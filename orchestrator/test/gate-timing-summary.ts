@@ -60,6 +60,29 @@ function largestGrowth(
   return growth.map((row) => `${row.path} +${row.delta}ms`).join(', ') || '(no individual file grew)'
 }
 
+function unitTimingResult(
+  unitElapsedMs: number,
+  committedMs: number | undefined,
+  ci: boolean,
+  reporter: Reporter,
+): { changed: boolean; fatal: boolean; nextMs: number; initial: boolean } {
+  const decision = decideTestTiming({ currentMs: unitElapsedMs, committedMs, growthLimit: GROWTH_LIMIT })
+  if (decision === 'initial' || decision === 'tighten') {
+    const description = decision === 'initial'
+      ? 'recorded initial total'
+      : `tightened ${committedMs}ms ->`
+    reporter.error(`${TIMING_SUMMARY_LABEL}: orchestrator unit ${description} ${unitElapsedMs}ms`)
+    return { changed: true, fatal: false, nextMs: unitElapsedMs, initial: decision === 'initial' }
+  }
+  if (decision === 'fail') {
+    const limitMs = Math.floor(committedMs! * (1 + GROWTH_LIMIT))
+    reporter.error(`${TIMING_SUMMARY_LABEL}: orchestrator unit total ${unitElapsedMs}ms exceeds 5% growth limit ${limitMs}ms (committed ${committedMs}ms)`)
+    if (!ci) reporter.error(`${TIMING_SUMMARY_LABEL}: growth is informational locally and fails on CI`)
+    return { changed: false, fatal: ci, nextMs: committedMs!, initial: false }
+  }
+  return { changed: false, fatal: false, nextMs: committedMs!, initial: false }
+}
+
 export function summaryRows(files: FileRow[]): CommittedTestTiming[] {
   return files.filter((file) => file.file.endsWith('.test.ts')).map((file) => ({
     path: `orchestrator/${file.file}`,
@@ -82,23 +105,13 @@ export function publishTimingSummary(
   const keepCommitted = new Set<string>()
   let baselineChanged = false
   let fatal = false
-  const unitDecision = decideTestTiming({
-    currentMs: unitElapsedMs,
-    committedMs: committedSummary?.unitElapsedMs || undefined,
-    growthLimit: GROWTH_LIMIT,
-  })
-  let nextUnitElapsedMs = committedSummary?.unitElapsedMs ?? unitElapsedMs
-  if (unitDecision === 'initial' || unitDecision === 'tighten') {
-    baselineChanged = true
-    nextUnitElapsedMs = unitElapsedMs
-    reporter.error(`${TIMING_SUMMARY_LABEL}: orchestrator unit ${unitDecision === 'initial' ? 'recorded initial total' : `tightened ${committedSummary!.unitElapsedMs}ms ->`} ${unitElapsedMs}ms`)
-  } else if (unitDecision === 'fail') {
-    const committedMs = committedSummary!.unitElapsedMs
-    const limitMs = Math.floor(committedMs * (1 + GROWTH_LIMIT))
-    reporter.error(`${TIMING_SUMMARY_LABEL}: orchestrator unit total ${unitElapsedMs}ms exceeds 5% growth limit ${limitMs}ms (committed ${committedMs}ms)`)
-    if (ci) fatal = true
-    else reporter.error(`${TIMING_SUMMARY_LABEL}: growth is informational locally and fails on CI`)
-  }
+  const unit = unitTimingResult(
+    unitElapsedMs, committedSummary?.unitElapsedMs || undefined, ci, reporter,
+  )
+  const reseedFiles = unit.initial
+  baselineChanged = unit.changed
+  fatal = unit.fatal
+  const nextUnitElapsedMs = unit.nextMs
   for (const [packageName, currentMs] of currentTotals) {
     const committedMs = committedTotals.get(packageName)
     const decision = decideTestTiming({ currentMs, committedMs, growthLimit: GROWTH_LIMIT })
@@ -113,7 +126,7 @@ export function publishTimingSummary(
       continue
     }
     // The baseline only moves down: a package that held or grew keeps its committed rows.
-    keepCommitted.add(packageName)
+    if (!reseedFiles) keepCommitted.add(packageName)
     if (decision === 'pass') continue
     const limitMs = Math.floor(committedMs! * (1 + GROWTH_LIMIT))
     reporter.error(`${TIMING_SUMMARY_LABEL}: ${packageName} total ${currentMs}ms exceeds 5% growth limit ${limitMs}ms (committed ${committedMs}ms)`)
@@ -134,9 +147,8 @@ export function publishTimingSummary(
     reporter.error(`test timing baseline changed; commit ${TIMING_SUMMARY_LABEL} and re-run`)
     return false
   }
-  if (fatal) return false
   reporter.log(`test timing ratchet: ok (${current.length} files)`)
-  return true
+  return !fatal
 }
 
 export function readTimingSummary(): CommittedTestTiming[] {
