@@ -1212,7 +1212,7 @@ export async function run(opts: {
       override: process.env.ORCH_SANDBOX,
       path: process.env.PATH,
       localBaseUrl: LOCAL_BASE_URL,
-      mcpAllowlist: mcpMode ? mcpAllowlist : [],
+      mcp: Boolean(mcpMode), mcpAllowlist: mcpMode ? mcpAllowlist : [],
     })
   } catch (e) {
     const why = String((e as Error)?.message ?? e)
