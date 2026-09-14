@@ -61,7 +61,7 @@ import {
 } from './transport.ts'
 import { appendRunEvent, teeTransportEvents } from './events.ts'
 import { checkpointRun, DEFAULT_CHECKPOINT_MINUTES, latestCheckpoint, recordFailedIdlePreservation } from './checkpoint.ts'
-import { decideOutcome } from './outcome.ts'
+import { decideOutcome, finalizeWorkerReply } from './outcome.ts'
 import { assessEvidence, assessEvidencePrompt, recordEvidence } from './evidence.ts'
 import {
   formatIdleKillError, idleKillMayProceed, idlePollMs,
@@ -1366,7 +1366,6 @@ export async function run(opts: {
   let contract: WorkerReply | null = null
   let contractObjects = 0
   let acceptedQuestions: ReturnType<typeof realQuestions> = []
-  let droppedQuestions: ReturnType<typeof realQuestions> = []
   let status = 'failed'
   let error: string | null = null
   let failureKind: ReturnType<typeof classify> | null = null
@@ -1723,10 +1722,6 @@ export async function run(opts: {
     }
     const questionsControlStatus = isAsking(contract) || contract?.status === 'done'
     acceptedQuestions = questionsControlStatus ? realQuestions(contract) : transportQuestions
-    const acceptedQuestionSet = new Set(acceptedQuestions)
-    droppedQuestions = questionsControlStatus
-      ? (contract?.questions ?? []).filter((item) => !acceptedQuestionSet.has(item))
-      : []
 
     const completedReplyAtTimeout = contract?.status === 'done' ||
       (!writesJob && !replyError && !!output && !isNonAnswer(output))
@@ -1982,29 +1977,12 @@ export async function run(opts: {
       })
     }
 
-    if (contract?.status === 'done' && contract.files_changed?.length === 0 &&
-        contract.tests?.ran === false && changes?.files.length === 0 &&
-        failureKind !== 'truncated') {
-      status = 'failed'
-      error = 'reported done with no change and no test run'
-      failureKind = 'other'
-    }
     if (retargetDiagnostic) error = error ? `${error}\n${retargetDiagnostic}` : retargetDiagnostic
-    if (contractObjects > 1) {
-      const note = `${contractObjects} contract objects in output; took the last`
-      error = error ? `${error}\n${note}` : note
-    }
-    if (contract?.status === 'done' && acceptedQuestions.length) {
-      const note = 'status reclassified from done to asking: a worker with a real question has not finished'
-      error = error ? `${error}\n${note}` : note
-    }
-    if (droppedQuestions.length && (acceptedQuestions.length || contract?.status === 'done')) {
-      const count = droppedQuestions.length
-      const rejected = droppedQuestions.map((item) => JSON.stringify(item.question)).join(', ')
-      const note = `${count} invalid question${count === 1 ? '' : 's'} dropped; ` +
-        `rejected question text: ${rejected}`
-      error = error ? `${error}\n${note}` : note
-    }
+    const finalization = finalizeWorkerReply({
+      reply: contract, measuredFiles: changes?.files ?? null,
+      status: status as import('./outcome.ts').OutcomeStatus, failureKind, error, contractObjects,
+    })
+    ;({ status, failureKind, error, acceptedQuestions } = finalization)
     /**
      * A raw stdout/stderr stream ending in a vendor termination marker means the
      * vendor killed the session. Whatever else the run appears to be — an ACP stop
