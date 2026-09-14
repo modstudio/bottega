@@ -171,13 +171,38 @@ async function flakeStore(): Promise<FlakeStore | null> {
   }
 }
 
+async function runGateTest(
+  name: string,
+  files: string[],
+  run: () => Promise<Result & { output: string }>,
+  store: FlakeStore | null,
+): Promise<Result> {
+  const result = await runWithRetry({
+    name,
+    files,
+    run,
+    weeklyCount: (test, file) => store ? store.count(test, file) : 0,
+    recordFlake: (row) => {
+      if (!store) {
+        console.error(`FLAKY ${row.file} ${row.test} (${row.signal}); flake store is unavailable`)
+        return
+      }
+      store.record({ test: row.test, file: row.file, load: measureHostLoad(), signal: row.signal })
+    },
+  })
+  if (result.question) console.error(result.question)
+  if (result.flakyLine) console.error(result.flakyLine)
+  return result
+}
+
 await withGateSlot(async () => {
   const gateStarted = Date.now()
   const store = await flakeStore()
-  const unit = await spawnTest('orchestrator unit', [
+  const unitName = 'orchestrator unit'
+  const unit = await runGateTest(unitName, [], () => spawnTest(unitName, [
     'bun', 'test', '--path-ignore-patterns', 'runs/**', '--path-ignore-patterns', '**/runs/**',
     ...declaredBoundaryTests.flatMap((file) => ['--path-ignore-patterns', file]),
-  ], [], process.env, 'unit')
+  ], [], process.env, 'unit'), store)
   const shards = balancedShards(readCommittedTimingSummary())
   const boundary = await Promise.all(shards.map(async (files, index) => {
     const name = `orchestrator process-boundary shard ${index + 1}/${map.shards.length}`
@@ -188,24 +213,9 @@ await withGateSlot(async () => {
       ORCH_DOCKER_INVENTORY_TIMEOUT_MS: String(dockerInventoryTimeoutForSize(size)),
     }
     const argv = ['bun', 'test', '--timeout', String(timeout), ...files]
-    const result = await runWithRetry({
-      name,
-      files,
-      run: async () => spawnTest(name, argv, files, env, `cli-${index + 1}`),
-      weeklyCount: (test, file) => store ? store.count(test, file) : 0,
-      recordFlake: (row) => {
-        if (!store) {
-          console.error(`FLAKY ${row.file} ${row.test} (${row.signal}); flake store is unavailable`)
-          return
-        }
-        store.record({
-          test: row.test, file: row.file, load: measureHostLoad(), signal: row.signal,
-        })
-      },
-    })
-    if (result.question) console.error(result.question)
-    if (result.flakyLine) console.error(result.flakyLine)
-    return result
+    return runGateTest(
+      name, files, () => spawnTest(name, argv, files, env, `cli-${index + 1}`), store,
+    )
   }))
 
   const results: Result[] = [unit, ...boundary]
