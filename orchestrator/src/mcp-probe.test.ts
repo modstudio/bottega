@@ -4,7 +4,7 @@ import { db } from './db.ts'
 import { upsertProject } from './projects.ts'
 import { run as runJob } from './run.ts'
 import {
-  mcpCallEvidence, mcpEndpointAllowlist, namesSeenAt, parseMcpConfig, parseMcpProbe, probeMcpServer,
+  mcpCallEvidence, mcpConfigAllowlist, mcpEndpointAllowlist, namesSeenAt, parseMcpConfig, parseMcpProbe, probeMcpServer,
   sanitizeProbeError, storedMcpProbe,
   wrongProjectReason,
 } from './mcp-probe.ts'
@@ -55,22 +55,32 @@ process.stdin.on('data', (chunk) => {
 }
 
 describe('MCP endpoint allowlist', () => {
-  test('adds host and host:port from the registered server URL and nothing else', () => {
+  test('adds every configured HTTP host and explicit port while ignoring stdio servers', () => {
     expect(mcpEndpointAllowlist('https://mcp.example.test:8443/sse')).toEqual([
       'mcp.example.test', 'mcp.example.test:8443',
+    ])
+    const allowlist = mcpConfigAllowlist(parseMcpConfig(JSON.stringify({ mcpServers: {
+      required: { url: 'https://required.example.test/mcp' },
+      sibling: { url: 'http://sibling.example.test:7331/mcp' },
+      duplicate: { url: 'https://required.example.test/other' },
+      stdio: { command: 'bun', args: ['server.ts'] },
+    } })))
+    expect(allowlist).toEqual([
+      'required.example.test', 'sibling.example.test', 'sibling.example.test:7331',
     ])
     const profile = readonlyLensProfile({
       worktree: '/runs/tree', runsDir: '/runs/evidence', project: fixtureProject,
       agent: 'grok', path: '/usr/bin', nodeModuleLinks: [],
-      mcpEndpoint: 'https://mcp.example.test:8443/sse',
+      mcpAllowlist: allowlist,
     })
-    expect(profile.network.allowedDomains).toContain('mcp.example.test')
-    expect(profile.network.allowedDomains).toContain('mcp.example.test:8443')
+    expect(profile.network.allowedDomains).toEqual(expect.arrayContaining(allowlist))
     const without = readonlyLensProfile({
       worktree: '/runs/tree', runsDir: '/runs/evidence', project: fixtureProject,
       agent: 'grok', path: '/usr/bin', nodeModuleLinks: [],
     })
-    expect(without.network.allowedDomains).not.toContain('mcp.example.test')
+    expect(without.network.allowedDomains).not.toContain('required.example.test')
+    expect(mcpConfigAllowlist({})).toEqual([])
+    expect(mcpConfigAllowlist(undefined)).toEqual([])
   })
 })
 

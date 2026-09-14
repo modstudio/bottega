@@ -48,7 +48,7 @@ import {
   type ConfinementEvent, type FreezeFailure,
 } from './confinement.ts'
 import {
-  mcpCallEvidence, namesSeenAt, probeMcpServer, readMcpConfig, resolveMcpServerUrl,
+  mcpCallEvidence, mcpConfigAllowlist, namesSeenAt, probeMcpServer, readMcpConfig,
   storedMcpProbe, wrongProjectReason,
 } from './mcp-probe.ts'
 import { startAskLoopback, type AskLoopback } from './ask.ts'
@@ -1197,7 +1197,7 @@ export async function run(opts: {
     ?? projectAt(callerCwd)?.settings.mcpServer
     ?? projectAt(callerCwd)?.name
     ?? null
-  const mcpEndpoint = mcpServerName ? resolveMcpServerUrl(mcpConfig[mcpServerName]) : null
+  const mcpAllowlist = mcpConfigAllowlist(mcpConfig)
   let sandboxSelection: ReturnType<typeof selectReadonlySandbox>
   try {
     sandboxSelection = selectReadonlySandbox({
@@ -1212,7 +1212,7 @@ export async function run(opts: {
       override: process.env.ORCH_SANDBOX,
       path: process.env.PATH,
       localBaseUrl: LOCAL_BASE_URL,
-      mcpEndpoint: mcpMode ? mcpEndpoint : null,
+      mcpAllowlist: mcpMode ? mcpAllowlist : [],
     })
   } catch (e) {
     const why = String((e as Error)?.message ?? e)
