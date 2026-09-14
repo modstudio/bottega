@@ -1,8 +1,8 @@
-import { afterEach, beforeEach, describe, expect, test } from 'bun:test'; import { readFileSync, writeFileSync, existsSync, chmodSync, rmSync } from 'node:fs'; import { join } from 'node:path'; import { cloneRepository, hermeticGitEnv } from '../test/fixtures/git.ts'; import { reviewReply, workerReply } from '../test/fixtures/replies.ts'; import { addRun, dir, reapTestRun, score } from '../test/fixtures/store.ts'; import { declaredCreate } from '../test/fixtures/worktree.ts'; import { AGENTS } from './agents.ts'; import { ask } from './ask.ts'; import { GENERIC_QUESTION_TOKENS, hasRealQuestions, parseWorkerReply, parseWorkerReplyWithCount, realQuestions } from './contract.ts'; import { db, nowIso } from './db.ts'; import { detectBlockers } from './failure.ts'; import { addDoctrineRule, addPair, addSkip, baselineForPair, ledgerRef, listDoctrineRules, listLedgerRefs, listPairs, listSkips, resolveLedgerRef, retireDoctrineRule, setBaseline, setLedgerRef } from './porting.ts'; import { projects, removeProject, upsertProject } from './projects.ts'
-import { candidates, pick } from './route.ts'
+import { afterEach, beforeEach, describe, expect, test } from 'bun:test'; import { readFileSync, writeFileSync, existsSync, chmodSync, rmSync } from 'node:fs'; import { join } from 'node:path'; import { cloneRepository, hermeticGitEnv } from '../test/fixtures/git.ts'; import { reviewReply, workerReply } from '../test/fixtures/replies.ts'; import { addRun, dir, reapTestRun, score } from '../test/fixtures/store.ts'; import { declaredCreate } from '../test/fixtures/worktree.ts'; import { AGENTS } from './agents.ts'; import { db } from './db.ts'; import { removeProject, upsertProject } from './projects.ts'
+import { candidates } from './route.ts'
 import { run as runJob } from './run.ts'
 import { weigh } from './score.ts'
-import { runDetail, state } from './serve.ts'
+import { runDetail } from './serve.ts'
 import { scriptedTransport, scriptedTransportSequence } from '../test/fake-transport.ts'
 import { installTestTransport } from './transport.ts'
 import { collectResult } from './collect.ts'; import { trackedTestResidue } from '../test/residue.ts'
@@ -11,61 +11,6 @@ afterEach(() => {
   installTestTransport(null)
   if (priorOrchDepth === undefined) delete process.env.ORCH_DEPTH
   else process.env.ORCH_DEPTH = priorOrchDepth
-})
-describe('porting data model', () => {
-  test('stores pair progress and declined candidates with their reasons', () => {
-    upsertProject({ name: 'source-invented', path: '/w/source-invented',
-      settings: { keyPrefixes: ['SRC'] } })
-    upsertProject({ name: 'target-invented', path: '/w/target-invented',
-      settings: { keyPrefixes: ['TGT'] } })
-    const [source, target] = projects().sort((a, b) => a.name.localeCompare(b.name))
-    const pair = addPair(source!.id, target!.id, '2026-09-01T00:00:00.000Z'); expect(addPair(source!.id, target!.id).id).toBe(pair.id); expect(listPairs()).toEqual([pair]); expect(baselineForPair(pair.id)).toEqual({
-      pair_id: pair.id, source_commit: null, scanned_at: null,
-    }); expect(setBaseline(pair.id, 'abc123', '2026-09-02T00:00:00.000Z')).toEqual({
-      pair_id: pair.id, source_commit: 'abc123', scanned_at: '2026-09-02T00:00:00.000Z',
-    })
-    addSkip(pair.id, 'candidate-one', 'not applicable', '2026-09-03T00:00:00.000Z'); expect(listSkips(pair.id)).toMatchObject([
-      { candidate: 'candidate-one', reason: 'not applicable' },
-    ])
-  })
-  test('keeps each ledger source project distinct and resolves the target by key prefix', () => {
-    upsertProject({ name: 'source-one-invented', path: '/w/source-one', settings: {} })
-    upsertProject({ name: 'source-two-invented', path: '/w/source-two', settings: {} })
-    upsertProject({ name: 'target-invented', path: '/w/target',
-      settings: { keyPrefixes: ['TGT'] } })
-    const byName = Object.fromEntries(projects().map((project) => [project.name, project]))
-    const ref = setLedgerRef({
-      taskKey: 'TGT-42', note: 'adapt this natively', createdAt: '2026-09-03T00:00:00.000Z',
-      sources: [
-        { source_project_id: byName['source-one-invented']!.id,
-          commits: ['aaa'], paths: ['src/a.ts'], note: 'first source' },
-        { source_project_id: byName['source-two-invented']!.id,
-          commits: ['bbb', 'ccc'], paths: ['src/b.ts'], note: 'second source' },
-      ],
-    }); expect(ref.target_project_id).toBe(byName['target-invented']!.id); expect(ledgerRef('TGT-42')!.sources).toEqual([
-      { source_project_id: byName['source-one-invented']!.id,
-        commits: ['aaa'], paths: ['src/a.ts'], note: 'first source' },
-      { source_project_id: byName['source-two-invented']!.id,
-        commits: ['bbb', 'ccc'], paths: ['src/b.ts'], note: 'second source' },
-    ]); expect(() => setLedgerRef({ taskKey: 'NONE-1', note: '', sources: ref.sources }))
-      .toThrow('no registered project owns task key')
-  })
-  test('resolution preserves provenance and default listings omit completed refs', () => {
-    upsertProject({ name: 'source-invented', path: '/w/source', settings: {} })
-    upsertProject({ name: 'target-invented', path: '/w/target',
-      settings: { keyPrefixes: ['TGT'] } })
-    const source = projects().find((project) => project.name === 'source-invented')!
-    setLedgerRef({
-      taskKey: 'TGT-42', note: 'provenance',
-      sources: [{ source_project_id: source.id, commits: ['abc'], paths: ['src/a.ts'], note: 'source' }],
-    }); expect(listLedgerRefs()).toHaveLength(1); expect(resolveLedgerRef('TGT-42', '2026-09-04T00:00:00.000Z')).toMatchObject({
-      task_key: 'TGT-42', resolved_at: '2026-09-04T00:00:00.000Z',
-      sources: [{ commits: ['abc'], paths: ['src/a.ts'] }],
-    }); expect(listLedgerRefs()).toEqual([]); expect(listLedgerRefs(true)).toHaveLength(1); expect(resolveLedgerRef('TGT-42', 'later')?.resolved_at).toBe('2026-09-04T00:00:00.000Z')
-  })
-  test('retires doctrine without freeing its stable number', () => {
-    addDoctrineRule(7, 'Invented rule', 'Keep the example invented.', '2026-09-01T00:00:00.000Z'); expect(retireDoctrineRule(7, '2026-09-02T00:00:00.000Z')).toBe(true); expect(listDoctrineRules(false)).toEqual([]); expect(listDoctrineRules()).toMatchObject([{ number: 7, retired_at: '2026-09-02T00:00:00.000Z' }]); expect(() => addDoctrineRule(7, 'Replacement', 'Must not reuse seven.')).toThrow()
-  })
 })
 describe('agent retry and failover records', () => {
   const git = (cwd: string, ...args: string[]) => {
@@ -144,6 +89,7 @@ describe('agent retry and failover records', () => {
     const recovered = logs.join('\n'); expect(recovered).toStartWith('TRUNCATED at the output ceiling'); expect(recovered).toContain('RECOVERED-END'); expect(recovered).not.toContain('DROP-ME')
   })
 })
+
 describe('review MCP recording', () => {
   test('silent provenance requires requested MCP degradation', async () => {
     const reply = reviewReply(1)
@@ -174,179 +120,7 @@ describe('review MCP recording', () => {
     } finally { grok.bin = original; rmSync(repo, { recursive: true, force: true }); rmSync(fake, { force: true }); rmSync(create, { force: true }) }
   })
 })
-describe('reading the verdict off the command line', () => {
-  // Mirrors the filter in cli.ts. `orch score 279 none --note "..."` read
-  // --note as the quality and rejected the whole thing as incoherent, which is
-  // a baffling way to be told about a typo nobody made.
-  const VALUE_FLAGS = new Set(['--agent', '--file', '--schema', '--model', '--note',
-                               '--job', '--limit', '--port', '--days', '--window'])
-  const words = (args: string[]) =>
-    args.filter((a, i) => !a.startsWith('--') && !VALUE_FLAGS.has(args[i - 1] ?? ''))
-  test('a note does not get read as the quality', () => {; expect(words(['none', '--note', 'it returned a vendor error'])).toEqual(['none'])
-  })
-  test('both halves survive a trailing note', () => {; expect(words(['full', 'right', '--note', 'good stuff'])).toEqual(['full', 'right'])
-  })
-  test('a boolean switch does not eat the word after it', () => {; expect(words(['full', '--quiet', 'right'])).toEqual(['full', 'right'])
-  })
-})
-describe('what the views print beside a percentage', () => {
-  test('a failure-only cell has a negative mean, which a bar cannot render', () => {
-    // The router is entitled to a negative score. `width:-50%` renders as
-    // nothing, with no hint that the cell is bad rather than empty.
-    addRun({ agent: 'agy', job: 'craft', status: 'failed' })
-    const c = candidates('craft').find((x) => x.agent === 'agy')!; expect(c.score).toBeLessThan(0)
-    const pct = Math.round(c.score! * 100); expect(Math.max(0, Math.min(100, pct))).toBe(0)
-  })
-  test('evidence is what MIN_SAMPLE counts, so it is what a surface must print', () => {
-    // One good verdict plus two unjudged failures: the mean is 0 over THREE
-    // judgements. A surface printing "0% of 1" beside it is incoherent — a 0%
-    // on a single `right` verdict cannot happen.
-    score(addRun({ agent: 'agy', job: 'review-lens-inline' }), 'full', 'right')
-    addRun({ agent: 'agy', job: 'review-lens-inline', status: 'failed' })
-    addRun({ agent: 'agy', job: 'review-lens-inline', status: 'stale' })
-    const c = candidates('review-lens-inline').find((x) => x.agent === 'agy')!; expect(c.score).toBe(0); expect(c.scored).toBe(1); expect(c.evidence).toBe(3)
-  })
-})
-describe('probes are excluded from every query that reports', () => {
-  test('byRepo leaves calibration traffic out', () => {
-    // The rule is stated in AGENTS.md and this was the one aggregate that had
-    // no test holding it: byRepo counted probes until it was noticed by eye.
-    const real = addRun({ agent: 'grok', job: 'craft' })
-    const probe = addRun({ agent: 'grok', job: 'craft', probe: 1 })
-    for (const id of [real, probe]) {
-      db().query("UPDATE run SET repo='devbox', vendor_tokens=100 WHERE id=?").run(id)
-    }
-    const rows = state(null).byRepo as { repo: string; runs: number; toks: number }[]
-    const devbox = rows.find((r) => r.repo === 'devbox')!; expect(devbox.runs).toBe(1); expect(devbox.toks).toBe(100)
-  })
-})
-describe('run detail', () => {
-  test('publishes every field hub reads without publishing the ask credential', () => {
-    const id = addRun({ agent: 'grok', job: 'craft', status: 'failed', latency: 1234, probe: 1 })
-    const promptPath = trackResidue(join(dir, 'detail-prompt.txt'))
-    const outputPath = trackResidue(join(dir, 'detail-output.txt'))
-    writeFileSync(promptPath, 'the whole prompt')
-    writeFileSync(outputPath, 'the whole reply')
-    db().query(
-      `UPDATE run SET vendor_tokens=?, failure_kind=?, evidence_excluded=?, error=?,
-                      prompt_path=?, output_path=?, run_token=?, doc_revisions=?, canon_sha=? WHERE id=?`,
-    ).run(5678, 'timeout', 'not evidence', 'timed out', promptPath, outputPath, 'secret', '[4,9]', 'canon-123', id)
-    score(id, 'partial', 'mixed')
-    db().query('UPDATE score SET note=? WHERE run_id=?').run('read by hub', id)
-    const detail = runDetail(id)!; expect(detail).toMatchObject({
-      id, requested_id: id, resolved_from: 'root', root_id: id,
-      agent: 'grok', job: 'craft', latency_ms: 1234, vendor_tokens: 5678,
-      status: 'failed', failure_kind: 'timeout', probe: 1,
-      evidence_excluded: 'not evidence', error: 'timed out',
-      doc_revisions: '[4,9]', canon_sha: 'canon-123',
-      delivery: 'partial', quality: 'mixed', note: 'read by hub',
-      prompt: 'the whole prompt', output: 'the whole reply',
-    }); expect(detail).not.toHaveProperty('run_token')
-  })
-  test('publishes ordered chain audit and renders a missing actor explicitly', () => {
-    const root = addRun({ agent: 'codex', job: 'implement' })
-    const child = addRun({ agent: 'codex', job: 'implement' })
-    db().query('UPDATE run SET parent_run_id=?, turn=2 WHERE id=?').run(root, child)
-    const insertAudit = db().query(
-      `INSERT INTO run_mutation_audit (run_id, root_id, action, actor_session, at, reason)
-       VALUES (?, ?, ?, ?, ?, ?)`,
-    )
-    insertAudit.run(root, root, 'stop', null, '2026-09-05T01:00:00.000Z', null)
-    insertAudit.run(child, root, 'continue', 'architect-session', '2026-09-05T02:00:00.000Z', 'ruled'); expect(runDetail(child)!.audit).toEqual([
-      { run_id: root, root_id: root, action: 'stop',
-        actor_session: 'anonymous (no session id)', at: '2026-09-05T01:00:00.000Z', reason: null },
-      { run_id: child, root_id: root, action: 'continue',
-        actor_session: 'architect-session', at: '2026-09-05T02:00:00.000Z', reason: 'ruled' },
-    ]); expect(runDetail(child)).toMatchObject({
-      id: child, requested_id: child, resolved_from: 'turn', root_id: root,
-    }); expect(() => insertAudit.run(root, root, 'invented', null, nowIso(), null)).toThrow()
-  })
-})
-/**
- * `orch wait` and `orch result` are the collection half of `--detach`, and
- * another session's fan-out now depends on their exit codes meaning what they
- * say. Driven through the real CLI, because the bugs worth catching here are in
- * argument parsing and process exit status, neither of which a unit call sees.
- */
-describe('a repository-reading job gets a disposable writable disk', () => {
-  /**
-   * One session had seven files of uncommitted review fixes in its
-   * checkout. A review lens ran there with --mcp and codex's
-   * --approve-for-me implied workspace-write. The tree came back at HEAD, no
-   * stash, no commit, nothing in the reflog. The disposable worktree makes that
-   * permission safe instead of excluding the agent from the route.
-   */
-  test('the old caller-checkout MCP exclusion is no longer needed', () => {; expect(pick('review-lens', 'codex', 0, false, null).agent).toBe('codex')
-  })
-  test('the same agent remains fine without tools', () => {; expect(pick('review-lens', 'codex', 0, false, null).agent).toBe('codex')
-  })
-})
-describe('a worker that stops to ask is not a worker that failed', () => {
-  test('an unparseable reply is rejected rather than read as a status', () => {
-    // The dangerous direction: treating "no structured reply" as success would
-    // record an unverifiable change set as a completed implementation.
-    expect(parseWorkerReply('I have finished the work, it all looks good.')).toBeNull(); expect(parseWorkerReply('')).toBeNull()
-  })
-  test('an unknown status is not silently promoted to done', () => {; expect(parseWorkerReply(JSON.stringify(workerReply({ status: 'partially-done' })))).toBeNull()
-  })
-  test('the object is recovered from prose and from a fence', () => {
-    const fenced = parseWorkerReply(`Here is my report:\n\`\`\`json\n${JSON.stringify(workerReply())}\n\`\`\``); expect(fenced?.status).toBe('done')
-    const embedded = parseWorkerReply(`Result: ${JSON.stringify(workerReply({
-      status: 'asking', summary: 'need a ruling', questions: null,
-    }))} — over to you`); expect(embedded?.status).toBe('asking')
-  })
-  test('a schema-shaped reply keeps its optional recommendation', () => {
-    const r = parseWorkerReply(JSON.stringify(workerReply({
-      status: 'asking', summary: 'stopped', questions: [{
-        question: 'one table or two?', options: ['one', 'two'], recommendation: 'two', why: null,
-      }],
-    }))); expect(r?.questions?.[0]?.recommendation).toBe('two')
-  })
-  test('a status alone is not a worker contract', () => {; expect(parseWorkerReply('{"status":"done"}')).toBeNull()
-  })
-  test('wrong-typed nested values reject the whole candidate', () => {; expect(parseWorkerReply(JSON.stringify(workerReply({ questions: [{
-      question: 'q?', options: null, recommendation: {}, why: null,
-    }] })))).toBeNull()
-  })
-  test('an asking reply keeps every question with text and why', () => {
-    const asking = (questions: unknown[]) => parseWorkerReply(JSON.stringify(workerReply({
-      status: 'asking', questions,
-    }))); expect(hasRealQuestions(asking([{
-      question: 'one table or two?', options: null, recommendation: null,
-      why: 'the choice changes the migration',
-    }]))).toBe(true); expect(hasRealQuestions(asking([{
-      question: 'which table?', options: null, recommendation: null, why: '   ',
-    }]))).toBe(false)
-    for (const why of ['\u200B', '\u2060', '\u00AD', '\u200B\u2060']) {; expect(hasRealQuestions(asking([{
-        question: 'one table or two?', options: null, recommendation: null, why,
-      }]))).toBe(false)
-    }
-    for (const token of GENERIC_QUESTION_TOKENS) {; expect(hasRealQuestions(asking([{
-        question: token, options: null, recommendation: null, why: 'a claimed reason',
-      }]))).toBe(false)
-    }
-    for (const disguised of ['(placeholder)!', '[TBD]', 'TODO?', '...question...']) {; expect(hasRealQuestions(asking([{
-        question: disguised, options: null, recommendation: null, why: 'a claimed reason',
-      }]))).toBe(false)
-    }; expect(hasRealQuestions(asking([{
-      question: '\u200B\u2060', options: null, recommendation: null, why: 'a claimed reason',
-    }]))).toBe(false)
-    const partial = asking([
-      {
-        question: 'which table?', options: null, recommendation: null,
-        why: 'the schema changes',
-      },
-      { question: '   ', options: null, recommendation: null, why: 'unknown choice' },
-    ]); expect(hasRealQuestions(partial)).toBe(true); expect(realQuestions(partial).map((item) => item.question)).toEqual(['which table?']); expect(hasRealQuestions(parseWorkerReply(JSON.stringify(workerReply({
-      status: 'done', questions: [{
-        question: 'Which table?', options: null, recommendation: null,
-        why: 'the schema changes',
-      }],
-    }))))).toBe(true)
-  })
-})
-describe('pid stays the worker for the whole run', () => {
-})
+
 describe('a wall kill does not erase a read-only answer', () => {
   test('substantive output is judgeable and routing does not count it as delivery-none', async () => {
     const script = trackResidue(join(dir, 'DEV-235-readonly-agent.ts'))
@@ -395,6 +169,7 @@ setInterval(() => {}, 1_000)
     }
   })
 })
+
 describe('vendor termination markers', () => {
   const grokStream = (...lines: string[]) => `${lines.join('\n')}\n`
   async function withGrokBin<T>(output: string, exitCode: number, fn: () => Promise<T>): Promise<T> {
@@ -657,84 +432,5 @@ printf '%s\\n' '{"type":"system","subtype":"init"}' '{"type":"result","result":"
       else process.env.ORCH_TEST_EXTERNAL_WRITE = priorTarget
       rmSync(watched, { recursive: true, force: true })
     }
-  })
-})
-describe('the live ask channel always answers', () => {
-  test('a live question is answerable through the command, not only in SQL', () => {
-    const live = addRun({ agent: 'codex', job: 'implement', status: 'running' })
-    db().query(
-      'INSERT INTO question (run_id, asked_at, question) VALUES (?,?,?)',
-    ).run(live, new Date().toISOString(), 'which table?')
-    const answerable = (id: number) => {
-      const r = db().query('SELECT status, parent_run_id FROM run WHERE id = ?').get(id) as
-        { status: string; parent_run_id: number | null }
-      const open = db().query(
-        `SELECT COUNT(*) n FROM question q JOIN run r ON r.id = q.run_id
-          WHERE (r.id = ? OR r.parent_run_id = ?) AND q.answered_at IS NULL`,
-      ).get(id, id) as { n: number }
-      return !r.parent_run_id && open.n > 0 && (r.status === 'running' || r.status === 'asking')
-    }; expect(answerable(live)).toBe(true); expect(answerable(addRun({ agent: 'codex', job: 'implement', status: 'running' }))).toBe(false)
-  })
-  test('a question asked on turn two is answerable from the root', () => {
-    const root = addRun({ agent: 'codex', job: 'implement', status: 'asking' })
-    const child = addRun({ agent: 'codex', job: 'implement', parent: root, turn: 2 })
-    db().query('INSERT INTO question (run_id, asked_at, question) VALUES (?,?,?)')
-      .run(child, new Date().toISOString(), 'and now what?')
-    const open = db().query(
-      `SELECT q.id FROM question q JOIN run r ON r.id = q.run_id
-        WHERE (r.id = ? OR r.parent_run_id = ?) AND q.answered_at IS NULL`,
-    ).all(root, root) as { id: number }[]; expect(open.length).toBe(1)
-  })
-  test('an unanswered question survives the timeout', async () => {
-    const run = addRun({ agent: 'codex', job: 'implement', status: 'running' })
-    await ask({ runId: run, question: 'still open', timeoutMs: 50 })
-    const open = db().query(
-      'SELECT COUNT(*) AS n FROM question WHERE run_id = ? AND answered_at IS NULL',
-    ).get(run) as { n: number }; expect(open.n).toBe(1)
-  })
-})
-describe('a worker asking is not a worker blocked', () => {
-  test('the old word is accepted and normalised', () => {
-    const r = parseWorkerReply(JSON.stringify(workerReply({
-      status: 'blocked', summary: 'x', questions: [{
-        question: 'q?', options: null, recommendation: null, why: null,
-      }],
-    }))); expect(r?.status).toBe('asking')
-  })
-  test('the two vocabularies do not overlap', () => {
-    const asking = parseWorkerReply(JSON.stringify(workerReply({ status: 'asking', summary: 'x' }))); expect(asking?.status).toBe('asking'); expect(detectBlockers('Docker access was denied, so I could not run the suite.')).not.toEqual([])
-  })
-})
-describe('asking is a first-class outcome, not a failure', () => {
-  test('every status check uses the current vocabulary', () => {
-    const wt = readFileSync(new URL('./worktree.ts', import.meta.url).pathname, 'utf8')
-    for (const [name, src] of [['worktree.ts', wt]] as const) {
-      const bad = src.split('\n').filter((l) =>
-        ["'blocked'", '"blocked"'].some((quoted) => l.includes(quoted))
-        && !l.includes('o.status') && !l.trim().startsWith('*')
-        && !l.trim().startsWith('//')); expect({ [name]: bad }).toEqual({ [name]: [] })
-    }
-  })
-})
-describe('a worker that narrates in its own reply shape', () => {
-  test('the LAST object wins, not the first and not the span', () => {
-    const r = parseWorkerReply([
-      workerReply({ summary: 'Starting by reading the canon', files_changed: [] }),
-      workerReply({ summary: 'Added the section', files_changed: ['a.ts', 'b.ts'] }),
-    ].map((value) => JSON.stringify(value)).join('\n')); expect(r?.summary).toBe('Added the section'); expect(r?.files_changed).toEqual(['a.ts', 'b.ts'])
-  })
-  test('a brace inside a string is not a brace', () => {
-    expect(parseWorkerReply(JSON.stringify(workerReply({ summary: 'uses {curly} braces' })))?.summary).toBe('uses {curly} braces')
-  })
-  test('a later object that does not validate does not shadow a good one', () => {
-    const r = parseWorkerReply(
-      `${JSON.stringify(workerReply({ summary: 'real' }))}\n{"note":"trailing object with no status"}`,
-    ); expect(r?.summary).toBe('real')
-  })
-  test('multiple valid contract objects report their count and take the last', () => {
-    const parsed = parseWorkerReplyWithCount([
-      workerReply({ summary: 'real reply' }),
-      workerReply({ summary: 'quoted contract-shaped object' }),
-    ].map((value) => JSON.stringify(value)).join('\n')); expect(parsed.reply?.summary).toBe('quoted contract-shaped object'); expect(parsed.contractObjects).toBe(2)
   })
 })

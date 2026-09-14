@@ -125,3 +125,22 @@ describe('who may judge a run', () => {
     })
   })
 })
+
+describe('what the views print beside a percentage', () => {
+  test('a failure-only cell has a negative mean, which a bar cannot render', () => {
+    // The router is entitled to a negative score. `width:-50%` renders as
+    // nothing, with no hint that the cell is bad rather than empty.
+    addRun({ agent: 'agy', job: 'craft', status: 'failed' })
+    const c = candidates('craft').find((x) => x.agent === 'agy')!; expect(c.score).toBeLessThan(0)
+    const pct = Math.round(c.score! * 100); expect(Math.max(0, Math.min(100, pct))).toBe(0)
+  })
+  test('evidence is what MIN_SAMPLE counts, so it is what a surface must print', () => {
+    // One good verdict plus two unjudged failures: the mean is 0 over THREE
+    // judgements. A surface printing "0% of 1" beside it is incoherent — a 0%
+    // on a single `right` verdict cannot happen.
+    score(addRun({ agent: 'agy', job: 'review-lens-inline' }), 'full', 'right')
+    addRun({ agent: 'agy', job: 'review-lens-inline', status: 'failed' })
+    addRun({ agent: 'agy', job: 'review-lens-inline', status: 'stale' })
+    const c = candidates('review-lens-inline').find((x) => x.agent === 'agy')!; expect(c.score).toBe(0); expect(c.scored).toBe(1); expect(c.evidence).toBe(3)
+  })
+})

@@ -192,3 +192,17 @@ describe('routing evidence scope', () => {
     expect(pick('review-lens', undefined, 0, false).reason).toContain(`on model ${current}`)
   })
 })
+
+describe('a repository-reading job gets a disposable writable disk', () => {
+  /**
+   * One session had seven files of uncommitted review fixes in its
+   * checkout. A review lens ran there with --mcp and codex's
+   * --approve-for-me implied workspace-write. The tree came back at HEAD, no
+   * stash, no commit, nothing in the reflog. The disposable worktree makes that
+   * permission safe instead of excluding the agent from the route.
+   */
+  test('the old caller-checkout MCP exclusion is no longer needed', () => {; expect(pick('review-lens', 'codex', 0, false, null).agent).toBe('codex')
+  })
+  test('the same agent remains fine without tools', () => {; expect(pick('review-lens', 'codex', 0, false, null).agent).toBe('codex')
+  })
+})
