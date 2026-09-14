@@ -1,5 +1,14 @@
 {
   "files": {
+    "src/evals-run.test.ts": {
+      "size": "moderate"
+    },
+    "src/run-lifecycle.test.ts": {
+      "size": "moderate"
+    },
+    "src/worktree-carry-chain.test.ts": {
+      "size": "moderate"
+    },
     "test/process-boundary/issue-filing.test.ts": {
       "size": "short"
     },
