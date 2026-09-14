@@ -7,7 +7,6 @@ import {
   type SandboxRuntimeConfig as LibrarySandboxRuntimeConfig,
 } from '@anthropic-ai/sandbox-runtime'
 import { ROOT } from './db.ts'
-import { mcpEndpointAllowlist } from './mcp-probe.ts'
 import type { Project } from './projects.ts'
 
 export type SandboxRuntimeConfig = {
@@ -107,7 +106,7 @@ export function readonlyLensProfile(input: {
   path?: string
   localBaseUrl?: string
   nodeModuleLinks?: string[]
-  mcpEndpoint?: string | null
+  mcpAllowlist?: string[]
 }): SandboxRuntimeConfig {
   const toolchain = (input.path ?? process.env.PATH ?? '')
     .split(delimiter).filter(Boolean).map((path) => resolve(path))
@@ -159,7 +158,7 @@ export function readonlyLensProfile(input: {
     network: {
       allowedDomains: [...new Set([
         ...vendorDomains, 'localhost', '127.0.0.1', '[::1]',
-        ...mcpEndpointAllowlist(input.mcpEndpoint),
+        ...(input.mcpAllowlist ?? []),
       ])],
       deniedDomains: [],
       allowUnixSockets: [],
@@ -206,7 +205,7 @@ export function selectReadonlySandbox(input: {
   override?: string
   path?: string
   localBaseUrl?: string
-  mcpEndpoint?: string | null
+  mcpAllowlist?: string[]
 }): SandboxSelection {
   if (!isReadonlySandboxCandidate(input)) {
     return { sandbox: 'host', profile: null, reason: null }
@@ -243,7 +242,7 @@ export function selectReadonlySandbox(input: {
       worktree: input.worktree, runsDir: input.runsDir, scratchDir: input.scratchDir,
       project: input.project,
       agent: input.agent, path: input.path, localBaseUrl: input.localBaseUrl,
-      mcpEndpoint: input.mcpEndpoint,
+      mcpAllowlist: input.mcpAllowlist,
     }),
   }
 }

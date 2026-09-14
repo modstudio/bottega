@@ -134,6 +134,13 @@ export function mcpEndpointAllowlist(url: string | null | undefined): string[] {
   }
 }
 
+export function mcpConfigAllowlist(
+  config: Record<string, McpServerConfig> | null | undefined,
+): string[] {
+  return [...new Set(Object.values(config ?? {}).flatMap((server) =>
+    mcpEndpointAllowlist(server.url)))]
+}
+
 export function resolveMcpServerUrl(config: McpServerConfig | undefined): string | null {
   return config?.url ?? null
 }
