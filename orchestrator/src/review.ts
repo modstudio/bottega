@@ -9,6 +9,7 @@ export { parseReviewOutput, parseReviewReply } from './contract.ts'
 import { job } from './jobs.ts'
 import type { ReviewTier } from './review-tier.ts'
 import { median } from './statistics.ts'
+import { filesCoveredIntersectChanged } from './review-coverage-match.ts'
 import { changeIdentity, type ChangeIdentityGitResult, type ChangeIdentityGitRunner } from './change-identity.ts'
 import { projectByName, type Project } from './projects.ts'
 
@@ -575,15 +576,7 @@ export function cleanReviewEvidence(
     return unavailable(String((cause as Error)?.message ?? cause))
   }
   if (!changed.length) return unavailable('changed-path set is empty')
-  const covered = provenance.files_covered
-  // A reviewer commonly reports paths relative to the directory it worked in.
-  // Any suffix match establishes some changed-file coverage. If one suffix is
-  // ambiguous and matches two changed paths, that still counts for coverage:
-  // this gate asks whether the change was read, not which same-named file it was.
-  const intersects = changed.some((path) => {
-    const normalized = path.replace(/^\.\//, '')
-    return covered.some((claim) => normalized === claim || normalized.endsWith(`/${claim}`))
-  })
+  const intersects = filesCoveredIntersectChanged(changed, provenance.files_covered)
   if (!intersects) {
     return {
       failure: 'clean review with no evidence: files_covered intersects none of the changed paths',
