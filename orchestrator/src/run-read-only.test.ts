@@ -1,9 +1,8 @@
 import { describe, expect, test } from "bun:test"
-import { mkdtempSync, rmSync, writeFileSync, existsSync } from "node:fs"
-import { tmpdir } from 'node:os'
+import { rmSync, writeFileSync, existsSync } from "node:fs"
 import { join } from "node:path"
 import { declaredCreate, worktreeDescribeFixture } from '../test/fixtures/worktree.ts'
-import { hermeticGitEnv } from '../test/fixtures/git.ts'
+import { cloneRepository, hermeticGitEnv } from '../test/fixtures/git.ts'
 import { addRun, dir } from '../test/fixtures/store.ts'
 import { db } from './db.ts'
 import { upsertProject } from './projects.ts'
@@ -81,15 +80,13 @@ async function runResumedNoRepositoryJob(
     gitConfigEnvironment?: Record<string, string>
   }, tree: ReturnType<typeof createWorktree>) => void,
 ): Promise<void> {
-  const repo = mkdtempSync(join(tmpdir(), 'orch-no-repo-resume-'))
+  const repo = cloneRepository('orch-no-repo-resume-')
   const promptPath = join(dir, `no-repo-resume-${Math.random().toString(16).slice(2)}.prompt.txt`)
   writeFileSync(join(repo, 'seed.txt'), 'seed\n')
-  for (const args of [['init'], ['add', 'seed.txt']]) {
-    const p = Bun.spawnSync(['git', ...args], {
-      cwd: repo, env: hermeticGitEnv(), stdout: 'pipe', stderr: 'pipe',
-    })
-    if (p.exitCode !== 0) throw new Error(p.stderr.toString())
-  }
+  const added = Bun.spawnSync(['git', 'add', 'seed.txt'], {
+    cwd: repo, env: hermeticGitEnv(), stdout: 'pipe', stderr: 'pipe',
+  })
+  if (added.exitCode !== 0) throw new Error(added.stderr.toString())
   const committed = Bun.spawnSync([
     'git', '-c', 'user.name=Orch Test', '-c', 'user.email=orch@example.invalid',
     'commit', '-m', 'seed',
