@@ -77,8 +77,8 @@ function unitTimingResult(
   if (decision === 'fail') {
     const limitMs = Math.floor(committedMs! * (1 + GROWTH_LIMIT))
     reporter.error(`${TIMING_SUMMARY_LABEL}: orchestrator unit total ${unitElapsedMs}ms exceeds 5% growth limit ${limitMs}ms (committed ${committedMs}ms)`)
-    if (!ci) reporter.error(`${TIMING_SUMMARY_LABEL}: growth is informational locally and fails on CI`)
-    return { changed: false, fatal: ci, nextMs: committedMs!, initial: false }
+    reporter.error(`${TIMING_SUMMARY_LABEL}: growth is informational; the suite runtime budget is the gate`)
+    return { changed: false, fatal: false, nextMs: committedMs!, initial: false }
   }
   return { changed: false, fatal: false, nextMs: committedMs!, initial: false }
 }
@@ -132,9 +132,11 @@ export function publishTimingSummary(
     reporter.error(`${TIMING_SUMMARY_LABEL}: ${packageName} total ${currentMs}ms exceeds 5% growth limit ${limitMs}ms (committed ${committedMs}ms)`)
     reporter.error(`${TIMING_SUMMARY_LABEL}: largest file growth: ${largestGrowth(current, committed!, packageName)}`)
     // Wall clock cannot separate a slower suite from a busier machine, so growth
-    // is informational here and fatal only where the runner is the only load.
-    if (ci) fatal = true
-    else reporter.error(`${TIMING_SUMMARY_LABEL}: growth is informational locally and fails on CI`)
+    // is informational everywhere: the baseline is measured on one machine and
+    // its band is narrower than run-to-run jitter, so growth is a trend to read,
+    // and the absolute suite runtime budget in scripts/check-runtime.ts is the
+    // check that fails a slow suite.
+    reporter.error(`${TIMING_SUMMARY_LABEL}: growth is informational; the suite runtime budget is the gate`)
   }
   const next = committed
     ? [

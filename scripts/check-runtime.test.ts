@@ -7,10 +7,10 @@ import {
 
 describe('suite runtime budget', () => {
   test.each([
-    { elapsedMs: 361_000, ci: false, verdict: 'over-informational' },
-    { elapsedMs: 361_000, ci: true, verdict: 'over-fatal' },
-    { elapsedMs: 359_000, ci: true, verdict: 'within' },
-    { elapsedMs: 359_000, ci: false, verdict: 'within' },
+    { elapsedMs: 121_000, ci: false, verdict: 'over-informational' },
+    { elapsedMs: 121_000, ci: true, verdict: 'over-fatal' },
+    { elapsedMs: 119_000, ci: true, verdict: 'within' },
+    { elapsedMs: 119_000, ci: false, verdict: 'within' },
   ] as const)('$verdict when elapsed=$elapsedMs and ci=$ci', ({ elapsedMs, ci, verdict }) => {
     expect(decideRuntimeBudget({
       elapsedMs,
