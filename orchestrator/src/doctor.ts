@@ -7,6 +7,7 @@ import {
   tryWake, unavailableReason, versionBelow, wakeStatus,
 } from './agents.ts'
 import { gwetAc1, quadraticWeightedKappa } from './agreement.ts'
+import { doctorAgentStatus } from './agent-auth.ts'
 import { DATABASE_RESOLUTION, DB_PATH, databaseOpenMode, db } from './db.ts'
 import { classifiedDockerResources, dockerRemovalCommand, dockerRunResources } from './docker-resources.ts'
 import { runTotals } from './evidence-query.ts'
@@ -24,7 +25,11 @@ type DoctorPresentation = {
   acpRuntimeGaps(): string | null
 }
 
-export async function doctorCommand(flags: DoctorFlags, presentation: DoctorPresentation): Promise<void> {
+export async function doctorCommand(
+  flags: DoctorFlags,
+  presentation: DoctorPresentation,
+  agentStatus: typeof doctorAgentStatus = doctorAgentStatus,
+): Promise<void> {
   const { has } = flags
   const { log, exitCode, candidates, pick, jobs, acpRuntimeGaps } = presentation
   // Probed BEFORE the agent list is printed, not after it. Doctor used to
@@ -148,9 +153,10 @@ export async function doctorCommand(flags: DoctorFlags, presentation: DoctorPres
     const why = unavailableReason(a.name)
     const version = why === 'not installed' ? null : cliVersion(a.bin)
     const old = version?.parsed && versionBelow(version.parsed, a.minimumCliVersion)
+    const auth = agentStatus(a.name, why, a.bin)
     log(
-      `  ${a.name.padEnd(12)} ${why ? 'absent ' : 'ready  '} ${a.billing.padEnd(13)}` +
-        (why ? `  ${why}` : '') +
+      `  ${a.name.padEnd(12)} ${auth.status.padEnd(7)} ${a.billing.padEnd(13)}` +
+        (auth.detail ? `  ${auth.detail}` : '') +
         (version ? `  version ${version.display}` : '  version unavailable') +
         (cool ? `  COOLING: ${cool}` : ''),
     )

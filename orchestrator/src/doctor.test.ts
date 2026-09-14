@@ -9,19 +9,37 @@ import { upsertProject } from './projects.ts'
 import { PLATFORM_SLUG } from '../../shared/brand.ts'
 import { doctorCommand } from './doctor.ts'
 import { cliVersion, versionBelow } from './agents.ts'
+import { doctorAgentStatus } from './agent-auth.ts'
 import { classifiedDockerResources } from './docker-resources.ts'
 import { trackedTestResidue } from '../test/residue.ts'
 const trackResidue = trackedTestResidue()
 
-async function doctor() {
+const localStatus: typeof doctorAgentStatus = (agent, unavailable, bin) =>
+  agent === 'agy' || agent === 'qwen-local'
+    ? doctorAgentStatus(agent, unavailable, bin)
+    : unavailable ? { status: 'absent', detail: unavailable } : { status: 'ready', detail: '' }
+
+async function doctor(agentStatus: typeof doctorAgentStatus = localStatus) {
   const lines: string[] = []; let exit = 0
-  await doctorCommand({ has: () => false }, { log: (...parts) => lines.push(parts.join(' ')), exitCode: (code) => { exit = code }, candidates: () => [], pick: () => ({ agent: 'none' }), jobs: () => [], acpRuntimeGaps: () => null })
+  await doctorCommand({ has: () => false }, { log: (...parts) => lines.push(parts.join(' ')), exitCode: (code) => { exit = code }, candidates: () => [], pick: () => ({ agent: 'none' }), jobs: () => [], acpRuntimeGaps: () => null }, agentStatus)
   return { text: lines.join('\n'), exit }
 }
 
 beforeEach(() => { process.env.ORCH_LOCAL_BASE_URL = '' })
 
 describe('doctor presentation', () => {
+  test('an agent without an auth strategy keeps its existing doctor line', async () => {
+    const result = await doctor()
+    expect(result.text).toMatch(/^  agy\s+absent\s+free\s+disabled — no readsRepo/m)
+  })
+
+  test('doctor prints the auth status and safe detail returned by its helper', async () => {
+    const result = await doctor((agent, unavailable, bin) => agent === 'codex'
+      ? { status: 'signed-out', detail: 'not logged in' }
+      : localStatus(agent, unavailable, bin))
+    expect(result.text).toMatch(/^  codex\s+signed-out\s+subscription\s+not logged in/m)
+  })
+
   test('doctor reports a checkout off its landing branch as a register question, not a failure', async () => {
     const repo = cloneRepository('doctor-off-trunk-')
     const git = (...args: string[]) => Bun.spawnSync(['git', ...args], { cwd: repo, stdout: 'pipe', stderr: 'pipe' })
