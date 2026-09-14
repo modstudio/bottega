@@ -1,7 +1,9 @@
 import { describe, expect, test } from 'bun:test'
+import { readFileSync } from 'node:fs'
 import { reviewReply } from '../test/fixtures/replies.ts'
 import { addRun } from '../test/fixtures/store.ts'
 import { db } from './db.ts'
+import { filesCoveredIntersectChanged } from './review-coverage-match.ts'
 import { recordReview } from './review.ts'
 import { triageFinding } from './review.ts'
 
@@ -19,3 +21,54 @@ describe('review triage', () => {
     expect(db().query('SELECT disposition,triaged_severity,triaged_at FROM review_finding WHERE review_id=?').get(reviewId)).toEqual({ disposition: null, triaged_severity: null, triaged_at: null })
   })
 })
+
+describe('review files_covered matching', () => {
+  const changed = 'app/Http/Controllers/Foo.php'
+
+  test('an absolute worktree path ending in a changed path counts as coverage', () => {
+    expect(filesCoveredIntersectChanged(
+      [changed],
+      ['/Users/shmuel/Projects/starship/.claude/worktrees/orch-3841/app/Http/Controllers/Foo.php'],
+    )).toBe(true)
+  })
+
+  test('an annotated entry naming a changed path counts as coverage', () => {
+    expect(filesCoveredIntersectChanged(
+      [changed],
+      ['2 of 2 changed files inspected in full: app/Http/Controllers/Foo.php'],
+    )).toBe(true)
+  })
+
+  test('a subdirectory-relative suffix still counts as coverage', () => {
+    expect(filesCoveredIntersectChanged(
+      ['orchestrator/src/review.ts'],
+      ['src/review.ts'],
+    )).toBe(true)
+  })
+
+  test('empty files_covered is unevidenced', () => {
+    expect(filesCoveredIntersectChanged([changed], [])).toBe(false)
+  })
+
+  test('an entry naming only an unchanged path is unevidenced', () => {
+    expect(filesCoveredIntersectChanged([changed], ['README.md'])).toBe(false)
+  })
+
+  test('a path that only shares a basename with a changed path does not count', () => {
+    expect(filesCoveredIntersectChanged(['app/X.php'], ['other/X.php'])).toBe(false)
+  })
+
+  test('a space-containing changed path listed as a whole entry counts as coverage', () => {
+    expect(filesCoveredIntersectChanged(
+      ['dir with space/file.ts'],
+      ['dir with space/file.ts'],
+    )).toBe(true)
+  })
+
+  test('cleanReviewEvidence uses filesCoveredIntersectChanged', () => {
+    const source = readFileSync(new URL('./review.ts', import.meta.url), 'utf8')
+    expect(source).toContain("from './review-coverage-match.ts'")
+    expect(source).toContain('filesCoveredIntersectChanged(changed, provenance.files_covered)')
+  })
+})
+
