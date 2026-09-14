@@ -10,7 +10,7 @@ import { installTestProcessInventory } from '../../src/run-process.ts'
 import { run as runJob } from '../../src/run.ts'
 import { resolveTaskBranch, taskBranchCandidacySql } from '../../src/task-branch.ts'
 import { createWorktreeForBranch } from '../../src/worktree.ts'
-import { hermeticGitEnv } from '../fixtures/git.ts'
+import { cloneRepository, hermeticGitEnv } from '../fixtures/git.ts'
 import { addRun, dir } from '../fixtures/store.ts'
 
 import { stubWorker } from '../stub-worker.ts'
@@ -24,10 +24,7 @@ const git = (cwd: string, ...args: string[]) => {
     return p.stdout.toString().trim()
   }
 const repository = () => {
-    const repo = mkdtempSync(join(tmpdir(), 'orch-task-branch-'))
-    git(repo, 'init', '-b', 'main')
-    git(repo, 'config', 'user.email', 'orch-test@example.invalid')
-    git(repo, 'config', 'user.name', 'Orch Test')
+    const repo = cloneRepository('orch-task-branch-')
     writeFileSync(join(repo, 'tracked.txt'), 'base\n')
     git(repo, 'add', 'tracked.txt')
     git(repo, 'commit', '-m', 'base')

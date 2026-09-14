@@ -9,7 +9,7 @@ import { JOBS } from '../../src/jobs.ts'
 import { upsertProject } from '../../src/projects.ts'
 import { candidates } from '../../src/route.ts'
 import { run as runJob } from '../../src/run.ts'
-import { hermeticGitEnv } from '../fixtures/git.ts'
+import { cloneRepository, hermeticGitEnv } from '../fixtures/git.ts'
 import { addRun, dir, reapTestProcess, reapTestRun } from '../fixtures/store.ts'
 import { declaredCreate } from '../fixtures/worktree.ts'
 
@@ -36,16 +36,13 @@ afterEach(() => {
 })
 
 function repo(): string {
-  const root = mkdtempSync(join(tmpdir(), 'orch-idle-'))
+  const root = cloneRepository('orch-idle-')
   roots.push(root)
   const g = (...args: string[]) => {
     const p = Bun.spawnSync(['git', ...args], { cwd: root, env: hermeticGitEnv(), stdout: 'pipe', stderr: 'pipe' })
     if (p.exitCode !== 0) throw new Error(p.stderr.toString())
     return p.stdout.toString().trim()
   }
-  g('init', '-b', 'main')
-  g('config', 'user.name', 'Test')
-  g('config', 'user.email', 'test@example.com')
   writeFileSync(join(root, 'file.txt'), 'base\n')
   g('add', 'file.txt'); g('commit', '-m', 'DEV-389 base')
   return root

@@ -7,7 +7,7 @@ import { upsertProject } from '../../src/projects.ts'
 import { run as runJob } from '../../src/run.ts'
 import { orphanSafety } from '../../src/worktree-attribution.ts'
 import { createWorktree, withProjectLock, withWorktreeCreateLock } from '../../src/worktree.ts'
-import { hermeticGitCommand, hermeticGitEnv } from '../fixtures/git.ts'
+import { cloneRepository, hermeticGitCommand, hermeticGitEnv } from '../fixtures/git.ts'
 import { addRun } from '../fixtures/store.ts'
 import { compoundCreate, worktreeDescribeFixture } from '../fixtures/worktree.ts'
 
@@ -262,12 +262,9 @@ const git = (cwd: string, ...args: string[]) => {
   return p.stdout.toString().trim()
 }
 test('a registered worktree is removable whether or not it is dirty', () => {
-    const repo = mkdtempSync(join(tmpdir(), 'orch-orphan-'))
+    const repo = cloneRepository('orch-orphan-')
     const tree = join(repo, '.claude', 'worktrees', 'orphan')
     try {
-      git(repo, 'init', '-b', 'main')
-      git(repo, 'config', 'user.email', 'orch-test@example.invalid')
-      git(repo, 'config', 'user.name', 'Orch Test')
       writeFileSync(join(repo, 'kept.txt'), 'base\n')
       git(repo, 'add', 'kept.txt')
       git(repo, 'commit', '-m', 'base')

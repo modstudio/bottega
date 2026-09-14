@@ -9,7 +9,7 @@ import { upsertProject } from '../../src/projects.ts'
 import { candidates } from '../../src/route.ts'
 import { run as runJob } from '../../src/run.ts'
 import { weigh } from '../../src/score.ts'
-import { hermeticGitEnv } from '../fixtures/git.ts'
+import { cloneRepository, hermeticGitEnv } from '../fixtures/git.ts'
 import { reviewReply } from '../fixtures/replies.ts'
 import { addRun, dir, reapTestRun, score } from '../fixtures/store.ts'
 
@@ -123,7 +123,7 @@ describe('run process boundary', () => {
 
 describe('issue blast-radius review tree', () => {
 test('a carried review launched from the fix worktree receives the committed fix tree', async () => {
-    const repo = mkdtempSync(join(tmpdir(), 'orch-issue-review-tree-'))
+    const repo = cloneRepository('orch-issue-review-tree-')
     const fixTree = mkdtempSync(join(tmpdir(), 'orch-issue-fix-tree-'))
     const script = stubWorker()
     const agent = AGENTS.codex!
@@ -141,9 +141,6 @@ test('a carried review launched from the fix worktree receives the committed fix
       return p.stdout.toString().trim()
     }
     try {
-      runGit(repo, 'init', '-b', 'main')
-      runGit(repo, 'config', 'user.email', 'orch-test@example.invalid')
-      runGit(repo, 'config', 'user.name', 'Orch Test')
       writeFileSync(join(repo, 'reviewed.txt'), 'trunk\n')
       runGit(repo, 'add', 'reviewed.txt')
       runGit(repo, 'commit', '-m', 'DEV-261 fixture trunk')
