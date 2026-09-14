@@ -1,5 +1,5 @@
 import { readdirSync, readFileSync, statSync } from 'node:fs'
-import { relative, resolve } from 'node:path'
+import { dirname, relative, resolve, sep } from 'node:path'
 import ts from 'typescript'
 
 const rootArgument = process.argv.find((argument) => argument.startsWith('--root='))
@@ -14,15 +14,17 @@ function filesUnder(directory: string): string[] {
   })
 }
 
-function productionPath(source: string): boolean {
-  return source.startsWith('../src/') || source.startsWith('../../shared/')
+function productionPath(importer: string, source: string): boolean {
+  const target = resolve(dirname(importer), source)
+  return target.startsWith(`${resolve(orchestrator, 'src')}${sep}`)
+    || target.startsWith(`${resolve(root, 'shared')}${sep}`)
 }
 
-function importedProductionBindings(source: string): Set<string> {
+function importedProductionBindings(path: string, source: string): Set<string> {
   const bindings = new Set<string>()
   const imports = source.matchAll(/import\s*{([^}]*)}\s*from\s*['"]([^'"]+)['"]/gs)
   for (const match of imports) {
-    if (!productionPath(match[2]!)) continue
+    if (!productionPath(path, match[2]!)) continue
     for (const entry of match[1]!.split(',')) {
       const binding = entry.trim().replace(/^type\s+/, '').split(/\s+as\s+/).pop()
       if (binding) bindings.add(binding)
@@ -31,10 +33,10 @@ function importedProductionBindings(source: string): Set<string> {
   return bindings
 }
 
-function exportedBindings(source: string): Set<string> {
+function exportedBindings(path: string, source: string): Set<string> {
   const bindings = new Set<string>()
   for (const match of source.matchAll(/export\s*{([^}]*)}(?:\s*from\s*['"]([^'"]+)['"])?/gs)) {
-    if (match[2] && productionPath(match[2])) {
+    if (match[2] && productionPath(path, match[2])) {
       failures.push('re-exports production bindings')
       continue
     }
@@ -51,11 +53,11 @@ function checkFixture(path: string): void {
   const source = readFileSync(path, 'utf8')
   const label = relative(root, path)
   const before = failures.length
-  if (/export\s+const\s*{[^}]+}\s*=\s*await\s+import\(\s*['"](?:\.\.\/src\/|\.\.\/\.\.\/shared\/)/s.test(source)) {
-    failures.push('re-exports production bindings obtained from await import')
+  for (const match of source.matchAll(/export\s+const\s*{[^}]+}\s*=\s*await\s+import\(\s*['"]([^'"]+)['"]/gs)) {
+    if (productionPath(path, match[1]!)) failures.push('re-exports production bindings obtained from await import')
   }
-  const imported = importedProductionBindings(source)
-  const exported = exportedBindings(source)
+  const imported = importedProductionBindings(path, source)
+  const exported = exportedBindings(path, source)
   for (const binding of imported) {
     if (exported.has(binding)) failures.push(`re-exports imported production binding ${binding}`)
   }

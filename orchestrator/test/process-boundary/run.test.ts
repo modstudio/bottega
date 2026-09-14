@@ -95,12 +95,12 @@ describe('run process boundary', () => {
   })
 
   test('a ruling that lands is handed straight back', async () => {
-    const runJob = addRun({ agent: 'codex', job: 'implement', status: 'running' })
+    const run = addRun({ agent: 'codex', job: 'implement', status: 'running' })
     const stale = '2026-09-08T00:01:00.000Z'
-    db().query('UPDATE run SET last_event_at=?, started_at=? WHERE id=?').run(stale, stale, runJob)
-    const pending = ask({ runId: runJob, question: 'one table or two?', timeoutMs: 10_000 })
+    db().query('UPDATE run SET last_event_at=?, started_at=? WHERE id=?').run(stale, stale, run)
+    const pending = ask({ runId: run, question: 'one table or two?', timeoutMs: 10_000 })
     for (let i = 0; i < 50; i++) {
-      const q = db().query('SELECT id FROM question WHERE run_id = ?').get(runJob) as { id: number } | null
+      const q = db().query('SELECT id FROM question WHERE run_id = ?').get(run) as { id: number } | null
       if (q) {
         db().query("UPDATE question SET answer=?, answered_at=?, answered_by='t' WHERE id=?")
           .run('two', new Date().toISOString(), q.id)
@@ -108,14 +108,14 @@ describe('run process boundary', () => {
       }
       await new Promise((r) => setTimeout(r, 20))
     }; expect(await pending).toEqual({ answered: true, answer: 'two' })
-    const row = db().query('SELECT last_event_at, status FROM run WHERE id=?').get(runJob) as {
+    const row = db().query('SELECT last_event_at, status FROM run WHERE id=?').get(run) as {
       last_event_at: string; status: string
     }; expect(row.status).toBe('running'); expect(Date.parse(row.last_event_at)).toBeGreaterThan(Date.parse(stale))
   })
 
   test('a question nobody answers falls back rather than hanging', async () => {
-    const runJob = addRun({ agent: 'codex', job: 'implement', status: 'running' })
-    const r = await ask({ runId: runJob, question: 'nobody is listening', timeoutMs: 50 }); expect(r.answered).toBe(false)
+    const run = addRun({ agent: 'codex', job: 'implement', status: 'running' })
+    const r = await ask({ runId: run, question: 'nobody is listening', timeoutMs: 50 }); expect(r.answered).toBe(false)
     if (!r.answered) expect(r.reason).toContain('blocked')
   })
 

@@ -696,11 +696,11 @@ describe('the live ask channel always answers', () => {
     ).all(root, root) as { id: number }[]; expect(open.length).toBe(1)
   })
   test('an unanswered question survives the timeout', async () => {
-    const runJob = addRun({ agent: 'codex', job: 'implement', status: 'running' })
-    await ask({ runId: runJob, question: 'still open', timeoutMs: 50 })
+    const run = addRun({ agent: 'codex', job: 'implement', status: 'running' })
+    await ask({ runId: run, question: 'still open', timeoutMs: 50 })
     const open = db().query(
       'SELECT COUNT(*) AS n FROM question WHERE run_id = ? AND answered_at IS NULL',
-    ).get(runJob) as { n: number }; expect(open.n).toBe(1)
+    ).get(run) as { n: number }; expect(open.n).toBe(1)
   })
 })
 describe('a worker asking is not a worker blocked', () => {
