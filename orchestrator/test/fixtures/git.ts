@@ -1,4 +1,6 @@
-import { cpSync, mkdtempSync, realpathSync, writeFileSync } from 'node:fs'
+import { afterEach } from 'bun:test'
+import { cpSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { scrubbedGitEnv } from '../../../shared/git.ts'
 import { dir, hermeticHome as preloadHome, testSpawnSync } from '../preload.ts'
@@ -21,6 +23,12 @@ const git = (cwd: string, ...args: string[]): void => {
 }
 
 let template: string | undefined
+const clones = new Set<string>()
+
+afterEach(() => {
+  for (const clone of clones) rmSync(clone, { recursive: true, force: true })
+  clones.clear()
+})
 
 export function templateRepository(): string {
   if (template) return template
@@ -35,7 +43,10 @@ export function templateRepository(): string {
 }
 
 export function cloneRepository(name = 'git-clone-'): string {
-  const target = join(mkdtempSync(join(dir, `git-clone-${name}`)), 'repo')
+  const target = mkdtempSync(join(tmpdir(), name))
+  rmSync(target, { recursive: true })
   cpSync(templateRepository(), target, { recursive: true })
-  return realpathSync(target)
+  const clone = realpathSync(target)
+  clones.add(clone)
+  return clone
 }

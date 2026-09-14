@@ -182,17 +182,13 @@ beforeEach(() => {
  * across the file.
  */
 afterEach(() => {
-  const childrenAfterTest = readdirSync(dir)
-  const clones = childrenAfterTest.filter((name) =>
-    !childrenBeforeTest.has(name) && name.startsWith('git-clone-'))
-  const residue = childrenAfterTest.filter((name) =>
-    !childrenBeforeTest.has(name) && !name.startsWith('git-template-') && !name.startsWith('git-clone-'))
+  const residue = readdirSync(dir).filter((name) =>
+    !childrenBeforeTest.has(name) && !name.startsWith('git-template-'))
   if (residue.length === 0) return
   const message = residue.map((name) =>
     `test ${Bun.main} left fixture residue: ${join(dir, name)}`,
   ).join('\n')
   for (const name of residue) rmSync(join(dir, name), { recursive: true, force: true })
-  for (const name of clones) rmSync(join(dir, name), { recursive: true, force: true })
   if (process.env.CI) throw new Error(message)
   console.warn(message)
 })

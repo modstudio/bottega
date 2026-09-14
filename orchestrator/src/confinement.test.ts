@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test'
 import { cloneRepository } from '../test/fixtures/git.ts'
-import { chmodSync, mkdirSync, mkdtempSync, rmSync, symlinkSync, utimesSync, writeFileSync } from 'node:fs'
+import { chmodSync, mkdirSync, mkdtempSync, renameSync, rmSync, symlinkSync, utimesSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { addRun } from '../test/fixtures/store.ts'
@@ -202,7 +202,7 @@ describe('symlinked tmpdir freeze', () => {
     mkdirSync(real)
     symlinkSync(real, link)
     const repo = join(link, 'repo')
-    mkdirSync(repo)
+    renameSync(cloneRepository('orch-symlink-repo-'), repo)
     const git = (...args: string[]) => {
       const p = Bun.spawnSync(['git', ...args], {
         cwd: repo, env: { ...process.env, GIT_CONFIG_NOSYSTEM: '1', GIT_CONFIG_GLOBAL: '/dev/null' },

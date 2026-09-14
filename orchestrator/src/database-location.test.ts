@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test'
 import { Database } from 'bun:sqlite'
-import { mkdtempSync, rmSync, writeFileSync, existsSync, realpathSync, mkdirSync, chmodSync } from 'node:fs'
+import { mkdtempSync, renameSync, rmSync, writeFileSync, existsSync, realpathSync, mkdirSync, chmodSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { PLATFORM_SLUG } from '../../shared/brand.ts'
@@ -80,7 +80,7 @@ describe('projects are data, not code', () => {
   })
 
   test('a sibling repository with no database falls through to the main binary database', () => {
-    const main = realpathSync(mkdtempSync(join(tmpdir(), 'orch-db-sibling-')))
+    const main = cloneRepository('orch-db-sibling-')
     const sibling = cloneRepository('orch-db-sibling-peer-')
     const binaryRoot = join(main, 'orchestrator')
     try {
@@ -210,7 +210,9 @@ describe('projects are data, not code', () => {
 
   test('an externally located linked binary resolves main and may never initialize beside itself', () => {
     const parent = realpathSync(mkdtempSync(join(tmpdir(), 'orch-db-external-binary-')))
+    const clonedMain = cloneRepository('orch-db-external-main-')
     const main = join(parent, 'main')
+    renameSync(clonedMain, main)
     const tree = join(parent, 'external-linked')
     const mainRoot = join(main, 'orchestrator')
     const binaryRoot = join(tree, 'orchestrator')
@@ -222,7 +224,6 @@ describe('projects are data, not code', () => {
       if (result.exitCode !== 0) throw new Error(result.stderr.toString())
     }
     try {
-      mkdirSync(main)
       writeFileSync(join(main, 'tracked'), 'fixture\n')
       git(main, 'add', 'tracked')
       git(main, 'commit', '-m', 'fixture')
