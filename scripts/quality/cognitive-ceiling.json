@@ -296,8 +296,9 @@
   {
     "file": "orchestrator/src/doctor.ts",
     "function": "doctorCommand",
-    "line": 27,
-    "score": 122
+    "line": 28,
+    "score": 120,
+    "key": "orchestrator/src/doctor.ts\u0000doctorCommand"
   },
   {
     "file": "orchestrator/src/evals.ts",
