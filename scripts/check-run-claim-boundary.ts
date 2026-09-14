@@ -10,7 +10,7 @@ checkModuleBoundary(
     './grok-trust.ts', './mcp-preflight.ts', './mcp-probe.ts', './project-lock.ts',
     './projects.ts', './prompt-retarget.ts', './resource-ownership.ts', './review-target.ts',
     './run-artifacts.ts', './run-process.ts', './sandbox.ts', './task-branch.ts',
-    './transport.ts', './worktree.ts', './worktree-caller.ts', './worktree-mcp.ts',
+    './worktree.ts', './worktree-caller.ts', './worktree-mcp.ts',
     './worktree-preflight.ts', './worktree-remove.ts', './worktree-types.ts',
   ],
 )

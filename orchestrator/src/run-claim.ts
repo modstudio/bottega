@@ -28,7 +28,6 @@ import {
 } from './run-artifacts.ts'
 import { teardownTerminalRunResources } from './resource-ownership.ts'
 import { resolveTaskBranch, type TaskBranchCandidate } from './task-branch.ts'
-import { type TransportName } from './transport.ts'
 import {
   assertCallerAncestry, carryWorkingState, resolveReadOnlyBase,
   type CarriedWorkingState,
@@ -65,9 +64,6 @@ type ClaimOptions = {
   carry?: boolean
   resume?: {
     parent: number
-    agent: string
-    session?: string
-    fresh?: boolean
     turn: number
     sessionId: string | null
     worktree: Worktree | null
@@ -93,7 +89,7 @@ export type ClaimInput = {
   vendorSession: string | null
   pack: Pack | null
   mcpRequest: McpRequest | undefined
-  transportName: TransportName
+  transportName: 'cli' | 'acp'
   a: Agent
   mcpConnection: McpConnection | null
   mcpMode: McpMode | null
