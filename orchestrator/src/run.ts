@@ -158,22 +158,6 @@ export function repoOf(cwd: string): string | null {
  * content: once the tree has been copied, every occurrence must point at the
  * copy or an agent following the pack escapes the isolation boundary.
  */
-function boundedConfinementError(message: string): string {
-  const bytes = Buffer.from(message)
-  if (bytes.length <= 1500) return message
-  const suffix = Buffer.from('\n… [error bounded to 1500 bytes]')
-  return Buffer.from(bytes.subarray(0, 1500 - suffix.length))
-    .toString('utf8').replace(/\uFFFD$/, '') + suffix.toString()
-}
-
-function confinementUnverifiedError(failures: FreezeFailure[]): string {
-  return boundedConfinementError(
-    'checkout confinement could not be verified:\n' + failures.map((failure) =>
-      `registered checkout ${failure.project} at ${failure.path}: ${failure.error}`,
-    ).join('\n'),
-  )
-}
-
 /** Present reply.json is accepted by the same lenient parsers as a missing-file fallback. */
 /**
  * The prompt a resumed turn actually puts on argv — reminder, separators,
