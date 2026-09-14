@@ -42,7 +42,7 @@ import { resolveBranchRef } from './projects.ts'
 import { resolveLens } from './lenses.ts'
 import { TRUNCATED_TRANSCRIPT_BYTES } from './result-output.ts'
 import { addedGrokTrustHeadings, grokTrustHeadings } from './grok-trust.ts'
-import { prepareSandboxHome, resetSandbox, sandboxLaunchArgv, selectReadonlySandbox } from './sandbox.ts'
+import { prepareProjectGrokMcpScope, prepareSandboxHome, resetSandbox, sandboxLaunchArgv, selectReadonlySandbox } from './sandbox.ts'
 import {
   classifyDivergence, freezeCheckouts, overlappingError,
   type ConfinementEvent, type FreezeFailure,
@@ -817,8 +817,10 @@ export async function run(opts: {
   let provisionedMcpConfig: ReturnType<typeof prepareWorkerMcpConfig> | null = null
   let retargetDiagnostic: string | null = null
   let mcpSetupHeader: string | null = null
-  let mcpTrustGranted = false
-  let taskBranchAttachment = false
+  let mcpTrustGranted = false, taskBranchAttachment = false
+  let grokMcpEnvironment: Record<string, string> = {}
+  const sandboxRoot = (db().query('SELECT COALESCE(parent_run_id,id) AS id FROM run WHERE id=?').get(claim.id) as { id: number }).id
+  const sandboxRunDir = join(runsDir, `sandbox-${sandboxRoot}`)
   /**
    * Cutting the worktree can FAIL, and the row already exists by now.
    *
@@ -1076,7 +1078,6 @@ export async function run(opts: {
       db().query('UPDATE run SET prompt_sha=?, prompt_bytes=? WHERE id=?')
         .run(sha(prompt), Buffer.byteLength(prompt), claim.id)
     }
-
     if (deferredCwdMcpPreflight) {
       const project = projectAt(callerCwd)
       if (!project) throw new Error(`no registered project identifies MCP configuration for ${callerCwd}`)
@@ -1088,26 +1089,25 @@ export async function run(opts: {
         mcpConnection = { server, connected: false, error: config.error }
       } else {
         const grokTrust = name === 'grok'
-        const recorded = db().query(
-          'SELECT id, cwd, worktree, worktree_source FROM run WHERE id=?',
-        ).get(claim.id) as {
-          id: number; cwd: string | null; worktree: string | null; worktree_source: string | null
-        } | null
+        const grokScope = prepareProjectGrokMcpScope(name, sandboxRunDir,
+          Object.keys(readMcpConfig(cwd)), project.settings.workerMcpServers, mcpSetupHeader)
+        grokMcpEnvironment = grokScope.environment
+        mcpSetupHeader = grokScope.header
+        const recorded = db().query('SELECT id, cwd, worktree, worktree_source FROM run WHERE id=?')
+          .get(claim.id) as { id: number; cwd: string | null; worktree: string | null; worktree_source: string | null } | null
         if (grokTrust) {
           assertGrokTrustEligible(
             cwd, recorded, noRepoIsolatePath(recorded?.id ?? claim.id, runsDir),
           )
         }
-        const beforeTrust = grokTrust ? grokTrustHeadings() : []
+        const beforeTrust = grokTrust ? grokTrustHeadings(grokMcpEnvironment) : []
         mcpTrustGranted = grokTrust
-        // Record the attempt before doctor: the trusted invocation may write its
-        // store and then fail, and that remains a grant orch made.
         if (grokTrust) db().query('UPDATE run SET mcp_trust_granted=1 WHERE id=?').run(claim.id)
         try {
-          mcpConnection = mcpConnectionFor(name, cwd, server, grokTrust, repoJob)
+          mcpConnection = mcpConnectionFor(name, cwd, server, grokTrust, repoJob, grokMcpEnvironment)
         } finally {
           if (grokTrust) {
-            const added = addedGrokTrustHeadings(beforeTrust, grokTrustHeadings())
+            const added = addedGrokTrustHeadings(beforeTrust, grokTrustHeadings(grokMcpEnvironment))
             db().query('UPDATE run SET mcp_trust_path=? WHERE id=?')
               .run(added.length ? JSON.stringify(added) : null, claim.id)
           }
@@ -1188,10 +1188,6 @@ export async function run(opts: {
   if (gitConfigEnvironment) {
     assertSharedRefGuardOutsideWritableRoots(gitConfigEnvironment.GIT_CONFIG_VALUE_0, writableRoots)
   }
-  const sandboxRoot = (db().query(
-    'SELECT COALESCE(parent_run_id,id) AS id FROM run WHERE id=?',
-  ).get(claim.id) as { id: number }).id
-  const sandboxRunDir = join(runsDir, `sandbox-${sandboxRoot}`)
   const mcpConfig = readMcpConfig(cwd)
   const mcpServerName = mcpConnection?.server
     ?? projectAt(callerCwd)?.settings.mcpServer
@@ -1251,7 +1247,7 @@ export async function run(opts: {
           config: probeConfig,
           cwd,
           env: childEnv(a, claim.id, runToken, {
-            ...(gitConfigEnvironment ?? {}), ...sandboxEnvironment,
+            ...(gitConfigEnvironment ?? {}), ...sandboxEnvironment, ...grokMcpEnvironment,
           }, repoJob),
           probeTool,
           wrap,
@@ -1457,7 +1453,7 @@ export async function run(opts: {
         : undefined,
       resume: Boolean(opts.resume && !opts.resume.fresh),
       env: childEnv(a, claim.id, runToken, {
-        ...(gitConfigEnvironment ?? {}), ...sandboxEnvironment,
+        ...(gitConfigEnvironment ?? {}), ...sandboxEnvironment, ...grokMcpEnvironment,
         ORCH_SCRATCH: scratchDir,
         ...(askLoopback ? { ORCH_ASK_URL: askLoopback.url } : {}),
       }, repoJob),

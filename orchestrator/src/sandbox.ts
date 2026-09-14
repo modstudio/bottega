@@ -310,6 +310,52 @@ export function grokSandboxConfig(config: string): string {
     .replace(/(\bargs\s*=\s*\[\s*)"[^"]+"/, `$1${JSON.stringify(join(ROOT, 'src', 'ask-proxy.ts'))}`))
 }
 
+/** Return checkout servers withheld from this project's workers. */
+export function disabledProjectMcpServers(
+  names: string[], allowed: string[] | undefined,
+): string[] {
+  if (allowed === undefined) return []
+  const allow = new Set(allowed)
+  return names.filter((name) => !allow.has(name))
+}
+
+/** Prepare the MCP home and visible scope line only for Grok. */
+export function prepareProjectGrokMcpScope(
+  agent: string, runDir: string, names: string[], allowed: string[] | undefined,
+  header: string | null,
+): { environment: Record<string, string>; header: string | null } {
+  if (agent !== 'grok') return { environment: {}, header }
+  const disabled = disabledProjectMcpServers(names, allowed)
+  const line = disabled.length
+    ? `MCP scope: withheld ${disabled.join(', ')} (not in workerMcpServers)` : null
+  return {
+    environment: prepareGrokMcpHome(runDir, disabled),
+    header: header && line ? `${header}\n${line}` : header ?? line,
+  }
+}
+
+/** Prepare Grok's host-run MCP state without copying its long-lived credential. */
+export function prepareGrokMcpHome(
+  runDir: string, disabled: string[], source = join(homedir(), '.grok'),
+): Record<string, string> {
+  mkdirSync(runDir, { recursive: true })
+  const authSource = join(source, 'auth.json')
+  const authTarget = join(runDir, 'auth.json')
+  if (existsSync(authSource) && !existsSync(authTarget)) symlinkSync(authSource, authTarget)
+
+  const configTarget = join(runDir, 'config.toml')
+  if (!existsSync(configTarget)) {
+    const configSource = join(source, 'config.toml')
+    const config = existsSync(configSource) ? readFileSync(configSource, 'utf8') : ''
+    const topLevel = config.split(/^\s*\[/m, 1)[0] ?? ''
+    if (/^\s*disabled_mcp_servers\s*=/m.test(topLevel)) {
+      throw new Error(`disabled_mcp_servers is already declared in ${configSource}`)
+    }
+    writeFileSync(configTarget, `disabled_mcp_servers = ${JSON.stringify(disabled)}\n\n${config}`)
+  }
+  return { GROK_HOME: runDir, GROK_DISABLE_AUTOUPDATER: '1' }
+}
+
 /**
  * Put vendor session state under this run's writable directory without copying
  * long-lived credentials into retained run evidence. Grok follows its official
@@ -321,15 +367,11 @@ export function prepareSandboxHome(
 ): Record<string, string> {
   mkdirSync(runDir, { recursive: true })
   if (agent === 'grok') {
-    const authSource = join(homedir(), '.grok', 'auth.json')
-    const authTarget = join(runDir, 'auth.json')
+    const source = join(homedir(), '.grok')
+    const authSource = join(source, 'auth.json'); const authTarget = join(runDir, 'auth.json')
     if (existsSync(authSource) && !existsSync(authTarget)) symlinkSync(authSource, authTarget)
-
-    const configSource = join(homedir(), '.grok', 'config.toml')
-    const configTarget = join(runDir, 'config.toml')
-    if (existsSync(configSource) && !existsSync(configTarget)) {
-      writeFileSync(configTarget, grokSandboxConfig(readFileSync(configSource, 'utf8')))
-    }
+    const configSource = join(source, 'config.toml'); const configTarget = join(runDir, 'config.toml')
+    if (existsSync(configSource) && !existsSync(configTarget)) writeFileSync(configTarget, grokSandboxConfig(readFileSync(configSource, 'utf8')))
     return { GROK_HOME: runDir, GROK_DISABLE_AUTOUPDATER: '1' }
   }
   if (agent === 'qwen-local') {

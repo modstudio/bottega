@@ -86,8 +86,8 @@ export function canonSourceInstruction(source: CanonSource): string {
 
 /**
  * Ask the same client that will run the lens whether its project MCP can start.
- * Grok gates repo-local MCP behind folder trust separately from permission
- * mode. The deferred orch-worktree path passes trust; caller-checkout probes do not.
+ * Grok gates repo-local MCP behind folder trust and reads its scoped server
+ * clamp from the run's GROK_HOME. Caller-checkout probes do not pass trust.
  */
 export function grokMcpConnection(
   bin: string, cwd: string, server: string, env: Record<string, string>, trust = false,
@@ -136,10 +136,11 @@ export function grokMcpConnection(
 
 export function mcpConnectionFor(
   name: string, cwd: string, server: string, trust = false, includeStore = true,
+  env: Record<string, string> = {},
 ): McpConnection {
   if (name === 'grok') {
     const grok = AGENTS.grok!
-    return grokMcpConnection(grok.bin, cwd, server, childEnv(grok, undefined, undefined, {}, includeStore), trust)
+    return grokMcpConnection(grok.bin, cwd, server, childEnv(grok, undefined, undefined, env, includeStore), trust)
   }
   return {
     server,

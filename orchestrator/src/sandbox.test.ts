@@ -1,11 +1,13 @@
 import { afterEach,describe,expect,test } from 'bun:test'
-import { homedir } from 'node:os'
+import { homedir,tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { mkdtempSync,readFileSync,rmSync,writeFileSync,mkdirSync } from 'node:fs'
 import { ROOT } from './db.ts'
 import { classify,NOT_EVIDENCE } from './failure.ts'
 import type { Project } from './projects.ts'
 import {
 grokSandboxConfig,
+disabledProjectMcpServers,prepareGrokMcpHome,
 READONLY_LENS_DENY_PATHS,readonlyLensProfile,readonlyNeedsDocker,
 resetSandbox,
 sandboxRuntimeConfig,
@@ -19,6 +21,34 @@ const fixtureProject = (settings: Project['settings'] = {}): Project => ({
   stack: 'node',
   canon: true,
   settings,
+})
+
+test('prepares one persistent Grok MCP home and refuses a source clamp', () => {
+  const fixture = mkdtempSync(join(tmpdir(), 'orch-grok-home-'))
+  try {
+    const source = join(fixture, 'source'); const runDir = join(fixture, 'run')
+    mkdirSync(source); writeFileSync(join(source, 'config.toml'), 'model = "grok"\n[mcp_servers.orch]\ncommand = "orch"\n')
+    expect(prepareGrokMcpHome(runDir, ['stopal', 'alephbeis'], source)).toEqual({
+      GROK_HOME: runDir, GROK_DISABLE_AUTOUPDATER: '1',
+    })
+    const written = readFileSync(join(runDir, 'config.toml'), 'utf8')
+    expect(written.startsWith('disabled_mcp_servers = ["stopal","alephbeis"]\n\n')).toBe(true)
+    expect(written).toContain('model = "grok"\n[mcp_servers.orch]')
+    writeFileSync(join(source, 'config.toml'), 'replacement = true\n')
+    prepareGrokMcpHome(runDir, [], source)
+    expect(readFileSync(join(runDir, 'config.toml'), 'utf8')).toBe(written)
+    const conflict = join(fixture, 'conflict'); mkdirSync(conflict)
+    writeFileSync(join(conflict, 'config.toml'), 'disabled_mcp_servers = ["x"]\n[mcp_servers.orch]\n')
+    expect(() => prepareGrokMcpHome(join(fixture, 'conflict-run'), [], conflict))
+      .toThrow(`disabled_mcp_servers is already declared in ${join(conflict, 'config.toml')}`)
+  } finally { rmSync(fixture, { recursive: true, force: true }) }
+})
+
+test('computes the complement only for declared worker MCP scope', () => {
+  const names = ['orch', 'starship', 'stopal']
+  expect(disabledProjectMcpServers(names, undefined)).toEqual([])
+  expect(disabledProjectMcpServers(names, [])).toEqual(names)
+  expect(disabledProjectMcpServers(names, ['starship'])).toEqual(['orch', 'stopal'])
 })
 
 describe('readonly-lens sandbox profile', () => {
