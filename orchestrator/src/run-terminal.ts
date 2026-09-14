@@ -573,4 +573,3 @@ export async function finishRun(input: TerminalInput): Promise<TerminalResult> {
     confinementEvent, preConfinement, artifactsPersisted,
   }
 }
-
