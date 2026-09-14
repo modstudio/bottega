@@ -8,7 +8,8 @@ import {
   type ReviewReply,
 } from './contract.ts'
 import { provenanceServer } from './mcp-preflight.ts'
-import { recordReview, type CleanReviewEvidence } from './review.ts'
+import { type CleanReviewEvidence } from './review.ts'
+import { recordReview } from './review-triage.ts'
 
 export type EvidencePromptFacts = {
   findingsJob: boolean

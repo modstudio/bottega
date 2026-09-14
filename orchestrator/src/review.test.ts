@@ -4,8 +4,7 @@ import { reviewReply } from '../test/fixtures/replies.ts'
 import { addRun } from '../test/fixtures/store.ts'
 import { db } from './db.ts'
 import { filesCoveredIntersectChanged } from './review-coverage-match.ts'
-import { recordReview } from './review.ts'
-import { triageFinding } from './review.ts'
+import { recordReview, triageFinding } from './review-triage.ts'
 
 describe('review triage', () => {
   test('review triage --severity stores explicit agreement and omission stores null', () => {
@@ -71,4 +70,3 @@ describe('review files_covered matching', () => {
     expect(source).toContain('filesCoveredIntersectChanged(changed, provenance.files_covered)')
   })
 })
-

@@ -19,7 +19,7 @@ import { guide } from './guide.ts'
 import { candidates } from './route.ts'
 import { readFileSync, existsSync } from 'node:fs'
 import { projectAt } from './projects.ts'
-import { reviewCalibration } from './review.ts'
+import { reviewCalibration } from './review-calibration.ts'
 import { messagesForRun, receiptMessagesForArchitect } from './mailbox.ts'
 
 registerStandardRuntime()

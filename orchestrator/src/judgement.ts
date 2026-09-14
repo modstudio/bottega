@@ -2,7 +2,8 @@
 /** Knows run rows, reviews and findings, score arithmetic, duel persistence, and judgeability. Must not know transports, worktrees, routing, the CLI, durable execution, dispatch, or cleanup. */
 import { existsSync, readFileSync } from 'node:fs'; import { db, nowIso, sessionId, writeTransaction } from './db.ts'
 import { recordDuels, recordLosses, recordTies, pairPartners, parseRunIds } from './duel.ts'
-import { job, JOBS } from './jobs.ts'; import { completeReview, cleanReviewEvidence, gradeReviewLens, parseReviewOutput, triageFinding, type Disposition, type ReviewGrades } from './review.ts'
+import { job, JOBS } from './jobs.ts'; import { cleanReviewEvidence, parseReviewOutput } from './review.ts'
+import { completeReview, gradeReviewLens, triageFinding, type Disposition, type ReviewGrades } from './review-triage.ts'
 import { REVIEW_REPRODUCED, REVIEW_COVERAGE, REVIEW_LIMITS, REVIEW_OVERLAP, REVIEW_SEVERITY, type ReviewReproduced, type ReviewCoverage, type ReviewLimits, type ReviewOverlap } from './review-vocabulary.ts'
 import { adoptRunMutation, auditRunMutation, authorizeRunMutation, runMutationActor, type RootAuthority } from './run-authority.ts'
 import { DELIVERY, FIDELITY, QUALITY, judgeability, weigh, type Delivery, type Fidelity, type Quality } from './score.ts'

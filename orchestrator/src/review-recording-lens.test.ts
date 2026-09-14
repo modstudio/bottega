@@ -2,7 +2,8 @@ import { describe,expect,spyOn,test } from 'bun:test'
 import { reviewReply } from '../test/fixtures/replies.ts'
 import { addRun } from '../test/fixtures/store.ts'
 import { db } from './db.ts'
-import { completeReview,gradeReviewLens,recordReview,recordReviews,triageFinding } from './review.ts'
+import { recordReviews } from './review.ts'
+import { completeReview,gradeReviewLens,recordReview,triageFinding } from './review-triage.ts'
 
 describe('review discipline', () => {
 test('records each lens before triage and derives runner and model from the orch run', () => {
