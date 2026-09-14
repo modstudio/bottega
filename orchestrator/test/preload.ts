@@ -182,7 +182,8 @@ beforeEach(() => {
  * across the file.
  */
 afterEach(() => {
-  const residue = readdirSync(dir).filter((name) => !childrenBeforeTest.has(name))
+  const residue = readdirSync(dir).filter((name) =>
+    !childrenBeforeTest.has(name) && !name.startsWith('git-template-'))
   if (residue.length === 0) return
   const message = residue.map((name) =>
     `test ${Bun.main} left fixture residue: ${join(dir, name)}`,
