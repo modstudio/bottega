@@ -11,8 +11,8 @@ import {
   assertMainCheckoutClean, assertRegisterBranches, projectAt, projectByName, validateStoredProjectSettings, } from './projects.ts'
 import { createHasPlaceholder } from './worktree-template.ts'
 import { resolveReviewTarget } from './review-target.ts'
-import {
-  createCommandExists, resolveBase, validateSeedWithTool } from './worktree.ts'
+import { resolveBase } from './worktree-caller.ts'
+import { createCommandExists, validateSeedWithTool } from './worktree-preflight.ts'
 import { realpathOrSpelled } from './checkout-identity.ts'
 import { repoRootOf } from './git-environment.ts'
 

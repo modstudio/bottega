@@ -9,7 +9,7 @@ import { db } from './db.ts'
 import { resolveRunsDirectory } from './database-location.ts'
 import { gitOk, gitResult } from './git-environment.ts'
 import { realpathOrSpelled } from './checkout-identity.ts'
-import type { Worktree } from './worktree.ts'
+import type { Worktree } from './worktree-types.ts'
 
 export type OrphanSafety = {
   removable: boolean
@@ -194,4 +194,3 @@ export function extractWorktree(
   catch (error) { return failed('write extraction.json', String(error)) }
   return { ok: true, dest, record }
 }
-

@@ -12,10 +12,6 @@ export const ALLOWED_IMPORT_CYCLES: AllowedCycle[] = [
     cycle: ['canon.ts', 'docs.ts', 'canon.ts'],
     reason: 'Pre-existing operator-doc/canon compilation cycle outside the three specified inversions.',
   },
-  {
-    cycle: ['worktree-attribution.ts', 'worktree.ts', 'worktree-attribution.ts'],
-    reason: 'Pre-existing worktree ownership/type cycle outside the three specified inversions.',
-  },
 ]
 
 function productionFiles(root: string): string[] {

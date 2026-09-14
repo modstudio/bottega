@@ -2,9 +2,9 @@
 import { appendFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { dirname, join, resolve } from 'node:path'
 import { db } from './db.ts'
-import { type WorktreeTool } from './projects.ts'
+import { projectAt, type WorktreeTool } from './projects.ts'
 import { runRecipe, dbNameFor, type Recipe } from './recipe.ts'
-import { assertCreateVarsAvailable, createArgv, fillArg, type WorktreeCreate } from './worktree-template.ts'
+import { createArgv, fillArg, fillTool, type WorktreeCreate } from './worktree-template.ts'
 import { ORCH_RUN_MARKER } from './worktree-attribution.ts'
 import { git, gitOk, repoRootOf, targetGitEnvironment } from './git-environment.ts'
 import { withWorktreeCreateLock } from './project-lock.ts'
@@ -448,4 +448,3 @@ function createFromRecipe(
   }
   return w
 }
-

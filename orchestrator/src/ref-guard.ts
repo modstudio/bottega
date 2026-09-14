@@ -1,5 +1,5 @@
 // concern: ref-guard
-import { accessSync, closeSync, constants, fchmodSync, fsyncSync, lstatSync, mkdirSync, openSync, readFileSync, realpathSync, readdirSync, rmSync, writeFileSync } from 'node:fs'
+import { accessSync, closeSync, constants, existsSync, fchmodSync, fsyncSync, lstatSync, mkdirSync, openSync, readFileSync, realpathSync, readdirSync, renameSync, rmSync, writeFileSync } from 'node:fs'
 import { createHash, randomUUID } from 'node:crypto'
 import { dirname, isAbsolute, join, relative, resolve, sep } from 'node:path'
 import { db, ROOT } from './db.ts'
@@ -331,5 +331,4 @@ export function workerSharedGitRoots(cwd: string, branch: string): string[] {
   const reflog = resolve(paths.commonDir, 'logs', 'refs', 'heads', ...branch.split('/'))
   return [join(paths.commonDir, 'objects'), dirname(ref), dirname(reflog)]
 }
-
 

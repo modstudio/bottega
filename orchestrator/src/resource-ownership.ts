@@ -11,7 +11,7 @@ import { dockerRunResources, resourcesForRuns, teardownRunResources, type Docker
 import { chainScoreJoin, EVIDENCE_CLOSED_SQL } from './evidence-query.ts'
 import { repoRootOf } from './git-environment.ts'
 import { realpathOrSpelled, withoutTrailingSeparators } from './checkout-identity.ts'
-import { withCleanupLock, withWorktreeLease } from './worktree.ts'
+import { withCleanupLock, withWorktreeLease } from './project-lock.ts'
 
 export type WorktreeSharerRow = { id: number; status: string; scored: number }
 

@@ -6,7 +6,7 @@ import { provisionReadOnlyTree, type ReadonlyProvision } from './readonly-provis
 import { assertCreateVarsAvailable } from './worktree-template.ts'
 import { git, gitOk, repoRootOf, targetGitEnvironment } from './git-environment.ts'
 import { branchTip, removeReadOnlyTree } from './worktree-remove.ts'
-import { attributeWorktree, runCreateTool, verifyFreshWorktree } from './worktree-create.ts'
+import { attributeWorktree, runCreateTool, verifyFreshWorktree, type RecordWorktree } from './worktree-create.ts'
 import type { Worktree } from './worktree-types.ts'
 
 export function createReadOnlyWorktree(
@@ -96,4 +96,3 @@ function restoreBranchToTip(
 }
 
 /** Refuse a newly created tree whose files or index do not exactly describe HEAD. */
-

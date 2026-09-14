@@ -15,8 +15,15 @@ import { namesRecordedRunTree, preflight } from './dispatch-preflight.ts'
 import {
   implicitReviewCoverageBase, inferredReadOnlyKey, resolveReviewTarget, } from './review-target.ts'
 import { db, nowIso, sessionId, tryWriteContention, writableDb, writeTransaction, enableSchemaReload } from './db.ts'; import { resolveRootFromLastTurn } from './run-liveness.ts'; import { teardownTerminalRunResources } from './resource-ownership.ts'
-import {
-  createWorkerWorktree, toolFor, changesIn, resolveBase, resolveReadOnlyBase, carryWorkingState, assertCallerAncestry, withWorktreeCreateLock, withWorktreeLease, removeFor, type Worktree, processStartTime, worktreeExists, prepareSharedRefGuard, assertSharedRefGuardOutsideWritableRoots, workerSharedGitRoots } from './worktree.ts'
+import { createWorkerWorktree, worktreeExists } from './worktree.ts'
+import { toolFor } from './worktree-preflight.ts'
+import { changesIn, removeFor } from './worktree-remove.ts'
+import { resolveBase, resolveReadOnlyBase, carryWorkingState, assertCallerAncestry } from './worktree-caller.ts'
+import { withWorktreeCreateLock, withWorktreeLease, processStartTime } from './project-lock.ts'
+import { prepareSharedRefGuard, assertSharedRefGuardOutsideWritableRoots, workerSharedGitRoots } from './ref-guard.ts'
+import type { Worktree } from './worktree-types.ts'
+import type { Changes } from './worktree-remove.ts'
+import type { CarriedWorkingState } from './worktree-caller.ts'
 import { repoRootOf, prepareWorktreeObjects, targetGitEnvironment, contentTree, type WorktreeObjectEnvironment } from './git-environment.ts'
 import { worktreeGitDir } from './git-environment.ts'
 import { realpathOrSpelled } from './checkout-identity.ts'
@@ -98,7 +105,7 @@ export type RunResult = {
   outPath: string
   /** Where a repository worker ran, and what it changed. Null for a non-repository job. */
   worktree: Worktree | null
-  changes: import('./worktree.ts').Changes | null
+  changes: Changes | null
   /** The worker's structured reply, when the job carried a contract. */
   contract: WorkerReply | null
   /** Terminal state, so a caller can tell `asking` from `ok` without re-reading the row. */
@@ -810,8 +817,8 @@ export async function run(opts: {
    * writes it terminal, so the failure is recorded rather than silent.
    */
   let worktree: Worktree | null = opts.resume?.worktree ?? null
-  let carried: import('./worktree.ts').CarriedWorkingState | null = null
-  let changes: import('./worktree.ts').Changes | null = null
+  let carried: CarriedWorkingState | null = null
+  let changes: Changes | null = null
   let isolatedCwd: string | null = null
   let removeIsolatedCwd: (() => void) | null = null
   let provisionedMcpConfig: ReturnType<typeof prepareWorkerMcpConfig> | null = null
