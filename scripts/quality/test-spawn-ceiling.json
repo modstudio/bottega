@@ -115,7 +115,7 @@
   "orchestrator/src/run-diff.test.ts": 75,
   "orchestrator/src/run-dispatch.test.ts": 2,
   "orchestrator/src/run-inbox.test.ts": 0,
-  "orchestrator/src/run-lifecycle.test.ts": 1478,
+  "orchestrator/src/run-lifecycle.test.ts": 1477,
   "orchestrator/src/run-listing.test.ts": 0,
   "orchestrator/src/run-liveness.test.ts": 0,
   "orchestrator/src/run-process.test.ts": 118,
