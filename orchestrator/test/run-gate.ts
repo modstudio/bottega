@@ -36,11 +36,12 @@ const declaredBoundaryTests = configured.filter((file) =>
 const present = [...declaredBoundaryTests].sort()
 
 const declared = Object.keys(map.files).sort()
+const declaredBoundary = declared.filter((file) => file.startsWith('test/process-boundary/'))
 const duplicates = configured.filter((file, index) => configured.indexOf(file) !== index)
 const missing = present.filter((file) => !configured.includes(file))
 const stale = configured.filter((file) => !present.includes(file))
 const undeclared = present.filter((file) => !map.files[file])
-const extraDeclared = declared.filter((file) => !present.includes(file))
+const extraDeclared = declaredBoundary.filter((file) => !present.includes(file))
 const exclusiveViolations = exclusiveShareViolations(map)
 if (duplicates.length || missing.length || stale.length || undeclared.length || extraDeclared.length
   || exclusiveViolations.length) {
@@ -199,11 +200,23 @@ await withGateSlot(async () => {
   const gateStarted = Date.now()
   const store = await flakeStore()
   const unitName = 'orchestrator unit'
-  const unit = await runGateTest(unitName, [], () => spawnTest(unitName, [
+  const moderateUnitFiles = Object.entries(map.files)
+    .filter(([file, policy]) => file.startsWith('src/') && policy.size === 'moderate')
+    .map(([file]) => file)
+    .sort()
+  const unitShort = await runGateTest(unitName, [], () => spawnTest(unitName, [
     'bun', 'test', '--path-ignore-patterns', 'runs/**', '--path-ignore-patterns', '**/runs/**',
     ...declaredBoundaryTests.flatMap((file) => ['--path-ignore-patterns', file]),
-  ], [], process.env, 'unit'), store)
-  const shards = balancedShards(readCommittedTimingSummary())
+    ...moderateUnitFiles.flatMap((file) => ['--path-ignore-patterns', file]),
+  ], [], process.env, 'unit-short'), store)
+  const unitModerate = moderateUnitFiles.length
+    ? await runGateTest(`${unitName} moderate`, moderateUnitFiles, () => spawnTest(
+        `${unitName} moderate`, ['bun', 'test', '--timeout', String(shardTimeoutMs(map.files, moderateUnitFiles)), ...moderateUnitFiles],
+        moderateUnitFiles, process.env, 'unit-moderate',
+      ), store)
+    : null
+  const unitResults = unitModerate ? [unitShort, unitModerate] : [unitShort]
+  const shards = balancedShards(readCommittedTimingSummary()?.files)
   const boundary = await Promise.all(shards.map(async (files, index) => {
     const name = `orchestrator process-boundary shard ${index + 1}/${map.shards.length}`
     const timeout = shardTimeoutMs(map.files, files)
@@ -218,7 +231,7 @@ await withGateSlot(async () => {
     )
   }))
 
-  const results: Result[] = [unit, ...boundary]
+  const results: Result[] = [...unitResults, ...boundary]
   for (const result of results) {
     if (result.exitCode === 0) continue
     console.error(`${result.name} failed with exit ${result.exitCode}`)
@@ -230,6 +243,10 @@ await withGateSlot(async () => {
   writeFileSync(timingPath, `${JSON.stringify(timing, null, 2)}\n`)
   console.log(`wrote ${timingPath}`)
   printTopTen(timing)
-  const timingPassed = publishTimingSummary(timing.files)
+  const unitElapsedMs = unitResults.reduce((sum, result) => {
+    const key = result.name === unitName ? 'unit-short' : 'unit-moderate'
+    return sum + (invocationTimings.get(key)?.elapsedMs ?? 0)
+  }, 0)
+  const timingPassed = publishTimingSummary(timing.files, unitElapsedMs)
   process.exit(testFailed || !timingPassed ? 1 : 0)
 })

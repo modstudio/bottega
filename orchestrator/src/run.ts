@@ -1814,23 +1814,6 @@ export async function run(opts: {
       // to. The word matters because a `blocker` in this system is the
       // opposite — an environment problem — and on a page they read alike.
       error = null
-    } else if (isAsking(contract)) {
-      /**
-       * Asking without a real question is a CONTRACT FAILURE, not a pause.
-       *
-       * Run 1743 is the measured case: grok returned "placeholder" with no why
-       * after 7.5 seconds, in orchestrator/runs/1788659791883-1743-grok-implement.txt.
-       * The schema was satisfied, but no decision had been asked. Recording it
-       * as asking created question 272 and summoned an architect to rule on
-       * nothing. Preserve the rejected text in the error, create no question,
-       * and let the ordinary failover policy hand untouched work to a new agent.
-       */
-      const rejected = contract?.questions?.map((item) => JSON.stringify(item.question)).join(', ')
-        || '(no question text)'
-      error = errorTail(
-        'the worker returned asking without a real question and non-empty why; ' +
-        `rejected question text: ${rejected}`,
-      )
     } else if (contract?.status === 'refused') {
       // The worker read the spec and says it cannot be built as written. That
       // is a real answer and often a correct one, so it is `ok` rather than a

@@ -19,16 +19,22 @@ export type CommittedTestTiming = {
   spawns: number
 }
 
+export type CommittedTimingSummary = {
+  unitElapsedMs: number
+  files: CommittedTestTiming[]
+}
+
 type Reporter = Pick<Console, 'error' | 'log'>
 
-export function readCommittedTimingSummary(): CommittedTestTiming[] | undefined {
+export function readCommittedTimingSummary(): CommittedTimingSummary | undefined {
   const result = Bun.spawnSync(['git', 'show', `HEAD:${TIMING_SUMMARY_LABEL}`], {
     cwd: root,
     stdout: 'pipe',
     stderr: 'pipe',
   })
   if (result.exitCode !== 0) return undefined
-  return JSON.parse(result.stdout.toString()) as CommittedTestTiming[]
+  const parsed = JSON.parse(result.stdout.toString()) as CommittedTimingSummary | CommittedTestTiming[]
+  return Array.isArray(parsed) ? { unitElapsedMs: 0, files: parsed } : parsed
 }
 
 function packageOf(path: string): string {
@@ -64,15 +70,35 @@ export function summaryRows(files: FileRow[]): CommittedTestTiming[] {
   })).sort((a, b) => a.path.localeCompare(b.path))
 }
 
-export function publishTimingSummary(files: FileRow[], reporter: Reporter = console): boolean {
+export function publishTimingSummary(
+  files: FileRow[], unitElapsedMs: number, reporter: Reporter = console,
+): boolean {
   const current = summaryRows(files)
-  const committed = readCommittedTimingSummary()
+  const committedSummary = readCommittedTimingSummary()
+  const committed = committedSummary?.files
   const currentTotals = totals(current)
   const committedTotals = committed ? totals(committed) : new Map<string, number>()
   const ci = Boolean(process.env.CI)
   const keepCommitted = new Set<string>()
   let baselineChanged = false
   let fatal = false
+  const unitDecision = decideTestTiming({
+    currentMs: unitElapsedMs,
+    committedMs: committedSummary?.unitElapsedMs || undefined,
+    growthLimit: GROWTH_LIMIT,
+  })
+  let nextUnitElapsedMs = committedSummary?.unitElapsedMs ?? unitElapsedMs
+  if (unitDecision === 'initial' || unitDecision === 'tighten') {
+    baselineChanged = true
+    nextUnitElapsedMs = unitElapsedMs
+    reporter.error(`${TIMING_SUMMARY_LABEL}: orchestrator unit ${unitDecision === 'initial' ? 'recorded initial total' : `tightened ${committedSummary!.unitElapsedMs}ms ->`} ${unitElapsedMs}ms`)
+  } else if (unitDecision === 'fail') {
+    const committedMs = committedSummary!.unitElapsedMs
+    const limitMs = Math.floor(committedMs * (1 + GROWTH_LIMIT))
+    reporter.error(`${TIMING_SUMMARY_LABEL}: orchestrator unit total ${unitElapsedMs}ms exceeds 5% growth limit ${limitMs}ms (committed ${committedMs}ms)`)
+    if (ci) fatal = true
+    else reporter.error(`${TIMING_SUMMARY_LABEL}: growth is informational locally and fails on CI`)
+  }
   for (const [packageName, currentMs] of currentTotals) {
     const committedMs = committedTotals.get(packageName)
     const decision = decideTestTiming({ currentMs, committedMs, growthLimit: GROWTH_LIMIT })
@@ -104,7 +130,7 @@ export function publishTimingSummary(files: FileRow[], reporter: Reporter = cons
       ].sort((a, b) => a.path.localeCompare(b.path))
     : current
   if (baselineChanged) {
-    writeFileSync(TIMING_SUMMARY_PATH, `${JSON.stringify(next, null, 2)}\n`)
+    writeFileSync(TIMING_SUMMARY_PATH, `${JSON.stringify({ unitElapsedMs: nextUnitElapsedMs, files: next }, null, 2)}\n`)
     reporter.error(`test timing baseline changed; commit ${TIMING_SUMMARY_LABEL} and re-run`)
     return false
   }
@@ -114,5 +140,6 @@ export function publishTimingSummary(files: FileRow[], reporter: Reporter = cons
 }
 
 export function readTimingSummary(): CommittedTestTiming[] {
-  return JSON.parse(readFileSync(TIMING_SUMMARY_PATH, 'utf8')) as CommittedTestTiming[]
+  const parsed = JSON.parse(readFileSync(TIMING_SUMMARY_PATH, 'utf8')) as CommittedTimingSummary | CommittedTestTiming[]
+  return Array.isArray(parsed) ? parsed : parsed.files
 }
