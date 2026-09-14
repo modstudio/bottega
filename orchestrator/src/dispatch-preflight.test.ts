@@ -1,4 +1,5 @@
 import { expect, test, describe } from "bun:test"
+import { cloneRepository } from '../test/fixtures/git.ts'
 import { chmodSync, mkdtempSync, rmSync, writeFileSync, readFileSync, realpathSync, readdirSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
@@ -51,11 +52,10 @@ test('non-commit bases are refused before every dispatch artifact', () => {
 })
 
 test('create commands must exist and be executable before dispatch', () => {
-  const repo = mkdtempSync(join(tmpdir(), 'orch-create-command-'))
+  const repo = cloneRepository('orch-create-command-')
   try {
     const git = (...args: string[]) => Bun.spawnSync(['git', ...args], { cwd: repo, stdout: 'pipe', stderr: 'pipe' })
-    git('init', '-b', 'main'); git('config', 'user.email', 'orch-test@example.invalid')
-    git('config', 'user.name', 'Orch Test'); writeFileSync(join(repo, 'tracked.txt'), 'fixture\n')
+    writeFileSync(join(repo, 'tracked.txt'), 'fixture\n')
     git('add', '.'); git('commit', '-m', 'fixture')
     upsertProject({ name: 'create-command', path: repo, settings: {
       worktree: { create: { command: 'scripts/missing-worktree', args: ['{branch}'] }, branch: 'task/{id}' },

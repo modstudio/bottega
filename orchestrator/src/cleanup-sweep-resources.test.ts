@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 import { randomUUID } from 'node:crypto'
 import { fakeDocker, fakeDockerCommand } from '../test/fixtures/docker.ts'
-import { hermeticGitCommand, hermeticGitEnv } from '../test/fixtures/git.ts'
+import { cloneRepository, hermeticGitCommand, hermeticGitEnv } from '../test/fixtures/git.ts'
 import { addRun, score } from '../test/fixtures/store.ts'
 import { db } from './db.ts'
 import { upsertProject } from './projects.ts'
@@ -48,10 +48,7 @@ describe('sweep only reclaims old orch-owned orphan worktrees', () => {
     }
   }
   const scratchRepo = () => {
-    const repo = mkdtempSync(join(tmpdir(), 'orch-sweep-'))
-    git(repo, 'init', '-b', 'main')
-    git(repo, 'config', 'user.email', 'orch-test@example.invalid')
-    git(repo, 'config', 'user.name', 'Orch Test')
+    const repo = cloneRepository('orch-sweep-')
     writeFileSync(join(repo, 'kept.txt'), 'base\n')
     git(repo, 'add', 'kept.txt')
     git(repo, 'commit', '-m', 'base')
@@ -264,16 +261,14 @@ describe('sweep only reclaims old orch-owned orphan worktrees', () => {
   test('sweep and doctor report terminal resources in a retained tree without removal commands', async () => {
     const project = `retained-resource-${randomUUID()}`
     const id = addRun({ agent: 'codex', job: 'implement', status: 'ok', repo: project })
-    const tree = mkdtempSync(join(tmpdir(), `orch-${id}-retained-`))
-    expect(Bun.spawnSync(['git', 'init', '-q', tree]).exitCode).toBe(0)
+    const tree = cloneRepository(`orch-${id}-retained-`)
     db().query('UPDATE run SET worktree=? WHERE id=?').run(tree, id)
     const noTree = addRun({ agent: 'codex', job: 'implement', status: 'asking', repo: project })
     addRun({ agent: 'codex', job: 'implement', status: 'failed', repo: project,
       parent: noTree, turn: 2 })
     const goneTree = addRun({ agent: 'codex', job: 'implement', status: 'failed', repo: project })
     db().query('UPDATE run SET worktree=? WHERE id=?').run(join(tree, 'gone'), goneTree)
-    const sharedTree = mkdtempSync(join(tmpdir(), `orch-${id}-shared-`))
-    expect(Bun.spawnSync(['git', 'init', '-q', sharedTree]).exitCode).toBe(0)
+    const sharedTree = cloneRepository(`orch-${id}-shared-`)
     const terminalSharer = addRun({ agent: 'codex', job: 'implement', status: 'failed', repo: project })
     const liveSharer = addRun({ agent: 'codex', job: 'implement', status: 'asking', repo: project })
     db().query('UPDATE run SET worktree=? WHERE id=?').run(sharedTree, terminalSharer)

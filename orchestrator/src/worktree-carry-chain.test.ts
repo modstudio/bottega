@@ -3,7 +3,7 @@ import { expect, test } from 'bun:test'
 import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { hermeticGitEnv } from '../test/fixtures/git.ts'
+import { cloneRepository, hermeticGitEnv } from '../test/fixtures/git.ts'
 import { workerReply } from '../test/fixtures/replies.ts'
 import { db } from './db.ts'
 import { run as runJob } from './run.ts'
@@ -14,16 +14,13 @@ import { runDiffCommand } from './run-diff.ts'
 
   test('every turn in a three-turn chain declares the inherited carry audit', async () => {
     const makeRepo = () => {
-      const repo = mkdtempSync(join(tmpdir(), 'orch-carry-chain-'))
+      const repo = cloneRepository('orch-carry-chain-')
       const git = (...args: string[]) => {
         const p = Bun.spawnSync(['git', ...args], {
           cwd: repo, env: hermeticGitEnv(), stdout: 'pipe', stderr: 'pipe',
         })
         if (p.exitCode !== 0) throw new Error(p.stderr.toString())
       }
-      git('init', '-b', 'main')
-      git('config', 'user.email', 'orch-test@example.invalid')
-      git('config', 'user.name', 'Orch Test')
       writeFileSync(join(repo, '.gitignore'), '.claude/\n')
       writeFileSync(join(repo, 'kept.txt'), 'base\n')
       git('add', '.gitignore', 'kept.txt')

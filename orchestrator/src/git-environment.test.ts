@@ -1,16 +1,14 @@
 import { expect, test, describe } from "bun:test"
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync, realpathSync } from "node:fs"
-import { tmpdir } from "node:os"
+import { mkdirSync, readFileSync, rmSync, writeFileSync, realpathSync } from "node:fs"
 import { join, resolve } from "node:path"
-import { hermeticGitEnv } from '../test/fixtures/git.ts'
+import { cloneRepository, hermeticGitEnv } from '../test/fixtures/git.ts'
 import { worktreeDescribeFixture } from '../test/fixtures/worktree.ts'
 import { repoRootOf } from './git-environment.ts'
 import { contentTree, targetGitEnvironment } from "./git-environment.ts"
 test('--cwd carry measures the same input tree as launching inside that worktree', () => {
-  const repo = mkdtempSync(join(tmpdir(), 'orch-content-tree-'))
+  const repo = cloneRepository('orch-content-tree-')
   try {
     const git = (...args: string[]) => Bun.spawnSync(['git', ...args], { cwd: repo, env: hermeticGitEnv(), stdout: 'pipe', stderr: 'pipe' })
-    git('init', '-b', 'main'); git('config', 'user.email', 'orch-test@example.invalid'); git('config', 'user.name', 'Orch Test')
     writeFileSync(join(repo, 'tracked.txt'), 'fixture\n'); git('add', '.'); git('commit', '-m', 'fixture')
     const checkout = `${repo}-carried-tree`
     git('worktree', 'add', '--detach', checkout, 'HEAD')
@@ -44,7 +42,7 @@ test('from inside a worktree, repoRootOf is the main checkout, not this tree', (
 })
 
 test('a guarded linked target receives its own object routing after inherited routing is scrubbed', () => {
-    const repo = mkdtempSync(join(tmpdir(), 'orch-target-git-env-'))
+    const repo = cloneRepository('orch-target-git-env-')
     const linked = join(repo, 'linked')
     const previous = Object.fromEntries([
       'GIT_DIR', 'GIT_WORK_TREE', 'GIT_OBJECT_DIRECTORY', 'GIT_ALTERNATE_OBJECT_DIRECTORIES',
@@ -58,9 +56,6 @@ test('a guarded linked target receives its own object routing after inherited ro
       if (p.exitCode !== 0) throw new Error(p.stderr.toString())
     }
     try {
-      fixtureGit('init', '-b', 'main')
-      fixtureGit('config', 'user.email', 'orch-test@example.invalid')
-      fixtureGit('config', 'user.name', 'Orch Test')
       writeFileSync(join(repo, 'tracked'), 'fixture\n')
       fixtureGit('add', 'tracked')
       fixtureGit('commit', '-m', 'fixture')

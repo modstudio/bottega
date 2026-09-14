@@ -6,7 +6,7 @@ import { AGENTS } from '../../src/agents.ts'
 import { db } from '../../src/db.ts'
 import { upsertProject } from '../../src/projects.ts'
 import { run as runJob } from '../../src/run.ts'
-import { hermeticGitEnv } from '../fixtures/git.ts'
+import { cloneRepository, hermeticGitEnv } from '../fixtures/git.ts'
 import { workerReply } from '../fixtures/replies.ts'
 import { dir } from '../fixtures/store.ts'
 
@@ -14,7 +14,7 @@ import { stubWorker } from '../stub-worker.ts'
 import { parseConfinement } from "../../src/confinement.ts"
 describe('run git process boundary', () => {
 const git = (cwd: string, ...args: string[]) => { const p = Bun.spawnSync(['git', ...args], { cwd, env: hermeticGitEnv(), stdout: 'pipe', stderr: 'pipe' }); if (p.exitCode !== 0) throw new Error(p.stderr.toString()); return p.stdout.toString().trim() }
-const repository = () => { const repo = realpathSync(mkdtempSync(join(tmpdir(), 'orch-outside-write-'))); git(repo, 'init', '-b', 'main'); git(repo, 'config', 'user.email', 'orch-test@example.invalid'); git(repo, 'config', 'user.name', 'Orch Test'); writeFileSync(join(repo, 'tracked.txt'), 'base\n'); git(repo, 'add', 'tracked.txt'); git(repo, 'commit', '-m', 'fixture'); return repo }
+const repository = () => { const repo = cloneRepository('orch-outside-write-'); writeFileSync(join(repo, 'tracked.txt'), 'base\n'); git(repo, 'add', 'tracked.txt'); git(repo, 'commit', '-m', 'fixture'); return repo }
 const grokOutput = (filesChanged: string[]) => [
   JSON.stringify({ type: 'system', subtype: 'init' }),
   JSON.stringify({

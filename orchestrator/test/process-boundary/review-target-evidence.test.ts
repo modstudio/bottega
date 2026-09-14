@@ -6,7 +6,7 @@ import { AGENTS } from '../../src/agents.ts'
 import { db } from '../../src/db.ts'
 import { upsertProject } from '../../src/projects.ts'
 import { run as runJob } from '../../src/run.ts'
-import { hermeticGitEnv } from '../fixtures/git.ts'
+import { cloneRepository, hermeticGitEnv } from '../fixtures/git.ts'
 import { reviewReply } from '../fixtures/replies.ts'
 
 import { stubWorker } from '../stub-worker.ts'
@@ -16,7 +16,7 @@ const worker = () => { const script = stubWorker(); trackResidue(dirname(script)
 
 describe('review-lens-inline has no checkout', () => {
 test('explicit review records the trunk merge-base for clean-review evidence', async () => {
-    const repo = mkdtempSync(join(tmpdir(), 'orch-explicit-review-evidence-'))
+    const repo = cloneRepository('orch-explicit-review-evidence-')
     const script = worker()
     const agent = AGENTS.codex!
     const original = {
@@ -40,9 +40,6 @@ test('explicit review records the trunk merge-base for clean-review evidence', a
       return reply
     }
     try {
-      git('init', '-b', 'main')
-      git('config', 'user.email', 'orch-test@example.invalid')
-      git('config', 'user.name', 'Orch Test')
       writeFileSync(join(repo, 'untouched.txt'), 'base\n')
       git('add', '.')
       git('commit', '-m', 'fixture trunk')
@@ -143,7 +140,7 @@ test('explicit review records the trunk merge-base for clean-review evidence', a
     }
   })
 test('implicit review measures from the constructed trunk merge-base', async () => {
-    const repo = mkdtempSync(join(tmpdir(), 'orch-implicit-review-evidence-'))
+    const repo = cloneRepository('orch-implicit-review-evidence-')
     const script = worker()
     const agent = AGENTS.codex!
     const original = {
@@ -167,9 +164,7 @@ test('implicit review measures from the constructed trunk merge-base', async () 
       return reply
     }
     try {
-      git('init', '-b', 'develop')
-      git('config', 'user.email', 'orch-test@example.invalid')
-      git('config', 'user.name', 'Orch Test')
+      git('branch', '-m', 'develop')
       writeFileSync(join(repo, 'untouched.txt'), 'base\n')
       git('add', '.')
       git('commit', '-m', 'fixture trunk')

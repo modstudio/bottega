@@ -1,8 +1,8 @@
 import { describe,expect,test } from 'bun:test'
-import { mkdirSync,mkdtempSync,realpathSync,rmSync,writeFileSync } from 'node:fs'
+import { mkdirSync,mkdtempSync,rmSync,writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { hermeticGitEnv } from '../test/fixtures/git.ts'
+import { cloneRepository, hermeticGitEnv } from '../test/fixtures/git.ts'
 import { reviewReply } from '../test/fixtures/replies.ts'
 import { addRun } from '../test/fixtures/store.ts'
 import { db } from './db.ts'
@@ -11,7 +11,7 @@ import { cleanReviewEvidence, recordReview } from './review.ts'
 
 describe('review discipline', () => {
 test('clean review evidence must name work and intersect the measured change', () => {
-    const repo = realpathSync(mkdtempSync(join(tmpdir(), 'orch-review-evidence-')))
+    const repo = cloneRepository('orch-review-evidence-')
     const gg = (...args: string[]) => {
       const p = Bun.spawnSync(['git', ...args], {
         cwd: repo, env: hermeticGitEnv(), stdout: 'pipe', stderr: 'pipe',
@@ -19,9 +19,6 @@ test('clean review evidence must name work and intersect the measured change', (
       if (p.exitCode !== 0) throw new Error(p.stderr.toString())
       return p.stdout.toString().trim()
     }
-    gg('init', '-b', 'main'); gg('config', 'user.email', 'orch-test@example.invalid')
-    gg('config', 'user.name', 'Orch Test')
-    writeFileSync(join(repo, 'base.txt'), 'base\n'); gg('add', '.'); gg('commit', '-m', 'base')
     const base = gg('rev-parse', 'HEAD')
     mkdirSync(join(repo, 'orchestrator', 'src'), { recursive: true })
     mkdirSync(join(repo, 'hub', 'src'), { recursive: true })
@@ -131,7 +128,7 @@ test('clean review evidence must name work and intersect the measured change', (
     }
   })
 test('clean review coverage reads the recorded change path set, not run.changed_paths', () => {
-    const repo = realpathSync(mkdtempSync(join(tmpdir(), 'orch-review-path-set-')))
+    const repo = cloneRepository('orch-review-path-set-')
     const gg = (...args: string[]) => {
       const p = Bun.spawnSync(['git', ...args], {
         cwd: repo, env: hermeticGitEnv(), stdout: 'pipe', stderr: 'pipe',
@@ -139,9 +136,6 @@ test('clean review coverage reads the recorded change path set, not run.changed_
       if (p.exitCode !== 0) throw new Error(p.stderr.toString())
       return p.stdout.toString().trim()
     }
-    gg('init', '-b', 'main'); gg('config', 'user.email', 'orch-test@example.invalid')
-    gg('config', 'user.name', 'Orch Test')
-    writeFileSync(join(repo, 'base.txt'), 'base\n'); gg('add', '.'); gg('commit', '-m', 'base')
     writeFileSync(join(repo, 'kept.ts'), 'kept\n'); gg('add', '.'); gg('commit', '-m', 'change')
     upsertProject({ name: 'review-path-set-project', path: repo })
     const runId = addRun({

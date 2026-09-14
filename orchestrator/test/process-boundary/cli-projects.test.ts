@@ -5,7 +5,7 @@ import { join } from 'node:path'
 import { db } from '../../src/db.ts'
 import { upsertProject } from '../../src/projects.ts'
 import { runCollectionDescribeFixture } from '../fixtures/cli.ts'
-import { hermeticGitEnv } from '../fixtures/git.ts'
+import { cloneRepository, hermeticGitEnv } from '../fixtures/git.ts'
 import { addRun } from '../fixtures/store.ts'
 
 
@@ -14,7 +14,7 @@ describe('project cleanup process boundary', () => {
   const insert = (status: string, job = 'implement') =>
     addRun({ agent: 'codex', job, status, session: 'orch-test-session' })
 test('discard removes both non-live worktrees owned by one chain', () => {
-  const repo = realpathSync(mkdtempSync(join(tmpdir(), 'orch-discard-chain-trees-')))
+  const repo = cloneRepository('orch-discard-chain-trees-')
   const git = (cwd: string, ...args: string[]) => {
     const result = Bun.spawnSync(['git', ...args], {
       cwd, env: hermeticGitEnv(), stdout: 'pipe', stderr: 'pipe',
@@ -22,12 +22,6 @@ test('discard removes both non-live worktrees owned by one chain', () => {
     if (result.exitCode !== 0) throw new Error(result.stderr.toString())
   }
   try {
-    git(repo, 'init', '-b', 'main')
-    git(repo, 'config', 'user.email', 'orch-test@example.invalid')
-    git(repo, 'config', 'user.name', 'Orch Test')
-    writeFileSync(join(repo, 'base.txt'), 'base\n')
-    git(repo, 'add', '.')
-    git(repo, 'commit', '-m', 'fixture')
     const first = join(repo, 'first-tree')
     const second = join(repo, 'second-tree')
     git(repo, 'worktree', 'add', '-b', 'first-tree', first)
@@ -48,19 +42,15 @@ test('discard removes both non-live worktrees owned by one chain', () => {
   } finally { rmSync(repo, { recursive: true, force: true }) }
 })
   test('automatic abandon retains a branch recorded by another run', () => {
-    const repo = mkdtempSync(join(tmpdir(), 'orch-abandon-'))
+    const repo = cloneRepository('orch-abandon-')
     const git = (...args: string[]) => {
       const p = Bun.spawnSync(['git', ...args], {
         cwd: repo, env: hermeticGitEnv(), stdout: 'pipe', stderr: 'pipe',
       })
       if (p.exitCode !== 0) throw new Error(p.stderr.toString())
       return p.stdout.toString().trim()
-      return p.stdout.toString().trim()
     }
     try {
-      git('init', '-b', 'main')
-      git('config', 'user.email', 'orch-test@example.invalid')
-      git('config', 'user.name', 'Orch Test')
       writeFileSync(join(repo, 'kept.txt'), 'base\n')
       git('add', 'kept.txt')
       git('commit', '-m', 'base')
@@ -83,8 +73,8 @@ test('discard removes both non-live worktrees owned by one chain', () => {
   })
 
   test('automatic abandon ignores a same-named branch in another repository', () => {
-    const first = mkdtempSync(join(tmpdir(), 'orch-abandon-first-'))
-    const second = mkdtempSync(join(tmpdir(), 'orch-abandon-second-'))
+    const first = cloneRepository('orch-abandon-first-')
+    const second = cloneRepository('orch-abandon-second-')
     const git = (repo: string, ...args: string[]) => {
       const p = Bun.spawnSync(['git', ...args], {
         cwd: repo, env: hermeticGitEnv(), stdout: 'pipe', stderr: 'pipe',
@@ -94,9 +84,6 @@ test('discard removes both non-live worktrees owned by one chain', () => {
     }
     try {
       for (const repo of [first, second]) {
-        git(repo, 'init', '-b', 'main')
-        git(repo, 'config', 'user.email', 'orch-test@example.invalid')
-        git(repo, 'config', 'user.name', 'Orch Test')
         writeFileSync(join(repo, 'kept.txt'), 'base\n')
         git(repo, 'add', 'kept.txt')
         git(repo, 'commit', '-m', 'base')

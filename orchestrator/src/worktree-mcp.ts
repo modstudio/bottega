@@ -3,7 +3,7 @@
  * Knows isolated worker directories and worker MCP configuration provisioning.
  * Must not know routing, transports, run state, or database writes.
  */
-import { chmodSync, existsSync, lstatSync, mkdirSync, readlinkSync, rmSync, symlinkSync, unlinkSync } from 'node:fs'
+import { chmodSync, existsSync, lstatSync, mkdirSync, readlinkSync, realpathSync, rmSync, symlinkSync, unlinkSync } from 'node:fs'
 import { dirname, join, relative } from 'node:path'
 
 type McpConfigPreflight = { header: string | null; error: string | null }
@@ -19,14 +19,19 @@ export function provisionMcpConfig(worktree: string, checkout: string): McpConfi
       error: `missing .mcp.json in worker cwd ${worktree}; registered checkout ${checkout} has no .mcp.json either`,
     }
   }
-  const link = relative(dirname(target), source)
+  // Both ends are resolved to their real paths before the relative walk is
+  // computed: a symlinked prefix on either side (/var versus /private/var)
+  // changes the number of parents between them, and a link measured on the
+  // unresolved paths breaks the moment the kernel walks it from the real one.
+  const link = relative(realpathSync(dirname(target)), realpathSync(source))
   symlinkSync(link, target)
   return { header: `MCP preflight: linked .mcp.json -> ${link}`, error: null }
 }
 
 export function prepareWorkerMcpConfig(worktree: string, checkout: string, inherited: boolean) {
   const target = join(worktree, '.mcp.json')
-  const expected = relative(dirname(target), join(checkout, '.mcp.json'))
+  const source = join(checkout, '.mcp.json')
+  const expected = existsSync(source) ? relative(realpathSync(dirname(target)), realpathSync(source)) : null
   let link: string | null = null
   if (inherited) {
     try {

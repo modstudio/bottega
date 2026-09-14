@@ -1,9 +1,9 @@
 import { describe,expect,test } from 'bun:test'
-import { existsSync,mkdirSync,mkdtempSync,realpathSync,rmSync,writeFileSync } from 'node:fs'
+import { existsSync,mkdirSync,mkdtempSync,realpathSync,rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { PLATFORM_SLUG } from '../../shared/brand.ts'
-import { hermeticGitEnv } from '../test/fixtures/git.ts'
+import { cloneRepository, hermeticGitEnv } from '../test/fixtures/git.ts'
 import { addRun, score } from '../test/fixtures/store.ts'
 import { db, nowIso } from './db.ts'
 import { claimMonitorNotices, markMonitorNoticesDelivered, monitor } from './monitor.ts'
@@ -78,13 +78,7 @@ describe('operational monitor record', () => {
   })
 
   test('monitor previews owned reclaim candidates and ignores review subjects', async () => {
-    const repo = realpathSync(mkdtempSync(join(tmpdir(), 'monitor-reclaim-')))
-    git(repo, 'init', '-b', 'main')
-    git(repo, 'config', 'user.email', 'orch-test@example.invalid')
-    git(repo, 'config', 'user.name', 'Orch Test')
-    writeFileSync(join(repo, 'base.txt'), 'base\n')
-    git(repo, 'add', 'base.txt')
-    git(repo, 'commit', '-m', 'base')
+    const repo = cloneRepository('monitor-reclaim-')
     const base = git(repo, 'rev-parse', 'HEAD')
     const project = `monitor-reclaim-${repo.split('/').pop()}`
     upsertProject({ name: project, path: repo, settings: { trunk: 'main' } })

@@ -1,5 +1,5 @@
 import { afterEach, expect, test } from 'bun:test'
-import { existsSync, lstatSync, mkdirSync, mkdtempSync, readlinkSync, rmSync, writeFileSync } from 'node:fs'
+import { existsSync, lstatSync, mkdirSync, mkdtempSync, readlinkSync, realpathSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { prepareWorkerMcpConfig, provisionMcpConfig } from './worktree-mcp.ts'
@@ -48,4 +48,15 @@ test('refuses cwd-discovered required MCP before agent spawn when the checkout h
     header: null,
     error: `missing .mcp.json in worker cwd ${worker}; registered checkout ${checkout} has no .mcp.json either`,
   })
+})
+
+test('the provisioned link resolves when the checkout is named through a symlinked prefix', () => {
+  const { checkout, worker } = fixture(); writeFileSync(join(checkout, '.mcp.json'), '{"real":true}\n')
+  const alias = join(roots[roots.length - 1]!, 'alias'); symlinkSync(checkout, alias)
+  const result = provisionMcpConfig(realpathSync(worker), alias)
+  expect(result.error).toBeNull()
+  expect(existsSync(join(worker, '.mcp.json'))).toBe(true)
+  expect(readlinkSync(join(worker, '.mcp.json'))).toBe('../checkout/.mcp.json')
+  expect(prepareWorkerMcpConfig(realpathSync(worker), alias, true).measure(() =>
+    existsSync(join(worker, '.mcp.json')))).toBe(false)
 })

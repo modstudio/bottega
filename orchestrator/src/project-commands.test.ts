@@ -1,10 +1,9 @@
 import { expect, test } from 'bun:test'
-import { mkdtempSync, rmSync, writeFileSync, realpathSync } from 'node:fs'
-import { tmpdir } from 'node:os'
+import { rmSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { PLATFORM_SLUG } from '../../shared/brand.ts'
 import { OrchProjectListSchema } from '../../shared/orch-contract.ts'
-import { hermeticGitEnv } from '../test/fixtures/git.ts'
+import { cloneRepository, hermeticGitEnv } from '../test/fixtures/git.ts'
 import { dir } from '../test/fixtures/store.ts'
 import { declaredCreate } from '../test/fixtures/worktree.ts'
 import { db } from './db.ts'
@@ -38,10 +37,8 @@ const git = (cwd: string, ...args: string[]) => {
   return result.stdout.toString().trim()
 }
 const registerRepo = (branch: string) => {
-  const repo = realpathSync(mkdtempSync(join(tmpdir(), 'orch-register-')))
-  git(repo, 'init', '-b', branch)
-  git(repo, 'config', 'user.email', 'orch-test@example.invalid')
-  git(repo, 'config', 'user.name', 'Orch Test')
+  const repo = cloneRepository('orch-register-')
+  if (branch !== 'main') git(repo, 'branch', '-m', branch)
   writeFileSync(join(repo, 'tracked.txt'), 'fixture\n')
   git(repo, 'add', '.')
   git(repo, 'commit', '-m', 'fixture')

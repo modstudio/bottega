@@ -2,16 +2,14 @@ import { describe, expect, test } from "bun:test"
 import { mkdtempSync, rmSync, writeFileSync, mkdirSync, chmodSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
-import { hermeticGitEnv } from '../fixtures/git.ts'
+import { cloneRepository, hermeticGitEnv } from '../fixtures/git.ts'
 
 describe('git environment process boundary', () => {
 test('an operational git refuses when the local-env query fails and cannot delete in an inherited repository', () => {
     const root = mkdtempSync(join(tmpdir(), 'orch-local-env-refusal-'))
-    const repoA = join(root, 'repo-a')
-    const repoB = join(root, 'repo-b')
+    const repoA = cloneRepository('orch-local-env-repo-a-')
+    const repoB = cloneRepository('orch-local-env-repo-b-')
     const bin = join(root, 'bin')
-    mkdirSync(repoA)
-    mkdirSync(repoB)
     mkdirSync(bin)
     const realGit = Bun.which('git')!
     const fixtureGit = (repo: string, ...args: string[]) => {
@@ -21,9 +19,6 @@ test('an operational git refuses when the local-env query fails and cannot delet
     }
     try {
       for (const repo of [repoA, repoB]) {
-        fixtureGit(repo, 'init', '-b', 'main')
-        fixtureGit(repo, 'config', 'user.email', 'orch-test@example.invalid')
-        fixtureGit(repo, 'config', 'user.name', 'Orch Test')
         writeFileSync(join(repo, 'tracked'), 'fixture\n')
         fixtureGit(repo, 'add', 'tracked')
         fixtureGit(repo, 'commit', '-m', 'fixture')

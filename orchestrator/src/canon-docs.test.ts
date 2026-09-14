@@ -3,7 +3,7 @@ import { mkdirSync,mkdtempSync,rmSync,writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { dirname,join } from 'node:path'
 import { importDocs, removeDoc, setDoc } from '../test/fixtures/docs.ts'
-import { hermeticGitEnv } from '../test/fixtures/git.ts'
+import { cloneRepository, hermeticGitEnv } from '../test/fixtures/git.ts'
 import { dir } from '../test/fixtures/store.ts'
 import { allNumericLiterals, checkDoc, compilePack, diffPack, numericLiteralReport, recordPack } from './canon.ts'
 import { db } from './db.ts'
@@ -13,13 +13,12 @@ import { allNumericLiterals as inspectNumericLiterals,findingsForPack } from './
 
 describe('scoped operator docs', () => {
   test('checkDoc validates tracked paths, commands, jobs and scripts from backticked tokens', () => {
-    const repo = mkdtempSync(join(tmpdir(), 'canon-check-'))
+    const repo = cloneRepository('canon-check-')
     try {
       mkdirSync(join(repo, 'scripts'))
       writeFileSync(join(repo, 'scripts', 'tracked.ts'), '')
       writeFileSync(join(repo, 'scripts', 'present.ts'), '')
       writeFileSync(join(repo, 'package.json'), JSON.stringify({ scripts: { check: 'true' } }))
-      Bun.spawnSync(['git', 'init'], { cwd: repo, env: hermeticGitEnv() })
       Bun.spawnSync(['git', 'add', 'scripts/tracked.ts', 'package.json'], {
         cwd: repo, env: hermeticGitEnv(),
       })
@@ -90,9 +89,8 @@ describe('scoped operator docs', () => {
   })
 
   test('numeric report scans safe register strings and reports read and missing canon files', () => {
-    const repo = mkdtempSync(join(tmpdir(), 'numeric-canon-'))
+    const repo = cloneRepository('numeric-canon-')
     try {
-      Bun.spawnSync(['git', 'init', '-b', 'main'], { cwd: repo, env: hermeticGitEnv() })
       const canon = ['AGENTS.md', 'orchestrator/AGENTS.md', 'hub/AGENTS.md', 'ops/AGENTS.md',
         'local-stack/AGENTS.md']
       for (const [index, file] of canon.slice(0, -1).entries()) {

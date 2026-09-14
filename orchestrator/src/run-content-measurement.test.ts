@@ -1,8 +1,7 @@
 import { describe, expect, spyOn, test } from 'bun:test'
-import { mkdtempSync, rmSync, writeFileSync, existsSync } from 'node:fs'
-import { tmpdir } from 'node:os'
+import { rmSync, writeFileSync, existsSync } from 'node:fs'
 import { join } from 'node:path'
-import { hermeticGitEnv } from '../test/fixtures/git.ts'
+import { cloneRepository, hermeticGitEnv } from '../test/fixtures/git.ts'
 import { db } from './db.ts'
 import { worktreeGitDir } from './git-environment.ts'
 import { run as runJob } from './run.ts'
@@ -11,7 +10,7 @@ const worktreeMod = await import('./worktree.ts')
 describe('content tree measurement', () => {
 
   test('a measurement failure before vendor spawn is a harness failure with the git message', async () => {
-    const repo = mkdtempSync(join(tmpdir(), 'orch-content-tree-failure-'))
+    const repo = cloneRepository('orch-content-tree-failure-')
     const g = (...args: string[]) => {
       const p = Bun.spawnSync(['git', ...args], {
         cwd: repo, env: hermeticGitEnv(), stdout: 'pipe', stderr: 'pipe',
@@ -22,9 +21,6 @@ describe('content tree measurement', () => {
     const vendorMarker = join(repo, 'vendor-started')
     const oldDepth = process.env.ORCH_DEPTH
     try {
-      g('init', '-b', 'main')
-      g('config', 'user.email', 'orch-test@example.invalid')
-      g('config', 'user.name', 'Orch Test')
       writeFileSync(join(repo, 'tracked.txt'), 'base\n')
       g('add', '.')
       g('commit', '-m', 'base')

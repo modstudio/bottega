@@ -1,4 +1,4 @@
-import { describe, expect, test } from 'bun:test'; import { chmodSync, existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'; import { tmpdir } from 'node:os'; import { join } from 'node:path'; import { hermeticGitEnv } from '../test/fixtures/git.ts'; import { reviewReply } from '../test/fixtures/replies.ts'; import { dir } from '../test/fixtures/store.ts'
+import { describe, expect, test } from 'bun:test'; import { chmodSync, existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'; import { tmpdir } from 'node:os'; import { join } from 'node:path'; import { cloneRepository, hermeticGitEnv } from '../test/fixtures/git.ts'; import { reviewReply } from '../test/fixtures/replies.ts'; import { dir } from '../test/fixtures/store.ts'
 import { AGENTS } from './agents.ts'
 import { db } from './db.ts'
 import { upsertProject } from './projects.ts'
@@ -162,16 +162,13 @@ describe('in-confinement probe', () => {
   })
 
   test('a no-repo MCP run receives project config and executes its strict tool-call probe', async () => {
-    const project = mkdtempSync(join(tmpdir(), 'orch-no-repo-mcp-'))
+    const project = cloneRepository('orch-no-repo-mcp-')
     const git = (...args: string[]) => {
       const result = Bun.spawnSync(['git', ...args], {
         cwd: project, env: hermeticGitEnv(), stdout: 'pipe', stderr: 'pipe',
       })
       if (result.exitCode !== 0) throw new Error(result.stderr.toString())
     }
-    git('init', '-b', 'main')
-    git('config', 'user.email', 'orch-test@example.invalid')
-    git('config', 'user.name', 'Orch Test')
     const server = writeMintedStdioServer(project)
     writeFileSync(join(project, '.mcp.json'), JSON.stringify({
       mcpServers: { fixture: { command: process.execPath, args: [server] } },
@@ -349,16 +346,13 @@ process.stdout.write(JSON.stringify({
 
 describe('strict probe refuses before the agent starts', () => {
   test('require with an unreachable in-confinement server records the probe and starts no agent', async () => {
-    const repo = mkdtempSync(join(tmpdir(), 'orch-mcp-strict-'))
+    const repo = cloneRepository('orch-mcp-strict-')
     const git = (...args: string[]) => {
       const p = Bun.spawnSync(['git', ...args], {
         cwd: repo, env: hermeticGitEnv(), stdout: 'pipe', stderr: 'pipe',
       })
       if (p.exitCode !== 0) throw new Error(p.stderr.toString())
     }
-    git('init', '-b', 'main')
-    git('config', 'user.email', 'orch-test@example.invalid')
-    git('config', 'user.name', 'Orch Test')
     writeFileSync(join(repo, 'tracked.txt'), 'base\n')
     git('add', 'tracked.txt')
     writeFileSync(join(repo, '.mcp.json'), JSON.stringify({
@@ -414,16 +408,13 @@ exit 0
   })
 
   test('require with a reachable stdio server launches and records listed tools', async () => {
-    const repo = mkdtempSync(join(tmpdir(), 'orch-mcp-reachable-'))
+    const repo = cloneRepository('orch-mcp-reachable-')
     const git = (...args: string[]) => {
       const p = Bun.spawnSync(['git', ...args], {
         cwd: repo, env: hermeticGitEnv(), stdout: 'pipe', stderr: 'pipe',
       })
       if (p.exitCode !== 0) throw new Error(p.stderr.toString())
     }
-    git('init', '-b', 'main')
-    git('config', 'user.email', 'orch-test@example.invalid')
-    git('config', 'user.name', 'Orch Test')
     writeFileSync(join(repo, 'tracked.txt'), 'base\n')
     git('add', 'tracked.txt')
     const server = writeMintedStdioServer(repo)
@@ -487,16 +478,13 @@ cat ${JSON.stringify(reply)}
   })
 
   test('require records wrong-project tools and starts no agent', async () => {
-    const repo = mkdtempSync(join(tmpdir(), 'orch-mcp-wrong-project-'))
+    const repo = cloneRepository('orch-mcp-wrong-project-')
     const git = (...args: string[]) => {
       const p = Bun.spawnSync(['git', ...args], {
         cwd: repo, env: hermeticGitEnv(), stdout: 'pipe', stderr: 'pipe',
       })
       if (p.exitCode !== 0) throw new Error(p.stderr.toString())
     }
-    git('init', '-b', 'main')
-    git('config', 'user.email', 'orch-test@example.invalid')
-    git('config', 'user.name', 'Orch Test')
     writeFileSync(join(repo, 'tracked.txt'), 'base\n')
     git('add', 'tracked.txt')
     writeFileSync(join(repo, '.mcp.json'), JSON.stringify({
@@ -549,16 +537,13 @@ exit 0
   })
 
   test('codex refuses a different project config before agent start', async () => {
-    const repo = mkdtempSync(join(tmpdir(), 'orch-mcp-codex-wrong-project-'))
+    const repo = cloneRepository('orch-mcp-codex-wrong-project-')
     const git = (...args: string[]) => {
       const p = Bun.spawnSync(['git', ...args], {
         cwd: repo, env: hermeticGitEnv(), stdout: 'pipe', stderr: 'pipe',
       })
       if (p.exitCode !== 0) throw new Error(p.stderr.toString())
     }
-    git('init', '-b', 'main')
-    git('config', 'user.email', 'orch-test@example.invalid')
-    git('config', 'user.name', 'Orch Test')
     writeFileSync(join(repo, 'tracked.txt'), 'base\n')
     writeFileSync(join(repo, '.mcp.json'), JSON.stringify({
       mcpServers: { alephbeis: { url: 'http://127.0.0.1:1/mcp' } },
@@ -614,16 +599,13 @@ exit 0
   })
 
   test('require records extra .mcp.json servers from the probe when doctor does not', async () => {
-    const repo = mkdtempSync(join(tmpdir(), 'orch-mcp-probe-wrong-project-'))
+    const repo = cloneRepository('orch-mcp-probe-wrong-project-')
     const git = (...args: string[]) => {
       const p = Bun.spawnSync(['git', ...args], {
         cwd: repo, env: hermeticGitEnv(), stdout: 'pipe', stderr: 'pipe',
       })
       if (p.exitCode !== 0) throw new Error(p.stderr.toString())
     }
-    git('init', '-b', 'main')
-    git('config', 'user.email', 'orch-test@example.invalid')
-    git('config', 'user.name', 'Orch Test')
     writeFileSync(join(repo, 'tracked.txt'), 'base\n')
     git('add', 'tracked.txt')
     writeFileSync(join(repo, '.mcp.json'), JSON.stringify({
@@ -689,16 +671,13 @@ exit 0
   })
 
   test('prefer with an unreachable server launches and records 0', async () => {
-    const repo = mkdtempSync(join(tmpdir(), 'orch-mcp-prefer-'))
+    const repo = cloneRepository('orch-mcp-prefer-')
     const git = (...args: string[]) => {
       const p = Bun.spawnSync(['git', ...args], {
         cwd: repo, env: hermeticGitEnv(), stdout: 'pipe', stderr: 'pipe',
       })
       if (p.exitCode !== 0) throw new Error(p.stderr.toString())
     }
-    git('init', '-b', 'main')
-    git('config', 'user.email', 'orch-test@example.invalid')
-    git('config', 'user.name', 'Orch Test')
     writeFileSync(join(repo, 'tracked.txt'), 'base\n')
     git('add', 'tracked.txt')
     writeFileSync(join(repo, '.mcp.json'), JSON.stringify({

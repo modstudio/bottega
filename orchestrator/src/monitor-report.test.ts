@@ -1,23 +1,14 @@
 import { describe,expect,spyOn,test } from 'bun:test'
-import { chmodSync,mkdirSync,mkdtempSync,realpathSync,rmSync,writeFileSync } from 'node:fs'
-import { tmpdir } from 'node:os'
+import { chmodSync,mkdirSync,rmSync,writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { PLATFORM_SLUG } from '../../shared/brand.ts'
-import { hermeticGitEnv } from '../test/fixtures/git.ts'
+import { cloneRepository } from '../test/fixtures/git.ts'
 import { addRun, dir } from '../test/fixtures/store.ts'
 import { db } from './db.ts'
 import { displayConditions, monitor, monitorHistory } from './monitor.ts'
 import { upsertProject } from './projects.ts'
 import { trackedTestResidue } from '../test/residue.ts'
 const trackResidue = trackedTestResidue()
-
-function git(cwd: string, ...args: string[]): string {
-  const result = Bun.spawnSync(['git', ...args], {
-    cwd, env: hermeticGitEnv(), stdout: 'pipe', stderr: 'pipe',
-  })
-  if (result.exitCode !== 0) throw new Error(result.stderr.toString())
-  return result.stdout.toString().trim()
-}
 
 function migrateHub(path: string): void {
   const result = Bun.spawnSync([process.execPath,
@@ -91,8 +82,7 @@ describe('operational monitor reports', () => {
   })
 
   test('does not mark a complete condition list partial when only issue filing fails', async () => {
-    const repo = realpathSync(mkdtempSync(join(tmpdir(), 'monitor-filing-failure-')))
-    git(repo, 'init', '-b', 'main')
+    const repo = cloneRepository('monitor-filing-failure-')
     writeFileSync(join(repo, '.git', 'index.lock'), '')
     const project = `monitor-filing-${repo.split('/').pop()}`
     upsertProject({ name: project, path: repo, settings: { trunk: 'main' } })

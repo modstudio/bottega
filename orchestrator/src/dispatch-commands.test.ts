@@ -3,6 +3,7 @@ import { mkdtempSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { declaredCreate } from '../test/fixtures/worktree.ts'
+import { cloneRepository } from '../test/fixtures/git.ts'
 import { db } from './db.ts'
 import { upsertProject } from './projects.ts'
 import { dispatchCommand } from './dispatch-commands.ts'
@@ -60,11 +61,8 @@ test('an explicit repo is validated before the prompt is read', async () => {
 })
 
 test('dispatch preflight enforces a clean registered main checkout', async () => {
-  const cwd = realpathSync(mkdtempSync(join(tmpdir(), 'orch-dirty-main-')))
+  const cwd = cloneRepository('orch-dirty-main-')
   try {
-    Bun.spawnSync(['git', 'init', '-q', '-b', 'main'], { cwd })
-    Bun.spawnSync(['git', 'config', 'user.email', 'test@example.com'], { cwd })
-    Bun.spawnSync(['git', 'config', 'user.name', 'Test'], { cwd })
     writeFileSync(join(cwd, 'tracked.txt'), 'before\n')
     Bun.spawnSync(['git', 'add', 'tracked.txt'], { cwd })
     Bun.spawnSync(['git', 'commit', '-qm', 'fixture'], { cwd })

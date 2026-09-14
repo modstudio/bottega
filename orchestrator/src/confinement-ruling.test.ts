@@ -1,9 +1,8 @@
 import { beforeEach, describe, expect, test } from 'bun:test'
-import { mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
-import { tmpdir } from 'node:os'
+import { mkdirSync, rmSync, writeFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { randomUUID } from 'node:crypto'
-import { hermeticGitEnv } from '../test/fixtures/git.ts'
+import { cloneRepository, hermeticGitEnv } from '../test/fixtures/git.ts'
 import { addRun } from '../test/fixtures/store.ts'
 import { db } from './db.ts'
 import { upsertProject } from './projects.ts'
@@ -13,17 +12,12 @@ import { refuseEscapedChain } from './run-control.ts'
 beforeEach(() => { process.env.CLAUDE_CODE_SESSION_ID = 'orch-test-session' })
 
 function fixture(kind: 'escaped' | 'confinement_unverified' = 'escaped') {
-  const repo = realpathSync(mkdtempSync(join(tmpdir(), 'orch-confinement-ruling-')))
+  const repo = cloneRepository('orch-confinement-ruling-')
   const git = (cwd: string, ...args: string[]) => {
     const child = Bun.spawnSync(['git', ...args], { cwd, env: hermeticGitEnv(), stdout: 'pipe', stderr: 'pipe' })
     if (child.exitCode !== 0) throw new Error(child.stderr.toString())
     return child.stdout.toString().trim()
   }
-  git(repo, 'init', '-b', 'main')
-  git(repo, 'config', 'user.email', 'orch-test@example.invalid')
-  git(repo, 'config', 'user.name', 'Orch Test')
-  writeFileSync(join(repo, 'base.txt'), 'base\n')
-  git(repo, 'add', 'base.txt'); git(repo, 'commit', '-m', 'base')
   const branch = 'confinement-work'
   const worktree = join(repo, 'trees', branch)
   mkdirSync(dirname(worktree), { recursive: true })

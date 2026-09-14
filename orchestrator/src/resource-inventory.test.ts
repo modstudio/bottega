@@ -1,8 +1,7 @@
 import { afterEach, expect, test } from 'bun:test'
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
-import { tmpdir } from 'node:os'
+import { mkdirSync, rmSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
-import { hermeticGitEnv } from '../test/fixtures/git.ts'
+import { cloneRepository, hermeticGitEnv } from '../test/fixtures/git.ts'
 import { addRun, reapTestProcess } from '../test/fixtures/store.ts'
 import { db } from './db.ts'
 import { terminalProcessAliveConditions, worktreeDatabaseConditions } from './monitor.ts'
@@ -133,7 +132,7 @@ test('a live run owns its database; a terminal run is reported and not dropped',
 })
 
 test('retained refs and ref-guard directories are inventoried without deletion', () => {
-  const repo = mkdtempSync(join(tmpdir(), 'orch-resource-inv-'))
+  const repo = cloneRepository('orch-resource-inv-')
   const git = (...args: string[]) => {
     const p = Bun.spawnSync(['git', ...args], {
       cwd: repo, env: hermeticGitEnv(), stdout: 'pipe', stderr: 'pipe',
@@ -142,11 +141,8 @@ test('retained refs and ref-guard directories are inventoried without deletion',
     return p.stdout.toString().trim()
   }
   try {
-    git('init', '-b', 'main')
     writeFileSync(join(repo, 'seed.txt'), 'seed\n')
     git('add', 'seed.txt')
-    git('config', 'user.email', 'orch-test@example.invalid')
-    git('config', 'user.name', 'Orch Test')
     git('commit', '-m', 'seed')
     const sha = git('rev-parse', 'HEAD')
     git('update-ref', 'refs/orch/retained/9', sha)

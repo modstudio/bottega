@@ -7,7 +7,7 @@ import { db } from '../../src/db.ts'
 import { canonSourceInstruction } from '../../src/mcp-preflight.ts'
 import { upsertProject } from '../../src/projects.ts'
 import { run as runJob } from '../../src/run.ts'
-import { hermeticGitEnv } from '../fixtures/git.ts'
+import { cloneRepository, hermeticGitEnv } from '../fixtures/git.ts'
 import { reviewReply } from '../fixtures/replies.ts'
 import { dir } from '../fixtures/store.ts'
 
@@ -84,10 +84,8 @@ test('a fan-out of grok --mcp records one pre-spawn refusal per worker tree', as
 })
 
 test('continue without parent output inherits prefer, re-probes, and keeps MIRROR explicit', async () => {
-  const repo = realpathSync(mkdtempSync(join(tmpdir(), 'orch-mcp-cwd-'))); roots.push(repo)
+  const repo = cloneRepository('orch-mcp-cwd-'); roots.push(repo)
   const git = (...args: string[]) => Bun.spawnSync(['git', ...args], { cwd: repo, env: hermeticGitEnv(), stdout: 'pipe', stderr: 'pipe' })
-  expect(git('init', '-b', 'main').exitCode).toBe(0)
-  git('config', 'user.email', 'orch-test@example.invalid'); git('config', 'user.name', 'Orch Test')
   writeFileSync(join(repo, 'tracked.txt'), 'base\n'); git('add', 'tracked.txt'); git('commit', '-m', 'base')
   writeFileSync(join(repo, '.mcp.json'), '{}\n'); upsertProject({ name: 'fixture-project', path: repo, settings: {} })
   const binDir = mkdtempSync(join(tmpdir(), 'orch-grok-prefer-continue-')); roots.push(binDir)

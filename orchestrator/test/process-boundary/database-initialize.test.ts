@@ -7,14 +7,14 @@ import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { missingDatabaseMessage, registeredRepositoryMissingDatabase, resolveDatabase, resolveRunsDirectory } from '../../src/database-location.ts'
 import { bootstrapFixtureStore } from '../../src/db.ts'
 import { projectAt, stackAt, upsertProject } from '../../src/projects.ts'
-import { hermeticGitEnv } from '../fixtures/git.ts'
+import { cloneRepository, hermeticGitEnv } from '../fixtures/git.ts'
 import { dir } from '../fixtures/store.ts'
 
 describe('projects are data, not code', () => {
 
   test('init-db is the explicit creation path and refuses an existing database', () => {
     const root = mkdtempSync(join(tmpdir(), 'orch-init-db-'))
-    const copy = join(root, 'main')
+    const copy = cloneRepository('orch-init-db-main-')
     const fresh = join(root, 'orchestrator', 'orch.db')
     const sourceRoot = join(dirname(new URL(import.meta.url).pathname), '../../..')
     mkdirSync(join(copy, 'orchestrator'), { recursive: true })
@@ -28,9 +28,6 @@ describe('projects are data, not code', () => {
       })
       if (result.exitCode !== 0) throw new Error(result.stderr.toString())
     }
-    git(copy, 'init', '-b', 'main')
-    git(copy, 'config', 'user.email', 'orch-test@example.invalid')
-    git(copy, 'config', 'user.name', 'Orch Test')
     git(copy, 'add', '.')
     git(copy, 'commit', '-m', 'DEV-321 main-checkout init-db')
     const entry = join(copy, 'orchestrator', 'src', 'orch.ts')

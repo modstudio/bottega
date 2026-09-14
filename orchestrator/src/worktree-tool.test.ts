@@ -1,8 +1,7 @@
 import { describe, expect, test } from "bun:test"
-import { mkdtempSync, rmSync, readFileSync, writeFileSync, existsSync, mkdirSync, chmodSync } from "node:fs"
-import { tmpdir } from "node:os"
+import { rmSync, readFileSync, writeFileSync, existsSync, mkdirSync, chmodSync } from "node:fs"
 import { join } from "node:path"
-import { hermeticGitCommand } from '../test/fixtures/git.ts'
+import { cloneRepository, hermeticGitCommand } from '../test/fixtures/git.ts'
 import { compoundCreate, declaredCreate, worktreeDescribeFixture } from '../test/fixtures/worktree.ts'
 import { db } from './db.ts'
 import { preflight } from './dispatch-preflight.ts'
@@ -10,7 +9,7 @@ import { upsertProject } from './projects.ts'
 import { run as runJob } from './run.ts'
 import { createWithTool } from './worktree.ts'
 describe('worktree tool capability', () => {
-const { fromRoot, git, scratchRepo } = worktreeDescribeFixture()
+const { fromRoot, scratchRepo } = worktreeDescribeFixture()
 test('preflight passes a project-specific seed spec intact to the project resolver', () => {
     const { repo } = scratchRepo()
     mkdirSync(join(repo, 'scripts'), { recursive: true })
@@ -52,8 +51,7 @@ exit 1
   })
 
 test('a resolver refusal happens before a run row or worktree can exist', async () => {
-    const repo = mkdtempSync(join(tmpdir(), 'orch-rejected-seed-'))
-    git(repo, 'init', '-b', 'main')
+    const repo = cloneRepository('orch-rejected-seed-')
     mkdirSync(join(repo, 'scripts'), { recursive: true })
     const created = join(repo, 'create-ran')
     const tool = join(repo, 'scripts', 'worktree')

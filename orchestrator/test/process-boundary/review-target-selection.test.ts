@@ -9,7 +9,7 @@ import { upsertProject } from '../../src/projects.ts'
 import { implicitReviewWarning, resolveReviewTarget } from '../../src/review-target.ts'
 import { completeReview, coverageAudit } from '../../src/review.ts'
 import { run as runJob } from '../../src/run.ts'
-import { hermeticGitEnv } from '../fixtures/git.ts'
+import { cloneRepository, hermeticGitEnv } from '../fixtures/git.ts'
 import { reviewReply } from '../fixtures/replies.ts'
 import { addRun, dir } from '../fixtures/store.ts'
 
@@ -19,7 +19,7 @@ const trackResidue = trackedTestResidue()
 
 describe('review-lens-inline has no checkout', () => {
 test('explicit review refs select and record the reviewed branch tip', async () => {
-    const repo = mkdtempSync(join(tmpdir(), 'orch-explicit-review-'))
+    const repo = cloneRepository('orch-explicit-review-')
     const branchTree = join(repo, 'feature-tree')
     const cwdCapture = trackResidue(join(dir, 'report-explicit-review.cwd'))
     const script = stubWorker({ captureCwd: true })
@@ -37,9 +37,6 @@ test('explicit review refs select and record the reviewed branch tip', async () 
       return p.stdout.toString().trim()
     }
     try {
-      git(repo, 'init', '-b', 'main')
-      git(repo, 'config', 'user.email', 'orch-test@example.invalid')
-      git(repo, 'config', 'user.name', 'Orch Test')
       writeFileSync(join(repo, 'subject.txt'), 'trunk\n')
       git(repo, 'add', 'subject.txt')
       git(repo, 'commit', '-m', 'fixture trunk')
@@ -132,7 +129,7 @@ test('explicit review refs select and record the reviewed branch tip', async () 
     }
   })
 test('runs from an empty directory while review-lens still receives the project tree', async () => {
-    const repo = mkdtempSync(join(tmpdir(), 'orch-inline-boundary-'))
+    const repo = cloneRepository('orch-inline-boundary-')
     const cwdCapture = trackResidue(join(dir, 'report-worker-cwd.cwd'))
     const stdinCapture = trackResidue(join(dir, 'report-worker-cwd.stdin'))
     const factsCapture = trackResidue(join(dir, 'report-worker-cwd.facts'))
@@ -157,9 +154,6 @@ test('runs from an empty directory while review-lens still receives the project 
       return p.stdout.toString().trim()
     }
     try {
-      runGit('init', '-b', 'main')
-      runGit('config', 'user.email', 'orch-test@example.invalid')
-      runGit('config', 'user.name', 'Orch Test')
       mkdirSync(join(repo, 'subdir'))
       writeFileSync(join(repo, '.gitignore'), 'ignored.txt\n')
       writeFileSync(join(repo, 'project-only.txt'), 'wrong tree evidence\n')

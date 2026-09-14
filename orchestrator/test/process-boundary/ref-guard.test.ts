@@ -7,7 +7,7 @@ import { writingFailoverRefusal } from '../../src/failover.ts'
 import { JOBS } from '../../src/jobs.ts'
 import { gitObjectEnvironmentFor, run as runJob } from '../../src/run.ts'
 import { changesIn, createWorktree, prepareSharedRefGuard, removeFor } from '../../src/worktree.ts'
-import { hermeticGitEnv } from '../fixtures/git.ts'
+import { cloneRepository, hermeticGitEnv } from '../fixtures/git.ts'
 import { addRun, reapTestProcess } from '../fixtures/store.ts'
 import { worktreeDescribeFixture } from '../fixtures/worktree.ts'
 
@@ -15,16 +15,11 @@ import { scriptedTransportSequence } from "../fake-transport.ts"
 describe("a worktree is resolved against the main checkout, not the caller cwd", () => {
   const { git, scratchRepo, markScratchRepoOwner } = worktreeDescribeFixture()
   test('resumed child cleanup removes only the discarding run guard, not the marker owner guard', () => {
-    const repo = mkdtempSync(join(tmpdir(), 'orch-guard-resumed-cleanup-'))
+    const repo = cloneRepository('orch-guard-resumed-cleanup-')
     const git = (args: string[]) => Bun.spawnSync(['git', ...args], {
       cwd: repo, env: hermeticGitEnv(), stdout: 'pipe', stderr: 'pipe',
     })
     try {
-      expect(git(['init', '-b', 'main']).exitCode).toBe(0)
-      writeFileSync(join(repo, 'base.txt'), 'base\n')
-      expect(git(['add', 'base.txt']).exitCode).toBe(0)
-      expect(git(['-c', 'user.email=orch-test@example.invalid', '-c', 'user.name=Orch Test',
-        'commit', '-m', 'base']).exitCode).toBe(0)
       const root = 251
       const resumedChild = 252
       const tree = createWorktree(repo, root)
@@ -41,13 +36,12 @@ describe("a worktree is resolved against the main checkout, not the caller cwd",
   })
 
   test('a resumed no-repository job still prepares the shared ref guard', async () => {
-    const repo = mkdtempSync(join(tmpdir(), 'orch-no-repo-resume-'))
+    const repo = cloneRepository('orch-no-repo-resume-')
     const promptPath = join(repo, 'root.prompt.txt')
     const git = (args: string[]) => Bun.spawnSync(['git', ...args], {
       cwd: repo, env: hermeticGitEnv(), stdout: 'pipe', stderr: 'pipe',
     })
     try {
-      expect(git(['init', '-b', 'main']).exitCode).toBe(0)
       writeFileSync(join(repo, 'seed.txt'), 'seed\n')
       expect(git(['add', 'seed.txt']).exitCode).toBe(0)
       expect(git(['-c', 'user.name=Orch Test', '-c', 'user.email=orch@example.invalid',
@@ -113,17 +107,12 @@ describe("a worktree is resolved against the main checkout, not the caller cwd",
 
 describe('shared ref guard publication boundary', () => {
 test('a killed preparation never publishes a partial hooks directory', async () => {
-    const repo = mkdtempSync(join(tmpdir(), 'orch-guard-killed-publication-'))
+    const repo = cloneRepository('orch-guard-killed-publication-')
     const git = (cwd: string, args: string[], env: Record<string, string> = {}) =>
       Bun.spawnSync(['git', ...args], {
         cwd, env: hermeticGitEnv(env), stdout: 'pipe', stderr: 'pipe',
     })
     try {
-      expect(git(repo, ['init', '-b', 'main']).exitCode).toBe(0)
-      writeFileSync(join(repo, 'base.txt'), 'base\n')
-      expect(git(repo, ['add', 'base.txt']).exitCode).toBe(0)
-      expect(git(repo, ['-c', 'user.email=orch-test@example.invalid',
-        '-c', 'user.name=Orch Test', 'commit', '-m', 'base']).exitCode).toBe(0)
       const projectHooks = join(repo, 'project-hooks')
       mkdirSync(projectHooks)
       const projectHook = join(projectHooks, 'reference-transaction')
@@ -177,16 +166,11 @@ test('a killed preparation never publishes a partial hooks directory', async () 
   }, 120_000)
 
 test('a wrapper delegating to a non-executable guard is rejected', () => {
-    const repo = mkdtempSync(join(tmpdir(), 'orch-guard-broken-mode-'))
+    const repo = cloneRepository('orch-guard-broken-mode-')
     const git = (cwd: string, args: string[]) => Bun.spawnSync(['git', ...args], {
       cwd, env: hermeticGitEnv(), stdout: 'pipe', stderr: 'pipe',
     })
     try {
-      expect(git(repo, ['init', '-b', 'main']).exitCode).toBe(0)
-      writeFileSync(join(repo, 'base.txt'), 'base\n')
-      expect(git(repo, ['add', 'base.txt']).exitCode).toBe(0)
-      expect(git(repo, ['-c', 'user.email=orch-test@example.invalid',
-        '-c', 'user.name=Orch Test', 'commit', '-m', 'base']).exitCode).toBe(0)
       const projectHooks = join(repo, 'project-hooks')
       mkdirSync(projectHooks)
       const projectHook = join(projectHooks, 'reference-transaction')
@@ -216,16 +200,11 @@ test('a wrapper delegating to a non-executable guard is rejected', () => {
   })
 
 test('concurrent shared-ref guard preparations publish one complete executable wrapper', async () => {
-    const repo = mkdtempSync(join(tmpdir(), 'orch-guard-concurrent-'))
+    const repo = cloneRepository('orch-guard-concurrent-')
     const git = (cwd: string, args: string[]) => Bun.spawnSync(['git', ...args], {
       cwd, env: hermeticGitEnv(), stdout: 'pipe', stderr: 'pipe',
     })
     try {
-      expect(git(repo, ['init', '-b', 'main']).exitCode).toBe(0)
-      writeFileSync(join(repo, 'base.txt'), 'base\n')
-      expect(git(repo, ['add', 'base.txt']).exitCode).toBe(0)
-      expect(git(repo, ['-c', 'user.email=orch-test@example.invalid',
-        '-c', 'user.name=Orch Test', 'commit', '-m', 'base']).exitCode).toBe(0)
       const projectHooks = join(repo, 'project-hooks')
       mkdirSync(projectHooks)
       const projectHook = join(projectHooks, 'reference-transaction')
@@ -261,16 +240,11 @@ test('concurrent shared-ref guard preparations publish one complete executable w
   }, 15_000)
 
 test('shared-ref guard refuses a self-referencing original without changing it', () => {
-    const repo = mkdtempSync(join(tmpdir(), 'orch-guard-self-reference-'))
+    const repo = cloneRepository('orch-guard-self-reference-')
     const git = (cwd: string, args: string[]) => Bun.spawnSync(['git', ...args], {
       cwd, env: hermeticGitEnv(), stdout: 'pipe', stderr: 'pipe',
     })
     try {
-      expect(git(repo, ['init', '-b', 'main']).exitCode).toBe(0)
-      writeFileSync(join(repo, 'base.txt'), 'base\n')
-      expect(git(repo, ['add', 'base.txt']).exitCode).toBe(0)
-      expect(git(repo, ['-c', 'user.email=orch-test@example.invalid',
-        '-c', 'user.name=Orch Test', 'commit', '-m', 'base']).exitCode).toBe(0)
       const tree = createWorktree(repo, 226)
       const hookDir = join(realpathSync(repo), '.git', 'orch-guards', '226')
       const installed = join(hookDir, 'reference-transaction')
@@ -291,18 +265,13 @@ test('shared-ref guard refuses a self-referencing original without changing it',
   })
 
 test('shared-ref guard refuses a project hook symlinked to the tracked guard', () => {
-    const repo = mkdtempSync(join(tmpdir(), 'orch-guard-shared-symlink-'))
+    const repo = cloneRepository('orch-guard-shared-symlink-')
     const git = (cwd: string, args: string[]) => Bun.spawnSync(['git', ...args], {
       cwd, env: hermeticGitEnv(), stdout: 'pipe', stderr: 'pipe',
     })
     const sharedGuard = realpathSync(new URL('../../hooks/reference-transaction', import.meta.url).pathname)
     const sharedBefore = readFileSync(sharedGuard)
     try {
-      expect(git(repo, ['init', '-b', 'main']).exitCode).toBe(0)
-      writeFileSync(join(repo, 'base.txt'), 'base\n')
-      expect(git(repo, ['add', 'base.txt']).exitCode).toBe(0)
-      expect(git(repo, ['-c', 'user.email=orch-test@example.invalid',
-        '-c', 'user.name=Orch Test', 'commit', '-m', 'base']).exitCode).toBe(0)
       const tree = createWorktree(repo, 227)
       const projectHooks = join(repo, '.githooks')
       mkdirSync(projectHooks)
@@ -321,17 +290,12 @@ test('shared-ref guard refuses a project hook symlinked to the tracked guard', (
   })
 
 test('shared-ref guard refuses an unwritable hook path without cleaning it', () => {
-    const repo = mkdtempSync(join(tmpdir(), 'orch-guard-unwritable-'))
+    const repo = cloneRepository('orch-guard-unwritable-')
     const git = (cwd: string, args: string[]) => Bun.spawnSync(['git', ...args], {
       cwd, env: hermeticGitEnv(), stdout: 'pipe', stderr: 'pipe',
     })
     let hookDir: string | null = null
     try {
-      expect(git(repo, ['init', '-b', 'main']).exitCode).toBe(0)
-      writeFileSync(join(repo, 'base.txt'), 'base\n')
-      expect(git(repo, ['add', 'base.txt']).exitCode).toBe(0)
-      expect(git(repo, ['-c', 'user.email=orch-test@example.invalid',
-        '-c', 'user.name=Orch Test', 'commit', '-m', 'base']).exitCode).toBe(0)
       const tree = createWorktree(repo, 228)
       hookDir = join(realpathSync(repo), '.git', 'orch-guards', '228')
       mkdirSync(hookDir, { recursive: true })
@@ -350,7 +314,7 @@ test('shared-ref guard refuses an unwritable hook path without cleaning it', () 
   })
 
 test('the shared-ref guard permits real rebase and merge bookkeeping', () => {
-    const repo = mkdtempSync(join(tmpdir(), 'orch-worker-porcelain-'))
+    const repo = cloneRepository('orch-worker-porcelain-')
     const git = (cwd: string, args: string[], env: Record<string, string> = {}) =>
       Bun.spawnSync(['git', ...args], {
         cwd, env: hermeticGitEnv(env), stdout: 'pipe', stderr: 'pipe',
@@ -361,13 +325,6 @@ test('the shared-ref guard permits real rebase and merge bookkeeping', () => {
       return p.stdout.toString().trim()
     }
     try {
-      ok(repo, ['init', '-b', 'main'])
-      ok(repo, ['config', 'user.email', 'orch-test@example.invalid'])
-      ok(repo, ['config', 'user.name', 'Orch Test'])
-      writeFileSync(join(repo, 'base.txt'), 'base\n')
-      ok(repo, ['add', 'base.txt'])
-      ok(repo, ['commit', '-m', 'base'])
-
       const tree = createWorktree(repo, 199)
       const guard = prepareSharedRefGuard(tree.path, `refs/heads/${tree.branch}`)
       writeFileSync(join(tree.path, 'worker-one.txt'), 'worker one\n')
@@ -399,7 +356,7 @@ test('the shared-ref guard permits real rebase and merge bookkeeping', () => {
   })
 
 test('worker commits are durable while the guard protects every other ref', () => {
-    const repo = mkdtempSync(join(tmpdir(), 'orch-land-common-objects-'))
+    const repo = cloneRepository('orch-land-common-objects-')
     const git = (cwd: string, args: string[], env: Record<string, string> = {}) => {
       const p = Bun.spawnSync(['git', ...args], {
         cwd, env: hermeticGitEnv(env), stdout: 'pipe', stderr: 'pipe',
@@ -408,9 +365,6 @@ test('worker commits are durable while the guard protects every other ref', () =
       return p.stdout.toString().trim()
     }
     try {
-      git(repo, ['init', '-b', 'main'])
-      git(repo, ['config', 'user.email', 'orch-test@example.invalid'])
-      git(repo, ['config', 'user.name', 'Orch Test'])
       writeFileSync(join(repo, 'kept.txt'), 'base\n')
       git(repo, ['add', 'kept.txt'])
       git(repo, ['commit', '-m', 'base'])

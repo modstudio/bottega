@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'bun:test'
-import { mkdtempSync, realpathSync, rmSync } from 'node:fs'
-import { tmpdir } from 'node:os'
+import { realpathSync, rmSync } from 'node:fs'
 import { join } from 'node:path'
+import { cloneRepository } from '../test/fixtures/git.ts'
 import { db } from './db.ts'
 import {
   DOCKER_INVENTORY_TIMEOUT_BY_SIZE,
@@ -53,14 +53,10 @@ describe('flake command', () => {
 
 describe('main checkout flake store', () => {
   test('count and record invoke the main checkout binary', () => {
-    const repo = mkdtempSync(join(tmpdir(), 'orch-flake-main-'))
+    const repo = cloneRepository('orch-flake-main-')
     const linked = `${repo}-linked`
     try {
       for (const argv of [
-        ['git', 'init', '-b', 'main'],
-        ['git', 'config', 'user.email', 'orch-test@example.invalid'],
-        ['git', 'config', 'user.name', 'Orch Test'],
-        ['git', 'commit', '--allow-empty', '-m', 'fixture'],
         ['git', 'worktree', 'add', '-b', 'linked', linked],
       ]) {
         const result = Bun.spawnSync(argv, { cwd: repo, stdout: 'pipe', stderr: 'pipe' })

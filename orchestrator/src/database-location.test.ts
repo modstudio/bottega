@@ -1,10 +1,10 @@
 import { describe, expect, test } from 'bun:test'
 import { Database } from 'bun:sqlite'
-import { mkdtempSync, rmSync, writeFileSync, existsSync, realpathSync, mkdirSync, chmodSync } from 'node:fs'
+import { mkdtempSync, renameSync, rmSync, writeFileSync, existsSync, realpathSync, mkdirSync, chmodSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { PLATFORM_SLUG } from '../../shared/brand.ts'
-import { hermeticGitEnv } from '../test/fixtures/git.ts'
+import { cloneRepository, hermeticGitEnv } from '../test/fixtures/git.ts'
 import { dir } from '../test/fixtures/store.ts'
 import { missingDatabaseMessage, registeredRepositoryMissingDatabase, resolveDatabase, resolveRunsDirectory } from './database-location.ts'
 import { bootstrapFixtureStore } from './db.ts'
@@ -17,7 +17,7 @@ describe('projects are data, not code', () => {
   })
 
   test('database resolution follows a linked worktree to its git common directory', () => {
-    const repo = realpathSync(mkdtempSync(join(tmpdir(), 'orch-db-location-')))
+    const repo = cloneRepository('orch-db-location-')
     const tree = join(repo, 'tree')
     const git = (cwd: string, ...args: string[]) => {
       const result = Bun.spawnSync(['git', ...args], {
@@ -26,9 +26,6 @@ describe('projects are data, not code', () => {
       if (result.exitCode !== 0) throw new Error(result.stderr.toString())
     }
     try {
-      git(repo, 'init', '-b', 'main')
-      git(repo, 'config', 'user.email', 'orch-test@example.invalid')
-      git(repo, 'config', 'user.name', 'Orch Test')
       writeFileSync(join(repo, 'tracked'), 'fixture\n')
       git(repo, 'add', 'tracked')
       git(repo, 'commit', '-m', 'fixture')
@@ -46,7 +43,7 @@ describe('projects are data, not code', () => {
   })
 
   test('an unreadable common directory is recovered from the linked worktree pointer for either binary', () => {
-    const repo = realpathSync(mkdtempSync(join(tmpdir(), 'orch-db-pointer-')))
+    const repo = cloneRepository('orch-db-pointer-')
     const tree = join(repo, 'tree')
     const databasePath = join(repo, 'orchestrator', 'orch.db')
     const override = join(repo, 'override.db')
@@ -57,9 +54,6 @@ describe('projects are data, not code', () => {
       if (result.exitCode !== 0) throw new Error(result.stderr.toString())
     }
     try {
-      git(repo, 'init', '-b', 'main')
-      git(repo, 'config', 'user.email', 'orch-test@example.invalid')
-      git(repo, 'config', 'user.name', 'Orch Test')
       writeFileSync(join(repo, 'tracked'), 'fixture\n')
       git(repo, 'add', 'tracked')
       git(repo, 'commit', '-m', 'fixture')
@@ -86,17 +80,10 @@ describe('projects are data, not code', () => {
   })
 
   test('a sibling repository with no database falls through to the main binary database', () => {
-    const main = realpathSync(mkdtempSync(join(tmpdir(), 'orch-db-sibling-')))
-    const sibling = join(main, 'sibling')
+    const main = cloneRepository('orch-db-sibling-')
+    const sibling = cloneRepository('orch-db-sibling-peer-')
     const binaryRoot = join(main, 'orchestrator')
     try {
-      mkdirSync(sibling)
-      for (const cwd of [main, sibling]) {
-        const initialized = Bun.spawnSync(['git', 'init', '-b', 'main'], {
-          cwd, env: hermeticGitEnv(), stdout: 'pipe', stderr: 'pipe',
-        })
-        expect(initialized.exitCode).toBe(0)
-      }
       mkdirSync(binaryRoot)
       const candidate = join(sibling, 'orchestrator', 'orch.db')
       expect(resolveDatabase(sibling, {}, binaryRoot)).toMatchObject({
@@ -109,7 +96,7 @@ describe('projects are data, not code', () => {
   })
 
   test('a missing database in this source repository is retained for refusal and main-only initialization', () => {
-    const repo = realpathSync(mkdtempSync(join(tmpdir(), 'orch-db-own-missing-')))
+    const repo = cloneRepository('orch-db-own-missing-')
     const tree = join(repo, 'tree')
     const candidate = join(repo, 'orchestrator', 'orch.db')
     const git = (cwd: string, ...args: string[]) => {
@@ -119,9 +106,6 @@ describe('projects are data, not code', () => {
       if (result.exitCode !== 0) throw new Error(result.stderr.toString())
     }
     try {
-      git(repo, 'init', '-b', 'main')
-      git(repo, 'config', 'user.email', 'orch-test@example.invalid')
-      git(repo, 'config', 'user.name', 'Orch Test')
       writeFileSync(join(repo, 'tracked'), 'fixture\n')
       git(repo, 'add', 'tracked')
       git(repo, 'commit', '-m', 'fixture')
@@ -145,20 +129,16 @@ describe('projects are data, not code', () => {
 
   test('a bare repository is its own root and never borrows its parent database', () => {
     const parent = realpathSync(mkdtempSync(join(tmpdir(), 'orch-db-bare-')))
-    const main = join(parent, 'main')
+    const main = cloneRepository('orch-db-bare-main-')
     const bare = join(parent, 'repository.git')
     const binaryRoot = join(main, 'orchestrator')
     const wrong = join(parent, 'orchestrator', 'orch.db')
     const right = join(bare, 'orchestrator', 'orch.db')
+    const git = (...args: string[]) => Bun.spawnSync(['git', ...args], {
+      cwd: parent, env: hermeticGitEnv(), stdout: 'pipe', stderr: 'pipe',
+    })
     try {
-      mkdirSync(main)
-      const mainInitialized = Bun.spawnSync(['git', 'init', '-b', 'main'], {
-        cwd: main, env: hermeticGitEnv(), stdout: 'pipe', stderr: 'pipe',
-      })
-      expect(mainInitialized.exitCode).toBe(0)
-      const initialized = Bun.spawnSync(['git', 'init', '--bare', bare], {
-        env: hermeticGitEnv(), stdout: 'pipe', stderr: 'pipe',
-      })
+      const initialized = git('init', '--bare', bare)
       expect(initialized.exitCode).toBe(0)
       mkdirSync(dirname(wrong), { recursive: true })
       writeFileSync(wrong, 'wrong database')
@@ -178,11 +158,7 @@ describe('projects are data, not code', () => {
   })
 
   test('the opened register can identify a missing platform database after pre-open fallback', () => {
-    const main = realpathSync(mkdtempSync(join(tmpdir(), 'orch-db-register-')))
-    const initialized = Bun.spawnSync(['git', 'init', '-b', 'main'], {
-      cwd: main, env: hermeticGitEnv(), stdout: 'pipe', stderr: 'pipe',
-    })
-    expect(initialized.exitCode).toBe(0)
+    const main = cloneRepository('orch-db-register-')
     mkdirSync(join(main, 'orchestrator'))
     const resolution = {
       ...resolveDatabase('/outside', {}, join(main, 'orchestrator')),
@@ -197,7 +173,7 @@ describe('projects are data, not code', () => {
   })
 
   test('runs and pending use the main database from a linked worktree without an override', () => {
-    const repo = realpathSync(mkdtempSync(join(tmpdir(), 'orch-db-cli-')))
+    const repo = cloneRepository('orch-db-cli-')
     const tree = join(repo, '.claude', 'worktrees', 'test-tree')
     const databasePath = join(repo, 'orchestrator', 'orch.db')
     const git = (cwd: string, ...args: string[]) => {
@@ -207,9 +183,6 @@ describe('projects are data, not code', () => {
       if (result.exitCode !== 0) throw new Error(result.stderr.toString())
     }
     try {
-      git(repo, 'init', '-b', 'main')
-      git(repo, 'config', 'user.email', 'orch-test@example.invalid')
-      git(repo, 'config', 'user.name', 'Orch Test')
       writeFileSync(join(repo, 'tracked'), 'fixture\n')
       git(repo, 'add', 'tracked')
       git(repo, 'commit', '-m', 'fixture')
@@ -238,7 +211,9 @@ describe('projects are data, not code', () => {
 
   test('an externally located linked binary resolves main and may never initialize beside itself', () => {
     const parent = realpathSync(mkdtempSync(join(tmpdir(), 'orch-db-external-binary-')))
+    const clonedMain = cloneRepository('orch-db-external-main-')
     const main = join(parent, 'main')
+    renameSync(clonedMain, main)
     const tree = join(parent, 'external-linked')
     const mainRoot = join(main, 'orchestrator')
     const binaryRoot = join(tree, 'orchestrator')
@@ -250,10 +225,6 @@ describe('projects are data, not code', () => {
       if (result.exitCode !== 0) throw new Error(result.stderr.toString())
     }
     try {
-      mkdirSync(main)
-      git(main, 'init', '-b', 'main')
-      git(main, 'config', 'user.email', 'orch-test@example.invalid')
-      git(main, 'config', 'user.name', 'Orch Test')
       writeFileSync(join(main, 'tracked'), 'fixture\n')
       git(main, 'add', 'tracked')
       git(main, 'commit', '-m', 'fixture')

@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test'; import { createHash } from 'node:crypto'; import { chmodSync, mkdirSync, mkdtempSync, rmSync, readFileSync, statSync, utimesSync, writeFileSync, existsSync } from 'node:fs'; import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { hermeticGitEnv } from '../test/fixtures/git.ts'
+import { cloneRepository, hermeticGitEnv } from '../test/fixtures/git.ts'
 import { addRun } from '../test/fixtures/store.ts'
 import { db } from './db.ts'
 import { dbNameFor, recipeNotes, runRecipe } from './recipe.ts'
@@ -149,10 +149,7 @@ describe('main checkout cleanliness', () => {
     return result.stdout.toString().trim()
   }
   const scratch = () => {
-    const repo = mkdtempSync(join(tmpdir(), 'orch-main-clean-'))
-    git(repo, 'init', '-b', 'main')
-    git(repo, 'config', 'user.email', 'orch-test@example.invalid')
-    git(repo, 'config', 'user.name', 'Orch Test')
+    const repo = cloneRepository('orch-main-clean-')
     writeFileSync(join(repo, 'tracked.txt'), 'fixture\n')
     writeFileSync(join(repo, '.gitignore'), 'ignored.txt\n')
     git(repo, 'add', '.')

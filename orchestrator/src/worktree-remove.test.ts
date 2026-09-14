@@ -1,8 +1,8 @@
 import { describe, expect, test } from 'bun:test'
-import { existsSync, mkdirSync, mkdtempSync, renameSync, rmSync } from 'node:fs'
+import { existsSync, mkdtempSync, renameSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { hermeticGitEnv } from '../test/fixtures/git.ts'
+import { cloneRepository, hermeticGitEnv } from '../test/fixtures/git.ts'
 import { removeWorktree, type Worktree } from './worktree.ts'
 
 function git(cwd: string, ...args: string[]): string {
@@ -21,13 +21,9 @@ function fixture(): {
   bAdmin: string
 } {
   const root = mkdtempSync(join(tmpdir(), 'orch-worktree-remove-'))
-  const repo = join(root, 'repo')
+  const repo = cloneRepository('orch-worktree-remove-repo-')
   const aPath = join(root, 'wt-a')
   const bPath = join(root, 'wt-b')
-  mkdirSync(repo)
-  git(repo, 'init', '-b', 'main')
-  git(repo, 'config', 'user.email', 'orch-test@example.invalid')
-  git(repo, 'config', 'user.name', 'Orch Test')
   git(repo, 'commit', '--allow-empty', '-m', 'fixture')
   git(repo, 'worktree', 'add', '-b', 'branch-a', aPath, 'HEAD')
   git(repo, 'worktree', 'add', '-b', 'branch-b', bPath, 'HEAD')

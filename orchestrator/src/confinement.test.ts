@@ -1,5 +1,6 @@
 import { describe, expect, test } from 'bun:test'
-import { chmodSync, mkdirSync, mkdtempSync, rmSync, symlinkSync, utimesSync, writeFileSync } from 'node:fs'
+import { cloneRepository } from '../test/fixtures/git.ts'
+import { chmodSync, mkdirSync, mkdtempSync, renameSync, rmSync, symlinkSync, utimesSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { addRun } from '../test/fixtures/store.ts'
@@ -167,7 +168,7 @@ describe('divergence classification', () => {
 
 describe('untrusted index sample', () => {
   test('a sample within one second of index mtime is re-taken', () => {
-    const repo = mkdtempSync(join(tmpdir(), 'orch-racy-index-'))
+    const repo = cloneRepository('orch-racy-index-')
     const git = (...args: string[]) => {
       const p = Bun.spawnSync(['git', ...args], {
         cwd: repo, env: { ...process.env, GIT_CONFIG_NOSYSTEM: '1', GIT_CONFIG_GLOBAL: '/dev/null' },
@@ -175,9 +176,6 @@ describe('untrusted index sample', () => {
       })
       if (p.exitCode !== 0) throw new Error(p.stderr.toString())
     }
-    git('init', '-b', 'main')
-    git('config', 'user.email', 'orch-test@example.invalid')
-    git('config', 'user.name', 'Orch Test')
     writeFileSync(join(repo, 'tracked'), 'x\n')
     git('add', 'tracked')
     git('commit', '-m', 'seed')
@@ -204,7 +202,7 @@ describe('symlinked tmpdir freeze', () => {
     mkdirSync(real)
     symlinkSync(real, link)
     const repo = join(link, 'repo')
-    mkdirSync(repo)
+    renameSync(cloneRepository('orch-symlink-repo-'), repo)
     const git = (...args: string[]) => {
       const p = Bun.spawnSync(['git', ...args], {
         cwd: repo, env: { ...process.env, GIT_CONFIG_NOSYSTEM: '1', GIT_CONFIG_GLOBAL: '/dev/null' },
@@ -212,9 +210,6 @@ describe('symlinked tmpdir freeze', () => {
       })
       if (p.exitCode !== 0) throw new Error(p.stderr.toString())
     }
-    git('init', '-b', 'main')
-    git('config', 'user.email', 'orch-test@example.invalid')
-    git('config', 'user.name', 'Orch Test')
     writeFileSync(join(repo, 'tracked'), 'x\n')
     git('add', 'tracked')
     git('commit', '-m', 'seed')

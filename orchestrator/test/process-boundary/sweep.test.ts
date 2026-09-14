@@ -10,7 +10,7 @@ import { upsertProject } from '../../src/projects.ts'
 import { run as runJob } from '../../src/run.ts'
 import { createReadOnlyWorktree, createWorktree, prepareSharedRefGuard } from '../../src/worktree.ts'
 import { fakeDocker, fakeDockerCommand } from '../fixtures/docker.ts'
-import { hermeticGitCommand, hermeticGitEnv } from '../fixtures/git.ts'
+import { cloneRepository, hermeticGitCommand, hermeticGitEnv } from '../fixtures/git.ts'
 import { addRun, score } from '../fixtures/store.ts'
 import { declaredCreate } from '../fixtures/worktree.ts'
 
@@ -162,10 +162,7 @@ exec ${JSON.stringify(actualGit)} "$@"
     return { dir, env: { PATH: `${dir}:${process.env.PATH ?? ''}` } }
   }
   const scratchRepo = () => {
-    const repo = mkdtempSync(join(tmpdir(), 'orch-sweep-'))
-    git(repo, 'init', '-b', 'main')
-    git(repo, 'config', 'user.email', 'orch-test@example.invalid')
-    git(repo, 'config', 'user.name', 'Orch Test')
+    const repo = cloneRepository('orch-sweep-')
     writeFileSync(join(repo, 'kept.txt'), 'base\n')
     git(repo, 'add', 'kept.txt')
     git(repo, 'commit', '-m', 'base')

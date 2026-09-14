@@ -1,8 +1,8 @@
 import { beforeEach, expect, test } from 'bun:test'
-import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
-import { tmpdir } from 'node:os'
+import { existsSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { addRun, dir } from '../test/fixtures/store.ts'
+import { cloneRepository } from '../test/fixtures/git.ts'
 import { db } from './db.ts'
 import { candidates } from './route.ts'
 import { createWorktree } from './worktree.ts'
@@ -67,7 +67,7 @@ test('stop does not signal an unverified agent pid and keeps its recorded worktr
 
 test('stop keeps a shared worktree and reports its container retention', async () => {
   const stopped = insert('running'); const owner = insert('asking')
-  const worktree = mkdtempSync(join(tmpdir(), 'orch-stop-shared-')); Bun.spawnSync(['git', 'init', '-q', worktree])
+  const worktree = cloneRepository('orch-stop-shared-')
   const evidence = join(worktree, 'evidence.txt'); writeFileSync(evidence, 'unjudged work\n')
   db().query('UPDATE run SET worktree=?,branch=? WHERE id=?').run(worktree, `orch/${stopped}`, stopped)
   db().query('UPDATE run SET worktree=?,branch=? WHERE id=?').run(worktree, `orch/${stopped}`, owner)

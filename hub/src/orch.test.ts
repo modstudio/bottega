@@ -10,6 +10,8 @@ import {
   startDashboardCapability, stopDashboardCapability,
 } from './orch.ts'
 import { encodeOrchRunLine, OrchBlockersSchema } from '../../shared/orch-contract.ts'
+import { scrubbedGitEnv } from '../../shared/git.ts'
+import { cloneRepository } from '../../shared/test-git-repository.ts'
 
 const runFixture = {
   id: 42,
@@ -225,19 +227,20 @@ describe('docSet stdin', () => {
     const body = "quote' backtick` newline\n"
     try {
       const sourceRoot = join(dirname(new URL(import.meta.url).pathname), '../..')
-      const copy = mkdtempSync(join(tmpdir(), 'hub-orch-main-'))
+      const gitEnv = {
+        ...scrubbedGitEnv(), HOME: dir,
+        GIT_CONFIG_GLOBAL: '/dev/null', GIT_CONFIG_SYSTEM: '/dev/null',
+      }
+      const copy = cloneRepository(gitEnv, 'hub-orch-main-')
       mkdirSync(join(copy, 'orchestrator'), { recursive: true })
       cpSync(join(sourceRoot, 'orchestrator', 'src'), join(copy, 'orchestrator', 'src'), { recursive: true })
       cpSync(join(sourceRoot, 'orchestrator', 'migrations'), join(copy, 'orchestrator', 'migrations'), { recursive: true })
       cpSync(join(sourceRoot, 'shared'), join(copy, 'shared'), { recursive: true })
       symlinkSync(join(sourceRoot, 'orchestrator', 'node_modules'), join(copy, 'orchestrator', 'node_modules'))
       const git = (cwd: string, ...args: string[]) => {
-        const result = Bun.spawnSync(['git', ...args], { cwd, stdout: 'pipe', stderr: 'pipe' })
+        const result = Bun.spawnSync(['git', ...args], { cwd, env: gitEnv, stdout: 'pipe', stderr: 'pipe' })
         if (result.exitCode !== 0) throw new Error(result.stderr.toString())
       }
-      git(copy, 'init', '-b', 'main')
-      git(copy, 'config', 'user.email', 'hub-test@example.invalid')
-      git(copy, 'config', 'user.name', 'Hub Test')
       git(copy, 'add', '.')
       git(copy, 'commit', '-m', 'DEV-321 hub orch init-db')
       const initialized = Bun.spawnSync(

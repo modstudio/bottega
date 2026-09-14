@@ -1,10 +1,9 @@
 import { afterEach, beforeEach } from 'bun:test'
-import { appendFileSync, mkdirSync, mkdtempSync, writeFileSync } from 'node:fs'
-import { tmpdir } from 'node:os'
+import { appendFileSync, mkdirSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import type { WorktreeCreate, WorktreeCreateArg } from '../../src/worktree-template.ts'
 import { testSpawnSync } from '../preload.ts'
-import { hermeticGitEnv } from './git.ts'
+import { cloneRepository, hermeticGitEnv } from './git.ts'
 
 export const declaredCreate = (command: string, args: WorktreeCreateArg[]): WorktreeCreate =>
   ({ command, args })
@@ -35,9 +34,8 @@ export function worktreeDescribeFixture() {
     return result.stdout.toString().trim()
   }
   function scratchRepo(): { repo: string; tree: string } {
-    const repo = mkdtempSync(join(tmpdir(), 'orch-nested-'))
-    git(repo, 'init', '-b', 'main'); git(repo, 'config', 'user.email', 'orch-test@example.invalid')
-    git(repo, 'config', 'user.name', 'Orch Test'); writeFileSync(join(repo, 'kept.txt'), 'base\n')
+    const repo = cloneRepository('orch-nested-')
+    writeFileSync(join(repo, 'kept.txt'), 'base\n')
     git(repo, 'add', 'kept.txt'); git(repo, 'commit', '-m', 'base')
     const tree = join(repo, '.claude', 'worktrees', 'AB-2581')
     mkdirSync(join(repo, '.claude', 'worktrees'), { recursive: true })

@@ -1,9 +1,9 @@
 import { describe,expect,test } from 'bun:test'
-import { mkdirSync,rmSync,writeFileSync } from 'node:fs'
+import { rmSync,writeFileSync } from 'node:fs'
 import { join } from 'node:path'
-import { hermeticGitEnv } from '../test/fixtures/git.ts'
+import { cloneRepository, hermeticGitEnv } from '../test/fixtures/git.ts'
 import { workerReply } from '../test/fixtures/replies.ts'
-import { addRun, dir } from '../test/fixtures/store.ts'
+import { addRun } from '../test/fixtures/store.ts'
 import { db, nowIso } from './db.ts'
 import { CANON_EVALS, currentCanonEvalSha, failingCanonEvalSlugs, lastCanonEvalAt, TRACKED_EVAL_PATH, UNTRACKED_EVAL_PATH } from './evals.ts'
 import { upsertProject } from './projects.ts'
@@ -16,8 +16,7 @@ test('counts each canon project only by all of its declared key prefixes', async
     const now = Date.parse('2026-09-12T00:30:00Z')
     registerClock(fakeClock(now))
     const fixture = (name: string, subjects: string[], keyPrefixes?: string[]) => {
-      const repo = join(dir, `metric-${name}`)
-      mkdirSync(repo)
+      const repo = cloneRepository(`metric-${name}-`)
       const git = (...args: string[]) => {
         const p = Bun.spawnSync(['git', ...args], {
           cwd: repo,
@@ -30,9 +29,6 @@ test('counts each canon project only by all of its declared key prefixes', async
         })
         if (p.exitCode !== 0) throw new Error(p.stderr.toString())
       }
-      git('init', '-b', 'main')
-      git('config', 'user.email', 'orch-test@example.invalid')
-      git('config', 'user.name', 'Orch Test')
       for (const [i, subject] of subjects.entries()) {
         writeFileSync(join(repo, `${i}.txt`), `${subject}\n`)
         git('add', `${i}.txt`)
