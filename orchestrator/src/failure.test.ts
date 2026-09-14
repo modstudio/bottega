@@ -1,5 +1,25 @@
 import { describe, expect, test } from 'bun:test'
-import { clusterErrorText } from './failure.ts'
+import { classify, clusterErrorText } from './failure.ts'
+
+describe('stale-login classification', () => {
+  /**
+   * Vendors word a stale login differently — "signed in" where another says
+   * "logged in" — and the wording is the only evidence available, because no
+   * CLI here reports its own auth state. Missing one costs more than a failed
+   * run: `other` raises no notification and triggers no cooldown, so routing
+   * re-dispatches to the same unauthenticated agent immediately.
+   */
+  test('reads a vendor that says it is not signed in as a stale login', () => {
+    const notSignedIn = 'Not signed in. To authenticate without a browser, run:\n  grok login --device-code\n\nAlternatively, set the XAI_API_KEY environment variable or run `grok login` on a machine with a browser.'
+    expect(classify(notSignedIn, 1)).toBe('auth')
+    expect(classify('not logged in', 1)).toBe('auth')
+  })
+
+  /** Waiting fixes a spent plan and does not fix a stale login, so quota keeps its precedence. */
+  test('leaves a spent plan classified as quota', () => {
+    expect(classify("You've hit your usage limit. Upgrade to Pro or try again at 14:00", 1)).toBe('quota')
+  })
+})
 
 describe('failure text clustering', () => {
   test('normalises the measured 14-day failure shapes without volatile values', () => {
