@@ -1,5 +1,6 @@
 {
   "orchestrator/src/agent-argv.test.ts": 167,
+  "orchestrator/src/agent-auth.test.ts": 0,
   "orchestrator/src/agent-cli-version.test.ts": 0,
   "orchestrator/src/agents.test.ts": 200,
   "orchestrator/src/agreement.test.ts": 0,

@@ -14,10 +14,17 @@ import { classifiedDockerResources } from './docker-resources.ts'
 import { trackedTestResidue } from '../test/residue.ts'
 const trackResidue = trackedTestResidue()
 
+/**
+ * codex is stubbed signed-out so every doctor() output also exercises the auth
+ * status wiring. Each doctorCommand call spawns a round of agent probes, so an
+ * extra call per assertion is paid against this file's spawn ceiling.
+ */
 const localStatus: typeof doctorAgentStatus = (agent, unavailable, bin) =>
-  agent === 'agy' || agent === 'qwen-local'
-    ? doctorAgentStatus(agent, unavailable, bin)
-    : unavailable ? { status: 'absent', detail: unavailable } : { status: 'ready', detail: '' }
+  agent === 'codex'
+    ? { status: 'signed-out', detail: 'not logged in' }
+    : agent === 'agy' || agent === 'qwen-local'
+      ? doctorAgentStatus(agent, unavailable, bin)
+      : unavailable ? { status: 'absent', detail: unavailable } : { status: 'ready', detail: '' }
 
 async function doctor(agentStatus: typeof doctorAgentStatus = localStatus) {
   const lines: string[] = []; let exit = 0
@@ -28,18 +35,6 @@ async function doctor(agentStatus: typeof doctorAgentStatus = localStatus) {
 beforeEach(() => { process.env.ORCH_LOCAL_BASE_URL = '' })
 
 describe('doctor presentation', () => {
-  test('an agent without an auth strategy keeps its existing doctor line', async () => {
-    const result = await doctor()
-    expect(result.text).toMatch(/^  agy\s+absent\s+free\s+disabled — no readsRepo/m)
-  })
-
-  test('doctor prints the auth status and safe detail returned by its helper', async () => {
-    const result = await doctor((agent, unavailable, bin) => agent === 'codex'
-      ? { status: 'signed-out', detail: 'not logged in' }
-      : localStatus(agent, unavailable, bin))
-    expect(result.text).toMatch(/^  codex\s+signed-out\s+subscription\s+not logged in/m)
-  })
-
   test('doctor reports a checkout off its landing branch as a register question, not a failure', async () => {
     const repo = cloneRepository('doctor-off-trunk-')
     const git = (...args: string[]) => Bun.spawnSync(['git', ...args], { cwd: repo, stdout: 'pipe', stderr: 'pipe' })
@@ -52,6 +47,9 @@ describe('doctor presentation', () => {
     expect(result.exit).toBe(0)
     expect(result.text).toContain('register questions (not run failures):')
     expect(result.text).toContain('off-trunk: checkout HEAD is topic, not landing branch main')
+    // Auth presentation rides on this call rather than a spawning doctor() of its own.
+    expect(result.text).toMatch(/^  agy\s+absent\s+free\s+disabled — no readsRepo/m)
+    expect(result.text).toMatch(/^  codex\s+signed-out\s+subscription\s+not logged in/m)
   })
 
   test('doctor retains resources whose repository root is unresolvable', async () => {
