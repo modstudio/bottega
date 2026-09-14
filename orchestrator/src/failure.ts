@@ -129,7 +129,7 @@ const PATTERNS: [FailureKind, RegExp][] = [
   // win before `auth`. Match the licensing vocabulary, never a bare error code.
   ['entitlement', /\b(have a valid licen[cs]e|not licen[cs]ed|request a licen[cs]e)\b/i],
   // The login is stale. Waiting does not fix it; re-authenticating does.
-  ['auth', /\b(401|403|unauthori[sz]ed|forbidden|not (?:logged in|authenticated)|invalid (?:api )?key|expired token|please (?:log|sign) in|re-?authenticate)\b/i],
+  ['auth', /\b(401|403|unauthori[sz]ed|forbidden|not (?:logged in|signed in|authenticated)|invalid (?:api )?key|expired token|please (?:log|sign) in|re-?authenticate)\b/i],
   /**
    * Nothing answered. The endpoint is not there at all.
    *
