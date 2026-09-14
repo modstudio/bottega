@@ -26,7 +26,7 @@ test('MCP Codex receives only orch-ask, orch, and its required project server', 
   )
 })
 
-test('bottega-shaped MCP scope emits orch exactly once', () => {
+test('platform-shaped MCP scope emits orch exactly once', () => {
   const entries = serverEntries(codexScopeArgs({ mcp: true, mcpServer: 'orch', home: '/operator' }))
   expect(entries.map((entry) => entry.match(/^mcp_servers\.([^=]+)/)![1]))
     .toEqual(['orch-ask', 'orch'])
