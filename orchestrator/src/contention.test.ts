@@ -4,26 +4,14 @@ import { existsSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { applyMigrations } from './migrations.ts'
-import { hermeticGitEnv } from '../test/fixtures/git.ts'
+import { cloneRepository } from '../test/fixtures/git.ts'
 import { db, DB_PATH } from './db.ts'
 import { withProjectLock } from './worktree.ts'
 import { insertContention, tryInsertContention } from './contention.ts'
 
 describe('contention ledger', () => {
   test('withProjectLock wait and timeout each write a row', async () => {
-    const repo = mkdtempSync(join(tmpdir(), 'orch-contention-lock-'))
-    const git = (args: string[]) => {
-      const result = Bun.spawnSync(['git', ...args], {
-        cwd: repo, env: hermeticGitEnv(), stdout: 'pipe', stderr: 'pipe',
-      })
-      if (result.exitCode !== 0) throw new Error(result.stderr.toString())
-    }
-    git(['init', '-b', 'main'])
-    git(['config', 'user.email', 'orch-test@example.invalid'])
-    git(['config', 'user.name', 'Orch Test'])
-    writeFileSync(join(repo, 'base.txt'), 'base\n')
-    git(['add', 'base.txt'])
-    git(['commit', '-m', 'base'])
+    const repo = cloneRepository('orch-contention-lock-')
     expect(db()).toBeDefined()
     const ready = join(repo, 'ready')
     const release = join(repo, 'release')
@@ -81,19 +69,7 @@ describe('contention ledger', () => {
   }, 15_000)
 
   test('lock timeout recording does not stall on a reserved store', async () => {
-    const repo = mkdtempSync(join(tmpdir(), 'orch-contention-lock-busy-'))
-    const git = (args: string[]) => {
-      const result = Bun.spawnSync(['git', ...args], {
-        cwd: repo, env: hermeticGitEnv(), stdout: 'pipe', stderr: 'pipe',
-      })
-      if (result.exitCode !== 0) throw new Error(result.stderr.toString())
-    }
-    git(['init', '-b', 'main'])
-    git(['config', 'user.email', 'orch-test@example.invalid'])
-    git(['config', 'user.name', 'Orch Test'])
-    writeFileSync(join(repo, 'base.txt'), 'base\n')
-    git(['add', 'base.txt'])
-    git(['commit', '-m', 'base'])
+    const repo = cloneRepository('orch-contention-lock-busy-')
     expect(db()).toBeDefined()
     const ready = join(repo, 'ready')
     const release = join(repo, 'release')

@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, test } from 'bun:test'
+import { cloneRepository } from '../test/fixtures/git.ts'
 import { chmodSync, mkdirSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { setDoc } from '../test/fixtures/docs.ts'
@@ -22,12 +23,8 @@ beforeEach(() => { process.env.ORCH_LOCAL_BASE_URL = '' })
 
 describe('doctor presentation', () => {
   test('doctor reports a checkout off its landing branch as a register question, not a failure', async () => {
-    const repo = trackResidue(join(dir, 'doctor-off-trunk'))
-    mkdirSync(repo, { recursive: true })
+    const repo = cloneRepository('doctor-off-trunk-')
     const git = (...args: string[]) => Bun.spawnSync(['git', ...args], { cwd: repo, stdout: 'pipe', stderr: 'pipe' })
-    expect(git('init', '-b', 'main').exitCode).toBe(0)
-    expect(git('config', 'user.email', 'orch-test@example.invalid').exitCode).toBe(0)
-    expect(git('config', 'user.name', 'Orch Test').exitCode).toBe(0)
     writeFileSync(join(repo, 'tracked.txt'), 'fixture\n')
     expect(git('add', '.').exitCode).toBe(0)
     expect(git('commit', '-m', 'fixture').exitCode).toBe(0)

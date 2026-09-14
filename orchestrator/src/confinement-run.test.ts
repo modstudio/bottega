@@ -1,8 +1,7 @@
 import { afterEach, describe, expect, test } from "bun:test"
-import { chmodSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, renameSync, rmSync, writeFileSync, existsSync } from "node:fs"
-import { tmpdir } from "node:os"
+import { chmodSync, mkdirSync, readFileSync, realpathSync, renameSync, rmSync, writeFileSync, existsSync } from "node:fs"
 import { dirname, join } from "node:path"
-import { hermeticGitEnv } from '../test/fixtures/git.ts'
+import { cloneRepository, hermeticGitEnv } from '../test/fixtures/git.ts'
 import { reviewReply, workerReply } from '../test/fixtures/replies.ts'
 import { dir } from '../test/fixtures/store.ts'
 import { AGENTS } from './agents.ts'
@@ -19,7 +18,7 @@ const scripts: string[] = []
 const agentScript = (name: string) => { const path = join(dir, name); scripts.push(path); return path }
 afterEach(() => { for (const script of scripts) rmSync(script, { force: true }); scripts.length = 0; rmSync(join(dir, '.claude'), { recursive: true, force: true }) })
 const git = (cwd: string, ...args: string[]) => { const p = Bun.spawnSync(['git', ...args], { cwd, env: hermeticGitEnv(), stdout: 'pipe', stderr: 'pipe' }); if (p.exitCode !== 0) throw new Error(p.stderr.toString()); return p.stdout.toString().trim() }
-const repository = () => { const repo = realpathSync(mkdtempSync(join(tmpdir(), 'orch-outside-write-'))); git(repo, 'init', '-b', 'main'); git(repo, 'config', 'user.email', 'orch-test@example.invalid'); git(repo, 'config', 'user.name', 'Orch Test'); writeFileSync(join(repo, 'tracked.txt'), 'base\n'); git(repo, 'add', 'tracked.txt'); git(repo, 'commit', '-m', 'fixture'); return repo }
+const repository = () => { const repo = cloneRepository('orch-outside-write-'); writeFileSync(join(repo, 'tracked.txt'), 'base\n'); git(repo, 'add', 'tracked.txt'); git(repo, 'commit', '-m', 'fixture'); return repo }
 const installConfinementTransport = (outputs: string[]) => scriptedTransportSequence(
   outputs.map((output) => [
     { kind: 'stdout' as const, chunk: output },

@@ -1,12 +1,11 @@
 import { describe, expect, test } from 'bun:test'
-import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
-import { tmpdir } from 'node:os'
+import { rmSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
-import { hermeticGitEnv } from '../test/fixtures/git.ts'
+import { cloneRepository, hermeticGitEnv } from '../test/fixtures/git.ts'
 import { contentTree } from './git-environment.ts'
 describe('content tree measurement', () => {
   test('keeps tracked ignored files, includes visible dirt, and measures tracked deletions', () => {
-    const repo = mkdtempSync(join(tmpdir(), 'orch-content-tree-'))
+    const repo = cloneRepository('orch-content-tree-')
     const g = (...args: string[]) => {
       const p = Bun.spawnSync(['git', ...args], {
         cwd: repo, env: hermeticGitEnv(), stdout: 'pipe', stderr: 'pipe',
@@ -15,9 +14,6 @@ describe('content tree measurement', () => {
       return p.stdout.toString().trim()
     }
     try {
-      g('init', '-b', 'main')
-      g('config', 'user.email', 'orch-test@example.invalid')
-      g('config', 'user.name', 'Orch Test')
       writeFileSync(join(repo, 'tracked.txt'), 'base\n')
       writeFileSync(join(repo, 'secret.txt'), 'tracked secret\n')
       g('add', '.')

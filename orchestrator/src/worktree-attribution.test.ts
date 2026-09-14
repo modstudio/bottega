@@ -3,7 +3,7 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync,
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { randomUUID } from 'node:crypto'
-import { hermeticGitEnv } from '../test/fixtures/git.ts'
+import { cloneRepository, hermeticGitEnv } from '../test/fixtures/git.ts'
 import { addRun } from '../test/fixtures/store.ts'
 import { db } from './db.ts'
 import { upsertProject } from './projects.ts'
@@ -24,14 +24,8 @@ function git(cwd: string, ...args: string[]): string {
 }
 
 function scratchRepo(): { repo: string; project: string } {
-  const repo = mkdtempSync(join(tmpdir(), 'orch-extract-'))
+  const repo = cloneRepository('orch-extract-')
   repos.push(repo)
-  git(repo, 'init', '-b', 'main')
-  git(repo, 'config', 'user.name', 'Orch Test')
-  git(repo, 'config', 'user.email', 'orch@example.invalid')
-  writeFileSync(join(repo, 'base.txt'), 'base\n')
-  git(repo, 'add', 'base.txt')
-  git(repo, 'commit', '-m', 'base')
   mkdirSync(join(repo, '.claude', 'worktrees'), { recursive: true })
   const project = `extract-${randomUUID()}`
   upsertProject({ name: project, path: realpathSync(repo), settings: { trunk: 'main' } })

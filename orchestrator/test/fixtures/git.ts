@@ -1,4 +1,4 @@
-import { cpSync, mkdtempSync, writeFileSync } from 'node:fs'
+import { cpSync, mkdtempSync, realpathSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { scrubbedGitEnv } from '../../../shared/git.ts'
 import { dir, hermeticHome as preloadHome, testSpawnSync } from '../preload.ts'
@@ -35,7 +35,7 @@ export function templateRepository(): string {
 }
 
 export function cloneRepository(name = 'git-clone-'): string {
-  const target = join(mkdtempSync(join(dir, name)), 'repo')
+  const target = join(mkdtempSync(join(dir, `git-clone-${name}`)), 'repo')
   cpSync(templateRepository(), target, { recursive: true })
-  return target
+  return realpathSync(target)
 }

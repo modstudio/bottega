@@ -1,9 +1,8 @@
 // Tests agents.ts: agent argv and sandbox selection.
 import { expect, test } from 'bun:test'
-import { mkdtempSync, rmSync, writeFileSync, realpathSync } from 'node:fs'
-import { tmpdir } from 'node:os'
+import { rmSync, writeFileSync, realpathSync } from 'node:fs'
 import { join } from 'node:path'
-import { hermeticGitEnv } from '../test/fixtures/git.ts'
+import { cloneRepository, hermeticGitEnv } from '../test/fixtures/git.ts'
 import { reviewReply } from '../test/fixtures/replies.ts'
 import { AGENTS, CODEX_ASK_ENV_VARS, CODEX_EXEC_SANDBOX } from './agents.ts'
 import { worktreeGitDir } from './git-environment.ts'
@@ -19,7 +18,7 @@ test('follows the job, not a project register entry', async () => {
     // handing every repository job workspace-write. A round-trip through
     // the register is the test that missed that, so this watches the
     // argv the agent is actually launched with.
-    const repo = mkdtempSync(join(tmpdir(), 'orch-sandbox-dispatch-'))
+    const repo = cloneRepository('orch-sandbox-dispatch-')
     const oldDepth = process.env.ORCH_DEPTH
     const runGit = (...args: string[]) => {
       const p = Bun.spawnSync(['git', ...args], {
@@ -28,9 +27,6 @@ test('follows the job, not a project register entry', async () => {
       if (p.exitCode !== 0) throw new Error(p.stderr.toString())
     }
     try {
-      runGit('init', '-b', 'main')
-      runGit('config', 'user.email', 'orch-test@example.invalid')
-      runGit('config', 'user.name', 'Orch Test')
       writeFileSync(join(repo, 'seed.txt'), 'seed\n')
       runGit('add', 'seed.txt')
       runGit('commit', '-m', 'fixture')
@@ -90,7 +86,7 @@ test('follows the job, not a project register entry', async () => {
   })
 
   test('a writing worktree grants codex its metadata, common objects, and run-ref directory', () => {
-    const repo = mkdtempSync(join(tmpdir(), 'orch-codex-git-dir-'))
+    const repo = cloneRepository('orch-codex-git-dir-')
     const git = (...args: string[]) => {
       const p = Bun.spawnSync(['git', ...args], {
         cwd: repo, env: hermeticGitEnv(), stdout: 'pipe', stderr: 'pipe',
@@ -98,9 +94,6 @@ test('follows the job, not a project register entry', async () => {
       if (p.exitCode !== 0) throw new Error(p.stderr.toString())
     }
     try {
-      git('init', '-b', 'main')
-      git('config', 'user.email', 'orch-test@example.invalid')
-      git('config', 'user.name', 'Orch Test')
       writeFileSync(join(repo, 'kept.txt'), 'base\n')
       git('add', 'kept.txt')
       git('commit', '-m', 'base')

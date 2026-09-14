@@ -1,8 +1,7 @@
 import { describe,expect,spyOn,test } from 'bun:test'
-import { mkdirSync,mkdtempSync,rmSync,writeFileSync } from 'node:fs'
-import { tmpdir } from 'node:os'
+import { mkdirSync,rmSync,writeFileSync } from 'node:fs'
 import { join } from 'node:path'
-import { hermeticGitEnv } from '../test/fixtures/git.ts'
+import { cloneRepository, hermeticGitEnv } from '../test/fixtures/git.ts'
 import { reviewReply } from '../test/fixtures/replies.ts'
 import { addRun } from '../test/fixtures/store.ts'
 import { db } from './db.ts'
@@ -74,7 +73,7 @@ test('an unregistered project warns after recording and does not block later gra
     } finally { stderr.mockRestore() }
   })
 test('an update-ref refusal warns after recording and does not block later grading', () => {
-    const repo = mkdtempSync(join(tmpdir(), 'orch-review-pin-refusal-'))
+    const repo = cloneRepository('orch-review-pin-refusal-')
     const runGit = (...args: string[]) => {
       const p = Bun.spawnSync(['git', ...args], {
         cwd: repo, env: hermeticGitEnv(), stdout: 'pipe', stderr: 'pipe',
@@ -82,12 +81,6 @@ test('an update-ref refusal warns after recording and does not block later gradi
       if (p.exitCode !== 0) throw new Error(p.stderr.toString().trim())
       return p.stdout.toString().trim()
     }
-    runGit('init', '-b', 'main')
-    runGit('config', 'user.email', 'orch-test@example.invalid')
-    runGit('config', 'user.name', 'Orch Test')
-    writeFileSync(join(repo, 'base.txt'), 'base\n')
-    runGit('add', 'base.txt')
-    runGit('commit', '-m', 'base')
     const project = 'review-pin-refusal'
     upsertProject({ name: project, path: repo, settings: { trunk: 'main' } })
     const runId = addRun({
@@ -116,7 +109,7 @@ test('an update-ref refusal warns after recording and does not block later gradi
     }
   })
 test('the grading capture path creates the same reviewed-commit pin', () => {
-    const repo = mkdtempSync(join(tmpdir(), 'orch-review-grade-pin-'))
+    const repo = cloneRepository('orch-review-grade-pin-')
     const runGit = (...args: string[]) => {
       const p = Bun.spawnSync(['git', ...args], {
         cwd: repo, env: hermeticGitEnv(), stdout: 'pipe', stderr: 'pipe',
@@ -125,12 +118,6 @@ test('the grading capture path creates the same reviewed-commit pin', () => {
       return p.stdout.toString().trim()
     }
     try {
-      runGit('init', '-b', 'main')
-      runGit('config', 'user.email', 'orch-test@example.invalid')
-      runGit('config', 'user.name', 'Orch Test')
-      writeFileSync(join(repo, 'base.txt'), 'base\n')
-      runGit('add', 'base.txt')
-      runGit('commit', '-m', 'base')
       const project = 'review-grade-pin'
       upsertProject({ name: project, path: repo, settings: { trunk: 'main' } })
       const commit = runGit('rev-parse', 'HEAD')

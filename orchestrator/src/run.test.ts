@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, test } from 'bun:test'; import { readFileSync, writeFileSync, existsSync, chmodSync, mkdtempSync, rmSync, realpathSync } from 'node:fs'; import { tmpdir } from 'node:os'; import { join } from 'node:path'; import { hermeticGitEnv } from '../test/fixtures/git.ts'; import { reviewReply, workerReply } from '../test/fixtures/replies.ts'; import { addRun, dir, reapTestRun, score } from '../test/fixtures/store.ts'; import { declaredCreate } from '../test/fixtures/worktree.ts'; import { AGENTS } from './agents.ts'; import { ask } from './ask.ts'; import { GENERIC_QUESTION_TOKENS, hasRealQuestions, parseWorkerReply, parseWorkerReplyWithCount, realQuestions } from './contract.ts'; import { db, nowIso } from './db.ts'; import { detectBlockers } from './failure.ts'; import { addDoctrineRule, addPair, addSkip, baselineForPair, ledgerRef, listDoctrineRules, listLedgerRefs, listPairs, listSkips, resolveLedgerRef, retireDoctrineRule, setBaseline, setLedgerRef } from './porting.ts'; import { projects, removeProject, upsertProject } from './projects.ts'
+import { afterEach, beforeEach, describe, expect, test } from 'bun:test'; import { readFileSync, writeFileSync, existsSync, chmodSync, rmSync } from 'node:fs'; import { join } from 'node:path'; import { cloneRepository, hermeticGitEnv } from '../test/fixtures/git.ts'; import { reviewReply, workerReply } from '../test/fixtures/replies.ts'; import { addRun, dir, reapTestRun, score } from '../test/fixtures/store.ts'; import { declaredCreate } from '../test/fixtures/worktree.ts'; import { AGENTS } from './agents.ts'; import { ask } from './ask.ts'; import { GENERIC_QUESTION_TOKENS, hasRealQuestions, parseWorkerReply, parseWorkerReplyWithCount, realQuestions } from './contract.ts'; import { db, nowIso } from './db.ts'; import { detectBlockers } from './failure.ts'; import { addDoctrineRule, addPair, addSkip, baselineForPair, ledgerRef, listDoctrineRules, listLedgerRefs, listPairs, listSkips, resolveLedgerRef, retireDoctrineRule, setBaseline, setLedgerRef } from './porting.ts'; import { projects, removeProject, upsertProject } from './projects.ts'
 import { candidates, pick } from './route.ts'
 import { run as runJob } from './run.ts'
 import { weigh } from './score.ts'
@@ -91,9 +91,8 @@ describe('agent retry and failover records', () => {
     const rows = db().query('SELECT agent,retry_of,error FROM run ORDER BY id').all() as { agent: string; retry_of: number | null; error: string }[]; expect(rows.map((row) => row.agent)).toEqual(['codex', 'grok']); expect(rows[1]!.error).toContain('after trying codex, grok')
   })
   test('a repository review failover keeps its immutable base across a trunk move', async () => {
-    const repo = mkdtempSync(join(tmpdir(), 'orch-review-failover-')); const caller = join(repo, '.claude', 'caller')
+    const repo = cloneRepository('orch-review-failover-'); const caller = join(repo, '.claude', 'caller')
     try {
-      git(repo, 'init', '-b', 'main'); git(repo, 'config', 'user.email', 'orch-test@example.invalid'); git(repo, 'config', 'user.name', 'Orch Test'); writeFileSync(join(repo, 'base.txt'), 'base\n'); git(repo, 'add', '.'); git(repo, 'commit', '-m', 'base')
       const originalBase = git(repo, 'rev-parse', 'HEAD'); git(repo, 'worktree', 'add', '-b', 'feature', caller, originalBase); writeFileSync(join(caller, 'change.ts'), 'carried review subject\n'); upsertProject({ name: 'review-failover-project', path: repo })
       const empty = reviewReply(0); empty.provenance.files_covered = []; empty.provenance.commands_run = []
       const clean = reviewReply(0); clean.provenance.files_covered = ['change.ts']; clean.provenance.commands_run = ['git diff -- change.ts']
@@ -106,9 +105,8 @@ describe('agent retry and failover records', () => {
     } finally { removeProject('review-failover-project'); rmSync(repo, { recursive: true, force: true }) }
   }, 15_000)
   test('a repository review failover bypasses a writing recipe that cannot recreate its base', async () => {
-    const repo = mkdtempSync(join(tmpdir(), 'orch-review-failover-no-base-')); const caller = join(repo, '.claude', 'caller'); const invoked = join(repo, 'project-worktree.invoked'); const tool = join(repo, 'project-worktree.ts')
-    try {
-      git(repo, 'init', '-b', 'main'); git(repo, 'config', 'user.email', 'orch-test@example.invalid'); git(repo, 'config', 'user.name', 'Orch Test'); writeFileSync(join(repo, 'base.txt'), 'base\n'); git(repo, 'add', '.'); git(repo, 'commit', '-m', 'base'); const originalBase = git(repo, 'rev-parse', 'HEAD'); git(repo, 'worktree', 'add', '-b', 'feature', caller, originalBase); writeFileSync(join(caller, 'change.ts'), 'carried review subject\n'); upsertProject({ name: 'review-failover-no-base-project', path: repo })
+    const repo = cloneRepository('orch-review-failover-no-base-'); const caller = join(repo, '.claude', 'caller'); const invoked = join(repo, 'project-worktree.invoked'); const tool = join(repo, 'project-worktree.ts')
+    try { const originalBase = git(repo, 'rev-parse', 'HEAD'); git(repo, 'worktree', 'add', '-b', 'feature', caller, originalBase); writeFileSync(join(caller, 'change.ts'), 'carried review subject\n'); upsertProject({ name: 'review-failover-no-base-project', path: repo })
       const empty = reviewReply(0); empty.provenance.files_covered = []; empty.provenance.commands_run = []; const clean = reviewReply(0); clean.provenance.files_covered = ['change.ts']; clean.provenance.commands_run = ['git diff -- change.ts']
       const transport = scriptedTransportSequence([[{ kind: 'ask', question: 'pause', why: 'change recipe' }, { kind: 'completed', output: JSON.stringify(empty) }], [{ kind: 'completed', output: JSON.stringify(clean) }]]); transport.install(); process.env.ORCH_DEPTH = '0'
       const pending = runJob({ job: 'review-lens', prompt: 'review the carried change', cwd: caller, repo: 'review-failover-no-base-project', agent: 'codex', lens: 'failover-no-base', carry: true, keepTree: true }); while (transport.starts() === 0) await Bun.sleep(5)
@@ -118,9 +116,8 @@ describe('agent retry and failover records', () => {
     } finally { removeProject('review-failover-no-base-project'); rmSync(repo, { recursive: true, force: true }) }
   }, 15_000)
   test('explicit review failover keeps the original ref and resolved tip', async () => {
-    const repo = mkdtempSync(join(tmpdir(), 'orch-explicit-review-failover-'))
-    try {
-      git(repo, 'init', '-b', 'main'); git(repo, 'config', 'user.email', 'orch-test@example.invalid'); git(repo, 'config', 'user.name', 'Orch Test'); writeFileSync(join(repo, 'subject.txt'), 'trunk\n'); git(repo, 'add', '.'); git(repo, 'commit', '-m', 'trunk'); git(repo, 'switch', '-c', 'feature/review-failover'); writeFileSync(join(repo, 'subject.txt'), 'reviewed branch\n'); git(repo, 'add', '.'); git(repo, 'commit', '-m', 'branch')
+    const repo = cloneRepository('orch-explicit-review-failover-')
+    try { writeFileSync(join(repo, 'subject.txt'), 'trunk\n'); git(repo, 'add', '.'); git(repo, 'commit', '-m', 'trunk'); git(repo, 'switch', '-c', 'feature/review-failover'); writeFileSync(join(repo, 'subject.txt'), 'reviewed branch\n'); git(repo, 'add', '.'); git(repo, 'commit', '-m', 'branch')
       const tip = git(repo, 'rev-parse', 'HEAD^{commit}'); const tree = git(repo, 'rev-parse', 'HEAD^{tree}'); git(repo, 'switch', 'main'); upsertProject({ name: 'review-failover-fixture', path: repo, settings: { trunk: 'main' } })
       const review = reviewReply(0); review.provenance.files_covered.push('subject.txt'); review.provenance.commands_run.push('git diff main...feature/review-failover -- subject.txt')
       scriptedTransportSequence([[{ kind: 'stderr', chunk: 'HTTP 402: balance exhausted' }, { kind: 'completed', exitCode: 1 }], [{ kind: 'completed', output: JSON.stringify(review) }]]).install(); process.env.ORCH_DEPTH = '0'
@@ -161,9 +158,8 @@ describe('review MCP recording', () => {
     expect(db().query('SELECT provenance_status FROM run WHERE id=?').get(requested.id)).toEqual({ provenance_status: 'silent' })
   })
   test('records a trust attempt before a doctor spawn throws', async () => {
-    const repo = realpathSync(mkdtempSync(join(tmpdir(), 'orch-trust-attempt-')))
+    const repo = cloneRepository('orch-trust-attempt-')
     const git = (...args: string[]) => Bun.spawnSync(['git', ...args], { cwd: repo, env: hermeticGitEnv(), stdout: 'pipe', stderr: 'pipe' })
-    git('init', '-b', 'main'); git('config', 'user.email', 'orch-test@example.invalid'); git('config', 'user.name', 'Orch Test')
     writeFileSync(join(repo, 'tracked'), 'base\n'); writeFileSync(join(repo, '.mcp.json'), '{}\n'); git('add', '.'); git('commit', '-m', 'base')
     const grok = AGENTS.grok!; const original = grok.bin; const fake = join(dir, 'grok-removed-before-doctor')
     writeFileSync(fake, '#!/bin/sh\nprintf "grok 1.0.13\\n"\n'); chmodSync(fake, 0o755)
@@ -549,7 +545,7 @@ setInterval(() => {}, 1_000)
     files_changed: [], tests: { command: null, ran: false, passed: null, detail: null },
   }))
   async function withWritingRepo<T>(fn: (repo: string) => Promise<T>): Promise<T> {
-    const repo = mkdtempSync(join(tmpdir(), 'orch-361-write-'))
+    const repo = cloneRepository('orch-361-write-')
     const git = (...args: string[]) => {
       const p = Bun.spawnSync(['git', ...args], {
         cwd: repo, env: hermeticGitEnv(), stdout: 'pipe', stderr: 'pipe',
@@ -557,9 +553,6 @@ setInterval(() => {}, 1_000)
       if (p.exitCode !== 0) throw new Error(p.stderr.toString())
     }
     writeFileSync(join(repo, 'seed.txt'), 'seed\n')
-    git('init', '-b', 'main')
-    git('config', 'user.email', 'orch-test@example.invalid')
-    git('config', 'user.name', 'Orch Test')
     git('add', 'seed.txt')
     git('commit', '-m', 'seed')
     try {
@@ -621,16 +614,13 @@ setInterval(() => {}, 1_000)
     })
   })
   test('a confinement trip with the marker present records escaped, not truncated', async () => {
-    const watched = realpathSync(mkdtempSync(join(tmpdir(), 'orch-361-escape-')))
+    const watched = cloneRepository('orch-361-escape-')
     const git = (...args: string[]) => {
       const p = Bun.spawnSync(['git', ...args], {
         cwd: watched, env: hermeticGitEnv(), stdout: 'pipe', stderr: 'pipe',
       })
       if (p.exitCode !== 0) throw new Error(p.stderr.toString())
     }
-    git('init', '-b', 'main')
-    git('config', 'user.email', 'orch-test@example.invalid')
-    git('config', 'user.name', 'Orch Test')
     writeFileSync(join(watched, 'tracked.txt'), 'base\n')
     git('add', 'tracked.txt')
     git('commit', '-m', 'fixture')

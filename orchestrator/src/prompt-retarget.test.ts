@@ -2,12 +2,12 @@ import { describe, expect, test } from "bun:test"
 import { mkdtempSync, rmSync, writeFileSync, realpathSync, mkdirSync, symlinkSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { basename, dirname, join } from "node:path"
-import { hermeticGitEnv } from '../test/fixtures/git.ts'
+import { cloneRepository, hermeticGitEnv } from '../test/fixtures/git.ts'
 import { checkoutAliases, checkoutCaseSensitivity } from './checkout-identity.ts'
 import { retargetRepositoryPrompt, retargetRepositoryPromptForDispatch, snapshotRegisteredCheckouts } from './prompt-retarget.ts'
 describe('prompt retarget decisions', () => {
 const git = (cwd: string, ...args: string[]) => { const p = Bun.spawnSync(['git', ...args], { cwd, env: hermeticGitEnv(), stdout: 'pipe', stderr: 'pipe' }); if (p.exitCode !== 0) throw new Error(p.stderr.toString()); return p.stdout.toString().trim() }
-const repository = () => { const repo = realpathSync(mkdtempSync(join(tmpdir(), 'orch-outside-write-'))); git(repo, 'init', '-b', 'main'); git(repo, 'config', 'user.email', 'orch-test@example.invalid'); git(repo, 'config', 'user.name', 'Orch Test'); writeFileSync(join(repo, 'tracked.txt'), 'base\n'); git(repo, 'add', 'tracked.txt'); git(repo, 'commit', '-m', 'fixture'); return repo }
+const repository = () => { const repo = cloneRepository('orch-outside-write-'); writeFileSync(join(repo, 'tracked.txt'), 'base\n'); git(repo, 'add', 'tracked.txt'); git(repo, 'commit', '-m', 'fixture'); return repo }
 test('caller paths in a review pack are retargeted at filesystem boundaries', () => {
     const caller = '/repo with [meta]*'
     const worktree = `${caller}/.claude/worktrees/orch-1`

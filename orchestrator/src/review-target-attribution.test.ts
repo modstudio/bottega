@@ -1,9 +1,8 @@
 import { describe,expect,test } from 'bun:test'
 import { randomUUID } from 'node:crypto'
-import { mkdirSync,mkdtempSync,rmSync,writeFileSync } from 'node:fs'
-import { tmpdir } from 'node:os'
+import { mkdirSync,rmSync,writeFileSync } from 'node:fs'
 import { join } from 'node:path'
-import { hermeticGitEnv } from '../test/fixtures/git.ts'
+import { cloneRepository, hermeticGitEnv } from '../test/fixtures/git.ts'
 import { db } from './db.ts'
 import { preflight } from './dispatch-preflight.ts'
 import { projectAt, upsertProject } from './projects.ts'
@@ -20,10 +19,8 @@ const git = (cwd: string, ...args: string[]) => {
     return p.stdout.toString().trim()
   }
 const repository = (branch = 'main') => {
-    const repo = mkdtempSync(join(tmpdir(), 'orch-attribution-'))
-    git(repo, 'init', '-b', branch)
-    git(repo, 'config', 'user.email', 'orch-test@example.invalid')
-    git(repo, 'config', 'user.name', 'Orch Test')
+    const repo = cloneRepository('orch-attribution-')
+    if (branch !== 'main') git(repo, 'branch', '-m', branch)
     writeFileSync(join(repo, 'tracked.txt'), 'fixture\n')
     git(repo, 'add', 'tracked.txt')
     git(repo, 'commit', '-m', 'fixture')

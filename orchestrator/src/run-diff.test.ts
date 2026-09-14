@@ -1,10 +1,10 @@
 // Tests run-diff.ts: runDiffCommand.
 import { expect, test } from 'bun:test'
-import { existsSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { randomUUID } from 'node:crypto'
-import { hermeticGitEnv } from '../test/fixtures/git.ts'
+import { cloneRepository, hermeticGitEnv } from '../test/fixtures/git.ts'
 import { addRun, dir } from '../test/fixtures/store.ts'
 import { db } from './db.ts'
 import { prepareWorktreeObjects } from './git-environment.ts'
@@ -59,7 +59,7 @@ test('diff surfaces the recorded base commit', async () => {
 })
 
   test('orch diff resolves a new blob staged in the worker-local object database', async () => {
-    const repo = mkdtempSync(join(tmpdir(), 'orch-isolated-objects-'))
+    const repo = cloneRepository('orch-isolated-objects-')
     const foreignObjects = mkdtempSync(join(tmpdir(), 'orch-foreign-objects-'))
     const git = (cwd: string, args: string[], env: Record<string, string> = {}) => {
       const p = Bun.spawnSync(['git', ...args], {
@@ -69,9 +69,6 @@ test('diff surfaces the recorded base commit', async () => {
       return p.stdout.toString().trim()
     }
     try {
-      git(repo, ['init', '-b', 'main'])
-      git(repo, ['config', 'user.email', 'orch-test@example.invalid'])
-      git(repo, ['config', 'user.name', 'Orch Test'])
       writeFileSync(join(repo, 'kept.txt'), 'base\n')
       git(repo, ['add', 'kept.txt'])
       git(repo, ['commit', '-m', 'base'])
@@ -102,7 +99,7 @@ test('diff surfaces the recorded base commit', async () => {
   })
 
   test('orch diff anchors at current trunk and --since-base restores the recorded range', async () => {
-    const repo = realpathSync(mkdtempSync(join(tmpdir(), 'orch-diff-trunk-')))
+    const repo = cloneRepository('orch-diff-trunk-')
     const foreignObjects = mkdtempSync(join(tmpdir(), 'orch-foreign-objects-'))
     const worker = join(repo, 'worker')
     const g = (cwd: string, ...args: string[]) => {
@@ -113,12 +110,6 @@ test('diff surfaces the recorded base commit', async () => {
       return p.stdout.toString().trim()
     }
     try {
-      g(repo, 'init', '-b', 'main')
-      g(repo, 'config', 'user.email', 'orch-test@example.invalid')
-      g(repo, 'config', 'user.name', 'Orch Test')
-      writeFileSync(join(repo, 'base.txt'), 'base\n')
-      g(repo, 'add', 'base.txt')
-      g(repo, 'commit', '-m', 'base')
       const recorded = g(repo, 'rev-parse', 'HEAD')
       for (const name of ['trunk-one', 'trunk-two']) {
         writeFileSync(join(repo, `${name}.txt`), `${name}\n`)
@@ -187,7 +178,7 @@ test('diff surfaces the recorded base commit', async () => {
   }, 20_000)
 
   test('orch diff finds an unregistered repository after its worktree is discarded', async () => {
-    const repo = realpathSync(mkdtempSync(join(tmpdir(), 'orch-diff-unregistered-')))
+    const repo = cloneRepository('orch-diff-unregistered-')
     const worker = join(repo, 'worker')
     const g = (cwd: string, ...args: string[]) => {
       const p = Bun.spawnSync(['git', ...args], {
@@ -197,12 +188,6 @@ test('diff surfaces the recorded base commit', async () => {
       return p.stdout.toString().trim()
     }
     try {
-      g(repo, 'init', '-b', 'main')
-      g(repo, 'config', 'user.email', 'orch-test@example.invalid')
-      g(repo, 'config', 'user.name', 'Orch Test')
-      writeFileSync(join(repo, 'base.txt'), 'base\n')
-      g(repo, 'add', 'base.txt')
-      g(repo, 'commit', '-m', 'base')
       const recorded = g(repo, 'rev-parse', 'HEAD')
       writeFileSync(join(repo, 'trunk.txt'), 'trunk\n')
       g(repo, 'add', 'trunk.txt')

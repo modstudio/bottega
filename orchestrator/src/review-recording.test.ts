@@ -1,8 +1,7 @@
 import { describe,expect,spyOn,test } from 'bun:test'
-import { mkdirSync,mkdtempSync,realpathSync,rmSync,writeFileSync } from 'node:fs'
-import { tmpdir } from 'node:os'
+import { mkdirSync,rmSync,writeFileSync } from 'node:fs'
 import { join } from 'node:path'
-import { hermeticGitEnv } from '../test/fixtures/git.ts'
+import { cloneRepository, hermeticGitEnv } from '../test/fixtures/git.ts'
 import { reviewReply } from '../test/fixtures/replies.ts'
 import { addRun } from '../test/fixtures/store.ts'
 import { db } from './db.ts'
@@ -13,15 +12,13 @@ import { changeIdentity } from './change-identity.ts'
 
 describe('review discipline', () => {
 test('list and show expose open, complete, stale, findings, grading, and pin state', () => {
-    const repo = mkdtempSync(join(tmpdir(), 'orch-review-read-'))
+    const repo = cloneRepository('orch-review-read-')
     const gg = (...args: string[]) => {
       const p = Bun.spawnSync(['git', ...args], { cwd: repo, env: hermeticGitEnv(), stdout: 'pipe', stderr: 'pipe' })
       if (p.exitCode !== 0) throw new Error(p.stderr.toString())
       return p.stdout.toString().trim()
     }
     try {
-      gg('init', '-b', 'main'); gg('config', 'user.email', 'orch-test@example.invalid'); gg('config', 'user.name', 'Orch Test')
-      writeFileSync(join(repo, 'base.txt'), 'base\n'); gg('add', '.'); gg('commit', '-m', 'base')
       gg('checkout', '-b', 'reviewed'); writeFileSync(join(repo, 'change.txt'), 'one\n'); gg('add', '.'); gg('commit', '-m', 'change')
       const project = 'review-read-project'
       upsertProject({ name: project, path: repo, settings: { trunk: 'main' } })
@@ -77,7 +74,7 @@ test('recording refuses lens runs from different projects', () => {
     expect(db().query('SELECT COUNT(*) AS n FROM review').get()).toEqual({ n: 0 })
   })
 test('a carried review stores the persist-time change identity when base through HEAD is empty', () => {
-    const repo = realpathSync(mkdtempSync(join(tmpdir(), 'orch-carried-review-identity-')))
+    const repo = cloneRepository('orch-carried-review-identity-')
     const git = (args: string[], stdin?: Uint8Array) => {
       const p = Bun.spawnSync(['git', ...args], {
         cwd: repo, env: hermeticGitEnv(), stdin, stdout: 'pipe', stderr: 'pipe',
@@ -87,9 +84,6 @@ test('a carried review stores the persist-time change identity when base through
     }
     const gg = (...args: string[]) => new TextDecoder().decode(git(args).stdout).trim()
     try {
-      gg('init', '-b', 'main')
-      gg('config', 'user.email', 'orch-test@example.invalid')
-      gg('config', 'user.name', 'Orch Test')
       writeFileSync(join(repo, 'reviewed.txt'), 'base\n')
       gg('add', 'reviewed.txt')
       gg('commit', '-m', 'DEV-377 fixture base')
@@ -122,14 +116,12 @@ test('a carried review stores the persist-time change identity when base through
     }
   })
 test('records a tier from one shared base and reviewed tree and exposes CLI JSON', () => {
-    const repo = realpathSync(mkdtempSync(join(tmpdir(), 'orch-tier-')))
+    const repo = cloneRepository('orch-tier-')
     const gg = (...args: string[]) => {
       const p = Bun.spawnSync(['git', ...args], { cwd: repo, env: hermeticGitEnv(), stdout: 'pipe', stderr: 'pipe' })
       if (p.exitCode !== 0) throw new Error(p.stderr.toString())
       return p.stdout.toString().trim()
     }
-    gg('init', '-b', 'main'); gg('config', 'user.email', 'orch-test@example.invalid'); gg('config', 'user.name', 'Orch Test')
-    writeFileSync(join(repo, 'base.txt'), 'base\n'); gg('add', 'base.txt'); gg('commit', '-m', 'base')
     gg('checkout', '-b', 'tier-review'); writeFileSync(join(repo, 'change.ts'), 'change\n'); gg('add', 'change.ts'); gg('commit', '-m', 'change')
     upsertProject({ name: 'tier-review-project', path: repo, settings: { trunk: 'main' } })
     try {
@@ -185,7 +177,7 @@ test('stores null tier and names differing lens bases', () => {
     } finally { stderr.mockRestore() }
   })
 test('coverage audit compares each lens to trunk at cut time, not later trunk history', () => {
-    const repo = mkdtempSync(join(tmpdir(), 'orch-coverage-audit-'))
+    const repo = cloneRepository('orch-coverage-audit-')
     const git = (...args: string[]) => {
       const p = Bun.spawnSync(['git', ...args], {
         cwd: repo, env: hermeticGitEnv(), stdout: 'pipe', stderr: 'pipe',
@@ -194,9 +186,6 @@ test('coverage audit compares each lens to trunk at cut time, not later trunk hi
       return p.stdout.toString().trim()
     }
     try {
-      git('init', '-b', 'main')
-      git('config', 'user.email', 'orch-test@example.invalid')
-      git('config', 'user.name', 'Orch Test')
       writeFileSync(join(repo, 'trunk.txt'), 'trunk\n')
       git('add', 'trunk.txt')
       git('commit', '-m', 'trunk fixture')

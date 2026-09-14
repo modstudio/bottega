@@ -2,20 +2,18 @@ import { describe, expect, spyOn, test } from 'bun:test'
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { hermeticGitCommand, hermeticGitEnv } from '../test/fixtures/git.ts'
+import { cloneRepository, hermeticGitCommand, hermeticGitEnv } from '../test/fixtures/git.ts'
 import { compoundCreate, declaredCreate, worktreeDescribeFixture } from '../test/fixtures/worktree.ts'
 import { upsertProject } from './projects.ts'
 import { createWithTool, createWorktree, processStartTime, projectLockDir, reclaimStaleProjectLock, resolveBase, staleProjectLockHolder, unmergedBranch, withWorktreeCreateLock } from './worktree.ts'
 
 function repo() {
-  const path = mkdtempSync(join(tmpdir(), 'orch-base-test-'))
+  const path = cloneRepository('orch-base-test-')
   const git = (...args: string[]) => {
     const result = Bun.spawnSync(['git', ...args], { cwd: path, env: hermeticGitEnv(), stdout: 'pipe', stderr: 'pipe' })
     if (result.exitCode !== 0) throw new Error(result.stderr.toString())
     return result.stdout.toString().trim()
   }
-  git('init', '-b', 'main'); git('config', 'user.email', 'orch-test@example.invalid'); git('config', 'user.name', 'Orch Test')
-  writeFileSync(join(path, 'base.txt'), 'base\n'); git('add', '.'); git('commit', '-m', 'base')
   return { path, git }
 }
 

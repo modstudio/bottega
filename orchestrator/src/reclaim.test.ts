@@ -1,8 +1,7 @@
 import { afterEach, describe, expect, test } from 'bun:test'
-import { chmodSync, existsSync, mkdirSync, mkdtempSync, readdirSync, realpathSync, rmSync, utimesSync, writeFileSync } from 'node:fs'
-import { tmpdir } from 'node:os'
+import { chmodSync, existsSync, mkdirSync, readdirSync, realpathSync, rmSync, utimesSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
-import { hermeticGitEnv } from '../test/fixtures/git.ts'
+import { cloneRepository, hermeticGitEnv } from '../test/fixtures/git.ts'
 import { addRun, score } from '../test/fixtures/store.ts'
 import { db } from './db.ts'
 import { upsertProject } from './projects.ts'
@@ -20,14 +19,8 @@ function git(cwd: string, ...args: string[]): string {
 }
 
 function fixture() {
-  const repo = mkdtempSync(join(tmpdir(), 'orch-reclaim-'))
+  const repo = cloneRepository('orch-reclaim-')
   repos.push(repo)
-  git(repo, 'init', '-b', 'main')
-  git(repo, 'config', 'user.email', 'orch-test@example.invalid')
-  git(repo, 'config', 'user.name', 'Orch Test')
-  writeFileSync(join(repo, 'base.txt'), 'base\n')
-  git(repo, 'add', 'base.txt')
-  git(repo, 'commit', '-m', 'base')
   const base = git(repo, 'rev-parse', 'HEAD')
   const project = `reclaim-${repo.split('/').pop()}`
   upsertProject({ name: project, path: repo, settings: { trunk: 'main' } })

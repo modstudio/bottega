@@ -3,7 +3,7 @@ import { mkdtempSync,rmSync,writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { scriptedTransport } from '../test/fake-transport.ts'
-import { hermeticGitEnv } from '../test/fixtures/git.ts'
+import { cloneRepository, hermeticGitEnv } from '../test/fixtures/git.ts'
 import { reviewReply } from '../test/fixtures/replies.ts'
 import { addRun } from '../test/fixtures/store.ts'
 import { db } from './db.ts'
@@ -64,10 +64,10 @@ describe('review-lens-inline has no checkout', () => {
     } finally { if (priorDepth === undefined) delete process.env.ORCH_DEPTH; else process.env.ORCH_DEPTH = priorDepth }
   })
   test('an unregistered implicit review fails as harness naming the project', async () => {
-    const repo = mkdtempSync(join(tmpdir(), 'orch-unregistered-review-')); const oldDepth = process.env.ORCH_DEPTH
+    const repo = cloneRepository('orch-unregistered-review-'); const oldDepth = process.env.ORCH_DEPTH
     const git = (...args: string[]) => { const p = Bun.spawnSync(['git', ...args], { cwd: repo, env: hermeticGitEnv(), stdout: 'pipe', stderr: 'pipe' }); if (p.exitCode !== 0) throw new Error(p.stderr.toString()) }
     try {
-      git('init', '-b', 'develop'); git('config', 'user.email', 'orch-test@example.invalid'); git('config', 'user.name', 'Orch Test')
+      git('branch', '-m', 'develop')
       writeFileSync(join(repo, 'changed.txt'), 'change\n'); git('add', '.'); git('commit', '-m', 'fixture')
       const reply = reviewReply(0); reply.provenance.files_covered = ['changed.txt']
       scriptedTransport([{ kind: 'completed', output: JSON.stringify(reply) }]).install(); process.env.ORCH_DEPTH = '0'

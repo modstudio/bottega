@@ -1,9 +1,8 @@
 // Tests worktree.ts: carryWorkingState and assertCallerAncestry.
 import { expect, spyOn, test } from 'bun:test'
-import { mkdtempSync, rmSync, readFileSync, writeFileSync, existsSync, readdirSync } from 'node:fs'
-import { tmpdir } from 'node:os'
+import { rmSync, readFileSync, writeFileSync, existsSync, readdirSync } from 'node:fs'
 import { join } from 'node:path'
-import { hermeticGitEnv } from '../test/fixtures/git.ts'
+import { cloneRepository, hermeticGitEnv } from '../test/fixtures/git.ts'
 import { workerReply } from '../test/fixtures/replies.ts'
 import { db } from './db.ts'
 import { run as runJob } from './run.ts'
@@ -14,7 +13,7 @@ import { runDiffCommand } from './run-diff.ts'
 
 
   test('a new worktree receives the caller state without changing the caller', () => {
-    const repo = mkdtempSync(join(tmpdir(), 'orch-carry-state-'))
+    const repo = cloneRepository('orch-carry-state-')
     const git = (...args: string[]) => {
       const p = Bun.spawnSync(['git', ...args], {
         cwd: repo, env: hermeticGitEnv(), stdout: 'pipe', stderr: 'pipe',
@@ -22,9 +21,6 @@ import { runDiffCommand } from './run-diff.ts'
       if (p.exitCode !== 0) throw new Error(p.stderr.toString())
     }
     try {
-      git('init', '-b', 'main')
-      git('config', 'user.email', 'orch-test@example.invalid')
-      git('config', 'user.name', 'Orch Test')
       writeFileSync(join(repo, '.gitignore'), 'ignored.txt\n.claude/\n')
       writeFileSync(join(repo, 'tracked.txt'), 'base\n')
       writeFileSync(join(repo, 'unstaged.txt'), 'base\n')
@@ -74,7 +70,7 @@ import { runDiffCommand } from './run-diff.ts'
   })
 
   test("a caller behind the tree's base is refused before its reversions are carried", () => {
-    const repo = mkdtempSync(join(tmpdir(), 'orch-stale-caller-'))
+    const repo = cloneRepository('orch-stale-caller-')
     const git = (...args: string[]) => {
       const p = Bun.spawnSync(['git', ...args], {
         cwd: repo, env: hermeticGitEnv(), stdout: 'pipe', stderr: 'pipe',
@@ -83,9 +79,6 @@ import { runDiffCommand } from './run-diff.ts'
       return p.stdout.toString().trim()
     }
     try {
-      git('init', '-b', 'main')
-      git('config', 'user.email', 'orch-test@example.invalid')
-      git('config', 'user.name', 'Orch Test')
       writeFileSync(join(repo, 'tracked.txt'), 'caller base\n')
       git('add', 'tracked.txt')
       git('commit', '-m', 'caller base')
@@ -111,7 +104,7 @@ import { runDiffCommand } from './run-diff.ts'
   })
 
   test('a default launch with a dirty checkout carries nothing and tells the operator', async () => {
-    const repo = mkdtempSync(join(tmpdir(), 'orch-carry-default-off-'))
+    const repo = cloneRepository('orch-carry-default-off-')
     const priorDepth = process.env.ORCH_DEPTH
     const git = (...args: string[]) => {
       const p = Bun.spawnSync(['git', ...args], {
@@ -121,9 +114,6 @@ import { runDiffCommand } from './run-diff.ts'
     }
     try {
       process.env.ORCH_DEPTH = '0'
-      git('init', '-b', 'main')
-      git('config', 'user.email', 'orch-test@example.invalid')
-      git('config', 'user.name', 'Orch Test')
       writeFileSync(join(repo, '.gitignore'), '.claude/\n')
       writeFileSync(join(repo, 'kept.txt'), 'base\n')
       git('add', '.gitignore', 'kept.txt')
@@ -182,7 +172,7 @@ import { runDiffCommand } from './run-diff.ts'
   }, 20_000)
 
   test('an explicit --carry launch with a dirty checkout carries and records as before', async () => {
-    const repo = mkdtempSync(join(tmpdir(), 'orch-carry-opt-in-'))
+    const repo = cloneRepository('orch-carry-opt-in-')
     const priorDepth = process.env.ORCH_DEPTH
     const git = (...args: string[]) => {
       const p = Bun.spawnSync(['git', ...args], {
@@ -192,9 +182,6 @@ import { runDiffCommand } from './run-diff.ts'
     }
     try {
       process.env.ORCH_DEPTH = '0'
-      git('init', '-b', 'main')
-      git('config', 'user.email', 'orch-test@example.invalid')
-      git('config', 'user.name', 'Orch Test')
       writeFileSync(join(repo, '.gitignore'), '.claude/\n')
       writeFileSync(join(repo, 'kept.txt'), 'base\n')
       git('add', '.gitignore', 'kept.txt')
@@ -240,7 +227,7 @@ import { runDiffCommand } from './run-diff.ts'
   }, 20_000)
 
   test('a behind caller is refused whether or not carrying was requested', async () => {
-    const repo = mkdtempSync(join(tmpdir(), 'orch-stale-caller-launch-'))
+    const repo = cloneRepository('orch-stale-caller-launch-')
     const git = (...args: string[]) => {
       const p = Bun.spawnSync(['git', ...args], {
         cwd: repo, env: hermeticGitEnv(), stdout: 'pipe', stderr: 'pipe',
@@ -252,9 +239,6 @@ import { runDiffCommand } from './run-diff.ts'
     scriptedTransport([]).install()
     process.env.ORCH_DEPTH = '0'
     try {
-      git('init', '-b', 'main')
-      git('config', 'user.email', 'orch-test@example.invalid')
-      git('config', 'user.name', 'Orch Test')
       writeFileSync(join(repo, 'tracked.txt'), 'caller base\n')
       git('add', 'tracked.txt')
       git('commit', '-m', 'caller base')

@@ -1,5 +1,5 @@
-import { afterEach, beforeEach, expect, test } from 'bun:test'; import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, utimesSync, writeFileSync } from 'node:fs'; import { tmpdir } from 'node:os'; import { join } from 'node:path'; import { randomUUID } from 'node:crypto'; import { fakeDocker } from '../test/fixtures/docker.ts'
-import { hermeticGitEnv } from '../test/fixtures/git.ts'
+import { afterEach, beforeEach, expect, test } from 'bun:test'; import { chmodSync, existsSync, mkdirSync, readFileSync, rmSync, utimesSync, writeFileSync } from 'node:fs'; import { join } from 'node:path'; import { randomUUID } from 'node:crypto'; import { fakeDocker } from '../test/fixtures/docker.ts'
+import { cloneRepository, hermeticGitEnv } from '../test/fixtures/git.ts'
 import { addRun, score } from '../test/fixtures/store.ts'
 import { closeOutRun } from './close-out.ts'
 import { db } from './db.ts'
@@ -21,13 +21,7 @@ function git(cwd: string, ...args: string[]): string {
 }
 
 function fixture(status = 'ok') {
-  const repo = mkdtempSync(join(tmpdir(), 'orch-close-out-'))
-  git(repo, 'init', '-b', 'main')
-  git(repo, 'config', 'user.name', 'Orch Test')
-  git(repo, 'config', 'user.email', 'orch@example.invalid')
-  writeFileSync(join(repo, 'base.txt'), 'base\n')
-  git(repo, 'add', 'base.txt')
-  git(repo, 'commit', '-m', 'base')
+  const repo = cloneRepository('orch-close-out-')
   const project = `close-out-${randomUUID()}`
   upsertProject({ name: project, path: repo, settings: { trunk: 'main' } })
   const id = addRun({ agent: 'codex', job: 'implement', status, repo })

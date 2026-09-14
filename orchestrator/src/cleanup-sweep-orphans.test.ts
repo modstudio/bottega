@@ -3,7 +3,7 @@ import { appendFileSync, mkdtempSync, rmSync, readFileSync, writeFileSync, exist
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 import { fakeDocker } from '../test/fixtures/docker.ts'
-import { hermeticGitEnv } from '../test/fixtures/git.ts'
+import { cloneRepository, hermeticGitEnv } from '../test/fixtures/git.ts'
 import { addRun } from '../test/fixtures/store.ts'
 import { db } from './db.ts'
 import { upsertProject } from './projects.ts'
@@ -66,10 +66,7 @@ exec ${JSON.stringify(actualGit)} "$@"
     return { dir, env: { PATH: `${dir}:${process.env.PATH ?? ''}` } }
   }
   const scratchRepo = () => {
-    const repo = mkdtempSync(join(tmpdir(), 'orch-sweep-'))
-    git(repo, 'init', '-b', 'main')
-    git(repo, 'config', 'user.email', 'orch-test@example.invalid')
-    git(repo, 'config', 'user.name', 'Orch Test')
+    const repo = cloneRepository('orch-sweep-')
     writeFileSync(join(repo, 'kept.txt'), 'base\n')
     git(repo, 'add', 'kept.txt')
     git(repo, 'commit', '-m', 'base')

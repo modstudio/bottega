@@ -3,7 +3,7 @@ import { mkdirSync,mkdtempSync,rmSync,writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { dirname,join } from 'node:path'
 import { importDocs, removeDoc, setDoc } from '../test/fixtures/docs.ts'
-import { hermeticGitEnv } from '../test/fixtures/git.ts'
+import { cloneRepository, hermeticGitEnv } from '../test/fixtures/git.ts'
 import { dir } from '../test/fixtures/store.ts'
 import { allNumericLiterals, checkDoc, compilePack, diffPack, numericLiteralReport, recordPack } from './canon.ts'
 import { db } from './db.ts'
@@ -90,9 +90,8 @@ describe('scoped operator docs', () => {
   })
 
   test('numeric report scans safe register strings and reports read and missing canon files', () => {
-    const repo = mkdtempSync(join(tmpdir(), 'numeric-canon-'))
+    const repo = cloneRepository('numeric-canon-')
     try {
-      Bun.spawnSync(['git', 'init', '-b', 'main'], { cwd: repo, env: hermeticGitEnv() })
       const canon = ['AGENTS.md', 'orchestrator/AGENTS.md', 'hub/AGENTS.md', 'ops/AGENTS.md',
         'local-stack/AGENTS.md']
       for (const [index, file] of canon.slice(0, -1).entries()) {

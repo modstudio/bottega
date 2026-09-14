@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 import { randomUUID } from 'node:crypto'
 import { fakeDocker, fakeDockerCommand } from '../test/fixtures/docker.ts'
-import { hermeticGitCommand, hermeticGitEnv } from '../test/fixtures/git.ts'
+import { cloneRepository, hermeticGitCommand, hermeticGitEnv } from '../test/fixtures/git.ts'
 import { addRun, score } from '../test/fixtures/store.ts'
 import { db } from './db.ts'
 import { upsertProject } from './projects.ts'
@@ -48,10 +48,7 @@ describe('sweep only reclaims old orch-owned orphan worktrees', () => {
     }
   }
   const scratchRepo = () => {
-    const repo = mkdtempSync(join(tmpdir(), 'orch-sweep-'))
-    git(repo, 'init', '-b', 'main')
-    git(repo, 'config', 'user.email', 'orch-test@example.invalid')
-    git(repo, 'config', 'user.name', 'Orch Test')
+    const repo = cloneRepository('orch-sweep-')
     writeFileSync(join(repo, 'kept.txt'), 'base\n')
     git(repo, 'add', 'kept.txt')
     git(repo, 'commit', '-m', 'base')

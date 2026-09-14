@@ -2,7 +2,7 @@ import { afterEach, describe, expect, test } from 'bun:test'
 import { existsSync, mkdtempSync, rmSync, writeFileSync, readFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
-import { hermeticGitEnv } from '../test/fixtures/git.ts'
+import { cloneRepository, hermeticGitEnv } from '../test/fixtures/git.ts'
 import { addRun, reapTestProcess } from '../test/fixtures/store.ts'
 import { declaredCreate } from '../test/fixtures/worktree.ts'
 import { db } from './db.ts'
@@ -23,16 +23,13 @@ afterEach(() => {
 })
 
 function repo(): string {
-  const root = mkdtempSync(join(tmpdir(), 'orch-checkpoint-'))
+  const root = cloneRepository('orch-checkpoint-')
   roots.push(root)
   const g = (...args: string[]) => {
     const p = Bun.spawnSync(['git', ...args], { cwd: root, env: hermeticGitEnv(), stdout: 'pipe', stderr: 'pipe' })
     if (p.exitCode !== 0) throw new Error(p.stderr.toString())
     return p.stdout.toString().trim()
   }
-  g('init', '-b', 'main')
-  g('config', 'user.name', 'Test')
-  g('config', 'user.email', 'test@example.com')
   writeFileSync(join(root, 'file.txt'), 'base\n')
   g('add', 'file.txt'); g('commit', '-m', 'DEV-374 base')
   const tree = join(root, 'tree')
