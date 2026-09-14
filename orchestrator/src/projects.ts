@@ -23,8 +23,7 @@
  */
 import { existsSync, readFileSync } from 'node:fs'
 import { join, resolve } from 'node:path'
-import {
-  gitToplevel, inspectCheckout, inspectionGitEnv, resolvedPathsEqual, type SequenceKind, type SequenceState, } from '../../shared/git.ts'
+import { gitToplevel, inspectCheckout, inspectionGitEnv, resolvedPathsEqual, type SequenceKind, type SequenceState, } from '../../shared/git.ts'
 import { db, writableDb, writeTransaction } from './db.ts'
 import { CREATE_VARS, createHasPlaceholder, placeholders, validateCreate, type WorktreeCreate } from './worktree-template.ts'; import { validateReadonlyProvision, type ReadonlyProvision } from './readonly-provision.ts'
 export { migrateCreate, type WorktreeCreate, type WorktreeCreateArg } from './worktree-template.ts'
@@ -67,6 +66,11 @@ export type ProjectSettings = {
   keyPrefixes?: string[]
   /** MCP server this project's agents attach to. Defaults to the project name. */
   mcpServer?: string
+  /**
+   * Servers in this checkout's `.mcp.json` its workers may start. A checkout
+   * can also list other projects' servers, as bottega's does.
+   */
+  workerMcpServers?: string[]
   /** A cheap plain-named read tool used to prove the MCP attachment. */
   mcp?: { probe_tool?: string }
   /**
@@ -324,12 +328,11 @@ export function validateProjectSettings(settings: ProjectSettings): string[] {
       new Set(['path', 'base']),
     ), ...validateReadonlyProvision(settings.worktree?.readonly_provision),
   ]
-  if (settings.secretPaths !== undefined && (
-    !Array.isArray(settings.secretPaths) ||
-    settings.secretPaths.some((path) => typeof path !== 'string' || !path.trim())
-  )) {
+  if (invalidOptionalStringArray(settings.secretPaths)) {
     problems.push('secretPaths must be an array of non-empty path strings')
   }
+  if (invalidOptionalStringArray(settings.workerMcpServers)) problems.push(
+    'workerMcpServers must be an array of non-empty strings')
   if (settings.requireCleanMain !== undefined && typeof settings.requireCleanMain !== 'boolean') {
     problems.push('requireCleanMain must be a boolean')
   }
@@ -366,6 +369,11 @@ export function validateProjectSettings(settings: ProjectSettings): string[] {
     }
   }
   return problems
+}
+
+function invalidOptionalStringArray(value: unknown): boolean {
+  return value !== undefined && (!Array.isArray(value) ||
+    value.some((entry) => typeof entry !== 'string' || !entry.trim()))
 }
 
 /** Validate a stored row without re-refusing its unchanged legacy create string. */

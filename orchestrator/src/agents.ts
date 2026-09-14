@@ -402,9 +402,8 @@ function codexCommon(o: Omit<ArgvOpts, 'prompt'>): string[] {
    * establishing rather than assuming. grok has no such conflict: it discovers
    * Claude-compatible MCP configuration natively and needs no approval flag, so
    * nothing competes with its sandbox setting. Repo-local servers are separately
-   * gated by Grok's persistent folder trust; run() passes `--trust` only for an
-   * orch-created disposable worktree when MCP was requested. The resulting
-   * entry is harmless residue after that unique worktree path is removed.
+   * gated by folder trust; run() passes `--trust` only for an orch-created
+   * disposable worktree and stores that grant in the run's GROK_HOME.
    * Verified directly — with
    * `--permission-mode acceptEdits` it reported `ask_orchestrator` among its
    * tools AND wrote the requested file in the same run.
@@ -583,14 +582,9 @@ const BUILTIN_AGENTS: Record<string, Agent> = {
     minimumCliVersion: '1.0.13',
     model: process.env.ORCH_GROK_MODEL ?? 'grok-4.6',
     billing: 'subscription',
-    // Project servers are discovered from the process cwd. For a repository
-    // run requesting `--mcp` (required) or `--mcp=prefer` (mirror fallback),
-    // dispatch therefore preflights the worker tree's `.mcp.json`. When only
-    // the registered checkout has it, orch links that copy into the worker
-    // tree before probing; when neither has it, required mode refuses before
-    // Grok starts and prefer mode records and discloses the mirror fallback.
-    // A removed tree's unique path never recurs, so its vendor trust entry is
-    // harmless residue reported by sweep rather than state orch edits.
+    // Project servers come from the worker tree's `.mcp.json`; the run-scoped
+    // GROK_HOME disables entries the project's workerMcpServers does not own.
+    // Dispatch preflights that clamped view and stores folder trust there too.
     //
     // writesRepo VERIFIED directly from a shell in a scratch git repo: with
     // `--permission-mode acceptEdits`, v1.0.13 created the requested uncommitted
