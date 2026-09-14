@@ -22,3 +22,15 @@ export function decideTestTiming({
   if (currentMs > committedMs * (1 + growthLimit)) return 'fail'
   return 'pass'
 }
+
+export type BaselineDisposition = 'write' | 'report' | 'keep'
+
+/**
+ * What to do with a measurement that would move the committed baseline. A
+ * local run writes it and asks for the commit; a hosted runner is a different
+ * machine, so its measurement is reported and never written or made a verdict.
+ */
+export function baselineDisposition({ changed, ci }: { changed: boolean; ci: boolean }): BaselineDisposition {
+  if (!changed) return 'keep'
+  return ci ? 'report' : 'write'
+}

@@ -3,7 +3,7 @@
  * committed surface. It knows timing rows, not how the gate runs tests.
  */
 import { readFileSync, writeFileSync } from 'node:fs'
-import { decideTestTiming } from '../../scripts/quality/test-timing-decision.ts'
+import { baselineDisposition, decideTestTiming } from '../../scripts/quality/test-timing-decision.ts'
 import type { FileRow } from './record-gate-timings.ts'
 
 const root = new URL('../..', import.meta.url).pathname.replace(/\/$/, '')
@@ -144,7 +144,13 @@ export function publishTimingSummary(
         ...committed.filter((row) => keepCommitted.has(packageOf(row.path))),
       ].sort((a, b) => a.path.localeCompare(b.path))
     : current
-  if (baselineChanged) {
+  const disposition = baselineDisposition({ changed: baselineChanged, ci })
+  if (disposition === 'report') {
+    reporter.error(`${TIMING_SUMMARY_LABEL}: baseline measured on CI is informational; commit a baseline from a local gate`)
+    reporter.log(`test timing ratchet: ok (${current.length} files)`)
+    return true
+  }
+  if (disposition === 'write') {
     writeFileSync(TIMING_SUMMARY_PATH, `${JSON.stringify({ unitElapsedMs: nextUnitElapsedMs, files: next }, null, 2)}\n`)
     reporter.error(`test timing baseline changed; commit ${TIMING_SUMMARY_LABEL} and re-run`)
     return false
