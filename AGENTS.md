@@ -404,12 +404,11 @@ them surfaces. No test uses the CLI subprocess shape.
 **A test lives beside what it tests.** A unit test is `<module>.test.ts` in the
 same directory as its module, so the two are read, reviewed, renamed and moved
 together, and a restructure that splits a module carries its tests in the same
-commit. A test whose assertion is about the process boundary itself - exit
-codes, signals, a real subprocess - belongs to no single module and lives under
-the gate. A concern's `test/` holds infrastructure only: fixtures, the preload,
-the gate runner, and timing reporters. There is no mirrored
-`tests/` tree, because a second tree drifts from the source on every rename and
-nothing reports the drift.
+commit. There is no process-boundary test package: exit codes, signals, and real
+subprocesses are outside the gate. A concern's `test/` holds infrastructure
+only: fixtures, the preload, the gate runner, and timing reporters. There is no
+mirrored `tests/` tree, because a second tree drifts from the source on every
+rename and nothing reports the drift.
 
 **Suite time is a shared budget**, and the budget is under two minutes on a
 hosted runner. A slow test guarding little makes every future change more
