@@ -59,56 +59,94 @@ export type WorkerFinalization<FailureKind extends string = string> = {
   droppedQuestions: WorkerQuestion[]
 }
 
-/** Classify the parsed worker reply against the measured repository change. */
-export function finalizeWorkerReply<FailureKind extends string>(inputs: {
+type FinalizationInputs<FailureKind extends string> = {
   reply: FinalizationReply | null
   measuredFiles: string[] | null
   status: OutcomeStatus
   failureKind: FailureKind | 'contract' | 'other' | null
   error: string | null
   contractObjects?: number
-}): WorkerFinalization<FailureKind> {
+}
+
+type FinalizationDecision<FailureKind extends string> = Pick<
+  WorkerFinalization<FailureKind>, 'status' | 'failureKind' | 'error'
+>
+
+function appendOutcomeNote(error: string | null, note: string): string {
+  return error ? `${error}\n${note}` : note
+}
+
+function rejectEmptyAsking<FailureKind extends string>(
+  reply: FinalizationReply | null,
+  acceptedQuestions: WorkerQuestion[],
+  decision: FinalizationDecision<FailureKind>,
+): FinalizationDecision<FailureKind> {
+  if (reply?.status !== 'asking' || acceptedQuestions.length > 0) return decision
+  const rejected = reply.questions?.map((item) => JSON.stringify(item.question)).join(', ')
+    || '(no question text)'
+  return {
+    status: 'failed', failureKind: 'contract',
+    error: 'the worker returned asking without a real question and non-empty why; ' +
+      `rejected question text: ${rejected}`,
+  }
+}
+
+function rejectEmptyDone<FailureKind extends string>(
+  inputs: FinalizationInputs<FailureKind>,
+  decision: FinalizationDecision<FailureKind>,
+): FinalizationDecision<FailureKind> {
+  const { reply } = inputs
+  if (reply?.status !== 'done' || reply.files_changed?.length !== 0 ||
+      reply.tests?.ran !== false || inputs.measuredFiles?.length !== 0 ||
+      decision.failureKind === 'truncated') return decision
+  return { status: 'failed', failureKind: 'other', error: 'reported done with no change and no test run' }
+}
+
+function reclassifyDoneAsking<FailureKind extends string>(
+  reply: FinalizationReply | null,
+  acceptedQuestions: WorkerQuestion[],
+  decision: FinalizationDecision<FailureKind>,
+): FinalizationDecision<FailureKind> {
+  if (reply?.status !== 'done' || acceptedQuestions.length === 0) return decision
+  const note = 'status reclassified from done to asking: a worker with a real question has not finished'
+  return { status: 'asking', failureKind: null, error: appendOutcomeNote(decision.error, note) }
+}
+
+function annotateDroppedQuestions<FailureKind extends string>(
+  reply: FinalizationReply | null,
+  acceptedQuestions: WorkerQuestion[],
+  droppedQuestions: WorkerQuestion[],
+  decision: FinalizationDecision<FailureKind>,
+): FinalizationDecision<FailureKind> {
+  if (droppedQuestions.length === 0 ||
+      (acceptedQuestions.length === 0 && reply?.status !== 'done')) return decision
+  const count = droppedQuestions.length
+  const rejected = droppedQuestions.map((item) => JSON.stringify(item.question)).join(', ')
+  const note = `${count} invalid question${count === 1 ? '' : 's'} dropped; ` +
+    `rejected question text: ${rejected}`
+  return { ...decision, error: appendOutcomeNote(decision.error, note) }
+}
+
+/** Classify the parsed worker reply against the measured repository change. */
+export function finalizeWorkerReply<FailureKind extends string>(
+  inputs: FinalizationInputs<FailureKind>,
+): WorkerFinalization<FailureKind> {
   const { reply } = inputs
   const questionsControlStatus = reply?.status === 'asking' || reply?.status === 'done'
   const acceptedQuestions = questionsControlStatus ? realQuestions(reply) : []
   const accepted = new Set(acceptedQuestions)
   const droppedQuestions = questionsControlStatus
     ? (reply?.questions ?? []).filter((item) => !accepted.has(item)) : []
-  let { status, failureKind, error } = inputs
-
-  if (reply?.status === 'asking' && acceptedQuestions.length === 0) {
-    const rejected = reply.questions?.map((item) => JSON.stringify(item.question)).join(', ')
-      || '(no question text)'
-    status = 'failed'
-    failureKind = 'contract'
-    error = 'the worker returned asking without a real question and non-empty why; ' +
-      `rejected question text: ${rejected}`
-  }
-  if (reply?.status === 'done' && reply.files_changed?.length === 0 &&
-      reply.tests?.ran === false && inputs.measuredFiles?.length === 0 &&
-      failureKind !== 'truncated') {
-    status = 'failed'
-    failureKind = 'other'
-    error = 'reported done with no change and no test run'
-  }
+  let decision: FinalizationDecision<FailureKind> = inputs
+  decision = rejectEmptyAsking(reply, acceptedQuestions, decision)
+  decision = rejectEmptyDone(inputs, decision)
   if ((inputs.contractObjects ?? 0) > 1) {
     const note = `${inputs.contractObjects} contract objects in output; took the last`
-    error = error ? `${error}\n${note}` : note
+    decision = { ...decision, error: appendOutcomeNote(decision.error, note) }
   }
-  if (reply?.status === 'done' && acceptedQuestions.length) {
-    status = 'asking'
-    failureKind = null
-    const note = 'status reclassified from done to asking: a worker with a real question has not finished'
-    error = error ? `${error}\n${note}` : note
-  }
-  if (droppedQuestions.length && (acceptedQuestions.length || reply?.status === 'done')) {
-    const count = droppedQuestions.length
-    const rejected = droppedQuestions.map((item) => JSON.stringify(item.question)).join(', ')
-    const note = `${count} invalid question${count === 1 ? '' : 's'} dropped; ` +
-      `rejected question text: ${rejected}`
-    error = error ? `${error}\n${note}` : note
-  }
-  return { status, failureKind, error, acceptedQuestions, droppedQuestions }
+  decision = reclassifyDoneAsking(reply, acceptedQuestions, decision)
+  decision = annotateDroppedQuestions(reply, acceptedQuestions, droppedQuestions, decision)
+  return { ...decision, acceptedQuestions, droppedQuestions }
 }
 
 export type OutcomeInputs<FailureKind extends string = string> = {
