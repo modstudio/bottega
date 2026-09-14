@@ -168,6 +168,9 @@ refuseFailed(results)
 
 for (const script of [
   'check-boundaries.ts', 'check-isolation-boundary.ts', 'check-review-boundary.ts',
+  'check-review-coverage-boundary.ts', 'check-review-pins-boundary.ts',
+  'check-review-triage-boundary.ts', 'check-review-calibration-boundary.ts',
+  'check-review-evidence-sql-boundary.ts', 'check-review-types-boundary.ts',
   'check-outcome-boundary.ts', 'check-contract-boundary.ts', 'check-evidence-boundary.ts',
   'check-git-environment-boundary.ts', 'check-review-target-boundary.ts',
   'check-checkout-identity-boundary.ts', 'check-worktree-mcp-boundary.ts',

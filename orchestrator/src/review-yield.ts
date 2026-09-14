@@ -3,7 +3,8 @@ import { db } from './db.ts'
 import { REVIEW_OVERLAP, REVIEW_SEVERITY, type ReviewOverlap, type ReviewSeverity } from './review-vocabulary.ts'
 import { attributedTaskKey } from './epic.ts'
 import { median } from './statistics.ts'
-import { reviewRunEvidenceSql, reviewTriageBag } from './review.ts'
+import { reviewRunEvidenceSql } from './review-evidence-sql.ts'
+import { reviewTriageBag } from './review-triage.ts'
 
 export type ReviewYieldFilters = {
   project?: string

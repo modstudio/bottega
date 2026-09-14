@@ -32,10 +32,10 @@ import {
   parseReaderOutput,
   type CanonSource, type WorkerReply, type ReviewReply, type ReplyDialect,
 } from './contract.ts'
+import { cleanReviewEvidence } from './review.ts'
 import {
-  CALIBRATION_SUFFIX_RESERVE_BYTES, calibrationLine, cleanReviewEvidence,
-  reviewCalibration,
-} from './review.ts'
+  CALIBRATION_SUFFIX_RESERVE_BYTES, calibrationLine, reviewCalibration,
+} from './review-calibration.ts'
 import { projectAt, projectByName, projects, stackAt } from './projects.ts'
 import { compilePack, recordPack } from './canon.ts'
 import { resolveBranchRef } from './projects.ts'
