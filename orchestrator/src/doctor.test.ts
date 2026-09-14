@@ -65,4 +65,17 @@ describe('doctor presentation', () => {
     expect(result.text).toContain('global/_/oversize-inject')
     expect(result.text).toMatch(/headroom/)
   })
+
+  test('a disabled local agent with a stale probe is not a machine failure; an enabled one is', async () => {
+    const stale = new Date(Date.now() - 30 * 86_400_000).toISOString()
+    db().query("UPDATE agent SET probed_at=?, enabled=0 WHERE name='qwen-local'").run(stale)
+    const disabled = await doctor()
+    expect(disabled.exit).toBe(0)
+    expect(disabled.text).not.toContain('qwen-local FAIL')
+    db().query("UPDATE agent SET enabled=1, disabled_reason=NULL WHERE name='qwen-local'").run()
+    const enabled = await doctor()
+    expect(enabled.exit).toBe(1)
+    expect(enabled.text).toContain('local probe     qwen-local FAIL')
+    expect(enabled.text).toContain('exceeds 7 days')
+  })
 })
