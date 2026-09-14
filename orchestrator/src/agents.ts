@@ -6,7 +6,9 @@ import { join } from 'node:path'
 import { DB_PATH, ROOT, db as dbForAgents, writableDb, nowIso } from './db.ts'
 import type { Caps } from './capabilities.ts'
 import type { ArgvOpts } from './transport.ts'
+import { codexScopeArgs } from './codex-mcp-scope.ts'
 export { MIGRATED_AGENT_NAMES } from './capabilities.ts'
+export { CODEX_ASK_ENV_VARS } from './codex-mcp-scope.ts'
 export type { Caps } from './capabilities.ts'
 export type { ArgvOpts, SandboxLevel } from './transport.ts'
 
@@ -18,18 +20,6 @@ export type { ArgvOpts, SandboxLevel } from './transport.ts'
  * legible when someone comes looking for it.
  */
 export const CODEX_EXEC_SANDBOX = 'danger-full-access'
-
-/**
- * Parent env names Codex must forward into orch-ask.
- *
- * Codex stdio MCP does not inherit the vendor CLI environment. Measured on
- * live `codex exec` workers: the parent had ORCH_RUN_ID/ORCH_RUN_TOKEN/ORCH_DB
- * and the ask-server grandchild had none, so authorised() failed with
- * "not a recognised orchestrator worker". Grok inherits the same pair by
- * default, including on `--resume`. `env_vars` is Codex's documented forward
- * list; the overlay is per spawn so concurrent runs keep their own values.
- */
-export const CODEX_ASK_ENV_VARS = ['ORCH_RUN_ID', 'ORCH_RUN_TOKEN', 'ORCH_DB'] as const
 
 type JSONSchema = Record<string, unknown>
 
@@ -392,6 +382,7 @@ function codexCommon(o: Omit<ArgvOpts, 'prompt'>): string[] {
   const a = [
     '--strict-config', '--skip-git-repo-check', '--json', '-o', o.out,
     '-m', o.model ?? AGENTS.codex!.model,
+    ...codexScopeArgs(o),
   ]
   /**
    * MCP AND THE SANDBOX CANNOT BOTH BE CHOSEN, and the split falls out well.
@@ -440,7 +431,6 @@ function codexCommon(o: Omit<ArgvOpts, 'prompt'>): string[] {
     }
   }
   if (o.mcp) {
-    a.push('-c', `mcp_servers.orch-ask.env_vars=${JSON.stringify([...CODEX_ASK_ENV_VARS])}`)
     a.push('--approve-for-me')
   } else if (o.sandbox === 'exec') a.push('-s', CODEX_EXEC_SANDBOX)
   else a.push('-s', o.write || o.sandbox === 'workspace-write' ? 'workspace-write' : 'read-only')

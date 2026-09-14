@@ -17,6 +17,7 @@
   "orchestrator/src/cleanup.test.ts": 704,
   "orchestrator/src/clock.test.ts": 0,
   "orchestrator/src/close-out.test.ts": 774,
+  "orchestrator/src/codex-mcp-scope.test.ts": 0,
   "orchestrator/src/collect-imports.test.ts": 0,
   "orchestrator/src/collect.test.ts": 0,
   "orchestrator/src/confinement-ruling.test.ts": 81,

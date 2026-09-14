@@ -4,7 +4,7 @@ import { rmSync, writeFileSync, realpathSync } from 'node:fs'
 import { join } from 'node:path'
 import { cloneRepository, hermeticGitEnv } from '../test/fixtures/git.ts'
 import { reviewReply } from '../test/fixtures/replies.ts'
-import { AGENTS, CODEX_ASK_ENV_VARS, CODEX_EXEC_SANDBOX } from './agents.ts'
+import { AGENTS, CODEX_EXEC_SANDBOX } from './agents.ts'
 import { worktreeGitDir } from './git-environment.ts'
 import { upsertProject } from './projects.ts'
 import { run as runJob } from './run.ts'
@@ -70,19 +70,19 @@ test('follows the job, not a project register entry', async () => {
     expect(argv).not.toContain(CODEX_EXEC_SANDBOX)
   })
 
-  test('Codex MCP forwards the run identity into orch-ask on first and resumed turns', () => {
-    const overlay = `mcp_servers.orch-ask.env_vars=${JSON.stringify([...CODEX_ASK_ENV_VARS])}`
+  test('Codex MCP scope is retained on first and resumed turns', () => {
     const first = AGENTS.codex!.argv({ prompt: 'p', out: '/tmp/o', mcp: true })
     expect(first).toContain('--strict-config')
     expect(first).toContain('--approve-for-me')
-    expect(first).toContain(overlay)
+    expect(first.some((arg) => arg.startsWith('mcp_servers.orch-ask='))).toBe(true)
     const resumed = AGENTS.codex!.resumeArgv!({
       prompt: 'p', out: '/tmp/o', mcp: true, session: 'thread',
     })
     expect(resumed).toContain('--strict-config')
     expect(resumed).toContain('--approve-for-me')
-    expect(resumed).toContain(overlay)
-    expect(AGENTS.codex!.argv({ prompt: 'p', out: '/tmp/o' })).not.toContain(overlay)
+    expect(resumed.some((arg) => arg.startsWith('mcp_servers.orch-ask='))).toBe(true)
+    expect(AGENTS.codex!.argv({ prompt: 'p', out: '/tmp/o' })
+      .some((arg) => arg.startsWith('mcp_servers.'))).toBe(false)
   })
 
   test('a writing worktree grants codex its metadata, common objects, and run-ref directory', () => {

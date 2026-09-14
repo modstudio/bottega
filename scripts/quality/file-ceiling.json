@@ -8,7 +8,7 @@
   "hub/src/serve.ts": 672,
   "hub/src/task-cli.test.ts": 704,
   "orchestrator/src/agents.test.ts": 951,
-  "orchestrator/src/agents.ts": 1477,
+  "orchestrator/src/agents.ts": 1467,
   "orchestrator/src/canon.test.ts": 508,
   "orchestrator/src/close-out.test.ts": 510,
   "orchestrator/src/contract.ts": 1058,
