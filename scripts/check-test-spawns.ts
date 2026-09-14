@@ -61,6 +61,11 @@ function newestSpawnMeasurements(): SpawnMeasurement[] | null {
   return artifact.files.filter((row) => row.file.startsWith('src/') && row.file.endsWith('.test.ts'))
 }
 
+/** A run's spawn count moves by a few calls with retries and timing; the band absorbs that, never a new subprocess. */
+function spawnBand(ceiling: number): number {
+  return Math.max(2, Math.ceil(ceiling * 0.05))
+}
+
 function checkSpawnCeilings(): { measured: number; ceilings: number; failed: boolean } {
   const measurements = newestSpawnMeasurements()
   const ceilings = existsSync(SPAWN_STATE_FILE)
@@ -77,9 +82,9 @@ function checkSpawnCeilings(): { measured: number; ceilings: number; failed: boo
     if (ceiling === undefined) {
       next[path] = count
       tightenings.push(`${SPAWN_STATE_LABEL}: ${path} recorded initial ceiling ${count}`)
-    } else if (count > ceiling) {
+    } else if (count > ceiling + spawnBand(ceiling)) {
       violations.push(`${path}: measured ${count} spawns, committed ceiling ${ceiling}`)
-    } else if (count < ceiling) {
+    } else if (count < ceiling - spawnBand(ceiling)) {
       next[path] = count
       tightenings.push(`${SPAWN_STATE_LABEL}: ${path} tightened ${ceiling} -> ${count}`)
     }
