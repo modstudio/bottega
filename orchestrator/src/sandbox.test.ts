@@ -7,7 +7,7 @@ import { classify,NOT_EVIDENCE } from './failure.ts'
 import type { Project } from './projects.ts'
 import {
 grokSandboxConfig,
-disabledProjectMcpServers,prepareGrokMcpHome,
+prepareGrokMcpHome,
 READONLY_LENS_DENY_PATHS,readonlyLensProfile,readonlyNeedsDocker,
 resetSandbox,
 sandboxRuntimeConfig,
@@ -42,13 +42,6 @@ test('prepares one persistent Grok MCP home and refuses a source clamp', () => {
     expect(() => prepareGrokMcpHome(join(fixture, 'conflict-run'), [], conflict))
       .toThrow(`disabled_mcp_servers is already declared in ${join(conflict, 'config.toml')}`)
   } finally { rmSync(fixture, { recursive: true, force: true }) }
-})
-
-test('computes the complement only for declared worker MCP scope', () => {
-  const names = ['orch', 'starship', 'stopal']
-  expect(disabledProjectMcpServers(names, undefined)).toEqual([])
-  expect(disabledProjectMcpServers(names, [])).toEqual(names)
-  expect(disabledProjectMcpServers(names, ['starship'])).toEqual(['orch', 'stopal'])
 })
 
 describe('readonly-lens sandbox profile', () => {

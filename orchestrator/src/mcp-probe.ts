@@ -62,6 +62,15 @@ export type McpServerConfig = {
   headers?: Record<string, string>
 }
 
+/** Return checkout servers withheld from this project's workers. */
+export function disabledProjectMcpServers(
+  names: string[], allowed: string[] | undefined,
+): string[] {
+  if (allowed === undefined) return []
+  const allow = new Set(allowed)
+  return names.filter((name) => !allow.has(name))
+}
+
 const ALLOWED_EXTRA_SERVERS = new Set(['orch-ask', 'orch'])
 const MCP_PROBE_ERROR_LIMIT = 400
 
