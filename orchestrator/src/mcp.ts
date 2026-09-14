@@ -19,6 +19,7 @@ import { getReview, listReviews } from './review.ts'
 import { strictlyAuthenticatedWorkerRun } from './ask.ts'
 import { resolveLens } from './lenses.ts'
 import { filedIssueDataLine } from './issue.ts'
+import { CONDITIONAL_ISSUE_REPORT_FIELD_REASONS, missingIssueReportFields } from './issue-report-fields.ts'
 
 const text = (value: unknown) => ({
   content: [{ type: 'text' as const, text: typeof value === 'string' ? value : JSON.stringify(value) }],
@@ -517,8 +518,8 @@ export function createDocsMcpServer(): McpServer {
 
   server.registerTool('file_issue', {
     description: `File an actionable defect or suggestion against ${PLATFORM_SLUG} through hub, returning likely duplicate tasks.`,
-    inputSchema: z.discriminatedUnion('kind', [z.object({
-      kind: z.literal('defect').describe('How the filed issue should be read.'),
+    inputSchema: z.object({
+      kind: z.enum(['defect', 'suggestion']).describe('How the filed issue should be read.'),
       title: z.string().optional().describe('Preferred task title. Whitespace is normalized and titles over 200 characters are shortened; the response reports truncation.'),
       what_happened: requiredReportField(
         'what_happened', 'state the observed behavior or proposed change',
@@ -527,11 +528,11 @@ export function createDocsMcpServer(): McpServer {
         'expected', 'state what should have happened or what the suggestion should achieve',
       ),
       reproduce_command: requiredReportField(
-        'reproduce_command', 'provide the exact command that reproduces or demonstrates the issue',
-      ),
+        'reproduce_command', CONDITIONAL_ISSUE_REPORT_FIELD_REASONS.reproduce_command,
+      ).optional(),
       environment: requiredReportField(
-        'environment', 'state the environment details that matter to reproducing the issue',
-      ),
+        'environment', CONDITIONAL_ISSUE_REPORT_FIELD_REASONS.environment,
+      ).optional(),
       evidence: requiredReportField(
         'evidence', 'provide concrete run ids, file:line pointers, or measured output',
       ),
@@ -539,24 +540,11 @@ export function createDocsMcpServer(): McpServer {
         'not_established', 'state what remains uncertain or has not been demonstrated',
       ),
       ...reporterFields,
-    }), z.object({
-      kind: z.literal('suggestion').describe('How the filed issue should be read.'),
-      title: z.string().optional().describe('Preferred task title. Whitespace is normalized and titles over 200 characters are shortened; the response reports truncation.'),
-      what_happened: requiredReportField(
-        'what_happened', 'state the observed behavior or proposed change',
-      ),
-      expected: requiredReportField(
-        'expected', 'state what should have happened or what the suggestion should achieve',
-      ),
-      evidence: requiredReportField(
-        'evidence', 'provide concrete run ids, file:line pointers, or measured output',
-      ),
-      not_established: requiredReportField(
-        'not_established', 'state what remains uncertain or has not been demonstrated',
-      ),
-      ...reporterFields,
-    })]),
+    }),
   }, async (input) => {
+    const missing = missingIssueReportFields(input)
+    if (missing.length) throw new Error(missing.map((field) =>
+      `${field} is required: ${CONDITIONAL_ISSUE_REPORT_FIELD_REASONS[field]}`).join('; '))
     const kind = input.reporter_kind ?? 'session'
     if (kind === 'monitor' && !input.monitor_invocation_id) {
       throw new Error('monitor_invocation_id is required for reporter_kind monitor')
@@ -575,7 +563,7 @@ export function createDocsMcpServer(): McpServer {
     const reporter: IssueReporter = kind === 'monitor'
       ? { kind, invocationId: input.monitor_invocation_id!, affectedProject: input.affected_project! }
       : { kind }
-    return text(await fileIssue(issue, reporter, input.reporting_project))
+    return text(await fileIssue(issue as FileIssueInput, reporter, input.reporting_project))
   })
 
   server.registerTool('note', {

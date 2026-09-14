@@ -12,7 +12,7 @@
   "orchestrator/src/contract.ts": 1058,
   "orchestrator/src/docs.ts": 664,
   "orchestrator/src/issue.ts": 503,
-  "orchestrator/src/mcp.ts": 595,
+  "orchestrator/src/mcp.ts": 583,
   "orchestrator/src/migrations.ts": 545,
   "orchestrator/src/monitor.ts": 863,
   "orchestrator/src/porting-import.ts": 730,
