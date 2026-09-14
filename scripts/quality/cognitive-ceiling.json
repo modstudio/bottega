@@ -801,57 +801,57 @@
     "score": 27
   },
   {
-    "file": "orchestrator/src/worktree.ts",
+    "file": "orchestrator/src/project-lock.ts",
     "function": "nextWaiterTicket",
-    "line": 687,
+    "line": 164,
     "score": 25
   },
   {
-    "file": "orchestrator/src/worktree.ts",
+    "file": "orchestrator/src/project-lock.ts",
     "function": "withKernelProjectLock",
-    "line": 761,
+    "line": 238,
     "score": 20
   },
   {
-    "file": "orchestrator/src/worktree.ts",
+    "file": "orchestrator/src/project-lock.ts",
     "function": "withProjectLock",
-    "line": 871,
+    "line": 348,
     "score": 32
   },
   {
-    "file": "orchestrator/src/worktree.ts",
+    "file": "orchestrator/src/ref-guard.ts",
     "function": "cleanupRefGuardLitter",
-    "line": 1118,
+    "line": 115,
     "score": 18
   },
   {
-    "file": "orchestrator/src/worktree.ts",
+    "file": "orchestrator/src/ref-guard.ts",
     "function": "prepareSharedRefGuard",
-    "line": 1191,
+    "line": 188,
     "score": 45
   },
   {
-    "file": "orchestrator/src/worktree.ts",
+    "file": "orchestrator/src/worktree-create.ts",
     "function": "createWithToolUnlocked",
-    "line": 1884,
+    "line": 124,
     "score": 23
   },
   {
-    "file": "orchestrator/src/worktree.ts",
+    "file": "orchestrator/src/worktree-readonly.ts",
     "function": "createReadOnlyWithTool",
-    "line": 2118,
+    "line": 28,
     "score": 21
   },
   {
-    "file": "orchestrator/src/worktree.ts",
+    "file": "orchestrator/src/worktree-remove.ts",
     "function": "removeWithTool",
-    "line": 2506,
+    "line": 104,
     "score": 39
   },
   {
-    "file": "orchestrator/src/worktree.ts",
+    "file": "orchestrator/src/worktree-remove.ts",
     "function": "removeFor",
-    "line": 2624,
+    "line": 222,
     "score": 16
   },
   {
