@@ -795,9 +795,6 @@ export async function run(opts: {
   let timer: ReturnType<typeof setTimeout> | null = null
   let checkpointTimer: ReturnType<typeof setInterval> | null = null
   let idleTimer: ReturnType<typeof setInterval> | null = null
-  let timedOut = false
-  let idleKilled = false
-  let idleKillError: string | null = null
   let idleUnkillable = false
   let idleTreePids: number[] = []
   let idleTreePgid: number | null = null
@@ -807,8 +804,6 @@ export async function run(opts: {
   let costUsd: number | null = null
   let resolvedSession: string | null = vendorSession
   let effectiveModel: string | null = null
-  let replyFileError: string | null = null
-  let replyFilePresent = false
   let contract: WorkerReply | null = null
   let contractObjects = 0
   let acceptedQuestions: ReturnType<typeof realQuestions> = []
@@ -822,11 +817,6 @@ export async function run(opts: {
   let confinementEvent: ConfinementEvent | null = null
   let frozenBefore: import('./confinement.ts').FrozenCheckout[] = []
   let askLoopback: AskLoopback | null = null
-  void timedOut
-  void idleKilled
-  void idleKillError
-  void replyFileError
-  void replyFilePresent
   // Start after orch's own worktree and hook setup, immediately before the
   // vendor process. The interval establishes when a change happened, not who
   // wrote it: an architect or concurrent landing can change a watched checkout.
@@ -859,9 +849,9 @@ export async function run(opts: {
 
   try {
     ({
-      proc, timer, checkpointTimer, idleTimer, timedOut, idleKilled, idleKillError,
+      proc, timer, checkpointTimer, idleTimer,
       idleUnkillable, idleTreePids, idleTreePgid, exitCode, output, vendorTokens,
-      costUsd, resolvedSession, effectiveModel, replyFileError, replyFilePresent,
+      costUsd, resolvedSession, effectiveModel,
       contract, contractObjects, acceptedQuestions, status, error, failureKind,
       artifactsPersisted, preConfinement, vendorTerminatedStream, confinementFailures,
       confinementEvent, frozenBefore, askLoopback, mcpSetupHeader,
