@@ -1982,7 +1982,7 @@ export async function run(opts: {
       reply: contract, measuredFiles: changes?.files ?? null,
       status: status as import('./outcome.ts').OutcomeStatus, failureKind, error, contractObjects,
     })
-    ;({ status, failureKind, error, acceptedQuestions } = finalization)
+    ;({ status, failureKind, error } = finalization)
     /**
      * A raw stdout/stderr stream ending in a vendor termination marker means the
      * vendor killed the session. Whatever else the run appears to be — an ACP stop

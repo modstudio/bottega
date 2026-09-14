@@ -1,5 +1,44 @@
 // concern: outcome
-import { realQuestions, type WorkerReply } from './contract.ts'
+export const GENERIC_QUESTION_TOKENS = ['placeholder', 'tbd', 'question', 'todo'] as const
+
+type WorkerQuestion = {
+  question: string
+  options?: string[] | null
+  recommendation?: string | null
+  why?: string | null
+}
+
+type FinalizationReply = {
+  status: 'done' | 'asking' | 'refused'
+  files_changed?: string[] | null
+  questions?: WorkerQuestion[] | null
+  tests?: { ran?: boolean } | null
+}
+
+/** Invisible format characters are not content, even though trim() preserves them. */
+function normalizeQuestionField(value: string | null | undefined): string {
+  return (value ?? '').replace(/\p{Cf}/gu, '').trim()
+}
+
+/** Whether one schema-valid question contains both a decision and its consequence. */
+export function isRealQuestion(item: WorkerQuestion): boolean {
+  const generic = new Set<string>(GENERIC_QUESTION_TOKENS)
+  const question = normalizeQuestionField(item.question)
+    .replace(/^\p{P}+|\p{P}+$/gu, '').trim()
+  const why = normalizeQuestionField(item.why)
+  return question.length > 0 && !generic.has(question.toLowerCase()) && why.length > 0
+}
+
+/** The usable question subset of a schema-valid worker reply. */
+export function realQuestions(r: FinalizationReply | null | undefined): WorkerQuestion[] {
+  if (!r?.questions?.length) return []
+  return r.questions.filter(isRealQuestion)
+}
+
+/** A reply contains a decision for the architect when at least one question is real. */
+export function hasRealQuestions(r: FinalizationReply | null | undefined): boolean {
+  return realQuestions(r).length > 0
+}
 export type OutcomeRow = {
   id: number
   status: string
@@ -16,13 +55,13 @@ export type WorkerFinalization<FailureKind extends string = string> = {
   status: OutcomeStatus
   failureKind: FailureKind | 'contract' | 'other' | null
   error: string | null
-  acceptedQuestions: NonNullable<WorkerReply['questions']>
-  droppedQuestions: NonNullable<WorkerReply['questions']>
+  acceptedQuestions: WorkerQuestion[]
+  droppedQuestions: WorkerQuestion[]
 }
 
 /** Classify the parsed worker reply against the measured repository change. */
 export function finalizeWorkerReply<FailureKind extends string>(inputs: {
-  reply: WorkerReply | null
+  reply: FinalizationReply | null
   measuredFiles: string[] | null
   status: OutcomeStatus
   failureKind: FailureKind | 'contract' | 'other' | null
