@@ -7,10 +7,14 @@ import { job } from './jobs.ts'
 import type { ReviewTier } from './review-tier.ts'
 import { filesCoveredIntersectChanged } from './review-coverage-match.ts'
 import { projectByName, type Project } from './projects.ts'
-import { classifyReviewTier, diffNumstat } from './review-tier.ts'
 import { completedReviews, coverageGit, coverageOutput, currentCoverage, projectRecord, reviewCoverageVerdict } from './review-coverage.ts'
 import { git, measureChangeIdentity, pinRef, pinReviewedCommits, projectPath, reviewChangeRange, storedChangePathSet } from './review-pins.ts'
 import type { ReviewCarry, ReviewListFilter, ReviewListRow, ReviewReadLens, RunRow } from './review-types.ts'
+
+const classifyReviewTier: typeof import('./review-tier.ts').classifyReviewTier = (...args) =>
+  (require('./review-tier.ts') as typeof import('./review-tier.ts')).classifyReviewTier(...args)
+const diffNumstat: typeof import('./review-tier.ts').diffNumstat = (...args) =>
+  (require('./review-tier.ts') as typeof import('./review-tier.ts')).diffNumstat(...args)
 
 export function recordReviewCarry(carry: ReviewCarry | null): void {
   if (!carry) return

@@ -1,10 +1,9 @@
 // concern: review-coverage
 import type { Database } from 'bun:sqlite'
 import { db } from './db.ts'
-import { targetGitEnvironment } from './git-environment.ts'
 import { changeIdentity } from './change-identity.ts'
 import { completedReviewEvidenceSql } from './review-evidence-sql.ts'
-import { git, reviewGit } from './review-pins.ts'
+import { git, reviewGit, targetGitEnvironment } from './review-pins.ts'
 import type { CoverageGitResult, CoverageGitRunner, CoverageVerdict, ReviewCarry, ReviewCoverageInput, ReviewListRow } from './review-types.ts'
 
 export function completedReviews(project: string): ReviewCoverageInput[] {
