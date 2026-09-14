@@ -26,7 +26,7 @@ import { join, resolve } from 'node:path'
 import {
   gitToplevel, inspectCheckout, inspectionGitEnv, resolvedPathsEqual, type SequenceKind, type SequenceState, } from '../../shared/git.ts'
 import { db, writableDb, writeTransaction } from './db.ts'
-import { CREATE_VARS, createHasPlaceholder, placeholders, validateCreate, type WorktreeCreate } from './worktree-template.ts'
+import { CREATE_VARS, createHasPlaceholder, placeholders, validateCreate, type WorktreeCreate } from './worktree-template.ts'; import { validateReadonlyProvision, type ReadonlyProvision } from './readonly-provision.ts'
 export { migrateCreate, type WorktreeCreate, type WorktreeCreateArg } from './worktree-template.ts'
 
 export type Project = {
@@ -148,7 +148,7 @@ export type WorktreeTool = {
    * When absent, read-only runs use a plain detached git worktree and no
    * project infrastructure.
    */
-  readonly_create?: WorktreeCreate
+  readonly_create?: WorktreeCreate; readonly_provision?: ReadonlyProvision
   /** What a read-only worker is told this project's detached tree can and cannot run. */
   readonly_notes?: string
   /** Optional teardown for readonly_create trees. Receives `{path}` only. */
@@ -322,7 +322,7 @@ export function validateProjectSettings(settings: ProjectSettings): string[] {
       settings.worktree?.readonly_create as unknown,
       'worktree.readonly_create',
       new Set(['path', 'base']),
-    ),
+    ), ...validateReadonlyProvision(settings.worktree?.readonly_provision),
   ]
   if (settings.secretPaths !== undefined && (
     !Array.isArray(settings.secretPaths) ||

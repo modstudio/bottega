@@ -29,7 +29,7 @@ import { platform } from 'node:os'
 import { delimiter, dirname, isAbsolute, join, relative, resolve, sep } from 'node:path'
 import { db, ROOT, tryWriteContention } from './db.ts'
 import { pidAlive } from './process-liveness.ts'
-import { projectAt, type WorktreeTool } from './projects.ts'
+import { projectAt, type WorktreeTool } from './projects.ts'; import { provisionReadOnlyTree, type ReadonlyProvision } from './readonly-provision.ts'
 import { runRecipe, teardownRecipe, dbNameFor, type Recipe } from './recipe.ts'
 import { scrubbedGitEnv } from '../../shared/git.ts'
 export { inspectionGitEnv, scrubbedGitEnv } from '../../shared/git.ts'
@@ -86,7 +86,7 @@ export function createWorkerWorktree(options: CreateWorkerWorktreeOptions): Work
       ? createReadOnlyWithTool(
           options.tool, options.cwd, options.runId, options.readOnlyBase, options.record,
         )
-      : createReadOnlyWorktree(options.cwd, options.runId, options.readOnlyBase, options.record)
+      : createReadOnlyWorktree(options.cwd, options.runId, options.readOnlyBase, options.record, options.tool?.readonly_provision)
   }
   if (options.tool) {
     return createWithTool(
@@ -1337,14 +1337,14 @@ function createWorktreeUnlocked(
 
 /** Cut the unprovisioned checkout used by a read-only repository job. */
 export function createReadOnlyWorktree(
-  cwd: string, runId: number, base: string, record?: RecordWorktree,
+  cwd: string, runId: number, base: string, record?: RecordWorktree, provision: ReadonlyProvision = [],
 ): Worktree {
   const repoRoot = repoRootOf(cwd)
   if (!repoRoot) throw new Error(`not a git repository: ${cwd}`)
   const path = join(repoRoot, '.claude', 'worktrees', `orch-${runId}`)
   mkdirSync(dirname(path), { recursive: true })
   if (existsSync(path)) throw new Error(`worktree ${path} already exists; run ${runId} would overwrite it`)
-  git(['worktree', 'add', '--detach', path, base], repoRoot)
+  git(['worktree', 'add', '--detach', path, base], repoRoot); provisionReadOnlyTree(repoRoot, path, provision)
   const worktree = { path, branch: '', base, repoRoot, source: 'git' as const }
   attributeWorktree(worktree, runId, record)
   verifyFreshWorktree(worktree)
