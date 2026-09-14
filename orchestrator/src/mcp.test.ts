@@ -47,11 +47,18 @@ describe('orch MCP', () => {
   })
 
   test('kind-dependent fields have exact missing sets', () => {
+    const completeSuggestion = {
+      kind: 'suggestion' as const,
+      what_happened: 'Expose more filing guidance',
+      expected: 'Clients can construct a report without validation retries',
+      evidence: 'The advertised schema contains the common report fields',
+      not_established: 'Whether clients render every description',
+    }
     expect(missingIssueReportFields({ kind: 'defect' })).toEqual([
       'reproduce_command', 'environment',
     ])
     expect(missingIssueReportFields({ kind: 'defect', reproduce_command: 'bun run check' }))
       .toEqual(['environment'])
-    expect(missingIssueReportFields({ kind: 'suggestion' })).toEqual([])
+    expect(missingIssueReportFields(completeSuggestion)).toEqual([])
   })
 })
