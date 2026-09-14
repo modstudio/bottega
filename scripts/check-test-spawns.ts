@@ -27,7 +27,7 @@ function testFiles(): string[] {
 function initSiteCount(source: string): number {
   const directRanges = [...source.matchAll(/\['git', 'init'[^\]\n]*\]/g)]
     .map((match) => [match.index, match.index + match[0].length] as const)
-  const helperSites = [...source.matchAll(/'init', '-b'/g)]
+  const helperSites = [...source.matchAll(/(?:'init', '-b'|\['init')/g)]
     .filter((match) => !directRanges.some(([start, end]) => start <= match.index && match.index < end))
   return directRanges.length + helperSites.length
 }

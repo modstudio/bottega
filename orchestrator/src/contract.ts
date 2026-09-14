@@ -2,7 +2,8 @@
 import { REVIEW_SEVERITY } from './review-vocabulary.ts'
 import { progressFileInstruction } from './checkpoint.ts'
 import { isReaderJob, type Job } from './jobs.ts'
-/** Words that name a question-shaped field without asking a question. */ export const GENERIC_QUESTION_TOKENS = ['placeholder', 'tbd', 'question', 'todo'] as const
+import { GENERIC_QUESTION_TOKENS } from './outcome.ts'
+export { GENERIC_QUESTION_TOKENS, hasRealQuestions, isRealQuestion, realQuestions } from './outcome.ts'
 
 /**
  * What an implementation worker is told, and what it must hand back.
@@ -907,36 +908,6 @@ export function resolveReplyDialect(j: Job): ReplyDialect {
  */
 export function isAsking(r: ContractReply | null | undefined): boolean {
   return r?.status === 'asking'
-}
-
-type ContractQuestion = NonNullable<ContractReply['questions']>[number]
-
-/** Invisible format characters are not content, even though trim() preserves them. */
-function normalizeQuestionField(value: string | null | undefined): string {
-  return (value ?? '').replace(/\p{Cf}/gu, '').trim()
-}
-
-/** Whether one schema-valid question contains both a decision and its consequence. */
-export function isRealQuestion(item: ContractQuestion): boolean {
-  const generic = new Set<string>(GENERIC_QUESTION_TOKENS)
-  // Punctuation is stripped only at the edges: punctuation inside a real
-  // sentence remains part of the question, while `(placeholder)!` reduces to
-  // the generic token it is disguising.
-  const question = normalizeQuestionField(item.question)
-    .replace(/^\p{P}+|\p{P}+$/gu, '').trim()
-  const why = normalizeQuestionField(item.why)
-  return question.length > 0 && !generic.has(question.toLowerCase()) && why.length > 0
-}
-
-/** The usable question subset of a schema-valid worker reply. */
-export function realQuestions(r: ContractReply | null | undefined): ContractQuestion[] {
-  if (!r?.questions?.length) return []
-  return r.questions.filter(isRealQuestion)
-}
-
-/** A reply contains a decision for the architect when at least one question is real. */
-export function hasRealQuestions(r: ContractReply | null | undefined): boolean {
-  return realQuestions(r).length > 0
 }
 
 /**

@@ -320,3 +320,15 @@ const { git: movedGit, scratchRepo: movedScratchRepo } = worktreeDescribeFixture
       rmSync(repo, { recursive: true, force: true })
     }
   })
+
+describe('asking is a first-class outcome, not a failure', () => {
+  test('every status check uses the current vocabulary', () => {
+    const wt = readFileSync(new URL('./worktree.ts', import.meta.url).pathname, 'utf8')
+    for (const [name, src] of [['worktree.ts', wt]] as const) {
+      const bad = src.split('\n').filter((l) =>
+        ["'blocked'", '"blocked"'].some((quoted) => l.includes(quoted))
+        && !l.includes('o.status') && !l.trim().startsWith('*')
+        && !l.trim().startsWith('//')); expect({ [name]: bad }).toEqual({ [name]: [] })
+    }
+  })
+})

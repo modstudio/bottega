@@ -2,11 +2,14 @@ import { describe, expect, test } from "bun:test"
 import { rmSync, writeFileSync, existsSync } from "node:fs"
 import { join } from "node:path"
 import { declaredCreate, worktreeDescribeFixture } from '../test/fixtures/worktree.ts'
+import { cloneRepository, hermeticGitEnv } from '../test/fixtures/git.ts'
+import { addRun, dir } from '../test/fixtures/store.ts'
 import { db } from './db.ts'
 import { upsertProject } from './projects.ts'
 import { run as runJob } from './run.ts'
-import { removeFor } from './worktree.ts'
-import { scriptedTransport } from "../test/fake-transport.ts"
+import { worktreeGitDir } from './git-environment.ts'
+import { createWorktree, removeFor } from './worktree.ts'
+import { scriptedTransport, scriptedTransportSequence } from "../test/fake-transport.ts"
 describe('read-only run worktrees', () => {
 const { git, scratchRepo } = worktreeDescribeFixture()
 test('a recipe-project read-only run records git source and warns that infrastructure is absent', async () => {
@@ -70,5 +73,55 @@ test('a read-only run uses the project\'s declared infrastructure note', async (
       rmSync(repo, { recursive: true, force: true })
     }
   })
+
+async function runResumedNoRepositoryJob(
+  inspectOptions: (options: {
+    writableRoots?: string[]
+    gitConfigEnvironment?: Record<string, string>
+  }, tree: ReturnType<typeof createWorktree>) => void,
+): Promise<void> {
+  const repo = cloneRepository('orch-no-repo-resume-')
+  const promptPath = join(dir, `no-repo-resume-${Math.random().toString(16).slice(2)}.prompt.txt`)
+  writeFileSync(join(repo, 'seed.txt'), 'seed\n')
+  const added = Bun.spawnSync(['git', 'add', 'seed.txt'], {
+    cwd: repo, env: hermeticGitEnv(), stdout: 'pipe', stderr: 'pipe',
+  })
+  if (added.exitCode !== 0) throw new Error(added.stderr.toString())
+  const committed = Bun.spawnSync([
+    'git', '-c', 'user.name=Orch Test', '-c', 'user.email=orch@example.invalid',
+    'commit', '-m', 'seed',
+  ], { cwd: repo, env: hermeticGitEnv(), stdout: 'pipe', stderr: 'pipe' })
+  if (committed.exitCode !== 0) throw new Error(committed.stderr.toString())
+  const tree = createWorktree(repo, 462)
+  const transport = scriptedTransportSequence([[{ kind: 'completed', output: 'summary' }]])
+  transport.install()
+  const priorDepth = process.env.ORCH_DEPTH
+  process.env.ORCH_DEPTH = '0'
+  const parent = addRun({ agent: 'codex', job: 'implement', status: 'asking' })
+  writeFileSync(promptPath, 'original implementation spec')
+  db().query('UPDATE run SET prompt_path=? WHERE id=?').run(promptPath, parent)
+  try {
+    await runJob({
+      job: 'summarize', prompt: 'summarize', cwd: tree.path, noFailover: true,
+      resume: {
+        parent, agent: 'codex', session: 'test-session', turn: 2,
+        sessionId: 'orch-test-session', worktree: tree,
+      },
+    })
+  } finally {
+    inspectOptions(transport.startOptions()[0]!, tree)
+    if (priorDepth === undefined) delete process.env.ORCH_DEPTH
+    else process.env.ORCH_DEPTH = priorDepth
+    rmSync(repo, { recursive: true, force: true })
+    rmSync(promptPath, { force: true })
+  }
+}
+
+test('a resumed no-repository job receives no worktree Git writable root', async () => {
+  await runResumedNoRepositoryJob((options, tree) => {
+    expect(options.writableRoots).toEqual([expect.stringMatching(/\/scratch$/)])
+    expect(options.writableRoots).not.toContain(worktreeGitDir(tree.path))
+  })
+})
 
 })
