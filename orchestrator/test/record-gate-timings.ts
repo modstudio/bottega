@@ -91,9 +91,9 @@ function parseJunit(xml: string): {
     }
   }
   const tests: TestRow[] = []
-  for (const node of xml.matchAll(/<testcase\b([^>]*)(?:\/>|>([\s\S]*?)<\/testcase>)/g)) {
-    const tAttrs = node[1]!
-    const tBody = node[2] ?? ''
+  for (const node of xml.matchAll(/<testcase\b([^>]*)\/>|<testcase\b([^>]*)>([\s\S]*?)<\/testcase>/g)) {
+    const tAttrs = node[1] ?? node[2]!
+    const tBody = node[3] ?? ''
     const name = decodeXml(tAttrs.match(/\bname="([^"]+)"/)?.[1] ?? '(unnamed)')
     const classname = decodeXml(tAttrs.match(/\bclassname="([^"]+)"/)?.[1] ?? '')
     const testFile = rel(tAttrs.match(/\bfile="([^"]+)"/)?.[1] ?? '')
