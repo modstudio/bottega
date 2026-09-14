@@ -5,7 +5,7 @@ import { db, liveRuns, nowIso, writableDb, writeTransaction } from './db.ts'; im
 import { fileIssue } from './mcp.ts'
 import { gitLocks } from './git-locks.ts'
 import { projectAt, projects } from './projects.ts'
-import { pidRecordIdentity, projectLockState } from './worktree.ts'
+import { pidRecordIdentity, projectLockState } from './project-lock.ts'
 import { targetGitEnvironment } from './git-environment.ts'
 import { worktreeDirty } from './worktree-attribution.ts'
 import { reclaimBranch, reclaimWorktree } from './reclaim.ts'

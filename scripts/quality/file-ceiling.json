@@ -1,6 +1,5 @@
 {
   "hub/src/hub.test.ts": 1162,
   "orchestrator/src/review.ts": 1337,
-  "orchestrator/src/run.ts": 1839,
-  "orchestrator/src/worktree.ts": 1455
+  "orchestrator/src/run.ts": 1839
 }

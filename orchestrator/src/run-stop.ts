@@ -3,7 +3,8 @@ import { db, nowIso, writeTransaction } from './db.ts'
 import { resolveRootFromLastTurn } from './run-liveness.ts'
 import { auditRunMutation, adoptRunMutation, authorizeRunMutation } from './run-authority.ts'
 import { teardownTerminalRunResources } from './resource-ownership.ts'
-import { branchTip, removeBranch, unmergedBranch, type Worktree } from './worktree.ts'
+import { branchTip, removeBranch, unmergedBranch } from './worktree-remove.ts'
+import type { Worktree } from './worktree-types.ts'
 import { cleanupRepoRoot, discardWorktree, evidenceOwningBranchOwners, verifyBranchOwnershipAfterCleanup, withCleanupLock, type CleanupOptions, type CleanupRow } from './cleanup.ts'
 
 export type RunStopOptions = CleanupOptions & { note?: string }

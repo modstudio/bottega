@@ -19,7 +19,7 @@ import { follow as followRun } from './run-control.ts'
 import { RUNS_DIR } from './run-artifacts.ts'
 import { sessionId } from './db.ts'
 import { assertAcpAllowed, assertAcpReady, resolveTransportName, selectAgentForTransport } from './transport.ts'
-import { callerDrift, checkoutHasUncommittedWork, resolveBase } from './worktree.ts'
+import { callerDrift, checkoutHasUncommittedWork, resolveBase } from './worktree-caller.ts'
 import { implicitReviewWarning } from './review-target.ts'
 
 type Presentation = { error(...values: unknown[]): void; printRunId(id: number): void; cwd(): string }

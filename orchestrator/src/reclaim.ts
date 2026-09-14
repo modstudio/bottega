@@ -5,8 +5,9 @@ import { EVIDENCE_CLOSED_SQL, chainScoreJoin } from './evidence-query.ts'
 import { pidAlive } from './process-liveness.ts'
 import { otherConversationWorktreeSharers } from './resource-ownership.ts'
 import { projectAt, projectByName } from './projects.ts'
-import {
-  branchTip, removeFor, restoreBranch, withCleanupLock, withWorktreeCreateLock, withWorktreeLease, type Worktree } from './worktree.ts'
+import { branchTip, removeFor, restoreBranch } from './worktree-remove.ts'
+import { withCleanupLock, withWorktreeCreateLock, withWorktreeLease } from './project-lock.ts'
+import type { Worktree } from './worktree-types.ts'
 import { markedWorktreeSource, orphanSafety } from './worktree-attribution.ts'
 import { targetGitEnvironment } from './git-environment.ts'
 

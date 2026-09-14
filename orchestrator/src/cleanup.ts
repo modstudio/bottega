@@ -7,7 +7,9 @@ import { projectAt, projectByName } from './projects.ts'
 import { otherConversationWorktreeSharers, type WorktreeSharerRow } from './resource-ownership.ts'
 import { auditRunMutation, adoptRunMutation, authorizeRunMutation, type RootAuthority } from './run-authority.ts'
 import { repoRootOf, targetGitEnvironment } from './git-environment.ts'
-import { branchTip, removeBranch, removeFor, restoreBranch, unmergedBranch, withCleanupLock as takeCleanupLock, withWorktreeLease, type Worktree } from './worktree.ts'
+import { branchTip, removeBranch, removeFor, restoreBranch, unmergedBranch } from './worktree-remove.ts'
+import { withCleanupLock as takeCleanupLock, withWorktreeLease } from './project-lock.ts'
+import type { Worktree } from './worktree-types.ts'
 import { resourcesForRuns, leakedResourceLines } from './docker-resources.ts'
 
 export type CleanupPresentation = {

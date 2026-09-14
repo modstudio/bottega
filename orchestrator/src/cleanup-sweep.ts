@@ -8,7 +8,8 @@ import { liveWorktreeSharers, terminalDockerRetentionReasonForRun } from './reso
 import { auditRunMutation } from './run-authority.ts'
 import { closeOutRun } from './close-out.ts'
 import { isOrchWorktree, markedWorktreeSource, orphanSafety } from './worktree-attribution.ts'
-import { branchTip, type Worktree } from './worktree.ts'
+import { branchTip } from './worktree-remove.ts'
+import type { Worktree } from './worktree-types.ts'
 import { classifiedDockerResources, dockerRunResources, leakedResourceLines, orchRunId, type DockerResource } from './docker-resources.ts'
 import { evidenceOwningBranchOwners, resourcesForConversation, verifyBranchOwnershipAfterCleanup, withCleanupLock, type CleanupPresentation } from './cleanup.ts'
 
@@ -153,7 +154,7 @@ export async function sweepRuns(options: SweepOptions, helpers: SweepHelpers): P
     }[]).filter((row) => !selectedProject ||
       projectAt(row.worktree)?.name === selectedProject.name)
 
-    const { removeFor, sweepWithTool } = await import('./worktree.ts')
+    const { removeFor, sweepWithTool } = await import('./worktree-remove.ts')
 
     let done = 0
     let cleanupFailed = false

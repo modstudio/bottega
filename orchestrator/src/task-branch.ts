@@ -6,8 +6,7 @@
 import { db } from './db.ts'
 import { projectAt, projects } from './projects.ts'
 import { reviewRunEvidenceSql } from './review.ts'
-import {
-  type Worktree } from './worktree.ts'
+import type { Worktree } from './worktree-types.ts'
 import { repoRootOf, targetGitEnvironment } from './git-environment.ts'
 import { realpathOrSpelled } from './checkout-identity.ts'
 
