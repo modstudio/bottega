@@ -1,12 +1,10 @@
 {
   "hub/src/cli.ts": 729,
   "hub/src/hub.test.ts": 1342,
-  "hub/src/migrations.test.ts": 566,
   "hub/src/migrations.ts": 528,
   "hub/src/query.ts": 710,
   "hub/src/report.ts": 521,
   "hub/src/serve.ts": 672,
-  "hub/src/task-cli.test.ts": 704,
   "orchestrator/src/agents.ts": 1467,
   "orchestrator/src/canon.test.ts": 508,
   "orchestrator/src/contract.ts": 1058,

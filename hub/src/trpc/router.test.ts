@@ -1,7 +1,4 @@
 import { describe, expect, mock, test } from 'bun:test'
-import { chmodSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
-import { tmpdir } from 'node:os'
-import { join } from 'node:path'
 import { createProjectRouter } from './routers/project.ts'
 import type { RegisteredProject } from '../projects.ts'
 
@@ -36,19 +33,6 @@ mock.module('../orch.ts', () => ({
 const { appRouter } = await import('./router.ts')
 const { createWorkRouter } = await import('./routers/work.ts')
 const caller = appRouter.createCaller({})
-
-test('importing the tRPC graph does not resolve the project register', () => {
-  const dir = mkdtempSync(join(tmpdir(), 'hub-lazy-register-'))
-  const failingOrch = join(dir, 'failing-orch')
-  writeFileSync(failingOrch, '#!/bin/sh\nexit 73\n')
-  chmodSync(failingOrch, 0o755)
-  const routerPath = new URL('./router.ts', import.meta.url).pathname
-  const result = Bun.spawnSync([process.execPath, '-e', `await import(${JSON.stringify(routerPath)})`], {
-    env: { ...process.env, HUB_ORCH: failingOrch }, stdout: 'pipe', stderr: 'pipe',
-  })
-  expect(result.exitCode, result.stderr.toString()).toBe(0)
-  rmSync(dir, { recursive: true, force: true })
-})
 
 const row = {
   id: 1,

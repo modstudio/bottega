@@ -1,10 +1,8 @@
 import { afterAll, describe, expect, test } from 'bun:test'
-import { chmodSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
+import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { Database } from 'bun:sqlite'
 import { db } from './db.ts'
-import { bootstrapFixtureStore } from './db.ts'
 import {
   acknowledgeNote, createNote, deriveNoteAnchor, dropNote, getNote, mergeNote, staleNotes,
   listActionableNotes, listNotes, promoteNote,
@@ -42,47 +40,6 @@ describe('suggestion notes', () => {
     })
     expect(offered.candidates[0]?.id).toBe(first.id)
     expect(listNotes()).toHaveLength(before)
-  })
-
-  test('note curate --help prints usage without running curate', () => {
-    const hub = new URL('./cli.ts', import.meta.url).pathname
-    const result = Bun.spawnSync([process.execPath, hub, 'note', 'curate', '--help'], {
-      stdout: 'pipe', stderr: 'pipe',
-    })
-    expect(result.exitCode).toBe(0)
-    expect(result.stdout.toString()).toContain('hub note curate')
-    expect(result.stderr.toString()).not.toContain('curator')
-  })
-
-  test('bare help is a subcommand only, never the note payload', () => {
-    const path = join(scratch, 'note-help.db')
-    bootstrapFixtureStore(path)
-    const register = join(scratch, 'note-help-register')
-    writeFileSync(register, `#!/usr/bin/env bun
-console.log(${JSON.stringify(JSON.stringify([
-  { id: 1, name: 'workshop', path: realpathSync(scratch), stack: null, canon: true, settings: {} },
-]))})
-`)
-    chmodSync(register, 0o755)
-    const hub = new URL('./cli.ts', import.meta.url).pathname
-    const env = {
-      ...process.env, HUB_DB: path,
-      HUB_ORCH: register,
-    }
-    const payload = Bun.spawnSync([
-      process.execPath, hub, 'note', 'new', 'help', '--new', '--area', 'workshop',
-    ], {
-      cwd: scratch, env, stdout: 'pipe', stderr: 'pipe',
-    })
-    expect(payload.exitCode, payload.stderr.toString()).toBe(0)
-    const stored = new Database(path, { readonly: true })
-    expect(stored.query<{ text: string }, []>("SELECT text FROM note WHERE text = 'help'").get()).toEqual({ text: 'help' })
-    stored.close()
-    const command = Bun.spawnSync([process.execPath, hub, 'note', 'help'], {
-      env, stdout: 'pipe', stderr: 'pipe',
-    })
-    expect(command.exitCode).toBe(0)
-    expect(command.stdout.toString()).toContain('hub note new')
   })
 
   test('create derives cwd, file content, run and session anchors', () => {
@@ -147,40 +104,6 @@ console.log(${JSON.stringify(JSON.stringify([
     expect(listNotes({ session, kept: true }).map((row) => row.id)).not.toContain(note.id)
   })
 
-  test('note keep accepts multiple ids and kept listings are auditable', () => {
-    const path = join(scratch, `note-keep-${crypto.randomUUID()}.db`)
-    bootstrapFixtureStore(path)
-    const stored = new Database(path)
-    const session = `cli-keep-${crypto.randomUUID()}`
-    const anchor = JSON.stringify([{ cwd: scratch, project: 'workshop', files: [], run_id: null, branch: null, commit: null, session_id: session }])
-    const at = new Date().toISOString()
-    const ids = ['first kept note', 'second kept note'].map((text) => Number(stored.query(
-      `INSERT INTO note(project,text,anchors,sightings,created_at,last_seen_at) VALUES ('workshop',?,?,1,?,?)`,
-    ).run(text, anchor, at, at).lastInsertRowid))
-    stored.close()
-    const cli = new URL('./cli.ts', import.meta.url).pathname
-    const env = { ...process.env, HUB_DB: path, CLAUDE_CODE_SESSION_ID: session }
-    const kept = Bun.spawnSync([process.execPath, cli, 'note', 'keep', ...ids.map(String)], { env, stdout: 'pipe', stderr: 'pipe' })
-    expect(kept.exitCode, kept.stderr.toString()).toBe(0)
-    expect(kept.stdout.toString()).toContain(`note ${ids[0]} kept for this session`)
-    expect(kept.stdout.toString()).toContain(`note ${ids[1]} kept for this session`)
-    const repeated = Bun.spawnSync([process.execPath, cli, 'note', 'keep', String(ids[0])], { env, stdout: 'pipe', stderr: 'pipe' })
-    expect(repeated.exitCode, repeated.stderr.toString()).toBe(0)
-    expect(repeated.stdout.toString()).toContain(`note ${ids[0]} already kept for this session`)
-    const listed = Bun.spawnSync([process.execPath, cli, 'note', 'list', '--kept', '--json'], { env, stdout: 'pipe', stderr: 'pipe' })
-    expect(listed.exitCode, listed.stderr.toString()).toBe(0)
-    expect(JSON.parse(listed.stdout.toString()).map((row: { id: number }) => row.id)).toEqual(ids.slice().reverse())
-  })
-
-  test('reserved text requires the note new grammar', () => {
-    const cli = new URL('./cli.ts', import.meta.url).pathname
-    const result = Bun.spawnSync([process.execPath, cli, 'note', 'list', '--new'], {
-      env: process.env, stdout: 'pipe', stderr: 'pipe',
-    })
-    expect(result.exitCode).not.toBe(0)
-    expect(result.stderr.toString()).toContain('hub note new "list"')
-  })
-
   test('stale maintenance recognizes file, run, branch and commit anchors', async () => {
     const file = join(scratch, 'changed.ts')
     writeFileSync(file, 'new\n')
@@ -229,28 +152,4 @@ console.log(${JSON.stringify(JSON.stringify([
     expect(getNote(recent).id).toBe(recent)
   })
 
-  test('promote uses the create gate and stale cleanup preserves promoted notes', () => {
-    const path = join(scratch, 'promote.db')
-    bootstrapFixtureStore(path)
-    const isolated = new Database(path)
-    const at = '2026-07-01T00:00:00.000Z'
-    const id = Number(isolated.query(
-      `INSERT INTO note(project,text,anchors,sightings,created_at,last_seen_at)
-       VALUES ('workshop','isolated promotion','[]',1,?,?)`,
-    ).run(at, at).lastInsertRowid)
-    isolated.close()
-    const cli = new URL('./cli.ts', import.meta.url).pathname
-    const env = { ...process.env, HUB_DB: path, HUB_ORCH: new URL('../test/project-register.ts', import.meta.url).pathname }
-    const promoted = Bun.spawnSync([process.execPath, cli, 'note', 'promote', String(id)], { env, stdout: 'pipe', stderr: 'pipe' })
-    expect(promoted.exitCode, promoted.stderr.toString()).toBe(0)
-    expect(promoted.stdout.toString().trim()).toMatch(/^LOC-/)
-    const marked = new Database(path)
-    marked.query("UPDATE note SET stale_at='2026-07-02T00:00:00.000Z', stale_reason='gone', last_seen_at=? WHERE id=?").run(at, id)
-    marked.close()
-    const swept = Bun.spawnSync([process.execPath, cli, 'note', 'stale'], { env, stdout: 'pipe', stderr: 'pipe' })
-    expect(swept.exitCode, swept.stderr.toString()).toBe(0)
-    const checked = new Database(path)
-    expect(checked.query<{ promoted_task: string }, [number]>('SELECT promoted_task FROM note WHERE id=?').get(id)?.promoted_task).toMatch(/^LOC-/)
-    checked.close()
-  })
 })

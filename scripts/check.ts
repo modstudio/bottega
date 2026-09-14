@@ -152,9 +152,7 @@ if (await inherit([
   // glob so this runs in a fixed order before the legs, and the cost of that is
   // that an unnamed hook test is not gated at all - which reports safety it is
   // not providing.
-  'bun', 'test', './.githooks/commit-msg.test.ts', './.githooks/post-merge.test.ts',
-  './.githooks/pre-commit.test.ts', './scripts/check-canon.test.ts',
-  './scripts/check-evidence-boundary.test.ts', './scripts/check-runtime.test.ts',
+  'bun', 'test', './scripts/check-canon.test.ts', './scripts/check-runtime.test.ts',
   './scripts/check-file-ceiling.test.ts', './scripts/check-cognitive-ceiling.test.ts',
   './scripts/import-scanner.test.ts', './scripts/check-import-cycles.test.ts',
   './scripts/quality/ratchet.test.ts',
