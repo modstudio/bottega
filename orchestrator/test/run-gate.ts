@@ -217,8 +217,8 @@ const unitResults = await withGateSlot(async () => {
     : null
   return unitModerate ? [unitShort, unitModerate] : [unitShort]
 })
-const shards = balancedShards(readCommittedTimingSummary()?.files)
-const boundary = await withGateSlot(() => Promise.all(shards.map(async (files, index) => {
+const shardGroups = balancedShards(readCommittedTimingSummary()?.files)
+const boundary = await withGateSlot(() => Promise.all(shardGroups.map(async (files, index) => {
     const name = `orchestrator process-boundary shard ${index + 1}/${map.shards.length}`
     const timeout = shardTimeoutMs(map.files, files)
     const size = shardSize(map.files, files)
