@@ -9,13 +9,26 @@ import { upsertProject } from './projects.ts'
 import { PLATFORM_SLUG } from '../../shared/brand.ts'
 import { doctorCommand } from './doctor.ts'
 import { cliVersion, versionBelow } from './agents.ts'
+import { doctorAgentStatus } from './agent-auth.ts'
 import { classifiedDockerResources } from './docker-resources.ts'
 import { trackedTestResidue } from '../test/residue.ts'
 const trackResidue = trackedTestResidue()
 
-async function doctor() {
+/**
+ * codex is stubbed signed-out so every doctor() output also exercises the auth
+ * status wiring. Each doctorCommand call spawns a round of agent probes, so an
+ * extra call per assertion is paid against this file's spawn ceiling.
+ */
+const localStatus: typeof doctorAgentStatus = (agent, unavailable, bin) =>
+  agent === 'codex'
+    ? { status: 'signed-out', detail: 'not logged in' }
+    : agent === 'agy' || agent === 'qwen-local'
+      ? doctorAgentStatus(agent, unavailable, bin)
+      : unavailable ? { status: 'absent', detail: unavailable } : { status: 'ready', detail: '' }
+
+async function doctor(agentStatus: typeof doctorAgentStatus = localStatus) {
   const lines: string[] = []; let exit = 0
-  await doctorCommand({ has: () => false }, { log: (...parts) => lines.push(parts.join(' ')), exitCode: (code) => { exit = code }, candidates: () => [], pick: () => ({ agent: 'none' }), jobs: () => [], acpRuntimeGaps: () => null })
+  await doctorCommand({ has: () => false }, { log: (...parts) => lines.push(parts.join(' ')), exitCode: (code) => { exit = code }, candidates: () => [], pick: () => ({ agent: 'none' }), jobs: () => [], acpRuntimeGaps: () => null }, agentStatus)
   return { text: lines.join('\n'), exit }
 }
 
@@ -34,6 +47,9 @@ describe('doctor presentation', () => {
     expect(result.exit).toBe(0)
     expect(result.text).toContain('register questions (not run failures):')
     expect(result.text).toContain('off-trunk: checkout HEAD is topic, not landing branch main')
+    // Auth presentation rides on this call rather than a spawning doctor() of its own.
+    expect(result.text).toMatch(/^  agy\s+absent\s+free\s+disabled — no readsRepo/m)
+    expect(result.text).toMatch(/^  codex\s+signed-out\s+subscription\s+not logged in/m)
   })
 
   test('doctor retains resources whose repository root is unresolvable', async () => {
