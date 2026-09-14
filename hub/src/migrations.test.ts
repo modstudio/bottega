@@ -1,11 +1,14 @@
 import { Database } from 'bun:sqlite'
-import { describe, expect, test } from 'bun:test'
+import { beforeAll, describe, expect, test } from 'bun:test'
 import { copyFileSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import {
   applyMigrations, BASELINE_SCHEMA_HASH, baselineSchemaHash, canonicalSchemaHash, CONNECTION_SCHEMA_INVARIANT, expectedSchemaHash, JOURNAL_WHEN_ORDER, journalLength, MIGRATIONS_FOLDER, MIGRATIONS_TABLE, migrationJournal, migrationRefusal, readUserVersion, SCHEMA_LOCK_TABLE, schemaVersionLabel, splitMigrationSource, } from './migrations.ts'
 import { closeDatabaseForFixture, db, enableSchemaReload, writeTransaction } from './db.ts'
+import { resetFixtureStore } from '../test/run-fixtures.ts'
+
+beforeAll(resetFixtureStore)
 
 const fresh = () => {
   const d = new Database(':memory:')

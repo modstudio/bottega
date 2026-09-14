@@ -1,8 +1,11 @@
-import { describe, expect, spyOn, test } from 'bun:test'
+import { beforeAll, describe, expect, spyOn, test } from 'bun:test'
 import { encodeOrchRunLine } from '../../shared/orch-contract.ts'
+import { resetFixtureStore } from '../test/run-fixtures.ts'
 
 const { db } = await import('./db.ts')
 const { reconcileOpenIntervals } = await import('./reconcile.ts')
+
+beforeAll(resetFixtureStore)
 
 function add(id: number, ref: string, endAt: string) {
   db().query(

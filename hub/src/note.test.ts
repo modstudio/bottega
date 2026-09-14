@@ -1,4 +1,4 @@
-import { afterAll, describe, expect, test } from 'bun:test'
+import { afterAll, beforeAll, describe, expect, test } from 'bun:test'
 import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -8,8 +8,10 @@ import {
   listActionableNotes, listNotes, promoteNote,
   type NoteAnchor,
 } from './note.ts'
+import { resetFixtureStore } from '../test/run-fixtures.ts'
 
 const scratch = mkdtempSync(join(tmpdir(), 'hub-note-'))
+beforeAll(resetFixtureStore)
 afterAll(() => rmSync(scratch, { recursive: true, force: true }))
 
 describe('suggestion notes', () => {

@@ -1,2 +1,4 @@
 [test]
+# Every file resets the one HUB_DB path resolved once by db.ts, so files cannot overlap.
+maxConcurrency = 1
 preload = ["./test/preload.ts"]

@@ -1,6 +1,9 @@
-import { describe, expect, mock, test } from 'bun:test'
+import { beforeAll, describe, expect, mock, test } from 'bun:test'
 import { createProjectRouter } from './routers/project.ts'
 import type { RegisteredProject } from '../projects.ts'
+import { resetFixtureStore } from '../../test/run-fixtures.ts'
+
+beforeAll(resetFixtureStore)
 
 /**
  * bun:test `mock.module` intercepts `hub/src/orch.ts` before the doc router
