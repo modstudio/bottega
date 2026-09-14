@@ -216,9 +216,9 @@ describe('harness-owned checkpoints', () => {
         branch: '{key}-orch-{id}',
       } } })
     const runner = join(main, 'signal-runner.ts')
-    const runModule = new URL('./run.ts', import.meta.url).href
-    const transportModule = new URL('./transport.ts', import.meta.url).href
-    const hooksModule = new URL('./store-hooks.ts', import.meta.url).href
+    const runModule = new URL('../../src/run.ts', import.meta.url).href
+    const transportModule = new URL('../../src/transport.ts', import.meta.url).href
+    const hooksModule = new URL('../../src/store-hooks.ts', import.meta.url).href
     writeFileSync(runner, `
       import { writeFileSync } from 'node:fs'
       import { join } from 'node:path'
