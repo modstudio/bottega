@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test'
-import { AGENTS } from '../test/fixture.ts'
+import { AGENTS } from './agents.ts'
 import { decideFailover, detachedRunOptions, retryModelForAgent, writingFailoverRefusal } from './failover.ts'
 
 const base = {

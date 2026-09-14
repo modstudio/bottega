@@ -3,7 +3,11 @@ import { existsSync,mkdirSync,mkdtempSync,realpathSync,rmSync,writeFileSync } fr
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { PLATFORM_SLUG } from '../../shared/brand.ts'
-import { addRun,claimMonitorNotices,db,hermeticGitEnv,markMonitorNoticesDelivered,monitor,nowIso,score,upsertProject } from '../test/fixture.ts'
+import { hermeticGitEnv } from '../test/fixtures/git.ts'
+import { addRun, score } from '../test/fixtures/store.ts'
+import { db, nowIso } from './db.ts'
+import { claimMonitorNotices, markMonitorNoticesDelivered, monitor } from './monitor.ts'
+import { upsertProject } from './projects.ts'
 
 function git(cwd: string, ...args: string[]): string {
   const result = Bun.spawnSync(['git', ...args], {

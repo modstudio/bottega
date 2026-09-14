@@ -2,7 +2,12 @@ import { describe,expect,test } from 'bun:test'
 import { mkdirSync,mkdtempSync,realpathSync,rmSync,writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { addRun,cleanReviewEvidence,db,hermeticGitEnv,recordReview,removeProject,reviewReply,upsertProject } from '../test/fixture.ts'
+import { hermeticGitEnv } from '../test/fixtures/git.ts'
+import { reviewReply } from '../test/fixtures/replies.ts'
+import { addRun } from '../test/fixtures/store.ts'
+import { db } from './db.ts'
+import { removeProject, upsertProject } from './projects.ts'
+import { cleanReviewEvidence, recordReview } from './review.ts'
 
 describe('review discipline', () => {
 test('clean review evidence must name work and intersect the measured change', () => {

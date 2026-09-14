@@ -2,7 +2,8 @@ import { afterEach, describe, expect, test } from 'bun:test'
 import { mkdtempSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { hermeticGitEnv, upsertProject } from '../test/fixture.ts'
+import { hermeticGitEnv } from '../test/fixtures/git.ts'
+import { upsertProject } from './projects.ts'
 
 describe('checkout watch selection',()=>{
 const repositories:string[]=[]

@@ -2,7 +2,9 @@ import { expect, test, describe } from "bun:test"
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync, realpathSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join, resolve } from "node:path"
-import { hermeticGitEnv, repoRootOf, worktreeDescribeFixture } from "../test/fixture.ts"
+import { hermeticGitEnv } from '../test/fixtures/git.ts'
+import { worktreeDescribeFixture } from '../test/fixtures/worktree.ts'
+import { repoRootOf } from './git-environment.ts'
 import { contentTree, targetGitEnvironment } from "./git-environment.ts"
 test('--cwd carry measures the same input tree as launching inside that worktree', () => {
   const repo = mkdtempSync(join(tmpdir(), 'orch-content-tree-'))

@@ -4,7 +4,9 @@ import { describe,expect,spyOn,test } from 'bun:test'
 import { mkdirSync,rmSync } from 'node:fs'
 import { join } from 'node:path'
 import { PLATFORM_SLUG } from '../../shared/brand.ts'
-import { createDocsMcpServer,dir,fileIssue,upsertProject } from '../test/fixture.ts'
+import { dir } from '../test/fixtures/store.ts'
+import { createDocsMcpServer, fileIssue } from './mcp.ts'
+import { upsertProject } from './projects.ts'
 
 const hubCli = new URL('../../hub/src/cli.ts', import.meta.url).pathname
 function migrateHub(path: string): void {

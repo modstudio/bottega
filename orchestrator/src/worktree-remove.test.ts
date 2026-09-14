@@ -2,7 +2,7 @@ import { describe, expect, test } from 'bun:test'
 import { existsSync, mkdirSync, mkdtempSync, renameSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { hermeticGitEnv } from '../test/fixture.ts'
+import { hermeticGitEnv } from '../test/fixtures/git.ts'
 import { removeWorktree, type Worktree } from './worktree.ts'
 
 function git(cwd: string, ...args: string[]): string {

@@ -2,7 +2,16 @@ import { afterEach, describe, expect, test } from "bun:test"
 import { chmodSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, renameSync, rmSync, writeFileSync, existsSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { dirname, join } from "node:path"
-import { AGENTS, candidates, db, dir, hermeticGitEnv, removeFor, reviewReply, run, snapshotRegisteredCheckouts, upsertProject, workerReply } from "../test/fixture.ts"
+import { hermeticGitEnv } from '../test/fixtures/git.ts'
+import { reviewReply, workerReply } from '../test/fixtures/replies.ts'
+import { dir } from '../test/fixtures/store.ts'
+import { AGENTS } from './agents.ts'
+import { db } from './db.ts'
+import { upsertProject } from './projects.ts'
+import { snapshotRegisteredCheckouts } from './prompt-retarget.ts'
+import { candidates } from './route.ts'
+import { run as runJob } from './run.ts'
+import { removeFor } from './worktree.ts'
 import { parseConfinement } from "./confinement.ts"
 import { scriptedTransportSequence } from "../test/fake-transport.ts"
 describe('outside-worktree write observation', () => {
@@ -45,7 +54,7 @@ printf '%s\\n' '{"type":"system","subtype":"init"}' '{"type":"result","result":"
     try {
       grok.bin = script
       process.env.ORCH_TEST_EXTERNAL_WRITE = join(watched, 'written-by-run.txt')
-      const dirty = await run({ job: 'file-question', prompt: 'write outside', cwd: dir, agent: 'grok' })
+      const dirty = await runJob({ job: 'file-question', prompt: 'write outside', cwd: dir, agent: 'grok' })
       const dirtyRunId = dirty.id
       const recorded = db().query(
         `SELECT status, failure_kind, error, output_path,
@@ -81,7 +90,7 @@ printf '%s\\n' '{"type":"system","subtype":"init"}' '{"type":"result","result":"
       rmSync(join(watched, 'written-by-run.txt'))
       delete process.env.ORCH_TEST_EXTERNAL_WRITE
       process.env.ORCH_TEST_INSIDE_WRITE = 'inside-only.txt'
-      const clean = await run({
+      const clean = await runJob({
         job: 'file-question', prompt: 'write inside', cwd: dir, agent: 'grok', keepTree: true,
       })
       const cleanRecorded = db().query(
@@ -96,7 +105,7 @@ printf '%s\\n' '{"type":"system","subtype":"init"}' '{"type":"result","result":"
       process.env.ORCH_TEST_INSIDE_WRITE = 'inside-resume.txt'
       let resumedRunId: number | null = null
       try {
-        const resumed = await run({
+        const resumed = await runJob({
           job: 'file-question', prompt: 'resume and escape', cwd: clean.worktree!.path,
           resume: {
             parent: clean.id, agent: 'grok', session: 'test-session', turn: 2,
@@ -146,7 +155,7 @@ printf '%s\\n' '{"type":"system","subtype":"init"}' '{"type":"result","result":"
     installConfinementTransport(['answer', 'answer', 'answer'])
     try {
       process.env.ORCH_TEST_EXTERNAL_WRITE = join(repo, 'summary-edit.txt')
-      const summary = await run({
+      const summary = await runJob({
         job: 'summarize', prompt: 'watch the caller without a worktree', cwd: repo, agent: 'grok',
       })
       expect(summary.worktree).toBeNull()
@@ -162,7 +171,7 @@ printf '%s\\n' '{"type":"system","subtype":"init"}' '{"type":"result","result":"
       rmSync(join(repo, 'summary-edit.txt'))
 
       delete process.env.ORCH_TEST_EXTERNAL_WRITE
-      const first = await run({
+      const first = await runJob({
         job: 'file-question', prompt: 'create a resumable chain', cwd: repo, agent: 'grok', keepTree: true,
       })
       expect(first.worktree).not.toBeNull()
@@ -172,7 +181,7 @@ printf '%s\\n' '{"type":"system","subtype":"init"}' '{"type":"result","result":"
       })
       if (added.exitCode !== 0) throw new Error(added.stderr.toString())
       process.env.ORCH_TEST_EXTERNAL_WRITE = join(caller, 'resume-edit.txt')
-      const resumed = await run({
+      const resumed = await runJob({
         job: 'file-question', prompt: 'resume from a distinct caller checkout', cwd: caller,
         resume: {
           parent: first.id, agent: 'grok', session: 'test-session', turn: 2,
@@ -218,7 +227,7 @@ printf '%s\\n' '{"type":"system","subtype":"init"}' '{"type":"result","result":"
     try {
       grok.bin = script
       try {
-        await run({ job: 'file-question', prompt: 'hide git', cwd: dir, agent: 'grok' })
+        await runJob({ job: 'file-question', prompt: 'hide git', cwd: dir, agent: 'grok' })
       } catch (error) {
         runId = (error as Error & { runId?: number }).runId ?? null
       }
@@ -288,7 +297,7 @@ printf '%s\\n' '${JSON.stringify(workerReply({ files_changed: ['overlap.txt'] })
     try {
       grok.bin = script
       try {
-        await run({ job: 'implement', prompt: 'overlap', cwd: caller, agent: 'grok', noFailover: true })
+        await runJob({ job: 'implement', prompt: 'overlap', cwd: caller, agent: 'grok', noFailover: true })
       } catch (error) {
         runId = (error as Error & { runId?: number }).runId ?? null
       }
@@ -357,9 +366,9 @@ printf '%s\\n' ${JSON.stringify(JSON.stringify({
     })])
     try {
       grok.bin = script
-      let result: Awaited<ReturnType<typeof run>>
+      let result: Awaited<ReturnType<typeof runJob>>
       try {
-        result = await run({
+        result = await runJob({
           job: 'review-lens', prompt: 'review this', cwd: repo, agent: 'grok', lens: 'craft',
         })
       } catch (error) {

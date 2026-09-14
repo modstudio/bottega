@@ -2,7 +2,9 @@ import { beforeEach, expect, test } from 'bun:test'
 import { mkdtempSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { db, declaredCreate, upsertProject } from '../test/fixture.ts'
+import { declaredCreate } from '../test/fixtures/worktree.ts'
+import { db } from './db.ts'
+import { upsertProject } from './projects.ts'
 import { dispatchCommand } from './dispatch-commands.ts'
 
 beforeEach(() => { process.env.ORCH_DEPTH = '0'; process.env.CLAUDE_CODE_SESSION_ID = 'orch-test-session' })

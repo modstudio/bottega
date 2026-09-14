@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test'
-import { bradleyTerry, gwetAc1 } from '../test/fixture.ts'
+import { bradleyTerry, gwetAc1 } from './agreement.ts'
 
 describe('routing agreement statistics', () => {
   test('Gwet AC1 matches a hand-computed three-category table', () => {

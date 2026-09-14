@@ -1,6 +1,6 @@
 import { describe,expect,test } from 'bun:test'
 import { tmpdir } from 'node:os'
-import { noRepoIsolatePath } from '../test/fixture.ts'
+import { noRepoIsolatePath } from './run-artifacts.ts'
 
 describe('review-lens-inline has no checkout', () => {
 test('the no-repo isolate is deterministically named below an owned runs directory', () => {

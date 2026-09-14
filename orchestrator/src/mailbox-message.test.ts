@@ -1,5 +1,7 @@
 import { describe,expect,test } from 'bun:test'
-import { addRun,checkMessages,db,messageArchitect,messagesForRun } from '../test/fixture.ts'
+import { addRun } from '../test/fixtures/store.ts'
+import { db } from './db.ts'
+import { checkMessages, messageArchitect, messagesForRun } from './mailbox.ts'
 import { receiptMessagesForArchitect, tellRun } from './mailbox.ts'
 
 describe('run mailbox', () => {

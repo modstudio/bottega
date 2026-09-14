@@ -1,7 +1,11 @@
 import { describe, expect, test } from "bun:test"
 import { rmSync, writeFileSync, existsSync } from "node:fs"
 import { join } from "node:path"
-import { db, declaredCreate, removeFor, runJob, upsertProject, worktreeDescribeFixture } from "../test/fixture.ts"
+import { declaredCreate, worktreeDescribeFixture } from '../test/fixtures/worktree.ts'
+import { db } from './db.ts'
+import { upsertProject } from './projects.ts'
+import { run as runJob } from './run.ts'
+import { removeFor } from './worktree.ts'
 import { scriptedTransport } from "../test/fake-transport.ts"
 describe('read-only run worktrees', () => {
 const { git, scratchRepo } = worktreeDescribeFixture()

@@ -1,5 +1,8 @@
 import { describe,expect,test } from 'bun:test'
-import { addRun,candidates,db,score,weigh } from '../test/fixture.ts'
+import { addRun, score } from '../test/fixtures/store.ts'
+import { db } from './db.ts'
+import { candidates } from './route.ts'
+import { weigh } from './score.ts'
 import { reclassifyFailuresCommand } from './failure-commands.ts'
 
 describe('reclassify-failures', () => {

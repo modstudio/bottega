@@ -1,5 +1,5 @@
 import { describe,expect,test } from 'bun:test'
-import { contractConflicts } from '../test/fixture.ts'
+import { contractConflicts } from './contract.ts'
 
 describe('job contracts are visible before submission', () => {
 test.each([

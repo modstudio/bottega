@@ -1,7 +1,10 @@
 import { describe, expect, test } from 'bun:test'
 import { chmodSync, existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
-import { AGENTS, addRun, db, dir, run } from '../test/fixture.ts'
+import { addRun, dir } from '../test/fixtures/store.ts'
+import { AGENTS } from './agents.ts'
+import { db } from './db.ts'
+import { run as runJob } from './run.ts'
 import {
   createEventLog, eventsFromVendorLine, formatPeek, idleLabel, peekRun, runEventsPath,
 } from './events.ts'
@@ -97,7 +100,7 @@ emit('{"type":"result","subtype":"success","result":"done","usage":{"input_token
     try {
       grok.bin = script
       const reserved = addRun({ agent: '(pending)', job: 'summarize', status: 'running' })
-      const running = run({
+      const running = runJob({
         job: 'summarize', prompt: 'hello', cwd: dir, agent: 'grok', reserveId: reserved, noFailover: true,
       })
       const path = runEventsPath(reserved)

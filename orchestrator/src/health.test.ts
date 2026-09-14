@@ -1,5 +1,6 @@
 import { describe, expect, test } from 'bun:test'
-import { addRun, db } from '../test/fixture.ts'
+import { addRun } from '../test/fixtures/store.ts'
+import { db } from './db.ts'
 import { insertContention } from './contention.ts'
 import { FAILURE_KINDS } from './failure.ts'
 import { harnessHealth } from './health.ts'

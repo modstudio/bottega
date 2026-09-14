@@ -2,7 +2,8 @@ import { describe, expect, test } from 'bun:test'
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { hermeticGitEnv, upsertProject } from '../test/fixture.ts'
+import { hermeticGitEnv } from '../test/fixtures/git.ts'
+import { upsertProject } from './projects.ts'
 import { MAIN_CHECKOUT_INVARIANT, mainCheckoutWorktreeHint } from './projects.ts'
 
 const HOOK = new URL('../hooks/protect-main-checkout.py', import.meta.url).pathname

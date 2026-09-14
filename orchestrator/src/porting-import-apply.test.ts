@@ -1,5 +1,10 @@
 import { describe,expect,test } from 'bun:test'
-import { ImportRefusalError,applyImport,baselineForPair,db,getDoc,ledgerRef,listDocRevisions,listDocs,listDoctrineRules,listPairs,listSkips,planImport,projects,setDoc,sourceCoverage,upsertProject } from '../test/fixture.ts'
+import { setDoc } from '../test/fixtures/docs.ts'
+import { db } from './db.ts'
+import { getDoc, listDocRevisions, listDocs } from './docs.ts'
+import { applyImport, ImportRefusalError, planImport, sourceCoverage } from './porting-import.ts'
+import { baselineForPair, ledgerRef, listDoctrineRules, listPairs, listSkips } from './porting.ts'
+import { projects, upsertProject } from './projects.ts'
 
 describe('port importer', () => {
 const registered = () => {

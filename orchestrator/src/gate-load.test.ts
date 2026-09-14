@@ -4,7 +4,7 @@ import {
 } from './gate-load.ts'
 import type { HostLoad } from './gate-policy.ts'
 import { join } from 'node:path'
-import { dir as suiteDir } from '../test/fixture.ts'
+import { dir as suiteDir } from '../test/fixtures/store.ts'
 import { trackedTestResidue } from '../test/residue.ts'
 const trackResidue = trackedTestResidue()
 beforeEach(() => { trackResidue(join(suiteDir, 'gates')) })

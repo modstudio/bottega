@@ -1,5 +1,6 @@
 import { describe, expect, test } from 'bun:test'
-import { addRun, db } from '../test/fixture.ts'
+import { addRun } from '../test/fixtures/store.ts'
+import { db } from './db.ts'
 import { reviewYield } from './review-yield.ts'
 
 function addReview(recordedAt: string, patchId: string | null, completed = true, pathSet: string | null = null): number {

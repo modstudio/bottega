@@ -1,6 +1,7 @@
 import { expect, test } from 'bun:test'
 import { readdirSync, readFileSync } from 'node:fs'
-import { db, RUNS_DIR } from '../test/fixture.ts'
+import { db } from './db.ts'
+import { RUNS_DIR } from './run-artifacts.ts'
 
 test('a detached run has exactly one prompt file', async () => {
   const { detach } = await import('./run-dispatch.ts')

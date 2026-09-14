@@ -1,7 +1,12 @@
 import { expect, spyOn, test } from 'bun:test'
 import { existsSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
-import { addRun, createWorktree, db, fakeDocker, nowIso, upsertProject, worktreeDescribeFixture } from '../test/fixture.ts'
+import { fakeDocker } from '../test/fixtures/docker.ts'
+import { addRun } from '../test/fixtures/store.ts'
+import { worktreeDescribeFixture } from '../test/fixtures/worktree.ts'
+import { db, nowIso } from './db.ts'
+import { upsertProject } from './projects.ts'
+import { createWorktree } from './worktree.ts'
 import { sweepRuns } from './cleanup-sweep.ts'
 
 const { git, scratchRepo } = worktreeDescribeFixture()

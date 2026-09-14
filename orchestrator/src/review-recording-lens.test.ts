@@ -2,7 +2,12 @@ import { describe,expect,spyOn,test } from 'bun:test'
 import { mkdirSync,mkdtempSync,rmSync,writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { addRun,completeReview,db,gradeReviewLens,hermeticGitEnv,recordReview,recordReviews,reviewReply,triageFinding,upsertProject } from '../test/fixture.ts'
+import { hermeticGitEnv } from '../test/fixtures/git.ts'
+import { reviewReply } from '../test/fixtures/replies.ts'
+import { addRun } from '../test/fixtures/store.ts'
+import { db } from './db.ts'
+import { upsertProject } from './projects.ts'
+import { completeReview, gradeReviewLens, recordReview, recordReviews, triageFinding } from './review.ts'
 
 describe('review discipline', () => {
 test('records each lens before triage and derives runner and model from the orch run', () => {

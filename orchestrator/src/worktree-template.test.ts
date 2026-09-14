@@ -1,7 +1,13 @@
 import { describe, expect, test } from "bun:test"
 import { rmSync, readFileSync, writeFileSync, realpathSync, mkdirSync, chmodSync } from "node:fs"
 import { join } from "node:path"
-import { createArgv, createWithTool, declaredCreate, fill, fillTool, hermeticGitCommand, preflight, seedArgv, upsertProject, worktreeDescribeFixture } from "../test/fixture.ts"
+import { hermeticGitCommand } from '../test/fixtures/git.ts'
+import { declaredCreate, worktreeDescribeFixture } from '../test/fixtures/worktree.ts'
+import { preflight } from './dispatch-preflight.ts'
+import { upsertProject } from './projects.ts'
+import { fill } from './recipe.ts'
+import { createArgv, fillTool, seedArgv } from './worktree-template.ts'
+import { createWithTool } from './worktree.ts'
 describe('worktree template decisions', () => {
 const { fromRoot, scratchRepo } = worktreeDescribeFixture()
 test('fill shell-quotes unquoted values and respects existing quotes', () => {

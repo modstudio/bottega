@@ -2,9 +2,9 @@ import { describe, expect, test } from 'bun:test'
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, utimesSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import {
-  KEEP_RUN_FILES_DAYS, addRun, db, dir, pruneRuns, runFilePaths,
-} from '../test/fixture.ts'
+import { addRun, dir } from '../test/fixtures/store.ts'
+import { db } from './db.ts'
+import { KEEP_RUN_FILES_DAYS, pruneRuns, runFilePaths } from './run-artifacts.ts'
 import { listRunArtifacts, persistRunArtifacts, readDispatchState, runArtifactsDir, runScratchDir, writeDispatchState } from './run-artifacts.ts'
 
 describe('run files are named by their run, not by the clock', () => {

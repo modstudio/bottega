@@ -1,5 +1,7 @@
 import { afterEach, expect, test } from 'bun:test'
-import { CANON_EVAL_LENS, canonEvalsReport, db, reviewReply, runCanonEvals, workerReply } from '../test/fixture.ts'
+import { reviewReply, workerReply } from '../test/fixtures/replies.ts'
+import { db } from './db.ts'
+import { CANON_EVAL_LENS, canonEvalsReport, runCanonEvals } from './evals.ts'
 import { scriptedTransportSequence } from '../test/fake-transport.ts'
 import { installTestTransport } from './transport.ts'
 

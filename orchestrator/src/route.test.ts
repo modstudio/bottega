@@ -1,6 +1,14 @@
 import { describe, expect, test } from 'bun:test'
 import { readFileSync } from 'node:fs'
-import { AGENTS, BETA_SCALE, COOLS_DOWN, EVIDENCE_WINDOW, FAILS_OVER, MIN_REVIEW_TRIAGED, MIN_SAMPLE, NEEDS_HUMAN, NEEDS_HUMAN_TITLE, NOISE_BAND, NOT_EVIDENCE, POSTERIOR_NOISE_BAND, QUALITY_STEP, STANDING_EXPLORE_RATE, UNSCORED_WHERE, WEIGHT, activeSql, addRun, candidates, classify, completeReview, currentPolicySelection, db, evidenceFor, label, median, nowIso, pendingForSession, pick, recordReview, reviewReply, score, scoreboard, standingExploreRate, triageFinding, unscoredCount, voidedSql, weigh, weightCase } from '../test/fixture.ts'
+import { reviewReply } from '../test/fixtures/replies.ts'
+import { addRun, score } from '../test/fixtures/store.ts'
+import { AGENTS } from './agents.ts'
+import { db, label, nowIso } from './db.ts'
+import { activeSql, pendingForSession, UNSCORED_WHERE, unscoredCount, voidedSql } from './evidence-query.ts'
+import { classify, COOLS_DOWN, FAILS_OVER, NEEDS_HUMAN, NEEDS_HUMAN_TITLE, NOT_EVIDENCE } from './failure.ts'
+import { completeReview, MIN_REVIEW_TRIAGED, recordReview, triageFinding } from './review.ts'
+import { BETA_SCALE, candidates, currentPolicySelection, EVIDENCE_WINDOW, evidenceFor, median, MIN_SAMPLE, NOISE_BAND, pick, POSTERIOR_NOISE_BAND, QUALITY_STEP, scoreboard, STANDING_EXPLORE_RATE, standingExploreRate, weightCase } from './route.ts'
+import { weigh, WEIGHT } from './score.ts'
 import { resolveFailover } from './collect.ts'
 
 describe('failure classification', () => {

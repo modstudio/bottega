@@ -1,10 +1,13 @@
 import { afterEach, beforeEach, describe, expect, spyOn, test } from 'bun:test'
 import { readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
-import {
-  ARGV_PROMPT_BYTES, addRun, db, dir, packResumePrompt, packedResumePrompt,
-  recordReview, reviewReply,
-} from '../test/fixture.ts'
+import { reviewReply } from '../test/fixtures/replies.ts'
+import { addRun, dir } from '../test/fixtures/store.ts'
+import { ARGV_PROMPT_BYTES } from './agents.ts'
+import { packResumePrompt } from './contract.ts'
+import { db } from './db.ts'
+import { recordReview } from './review.ts'
+import { packedResumePrompt } from './run.ts'
 import { continueRun } from './run-control.ts'
 import { trackedTestResidue } from '../test/residue.ts'
 const trackResidue = trackedTestResidue()

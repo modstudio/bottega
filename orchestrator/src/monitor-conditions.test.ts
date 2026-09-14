@@ -2,7 +2,12 @@ import { describe,expect,spyOn,test } from 'bun:test'
 import { rmSync } from 'node:fs'
 import { join } from 'node:path'
 import { PLATFORM_SLUG } from '../../shared/brand.ts'
-import { addRun,claimMonitorNotices,db,deadRunningProcessConditions,dir,fileIssue,markMonitorNoticesDelivered,monitor,monitorHistory,nowIso,parseFiledIssue,reconcileHub,rulingConditions,score,upsertProject } from '../test/fixture.ts'
+import { addRun, dir, score } from '../test/fixtures/store.ts'
+import { db, nowIso } from './db.ts'
+import { parseFiledIssue } from './issue.ts'
+import { fileIssue } from './mcp.ts'
+import { claimMonitorNotices, deadRunningProcessConditions, markMonitorNoticesDelivered, monitor, monitorHistory, reconcileHub, rulingConditions } from './monitor.ts'
+import { upsertProject } from './projects.ts'
 
 function migrateHub(path: string): void {
   const result = Bun.spawnSync([process.execPath,

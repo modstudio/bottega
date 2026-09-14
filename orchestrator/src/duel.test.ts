@@ -1,5 +1,7 @@
 import { describe, expect, test } from 'bun:test'
-import { addRun, db, duelMatrices, parseRunIds, recordDuels } from '../test/fixture.ts'
+import { addRun } from '../test/fixtures/store.ts'
+import { db } from './db.ts'
+import { duelMatrices, parseRunIds, recordDuels } from './duel.ts'
 
 describe('pairwise judgements', () => {
   test('--better-than accepts a comma list of run ids', () => {

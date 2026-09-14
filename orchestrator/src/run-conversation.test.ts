@@ -3,7 +3,12 @@ import { describe, expect, test } from 'bun:test'
 import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { addRun, createWorktree, db, dir, hermeticGitEnv, nowIso, runJob, workerReply } from '../test/fixture.ts'
+import { hermeticGitEnv } from '../test/fixtures/git.ts'
+import { workerReply } from '../test/fixtures/replies.ts'
+import { addRun, dir } from '../test/fixtures/store.ts'
+import { db, nowIso } from './db.ts'
+import { run as runJob } from './run.ts'
+import { createWorktree } from './worktree.ts'
 import { scriptedTransportSequence } from '../test/fake-transport.ts'
 describe('a conversation is one unit of work, not one per turn', () => {
   test('a three-turn chain resolves the intermediate asking turn end to end', async () => {

@@ -2,7 +2,21 @@ import { afterEach, beforeEach, describe, expect, test } from 'bun:test'
 import { readFileSync, writeFileSync, existsSync, chmodSync, mkdtempSync, rmSync, realpathSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { AGENTS, GENERIC_QUESTION_TOKENS, addDoctrineRule, addPair, addRun, addSkip, ask, baselineForPair, candidates, db, declaredCreate, detectBlockers, dir, hasRealQuestions, hermeticGitEnv, ledgerRef, listDoctrineRules, listLedgerRefs, listPairs, listSkips, nowIso, parseWorkerReply, parseWorkerReplyWithCount, pick, projects, realQuestions, reapTestRun, removeProject, resolveLedgerRef, retireDoctrineRule, reviewReply, run, runDetail, score, setBaseline, setLedgerRef, state, upsertProject, weigh, workerReply } from '../test/fixture.ts'
+import { hermeticGitEnv } from '../test/fixtures/git.ts'
+import { reviewReply, workerReply } from '../test/fixtures/replies.ts'
+import { addRun, dir, reapTestRun, score } from '../test/fixtures/store.ts'
+import { declaredCreate } from '../test/fixtures/worktree.ts'
+import { AGENTS } from './agents.ts'
+import { ask } from './ask.ts'
+import { GENERIC_QUESTION_TOKENS, hasRealQuestions, parseWorkerReply, parseWorkerReplyWithCount, realQuestions } from './contract.ts'
+import { db, nowIso } from './db.ts'
+import { detectBlockers } from './failure.ts'
+import { addDoctrineRule, addPair, addSkip, baselineForPair, ledgerRef, listDoctrineRules, listLedgerRefs, listPairs, listSkips, resolveLedgerRef, retireDoctrineRule, setBaseline, setLedgerRef } from './porting.ts'
+import { projects, removeProject, upsertProject } from './projects.ts'
+import { candidates, pick } from './route.ts'
+import { run as runJob } from './run.ts'
+import { weigh } from './score.ts'
+import { runDetail, state } from './serve.ts'
 import { scriptedTransport, scriptedTransportSequence } from '../test/fake-transport.ts'
 import { installTestTransport } from './transport.ts'
 import { collectResult } from './collect.ts'; import { trackedTestResidue } from '../test/residue.ts'
@@ -74,20 +88,20 @@ describe('agent retry and failover records', () => {
   }
   test('a read-only run stores the caller prompt unwrapped and the bound prompt beside it', async () => {
     const original = 'What does foo.ts do?'; scriptedTransport([{ kind: 'completed', output: 'plain answer' }]).install(); process.env.ORCH_DEPTH = '0'
-    const result = await run({ job: 'file-question', prompt: original, cwd: dir, agent: 'codex', noFailover: true })
+    const result = await runJob({ job: 'file-question', prompt: original, cwd: dir, agent: 'codex', noFailover: true })
     const row = db().query('SELECT prompt_path,prompt_sha,spec_sha FROM run WHERE id=?').get(result.id) as { prompt_path: string; prompt_sha: string; spec_sha: string }; expect(readFileSync(row.prompt_path, 'utf8')).toBe(original); const bound = readFileSync(row.prompt_path.replace(/\.prompt\.txt$/, '.bound.txt'), 'utf8'); expect(bound.endsWith(original)).toBe(true); expect(row.prompt_sha).not.toBe(row.spec_sha); expect(runDetail(result.id)?.prompt).toBe(original)
   })
   test('--no-failover holds and records a clear terminal explanation', async () => {
     scriptedTransport([{ kind: 'stderr', chunk: 'usage limit reached' }, { kind: 'completed', exitCode: 1 }]).install(); process.env.ORCH_DEPTH = '0'
-    await expect(run({ job: 'understand', prompt: 'do not retry this', agent: 'codex', cwd: dir, noFailover: true })).rejects.toThrow('usage limit reached'); expect(db().query('SELECT no_failover,failure_kind,error FROM run ORDER BY id DESC LIMIT 1').get()).toMatchObject({ no_failover: 1, failure_kind: 'quota', error: expect.stringContaining('Failover refused: disabled by --no-failover') })
+    await expect(runJob({ job: 'understand', prompt: 'do not retry this', agent: 'codex', cwd: dir, noFailover: true })).rejects.toThrow('usage limit reached'); expect(db().query('SELECT no_failover,failure_kind,error FROM run ORDER BY id DESC LIMIT 1').get()).toMatchObject({ no_failover: 1, failure_kind: 'quota', error: expect.stringContaining('Failover refused: disabled by --no-failover') })
   })
   test('prefer persists through automatic failover and the successor returns the answer', async () => {
     scriptedTransportSequence([[{ kind: 'stderr', chunk: 'HTTP 402: balance exhausted' }, { kind: 'completed', exitCode: 1 }], [{ kind: 'completed', output: 'successor answer' }]]).install(); process.env.ORCH_DEPTH = '0'
-    const result = await run({ job: 'understand', prompt: 'answer once', agent: 'codex', cwd: dir }); expect(result.output).toBe('successor answer'); const rows = db().query('SELECT agent,retry_of,automatic_failover FROM run ORDER BY id').all(); expect(rows).toEqual([{ agent: 'codex', retry_of: null, automatic_failover: 0 }, { agent: 'grok', retry_of: result.id - 1, automatic_failover: 1 }])
+    const result = await runJob({ job: 'understand', prompt: 'answer once', agent: 'codex', cwd: dir }); expect(result.output).toBe('successor answer'); const rows = db().query('SELECT agent,retry_of,automatic_failover FROM run ORDER BY id').all(); expect(rows).toEqual([{ agent: 'codex', retry_of: null, automatic_failover: 0 }, { agent: 'grok', retry_of: result.id - 1, automatic_failover: 1 }])
   })
   test('quota failover tries every enabled agent and skips disabled legacy rows', async () => {
     scriptedTransportSequence([[{ kind: 'stderr', chunk: 'HTTP 402: no balance' }, { kind: 'completed', exitCode: 1 }], [{ kind: 'failed', error: 'HTTP 402: no balance' }]]).install(); process.env.ORCH_DEPTH = '0'
-    await expect(run({ job: 'review-lens-inline', prompt: 'bounded', agent: 'codex', cwd: dir, lens: 'bounded' })).rejects.toThrow()
+    await expect(runJob({ job: 'review-lens-inline', prompt: 'bounded', agent: 'codex', cwd: dir, lens: 'bounded' })).rejects.toThrow()
     const rows = db().query('SELECT agent,retry_of,error FROM run ORDER BY id').all() as { agent: string; retry_of: number | null; error: string }[]; expect(rows.map((row) => row.agent)).toEqual(['codex', 'grok']); expect(rows[1]!.error).toContain('after trying codex, grok')
   })
   test('a repository review failover keeps its immutable base across a trunk move', async () => {
@@ -98,7 +112,7 @@ describe('agent retry and failover records', () => {
       const empty = reviewReply(0); empty.provenance.files_covered = []; empty.provenance.commands_run = []
       const clean = reviewReply(0); clean.provenance.files_covered = ['change.ts']; clean.provenance.commands_run = ['git diff -- change.ts']
       const transport = scriptedTransportSequence([[{ kind: 'ask', question: 'pause', why: 'move trunk' }, { kind: 'completed', output: JSON.stringify(empty) }], [{ kind: 'completed', output: JSON.stringify(clean) }]]); transport.install(); process.env.ORCH_DEPTH = '0'
-      const pending = run({ job: 'review-lens', prompt: 'review the carried change', cwd: caller, repo: 'review-failover-project', agent: 'codex', lens: 'failover-base', carry: true })
+      const pending = runJob({ job: 'review-lens', prompt: 'review the carried change', cwd: caller, repo: 'review-failover-project', agent: 'codex', lens: 'failover-base', carry: true })
       while (transport.starts() === 0) await Bun.sleep(5)
       writeFileSync(join(repo, 'trunk.txt'), 'moved\n'); git(repo, 'add', 'trunk.txt'); git(repo, 'commit', '-m', 'trunk moves'); transport.injectRuling('continue')
       const result = await pending; expect(result.agent).toBe('grok')
@@ -111,7 +125,7 @@ describe('agent retry and failover records', () => {
       git(repo, 'init', '-b', 'main'); git(repo, 'config', 'user.email', 'orch-test@example.invalid'); git(repo, 'config', 'user.name', 'Orch Test'); writeFileSync(join(repo, 'base.txt'), 'base\n'); git(repo, 'add', '.'); git(repo, 'commit', '-m', 'base'); const originalBase = git(repo, 'rev-parse', 'HEAD'); git(repo, 'worktree', 'add', '-b', 'feature', caller, originalBase); writeFileSync(join(caller, 'change.ts'), 'carried review subject\n'); upsertProject({ name: 'review-failover-no-base-project', path: repo })
       const empty = reviewReply(0); empty.provenance.files_covered = []; empty.provenance.commands_run = []; const clean = reviewReply(0); clean.provenance.files_covered = ['change.ts']; clean.provenance.commands_run = ['git diff -- change.ts']
       const transport = scriptedTransportSequence([[{ kind: 'ask', question: 'pause', why: 'change recipe' }, { kind: 'completed', output: JSON.stringify(empty) }], [{ kind: 'completed', output: JSON.stringify(clean) }]]); transport.install(); process.env.ORCH_DEPTH = '0'
-      const pending = run({ job: 'review-lens', prompt: 'review the carried change', cwd: caller, repo: 'review-failover-no-base-project', agent: 'codex', lens: 'failover-no-base', carry: true, keepTree: true }); while (transport.starts() === 0) await Bun.sleep(5)
+      const pending = runJob({ job: 'review-lens', prompt: 'review the carried change', cwd: caller, repo: 'review-failover-no-base-project', agent: 'codex', lens: 'failover-no-base', carry: true, keepTree: true }); while (transport.starts() === 0) await Bun.sleep(5)
       writeFileSync(tool, `import { writeFileSync } from 'node:fs'; writeFileSync(${JSON.stringify(invoked)}, 'invoked')`); upsertProject({ name: 'review-failover-no-base-project', path: repo, settings: { worktree: { create: declaredCreate(process.execPath, [tool, '{branch}']), branch: 'task/{id}' } } }); transport.injectRuling('continue')
       const result = await pending; expect(result).toMatchObject({ agent: 'grok', worktree: { source: 'git' } }); expect(git(result.worktree!.path, 'rev-parse', 'HEAD')).toBe(originalBase); expect(existsSync(invoked)).toBe(false)
       const rows = db().query("SELECT agent,status,failure_kind,retry_of,base_commit,worktree_source FROM run WHERE repo='review-failover-no-base-project' ORDER BY id").all(); expect(rows).toEqual([{ agent: 'codex', status: 'failed', failure_kind: 'unevidenced', retry_of: null, base_commit: originalBase, worktree_source: 'git' }, { agent: 'grok', status: 'ok', failure_kind: null, retry_of: expect.any(Number), base_commit: originalBase, worktree_source: 'git' }])
@@ -124,24 +138,24 @@ describe('agent retry and failover records', () => {
       const tip = git(repo, 'rev-parse', 'HEAD^{commit}'); const tree = git(repo, 'rev-parse', 'HEAD^{tree}'); git(repo, 'switch', 'main'); upsertProject({ name: 'review-failover-fixture', path: repo, settings: { trunk: 'main' } })
       const review = reviewReply(0); review.provenance.files_covered.push('subject.txt'); review.provenance.commands_run.push('git diff main...feature/review-failover -- subject.txt')
       scriptedTransportSequence([[{ kind: 'stderr', chunk: 'HTTP 402: balance exhausted' }, { kind: 'completed', exitCode: 1 }], [{ kind: 'completed', output: JSON.stringify(review) }]]).install(); process.env.ORCH_DEPTH = '0'
-      const result = await run({ job: 'review-lens', prompt: 'inspect the requested branch', cwd: repo, agent: 'codex', lens: 'failover-review', review: 'feature/review-failover', keepTree: true })
+      const result = await runJob({ job: 'review-lens', prompt: 'inspect the requested branch', cwd: repo, agent: 'codex', lens: 'failover-review', review: 'feature/review-failover', keepTree: true })
       const rows = db().query('SELECT agent,retry_of,input_tree,head_commit,review_ref FROM run ORDER BY id').all(); expect(rows[1]).toEqual({ agent: 'grok', retry_of: expect.any(Number), input_tree: tree, head_commit: tip, review_ref: 'feature/review-failover' }); expect(git(result.worktree!.path, 'rev-parse', 'HEAD')).toBe(tip)
     } finally { removeProject('review-failover-fixture'); rmSync(repo, { recursive: true, force: true }) }
   })
   test('a vendor content refusal is recorded distinctly and fails over', async () => {
     const refusal = 'This content was flagged for possible cybersecurity risk. If this seems wrong, try rephrasing your request.'
     scriptedTransportSequence([[{ kind: 'stderr', chunk: refusal }, { kind: 'completed', exitCode: 1 }], [{ kind: 'completed', output: 'review completed' }]]).install(); process.env.ORCH_DEPTH = '0'
-    const result = await run({ job: 'understand', prompt: 'review the defensive guard', agent: 'codex', cwd: dir }); expect(result).toMatchObject({ agent: 'grok', output: 'review completed' })
+    const result = await runJob({ job: 'understand', prompt: 'review the defensive guard', agent: 'codex', cwd: dir }); expect(result).toMatchObject({ agent: 'grok', output: 'review completed' })
     const rows = db().query('SELECT agent,status,failure_kind,retry_of FROM run ORDER BY id').all(); expect(rows).toEqual([{ agent: 'codex', status: 'failed', failure_kind: 'content_refusal', retry_of: null }, { agent: 'grok', status: 'ok', failure_kind: null, retry_of: expect.any(Number) }]); expect(candidates('understand').find((item) => item.agent === 'codex')).toMatchObject({ failures: 0, evidence: 0, cooling: null })
   })
   test('records a cancelled result event as a failed run with its error', async () => {
     scriptedTransport([{ kind: 'stdout', chunk: 'Working.\n' }, { kind: 'failed', error: 'cancelled' }]).install(); process.env.ORCH_DEPTH = '0'
-    const reserved = addRun({ agent: '(pending)', job: 'file-question', status: 'running' }); await expect(run({ job: 'file-question', prompt: 'hello', cwd: dir, agent: 'grok', reserveId: reserved, noFailover: true })).rejects.toThrow('cancelled')
+    const reserved = addRun({ agent: '(pending)', job: 'file-question', status: 'running' }); await expect(runJob({ job: 'file-question', prompt: 'hello', cwd: dir, agent: 'grok', reserveId: reserved, noFailover: true })).rejects.toThrow('cancelled')
     const failed = db().query('SELECT status,failure_kind,error,output_path,output_bytes FROM run WHERE id=?').get(reserved) as { status: string; failure_kind: string; error: string; output_path: string; output_bytes: number }; expect(failed).toMatchObject({ status: 'failed', failure_kind: 'other', error: 'cancelled' }); expect(readFileSync(failed.output_path, 'utf8')).toContain('Working.'); expect(failed.output_bytes).toBeGreaterThan(0)
   })
   test('retains and recovers a transcript when an empty result hits the output ceiling', async () => {
     const visible = `DROP-ME-${'x'.repeat(40 * 1024)}-RECOVERED-END`; const transcript = JSON.stringify({ type: 'assistant', message: { content: [{ type: 'thinking', text: visible }], stop_reason: 'max_tokens' } }) + '\n'; scriptedTransport([{ kind: 'stdout', chunk: transcript }, { kind: 'completed', parsedText: '', stopReason: 'max_tokens' }]).install(); process.env.ORCH_DEPTH = '0'
-    const reserved = addRun({ agent: '(pending)', job: 'file-question', status: 'running' }); await expect(run({ job: 'file-question', prompt: 'recover this report', cwd: dir, agent: 'grok', reserveId: reserved, noFailover: true })).rejects.toThrow('output ceiling')
+    const reserved = addRun({ agent: '(pending)', job: 'file-question', status: 'running' }); await expect(runJob({ job: 'file-question', prompt: 'recover this report', cwd: dir, agent: 'grok', reserveId: reserved, noFailover: true })).rejects.toThrow('output ceiling')
     const row = db().query('SELECT status,failure_kind,output_path,output_bytes FROM run WHERE id=?').get(reserved) as { status: string; failure_kind: string; output_path: string; output_bytes: number }; expect(row).toMatchObject({ status: 'failed', failure_kind: 'truncated' }); expect(readFileSync(row.output_path, 'utf8')).toContain('RECOVERED-END')
     const logs: string[] = []; expect(() => collectResult(db(), ['result', String(reserved)], () => '', { log: (...values) => logs.push(values.join(' ')), error: () => {}, exit: (code): never => { throw new Error(`EXIT:${code}`) } })).toThrow('EXIT:1')
     const recovered = logs.join('\n'); expect(recovered).toStartWith('TRUNCATED at the output ceiling'); expect(recovered).toContain('RECOVERED-END'); expect(recovered).not.toContain('DROP-ME')
@@ -155,8 +169,8 @@ describe('review MCP recording', () => {
       [{ kind: 'completed', output: JSON.stringify(reply) }],
     ]).install(); process.env.ORCH_DEPTH = '0'
     upsertProject({ name: 'fixture-project', path: dir, settings: {} })
-    const plain = await run({ job: 'review-lens', prompt: 'review', cwd: dir, agent: 'codex', mcp: false, lens: 'plain', noFailover: true })
-    const requested = await run({ job: 'review-lens', prompt: 'review', cwd: dir, agent: 'codex', mcp: true, lens: 'requested', noFailover: true })
+    const plain = await runJob({ job: 'review-lens', prompt: 'review', cwd: dir, agent: 'codex', mcp: false, lens: 'plain', noFailover: true })
+    const requested = await runJob({ job: 'review-lens', prompt: 'review', cwd: dir, agent: 'codex', mcp: true, lens: 'requested', noFailover: true })
     expect(db().query('SELECT provenance_status FROM run WHERE id=?').get(plain.id)).toEqual({ provenance_status: null })
     expect(db().query('SELECT provenance_status FROM run WHERE id=?').get(requested.id)).toEqual({ provenance_status: 'silent' })
   })
@@ -173,7 +187,7 @@ describe('review MCP recording', () => {
     grok.bin = fake; process.env.ORCH_DEPTH = '0'
     const before = (db().query('SELECT MAX(id) id FROM run').get() as { id: number | null }).id ?? 0
     try {
-      await expect(run({ job: 'review-lens', prompt: 'review', cwd: repo, agent: 'grok', mcp: true, lens: 'trust', noFailover: true })).rejects.toThrow()
+      await expect(runJob({ job: 'review-lens', prompt: 'review', cwd: repo, agent: 'grok', mcp: true, lens: 'trust', noFailover: true })).rejects.toThrow()
       expect(db().query('SELECT mcp_trust_granted,mcp_trust_path FROM run WHERE id>? ORDER BY id LIMIT 1').get(before)).toEqual({ mcp_trust_granted: 1, mcp_trust_path: null })
     } finally { grok.bin = original; rmSync(repo, { recursive: true, force: true }); rmSync(fake, { force: true }); rmSync(create, { force: true }) }
   })
@@ -374,7 +388,7 @@ setInterval(() => {}, 1_000)
       // fixture's forced wall kill declarative instead of making timeoutMs a
       // readiness barrier whose getter cannot be read until after launch.
       grok.timeoutMs = 3 * 598
-      const result = await run({
+      const result = await runJob({
         job: 'file-question', prompt: 'where is the implementation?', cwd: dir,
         agent: 'grok', noFailover: true,
       })
@@ -447,7 +461,7 @@ describe('vendor termination markers', () => {
   ])('records failed/truncated for %s', async (_case, output, exitCode) => {
     await withGrokBin(output, exitCode, async () => {
       const reserved = addRun({ agent: '(pending)', job: 'file-question', status: 'running' })
-      await expect(run({
+      await expect(runJob({
         job: 'file-question', prompt: 'inspect this', cwd: dir,
         agent: 'grok', reserveId: reserved, noFailover: true,
       })).rejects.toThrow('[API Error: terminated]'); expect(db().query(
@@ -472,7 +486,7 @@ describe('vendor termination markers', () => {
     await withGrokBin(output, exitCode, async () => {
       let runId: number
       try {
-        const result = await run({
+        const result = await runJob({
           job: 'file-question', prompt: 'answer this', cwd: dir,
           agent: 'grok', noFailover: true,
         })
@@ -523,7 +537,7 @@ setInterval(() => {}, 1_000)
     await withHangingGrokBin(output, async (ready) => {
       const reserved = addRun({ agent: '(pending)', job: 'file-question', status: 'running' })
       try {
-      await expect(run({
+      await expect(runJob({
         job: 'file-question', prompt: 'inspect this', cwd: dir,
         agent: 'grok', reserveId: reserved, noFailover: true,
       })).rejects.toThrow('[API Error: terminated]'); expect(existsSync(ready)).toBe(true); expect(db().query(
@@ -578,7 +592,7 @@ setInterval(() => {}, 1_000)
       await withWritingRepo(async (repo) => {
         let runId: number | null = null
         try {
-          const result = await run({
+          const result = await runJob({
             job: 'implement', prompt: 'build it', cwd: repo,
             agent: 'grok', noFailover: true,
           })
@@ -603,7 +617,7 @@ setInterval(() => {}, 1_000)
       await withWritingRepo(async (repo) => {
         let runId: number | null = null
         try {
-          await run({
+          await runJob({
             job: 'implement', prompt: 'build it', cwd: repo,
             agent: 'grok', noFailover: true,
           })
@@ -652,7 +666,7 @@ printf '%s\\n' '{"type":"system","subtype":"init"}' '{"type":"result","result":"
       process.env.ORCH_TEST_EXTERNAL_WRITE = join(watched, 'tracked.txt')
       let runId: number | null = null
       try {
-        await run({ job: 'implement', prompt: 'write outside', cwd: watched, agent: 'grok', noFailover: true })
+        await runJob({ job: 'implement', prompt: 'write outside', cwd: watched, agent: 'grok', noFailover: true })
       } catch (error) {
         runId = (error as Error & { runId?: number }).runId ?? null
       }; expect(runId).not.toBeNull()
@@ -696,11 +710,11 @@ describe('the live ask channel always answers', () => {
     ).all(root, root) as { id: number }[]; expect(open.length).toBe(1)
   })
   test('an unanswered question survives the timeout', async () => {
-    const run = addRun({ agent: 'codex', job: 'implement', status: 'running' })
-    await ask({ runId: run, question: 'still open', timeoutMs: 50 })
+    const runJob = addRun({ agent: 'codex', job: 'implement', status: 'running' })
+    await ask({ runId: runJob, question: 'still open', timeoutMs: 50 })
     const open = db().query(
       'SELECT COUNT(*) AS n FROM question WHERE run_id = ? AND answered_at IS NULL',
-    ).get(run) as { n: number }; expect(open.n).toBe(1)
+    ).get(runJob) as { n: number }; expect(open.n).toBe(1)
   })
 })
 describe('a worker asking is not a worker blocked', () => {

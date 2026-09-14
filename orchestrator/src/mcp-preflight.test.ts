@@ -1,7 +1,9 @@
 import { afterEach, describe, expect, test } from 'bun:test'
 import { chmodSync, rmSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
-import { AGENTS, dir, upsertProject } from '../test/fixture.ts'
+import { dir } from '../test/fixtures/store.ts'
+import { AGENTS } from './agents.ts'
+import { upsertProject } from './projects.ts'
 import { assertGrokTrustEligible, canonSourceFor, canonSourceInstruction, effectiveMcpRequest, grokMcpConnection, mcpAttachRefusal, mcpRequestFromStored, preflightMcp } from './mcp-preflight.ts'
 
 const fixtureFiles: string[] = []

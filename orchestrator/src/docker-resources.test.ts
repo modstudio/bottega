@@ -4,7 +4,11 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import {
   classifiedDockerResources, dockerInventoryTimeoutMs, dockerRemovalTimeoutMs, dockerRunResources, orphanedDockerResources, teardownRunResources, type DockerResource, } from './docker-resources.ts'
-import { addRun, AGENTS, db, persistTerminalSnapshot, reconcileRun, runJob } from '../test/fixture.ts'
+import { addRun } from '../test/fixtures/store.ts'
+import { AGENTS } from './agents.ts'
+import { db } from './db.ts'
+import { persistTerminalSnapshot, reconcileRun } from './run-artifacts.ts'
+import { run as runJob } from './run.ts'
 import { teardownTerminalRunResources } from './resource-ownership.ts'
 
 afterEach(() => { mock.restore() })

@@ -1,5 +1,7 @@
 import { describe, expect, test } from 'bun:test'
-import { addRun, adoptRunMutation, authorizeRunMutation, db, sessionId } from '../test/fixture.ts'
+import { addRun } from '../test/fixtures/store.ts'
+import { db, sessionId } from './db.ts'
+import { adoptRunMutation, authorizeRunMutation } from './run-authority.ts'
 
 describe('session identity is the primary id only', () => {
   const restoreSessionEnv = (claude: string | undefined, bridge: string | undefined) => {

@@ -2,7 +2,11 @@ import { beforeEach, describe, expect, test } from 'bun:test'
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { db, dir, removeFor, run, upsertProject } from '../test/fixture.ts'
+import { dir } from '../test/fixtures/store.ts'
+import { db } from './db.ts'
+import { upsertProject } from './projects.ts'
+import { run as runJob } from './run.ts'
+import { removeFor } from './worktree.ts'
 import { scriptedTransportSequence } from '../test/fake-transport.ts'
 import { trackedTestResidue } from '../test/residue.ts'
 const trackResidue = trackedTestResidue(); beforeEach(() => { trackResidue(join(dir, '.claude')) })
@@ -27,7 +31,7 @@ test('a moved registered checkout is warned and excluded from the frozen watch s
     process.env.ORCH_TEST_MOVED_PROJECT = moved
     try {
       console.error = (...args: unknown[]) => warnings.push(args.join(' '))
-      const result = await run({
+      const result = await runJob({
         job: 'file-question', prompt: 'proceed despite moved checkout', cwd: dir, agent: 'grok',
         keepTree: true,
       })
@@ -47,7 +51,7 @@ test('a moved registered checkout is warned and excluded from the frozen watch s
 
       rmSync(moved, { recursive: true, force: true })
       warnings.length = 0
-      const noTree = await run({
+      const noTree = await runJob({
         job: 'summarize', prompt: 'no checkout required', cwd: dir, agent: 'grok',
       })
       expect(noTree.worktree).toBeNull()

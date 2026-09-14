@@ -4,7 +4,12 @@ import { existsSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from 'no
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { randomUUID } from 'node:crypto'
-import { addRun, changesIn, createWorktree, db, dir, hermeticGitEnv, prepareWorktreeObjects, upsertProject } from '../test/fixture.ts'
+import { hermeticGitEnv } from '../test/fixtures/git.ts'
+import { addRun, dir } from '../test/fixtures/store.ts'
+import { db } from './db.ts'
+import { prepareWorktreeObjects } from './git-environment.ts'
+import { upsertProject } from './projects.ts'
+import { changesIn, createWorktree } from './worktree.ts'
 import { runDiffCommand } from './run-diff.ts'
 
 async function showRunDiff(

@@ -2,8 +2,15 @@ import { afterEach, describe, expect, test } from 'bun:test'
 import { chmodSync, existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import {
-  addRun, candidates, classify, db, declaredCreate, hermeticGitEnv, JOBS, NEEDS_HUMAN, NOT_EVIDENCE, reapTestProcess, reapTestRun, run, upsertProject, } from '../test/fixture.ts'
+import { hermeticGitEnv } from '../test/fixtures/git.ts'
+import { addRun, reapTestProcess, reapTestRun } from '../test/fixtures/store.ts'
+import { declaredCreate } from '../test/fixtures/worktree.ts'
+import { db } from './db.ts'
+import { classify, NEEDS_HUMAN, NOT_EVIDENCE } from './failure.ts'
+import { JOBS } from './jobs.ts'
+import { upsertProject } from './projects.ts'
+import { candidates } from './route.ts'
+import { run as runJob } from './run.ts'
 import { pidAlive } from './process-liveness.ts'
 import { formatIdleKillError, idleKillMayProceed, idleKillMs, installTestProcessSampler, isGroupKillablePgid, isWorkerCpuIdle,
   parseIdleReclaimedMs, parsePsTable, runHasLiveDescendants, shouldIdleKill, terminateProcessGroup,
@@ -366,7 +373,7 @@ describe('live idle kill', () => {
     process.env.ORCH_DEPTH = '0'
     let runId: number | null = null
     try {
-      const result = await run({
+      const result = await runJob({
         job: 'implement', prompt: 'edit the tracked file', cwd: main,
         agent: 'codex', key: 'DEV-389', noFailover: true,
       })
@@ -452,7 +459,7 @@ describe('live idle kill', () => {
     process.env.ORCH_DEPTH = '0'
     let runId: number | null = null
     let vendorPid: number | null = null
-    const pending = run({
+    const pending = runJob({
       job: 'implement', prompt: 'edit the tracked file', cwd: main,
       agent: 'codex', key: 'DEV-389', noFailover: true, keepTree: true,
     }).then((result) => {

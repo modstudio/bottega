@@ -3,7 +3,11 @@ import { appendFileSync, mkdtempSync, rmSync, readFileSync, writeFileSync, exist
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 import { randomUUID } from 'node:crypto'
-import { addRun, db, fakeDocker, fakeDockerCommand, hermeticGitCommand, hermeticGitEnv, score, upsertProject } from '../test/fixture.ts'
+import { fakeDocker, fakeDockerCommand } from '../test/fixtures/docker.ts'
+import { hermeticGitCommand, hermeticGitEnv } from '../test/fixtures/git.ts'
+import { addRun, score } from '../test/fixtures/store.ts'
+import { db } from './db.ts'
+import { upsertProject } from './projects.ts'
 import { runSweep } from '../test/fake-sweep.ts'
 describe('sweep only reclaims old orch-owned orphan worktrees', () => {
   const processInventoryBin = mkdtempSync(join(tmpdir(), 'orch-empty-process-inventory-'))

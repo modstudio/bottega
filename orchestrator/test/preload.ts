@@ -3,6 +3,7 @@ import { chmodSync, copyFileSync, mkdirSync, mkdtempSync, readdirSync, realpathS
 import { tmpdir } from 'node:os'
 import { basename, dirname, join, resolve } from 'node:path'
 import { createTestHubDatabaseGuard } from '../../shared/test-hub-database.ts'
+import { scrubbedGitEnv } from '../../shared/git.ts'
 
 const discoveryEnv = Object.fromEntries(Object.entries(process.env).filter(([key]) =>
   !key.startsWith('GIT_') && key !== 'ORCH_GUARDED_GIT_COMMON_DIR' && key !== 'ORCH_ALLOWED_GIT_REF'
@@ -29,8 +30,9 @@ export const REGISTERED_LIVE_STORE = resolve(
  * DB_PATH is read at module load, so the handle is released and the file
  * replaced from a template rather than the module graph reloaded.
  */
-const dir = mkdtempSync(join(tmpdir(), 'orch-test-'))
+export const dir = mkdtempSync(join(tmpdir(), 'orch-test-'))
 const originalPath = process.env.PATH
+const originalSandbox = process.env.ORCH_SANDBOX
 const store = join(dir, 'test.db')
 const template = join(dir, 'template.db')
 process.env.ORCH_DB = store
@@ -43,14 +45,52 @@ process.env.ORCH_RUNS = join(dir, 'runs')
 process.env.ORCH_GATE_PIDS = join(dir, 'gates')
 // Terminalisation now inventories Docker for every run. Keep the whole suite
 // hermetic, including test files that do not import the shared fixture.
-const cleanDockerBin = join(dir, 'clean-docker-bin')
+export const cleanDockerBin = join(dir, 'clean-docker-bin')
 mkdirSync(cleanDockerBin)
 writeFileSync(join(cleanDockerBin, 'docker'), '#!/bin/sh\nexit 0\n')
 chmodSync(join(cleanDockerBin, 'docker'), 0o755)
 process.env.PATH = `${cleanDockerBin}:${originalPath ?? ''}`
+process.env.ORCH_SANDBOX = 'host'
+export const hermeticHome = join(dir, 'home')
+mkdirSync(hermeticHome)
 export const PRELOAD_STORE = process.env.ORCH_DB
 export const PRELOAD_RUNS = process.env.ORCH_RUNS
 mkdirSync(process.env.ORCH_RUNS)
+
+function childEnv(env?: Record<string, string | undefined>): Record<string, string | undefined> {
+  const requestedStore = env?.ORCH_DB ?? PRELOAD_STORE
+  if (resolve(requestedStore) === REGISTERED_LIVE_STORE) {
+    throw new Error(`test child refuses registered live store: ${REGISTERED_LIVE_STORE}`)
+  }
+  return {
+    ...(env ?? process.env),
+    ORCH_DB: requestedStore,
+    ORCH_RUNS: env?.ORCH_RUNS ?? PRELOAD_RUNS,
+  }
+}
+
+export const testSpawn: typeof Bun.spawn = ((cmd: any, options: any = {}) =>
+  Bun.spawn(cmd, { ...options, env: childEnv(options.env) })) as typeof Bun.spawn
+export const testSpawnSync: typeof Bun.spawnSync = ((cmd: any, options: any = {}) =>
+  Bun.spawnSync(cmd, { ...options, env: childEnv(options.env) })) as typeof Bun.spawnSync
+
+const preloadGitEnv = () => ({
+  ...scrubbedGitEnv(), HOME: hermeticHome,
+  GIT_CONFIG_GLOBAL: '/dev/null', GIT_CONFIG_SYSTEM: '/dev/null',
+})
+writeFileSync(join(dir, '.gitignore'), '*\n!.gitignore\n')
+for (const args of [
+  ['init', '-b', 'main'],
+  ['config', 'user.email', 'orch-test@example.invalid'],
+  ['config', 'user.name', 'Orch Test'],
+  ['add', '.gitignore'],
+  ['commit', '-m', 'test fixture'],
+]) {
+  const result = testSpawnSync(['git', ...args], {
+    cwd: dir, env: preloadGitEnv(), stdout: 'pipe', stderr: 'pipe',
+  })
+  if (result.exitCode !== 0) throw new Error(result.stderr.toString())
+}
 const assertTestHubDatabase = createTestHubDatabaseGuard(new URL('../..', import.meta.url).pathname)
 assertTestHubDatabase()
 
@@ -160,5 +200,7 @@ afterAll(() => {
   delete process.env.ORCH_GATE_PIDS
   if (originalPath === undefined) delete process.env.PATH
   else process.env.PATH = originalPath
+  if (originalSandbox === undefined) delete process.env.ORCH_SANDBOX
+  else process.env.ORCH_SANDBOX = originalSandbox
   rmSync(dir, { recursive: true, force: true })
 })

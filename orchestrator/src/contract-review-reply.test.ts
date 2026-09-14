@@ -1,5 +1,6 @@
 import { describe,expect,test } from 'bun:test'
-import { parseReviewReply,reviewReply } from '../test/fixture.ts'
+import { reviewReply } from '../test/fixtures/replies.ts'
+import { parseReviewReply } from './review.ts'
 
 describe('review discipline', () => {
 test('review parsing requires one of the three canon provenance values', () => {
