@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test'
-import { decideTestTiming } from './test-timing-decision'
+import { baselineDisposition, decideTestTiming } from './test-timing-decision'
 
 describe('test timing decision', () => {
   test('records an initial measurement', () => {
@@ -25,5 +25,14 @@ describe('test timing decision', () => {
   test('fails growth above the allowance', () => {
     expect(decideTestTiming({ currentMs: 106, committedMs: 100, growthLimit: 0.05 }))
       .toBe('fail')
+  })
+})
+
+describe('baseline disposition', () => {
+  test('a local run writes a moved baseline and a hosted run only reports it', () => {
+    expect(baselineDisposition({ changed: true, ci: false })).toBe('write')
+    expect(baselineDisposition({ changed: true, ci: true })).toBe('report')
+    expect(baselineDisposition({ changed: false, ci: true })).toBe('keep')
+    expect(baselineDisposition({ changed: false, ci: false })).toBe('keep')
   })
 })
