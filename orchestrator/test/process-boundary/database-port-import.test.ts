@@ -3,7 +3,12 @@ import { describe,expect,test } from 'bun:test'
 import { existsSync,mkdtempSync,rmSync,writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { db,listPairs,planImport,projects,runWithDelayedStdoutReader,sourceCoverage,upsertProject } from '../fixture.ts'
+import { db } from '../../src/db.ts'
+import { planImport, sourceCoverage } from '../../src/porting-import.ts'
+import { listPairs } from '../../src/porting.ts'
+import { projects, upsertProject } from '../../src/projects.ts'
+import { runWithDelayedStdoutReader } from '../fixtures/cli.ts'
+
 
 describe('port importer', () => {
 const registered = () => {

@@ -2,7 +2,15 @@ import { describe, expect, test } from "bun:test"
 import { chmodSync, mkdtempSync, rmSync, readFileSync, writeFileSync, existsSync, realpathSync, mkdirSync, readdirSync, statSync, symlinkSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
-import { addRun, changesIn, createWorktree, db, gitObjectEnvironmentFor, hermeticGitEnv, JOBS, prepareSharedRefGuard, reapTestProcess, removeFor, runJob, worktreeDescribeFixture, run, writingFailoverRefusal } from "../fixture.ts"
+import { db } from '../../src/db.ts'
+import { writingFailoverRefusal } from '../../src/failover.ts'
+import { JOBS } from '../../src/jobs.ts'
+import { gitObjectEnvironmentFor, run as runJob } from '../../src/run.ts'
+import { changesIn, createWorktree, prepareSharedRefGuard, removeFor } from '../../src/worktree.ts'
+import { hermeticGitEnv } from '../fixtures/git.ts'
+import { addRun, reapTestProcess } from '../fixtures/store.ts'
+import { worktreeDescribeFixture } from '../fixtures/worktree.ts'
+
 import { scriptedTransportSequence } from "../fake-transport.ts"
 describe("a worktree is resolved against the main checkout, not the caller cwd", () => {
   const { git, scratchRepo, markScratchRepoOwner } = worktreeDescribeFixture()

@@ -2,9 +2,12 @@ import { afterEach, describe, expect, test } from 'bun:test'
 import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, realpathSync, rmSync, utimesSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import {
-  addRun, db, hermeticGitEnv, projectLockDir, reapTestProcess, score, upsertProject, worktreeLeaseName,
-} from '../fixture.ts'
+import { db } from '../../src/db.ts'
+import { upsertProject } from '../../src/projects.ts'
+import { projectLockDir, worktreeLeaseName } from '../../src/worktree.ts'
+import { hermeticGitEnv } from '../fixtures/git.ts'
+import { addRun, reapTestProcess, score } from '../fixtures/store.ts'
+
 
 const CLI = new URL('../../src/orch.ts', import.meta.url).pathname
 const repos: string[] = []

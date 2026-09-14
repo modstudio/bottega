@@ -3,7 +3,10 @@ import { chmodSync,mkdirSync,mkdtempSync,readdirSync,rmSync,symlinkSync,writeFil
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { MONITOR_CAPABILITY_PATH_ENV,MONITOR_CAPABILITY_TOKEN_ENV } from '../../../shared/monitor-capability.ts'
-import { addRun,claimMonitorNotices,db,monitor,nowIso,reapTestProcess } from '../fixture.ts'
+import { db, nowIso } from '../../src/db.ts'
+import { claimMonitorNotices, monitor } from '../../src/monitor.ts'
+import { addRun, reapTestProcess } from '../fixtures/store.ts'
+
 
 function persistAddressedCondition(
   kind: string,

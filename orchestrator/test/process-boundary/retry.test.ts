@@ -3,7 +3,12 @@ import { mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'n
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
-import { READONLY_PREAMBLE, db, dir, replyFileInstruction, runCollectionDescribeFixture, upsertProject } from '../fixture.ts'
+import { READONLY_PREAMBLE, replyFileInstruction } from '../../src/contract.ts'
+import { db } from '../../src/db.ts'
+import { upsertProject } from '../../src/projects.ts'
+import { runCollectionDescribeFixture } from '../fixtures/cli.ts'
+import { dir } from '../fixtures/store.ts'
+
 import { stubWorker } from "../stub-worker.ts"
 import { trackedTestResidue } from '../residue.ts'
 const trackResidue = trackedTestResidue(); beforeEach(() => { trackResidue(join(dir, '.claude')) })

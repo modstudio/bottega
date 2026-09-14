@@ -3,7 +3,13 @@ import { randomUUID } from 'node:crypto'
 import { mkdirSync,mkdtempSync,rmSync,writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { AGENTS,addRun,db,dir,hermeticGitEnv,projectAt,runJob,upsertProject } from '../fixture.ts'
+import { AGENTS } from '../../src/agents.ts'
+import { db } from '../../src/db.ts'
+import { projectAt, upsertProject } from '../../src/projects.ts'
+import { run as runJob } from '../../src/run.ts'
+import { hermeticGitEnv } from '../fixtures/git.ts'
+import { addRun, dir } from '../fixtures/store.ts'
+
 
 describe('task branch resolution', () => {
 const git = (cwd: string, ...args: string[]) => {

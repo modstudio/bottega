@@ -11,31 +11,31 @@ const repository = () => { const repo = realpathSync(mkdtempSync(join(tmpdir(), 
 test('caller paths in a review pack are retargeted at filesystem boundaries', () => {
     const caller = '/repo with [meta]*'
     const worktree = `${caller}/.claude/worktrees/orch-1`
-    expect(retargetRepositoryPrompt(`${caller}/subdir/subject.txt`, `${caller}/`, worktree).prompt)
+    expect(retargetRepositoryPrompt(`${caller}/subdir/subject.txt`, `${caller}/`, worktree, false, []).prompt)
       .toBe(`${worktree}/subdir/subject.txt`)
-    expect(retargetRepositoryPrompt(caller, caller, worktree).prompt).toBe(worktree)
-    expect(retargetRepositoryPrompt(`${caller}-archive/subject.txt`, caller, worktree).prompt)
+    expect(retargetRepositoryPrompt(caller, caller, worktree, false, []).prompt).toBe(worktree)
+    expect(retargetRepositoryPrompt(`${caller}-archive/subject.txt`, caller, worktree, false, []).prompt)
       .toBe(`${caller}-archive/subject.txt`)
-    expect(retargetRepositoryPrompt(`word${caller}/subject.txt`, caller, worktree).prompt)
+    expect(retargetRepositoryPrompt(`word${caller}/subject.txt`, caller, worktree, false, []).prompt)
       .toBe(`word${caller}/subject.txt`)
     for (const prefix of ['', ' ', '\n', '"', "'", '`', '=', ':', ',', '(', '[', '{', '<']) {
-      expect(retargetRepositoryPrompt(`${prefix}${caller}/subject.txt`, caller, worktree).prompt)
+      expect(retargetRepositoryPrompt(`${prefix}${caller}/subject.txt`, caller, worktree, false, []).prompt)
         .toBe(`${prefix}${worktree}/subject.txt`)
     }
     const bound = `read ${worktree}/subject.txt`
-    expect(retargetRepositoryPrompt(bound, caller, worktree).prompt).toBe(bound)
-    expect(retargetRepositoryPrompt('unchanged', '', worktree).prompt).toBe('unchanged')
-    expect(retargetRepositoryPrompt('/subject.txt', '/', '/worktree').prompt).toBe('/subject.txt')
-    expect(retargetRepositoryPrompt('/', '/', '/worktree').prompt).toBe('/')
+    expect(retargetRepositoryPrompt(bound, caller, worktree, false, []).prompt).toBe(bound)
+    expect(retargetRepositoryPrompt('unchanged', '', worktree, false, []).prompt).toBe('unchanged')
+    expect(retargetRepositoryPrompt('/subject.txt', '/', '/worktree', false, []).prompt).toBe('/subject.txt')
+    expect(retargetRepositoryPrompt('/', '/', '/worktree', false, []).prompt).toBe('/')
     expect(retargetRepositoryPrompt(
-      '/repo\nline [meta]*/subject.txt', '/repo\nline [meta]*', '/worktree',
+      '/repo\nline [meta]*/subject.txt', '/repo\nline [meta]*', '/worktree', false, []
     ).prompt).toBe('/worktree/subject.txt')
   })
 
 test('path ends, alias specificity, URI authorities, and malformed aliases are one rule', () => {
     expect(retargetRepositoryPrompt(
       '/repo, /repo) /repo: /repo. /repo-archive /repo.git /repo-\n/repo\nnext',
-      '/repo', '/wt',
+      '/repo', '/wt', false, []
     ).prompt).toBe('/wt, /wt) /wt: /wt. /repo-archive /repo.git /wt-\n/wt\nnext')
 
     const shorterTarget = retargetRepositoryPrompt(
@@ -49,15 +49,15 @@ test('path ends, alias specificity, URI authorities, and malformed aliases are o
     expect(retargetRepositoryPrompt('/repo/file', '/repo', '/', false, ['/']).prompt)
       .toBe('/file')
     expect(retargetRepositoryPrompt(
-      'https://repo/file file:///repo/file', '/repo', '/wt',
+      'https://repo/file file:///repo/file', '/repo', '/wt', false, []
     ).prompt).toBe('https://repo/file file:///wt/file')
     expect(retargetRepositoryPrompt(
       'https://example.test/repo/f file:///repo/f "https://host/repo/f" (ssh://host/repo/f)',
-      '/repo', '/wt',
+      '/repo', '/wt', false, []
     ).prompt).toBe('https://example.test/wt/f file:///wt/f "https://host/wt/f" (ssh://host/wt/f)')
     expect(retargetRepositoryPrompt(
       'https://x.test/?path=/repo/file vscode://x/open?path=/repo/file file://host/?path=/repo/file',
-      '/repo', '/wt',
+      '/repo', '/wt', false, []
     ).prompt).toBe(
       'https://x.test/?path=/wt/file vscode://x/open?path=/wt/file file://host/?path=/wt/file',
     )
@@ -73,7 +73,7 @@ test('path ends, alias specificity, URI authorities, and malformed aliases are o
     expect(retargetRepositoryPrompt(
       aliased, '/repo', '/repo/wt', false, ['/repo/wt-alias'],
     ).prompt).toBe(aliased)
-    expect(retargetRepositoryPrompt('//repo/file', '/repo', '/wt').prompt).toBe('//repo/file')
+    expect(retargetRepositoryPrompt('//repo/file', '/repo', '/wt', false, []).prompt).toBe('//repo/file')
 
     expect(retargetRepositoryPrompt('/repo/file', '/repo', '', false, [])).toEqual({
       prompt: '/repo/file',
@@ -119,10 +119,10 @@ test('suffix boundaries are lexical and independent of filesystem state', () => 
         `${caller}@archive ${caller}-archive/f ${caller}.git ${caller}.x ` +
         `${caller}_archive ${caller},archive ${caller}:archive ${caller}+archive ` +
         `${caller}:+ word${caller}/f`
-      expect(retargetRepositoryPrompt(prompt, caller, worktree).prompt).toBe(expected)
+      expect(retargetRepositoryPrompt(prompt, caller, worktree, false, []).prompt).toBe(expected)
       mkdirSync(`${caller}.`)
       mkdirSync(`${caller}-archive`)
-      expect(retargetRepositoryPrompt(prompt, caller, worktree).prompt).toBe(expected)
+      expect(retargetRepositoryPrompt(prompt, caller, worktree, false, []).prompt).toBe(expected)
     } finally {
       rmSync(parent, { recursive: true, force: true })
     }
@@ -131,28 +131,28 @@ test('suffix boundaries are lexical and independent of filesystem state', () => 
 test('shell operators end paths and Unicode name characters do not', () => {
     expect(retargetRepositoryPrompt(
       'cd /repo;pwd /repo|x /repo&&x /repo>out /repo<in /repo)next /repo`pwd` /repo$VAR',
-      '/repo', '/wt',
+      '/repo', '/wt', false, []
     ).prompt).toBe('cd /wt;pwd /wt|x /wt&&x /wt>out /wt<in /wt)next /wt`pwd` /wt$VAR')
     expect(retargetRepositoryPrompt(
       '/repoé/f /repo١/f /repo\u0301/f /repo𐐀/f é/repo/f ١/repo/f e\u0301/repo/f 𐐀/repo/f /repo/é',
-      '/repo', '/wt',
+      '/repo', '/wt', false, []
     ).prompt).toBe('/repoé/f /repo١/f /repo\u0301/f /repo𐐀/f é/repo/f ١/repo/f e\u0301/repo/f 𐐀/repo/f /wt/é')
     expect(retargetRepositoryPrompt(
-      '/tmp/@/repo/file /tmp//repo/file', '/repo', '/wt',
+      '/tmp/@/repo/file /tmp//repo/file', '/repo', '/wt', false, []
     ).prompt).toBe('/tmp/@/wt/file /tmp//repo/file')
     const escapedPrompt = '—/repo/f @/repo/f ' + '\\' + '/repo/f'
     const escapedExpected = '—/wt/f @/wt/f ' + '\\' + '/wt/f'
-    expect(retargetRepositoryPrompt(escapedPrompt, '/repo', '/wt').prompt).toBe(escapedExpected)
+    expect(retargetRepositoryPrompt(escapedPrompt, '/repo', '/wt', false, []).prompt).toBe(escapedExpected)
   })
 
 test('case-insensitive aliases use the documented partial length-changing fold', () => {
     expect(retargetRepositoryPrompt(
       '/tmp/case/i̇/file /tmp/case/SS/file /tmp/case/fi/file',
-      ['/tmp/case/İ', '/tmp/case/ß', '/tmp/case/ﬁ'], '/worktree', true,
+      ['/tmp/case/İ', '/tmp/case/ß', '/tmp/case/ﬁ'], '/worktree', true, []
     ).prompt).toBe('/worktree/file /worktree/file /worktree/file')
     expect(retargetRepositoryPrompt(
       '/tmp/case/İ/file /tmp/case/ß/file /tmp/case/ﬁ/file',
-      ['/tmp/case/i̇', '/tmp/case/SS', '/tmp/case/fi'], '/worktree', true,
+      ['/tmp/case/i̇', '/tmp/case/SS', '/tmp/case/fi'], '/worktree', true, []
     ).prompt).toBe('/worktree/file /worktree/file /worktree/file')
   })
 
@@ -178,13 +178,13 @@ test('all checkout aliases follow the checkout filesystem case behavior', () => 
       const prompt = checkout!.roots
         .map((root) => `${root.replace(/\/+$/, '')}/subject.txt`).join('\n')
       expect(retargetRepositoryPrompt(
-        prompt, checkout!.roots, '/worktree', checkout!.caseInsensitive,
+        prompt, checkout!.roots, '/worktree', checkout!.caseInsensitive, []
       ).prompt).toBe(checkout!.roots.map(() => '/worktree/subject.txt').join('\n'))
 
       const uppercase = realpathSync(repo).toUpperCase()
       const expected = checkout!.caseInsensitive ? '/worktree/subject.txt' : `${uppercase}/subject.txt`
       expect(retargetRepositoryPrompt(
-        `${uppercase}/subject.txt`, checkout!.roots, '/worktree', checkout!.caseInsensitive,
+        `${uppercase}/subject.txt`, checkout!.roots, '/worktree', checkout!.caseInsensitive, []
       ).prompt).toBe(expected)
     } finally {
       rmSync(alias)

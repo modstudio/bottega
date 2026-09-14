@@ -5,7 +5,8 @@ import { chmodSync, existsSync, mkdtempSync, readFileSync, rmSync } from 'node:f
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { createHash } from 'node:crypto'
-import { applySchema } from '../fixture.ts'
+import { applySchema } from '../../src/db.ts'
+
 const inheritedEnvironment = {
   ORCH_DB: process.env.ORCH_DB,
   ORCH_DEPTH: process.env.ORCH_DEPTH,

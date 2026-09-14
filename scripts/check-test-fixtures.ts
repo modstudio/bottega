@@ -1,7 +1,9 @@
 import { readdirSync, readFileSync, statSync } from 'node:fs'
 import { relative, resolve } from 'node:path'
+import ts from 'typescript'
 
-const root = resolve(new URL('..', import.meta.url).pathname)
+const rootArgument = process.argv.find((argument) => argument.startsWith('--root='))
+const root = resolve(rootArgument?.slice('--root='.length) ?? new URL('..', import.meta.url).pathname)
 const orchestrator = resolve(root, 'orchestrator')
 const failures: string[] = []
 
@@ -60,42 +62,37 @@ function checkFixture(path: string): void {
   for (let index = before; index < failures.length; index += 1) failures[index] = `${label}: ${failures[index]}`
 }
 
-function braceDepthBeforeLines(source: string): number[] {
-  const depths: number[] = []
-  let depth = 0
-  let quote: string | null = null
-  let escaped = false
-  for (const line of source.split('\n')) {
-    depths.push(depth)
-    for (let index = 0; index < line.length; index += 1) {
-      const char = line[index]!
-      if (quote) {
-        if (escaped) escaped = false
-        else if (char === '\\') escaped = true
-        else if (char === quote) quote = null
-        continue
-      }
-      if (char === "'" || char === '"' || char === '`') quote = char
-      else if (char === '{') depth += 1
-      else if (char === '}') depth = Math.max(0, depth - 1)
-    }
-  }
-  return depths
+function environmentName(node: ts.Node): string | null {
+  if (!ts.isPropertyAccessExpression(node)) return null
+  if (!ts.isPropertyAccessExpression(node.expression)) return null
+  if (!ts.isIdentifier(node.expression.expression)
+    || node.expression.expression.text !== 'process'
+    || node.expression.name.text !== 'env') return null
+  return ['PATH', 'HOME', 'ORCH_SANDBOX'].includes(node.name.text) ? node.name.text : null
 }
 
 function checkTest(path: string): void {
   if (!/\.(?:test|spec)\.tsx?$/.test(path)) return
   const source = readFileSync(path, 'utf8')
   const label = relative(root, path)
-  if (/from\s*['"][^'"]*test\/fixture\.ts['"]/.test(source)) {
-    failures.push(`${label}: imports orchestrator/test/fixture.ts`)
+  for (const statement of ts.createSourceFile(path, source, ts.ScriptTarget.Latest, true).statements) {
+    if (ts.isImportDeclaration(statement) && ts.isStringLiteral(statement.moduleSpecifier)
+      && resolve(path, '..', statement.moduleSpecifier.text) === resolve(orchestrator, 'test/fixture.ts')) {
+      failures.push(`${label}: imports orchestrator/test/fixture.ts`)
+    }
   }
-  const lines = source.split('\n')
-  const depths = braceDepthBeforeLines(source)
-  for (let index = 0; index < lines.length; index += 1) {
-    if (depths[index] !== 0) continue
-    if (/(?:delete\s+process\.env\.(?:PATH|HOME|ORCH_SANDBOX)\b|process\.env\.(?:PATH|HOME|ORCH_SANDBOX)\s*=)/.test(lines[index]!)) {
-      failures.push(`${label}:${index + 1}: mutates test environment at module top level`)
+  const ast = ts.createSourceFile(path, source, ts.ScriptTarget.Latest, true)
+  for (const statement of ast.statements) {
+    if (!ts.isExpressionStatement(statement)) continue
+    const expression = statement.expression
+    const assigned = ts.isBinaryExpression(expression)
+      && expression.operatorToken.kind >= ts.SyntaxKind.FirstAssignment
+      && expression.operatorToken.kind <= ts.SyntaxKind.LastAssignment
+      && environmentName(expression.left)
+    const deleted = ts.isDeleteExpression(expression) && environmentName(expression.expression)
+    if (assigned || deleted) {
+      const line = ast.getLineAndCharacterOfPosition(statement.getStart(ast)).line + 1
+      failures.push(`${label}:${line}: mutates test environment at module top level`)
     }
   }
 }

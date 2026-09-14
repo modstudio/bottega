@@ -3,7 +3,16 @@ import { randomUUID } from 'node:crypto'
 import { existsSync,mkdirSync,mkdtempSync,realpathSync,rmSync,writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { AGENTS,addRun,createWorktreeForBranch,db,dir,hermeticGitEnv,installTestProcessInventory,projectAt,resolveTaskBranch,runJob,taskBranchCandidacySql,upsertProject } from '../fixture.ts'
+import { AGENTS } from '../../src/agents.ts'
+import { db } from '../../src/db.ts'
+import { projectAt, upsertProject } from '../../src/projects.ts'
+import { installTestProcessInventory } from '../../src/run-process.ts'
+import { run as runJob } from '../../src/run.ts'
+import { resolveTaskBranch, taskBranchCandidacySql } from '../../src/task-branch.ts'
+import { createWorktreeForBranch } from '../../src/worktree.ts'
+import { hermeticGitEnv } from '../fixtures/git.ts'
+import { addRun, dir } from '../fixtures/store.ts'
+
 import { stubWorker } from '../stub-worker.ts'
 
 describe('task branch resolution', () => {

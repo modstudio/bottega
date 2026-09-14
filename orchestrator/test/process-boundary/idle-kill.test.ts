@@ -2,8 +2,17 @@ import { afterEach, describe, expect, test } from 'bun:test'
 import { chmodSync, existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import {
-  AGENTS, addRun, candidates, classify, db, declaredCreate, dir, hermeticGitEnv, JOBS, NEEDS_HUMAN, NOT_EVIDENCE, reapTestProcess, reapTestRun, run, upsertProject, } from '../fixture.ts'
+import { AGENTS } from '../../src/agents.ts'
+import { db } from '../../src/db.ts'
+import { classify, NEEDS_HUMAN, NOT_EVIDENCE } from '../../src/failure.ts'
+import { JOBS } from '../../src/jobs.ts'
+import { upsertProject } from '../../src/projects.ts'
+import { candidates } from '../../src/route.ts'
+import { run as runJob } from '../../src/run.ts'
+import { hermeticGitEnv } from '../fixtures/git.ts'
+import { addRun, dir, reapTestProcess, reapTestRun } from '../fixtures/store.ts'
+import { declaredCreate } from '../fixtures/worktree.ts'
+
 import { stubWorker } from "../stub-worker.ts"
 import { trackedTestResidue } from '../residue.ts'
 const trackResidue = trackedTestResidue()
@@ -216,7 +225,7 @@ describe('idle kill process boundary', () => {
     process.env.ORCH_DEPTH = '0'
     let runId: number | null = null
     try {
-      const result = await run({
+      const result = await runJob({
         job: 'implement', prompt: 'edit the tracked file', cwd: main,
         agent: 'codex', key: 'DEV-389', noFailover: true,
       })
@@ -262,7 +271,7 @@ describe('idle kill process boundary', () => {
       grok.bin = script
       grok.timeoutMs = 2_500
       try {
-        const result = await run({
+        const result = await runJob({
           job: 'summarize', prompt: 'hello', cwd: dir, agent: 'grok', noFailover: true,
         })
         runId = result.id
@@ -296,7 +305,7 @@ describe('idle kill process boundary', () => {
       grok.bin = script
       grok.timeoutMs = 20_000
       try {
-        const result = await run({
+        const result = await runJob({
           job: 'summarize', prompt: 'hello', cwd: dir, agent: 'grok', noFailover: true,
         })
         runId = result.id
@@ -362,7 +371,7 @@ describe('idle kill process boundary', () => {
     let runId: number | null = null
     try {
       try {
-        const result = await run({
+        const result = await runJob({
           job: 'summarize', prompt: 'hello', cwd: dir, agent: 'grok',
           transport: 'acp', noFailover: true,
         })
@@ -401,7 +410,7 @@ describe('idle kill process boundary', () => {
       grok.bin = script
       grok.timeoutMs = 2_500
       try {
-        const result = await run({
+        const result = await runJob({
           job: 'summarize', prompt: 'hello', cwd: dir, agent: 'grok', noFailover: true,
         })
         runId = result.id

@@ -3,7 +3,17 @@ import { mkdtempSync, rmSync, readFileSync, writeFileSync, existsSync, realpathS
 import { tmpdir } from "node:os"
 import { join, resolve } from "node:path"
 import { type WorktreeCreate } from "../../src/worktree-template.ts"
-import { addRun, branchTip, compoundCreate, createArgv, createReadOnlyWithTool, createReadOnlyWorktree, createWithTool, createWorktree, db, declaredCreate, hermeticGitCommand, hermeticGitEnv, preflight, prepareSharedRefGuard, removeFor, resolveReviewTarget, run, upsertProject, worktreeDescribeFixture } from "../fixture.ts"
+import { db } from '../../src/db.ts'
+import { preflight } from '../../src/dispatch-preflight.ts'
+import { upsertProject } from '../../src/projects.ts'
+import { resolveReviewTarget } from '../../src/review-target.ts'
+import { run as runJob } from '../../src/run.ts'
+import { createArgv } from '../../src/worktree-template.ts'
+import { branchTip, createReadOnlyWithTool, createReadOnlyWorktree, createWithTool, createWorktree, prepareSharedRefGuard, removeFor } from '../../src/worktree.ts'
+import { hermeticGitCommand, hermeticGitEnv } from '../fixtures/git.ts'
+import { addRun } from '../fixtures/store.ts'
+import { compoundCreate, declaredCreate, worktreeDescribeFixture } from '../fixtures/worktree.ts'
+
 describe('worktree creation process boundary', () => {
 const { fromRoot, git, scratchRepo } = worktreeDescribeFixture()
 test('repository dispatch refuses a register landing branch that disagrees with HEAD', () => {

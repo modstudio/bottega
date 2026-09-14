@@ -30,6 +30,5 @@
   "orchestrator/src/run.ts": 2489,
   "orchestrator/src/transport-acp.ts": 620,
   "orchestrator/src/transport.test.ts": 795,
-  "orchestrator/src/worktree.ts": 1996,
-  "orchestrator/test/fixture.ts": 523
+  "orchestrator/src/worktree.ts": 1996
 }

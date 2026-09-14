@@ -1,5 +1,7 @@
 import { expect, test } from 'bun:test'
-import { addRun, db, dir } from '../fixture.ts'
+import { db } from '../../src/db.ts'
+import { addRun, dir } from '../fixtures/store.ts'
+
 import { join } from 'node:path'
 import { rmSync } from 'node:fs'
 

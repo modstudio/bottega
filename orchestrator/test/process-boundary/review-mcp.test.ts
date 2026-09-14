@@ -2,7 +2,15 @@ import { afterEach, beforeEach, expect, test } from 'bun:test'
 import { existsSync, mkdtempSync, readFileSync, realpathSync, rmSync, symlinkSync, unlinkSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
-import { AGENTS, canonSourceInstruction, db, dir, hermeticGitEnv, reviewReply, runJob, upsertProject } from '../fixture.ts'
+import { AGENTS } from '../../src/agents.ts'
+import { db } from '../../src/db.ts'
+import { canonSourceInstruction } from '../../src/mcp-preflight.ts'
+import { upsertProject } from '../../src/projects.ts'
+import { run as runJob } from '../../src/run.ts'
+import { hermeticGitEnv } from '../fixtures/git.ts'
+import { reviewReply } from '../fixtures/replies.ts'
+import { dir } from '../fixtures/store.ts'
+
 import { stubWorker } from "../stub-worker.ts"
 import { trackedTestResidue } from '../residue.ts'
 

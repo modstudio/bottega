@@ -2,8 +2,12 @@ import { describe, expect, test } from 'bun:test'
 import { existsSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { addRun, db, hermeticGitEnv, upsertProject } from '../fixture.ts'
-import { runCollectionDescribeFixture } from '../fixture.ts'
+import { db } from '../../src/db.ts'
+import { upsertProject } from '../../src/projects.ts'
+import { runCollectionDescribeFixture } from '../fixtures/cli.ts'
+import { hermeticGitEnv } from '../fixtures/git.ts'
+import { addRun } from '../fixtures/store.ts'
+
 
 describe('project cleanup process boundary', () => {
   const { orch } = runCollectionDescribeFixture()
