@@ -1042,7 +1042,7 @@ export async function probeAgent(name: string): Promise<RegistrationProbeResult>
     throw new Error(`legacy agent "${name}" has no runnable harness`)
   }
   const agent = rowAgent(row)
-  if (which(agent.bin) === null) throw new Error(`${agent.harness} harness is not installed`)
+  if (which(agent.bin, { PATH: process.env.PATH }) === null) throw new Error(`${agent.harness} harness is not installed`)
   const scratch = mkdtempSync(join(process.env.TMPDIR ?? '/tmp', 'orch-agent-probe-'))
   mkdirSync(join(scratch, 'repo'))
   writeFileSync(join(scratch, 'repo', REGISTRATION_PROBE_FILE), `${REGISTRATION_PROBE_SENTINEL}\n`)
@@ -1273,7 +1273,7 @@ export function wakeDecision(o: {
 export function wakeStatus(now = Date.now()): { send: boolean; detail: string } {
   return wakeDecision({
     mac: LOCAL_WOL_MAC,
-    haveBinary: which('wakeonlan') !== null,
+    haveBinary: which('wakeonlan', { PATH: process.env.PATH }) !== null,
     last: lastWakeAttempt(),
     now,
   })
@@ -1372,7 +1372,7 @@ export function unavailableReason(name: string): string | null {
   if (a.probePassed === null) return `registration probe incomplete; run orch agent probe ${name}`
   if (a.probedAt && a.probePassed === false) return 'registration probe failed'
   if (a.contextTokens === 0) return 'unprobed and has no declared context window'
-  if (which(a.bin) === null) return 'not installed'
+  if (which(a.bin, { PATH: process.env.PATH }) === null) return 'not installed'
   if (a.billing === 'local') {
     // A local agent is only real once an endpoint is configured...
     if (!LOCAL_BASE_URL) return 'ORCH_LOCAL_BASE_URL not set'
