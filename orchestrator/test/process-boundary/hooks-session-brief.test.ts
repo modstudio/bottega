@@ -2,7 +2,11 @@ import { describe,expect,test } from 'bun:test'
 import { chmodSync,copyFileSync,mkdirSync,mkdtempSync,rmSync,writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { addRun,db,dir,monitorHistory,nowIso,setDoc } from '../fixture.ts'
+import { db, nowIso } from '../../src/db.ts'
+import { monitorHistory } from '../../src/monitor.ts'
+import { setDoc } from '../fixtures/docs.ts'
+import { addRun, dir } from '../fixtures/store.ts'
+
 
 const PROCESS_INSPECTION_AVAILABLE = (() => {
   try { return Bun.spawnSync(['/bin/ps', '-p', String(process.pid), '-o', 'command='],

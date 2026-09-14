@@ -1,5 +1,8 @@
 import { describe,expect,test } from 'bun:test'
-import { brief,consumeDoc,db,listOpenResumes,parseResumeFrontmatter,resumeAge,setDoc,upsertProject } from '../test/fixture.ts'
+import { consumeDoc, setDoc } from '../test/fixtures/docs.ts'
+import { db } from './db.ts'
+import { brief, listOpenResumes, parseResumeFrontmatter, resumeAge } from './docs.ts'
+import { upsertProject } from './projects.ts'
 
 
 describe('scoped operator docs', () => {

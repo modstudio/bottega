@@ -1,5 +1,7 @@
 import { describe, expect, test } from 'bun:test'
-import { FIDELITY_PENALTY, addRun, candidates, judgeability, score, weigh } from '../test/fixture.ts'
+import { addRun, score } from '../test/fixtures/store.ts'
+import { candidates } from './route.ts'
+import { FIDELITY_PENALTY, judgeability, weigh } from './score.ts'
 
 describe('fidelity: did it build what it was asked to build', () => {
   test('correct code that solved the wrong problem is not a perfect run', () => {

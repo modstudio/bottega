@@ -1,8 +1,8 @@
-import { describe, expect, test } from 'bun:test'
-import { chmodSync, existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
-import { tmpdir } from 'node:os'
-import { join } from 'node:path'
-import { AGENTS, db, dir, hermeticGitEnv, reviewReply, runJob, upsertProject } from '../test/fixture.ts'
+import { describe, expect, test } from 'bun:test'; import { chmodSync, existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'; import { tmpdir } from 'node:os'; import { join } from 'node:path'; import { hermeticGitEnv } from '../test/fixtures/git.ts'; import { reviewReply } from '../test/fixtures/replies.ts'; import { dir } from '../test/fixtures/store.ts'
+import { AGENTS } from './agents.ts'
+import { db } from './db.ts'
+import { upsertProject } from './projects.ts'
+import { run as runJob } from './run.ts'
 import {
   mcpCallEvidence, mcpEndpointAllowlist, namesSeenAt, parseMcpConfig, parseMcpProbe, probeMcpServer,
   sanitizeProbeError, storedMcpProbe,

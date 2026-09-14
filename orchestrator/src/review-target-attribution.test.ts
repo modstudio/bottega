@@ -3,7 +3,12 @@ import { randomUUID } from 'node:crypto'
 import { mkdirSync,mkdtempSync,rmSync,writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { db,hermeticGitEnv,inferredReadOnlyKey,preflight,projectAt,runJob,upsertProject } from '../test/fixture.ts'
+import { hermeticGitEnv } from '../test/fixtures/git.ts'
+import { db } from './db.ts'
+import { preflight } from './dispatch-preflight.ts'
+import { projectAt, upsertProject } from './projects.ts'
+import { inferredReadOnlyKey } from './review-target.ts'
+import { run as runJob } from './run.ts'
 import { scriptedTransport } from '../test/fake-transport.ts'
 
 describe('read-only run task attribution', () => {

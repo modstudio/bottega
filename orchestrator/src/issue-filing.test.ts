@@ -4,7 +4,10 @@ import { describe,expect,setDefaultTimeout,test } from 'bun:test'
 import { rmSync } from 'node:fs'
 import { join } from 'node:path'
 import { PLATFORM_SLUG } from '../../shared/brand.ts'
-import { createDocsMcpServer,dir,parseFiledIssue,upsertProject } from '../test/fixture.ts'
+import { dir } from '../test/fixtures/store.ts'
+import { parseFiledIssue } from './issue.ts'
+import { createDocsMcpServer } from './mcp.ts'
+import { upsertProject } from './projects.ts'
 
 setDefaultTimeout(20_000)
 

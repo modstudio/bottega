@@ -1,6 +1,8 @@
 import { beforeEach, expect, test } from 'bun:test'
 import { readFileSync } from 'node:fs'
-import { addRun, db, upsertProject } from '../test/fixture.ts'
+import { addRun } from '../test/fixtures/store.ts'
+import { db } from './db.ts'
+import { upsertProject } from './projects.ts'
 import { VOIDED_SQL, activeSql, voidedSql } from './evidence-query.ts'
 import { runInboxCommand } from './run-inbox.ts'
 

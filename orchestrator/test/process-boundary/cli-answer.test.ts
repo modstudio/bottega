@@ -1,5 +1,6 @@
 import { describe, expect, test } from 'bun:test'
-import { runCollectionDescribeFixture } from '../fixture.ts'
+import { runCollectionDescribeFixture } from '../fixtures/cli.ts'
+
 
 /** Process-boundary rows retained until the boundary suite is consolidated. */
 describe('detached run collection', () => {

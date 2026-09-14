@@ -1,7 +1,12 @@
 import { describe, expect, test } from 'bun:test'
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { dirname, join, relative, resolve } from 'node:path'
-import { addRun, db, dir, recordReview, reviewReply, runCollectionDescribeFixture } from '../fixture.ts'
+import { db } from '../../src/db.ts'
+import { recordReview } from '../../src/review.ts'
+import { runCollectionDescribeFixture } from '../fixtures/cli.ts'
+import { reviewReply } from '../fixtures/replies.ts'
+import { addRun, dir } from '../fixtures/store.ts'
+
 import { trackedTestResidue } from '../residue.ts'
 const trackResidue = trackedTestResidue()
 

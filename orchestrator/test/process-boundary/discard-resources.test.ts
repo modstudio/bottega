@@ -3,7 +3,16 @@ import { describe, expect, spyOn, test } from 'bun:test'
 import { appendFileSync, chmodSync, mkdtempSync, rmSync, readFileSync, writeFileSync, existsSync, realpathSync, mkdirSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { addRun, compoundCreate, createWithTool, createWorktree, db, declaredCreate, fakeDocker, fakeDockerCommand, hermeticGitCommand, hermeticGitEnv, nowIso, prepareSharedRefGuard, prepareWorktreeObjects, processStartTime, projectLockDir, reclaimStaleProjectLock, removeFor, resolveBase, runJob, staleProjectLockHolder, upsertProject, withProjectLock, withWorktreeCreateLock, worktreeDescribeFixture } from '../fixture.ts'
+import { db, nowIso } from '../../src/db.ts'
+import { prepareWorktreeObjects } from '../../src/git-environment.ts'
+import { upsertProject } from '../../src/projects.ts'
+import { run as runJob } from '../../src/run.ts'
+import { createWithTool, createWorktree, prepareSharedRefGuard, processStartTime, projectLockDir, reclaimStaleProjectLock, removeFor, resolveBase, staleProjectLockHolder, withProjectLock, withWorktreeCreateLock } from '../../src/worktree.ts'
+import { fakeDocker, fakeDockerCommand } from '../fixtures/docker.ts'
+import { hermeticGitCommand, hermeticGitEnv } from '../fixtures/git.ts'
+import { addRun } from '../fixtures/store.ts'
+import { compoundCreate, declaredCreate, worktreeDescribeFixture } from '../fixtures/worktree.ts'
+
 import { scriptedTransportSequence } from '../fake-transport.ts'
 
 

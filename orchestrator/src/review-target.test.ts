@@ -1,6 +1,9 @@
 import { describe, expect, test } from "bun:test"
 import { rmSync } from "node:fs"
-import { declaredCreate, hermeticGitEnv, resolveReviewTarget, upsertProject, worktreeDescribeFixture } from "../test/fixture.ts"
+import { hermeticGitEnv } from '../test/fixtures/git.ts'
+import { declaredCreate, worktreeDescribeFixture } from '../test/fixtures/worktree.ts'
+import { upsertProject } from './projects.ts'
+import { resolveReviewTarget } from './review-target.ts'
 describe('review target worktree recipes', () => {
 const { fromRoot, scratchRepo } = worktreeDescribeFixture()
 test('explicit review ignores a writing recipe with no {base} and no detached support', () => {

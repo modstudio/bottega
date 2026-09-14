@@ -2,7 +2,7 @@
 import { chmodSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { afterEach } from 'bun:test'
-import { dir } from './fixture.ts'
+import { dir } from './fixtures/store.ts'
 
 const roots: string[] = []
 afterEach(() => { while (roots.length > 0) rmSync(roots.pop()!, { recursive: true, force: true }) })

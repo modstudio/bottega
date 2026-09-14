@@ -3,7 +3,11 @@ import { chmodSync,mkdirSync,mkdtempSync,realpathSync,rmSync,writeFileSync } fro
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { PLATFORM_SLUG } from '../../shared/brand.ts'
-import { addRun,db,dir,displayConditions,hermeticGitEnv,monitor,monitorHistory,upsertProject } from '../test/fixture.ts'
+import { hermeticGitEnv } from '../test/fixtures/git.ts'
+import { addRun, dir } from '../test/fixtures/store.ts'
+import { db } from './db.ts'
+import { displayConditions, monitor, monitorHistory } from './monitor.ts'
+import { upsertProject } from './projects.ts'
 import { trackedTestResidue } from '../test/residue.ts'
 const trackResidue = trackedTestResidue()
 

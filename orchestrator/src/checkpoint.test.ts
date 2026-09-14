@@ -2,7 +2,13 @@ import { afterEach, describe, expect, test } from 'bun:test'
 import { existsSync, mkdtempSync, rmSync, writeFileSync, readFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
-import { addRun, db, declaredCreate, hermeticGitEnv, prepareSharedRefGuard, reapTestProcess, run, upsertProject } from '../test/fixture.ts'
+import { hermeticGitEnv } from '../test/fixtures/git.ts'
+import { addRun, reapTestProcess } from '../test/fixtures/store.ts'
+import { declaredCreate } from '../test/fixtures/worktree.ts'
+import { db } from './db.ts'
+import { upsertProject } from './projects.ts'
+import { run as runJob } from './run.ts'
+import { prepareSharedRefGuard } from './worktree.ts'
 import {
   checkpointResumeContext, checkpointRun, PRESERVATION_FAILED_FILE, readTaskPointer,
   recordFailedIdlePreservation,
@@ -176,7 +182,7 @@ describe('harness-owned checkpoints', () => {
     let runId: number | null = null
     let thrown = ''
     try {
-      const result = await run({ job: 'implement', prompt: 'edit the tracked file', cwd: main,
+      const result = await runJob({ job: 'implement', prompt: 'edit the tracked file', cwd: main,
         agent: 'codex', key: 'DEV-374', noFailover: true })
       runId = result.id
     } catch (error) {

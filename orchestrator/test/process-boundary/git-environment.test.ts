@@ -2,7 +2,8 @@ import { describe, expect, test } from "bun:test"
 import { mkdtempSync, rmSync, writeFileSync, mkdirSync, chmodSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
-import { hermeticGitEnv } from "../fixture.ts"
+import { hermeticGitEnv } from '../fixtures/git.ts'
+
 describe('git environment process boundary', () => {
 test('an operational git refuses when the local-env query fails and cannot delete in an inherited repository', () => {
     const root = mkdtempSync(join(tmpdir(), 'orch-local-env-refusal-'))

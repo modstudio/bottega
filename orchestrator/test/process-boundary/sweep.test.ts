@@ -3,7 +3,17 @@ import { appendFileSync, mkdtempSync, rmSync, readFileSync, writeFileSync, exist
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 import { randomUUID } from 'node:crypto'
-import { AGENTS, addRun, contentTree, createReadOnlyWorktree, createWorktree, db, declaredCreate, fakeDocker, fakeDockerCommand, hermeticGitCommand, hermeticGitEnv, prepareSharedRefGuard, prepareWorktreeObjects, runJob, score, upsertProject, worktreeGitDir } from '../fixture.ts'
+import { AGENTS } from '../../src/agents.ts'
+import { db } from '../../src/db.ts'
+import { contentTree, prepareWorktreeObjects, worktreeGitDir } from '../../src/git-environment.ts'
+import { upsertProject } from '../../src/projects.ts'
+import { run as runJob } from '../../src/run.ts'
+import { createReadOnlyWorktree, createWorktree, prepareSharedRefGuard } from '../../src/worktree.ts'
+import { fakeDocker, fakeDockerCommand } from '../fixtures/docker.ts'
+import { hermeticGitCommand, hermeticGitEnv } from '../fixtures/git.ts'
+import { addRun, score } from '../fixtures/store.ts'
+import { declaredCreate } from '../fixtures/worktree.ts'
+
 const worktreeMod = await import('../../src/worktree.ts')
 describe('sweep only reclaims old orch-owned orphan worktrees', () => {
   const CLI = new URL('../../src/orch.ts', import.meta.url).pathname

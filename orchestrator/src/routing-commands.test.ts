@@ -1,5 +1,9 @@
 import { expect, test } from 'bun:test'
-import { AGENTS, MIN_SAMPLE, addRun, db, recordDuels } from '../test/fixture.ts'
+import { addRun } from '../test/fixtures/store.ts'
+import { AGENTS } from './agents.ts'
+import { db } from './db.ts'
+import { recordDuels } from './duel.ts'
+import { MIN_SAMPLE } from './route.ts'
 import { pickCommand, statsCommand } from './routing-commands.ts'
 
 const preview = (avoid: string[] = [], distinctModels: string[] = []) => {

@@ -1,5 +1,7 @@
 import { describe, expect, test } from 'bun:test'
-import { addRun, db, runJson, score } from '../test/fixture.ts'
+import { runJson } from '../test/fixtures/replies.ts'
+import { addRun, score } from '../test/fixtures/store.ts'
+import { db } from './db.ts'
 import { runListingCommand } from './run-listing.ts'
 import { runDetail } from './serve.ts'
 

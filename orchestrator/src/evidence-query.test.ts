@@ -1,5 +1,10 @@
 import { describe, expect, test } from 'bun:test'
-import { SHARED_OUTPUT_REASON, addRun, candidates, db, dir, excludeSharedOutputRuns, pendingForSession, runList, score, state, weigh } from '../test/fixture.ts'
+import { addRun, dir, score } from '../test/fixtures/store.ts'
+import { db } from './db.ts'
+import { excludeSharedOutputRuns, pendingForSession, SHARED_OUTPUT_REASON } from './evidence-query.ts'
+import { candidates } from './route.ts'
+import { weigh } from './score.ts'
+import { runList, state } from './serve.ts'
 import { join } from 'node:path'
 import { runTotals } from './evidence-query.ts'
 

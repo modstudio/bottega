@@ -1,6 +1,8 @@
 import { describe, expect, test } from 'bun:test'
 import { readFileSync } from 'node:fs'
-import { ISSUE_DIAGNOSIS_SCHEMA, ISSUE_WORKER_SCHEMA, JOBS, boundedIssuePack, parseFiledIssue, parseIssueReply, parseWorkerReplyWithCount, seedFromReport, validatedTrackerTaskKey } from '../test/fixture.ts'
+import { ISSUE_WORKER_SCHEMA, parseWorkerReplyWithCount } from './contract.ts'
+import { boundedIssuePack, ISSUE_DIAGNOSIS_SCHEMA, parseFiledIssue, parseIssueReply, seedFromReport, validatedTrackerTaskKey } from './issue.ts'
+import { JOBS } from './jobs.ts'
 
 describe('filed issue coordinator inputs', () => {
   const shown = { task: { key: 'DEV-9', title: '[DEFECT] broken', body: `TYPE: DEFECT

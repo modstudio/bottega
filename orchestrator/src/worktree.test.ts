@@ -2,7 +2,10 @@ import { describe, expect, spyOn, test } from 'bun:test'
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { compoundCreate, createWithTool, createWorktree, declaredCreate, hermeticGitCommand, hermeticGitEnv, processStartTime, projectLockDir, reclaimStaleProjectLock, resolveBase, staleProjectLockHolder, unmergedBranch, upsertProject, withWorktreeCreateLock, worktreeDescribeFixture } from '../test/fixture.ts'
+import { hermeticGitCommand, hermeticGitEnv } from '../test/fixtures/git.ts'
+import { compoundCreate, declaredCreate, worktreeDescribeFixture } from '../test/fixtures/worktree.ts'
+import { upsertProject } from './projects.ts'
+import { createWithTool, createWorktree, processStartTime, projectLockDir, reclaimStaleProjectLock, resolveBase, staleProjectLockHolder, unmergedBranch, withWorktreeCreateLock } from './worktree.ts'
 
 function repo() {
   const path = mkdtempSync(join(tmpdir(), 'orch-base-test-'))

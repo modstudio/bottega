@@ -2,7 +2,17 @@ import { afterEach, beforeEach, describe, expect, test } from "bun:test"
 import { readFileSync, writeFileSync, mkdtempSync, rmSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
-import { AGENTS, addRun, ask, candidates, db, dir, hermeticGitEnv, reapTestRun, reviewReply, run, score, upsertProject, weigh, runJob } from "../fixture.ts"
+import { AGENTS } from '../../src/agents.ts'
+import { ask } from '../../src/ask.ts'
+import { db } from '../../src/db.ts'
+import { upsertProject } from '../../src/projects.ts'
+import { candidates } from '../../src/route.ts'
+import { run as runJob } from '../../src/run.ts'
+import { weigh } from '../../src/score.ts'
+import { hermeticGitEnv } from '../fixtures/git.ts'
+import { reviewReply } from '../fixtures/replies.ts'
+import { addRun, dir, reapTestRun, score } from '../fixtures/store.ts'
+
 import { stubWorker } from "../stub-worker.ts"
 import { installTestTransport } from "../../src/transport.ts"
 import { trackedTestResidue } from '../residue.ts'
@@ -32,7 +42,7 @@ describe('run process boundary', () => {
       grok.bin = script
       const reserved = addRun({ agent: '(pending)', job: 'file-question', status: 'running' })
       db().query('UPDATE run SET pid=? WHERE id=?').run(process.pid, reserved)
-      await run({ job: 'file-question', prompt: 'hello', cwd: dir, agent: 'grok', reserveId: reserved })
+      await runJob({ job: 'file-question', prompt: 'hello', cwd: dir, agent: 'grok', reserveId: reserved })
       const row = db().query('SELECT pid, agent_pid, agent_pgid, agent_start_time FROM run WHERE id=?')
         .get(reserved) as {
           pid: number; agent_pid: number; agent_pgid: number | null; agent_start_time: string | null
@@ -62,7 +72,7 @@ describe('run process boundary', () => {
       grok.bin = script
       grok.timeoutMs = 250
       try {
-        await run({
+        await runJob({
           job: 'file-question', prompt: 'where is the implementation?', cwd: dir,
           agent: 'grok', noFailover: true,
         })

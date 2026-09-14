@@ -1,7 +1,9 @@
 import { describe,expect,test } from 'bun:test'
 import { mkdirSync,realpathSync } from 'node:fs'
 import { join } from 'node:path'
-import { dir,upsertProject } from '../fixture.ts'
+import { upsertProject } from '../../src/projects.ts'
+import { dir } from '../fixtures/store.ts'
+
 import { trackedTestResidue } from '../residue.ts'
 const trackResidue = trackedTestResidue()
 

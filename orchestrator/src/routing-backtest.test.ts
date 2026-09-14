@@ -1,5 +1,9 @@
 import { describe, expect, test } from 'bun:test'
-import { AGENTS, EVIDENCE_WINDOW, MIN_SAMPLE, ROUTING_BACKTEST_SEEDS, addRun, betaContribution, candidates, db, pick, routingBacktest, routingBacktestEnsemble } from '../test/fixture.ts'
+import { addRun } from '../test/fixtures/store.ts'
+import { AGENTS } from './agents.ts'
+import { db } from './db.ts'
+import { betaContribution, candidates, EVIDENCE_WINDOW, MIN_SAMPLE, pick } from './route.ts'
+import { ROUTING_BACKTEST_SEEDS, routingBacktest, routingBacktestEnsemble } from './routing-backtest.ts'
 
 describe('routing backtest statistics', () => {
   test('maps both judgement extremes to whole Beta observations', () => {

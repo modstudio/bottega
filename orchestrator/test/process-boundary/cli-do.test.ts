@@ -6,11 +6,22 @@ import { join } from 'node:path'
 import { createHash, randomUUID } from 'node:crypto'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { OrchRunEnvelopeSchema } from '../../../shared/orch-contract.ts'
-import { runJson, AGENTS, JOBS, RUNS_DIR, addRun, bootstrapFixtureStore, callerDrift, db, declaredCreate, detachedRunOptions, dir, hermeticGitEnv, setDoc, upsertProject } from '../fixture.ts'
+import { AGENTS } from '../../src/agents.ts'
+import { bootstrapFixtureStore, db } from '../../src/db.ts'
+import { detachedRunOptions } from '../../src/failover.ts'
+import { JOBS } from '../../src/jobs.ts'
+import { upsertProject } from '../../src/projects.ts'
+import { RUNS_DIR } from '../../src/run-artifacts.ts'
+import { callerDrift } from '../../src/worktree.ts'
+import { runCollectionDescribeFixture } from '../fixtures/cli.ts'
+import { runJson } from '../fixtures/replies.ts'
+import { setDoc } from '../fixtures/docs.ts'
+import { hermeticGitEnv } from '../fixtures/git.ts'
+import { addRun, dir } from '../fixtures/store.ts'
+import { declaredCreate } from '../fixtures/worktree.ts'
+
 import { MAIN_CHECKOUT_INVARIANT, mainCheckoutWorktreeHint } from '../../src/projects.ts'
 import { trackedTestResidue } from '../residue.ts'
-
-import { runCollectionDescribeFixture } from '../fixture.ts'
 const trackResidue = trackedTestResidue()
 
 describe("detached run collection", () => {

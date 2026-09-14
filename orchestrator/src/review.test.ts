@@ -1,5 +1,8 @@
 import { describe, expect, test } from 'bun:test'
-import { addRun, db, recordReview, reviewReply } from '../test/fixture.ts'
+import { reviewReply } from '../test/fixtures/replies.ts'
+import { addRun } from '../test/fixtures/store.ts'
+import { db } from './db.ts'
+import { recordReview } from './review.ts'
 import { triageFinding } from './review.ts'
 
 describe('review triage', () => {

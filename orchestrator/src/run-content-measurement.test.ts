@@ -2,7 +2,10 @@ import { describe, expect, spyOn, test } from 'bun:test'
 import { mkdtempSync, rmSync, writeFileSync, existsSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { db, hermeticGitEnv, runJob, worktreeGitDir } from '../test/fixture.ts'
+import { hermeticGitEnv } from '../test/fixtures/git.ts'
+import { db } from './db.ts'
+import { worktreeGitDir } from './git-environment.ts'
+import { run as runJob } from './run.ts'
 import { scriptedTransport } from '../test/fake-transport.ts'
 const worktreeMod = await import('./worktree.ts')
 describe('content tree measurement', () => {

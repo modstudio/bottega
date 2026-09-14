@@ -6,7 +6,7 @@
  *   cleared by: <a literal orch, git, or residue-removal invocation>
  *
  */
-import { afterAll, beforeEach, expect, test } from 'bun:test'
+import { afterAll, beforeAll, beforeEach, expect, test } from 'bun:test'
 import { Database } from 'bun:sqlite'
 import {
   chmodSync, cpSync, existsSync, mkdirSync, mkdtempSync,
@@ -46,10 +46,12 @@ const repo = realpathSync(repoPath)
 writeFileSync(join(bin, 'docker'), '#!/bin/sh\nexit 0\n')
 chmodSync(join(bin, 'docker'), 0o755)
 
-process.env.HOME = home
-process.env.PATH = `${bin}:${process.env.PATH ?? ''}`
-process.env.ORCH_DEPTH = '0'
-process.env.CLAUDE_CODE_SESSION_ID = 'lifecycle-harness'
+beforeAll(() => {
+  process.env.HOME = home
+  process.env.PATH = `${bin}:${process.env.PATH ?? ''}`
+  process.env.ORCH_DEPTH = '0'
+  process.env.CLAUDE_CODE_SESSION_ID = 'lifecycle-harness'
+})
 
 const sourceRoot = join(dirname(new URL(import.meta.url).pathname), '../../..')
 const cli = join(sourceRoot, 'orchestrator', 'src', 'orch.ts')

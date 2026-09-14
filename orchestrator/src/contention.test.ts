@@ -4,7 +4,9 @@ import { existsSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { applyMigrations } from './migrations.ts'
-import { db, DB_PATH, hermeticGitEnv, withProjectLock } from '../test/fixture.ts'
+import { hermeticGitEnv } from '../test/fixtures/git.ts'
+import { db, DB_PATH } from './db.ts'
+import { withProjectLock } from './worktree.ts'
 import { insertContention, tryInsertContention } from './contention.ts'
 
 describe('contention ledger', () => {

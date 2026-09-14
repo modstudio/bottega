@@ -1,5 +1,6 @@
 import { describe,expect,test } from 'bun:test'
-import { db,summary } from '../test/fixture.ts'
+import { db } from './db.ts'
+import { summary } from './metric.ts'
 
 describe('metric canon headline and calendar halves', () => {
 test('headline uses canon totals and excluded days do not move the midpoint', () => {

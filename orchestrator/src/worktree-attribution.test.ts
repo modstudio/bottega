@@ -3,9 +3,11 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync,
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { randomUUID } from 'node:crypto'
-import {
-  addRun, createWorktree, db, hermeticGitEnv, removeFor, upsertProject,
-} from '../test/fixture.ts'
+import { hermeticGitEnv } from '../test/fixtures/git.ts'
+import { addRun } from '../test/fixtures/store.ts'
+import { db } from './db.ts'
+import { upsertProject } from './projects.ts'
+import { createWorktree, removeFor } from './worktree.ts'
 import {
   extractWorktree, extractionDest, sanitiseOrphanExtractionPath,
 } from './worktree-attribution.ts'

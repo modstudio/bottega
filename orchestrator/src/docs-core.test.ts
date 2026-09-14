@@ -1,5 +1,12 @@
 import { describe,expect,test } from 'bun:test'
-import { CanonBudgetError,JOBS,compileBrief,compilePack,consumeDoc,consumeDocument,db,deleteDoc,diffDocRevisions,dir,docsForRun,getDoc,getDocRevision,listDocRevisions,listDocs,readDocs,removeDoc,removeProject,restoreDoc,runJob,setDoc,upsertProject,writeDoc } from '../test/fixture.ts'
+import { consumeDoc, removeDoc, setDoc } from '../test/fixtures/docs.ts'
+import { dir } from '../test/fixtures/store.ts'
+import { CanonBudgetError, compileBrief, compilePack } from './canon.ts'
+import { db } from './db.ts'
+import { consumeDoc as consumeDocument, removeDoc as deleteDoc, diffDocRevisions, docsForRun, getDoc, getDocRevision, listDocRevisions, listDocs, importDocs as readDocs, restoreDoc, setDoc as writeDoc } from './docs.ts'
+import { JOBS } from './jobs.ts'
+import { removeProject, upsertProject } from './projects.ts'
+import { run as runJob } from './run.ts'
 
 
 describe('scoped operator docs', () => {

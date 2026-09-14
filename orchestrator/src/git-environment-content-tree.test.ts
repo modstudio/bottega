@@ -2,7 +2,8 @@ import { describe, expect, test } from 'bun:test'
 import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { contentTree, hermeticGitEnv } from '../test/fixture.ts'
+import { hermeticGitEnv } from '../test/fixtures/git.ts'
+import { contentTree } from './git-environment.ts'
 describe('content tree measurement', () => {
   test('keeps tracked ignored files, includes visible dirt, and measures tracked deletions', () => {
     const repo = mkdtempSync(join(tmpdir(), 'orch-content-tree-'))

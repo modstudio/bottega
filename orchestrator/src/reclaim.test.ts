@@ -2,9 +2,10 @@ import { afterEach, describe, expect, test } from 'bun:test'
 import { chmodSync, existsSync, mkdirSync, mkdtempSync, readdirSync, realpathSync, rmSync, utimesSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import {
-  addRun, db, hermeticGitEnv, score, upsertProject,
-} from '../test/fixture.ts'
+import { hermeticGitEnv } from '../test/fixtures/git.ts'
+import { addRun, score } from '../test/fixtures/store.ts'
+import { db } from './db.ts'
+import { upsertProject } from './projects.ts'
 import { runSweep } from '../test/fake-sweep.ts'
 import { reclaimBranch, reclaimWorktree } from './reclaim.ts'
 

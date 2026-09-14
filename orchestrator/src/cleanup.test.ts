@@ -1,7 +1,13 @@
 import { afterEach, beforeEach, expect, spyOn, test } from 'bun:test'
 import { appendFileSync, existsSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
-import { addRun, createWorktree, db, dir, fakeDocker, hermeticGitEnv, nowIso, prepareSharedRefGuard, upsertProject, worktreeDescribeFixture } from '../test/fixture.ts'
+import { fakeDocker } from '../test/fixtures/docker.ts'
+import { hermeticGitEnv } from '../test/fixtures/git.ts'
+import { addRun, dir } from '../test/fixtures/store.ts'
+import { worktreeDescribeFixture } from '../test/fixtures/worktree.ts'
+import { db, nowIso } from './db.ts'
+import { upsertProject } from './projects.ts'
+import { createWorktree, prepareSharedRefGuard } from './worktree.ts'
 import { discardRun, resourcesForConversation } from './cleanup.ts'
 
 const presentation = {

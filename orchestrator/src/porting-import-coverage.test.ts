@@ -1,5 +1,5 @@
 import { describe,expect,test } from 'bun:test'
-import { planImport,sourceCoverage } from '../test/fixture.ts'
+import { planImport, sourceCoverage } from './porting-import.ts'
 
 describe('port importer', () => {
 const fixture = (overrides: Partial<Record<'doctrine' | 'differences' | 'backports' | 'refs' | 'state' | 'projects', string>> = {}) => ({

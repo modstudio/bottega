@@ -2,7 +2,10 @@ import { describe,expect,test } from 'bun:test'
 import { chmodSync,copyFileSync,mkdirSync,mkdtempSync,rmSync,writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { db,setDoc,upsertProject } from '../fixture.ts'
+import { db } from '../../src/db.ts'
+import { upsertProject } from '../../src/projects.ts'
+import { setDoc } from '../fixtures/docs.ts'
+
 
   const hook = new URL('../../hooks/session-brief.py', import.meta.url).pathname
   const heartbeat = new URL('../../hooks/orch-heartbeat.sh', import.meta.url).pathname

@@ -2,7 +2,8 @@ import { describe, expect, test } from 'bun:test'
 import { chmodSync, mkdirSync, mkdtempSync, rmSync, symlinkSync, utimesSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { addRun, db } from '../test/fixture.ts'
+import { addRun } from '../test/fixtures/store.ts'
+import { db } from './db.ts'
 import {
   classifyDivergence, freezeCheckout, indexIsUntrusted, parseConfinement, porcelainPaths,
   sessionForPid, UNTRUSTED_RETRY_WAIT_MS, type FrozenCheckout,

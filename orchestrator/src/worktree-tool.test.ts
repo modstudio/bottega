@@ -2,7 +2,13 @@ import { describe, expect, test } from "bun:test"
 import { mkdtempSync, rmSync, readFileSync, writeFileSync, existsSync, mkdirSync, chmodSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
-import { compoundCreate, createWithTool, db, declaredCreate, hermeticGitCommand, preflight, runJob, upsertProject, worktreeDescribeFixture } from "../test/fixture.ts"
+import { hermeticGitCommand } from '../test/fixtures/git.ts'
+import { compoundCreate, declaredCreate, worktreeDescribeFixture } from '../test/fixtures/worktree.ts'
+import { db } from './db.ts'
+import { preflight } from './dispatch-preflight.ts'
+import { upsertProject } from './projects.ts'
+import { run as runJob } from './run.ts'
+import { createWithTool } from './worktree.ts'
 describe('worktree tool capability', () => {
 const { fromRoot, git, scratchRepo } = worktreeDescribeFixture()
 test('preflight passes a project-specific seed spec intact to the project resolver', () => {

@@ -1,7 +1,7 @@
-import { afterEach, beforeEach, describe, expect, test } from 'bun:test'
-import { readFileSync, writeFileSync } from 'node:fs'
-import { join } from 'node:path'
-import { AGENTS, db, dir, replyFileInstruction, run } from '../test/fixture.ts'; import { trackedTestResidue } from '../test/residue.ts'
+import { afterEach, beforeEach, describe, expect, test } from 'bun:test'; import { readFileSync, writeFileSync } from 'node:fs'; import { join } from 'node:path'; import { dir } from '../test/fixtures/store.ts'; import { AGENTS } from './agents.ts'; import { replyFileInstruction } from './contract.ts'
+import { db } from './db.ts'
+import { run as runJob } from './run.ts'
+import { trackedTestResidue } from '../test/residue.ts'
 import { addAgent, recordAgentProbe, removeAgent, setAgent } from './agents.ts'
 import { chainTransport } from './failover.ts'
 import { ask } from './ask.ts'
@@ -79,7 +79,7 @@ describe('ACP transport through run', () => {
     }
   }
 
-  const runAcp = (prompt = 'summarise this') => run({
+  const runAcp = (prompt = 'summarise this') => runJob({
     job: 'summarize', prompt, cwd: dir, agent: 'codex', transport: 'acp', noFailover: true,
   })
 
@@ -111,7 +111,7 @@ describe('ACP transport through run', () => {
         writeFileSync(join(scratch!, 'reply.json'), structured)
         return fakeResult({ output: 'I completed the repository question.', status: 'ok' })
       })
-      const result = await run({
+      const result = await runJob({
         job: 'file-question', prompt: 'inspect one file', cwd: dir, agent: 'codex',
         transport: 'acp', noFailover: true, deliverables: ['answer'],
       })
@@ -180,7 +180,7 @@ describe('ACP transport through run', () => {
       let runId: number | null = null
       let message = ''
       try {
-        await run({
+        await runJob({
           job: 'file-question', prompt: 'inspect one file', cwd: dir, agent: 'codex',
           transport: 'acp', noFailover: true, deliverables: ['answer'],
         })
@@ -259,7 +259,7 @@ describe('ACP transport through run', () => {
     })
     try {
       installFake(() => fakeResult({ output: structured, status: 'ok' }))
-      const result = await run({
+      const result = await runJob({
         job: 'file-question', prompt: 'inspect one file', cwd: dir, agent: 'codex',
         transport: 'acp', noFailover: true, deliverables: ['answer'],
       })
@@ -312,7 +312,7 @@ describe('ACP transport through run', () => {
     })
     try {
       installFake(() => fakeResult({ output: 'ok', status: 'ok' }))
-      const result = await run({
+      const result = await runJob({
         job: 'summarize', prompt: 'summarise this', cwd: dir,
         agent: 'local-acp', noFailover: true,
       })
@@ -348,7 +348,7 @@ describe('ACP transport through run', () => {
     }
     try {
       installFake(() => fakeResult({ output: 'ok', status: 'ok' }))
-      const result = await run({
+      const result = await runJob({
         job: 'summarize', prompt: 'summarise this', cwd: dir, noFailover: true,
       })
       expect(db().query('SELECT agent,transport FROM run WHERE id=?').get(result.id))
@@ -387,7 +387,7 @@ describe('ACP transport through run', () => {
         resume(opts) { return this.start(opts) },
       }
       installTestTransport(transport)
-      const result = await run({
+      const result = await runJob({
         job: 'summarize', prompt: 'summarise', cwd: dir,
         agent: 'grok', transport: 'acp', model: 'grok-4.5', noFailover: true,
       })
@@ -617,7 +617,7 @@ describe('ACP transport through run', () => {
       let runId: number | null = null
       let message = ''
       try {
-        await run({
+        await runJob({
           job: 'summarize', prompt: 'answer via schema', cwd: dir, agent: 'codex',
           transport: 'acp', schemaPath, noFailover: true,
         })
@@ -649,7 +649,7 @@ describe('ACP transport through run', () => {
       }))
       let runId: number | null = null
       try {
-        await run({
+        await runJob({
           job: 'summarize', prompt: 'answer via schema', cwd: dir, agent: 'codex',
           transport: 'acp', schemaPath, noFailover: true,
         })
@@ -677,7 +677,7 @@ describe('ACP transport through run', () => {
       installFake(() => fakeResult({
         output: '{"answer":"yes"}', status: 'ok', stopReason: 'end_turn',
       }))
-      const result = await run({
+      const result = await runJob({
         job: 'summarize', prompt: 'answer via schema', cwd: dir, agent: 'grok',
         transport: 'acp', schemaPath, noFailover: true,
       })
@@ -702,7 +702,7 @@ describe('ACP transport through run', () => {
             stopReason: 'cancelled',
             questions: [{ question: 'Which design?', why: 'ACP elicitation' }],
           }))
-      const first = await run({
+      const first = await runJob({
         job: 'summarize', prompt: 'ask first', cwd: dir, agent: 'codex',
         transport: 'acp', noFailover: true,
       })
@@ -711,7 +711,7 @@ describe('ACP transport through run', () => {
         .toEqual({ transport: 'acp', vendor_session: 'sess-acp-1' })
       expect(chainTransport(first.id)).toBe('acp')
 
-      const second = await run({
+      const second = await runJob({
         job: 'summarize', prompt: 'use the first design', cwd: dir, agent: 'codex',
         noFailover: true,
         resume: {
@@ -744,7 +744,7 @@ describe('ACP transport through run', () => {
       let runId: number | null = null
       let message = ''
       try {
-        await run({
+        await runJob({
           job: 'summarize', prompt: 'answer via schema', cwd: dir, agent: 'codex',
           transport: 'acp', schemaPath, noFailover: true,
         })
@@ -776,7 +776,7 @@ describe('ACP transport through run', () => {
       let runId: number | null = null
       let message = ''
       try {
-        await run({
+        await runJob({
           job: 'summarize', prompt: 'answer via schema', cwd: dir, agent: 'codex',
           transport: 'acp', schemaPath, noFailover: true,
         })

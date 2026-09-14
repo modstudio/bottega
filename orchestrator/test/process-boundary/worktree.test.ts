@@ -2,7 +2,15 @@ import { describe, expect, test } from "bun:test"
 import { mkdtempSync, rmSync, writeFileSync, existsSync, realpathSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
-import { addRun, compoundCreate, createWorktree, db, hermeticGitCommand, hermeticGitEnv, runJob, upsertProject, withProjectLock, withWorktreeCreateLock, worktreeDescribeFixture, orphanSafety, run } from "../fixture.ts"
+import { db } from '../../src/db.ts'
+import { upsertProject } from '../../src/projects.ts'
+import { run as runJob } from '../../src/run.ts'
+import { orphanSafety } from '../../src/worktree-attribution.ts'
+import { createWorktree, withProjectLock, withWorktreeCreateLock } from '../../src/worktree.ts'
+import { hermeticGitCommand, hermeticGitEnv } from '../fixtures/git.ts'
+import { addRun } from '../fixtures/store.ts'
+import { compoundCreate, worktreeDescribeFixture } from '../fixtures/worktree.ts'
+
 describe("a worktree is resolved against the main checkout, not the caller cwd", () => {
   const { git, scratchRepo, markScratchRepoOwner } = worktreeDescribeFixture()
 test('two environment bases contend on the shared checkout lock', async () => {

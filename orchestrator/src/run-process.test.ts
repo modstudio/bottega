@@ -1,7 +1,11 @@
 import { beforeEach, describe, expect, test } from 'bun:test'
 import { rmSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
-import { AGENTS, addRun, db, dir, runJob, upsertProject } from '../test/fixture.ts'
+import { addRun, dir } from '../test/fixtures/store.ts'
+import { AGENTS } from './agents.ts'
+import { db } from './db.ts'
+import { upsertProject } from './projects.ts'
+import { run as runJob } from './run.ts'
 import { errorTail, verifiedProcessTree } from './run-process.ts'
 import { trackedTestResidue } from '../test/residue.ts'
 const trackResidue = trackedTestResidue(); beforeEach(() => { trackResidue(join(dir, '.claude')) })

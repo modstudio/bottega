@@ -1,5 +1,10 @@
 import { describe,expect,test } from 'bun:test'
-import { MIN_SAMPLE,addRun,db,evidenceFor,guide,pick,recordReview,reviewReply,score } from '../test/fixture.ts'
+import { reviewReply } from '../test/fixtures/replies.ts'
+import { addRun, score } from '../test/fixtures/store.ts'
+import { db } from './db.ts'
+import { guide } from './guide.ts'
+import { recordReview } from './review.ts'
+import { evidenceFor, MIN_SAMPLE, pick } from './route.ts'
 
 describe('findings routing narrows to a lens only when that buys a comparison', () => {
 const judgedLensRun = (

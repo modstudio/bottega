@@ -4,7 +4,12 @@ import { mkdtempSync, rmSync, writeFileSync, existsSync, realpathSync, mkdirSync
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
-import { bootstrapFixtureStore, dir, hermeticGitEnv, missingDatabaseMessage, projectAt, registeredRepositoryMissingDatabase, resolveDatabase, resolveRunsDirectory, stackAt, upsertProject } from '../fixture.ts'
+import { missingDatabaseMessage, registeredRepositoryMissingDatabase, resolveDatabase, resolveRunsDirectory } from '../../src/database-location.ts'
+import { bootstrapFixtureStore } from '../../src/db.ts'
+import { projectAt, stackAt, upsertProject } from '../../src/projects.ts'
+import { hermeticGitEnv } from '../fixtures/git.ts'
+import { dir } from '../fixtures/store.ts'
+
 describe('projects are data, not code', () => {
 
   test('init-db is the explicit creation path and refuses an existing database', () => {

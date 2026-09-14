@@ -4,7 +4,10 @@ import { mkdtempSync, rmSync, writeFileSync, existsSync, realpathSync, mkdirSync
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { PLATFORM_SLUG } from '../../shared/brand.ts'
-import { bootstrapFixtureStore, dir, hermeticGitEnv, missingDatabaseMessage, registeredRepositoryMissingDatabase, resolveDatabase, resolveRunsDirectory } from '../test/fixture.ts'
+import { hermeticGitEnv } from '../test/fixtures/git.ts'
+import { dir } from '../test/fixtures/store.ts'
+import { missingDatabaseMessage, registeredRepositoryMissingDatabase, resolveDatabase, resolveRunsDirectory } from './database-location.ts'
+import { bootstrapFixtureStore } from './db.ts'
 describe('projects are data, not code', () => {
   test('database resolution honors an explicit override', () => {
     const path = join(dir, 'explicit-resolution.db')

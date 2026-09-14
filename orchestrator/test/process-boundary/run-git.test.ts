@@ -2,7 +2,14 @@ import { describe, expect, test } from "bun:test"
 import { mkdtempSync, rmSync, writeFileSync, existsSync, realpathSync, mkdirSync, chmodSync, appendFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { dirname, join } from "node:path"
-import { AGENTS, db, dir, hermeticGitEnv, run, upsertProject, workerReply } from "../fixture.ts"
+import { AGENTS } from '../../src/agents.ts'
+import { db } from '../../src/db.ts'
+import { upsertProject } from '../../src/projects.ts'
+import { run as runJob } from '../../src/run.ts'
+import { hermeticGitEnv } from '../fixtures/git.ts'
+import { workerReply } from '../fixtures/replies.ts'
+import { dir } from '../fixtures/store.ts'
+
 import { stubWorker } from '../stub-worker.ts'
 import { parseConfinement } from "../../src/confinement.ts"
 describe('run git process boundary', () => {
@@ -40,7 +47,7 @@ test('own-checkout git pull from a worktree completes and is classified unattrib
     process.env.ORCH_STUB_OUTPUT = grokOutput(['worker.txt'])
     try {
       grok.bin = script
-      const result = await run({
+      const result = await runJob({
         job: 'implement', prompt: 'pull-safe', cwd: caller, agent: 'grok', noFailover: true,
       })
       expect(result.status).toBe('ok')
@@ -84,7 +91,7 @@ test('worker commits skip project commit-msg hooks for implement and fix', async
       process.env.ORCH_STUB_OUTPUT = grokOutput(['worker.txt'])
       try {
         grok.bin = script
-        const result = await run({ job, prompt: 'commit', cwd: repo, agent: 'grok', noFailover: true })
+        const result = await runJob({ job, prompt: 'commit', cwd: repo, agent: 'grok', noFailover: true })
         expect(result.status).toBe('ok')
         expect(existsSync(marker)).toBe(false)
       } finally {

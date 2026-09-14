@@ -2,7 +2,10 @@ import { expect, test, describe } from "bun:test"
 import { chmodSync, mkdtempSync, rmSync, writeFileSync, readFileSync, realpathSync, readdirSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
-import { upsertProject, createArgv, db, declaredCreate, worktreeDescribeFixture } from "../test/fixture.ts"
+import { declaredCreate, worktreeDescribeFixture } from '../test/fixtures/worktree.ts'
+import { db } from './db.ts'
+import { upsertProject } from './projects.ts'
+import { createArgv } from './worktree-template.ts'
 import { selectProjectProfile, setProfile } from "./lenses.ts"
 import { preflight } from "./dispatch-preflight.ts"
 import { resolveBase } from "./worktree.ts"

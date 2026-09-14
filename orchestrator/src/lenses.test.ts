@@ -1,5 +1,7 @@
 import { describe, expect, test } from 'bun:test'
-import { addRun, db, upsertProject } from '../test/fixture.ts'
+import { addRun } from '../test/fixtures/store.ts'
+import { db } from './db.ts'
+import { upsertProject } from './projects.ts'
 import { applyMigrations } from './migrations.ts'
 import { sessionId } from './db.ts'
 import { listLenses,resolveLens,selectProjectProfile,setLens,setProfile } from './lenses.ts'

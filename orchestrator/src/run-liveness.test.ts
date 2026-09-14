@@ -1,5 +1,9 @@
 import { describe, expect, test } from 'bun:test'
-import { NOT_EVIDENCE, PENDING_BOOTSTRAP_MS, STALE_AFTER_MS, addRun, candidates, db, nowIso, reapStale } from '../test/fixture.ts'
+import { addRun } from '../test/fixtures/store.ts'
+import { db, nowIso } from './db.ts'
+import { NOT_EVIDENCE } from './failure.ts'
+import { candidates } from './route.ts'
+import { PENDING_BOOTSTRAP_MS, reapStale, STALE_AFTER_MS } from './run-liveness.ts'
 
 describe('reapStale', () => {
   test('a run older than the cutoff is untouched while its pid is alive', () => {

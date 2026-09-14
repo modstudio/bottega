@@ -1,5 +1,7 @@
 import { describe,expect,test } from 'bun:test'
-import { JOBS,REVIEW_SCHEMA,VERIFY_CLAIM_SCHEMA,preflight } from '../test/fixture.ts'
+import { REVIEW_SCHEMA, VERIFY_CLAIM_SCHEMA } from './contract.ts'
+import { preflight } from './dispatch-preflight.ts'
+import { JOBS } from './jobs.ts'
 
 describe('review discipline', () => {
 test('findings jobs have stable identities and the structured coverage contract', () => {

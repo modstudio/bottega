@@ -1,7 +1,7 @@
 import { expect, test } from 'bun:test'
 import { writeFileSync } from 'node:fs'
 import { join } from 'node:path'
-import { dir } from '../test/fixture.ts'
+import { dir } from '../test/fixtures/store.ts'
 import { TELL_WORKING_FORMS, assertWorkerText, parseWorkerMessageArgs, readMessageText } from './args.ts'
 import { trackedTestResidue } from '../test/residue.ts'
 const trackResidue = trackedTestResidue()

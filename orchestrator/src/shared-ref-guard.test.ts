@@ -2,7 +2,10 @@ import { expect, test, describe } from "bun:test"
 import { mkdtempSync, rmSync, readFileSync, writeFileSync, existsSync, realpathSync, mkdirSync, chmodSync, readdirSync, symlinkSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
-import { addRun, assertSharedRefGuardOutsideWritableRoots, createWorktree, hermeticGitEnv, prepareSharedRefGuard, prepareWorktreeObjects, removeFor, removeSharedRefGuard } from "../test/fixture.ts"
+import { hermeticGitEnv } from '../test/fixtures/git.ts'
+import { addRun } from '../test/fixtures/store.ts'
+import { prepareWorktreeObjects } from './git-environment.ts'
+import { assertSharedRefGuardOutsideWritableRoots, createWorktree, prepareSharedRefGuard, removeFor, removeSharedRefGuard } from './worktree.ts'
 test('the shared-ref guard does not run project hooks in a scratch repository', () => {
     const repo = mkdtempSync(join(tmpdir(), 'orch-project-hooks-'))
     const scratch = mkdtempSync(join(tmpdir(), 'orch-unrelated-scratch-'))

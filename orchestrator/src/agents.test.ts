@@ -1,8 +1,8 @@
-import { afterEach, beforeEach, describe, expect, test } from 'bun:test'
-import { rmSync, readFileSync, writeFileSync } from 'node:fs'
-import { join } from 'node:path'
-import { createHash } from 'node:crypto'
-import { AGENTS, DB_PATH, GENERIC_QUESTION_TOKENS, JOBS, NEEDS_HEALTH, OUTPUT_RESERVE, STALE_AFTER_MS, WAKE_COOLDOWN_MS, WORKER_PREAMBLE, addRun, available, candidates, classify, db, detectBlockers, dir, ensureLocalHealth, guide, isNonAnswer, jobTimeoutCeilingMinutes, localReachable, pick, replyFileInstruction, resetLocalHealth, runJob, score, strictCodexSchema, unavailableReason, wakeDecision, workerPreamble, workerResumeGuard } from '../test/fixture.ts'
+import { afterEach, beforeEach, describe, expect, test } from 'bun:test'; import { rmSync, readFileSync, writeFileSync } from 'node:fs'; import { join } from 'node:path'; import { createHash } from 'node:crypto'; import { addRun, dir, score } from '../test/fixtures/store.ts'; import { AGENTS, available, ensureLocalHealth, localReachable, NEEDS_HEALTH, resetLocalHealth, strictCodexSchema, unavailableReason, WAKE_COOLDOWN_MS, wakeDecision } from './agents.ts'; import { GENERIC_QUESTION_TOKENS, replyFileInstruction, WORKER_PREAMBLE, workerPreamble, workerResumeGuard } from './contract.ts'; import { db, DB_PATH } from './db.ts'; import { classify, detectBlockers, isNonAnswer } from './failure.ts'; import { guide } from './guide.ts'
+import { JOBS, jobTimeoutCeilingMinutes } from './jobs.ts'
+import { candidates, OUTPUT_RESERVE, pick } from './route.ts'
+import { STALE_AFTER_MS } from './run-liveness.ts'
+import { run as runJob } from './run.ts'
 import { addAgent, agentRows, recordAgentProbe, refreshAgents, registrationProbeReadsRepo, removeAgent, requireAgent, setAgent } from './agents.ts'; import { trackedTestResidue } from '../test/residue.ts'; const trackResidue = trackedTestResidue(); beforeEach(() => { trackResidue(join(dir, '.claude')) })
 describe('agent registry', () => {
   test('requires an exact key from this process registry with diagnostic evidence', () => {

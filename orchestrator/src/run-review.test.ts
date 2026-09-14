@@ -3,7 +3,11 @@ import { mkdtempSync,rmSync,writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { scriptedTransport } from '../test/fake-transport.ts'
-import { addRun,db,hermeticGitEnv,reviewReply,runJob } from '../test/fixture.ts'
+import { hermeticGitEnv } from '../test/fixtures/git.ts'
+import { reviewReply } from '../test/fixtures/replies.ts'
+import { addRun } from '../test/fixtures/store.ts'
+import { db } from './db.ts'
+import { run as runJob } from './run.ts'
 import { installTestTransport } from './transport.ts'
 
 afterEach(() => installTestTransport(null))

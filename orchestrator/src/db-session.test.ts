@@ -1,6 +1,6 @@
 // Tests db.ts: session heartbeat writes.
 import { expect, test } from 'bun:test'
-import { db, recordSessionSeen } from '../test/fixture.ts'
+import { db, recordSessionSeen } from './db.ts'
 
 test('a failed heartbeat stamp never propagates', () => {
   db().exec('DROP TABLE session_seen')

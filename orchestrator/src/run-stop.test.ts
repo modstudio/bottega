@@ -2,7 +2,10 @@ import { beforeEach, expect, test } from 'bun:test'
 import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { addRun, candidates, createWorktree, db, dir } from '../test/fixture.ts'
+import { addRun, dir } from '../test/fixtures/store.ts'
+import { db } from './db.ts'
+import { candidates } from './route.ts'
+import { createWorktree } from './worktree.ts'
 import { abandonRun, stopRun } from './run-stop.ts'
 
 const presentation = () => {

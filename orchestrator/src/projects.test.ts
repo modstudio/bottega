@@ -1,9 +1,9 @@
-import { describe, expect, test } from 'bun:test'
-import { createHash } from 'node:crypto'
-import { chmodSync, mkdirSync, mkdtempSync, rmSync, readFileSync, statSync, utimesSync, writeFileSync, existsSync } from 'node:fs'
-import { tmpdir } from 'node:os'
+import { describe, expect, test } from 'bun:test'; import { createHash } from 'node:crypto'; import { chmodSync, mkdirSync, mkdtempSync, rmSync, readFileSync, statSync, utimesSync, writeFileSync, existsSync } from 'node:fs'; import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { addRun, db, dbNameFor, hermeticGitEnv, recipeNotes, runRecipe } from '../test/fixture.ts'
+import { hermeticGitEnv } from '../test/fixtures/git.ts'
+import { addRun } from '../test/fixtures/store.ts'
+import { db } from './db.ts'
+import { dbNameFor, recipeNotes, runRecipe } from './recipe.ts'
 import { provisionDb } from './recipe.ts'
 import {
   MAIN_CHECKOUT_INVARIANT, assertMainCheckoutClean, inspectMainCheckout, mainCheckoutWorktreeHint,

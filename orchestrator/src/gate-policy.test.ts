@@ -2,7 +2,7 @@ import { describe, expect, test } from 'bun:test'
 import { mkdtempSync, realpathSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { db } from '../test/fixture.ts'
+import { db } from './db.ts'
 import {
   DOCKER_INVENTORY_TIMEOUT_BY_SIZE,
   ELAPSED_ASSERTION_MS,
