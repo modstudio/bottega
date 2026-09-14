@@ -763,17 +763,23 @@
     "score": 26
   },
   {
-    "file": "orchestrator/src/run.ts",
-    "function": "run",
-    "line": 195,
-    "score": 366,
-    "key": "orchestrator/src/run.ts\u0000run"
+    "file": "orchestrator/src/run-terminal.ts",
+    "function": "finishRun",
+    "line": 120,
+    "score": 98
+  },
+  {
+    "file": "orchestrator/src/run-terminal.ts",
+    "function": "writeTransaction callback",
+    "line": 418,
+    "score": 20
   },
   {
     "file": "orchestrator/src/run.ts",
-    "function": "writeTransaction callback",
-    "line": 2233,
-    "score": 20
+    "function": "run",
+    "line": 173,
+    "score": 208,
+    "key": "orchestrator/src/run.ts\u0000run"
   },
   {
     "file": "orchestrator/src/task-branch.ts",
