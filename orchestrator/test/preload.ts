@@ -48,6 +48,14 @@ export const cleanDockerBin = join(dir, 'clean-docker-bin')
 mkdirSync(cleanDockerBin)
 writeFileSync(join(cleanDockerBin, 'docker'), '#!/bin/sh\nexit 0\n')
 chmodSync(join(cleanDockerBin, 'docker'), 0o755)
+// Routing eligibility asks which(agent.bin). The suite decides routes from the
+// registry and the evidence, never from which vendor CLIs this host has, so
+// every registered binary name resolves to a stand-in that answers a version
+// probe and nothing else; no test spawns an agent.
+for (const bin of ['codex', 'grok', 'agy', 'qwen', 'goose']) {
+  writeFileSync(join(cleanDockerBin, bin), '#!/bin/sh\necho "stand-in 999.0.0"\n')
+  chmodSync(join(cleanDockerBin, bin), 0o755)
+}
 process.env.PATH = `${cleanDockerBin}:${originalPath ?? ''}`
 process.env.ORCH_SANDBOX = 'host'
 export const PRELOAD_STORE = process.env.ORCH_DB

@@ -1372,7 +1372,7 @@ export function unavailableReason(name: string): string | null {
   if (a.probePassed === null) return `registration probe incomplete; run orch agent probe ${name}`
   if (a.probedAt && a.probePassed === false) return 'registration probe failed'
   if (a.contextTokens === 0) return 'unprobed and has no declared context window'
-  if (which(a.bin) === null) return 'not installed'
+  if (which(a.bin, { PATH: process.env.PATH }) === null) return 'not installed'
   if (a.billing === 'local') {
     // A local agent is only real once an endpoint is configured...
     if (!LOCAL_BASE_URL) return 'ORCH_LOCAL_BASE_URL not set'
