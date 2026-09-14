@@ -79,7 +79,6 @@ export type ClaimInput = {
   runsDir: string
   paths: ReturnType<typeof runFilePaths>
   stamp: string
-  outPath: string
   name: string
   generatedSchema: unknown
   originalPrompt: string
@@ -109,18 +108,17 @@ export type ClaimInput = {
 }
 
 export type ClaimResult = {
-  outPath: string
   promptPath: string
+  originalSchemaPath: string | undefined
   textReplyContract: boolean
   schemaPath: string | undefined
   started: number
   launchKey: string | null
-  noFailover: boolean
+  runToken: string
   claim: { id: number }
   keepTree: boolean
   scratchDir: string
   worktree: Worktree | null
-  carried: CarriedWorkingState | null
   changes: Changes | null
   isolatedCwd: string | null
   removeIsolatedCwd: (() => void) | null
@@ -138,7 +136,7 @@ export type ClaimResult = {
 
 export async function claimRun(input: ClaimInput): Promise<ClaimResult> {
   let {
-    opts, runsDir, paths, stamp, outPath, name, generatedSchema, originalPrompt, prompt,
+    opts, runsDir, paths, stamp, name, generatedSchema, originalPrompt, prompt,
     callerCwd, seed, writesJob, repoJob, runProjectName, runProjectId, reason,
     vendorSession, pack, mcpRequest, transportName, a, mcpConnection, mcpMode,
     declaredDeliverables, timeoutMinutes, forbidsRepo, reviewTarget, coverageBase,
@@ -677,8 +675,8 @@ export async function claimRun(input: ClaimInput): Promise<ClaimResult> {
     }
   
   return {
-    outPath, promptPath, textReplyContract, schemaPath, started, launchKey,
-    noFailover, claim, keepTree, scratchDir, worktree, carried, changes,
+    promptPath, originalSchemaPath, textReplyContract, schemaPath, started, launchKey,
+    runToken, claim, keepTree, scratchDir, worktree, changes,
     isolatedCwd, removeIsolatedCwd, provisionedMcpConfig, retargetDiagnostic,
     mcpSetupHeader, mcpTrustGranted, grokMcpEnvironment, sandboxRunDir, cwd,
     prompt, mcpConnection, usingMcp,

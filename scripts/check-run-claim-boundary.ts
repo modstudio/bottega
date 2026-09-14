@@ -1,0 +1,16 @@
+#!/usr/bin/env bun
+import { checkModuleBoundary } from './module-boundary.ts'
+
+checkModuleBoundary(
+  'check-run-claim-boundary',
+  'orchestrator/src/run-claim.ts',
+  [
+    './agents.ts', './canon.ts', './checkout-identity.ts', './contract.ts', './db.ts',
+    './dispatch-preflight.ts', './events.ts', './failover.ts', './git-environment.ts',
+    './grok-trust.ts', './mcp-preflight.ts', './mcp-probe.ts', './project-lock.ts',
+    './projects.ts', './prompt-retarget.ts', './resource-ownership.ts', './review-target.ts',
+    './run-artifacts.ts', './run-process.ts', './sandbox.ts', './task-branch.ts',
+    './transport.ts', './worktree.ts', './worktree-caller.ts', './worktree-mcp.ts',
+    './worktree-preflight.ts', './worktree-remove.ts', './worktree-types.ts',
+  ],
+)

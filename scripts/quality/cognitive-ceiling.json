@@ -499,6 +499,24 @@
     "score": 98
   },
   {
+    "file": "orchestrator/src/project-lock.ts",
+    "function": "nextWaiterTicket",
+    "line": 164,
+    "score": 25
+  },
+  {
+    "file": "orchestrator/src/project-lock.ts",
+    "function": "withKernelProjectLock",
+    "line": 238,
+    "score": 20
+  },
+  {
+    "file": "orchestrator/src/project-lock.ts",
+    "function": "withProjectLock",
+    "line": 348,
+    "score": 32
+  },
+  {
     "file": "orchestrator/src/projects.ts",
     "function": "validateProjectSettings",
     "line": 392,
@@ -535,6 +553,18 @@
     "score": 26
   },
   {
+    "file": "orchestrator/src/ref-guard.ts",
+    "function": "cleanupRefGuardLitter",
+    "line": 115,
+    "score": 18
+  },
+  {
+    "file": "orchestrator/src/ref-guard.ts",
+    "function": "prepareSharedRefGuard",
+    "line": 188,
+    "score": 45
+  },
+  {
     "file": "orchestrator/src/resource-inventory.ts",
     "function": "refGuardInventory",
     "line": 172,
@@ -547,16 +577,22 @@
     "score": 19
   },
   {
+    "file": "orchestrator/src/review-calibration.ts",
+    "function": "calibrationCell",
+    "line": 80,
+    "score": 30
+  },
+  {
+    "file": "orchestrator/src/review-calibration.ts",
+    "function": "reviewCalibrationFleet",
+    "line": 217,
+    "score": 18
+  },
+  {
     "file": "orchestrator/src/review-commands.ts",
     "function": "reviewCommand",
     "line": 22,
     "score": 177
-  },
-  {
-    "file": "orchestrator/src/review-tier.ts",
-    "function": "classifyReviewTier",
-    "line": 42,
-    "score": 21
   },
   {
     "file": "orchestrator/src/review-coverage.ts",
@@ -571,12 +607,6 @@
     "score": 17
   },
   {
-    "file": "orchestrator/src/review.ts",
-    "function": "cleanReviewEvidence",
-    "line": 86,
-    "score": 21
-  },
-  {
     "file": "orchestrator/src/review-coverage.ts",
     "function": "coverageAudit",
     "line": 374,
@@ -589,16 +619,16 @@
     "score": 17
   },
   {
-    "file": "orchestrator/src/review-calibration.ts",
-    "function": "calibrationCell",
-    "line": 80,
-    "score": 30
+    "file": "orchestrator/src/review-tier.ts",
+    "function": "classifyReviewTier",
+    "line": 42,
+    "score": 21
   },
   {
-    "file": "orchestrator/src/review-calibration.ts",
-    "function": "reviewCalibrationFleet",
-    "line": 217,
-    "score": 18
+    "file": "orchestrator/src/review.ts",
+    "function": "cleanReviewEvidence",
+    "line": 86,
+    "score": 21
   },
   {
     "file": "orchestrator/src/route.test.ts",
@@ -721,10 +751,16 @@
     "score": 26
   },
   {
+    "file": "orchestrator/src/run-claim.ts",
+    "function": "claimRun",
+    "line": 137,
+    "score": 122
+  },
+  {
     "file": "orchestrator/src/run.ts",
     "function": "run",
-    "line": 232,
-    "score": 642,
+    "line": 229,
+    "score": 520,
     "key": "orchestrator/src/run.ts\u0000run"
   },
   {
@@ -777,60 +813,6 @@
     "score": 20
   },
   {
-    "file": "orchestrator/src/worktree-template.ts",
-    "function": "scanPipelineOperators",
-    "line": 354,
-    "score": 25
-  },
-  {
-    "file": "orchestrator/src/worktree-template.ts",
-    "function": "validateCreate",
-    "line": 640,
-    "score": 33
-  },
-  {
-    "file": "orchestrator/src/worktree-template.ts",
-    "function": "shellTokens",
-    "line": 790,
-    "score": 28
-  },
-  {
-    "file": "orchestrator/src/worktree-template.ts",
-    "function": "shellWords",
-    "line": 1683,
-    "score": 27
-  },
-  {
-    "file": "orchestrator/src/project-lock.ts",
-    "function": "nextWaiterTicket",
-    "line": 164,
-    "score": 25
-  },
-  {
-    "file": "orchestrator/src/project-lock.ts",
-    "function": "withKernelProjectLock",
-    "line": 238,
-    "score": 20
-  },
-  {
-    "file": "orchestrator/src/project-lock.ts",
-    "function": "withProjectLock",
-    "line": 348,
-    "score": 32
-  },
-  {
-    "file": "orchestrator/src/ref-guard.ts",
-    "function": "cleanupRefGuardLitter",
-    "line": 115,
-    "score": 18
-  },
-  {
-    "file": "orchestrator/src/ref-guard.ts",
-    "function": "prepareSharedRefGuard",
-    "line": 188,
-    "score": 45
-  },
-  {
     "file": "orchestrator/src/worktree-create.ts",
     "function": "createWithToolUnlocked",
     "line": 124,
@@ -853,6 +835,30 @@
     "function": "removeFor",
     "line": 222,
     "score": 16
+  },
+  {
+    "file": "orchestrator/src/worktree-template.ts",
+    "function": "scanPipelineOperators",
+    "line": 354,
+    "score": 25
+  },
+  {
+    "file": "orchestrator/src/worktree-template.ts",
+    "function": "validateCreate",
+    "line": 640,
+    "score": 33
+  },
+  {
+    "file": "orchestrator/src/worktree-template.ts",
+    "function": "shellTokens",
+    "line": 790,
+    "score": 28
+  },
+  {
+    "file": "orchestrator/src/worktree-template.ts",
+    "function": "shellWords",
+    "line": 1683,
+    "score": 27
   },
   {
     "file": "scripts/check.ts",

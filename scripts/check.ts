@@ -180,6 +180,7 @@ for (const script of [
   'check-worktree-types-boundary.ts', 'check-worktree-caller-boundary.ts',
   'check-worktree-preflight-boundary.ts', 'check-worktree-create-boundary.ts',
   'check-worktree-readonly-boundary.ts',
+  'check-run-claim-boundary.ts',
   'check-workflows-boundary.ts', 'check-issue-report-fields-boundary.ts',
   'check-mcp-preflight-boundary.ts', 'check-dispatch-preflight-boundary.ts',
   'check-failover-boundary.ts', 'check-run-process-boundary.ts',
