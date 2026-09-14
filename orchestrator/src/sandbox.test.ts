@@ -136,6 +136,31 @@ describe('readonly-lens sandbox profile', () => {
     expect(readonlyNeedsDocker('Docker is unavailable in read-only worktrees; use bun tests.')).toBe(false)
   })
 
+  test('an MCP Grok repository run is unconfined because srt blocks its transports', () => {
+    expect(selectReadonlySandbox({
+      agent: 'grok', readsRepo: true, writesRepo: false, mcp: true,
+      worktree: '/runs/tree', runsDir: '/runs/evidence',
+      project: fixtureProject(),
+    })).toEqual({
+      sandbox: 'host', profile: null,
+      reason: 'MCP was requested; srt blocks MCP transports; run is unconfined',
+    })
+  })
+
+  test('Grok repository runs without MCP remain confined', () => {
+    const selections = [{}, { mcp: false }].map((mcp) =>
+      selectReadonlySandbox({
+        agent: 'grok', readsRepo: true, writesRepo: false, ...mcp,
+        worktree: '/runs/tree', runsDir: '/runs/evidence',
+        project: fixtureProject(), path: '/usr/bin',
+      }))
+    for (const selected of selections) {
+      expect(selected.sandbox).toBe('srt')
+      expect(selected.profile).not.toBeNull()
+    }
+    expect(selections[0]).toEqual(selections[1])
+  })
+
   test('a no-repo Grok run uses its isolate as the sandbox root', () => {
     const selected = selectReadonlySandbox({
       agent: 'grok', readsRepo: false, writesRepo: false,
@@ -153,7 +178,7 @@ describe('readonly-lens sandbox profile', () => {
   test('a host override records the lost isolate confinement only for no-repo runs', () => {
     const shared = {
       agent: 'grok', writesRepo: false, worktree: '/runs/isolates/42',
-      runsDir: '/runs/sandbox-42', project: fixtureProject(), override: 'host',
+      runsDir: '/runs/sandbox-42', project: fixtureProject(), override: 'host', mcp: true,
     }
     const noRepo = selectReadonlySandbox({ ...shared, readsRepo: false })
     const repository = selectReadonlySandbox({ ...shared, readsRepo: true })
@@ -187,7 +212,7 @@ describe('readonly-lens sandbox profile', () => {
       expect(selectReadonlySandbox({
         ...input, readsRepo: true, worktree: '/runs/tree', runsDir: '/runs/evidence',
         project: fixtureProject(),
-      }).sandbox).toBe('host')
+      })).toEqual({ sandbox: 'host', profile: null, reason: null })
     }
   })
 

@@ -205,6 +205,7 @@ export function selectReadonlySandbox(input: {
   override?: string
   path?: string
   localBaseUrl?: string
+  mcp?: boolean
   mcpAllowlist?: string[]
 }): SandboxSelection {
   if (!isReadonlySandboxCandidate(input)) {
@@ -222,6 +223,12 @@ export function selectReadonlySandbox(input: {
       reason: input.readsRepo
         ? 'ORCH_SANDBOX=host'
         : 'ORCH_SANDBOX=host skipped the no-repo isolate sandbox; run is unconfined',
+    }
+  }
+  if (input.mcp) {
+    return {
+      sandbox: 'host', profile: null,
+      reason: 'MCP was requested; srt blocks MCP transports; run is unconfined',
     }
   }
   if (!input.worktree) {
