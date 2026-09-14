@@ -2,7 +2,6 @@
 import type { Database } from 'bun:sqlite'
 import { db } from './db.ts'
 import { targetGitEnvironment } from './git-environment.ts'
-import { filesCoveredIntersectChanged } from './review-coverage-match.ts'
 import { changeIdentity } from './change-identity.ts'
 import { completedReviewEvidenceSql } from './review-evidence-sql.ts'
 import { git, reviewGit } from './review-pins.ts'
@@ -42,27 +41,6 @@ export function completedReviews(project: string): ReviewCoverageInput[] {
   return [...grouped.values()]
 }
 
-export type ReviewCarry = {
-  project: string
-  branch: string
-  tip: string
-  tree: string
-  reviewId: number
-  reviewedCommit: string
-  reviewedTree: string
-  patchId: string
-  oldBase: string
-  newBase: string
-}
-
-export type CoverageVerdict =
-  | { kind: 'exact' }
-  | ({ kind: 'carried'; class: 'trivial-rebase' | 'no-code-change'; resolution: 'pin' | 'walk' } & Omit<ReviewCarry, 'project' | 'branch'>)
-  | { kind: 'invalid'; reason: string; resolution?: 'pin' | 'walk' }
-
-export type CoverageGitResult = ChangeIdentityGitResult
-export type CoverageGitRunner = ChangeIdentityGitRunner
-
 export function coverageGit(repoRoot: string): CoverageGitRunner {
   return (args, stdin) => {
     const p = Bun.spawnSync(['git', ...args], {
@@ -73,7 +51,7 @@ export function coverageGit(repoRoot: string): CoverageGitRunner {
   }
 }
 
-function coverageOutput(result: CoverageGitResult, args: string[]): string {
+export function coverageOutput(result: CoverageGitResult, args: string[]): string {
   if (!result.ok) throw new Error(`git ${args.join(' ')} failed: ${result.err}`)
   return result.out
 }
@@ -450,4 +428,3 @@ export function coverageAudit(database: Database = db()): CoverageAudit {
     partial_review_ids: partialReviewIds,
   }
 }
-

@@ -3,7 +3,7 @@ import type { Database } from 'bun:sqlite'
 import { db, writableDb } from './db.ts'
 import { targetGitEnvironment } from './git-environment.ts'
 import { changeIdentity } from './change-identity.ts'
-import type { CoverageGitRunner, ReviewChangeRange, ReviewPin, RunRow } from './review-types.ts'
+import type { CoverageGitRunner, ReviewChangeRange, RunRow } from './review-types.ts'
 
 export function reviewChangeRange(run: Pick<RunRow,
   'base_commit' | 'input_tree' | 'head_commit' | 'review_ref' | 'changed_paths'
@@ -23,40 +23,6 @@ export function reviewChangeRange(run: Pick<RunRow,
     ? run.input_tree
     : run.head_commit ?? run.input_tree
   return fallback ? { from: run.base_commit, to: fallback, paths: null } : null
-}
-
-function tierForRuns(runs: RunRow[], database: Database): ReviewTier | null {
-  const bases = new Map(runs.map((run) => [run.id, run.base_commit]))
-  const trees = new Map(runs.map((run) => [run.id, run.input_tree]))
-  const distinctBases = new Set(bases.values())
-  const distinctTrees = new Set(trees.values())
-  const differ = (values: Map<number, string | null>) => [...values].map(([id, value]) =>
-    `run ${id}=${value ?? 'NULL'}`).join(', ')
-  if (distinctBases.size !== 1 || distinctTrees.size !== 1) {
-    console.error(`warning: review tier not recorded: lens runs differ (${differ(bases)}; ${differ(trees)})`)
-    return null
-  }
-  try {
-    for (const run of runs) {
-      if (!run.base_commit || !run.input_tree || !run.repo) {
-        throw new Error(`run ${run.id} lacks base_commit, input_tree, or repo`)
-      }
-      const repo = projectPath(database, run.repo)
-      if (!repo) throw new Error(`run ${run.id} project ${run.repo} is not registered`)
-      const base = git(repo, ['cat-file', '-e', `${run.base_commit}^{commit}`], true)
-      if (!base.ok) throw new Error(`run ${run.id} base ${run.base_commit} cannot be resolved`)
-      const actualTree = git(repo, ['cat-file', '-t', run.input_tree], true)
-      if (!actualTree.ok || actualTree.out !== 'tree') {
-        throw new Error(`run ${run.id} reviewed tree ${run.input_tree} cannot be resolved as a tree`)
-      }
-    }
-    const run = runs[0]!
-    const repo = projectPath(database, run.repo!)
-    return classifyReviewTier({ files: diffNumstat(repo!, run.base_commit!, run.input_tree!) })
-  } catch (cause) {
-    console.error(`warning: review tier not recorded: ${String((cause as Error)?.message ?? cause)}`)
-    return null
-  }
 }
 
 export const pinRef = (runId: number) => `refs/orch/reviewed/${runId}`
@@ -207,4 +173,3 @@ export function reviewPins(prune = false, database: Database = db()): ReviewPin[
   }
   return pins
 }
-

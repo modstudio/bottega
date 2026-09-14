@@ -60,18 +60,17 @@ export type ReviewListRow = {
   coverage: 'exact' | 'trivial-rebase' | 'no-code-change' | 'stale' | null
 }
 
-type ReviewReadLens = ReviewCoverageInput['lenses'][number] & {
+export type ReviewReadLens = ReviewCoverageInput['lenses'][number] & {
   id: number; runId: number; agent: string; model: string | null; treeInspected: string | null
   reviewRef: string; reproduced: ReviewReproduced | null; coverageGrade: ReviewCoverage | null
   limits: ReviewLimits | null; overlap: ReviewOverlap | null
 }
 
-type RunRow = {
+export type RunRow = {
   id: number; agent: string; model: string | null; lens: string | null
   job: string; status: string; output_path: string | null; input_tree: string | null
   head_commit: string | null; repo: string | null; project_id: number | null
   base_commit: string | null; review_ref: string | null; changed_paths: string | null
 }
 
-type ReviewChangeRange = { from: string; to: string; paths: string[] | null }
-
+export type ReviewChangeRange = { from: string; to: string; paths: string[] | null }
