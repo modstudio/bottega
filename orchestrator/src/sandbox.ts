@@ -367,11 +367,15 @@ export function prepareSandboxHome(
 ): Record<string, string> {
   mkdirSync(runDir, { recursive: true })
   if (agent === 'grok') {
-    const source = join(homedir(), '.grok')
-    const authSource = join(source, 'auth.json'); const authTarget = join(runDir, 'auth.json')
+    const authSource = join(homedir(), '.grok', 'auth.json')
+    const authTarget = join(runDir, 'auth.json')
     if (existsSync(authSource) && !existsSync(authTarget)) symlinkSync(authSource, authTarget)
-    const configSource = join(source, 'config.toml'); const configTarget = join(runDir, 'config.toml')
-    if (existsSync(configSource) && !existsSync(configTarget)) writeFileSync(configTarget, grokSandboxConfig(readFileSync(configSource, 'utf8')))
+
+    const configSource = join(homedir(), '.grok', 'config.toml')
+    const configTarget = join(runDir, 'config.toml')
+    if (existsSync(configSource) && !existsSync(configTarget)) {
+      writeFileSync(configTarget, grokSandboxConfig(readFileSync(configSource, 'utf8')))
+    }
     return { GROK_HOME: runDir, GROK_DISABLE_AUTOUPDATER: '1' }
   }
   if (agent === 'qwen-local') {

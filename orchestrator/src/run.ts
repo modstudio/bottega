@@ -1102,6 +1102,8 @@ export async function run(opts: {
         }
         const beforeTrust = grokTrust ? grokTrustHeadings(grokMcpEnvironment) : []
         mcpTrustGranted = grokTrust
+        // Record the attempt before doctor: the trusted invocation may write its
+        // store and then fail, and that remains a grant orch made.
         if (grokTrust) db().query('UPDATE run SET mcp_trust_granted=1 WHERE id=?').run(claim.id)
         try {
           mcpConnection = mcpConnectionFor(name, cwd, server, grokTrust, repoJob, grokMcpEnvironment)
