@@ -13,13 +13,12 @@ import { allNumericLiterals as inspectNumericLiterals,findingsForPack } from './
 
 describe('scoped operator docs', () => {
   test('checkDoc validates tracked paths, commands, jobs and scripts from backticked tokens', () => {
-    const repo = mkdtempSync(join(tmpdir(), 'canon-check-'))
+    const repo = cloneRepository('canon-check-')
     try {
       mkdirSync(join(repo, 'scripts'))
       writeFileSync(join(repo, 'scripts', 'tracked.ts'), '')
       writeFileSync(join(repo, 'scripts', 'present.ts'), '')
       writeFileSync(join(repo, 'package.json'), JSON.stringify({ scripts: { check: 'true' } }))
-      Bun.spawnSync(['git', 'init'], { cwd: repo, env: hermeticGitEnv() })
       Bun.spawnSync(['git', 'add', 'scripts/tracked.ts', 'package.json'], {
         cwd: repo, env: hermeticGitEnv(),
       })

@@ -134,10 +134,11 @@ describe('projects are data, not code', () => {
     const binaryRoot = join(main, 'orchestrator')
     const wrong = join(parent, 'orchestrator', 'orch.db')
     const right = join(bare, 'orchestrator', 'orch.db')
+    const git = (...args: string[]) => Bun.spawnSync(['git', ...args], {
+      cwd: parent, env: hermeticGitEnv(), stdout: 'pipe', stderr: 'pipe',
+    })
     try {
-      const initialized = Bun.spawnSync(['git', 'init', '--bare', bare], {
-        env: hermeticGitEnv(), stdout: 'pipe', stderr: 'pipe',
-      })
+      const initialized = git('init', '--bare', bare)
       expect(initialized.exitCode).toBe(0)
       mkdirSync(dirname(wrong), { recursive: true })
       writeFileSync(wrong, 'wrong database')

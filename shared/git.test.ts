@@ -3,6 +3,7 @@ import { mkdtempSync, rmSync, realpathSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { mainCheckoutOf, scrubbedGitEnv } from "./git.ts"
+import { cloneRepository } from './test-git-repository.ts'
 
 /** A git environment that reads no user or system configuration; shared/ imports from nobody, so it is built here. */
 const hermeticGitEnv = (home: string): NodeJS.ProcessEnv => ({
@@ -49,14 +50,10 @@ test('the shared scrub removes repository-location variables git lists and orch 
   })
 
 test('main checkout resolution does not merge inherited object routing into a supplied environment', () => {
-    const repo = mkdtempSync(join(tmpdir(), 'orch-main-checkout-env-'))
     const home = mkdtempSync(join(tmpdir(), 'shared-git-home-'))
+    const repo = cloneRepository(hermeticGitEnv(home), 'orch-main-checkout-env-')
     const previous = process.env.GIT_OBJECT_DIRECTORY
     try {
-      const initialized = Bun.spawnSync(['git', 'init', '-b', 'main'], {
-        cwd: repo, env: hermeticGitEnv(home), stdout: 'pipe', stderr: 'pipe',
-      })
-      if (initialized.exitCode !== 0) throw new Error(initialized.stderr.toString())
       process.env.GIT_OBJECT_DIRECTORY = '/nonexistent/worker/objects'
       expect(mainCheckoutOf(repo, hermeticGitEnv(home))).toBe(realpathSync(repo))
     } finally {

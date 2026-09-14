@@ -261,16 +261,14 @@ describe('sweep only reclaims old orch-owned orphan worktrees', () => {
   test('sweep and doctor report terminal resources in a retained tree without removal commands', async () => {
     const project = `retained-resource-${randomUUID()}`
     const id = addRun({ agent: 'codex', job: 'implement', status: 'ok', repo: project })
-    const tree = mkdtempSync(join(tmpdir(), `orch-${id}-retained-`))
-    expect(Bun.spawnSync(['git', 'init', '-q', tree]).exitCode).toBe(0)
+    const tree = cloneRepository(`orch-${id}-retained-`)
     db().query('UPDATE run SET worktree=? WHERE id=?').run(tree, id)
     const noTree = addRun({ agent: 'codex', job: 'implement', status: 'asking', repo: project })
     addRun({ agent: 'codex', job: 'implement', status: 'failed', repo: project,
       parent: noTree, turn: 2 })
     const goneTree = addRun({ agent: 'codex', job: 'implement', status: 'failed', repo: project })
     db().query('UPDATE run SET worktree=? WHERE id=?').run(join(tree, 'gone'), goneTree)
-    const sharedTree = mkdtempSync(join(tmpdir(), `orch-${id}-shared-`))
-    expect(Bun.spawnSync(['git', 'init', '-q', sharedTree]).exitCode).toBe(0)
+    const sharedTree = cloneRepository(`orch-${id}-shared-`)
     const terminalSharer = addRun({ agent: 'codex', job: 'implement', status: 'failed', repo: project })
     const liveSharer = addRun({ agent: 'codex', job: 'implement', status: 'asking', repo: project })
     db().query('UPDATE run SET worktree=? WHERE id=?').run(sharedTree, terminalSharer)
