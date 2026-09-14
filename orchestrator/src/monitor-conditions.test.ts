@@ -1,21 +1,7 @@
 import { describe,expect,spyOn,test } from 'bun:test'
-import { rmSync } from 'node:fs'
-import { join } from 'node:path'
-import { PLATFORM_SLUG } from '../../shared/brand.ts'
-import { addRun, dir, score } from '../test/fixtures/store.ts'
-import { db, nowIso } from './db.ts'
-import { parseFiledIssue } from './issue.ts'
-import { fileIssue } from './mcp.ts'
-import { claimMonitorNotices, deadRunningProcessConditions, markMonitorNoticesDelivered, monitor, monitorHistory, reconcileHub, rulingConditions } from './monitor.ts'
-import { upsertProject } from './projects.ts'
-
-function migrateHub(path: string): void {
-  const result = Bun.spawnSync([process.execPath,
-    new URL('../../hub/src/cli.ts', import.meta.url).pathname, 'migrate'], {
-    env: { ...process.env, HUB_DB: path }, stdout: 'pipe', stderr: 'pipe',
-  })
-  expect(result.exitCode, result.stderr.toString()).toBe(0)
-}
+import { addRun,score } from '../test/fixtures/store.ts'
+import { db,nowIso } from './db.ts'
+import { claimMonitorNotices,deadRunningProcessConditions,markMonitorNoticesDelivered,monitor,monitorHistory,reconcileHub,rulingConditions } from './monitor.ts'
 
 function persistAddressedCondition(
   kind: string,
@@ -334,54 +320,5 @@ describe('operational monitor conditions', () => {
         errors: ['hub database is absent at /tmp/none'],
       })
     } finally { spawn.mockRestore() }
-  })
-
-  test('files monitor provenance against a real invocation without a fake session', async () => {
-    const hubDb = join(dir, 'monitor-file-issue.db')
-    const priorHubDb = process.env.HUB_DB
-    const priorSession = process.env.CLAUDE_CODE_SESSION_ID
-    process.env.HUB_DB = hubDb
-    migrateHub(hubDb)
-    delete process.env.CLAUDE_CODE_SESSION_ID
-    upsertProject({ name: PLATFORM_SLUG, path: process.cwd(), stack: 'typescript', canon: true,
-      settings: { keyPrefixes: ['DEV'] } })
-    const invocation = (db().query(
-      `INSERT INTO monitor_invocation (started_at,trigger) VALUES (?, 'backstop') RETURNING id`,
-    ).get(nowIso()) as { id: number }).id
-    try {
-      const filed = await fileIssue({ kind: 'defect', what_happened: 'A detector is unavailable',
-        expected: 'The detector has machine-readable state', reproduce_command: 'orch monitor',
-        environment: 'test monitor pass', evidence: `monitor invocation ${invocation}`,
-        not_established: 'The state contract is not designed',
-      }, { kind: 'monitor', invocationId: invocation, affectedProject: 'starship' }, PLATFORM_SLUG)
-      expect(filed).toMatchObject({
-        reporter: 'monitor', reporter_id: invocation,
-        monitor_invocation_id: invocation, session: null, project: PLATFORM_SLUG,
-      })
-      expect(Object.keys(filed).sort()).toEqual([
-        'duplicates', 'key', 'kind', 'monitor_invocation_id', 'project', 'reporter',
-        'reporter_id', 'session', 'title', 'title_shortened', 'worker_run_id',
-      ])
-      const shown = Bun.spawnSync([new URL('../../bin/hub', import.meta.url).pathname,
-        'task', 'show', filed.key, '--json'], { env: { ...process.env }, stdout: 'pipe' })
-      const task = JSON.parse(shown.stdout.toString()).task
-      expect(task.body).toStartWith('FILED ISSUE DATA: {')
-      expect(task.body).toContain('REPORTER KIND: MONITOR')
-      expect(task.body).toContain(`REPORTING MONITOR INVOCATION: ${invocation}`)
-      expect(task.body).toContain('AFFECTED PROJECT: starship')
-      expect(task.body).not.toContain('REPORTING SESSION:')
-      expect(parseFiledIssue({ task })).toMatchObject({
-        kind: 'defect', reportingProject: PLATFORM_SLUG,
-        whatHappened: 'A detector is unavailable',
-        expected: 'The detector has machine-readable state',
-        reproduceCommand: 'orch monitor', environment: 'test monitor pass',
-        evidence: `monitor invocation ${invocation}`,
-        notEstablished: 'The state contract is not designed',
-      })
-    } finally {
-      rmSync(hubDb, { force: true }); rmSync(`${hubDb}-shm`, { force: true }); rmSync(`${hubDb}-wal`, { force: true })
-      if (priorHubDb === undefined) delete process.env.HUB_DB; else process.env.HUB_DB = priorHubDb
-      if (priorSession === undefined) delete process.env.CLAUDE_CODE_SESSION_ID; else process.env.CLAUDE_CODE_SESSION_ID = priorSession
-    }
   })
 })

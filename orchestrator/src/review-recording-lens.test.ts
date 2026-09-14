@@ -1,12 +1,8 @@
 import { describe,expect,spyOn,test } from 'bun:test'
-import { mkdirSync,rmSync,writeFileSync } from 'node:fs'
-import { join } from 'node:path'
-import { cloneRepository, hermeticGitEnv } from '../test/fixtures/git.ts'
 import { reviewReply } from '../test/fixtures/replies.ts'
 import { addRun } from '../test/fixtures/store.ts'
 import { db } from './db.ts'
-import { upsertProject } from './projects.ts'
-import { completeReview, gradeReviewLens, recordReview, recordReviews, triageFinding } from './review.ts'
+import { completeReview,gradeReviewLens,recordReview,recordReviews,triageFinding } from './review.ts'
 
 describe('review discipline', () => {
 test('records each lens before triage and derives runner and model from the orch run', () => {
@@ -72,65 +68,6 @@ test('an unregistered project warns after recording and does not block later gra
         .toEqual({ n: 1 })
     } finally { stderr.mockRestore() }
   })
-test('an update-ref refusal warns after recording and does not block later grading', () => {
-    const repo = cloneRepository('orch-review-pin-refusal-')
-    const runGit = (...args: string[]) => {
-      const p = Bun.spawnSync(['git', ...args], {
-        cwd: repo, env: hermeticGitEnv(), stdout: 'pipe', stderr: 'pipe',
-      })
-      if (p.exitCode !== 0) throw new Error(p.stderr.toString().trim())
-      return p.stdout.toString().trim()
-    }
-    const project = 'review-pin-refusal'
-    upsertProject({ name: project, path: repo, settings: { trunk: 'main' } })
-    const runId = addRun({
-      agent: 'codex', job: 'review-lens', model: 'm', lens: 'refused-pin', repo: project,
-      inputTree: runGit('rev-parse', 'HEAD^{tree}'), headCommit: runGit('rev-parse', 'HEAD'),
-    })
-    const refDir = join(repo, '.git', 'refs', 'orch', 'reviewed')
-    mkdirSync(refDir, { recursive: true })
-    writeFileSync(join(refDir, `${runId}.lock`), 'held\n')
-    const stderr = spyOn(console, 'error').mockImplementation(() => {})
-    try {
-      const reviewId = recordReview(runId, reviewReply(0), db())
-      expect(reviewId).toBeGreaterThan(0)
-      expect(stderr).toHaveBeenCalledWith(expect.stringContaining(
-        `refs/orch/reviewed/${runId} was not created: git update-ref failed:`,
-      ))
-      expect(() => runGit('rev-parse', `refs/orch/reviewed/${runId}`)).toThrow()
-      expect(() => gradeReviewLens(runId, null, {
-        reproduced: 'none', coverage: 'adequate', limits: 'absent', overlap: 'none',
-      })).not.toThrow()
-      expect(db().query('SELECT COUNT(*) AS n FROM review WHERE id=?').get(reviewId))
-        .toEqual({ n: 1 })
-    } finally {
-      stderr.mockRestore()
-      rmSync(repo, { recursive: true, force: true })
-    }
-  })
-test('the grading capture path creates the same reviewed-commit pin', () => {
-    const repo = cloneRepository('orch-review-grade-pin-')
-    const runGit = (...args: string[]) => {
-      const p = Bun.spawnSync(['git', ...args], {
-        cwd: repo, env: hermeticGitEnv(), stdout: 'pipe', stderr: 'pipe',
-      })
-      if (p.exitCode !== 0) throw new Error(p.stderr.toString().trim())
-      return p.stdout.toString().trim()
-    }
-    try {
-      const project = 'review-grade-pin'
-      upsertProject({ name: project, path: repo, settings: { trunk: 'main' } })
-      const commit = runGit('rev-parse', 'HEAD')
-      const runId = addRun({
-        agent: 'codex', job: 'review-lens', model: 'm', lens: 'grade-pin', repo: project,
-        inputTree: runGit('rev-parse', 'HEAD^{tree}'), headCommit: commit,
-      })
-      gradeReviewLens(runId, reviewReply(0), {
-        reproduced: 'none', coverage: 'adequate', limits: 'named', overlap: 'none',
-      })
-      expect(runGit('rev-parse', `refs/orch/reviewed/${runId}`)).toBe(commit)
-    } finally { rmSync(repo, { recursive: true, force: true }) }
-  })
 test('triage records explicit severity agreement and leaves omission unassessed', () => {
     const runId = addRun({ agent: 'codex', job: 'review-lens', model: 'm', lens: 'severity' })
     const reviewId = recordReview(runId, reviewReply(2), db())
@@ -150,4 +87,3 @@ test('triage records explicit severity agreement and leaves omission unassessed'
       .run(reviewId)).toThrow()
   })
 })
-

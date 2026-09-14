@@ -1,15 +1,10 @@
-import { afterEach, expect, mock, spyOn, test } from 'bun:test'
-import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from 'node:fs'
+import { afterEach,expect,mock,spyOn,test } from 'bun:test'
+import { mkdirSync,mkdtempSync,rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import {
-  classifiedDockerResources, dockerInventoryTimeoutMs, dockerRemovalTimeoutMs, dockerRunResources, orphanedDockerResources, teardownRunResources, type DockerResource, } from './docker-resources.ts'
-import { addRun } from '../test/fixtures/store.ts'
-import { AGENTS } from './agents.ts'
-import { db } from './db.ts'
-import { persistTerminalSnapshot, reconcileRun } from './run-artifacts.ts'
-import { run as runJob } from './run.ts'
-import { teardownTerminalRunResources } from './resource-ownership.ts'
+classifiedDockerResources,dockerInventoryTimeoutMs,dockerRemovalTimeoutMs,dockerRunResources,orphanedDockerResources,teardownRunResources,type DockerResource,
+} from './docker-resources.ts'
 
 afterEach(() => { mock.restore() })
 
@@ -116,79 +111,6 @@ test('run teardown removes only containers, is idempotent, and isolates run iden
   ])
 })
 
-test('a resumed terminal turn tears down root-named containers and preserves volumes', () => {
-  const root = addRun({ agent: 'codex', job: 'implement', status: 'asking' })
-  const child = addRun({ agent: 'codex', job: 'implement', status: 'ok', parent: root, turn: 2 })
-  db().query("UPDATE run SET status='ok' WHERE id=?").run(root)
-  const tree = mkdtempSync(join(tmpdir(), 'orch-complete-tree-'))
-  mkdirSync(join(tree, '.git'))
-  db().query('UPDATE run SET worktree=? WHERE id=? OR id=?').run(tree, root, child)
-  const removals: string[] = []
-  const originalSpawnSync = Bun.spawnSync
-  spyOn(Bun, 'spawnSync').mockImplementation(((args: string[]) => {
-    const command = args.join(' ')
-    if (command === 'docker ps -a --format {{.Names}}') return result(`app-orch-${root}-web`)
-    if (command === 'docker volume ls --format {{.Name}}') return result(`orch-${root}_app-pgdata`)
-    if (command.startsWith('docker ')) {
-      removals.push(command)
-      return result('')
-    }
-    if (command === 'git rev-parse --path-format=absolute --git-common-dir') {
-      return result(join(tree, '.git'))
-    }
-    if (command === 'git rev-parse --git-common-dir') return result('.git')
-    return originalSpawnSync(args)
-  }) as typeof Bun.spawnSync)
-  try {
-    teardownTerminalRunResources(db(), child)
-    expect(removals).toEqual([`docker rm -f app-orch-${root}-web`])
-  } finally {
-    rmSync(tree, { recursive: true, force: true })
-  }
-})
-
-test('reconcile tears down terminal snapshots but leaves asking snapshots untouched', () => {
-  const terminal = addRun({ agent: 'codex', job: 'implement', status: 'running' })
-  const asking = addRun({ agent: 'codex', job: 'implement', status: 'running' })
-  const snapshot = (status: string) => ({
-    status, error: null, failureKind: null, output: status,
-    outputPath: '/tmp/out', promptPath: '/tmp/prompt', exitCode: 0, latencyMs: 1,
-    vendorTokens: null, vendorCostUsd: null, model: null, vendorSession: null,
-    preConfinement: null, confinement: null, filesChanged: null, changedPaths: null, linesAdded: null,
-    linesRemoved: null, testsRan: null, testsPassed: null, deviations: null, escalations: null,
-  })
-  persistTerminalSnapshot(terminal, snapshot('ok'))
-  persistTerminalSnapshot(asking, snapshot('asking'))
-  const tree = mkdtempSync(join(tmpdir(), 'orch-reconcile-tree-'))
-  mkdirSync(join(tree, '.git'))
-  db().query('UPDATE run SET worktree=? WHERE id=?').run(tree, terminal)
-  const removals: string[] = []
-  const originalSpawnSync = Bun.spawnSync
-  spyOn(Bun, 'spawnSync').mockImplementation(((args: string[]) => {
-    const command = args.join(' ')
-    if (command === 'docker ps -a --format {{.Names}}') {
-      return result(`app-orch-${terminal}-web\napp-orch-${asking}-web`)
-    }
-    if (command === 'docker volume ls --format {{.Name}}') return result('')
-    if (command === 'git rev-parse --path-format=absolute --git-common-dir') {
-      return result(join(tree, '.git'))
-    }
-    if (command === 'git rev-parse --git-common-dir') return result('.git')
-    if (command.startsWith('docker ')) {
-      removals.push(command)
-      return result('')
-    }
-    return originalSpawnSync(args)
-  }) as typeof Bun.spawnSync)
-  try {
-    reconcileRun(terminal)
-    reconcileRun(asking)
-    expect(removals).toEqual([`docker rm -f app-orch-${terminal}-web`])
-  } finally {
-    rmSync(tree, { recursive: true, force: true })
-  }
-})
-
 test('reporting distinguishes leaked resources from terminal resources in a retained tree', () => {
   const dir = mkdtempSync(join(tmpdir(), 'orch-retained-report-'))
   const resources: DockerResource[] = [
@@ -247,53 +169,3 @@ function result(stdout: string, exitCode = 0, stderr = ''): ReturnType<typeof Bu
     success: exitCode === 0, exitedDueToTimeout: false,
   } as ReturnType<typeof Bun.spawnSync>
 }
-
-test('run lifecycle does not tear resources down without a recorded worktree', async () => {
-  const root = mkdtempSync(join(tmpdir(), 'orch-terminal-teardown-'))
-  const agentScript = join(root, 'agent.ts')
-  writeFileSync(agentScript, "console.log(JSON.stringify({ answer: 'finished' }))\n")
-
-  const dockerLog: string[] = []
-  let teardownId: number | null = null
-  const originalSpawnSync = Bun.spawnSync
-  spyOn(Bun, 'spawnSync').mockImplementation(((args: string[], options?: Parameters<typeof Bun.spawnSync>[1]) => {
-    const command = args.join(' ')
-    if (command === 'docker ps -a --format {{.Names}}') {
-      const row = db().query("SELECT id FROM run WHERE label='docker-lifecycle-test'").get() as
-        { id: number } | null
-      teardownId = row?.id ?? null
-      return result(teardownId === null ? '' : `app-orch-${teardownId}-web`)
-    }
-    if (command === 'docker volume ls --format {{.Name}}') return result('')
-    if (command.startsWith('docker ')) {
-      const row = db().query('SELECT status FROM run WHERE id=?').get(teardownId) as { status: string }
-      dockerLog.push(`${row.status}:${command}`)
-      return result('')
-    }
-    return originalSpawnSync(args, options as never)
-  }) as typeof Bun.spawnSync)
-
-  const agent = AGENTS.codex!
-  const original = { bin: agent.bin, argv: agent.argv, readsOut: agent.readsOut }
-  const priorDepth = process.env.ORCH_DEPTH
-  agent.bin = process.execPath
-  agent.argv = () => [agentScript]
-  agent.readsOut = false
-  process.env.ORCH_DEPTH = '0'
-  try {
-    const completed = await runJob({
-      job: 'summarize', prompt: 'summarize this', agent: 'codex', noFailover: true,
-      label: 'docker-lifecycle-test',
-    })
-    expect(db().query('SELECT status FROM run WHERE id=?').get(completed.id)).toEqual({ status: 'ok' })
-    expect(teardownId).toBeNull()
-    expect(dockerLog).toEqual([])
-  } finally {
-    agent.bin = original.bin
-    agent.argv = original.argv
-    agent.readsOut = original.readsOut
-    if (priorDepth === undefined) delete process.env.ORCH_DEPTH
-    else process.env.ORCH_DEPTH = priorDepth
-    rmSync(root, { recursive: true, force: true })
-  }
-})

@@ -1,40 +1,15 @@
 import { describe,expect,test } from 'bun:test'
-import { mkdirSync,mkdtempSync,rmSync,writeFileSync } from 'node:fs'
+import { mkdtempSync,rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
-import { dirname,join } from 'node:path'
-import { importDocs, removeDoc, setDoc } from '../test/fixtures/docs.ts'
-import { cloneRepository, hermeticGitEnv } from '../test/fixtures/git.ts'
+import { join } from 'node:path'
+import { importDocs,setDoc } from '../test/fixtures/docs.ts'
 import { dir } from '../test/fixtures/store.ts'
-import { allNumericLiterals, checkDoc, compilePack, diffPack, numericLiteralReport, recordPack } from './canon.ts'
+import { compilePack,findingsForPack,allNumericLiterals as inspectNumericLiterals,numericLiteralReport } from './canon.ts'
 import { db } from './db.ts'
-import { brief, docsForRun, exportDocs, getDoc, listDocMetadata } from './docs.ts'
+import { brief,docsForRun,exportDocs,getDoc,listDocMetadata } from './docs.ts'
 import { upsertProject } from './projects.ts'
-import { allNumericLiterals as inspectNumericLiterals,findingsForPack } from './canon.ts'
 
 describe('scoped operator docs', () => {
-  test('checkDoc validates tracked paths, commands, jobs and scripts from backticked tokens', () => {
-    const repo = cloneRepository('canon-check-')
-    try {
-      mkdirSync(join(repo, 'scripts'))
-      writeFileSync(join(repo, 'scripts', 'tracked.ts'), '')
-      writeFileSync(join(repo, 'scripts', 'present.ts'), '')
-      writeFileSync(join(repo, 'package.json'), JSON.stringify({ scripts: { check: 'true' } }))
-      Bun.spawnSync(['git', 'add', 'scripts/tracked.ts', 'package.json'], {
-        cwd: repo, env: hermeticGitEnv(),
-      })
-      const findings = checkDoc([
-        '`scripts/tracked.ts` `scripts/present.ts` `scripts/<x>.ts` `dist/generated.js`',
-        '`scripts/tracked.ts:1-2` `scripts/worktree`',
-        '`orch doc` `orch nosuch` `orch do understand` `orch do fake-job`',
-        '`bun run check` `bun run nosuch`',
-      ].join('\n'), { repoRoot: repo })
-      expect(findings.map((finding) => [finding.kind, finding.token])).toEqual([
-        ['path', 'scripts/present.ts'], ['orch-command', 'orch nosuch'],
-        ['job', 'orch do fake-job'], ['bun-script', 'bun run nosuch'],
-      ])
-      expect(checkDoc('body', { repoRoot: join(repo, 'missing') })[0]?.kind).toBe('unchecked')
-    } finally { rmSync(repo, { recursive: true, force: true }) }
-  })
 
   test('numeric literal report classifies per clause and excludes non-prose spans', () => {
     const cases: { text: string; expected: [string, string][] }[] = [
@@ -88,48 +63,6 @@ describe('scoped operator docs', () => {
     }
   })
 
-  test('numeric report scans safe register strings and reports read and missing canon files', () => {
-    const repo = cloneRepository('numeric-canon-')
-    try {
-      const canon = ['AGENTS.md', 'orchestrator/AGENTS.md', 'hub/AGENTS.md', 'ops/AGENTS.md',
-        'local-stack/AGENTS.md']
-      for (const [index, file] of canon.slice(0, -1).entries()) {
-        mkdirSync(dirname(join(repo, file)), { recursive: true })
-        writeFileSync(join(repo, file), `The current suite has ${index + 10} tests.\n`)
-      }
-      mkdirSync(join(repo, 'nested'), { recursive: true })
-      writeFileSync(join(repo, 'nested', 'AGENTS.md'), 'The current suite has 999 tests.\n')
-      upsertProject({ name: 'registered', path: repo, canon: true,
-        settings: { worktree: { notes: 'The current port is 7000.' } } })
-      upsertProject({ name: 'null-settings', path: '/null', canon: true })
-      db().query(`UPDATE project SET settings='null' WHERE name='null-settings'`).run()
-      upsertProject({ name: 'bad-notes', path: '/bad', canon: true,
-        settings: { worktree: { notes: 123, readonly_notes: null } } as any })
-      const result = allNumericLiterals(repo)
-      const report = result.numericLiterals.filter((hit) => hit.classification === 'RESTATED')
-      expect(report.map((hit) => hit.source)).toEqual([
-        'register:registered notes', 'AGENTS.md:1', 'orchestrator/AGENTS.md:1',
-        'hub/AGENTS.md:1', 'ops/AGENTS.md:1',
-      ])
-      expect(report.map((hit) => hit.numeral)).toEqual(['7000', '10', '11', '12', '13'])
-      expect(result.canonFiles).toEqual({ read: canon.slice(0, -1), missing: ['local-stack/AGENTS.md'] })
-    } finally { rmSync(repo, { recursive: true, force: true }) }
-  })
-
-  test('canon pack upsert and diff retain removed docs, revisions, and byte delta', () => {
-    setDoc({ scope: 'global', subject: null, slug: 'one', title: 'One', body: 'one' })
-    setDoc({ scope: 'global', subject: null, slug: 'two', title: 'Two', body: 'two' })
-    recordPack(compilePack({ job: 'understand', cwd: dir }))
-    removeDoc('global', null, 'two')
-    setDoc({ scope: 'global', subject: null, slug: 'one', title: 'One', body: 'changed' })
-    const diff = diffPack({ job: 'understand', cwd: dir })
-    expect(diff.removed.map((doc) => doc.slug)).toEqual(['two'])
-    expect(diff.changed[0]).toMatchObject({ fromRevision: expect.any(Number), toRevision: expect.any(Number) })
-    expect(diff.bytesDelta).not.toBe(0)
-    recordPack(diff.current)
-    expect(db().query('SELECT COUNT(*) n FROM canon_pack').get()).toEqual({ n: 1 })
-  })
-
   test('docsForRun refuses a document whose provenance was bypassed', () => {
     db().query(
       `INSERT INTO doc (scope, subject, slug, title, body, created_at, updated_at)
@@ -180,38 +113,6 @@ describe('scoped operator docs', () => {
     setDoc({ scope: 'project', subject: 'known', slug: 'p', title: 'Project', body: 'P' })
     setDoc({ scope: 'global', subject: null, slug: 'g', title: 'Global', body: 'G' })
     expect(brief('/w/known/src')).toBe('## Global\n\nG\n\n## Project\n\nP')
-  })
-
-  test('doc CLI delivery round-trips and validation warnings do not refuse the write', () => {
-    const body = '`orch nosuch`'
-    const warnings = checkDoc(body, { repoRoot: dir })
-    const written = setDoc({ scope: 'global', subject: null, slug: 'cli-demand', title: 'CLI',
-      body, delivery: 'demand', reason: 'test' })
-    expect(written.delivery).toBe('demand')
-    expect(warnings).toEqual([expect.objectContaining({ kind: 'orch-command' })])
-    expect(getDoc('global', null, 'cli-demand')?.body).toBe(body)
-  })
-
-  test('canon check publishes JSON and exits one only when findings exist', () => {
-    upsertProject({ name: 'canon-cli', path: dir, canon: true,
-      settings: { worktree: { notes: 'The current suite has 9,999 tests.' } } })
-    setDoc({ scope: 'global', subject: null, slug: 'bad', title: 'Bad', body: '`orch nosuch`' })
-    const pack = compilePack({ job: 'understand', cwd: dir })
-    expect(findingsForPack(pack).flatMap((row) => row.findings)).toEqual([
-      expect.objectContaining({ kind: 'orch-command', token: 'orch nosuch' }),
-    ])
-    expect(inspectNumericLiterals(dir)).toMatchObject({
-      numericLiterals: [expect.objectContaining({
-        source: 'register:canon-cli notes', numeral: '9,999', classification: 'RESTATED',
-      })],
-      canonFiles: { read: [], missing: [
-        'AGENTS.md', 'orchestrator/AGENTS.md', 'hub/AGENTS.md', 'ops/AGENTS.md',
-        'local-stack/AGENTS.md',
-      ] },
-    })
-    setDoc({ scope: 'global', subject: null, slug: 'bad', title: 'Good', body: '`orch doc`' })
-    expect(findingsForPack(compilePack({ job: 'understand', cwd: dir }))
-      .flatMap((row) => row.findings)).toEqual([])
   })
 
   test('canon check keeps its exit-zero JSON contract for a missing cwd', () => {

@@ -1,5 +1,5 @@
 /**
- * Opt-in CLI-leg instrumenter. Activated by ORCH_GATE_TIMINGS (a JSON path, or
+ * Opt-in test instrumenter. Activated by ORCH_GATE_TIMINGS (a JSON path, or
  * any non-empty value to auto-place under orchestrator/runs/gate-timings/).
  *
  * Counts Bun.spawn / Bun.spawnSync and fixture-store bootstraps per test file

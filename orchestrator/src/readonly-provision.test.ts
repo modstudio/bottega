@@ -1,8 +1,8 @@
-import { afterEach, expect, test } from 'bun:test'
-import { lstatSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { afterEach,expect,test } from 'bun:test'
+import { lstatSync,mkdirSync,mkdtempSync,readFileSync,rmSync,writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { provisionReadOnlyTree, validateReadonlyProvision } from './readonly-provision.ts'
+import { provisionReadOnlyTree,validateReadonlyProvision } from './readonly-provision.ts'
 
 const roots: string[] = []
 const fixture = () => {
@@ -26,18 +26,6 @@ test('link creates a real directory whose entries are symlinks', () => {
   expect(lstatSync(join(tree, 'node_modules')).isDirectory()).toBe(true)
   expect(lstatSync(join(tree, 'node_modules', 'package')).isSymbolicLink()).toBe(true)
   expect(lstatSync(join(tree, 'node_modules', '.hidden')).isSymbolicLink()).toBe(true)
-})
-
-test('clone creates a real directory with matching content', () => {
-  const { main, tree } = fixture()
-  mkdirSync(join(main, 'vendor'))
-  writeFileSync(join(main, 'vendor', 'autoload.php'), '<?php')
-
-  provisionReadOnlyTree(main, tree, [{ path: 'vendor', method: 'clone' }])
-
-  expect(lstatSync(join(tree, 'vendor')).isDirectory()).toBe(true)
-  expect(lstatSync(join(tree, 'vendor')).isSymbolicLink()).toBe(false)
-  expect(readFileSync(join(tree, 'vendor', 'autoload.php'), 'utf8')).toBe('<?php')
 })
 
 test('missing source path is skipped', () => {

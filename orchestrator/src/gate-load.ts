@@ -1,7 +1,13 @@
 import { existsSync, mkdirSync, readdirSync, rmSync, writeFileSync } from 'node:fs'
 import { cpus, freemem, loadavg, tmpdir } from 'node:os'
 import { join } from 'node:path'
-import type { HostLoad } from './gate-policy.ts'
+
+export type HostLoad = {
+  gates: number
+  loadavg: number
+  ncpu: number
+  freeMem: number
+}
 
 /** Two concurrent gates is the measured safe operating point (DEV-375). */
 export const GATE_CONCURRENCY_LIMIT = 2

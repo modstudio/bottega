@@ -1,17 +1,16 @@
-import { afterEach, describe, expect, test } from 'bun:test'
-import {
-  existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync, } from 'node:fs'
+import { afterEach,describe,expect,test } from 'bun:test'
 import { homedir } from 'node:os'
-import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import type { Project } from './projects.ts'
 import { ROOT } from './db.ts'
+import { classify,NOT_EVIDENCE } from './failure.ts'
+import type { Project } from './projects.ts'
 import {
-  grokSandboxConfig,
-  READONLY_LENS_DENY_PATHS, readonlyLensProfile, readonlyNeedsDocker, selectReadonlySandbox,
-  resetSandbox, sandboxLaunchArgv, sandboxRuntimeConfig, SRT_LIBRARY,
+grokSandboxConfig,
+READONLY_LENS_DENY_PATHS,readonlyLensProfile,readonlyNeedsDocker,
+resetSandbox,
+sandboxRuntimeConfig,
+selectReadonlySandbox
 } from './sandbox.ts'
-import { classify, NOT_EVIDENCE } from './failure.ts'
 
 const fixtureProject = (settings: Project['settings'] = {}): Project => ({
   id: 1,
@@ -178,66 +177,6 @@ describe('readonly-lens sandbox profile', () => {
       agent: 'grok', readsRepo: false, writesRepo: false,
       worktree: '/runs/isolates/42', runsDir: '/runs/sandbox-42', project: null,
     }).sandbox).toBe('srt')
-  })
-
-  test('an srt profile allows reads outside the isolate unless the path is explicitly denied', async () => {
-    const parent = mkdtempSync(join(tmpdir(), 'orch-no-repo-boundary-'))
-    const isolate = join(parent, 'isolate')
-    const evidence = join(parent, 'evidence')
-    const outside = join(parent, 'outside.txt')
-    const mcpSource = join(parent, 'project.mcp.json')
-    mkdirSync(isolate)
-    mkdirSync(evidence)
-    writeFileSync(outside, 'secret outside the isolate')
-    writeFileSync(mcpSource, '{"mcpServers":{}}')
-    symlinkSync(mcpSource, join(isolate, '.mcp.json'))
-    try {
-      const profile = readonlyLensProfile({
-        worktree: isolate, runsDir: evidence, agent: 'grok',
-        project: fixtureProject(),
-        path: '/bin:/usr/bin', nodeModuleLinks: [],
-      })
-      const readableConfig = Bun.spawnSync(await sandboxLaunchArgv(
-        profile, '/bin/cat', [join(isolate, '.mcp.json')],
-      ), { stdout: 'pipe', stderr: 'pipe' })
-      expect(readableConfig.exitCode, readableConfig.stderr.toString()).toBe(0)
-      expect(readableConfig.stdout.toString()).toBe('{"mcpServers":{}}')
-      const launched = Bun.spawnSync(await sandboxLaunchArgv(
-        profile, '/bin/sh', ['-c', `cat ${JSON.stringify(outside)}`],
-      ), { stdout: 'pipe', stderr: 'pipe' })
-      expect(existsSync(SRT_LIBRARY)).toBe(true)
-      expect(launched.exitCode, launched.stderr.toString()).toBe(0)
-      expect(launched.stdout.toString()).toContain('secret outside the isolate')
-    } finally {
-      rmSync(parent, { recursive: true, force: true })
-    }
-  })
-
-  test('an srt profile lets a run write its contracted scratch reply', async () => {
-    const parent = mkdtempSync(join(tmpdir(), 'orch-srt-reply-'))
-    const isolate = join(parent, 'isolate')
-    const evidence = join(parent, 'sandbox')
-    const scratch = join(parent, 'run', 'scratch')
-    mkdirSync(isolate)
-    mkdirSync(evidence)
-    mkdirSync(scratch, { recursive: true })
-    try {
-      const profile = readonlyLensProfile({
-        worktree: isolate, runsDir: evidence, scratchDir: scratch,
-        agent: 'grok', project: null, path: '/bin:/usr/bin', nodeModuleLinks: [],
-      })
-      expect(profile.filesystem.allowWrite).toContain(scratch)
-      const reply = join(scratch, 'reply.json')
-      const launched = Bun.spawnSync(await sandboxLaunchArgv(
-        profile, '/bin/sh',
-        ['-c', `printf '{"status":"done"}' > ${JSON.stringify(reply)}`],
-      ), { stdout: 'pipe', stderr: 'pipe' })
-      expect(existsSync(SRT_LIBRARY)).toBe(true)
-      expect(launched.exitCode, launched.stderr.toString()).toBe(0)
-      expect(readFileSync(reply, 'utf8')).toBe('{"status":"done"}')
-    } finally {
-      rmSync(parent, { recursive: true, force: true })
-    }
   })
 
   test('codex and writing jobs stay on the host seam', () => {

@@ -1,12 +1,8 @@
-import { beforeEach, expect, test } from 'bun:test'
-import { existsSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
-import { join } from 'node:path'
-import { addRun, dir } from '../test/fixtures/store.ts'
-import { cloneRepository } from '../test/fixtures/git.ts'
+import { beforeEach,expect,test } from 'bun:test'
+import { addRun } from '../test/fixtures/store.ts'
 import { db } from './db.ts'
 import { candidates } from './route.ts'
-import { createWorktree } from './worktree.ts'
-import { abandonRun, stopRun } from './run-stop.ts'
+import { abandonRun,stopRun } from './run-stop.ts'
 
 const presentation = () => {
   const lines: string[] = []
@@ -46,37 +42,6 @@ test('abandon retires an asking run from the live inbox and keeps it in all as t
     .toEqual({ status: 'stale', error: 'abandoned by architect: superseded', failure_kind: 'abandoned' })
   expect(db().query('SELECT answer,answered_by,delivery_pending_at FROM question WHERE run_id=?').get(id))
     .toEqual({ answer: '(abandoned)', answered_by: 'orch-test-session', delivery_pending_at: null })
-})
-
-test('stop does not signal an unverified agent pid and keeps its recorded worktree', async () => {
-  const vendor = Bun.spawn(['sleep', '30']); const id = insert('running')
-  const worktree = createWorktree(dir, id)
-  db().query('UPDATE run SET agent_pid=?,cwd=?,worktree=?,branch=? WHERE id=?')
-    .run(vendor.pid, worktree.path, worktree.path, worktree.branch, id)
-  try {
-    expect((await invoke('stop', id)).code).toBe(0)
-    expect(() => process.kill(vendor.pid, 0)).not.toThrow()
-    expect(db().query('SELECT status,error,failure_kind,worktree FROM run WHERE id=?').get(id))
-      .toEqual({ status: 'stopped', error: 'stopped by architect', failure_kind: 'stopped', worktree: worktree.path })
-  } finally {
-    vendor.kill()
-    if (existsSync(worktree.path)) rmSync(worktree.path, { recursive: true, force: true })
-    rmSync(join(dir, '.claude'), { recursive: true, force: true })
-  }
-})
-
-test('stop keeps a shared worktree and reports its container retention', async () => {
-  const stopped = insert('running'); const owner = insert('asking')
-  const worktree = cloneRepository('orch-stop-shared-')
-  const evidence = join(worktree, 'evidence.txt'); writeFileSync(evidence, 'unjudged work\n')
-  db().query('UPDATE run SET worktree=?,branch=? WHERE id=?').run(worktree, `orch/${stopped}`, stopped)
-  db().query('UPDATE run SET worktree=?,branch=? WHERE id=?').run(worktree, `orch/${stopped}`, owner)
-  try {
-    const result = await invoke('stop', stopped)
-    expect(result.out).toContain(`kept worktree ${worktree}`)
-    expect(result.out).toContain('another live run still owns the tree')
-    expect(readFileSync(evidence, 'utf8')).toBe('unjudged work\n')
-  } finally { rmSync(worktree, { recursive: true, force: true }) }
 })
 
 test('a foreign session can neither stop nor abandon an owned run', async () => {

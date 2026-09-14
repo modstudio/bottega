@@ -229,7 +229,7 @@ export function seedGuidance(seeds: string[]): string {
 export const CLI_COMMANDS = new Set([
   "abandon", "agent", "agents", "answer", "ask-server", "blockers", "canon", "close-out",
   "confinement", "continue", "contract", "diff", "discard", "do", "doc", "doctor", "epic",
-  "flake", "guide", "health", "inbox", "init-db", "issue", "jobs", "judge", "lens", "mcp",
+  "guide", "health", "inbox", "init-db", "issue", "jobs", "judge", "lens", "mcp",
   "metric", "migrate", "monitor", "note", "peek", "pending", "pick", "port", "project",
   "recalibrate", "reclaim", "reclassify-failures", "reconcile", "result", "retry", "review",
   "routing-backtest", "run", "runs", "score", "search", "serve", "setup-ask", "spawns",

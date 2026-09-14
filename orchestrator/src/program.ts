@@ -4,7 +4,6 @@ import { Command, CommanderError } from 'commander'
 import { recordSessionSeen } from './db.ts'
 import { register as registerCleanup } from './commands/cleanup.ts'
 import { register as registerDocs } from './commands/docs.ts'
-import { register as registerGate } from './commands/gate.ts'
 import { register as registerHealth } from './commands/health.ts'
 import { register as registerInbox } from './commands/inbox.ts'
 import { register as registerJudgement } from './commands/judgement.ts'
@@ -26,7 +25,6 @@ export const program = new Command()
   .allowExcessArguments(false)
   .showSuggestionAfterError()
 
-registerGate(program)
 registerReview(program)
 registerDocs(program)
 registerRunListing(program)

@@ -815,8 +815,8 @@ in the branch and gated again. Merge on GitHub; afterwards the main checkout
 pulls the landing branch and runs migrations. Carry a lens from an older tree
 manually with DEV-270's four facts instead of re-lensing it. Rebase a branch
 that has fallen behind trunk in the same breath as its resume or lens dispatch;
-the harness refuses a stale caller. Retry a gate once when a ceiling flake
-stops it, then record the flake on DEV-315 rather than opening another task.
+the harness refuses a stale caller. A red gate is a real finding: fix it or
+report it, without a retry path that can turn the same failure green.
 
 ### END
 
@@ -1799,32 +1799,16 @@ before, 160 of 160 after.
 
 ## The test gate
 
-The gate is sized to this machine, not to an idle one. Nine failures in a day
-were bounds written for a quiet host: 5 s defaults on tests that spawn orch and
-git, a 1 s docker inventory bound, an 8 s elapsed assertion, a lock-waiter whose
-children took seconds to start under four concurrent gates. Two per-test bounds
-were raised by hand; this paragraph is the policy.
+The gate is one in-process `bun test` invocation over `orchestrator/src`, with
+the test preload, under the shared host-load hold. The hold admits at most two
+running gates and also waits while loadavg is at or above ncpu or free RAM is
+under 1 GiB; `gate-load.ts` defines that shared limit.
 
-Every CLI test file declares a size in `orchestrator/test/shards.json`: **short**
-(30 s), **moderate** (120 s) or **long** (600 s). The shard runner passes that
-bound; the unit leg keeps 5 s. Files that hold project locks are **exclusive**
-and never share a shard with each other.
-
-The gate retries a failed shard **once**, and only when the failure matches a
-named signal: a timeout, exit 143, a lock wait, or a listen EPERM. A pass after
-that fail is **FLAKY**: printed on the gate report and recorded in `test_flake`
-(test, file, count, load at failure), which `orch health` shows. Two flakes of
-one test in a week are printed as a question to the operator and are not retried
-again. There is no blanket retry.
-
-The shard runner measures host load — running gates, CPU, memory — and holds a
-shard while more than two gates are running, or while loadavg is at or above
-ncpu, or while free RAM is under 1 GiB. `gate-load.ts` defines that shared
-limit. Sub-second product bounds that tests exercise (the
-sweep's docker inventory 1 s, and elapsed assertions that must stay well under
-a lock wait) are set from the file's size class: docker via
-`ORCH_DOCKER_INVENTORY_TIMEOUT_MS` when the shard runs; elapsed via
-`elapsedAssertionMs` (short 50, moderate 200, long 1000).
+The invocation emits a junit timing artefact and a per-file timing table. The
+timing ratchet compares its total with the committed baseline and only moves
+down. The spawn rule is fixed: a unit test file measured above 20 Bun spawn or
+spawnSync calls fails the gate. There are no size classes, shards, subprocess
+test leg, or retry path.
 
 ## Agent capabilities are not interchangeable
 
