@@ -1447,7 +1447,7 @@ export async function run(opts: {
       startedAt: started,
       write: writes,
       sandbox: repoJob ? 'workspace-write' : 'read-only',
-      mcp: usingMcp,
+      mcp: usingMcp, mcpServer: mcpServerName ?? undefined,
       trustCwd: mcpTrustGranted ? cwd : undefined,
       writableRoots,
       gitObjectEnvironment,
