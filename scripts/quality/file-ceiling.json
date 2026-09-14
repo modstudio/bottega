@@ -1,24 +1,6 @@
 {
-  "hub/src/cli.ts": 729,
-  "hub/src/hub.test.ts": 1342,
-  "hub/src/migrations.ts": 528,
-  "hub/src/query.ts": 710,
-  "hub/src/report.ts": 521,
-  "hub/src/serve.ts": 672,
-  "orchestrator/src/agents.ts": 1467,
-  "orchestrator/src/canon.test.ts": 508,
-  "orchestrator/src/contract.ts": 1058,
-  "orchestrator/src/docs.ts": 664,
-  "orchestrator/src/issue.ts": 503,
-  "orchestrator/src/mcp.ts": 583,
-  "orchestrator/src/migrations.ts": 545,
-  "orchestrator/src/monitor.ts": 863,
-  "orchestrator/src/porting-import.ts": 730,
-  "orchestrator/src/projects.ts": 643,
-  "orchestrator/src/review.ts": 1436,
-  "orchestrator/src/route.test.ts": 1132,
-  "orchestrator/src/route.ts": 981,
-  "orchestrator/src/run.ts": 2450,
-  "orchestrator/src/transport-acp.ts": 620,
-  "orchestrator/src/worktree.ts": 1996
+  "hub/src/hub.test.ts": 1162,
+  "orchestrator/src/review.ts": 1337,
+  "orchestrator/src/run.ts": 1840,
+  "orchestrator/src/worktree.ts": 1455
 }

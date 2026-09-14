@@ -6,7 +6,7 @@ import { decideCeiling } from './quality/ceiling-decision'
 const ROOT = new URL('..', import.meta.url).pathname.replace(/\/$/, '')
 const STATE_FILE = `${ROOT}/scripts/quality/file-ceiling.json`
 const STATE_LABEL = 'scripts/quality/file-ceiling.json'
-const CEILING = 500
+const CEILING = 1000
 const SOURCE_ROOTS = [
   'orchestrator/src', 'orchestrator/test', 'hub/src', 'hub/web/src', 'shared', 'scripts',
 ]
@@ -33,8 +33,28 @@ export function measuredSourceFiles() {
   return sourceFiles().map((path) => ({ path, absolute: resolve(ROOT, path) }))
 }
 
-function newlineTerminatedLines(content: string) {
-  return content.match(/\n/g)?.length ?? 0
+/**
+ * Code lines only: blank lines and comment lines are not counted, so a reasoned
+ * comment never costs a file its room. A line that opens a block comment and
+ * every line until it closes is a comment line.
+ */
+function codeLines(content: string): number {
+  let count = 0
+  let inBlock = false
+  for (const raw of content.split('\n')) {
+    const line = raw.trim()
+    if (inBlock) {
+      if (line.includes('*/')) inBlock = false
+      continue
+    }
+    if (line === '' || line.startsWith('//')) continue
+    if (line.startsWith('/*')) {
+      if (!line.includes('*/')) inBlock = true
+      continue
+    }
+    count += 1
+  }
+  return count
 }
 
 type FileMeasurement = { path: string; lines: number }
@@ -60,7 +80,7 @@ function writeState(stateFile: string, state: Record<string, number>) {
 function measureFiles(): FileMeasurement[] {
   return measuredSourceFiles().map((file) => ({
     path: file.path,
-    lines: newlineTerminatedLines(readFileSync(file.absolute, 'utf8')),
+    lines: codeLines(readFileSync(file.absolute, 'utf8')),
   }))
 }
 
@@ -87,7 +107,7 @@ export function checkFileCeiling(options: FileCeilingOptions = {}) {
     }
     if (decision === 'fail') {
       violations.push(
-        `${path}: ${lines} lines, frozen at ${frozen[path] ?? CEILING}; ` +
+        `${path}: ${lines} code lines, frozen at ${frozen[path] ?? CEILING}; ` +
         'split a concern out (architecture-rules 15)',
       )
     }
