@@ -1,49 +1,34 @@
-# Calibration run for DEV-450. This deliberately does NOT gate anything yet:
-# it exists to find out which of the suite's host-dependent tests behave
-# differently on a hosted Linux runner than on the operator's macOS machine.
-# Read its result against a local run before wiring any check to it.
+# The remote gate. It runs the same `bun run check` the local gate runs, on
+# every pull request and every push to main that touches code, so a green
+# here is the same evidence as a green on the operator's machine. The local
+# gate proves a commit; this run admits it.
 name: ci
 
-# MANUAL ONLY, deliberately. The suite is not fit to run here yet: 1,711 tests,
-# 874s serial, 84% of it in CLI subprocess tests. Running it on every push buys
-# a slow, flaky signal at the cost of the whole free-minute budget.
-#
-# Automatic triggers go back on when the suite is right-sized under DEV-450.
-# The path filters that belong here are kept below, commented, so restoring
-# them is one edit rather than a rewrite.
-#
-# on:
-#   pull_request:
-#     paths: ['**.ts', '**.tsx', '**/package.json', 'bun.lock',
-#             '**/bunfig.toml', '**/tsconfig.json', 'scripts/**',
-#             'orchestrator/test/**', '.githooks/**', '.github/workflows/ci.yml']
-#   push:
-#     branches: [main]
-#     paths: [ ...same... ]
 on:
+  pull_request:
+    paths: ['**.ts', '**.tsx', '**/package.json', 'bun.lock',
+            '**/bunfig.toml', '**/tsconfig.json', 'scripts/**',
+            'orchestrator/test/**', '.githooks/**', '.github/workflows/ci.yml']
+  push:
+    branches: [main]
+    paths: ['**.ts', '**.tsx', '**/package.json', 'bun.lock',
+            '**/bunfig.toml', '**/tsconfig.json', 'scripts/**',
+            'orchestrator/test/**', '.githooks/**', '.github/workflows/ci.yml']
   workflow_dispatch:
 
 jobs:
-  suite:
+  check:
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
         with:
+          # The timing ratchet and the canon checks read trunk history.
           fetch-depth: 0
 
       - uses: oven-sh/setup-bun@v2
         with:
           bun-version: 1.3.14
-
-      # The suite creates real git worktrees, commits and ref transactions.
-      # Without an identity those operations fail for a reason that has nothing
-      # to do with the code under test.
-      - name: Give git an identity
-        run: |
-          git config --global user.email ci@example.invalid
-          git config --global user.name  ci
-          git config --global init.defaultBranch main
 
       - name: Install
         run: |
@@ -52,36 +37,11 @@ jobs:
           (cd hub && bun install --silent)
           (cd hub/web && bun install --silent)
 
-      - name: Typecheck
-        run: |
-          (cd orchestrator && bun run typecheck)
-          (cd hub && bun run typecheck)
-          (cd hub/web && bun run typecheck)
-
-      # Reported per package so a Linux-specific failure is attributable to one
-      # suite rather than to "the gate". continue-on-error because this run is
-      # calibration: we want the whole picture, not the first failure.
-      - name: orchestrator suite
-        id: orch
-        continue-on-error: true
-        run: cd orchestrator && bun run test:gate
-
-      - name: hub suite
-        id: hub
-        continue-on-error: true
-        run: cd hub && bun run test
-
-      - name: hub/web suite
-        id: web
-        continue-on-error: true
-        run: cd hub/web && bun run test && bun run build
-
-      - name: Calibration summary
-        run: |
-          {
-            echo "| suite | result |"
-            echo "|---|---|"
-            echo "| orchestrator | ${{ steps.orch.outcome }} |"
-            echo "| hub | ${{ steps.hub.outcome }} |"
-            echo "| hub/web | ${{ steps.web.outcome }} |"
-          } >> "$GITHUB_STEP_SUMMARY"
+      # One command, the same one the local gate runs: typechecks, every
+      # suite, the web build, and the boundary, ceiling, timing, spawn,
+      # fixture, brand and canon checks. CI=1 makes timing growth fatal here,
+      # where it is informational locally.
+      - name: Check
+        env:
+          CI: "1"
+        run: bun run check
