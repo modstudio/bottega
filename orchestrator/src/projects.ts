@@ -44,7 +44,15 @@ export type Project = {
   stack: string | null
   /** Whether work here counts toward the canon denominator in the ratio. */
   canon: boolean
-  /** Per-project JSON; relied-on shapes are named and validated below. */
+  /**
+   * Per-project settings, as JSON.
+   *
+   * A blob rather than columns because what a project needs to declare is not
+   * knowable in advance — a tracker's status vocabulary, a display colour, the
+   * branch its trunk is called — and every one of those added as a column would
+   * be another thing the code has to know about. The shapes that ARE relied on
+   * are named in `ProjectSettings`, so the reliance is at least written down.
+   */
   settings: ProjectSettings
 }
 export type ProjectSettings = {
