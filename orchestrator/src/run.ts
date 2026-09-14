@@ -60,6 +60,7 @@ import {
   type TransportName, type TransportStartOpts, type TransportResult,
 } from './transport.ts'
 import { appendRunEvent, teeTransportEvents } from './events.ts'
+import { codexMcpSetupHeader, codexProjectServersForRun } from './codex-mcp-scope.ts'
 import { checkpointRun, DEFAULT_CHECKPOINT_MINUTES, latestCheckpoint, recordFailedIdlePreservation } from './checkpoint.ts'
 import { decideOutcome, finalizeWorkerReply } from './outcome.ts'
 import { assessEvidence, assessEvidencePrompt, recordEvidence } from './evidence.ts'
@@ -1191,10 +1192,9 @@ export async function run(opts: {
     assertSharedRefGuardOutsideWritableRoots(gitConfigEnvironment.GIT_CONFIG_VALUE_0, writableRoots)
   }
   const mcpConfig = readMcpConfig(cwd)
-  const mcpServerName = mcpConnection?.server
-    ?? projectAt(callerCwd)?.settings.mcpServer
-    ?? projectAt(callerCwd)?.name
-    ?? null
+  const codexMcpScope = codexProjectServersForRun(name, transportName, usingMcp, mcpConfig, projectAt(callerCwd), cwd)
+  mcpSetupHeader = codexMcpSetupHeader(mcpSetupHeader, codexMcpScope)
+  const mcpServerName = mcpConnection?.server ?? projectAt(callerCwd)?.settings.mcpServer ?? projectAt(callerCwd)?.name ?? null
   const mcpAllowlist = mcpConfigAllowlist(mcpConfig)
   let sandboxSelection: ReturnType<typeof selectReadonlySandbox>
   try {
@@ -1445,7 +1445,7 @@ export async function run(opts: {
       startedAt: started,
       write: writes,
       sandbox: repoJob ? 'workspace-write' : 'read-only',
-      mcp: usingMcp, mcpServer: mcpServerName ?? undefined,
+      mcp: usingMcp, mcpServer: mcpServerName ?? undefined, projectServers: codexMcpScope?.servers,
       trustCwd: mcpTrustGranted ? cwd : undefined,
       writableRoots,
       gitObjectEnvironment,

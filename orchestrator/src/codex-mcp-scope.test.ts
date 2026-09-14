@@ -3,7 +3,7 @@ import { expect, test } from 'bun:test'
 import { dirname, join } from 'node:path'
 import { AGENTS } from './agents.ts'
 import {
-  CODEX_ASK_ENV_VARS, CODEX_REASONING_EFFORT, codexScopeArgs,
+  CODEX_ASK_ENV_VARS, CODEX_REASONING_EFFORT, codexProjectServers, codexScopeArgs,
 } from './codex-mcp-scope.ts'
 import { ROOT } from './database-location.ts'
 
@@ -24,6 +24,38 @@ test('MCP Codex receives only orch-ask, orch, and its required project server', 
   expect(argv).toContain(
     `mcp_servers.starship={command=${JSON.stringify(join(home, '.claude/mcp/mcp-run'))},args=["starship"]}`,
   )
+})
+
+test('project MCP scope selects allowed credential-free launch definitions', () => {
+  const cwd = '/project'
+  const scope = codexProjectServers({
+    relative: { name: 'relative', command: 'scripts/mcp/server', args: ['serve'] },
+    bare: { name: 'bare', command: 'npx' },
+    remote: { name: 'remote', url: 'https://mcp.example.test' },
+    secretHeader: { name: 'secretHeader', url: 'https://secret.test', headers: { Authorization: 'token' } },
+    secretEnv: { name: 'secretEnv', command: 'node', env: { TOKEN: '${TOKEN}' } },
+    excluded: { name: 'excluded', command: 'bash' },
+  }, ['relative', 'bare', 'remote', 'secretHeader', 'secretEnv'], cwd)
+  expect(scope).toEqual({
+    servers: {
+      relative: { command: join(cwd, 'scripts/mcp/server'), args: ['serve'], cwd },
+      bare: { command: 'npx', args: [], cwd },
+      remote: { url: 'https://mcp.example.test' },
+    },
+    withheld: ['secretHeader', 'secretEnv'],
+  })
+})
+
+test('project server overlay takes the place of the mcp-run definition for the same name', () => {
+  const projectServer = { command: '/project/scripts/mcp/server', args: [], cwd: '/project' }
+  const entries = serverEntries(codexScopeArgs({
+    mcp: true, mcpServer: 'starship', home: '/operator', projectServers: { starship: projectServer },
+  }))
+  expect(entries).toContain(
+    'mcp_servers.starship={command="/project/scripts/mcp/server",args=[],cwd="/project"}',
+  )
+  expect(entries.filter((entry) => entry.startsWith('mcp_servers.starship='))).toHaveLength(1)
+  expect(entries.join('\n')).not.toContain('.claude/mcp/mcp-run')
 })
 
 test('platform-shaped MCP scope emits orch exactly once', () => {

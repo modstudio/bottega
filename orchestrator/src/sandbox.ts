@@ -7,6 +7,7 @@ import {
   type SandboxRuntimeConfig as LibrarySandboxRuntimeConfig,
 } from '@anthropic-ai/sandbox-runtime'
 import { ROOT } from './db.ts'
+import { disabledProjectMcpServers } from './mcp-probe.ts'
 import type { Project } from './projects.ts'
 
 export type SandboxRuntimeConfig = {
@@ -308,15 +309,6 @@ export function grokSandboxConfig(config: string): string {
   return config.replace(section, (body) => body
     .replace(/(\bcommand\s*=\s*)"[^"]+"/, `$1${JSON.stringify(Bun.which('bun') ?? process.execPath)}`)
     .replace(/(\bargs\s*=\s*\[\s*)"[^"]+"/, `$1${JSON.stringify(join(ROOT, 'src', 'ask-proxy.ts'))}`))
-}
-
-/** Return checkout servers withheld from this project's workers. */
-export function disabledProjectMcpServers(
-  names: string[], allowed: string[] | undefined,
-): string[] {
-  if (allowed === undefined) return []
-  const allow = new Set(allowed)
-  return names.filter((name) => !allow.has(name))
 }
 
 /** Prepare the MCP home and visible scope line only for Grok. */

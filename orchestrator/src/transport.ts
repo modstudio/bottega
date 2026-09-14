@@ -54,6 +54,8 @@ export type ArgvOpts = {
   mcp?: boolean
   /** Required project MCP server already resolved by dispatch. */
   mcpServer?: string
+  /** Credential-free project MCP launch definitions resolved by dispatch. */
+  projectServers?: Record<string, { command?: string; args?: string[]; cwd?: string; url?: string }>
   /** HOME inherited by the vendor process. */
   home?: string
   /** Grok-only scoped trust for the disposable cwd orch created. */
@@ -183,6 +185,7 @@ export type TransportStartOpts = {
   sandbox?: SandboxLevel
   mcp?: boolean
   mcpServer?: string
+  projectServers?: ArgvOpts['projectServers']
   trustCwd?: string
   writableRoots?: ArgvOpts['writableRoots']
   gitObjectEnvironment?: ArgvOpts['gitObjectEnvironment']
