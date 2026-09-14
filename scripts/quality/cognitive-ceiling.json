@@ -709,6 +709,12 @@
     "score": 18
   },
   {
+    "file": "orchestrator/src/run-claim.ts",
+    "function": "claimRun",
+    "line": 137,
+    "score": 122
+  },
+  {
     "file": "orchestrator/src/run-control.ts",
     "function": "follow",
     "line": 31,
@@ -739,6 +745,12 @@
     "score": 46
   },
   {
+    "file": "orchestrator/src/run-live.ts",
+    "function": "runLive",
+    "line": 139,
+    "score": 108
+  },
+  {
     "file": "orchestrator/src/run-liveness.ts",
     "function": "reapStale",
     "line": 172,
@@ -751,16 +763,10 @@
     "score": 26
   },
   {
-    "file": "orchestrator/src/run-claim.ts",
-    "function": "claimRun",
-    "line": 137,
-    "score": 122
-  },
-  {
     "file": "orchestrator/src/run.ts",
     "function": "run",
-    "line": 229,
-    "score": 520,
+    "line": 195,
+    "score": 366,
     "key": "orchestrator/src/run.ts\u0000run"
   },
   {
