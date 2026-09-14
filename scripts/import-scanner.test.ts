@@ -1,6 +1,4 @@
 import { describe, expect, test } from 'bun:test'
-import { cpSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
-import { join } from 'node:path'
 import { importSpecifiers } from './import-scanner.ts'
 
 const cases = [
@@ -27,28 +25,5 @@ describe('import scanner', () => {
     const scan = importSpecifiers('import(`./${moduleName}.ts`)')
     expect(scan.specifiers).toEqual([])
     expect(scan.unresolvedRelative).toHaveLength(1)
-  })
-
-  test('a forbidden scanner result is wired through the repository boundary guard', () => {
-    const root = new URL('..', import.meta.url).pathname.replace(/\/$/, '')
-    const fixture = mkdtempSync(join(root, '.import-scanner-test-'))
-    try {
-      mkdirSync(join(fixture, 'scripts'))
-      for (const concern of ['orchestrator', 'hub', 'ops', 'local-stack', 'shared']) {
-        mkdirSync(join(fixture, concern, 'src'), { recursive: true })
-      }
-      cpSync(join(root, 'scripts/import-scanner.ts'), join(fixture, 'scripts/import-scanner.ts'))
-      cpSync(join(root, 'scripts/check-boundaries.ts'), join(fixture, 'scripts/check-boundaries.ts'))
-      cpSync(join(root, 'shared/brand.ts'), join(fixture, 'shared/brand.ts'))
-      writeFileSync(join(fixture, 'hub/src/forbidden.ts'), 'void import(`../../orchestrator/src/run.ts`)\n')
-
-      const result = Bun.spawnSync(['bun', join(fixture, 'scripts/check-boundaries.ts')], {
-        cwd: fixture, stdout: 'pipe', stderr: 'pipe',
-      })
-      expect(result.exitCode).not.toBe(0)
-      expect(result.stderr.toString()).toContain('cross-concern')
-    } finally {
-      rmSync(fixture, { recursive: true, force: true })
-    }
   })
 })

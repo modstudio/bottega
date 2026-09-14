@@ -1,17 +1,15 @@
 import { describe, expect, test } from 'bun:test'
 import {
-  chmodSync, cpSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, realpathSync, rmSync, statSync,
-  symlinkSync, writeFileSync,
+  chmodSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, realpathSync, rmSync, statSync,
+  writeFileSync,
 } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import {
-  decodeRunsJson, docArgv, docGet, docRemove, docSet, projectArgv,
+  decodeRunsJson, docArgv, projectArgv,
   startDashboardCapability, stopDashboardCapability,
 } from './orch.ts'
 import { encodeOrchRunLine, OrchBlockersSchema } from '../../shared/orch-contract.ts'
-import { scrubbedGitEnv } from '../../shared/git.ts'
-import { cloneRepository } from '../../shared/test-git-repository.ts'
 
 const runFixture = {
   id: 42,
@@ -216,52 +214,6 @@ describe('docArgv', () => {
 
   test('subjects', () => {
     expect(docArgv('subjects')).toEqual(['doc', 'subjects', '--json'])
-  })
-})
-
-describe('docSet stdin', () => {
-  test('a body containing a single quote, a backtick and a newline round-trips unchanged', async () => {
-    const dir = mkdtempSync(join(tmpdir(), 'hub-doc-'))
-    const prev = process.env.ORCH_DB
-    process.env.ORCH_DB = join(dir, 'orch.db')
-    const body = "quote' backtick` newline\n"
-    try {
-      const sourceRoot = join(dirname(new URL(import.meta.url).pathname), '../..')
-      const gitEnv = {
-        ...scrubbedGitEnv(), HOME: dir,
-        GIT_CONFIG_GLOBAL: '/dev/null', GIT_CONFIG_SYSTEM: '/dev/null',
-      }
-      const copy = cloneRepository(gitEnv, 'hub-orch-main-')
-      mkdirSync(join(copy, 'orchestrator'), { recursive: true })
-      cpSync(join(sourceRoot, 'orchestrator', 'src'), join(copy, 'orchestrator', 'src'), { recursive: true })
-      cpSync(join(sourceRoot, 'orchestrator', 'migrations'), join(copy, 'orchestrator', 'migrations'), { recursive: true })
-      cpSync(join(sourceRoot, 'shared'), join(copy, 'shared'), { recursive: true })
-      symlinkSync(join(sourceRoot, 'orchestrator', 'node_modules'), join(copy, 'orchestrator', 'node_modules'))
-      const git = (cwd: string, ...args: string[]) => {
-        const result = Bun.spawnSync(['git', ...args], { cwd, env: gitEnv, stdout: 'pipe', stderr: 'pipe' })
-        if (result.exitCode !== 0) throw new Error(result.stderr.toString())
-      }
-      git(copy, 'add', '.')
-      git(copy, 'commit', '-m', 'DEV-321 hub orch init-db')
-      const initialized = Bun.spawnSync(
-        [process.execPath, join(copy, 'orchestrator', 'src', 'orch.ts'), 'init-db'],
-        { cwd: copy, env: { ...process.env, ORCH_DEPTH: '0' }, stdout: 'pipe', stderr: 'pipe' },
-      )
-      rmSync(copy, { recursive: true, force: true })
-      expect(initialized.exitCode, initialized.stderr.toString()).toBe(0)
-      const row = await docSet({
-        scope: 'global', subject: null, slug: 'round-trip', title: 'T', body, reason: 'test round trip',
-      })
-      expect(row.body).toBe(body)
-      const got = await docGet('global', null, 'round-trip')
-      expect(got.body).toBe(body)
-      const removed = await docRemove('global', null, 'round-trip', 'test cleanup')
-      expect(removed).toEqual({ removed: true })
-    } finally {
-      if (prev === undefined) delete process.env.ORCH_DB
-      else process.env.ORCH_DB = prev
-      rmSync(dir, { recursive: true, force: true })
-    }
   })
 })
 

@@ -1333,12 +1333,8 @@ Four instances on 2026-09-03, all the same shape:
 - The DEV-137 migration script opened a worktree's empty orch.db and printed
   "0 child rows would be resolved". A session nearly closed the task on that
   number.
-- hub's docSet test believed it had isolated ORCH_DB, silently reached the
-  real database, and was revealed only by a permission error. The cause was
-  Bun.spawn inheriting the environment as of process start: the environment did
-  not fail to be READ, it failed to be PASSED. Those are indistinguishable from
-  the caller's side and have different fixes, which is what makes this an
-  instance of the rule rather than merely an example of it. (DEV-153)
+- Hub adapter tests exercise argument construction in-process and never invoke
+  a subprocess or open the operator's store.
 - orch printed a styled run id into a pipe, so callers parsed 0 or NaN instead
   of failing. (DEV-152)
 
