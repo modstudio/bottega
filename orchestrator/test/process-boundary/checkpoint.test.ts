@@ -2,19 +2,19 @@ import { afterEach, describe, expect, test } from 'bun:test'
 import { existsSync, mkdtempSync, rmSync, writeFileSync, readFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
-import { cloneRepository, hermeticGitEnv } from '../test/fixtures/git.ts'
-import { addRun, reapTestProcess } from '../test/fixtures/store.ts'
-import { declaredCreate } from '../test/fixtures/worktree.ts'
-import { db } from './db.ts'
-import { upsertProject } from './projects.ts'
-import { run as runJob } from './run.ts'
-import { prepareSharedRefGuard } from './worktree.ts'
+import { cloneRepository, hermeticGitEnv } from '../fixtures/git.ts'
+import { addRun, reapTestProcess } from '../fixtures/store.ts'
+import { declaredCreate } from '../fixtures/worktree.ts'
+import { db } from '../../src/db.ts'
+import { upsertProject } from '../../src/projects.ts'
+import { run as runJob } from '../../src/run.ts'
+import { prepareSharedRefGuard } from '../../src/worktree.ts'
 import {
   checkpointResumeContext, checkpointRun, PRESERVATION_FAILED_FILE, readTaskPointer,
   recordFailedIdlePreservation,
-} from './checkpoint.ts'
-import { runEventsPath } from './events.ts'
-import { installTestTransport, type AgentTransport, type TransportResult } from './transport.ts'
+} from '../../src/checkpoint.ts'
+import { runEventsPath } from '../../src/events.ts'
+import { installTestTransport, type AgentTransport, type TransportResult } from '../../src/transport.ts'
 
 const roots: string[] = []
 afterEach(() => {

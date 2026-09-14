@@ -1,5 +1,26 @@
 {
   "files": {
+    "test/process-boundary/issue-filing.test.ts": {
+      "size": "short"
+    },
+    "test/process-boundary/heartbeat-hooks.test.ts": {
+      "size": "short"
+    },
+    "test/process-boundary/checkpoint.test.ts": {
+      "size": "short"
+    },
+    "test/process-boundary/idle-kill-signal.test.ts": {
+      "size": "short"
+    },
+    "test/process-boundary/canon-cli.test.ts": {
+      "size": "short"
+    },
+    "test/process-boundary/transport-cli.test.ts": {
+      "size": "short"
+    },
+    "test/process-boundary/dispatch-preflight-cli.test.ts": {
+      "size": "short"
+    },
     "test/process-boundary/hooks-notes.test.ts": {
       "size": "short"
     },
@@ -135,6 +156,13 @@
     {
       "measuredSeconds": 75.42,
       "files": [
+        "test/process-boundary/issue-filing.test.ts",
+        "test/process-boundary/heartbeat-hooks.test.ts",
+        "test/process-boundary/checkpoint.test.ts",
+        "test/process-boundary/idle-kill-signal.test.ts",
+        "test/process-boundary/canon-cli.test.ts",
+        "test/process-boundary/transport-cli.test.ts",
+        "test/process-boundary/dispatch-preflight-cli.test.ts",
         "test/process-boundary/worktree-create.test.ts",
         "test/process-boundary/review-target-evidence.test.ts",
         "test/process-boundary/review-target-selection.test.ts",

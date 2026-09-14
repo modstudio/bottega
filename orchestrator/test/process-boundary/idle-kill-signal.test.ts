@@ -1,19 +1,19 @@
-import { afterEach, describe, expect, test } from 'bun:test'; import { chmodSync, existsSync, readFileSync, rmSync, writeFileSync } from 'node:fs'; import { join } from 'node:path'; import { cloneRepository, hermeticGitEnv } from '../test/fixtures/git.ts'; import { addRun, reapTestProcess, reapTestRun } from '../test/fixtures/store.ts'; import { declaredCreate } from '../test/fixtures/worktree.ts'; import { db } from './db.ts'
-import { classify, NEEDS_HUMAN, NOT_EVIDENCE } from './failure.ts'
-import { JOBS } from './jobs.ts'
-import { upsertProject } from './projects.ts'
-import { candidates } from './route.ts'
-import { run as runJob } from './run.ts'
-import { pidAlive } from './process-liveness.ts'
+import { afterEach, describe, expect, test } from 'bun:test'; import { chmodSync, existsSync, readFileSync, rmSync, writeFileSync } from 'node:fs'; import { join } from 'node:path'; import { cloneRepository, hermeticGitEnv } from '../fixtures/git.ts'; import { addRun, reapTestProcess, reapTestRun } from '../fixtures/store.ts'; import { declaredCreate } from '../fixtures/worktree.ts'; import { db } from '../../src/db.ts'
+import { classify, NEEDS_HUMAN, NOT_EVIDENCE } from '../../src/failure.ts'
+import { JOBS } from '../../src/jobs.ts'
+import { upsertProject } from '../../src/projects.ts'
+import { candidates } from '../../src/route.ts'
+import { run as runJob } from '../../src/run.ts'
+import { pidAlive } from '../../src/process-liveness.ts'
 import { formatIdleKillError, idleKillMayProceed, idleKillMs, installTestProcessSampler, isGroupKillablePgid, isWorkerCpuIdle,
   parseIdleReclaimedMs, parsePsTable, runHasLiveDescendants, shouldIdleKill, terminateProcessGroup,
-  DEFAULT_EXTERNAL_WAIT_IDLE_KILL_MS, DEFAULT_IDLE_KILL_MS } from './idle-kill.ts'
-import { PRESERVATION_FAILED_FILE } from './checkpoint.ts'
-import { CPU_LOCAL_JOBS, IDLE_BELOW_WALL_MS, JOB_TIMEOUTS, jobDeclaredWallMs, jobIdleKillMs } from './jobs.ts'
-import { runScratchDir } from './run-artifacts.ts'
-import { isRoutingEvidence } from './route.ts'
-import { harnessHealth } from './health.ts'
-import { installTestTransport, type AgentTransport, type TransportResult } from './transport.ts'
+  DEFAULT_EXTERNAL_WAIT_IDLE_KILL_MS, DEFAULT_IDLE_KILL_MS } from '../../src/idle-kill.ts'
+import { PRESERVATION_FAILED_FILE } from '../../src/checkpoint.ts'
+import { CPU_LOCAL_JOBS, IDLE_BELOW_WALL_MS, JOB_TIMEOUTS, jobDeclaredWallMs, jobIdleKillMs } from '../../src/jobs.ts'
+import { runScratchDir } from '../../src/run-artifacts.ts'
+import { isRoutingEvidence } from '../../src/route.ts'
+import { harnessHealth } from '../../src/health.ts'
+import { installTestTransport, type AgentTransport, type TransportResult } from '../../src/transport.ts'
 
 const roots: string[] = []
 afterEach(() => {

@@ -3,11 +3,11 @@ import { Database } from 'bun:sqlite'
 import { chmodSync, copyFileSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { PLATFORM_SLUG } from '../../shared/brand.ts'
+import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 
-const guard = new URL('../hooks/heartbeat-guard.py', import.meta.url).pathname
-const remind = new URL('../hooks/heartbeat-remind.py', import.meta.url).pathname
-const heartbeat = new URL('../hooks/orch-heartbeat.sh', import.meta.url).pathname
+const guard = new URL('../../hooks/heartbeat-guard.py', import.meta.url).pathname
+const remind = new URL('../../hooks/heartbeat-remind.py', import.meta.url).pathname
+const heartbeat = new URL('../../hooks/orch-heartbeat.sh', import.meta.url).pathname
 const roots: string[] = []
 
 afterEach(() => {

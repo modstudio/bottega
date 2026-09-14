@@ -3,15 +3,15 @@ import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js'
 import { describe,expect,setDefaultTimeout,test } from 'bun:test'
 import { rmSync } from 'node:fs'
 import { join } from 'node:path'
-import { PLATFORM_SLUG } from '../../shared/brand.ts'
-import { dir } from '../test/fixtures/store.ts'
-import { parseFiledIssue } from './issue.ts'
-import { createDocsMcpServer } from './mcp.ts'
-import { upsertProject } from './projects.ts'
+import { PLATFORM_SLUG } from '../../../shared/brand.ts'
+import { dir } from '../fixtures/store.ts'
+import { parseFiledIssue } from '../../src/issue.ts'
+import { createDocsMcpServer } from '../../src/mcp.ts'
+import { upsertProject } from '../../src/projects.ts'
 
 setDefaultTimeout(20_000)
 
-const hubCli = new URL('../../hub/src/cli.ts', import.meta.url).pathname
+const hubCli = new URL('../../../hub/src/cli.ts', import.meta.url).pathname
 function migrateHub(path: string): void {
   const result = Bun.spawnSync([process.execPath, hubCli, 'migrate'], {
     env: { ...process.env, HUB_DB: path }, stdout: 'pipe', stderr: 'pipe',
@@ -37,7 +37,7 @@ describe('scoped operator docs', () => {
       settings: { keyPrefixes: ['DEV'] },
     })
     const prior = Bun.spawnSync([
-      new URL('../../bin/hub', import.meta.url).pathname,
+      new URL('../../../bin/hub', import.meta.url).pathname,
       'task', 'new', '--project', PLATFORM_SLUG,
       '--title', '[SUGGESTION] Issue reporting needs a direct filing path',
       '--allow-duplicate', 'orchestrator file_issue test seed',
@@ -78,7 +78,7 @@ describe('scoped operator docs', () => {
         'reporter_id', 'session', 'title', 'title_shortened', 'worker_run_id',
       ])
       const shown = Bun.spawnSync([
-        new URL('../../bin/hub', import.meta.url).pathname,
+        new URL('../../../bin/hub', import.meta.url).pathname,
         'task', 'show', result.key, '--json',
       ], { env: { ...process.env }, stdout: 'pipe', stderr: 'pipe' })
       expect(shown.exitCode).toBe(0)
@@ -124,7 +124,7 @@ describe('scoped operator docs', () => {
       expect(shortenedResult.title).toStartWith('[SUGGESTION] A deliberately multiline title ')
       expect(shortenedResult.title).toEndWith('…')
       const shownShortened = Bun.spawnSync([
-        new URL('../../bin/hub', import.meta.url).pathname,
+        new URL('../../../bin/hub', import.meta.url).pathname,
         'task', 'show', shortenedResult.key, '--json',
       ], { env: { ...process.env }, stdout: 'pipe', stderr: 'pipe' })
       expect(shownShortened.exitCode).toBe(0)
@@ -179,7 +179,7 @@ describe('scoped operator docs', () => {
       const hostileResult = JSON.parse(((hostile as any).content[0] as { text: string }).text)
       expect(hostileResult.key).toBe('DEV-5')
       const shownHostile = Bun.spawnSync([
-        new URL('../../bin/hub', import.meta.url).pathname,
+        new URL('../../../bin/hub', import.meta.url).pathname,
         'task', 'show', hostileResult.key, '--json',
       ], { env: { ...process.env }, stdout: 'pipe', stderr: 'pipe' })
       expect(shownHostile.exitCode).toBe(0)
@@ -231,7 +231,7 @@ describe('scoped operator docs', () => {
           expect(filedMarker.isError).not.toBe(true)
           const markerResult = JSON.parse(((filedMarker as any).content[0] as { text: string }).text)
           const shownMarker = Bun.spawnSync([
-            new URL('../../bin/hub', import.meta.url).pathname,
+            new URL('../../../bin/hub', import.meta.url).pathname,
             'task', 'show', markerResult.key, '--json',
           ], { env: { ...process.env }, stdout: 'pipe', stderr: 'pipe' })
           expect(shownMarker.exitCode).toBe(0)
@@ -257,7 +257,7 @@ describe('scoped operator docs', () => {
       expect(hostileTitle.isError).not.toBe(true)
       const hostileTitleResult = JSON.parse(((hostileTitle as any).content[0] as { text: string }).text)
       const shownHostileTitle = Bun.spawnSync([
-        new URL('../../bin/hub', import.meta.url).pathname,
+        new URL('../../../bin/hub', import.meta.url).pathname,
         'task', 'show', hostileTitleResult.key, '--json',
       ], { env: { ...process.env }, stdout: 'pipe', stderr: 'pipe' })
       expect(shownHostileTitle.exitCode).toBe(0)
