@@ -43,8 +43,7 @@ const legs: Leg[] = [
     commands: [
       { cwd: `${root}orchestrator`, argv: ['bun', 'install', '--silent'] },
       { cwd: `${root}orchestrator`, argv: ['bun', 'run', 'typecheck'] },
-      // The root gate uses the measured CLI shards while the package's ordinary
-      // test command remains the unit/CLI split used outside the full gate.
+      // The unit gate runs once under the shared host-load hold.
       { cwd: `${root}orchestrator`, argv: ['bun', 'run', 'test:gate'] },
     ],
   },

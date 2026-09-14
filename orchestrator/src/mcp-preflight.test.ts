@@ -1,10 +1,10 @@
-import { afterEach, describe, expect, test } from 'bun:test'
-import { chmodSync, rmSync, writeFileSync } from 'node:fs'
+import { afterEach,describe,expect,test } from 'bun:test'
+import { chmodSync,rmSync,writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { dir } from '../test/fixtures/store.ts'
 import { AGENTS } from './agents.ts'
+import { assertGrokTrustEligible,canonSourceFor,canonSourceInstruction,effectiveMcpRequest,mcpAttachRefusal,mcpRequestFromStored,preflightMcp } from './mcp-preflight.ts'
 import { upsertProject } from './projects.ts'
-import { assertGrokTrustEligible, canonSourceFor, canonSourceInstruction, effectiveMcpRequest, grokMcpConnection, mcpAttachRefusal, mcpRequestFromStored, preflightMcp } from './mcp-preflight.ts'
 
 const fixtureFiles: string[] = []
 const fixtureFile = (name: string) => {
@@ -66,14 +66,6 @@ test('preflightMcp leaves cwd-discovered config decisions until the worker tree 
   writeFileSync(doctor, '#!/bin/sh\nprintf \'%s\' \'{"servers":[{"name":"orch","healthy":false}]}\'\n'); chmodSync(doctor, 0o755)
   try { expect(() => preflightMcp({ mcp: true, cwd: dir, job: 'review-lens', selectedAgent: 'grok' })).not.toThrow(); rmSync(join(dir, '.mcp.json'), { force: true }); expect(() => preflightMcp({ mcp: true, cwd: dir, job: 'review-lens', selectedAgent: 'grok' })).not.toThrow() } finally { AGENTS.grok!.bin = original }
 })
-test('reads Grok doctor as the same-named project connection', () => {
-  const doctor = fixtureFile('fake-grok-mcp-doctor.sh'); writeFileSync(doctor, '#!/bin/sh\nprintf \'%s\' \'{"servers":[{"name":"starship","healthy":false,"checks":[{"label":"folder untrusted","passed":false,"detail":"repo-local server not started","hint":"re-run with --trust"}]}]}\'\n'); chmodSync(doctor, 0o755)
-  expect(grokMcpConnection(doctor, dir, 'starship', { PATH: process.env.PATH ?? '' })).toEqual({ server: 'starship', connected: false, error: 'folder untrusted: repo-local server not started: re-run with --trust', namesSeen: ['starship'] })
-})
-test('a missing server names the ones doctor did report', () => {
-  const doctor = fixtureFile('fake-grok-mcp-available.sh'); writeFileSync(doctor, '#!/bin/sh\nprintf \'%s\' \'{"servers":[{"name":"orch","healthy":true},{"name":"user-scope","healthy":true}]}\'\n'); chmodSync(doctor, 0o755)
-  const result = grokMcpConnection(doctor, dir, 'starship', { PATH: process.env.PATH ?? '' }); expect(result.connected).toBe(false); expect(result.error).toContain("Available: orch, user-scope"); expect(result.error).toContain('"name":"orch"')
-})
 test('maps all recorded connection states without flattening unknown', () => {
   expect(canonSourceFor(true, { server: 'fixture-project', connected: true, error: null }, true)).toBe('live database'); expect(canonSourceFor(true, { server: 'fixture-project', connected: false, error: 'down' }, true)).toBe('mirror'); expect(canonSourceFor(true, { server: 'fixture-project', connected: null, error: 'no diagnostic' }, true)).toBe('unknown')
 })
@@ -92,16 +84,6 @@ test('verify-claim keeps its verdict contract and receives the same canon proven
 test('a user-scope required server is refused only when doctor does not report it', () => {
   expect(mcpAttachRefusal({ server: 'orch', connected: false, error: "MCP server 'orch' was not reported. Available: starship, stopal" })).toContain("server 'orch' could not be attached")
   expect(mcpAttachRefusal({ server: 'orch', connected: true, error: null })).toBeNull()
-})
-test('a caller-checkout doctor never receives trust', () => {
-  const doctor = fixtureFile('fake-grok-caller-doctor.sh')
-  const argv = fixtureFile('fake-grok-caller-argv')
-  writeFileSync(doctor, `#!/bin/sh\nprintf '%s' "$*" > ${JSON.stringify(argv)}\nprintf '%s' '{"servers":[{"name":"fixture-project","healthy":true}]}'\n`)
-  chmodSync(doctor, 0o755)
-  try {
-    expect(grokMcpConnection(doctor, dir, 'fixture-project', { PATH: process.env.PATH ?? '' }).connected).toBe(true)
-    expect(require('node:fs').readFileSync(argv, 'utf8')).not.toContain('--trust')
-  } finally { rmSync(argv, { force: true }) }
 })
 test('refuses a grok lens before agent spawn and records the worker-tree preflight failure', () => {
   expect(mcpAttachRefusal({ server: 'fixture-project', connected: false, error: 'folder untrusted' }))

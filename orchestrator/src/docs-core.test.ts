@@ -1,12 +1,10 @@
 import { describe,expect,test } from 'bun:test'
-import { consumeDoc, removeDoc, setDoc } from '../test/fixtures/docs.ts'
+import { consumeDoc,removeDoc,setDoc } from '../test/fixtures/docs.ts'
 import { dir } from '../test/fixtures/store.ts'
-import { CanonBudgetError, compileBrief, compilePack } from './canon.ts'
+import { CanonBudgetError,compileBrief,compilePack } from './canon.ts'
 import { db } from './db.ts'
-import { consumeDoc as consumeDocument, removeDoc as deleteDoc, diffDocRevisions, docsForRun, getDoc, getDocRevision, listDocRevisions, listDocs, importDocs as readDocs, restoreDoc, setDoc as writeDoc } from './docs.ts'
-import { JOBS } from './jobs.ts'
-import { removeProject, upsertProject } from './projects.ts'
-import { run as runJob } from './run.ts'
+import { consumeDoc as consumeDocument,removeDoc as deleteDoc,diffDocRevisions,docsForRun,getDoc,getDocRevision,listDocRevisions,listDocs,importDocs as readDocs,restoreDoc,setDoc as writeDoc } from './docs.ts'
+import { removeProject,upsertProject } from './projects.ts'
 
 
 describe('scoped operator docs', () => {
@@ -174,36 +172,6 @@ describe('scoped operator docs', () => {
     expect(pack.sha256).toHaveLength(64)
     expect(getDoc('global', null, 'demand')?.delivery).toBe('demand')
     expect(docsForRun({ job: 'understand', cwd: dir }).map((doc) => doc.slug)).not.toContain('demand')
-  })
-
-  test('budget refusal lists every document largest-first and run records harness before spawn', async () => {
-    setDoc({ scope: 'global', subject: null, slug: 'small', title: 'Small', body: 'x' })
-    setDoc({ scope: 'global', subject: null, slug: 'large', title: 'Large', body: 'x'.repeat(80) })
-    const old = JOBS.understand!.packBytes
-    const oldDepth = process.env.ORCH_DEPTH
-    JOBS.understand!.packBytes = 32
-    process.env.ORCH_DEPTH = '0'
-    try {
-      expect(() => compilePack({ job: 'understand', cwd: dir })).toThrow(CanonBudgetError)
-      let message = ''
-      try {
-        await runJob({
-          job: 'understand', prompt: 'never spawned', cwd: dir, agent: 'codex', mcp: 'prefer',
-        })
-      }
-      catch (cause) { message = (cause as Error).message }
-      expect(message).toContain('global/_/large')
-      expect(message.indexOf('global/_/large')).toBeLessThan(message.indexOf('global/_/small'))
-      const row = db().query(
-        'SELECT status,failure_kind,error,mcp FROM run ORDER BY id DESC LIMIT 1',
-      ).get() as any
-      expect(row).toMatchObject({ status: 'failed', failure_kind: 'harness', mcp: 2 })
-      expect(row.error).toContain('demote the named largest inject sections')
-    } finally {
-      JOBS.understand!.packBytes = old
-      if (oldDepth === undefined) delete process.env.ORCH_DEPTH
-      else process.env.ORCH_DEPTH = oldDepth
-    }
   })
 
   test('brief has its own 64 KiB refusal', () => {

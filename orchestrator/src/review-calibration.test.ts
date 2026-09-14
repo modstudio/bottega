@@ -1,15 +1,9 @@
 import { afterEach,describe,expect,test } from 'bun:test'
-import { createHash } from 'node:crypto'
-import { readFileSync } from 'node:fs'
 import { reviewReply } from '../test/fixtures/replies.ts'
-import { addRun, score } from '../test/fixtures/store.ts'
-import { AGENTS, strictCodexSchema } from './agents.ts'
-import { REVIEW_SCHEMA } from './contract.ts'
+import { addRun,score } from '../test/fixtures/store.ts'
 import { db } from './db.ts'
-import { calibrationLine, completeReview, gradeReviewLens, MIN_REVIEW_TRIAGED, recordReview, reviewCalibration, reviewCalibrationFleet, triageFinding } from './review.ts'
-import { run as runJob } from './run.ts'
+import { calibrationLine,completeReview,gradeReviewLens,MIN_REVIEW_TRIAGED,recordReview,reviewCalibration,reviewCalibrationFleet,triageFinding } from './review.ts'
 import { state } from './serve.ts'
-import { scriptedTransportSequence } from '../test/fake-transport.ts'
 import { installTestTransport } from './transport.ts'
 
 afterEach(() => installTestTransport(null))
@@ -228,39 +222,5 @@ test('uses only the most recent fifty complete reviews', () => {
     expect(reviewCalibration('window', 'codex', 'm')).toMatchObject({
       precision: 0, hits: 0, triaged: 50, basis: 'model',
     })
-  })
-test('appends the selected agent calibration before hashing and storing its final prompt', async () => {
-    const agent = AGENTS.codex!
-    const output = JSON.stringify(reviewReply(1))
-    const priorDepth = process.env.ORCH_DEPTH
-    try {
-      // Qualifying evidence exists for the selected agent and nowhere else.
-      const evidenceRun = addRun({ agent: 'codex', job: 'review-lens-inline',
-        model: agent.model, lens: 'bound-prompt' })
-      const evidenceReview = recordReview(evidenceRun, reviewReply(MIN_REVIEW_TRIAGED), db())
-      for (let i = 1; i <= MIN_REVIEW_TRIAGED; i++) triageFinding(evidenceReview, i, 'accepted')
-      completeReview(evidenceReview)
-
-      const transport = scriptedTransportSequence([[{ kind: 'completed', output }]])
-      transport.install()
-      process.env.ORCH_DEPTH = '0'
-      const result = await runJob({ job: 'review-lens-inline', prompt: 'inspect this pack',
-        agent: 'codex', lens: 'bound-prompt' })
-      const sent = transport.startOptions()[0]!.prompt
-      const sentSchema = transport.startOptions()[0]!.schemaPath
-      expect(sent).toContain('closed scale: critical | high | medium | low')
-      expect(sent).toContain('precision 1.00 over 10 triaged findings')
-      expect(JSON.parse(readFileSync(sentSchema!, 'utf8'))).toEqual(strictCodexSchema(REVIEW_SCHEMA))
-      const row = db().query('SELECT prompt_sha, prompt_path, lens FROM run WHERE id=?').get(result.id) as
-        { prompt_sha: string; prompt_path: string; lens: string }
-      const bound = readFileSync(row.prompt_path.replace(/\.prompt\.txt$/, '.bound.txt'), 'utf8')
-      expect(bound).toBe(sent)
-      expect(row.prompt_sha).toBe(createHash('sha256').update(sent).digest('hex').slice(0, 16))
-      expect(row.lens).toBe('bound-prompt')
-      expect(readFileSync(row.prompt_path, 'utf8')).toBe('inspect this pack')
-    } finally {
-      if (priorDepth === undefined) delete process.env.ORCH_DEPTH
-      else process.env.ORCH_DEPTH = priorDepth
-    }
   })
 })

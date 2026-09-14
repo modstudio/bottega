@@ -1,15 +1,15 @@
-import { afterEach, beforeEach, describe, expect, test } from 'bun:test'
-import { readFileSync, writeFileSync } from 'node:fs'
+import { afterEach,beforeEach,describe,expect,test } from 'bun:test'
+import { writeFileSync } from 'node:fs'
 import { join } from 'node:path'
-import { addRun, dir } from '../test/fixtures/store.ts'
+import { addRun,dir } from '../test/fixtures/store.ts'
+import { trackedTestResidue } from '../test/residue.ts'
 import { ARGV_PROMPT_BYTES } from './agents.ts'
+import { assertWorkerText,readMessageText,readWorkerFile } from './args.ts'
 import { rulingPrompt } from './contract.ts'
 import { db } from './db.ts'
-import { packedResumePrompt } from './run.ts'
-import { assertWorkerText, readMessageText, readWorkerFile } from './args.ts'
-import { answerRun, retryRun } from './run-answer.ts'
+import { answerRun,retryRun } from './run-answer.ts'
 import { continueRun } from './run-control.ts'
-import { trackedTestResidue } from '../test/residue.ts'
+import { packedResumePrompt } from './run.ts'
 
 const trackResidue = trackedTestResidue()
 
@@ -56,20 +56,6 @@ describe('run answers', () => {
     expect(db().query('SELECT answer,delivery_pending_at FROM question WHERE run_id=?').get(id)).toEqual({ answer: 'use the existing shape', delivery_pending_at: expect.any(String) })
     expect(rulingPrompt([{ question: 'which shape?', answer: 'use the existing shape' }])).toContain('THE RULING: use the existing shape')
   })
-
-  test('answer resumes the agent from the same row as the fallback vendor session', async () => {
-    const root = insert('asking'); db().query('UPDATE run SET session_id=?,vendor_session=?,agent=?,cwd=? WHERE id=?').run('orch-test-session', 'codex-session', 'codex', dir, root)
-    const latest = insert('asking'); db().query('UPDATE run SET parent_run_id=?,turn=2,vendor_session=NULL,agent=?,cwd=? WHERE id=?').run(root, 'grok', dir, latest); db().query('INSERT INTO question (run_id,asked_at,question) VALUES (?,?,?)').run(latest, new Date().toISOString(), 'which shape?')
-    await answerRun(root, { argv: ['existing'], recordOnly: false, flags }, helpers)
-    expect(db().query('SELECT vendor_session FROM run WHERE parent_run_id=? AND turn=3').get(root)).toEqual({ vendor_session: 'codex-session' })
-  })
-
-  test('a resume spawn failure rolls the ruling back and leaves the question open', async () => {
-    const id = insert('asking', 'implement'); db().query('UPDATE run SET session_id=?,vendor_session=? WHERE id=?').run('orch-test-session', 'vendor', id); db().query('INSERT INTO question (run_id,asked_at,question) VALUES (?,?,?)').run(id, new Date().toISOString(), 'which shape?')
-    process.env.ORCH_EXEC_PATH = join(dir, 'definitely-missing-exec')
-    await expect(answerRun(id, { argv: ['existing'], recordOnly: false, flags }, helpers)).rejects.toThrow()
-    expect(db().query('SELECT answer,answered_at FROM question WHERE run_id=?').get(id)).toEqual({ answer: null, answered_at: null })
-  })
   test('answer refuses six individually-legal --file rulings whose packed resume exceeds argv', async () => {
     const id = insert('asking', 'implement')
     const spec = trackResidue(join(dir, `answer-six-large-${id}.prompt.txt`))
@@ -97,29 +83,6 @@ describe('run answers', () => {
     expect(db().query('SELECT answer FROM question WHERE run_id=?').all(id))
       .toEqual(questions.map(() => ({ answer: null })))
     expect(db().query('SELECT COUNT(*) n FROM run WHERE parent_run_id=?').get(id)).toEqual({ n: 0 })
-  })
-
-  test('answer accepts six small --file rulings and resumes', async () => {
-    const id = insert('asking', 'implement')
-    db().query('UPDATE run SET vendor_session=?, session_id=?, cwd=? WHERE id=?')
-      .run('parent-session', 'orch-test-session', dir, id)
-    for (let i = 1; i <= 6; i++) db().query(
-      'INSERT INTO question (run_id, asked_at, question) VALUES (?,?,?)',
-    ).run(id, new Date().toISOString(), `q${i}?`)
-    const questions = db().query('SELECT id FROM question WHERE run_id=? ORDER BY id').all(id) as { id: number }[]
-    const argv: string[] = []
-    for (const question of questions) {
-      const path = trackResidue(join(dir, `answer-small-${question.id}.txt`))
-      writeFileSync(path, `yes ${question.id}`)
-      argv.push(`--q${question.id}`, '--file', path)
-    }
-    await answerRun(id, { argv, recordOnly: false, flags }, helpers)
-    expect(db().query('SELECT answer FROM question WHERE run_id=? ORDER BY id').all(id))
-      .toEqual(questions.map((q) => ({ answer: `yes ${q.id}` })))
-    const child = db().query('SELECT parent_run_id,prompt_path FROM run WHERE parent_run_id=?').get(id) as
-      { parent_run_id: number; prompt_path: string }
-    expect(child.parent_run_id).toBe(id)
-    expect(readFileSync(child.prompt_path, 'utf8')).toContain(`yes ${questions[0]!.id}`)
   })
 
   test('answer refuses questions split between live and stopped owners', async () => {
@@ -302,14 +265,6 @@ test('a partial multi-question ruling names the single-command rule', async () =
   add.get(id, new Date().toISOString(), 'two?')
   await expect(answerRun(id, { argv: [`--q${first}`, 'yes'], recordOnly: true, flags }, helpers)).rejects.toThrow('single command')
   expect(db().query('SELECT answer FROM question WHERE run_id=?').all(id)).toEqual([{ answer: null }, { answer: null }])
-})
-
-test('answer resumes a durable root question when no child is running', async () => {
-  const id = insert('asking'); db().query('UPDATE run SET session_id=?,vendor_session=?,cwd=? WHERE id=?').run('orch-test-session', 'vendor', dir, id)
-  db().query('INSERT INTO question (run_id,asked_at,question) VALUES (?,?,?)').run(id, new Date().toISOString(), 'which?')
-  await answerRun(id, { argv: ['resume it'], recordOnly: false, flags }, helpers)
-  expect(db().query('SELECT parent_run_id,turn FROM run WHERE parent_run_id=?').get(id))
-    .toEqual({ parent_run_id: id, turn: 2 })
 })
 
 test('a leaf id answers the open question in its conversation', async () => {

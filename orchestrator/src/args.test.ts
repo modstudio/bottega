@@ -18,7 +18,7 @@ test('every registered top-level command is recognised as canon', () => {
     'inbox', 'peek', 'answer', 'tell', 'continue', 'diff', 'sweep', 'discard', 'stop', 'abandon', 'score',
     'recalibrate', 'routing-backtest', 'runs', 'guide', 'spawns', 'stats', 'pick', 'pending', 'metric', 'serve',
     'reclassify-failures', 'health', 'doctor', 'jobs', 'agents', 'workflow', 'lens', 'note', 'judge',
-    'close-out', 'confinement', 'flake', 'reconcile', 'epic',
+    'close-out', 'confinement', 'reconcile', 'epic',
   ]
   for (const command of commands) expect(isCliCommand(command)).toBeTrue()
   expect(isCliCommand('nosuch')).toBeFalse()

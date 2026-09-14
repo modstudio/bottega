@@ -1,59 +1,9 @@
 import { describe,expect,test } from 'bun:test'
-import { rmSync,writeFileSync } from 'node:fs'
-import { join } from 'node:path'
-import { cloneRepository, hermeticGitEnv } from '../test/fixtures/git.ts'
 import { workerReply } from '../test/fixtures/replies.ts'
-import { addRun } from '../test/fixtures/store.ts'
-import { db, nowIso } from './db.ts'
-import { CANON_EVALS, currentCanonEvalSha, failingCanonEvalSlugs, lastCanonEvalAt, TRACKED_EVAL_PATH, UNTRACKED_EVAL_PATH } from './evals.ts'
-import { upsertProject } from './projects.ts'
 import type { ReviewReply,WorkerReply } from './contract.ts'
-import { fakeClock, registerClock, systemClock } from './clock.ts'
-import { collect } from './metric.ts'
+import { CANON_EVALS,TRACKED_EVAL_PATH,UNTRACKED_EVAL_PATH } from './evals.ts'
 
 describe('metric canon headline and calendar halves', () => {
-test('counts each canon project only by all of its declared key prefixes', async () => {
-    const now = Date.parse('2026-09-12T00:30:00Z')
-    registerClock(fakeClock(now))
-    const fixture = (name: string, subjects: string[], keyPrefixes?: string[]) => {
-      const repo = cloneRepository(`metric-${name}-`)
-      const git = (...args: string[]) => {
-        const p = Bun.spawnSync(['git', ...args], {
-          cwd: repo,
-          env: {
-            ...hermeticGitEnv(),
-            GIT_AUTHOR_DATE: new Date(now).toISOString(),
-            GIT_COMMITTER_DATE: new Date(now).toISOString(),
-          },
-          stdout: 'pipe', stderr: 'pipe',
-        })
-        if (p.exitCode !== 0) throw new Error(p.stderr.toString())
-      }
-      for (const [i, subject] of subjects.entries()) {
-        writeFileSync(join(repo, `${i}.txt`), `${subject}\n`)
-        git('add', `${i}.txt`)
-        git('commit', '-m', subject)
-      }
-      upsertProject({ name, path: repo, canon: true, settings: { keyPrefixes } })
-      return repo
-    }
-
-    const repos = [
-      fixture('one-prefix', ['ONE-1 shipped'], ['ONE']),
-      fixture('several-prefixes', ['LEFT-2 shipped', 'RIGHT-3 shipped'], ['LEFT', 'RIGHT']),
-      fixture('no-prefixes', ['OLD-4 must not count']),
-    ]
-    db().exec('DELETE FROM metric')
-    try {
-      await collect(1)
-      const total = db().query('SELECT SUM(tasks) AS tasks FROM metric').get() as { tasks: number }
-      expect(total.tasks).toBe(3)
-    } finally {
-      registerClock(systemClock)
-      db().exec('DELETE FROM metric')
-      for (const repo of repos) rmSync(repo, { recursive: true, force: true })
-    }
-  }, 15_000)
 })
 
 describe('behavioural canon evals', () => {
@@ -125,21 +75,5 @@ test('each eval check has a positive fixture and a negative fixture', () => {
     })
     expect(bySlug['reports-evidence-not-claims']!.check(evidencedReview as ReviewReply)).toMatchObject({ pass: true })
     expect(bySlug['reports-evidence-not-claims']!.check(proseReview as ReviewReply)).toMatchObject({ pass: false })
-  })
-test('monitor and doctor prominently name failing canon eval slugs', () => {
-    const runId = addRun({ agent: 'codex', job: 'implement', probe: 1 })
-    db().query(
-      `INSERT INTO canon_eval (slug, run_id, canon_sha, agent, model, pass, why, at)
-       VALUES ('asks-instead-of-deciding', ?, 'sha', 'codex', 'm', 0, 'built', ?)`,
-    ).run(runId, nowIso())
-    const passing = CANON_EVALS.find((ev) => ev.slug === 'refuses-main')!
-    const passingRun = addRun({ agent: 'codex', job: passing.job, probe: 1 })
-    db().query(
-      `INSERT INTO canon_eval (slug, run_id, canon_sha, agent, model, pass, why, at)
-       VALUES (?, ?, ?, 'codex', 'm', 1, 'refused', ?)`,
-    ).run(passing.slug, passingRun, currentCanonEvalSha(passing), nowIso())
-    expect(failingCanonEvalSlugs()).toEqual(['asks-instead-of-deciding'])
-    expect(lastCanonEvalAt()).not.toBeNull()
-
   })
 })

@@ -349,12 +349,6 @@
     "score": 16
   },
   {
-    "file": "orchestrator/src/gate-policy.ts",
-    "function": "parseShardMap",
-    "line": 67,
-    "score": 25
-  },
-  {
     "file": "orchestrator/src/git-locks.ts",
     "function": "gitLocks",
     "line": 75,

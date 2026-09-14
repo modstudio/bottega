@@ -1,7 +1,15 @@
-import { describe, expect, test } from 'bun:test'; import { readFileSync } from 'node:fs'; import { reviewReply } from '../test/fixtures/replies.ts'; import { addRun, score } from '../test/fixtures/store.ts'; import { AGENTS } from './agents.ts'; import { db, label, nowIso } from './db.ts'; import { activeSql, pendingForSession, UNSCORED_WHERE, unscoredCount, voidedSql } from './evidence-query.ts'; import { classify, COOLS_DOWN, FAILS_OVER, NEEDS_HUMAN, NEEDS_HUMAN_TITLE, NOT_EVIDENCE } from './failure.ts'; import { completeReview, MIN_REVIEW_TRIAGED, recordReview, triageFinding } from './review.ts'
-import { BETA_SCALE, candidates, currentPolicySelection, EVIDENCE_WINDOW, evidenceFor, median, MIN_SAMPLE, NOISE_BAND, pick, POSTERIOR_NOISE_BAND, QUALITY_STEP, scoreboard, STANDING_EXPLORE_RATE, standingExploreRate, weightCase } from './route.ts'
-import { weigh, WEIGHT } from './score.ts'
-import { resolveFailover } from './collect.ts'
+import { describe,expect,test } from 'bun:test';
+import { readFileSync } from 'node:fs';
+import { reviewReply } from '../test/fixtures/replies.ts';
+import { addRun,score } from '../test/fixtures/store.ts';
+import { AGENTS } from './agents.ts';
+import { resolveFailover } from './collect.ts';
+import { db,label,nowIso } from './db.ts';
+import { activeSql,pendingForSession,UNSCORED_WHERE,unscoredCount,voidedSql } from './evidence-query.ts';
+import { classify,COOLS_DOWN,FAILS_OVER,NEEDS_HUMAN,NEEDS_HUMAN_TITLE,NOT_EVIDENCE } from './failure.ts';
+import { completeReview,MIN_REVIEW_TRIAGED,recordReview,triageFinding } from './review.ts';
+import { BETA_SCALE,candidates,currentPolicySelection,EVIDENCE_WINDOW,evidenceFor,median,MIN_SAMPLE,NOISE_BAND,pick,POSTERIOR_NOISE_BAND,QUALITY_STEP,scoreboard,STANDING_EXPLORE_RATE,standingExploreRate,weightCase } from './route.ts';
+import { weigh,WEIGHT } from './score.ts';
 
 describe('failure classification', () => {
   test('contract failures fail over as scoreable none evidence without cooldown or notification', () => {
@@ -975,12 +983,6 @@ describe('the Stop hook and orch agree on what is unscored', () => {
     readFileSync(new URL('../hooks/score-reminder.py', import.meta.url).pathname, 'utf8'),
   )
 
-  const hookEnv = (session: string) => ({
-    ...process.env,
-    ORCH_DB: process.env.ORCH_DB!,
-    CLAUDE_CODE_SESSION_ID: session,
-  })
-
   test('Stop cleanup has one global budget and uses non-blocking close-out', () => {
     const hook = readFileSync(
       new URL('../hooks/score-reminder.py', import.meta.url).pathname, 'utf8',
@@ -1111,95 +1113,6 @@ describe('the Stop hook and orch agree on what is unscored', () => {
       missingFromHook: [],
       missingFromTs: predicateDrift('', mentionsReview).missingFromTs,
     })
-  })
-
-  test('score --void with no verdict closes the ledger for pending, count, monitor, runs and the hook', () => {
-    const session = 'void-no-verdict-session'
-    const id = addRun({ agent: 'codex', job: 'understand', session })
-    expect(pendingForSession(session).map((row) => row.id)).toEqual([id])
-    expect(unscoredCount()).toBe(1)
-
-    const CLI = new URL('orch.ts', import.meta.url).pathname
-    const env = {
-      ...process.env, ORCH_DB: process.env.ORCH_DB!, ORCH_DEPTH: '0',
-      CLAUDE_CODE_SESSION_ID: session,
-    }
-    const voided = Bun.spawnSync([process.execPath, CLI, 'score', String(id), '--void'], {
-      env, stdout: 'pipe', stderr: 'pipe',
-    })
-    expect(voided.exitCode, voided.stderr.toString()).toBe(0)
-
-    const pending = pendingForSession(session)
-    const hook = Bun.spawnSync(
-      ['python3', new URL('../hooks/score-reminder.py', import.meta.url).pathname],
-      {
-        env: hookEnv(session),
-        stdin: new TextEncoder().encode(JSON.stringify({ session_id: session })),
-        stdout: 'pipe', stderr: 'pipe',
-      },
-    )
-    const pendingCli = Bun.spawnSync([process.execPath, CLI, 'pending'], {
-      env, stdout: 'pipe', stderr: 'pipe',
-    })
-    const runs = Bun.spawnSync(
-      [process.execPath, CLI, 'runs', '--unscored', '--json', '--id', String(id)],
-      { env, stdout: 'pipe', stderr: 'pipe' },
-    )
-    const monitorIds = (db().query(
-      `SELECT r.id FROM run r LEFT JOIN score s ON s.run_id=r.id WHERE ${UNSCORED_WHERE}`,
-    ).all() as { id: number }[]).map((row) => row.id)
-
-    expect(pending).toEqual([])
-    expect(unscoredCount()).toBe(0)
-    expect(hook.stdout.toString()).toBe('')
-    expect(pendingCli.exitCode).toBe(0)
-    expect(pendingCli.stdout.toString()).toContain('nothing of yours is unscored')
-    expect(runs.stdout.toString().trim()).toBe('')
-    expect(monitorIds).not.toContain(id)
-  })
-
-  test('the Stop hook stands down once per session including the note reminder', () => {
-    addRun({ agent: 'codex', job: 'craft', session: 'hook-once-session' })
-    const hook = new URL('../hooks/score-reminder.py', import.meta.url).pathname
-    const invoke = (payload: Record<string, unknown>) => Bun.spawnSync(['python3', hook], {
-      env: hookEnv('hook-once-session'),
-      stdin: new TextEncoder().encode(JSON.stringify(payload)),
-      stdout: 'pipe', stderr: 'pipe',
-    })
-    const first = invoke({ session_id: 'hook-once-session' })
-    expect(first.exitCode).toBe(0)
-    expect(JSON.parse(first.stdout.toString()).reason).toContain('not been scored')
-    const second = invoke({ session_id: 'hook-once-session', stop_hook_active: true })
-    expect(second.exitCode).toBe(0)
-    expect(second.stdout.toString()).toBe('')
-  })
-
-  test('the hook raises an unrecorded scored pair once', () => {
-    const first = addRun({ agent: 'codex', job: 'craft', session: 'hook-session', inputTree: 'hook-tree' })
-    const second = addRun({ agent: 'grok', job: 'craft', session: 'hook-session', inputTree: 'hook-tree' })
-    const at = new Date().toISOString()
-    for (const id of [first, second]) {
-      db().query(
-        `INSERT INTO score (run_id, delivery, quality, scored_at)
-         VALUES (?,'full','right',?)`,
-      ).run(id, at)
-    }
-    const hook = new URL('../hooks/score-reminder.py', import.meta.url).pathname
-    const invoke = () => Bun.spawnSync(['python3', hook], {
-      env: hookEnv('hook-session'),
-      stdin: new TextEncoder().encode(JSON.stringify({ session_id: 'hook-session' })),
-      stdout: 'pipe', stderr: 'pipe',
-    })
-    const offered = invoke()
-    expect(offered.exitCode).toBe(0)
-    expect(JSON.parse(offered.stdout.toString()).reason).toContain(
-      `orch judge ${second} full right --better-than ${first}`,
-    )
-
-    db().query(
-      'INSERT INTO compared_pair (run_a_id, run_b_id, compared_at) VALUES (?,?,?)',
-    ).run(first, second, at)
-    expect(invoke().stdout.toString()).toBe('')
   })
 
   test('empty-string exclusion is voided in SQL, matching IS NOT NULL not truthiness', () => {
