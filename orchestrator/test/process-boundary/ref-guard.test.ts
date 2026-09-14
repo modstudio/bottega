@@ -20,10 +20,6 @@ describe("a worktree is resolved against the main checkout, not the caller cwd",
       cwd: repo, env: hermeticGitEnv(), stdout: 'pipe', stderr: 'pipe',
     })
     try {
-      writeFileSync(join(repo, 'base.txt'), 'base\n')
-      expect(git(['add', 'base.txt']).exitCode).toBe(0)
-      expect(git(['-c', 'user.email=orch-test@example.invalid', '-c', 'user.name=Orch Test',
-        'commit', '-m', 'base']).exitCode).toBe(0)
       const root = 251
       const resumedChild = 252
       const tree = createWorktree(repo, root)
@@ -329,10 +325,6 @@ test('the shared-ref guard permits real rebase and merge bookkeeping', () => {
       return p.stdout.toString().trim()
     }
     try {
-      writeFileSync(join(repo, 'base.txt'), 'base\n')
-      ok(repo, ['add', 'base.txt'])
-      ok(repo, ['commit', '-m', 'base'])
-
       const tree = createWorktree(repo, 199)
       const guard = prepareSharedRefGuard(tree.path, `refs/heads/${tree.branch}`)
       writeFileSync(join(tree.path, 'worker-one.txt'), 'worker one\n')
