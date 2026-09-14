@@ -35,7 +35,7 @@ export function templateRepository(): string {
 }
 
 export function cloneRepository(name = 'git-clone-'): string {
-  const target = mkdtempSync(join(dir, name))
+  const target = join(mkdtempSync(join(dir, name)), 'repo')
   cpSync(templateRepository(), target, { recursive: true })
   return target
 }
