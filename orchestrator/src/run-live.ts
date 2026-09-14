@@ -63,6 +63,7 @@ type LiveOptions = {
 
 export type LiveInput = {
   repoJob: boolean
+  name: string
   worktree: Worktree | null
   claim: { id: number }
   provisionedMcpConfig: { measure<T>(operation: () => T): T } | null
@@ -137,7 +138,7 @@ export type LiveResult = {
 
 export async function runLive(input: LiveInput): Promise<LiveResult> {
   let {
-    repoJob, worktree, claim, provisionedMcpConfig, reviewTarget,
+    repoJob, name, worktree, claim, provisionedMcpConfig, reviewTarget,
     sandboxSelection, runToken, transportName, a, cwd, prompt, outPath,
     vendorSession, schemaPath, originalSchemaPath, opts, sandboxEnvironment,
     writes, usingMcp, mcpServerName, codexMcpScope, mcpTrustGranted,
