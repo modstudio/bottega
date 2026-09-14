@@ -10,7 +10,7 @@ export function resetFixtureStore() {
   const database = db()
   writeTransaction(() => {
     database.exec('PRAGMA foreign_keys = OFF')
-    const tables = database.query<{ name: string }, []>(
+    const tables = database.query<{ name: string }, [string]>(
       `SELECT name FROM sqlite_master
         WHERE type = 'table' AND name <> ? AND name NOT LIKE 'sqlite_%'`,
     ).all(MIGRATIONS_TABLE)
