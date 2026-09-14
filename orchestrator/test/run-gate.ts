@@ -196,14 +196,14 @@ async function runGateTest(
   return result
 }
 
-await withGateSlot(async () => {
-  const gateStarted = Date.now()
-  const store = await flakeStore()
-  const unitName = 'orchestrator unit'
-  const moderateUnitFiles = Object.entries(map.files)
-    .filter(([file, policy]) => file.startsWith('src/') && policy.size === 'moderate')
-    .map(([file]) => file)
-    .sort()
+const gateStarted = Date.now()
+const store = await flakeStore()
+const unitName = 'orchestrator unit'
+const moderateUnitFiles = Object.entries(map.files)
+  .filter(([file, policy]) => file.startsWith('src/') && policy.size === 'moderate')
+  .map(([file]) => file)
+  .sort()
+const unitResults = await withGateSlot(async () => {
   const unitShort = await runGateTest(unitName, [], () => spawnTest(unitName, [
     'bun', 'test', '--path-ignore-patterns', 'runs/**', '--path-ignore-patterns', '**/runs/**',
     ...declaredBoundaryTests.flatMap((file) => ['--path-ignore-patterns', file]),
@@ -215,9 +215,10 @@ await withGateSlot(async () => {
         moderateUnitFiles, process.env, 'unit-moderate',
       ), store)
     : null
-  const unitResults = unitModerate ? [unitShort, unitModerate] : [unitShort]
-  const shards = balancedShards(readCommittedTimingSummary()?.files)
-  const boundary = await Promise.all(shards.map(async (files, index) => {
+  return unitModerate ? [unitShort, unitModerate] : [unitShort]
+})
+const shards = balancedShards(readCommittedTimingSummary()?.files)
+const boundary = await withGateSlot(() => Promise.all(shards.map(async (files, index) => {
     const name = `orchestrator process-boundary shard ${index + 1}/${map.shards.length}`
     const timeout = shardTimeoutMs(map.files, files)
     const size = shardSize(map.files, files)
@@ -229,24 +230,23 @@ await withGateSlot(async () => {
     return runGateTest(
       name, files, () => spawnTest(name, argv, files, env, `cli-${index + 1}`), store,
     )
-  }))
+})))
 
-  const results: Result[] = [...unitResults, ...boundary]
-  for (const result of results) {
-    if (result.exitCode === 0) continue
-    console.error(`${result.name} failed with exit ${result.exitCode}`)
-    if (result.files.length) console.error(`failing shard files: ${result.files.join(', ')}`)
-    console.error(`the prefixed Bun failure above names the failing test`)
-  }
-  const testFailed = results.some((result) => result.exitCode !== 0)
-  const timing = aggregateTimings(testFailed ? 1 : 0, Date.now() - gateStarted)
-  writeFileSync(timingPath, `${JSON.stringify(timing, null, 2)}\n`)
-  console.log(`wrote ${timingPath}`)
-  printTopTen(timing)
-  const unitElapsedMs = unitResults.reduce((sum, result) => {
-    const key = result.name === unitName ? 'unit-short' : 'unit-moderate'
-    return sum + (invocationTimings.get(key)?.elapsedMs ?? 0)
-  }, 0)
-  const timingPassed = publishTimingSummary(timing.files, unitElapsedMs)
-  process.exit(testFailed || !timingPassed ? 1 : 0)
-})
+const results: Result[] = [...unitResults, ...boundary]
+for (const result of results) {
+  if (result.exitCode === 0) continue
+  console.error(`${result.name} failed with exit ${result.exitCode}`)
+  if (result.files.length) console.error(`failing shard files: ${result.files.join(', ')}`)
+  console.error(`the prefixed Bun failure above names the failing test`)
+}
+const testFailed = results.some((result) => result.exitCode !== 0)
+const timing = aggregateTimings(testFailed ? 1 : 0, Date.now() - gateStarted)
+writeFileSync(timingPath, `${JSON.stringify(timing, null, 2)}\n`)
+console.log(`wrote ${timingPath}`)
+printTopTen(timing)
+const unitElapsedMs = unitResults.reduce((sum, result) => {
+  const key = result.name === unitName ? 'unit-short' : 'unit-moderate'
+  return sum + (invocationTimings.get(key)?.elapsedMs ?? 0)
+}, 0)
+const timingPassed = publishTimingSummary(timing.files, unitElapsedMs)
+process.exit(testFailed || !timingPassed ? 1 : 0)
