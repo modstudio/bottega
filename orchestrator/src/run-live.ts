@@ -746,11 +746,6 @@ export async function runLive(input: LiveInput): Promise<LiveResult> {
       // crashed, not sit in the table looking like a success until a person
       // reads 57 bytes and works it out.
       error = errorTail(output)
-    } else if (acceptedQuestions.length) {
-      // `asking`, not `blocked`: the worker is doing exactly what it was told
-      // to. The word matters because a `blocker` in this system is the
-      // opposite — an environment problem — and on a page they read alike.
-      error = null
     } else if (contract?.status === 'refused') {
       // The worker read the spec and says it cannot be built as written. That
       // is a real answer and often a correct one, so it is `ok` rather than a

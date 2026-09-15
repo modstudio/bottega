@@ -219,8 +219,6 @@ export function decideOutcome<FailureKind extends string>(
     return { status: 'failed', failureKind: inputs.replyErrorFailureKind }
   } else if (inputs.exitCode === 0 && inputs.nonAnswer) {
     return { status: 'failed', failureKind: inputs.nonAnswerFailureKind }
-  } else if (inputs.acceptedQuestions) {
-    return { status: 'asking', failureKind: null }
   } else if (inputs.contractStatus === 'asking') {
     return { status: 'failed', failureKind: 'contract' }
   } else if (inputs.contractStatus === 'refused') {
