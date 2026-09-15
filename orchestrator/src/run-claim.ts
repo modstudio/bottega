@@ -638,7 +638,11 @@ export async function claimRun(input: ClaimInput): Promise<ClaimResult> {
             // need not descend from the caller. An overlay still comes only
             // from that branch's own checkout, where the ancestry guard remains
             // the protection against carrying reversions onto a newer tip.
+            // A tree rebuilt for a resume holds the chain's own tip, which the
+            // caller checkout need not contain; the ancestry guard protects new
+            // dispatches only, and nothing is carried into a rebuilt resume.
             if (
+              !resumePlan &&
               !resolvedTaskBranch &&
               (!reviewTarget || opts.carry) &&
               !namesRecordedRunTree({
@@ -650,9 +654,10 @@ export async function claimRun(input: ClaimInput): Promise<ClaimResult> {
             ) {
               assertCallerAncestry(callerCwd, restored)
             }
-            carried = opts.carry
-              ? carryWorkingState(callerCwd, restored)
-              : { base: restored.base, tracked: [], untracked: [] }
+            carried =
+              opts.carry && !resumePlan
+                ? carryWorkingState(callerCwd, restored)
+                : { base: restored.base, tracked: [], untracked: [] }
           } catch (e) {
             const cleanup = removeFor(restored, restored.repoRoot, false, false, claim.id)
             throw new Error(
