@@ -1,10 +1,10 @@
 import { Database } from 'bun:sqlite'
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test'
-import { copyFileSync, existsSync, readFileSync, rmSync } from 'node:fs'
-import { join } from 'node:path'
+import { copyFileSync, existsSync, rmSync } from 'node:fs'
 import { SQL } from 'bun'
 import { PLATFORM_SLUG } from '../../shared/brand.ts'
 import { importProjects } from './postgres-import.ts'
+import { migratePostgres } from './postgres-migrate.ts'
 import { PLATFORM_SPACE_ID } from './postgres-schema.ts'
 
 const container = process.env.ORCH_TEST_POSTGRES_CONTAINER
@@ -23,10 +23,6 @@ type ImportedProject = Record<string, unknown> & {
   name: string
   key_prefixes: string[]
 }
-
-const migrations = ['0000_substrate.sql', '0001_project_import_shape.sql'].map((file) =>
-  readFileSync(join(import.meta.dir, '..', 'postgres', 'migrations', file), 'utf8'),
-)
 
 async function targetState(sql: SQL): Promise<unknown> {
   const projects = await sql`
@@ -48,13 +44,14 @@ realPostgres('project import against copied live SQLite data', () => {
   const sql = new SQL(databaseUrl!)
 
   beforeAll(async () => {
-    for (const migration of migrations) await sql.unsafe(migration)
+    await migratePostgres(databaseUrl!)
   })
 
   afterAll(async () => {
     await sql.unsafe(
       'DROP TABLE IF EXISTS membership, machine, seq, project, "user", space CASCADE',
     )
+    await sql.unsafe('DROP SCHEMA IF EXISTS drizzle CASCADE')
     await sql.close()
     rmSync(unownedHubDb, { force: true })
   })

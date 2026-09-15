@@ -1,14 +1,21 @@
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test'
-import { readFileSync } from 'node:fs'
+import { existsSync, readdirSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { PLATFORM_SLUG } from '../../shared/brand.ts'
+import { migratePostgres } from './postgres-migrate.ts'
 import { newRecordId, PLATFORM_SPACE_ID, PLATFORM_SPACE_NAME } from './postgres-schema.ts'
 
 const container = process.env.ORCH_TEST_POSTGRES_CONTAINER
-const migration = readFileSync(
-  join(import.meta.dir, '..', 'postgres', 'migrations', '0000_substrate.sql'),
-  'utf8',
-)
+const ownerUrl = process.env.ORCH_TEST_POSTGRES_OWNER_URL
+const migrationsFolder = join(import.meta.dir, '..', 'postgres', 'migrations')
+const postgresSchema = readFileSync(join(import.meta.dir, 'postgres-schema.ts'), 'utf8')
+const migration = readdirSync(migrationsFolder, { withFileTypes: true })
+  .filter((entry) => entry.isDirectory())
+  .map((entry) => entry.name)
+  .filter((folder) => existsSync(join(migrationsFolder, folder, 'migration.sql')))
+  .sort()
+  .map((folder) => readFileSync(join(migrationsFolder, folder, 'migration.sql'), 'utf8'))
+  .join('\n')
 const SPACE_A = '01990000-0000-7000-8000-00000000000a'
 const SPACE_B = '01990000-0000-7000-8000-00000000000b'
 const USER_A = '01990000-0000-7000-8000-000000000010'
@@ -88,6 +95,27 @@ describe('Postgres substrate shape', () => {
     }
   })
 
+  test('every schema-first RLS table is forced in migrations', () => {
+    const enabled = new Set(
+      [...migration.matchAll(/ALTER TABLE "([^"]+)" ENABLE ROW LEVEL SECURITY/g)].map(
+        (match) => match[1],
+      ),
+    )
+    const forced = new Set(
+      [...migration.matchAll(/ALTER TABLE "([^"]+)" FORCE ROW LEVEL SECURITY/g)].map(
+        (match) => match[1],
+      ),
+    )
+    const withRls = new Set(
+      [...postgresSchema.matchAll(/pgTable\.withRLS\(\s*['"]([^'"]+)['"]/g)].map(
+        (match) => match[1],
+      ),
+    )
+
+    expect([...enabled].sort()).toEqual([...forced].sort())
+    expect([...withRls].sort()).toEqual([...forced].sort())
+  })
+
   test('machine belongs to a user and seq has the fully qualified key', () => {
     const machineDdl = migration.match(/CREATE TABLE "machine" \([\s\S]*?\n\);/)?.[0]
     expect(machineDdl).toContain('"user_id" uuid NOT NULL')
@@ -96,22 +124,22 @@ describe('Postgres substrate shape', () => {
   })
 })
 
-const realPostgres = container ? describe : describe.skip
+const realPostgres = container && ownerUrl ? describe : describe.skip
 realPostgres('RLS proof against real Postgres', () => {
-  beforeAll(() => {
+  beforeAll(async () => {
     const roleSetup = psql(
       'postgres',
       'postgres',
       `
       CREATE ROLE record_owner LOGIN PASSWORD 'owner-password' NOSUPERUSER NOBYPASSRLS;
       CREATE ROLE tenant_actor LOGIN PASSWORD 'tenant-password' NOSUPERUSER NOBYPASSRLS;
+      GRANT CREATE ON DATABASE postgres TO record_owner;
       GRANT CREATE ON SCHEMA public TO record_owner;
     `,
     )
     expect(roleSetup.code, roleSetup.stderr).toBe(0)
 
-    const applied = psql('record_owner', 'owner-password', migration)
-    expect(applied.code, applied.stderr).toBe(0)
+    await migratePostgres(ownerUrl!)
 
     succeeds(
       'postgres',
@@ -153,6 +181,9 @@ realPostgres('RLS proof against real Postgres', () => {
       'postgres',
       `
       DROP TABLE IF EXISTS membership, machine, seq, project, "user", space CASCADE;
+      DROP SCHEMA IF EXISTS drizzle CASCADE;
+      REVOKE CREATE ON DATABASE postgres FROM record_owner;
+      REVOKE CREATE ON SCHEMA public FROM record_owner;
       DROP ROLE IF EXISTS tenant_actor;
       DROP ROLE IF EXISTS record_owner;
     `,
@@ -170,6 +201,41 @@ realPostgres('RLS proof against real Postgres', () => {
     `,
     )
     expect(facts).toBe('f|f|f')
+  })
+
+  test('the seq primary key columns are not nullable', () => {
+    const columns = succeeds(
+      'postgres',
+      'postgres',
+      `
+      SELECT column_name, is_nullable
+      FROM information_schema.columns
+      WHERE table_schema = 'public' AND table_name = 'seq'
+        AND column_name IN ('space_id', 'project_id', 'name')
+      ORDER BY ordinal_position;
+    `,
+    )
+    expect(columns.split('\n')).toEqual(['space_id|NO', 'project_id|NO', 'name|NO'])
+
+    const inserted = asSpace(
+      'record_owner',
+      'owner-password',
+      SPACE_A,
+      `INSERT INTO seq (space_id, project_id, name, next)
+       VALUES ('${SPACE_A}', '${PROJECT_A}', NULL, 1);`,
+    )
+    expect(inserted.code).not.toBe(0)
+    expect(inserted.stderr).toContain('null value in column "name"')
+  })
+
+  test('tenant roles cannot read Drizzle migration metadata', () => {
+    const result = psql(
+      'tenant_actor',
+      'tenant-password',
+      'SELECT count(*) FROM drizzle.__drizzle_migrations;',
+    )
+    expect(result.code).not.toBe(0)
+    expect(result.stderr).toContain('permission denied for schema drizzle')
   })
 
   test('same-space SELECT remains visible', () => {
