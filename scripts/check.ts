@@ -253,6 +253,8 @@ for (const script of [
   'check-task-branch-boundary.ts',
   'check-prompt-retarget-boundary.ts',
   'check-run-artifacts-boundary.ts',
+  'check-run-alive-boundary.ts',
+  'check-run-lease-boundary.ts',
   'check-close-out-boundary.ts',
   'check-run-control-boundary.ts',
   'check-run-dispatch-boundary.ts',

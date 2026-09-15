@@ -75,6 +75,7 @@ import { pick } from './route.ts'
 import { pruneRuns, RUNS_DIR, readDispatchState, runFilePaths } from './run-artifacts.ts'
 import { claimRun } from './run-claim.ts'
 import { closeRun } from './run-close.ts'
+import { acquireRunLease } from './run-lease.ts'
 import { runLive } from './run-live.ts'
 import { resolveRootFromLastTurn } from './run-liveness.ts'
 import { bindSignals, childEnv, sha } from './run-process.ts'
@@ -97,6 +98,18 @@ import {
 import { resolveBase, resolveReadOnlyBase } from './worktree-caller.ts'
 import { toolFor } from './worktree-preflight.ts'
 import type { Worktree } from './worktree-types.ts'
+
+function requiredRunLease(
+  runId: number,
+  failed: (cause: unknown) => void,
+): ReturnType<typeof acquireRunLease> {
+  try {
+    return acquireRunLease(runId)
+  } catch (cause) {
+    failed(cause)
+    throw cause
+  }
+}
 
 export { TRUNCATED_TRANSCRIPT_BYTES }
 
@@ -951,6 +964,7 @@ export async function run(opts: {
   let confinementEvent: ConfinementEvent | null = null
   let frozenBefore: import('./confinement.ts').FrozenCheckout[] = []
   let askLoopback: AskLoopback | null = null
+  let runLease: ReturnType<typeof acquireRunLease> | null = null
   // Start after orch's own worktree and hook setup, immediately before the
   // vendor process. The interval establishes when a change happened, not who
   // wrote it: an architect or concurrent landing can change a watched checkout.
@@ -991,6 +1005,10 @@ export async function run(opts: {
   }))
 
   try {
+    runLease = requiredRunLease(claim.id, (cause) => {
+      error = String((cause as Error).message ?? cause)
+      failureKind = 'harness'
+    })
     ;({
       proc,
       timer,
@@ -1059,65 +1077,69 @@ export async function run(opts: {
       mcpSetupHeader,
     }))
   } finally {
-    ;({
-      status,
-      error,
-      failureKind,
-      changes,
-      output,
-      acceptedQuestions,
-      confinementEvent,
-      preConfinement,
-      artifactsPersisted,
-    } = await finishRun({
-      timer,
-      checkpointTimer,
-      idleTimer,
-      proc,
-      askLoopback,
-      claim,
-      writesJob,
-      worktree,
-      launchKey,
-      failureKind,
-      scratchDir,
-      gitConfigEnvironment,
-      opts,
-      watchedCheckouts,
-      confinementFailures,
-      frozenBefore,
-      removeIsolatedCwd,
-      changes,
-      provisionedMcpConfig,
-      started,
-      retargetDiagnostic,
-      error,
-      contract,
-      status,
-      contractObjects,
-      vendorTerminatedStream,
-      acceptedQuestions,
-      requestedJob,
-      output,
-      confinementEvent,
-      resolvedDialect,
-      runProjectName,
-      mcpConnection,
-      mcpMode,
-      declaredDeliverables,
-      mcpSetupHeader,
-      outPath,
-      preConfinement,
-      callerCwd,
-      promptPath,
-      exitCode,
-      vendorTokens,
-      costUsd,
-      effectiveModel,
-      resolvedSession,
-      name,
-      artifactsPersisted,
-    }))
+    try {
+      ;({
+        status,
+        error,
+        failureKind,
+        changes,
+        output,
+        acceptedQuestions,
+        confinementEvent,
+        preConfinement,
+        artifactsPersisted,
+      } = await finishRun({
+        timer,
+        checkpointTimer,
+        idleTimer,
+        proc,
+        askLoopback,
+        claim,
+        writesJob,
+        worktree,
+        launchKey,
+        failureKind,
+        scratchDir,
+        gitConfigEnvironment,
+        opts,
+        watchedCheckouts,
+        confinementFailures,
+        frozenBefore,
+        removeIsolatedCwd,
+        changes,
+        provisionedMcpConfig,
+        started,
+        retargetDiagnostic,
+        error,
+        contract,
+        status,
+        contractObjects,
+        vendorTerminatedStream,
+        acceptedQuestions,
+        requestedJob,
+        output,
+        confinementEvent,
+        resolvedDialect,
+        runProjectName,
+        mcpConnection,
+        mcpMode,
+        declaredDeliverables,
+        mcpSetupHeader,
+        outPath,
+        preConfinement,
+        callerCwd,
+        promptPath,
+        exitCode,
+        vendorTokens,
+        costUsd,
+        effectiveModel,
+        resolvedSession,
+        name,
+        artifactsPersisted,
+      }))
+    } finally {
+      runLease?.release()
+    }
   }
 
   return closeRun({

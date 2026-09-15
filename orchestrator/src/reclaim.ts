@@ -1,6 +1,6 @@
 import { existsSync, realpathSync } from 'node:fs'
 import { isAbsolute, relative, resolve, sep } from 'node:path'
-import { db, SESSION_LIVE_MS, sessionId, writableDb, writeTransaction } from './db.ts'
+import { db, sessionId, writableDb, writeTransaction } from './db.ts'
 import { chainScoreJoin, EVIDENCE_CLOSED_SQL } from './evidence-query.ts'
 import { targetGitEnvironment } from './git-environment.ts'
 import { keepTreeHold } from './keep-tree-hold.ts'
@@ -9,6 +9,8 @@ import { withCleanupLock, withWorktreeCreateLock, withWorktreeLease } from './pr
 import { projectAt, projectByName } from './projects.ts'
 import { settleClaims } from './resource-claims.ts'
 import { otherConversationWorktreeSharers } from './resource-ownership.ts'
+import { runAlive } from './run-alive.ts'
+import { runLeaseState } from './run-lease.ts'
 import { markedWorktreeSource, orphanSafety } from './worktree-attribution.ts'
 import { branchTip, removeFor, restoreBranch } from './worktree-remove.ts'
 import type { Worktree } from './worktree-types.ts'
@@ -94,17 +96,14 @@ function branchRows(project: string, branch: string): ReclaimRun[] {
     .all(project, branch) as ReclaimRun[]
 }
 
-function liveOwner(row: ReclaimRun, clock: number): string | null {
-  if (row.pid && pidAlive(row.pid)) return `run ${row.id} worker pid ${row.pid} is live`
-  if (row.agent_pid && pidAlive(row.agent_pid))
-    return `run ${row.id} agent pid ${row.agent_pid} is live`
-  if (row.session_id && row.session_last_seen) {
-    const seen = Date.parse(row.session_last_seen)
-    if (Number.isFinite(seen) && clock - seen <= SESSION_LIVE_MS) {
-      return `run ${row.id} session ${row.session_id} was last seen at ${row.session_last_seen}`
-    }
-  }
-  return null
+function liveOwner(row: ReclaimRun): string | null {
+  return runAlive({
+    status: row.status,
+    lease: runLeaseState(row.id),
+    pidAlive: Boolean(row.pid && pidAlive(row.pid)),
+  })
+    ? `run ${row.id} is alive`
+    : null
 }
 
 function absentCommits(repoRoot: string, subject: string, trunk: string): string[] | null {
@@ -120,12 +119,11 @@ type WorktreeProof = {
 
 function proveRunOwners(
   rows: ReclaimRun[],
-  clock: number,
   includeRecordedProcessLiveness = true,
 ): ReclaimResult | null {
   for (const row of rows) {
     if (includeRecordedProcessLiveness) {
-      const live = liveOwner(row, clock)
+      const live = liveOwner(row)
       if (live) return refuse(live)
     }
     if (!['ok', 'failed', 'stale', 'stopped'].includes(row.status)) {
@@ -168,7 +166,7 @@ function proveWorktree(path: string, clock: number, _allowDirty = false): Worktr
     }
   }
   if (rows.length) {
-    const owners = proveRunOwners(rows, clock, false)
+    const owners = proveRunOwners(rows, false)
     if (owners) return { result: owners }
     for (const lockedRow of rows) {
       if (
@@ -355,7 +353,7 @@ export function reclaimBranch(
     const rows = branchRows(projectName, branch)
     if (!rows.length)
       return { result: refuse(`no run row records minted branch ${projectName}:${branch}`) }
-    const owners = proveRunOwners(rows, options.clock ?? Date.now())
+    const owners = proveRunOwners(rows)
     if (owners) return { result: owners }
     const tip = branchTip(project.path, branch)
     if (!tip) return { result: refuse(`branch ${projectName}:${branch} does not exist`) }

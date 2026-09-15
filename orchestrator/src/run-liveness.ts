@@ -7,24 +7,14 @@ import type { Database } from 'bun:sqlite'
 import { db, linkedWorktreeReadOnly, writeTransaction } from './db.ts'
 import { pidAlive } from './process-liveness.ts'
 import { teardownTerminalRunResources } from './resource-ownership.ts'
+import { runAlive } from './run-alive.ts'
 import { auditRunMutation, runMutationAuthority } from './run-authority.ts'
+import { runLeaseState } from './run-lease.ts'
 
 /**
- * A process that died mid-run leaves its row at 'running' for ever. Anything
- * older than this is treated as abandoned rather than live, so the dashboard
- * shows what is actually in flight.
- */
-/**
- * Raised from 30 minutes when jobs gained their own bounds.
- *
- * Every bound must sit below this, or a run still working is swept out from
- * under a live process — which is why the suite asserts it. `implement` runs to
- * 45 minutes because building and then verifying a real change takes longer
- * than any review does.
- *
- * The cost of raising it is small: `reapStale` reaps a dead pid immediately
- * whatever the age, so this cutoff only governs rows whose pid is unknown or
- * recycled, and those are the cases where waiting longer is the safer error.
+ * The outer ceiling for a run and for callers waiting on one. Liveness itself
+ * comes from the coordinator's kernel lease; elapsed time is not evidence that
+ * a quiet worker, including one blocked on a ruling, has died.
  */
 export const STALE_AFTER_MS = 60 * 60 * 1000
 
@@ -34,8 +24,7 @@ export const STALE_AFTER_MS = 60 * 60 * 1000
  * detach() inserts the reserved row, then spawns the worker, then records the
  * pid. A spawn error or a parent death in that gap leaves agent='(pending)',
  * status='running', no pid. That is not an agent run, and waiting for
- * STALE_AFTER_MS classified those as stale/interrupted. After this bound they
- * are failed/harness instead.
+ * the ordinary run lease. After this bound they are failed/harness instead.
  */
 export const PENDING_BOOTSTRAP_MS = 60_000
 
@@ -164,28 +153,42 @@ export function resolveRootFromLastTurn(database: Database, rootId: number): num
  * Those rows inflate "in flight" and hide in `--unscored`, so they are swept to
  * a distinct status rather than silently counted as either running or failed.
  *
- * Liveness is checked by PID where one was recorded — a dead process is dead
- * now, not in thirty minutes. A live PID always wins over the age fallback;
- * treating a demonstrably live worker as stale transfers authority while it
- * is still working. The cutoff applies only to rows that have no PID.
+ * Current runs are alive exactly while their coordinator lease is held. Rows
+ * predating the lease fall back to their recorded PID; elapsed time is never a
+ * liveness signal.
  *
  * Returns how many were swept. Called opportunistically on open: cheap, and it
  * means no separate cron has to remember.
  */
 export type ObservedDeadRun = { id: number; reason: string }
 
+type RunningRow = {
+  id: number
+  pid: number | null
+  agent_pid: number | null
+  agent: string
+  started_at: string
+}
+
+function runningRowAlive(row: RunningRow): boolean {
+  return runAlive({
+    status: 'running',
+    lease: runLeaseState(row.id),
+    pidAlive: Boolean(row.pid && pidAlive(row.pid)),
+  })
+}
+
+function deadRunReason(row: RunningRow): string {
+  if (runLeaseState(row.id) === 'free') return `run lease ${row.id} is free`
+  if (row.pid) return `pid ${row.pid} is not alive`
+  return 'legacy run has no live pid'
+}
+
 export function reapStale(d: Database = db()): number | ObservedDeadRun[] {
-  const cutoff = new Date(Date.now() - STALE_AFTER_MS).toISOString()
   const bootstrapCutoff = new Date(Date.now() - PENDING_BOOTSTRAP_MS).toISOString()
   const rows = d
     .query(`SELECT id, pid, agent_pid, agent, started_at FROM run WHERE status='running'`)
-    .all() as {
-    id: number
-    pid: number | null
-    agent_pid: number | null
-    agent: string
-    started_at: string
-  }[]
+    .all() as RunningRow[]
 
   const dead: number[] = []
   const abandonedBootstrap: number[] = []
@@ -193,18 +196,11 @@ export function reapStale(d: Database = db()): number | ObservedDeadRun[] {
     // A pid-less `(pending)` row is abandoned bootstrap, not an agent run.
     // Checked before the hour cutoff so these are failed/harness rather than
     // waiting for stale/interrupted.
-    if (!r.pid && r.agent === '(pending)' && r.started_at < bootstrapCutoff) {
-      abandonedBootstrap.push(r.id)
+    if (r.agent === '(pending)') {
+      if (!r.pid && r.started_at < bootstrapCutoff) abandonedBootstrap.push(r.id)
       continue
     }
-    // signal 0 tests existence without touching the process. A live PID is
-    // authoritative whatever the row's age; only PID-less legacy rows fall
-    // back to the clock.
-    if (r.pid) {
-      if (!pidAlive(r.pid)) dead.push(r.id)
-      continue
-    }
-    if (r.started_at < cutoff) dead.push(r.id)
+    if (!runningRowAlive(r)) dead.push(r.id)
   }
   if (linkedWorktreeReadOnly) {
     return [
@@ -212,7 +208,7 @@ export function reapStale(d: Database = db()): number | ObservedDeadRun[] {
         const row = rows.find((candidate) => candidate.id === id)!
         return {
           id,
-          reason: row.pid ? `pid ${row.pid} is not alive` : `no pid after ${STALE_AFTER_MS}ms`,
+          reason: deadRunReason(row),
         }
       }),
       ...abandonedBootstrap.map((id) => ({
@@ -243,13 +239,9 @@ export function reapStale(d: Database = db()): number | ObservedDeadRun[] {
     // Stamped `interrupted`, which puts these under the same NOT_EVIDENCE rule as
     // an exit-143 kill instead of leaving routing a second concept to know about.
     //
-    // A reaped row can ONLY be an external kill, and the two facts that make that
-    // airtight are both already enforced: every agent's timeout is held below
-    // STALE_AFTER_MS (asserted in the suite), so a genuine hang is caught by the
-    // agent's own timer and recorded as `timeout` - which IS evidence - and
-    // run()'s try/finally writes a terminal row on any normal exit and on
-    // SIGTERM. Reaching here means neither could run: SIGKILL, or the parent's
-    // process group going down and taking the child with it.
+    // A reaped row can ONLY be an external kill: run() holds its lease until
+    // after its terminal write. Reaching here means that write could not run,
+    // such as after SIGKILL or the parent's process group going down.
     //
     // Run 521 is the worked example. A delegation in this very session was killed
     // by the calling harness's command timeout and landed here - a fact about the
@@ -263,8 +255,7 @@ export function reapStale(d: Database = db()): number | ObservedDeadRun[] {
       const vendorAlive = row.agent_pid && pidAlive(row.agent_pid)
       const surviving = vendorAlive ? `; vendor pid ${row.agent_pid} still alive` : ''
       const error = `abandoned: process gone, no terminal state recorded${surviving}`
-      const reason =
-        (row.pid ? `pid ${row.pid} is not alive` : `no pid after ${STALE_AFTER_MS}ms`) + surviving
+      const reason = deadRunReason(row) + surviving
       writeTransaction(() => {
         if (update.run(error, id).changes !== 1) return
         const authority = runMutationAuthority(d, id)

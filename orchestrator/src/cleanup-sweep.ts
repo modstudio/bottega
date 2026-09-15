@@ -17,10 +17,13 @@ import {
   leakedResourceLines,
   orchRunId,
 } from './docker-resources.ts'
+import { pidAlive } from './process-liveness.ts'
 import { projectAt, projectByName, projects } from './projects.ts'
 import { liveWorktreeSharers, terminalDockerRetentionReasonForRun } from './resource-ownership.ts'
+import { runAlive } from './run-alive.ts'
 import { RUNS_DIR } from './run-artifacts.ts'
 import { auditRunMutation } from './run-authority.ts'
+import { removeFreeRunLease, runLeaseIds, runLeaseState } from './run-lease.ts'
 import {
   inspectTreeOwnership,
   isOrchWorktree,
@@ -48,7 +51,7 @@ function orphanKeepReason(detail: string): string {
   return /^has commits not reachable from /.test(detail) ? 'holds commits not on trunk' : detail
 }
 
-type NamedRun = { id: number; status: string }
+type NamedRun = { id: number; status: string; alive: boolean }
 type ClosedSweepOutcome = 'released' | 'absent' | 'forgotten'
 type SweepCandidate = {
   id: number
@@ -100,12 +103,20 @@ function namedRun(
   const rootId = member.parent_run_id ?? member.id
   const latest = db()
     .query(
-      `SELECT status FROM run
+      `SELECT id,status,pid FROM run
       WHERE id=? OR parent_run_id=?
       ORDER BY turn DESC, id DESC LIMIT 1`,
     )
-    .get(rootId, rootId) as { status: string }
-  return { id: member.id, status: latest.status }
+    .get(rootId, rootId) as { id: number; status: string; pid: number | null }
+  return {
+    id: member.id,
+    status: latest.status,
+    alive: runAlive({
+      status: latest.status,
+      lease: runLeaseState(latest.id),
+      pidAlive: Boolean(latest.pid && pidAlive(latest.pid)),
+    }),
+  }
 }
 
 function printSweepKept(
@@ -232,6 +243,18 @@ function shouldInventoryBeforeSweep(row: SweepCandidate, dry: boolean): boolean 
   return !dry && sweepTreeIsOwned(row)
 }
 
+function sweepTerminalRunLeases(dry: boolean): void {
+  if (dry) return
+  for (const runId of runLeaseIds()) {
+    const row = db().query('SELECT status FROM run WHERE id=?').get(runId) as {
+      status: string
+    } | null
+    if (row && ['ok', 'failed', 'stale', 'stopped'].includes(row.status)) {
+      removeFreeRunLease(runId)
+    }
+  }
+}
+
 function reportImmediateClosedSweep(
   closed: ReturnType<typeof closeOutRun>,
   row: SweepCandidate,
@@ -292,6 +315,7 @@ export async function sweepRuns(options: SweepOptions, helpers: SweepHelpers): P
   const keep = (line: string, reason: string) => {
     kept.push({ line, reason })
   }
+  sweepTerminalRunLeases(dry)
   for (const r of rows) {
     const current = db().query('SELECT worktree FROM run WHERE id=?').get(r.id) as {
       worktree: string | null
@@ -375,7 +399,7 @@ export async function sweepRuns(options: SweepOptions, helpers: SweepHelpers): P
         continue
       }
       const named = namedRun(entry.name, p.settings.worktree?.branch, p)
-      if (named?.status === 'running' || named?.status === 'asking') {
+      if (named?.alive) {
         keep(`${label}  live — kept`, 'live — kept')
         continue
       }
@@ -417,7 +441,7 @@ export async function sweepRuns(options: SweepOptions, helpers: SweepHelpers): P
           const ownersBefore = evidenceOwningBranchOwners(ownerRow, p.path)
           const snapshot = safe.branch ? branchTip(p.path, safe.branch) : null
           const lockedRun = namedRun(entry.name, p.settings.worktree?.branch, p)
-          if (lockedRun?.status === 'running' || lockedRun?.status === 'asking') {
+          if (lockedRun?.alive) {
             keep(`${label}  live — kept`, 'live — kept')
             return
           }

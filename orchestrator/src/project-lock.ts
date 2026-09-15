@@ -142,6 +142,41 @@ const LOCK_EX = 2
 const LOCK_NB = 4
 const LOCK_UN = 8
 
+export type KernelLease = { release: () => void }
+
+function kernelLease(fd: number): KernelLease {
+  let released = false
+  return {
+    release: () => {
+      if (released) return
+      released = true
+      flock(fd, LOCK_UN)
+      closeSync(fd)
+    },
+  }
+}
+
+/** Acquire one non-blocking kernel lease, creating its file when requested. */
+export function tryKernelLease(path: string, create = false): KernelLease | null {
+  let fd: number
+  try {
+    fd = openSync(path, constants.O_RDWR | (create ? constants.O_CREAT : 0), 0o600)
+  } catch (error) {
+    if (!create && (error as NodeJS.ErrnoException).code === 'ENOENT') return null
+    throw error
+  }
+  if (flock(fd, LOCK_EX | LOCK_NB) === 0) return kernelLease(fd)
+  closeSync(fd)
+  return null
+}
+
+/** Acquire a required kernel lease or refuse with its exact path. */
+export function acquireKernelLease(path: string): KernelLease {
+  const lease = tryKernelLease(path, true)
+  if (!lease) throw new Error(`could not acquire run lease ${path}: lock is already held`)
+  return lease
+}
+
 export function projectLockDir(repoRoot: string): string {
   const common = realpathSync(resolve(repoRoot, git(['rev-parse', '--git-common-dir'], repoRoot)))
   return join(common, 'orch', 'locks')
@@ -171,14 +206,10 @@ function projectLockPaths(
 
 function kernelLockHeld(path: string): boolean {
   if (!existsSync(path)) return false
-  const fd = openSync(path, constants.O_RDWR)
-  try {
-    if (flock(fd, LOCK_EX | LOCK_NB) !== 0) return true
-    flock(fd, LOCK_UN)
-    return false
-  } finally {
-    closeSync(fd)
-  }
+  const lease = tryKernelLease(path)
+  if (!lease) return true
+  lease.release()
+  return false
 }
 
 function lockLabel(name: string): string {

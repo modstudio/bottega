@@ -6,10 +6,10 @@ import { candidates } from './route.ts'
 import { PENDING_BOOTSTRAP_MS, reapStale, STALE_AFTER_MS } from './run-liveness.ts'
 
 describe('reapStale', () => {
-  test('a run older than the cutoff is untouched while its pid is alive', () => {
+  test('elapsed time does not kill a legacy run while its pid is alive', () => {
     const id = addRun({ agent: 'grok', job: 'craft', status: 'running' })
     // process.pid is certainly alive: this is the recycled-pid case, and the
-    // age cutoff has to win it.
+    // elapsed time must not decide liveness.
     db()
       .query('UPDATE run SET started_at=?, pid=? WHERE id=?')
       .run(new Date(Date.now() - STALE_AFTER_MS - 60_000).toISOString(), process.pid, id)
@@ -59,19 +59,9 @@ describe('reapStale', () => {
     expect(NOT_EVIDENCE).toContain(r.failure_kind)
   })
 
-  test('a recent run with NO pid cannot be swept, which is why one is recorded', () => {
-    // The liveness check is guarded on `if (r.pid)`, so a row without one is
-    // invisible to it and can only be cleared by the thirty-minute cutoff. That
-    // is not a bug in the reaper - a pid it never had tells it nothing - it is
-    // the reason detach() must write the WORKER's pid the moment it spawns.
-    // Without that, a worker that died before starting an agent left a row
-    // claiming to run, showing `(pending)` on the dashboard; four were sitting
-    // there when this was found, one for fifteen minutes.
+  test('a legacy run with no lease and no pid is swept at once', () => {
     const id = addRun({ agent: 'grok', job: 'craft', status: 'running' })
     db().query('UPDATE run SET pid=NULL WHERE id=?').run(id)
-    expect(reapStale(db())).toBe(0)
-    // With one, the very same dead worker is swept on the next pass.
-    db().query('UPDATE run SET pid=? WHERE id=?').run(4194304, id)
     expect(reapStale(db())).toBe(1)
   })
 
