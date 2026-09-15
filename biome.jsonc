@@ -65,22 +65,5 @@
         "organizeImports": "on"
       }
     }
-  },
-  "overrides": [
-    {
-      "includes": ["hub/web/src/**"],
-      // These sites are real and are fixed with UI verification under DEV-552.
-      "linter": {
-        "rules": {
-          "a11y": "warn",
-          "correctness": {
-            "useExhaustiveDependencies": "warn"
-          },
-          "suspicious": {
-            "noArrayIndexKey": "warn"
-          }
-        }
-      }
-    }
-  ]
+  }
 }
