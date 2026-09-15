@@ -710,6 +710,12 @@
     "score": 122
   },
   {
+    "file": "orchestrator/src/run-close.ts",
+    "function": "closeRun",
+    "line": 102,
+    "score": 36
+  },
+  {
     "file": "orchestrator/src/run-control.ts",
     "function": "follow",
     "line": 31,
@@ -773,8 +779,8 @@
   {
     "file": "orchestrator/src/run.ts",
     "function": "run",
-    "line": 173,
-    "score": 208,
+    "line": 201,
+    "score": 159,
     "key": "orchestrator/src/run.ts\u0000run"
   },
   {

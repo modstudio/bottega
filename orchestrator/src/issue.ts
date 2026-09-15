@@ -12,7 +12,8 @@ import { DB_PATH, db } from './db.ts'
 import { type Project, projectByName } from './projects.ts'
 import { prepareSharedRefGuard } from './ref-guard.ts'
 import { parseReviewOutput } from './review.ts'
-import { type RunResult, run } from './run.ts'
+import { run } from './run.ts'
+import type { RunResult } from './run-types.ts'
 import { removeFor } from './worktree-remove.ts'
 
 const HUB = new URL('../../bin/hub', import.meta.url).pathname

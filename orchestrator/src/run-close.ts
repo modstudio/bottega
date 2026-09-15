@@ -21,18 +21,51 @@ import { resolveBranchRef, stackAt } from './projects.ts'
 import { reclaimTerminalTree } from './close-out.ts'
 import { CALIBRATION_SUFFIX_RESERVE_BYTES } from './review-calibration.ts'
 import { pick } from './route.ts'
-import type { RunResult } from './run.ts'
 import { terminateRunProcesses } from './run-process.ts'
+import type { RunResult } from './run-types.ts'
 import type { TransportName } from './transport.ts'
 import type { Changes } from './worktree-remove.ts'
 import type { Worktree } from './worktree-types.ts'
 
-type RunOptions = Parameters<typeof import('./run.ts').run>[0]
+type CloseOptions = {
+  job: string
+  noFailover?: boolean
+  avoid?: string[]
+  carry?: boolean
+}
+
+type SuccessorOptions = {
+  job: string
+  prompt: string
+  agent: string
+  transport: TransportName | undefined
+  schemaPath: string | undefined
+  mcp: ReturnType<typeof mcpRequestFromStored>
+  probe: boolean
+  label: string | undefined
+  lens: string | undefined
+  cwd: string
+  repo: string | undefined
+  retryOf: number
+  noFailover: false
+  ownerSession: string | null
+  automaticFailover: true
+  seed: string | undefined
+  key: string | undefined
+  base: string | undefined
+  avoid: string[] | undefined
+  carry: boolean | undefined
+  review: string | undefined
+  deliverables: string[]
+  timeoutMinutes: number | undefined
+  keepTree: boolean
+  resolvedReviewTarget: { branch: string; commit: string; base: string } | undefined
+}
 
 export type CloseInput = {
   failureKind: ReturnType<typeof classify> | null
   name: string
-  opts: RunOptions
+  opts: CloseOptions
   claim: { id: number }
   idleUnkillable: boolean
   status: string
@@ -57,7 +90,7 @@ export type CloseInput = {
   outPath: string
   contract: WorkerReply | null
   error: string | null
-  run: typeof import('./run.ts').run
+  run: (opts: SuccessorOptions) => Promise<RunResult>
 }
 
 function appendFailoverRefusal(id: number, reason: string): void {
