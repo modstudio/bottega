@@ -368,12 +368,6 @@
   },
   {
     "file": "orchestrator/src/issue.ts",
-    "function": "parseFiledIssue",
-    "line": 92,
-    "score": 16
-  },
-  {
-    "file": "orchestrator/src/issue.ts",
     "function": "jsonObjects",
     "line": 174,
     "score": 18
@@ -465,8 +459,9 @@
   {
     "file": "orchestrator/src/outcome.ts",
     "function": "decideOutcome",
-    "line": 40,
-    "score": 32
+    "line": 194,
+    "score": 31,
+    "key": "orchestrator/src/outcome.ts\u0000decideOutcome"
   },
   {
     "file": "orchestrator/src/port-commands.ts",
@@ -747,8 +742,9 @@
   {
     "file": "orchestrator/src/run-live.ts",
     "function": "runLive",
-    "line": 139,
-    "score": 108
+    "line": 179,
+    "score": 107,
+    "key": "orchestrator/src/run-live.ts\u0000runLive"
   },
   {
     "file": "orchestrator/src/run-liveness.ts",
