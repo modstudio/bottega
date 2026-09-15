@@ -1,0 +1,1191 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "baseRef": {
+      "type": "string"
+    },
+    "allocate": {
+      "type": "object",
+      "properties": {
+        "ports": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "databases": {
+          "type": "object",
+          "propertyNames": {
+            "type": "string"
+          },
+          "additionalProperties": {
+            "oneOf": [
+              {
+                "type": "object",
+                "properties": {
+                  "kind": {
+                    "type": "string",
+                    "const": "postgres-template"
+                  },
+                  "template": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "psql": {
+                    "type": "string",
+                    "minLength": 1
+                  }
+                },
+                "required": ["kind", "template"],
+                "additionalProperties": false
+              },
+              {
+                "type": "object",
+                "properties": {
+                  "kind": {
+                    "type": "string",
+                    "const": "mysql-dump"
+                  },
+                  "dump": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "mysql": {
+                    "type": "string",
+                    "minLength": 1
+                  }
+                },
+                "required": ["kind", "dump"],
+                "additionalProperties": false
+              },
+              {
+                "type": "object",
+                "properties": {
+                  "kind": {
+                    "type": "string",
+                    "const": "compose"
+                  },
+                  "up": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "down": {
+                    "type": "string",
+                    "minLength": 1
+                  }
+                },
+                "required": ["kind", "up", "down"],
+                "additionalProperties": false
+              }
+            ]
+          }
+        },
+        "strings": {
+          "type": "object",
+          "propertyNames": {
+            "type": "string"
+          },
+          "additionalProperties": {
+            "type": "string"
+          }
+        }
+      },
+      "additionalProperties": false
+    },
+    "env": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "path": {
+            "type": "string",
+            "minLength": 1
+          },
+          "contents": {
+            "type": "string"
+          },
+          "mode": {
+            "type": "string",
+            "enum": ["append", "replace", "managed-block"]
+          },
+          "inherit": {
+            "type": "string"
+          },
+          "omit": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        },
+        "required": ["path", "contents"],
+        "additionalProperties": false
+      }
+    },
+    "shared": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "minLength": 1
+          },
+          "kind": {
+            "type": "string",
+            "enum": ["path", "volume", "network", "service"]
+          },
+          "from": {
+            "type": "string",
+            "minLength": 1
+          },
+          "at": {
+            "type": "string"
+          }
+        },
+        "required": ["name", "kind", "from"],
+        "additionalProperties": false
+      }
+    },
+    "pre": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "minLength": 1
+          },
+          "run": {
+            "type": "object",
+            "properties": {
+              "command": {
+                "type": "string",
+                "minLength": 1
+              },
+              "args": {
+                "type": "array",
+                "items": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "value": {
+                          "type": "string"
+                        },
+                        "omitWhenEmpty": {
+                          "type": "string",
+                          "enum": ["branch", "name", "base", "seed", "key", "path"]
+                        }
+                      },
+                      "required": ["value", "omitWhenEmpty"],
+                      "additionalProperties": false
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "expand": {
+                          "type": "string",
+                          "const": "seed"
+                        }
+                      },
+                      "required": ["expand"],
+                      "additionalProperties": false
+                    }
+                  ]
+                }
+              },
+              "cwd": {
+                "type": "string"
+              }
+            },
+            "required": ["command", "args"],
+            "additionalProperties": false
+          },
+          "undo": {
+            "type": "object",
+            "properties": {
+              "command": {
+                "type": "string",
+                "minLength": 1
+              },
+              "args": {
+                "type": "array",
+                "items": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "value": {
+                          "type": "string"
+                        },
+                        "omitWhenEmpty": {
+                          "type": "string",
+                          "enum": ["branch", "name", "base", "seed", "key", "path"]
+                        }
+                      },
+                      "required": ["value", "omitWhenEmpty"],
+                      "additionalProperties": false
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "expand": {
+                          "type": "string",
+                          "const": "seed"
+                        }
+                      },
+                      "required": ["expand"],
+                      "additionalProperties": false
+                    }
+                  ]
+                }
+              },
+              "cwd": {
+                "type": "string"
+              }
+            },
+            "required": ["command", "args"],
+            "additionalProperties": false
+          },
+          "verify": {
+            "type": "object",
+            "properties": {
+              "command": {
+                "type": "string",
+                "minLength": 1
+              },
+              "args": {
+                "type": "array",
+                "items": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "value": {
+                          "type": "string"
+                        },
+                        "omitWhenEmpty": {
+                          "type": "string",
+                          "enum": ["branch", "name", "base", "seed", "key", "path"]
+                        }
+                      },
+                      "required": ["value", "omitWhenEmpty"],
+                      "additionalProperties": false
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "expand": {
+                          "type": "string",
+                          "const": "seed"
+                        }
+                      },
+                      "required": ["expand"],
+                      "additionalProperties": false
+                    }
+                  ]
+                }
+              },
+              "cwd": {
+                "type": "string"
+              }
+            },
+            "required": ["command", "args"],
+            "additionalProperties": false
+          },
+          "exec": {
+            "oneOf": [
+              {
+                "type": "object",
+                "properties": {
+                  "where": {
+                    "type": "string",
+                    "const": "host"
+                  }
+                },
+                "required": ["where"],
+                "additionalProperties": false
+              },
+              {
+                "type": "object",
+                "properties": {
+                  "where": {
+                    "type": "string",
+                    "const": "container"
+                  },
+                  "service": {
+                    "type": "string",
+                    "minLength": 1
+                  }
+                },
+                "required": ["where", "service"],
+                "additionalProperties": false
+              },
+              {
+                "type": "object",
+                "properties": {
+                  "where": {
+                    "type": "string",
+                    "const": "as-user"
+                  },
+                  "user": {
+                    "type": "string",
+                    "minLength": 1
+                  }
+                },
+                "required": ["where", "user"],
+                "additionalProperties": false
+              }
+            ]
+          }
+        },
+        "required": ["name", "run"],
+        "additionalProperties": false
+      }
+    },
+    "create": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "minLength": 1
+          },
+          "run": {
+            "type": "object",
+            "properties": {
+              "command": {
+                "type": "string",
+                "minLength": 1
+              },
+              "args": {
+                "type": "array",
+                "items": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "value": {
+                          "type": "string"
+                        },
+                        "omitWhenEmpty": {
+                          "type": "string",
+                          "enum": ["branch", "name", "base", "seed", "key", "path"]
+                        }
+                      },
+                      "required": ["value", "omitWhenEmpty"],
+                      "additionalProperties": false
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "expand": {
+                          "type": "string",
+                          "const": "seed"
+                        }
+                      },
+                      "required": ["expand"],
+                      "additionalProperties": false
+                    }
+                  ]
+                }
+              },
+              "cwd": {
+                "type": "string"
+              }
+            },
+            "required": ["command", "args"],
+            "additionalProperties": false
+          },
+          "undo": {
+            "type": "object",
+            "properties": {
+              "command": {
+                "type": "string",
+                "minLength": 1
+              },
+              "args": {
+                "type": "array",
+                "items": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "value": {
+                          "type": "string"
+                        },
+                        "omitWhenEmpty": {
+                          "type": "string",
+                          "enum": ["branch", "name", "base", "seed", "key", "path"]
+                        }
+                      },
+                      "required": ["value", "omitWhenEmpty"],
+                      "additionalProperties": false
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "expand": {
+                          "type": "string",
+                          "const": "seed"
+                        }
+                      },
+                      "required": ["expand"],
+                      "additionalProperties": false
+                    }
+                  ]
+                }
+              },
+              "cwd": {
+                "type": "string"
+              }
+            },
+            "required": ["command", "args"],
+            "additionalProperties": false
+          },
+          "verify": {
+            "type": "object",
+            "properties": {
+              "command": {
+                "type": "string",
+                "minLength": 1
+              },
+              "args": {
+                "type": "array",
+                "items": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "value": {
+                          "type": "string"
+                        },
+                        "omitWhenEmpty": {
+                          "type": "string",
+                          "enum": ["branch", "name", "base", "seed", "key", "path"]
+                        }
+                      },
+                      "required": ["value", "omitWhenEmpty"],
+                      "additionalProperties": false
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "expand": {
+                          "type": "string",
+                          "const": "seed"
+                        }
+                      },
+                      "required": ["expand"],
+                      "additionalProperties": false
+                    }
+                  ]
+                }
+              },
+              "cwd": {
+                "type": "string"
+              }
+            },
+            "required": ["command", "args"],
+            "additionalProperties": false
+          },
+          "exec": {
+            "oneOf": [
+              {
+                "type": "object",
+                "properties": {
+                  "where": {
+                    "type": "string",
+                    "const": "host"
+                  }
+                },
+                "required": ["where"],
+                "additionalProperties": false
+              },
+              {
+                "type": "object",
+                "properties": {
+                  "where": {
+                    "type": "string",
+                    "const": "container"
+                  },
+                  "service": {
+                    "type": "string",
+                    "minLength": 1
+                  }
+                },
+                "required": ["where", "service"],
+                "additionalProperties": false
+              },
+              {
+                "type": "object",
+                "properties": {
+                  "where": {
+                    "type": "string",
+                    "const": "as-user"
+                  },
+                  "user": {
+                    "type": "string",
+                    "minLength": 1
+                  }
+                },
+                "required": ["where", "user"],
+                "additionalProperties": false
+              }
+            ]
+          }
+        },
+        "required": ["name", "run"],
+        "additionalProperties": false
+      }
+    },
+    "serve": {
+      "type": "object",
+      "propertyNames": {
+        "type": "string"
+      },
+      "additionalProperties": {
+        "type": "array",
+        "items": {
+          "type": "object",
+          "properties": {
+            "name": {
+              "type": "string",
+              "minLength": 1
+            },
+            "run": {
+              "type": "object",
+              "properties": {
+                "command": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "args": {
+                  "type": "array",
+                  "items": {
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "object",
+                        "properties": {
+                          "value": {
+                            "type": "string"
+                          },
+                          "omitWhenEmpty": {
+                            "type": "string",
+                            "enum": ["branch", "name", "base", "seed", "key", "path"]
+                          }
+                        },
+                        "required": ["value", "omitWhenEmpty"],
+                        "additionalProperties": false
+                      },
+                      {
+                        "type": "object",
+                        "properties": {
+                          "expand": {
+                            "type": "string",
+                            "const": "seed"
+                          }
+                        },
+                        "required": ["expand"],
+                        "additionalProperties": false
+                      }
+                    ]
+                  }
+                },
+                "cwd": {
+                  "type": "string"
+                }
+              },
+              "required": ["command", "args"],
+              "additionalProperties": false
+            },
+            "undo": {
+              "type": "object",
+              "properties": {
+                "command": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "args": {
+                  "type": "array",
+                  "items": {
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "object",
+                        "properties": {
+                          "value": {
+                            "type": "string"
+                          },
+                          "omitWhenEmpty": {
+                            "type": "string",
+                            "enum": ["branch", "name", "base", "seed", "key", "path"]
+                          }
+                        },
+                        "required": ["value", "omitWhenEmpty"],
+                        "additionalProperties": false
+                      },
+                      {
+                        "type": "object",
+                        "properties": {
+                          "expand": {
+                            "type": "string",
+                            "const": "seed"
+                          }
+                        },
+                        "required": ["expand"],
+                        "additionalProperties": false
+                      }
+                    ]
+                  }
+                },
+                "cwd": {
+                  "type": "string"
+                }
+              },
+              "required": ["command", "args"],
+              "additionalProperties": false
+            },
+            "verify": {
+              "type": "object",
+              "properties": {
+                "command": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "args": {
+                  "type": "array",
+                  "items": {
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "object",
+                        "properties": {
+                          "value": {
+                            "type": "string"
+                          },
+                          "omitWhenEmpty": {
+                            "type": "string",
+                            "enum": ["branch", "name", "base", "seed", "key", "path"]
+                          }
+                        },
+                        "required": ["value", "omitWhenEmpty"],
+                        "additionalProperties": false
+                      },
+                      {
+                        "type": "object",
+                        "properties": {
+                          "expand": {
+                            "type": "string",
+                            "const": "seed"
+                          }
+                        },
+                        "required": ["expand"],
+                        "additionalProperties": false
+                      }
+                    ]
+                  }
+                },
+                "cwd": {
+                  "type": "string"
+                }
+              },
+              "required": ["command", "args"],
+              "additionalProperties": false
+            },
+            "exec": {
+              "oneOf": [
+                {
+                  "type": "object",
+                  "properties": {
+                    "where": {
+                      "type": "string",
+                      "const": "host"
+                    }
+                  },
+                  "required": ["where"],
+                  "additionalProperties": false
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "where": {
+                      "type": "string",
+                      "const": "container"
+                    },
+                    "service": {
+                      "type": "string",
+                      "minLength": 1
+                    }
+                  },
+                  "required": ["where", "service"],
+                  "additionalProperties": false
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "where": {
+                      "type": "string",
+                      "const": "as-user"
+                    },
+                    "user": {
+                      "type": "string",
+                      "minLength": 1
+                    }
+                  },
+                  "required": ["where", "user"],
+                  "additionalProperties": false
+                }
+              ]
+            }
+          },
+          "required": ["name", "run"],
+          "additionalProperties": false
+        }
+      }
+    },
+    "destroy": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "minLength": 1
+          },
+          "run": {
+            "type": "object",
+            "properties": {
+              "command": {
+                "type": "string",
+                "minLength": 1
+              },
+              "args": {
+                "type": "array",
+                "items": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "value": {
+                          "type": "string"
+                        },
+                        "omitWhenEmpty": {
+                          "type": "string",
+                          "enum": ["branch", "name", "base", "seed", "key", "path"]
+                        }
+                      },
+                      "required": ["value", "omitWhenEmpty"],
+                      "additionalProperties": false
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "expand": {
+                          "type": "string",
+                          "const": "seed"
+                        }
+                      },
+                      "required": ["expand"],
+                      "additionalProperties": false
+                    }
+                  ]
+                }
+              },
+              "cwd": {
+                "type": "string"
+              }
+            },
+            "required": ["command", "args"],
+            "additionalProperties": false
+          },
+          "undo": {
+            "type": "object",
+            "properties": {
+              "command": {
+                "type": "string",
+                "minLength": 1
+              },
+              "args": {
+                "type": "array",
+                "items": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "value": {
+                          "type": "string"
+                        },
+                        "omitWhenEmpty": {
+                          "type": "string",
+                          "enum": ["branch", "name", "base", "seed", "key", "path"]
+                        }
+                      },
+                      "required": ["value", "omitWhenEmpty"],
+                      "additionalProperties": false
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "expand": {
+                          "type": "string",
+                          "const": "seed"
+                        }
+                      },
+                      "required": ["expand"],
+                      "additionalProperties": false
+                    }
+                  ]
+                }
+              },
+              "cwd": {
+                "type": "string"
+              }
+            },
+            "required": ["command", "args"],
+            "additionalProperties": false
+          },
+          "verify": {
+            "type": "object",
+            "properties": {
+              "command": {
+                "type": "string",
+                "minLength": 1
+              },
+              "args": {
+                "type": "array",
+                "items": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "value": {
+                          "type": "string"
+                        },
+                        "omitWhenEmpty": {
+                          "type": "string",
+                          "enum": ["branch", "name", "base", "seed", "key", "path"]
+                        }
+                      },
+                      "required": ["value", "omitWhenEmpty"],
+                      "additionalProperties": false
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "expand": {
+                          "type": "string",
+                          "const": "seed"
+                        }
+                      },
+                      "required": ["expand"],
+                      "additionalProperties": false
+                    }
+                  ]
+                }
+              },
+              "cwd": {
+                "type": "string"
+              }
+            },
+            "required": ["command", "args"],
+            "additionalProperties": false
+          },
+          "exec": {
+            "oneOf": [
+              {
+                "type": "object",
+                "properties": {
+                  "where": {
+                    "type": "string",
+                    "const": "host"
+                  }
+                },
+                "required": ["where"],
+                "additionalProperties": false
+              },
+              {
+                "type": "object",
+                "properties": {
+                  "where": {
+                    "type": "string",
+                    "const": "container"
+                  },
+                  "service": {
+                    "type": "string",
+                    "minLength": 1
+                  }
+                },
+                "required": ["where", "service"],
+                "additionalProperties": false
+              },
+              {
+                "type": "object",
+                "properties": {
+                  "where": {
+                    "type": "string",
+                    "const": "as-user"
+                  },
+                  "user": {
+                    "type": "string",
+                    "minLength": 1
+                  }
+                },
+                "required": ["where", "user"],
+                "additionalProperties": false
+              }
+            ]
+          }
+        },
+        "required": ["name", "run"],
+        "additionalProperties": false
+      }
+    },
+    "verifyDown": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "minLength": 1
+          },
+          "run": {
+            "type": "object",
+            "properties": {
+              "command": {
+                "type": "string",
+                "minLength": 1
+              },
+              "args": {
+                "type": "array",
+                "items": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "value": {
+                          "type": "string"
+                        },
+                        "omitWhenEmpty": {
+                          "type": "string",
+                          "enum": ["branch", "name", "base", "seed", "key", "path"]
+                        }
+                      },
+                      "required": ["value", "omitWhenEmpty"],
+                      "additionalProperties": false
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "expand": {
+                          "type": "string",
+                          "const": "seed"
+                        }
+                      },
+                      "required": ["expand"],
+                      "additionalProperties": false
+                    }
+                  ]
+                }
+              },
+              "cwd": {
+                "type": "string"
+              }
+            },
+            "required": ["command", "args"],
+            "additionalProperties": false
+          },
+          "undo": {
+            "type": "object",
+            "properties": {
+              "command": {
+                "type": "string",
+                "minLength": 1
+              },
+              "args": {
+                "type": "array",
+                "items": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "value": {
+                          "type": "string"
+                        },
+                        "omitWhenEmpty": {
+                          "type": "string",
+                          "enum": ["branch", "name", "base", "seed", "key", "path"]
+                        }
+                      },
+                      "required": ["value", "omitWhenEmpty"],
+                      "additionalProperties": false
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "expand": {
+                          "type": "string",
+                          "const": "seed"
+                        }
+                      },
+                      "required": ["expand"],
+                      "additionalProperties": false
+                    }
+                  ]
+                }
+              },
+              "cwd": {
+                "type": "string"
+              }
+            },
+            "required": ["command", "args"],
+            "additionalProperties": false
+          },
+          "verify": {
+            "type": "object",
+            "properties": {
+              "command": {
+                "type": "string",
+                "minLength": 1
+              },
+              "args": {
+                "type": "array",
+                "items": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "value": {
+                          "type": "string"
+                        },
+                        "omitWhenEmpty": {
+                          "type": "string",
+                          "enum": ["branch", "name", "base", "seed", "key", "path"]
+                        }
+                      },
+                      "required": ["value", "omitWhenEmpty"],
+                      "additionalProperties": false
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "expand": {
+                          "type": "string",
+                          "const": "seed"
+                        }
+                      },
+                      "required": ["expand"],
+                      "additionalProperties": false
+                    }
+                  ]
+                }
+              },
+              "cwd": {
+                "type": "string"
+              }
+            },
+            "required": ["command", "args"],
+            "additionalProperties": false
+          },
+          "exec": {
+            "oneOf": [
+              {
+                "type": "object",
+                "properties": {
+                  "where": {
+                    "type": "string",
+                    "const": "host"
+                  }
+                },
+                "required": ["where"],
+                "additionalProperties": false
+              },
+              {
+                "type": "object",
+                "properties": {
+                  "where": {
+                    "type": "string",
+                    "const": "container"
+                  },
+                  "service": {
+                    "type": "string",
+                    "minLength": 1
+                  }
+                },
+                "required": ["where", "service"],
+                "additionalProperties": false
+              },
+              {
+                "type": "object",
+                "properties": {
+                  "where": {
+                    "type": "string",
+                    "const": "as-user"
+                  },
+                  "user": {
+                    "type": "string",
+                    "minLength": 1
+                  }
+                },
+                "required": ["where", "user"],
+                "additionalProperties": false
+              }
+            ]
+          }
+        },
+        "required": ["name", "run"],
+        "additionalProperties": false
+      }
+    }
+  },
+  "required": ["create"],
+  "additionalProperties": false
+}
