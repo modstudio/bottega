@@ -1,0 +1,176 @@
+// concern: run-outbox
+/** Knows how a terminal local run becomes an ordered hosted-record mutation. Must not know Postgres. */
+import type { Database } from 'bun:sqlite'
+import { PLATFORM_SPACE_ID } from './postgres-schema.ts'
+
+export const RUN_RECORD_PAYLOAD_COLUMNS = [
+  'id',
+  'spaceId',
+  'projectName',
+  'machineId',
+  'localId',
+  'startedAt',
+  'finishedAt',
+  'agent',
+  'job',
+  'promptSha',
+  'specSha',
+  'promptBytes',
+  'promptHead',
+  'label',
+  'lens',
+  'latencyMs',
+  'exitCode',
+  'outputBytes',
+  'vendorTokens',
+  'vendorCostUsd',
+  'probe',
+  'failureKind',
+  'status',
+  'error',
+  'retryOf',
+  'parentRunId',
+  'turn',
+  'filesChanged',
+  'changedPaths',
+  'linesAdded',
+  'linesRemoved',
+  'testsRan',
+  'testsPassed',
+  'deviations',
+  'escalations',
+  'stack',
+  'model',
+  'evidenceExcluded',
+  'inputTree',
+  'headCommit',
+  'reviewRef',
+  'branch',
+  'baseCommit',
+  'mintedBranch',
+  'docsInjected',
+  'docRevisions',
+  'canonSha',
+  'transport',
+  'sessionId',
+  'routeReason',
+  'noFailover',
+  'automaticFailover',
+  'outsideWorktreeWrites',
+  'reviewProvenance',
+  'provenanceStatus',
+  'workPreserved',
+  'closeOutOutcome',
+  'closeOutDetail',
+  'createdAt',
+  'updatedAt',
+] as const
+
+type LocalRun = Record<string, unknown> & {
+  id: number
+  record_id: string
+  project_name: string
+  started_at: string
+  retry_record_id: string | null
+  parent_record_id: string | null
+}
+
+function json(value: unknown): unknown {
+  return value == null ? null : JSON.parse(String(value))
+}
+
+export function buildRunRecordPayload(
+  row: LocalRun,
+  machineId: string,
+  finishedAt: string,
+): Record<string, unknown> {
+  return {
+    id: row.record_id,
+    spaceId: PLATFORM_SPACE_ID,
+    projectName: row.project_name,
+    machineId,
+    localId: row.id,
+    startedAt: row.started_at,
+    finishedAt,
+    agent: row.agent,
+    job: row.job,
+    promptSha: row.prompt_sha,
+    specSha: row.spec_sha,
+    promptBytes: row.prompt_bytes,
+    promptHead: row.prompt_head,
+    label: row.label,
+    lens: row.lens,
+    latencyMs: row.latency_ms,
+    exitCode: row.exit_code,
+    outputBytes: row.output_bytes,
+    vendorTokens: row.vendor_tokens,
+    vendorCostUsd: row.vendor_cost_usd,
+    probe: Boolean(row.probe),
+    failureKind: row.failure_kind,
+    status: row.status,
+    error: row.error,
+    retryOf: row.retry_record_id,
+    parentRunId: row.parent_record_id,
+    turn: row.turn,
+    filesChanged: row.files_changed,
+    changedPaths: json(row.changed_paths),
+    linesAdded: row.lines_added,
+    linesRemoved: row.lines_removed,
+    testsRan: row.tests_ran,
+    testsPassed: row.tests_passed,
+    deviations: row.deviations,
+    escalations: row.escalations,
+    stack: row.stack,
+    model: row.model,
+    evidenceExcluded: row.evidence_excluded,
+    inputTree: row.input_tree,
+    headCommit: row.head_commit,
+    reviewRef: row.review_ref,
+    branch: row.branch,
+    baseCommit: row.base_commit,
+    mintedBranch: row.minted_branch,
+    docsInjected: row.docs_injected,
+    docRevisions: json(row.doc_revisions),
+    canonSha: row.canon_sha,
+    transport: row.transport,
+    sessionId: row.session_id,
+    routeReason: row.route_reason,
+    noFailover: Boolean(row.no_failover),
+    automaticFailover: Boolean(row.automatic_failover),
+    outsideWorktreeWrites: json(row.outside_worktree_writes),
+    reviewProvenance: json(row.review_provenance),
+    provenanceStatus: row.provenance_status,
+    workPreserved: Boolean(row.work_preserved),
+    closeOutOutcome: row.close_out_outcome,
+    closeOutDetail: row.close_out_detail,
+    createdAt: row.started_at,
+    updatedAt: finishedAt,
+  }
+}
+
+export function enqueueRunRecord(
+  database: Database,
+  runId: number,
+  machineId: string,
+  finishedAt: string,
+): void {
+  const row = database
+    .query<LocalRun, [number]>(
+      `SELECT r.*, project.name AS project_name,
+              retry.record_id AS retry_record_id, parent.record_id AS parent_record_id
+         FROM run r
+         JOIN project ON project.id=r.project_id
+         LEFT JOIN run retry ON retry.id=r.retry_of
+         LEFT JOIN run parent ON parent.id=r.parent_run_id
+        WHERE r.id=?`,
+    )
+    .get(runId)
+  if (!row) throw new Error(`run ${runId} has no project-backed row to enqueue`)
+  const payload = buildRunRecordPayload(row, machineId, finishedAt)
+  database
+    .query(
+      `INSERT INTO outbox (kind, record_id, payload, created_at)
+       VALUES ('run', ?, ?, ?)`,
+    )
+    .run(row.record_id, JSON.stringify(payload), finishedAt)
+}
