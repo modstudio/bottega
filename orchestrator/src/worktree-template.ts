@@ -446,7 +446,7 @@ function shellWords(spec: string): string[] {
   return words
 }
 
-function expandedSeed(seed: string): string[] {
+export function expandedSeed(seed: string): string[] {
   return shellWords(seed)
 }
 
