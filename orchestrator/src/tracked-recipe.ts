@@ -10,6 +10,7 @@ import {
   destroyPlan,
   lifecycleFailure,
   serveUndoPlan,
+  snapshotlessTeardown,
   teardownVars,
   trackedExecutionRefusal,
 } from './recipe-lifecycle.ts'
@@ -266,6 +267,18 @@ function writeSnapshot(runId: number, snapshot: RecipeSnapshot): void {
     .run(JSON.stringify(snapshot), runId)
 }
 
+function liveDatabaseClaims(runId: number): number {
+  return (
+    db()
+      .query(
+        `SELECT COUNT(*) count FROM resource_claim
+         WHERE root_run_id=(SELECT COALESCE(parent_run_id,id) FROM run WHERE id=?)
+           AND kind='database' AND state='claimed'`,
+      )
+      .get(runId) as { count: number }
+  ).count
+}
+
 function readSnapshot(runId: number): {
   snapshot: RecipeSnapshot | null
   key: string | null
@@ -450,16 +463,28 @@ export function teardownTrackedRecipe(
     remove(): { removed: boolean; detail: string }
     stored?: { snapshot: RecipeSnapshot | null; key: string | null; seed: string | null }
     treeExists?: boolean
+    liveDatabaseClaims?: number
   },
   runStep: StepRunner = kernelRunStep,
   runUndo: StepRunner = kernelRunUndo,
 ): { removed: boolean; detail: string } {
   const stored = input.stored ?? readSnapshot(input.runId)
-  if (!stored.snapshot)
-    return {
-      removed: false,
-      detail: 'tracked recipe tree has no recorded recipe snapshot; teardown cannot be established',
+  if (!stored.snapshot) {
+    const liveDatabases = input.liveDatabaseClaims ?? liveDatabaseClaims(input.runId)
+    if (snapshotlessTeardown(liveDatabases) === 'keep') {
+      return {
+        removed: false,
+        detail: `tracked recipe tree has no recorded recipe snapshot and ${liveDatabases} live database claim(s); kept`,
+      }
     }
+    const removal = input.remove()
+    return removal.removed
+      ? {
+          ...removal,
+          detail: `${removal.detail}; no recorded recipe snapshot, removed as a plain tree`,
+        }
+      : removal
+  }
   const vars = teardownVars({
     path: input.worktree.path,
     branch: input.worktree.branch,

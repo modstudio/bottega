@@ -759,8 +759,8 @@ export function worktreeWarnings(p: Project): string[] {
   if (w.create && w.recipe) {
     out.push('declares both create and recipe; create wins and the recipe is ignored')
   }
-  if (!w.create && !w.recipe) {
-    out.push('declares neither create nor recipe, so it cannot make a worktree at all')
+  if (!w.create && !w.recipe && !w.recipePath) {
+    out.push('declares neither create, recipe nor recipePath, so it cannot make a worktree at all')
   }
   /*
    * Only for a project running its OWN script.

@@ -73,3 +73,13 @@ export function teardownVars(input: {
 export function lifecycleFailure(results: readonly StepResult[]): StepResult | null {
   return results.find((result) => result.status !== 'ok') ?? null
 }
+
+/**
+ * A tree with no recorded recipe was built before its project tracked one, so the
+ * recipe that built it is unknown. Its tree is rebuildable and removed as a plain
+ * tree; a live database claim is the one leftover that removal would orphan, so it
+ * keeps the tree and reports.
+ */
+export function snapshotlessTeardown(liveDatabaseClaims: number): 'remove' | 'keep' {
+  return liveDatabaseClaims > 0 ? 'keep' : 'remove'
+}
