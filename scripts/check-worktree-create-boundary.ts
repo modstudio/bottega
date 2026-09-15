@@ -5,6 +5,7 @@ checkModuleBoundary('check-worktree-create-boundary', 'orchestrator/src/worktree
   './db.ts',
   './projects.ts',
   './recipe.ts',
+  './tracked-recipe.ts',
   './worktree-template.ts',
   './worktree-attribution.ts',
   './git-environment.ts',

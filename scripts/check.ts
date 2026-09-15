@@ -231,6 +231,7 @@ for (const script of [
   'check-worktree-template-boundary.ts',
   'check-recipe-schema-boundary.ts',
   'check-recipe-loader-boundary.ts',
+  'check-recipe-lifecycle-boundary.ts',
   'check-recipe-step-boundary.ts',
   'check-worktree-attribution-boundary.ts',
   'check-project-lock-boundary.ts',

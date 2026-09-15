@@ -103,6 +103,7 @@ export const run = sqliteTable(
     retryOf: integer('retry_of'),
     launchCwd: text('launch_cwd'),
     launchSeed: text('launch_seed'),
+    recipeSnapshot: text('recipe_snapshot'),
     launchKey: text('launch_key'),
     launchBase: text('launch_base'),
     noFailover: integer('no_failover').notNull().default(0),
