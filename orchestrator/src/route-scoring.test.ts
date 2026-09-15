@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'bun:test'
 import { addRun, score } from '../test/fixtures/store.ts'
 import { label } from './db.ts'
-import { candidates, median, MIN_SAMPLE, NOISE_BAND, QUALITY_STEP, weightCase } from './route.ts'
+import { candidates, MIN_SAMPLE, median, NOISE_BAND, QUALITY_STEP, weightCase } from './route.ts'
 import { WEIGHT, weigh } from './score.ts'
 
 describe('the scoring matrix', () => {
