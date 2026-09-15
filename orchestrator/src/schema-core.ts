@@ -185,6 +185,7 @@ export const run = sqliteTable(
       sql`${t.closeOutOutcome} is null or ${t.closeOutOutcome} in ('released','forgotten','held','live','absent','failed')`,
     ),
     index('run_job_agent').on(t.job, t.agent),
+    index('run_parent_turn').on(t.parentRunId, t.turn),
   ],
 )
 
