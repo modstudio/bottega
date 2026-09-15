@@ -297,6 +297,7 @@ for (const script of [
   'check-monitor-conditions-boundary.ts',
   'check-monitor-notices-boundary.ts',
   'check-monitor-types-boundary.ts',
+  'check-postgres-migrate-boundary.ts',
   'check-database-boundary.ts',
   'check-store-hooks-boundary.ts',
   'check-review-vocabulary-boundary.ts',
