@@ -180,7 +180,7 @@ export const run = sqliteTable(
     check('run_transport_check', sql`${t.transport} is null or ${t.transport} in ('cli','acp')`),
     check(
       'run_close_out_outcome_check',
-      sql`${t.closeOutOutcome} is null or ${t.closeOutOutcome} in ('released','held','live','absent','failed')`,
+      sql`${t.closeOutOutcome} is null or ${t.closeOutOutcome} in ('released','forgotten','held','live','absent','failed')`,
     ),
     index('run_job_agent').on(t.job, t.agent),
   ],

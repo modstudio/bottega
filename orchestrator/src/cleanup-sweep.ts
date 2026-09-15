@@ -1,6 +1,6 @@
 /** Cleanup sweep knows worktree ownership, leases and the cleanup lock, resource reclamation, and branch retention. It must not know transports, routing, reviews, contracts, the CLI, or durable execution. */
 import { existsSync, readdirSync, realpathSync } from 'node:fs'
-import { basename, join, resolve } from 'node:path'
+import { join, resolve } from 'node:path'
 import {
   type CleanupPresentation,
   evidenceOwningBranchOwners,
@@ -20,7 +20,13 @@ import {
 import { projectAt, projectByName, projects } from './projects.ts'
 import { liveWorktreeSharers, terminalDockerRetentionReasonForRun } from './resource-ownership.ts'
 import { auditRunMutation } from './run-authority.ts'
-import { isOrchWorktree, markedWorktreeSource, orphanSafety } from './worktree-attribution.ts'
+import {
+  isOrchWorktree,
+  inspectTreeOwnership,
+  markedWorktreeSource,
+  orphanSafety,
+  worktreeNameRunId,
+} from './worktree-attribution.ts'
 import { branchTip } from './worktree-remove.ts'
 import type { Worktree } from './worktree-types.ts'
 
@@ -42,28 +48,7 @@ function orphanKeepReason(detail: string): string {
 }
 
 type NamedRun = { id: number; status: string }
-type ClosedSweepOutcome = 'released' | 'absent'
-
-function templateRunId(name: string, branchTemplate?: string): number | null {
-  const conventional = name.match(/^orch-(\d+)$/)
-  if (conventional) return Number(conventional[1])
-  if (!branchTemplate?.includes('{id}')) return null
-
-  let idGroup = 0
-  const parts = basename(branchTemplate).split(/(\{id\}|\{key\})/g)
-  const pattern = parts
-    .map((part) => {
-      if (part === '{id}') {
-        idGroup++
-        return idGroup === 1 ? '(\\d+)' : '\\d+'
-      }
-      if (part === '{key}') return '[^/]+'
-      return part.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
-    })
-    .join('')
-  const match = name.match(new RegExp(`^${pattern}$`))
-  return match?.[1] ? Number(match[1]) : null
-}
+type ClosedSweepOutcome = 'released' | 'absent' | 'forgotten'
 
 function pathIsUnder(path: string | null, root: string): boolean {
   if (!path) return false
@@ -77,7 +62,7 @@ function namedRun(
   branchTemplate: string | undefined,
   project: { name: string; path: string },
 ): NamedRun | null {
-  const runId = templateRunId(name, branchTemplate)
+  const runId = worktreeNameRunId(name, branchTemplate)
   if (runId === null) return null
   const member = db()
     .query('SELECT id, parent_run_id, repo, cwd, worktree FROM run WHERE id=?')
@@ -109,13 +94,14 @@ function namedRun(
 function printSweepKept(
   released: number,
   absent: number,
+  forgotten: number,
   kept: { line: string; reason: string }[],
   dry: boolean,
   force: boolean,
   presentation: CleanupPresentation,
 ): void {
   presentation.log(
-    `\n${dry ? 'would reclaim' : 'reclaimed'} ${released}, already absent ${absent}, kept ${kept.length}`,
+    `\n${dry ? 'would reclaim' : 'reclaimed'} ${released}, already absent ${absent}, forgotten ${forgotten}, kept ${kept.length}`,
   )
   const listAll = dry
   const fits = kept.length <= KEPT_ROW_LIMIT
@@ -153,7 +139,16 @@ function reportClosedSweepRow(
       )
     })
   }
-  const action = outcome === 'absent' ? 'already absent' : dry ? 'would reclaim' : 'reclaimed'
+  const action =
+    outcome === 'absent'
+      ? 'already absent'
+      : outcome === 'forgotten'
+        ? dry
+          ? 'would forget'
+          : 'forgotten'
+        : dry
+          ? 'would reclaim'
+          : 'reclaimed'
   presentation.log(`${action} ${row.id}  ${row.worktree}`)
   return outcome
 }
@@ -213,6 +208,7 @@ export async function sweepRuns(options: SweepOptions, helpers: SweepHelpers): P
 
   let released = 0
   let absent = 0
+  let forgotten = 0
   let cleanupFailed = false
   const inventoryErrors = new Set<string>()
   const leaked = new Map<string, { resource: DockerResource; project: string; runId: number }>()
@@ -225,7 +221,21 @@ export async function sweepRuns(options: SweepOptions, helpers: SweepHelpers): P
       worktree: string | null
     } | null
     if (current?.worktree !== r.worktree) continue
-    if (!dry) {
+    const project = r.repo ? projectByName(r.repo) : projectAt(r.worktree)
+    const conversationIds = (
+      db()
+        .query('SELECT id FROM run WHERE id=? OR parent_run_id=? ORDER BY id')
+        .all(r.root_id, r.root_id) as { id: number }[]
+    ).map((turn) => turn.id)
+    const ownership = project
+      ? inspectTreeOwnership(
+          r.worktree,
+          project.path,
+          conversationIds,
+          project.settings.worktree?.branch,
+        )
+      : 'unknown'
+    if (!dry && ownership === 'owned') {
       const before = resourcesForConversation(r.id)
       if (!before.ascertainable) {
         inventoryErrors.add(before.reason)
@@ -236,11 +246,19 @@ export async function sweepRuns(options: SweepOptions, helpers: SweepHelpers): P
       }
     }
     const closed = closeOutRun(r.id, { intent: 'sweep', dryRun: dry })
-    if (closed.outcome === 'released' || closed.outcome === 'absent') {
+    if (
+      closed.outcome === 'released' ||
+      closed.outcome === 'absent' ||
+      closed.outcome === 'forgotten'
+    ) {
       if (dry) {
         const outcome = reportClosedSweepRow(closed.outcome, r, true, options.presentation)
         released += Number(outcome === 'released')
         absent += Number(outcome === 'absent')
+        forgotten += Number(outcome === 'forgotten')
+      } else if (closed.outcome === 'forgotten') {
+        reportClosedSweepRow(closed.outcome, r, false, options.presentation)
+        forgotten++
       } else {
         const project = r.repo ?? projectAt(r.worktree)?.name ?? 'unknown'
         const inventory = resourcesForConversation(r.id)
@@ -570,7 +588,7 @@ export async function sweepRuns(options: SweepOptions, helpers: SweepHelpers): P
       options.presentation.error(`  ${dry ? 'would report ' : ''}${error}`)
   }
 
-  printSweepKept(released, absent, kept, dry, options.force, options.presentation)
+  printSweepKept(released, absent, forgotten, kept, dry, options.force, options.presentation)
   if (cleanupFailed) options.presentation.setExitCode(1)
   return
 }

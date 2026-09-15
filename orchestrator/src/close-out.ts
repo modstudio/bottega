@@ -15,18 +15,19 @@ import {
   withWorktreeLease,
   worktreeLeaseName,
 } from './project-lock.ts'
-import { projectByName } from './projects.ts'
+import { projectAt, projectByName } from './projects.ts'
 import { proveWorktreeReconstructible } from './reclaim.ts'
 import { liveWorktreeSharers, worktreePathSpellings } from './resource-ownership.ts'
 import { processTable, terminateRunProcesses } from './run-process.ts'
 import { worktreeExists } from './worktree.ts'
+import { inspectTreeOwnership } from './worktree-attribution.ts'
 import { branchTip, removeFor, restoreBranch } from './worktree-remove.ts'
 import type { Worktree } from './worktree-types.ts'
 
 export type CloseOutResult = {
   runId: number
   worktree: string | null
-  outcome: 'released' | 'held' | 'live' | 'absent' | 'failed'
+  outcome: 'released' | 'forgotten' | 'held' | 'live' | 'absent' | 'failed'
   detail: string
 }
 
@@ -137,6 +138,42 @@ function attemptCloseOutRun(
       outcome: 'failed',
       detail: 'repository root not found',
     }
+
+  const conversationIds = (
+    db()
+      .query('SELECT id FROM run WHERE id=? OR parent_run_id=? ORDER BY id')
+      .all(row.root_id, row.root_id) as { id: number }[]
+  ).map((turn) => turn.id)
+  const branchTemplate = (effective.repo ? projectByName(effective.repo) : projectAt(treePath))
+    ?.settings.worktree?.branch
+  const nonOwnedResult = (ownership: 'attached' | 'unknown'): CloseOutResult => {
+    if (ownership === 'unknown') {
+      return {
+        runId: row.root_id,
+        worktree: treePath,
+        outcome: 'held',
+        detail: `ownership of ${treePath} could not be established; pointer and tree retained`,
+      }
+    }
+    if (!options.dryRun) {
+      db()
+        .query(
+          `UPDATE run SET worktree=NULL
+           WHERE worktree=? AND (id=? OR parent_run_id=?)`,
+        )
+        .run(treePath, row.root_id, row.root_id)
+    }
+    return {
+      runId: row.root_id,
+      worktree: treePath,
+      outcome: 'forgotten',
+      detail: options.dryRun
+        ? `would forget attached tree ${treePath}; tree and branch would be left in place`
+        : `attached tree ${treePath} is not this run's; pointer cleared, tree left in place`,
+    }
+  }
+  const ownership = inspectTreeOwnership(treePath, repoRoot, conversationIds, branchTemplate)
+  if (ownership !== 'owned') return nonOwnedResult(ownership)
 
   const liveRows = () => {
     const sharers = liveWorktreeSharers(db(), { id: row.root_id, worktree: treePath })
@@ -250,6 +287,13 @@ function attemptCloseOutRun(
                 outcome: 'live' as const,
                 detail: `live run(s): ${lockedLive.map((owner) => `${owner.id} (${owner.status})`).join(', ')}`,
               }
+            const lockedOwnership = inspectTreeOwnership(
+              treePath,
+              repoRoot,
+              conversationIds,
+              branchTemplate,
+            )
+            if (lockedOwnership !== 'owned') return nonOwnedResult(lockedOwnership)
             const reclaimProof = proveWorktreeReconstructible(treePath)
             if (!reclaimProof.ok)
               return {
