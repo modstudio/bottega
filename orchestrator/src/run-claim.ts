@@ -32,6 +32,7 @@ import {
 import { readMcpConfig, wrongProjectReason } from './mcp-probe.ts'
 import { withWorktreeCreateLock, withWorktreeLease } from './project-lock.ts'
 import { projectAt, stackAt } from './projects.ts'
+import { newRecordId } from './postgres-schema.ts'
 import { retargetRepositoryPromptForDispatch } from './prompt-retarget.ts'
 import {
   claimRecipePort,
@@ -309,6 +310,7 @@ export async function claimRun(input: ClaimInput): Promise<ClaimResult> {
       : originalSchemaPath
 
   const started = Date.now()
+  const recordId = newRecordId()
   const head = originalPrompt.slice(0, 200).replace(/\s+/g, ' ')
   const inheritedLaunch = opts.resume
     ? (db()
@@ -351,7 +353,7 @@ export async function claimRun(input: ClaimInput): Promise<ClaimResult> {
           // `orch answer` on the original found the wrong latest turn, and the
           // roll-up wrote its outcome nowhere. The two claim paths must agree on
           // every column that means something, and these mean the most.
-          `UPDATE run SET started_at=?, agent=?, job=?, repo=?, project_id=?, cwd=?, prompt_sha=?, spec_sha=?,
+          `UPDATE run SET record_id=?, started_at=?, agent=?, job=?, repo=?, project_id=?, cwd=?, prompt_sha=?, spec_sha=?,
                           prompt_bytes=?, prompt_head=?, label=?, status='running', probe=?, retry_of=?,
                           route_reason=?, branch=?, parent_run_id=?, turn=?, vendor_session=?, docs_injected=?, doc_revisions=?, canon_sha=?,
                           launch_cwd=?, launch_seed=?, launch_key=?, launch_base=?, no_failover=?,
@@ -359,6 +361,7 @@ export async function claimRun(input: ClaimInput): Promise<ClaimResult> {
             WHERE id=? RETURNING id`,
         )
         .get(
+          recordId,
           nowIso(),
           name,
           opts.job,
@@ -398,12 +401,13 @@ export async function claimRun(input: ClaimInput): Promise<ClaimResult> {
         ) as { id: number })
     : (db()
         .query(
-          `INSERT INTO run (started_at, agent, job, repo, project_id, cwd, prompt_sha, spec_sha, prompt_bytes, prompt_head, label, status, session_id, probe, retry_of, route_reason, branch, parent_run_id, turn, vendor_session, docs_injected, doc_revisions, canon_sha,
+          `INSERT INTO run (record_id, started_at, agent, job, repo, project_id, cwd, prompt_sha, spec_sha, prompt_bytes, prompt_head, label, status, session_id, probe, retry_of, route_reason, branch, parent_run_id, turn, vendor_session, docs_injected, doc_revisions, canon_sha,
                             launch_cwd, launch_seed, launch_key, launch_base, no_failover,
                             automatic_failover, review_ref, pid, mcp, transport)
-           VALUES (?,?,?,?,?,?,?,?,?,?,?,'running',?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?) RETURNING id`,
+           VALUES (?,?,?,?,?,?,?,?,?,?,?,?,'running',?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?) RETURNING id`,
         )
         .get(
+          recordId,
           nowIso(),
           name,
           opts.job,
