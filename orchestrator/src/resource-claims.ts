@@ -6,6 +6,7 @@
 import type { Database } from 'bun:sqlite'
 
 export const RESOURCE_CLAIM_MIGRATION = '0020_resource_claim'
+export const RECIPE_PORT_BAND: PortBand = { start: 21000, end: 25000 }
 
 export const RESOURCE_CLAIM_KINDS = [
   'worktree',
@@ -19,6 +20,7 @@ export const RESOURCE_CLAIM_KINDS = [
 
 export type ResourceClaimKind = (typeof RESOURCE_CLAIM_KINDS)[number]
 export type ResourceClaimState = 'claimed' | 'released' | 'retained' | 'forgotten' | 'absent'
+export type PortBand = { start: number; end: number }
 export type CloseOutClaimOutcome = 'released' | 'forgotten' | 'held' | 'live' | 'absent' | 'failed'
 export type SandboxDirectoryReleaseInput = {
   terminal: boolean
@@ -53,6 +55,24 @@ export function claimCreationDecision(
 ): 'record' | 'duplicate' | 'collision' {
   if (existingRootRunId === null) return 'record'
   return existingRootRunId === requestedRootRunId ? 'duplicate' : 'collision'
+}
+
+export function lowestFreePort(band: PortBand, claimedPorts: readonly number[]): number | null {
+  const claimed = new Set(claimedPorts)
+  for (let port = band.start; port < band.end; port++) {
+    if (!claimed.has(port)) return port
+  }
+  return null
+}
+
+export function recipePortAllocation(
+  band: PortBand,
+  claimedPorts: readonly number[],
+  existingClaimedPort: number | null,
+): { action: 'reuse' | 'claim'; port: number } | { action: 'full' } {
+  if (existingClaimedPort !== null) return { action: 'reuse', port: existingClaimedPort }
+  const port = lowestFreePort(band, claimedPorts)
+  return port === null ? { action: 'full' } : { action: 'claim', port }
 }
 
 export function settledStateForDatabaseTeardown(
@@ -176,25 +196,82 @@ export function recordTrustEntryClaims(
   }
 }
 
-export function recordPortClaim(
+export function claimRecipePort(
   database: Database,
-  input: ClaimIdentity & { port: number; claimedAt: string },
-): number | null {
-  const result = insertClaim(database, {
-    ...input,
-    kind: claimKindForCreation('serve_port'),
-    allocationKey: `port:${input.port}`,
-    identity: JSON.stringify({ runId: input.runId, projectId: input.projectId }),
-    label: String(input.rootRunId),
-  })
-  if (result !== 'collision') return null
+  input: ClaimIdentity & { claimedAt: string; band: PortBand },
+): number {
   const existing = database
     .query(
-      `SELECT root_run_id FROM resource_claim
-       WHERE kind='port' AND allocation_key=? AND state='claimed'`,
+      `SELECT allocation_key FROM resource_claim
+       WHERE root_run_id=? AND kind='port' AND state='claimed'
+       ORDER BY id DESC LIMIT 1`,
     )
-    .get(`port:${input.port}`) as { root_run_id: number }
-  return existing.root_run_id
+    .get(input.rootRunId) as { allocation_key: string } | null
+  const existingPort = existing ? Number(existing.allocation_key.slice('port:'.length)) : null
+  const claimedPorts = (
+    database
+      .query("SELECT allocation_key FROM resource_claim WHERE kind='port' AND state='claimed'")
+      .all() as { allocation_key: string }[]
+  ).map((row) => Number(row.allocation_key.slice('port:'.length)))
+  const attempted = new Set(claimedPorts)
+  const bandSize = input.band.end - input.band.start
+
+  for (let attempt = 0; attempt < bandSize; attempt++) {
+    const decision = recipePortAllocation(input.band, [...attempted], existingPort)
+    if (decision.action === 'full') break
+    if (decision.action === 'reuse') return decision.port
+    try {
+      database
+        .query(
+          `INSERT INTO resource_claim
+           (root_run_id,run_id,project_id,kind,allocation_key,identity,label,state,claimed_at)
+           VALUES (?,?,?,'port',?,?,?,'claimed',?)`,
+        )
+        .run(
+          input.rootRunId,
+          input.runId,
+          input.projectId,
+          `port:${decision.port}`,
+          JSON.stringify({ runId: input.runId, projectId: input.projectId }),
+          String(input.rootRunId),
+          input.claimedAt,
+        )
+      return decision.port
+    } catch (error) {
+      if (!String((error as Error)?.message ?? error).includes('UNIQUE constraint failed')) {
+        throw error
+      }
+      attempted.add(decision.port)
+    }
+  }
+
+  const liveClaims = (
+    database
+      .query(
+        `SELECT COUNT(*) count FROM resource_claim
+         WHERE kind='port' AND state='claimed'
+           AND CAST(SUBSTR(allocation_key, 6) AS INTEGER)>=?
+           AND CAST(SUBSTR(allocation_key, 6) AS INTEGER)<?`,
+      )
+      .get(input.band.start, input.band.end) as { count: number }
+  ).count
+  throw new Error(
+    `recipe port band [${input.band.start}, ${input.band.end}) is full: ${liveClaims} live claims`,
+  )
+}
+
+export function recipePortClaimForRun(database: Database, runId: number): number | null {
+  const claim = database
+    .query(
+      `SELECT allocation_key FROM resource_claim
+       WHERE root_run_id=(SELECT COALESCE(parent_run_id,id) FROM run WHERE id=?)
+         AND kind='port'
+       ORDER BY id DESC LIMIT 1`,
+    )
+    .get(runId) as { allocation_key: string } | null
+  if (!claim) return null
+  const port = Number(claim.allocation_key.slice('port:'.length))
+  return Number.isInteger(port) ? port : null
 }
 
 export function recordDatabaseClaim(

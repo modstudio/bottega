@@ -6,10 +6,14 @@ import { git, gitOk, gitRaw, targetGitEnvironment } from './git-environment.ts'
 import { projectAt, type WorktreeTool } from './projects.ts'
 import { databaseDroppedByTeardown, dbNameFor, type Recipe, teardownRecipe } from './recipe.ts'
 import { markedWorktreeRunId, removeSharedRefGuard } from './ref-guard.ts'
-import { settleDatabaseClaim } from './resource-claims.ts'
+import { recipePortClaimForRun, settleDatabaseClaim } from './resource-claims.ts'
 import { extractWorktree, ORCH_RUN_MARKER } from './worktree-attribution.ts'
-import { portFor, runShellTool } from './worktree-tool.ts'
+import { runShellTool } from './worktree-tool.ts'
 import type { Worktree } from './worktree-types.ts'
+
+function portFor(runId: number): number {
+  return 21000 + (runId % 4000)
+}
 
 export type Changes = {
   /** The unified diff against the run's trunk merge-base, including files never added. */
@@ -29,7 +33,11 @@ export type Changes = {
 function teardownBuiltInRecipe(recipe: Recipe, w: Worktree, runId: number): void {
   const dbName = dbNameFor(w.repoRoot.split('/').pop() ?? 'app', runId)
   const cwd = existsSync(w.path) ? w.path : w.repoRoot
-  const teardown = teardownRecipe(recipe, cwd, dbName, String(recipe.serve ? portFor(runId) : ''))
+  const claimedPort = recipe.serve ? recipePortClaimForRun(db(), runId) : null
+  // A recipe tree with no port claim predates ledger allocation. Only those
+  // legacy trees derive the teardown port from their run id.
+  const teardownPort = claimedPort ?? (recipe.serve ? portFor(runId) : null)
+  const teardown = teardownRecipe(recipe, cwd, dbName, String(teardownPort ?? ''))
   for (const step of teardown) {
     if (!step.ok) console.error(`orch: ${step.step} failed: ${step.detail.slice(-200)}`)
   }

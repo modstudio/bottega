@@ -25,6 +25,7 @@
 import { existsSync } from 'node:fs'
 import type { WorktreeTool } from './projects.ts'
 import {
+  type ClaimRecipePort,
   createWithTool,
   createWorktree,
   createWorktreeForBranch,
@@ -52,6 +53,7 @@ export type CreateWorkerWorktreeOptions = {
   existingBranch?: string
   existingBranchTip?: string
   recordRecipeResource?: RecordRecipeResource
+  claimRecipePort?: ClaimRecipePort
 }
 
 /** Create the worker tree through the project lifecycle or Git fallback. */
@@ -85,6 +87,7 @@ export function createWorkerWorktree(options: CreateWorkerWorktreeOptions): Work
       options.detached,
       options.existingBranch,
       options.recordRecipeResource,
+      options.claimRecipePort,
     )
   }
   return options.existingBranch
