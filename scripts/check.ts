@@ -205,6 +205,7 @@ const results = await Promise.all(
 refuseFailed(results)
 
 for (const script of [
+  'check-postgres-migrations.ts',
   'check-boundaries.ts',
   'check-schema-core-boundary.ts',
   'check-schema-docs-boundary.ts',
