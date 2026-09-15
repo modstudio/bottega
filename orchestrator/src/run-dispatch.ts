@@ -5,7 +5,7 @@
  */
 import { type ChildProcess, spawn } from 'node:child_process'
 import { createHash } from 'node:crypto'
-import { mkdirSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, writeFileSync } from 'node:fs'
 import { db, nowIso, sessionId, writableDb, writeTransaction } from './db.ts'
 import { preflight } from './dispatch-preflight.ts'
 import type { DetachSpec } from './failover.ts'
@@ -214,7 +214,7 @@ export async function detach(
     JSON.stringify({ ...spec, seed }),
   ]
   const spawnOpts = {
-    cwd,
+    cwd: spawnCwd(cwd, process.cwd(), existsSync),
     // The child must not inherit this process's session id: the run row
     // already records the session that ASKED for the work, and run() would
     // otherwise re-stamp it from the child's environment.
@@ -267,4 +267,19 @@ export async function detach(
   if (child.pid) db().query('UPDATE run SET pid=? WHERE id=?').run(child.pid, id)
   child.unref()
   return id
+}
+
+/**
+ * The directory the detached worker is spawned in. A continuation names the
+ * worktree its chain last ran in, and a finished writing run's worktree has been
+ * discarded; spawning into a missing directory fails with ENOENT on the
+ * executable before run() can rebuild the tree. The recorded cwd still travels
+ * in the spec, so only the process's starting directory falls back.
+ */
+export function spawnCwd(
+  recorded: string,
+  fallback: string,
+  exists: (path: string) => boolean,
+): string {
+  return exists(recorded) ? recorded : fallback
 }

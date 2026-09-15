@@ -172,6 +172,39 @@ export function refuseEscapedChain(id: number): void {
   )
 }
 
+export type ChainTurn = {
+  id: number
+  agent: string
+  vendor_session: string | null
+  turn: number
+  cwd: string | null
+  worktree: string | null
+  branch: string | null
+  base_commit: string | null
+  worktree_source: 'recipe' | 'git' | 'readonly_recipe' | null
+}
+
+/**
+ * The turn a continuation resumes from, and the number the new turn takes.
+ * A turn whose agent is still `(pending)` never started: it names no agent,
+ * session or worktree to resume, so identity comes from the newest turn that
+ * did start. Numbering counts every row, so a turn number never repeats.
+ */
+export function continuationTurn(
+  rootId: number,
+  chain: readonly ChainTurn[],
+): { latest: ChainTurn; nextTurn: number } {
+  const started = chain.filter((turn) => turn.agent !== '(pending)')
+  if (!started.length) {
+    throw new Error(`run ${rootId} cannot be continued: no turn in its chain ever started`)
+  }
+  const byTurn = (a: ChainTurn, b: ChainTurn) => b.turn - a.turn
+  return {
+    latest: [...started].sort(byTurn)[0]!,
+    nextTurn: Math.max(...chain.map((turn) => turn.turn)) + 1,
+  }
+}
+
 /** Resume a root run through the one path shared by `continue` and writing retries. */
 export async function continueRun(
   id: number,
@@ -225,23 +258,15 @@ export async function continueRun(
   // prevent.
   if (open.n)
     throw new Error(`run ${id} is waiting on ${open.n} question(s): orch answer ${id} ...`)
-  const latest = db()
-    .query(
-      `SELECT id, agent, vendor_session, turn, cwd, worktree, branch, base_commit, worktree_source
-       FROM run WHERE id = ? OR parent_run_id = ?
-      ORDER BY turn DESC LIMIT 1`,
-    )
-    .get(id, id) as {
-    id: number
-    agent: string
-    vendor_session: string | null
-    turn: number
-    cwd: string | null
-    worktree: string | null
-    branch: string | null
-    base_commit: string | null
-    worktree_source: 'recipe' | 'git' | 'readonly_recipe' | null
-  }
+  const { latest, nextTurn } = continuationTurn(
+    id,
+    db()
+      .query(
+        `SELECT id, agent, vendor_session, turn, cwd, worktree, branch, base_commit, worktree_source
+         FROM run WHERE id = ? OR parent_run_id = ?`,
+      )
+      .all(id, id) as ChainTurn[],
+  )
   const checkpointContext = (await import('./checkpoint.ts')).checkpointResumeContext(
     db(),
     id,
@@ -254,7 +279,8 @@ export async function continueRun(
       : (db()
           .query(
             `SELECT id, agent, vendor_session, turn
-           FROM run WHERE (id = ? OR parent_run_id = ?) AND vendor_session IS NOT NULL
+           FROM run WHERE (id = ? OR parent_run_id = ?)
+             AND agent <> '(pending)' AND vendor_session IS NOT NULL
           ORDER BY turn DESC LIMIT 1`,
           )
           .get(id, id) as {
@@ -337,7 +363,7 @@ export async function continueRun(
       agent: checkpointContext ? latest.agent : sessionFrom!.agent,
       session: checkpointContext ? undefined : (sessionFrom!.vendor_session ?? undefined),
       fresh: Boolean(checkpointContext),
-      turn: latest.turn + 1,
+      turn: nextTurn,
       sessionId: authority.owner,
       worktree: latest.worktree
         ? {

@@ -9,7 +9,7 @@ import { packResumePrompt } from './contract.ts'
 import { db } from './db.ts'
 import { recordReview } from './review-triage.ts'
 import { packedResumePrompt } from './run.ts'
-import { continueRun } from './run-control.ts'
+import { type ChainTurn, continuationTurn, continueRun } from './run-control.ts'
 
 const trackResidue = trackedTestResidue()
 
@@ -45,6 +45,44 @@ afterEach(() => {
 })
 
 describe('run continuation', () => {
+  test('a continuation resumes from the newest turn that started, numbered past every turn', () => {
+    const turn = (id: number, agent: string, n: number): ChainTurn => ({
+      id,
+      agent,
+      vendor_session: agent === '(pending)' ? null : 'session',
+      turn: n,
+      cwd: agent === '(pending)' ? null : '/tree',
+      worktree: agent === '(pending)' ? null : '/tree',
+      branch: agent === '(pending)' ? null : 'branch',
+      base_commit: null,
+      worktree_source: agent === '(pending)' ? null : 'git',
+    })
+    const chain = [
+      turn(10, 'codex', 1),
+      turn(11, 'codex', 2),
+      turn(12, '(pending)', 3),
+      turn(13, '(pending)', 4),
+    ]
+
+    const { latest, nextTurn } = continuationTurn(10, chain)
+
+    expect(latest).toMatchObject({ id: 11, agent: 'codex', worktree: '/tree' })
+    expect(nextTurn).toBe(5)
+  })
+
+  test('a chain with no started turn cannot be continued', async () => {
+    const root = addRun({
+      agent: '(pending)',
+      job: 'implement',
+      status: 'failed',
+      session: 'orch-test-session',
+    })
+
+    await expect(continueRun(root, undefined, limit)).rejects.toThrow(
+      `run ${root} cannot be continued: no turn in its chain ever started`,
+    )
+  })
+
   test('a findings root with a recorded review cannot be re-terminalised', async () => {
     const root = addRun({
       agent: 'codex',
