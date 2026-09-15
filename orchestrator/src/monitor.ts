@@ -13,6 +13,7 @@ import {
 } from './docker-resources.ts'
 import { gitLocks } from './git-locks.ts'
 import { grokTrustHeadings } from './grok-trust.ts'
+import { keepTreeHold } from './keep-tree-hold.ts'
 import { fileIssue } from './mcp.ts'
 import {
   age,
@@ -365,7 +366,9 @@ export async function monitor(
 
     const heldTrees = database
       .query(
-        `SELECT MIN(id) id, worktree, MAX(keep_tree) keep_tree, MIN(started_at) started_at
+        `SELECT MIN(id) id, worktree, MAX(keep_tree) keep_tree,
+                MAX(keep_tree_until) keep_tree_until, MAX(keep_tree_reason) keep_tree_reason,
+                MIN(started_at) started_at
          FROM run WHERE repo=? AND worktree IS NOT NULL
           AND status IN ('ok','failed','stale','stopped')
         GROUP BY worktree`,
@@ -374,20 +377,28 @@ export async function monitor(
       id: number
       worktree: string
       keep_tree: number
+      keep_tree_until: string | null
+      keep_tree_reason: string | null
       started_at: string
     }[]
     for (const held of heldTrees) {
       if (!existsSync(held.worktree)) continue
-      const dirty = held.keep_tree ? null : worktreeDirty(held.worktree)
-      if (!held.keep_tree && !dirty?.dirty) continue
+      const hold = keepTreeHold({
+        keepTree: held.keep_tree,
+        keepTreeUntil: held.keep_tree_until,
+        startedAt: held.started_at,
+        now: new Date(clock).toISOString(),
+      })
+      const dirty = hold.held ? null : worktreeDirty(held.worktree)
+      if (!hold.held && !dirty?.dirty) continue
       const ageMs = age(held.started_at, clock)
-      const explicit = Boolean(held.keep_tree)
+      const explicit = hold.held
       add({
         kind: explicit ? 'explicitly-held-worktree' : 'held-worktree',
         subject: held.worktree,
         since: held.started_at,
         detail: explicit
-          ? `run ${held.id} retained by explicit --keep-tree`
+          ? `run ${held.id} retained by ${held.keep_tree_reason ?? 'explicit --keep-tree'} until ${hold.until}`
           : `run ${held.id} ${dirty!.detail}`,
         action: explicit
           ? `clear with orch discard ${held.id}`

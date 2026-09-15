@@ -118,7 +118,7 @@ test('the detached spec mapping forwards every field to run', () => {
       resume,
       deliverables: ['timing'],
       timeoutMinutes: 40,
-      keepTree: true,
+      keepTree: { until: '2026-09-16T12:00:00.000Z', reason: 'review' },
     }),
   ).toMatchObject({
     job: 'implement',
@@ -148,7 +148,7 @@ test('the detached spec mapping forwards every field to run', () => {
     resume,
     deliverables: ['timing'],
     timeoutMinutes: 40,
-    keepTree: true,
+    keepTree: { until: '2026-09-16T12:00:00.000Z', reason: 'review' },
   })
 })
 

@@ -17,6 +17,7 @@ import {
 } from './failover.ts'
 import { type classify, FAILS_OVER, NEEDS_HUMAN, NEEDS_HUMAN_TITLE, notify } from './failure.ts'
 import { type Job, reclaimsTreeByDefault } from './jobs.ts'
+import type { KeepTreeExemption } from './keep-tree-hold.ts'
 import { mcpRequestFromStored } from './mcp-preflight.ts'
 import { resolveBranchRef, stackAt } from './projects.ts'
 import { CALIBRATION_SUFFIX_RESERVE_BYTES } from './review-calibration.ts'
@@ -58,7 +59,7 @@ type SuccessorOptions = {
   review: string | undefined
   deliverables: string[]
   timeoutMinutes: number | undefined
-  keepTree: boolean
+  keepTree: KeepTreeExemption | undefined
   resolvedReviewTarget: { branch: string; commit: string; base: string } | undefined
 }
 
@@ -80,7 +81,7 @@ export type CloseInput = {
   repoJob: boolean
   declaredDeliverables: string[]
   timeoutMinutes: number | undefined
-  keepTree: boolean
+  keepTree: KeepTreeExemption | undefined
   reason: string
   output: string
   started: number

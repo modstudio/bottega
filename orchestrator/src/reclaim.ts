@@ -3,6 +3,7 @@ import { isAbsolute, relative, resolve, sep } from 'node:path'
 import { db, SESSION_LIVE_MS, sessionId, writableDb, writeTransaction } from './db.ts'
 import { chainScoreJoin, EVIDENCE_CLOSED_SQL } from './evidence-query.ts'
 import { targetGitEnvironment } from './git-environment.ts'
+import { keepTreeHold } from './keep-tree-hold.ts'
 import { pidAlive } from './process-liveness.ts'
 import { withCleanupLock, withWorktreeCreateLock, withWorktreeLease } from './project-lock.ts'
 import { projectAt, projectByName } from './projects.ts'
@@ -32,6 +33,8 @@ type ReclaimRun = {
   session_last_seen: string | null
   scored: number
   keep_tree: number
+  keep_tree_until: string | null
+  started_at: string
 }
 
 function git(cwd: string, args: string[]): { ok: boolean; out: string } {
@@ -58,7 +61,7 @@ function runRows(path: string): ReclaimRun[] {
             r.branch, r.branch_kept, r.branch_kept_tip, r.minted_branch,
             r.base_commit, r.worktree_source, r.status,
             r.pid, r.agent_pid, r.session_id, seen.last_seen session_last_seen,
-            ${EVIDENCE_CLOSED_SQL} AS scored, r.keep_tree
+            ${EVIDENCE_CLOSED_SQL} AS scored, r.keep_tree, r.keep_tree_until, r.started_at
        FROM run r ${chainScoreJoin('r', 's')}
        LEFT JOIN session_seen seen ON seen.session_id=r.session_id
       WHERE r.worktree IS NOT NULL ORDER BY r.id`,
@@ -83,7 +86,7 @@ function branchRows(project: string, branch: string): ReclaimRun[] {
             r.branch_kept_tip, r.minted_branch,
             r.base_commit, r.worktree_source, r.status, r.pid, r.agent_pid,
             r.session_id, seen.last_seen session_last_seen,
-            ${EVIDENCE_CLOSED_SQL} AS scored, r.keep_tree
+            ${EVIDENCE_CLOSED_SQL} AS scored, r.keep_tree, r.keep_tree_until, r.started_at
        FROM run r ${chainScoreJoin('r', 's')}
        LEFT JOIN session_seen seen ON seen.session_id=r.session_id
       WHERE r.repo=? AND r.minted_branch=? ORDER BY r.id`,
@@ -168,7 +171,14 @@ function proveWorktree(path: string, clock: number, _allowDirty = false): Worktr
     const owners = proveRunOwners(rows, clock, false)
     if (owners) return { result: owners }
     for (const lockedRow of rows) {
-      if (lockedRow.keep_tree)
+      if (
+        keepTreeHold({
+          keepTree: lockedRow.keep_tree,
+          keepTreeUntil: lockedRow.keep_tree_until,
+          startedAt: lockedRow.started_at,
+          now: new Date(clock).toISOString(),
+        }).held
+      )
         return {
           result: refuse(`run ${lockedRow.id} records keep_tree; its worktree is protected`),
         }

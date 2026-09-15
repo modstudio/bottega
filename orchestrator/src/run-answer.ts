@@ -11,6 +11,7 @@ import { rulingPrompt } from './contract.ts'
 import { db, writeTransaction } from './db.ts'
 import { chainTransport, retryModelForAgent } from './failover.ts'
 import { job } from './jobs.ts'
+import { keepTreeHold } from './keep-tree-hold.ts'
 import { mcpRequestFromStored } from './mcp-preflight.ts'
 import { failureReason } from './outcome.ts'
 import { pidAlive } from './process-liveness.ts'
@@ -50,7 +51,7 @@ export async function retryRun(
       `SELECT id, COALESCE(parent_run_id,id) root_id, agent, job, cwd, prompt_path,
           probe, status, failure_kind, mcp, mcp_error,
           schema_path, model, lens, launch_cwd, launch_seed, launch_key, launch_base, no_failover,
-          keep_tree
+          keep_tree, keep_tree_until, keep_tree_reason, started_at
      FROM run WHERE id = ?`,
     )
     .get(id) as {
@@ -74,6 +75,9 @@ export async function retryRun(
     launch_base: string | null
     no_failover: number
     keep_tree: number
+    keep_tree_until: string | null
+    keep_tree_reason: string | null
+    started_at: string
   } | null
   if (!row) throw new Error(`no run ${id}`)
   // A writing job already has a worktree and a vendor session. Retry would
@@ -148,7 +152,24 @@ export async function retryRun(
       base: row.launch_base ?? undefined,
       noFailover: !!row.no_failover,
       transport: chainTransport(row.root_id) ?? undefined,
-      keepTree: !!row.keep_tree,
+      keepTree: row.keep_tree
+        ? (() => {
+            const decision = keepTreeHold({
+              keepTree: row.keep_tree,
+              keepTreeUntil: row.keep_tree_until,
+              startedAt: row.started_at,
+              now: new Date().toISOString(),
+            })
+            return {
+              until: decision.held
+                ? decision.until
+                : 'expiredAt' in decision
+                  ? decision.expiredAt
+                  : row.started_at,
+              reason: row.keep_tree_reason ?? 'explicit --keep-tree',
+            }
+          })()
+        : undefined,
       deliverables: dispatch.deliverables,
       timeoutMinutes: dispatch.timeoutMinutes ?? undefined,
     },

@@ -60,7 +60,6 @@ type SweepCandidate = {
   status: string
   worktree_source: Worktree['source'] | null
   job: string
-  keep_tree: number
   pid: number | null
   agent_pid: number | null
   session_id: string | null
@@ -274,7 +273,7 @@ export async function sweepRuns(options: SweepOptions, helpers: SweepHelpers): P
       .query(
         `SELECT r.id, COALESCE(r.parent_run_id, r.id) root_id,
               r.repo, r.worktree, r.branch, r.base_commit, r.worktree_source, r.status, r.job,
-              r.keep_tree, r.pid, r.agent_pid, r.session_id, seen.last_seen AS session_last_seen
+              r.pid, r.agent_pid, r.session_id, seen.last_seen AS session_last_seen
          FROM run r
          LEFT JOIN session_seen seen ON seen.session_id=r.session_id
         WHERE r.worktree IS NOT NULL AND r.status IN ('ok','failed','stale','stopped')

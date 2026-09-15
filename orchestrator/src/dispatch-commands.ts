@@ -4,6 +4,7 @@ import { existsSync, realpathSync } from 'node:fs'
 import { preflight } from './dispatch-preflight.ts'
 import type { DetachSpec } from './failover.ts'
 import { isReaderJob, job, reclaimsTreeByDefault, resolveJobTimeoutMs } from './jobs.ts'
+import { keepTreeExemption, parseKeepTreeDuration } from './keep-tree-hold.ts'
 import type { McpRequest } from './mcp-preflight.ts'
 import { projectAt, projectByName, projects } from './projects.ts'
 
@@ -130,7 +131,7 @@ export async function dispatchCommand(
   if (has('keep-tree') && !reclaimsTreeByDefault(jobName)) {
     throw new Error('--keep-tree is only valid for lens and reader jobs')
   }
-  const keepTree = has('keep-tree')
+  const keepTreeDuration = has('keep-tree') ? parseKeepTreeDuration(flag('keep-tree')) : undefined
   if (!porcelain && !explicitRepo && !projectAt(callerCwd)) {
     error(
       `! this run will not be attributed to any project; use --repo <name> ` +
@@ -150,6 +151,10 @@ export async function dispatchCommand(
   }
   const prompt = await readPrompt()
   if (!prompt.trim()) throw new Error('empty prompt')
+  const keepTree =
+    keepTreeDuration === undefined
+      ? undefined
+      : keepTreeExemption(keepTreeDuration, flag('keep-tree-reason'))
   const conflicts = jobName === 'implement' ? contractConflicts(prompt) : []
 
   // A fan-out cannot be run synchronously, and that is not a caller's problem
