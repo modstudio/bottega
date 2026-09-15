@@ -105,34 +105,31 @@ describe('Drizzle migration journal', () => {
 
   test('every typed table and column has the migration NOT NULL and default shape', () => {
     const d = fresh()
-    for (const declared of declaredSchemas) {
-      for (const value of Object.values(declared)) {
-        if (!value || typeof value !== 'object' || !('getSQL' in value)) continue
-        const table = value as SQLiteTable
-        const name = getTableName(table)
-        const config = getTableConfig(table)
-        const actual = d.query(`PRAGMA table_info("${name}")`).all() as {
-          name: string
-          notnull: number
-          dflt_value: string | null
-        }[]
-        expect(actual.length, name).toBe(config.columns.length)
-        for (const column of config.columns) {
-          const row = actual.find((candidate) => candidate.name === column.name)
-          expect(row, `${name}.${column.name}`).toBeDefined()
-          const primaryKeyNotNull = column.primary
-          expect(
-            Boolean(row!.notnull || primaryKeyNotNull),
-            `${name}.${column.name} NOT NULL`,
-          ).toBe(column.notNull || primaryKeyNotNull)
-          const expectedDefault =
-            column.default === undefined
-              ? null
-              : typeof column.default === 'string'
-                ? `'${column.default}'`
-                : String(column.default)
-          expect(row!.dflt_value, `${name}.${column.name} default`).toBe(expectedDefault)
-        }
+    for (const value of declaredSchemas.flatMap((declared) => Object.values(declared))) {
+      if (!value || typeof value !== 'object' || !('getSQL' in value)) continue
+      const table = value as SQLiteTable
+      const name = getTableName(table)
+      const config = getTableConfig(table)
+      const actual = d.query(`PRAGMA table_info("${name}")`).all() as {
+        name: string
+        notnull: number
+        dflt_value: string | null
+      }[]
+      expect(actual.length, name).toBe(config.columns.length)
+      for (const column of config.columns) {
+        const row = actual.find((candidate) => candidate.name === column.name)
+        expect(row, `${name}.${column.name}`).toBeDefined()
+        const primaryKeyNotNull = column.primary
+        expect(Boolean(row!.notnull || primaryKeyNotNull), `${name}.${column.name} NOT NULL`).toBe(
+          column.notNull || primaryKeyNotNull,
+        )
+        const expectedDefault =
+          column.default === undefined
+            ? null
+            : typeof column.default === 'string'
+              ? `'${column.default}'`
+              : String(column.default)
+        expect(row!.dflt_value, `${name}.${column.name} default`).toBe(expectedDefault)
       }
     }
     d.close()
