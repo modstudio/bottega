@@ -72,6 +72,7 @@ describe('port importer', () => {
       path: `/fixture/${index}`,
       stack: null,
       canon: false,
+      retiredAt: null,
       settings: index === 0 ? { keyPrefixes: prefixes } : {},
     }))
     const plan = planImport(files, syntheticRegister)

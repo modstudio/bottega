@@ -16,7 +16,7 @@ import {
   restoreDoc,
   setDoc as writeDoc,
 } from './docs.ts'
-import { removeProject, upsertProject } from './projects.ts'
+import { retireProject, upsertProject } from './projects.ts'
 
 describe('scoped operator docs', () => {
   test('CRUD round-trips and set is a uniqueness-preserving upsert', () => {
@@ -179,7 +179,7 @@ describe('scoped operator docs', () => {
     expect(diffDocRevisions(previous!.id, latest!.id)).toContain('-one\n+two')
   })
 
-  test('history and restore survive removal of the addressed project', () => {
+  test('history and restore survive retirement of the addressed project', () => {
     upsertProject({ name: 'former', path: '/w/former', stack: null, canon: true, settings: {} })
     setDoc({
       scope: 'project',
@@ -189,7 +189,7 @@ describe('scoped operator docs', () => {
       body: 'kept',
     })
     removeDoc('project', 'former', 'historic')
-    expect(removeProject('former')).toBe(true)
+    expect(retireProject('former')).toBe('retired')
 
     expect(
       listDocRevisions('project', 'former', 'historic').map((revision) => revision.op),
@@ -202,7 +202,7 @@ describe('scoped operator docs', () => {
         listDocRevisions('project', 'former', 'historic').find(
           (revision) => revision.op === 'create',
         )!.id,
-        { reason: 'restore after unregistering' },
+        { reason: 'restore after retiring' },
       ),
     ).toMatchObject({
       id: expect.any(Number),
@@ -213,7 +213,7 @@ describe('scoped operator docs', () => {
     })
   })
 
-  test('consume survives removal of the addressed project', () => {
+  test('consume survives retirement of the addressed project', () => {
     upsertProject({ name: 'former', path: '/w/former', stack: null, canon: true, settings: {} })
     setDoc({
       scope: 'resume',
@@ -229,7 +229,7 @@ describe('scoped operator docs', () => {
       title: 'Project',
       body: '---\nstatus: open\n---\n\nproject',
     })
-    expect(removeProject('former')).toBe(true)
+    expect(retireProject('former')).toBe('retired')
 
     expect(consumeDoc('resume', 'former', 'epic').body).toContain('status: consumed')
     expect(consumeDoc('project', 'former', 'note').body).toContain('status: consumed')

@@ -2,7 +2,35 @@ import { afterEach, describe, expect, test } from 'bun:test'
 import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { projectAt, stackAt, upsertProject, validateProjectSettings } from './projects.ts'
+import { db, writableDb } from './db.ts'
+import {
+  type ProjectReferenceCounts,
+  projectAt,
+  projectByName,
+  projectRemovalRefusal,
+  projects,
+  removeProject,
+  retiredProjectAt,
+  retiredProjectByName,
+  retiredProjectRefusal,
+  retireProject,
+  stackAt,
+  unretireProject,
+  upsertProject,
+  validateProjectSettings,
+} from './projects.ts'
+
+const none: ProjectReferenceCounts = {
+  run: 0,
+  resource_claim: 0,
+  canon_pack: 0,
+  landing: 0,
+  landing_override: 0,
+  landing_review_carry: 0,
+  doc: 0,
+  doc_revision: 0,
+  review: 0,
+}
 
 let projectDirectory: string | null = null
 
@@ -69,5 +97,78 @@ describe('projects are data, not code', () => {
         worktree: { recipe: {}, recipePath: '.orch/worktree.jsonc' },
       }).join('\n'),
     ).toContain('recipe and recipePath may not both be declared')
+  })
+})
+
+describe('DEV-587 referenced projects are retired, not unstitched', () => {
+  test('projectRemovalRefusal is null for all-zero counts', () => {
+    expect(projectRemovalRefusal('ghost', none)).toBeNull()
+  })
+
+  test('projectRemovalRefusal names only non-zero tables', () => {
+    expect(projectRemovalRefusal('kept', { ...none, run: 2, resource_claim: 1, doc: 4 })).toEqual([
+      'project kept is referenced by 2 run(s), 1 claim(s), 4 doc(s); removing it would blank their project attribution',
+      'cleared by: orch project retire kept',
+    ])
+  })
+
+  test('a project with a run refuses removal and keeps the run attributed', () => {
+    upsertProject({ name: 'kept-run', path: '/w/kept-run' })
+    const project = projectByName('kept-run')!
+    writableDb()
+    db()
+      .query(
+        `INSERT INTO run (started_at, agent, job, project_id, prompt_sha, prompt_bytes, prompt_head, status)
+         VALUES ('t', 'a', 'understand', ?, 'sha', 1, 'h', 'ok')`,
+      )
+      .run(project.id)
+    expect(() => removeProject('kept-run')).toThrow(
+      'project kept-run is referenced by 1 run(s); removing it would blank their project attribution\n' +
+        'cleared by: orch project retire kept-run',
+    )
+    expect(projectByName('kept-run')?.id).toBe(project.id)
+    expect(
+      (
+        db().query('SELECT project_id FROM run WHERE project_id=?').get(project.id) as {
+          project_id: number
+        }
+      ).project_id,
+    ).toBe(project.id)
+  })
+
+  test('a project with nothing referencing it still removes', () => {
+    upsertProject({ name: 'ephemeral', path: '/w/ephemeral' })
+    expect(removeProject('ephemeral')).toBe(true)
+    expect(projectByName('ephemeral')).toBeNull()
+  })
+
+  test('retire stamps retired_at and hides the row from acting reads', () => {
+    upsertProject({ name: 'tombstoned', path: '/w/tombstoned' })
+    expect(retireProject('tombstoned')).toBe('retired')
+    const retired = projects({ retired: true }).find((project) => project.name === 'tombstoned')
+    expect(retired?.retiredAt).toBeTruthy()
+    expect(projects().some((project) => project.name === 'tombstoned')).toBe(false)
+    expect(projectByName('tombstoned')).toBeNull()
+    expect(projectAt('/w/tombstoned')).toBeNull()
+    expect(retiredProjectByName('tombstoned')?.id).toBe(retired!.id)
+    expect(retiredProjectAt('/w/tombstoned')?.name).toBe('tombstoned')
+    expect(retiredProjectRefusal('tombstoned')).toBe(
+      'project tombstoned is retired; cleared by: orch project retire tombstoned --undo',
+    )
+    expect(retireProject('tombstoned')).toBe('already-retired')
+  })
+
+  test('undo and re-add restore a retired name', () => {
+    upsertProject({ name: 'restored', path: '/w/restored' })
+    expect(retireProject('restored')).toBe('retired')
+    expect(unretireProject('restored')).toBe(true)
+    expect(projectByName('restored')?.path).toBe('/w/restored')
+    expect(projectByName('restored')?.retiredAt).toBeNull()
+    expect(retireProject('restored')).toBe('retired')
+    upsertProject({ name: 'restored', path: '/w/restored-next', stack: 'node' })
+    const live = projectByName('restored')
+    expect(live?.path).toBe('/w/restored-next')
+    expect(live?.stack).toBe('node')
+    expect(live?.retiredAt).toBeNull()
   })
 })

@@ -255,8 +255,9 @@
   {
     "file": "orchestrator/src/dispatch-commands.ts",
     "function": "dispatchCommand",
-    "line": 44,
-    "score": 44
+    "line": 72,
+    "score": 40,
+    "key": "orchestrator/src/dispatch-commands.ts\u0000dispatchCommand"
   },
   {
     "file": "orchestrator/src/dispatch-preflight.ts",
@@ -485,8 +486,9 @@
   {
     "file": "orchestrator/src/project-commands.ts",
     "function": "projectCommand",
-    "line": 19,
-    "score": 98
+    "line": 165,
+    "score": 64,
+    "key": "orchestrator/src/project-commands.ts\u0000projectCommand"
   },
   {
     "file": "orchestrator/src/project-lock.ts",

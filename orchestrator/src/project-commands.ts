@@ -8,12 +8,16 @@ import { tryWriteContention, writeTransaction } from './db.ts'
 import { selectProjectProfile } from './lenses.ts'
 import {
   assertRegisterBranches,
+  type Project,
   type ProjectSettings,
   projectByName,
   projects,
   removeProject,
   renameProject,
+  retiredProjectByName,
+  retireProject,
   sniffStack,
+  unretireProject,
   upsertProject,
   validateProjectSettings,
   worktreeWarnings,
@@ -24,6 +28,147 @@ import { migrateCreate } from './worktree-template.ts'
 type ProjectFlags = { has(name: string): boolean; flag(name: string): string | undefined }
 type ProjectPresentation = { log(...values: unknown[]): void; cwd(): string }
 
+function listedProjectJson(project: Project) {
+  const { retiredAt, ...rest } = project
+  return {
+    ...rest,
+    ...(retiredAt ? { retired_at: retiredAt } : {}),
+    lifecycle_form: lifecycleForm(project.settings.worktree),
+    problems: validateProjectSettings(project.settings, project.path),
+    commit_hooks_skipped: true,
+    gate: typeof project.settings.gate === 'string' ? project.settings.gate : null,
+  }
+}
+
+function emptyProjectListMessage(retired: boolean): string {
+  if (retired) return 'no retired projects.'
+  return (
+    'no projects registered.\n\n' +
+    '  orch project add <path> [--name X] [--stack Y] [--no-canon] [--json]\n' +
+    '  orch project retire <name> [--undo]\n\n' +
+    'The stack is what lets routing tell "good at PHP" from "good at Vue";\n' +
+    'two projects sharing one stack pool their evidence.'
+  )
+}
+
+function printProjectRows(all: Project[], presentation: ProjectPresentation): void {
+  for (const p of all) {
+    const retiredMark = p.retiredAt ? '  retired' : ''
+    presentation.log(
+      `${p.name.padEnd(14)} ${(p.stack ?? '—').padEnd(22)} ` +
+        `${p.canon ? 'canon' : '     '}  ${p.path}${retiredMark}`,
+    )
+    const keys = Object.keys(p.settings)
+    if (keys.length) presentation.log(`${' '.repeat(14)} settings: ${keys.join(', ')}`)
+    for (const problem of validateProjectSettings(p.settings, p.path)) {
+      presentation.log(`${p.name}: ${problem}`)
+    }
+    // Reported, not enforced: a half-configured project should say so and
+    // keep working. Every one of these is a state that has actually
+    // happened rather than one imagined here.
+    for (const w of worktreeWarnings(p)) {
+      presentation.log(`${' '.repeat(14)} ! ${w}`)
+    }
+  }
+}
+
+function listProjectsCommand(flags: ProjectFlags, presentation: ProjectPresentation): void {
+  const retired = flags.has('retired')
+  const all = retired ? projects({ retired: true }) : projects()
+  /**
+   * PUBLISHED, because hub cannot import this concern and must not open
+   * `orch.db`.
+   *
+   * The boundary check forbids the import and a shared database would make
+   * two concerns one, so what another concern needs is emitted here — the
+   * same contract `orch state` already serves the dashboard under. A
+   * project's identity, stack and settings are exactly the facts hub needs
+   * to stop knowing four repository names of its own.
+   */
+  if (flags.has('json')) {
+    presentation.log(JSON.stringify(all.map(listedProjectJson)))
+    return
+  }
+  if (!all.length) {
+    presentation.log(emptyProjectListMessage(retired))
+    return
+  }
+  printProjectRows(all, presentation)
+}
+
+function addProjectCommand(
+  argv: string[],
+  flags: ProjectFlags,
+  presentation: ProjectPresentation,
+): void {
+  const { has, flag } = flags
+  const path = (argv[2] ?? presentation.cwd()).replace(/\/$/, '')
+  if (!existsSync(path)) throw new Error(`no such directory: ${path}`)
+  const name = flag('name') ?? path.split('/').filter(Boolean).pop()!
+  // Sniffed only as a SUGGESTION, at the one moment a person is looking
+  // straight at the project and can correct it. A guess that reruns on
+  // every routing decision is a guess nobody ever reviews.
+  const stack = flag('stack') ?? sniffStack(path)
+  let settings = {} as ProjectSettings
+  if (flag('settings')) {
+    try {
+      settings = JSON.parse(flag('settings')!) as typeof settings
+    } catch (e) {
+      throw new Error(`--settings must be JSON: ${e}`)
+    }
+    const malformed = validateProjectSettings(settings, path)
+    if (malformed.length) throw new Error(malformed.join('\n'))
+  }
+  const candidate = {
+    id: 0,
+    name,
+    path,
+    stack,
+    canon: !has('no-canon'),
+    retiredAt: null,
+    settings,
+  }
+  const incomplete = worktreeWarnings(candidate).filter(
+    (w) =>
+      w.startsWith('has a create command but no branch template') ||
+      w.startsWith('has a create command with a {seed} placeholder but no seeds list'),
+  )
+  if (incomplete.length && !has('allow-incomplete')) throw new Error(incomplete.join('\n'))
+  assertRegisterBranches(candidate)
+  const wasRetired = Boolean(retiredProjectByName(name))
+  upsertProject(candidate)
+  if (has('json')) {
+    presentation.log(JSON.stringify(projectByName(name)))
+    return
+  }
+  if (wasRetired) {
+    presentation.log(`un-retired ${name}`)
+  } else {
+    presentation.log(
+      `registered ${name}  ${stack ?? '(no stack — orch project set ' + name + ' --stack ...)'}  ${path}`,
+    )
+  }
+  for (const w of worktreeWarnings(projectByName(name)!)) {
+    presentation.log(`${' '.repeat(14)} ! ${w}`)
+  }
+}
+
+function retireProjectCommand(
+  argv: string[],
+  flags: ProjectFlags,
+  presentation: ProjectPresentation,
+): void {
+  const name = argv[2]
+  if (!name) throw new Error('orch project retire <name> [--undo]')
+  if (flags.has('undo')) {
+    unretireProject(name)
+    presentation.log(`un-retired ${name}`)
+    return
+  }
+  const outcome = retireProject(name)
+  presentation.log(outcome === 'already-retired' ? `already retired ${name}` : `retired ${name}`)
+}
+
 export function projectCommand(
   sub: string,
   argv: string[],
@@ -33,97 +178,12 @@ export function projectCommand(
   const { has, flag } = flags
 
   if (sub === 'list') {
-    const all = projects()
-    /**
-     * PUBLISHED, because hub cannot import this concern and must not open
-     * `orch.db`.
-     *
-     * The boundary check forbids the import and a shared database would make
-     * two concerns one, so what another concern needs is emitted here — the
-     * same contract `orch state` already serves the dashboard under. A
-     * project's identity, stack and settings are exactly the facts hub needs
-     * to stop knowing four repository names of its own.
-     */
-    if (has('json')) {
-      presentation.log(
-        JSON.stringify(
-          all.map((project) => ({
-            ...project,
-            lifecycle_form: lifecycleForm(project.settings.worktree),
-            problems: validateProjectSettings(project.settings, project.path),
-            commit_hooks_skipped: true,
-            gate: typeof project.settings.gate === 'string' ? project.settings.gate : null,
-          })),
-        ),
-      )
-      return
-    }
-    if (!all.length) {
-      presentation.log(
-        'no projects registered.\n\n' +
-          '  orch project add <path> [--name X] [--stack Y] [--no-canon] [--json]\n\n' +
-          'The stack is what lets routing tell "good at PHP" from "good at Vue";\n' +
-          'two projects sharing one stack pool their evidence.',
-      )
-      return
-    }
-    for (const p of all) {
-      presentation.log(
-        `${p.name.padEnd(14)} ${(p.stack ?? '—').padEnd(22)} ` +
-          `${p.canon ? 'canon' : '     '}  ${p.path}`,
-      )
-      const keys = Object.keys(p.settings)
-      if (keys.length) presentation.log(`${' '.repeat(14)} settings: ${keys.join(', ')}`)
-      for (const problem of validateProjectSettings(p.settings, p.path)) {
-        presentation.log(`${p.name}: ${problem}`)
-      }
-      // Reported, not enforced: a half-configured project should say so and
-      // keep working. Every one of these is a state that has actually
-      // happened rather than one imagined here.
-      for (const w of worktreeWarnings(p)) {
-        presentation.log(`${' '.repeat(14)} ! ${w}`)
-      }
-    }
+    listProjectsCommand(flags, presentation)
     return
   }
 
   if (sub === 'add') {
-    const path = (argv[2] ?? presentation.cwd()).replace(/\/$/, '')
-    if (!existsSync(path)) throw new Error(`no such directory: ${path}`)
-    const name = flag('name') ?? path.split('/').filter(Boolean).pop()!
-    // Sniffed only as a SUGGESTION, at the one moment a person is looking
-    // straight at the project and can correct it. A guess that reruns on
-    // every routing decision is a guess nobody ever reviews.
-    const stack = flag('stack') ?? sniffStack(path)
-    let settings = {} as ProjectSettings
-    if (flag('settings')) {
-      try {
-        settings = JSON.parse(flag('settings')!) as typeof settings
-      } catch (e) {
-        throw new Error(`--settings must be JSON: ${e}`)
-      }
-      const malformed = validateProjectSettings(settings, path)
-      if (malformed.length) throw new Error(malformed.join('\n'))
-    }
-    const candidate = { id: 0, name, path, stack, canon: !has('no-canon'), settings }
-    const incomplete = worktreeWarnings(candidate).filter(
-      (w) =>
-        w.startsWith('has a create command but no branch template') ||
-        w.startsWith('has a create command with a {seed} placeholder but no seeds list'),
-    )
-    if (incomplete.length && !has('allow-incomplete')) throw new Error(incomplete.join('\n'))
-    assertRegisterBranches(candidate)
-    upsertProject(candidate)
-    if (has('json')) {
-      presentation.log(JSON.stringify(projectByName(name)))
-      return
-    }
-    presentation.log(
-      `registered ${name}  ${stack ?? '(no stack — orch project set ' + name + ' --stack ...)'}  ${path}`,
-    )
-    for (const w of worktreeWarnings(projectByName(name)!)) {
-      presentation.log(`${' '.repeat(14)} ! ${w}`)
-    }
+    addProjectCommand(argv, flags, presentation)
     return
   }
 
@@ -184,6 +244,7 @@ export function projectCommand(
       path: flag('path') ?? p.path,
       stack: flag('stack') ?? p.stack,
       canon: has('no-canon') ? false : has('canon') ? true : p.canon,
+      retiredAt: p.retiredAt,
       settings,
     }
     const malformed = validateProjectSettings(candidate.settings, candidate.path).filter(
@@ -290,11 +351,14 @@ export function projectCommand(
   if (sub === 'remove') {
     const name = argv[2]
     if (!name) throw new Error('orch project remove <name>')
-    // The RUNS stay. They are evidence about agents, and that evidence did
-    // not stop being true because the project was deregistered.
     presentation.log(removeProject(name) ? `removed ${name}` : `no project "${name}"`)
     return
   }
 
-  throw new Error(`unknown: orch project ${sub}. Try list | add | set | remove`)
+  if (sub === 'retire') {
+    retireProjectCommand(argv, flags, presentation)
+    return
+  }
+
+  throw new Error(`unknown: orch project ${sub}. Try list | add | set | remove | retire`)
 }

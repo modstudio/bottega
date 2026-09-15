@@ -428,8 +428,11 @@ export function projectRemovalRefusal(
 
 export function projectReferenceCounts(projectId: number): ProjectReferenceCounts {
   const count = (table: string) =>
-    (db().query(`SELECT COUNT(*) AS n FROM ${table} WHERE project_id=?`).get(projectId) as { n: number })
-      .n
+    (
+      db().query(`SELECT COUNT(*) AS n FROM ${table} WHERE project_id=?`).get(projectId) as {
+        n: number
+      }
+    ).n
   return {
     run: count('run'),
     resource_claim: count('resource_claim'),
