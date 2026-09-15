@@ -1,5 +1,5 @@
 import ts from 'typescript'
-import type { Finding } from './ratchet'
+import type { Finding } from '../../shared/ratchet'
 
 const TEST_NAMES = new Set(['it', 'test'])
 

@@ -183,7 +183,8 @@ if (
     './scripts/check-cognitive-ceiling.test.ts',
     './scripts/import-scanner.test.ts',
     './scripts/check-import-cycles.test.ts',
-    './scripts/quality/ratchet.test.ts',
+    './scripts/quality/no-expect.test.ts',
+    './shared/ratchet.test.ts',
     './scripts/quality/ceiling-decision.test.ts',
     './scripts/quality/test-timing-decision.test.ts',
     './shared/git.test.ts',
@@ -275,6 +276,9 @@ for (const script of [
   'check-review-commands-boundary.ts',
   'check-dispatch-commands-boundary.ts',
   'check-canon-commands-boundary.ts',
+  'check-canon-budget-boundary.ts',
+  'check-canon-files-boundary.ts',
+  'check-canon-lint-boundary.ts',
   'check-routing-commands-boundary.ts',
   'check-failure-commands-boundary.ts',
   'check-health-commands-boundary.ts',
@@ -352,6 +356,9 @@ for (const script of [
   )
   if ((await child.exited) !== 0) process.exit(1)
 }
+
+if ((await inherit(['bun', `${root}orchestrator/scripts/check-canon-lint.ts`])) !== 0)
+  process.exit(1)
 
 let qualityMode: string
 try {

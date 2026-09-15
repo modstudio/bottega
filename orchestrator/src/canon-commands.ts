@@ -1,5 +1,9 @@
 // concern: canon-commands
-/** Knows canon command semantics over canon and evals. Must not know runs, routing, transports, the CLI, or worktrees. */
+/** Knows canon command semantics over canon, lint, and evals. Must not know runs, routing, transports, the CLI, or worktrees. */
+import { readFileSync, writeFileSync } from 'node:fs'
+import { dirname, resolve } from 'node:path'
+import { z } from 'zod'
+import type { Finding } from '../../shared/ratchet.ts'
 import {
   allInjectChecks,
   allNumericLiterals,
@@ -7,6 +11,8 @@ import {
   diffPack,
   findingsForPack,
 } from './canon.ts'
+import { canonGitRoot, collectCanonFiles } from './canon-files.ts'
+import { introducedCanonFindings, lintCanon } from './canon-lint.ts'
 import { canonEvalsReport, runCanonEvals } from './evals.ts'
 
 type CanonFlags = { has(name: string): boolean; flag(name: string): string | undefined }
@@ -14,6 +20,76 @@ type CanonPresentation = {
   log(...values: unknown[]): void
   exitCode(code: number): void
   cwd(): string
+}
+
+const findingSchema = z.object({
+  file: z.string(),
+  line: z.number().int(),
+  rule: z.string(),
+  message: z.string(),
+  measuredBytes: z.number().int().nonnegative().optional(),
+})
+
+function printMeasurements(
+  result: ReturnType<typeof lintCanon>,
+  log: (...values: unknown[]) => void,
+): void {
+  const { tiers } = result.summary
+  log('tiers')
+  if (tiers.entry)
+    log(`  entry       ${tiers.entry.bytes}/${tiers.entry.limit}  ${tiers.entry.path}`)
+  log(`  always-on   ${tiers.alwaysOn.bytes}/${tiers.alwaysOn.limit}`)
+  for (const [name, rows] of [
+    ['rule', tiers.rules],
+    ['context', tiers.contexts],
+    ['reference', tiers.references],
+    ['card', tiers.cards],
+  ] as const) {
+    for (const row of rows) log(`  ${name.padEnd(11)} ${row.bytes}/${row.limit}  ${row.path}`)
+  }
+  log('chains')
+  for (const row of result.summary.chains)
+    log(`  ${row.bytes}/${row.limit}  ${dirname(row.path) === '.' ? '.' : dirname(row.path)}`)
+}
+
+function printFindings(findings: Finding[], log: (...values: unknown[]) => void): void {
+  if (!findings.length) {
+    log('findings: none')
+    return
+  }
+  const grouped = Map.groupBy(findings, (finding) => finding.rule)
+  log('findings')
+  for (const [rule, rows] of [...grouped].sort(([a], [b]) => a.localeCompare(b))) {
+    log(`  ${rule} (${rows.length})`)
+    for (const finding of rows) log(`    ${finding.file}:${finding.line}  ${finding.message}`)
+  }
+}
+
+export function canonLintCommand(flags: CanonFlags, presentation: CanonPresentation): void {
+  const requestedCwd = resolve(flags.flag('cwd') ?? presentation.cwd())
+  const root = canonGitRoot(requestedCwd)
+  const result = lintCanon({ files: collectCanonFiles(root) })
+  const baselineFlag = flags.flag('baseline')
+  if ((flags.has('strict') || flags.has('write-baseline')) && !baselineFlag) {
+    throw new Error('--strict and --write-baseline require --baseline FILE')
+  }
+  const baselinePath = baselineFlag ? resolve(presentation.cwd(), baselineFlag) : null
+  if (flags.has('write-baseline')) {
+    writeFileSync(baselinePath!, `${JSON.stringify(result.findings, null, 2)}\n`)
+    presentation.log(`wrote ${result.findings.length} findings to ${baselinePath}`)
+    return
+  }
+  let displayed = result.findings
+  if (flags.has('strict')) {
+    const baseline = findingSchema.array().parse(JSON.parse(readFileSync(baselinePath!, 'utf8')))
+    displayed = introducedCanonFindings(baseline, result.findings)
+  }
+  if (flags.has('json')) presentation.log(JSON.stringify({ ...result, findings: displayed }))
+  else {
+    printMeasurements(result, presentation.log)
+    printFindings(displayed, presentation.log)
+  }
+  if (flags.has('strict') && displayed.length) presentation.exitCode(1)
 }
 
 export async function canonCommand(
@@ -118,5 +194,5 @@ export async function canonCommand(
     }
     return
   }
-  throw new Error('unknown: orch canon. Try check | diff | eval | evals')
+  throw new Error('unknown: orch canon. Try check | diff | eval | evals | lint')
 }
