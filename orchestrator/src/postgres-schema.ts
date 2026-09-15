@@ -17,14 +17,15 @@ import { PLATFORM_SLUG } from '../../shared/brand.ts'
 
 /** Stable id and application-owned name for the platform tenant. */
 export const PLATFORM_SPACE_ID = '01990000-0000-7000-8000-000000000001' as const
+export const PLATFORM_OPERATOR_USER_ID = '01990000-0000-7000-8000-000000000002' as const
 export const PLATFORM_SPACE_NAME = PLATFORM_SLUG
 
 const identity = () => uuid('id').primaryKey()
-const spaceIdentity = () =>
+export const spaceIdentity = () =>
   uuid('space_id')
     .notNull()
     .references(() => space.id)
-const tenantPolicies = (table: string, owner: AnyPgColumn) => {
+export const tenantPolicies = (table: string, owner: AnyPgColumn) => {
   const ownsRow = sql`${owner} = nullif(current_setting('app.space_id', true), '')::uuid`
   return [
     pgPolicy(`${table}_space_select`, { for: 'select', using: ownsRow }),
