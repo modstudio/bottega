@@ -9,6 +9,7 @@ import {
   reconcileHub,
   rulingConditions,
   staleTrustEntryConditions,
+  unsettledClaimConditions,
 } from './monitor-conditions.ts'
 import { claimMonitorNotices, markMonitorNoticesDelivered } from './monitor-notices.ts'
 
@@ -38,6 +39,52 @@ function persistAddressedCondition(
 }
 
 describe('operational monitor conditions', () => {
+  test('reports claimed allocations only after a conversation has been terminal over one hour', () => {
+    const clock = Date.parse('2026-09-15T12:00:00Z')
+    const claim = {
+      kind: 'sandbox_dir' as const,
+      rootId: 52,
+      allocationKeys: ['/runs/sandbox-52'],
+      terminal: true,
+      terminalAt: '2026-09-15T10:59:59Z',
+    }
+    expect(unsettledClaimConditions({ ascertainable: true, claims: [claim] }, clock)).toEqual({
+      conditions: [
+        {
+          kind: 'unsettled-claim',
+          subject: 'sandbox_dir:52',
+          since: '2026-09-15T10:59:59Z',
+          ageMs: 3_601_000,
+          detail:
+            'sandbox_dir claim for terminal conversation 52 remains claimed; allocation key /runs/sandbox-52',
+          action: 'run orch sweep',
+        },
+      ],
+      errors: [],
+    })
+    expect(
+      unsettledClaimConditions(
+        {
+          ascertainable: true,
+          claims: [
+            { ...claim, terminalAt: '2026-09-15T11:00:01Z' },
+            { ...claim, rootId: 53, terminal: false },
+          ],
+        },
+        clock,
+      ),
+    ).toEqual({ conditions: [], errors: [] })
+    expect(
+      unsettledClaimConditions(
+        { ascertainable: false, reason: 'unsettled claim inventory unavailable: denied' },
+        clock,
+      ),
+    ).toEqual({
+      conditions: [],
+      errors: ['unsettled claim inventory unavailable: denied'],
+    })
+  })
+
   test('reports only orphan Docker networks and preserves an unavailable detector', () => {
     const clock = Date.parse('2026-09-15T12:00:00Z')
     const orphan = {

@@ -4,6 +4,8 @@
  * and reclamation. Must not know routing, contracts, transports, reviews, or
  * the CLI.
  */
+import { existsSync, rmSync } from 'node:fs'
+import { join, resolve } from 'node:path'
 import { db, nowIso, sessionId, writeTransaction } from './db.ts'
 import { repoRootOf, targetGitEnvironment } from './git-environment.ts'
 import { isGroupKillablePgid, runHasLiveDescendants } from './idle-kill.ts'
@@ -17,8 +19,15 @@ import {
 } from './project-lock.ts'
 import { projectAt, projectByName } from './projects.ts'
 import { proveWorktreeReconstructible } from './reclaim.ts'
-import { recordRetainedRefClaim, settleClaims, settledStateForCloseOut } from './resource-claims.ts'
+import {
+  type ResourceClaimState,
+  recordRetainedRefClaim,
+  sandboxDirectoryRelease,
+  settleClaims,
+  settledStateForCloseOut,
+} from './resource-claims.ts'
 import { liveWorktreeSharers, worktreePathSpellings } from './resource-ownership.ts'
+import { RUNS_DIR } from './run-artifacts.ts'
 import { processTable, terminateRunProcesses } from './run-process.ts'
 import { worktreeExists } from './worktree.ts'
 import { inspectTreeOwnership } from './worktree-attribution.ts'
@@ -33,6 +42,152 @@ export type CloseOutResult = {
 }
 
 const TERMINAL = new Set(['ok', 'failed', 'stale', 'stopped'])
+
+export type SandboxReleaseResult = {
+  rootId: number
+  path: string
+  outcome: 'released' | 'absent' | 'kept'
+  detail: string
+}
+
+function conversationProcessState(rootId: number): boolean | null {
+  const inventory = processTable()
+  if (!inventory.ascertainable) return null
+  const turns = db()
+    .query(
+      `SELECT pid,agent_pid,agent_pgid FROM run
+       WHERE id=? OR parent_run_id=? ORDER BY id`,
+    )
+    .all(rootId, rootId) as {
+    pid: number | null
+    agent_pid: number | null
+    agent_pgid: number | null
+  }[]
+  const selfPgid = inventory.rows.find((row) => row.pid === process.pid)?.pgid ?? null
+  const roots = [
+    ...new Set(
+      turns
+        .flatMap((turn) => [turn.pid, turn.agent_pid])
+        .filter((pid): pid is number => pid != null && pid > 1 && pid !== process.pid),
+    ),
+  ]
+  const groups = new Set(
+    turns
+      .map((turn) => turn.agent_pgid)
+      .filter(
+        (pgid): pgid is number =>
+          pgid != null && pgid > 1 && (selfPgid === null || pgid !== selfPgid),
+      ),
+  )
+  const samples = inventory.rows.map((row) => ({
+    pid: row.pid,
+    ppid: row.ppid,
+    pgid: row.pgid,
+    cpu: 0,
+    state: '',
+  }))
+  return (
+    runHasLiveDescendants(roots, [], { sample: () => samples }) ||
+    inventory.rows.some((row) => roots.includes(row.pid) || groups.has(row.pgid))
+  )
+}
+
+function recordedWorktreeState(rootId: number): ResourceClaimState | 'no-tree' {
+  const claim = db()
+    .query(
+      `SELECT state FROM resource_claim
+       WHERE root_run_id=? AND kind='worktree' ORDER BY id DESC LIMIT 1`,
+    )
+    .get(rootId) as { state: ResourceClaimState } | null
+  if (claim) return claim.state
+  const rows = db()
+    .query('SELECT worktree FROM run WHERE id=? OR parent_run_id=?')
+    .all(rootId, rootId) as { worktree: string | null }[]
+  return rows.some((row) => row.worktree && existsSync(row.worktree)) ? 'claimed' : 'no-tree'
+}
+
+function pathInside(candidate: string | null, directory: string): boolean {
+  if (!candidate) return false
+  const path = resolve(candidate)
+  const root = resolve(directory)
+  return path === root || path.startsWith(`${root}/`)
+}
+
+/** Release one conversation's vendor home after its tree and process claims are settled. */
+export function releaseSandboxDirectoryForConversation(
+  rootId: number,
+  options: { dryRun?: boolean; worktreeState?: ResourceClaimState | 'no-tree' } = {},
+): SandboxReleaseResult {
+  const path = join(RUNS_DIR, `sandbox-${rootId}`)
+  const turns = db()
+    .query('SELECT status,keep_tree FROM run WHERE id=? OR parent_run_id=? ORDER BY id')
+    .all(rootId, rootId) as { status: string; keep_tree: number }[]
+  const decision = sandboxDirectoryRelease({
+    terminal: turns.length > 0 && turns.every((turn) => TERMINAL.has(turn.status)),
+    liveTurn: turns.some((turn) => turn.status === 'running' || turn.status === 'asking'),
+    liveProcess: conversationProcessState(rootId),
+    worktreeState: options.worktreeState ?? recordedWorktreeState(rootId),
+    keepTree: turns.some((turn) => Boolean(turn.keep_tree)),
+    directoryExists: existsSync(path),
+  })
+  if (decision === 'absent') {
+    if (!options.dryRun)
+      writeTransaction(() => {
+        settleClaims(db(), {
+          rootRunId: rootId,
+          kind: 'sandbox_dir',
+          state: 'absent',
+          settledAt: nowIso(),
+          detail: 'sandbox directory was already absent',
+        })
+      })
+    return { rootId, path, outcome: 'absent', detail: 'sandbox directory was already absent' }
+  }
+  if (decision.startsWith('keep:')) {
+    return { rootId, path, outcome: 'kept', detail: decision.slice('keep:'.length) }
+  }
+  if (options.dryRun) {
+    return { rootId, path, outcome: 'released', detail: 'would release sandbox directory' }
+  }
+  try {
+    rmSync(path, { recursive: true })
+  } catch (error) {
+    return {
+      rootId,
+      path,
+      outcome: 'kept',
+      detail: `sandbox directory removal failed: ${String((error as Error).message ?? error)}`,
+    }
+  }
+  writeTransaction(() => {
+    const settledAt = nowIso()
+    settleClaims(db(), {
+      rootRunId: rootId,
+      kind: 'sandbox_dir',
+      state: 'released',
+      settledAt,
+      detail: `removed ${path}`,
+    })
+    const trustClaims = db()
+      .query(
+        `SELECT allocation_key,identity FROM resource_claim
+         WHERE root_run_id=? AND kind='trust_entry' AND state='claimed'`,
+      )
+      .all(rootId) as { allocation_key: string; identity: string | null }[]
+    for (const claim of trustClaims) {
+      if (!pathInside(claim.identity, path)) continue
+      settleClaims(db(), {
+        rootRunId: rootId,
+        kind: 'trust_entry',
+        state: 'released',
+        settledAt,
+        detail: `trust store removed with ${path}`,
+        allocationKey: claim.allocation_key,
+      })
+    }
+  })
+  return { rootId, path, outcome: 'released', detail: `removed sandbox directory ${path}` }
+}
 
 function terminalHoldResult(
   runId: number,
@@ -563,6 +718,21 @@ export function closeOutRun(
         })
       }
     })
+  }
+  if (options.intent !== 'sweep' && ['released', 'absent', 'forgotten'].includes(result.outcome)) {
+    const sandbox = releaseSandboxDirectoryForConversation(result.runId, {
+      dryRun: options.dryRun,
+      worktreeState: result.outcome as Extract<
+        ResourceClaimState,
+        'released' | 'absent' | 'forgotten'
+      >,
+    })
+    if (sandbox.outcome === 'kept' || sandbox.outcome === 'released') {
+      result.detail = `${result.detail}; ${sandbox.detail}`
+      if (!options.dryRun) {
+        db().query('UPDATE run SET close_out_detail=? WHERE id=?').run(result.detail, result.runId)
+      }
+    }
   }
   return result
 }

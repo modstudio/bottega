@@ -20,6 +20,15 @@ export const RESOURCE_CLAIM_KINDS = [
 export type ResourceClaimKind = (typeof RESOURCE_CLAIM_KINDS)[number]
 export type ResourceClaimState = 'claimed' | 'released' | 'retained' | 'forgotten' | 'absent'
 export type CloseOutClaimOutcome = 'released' | 'forgotten' | 'held' | 'live' | 'absent' | 'failed'
+export type SandboxDirectoryReleaseInput = {
+  terminal: boolean
+  liveTurn: boolean
+  liveProcess: boolean | null
+  worktreeState: ResourceClaimState | 'no-tree'
+  keepTree: boolean
+  directoryExists: boolean
+}
+export type SandboxDirectoryReleaseDecision = 'release' | 'absent' | `keep:${string}`
 
 export type RecipeDatabaseProvider = 'postgres-template' | 'mysql-dump' | 'compose'
 
@@ -78,6 +87,22 @@ export function settledStateForCloseOut(
   if (kind === 'worktree' && outcome === 'absent') return 'absent'
   if (kind === 'branch' && outcome === 'released') return 'retained'
   return null
+}
+
+/** Decide sandbox-home release from conversation liveness and the settled tree outcome. */
+export function sandboxDirectoryRelease(
+  input: SandboxDirectoryReleaseInput,
+): SandboxDirectoryReleaseDecision {
+  if (!input.directoryExists) return 'absent'
+  if (!input.terminal) return 'keep:conversation is not terminal'
+  if (input.liveTurn) return 'keep:conversation has a live turn'
+  if (input.liveProcess === null) return 'keep:process liveness could not be established'
+  if (input.liveProcess) return 'keep:conversation has a live process'
+  if (input.keepTree) return 'keep:held by explicit --keep-tree'
+  if (input.worktreeState === 'claimed' || input.worktreeState === 'retained') {
+    return 'keep:worktree is still held'
+  }
+  return 'release'
 }
 
 type ClaimIdentity = {

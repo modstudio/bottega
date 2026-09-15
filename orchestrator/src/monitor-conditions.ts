@@ -12,6 +12,7 @@ import type { MonitorCondition } from './monitor-types.ts'
 import { pidAlive } from './process-liveness.ts'
 import { pidRecordIdentity } from './project-lock.ts'
 import { projects } from './projects.ts'
+import type { ResourceClaimKind } from './resource-claims.ts'
 import {
   refGuardInventory,
   retainedRefInventory,
@@ -123,6 +124,7 @@ export function idleRunConditions(clock = Date.now()): MonitorCondition[] {
 }
 
 const TERMINAL_RUN_STATUSES = "('ok','failed','stale','stopped')"
+const TERMINAL_RUN_STATUS_SET = new Set(['ok', 'failed', 'stale', 'stopped'])
 
 /** Report recorded pids and descendants that outlived a terminal run. Observation only. */
 export function terminalProcessAliveConditions(clock = Date.now()): MonitorCondition[] {
@@ -580,6 +582,117 @@ export function staleTrustEntryConditions(inventory: TrustEntryInventory): {
         ageMs: null,
         detail: `run ${entry.runId} recorded Grok trust heading ${entry.heading} after its worktree disappeared`,
         action: 'reported; prune by hand in the vendor trust store',
+      },
+    ]
+  })
+  return { conditions, errors: [] }
+}
+
+export type UnsettledClaimInventory =
+  | {
+      ascertainable: true
+      claims: {
+        kind: ResourceClaimKind
+        rootId: number
+        allocationKeys: string[]
+        terminal: boolean
+        terminalAt: string | null
+      }[]
+    }
+  | { ascertainable: false; reason: string }
+
+/** Read claimed allocations with the terminal time of their complete conversation. */
+export function unsettledClaimInventory(database = db()): UnsettledClaimInventory {
+  try {
+    const claims = database
+      .query(
+        `SELECT root_run_id,kind,allocation_key FROM resource_claim
+         WHERE state='claimed' ORDER BY root_run_id,kind,allocation_key`,
+      )
+      .all() as { root_run_id: number; kind: ResourceClaimKind; allocation_key: string }[]
+    const turns = database
+      .query(
+        `SELECT id,parent_run_id,turn,status,started_at,latency_ms FROM run
+         ORDER BY COALESCE(parent_run_id,id),turn,id`,
+      )
+      .all() as {
+      id: number
+      parent_run_id: number | null
+      turn: number
+      status: string
+      started_at: string
+      latency_ms: number | null
+    }[]
+    const byRoot = new Map<number, typeof turns>()
+    for (const turn of turns) {
+      const rootId = turn.parent_run_id ?? turn.id
+      byRoot.set(rootId, [...(byRoot.get(rootId) ?? []), turn])
+    }
+    const grouped = new Map<
+      string,
+      {
+        kind: ResourceClaimKind
+        rootId: number
+        allocationKeys: string[]
+        terminal: boolean
+        terminalAt: string | null
+      }
+    >()
+    for (const claim of claims) {
+      const key = `${claim.kind}:${claim.root_run_id}`
+      const conversation = byRoot.get(claim.root_run_id) ?? []
+      const terminal =
+        conversation.length > 0 &&
+        conversation.every((turn) => TERMINAL_RUN_STATUS_SET.has(turn.status))
+      const last = conversation.at(-1)
+      let terminalAt: string | null = null
+      if (terminal && last) {
+        if (last.latency_ms === null || !Number.isFinite(Date.parse(last.started_at))) {
+          return {
+            ascertainable: false,
+            reason: `unsettled claim inventory unavailable: terminal time for conversation ${claim.root_run_id} could not be established`,
+          }
+        }
+        terminalAt = new Date(Date.parse(last.started_at) + last.latency_ms).toISOString()
+      }
+      const current = grouped.get(key) ?? {
+        kind: claim.kind,
+        rootId: claim.root_run_id,
+        allocationKeys: [],
+        terminal,
+        terminalAt,
+      }
+      current.allocationKeys.push(claim.allocation_key)
+      grouped.set(key, current)
+    }
+    return { ascertainable: true, claims: [...grouped.values()] }
+  } catch (error) {
+    return {
+      ascertainable: false,
+      reason: `unsettled claim inventory unavailable: ${String((error as Error).message ?? error)}`,
+    }
+  }
+}
+
+/** Report claimed allocations after their conversation has been terminal for more than one hour. */
+export function unsettledClaimConditions(
+  inventory: UnsettledClaimInventory,
+  clock: number,
+): { conditions: MonitorCondition[]; errors: string[] } {
+  if (!inventory.ascertainable) return { conditions: [], errors: [inventory.reason] }
+  const conditions = inventory.claims.flatMap((claim): MonitorCondition[] => {
+    if (!claim.terminal || !claim.terminalAt) return []
+    const ageMs = age(claim.terminalAt, clock)
+    if (ageMs === null || ageMs <= 3_600_000) return []
+    const allocations = claim.allocationKeys.join(', ')
+    return [
+      {
+        kind: 'unsettled-claim',
+        subject: `${claim.kind}:${claim.rootId}`,
+        since: claim.terminalAt,
+        ageMs,
+        detail: `${claim.kind} claim for terminal conversation ${claim.rootId} remains claimed; allocation key ${allocations}`,
+        action: 'run orch sweep',
       },
     ]
   })

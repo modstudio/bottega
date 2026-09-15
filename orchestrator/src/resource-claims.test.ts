@@ -3,12 +3,48 @@ import {
   claimCreationDecision,
   claimKindForCreation,
   createdWorktreeClaimKinds,
+  sandboxDirectoryRelease,
   settledStateForCloseOut,
   settledStateForDatabaseTeardown,
   settledStateForWorktreeResource,
 } from './resource-claims.ts'
 
 describe('resource claim decisions', () => {
+  const releasableSandbox = {
+    terminal: true,
+    liveTurn: false,
+    liveProcess: false,
+    worktreeState: 'released' as const,
+    keepTree: false,
+    directoryExists: true,
+  }
+
+  test('sandbox release keeps every live or explicitly held conversation resource', () => {
+    expect(sandboxDirectoryRelease({ ...releasableSandbox, terminal: false })).toBe(
+      'keep:conversation is not terminal',
+    )
+    expect(sandboxDirectoryRelease({ ...releasableSandbox, liveTurn: true })).toBe(
+      'keep:conversation has a live turn',
+    )
+    expect(sandboxDirectoryRelease({ ...releasableSandbox, liveProcess: true })).toBe(
+      'keep:conversation has a live process',
+    )
+    expect(sandboxDirectoryRelease({ ...releasableSandbox, keepTree: true })).toBe(
+      'keep:held by explicit --keep-tree',
+    )
+    expect(sandboxDirectoryRelease({ ...releasableSandbox, worktreeState: 'claimed' })).toBe(
+      'keep:worktree is still held',
+    )
+  })
+
+  test('sandbox release accepts a released tree or no tree and reports an absent directory', () => {
+    expect(sandboxDirectoryRelease(releasableSandbox)).toBe('release')
+    expect(sandboxDirectoryRelease({ ...releasableSandbox, worktreeState: 'no-tree' })).toBe(
+      'release',
+    )
+    expect(sandboxDirectoryRelease({ ...releasableSandbox, directoryExists: false })).toBe('absent')
+  })
+
   test('creation records exactly the resources that were created', () => {
     expect(claimKindForCreation('sandbox_directory')).toBe('sandbox_dir')
     expect(claimKindForCreation('trust_heading')).toBe('trust_entry')
