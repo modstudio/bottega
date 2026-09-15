@@ -261,6 +261,39 @@ export const project = sqliteTable('project', {
   settings: text(),
 })
 
+export const resourceClaim = sqliteTable(
+  'resource_claim',
+  {
+    id: id(),
+    rootRunId: integer('root_run_id')
+      .notNull()
+      .references(() => run.id),
+    runId: integer('run_id')
+      .notNull()
+      .references(() => run.id),
+    projectId: integer('project_id').references(() => project.id),
+    kind: text().notNull(),
+    allocationKey: text('allocation_key').notNull(),
+    identity: text(),
+    /** The ownership label orch applies at creation, not a later observation. */
+    label: text(),
+    state: text().notNull(),
+    claimedAt: text('claimed_at').notNull(),
+    settledAt: text('settled_at'),
+    settledDetail: text('settled_detail'),
+  },
+  (t) => [
+    check('resource_claim_kind_check', sql`${t.kind} in ('worktree','branch','retained_ref')`),
+    check(
+      'resource_claim_state_check',
+      sql`${t.state} in ('claimed','released','retained','forgotten','absent')`,
+    ),
+    uniqueIndex('resource_claim_one_live_allocation')
+      .on(t.kind, t.allocationKey)
+      .where(sql`${t.state} = 'claimed'`),
+  ],
+)
+
 export const blocker = sqliteTable(
   'blocker',
   {

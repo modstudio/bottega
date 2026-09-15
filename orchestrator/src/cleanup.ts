@@ -7,6 +7,7 @@ import { chainScoreJoin, EVIDENCE_CLOSED_SQL } from './evidence-query.ts'
 import { repoRootOf, targetGitEnvironment } from './git-environment.ts'
 import { withCleanupLock as takeCleanupLock, withWorktreeLease } from './project-lock.ts'
 import { projectAt, projectByName } from './projects.ts'
+import { settleClaims } from './resource-claims.ts'
 import { otherConversationWorktreeSharers, type WorktreeSharerRow } from './resource-ownership.ts'
 import {
   adoptRunMutation,
@@ -482,6 +483,24 @@ export function discardWorktree(
       protectedBranch && row.branch && branchTip(repoRoot, row.branch) ? row.branch : null
     writeTransaction(() => {
       clearConversationWorktree(row.id, row.worktree, keptProtectedBranch)
+      settleClaims(db(), {
+        rootRunId: row.id,
+        kind: 'worktree',
+        state: 'released',
+        settledAt: new Date().toISOString(),
+        detail: r.detail,
+        allocationKey: row.worktree,
+      })
+      if (force && minted && branchTip(repoRoot, minted) === null) {
+        settleClaims(db(), {
+          rootRunId: row.id,
+          kind: 'branch',
+          state: 'released',
+          settledAt: new Date().toISOString(),
+          detail: `deleted refs/heads/${minted}`,
+          allocationKey: `refs/heads/${minted}`,
+        })
+      }
       if (auditAuthority) auditRunMutation(auditAuthority, 'discard', options.auditReason)
     })
     options.presentation.log(`${verb} run ${row.id}'s worktree`)
@@ -623,6 +642,14 @@ export async function discardRun(id: number, options: CleanupOptions): Promise<v
           db()
             .query('UPDATE run SET branch_kept=NULL, branch_kept_tip=NULL WHERE id=?')
             .run(authority.rootId)
+          settleClaims(db(), {
+            rootRunId: authority.rootId,
+            kind: 'branch',
+            state: 'released',
+            settledAt: new Date().toISOString(),
+            detail: `deleted refs/heads/${row.branch_kept}`,
+            allocationKey: `refs/heads/${row.branch_kept}`,
+          })
           auditRunMutation(authority, 'discard', options.auditReason)
         })
       }
