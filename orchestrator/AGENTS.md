@@ -1445,18 +1445,15 @@ body. The agent reads the list, asks which (or offers the single one), fetches
 it with `get_doc`, then marks it consumed with `set_doc` — flipping `status`
 and stamping `consumed`. Declining must not consume anything.
 
-## Cleaning up is a delay, not a prohibition
+## Cleaning up follows ownership
 
-Nothing reclaimed anything, deliberately: a failed run's half-finished tree is
-the most readable artefact here, and cleaning up on failure would destroy the
-evidence exactly where it is most useful. That argues for a **delay**. A tree
-nobody has looked at in a day is not being read.
-
-`orch sweep` runs nightly and takes only runs that are terminal, older than a
-day, and **already scored** — an unjudged run is one whose diff is the evidence
-somebody still owes a verdict on. It reports what it kept and why. A restore
-path that runs SQL checks table and constraint counts after, never exit status
-alone. Then each project's own sweep runs, because a
+A run's tree is closed out when the run terminalises. Close-out and `orch sweep`
+release a tree unless someone is alive on it or it holds work that exists
+nowhere else: uncommitted changes or commits on no other ref. The branch is
+always kept. Sweep reports what it released, what was already absent while its
+recorded identity remains, and what it kept and why. A restore path that runs
+SQL checks table and constraint counts after, never exit status alone. Then
+each project's own sweep runs, because a
 database whose worktree directory somebody deleted by hand is invisible to orch
 entirely: no row points at it and there is nothing left to remove.
 

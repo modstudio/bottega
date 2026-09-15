@@ -17,7 +17,6 @@ import {
   leakedResourceLines,
   orchRunId,
 } from './docker-resources.ts'
-import { chainScoreJoin, EVIDENCE_CLOSED_SQL } from './evidence-query.ts'
 import { projectAt, projectByName, projects } from './projects.ts'
 import { liveWorktreeSharers, terminalDockerRetentionReasonForRun } from './resource-ownership.ts'
 import { auditRunMutation } from './run-authority.ts'
@@ -43,6 +42,7 @@ function orphanKeepReason(detail: string): string {
 }
 
 type NamedRun = { id: number; status: string }
+type ClosedSweepOutcome = 'released' | 'absent'
 
 function templateRunId(name: string, branchTemplate?: string): number | null {
   const conventional = name.match(/^orch-(\d+)$/)
@@ -107,13 +107,16 @@ function namedRun(
 }
 
 function printSweepKept(
-  done: number,
+  released: number,
+  absent: number,
   kept: { line: string; reason: string }[],
   dry: boolean,
   force: boolean,
   presentation: CleanupPresentation,
 ): void {
-  presentation.log(`\n${dry ? 'would reclaim' : 'reclaimed'} ${done}, kept ${kept.length}`)
+  presentation.log(
+    `\n${dry ? 'would reclaim' : 'reclaimed'} ${released}, already absent ${absent}, kept ${kept.length}`,
+  )
   const listAll = dry
   const fits = kept.length <= KEPT_ROW_LIMIT
   const showSummary = listAll || !fits
@@ -134,6 +137,25 @@ function printSweepKept(
     if (force) parts.push('--force')
     presentation.log(`  ${parts.join(' ')} lists every kept row`)
   }
+}
+
+function reportClosedSweepRow(
+  outcome: ClosedSweepOutcome,
+  row: { id: number; root_id: number; worktree: string },
+  dry: boolean,
+  presentation: CleanupPresentation,
+): ClosedSweepOutcome {
+  if (outcome === 'released' && !dry) {
+    writeTransaction(() => {
+      auditRunMutation(
+        { runId: row.id, rootId: row.root_id, owner: null, actor: sessionId() },
+        'sweep',
+      )
+    })
+  }
+  const action = outcome === 'absent' ? 'already absent' : dry ? 'would reclaim' : 'reclaimed'
+  presentation.log(`${action} ${row.id}  ${row.worktree}`)
+  return outcome
 }
 
 /**
@@ -163,10 +185,8 @@ export async function sweepRuns(options: SweepOptions, helpers: SweepHelpers): P
       .query(
         `SELECT r.id, COALESCE(r.parent_run_id, r.id) root_id,
               r.repo, r.worktree, r.branch, r.base_commit, r.worktree_source, r.status, r.job,
-              r.keep_tree, r.pid, r.agent_pid, r.session_id, seen.last_seen AS session_last_seen,
-              (julianday('now') - julianday(r.started_at)) AS age_days,
-              ${EVIDENCE_CLOSED_SQL} AS scored
-         FROM run r ${chainScoreJoin('r', 's')}
+              r.keep_tree, r.pid, r.agent_pid, r.session_id, seen.last_seen AS session_last_seen
+         FROM run r
          LEFT JOIN session_seen seen ON seen.session_id=r.session_id
         WHERE r.worktree IS NOT NULL AND r.status IN ('ok','failed','stale','stopped')
         ORDER BY r.id`,
@@ -182,8 +202,6 @@ export async function sweepRuns(options: SweepOptions, helpers: SweepHelpers): P
       worktree_source: Worktree['source'] | null
       job: string
       keep_tree: number
-      age_days: number
-      scored: number
       pid: number | null
       agent_pid: number | null
       session_id: string | null
@@ -193,7 +211,8 @@ export async function sweepRuns(options: SweepOptions, helpers: SweepHelpers): P
 
   const { removeFor, sweepWithTool } = await import('./worktree-remove.ts')
 
-  let done = 0
+  let released = 0
+  let absent = 0
   let cleanupFailed = false
   const inventoryErrors = new Set<string>()
   const leaked = new Map<string, { resource: DockerResource; project: string; runId: number }>()
@@ -219,8 +238,9 @@ export async function sweepRuns(options: SweepOptions, helpers: SweepHelpers): P
     const closed = closeOutRun(r.id, { intent: 'sweep', dryRun: dry })
     if (closed.outcome === 'released' || closed.outcome === 'absent') {
       if (dry) {
-        options.presentation.log(`would reclaim ${r.id}  ${r.worktree}`)
-        done++
+        const outcome = reportClosedSweepRow(closed.outcome, r, true, options.presentation)
+        released += Number(outcome === 'released')
+        absent += Number(outcome === 'absent')
       } else {
         const project = r.repo ?? projectAt(r.worktree)?.name ?? 'unknown'
         const inventory = resourcesForConversation(r.id)
@@ -242,14 +262,9 @@ export async function sweepRuns(options: SweepOptions, helpers: SweepHelpers): P
             `could not fully reclaim ${r.id}: project ${project}'s remove tool leaked Docker resources`,
           )
         } else {
-          writeTransaction(() => {
-            auditRunMutation(
-              { runId: r.id, rootId: r.root_id, owner: null, actor: sessionId() },
-              'sweep',
-            )
-          })
-          options.presentation.log(`reclaimed ${r.id}  ${r.worktree}`)
-          done++
+          const outcome = reportClosedSweepRow(closed.outcome, r, false, options.presentation)
+          released += Number(outcome === 'released')
+          absent += Number(outcome === 'absent')
         }
       }
     } else {
@@ -307,7 +322,7 @@ export async function sweepRuns(options: SweepOptions, helpers: SweepHelpers): P
       }
       if (dry) {
         options.presentation.log(`would reclaim ${label}; ${safe.detail}`)
-        done++
+        released++
         continue
       }
 
@@ -402,7 +417,7 @@ export async function sweepRuns(options: SweepOptions, helpers: SweepHelpers): P
                   `branch ${safe.branch} left because run ${owner.id} records it`,
                 )
               }
-              done++
+              released++
             }
           } else {
             cleanupFailed = true
@@ -555,7 +570,7 @@ export async function sweepRuns(options: SweepOptions, helpers: SweepHelpers): P
       options.presentation.error(`  ${dry ? 'would report ' : ''}${error}`)
   }
 
-  printSweepKept(done, kept, dry, options.force, options.presentation)
+  printSweepKept(released, absent, kept, dry, options.force, options.presentation)
   if (cleanupFailed) options.presentation.setExitCode(1)
   return
 }

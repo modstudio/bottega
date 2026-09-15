@@ -114,16 +114,10 @@
     "score": 17
   },
   {
-    "file": "orchestrator/src/codex-schema.ts",
-    "function": "visit",
-    "line": 190,
-    "score": 25
-  },
-  {
-    "file": "orchestrator/src/agents.ts",
-    "function": "parseReply#3",
-    "line": 744,
-    "score": 29
+    "file": "orchestrator/src/agent-probe.ts",
+    "function": "probeAgent",
+    "line": 1151,
+    "score": 40
   },
   {
     "file": "orchestrator/src/agent-registry.ts",
@@ -138,10 +132,10 @@
     "score": 40
   },
   {
-    "file": "orchestrator/src/agent-probe.ts",
-    "function": "probeAgent",
-    "line": 1151,
-    "score": 40
+    "file": "orchestrator/src/agents.ts",
+    "function": "parseReply#3",
+    "line": 744,
+    "score": 29
   },
   {
     "file": "orchestrator/src/args.ts",
@@ -194,14 +188,21 @@
   {
     "file": "orchestrator/src/close-out.ts",
     "function": "attemptCloseOutRun",
-    "line": 27,
-    "score": 23
+    "line": 36,
+    "score": 19,
+    "key": "orchestrator/src/close-out.ts\u0000attemptCloseOutRun"
   },
   {
     "file": "orchestrator/src/close-out.ts",
     "function": "withCleanupLock callback",
     "line": 168,
     "score": 24
+  },
+  {
+    "file": "orchestrator/src/codex-schema.ts",
+    "function": "visit",
+    "line": 190,
+    "score": 25
   },
   {
     "file": "orchestrator/src/collect.ts",
