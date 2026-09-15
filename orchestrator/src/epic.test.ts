@@ -295,7 +295,7 @@ describe('epic scoreboard', () => {
       stderr: '',
       exited: Promise.resolve(0),
       args,
-    })) as unknown as ReturnType<typeof Bun.spawn>)
+    })) as unknown as typeof Bun.spawn)
     try {
       expect(await epicChildren('DEV-500')).toEqual(children)
       expect(spawn).toHaveBeenCalledTimes(1)

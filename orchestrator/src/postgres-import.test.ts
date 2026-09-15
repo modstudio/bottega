@@ -127,7 +127,7 @@ realPostgres('project import against copied live SQLite data', () => {
         expect(columnForSetting[key], `source setting ${key} has a target column`).toBeDefined()
         const expected =
           key === 'mcp' ? (settings.mcp as { probe_tool: string }).probe_tool : settings[key]
-        expect(target[columnForSetting[key]!]!, `${source.name}.${key}`).toEqual(expected)
+        expect(target[columnForSetting[key]!] as unknown, `${source.name}.${key}`).toEqual(expected)
       }
     }
 

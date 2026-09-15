@@ -24,7 +24,7 @@ describe('scoped operator docs', () => {
         },
       })
       expect(filed.isError).toBe(true)
-      const message = (filed.content[0] as { text: string }).text
+      const message = (filed.content as { text: string }[])[0]!.text
       expect(message).toContain('reproduce_command is required')
       expect(message).toContain('exact command that reproduces or demonstrates the issue')
     } finally {
@@ -52,7 +52,7 @@ describe('scoped operator docs', () => {
         delete arguments_[field]
         const filed = await client.callTool({ name: 'file_issue', arguments: arguments_ })
         expect(filed.isError).toBe(true)
-        const message = (filed.content[0] as { text: string }).text
+        const message = (filed.content as { text: string }[])[0]!.text
         expect(message).toContain(`${field} is required`)
       } finally {
         await client.close()
@@ -80,7 +80,7 @@ describe('scoped operator docs', () => {
         },
       })
       expect(filed.isError).toBe(true)
-      expect((filed.content[0] as { text: string }).text).toContain('reporter_kind')
+      expect((filed.content as { text: string }[])[0]!.text).toContain('reporter_kind')
     } finally {
       await client.close()
       await server.close()

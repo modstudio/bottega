@@ -52,7 +52,7 @@ describe('orch MCP', () => {
         },
       })
       expect(result.isError).toBe(true)
-      expect((result.content[0] as { text: string }).text).toContain(
+      expect((result.content as { text: string }[])[0]!.text).toContain(
         'reproduce_command is required: provide the exact command that reproduces or demonstrates the issue',
       )
     } finally {

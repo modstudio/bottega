@@ -83,7 +83,11 @@ describe('run listing', () => {
       await command({ id: [String(first), String(second), String(unknown)], json: true })
     ).map(runJson)
     expect(rows.map((row) => row.id)).toEqual([second, first, unknown])
-    expect(rows.at(-1)).toEqual({ id: unknown, status: 'unknown', unknown: true })
+    expect(rows.at(-1) as unknown).toEqual({
+      id: unknown,
+      status: 'unknown',
+      unknown: true,
+    })
   })
 
   test('runs --id identifies a requested turn while returning its chain root', async () => {
@@ -234,7 +238,7 @@ describe('run listing', () => {
     const human = (await command()).join('\n')
     expect(human.match(new RegExp(`\\b${root}\\s+codex→grok`, 'g'))).toHaveLength(1)
     expect(human).not.toMatch(new RegExp(`\\b${successor}\\s+`))
-    const rows = (await command({ json: true })).map(runJson) as {
+    const rows = (await command({ json: true })).map(runJson) as unknown as {
       id: number
       retry_of: number | null
       failover_chain: string[]

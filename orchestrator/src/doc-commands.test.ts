@@ -45,6 +45,9 @@ async function command(args: string[], stdin = '') {
   }
   const presentation = {
     log: (...parts: unknown[]) => out.push(parts.join(' ')),
+    usage: (): never => {
+      throw new Error('unexpected usage')
+    },
     error: (...parts: unknown[]) => err.push(parts.join(' ')),
     write: (value: string) => out.push(value),
     writeStdout: async (value: string) => {
@@ -59,8 +62,7 @@ async function command(args: string[], stdin = '') {
   }
   try {
     if (args[0] === 'port') await portCommand(args[1], args[2], args, flags, presentation)
-    else if (args[0] === 'review')
-      await reviewCommand(args[1], args, flags, presentation as Parameters<typeof reviewCommand>[3])
+    else if (args[0] === 'review') await reviewCommand(args[1], args, flags, presentation)
   } catch (error) {
     code = 1
     err.push((error as Error).message)
@@ -195,8 +197,16 @@ describe('scoped operator docs', () => {
     const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair()
     await server.connect(serverTransport)
     await client.connect(clientTransport)
-    const value = (result: Awaited<ReturnType<Client['callTool']>>) =>
-      JSON.parse((result.content[0] as { text: string }).text)
+    const value = (result: unknown) => {
+      if (!result || typeof result !== 'object' || !('content' in result)) {
+        throw new Error('tool result has no content')
+      }
+      const content = result.content
+      if (!Array.isArray(content) || !content[0] || typeof content[0].text !== 'string') {
+        throw new Error('tool result has no text content')
+      }
+      return JSON.parse(content[0].text)
+    }
     try {
       await client.callTool({
         name: 'set_port_baseline',

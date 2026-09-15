@@ -1,6 +1,10 @@
 import { describe, expect, test } from 'bun:test'
 import { readFileSync } from 'node:fs'
-import { ISSUE_WORKER_SCHEMA, parseWorkerReplyWithCount } from './contract.ts'
+import {
+  ISSUE_WORKER_SCHEMA,
+  type IssueWorkerReply,
+  parseWorkerReplyWithCount,
+} from './contract.ts'
 import {
   boundedIssuePack,
   ISSUE_DIAGNOSIS_SCHEMA,
@@ -184,7 +188,7 @@ the legacy uncertainty`
   })
 
   test('the routed issue worker has a distinct accepted writing contract', () => {
-    const reply = {
+    const reply: IssueWorkerReply = {
       status: 'done',
       outcome: 'fixed',
       cause_location: 'orch-code',

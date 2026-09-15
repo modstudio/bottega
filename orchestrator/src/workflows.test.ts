@@ -188,7 +188,7 @@ describe('workflow versions and composition', () => {
     expect(showWorkflow('test-flow', 2, d).status).toBe('production')
     retireWorkflow('test-flow', 2, 'withdraw', 'architect', d)
     const versions = workflowVersions('test-flow', d)
-    expect(versions[1]!.events.map((e: { event: string }) => e.event)).toEqual([
+    expect((versions[1]!.events as { event: string }[]).map((e) => e.event)).toEqual([
       'set',
       'promote',
       'retire',
