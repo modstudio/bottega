@@ -49,6 +49,23 @@ describe('tracked recipe refusal rules', () => {
     expect(messages(recipe).join('\n')).toContain('{ports.web} names an undeclared port')
   })
 
+  test('a string allocation may use static values and index but not another allocation', () => {
+    expect(
+      recipeSchema.safeParse({
+        allocate: { strings: { cookie: '{name}-{index}' } },
+        create: [],
+      }).success,
+    ).toBe(true)
+    expect(
+      messages({
+        allocate: { ports: ['web'], strings: { cookie: '{ports.web}' } },
+        create: [],
+      }).join('\n'),
+    ).toContain(
+      'placeholder rule: string allocation "cookie" may use only {branch} {name} {base} {key} {seed} {path} {main} {index}',
+    )
+  })
+
   test('refuses absolute and parent-traversing command working directories', () => {
     for (const cwd of ['/tmp/app', 'packages/../other']) {
       const recipe = minimal()

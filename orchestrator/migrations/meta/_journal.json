@@ -176,6 +176,13 @@
       "when": 1788900000018,
       "tag": "0024_run_recipe_snapshot",
       "breakpoints": true
+    },
+    {
+      "idx": 25,
+      "version": "6",
+      "when": 1788900000019,
+      "tag": "0025_resource_claim_allocation_kinds",
+      "breakpoints": true
     }
   ]
 }

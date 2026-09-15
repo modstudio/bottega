@@ -321,6 +321,9 @@ export async function doctorCommand(
   )
   const claimedPorts = claims.byKind.find(({ kind }) => kind === 'port')?.count ?? 0
   log(`ports: ${claimedPorts} of ${RECIPE_PORT_BAND.end - RECIPE_PORT_BAND.start} claimed`)
+  const claimedIndexes = claims.byKind.find(({ kind }) => kind === 'index')?.count ?? 0
+  const claimedStrings = claims.byKind.find(({ kind }) => kind === 'string')?.count ?? 0
+  log(`allocations: ${claimedIndexes} index, ${claimedStrings} string claims live`)
   const heldCandidates = db()
     .query(
       `SELECT worktree, MAX(keep_tree) keep_tree, MAX(keep_tree_until) keep_tree_until,

@@ -3,6 +3,7 @@ import {
   compensationPlan,
   destroyPlan,
   lifecycleFailure,
+  teardownVars,
   trackedExecutionRefusal,
 } from './recipe-lifecycle.ts'
 import type { TrackedRecipe } from './recipe-schema.ts'
@@ -18,7 +19,6 @@ const recipe = (extra: Partial<TrackedRecipe> = {}): TrackedRecipe => ({ create:
 
 describe('tracked recipe lifecycle planning', () => {
   test.each([
-    ['allocate', 5, { ports: ['web'] }],
     ['env', 7, []],
     ['shared', 8, []],
     ['serve', 9, {}],
@@ -29,7 +29,18 @@ describe('tracked recipe lifecycle planning', () => {
   })
 
   test('accepts only the lifecycle arrays executed by this slice', () => {
-    expect(trackedExecutionRefusal(recipe({ pre: [], destroy: [], verifyDown: [] }))).toBeNull()
+    expect(
+      trackedExecutionRefusal(
+        recipe({ allocate: { ports: ['web'], strings: { cookie: 'x-{index}' } } }),
+      ),
+    ).toBeNull()
+    expect(
+      trackedExecutionRefusal(
+        recipe({ allocate: { databases: { app: { kind: 'compose', up: 'up', down: 'down' } } } }),
+      ),
+    ).toBe(
+      'tracked recipe declares allocate.databases, which is not executable yet (Phase 3 slice 6)',
+    )
   })
 
   test('compensates the failed step and earlier undoable steps in reverse', () => {
@@ -68,5 +79,23 @@ describe('tracked recipe lifecycle planning', () => {
       lifecycleFailure([result('ok', 'ok'), result('first', 'failed'), result('second', 'refused')])
         ?.name,
     ).toBe('first')
+  })
+
+  test('teardown variables restore every allocation recorded in the snapshot', () => {
+    expect(
+      teardownVars({
+        path: '/trees/one',
+        branch: 'DEV-577',
+        base: 'abc',
+        key: 'DEV-577',
+        seed: null,
+        main: '/main',
+        allocations: {
+          index: 3,
+          ports: { web: 21002 },
+          strings: { cookie: 'tree-3' },
+        },
+      }),
+    ).toMatchObject({ index: '3', 'ports.web': '21002', 'alloc.cookie': 'tree-3' })
   })
 })

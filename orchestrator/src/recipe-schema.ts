@@ -5,7 +5,7 @@ import { z } from 'zod'
 const strictObject = <Shape extends z.core.$ZodLooseShape>(shape: Shape) =>
   z.strictObject(shape, { error: 'unknown-key rule: objects may not contain unknown keys' })
 
-const placeholderName = z.enum(['branch', 'name', 'base', 'seed', 'key', 'path'])
+const placeholderName = z.enum(['branch', 'name', 'base', 'seed', 'key', 'path', 'main', 'index'])
 
 const worktreeCreateArgSchema = z.union([
   z.string(),
@@ -61,7 +61,12 @@ const databaseProviderSchema = z.discriminatedUnion('kind', [
 export const allocationsSchema = strictObject({
   ports: z.array(z.string().min(1)).optional(),
   databases: z.record(z.string(), databaseProviderSchema).optional(),
-  strings: z.record(z.string(), z.string()).optional(),
+  strings: z
+    .record(z.string(), z.string())
+    .describe(
+      'Named claimed string values. Templates may use only {branch} {name} {base} {key} {seed} {path} {main} {index}; include {index} when simultaneous worktrees could otherwise collide.',
+    )
+    .optional(),
 })
 
 export const envFileSchema = strictObject({
@@ -167,6 +172,21 @@ function validatePlaceholders(recipe: RecipeInput, context: z.RefinementCtx): vo
   }
 }
 
+function validateStringAllocationTemplates(recipe: RecipeInput, context: z.RefinementCtx): void {
+  for (const [name, template] of Object.entries(recipe.allocate?.strings ?? {})) {
+    const invalid = [...template.matchAll(/\{([^{}]+)\}/g)].some(
+      (match) => !STATIC_PLACEHOLDERS.has(match[1]!),
+    )
+    if (invalid) {
+      context.addIssue({
+        code: 'custom',
+        path: ['allocate', 'strings', name],
+        message: `placeholder rule: string allocation "${name}" may use only {branch} {name} {base} {key} {seed} {path} {main} {index}`,
+      })
+    }
+  }
+}
+
 function validateAllocationUndo(recipe: RecipeInput, context: z.RefinementCtx): void {
   for (const [index, step] of recipe.create.entries()) {
     if (hasAllocationPlaceholder(step.run) && !step.undo) {
@@ -199,6 +219,7 @@ function validateWorkingDirectories(recipe: RecipeInput, context: z.RefinementCt
 export const recipeSchema = recipeShape.superRefine((recipe, context) => {
   validateStepNames(recipe, context)
   validatePlaceholders(recipe, context)
+  validateStringAllocationTemplates(recipe, context)
   validateAllocationUndo(recipe, context)
   validateWorkingDirectories(recipe, context)
 })
