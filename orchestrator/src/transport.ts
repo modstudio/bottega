@@ -80,6 +80,8 @@ export type ArgvOpts = {
   }
   /** Command-scoped git configuration enforced inside the worker's shell. */
   gitConfigEnvironment?: Record<string, string>
+  /** Tracked-recipe allocation values (ORCH_INDEX, ORCH_PORTS_*, ORCH_ALLOC_*) set inside the worker's shell. */
+  recipeEnvironment?: Record<string, string>
   /**
    * The conversation this turn belongs to.
    *
@@ -197,6 +199,7 @@ export type TransportStartOpts = {
   writableRoots?: ArgvOpts['writableRoots']
   gitObjectEnvironment?: ArgvOpts['gitObjectEnvironment']
   gitConfigEnvironment?: ArgvOpts['gitConfigEnvironment']
+  recipeEnvironment?: ArgvOpts['recipeEnvironment']
   srt?: { profile: SandboxRuntimeConfig; runtimeDir: string }
   /** ACP binary. CLI uses `agent.bin`. */
   bin?: string

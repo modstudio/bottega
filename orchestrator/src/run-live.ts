@@ -302,6 +302,7 @@ export async function runLive(input: LiveInput): Promise<LiveResult> {
       writableRoots,
       gitObjectEnvironment,
       gitConfigEnvironment,
+      recipeEnvironment,
       srt: sandboxSelection.profile
         ? { profile: sandboxSelection.profile, runtimeDir: sandboxRunDir }
         : undefined,

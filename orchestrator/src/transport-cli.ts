@@ -63,6 +63,7 @@ async function spawnCli(opts: TransportStartOpts): Promise<TransportHandle> {
     writableRoots: opts.writableRoots,
     gitObjectEnvironment: opts.gitObjectEnvironment,
     gitConfigEnvironment: opts.gitConfigEnvironment,
+    recipeEnvironment: opts.recipeEnvironment,
     session: opts.session,
   }
   const argv =
