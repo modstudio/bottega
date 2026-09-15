@@ -1,7 +1,7 @@
 import { sql } from 'drizzle-orm'
 import {
-  bigint,
   type AnyPgColumn,
+  bigint,
   boolean,
   foreignKey,
   jsonb,
