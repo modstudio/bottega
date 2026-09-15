@@ -67,11 +67,13 @@ export const FAILURE_KINDS = [
 ] as const
 export type FailureKind = (typeof FAILURE_KINDS)[number]
 
+const ANSI_ESCAPE_SEQUENCE = new RegExp(String.raw`\x1B\[[0-?]*[ -/]*[@-~]`, 'g')
+
 /** Remove volatile values while retaining the wording that identifies one failure shape. */
 export function clusterErrorText(value: string | null | undefined): string {
   if (!value?.trim()) return ''
   return value
-    .replace(/\x1B\[[0-?]*[ -/]*[@-~]/g, '')
+    .replace(ANSI_ESCAPE_SEQUENCE, '')
     .replace(
       /(?:file:\/\/)?(?:~\/|\/?(?:Users|private|tmp|var|opt|home)\/)[^\s'"`,;)]+/gi,
       '<path>',

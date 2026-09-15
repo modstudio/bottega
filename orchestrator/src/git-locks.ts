@@ -57,11 +57,13 @@ function owningPids(path: string): number[] | null {
   ]
 }
 
+const BINARY_CONTROL_CHARACTER = new RegExp(String.raw`[\0-\x08\x0b\x0c\x0e-\x1f]`)
+
 function lockContents(path: string): string {
   const bytes = readFileSync(path)
   if (bytes.length > 4096) return `[${bytes.length} bytes; content omitted]`
   const text = bytes.toString('utf8')
-  if (/[\0-\x08\x0b\x0c\x0e-\x1f]/.test(text)) return `[${bytes.length} binary bytes]`
+  if (BINARY_CONTROL_CHARACTER.test(text)) return `[${bytes.length} binary bytes]`
   return text.trim()
 }
 
