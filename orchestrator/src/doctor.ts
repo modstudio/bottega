@@ -29,6 +29,7 @@ import { claimCounts, RECIPE_PORT_BAND, RESOURCE_CLAIM_MIGRATION } from './resou
 import { terminalDockerRetentionReasonForRun } from './resource-ownership.ts'
 import { DELIVERY, FIDELITY, QUALITY } from './score.ts'
 import { worktreeDirty } from './worktree-attribution.ts'
+import { lifecycleReportLines } from './worktree-lifecycle.ts'
 
 type DoctorFlags = { has(name: string): boolean }
 type DoctorPresentation = {
@@ -353,6 +354,16 @@ export async function doctorCommand(
     undeclaredCommitHooks,
     registerBranchCheck,
   } = await import('./projects.ts')
+  lifecycleReportLines(
+    registeredProjects().map((project) => ({
+      name: project.name,
+      path: project.path,
+      worktree: project.settings.worktree,
+    })),
+    existsSync,
+  ).forEach((line) => {
+    log(line)
+  })
   const hookFlags = registeredProjects().map(undeclaredCommitHooks).filter(Boolean)
   if (hookFlags.length) {
     log('\ncommit hooks skipped in worker trees; landing gate must declare the checks:')
