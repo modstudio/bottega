@@ -9,7 +9,7 @@ import {
   text,
   unique,
 } from 'drizzle-orm/sqlite-core'
-import { DOC_SCOPE_SUBJECT_KIND, DOC_SCOPES } from '../../shared/docs.ts'
+import { DOC_SCOPES } from '../../shared/docs.ts'
 import { id, project, run, subjectlessScopes, subjectScopes, values } from './schema-core.ts'
 
 const docAddressChecks = <

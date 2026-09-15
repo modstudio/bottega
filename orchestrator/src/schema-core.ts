@@ -11,6 +11,7 @@ import {
   unique,
   uniqueIndex,
 } from 'drizzle-orm/sqlite-core'
+import { DOC_SCOPE_SUBJECT_KIND, DOC_SCOPES } from '../../shared/docs.ts'
 import { RUN_MUTATION_ACTIONS } from './run-authority.ts'
 import { DELIVERY, FIDELITY, QUALITY } from './score.ts'
 
