@@ -250,18 +250,64 @@ function isRepositoryCandidate(reference: string, firstSegments: Set<string>): b
   return firstSegments.has(reference.split('/')[0]!)
 }
 
-function pathExists(reference: string, trackedPaths: string[]): boolean {
+const FILE_REFERENCE = /\.(?:ts|tsx|js|mjs|cjs|py|sh|php|vue|json|jsonc|md|toml|yml|yaml|sql)$/
+
+function pathMatches(reference: string, trackedPath: string): boolean {
+  if (/[*?[\]]/.test(reference)) return globPattern(reference).test(trackedPath)
+  return trackedPath === reference || trackedPath.startsWith(`${reference}/`)
+}
+
+function resolvedReferencePaths(
+  reference: string,
+  canonPath: string,
+  trackedPaths: string[],
+): string[] {
   const exemptions = new Set(REFERENCE_EXEMPTIONS.map(({ reference: item }) => item))
-  if (exemptions.has(reference)) return true
-  if (/[*?[\]]/.test(reference)) {
-    const pattern = globPattern(reference)
-    return trackedPaths.some((path) => pattern.test(path))
+  if (exemptions.has(reference)) return [reference]
+
+  const matched = new Set<string>()
+  const addMatches = (candidate: string) => {
+    for (const trackedPath of trackedPaths) {
+      if (pathMatches(candidate, trackedPath)) matched.add(trackedPath)
+    }
   }
-  return trackedPaths.some((path) => path === reference || path.startsWith(`${reference}/`))
+  addMatches(reference)
+  addMatches(posix.normalize(posix.join(posix.dirname(canonPath), reference)))
+
+  const suffix = `/${reference}`
+  for (const trackedPath of trackedPaths) {
+    if (
+      /[*?[\]]/.test(reference)
+        ? globPattern(`**${suffix}`).test(trackedPath)
+        : trackedPath.endsWith(suffix)
+    ) {
+      matched.add(trackedPath)
+    }
+  }
+  return [...matched]
 }
 
 function escapedIdentifier(identifier: string): string {
   return identifier.replace(/[\\^$.*+?()[\]{}|]/g, '\\$&')
+}
+
+function containsDeclaration(text: string, identifier: string): boolean {
+  const word = escapedIdentifier(identifier)
+  const identifierPattern = new RegExp(`\\b${word}\\b`)
+  const keywordPattern = /\b(?:function|const|let|class|interface|type|enum|def|export)\b/
+  const assignmentOrTypePattern = new RegExp(`\\b${word}\\b\\s*[=:]`)
+  const callableDeclarationPattern = new RegExp(
+    `(?:\\b(?:public|private|protected|static|abstract|async|get|set)\\s+)*\\b${word}\\b\\s*\\([^)]*\\)\\s*(?:\\{|=>|:)`,
+  )
+  return text
+    .split(/\r?\n/)
+    .some(
+      (line) =>
+        identifierPattern.test(line) &&
+        (keywordPattern.test(line) ||
+          assignmentOrTypePattern.test(line) ||
+          callableDeclarationPattern.test(line)),
+    )
 }
 
 function referenceFindings(file: CanonFile, input: CanonLintInput): CanonFinding[] {
@@ -274,9 +320,9 @@ function referenceFindings(file: CanonFile, input: CanonLintInput): CanonFinding
   for (const { content: candidate, line } of referencePieces(file)) {
     const unsuffixedPath = stripReferenceSuffix(candidate)
     const path = unsuffixedPath.replace(/\/$/, '')
-    if (!isRepositoryCandidate(path, firstSegments)) continue
-    const exists = pathExists(path, input.trackedPaths)
-    if (!exists) {
+    if (!FILE_REFERENCE.test(path) && !isRepositoryCandidate(path, firstSegments)) continue
+    const matchedPaths = resolvedReferencePaths(path, file.path, input.trackedPaths)
+    if (!matchedPaths.length) {
       findings.push({
         file: file.path,
         line,
@@ -298,13 +344,13 @@ function referenceFindings(file: CanonFile, input: CanonLintInput): CanonFinding
     const identifier = anchor.match(/^:([A-Za-z_$][\w$]*)$/)?.[1]
     if (
       identifier &&
-      !new RegExp(`\\b${escapedIdentifier(identifier)}\\b`).test(texts.get(path) ?? '')
+      !matchedPaths.some((matched) => containsDeclaration(texts.get(matched) ?? '', identifier))
     ) {
       findings.push({
         file: file.path,
         line,
         rule: 'canon/reference-symbol',
-        message: `${path} does not contain identifier ${identifier}`,
+        message: `${matchedPaths.join(', ')} do not declare identifier ${identifier}`,
       })
     }
   }

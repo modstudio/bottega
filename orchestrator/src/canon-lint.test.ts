@@ -160,9 +160,14 @@ describe('canon current reference rules', () => {
     ).toHaveLength(3)
   })
 
-  test('reference paths skip placeholders', () => {
+  test('extension references are candidates even with placeholders', () => {
     expect(
       inputRules('`src/<name>.ts` and `src/{name}.ts`', 'canon/reference-path', {
+        trackedPaths: ['src/real.ts'],
+      }),
+    ).toHaveLength(2)
+    expect(
+      inputRules('`src/<name>` and `src/{name}`', 'canon/reference-path', {
         trackedPaths: ['src/real.ts'],
       }),
     ).toEqual([])
@@ -181,15 +186,69 @@ describe('canon current reference rules', () => {
     ).toHaveLength(1)
   })
 
-  test('reference symbols require the named identifier in the referenced file', () => {
-    const extra = {
-      trackedPaths: ['file.ts'],
-      sourceTexts: [{ path: 'file.ts', text: 'export const realName = true' }],
-    }
-    expect(inputRules('`file.ts:realName`', 'canon/reference-symbol', extra)).toEqual([])
-    expect(inputRules('`file.ts:ghost`', 'canon/reference-symbol', extra)).toEqual([
-      expect.objectContaining({ message: 'file.ts does not contain identifier ghost' }),
+  test('module-relative symbol references report identifiers absent from every suffix match', () => {
+    expect(
+      inputRules('`worktree.ts:ghost`', 'canon/reference-symbol', {
+        trackedPaths: ['orchestrator/src/worktree.ts'],
+        sourceTexts: [{ path: 'orchestrator/src/worktree.ts', text: 'const other = true' }],
+      }),
+    ).toEqual([
+      expect.objectContaining({
+        message: 'orchestrator/src/worktree.ts do not declare identifier ghost',
+      }),
     ])
+  })
+
+  test('module-relative symbol references accept a declaration-shaped occurrence', () => {
+    expect(
+      inputRules('`worktree.ts:ghost`', 'canon/reference-symbol', {
+        trackedPaths: ['orchestrator/src/worktree.ts'],
+        sourceTexts: [{ path: 'orchestrator/src/worktree.ts', text: 'export function ghost() {}' }],
+      }),
+    ).toEqual([])
+  })
+
+  test('module-relative symbol references reject an import-only occurrence', () => {
+    expect(
+      inputRules('`worktree.ts:ghost`', 'canon/reference-symbol', {
+        trackedPaths: ['orchestrator/src/worktree.ts'],
+        sourceTexts: [
+          { path: 'orchestrator/src/worktree.ts', text: "import { ghost } from './other.ts'" },
+        ],
+      }),
+    ).toHaveLength(1)
+  })
+
+  test('module-relative symbol references reject a call-only occurrence', () => {
+    expect(
+      inputRules('`worktree.ts:ghost`', 'canon/reference-symbol', {
+        trackedPaths: ['orchestrator/src/worktree.ts'],
+        sourceTexts: [{ path: 'orchestrator/src/worktree.ts', text: 'ghost()' }],
+      }),
+    ).toHaveLength(1)
+  })
+
+  test('extension references report a path finding when no resolution matches', () => {
+    expect(
+      inputRules('`nothere.ts`', 'canon/reference-path', {
+        trackedPaths: ['orchestrator/src/worktree.ts'],
+      }),
+    ).toEqual([expect.objectContaining({ message: 'repository path nothere.ts is not tracked' })])
+  })
+
+  test('file references resolve from the repository root', () => {
+    expect(
+      inputRules('`orchestrator/src/worktree.ts`', 'canon/reference-path', {
+        trackedPaths: ['orchestrator/src/worktree.ts'],
+      }),
+    ).toEqual([])
+  })
+
+  test('file references resolve relative to the citing canon directory', () => {
+    const result = lint([{ path: 'orchestrator/AGENTS.md', text: '`src/worktree.ts`' }], {
+      trackedPaths: ['orchestrator/src/worktree.ts'],
+    })
+    expect(result.findings.filter((finding) => finding.rule === 'canon/reference-path')).toEqual([])
   })
 
   test('line anchors are findings while an identifier anchor is not', () => {
