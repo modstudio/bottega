@@ -111,7 +111,7 @@ There is one `scoreboard()` and the views call it. A test asserts every cell mat
 
 # Activity counters and score windows
 
-The routing matrix and guide do not take a dashboard activity window. Their bound is `EVIDENCE_WINDOW`, the most recent judgements for a job, agent, and the agent's current model. A model swap starts a fresh posterior. Per-repo tallies report activity, not routing evidence, and take neither window.
+The routing matrix and guide do not take a dashboard activity window. Their bound is `EVIDENCE_WINDOW`, the most recent judgements for a job, agent, and the agent's current model. A model swap starts a fresh posterior. Per-repo tallies report activity, not routing evidence, and take neither window. Empty-window sums are coalesced, because SQLite `SUM` over no rows is null while `COUNT` is zero.
 
 # When an agent runs out of plan
 
