@@ -300,8 +300,8 @@ function TaskTable({
         const visible = row.key && opened.has(row.key) ? runs : runs.filter((run) => run.running)
         return visible.length ? (
           <div className="bg-muted/20 px-5 py-1">
-            {visible.map((run, index) => (
-              <RunLine key={`${run.start}:${index}`} run={run} now={now} />
+            {visible.map((run) => (
+              <RunLine key={`${run.start}:${run.agent}:${run.job}`} run={run} now={now} />
             ))}
           </div>
         ) : null

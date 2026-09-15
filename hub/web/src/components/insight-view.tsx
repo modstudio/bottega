@@ -442,10 +442,10 @@ function RoutingView({ data }: { data: RoutingData }) {
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {data.blockers.map((row, index) => {
+                  {data.blockers.map((row) => {
                     const example = blockerLine(row.example)
                     return (
-                      <TableRow key={`${row.kind}:${row.example}:${index}`}>
+                      <TableRow key={`${row.source}:${row.kind ?? row.example ?? 'unknown'}`}>
                         <TableCell className="font-semibold">
                           {row.kind ?? example ?? '-'}
                         </TableCell>
@@ -490,8 +490,8 @@ function RoutingView({ data }: { data: RoutingData }) {
                     </TableRow>
                   </TableHeader>
                   <TableBody>
-                    {data.spawns.map((row, index) => (
-                      <TableRow key={`${row.decision}:${row.why}:${index}`}>
+                    {data.spawns.map((row) => (
+                      <TableRow key={`${row.decision}:${row.why}`}>
                         <TableCell>
                           <Badge variant={row.decision === 'denied' ? 'destructive' : 'outline'}>
                             {row.decision}
@@ -520,8 +520,8 @@ function RoutingView({ data }: { data: RoutingData }) {
                     </TableRow>
                   </TableHeader>
                   <TableBody>
-                    {data.byRepo.slice(0, 18).map((row, index) => (
-                      <TableRow key={`${row.repo}:${row.agent}:${index}`}>
+                    {data.byRepo.slice(0, 18).map((row) => (
+                      <TableRow key={`${row.repo}:${row.agent}`}>
                         <TableCell>{row.repo === '-' ? 'elsewhere' : row.repo}</TableCell>
                         <TableCell>{row.agent}</TableCell>
                         <TableCell className="text-right">{number.format(row.runs)}</TableCell>
