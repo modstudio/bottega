@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test'
-import { recipeSchema } from './recipe-schema.ts'
+import { allocationEnvironmentVariable, recipeSchema } from './recipe-schema.ts'
 
 const command: { command: string; args: string[]; cwd?: string } = { command: 'true', args: [] }
 const minimal = () => ({ create: [{ name: 'create', run: command }] })
@@ -86,5 +86,30 @@ describe('tracked recipe refusal rules', () => {
         create: [{ ...recipe.create[0], undo: { command: 'stop', args: ['{ports.web}'] } }],
       }).success,
     ).toBe(true)
+  })
+
+  test('rule 1 refuses a serve step without undo', () => {
+    expect(
+      messages({
+        create: [],
+        serve: { preview: [{ name: 'web', run: command }] },
+      }).join('\n'),
+    ).toContain('rule 1: serve step "web" in mode "preview" must declare undo')
+  })
+
+  test('refuses allocation names that collide after environment normalization', () => {
+    expect(
+      messages({
+        allocate: { ports: ['api-v2', 'api.v2'] },
+        create: [],
+      }).join('\n'),
+    ).toContain(
+      'allocation names "api-v2" and "api.v2" map to the same environment variable ORCH_PORTS_API_V2',
+    )
+  })
+
+  test('names allocation environment variables', () => {
+    expect(allocationEnvironmentVariable('ports', 'hub')).toBe('ORCH_PORTS_HUB')
+    expect(allocationEnvironmentVariable('ports', 'api-v2')).toBe('ORCH_PORTS_API_V2')
   })
 })

@@ -6,6 +6,8 @@ import {
   executeTrackedCreateSteps,
   executeTrackedPreSteps,
   type RecipeSnapshot,
+  recipeAllocationEnvironment,
+  renderTrackedRecipeNotes,
   type TrackedAllocator,
   teardownTrackedRecipe,
 } from './tracked-recipe.ts'
@@ -99,6 +101,100 @@ describe('tracked recipe execution', () => {
       removed: false,
       detail: 'recipe teardown failed at "one" (undo): one broke',
     })
+    expect(removed).toBeFalse()
+  })
+
+  test('reports serve commands with allocation references, main filled, and default first', () => {
+    const recipe: TrackedRecipe = {
+      allocate: { ports: ['hub'], strings: { token: 'tree-{index}' } },
+      create: [],
+      serve: {
+        preview: [
+          {
+            name: 'preview web',
+            run: { command: 'serve', args: ['{path}', '{ports.hub}'] },
+            undo: { command: 'stop', args: ['{alloc.token}'] },
+          },
+        ],
+        default: [
+          {
+            name: 'default web',
+            run: { command: 'bun', args: ['{main}/app.ts', '{index}'] },
+            undo: { command: 'kill', args: ['{branch}'] },
+          },
+        ],
+      },
+    }
+    expect(renderTrackedRecipeNotes(recipe, '/main')).toBe(
+      'serve mode default:\n' +
+        '  bun /main/app.ts $ORCH_INDEX   default web\n' +
+        '  stop: kill <branch>\n' +
+        'serve mode preview:\n' +
+        '  serve <path> $ORCH_PORTS_HUB   preview web\n' +
+        '  stop: stop $ORCH_ALLOC_TOKEN\n' +
+        'NEVER verify against a server you did not start for this worktree. Borrowing one\n' +
+        'tests a different branch and PASSES, which is worse than failing.',
+    )
+  })
+
+  test('builds the worker environment from recorded allocations', () => {
+    expect(
+      recipeAllocationEnvironment({
+        index: 4,
+        ports: { hub: 21003, 'api-v2': 21004 },
+        strings: { token: 'tree-4' },
+      }),
+    ).toEqual({
+      ORCH_INDEX: '4',
+      ORCH_PORTS_HUB: '21003',
+      ORCH_PORTS_API_V2: '21004',
+      ORCH_ALLOC_TOKEN: 'tree-4',
+    })
+  })
+
+  test('runs serve undos before destroy undos and keeps the tree after a serve failure', () => {
+    const calls: string[] = []
+    const serve = step('serve')
+    const destroy = step('destroy')
+    const recipe: TrackedRecipe = {
+      create: [],
+      serve: { default: [serve] },
+      destroy: [destroy],
+    }
+    const snapshot: RecipeSnapshot = {
+      source: { path: '.orch/worktree.jsonc', commit: 'abc' },
+      recipe,
+    }
+    let removed = false
+    const outcome = teardownTrackedRecipe(
+      {
+        runId: 1,
+        worktree: {
+          path: '/tree',
+          branch: 'branch',
+          base: 'abc',
+          repoRoot: '/main',
+          source: 'recipe',
+          mintedBranch: 'branch',
+        },
+        stored: { snapshot, key: null, seed: null },
+        treeExists: true,
+        remove: () => {
+          removed = true
+          return { removed: true, detail: '/tree' }
+        },
+      },
+      (item) => {
+        calls.push(`run:${item.name}`)
+        return result(item.name, 'run', true)
+      },
+      (item) => {
+        calls.push(`undo:${item.name}`)
+        return result(item.name, 'undo', false)
+      },
+    )
+    expect(calls).toEqual(['undo:serve', 'run:destroy'])
+    expect(outcome.detail).toContain('recipe teardown failed at "serve" (undo)')
     expect(removed).toBeFalse()
   })
 })

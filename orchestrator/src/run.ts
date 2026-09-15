@@ -28,6 +28,7 @@ import { type classify, notify } from './failure.ts'
 import {
   gitContext,
   prepareWorktreeObjects,
+  repoRootOf,
   type WorktreeObjectEnvironment,
   worktreeGitDir,
 } from './git-environment.ts'
@@ -54,7 +55,7 @@ import {
   storedMcpProbe,
   wrongProjectReason,
 } from './mcp-probe.ts'
-import { projectAt, projectByName, stackAt } from './projects.ts'
+import { projectAt, projectByName, stackAt, type WorktreeTool } from './projects.ts'
 import { recipeNotes } from './recipe.ts'
 import {
   assertSharedRefGuardOutsideWritableRoots,
@@ -87,6 +88,7 @@ import {
   sandboxLaunchArgv,
   selectReadonlySandbox,
 } from './sandbox.ts'
+import { trackedRecipeEnvironment, trackedRecipeNotes } from './tracked-recipe.ts'
 import {
   assertAcpAllowed,
   assertAcpReady,
@@ -112,6 +114,21 @@ function requiredRunLease(
 }
 
 export { TRUNCATED_TRANSCRIPT_BYTES }
+
+function generatedWorktreeNotes(tool: WorktreeTool, callerCwd: string): string {
+  if (tool.recipe) return recipeNotes(tool.recipe, "<this worktree's database>", '')
+  if (tool.recipePath) return trackedRecipeNotes(tool, repoRootOf(callerCwd) ?? callerCwd)
+  return ''
+}
+
+function trackedWorkerEnvironment(
+  writesJob: boolean,
+  worktree: Worktree | null,
+  tool: WorktreeTool | null,
+  runId: number,
+): Record<string, string> {
+  return writesJob && worktree && tool?.recipePath ? trackedRecipeEnvironment(runId) : {}
+}
 
 /** Read-only repository jobs isolate scratch objects; writing jobs need durable commits. */
 export function gitObjectEnvironmentFor(
@@ -406,7 +423,7 @@ export async function run(opts: {
         `record what you could not run in could_not_verify.`
       )
     }
-    const generated = tool.recipe ? recipeNotes(tool.recipe, "<this worktree's database>", '') : ''
+    const generated = generatedWorktreeNotes(tool, callerCwd)
     return [tool.notes ?? '', generated].filter(Boolean).join('\n\n')
   })()
   const originalPrompt = opts.prompt
@@ -724,6 +741,12 @@ export async function run(opts: {
         writesJob && requestedJob.name !== 'land' ? `refs/heads/${worktree.branch}` : undefined,
       )
     : undefined
+  const recipeEnvironment = trackedWorkerEnvironment(
+    writesJob,
+    worktree,
+    toolFor(callerCwd),
+    claim.id,
+  )
   if (gitConfigEnvironment) {
     assertSharedRefGuardOutsideWritableRoots(gitConfigEnvironment.GIT_CONFIG_VALUE_0, writableRoots)
   }
@@ -1066,6 +1089,7 @@ export async function run(opts: {
       gitConfigEnvironment,
       sandboxRunDir,
       grokMcpEnvironment,
+      recipeEnvironment,
       scratchDir,
       writesJob,
       launchKey,

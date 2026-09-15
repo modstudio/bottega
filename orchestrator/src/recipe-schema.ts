@@ -91,7 +91,12 @@ const recipeShape = strictObject({
   shared: z.array(sharedSchema).optional(),
   pre: z.array(stepSchema).optional(),
   create: z.array(stepSchema),
-  serve: z.record(z.string(), z.array(stepSchema)).optional(),
+  serve: z
+    .record(z.string(), z.array(stepSchema))
+    .describe(
+      'rule 1: every serve step "<name>" in mode "<mode>" must declare undo so teardown can stop anything the worker started.',
+    )
+    .optional(),
   destroy: z.array(stepSchema).optional(),
   verifyDown: z.array(stepSchema).optional(),
 })
@@ -199,6 +204,49 @@ function validateAllocationUndo(recipe: RecipeInput, context: z.RefinementCtx): 
   }
 }
 
+export function allocationEnvironmentVariable(kind: 'ports' | 'alloc', name: string): string {
+  const normalized = name.toUpperCase().replace(/[^A-Z0-9]/g, '_')
+  return `ORCH_${kind === 'ports' ? 'PORTS' : 'ALLOC'}_${normalized}`
+}
+
+function validateServeUndo(recipe: RecipeInput, context: z.RefinementCtx): void {
+  for (const [mode, steps] of Object.entries(recipe.serve ?? {})) {
+    for (const [index, step] of steps.entries()) {
+      if (!step.undo) {
+        context.addIssue({
+          code: 'custom',
+          path: ['serve', mode, index],
+          message: `rule 1: serve step "${step.name}" in mode "${mode}" must declare undo`,
+        })
+      }
+    }
+  }
+}
+
+function validateAllocationEnvironmentNames(recipe: RecipeInput, context: z.RefinementCtx): void {
+  const allocations: ['ports' | 'alloc', string][] = [
+    ...(recipe.allocate?.ports ?? []).map((name): ['ports', string] => ['ports', name]),
+    ...Object.keys(recipe.allocate?.strings ?? {}).map((name): ['alloc', string] => [
+      'alloc',
+      name,
+    ]),
+  ]
+  const names = new Map<string, string>()
+  for (const [kind, name] of allocations) {
+    const variable = allocationEnvironmentVariable(kind, name)
+    const prior = names.get(variable)
+    if (prior !== undefined) {
+      context.addIssue({
+        code: 'custom',
+        path: ['allocate', kind === 'ports' ? 'ports' : 'strings'],
+        message: `allocation names "${prior}" and "${name}" map to the same environment variable ${variable}`,
+      })
+    } else {
+      names.set(variable, name)
+    }
+  }
+}
+
 function validateWorkingDirectories(recipe: RecipeInput, context: z.RefinementCtx): void {
   for (const step of allSteps(recipe)) {
     if (
@@ -221,6 +269,8 @@ export const recipeSchema = recipeShape.superRefine((recipe, context) => {
   validatePlaceholders(recipe, context)
   validateStringAllocationTemplates(recipe, context)
   validateAllocationUndo(recipe, context)
+  validateServeUndo(recipe, context)
+  validateAllocationEnvironmentNames(recipe, context)
   validateWorkingDirectories(recipe, context)
 })
 

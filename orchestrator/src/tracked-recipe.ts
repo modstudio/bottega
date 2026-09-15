@@ -9,11 +9,12 @@ import {
   compensationPlan,
   destroyPlan,
   lifecycleFailure,
+  serveUndoPlan,
   teardownVars,
   trackedExecutionRefusal,
 } from './recipe-lifecycle.ts'
 import { parseTrackedRecipe } from './recipe-loader.ts'
-import type { TrackedRecipe } from './recipe-schema.ts'
+import { allocationEnvironmentVariable, type TrackedRecipe } from './recipe-schema.ts'
 import {
   runStep as kernelRunStep,
   runUndo as kernelRunUndo,
@@ -109,7 +110,7 @@ export const trackedAllocator: TrackedAllocator = {
   },
 }
 
-function loadRecipeAtBase(input: TrackedCreateInput): {
+function loadRecipeAtBase(input: { tool: WorktreeTool; repoRoot: string; baseRef?: string }): {
   base: string
   recipe: TrackedRecipe
   snapshot: RecipeSnapshot
@@ -139,6 +140,82 @@ function loadRecipeAtBase(input: TrackedCreateInput): {
     recipe = read()
   }
   return { base, recipe, snapshot: { source: { path: pointer, commit: base }, recipe } }
+}
+
+function renderedPlaceholder(name: string): string {
+  if (name === 'main') return name
+  if (name === 'index') return '$ORCH_INDEX'
+  const allocation = name.match(/^(ports|alloc)\.(.+)$/)
+  if (allocation) {
+    return `$${allocationEnvironmentVariable(allocation[1] as 'ports' | 'alloc', allocation[2]!)}`
+  }
+  return `<${name}>`
+}
+
+function renderCommand(command: Step['run'], main: string): string {
+  const render = (value: string) =>
+    value.replace(/\{([^{}]+)\}/g, (_placeholder, name: string) => {
+      const rendered = renderedPlaceholder(name)
+      return rendered === 'main' ? main : rendered
+    })
+  const args = command.args.flatMap((arg) => {
+    if (typeof arg === 'string') return [render(arg)]
+    if ('expand' in arg) return ['<seed>']
+    return [render(arg.value)]
+  })
+  return [render(command.command), ...args].join(' ')
+}
+
+/** Render serve declarations without executing them or requiring allocated values yet. */
+export function renderTrackedRecipeNotes(recipe: TrackedRecipe, main: string): string {
+  const entries = Object.entries(recipe.serve ?? {})
+  const modes = entries.some(([mode]) => mode === 'default')
+    ? [
+        ...entries.filter(([mode]) => mode === 'default'),
+        ...entries.filter(([mode]) => mode !== 'default'),
+      ]
+    : entries
+  if (!modes.length) return ''
+  const lines: string[] = []
+  for (const [mode, steps] of modes) {
+    lines.push(`serve mode ${mode}:`)
+    for (const step of steps) {
+      lines.push(`  ${renderCommand(step.run, main)}   ${step.name}`)
+      lines.push(`  stop: ${renderCommand(step.undo!, main)}`)
+    }
+  }
+  lines.push('NEVER verify against a server you did not start for this worktree. Borrowing one')
+  lines.push('tests a different branch and PASSES, which is worse than failing.')
+  return lines.join('\n')
+}
+
+/** Best-effort prompt notes from the same committed recipe source used by creation. */
+export function trackedRecipeNotes(tool: WorktreeTool, repoRoot: string): string {
+  if (!tool.recipePath) return ''
+  try {
+    const loaded = loadRecipeAtBase({ tool, repoRoot })
+    return renderTrackedRecipeNotes(loaded.recipe, repoRoot)
+  } catch {
+    return ''
+  }
+}
+
+export function recipeAllocationEnvironment(
+  allocations: RecipeAllocations | undefined,
+): Record<string, string> {
+  if (!allocations) return {}
+  const environment: Record<string, string> = { ORCH_INDEX: String(allocations.index) }
+  for (const [name, port] of Object.entries(allocations.ports)) {
+    environment[allocationEnvironmentVariable('ports', name)] = String(port)
+  }
+  for (const [name, value] of Object.entries(allocations.strings)) {
+    environment[allocationEnvironmentVariable('alloc', name)] = value
+  }
+  return environment
+}
+
+export function trackedRecipeEnvironment(runId: number): Record<string, string> {
+  return recipeAllocationEnvironment(readSnapshot(runId).snapshot?.allocations)
 }
 
 export function executeTrackedCreateSteps(
@@ -394,9 +471,9 @@ export function teardownTrackedRecipe(
   })
   const treeExists = input.treeExists ?? existsSync(input.worktree.path)
   const context = { treeRoot: treeExists ? input.worktree.path : input.worktree.repoRoot, vars }
-  const results = destroyPlan(stored.snapshot.recipe).map(({ step, phase }) =>
-    phase === 'run' ? runStep(step, context) : runUndo(step, context),
-  )
+  const results = serveUndoPlan(stored.snapshot.recipe).map((step) => runUndo(step, context))
+  for (const { step, phase } of destroyPlan(stored.snapshot.recipe))
+    results.push(phase === 'run' ? runStep(step, context) : runUndo(step, context))
   for (const step of stored.snapshot.recipe.verifyDown ?? []) results.push(runStep(step, context))
   const failed = lifecycleFailure(results)
   return failed

@@ -3,7 +3,7 @@
 import type { TrackedRecipe } from './recipe-schema.ts'
 import type { Step, StepResult } from './recipe-step.ts'
 
-const deferred = { env: 7, shared: 8, serve: 9 } as const
+const deferred = { env: 7, shared: 8 } as const
 
 export function trackedExecutionRefusal(recipe: TrackedRecipe): string | null {
   if (recipe.allocate?.databases !== undefined) {
@@ -31,6 +31,10 @@ export function destroyPlan(recipe: TrackedRecipe): { step: Step; phase: 'run' |
         .filter((step) => step.undo)
         .reverse()
         .map((step) => ({ step, phase: 'undo' as const }))
+}
+
+export function serveUndoPlan(recipe: TrackedRecipe): Step[] {
+  return Object.values(recipe.serve ?? {}).flatMap((steps) => [...steps].reverse())
 }
 
 export function teardownVars(input: {
