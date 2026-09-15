@@ -933,6 +933,17 @@ The invariants are:
   under that one lock; it does not reach into Drizzle's private migrator session
   or dialect. Expand-first for any column a running process still reads.
   `db.ts:adoptRunMutation` governs chain ownership, not schema authority.
+  The Postgres record is schema-first: edit `postgres-schema.ts`, then run
+  `drizzle-kit generate --config drizzle.postgres.config.ts --name=<name>` and
+  commit the generated migration folder and snapshot whole. A committed
+  migration folder is never renamed, and generated `migration.sql` is never
+  hand-edited. SQL the kit cannot express, including FORCE ROW LEVEL SECURITY,
+  grants and seed rows, goes in a custom migration created with
+  `drizzle-kit generate --custom --config drizzle.postgres.config.ts --name=<name>`.
+  The gate proves the snapshot chain is consistent and the schema has no
+  ungenerated change. SQLite keeps its hand-written journal because its
+  backfill blocks and baseline adoption are not represented by the kit, and no
+  new table goes there.
 - **A linked-worktree binary reads the main store and never writes it, whatever
   names the path.** `ORCH_DB` locates a store; it never authorises a write. The
   dispatcher exports the live path to every worker (`run.ts`), so a worker's own
