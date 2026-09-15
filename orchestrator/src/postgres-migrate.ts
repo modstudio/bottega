@@ -1,6 +1,7 @@
 // concern: postgres-migrate
-import { SQL } from 'bun'
+
 import { join } from 'node:path'
+import { SQL } from 'bun'
 import { drizzle } from 'drizzle-orm/bun-sql'
 import { migrate } from 'drizzle-orm/bun-sql/migrator'
 
