@@ -19,15 +19,9 @@ import {
 } from '../../shared/monitor-capability.ts'
 import { sessionId } from './db.ts'
 import { failingCanonEvalSlugs } from './evals.ts'
-import {
-  claimMonitorNotices,
-  displayConditions,
-  formatMonitorPass,
-  type MonitorNotice,
-  markMonitorNoticesDelivered,
-  monitor,
-  monitorHistory,
-} from './monitor.ts'
+import { displayConditions, formatMonitorPass, monitor, monitorHistory } from './monitor.ts'
+import { claimMonitorNotices, markMonitorNoticesDelivered } from './monitor-notices.ts'
+import type { MonitorNotice } from './monitor-types.ts'
 import { pidAlive } from './process-liveness.ts'
 
 type Options = {
