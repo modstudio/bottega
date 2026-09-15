@@ -47,8 +47,6 @@ export function Sheet({
     <aside
       ref={panel}
       tabIndex={-1}
-      role="complementary"
-      aria-modal="false"
       aria-label={typeof title === 'string' ? title : 'Record detail'}
       className="fixed inset-y-0 right-0 z-40 flex w-[min(640px,100vw)] flex-col border-l border-border bg-[var(--surface-raised)] outline-none max-[900px]:w-screen"
     >

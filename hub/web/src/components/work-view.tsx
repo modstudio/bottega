@@ -1,5 +1,5 @@
 import { keepPreviousData, useQuery } from '@tanstack/react-query'
-import { useNavigate } from '@tanstack/react-router'
+import { Link, useNavigate } from '@tanstack/react-router'
 import { ChevronRight } from 'lucide-react'
 import { useEffect, useMemo, useState } from 'react'
 import { Badge } from '@/components/badge'
@@ -300,8 +300,8 @@ function TaskTable({
         const visible = row.key && opened.has(row.key) ? runs : runs.filter((run) => run.running)
         return visible.length ? (
           <div className="bg-muted/20 px-5 py-1">
-            {visible.map((run, index) => (
-              <RunLine key={`${run.start}:${index}`} run={run} now={now} />
+            {visible.map((run) => (
+              <RunLine key={`${run.start}:${run.agent}:${run.job}`} run={run} now={now} />
             ))}
           </div>
         ) : null
@@ -491,18 +491,12 @@ function BoardOwner({ card }: { card: BoardCard }) {
 
 function BoardCardView({ card }: { card: BoardCard }) {
   const colors = useProjectColors()
-  const navigate = useNavigate()
-  const open = () => void navigate({ to: '/board/tasks/$key', params: { key: card.key } })
   return (
-    <div
+    <Link
+      to="/board/tasks/$key"
+      params={{ key: card.key }}
       data-record-key={card.key}
-      tabIndex={0}
-      role="link"
-      onClick={open}
-      onKeyDown={(event) => {
-        if (event.key === 'Enter') open()
-      }}
-      className="proj-card cursor-pointer border border-border p-3 focus-visible:ring-2 focus-visible:ring-ring"
+      className="proj-card block cursor-pointer border border-border p-3 focus-visible:ring-2 focus-visible:ring-ring"
       style={projectVars(colors, card.project)}
     >
       <div className="whitespace-nowrap font-semibold">{card.key}</div>
@@ -521,7 +515,7 @@ function BoardCardView({ card }: { card: BoardCard }) {
           </span>
         ) : null}
       </div>
-    </div>
+    </Link>
   )
 }
 

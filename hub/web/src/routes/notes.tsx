@@ -29,8 +29,15 @@ function NotesPage() {
         title="Notes"
         subtitle="The suggestion box"
         actions={
-          <label className="flex items-center gap-2 text-sm text-muted-foreground">
-            <Checkbox checked={stale} onChange={(event) => setStale(event.target.checked)} />
+          <label
+            htmlFor="show-stale"
+            className="flex items-center gap-2 text-sm text-muted-foreground"
+          >
+            <Checkbox
+              id="show-stale"
+              checked={stale}
+              onChange={(event) => setStale(event.target.checked)}
+            />
             Show stale only
           </label>
         }

@@ -118,8 +118,12 @@ function DesignPage() {
         {semanticColors.map((color) => (
           <div key={color.name} className="border border-border">
             <div className="grid h-16 grid-cols-2">
-              <div style={{ background: color.light }} aria-label={`${color.name} light`} />
-              <div style={{ background: color.dark }} aria-label={`${color.name} dark`} />
+              <div style={{ background: color.light }}>
+                <span className="sr-only">{color.name} light</span>
+              </div>
+              <div style={{ background: color.dark }}>
+                <span className="sr-only">{color.name} dark</span>
+              </div>
             </div>
             <div className="p-2">
               <div className="font-semibold">--{color.name}</div>
@@ -184,8 +188,8 @@ function DesignPage() {
           onChange={setSelect}
         />
         <Textarea aria-label="Sample textarea" defaultValue="Textarea" />
-        <label className="flex items-center gap-2">
-          <Checkbox defaultChecked /> Checkbox
+        <label htmlFor="sample-checkbox" className="flex items-center gap-2">
+          <Checkbox id="sample-checkbox" defaultChecked /> Checkbox
         </label>
       </div>
 

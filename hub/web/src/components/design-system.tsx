@@ -85,7 +85,11 @@ export function EmptyState({ title, hint }: { title: string; hint?: string }) {
 }
 
 export function LiveDot() {
-  return <span className="live-dot" aria-label="Running" />
+  return (
+    <span className="live-dot">
+      <span className="sr-only">Running</span>
+    </span>
+  )
 }
 
 function Filter({
@@ -131,7 +135,8 @@ export function Segmented({
   label: string
 }) {
   return (
-    <div className="segmented" role="group" aria-label={label}>
+    <fieldset className="segmented min-w-0 p-0">
+      <legend className="sr-only">{label}</legend>
       {options.map((option) => (
         <button
           key={option.value}
@@ -142,7 +147,7 @@ export function Segmented({
           {option.label}
         </button>
       ))}
-    </div>
+    </fieldset>
   )
 }
 
@@ -277,8 +282,9 @@ export function SourceMark({
         : `${project ?? 'external'} · ${protocol ?? 'tracker protocol unknown'}`
   const Icon = source === 'local' ? Database : source === 'git' ? GitCommit : RadioTower
   return (
-    <span className="inline-flex items-center" title={title} aria-label={title}>
-      <Icon size={13} />
+    <span className="inline-flex items-center" title={title}>
+      <Icon size={13} aria-hidden />
+      <span className="sr-only">{title}</span>
     </span>
   )
 }
