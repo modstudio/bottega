@@ -1,6 +1,7 @@
 // concern: canon-lint
 /** Knows pure canon classification and lint rules. Must not know filesystems, stores, commands, or processes. */
 import { posix } from 'node:path'
+import { CANON_REFERENCE_EXEMPTIONS } from '../../shared/canon-references.ts'
 import { type Finding, introducedFindings } from '../../shared/ratchet.ts'
 import {
   ALWAYS_ON_TOTAL_BYTES,
@@ -13,6 +14,13 @@ import {
 } from './canon-budget.ts'
 
 export type CanonFile = { path: string; text: string; symlinkTarget?: string }
+export type CanonSourceText = { path: string; text: string }
+export type CanonLintInput = {
+  files: CanonFile[]
+  trackedPaths: string[]
+  packageScripts: string[]
+  sourceTexts: CanonSourceText[]
+}
 export type CanonFinding = Finding & { measuredBytes?: number }
 
 export type CanonMeasurement = { path: string; bytes: number; limit: number }
@@ -31,6 +39,9 @@ export type CanonLintResult = { summary: CanonLintSummary; findings: CanonFindin
 
 export const TASK_KEY_PATTERN = /\b[A-Z][A-Z0-9]{1,9}-\d+\b/
 export const TASK_KEY_EXEMPTIONS = ['UTF', 'SHA', 'ISO', 'RFC', 'ES', 'TLS', 'HTTP', 'IPV']
+
+export const REFERENCE_EXEMPTIONS: { reference: string; reason: string }[] =
+  CANON_REFERENCE_EXEMPTIONS.map(({ path, reason }) => ({ reference: path, reason }))
 
 export const HISTORY_PATTERNS = [
   /\bused to\b/i,
@@ -167,6 +178,262 @@ function proseFindings(file: CanonFile, findings: CanonFinding[]): void {
   }
 }
 
+type LineSpan = { content: string; line: number }
+
+function scannedLines(file: CanonFile): { text: string; line: number }[] {
+  const lines: { text: string; line: number }[] = []
+  let fence: '`' | '~' | null = null
+  for (const [index, text] of file.text.split(/\r?\n/).entries()) {
+    const marker = text.match(/^\s*(`{3,}|~{3,})/)?.[1]?.[0] as '`' | '~' | undefined
+    if (marker) {
+      if (fence === marker) fence = null
+      else if (fence === null) fence = marker
+      continue
+    }
+    if (fence === null) lines.push({ text, line: index + 1 })
+  }
+  return lines
+}
+
+function inlineCodeSpans(file: CanonFile): LineSpan[] {
+  return scannedLines(file).flatMap(({ text, line }) =>
+    [...text.matchAll(/(`+)([^`\n]*?)\1/g)].map((match) => ({ content: match[2]!, line })),
+  )
+}
+
+function markdownLinkTargets(file: CanonFile): LineSpan[] {
+  return scannedLines(file).flatMap(({ text, line }) =>
+    [...text.matchAll(/\[[^\]]*\]\(\s*([^\s)]+)(?:\s+[^)]*)?\)/g)].map((match) => ({
+      content: match[1]!,
+      line,
+    })),
+  )
+}
+
+function referencePieces(file: CanonFile): LineSpan[] {
+  return [...inlineCodeSpans(file), ...markdownLinkTargets(file)].flatMap(({ content, line }) =>
+    content
+      .split(/\s+/)
+      .filter(Boolean)
+      .map((piece) => ({ content: piece, line })),
+  )
+}
+
+function stripReferenceSuffix(reference: string): string {
+  return reference.replace(/:(?:[A-Za-z_$][\w$]*|\d+(?:-\d+)?)$/, '')
+}
+
+function globPattern(pattern: string): RegExp {
+  let source = '^'
+  for (let index = 0; index < pattern.length; index++) {
+    const character = pattern[index]!
+    if (character === '*') {
+      if (pattern[index + 1] === '*') index++
+      source += '.*'
+    } else if (character === '?') source += '[^/]'
+    else if (character === '[') {
+      const end = pattern.indexOf(']', index + 1)
+      if (end < 0) source += '\\['
+      else {
+        source += pattern.slice(index, end + 1)
+        index = end
+      }
+    } else source += character.replace(/[\\^$.*+?()[\]{}|]/g, '\\$&')
+  }
+  return new RegExp(`${source}$`)
+}
+
+/** URLs, home- or variable-rooted paths and placeholders never name a tracked path. */
+function isNonRepositoryShape(reference: string): boolean {
+  if (/^[A-Za-z][A-Za-z\d+.-]*:\/\//.test(reference) || reference.startsWith('mailto:')) return true
+  return /^[~/$-]/.test(reference) || /[<>{}]/.test(reference)
+}
+
+function isRepositoryCandidate(reference: string, firstSegments: Set<string>): boolean {
+  return firstSegments.has(reference.split('/')[0]!)
+}
+
+const FILE_REFERENCE = /\.(?:ts|tsx|js|mjs|cjs|py|sh|php|vue|json|jsonc|md|toml|yml|yaml|sql)$/
+
+function pathMatches(reference: string, trackedPath: string): boolean {
+  if (/[*?[\]]/.test(reference)) return globPattern(reference).test(trackedPath)
+  return trackedPath === reference || trackedPath.startsWith(`${reference}/`)
+}
+
+function resolvedReferencePaths(
+  reference: string,
+  canonPath: string,
+  trackedPaths: string[],
+): string[] {
+  const exemptions = new Set(REFERENCE_EXEMPTIONS.map(({ reference: item }) => item))
+  if (exemptions.has(reference)) return [reference]
+
+  const matched = new Set<string>()
+  const addMatches = (candidate: string) => {
+    for (const trackedPath of trackedPaths) {
+      if (pathMatches(candidate, trackedPath)) matched.add(trackedPath)
+    }
+  }
+  addMatches(reference)
+  addMatches(posix.normalize(posix.join(posix.dirname(canonPath), reference)))
+
+  const suffix = `/${reference}`
+  for (const trackedPath of trackedPaths) {
+    if (
+      /[*?[\]]/.test(reference)
+        ? globPattern(`**${suffix}`).test(trackedPath)
+        : trackedPath.endsWith(suffix)
+    ) {
+      matched.add(trackedPath)
+    }
+  }
+  return [...matched]
+}
+
+function escapedIdentifier(identifier: string): string {
+  return identifier.replace(/[\\^$.*+?()[\]{}|]/g, '\\$&')
+}
+
+function containsDeclaration(text: string, identifier: string): boolean {
+  const word = escapedIdentifier(identifier)
+  const identifierPattern = new RegExp(`\\b${word}\\b`)
+  const keywordPattern = /\b(?:function|const|let|class|interface|type|enum|def|export)\b/
+  const assignmentOrTypePattern = new RegExp(`\\b${word}\\b\\s*[=:]`)
+  const callableDeclarationPattern = new RegExp(
+    `(?:\\b(?:public|private|protected|static|abstract|async|get|set)\\s+)*\\b${word}\\b\\s*\\([^)]*\\)\\s*(?:\\{|=>|:)`,
+  )
+  return text
+    .split(/\r?\n/)
+    .some(
+      (line) =>
+        identifierPattern.test(line) &&
+        (keywordPattern.test(line) ||
+          assignmentOrTypePattern.test(line) ||
+          callableDeclarationPattern.test(line)),
+    )
+}
+
+function referenceFindings(file: CanonFile, input: CanonLintInput): CanonFinding[] {
+  const findings: CanonFinding[] = []
+  const firstSegments = new Set(input.trackedPaths.map((path) => path.split('/')[0]!))
+  const texts = new Map([
+    ...input.sourceTexts.map(({ path, text }) => [path, text] as const),
+    ...input.files.map(({ path, text }) => [path, text] as const),
+  ])
+  for (const { content: candidate, line } of referencePieces(file)) {
+    const unsuffixedPath = stripReferenceSuffix(candidate)
+    const path = unsuffixedPath.replace(/\/$/, '')
+    if (
+      isNonRepositoryShape(path) ||
+      (!FILE_REFERENCE.test(path) && !isRepositoryCandidate(path, firstSegments))
+    )
+      continue
+    const matchedPaths = resolvedReferencePaths(path, file.path, input.trackedPaths)
+    if (!matchedPaths.length) {
+      findings.push({
+        file: file.path,
+        line,
+        rule: 'canon/reference-path',
+        message: `repository path ${path} is not tracked`,
+      })
+      continue
+    }
+    const anchor = candidate.slice(unsuffixedPath.length)
+    if (/^:\d+(?:-\d+)?$/.test(anchor)) {
+      findings.push({
+        file: file.path,
+        line,
+        rule: 'canon/line-anchor',
+        message: `line anchor ${candidate} rots; cite an identifier`,
+      })
+      continue
+    }
+    const identifier = anchor.match(/^:([A-Za-z_$][\w$]*)$/)?.[1]
+    if (
+      identifier &&
+      !matchedPaths.some((matched) => containsDeclaration(texts.get(matched) ?? '', identifier))
+    ) {
+      findings.push({
+        file: file.path,
+        line,
+        rule: 'canon/reference-symbol',
+        message: `${matchedPaths.join(', ')} do not declare identifier ${identifier}`,
+      })
+    }
+  }
+  return findings
+}
+
+function referenceCodeFindings(file: CanonFile, sourceTexts: CanonSourceText[]): CanonFinding[] {
+  const source = sourceTexts.map(({ text }) => text).join('\n')
+  return inlineCodeSpans(file).flatMap(({ content, line }) => {
+    const match = content.match(
+      /^(?:([A-Za-z_$][\w$]*)\(\)|[A-Za-z_$][\w$]*\.([A-Za-z_$][\w$]*)(?:\(\))?|([A-Z][A-Z0-9_]*_[A-Z0-9_]*))$/,
+    )
+    const identifier = match?.[1] ?? match?.[2] ?? match?.[3]
+    if (
+      !identifier ||
+      (match?.[3] && content.length < 4) ||
+      new RegExp(`\\b${escapedIdentifier(identifier)}\\b`).test(source)
+    )
+      return []
+    return [
+      {
+        file: file.path,
+        line,
+        rule: 'canon/reference-code',
+        message: `identifier ${identifier} does not occur in tracked source`,
+      },
+    ]
+  })
+}
+
+function referenceScriptFindings(file: CanonFile, packageScripts: string[]): CanonFinding[] {
+  const scripts = new Set(packageScripts)
+  return file.text.split(/\r?\n/).flatMap((lineText, index) =>
+    [...lineText.matchAll(/\b(?:bun|npm) run ([a-z][\w:.-]*)(?![\w:.$/-])/g)].flatMap((match) => {
+      const name = match[1]!
+      if (
+        name.includes('$') ||
+        name.includes('/') ||
+        /\.(?:ts|js)$/.test(name) ||
+        scripts.has(name)
+      ) {
+        return []
+      }
+      return [
+        {
+          file: file.path,
+          line: index + 1,
+          rule: 'canon/reference-script',
+          message: `package script ${name} is not defined`,
+        },
+      ]
+    }),
+  )
+}
+
+function numeralFindings(file: CanonFile): CanonFinding[] {
+  return scannedLines(file).flatMap(({ text, line }) => {
+    const prose = text
+      .replace(/(`+)[^`\n]*?\1/g, (value) => ' '.repeat(value.length))
+      .replace(/\[[^\]]*\]\([^)]*\)/g, (value) => ' '.repeat(value.length))
+    const orderedMarker = prose.match(/^\s*(?:#+\s*)?(\d+)[.)]\s/)
+    for (const match of prose.matchAll(/(?<![A-Za-z0-9_-])\d+(?![A-Za-z0-9_-])/g)) {
+      if (orderedMarker && match.index === prose.indexOf(orderedMarker[1]!)) continue
+      return [
+        {
+          file: file.path,
+          line,
+          rule: 'canon/numeral',
+          message: `prose contains numeral ${match[0]}; name its constant or reporting command`,
+        },
+      ]
+    }
+    return []
+  })
+}
+
 function chainFiles(path: string, agentsByPath: Map<string, CanonFile>): CanonFile[] {
   const directory = posix.dirname(path)
   const parts = directory === '.' ? [] : directory.split('/')
@@ -298,11 +565,15 @@ function cardHeadingFindings(file: CanonFile): Finding[] {
     : []
 }
 
-function contentFindings(classified: Classified): CanonFinding[] {
+function contentFindings(classified: Classified, input: CanonLintInput): CanonFinding[] {
   const { file, kind } = classified
   if (!kind || kind === 'alias' || kind === 'publication') return []
   const findings: CanonFinding[] = []
   proseFindings(file, findings)
+  findings.push(...referenceFindings(file, input))
+  findings.push(...referenceCodeFindings(file, input.sourceTexts))
+  findings.push(...referenceScriptFindings(file, input.packageScripts))
+  findings.push(...numeralFindings(file))
   if (kind === 'rule' || kind === 'context' || kind === 'reference') {
     findings.push(...frontmatterFinding(file, kind))
   }
@@ -335,7 +606,7 @@ function symlinkFindings(file: CanonFile, paths: Set<string>): Finding[] {
   return findings
 }
 
-export function lintCanon(input: { files: CanonFile[] }): CanonLintResult {
+export function lintCanon(input: CanonLintInput): CanonLintResult {
   const classified = input.files.map((file): Classified => ({ file, kind: kindOf(file) }))
   const tiers = tierFiles(classified)
   const tierMeasurements = tierSummary(tiers)
@@ -344,7 +615,7 @@ export function lintCanon(input: { files: CanonFile[] }): CanonLintResult {
   const findings = [
     ...sizeFindings(tiers, tierMeasurements),
     ...chains.findings,
-    ...classified.flatMap(contentFindings),
+    ...classified.flatMap((item) => contentFindings(item, input)),
     ...input.files.flatMap((file) => symlinkFindings(file, paths)),
   ]
   findings.sort(

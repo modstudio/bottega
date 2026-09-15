@@ -2,7 +2,7 @@
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { z } from 'zod'
-import { canonGitRoot, collectCanonFiles } from '../src/canon-files.ts'
+import { canonGitRoot, collectCanonLintInput } from '../src/canon-files.ts'
 import { introducedCanonFindings, lintCanon } from '../src/canon-lint.ts'
 
 const findingSchema = z.object({
@@ -16,7 +16,7 @@ const findingSchema = z.object({
 const root = canonGitRoot(process.cwd())
 const baselinePath = join(root, 'scripts/quality/canon-lint.json')
 const baseline = findingSchema.array().parse(JSON.parse(readFileSync(baselinePath, 'utf8')))
-const result = lintCanon({ files: collectCanonFiles(root) })
+const result = lintCanon(collectCanonLintInput(root))
 const introduced = introducedCanonFindings(baseline, result.findings)
 
 if (introduced.length) {

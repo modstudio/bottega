@@ -384,6 +384,912 @@
     "message": "contains a task key"
   },
   {
+    "file": "AGENTS.md",
+    "line": 101,
+    "rule": "canon/numeral",
+    "message": "prose contains numeral 22; name its constant or reporting command"
+  },
+  {
+    "file": "AGENTS.md",
+    "line": 338,
+    "rule": "canon/numeral",
+    "message": "prose contains numeral 1; name its constant or reporting command"
+  },
+  {
+    "file": "AGENTS.md",
+    "line": 354,
+    "rule": "canon/numeral",
+    "message": "prose contains numeral 25; name its constant or reporting command"
+  },
+  {
+    "file": "hub/AGENTS.md",
+    "line": 40,
+    "rule": "canon/numeral",
+    "message": "prose contains numeral 7778; name its constant or reporting command"
+  },
+  {
+    "file": "hub/AGENTS.md",
+    "line": 78,
+    "rule": "canon/numeral",
+    "message": "prose contains numeral 378; name its constant or reporting command"
+  },
+  {
+    "file": "hub/AGENTS.md",
+    "line": 79,
+    "rule": "canon/numeral",
+    "message": "prose contains numeral 379; name its constant or reporting command"
+  },
+  {
+    "file": "hub/AGENTS.md",
+    "line": 100,
+    "rule": "canon/numeral",
+    "message": "prose contains numeral 1; name its constant or reporting command"
+  },
+  {
+    "file": "hub/AGENTS.md",
+    "line": 120,
+    "rule": "canon/numeral",
+    "message": "prose contains numeral 378; name its constant or reporting command"
+  },
+  {
+    "file": "hub/AGENTS.md",
+    "line": 121,
+    "rule": "canon/numeral",
+    "message": "prose contains numeral 452; name its constant or reporting command"
+  },
+  {
+    "file": "hub/AGENTS.md",
+    "line": 122,
+    "rule": "canon/numeral",
+    "message": "prose contains numeral 91; name its constant or reporting command"
+  },
+  {
+    "file": "hub/AGENTS.md",
+    "line": 140,
+    "rule": "canon/numeral",
+    "message": "prose contains numeral 53; name its constant or reporting command"
+  },
+  {
+    "file": "hub/AGENTS.md",
+    "line": 144,
+    "rule": "canon/numeral",
+    "message": "prose contains numeral 200; name its constant or reporting command"
+  },
+  {
+    "file": "hub/AGENTS.md",
+    "line": 145,
+    "rule": "canon/numeral",
+    "message": "prose contains numeral 200; name its constant or reporting command"
+  },
+  {
+    "file": "hub/AGENTS.md",
+    "line": 150,
+    "rule": "canon/numeral",
+    "message": "prose contains numeral 39; name its constant or reporting command"
+  },
+  {
+    "file": "hub/AGENTS.md",
+    "line": 155,
+    "rule": "canon/numeral",
+    "message": "prose contains numeral 451; name its constant or reporting command"
+  },
+  {
+    "file": "hub/AGENTS.md",
+    "line": 157,
+    "rule": "canon/numeral",
+    "message": "prose contains numeral 76; name its constant or reporting command"
+  },
+  {
+    "file": "hub/AGENTS.md",
+    "line": 158,
+    "rule": "canon/numeral",
+    "message": "prose contains numeral 20; name its constant or reporting command"
+  },
+  {
+    "file": "hub/AGENTS.md",
+    "line": 170,
+    "rule": "canon/numeral",
+    "message": "prose contains numeral 7; name its constant or reporting command"
+  },
+  {
+    "file": "hub/AGENTS.md",
+    "line": 171,
+    "rule": "canon/numeral",
+    "message": "prose contains numeral 102; name its constant or reporting command"
+  },
+  {
+    "file": "hub/AGENTS.md",
+    "line": 172,
+    "rule": "canon/numeral",
+    "message": "prose contains numeral 0; name its constant or reporting command"
+  },
+  {
+    "file": "hub/AGENTS.md",
+    "line": 173,
+    "rule": "canon/numeral",
+    "message": "prose contains numeral 294; name its constant or reporting command"
+  },
+  {
+    "file": "hub/AGENTS.md",
+    "line": 175,
+    "rule": "canon/numeral",
+    "message": "prose contains numeral 22; name its constant or reporting command"
+  },
+  {
+    "file": "hub/AGENTS.md",
+    "line": 179,
+    "rule": "canon/numeral",
+    "message": "prose contains numeral 39; name its constant or reporting command"
+  },
+  {
+    "file": "hub/AGENTS.md",
+    "line": 180,
+    "rule": "canon/numeral",
+    "message": "prose contains numeral 2; name its constant or reporting command"
+  },
+  {
+    "file": "hub/AGENTS.md",
+    "line": 238,
+    "rule": "canon/numeral",
+    "message": "prose contains numeral 0; name its constant or reporting command"
+  },
+  {
+    "file": "hub/AGENTS.md",
+    "line": 270,
+    "rule": "canon/numeral",
+    "message": "prose contains numeral 387; name its constant or reporting command"
+  },
+  {
+    "file": "hub/AGENTS.md",
+    "line": 271,
+    "rule": "canon/numeral",
+    "message": "prose contains numeral 1040; name its constant or reporting command"
+  },
+  {
+    "file": "hub/AGENTS.md",
+    "line": 283,
+    "rule": "canon/numeral",
+    "message": "prose contains numeral 20; name its constant or reporting command"
+  },
+  {
+    "file": "hub/AGENTS.md",
+    "line": 320,
+    "rule": "canon/numeral",
+    "message": "prose contains numeral 11; name its constant or reporting command"
+  },
+  {
+    "file": "hub/AGENTS.md",
+    "line": 321,
+    "rule": "canon/numeral",
+    "message": "prose contains numeral 2; name its constant or reporting command"
+  },
+  {
+    "file": "hub/AGENTS.md",
+    "line": 337,
+    "rule": "canon/numeral",
+    "message": "prose contains numeral 18; name its constant or reporting command"
+  },
+  {
+    "file": "hub/AGENTS.md",
+    "line": 341,
+    "rule": "canon/numeral",
+    "message": "prose contains numeral 880; name its constant or reporting command"
+  },
+  {
+    "file": "hub/AGENTS.md",
+    "line": 343,
+    "rule": "canon/numeral",
+    "message": "prose contains numeral 3; name its constant or reporting command"
+  },
+  {
+    "file": "hub/AGENTS.md",
+    "line": 347,
+    "rule": "canon/numeral",
+    "message": "prose contains numeral 35; name its constant or reporting command"
+  },
+  {
+    "file": "hub/AGENTS.md",
+    "line": 408,
+    "rule": "canon/numeral",
+    "message": "prose contains numeral 9; name its constant or reporting command"
+  },
+  {
+    "file": "hub/AGENTS.md",
+    "line": 411,
+    "rule": "canon/numeral",
+    "message": "prose contains numeral 320; name its constant or reporting command"
+  },
+  {
+    "file": "ops/AGENTS.md",
+    "line": 7,
+    "rule": "canon/numeral",
+    "message": "prose contains numeral 06; name its constant or reporting command"
+  },
+  {
+    "file": "ops/AGENTS.md",
+    "line": 10,
+    "rule": "canon/numeral",
+    "message": "prose contains numeral 06; name its constant or reporting command"
+  },
+  {
+    "file": "ops/AGENTS.md",
+    "line": 14,
+    "rule": "canon/numeral",
+    "message": "prose contains numeral 07; name its constant or reporting command"
+  },
+  {
+    "file": "orchestrator/AGENTS.md",
+    "line": 23,
+    "rule": "canon/numeral",
+    "message": "prose contains numeral 80; name its constant or reporting command"
+  },
+  {
+    "file": "orchestrator/AGENTS.md",
+    "line": 34,
+    "rule": "canon/numeral",
+    "message": "prose contains numeral 90; name its constant or reporting command"
+  },
+  {
+    "file": "orchestrator/AGENTS.md",
+    "line": 72,
+    "rule": "canon/numeral",
+    "message": "prose contains numeral 26; name its constant or reporting command"
+  },
+  {
+    "file": "orchestrator/AGENTS.md",
+    "line": 213,
+    "rule": "canon/numeral",
+    "message": "prose contains numeral 50; name its constant or reporting command"
+  },
+  {
+    "file": "orchestrator/AGENTS.md",
+    "line": 235,
+    "rule": "canon/numeral",
+    "message": "prose contains numeral 5; name its constant or reporting command"
+  },
+  {
+    "file": "orchestrator/AGENTS.md",
+    "line": 264,
+    "rule": "canon/numeral",
+    "message": "prose contains numeral 0; name its constant or reporting command"
+  },
+  {
+    "file": "orchestrator/AGENTS.md",
+    "line": 272,
+    "rule": "canon/numeral",
+    "message": "prose contains numeral 0; name its constant or reporting command"
+  },
+  {
+    "file": "orchestrator/AGENTS.md",
+    "line": 285,
+    "rule": "canon/numeral",
+    "message": "prose contains numeral 10; name its constant or reporting command"
+  },
+  {
+    "file": "orchestrator/AGENTS.md",
+    "line": 286,
+    "rule": "canon/numeral",
+    "message": "prose contains numeral 3; name its constant or reporting command"
+  },
+  {
+    "file": "orchestrator/AGENTS.md",
+    "line": 326,
+    "rule": "canon/numeral",
+    "message": "prose contains numeral 0; name its constant or reporting command"
+  },
+  {
+    "file": "orchestrator/AGENTS.md",
+    "line": 327,
+    "rule": "canon/numeral",
+    "message": "prose contains numeral 25; name its constant or reporting command"
+  },
+  {
+    "file": "orchestrator/AGENTS.md",
+    "line": 328,
+    "rule": "canon/numeral",
+    "message": "prose contains numeral 0; name its constant or reporting command"
+  },
+  {
+    "file": "orchestrator/AGENTS.md",
+    "line": 345,
+    "rule": "canon/numeral",
+    "message": "prose contains numeral 1; name its constant or reporting command"
+  },
+  {
+    "file": "orchestrator/AGENTS.md",
+    "line": 361,
+    "rule": "canon/numeral",
+    "message": "prose contains numeral 279; name its constant or reporting command"
+  },
+  {
+    "file": "orchestrator/AGENTS.md",
+    "line": 405,
+    "rule": "canon/numeral",
+    "message": "prose contains numeral 4; name its constant or reporting command"
+  },
+  {
+    "file": "orchestrator/AGENTS.md",
+    "line": 407,
+    "rule": "canon/numeral",
+    "message": "prose contains numeral 1; name its constant or reporting command"
+  },
+  {
+    "file": "orchestrator/AGENTS.md",
+    "line": 419,
+    "rule": "canon/numeral",
+    "message": "prose contains numeral 131; name its constant or reporting command"
+  },
+  {
+    "file": "orchestrator/AGENTS.md",
+    "line": 456,
+    "rule": "canon/numeral",
+    "message": "prose contains numeral 82; name its constant or reporting command"
+  },
+  {
+    "file": "orchestrator/AGENTS.md",
+    "line": 458,
+    "rule": "canon/numeral",
+    "message": "prose contains numeral 23; name its constant or reporting command"
+  },
+  {
+    "file": "orchestrator/AGENTS.md",
+    "line": 459,
+    "rule": "canon/numeral",
+    "message": "prose contains numeral 16; name its constant or reporting command"
+  },
+  {
+    "file": "orchestrator/AGENTS.md",
+    "line": 472,
+    "rule": "canon/numeral",
+    "message": "prose contains numeral 65; name its constant or reporting command"
+  },
+  {
+    "file": "orchestrator/AGENTS.md",
+    "line": 510,
+    "rule": "canon/numeral",
+    "message": "prose contains numeral 13; name its constant or reporting command"
+  },
+  {
+    "file": "orchestrator/AGENTS.md",
+    "line": 515,
+    "rule": "canon/numeral",
+    "message": "prose contains numeral 3; name its constant or reporting command"
+  },
+  {
+    "file": "orchestrator/AGENTS.md",
+    "line": 516,
+    "rule": "canon/numeral",
+    "message": "prose contains numeral 3; name its constant or reporting command"
+  },
+  {
+    "file": "orchestrator/AGENTS.md",
+    "line": 520,
+    "rule": "canon/numeral",
+    "message": "prose contains numeral 13; name its constant or reporting command"
+  },
+  {
+    "file": "orchestrator/AGENTS.md",
+    "line": 524,
+    "rule": "canon/numeral",
+    "message": "prose contains numeral 10; name its constant or reporting command"
+  },
+  {
+    "file": "orchestrator/AGENTS.md",
+    "line": 534,
+    "rule": "canon/numeral",
+    "message": "prose contains numeral 96; name its constant or reporting command"
+  },
+  {
+    "file": "orchestrator/AGENTS.md",
+    "line": 536,
+    "rule": "canon/numeral",
+    "message": "prose contains numeral 100; name its constant or reporting command"
+  },
+  {
+    "file": "orchestrator/AGENTS.md",
+    "line": 551,
+    "rule": "canon/numeral",
+    "message": "prose contains numeral 24; name its constant or reporting command"
+  },
+  {
+    "file": "orchestrator/AGENTS.md",
+    "line": 569,
+    "rule": "canon/numeral",
+    "message": "prose contains numeral 0; name its constant or reporting command"
+  },
+  {
+    "file": "orchestrator/AGENTS.md",
+    "line": 603,
+    "rule": "canon/numeral",
+    "message": "prose contains numeral 96; name its constant or reporting command"
+  },
+  {
+    "file": "orchestrator/AGENTS.md",
+    "line": 713,
+    "rule": "canon/numeral",
+    "message": "prose contains numeral 279; name its constant or reporting command"
+  },
+  {
+    "file": "orchestrator/AGENTS.md",
+    "line": 717,
+    "rule": "canon/numeral",
+    "message": "prose contains numeral 131; name its constant or reporting command"
+  },
+  {
+    "file": "orchestrator/AGENTS.md",
+    "line": 730,
+    "rule": "canon/numeral",
+    "message": "prose contains numeral 0; name its constant or reporting command"
+  },
+  {
+    "file": "orchestrator/AGENTS.md",
+    "line": 732,
+    "rule": "canon/numeral",
+    "message": "prose contains numeral 1; name its constant or reporting command"
+  },
+  {
+    "file": "orchestrator/AGENTS.md",
+    "line": 733,
+    "rule": "canon/numeral",
+    "message": "prose contains numeral 2; name its constant or reporting command"
+  },
+  {
+    "file": "orchestrator/AGENTS.md",
+    "line": 735,
+    "rule": "canon/numeral",
+    "message": "prose contains numeral 3; name its constant or reporting command"
+  },
+  {
+    "file": "orchestrator/AGENTS.md",
+    "line": 737,
+    "rule": "canon/numeral",
+    "message": "prose contains numeral 0; name its constant or reporting command"
+  },
+  {
+    "file": "orchestrator/AGENTS.md",
+    "line": 738,
+    "rule": "canon/numeral",
+    "message": "prose contains numeral 3; name its constant or reporting command"
+  },
+  {
+    "file": "orchestrator/AGENTS.md",
+    "line": 741,
+    "rule": "canon/numeral",
+    "message": "prose contains numeral 3; name its constant or reporting command"
+  },
+  {
+    "file": "orchestrator/AGENTS.md",
+    "line": 776,
+    "rule": "canon/numeral",
+    "message": "prose contains numeral 0; name its constant or reporting command"
+  },
+  {
+    "file": "orchestrator/AGENTS.md",
+    "line": 807,
+    "rule": "canon/numeral",
+    "message": "prose contains numeral 3; name its constant or reporting command"
+  },
+  {
+    "file": "orchestrator/AGENTS.md",
+    "line": 884,
+    "rule": "canon/numeral",
+    "message": "prose contains numeral 25; name its constant or reporting command"
+  },
+  {
+    "file": "orchestrator/AGENTS.md",
+    "line": 913,
+    "rule": "canon/numeral",
+    "message": "prose contains numeral 0; name its constant or reporting command"
+  },
+  {
+    "file": "orchestrator/AGENTS.md",
+    "line": 940,
+    "rule": "canon/numeral",
+    "message": "prose contains numeral 27; name its constant or reporting command"
+  },
+  {
+    "file": "orchestrator/AGENTS.md",
+    "line": 946,
+    "rule": "canon/numeral",
+    "message": "prose contains numeral 08; name its constant or reporting command"
+  },
+  {
+    "file": "orchestrator/AGENTS.md",
+    "line": 976,
+    "rule": "canon/numeral",
+    "message": "prose contains numeral 3; name its constant or reporting command"
+  },
+  {
+    "file": "orchestrator/AGENTS.md",
+    "line": 979,
+    "rule": "canon/numeral",
+    "message": "prose contains numeral 3; name its constant or reporting command"
+  },
+  {
+    "file": "orchestrator/AGENTS.md",
+    "line": 981,
+    "rule": "canon/numeral",
+    "message": "prose contains numeral 3; name its constant or reporting command"
+  },
+  {
+    "file": "orchestrator/AGENTS.md",
+    "line": 982,
+    "rule": "canon/numeral",
+    "message": "prose contains numeral 142; name its constant or reporting command"
+  },
+  {
+    "file": "orchestrator/AGENTS.md",
+    "line": 983,
+    "rule": "canon/numeral",
+    "message": "prose contains numeral 142; name its constant or reporting command"
+  },
+  {
+    "file": "orchestrator/AGENTS.md",
+    "line": 984,
+    "rule": "canon/numeral",
+    "message": "prose contains numeral 143; name its constant or reporting command"
+  },
+  {
+    "file": "orchestrator/AGENTS.md",
+    "line": 986,
+    "rule": "canon/numeral",
+    "message": "prose contains numeral 3; name its constant or reporting command"
+  },
+  {
+    "file": "orchestrator/AGENTS.md",
+    "line": 988,
+    "rule": "canon/numeral",
+    "message": "prose contains numeral 2; name its constant or reporting command"
+  },
+  {
+    "file": "orchestrator/AGENTS.md",
+    "line": 1024,
+    "rule": "canon/numeral",
+    "message": "prose contains numeral 2; name its constant or reporting command"
+  },
+  {
+    "file": "orchestrator/AGENTS.md",
+    "line": 1047,
+    "rule": "canon/numeral",
+    "message": "prose contains numeral 314; name its constant or reporting command"
+  },
+  {
+    "file": "orchestrator/AGENTS.md",
+    "line": 1060,
+    "rule": "canon/numeral",
+    "message": "prose contains numeral 7; name its constant or reporting command"
+  },
+  {
+    "file": "orchestrator/AGENTS.md",
+    "line": 1111,
+    "rule": "canon/numeral",
+    "message": "prose contains numeral 121; name its constant or reporting command"
+  },
+  {
+    "file": "orchestrator/AGENTS.md",
+    "line": 1176,
+    "rule": "canon/numeral",
+    "message": "prose contains numeral 0; name its constant or reporting command"
+  },
+  {
+    "file": "orchestrator/AGENTS.md",
+    "line": 1199,
+    "rule": "canon/numeral",
+    "message": "prose contains numeral 0; name its constant or reporting command"
+  },
+  {
+    "file": "orchestrator/AGENTS.md",
+    "line": 1297,
+    "rule": "canon/numeral",
+    "message": "prose contains numeral 7778; name its constant or reporting command"
+  },
+  {
+    "file": "orchestrator/AGENTS.md",
+    "line": 1309,
+    "rule": "canon/numeral",
+    "message": "prose contains numeral 0; name its constant or reporting command"
+  },
+  {
+    "file": "orchestrator/AGENTS.md",
+    "line": 1310,
+    "rule": "canon/numeral",
+    "message": "prose contains numeral 2; name its constant or reporting command"
+  },
+  {
+    "file": "orchestrator/AGENTS.md",
+    "line": 1321,
+    "rule": "canon/numeral",
+    "message": "prose contains numeral 0; name its constant or reporting command"
+  },
+  {
+    "file": "orchestrator/AGENTS.md",
+    "line": 1337,
+    "rule": "canon/numeral",
+    "message": "prose contains numeral 0; name its constant or reporting command"
+  },
+  {
+    "file": "orchestrator/AGENTS.md",
+    "line": 1341,
+    "rule": "canon/numeral",
+    "message": "prose contains numeral 0; name its constant or reporting command"
+  },
+  {
+    "file": "orchestrator/AGENTS.md",
+    "line": 1399,
+    "rule": "canon/numeral",
+    "message": "prose contains numeral 0; name its constant or reporting command"
+  },
+  {
+    "file": "orchestrator/AGENTS.md",
+    "line": 1430,
+    "rule": "canon/numeral",
+    "message": "prose contains numeral 8601; name its constant or reporting command"
+  },
+  {
+    "file": "orchestrator/AGENTS.md",
+    "line": 1431,
+    "rule": "canon/numeral",
+    "message": "prose contains numeral 8601; name its constant or reporting command"
+  },
+  {
+    "file": "orchestrator/AGENTS.md",
+    "line": 1538,
+    "rule": "canon/numeral",
+    "message": "prose contains numeral 0; name its constant or reporting command"
+  },
+  {
+    "file": "orchestrator/AGENTS.md",
+    "line": 1539,
+    "rule": "canon/numeral",
+    "message": "prose contains numeral 0; name its constant or reporting command"
+  },
+  {
+    "file": "orchestrator/AGENTS.md",
+    "line": 1540,
+    "rule": "canon/numeral",
+    "message": "prose contains numeral 0; name its constant or reporting command"
+  },
+  {
+    "file": "orchestrator/AGENTS.md",
+    "line": 1611,
+    "rule": "canon/numeral",
+    "message": "prose contains numeral 65; name its constant or reporting command"
+  },
+  {
+    "file": "orchestrator/AGENTS.md",
+    "line": 1652,
+    "rule": "canon/numeral",
+    "message": "prose contains numeral 34; name its constant or reporting command"
+  },
+  {
+    "file": "orchestrator/AGENTS.md",
+    "line": 1679,
+    "rule": "canon/numeral",
+    "message": "prose contains numeral 200; name its constant or reporting command"
+  },
+  {
+    "file": "orchestrator/AGENTS.md",
+    "line": 1711,
+    "rule": "canon/numeral",
+    "message": "prose contains numeral 18; name its constant or reporting command"
+  },
+  {
+    "file": "orchestrator/AGENTS.md",
+    "line": 1712,
+    "rule": "canon/numeral",
+    "message": "prose contains numeral 7; name its constant or reporting command"
+  },
+  {
+    "file": "orchestrator/AGENTS.md",
+    "line": 1783,
+    "rule": "canon/numeral",
+    "message": "prose contains numeral 30; name its constant or reporting command"
+  },
+  {
+    "file": "orchestrator/AGENTS.md",
+    "line": 1795,
+    "rule": "canon/numeral",
+    "message": "prose contains numeral 8; name its constant or reporting command"
+  },
+  {
+    "file": "orchestrator/AGENTS.md",
+    "line": 1796,
+    "rule": "canon/numeral",
+    "message": "prose contains numeral 160; name its constant or reporting command"
+  },
+  {
+    "file": "orchestrator/AGENTS.md",
+    "line": 1803,
+    "rule": "canon/numeral",
+    "message": "prose contains numeral 1; name its constant or reporting command"
+  },
+  {
+    "file": "orchestrator/AGENTS.md",
+    "line": 1807,
+    "rule": "canon/numeral",
+    "message": "prose contains numeral 20; name its constant or reporting command"
+  },
+  {
+    "file": "orchestrator/AGENTS.md",
+    "line": 1826,
+    "rule": "canon/numeral",
+    "message": "prose contains numeral 13; name its constant or reporting command"
+  },
+  {
+    "file": "orchestrator/AGENTS.md",
+    "line": 1873,
+    "rule": "canon/numeral",
+    "message": "prose contains numeral 1; name its constant or reporting command"
+  },
+  {
+    "file": "orchestrator/AGENTS.md",
+    "line": 1953,
+    "rule": "canon/numeral",
+    "message": "prose contains numeral 147; name its constant or reporting command"
+  },
+  {
+    "file": "orchestrator/AGENTS.md",
+    "line": 1954,
+    "rule": "canon/numeral",
+    "message": "prose contains numeral 131; name its constant or reporting command"
+  },
+  {
+    "file": "orchestrator/AGENTS.md",
+    "line": 1959,
+    "rule": "canon/numeral",
+    "message": "prose contains numeral 65; name its constant or reporting command"
+  },
+  {
+    "file": "orchestrator/AGENTS.md",
+    "line": 1960,
+    "rule": "canon/numeral",
+    "message": "prose contains numeral 74; name its constant or reporting command"
+  },
+  {
+    "file": "orchestrator/AGENTS.md",
+    "line": 1961,
+    "rule": "canon/numeral",
+    "message": "prose contains numeral 16; name its constant or reporting command"
+  },
+  {
+    "file": "orchestrator/AGENTS.md",
+    "line": 1968,
+    "rule": "canon/numeral",
+    "message": "prose contains numeral 400; name its constant or reporting command"
+  },
+  {
+    "file": "orchestrator/AGENTS.md",
+    "line": 1970,
+    "rule": "canon/numeral",
+    "message": "prose contains numeral 6; name its constant or reporting command"
+  },
+  {
+    "file": "orchestrator/AGENTS.md",
+    "line": 1979,
+    "rule": "canon/numeral",
+    "message": "prose contains numeral 279; name its constant or reporting command"
+  },
+  {
+    "file": "orchestrator/AGENTS.md",
+    "line": 1980,
+    "rule": "canon/numeral",
+    "message": "prose contains numeral 0; name its constant or reporting command"
+  },
+  {
+    "file": "orchestrator/AGENTS.md",
+    "line": 1985,
+    "rule": "canon/numeral",
+    "message": "prose contains numeral 400; name its constant or reporting command"
+  },
+  {
+    "file": "orchestrator/AGENTS.md",
+    "line": 1997,
+    "rule": "canon/numeral",
+    "message": "prose contains numeral 2026; name its constant or reporting command"
+  },
+  {
+    "file": "AGENTS.md",
+    "line": 94,
+    "rule": "canon/reference-path",
+    "message": "repository path work-report/config.json is not tracked"
+  },
+  {
+    "file": "AGENTS.md",
+    "line": 99,
+    "rule": "canon/reference-path",
+    "message": "repository path config.json is not tracked"
+  },
+  {
+    "file": "orchestrator/AGENTS.md",
+    "line": 926,
+    "rule": "canon/reference-path",
+    "message": "repository path schema.ts is not tracked"
+  },
+  {
+    "file": "orchestrator/AGENTS.md",
+    "line": 942,
+    "rule": "canon/reference-path",
+    "message": "repository path test/fixture.ts is not tracked"
+  },
+  {
+    "file": "orchestrator/AGENTS.md",
+    "line": 954,
+    "rule": "canon/reference-path",
+    "message": "repository path test/fixture.ts is not tracked"
+  },
+  {
+    "file": "orchestrator/AGENTS.md",
+    "line": 846,
+    "rule": "canon/reference-symbol",
+    "message": "orchestrator/src/worktree.ts do not declare identifier withWorktreeCreateLock"
+  },
+  {
+    "file": "orchestrator/AGENTS.md",
+    "line": 848,
+    "rule": "canon/reference-symbol",
+    "message": "hub/src/cli.ts do not declare identifier withCleanupLock"
+  },
+  {
+    "file": "orchestrator/AGENTS.md",
+    "line": 854,
+    "rule": "canon/reference-symbol",
+    "message": "orchestrator/src/worktree.ts do not declare identifier withWorktreeLease"
+  },
+  {
+    "file": "orchestrator/AGENTS.md",
+    "line": 935,
+    "rule": "canon/reference-symbol",
+    "message": "hub/src/db.ts, orchestrator/src/db.ts do not declare identifier adoptRunMutation"
+  },
+  {
+    "file": "orchestrator/AGENTS.md",
+    "line": 958,
+    "rule": "canon/reference-symbol",
+    "message": "orchestrator/src/worktree.ts do not declare identifier withProjectLock"
+  },
+  {
+    "file": "orchestrator/AGENTS.md",
+    "line": 980,
+    "rule": "canon/reference-symbol",
+    "message": "hub/src/cli.ts do not declare identifier withCleanupLock"
+  },
+  {
+    "file": "orchestrator/AGENTS.md",
+    "line": 980,
+    "rule": "canon/reference-symbol",
+    "message": "orchestrator/src/worktree.ts do not declare identifier withWorktreeCreateLock"
+  },
+  {
+    "file": "orchestrator/AGENTS.md",
+    "line": 981,
+    "rule": "canon/reference-symbol",
+    "message": "hub/src/cli.ts do not declare identifier continueRun"
+  },
+  {
+    "file": "orchestrator/AGENTS.md",
+    "line": 981,
+    "rule": "canon/reference-symbol",
+    "message": "orchestrator/src/worktree.ts do not declare identifier assertCallerAncestry"
+  },
+  {
+    "file": "orchestrator/AGENTS.md",
+    "line": 982,
+    "rule": "canon/reference-symbol",
+    "message": "orchestrator/src/worktree.ts do not declare identifier reclaimStaleProjectLock"
+  },
+  {
+    "file": "orchestrator/AGENTS.md",
+    "line": 983,
+    "rule": "canon/reference-symbol",
+    "message": "orchestrator/src/worktree.ts do not declare identifier processStartTime"
+  },
+  {
+    "file": "orchestrator/AGENTS.md",
+    "line": 984,
+    "rule": "canon/reference-symbol",
+    "message": "orchestrator/src/worktree.ts do not declare identifier processStartTime"
+  },
+  {
     "file": "hub/AGENTS.md",
     "line": 1,
     "rule": "canon/size-card",
@@ -401,28 +1307,28 @@
     "file": "hub/AGENTS.md",
     "line": 1,
     "rule": "canon/size-chain",
-    "message": "measured 55136 bytes; limit 32768 bytes",
-    "measuredBytes": 55136
+    "message": "measured 55139 bytes; limit 32768 bytes",
+    "measuredBytes": 55139
   },
   {
     "file": "ops/AGENTS.md",
     "line": 1,
     "rule": "canon/size-chain",
-    "message": "measured 32804 bytes; limit 32768 bytes",
-    "measuredBytes": 32804
+    "message": "measured 32807 bytes; limit 32768 bytes",
+    "measuredBytes": 32807
   },
   {
     "file": "orchestrator/AGENTS.md",
     "line": 1,
     "rule": "canon/size-chain",
-    "message": "measured 153059 bytes; limit 32768 bytes",
-    "measuredBytes": 153059
+    "message": "measured 153062 bytes; limit 32768 bytes",
+    "measuredBytes": 153062
   },
   {
     "file": "AGENTS.md",
     "line": 1,
     "rule": "canon/size-entry",
-    "message": "measured 31469 bytes; limit 16384 bytes",
-    "measuredBytes": 31469
+    "message": "measured 31472 bytes; limit 16384 bytes",
+    "measuredBytes": 31472
   }
 ]

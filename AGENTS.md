@@ -47,7 +47,7 @@ Three more separations that matter as much as the import graph:
   working in `ops/` is not handed the orchestrator's rules.
 
 Every repository path and package script named by canon resolves to a tracked
-path or a defined script; check-canon enforces it.
+path or a defined script; the canon lint enforces it.
 
 ## What bottega is for the other projects
 

@@ -11,7 +11,7 @@ import {
   diffPack,
   findingsForPack,
 } from './canon.ts'
-import { canonGitRoot, collectCanonFiles } from './canon-files.ts'
+import { canonGitRoot, collectCanonLintInput } from './canon-files.ts'
 import { introducedCanonFindings, lintCanon } from './canon-lint.ts'
 import { canonEvalsReport, runCanonEvals } from './evals.ts'
 
@@ -68,7 +68,7 @@ function printFindings(findings: Finding[], log: (...values: unknown[]) => void)
 export function canonLintCommand(flags: CanonFlags, presentation: CanonPresentation): void {
   const requestedCwd = resolve(flags.flag('cwd') ?? presentation.cwd())
   const root = canonGitRoot(requestedCwd)
-  const result = lintCanon({ files: collectCanonFiles(root) })
+  const result = lintCanon(collectCanonLintInput(root))
   const baselineFlag = flags.flag('baseline')
   if ((flags.has('strict') || flags.has('write-baseline')) && !baselineFlag) {
     throw new Error('--strict and --write-baseline require --baseline FILE')

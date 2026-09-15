@@ -3,7 +3,7 @@
 import { existsSync, readFileSync, readlinkSync } from 'node:fs'
 import { posix, resolve } from 'node:path'
 import { inspectionGitEnv } from '../../shared/git.ts'
-import type { CanonFile } from './canon-lint.ts'
+import type { CanonFile, CanonLintInput, CanonSourceText } from './canon-lint.ts'
 
 function git(cwd: string, args: string[]): string {
   const result = Bun.spawnSync(['git', '-C', cwd, ...args], {
@@ -30,8 +30,8 @@ export function canonGitRoot(cwd: string): string {
   return git(cwd, ['rev-parse', '--show-toplevel']).trim()
 }
 
-export function collectCanonFiles(root: string): CanonFile[] {
-  const entries = git(root, ['ls-files', '-s', '-z'])
+function trackedEntries(root: string): { mode: string; path: string }[] {
+  return git(root, ['ls-files', '-s', '-z'])
     .split('\0')
     .filter(Boolean)
     .map((entry) => {
@@ -39,9 +39,12 @@ export function collectCanonFiles(root: string): CanonFile[] {
       if (!match) throw new Error(`could not parse git ls-files entry ${JSON.stringify(entry)}`)
       return { mode: match[1]!, path: match[2]! }
     })
-    .filter(({ path }) => isCanonPath(path))
+}
+
+function readCanonFiles(root: string, entries: { mode: string; path: string }[]): CanonFile[] {
+  const canonEntries = entries.filter(({ path }) => isCanonPath(path))
   const tracked = new Set(entries.map(({ path }) => path))
-  return entries.map(({ mode, path }) => {
+  return canonEntries.map(({ mode, path }) => {
     const absolute = resolve(root, path)
     if (mode !== '120000') return { path, text: readFileSync(absolute, 'utf8') }
     const symlinkTarget = readlinkSync(absolute)
@@ -57,4 +60,41 @@ export function collectCanonFiles(root: string): CanonFile[] {
       symlinkTarget,
     }
   })
+}
+
+const SOURCE_PATH = /\.(?:ts|tsx|js|mjs|cjs|py|sh|php|vue)$/
+
+function readSourceTexts(
+  root: string,
+  entries: { mode: string; path: string }[],
+): CanonSourceText[] {
+  return entries
+    .filter(
+      ({ mode, path }) =>
+        mode !== '120000' && SOURCE_PATH.test(path) && existsSync(resolve(root, path)),
+    )
+    .map(({ path }) => ({ path, text: readFileSync(resolve(root, path), 'utf8') }))
+}
+
+function readPackageScripts(root: string, entries: { path: string }[]): string[] {
+  const scripts = new Set<string>()
+  for (const { path } of entries.filter(
+    ({ path }) => posix.basename(path) === 'package.json' && existsSync(resolve(root, path)),
+  )) {
+    const json = JSON.parse(readFileSync(resolve(root, path), 'utf8')) as {
+      scripts?: Record<string, unknown>
+    }
+    for (const name of Object.keys(json.scripts ?? {})) scripts.add(name)
+  }
+  return [...scripts].sort()
+}
+
+export function collectCanonLintInput(root: string): CanonLintInput {
+  const entries = trackedEntries(root)
+  return {
+    files: readCanonFiles(root, entries),
+    trackedPaths: entries.map(({ path }) => path),
+    packageScripts: readPackageScripts(root, entries),
+    sourceTexts: readSourceTexts(root, entries),
+  }
 }
