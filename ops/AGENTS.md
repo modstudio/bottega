@@ -15,6 +15,9 @@ never take a destructive guess.
   main checkout's binary into the live store. Probe runs; never routing
   evidence.
 
+Every launchd template renders to a plist that plutil accepts; where plutil is
+unavailable the check reports and does not gate.
+
 **Depth is asked, not assumed.** Each project gets the deepest refresh its own
 `scripts/sync/main` advertises — `--full`, else `--refresh`, else flag-less.
 Detection reads the script, so a project that gains `--full` is picked up with

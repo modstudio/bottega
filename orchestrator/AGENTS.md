@@ -387,6 +387,9 @@ thing it serves.
 argv, bounded by `ARG_MAX`; Codex reads stdin and has no ceiling. A pack too
 large for an argv agent excludes it rather than being sent and dying.
 
+Every compiled project and job canon pack fits the declared pack byte ceiling;
+a project or job whose pack cannot compile fails the gate.
+
 **So is context, and that is the one that actually bit.** A job declares roughly
 what its WORKING SET needs — not the prompt, which is small for all of them, but
 everything that accumulates once the agent starts: files opened, canon fetched,
