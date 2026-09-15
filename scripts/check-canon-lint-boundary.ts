@@ -5,7 +5,12 @@ import { importSpecifiers } from './import-scanner.ts'
 
 const ROOT = new URL('..', import.meta.url).pathname.replace(/\/$/, '')
 const FILE = 'orchestrator/src/canon-lint.ts'
-const ALLOWED = new Set(['node:path', '../../shared/ratchet.ts', './canon-budget.ts'])
+const ALLOWED = new Set([
+  'node:path',
+  '../../shared/canon-references.ts',
+  '../../shared/ratchet.ts',
+  './canon-budget.ts',
+])
 const imports = importSpecifiers(readFileSync(`${ROOT}/${FILE}`, 'utf8'))
 const violations = [...imports.specifiers, ...imports.typeOnlySpecifiers]
   .filter((specifier) => !ALLOWED.has(specifier))

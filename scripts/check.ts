@@ -175,7 +175,6 @@ if (
     // not providing.
     'bun',
     'test',
-    './scripts/check-canon.test.ts',
     './scripts/check-runtime.test.ts',
     './scripts/check-comment-hygiene.test.ts',
     './scripts/check-test-placement.test.ts',
@@ -336,7 +335,6 @@ for (const script of [
   'check-test-spawns.ts',
   'check-comment-hygiene.ts',
   'check-brand.ts',
-  'check-canon.ts',
   'generate-recipe-schema.ts',
   '../orchestrator/scripts/check-pack-budget.ts',
   'check-import-cycles.ts',

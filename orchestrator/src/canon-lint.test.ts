@@ -11,13 +11,22 @@ import {
 import {
   type CanonFile,
   type CanonFinding,
+  type CanonLintInput,
   introducedCanonFindings,
   lintCanon,
 } from './canon-lint.ts'
 
-const lint = (files: CanonFile[]) => lintCanon({ files })
+const lint = (files: CanonFile[], extra: Partial<Omit<CanonLintInput, 'files'>> = {}) =>
+  lintCanon({
+    files,
+    trackedPaths: extra.trackedPaths ?? [],
+    packageScripts: extra.packageScripts ?? [],
+    sourceTexts: extra.sourceTexts ?? [],
+  })
 const rules = (files: CanonFile[], rule: string) =>
   lint(files).findings.filter((finding) => finding.rule === rule)
+const inputRules = (text: string, rule: string, extra: Partial<Omit<CanonLintInput, 'files'>>) =>
+  lint([{ path: 'AGENTS.md', text }], extra).findings.filter((finding) => finding.rule === rule)
 const text = (bytes: number) => 'x'.repeat(bytes)
 const card = (extra = '') =>
   `## Purpose\n\nP\n\n## Belongs here\n\nB\n\n## Does not belong here\n\nD\n\n## May depend on\n\nM\n${extra}`
@@ -129,6 +138,105 @@ describe('canon prose rules', () => {
     )
     expect(result.map((finding) => finding.line)).toEqual([1, 3, 4, 5])
     expect(rules([{ path: 'AGENTS.md', text: 'Current rule.' }], 'canon/issue')).toEqual([])
+  })
+})
+
+describe('canon current reference rules', () => {
+  test('reference paths accept tracked paths and matching globs, and reject missing ones', () => {
+    const extra = { trackedPaths: ['src/real.ts', 'scripts/check.ts'] }
+    expect(
+      inputRules(
+        '`src/real.ts` and `src/*.ts` and [source](src/real.ts)',
+        'canon/reference-path',
+        extra,
+      ),
+    ).toEqual([])
+    expect(
+      inputRules(
+        '`src/missing.ts` and `src/nope/*.ts` and [missing](src/also-missing.ts)',
+        'canon/reference-path',
+        extra,
+      ),
+    ).toHaveLength(3)
+  })
+
+  test('reference paths skip placeholders', () => {
+    expect(
+      inputRules('`src/<name>.ts` and `src/{name}.ts`', 'canon/reference-path', {
+        trackedPaths: ['src/real.ts'],
+      }),
+    ).toEqual([])
+  })
+
+  test('reference exemptions are exact', () => {
+    expect(
+      inputRules('`orchestrator/orch.db`', 'canon/reference-path', {
+        trackedPaths: ['orchestrator/src/orch.ts'],
+      }),
+    ).toEqual([])
+    expect(
+      inputRules('`orchestrator/orch.db-copy`', 'canon/reference-path', {
+        trackedPaths: ['orchestrator/src/orch.ts'],
+      }),
+    ).toHaveLength(1)
+  })
+
+  test('reference symbols require the named identifier in the referenced file', () => {
+    const extra = {
+      trackedPaths: ['file.ts'],
+      sourceTexts: [{ path: 'file.ts', text: 'export const realName = true' }],
+    }
+    expect(inputRules('`file.ts:realName`', 'canon/reference-symbol', extra)).toEqual([])
+    expect(inputRules('`file.ts:ghost`', 'canon/reference-symbol', extra)).toEqual([
+      expect.objectContaining({ message: 'file.ts does not contain identifier ghost' }),
+    ])
+  })
+
+  test('line anchors are findings while an identifier anchor is not', () => {
+    const extra = {
+      trackedPaths: ['file.ts'],
+      sourceTexts: [{ path: 'file.ts', text: 'const realName = true' }],
+    }
+    expect(inputRules('`file.ts:12`', 'canon/line-anchor', extra)).toHaveLength(1)
+    expect(inputRules('`file.ts:realName`', 'canon/line-anchor', extra)).toEqual([])
+  })
+
+  test('code references require a tracked-source occurrence', () => {
+    const sourceTexts = [{ path: 'src/real.ts', text: 'function liveName() {}' }]
+    expect(inputRules('`liveName()`', 'canon/reference-code', { sourceTexts })).toEqual([])
+    expect(inputRules('`deadName()`', 'canon/reference-code', { sourceTexts })).toHaveLength(1)
+  })
+
+  test('script references require a package script and include fenced commands', () => {
+    expect(
+      inputRules('run `bun run check`\n```sh\nnpm run check\n```', 'canon/reference-script', {
+        packageScripts: ['check'],
+      }),
+    ).toEqual([])
+    expect(
+      inputRules('```sh\nbun run absent\n```', 'canon/reference-script', {
+        packageScripts: ['check'],
+      }),
+    ).toHaveLength(1)
+    expect(
+      inputRules('bun run scripts/check.ts', 'canon/reference-script', {
+        packageScripts: [],
+      }),
+    ).toEqual([])
+  })
+
+  test('numerals report prose values but exclude technical words, markers, and code', () => {
+    expect(inputRules('109 scripts\n82%', 'canon/numeral', {})).toEqual([
+      expect.objectContaining({ line: 1, message: expect.stringContaining('109') }),
+      expect.objectContaining({ line: 2, message: expect.stringContaining('82') }),
+    ])
+    expect(
+      inputRules(
+        'UTF-8 and arm64\n1. step\n`109 scripts`\n[target](src/82.ts)',
+        'canon/numeral',
+        {},
+      ),
+    ).toEqual([])
   })
 })
 
