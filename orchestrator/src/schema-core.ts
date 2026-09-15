@@ -289,7 +289,7 @@ export const resourceClaim = sqliteTable(
   (t) => [
     check(
       'resource_claim_kind_check',
-      sql`${t.kind} in ('worktree','branch','retained_ref','sandbox_dir','trust_entry','port','database')`,
+      sql`${t.kind} in ('worktree','branch','retained_ref','sandbox_dir','trust_entry','port','database','index','string')`,
     ),
     check(
       'resource_claim_state_check',

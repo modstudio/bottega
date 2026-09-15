@@ -13,26 +13,19 @@ the top tier — there is none left to buy. The only remaining variable is
 A Claude subagent bills that same allotment. An external agent does not. So the
 substitution this exists to make is:
 
-> work that used to spawn a Claude subagent now spawns `codex`, `grok`, `agy`,
+> work that would spawn a Claude subagent spawns `codex`, `grok`, `agy`,
 > or a local model — and Claude keeps the **design**, the judgment, and the
 > synthesis.
 
-## Claude was the implementer, deliberately. That has changed, and why matters
+## Implementation is delegated because escalation makes it safe
 
-This file used to say Claude stays the implementer: it leads SWE-Bench Pro
-(80.3% against Codex's 64.6%), and implementation quality protects the
-**denominator**, because a cheap wrong answer costs a rework round and makes the
-ratio worse while looking like a saving.
-
-Every word of that is still true. What changed is that the reasoning had a
-hidden premise: that a delegated implementation is a **guess** — an agent hits
-an ambiguity in the spec, resolves it silently, and builds on its own answer.
-That is what makes a cheap wrong answer likely, and it is the real content of
-the standing objection to fanning out implementation at all. Cognition's
-write-up is the clearest statement of it: parallel workers make conflicting
-*implicit* decisions and the results do not merge. Anthropic's own multi-agent
-post, which measures 90.2% over single-agent on breadth research, still names
-most coding tasks as the case for keeping one thread.
+A cheap wrong answer costs a rework round and makes the ratio worse while
+looking like a saving, and a delegated implementation goes wrong as a **guess**:
+an agent hits an ambiguity in the spec, resolves it silently, and builds on its
+own answer. That is the real content of the standing objection to fanning out
+implementation at all: parallel workers make conflicting *implicit* decisions
+and the results do not merge, which is why most coding tasks are the case for
+keeping one thread.
 
 The load-bearing word in all of it is **implicit**. A worker that must stop and
 ask whenever it reaches a judgement call turns an implicit decision into an
@@ -66,14 +59,10 @@ time it is due. Three things make it structural rather than remembered:
 - Every run records the **session that made it**, from `CLAUDE_CODE_SESSION_ID`.
   Only that session can judge it, because only it read the output — and
   `orch score` **refuses** a run belonging to another session (`--force`
-  overrides, for correcting a verdict you know to be wrong). It used to
-  read `CLAUDE_CODE_BRIDGE_SESSION_ID`, which exists only while Remote Control is
-  connected and is *shared between sessions on the bridge*, falling back to
-  `CLAUDE_SESSION_ID`, which does not exist at all — so 26 of 66 runs recorded no
-  session, and runs from a concurrent session landed on another's backlog.
-  That fallback is gone: the bridge id is never an identity, `sessionId()`
-  returns the primary id or nothing, and a mutation that needs an owner refuses
-  rather than proceeding under the shared id.
+  overrides, for correcting a verdict you know to be wrong). The bridge id
+  (`CLAUDE_CODE_BRIDGE_SESSION_ID`) is shared between sessions and is never an
+  identity: `sessionId()` returns the primary id or nothing, and a mutation
+  that needs an owner refuses rather than proceeding under the shared id.
 - `orch pending` lists your own unscored runs and exits non-zero while any remain.
 - A **Stop hook** raises them before a session finishes, once per turn — it stands
   down if it has already asked, so it can never trap a session in a loop. The
@@ -88,16 +77,11 @@ time it is due. Three things make it structural rather than remembered:
 something false, which is worse than the visible gap an unscored run leaves.
 That is also why nobody may score another session's runs.
 
-That last sentence was here, and on its own it did not hold. On 2026-08-31 two
-concurrent sessions each scored the other's runs within an hour, neither
-intending to: `orch do` prints a run id only when a long run **finishes**, so
-during a parallel fan-out you are holding outputs with no ids, and "my second
-block of ids continues my first" is the natural inference. It is wrong exactly
-when a concurrent session's runs have interleaved into the gap — the case nobody
-pictures, and one that sequential use never exposes. Both sessions found it the
-same way: a Stop hook naming unscored runs they thought they had already scored.
+During a parallel fan-out a session holds outputs with no ids, and a
+concurrent session.s runs can interleave into the gap, so "my second block of
+ids continues my first" is a natural and wrong inference.
 
-So the rule is now a gate rather than a sentence, and the refusal names the
+So the rule is a gate rather than a sentence, and the refusal names the
 owning session — because "not yours" tells nobody what to do next, whereas a
 session id makes asking the obvious move. On this machine that is a SendMessage
 away, and it is how both halves of that incident were corrected: each session
@@ -933,6 +917,19 @@ The invariants are:
   under that one lock; it does not reach into Drizzle's private migrator session
   or dialect. Expand-first for any column a running process still reads.
   `db.ts:adoptRunMutation` governs chain ownership, not schema authority.
+  The Postgres record is schema-first: edit `postgres-schema.ts`, then run
+  `drizzle-kit generate --config drizzle.postgres.config.ts --name=<name>` and
+  commit the generated migration folder and snapshot whole. A committed
+  migration folder keeps its name, and generated `migration.sql` is never
+  hand-edited. SQL the kit cannot express, including FORCE ROW LEVEL SECURITY,
+  grants and seed rows, goes in a custom migration created with
+  `drizzle-kit generate --custom --config drizzle.postgres.config.ts --name=<name>`.
+  The migration role holds CREATE on the database so it owns Drizzle's
+  `drizzle` metadata schema; tenant roles have no privilege on that schema.
+  The gate proves the snapshot chain is consistent and the schema has no
+  ungenerated change. SQLite keeps its hand-written journal because its
+  backfill blocks and baseline adoption are not represented by the kit, and no
+  new table goes there.
 - **A linked-worktree binary reads the main store and never writes it, whatever
   names the path.** `ORCH_DB` locates a store; it never authorises a write. The
   dispatcher exports the live path to every worker (`run.ts`), so a worker's own

@@ -3,9 +3,12 @@
 import type { TrackedRecipe } from './recipe-schema.ts'
 import type { Step, StepResult } from './recipe-step.ts'
 
-const deferred = { allocate: 5, env: 7, shared: 8, serve: 9 } as const
+const deferred = { env: 7, shared: 8, serve: 9 } as const
 
 export function trackedExecutionRefusal(recipe: TrackedRecipe): string | null {
+  if (recipe.allocate?.databases !== undefined) {
+    return 'tracked recipe declares allocate.databases, which is not executable yet (Phase 3 slice 6)'
+  }
   for (const [field, slice] of Object.entries(deferred)) {
     if (recipe[field as keyof typeof deferred] !== undefined) {
       return `tracked recipe declares ${field}, which is not executable yet (Phase 3 slice ${slice})`
@@ -37,8 +40,13 @@ export function teardownVars(input: {
   key: string | null
   seed: string | null
   main: string
+  allocations?: {
+    index: number
+    ports: Record<string, number>
+    strings: Record<string, string>
+  }
 }): Record<string, string> {
-  return {
+  const vars: Record<string, string> = {
     path: input.path,
     name: input.path.split('/').pop() ?? input.path,
     branch: input.branch,
@@ -47,6 +55,15 @@ export function teardownVars(input: {
     seed: input.seed ?? '',
     main: input.main,
   }
+  if (!input.allocations) return vars
+  vars.index = String(input.allocations.index)
+  for (const [name, port] of Object.entries(input.allocations.ports)) {
+    vars[`ports.${name}`] = String(port)
+  }
+  for (const [name, value] of Object.entries(input.allocations.strings)) {
+    vars[`alloc.${name}`] = value
+  }
+  return vars
 }
 
 export function lifecycleFailure(results: readonly StepResult[]): StepResult | null {

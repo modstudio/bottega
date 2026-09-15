@@ -16,6 +16,8 @@ export const RESOURCE_CLAIM_KINDS = [
   'trust_entry',
   'port',
   'database',
+  'index',
+  'string',
 ] as const
 
 export type ResourceClaimKind = (typeof RESOURCE_CLAIM_KINDS)[number]
@@ -75,6 +77,40 @@ export function recipePortAllocation(
   return port === null ? { action: 'full' } : { action: 'claim', port }
 }
 
+export function indexAllocation(
+  claimedIndexes: readonly number[],
+  existingClaimedIndex: number | null,
+): { action: 'reuse' | 'claim'; index: number } {
+  if (existingClaimedIndex !== null) return { action: 'reuse', index: existingClaimedIndex }
+  const claimed = new Set(claimedIndexes)
+  let index = 1
+  while (claimed.has(index)) index++
+  return { action: 'claim', index }
+}
+
+export function stringClaimDecision(
+  existingValue: string | null,
+  heldByRootRunId: number | null,
+  requestedRootRunId: number,
+): 'reuse' | 'claim' | 'collision' {
+  if (existingValue !== null) return 'reuse'
+  if (heldByRootRunId === null) return 'claim'
+  return heldByRootRunId === requestedRootRunId ? 'reuse' : 'collision'
+}
+
+export function fillStringAllocationTemplate(
+  name: string,
+  template: string,
+  vars: Record<string, string>,
+): string {
+  for (const match of template.matchAll(/\{([^{}]+)\}/g)) {
+    if (!(match[1]! in vars)) {
+      throw new Error(`unavailable placeholder {${match[1]}} in string allocation "${name}"`)
+    }
+  }
+  return template.replace(/\{([^{}]+)\}/g, (_placeholder, key: string) => vars[key]!)
+}
+
 export function settledStateForDatabaseTeardown(
   databaseDropped: boolean,
 ): Extract<ResourceClaimState, 'released' | 'retained'> {
@@ -86,7 +122,7 @@ export function settledStateForWorktreeResource(
   kind: ResourceClaimKind,
 ): ResourceClaimState | null {
   if (worktreeState === 'retained') return null
-  if (kind === 'port') return 'released'
+  if (kind === 'port' || kind === 'index' || kind === 'string') return 'released'
   return null
 }
 
@@ -198,15 +234,22 @@ export function recordTrustEntryClaims(
 
 export function claimRecipePort(
   database: Database,
-  input: ClaimIdentity & { claimedAt: string; band: PortBand },
+  input: ClaimIdentity & { claimedAt: string; band: PortBand; name?: string },
 ): number {
+  const nameFilter =
+    input.name === undefined
+      ? "json_type(identity,'$.name') IS NULL"
+      : "json_extract(identity,'$.name')=?"
   const existing = database
     .query(
       `SELECT allocation_key FROM resource_claim
        WHERE root_run_id=? AND kind='port' AND state='claimed'
+         AND ${nameFilter}
        ORDER BY id DESC LIMIT 1`,
     )
-    .get(input.rootRunId) as { allocation_key: string } | null
+    .get(...(input.name === undefined ? [input.rootRunId] : [input.rootRunId, input.name])) as {
+    allocation_key: string
+  } | null
   const existingPort = existing ? Number(existing.allocation_key.slice('port:'.length)) : null
   const claimedPorts = (
     database
@@ -232,7 +275,11 @@ export function claimRecipePort(
           input.runId,
           input.projectId,
           `port:${decision.port}`,
-          JSON.stringify({ runId: input.runId, projectId: input.projectId }),
+          JSON.stringify({
+            runId: input.runId,
+            projectId: input.projectId,
+            ...(input.name === undefined ? {} : { name: input.name }),
+          }),
           String(input.rootRunId),
           input.claimedAt,
         )
@@ -258,6 +305,131 @@ export function claimRecipePort(
   throw new Error(
     `recipe port band [${input.band.start}, ${input.band.end}) is full: ${liveClaims} live claims`,
   )
+}
+
+export function claimIndex(
+  database: Database,
+  input: ClaimIdentity & { projectId: number; claimedAt: string },
+): number {
+  const existing = database
+    .query(
+      `SELECT allocation_key FROM resource_claim
+       WHERE root_run_id=? AND project_id=? AND kind='index' AND state='claimed'
+       ORDER BY id DESC LIMIT 1`,
+    )
+    .get(input.rootRunId, input.projectId) as { allocation_key: string } | null
+  const existingIndex = existing ? Number(existing.allocation_key.split(':').at(-1)) : null
+  const claimedIndexes = (
+    database
+      .query(
+        `SELECT allocation_key FROM resource_claim
+         WHERE project_id=? AND kind='index' AND state='claimed'`,
+      )
+      .all(input.projectId) as { allocation_key: string }[]
+  ).map((row) => Number(row.allocation_key.split(':').at(-1)))
+  const attempted = new Set(claimedIndexes)
+
+  while (true) {
+    const decision = indexAllocation([...attempted], existingIndex)
+    if (decision.action === 'reuse') return decision.index
+    try {
+      database
+        .query(
+          `INSERT INTO resource_claim
+           (root_run_id,run_id,project_id,kind,allocation_key,identity,label,state,claimed_at)
+           VALUES (?,?,?,'index',?,?,?,'claimed',?)`,
+        )
+        .run(
+          input.rootRunId,
+          input.runId,
+          input.projectId,
+          `index:${input.projectId}:${decision.index}`,
+          JSON.stringify({ runId: input.runId, projectId: input.projectId }),
+          String(input.rootRunId),
+          input.claimedAt,
+        )
+      return decision.index
+    } catch (error) {
+      if (!String((error as Error)?.message ?? error).includes('UNIQUE constraint failed')) {
+        throw error
+      }
+      attempted.add(decision.index)
+    }
+  }
+}
+
+export function claimString(
+  database: Database,
+  input: ClaimIdentity & { projectId: number; name: string; value: string; claimedAt: string },
+): string {
+  const existing = database
+    .query(
+      `SELECT allocation_key FROM resource_claim
+       WHERE root_run_id=? AND project_id=? AND kind='string' AND state='claimed'
+         AND json_extract(identity,'$.name')=?
+       ORDER BY id DESC LIMIT 1`,
+    )
+    .get(input.rootRunId, input.projectId, input.name) as { allocation_key: string } | null
+  const existingValue = existing
+    ? existing.allocation_key.slice(`string:${input.projectId}:`.length)
+    : null
+  const allocationKey = `string:${input.projectId}:${input.value}`
+  const holder = database
+    .query(
+      `SELECT root_run_id FROM resource_claim
+       WHERE kind='string' AND allocation_key=? AND state='claimed'`,
+    )
+    .get(allocationKey) as { root_run_id: number } | null
+  const decision = stringClaimDecision(existingValue, holder?.root_run_id ?? null, input.rootRunId)
+  if (decision === 'reuse') return existingValue ?? input.value
+  if (decision === 'collision') {
+    throw new Error(
+      `string allocation "${input.name}" value "${input.value}" is held by run ${holder!.root_run_id}; include {index} in its template`,
+    )
+  }
+  try {
+    database
+      .query(
+        `INSERT INTO resource_claim
+         (root_run_id,run_id,project_id,kind,allocation_key,identity,label,state,claimed_at)
+         VALUES (?,?,?,'string',?,?,?,'claimed',?)`,
+      )
+      .run(
+        input.rootRunId,
+        input.runId,
+        input.projectId,
+        allocationKey,
+        JSON.stringify({ runId: input.runId, projectId: input.projectId, name: input.name }),
+        String(input.rootRunId),
+        input.claimedAt,
+      )
+    return input.value
+  } catch (error) {
+    if (!String((error as Error)?.message ?? error).includes('UNIQUE constraint failed'))
+      throw error
+    const collided = database
+      .query(
+        `SELECT root_run_id FROM resource_claim
+         WHERE kind='string' AND allocation_key=? AND state='claimed'`,
+      )
+      .get(allocationKey) as { root_run_id: number }
+    throw new Error(
+      `string allocation "${input.name}" value "${input.value}" is held by run ${collided.root_run_id}; include {index} in its template`,
+    )
+  }
+}
+
+export function releaseRecipeAllocationClaims(
+  database: Database,
+  input: { claimIds: readonly number[]; settledAt: string; reason: string },
+): void {
+  const update = database.query(
+    `UPDATE resource_claim SET state='released',settled_at=?,settled_detail=?
+     WHERE id=? AND state='claimed' AND kind IN ('port','index','string')`,
+  )
+  for (const id of input.claimIds) {
+    update.run(input.settledAt, `tracked creation failed: ${input.reason}`, id)
+  }
 }
 
 export function recipePortClaimForRun(database: Database, runId: number): number | null {
@@ -363,14 +535,19 @@ export function settleClaims(
       input.allocationKey ?? null,
     )
   if (settled.changes && input.kind === 'worktree') {
-    const portState = settledStateForWorktreeResource(input.state, 'port')
-    if (portState) {
+    const allocationState = settledStateForWorktreeResource(input.state, 'port')
+    if (allocationState) {
       database
         .query(
           `UPDATE resource_claim SET state=?, settled_at=?, settled_detail=?
-           WHERE root_run_id=? AND kind='port' AND state='claimed'`,
+           WHERE root_run_id=? AND kind IN ('port','index','string') AND state='claimed'`,
         )
-        .run(portState, input.settledAt, `worktree claim settled: ${input.detail}`, input.rootRunId)
+        .run(
+          allocationState,
+          input.settledAt,
+          `worktree claim settled: ${input.detail}`,
+          input.rootRunId,
+        )
     }
   }
 }

@@ -34,7 +34,7 @@ const tenantPolicies = (table: string, owner: AnyPgColumn) => {
   ]
 }
 
-export const space = pgTable(
+export const space = pgTable.withRLS(
   'space',
   {
     id: identity(),
@@ -42,7 +42,7 @@ export const space = pgTable(
     createdAt: timestamp('created_at', { withTimezone: true }).notNull(),
   },
   (table) => tenantPolicies('space', table.id),
-).enableRLS()
+)
 
 export const user = pgTable('user', {
   id: identity(),
@@ -51,7 +51,7 @@ export const user = pgTable('user', {
   createdAt: timestamp('created_at', { withTimezone: true }).notNull(),
 })
 
-export const membership = pgTable(
+export const membership = pgTable.withRLS(
   'membership',
   {
     id: identity(),
@@ -67,7 +67,7 @@ export const membership = pgTable(
     unique('membership_space_user_unique').on(table.spaceId, table.userId),
     ...tenantPolicies('membership', table.spaceId),
   ],
-).enableRLS()
+)
 
 export const machine = pgTable('machine', {
   id: identity(),
@@ -79,7 +79,7 @@ export const machine = pgTable('machine', {
   lastSeen: timestamp('last_seen', { withTimezone: true }).notNull(),
 })
 
-export const project = pgTable(
+export const project = pgTable.withRLS(
   'project',
   {
     id: identity(),
@@ -107,9 +107,9 @@ export const project = pgTable(
     unique('project_space_id_unique').on(table.spaceId, table.id),
     ...tenantPolicies('project', table.spaceId),
   ],
-).enableRLS()
+)
 
-export const seq = pgTable(
+export const seq = pgTable.withRLS(
   'seq',
   {
     spaceId: spaceIdentity(),
@@ -128,7 +128,7 @@ export const seq = pgTable(
     }),
     ...tenantPolicies('seq', table.spaceId),
   ],
-).enableRLS()
+)
 
 /** IDs are minted before a database connection exists; no id column has a default. */
 export function newRecordId(): string {
