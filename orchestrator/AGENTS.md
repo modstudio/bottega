@@ -1235,8 +1235,6 @@ chunk.
 
 ## A worktree belongs to the project, not to orch
 
-A tracked recipe tears a tree down with the recipe that built it: creation records the validated recipe and the commit it was read from on the run, and teardown uses that record, never the current file. Teardown runs the explicit `destroy` steps, or else every create step's `undo` in reverse, then `verifyDown`. Any failure keeps the tree and its claims and names the failed step. An `undo` must succeed when its step never ran or only partly ran, because compensation and teardown both run it without knowing how far creation got.
-
 orch cut worktrees with plain git, and in two of these repositories that
 produces a directory that looks right and is useless. One application's own script
 says what is missing: no generated `.env`, no cloned vendor tree, so compose

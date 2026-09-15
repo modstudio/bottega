@@ -31,7 +31,11 @@ export const execContextSchema = z.discriminatedUnion('where', [
 export const stepSchema = strictObject({
   name: z.string().min(1),
   run: commandSchema,
-  undo: commandSchema.optional(),
+  undo: commandSchema
+    .describe(
+      'Reverses this step. Must succeed when the step never ran or only partly ran: compensation after a failed create and teardown both run it without knowing how far creation got. Teardown uses the recipe recorded when the tree was built, never the current file; any failed undo or verifyDown keeps the tree and its claims.',
+    )
+    .optional(),
   verify: commandSchema.optional(),
   exec: execContextSchema.optional(),
 })
