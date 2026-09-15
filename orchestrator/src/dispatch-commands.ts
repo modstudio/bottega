@@ -6,7 +6,14 @@ import type { DetachSpec } from './failover.ts'
 import { isReaderJob, job, reclaimsTreeByDefault, resolveJobTimeoutMs } from './jobs.ts'
 import { keepTreeExemptionFromOption } from './keep-tree-hold.ts'
 import type { McpRequest } from './mcp-preflight.ts'
-import { projectAt, projectByName, projects } from './projects.ts'
+import {
+  projectAt,
+  projectByName,
+  projects,
+  retiredProjectAt,
+  retiredProjectByName,
+  retiredProjectRefusal,
+} from './projects.ts'
 
 type TransportName = 'cli' | 'acp'
 
@@ -46,6 +53,22 @@ const projectNames = () =>
     .map((p) => p.name)
     .join(', ') || '(none)'
 
+function assertDispatchableProject(
+  explicitRepo: string | undefined,
+  callerCwd: string,
+  requestedCwd: boolean,
+): void {
+  if (!projectAt(callerCwd)) {
+    const retiredHere = retiredProjectAt(callerCwd)
+    if (retiredHere) throw new Error(retiredProjectRefusal(retiredHere.name))
+    if (requestedCwd) throw new Error(`--cwd is not inside a registered project: ${callerCwd}`)
+  }
+  if (explicitRepo && !projectByName(explicitRepo)) {
+    if (retiredProjectByName(explicitRepo)) throw new Error(retiredProjectRefusal(explicitRepo))
+    throw new Error(`unknown repo "${explicitRepo}". Registered: ${projectNames()}`)
+  }
+}
+
 export async function dispatchCommand(
   argv: string[],
   flags: DispatchFlags,
@@ -83,12 +106,8 @@ export async function dispatchCommand(
   if (requestedCwd && !existsSync(requestedCwd))
     throw new Error(`--cwd does not exist: ${requestedCwd}`)
   const callerCwd = requestedCwd ? realpathSync(requestedCwd) : process.cwd()
-  if (requestedCwd && !projectAt(callerCwd))
-    throw new Error(`--cwd is not inside a registered project: ${callerCwd}`)
   const explicitRepo = flag('repo')
-  if (explicitRepo && !projectByName(explicitRepo)) {
-    throw new Error(`unknown repo "${explicitRepo}". Registered: ${projectNames()}`)
-  }
+  assertDispatchableProject(explicitRepo, callerCwd, Boolean(requestedCwd))
   // Project-required inputs are knowable before the prompt is read. Checking
   // them afterwards made a missing key pay for stdin and run setup first.
   const base = flag('base')

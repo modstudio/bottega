@@ -110,6 +110,8 @@ export function register(program: Command): void {
     .option('--allow-incomplete')
     .option('--json')
     .option('--apply')
+    .option('--retired')
+    .option('--undo')
     .action((args, options) => {
       const argv = ['project', ...args]
       projectCommand(argv[1] ?? 'list', argv, optionFlags(options), { log, cwd: process.cwd })

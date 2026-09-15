@@ -22,6 +22,7 @@ const fixtureProject = (settings: Project['settings'] = {}): Project => ({
   path: '/projects/fixture',
   stack: 'node',
   canon: true,
+  retiredAt: null,
   settings,
 })
 

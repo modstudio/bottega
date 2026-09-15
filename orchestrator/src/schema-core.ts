@@ -263,6 +263,7 @@ export const project = sqliteTable('project', {
   stack: text(),
   canon: integer().notNull().default(1),
   settings: text(),
+  retiredAt: text('retired_at'),
 })
 
 export const resourceClaim = sqliteTable(

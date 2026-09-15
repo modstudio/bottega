@@ -893,7 +893,7 @@ export function projectsForDryRun(path: string): Project[] {
         } catch {
           settings = {}
         }
-        return { ...row, canon: row.canon === 1, settings }
+        return { ...row, canon: row.canon === 1, retiredAt: null, settings }
       })
     } finally {
       readonly.close()
