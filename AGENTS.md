@@ -86,6 +86,8 @@ SMTP password in the login keychain, and `hub`'s settings hold a *reference*
 not. Read them at use time; never at import, never into a log, never into a
 database the dashboard serves from.
 
+Gitleaks scans the whole history in CI and locally where the binary is installed; a finding fails the gate, and the only allowlist is fake fixture credentials named in `.gitleaks.toml`.
+
 The metered Anthropic key that used to sit in `work-report/config.json` is gone
 with it. Summaries go through `orch`, which spends neither metered billing nor
 the Claude allotment — the one cost the orchestrator exists to avoid.
