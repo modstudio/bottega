@@ -8,7 +8,7 @@
 import { randomUUID } from 'node:crypto'
 import { mkdirSync, writeFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
-import { type Agent } from './agents.ts'
+import type { Agent } from './agents.ts'
 import type { Pack } from './canon.ts'
 import { checkoutAliases, realpathOrSpelled } from './checkout-identity.ts'
 import { readStrictCodexSchema } from './codex-schema.ts'
