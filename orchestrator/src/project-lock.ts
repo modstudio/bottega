@@ -18,14 +18,15 @@ import {
 } from 'node:fs'
 import { platform } from 'node:os'
 import { join, resolve } from 'node:path'
-import { scrubbedGitEnv } from '../../shared/git.ts'
+import { pidAlive, processStartTime } from '../../shared/process-identity.ts'
 import { tryWriteContention } from './db.ts'
 import { git } from './git-environment.ts'
-import { pidAlive } from './process-liveness.ts'
 
 const WORKTREE_CREATE_LOCK_TIMEOUT_MS = 5 * 60_000
 const WORKTREE_CREATE_LOCK_POLL_MS = 100
 const heldProjectLocks = new Set<string>()
+
+export { processStartTime } from '../../shared/process-identity.ts'
 
 export type ProjectLockIdentity = {
   session: string | null
@@ -44,9 +45,6 @@ export type ProjectLockState = {
   holder: ProjectLockParticipant | null
   waiters: ProjectLockParticipant[]
 }
-
-const PROCESS_START_TIME =
-  /^(Sun|Mon|Tue|Wed|Thu|Fri|Sat) (Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec) [ 0-3]\d [0-2]\d:[0-5]\d:[0-5]\d \d{4}$/
 
 function projectLockParticipant(path: string): ProjectLockParticipant | null {
   let value: string
@@ -103,24 +101,6 @@ export function pidRecordIdentity(
   const actual = processStartTime(pid)
   if (actual === null) return 'unknown'
   return actual === recordedStartTime ? 'live' : 'reused'
-}
-
-/** Locale-independent process birth; malformed or unreadable identity is unknown. */
-export function processStartTime(pid: number): string | null {
-  if (!Number.isSafeInteger(pid) || pid <= 0) return null
-  if (platform() !== 'darwin' && platform() !== 'linux') return null
-  try {
-    const inspected = Bun.spawnSync(['ps', '-o', 'lstart=', '-p', String(pid)], {
-      env: { ...scrubbedGitEnv(), LC_ALL: 'C', LANG: 'C' },
-      stdout: 'pipe',
-      stderr: 'ignore',
-    })
-    if (inspected.exitCode !== 0) return null
-    const value = inspected.stdout.toString().trim()
-    return PROCESS_START_TIME.test(value) ? value : null
-  } catch {
-    return null
-  }
 }
 
 export function staleProjectLockHolder(holder: ProjectLockParticipant): string | null {

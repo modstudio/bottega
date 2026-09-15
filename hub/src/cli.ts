@@ -32,6 +32,7 @@ import { printReconcile, reconcileOpenIntervals } from './reconcile.ts'
 import { gather, recordSend, renderHtml, renderText, send, summarise } from './report.ts'
 import { listOpenRulings, rulingsPayload } from './rulings.ts'
 import { serve } from './serve.ts'
+import { ownServeRecord, servePortIsFree, stopRecordedServe } from './serve-lifecycle.ts'
 import { getReport } from './settings.ts'
 import {
   closeTask,
@@ -209,6 +210,9 @@ const USAGE = `hub — every project's tasks in flight, what each cost, and the 
   hub doctor                  report the live structural schema hash and user_version
   hub tasks [--hours N]       what has been worked on, newest window first
   hub serve [--port 7778]     the dashboard
+  hub serve-stop --port N     stop this checkout's recorded dashboard
+  hub serve-check --port N --down
+                              confirm that loopback port N accepts no connection
   hub reconcile [--dry-run]   close open intervals whose orch runs are terminal
                               using exact run ids, never an age or time window
   hub rulings [--json]        open questions ingested from orch, with age
@@ -877,10 +881,37 @@ try {
     case 'tasks':
       tasks()
       break
-    case 'serve':
+    case 'serve': {
       startDashboardCapability()
-      serve(Number(flag('port') ?? 7778))
+      const dashboard = serve(Number(flag('port') ?? 7778))
+      if (dashboard.port === undefined) throw new Error('hub: dashboard did not bind a TCP port')
+      ownServeRecord(dashboard.port)
       break
+    }
+    case 'serve-stop': {
+      const port = Number(flag('port'))
+      if (!Number.isInteger(port) || port < 1 || port > 65_535) {
+        console.error('usage: hub serve-stop --port N')
+        process.exitCode = 2
+        break
+      }
+      if (!(await stopRecordedServe(port))) process.exitCode = 1
+      break
+    }
+    case 'serve-check': {
+      const port = Number(flag('port'))
+      if (!has('down') || !Number.isInteger(port) || port < 1 || port > 65_535) {
+        console.error('usage: hub serve-check --port N --down')
+        process.exitCode = 2
+        break
+      }
+      const free = await servePortIsFree(port)
+      console.log(
+        free ? `hub: port ${port} is free` : `hub: port ${port} is still accepting connections`,
+      )
+      if (!free) process.exitCode = 1
+      break
+    }
     case 'reconcile':
       printReconcile(await reconcileOpenIntervals({ dryRun: has('dry-run') }))
       break
