@@ -28,9 +28,7 @@ async function pump(stream: ReadableStream<Uint8Array>, error: boolean): Promise
 async function runTests(): Promise<GateTimings> {
   const junitPath = `${timingDir}${timingStamp}.unit.junit.xml`
   const sidecarBase = `${timingDir}${timingStamp}.unit.json`
-  const command = [
-    'bun', 'test', 'src', '--reporter=junit', `--reporter-outfile=${junitPath}`,
-  ]
+  const command = ['bun', 'test', 'src', '--reporter=junit', `--reporter-outfile=${junitPath}`]
   const started = Date.now()
   const child = Bun.spawn(command, {
     cwd: orchRoot,

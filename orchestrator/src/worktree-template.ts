@@ -13,25 +13,30 @@
  * and expansion is the one deliberate boundary where a seed string becomes
  * several argv entries.
  */
-export type WorktreeCreateArg = string | {
-  value: string
-  omitWhenEmpty: 'branch' | 'name' | 'base' | 'seed' | 'key' | 'path'
-} | {
-  expand: 'seed'
-}
+export type WorktreeCreateArg =
+  | string
+  | {
+      value: string
+      omitWhenEmpty: 'branch' | 'name' | 'base' | 'seed' | 'key' | 'path'
+    }
+  | {
+      expand: 'seed'
+    }
 
-export type WorktreeCreate = {
-  command: string
-  args: WorktreeCreateArg[]
-  env?: Record<string, string>
-} | {
-  /**
-   * Narrow escape hatch for the one lifecycle tool whose input is piped JSON.
-   * Registration refuses this form unless it contains a real pipeline; an
-   * ordinary command must use command plus args.
-   */
-  pipeline: string
-}
+export type WorktreeCreate =
+  | {
+      command: string
+      args: WorktreeCreateArg[]
+      env?: Record<string, string>
+    }
+  | {
+      /**
+       * Narrow escape hatch for the one lifecycle tool whose input is piped JSON.
+       * Registration refuses this form unless it contains a real pipeline; an
+       * ordinary command must use command plus args.
+       */
+      pipeline: string
+    }
 
 const CREATE_VARS = new Set(['branch', 'name', 'base', 'seed', 'key', 'path'])
 
@@ -62,8 +67,12 @@ function scanPipelineOperators(template: string): {
     } else if (char === '"' && quote !== "'") {
       quote = quote === '"' ? null : '"'
       if (quote) quoteStart = i
-    } else if (char === '|' && quote === null &&
-               template[i - 1] !== '|' && template[i + 1] !== '|') {
+    } else if (
+      char === '|' &&
+      quote === null &&
+      template[i - 1] !== '|' &&
+      template[i + 1] !== '|'
+    ) {
       positions.push(i)
     } else if (char === '&' && quote === null && template[i + 1] === '&') {
       ands.push(i)
@@ -87,7 +96,11 @@ function validateCreate(create: unknown, at: string, allowedVars: Set<string>): 
   }
   const value = create as Record<string, unknown>
   if ('pipeline' in value) {
-    if (Object.keys(value).length !== 1 || typeof value.pipeline !== 'string' || !value.pipeline.trim()) {
+    if (
+      Object.keys(value).length !== 1 ||
+      typeof value.pipeline !== 'string' ||
+      !value.pipeline.trim()
+    ) {
       return [`${at}.pipeline must be the declaration's only key and must be a non-empty string`]
     }
     if (!hasPipelineOperator(value.pipeline)) {
@@ -95,7 +108,9 @@ function validateCreate(create: unknown, at: string, allowedVars: Set<string>): 
     }
     const unknown = placeholders(value.pipeline).find((name) => !allowedVars.has(name))
     if (unknown) return [`${at}.pipeline contains unknown placeholder {${unknown}}`]
-    const capability = placeholders(value.pipeline).find((name) => name === 'base' || name === 'seed')
+    const capability = placeholders(value.pipeline).find(
+      (name) => name === 'base' || name === 'seed',
+    )
     return capability
       ? [`${at}.pipeline cannot declare {${capability}} semantics; use command and args`]
       : []
@@ -105,9 +120,14 @@ function validateCreate(create: unknown, at: string, allowedVars: Set<string>): 
     problems.push(`${at}.command must be a non-empty string`)
   } else if (/\s/.test(value.command)) {
     problems.push(`${at}.command must name one executable; put each argument in args`)
-  } else if (/(^|\/)(?:ba|z|da)?sh$/.test(value.command) &&
-             Array.isArray(value.args) && value.args.includes('-c')) {
-    problems.push(`${at} may not disguise a shell string as ${value.command} -c; use command and args`)
+  } else if (
+    /(^|\/)(?:ba|z|da)?sh$/.test(value.command) &&
+    Array.isArray(value.args) &&
+    value.args.includes('-c')
+  ) {
+    problems.push(
+      `${at} may not disguise a shell string as ${value.command} -c; use command and args`,
+    )
   }
   if (!Array.isArray(value.args)) {
     problems.push(`${at}.args must be an array`)
@@ -150,9 +170,12 @@ function validateCreate(create: unknown, at: string, allowedVars: Set<string>): 
       return
     }
     const variable = item.omitWhenEmpty
-    if (Object.keys(item).some((key) => key !== 'value' && key !== 'omitWhenEmpty') ||
-        typeof item.value !== 'string' || typeof variable !== 'string' ||
-        !allowedVars.has(variable)) {
+    if (
+      Object.keys(item).some((key) => key !== 'value' && key !== 'omitWhenEmpty') ||
+      typeof item.value !== 'string' ||
+      typeof variable !== 'string' ||
+      !allowedVars.has(variable)
+    ) {
       problems.push(`${argAt} must have a string value and one valid omitWhenEmpty variable`)
       return
     }
@@ -176,7 +199,9 @@ export function migrateCreate(create: string): CreateMigration {
     return {
       kind: 'refused',
       message: unsupportedShellToken(
-        pipeline.unclosed.quote, pipeline.unclosed.position, 'unclosed quote',
+        pipeline.unclosed.quote,
+        pipeline.unclosed.position,
+        'unclosed quote',
       ).message,
     }
   }
@@ -201,7 +226,8 @@ export function migrateCreate(create: string): CreateMigration {
     if (!before.ok) return { kind: 'refused', message: before.message }
     return {
       kind: 'refused',
-      message: `'&&'-chained tail ${JSON.stringify(create.slice(and + 2).trim())} cannot be migrated; ` +
+      message:
+        `'&&'-chained tail ${JSON.stringify(create.slice(and + 2).trim())} cannot be migrated; ` +
         `the chain must move into the project's script`,
     }
   }
@@ -293,9 +319,14 @@ function shellTokens(input: string): ShellTokens {
 }
 
 function unsupportedShellToken(
-  token: string, position: number, kind = 'unsupported shell token',
+  token: string,
+  position: number,
+  kind = 'unsupported shell token',
 ): { ok: false; message: string } {
-  return { ok: false, message: `${kind} ${JSON.stringify(token)} at position ${position}; cannot migrate` }
+  return {
+    ok: false,
+    message: `${kind} ${JSON.stringify(token)} at position ${position}; cannot migrate`,
+  }
 }
 
 function fillArg(template: string, vars: Record<string, string>): string {
@@ -304,7 +335,8 @@ function fillArg(template: string, vars: Record<string, string>): string {
 
 /** Render the declared process argv. Empty strings remain real argv entries. */
 export function createArgv(
-  stored: WorktreeCreate | string, vars: Record<string, string>,
+  stored: WorktreeCreate | string,
+  vars: Record<string, string>,
 ): string[] {
   // TOLERANT READ, STRICT WRITE. A legacy row becomes the equivalent shell
   // declaration in memory; validateProjectSettings still refuses anyone
@@ -329,13 +361,15 @@ export function createArgv(
 }
 
 function assertCreateVarsAvailable(
-  create: WorktreeCreate | string, vars: Record<string, string>,
+  create: WorktreeCreate | string,
+  vars: Record<string, string>,
 ): void {
   const encoded = JSON.stringify(create)
   const missing = [...encoded.matchAll(/\{(\w+)\}/g)]
     .map((match) => match[1]!)
     .find((name) => !(name in vars))
-  if (missing) throw new Error(`worktree create template references unavailable placeholder {${missing}}`)
+  if (missing)
+    throw new Error(`worktree create template references unavailable placeholder {${missing}}`)
 }
 
 function quoteAt(template: string, offset: number): "'" | '"' | null {
@@ -459,11 +493,13 @@ export function createHasPlaceholder(
   // compatibility ramp and disappears with its last stored string.
   if (typeof create === 'string') return create.includes(`{${variable}}`)
   if (!create || !('command' in create)) return false
-  return create.args.some((arg) => {
-    if (typeof arg === 'string') return placeholders(arg).includes(variable)
-    if ('expand' in arg) return arg.expand === variable
-    return placeholders(arg.value).includes(variable)
-  }) || Object.values(create.env ?? {}).some((value) => placeholders(value).includes(variable))
+  return (
+    create.args.some((arg) => {
+      if (typeof arg === 'string') return placeholders(arg).includes(variable)
+      if ('expand' in arg) return arg.expand === variable
+      return placeholders(arg.value).includes(variable)
+    }) || Object.values(create.env ?? {}).some((value) => placeholders(value).includes(variable))
+  )
 }
 
 export { CREATE_VARS, assertCreateVarsAvailable, fillArg, placeholders, validateCreate }

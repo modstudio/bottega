@@ -2,21 +2,35 @@ import { describe, expect, test } from 'bun:test'
 import { existsSync } from 'node:fs'
 import { join, resolve } from 'node:path'
 import {
-  ACP_PARITY_REPOSITORY_ROOT, caseSemanticallyMatches, requiredParityPassed, type Row,
+  ACP_PARITY_REPOSITORY_ROOT,
+  caseSemanticallyMatches,
+  requiredParityPassed,
+  type Row,
   parityCaseVerdict,
 } from './acp-parity.ts'
 
-const row = (caseName: string, transport: 'cli' | 'acp', outcome = 'ok', failureKind = '—'): Row => ({
-  case: caseName, transport, outcome, failureKind, tokens: '1', latencyMs: 1, rawBytes: 1,
+const row = (
+  caseName: string,
+  transport: 'cli' | 'acp',
+  outcome = 'ok',
+  failureKind = '—',
+): Row => ({
+  case: caseName,
+  transport,
+  outcome,
+  failureKind,
+  tokens: '1',
+  latencyMs: 1,
+  rawBytes: 1,
 })
 
 function passingRows(): Row[] {
   const rows: Row[] = []
   for (const name of ['structured-ok', 'tool-read', 'schema', 'timeout', 'malformed']) {
     for (const transport of ['cli', 'acp'] as const) {
-      rows.push(name === 'timeout'
-        ? row(name, transport, 'failed', 'timeout')
-        : row(name, transport))
+      rows.push(
+        name === 'timeout' ? row(name, transport, 'failed', 'timeout') : row(name, transport),
+      )
     }
   }
   rows.push(row('ask-answer', 'acp'))
@@ -32,14 +46,20 @@ describe('ACP parity exit verdict', () => {
 
   test('requires each successful transport turn to contain its declared semantic answer', () => {
     const reply = (output: string, stopReason: string | null = 'end_turn') => ({
-      output, parsed: { text: output, tokens: null, costUsd: null }, stopReason,
+      output,
+      parsed: { text: output, tokens: null, costUsd: null },
+      stopReason,
     })
     expect(caseSemanticallyMatches('tool-read', reply('path does not exist'))).toBe(false)
     expect(caseSemanticallyMatches('tool-read', reply('@devbox/orchestrator'))).toBe(true)
-    expect(parityCaseVerdict('tool-read', 'ok', null, reply('path does not exist')))
-      .toEqual({ outcome: 'failed', failureKind: 'semantic' })
-    expect(parityCaseVerdict('tool-read', 'ok', null, reply('@devbox/orchestrator')))
-      .toEqual({ outcome: 'ok', failureKind: '—' })
+    expect(parityCaseVerdict('tool-read', 'ok', null, reply('path does not exist'))).toEqual({
+      outcome: 'failed',
+      failureKind: 'semantic',
+    })
+    expect(parityCaseVerdict('tool-read', 'ok', null, reply('@devbox/orchestrator'))).toEqual({
+      outcome: 'ok',
+      failureKind: '—',
+    })
     expect(caseSemanticallyMatches('structured-ok', reply('{"status":"wrong"}'))).toBe(false)
     expect(caseSemanticallyMatches('schema', reply('{"verdict":"true"}'))).toBe(true)
     expect(caseSemanticallyMatches('malformed', reply('{'))).toBe(true)

@@ -1,5 +1,10 @@
 // concern: review-types
-import type { ReviewCoverage, ReviewLimits, ReviewOverlap, ReviewReproduced } from './review-vocabulary.ts'
+import type {
+  ReviewCoverage,
+  ReviewLimits,
+  ReviewOverlap,
+  ReviewReproduced,
+} from './review-vocabulary.ts'
 import type { ChangeIdentityGitResult, ChangeIdentityGitRunner } from './change-identity.ts'
 
 export type ReviewCoverageInput = {
@@ -34,7 +39,11 @@ export type ReviewCarry = {
 
 export type CoverageVerdict =
   | { kind: 'exact' }
-  | ({ kind: 'carried'; class: 'trivial-rebase' | 'no-code-change'; resolution: 'pin' | 'walk' } & Omit<ReviewCarry, 'project' | 'branch'>)
+  | ({
+      kind: 'carried'
+      class: 'trivial-rebase' | 'no-code-change'
+      resolution: 'pin' | 'walk'
+    } & Omit<ReviewCarry, 'project' | 'branch'>)
   | { kind: 'invalid'; reason: string; resolution?: 'pin' | 'walk' }
 
 export type CoverageGitResult = ChangeIdentityGitResult
@@ -56,21 +65,45 @@ export type ReviewListRow = {
   risk: number | null
   size: number | null
   lens_count: number
-  findings: { total: number; triaged: number; accepted: number; modified: number; rejected: number; skipped: number }
+  findings: {
+    total: number
+    triaged: number
+    accepted: number
+    modified: number
+    rejected: number
+    skipped: number
+  }
   coverage: 'exact' | 'trivial-rebase' | 'no-code-change' | 'stale' | null
 }
 
 export type ReviewReadLens = ReviewCoverageInput['lenses'][number] & {
-  id: number; runId: number; agent: string; model: string | null; treeInspected: string | null
-  reviewRef: string; reproduced: ReviewReproduced | null; coverageGrade: ReviewCoverage | null
-  limits: ReviewLimits | null; overlap: ReviewOverlap | null
+  id: number
+  runId: number
+  agent: string
+  model: string | null
+  treeInspected: string | null
+  reviewRef: string
+  reproduced: ReviewReproduced | null
+  coverageGrade: ReviewCoverage | null
+  limits: ReviewLimits | null
+  overlap: ReviewOverlap | null
 }
 
 export type RunRow = {
-  id: number; agent: string; model: string | null; lens: string | null
-  job: string; status: string; output_path: string | null; input_tree: string | null
-  head_commit: string | null; repo: string | null; project_id: number | null
-  base_commit: string | null; review_ref: string | null; changed_paths: string | null
+  id: number
+  agent: string
+  model: string | null
+  lens: string | null
+  job: string
+  status: string
+  output_path: string | null
+  input_tree: string | null
+  head_commit: string | null
+  repo: string | null
+  project_id: number | null
+  base_commit: string | null
+  review_ref: string | null
+  changed_paths: string | null
 }
 
 export type ReviewChangeRange = { from: string; to: string; paths: string[] | null }

@@ -49,11 +49,15 @@ describe('record search', () => {
 
     const found = searchRecords(d, 'dev-203')
     expect(found.results.map((result) => result.source)).toEqual([
-      'score', 'ruling', 'review', 'output',
+      'score',
+      'ruling',
+      'review',
+      'output',
     ])
     expect(found.results.every((result) => result.match === 'direct task link')).toBe(true)
-    expect(found.results.find((result) => result.source === 'output')!.snippet.length)
-      .toBeLessThanOrEqual(242)
+    expect(
+      found.results.find((result) => result.source === 'output')!.snippet.length,
+    ).toBeLessThanOrEqual(242)
   })
 
   test('file and function searches are literal and honestly marked weak', () => {
@@ -71,7 +75,9 @@ describe('record search', () => {
 
   test('missing output files are reported instead of silently treated as searchable', () => {
     const d = fixture()
-    d.exec(`INSERT INTO run VALUES (1, NULL, 'DEV-1', '2026-09-01T00:00:00Z', '/definitely/missing/output')`)
+    d.exec(
+      `INSERT INTO run VALUES (1, NULL, 'DEV-1', '2026-09-01T00:00:00Z', '/definitely/missing/output')`,
+    )
     const found = searchRecords(d, 'anything')
     expect(found.results).toEqual([])
     expect(found.unavailable_outputs).toBe(1)

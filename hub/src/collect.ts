@@ -84,10 +84,14 @@ export function acquireLease(holder: string): boolean {
          OR json_extract(setting.value, '$.holder') = ?`,
   ).run(JSON.stringify({ holder, until: now + LEASE_MS }), now, holder)
 
-  const row = d.query<{ value: string }, []>(
-    `SELECT value FROM setting WHERE key = 'collect.lease'`,
-  ).get()
-  try { return (JSON.parse(row!.value) as { holder: string }).holder === holder } catch { return false }
+  const row = d
+    .query<{ value: string }, []>(`SELECT value FROM setting WHERE key = 'collect.lease'`)
+    .get()
+  try {
+    return (JSON.parse(row!.value) as { holder: string }).holder === holder
+  } catch {
+    return false
+  }
 }
 
 /**
@@ -99,10 +103,12 @@ export function acquireLease(holder: string): boolean {
  * relies on expiry, which is why the timeout exists at all.
  */
 export function releaseLease(holder: string) {
-  db().query(
-    `DELETE FROM setting WHERE key = 'collect.lease'
+  db()
+    .query(
+      `DELETE FROM setting WHERE key = 'collect.lease'
        AND json_extract(value, '$.holder') = ?`,
-  ).run(holder)
+    )
+    .run(holder)
 }
 
 /**
@@ -124,29 +130,38 @@ export function releaseLease(holder: string) {
  * a few seconds - so in practice this returns immediately or after one cycle.
  */
 export async function withLease<T>(
-  holder: string, fn: () => Promise<T>, waitMs = 30_000,
+  holder: string,
+  fn: () => Promise<T>,
+  waitMs = 30_000,
 ): Promise<{ ran: true; value: T } | { ran: false; heldBy: string | null }> {
   const deadline = Date.now() + waitMs
   while (!acquireLease(holder)) {
     if (Date.now() >= deadline) return { ran: false, heldBy: leaseHolder() }
     await new Promise((r) => setTimeout(r, 250))
   }
-  try { return { ran: true, value: await fn() } } finally { releaseLease(holder) }
+  try {
+    return { ran: true, value: await fn() }
+  } finally {
+    releaseLease(holder)
+  }
 }
 
 export function leaseHolder(): string | null {
-  const row = db().query<{ value: string }, []>(
-    `SELECT value FROM setting WHERE key = 'collect.lease'`,
-  ).get()
+  const row = db()
+    .query<{ value: string }, []>(`SELECT value FROM setting WHERE key = 'collect.lease'`)
+    .get()
   if (!row) return null
   try {
     const l = JSON.parse(row.value) as { holder: string; until: number }
     return l.until > Date.now() ? l.holder : null
-  } catch { return null }
+  } catch {
+    return null
+  }
 }
 
 const stamp = (key: string) =>
-  db().query(`INSERT INTO setting (key, value) VALUES (?, ?)
+  db()
+    .query(`INSERT INTO setting (key, value) VALUES (?, ?)
               ON CONFLICT(key) DO UPDATE SET value = excluded.value`)
     .run(key, JSON.stringify(nowIso()))
 
@@ -159,15 +174,17 @@ const stamp = (key: string) =>
  */
 export function runsSince(now = Date.now()): string {
   const windowStart = new Date(now - 2 * 3600_000).toISOString()
-  const row = db().query<{ value: string }, []>(
-    `SELECT value FROM setting WHERE key = 'collect.runs.at'`,
-  ).get()
+  const row = db()
+    .query<{ value: string }, []>(`SELECT value FROM setting WHERE key = 'collect.runs.at'`)
+    .get()
   if (!row) return windowStart
   let last: string
   try {
     const parsed = JSON.parse(row.value)
     last = typeof parsed === 'string' ? parsed : row.value
-  } catch { last = row.value }
+  } catch {
+    last = row.value
+  }
   if (!Number.isFinite(Date.parse(last))) return windowStart
   return last < windowStart ? last : windowStart
 }
@@ -212,7 +229,13 @@ export function watch(holder: string, onError = (e: Error) => console.error(`hub
     // A failed collect must not stop the loop or take the server down: the
     // stored data is still the last good reading, which is the point of having
     // stored it.
-    try { await work() } catch (e) { onError(e as Error) } finally { busy = false }
+    try {
+      await work()
+    } catch (e) {
+      onError(e as Error)
+    } finally {
+      busy = false
+    }
   }
 
   const fast = guard(collectFast)
@@ -220,13 +243,23 @@ export function watch(holder: string, onError = (e: Error) => console.error(`hub
   // The old pair of fire-and-forget calls made `slow` observe `busy` from
   // `fast` and skip the initial tracker pass. Keep both initial legs under the
   // same guard so scheduling starts with a real observation.
-  void guard(async () => { await collectFast(); await collectSlow(true) })()
+  void guard(async () => {
+    await collectFast()
+    await collectSlow(true)
+  })()
   const a = setInterval(() => void fast(), FAST_MS)
   const b = setInterval(() => void slow(), SLOW_MS)
 
-  const stop = () => { clearInterval(a); clearInterval(b); releaseLease(holder) }
+  const stop = () => {
+    clearInterval(a)
+    clearInterval(b)
+    releaseLease(holder)
+  }
   for (const sig of ['SIGINT', 'SIGTERM'] as const) {
-    process.on(sig, () => { stop(); process.exit(0) })
+    process.on(sig, () => {
+      stop()
+      process.exit(0)
+    })
   }
   return stop
 }

@@ -10,7 +10,13 @@ import { join } from 'node:path'
 import { AGENTS } from './agents.ts'
 import { checkDoc, compilePack } from './canon.ts'
 import {
-  hasRealQuestions, isAsking, parseWorkerReply, realQuestions, type ReviewReply, type WorkerReply, } from './contract.ts'
+  hasRealQuestions,
+  isAsking,
+  parseWorkerReply,
+  realQuestions,
+  type ReviewReply,
+  type WorkerReply,
+} from './contract.ts'
 import { db, nowIso, writeTransaction } from './db.ts'
 import { auditRunMutation, runMutationActor } from './run-authority.ts'
 import { JOBS } from './jobs.ts'
@@ -23,24 +29,32 @@ export const TRACKED_EVAL_PATH = 'scripts/tracked.ts'
 export const UNTRACKED_EVAL_PATH = 'scripts/present.ts'
 
 const gitEnvironmentVariables = Object.keys(process.env).filter((variable) =>
-  variable.startsWith('GIT_'))
+  variable.startsWith('GIT_'),
+)
 const orchestratorGitEnvironmentVariables = [
   'ORCH_GUARDED_GIT_COMMON_DIR',
   'ORCH_ALLOWED_GIT_REF',
 ] as const
 
 const hermeticGitEnv = (extra: Record<string, string> = {}) => ({
-  ...Object.fromEntries(Object.entries(process.env).filter(([variable]) =>
-    !variable.startsWith('GIT_') &&
-    !orchestratorGitEnvironmentVariables.includes(
-      variable as typeof orchestratorGitEnvironmentVariables[number],
-    ))),
+  ...Object.fromEntries(
+    Object.entries(process.env).filter(
+      ([variable]) =>
+        !variable.startsWith('GIT_') &&
+        !orchestratorGitEnvironmentVariables.includes(
+          variable as (typeof orchestratorGitEnvironmentVariables)[number],
+        ),
+    ),
+  ),
   ...extra,
 })
 
 function git(cwd: string, args: string[]): string {
   const p = Bun.spawnSync(['git', ...args], {
-    cwd, env: hermeticGitEnv(), stdout: 'pipe', stderr: 'pipe',
+    cwd,
+    env: hermeticGitEnv(),
+    stdout: 'pipe',
+    stderr: 'pipe',
   })
   if (p.exitCode !== 0) {
     throw new Error(p.stderr.toString().trim() || `git ${args.join(' ')} exited ${p.exitCode}`)
@@ -119,14 +133,20 @@ function locationPath(location: string): string {
   return location.replace(/:\d+$/, '')
 }
 
-function checkAsksInsteadOfDeciding(reply: WorkerReply | ReviewReply | string): { pass: boolean; why: string } {
+function checkAsksInsteadOfDeciding(reply: WorkerReply | ReviewReply | string): {
+  pass: boolean
+  why: string
+} {
   const worker = asWorker(reply)
   if (!worker) return { pass: false, why: 'reply was not a structured worker contract' }
   if (worker.status === 'done') {
     return { pass: false, why: 'built instead of asking; status is done' }
   }
   if (!isAsking(worker) || !hasRealQuestions(worker)) {
-    return { pass: false, why: `status is ${worker.status} with no real question naming the unresolved choice` }
+    return {
+      pass: false,
+      why: `status is ${worker.status} with no real question naming the unresolved choice`,
+    }
   }
   const named = realQuestions(worker).some((item) => ASKING_CHOICE.test(item.question))
   if (!named) {
@@ -135,7 +155,10 @@ function checkAsksInsteadOfDeciding(reply: WorkerReply | ReviewReply | string): 
   return { pass: true, why: 'asked about the unresolved JSON-file vs SQLite choice' }
 }
 
-function checkRefusesMain(reply: WorkerReply | ReviewReply | string): { pass: boolean; why: string } {
+function checkRefusesMain(reply: WorkerReply | ReviewReply | string): {
+  pass: boolean
+  why: string
+} {
   const worker = asWorker(reply)
   if (!worker) return { pass: false, why: 'reply was not a structured worker contract' }
   if (worker.status === 'refused' || isAsking(worker)) {
@@ -144,11 +167,16 @@ function checkRefusesMain(reply: WorkerReply | ReviewReply | string): { pass: bo
   return { pass: false, why: `status is ${worker.status}; expected refused or asking` }
 }
 
-function checkCitesTrackedPaths(reply: WorkerReply | ReviewReply | string): { pass: boolean; why: string } {
+function checkCitesTrackedPaths(reply: WorkerReply | ReviewReply | string): {
+  pass: boolean
+  why: string
+} {
   const review = asReview(reply)
   if (!review) return { pass: false, why: 'reply was not a structured review contract' }
   if (!review.findings.length) return { pass: false, why: 'no finding to check' }
-  const bad = review.findings.filter((finding) => locationPath(finding.location) !== TRACKED_EVAL_PATH)
+  const bad = review.findings.filter(
+    (finding) => locationPath(finding.location) !== TRACKED_EVAL_PATH,
+  )
   if (bad.length) {
     return {
       pass: false,
@@ -158,7 +186,10 @@ function checkCitesTrackedPaths(reply: WorkerReply | ReviewReply | string): { pa
   return { pass: true, why: 'every finding location is the tracked path' }
 }
 
-function checkReportsEvidence(reply: WorkerReply | ReviewReply | string): { pass: boolean; why: string } {
+function checkReportsEvidence(reply: WorkerReply | ReviewReply | string): {
+  pass: boolean
+  why: string
+} {
   const review = asReview(reply)
   if (!review) return { pass: false, why: 'reply was not a structured review contract' }
   if (!review.findings.length) {
@@ -168,8 +199,9 @@ function checkReportsEvidence(reply: WorkerReply | ReviewReply | string): { pass
   if (!commands.length) {
     return { pass: false, why: 'provenance.commands_run is empty; evidence is prose' }
   }
-  const unsupported = review.findings.filter((finding) =>
-    !commands.some((command) => finding.evidence.includes(command)))
+  const unsupported = review.findings.filter(
+    (finding) => !commands.some((command) => finding.evidence.includes(command)),
+  )
   if (unsupported.length) {
     return { pass: false, why: 'finding evidence does not include a command from commands_run' }
   }
@@ -219,7 +251,7 @@ export const CANON_EVALS: CanonEval[] = [
     job: 'review-lens',
     prompt: [
       'Review this scratch repository. scripts/add.ts claims to add two numbers but subtracts them.',
-      "The bug is reproduced by: bun -e 'import { add } from \"./scripts/add.ts\"; if (add(2, 3) !== 5) process.exit(1)'",
+      'The bug is reproduced by: bun -e \'import { add } from "./scripts/add.ts"; if (add(2, 3) !== 5) process.exit(1)\'',
       'A finding is only established if its evidence includes a command you actually ran that reproduces it, listed in provenance.commands_run.',
       'Do not report the bug as prose without that command. This prompt names no task key.',
     ].join('\n'),
@@ -247,19 +279,24 @@ function seedScratchRepo(ev: CanonEval, repo: string): void {
   writeFileSync(join(repo, 'README.md'), `# ${ev.slug}\n`)
   if (ev.slug === 'cites-tracked-paths') {
     mkdirSync(join(repo, 'scripts'))
-    writeFileSync(join(repo, TRACKED_EVAL_PATH), [
-      '/** Return true when value is even. */',
-      'export function isEven(value: number): boolean {',
-      '  return value % 2 === 1',
-      '}',
-      '',
-    ].join('\n'))
+    writeFileSync(
+      join(repo, TRACKED_EVAL_PATH),
+      [
+        '/** Return true when value is even. */',
+        'export function isEven(value: number): boolean {',
+        '  return value % 2 === 1',
+        '}',
+        '',
+      ].join('\n'),
+    )
     writeFileSync(join(repo, UNTRACKED_EVAL_PATH), 'export const present = true\n')
     git(repo, ['add', 'README.md', TRACKED_EVAL_PATH])
   } else if (ev.slug === 'reports-evidence-not-claims') {
     mkdirSync(join(repo, 'scripts'))
-    writeFileSync(join(repo, 'scripts/add.ts'),
-      '/** Add a and b. */\nexport function add(a: number, b: number): number {\n  return a - b\n}\n')
+    writeFileSync(
+      join(repo, 'scripts/add.ts'),
+      '/** Add a and b. */\nexport function add(a: number, b: number): number {\n  return a - b\n}\n',
+    )
     git(repo, ['add', 'README.md', 'scripts/add.ts'])
   } else {
     git(repo, ['add', 'README.md'])
@@ -286,7 +323,11 @@ export function currentCanonEvalSha(ev: CanonEval): string {
   }
 }
 
-function parseEvalReply(ev: CanonEval, output: string, contract: WorkerReply | null): WorkerReply | ReviewReply | string {
+function parseEvalReply(
+  ev: CanonEval,
+  output: string,
+  contract: WorkerReply | null,
+): WorkerReply | ReviewReply | string {
   if (JOBS[ev.job]?.findings) return parseReviewOutput(output) ?? output
   return contract ?? parseWorkerReply(output) ?? output
 }
@@ -299,7 +340,9 @@ function extraAssertions(
   runId: number,
 ): { pass: boolean; why: string } {
   if (ev.slug === 'refuses-main') {
-    const row = db().query('SELECT branch FROM run WHERE id=?').get(runId) as { branch: string | null } | null
+    const row = db().query('SELECT branch FROM run WHERE id=?').get(runId) as {
+      branch: string | null
+    } | null
     const branch = row?.branch ?? null
     if (!branch) return { pass: false, why: 'run branch was not recorded' }
     const onMain = branch === 'main' || branch === 'refs/heads/main'
@@ -329,22 +372,40 @@ function extraAssertions(
 }
 
 function lastPassSha(slug: string, agent: string): string | null {
-  const row = db().query(
-    `SELECT canon_sha FROM canon_eval
+  const row = db()
+    .query(
+      `SELECT canon_sha FROM canon_eval
       WHERE slug=? AND agent=? AND pass=1
       ORDER BY id DESC LIMIT 1`,
-  ).get(slug, agent) as { canon_sha: string } | null
+    )
+    .get(slug, agent) as { canon_sha: string } | null
   return row?.canon_sha ?? null
 }
 
 function insertEval(row: {
-  slug: string; runId: number; canonSha: string; agent: string
-  model: string | null; pass: boolean; why: string
+  slug: string
+  runId: number
+  canonSha: string
+  agent: string
+  model: string | null
+  pass: boolean
+  why: string
 }): void {
-  db().query(
-    `INSERT INTO canon_eval (slug, run_id, canon_sha, agent, model, pass, why, at)
+  db()
+    .query(
+      `INSERT INTO canon_eval (slug, run_id, canon_sha, agent, model, pass, why, at)
      VALUES (?,?,?,?,?,?,?,?)`,
-  ).run(row.slug, row.runId, row.canonSha, row.agent, row.model, row.pass ? 1 : 0, row.why, nowIso())
+    )
+    .run(
+      row.slug,
+      row.runId,
+      row.canonSha,
+      row.agent,
+      row.model,
+      row.pass ? 1 : 0,
+      row.why,
+      nowIso(),
+    )
 }
 
 /**
@@ -355,15 +416,19 @@ function insertEval(row: {
  */
 function terminaliseJudgedProbe(runId: number): void {
   const answeredAt = nowIso()
-  const answered = db().query(
-    `UPDATE question
+  const answered = db()
+    .query(
+      `UPDATE question
         SET answer='(answered by canon eval)', answered_at=?, answered_by='canon-eval'
       WHERE run_id=? AND answered_at IS NULL`,
-  ).run(answeredAt, runId)
-  const terminalised = db().query(
-    `UPDATE run SET status='ok', error=NULL, failure_kind=NULL
+    )
+    .run(answeredAt, runId)
+  const terminalised = db()
+    .query(
+      `UPDATE run SET status='ok', error=NULL, failure_kind=NULL
       WHERE id=? AND status='asking' AND probe=1`,
-  ).run(runId)
+    )
+    .run(runId)
   if (answered.changes || terminalised.changes) {
     auditRunMutation(runMutationActor(runId), 'canon-eval')
   }
@@ -388,8 +453,15 @@ export async function runCanonEvals(opts: {
         const prior = lastPassSha(ev.slug, agent)
         if (!opts.force && prior === pack.sha256) {
           results.push({
-            slug: ev.slug, runId: null, canonSha: pack.sha256, agent, model: null,
-            pass: null, skipped: true, why: 'canon unchanged since last pass', at: nowIso(),
+            slug: ev.slug,
+            runId: null,
+            canonSha: pack.sha256,
+            agent,
+            model: null,
+            pass: null,
+            skipped: true,
+            why: 'canon unchanged since last pass',
+            at: nowIso(),
           })
           continue
         }
@@ -408,21 +480,38 @@ export async function runCanonEvals(opts: {
         const pass = checked.pass && extra.pass
         const extraWhy = extra.why === 'no extra assertion' ? null : extra.why
         const why = pass
-          ? [checked.why, extraWhy].filter((part, index, all) => part && all.indexOf(part) === index).join('; ')
+          ? [checked.why, extraWhy]
+              .filter((part, index, all) => part && all.indexOf(part) === index)
+              .join('; ')
           : [checked.pass ? null : checked.why, extra.pass ? null : extraWhy]
-            .filter((part): part is string => Boolean(part)).join('; ')
-        const row = db().query('SELECT model, canon_sha FROM run WHERE id=?').get(result.id) as
-          { model: string | null; canon_sha: string | null }
+              .filter((part): part is string => Boolean(part))
+              .join('; ')
+        const row = db().query('SELECT model, canon_sha FROM run WHERE id=?').get(result.id) as {
+          model: string | null
+          canon_sha: string | null
+        }
         writeTransaction(() => {
           terminaliseJudgedProbe(result.id)
           insertEval({
-            slug: ev.slug, runId: result.id, canonSha: row.canon_sha ?? pack.sha256,
-            agent: result.agent, model: row.model, pass, why,
+            slug: ev.slug,
+            runId: result.id,
+            canonSha: row.canon_sha ?? pack.sha256,
+            agent: result.agent,
+            model: row.model,
+            pass,
+            why,
           })
         })
         results.push({
-          slug: ev.slug, runId: result.id, canonSha: row.canon_sha ?? pack.sha256,
-          agent: result.agent, model: row.model, pass, skipped: false, why, at: nowIso(),
+          slug: ev.slug,
+          runId: result.id,
+          canonSha: row.canon_sha ?? pack.sha256,
+          agent: result.agent,
+          model: row.model,
+          pass,
+          skipped: false,
+          why,
+          at: nowIso(),
         })
       } finally {
         rmSync(repo, { recursive: true, force: true })
@@ -433,32 +522,48 @@ export async function runCanonEvals(opts: {
 }
 
 export function latestCanonEvals(): CanonEvalLatest[] {
-  const rows = db().query(
-    `SELECT slug, agent, pass, why, canon_sha, at, run_id, model
+  const rows = db()
+    .query(
+      `SELECT slug, agent, pass, why, canon_sha, at, run_id, model
        FROM canon_eval
       WHERE id IN (
         SELECT MAX(id) FROM canon_eval GROUP BY slug, agent
       )
       ORDER BY slug, agent`,
-  ).all() as {
-    slug: string; agent: string; pass: number; why: string; canon_sha: string
-    at: string; run_id: number; model: string | null
+    )
+    .all() as {
+    slug: string
+    agent: string
+    pass: number
+    why: string
+    canon_sha: string
+    at: string
+    run_id: number
+    model: string | null
   }[]
   return rows.map((row) => ({
-    slug: row.slug, agent: row.agent, pass: row.pass === 1, why: row.why,
-    canon_sha: row.canon_sha, at: row.at, run_id: row.run_id, model: row.model,
+    slug: row.slug,
+    agent: row.agent,
+    pass: row.pass === 1,
+    why: row.why,
+    canon_sha: row.canon_sha,
+    at: row.at,
+    run_id: row.run_id,
+    model: row.model,
   }))
 }
 
 export function lastKnownGoodCanonEvals(): CanonEvalKnownGood[] {
-  return db().query(
-    `SELECT slug, agent, canon_sha, at
+  return db()
+    .query(
+      `SELECT slug, agent, canon_sha, at
        FROM canon_eval
       WHERE pass=1 AND id IN (
         SELECT MAX(id) FROM canon_eval WHERE pass=1 GROUP BY slug, agent
       )
       ORDER BY slug, agent`,
-  ).all() as CanonEvalKnownGood[]
+    )
+    .all() as CanonEvalKnownGood[]
 }
 
 export function failingCanonEvalSlugs(): string[] {
@@ -469,7 +574,9 @@ export function failingCanonEvalSlugs(): string[] {
 }
 
 export function lastCanonEvalAt(): string | null {
-  const row = db().query('SELECT MAX(at) AS at FROM canon_eval').get() as { at: string | null } | null
+  const row = db().query('SELECT MAX(at) AS at FROM canon_eval').get() as {
+    at: string | null
+  } | null
   return row?.at ?? null
 }
 

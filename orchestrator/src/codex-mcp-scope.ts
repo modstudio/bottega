@@ -41,7 +41,9 @@ function serverOverlay(name: string, server: CodexMcpServer): string {
 
 /** Select project MCP launch definitions that are safe to expose on argv. */
 export function codexProjectServers(
-  config: Record<string, McpServerConfig>, allowed: string[] | undefined, cwd: string,
+  config: Record<string, McpServerConfig>,
+  allowed: string[] | undefined,
+  cwd: string,
 ): { servers: Record<string, CodexMcpServer>; withheld: string[] } {
   const disabled = new Set(disabledProjectMcpServers(Object.keys(config), allowed))
   const servers: Record<string, CodexMcpServer> = {}
@@ -53,8 +55,10 @@ export function codexProjectServers(
     } else if (entry.url) {
       servers[name] = { url: entry.url }
     } else if (entry.command) {
-      const command = entry.command.includes('/') && !isAbsolute(entry.command)
-        ? resolve(cwd, entry.command) : entry.command
+      const command =
+        entry.command.includes('/') && !isAbsolute(entry.command)
+          ? resolve(cwd, entry.command)
+          : entry.command
       servers[name] = { command, args: entry.args ?? [], cwd }
     } else {
       withheld.push(name)
@@ -69,17 +73,23 @@ export function codexProjectServers(
  * registered checkout then supplies the definitions.
  */
 export function codexProjectServersForRun(
-  agent: string, transport: string, mcp: boolean, treeConfig: Record<string, McpServerConfig>,
-  project: { path: string; settings: { workerMcpServers?: string[] } } | null, cwd: string,
+  agent: string,
+  transport: string,
+  mcp: boolean,
+  treeConfig: Record<string, McpServerConfig>,
+  project: { path: string; settings: { workerMcpServers?: string[] } } | null,
+  cwd: string,
 ): ReturnType<typeof codexProjectServers> | null {
   if (agent !== 'codex' || transport !== 'cli' || !mcp) return null
-  const config = Object.keys(treeConfig).length || !project ? treeConfig : readMcpConfig(project.path)
+  const config =
+    Object.keys(treeConfig).length || !project ? treeConfig : readMcpConfig(project.path)
   return codexProjectServers(config, project?.settings.workerMcpServers, cwd)
 }
 
 /** Append the visible reason when project MCP definitions cannot enter argv. */
 export function codexMcpSetupHeader(
-  header: string | null, scope: ReturnType<typeof codexProjectServers> | null,
+  header: string | null,
+  scope: ReturnType<typeof codexProjectServers> | null,
 ): string | null {
   if (!scope?.withheld.length) return header
   const line = `MCP scope: codex withheld ${scope.withheld.join(', ')} (inline env/headers or no launch definition)`
@@ -90,9 +100,12 @@ export function codexMcpSetupHeader(
 export function codexScopeArgs(opts: CodexScopeOpts): string[] {
   const args = [
     '--ignore-user-config',
-    '-c', 'features.apps=false',
-    '-c', 'features.plugins=false',
-    '-c', `model_reasoning_effort=${JSON.stringify(CODEX_REASONING_EFFORT)}`,
+    '-c',
+    'features.apps=false',
+    '-c',
+    'features.plugins=false',
+    '-c',
+    `model_reasoning_effort=${JSON.stringify(CODEX_REASONING_EFFORT)}`,
   ]
   if (!opts.mcp) return args
 
@@ -107,10 +120,13 @@ export function codexScopeArgs(opts: CodexScopeOpts): string[] {
     if (name !== 'orch-ask' && name !== 'orch') args.push('-c', serverOverlay(name, server))
   }
   if (opts.mcpServer && opts.mcpServer !== 'orch' && !opts.projectServers?.[opts.mcpServer]) {
-    args.push('-c', serverOverlay(opts.mcpServer, {
-      command: join(opts.home ?? '', '.claude', 'mcp', 'mcp-run'),
-      args: [opts.mcpServer],
-    }))
+    args.push(
+      '-c',
+      serverOverlay(opts.mcpServer, {
+        command: join(opts.home ?? '', '.claude', 'mcp', 'mcp-run'),
+        args: [opts.mcpServer],
+      }),
+    )
   }
   return args
 }

@@ -33,14 +33,17 @@ for (const concern of CONCERNS) {
         else out.push(p)
       }
       const target = out[0]
-      if (concern === 'hub' && rel.startsWith('web/') && target === 'hub'
-          && out[1] !== 'web') {
+      if (concern === 'hub' && rel.startsWith('web/') && target === 'hub' && out[1] !== 'web') {
         const resolved = out.join('/')
-        const typeOnlyRouter = resolved === 'hub/src/trpc/router.ts'
-          && new RegExp(`import\\s+type\\s+[^\\n]+from\\s+['"]${spec.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}['"]`)
-            .test(src)
+        const typeOnlyRouter =
+          resolved === 'hub/src/trpc/router.ts' &&
+          new RegExp(
+            `import\\s+type\\s+[^\\n]+from\\s+['"]${spec.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}['"]`,
+          ).test(src)
         if (!typeOnlyRouter) {
-          violations.push(`${file}\n    imports "${spec}" -> ${resolved}  (hub/web may import only the hub router type)`)
+          violations.push(
+            `${file}\n    imports "${spec}" -> ${resolved}  (hub/web may import only the hub router type)`,
+          )
         }
         continue
       }

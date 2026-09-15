@@ -21,10 +21,16 @@ describe('spend conservation', () => {
   const t = at('2026-09-01T10:00:00Z')
 
   test('a normal leg keeps every token', () => {
-    expect(conserved(
-      [t, t + 60_000, t + 120_000],
-      [{ at: t, tokens: 100 }, { at: t + 60_000, tokens: 200 }, { at: t + 120_000, tokens: 300 }],
-    )).toBe(600)
+    expect(
+      conserved(
+        [t, t + 60_000, t + 120_000],
+        [
+          { at: t, tokens: 100 },
+          { at: t + 60_000, tokens: 200 },
+          { at: t + 120_000, tokens: 300 },
+        ],
+      ),
+    ).toBe(600)
   })
 
   test('the last message sits on a span boundary and is still counted', () => {
@@ -34,8 +40,13 @@ describe('spend conservation', () => {
   })
 
   test('a single-message leg keeps its spend and reports no duration', () => {
-    const leg = { cwd: '/fixtures/repos/workshop', ref: 'r', stamps: [t], prompts: [],
-                  spend: [{ at: t, tokens: 900 }] }
+    const leg = {
+      cwd: '/fixtures/repos/workshop',
+      ref: 'r',
+      stamps: [t],
+      prompts: [],
+      spend: [{ at: t, tokens: 900 }],
+    }
     const out = spendingSpans(leg, DEFAULT_IDLE_CAP_MS)
     expect(out).toHaveLength(1)
     expect(out[0]!.tokens).toBe(900)

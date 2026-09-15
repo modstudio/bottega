@@ -1,6 +1,10 @@
 import { MIGRATED_AGENT_NAMES, type Caps } from './capabilities.ts'
 import { STALE_AFTER_MS } from './run-liveness.ts'
-import { DEFAULT_EXTERNAL_WAIT_IDLE_KILL_MS, DEFAULT_IDLE_KILL_MS, idleKillMs } from './idle-kill.ts'
+import {
+  DEFAULT_EXTERNAL_WAIT_IDLE_KILL_MS,
+  DEFAULT_IDLE_KILL_MS,
+  idleKillMs,
+} from './idle-kill.ts'
 
 export type Job = {
   name: string
@@ -85,13 +89,16 @@ export function clampIdleKillMs(idleMs: number, wallMs: number): number {
 }
 
 export function jobIdleKillMs(
-  name: string, env: NodeJS.ProcessEnv = process.env, wallMs?: number,
+  name: string,
+  env: NodeJS.ProcessEnv = process.env,
+  wallMs?: number,
 ): number {
-  const raw = env.ORCH_IDLE_KILL_MS !== undefined && env.ORCH_IDLE_KILL_MS !== ''
-    ? idleKillMs(env)
-    : (CPU_LOCAL_JOBS as readonly string[]).includes(name)
-      ? DEFAULT_IDLE_KILL_MS
-      : DEFAULT_EXTERNAL_WAIT_IDLE_KILL_MS
+  const raw =
+    env.ORCH_IDLE_KILL_MS !== undefined && env.ORCH_IDLE_KILL_MS !== ''
+      ? idleKillMs(env)
+      : (CPU_LOCAL_JOBS as readonly string[]).includes(name)
+        ? DEFAULT_IDLE_KILL_MS
+        : DEFAULT_EXTERNAL_WAIT_IDLE_KILL_MS
   const wall = wallMs ?? jobDeclaredWallMs(name)
   return wall != null ? clampIdleKillMs(raw, wall) : raw
 }
@@ -115,13 +122,16 @@ export const JOB_TIMEOUTS = {
 
 /** Compact defaults/ceilings for `orch do --help`, derived from JOB_TIMEOUTS. */
 export function jobTimeoutHelp(): string {
-  return Object.entries(JOB_TIMEOUTS).map(([name, bounds]) =>
-    `${name} ${bounds.defaultMinutes == null ? 'agent' : `${bounds.defaultMinutes}m`}/${bounds.ceilingMinutes}m`,
-  ).join(', ')
+  return Object.entries(JOB_TIMEOUTS)
+    .map(
+      ([name, bounds]) =>
+        `${name} ${bounds.defaultMinutes == null ? 'agent' : `${bounds.defaultMinutes}m`}/${bounds.ceilingMinutes}m`,
+    )
+    .join(', ')
 }
 
 export const READER_JOBS = ['diagnose', 'understand', 'file-question'] as const
-export type ReaderJob = typeof READER_JOBS[number]
+export type ReaderJob = (typeof READER_JOBS)[number]
 
 export function isReaderJob(name: string): name is ReaderJob {
   return (READER_JOBS as readonly string[]).includes(name)
@@ -134,7 +144,8 @@ export function reclaimsTreeByDefault(name: string): boolean {
 }
 
 export function jobTimeoutCeilingMs(j: Job): number {
-  const declared = j.timeoutCeilingMs ?? JOB_TIMEOUTS[j.name as keyof typeof JOB_TIMEOUTS].ceilingMinutes * 60_000
+  const declared =
+    j.timeoutCeilingMs ?? JOB_TIMEOUTS[j.name as keyof typeof JOB_TIMEOUTS].ceilingMinutes * 60_000
   return Math.min(declared, STALE_AFTER_MS - 1)
 }
 
@@ -147,9 +158,11 @@ export function timeoutCeilingRefusal(j: Job, requestedMinutes: number): string 
   const effective = jobTimeoutCeilingMinutes(j)
   const staleMinutes = Math.round(STALE_AFTER_MS / 60_000)
   if (effective < declared) {
-    return `${j.name} timeout ceiling is ${effective} minutes ` +
+    return (
+      `${j.name} timeout ceiling is ${effective} minutes ` +
       `(stale cutoff ${staleMinutes}m wins over the job's ${declared}m ceiling); ` +
       `got --timeout ${requestedMinutes}`
+    )
   }
   return `${j.name} timeout ceiling is ${effective} minutes; got --timeout ${requestedMinutes}`
 }
@@ -159,12 +172,16 @@ export function timeoutCeilingRefusal(j: Job, requestedMinutes: number): string 
  * Throws if the override is not a positive integer or exceeds the ceiling.
  */
 export function resolveJobTimeoutMs(
-  j: Job, agentTimeoutMs: number, overrideMinutes?: number,
+  j: Job,
+  agentTimeoutMs: number,
+  overrideMinutes?: number,
 ): number {
   const ceiling = jobTimeoutCeilingMs(j)
   if (overrideMinutes !== undefined) {
     if (!Number.isInteger(overrideMinutes) || overrideMinutes < 1) {
-      throw new Error(`--timeout must be a positive integer number of minutes; got ${overrideMinutes}`)
+      throw new Error(
+        `--timeout must be a positive integer number of minutes; got ${overrideMinutes}`,
+      )
     }
     const requested = overrideMinutes * 60_000
     if (requested > ceiling) throw new Error(timeoutCeilingRefusal(j, overrideMinutes))
@@ -176,17 +193,22 @@ export function resolveJobTimeoutMs(
 /** One sentence naming this job's bound and where to write long tables. */
 export function jobBoundInstruction(j: Job, boundMs: number): string {
   const minutes = Math.round(boundMs / 60_000)
-  return `This job's bound is ${minutes} minutes. When a step is long, write tables ` +
+  return (
+    `This job's bound is ${minutes} minutes. When a step is long, write tables ` +
     `incrementally to a named file under $ORCH_SCRATCH rather than holding them only in the final reply.`
+  )
 }
 
 export function jobBoundInstructionForContract(j: Job): string {
   const defaults = JOB_TIMEOUTS[j.name as keyof typeof JOB_TIMEOUTS]
-  const bound = defaults?.defaultMinutes != null
-    ? `${defaults.defaultMinutes} minutes`
-    : `the selected agent's bound, capped at ${jobTimeoutCeilingMinutes(j)} minutes`
-  return `This job's bound is ${bound}. When a step is long, write tables ` +
+  const bound =
+    defaults?.defaultMinutes != null
+      ? `${defaults.defaultMinutes} minutes`
+      : `the selected agent's bound, capped at ${jobTimeoutCeilingMinutes(j)} minutes`
+  return (
+    `This job's bound is ${bound}. When a step is long, write tables ` +
     `incrementally to a named file under $ORCH_SCRATCH rather than holding them only in the final reply.`
+  )
 }
 
 export { DEFAULT_PACK_BYTES } from './pack-budget.ts'
@@ -388,7 +410,7 @@ for (const [jobName, j] of Object.entries(JOBS)) {
     if (!(MIGRATED_AGENT_NAMES as readonly string[]).includes(agent)) {
       throw new Error(
         `job "${jobName}" prefers unknown agent "${agent}" - ` +
-        `known agents: ${MIGRATED_AGENT_NAMES.join(', ')}`,
+          `known agents: ${MIGRATED_AGENT_NAMES.join(', ')}`,
       )
     }
   }

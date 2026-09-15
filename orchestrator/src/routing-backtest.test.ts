@@ -3,7 +3,11 @@ import { addRun } from '../test/fixtures/store.ts'
 import { AGENTS } from './agents.ts'
 import { db } from './db.ts'
 import { betaContribution, candidates, EVIDENCE_WINDOW, MIN_SAMPLE, pick } from './route.ts'
-import { ROUTING_BACKTEST_SEEDS, routingBacktest, routingBacktestEnsemble } from './routing-backtest.ts'
+import {
+  ROUTING_BACKTEST_SEEDS,
+  routingBacktest,
+  routingBacktestEnsemble,
+} from './routing-backtest.ts'
 
 describe('routing backtest statistics', () => {
   test('maps both judgement extremes to whole Beta observations', () => {
@@ -11,14 +15,17 @@ describe('routing backtest statistics', () => {
     expect(betaContribution(1)).toEqual({ successes: 1, failures: 0 })
   })
 
-
   test('is deterministic under a fixed seed', () => {
     const insert = db().query(
       `INSERT INTO score (run_id, delivery, quality, scored_at, scored_by)
        VALUES (?,?,?,'2026-01-01T00:00:00.000Z','test')`,
     )
     for (let i = 0; i < 8; i++) {
-      const id = addRun({ agent: i % 2 ? 'agy' : 'codex', job: 'summarize', startedAt: `2026-01-${String(i + 1).padStart(2, '0')}T00:00:00.000Z` })
+      const id = addRun({
+        agent: i % 2 ? 'agy' : 'codex',
+        job: 'summarize',
+        startedAt: `2026-01-${String(i + 1).padStart(2, '0')}T00:00:00.000Z`,
+      })
       insert.run(id, 'full', i % 3 ? 'right' : 'mixed')
     }
     expect(routingBacktest('summarize', 12345)).toEqual(routingBacktest('summarize', 12345))
@@ -26,10 +33,14 @@ describe('routing backtest statistics', () => {
 
   test('does not expose evidence from an overlapping fan-out before it was scored', () => {
     const first = addRun({
-      agent: 'codex', job: 'summarize', startedAt: '2026-01-01T00:00:00.000Z',
+      agent: 'codex',
+      job: 'summarize',
+      startedAt: '2026-01-01T00:00:00.000Z',
     })
     const second = addRun({
-      agent: 'agy', job: 'summarize', startedAt: '2026-01-02T00:00:00.000Z',
+      agent: 'agy',
+      job: 'summarize',
+      startedAt: '2026-01-02T00:00:00.000Z',
     })
     const insert = db().query(
       `INSERT INTO score (run_id, delivery, quality, scored_at, scored_by)
@@ -42,18 +53,21 @@ describe('routing backtest statistics', () => {
 
   test('replays a successful unscored dispatch as a decision without quality evidence', () => {
     const scored = addRun({
-      agent: 'codex', job: 'fix', startedAt: '2026-01-01T00:00:00.000Z',
+      agent: 'codex',
+      job: 'fix',
+      startedAt: '2026-01-01T00:00:00.000Z',
     })
     addRun({ agent: 'grok', job: 'fix', startedAt: '2026-01-02T00:00:00.000Z' })
-    db().query(
-      `INSERT INTO score (run_id, delivery, quality, scored_at, scored_by)
+    db()
+      .query(
+        `INSERT INTO score (run_id, delivery, quality, scored_at, scored_by)
        VALUES (?,'full','right','2026-01-01T01:00:00.000Z','test')`,
-    ).run(scored)
+      )
+      .run(scored)
 
     const result = routingBacktest('fix', 1)
     expect(result.jobs[0]!.runs).toBe(2)
     expect(result.unscoredDecisions).toBe(1)
-
   })
 
   test('unscored successful latency reaches the replay tie-break at completion', () => {
@@ -72,12 +86,15 @@ describe('routing backtest statistics', () => {
       db().query('UPDATE run SET latency_ms=NULL WHERE id=?').run(id)
       const next = routingBacktest('fix', seed).jobs[0]!.currentSelections
       const chosen = choiceAdded(next) as keyof typeof matched
-      db().query('UPDATE run SET agent=?, model=? WHERE id=?')
+      db()
+        .query('UPDATE run SET agent=?, model=? WHERE id=?')
         .run(chosen, AGENTS[chosen]!.model, id)
-      db().query(
-        `INSERT INTO score (run_id, delivery, quality, scored_at, scored_by)
+      db()
+        .query(
+          `INSERT INTO score (run_id, delivery, quality, scored_at, scored_by)
          VALUES (?,'full','right',?,'test')`,
-      ).run(id, new Date(Date.parse(startedAt) + 1000).toISOString())
+        )
+        .run(id, new Date(Date.parse(startedAt) + 1000).toISOString())
       matched[chosen]++
       prior = routingBacktest('fix', seed).jobs[0]!.currentSelections
     }
@@ -98,14 +115,21 @@ describe('routing backtest statistics', () => {
     while (!grokLatency && tick < 150) {
       const startedAt = new Date(base + tick++ * 86_400_000).toISOString()
       const id = addRun({
-        agent: 'codex', job: 'fix', status: 'failed', kind: 'unreachable', startedAt,
+        agent: 'codex',
+        job: 'fix',
+        status: 'failed',
+        kind: 'unreachable',
+        startedAt,
       })
       const next = routingBacktest('fix', seed).jobs[0]!.currentSelections
       const chosen = choiceAdded(next)
-      db().query('UPDATE run SET agent=?, model=? WHERE id=?')
+      db()
+        .query('UPDATE run SET agent=?, model=? WHERE id=?')
         .run(chosen, AGENTS[chosen]!.model, id)
       if (chosen === 'grok') {
-        db().query("UPDATE run SET status='ok', failure_kind=NULL, latency_ms=1000 WHERE id=?").run(id)
+        db()
+          .query("UPDATE run SET status='ok', failure_kind=NULL, latency_ms=1000 WHERE id=?")
+          .run(id)
         grokLatency = true
       }
       prior = routingBacktest('fix', seed).jobs[0]!.currentSelections
@@ -122,11 +146,19 @@ describe('routing backtest statistics', () => {
 
   test("uses the terminating child's time when a root inherits stale status", () => {
     const root = addRun({
-      agent: 'codex', job: 'fix', status: 'stale', latency: 1000,
+      agent: 'codex',
+      job: 'fix',
+      status: 'stale',
+      latency: 1000,
       startedAt: '2026-01-01T00:00:00.000Z',
     })
     addRun({
-      agent: 'codex', job: 'fix', status: 'stale', parent: root, turn: 2, latency: 60 * 60_000,
+      agent: 'codex',
+      job: 'fix',
+      status: 'stale',
+      parent: root,
+      turn: 2,
+      latency: 60 * 60_000,
       startedAt: '2026-01-01T10:00:00.000Z',
     })
     addRun({ agent: 'grok', job: 'fix', startedAt: '2026-01-01T12:00:00.000Z' })
@@ -134,7 +166,9 @@ describe('routing backtest statistics', () => {
     const shortRootLatency = routingBacktest('fix', 1)
     db().query('UPDATE run SET latency_ms=NULL WHERE id=?').run(root)
     const nullRootLatency = routingBacktest('fix', 1)
-    db().query('UPDATE run SET latency_ms=? WHERE id=?').run(24 * 60 * 60_000, root)
+    db()
+      .query('UPDATE run SET latency_ms=? WHERE id=?')
+      .run(24 * 60 * 60_000, root)
     const longRootLatency = routingBacktest('fix', 1)
 
     expect(nullRootLatency).toEqual(shortRootLatency)
@@ -168,16 +202,24 @@ describe('routing backtest statistics', () => {
 
   test('quota cooldown is operational state, not scoring evidence, and a probe clears it', () => {
     addRun({
-      agent: 'codex', job: 'fix', status: 'failed', kind: 'quota', latency: 1000,
+      agent: 'codex',
+      job: 'fix',
+      status: 'failed',
+      kind: 'quota',
+      latency: 1000,
       startedAt: '2026-01-01T00:00:00.000Z',
     })
     const decision = addRun({
-      agent: 'codex', job: 'fix', startedAt: '2026-01-01T00:10:00.000Z',
+      agent: 'codex',
+      job: 'fix',
+      startedAt: '2026-01-01T00:10:00.000Z',
     })
-    db().query(
-      `INSERT INTO score (run_id, delivery, quality, scored_at, scored_by)
+    db()
+      .query(
+        `INSERT INTO score (run_id, delivery, quality, scored_at, scored_by)
        VALUES (?,'full','right','2026-01-01T00:11:00.000Z','test')`,
-    ).run(decision)
+      )
+      .run(decision)
 
     const cooled = routingBacktest('fix', 2)
     const disabled = routingBacktest('fix', 2, { cooldowns: false })
@@ -185,23 +227,31 @@ describe('routing backtest statistics', () => {
     expect(disabled.jobs[0]!.currentSelections).toEqual({ codex: 2 })
 
     addRun({
-      agent: 'codex', job: 'fix', probe: 1, startedAt: '2026-01-01T00:05:00.000Z',
+      agent: 'codex',
+      job: 'fix',
+      probe: 1,
+      startedAt: '2026-01-01T00:05:00.000Z',
     })
     expect(routingBacktest('fix', 2).jobs[0]!.currentSelections).toEqual({ codex: 2 })
   })
 
   test('reports voided-row selection sensitivity side by side', () => {
     const id = addRun({
-      agent: 'codex', job: 'fix', startedAt: '2026-01-01T00:00:00.000Z',
+      agent: 'codex',
+      job: 'fix',
+      startedAt: '2026-01-01T00:00:00.000Z',
     })
-    db().query(
-      `INSERT INTO score (run_id, delivery, quality, scored_at, scored_by)
+    db()
+      .query(
+        `INSERT INTO score (run_id, delivery, quality, scored_at, scored_by)
        VALUES (?,'full','right','2026-01-01T00:01:00.000Z','test')`,
-    ).run(id)
-    db().query("UPDATE run SET evidence_excluded='voided with orch score --void' WHERE id=?").run(id)
+      )
+      .run(id)
+    db()
+      .query("UPDATE run SET evidence_excluded='voided with orch score --void' WHERE id=?")
+      .run(id)
     expect(routingBacktest('fix', 2).jobs).toEqual([])
     expect(routingBacktest('fix', 2, { includeVoided: true }).jobs[0]!.runs).toBe(1)
-
   })
 
   test('each simulated policy learns only from historical runs it selected', () => {
@@ -212,7 +262,8 @@ describe('routing backtest statistics', () => {
     for (let i = 0; i < 9; i++) {
       const day = String(i + 1).padStart(2, '0')
       const id = addRun({
-        agent: i < 5 ? 'codex' : 'agy', job: 'fix',
+        agent: i < 5 ? 'codex' : 'agy',
+        job: 'fix',
         startedAt: `2026-01-${day}T00:00:00.000Z`,
       })
       insert.run(id, 'full', i < 5 ? 'mixed' : 'right', `2026-01-${day}T01:00:00.000Z`)
@@ -227,10 +278,15 @@ describe('routing backtest statistics', () => {
   test('scoring NOT_EVIDENCE failures changes no replay trajectory', () => {
     const ids: number[] = []
     for (let i = 0; i < 6; i++) {
-      ids.push(addRun({
-        agent: 'grok', job: 'fix', status: 'failed', kind: 'unreachable',
-        startedAt: `2026-01-0${i + 1}T00:00:00.000Z`,
-      }))
+      ids.push(
+        addRun({
+          agent: 'grok',
+          job: 'fix',
+          status: 'failed',
+          kind: 'unreachable',
+          startedAt: `2026-01-0${i + 1}T00:00:00.000Z`,
+        }),
+      )
     }
     const before = routingBacktestEnsemble('fix').trajectories.map((trajectory) => trajectory.jobs)
     const insert = db().query(
@@ -263,11 +319,13 @@ describe('routing backtest statistics', () => {
     }
 
     expect(candidates('fix').find((candidate) => candidate.agent === 'codex')).toMatchObject({
-      evidence: MIN_SAMPLE, evidenceModel: currentModel, score: 0,
+      evidence: MIN_SAMPLE,
+      evidenceModel: currentModel,
+      score: 0,
     })
   })
 
-  test("the replay excludes a disabled legacy agent while retaining its historical rows", () => {
+  test('the replay excludes a disabled legacy agent while retaining its historical rows', () => {
     const insert = db().query(
       `INSERT INTO score (run_id, delivery, quality, scored_at, scored_by)
        VALUES (?,'full','right',?,'test')`,
@@ -275,16 +333,28 @@ describe('routing backtest statistics', () => {
     for (let i = 0; i < MIN_SAMPLE; i++) {
       const day = String(i + 1).padStart(2, '0')
       const id = addRun({
-        agent: 'qwen-local', job: 'summarize', startedAt: `2026-01-${day}T00:00:00.000Z`,
+        agent: 'qwen-local',
+        job: 'summarize',
+        startedAt: `2026-01-${day}T00:00:00.000Z`,
       })
       insert.run(id, `2026-01-${day}T01:00:00.000Z`)
     }
 
     const production = pick(
-      'summarize', undefined, 0, true, undefined, {}, false, undefined, () => 0,
+      'summarize',
+      undefined,
+      0,
+      true,
+      undefined,
+      {},
+      false,
+      undefined,
+      () => 0,
     ).agent
     const sixth = addRun({
-      agent: production, job: 'summarize', startedAt: '2026-01-06T00:00:00.000Z',
+      agent: production,
+      job: 'summarize',
+      startedAt: '2026-01-06T00:00:00.000Z',
     })
     insert.run(sixth, '2026-01-06T01:00:00.000Z')
 
@@ -300,7 +370,8 @@ describe('routing backtest statistics', () => {
     )
     for (let i = 0; i < 12; i++) {
       const id = addRun({
-        agent: i % 2 ? 'agy' : 'codex', job: 'summarize',
+        agent: i % 2 ? 'agy' : 'codex',
+        job: 'summarize',
         startedAt: `2026-02-${String(i + 1).padStart(2, '0')}T00:00:00.000Z`,
       })
       insert.run(id, 'full', i % 3 ? 'right' : 'mixed')
@@ -308,20 +379,28 @@ describe('routing backtest statistics', () => {
     const result = routingBacktest('summarize', 7)
     expect(result.jobs.map((row) => row.job)).toEqual(['summarize'])
     for (const row of result.jobs) {
-      expect(Object.values(row.currentSelections).reduce((sum, count) => sum + count, 0)).toBe(row.runs)
-      expect(Object.values(row.thompsonSelections).reduce((sum, count) => sum + count, 0)).toBe(row.runs)
+      expect(Object.values(row.currentSelections).reduce((sum, count) => sum + count, 0)).toBe(
+        row.runs,
+      )
+      expect(Object.values(row.thompsonSelections).reduce((sum, count) => sum + count, 0)).toBe(
+        row.runs,
+      )
       expect(row.agreements + row.differences).toBe(row.runs)
     }
   })
 
   test('the ensemble aggregates the fixed twenty reproducible trajectories', () => {
     const id = addRun({
-      agent: 'codex', job: 'summarize', startedAt: '2026-01-02T00:00:00.000Z',
+      agent: 'codex',
+      job: 'summarize',
+      startedAt: '2026-01-02T00:00:00.000Z',
     })
-    db().query(
-      `INSERT INTO score (run_id, delivery, quality, scored_at, scored_by)
+    db()
+      .query(
+        `INSERT INTO score (run_id, delivery, quality, scored_at, scored_by)
        VALUES (?,'full','right','2026-01-02T01:00:00.000Z','test')`,
-    ).run(id)
+      )
+      .run(id)
     const result = routingBacktestEnsemble('summarize')
     expect(result.seeds).toEqual(ROUTING_BACKTEST_SEEDS)
     expect(result.trajectories).toHaveLength(20)
@@ -330,6 +409,4 @@ describe('routing backtest statistics', () => {
       result.trajectories.reduce((sum, trajectory) => sum + trajectory.jobs[0]!.runs, 0),
     )
   })
-
-
 })

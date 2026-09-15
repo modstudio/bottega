@@ -1,5 +1,21 @@
 import { createRootRoute, Link, Outlet } from '@tanstack/react-router'
-import { Activity, Bot, BookOpen, BriefcaseBusiness, CheckCircle2, CircleDollarSign, FolderGit2, GitCompareArrows, Kanban, NotebookPen, Palette, Plane, Play, Route as RouteIcon, Settings } from 'lucide-react'
+import {
+  Activity,
+  Bot,
+  BookOpen,
+  BriefcaseBusiness,
+  CheckCircle2,
+  CircleDollarSign,
+  FolderGit2,
+  GitCompareArrows,
+  Kanban,
+  NotebookPen,
+  Palette,
+  Plane,
+  Play,
+  Route as RouteIcon,
+  Settings,
+} from 'lucide-react'
 import { PLATFORM_NAME } from '../../../../shared/brand.ts'
 import { useWindowState } from '@/lib/window'
 import { LiveDot } from '@/components/design-system'
@@ -42,13 +58,17 @@ export const Route = createRootRoute({
                 <Icon size={16} strokeWidth={1.5} />
                 {label}
                 {to === '/flight' && counts?.flight ? <LiveDot /> : null}
-                {'count' in item && counts?.[item.count] ? <span className="ml-auto text-muted-foreground">{counts[item.count]}</span> : null}
+                {'count' in item && counts?.[item.count] ? (
+                  <span className="ml-auto text-muted-foreground">{counts[item.count]}</span>
+                ) : null}
               </Link>
             ))}
           </nav>
         </aside>
         <main className="min-w-0 flex-1 px-8 pb-8">
-          <div className="max-w-[1160px]"><Outlet /></div>
+          <div className="max-w-[1160px]">
+            <Outlet />
+          </div>
         </main>
       </div>
     )

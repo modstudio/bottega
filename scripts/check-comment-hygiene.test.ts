@@ -39,7 +39,9 @@ describe('comment hygiene', () => {
   })
 
   test('does not treat a URL string as a comment', () => {
-    expect(checkCommentBody('subject.ts', 'const url = "https://example.test/previously"')).toEqual([])
+    expect(checkCommentBody('subject.ts', 'const url = "https://example.test/previously"')).toEqual(
+      [],
+    )
   })
 
   test('does not reject the purpose sense of used to', () => {

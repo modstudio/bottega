@@ -39,19 +39,22 @@ export class DuplicateTaskError extends Error {
 }
 
 const DUPLICATE_STOP_WORDS = new Set(
-  'a an and are as at be by for from has have in into is it its of on or that the this to was were will with should before after not no'.split(' '),
+  'a an and are as at be by for from has have in into is it its of on or that the this to was were will with should before after not no'.split(
+    ' ',
+  ),
 )
 
 // Provisional, measured against the real reports that prompted DEV-267:
 // DEV-209/DEV-210 scored 0.248, DEV-265/DEV-266 scored 0.227, and the best
 // unrelated result across those four searches scored 0.151.
-const DUPLICATE_THRESHOLD = 0.20
+const DUPLICATE_THRESHOLD = 0.2
 const DUPLICATE_LIMIT = 3
 
 function titleTokens(title: string): Set<string> {
   return new Set(
-    (title.toLowerCase().match(/[a-z0-9]+/g) ?? [])
-      .filter((token) => token.length > 1 && !DUPLICATE_STOP_WORDS.has(token)),
+    (title.toLowerCase().match(/[a-z0-9]+/g) ?? []).filter(
+      (token) => token.length > 1 && !DUPLICATE_STOP_WORDS.has(token),
+    ),
   )
 }
 
@@ -79,7 +82,7 @@ export function duplicateCandidates(tasks: TaskRow[], title: string): DuplicateC
 }
 
 export const TASK_DOCUMENT_ROLES = ['handoff'] as const
-export type TaskDocumentRole = typeof TASK_DOCUMENT_ROLES[number]
+export type TaskDocumentRole = (typeof TASK_DOCUMENT_ROLES)[number]
 export type TaskDocumentSummary = {
   id: number
   task_key: string
@@ -130,19 +133,26 @@ function assertParent(key: string | null | undefined) {
 }
 
 /** Check, allocate, insert, and record an override under one serialised write transaction. */
-export function createTask(input: {
-  project: string; title: string; status?: string; parent?: string; body?: string
-}, options: {
-  allowDuplicateReason?: string
-  afterDuplicateSearch?: () => void
-} = {}): TaskRow {
+export function createTask(
+  input: {
+    project: string
+    title: string
+    status?: string
+    parent?: string
+    body?: string
+  },
+  options: {
+    allowDuplicateReason?: string
+    afterDuplicateSearch?: () => void
+  } = {},
+): TaskRow {
   if (!input.title.trim()) throw new Error('task title is required')
   const project = registeredProject(input.project)
   const prefix = project.settings.keyPrefixes?.[0]
   if (!prefix) {
     throw new Error(
       `project '${input.project}' has no key prefix; set one with ` +
-      `orch project set ${input.project} --settings '{"keyPrefixes":["ABC"]}'`,
+        `orch project set ${input.project} --settings '{"keyPrefixes":["ABC"]}'`,
     )
   }
   const category = status(input.status)
@@ -160,30 +170,46 @@ export function createTask(input: {
       throw new DuplicateTaskError(candidates)
     }
     const pattern = new RegExp(`^${prefix.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}-(\\d+)$`, 'i')
-    const highest = d.query<{ key: string }, []>(`SELECT key FROM task`).all()
+    const highest = d
+      .query<{ key: string }, []>(`SELECT key FROM task`)
+      .all()
       .reduce((max, row) => {
         const match = pattern.exec(row.key)
         return match ? Math.max(max, Number(match[1])) : max
       }, 0)
-    const sequence = d.query<{ next: number }, [string]>(
-      `SELECT next FROM seq WHERE name = ?`,
-    ).get(`task:${prefix}`)
+    const sequence = d
+      .query<{ next: number }, [string]>(`SELECT next FROM seq WHERE name = ?`)
+      .get(`task:${prefix}`)
     const number = Math.max(highest + 1, sequence?.next ?? 1)
     const key = `${prefix.toUpperCase()}-${number}`
     d.query(
       `INSERT INTO task (key, project, title, status, status_category, parent_key, body,
                          opened_at, closed_at, updated_at, source, first_seen, last_seen)
        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'local', ?, ?)`,
-    ).run(key, input.project, input.title, category, category, parent ?? null, input.body ?? null,
-          at, category === 'done' ? at : null, at, at, at)
+    ).run(
+      key,
+      input.project,
+      input.title,
+      category,
+      category,
+      parent ?? null,
+      input.body ?? null,
+      at,
+      category === 'done' ? at : null,
+      at,
+      at,
+      at,
+    )
     d.query(
       `INSERT INTO seq (name, next) VALUES (?, ?)
        ON CONFLICT(name) DO UPDATE SET next = excluded.next`,
     ).run(`task:${prefix}`, number + 1)
     if (options.allowDuplicateReason !== undefined) {
-      d.query(
-        `INSERT INTO task_comment (task_key, body, created_at) VALUES (?, ?, ?)`,
-      ).run(key, options.allowDuplicateReason, at)
+      d.query(`INSERT INTO task_comment (task_key, body, created_at) VALUES (?, ?, ?)`).run(
+        key,
+        options.allowDuplicateReason,
+        at,
+      )
     }
     return key
   })
@@ -191,37 +217,46 @@ export function createTask(input: {
   return showTask(key).task
 }
 
-export function listTasks(filters: {
-  project?: string; status?: string; parent?: string
-} = {}): TaskRow[] {
+export function listTasks(
+  filters: { project?: string; status?: string; parent?: string } = {},
+): TaskRow[] {
   const clauses: string[] = []
   const values: string[] = []
   if (filters.project) {
     registeredProject(filters.project)
-    clauses.push('project = ?'); values.push(filters.project)
+    clauses.push('project = ?')
+    values.push(filters.project)
   }
   if (filters.status) {
-    clauses.push('status_category = ?'); values.push(status(filters.status))
+    clauses.push('status_category = ?')
+    values.push(status(filters.status))
   }
   if (filters.parent) {
-    clauses.push('parent_key = ?'); values.push(filters.parent.toUpperCase())
+    clauses.push('parent_key = ?')
+    values.push(filters.parent.toUpperCase())
   }
-  return db().query<TaskRow, string[]>(
-    `SELECT * FROM task ${clauses.length ? `WHERE ${clauses.join(' AND ')}` : ''}
+  return db()
+    .query<TaskRow, string[]>(
+      `SELECT * FROM task ${clauses.length ? `WHERE ${clauses.join(' AND ')}` : ''}
      ORDER BY project, key`,
-  ).all(...values)
+    )
+    .all(...values)
 }
 
 export function showTask(key: string): {
-  task: TaskRow; comments: TaskComment[]; documents: TaskDocumentSummary[]
+  task: TaskRow
+  comments: TaskComment[]
+  documents: TaskDocumentSummary[]
 } {
   const upper = key.toUpperCase()
   const task = db().query<TaskRow, [string]>(`SELECT * FROM task WHERE key = ?`).get(upper)
   if (!task) throw new Error(`no task ${upper}`)
-  const comments = db().query<TaskComment, [string]>(
-    `SELECT id, task_key, body, created_at FROM task_comment
+  const comments = db()
+    .query<TaskComment, [string]>(
+      `SELECT id, task_key, body, created_at FROM task_comment
       WHERE task_key = ? ORDER BY created_at, id`,
-  ).all(upper)
+    )
+    .all(upper)
   return { task, comments, documents: listTaskDocuments(upper) }
 }
 
@@ -240,39 +275,53 @@ export type TaskRun = {
 export function taskRecord(key: string) {
   const record = showTask(key)
   const project = projects().find((candidate) => candidate.name === record.task.project) ?? null
-  const documents = record.documents.map((document) => getTaskDocument(document.id))
+  const documents = record.documents
+    .map((document) => getTaskDocument(document.id))
     .sort((a, b) => Number(b.role === 'handoff') - Number(a.role === 'handoff'))
-  const runs = db().query<{
-    ref: string; agent: string | null; job: string | null; started_at: string; ended_at: string
-    running: number; vendor_tokens: number; vendor_cost_usd: number | null
-  }, [string]>(
-    `SELECT ref, agent, job, MIN(start_at) started_at, MAX(end_at) ended_at,
+  const runs = db()
+    .query<
+      {
+        ref: string
+        agent: string | null
+        job: string | null
+        started_at: string
+        ended_at: string
+        running: number
+        vendor_tokens: number
+        vendor_cost_usd: number | null
+      },
+      [string]
+    >(
+      `SELECT ref, agent, job, MIN(start_at) started_at, MAX(end_at) ended_at,
             MAX(open) running, SUM(vendor_tokens) vendor_tokens,
             SUM(vendor_cost_usd) vendor_cost_usd
        FROM interval
       WHERE task_key = ? AND source = 'orch'
       GROUP BY ref, agent, job
       ORDER BY started_at DESC`,
-  ).all(record.task.key).flatMap((run): TaskRun[] => {
-    const parsed = runRef(run.ref)
-    if (!parsed) return []
-    return [{
-      id: parsed.turn ?? parsed.root,
-      agent: run.agent,
-      job: run.job,
-      started_at: run.started_at,
-      ended_at: run.ended_at,
-      running: Boolean(run.running),
-      vendor_tokens: run.vendor_tokens,
-      vendor_cost_usd: run.vendor_cost_usd,
-    }]
-  })
+    )
+    .all(record.task.key)
+    .flatMap((run): TaskRun[] => {
+      const parsed = runRef(run.ref)
+      if (!parsed) return []
+      return [
+        {
+          id: parsed.turn ?? parsed.root,
+          agent: run.agent,
+          job: run.job,
+          started_at: run.started_at,
+          ended_at: run.ended_at,
+          running: Boolean(run.running),
+          vendor_tokens: run.vendor_tokens,
+          vendor_cost_usd: run.vendor_cost_usd,
+        },
+      ]
+    })
   return {
     task: record.task,
     source: record.task.source,
-    sourceProtocol: record.task.source === 'mcp'
-      ? project?.settings.tracker?.protocol ?? null
-      : null,
+    sourceProtocol:
+      record.task.source === 'mcp' ? (project?.settings.tracker?.protocol ?? null) : null,
     project,
     capabilities: trackerCapabilities({ source: record.task.source, project }),
     runs,
@@ -281,24 +330,35 @@ export function taskRecord(key: string) {
   }
 }
 
-export function setTask(key: string, changes: {
-  title?: string; status?: string; parent?: string | null; body?: string
-}, options: { force?: boolean } = {}): TaskRow {
+export function setTask(
+  key: string,
+  changes: {
+    title?: string
+    status?: string
+    parent?: string | null
+    body?: string
+  },
+  options: { force?: boolean } = {},
+): TaskRow {
   const upper = key.toUpperCase()
   const d = db()
   const write = d.transaction(() => {
     const current = showTask(upper).task
     if (current.source !== 'local') throw new Error(`task ${upper} is not local`)
-    if (changes.body !== undefined && current.body !== null && current.body !== '' && !options.force) {
+    if (
+      changes.body !== undefined &&
+      current.body !== null &&
+      current.body !== '' &&
+      !options.force
+    ) {
       throw new Error(
         `task ${upper} already has a body:\n\n${current.body}\n\n` +
-        'Pass --force to overwrite it.',
+          'Pass --force to overwrite it.',
       )
     }
     const category = changes.status === undefined ? current.status_category : status(changes.status)
-    const parent = changes.parent === undefined
-      ? current.parent_key
-      : changes.parent?.toUpperCase() ?? null
+    const parent =
+      changes.parent === undefined ? current.parent_key : (changes.parent?.toUpperCase() ?? null)
     assertParent(parent)
     const at = nowIso()
     d.query(
@@ -306,8 +366,18 @@ export function setTask(key: string, changes: {
                        closed_at = CASE WHEN ? = 'done' THEN COALESCE(closed_at, ?) ELSE NULL END,
                        updated_at = ?, last_seen = ?
         WHERE key = ?`,
-    ).run(changes.title ?? current.title, category, category, parent,
-          changes.body ?? current.body, category, at, at, at, upper)
+    ).run(
+      changes.title ?? current.title,
+      category,
+      category,
+      parent,
+      changes.body ?? current.body,
+      category,
+      at,
+      at,
+      at,
+      upper,
+    )
     if (changes.status !== undefined && current.status_category !== category) {
       d.query(
         `INSERT OR IGNORE INTO task_status_event (task_key, at, from_status, to_status)
@@ -328,50 +398,67 @@ export function commentTask(key: string, body: string): TaskComment {
   const current = showTask(upper).task
   if (current.source !== 'local') throw new Error(`task ${upper} is not local`)
   const at = nowIso()
-  const result = db().query(
-    `INSERT INTO task_comment (task_key, body, created_at) VALUES (?, ?, ?)`,
-  ).run(upper, body, at)
+  const result = db()
+    .query(`INSERT INTO task_comment (task_key, body, created_at) VALUES (?, ?, ?)`)
+    .run(upper, body, at)
   db().query(`UPDATE task SET updated_at = ?, last_seen = ? WHERE key = ?`).run(at, at, upper)
   return { id: Number(result.lastInsertRowid), task_key: upper, body, created_at: at }
 }
 
 export function listTaskDocuments(key: string): TaskDocumentSummary[] {
   const upper = key.toUpperCase()
-  const task = db().query<{ key: string }, [string]>(`SELECT key FROM task WHERE key = ?`).get(upper)
+  const task = db()
+    .query<{ key: string }, [string]>(`SELECT key FROM task WHERE key = ?`)
+    .get(upper)
   if (!task) throw new Error(`no task ${upper}`)
-  return db().query<TaskDocumentSummary, [string]>(
-    `SELECT id, task_key, role, title, updated_at FROM task_document
+  return db()
+    .query<TaskDocumentSummary, [string]>(
+      `SELECT id, task_key, role, title, updated_at FROM task_document
       WHERE task_key = ? ORDER BY created_at, id`,
-  ).all(upper)
+    )
+    .all(upper)
 }
 
 export function getTaskDocument(idValue: number | string): TaskDocument {
   const id = documentId(idValue)
-  const document = db().query<TaskDocument, [number]>(
-    `SELECT id, task_key, role, title, body, version, created_at, updated_at
+  const document = db()
+    .query<TaskDocument, [number]>(
+      `SELECT id, task_key, role, title, body, version, created_at, updated_at
        FROM task_document WHERE id = ?`,
-  ).get(id)
+    )
+    .get(id)
   if (!document) throw new Error(`no task document ${id}`)
   return document
 }
 
 export function createTaskDocument(input: {
-  task: string; title: string; body?: string; role?: string
+  task: string
+  title: string
+  body?: string
+  role?: string
 }): TaskDocument {
   const upper = input.task.toUpperCase()
   const task = showTask(upper).task
   if (task.source !== 'local') throw new Error(`task ${upper} is not local`)
   const at = nowIso()
-  const result = db().query(
-    `INSERT INTO task_document (task_key, role, title, body, version, created_at, updated_at)
+  const result = db()
+    .query(
+      `INSERT INTO task_document (task_key, role, title, body, version, created_at, updated_at)
      VALUES (?, ?, ?, ?, ?, ?, ?)`,
-  ).run(upper, documentRole(input.role), input.title, input.body ?? '', documentVersion(), at, at)
+    )
+    .run(upper, documentRole(input.role), input.title, input.body ?? '', documentVersion(), at, at)
   return getTaskDocument(Number(result.lastInsertRowid))
 }
 
-export function updateTaskDocument(idValue: number | string, changes: {
-  title?: string; body?: string; role?: string | null; expectedVersion?: string
-}): TaskDocument {
+export function updateTaskDocument(
+  idValue: number | string,
+  changes: {
+    title?: string
+    body?: string
+    role?: string | null
+    expectedVersion?: string
+  },
+): TaskDocument {
   const id = documentId(idValue)
   const d = db()
   const write = d.transaction(() => {
@@ -385,19 +472,33 @@ export function updateTaskDocument(idValue: number | string, changes: {
       if (!changes.expectedVersion) {
         throw new Error('a body update requires --version from `hub task doc show`')
       }
-      const result = d.query(
-        `UPDATE task_document
+      const result = d
+        .query(
+          `UPDATE task_document
             SET title = ?, role = ?, body = ?, version = ?, updated_at = ?
           WHERE id = ? AND version = ?`,
-      ).run(changes.title ?? current.title, role, changes.body, documentVersion(), at,
-            id, changes.expectedVersion)
+        )
+        .run(
+          changes.title ?? current.title,
+          role,
+          changes.body,
+          documentVersion(),
+          at,
+          id,
+          changes.expectedVersion,
+        )
       if (result.changes !== 1) {
-        throw new Error(`task document ${id} changed since version ${changes.expectedVersion}; read it again`)
+        throw new Error(
+          `task document ${id} changed since version ${changes.expectedVersion}; read it again`,
+        )
       }
     } else {
-      d.query(
-        `UPDATE task_document SET title = ?, role = ?, updated_at = ? WHERE id = ?`,
-      ).run(changes.title ?? current.title, role, at, id)
+      d.query(`UPDATE task_document SET title = ?, role = ?, updated_at = ? WHERE id = ?`).run(
+        changes.title ?? current.title,
+        role,
+        at,
+        id,
+      )
     }
   })
   write.immediate()

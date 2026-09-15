@@ -6,8 +6,18 @@ import { createHash } from 'node:crypto'
 import { basename, dirname, join, resolve } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { PLATFORM_SLUG } from '../../shared/brand.ts'
-import { DATABASE_RESOLUTION, DB_PATH, missingDatabaseMessage, registeredRepositoryMissingDatabase } from './database-location.ts'
-import { applyMigrations, migrationRefusal, readUserVersion, staleWriteRefusal } from './migrations.ts'
+import {
+  DATABASE_RESOLUTION,
+  DB_PATH,
+  missingDatabaseMessage,
+  registeredRepositoryMissingDatabase,
+} from './database-location.ts'
+import {
+  applyMigrations,
+  migrationRefusal,
+  readUserVersion,
+  staleWriteRefusal,
+} from './migrations.ts'
 import { contentionTableExists, insertContention } from './contention.ts'
 export { label } from './outcome.ts'
 export { DATABASE_RESOLUTION, DB_PATH, ROOT } from './database-location.ts'
@@ -16,25 +26,40 @@ let connectionWritable: boolean | null = null
 let openedUserVersion: number | null = null
 let schemaReload: ((from: number, to: number) => void) | null = null
 type OpenHook = (database: Database) => void
-export type OpenHooks = { afterWritableOpen?: OpenHook[]; afterInitialize?: OpenHook[]; afterSchemaApply?: OpenHook[] }
+export type OpenHooks = {
+  afterWritableOpen?: OpenHook[]
+  afterInitialize?: OpenHook[]
+  afterSchemaApply?: OpenHook[]
+}
 let openHooks: OpenHooks | null = null
 export function registerOpenHooks(hooks: OpenHooks): () => void {
-  const previous = openHooks; openHooks = hooks
-  return () => { openHooks = previous }
+  const previous = openHooks
+  openHooks = hooks
+  return () => {
+    openHooks = previous
+  }
 }
 function registeredOpenHooks(): OpenHooks {
   if (openHooks && Object.values(openHooks).some((hooks) => hooks?.length)) return openHooks
-  throw new Error('refusing writable database open: standard store hooks are not registered\n' + 'invariant: Writable stores run evidence hygiene, liveness reaping, and workflow seeding.\n' + 'cleared by: call registerStandardHooks() before opening the store')
+  throw new Error(
+    'refusing writable database open: standard store hooks are not registered\n' +
+      'invariant: Writable stores run evidence hygiene, liveness reaping, and workflow seeding.\n' +
+      'cleared by: call registerStandardHooks() before opening the store',
+  )
 }
-function requireOpenHooksForWritableMode(): void { if (!linkedWorktreeReadOnly) registeredOpenHooks() }
-function runOpenHooks(moment: keyof OpenHooks, database: Database): void { for (const hook of registeredOpenHooks()[moment] ?? []) hook(database) }
+function requireOpenHooksForWritableMode(): void {
+  if (!linkedWorktreeReadOnly) registeredOpenHooks()
+}
+function runOpenHooks(moment: keyof OpenHooks, database: Database): void {
+  for (const hook of registeredOpenHooks()[moment] ?? []) hook(database)
+}
 export const LINKED_WORKTREE_WRITE_REFUSAL =
   'refusing to write run or project rows to the registered main store from a linked worktree\n' +
   'invariant: A linked-worktree binary cannot write lifecycle rows to the registered main store.\n' +
   'cleared by: orch <command> with ORCH_DB_WRITE=1, or set ORCH_DB to a scratch copy'
 export const LINKED_WORKTREE_SCHEMA_REFUSAL =
   'refusing to migrate the store from a linked-worktree binary; run it from the main checkout\n' +
-  'invariant: Only the main checkout\'s binary migrates the store.\n' +
+  "invariant: Only the main checkout's binary migrates the store.\n" +
   'cleared by: orch migrate'
 
 /**
@@ -46,7 +71,11 @@ export const LINKED_WORKTREE_SCHEMA_REFUSAL =
 function sameStore(a: string, b: string): boolean {
   const real = (path: string) => {
     const dir = dirname(path)
-    try { return join(realpathSync(dir), basename(path)) } catch { return resolve(path) }
+    try {
+      return join(realpathSync(dir), basename(path))
+    } catch {
+      return resolve(path)
+    }
   }
   return real(a) === real(b)
 }
@@ -61,10 +90,11 @@ function sameStore(a: string, b: string): boolean {
  * ORCH_DB_WRITE=1 is the operator's explicit, recorded insistence.
  */
 export const linkedWorktreeReadOnly =
-  DATABASE_RESOLUTION.linkedWorktreeBinary
-  && process.env.ORCH_DB_WRITE !== '1'
-  && (DATABASE_RESOLUTION.method !== 'ORCH_DB'
-    || (DATABASE_RESOLUTION.mainStorePath !== null && sameStore(DB_PATH, DATABASE_RESOLUTION.mainStorePath)))
+  DATABASE_RESOLUTION.linkedWorktreeBinary &&
+  process.env.ORCH_DB_WRITE !== '1' &&
+  (DATABASE_RESOLUTION.method !== 'ORCH_DB' ||
+    (DATABASE_RESOLUTION.mainStorePath !== null &&
+      sameStore(DB_PATH, DATABASE_RESOLUTION.mainStorePath)))
 
 let registeredStoreWriteProtected = false
 
@@ -79,7 +109,12 @@ export function writableDb(): Database {
 
 /** Already-open writable handle, or null. Does not open a connection. */
 export function openWritableHandle(): Database | null {
-  if (!handle || linkedWorktreeReadOnly || registeredStoreWriteProtected || connectionWritable !== true) {
+  if (
+    !handle ||
+    linkedWorktreeReadOnly ||
+    registeredStoreWriteProtected ||
+    connectionWritable !== true
+  ) {
     return null
   }
   return handle
@@ -153,9 +188,10 @@ export function db(writable = false): Database {
   if (!existsSync(DB_PATH)) throw new Error(missingDatabaseMessage())
   requireOpenHooksForWritableMode()
   const sidecarsExist = existsSync(`${DB_PATH}-wal`) || existsSync(`${DB_PATH}-shm`)
-  const readOnlyPath = linkedWorktreeReadOnly && !sidecarsExist
-    ? `${pathToFileURL(DB_PATH).href}?immutable=1`
-    : DB_PATH
+  const readOnlyPath =
+    linkedWorktreeReadOnly && !sidecarsExist
+      ? `${pathToFileURL(DB_PATH).href}?immutable=1`
+      : DB_PATH
   const d = linkedWorktreeReadOnly
     ? new Database(readOnlyPath, { readonly: true })
     : new Database(DB_PATH, { readwrite: true, create: false })
@@ -175,22 +211,34 @@ export function db(writable = false): Database {
   if (refused) {
     try {
       if (contentionTableExists(d) && !linkedWorktreeReadOnly) {
-        writeTransaction(() => insertContention(d, {
-          resourceKind: 'store', resourceKey: DB_PATH, eventKind: 'refusal', cause: refused,
-        }), d)
+        writeTransaction(
+          () =>
+            insertContention(d, {
+              resourceKind: 'store',
+              resourceKey: DB_PATH,
+              eventKind: 'refusal',
+              cause: refused,
+            }),
+          d,
+        )
       }
-    } catch { /* still refuse; recording must not replace the refusal */ }
+    } catch {
+      /* still refuse; recording must not replace the refusal */
+    }
     d.close()
     throw new Error(refused)
   }
-  const registered = d.query('SELECT path FROM project WHERE name = ?').get(PLATFORM_SLUG) as
-    { path: string } | null
-  DATABASE_RESOLUTION.registeredPath = registered ? join(registered.path, 'orchestrator', 'orch.db') : null
+  const registered = d.query('SELECT path FROM project WHERE name = ?').get(PLATFORM_SLUG) as {
+    path: string
+  } | null
+  DATABASE_RESOLUTION.registeredPath = registered
+    ? join(registered.path, 'orchestrator', 'orch.db')
+    : null
   registeredStoreWriteProtected = Boolean(
     DATABASE_RESOLUTION.linkedWorktreeBinary &&
-    DATABASE_RESOLUTION.registeredPath &&
-    sameStore(DATABASE_RESOLUTION.registeredPath, DB_PATH) &&
-    process.env.ORCH_DB_WRITE !== '1'
+      DATABASE_RESOLUTION.registeredPath &&
+      sameStore(DATABASE_RESOLUTION.registeredPath, DB_PATH) &&
+      process.env.ORCH_DB_WRITE !== '1',
   )
   const registeredMissing = registered
     ? registeredRepositoryMissingDatabase(DATABASE_RESOLUTION, registered.path)
@@ -216,9 +264,9 @@ export function db(writable = false): Database {
 }
 
 export function liveRuns(database: Database = db()): { worktree: string | null }[] {
-  return database.query(
-    `SELECT worktree FROM run WHERE status IN ('running','asking')`,
-  ).all() as { worktree: string | null }[]
+  return database.query(`SELECT worktree FROM run WHERE status IN ('running','asking')`).all() as {
+    worktree: string | null
+  }[]
 }
 
 export function liveRunCount(database: Database = db()): number {
@@ -233,7 +281,8 @@ export function writeTransaction<T>(fn: () => T, database: Database = db(true)):
 
 /** Best-effort contention insert; never throws. busyTimeoutMs 0 uses a one-shot connection. */
 export function tryWriteContention(
-  row: import('./contention.ts').ContentionWrite, opts?: { busyTimeoutMs?: number },
+  row: import('./contention.ts').ContentionWrite,
+  opts?: { busyTimeoutMs?: number },
 ): void {
   try {
     if (linkedWorktreeReadOnly || registeredStoreWriteProtected) return
@@ -248,21 +297,28 @@ export function tryWriteContention(
         if (opened !== null && readUserVersion(d) !== opened) return
         if (!contentionTableExists(d)) return
         insertContention(d, row)
-      } finally { d.close() }
+      } finally {
+        d.close()
+      }
       return
     }
     const d = openWritableHandle()
     if (!d || !contentionTableExists(d)) return
     writeTransaction(() => insertContention(d, row), d)
-  } catch { /* CONSTRAINTS: recording must not change lock, landing or detector behaviour */ }
+  } catch {
+    /* CONSTRAINTS: recording must not change lock, landing or detector behaviour */
+  }
 }
 
 /** The sole path that may create the orchestrator database. */
 export function initializeDatabase(): string {
   if (DATABASE_RESOLUTION.linkedWorktreeBinary) throw new Error(LINKED_WORKTREE_SCHEMA_REFUSAL)
-  if (existsSync(DB_PATH)) throw new Error(`refusing to initialize: orchestrator database already exists: ${DB_PATH}`)
+  if (existsSync(DB_PATH))
+    throw new Error(`refusing to initialize: orchestrator database already exists: ${DB_PATH}`)
   if (!DATABASE_RESOLUTION.initializable) {
-    throw new Error(`refusing to initialize from a worktree binary: ${DB_PATH}\nrun orch init-db from the main checkout`)
+    throw new Error(
+      `refusing to initialize from a worktree binary: ${DB_PATH}\nrun orch init-db from the main checkout`,
+    )
   }
   registeredOpenHooks()
   mkdirSync(dirname(DB_PATH), { recursive: true })
@@ -289,11 +345,13 @@ export const applySchema = applySchemaForFixture
 function seedProjects(d: Database): void {
   const { n } = d.query('SELECT COUNT(*) AS n FROM project').get() as { n: number }
   if (n > 0) return
-  const rows = d.query(
-    `SELECT repo, cwd FROM run r
+  const rows = d
+    .query(
+      `SELECT repo, cwd FROM run r
       WHERE repo IS NOT NULL AND cwd IS NOT NULL
         AND id = (SELECT MAX(id) FROM run x WHERE x.repo = r.repo AND x.cwd IS NOT NULL)`,
-  ).all() as { repo: string; cwd: string }[]
+    )
+    .all() as { repo: string; cwd: string }[]
   for (const { repo, cwd } of rows) {
     const parts = cwd.split('/')
     const at = parts.indexOf(repo)
@@ -303,7 +361,9 @@ function seedProjects(d: Database): void {
         `INSERT INTO project (name, path, stack, canon, settings) VALUES (?,?,?,1,'{}')
          ON CONFLICT(name) DO NOTHING`,
       ).run(repo, path, null)
-    } catch { /* one malformed historical row does not block the remaining seed */ }
+    } catch {
+      /* one malformed historical row does not block the remaining seed */
+    }
   }
 }
 
@@ -344,10 +404,12 @@ export function migrateDatabase(): { path: string; versions: string[] } {
 export function backfillSpecSha(): { updated: number; missing: number } {
   if (DATABASE_RESOLUTION.linkedWorktreeBinary) throw new Error(LINKED_WORKTREE_SCHEMA_REFUSAL)
   const database = writableDb()
-  const roots = database.query(
-    `SELECT id, prompt_path FROM run
+  const roots = database
+    .query(
+      `SELECT id, prompt_path FROM run
       WHERE parent_run_id IS NULL AND spec_sha IS NULL AND prompt_path IS NOT NULL`,
-  ).all() as { id: number; prompt_path: string }[]
+    )
+    .all() as { id: number; prompt_path: string }[]
   let updated = 0
   let missing = 0
   writeTransaction(() => {
@@ -358,9 +420,9 @@ export function backfillSpecSha(): { updated: number; missing: number } {
       }
       const prompt = readFileSync(root.prompt_path)
       const specSha = createHash('sha256').update(prompt).digest('hex').slice(0, 16)
-      updated += database.query(
-        'UPDATE run SET spec_sha=? WHERE id=? AND spec_sha IS NULL',
-      ).run(specSha, root.id).changes
+      updated += database
+        .query('UPDATE run SET spec_sha=? WHERE id=? AND spec_sha IS NULL')
+        .run(specSha, root.id).changes
     }
   }, database)
   return { updated, missing }
@@ -388,8 +450,7 @@ export const nowIso = () => new Date().toISOString()
  * primary id or null. A null owner is an unowned root; mutations that need an
  * identity to adopt refuse rather than proceeding under the shared bridge id.
  */
-export const sessionId = (): string | null =>
-  process.env.CLAUDE_CODE_SESSION_ID ?? null
+export const sessionId = (): string | null => process.env.CLAUDE_CODE_SESSION_ID ?? null
 
 /**
  * A session seen inside this window is known live. A session outside it is

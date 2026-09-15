@@ -56,8 +56,9 @@ type SchemaInventory = {
 }
 
 export function migrationJournal(folder = MIGRATIONS_FOLDER): JournalEntry[] {
-  const journal = JSON.parse(readFileSync(join(folder, 'meta', '_journal.json'), 'utf8')) as
-    { entries: JournalEntry[] }
+  const journal = JSON.parse(readFileSync(join(folder, 'meta', '_journal.json'), 'utf8')) as {
+    entries: JournalEntry[]
+  }
   const entries = journal.entries
   for (let i = 1; i < entries.length; i++) {
     const previous = entries[i - 1]!
@@ -65,8 +66,8 @@ export function migrationJournal(folder = MIGRATIONS_FOLDER): JournalEntry[] {
     if (current.when <= previous.when) {
       throw new Error(
         `refusing to load a migration journal whose when values are not strictly increasing\n` +
-        `invariant: ${JOURNAL_WHEN_ORDER}\n` +
-        `${previous.tag}@${previous.when} then ${current.tag}@${current.when}`,
+          `invariant: ${JOURNAL_WHEN_ORDER}\n` +
+          `${previous.tag}@${previous.when} then ${current.tag}@${current.when}`,
       )
     }
   }
@@ -84,7 +85,7 @@ export function splitMigrationSource(source: string): { ddl: string; backfill: s
   if (opens.length !== closes.length) {
     throw new Error(
       `refusing to load a migration whose backfill block is not closed\n` +
-      `invariant: ${BACKFILL_UNCLOSED}`,
+        `invariant: ${BACKFILL_UNCLOSED}`,
     )
   }
   const blocks: string[] = []
@@ -99,7 +100,9 @@ export function splitMigrationSource(source: string): { ddl: string; backfill: s
 }
 
 function migrationHash(entry: JournalEntry, folder = MIGRATIONS_FOLDER): string {
-  return createHash('sha256').update(splitMigrationSource(migrationSource(entry, folder)).ddl).digest('hex')
+  return createHash('sha256')
+    .update(splitMigrationSource(migrationSource(entry, folder)).ddl)
+    .digest('hex')
 }
 
 export function readUserVersion(d: Database): number {
@@ -122,8 +125,10 @@ export function schemaVersionLabel(d: Database): string {
 }
 
 export function staleWriteRefusal(actual: number, opened: number, clearedBy: string): string {
-  return `refusing to write: the store schema is newer than this process (user_version ${actual}, opened ${opened})\n` +
+  return (
+    `refusing to write: the store schema is newer than this process (user_version ${actual}, opened ${opened})\n` +
     `invariant: ${CONNECTION_SCHEMA_INVARIANT}\ncleared by: ${clearedBy}`
+  )
 }
 
 function tableExists(d: Database, table: string): boolean {
@@ -136,29 +141,39 @@ export function migrationState(
 ): { pending: JournalEntry[]; ahead: string | null } {
   const journal = migrationJournal(folder)
   if (!tableExists(d, MIGRATIONS_TABLE)) return { pending: journal, ahead: null }
-  const applied = d.query(
-    `SELECT hash, created_at, version FROM ${MIGRATIONS_TABLE} ORDER BY created_at`,
-  ).all() as { hash: string; created_at: number; version: string | null }[]
+  const applied = d
+    .query(`SELECT hash, created_at, version FROM ${MIGRATIONS_TABLE} ORDER BY created_at`)
+    .all() as { hash: string; created_at: number; version: string | null }[]
   const expected = new Map(journal.map((entry) => [entry.when, migrationHash(entry, folder)]))
   const ahead = applied.find((row) => expected.get(Number(row.created_at)) !== row.hash)
   return {
-    pending: journal.filter((entry) => !applied.some((row) =>
-      Number(row.created_at) === entry.when && row.hash === expected.get(entry.when))),
-    ahead: ahead ? ahead.version ?? String(ahead.created_at) :
-      applied.length > journal.length
-        ? applied.at(-1)?.version ?? String(applied.at(-1)?.created_at) : null,
+    pending: journal.filter(
+      (entry) =>
+        !applied.some(
+          (row) => Number(row.created_at) === entry.when && row.hash === expected.get(entry.when),
+        ),
+    ),
+    ahead: ahead
+      ? (ahead.version ?? String(ahead.created_at))
+      : applied.length > journal.length
+        ? (applied.at(-1)?.version ?? String(applied.at(-1)?.created_at))
+        : null,
   }
 }
 
 export function migrationRefusal(d: Database): string | null {
   const state = migrationState(d)
   if (state.ahead) {
-    return `refusing to open a store ahead of this binary's migration journal: ${state.ahead}\n` +
+    return (
+      `refusing to open a store ahead of this binary's migration journal: ${state.ahead}\n` +
       `invariant: ${SCHEMA_INVARIANT}\ncleared by: hub migrate`
+    )
   }
   if (state.pending.length) {
-    return `refusing to open a store behind this binary's migration journal: ${state.pending[0]!.tag}\n` +
+    return (
+      `refusing to open a store behind this binary's migration journal: ${state.pending[0]!.tag}\n` +
       `invariant: ${SCHEMA_INVARIANT}\ncleared by: hub migrate`
+    )
   }
   return null
 }
@@ -166,9 +181,15 @@ export function migrationRefusal(d: Database): string | null {
 /** Match the orchestrator twin's canonicalisation: quotes and whitespace are immaterial. */
 function normalizeSql(source: string): string {
   return source
-    .replace(/"([A-Za-z_][A-Za-z0-9_]*)"|`([A-Za-z_][A-Za-z0-9_]*)`|\[([A-Za-z_][A-Za-z0-9_]*)\]/g,
-      (_match, quoted: string | undefined, backticked: string | undefined,
-        bracketed: string | undefined) => quoted ?? backticked ?? bracketed ?? '')
+    .replace(
+      /"([A-Za-z_][A-Za-z0-9_]*)"|`([A-Za-z_][A-Za-z0-9_]*)`|\[([A-Za-z_][A-Za-z0-9_]*)\]/g,
+      (
+        _match,
+        quoted: string | undefined,
+        backticked: string | undefined,
+        bracketed: string | undefined,
+      ) => quoted ?? backticked ?? bracketed ?? '',
+    )
     .replace(/\s+/g, ' ')
     .trim()
 }
@@ -210,7 +231,10 @@ function checkExpressions(source: string): string[] {
       } else if (!inString && char === '(') depth++
       else if (!inString && char === ')') depth--
     }
-    if (depth !== 0) throw new Error(`unterminated CHECK expression: ${source.slice(match.index, match.index + 80)}`)
+    if (depth !== 0)
+      throw new Error(
+        `unterminated CHECK expression: ${source.slice(match.index, match.index + 80)}`,
+      )
     expressions.push(normalizeExpression(sql.slice(start, end - 1)))
     check.lastIndex = end
   }
@@ -222,11 +246,13 @@ function quoteIdentifier(value: string): string {
 }
 
 function schemaInventory(d: Database): SchemaInventory {
-  const tableRows = d.query(
-    `SELECT name, sql FROM sqlite_master
+  const tableRows = d
+    .query(
+      `SELECT name, sql FROM sqlite_master
      WHERE type='table' AND name NOT LIKE 'sqlite_%' AND name NOT IN (?, ?)
      ORDER BY name`,
-  ).all(MIGRATIONS_TABLE, SCHEMA_LOCK_TABLE) as { name: string; sql: string }[]
+    )
+    .all(MIGRATIONS_TABLE, SCHEMA_LOCK_TABLE) as { name: string; sql: string }[]
   const tables = tableRows.map((row) => row.name).sort()
   const columns: ColumnShape[] = []
   const foreignKeys: ForeignKeyShape[] = []
@@ -234,11 +260,17 @@ function schemaInventory(d: Database): SchemaInventory {
   const checks: { table: string; expression: string }[] = []
   for (const table of tableRows) {
     const rows = d.query(`PRAGMA table_info(${quoteIdentifier(table.name)})`).all() as {
-      name: string; type: string; notnull: number; dflt_value: string | null; pk: number
+      name: string
+      type: string
+      notnull: number
+      dflt_value: string | null
+      pk: number
     }[]
     for (const row of rows) {
       columns.push({
-        table: table.name, name: row.name, type: normalizeSql(row.type).toLowerCase(),
+        table: table.name,
+        name: row.name,
+        type: normalizeSql(row.type).toLowerCase(),
         notnull: row.notnull,
         defaultValue: row.dflt_value == null ? null : normalizeExpression(row.dflt_value),
         primaryKey: row.pk,
@@ -246,44 +278,82 @@ function schemaInventory(d: Database): SchemaInventory {
     }
     columns.sort((a, b) => a.table.localeCompare(b.table) || a.name.localeCompare(b.name))
     const fks = d.query(`PRAGMA foreign_key_list(${quoteIdentifier(table.name)})`).all() as {
-      id: number; seq: number; table: string; from: string; to: string | null
-      on_update: string; on_delete: string; match: string
+      id: number
+      seq: number
+      table: string
+      from: string
+      to: string | null
+      on_update: string
+      on_delete: string
+      match: string
     }[]
-    foreignKeys.push(...fks.map((row) => ({
-      table: table.name, id: row.id, sequence: row.seq, targetTable: row.table,
-      from: row.from, to: row.to, onUpdate: row.on_update.toLowerCase(),
-      onDelete: row.on_delete.toLowerCase(), match: row.match.toLowerCase(),
-    })))
+    foreignKeys.push(
+      ...fks.map((row) => ({
+        table: table.name,
+        id: row.id,
+        sequence: row.seq,
+        targetTable: row.table,
+        from: row.from,
+        to: row.to,
+        onUpdate: row.on_update.toLowerCase(),
+        onDelete: row.on_delete.toLowerCase(),
+        match: row.match.toLowerCase(),
+      })),
+    )
     const listed = d.query(`PRAGMA index_list(${quoteIdentifier(table.name)})`).all() as {
-      name: string; unique: number; origin: string; partial: number
+      name: string
+      unique: number
+      origin: string
+      partial: number
     }[]
     for (const index of listed) {
       const info = d.query(`PRAGMA index_info(${quoteIdentifier(index.name)})`).all() as {
-        seqno: number; cid: number; name: string | null
+        seqno: number
+        cid: number
+        name: string | null
       }[]
-      const sql = (d.query("SELECT sql FROM sqlite_master WHERE type='index' AND name=?").get(index.name) as
-        { sql: string | null } | null)?.sql ?? null
+      const sql =
+        (
+          d
+            .query("SELECT sql FROM sqlite_master WHERE type='index' AND name=?")
+            .get(index.name) as { sql: string | null } | null
+        )?.sql ?? null
       indexes.push({
-        table: table.name, name: index.name, unique: index.unique,
-        origin: index.origin.toLowerCase(), partial: index.partial,
-        columns: info.sort((a, b) => a.seqno - b.seqno)
-          .map((row) => `${row.cid}:${row.name ?? '<expression>'}`).join(','),
+        table: table.name,
+        name: index.name,
+        unique: index.unique,
+        origin: index.origin.toLowerCase(),
+        partial: index.partial,
+        columns: info
+          .sort((a, b) => a.seqno - b.seqno)
+          .map((row) => `${row.cid}:${row.name ?? '<expression>'}`)
+          .join(','),
         indexSql: sql == null ? null : normalizeExpression(normalizeSql(withoutSqlComments(sql))),
       })
     }
-    for (const expression of checkExpressions(table.sql)) checks.push({ table: table.name, expression })
+    for (const expression of checkExpressions(table.sql))
+      checks.push({ table: table.name, expression })
   }
-  const views = (d.query(
-    `SELECT name, sql FROM sqlite_master WHERE type='view' AND name NOT LIKE 'sqlite_%' ORDER BY name`,
-  ).all() as { name: string; sql: string | null }[]).map((row) => ({
+  const views = (
+    d
+      .query(
+        `SELECT name, sql FROM sqlite_master WHERE type='view' AND name NOT LIKE 'sqlite_%' ORDER BY name`,
+      )
+      .all() as { name: string; sql: string | null }[]
+  ).map((row) => ({
     name: row.name,
     sql: row.sql == null ? null : normalizeExpression(normalizeSql(withoutSqlComments(row.sql))),
   }))
-  const triggers = (d.query(
-    `SELECT name, tbl_name, sql FROM sqlite_master
+  const triggers = (
+    d
+      .query(
+        `SELECT name, tbl_name, sql FROM sqlite_master
      WHERE type='trigger' AND name NOT LIKE 'sqlite_%' ORDER BY name`,
-  ).all() as { name: string; tbl_name: string; sql: string | null }[]).map((row) => ({
-    name: row.name, table: row.tbl_name,
+      )
+      .all() as { name: string; tbl_name: string; sql: string | null }[]
+  ).map((row) => ({
+    name: row.name,
+    table: row.tbl_name,
     sql: row.sql == null ? null : normalizeExpression(normalizeSql(withoutSqlComments(row.sql))),
   }))
   foreignKeys.sort((a, b) => JSON.stringify(a).localeCompare(JSON.stringify(b)))
@@ -295,8 +365,10 @@ function schemaInventory(d: Database): SchemaInventory {
 function inventoryLines(inventory: SchemaInventory): string[] {
   return [
     ...inventory.tables.map((table) => `table ${table}`),
-    ...inventory.columns.map((row) =>
-      `column ${row.table}.${row.name} ${row.type} notnull=${row.notnull} default=${row.defaultValue ?? 'NULL'} pk=${row.primaryKey}`),
+    ...inventory.columns.map(
+      (row) =>
+        `column ${row.table}.${row.name} ${row.type} notnull=${row.notnull} default=${row.defaultValue ?? 'NULL'} pk=${row.primaryKey}`,
+    ),
     ...inventory.foreignKeys.map((row) => `foreign-key ${JSON.stringify(row)}`),
     ...inventory.indexes.map((row) => `index ${JSON.stringify(row)}`),
     ...inventory.checks.map((row) => `check ${row.table} ${row.expression}`),
@@ -306,7 +378,9 @@ function inventoryLines(inventory: SchemaInventory): string[] {
 }
 
 export function canonicalSchemaHash(d: Database): string {
-  return createHash('sha256').update(inventoryLines(schemaInventory(d)).join('\n')).digest('hex')
+  return createHash('sha256')
+    .update(inventoryLines(schemaInventory(d)).join('\n'))
+    .digest('hex')
 }
 
 /**
@@ -328,7 +402,11 @@ export function stripSqlComments(source: string): string {
       }
       continue
     }
-    if (char === "'") { inString = true; result += char; continue }
+    if (char === "'") {
+      inString = true
+      result += char
+      continue
+    }
     if (char === '-' && source[i + 1] === '-') {
       const end = source.indexOf('\n', i)
       if (end === -1) break
@@ -410,7 +488,8 @@ function inventoryDiff(actual: SchemaInventory, expected: SchemaInventory): stri
   const indexKey = (row: IndexShape) => `${row.table}.${row.name} ${JSON.stringify(row)}`
   const actualIndexes = shape(actual.indexes.map(indexKey))
   const expectedIndexes = shape(expected.indexes.map(indexKey))
-  const checkKey = (row: { table: string; expression: string }) => `check ${row.table} ${row.expression}`
+  const checkKey = (row: { table: string; expression: string }) =>
+    `check ${row.table} ${row.expression}`
   const actualChecks = shape(actual.checks.map(checkKey))
   const expectedChecks = shape(expected.checks.map(checkKey))
   const foreignKeyKey = (row: ForeignKeyShape) => `foreign-key ${JSON.stringify(row)}`
@@ -422,7 +501,8 @@ function inventoryDiff(actual: SchemaInventory, expected: SchemaInventory): stri
   const triggerKey = (row: TriggerShape) => `trigger ${row.table}.${row.name} ${row.sql ?? 'NULL'}`
   const actualTriggers = shape(actual.triggers.map(triggerKey))
   const expectedTriggers = shape(expected.triggers.map(triggerKey))
-  const difference = (left: string[], right: string[]) => left.filter((value) => !right.includes(value))
+  const difference = (left: string[], right: string[]) =>
+    left.filter((value) => !right.includes(value))
   return [
     `missing tables: ${difference(expectedTables, actualTables).join(', ') || 'none'}`,
     `unexpected tables: ${difference(actualTables, expectedTables).join(', ') || 'none'}`,
@@ -469,26 +549,35 @@ function ensureSchemaLock(d: Database): void {
 }
 
 function recordMigration(d: Database, entry: JournalEntry, folder: string): void {
-  d.query(`INSERT INTO ${MIGRATIONS_TABLE} (hash,created_at,version) VALUES (?,?,?)`)
-    .run(migrationHash(entry, folder), entry.when, entry.tag)
+  d.query(`INSERT INTO ${MIGRATIONS_TABLE} (hash,created_at,version) VALUES (?,?,?)`).run(
+    migrationHash(entry, folder),
+    entry.when,
+    entry.tag,
+  )
 }
 
 function adoptBaseline(d: Database, folder: string): string[] {
   if (tableExists(d, MIGRATIONS_TABLE)) return []
-  const applicationObjects = (d.query(
-    "SELECT COUNT(*) AS n FROM sqlite_master WHERE name NOT LIKE 'sqlite_%' AND name NOT IN (?, ?)",
-  ).get(MIGRATIONS_TABLE, SCHEMA_LOCK_TABLE) as { n: number }).n
+  const applicationObjects = (
+    d
+      .query(
+        "SELECT COUNT(*) AS n FROM sqlite_master WHERE name NOT LIKE 'sqlite_%' AND name NOT IN (?, ?)",
+      )
+      .get(MIGRATIONS_TABLE, SCHEMA_LOCK_TABLE) as { n: number }
+  ).n
   if (applicationObjects === 0) return []
   const actualInventory = schemaInventory(d)
   const expectedInventory = baselineInventory(folder)
   const storedHash = canonicalSchemaHash(d)
-  const expectedHash = createHash('sha256').update(inventoryLines(expectedInventory).join('\n')).digest('hex')
+  const expectedHash = createHash('sha256')
+    .update(inventoryLines(expectedInventory).join('\n'))
+    .digest('hex')
   if (storedHash !== expectedHash) {
     throw new Error(
       `refusing to adopt migration baseline: the existing store does not match it\n` +
-      `stored hash: ${storedHash}\nexpected hash: ${expectedHash}\n` +
-      `${inventoryDiff(actualInventory, expectedInventory)}\n` +
-      `back up the store and run the old binary's open once`,
+        `stored hash: ${storedHash}\nexpected hash: ${expectedHash}\n` +
+        `${inventoryDiff(actualInventory, expectedInventory)}\n` +
+        `back up the store and run the old binary's open once`,
     )
   }
   const entry = migrationJournal(folder)[0]!
@@ -508,7 +597,9 @@ export function applyMigrations(d: Database, folder = MIGRATIONS_FOLDER): string
     const versions = adoptBaseline(d, folder)
     const state = migrationState(d, folder)
     if (state.ahead) {
-      throw new Error(`refusing to migrate a store ahead of this binary's migration journal: ${state.ahead}`)
+      throw new Error(
+        `refusing to migrate a store ahead of this binary's migration journal: ${state.ahead}`,
+      )
     }
     for (const entry of state.pending) {
       createMigrationsTable(d)
@@ -522,7 +613,11 @@ export function applyMigrations(d: Database, folder = MIGRATIONS_FOLDER): string
     d.exec('COMMIT')
     return versions
   } catch (error) {
-    try { d.exec('ROLLBACK') } catch { /* statement error already aborted the transaction */ }
+    try {
+      d.exec('ROLLBACK')
+    } catch {
+      /* statement error already aborted the transaction */
+    }
     throw error
   }
 }

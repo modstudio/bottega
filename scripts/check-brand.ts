@@ -43,7 +43,8 @@ const NAME = new RegExp(`\\b${PLATFORM_NAME}\\b|\\b${PLATFORM_SLUG}\\b`, 'i')
 
 const leaks: string[] = []
 for (const rel of new Glob('**/*.{ts,tsx,js,mjs,json,py,sh}').scanSync({ cwd: ROOT })) {
-  if (rel.includes('node_modules') || rel.startsWith('.git/') || rel.startsWith('hub/web/dist/')) continue
+  if (rel.includes('node_modules') || rel.startsWith('.git/') || rel.startsWith('hub/web/dist/'))
+    continue
   // Run artifacts are gitignored vendor output, not source: a sandboxed worker's
   // session context quotes the canon that opens with the name. Policing them
   // would keep this check red after every run and teach everyone to skip it.
@@ -69,8 +70,8 @@ for (const rel of new Glob('**/*.{ts,tsx,js,mjs,json,py,sh}').scanSync({ cwd: RO
 if (leaks.length) {
   console.error(
     `the platform name belongs in shared/brand.ts and nowhere else in code —\n` +
-    `${leaks.length} literal(s) found:\n\n${leaks.join('\n')}\n\n` +
-    `Import PLATFORM_NAME instead, or add a reason to ALLOWED in this file.`,
+      `${leaks.length} literal(s) found:\n\n${leaks.join('\n')}\n\n` +
+      `Import PLATFORM_NAME instead, or add a reason to ALLOWED in this file.`,
   )
   process.exit(1)
 }

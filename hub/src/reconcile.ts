@@ -45,12 +45,14 @@ export async function reconcileOpenIntervals(
   options: { dryRun?: boolean; now?: number } = {},
 ): Promise<ReconcileResult> {
   const d = db()
-  const intervals = d.query(
-    `SELECT id, task_key, project, agent, start_at, end_at, ref
+  const intervals = d
+    .query(
+      `SELECT id, task_key, project, agent, start_at, end_at, ref
        FROM interval WHERE source = 'orch' AND open = 1 ORDER BY id`,
-  ).all() as OpenInterval[]
+    )
+    .all() as OpenInterval[]
   const refs = intervals.map((interval) => runRef(interval.ref))
-  const rootIds = [...new Set(refs.flatMap((ref) => ref ? [ref.root] : []))]
+  const rootIds = [...new Set(refs.flatMap((ref) => (ref ? [ref.root] : [])))]
   const answers = await readRunsById(rootIds)
   const byId = new Map(answers.map((answer) => [answer.id, answer]))
   const now = options.now ?? Date.now()
@@ -60,24 +62,41 @@ export async function reconcileOpenIntervals(
   intervals.forEach((interval, index) => {
     const ref = refs[index]
     if (!ref) {
-      leftOpen.push({ ...interval, runId: null, status: null, removesMs: 0,
-        reason: 'ref is not a recognised orch run ref; needs a decision' })
+      leftOpen.push({
+        ...interval,
+        runId: null,
+        status: null,
+        removesMs: 0,
+        reason: 'ref is not a recognised orch run ref; needs a decision',
+      })
       return
     }
     const answer = byId.get(ref.root)
     const status = statusFor(answer, ref.turn)
     if (status == null) {
-      leftOpen.push({ ...interval, runId: ref.turn ?? ref.root, status: null, removesMs: 0,
-        reason: `run ${ref.turn ?? ref.root} is unknown to orch; needs a decision` })
+      leftOpen.push({
+        ...interval,
+        runId: ref.turn ?? ref.root,
+        status: null,
+        removesMs: 0,
+        reason: `run ${ref.turn ?? ref.root} is unknown to orch; needs a decision`,
+      })
       return
     }
     if (status === 'running') {
-      leftOpen.push({ ...interval, runId: ref.turn ?? ref.root, status, removesMs: 0,
-        reason: `run ${ref.turn ?? ref.root} is still running` })
+      leftOpen.push({
+        ...interval,
+        runId: ref.turn ?? ref.root,
+        status,
+        removesMs: 0,
+        reason: `run ${ref.turn ?? ref.root} is still running`,
+      })
       return
     }
     closed.push({
-      ...interval, runId: ref.turn ?? ref.root, status,
+      ...interval,
+      runId: ref.turn ?? ref.root,
+      status,
       removesMs: Math.max(0, now - new Date(interval.end_at).getTime()),
       reason: `run ${ref.turn ?? ref.root} is terminal (${status})`,
     })
@@ -85,7 +104,9 @@ export async function reconcileOpenIntervals(
 
   if (!options.dryRun && closed.length) {
     const close = d.query(`UPDATE interval SET open = 0 WHERE id = ? AND open = 1`)
-    d.transaction(() => { for (const interval of closed) close.run(interval.id) })()
+    d.transaction(() => {
+      for (const interval of closed) close.run(interval.id)
+    })()
   }
   return { dryRun: options.dryRun ?? false, closed, leftOpen }
 }
@@ -98,13 +119,18 @@ export function printReconcile(result: ReconcileResult): void {
   else {
     console.log(`${verb}:`)
     for (const item of result.closed) {
-      console.log(`  interval ${item.id}  ${item.ref}  ${identity(item)}  ${item.reason}; removes ${human(item.removesMs)} engaged time`)
+      console.log(
+        `  interval ${item.id}  ${item.ref}  ${identity(item)}  ${item.reason}; removes ${human(item.removesMs)} engaged time`,
+      )
     }
   }
   console.log('left open:')
   if (!result.leftOpen.length) console.log('  none')
-  else for (const item of result.leftOpen) {
-    console.log(`  interval ${item.id}  ${item.ref}  ${identity(item)}  ${item.reason}`)
-  }
-  console.log(`${result.dryRun ? 'dry run: ' : ''}${verb} ${result.closed.length}; left ${result.leftOpen.length} open`)
+  else
+    for (const item of result.leftOpen) {
+      console.log(`  interval ${item.id}  ${item.ref}  ${identity(item)}  ${item.reason}`)
+    }
+  console.log(
+    `${result.dryRun ? 'dry run: ' : ''}${verb} ${result.closed.length}; left ${result.leftOpen.length} open`,
+  )
 }

@@ -26,8 +26,9 @@ registerStandardRuntime()
 
 /** Full detail for one run: the whole prompt and the whole reply, read from disk. */
 export function runDetail(id: number, receipt = false) {
-  const row = db().query(
-    `SELECT r.id, r.agent, r.job, r.cwd, r.latency_ms, r.vendor_tokens, r.status,
+  const row = db()
+    .query(
+      `SELECT r.id, r.agent, r.job, r.cwd, r.latency_ms, r.vendor_tokens, r.status,
             r.failure_kind, r.probe, r.evidence_excluded, r.error, r.input_tree, r.head_commit,
             r.changed_paths, r.review_ref, r.doc_revisions, r.canon_sha,
             r.prompt_path, r.output_path, r.mcp, r.mcp_server, r.mcp_connected, r.mcp_error,
@@ -35,28 +36,31 @@ export function runDetail(id: number, receipt = false) {
             s.delivery, s.quality, s.fidelity, s.note, s.scored_at
        FROM run r
        LEFT JOIN score s ON s.run_id = r.id WHERE r.id = ?`,
-  ).get(id) as Record<string, unknown> | null
+    )
+    .get(id) as Record<string, unknown> | null
   if (!row) return null
   const read = (p: unknown) =>
     typeof p === 'string' && existsSync(p) ? readFileSync(p, 'utf8') : null
-  const identity = db().query(
-    'SELECT parent_run_id, COALESCE(parent_run_id, id) root_id FROM run WHERE id=?',
-  ).get(id) as { parent_run_id: number | null; root_id: number }
+  const identity = db()
+    .query('SELECT parent_run_id, COALESCE(parent_run_id, id) root_id FROM run WHERE id=?')
+    .get(id) as { parent_run_id: number | null; root_id: number }
   const rootId = identity.root_id
   const messages = receipt ? receiptMessagesForArchitect(id) : messagesForRun(id)
-  const audit = db().query(
-    `SELECT run_id, root_id, action,
+  const audit = db()
+    .query(
+      `SELECT run_id, root_id, action,
             COALESCE(actor_session, 'anonymous (no session id)') actor_session,
             at, reason
        FROM run_mutation_audit WHERE root_id=? ORDER BY at, rowid`,
-  ).all(rootId)
+    )
+    .all(rootId)
   return {
     ...row,
     requested_id: id,
     resolved_from: identity.parent_run_id === null ? 'root' : 'turn',
     root_id: rootId,
     changed_paths: typeof row.changed_paths === 'string' ? JSON.parse(row.changed_paths) : null,
-    project: typeof row.cwd === 'string' ? projectAt(row.cwd)?.name ?? null : null,
+    project: typeof row.cwd === 'string' ? (projectAt(row.cwd)?.name ?? null) : null,
     scoreAxes: JOBS[String(row.job)]?.needs.writesRepo
       ? ['delivery', 'quality', 'fidelity']
       : ['delivery', 'quality'],
@@ -84,9 +88,7 @@ export function state(sinceDays: number | null = null) {
   // boundary at which a long-lived process adopts registry changes.
   refreshAgents()
   const d = db()
-  const since = sinceDays
-    ? new Date(Date.now() - sinceDays * 86_400_000).toISOString()
-    : '0000'
+  const since = sinceDays ? new Date(Date.now() - sinceDays * 86_400_000).toISOString() : '0000'
   // Age is a reaping criterion, not a display one. Filtering the panel by the
   // same cutoff as well made a genuinely live long run disappear from "in
   // flight" without ever becoming stale: reapStale had left it alone because
@@ -116,39 +118,46 @@ export function state(sinceDays: number | null = null) {
    * So a row waits only while something is genuinely unanswered, and the count
    * is carried beside it so the page can say how many.
    */
-  const live = d.query(
-    `SELECT id, agent, job, repo, cwd, started_at, COALESCE(label, prompt_head) AS prompt_head, status,
+  const live = d
+    .query(
+      `SELECT id, agent, job, repo, cwd, started_at, COALESCE(label, prompt_head) AS prompt_head, status,
             (SELECT COUNT(*) FROM question q
               WHERE q.run_id = run.id AND q.answered_at IS NULL) AS open_questions,
             (status = 'asking' AND (SELECT COUNT(*) FROM question q
               WHERE q.run_id = run.id AND q.answered_at IS NULL) > 0) AS waiting
        FROM run WHERE status IN ('running','asking') ORDER BY waiting DESC, id DESC`,
-  ).all()
+    )
+    .all()
 
-  const stale = (d.query(
-    `SELECT COUNT(*) n FROM run WHERE status='stale'`,
-  ).get() as { n: number }).n
+  const stale = (d.query(`SELECT COUNT(*) n FROM run WHERE status='stale'`).get() as { n: number })
+    .n
 
   // One cell per agent × job, from the router's own scoreboard rather than a
   // second query. This used to filter status='ok' and reported grok on
   // review-lens at 96% while the router, counting six failures, was using 69%.
   const matrix = scoreboard().map((c) => ({
-    job: c.job, promptBucket: c.promptBucket, agent: c.agent,
+    job: c.job,
+    promptBucket: c.promptBucket,
+    agent: c.agent,
     // `judged`, not `scored`: it counts failures too, and a key that keeps the
     // old name while changing meaning is how the page came to render
     // "36/32 scored" — more judgements than runs, which is nonsense on sight.
-    runs: c.runs, judged: c.evidence, failures: c.failures,
+    runs: c.runs,
+    judged: c.evidence,
+    failures: c.failures,
     pts: c.score === null ? 0 : c.score * c.evidence,
-    lat: c.latencyMs, toks: c.tokens,
+    lat: c.latencyMs,
+    toks: c.tokens,
   }))
 
-  const byRepo = d.query(
-    `SELECT COALESCE(r.repo,'—') repo, r.agent, COUNT(*) runs,
+  const byRepo = d
+    .query(
+      `SELECT COALESCE(r.repo,'—') repo, r.agent, COUNT(*) runs,
             SUM(COALESCE(r.vendor_tokens,0)) toks
        FROM run r WHERE r.status='ok' AND r.probe=0
       GROUP BY r.repo, r.agent ORDER BY runs DESC`,
-  ).all()
-
+    )
+    .all()
 
   // Windowed. A lifetime `failed` and `stale` can only ever go up, so the
   // counters that would show a fix working stay frozen at the pre-fix number:
@@ -171,8 +180,9 @@ export function state(sinceDays: number | null = null) {
   // the page can say so instead of showing nothing.
   let metric = null
   let metricError: string | null = null
-  try { metric = metricSummary(14) }
-  catch (e) {
+  try {
+    metric = metricSummary(14)
+  } catch (e) {
     const m = (e as Error).message
     if (!/no such table/i.test(m)) metricError = m
   }
@@ -182,12 +192,14 @@ export function state(sinceDays: number | null = null) {
   // left to be inferred from a run that merely says "failed".
   const health = Object.keys(AGENTS).map((name) => {
     const c = candidates('summarize').find((x) => x.agent === name)
-    const l = d.query(
-      `SELECT status, failure_kind, started_at,
+    const l = d
+      .query(
+        `SELECT status, failure_kind, started_at,
               (julianday('now') - julianday(started_at)) * 1440 AS mins_ago
          FROM run WHERE agent = ? AND status IN ('ok','failed') AND started_at >= ?
         ORDER BY id DESC LIMIT 1`,
-    ).get(name, since) as { status: string; failure_kind: string | null; mins_ago: number } | null
+      )
+      .get(name, since) as { status: string; failure_kind: string | null; mins_ago: number } | null
     return {
       agent: name,
       billing: AGENTS[name]!.billing,
@@ -198,25 +210,39 @@ export function state(sinceDays: number | null = null) {
     }
   })
 
-  const spawns = d.query(
-    `SELECT decision, why, COUNT(*) n FROM spawn GROUP BY decision, why ORDER BY n DESC`,
-  ).all()
+  const spawns = d
+    .query(`SELECT decision, why, COUNT(*) n FROM spawn GROUP BY decision, why ORDER BY n DESC`)
+    .all()
 
-  const reviewCells = (d.query(
-    `SELECT DISTINCT lens, agent, model FROM review_lens
+  const reviewCells = (
+    d
+      .query(
+        `SELECT DISTINCT lens, agent, model FROM review_lens
       WHERE model IS NOT NULL ORDER BY lens, agent, model`,
-  ).all() as { lens: string; agent: string; model: string }[])
-    .map(({ lens, agent, model }) => reviewCalibration(lens, agent, model, d))
+      )
+      .all() as { lens: string; agent: string; model: string }[]
+  ).map(({ lens, agent, model }) => reviewCalibration(lens, agent, model, d))
 
   return {
-    live, stale, matrix, byRepo, totals, allTimeRuns, unscored, sinceDays,
-    metric, metricError, guide: guide(), health, spawns, reviewCalibration: reviewCells,
+    live,
+    stale,
+    matrix,
+    byRepo,
+    totals,
+    allTimeRuns,
+    unscored,
+    sinceDays,
+    metric,
+    metricError,
+    guide: guide(),
+    health,
+    spawns,
+    reviewCalibration: reviewCells,
     agents: Object.values(AGENTS).map((a) => ({ name: a.name, billing: a.billing, caps: a.caps })),
     jobs: Object.keys(JOBS),
     now: Date.now(),
   }
 }
-
 
 /** Filtered, paginated run listing. Filters are whitelisted, never interpolated. */
 export function runList(q: URLSearchParams) {
@@ -226,34 +252,50 @@ export function runList(q: URLSearchParams) {
   const args: (string | number)[] = []
   for (const key of ['agent', 'job', 'repo'] as const) {
     const v = q.get(key)
-    if (v) { where.push(`r.${key} = ?`); args.push(v) }
+    if (v) {
+      where.push(`r.${key} = ?`)
+      args.push(v)
+    }
   }
   const status = q.get('status')
-  if (status) { where.push('r.status = ?'); args.push(status) }
+  if (status) {
+    where.push('r.status = ?')
+    args.push(status)
+  }
   // One dropdown over two columns: 'none' is a delivery, the rest are qualities.
   const verdict = q.get('verdict')
   if (verdict === 'unscored') where.push('s.delivery IS NULL AND r.evidence_excluded IS NULL')
   else if (verdict === 'none') where.push("s.delivery = 'none' AND r.evidence_excluded IS NULL")
   else if (verdict === 'excluded') where.push('r.evidence_excluded IS NOT NULL')
-  else if (verdict) { where.push('s.quality = ? AND r.evidence_excluded IS NULL'); args.push(verdict) }
+  else if (verdict) {
+    where.push('s.quality = ? AND r.evidence_excluded IS NULL')
+    args.push(verdict)
+  }
   const search = q.get('q')
-  if (search) { where.push('COALESCE(r.label, r.prompt_head) LIKE ?'); args.push(`%${search}%`) }
+  if (search) {
+    where.push('COALESCE(r.label, r.prompt_head) LIKE ?')
+    args.push(`%${search}%`)
+  }
 
   const clause = where.length ? `WHERE ${where.join(' AND ')}` : ''
   const limit = Math.min(Math.max(Number(q.get('limit') ?? 25), 1), 200)
   const page = Math.max(Number(q.get('page') ?? 1), 1)
 
-  const total = (db().query(
-    `SELECT COUNT(*) n FROM run r LEFT JOIN score s ON s.run_id = r.id ${clause}`,
-  ).get(...args) as { n: number }).n
+  const total = (
+    db()
+      .query(`SELECT COUNT(*) n FROM run r LEFT JOIN score s ON s.run_id = r.id ${clause}`)
+      .get(...args) as { n: number }
+  ).n
 
-  const rows = db().query(
-    `SELECT r.id, r.started_at, r.agent, r.job, r.repo, r.latency_ms, r.vendor_tokens,
+  const rows = db()
+    .query(
+      `SELECT r.id, r.started_at, r.agent, r.job, r.repo, r.latency_ms, r.vendor_tokens,
             r.prompt_bytes, r.output_bytes, r.status, s.delivery, s.quality, s.note,
             COALESCE(r.label, r.prompt_head) AS prompt_head
        FROM run r LEFT JOIN score s ON s.run_id = r.id
        ${clause} ORDER BY r.id DESC LIMIT ? OFFSET ?`,
-  ).all(...args, limit, (page - 1) * limit)
+    )
+    .all(...args, limit, (page - 1) * limit)
 
   // Distinct values so the filter dropdowns only offer what exists.
   //
@@ -261,11 +303,17 @@ export function runList(q: URLSearchParams) {
   // the type is narrowed to the three columns this is allowed to read rather
   // than left as `string` for a later caller to widen by accident.
   const distinct = (col: 'agent' | 'job' | 'repo') =>
-    (db().query(`SELECT DISTINCT ${col} v FROM run WHERE ${col} IS NOT NULL ORDER BY v`)
-      .all() as { v: string }[]).map((r) => r.v)
+    (
+      db().query(`SELECT DISTINCT ${col} v FROM run WHERE ${col} IS NOT NULL ORDER BY v`).all() as {
+        v: string
+      }[]
+    ).map((r) => r.v)
 
   return {
-    rows, total, page, limit,
+    rows,
+    total,
+    page,
+    limit,
     pages: Math.max(Math.ceil(total / limit), 1),
     facets: { agents: distinct('agent'), jobs: distinct('job'), repos: distinct('repo') },
   }

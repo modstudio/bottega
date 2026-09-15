@@ -10,7 +10,9 @@ test('jobs exposes fidelity only for writing jobs', () => {
 test('the timeout override respects the ceiling', () => {
   const fileQuestion = JOBS['file-question']!
   expect(jobTimeoutCeilingMinutes(fileQuestion)).toBe(20)
-  expect(() => resolveJobTimeoutMs(fileQuestion, 25 * 60_000, 21)).toThrow('file-question timeout ceiling is 20 minutes')
+  expect(() => resolveJobTimeoutMs(fileQuestion, 25 * 60_000, 21)).toThrow(
+    'file-question timeout ceiling is 20 minutes',
+  )
   expect(resolveJobTimeoutMs(fileQuestion, 25 * 60_000, 20)).toBe(20 * 60_000)
   expect(() => resolveJobTimeoutMs(JOBS.diagnose!, 20 * 60_000, 60)).toThrow('stale cutoff')
 })

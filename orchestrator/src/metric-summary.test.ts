@@ -1,9 +1,9 @@
-import { describe,expect,test } from 'bun:test'
+import { describe, expect, test } from 'bun:test'
 import { db } from './db.ts'
 import { summary } from './metric.ts'
 
 describe('metric canon headline and calendar halves', () => {
-test('headline uses canon totals and excluded days do not move the midpoint', () => {
+  test('headline uses canon totals and excluded days do not move the midpoint', () => {
     const day = (ago: number) => {
       const d = new Date()
       d.setDate(d.getDate() - ago)
@@ -17,9 +17,13 @@ test('headline uses canon totals and excluded days do not move the midpoint', ()
        VALUES (?,?,?,?,?,?,?,?)`,
     )
     for (const [ago, canon, other, tasks] of [
-      [13, 300, 30, 3], [12, 300, 30, 3], [10, 1, 0, 100],
-      [2, 150, 15, 3], [1, 150, 15, 3],
-    ]) insert.run(day(ago), canon + other, 0, 1, tasks, canon, other, new Date().toISOString())
+      [13, 300, 30, 3],
+      [12, 300, 30, 3],
+      [10, 1, 0, 100],
+      [2, 150, 15, 3],
+      [1, 150, 15, 3],
+    ])
+      insert.run(day(ago), canon + other, 0, 1, tasks, canon, other, new Date().toISOString())
 
     const s = summary(14)
     expect(s.canonTokens).toBe(900)
@@ -32,4 +36,3 @@ test('headline uses canon totals and excluded days do not move the midpoint', ()
     db().exec('DELETE FROM metric')
   })
 })
-

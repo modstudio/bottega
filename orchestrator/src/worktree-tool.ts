@@ -3,17 +3,21 @@ import { fillTool } from './worktree-template.ts'
 import { targetGitEnvironment } from './git-environment.ts'
 
 export function runShellTool(
-  template: string, vars: Record<string, string>, cwd: string,
+  template: string,
+  vars: Record<string, string>,
+  cwd: string,
 ): { ok: boolean; out: string; stdout: string; exitCode: number | null } {
   const cmd = fillTool(template, vars)
   const p = Bun.spawnSync(['sh', '-c', cmd], {
-    cwd, env: targetGitEnvironment(cwd), stdout: 'pipe', stderr: 'pipe',
+    cwd,
+    env: targetGitEnvironment(cwd),
+    stdout: 'pipe',
+    stderr: 'pipe',
   })
   const stdout = p.stdout.toString()
   const out = `${stdout}${p.stderr.toString()}`.trim()
   return { ok: p.exitCode === 0, out, stdout, exitCode: p.exitCode }
 }
-
 
 /**
  * A port nothing else on this machine is using, derived from the run id.
@@ -28,4 +32,3 @@ export function runShellTool(
 export function portFor(runId: number): number {
   return 21000 + (runId % 4000)
 }
-

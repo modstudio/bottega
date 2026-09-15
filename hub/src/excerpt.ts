@@ -26,8 +26,8 @@ import { readFileSync } from 'node:fs'
  * Display only. It never decides what a run is attributed to.
  */
 const LENS = [
-  /\bstep\s+"([^"]+)"/,          // get-workflow-step-tool ... step "agent-dead-code"
-  /\bstep:\s*"([^"]+)"/,         // get_workflow_step({ ..., step: "agent-correctness" })
+  /\bstep\s+"([^"]+)"/, // get-workflow-step-tool ... step "agent-dead-code"
+  /\bstep:\s*"([^"]+)"/, // get_workflow_step({ ..., step: "agent-correctness" })
   /^Review dimension:\s*(.+)$/m, // the inline packs
 ]
 
@@ -41,9 +41,14 @@ export function promptLens(path: string | null | undefined): string | null {
     const text = readFileSync(path, 'utf8')
     for (const re of LENS) {
       const m = re.exec(text)
-      if (m?.[1]) { out = m[1].trim().slice(0, 48); break }
+      if (m?.[1]) {
+        out = m[1].trim().slice(0, 48)
+        break
+      }
     }
-  } catch { /* the file may be cleaned up; that is not an error */ }
+  } catch {
+    /* the file may be cleaned up; that is not an error */
+  }
   cache.set(path, out)
   return out
 }

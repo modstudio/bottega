@@ -3,41 +3,31 @@
     "starship": {
       "type": "stdio",
       "command": "/Users/shmuel/.claude/mcp/mcp-run",
-      "args": [
-        "starship"
-      ],
+      "args": ["starship"],
       "env": {}
     },
     "stopal": {
       "type": "stdio",
       "command": "/Users/shmuel/.claude/mcp/mcp-run",
-      "args": [
-        "stopal"
-      ],
+      "args": ["stopal"],
       "env": {}
     },
     "alephbeis": {
       "type": "stdio",
       "command": "/Users/shmuel/.claude/mcp/mcp-run",
-      "args": [
-        "alephbeis"
-      ],
+      "args": ["alephbeis"],
       "env": {}
     },
     "youtrack-starship": {
       "type": "stdio",
       "command": "/Users/shmuel/.claude/mcp/mcp-run",
-      "args": [
-        "youtrack-starship"
-      ],
+      "args": ["youtrack-starship"],
       "env": {}
     },
     "youtrack-alephbeis": {
       "type": "stdio",
       "command": "/Users/shmuel/.claude/mcp/mcp-run",
-      "args": [
-        "youtrack-alephbeis"
-      ],
+      "args": ["youtrack-alephbeis"],
       "env": {}
     }
   }

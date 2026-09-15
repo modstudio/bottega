@@ -10,7 +10,9 @@ if (!plutil) {
 }
 
 const root = new URL('../ops/launchd', import.meta.url).pathname
-const templates = readdirSync(root).filter((name) => name.endsWith('.plist.template')).sort()
+const templates = readdirSync(root)
+  .filter((name) => name.endsWith('.plist.template'))
+  .sort()
 const renderedDirectory = mkdtempSync(join(tmpdir(), `${PLATFORM_SLUG}-launchd-lint-`))
 let failed = false
 

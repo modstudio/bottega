@@ -5,15 +5,18 @@ import { duelMatrices } from './duel.ts'
 import { guide } from './guide.ts'
 import { resolveLens } from './lenses.ts'
 import { projectAt } from './projects.ts'
+import { evidenceFor, MIN_SAMPLE, pick, promptSizeBucketLabel, scoreboard } from './route.ts'
 import {
-  evidenceFor, MIN_SAMPLE, pick, promptSizeBucketLabel, scoreboard,
-} from './route.ts'
-import {
-  routingBacktest, routingBacktestEnsemble, type RoutingBacktest,
+  routingBacktest,
+  routingBacktestEnsemble,
+  type RoutingBacktest,
 } from './routing-backtest.ts'
 
 type RoutingFlags = { has(name: string): boolean; flag(name: string): string | undefined }
-type RoutingPresentation = { log(...values: unknown[]): void; dur(ms: number | null | undefined): string }
+type RoutingPresentation = {
+  log(...values: unknown[]): void
+  dur(ms: number | null | undefined): string
+}
 type PickOptions = {
   jobName: string
   stack: string | null
@@ -24,13 +27,20 @@ type PickOptions = {
 }
 type PickPresentation = {
   log(...values: unknown[]): void
-  agents: Record<string, {
-    billing: string
-    probeResult?: unknown
-  } | undefined>
+  agents: Record<
+    string,
+    | {
+        billing: string
+        probeResult?: unknown
+      }
+    | undefined
+  >
 }
 
-export function routingBacktestCommand(flags: RoutingFlags, presentation: RoutingPresentation): void {
+export function routingBacktestCommand(
+  flags: RoutingFlags,
+  presentation: RoutingPresentation,
+): void {
   const { has, flag } = flags
   const { log } = presentation
   const jobFilter = flag('job')
@@ -40,44 +50,61 @@ export function routingBacktestCommand(flags: RoutingFlags, presentation: Routin
     throw new Error('--seed must be a non-negative integer')
   }
   const assumptions = {
-    outcomeComparison: 'not identifiable: agreements have the same logged outcome, while disagreements have no counterfactual outcome for the agent not run',
-    policyLearning: 'each simulated policy updates only from logged runs where it chose the historical agent',
-    latency: 'a matched successful run enters tie-break latency at chain completion whether or not it was scored',
+    outcomeComparison:
+      'not identifiable: agreements have the same logged outcome, while disagreements have no counterfactual outcome for the agent not run',
+    policyLearning:
+      'each simulated policy updates only from logged runs where it chose the historical agent',
+    latency:
+      'a matched successful run enters tie-break latency at chain completion whether or not it was scored',
     eligibility: 'current static capability, metered, prompt-size and context rules',
-    cooldowns: 'reconstructed from the full terminal operational stream, including quota/auth failures and successful probes; these events do not become scoring evidence',
+    cooldowns:
+      'reconstructed from the full terminal operational stream, including quota/auth failures and successful probes; these events do not become scoring evidence',
     reachability: 'present-day reachability ignored',
-    evidence: 'every non-probe root dispatch is a decision; default distributions omit voided/evidence-excluded rows, while NOT_EVIDENCE runs remain decisions but never enter policy evidence',
-    causalAvailability: 'scored evidence enters at scored_at; eligible unjudged failures enter at the terminating chain member time; dispatch sees only earlier available evidence',
+    evidence:
+      'every non-probe root dispatch is a decision; default distributions omit voided/evidence-excluded rows, while NOT_EVIDENCE runs remain decisions but never enter policy evidence',
+    causalAvailability:
+      'scored evidence enters at scored_at; eligible unjudged failures enter at the terminating chain member time; dispatch sees only earlier available evidence',
     ties: 'inside the noise band Thompson ties use reviewer precision when available, then unmetered and median latency',
     betaMapping: 'successes += (w + 0.5) / 1.5; failures += 1 - successes',
     exploration: 'choice differs from deterministic expected leader',
     scope: jobFilter ? `only job ${jobFilter}` : 'all displayed jobs',
   }
-  const distribution = (values: Record<string, number>) => Object.entries(values)
-    .sort(([a], [b]) => a.localeCompare(b)).map(([agent, count]) => `${agent}=${count}`).join(', ') || 'none'
+  const distribution = (values: Record<string, number>) =>
+    Object.entries(values)
+      .sort(([a], [b]) => a.localeCompare(b))
+      .map(([agent, count]) => `${agent}=${count}`)
+      .join(', ') || 'none'
   const movedSelections = (baseline: RoutingBacktest, comparison: RoutingBacktest) => {
-    const moved = (key: 'currentSelections' | 'thompsonSelections') => baseline.jobs.reduce((total, row) => {
-      const other = comparison.jobs.find((candidate) => candidate.job === row.job)
-      const agents = new Set([...Object.keys(row[key]), ...Object.keys(other?.[key] ?? {})])
-      return total + [...agents].reduce(
-        (sum, agent) => sum + Math.abs((row[key][agent] ?? 0) - (other?.[key][agent] ?? 0)), 0,
-      ) / 2
-    }, 0)
+    const moved = (key: 'currentSelections' | 'thompsonSelections') =>
+      baseline.jobs.reduce((total, row) => {
+        const other = comparison.jobs.find((candidate) => candidate.job === row.job)
+        const agents = new Set([...Object.keys(row[key]), ...Object.keys(other?.[key] ?? {})])
+        return (
+          total +
+          [...agents].reduce(
+            (sum, agent) => sum + Math.abs((row[key][agent] ?? 0) - (other?.[key][agent] ?? 0)),
+            0,
+          ) /
+            2
+        )
+      }, 0)
     return { current: moved('currentSelections'), thompson: moved('thompsonSelections') }
   }
   const printTrajectory = (result: RoutingBacktest, voided: RoutingBacktest, indent = '') => {
-    log(`${indent}seed ${result.seed}: causal exclusions ${result.causalExcludedJudgements}; unscored decisions ${result.unscoredDecisions}`)
+    log(
+      `${indent}seed ${result.seed}: causal exclusions ${result.causalExcludedJudgements}; unscored decisions ${result.unscoredDecisions}`,
+    )
     const jobs = [...new Set([...result.jobs, ...voided.jobs].map((row) => row.job))]
     for (const job of jobs) {
       const row = result.jobs.find((candidate) => candidate.job === job)
       const included = voided.jobs.find((candidate) => candidate.job === job)
       log(
         `${indent}  ${job}: runs=${row?.runs ?? 0} agreements=${row?.agreements ?? 0} ` +
-        `agreement=${((row?.agreementShare ?? 0) * 100).toFixed(1)}% ` +
-        `Thompson-exploration=${((row?.thompsonExplorationShare ?? 0) * 100).toFixed(1)}% ` +
-        `voided-excluded live-Thompson=[${distribution(row?.currentSelections ?? {})}] comparison-Thompson=[${distribution(row?.thompsonSelections ?? {})}]; ` +
-        `voided-included live-Thompson=[${distribution(included?.currentSelections ?? {})}] ` +
-        `Thompson=[${distribution(included?.thompsonSelections ?? {})}]`,
+          `agreement=${((row?.agreementShare ?? 0) * 100).toFixed(1)}% ` +
+          `Thompson-exploration=${((row?.thompsonExplorationShare ?? 0) * 100).toFixed(1)}% ` +
+          `voided-excluded live-Thompson=[${distribution(row?.currentSelections ?? {})}] comparison-Thompson=[${distribution(row?.thompsonSelections ?? {})}]; ` +
+          `voided-included live-Thompson=[${distribution(included?.currentSelections ?? {})}] ` +
+          `Thompson=[${distribution(included?.thompsonSelections ?? {})}]`,
       )
     }
   }
@@ -93,10 +120,14 @@ export function routingBacktestCommand(flags: RoutingFlags, presentation: Routin
       cooldownSensitivity: `disabling cooldown redistributes ${cooldownMoves.current} current-policy and ${cooldownMoves.thompson} Thompson selections`,
     }
     if (has('json')) {
-      log(JSON.stringify({
-        mode: 'single-seed-reproduction', assumptions: outputAssumptions, ...result,
-        sensitivities: { voidedIncluded, cooldownDisabled: { selectionMoves: cooldownMoves } },
-      }))
+      log(
+        JSON.stringify({
+          mode: 'single-seed-reproduction',
+          assumptions: outputAssumptions,
+          ...result,
+          sensitivities: { voidedIncluded, cooldownDisabled: { selectionMoves: cooldownMoves } },
+        }),
+      )
       return
     }
     log(`routing replay diagnostic (seed ${seed}; descriptive only)`)
@@ -121,10 +152,14 @@ export function routingBacktestCommand(flags: RoutingFlags, presentation: Routin
     cooldownSensitivity: `disabling cooldown redistributes ${cooldownMoves.current} current-policy and ${cooldownMoves.thompson} Thompson selections across all seeds`,
   }
   if (has('json')) {
-    log(JSON.stringify({
-      mode: 'ensemble', assumptions: outputAssumptions, ...result,
-      sensitivities: { voidedIncluded, cooldownDisabled: { selectionMoves: cooldownMoves } },
-    }))
+    log(
+      JSON.stringify({
+        mode: 'ensemble',
+        assumptions: outputAssumptions,
+        ...result,
+        sensitivities: { voidedIncluded, cooldownDisabled: { selectionMoves: cooldownMoves } },
+      }),
+    )
     return
   }
   log(`routing replay diagnostic (seeds ${result.seeds.join(', ')}; descriptive only)`)
@@ -137,39 +172,43 @@ export function routingBacktestCommand(flags: RoutingFlags, presentation: Routin
     const included = voidedIncluded.jobs.find((candidate) => candidate.job === job)
     log(
       `  ${job}: decisions=${row?.runs ?? 0} agreements=${row?.agreements ?? 0} ` +
-      `agreement=${((row?.agreementShare ?? 0) * 100).toFixed(1)}% ` +
-      `Thompson-exploration=${((row?.thompsonExplorationShare ?? 0) * 100).toFixed(1)}% ` +
-      `voided-excluded live-Thompson=[${distribution(row?.currentSelections ?? {})}] comparison-Thompson=[${distribution(row?.thompsonSelections ?? {})}]; ` +
-      `voided-included live-Thompson=[${distribution(included?.currentSelections ?? {})}] ` +
-      `Thompson=[${distribution(included?.thompsonSelections ?? {})}]`,
+        `agreement=${((row?.agreementShare ?? 0) * 100).toFixed(1)}% ` +
+        `Thompson-exploration=${((row?.thompsonExplorationShare ?? 0) * 100).toFixed(1)}% ` +
+        `voided-excluded live-Thompson=[${distribution(row?.currentSelections ?? {})}] comparison-Thompson=[${distribution(row?.thompsonSelections ?? {})}]; ` +
+        `voided-included live-Thompson=[${distribution(included?.currentSelections ?? {})}] ` +
+        `Thompson=[${distribution(included?.thompsonSelections ?? {})}]`,
     )
   }
 }
-
 
 export function guideCommand(flags: RoutingFlags, presentation: RoutingPresentation): void {
   const { flag } = flags
   const { log, dur } = presentation
   const rawPromptBytes = flag('prompt-bytes')
   const promptBytes = rawPromptBytes === undefined ? undefined : Number(rawPromptBytes)
-  if (promptBytes !== undefined &&
-      (!/^\d+$/.test(rawPromptBytes!) || !Number.isSafeInteger(promptBytes))) {
+  if (
+    promptBytes !== undefined &&
+    (!/^\d+$/.test(rawPromptBytes!) || !Number.isSafeInteger(promptBytes))
+  ) {
     throw new Error('--prompt-bytes must be a non-negative integer')
   }
   const gs = guide(flag('job'), promptBytes, flag('lens'))
   if (flag('lens')) {
-    const p=projectAt(process.cwd())
-    const resolved=resolveLens(flag('lens')!,p?.name??null)
-    log(`lens profiles: ${resolved ? resolved.profiles.map(x=>`${x.axis}=${x.name}@${x.version}`).join(', ') : 'free-form (no catalogue row)'}`)
+    const p = projectAt(process.cwd())
+    const resolved = resolveLens(flag('lens')!, p?.name ?? null)
+    log(
+      `lens profiles: ${resolved ? resolved.profiles.map((x) => `${x.axis}=${x.name}@${x.version}`).join(', ') : 'free-form (no catalogue row)'}`,
+    )
   }
   const size = (b: number) => (b >= 1024 ? `${Math.round(b / 1024)}KB` : `${Math.round(b)}B`)
   const tradeoffs: string[] = []
-  let decided = 0, provisional = 0, blank = 0
+  let decided = 0,
+    provisional = 0,
+    blank = 0
 
   for (const g of gs) {
-    const bucket = g.promptBucket === null
-      ? ''
-      : ` [${promptSizeBucketLabel(g.promptBucket)} prompts]`
+    const bucket =
+      g.promptBucket === null ? '' : ` [${promptSizeBucketLabel(g.promptBucket)} prompts]`
     log(`\n${g.job}${bucket}  ${g.what}`)
     if (!g.tried.length) {
       blank++
@@ -183,14 +222,16 @@ export function guideCommand(flags: RoutingFlags, presentation: RoutingPresentat
           .sort((a, b) => b.score! - a.score! || b.evidence - a.evidence)[0]
         log(
           `  best     ${g.best.agent.padEnd(11)} ${((g.best.score! * 100).toFixed(0) + '%').padStart(5)}` +
-          ` raw, ${((g.best.shrunk! * 100).toFixed(0) + '%').padStart(5)} shrunk` +
-          // "judged", not "scored": the percentage now includes failed runs
-          // at the `unusable` weight, so labelling it with the verdict count
-          // alone described a smaller denominator than the number came from.
-          `  over ${g.best.evidence} judged` +
-          (g.best.failures ? ` (incl. ${g.best.failures} failed)` : '') +
-          (rawBest && rawBest.agent !== g.best.agent ? `   SHRUNK LEADER (raw: ${rawBest.agent})` : '') +
-          (g.decided ? '' : `   PROVISIONAL - needs ${MIN_SAMPLE}`),
+            ` raw, ${((g.best.shrunk! * 100).toFixed(0) + '%').padStart(5)} shrunk` +
+            // "judged", not "scored": the percentage now includes failed runs
+            // at the `unusable` weight, so labelling it with the verdict count
+            // alone described a smaller denominator than the number came from.
+            `  over ${g.best.evidence} judged` +
+            (g.best.failures ? ` (incl. ${g.best.failures} failed)` : '') +
+            (rawBest && rawBest.agent !== g.best.agent
+              ? `   SHRUNK LEADER (raw: ${rawBest.agent})`
+              : '') +
+            (g.decided ? '' : `   PROVISIONAL - needs ${MIN_SAMPLE}`),
         )
       } else log('  best     - nothing scored yet')
 
@@ -199,13 +240,13 @@ export function guideCommand(flags: RoutingFlags, presentation: RoutingPresentat
       const solo = !g.quickest
       log(
         `  ${solo ? 'speed   ' : 'quickest'} ${q.agent.padEnd(11)} ${dur(q.latencyMs).padStart(5)}` +
-        `  median over ${q.runs} run${q.runs === 1 ? '' : 's'}, ~${size(q.promptBytes)} prompts` +
-        (solo ? '   (only agent tried)' : ''),
+          `  median over ${q.runs} run${q.runs === 1 ? '' : 's'}, ~${size(q.promptBytes)} prompts` +
+          (solo ? '   (only agent tried)' : ''),
       )
       if (g.best && g.quickest && g.best.agent !== g.quickest.agent) {
         tradeoffs.push(
           `${g.job}${bucket}: ${g.best.agent} judges best, ${g.quickest.agent} is ` +
-          `${dur(g.quickest.latencyMs)} vs ${dur(g.best.latencyMs)}`,
+            `${dur(g.quickest.latencyMs)} vs ${dur(g.best.latencyMs)}`,
         )
       }
     }
@@ -214,9 +255,9 @@ export function guideCommand(flags: RoutingFlags, presentation: RoutingPresentat
     for (const cell of g.evidenceCells) {
       log(
         `  evidence ${cell.name}: ` +
-        (cell.counts.length
-          ? cell.counts.map((row) => `${row.agent}=${row.evidence}`).join(', ')
-          : 'no judgements'),
+          (cell.counts.length
+            ? cell.counts.map((row) => `${row.agent}=${row.evidence}`).join(', ')
+            : 'no judgements'),
       )
     }
     log(`  routes to ${g.routesTo}   (${g.reason})`)
@@ -228,10 +269,9 @@ export function guideCommand(flags: RoutingFlags, presentation: RoutingPresentat
   }
   log(
     `\n  ${decided} bucket(s) decided by evidence, ${provisional} provisional, ${blank} with no runs.` +
-    `\n  Routing and latency evidence are separated at the provisional 16 KiB prompt boundary.`,
+      `\n  Routing and latency evidence are separated at the provisional 16 KiB prompt boundary.`,
   )
 }
-
 
 export function statsCommand(flags: RoutingFlags, presentation: RoutingPresentation): void {
   const { flag } = flags
@@ -241,12 +281,18 @@ export function statsCommand(flags: RoutingFlags, presentation: RoutingPresentat
   // status='ok' after the router stopped, so grok on review-lens read 96%
   // here and 69% to the thing actually choosing an agent. A report that
   // disagrees with the decision it describes is worse than no report.
-  const rows = scoreboard(flag('job'))
-    .sort((a, b) => a.job.localeCompare(b.job) || (b.shrunk ?? -9) - (a.shrunk ?? -9))
+  const rows = scoreboard(flag('job')).sort(
+    (a, b) => a.job.localeCompare(b.job) || (b.shrunk ?? -9) - (a.shrunk ?? -9),
+  )
   const matrices = duelMatrices(flag('job'))
-  if (!rows.length && !matrices.length) { log('no runs yet'); return }
+  if (!rows.length && !matrices.length) {
+    log('no runs yet')
+    return
+  }
   if (rows.length) {
-    log('job / prompt bucket            agent        runs  judged    raw  shrunk  median    vendor tokens      cost')
+    log(
+      'job / prompt bucket            agent        runs  judged    raw  shrunk  median    vendor tokens      cost',
+    )
     for (const r of rows) {
       const score = r.score === null ? '—' : `${(r.score * 100).toFixed(0)}%`
       const shrunk = r.shrunk === null ? '—' : `${(r.shrunk * 100).toFixed(0)}%`
@@ -263,8 +309,15 @@ export function statsCommand(flags: RoutingFlags, presentation: RoutingPresentat
     }
   }
   for (const matrix of matrices) {
-    const duelCount = matrix.agents.reduce((sum, agent) => sum +
-      matrix.agents.reduce((agentSum, opponent) => agentSum + matrix.cells[agent]![opponent]!.wins, 0), 0)
+    const duelCount = matrix.agents.reduce(
+      (sum, agent) =>
+        sum +
+        matrix.agents.reduce(
+          (agentSum, opponent) => agentSum + matrix.cells[agent]![opponent]!.wins,
+          0,
+        ),
+      0,
+    )
     if (duelCount >= MIN_SAMPLE) {
       const strengths = bradleyTerry(
         matrix.agents,
@@ -281,18 +334,23 @@ export function statsCommand(flags: RoutingFlags, presentation: RoutingPresentat
     log(`\n${matrix.job} duels (wins-losses)`)
     log(`${'agent'.padEnd(width)} ${matrix.agents.map((a) => a.padStart(width)).join(' ')}`)
     for (const agent of matrix.agents) {
-      const cells = matrix.agents.map((opponent) => {
-        if (opponent === agent) return '-'.padStart(width)
-        const cell = matrix.cells[agent]![opponent]!
-        return `${cell.wins}-${cell.losses}`.padStart(width)
-      }).join(' ')
+      const cells = matrix.agents
+        .map((opponent) => {
+          if (opponent === agent) return '-'.padStart(width)
+          const cell = matrix.cells[agent]![opponent]!
+          return `${cell.wins}-${cell.losses}`.padStart(width)
+        })
+        .join(' ')
       log(`${agent.padEnd(width)} ${cells}`)
     }
   }
 }
 
-
-export function pickCommand(options: PickOptions, flags: RoutingFlags, presentation: PickPresentation): void {
+export function pickCommand(
+  options: PickOptions,
+  flags: RoutingFlags,
+  presentation: PickPresentation,
+): void {
   void flags
   const { log, agents } = presentation
   // --stack, or the stack of wherever you are standing. A route is a claim
@@ -301,24 +359,35 @@ export function pickCommand(options: PickOptions, flags: RoutingFlags, presentat
   const { jobName, stack, avoid, distinctModels, lens, selectedAgent } = options
   // explore=false: a report that spent the exploration coin would name a
   // different agent each time it was read.
-  const p = pick(jobName, selectedAgent, 0, false, stack,
-    { agents: avoid, models: distinctModels }, false, lens)
+  const p = pick(
+    jobName,
+    selectedAgent,
+    0,
+    false,
+    stack,
+    { agents: avoid, models: distinctModels },
+    false,
+    lens,
+  )
   const ev = evidenceFor(jobName, 0, stack, undefined, lens)
   if (lens) {
-    const resolved=resolveLens(lens,projectAt(process.cwd())?.name??null)
-    log(`selected profiles: ${resolved ? resolved.profiles.map(x=>`${x.axis}=${x.name}@${x.version}`).join(', ') : 'free-form (no catalogue row)'}`)
+    const resolved = resolveLens(lens, projectAt(process.cwd())?.name ?? null)
+    log(
+      `selected profiles: ${resolved ? resolved.profiles.map((x) => `${x.axis}=${x.name}@${x.version}`).join(', ') : 'free-form (no catalogue row)'}`,
+    )
   }
-  const counts = (rows: typeof ev.cands) => rows
-    .filter((candidate) => candidate.evidence > 0)
-    .map((candidate) => `${candidate.agent}=${candidate.evidence}`)
-    .join(', ') || 'no judgements'
+  const counts = (rows: typeof ev.cands) =>
+    rows
+      .filter((candidate) => candidate.evidence > 0)
+      .map((candidate) => `${candidate.agent}=${candidate.evidence}`)
+      .join(', ') || 'no judgements'
   log(
     `${jobName} -> ${p.agent}   (${p.reason})\n` +
-    `  deciding cell: ${ev.level === 'lens' ? `lens ${ev.lens}` : ev.level === 'stack' ? `stack ${ev.stack}` : 'job-wide'}\n` +
-    (ev.scoped && ev.lens
-      ? `  lens ${ev.lens} evidence: ${counts(ev.scoped)}\n  job-wide evidence: ${counts(ev.job)}\n`
-      : `  evidence: ${ev.level === 'stack' ? `${ev.stack} only` : 'all stacks'}` +
-        `${stack && ev.level === 'job' ? ` (too little on ${stack} to compare agents there)` : ''}\n`),
+      `  deciding cell: ${ev.level === 'lens' ? `lens ${ev.lens}` : ev.level === 'stack' ? `stack ${ev.stack}` : 'job-wide'}\n` +
+      (ev.scoped && ev.lens
+        ? `  lens ${ev.lens} evidence: ${counts(ev.scoped)}\n  job-wide evidence: ${counts(ev.job)}\n`
+        : `  evidence: ${ev.level === 'stack' ? `${ev.stack} only` : 'all stacks'}` +
+          `${stack && ev.level === 'job' ? ` (too little on ${stack} to compare agents there)` : ''}\n`),
   )
   const listed = [...ev.cands].sort((a, b) => {
     const rank = (candidate: typeof a) =>
@@ -332,8 +401,8 @@ export function pickCommand(options: PickOptions, flags: RoutingFlags, presentat
       `  ${c.agent.padEnd(7)} ${c.eligible ? 'eligible' : 'excluded'.padEnd(8)}` +
         ` declared=${c.declared?.join(',') ?? 'any'} preferred=${c.preferred ? 'yes' : 'no'}` +
         ` runs=${String(c.runs).padStart(3)} judged=${String(c.evidence).padStart(3)}` +
-        ` score=${c.score === null ? "—" : (c.score * 100).toFixed(0) + "%"}` +
-        ` shrunk=${c.shrunk === null ? "—" : (c.shrunk * 100).toFixed(0) + "%"}  ${c.why}${mcpNote}`,
+        ` score=${c.score === null ? '—' : (c.score * 100).toFixed(0) + '%'}` +
+        ` shrunk=${c.shrunk === null ? '—' : (c.shrunk * 100).toFixed(0) + '%'}  ${c.why}${mcpNote}`,
     )
   }
   log(`\n  (a rate steers routing only at ${MIN_SAMPLE}+ scored runs)`)

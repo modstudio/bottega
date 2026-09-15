@@ -16,7 +16,10 @@ import { AGENTS } from '../src/agents.ts'
 import { db, ROOT } from '../src/db.ts'
 import { run } from '../src/run.ts'
 import {
-  outcomeFromTransport, transportFor, type TransportName, type TransportResult,
+  outcomeFromTransport,
+  transportFor,
+  type TransportName,
+  type TransportResult,
 } from '../src/transport.ts'
 
 const SCHEMA = {
@@ -38,7 +41,11 @@ type CaseSpec = {
 export const ACP_PARITY_REPOSITORY_ROOT = resolve(import.meta.dir, '../..')
 
 const parsedJson = (reply: SemanticReply): unknown => {
-  try { return JSON.parse(reply.parsed?.text ?? reply.output) } catch { return null }
+  try {
+    return JSON.parse(reply.parsed?.text ?? reply.output)
+  } catch {
+    return null
+  }
 }
 
 const CASES: CaseSpec[] = [
@@ -47,8 +54,11 @@ const CASES: CaseSpec[] = [
     prompt: 'Reply with exactly this JSON and nothing else: {"status":"ok"}',
     expected: (reply) => {
       const value = parsedJson(reply)
-      return typeof value === 'object' && value !== null &&
+      return (
+        typeof value === 'object' &&
+        value !== null &&
         (value as Record<string, unknown>).status === 'ok'
+      )
     },
   },
   {
@@ -62,8 +72,11 @@ const CASES: CaseSpec[] = [
     schema: true,
     expected: (reply) => {
       const value = parsedJson(reply)
-      return typeof value === 'object' && value !== null &&
+      return (
+        typeof value === 'object' &&
+        value !== null &&
         (value as Record<string, unknown>).verdict === 'true'
+      )
     },
   },
   {
@@ -74,7 +87,8 @@ const CASES: CaseSpec[] = [
   },
   {
     id: 'malformed',
-    prompt: 'Reply with the single character { and nothing else. Do not close it. Do not write JSON.',
+    prompt:
+      'Reply with the single character { and nothing else. Do not close it. Do not write JSON.',
     expected: (reply) => (reply.parsed?.text ?? reply.output).trim() === '{',
   },
 ]
@@ -84,7 +98,10 @@ export function caseSemanticallyMatches(id: string, reply: SemanticReply): boole
 }
 
 export function parityCaseVerdict(
-  id: string, transportStatus: string, failureKind: string | null, reply: SemanticReply,
+  id: string,
+  transportStatus: string,
+  failureKind: string | null,
+  reply: SemanticReply,
 ): Pick<Row, 'outcome' | 'failureKind'> {
   if (transportStatus === 'ok' && !caseSemanticallyMatches(id, reply)) {
     return { outcome: 'failed', failureKind: 'semantic' }
@@ -121,16 +138,26 @@ async function runCase(
   const transport = transportFor(transportName)
   const started = Date.now()
   const handle = await transport.start({
-    agent, cwd, prompt: spec.prompt, outPath,
-    schemaPath, model: agent.model, startedAt: started,
-    write: false, sandbox: 'read-only',
+    agent,
+    cwd,
+    prompt: spec.prompt,
+    outPath,
+    schemaPath,
+    model: agent.model,
+    startedAt: started,
+    write: false,
+    sandbox: 'read-only',
     env: Object.fromEntries(
-      Object.entries(process.env).filter((entry): entry is [string, string] => entry[1] !== undefined),
+      Object.entries(process.env).filter(
+        (entry): entry is [string, string] => entry[1] !== undefined,
+      ),
     ),
   })
   let timer: ReturnType<typeof setTimeout> | null = null
   if (spec.timeoutMs != null) {
-    timer = setTimeout(() => { void transport.cancel(handle) }, spec.timeoutMs)
+    timer = setTimeout(() => {
+      void transport.cancel(handle)
+    }, spec.timeoutMs)
   }
   try {
     await transport.prompt(handle, spec.prompt)
@@ -147,7 +174,11 @@ async function runCase(
     }
   } finally {
     if (timer) clearTimeout(timer)
-    try { handle.kill(9) } catch { /* already gone */ }
+    try {
+      handle.kill(9)
+    } catch {
+      /* already gone */
+    }
   }
 }
 
@@ -167,16 +198,20 @@ async function runAskCase(): Promise<Row> {
     cwd: ROOT,
     noFailover: true,
     ownerSession: process.env.CLAUDE_CODE_SESSION_ID ?? marker,
-  }).finally(() => { settled = true })
+  }).finally(() => {
+    settled = true
+  })
 
   let runId: number | null = null
   let questionSeen = false
   const deadline = Date.now() + 120_000
   while (!settled && Date.now() < deadline) {
-    const row = db().query(
-      `SELECT r.id, EXISTS(SELECT 1 FROM question q WHERE q.run_id=r.id) asked
+    const row = db()
+      .query(
+        `SELECT r.id, EXISTS(SELECT 1 FROM question q WHERE q.run_id=r.id) asked
          FROM run r WHERE r.label=? ORDER BY r.id DESC LIMIT 1`,
-    ).get(marker) as { id: number; asked: number } | null
+      )
+      .get(marker) as { id: number; asked: number } | null
     if (row) runId = row.id
     if (row?.asked) {
       questionSeen = true
@@ -184,7 +219,8 @@ async function runAskCase(): Promise<Row> {
         cmd: [process.execPath, join(ROOT, 'src/cli.ts'), 'answer', String(row.id), ruling],
         cwd: ROOT,
         env: process.env,
-        stdout: 'pipe', stderr: 'pipe',
+        stdout: 'pipe',
+        stderr: 'pipe',
       })
       if (answer.exitCode !== 0) {
         throw new Error(`orch answer failed: ${answer.stderr.toString().trim()}`)
@@ -194,9 +230,15 @@ async function runAskCase(): Promise<Row> {
     await Bun.sleep(100)
   }
   if (!questionSeen && !settled && runId != null) {
-    const pid = db().query('SELECT agent_pid FROM run WHERE id=?').get(runId) as
-      { agent_pid: number | null } | null
-    if (pid?.agent_pid) try { process.kill(pid.agent_pid, 'SIGTERM') } catch { /* exited */ }
+    const pid = db().query('SELECT agent_pid FROM run WHERE id=?').get(runId) as {
+      agent_pid: number | null
+    } | null
+    if (pid?.agent_pid)
+      try {
+        process.kill(pid.agent_pid, 'SIGTERM')
+      } catch {
+        /* exited */
+      }
   }
 
   const result = await promise
@@ -206,7 +248,8 @@ async function runAskCase(): Promise<Row> {
   // does not mean the blocked MCP call failed to resume.
   const continued = questionSeen && result.status === 'ok' && result.output.trim().endsWith(ruling)
   return {
-    case: 'ask-answer', transport: 'acp',
+    case: 'ask-answer',
+    transport: 'acp',
     // A normal final answer without an orch question is not a successful
     // round trip, even when the vendor itself ended the turn successfully.
     outcome: continued ? 'ok' : 'failed',
@@ -220,9 +263,11 @@ async function runAskCase(): Promise<Row> {
 /** A timeout is the one deliberately failed case; every other turn must finish ok. */
 export function requiredParityPassed(rows: Row[]): boolean {
   if (rows.length !== CASES.length * 2 + 1) return false
-  return rows.every((row) => row.case === 'timeout'
-    ? row.outcome === 'failed' && row.failureKind === 'timeout'
-    : row.outcome === 'ok')
+  return rows.every((row) =>
+    row.case === 'timeout'
+      ? row.outcome === 'failed' && row.failureKind === 'timeout'
+      : row.outcome === 'ok',
+  )
 }
 
 async function main(): Promise<void> {
@@ -243,8 +288,13 @@ async function main(): Promise<void> {
         rows.push(await runCase(transportName, spec, cwd, dir))
       } catch (error) {
         rows.push({
-          case: spec.id, transport: transportName, outcome: 'failed', failureKind: 'harness',
-          tokens: '—', latencyMs: 0, rawBytes: 0,
+          case: spec.id,
+          transport: transportName,
+          outcome: 'failed',
+          failureKind: 'harness',
+          tokens: '—',
+          latencyMs: 0,
+          rawBytes: 0,
         })
         process.stderr.write(`  ${String((error as Error)?.message ?? error)}\n`)
       }
@@ -256,24 +306,40 @@ async function main(): Promise<void> {
     rows.push(await runAskCase())
   } catch (error) {
     rows.push({
-      case: 'ask-answer', transport: 'acp', outcome: 'failed', failureKind: 'harness',
-      tokens: '—', latencyMs: 0, rawBytes: 0,
+      case: 'ask-answer',
+      transport: 'acp',
+      outcome: 'failed',
+      failureKind: 'harness',
+      tokens: '—',
+      latencyMs: 0,
+      rawBytes: 0,
     })
     process.stderr.write(`  ${String((error as Error)?.message ?? error)}\n`)
   }
 
   const header = [
-    cell('case', 16), cell('tr', 4), cell('outcome', 8),
-    cell('fail', 12), cell('tokens', 8), cell('ms', 8), cell('rawB', 8),
+    cell('case', 16),
+    cell('tr', 4),
+    cell('outcome', 8),
+    cell('fail', 12),
+    cell('tokens', 8),
+    cell('ms', 8),
+    cell('rawB', 8),
   ].join(' ')
   console.log(header)
   console.log('-'.repeat(header.length))
   for (const row of rows) {
-    console.log([
-      cell(row.case, 16), cell(row.transport, 4), cell(row.outcome, 8),
-      cell(row.failureKind, 12), cell(row.tokens, 8),
-      cell(String(row.latencyMs), 8), cell(String(row.rawBytes), 8),
-    ].join(' '))
+    console.log(
+      [
+        cell(row.case, 16),
+        cell(row.transport, 4),
+        cell(row.outcome, 8),
+        cell(row.failureKind, 12),
+        cell(row.tokens, 8),
+        cell(String(row.latencyMs), 8),
+        cell(String(row.rawBytes), 8),
+      ].join(' '),
+    )
   }
   console.log(`\nparity files: ${dir}`)
   const nativeElicitation = AGENTS[requestedAgent]!.acp?.nativeElicitation

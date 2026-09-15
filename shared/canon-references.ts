@@ -6,15 +6,18 @@
 export const CANON_REFERENCE_EXEMPTIONS: { path: string; reason: string }[] = [
   {
     path: 'orchestrator/orch.db',
-    reason: 'gitignored runtime store; canon must name it, and it is per-machine state rather than a repository artifact.',
+    reason:
+      'gitignored runtime store; canon must name it, and it is per-machine state rather than a repository artifact.',
   },
   {
     path: 'scripts/worktree',
-    reason: "another project's CLI, referenced as an example of how those projects invoke their own worktree tooling.",
+    reason:
+      "another project's CLI, referenced as an example of how those projects invoke their own worktree tooling.",
   },
   {
     path: 'scripts/sync/main',
-    reason: "another project's sync fabric, referenced in cross-project process and backport comparisons.",
+    reason:
+      "another project's sync fabric, referenced in cross-project process and backport comparisons.",
   },
   {
     path: 'scripts/sync',
@@ -22,15 +25,18 @@ export const CANON_REFERENCE_EXEMPTIONS: { path: string; reason: string }[] = [
   },
   {
     path: 'scripts/sync/config.sh',
-    reason: "another project's sync module, referenced to compare dependency-checking behaviour across projects.",
+    reason:
+      "another project's sync module, referenced to compare dependency-checking behaviour across projects.",
   },
   {
     path: 'scripts/new-instance.sh',
-    reason: "another project's retired sibling-checkout script, referenced to forbid porting that external design.",
+    reason:
+      "another project's retired sibling-checkout script, referenced to forbid porting that external design.",
   },
   {
     path: '.githooks/post-checkout',
-    reason: "another project's branch-switch hook, referenced as a cross-project backport candidate.",
+    reason:
+      "another project's branch-switch hook, referenced as a cross-project backport candidate.",
   },
 ]
 

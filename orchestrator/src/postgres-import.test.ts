@@ -11,7 +11,8 @@ const container = process.env.ORCH_TEST_POSTGRES_CONTAINER
 const databaseUrl = process.env.ORCH_TEST_POSTGRES_URL
 const sourceOrchDb = process.env.ORCH_TEST_SOURCE_ORCH_DB
 const sourceHubDb = process.env.ORCH_TEST_SOURCE_HUB_DB
-const realPostgres = container && databaseUrl && sourceOrchDb && sourceHubDb ? describe : describe.skip
+const realPostgres =
+  container && databaseUrl && sourceOrchDb && sourceHubDb ? describe : describe.skip
 
 type SourceProject = {
   name: string
@@ -24,7 +25,7 @@ type ImportedProject = Record<string, unknown> & {
 }
 
 const migrations = ['0000_substrate.sql', '0001_project_import_shape.sql'].map((file) =>
-  readFileSync(join(import.meta.dir, '..', 'postgres', 'migrations', file), 'utf8')
+  readFileSync(join(import.meta.dir, '..', 'postgres', 'migrations', file), 'utf8'),
 )
 
 async function targetState(sql: SQL): Promise<unknown> {
@@ -51,7 +52,9 @@ realPostgres('project import against copied live SQLite data', () => {
   })
 
   afterAll(async () => {
-    await sql.unsafe('DROP TABLE IF EXISTS membership, machine, seq, project, "user", space CASCADE')
+    await sql.unsafe(
+      'DROP TABLE IF EXISTS membership, machine, seq, project, "user", space CASCADE',
+    )
     await sql.close()
     rmSync(unownedHubDb, { force: true })
   })
@@ -61,44 +64,69 @@ realPostgres('project import against copied live SQLite data', () => {
     expect(existsSync(sources.hubDb), sources.hubDb).toBe(true)
     const orch = new Database(sources.orchDb, { readonly: true })
     const hub = new Database(sources.hubDb, { readonly: true })
-    const sourceProjects = orch.query<SourceProject, []>(
-      'SELECT name, settings FROM project ORDER BY name',
-    ).all()
-    const sourceSequences = hub.query<{ name: string; next: number }, []>(
-      'SELECT name, next FROM seq ORDER BY name',
-    ).all()
+    const sourceProjects = orch
+      .query<SourceProject, []>('SELECT name, settings FROM project ORDER BY name')
+      .all()
+    const sourceSequences = hub
+      .query<{ name: string; next: number }, []>('SELECT name, next FROM seq ORDER BY name')
+      .all()
     orch.close()
     hub.close()
 
-    const sourceKeySet = new Set(sourceProjects.flatMap((row) => Object.keys(JSON.parse(row.settings))))
+    const sourceKeySet = new Set(
+      sourceProjects.flatMap((row) => Object.keys(JSON.parse(row.settings))),
+    )
     expect([...sourceKeySet].sort()).toEqual([
-      'color', 'colorDark', 'envPrefix', 'gate', 'keyPrefixes', 'mcp', 'mcpServer',
-      'tracker', 'trunk', 'worktree',
+      'color',
+      'colorDark',
+      'envPrefix',
+      'gate',
+      'keyPrefixes',
+      'mcp',
+      'mcpServer',
+      'tracker',
+      'trunk',
+      'worktree',
     ])
 
-    const first = await importProjects({ ...sources, databaseUrl: databaseUrl!, spaceId: PLATFORM_SPACE_ID })
+    const first = await importProjects({
+      ...sources,
+      databaseUrl: databaseUrl!,
+      spaceId: PLATFORM_SPACE_ID,
+    })
     expect(first.projects).toBe(sourceProjects.length)
-    expect(first.sequences).toBe(sourceSequences.filter((row) => row.name.startsWith('task:')).length)
-    expect(first.skippedSequences).toEqual([{
-      name: 'dev', next: 21,
-      reason: 'sequence name has no task: namespace and therefore no determinate project owner',
-    }])
+    expect(first.sequences).toBe(
+      sourceSequences.filter((row) => row.name.startsWith('task:')).length,
+    )
+    expect(first.skippedSequences).toEqual([
+      {
+        name: 'dev',
+        next: 21,
+        reason: 'sequence name has no task: namespace and therefore no determinate project owner',
+      },
+    ])
 
-    const imported = await sql`SELECT * FROM project ORDER BY name` as ImportedProject[]
+    const imported = (await sql`SELECT * FROM project ORDER BY name`) as ImportedProject[]
     expect(imported).toHaveLength(sourceProjects.length)
     const columnForSetting: Record<string, string> = {
-      color: 'color', colorDark: 'color_dark', envPrefix: 'env_prefix', gate: 'gate',
-      keyPrefixes: 'key_prefixes', mcp: 'mcp_probe_tool', mcpServer: 'mcp_server',
-      tracker: 'tracker', trunk: 'landing_branch', worktree: 'worktree_recipe',
+      color: 'color',
+      colorDark: 'color_dark',
+      envPrefix: 'env_prefix',
+      gate: 'gate',
+      keyPrefixes: 'key_prefixes',
+      mcp: 'mcp_probe_tool',
+      mcpServer: 'mcp_server',
+      tracker: 'tracker',
+      trunk: 'landing_branch',
+      worktree: 'worktree_recipe',
     }
     for (const source of sourceProjects) {
       const settings = JSON.parse(source.settings) as Record<string, unknown>
       const target = imported.find((row) => row.name === source.name)!
       for (const key of Object.keys(settings)) {
         expect(columnForSetting[key], `source setting ${key} has a target column`).toBeDefined()
-        const expected = key === 'mcp'
-          ? (settings.mcp as { probe_tool: string }).probe_tool
-          : settings[key]
+        const expected =
+          key === 'mcp' ? (settings.mcp as { probe_tool: string }).probe_tool : settings[key]
         expect(target[columnForSetting[key]!]!, `${source.name}.${key}`).toEqual(expected as any)
       }
     }
@@ -118,15 +146,21 @@ realPostgres('project import against copied live SQLite data', () => {
       .map((row) => {
         const prefix = row.name.slice('task:'.length)
         const owner = sourceProjects.find((project) =>
-          (JSON.parse(project.settings).keyPrefixes as string[] | undefined)?.includes(prefix)
+          (JSON.parse(project.settings).keyPrefixes as string[] | undefined)?.includes(prefix),
         )
         return { name: row.name, next: String(row.next), project: owner?.name }
       })
     expect([...importedSequences]).toEqual(expectedSequences)
-    expect(expectedSequences.some((row) => row.name === 'task:DEV' && row.project === PLATFORM_SLUG)).toBe(true)
+    expect(
+      expectedSequences.some((row) => row.name === 'task:DEV' && row.project === PLATFORM_SLUG),
+    ).toBe(true)
 
     const before = await targetState(sql)
-    const second = await importProjects({ ...sources, databaseUrl: databaseUrl!, spaceId: PLATFORM_SPACE_ID })
+    const second = await importProjects({
+      ...sources,
+      databaseUrl: databaseUrl!,
+      spaceId: PLATFORM_SPACE_ID,
+    })
     expect(second).toEqual(first)
     expect(await targetState(sql)).toEqual(before)
   })
@@ -138,9 +172,14 @@ realPostgres('project import against copied live SQLite data', () => {
     hub.close()
     const before = await targetState(sql)
 
-    await expect(importProjects({
-      orchDb: sources.orchDb, hubDb: unownedHubDb, databaseUrl: databaseUrl!, spaceId: PLATFORM_SPACE_ID,
-    })).rejects.toThrow('cannot import sequence task:NOPE: matched no project')
+    await expect(
+      importProjects({
+        orchDb: sources.orchDb,
+        hubDb: unownedHubDb,
+        databaseUrl: databaseUrl!,
+        spaceId: PLATFORM_SPACE_ID,
+      }),
+    ).rejects.toThrow('cannot import sequence task:NOPE: matched no project')
     expect(await targetState(sql)).toEqual(before)
   })
 })

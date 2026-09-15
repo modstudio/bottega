@@ -9,8 +9,7 @@
  */
 import { mkdirSync, readFileSync, readdirSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
-import {
-  DOC_SCOPES, DOC_SCOPE_SUBJECT_KIND, type DocScope, } from '../../shared/docs.ts'
+import { DOC_SCOPES, DOC_SCOPE_SUBJECT_KIND, type DocScope } from '../../shared/docs.ts'
 import { AGENTS } from './agents.ts'
 import { db, nowIso, sessionId, writableDb, writeTransaction } from './db.ts'
 import { JOBS } from './jobs.ts'
@@ -33,11 +32,21 @@ export type Doc = {
   updated_at: string
 }
 
-export type DocMetadata = Pick<Doc, 'id' | 'scope' | 'subject' | 'slug' | 'title' | 'updated_at'> & {
+export type DocMetadata = Pick<
+  Doc,
+  'id' | 'scope' | 'subject' | 'slug' | 'title' | 'updated_at'
+> & {
   bytes: number
 }
 
-export type DocRevisionOp = 'create' | 'set' | 'consume' | 'delete' | 'restore' | 'import' | 'backfill'
+export type DocRevisionOp =
+  | 'create'
+  | 'set'
+  | 'consume'
+  | 'delete'
+  | 'restore'
+  | 'import'
+  | 'backfill'
 export type DocRevision = {
   id: number
   doc_id: number
@@ -54,60 +63,84 @@ export type DocRevision = {
   session_id: string | null
   at: string
 }
-export type DocRevisionMetadata = Omit<DocRevision, 'title' | 'body' | 'delivery' | 'session_id' | 'doc_id' | 'scope' | 'subject' | 'slug'> & {
+export type DocRevisionMetadata = Omit<
+  DocRevision,
+  'title' | 'body' | 'delivery' | 'session_id' | 'doc_id' | 'scope' | 'subject' | 'slug'
+> & {
   bytes: number
 }
 export type DocWriteContext = { author?: string; reason: string; forceInject?: string }
 
 function assertInjectSize(input: {
-  scope: string; subject: string | null; slug: string; title: string; body: string
-  delivery?: 'inject' | 'demand'; forceInject?: string
+  scope: string
+  subject: string | null
+  slug: string
+  title: string
+  body: string
+  delivery?: 'inject' | 'demand'
+  forceInject?: string
 }): void {
   if (input.delivery !== 'inject') return
   const bytes = Buffer.byteLength(input.body)
   if (bytes > MAX_INJECT_DOC_BYTES && !input.forceInject?.trim()) {
-    const current = db().query("SELECT COALESCE(MAX(bytes), 0) AS bytes FROM canon_pack").get() as { bytes: number }
+    const current = db().query('SELECT COALESCE(MAX(bytes), 0) AS bytes FROM canon_pack').get() as {
+      bytes: number
+    }
     const headroom = DEFAULT_PACK_BYTES - current.bytes
     throw new Error(
       `inject document is ${bytes} bytes; threshold is ${MAX_INJECT_DOC_BYTES} bytes; ` +
-      `current pack is ${current.bytes} bytes with ${headroom} bytes headroom\n` +
-      'invariant: oversized narrative belongs on demand so an accepted write cannot break the canon pack gate\n' +
-      'cleared by: use --delivery demand, shorten the document, or pass --force-inject "<reason>"',
+        `current pack is ${current.bytes} bytes with ${headroom} bytes headroom\n` +
+        'invariant: oversized narrative belongs on demand so an accepted write cannot break the canon pack gate\n' +
+        'cleared by: use --delivery demand, shorten the document, or pass --force-inject "<reason>"',
     )
   }
 
   if (!['global', 'job', 'project'].includes(input.scope)) return
-  const projectRows = db().query('SELECT name,path FROM project ORDER BY name').all() as
-    { name: string; path: string }[]
-  const projectsToCheck = input.scope === 'project'
-    ? projectRows.filter((project) => project.name === input.subject)
-    : projectRows.length ? projectRows : [{ name: '_', path: process.cwd() }]
-  const jobsToCheck = input.scope === 'job' && input.subject
-    ? [input.subject]
-    : Object.keys(JOBS)
+  const projectRows = db().query('SELECT name,path FROM project ORDER BY name').all() as {
+    name: string
+    path: string
+  }[]
+  const projectsToCheck =
+    input.scope === 'project'
+      ? projectRows.filter((project) => project.name === input.subject)
+      : projectRows.length
+        ? projectRows
+        : [{ name: '_', path: process.cwd() }]
+  const jobsToCheck = input.scope === 'job' && input.subject ? [input.subject] : Object.keys(JOBS)
   const identity = `${input.scope}/${input.subject ?? '_'}/${input.slug}`
   for (const project of projectsToCheck) {
     for (const jobName of jobsToCheck) {
-      const selected = docsForRun({ job: jobName, cwd: project.path })
-        .filter((doc) => `${doc.scope}/${doc.subject ?? '_'}/${doc.slug}` !== identity)
+      const selected = docsForRun({ job: jobName, cwd: project.path }).filter(
+        (doc) => `${doc.scope}/${doc.subject ?? '_'}/${doc.slug}` !== identity,
+      )
       const proposed: Doc = {
-        id: -1, project_id: null, scope: input.scope as DocScope, subject: input.subject,
-        slug: input.slug, title: input.title, body: input.body, delivery: 'inject',
-        created_at: '', updated_at: '',
+        id: -1,
+        project_id: null,
+        scope: input.scope as DocScope,
+        subject: input.subject,
+        slug: input.slug,
+        title: input.title,
+        body: input.body,
+        delivery: 'inject',
+        created_at: '',
+        updated_at: '',
       }
       const docs = [...selected, proposed]
       const packBytes = Buffer.byteLength(docsMarkdown(docs))
       const budget = JOBS[jobName]?.packBytes ?? DEFAULT_PACK_BYTES
       if (packBytes <= budget) continue
-      const largest = docs.map((doc) => ({
-        name: `${doc.scope}/${doc.subject ?? '_'}/${doc.slug}`,
-        bytes: Buffer.byteLength(`## ${doc.title}\n\n${doc.body}`),
-      })).sort((a, b) => b.bytes - a.bytes).slice(0, 3)
+      const largest = docs
+        .map((doc) => ({
+          name: `${doc.scope}/${doc.subject ?? '_'}/${doc.slug}`,
+          bytes: Buffer.byteLength(`## ${doc.title}\n\n${doc.body}`),
+        }))
+        .sort((a, b) => b.bytes - a.bytes)
+        .slice(0, 3)
       throw new Error(
         `canon pack ${jobName}/${project.name} would be ${packBytes} bytes, ` +
-        `${packBytes - budget} bytes over its ${budget} byte ceiling\n` +
-        `largest inject sections to demote: ${largest.map((doc) => `${doc.name} (${doc.bytes} bytes)`).join(', ')}\n` +
-        'cleared by: demote the named largest inject sections to demand documents',
+          `${packBytes - budget} bytes over its ${budget} byte ceiling\n` +
+          `largest inject sections to demote: ${largest.map((doc) => `${doc.name} (${doc.bytes} bytes)`).join(', ')}\n` +
+          'cleared by: demote the named largest inject sections to demand documents',
       )
     }
   }
@@ -131,7 +164,9 @@ function validScope(scope: string): asserts scope is DocScope {
 function validateHistoricAddress(scope: string, slug: string): asserts scope is DocScope {
   validScope(scope)
   if (!/^[a-z0-9][a-z0-9-]*$/.test(slug) || slug.length > 64) {
-    throw new Error('invalid slug; use 1-64 lowercase letters, digits, or hyphens, starting with a letter or digit')
+    throw new Error(
+      'invalid slug; use 1-64 lowercase letters, digits, or hyphens, starting with a letter or digit',
+    )
   }
 }
 
@@ -142,7 +177,8 @@ function validate(scope: string, subject: string | null, slug: string): asserts 
     if (subject !== null) throw new Error(`${scope} docs take no subject; remove --subject`)
     return
   }
-  if (!subject) throw new Error(`${scope} docs require --subject; valid values: ${validSubjects(scope)}`)
+  if (!subject)
+    throw new Error(`${scope} docs require --subject; valid values: ${validSubjects(scope)}`)
   if (subjectKind === 'project' && !projectByName(subject)) {
     throw new Error(`unknown project subject "${subject}"; valid values: ${validSubjects(scope)}`)
   }
@@ -156,7 +192,10 @@ function validate(scope: string, subject: string | null, slug: string): asserts 
 
 export function docSubjects(): { project: string[]; agent: string[]; job: string[] } {
   return {
-    project: db().query('SELECT name FROM project ORDER BY name').all().map((r: any) => r.name),
+    project: db()
+      .query('SELECT name FROM project ORDER BY name')
+      .all()
+      .map((r: any) => r.name),
     agent: Object.keys(AGENTS).sort(),
     job: Object.keys(JOBS).sort(),
   }
@@ -165,9 +204,13 @@ export function docSubjects(): { project: string[]; agent: string[]; job: string
 function validSubjects(scope: DocScope): string {
   const subjectKind = DOC_SCOPE_SUBJECT_KIND[scope]
   if (subjectKind === null) return '(none)'
-  const values = subjectKind === 'project'
-    ? db().query('SELECT name FROM project ORDER BY name').all().map((r: any) => r.name)
-    : Object.keys(subjectKind === 'agent' ? AGENTS : JOBS).sort()
+  const values =
+    subjectKind === 'project'
+      ? db()
+          .query('SELECT name FROM project ORDER BY name')
+          .all()
+          .map((r: any) => r.name)
+      : Object.keys(subjectKind === 'agent' ? AGENTS : JOBS).sort()
   return values.join(', ') || '(none)'
 }
 
@@ -175,15 +218,20 @@ export function listDocs(filters: { scope?: string; subject?: string | null } = 
   if (filters.scope !== undefined) validScope(filters.scope)
   const where: string[] = []
   const values: any[] = []
-  if (filters.scope !== undefined) { where.push('scope = ?'); values.push(filters.scope) }
+  if (filters.scope !== undefined) {
+    where.push('scope = ?')
+    values.push(filters.scope)
+  }
   if (filters.subject !== undefined) {
     where.push(filters.subject === null ? 'subject IS NULL' : 'subject = ?')
     if (filters.subject !== null) values.push(filters.subject)
   }
-  return db().query(
-    `SELECT * FROM doc${where.length ? ` WHERE ${where.join(' AND ')}` : ''} ` +
-    'ORDER BY scope, COALESCE(subject, \'\'), slug',
-  ).all(...values) as Doc[]
+  return db()
+    .query(
+      `SELECT * FROM doc${where.length ? ` WHERE ${where.join(' AND ')}` : ''} ` +
+        "ORDER BY scope, COALESCE(subject, ''), slug",
+    )
+    .all(...values) as Doc[]
 }
 
 /** A browseable projection: body contents are fetched only through getDoc. */
@@ -198,7 +246,10 @@ export function listDocMetadata(filters: DocListFilters = {}): DocMetadata[] {
 
   const where: string[] = []
   const values: any[] = []
-  if (filters.scope !== undefined) { where.push('scope = ?'); values.push(filters.scope) }
+  if (filters.scope !== undefined) {
+    where.push('scope = ?')
+    values.push(filters.scope)
+  }
   if (filters.scopes !== undefined) {
     if (filters.scopes.length === 0) where.push('0')
     else {
@@ -226,44 +277,74 @@ export function listDocMetadata(filters: DocListFilters = {}): DocMetadata[] {
   const order = filters.updatedAtOrder
     ? `updated_at ${filters.updatedAtOrder.toUpperCase()}, scope, COALESCE(subject, ''), slug`
     : "scope, COALESCE(subject, ''), slug"
-  return db().query(
-    `SELECT id, scope, subject, slug, title, length(CAST(body AS BLOB)) AS bytes, updated_at
+  return db()
+    .query(
+      `SELECT id, scope, subject, slug, title, length(CAST(body AS BLOB)) AS bytes, updated_at
      FROM doc${where.length ? ` WHERE ${where.join(' AND ')}` : ''} ORDER BY ${order}`,
-  ).all(...values) as DocMetadata[]
+    )
+    .all(...values) as DocMetadata[]
 }
 
 export function getDoc(scope: string, subject: string | null, slug: string): Doc | null {
   validScope(scope)
-  return db().query(
-    'SELECT * FROM doc WHERE scope = ? AND subject IS ? AND slug = ?',
-  ).get(scope, subject, slug) as Doc | null
+  return db()
+    .query('SELECT * FROM doc WHERE scope = ? AND subject IS ? AND slug = ?')
+    .get(scope, subject, slug) as Doc | null
 }
 
-function writeIdentity(context: DocWriteContext): { author: string; reason: string; session: string | null } {
+function writeIdentity(context: DocWriteContext): {
+  author: string
+  reason: string
+  session: string | null
+} {
   const reason = context.reason?.trim()
-  if (!reason) throw new Error('doc write reason is required; pass --reason on the CLI or reason through MCP/Hub')
+  if (!reason)
+    throw new Error(
+      'doc write reason is required; pass --reason on the CLI or reason through MCP/Hub',
+    )
   const session = sessionId()
   const author = (context.author ?? session ?? 'unknown').trim()
-  if (!author) throw new Error('doc write author must not be empty; omit it to use the session or unknown')
+  if (!author)
+    throw new Error('doc write author must not be empty; omit it to use the session or unknown')
   return { author, reason, session }
 }
 
 function insertRevision(doc: Doc, op: DocRevisionOp, context: DocWriteContext, at: string): void {
   const identity = writeIdentity(context)
-  db().query(
-    `INSERT INTO doc_revision
+  db()
+    .query(
+      `INSERT INTO doc_revision
        (doc_id, scope, subject, project_id, slug, op, title, body, delivery, author, reason, session_id, at)
      VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)`,
-  ).run(
-    doc.id, doc.scope, doc.subject, doc.project_id, doc.slug, op, doc.title, doc.body, doc.delivery,
-    identity.author, identity.reason, identity.session, at,
-  )
+    )
+    .run(
+      doc.id,
+      doc.scope,
+      doc.subject,
+      doc.project_id,
+      doc.slug,
+      op,
+      doc.title,
+      doc.body,
+      doc.delivery,
+      identity.author,
+      identity.reason,
+      identity.session,
+      at,
+    )
 }
 
-function setDocWithOp(input: {
-  scope: string; subject: string | null; slug: string; title: string; body: string
-  delivery?: 'inject' | 'demand'
-} & DocWriteContext, requestedOp?: 'import'): Doc {
+function setDocWithOp(
+  input: {
+    scope: string
+    subject: string | null
+    slug: string
+    title: string
+    body: string
+    delivery?: 'inject' | 'demand'
+  } & DocWriteContext,
+  requestedOp?: 'import',
+): Doc {
   writableDb()
   validate(input.scope, input.subject, input.slug)
   writeIdentity(input)
@@ -274,14 +355,29 @@ function setDocWithOp(input: {
     const at = nowIso()
     let doc: Doc
     if (existing) {
-      db().query('UPDATE doc SET title=?, body=?, delivery=?, updated_at=? WHERE id=?')
+      db()
+        .query('UPDATE doc SET title=?, body=?, delivery=?, updated_at=? WHERE id=?')
         .run(input.title, input.body, input.delivery ?? existing.delivery, at, existing.id)
       doc = getDoc(input.scope, input.subject, input.slug)!
     } else {
-      const id = (db().query(
-        `INSERT INTO doc (scope, subject, project_id, slug, title, body, delivery, created_at, updated_at)
+      const id = (
+        db()
+          .query(
+            `INSERT INTO doc (scope, subject, project_id, slug, title, body, delivery, created_at, updated_at)
          VALUES (?,?,?,?,?,?,?,?,?) RETURNING id`,
-      ).get(input.scope, input.subject, input.scope==='project'?projectByName(input.subject!)!.id:null, input.slug, input.title, input.body, input.delivery ?? 'inject', at, at) as { id: number }).id
+          )
+          .get(
+            input.scope,
+            input.subject,
+            input.scope === 'project' ? projectByName(input.subject!)!.id : null,
+            input.slug,
+            input.title,
+            input.body,
+            input.delivery ?? 'inject',
+            at,
+            at,
+          ) as { id: number }
+      ).id
       doc = db().query('SELECT * FROM doc WHERE id=?').get(id) as Doc
     }
     insertRevision(doc, requestedOp ?? (existing ? 'set' : 'create'), input, at)
@@ -289,10 +385,16 @@ function setDocWithOp(input: {
   })
 }
 
-export function setDoc(input: {
-  scope: string; subject: string | null; slug: string; title: string; body: string
-  delivery?: 'inject' | 'demand'
-} & DocWriteContext): Doc {
+export function setDoc(
+  input: {
+    scope: string
+    subject: string | null
+    slug: string
+    title: string
+    body: string
+    delivery?: 'inject' | 'demand'
+  } & DocWriteContext,
+): Doc {
   if (input.scope === 'resume') {
     const frontmatter = resumeFrontmatter(input.body)
     if (!frontmatter?.top.status) {
@@ -313,15 +415,24 @@ export function setDoc(input: {
   return setDocWithOp(input)
 }
 
-export function importDoc(input: {
-  scope: string; subject: string | null; slug: string; title: string; body: string
-  delivery?: 'inject' | 'demand'
-} & DocWriteContext): Doc {
+export function importDoc(
+  input: {
+    scope: string
+    subject: string | null
+    slug: string
+    title: string
+    body: string
+    delivery?: 'inject' | 'demand'
+  } & DocWriteContext,
+): Doc {
   return setDocWithOp(input, 'import')
 }
 
 export function removeDoc(
-  scope: string, subject: string | null, slug: string, context: DocWriteContext,
+  scope: string,
+  subject: string | null,
+  slug: string,
+  context: DocWriteContext,
 ): boolean {
   writableDb()
   validScope(scope)
@@ -344,7 +455,9 @@ export type ConsumedDoc = Doc & { already_consumed: boolean }
  * serializing YAML, which would rewrite unrelated whitespace and ordering.
  */
 export function consumeDoc(
-  scope: string, subject: string | null, slug: string,
+  scope: string,
+  subject: string | null,
+  slug: string,
   context: DocWriteContext,
 ): ConsumedDoc {
   writableDb()
@@ -379,13 +492,16 @@ export function consumeDoc(
   if (missing.length) {
     const consumedStatus = resolvedStatus()!
     const consumedStatusEnd = consumedStatus.valueEnd
-    yaml = yaml.slice(0, consumedStatusEnd) + newline + missing.join(newline)
-      + yaml.slice(consumedStatusEnd)
+    yaml =
+      yaml.slice(0, consumedStatusEnd) +
+      newline +
+      missing.join(newline) +
+      yaml.slice(consumedStatusEnd)
   }
 
   const contentStart = frontmatter.index! + 3 + newline.length
-  const body = doc.body.slice(0, contentStart) + yaml
-    + doc.body.slice(contentStart + frontmatter[2]!.length)
+  const body =
+    doc.body.slice(0, contentStart) + yaml + doc.body.slice(contentStart + frontmatter[2]!.length)
   return writeTransaction(() => {
     db().query('UPDATE doc SET body=?, updated_at=? WHERE id=?').run(body, consumedAt, doc.id)
     const result = getDoc(scope, subject, slug)!
@@ -407,7 +523,9 @@ export function docsForRun(input: { job: string; cwd: string }): InjectedDoc[] {
   return docs.map((doc) => {
     const revisionId = (latest.get(doc.id) as { id: number | null }).id
     if (revisionId === null) {
-      throw new Error(`doc ${doc.scope}/${doc.subject ?? '_'}/${doc.slug} has no revision; refusing run`)
+      throw new Error(
+        `doc ${doc.scope}/${doc.subject ?? '_'}/${doc.slug} has no revision; refusing run`,
+      )
     }
     return { ...doc, revision_id: revisionId }
   })
@@ -421,8 +539,15 @@ export function brief(cwd: string): string {
   return compileBrief(cwd).markdown
 }
 
-const RESUME_FRONTMATTER_KEYS = ['status', 'epic', 'project', 'written', 'consumed', 'consumed_by'] as const
-export type ResumeFrontmatter = { [K in typeof RESUME_FRONTMATTER_KEYS[number]]?: string }
+const RESUME_FRONTMATTER_KEYS = [
+  'status',
+  'epic',
+  'project',
+  'written',
+  'consumed',
+  'consumed_by',
+] as const
+export type ResumeFrontmatter = { [K in (typeof RESUME_FRONTMATTER_KEYS)[number]]?: string }
 export type ResolvedStatus = {
   value: string
   valueStart: number
@@ -565,7 +690,10 @@ export function exportDocs(dir: string): number {
   for (const doc of docs) {
     const target = join(dir, doc.scope, doc.subject ?? '_')
     mkdirSync(target, { recursive: true })
-    writeFileSync(join(target, `${doc.slug}.md`), `---\ntitle: ${JSON.stringify(doc.title)}\n---\n\n${doc.body}`)
+    writeFileSync(
+      join(target, `${doc.slug}.md`),
+      `---\ntitle: ${JSON.stringify(doc.title)}\n---\n\n${doc.body}`,
+    )
   }
   return docs.length
 }
@@ -581,16 +709,24 @@ export function importDocs(dir: string, context: DocWriteContext): number {
     for (const subjectEntry of readdirSync(join(dir, scope), { withFileTypes: true })) {
       if (!subjectEntry.isDirectory()) continue
       const subject = subjectEntry.name === '_' ? null : subjectEntry.name
-      for (const file of readdirSync(join(dir, scope, subjectEntry.name), { withFileTypes: true })) {
+      for (const file of readdirSync(join(dir, scope, subjectEntry.name), {
+        withFileTypes: true,
+      })) {
         if (!file.isFile() || !file.name.endsWith('.md')) continue
         const raw = readFileSync(join(dir, scope, subjectEntry.name, file.name), 'utf8')
         const match = raw.match(/^---\r?\ntitle:\s*(.+)\r?\n---\r?\n(?:\r?\n)?([\s\S]*)$/)
         if (!match) throw new Error(`${file.name}: expected YAML frontmatter with a title`)
         let title: string
-        try { title = JSON.parse(match[1]!) }
-        catch { throw new Error(`${file.name}: title must be a YAML double-quoted string`) }
+        try {
+          title = JSON.parse(match[1]!)
+        } catch {
+          throw new Error(`${file.name}: title must be a YAML double-quoted string`)
+        }
         if (typeof title !== 'string') throw new Error(`${file.name}: title must be a string`)
-        setDocWithOp({ scope, subject, slug: file.name.slice(0, -3), title, body: match[2]!, ...context }, 'import')
+        setDocWithOp(
+          { scope, subject, slug: file.name.slice(0, -3), title, body: match[2]!, ...context },
+          'import',
+        )
         count++
       }
     }
@@ -598,12 +734,18 @@ export function importDocs(dir: string, context: DocWriteContext): number {
   return count
 }
 
-export function listDocRevisions(scope: string, subject: string | null, slug: string): DocRevisionMetadata[] {
+export function listDocRevisions(
+  scope: string,
+  subject: string | null,
+  slug: string,
+): DocRevisionMetadata[] {
   validateHistoricAddress(scope, slug)
-  return db().query(
-    `SELECT id, op, author, reason, at, length(CAST(body AS BLOB)) AS bytes
+  return db()
+    .query(
+      `SELECT id, op, author, reason, at, length(CAST(body AS BLOB)) AS bytes
        FROM doc_revision WHERE scope=? AND subject IS ? AND slug=? ORDER BY id DESC`,
-  ).all(scope, subject, slug) as DocRevisionMetadata[]
+    )
+    .all(scope, subject, slug) as DocRevisionMetadata[]
 }
 
 export function getDocRevision(id: number): DocRevision | null {
@@ -611,13 +753,22 @@ export function getDocRevision(id: number): DocRevision | null {
 }
 
 export function restoreDoc(
-  scope: string, subject: string | null, slug: string, revisionId: number, context: DocWriteContext,
+  scope: string,
+  subject: string | null,
+  slug: string,
+  revisionId: number,
+  context: DocWriteContext,
 ): Doc {
   writableDb()
   validateHistoricAddress(scope, slug)
   writeIdentity(context)
   const revision = getDocRevision(revisionId)
-  if (!revision || revision.scope !== scope || revision.subject !== subject || revision.slug !== slug) {
+  if (
+    !revision ||
+    revision.scope !== scope ||
+    revision.subject !== subject ||
+    revision.slug !== slug
+  ) {
     throw new Error(`no revision ${revisionId} for ${scope}/${subject ?? '_'}/${slug}`)
   }
   return writeTransaction(() => {
@@ -625,14 +776,27 @@ export function restoreDoc(
     const at = nowIso()
     let doc: Doc
     if (existing) {
-      db().query('UPDATE doc SET title=?, body=?, delivery=?, updated_at=? WHERE id=?')
+      db()
+        .query('UPDATE doc SET title=?, body=?, delivery=?, updated_at=? WHERE id=?')
         .run(revision.title, revision.body, revision.delivery, at, existing.id)
       doc = getDoc(scope, subject, slug)!
     } else {
-      db().query(
-        `INSERT INTO doc (scope, subject, project_id, slug, title, body, delivery, created_at, updated_at)
+      db()
+        .query(
+          `INSERT INTO doc (scope, subject, project_id, slug, title, body, delivery, created_at, updated_at)
          VALUES (?,?,?,?,?,?,?,?,?)`,
-      ).run(scope, subject, scope==='project'?projectByName(subject!)?.id??null:null, slug, revision.title, revision.body, revision.delivery, at, at)
+        )
+        .run(
+          scope,
+          subject,
+          scope === 'project' ? (projectByName(subject!)?.id ?? null) : null,
+          slug,
+          revision.title,
+          revision.body,
+          revision.delivery,
+          at,
+          at,
+        )
       doc = getDoc(scope, subject, slug)!
     }
     insertRevision(doc, 'restore', context, at)
@@ -647,16 +811,25 @@ export function diffDocRevisions(a: number, b: number): string {
   if (!right) throw new Error(`no doc revision ${b}`)
   const x = left.body.split('\n')
   const y = right.body.split('\n')
-  const lengths = Array.from({ length: x.length + 1 }, () => new Array<number>(y.length + 1).fill(0))
-  for (let i = x.length - 1; i >= 0; i--) for (let j = y.length - 1; j >= 0; j--) {
-    lengths[i]![j] = x[i] === y[j] ? lengths[i + 1]![j + 1]! + 1
-      : Math.max(lengths[i + 1]![j]!, lengths[i]![j + 1]!)
-  }
+  const lengths = Array.from({ length: x.length + 1 }, () =>
+    new Array<number>(y.length + 1).fill(0),
+  )
+  for (let i = x.length - 1; i >= 0; i--)
+    for (let j = y.length - 1; j >= 0; j--) {
+      lengths[i]![j] =
+        x[i] === y[j]
+          ? lengths[i + 1]![j + 1]! + 1
+          : Math.max(lengths[i + 1]![j]!, lengths[i]![j + 1]!)
+    }
   const lines = [`--- revision-${a}`, `+++ revision-${b}`]
-  let i = 0; let j = 0
+  let i = 0
+  let j = 0
   while (i < x.length || j < y.length) {
-    if (i < x.length && j < y.length && x[i] === y[j]) { lines.push(` ${x[i]}`); i++; j++ }
-    else if (j < y.length && (i === x.length || lengths[i]![j + 1]! > lengths[i + 1]![j]!)) {
+    if (i < x.length && j < y.length && x[i] === y[j]) {
+      lines.push(` ${x[i]}`)
+      i++
+      j++
+    } else if (j < y.length && (i === x.length || lengths[i]![j + 1]! > lengths[i + 1]![j]!)) {
       lines.push(`+${y[j++]}`)
     } else lines.push(`-${x[i++]}`)
   }

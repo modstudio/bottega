@@ -2,7 +2,15 @@ import { describe, expect, test } from 'bun:test'
 import { addRun, score } from '../test/fixtures/store.ts'
 import { AGENTS } from './agents.ts'
 import { guide } from './guide.ts'
-import { candidates, EVIDENCE_WINDOW, MIN_SAMPLE, pick, PROMPT_SIZE_BOUNDARY, promptSizeBucket, scoreboard } from './route.ts'
+import {
+  candidates,
+  EVIDENCE_WINDOW,
+  MIN_SAMPLE,
+  pick,
+  PROMPT_SIZE_BOUNDARY,
+  promptSizeBucket,
+  scoreboard,
+} from './route.ts'
 
 describe('one score, reported the same everywhere', () => {
   function judged(agent: string, rights: number, wrongs: number) {
@@ -73,7 +81,7 @@ describe('one score, reported the same everywhere', () => {
   test('every cell in the scoreboard matches candidates() for its job', () => {
     score(addRun({ agent: 'grok', job: 'craft' }), 'full', 'right')
     addRun({ agent: 'codex', job: 'craft', status: 'stale' })
-    score(addRun({ agent: 'grok', job: 'safety' }), 'full', 'mixed' )
+    score(addRun({ agent: 'grok', job: 'safety' }), 'full', 'mixed')
     for (const cell of scoreboard()) {
       const promptBytes = cell.promptBucket === 'small' ? 0 : PROMPT_SIZE_BOUNDARY
       const c = candidates(cell.job, promptBytes).find((x) => x.agent === cell.agent)!
@@ -108,49 +116,91 @@ describe('routing evidence scope', () => {
 
     for (let i = 0; i < 2; i++) {
       addRun({
-        agent: 'qwen-local', job: 'file-question', promptBytes: 119 * 1024,
-        latency: 945_000, status: 'failed', kind: 'timeout', startedAt: '2026-01-01T00:00:00Z',
+        agent: 'qwen-local',
+        job: 'file-question',
+        promptBytes: 119 * 1024,
+        latency: 945_000,
+        status: 'failed',
+        kind: 'timeout',
+        startedAt: '2026-01-01T00:00:00Z',
       })
     }
     for (let i = 0; i < 7; i++) {
-      score(addRun({
-        agent: 'qwen-local', job: 'file-question', promptBytes: 672, latency: 9_000,
-      }), 'full', 'right')
-      score(addRun({
-        agent: 'grok', job: 'file-question', promptBytes: 25 * 1024, latency: 163_000,
-      }), 'full', 'right')
+      score(
+        addRun({
+          agent: 'qwen-local',
+          job: 'file-question',
+          promptBytes: 672,
+          latency: 9_000,
+        }),
+        'full',
+        'right',
+      )
+      score(
+        addRun({
+          agent: 'grok',
+          job: 'file-question',
+          promptBytes: 25 * 1024,
+          latency: 163_000,
+        }),
+        'full',
+        'right',
+      )
     }
     for (let i = 0; i < 2; i++) {
-      score(addRun({
-        agent: 'qwen-local', job: 'file-question', promptBytes: 25 * 1024, latency: 653_000,
-      }), 'full', 'right')
+      score(
+        addRun({
+          agent: 'qwen-local',
+          job: 'file-question',
+          promptBytes: 25 * 1024,
+          latency: 653_000,
+        }),
+        'full',
+        'right',
+      )
     }
 
     const small = candidates('file-question', 672)
     const large = candidates('file-question', 25 * 1024)
     expect(small.find((c) => c.agent === 'qwen-local')).toMatchObject({
-      evidence: 7, latencyMs: 9_000,
+      evidence: 7,
+      latencyMs: 9_000,
     })
     expect(large.find((c) => c.agent === 'qwen-local')).toMatchObject({
-      evidence: 4, latencyMs: 653_000,
+      evidence: 4,
+      latencyMs: 653_000,
     })
     expect(large.find((c) => c.agent === 'grok')).toMatchObject({
-      evidence: 7, latencyMs: 163_000,
+      evidence: 7,
+      latencyMs: 163_000,
     })
     expect(pick('file-question', undefined, 25 * 1024, false).agent).toBe('grok')
   })
 
   test('guide defaults to every populated bucket and can narrow to one input size', () => {
-    score(addRun({
-      agent: 'codex', job: 'file-question', promptBytes: 672, latency: 18_300,
-    }), 'full', 'right')
-    score(addRun({
-      agent: 'grok', job: 'file-question', promptBytes: 25 * 1024, latency: 163_000,
-    }), 'full', 'right')
+    score(
+      addRun({
+        agent: 'codex',
+        job: 'file-question',
+        promptBytes: 672,
+        latency: 18_300,
+      }),
+      'full',
+      'right',
+    )
+    score(
+      addRun({
+        agent: 'grok',
+        job: 'file-question',
+        promptBytes: 25 * 1024,
+        latency: 163_000,
+      }),
+      'full',
+      'right',
+    )
 
     expect(guide('file-question').map((row) => row.promptBucket)).toEqual(['small', 'large'])
     expect(guide('file-question', 25 * 1024).map((row) => row.promptBucket)).toEqual(['large'])
-
   })
 
   test('only the most recent evidence window counts in candidates and the scoreboard', () => {
@@ -201,8 +251,10 @@ describe('a repository-reading job gets a disposable writable disk', () => {
    * stash, no commit, nothing in the reflog. The disposable worktree makes that
    * permission safe instead of excluding the agent from the route.
    */
-  test('the old caller-checkout MCP exclusion is no longer needed', () => {; expect(pick('review-lens', 'codex', 0, false, null).agent).toBe('codex')
+  test('the old caller-checkout MCP exclusion is no longer needed', () => {
+    expect(pick('review-lens', 'codex', 0, false, null).agent).toBe('codex')
   })
-  test('the same agent remains fine without tools', () => {; expect(pick('review-lens', 'codex', 0, false, null).agent).toBe('codex')
+  test('the same agent remains fine without tools', () => {
+    expect(pick('review-lens', 'codex', 0, false, null).agent).toBe('codex')
   })
 })

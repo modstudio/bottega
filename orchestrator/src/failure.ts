@@ -13,13 +13,20 @@
  */
 /** Runtime vocabulary as well as a type: reporting must show zeroes for new kinds. */
 export const FAILURE_KINDS = [
-  'quota', 'auth',
+  'quota',
+  'auth',
   /**
    * The vendor will not serve this account for the product. Neither waiting nor
    * re-authenticating fixes it; an administrator has to grant the entitlement.
    */
   'entitlement',
-  'unreachable', 'timeout', 'context', 'cost', 'stopped', 'denied', 'content_refusal',
+  'unreachable',
+  'timeout',
+  'context',
+  'cost',
+  'stopped',
+  'denied',
+  'content_refusal',
   'interrupted',
   /**
    * The run coordinator checkpointed and terminated a worker that had gone
@@ -58,19 +65,28 @@ export const FAILURE_KINDS = [
   'abandoned',
   'other',
 ] as const
-export type FailureKind = typeof FAILURE_KINDS[number]
+export type FailureKind = (typeof FAILURE_KINDS)[number]
 
 /** Remove volatile values while retaining the wording that identifies one failure shape. */
 export function clusterErrorText(value: string | null | undefined): string {
   if (!value?.trim()) return ''
   return value
     .replace(/\x1B\[[0-?]*[ -/]*[@-~]/g, '')
-    .replace(/(?:file:\/\/)?(?:~\/|\/?(?:Users|private|tmp|var|opt|home)\/)[^\s'"`,;)]+/gi, '<path>')
+    .replace(
+      /(?:file:\/\/)?(?:~\/|\/?(?:Users|private|tmp|var|opt|home)\/)[^\s'"`,;)]+/gi,
+      '<path>',
+    )
     .replace(/\b[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\b/gi, '<id>')
     .replace(/\b(?:req(?:uest)?[-_]id[-_:=]?|req_)[a-z0-9_-]{6,}\b/gi, '<id>')
-    .replace(/\b(task|branch)\s+(?=[a-z0-9._\/-]*[a-z])(?:[a-z][a-z0-9._-]*\/)?[a-z0-9][a-z0-9._-]*\d[a-z0-9._-]*\b/gi, '$1 <id>')
+    .replace(
+      /\b(task|branch)\s+(?=[a-z0-9._\/-]*[a-z])(?:[a-z][a-z0-9._-]*\/)?[a-z0-9][a-z0-9._-]*\d[a-z0-9._-]*\b/gi,
+      '$1 <id>',
+    )
     .replace(/\b(?=[0-9a-f]{7,64}\b)(?=[0-9a-f]*[a-f])[0-9a-f]+\b/gi, '<id>')
-    .replace(/\b(run|session|request|call|pid|id)[- _:#=]+(?=[a-z0-9_-]*[a-z])[a-z0-9_-]*\d[a-z0-9_-]*\b/gi, '$1 <id>')
+    .replace(
+      /\b(run|session|request|call|pid|id)[- _:#=]+(?=[a-z0-9_-]*[a-z])[a-z0-9_-]*\d[a-z0-9_-]*\b/gi,
+      '$1 <id>',
+    )
     .replace(/\d+(?:\.\d+)?/g, '<n>')
     .replace(/\s+/g, ' ')
     .trim()
@@ -121,15 +137,24 @@ const PATTERNS: [FailureKind, RegExp][] = [
   // vendor's last line of defence classified as our harness fault, never as
   // scoreable evidence about the model.
   ['harness', /Invalid schema for response_format/i],
-  ['context', /\b(context (?:window|length|limit)|maximum context|max(?:imum)? tokens for (?:this )?context)\b/i],
+  [
+    'context',
+    /\b(context (?:window|length|limit)|maximum context|max(?:imum)? tokens for (?:this )?context)\b/i,
+  ],
   ['cost', /\b(cost limit|budget (?:limit )?(?:exceeded|reached)|maximum cost)\b/i],
   // The plan is out. Distinct from `auth` because waiting fixes it.
-  ['quota', /\b(402|429|quota|usage limit|rate.?limit|too many requests|out of (?:credit|tokens)|insufficient (?:credit|quota|balance)|balance (?:exhausted|depleted)|exceeded your|plan limit|monthly limit|upgrade your plan)\b/i],
+  [
+    'quota',
+    /\b(402|429|quota|usage limit|rate.?limit|too many requests|out of (?:credit|tokens)|insufficient (?:credit|quota|balance)|balance (?:exhausted|depleted)|exceeded your|plan limit|monthly limit|upgrade your plan)\b/i,
+  ],
   // Licensing text can also tell the user to sign in again, so entitlement must
   // win before `auth`. Match the licensing vocabulary, never a bare error code.
   ['entitlement', /\b(have a valid licen[cs]e|not licen[cs]ed|request a licen[cs]e)\b/i],
   // The login is stale. Waiting does not fix it; re-authenticating does.
-  ['auth', /\b(401|403|unauthori[sz]ed|forbidden|not (?:logged in|signed in|authenticated)|invalid (?:api )?key|expired token|please (?:log|sign) in|re-?authenticate)\b/i],
+  [
+    'auth',
+    /\b(401|403|unauthori[sz]ed|forbidden|not (?:logged in|signed in|authenticated)|invalid (?:api )?key|expired token|please (?:log|sign) in|re-?authenticate)\b/i,
+  ],
   /**
    * Nothing answered. The endpoint is not there at all.
    *
@@ -146,7 +171,10 @@ const PATTERNS: [FailureKind, RegExp][] = [
    * `timeout` where it has always been: a peer that resets did answer first, and
    * reclassifying it on no evidence would be trading one guess for another.
    */
-  ['unreachable', /\b(connection error|connection refused|ECONNREFUSED|EHOSTUNREACH|ENETUNREACH|no route to host|could ?n[o']?t connect|unable to connect|failed to connect|network is unreachable|host is down)\b/i],
+  [
+    'unreachable',
+    /\b(connection error|connection refused|ECONNREFUSED|EHOSTUNREACH|ENETUNREACH|no route to host|could ?n[o']?t connect|unable to connect|failed to connect|network is unreachable|host is down)\b/i,
+  ],
   ['timeout', /\b(timeout|timed out|deadline exceeded|ETIMEDOUT|connection reset)\b/i],
   // The vendor declined the prompt itself. This is distinct from `denied`,
   // where the headless harness could not grant a tool permission: a content
@@ -159,12 +187,13 @@ const PATTERNS: [FailureKind, RegExp][] = [
   // A bare `approval` matches Codex's `approval: never` banner even when the
   // failure is unrelated. Only phrasings that mean a permission was actually
   // refused belong here.
-  ['denied', /\b(permission (?:that|was) .*denied|auto-denied|requir(?:e|es|ed) the "?\w+"? permission|approval (?:denied|required|rejected))\b/i],
+  [
+    'denied',
+    /\b(permission (?:that|was) .*denied|auto-denied|requir(?:e|es|ed) the "?\w+"? permission|approval (?:denied|required|rejected))\b/i,
+  ],
 ]
 
-const VENDOR_TERMINATION_MARKERS = [
-  '[API Error: terminated]',
-]
+const VENDOR_TERMINATION_MARKERS = ['[API Error: terminated]']
 
 /**
  * A marker must be the whole trailing line. Reviews discuss API errors in
@@ -190,7 +219,7 @@ export function hasVendorTerminationMarker(text: string): boolean {
  * not be thrown away, so nothing here matches mid-text.
  */
 const NON_ANSWER = [
-  /^\[API Error:/i,           // Qwen Code / Gemini CLI lineage
+  /^\[API Error:/i, // Qwen Code / Gemini CLI lineage
   /^\[Error:/i,
   /^Error:\s*timeout waiting for response/i,
 ]
@@ -202,7 +231,9 @@ export function isNonAnswer(text: string): boolean {
   try {
     const event = JSON.parse(first)
     if (event?.type === 'system' && event?.subtype === 'init') return true
-  } catch { /* ordinary prose is not a transcript */ }
+  } catch {
+    /* ordinary prose is not a transcript */
+  }
   return NON_ANSWER.some((re) => re.test(t))
 }
 
@@ -246,9 +277,13 @@ export function classify(
     return timedOut ? 'timeout' : 'interrupted'
   }
   if (!error) return 'other'
-  if (sandbox === 'srt' &&
-      /(?:permission denied|operation not permitted|sandbox(?:-exec)?[^\n]*(?:deny|denied))/i.test(error) &&
-      /(?:^|[\s:'"])(?:\/[^\s:'"]+|~\/[^\s:'"]+)/m.test(error)) {
+  if (
+    sandbox === 'srt' &&
+    /(?:permission denied|operation not permitted|sandbox(?:-exec)?[^\n]*(?:deny|denied))/i.test(
+      error,
+    ) &&
+    /(?:^|[\s:'"])(?:\/[^\s:'"]+|~\/[^\s:'"]+)/m.test(error)
+  ) {
     return 'sandbox_denied'
   }
   for (const [kind, re] of PATTERNS) if (re.test(error)) return kind
@@ -257,7 +292,11 @@ export function classify(
 
 /** Failures a person has to act on: nothing downstream can route around them. */
 export const NEEDS_HUMAN: FailureKind[] = [
-  'quota', 'auth', 'unreachable', 'escaped', 'confinement_unverified',
+  'quota',
+  'auth',
+  'unreachable',
+  'escaped',
+  'confinement_unverified',
 ]
 
 /**
@@ -294,7 +333,12 @@ export const COOLS_DOWN: FailureKind[] = ['quota', 'auth', 'entitlement']
 
 /** Failures where another vendor should receive the same prompt immediately. */
 export const FAILS_OVER: FailureKind[] = [
-  'quota', 'auth', 'entitlement', 'content_refusal', 'contract', 'unevidenced',
+  'quota',
+  'auth',
+  'entitlement',
+  'content_refusal',
+  'contract',
+  'unevidenced',
 ]
 
 /**
@@ -315,8 +359,22 @@ export const FAILS_OVER: FailureKind[] = [
  * `unreachable` was carved out to stop.
  */
 export const NOT_EVIDENCE: FailureKind[] = [
-  'quota', 'auth', 'entitlement', 'unreachable', 'context', 'cost', 'content_refusal', 'interrupted', 'idle', 'truncated', 'escaped',
-  'confinement_unverified', 'sandbox_denied', 'mcp_unverified', 'harness', 'abandoned',
+  'quota',
+  'auth',
+  'entitlement',
+  'unreachable',
+  'context',
+  'cost',
+  'content_refusal',
+  'interrupted',
+  'idle',
+  'truncated',
+  'escaped',
+  'confinement_unverified',
+  'sandbox_denied',
+  'mcp_unverified',
+  'harness',
+  'abandoned',
 ]
 
 /**
@@ -327,11 +385,16 @@ export function notify(title: string, message: string): void {
   try {
     const esc = (s: string) => s.replace(/["\\]/g, '\\$&').slice(0, 200)
     Bun.spawn(
-      ['osascript', '-e',
-       `display notification "${esc(message)}" with title "orch" subtitle "${esc(title)}"`],
+      [
+        'osascript',
+        '-e',
+        `display notification "${esc(message)}" with title "orch" subtitle "${esc(title)}"`,
+      ],
       { stdout: 'ignore', stderr: 'ignore', stdin: 'ignore' },
     ).unref()
-  } catch { /* a missing osascript must not fail a run */ }
+  } catch {
+    /* a missing osascript must not fail a run */
+  }
 }
 
 /**
@@ -366,7 +429,8 @@ export type Detected = { kind: string; what: string; why: string }
  * A blocker is the agent talking about ITSELF, so the test is whether the same
  * line says it could not proceed.
  */
-const INABILITY = /\b(could ?n'?o?t|cannot|can't|unable to|failed to|was denied|prevented|blocked from)\b/i
+const INABILITY =
+  /\b(could ?n'?o?t|cannot|can't|unable to|failed to|was denied|prevented|blocked from)\b/i
 
 /**
  * `needsInability` marks the patterns that are only a blocker when the agent
@@ -381,9 +445,20 @@ const BLOCKER_PATTERNS: [string, RegExp, boolean?][] = [
   // problem, which is the opposite of what a recurrence table is for.
   // It still requires the same line to say the worker was unable to proceed;
   // otherwise a quoted Docker error would be recorded as a detected fact.
-  ['docker-denied', /docker[^.\n]{0,40}(access[^.\n]{0,12}(denied|failed)|socket[^.\n]{0,30}denied|permission denied|could ?n[o']?t (be )?(reach|access|connect))/i, true],
-  ['docker-unavailable', /(cannot connect to the docker daemon|docker daemon is not running)/i, true],
-  ['runtime-missing', /\b(php|python3?|ruby|go|java)\b[^.\n]{0,30}\b(is (not available|unavailable)|not (found|installed)|unavailable on the host)/i],
+  [
+    'docker-denied',
+    /docker[^.\n]{0,40}(access[^.\n]{0,12}(denied|failed)|socket[^.\n]{0,30}denied|permission denied|could ?n[o']?t (be )?(reach|access|connect))/i,
+    true,
+  ],
+  [
+    'docker-unavailable',
+    /(cannot connect to the docker daemon|docker daemon is not running)/i,
+    true,
+  ],
+  [
+    'runtime-missing',
+    /\b(php|python3?|ruby|go|java)\b[^.\n]{0,30}\b(is (not available|unavailable)|not (found|installed)|unavailable on the host)/i,
+  ],
   ['binding-missing', /(lack|missing|could not (find|load))[^.\n]{0,40}native binding/i],
   ['command-not-found', /\b(command not found|: not found)\b/i, true],
   ['permission-denied', /\bpermission denied\b/i, true],

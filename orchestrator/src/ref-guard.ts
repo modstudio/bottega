@@ -1,5 +1,21 @@
 // concern: ref-guard
-import { accessSync, closeSync, constants, existsSync, fchmodSync, fsyncSync, lstatSync, mkdirSync, openSync, readFileSync, realpathSync, readdirSync, renameSync, rmSync, writeFileSync } from 'node:fs'
+import {
+  accessSync,
+  closeSync,
+  constants,
+  existsSync,
+  fchmodSync,
+  fsyncSync,
+  lstatSync,
+  mkdirSync,
+  openSync,
+  readFileSync,
+  realpathSync,
+  readdirSync,
+  renameSync,
+  rmSync,
+  writeFileSync,
+} from 'node:fs'
 import { createHash, randomUUID } from 'node:crypto'
 import { dirname, isAbsolute, join, relative, resolve, sep } from 'node:path'
 import { db, ROOT } from './db.ts'
@@ -26,7 +42,10 @@ function sharedRefGuardWrapper(hookDir: string, guard: string, original: string)
 }
 
 function pathEntryExists(path: string): boolean {
-  try { lstatSync(path); return true } catch (error) {
+  try {
+    lstatSync(path)
+    return true
+  } catch (error) {
     if ((error as NodeJS.ErrnoException).code === 'ENOENT') return false
     throw error
   }
@@ -41,7 +60,11 @@ type InstalledRefGuard = {
 }
 
 function sameFileBytes(left: string, right: string): boolean {
-  try { return readFileSync(left).equals(readFileSync(right)) } catch { return false }
+  try {
+    return readFileSync(left).equals(readFileSync(right))
+  } catch {
+    return false
+  }
 }
 
 function installedRefGuard(installed: string, guard: string): InstalledRefGuard | null {
@@ -64,12 +87,18 @@ function installedRefGuard(installed: string, guard: string): InstalledRefGuard 
     return { kind: 'guard', content, executable }
   }
   const text = content.toString()
-  const marker = text.match(/^#!\/bin\/sh\n# orch shared-ref guard wrapper\n# guard-hook-base64: ([A-Za-z0-9+/=]+)\n# original-hook-base64: ([A-Za-z0-9+/=]+)\n/)
+  const marker = text.match(
+    /^#!\/bin\/sh\n# orch shared-ref guard wrapper\n# guard-hook-base64: ([A-Za-z0-9+/=]+)\n# original-hook-base64: ([A-Za-z0-9+/=]+)\n/,
+  )
   if (!marker) return null
   const wrappedGuard = Buffer.from(marker[1]!, 'base64').toString()
   const original = Buffer.from(marker[2]!, 'base64').toString()
   if (!sameFileBytes(wrappedGuard, guard)) return null
-  try { accessSync(wrappedGuard, constants.X_OK) } catch { return null }
+  try {
+    accessSync(wrappedGuard, constants.X_OK)
+  } catch {
+    return null
+  }
   return text === sharedRefGuardWrapper(dirname(installed), wrappedGuard, original)
     ? { kind: 'wrapper', content, executable, wrappedGuard, original }
     : null
@@ -93,7 +122,11 @@ function refGuardOwner(cwd: string): string {
   const value = markedWorktreeRunId(cwd)
   if (value !== null) return String(value)
   let real = cwd
-  try { real = realpathSync(cwd) } catch { /* the path as given still keys deterministically */ }
+  try {
+    real = realpathSync(cwd)
+  } catch {
+    /* the path as given still keys deterministically */
+  }
   return `${UNMARKED_GUARD_PREFIX}${createHash('sha256').update(real).digest('hex').slice(0, 16)}`
 }
 
@@ -101,7 +134,9 @@ export function markedWorktreeRunId(cwd: string): number | null {
   try {
     const value = Number(readFileSync(join(cwd, ORCH_RUN_MARKER), 'utf8').split('\n', 1)[0])
     return Number.isInteger(value) && value > 0 ? value : null
-  } catch { return null }
+  } catch {
+    return null
+  }
 }
 
 function refGuardCheckpoint(name: string): void {
@@ -121,10 +156,15 @@ function cleanupRefGuardLitter(gitDir: string, hookDir?: string): void {
       continue
     }
     if (!/^\d+$/.test(name)) continue
-    const run = db().query(
-      `SELECT status, worktree FROM run WHERE id=?`,
-    ).get(Number(name)) as { status: string; worktree: string | null } | null
-    if (!run || run.worktree !== null || !['ok', 'failed', 'stale', 'stopped'].includes(run.status)) {
+    const run = db().query(`SELECT status, worktree FROM run WHERE id=?`).get(Number(name)) as {
+      status: string
+      worktree: string | null
+    } | null
+    if (
+      !run ||
+      run.worktree !== null ||
+      !['ok', 'failed', 'stale', 'stopped'].includes(run.status)
+    ) {
       continue
     }
     rmSync(join(gitDir, name), { recursive: true, force: true })
@@ -139,7 +179,10 @@ function cleanupRefGuardLitter(gitDir: string, hookDir?: string): void {
 }
 
 function stageRefGuardDirectory(
-  gitDir: string, hookDir: string, guard: string, wrapper: string | null,
+  gitDir: string,
+  hookDir: string,
+  guard: string,
+  wrapper: string | null,
 ): void {
   const stage = join(gitDir, `${REF_GUARD_STAGE_PREFIX}${process.pid}-${randomUUID()}`)
   const staged = join(stage, 'reference-transaction')
@@ -163,7 +206,9 @@ function stageRefGuardDirectory(
     const directoryFd = openSync(stage, constants.O_RDONLY)
     try {
       fsyncSync(directoryFd)
-    } finally { closeSync(directoryFd) }
+    } finally {
+      closeSync(directoryFd)
+    }
     renameSync(stage, hookDir)
   } finally {
     if (fd !== null) closeSync(fd)
@@ -172,22 +217,21 @@ function stageRefGuardDirectory(
 }
 
 function verifiedSharedRefGuardEnvironment(
-  paths: { commonDir: string }, hookDir: string, guard: string, allowedRef?: string,
+  paths: { commonDir: string },
+  hookDir: string,
+  guard: string,
+  allowedRef?: string,
 ): SharedRefGuardEnvironment {
   const installed = join(hookDir, 'reference-transaction')
   const verified = installedRefGuard(installed, guard)
   if (!verified?.executable) {
-    throw new Error(
-      `refusing to expose unverified shared ref guard hooks path: ${hookDir}`,
-    )
+    throw new Error(`refusing to expose unverified shared ref guard hooks path: ${hookDir}`)
   }
   return sharedRefGuardEnvironment(paths, hookDir, allowedRef)
 }
 
 /** Install the ref-update boundary without changing the shared repository config. */
-export function prepareSharedRefGuard(
-  cwd: string, allowedRef?: string,
-): SharedRefGuardEnvironment {
+export function prepareSharedRefGuard(cwd: string, allowedRef?: string): SharedRefGuardEnvironment {
   const paths = linkedWorktreePaths(cwd)
   if (!paths) throw new Error(`cannot guard shared refs: ${cwd} is not a linked worktree`)
   const hookDir = join(paths.commonDir, 'orch-guards', refGuardOwner(cwd))
@@ -200,7 +244,9 @@ export function prepareSharedRefGuard(
 
   const configured = gitConfigOk(['config', '--path', 'core.hooksPath'], cwd)
   const originalDir = configured
-    ? (configured.startsWith('/') ? configured : resolve(cwd, configured))
+    ? configured.startsWith('/')
+      ? configured
+      : resolve(cwd, configured)
     : join(paths.commonDir, 'hooks')
 
   const guard = realpathSync(join(ROOT, 'hooks', 'reference-transaction'))
@@ -211,8 +257,12 @@ export function prepareSharedRefGuard(
 
   if (pathEntryExists(originalReferenceHook)) {
     let original: string
-    try { original = realpathSync(originalReferenceHook) } catch {
-      throw new Error(`refusing shared ref guard wrapper: original hook cannot be resolved: ${originalReferenceHook}`)
+    try {
+      original = realpathSync(originalReferenceHook)
+    } catch {
+      throw new Error(
+        `refusing shared ref guard wrapper: original hook cannot be resolved: ${originalReferenceHook}`,
+      )
     }
     if (resolve(originalReferenceHook) === resolve(installed)) {
       throw new Error(
@@ -227,7 +277,7 @@ export function prepareSharedRefGuard(
     if (sameFileBytes(original, guard)) {
       throw new Error(
         `refusing shared ref guard wrapper: original hook ${originalReferenceHook} ` +
-        `resolves to tracked shared guard ${guard}`,
+          `resolves to tracked shared guard ${guard}`,
       )
     }
     wrapper = sharedRefGuardWrapper(hookDir, guard, original)
@@ -239,9 +289,15 @@ export function prepareSharedRefGuard(
     if (pathEntryExists(installed)) {
       let target = installed
       if (lstatSync(installed).isSymbolicLink()) {
-        try { target = realpathSync(installed) } catch { target = '(dangling symlink)' }
+        try {
+          target = realpathSync(installed)
+        } catch {
+          target = '(dangling symlink)'
+        }
       }
-      throw new Error(`refusing to replace existing shared ref guard hook ${installed} (resolves to ${target})`)
+      throw new Error(
+        `refusing to replace existing shared ref guard hook ${installed} (resolves to ${target})`,
+      )
     }
   } else if (installedGuard !== null) {
     if (installedGuard.executable) {
@@ -270,8 +326,11 @@ export function prepareSharedRefGuard(
     if (!pathEntryExists(hookDir)) throw error
     const winner = installedRefGuard(installed, guard)
     const expectedOriginal = wrapper === null ? undefined : realpathSync(originalReferenceHook)
-    if (!winner?.executable || winner.kind !== (wrapper === null ? 'guard' : 'wrapper') ||
-        winner.original !== expectedOriginal) {
+    if (
+      !winner?.executable ||
+      winner.kind !== (wrapper === null ? 'guard' : 'wrapper') ||
+      winner.original !== expectedOriginal
+    ) {
       throw new Error(`shared ref guard publication raced with an unsafe hook at ${installed}`)
     }
   }
@@ -292,7 +351,8 @@ export function removeSharedRefGuard(cwd: string, runId: number): void {
  * make a writable ancestor look unrelated to the published directory.
  */
 export function assertSharedRefGuardOutsideWritableRoots(
-  hookDir: string, writableRoots: string[],
+  hookDir: string,
+  writableRoots: string[],
 ): void {
   const published = realpathSync(hookDir)
   for (const root of writableRoots) {
@@ -301,14 +361,16 @@ export function assertSharedRefGuardOutsideWritableRoots(
     if (rel === '' || (!rel.startsWith(`..${sep}`) && rel !== '..' && !isAbsolute(rel))) {
       throw new Error(
         `THE GUARD LIVES OUTSIDE EVERY ROOT THE WORKER CAN WRITE invariant failed: ` +
-        `${published} is inside writable root ${canonicalRoot}`,
+          `${published} is inside writable root ${canonicalRoot}`,
       )
     }
   }
 }
 
 function sharedRefGuardEnvironment(
-  paths: { commonDir: string }, hookDir: string, allowedRef?: string,
+  paths: { commonDir: string },
+  hookDir: string,
+  allowedRef?: string,
 ): SharedRefGuardEnvironment {
   return {
     GIT_CONFIG_COUNT: '1',
@@ -331,4 +393,3 @@ export function workerSharedGitRoots(cwd: string, branch: string): string[] {
   const reflog = resolve(paths.commonDir, 'logs', 'refs', 'heads', ...branch.split('/'))
   return [join(paths.commonDir, 'objects'), dirname(ref), dirname(reflog)]
 }
-

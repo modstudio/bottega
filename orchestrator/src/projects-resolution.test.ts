@@ -1,7 +1,6 @@
 import { describe, expect, test } from 'bun:test'
 import { projectAt, stackAt, upsertProject } from './projects.ts'
 describe('projects are data, not code', () => {
-
   test('a directory belongs to the project that contains it', () => {
     upsertProject({ name: 'alpha', path: '/w/alpha', stack: 'php-laravel' })
     expect(projectAt('/w/alpha')?.name).toBe('alpha')
@@ -29,7 +28,8 @@ describe('projects are data, not code', () => {
 
   test('settings survive a round trip', () => {
     upsertProject({
-      name: 'alpha', path: '/w/alpha',
+      name: 'alpha',
+      path: '/w/alpha',
       settings: { trunk: 'develop', states: { in_progress: 'active' } },
     })
     const p = projectAt('/w/alpha')!

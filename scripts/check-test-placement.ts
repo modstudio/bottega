@@ -45,7 +45,9 @@ export function checkTestFiles(files: string[]): TestPlacementFinding[] {
 function trackedFiles(root: string): string[] {
   const listed = Bun.spawnSync(['git', 'ls-files', '--', ...ROOTS], { cwd: root })
   if (listed.exitCode !== 0) {
-    throw new Error(`could not list tracked test and module files: ${listed.stderr.toString().trim()}`)
+    throw new Error(
+      `could not list tracked test and module files: ${listed.stderr.toString().trim()}`,
+    )
   }
   return listed.stdout.toString().trim().split('\n').filter(Boolean)
 }
@@ -60,9 +62,10 @@ if (import.meta.main) {
   if (findings.length) {
     console.error('test placement check failed')
     for (const finding of findings) {
-      const detail = finding.reason === 'mirrored-tests-tree'
-        ? 'there is no mirrored tests tree'
-        : 'no same-directory module matched'
+      const detail =
+        finding.reason === 'mirrored-tests-tree'
+          ? 'there is no mirrored tests tree'
+          : 'no same-directory module matched'
       console.error(`${finding.file}: ${detail}; looked for: ${finding.candidates.join(', ')}`)
     }
     process.exit(1)

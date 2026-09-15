@@ -86,12 +86,15 @@ const DEFAULTS: Report = {
 
 export function getReport(): Report {
   const defaults = { ...DEFAULTS, projects: projectNames() }
-  const row = db().query<{ value: string }, []>(
-    `SELECT value FROM setting WHERE key = 'report'`,
-  ).get()
+  const row = db()
+    .query<{ value: string }, []>(`SELECT value FROM setting WHERE key = 'report'`)
+    .get()
   if (!row) return defaults
-  try { return { ...defaults, ...(JSON.parse(row.value) as Partial<Report>) } }
-  catch { return defaults }
+  try {
+    return { ...defaults, ...(JSON.parse(row.value) as Partial<Report>) }
+  } catch {
+    return defaults
+  }
 }
 
 export function setReport(patch: Partial<Report>): Report {
@@ -100,14 +103,18 @@ export function setReport(patch: Partial<Report>): Report {
   // reference by design, and accepting one that is not one would put a
   // credential in a table the dashboard serves from.
   if (next.smtpPasswordRef && !/^(keychain|env):/.test(next.smtpPasswordRef)) {
-    throw new Error('smtpPasswordRef must be "keychain:<service>" or "env:<NAME>", never a password')
+    throw new Error(
+      'smtpPasswordRef must be "keychain:<service>" or "env:<NAME>", never a password',
+    )
   }
   const registered = new Set(projectNames())
   next.projects = next.projects.filter((project) => registered.has(project))
   next.to = next.to.map((s) => s.trim()).filter(Boolean)
   next.briefs = (next.briefs ?? []).filter((b) => b && b.name && b.match?.length)
-  db().query(`INSERT INTO setting (key, value) VALUES ('report', ?)
-              ON CONFLICT(key) DO UPDATE SET value = excluded.value`).run(JSON.stringify(next))
+  db()
+    .query(`INSERT INTO setting (key, value) VALUES ('report', ?)
+              ON CONFLICT(key) DO UPDATE SET value = excluded.value`)
+    .run(JSON.stringify(next))
   return next
 }
 
@@ -117,8 +124,10 @@ export function smtpPassword(ref: string): string | null {
   const name = rest.join(':')
   if (kind === 'env') return process.env[name] || null
   if (kind === 'keychain') {
-    const p = Bun.spawnSync(['security', 'find-generic-password', '-s', name, '-w'],
-      { stdout: 'pipe', stderr: 'ignore' })
+    const p = Bun.spawnSync(['security', 'find-generic-password', '-s', name, '-w'], {
+      stdout: 'pipe',
+      stderr: 'ignore',
+    })
     const out = new TextDecoder().decode(p.stdout).trim()
     return out || null
   }

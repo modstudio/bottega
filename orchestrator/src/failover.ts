@@ -20,7 +20,11 @@ type RetryWorktree = {
 }
 
 export type DetachSpec = {
-  agent?: string; schema?: string; mcp?: McpRequest; model?: string; probe?: boolean
+  agent?: string
+  schema?: string
+  mcp?: McpRequest
+  model?: string
+  probe?: boolean
   transport?: TransportName
   label?: string
   lens?: string
@@ -30,7 +34,8 @@ export type DetachSpec = {
   base?: string
   avoid?: string[]
   distinctModels?: string[]
-  retryOf?: number; cwd?: string
+  retryOf?: number
+  cwd?: string
   noFailover?: boolean
   noWaitCapacity?: boolean
   carry?: boolean
@@ -40,7 +45,10 @@ export type DetachSpec = {
   timeoutMinutes?: number
   keepTree?: boolean
   resume?: {
-    parent: number; agent: string; session?: string; turn: number
+    parent: number
+    agent: string
+    session?: string
+    turn: number
     fresh?: boolean
     sessionId: string | null
     worktree: RetryWorktree | null
@@ -61,42 +69,116 @@ export function retryModelForAgent(
 }
 
 export function chainTransport(rootId: number): TransportName | null {
-  const row = db().query(
-    `SELECT transport FROM run
+  const row = db()
+    .query(
+      `SELECT transport FROM run
       WHERE (id = ? OR parent_run_id = ?) AND transport IS NOT NULL
       ORDER BY turn DESC, id DESC LIMIT 1`,
-  ).get(rootId, rootId) as { transport: string } | null
+    )
+    .get(rootId, rootId) as { transport: string } | null
   return row?.transport === 'cli' || row?.transport === 'acp' ? row.transport : null
 }
 
 export function detachedRunOptions(
-  jobName: string, prompt: string, reserveId: number, spec: DetachSpec,
+  jobName: string,
+  prompt: string,
+  reserveId: number,
+  spec: DetachSpec,
 ) {
   const {
-    agent, schema, mcp, model, probe, transport, label, lens, seed, key, repo, base, avoid,
-    distinctModels, retryOf, cwd, noFailover, noWaitCapacity, carry, review, ownerSession, resume,
-    deliverables, timeoutMinutes, keepTree,
+    agent,
+    schema,
+    mcp,
+    model,
+    probe,
+    transport,
+    label,
+    lens,
+    seed,
+    key,
+    repo,
+    base,
+    avoid,
+    distinctModels,
+    retryOf,
+    cwd,
+    noFailover,
+    noWaitCapacity,
+    carry,
+    review,
+    ownerSession,
+    resume,
+    deliverables,
+    timeoutMinutes,
+    keepTree,
   } = spec
   // Adding a field to DetachSpec must fail typechecking until it is handled here.
   const consumed: Required<Record<keyof DetachSpec, unknown>> = {
-    agent, schema, mcp, model, probe, transport, label, lens, seed, key, repo, base, avoid,
-    distinctModels, retryOf, cwd, noFailover, noWaitCapacity, carry, review, ownerSession, resume,
-    deliverables, timeoutMinutes, keepTree,
+    agent,
+    schema,
+    mcp,
+    model,
+    probe,
+    transport,
+    label,
+    lens,
+    seed,
+    key,
+    repo,
+    base,
+    avoid,
+    distinctModels,
+    retryOf,
+    cwd,
+    noFailover,
+    noWaitCapacity,
+    carry,
+    review,
+    ownerSession,
+    resume,
+    deliverables,
+    timeoutMinutes,
+    keepTree,
   }
   void consumed
   return {
-    job: jobName, prompt, reserveId,
-    agent, schemaPath: schema, mcp, model, probe, transport, label, lens, seed, key, repo, base, avoid,
-    distinctModels, retryOf, cwd, noFailover, noWaitCapacity, carry, review, ownerSession, resume,
-    deliverables, timeoutMinutes, keepTree,
+    job: jobName,
+    prompt,
+    reserveId,
+    agent,
+    schemaPath: schema,
+    mcp,
+    model,
+    probe,
+    transport,
+    label,
+    lens,
+    seed,
+    key,
+    repo,
+    base,
+    avoid,
+    distinctModels,
+    retryOf,
+    cwd,
+    noFailover,
+    noWaitCapacity,
+    carry,
+    review,
+    ownerSession,
+    resume,
+    deliverables,
+    timeoutMinutes,
+    keepTree,
   }
 }
 
 export const MAX_FAILOVER_ATTEMPTS = 3
 
 export function resolveSupersededTurn(database: Database, rootId: number, turn: number): number {
-  return database.query(
-    `UPDATE run AS prior SET status='ok'
+  return database
+    .query(
+      `UPDATE run AS prior SET status='ok'
       WHERE prior.parent_run_id=? AND prior.turn=? AND prior.status='asking'
         AND EXISTS (
           SELECT 1 FROM question q
@@ -110,7 +192,8 @@ export function resolveSupersededTurn(database: Database, rootId: number, turn: 
           SELECT 1 FROM run later
            WHERE later.parent_run_id=prior.parent_run_id AND later.turn>prior.turn
         )`,
-  ).run(rootId, turn).changes
+    )
+    .run(rootId, turn).changes
 }
 
 export type FailoverAttempt = { id: number; agent: string }
@@ -119,15 +202,19 @@ export function failoverAttempts(id: number): FailoverAttempt[] {
   const attempts: FailoverAttempt[] = []
   let memberId: number | null = id
   while (memberId) {
-    const member = db().query(
-      'SELECT id, agent, parent_run_id FROM run WHERE id=?',
-    ).get(memberId) as { id: number; agent: string; parent_run_id: number | null } | null
+    const member = db()
+      .query('SELECT id, agent, parent_run_id FROM run WHERE id=?')
+      .get(memberId) as { id: number; agent: string; parent_run_id: number | null } | null
     if (!member) break
     const rootId = member.parent_run_id ?? member.id
-    const root = db().query(
-      'SELECT id, agent, retry_of, automatic_failover FROM run WHERE id=?',
-    ).get(rootId) as
-      { id: number; agent: string; retry_of: number | null; automatic_failover: number }
+    const root = db()
+      .query('SELECT id, agent, retry_of, automatic_failover FROM run WHERE id=?')
+      .get(rootId) as {
+      id: number
+      agent: string
+      retry_of: number | null
+      automatic_failover: number
+    }
     attempts.unshift({ id: root.id, agent: root.agent })
     memberId = root.automatic_failover ? root.retry_of : null
   }
@@ -181,8 +268,12 @@ export function decideFailover(facts: {
   successor?: { agent: string } | null
   selectionError?: string
 }): FailoverDecision {
-  if (facts.status !== 'failed' || !facts.failureKind ||
-      !facts.failoverKinds.includes(facts.failureKind)) return { kind: 'none' }
+  if (
+    facts.status !== 'failed' ||
+    !facts.failureKind ||
+    !facts.failoverKinds.includes(facts.failureKind)
+  )
+    return { kind: 'none' }
   if (facts.noFailover) {
     return { kind: 'refusal', reason: `disabled by --no-failover; worktree ${facts.worktree}` }
   }

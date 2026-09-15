@@ -20,23 +20,43 @@ describe('recalibrating the scorer', () => {
     const stdin = new PassThrough()
     stdin.end(input)
     let out = ''
-    const output = new Writable({ write(chunk, _encoding, done) { out += chunk.toString(); done() } })
+    const output = new Writable({
+      write(chunk, _encoding, done) {
+        out += chunk.toString()
+        done()
+      },
+    })
     const logs: string[] = []
     const values = new Map<string, string>()
-    for (let i = 0; i < args.length; i++) if (args[i]!.startsWith('--')) values.set(args[i]!.slice(2), args[i + 1] ?? '')
+    for (let i = 0; i < args.length; i++)
+      if (args[i]!.startsWith('--')) values.set(args[i]!.slice(2), args[i + 1] ?? '')
     await recalibrate(
       { has: (name) => args.includes(`--${name}`), flag: (name) => values.get(name) },
-      { log: (...items) => logs.push(items.join(' ')), write: (value) => { out += value }, input: stdin, output },
+      {
+        log: (...items) => logs.push(items.join(' ')),
+        write: (value) => {
+          out += value
+        },
+        input: stdin,
+        output,
+      },
     )
     return { code: 0, out: [...logs, out].join('\n'), err: '' }
   }
   const oldScore = (
-    runId: number, delivery: string, quality: string | null, fidelity: string | null,
-    scorer = 'claude', scoredAt = '2026-01-01T00:00:00.000Z',
-  ) => db().query(
-    `INSERT INTO score (run_id, delivery, quality, fidelity, scored_at, scored_by)
+    runId: number,
+    delivery: string,
+    quality: string | null,
+    fidelity: string | null,
+    scorer = 'claude',
+    scoredAt = '2026-01-01T00:00:00.000Z',
+  ) =>
+    db()
+      .query(
+        `INSERT INTO score (run_id, delivery, quality, fidelity, scored_at, scored_by)
      VALUES (?,?,?,?,?,?)`,
-  ).run(runId, delivery, quality, fidelity, scoredAt, scorer)
+      )
+      .run(runId, delivery, quality, fidelity, scoredAt, scorer)
 
   test('blind verdicts are stored apart and kappa is printed per comparable axis', async () => {
     const originals = [
@@ -53,22 +73,32 @@ describe('recalibrating the scorer', () => {
       oldScore(id, original[0], original[1], original[2])
     }
 
-    const r = await runRecalibrate('full right faithful\nfull right faithful\nfull right faithful\n', '--n', '3')
+    const r = await runRecalibrate(
+      'full right faithful\nfull right faithful\nfull right faithful\n',
+      '--n',
+      '3',
+    )
     expect(r.code).toBe(0)
     expect(r.err).toBe('')
     expect(r.out).toContain('axes: delivery quality fidelity')
     expect(r.out).toContain('delivery: n=3 kappa=0.000 ac1=0.111 reading=ambiguous rubric')
     expect(r.out).toContain('quality: n=2 kappa=0.000 ac1=0.385 reading=ambiguous rubric')
     expect(r.out).toContain('fidelity: n=2 kappa=0.000 ac1=0.385 reading=ambiguous rubric')
-    expect(db().query(
-      `SELECT delivery, quality, fidelity, session_id FROM calibration ORDER BY id`,
-    ).all()).toEqual(Array.from({ length: 3 }, () => ({
-      delivery: 'full', quality: 'right', fidelity: 'faithful',
-      session_id: 'calibration-session',
-    })))
-    expect(db().query(
-      'SELECT delivery, quality, fidelity FROM score ORDER BY id',
-    ).all()).toEqual(originals.map(([delivery, quality, fidelity]) => ({ delivery, quality, fidelity })))
+    expect(
+      db()
+        .query(`SELECT delivery, quality, fidelity, session_id FROM calibration ORDER BY id`)
+        .all(),
+    ).toEqual(
+      Array.from({ length: 3 }, () => ({
+        delivery: 'full',
+        quality: 'right',
+        fidelity: 'faithful',
+        session_id: 'calibration-session',
+      })),
+    )
+    expect(db().query('SELECT delivery, quality, fidelity FROM score ORDER BY id').all()).toEqual(
+      originals.map(([delivery, quality, fidelity]) => ({ delivery, quality, fidelity })),
+    )
   })
 
   test('age and scorer identity filter the sample, while force skips only identity', async () => {
@@ -99,5 +129,4 @@ describe('recalibrating the scorer', () => {
     expect(forced.out).not.toContain('recent output')
     expect((db().query('SELECT COUNT(*) AS n FROM calibration').get() as { n: number }).n).toBe(1)
   })
-
 })

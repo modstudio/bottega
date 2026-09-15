@@ -1,8 +1,14 @@
 import { db } from './db.ts'
 import { JOBS } from './jobs.ts'
 import {
-  candidates, evidenceFor, pick, MIN_SAMPLE, PROMPT_SIZE_BOUNDARY,
-  promptBucketsForJob, promptSizeBucket, type PromptSizeBucket,
+  candidates,
+  evidenceFor,
+  pick,
+  MIN_SAMPLE,
+  PROMPT_SIZE_BOUNDARY,
+  promptBucketsForJob,
+  promptSizeBucket,
+  type PromptSizeBucket,
 } from './route.ts'
 import { median } from './statistics.ts'
 
@@ -61,10 +67,12 @@ export function guide(onlyJob?: string, promptBytes?: number, lens?: string): Jo
   // Scores come from candidates(), not from a second copy of the same SQL here.
   // A guide that disagrees with the router is worse than no guide, because it is
   // consulted precisely when someone wants to know what the router will do.
-  const raw = db().query(
-    `SELECT job, agent, latency_ms, prompt_bytes FROM run
+  const raw = db()
+    .query(
+      `SELECT job, agent, latency_ms, prompt_bytes FROM run
       WHERE status='ok' AND probe=0 AND latency_ms IS NOT NULL`,
-  ).all() as { job: string; agent: string; latency_ms: number; prompt_bytes: number }[]
+    )
+    .all() as { job: string; agent: string; latency_ms: number; prompt_bytes: number }[]
 
   const key = (j: string, a: string, bucket: PromptSizeBucket) => `${j} ${a} ${bucket}`
   const samples = new Map<string, { lat: number[]; bytes: number[] }>()
@@ -79,9 +87,12 @@ export function guide(onlyJob?: string, promptBytes?: number, lens?: string): Jo
     .filter((n) => !onlyJob || n === onlyJob)
     .flatMap((name) => {
       const populated = promptBucketsForJob(name)
-      const buckets: (PromptSizeBucket | null)[] = promptBytes === undefined
-        ? (populated.length ? populated : [null])
-        : [promptSizeBucket(promptBytes)]
+      const buckets: (PromptSizeBucket | null)[] =
+        promptBytes === undefined
+          ? populated.length
+            ? populated
+            : [null]
+          : [promptSizeBucket(promptBytes)]
       return buckets.map((bucket) => {
         const bucketBytes = bucket === 'large' ? PROMPT_SIZE_BOUNDARY : 0
         const ev = evidenceFor(name, bucketBytes, null, undefined, lens)
@@ -97,9 +108,10 @@ export function guide(onlyJob?: string, promptBytes?: number, lens?: string): Jo
             score: c.score,
             shrunk: c.shrunk,
             latencyMs: c.latencyMs,
-            promptBytes: bucket === null
-              ? 0
-              : median(samples.get(key(name, c.agent, bucket))?.bytes ?? []) ?? 0,
+            promptBytes:
+              bucket === null
+                ? 0
+                : (median(samples.get(key(name, c.agent, bucket))?.bytes ?? []) ?? 0),
             costUsd: c.costUsd,
           }))
           // An agent that has only ever failed here has still been tried, and
@@ -108,25 +120,33 @@ export function guide(onlyJob?: string, promptBytes?: number, lens?: string): Jo
           .filter((c) => c.runs > 0 || c.failures > 0)
 
         const judged = tried.filter((c) => c.score !== null)
-        const best = [...judged]
-          .sort((a, b) => b.shrunk! - a.shrunk! || b.evidence - a.evidence)[0] ?? null
+        const best =
+          [...judged].sort((a, b) => b.shrunk! - a.shrunk! || b.evidence - a.evidence)[0] ?? null
         // One agent tried is a measurement, not a race; leaving this null stops
         // the caller crowning the winner of a field of one.
-        const quickest = tried.length > 1
-          ? ([...tried]
-              .filter((c) => c.latencyMs !== null)
-              .sort((a, b) => a.latencyMs! - b.latencyMs!)[0] ?? null)
-          : null
+        const quickest =
+          tried.length > 1
+            ? ([...tried]
+                .filter((c) => c.latencyMs !== null)
+                .sort((a, b) => a.latencyMs! - b.latencyMs!)[0] ?? null)
+            : null
         const chosen = pick(name, undefined, bucketBytes, false, null, {}, false, lens)
-        const counts = (rows: ReturnType<typeof candidates>) => rows
-          .filter((candidate) => candidate.evidence > 0)
-          .map((candidate) => ({ agent: candidate.agent, evidence: candidate.evidence }))
-        const evidenceCells = ev.scoped && ev.lens
-          ? [
-              { name: `lens ${ev.lens}`, counts: counts(ev.scoped) },
-              { name: 'job-wide', counts: counts(ev.job) },
-            ]
-          : [{ name: ev.level === 'stack' ? `stack ${ev.stack}` : 'job-wide', counts: counts(ev.job) }]
+        const counts = (rows: ReturnType<typeof candidates>) =>
+          rows
+            .filter((candidate) => candidate.evidence > 0)
+            .map((candidate) => ({ agent: candidate.agent, evidence: candidate.evidence }))
+        const evidenceCells =
+          ev.scoped && ev.lens
+            ? [
+                { name: `lens ${ev.lens}`, counts: counts(ev.scoped) },
+                { name: 'job-wide', counts: counts(ev.job) },
+              ]
+            : [
+                {
+                  name: ev.level === 'stack' ? `stack ${ev.stack}` : 'job-wide',
+                  counts: counts(ev.job),
+                },
+              ]
 
         return {
           job: name,
@@ -142,9 +162,7 @@ export function guide(onlyJob?: string, promptBytes?: number, lens?: string): Jo
           reason: chosen.reason,
           evidenceCells,
           tried,
-          excluded: all
-            .filter((c) => !c.eligible)
-            .map((c) => ({ agent: c.agent, why: c.why })),
+          excluded: all.filter((c) => !c.eligible).map((c) => ({ agent: c.agent, why: c.why })),
         }
       })
     })

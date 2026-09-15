@@ -99,13 +99,20 @@ export type TransportAgent = {
   argv(opts: ArgvOpts): string[]
   resumeArgv?(opts: ArgvOpts & { session: string }): string[]
   readSession?(ctx: {
-    stdout: string; cwd: string; prompt: string; startedAt: number; home?: string
+    stdout: string
+    cwd: string
+    prompt: string
+    startedAt: number
+    home?: string
   }): string | null
   stdin: boolean
   readsOut: boolean
   parseReply?(stdout: string): {
-    text: string; tokens: number | null; costUsd: number | null
-    stopReason?: string | null; error?: string
+    text: string
+    tokens: number | null
+    costUsd: number | null
+    stopReason?: string | null
+    error?: string
   }
 }
 
@@ -262,7 +269,8 @@ export function resolveTransportName(
 
 /** ACP pins to codex when the caller did not name an agent. */
 export function selectAgentForTransport(
-  transport: TransportName, agent?: string,
+  transport: TransportName,
+  agent?: string,
 ): string | undefined {
   if (transport === 'acp') return agent ?? 'codex'
   return agent
@@ -276,9 +284,15 @@ export function selectAgentForTransport(
  * every job that happens not to write.
  */
 export function assertAcpAllowed(
-  jobName: string, agentName: string | undefined, registered?: TransportAgent,
+  jobName: string,
+  agentName: string | undefined,
+  registered?: TransportAgent,
 ): void {
-  if (agentName && !['codex', 'grok'].includes(agentName) && registered?.defaultTransport !== 'acp') {
+  if (
+    agentName &&
+    !['codex', 'grok'].includes(agentName) &&
+    registered?.defaultTransport !== 'acp'
+  ) {
     throw new Error(
       `ACP transport is a ${ACP_PILOT_TASK} pilot and is only available for registered ACP agents`,
     )
@@ -295,8 +309,10 @@ export function assertAcpAllowed(
 }
 
 export function resolveCodexAcpBin(): string {
-  return process.env.ORCH_ACP_BIN ||
+  return (
+    process.env.ORCH_ACP_BIN ||
     join(dirname(fileURLToPath(import.meta.url)), '..', 'node_modules', '.bin', 'codex-acp')
+  )
 }
 
 export function acpRuntimeGaps(opts?: {
@@ -307,12 +323,15 @@ export function acpRuntimeGaps(opts?: {
   agentName?: string
   agent?: TransportAgent
 }): string | null {
-  const sdkResolve = opts?.sdkResolve ?? (() => requireTransport.resolve('@agentclientprotocol/sdk'))
+  const sdkResolve =
+    opts?.sdkResolve ?? (() => requireTransport.resolve('@agentclientprotocol/sdk'))
   const ajvResolve = opts?.ajvResolve ?? (() => requireTransport.resolve('ajv/dist/2020.js'))
   const agentName = opts?.agentName ?? 'codex'
   const registered = opts?.agent
   const registeredBin = registered ? Bun.which(registered.bin) : null
-  const binPath = opts?.binPath ?? (agentName === 'grok' ? (Bun.which('grok') ?? 'grok') : registeredBin ?? resolveCodexAcpBin())
+  const binPath =
+    opts?.binPath ??
+    (agentName === 'grok' ? (Bun.which('grok') ?? 'grok') : (registeredBin ?? resolveCodexAcpBin()))
   const binExists = opts?.binExists ?? existsSync
   try {
     sdkResolve()
@@ -341,8 +360,8 @@ export function transportFor(name: TransportName): AgentTransport {
   if (!factory) {
     throw new Error(
       `refusing transport selection: transport "${name}" is not registered\n` +
-      'invariant: Entrypoints register the standard transport adapters before selection.\n' +
-      'cleared by: call registerStandardTransports() before selecting a transport',
+        'invariant: Entrypoints register the standard transport adapters before selection.\n' +
+        'cleared by: call registerStandardTransports() before selecting a transport',
     )
   }
   return factory()
@@ -397,16 +416,23 @@ const READ_PERMISSION_KINDS = new Set(['read', 'search', 'think', 'fetch'])
 export function decideAcpPermission(
   toolKind: string | undefined,
   options: Array<{ optionId: string; kind: string }>,
-): { decision: 'allow' | 'reject'; outcome: { outcome: 'selected'; optionId: string } | { outcome: 'cancelled' } } {
+): {
+  decision: 'allow' | 'reject'
+  outcome: { outcome: 'selected'; optionId: string } | { outcome: 'cancelled' }
+} {
   const allowRead = READ_PERMISSION_KINDS.has(toolKind ?? '')
   if (allowRead) {
-    const allow = options.find((option) => option.kind === 'allow_once')
-      ?? options.find((option) => option.kind === 'allow_always')
-    if (allow) return { decision: 'allow', outcome: { outcome: 'selected', optionId: allow.optionId } }
+    const allow =
+      options.find((option) => option.kind === 'allow_once') ??
+      options.find((option) => option.kind === 'allow_always')
+    if (allow)
+      return { decision: 'allow', outcome: { outcome: 'selected', optionId: allow.optionId } }
   }
-  const reject = options.find((option) => option.kind === 'reject_once')
-    ?? options.find((option) => option.kind === 'reject_always')
-  if (reject) return { decision: 'reject', outcome: { outcome: 'selected', optionId: reject.optionId } }
+  const reject =
+    options.find((option) => option.kind === 'reject_once') ??
+    options.find((option) => option.kind === 'reject_always')
+  if (reject)
+    return { decision: 'reject', outcome: { outcome: 'selected', optionId: reject.optionId } }
   return { decision: 'reject', outcome: { outcome: 'cancelled' } }
 }
 
@@ -420,7 +446,9 @@ export function confineFsPath(path: string, root: string, method = 'readTextFile
   try {
     realRoot = realpathSync(root)
   } catch {
-    throw new Error(`ACP fs.${method} refused: ${method === 'readTextFile' ? 'worktree' : 'root'} ${root} is not readable`)
+    throw new Error(
+      `ACP fs.${method} refused: ${method === 'readTextFile' ? 'worktree' : 'root'} ${root} is not readable`,
+    )
   }
   const rootedPath = isAbsolute(path) ? path : join(realRoot, path)
   let candidate: string
@@ -450,10 +478,10 @@ function loadAjvValidator(): AjvValidator {
   // reach this module through run.ts, and the hermetic linked-tree fixtures
   // carry no orchestrator/node_modules, so a static import broke `orch doctor`.
   const loaded: unknown = requireTransport('ajv/dist/2020.js')
-  const candidate: unknown = typeof loaded === 'function'
-    ? loaded
-    : (loaded as { default?: unknown } | null)?.default
-  if (typeof candidate !== 'function') throw new Error('ajv/dist/2020.js did not export a constructor')
+  const candidate: unknown =
+    typeof loaded === 'function' ? loaded : (loaded as { default?: unknown } | null)?.default
+  if (typeof candidate !== 'function')
+    throw new Error('ajv/dist/2020.js did not export a constructor')
   const validator = new (candidate as Ajv2020Ctor)({ strict: false })
   schemaValidator = validator
   return validator

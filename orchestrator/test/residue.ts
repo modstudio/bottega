@@ -8,5 +8,8 @@ export function trackedTestResidue(): (path: string) => string {
     for (const path of paths) rmSync(path, { recursive: true, force: true })
     paths.clear()
   })
-  return (path) => { paths.add(path); return path }
+  return (path) => {
+    paths.add(path)
+    return path
+  }
 }

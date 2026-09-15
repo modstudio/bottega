@@ -6,18 +6,29 @@ import { provisionReadOnlyTree, type ReadonlyProvision } from './readonly-provis
 import { assertCreateVarsAvailable } from './worktree-template.ts'
 import { git, gitOk, repoRootOf, targetGitEnvironment } from './git-environment.ts'
 import { branchTip, removeReadOnlyTree } from './worktree-remove.ts'
-import { attributeWorktree, runCreateTool, verifyFreshWorktree, type RecordWorktree } from './worktree-create.ts'
+import {
+  attributeWorktree,
+  runCreateTool,
+  verifyFreshWorktree,
+  type RecordWorktree,
+} from './worktree-create.ts'
 import type { Worktree } from './worktree-types.ts'
 
 export function createReadOnlyWorktree(
-  cwd: string, runId: number, base: string, record?: RecordWorktree, provision: ReadonlyProvision = [],
+  cwd: string,
+  runId: number,
+  base: string,
+  record?: RecordWorktree,
+  provision: ReadonlyProvision = [],
 ): Worktree {
   const repoRoot = repoRootOf(cwd)
   if (!repoRoot) throw new Error(`not a git repository: ${cwd}`)
   const path = join(repoRoot, '.claude', 'worktrees', `orch-${runId}`)
   mkdirSync(dirname(path), { recursive: true })
-  if (existsSync(path)) throw new Error(`worktree ${path} already exists; run ${runId} would overwrite it`)
-  git(['worktree', 'add', '--detach', path, base], repoRoot); provisionReadOnlyTree(repoRoot, path, provision)
+  if (existsSync(path))
+    throw new Error(`worktree ${path} already exists; run ${runId} would overwrite it`)
+  git(['worktree', 'add', '--detach', path, base], repoRoot)
+  provisionReadOnlyTree(repoRoot, path, provision)
   const worktree = { path, branch: '', base, repoRoot, source: 'git' as const }
   attributeWorktree(worktree, runId, record)
   verifyFreshWorktree(worktree)
@@ -26,28 +37,41 @@ export function createReadOnlyWorktree(
 
 /** Let a project provision a detached read-only checkout at orch's chosen path. */
 export function createReadOnlyWithTool(
-  tool: WorktreeTool, cwd: string, runId: number, base: string,
+  tool: WorktreeTool,
+  cwd: string,
+  runId: number,
+  base: string,
   record?: RecordWorktree,
 ): Worktree {
   const repoRoot = repoRootOf(cwd)
   if (!repoRoot) throw new Error(`not a git repository: ${cwd}`)
   if (!tool.readonly_create) throw new Error('project declares no readonly_create command')
   const path = join(repoRoot, '.claude', 'worktrees', `orch-${runId}`)
-  if (existsSync(path)) throw new Error(`worktree ${path} already exists; run ${runId} would overwrite it`)
+  if (existsSync(path))
+    throw new Error(`worktree ${path} already exists; run ${runId} would overwrite it`)
   const vars = { path, base }
   assertCreateVarsAvailable(tool.readonly_create, vars)
   const branchesBefore = localBranchTips(repoRoot)
   const result = runCreateTool(tool.readonly_create, vars, repoRoot, targetGitEnvironment(cwd))
   let branch = ''
   try {
-    if (!result.ok) throw new Error(`the project's read-only worktree tool failed:\n${result.out.slice(-1500)}`)
+    if (!result.ok)
+      throw new Error(`the project's read-only worktree tool failed:\n${result.out.slice(-1500)}`)
     if (!existsSync(path)) {
-      throw new Error(`the project's read-only worktree tool reported success but ${path} does not exist`)
+      throw new Error(
+        `the project's read-only worktree tool reported success but ${path} does not exist`,
+      )
     }
     branch = gitOk(['symbolic-ref', '--quiet', '--short', 'HEAD'], path) ?? ''
-    if (branch) throw new Error(`the project's read-only worktree tool created attached branch ${branch}`)
+    if (branch)
+      throw new Error(`the project's read-only worktree tool created attached branch ${branch}`)
     const worktree = {
-      path, branch: '', base, repoRoot, source: 'readonly_recipe' as const, mintedBranch: null,
+      path,
+      branch: '',
+      base,
+      repoRoot,
+      source: 'readonly_recipe' as const,
+      mintedBranch: null,
     }
     attributeWorktree(worktree, runId, record)
     verifyFreshWorktree(worktree)
@@ -55,40 +79,62 @@ export function createReadOnlyWithTool(
   } catch (error) {
     if (!existsSync(path)) throw error
     const previousTip = branch ? branchesBefore.get(branch) : undefined
-    const cleanup = removeReadOnlyTree(tool, {
-      path, branch, base, repoRoot, source: 'readonly_recipe',
-    }, previousTip !== undefined)
+    const cleanup = removeReadOnlyTree(
+      tool,
+      {
+        path,
+        branch,
+        base,
+        repoRoot,
+        source: 'readonly_recipe',
+      },
+      previousTip !== undefined,
+    )
     if (cleanup.removed && branch && previousTip !== undefined) {
       const restored = restoreBranchToTip(repoRoot, branch, previousTip)
       if (!restored.ok) {
         cleanup.removed = false
-        cleanup.detail = `${cleanup.detail}; could not restore pre-existing branch ${branch} ` +
+        cleanup.detail =
+          `${cleanup.detail}; could not restore pre-existing branch ${branch} ` +
           `to ${previousTip}: ${restored.error}`
       }
     }
     throw new Error(
       `${error instanceof Error ? error.message : String(error)}\n` +
-      `cleanup: ${cleanup.removed ? 'removed' : cleanup.detail}`,
+        `cleanup: ${cleanup.removed ? 'removed' : cleanup.detail}`,
     )
   }
 }
 
 function localBranchTips(repoRoot: string): Map<string, string> {
-  const lines = git(['for-each-ref', '--format=%(refname:short) %(objectname)', 'refs/heads/'], repoRoot)
-  return new Map(lines.split('\n').filter(Boolean).map((line) => {
-    const split = line.lastIndexOf(' ')
-    return [line.slice(0, split), line.slice(split + 1)]
-  }))
+  const lines = git(
+    ['for-each-ref', '--format=%(refname:short) %(objectname)', 'refs/heads/'],
+    repoRoot,
+  )
+  return new Map(
+    lines
+      .split('\n')
+      .filter(Boolean)
+      .map((line) => {
+        const split = line.lastIndexOf(' ')
+        return [line.slice(0, split), line.slice(split + 1)]
+      }),
+  )
 }
 
 function restoreBranchToTip(
-  repoRoot: string, branch: string, tip: string,
+  repoRoot: string,
+  branch: string,
+  tip: string,
 ): { ok: true } | { ok: false; error: string } {
   const current = branchTip(repoRoot, branch)
   if (current === tip) return { ok: true }
   const expected = current ?? '0000000000000000000000000000000000000000'
   const p = Bun.spawnSync(['git', 'update-ref', `refs/heads/${branch}`, tip, expected], {
-    cwd: repoRoot, env: targetGitEnvironment(repoRoot), stdout: 'pipe', stderr: 'pipe',
+    cwd: repoRoot,
+    env: targetGitEnvironment(repoRoot),
+    stdout: 'pipe',
+    stderr: 'pipe',
   })
   return p.exitCode === 0
     ? { ok: true }

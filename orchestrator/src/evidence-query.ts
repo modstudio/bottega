@@ -26,8 +26,9 @@ export const SHARED_OUTPUT_REASON =
  * counted rather than guessed.
  */
 export function excludeSharedOutputRuns(d: Database = db()): number {
-  const r = d.query(
-    `UPDATE run SET evidence_excluded = ?
+  const r = d
+    .query(
+      `UPDATE run SET evidence_excluded = ?
       WHERE evidence_excluded IS NULL
         AND output_path IN (
           SELECT output_path FROM run
@@ -35,7 +36,8 @@ export function excludeSharedOutputRuns(d: Database = db()): number {
            GROUP BY output_path
           HAVING COUNT(*) > 1
         )`,
-  ).run(SHARED_OUTPUT_REASON)
+    )
+    .run(SHARED_OUTPUT_REASON)
   return r.changes
 }
 
@@ -56,8 +58,7 @@ export function excludeSharedOutputRuns(d: Database = db()): number {
  * A void closes the ledger whether or not a verdict was stored: excluded
  * evidence is not an owed judgement.
  */
-export const UNSCORED_WHERE =
-  `r.status = 'ok' AND r.evidence_excluded IS NULL AND COALESCE(r.probe, 0) = 0 AND r.parent_run_id IS NULL
+export const UNSCORED_WHERE = `r.status = 'ok' AND r.evidence_excluded IS NULL AND COALESCE(r.probe, 0) = 0 AND r.parent_run_id IS NULL
    AND COALESCE((SELECT c.status FROM run c WHERE c.parent_run_id = r.id
                   ORDER BY c.turn DESC LIMIT 1), r.status) <> 'running'
    AND (s.delivery IS NULL
@@ -73,15 +74,12 @@ export const UNSCORED_WHERE =
  * same way chainScoreJoin makes it see the root's score, or a no-verdict
  * void would still pin a tree held by a later turn.
  */
-export const EVIDENCE_EXCLUDED_SQL =
-  `(SELECT evidence_root.evidence_excluded FROM run evidence_root
+export const EVIDENCE_EXCLUDED_SQL = `(SELECT evidence_root.evidence_excluded FROM run evidence_root
      WHERE evidence_root.id = COALESCE(r.parent_run_id, r.id))`
 
-export const EVIDENCE_CLOSED_SQL =
-  `(s.delivery IS NOT NULL OR ${EVIDENCE_EXCLUDED_SQL} IS NOT NULL)`
+export const EVIDENCE_CLOSED_SQL = `(s.delivery IS NOT NULL OR ${EVIDENCE_EXCLUDED_SQL} IS NOT NULL)`
 
-export const EVIDENCE_OPEN_SQL =
-  `(s.delivery IS NULL AND ${EVIDENCE_EXCLUDED_SQL} IS NULL)`
+export const EVIDENCE_OPEN_SQL = `(s.delivery IS NULL AND ${EVIDENCE_EXCLUDED_SQL} IS NULL)`
 
 /**
  * Voided is the exclusion stamp, not a routing-evidence count, so it does
@@ -106,8 +104,7 @@ export function activeSql(alias = 'r'): string {
 
 const NOT_EVIDENCE_SQL = NOT_EVIDENCE.map((kind) => `'${kind}'`).join(', ')
 
-export const SCORED_EVIDENCE_SQL =
-  `s.delivery IS NOT NULL
+export const SCORED_EVIDENCE_SQL = `s.delivery IS NOT NULL
    AND r.evidence_excluded IS NULL
    AND COALESCE(r.failure_kind, '') NOT IN (${NOT_EVIDENCE_SQL})`
 
@@ -128,7 +125,11 @@ function sqlAlias(name: string): string {
   return name
 }
 
-export function changeIdentityJoin(runAlias: string, lensAlias: string, reviewAlias: string): string {
+export function changeIdentityJoin(
+  runAlias: string,
+  lensAlias: string,
+  reviewAlias: string,
+): string {
   const run = sqlAlias(runAlias)
   const lens = sqlAlias(lensAlias)
   const review = sqlAlias(reviewAlias)
@@ -150,7 +151,10 @@ export function sameChangeSql(leftReview: string, rightReview: string): string {
 }
 
 export function pairReasonSql(
-  leftRun: string, rightRun: string, leftReview: string, rightReview: string,
+  leftRun: string,
+  rightRun: string,
+  leftReview: string,
+  rightReview: string,
 ): string {
   const left = sqlAlias(leftRun)
   sqlAlias(rightRun)
@@ -184,12 +188,13 @@ export type RunTotals = {
  * prints.
  */
 export function runTotals(sinceIso?: string): RunTotals {
-  const row = db().query(
-    // COALESCE on every SUM: over an empty window SUM returns NULL, not zero,
-    // while COUNT returns zero — so a quiet day answered `failed: null` beside
-    // `runs: 0`. The page coerces it, but an API that reports "no failures" as
-    // null is one bad `??` away from reporting it as "unknown".
-    `SELECT COUNT(*) runs,
+  const row = db()
+    .query(
+      // COALESCE on every SUM: over an empty window SUM returns NULL, not zero,
+      // while COUNT returns zero — so a quiet day answered `failed: null` beside
+      // `runs: 0`. The page coerces it, but an API that reports "no failures" as
+      // null is one bad `??` away from reporting it as "unknown".
+      `SELECT COUNT(*) runs,
             COALESCE(SUM(CASE WHEN r.status='failed' THEN 1 ELSE 0 END), 0) failed,
             COALESCE(SUM(CASE WHEN r.status='stale' THEN 1 ELSE 0 END), 0) stale_n,
             COALESCE(SUM(COALESCE(r.vendor_tokens,0)), 0) toks,
@@ -197,39 +202,52 @@ export function runTotals(sinceIso?: string): RunTotals {
             COALESCE(SUM(CASE WHEN ${VOIDED_SQL} THEN 1 ELSE 0 END), 0) voided
        FROM run r LEFT JOIN score s ON s.run_id = r.id
       ${sinceIso ? 'WHERE r.started_at >= ?' : ''}`,
-  ).get(...(sinceIso ? [sinceIso] : [])) as Omit<RunTotals, 'unscored'>
+    )
+    .get(...(sinceIso ? [sinceIso] : [])) as Omit<RunTotals, 'unscored'>
   return { ...row, unscored: unscoredCount(sinceIso) }
 }
 
 /** Join the one score owned by a conversation root to any of its turns. */
 export function chainScoreJoin(runAlias: string, scoreAlias: string): string {
-  if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(runAlias) ||
-      !/^[A-Za-z_][A-Za-z0-9_]*$/.test(scoreAlias)) {
+  if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(runAlias) || !/^[A-Za-z_][A-Za-z0-9_]*$/.test(scoreAlias)) {
     throw new Error('chain score aliases must be SQL identifiers')
   }
-  return `LEFT JOIN score ${scoreAlias} ON ${scoreAlias}.run_id = ` +
+  return (
+    `LEFT JOIN score ${scoreAlias} ON ${scoreAlias}.run_id = ` +
     `COALESCE(${runAlias}.parent_run_id, ${runAlias}.id)`
+  )
 }
 
 export function pendingForSession(sid: string | null) {
   if (!sid) return []
-  return db().query(
-    `SELECT r.id, r.agent, r.job, r.repo, COALESCE(r.label, r.prompt_head) AS prompt_head,
+  return db()
+    .query(
+      `SELECT r.id, r.agent, r.job, r.repo, COALESCE(r.label, r.prompt_head) AS prompt_head,
             CASE WHEN s.delivery IS NOT NULL THEN 1 ELSE 0 END AS rescore
        FROM run r LEFT JOIN score s ON s.run_id = r.id
       WHERE r.session_id = ? AND ${UNSCORED_WHERE}
       ORDER BY r.id`,
-  ).all(sid) as {
-    id: number; agent: string; job: string; repo: string | null; prompt_head: string; rescore: number
+    )
+    .all(sid) as {
+    id: number
+    agent: string
+    job: string
+    repo: string | null
+    prompt_head: string
+    rescore: number
   }[]
 }
 
 /** How many runs are owed a judgement, by the same rule, across every session. */
 export function unscoredCount(sinceIso?: string): number {
-  return (db().query(
-    `SELECT COUNT(*) n FROM run r LEFT JOIN score s ON s.run_id = r.id
+  return (
+    db()
+      .query(
+        `SELECT COUNT(*) n FROM run r LEFT JOIN score s ON s.run_id = r.id
       WHERE ${UNSCORED_WHERE}${sinceIso ? ' AND r.started_at >= ?' : ''}`,
-  ).get(...(sinceIso ? [sinceIso] : [])) as { n: number }).n
+      )
+      .get(...(sinceIso ? [sinceIso] : [])) as { n: number }
+  ).n
 }
 
 /**

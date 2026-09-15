@@ -34,7 +34,11 @@ export function relativeTime(value: string | number | Date) {
   if (delta < 3_600_000) return `${Math.round(delta / 60_000)}m ago`
   if (delta < 86_400_000) return `${Math.round(delta / 3_600_000)}h ago`
   if (delta < 172_800_000) return 'yesterday'
-  return new Intl.DateTimeFormat('en-US', { month: 'short', day: 'numeric', year: date.getFullYear() === new Date().getFullYear() ? undefined : 'numeric' }).format(date)
+  return new Intl.DateTimeFormat('en-US', {
+    month: 'short',
+    day: 'numeric',
+    year: date.getFullYear() === new Date().getFullYear() ? undefined : 'numeric',
+  }).format(date)
 }
 
 export function collectedTime(value: string | null) {

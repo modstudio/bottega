@@ -1,12 +1,20 @@
-import { afterEach,expect,mock,spyOn,test } from 'bun:test'
-import { mkdirSync,mkdtempSync,rmSync } from 'node:fs'
+import { afterEach, expect, mock, spyOn, test } from 'bun:test'
+import { mkdirSync, mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import {
-classifiedDockerResources,dockerInventoryTimeoutMs,dockerRemovalTimeoutMs,dockerRunResources,orphanedDockerResources,teardownRunResources,type DockerResource,
+  classifiedDockerResources,
+  dockerInventoryTimeoutMs,
+  dockerRemovalTimeoutMs,
+  dockerRunResources,
+  orphanedDockerResources,
+  teardownRunResources,
+  type DockerResource,
 } from './docker-resources.ts'
 
-afterEach(() => { mock.restore() })
+afterEach(() => {
+  mock.restore()
+})
 
 test('docker inventory timeout is configurable and defaults to 1s', () => {
   expect(dockerInventoryTimeoutMs({})).toBe(1_000)
@@ -64,9 +72,9 @@ test('terminal resources are orphaned even while their worktree survives', () =>
     { kind: 'volume', name: 'app_orch-41_data', runId: 41 },
   ]
   try {
-    expect(orphanedDockerResources(resources, [
-      { id: 41, repo: 'app', worktree, status: 'ok' },
-    ])).toEqual(resources.map((resource) => ({ resource, project: 'app' })))
+    expect(
+      orphanedDockerResources(resources, [{ id: 41, repo: 'app', worktree, status: 'ok' }]),
+    ).toEqual(resources.map((resource) => ({ resource, project: 'app' })))
   } finally {
     rmSync(root, { recursive: true, force: true })
   }
@@ -81,10 +89,12 @@ test('live and asking runs own resources before and after their worktree exists'
     { kind: 'volume', name: 'app_orch-43_data', runId: 43 },
   ]
   try {
-    expect(orphanedDockerResources(resources, [
-      { id: 42, repo: 'app', worktree, status: 'running' },
-      { id: 43, repo: 'app', worktree: null, status: 'asking' },
-    ])).toEqual([])
+    expect(
+      orphanedDockerResources(resources, [
+        { id: 42, repo: 'app', worktree, status: 'running' },
+        { id: 43, repo: 'app', worktree: null, status: 'asking' },
+      ]),
+    ).toEqual([])
   } finally {
     rmSync(root, { recursive: true, force: true })
   }
@@ -106,9 +116,7 @@ test('run teardown removes only containers, is idempotent, and isolates run iden
 
   teardownRunResources(51)
   teardownRunResources(51)
-  expect(removals).toEqual([
-    'docker rm -f app-orch-51-web',
-  ])
+  expect(removals).toEqual(['docker rm -f app-orch-51-web'])
 })
 
 test('reporting distinguishes leaked resources from terminal resources in a retained tree', () => {
@@ -118,12 +126,12 @@ test('reporting distinguishes leaked resources from terminal resources in a reta
     { kind: 'volume', name: 'app_orch-92_data', runId: 92 },
   ]
   try {
-    expect(classifiedDockerResources(resources, [
-      { id: 91, repo: 'app', worktree: dir, status: 'ok' },
-      { id: 92, repo: 'app', worktree: join(dir, 'gone'), status: 'failed' },
-    ]).map(({ condition }) => condition)).toEqual([
-      'retained-worktree-resources', 'leaked',
-    ])
+    expect(
+      classifiedDockerResources(resources, [
+        { id: 91, repo: 'app', worktree: dir, status: 'ok' },
+        { id: 92, repo: 'app', worktree: join(dir, 'gone'), status: 'failed' },
+      ]).map(({ condition }) => condition),
+    ).toEqual(['retained-worktree-resources', 'leaked'])
   } finally {
     rmSync(dir, { recursive: true, force: true })
   }
@@ -131,7 +139,9 @@ test('reporting distinguishes leaked resources from terminal resources in a reta
 
 test('an unavailable inventory prevents teardown of partially inventoried resources', () => {
   const errors: string[] = []
-  spyOn(console, 'error').mockImplementation((value) => { errors.push(String(value)) })
+  spyOn(console, 'error').mockImplementation((value) => {
+    errors.push(String(value))
+  })
   spyOn(Bun, 'spawnSync').mockImplementation(((args: string[]) => {
     const command = args.join(' ')
     if (command === 'docker ps -a --format {{.Names}}') return result('app-orch-61-web')
@@ -141,9 +151,13 @@ test('an unavailable inventory prevents teardown of partially inventoried resour
     return result('', 1, 'Cannot connect to the Docker daemon')
   }) as typeof Bun.spawnSync)
 
-  expect(teardownRunResources(61)).toEqual(expect.objectContaining({
-    complete: false, removed: 0, skipped: true,
-  }))
+  expect(teardownRunResources(61)).toEqual(
+    expect.objectContaining({
+      complete: false,
+      removed: 0,
+      skipped: true,
+    }),
+  )
   expect(errors).toEqual([
     expect.stringContaining('inventory unavailable: Cannot connect to the Docker daemon'),
   ])
@@ -151,7 +165,9 @@ test('an unavailable inventory prevents teardown of partially inventoried resour
 
 test('an already-removed resource is an idempotent success without an error log', () => {
   const errors: string[] = []
-  spyOn(console, 'error').mockImplementation((value) => { errors.push(String(value)) })
+  spyOn(console, 'error').mockImplementation((value) => {
+    errors.push(String(value))
+  })
   spyOn(Bun, 'spawnSync').mockImplementation(((args: string[]) => {
     const command = args.join(' ')
     if (command === 'docker ps -a --format {{.Names}}') return result('app-orch-71-web')
@@ -165,7 +181,10 @@ test('an already-removed resource is an idempotent success without an error log'
 
 function result(stdout: string, exitCode = 0, stderr = ''): ReturnType<typeof Bun.spawnSync> {
   return {
-    exitCode, stdout: Buffer.from(stdout), stderr: Buffer.from(stderr),
-    success: exitCode === 0, exitedDueToTimeout: false,
+    exitCode,
+    stdout: Buffer.from(stdout),
+    stderr: Buffer.from(stderr),
+    success: exitCode === 0,
+    exitedDueToTimeout: false,
   } as ReturnType<typeof Bun.spawnSync>
 }

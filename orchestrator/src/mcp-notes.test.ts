@@ -1,9 +1,8 @@
 import { Client } from '@modelcontextprotocol/sdk/client/index.js'
 import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js'
-import { describe,expect,test } from 'bun:test'
+import { describe, expect, test } from 'bun:test'
 import { PLATFORM_SLUG } from '../../shared/brand.ts'
 import { createDocsMcpServer } from './mcp.ts'
-
 
 describe('scoped operator docs', () => {
   test('MCP file_issue refuses a defect missing reproduce_command with an actionable message', async () => {
@@ -34,30 +33,33 @@ describe('scoped operator docs', () => {
     }
   })
 
-  test.each(['evidence', 'not_established'])('MCP file_issue refuses a suggestion missing %s', async (field) => {
-    const server = createDocsMcpServer()
-    const client = new Client({ name: 'orch-test', version: '1.0.0' })
-    const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair()
-    await server.connect(serverTransport)
-    await client.connect(clientTransport)
-    try {
-      const arguments_: Record<string, string> = {
-        kind: 'suggestion',
-        what_happened: 'Issue reports need a direct filing path',
-        expected: `A report should land on the ${PLATFORM_SLUG} board`,
-        evidence: 'orchestrator/src/mcp.ts:11 had only project and document tools',
-        not_established: 'No priority or assignee has been established',
+  test.each(['evidence', 'not_established'])(
+    'MCP file_issue refuses a suggestion missing %s',
+    async (field) => {
+      const server = createDocsMcpServer()
+      const client = new Client({ name: 'orch-test', version: '1.0.0' })
+      const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair()
+      await server.connect(serverTransport)
+      await client.connect(clientTransport)
+      try {
+        const arguments_: Record<string, string> = {
+          kind: 'suggestion',
+          what_happened: 'Issue reports need a direct filing path',
+          expected: `A report should land on the ${PLATFORM_SLUG} board`,
+          evidence: 'orchestrator/src/mcp.ts:11 had only project and document tools',
+          not_established: 'No priority or assignee has been established',
+        }
+        delete arguments_[field]
+        const filed = await client.callTool({ name: 'file_issue', arguments: arguments_ })
+        expect(filed.isError).toBe(true)
+        const message = ((filed as any).content[0] as { text: string }).text
+        expect(message).toContain(`${field} is required`)
+      } finally {
+        await client.close()
+        await server.close()
       }
-      delete arguments_[field]
-      const filed = await client.callTool({ name: 'file_issue', arguments: arguments_ })
-      expect(filed.isError).toBe(true)
-      const message = ((filed as any).content[0] as { text: string }).text
-      expect(message).toContain(`${field} is required`)
-    } finally {
-      await client.close()
-      await server.close()
-    }
-  })
+    },
+  )
 
   test('MCP file_issue refuses an unknown reporter kind', async () => {
     const server = createDocsMcpServer()
@@ -84,5 +86,4 @@ describe('scoped operator docs', () => {
       await server.close()
     }
   })
-
 })

@@ -11,26 +11,58 @@ beforeAll(resetFixtureStore)
  * touch orch and needs no mock.
  */
 const docList = mock(async (_filters?: unknown) => [] as unknown[])
-const docGet = mock(async (_scope: string, _subject: string | null, _slug: string) =>
-  ({}) as unknown)
+const docGet = mock(
+  async (_scope: string, _subject: string | null, _slug: string) => ({}) as unknown,
+)
 const docSet = mock(async (_input: unknown) => ({}) as unknown)
-const docRemove = mock(async (_scope: string, _subject: string | null, _slug: string, _reason: string) =>
-  ({ removed: false }))
-const docHistory = mock(async (_scope: string, _subject: string | null, _slug: string) => [] as unknown[])
-const docSubjects = mock(async () => ({ project: [] as string[], agent: [] as string[], job: [] as string[] }))
+const docRemove = mock(
+  async (_scope: string, _subject: string | null, _slug: string, _reason: string) => ({
+    removed: false,
+  }),
+)
+const docHistory = mock(
+  async (_scope: string, _subject: string | null, _slug: string) => [] as unknown[],
+)
+const docSubjects = mock(async () => ({
+  project: [] as string[],
+  agent: [] as string[],
+  job: [] as string[],
+}))
 const jobs = mock(async () => [])
 const agents = mock(async () => [])
 const health = mock(async () => ({
-  header: 'Harness health only — never routing evidence.', days: 14, from: '2026-08-24T00:00:00.000Z',
-  classes: [{ kind: 'interrupted', count: 2, totalTimeMs: 1_000, meanTimeMs: 500,
-    firstSeen: '2026-09-01T00:00:00.000Z', lastSeen: '2026-09-02T00:00:00.000Z',
-    clusters: [], sparkline: [{ day: '2026-09-02', count: 2 }] }],
-  falseVerdicts: [], landingRefusals: 1, mcpProbeFailures: 0, mcpUnprobed: 0,
+  header: 'Harness health only — never routing evidence.',
+  days: 14,
+  from: '2026-08-24T00:00:00.000Z',
+  classes: [
+    {
+      kind: 'interrupted',
+      count: 2,
+      totalTimeMs: 1_000,
+      meanTimeMs: 500,
+      firstSeen: '2026-09-01T00:00:00.000Z',
+      lastSeen: '2026-09-02T00:00:00.000Z',
+      clusters: [],
+      sparkline: [{ day: '2026-09-02', count: 2 }],
+    },
+  ],
+  falseVerdicts: [],
+  landingRefusals: 1,
+  mcpProbeFailures: 0,
+  mcpUnprobed: 0,
   contention: { resources: [], sessions: [] },
 }))
 
 mock.module('../orch.ts', () => ({
-  docList, docGet, docSet, docRemove, docHistory, docSubjects, jobs, agents, health,
+  docList,
+  docGet,
+  docSet,
+  docRemove,
+  docHistory,
+  docSubjects,
+  jobs,
+  agents,
+  health,
 }))
 
 const { appRouter } = await import('./router.ts')
@@ -82,7 +114,10 @@ describe('project.list', () => {
 
 describe('insight.health', () => {
   test('renders its response from the stubbed orch client', async () => {
-    const response = await caller.insight.health({ hours: 168, filters: { agent: '', project: '' } })
+    const response = await caller.insight.health({
+      hours: 168,
+      filters: { agent: '', project: '' },
+    })
     expect(health).toHaveBeenCalledWith(7)
     expect(response.view).toBe('health')
     expect(response.data.classes[0]?.kind).toBe('interrupted')
@@ -95,58 +130,102 @@ describe('work.task', () => {
   const fakeView = (async () => ({})) as never
 
   test('returns the canonical task record', async () => {
-    const record = { task: { key: 'DEV-1' }, source: 'local', project: null, runs: [], comments: [], documents: [] }
-    const router = createWorkRouter({ strip: fakeStrip, view: fakeView, taskRecord: () => record as never })
+    const record = {
+      task: { key: 'DEV-1' },
+      source: 'local',
+      project: null,
+      runs: [],
+      comments: [],
+      documents: [],
+    }
+    const router = createWorkRouter({
+      strip: fakeStrip,
+      view: fakeView,
+      taskRecord: () => record as never,
+    })
     const result = await router.createCaller({}).task({ key: 'DEV-1' })
     expect(result.task.key).toBe('DEV-1')
     expect(result.source).toBe('local')
   })
 
   test('maps an unknown key to NOT_FOUND', async () => {
-    const router = createWorkRouter({ strip: fakeStrip, view: fakeView, taskRecord: () => { throw new Error('no task DEV-404') } })
-    await expect(router.createCaller({}).task({ key: 'DEV-404' }))
-      .rejects.toMatchObject({ code: 'NOT_FOUND', message: 'no task DEV-404' })
+    const router = createWorkRouter({
+      strip: fakeStrip,
+      view: fakeView,
+      taskRecord: () => {
+        throw new Error('no task DEV-404')
+      },
+    })
+    await expect(router.createCaller({}).task({ key: 'DEV-404' })).rejects.toMatchObject({
+      code: 'NOT_FOUND',
+      message: 'no task DEV-404',
+    })
   })
 
   test('each local write mutation preserves the non-local refusal', async () => {
-    const refusal = () => { throw new Error('task EXT-1 is not local') }
+    const refusal = () => {
+      throw new Error('task EXT-1 is not local')
+    }
     const router = createWorkRouter({
-      strip: fakeStrip, view: fakeView,
+      strip: fakeStrip,
+      view: fakeView,
       setTask: refusal as never,
       commentTask: refusal as never,
       updateTaskDocument: refusal as never,
     })
     const writes = router.createCaller({})
-    await expect(writes.setStatus({ key: 'EXT-1', status: 'active' })).rejects.toMatchObject({ code: 'BAD_REQUEST', message: 'task EXT-1 is not local' })
-    await expect(writes.setTitle({ key: 'EXT-1', title: 'No' })).rejects.toMatchObject({ code: 'BAD_REQUEST', message: 'task EXT-1 is not local' })
-    await expect(writes.comment({ key: 'EXT-1', body: 'No' })).rejects.toMatchObject({ code: 'BAD_REQUEST', message: 'task EXT-1 is not local' })
-    await expect(writes.setDocument({ id: 1, title: 'No', body: 'No', version: 'old' })).rejects.toMatchObject({ code: 'BAD_REQUEST', message: 'task EXT-1 is not local' })
+    await expect(writes.setStatus({ key: 'EXT-1', status: 'active' })).rejects.toMatchObject({
+      code: 'BAD_REQUEST',
+      message: 'task EXT-1 is not local',
+    })
+    await expect(writes.setTitle({ key: 'EXT-1', title: 'No' })).rejects.toMatchObject({
+      code: 'BAD_REQUEST',
+      message: 'task EXT-1 is not local',
+    })
+    await expect(writes.comment({ key: 'EXT-1', body: 'No' })).rejects.toMatchObject({
+      code: 'BAD_REQUEST',
+      message: 'task EXT-1 is not local',
+    })
+    await expect(
+      writes.setDocument({ id: 1, title: 'No', body: 'No', version: 'old' }),
+    ).rejects.toMatchObject({ code: 'BAD_REQUEST', message: 'task EXT-1 is not local' })
   })
 
   test('a write to a missing task maps to NOT_FOUND', async () => {
     const router = createWorkRouter({
-      strip: fakeStrip, view: fakeView,
-      setTask: (() => { throw new Error('no task DEV-404') }) as never,
+      strip: fakeStrip,
+      view: fakeView,
+      setTask: (() => {
+        throw new Error('no task DEV-404')
+      }) as never,
     })
-    await expect(router.createCaller({}).setStatus({ key: 'DEV-404', status: 'active' }))
-      .rejects.toMatchObject({ code: 'NOT_FOUND', message: 'no task DEV-404' })
+    await expect(
+      router.createCaller({}).setStatus({ key: 'DEV-404', status: 'active' }),
+    ).rejects.toMatchObject({ code: 'NOT_FOUND', message: 'no task DEV-404' })
   })
 
   test('a stale document reports both versions without retrying the write', async () => {
     let writes = 0
     const router = createWorkRouter({
-      strip: fakeStrip, view: fakeView,
+      strip: fakeStrip,
+      view: fakeView,
       updateTaskDocument: (() => {
         writes++
         throw new Error('task document 1 changed since version old; read it again')
       }) as never,
       getTaskDocument: (() => ({ version: 'new' })) as never,
     })
-    await expect(router.createCaller({}).setDocument({
-      id: 1, title: 'Draft', body: 'Kept text', version: 'old',
-    })).rejects.toMatchObject({
+    await expect(
+      router.createCaller({}).setDocument({
+        id: 1,
+        title: 'Draft',
+        body: 'Kept text',
+        version: 'old',
+      }),
+    ).rejects.toMatchObject({
       code: 'CONFLICT',
-      message: 'This document changed since you opened it (version old → new). Reload to see the current version; your edit was not saved.',
+      message:
+        'This document changed since you opened it (version old → new). Reload to see the current version; your edit was not saved.',
     })
     expect(writes).toBe(1)
   })
@@ -168,7 +247,14 @@ describe('doc router', () => {
   })
 
   test('set passes the input to docSet', async () => {
-    const input = { scope: 'global' as const, subject: null, slug: 'hello', title: 'Hello', body: 'Hi', reason: 'updated' }
+    const input = {
+      scope: 'global' as const,
+      subject: null,
+      slug: 'hello',
+      title: 'Hello',
+      body: 'Hi',
+      reason: 'updated',
+    }
     docSet.mockResolvedValueOnce(row)
     const got = await caller.doc.set(input)
     expect(docSet).toHaveBeenCalledWith(input)
@@ -177,24 +263,49 @@ describe('doc router', () => {
 
   test('remove passes scope, subject and slug to docRemove', async () => {
     docRemove.mockResolvedValueOnce({ removed: true })
-    const got = await caller.doc.remove({ scope: 'global', subject: null, slug: 'hello', reason: 'obsolete' })
+    const got = await caller.doc.remove({
+      scope: 'global',
+      subject: null,
+      slug: 'hello',
+      reason: 'obsolete',
+    })
     expect(docRemove).toHaveBeenCalledWith('global', null, 'hello', 'obsolete')
     expect(got).toEqual({ removed: true })
   })
 
   test('set and remove require a non-empty reason, and history forwards the address', async () => {
-    await expect(caller.doc.set({
-      scope: 'global', subject: null, slug: 'hello', title: 'Hello', body: 'Hi', reason: ' ',
-    })).rejects.toMatchObject({ code: 'BAD_REQUEST' })
-    await expect(caller.doc.remove({
-      scope: 'global', subject: null, slug: 'hello', reason: '',
-    })).rejects.toMatchObject({ code: 'BAD_REQUEST' })
-    const revisions = [{
-      id: 1, op: 'create' as const, author: 'tester', reason: 'created',
-      at: '2026-09-04T00:00:00.000Z', bytes: 2,
-    }]
+    await expect(
+      caller.doc.set({
+        scope: 'global',
+        subject: null,
+        slug: 'hello',
+        title: 'Hello',
+        body: 'Hi',
+        reason: ' ',
+      }),
+    ).rejects.toMatchObject({ code: 'BAD_REQUEST' })
+    await expect(
+      caller.doc.remove({
+        scope: 'global',
+        subject: null,
+        slug: 'hello',
+        reason: '',
+      }),
+    ).rejects.toMatchObject({ code: 'BAD_REQUEST' })
+    const revisions = [
+      {
+        id: 1,
+        op: 'create' as const,
+        author: 'tester',
+        reason: 'created',
+        at: '2026-09-04T00:00:00.000Z',
+        bytes: 2,
+      },
+    ]
     docHistory.mockResolvedValueOnce(revisions)
-    expect(await caller.doc.history({ scope: 'global', subject: null, slug: 'hello' })).toEqual(revisions)
+    expect(await caller.doc.history({ scope: 'global', subject: null, slug: 'hello' })).toEqual(
+      revisions,
+    )
     expect(docHistory).toHaveBeenCalledWith('global', null, 'hello')
   })
 
@@ -205,7 +316,7 @@ describe('doc router', () => {
     expect(docSubjects).toHaveBeenCalled()
   })
 
-  test('orch errors surface as BAD_REQUEST with orch\'s message', async () => {
+  test("orch errors surface as BAD_REQUEST with orch's message", async () => {
     docGet.mockRejectedValueOnce(new Error('orch doc exited 1: invalid slug; use 1-64 lowercase'))
     let thrown: unknown
     try {
@@ -213,25 +324,38 @@ describe('doc router', () => {
     } catch (e) {
       thrown = e
     }
-    expect(thrown).toMatchObject({ code: 'BAD_REQUEST', message: 'invalid slug; use 1-64 lowercase' })
+    expect(thrown).toMatchObject({
+      code: 'BAD_REQUEST',
+      message: 'invalid slug; use 1-64 lowercase',
+    })
   })
 })
 
 describe('project writes', () => {
   const row: RegisteredProject = {
-    id: 10, name: 'new-project', path: '/tmp/new-project', stack: 'bun', canon: true,
+    id: 10,
+    name: 'new-project',
+    path: '/tmp/new-project',
+    stack: 'bun',
+    canon: true,
     settings: {},
   }
 
   test('add forwards its validated input to the injected orch function', async () => {
     let received: unknown
     const router = createProjectRouter({
-      add: async (input) => { received = input; return row },
+      add: async (input) => {
+        received = input
+        return row
+      },
       set: async () => row,
       remove: async () => {},
     })
     const result = await router.createCaller({}).add({
-      path: row.path, name: row.name, stack: row.stack!, canon: false,
+      path: row.path,
+      name: row.name,
+      stack: row.stack!,
+      canon: false,
     })
     expect(received).toEqual({ path: row.path, name: row.name, stack: 'bun', canon: false })
     expect(result).toEqual(row)
@@ -241,11 +365,16 @@ describe('project writes', () => {
     let received: unknown
     const router = createProjectRouter({
       add: async () => row,
-      set: async (name, body) => { received = [name, body]; return row },
+      set: async (name, body) => {
+        received = [name, body]
+        return row
+      },
       remove: async () => {},
     })
     await router.createCaller({}).set({
-      name: row.name, settings: { tracker: null }, canon: true,
+      name: row.name,
+      settings: { tracker: null },
+      canon: true,
     })
     expect(received).toEqual([row.name, { settings: { tracker: null }, canon: true }])
   })
@@ -255,12 +384,16 @@ describe('project writes', () => {
     const router = createProjectRouter({
       add: async () => row,
       set: async () => row,
-      remove: async (name) => { received = name; throw new Error('no project "missing"') },
+      remove: async (name) => {
+        received = name
+        throw new Error('no project "missing"')
+      },
     })
     const failure = router.createCaller({}).remove({ name: 'missing' })
     expect(received).toBeUndefined()
     await expect(failure).rejects.toMatchObject({
-      code: 'BAD_REQUEST', message: 'no project "missing"',
+      code: 'BAD_REQUEST',
+      message: 'no project "missing"',
     })
     expect(received).toBe('missing')
   })

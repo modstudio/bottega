@@ -7,9 +7,17 @@ import { DEFAULT_IDLE_GRACE_MS, terminateProcessGroup } from './idle-kill.ts'
 import { sandboxLaunchArgv } from './sandbox.ts'
 import type { SandboxRuntimeConfig } from './sandbox.ts'
 import {
-  ACP_PILOT_TASK, confineFsPath, decideAcpPermission, outcomeFromTransport, registerTransport, resolveCodexAcpBin,
+  ACP_PILOT_TASK,
+  confineFsPath,
+  decideAcpPermission,
+  outcomeFromTransport,
+  registerTransport,
+  resolveCodexAcpBin,
   stopErrorMessage,
-  type AgentTransport, type NormalizedEvent, type TransportHandle, type TransportResult,
+  type AgentTransport,
+  type NormalizedEvent,
+  type TransportHandle,
+  type TransportResult,
   type TransportStartOpts,
 } from './transport.ts'
 
@@ -34,7 +42,12 @@ type AcpTurnInput = {
   error?: string | null
   timedOut?: boolean
   permissionEvents?: Extract<NormalizedEvent, { kind: 'permission' }>[]
-  usage?: { inputTokens?: number; outputTokens?: number; totalTokens?: number; costUsd?: number } | null
+  usage?: {
+    inputTokens?: number
+    outputTokens?: number
+    totalTokens?: number
+    costUsd?: number
+  } | null
 }
 type GrokSessionResponse = {
   models?: { currentModelId?: unknown; availableModels?: unknown }
@@ -48,14 +61,16 @@ export function grokSessionMeta(model: string | undefined): Record<string, unkno
 
 /** Read back the model Grok says the session actually uses. */
 export function grokEffectiveModel(
-  response: GrokSessionResponse, requested: string | undefined, explicit: boolean,
+  response: GrokSessionResponse,
+  requested: string | undefined,
+  explicit: boolean,
 ): string | null {
   const current = response.models?.currentModelId
   const effective = typeof current === 'string' && current.trim() ? current : null
   if (explicit && (!effective || effective !== requested)) {
     throw new Error(
       `${ACP_PILOT_TASK} Grok ACP model refusal: requested ${JSON.stringify(requested)}; ` +
-      `session reported ${effective ? JSON.stringify(effective) : 'no effective model'}`,
+        `session reported ${effective ? JSON.stringify(effective) : 'no effective model'}`,
     )
   }
   return effective
@@ -71,7 +86,12 @@ function asUpdate(value: unknown): AcpUpdate | null {
 }
 
 function textOf(content: AcpUpdate['content']): string {
-  if (content && !Array.isArray(content) && content.type === 'text' && typeof content.text === 'string') {
+  if (
+    content &&
+    !Array.isArray(content) &&
+    content.type === 'text' &&
+    typeof content.text === 'string'
+  ) {
     return content.text
   }
   return ''
@@ -83,7 +103,11 @@ function toolCallTarget(update: AcpUpdate): string | undefined {
       if (typeof location?.path === 'string' && location.path) return location.path
     }
   }
-  if (isRecord(update.rawInput) && typeof update.rawInput.path === 'string' && update.rawInput.path) {
+  if (
+    isRecord(update.rawInput) &&
+    typeof update.rawInput.path === 'string' &&
+    update.rawInput.path
+  ) {
     return update.rawInput.path
   }
   return undefined
@@ -95,8 +119,12 @@ function toolCallResult(update: AcpUpdate): string | undefined {
   const parts: string[] = []
   for (const item of update.content) {
     if (!isRecord(item)) continue
-    if (item.type === 'content' && isRecord(item.content) &&
-        item.content.type === 'text' && typeof item.content.text === 'string') {
+    if (
+      item.type === 'content' &&
+      isRecord(item.content) &&
+      item.content.type === 'text' &&
+      typeof item.content.text === 'string'
+    ) {
       parts.push(item.content.text)
     } else if (item.type === 'text' && typeof item.text === 'string') {
       parts.push(item.text)
@@ -163,7 +191,9 @@ export function normalizeAcpTurn(input: AcpTurnInput): TransportResult {
           if (result) known.result = result
           const paths = Array.isArray(update.locations)
             ? update.locations.flatMap((location) =>
-                typeof location?.path === 'string' && location.path ? [{ path: location.path }] : [],
+                typeof location?.path === 'string' && location.path
+                  ? [{ path: location.path }]
+                  : [],
               )
             : []
           if (paths.length) known.locations = [...(known.locations ?? []), ...paths]
@@ -221,7 +251,11 @@ export function normalizeAcpTurn(input: AcpTurnInput): TransportResult {
 
   const raw = input.updates.map((update) => JSON.stringify(update)).join('\n')
   const folded = outcomeFromTransport({
-    asking, error, exitCode: 0, output, stopReason,
+    asking,
+    error,
+    exitCode: 0,
+    output,
+    stopReason,
   })
   let exitCode = 0
   if (folded.status === 'failed') {
@@ -229,17 +263,31 @@ export function normalizeAcpTurn(input: AcpTurnInput): TransportResult {
   }
 
   return {
-    output, stdout: raw, stderr: '', raw,
+    output,
+    stdout: raw,
+    stderr: '',
+    raw,
     parsed: { text: output, tokens, costUsd, stopReason, error: error ?? undefined },
-    tokens, costUsd, sessionId, stopReason, error,
-    exitCode, pid: null, events, asking,
-    failureKind: folded.failureKind, status: folded.status,
-    questions: asking && input.elicitation
-      ? [{
-          question: input.elicitation.message,
-          why: 'ACP elicitation/create mapped to the orch ask channel',
-        }]
-      : [],
+    tokens,
+    costUsd,
+    sessionId,
+    stopReason,
+    error,
+    exitCode,
+    pid: null,
+    events,
+    asking,
+    failureKind: folded.failureKind,
+    status: folded.status,
+    questions:
+      asking && input.elicitation
+        ? [
+            {
+              question: input.elicitation.message,
+              why: 'ACP elicitation/create mapped to the orch ask channel',
+            },
+          ]
+        : [],
   }
 }
 
@@ -271,7 +319,8 @@ function readTextFile(path: string, line?: number | null, limit?: number | null)
 
 /** Add only the per-run Grok leader socket to the profile persisted for srt. */
 export function acpSandboxProfile(
-  profile: SandboxRuntimeConfig, leaderSocket: string | null,
+  profile: SandboxRuntimeConfig,
+  leaderSocket: string | null,
 ): SandboxRuntimeConfig {
   if (!leaderSocket) return profile
   return {
@@ -285,9 +334,7 @@ export function acpSandboxProfile(
 
 /** Grok must create its leader inside the directory the run may write. */
 export function acpLeaderSocketPath(outPath: string, runtimeDir?: string): string {
-  return runtimeDir
-    ? join(runtimeDir, 'grok-leader.sock')
-    : `${outPath}.leader.sock`
+  return runtimeDir ? join(runtimeDir, 'grok-leader.sock') : `${outPath}.leader.sock`
 }
 
 async function openAcp(opts: TransportStartOpts): Promise<TransportHandle> {
@@ -297,40 +344,53 @@ async function openAcp(opts: TransportStartOpts): Promise<TransportHandle> {
   const leaderSocket = grok ? acpLeaderSocketPath(opts.outPath, opts.srt?.runtimeDir) : null
   const agentArgv = acpHarnessArgv(opts.agent.harness ?? opts.agent.name, leaderSocket)
   const profile = opts.srt ? acpSandboxProfile(opts.srt.profile, leaderSocket) : null
-  const launch = profile && opts.srt ? await sandboxLaunchArgv(profile, bin, agentArgv)
-    : [bin, ...agentArgv]
+  const launch =
+    profile && opts.srt ? await sandboxLaunchArgv(profile, bin, agentArgv) : [bin, ...agentArgv]
   const child = execa(launch[0]!, launch.slice(1), {
-    cwd: opts.cwd, env: {
+    cwd: opts.cwd,
+    env: {
       ...opts.env,
       NO_BROWSER: '1',
       INITIAL_AGENT_MODE: 'read-only',
       ...(opts.model ? { CODEX_CONFIG: JSON.stringify({ model: opts.model }) } : {}),
-      ...(opts.agent.harness === 'opencode' && opts.agent.baseUrl && opts.model ? {
-        OPENCODE_CONFIG_CONTENT: JSON.stringify({
-          model: `orch-local/${opts.model}`,
-          provider: {
-            'orch-local': {
-              npm: '@ai-sdk/openai-compatible',
-              name: 'orch local backend',
-              options: { baseURL: opts.agent.baseUrl, apiKey: 'local' },
-              models: { [opts.model]: { name: opts.model } },
-            },
-          },
-        }),
-      } : {}),
-      ...(opts.agent.harness === 'goose' ? {
-        XDG_STATE_HOME: opts.srt?.runtimeDir ?? dirname(opts.outPath),
-        XDG_DATA_HOME: opts.srt?.runtimeDir ?? dirname(opts.outPath),
-        XDG_CONFIG_HOME: opts.srt?.runtimeDir ?? dirname(opts.outPath),
-      } : {}),
+      ...(opts.agent.harness === 'opencode' && opts.agent.baseUrl && opts.model
+        ? {
+            OPENCODE_CONFIG_CONTENT: JSON.stringify({
+              model: `orch-local/${opts.model}`,
+              provider: {
+                'orch-local': {
+                  npm: '@ai-sdk/openai-compatible',
+                  name: 'orch local backend',
+                  options: { baseURL: opts.agent.baseUrl, apiKey: 'local' },
+                  models: { [opts.model]: { name: opts.model } },
+                },
+              },
+            }),
+          }
+        : {}),
+      ...(opts.agent.harness === 'goose'
+        ? {
+            XDG_STATE_HOME: opts.srt?.runtimeDir ?? dirname(opts.outPath),
+            XDG_DATA_HOME: opts.srt?.runtimeDir ?? dirname(opts.outPath),
+            XDG_CONFIG_HOME: opts.srt?.runtimeDir ?? dirname(opts.outPath),
+          }
+        : {}),
     },
-    stdin: 'pipe', stdout: 'pipe', stderr: 'pipe',
-    detached: true, cleanup: true, killSignal: 'SIGTERM', extendEnv: false,
-    forceKillAfterDelay: DEFAULT_IDLE_GRACE_MS, reject: false,
+    stdin: 'pipe',
+    stdout: 'pipe',
+    stderr: 'pipe',
+    detached: true,
+    cleanup: true,
+    killSignal: 'SIGTERM',
+    extendEnv: false,
+    forceKillAfterDelay: DEFAULT_IDLE_GRACE_MS,
+    reject: false,
   })
 
   const stderrChunks: Buffer[] = []
-  child.stderr?.on('data', (chunk: Buffer) => { stderrChunks.push(chunk) })
+  child.stderr?.on('data', (chunk: Buffer) => {
+    stderrChunks.push(chunk)
+  })
 
   const updates: unknown[] = []
   const liveEvents: NormalizedEvent[] = []
@@ -351,7 +411,8 @@ async function openAcp(opts: TransportStartOpts): Promise<TransportHandle> {
     if (wait) wait(event)
   }
 
-  const app = acp.client({ name: 'orch' })
+  const app = acp
+    .client({ name: 'orch' })
     .onRequest(acp.methods.client.session.requestPermission, (req) => {
       // orch replies allow/reject here; the sandboxed child does not. Read-class
       // tools may run; edit/write/execute are rejected. Gap: the architect never
@@ -361,7 +422,11 @@ async function openAcp(opts: TransportStartOpts): Promise<TransportHandle> {
       const optionKinds = req.params.options.map((option) => option.kind)
       const decided = decideAcpPermission(toolKind, req.params.options)
       const event: Extract<NormalizedEvent, { kind: 'permission' }> = {
-        kind: 'permission', title, optionKinds, toolKind, decision: decided.decision,
+        kind: 'permission',
+        title,
+        optionKinds,
+        toolKind,
+        decision: decided.decision,
       }
       permissionEvents.push(event)
       pushEvent(event)
@@ -376,8 +441,10 @@ async function openAcp(opts: TransportStartOpts): Promise<TransportHandle> {
         const fields = Object.entries(properties)
         const stringFields = fields.filter(([, schema]) => {
           if (!isRecord(schema)) return false
-          return schema.type === 'string' ||
+          return (
+            schema.type === 'string' ||
             (Array.isArray(schema.type) && schema.type.includes('string'))
+          )
         })
         if (fields.length === 1 && stringFields.length === 1) {
           const runId = Number(opts.env.ORCH_RUN_ID ?? 0)
@@ -391,11 +458,17 @@ async function openAcp(opts: TransportStartOpts): Promise<TransportHandle> {
               why: 'ACP form elicitation delivered through orch answer',
             })
             if (answer.answered) {
-              db().query("UPDATE run SET status='running' WHERE id=? AND status='asking'").run(runId)
+              db()
+                .query("UPDATE run SET status='running' WHERE id=? AND status='asking'")
+                .run(runId)
               elicitation = null
-              return { action: 'accept' as const, content: { [stringFields[0]![0]]: answer.answer } }
+              return {
+                action: 'accept' as const,
+                content: { [stringFields[0]![0]]: answer.answer },
+              }
             }
-            elicitationFallback = 'ACP elicitation received no ruling before the ask-channel timeout'
+            elicitationFallback =
+              'ACP elicitation received no ruling before the ask-channel timeout'
           } else {
             elicitationFallback = 'ACP elicitation had no authenticated orch run identity'
           }
@@ -452,43 +525,58 @@ async function openAcp(opts: TransportStartOpts): Promise<TransportHandle> {
     // codex-acp needs it on session/new. Grok loads the per-run config prepared
     // in GROK_HOME; passing the same stdio server here makes 1.0.13 reject
     // session/new with "Path not found."
-    const mcpServers: acp.McpServer[] = !grok && opts.env.ORCH_RUN_ID && opts.env.ORCH_RUN_TOKEN
-      ? [{
-          name: 'orch-ask',
-          command: process.execPath,
-          args: [join(dirname(import.meta.path), 'orch.ts'), 'ask-server'],
-          env: ['ORCH_ASK_URL', 'ORCH_RUN_ID', 'ORCH_RUN_TOKEN', 'ORCH_DB']
-            .flatMap((name) => opts.env[name] ? [{ name, value: opts.env[name]! }] : []),
-        }]
-      : []
+    const mcpServers: acp.McpServer[] =
+      !grok && opts.env.ORCH_RUN_ID && opts.env.ORCH_RUN_TOKEN
+        ? [
+            {
+              name: 'orch-ask',
+              command: process.execPath,
+              args: [join(dirname(import.meta.path), 'orch.ts'), 'ask-server'],
+              env: ['ORCH_ASK_URL', 'ORCH_RUN_ID', 'ORCH_RUN_TOKEN', 'ORCH_DB'].flatMap((name) =>
+                opts.env[name] ? [{ name, value: opts.env[name]! }] : [],
+              ),
+            },
+          ]
+        : []
     if (opts.session) {
       const loaded = await ctx.request(acp.methods.agent.session.load, {
         // orch resumes the vendor conversation; the prompt is the ruling.
-        cwd: opts.cwd, sessionId: opts.session, mcpServers,
+        cwd: opts.cwd,
+        sessionId: opts.session,
+        mcpServers,
       })
       sessionId = opts.session
       if (grok) {
         effectiveModel = grokEffectiveModel(
-          loaded as GrokSessionResponse, opts.model, Boolean(opts.modelExplicit),
+          loaded as GrokSessionResponse,
+          opts.model,
+          Boolean(opts.modelExplicit),
         )
       }
     } else {
       const created = await ctx.request(acp.methods.agent.session.new, {
         // orch opens a read-only session with its per-run ruling channel.
-        cwd: opts.cwd, mcpServers,
+        cwd: opts.cwd,
+        mcpServers,
         ...(grok ? { _meta: grokSessionMeta(opts.model) } : {}),
       })
       sessionId = created.sessionId
       if (grok) {
         effectiveModel = grokEffectiveModel(
-          created as GrokSessionResponse, opts.model, Boolean(opts.modelExplicit),
+          created as GrokSessionResponse,
+          opts.model,
+          Boolean(opts.modelExplicit),
         )
       }
     }
     if (sessionId) pushEvent({ kind: 'session', sessionId })
   } catch (error) {
     closed = true
-    try { child.kill('SIGTERM') } catch { /* already gone */ }
+    try {
+      child.kill('SIGTERM')
+    } catch {
+      /* already gone */
+    }
     if (leaderSocket) rmSync(leaderSocket, { force: true })
     const stderr = Buffer.concat(stderrChunks).toString('utf8').trim()
     throw new Error([String((error as Error)?.message ?? error), stderr].filter(Boolean).join('\n'))
@@ -521,11 +609,14 @@ async function openAcp(opts: TransportStartOpts): Promise<TransportHandle> {
             type: 'text',
             text: `\nRespond with JSON matching this schema and nothing else:\n${schema}`,
           })
-        } catch { /* schema is best-effort on the wire; run.ts validates */ }
+        } catch {
+          /* schema is best-effort on the wire; run.ts validates */
+        }
       }
       const promptWork = ctx.request(acp.methods.agent.session.prompt, {
         // orch sends the bound prompt as text blocks; schema is also inlined.
-        sessionId, prompt: blocks,
+        sessionId,
+        prompt: blocks,
       })
       collectPromise = (async () => {
         let stopReason: string | null = null
@@ -537,43 +628,63 @@ async function openAcp(opts: TransportStartOpts): Promise<TransportHandle> {
           const nested = meta && isRecord(meta.usage) ? meta.usage : null
           const direct = isRecord(response.usage) ? response.usage : null
           const usage = (nested ?? direct) as Record<string, unknown> | null
-          const inputTokens = usage && typeof usage.inputTokens === 'number' ? usage.inputTokens : undefined
-          const outputTokens = usage && typeof usage.outputTokens === 'number' ? usage.outputTokens : undefined
-          const totalTokens = usage && typeof usage.totalTokens === 'number' ? usage.totalTokens : undefined
-          const costTicks = usage && typeof usage.costUsdTicks === 'number' ? usage.costUsdTicks : undefined
+          const inputTokens =
+            usage && typeof usage.inputTokens === 'number' ? usage.inputTokens : undefined
+          const outputTokens =
+            usage && typeof usage.outputTokens === 'number' ? usage.outputTokens : undefined
+          const totalTokens =
+            usage && typeof usage.totalTokens === 'number' ? usage.totalTokens : undefined
+          const costTicks =
+            usage && typeof usage.costUsdTicks === 'number' ? usage.costUsdTicks : undefined
           const costUsd = costTicks === undefined ? undefined : costTicks / 1_000_000_000
-          terminalUsage = inputTokens !== undefined || outputTokens !== undefined ||
-            totalTokens !== undefined || costUsd !== undefined
-            ? { inputTokens, outputTokens, totalTokens, costUsd }
-            : null
+          terminalUsage =
+            inputTokens !== undefined ||
+            outputTokens !== undefined ||
+            totalTokens !== undefined ||
+            costUsd !== undefined
+              ? { inputTokens, outputTokens, totalTokens, costUsd }
+              : null
         } catch (cause) {
           error = String((cause as Error)?.message ?? cause)
         }
         let result: ReturnType<typeof normalizeAcpTurn>
         try {
-        const stderr = Buffer.concat(stderrChunks).toString('utf8')
-        result = normalizeAcpTurn({
-          sessionId, updates, stopReason, elicitation, error, usage: terminalUsage,
-          timedOut: cancelled,
-          permissionEvents,
-        })
-        result.stderr = elicitationFallback
-          ? [stderr, elicitationFallback].filter(Boolean).join('\n')
-          : stderr
-        result.pid = child.pid ?? null
-        result.effectiveModel = effectiveModel
-        writeFileSync(opts.outPath, result.output)
-        if (result.stopReason) pushEvent({ kind: 'stop', reason: result.stopReason })
+          const stderr = Buffer.concat(stderrChunks).toString('utf8')
+          result = normalizeAcpTurn({
+            sessionId,
+            updates,
+            stopReason,
+            elicitation,
+            error,
+            usage: terminalUsage,
+            timedOut: cancelled,
+            permissionEvents,
+          })
+          result.stderr = elicitationFallback
+            ? [stderr, elicitationFallback].filter(Boolean).join('\n')
+            : stderr
+          result.pid = child.pid ?? null
+          result.effectiveModel = effectiveModel
+          writeFileSync(opts.outPath, result.output)
+          if (result.stopReason) pushEvent({ kind: 'stop', reason: result.stopReason })
         } finally {
           // Waiters on events() must wake on every exit path (review 349).
           closed = true
           finishEvents()
         }
-        try { connection?.close() } catch { /* already closed */ }
+        try {
+          connection?.close()
+        } catch {
+          /* already closed */
+        }
         // Both paid adapters are long-lived stdio servers. A completed prompt is
         // the end of this orch run, so do not leave the adapter (or Grok's
         // per-run leader) alive after its result has been collected.
-        try { child.kill('SIGTERM') } catch { /* already exited */ }
+        try {
+          child.kill('SIGTERM')
+        } catch {
+          /* already exited */
+        }
         if (leaderSocket) rmSync(leaderSocket, { force: true })
         return result
       })()
@@ -594,7 +705,9 @@ async function openAcp(opts: TransportStartOpts): Promise<TransportHandle> {
       if (ctx && sessionId) {
         try {
           await ctx.notify(acp.methods.agent.session.cancel, { sessionId })
-        } catch { /* agent may already be gone */ }
+        } catch {
+          /* agent may already be gone */
+        }
       }
       void terminateProcessGroup(child.pid ?? 0, { direct: child })
       if (leaderSocket) rmSync(leaderSocket, { force: true })
@@ -610,11 +723,23 @@ async function openAcp(opts: TransportStartOpts): Promise<TransportHandle> {
 
 export const acpTransport: AgentTransport = {
   name: 'acp',
-  start(opts) { return openAcp(opts) },
-  prompt(handle, text) { return handle.prompt(text) },
-  events(handle) { return handle.events() },
-  cancel(handle) { return handle.cancel() },
-  resume(opts) { return openAcp({ ...opts, resume: true }) },
+  start(opts) {
+    return openAcp(opts)
+  },
+  prompt(handle, text) {
+    return handle.prompt(text)
+  },
+  events(handle) {
+    return handle.events()
+  },
+  cancel(handle) {
+    return handle.cancel()
+  },
+  resume(opts) {
+    return openAcp({ ...opts, resume: true })
+  },
 }
-export function registerAcpTransport(): void { registerTransport('acp', () => acpTransport) }
+export function registerAcpTransport(): void {
+  registerTransport('acp', () => acpTransport)
+}
 registerAcpTransport()

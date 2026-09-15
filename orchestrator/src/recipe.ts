@@ -95,7 +95,9 @@ function verifySqlCounts(result: StepResult & { out: string }, step: string): St
 
 function sh(cmd: string, cwd: string, env?: Record<string, string>): StepResult & { out: string } {
   const p = Bun.spawnSync(['sh', '-c', cmd], {
-    cwd, stdout: 'pipe', stderr: 'pipe',
+    cwd,
+    stdout: 'pipe',
+    stderr: 'pipe',
     env: { ...process.env, ...(env ?? {}) },
   })
   const out = `${p.stdout.toString()}${p.stderr.toString()}`.trim()
@@ -112,7 +114,10 @@ function sh(cmd: string, cwd: string, env?: Record<string, string>): StepResult 
  * is a name that will one day be used unquoted.
  */
 export function dbNameFor(base: string, runId: number): string {
-  const clean = base.toLowerCase().replace(/[^a-z0-9_]+/g, '_').replace(/^_+|_+$/g, '')
+  const clean = base
+    .toLowerCase()
+    .replace(/[^a-z0-9_]+/g, '_')
+    .replace(/^_+|_+$/g, '')
   return `${clean || 'app'}_wt_${runId}`
 }
 
@@ -147,9 +152,7 @@ export const fill = (template: string, vars: Record<string, string>) =>
  * nothing, and this whole file exists because that failure reports itself as a
  * pass.
  */
-export function provisionDb(
-  db: DbProvider, dbName: string, cwd: string,
-): StepResult[] {
+export function provisionDb(db: DbProvider, dbName: string, cwd: string): StepResult[] {
   switch (db.kind) {
     case 'none':
       return []
@@ -167,8 +170,11 @@ export function provisionDb(
         cwd,
       )
       const verified = verifySqlCounts(counts, `clone ${db.template}`)
-      return [{ ...drop, step: 'drop database if it exists' },
-              { ...create, step: `clone ${db.template}` }, verified]
+      return [
+        { ...drop, step: 'drop database if it exists' },
+        { ...create, step: `clone ${db.template}` },
+        verified,
+      ]
     }
     case 'mysql-dump': {
       const mysql = db.mysql ?? 'mysql'
@@ -210,12 +216,20 @@ export function teardownDb(db: DbProvider, dbName: string, cwd: string): StepRes
         cwd,
       )
       const drop = sh(`${psql} -c 'DROP DATABASE IF EXISTS "${dbName}"'`, cwd)
-      return [{ ...kick, step: 'disconnect' }, { ...drop, step: 'drop database' }]
+      return [
+        { ...kick, step: 'disconnect' },
+        { ...drop, step: 'drop database' },
+      ]
     }
     case 'mysql-dump': {
       const mysql = db.mysql ?? 'mysql'
       const q = String.fromCharCode(96)
-      return [{ ...sh(`${mysql} -e 'DROP DATABASE IF EXISTS ${q}${dbName}${q}'`, cwd), step: 'drop database' }]
+      return [
+        {
+          ...sh(`${mysql} -e 'DROP DATABASE IF EXISTS ${q}${dbName}${q}'`, cwd),
+          step: 'drop database',
+        },
+      ]
     }
     case 'compose':
       return [{ ...sh(fill(db.down, { db: dbName }), cwd), step: 'compose down' }]
@@ -224,18 +238,23 @@ export function teardownDb(db: DbProvider, dbName: string, cwd: string): StepRes
 
 /** Take down everything a recipe may have provisioned before its tree goes. */
 export function teardownRecipe(
-  recipe: Recipe, worktreePath: string, dbName: string, port: string,
+  recipe: Recipe,
+  worktreePath: string,
+  dbName: string,
+  port: string,
 ): StepResult[] {
   const results: StepResult[] = []
   const vars = {
-    db: dbName, path: worktreePath, port,
+    db: dbName,
+    path: worktreePath,
+    port,
     name: worktreePath.split('/').pop() ?? '',
   }
   if (recipe.stop) {
-    const stopped = sh(
-      fill(recipe.stop, vars), worktreePath,
-      { WORKTREE_DB: dbName, WORKTREE_PORT: port },
-    )
+    const stopped = sh(fill(recipe.stop, vars), worktreePath, {
+      WORKTREE_DB: dbName,
+      WORKTREE_PORT: port,
+    })
     results.push({ ...stopped, step: 'stop' })
   }
   if (recipe.database) results.push(...teardownDb(recipe.database, dbName, worktreePath))
@@ -256,7 +275,10 @@ export function teardownRecipe(
  * hand it over.
  */
 export function runRecipe(
-  recipe: Recipe, worktreePath: string, dbName: string, port: string,
+  recipe: Recipe,
+  worktreePath: string,
+  dbName: string,
+  port: string,
 ): StepResult[] {
   const results: StepResult[] = []
   const vars = { db: dbName, path: worktreePath, port, name: worktreePath.split('/').pop() ?? '' }
@@ -280,9 +302,10 @@ export function runRecipe(
       // a managed block. Bun and most loaders are last-wins, so an appended
       // block overrides what it inherits — which is what makes the inheritance
       // safe rather than a source of silent disagreement.
-      const prior = recipe.env.append !== false && existsSync(target)
-        ? `${readFileSync(target, 'utf8').replace(/\n*$/, '')}\n`
-        : ''
+      const prior =
+        recipe.env.append !== false && existsSync(target)
+          ? `${readFileSync(target, 'utf8').replace(/\n*$/, '')}\n`
+          : ''
       writeFileSync(target, `${prior}${body}\n`)
       results.push({ step: 'env', ok: true, detail: recipe.env.path })
     } catch (e) {
@@ -312,7 +335,9 @@ export function recipeNotes(recipe: Recipe, dbName: string, port: string): strin
   }
   if (recipe.serve) {
     lines.push('')
-    lines.push(`  ${fill(recipe.serve, { db: dbName, port })}   serve THIS tree${port ? ` (port ${port})` : ''}`)
+    lines.push(
+      `  ${fill(recipe.serve, { db: dbName, port })}   serve THIS tree${port ? ` (port ${port})` : ''}`,
+    )
     if (recipe.stop) lines.push(`  ${fill(recipe.stop, { db: dbName, port })}   stop it`)
     lines.push('')
     lines.push('NEVER verify against a server you did not start for this worktree. Borrowing one')
@@ -320,7 +345,9 @@ export function recipeNotes(recipe: Recipe, dbName: string, port: string): strin
   }
   if (recipe.migrate) {
     lines.push('')
-    lines.push(`Migrations were run when this tree was made (\`${recipe.migrate}\`). Run them again`)
+    lines.push(
+      `Migrations were run when this tree was made (\`${recipe.migrate}\`). Run them again`,
+    )
     lines.push('yourself if you add one.')
   }
   return lines.join('\n')

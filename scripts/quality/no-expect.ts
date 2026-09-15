@@ -10,7 +10,10 @@ function rootCallName(expression: ts.Expression): string | undefined {
   return undefined
 }
 
-function testBody(call: ts.CallExpression, source: ts.SourceFile): ts.FunctionLikeDeclaration | undefined {
+function testBody(
+  call: ts.CallExpression,
+  source: ts.SourceFile,
+): ts.FunctionLikeDeclaration | undefined {
   for (let index = call.arguments.length - 1; index >= 0; index--) {
     const argument = call.arguments[index]!
     if (ts.isArrowFunction(argument) || ts.isFunctionExpression(argument)) return argument
@@ -18,8 +21,12 @@ function testBody(call: ts.CallExpression, source: ts.SourceFile): ts.FunctionLi
     const symbol = source.locals?.get(argument.escapedText)
     for (const declaration of symbol?.declarations ?? []) {
       if (ts.isFunctionDeclaration(declaration) && declaration.body) return declaration
-      if (ts.isVariableDeclaration(declaration) && declaration.initializer
-        && (ts.isArrowFunction(declaration.initializer) || ts.isFunctionExpression(declaration.initializer))) {
+      if (
+        ts.isVariableDeclaration(declaration) &&
+        declaration.initializer &&
+        (ts.isArrowFunction(declaration.initializer) ||
+          ts.isFunctionExpression(declaration.initializer))
+      ) {
         return declaration.initializer
       }
     }
@@ -42,14 +49,21 @@ function reachesExpect(node: ts.Node, source: ts.SourceFile, seen: Set<ts.Node>)
       if (ts.isIdentifier(child.expression)) {
         const symbol = source.locals?.get(child.expression.escapedText)
         for (const declaration of symbol?.declarations ?? []) {
-          if (ts.isFunctionDeclaration(declaration) && declaration.body
-            && reachesExpect(declaration.body, source, seen)) {
+          if (
+            ts.isFunctionDeclaration(declaration) &&
+            declaration.body &&
+            reachesExpect(declaration.body, source, seen)
+          ) {
             found = true
             return
           }
-          if (ts.isVariableDeclaration(declaration) && declaration.initializer
-            && (ts.isArrowFunction(declaration.initializer) || ts.isFunctionExpression(declaration.initializer))
-            && reachesExpect(declaration.initializer, source, seen)) {
+          if (
+            ts.isVariableDeclaration(declaration) &&
+            declaration.initializer &&
+            (ts.isArrowFunction(declaration.initializer) ||
+              ts.isFunctionExpression(declaration.initializer)) &&
+            reachesExpect(declaration.initializer, source, seen)
+          ) {
             found = true
             return
           }

@@ -15,7 +15,10 @@ describe('mergeTimings', () => {
 </testsuites>`
 
     const result = mergeTimings({}, xml, {
-      stamp: 'stamp', command: ['bun', 'test'], elapsedMs: 18, exitCode: 1,
+      stamp: 'stamp',
+      command: ['bun', 'test'],
+      elapsedMs: 18,
+      exitCode: 1,
     })
 
     expect(result.tests.map(({ name, file, pass }) => ({ name, file, pass }))).toEqual([
@@ -24,7 +27,9 @@ describe('mergeTimings', () => {
       { name: 'failing row', file: 'src/example.test.ts', pass: false },
     ])
     expect(result.tests.map(({ wallMs }) => wallMs)).toEqual([
-      expect.closeTo(0.043), expect.closeTo(0.03), expect.closeTo(0.109),
+      expect.closeTo(0.043),
+      expect.closeTo(0.03),
+      expect.closeTo(0.109),
     ])
     expect(result.files).toMatchObject([
       { file: 'src/example.test.ts', wallMs: 17, tests: 3, failed: 1 },

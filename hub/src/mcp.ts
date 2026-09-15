@@ -19,7 +19,11 @@ export class Mcp {
   private sessionId: string | null = null
   private nextId = 1
 
-  constructor(private url: string, private token: string, private timeoutMs = 30_000) {}
+  constructor(
+    private url: string,
+    private token: string,
+    private timeoutMs = 30_000,
+  ) {}
 
   private headers(): Record<string, string> {
     const h: Record<string, string> = {
@@ -52,37 +56,50 @@ export class Mcp {
       // SSE fallback: find the first data: line carrying JSON-RPC.
       for (const line of raw.split('\n')) {
         if (!line.startsWith('data:')) continue
-        try { return JSON.parse(line.slice(5).trim()) as Record<string, unknown> } catch { /* next */ }
+        try {
+          return JSON.parse(line.slice(5).trim()) as Record<string, unknown>
+        } catch {
+          /* next */
+        }
       }
       throw new McpError(`unparseable response: ${raw.slice(0, 200)}`)
     }
   }
 
   async initialize() {
-    const r = await this.post({
-      jsonrpc: '2.0', id: this.nextId++, method: 'initialize',
+    const r = (await this.post({
+      jsonrpc: '2.0',
+      id: this.nextId++,
+      method: 'initialize',
       params: {
         protocolVersion: '2024-11-05',
         capabilities: {},
         clientInfo: { name: 'hub', version: '0.1' },
       },
-    }) as { error?: unknown }
+    })) as { error?: unknown }
     if (r.error) throw new McpError(`initialize: ${JSON.stringify(r.error)}`)
     await this.post({ jsonrpc: '2.0', method: 'notifications/initialized' }, false)
   }
 
   async callTool(name: string, args: Record<string, unknown>): Promise<unknown> {
-    const r = await this.post({
-      jsonrpc: '2.0', id: this.nextId++, method: 'tools/call',
+    const r = (await this.post({
+      jsonrpc: '2.0',
+      id: this.nextId++,
+      method: 'tools/call',
       params: { name, arguments: args },
-    }) as { error?: unknown; result?: Record<string, unknown> }
+    })) as { error?: unknown; result?: Record<string, unknown> }
     if (r.error) throw new McpError(`${name}: ${JSON.stringify(r.error)}`)
     const res = r.result ?? {}
-    if (res.isError) throw new McpError(`${name} returned an error: ${JSON.stringify(res).slice(0, 200)}`)
+    if (res.isError)
+      throw new McpError(`${name} returned an error: ${JSON.stringify(res).slice(0, 200)}`)
     if (res.structuredContent) return res.structuredContent
     for (const item of (res.content as { type?: string; text?: string }[] | undefined) ?? []) {
       if (item.type === 'text' && typeof item.text === 'string') {
-        try { return JSON.parse(item.text) } catch { return { text: item.text } }
+        try {
+          return JSON.parse(item.text)
+        } catch {
+          return { text: item.text }
+        }
       }
     }
     return res
@@ -97,7 +114,11 @@ export class Mcp {
  */
 export function credentials(name: string): { url: string; token: string } | null {
   let text: string
-  try { text = readFileSync(`${process.env.HOME}/.claude/.env`, 'utf8') } catch { return null }
+  try {
+    text = readFileSync(`${process.env.HOME}/.claude/.env`, 'utf8')
+  } catch {
+    return null
+  }
   const get = (key: string) => {
     const m = text.match(new RegExp(`^${key}=(.*)$`, 'm'))
     return m?.[1]?.trim().replace(/^["']|["']$/g, '') || null

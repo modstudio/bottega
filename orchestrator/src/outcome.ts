@@ -24,7 +24,8 @@ function normalizeQuestionField(value: string | null | undefined): string {
 export function isRealQuestion(item: WorkerQuestion): boolean {
   const generic = new Set<string>(GENERIC_QUESTION_TOKENS)
   const question = normalizeQuestionField(item.question)
-    .replace(/^\p{P}+|\p{P}+$/gu, '').trim()
+    .replace(/^\p{P}+|\p{P}+$/gu, '')
+    .trim()
   const why = normalizeQuestionField(item.why)
   return question.length > 0 && !generic.has(question.toLowerCase()) && why.length > 0
 }
@@ -69,7 +70,8 @@ type FinalizationInputs<FailureKind extends string> = {
 }
 
 type FinalizationDecision<FailureKind extends string> = Pick<
-  WorkerFinalization<FailureKind>, 'status' | 'failureKind' | 'error'
+  WorkerFinalization<FailureKind>,
+  'status' | 'failureKind' | 'error'
 >
 
 function appendOutcomeNote(error: string | null, note: string): string {
@@ -82,11 +84,13 @@ function rejectEmptyAsking<FailureKind extends string>(
   decision: FinalizationDecision<FailureKind>,
 ): FinalizationDecision<FailureKind> {
   if (reply?.status !== 'asking' || acceptedQuestions.length > 0) return decision
-  const rejected = reply.questions?.map((item) => JSON.stringify(item.question)).join(', ')
-    || '(no question text)'
+  const rejected =
+    reply.questions?.map((item) => JSON.stringify(item.question)).join(', ') || '(no question text)'
   return {
-    status: 'failed', failureKind: 'contract',
-    error: 'the worker returned asking without a real question and non-empty why; ' +
+    status: 'failed',
+    failureKind: 'contract',
+    error:
+      'the worker returned asking without a real question and non-empty why; ' +
       `rejected question text: ${rejected}`,
   }
 }
@@ -96,10 +100,19 @@ function rejectEmptyDone<FailureKind extends string>(
   decision: FinalizationDecision<FailureKind>,
 ): FinalizationDecision<FailureKind> {
   const { reply } = inputs
-  if (reply?.status !== 'done' || reply.files_changed?.length !== 0 ||
-      reply.tests?.ran !== false || inputs.measuredFiles?.length !== 0 ||
-      decision.failureKind === 'truncated') return decision
-  return { status: 'failed', failureKind: 'other', error: 'reported done with no change and no test run' }
+  if (
+    reply?.status !== 'done' ||
+    reply.files_changed?.length !== 0 ||
+    reply.tests?.ran !== false ||
+    inputs.measuredFiles?.length !== 0 ||
+    decision.failureKind === 'truncated'
+  )
+    return decision
+  return {
+    status: 'failed',
+    failureKind: 'other',
+    error: 'reported done with no change and no test run',
+  }
 }
 
 function reclassifyDoneAsking<FailureKind extends string>(
@@ -108,7 +121,8 @@ function reclassifyDoneAsking<FailureKind extends string>(
   decision: FinalizationDecision<FailureKind>,
 ): FinalizationDecision<FailureKind> {
   if (reply?.status !== 'done' || acceptedQuestions.length === 0) return decision
-  const note = 'status reclassified from done to asking: a worker with a real question has not finished'
+  const note =
+    'status reclassified from done to asking: a worker with a real question has not finished'
   return { status: 'asking', failureKind: null, error: appendOutcomeNote(decision.error, note) }
 }
 
@@ -118,11 +132,12 @@ function annotateDroppedQuestions<FailureKind extends string>(
   droppedQuestions: WorkerQuestion[],
   decision: FinalizationDecision<FailureKind>,
 ): FinalizationDecision<FailureKind> {
-  if (droppedQuestions.length === 0 ||
-      (acceptedQuestions.length === 0 && reply?.status !== 'done')) return decision
+  if (droppedQuestions.length === 0 || (acceptedQuestions.length === 0 && reply?.status !== 'done'))
+    return decision
   const count = droppedQuestions.length
   const rejected = droppedQuestions.map((item) => JSON.stringify(item.question)).join(', ')
-  const note = `${count} invalid question${count === 1 ? '' : 's'} dropped; ` +
+  const note =
+    `${count} invalid question${count === 1 ? '' : 's'} dropped; ` +
     `rejected question text: ${rejected}`
   return { ...decision, error: appendOutcomeNote(decision.error, note) }
 }
@@ -136,7 +151,8 @@ export function finalizeWorkerReply<FailureKind extends string>(
   const acceptedQuestions = questionsControlStatus ? realQuestions(reply) : []
   const accepted = new Set(acceptedQuestions)
   const droppedQuestions = questionsControlStatus
-    ? (reply?.questions ?? []).filter((item) => !accepted.has(item)) : []
+    ? (reply?.questions ?? []).filter((item) => !accepted.has(item))
+    : []
   let decision: FinalizationDecision<FailureKind> = inputs
   decision = rejectEmptyAsking(reply, acceptedQuestions, decision)
   decision = rejectEmptyDone(inputs, decision)
@@ -247,7 +263,10 @@ export function outcomeOf(row: OutcomeRow): { terminal: boolean; ok: boolean; li
 
 /** The single-line failure summary shared by result and wait. */
 export function failureReason(row: {
-  status: string; error: string | null; failure_kind: string | null; exit_code: number | null
+  status: string
+  error: string | null
+  failure_kind: string | null
+  exit_code: number | null
 }): string {
   const kind = row.failure_kind ?? row.status
   const code = row.exit_code == null ? '' : `, exit ${row.exit_code}`

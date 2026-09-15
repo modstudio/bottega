@@ -4,8 +4,15 @@ import { assessEvidence, assessEvidencePrompt, type EvidenceFacts } from './evid
 const reviewReply = {
   findings: [],
   provenance: {
-    standards_read: [], model_used: 'fixture', files_covered: ['src/a.ts'],
-    commands_run: [], mcp_tools: [], docs_read: [], could_not_verify: [], substitutes: [], canon_source: 'mirror',
+    standards_read: [],
+    model_used: 'fixture',
+    files_covered: ['src/a.ts'],
+    commands_run: [],
+    mcp_tools: [],
+    docs_read: [],
+    could_not_verify: [],
+    substitutes: [],
+    canon_source: 'mirror',
   },
 } as EvidenceFacts['reviewReply']
 
@@ -29,7 +36,11 @@ describe('evidence prompt assessment', () => {
     ['verify-claim canon source', { verifyClaimJob: true }, false, true],
   ] as const)('%s', (_name, facts, bindsReader, requiresCanon) => {
     const assessment = assessEvidencePrompt({
-      findingsJob: false, verifyClaimJob: false, readerJob: false, declaredDeliverables: [], ...facts,
+      findingsJob: false,
+      verifyClaimJob: false,
+      readerJob: false,
+      declaredDeliverables: [],
+      ...facts,
     })
     expect(Boolean(assessment.readerInstruction)).toBe(bindsReader)
     expect(assessment.requiresCanonSource).toBe(requiresCanon)
@@ -38,83 +49,131 @@ describe('evidence prompt assessment', () => {
 
 describe('terminal evidence assessment', () => {
   test('provenance rejects only another registered project MCP prefix', () => {
-    const assess = (tools: string[]) => assessEvidence(
-      { status: 'ok', error: null, failureKind: null },
-      { ...base, reviewReply: { ...reviewReply!, provenance: {
-        ...reviewReply!.provenance, mcp_tools: tools,
-      } }, otherProjectMcpServers: new Set(['other-server']), ownMcpServer: 'fixture-project' },
-    )
+    const assess = (tools: string[]) =>
+      assessEvidence(
+        { status: 'ok', error: null, failureKind: null },
+        {
+          ...base,
+          reviewReply: {
+            ...reviewReply!,
+            provenance: {
+              ...reviewReply!.provenance,
+              mcp_tools: tools,
+            },
+          },
+          otherProjectMcpServers: new Set(['other-server']),
+          ownMcpServer: 'fixture-project',
+        },
+      )
     for (const tool of ['get_doc', 'mcp__fixture-project__get_doc', 'orch-ask.get_doc']) {
       expect(assess([tool]).status).toBe('ok')
     }
     expect(assess(['other-server.get_doc'])).toMatchObject({
-      status: 'failed', failureKind: 'contract',
+      status: 'failed',
+      failureKind: 'contract',
       error: 'wrong project: provenance names other-server.get_doc, expected fixture-project',
     })
   })
 
   test.each([
-    ['findings admissibility', {
-      findingsJob: true,
-    }, { failureKind: 'contract', error: 'mandatory PROVENANCE' }],
-    ['clean-review evidence', {
-      findingsJob: true, reviewReply,
-      cleanReview: { failure: 'clean review with no evidence', note: null, kind: 'unevidenced' },
-    }, { failureKind: 'unevidenced', error: 'clean review with no evidence' }],
-    ['wrong-project provenance', {
-      reviewReply: {
-        ...reviewReply!, provenance: { ...reviewReply!.provenance, mcp_tools: ['mcp__other__read'] },
+    [
+      'findings admissibility',
+      {
+        findingsJob: true,
       },
-      otherProjectMcpServers: new Set(['other']),
-    }, { failureKind: 'contract', error: 'wrong project' }],
-    ['dotted wrong-project provenance', {
-      reviewReply: {
-        ...reviewReply!, provenance: { ...reviewReply!.provenance, mcp_tools: ['other.read'] },
+      { failureKind: 'contract', error: 'mandatory PROVENANCE' },
+    ],
+    [
+      'clean-review evidence',
+      {
+        findingsJob: true,
+        reviewReply,
+        cleanReview: { failure: 'clean review with no evidence', note: null, kind: 'unevidenced' },
       },
-      otherProjectMcpServers: new Set(['other']),
-    }, { failureKind: 'contract', error: 'wrong project' }],
-    ['run 3382 Codex Apps provenance', {
-      reviewReply: {
-        ...reviewReply!, provenance: {
-          ...reviewReply!.provenance,
-          mcp_tools: [
-            'codex_apps.alephbeis_mcp_get_workflow_step_tool',
-            'codex_apps.alephbeis_mcp_get_rule_tool',
-            'starship.get_task_tool',
-            'starship.list_task_documents_tool',
-          ],
+      { failureKind: 'unevidenced', error: 'clean review with no evidence' },
+    ],
+    [
+      'wrong-project provenance',
+      {
+        reviewReply: {
+          ...reviewReply!,
+          provenance: { ...reviewReply!.provenance, mcp_tools: ['mcp__other__read'] },
         },
+        otherProjectMcpServers: new Set(['other']),
       },
-      otherProjectMcpServers: new Set(['alephbeis', 'stopal']),
-      ownMcpServer: 'starship',
-    }, {
-      failureKind: 'contract',
-      error: 'wrong project: provenance names codex_apps.alephbeis_mcp_get_workflow_step_tool, expected starship',
-    }],
-    ['run 3385 Codex Apps provenance', {
-      reviewReply: {
-        ...reviewReply!, provenance: {
-          ...reviewReply!.provenance,
-          mcp_tools: [
-            'codex_apps.alephbeis_mcp_get_workflow_step_tool',
-            'codex_apps.alephbeis_mcp_get_rule_tool',
-          ],
+      { failureKind: 'contract', error: 'wrong project' },
+    ],
+    [
+      'dotted wrong-project provenance',
+      {
+        reviewReply: {
+          ...reviewReply!,
+          provenance: { ...reviewReply!.provenance, mcp_tools: ['other.read'] },
         },
+        otherProjectMcpServers: new Set(['other']),
       },
-      otherProjectMcpServers: new Set(['alephbeis', 'stopal']),
-      ownMcpServer: 'starship',
-    }, {
-      failureKind: 'contract',
-      error: 'wrong project: provenance names codex_apps.alephbeis_mcp_get_workflow_step_tool, expected starship',
-    }],
-    ['reader deliverable completeness', {
-      readerJob: true, declaredDeliverables: ['table'], readerReply: { deliverables: [], narrative: null, files_written: null },
-    }, { failureKind: 'unevidenced', error: 'missing declared deliverable' }],
+      { failureKind: 'contract', error: 'wrong project' },
+    ],
+    [
+      'run 3382 Codex Apps provenance',
+      {
+        reviewReply: {
+          ...reviewReply!,
+          provenance: {
+            ...reviewReply!.provenance,
+            mcp_tools: [
+              'codex_apps.alephbeis_mcp_get_workflow_step_tool',
+              'codex_apps.alephbeis_mcp_get_rule_tool',
+              'starship.get_task_tool',
+              'starship.list_task_documents_tool',
+            ],
+          },
+        },
+        otherProjectMcpServers: new Set(['alephbeis', 'stopal']),
+        ownMcpServer: 'starship',
+      },
+      {
+        failureKind: 'contract',
+        error:
+          'wrong project: provenance names codex_apps.alephbeis_mcp_get_workflow_step_tool, expected starship',
+      },
+    ],
+    [
+      'run 3385 Codex Apps provenance',
+      {
+        reviewReply: {
+          ...reviewReply!,
+          provenance: {
+            ...reviewReply!.provenance,
+            mcp_tools: [
+              'codex_apps.alephbeis_mcp_get_workflow_step_tool',
+              'codex_apps.alephbeis_mcp_get_rule_tool',
+            ],
+          },
+        },
+        otherProjectMcpServers: new Set(['alephbeis', 'stopal']),
+        ownMcpServer: 'starship',
+      },
+      {
+        failureKind: 'contract',
+        error:
+          'wrong project: provenance names codex_apps.alephbeis_mcp_get_workflow_step_tool, expected starship',
+      },
+    ],
+    [
+      'reader deliverable completeness',
+      {
+        readerJob: true,
+        declaredDeliverables: ['table'],
+        readerReply: { deliverables: [], narrative: null, files_written: null },
+      },
+      { failureKind: 'unevidenced', error: 'missing declared deliverable' },
+    ],
   ] as const)('%s', (_name, facts, expected) => {
-    const assessment = assessEvidence(
-      { status: 'ok', error: null, failureKind: null },
-      { ...base, ...facts } as EvidenceFacts,
-    )
+    const assessment = assessEvidence({ status: 'ok', error: null, failureKind: null }, {
+      ...base,
+      ...facts,
+    } as EvidenceFacts)
     expect(assessment.status).toBe('failed')
     expect(assessment.failureKind).toBe(expected.failureKind)
     expect(assessment.error).toContain(expected.error)
@@ -129,7 +188,8 @@ describe('terminal evidence assessment', () => {
       {
         ...base,
         reviewReply: {
-          ...reviewReply!, provenance: { ...reviewReply!.provenance, mcp_tools: [tool] },
+          ...reviewReply!,
+          provenance: { ...reviewReply!.provenance, mcp_tools: [tool] },
         },
         otherProjectMcpServers: new Set(['alephbeis', 'stopal']),
         ownMcpServer: 'starship',

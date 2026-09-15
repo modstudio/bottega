@@ -11,14 +11,16 @@ export function durationMs(value: string): number | null {
 }
 
 export function rulingsStaleAfter(): string {
-  const row = db().query<{ value: string }, [string]>(
-    `SELECT value FROM setting WHERE key = ?`,
-  ).get(RULINGS_STALE_AFTER_KEY)
+  const row = db()
+    .query<{ value: string }, [string]>(`SELECT value FROM setting WHERE key = ?`)
+    .get(RULINGS_STALE_AFTER_KEY)
   if (!row) return RULINGS_STALE_AFTER_DEFAULT
   try {
     const parsed = JSON.parse(row.value)
     if (typeof parsed === 'string' && durationMs(parsed) != null) return parsed
-  } catch { /* stored as a bare duration */ }
+  } catch {
+    /* stored as a bare duration */
+  }
   return durationMs(row.value) != null ? row.value : RULINGS_STALE_AFTER_DEFAULT
 }
 
@@ -31,13 +33,21 @@ export type OpenRuling = {
 }
 
 export function listOpenRulings(now = Date.now()): OpenRuling[] {
-  const rows = db().query<{
-    question_id: number; task_key: string | null; session_id: string | null; asked_at: string
-  }, []>(
-    `SELECT question_id, task_key, session_id, asked_at FROM question
+  const rows = db()
+    .query<
+      {
+        question_id: number
+        task_key: string | null
+        session_id: string | null
+        asked_at: string
+      },
+      []
+    >(
+      `SELECT question_id, task_key, session_id, asked_at FROM question
       WHERE answered_at IS NULL
       ORDER BY task_key IS NULL, task_key, question_id`,
-  ).all()
+    )
+    .all()
   return rows.map((row) => {
     const at = Date.parse(row.asked_at)
     return {

@@ -9,8 +9,18 @@ import { ingestTrackers } from './ingest/trackers.ts'
 import { tasksInWindow, estateEngagedMs, rollUpDays } from './query.ts'
 import { watch, withLease } from './collect.ts'
 import {
-  closeTask, commentTask, createTask, createTaskDocument, deleteTaskDocument, DuplicateTaskError,
-  duplicateCandidates, getTaskDocument, listTaskDocuments, listTasks, setTask, showTask,
+  closeTask,
+  commentTask,
+  createTask,
+  createTaskDocument,
+  deleteTaskDocument,
+  DuplicateTaskError,
+  duplicateCandidates,
+  getTaskDocument,
+  listTaskDocuments,
+  listTasks,
+  setTask,
+  showTask,
   updateTaskDocument,
 } from './task.ts'
 import { gather, summarise, renderHtml, renderText, send, recordSend } from './report.ts'
@@ -26,8 +36,18 @@ import { listOpenRulings, rulingsPayload } from './rulings.ts'
 import { startDashboardCapability } from './orch.ts'
 import { hoursAgo } from './time.ts'
 import {
-  acknowledgeNote, createNote, curateNotes, curatorEnabled, dropNote, listActionableNotes, listNotes, mergeNote,
-  noteSessionId, promoteNote, setCuratorEnabled, staleNotes,
+  acknowledgeNote,
+  createNote,
+  curateNotes,
+  curatorEnabled,
+  dropNote,
+  listActionableNotes,
+  listNotes,
+  mergeNote,
+  noteSessionId,
+  promoteNote,
+  setCuratorEnabled,
+  staleNotes,
 } from './note.ts'
 
 const argv = process.argv.slice(2)
@@ -36,37 +56,71 @@ const flag = (name: string) => {
   const i = argv.indexOf(`--${name}`)
   return i >= 0 ? argv[i + 1] : undefined
 }
-const flags = (name: string) => argv.flatMap((value, index) =>
-  value === `--${name}` && argv[index + 1] ? [argv[index + 1]!] : [])
+const flags = (name: string) =>
+  argv.flatMap((value, index) =>
+    value === `--${name}` && argv[index + 1] ? [argv[index + 1]!] : [],
+  )
 const has = (name: string) => argv.includes(`--${name}`)
-const taskCommandShapes = new Map<string, {
-  positionalCount: number
-  valueFlags: ReadonlySet<string>
-}>([
-  ['new', { positionalCount: 0, valueFlags: new Set([
-    '--project', '--title', '--status', '--parent', '--body', '--body-file', '--allow-duplicate',
-  ]) }],
+const taskCommandShapes = new Map<
+  string,
+  {
+    positionalCount: number
+    valueFlags: ReadonlySet<string>
+  }
+>([
+  [
+    'new',
+    {
+      positionalCount: 0,
+      valueFlags: new Set([
+        '--project',
+        '--title',
+        '--status',
+        '--parent',
+        '--body',
+        '--body-file',
+        '--allow-duplicate',
+      ]),
+    },
+  ],
   ['duplicates', { positionalCount: 0, valueFlags: new Set(['--project', '--title']) }],
   ['tracker-new', { positionalCount: 0, valueFlags: new Set(['--project', '--title', '--body']) }],
   ['list', { positionalCount: 0, valueFlags: new Set(['--project', '--status', '--parent']) }],
   ['show', { positionalCount: 1, valueFlags: new Set() }],
-  ['set', { positionalCount: 1, valueFlags: new Set(['--title', '--status', '--parent', '--body']) }],
+  [
+    'set',
+    { positionalCount: 1, valueFlags: new Set(['--title', '--status', '--parent', '--body']) },
+  ],
   ['close', { positionalCount: 1, valueFlags: new Set() }],
   ['comment', { positionalCount: 2, valueFlags: new Set() }],
   ['import', { positionalCount: 1, valueFlags: new Set() }],
-  ['doc new', { positionalCount: 1, valueFlags: new Set(['--title', '--role', '--body', '--body-file']) }],
+  [
+    'doc new',
+    { positionalCount: 1, valueFlags: new Set(['--title', '--role', '--body', '--body-file']) },
+  ],
   ['doc list', { positionalCount: 1, valueFlags: new Set() }],
   ['doc show', { positionalCount: 1, valueFlags: new Set() }],
-  ['doc set', { positionalCount: 1, valueFlags: new Set([
-    '--title', '--role', '--body', '--body-file', '--version',
-  ]) }],
+  [
+    'doc set',
+    {
+      positionalCount: 1,
+      valueFlags: new Set(['--title', '--role', '--body', '--body-file', '--version']),
+    },
+  ],
   ['doc rm', { positionalCount: 1, valueFlags: new Set() }],
-  ['document new', { positionalCount: 1, valueFlags: new Set(['--title', '--role', '--body', '--body-file']) }],
+  [
+    'document new',
+    { positionalCount: 1, valueFlags: new Set(['--title', '--role', '--body', '--body-file']) },
+  ],
   ['document list', { positionalCount: 1, valueFlags: new Set() }],
   ['document show', { positionalCount: 1, valueFlags: new Set() }],
-  ['document set', { positionalCount: 1, valueFlags: new Set([
-    '--title', '--role', '--body', '--body-file', '--version',
-  ]) }],
+  [
+    'document set',
+    {
+      positionalCount: 1,
+      valueFlags: new Set(['--title', '--role', '--body', '--body-file', '--version']),
+    },
+  ],
   ['document rm', { positionalCount: 1, valueFlags: new Set() }],
 ])
 const isHelpToken = (token: string | undefined) =>
@@ -96,12 +150,29 @@ const hubHelpRequested = () => {
   if (cmd === 'task') return taskHelpRequested()
   if (isHelpToken(cmd) || argv[1] === 'help') return true
   const valueFlags = new Set([
-    '--area', '--hours', '--only', '--parent', '--port', '--project', '--reason', '--role',
-    '--same-as', '--session', '--since', '--status', '--title', '--body', '--body-file', '--version',
+    '--area',
+    '--hours',
+    '--only',
+    '--parent',
+    '--port',
+    '--project',
+    '--reason',
+    '--role',
+    '--same-as',
+    '--session',
+    '--since',
+    '--status',
+    '--title',
+    '--body',
+    '--body-file',
+    '--version',
   ])
   let expectingValue = false
   for (const token of argv.slice(1)) {
-    if (expectingValue) { expectingValue = false; continue }
+    if (expectingValue) {
+      expectingValue = false
+      continue
+    }
     if (token === '--help' || token === '-h') return true
     expectingValue = valueFlags.has(token)
   }
@@ -186,9 +257,11 @@ async function collect() {
 
   if (run('tasks')) {
     for (const t of await ingestTrackers()) {
-      const note = t.skipped ? `skipped: ${t.skipped}`
-        : t.error ? `FAILED: ${t.error}`
-        : `${t.tasks} tasks, ${t.changed} status changes`
+      const note = t.skipped
+        ? `skipped: ${t.skipped}`
+        : t.error
+          ? `FAILED: ${t.error}`
+          : `${t.tasks} tasks, ${t.changed} status changes`
       console.log(`${('tracker/' + t.project).padEnd(21)}${note}`)
     }
   }
@@ -198,8 +271,10 @@ async function collect() {
   // the ratio would then depend on which one you read.
   console.log(`days         ${rollUpDays()} rolled up`)
 
-  db().query(`INSERT INTO setting (key, value) VALUES ('collect.at', ?)
-              ON CONFLICT(key) DO UPDATE SET value = excluded.value`).run(JSON.stringify(nowIso()))
+  db()
+    .query(`INSERT INTO setting (key, value) VALUES ('collect.at', ?)
+              ON CONFLICT(key) DO UPDATE SET value = excluded.value`)
+    .run(JSON.stringify(nowIso()))
   console.log(`\ncollected in ${human(Date.now() - t0)}`)
 }
 
@@ -208,25 +283,28 @@ function tasks() {
   const from = hoursAgo(hours)
   const to = nowIso()
   const rows = tasksInWindow(from, to)
-  if (!rows.length) { console.log('nothing recorded in that window — run `hub collect` first'); return }
+  if (!rows.length) {
+    console.log('nothing recorded in that window — run `hub collect` first')
+    return
+  }
 
   const n = (x: number) => x.toLocaleString('en-US')
   console.log(
     `${'project'.padEnd(10)} ${'task'.padEnd(11)} ${'engaged'.padStart(9)} ` +
-    `${'claude'.padStart(14)}  agents`,
+      `${'claude'.padStart(14)}  agents`,
   )
   for (const r of rows) {
     const vendors = r.vendors.map((v) => `${v.agent} ${n(v.tokens)}`).join(', ')
     const active = r.activeAgents.length ? `  <- ${r.activeAgents.join(', ')} running` : ''
     console.log(
       `${(r.project ?? '?').padEnd(10)} ${(r.key ?? '(untracked)').padEnd(11)} ` +
-      `${human(r.engagedMs).padStart(9)} ${n(r.claudeTokens).padStart(14)}  ${vendors}${active}`,
+        `${human(r.engagedMs).padStart(9)} ${n(r.claudeTokens).padStart(14)}  ${vendors}${active}`,
     )
   }
   console.log(
     `\n${rows.length} rows. Estate engaged time over the window: ` +
-    `${human(estateEngagedMs(from, to))} — the union across every task at once, ` +
-    `which is why it is less than these rows added up.`,
+      `${human(estateEngagedMs(from, to))} — the union across every task at once, ` +
+      `which is why it is less than these rows added up.`,
   )
 }
 
@@ -244,8 +322,10 @@ async function task() {
     return value
   }
   const printRow = (row: ReturnType<typeof showTask>['task']) => {
-    console.log(`${row.key.padEnd(10)} ${(row.status_category ?? '').padEnd(8)} ` +
-                `${row.project.padEnd(12)} ${row.title ?? ''}`)
+    console.log(
+      `${row.key.padEnd(10)} ${(row.status_category ?? '').padEnd(8)} ` +
+        `${row.project.padEnd(12)} ${row.title ?? ''}`,
+    )
   }
   const newBody = () => {
     if (has('body') && has('body-file')) {
@@ -260,8 +340,12 @@ async function task() {
     const action = argv[2]
     const ref = argv[3] ?? ''
     if (action === 'new') {
-      const document = createTaskDocument({ task: ref, title: required('title'),
-        body: newBody(), role: flag('role') })
+      const document = createTaskDocument({
+        task: ref,
+        title: required('title'),
+        body: newBody(),
+        role: flag('role'),
+      })
       // This is a value for the caller to pass back, not presentational output.
       // Bun inspects a numeric console argument and ANSI-wraps it when
       // FORCE_COLOR is set, even when NO_COLOR is set too.
@@ -272,24 +356,28 @@ async function task() {
       const documents = listTaskDocuments(ref)
       if (has('json')) console.log(JSON.stringify(documents))
       else if (!documents.length) console.log('no documents')
-      else for (const document of documents) {
-        const role = document.role ? ` [${document.role}]` : ''
-        console.log(`${document.id}${role}  ${document.title}`)
-      }
+      else
+        for (const document of documents) {
+          const role = document.role ? ` [${document.role}]` : ''
+          console.log(`${document.id}${role}  ${document.title}`)
+        }
       return
     }
     if (action === 'show') {
       const document = getTaskDocument(ref)
       if (has('json')) console.log(JSON.stringify(document))
       else {
-        console.log(`${document.id}  ${document.task_key}${document.role ? ` [${document.role}]` : ''}  ${document.title}`)
+        console.log(
+          `${document.id}  ${document.task_key}${document.role ? ` [${document.role}]` : ''}  ${document.title}`,
+        )
         console.log(`version: ${document.version}`)
         if (document.body) console.log(`\n${document.body}`)
       }
       return
     }
     if (action === 'set') {
-      if (has('role') && has('no-role')) throw new Error('--role and --no-role are mutually exclusive')
+      if (has('role') && has('no-role'))
+        throw new Error('--role and --no-role are mutually exclusive')
       const body = newBody()
       const changes = {
         ...(has('title') ? { title: required('title') } : {}),
@@ -297,7 +385,8 @@ async function task() {
         ...(body !== undefined ? { body } : {}),
         ...(has('version') ? { expectedVersion: required('version') } : {}),
       }
-      if (!Object.keys(changes).length) throw new Error('hub task doc set requires a field to change')
+      if (!Object.keys(changes).length)
+        throw new Error('hub task doc set requires a field to change')
       const document = updateTaskDocument(ref, changes)
       console.log(`${document.id} updated; version ${document.version}`)
       return
@@ -316,35 +405,42 @@ async function task() {
     const body = newBody()
     const override = flag('allow-duplicate')
     const delay = Number(process.env.HUB_TEST_DUPLICATE_DELAY_MS ?? 0)
-    const afterDuplicateSearch = delay > 0 ? () => {
-      const marker = process.env.HUB_TEST_DUPLICATE_MARKER
-      if (marker) writeFileSync(marker, '')
-      Bun.sleepSync(delay)
-    } : undefined
+    const afterDuplicateSearch =
+      delay > 0
+        ? () => {
+            const marker = process.env.HUB_TEST_DUPLICATE_MARKER
+            if (marker) writeFileSync(marker, '')
+            Bun.sleepSync(delay)
+          }
+        : undefined
     let row
     try {
-      row = createTask({ project, title,
-        status: flag('status'), parent: flag('parent'), body }, {
-        allowDuplicateReason: has('allow-duplicate') ? override : undefined,
-        afterDuplicateSearch,
-      })
+      row = createTask(
+        { project, title, status: flag('status'), parent: flag('parent'), body },
+        {
+          allowDuplicateReason: has('allow-duplicate') ? override : undefined,
+          afterDuplicateSearch,
+        },
+      )
     } catch (error) {
       if (!(error instanceof DuplicateTaskError)) throw error
-      throw new Error([
-        'possible duplicate tasks:',
-        ...error.candidates.map((candidate) =>
-          `${candidate.key} [${candidate.status ?? 'unknown'}] score ${candidate.score.toFixed(3)}  ${candidate.title}`),
-        '',
-        'Refusing to create a duplicate. Pass --allow-duplicate "reason" to override.',
-      ].join('\n'))
+      throw new Error(
+        [
+          'possible duplicate tasks:',
+          ...error.candidates.map(
+            (candidate) =>
+              `${candidate.key} [${candidate.status ?? 'unknown'}] score ${candidate.score.toFixed(3)}  ${candidate.title}`,
+          ),
+          '',
+          'Refusing to create a duplicate. Pass --allow-duplicate "reason" to override.',
+        ].join('\n'),
+      )
     }
     console.log(row.key)
     return
   }
   if (sub === 'duplicates') {
-    const rows = duplicateCandidates(
-      listTasks({ project: required('project') }), required('title'),
-    )
+    const rows = duplicateCandidates(listTasks({ project: required('project') }), required('title'))
     if (!has('json')) throw new Error('hub task duplicates requires --json')
     console.log(JSON.stringify(rows))
     return
@@ -354,16 +450,19 @@ async function task() {
     if (!project) throw new Error(`unknown project '${required('project')}'`)
     const tracker = project.settings.tracker
     const env = tracker?.envPrefix ?? project.settings.envPrefix
-    if (!tracker || !env) throw new Error(`project ${project.name} has no usable tracker configured`)
+    if (!tracker || !env)
+      throw new Error(`project ${project.name} has no usable tracker configured`)
     const auth = credentials(env)
     if (!auth) throw new Error(`credentials for ${project.name} tracker do not resolve`)
     const status = tracker.openStatuses?.[0]
     if (!status) throw new Error(`project ${project.name} has no open tracker status configured`)
     const client = new Mcp(auth.url, auth.token)
     await client.initialize()
-    const result = await createTrackerTask(client, project, {
-      title: required('title'), body: required('body'), status,
-    }) as any
+    const result = (await createTrackerTask(client, project, {
+      title: required('title'),
+      body: required('body'),
+      status,
+    })) as any
     const key = result?.key ?? result?.data?.humanKey ?? result?.task?.key
     if (typeof key !== 'string' || !key.trim()) {
       throw new Error(`tracker created a task but returned no task key: ${JSON.stringify(result)}`)
@@ -372,7 +471,11 @@ async function task() {
     return
   }
   if (sub === 'list') {
-    const rows = listTasks({ project: flag('project'), status: flag('status'), parent: flag('parent') })
+    const rows = listTasks({
+      project: flag('project'),
+      status: flag('status'),
+      parent: flag('parent'),
+    })
     if (has('json')) console.log(JSON.stringify(rows))
     else if (!rows.length) console.log('no tasks')
     else rows.forEach(printRow)
@@ -389,7 +492,9 @@ async function task() {
         console.log('\ndocuments:')
         for (const document of shown.documents) {
           const role = document.role ? ` [${document.role}]` : ''
-          console.log(`  ${document.id}${role}  ${document.title} — hub task doc show ${document.id}`)
+          console.log(
+            `  ${document.id}${role}  ${document.title} — hub task doc show ${document.id}`,
+          )
         }
       }
       for (const comment of shown.comments) console.log(`\n${comment.created_at}  ${comment.body}`)
@@ -397,18 +502,26 @@ async function task() {
     return
   }
   if (sub === 'set') {
-    if (has('parent') && has('no-parent')) throw new Error('--parent and --no-parent are mutually exclusive')
+    if (has('parent') && has('no-parent'))
+      throw new Error('--parent and --no-parent are mutually exclusive')
     const changes = {
       ...(has('title') ? { title: required('title') } : {}),
       ...(has('status') ? { status: required('status') } : {}),
-      ...(has('parent') ? { parent: required('parent') } : has('no-parent') ? { parent: null } : {}),
+      ...(has('parent')
+        ? { parent: required('parent') }
+        : has('no-parent')
+          ? { parent: null }
+          : {}),
       ...(has('body') ? { body: required('body') } : {}),
     }
     if (!Object.keys(changes).length) throw new Error('hub task set requires a field to change')
     printRow(setTask(argv[2] ?? '', changes, { force: has('force') }))
     return
   }
-  if (sub === 'close') { printRow(closeTask(argv[2] ?? '')); return }
+  if (sub === 'close') {
+    printRow(closeTask(argv[2] ?? ''))
+    return
+  }
   if (sub === 'comment') {
     const body = argv[3]
     if (!body) throw new Error('hub task comment <KEY> "..."')
@@ -426,16 +539,29 @@ async function task() {
     const file = argv[2]
     if (!file) throw new Error('hub task import <file.json>')
     const items = JSON.parse(readFileSync(file, 'utf8')) as {
-      title: string; opened: string; closed: string | null; shas: string[]
+      title: string
+      opened: string
+      closed: string | null
+      shas: string[]
     }[]
     // One pass over git for every commit's real instant, rather than a
     // subprocess per sha.
     const log = Bun.spawnSync(
-      ['git', '-C', new URL('../..', import.meta.url).pathname, 'log', '--all', '--format=%H%x09%cI'],
+      [
+        'git',
+        '-C',
+        new URL('../..', import.meta.url).pathname,
+        'log',
+        '--all',
+        '--format=%H%x09%cI',
+      ],
       { stdout: 'pipe', stderr: 'ignore' },
     )
     const stamps = new Map(
-      new TextDecoder().decode(log.stdout).split('\n').filter(Boolean)
+      new TextDecoder()
+        .decode(log.stdout)
+        .split('\n')
+        .filter(Boolean)
         .map((l) => l.split('\t') as [string, string]),
     )
 
@@ -448,8 +574,18 @@ async function task() {
       for (const t of items) {
         const key = nextImportedTaskKey(prefix)
         const done = !!t.closed
-        ins.run(key, project, t.title, done ? 'Done' : 'Open', done ? 'done' : 'open',
-                t.opened, t.closed, t.closed ?? t.opened, at, at)
+        ins.run(
+          key,
+          project,
+          t.title,
+          done ? 'Done' : 'Open',
+          done ? 'done' : 'open',
+          t.opened,
+          t.closed,
+          t.closed ?? t.opened,
+          at,
+          at,
+        )
         // Backfilled tasks carry their commits, so commit-window attribution
         // can find them.
         //
@@ -460,8 +596,9 @@ async function task() {
         for (const sha of t.shas) {
           const at = stamps.get(sha)
           if (!at) continue
-          d.query(`INSERT OR IGNORE INTO commit_key (sha, repo, task_key, at) VALUES (?,?,?,?)`)
-            .run(sha, project, key, at)
+          d.query(
+            `INSERT OR IGNORE INTO commit_key (sha, repo, task_key, at) VALUES (?,?,?,?)`,
+          ).run(sha, project, key, at)
         }
       }
     })
@@ -482,19 +619,24 @@ async function note() {
     if (argv[2] && !argv[2]!.startsWith('--')) {
       throw new Error('to file the text "list", use: hub note new "list" [--new|--same-as ID]')
     }
-    if (has('actionable') && has('kept')) throw new Error('--actionable and --kept are mutually exclusive')
+    if (has('actionable') && has('kept'))
+      throw new Error('--actionable and --kept are mutually exclusive')
     const sessions = flags('session')
     if (has('kept') && !sessions.length && noteSessionId()) sessions.push(noteSessionId()!)
-    if (has('kept') && !sessions.length) throw new Error('hub note list --kept requires --session ID or a session environment')
+    if (has('kept') && !sessions.length)
+      throw new Error('hub note list --kept requires --session ID or a session environment')
     const session = sessions.length ? sessions : undefined
     const rows = has('actionable')
       ? listActionableNotes({ project: flag('project'), session })
       : listNotes({ project: flag('project'), stale: has('stale'), session, kept: has('kept') })
     if (has('json')) console.log(JSON.stringify(rows))
     else if (!rows.length) console.log('no notes')
-    else for (const row of rows) {
-      console.log(`${String(row.id).padEnd(5)} ${row.project.padEnd(12)} x${row.sightings}  ${row.text}`)
-    }
+    else
+      for (const row of rows) {
+        console.log(
+          `${String(row.id).padEnd(5)} ${row.project.padEnd(12)} x${row.sightings}  ${row.text}`,
+        )
+      }
     return
   }
   if (sub === 'keep') {
@@ -504,7 +646,9 @@ async function note() {
     if (!session) throw new Error('hub note keep requires a session environment')
     for (const id of ids) {
       const result = acknowledgeNote(id, session)
-      console.log(`note ${result.note.id} ${result.alreadyAcknowledged ? 'already kept' : 'kept'} for this session`)
+      console.log(
+        `note ${result.note.id} ${result.alreadyAcknowledged ? 'already kept' : 'kept'} for this session`,
+      )
     }
     return
   }
@@ -533,7 +677,10 @@ async function note() {
   }
   if (sub === 'curate') {
     const results = await curateNotes(has('scheduled'))
-    if (has('scheduled') && !curatorEnabled()) { console.log('note curator is disabled'); return }
+    if (has('scheduled') && !curatorEnabled()) {
+      console.log('note curator is disabled')
+      return
+    }
     for (const result of results) console.log(`${result.project}: ${result.result}`)
     return
   }
@@ -547,28 +694,42 @@ async function note() {
   }
 
   if (sub !== 'new') {
-    throw new Error(`hub note new <text> [--same-as ID|--new]; to file the text "${sub ?? ''}", put new before it`)
+    throw new Error(
+      `hub note new <text> [--same-as ID|--new]; to file the text "${sub ?? ''}", put new before it`,
+    )
   }
   const text = argv[2] ?? ''
   const same = flag('same-as')
-  let result = createNote({ text, area: flag('area'), sameAs: same ? Number(same) : undefined, forceNew: has('new') })
+  let result = createNote({
+    text,
+    area: flag('area'),
+    sameAs: same ? Number(same) : undefined,
+    forceNew: has('new'),
+  })
   if (!result.note) {
-    const lines = result.candidates.map((candidate) =>
-      `${candidate.id} score ${candidate.score.toFixed(3)}  ${candidate.text}`)
+    const lines = result.candidates.map(
+      (candidate) => `${candidate.id} score ${candidate.score.toFixed(3)}  ${candidate.text}`,
+    )
     if (!process.stdin.isTTY) {
-      throw new Error(`possible duplicate notes:\n${lines.join('\n')}\nPass --same-as <id> or --new.`)
+      throw new Error(
+        `possible duplicate notes:\n${lines.join('\n')}\nPass --same-as <id> or --new.`,
+      )
     }
     console.log(`possible duplicate notes:\n${lines.join('\n')}`)
     const answer = prompt("Enter a note id for the same finding, or 'new':")?.trim() ?? ''
     result = /^\d+$/.test(answer)
       ? createNote({ text, area: flag('area'), sameAs: Number(answer) })
-      : answer === 'new' ? createNote({ text, area: flag('area'), forceNew: true }) : result
+      : answer === 'new'
+        ? createNote({ text, area: flag('area'), forceNew: true })
+        : result
     if (!result.note) throw new Error('note not filed')
   }
   for (const candidate of result.candidates) {
     console.log(`near ${candidate.id} score ${candidate.score.toFixed(3)}  ${candidate.text}`)
   }
-  console.log(`note ${result.note.id} filed; ${result.note.sightings} sighting${result.note.sightings === 1 ? '' : 's'}`)
+  console.log(
+    `note ${result.note.id} filed; ${result.note.sightings} sighting${result.note.sightings === 1 ? '' : 's'}`,
+  )
 }
 
 async function sendReport() {
@@ -625,8 +786,12 @@ async function sendReport() {
     return
   }
 
-  const res = await send({ ...r, to }, test ? `[test] ${subject}` : subject,
-                         text, renderHtml(g, sentences))
+  const res = await send(
+    { ...r, to },
+    test ? `[test] ${subject}` : subject,
+    text,
+    renderHtml(g, sentences),
+  )
   recordSend(g, r, res.ok ? 'sent' : 'failed', res.error, { test, to })
   console.log(res.ok ? `${test ? 'test ' : ''}sent to ${to.join(', ')}` : `FAILED: ${res.error}`)
   if (!res.ok) process.exit(1)
@@ -643,82 +808,108 @@ async function sendReport() {
  * orch has wrapped its dispatch this way for exactly this reason; hub had not.
  */
 try {
-
-if (hubHelpRequested()) {
-  console.log(cmd === 'task' ? TASK_USAGE : USAGE)
-  process.exit(0)
-}
-
-const usesDatabase = cmd === 'collect' || cmd === 'tasks' || cmd === 'serve'
-  || cmd === 'task' || cmd === 'send' || cmd === 'reconcile' || cmd === 'rulings'
-  || cmd === 'doctor' || cmd === 'note'
-if (usesDatabase) requireDatabase()
-
-switch (cmd) {
-  case 'migrate': {
-    const migrated = migrateDatabase()
-    if (migrated.versions.length === 0) console.log(`schema already current: ${migrated.path}`)
-    else {
-      console.log(`migrated ${migrated.path}`)
-      for (const version of migrated.versions) console.log(`  applied ${version}`)
-    }
-    break
+  if (hubHelpRequested()) {
+    console.log(cmd === 'task' ? TASK_USAGE : USAGE)
+    process.exit(0)
   }
-  case 'doctor':
-    console.log(`database       ${DB_PATH}`)
-    console.log(`schema hash    ${canonicalSchemaHash(db()) === expectedSchemaHash() ? 'match' : 'DRIFT'}`)
-    console.log(`schema version ${schemaVersionLabel(db())}`)
-    break
-  case 'collect':
-    if (has('watch')) {
-      console.log(`hub: collecting every ${20}s (fast) and ${300}s (slow); ctrl-c to stop`)
-      watch(`collect:${process.pid}`, (e) => console.error(`hub: collect failed: ${e.message}`))
-      // Hold the process open for launchd, which restarts anything that exits.
-      await new Promise(() => {})
-    }
-    {
-      // Through the lease, not around it. This used to call collect() directly,
-      // which let it interleave with `hub serve` and the launchd daemon while
-      // the transcripts leg was clearing and rewriting spans.
-      const r = await withLease(`collect:${process.pid}`, collect)
-      if (!r.ran) {
-        console.error(`hub: ${r.heldBy ?? 'another process'} is collecting and did not `
-          + 'finish in 30s; nothing collected')
-        process.exit(1)
+
+  const usesDatabase =
+    cmd === 'collect' ||
+    cmd === 'tasks' ||
+    cmd === 'serve' ||
+    cmd === 'task' ||
+    cmd === 'send' ||
+    cmd === 'reconcile' ||
+    cmd === 'rulings' ||
+    cmd === 'doctor' ||
+    cmd === 'note'
+  if (usesDatabase) requireDatabase()
+
+  switch (cmd) {
+    case 'migrate': {
+      const migrated = migrateDatabase()
+      if (migrated.versions.length === 0) console.log(`schema already current: ${migrated.path}`)
+      else {
+        console.log(`migrated ${migrated.path}`)
+        for (const version of migrated.versions) console.log(`  applied ${version}`)
       }
-    }
-    break
-  case 'tasks': tasks(); break
-  case 'serve': startDashboardCapability(); serve(Number(flag('port') ?? 7778)); break
-  case 'reconcile': printReconcile(await reconcileOpenIntervals({ dryRun: has('dry-run') })); break
-  case 'rulings': {
-    if (has('json')) {
-      console.log(JSON.stringify(rulingsPayload()))
       break
     }
-    const rows = listOpenRulings()
-    if (!rows.length) { console.log('no open rulings'); break }
-    for (const row of rows) {
+    case 'doctor':
+      console.log(`database       ${DB_PATH}`)
       console.log(
-        `question ${row.question_id}  ${(row.task_key ?? '(untracked)').padEnd(12)} ` +
-        `session ${row.session_id ?? 'unknown'}  since ${row.asked_at}  age ${human(row.age)}`,
+        `schema hash    ${canonicalSchemaHash(db()) === expectedSchemaHash() ? 'match' : 'DRIFT'}`,
       )
+      console.log(`schema version ${schemaVersionLabel(db())}`)
+      break
+    case 'collect':
+      if (has('watch')) {
+        console.log(`hub: collecting every ${20}s (fast) and ${300}s (slow); ctrl-c to stop`)
+        watch(`collect:${process.pid}`, (e) => console.error(`hub: collect failed: ${e.message}`))
+        // Hold the process open for launchd, which restarts anything that exits.
+        await new Promise(() => {})
+      }
+      {
+        // Through the lease, not around it. This used to call collect() directly,
+        // which let it interleave with `hub serve` and the launchd daemon while
+        // the transcripts leg was clearing and rewriting spans.
+        const r = await withLease(`collect:${process.pid}`, collect)
+        if (!r.ran) {
+          console.error(
+            `hub: ${r.heldBy ?? 'another process'} is collecting and did not ` +
+              'finish in 30s; nothing collected',
+          )
+          process.exit(1)
+        }
+      }
+      break
+    case 'tasks':
+      tasks()
+      break
+    case 'serve':
+      startDashboardCapability()
+      serve(Number(flag('port') ?? 7778))
+      break
+    case 'reconcile':
+      printReconcile(await reconcileOpenIntervals({ dryRun: has('dry-run') }))
+      break
+    case 'rulings': {
+      if (has('json')) {
+        console.log(JSON.stringify(rulingsPayload()))
+        break
+      }
+      const rows = listOpenRulings()
+      if (!rows.length) {
+        console.log('no open rulings')
+        break
+      }
+      for (const row of rows) {
+        console.log(
+          `question ${row.question_id}  ${(row.task_key ?? '(untracked)').padEnd(12)} ` +
+            `session ${row.session_id ?? 'unknown'}  since ${row.asked_at}  age ${human(row.age)}`,
+        )
+      }
+      break
     }
-    break
+    case 'task':
+      await task()
+      break
+    case 'note':
+      await note()
+      break
+    case 'send':
+      await sendReport()
+      break
+    case undefined:
+    case 'help':
+    case '--help':
+      console.log(USAGE)
+      break
+    default:
+      console.error(`hub: unknown command '${cmd}'\n`)
+      console.log(USAGE)
+      process.exit(1)
   }
-  case 'task': await task(); break
-  case 'note': await note(); break
-  case 'send': await sendReport(); break
-  case undefined:
-  case 'help':
-  case '--help':
-    console.log(USAGE); break
-  default:
-    console.error(`hub: unknown command '${cmd}'\n`)
-    console.log(USAGE)
-    process.exit(1)
-}
-
 } catch (e) {
   // The message alone: anything thrown here is meant for whoever typed the
   // command, and a non-zero exit is how a shell learns it did not work.

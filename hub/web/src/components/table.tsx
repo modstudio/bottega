@@ -18,7 +18,12 @@ export function TableBody({ className, ...props }: HTMLAttributes<HTMLTableSecti
 }
 
 export function TableRow({ className, ...props }: HTMLAttributes<HTMLTableRowElement>) {
-  return <tr className={cx('h-10 border-b hover:bg-muted data-[state=selected]:bg-muted', className)} {...props} />
+  return (
+    <tr
+      className={cx('h-10 border-b hover:bg-muted data-[state=selected]:bg-muted', className)}
+      {...props}
+    />
+  )
 }
 
 export function TableHead({ className, ...props }: ThHTMLAttributes<HTMLTableCellElement>) {
@@ -34,5 +39,13 @@ export function TableHead({ className, ...props }: ThHTMLAttributes<HTMLTableCel
 }
 
 export function TableCell({ className, ...props }: TdHTMLAttributes<HTMLTableCellElement>) {
-  return <td className={cx('px-3 py-2 align-middle text-[12.5px] [&:has([role=checkbox])]:pr-0', className)} {...props} />
+  return (
+    <td
+      className={cx(
+        'px-3 py-2 align-middle text-[12.5px] [&:has([role=checkbox])]:pr-0',
+        className,
+      )}
+      {...props}
+    />
+  )
 }

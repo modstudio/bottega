@@ -1,12 +1,28 @@
 import { Client } from '@modelcontextprotocol/sdk/client/index.js'
 import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js'
-import { describe,expect,test } from 'bun:test'
+import { describe, expect, test } from 'bun:test'
 import { consumeDoc, removeDoc, setDoc } from '../test/fixtures/docs.ts'
 import { AGENTS } from './agents.ts'
-import { removeDoc as deleteDoc, diffDocRevisions, docSubjects, getDoc, listDocRevisions, parseResumeFrontmatter, restoreDoc, setDoc as writeDoc } from './docs.ts'
+import {
+  removeDoc as deleteDoc,
+  diffDocRevisions,
+  docSubjects,
+  getDoc,
+  listDocRevisions,
+  parseResumeFrontmatter,
+  restoreDoc,
+  setDoc as writeDoc,
+} from './docs.ts'
 import { JOBS } from './jobs.ts'
 import { createDocsMcpServer } from './mcp.ts'
-import { baselineForPair, ledgerRef, listDoctrineRules, listLedgerRefs, listPairs, listSkips } from './porting.ts'
+import {
+  baselineForPair,
+  ledgerRef,
+  listDoctrineRules,
+  listLedgerRefs,
+  listPairs,
+  listSkips,
+} from './porting.ts'
 import { upsertProject } from './projects.ts'
 import { portCommand } from './port-commands.ts'
 import { reviewCommand } from './review-commands.ts'
@@ -14,43 +30,91 @@ import { reviewCommand } from './review-commands.ts'
 async function command(args: string[], stdin = '') {
   const values = new Map<string, string>()
   const present = new Set<string>()
-  for (let i = 0; i < args.length; i++) if (args[i]?.startsWith('--')) {
-    const name = args[i]!.slice(2); present.add(name)
-    if (args[i + 1] !== undefined && !args[i + 1]!.startsWith('--')) values.set(name, args[++i]!)
+  for (let i = 0; i < args.length; i++)
+    if (args[i]?.startsWith('--')) {
+      const name = args[i]!.slice(2)
+      present.add(name)
+      if (args[i + 1] !== undefined && !args[i + 1]!.startsWith('--')) values.set(name, args[++i]!)
+    }
+  const out: string[] = []
+  const err: string[] = []
+  let code = 0
+  const flags = {
+    has: (name: string) => present.has(name),
+    flag: (name: string) => values.get(name),
   }
-  const out: string[] = []; const err: string[] = []; let code = 0
-  const flags = { has: (name: string) => present.has(name), flag: (name: string) => values.get(name) }
   const presentation = {
-    log: (...parts: unknown[]) => out.push(parts.join(' ')), error: (...parts: unknown[]) => err.push(parts.join(' ')),
-    write: (value: string) => out.push(value), writeStdout: async (value: string) => { out.push(value) },
-    stdinText: async () => stdin, stdinIsTTY: false, cwd: () => process.cwd(),
-    exitCode: (value: number) => { code = value },
+    log: (...parts: unknown[]) => out.push(parts.join(' ')),
+    error: (...parts: unknown[]) => err.push(parts.join(' ')),
+    write: (value: string) => out.push(value),
+    writeStdout: async (value: string) => {
+      out.push(value)
+    },
+    stdinText: async () => stdin,
+    stdinIsTTY: false,
+    cwd: () => process.cwd(),
+    exitCode: (value: number) => {
+      code = value
+    },
   }
   try {
     if (args[0] === 'port') await portCommand(args[1], args[2], args, flags, presentation)
     else if (args[0] === 'review') await reviewCommand(args[1], args, flags, presentation as any)
-  } catch (error) { code = 1; err.push((error as Error).message) }
+  } catch (error) {
+    code = 1
+    err.push((error as Error).message)
+  }
   return { code, out: out.join('\n'), err: err.join('\n') }
 }
-
 
 describe('scoped operator docs', () => {
   test('orch port exposes baseline, skip, ledger resolution, correction, and doctrine lifecycle', async () => {
     upsertProject({ name: 'source-invented', path: '/w/source', settings: {} })
-    upsertProject({ name: 'target-invented', path: '/w/target',
-      settings: { keyPrefixes: ['TGT'] } })
+    upsertProject({
+      name: 'target-invented',
+      path: '/w/target',
+      settings: { keyPrefixes: ['TGT'] },
+    })
 
-    expect((await command(['port', 'baseline', 'set', 'source-invented', 'target-invented', 'abc'])).code).toBe(0)
+    expect(
+      (await command(['port', 'baseline', 'set', 'source-invented', 'target-invented', 'abc']))
+        .code,
+    ).toBe(0)
     const pair = listPairs()[0]!
     expect(baselineForPair(pair.id)?.source_commit).toBe('abc')
-    expect((await command(['port', 'skip', 'add', 'source-invented', 'target-invented', 'old-feature',
-      '--reason', 'superseded'])).code).toBe(0)
+    expect(
+      (
+        await command([
+          'port',
+          'skip',
+          'add',
+          'source-invented',
+          'target-invented',
+          'old-feature',
+          '--reason',
+          'superseded',
+        ])
+      ).code,
+    ).toBe(0)
     expect(listSkips(pair.id)).toMatchObject([{ candidate: 'old-feature', reason: 'superseded' }])
 
     const sources = JSON.stringify([
       { project: 'source-invented', commits: ['abc'], paths: ['src/a.ts'], note: 'origin' },
     ])
-    expect((await command(['port', 'ref', 'set', 'TGT-7', '--sources', sources, '--note', 'native task'])).code).toBe(0)
+    expect(
+      (
+        await command([
+          'port',
+          'ref',
+          'set',
+          'TGT-7',
+          '--sources',
+          sources,
+          '--note',
+          'native task',
+        ])
+      ).code,
+    ).toBe(0)
     expect((await command(['port', 'ref', 'resolve', 'TGT-7', '--json'])).code).toBe(0)
     expect(ledgerRef('TGT-7')).toMatchObject({ task_key: 'TGT-7', resolved_at: expect.any(String) })
     expect(listLedgerRefs()).toEqual([])
@@ -58,8 +122,14 @@ describe('scoped operator docs', () => {
     expect((await command(['port', 'ref', 'delete-error', 'TGT-7'])).code).toBe(0)
     expect(ledgerRef('TGT-7')).toBeNull()
 
-    expect((await command(['port', 'doctrine', 'add', '4', '--title', 'Native', '--json'], 'Adapt natively.')).code)
-      .toBe(0)
+    expect(
+      (
+        await command(
+          ['port', 'doctrine', 'add', '4', '--title', 'Native', '--json'],
+          'Adapt natively.',
+        )
+      ).code,
+    ).toBe(0)
     expect((await command(['port', 'doctrine', 'retire', '4'])).code).toBe(0)
     expect(listDoctrineRules(false)).toEqual([])
     expect(listDoctrineRules(true)).toMatchObject([{ number: 4, retired_at: expect.any(String) }])
@@ -73,7 +143,16 @@ describe('scoped operator docs', () => {
     const sources = JSON.stringify([
       { project: 'source-invented', commits: [], paths: [], note: '' },
     ])
-    const prefix = await command(['port', 'ref', 'set', 'NONE-1', '--sources', sources, '--note', ''])
+    const prefix = await command([
+      'port',
+      'ref',
+      'set',
+      'NONE-1',
+      '--sources',
+      sources,
+      '--note',
+      '',
+    ])
     expect(prefix.code).toBe(1)
     expect(prefix.err).toContain('no registered project owns task key')
   })
@@ -85,22 +164,31 @@ describe('scoped operator docs', () => {
     })
     expect(await command(['port', 'ref'])).toMatchObject({
       code: 1,
-      err: expect.stringContaining('unknown: orch port ref. Try list | show | set | resolve | delete-error'),
+      err: expect.stringContaining(
+        'unknown: orch port ref. Try list | show | set | resolve | delete-error',
+      ),
     })
     expect(await command(['review', 'inspect'])).toMatchObject({
       code: 1,
-      err: expect.stringContaining('unknown: orch review inspect. Try tier | record | triage | complete | calibration'),
+      err: expect.stringContaining(
+        'unknown: orch review inspect. Try tier | record | triage | complete | calibration',
+      ),
     })
     expect(await command(['review'])).toMatchObject({
       code: 1,
-      err: expect.stringContaining('unknown: orch review. Try tier | record | triage | complete | calibration'),
+      err: expect.stringContaining(
+        'unknown: orch review. Try tier | record | triage | complete | calibration',
+      ),
     })
   }, 20_000)
 
   test('MCP port tools use registered names and preserve resolved provenance', async () => {
     upsertProject({ name: 'source-invented', path: '/w/source', settings: {} })
-    upsertProject({ name: 'target-invented', path: '/w/target',
-      settings: { keyPrefixes: ['TGT'] } })
+    upsertProject({
+      name: 'target-invented',
+      path: '/w/target',
+      settings: { keyPrefixes: ['TGT'] },
+    })
     const server = createDocsMcpServer()
     const client = new Client({ name: 'orch-port-test', version: '1.0.0' })
     const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair()
@@ -108,30 +196,54 @@ describe('scoped operator docs', () => {
     await client.connect(clientTransport)
     const value = (result: any) => JSON.parse((result.content[0] as { text: string }).text)
     try {
-      await client.callTool({ name: 'set_port_baseline', arguments: {
-        source: 'source-invented', target: 'target-invented', source_commit: 'abc',
-      } })
-      await client.callTool({ name: 'record_port_skip', arguments: {
-        source: 'source-invented', target: 'target-invented', candidate: 'old', reason: 'done elsewhere',
-      } })
-      await client.callTool({ name: 'set_port_ledger_ref', arguments: {
-        task_key: 'TGT-8', note: 'native', sources: [
-          { project: 'source-invented', commits: ['abc'], paths: ['src/a.ts'], note: 'origin' },
-        ],
-      } })
-      const resolved = await client.callTool({ name: 'resolve_port_ledger_ref',
-        arguments: { task_key: 'TGT-8' } })
+      await client.callTool({
+        name: 'set_port_baseline',
+        arguments: {
+          source: 'source-invented',
+          target: 'target-invented',
+          source_commit: 'abc',
+        },
+      })
+      await client.callTool({
+        name: 'record_port_skip',
+        arguments: {
+          source: 'source-invented',
+          target: 'target-invented',
+          candidate: 'old',
+          reason: 'done elsewhere',
+        },
+      })
+      await client.callTool({
+        name: 'set_port_ledger_ref',
+        arguments: {
+          task_key: 'TGT-8',
+          note: 'native',
+          sources: [
+            { project: 'source-invented', commits: ['abc'], paths: ['src/a.ts'], note: 'origin' },
+          ],
+        },
+      })
+      const resolved = await client.callTool({
+        name: 'resolve_port_ledger_ref',
+        arguments: { task_key: 'TGT-8' },
+      })
       expect(value(resolved)).toMatchObject({ task_key: 'TGT-8', resolved_at: expect.any(String) })
       const active = await client.callTool({ name: 'list_port_ledger_refs', arguments: {} })
-      const all = await client.callTool({ name: 'list_port_ledger_refs',
-        arguments: { include_resolved: true } })
+      const all = await client.callTool({
+        name: 'list_port_ledger_refs',
+        arguments: { include_resolved: true },
+      })
       expect(value(active)).toEqual([])
       expect(value(all)).toMatchObject([{ task_key: 'TGT-8', sources: [{ commits: ['abc'] }] }])
-      await client.callTool({ name: 'add_port_doctrine_rule',
-        arguments: { number: 5, title: 'Native', body: 'Adapt natively.' } })
+      await client.callTool({
+        name: 'add_port_doctrine_rule',
+        arguments: { number: 5, title: 'Native', body: 'Adapt natively.' },
+      })
       await client.callTool({ name: 'retire_port_doctrine_rule', arguments: { number: 5 } })
-      const doctrine = await client.callTool({ name: 'list_port_doctrine',
-        arguments: { include_retired: true } })
+      const doctrine = await client.callTool({
+        name: 'list_port_doctrine',
+        arguments: { include_retired: true },
+      })
       expect(value(doctrine)).toMatchObject([{ number: 5, retired_at: expect.any(String) }])
     } finally {
       await client.close()
@@ -161,15 +273,33 @@ describe('scoped operator docs', () => {
   })
 
   test('orch doc history, diff, and restore operate on revisions without rewinding', () => {
-    writeDoc({ scope: 'global', subject: null, slug: 'cli-history', title: 'T', body: 'one\n', reason: 'first' })
-    writeDoc({ scope: 'global', subject: null, slug: 'cli-history', title: 'T', body: 'two\n', reason: 'second' })
+    writeDoc({
+      scope: 'global',
+      subject: null,
+      slug: 'cli-history',
+      title: 'T',
+      body: 'one\n',
+      reason: 'first',
+    })
+    writeDoc({
+      scope: 'global',
+      subject: null,
+      slug: 'cli-history',
+      title: 'T',
+      body: 'two\n',
+      reason: 'second',
+    })
     const rows = listDocRevisions('global', null, 'cli-history')
     const newerId = rows[0]!.id
     const originalId = rows[1]!.id
     expect(rows.map((row: any) => row.reason)).toEqual(['second', 'first'])
     expect(rows[0]).toMatchObject({
-      id: expect.any(Number), op: 'set', author: expect.any(String), reason: 'second',
-      at: expect.any(String), bytes: 4,
+      id: expect.any(Number),
+      op: 'set',
+      author: expect.any(String),
+      reason: 'second',
+      at: expect.any(String),
+      bytes: 4,
     })
     expect(diffDocRevisions(originalId, newerId)).toContain('-one\n+two')
     deleteDoc('global', null, 'cli-history', { reason: 'gone' })
@@ -179,7 +309,8 @@ describe('scoped operator docs', () => {
   }, 20_000)
 
   test('orch doc consume stamps the session and preserves the document outside its fields', () => {
-    const body = '---\r\nstatus: open\r\nepic: demo\r\nproject: known\r\nwritten: 2026-09-03T00:00:00.000Z\r\n---\r\n\r\nNEXT ACTION  \r\n'
+    const body =
+      '---\r\nstatus: open\r\nepic: demo\r\nproject: known\r\nwritten: 2026-09-03T00:00:00.000Z\r\n---\r\n\r\nNEXT ACTION  \r\n'
     setDoc({ scope: 'global', subject: null, slug: 'take-it', title: 'Take it', body })
     const priorSession = process.env.CLAUDE_CODE_SESSION_ID
     process.env.CLAUDE_CODE_SESSION_ID = 'consume-test-session'
@@ -187,10 +318,13 @@ describe('scoped operator docs', () => {
       const result = consumeDoc('global', null, 'take-it')
       expect(result.already_consumed).toBe(false)
       const consumed = getDoc('global', null, 'take-it')!.body
-      expect(consumed).toMatch(/^---\r\nstatus: consumed\r\nconsumed: \d{4}-\d\d-\d\dT\d\d:\d\d:\d\d\.\d{3}Z\r\nconsumed_by: consume-test-session\r\nepic:/)
+      expect(consumed).toMatch(
+        /^---\r\nstatus: consumed\r\nconsumed: \d{4}-\d\d-\d\dT\d\d:\d\d:\d\d\.\d{3}Z\r\nconsumed_by: consume-test-session\r\nepic:/,
+      )
       expect(consumed.slice(consumed.indexOf('epic:'))).toBe(body.slice(body.indexOf('epic:')))
       expect(parseResumeFrontmatter(consumed)).toMatchObject({
-        status: 'consumed', consumed_by: 'consume-test-session',
+        status: 'consumed',
+        consumed_by: 'consume-test-session',
       })
     } finally {
       if (priorSession === undefined) delete process.env.CLAUDE_CODE_SESSION_ID
@@ -199,11 +333,11 @@ describe('scoped operator docs', () => {
   })
 
   test('orch doc consume reports an already-consumed document without rewriting it', () => {
-    const body = '---\nstatus: consumed\nconsumed: 2026-09-03T01:02:03.000Z\nconsumed_by: first-session\nepic: demo\n---\n\nBODY\n'
+    const body =
+      '---\nstatus: consumed\nconsumed: 2026-09-03T01:02:03.000Z\nconsumed_by: first-session\nepic: demo\n---\n\nBODY\n'
     setDoc({ scope: 'global', subject: null, slug: 'taken', title: 'Taken', body })
     const before = getDoc('global', null, 'taken')!
     expect(consumeDoc('global', null, 'taken').already_consumed).toBe(true)
     expect(getDoc('global', null, 'taken')).toEqual(before)
   })
-
 })

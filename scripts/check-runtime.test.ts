@@ -12,11 +12,13 @@ describe('suite runtime budget', () => {
     { elapsedMs: 119_000, ci: true, verdict: 'within' },
     { elapsedMs: 119_000, ci: false, verdict: 'within' },
   ] as const)('$verdict when elapsed=$elapsedMs and ci=$ci', ({ elapsedMs, ci, verdict }) => {
-    expect(decideRuntimeBudget({
-      elapsedMs,
-      budgetMs: SUITE_RUNTIME_BUDGET_MS,
-      ci,
-    })).toBe(verdict)
+    expect(
+      decideRuntimeBudget({
+        elapsedMs,
+        budgetMs: SUITE_RUNTIME_BUDGET_MS,
+        ci,
+      }),
+    ).toBe(verdict)
   })
 
   test('hung-suite timeout remains separate from the regression budget', () => {

@@ -15,7 +15,10 @@ export type GitLock = {
 
 function git(cwd: string, args: string[]): string | null {
   const p = Bun.spawnSync(['git', ...args], {
-    cwd, env: targetGitEnvironment(cwd), stdout: 'pipe', stderr: 'pipe',
+    cwd,
+    env: targetGitEnvironment(cwd),
+    stdout: 'pipe',
+    stderr: 'pipe',
   })
   return p.exitCode === 0 ? p.stdout.toString().trim() : null
 }
@@ -44,9 +47,14 @@ function owningPids(path: string): number[] | null {
   // lsof uses 1 for a successful inventory with no matching open file.
   if (p.exitCode === 1 && !p.stderr?.toString().trim()) return []
   if (p.exitCode !== 0) return null
-  return [...new Set((p.stdout?.toString() ?? '').split('\n')
-    .map((value) => Number(value.trim()))
-    .filter((value) => Number.isInteger(value) && value > 0 && pidAlive(value)))]
+  return [
+    ...new Set(
+      (p.stdout?.toString() ?? '')
+        .split('\n')
+        .map((value) => Number(value.trim()))
+        .filter((value) => Number.isInteger(value) && value > 0 && pidAlive(value)),
+    ),
+  ]
 }
 
 function lockContents(path: string): string {
@@ -116,13 +124,19 @@ export function gitLocks(repoRoot: string, clock = Date.now()): GitLock[] {
 export function formatGitLocks(repoRoot: string, clock = Date.now()): string {
   const locks = gitLocks(repoRoot, clock)
   if (!locks.length) return 'git locks:\n  none'
-  return `git locks:\n${locks.map((lock) => {
-    const age = `${Math.max(0, Math.round(lock.ageMs / 1000))}s`
-    const target = lock.target ? `\n    target: ${lock.target}` : ''
-    const resolved = lock.contentRefs.length ? ` -> ${lock.contentRefs.join(', ')}` : ''
-    const contents = lock.contents ? `${lock.contents}${resolved}` : '(empty)'
-    const owner = lock.ownerPids === null ? 'unknown (lsof unavailable)'
-      : lock.ownerPids.length ? `${lock.ownerPids.join(', ')} alive` : 'none alive'
-    return `  ${lock.path} (age ${age})${target}\n    contents: ${contents}\n    owner pid: ${owner}`
-  }).join('\n')}`
+  return `git locks:\n${locks
+    .map((lock) => {
+      const age = `${Math.max(0, Math.round(lock.ageMs / 1000))}s`
+      const target = lock.target ? `\n    target: ${lock.target}` : ''
+      const resolved = lock.contentRefs.length ? ` -> ${lock.contentRefs.join(', ')}` : ''
+      const contents = lock.contents ? `${lock.contents}${resolved}` : '(empty)'
+      const owner =
+        lock.ownerPids === null
+          ? 'unknown (lsof unavailable)'
+          : lock.ownerPids.length
+            ? `${lock.ownerPids.join(', ')} alive`
+            : 'none alive'
+      return `  ${lock.path} (age ${age})${target}\n    contents: ${contents}\n    owner pid: ${owner}`
+    })
+    .join('\n')}`
 }

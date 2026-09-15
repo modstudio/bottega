@@ -9,7 +9,8 @@ const imports = importSpecifiers(readFileSync(`${ROOT}/${FILE}`, 'utf8'))
 const violations = [...imports.specifiers, ...imports.typeOnlySpecifiers]
   .filter((specifier) => specifier.startsWith('.'))
   .map((specifier) => `${FILE} imports "${specifier}" (issue report field decisions must be pure)`)
-for (const expression of imports.unresolvedRelative) violations.push(`${FILE} has an unresolved relative import at ${expression}`)
+for (const expression of imports.unresolvedRelative)
+  violations.push(`${FILE} has an unresolved relative import at ${expression}`)
 if (violations.length) {
   console.error(`check-issue-report-fields-boundary: ${violations.length} violation(s)\n`)
   for (const violation of violations) console.error(`  ${violation}\n`)

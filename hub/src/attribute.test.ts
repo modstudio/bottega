@@ -104,9 +104,7 @@ describe('attribute()', () => {
     const worktree = attribute({ cwd: `${cwd}/.claude/worktrees/ALP-5347/app` })
     expect(named.key).not.toBeNull()
     expect(silent.key).toBeNull()
-    expect([named.project, silent.project, worktree.project]).toEqual(
-      ['alpha', 'alpha', 'alpha'],
-    )
+    expect([named.project, silent.project, worktree.project]).toEqual(['alpha', 'alpha', 'alpha'])
   })
 })
 

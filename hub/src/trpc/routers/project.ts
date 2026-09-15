@@ -30,8 +30,9 @@ type ProjectWrites = {
 
 export function createProjectRouter(writes: ProjectWrites) {
   const badRequest = async <T>(operation: () => Promise<T>): Promise<T> => {
-    try { return await operation() }
-    catch (error) {
+    try {
+      return await operation()
+    } catch (error) {
       throw new TRPCError({
         code: 'BAD_REQUEST',
         message: error instanceof Error ? error.message : String(error),
@@ -41,18 +42,20 @@ export function createProjectRouter(writes: ProjectWrites) {
   }
 
   return t.router({
-    list: t.procedure.query(() => projects().map((project) => ({
-      ...project,
-      trackerStatus: trackerPresentation(project),
-    }))),
-    add: t.procedure.input(addInput).mutation(({ input }) =>
-      badRequest(() => writes.add(input))),
+    list: t.procedure.query(() =>
+      projects().map((project) => ({
+        ...project,
+        trackerStatus: trackerPresentation(project),
+      })),
+    ),
+    add: t.procedure.input(addInput).mutation(({ input }) => badRequest(() => writes.add(input))),
     set: t.procedure.input(setInput).mutation(({ input }) => {
       const { name, ...body } = input
       return badRequest(() => writes.set(name, body))
     }),
-    remove: t.procedure.input(removeInput).mutation(({ input }) =>
-      badRequest(() => writes.remove(input.name))),
+    remove: t.procedure
+      .input(removeInput)
+      .mutation(({ input }) => badRequest(() => writes.remove(input.name))),
   })
 }
 

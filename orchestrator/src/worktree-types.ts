@@ -13,4 +13,3 @@ export type Worktree = {
   /** Branch this run minted. Null/absent means it must never delete row.branch. */
   mintedBranch?: string | null
 }
-

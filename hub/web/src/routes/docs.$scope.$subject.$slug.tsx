@@ -118,20 +118,84 @@ function DocPage() {
   }
 
   if (!scoped) {
-    return <Sheet open onClose={() => void navigate({ to: '/docs' })} title={slug}><p className="text-destructive">unknown scope "{scope}"; valid: {DOC_SCOPES.join(', ')}</p></Sheet>
+    return (
+      <Sheet open onClose={() => void navigate({ to: '/docs' })} title={slug}>
+        <p className="text-destructive">
+          unknown scope "{scope}"; valid: {DOC_SCOPES.join(', ')}
+        </p>
+      </Sheet>
+    )
   }
 
   return (
-    <Sheet open onClose={() => void navigate({ to: '/docs' })} title={editing ? <Input
-              value={title}
-              onChange={(e) => setTitle(e.target.value)}
-              className="font-sans text-[20px] font-semibold"
-            /> : (doc.data?.title ?? slug)} subtitle={`${scope} \u00b7 ${subject ?? slug}`} actions={
+    <Sheet
+      open
+      onClose={() => void navigate({ to: '/docs' })}
+      title={
+        editing ? (
+          <Input
+            value={title}
+            onChange={(e) => setTitle(e.target.value)}
+            className="font-sans text-[20px] font-semibold"
+          />
+        ) : (
+          (doc.data?.title ?? slug)
+        )
+      }
+      subtitle={`${scope} \u00b7 ${subject ?? slug}`}
+      actions={
         <div className="flex shrink-0 gap-2">
-          {(editing || confirmingDelete) ? <Input aria-label="Reason" placeholder="Reason (required)" value={reason} onChange={(e) => setReason(e.target.value)} className="w-52" /> : null}
-          {editing ? <><Button size="sm" onClick={() => save.mutate({ scope, subject, slug, title, body, delivery, reason })} disabled={save.isPending || !title || !reason.trim()}><Save size={14} />Save</Button><Button size="sm" variant="outline" onClick={cancelEdit}><X size={14} />Cancel</Button></> : <Button size="sm" variant="outline" onClick={() => { setConfirmingDelete(false); setReason(''); setEditing(true) }} disabled={!doc.data}><Pencil size={14} />Edit</Button>}
-          <Button size="sm" variant="destructive" onClick={onDelete} disabled={remove.isPending || !doc.data || (confirmingDelete && !reason.trim())}><Trash2 size={14} />{confirmingDelete ? 'Confirm delete' : 'Delete'}</Button>
-        </div>}>
+          {editing || confirmingDelete ? (
+            <Input
+              aria-label="Reason"
+              placeholder="Reason (required)"
+              value={reason}
+              onChange={(e) => setReason(e.target.value)}
+              className="w-52"
+            />
+          ) : null}
+          {editing ? (
+            <>
+              <Button
+                size="sm"
+                onClick={() => save.mutate({ scope, subject, slug, title, body, delivery, reason })}
+                disabled={save.isPending || !title || !reason.trim()}
+              >
+                <Save size={14} />
+                Save
+              </Button>
+              <Button size="sm" variant="outline" onClick={cancelEdit}>
+                <X size={14} />
+                Cancel
+              </Button>
+            </>
+          ) : (
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={() => {
+                setConfirmingDelete(false)
+                setReason('')
+                setEditing(true)
+              }}
+              disabled={!doc.data}
+            >
+              <Pencil size={14} />
+              Edit
+            </Button>
+          )}
+          <Button
+            size="sm"
+            variant="destructive"
+            onClick={onDelete}
+            disabled={remove.isPending || !doc.data || (confirmingDelete && !reason.trim())}
+          >
+            <Trash2 size={14} />
+            {confirmingDelete ? 'Confirm delete' : 'Delete'}
+          </Button>
+        </div>
+      }
+    >
       {doc.isPending ? <p className="text-muted-foreground">Loading doc...</p> : null}
       {doc.error ? <p className="text-destructive">{doc.error.message}</p> : null}
       {save.error ? <p className="text-destructive">{save.error.message}</p> : null}
@@ -141,35 +205,54 @@ function DocPage() {
         <div>
           <label className="mb-3 block max-w-xs text-sm">
             <span className="text-muted-foreground">Delivery</span>
-            <select className="flex h-10 w-full border border-input bg-background px-3 py-2 text-sm focus-visible:ring-2 focus-visible:ring-ring"
-              value={delivery} onChange={(e) => setDelivery(e.target.value as 'inject' | 'demand')}>
-              <option value="inject">inject</option><option value="demand">demand</option>
+            <select
+              className="flex h-10 w-full border border-input bg-background px-3 py-2 text-sm focus-visible:ring-2 focus-visible:ring-ring"
+              value={delivery}
+              onChange={(e) => setDelivery(e.target.value as 'inject' | 'demand')}
+            >
+              <option value="inject">inject</option>
+              <option value="demand">demand</option>
             </select>
           </label>
           <div className="grid grid-cols-2 gap-0 border border-border">
-          <Textarea
-            value={body}
-            onChange={(e) => setBody(e.target.value)}
-            className="min-h-[60vh] border-0 border-r font-mono text-[12.5px]"
-          />
-          <div className="min-h-[60vh] overflow-auto p-3">
-            <Markdown content={body} />
-          </div>
+            <Textarea
+              value={body}
+              onChange={(e) => setBody(e.target.value)}
+              className="min-h-[60vh] border-0 border-r font-mono text-[12.5px]"
+            />
+            <div className="min-h-[60vh] overflow-auto p-3">
+              <Markdown content={body} />
+            </div>
           </div>
         </div>
       ) : null}
 
-      {doc.data && !editing ? <div className="prose-copy"><Markdown content={doc.data.body} /></div> : null}
-      {doc.data && !editing ? <div className="mt-8 border-t border-border pt-4">
-        <h2 className="mb-3 text-sm font-semibold">History</h2>
-        {history.error ? <p className="text-destructive">{history.error.message}</p> : null}
-        {history.data?.map((revision) => <div key={revision.id} className="grid grid-cols-[5rem_6rem_1fr_auto] gap-3 border-b border-border py-2 text-xs">
-          <span>#{revision.id} {revision.op}</span>
-          <span>{revision.author}</span>
-          <span>{revision.reason}</span>
-          <span className="text-muted-foreground">{revision.at} · {revision.bytes} bytes</span>
-        </div>)}
-      </div> : null}
+      {doc.data && !editing ? (
+        <div className="prose-copy">
+          <Markdown content={doc.data.body} />
+        </div>
+      ) : null}
+      {doc.data && !editing ? (
+        <div className="mt-8 border-t border-border pt-4">
+          <h2 className="mb-3 text-sm font-semibold">History</h2>
+          {history.error ? <p className="text-destructive">{history.error.message}</p> : null}
+          {history.data?.map((revision) => (
+            <div
+              key={revision.id}
+              className="grid grid-cols-[5rem_6rem_1fr_auto] gap-3 border-b border-border py-2 text-xs"
+            >
+              <span>
+                #{revision.id} {revision.op}
+              </span>
+              <span>{revision.author}</span>
+              <span>{revision.reason}</span>
+              <span className="text-muted-foreground">
+                {revision.at} · {revision.bytes} bytes
+              </span>
+            </div>
+          ))}
+        </div>
+      ) : null}
     </Sheet>
   )
 }

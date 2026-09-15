@@ -3,7 +3,9 @@ import { dirname, relative, resolve, sep } from 'node:path'
 import ts from 'typescript'
 
 const rootArgument = process.argv.find((argument) => argument.startsWith('--root='))
-const root = resolve(rootArgument?.slice('--root='.length) ?? new URL('..', import.meta.url).pathname)
+const root = resolve(
+  rootArgument?.slice('--root='.length) ?? new URL('..', import.meta.url).pathname,
+)
 const orchestrator = resolve(root, 'orchestrator')
 const failures: string[] = []
 
@@ -16,8 +18,10 @@ function filesUnder(directory: string): string[] {
 
 function productionPath(importer: string, source: string): boolean {
   const target = resolve(dirname(importer), source)
-  return target.startsWith(`${resolve(orchestrator, 'src')}${sep}`)
-    || target.startsWith(`${resolve(root, 'shared')}${sep}`)
+  return (
+    target.startsWith(`${resolve(orchestrator, 'src')}${sep}`) ||
+    target.startsWith(`${resolve(root, 'shared')}${sep}`)
+  )
 }
 
 function importedProductionBindings(path: string, source: string): Set<string> {
@@ -26,7 +30,11 @@ function importedProductionBindings(path: string, source: string): Set<string> {
   for (const match of imports) {
     if (!productionPath(path, match[2]!)) continue
     for (const entry of match[1]!.split(',')) {
-      const binding = entry.trim().replace(/^type\s+/, '').split(/\s+as\s+/).pop()
+      const binding = entry
+        .trim()
+        .replace(/^type\s+/, '')
+        .split(/\s+as\s+/)
+        .pop()
       if (binding) bindings.add(binding)
     }
   }
@@ -41,7 +49,10 @@ function exportedBindings(path: string, source: string): Set<string> {
       continue
     }
     for (const entry of match[1]!.split(',')) {
-      const binding = entry.trim().replace(/^type\s+/, '').split(/\s+as\s+/)[0]
+      const binding = entry
+        .trim()
+        .replace(/^type\s+/, '')
+        .split(/\s+as\s+/)[0]
       if (binding) bindings.add(binding)
     }
   }
@@ -53,23 +64,30 @@ function checkFixture(path: string): void {
   const source = readFileSync(path, 'utf8')
   const label = relative(root, path)
   const before = failures.length
-  for (const match of source.matchAll(/export\s+const\s*{[^}]+}\s*=\s*await\s+import\(\s*['"]([^'"]+)['"]/gs)) {
-    if (productionPath(path, match[1]!)) failures.push('re-exports production bindings obtained from await import')
+  for (const match of source.matchAll(
+    /export\s+const\s*{[^}]+}\s*=\s*await\s+import\(\s*['"]([^'"]+)['"]/gs,
+  )) {
+    if (productionPath(path, match[1]!))
+      failures.push('re-exports production bindings obtained from await import')
   }
   const imported = importedProductionBindings(path, source)
   const exported = exportedBindings(path, source)
   for (const binding of imported) {
     if (exported.has(binding)) failures.push(`re-exports imported production binding ${binding}`)
   }
-  for (let index = before; index < failures.length; index += 1) failures[index] = `${label}: ${failures[index]}`
+  for (let index = before; index < failures.length; index += 1)
+    failures[index] = `${label}: ${failures[index]}`
 }
 
 function environmentName(node: ts.Node): string | null {
   if (!ts.isPropertyAccessExpression(node)) return null
   if (!ts.isPropertyAccessExpression(node.expression)) return null
-  if (!ts.isIdentifier(node.expression.expression)
-    || node.expression.expression.text !== 'process'
-    || node.expression.name.text !== 'env') return null
+  if (
+    !ts.isIdentifier(node.expression.expression) ||
+    node.expression.expression.text !== 'process' ||
+    node.expression.name.text !== 'env'
+  )
+    return null
   return ['PATH', 'HOME', 'ORCH_SANDBOX'].includes(node.name.text) ? node.name.text : null
 }
 
@@ -77,9 +95,14 @@ function checkTest(path: string): void {
   if (!/\.(?:test|spec)\.tsx?$/.test(path)) return
   const source = readFileSync(path, 'utf8')
   const label = relative(root, path)
-  for (const statement of ts.createSourceFile(path, source, ts.ScriptTarget.Latest, true).statements) {
-    if (ts.isImportDeclaration(statement) && ts.isStringLiteral(statement.moduleSpecifier)
-      && resolve(path, '..', statement.moduleSpecifier.text) === resolve(orchestrator, 'test/fixture.ts')) {
+  for (const statement of ts.createSourceFile(path, source, ts.ScriptTarget.Latest, true)
+    .statements) {
+    if (
+      ts.isImportDeclaration(statement) &&
+      ts.isStringLiteral(statement.moduleSpecifier) &&
+      resolve(path, '..', statement.moduleSpecifier.text) ===
+        resolve(orchestrator, 'test/fixture.ts')
+    ) {
       failures.push(`${label}: imports orchestrator/test/fixture.ts`)
     }
   }
@@ -87,10 +110,11 @@ function checkTest(path: string): void {
   for (const statement of ast.statements) {
     if (!ts.isExpressionStatement(statement)) continue
     const expression = statement.expression
-    const assigned = ts.isBinaryExpression(expression)
-      && expression.operatorToken.kind >= ts.SyntaxKind.FirstAssignment
-      && expression.operatorToken.kind <= ts.SyntaxKind.LastAssignment
-      && environmentName(expression.left)
+    const assigned =
+      ts.isBinaryExpression(expression) &&
+      expression.operatorToken.kind >= ts.SyntaxKind.FirstAssignment &&
+      expression.operatorToken.kind <= ts.SyntaxKind.LastAssignment &&
+      environmentName(expression.left)
     const deleted = ts.isDeleteExpression(expression) && environmentName(expression.expression)
     if (assigned || deleted) {
       const line = ast.getLineAndCharacterOfPosition(statement.getStart(ast)).line + 1

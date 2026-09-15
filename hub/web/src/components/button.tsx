@@ -23,11 +23,22 @@ type ButtonProps = ButtonHTMLAttributes<HTMLButtonElement> & {
   asChild?: boolean
 }
 
-export function Button({ className, variant = 'default', size = 'default', asChild = false, children, ...props }: ButtonProps) {
+export function Button({
+  className,
+  variant = 'default',
+  size = 'default',
+  asChild = false,
+  children,
+  ...props
+}: ButtonProps) {
   const classes = cx(base, variants[variant], sizes[size], className)
   if (asChild && isValidElement(children)) {
     const child = children as ReactElement<{ className?: string }>
     return cloneElement(child, { className: cx(classes, child.props.className) })
   }
-  return <button className={classes} {...props}>{children}</button>
+  return (
+    <button className={classes} {...props}>
+      {children}
+    </button>
+  )
 }

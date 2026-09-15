@@ -30,7 +30,13 @@ export type BaselineDisposition = 'write' | 'report' | 'keep'
  * local run writes it and asks for the commit; a hosted runner is a different
  * machine, so its measurement is reported and never written or made a verdict.
  */
-export function baselineDisposition({ changed, ci }: { changed: boolean; ci: boolean }): BaselineDisposition {
+export function baselineDisposition({
+  changed,
+  ci,
+}: {
+  changed: boolean
+  ci: boolean
+}): BaselineDisposition {
   if (!changed) return 'keep'
   return ci ? 'report' : 'write'
 }

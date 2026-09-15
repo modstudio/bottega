@@ -84,7 +84,6 @@ describe('the fidelity penalty cannot sink below "nothing arrived"', () => {
   })
 })
 
-
 describe('who may judge a run', () => {
   // The rule was already written in AGENTS.md and did not hold: on 2026-08-31 two
   // concurrent sessions each scored the other's runs within an hour, both having
@@ -131,8 +130,10 @@ describe('what the views print beside a percentage', () => {
     // The router is entitled to a negative score. `width:-50%` renders as
     // nothing, with no hint that the cell is bad rather than empty.
     addRun({ agent: 'agy', job: 'craft', status: 'failed' })
-    const c = candidates('craft').find((x) => x.agent === 'agy')!; expect(c.score).toBeLessThan(0)
-    const pct = Math.round(c.score! * 100); expect(Math.max(0, Math.min(100, pct))).toBe(0)
+    const c = candidates('craft').find((x) => x.agent === 'agy')!
+    expect(c.score).toBeLessThan(0)
+    const pct = Math.round(c.score! * 100)
+    expect(Math.max(0, Math.min(100, pct))).toBe(0)
   })
   test('evidence is what MIN_SAMPLE counts, so it is what a surface must print', () => {
     // One good verdict plus two unjudged failures: the mean is 0 over THREE
@@ -141,6 +142,9 @@ describe('what the views print beside a percentage', () => {
     score(addRun({ agent: 'agy', job: 'review-lens-inline' }), 'full', 'right')
     addRun({ agent: 'agy', job: 'review-lens-inline', status: 'failed' })
     addRun({ agent: 'agy', job: 'review-lens-inline', status: 'stale' })
-    const c = candidates('review-lens-inline').find((x) => x.agent === 'agy')!; expect(c.score).toBe(0); expect(c.scored).toBe(1); expect(c.evidence).toBe(3)
+    const c = candidates('review-lens-inline').find((x) => x.agent === 'agy')!
+    expect(c.score).toBe(0)
+    expect(c.scored).toBe(1)
+    expect(c.evidence).toBe(3)
   })
 })

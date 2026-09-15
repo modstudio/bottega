@@ -1,24 +1,35 @@
 import { describe, expect, test } from 'bun:test'
 import {
-  CURSOR_CREATE_REFUSAL, GIT_WRITE_REFUSAL, TASK_STATUSES,
-  TRACKER_COMMENT_WRITE_REFUSAL, TRACKER_STATUS_WRITE_REFUSAL,
-  TRACKER_TITLE_WRITE_REFUSAL, UNKNOWN_TRACKER_REFUSAL, WORKSPACE_CREATE_REFUSAL,
-  createTrackerTask, documentsRefusal, trackerCapabilities, trackerSourceFor,
-  type ToolCaller, type TrackerProject,
+  CURSOR_CREATE_REFUSAL,
+  GIT_WRITE_REFUSAL,
+  TASK_STATUSES,
+  TRACKER_COMMENT_WRITE_REFUSAL,
+  TRACKER_STATUS_WRITE_REFUSAL,
+  TRACKER_TITLE_WRITE_REFUSAL,
+  UNKNOWN_TRACKER_REFUSAL,
+  WORKSPACE_CREATE_REFUSAL,
+  createTrackerTask,
+  documentsRefusal,
+  trackerCapabilities,
+  trackerSourceFor,
+  type ToolCaller,
+  type TrackerProject,
 } from './trackers.ts'
 
 const task = { title: 'Move the adapter', body: 'Protocol-neutral body', status: 'todo' }
 
 const project = (name: string, protocol?: string): TrackerProject => ({
   name,
-  settings: protocol ? {
-    tracker: {
-      protocol,
-      envPrefix: 'FIXTURE',
-      openStatuses: ['todo'],
-      states: { todo: 'open', done: 'done' },
-    },
-  } : {},
+  settings: protocol
+    ? {
+        tracker: {
+          protocol,
+          envPrefix: 'FIXTURE',
+          openStatuses: ['todo'],
+          states: { todo: 'open', done: 'done' },
+        },
+      }
+    : {},
 })
 
 const fixtureCaller = () => {
@@ -36,67 +47,81 @@ describe('tracker create protocols', () => {
   test('array-mcp uses its underscored tool and evidenced payload', async () => {
     const fixture = fixtureCaller()
 
-    expect(await createTrackerTask(fixture.caller, project('adanim', 'array-mcp'), task))
-      .toEqual({ key: 'ADN-1' })
-    expect(fixture.calls).toEqual([{
-      name: 'task_create',
-      args: {
-        title: 'Move the adapter',
-        description: 'Protocol-neutral body',
-        status: 'todo',
+    expect(await createTrackerTask(fixture.caller, project('adanim', 'array-mcp'), task)).toEqual({
+      key: 'ADN-1',
+    })
+    expect(fixture.calls).toEqual([
+      {
+        name: 'task_create',
+        args: {
+          title: 'Move the adapter',
+          description: 'Protocol-neutral body',
+          status: 'todo',
+        },
       },
-    }])
+    ])
   })
 
   test('workspace-mcp refuses its incompatible evidenced status fields', async () => {
     const fixture = fixtureCaller()
 
-    await expect(createTrackerTask(fixture.caller, project('starship', 'workspace-mcp'), task))
-      .rejects.toThrow('workspace-mcp create refused: the status field differs')
+    await expect(
+      createTrackerTask(fixture.caller, project('starship', 'workspace-mcp'), task),
+    ).rejects.toThrow('workspace-mcp create refused: the status field differs')
     expect(fixture.calls).toEqual([])
   })
 
   test('cursor-mcp refuses the required field absent from the register', async () => {
     const fixture = fixtureCaller()
 
-    await expect(createTrackerTask(fixture.caller, project('stopal', 'cursor-mcp'), task))
-      .rejects.toThrow('cursor-mcp create refused: required projectId')
+    await expect(
+      createTrackerTask(fixture.caller, project('stopal', 'cursor-mcp'), task),
+    ).rejects.toThrow('cursor-mcp create refused: required projectId')
     expect(fixture.calls).toEqual([])
   })
 
   test('a project with no tracker refuses and names the project', async () => {
     const fixture = fixtureCaller()
 
-    await expect(createTrackerTask(fixture.caller, project('untracked'), task))
-      .rejects.toThrow('project untracked has no tracker configured')
+    await expect(createTrackerTask(fixture.caller, project('untracked'), task)).rejects.toThrow(
+      'project untracked has no tracker configured',
+    )
     expect(fixture.calls).toEqual([])
   })
 
   test('an unsupported protocol refuses instead of silently succeeding', async () => {
     const fixture = fixtureCaller()
 
-    await expect(createTrackerTask(fixture.caller, project('future', 'future-mcp'), task))
-      .rejects.toThrow('tracker protocol future-mcp has no create support')
+    await expect(
+      createTrackerTask(fixture.caller, project('future', 'future-mcp'), task),
+    ).rejects.toThrow('tracker protocol future-mcp has no create support')
     expect(fixture.calls).toEqual([])
   })
 })
 
 describe('tracker source construction', () => {
   test('names a project whose tracker is missing envPrefix', () => {
-    expect(() => trackerSourceFor({
-      name: 'adanim', settings: { tracker: { protocol: 'array-mcp' } },
-    })).toThrow('project adanim tracker is missing envPrefix')
+    expect(() =>
+      trackerSourceFor({
+        name: 'adanim',
+        settings: { tracker: { protocol: 'array-mcp' } },
+      }),
+    ).toThrow('project adanim tracker is missing envPrefix')
   })
 
   test('names an unrecognised protocol', () => {
-    expect(() => trackerSourceFor({
-      name: 'future', settings: { tracker: { protocol: 'future-mcp', envPrefix: 'FUTURE' } },
-    })).toThrow('project future tracker has unrecognised protocol future-mcp')
+    expect(() =>
+      trackerSourceFor({
+        name: 'future',
+        settings: { tracker: { protocol: 'future-mcp', envPrefix: 'FUTURE' } },
+      }),
+    ).toThrow('project future tracker has unrecognised protocol future-mcp')
   })
 
   test('a correctly configured tracker still builds', () => {
     expect(trackerSourceFor(project('working', 'array-mcp'))).toMatchObject({
-      project: 'working', env: 'FIXTURE',
+      project: 'working',
+      env: 'FIXTURE',
     })
   })
 
@@ -108,35 +133,52 @@ describe('tracker source construction', () => {
 describe('tracker capabilities', () => {
   test('local records expose every hub write', () => {
     expect(trackerCapabilities({ source: 'local', project: project('workshop') })).toEqual({
-      create: { allowed: true }, setStatus: { allowed: true },
-      setTitle: { allowed: true }, comment: { allowed: true }, documents: { allowed: true },
-      statusVocabulary: [...TASK_STATUSES], keyFormat: null,
+      create: { allowed: true },
+      setStatus: { allowed: true },
+      setTitle: { allowed: true },
+      comment: { allowed: true },
+      documents: { allowed: true },
+      statusVocabulary: [...TASK_STATUSES],
+      keyFormat: null,
     })
   })
 
   for (const protocol of ['workspace-mcp', 'cursor-mcp', 'array-mcp'] as const) {
     test(`${protocol} exposes only its evidenced create support`, () => {
-      const capabilities = trackerCapabilities({ source: 'mcp', project: project('external', protocol) })
+      const capabilities = trackerCapabilities({
+        source: 'mcp',
+        project: project('external', protocol),
+      })
       expect(capabilities).toEqual({
-        create: protocol === 'array-mcp' ? { allowed: true } : {
-          allowed: false,
-          reason: protocol === 'workspace-mcp' ? WORKSPACE_CREATE_REFUSAL : CURSOR_CREATE_REFUSAL,
-        },
+        create:
+          protocol === 'array-mcp'
+            ? { allowed: true }
+            : {
+                allowed: false,
+                reason:
+                  protocol === 'workspace-mcp' ? WORKSPACE_CREATE_REFUSAL : CURSOR_CREATE_REFUSAL,
+              },
         setStatus: { allowed: false, reason: TRACKER_STATUS_WRITE_REFUSAL },
         setTitle: { allowed: false, reason: TRACKER_TITLE_WRITE_REFUSAL },
         comment: { allowed: false, reason: TRACKER_COMMENT_WRITE_REFUSAL },
         documents: { allowed: false, reason: documentsRefusal(protocol) },
-        statusVocabulary: ['todo', 'done'], keyFormat: null,
+        statusVocabulary: ['todo', 'done'],
+        keyFormat: null,
       })
     })
   }
 
   test('git and unknown MCP provenance are read-only with their own exact reasons', () => {
-    const git = trackerCapabilities({ source: 'git', project: {
-      name: 'old', settings: {
-        keyPrefixes: ['OLD', 'LEG'], tracker: { protocol: 'array-mcp' },
+    const git = trackerCapabilities({
+      source: 'git',
+      project: {
+        name: 'old',
+        settings: {
+          keyPrefixes: ['OLD', 'LEG'],
+          tracker: { protocol: 'array-mcp' },
+        },
       },
-    } })
+    })
     expect(git.keyFormat).toBe('OLD-* | LEG-*')
     expect(git.setTitle).toEqual({ allowed: false, reason: GIT_WRITE_REFUSAL })
 

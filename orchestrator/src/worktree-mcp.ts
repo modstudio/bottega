@@ -3,7 +3,17 @@
  * Knows isolated worker directories and worker MCP configuration provisioning.
  * Must not know routing, transports, run state, or database writes.
  */
-import { chmodSync, existsSync, lstatSync, mkdirSync, readlinkSync, realpathSync, rmSync, symlinkSync, unlinkSync } from 'node:fs'
+import {
+  chmodSync,
+  existsSync,
+  lstatSync,
+  mkdirSync,
+  readlinkSync,
+  realpathSync,
+  rmSync,
+  symlinkSync,
+  unlinkSync,
+} from 'node:fs'
 import { dirname, join, relative } from 'node:path'
 
 type McpConfigPreflight = { header: string | null; error: string | null }
@@ -31,14 +41,17 @@ export function provisionMcpConfig(worktree: string, checkout: string): McpConfi
 export function prepareWorkerMcpConfig(worktree: string, checkout: string, inherited: boolean) {
   const target = join(worktree, '.mcp.json')
   const source = join(checkout, '.mcp.json')
-  const expected = existsSync(source) ? relative(realpathSync(dirname(target)), realpathSync(source)) : null
+  const expected = existsSync(source)
+    ? relative(realpathSync(dirname(target)), realpathSync(source))
+    : null
   let link: string | null = null
   if (inherited) {
     try {
-      link = lstatSync(target).isSymbolicLink() && readlinkSync(target) === expected
-        ? expected
-        : null
-    } catch { /* the target may not exist until provisioned below */ }
+      link =
+        lstatSync(target).isSymbolicLink() && readlinkSync(target) === expected ? expected : null
+    } catch {
+      /* the target may not exist until provisioned below */
+    }
   }
   const config = provisionMcpConfig(worktree, checkout)
   if (config.header !== null) link = readlinkSync(target)
@@ -68,4 +81,3 @@ export function createIsolatedWorkerDirectory(path: string): () => void {
   mkdirSync(path, { mode: 0o700 })
   return () => rmSync(path, { recursive: true, force: true })
 }
-

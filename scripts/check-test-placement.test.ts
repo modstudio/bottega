@@ -42,15 +42,17 @@ describe('test placement', () => {
 
   test('reports every candidate for a missing module', () => {
     const files = temporaryTree(['orchestrator/src/agent-cli-version.test.ts'])
-    expect(checkTestFiles(files)).toEqual([{
-      file: 'orchestrator/src/agent-cli-version.test.ts',
-      candidates: [
-        'orchestrator/src/agent-cli-version.ts',
-        'orchestrator/src/agent-cli.ts',
-        'orchestrator/src/agent.ts',
-      ],
-      reason: 'missing-module',
-    }])
+    expect(checkTestFiles(files)).toEqual([
+      {
+        file: 'orchestrator/src/agent-cli-version.test.ts',
+        candidates: [
+          'orchestrator/src/agent-cli-version.ts',
+          'orchestrator/src/agent-cli.ts',
+          'orchestrator/src/agent.ts',
+        ],
+        reason: 'missing-module',
+      },
+    ])
   })
 
   test('rejects a mirrored tests tree even when its module exists', () => {

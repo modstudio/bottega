@@ -50,8 +50,7 @@ export const PLATFORM_SLUG = 'bottega'
  * Kept here rather than in each concern's own docs because a tagline repeated
  * in four places is a tagline that will disagree with itself within a month.
  */
-export const PLATFORM_TAGLINE =
-  'One designer, many hands: delegate the building, keep the design.'
+export const PLATFORM_TAGLINE = 'One designer, many hands: delegate the building, keep the design.'
 
 /**
  * The concerns, which are the reason this is a platform rather than a tool.

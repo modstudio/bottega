@@ -10,17 +10,23 @@ export type CliFlags = {
 }
 
 let invocationArgv: string[] = []
-export function setRawArgv(argv: string[]): void { invocationArgv = argv }
-export function rawArgv(_command: Command): string[] { return invocationArgv }
+export function setRawArgv(argv: string[]): void {
+  invocationArgv = argv
+}
+export function rawArgv(_command: Command): string[] {
+  return invocationArgv
+}
 
-const optionKey = (name: string) => name.replace(/-([a-z])/g, (_, letter: string) => letter.toUpperCase())
+const optionKey = (name: string) =>
+  name.replace(/-([a-z])/g, (_, letter: string) => letter.toUpperCase())
 
 /** Adapts Commander's already-parsed values to existing service flag ports. */
 export function optionFlags(options: OptionValues): CliFlags {
   return {
-    has: (name) => name.startsWith('no-')
-      ? options[optionKey(name.slice(3))] === false || Boolean(options[optionKey(name)])
-      : Boolean(options[optionKey(name)]),
+    has: (name) =>
+      name.startsWith('no-')
+        ? options[optionKey(name.slice(3))] === false || Boolean(options[optionKey(name)])
+        : Boolean(options[optionKey(name)]),
     flag: (name) => {
       const value = options[optionKey(name)]
       if (Array.isArray(value)) {
@@ -62,7 +68,7 @@ export function duration(ms: number | null | undefined): string {
 
 export function writeStdout(value: string): Promise<void> {
   return new Promise((resolve, reject) => {
-    process.stdout.write(value, (error) => error ? reject(error) : resolve())
+    process.stdout.write(value, (error) => (error ? reject(error) : resolve()))
   })
 }
 

@@ -52,10 +52,11 @@ export type EvidenceFacts = {
   readerReply: ReaderReply | null
 }
 
-export type EvidenceAssessment<FailureKind extends string = string> =
-  ProvisionalEvidenceOutcome<FailureKind | 'contract' | 'unevidenced' | 'harness'> & {
-    provenanceWrongProjectTool: string | null
-  }
+export type EvidenceAssessment<FailureKind extends string = string> = ProvisionalEvidenceOutcome<
+  FailureKind | 'contract' | 'unevidenced' | 'harness'
+> & {
+  provenanceWrongProjectTool: string | null
+}
 
 /**
  * Assess supplied evidence after execution has provisionally judged the run.
@@ -69,17 +70,25 @@ export function assessEvidence<FailureKind extends string>(
     ...provisional,
   }
 
-  if (facts.findingsJob && facts.outputPresent &&
-      (outcome.status === 'ok' || facts.confinementClassification !== null)) {
+  if (
+    facts.findingsJob &&
+    facts.outputPresent &&
+    (outcome.status === 'ok' || facts.confinementClassification !== null)
+  ) {
     if (!facts.reviewReply && outcome.status === 'ok') {
       outcome = {
         status: 'failed',
-        error: 'reply did not match the review contract: mandatory PROVENANCE section missing or malformed',
+        error:
+          'reply did not match the review contract: mandatory PROVENANCE section missing or malformed',
         failureKind: 'contract',
       }
     }
-    if (facts.reviewReply && outcome.status === 'ok' &&
-        facts.confinementClassification !== 'overlapping' && facts.cleanReview) {
+    if (
+      facts.reviewReply &&
+      outcome.status === 'ok' &&
+      facts.confinementClassification !== 'overlapping' &&
+      facts.cleanReview
+    ) {
       if (facts.cleanReview.failure !== null) {
         outcome = {
           status: 'failed',
@@ -94,10 +103,11 @@ export function assessEvidence<FailureKind extends string>(
     }
   }
 
-  const provenanceWrongProjectTool = facts.reviewReply?.provenance.mcp_tools.find((tool) => {
-    const server = provenanceServer(tool, facts.otherProjectMcpServers)
-    return Boolean(server && facts.otherProjectMcpServers.has(server))
-  }) ?? null
+  const provenanceWrongProjectTool =
+    facts.reviewReply?.provenance.mcp_tools.find((tool) => {
+      const server = provenanceServer(tool, facts.otherProjectMcpServers)
+      return Boolean(server && facts.otherProjectMcpServers.has(server))
+    }) ?? null
   if (facts.reviewReply && provenanceWrongProjectTool && outcome.status === 'ok') {
     outcome = {
       status: 'failed',
@@ -122,7 +132,9 @@ export function assessEvidence<FailureKind extends string>(
 
 /** Record assessed findings inside the transaction owned by execution. */
 export function recordEvidence(
-  database: Database, runId: number, reviewReply: ReviewReply,
+  database: Database,
+  runId: number,
+  reviewReply: ReviewReply,
 ): number {
   return recordReview(runId, reviewReply, database)
 }

@@ -51,23 +51,27 @@ export function listPairs(): PortPair[] {
 }
 
 export function pairByProjects(sourceProjectId: number, targetProjectId: number): PortPair | null {
-  return db().query(
-    'SELECT * FROM port_pair WHERE source_project_id=? AND target_project_id=?',
-  ).get(sourceProjectId, targetProjectId) as PortPair | null
+  return db()
+    .query('SELECT * FROM port_pair WHERE source_project_id=? AND target_project_id=?')
+    .get(sourceProjectId, targetProjectId) as PortPair | null
 }
 
 export function addPair(sourceProjectId: number, targetProjectId: number, at = nowIso()): PortPair {
   writableDb()
   writeTransaction(() => {
-    db().query(
-      `INSERT INTO port_pair (source_project_id, target_project_id, created_at)
+    db()
+      .query(
+        `INSERT INTO port_pair (source_project_id, target_project_id, created_at)
        VALUES (?,?,?) ON CONFLICT(source_project_id, target_project_id) DO NOTHING`,
-    ).run(sourceProjectId, targetProjectId, at)
+      )
+      .run(sourceProjectId, targetProjectId, at)
     const pair = pairByProjects(sourceProjectId, targetProjectId)!
-    db().query(
-      `INSERT INTO port_baseline (pair_id, source_commit, scanned_at) VALUES (?,NULL,NULL)
+    db()
+      .query(
+        `INSERT INTO port_baseline (pair_id, source_commit, scanned_at) VALUES (?,NULL,NULL)
        ON CONFLICT(pair_id) DO NOTHING`,
-    ).run(pair.id)
+      )
+      .run(pair.id)
   })
   return pairByProjects(sourceProjectId, targetProjectId)!
 }
@@ -78,7 +82,9 @@ export function removePair(id: number): boolean {
 }
 
 export function baselineForPair(pairId: number): PortBaseline | null {
-  return db().query('SELECT * FROM port_baseline WHERE pair_id=?').get(pairId) as PortBaseline | null
+  return db()
+    .query('SELECT * FROM port_baseline WHERE pair_id=?')
+    .get(pairId) as PortBaseline | null
 }
 
 export function setBaseline(
@@ -87,18 +93,18 @@ export function setBaseline(
   scannedAt: string | null = sourceCommit === null ? null : nowIso(),
 ): PortBaseline {
   writableDb()
-  db().query(
-    `INSERT INTO port_baseline (pair_id, source_commit, scanned_at) VALUES (?,?,?)
+  db()
+    .query(
+      `INSERT INTO port_baseline (pair_id, source_commit, scanned_at) VALUES (?,?,?)
      ON CONFLICT(pair_id) DO UPDATE SET
        source_commit=excluded.source_commit, scanned_at=excluded.scanned_at`,
-  ).run(pairId, sourceCommit, scannedAt)
+    )
+    .run(pairId, sourceCommit, scannedAt)
   return baselineForPair(pairId)!
 }
 
 export function listSkips(pairId: number): PortSkip[] {
-  return db().query(
-    'SELECT * FROM port_skip WHERE pair_id=? ORDER BY id',
-  ).all(pairId) as PortSkip[]
+  return db().query('SELECT * FROM port_skip WHERE pair_id=? ORDER BY id').all(pairId) as PortSkip[]
 }
 
 export function addSkip(
@@ -108,10 +114,14 @@ export function addSkip(
   skippedAt = nowIso(),
 ): PortSkip {
   writableDb()
-  const id = (db().query(
-    `INSERT INTO port_skip (pair_id, candidate, reason, skipped_at) VALUES (?,?,?,?)
+  const id = (
+    db()
+      .query(
+        `INSERT INTO port_skip (pair_id, candidate, reason, skipped_at) VALUES (?,?,?,?)
      RETURNING id`,
-  ).get(pairId, candidate, reason, skippedAt) as { id: number }).id
+      )
+      .get(pairId, candidate, reason, skippedAt) as { id: number }
+  ).id
   return db().query('SELECT * FROM port_skip WHERE id=?').get(id) as PortSkip
 }
 
@@ -138,13 +148,17 @@ function parseStringArray(value: string): string[] {
 }
 
 export function ledgerRef(taskKey: string): LedgerRef | null {
-  const ref = db().query('SELECT * FROM port_ref WHERE task_key=?').get(taskKey) as
-    Omit<LedgerRef, 'sources'> | null
+  const ref = db().query('SELECT * FROM port_ref WHERE task_key=?').get(taskKey) as Omit<
+    LedgerRef,
+    'sources'
+  > | null
   if (!ref) return null
-  const rows = db().query(
-    `SELECT source_project_id, commits, paths, note FROM port_ref_source
+  const rows = db()
+    .query(
+      `SELECT source_project_id, commits, paths, note FROM port_ref_source
      WHERE task_key=? ORDER BY id`,
-  ).all(taskKey) as { source_project_id: number; commits: string; paths: string; note: string }[]
+    )
+    .all(taskKey) as { source_project_id: number; commits: string; paths: string; note: string }[]
   return {
     ...ref,
     sources: rows.map((row) => ({
@@ -157,9 +171,11 @@ export function ledgerRef(taskKey: string): LedgerRef | null {
 }
 
 export function listLedgerRefs(includeResolved = false): LedgerRef[] {
-  const keys = db().query(
-    `SELECT task_key FROM port_ref${includeResolved ? '' : ' WHERE resolved_at IS NULL'} ORDER BY task_key`,
-  ).all() as { task_key: string }[]
+  const keys = db()
+    .query(
+      `SELECT task_key FROM port_ref${includeResolved ? '' : ' WHERE resolved_at IS NULL'} ORDER BY task_key`,
+    )
+    .all() as { task_key: string }[]
   return keys.map(({ task_key }) => ledgerRef(task_key)!)
 }
 
@@ -171,16 +187,20 @@ export function setLedgerRef(input: {
 }): LedgerRef {
   writableDb()
   if (input.sources.length === 0) throw new Error('a ledger ref needs at least one source project')
-  if (new Set(input.sources.map((source) => source.source_project_id)).size !== input.sources.length) {
+  if (
+    new Set(input.sources.map((source) => source.source_project_id)).size !== input.sources.length
+  ) {
     throw new Error('a ledger ref may name each source project only once')
   }
   const target = projectForTaskKey(input.taskKey)
   writeTransaction(() => {
-    db().query(
-      `INSERT INTO port_ref (task_key, target_project_id, note, created_at) VALUES (?,?,?,?)
+    db()
+      .query(
+        `INSERT INTO port_ref (task_key, target_project_id, note, created_at) VALUES (?,?,?,?)
        ON CONFLICT(task_key) DO UPDATE SET
          target_project_id=excluded.target_project_id, note=excluded.note`,
-    ).run(input.taskKey, target.id, input.note, input.createdAt ?? nowIso())
+      )
+      .run(input.taskKey, target.id, input.note, input.createdAt ?? nowIso())
     db().query('DELETE FROM port_ref_source WHERE task_key=?').run(input.taskKey)
     const insert = db().query(
       `INSERT INTO port_ref_source
@@ -188,8 +208,11 @@ export function setLedgerRef(input: {
     )
     for (const source of input.sources) {
       insert.run(
-        input.taskKey, source.source_project_id,
-        JSON.stringify(source.commits), JSON.stringify(source.paths), source.note,
+        input.taskKey,
+        source.source_project_id,
+        JSON.stringify(source.commits),
+        JSON.stringify(source.paths),
+        source.note,
       )
     }
   })
@@ -205,16 +228,18 @@ export function resolveLedgerRef(taskKey: string, resolvedAt = nowIso()): Ledger
   writableDb()
   const existing = ledgerRef(taskKey)
   if (!existing || existing.resolved_at) return existing
-  db().query(
-    'UPDATE port_ref SET resolved_at=? WHERE task_key=? AND resolved_at IS NULL',
-  ).run(resolvedAt, taskKey)
+  db()
+    .query('UPDATE port_ref SET resolved_at=? WHERE task_key=? AND resolved_at IS NULL')
+    .run(resolvedAt, taskKey)
   return ledgerRef(taskKey)
 }
 
 export function listDoctrineRules(includeRetired = true): DoctrineRule[] {
-  return db().query(
-    `SELECT * FROM port_doctrine${includeRetired ? '' : ' WHERE retired_at IS NULL'} ORDER BY number`,
-  ).all() as DoctrineRule[]
+  return db()
+    .query(
+      `SELECT * FROM port_doctrine${includeRetired ? '' : ' WHERE retired_at IS NULL'} ORDER BY number`,
+    )
+    .all() as DoctrineRule[]
 }
 
 export function addDoctrineRule(
@@ -224,15 +249,17 @@ export function addDoctrineRule(
   createdAt = nowIso(),
 ): DoctrineRule {
   writableDb()
-  db().query(
-    `INSERT INTO port_doctrine (number, title, body, created_at) VALUES (?,?,?,?)`,
-  ).run(number, title, body, createdAt)
+  db()
+    .query(`INSERT INTO port_doctrine (number, title, body, created_at) VALUES (?,?,?,?)`)
+    .run(number, title, body, createdAt)
   return db().query('SELECT * FROM port_doctrine WHERE number=?').get(number) as DoctrineRule
 }
 
 export function retireDoctrineRule(number: number, retiredAt = nowIso()): boolean {
   writableDb()
-  return db().query(
-    'UPDATE port_doctrine SET retired_at=? WHERE number=? AND retired_at IS NULL',
-  ).run(retiredAt, number).changes > 0
+  return (
+    db()
+      .query('UPDATE port_doctrine SET retired_at=? WHERE number=? AND retired_at IS NULL')
+      .run(retiredAt, number).changes > 0
+  )
 }

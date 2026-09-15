@@ -1,19 +1,37 @@
 import { afterAll, afterEach, beforeEach } from 'bun:test'
-import { chmodSync, copyFileSync, mkdirSync, mkdtempSync, readdirSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
+import {
+  chmodSync,
+  copyFileSync,
+  mkdirSync,
+  mkdtempSync,
+  readdirSync,
+  realpathSync,
+  rmSync,
+  writeFileSync,
+} from 'node:fs'
 import { tmpdir } from 'node:os'
 import { basename, dirname, join, resolve } from 'node:path'
 import { createTestHubDatabaseGuard } from '../../shared/test-hub-database.ts'
 
-const discoveryEnv = Object.fromEntries(Object.entries(process.env).filter(([key]) =>
-  !key.startsWith('GIT_') && key !== 'ORCH_GUARDED_GIT_COMMON_DIR' && key !== 'ORCH_ALLOWED_GIT_REF'
-))
+const discoveryEnv = Object.fromEntries(
+  Object.entries(process.env).filter(
+    ([key]) =>
+      !key.startsWith('GIT_') &&
+      key !== 'ORCH_GUARDED_GIT_COMMON_DIR' &&
+      key !== 'ORCH_ALLOWED_GIT_REF',
+  ),
+)
 const commonDir = Bun.spawnSync(['git', 'rev-parse', '--git-common-dir'], {
-  cwd: import.meta.dir, env: discoveryEnv, stdout: 'pipe', stderr: 'pipe',
+  cwd: import.meta.dir,
+  env: discoveryEnv,
+  stdout: 'pipe',
+  stderr: 'pipe',
 })
 if (commonDir.exitCode !== 0) throw new Error(commonDir.stderr.toString())
 export const REGISTERED_LIVE_STORE = resolve(
   dirname(resolve(import.meta.dir, commonDir.stdout.toString().trim())),
-  'orchestrator', 'orch.db',
+  'orchestrator',
+  'orch.db',
 )
 
 /**
@@ -81,11 +99,15 @@ function assertOwnedStore(): void {
   // The file may not exist yet, so the directory is what gets resolved.
   const real = (path: string) => join(realpathSync(dirname(path)), basename(path))
   const ownedDir = realpathSync(dir)
-  if (real(DB_PATH) !== real(store) || !real(DB_PATH).startsWith(`${ownedDir}/`) || !ownedDir.startsWith(realpathSync(tmpdir()))) {
+  if (
+    real(DB_PATH) !== real(store) ||
+    !real(DB_PATH).startsWith(`${ownedDir}/`) ||
+    !ownedDir.startsWith(realpathSync(tmpdir()))
+  ) {
     throw new Error(
       `test preload refuses to run: db.ts resolved ${DB_PATH}, not the fixture store ${store} under ${tmpdir()}\n` +
-      'invariant: A test suite only ever writes a store its own preload created.\n' +
-      'cleared by: bun test from orchestrator/ with ORCH_DB unset',
+        'invariant: A test suite only ever writes a store its own preload created.\n' +
+        'cleared by: bun test from orchestrator/ with ORCH_DB unset',
     )
   }
 }
@@ -96,9 +118,15 @@ copyFileSync(template, store)
 {
   const { recordAgentProbe, refreshAgents } = await import('../src/agents.ts')
   const fileProbe = (harness: string) => ({
-    harness, ok: true,
+    harness,
+    ok: true,
     reply: { ok: true, output: 'ok' },
-    tool: { ok: true, output: 'REGISTRATION_PROBE_FILE_OK', toolEvents: 1, statuses: ['completed'] },
+    tool: {
+      ok: true,
+      output: 'REGISTRATION_PROBE_FILE_OK',
+      toolEvents: 1,
+      statuses: ['completed'],
+    },
     schema: { ok: true, output: '{"status":"ok"}' },
     file: { ok: true, output: '{"status":"ok"}' },
     contextTokens: null as number | null,
@@ -130,17 +158,24 @@ beforeEach(() => {
   }
   assertOwnedStore()
   try {
-    sequence = db().query('SELECT name, seq FROM sqlite_sequence').all() as { name: string; seq: number }[]
-  } catch { /* an unopenable store carries nothing forward */ }
+    sequence = db().query('SELECT name, seq FROM sqlite_sequence').all() as {
+      name: string
+      seq: number
+    }[]
+  } catch {
+    /* an unopenable store carries nothing forward */
+  }
   closeDatabaseForFixture()
-  for (const sidecar of ['', '-wal', '-shm', '-journal']) rmSync(`${store}${sidecar}`, { force: true })
+  for (const sidecar of ['', '-wal', '-shm', '-journal'])
+    rmSync(`${store}${sidecar}`, { force: true })
   copyFileSync(template, store)
   if (sequence.length > 0) {
     const fresh = db()
     // sqlite_sequence carries no unique constraint, so an upsert is refused.
     for (const { name, seq } of sequence) {
       const bumped = fresh.query('UPDATE sqlite_sequence SET seq = ? WHERE name = ?').run(seq, name)
-      if (bumped.changes === 0) fresh.query('INSERT INTO sqlite_sequence (name, seq) VALUES (?, ?)').run(name, seq)
+      if (bumped.changes === 0)
+        fresh.query('INSERT INTO sqlite_sequence (name, seq) VALUES (?, ?)').run(name, seq)
     }
   }
   childrenBeforeTest = new Set(readdirSync(dir))
@@ -153,12 +188,13 @@ beforeEach(() => {
  * across the file.
  */
 afterEach(() => {
-  const residue = readdirSync(dir).filter((name) =>
-    !childrenBeforeTest.has(name) && !name.startsWith('git-template-'))
+  const residue = readdirSync(dir).filter(
+    (name) => !childrenBeforeTest.has(name) && !name.startsWith('git-template-'),
+  )
   if (residue.length === 0) return
-  const message = residue.map((name) =>
-    `test ${Bun.main} left fixture residue: ${join(dir, name)}`,
-  ).join('\n')
+  const message = residue
+    .map((name) => `test ${Bun.main} left fixture residue: ${join(dir, name)}`)
+    .join('\n')
   for (const name of residue) rmSync(join(dir, name), { recursive: true, force: true })
   if (process.env.CI) throw new Error(message)
   console.warn(message)

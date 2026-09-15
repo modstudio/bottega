@@ -3,14 +3,18 @@ import { existsSync, mkdirSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { mainCheckoutOf } from '../../shared/git.ts'
 import {
-  applyMigrations, migrationRefusal, readUserVersion, staleWriteRefusal,
+  applyMigrations,
+  migrationRefusal,
+  readUserVersion,
+  staleWriteRefusal,
 } from './migrations.ts'
 
 export type { Project } from './projects.ts'
 
 const checkout = new URL('../..', import.meta.url).pathname
 const mainCheckout = mainCheckoutOf(checkout)
-export const DB_PATH = process.env.HUB_DB ?? (mainCheckout ? join(mainCheckout, 'hub', 'hub.db') : null)
+export const DB_PATH =
+  process.env.HUB_DB ?? (mainCheckout ? join(mainCheckout, 'hub', 'hub.db') : null)
 
 let handle: Database | null = null
 let openedUserVersion: number | null = null
@@ -116,13 +120,17 @@ export function migrateDatabase(): { path: string; versions: string[] } {
 export function nextImportedTaskKey(prefix: string): string {
   const d = db()
   const pattern = new RegExp(`^${prefix.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}-(\\d+)$`, 'i')
-  const highest = d.query<{ key: string }, []>(`SELECT key FROM task`).all()
+  const highest = d
+    .query<{ key: string }, []>(`SELECT key FROM task`)
+    .all()
     .reduce((max, row) => {
       const match = pattern.exec(row.key)
       return match ? Math.max(max, Number(match[1])) : max
     }, 0)
   const name = `task:${prefix}`
-  const sequence = d.query<{ next: number }, [string]>(`SELECT next FROM seq WHERE name = ?`).get(name)
+  const sequence = d
+    .query<{ next: number }, [string]>(`SELECT next FROM seq WHERE name = ?`)
+    .get(name)
   const number = Math.max(highest + 1, sequence?.next ?? 1)
   d.query(
     `INSERT INTO seq (name, next) VALUES (?, ?)

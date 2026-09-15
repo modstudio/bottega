@@ -38,8 +38,10 @@ function staticViolations(): StaticViolation[] {
       else if (/\b(?:from|require\s*\()\s*['"](?:node:)?child_process['"]/.test(line)) {
         reason = 'child_process import'
       } else if (/\bcopyLiveHub\b/.test(line)) reason = 'live hub store access'
-      else if (/\b(?:hub|orch)\.db\b/.test(line)
-        && mainCheckoutBindings.some((binding) => line.includes(`join(${binding}`))) {
+      else if (
+        /\b(?:hub|orch)\.db\b/.test(line) &&
+        mainCheckoutBindings.some((binding) => line.includes(`join(${binding}`))
+      ) {
         reason = 'live store joined from mainCheckoutOf'
       }
       return reason ? [{ file: file.slice(ROOT.length + 1), line: index + 1, reason }] : []
@@ -66,19 +68,27 @@ function newestSpawnMeasurements(): SpawnMeasurement[] | null {
   if (!Array.isArray(artifact.files)) {
     throw new Error(`${artifacts[0]}: gate timing artefact has no files table`)
   }
-  return artifact.files.filter((row) => row.file.startsWith('src/') && row.file.endsWith('.test.ts'))
+  return artifact.files.filter(
+    (row) => row.file.startsWith('src/') && row.file.endsWith('.test.ts'),
+  )
 }
 
 const measurements = newestSpawnMeasurements()
 if (!measurements) {
-  console.log('check-test-spawns: static rule ok; no gate timing artefact, fixed spawn rule not measured')
+  console.log(
+    'check-test-spawns: static rule ok; no gate timing artefact, fixed spawn rule not measured',
+  )
   process.exit(0)
 }
 const violations = measurements
   .map((row) => ({ file: row.file, spawns: row.spawn + row.spawnSync }))
   .filter((row) => row.spawns > SPAWN_LIMIT)
 for (const row of violations) {
-  console.error(`orchestrator/${row.file}: measured ${row.spawns} spawns, fixed limit ${SPAWN_LIMIT}`)
+  console.error(
+    `orchestrator/${row.file}: measured ${row.spawns} spawns, fixed limit ${SPAWN_LIMIT}`,
+  )
 }
 if (violations.length) process.exit(1)
-console.log(`check-test-spawns: static rule ok; measured ${measurements.length} orchestrator unit test files, fixed limit ${SPAWN_LIMIT}`)
+console.log(
+  `check-test-spawns: static rule ok; measured ${measurements.length} orchestrator unit test files, fixed limit ${SPAWN_LIMIT}`,
+)

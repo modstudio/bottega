@@ -17,9 +17,10 @@ const enabled = process.env.ORCH_GATE_TIMINGS
 if (enabled) {
   const orchRoot = join(import.meta.dir, '..')
   const stamp = new Date().toISOString().replace(/[:.]/g, '-')
-  const outPath = enabled.includes('/') || enabled.endsWith('.json')
-    ? enabled
-    : join(orchRoot, 'runs', 'gate-timings', `${stamp}.json`)
+  const outPath =
+    enabled.includes('/') || enabled.endsWith('.json')
+      ? enabled
+      : join(orchRoot, 'runs', 'gate-timings', `${stamp}.json`)
   const sidecarPath = `${outPath}.spawn.json`
 
   type Kind = 'cli' | 'git' | 'other'

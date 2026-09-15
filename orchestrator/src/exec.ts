@@ -37,8 +37,9 @@ const id = Number(idArg)
 function recordStartupFailure(reason: string): void {
   if (!id) return
   try {
-    const path = process.env.ORCH_DB
-      ?? join(new URL('..', import.meta.url).pathname.replace(/\/$/, ''), 'orch.db')
+    const path =
+      process.env.ORCH_DB ??
+      join(new URL('..', import.meta.url).pathname.replace(/\/$/, ''), 'orch.db')
     // `readwrite` explicitly: Bun refuses `{ create: false }` on its own with
     // "flags must include SQLITE_OPEN_READONLY or SQLITE_OPEN_READWRITE", and
     // this function swallows its own errors by design — so the first version

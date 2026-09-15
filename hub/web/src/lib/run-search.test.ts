@@ -1,6 +1,11 @@
 import { describe, expect, test } from 'bun:test'
 import { vendorFigures } from './format'
-import { matchesRunSearch, runSearchText, type SearchableLiveRun, type SearchableRun } from './run-search'
+import {
+  matchesRunSearch,
+  runSearchText,
+  type SearchableLiveRun,
+  type SearchableRun,
+} from './run-search'
 import { PROJECT_FALLBACK } from './project'
 
 const completed: SearchableRun = {
@@ -22,10 +27,12 @@ const completed: SearchableRun = {
 }
 
 test('vendor figures remain separate currencies', () => {
-  expect(vendorFigures([
-    { agent: 'grok', tokens: 1_200_000 },
-    { agent: 'codex', tokens: 340_000 },
-  ])).toBe('grok 1.2M · codex 340K')
+  expect(
+    vendorFigures([
+      { agent: 'grok', tokens: 1_200_000 },
+      { agent: 'codex', tokens: 340_000 },
+    ]),
+  ).toBe('grok 1.2M · codex 340K')
 })
 
 const live: SearchableLiveRun = {
@@ -40,16 +47,33 @@ const live: SearchableLiveRun = {
 describe('runs collection search', () => {
   test('completed rows include every rendered text field', () => {
     for (const query of [
-      'workshop', 'DEV-259', 'codex', 'review-lens', 'craft', '4m 12s',
-      'partial', 'mixed', '12.3K', '$1.25', 'Sep 6', '10:30 am',
-    ]) expect(matchesRunSearch(completed, query)).toBe(true)
+      'workshop',
+      'DEV-259',
+      'codex',
+      'review-lens',
+      'craft',
+      '4m 12s',
+      'partial',
+      'mixed',
+      '12.3K',
+      '$1.25',
+      'Sep 6',
+      '10:30 am',
+    ])
+      expect(matchesRunSearch(completed, query)).toBe(true)
 
-    expect(matchesRunSearch({ ...completed, delivery: null, quality: null, status: 'failed' }, 'failed')).toBe(true)
-    expect(matchesRunSearch({ ...completed, delivery: null, quality: null, probe: true }, 'probe')).toBe(true)
-    expect(matchesRunSearch(
-      { ...completed, evidence_excluded: 'voided with orch score --void' },
-      'Not routing evidence',
-    )).toBe(true)
+    expect(
+      matchesRunSearch({ ...completed, delivery: null, quality: null, status: 'failed' }, 'failed'),
+    ).toBe(true)
+    expect(
+      matchesRunSearch({ ...completed, delivery: null, quality: null, probe: true }, 'probe'),
+    ).toBe(true)
+    expect(
+      matchesRunSearch(
+        { ...completed, evidence_excluded: 'voided with orch score --void' },
+        'Not routing evidence',
+      ),
+    ).toBe(true)
   })
 
   test('a voided unscored run is not found by Unscored and is found by the exclusion', () => {
@@ -79,7 +103,9 @@ describe('runs collection search', () => {
     for (const query of ['grok', 'implement', 'starship', '1m 32s', 'collection search']) {
       expect(matchesRunSearch(live, query)).toBe(true)
     }
-    expect(runSearchText({ ...live, prompt_head: `${'x'.repeat(90)}hidden` })).not.toContain('hidden')
+    expect(runSearchText({ ...live, prompt_head: `${'x'.repeat(90)}hidden` })).not.toContain(
+      'hidden',
+    )
   })
 
   test('rows without a project are found by the fallback ProjectMark renders', () => {

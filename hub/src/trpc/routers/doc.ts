@@ -21,24 +21,43 @@ async function fromOrch<T>(fn: () => Promise<T>): Promise<T> {
 
 export const docRouter = t.router({
   list: t.procedure
-    .input(z.object({
-      scope: scope.optional(),
-      subject: z.string().nullable().optional(),
-    }).optional())
+    .input(
+      z
+        .object({
+          scope: scope.optional(),
+          subject: z.string().nullable().optional(),
+        })
+        .optional(),
+    )
     .query(({ input }) => fromOrch(() => docList(input ?? {}))),
   get: t.procedure
     .input(z.object({ scope, subject, slug: z.string() }))
     .query(({ input }) => fromOrch(() => docGet(input.scope, input.subject, input.slug))),
   set: t.procedure
-    .input(z.object({
-      scope, subject, slug: z.string(), title: z.string(), body: z.string(),
-      reason: z.string().trim().min(1, 'Reason is required'),
-      delivery: z.enum(['inject', 'demand']).optional(),
-    }))
+    .input(
+      z.object({
+        scope,
+        subject,
+        slug: z.string(),
+        title: z.string(),
+        body: z.string(),
+        reason: z.string().trim().min(1, 'Reason is required'),
+        delivery: z.enum(['inject', 'demand']).optional(),
+      }),
+    )
     .mutation(({ input }) => fromOrch(() => docSet(input))),
   remove: t.procedure
-    .input(z.object({ scope, subject, slug: z.string(), reason: z.string().trim().min(1, 'Reason is required') }))
-    .mutation(({ input }) => fromOrch(() => docRemove(input.scope, input.subject, input.slug, input.reason))),
+    .input(
+      z.object({
+        scope,
+        subject,
+        slug: z.string(),
+        reason: z.string().trim().min(1, 'Reason is required'),
+      }),
+    )
+    .mutation(({ input }) =>
+      fromOrch(() => docRemove(input.scope, input.subject, input.slug, input.reason)),
+    ),
   history: t.procedure
     .input(z.object({ scope, subject, slug: z.string() }))
     .query(({ input }) => fromOrch(() => docHistory(input.scope, input.subject, input.slug))),

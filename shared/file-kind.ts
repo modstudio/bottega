@@ -2,7 +2,10 @@ export type FileKind = 'generated' | 'test' | 'docs' | 'config' | 'product'
 
 const RULES: [FileKind, RegExp][] = [
   ['generated', /drizzle\/(.*snapshot\.json$|meta\/)/],
-  ['generated', /(^|\/)(package-lock\.json|bun\.lockb?|yarn\.lock|composer\.lock|pnpm-lock\.yaml)$/],
+  [
+    'generated',
+    /(^|\/)(package-lock\.json|bun\.lockb?|yarn\.lock|composer\.lock|pnpm-lock\.yaml)$/,
+  ],
   ['generated', /\.min\.(js|css)$/],
   ['generated', /(^|\/)(dist|build|vendor|node_modules)\//],
   ['generated', /\.(map|snap|svg|png|jpe?g|gif|ico|woff2?|ttf|pdf|lock)$/],

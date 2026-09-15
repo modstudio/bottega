@@ -73,9 +73,7 @@ export async function ingestRuns(since: string): Promise<{ rows: number; skipped
        answered_at = excluded.answered_at`,
   )
   const deleteRootQuestions = d.query(`DELETE FROM question WHERE root_ref = ?`)
-  const close = d.query(
-    `UPDATE interval SET open = 0 WHERE source = 'orch' AND ref = ?`,
-  )
+  const close = d.query(`UPDATE interval SET open = 0 WHERE source = 'orch' AND ref = ?`)
   const removeOtherStarts = d.query(
     `DELETE FROM interval WHERE source = 'orch' AND ref = ? AND start_at <> ?`,
   )
@@ -113,7 +111,10 @@ export async function ingestRuns(since: string): Promise<{ rows: number; skipped
       // A probe is a smoke test — "reply with ok" — that did no work on
       // anything, so it is not engaged time on any task. A question on it is
       // still a request for a ruling.
-      if (r.probe === 1) { skipped++; continue }
+      if (r.probe === 1) {
+        skipped++
+        continue
+      }
 
       // Failover is a new root, not another turn of the run it replaces. The
       // predecessor can therefore fall outside this collect's time window even
@@ -129,7 +130,10 @@ export async function ingestRuns(since: string): Promise<{ rows: number; skipped
       for (const turn of turns) {
         const ref = r.turns ? `orch:${r.id}:turn:${turn.id}` : `orch:${r.id}`
         const start = new Date(turn.started_at).getTime()
-        if (!Number.isFinite(start)) { skipped++; continue }
+        if (!Number.isFinite(start)) {
+          skipped++
+          continue
+        }
 
         // A live turn grows to NOW until its measured latency arrives. A turn
         // that stopped without a latency contributes no execution interval.
@@ -140,10 +144,18 @@ export async function ingestRuns(since: string): Promise<{ rows: number; skipped
         }
         const end = turn.latency_ms == null ? Math.max(now, start) : start + turn.latency_ms
         stmt.run(
-          a.key, a.project, r.agent, r.job,
-          new Date(start).toISOString(), new Date(end).toISOString(),
-          turn.vendor_tokens ?? 0, turn.vendor_cost_usd, ref, a.via,
-          turn.latency_ms == null ? 1 : 0, r.session_id,
+          a.key,
+          a.project,
+          r.agent,
+          r.job,
+          new Date(start).toISOString(),
+          new Date(end).toISOString(),
+          turn.vendor_tokens ?? 0,
+          turn.vendor_cost_usd,
+          ref,
+          a.via,
+          turn.latency_ms == null ? 1 : 0,
+          r.session_id,
         )
         if (!r.turns) removeOtherStarts.run(ref, new Date(start).toISOString())
         rows++

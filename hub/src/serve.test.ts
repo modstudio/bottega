@@ -17,15 +17,22 @@ describe('run ingest', () => {
       status: 'ok',
     })
     await ingestRunFixtures(run)
-    const interval = db().query(
-      `SELECT task_key, via FROM interval WHERE ref = 'orch:9801'`,
-    ).get() as { task_key: string; via: string }
+    const interval = db()
+      .query(`SELECT task_key, via FROM interval WHERE ref = 'orch:9801'`)
+      .get() as { task_key: string; via: string }
     expect(interval).toEqual({ task_key: 'DEV-3000', via: 'launch_key' })
 
     const state = {
-      live: [], stale: 0, matrix: [], guide: [], health: [],
+      live: [],
+      stale: 0,
+      matrix: [],
+      guide: [],
+      health: [],
       totals: { runs: 1, failed: 0, stale_n: 0, toks: 0, scored: 1 },
-      unscored: 0, spawns: [], agents: [], byRepo: [],
+      unscored: 0,
+      spawns: [],
+      agents: [],
+      byRepo: [],
     }
     const spawn = spyOn(Bun, 'spawn').mockImplementation(((argv: string[]) => ({
       stdout: new Blob([argv.includes('runs') ? JSON.stringify(run) : JSON.stringify(state)]),
@@ -34,7 +41,7 @@ describe('run ingest', () => {
       kill() {},
     })) as unknown as typeof Bun.spawn)
     try {
-      const result = await view('runs', 24) as { rows: { id: number; task: string | null }[] }
+      const result = (await view('runs', 24)) as { rows: { id: number; task: string | null }[] }
       expect(result.rows).toEqual([expect.objectContaining({ id: 9801, task: 'DEV-3000' })])
     } finally {
       spawn.mockRestore()
@@ -49,9 +56,16 @@ describe('run ingest', () => {
       evidence_excluded: 'voided with orch score --void',
     })
     const state = {
-      live: [], stale: 0, matrix: [], guide: [], health: [],
+      live: [],
+      stale: 0,
+      matrix: [],
+      guide: [],
+      health: [],
       totals: { runs: 1, failed: 0, stale_n: 0, toks: 0, scored: 0, voided: 1 },
-      unscored: 0, spawns: [], agents: [], byRepo: [],
+      unscored: 0,
+      spawns: [],
+      agents: [],
+      byRepo: [],
     }
     const spawn = spyOn(Bun, 'spawn').mockImplementation(((argv: string[]) => ({
       stdout: new Blob([argv.includes('runs') ? JSON.stringify(run) : JSON.stringify(state)]),
@@ -60,16 +74,18 @@ describe('run ingest', () => {
       kill() {},
     })) as unknown as typeof Bun.spawn)
     try {
-      const result = await view('runs', 24) as {
+      const result = (await view('runs', 24)) as {
         totals: { scored: number; voided: number }
         rows: { id: number; evidence_excluded: string | null; delivery: string | null }[]
       }
       expect(result.totals).toEqual(expect.objectContaining({ scored: 0, voided: 1 }))
-      expect(result.rows).toEqual([expect.objectContaining({
-        id: 9821,
-        delivery: 'none',
-        evidence_excluded: 'voided with orch score --void',
-      })])
+      expect(result.rows).toEqual([
+        expect.objectContaining({
+          id: 9821,
+          delivery: 'none',
+          evidence_excluded: 'voided with orch score --void',
+        }),
+      ])
     } finally {
       spawn.mockRestore()
     }
@@ -81,9 +97,16 @@ describe('run ingest', () => {
       runFixture({ id: 9812, agent: 'codex', vendor_tokens: 340_000 }),
     ]
     const state = {
-      live: [], stale: 0, matrix: [], guide: [], health: [],
+      live: [],
+      stale: 0,
+      matrix: [],
+      guide: [],
+      health: [],
       totals: { runs: 2, failed: 0, stale_n: 0, toks: 1_540_000, scored: 2 },
-      unscored: 0, spawns: [], agents: [], byRepo: [],
+      unscored: 0,
+      spawns: [],
+      agents: [],
+      byRepo: [],
     }
     const spawn = spyOn(Bun, 'spawn').mockImplementation(((argv: string[]) => ({
       stdout: new Blob([
@@ -96,7 +119,7 @@ describe('run ingest', () => {
       kill() {},
     })) as unknown as typeof Bun.spawn)
     try {
-      const result = await view('runs', 24) as {
+      const result = (await view('runs', 24)) as {
         totals: Record<string, number>
         vendors: { agent: string; tokens: number }[]
       }

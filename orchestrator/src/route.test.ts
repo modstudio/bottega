@@ -1,15 +1,44 @@
-import { describe,expect,test } from 'bun:test';
-import { readFileSync } from 'node:fs';
-import { reviewReply } from '../test/fixtures/replies.ts';
-import { addRun,score } from '../test/fixtures/store.ts';
-import { AGENTS } from './agents.ts';
-import { resolveFailover } from './collect.ts';
-import { db,label,nowIso } from './db.ts';
-import { activeSql,pendingForSession,UNSCORED_WHERE,unscoredCount,voidedSql } from './evidence-query.ts';
-import { classify,COOLS_DOWN,FAILS_OVER,NEEDS_HUMAN,NEEDS_HUMAN_TITLE,NOT_EVIDENCE } from './failure.ts';
-import { completeReview,MIN_REVIEW_TRIAGED,recordReview,triageFinding } from './review-triage.ts';
-import { BETA_SCALE,candidates,currentPolicySelection,EVIDENCE_WINDOW,evidenceFor,median,MIN_SAMPLE,NOISE_BAND,pick,POSTERIOR_NOISE_BAND,QUALITY_STEP,scoreboard,STANDING_EXPLORE_RATE,standingExploreRate,weightCase } from './route.ts';
-import { weigh,WEIGHT } from './score.ts';
+import { describe, expect, test } from 'bun:test'
+import { readFileSync } from 'node:fs'
+import { reviewReply } from '../test/fixtures/replies.ts'
+import { addRun, score } from '../test/fixtures/store.ts'
+import { AGENTS } from './agents.ts'
+import { resolveFailover } from './collect.ts'
+import { db, label, nowIso } from './db.ts'
+import {
+  activeSql,
+  pendingForSession,
+  UNSCORED_WHERE,
+  unscoredCount,
+  voidedSql,
+} from './evidence-query.ts'
+import {
+  classify,
+  COOLS_DOWN,
+  FAILS_OVER,
+  NEEDS_HUMAN,
+  NEEDS_HUMAN_TITLE,
+  NOT_EVIDENCE,
+} from './failure.ts'
+import { completeReview, MIN_REVIEW_TRIAGED, recordReview, triageFinding } from './review-triage.ts'
+import {
+  BETA_SCALE,
+  candidates,
+  currentPolicySelection,
+  EVIDENCE_WINDOW,
+  evidenceFor,
+  median,
+  MIN_SAMPLE,
+  NOISE_BAND,
+  pick,
+  POSTERIOR_NOISE_BAND,
+  QUALITY_STEP,
+  scoreboard,
+  STANDING_EXPLORE_RATE,
+  standingExploreRate,
+  weightCase,
+} from './route.ts'
+import { weigh, WEIGHT } from './score.ts'
 
 describe('failure classification', () => {
   test('contract failures fail over as scoreable none evidence without cooldown or notification', () => {
@@ -21,8 +50,12 @@ describe('failure classification', () => {
     addRun({ agent: 'codex', job: 'implement', status: 'failed', kind: 'contract' })
     const routed = candidates('implement').find((item) => item.agent === 'codex')!
     expect(routed).toMatchObject({ failures: 1, evidence: 1, score: WEIGHT.none, cooling: null })
-    expect(scoreboard('implement').find((item) => item.agent === 'codex'))
-      .toMatchObject({ failures: 1, evidence: 1, score: WEIGHT.none, cooling: null })
+    expect(scoreboard('implement').find((item) => item.agent === 'codex')).toMatchObject({
+      failures: 1,
+      evidence: 1,
+      score: WEIGHT.none,
+      cooling: null,
+    })
   })
 
   test('unevidenced reviews fail over and count against the agent', () => {
@@ -32,30 +65,43 @@ describe('failure classification', () => {
     expect(NOT_EVIDENCE).not.toContain('unevidenced')
 
     addRun({ agent: 'codex', job: 'review-lens', status: 'failed', kind: 'unevidenced' })
-    expect(candidates('review-lens').find((item) => item.agent === 'codex'))
-      .toMatchObject({ failures: 1, evidence: 1, score: WEIGHT.none, cooling: null })
+    expect(candidates('review-lens').find((item) => item.agent === 'codex')).toMatchObject({
+      failures: 1,
+      evidence: 1,
+      score: WEIGHT.none,
+      cooling: null,
+    })
   })
 
   test("OpenAI's invalid response schema is a harness failure", () => {
-    expect(classify(
-      "Invalid schema for response_format 'codex_output_schema': additionalProperties is required",
-    )).toBe('harness')
+    expect(
+      classify(
+        "Invalid schema for response_format 'codex_output_schema': additionalProperties is required",
+      ),
+    ).toBe('harness')
   })
 
   test("Codex's own banner is not a permission denial", () => {
     // The banner Codex prints before it says anything, followed by the real
     // error. `approval` used to match here and stamped `denied` on it.
     const codexBanner = [
-      'OpenAI Codex v0.151.0', '--------',
-      'workdir: /workspace/y', 'model: gpt-5.6-sol',
-      'approval: never', 'sandbox: read-only', '',
-      'ERROR: Unexpected message role', 'stream disconnected',
+      'OpenAI Codex v0.151.0',
+      '--------',
+      'workdir: /workspace/y',
+      'model: gpt-5.6-sol',
+      'approval: never',
+      'sandbox: read-only',
+      '',
+      'ERROR: Unexpected message role',
+      'stream disconnected',
     ].join('\n')
     expect(classify(codexBanner)).not.toBe('denied')
   })
 
   test('a real headless denial still classifies as denied', () => {
-    expect(classify('jetski: no output produced — a tool required the "read_file" permission')).toBe('denied')
+    expect(
+      classify('jetski: no output produced — a tool required the "read_file" permission'),
+    ).toBe('denied')
     expect(classify('the command was auto-denied by headless mode')).toBe('denied')
   })
 
@@ -74,7 +120,11 @@ describe('failure classification', () => {
     expect(classify('balance exhausted')).toBe('quota')
     expect(classify('401 unauthorized')).toBe('auth')
     expect(NEEDS_HUMAN).toEqual([
-      'quota', 'auth', 'unreachable', 'escaped', 'confinement_unverified',
+      'quota',
+      'auth',
+      'unreachable',
+      'escaped',
+      'confinement_unverified',
     ])
   })
 
@@ -82,7 +132,8 @@ describe('failure classification', () => {
     const licenseFailure = JSON.stringify({
       status: 'ERROR',
       response: '',
-      error: 'You do not have a valid license of this product. Please contact your administrator to request a license. If you are not an enterprise user and believe you are receiving this message as an error, please try using the latest version and logging in again. (#3501)',
+      error:
+        'You do not have a valid license of this product. Please contact your administrator to request a license. If you are not an enterprise user and believe you are receiving this message as an error, please try using the latest version and logging in again. (#3501)',
     })
 
     expect(classify(licenseFailure)).toBe('entitlement')
@@ -92,9 +143,11 @@ describe('failure classification', () => {
     expect(classify('there is no seat at the table for this concern')).toBe('other')
     expect(classify('not a valid license identifier')).toBe('other')
     expect(classify('permission was denied due to missing entitlement')).toBe('denied')
-    expect(classify(
-      'This content was flagged for possible cybersecurity risk regarding entitlement bypass',
-    )).toBe('content_refusal')
+    expect(
+      classify(
+        'This content was flagged for possible cybersecurity risk regarding entitlement bypass',
+      ),
+    ).toBe('content_refusal')
     expect(NOT_EVIDENCE).toContain('entitlement')
     expect(FAILS_OVER).toContain('entitlement')
     expect(COOLS_DOWN).toContain('entitlement')
@@ -123,10 +176,13 @@ describe('failure classification', () => {
       expect(COOLS_DOWN).not.toContain(kind)
       addRun({ agent: 'grok', job: 'file-question', status: 'failed', kind })
     }
-    expect(NEEDS_HUMAN_TITLE.escaped('grok'))
-      .toBe('outside change observed during grok run')
-    expect(candidates('file-question').find((item) => item.agent === 'grok'))
-      .toMatchObject({ failures: 0, evidence: 0, score: null, cooling: null })
+    expect(NEEDS_HUMAN_TITLE.escaped('grok')).toBe('outside change observed during grok run')
+    expect(candidates('file-question').find((item) => item.agent === 'grok')).toMatchObject({
+      failures: 0,
+      evidence: 0,
+      score: null,
+      cooling: null,
+    })
   })
 
   test('an endpoint that is not there is unreachable, not a verdict', () => {
@@ -134,10 +190,12 @@ describe('failure classification', () => {
     // powered off, and the shapes a tunnel or a refused socket produce.
     expect(classify('[API Error: Connection error.]')).toBe('unreachable')
     expect(classify('connect ECONNREFUSED 127.0.0.1:8010')).toBe('unreachable')
-    expect(classify('ssh: connect to host 192.0.2.10 port 22: No route to host'))
-      .toBe('unreachable')
-    expect(classify('Unable to connect. Is the computer able to access the url?'))
-      .toBe('unreachable')
+    expect(classify('ssh: connect to host 192.0.2.10 port 22: No route to host')).toBe(
+      'unreachable',
+    )
+    expect(classify('Unable to connect. Is the computer able to access the url?')).toBe(
+      'unreachable',
+    )
   })
 
   test('what the room did is not evidence about the agent', () => {
@@ -145,8 +203,22 @@ describe('failure classification', () => {
     // process tree, and orch itself being wrong are not capability evidence.
     // None of them may be averaged in with the agent's actual work.
     expect(NOT_EVIDENCE).toEqual([
-      'quota', 'auth', 'entitlement', 'unreachable', 'context', 'cost', 'content_refusal', 'interrupted', 'idle', 'truncated', 'escaped',
-      'confinement_unverified', 'sandbox_denied', 'mcp_unverified', 'harness', 'abandoned',
+      'quota',
+      'auth',
+      'entitlement',
+      'unreachable',
+      'context',
+      'cost',
+      'content_refusal',
+      'interrupted',
+      'idle',
+      'truncated',
+      'escaped',
+      'confinement_unverified',
+      'sandbox_denied',
+      'mcp_unverified',
+      'harness',
+      'abandoned',
     ])
     for (const kind of ['timeout', 'denied', 'other']) {
       expect(NOT_EVIDENCE).not.toContain(kind)
@@ -165,8 +237,9 @@ describe('failure classification', () => {
     expect(classify('exit 1, empty output')).toBe('other')
     // Anchored whole-string, so a reply that merely discusses the shape - a
     // review of this very file would - is never thrown away as a failure.
-    expect(classify('the wrapper reported exit 143, empty output, which we now classify'))
-      .toBe('other')
+    expect(classify('the wrapper reported exit 143, empty output, which we now classify')).toBe(
+      'other',
+    )
   })
 
   test('an interrupted run neither cools the agent down nor pages a person', () => {
@@ -182,8 +255,12 @@ describe('failure classification', () => {
     expect(NEEDS_HUMAN).not.toContain('idle')
     expect(FAILS_OVER).not.toContain('idle')
     addRun({ agent: 'grok', job: 'implement', status: 'failed', kind: 'idle' })
-    expect(candidates('implement').find((item) => item.agent === 'grok'))
-      .toMatchObject({ failures: 0, evidence: 0, score: null, cooling: null })
+    expect(candidates('implement').find((item) => item.agent === 'grok')).toMatchObject({
+      failures: 0,
+      evidence: 0,
+      score: null,
+      cooling: null,
+    })
   })
 
   test('a content refusal fails over without cooling or paging', () => {
@@ -206,8 +283,7 @@ describe('failure classification', () => {
   test('a peer that reset stays a timeout — it answered before it stopped', () => {
     // Guards the deliberate narrowness of the unreachable pattern. Reclassifying
     // this on no evidence would trade one guess for another.
-    expect(classify('kex_exchange_identification: read: Connection reset by peer'))
-      .toBe('timeout')
+    expect(classify('kex_exchange_identification: read: Connection reset by peer')).toBe('timeout')
   })
 
   test('every kind needing a human has something to tell them', () => {
@@ -249,15 +325,18 @@ describe('routing counts failures as evidence', () => {
     score(id, 'none')
     const c = candidates('craft').find((x) => x.agent === 'codex')!
     expect(c.scored).toBe(1)
-    expect(c.failures).toBe(0)   // already represented by the score
-    expect(c.evidence).toBe(1)   // one run, one judgement
+    expect(c.failures).toBe(0) // already represented by the score
+    expect(c.evidence).toBe(1) // one run, one judgement
     expect(c.score).toBe(weigh('none', null))
   })
 
   test('an explicit score on an interrupted run is not routing evidence', () => {
     score(addRun({ agent: 'codex', job: 'craft' }), 'full', 'right')
     const interrupted = addRun({
-      agent: 'codex', job: 'craft', status: 'failed', kind: 'interrupted',
+      agent: 'codex',
+      job: 'craft',
+      status: 'failed',
+      kind: 'interrupted',
     })
     score(interrupted, 'none')
 
@@ -281,29 +360,34 @@ describe('routing counts failures as evidence', () => {
     score(addRun({ agent: 'codex', job: 'safety' }), 'full', 'right')
     score(addRun({ agent: 'codex', job: 'safety', status: 'failed' }), 'none')
     addRun({ agent: 'codex', job: 'safety', status: 'stale' })
-    addRun({ agent: 'codex', job: 'safety' })  // ok, unscored
+    addRun({ agent: 'codex', job: 'safety' }) // ok, unscored
     const c = candidates('safety').find((x) => x.agent === 'codex')!
     expect(c.evidence).toBeLessThanOrEqual(4)
-    expect(c.evidence).toBe(3)  // the unscored OK run is not yet a judgement
+    expect(c.evidence).toBe(3) // the unscored OK run is not yet a judgement
   })
 
   test('a woken box is usable at once, not in an hour', () => {
     // The bug this pins: wake succeeds, the box is serving five minutes later,
     // and routing still refuses it for the remaining fifty-five because the
     // last run had failed `unreachable`.
-    db().query(
-      `INSERT INTO run (started_at, agent, job, prompt_sha, prompt_bytes, prompt_head,
+    db()
+      .query(
+        `INSERT INTO run (started_at, agent, job, prompt_sha, prompt_bytes, prompt_head,
                         status, failure_kind)
        VALUES (datetime('now','-5 minutes'),'qwen-local','file-question','s',10,'h',
                'failed','unreachable')`,
-    ).run()
+      )
+      .run()
     const c = candidates('file-question').find((x) => x.agent === 'qwen-local')!
     expect(c.cooling).toBeNull()
   })
 
   test('quota opens the circuit, because only a run can tell you it has cleared', () => {
     addRun({
-      agent: 'codex', job: 'craft', status: 'failed', kind: 'quota',
+      agent: 'codex',
+      job: 'craft',
+      status: 'failed',
+      kind: 'quota',
       startedAt: new Date(Date.now() - 5 * 60_000).toISOString(),
     })
     const c = candidates('craft').find((x) => x.agent === 'codex')!
@@ -318,16 +402,26 @@ describe('routing counts failures as evidence', () => {
     // are still running; their later quota deaths must open the circuit.
     const base = Date.now() - 10 * 60_000
     addRun({
-      agent: 'grok', job: 'review-lens', status: 'failed', kind: 'quota',
-      startedAt: new Date(base).toISOString(), latency: 8 * 60_000,
+      agent: 'grok',
+      job: 'review-lens',
+      status: 'failed',
+      kind: 'quota',
+      startedAt: new Date(base).toISOString(),
+      latency: 8 * 60_000,
     })
     addRun({
-      agent: 'grok', job: 'review-lens', status: 'failed', kind: 'quota',
-      startedAt: new Date(base + 1000).toISOString(), latency: 8 * 60_000,
+      agent: 'grok',
+      job: 'review-lens',
+      status: 'failed',
+      kind: 'quota',
+      startedAt: new Date(base + 1000).toISOString(),
+      latency: 8 * 60_000,
     })
     addRun({
-      agent: 'grok', job: 'review-lens',
-      startedAt: new Date(base + 2000).toISOString(), latency: 2 * 60_000,
+      agent: 'grok',
+      job: 'review-lens',
+      startedAt: new Date(base + 2000).toISOString(),
+      latency: 2 * 60_000,
     })
 
     const c = candidates('review-lens').find((x) => x.agent === 'grok')!
@@ -340,14 +434,12 @@ describe('routing counts failures as evidence', () => {
     // qwen-local its best job and kept recording the failures against it.
     score(addRun({ agent: 'qwen-local', job: 'file-question' }), 'full', 'right')
     score(addRun({ agent: 'qwen-local', job: 'file-question' }), 'full', 'right')
-    addRun({ agent: 'qwen-local', job: 'file-question', status: 'failed',
-             kind: 'unreachable' })
-    addRun({ agent: 'qwen-local', job: 'file-question', status: 'failed',
-             kind: 'unreachable' })
+    addRun({ agent: 'qwen-local', job: 'file-question', status: 'failed', kind: 'unreachable' })
+    addRun({ agent: 'qwen-local', job: 'file-question', status: 'failed', kind: 'unreachable' })
 
     const c = candidates('file-question').find((x) => x.agent === 'qwen-local')!
-    expect(c.failures).toBe(0)          // neither outage is charged to the model
-    expect(c.evidence).toBe(2)          // only the two real verdicts
+    expect(c.failures).toBe(0) // neither outage is charged to the model
+    expect(c.evidence).toBe(2) // only the two real verdicts
     expect(c.score).toBe(weigh('full', 'right'))
   })
 
@@ -374,7 +466,7 @@ describe('routing counts failures as evidence', () => {
   test('an unclassified failure is still evidence, so the exclusion cannot leak', () => {
     // COALESCE, not a bare NOT IN: a NULL failure_kind must stay countable.
     // Without it every pre-classification row would silently stop counting.
-    addRun({ agent: 'grok', job: 'craft', status: 'failed' })   // kind NULL
+    addRun({ agent: 'grok', job: 'craft', status: 'failed' }) // kind NULL
     const c = candidates('craft').find((x) => x.agent === 'grok')!
     expect(c.failures).toBe(1)
   })
@@ -441,10 +533,10 @@ describe('the scoring matrix', () => {
 
   test('the three cells the old vocabulary could express kept their exact values', () => {
     // Migrating must not move any agent's standing on its own.
-    expect(weigh('full', 'right')).toBe(1)     // was good
-    expect(weigh('full', 'mixed')).toBe(0.5)   // was partial
-    expect(weigh('full', 'wrong')).toBe(0)     // was bad
-    expect(weigh('none', null)).toBe(-0.5)     // was unusable
+    expect(weigh('full', 'right')).toBe(1) // was good
+    expect(weigh('full', 'mixed')).toBe(0.5) // was partial
+    expect(weigh('full', 'wrong')).toBe(0) // was bad
+    expect(weigh('none', null)).toBe(-0.5) // was unusable
   })
 
   test('the SQL expression is built from the matrix, so editing it moves routing', () => {
@@ -454,7 +546,9 @@ describe('the scoring matrix', () => {
         expect(sql).toContain(`WHEN s.delivery = '${delivery}' THEN ${row}`)
       } else {
         for (const [quality, w] of Object.entries(row)) {
-          expect(sql).toContain(`WHEN s.delivery = '${delivery}' AND s.quality = '${quality}' THEN ${w}`)
+          expect(sql).toContain(
+            `WHEN s.delivery = '${delivery}' AND s.quality = '${quality}' THEN ${w}`,
+          )
         }
       }
     }
@@ -468,8 +562,9 @@ describe('the scoring matrix', () => {
     score(noAnswer, 'none')
     score(wrongAnswer, 'full', 'wrong')
     const cs = candidates('craft')
-    expect(cs.find((c) => c.agent === 'agy')!.score)
-      .toBeLessThan(cs.find((c) => c.agent === 'codex')!.score!)
+    expect(cs.find((c) => c.agent === 'agy')!.score).toBeLessThan(
+      cs.find((c) => c.agent === 'codex')!.score!,
+    )
   })
 
   test('the schema refuses an incoherent judgement', () => {
@@ -508,8 +603,8 @@ describe('the noise band', () => {
     // The old derivation was WEIGHT_MAX / MIN_SAMPLE / 2. It agreed only
     // because WEIGHT_MAX/2 and one quality step are both 0.5 today.
     const coincidence = 1 / MIN_SAMPLE / 2
-    expect(NOISE_BAND).toBeCloseTo(coincidence)          // same number now
-    expect(QUALITY_STEP).not.toBe(1 / 2 + 0.0001)        // but derived differently
+    expect(NOISE_BAND).toBeCloseTo(coincidence) // same number now
+    expect(QUALITY_STEP).not.toBe(1 / 2 + 0.0001) // but derived differently
   })
 })
 
@@ -524,7 +619,9 @@ describe('routing exploration', () => {
       const routed = pick('review-lens')
       expect(routed.agent).toBe('grok')
       expect(routed.reason).toContain('thompson; challenger')
-    } finally { Math.random = random }
+    } finally {
+      Math.random = random
+    }
   })
 
   test('draw=false ranks proven agents by the same shrunk posterior mean', () => {
@@ -544,32 +641,44 @@ describe('routing exploration', () => {
     expect(POSTERIOR_NOISE_BAND).toBeCloseTo(NOISE_BAND / BETA_SCALE)
     for (let i = 0; i < MIN_SAMPLE; i++) {
       score(addRun({ agent: 'codex', job: 'review-lens' }), 'full', 'right')
-      score(
-        addRun({ agent: 'grok', job: 'review-lens' }),
-        'full', i < 2 ? 'right' : 'mixed',
-      )
+      score(addRun({ agent: 'grok', job: 'review-lens' }), 'full', i < 2 ? 'right' : 'mixed')
     }
     const cands = candidates('review-lens').filter((candidate) =>
-      ['codex', 'grok'].includes(candidate.agent))
+      ['codex', 'grok'].includes(candidate.agent),
+    )
     const selected = currentPolicySelection(cands, [], false)
     const trunkStyle = [...cands].sort((a, b) => b.shrunk! - a.shrunk!)[0]!
-    const trunkBand = cands.filter((candidate) =>
-      trunkStyle.shrunk! - candidate.shrunk! <= NOISE_BAND)
+    const trunkBand = cands.filter(
+      (candidate) => trunkStyle.shrunk! - candidate.shrunk! <= NOISE_BAND,
+    )
     expect(pick('review-lens', undefined, 0, false).agent).toBe('codex')
     expect(trunkStyle.agent).toBe('codex')
     expect(trunkBand).toHaveLength(1)
     expect(selected).toMatchObject({ chosen: { agent: 'codex' }, tied: 1 })
 
     const candidate = (
-      agent: string, scoreValue: number, shrunk: number, free: boolean, latencyMs: number,
+      agent: string,
+      scoreValue: number,
+      shrunk: number,
+      free: boolean,
+      latencyMs: number,
     ) => ({
-      agent, scored: MIN_SAMPLE, failures: 0, none: 0, evidence: MIN_SAMPLE,
-      score: scoreValue, shrunk, free, latencyMs, precision: null,
+      agent,
+      scored: MIN_SAMPLE,
+      failures: 0,
+      none: 0,
+      evidence: MIN_SAMPLE,
+      score: scoreValue,
+      shrunk,
+      free,
+      latencyMs,
+      precision: null,
     })
-    const inside = currentPolicySelection([
-      candidate('a', 1, 0.975, false, 10_000),
-      candidate('b', 0.9, 0.925, true, 20_000),
-    ], [], false)
+    const inside = currentPolicySelection(
+      [candidate('a', 1, 0.975, false, 10_000), candidate('b', 0.9, 0.925, true, 20_000)],
+      [],
+      false,
+    )
     expect(inside).toMatchObject({ chosen: { agent: 'b' }, tied: 2 })
   })
 
@@ -585,8 +694,9 @@ describe('routing exploration', () => {
       completeReview(reviewId)
     }
     calibrate('grok', MIN_REVIEW_TRIAGED - 1)
-    expect(pick('review-lens', undefined, 0, false, null, {}, false, 'correctness').agent)
-      .toBe('codex')
+    expect(pick('review-lens', undefined, 0, false, null, {}, false, 'correctness').agent).toBe(
+      'codex',
+    )
     calibrate('grok', 1)
     const routed = pick('review-lens', undefined, 0, false, null, {}, false, 'correctness')
     expect(routed.agent).toBe('grok')
@@ -611,10 +721,12 @@ describe('routing exploration', () => {
       score(addRun({ agent: 'grok', job: 'review-lens' }), 'full', 'mixed')
     }
     const evalRun = addRun({ agent: 'codex', job: 'implement', probe: 1 })
-    db().query(
-      `INSERT INTO canon_eval (slug, run_id, canon_sha, agent, model, pass, why, at)
+    db()
+      .query(
+        `INSERT INTO canon_eval (slug, run_id, canon_sha, agent, model, pass, why, at)
        VALUES ('asks-instead-of-deciding', ?, 'sha', 'codex', 'm', 0, 'built', ?)`,
-    ).run(evalRun, nowIso())
+      )
+      .run(evalRun, nowIso())
     const random = Math.random
     Math.random = () => 0
     try {
@@ -623,7 +735,9 @@ describe('routing exploration', () => {
       expect(protectedRoute.reason).toContain(
         'codex not explored: failing canon eval asks-instead-of-deciding',
       )
-    } finally { Math.random = random }
+    } finally {
+      Math.random = random
+    }
 
     for (let i = 0; i < MIN_SAMPLE; i++) {
       score(addRun({ agent: 'codex', job: 'review-lens' }), 'full', 'right')
@@ -633,12 +747,15 @@ describe('routing exploration', () => {
 
   test('a failing eval never overrides an explicit agent pin', () => {
     const evalRun = addRun({ agent: 'codex', job: 'implement', probe: 1 })
-    db().query(
-      `INSERT INTO canon_eval (slug, run_id, canon_sha, agent, model, pass, why, at)
+    db()
+      .query(
+        `INSERT INTO canon_eval (slug, run_id, canon_sha, agent, model, pass, why, at)
        VALUES ('asks-instead-of-deciding', ?, 'sha', 'codex', 'm', 0, 'built', ?)`,
-    ).run(evalRun, nowIso())
+      )
+      .run(evalRun, nowIso())
     expect(pick('review-lens', 'codex')).toEqual({
-      agent: 'codex', reason: 'explicit --agent',
+      agent: 'codex',
+      reason: 'explicit --agent',
     })
   })
 
@@ -648,10 +765,12 @@ describe('routing exploration', () => {
       score(addRun({ agent: 'codex', job: 'review-lens' }), 'full', 'mixed')
     }
     const evalRun = addRun({ agent: 'codex', job: 'implement', probe: 1 })
-    db().query(
-      `INSERT INTO canon_eval (slug, run_id, canon_sha, agent, model, pass, why, at)
+    db()
+      .query(
+        `INSERT INTO canon_eval (slug, run_id, canon_sha, agent, model, pass, why, at)
        VALUES ('asks-instead-of-deciding', ?, 'sha', 'codex', 'm', 0, 'built', ?)`,
-    ).run(evalRun, nowIso())
+      )
+      .run(evalRun, nowIso())
     const random = Math.random
     Math.random = () => STANDING_EXPLORE_RATE / 2
     try {
@@ -659,7 +778,9 @@ describe('routing exploration', () => {
       expect(routed.agent).toBe('grok')
       expect(routed.reason).not.toContain('standing challenger')
       expect(routed.reason).toContain('codex not explored: failing canon eval')
-    } finally { Math.random = random }
+    } finally {
+      Math.random = random
+    }
   })
 
   test('a harness-failed eval run without an eval result leaves exploration open', () => {
@@ -667,7 +788,11 @@ describe('routing exploration', () => {
       score(addRun({ agent: 'grok', job: 'review-lens' }), 'full', 'right')
     }
     addRun({
-      agent: 'codex', job: 'implement', probe: 1, status: 'failed', kind: 'harness',
+      agent: 'codex',
+      job: 'implement',
+      probe: 1,
+      status: 'failed',
+      kind: 'harness',
     })
     const random = Math.random
     Math.random = () => 0
@@ -676,20 +801,38 @@ describe('routing exploration', () => {
       expect(routed.agent).toBe('codex')
       expect(routed.reason).toContain('challenger')
       expect(routed.reason).not.toContain('not explored')
-    } finally { Math.random = random }
+    } finally {
+      Math.random = random
+    }
   })
 
   test('two null precision cells fall through to free billing and then latency', () => {
     const candidate = (agent: string, free: boolean, latencyMs: number) => ({
-      agent, scored: MIN_SAMPLE, failures: 0, none: 0, evidence: MIN_SAMPLE,
-      score: 1, shrunk: 1, free, latencyMs, precision: null,
+      agent,
+      scored: MIN_SAMPLE,
+      failures: 0,
+      none: 0,
+      evidence: MIN_SAMPLE,
+      score: 1,
+      shrunk: 1,
+      free,
+      latencyMs,
+      precision: null,
     })
-    expect(currentPolicySelection([
-      candidate('paid-fast', false, 1_000), candidate('free-slow', true, 10_000),
-    ], [], false).chosen.agent).toBe('free-slow')
-    expect(currentPolicySelection([
-      candidate('slow', false, 10_000), candidate('fast', false, 1_000),
-    ], [], false).chosen.agent).toBe('fast')
+    expect(
+      currentPolicySelection(
+        [candidate('paid-fast', false, 1_000), candidate('free-slow', true, 10_000)],
+        [],
+        false,
+      ).chosen.agent,
+    ).toBe('free-slow')
+    expect(
+      currentPolicySelection(
+        [candidate('slow', false, 10_000), candidate('fast', false, 1_000)],
+        [],
+        false,
+      ).chosen.agent,
+    ).toBe('fast')
   })
 
   test('a wrong answer stays explorable, while delivery-none-only history does not', () => {
@@ -728,11 +871,9 @@ describe('routing exploration', () => {
   })
 
   test('the standing exploration floor decays with the leader cell evidence', () => {
-    expect(standingExploreRate(MIN_SAMPLE)).toBe(0.10)
+    expect(standingExploreRate(MIN_SAMPLE)).toBe(0.1)
     expect(standingExploreRate(4 * MIN_SAMPLE)).toBe(0.05)
-    expect(standingExploreRate(EVIDENCE_WINDOW)).toBe(
-      Math.max(0.03, 0.10 / Math.sqrt(8)),
-    )
+    expect(standingExploreRate(EVIDENCE_WINDOW)).toBe(Math.max(0.03, 0.1 / Math.sqrt(8)))
   })
 
   test('the standing draw skips a challenger whose scored history is all none', () => {
@@ -753,12 +894,12 @@ describe('routing exploration', () => {
 
 describe('what counts as unscored', () => {
   test('only a successful, non-probe, unjudged run is owed a judgement', () => {
-    addRun({ agent: 'grok', job: 'craft' })                          // owed
-    addRun({ agent: 'grok', job: 'craft', probe: 1 })                // calibration
-    addRun({ agent: 'grok', job: 'craft', status: 'failed' })        // already none
-    addRun({ agent: 'grok', job: 'craft', status: 'stale' })         // already none
-    addRun({ agent: 'grok', job: 'craft', status: 'running' })       // not finished
-    score(addRun({ agent: 'grok', job: 'craft' }), 'full', 'right')  // judged
+    addRun({ agent: 'grok', job: 'craft' }) // owed
+    addRun({ agent: 'grok', job: 'craft', probe: 1 }) // calibration
+    addRun({ agent: 'grok', job: 'craft', status: 'failed' }) // already none
+    addRun({ agent: 'grok', job: 'craft', status: 'stale' }) // already none
+    addRun({ agent: 'grok', job: 'craft', status: 'running' }) // not finished
+    score(addRun({ agent: 'grok', job: 'craft' }), 'full', 'right') // judged
 
     // `runs - scores` — what doctor and the card used to do — would say 5.
     expect(unscoredCount()).toBe(1)
@@ -774,7 +915,8 @@ describe('what counts as unscored', () => {
 
   test('the count honours the dashboard window', () => {
     const old = addRun({ agent: 'grok', job: 'craft' })
-    db().query('UPDATE run SET started_at=? WHERE id=?')
+    db()
+      .query('UPDATE run SET started_at=? WHERE id=?')
       .run(new Date(Date.now() - 60 * 86_400_000).toISOString(), old)
     addRun({ agent: 'grok', job: 'craft' })
     expect(unscoredCount()).toBe(2)
@@ -788,8 +930,8 @@ describe('median', () => {
     // how a pair of copies always starts.
     expect(median([])).toBeNull()
     expect(median([5])).toBe(5)
-    expect(median([3, 1, 2])).toBe(2)          // odd: middle after sorting
-    expect(median([4, 1, 3, 2])).toBe(2.5)     // even: mean of the middle two
+    expect(median([3, 1, 2])).toBe(2) // odd: middle after sorting
+    expect(median([4, 1, 3, 2])).toBe(2.5) // even: mean of the middle two
   })
 
   test('it does not disturb the array it is given', () => {
@@ -806,30 +948,29 @@ describe('median', () => {
 
 describe('fan-out routing exclusions', () => {
   test('avoid removes an agent while another eligible agent remains', () => {
-    expect(pick('review-lens', undefined, 0, false, null,
-      { agents: ['grok'] }).agent).toBe('codex')
+    expect(pick('review-lens', undefined, 0, false, null, { agents: ['grok'] }).agent).toBe('codex')
   })
 
   test('exhausted exclusions refuse and name the cause', () => {
-    expect(() => pick('review-lens', undefined, 0, false, null,
-      { agents: ['grok', 'codex'] })).toThrow(
-        'excluded by constraint: codex: --avoid named codex; grok: --avoid named grok',
-      )
+    expect(() =>
+      pick('review-lens', undefined, 0, false, null, { agents: ['grok', 'codex'] }),
+    ).toThrow('excluded by constraint: codex: --avoid named codex; grok: --avoid named grok')
   })
 
   test('MCP routing no longer excludes codex over the caller checkout', () => {
-    expect(pick('mcp-query', undefined, 0, false, null,
-      { agents: ['grok'] }).agent).toBe('codex')
+    expect(pick('mcp-query', undefined, 0, false, null, { agents: ['grok'] }).agent).toBe('codex')
   })
 
   test('an explicit pin that is also avoided is refused', () => {
-    expect(() => pick('review-lens', 'grok', 0, false, null,
-      { agents: ['grok'] })).toThrow('contradicts')
+    expect(() => pick('review-lens', 'grok', 0, false, null, { agents: ['grok'] })).toThrow(
+      'contradicts',
+    )
   })
 
   test('distinct models exclude the agent currently using one', () => {
-    expect(pick('review-lens', undefined, 0, false, null,
-      { models: [AGENTS.grok!.model] }).agent).toBe('codex')
+    expect(
+      pick('review-lens', undefined, 0, false, null, { models: [AGENTS.grok!.model] }).agent,
+    ).toBe('codex')
   })
 })
 
@@ -838,24 +979,31 @@ describe('routing narrows to a stack only when that buys a comparison', () => {
     // Narrowing here would demote an agent with a long job-wide record to
     // "unproven" and hand the work to whichever one reached five on this stack
     // first — the incumbency problem, arriving by a different door.
-    for (let i = 0; i < 6; i++) score(addRun({ agent: 'codex', job: 'craft', stack: 'php' }), 'full', 'right')
-    for (let i = 0; i < 9; i++) score(addRun({ agent: 'grok', job: 'craft', stack: 'node' }), 'full', 'right')
+    for (let i = 0; i < 6; i++)
+      score(addRun({ agent: 'codex', job: 'craft', stack: 'php' }), 'full', 'right')
+    for (let i = 0; i < 9; i++)
+      score(addRun({ agent: 'grok', job: 'craft', stack: 'node' }), 'full', 'right')
     expect(evidenceFor('craft', 0, 'php').level).toBe('job')
   })
 
   test('two proven agents on a stack is a real comparison', () => {
-    for (let i = 0; i < 6; i++) score(addRun({ agent: 'codex', job: 'craft', stack: 'php' }), 'full', 'right')
-    for (let i = 0; i < 6; i++) score(addRun({ agent: 'grok', job: 'craft', stack: 'php' }), 'full', 'mixed')
+    for (let i = 0; i < 6; i++)
+      score(addRun({ agent: 'codex', job: 'craft', stack: 'php' }), 'full', 'right')
+    for (let i = 0; i < 6; i++)
+      score(addRun({ agent: 'grok', job: 'craft', stack: 'php' }), 'full', 'mixed')
     const ev = evidenceFor('craft', 0, 'php')
     expect(ev.level).toBe('stack')
     expect(ev.stack).toBe('php')
   })
 
   test('evidence from another stack does not leak into a scoped view', () => {
-    for (let i = 0; i < 6; i++) score(addRun({ agent: 'codex', job: 'craft', stack: 'php' }), 'full', 'right')
-    for (let i = 0; i < 6; i++) score(addRun({ agent: 'grok', job: 'craft', stack: 'php' }), 'full', 'right')
+    for (let i = 0; i < 6; i++)
+      score(addRun({ agent: 'codex', job: 'craft', stack: 'php' }), 'full', 'right')
+    for (let i = 0; i < 6; i++)
+      score(addRun({ agent: 'grok', job: 'craft', stack: 'php' }), 'full', 'right')
     // A disaster on a different stack must not touch the php verdict.
-    for (let i = 0; i < 9; i++) addRun({ agent: 'codex', job: 'craft', stack: 'node', status: 'failed' })
+    for (let i = 0; i < 9; i++)
+      addRun({ agent: 'codex', job: 'craft', stack: 'node', status: 'failed' })
     const scoped = evidenceFor('craft', 0, 'php').cands.find((c) => c.agent === 'codex')!
     expect(scoped.evidence).toBe(6)
     expect(scoped.score).toBe(weigh('full', 'right'))
@@ -864,7 +1012,9 @@ describe('routing narrows to a stack only when that buys a comparison', () => {
   test('no stack at all behaves exactly as it always did', () => {
     for (let i = 0; i < 6; i++) score(addRun({ agent: 'codex', job: 'craft' }), 'full', 'right')
     expect(evidenceFor('craft', 0, null).level).toBe('job')
-    expect(evidenceFor('craft', 0, undefined).cands.find((c) => c.agent === 'codex')!.evidence).toBe(6)
+    expect(
+      evidenceFor('craft', 0, undefined).cands.find((c) => c.agent === 'codex')!.evidence,
+    ).toBe(6)
   })
 })
 
@@ -893,14 +1043,23 @@ describe('the Stop hook and orch agree on what is unscored', () => {
         }
         continue
       }
-      if (c === "'") { inString = true; continue }
-      if (c === '(') { depth++; continue }
-      if (c === ')') { depth--; continue }
+      if (c === "'") {
+        inString = true
+        continue
+      }
+      if (c === '(') {
+        depth++
+        continue
+      }
+      if (c === ')') {
+        depth--
+        continue
+      }
       if (
-        depth === 0
-        && sql.slice(i, i + kw.length).toLowerCase() === kw
-        && !isWordChar(sql[i - 1])
-        && !isWordChar(sql[i + kw.length])
+        depth === 0 &&
+        sql.slice(i, i + kw.length).toLowerCase() === kw &&
+        !isWordChar(sql[i - 1]) &&
+        !isWordChar(sql[i + kw.length])
       ) {
         parts.push(sql.slice(start, i).trim())
         i += kw.length - 1
@@ -925,7 +1084,10 @@ describe('the Stop hook and orch agree on what is unscored', () => {
         }
         continue
       }
-      if (c === "'") { inString = true; continue }
+      if (c === "'") {
+        inString = true
+        continue
+      }
       if (c === '(') depth++
       else if (c === ')') {
         depth--
@@ -953,7 +1115,8 @@ describe('the Stop hook and orch agree on what is unscored', () => {
     if (disjuncts.length < 2) return trimmed
 
     const listed = (d: string) =>
-      HOOK_ONLY_OR.includes(normalizeSql(d)) || HOOK_ONLY_OR.includes(normalizeSql(unwrapAllOuter(d)))
+      HOOK_ONLY_OR.includes(normalizeSql(d)) ||
+      HOOK_ONLY_OR.includes(normalizeSql(unwrapAllOuter(d)))
     const kept = disjuncts.filter((d) => !listed(d))
     if (kept.length === disjuncts.length) return trimmed
     if (kept.length === 0) return null
@@ -979,13 +1142,15 @@ describe('the Stop hook and orch agree on what is unscored', () => {
     return sql.slice(whereAt + 'WHERE'.length)
   }
 
-  const liveHookWhere = () => hookOwedWhere(
-    readFileSync(new URL('../hooks/score-reminder.py', import.meta.url).pathname, 'utf8'),
-  )
+  const liveHookWhere = () =>
+    hookOwedWhere(
+      readFileSync(new URL('../hooks/score-reminder.py', import.meta.url).pathname, 'utf8'),
+    )
 
   test('Stop cleanup has one global budget and uses non-blocking close-out', () => {
     const hook = readFileSync(
-      new URL('../hooks/score-reminder.py', import.meta.url).pathname, 'utf8',
+      new URL('../hooks/score-reminder.py', import.meta.url).pathname,
+      'utf8',
     )
     expect(hook).toContain('GLOBAL_BUDGET_SECONDS = 20')
     expect(hook).toContain('deadline = time.monotonic() + GLOBAL_BUDGET_SECONDS')
@@ -1011,13 +1176,16 @@ describe('the Stop hook and orch agree on what is unscored', () => {
 
   test('the comparator fails when either copy has a unique clause', () => {
     expect(predicateDrift('a AND b', 'a AND b AND extra')).toEqual({
-      missingFromHook: [], missingFromTs: ['extra'],
+      missingFromHook: [],
+      missingFromTs: ['extra'],
     })
     expect(predicateDrift('a AND b AND extra', 'a AND b')).toEqual({
-      missingFromHook: ['extra'], missingFromTs: [],
+      missingFromHook: ['extra'],
+      missingFromTs: [],
     })
     expect(predicateDrift("r.status = 'ok'", "r.session_id = ? AND r.status = 'ok'")).toEqual({
-      missingFromHook: [], missingFromTs: [],
+      missingFromHook: [],
+      missingFromTs: [],
     })
   })
 
@@ -1031,10 +1199,12 @@ describe('the Stop hook and orch agree on what is unscored', () => {
      * review reminder are hook-only; everything else must be the same set.
      */
     const hook = readFileSync(
-      new URL('../hooks/score-reminder.py', import.meta.url).pathname, 'utf8',
+      new URL('../hooks/score-reminder.py', import.meta.url).pathname,
+      'utf8',
     )
     expect(predicateDrift(UNSCORED_WHERE, hookOwedWhere(hook))).toEqual({
-      missingFromHook: [], missingFromTs: [],
+      missingFromHook: [],
+      missingFromTs: [],
     })
   })
 
@@ -1069,41 +1239,49 @@ describe('the Stop hook and orch agree on what is unscored', () => {
     const to = 'r.evidence_excluded IS NOT NULL'
     const hook = liveHookWhere()
     expect(predicateDrift(UNSCORED_WHERE.replace(from, to), hook)).not.toEqual({
-      missingFromHook: [], missingFromTs: [],
+      missingFromHook: [],
+      missingFromTs: [],
     })
     expect(predicateDrift(UNSCORED_WHERE, hook.replace(from, to))).not.toEqual({
-      missingFromHook: [], missingFromTs: [],
+      missingFromHook: [],
+      missingFromTs: [],
     })
   })
 
   test('reordering top-level conjuncts is not drift', () => {
-    const reordered = splitTopLevel(stripSqlComments(UNSCORED_WHERE), 'AND').toReversed().join(' AND ')
+    const reordered = splitTopLevel(stripSqlComments(UNSCORED_WHERE), 'AND')
+      .toReversed()
+      .join(' AND ')
     expect(predicateDrift(reordered, liveHookWhere())).toEqual({
-      missingFromHook: [], missingFromTs: [],
+      missingFromHook: [],
+      missingFromTs: [],
     })
   })
 
   test('whitespace changes are not drift', () => {
     const padded = stripSqlComments(UNSCORED_WHERE).replace(/\s+/g, '   \n')
     expect(predicateDrift(padded, liveHookWhere())).toEqual({
-      missingFromHook: [], missingFromTs: [],
+      missingFromHook: [],
+      missingFromTs: [],
     })
   })
 
-  test('an unlisted disjunct OR\'d onto the delivery group is drift, both ways', () => {
+  test("an unlisted disjunct OR'd onto the delivery group is drift, both ways", () => {
     const unlisted = 'r.stack IS NULL'
     const hook = liveHookWhere()
     expect(predicateDrift(orOntoLast(UNSCORED_WHERE, unlisted), hook)).not.toEqual({
-      missingFromHook: [], missingFromTs: [],
+      missingFromHook: [],
+      missingFromTs: [],
     })
     expect(predicateDrift(UNSCORED_WHERE, orOntoLast(hook, unlisted))).not.toEqual({
-      missingFromHook: [], missingFromTs: [],
+      missingFromHook: [],
+      missingFromTs: [],
     })
   })
 
   test('a new AND conjunct that merely mentions r.session_id or review. is still caught', () => {
     const hook = liveHookWhere()
-    const mentionsSession = 'COALESCE(r.session_id, \'\') <> \'\''
+    const mentionsSession = "COALESCE(r.session_id, '') <> ''"
     const mentionsReview = 'review.id IS NULL'
     expect(predicateDrift(UNSCORED_WHERE, `${hook} AND ${mentionsSession}`)).toEqual({
       missingFromHook: [],
@@ -1118,14 +1296,19 @@ describe('the Stop hook and orch agree on what is unscored', () => {
   test('empty-string exclusion is voided in SQL, matching IS NOT NULL not truthiness', () => {
     const id = addRun({ agent: 'codex', job: 'implement', status: 'asking' })
     db().query("UPDATE run SET evidence_excluded='' WHERE id=?").run(id)
-    const row = db().query(
-      `SELECT ${voidedSql('r')} AS voided, ${activeSql('r')} AS active FROM run r WHERE id=?`,
-    ).get(id) as { voided: number; active: number }
+    const row = db()
+      .query(
+        `SELECT ${voidedSql('r')} AS voided, ${activeSql('r')} AS active FROM run r WHERE id=?`,
+      )
+      .get(id) as { voided: number; active: number }
     expect(row).toEqual({ voided: 1, active: 0 })
-    const nulled = db().query(
-      `SELECT ${voidedSql('r')} AS voided, ${activeSql('r')} AS active FROM run r WHERE id=?`,
-    ).get(addRun({ agent: 'codex', job: 'implement', status: 'asking' })) as {
-      voided: number; active: number
+    const nulled = db()
+      .query(
+        `SELECT ${voidedSql('r')} AS voided, ${activeSql('r')} AS active FROM run r WHERE id=?`,
+      )
+      .get(addRun({ agent: 'codex', job: 'implement', status: 'asking' })) as {
+      voided: number
+      active: number
     }
     expect(nulled).toEqual({ voided: 0, active: 1 })
   })

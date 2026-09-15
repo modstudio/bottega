@@ -64,7 +64,8 @@ export async function run(argv: string[]): Promise<number> {
     return Number(process.exitCode ?? 0)
   } catch (error) {
     const code = exitCodeFor(error)
-    if (!(error instanceof CommanderError)) console.error(error instanceof Error ? error.message : String(error))
+    if (!(error instanceof CommanderError))
+      console.error(error instanceof Error ? error.message : String(error))
     return code
   }
 }

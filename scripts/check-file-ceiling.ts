@@ -8,7 +8,12 @@ const STATE_FILE = `${ROOT}/scripts/quality/file-ceiling.json`
 const STATE_LABEL = 'scripts/quality/file-ceiling.json'
 const CEILING = 1000
 const SOURCE_ROOTS = [
-  'orchestrator/src', 'orchestrator/test', 'hub/src', 'hub/web/src', 'shared', 'scripts',
+  'orchestrator/src',
+  'orchestrator/test',
+  'hub/src',
+  'hub/web/src',
+  'shared',
+  'scripts',
 ]
 
 export const GENERATED_EXCLUSIONS = [
@@ -95,7 +100,10 @@ export function checkFileCeiling(options: FileCeilingOptions = {}) {
   const tightenings: string[] = []
   for (const { path, lines } of measured) {
     const decision = decideCeiling({
-      key: path, value: lines, frozen: frozen[path], ceiling: CEILING,
+      key: path,
+      value: lines,
+      frozen: frozen[path],
+      ceiling: CEILING,
     })
     if (decision === 'lower') {
       next[path] = lines
@@ -108,7 +116,7 @@ export function checkFileCeiling(options: FileCeilingOptions = {}) {
     if (decision === 'fail') {
       violations.push(
         `${path}: ${lines} code lines, frozen at ${frozen[path] ?? CEILING}; ` +
-        'split a concern out (architecture-rules 15)',
+          'split a concern out (architecture-rules 15)',
       )
     }
   }
@@ -122,9 +130,7 @@ export function checkFileCeiling(options: FileCeilingOptions = {}) {
   for (const tightening of tightenings) reporter.error(tightening)
   for (const violation of violations) reporter.error(violation)
   if (tightenings.length) {
-    reporter.error(
-      `baseline tightened; commit ${STATE_LABEL} and re-run (architecture-rules 15)`,
-    )
+    reporter.error(`baseline tightened; commit ${STATE_LABEL} and re-run (architecture-rules 15)`)
   }
   if (violations.length || tightenings.length) {
     return false

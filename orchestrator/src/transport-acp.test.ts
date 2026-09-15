@@ -4,19 +4,41 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { AGENTS } from './agents.ts'
 import {
-  ACP_PILOT_TASK, acpRuntimeGaps, assertAcpAllowed, confineFsPath, decideAcpPermission,
-  failureKindFromStop, isAcpPilotJob, outcomeFromTransport, resolveTransportName,
-  selectAgentForTransport, stopErrorMessage, valueMatchesStrictSchema,
+  ACP_PILOT_TASK,
+  acpRuntimeGaps,
+  assertAcpAllowed,
+  confineFsPath,
+  decideAcpPermission,
+  failureKindFromStop,
+  isAcpPilotJob,
+  outcomeFromTransport,
+  resolveTransportName,
+  selectAgentForTransport,
+  stopErrorMessage,
+  valueMatchesStrictSchema,
 } from './transport.ts'
 import {
-  acpHarnessArgv, acpLeaderSocketPath, acpOutcome, acpSandboxProfile, grokEffectiveModel,
-  grokSessionMeta, normalizeAcpTurn,
+  acpHarnessArgv,
+  acpLeaderSocketPath,
+  acpOutcome,
+  acpSandboxProfile,
+  grokEffectiveModel,
+  grokSessionMeta,
+  normalizeAcpTurn,
 } from './transport-acp.ts'
 import {
-  ACP_FIXTURE_CANCELLED_TEXT, ACP_FIXTURE_EDIT_PERMISSION, ACP_FIXTURE_ELICITATION,
-  ACP_FIXTURE_GROK, ACP_FIXTURE_MALFORMED, ACP_FIXTURE_REFUSAL, ACP_FIXTURE_SCHEMA,
-  ACP_FIXTURE_STRUCTURED_OK, ACP_FIXTURE_TIMEOUT, ACP_FIXTURE_TOOL_READ,
-  ACP_FIXTURE_TRUNCATED, ACP_FIXTURE_TRUNCATED_TEXT,
+  ACP_FIXTURE_CANCELLED_TEXT,
+  ACP_FIXTURE_EDIT_PERMISSION,
+  ACP_FIXTURE_ELICITATION,
+  ACP_FIXTURE_GROK,
+  ACP_FIXTURE_MALFORMED,
+  ACP_FIXTURE_REFUSAL,
+  ACP_FIXTURE_SCHEMA,
+  ACP_FIXTURE_STRUCTURED_OK,
+  ACP_FIXTURE_TIMEOUT,
+  ACP_FIXTURE_TOOL_READ,
+  ACP_FIXTURE_TRUNCATED,
+  ACP_FIXTURE_TRUNCATED_TEXT,
 } from './transport-acp.fixtures.ts'
 
 describe('ACP transport selection', () => {
@@ -61,7 +83,9 @@ describe('ACP transport selection', () => {
       const agent = AGENTS[name]!
       expect(agent.defaultTransport).toBe('cli')
       expect(agent.acp?.nativeElicitation).toBe(false)
-      expect(agent.acp?.nativeElicitationReason).toMatch(/emitted no elicitation\/create|unavailable/)
+      expect(agent.acp?.nativeElicitationReason).toMatch(
+        /emitted no elicitation\/create|unavailable/,
+      )
     }
     expect(AGENTS.codex!.acp?.mcpServers).toBe(true)
     expect(AGENTS.grok!.acp?.mcpServers).toBe(false)
@@ -70,15 +94,27 @@ describe('ACP transport selection', () => {
 
   test('grok model is passed through session/new and read back from the session', () => {
     expect(grokSessionMeta('grok-4.5')).toEqual({ modelId: 'grok-4.5' })
-    expect(grokEffectiveModel({
-      models: { currentModelId: 'grok-4.5', availableModels: [] },
-    }, 'grok-4.5', true)).toBe('grok-4.5')
+    expect(
+      grokEffectiveModel(
+        {
+          models: { currentModelId: 'grok-4.5', availableModels: [] },
+        },
+        'grok-4.5',
+        true,
+      ),
+    ).toBe('grok-4.5')
   })
 
   test('an explicit grok model the ACP session did not honour is refused with its anchor', () => {
-    expect(() => grokEffectiveModel({
-      models: { currentModelId: 'grok-4.6', availableModels: [] },
-    }, 'grok-4.5', true)).toThrow(`${ACP_PILOT_TASK} Grok ACP model refusal`)
+    expect(() =>
+      grokEffectiveModel(
+        {
+          models: { currentModelId: 'grok-4.6', availableModels: [] },
+        },
+        'grok-4.5',
+        true,
+      ),
+    ).toThrow(`${ACP_PILOT_TASK} Grok ACP model refusal`)
     expect(() => grokEffectiveModel({}, 'grok-4.5', true)).toThrow('no effective model')
   })
 })
@@ -93,18 +129,22 @@ describe('ACP event fixtures normalise to orch outcomes', () => {
     expect(result.sessionId).toBe('sess_parity_ok')
     expect(result.events.some((event) => event.kind === 'text')).toBe(true)
     expect(result.events.some((event) => event.kind === 'usage')).toBe(true)
-    expect(result.events.some((event) => event.kind === 'stop' && event.reason === 'end_turn')).toBe(true)
+    expect(
+      result.events.some((event) => event.kind === 'stop' && event.reason === 'end_turn'),
+    ).toBe(true)
   })
 
   test('PromptResponse.usage without token fields stays unreported rather than 0', () => {
     const result = normalizeAcpTurn({
       sessionId: 'sess_no_usage',
-      updates: [{
-        update: {
-          sessionUpdate: 'agent_message_chunk',
-          content: { type: 'text', text: 'ok' },
+      updates: [
+        {
+          update: {
+            sessionUpdate: 'agent_message_chunk',
+            content: { type: 'text', text: 'ok' },
+          },
         },
-      }],
+      ],
       stopReason: 'end_turn',
       usage: {},
     })
@@ -116,12 +156,14 @@ describe('ACP event fixtures normalise to orch outcomes', () => {
   test('PromptResponse.usage records vendor tokens and cost when emitted', () => {
     const result = normalizeAcpTurn({
       sessionId: 'sess_usage',
-      updates: [{
-        update: {
-          sessionUpdate: 'agent_message_chunk',
-          content: { type: 'text', text: 'ok' },
+      updates: [
+        {
+          update: {
+            sessionUpdate: 'agent_message_chunk',
+            content: { type: 'text', text: 'ok' },
+          },
         },
-      }],
+      ],
       stopReason: 'end_turn',
       usage: { inputTokens: 10, outputTokens: 5, costUsd: 0.002 },
     })
@@ -133,33 +175,47 @@ describe('ACP event fixtures normalise to orch outcomes', () => {
     const result = normalizeAcpTurn(ACP_FIXTURE_TOOL_READ)
     expect(acpOutcome(result)).toBe('ok')
     expect(result.output).toBe('"@devbox/orchestrator"')
-    expect(result.events.some((event) => event.kind === 'tool' && event.toolKind === 'read')).toBe(true)
+    expect(result.events.some((event) => event.kind === 'tool' && event.toolKind === 'read')).toBe(
+      true,
+    )
   })
 
   test('a completed read captures the target path and tool result', () => {
     const result = normalizeAcpTurn({
       sessionId: 'sess_probe',
-      updates: [{
-        sessionUpdate: 'tool_call',
-        title: 'Read probe.txt',
-        kind: 'read',
-        status: 'completed',
-        locations: [{ path: '/tmp/repo/probe.txt' }],
-        content: [{ type: 'content', content: { type: 'text', text: 'REGISTRATION_PROBE_FILE_OK\n' } }],
-      }],
+      updates: [
+        {
+          sessionUpdate: 'tool_call',
+          title: 'Read probe.txt',
+          kind: 'read',
+          status: 'completed',
+          locations: [{ path: '/tmp/repo/probe.txt' }],
+          content: [
+            { type: 'content', content: { type: 'text', text: 'REGISTRATION_PROBE_FILE_OK\n' } },
+          ],
+        },
+      ],
       stopReason: 'end_turn',
     })
-    expect(result.events.some((event) => event.kind === 'tool' &&
-      event.toolKind === 'read' && event.status === 'completed' &&
-      event.target === '/tmp/repo/probe.txt' &&
-      event.result === 'REGISTRATION_PROBE_FILE_OK\n')).toBe(true)
+    expect(
+      result.events.some(
+        (event) =>
+          event.kind === 'tool' &&
+          event.toolKind === 'read' &&
+          event.status === 'completed' &&
+          event.target === '/tmp/repo/probe.txt' &&
+          event.result === 'REGISTRATION_PROBE_FILE_OK\n',
+      ),
+    ).toBe(true)
   })
 
   test('grok updates use terminal input plus output usage, not session-context used', () => {
     const result = normalizeAcpTurn(ACP_FIXTURE_GROK)
     expect(result.output).toBe('@devbox/orchestrator')
     expect(result.tokens).toBe(101_505)
-    expect(result.events.some((event) => event.kind === 'tool' && event.toolKind === 'read')).toBe(true)
+    expect(result.events.some((event) => event.kind === 'tool' && event.toolKind === 'read')).toBe(
+      true,
+    )
   })
 
   test('a schema-shaped reply is ok with the JSON body', () => {
@@ -226,7 +282,9 @@ describe('ACP defaults Codex and preflight names the missing piece', () => {
 
   test('preflight names a missing SDK', () => {
     const gap = acpRuntimeGaps({
-      sdkResolve: () => { throw new Error('Cannot find module') },
+      sdkResolve: () => {
+        throw new Error('Cannot find module')
+      },
       binExists: () => true,
     })
     expect(gap).toContain(ACP_PILOT_TASK)
@@ -246,7 +304,9 @@ describe('ACP defaults Codex and preflight names the missing piece', () => {
   test('preflight names a missing ajv', () => {
     const gap = acpRuntimeGaps({
       sdkResolve: () => '/fake/sdk',
-      ajvResolve: () => { throw new Error('Cannot find module') },
+      ajvResolve: () => {
+        throw new Error('Cannot find module')
+      },
       binExists: () => true,
     })
     expect(gap).toContain(ACP_PILOT_TASK)
@@ -262,14 +322,18 @@ describe('ACP client-served fs is confined to the worktree', () => {
 
   test('the grok leader socket is the only socket added to the srt profile', () => {
     const profile = {
-      network: { allowedDomains: [], deniedDomains: [], allowUnixSockets: [], allowLocalBinding: true },
+      network: {
+        allowedDomains: [],
+        deniedDomains: [],
+        allowUnixSockets: [],
+        allowLocalBinding: true,
+      },
       filesystem: { denyRead: [], allowWithinDeny: ['/tree'], allowWrite: ['/run'], denyWrite: [] },
     }
     const confined = acpSandboxProfile(profile, '/run/grok.leader.sock')
     expect(confined.network.allowUnixSockets).toEqual(['/run/grok.leader.sock'])
     expect(confined.filesystem).toEqual(profile.filesystem)
-    expect(acpLeaderSocketPath('/evidence/out.txt', '/run'))
-      .toBe('/run/grok-leader.sock')
+    expect(acpLeaderSocketPath('/evidence/out.txt', '/run')).toBe('/run/grok-leader.sock')
     expect(acpLeaderSocketPath('/evidence/out.txt')).toBe('/evidence/out.txt.leader.sock')
   })
   test('a path inside the worktree is allowed; a path outside is refused by name', () => {
@@ -287,10 +351,12 @@ describe('ACP client-served fs is confined to the worktree', () => {
     const root = mkdtempSync(join(tmpdir(), 'orch-acp-fs-missing-'))
     roots.push(root)
     mkdirSync(join(root, 'src'))
-    expect(confineFsPath(join(root, 'src', 'nope.ts'), root))
-      .toBe(join(realpathSync(join(root, 'src')), 'nope.ts'))
-    expect(() => confineFsPath(join(tmpdir(), 'outside-nope.ts'), root))
-      .toThrow('ACP fs.readTextFile refused')
+    expect(confineFsPath(join(root, 'src', 'nope.ts'), root)).toBe(
+      join(realpathSync(join(root, 'src')), 'nope.ts'),
+    )
+    expect(() => confineFsPath(join(tmpdir(), 'outside-nope.ts'), root)).toThrow(
+      'ACP fs.readTextFile refused',
+    )
   })
 })
 
@@ -299,33 +365,41 @@ describe('ACP permission policy', () => {
     const allow = decideAcpPermission('read', ACP_FIXTURE_EDIT_PERMISSION.options)
     expect(allow.decision).toBe('allow')
     const edit = decideAcpPermission(
-      ACP_FIXTURE_EDIT_PERMISSION.toolKind, ACP_FIXTURE_EDIT_PERMISSION.options,
+      ACP_FIXTURE_EDIT_PERMISSION.toolKind,
+      ACP_FIXTURE_EDIT_PERMISSION.options,
     )
     expect(edit.decision).toBe('reject')
     expect(edit.outcome).toEqual({ outcome: 'selected', optionId: 'reject-once' })
     const result = normalizeAcpTurn({
       sessionId: 'sess_edit',
-      updates: [{
-        sessionId: 'sess_edit',
-        update: {
-          sessionUpdate: 'tool_call',
-          title: ACP_FIXTURE_EDIT_PERMISSION.title,
-          kind: 'edit',
-          status: 'failed',
+      updates: [
+        {
+          sessionId: 'sess_edit',
+          update: {
+            sessionUpdate: 'tool_call',
+            title: ACP_FIXTURE_EDIT_PERMISSION.title,
+            kind: 'edit',
+            status: 'failed',
+          },
         },
-      }],
-      permissionEvents: [{
-        kind: 'permission',
-        title: ACP_FIXTURE_EDIT_PERMISSION.title,
-        optionKinds: ACP_FIXTURE_EDIT_PERMISSION.options.map((option) => option.kind),
-        toolKind: 'edit',
-        decision: edit.decision,
-      }],
+      ],
+      permissionEvents: [
+        {
+          kind: 'permission',
+          title: ACP_FIXTURE_EDIT_PERMISSION.title,
+          optionKinds: ACP_FIXTURE_EDIT_PERMISSION.options.map((option) => option.kind),
+          toolKind: 'edit',
+          decision: edit.decision,
+        },
+      ],
       stopReason: 'end_turn',
     })
-    expect(result.events.some((event) =>
-      event.kind === 'permission' && event.decision === 'reject' && event.toolKind === 'edit',
-    )).toBe(true)
+    expect(
+      result.events.some(
+        (event) =>
+          event.kind === 'permission' && event.decision === 'reject' && event.toolKind === 'edit',
+      ),
+    ).toBe(true)
   })
 
   test('execute and write-class tools are rejected', () => {
@@ -354,26 +428,77 @@ describe('tool_call_update folds into its tool_call', () => {
   test('a goose-shaped read (call with target, update with only the status) satisfies the readsRepo probe gate', async () => {
     const { registrationProbeReadsRepo } = await import('./agents.ts')
     const result = normalizeAcpTurn({
-      sessionId: 's', stopReason: 'end_turn', updates: [
-        { update: { sessionUpdate: 'tool_call', toolCallId: 'call-1', title: 'read probe.txt', kind: 'read', status: 'pending', locations: [{ path: '/tmp/probe/probe.txt' }] } },
-        { update: { sessionUpdate: 'tool_call_update', toolCallId: 'call-1', status: 'in_progress' } },
-        { update: { sessionUpdate: 'tool_call_update', toolCallId: 'call-1', status: 'completed', rawOutput: 'REGISTRATION_PROBE_FILE_OK' } },
-        { update: { sessionUpdate: 'agent_message_chunk', content: { type: 'text', text: 'The contents are REGISTRATION_PROBE_FILE_OK' } } },
+      sessionId: 's',
+      stopReason: 'end_turn',
+      updates: [
+        {
+          update: {
+            sessionUpdate: 'tool_call',
+            toolCallId: 'call-1',
+            title: 'read probe.txt',
+            kind: 'read',
+            status: 'pending',
+            locations: [{ path: '/tmp/probe/probe.txt' }],
+          },
+        },
+        {
+          update: {
+            sessionUpdate: 'tool_call_update',
+            toolCallId: 'call-1',
+            status: 'in_progress',
+          },
+        },
+        {
+          update: {
+            sessionUpdate: 'tool_call_update',
+            toolCallId: 'call-1',
+            status: 'completed',
+            rawOutput: 'REGISTRATION_PROBE_FILE_OK',
+          },
+        },
+        {
+          update: {
+            sessionUpdate: 'agent_message_chunk',
+            content: { type: 'text', text: 'The contents are REGISTRATION_PROBE_FILE_OK' },
+          },
+        },
       ],
     })
     const tools = result.events.filter((event) => event.kind === 'tool')
     expect(tools).toHaveLength(1)
-    expect(tools[0]).toMatchObject({ status: 'completed', toolKind: 'read', target: '/tmp/probe/probe.txt', result: 'REGISTRATION_PROBE_FILE_OK' })
+    expect(tools[0]).toMatchObject({
+      status: 'completed',
+      toolKind: 'read',
+      target: '/tmp/probe/probe.txt',
+      result: 'REGISTRATION_PROBE_FILE_OK',
+    })
     expect(registrationProbeReadsRepo(result.events, result.output)).toBe(true)
   })
 
   test('an update naming no known call stays its own event, and an unrelated tool plus a hallucinated sentinel still fails the gate', async () => {
     const { registrationProbeReadsRepo } = await import('./agents.ts')
     const result = normalizeAcpTurn({
-      sessionId: 's', stopReason: 'end_turn', updates: [
-        { update: { sessionUpdate: 'tool_call', toolCallId: 'call-9', title: 'list directory', kind: 'execute', status: 'completed' } },
-        { update: { sessionUpdate: 'tool_call_update', toolCallId: 'orphan', status: 'completed' } },
-        { update: { sessionUpdate: 'agent_message_chunk', content: { type: 'text', text: 'REGISTRATION_PROBE_FILE_OK' } } },
+      sessionId: 's',
+      stopReason: 'end_turn',
+      updates: [
+        {
+          update: {
+            sessionUpdate: 'tool_call',
+            toolCallId: 'call-9',
+            title: 'list directory',
+            kind: 'execute',
+            status: 'completed',
+          },
+        },
+        {
+          update: { sessionUpdate: 'tool_call_update', toolCallId: 'orphan', status: 'completed' },
+        },
+        {
+          update: {
+            sessionUpdate: 'agent_message_chunk',
+            content: { type: 'text', text: 'REGISTRATION_PROBE_FILE_OK' },
+          },
+        },
       ],
     })
     expect(result.events.filter((event) => event.kind === 'tool')).toHaveLength(2)

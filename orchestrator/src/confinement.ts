@@ -3,7 +3,12 @@ import { existsSync, statSync } from 'node:fs'
 import { join } from 'node:path'
 import type { Database } from 'bun:sqlite'
 import {
-  AttributionKindSchema, ConfinementClassSchema, emptyAttribution, type AttributionKind, type ConfinementClass, } from '../../shared/orch-contract.ts'
+  AttributionKindSchema,
+  ConfinementClassSchema,
+  emptyAttribution,
+  type AttributionKind,
+  type ConfinementClass,
+} from '../../shared/orch-contract.ts'
 import { targetGitEnvironment } from './git-environment.ts'
 
 export const UNTRUSTED_INDEX_WINDOW_MS = 1000
@@ -52,7 +57,8 @@ export type FreezeFailure = CheckoutToWatch & { error: string }
 function git(cwd: string, args: string[]): { ok: boolean; stdout: string; stderr: string } {
   const p = Bun.spawnSync(['git', '-C', cwd, ...args], {
     env: { ...targetGitEnvironment(cwd), GIT_OPTIONAL_LOCKS: '0' },
-    stdout: 'pipe', stderr: 'pipe',
+    stdout: 'pipe',
+    stderr: 'pipe',
   })
   return {
     ok: p.exitCode === 0,
@@ -118,8 +124,9 @@ export function indexIsUntrusted(cwd: string, now = Date.now()): boolean {
   }
 }
 
-function samplePorcelain(cwd: string):
-  { ok: true; status: string; head: string | null } | { ok: false; error: string } {
+function samplePorcelain(
+  cwd: string,
+): { ok: true; status: string; head: string | null } | { ok: false; error: string } {
   const status = git(cwd, ['status', '--porcelain=v1', '-z', '--untracked-files=all'])
   if (!status.ok) {
     return { ok: false, error: status.stderr.trim() || 'git status failed' }
@@ -181,7 +188,8 @@ function lockHolderPids(checkout: string): ConfinementLockHolder[] {
   const lock = gitDir.ok ? join(gitDir.stdout.trim(), 'index.lock') : null
   if (!lock || !existsSync(lock)) return []
   const owner = Bun.spawnSync(['lsof', '-nP', '-Fpc', '--', lock], {
-    stdout: 'pipe', stderr: 'ignore',
+    stdout: 'pipe',
+    stderr: 'ignore',
   })
   if (owner.exitCode !== 0) return []
   let pid: number | null = null
@@ -201,9 +209,9 @@ function lockHolderPids(checkout: string): ConfinementLockHolder[] {
 }
 
 export function sessionForPid(database: Database, pid: number): string | null {
-  const row = database.query(
-    `SELECT session_id FROM run WHERE pid=? OR agent_pid=? ORDER BY id DESC LIMIT 1`,
-  ).get(pid, pid) as { session_id: string | null } | null
+  const row = database
+    .query(`SELECT session_id FROM run WHERE pid=? OR agent_pid=? ORDER BY id DESC LIMIT 1`)
+    .get(pid, pid) as { session_id: string | null } | null
   return row?.session_id ?? null
 }
 
@@ -212,12 +220,14 @@ export function landingThatMovedHead(
   project: string,
   startedAt: string,
 ): { sessionId: string | null; landingId: number } | null {
-  const row = database.query(
-    `SELECT id, session_id FROM landing
+  const row = database
+    .query(
+      `SELECT id, session_id FROM landing
       WHERE project=? AND status='landed'
         AND datetime(COALESCE(finished_at, started_at)) >= datetime(?)
       ORDER BY id DESC LIMIT 1`,
-  ).get(project, startedAt) as { id: number; session_id: string | null } | null
+    )
+    .get(project, startedAt) as { id: number; session_id: string | null } | null
   return row ? { sessionId: row.session_id, landingId: row.id } : null
 }
 
@@ -284,10 +294,14 @@ export function classifyDivergence(input: {
     if (!original) continue
     const paths = porcelainPaths(current.status)
     const originalPaths = new Set(porcelainPaths(original.status))
-    const changedPaths = paths.filter((path) => !originalPaths.has(path) || original.status !== current.status)
-    const oidMoved = Boolean(original.headOid && current.headOid && original.headOid !== current.headOid)
-    const treeMoved = original.indexTree !== current.indexTree
-      || original.untrackedHash !== current.untrackedHash
+    const changedPaths = paths.filter(
+      (path) => !originalPaths.has(path) || original.status !== current.status,
+    )
+    const oidMoved = Boolean(
+      original.headOid && current.headOid && original.headOid !== current.headOid,
+    )
+    const treeMoved =
+      original.indexTree !== current.indexTree || original.untrackedHash !== current.untrackedHash
     const porcelainMoved = original.status !== current.status
     if (!oidMoved && !treeMoved && !porcelainMoved && original.head === current.head) continue
     const checkoutOverlaps: string[] = []
@@ -310,7 +324,8 @@ export function classifyDivergence(input: {
   }
   if (!selected) return null
   const who = attributeDivergence(input.database, selected.checkout, {
-    startedAt: input.startedAt, headMoved: selected.headMoved,
+    startedAt: input.startedAt,
+    headMoved: selected.headMoved,
   })
   return {
     classification: selected.classification,
@@ -326,32 +341,38 @@ export function classifyDivergence(input: {
 }
 
 export function overlappingError(event: ConfinementEvent): string {
-  const who = event.attribution === 'lock_holder'
-    ? `lock_holder pid ${event.lockHolder?.pid ?? 'unknown'}`
-      + (event.lockHolder?.sessionId ? ` session ${event.lockHolder.sessionId}` : '')
-      + (event.lockHolder?.command ? ` (${event.lockHolder.command})` : '')
-    : event.attribution === 'landing'
-      ? `landing session ${event.landingSession ?? 'unknown'}`
-      : 'unattributed'
-  const detail = event.after.map((change, index) => {
-    const before = event.freeze[index]
-    const porcelain = (status: string) => status
-      ? status.split('\0').filter(Boolean).join('\n')
-      : '(clean)'
-    return `registered checkout ${change.project} at ${change.path}\n` +
-      `attribution: ${who}\n` +
-      `before HEAD: ${before?.headOid ?? before?.head ?? '(unknown)'}\n` +
-      `after HEAD: ${change.headOid ?? change.head ?? '(unknown)'}\n` +
-      `overlapping: ${event.overlappingPaths.join(', ') || '(none)'}\n` +
-      `before:\n${porcelain(before?.status ?? '')}\nafter:\n${porcelain(change.status)}`
-  }).join('\n\n')
-  const message =
-    `confinement: overlapping outside change\nattribution: ${who}\n${detail}`
+  const who =
+    event.attribution === 'lock_holder'
+      ? `lock_holder pid ${event.lockHolder?.pid ?? 'unknown'}` +
+        (event.lockHolder?.sessionId ? ` session ${event.lockHolder.sessionId}` : '') +
+        (event.lockHolder?.command ? ` (${event.lockHolder.command})` : '')
+      : event.attribution === 'landing'
+        ? `landing session ${event.landingSession ?? 'unknown'}`
+        : 'unattributed'
+  const detail = event.after
+    .map((change, index) => {
+      const before = event.freeze[index]
+      const porcelain = (status: string) =>
+        status ? status.split('\0').filter(Boolean).join('\n') : '(clean)'
+      return (
+        `registered checkout ${change.project} at ${change.path}\n` +
+        `attribution: ${who}\n` +
+        `before HEAD: ${before?.headOid ?? before?.head ?? '(unknown)'}\n` +
+        `after HEAD: ${change.headOid ?? change.head ?? '(unknown)'}\n` +
+        `overlapping: ${event.overlappingPaths.join(', ') || '(none)'}\n` +
+        `before:\n${porcelain(before?.status ?? '')}\nafter:\n${porcelain(change.status)}`
+      )
+    })
+    .join('\n\n')
+  const message = `confinement: overlapping outside change\nattribution: ${who}\n${detail}`
   const bytes = Buffer.from(message)
   if (bytes.length <= 1500) return message
   const suffix = Buffer.from('\n… [error bounded to 1500 bytes]')
-  return Buffer.from(bytes.subarray(0, 1500 - suffix.length))
-    .toString('utf8').replace(/\uFFFD$/, '') + suffix.toString()
+  return (
+    Buffer.from(bytes.subarray(0, 1500 - suffix.length))
+      .toString('utf8')
+      .replace(/\uFFFD$/, '') + suffix.toString()
+  )
 }
 
 export function parseConfinement(value: string | null): ConfinementEvent | null {
@@ -366,7 +387,9 @@ export function parseConfinement(value: string | null): ConfinementEvent | null 
   }
 }
 
-export function attributionCounts(events: Array<ConfinementEvent | null>): Record<AttributionKind, number> {
+export function attributionCounts(
+  events: Array<ConfinementEvent | null>,
+): Record<AttributionKind, number> {
   const counts = emptyAttribution()
   for (const event of events) {
     if (!event) continue

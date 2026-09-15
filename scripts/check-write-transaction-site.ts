@@ -10,7 +10,8 @@ function collect(directory: string) {
   for (const entry of readdirSync(directory, { withFileTypes: true })) {
     const path = join(directory, entry.name)
     if (entry.isDirectory()) collect(path)
-    else if (entry.isFile() && entry.name.endsWith('.ts') && !entry.name.endsWith('.test.ts')) files.push(path)
+    else if (entry.isFile() && entry.name.endsWith('.ts') && !entry.name.endsWith('.test.ts'))
+      files.push(path)
   }
 }
 
@@ -22,12 +23,19 @@ for (const path of files) {
   const source = readFileSync(path, 'utf8')
   const file = ts.createSourceFile(path, source, ts.ScriptTarget.Latest, true, ts.ScriptKind.TS)
   const visit = (node: ts.Node): void => {
-    if (ts.isCallExpression(node) && ts.isPropertyAccessExpression(node.expression) &&
-        node.expression.name.text === 'transaction') {
+    if (
+      ts.isCallExpression(node) &&
+      ts.isPropertyAccessExpression(node.expression) &&
+      node.expression.name.text === 'transaction'
+    ) {
       let parent: ts.Node | undefined = node
       let sanctioned = false
       while (parent) {
-        if (ts.isFunctionDeclaration(parent) && parent.name?.text === 'writeTransaction' && basename(path) === 'db.ts') {
+        if (
+          ts.isFunctionDeclaration(parent) &&
+          parent.name?.text === 'writeTransaction' &&
+          basename(path) === 'db.ts'
+        ) {
           sanctioned = true
           break
         }
@@ -44,6 +52,9 @@ for (const path of files) {
 }
 
 if (violations.length) {
-  for (const violation of violations) console.error(`${violation}: only orchestrator/src/db.ts:writeTransaction may open a production transaction`)
+  for (const violation of violations)
+    console.error(
+      `${violation}: only orchestrator/src/db.ts:writeTransaction may open a production transaction`,
+    )
   process.exit(1)
 }

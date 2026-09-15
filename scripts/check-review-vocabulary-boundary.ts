@@ -19,7 +19,8 @@ for (const specifier of [...imports.specifiers, ...imports.typeOnlySpecifiers]) 
   const concern = FORBIDDEN.find(([pattern]) => pattern.test(specifier))?.[1]
   if (concern) violations.push(`${FILE} imports "${specifier}" (${concern})`)
 }
-for (const expression of imports.unresolvedRelative) violations.push(`${FILE} has an unresolved relative import at ${expression}`)
+for (const expression of imports.unresolvedRelative)
+  violations.push(`${FILE} has an unresolved relative import at ${expression}`)
 if (violations.length) {
   console.error(`check-review-vocabulary-boundary: ${violations.length} violation(s)\n`)
   for (const violation of violations) console.error(`  ${violation}\n`)

@@ -1,8 +1,8 @@
-import { afterEach,expect,test } from 'bun:test'
-import { lstatSync,mkdirSync,mkdtempSync,readFileSync,rmSync,writeFileSync } from 'node:fs'
+import { afterEach, expect, test } from 'bun:test'
+import { lstatSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { provisionReadOnlyTree,validateReadonlyProvision } from './readonly-provision.ts'
+import { provisionReadOnlyTree, validateReadonlyProvision } from './readonly-provision.ts'
 
 const roots: string[] = []
 const fixture = () => {
@@ -10,10 +10,13 @@ const fixture = () => {
   roots.push(root)
   const main = join(root, 'main')
   const tree = join(root, 'tree')
-  mkdirSync(main); mkdirSync(tree)
+  mkdirSync(main)
+  mkdirSync(tree)
   return { main, tree }
 }
-afterEach(() => { for (const root of roots.splice(0)) rmSync(root, { recursive: true, force: true }) })
+afterEach(() => {
+  for (const root of roots.splice(0)) rmSync(root, { recursive: true, force: true })
+})
 
 test('link creates a real directory whose entries are symlinks', () => {
   const { main, tree } = fixture()
@@ -30,13 +33,16 @@ test('link creates a real directory whose entries are symlinks', () => {
 
 test('missing source path is skipped', () => {
   const { main, tree } = fixture()
-  expect(() => provisionReadOnlyTree(main, tree, [{ path: 'missing', method: 'link' }])).not.toThrow()
+  expect(() =>
+    provisionReadOnlyTree(main, tree, [{ path: 'missing', method: 'link' }]),
+  ).not.toThrow()
   expect(() => lstatSync(join(tree, 'missing'))).toThrow()
 })
 
 test('existing target is left alone', () => {
   const { main, tree } = fixture()
-  mkdirSync(join(main, 'vendor')); mkdirSync(join(tree, 'vendor'))
+  mkdirSync(join(main, 'vendor'))
+  mkdirSync(join(tree, 'vendor'))
   writeFileSync(join(main, 'vendor', 'source'), 'source')
   writeFileSync(join(tree, 'vendor', 'kept'), 'kept')
 
@@ -47,12 +53,16 @@ test('existing target is left alone', () => {
 })
 
 test('validation refuses malformed readonly provision declarations', () => {
-  expect(validateReadonlyProvision([{ path: 'vendor', method: 'copy' }]))
-    .toEqual(["worktree.readonly_provision method must be 'link' or 'clone'"])
-  expect(validateReadonlyProvision([{ path: '/vendor', method: 'clone' }]))
-    .toEqual(['worktree.readonly_provision path must be a non-empty relative path without ..'])
-  expect(validateReadonlyProvision([{ path: '../vendor', method: 'link' }]))
-    .toEqual(['worktree.readonly_provision path must be a non-empty relative path without ..'])
-  expect(validateReadonlyProvision({ path: 'vendor', method: 'clone' }))
-    .toEqual(['worktree.readonly_provision must be an array'])
+  expect(validateReadonlyProvision([{ path: 'vendor', method: 'copy' }])).toEqual([
+    "worktree.readonly_provision method must be 'link' or 'clone'",
+  ])
+  expect(validateReadonlyProvision([{ path: '/vendor', method: 'clone' }])).toEqual([
+    'worktree.readonly_provision path must be a non-empty relative path without ..',
+  ])
+  expect(validateReadonlyProvision([{ path: '../vendor', method: 'link' }])).toEqual([
+    'worktree.readonly_provision path must be a non-empty relative path without ..',
+  ])
+  expect(validateReadonlyProvision({ path: 'vendor', method: 'clone' })).toEqual([
+    'worktree.readonly_provision must be an array',
+  ])
 })

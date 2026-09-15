@@ -7,7 +7,8 @@ const ROOTS = ['orchestrator', 'hub', 'shared', 'scripts']
 const GENERATED = /^(?:hub\/web\/src\/routeTree\.gen\.ts|.*(?:^|\/)migrations\/meta(?:\/|$))/
 const SOURCE = /\.tsx?$/
 
-export const HISTORY_PHRASE = /\b(?:used to (?:be|have)|formerly|back when|previously|was omitted|this replac(?:es|ed)|the first draft|restores the (?:earlier|old|previous))\b/gi
+export const HISTORY_PHRASE =
+  /\b(?:used to (?:be|have)|formerly|back when|previously|was omitted|this replac(?:es|ed)|the first draft|restores the (?:earlier|old|previous))\b/gi
 
 export type CommentHygieneFinding = {
   file: string
@@ -47,13 +48,18 @@ function trackedSources(root: string): string[] {
   if (listed.exitCode !== 0) {
     throw new Error(`could not list tracked source files: ${listed.stderr.toString().trim()}`)
   }
-  return listed.stdout.toString().trim().split('\n').filter(Boolean)
+  return listed.stdout
+    .toString()
+    .trim()
+    .split('\n')
+    .filter(Boolean)
     .filter((file) => SOURCE.test(file) && !GENERATED.test(file))
 }
 
 export function checkTrackedComments(root: string): CommentHygieneFinding[] {
   return trackedSources(root).flatMap((file) =>
-    checkCommentBody(file, readFileSync(resolve(root, file), 'utf8')))
+    checkCommentBody(file, readFileSync(resolve(root, file), 'utf8')),
+  )
 }
 
 if (import.meta.main) {
@@ -62,7 +68,9 @@ if (import.meta.main) {
   if (findings.length) {
     console.error('comment hygiene check failed')
     for (const finding of findings) {
-      console.error(`${finding.file}:${finding.line}: "${finding.phrase}" — state what the code does now and why; git holds what it used to be.`)
+      console.error(
+        `${finding.file}:${finding.line}: "${finding.phrase}" — state what the code does now and why; git holds what it used to be.`,
+      )
     }
     process.exit(1)
   }

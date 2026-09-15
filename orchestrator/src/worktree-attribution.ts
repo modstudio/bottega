@@ -3,7 +3,15 @@
  * Knows worktree markers, ownership, dirty state, orphan safety, and extraction
  * to artifacts. Must not know routing, contracts, transports, run state, or CLI adapters.
  */
-import { cpSync, existsSync, mkdirSync, readFileSync, realpathSync, statSync, writeFileSync } from 'node:fs'
+import {
+  cpSync,
+  existsSync,
+  mkdirSync,
+  readFileSync,
+  realpathSync,
+  statSync,
+  writeFileSync,
+} from 'node:fs'
 import { basename, dirname, join, resolve } from 'node:path'
 import { db } from './db.ts'
 import { resolveRunsDirectory } from './database-location.ts'
@@ -23,11 +31,15 @@ export const ORCH_RUN_MARKER = '.orch-run'
 export function markedWorktreeSource(path: string): Worktree['source'] | undefined {
   try {
     const line = readFileSync(join(path, ORCH_RUN_MARKER), 'utf8')
-      .split('\n').find((entry) => entry.startsWith('source: '))
+      .split('\n')
+      .find((entry) => entry.startsWith('source: '))
     const source = line?.slice('source: '.length)
     return source === 'recipe' || source === 'git' || source === 'readonly_recipe'
-      ? source : undefined
-  } catch { return undefined }
+      ? source
+      : undefined
+  } catch {
+    return undefined
+  }
 }
 
 /** Recognise current markers and the naming schemes used before markers existed. */
@@ -55,7 +67,8 @@ export function isOrchWorktree(path: string, branchTemplate?: string): boolean {
 export function orphanSafety(path: string, repoRoot: string, _trunk: string): OrphanSafety {
   const listed = gitOk(['worktree', 'list', '--porcelain'], repoRoot)
   const actual = existsSync(path) ? realpathSync(path) : path
-  const registered = listed?.split('\n')
+  const registered = listed
+    ?.split('\n')
     .filter((line) => line.startsWith('worktree '))
     .map((line) => line.slice('worktree '.length))
     .some((candidate) => existsSync(candidate) && realpathSync(candidate) === actual)
@@ -70,7 +83,8 @@ export function orphanSafety(path: string, repoRoot: string, _trunk: string): Or
 /** The one retention fact a checkout can hold that its branch cannot. */
 export function worktreeDirty(path: string): { dirty: boolean; detail: string } {
   const status = gitOk(['status', '--porcelain', '--untracked-files=all'], path)
-  if (status === null) return { dirty: true, detail: 'could not inspect uncommitted or untracked work' }
+  if (status === null)
+    return { dirty: true, detail: 'could not inspect uncommitted or untracked work' }
   return status
     ? { dirty: true, detail: 'has uncommitted or untracked changes' }
     : { dirty: false, detail: 'all work is committed' }
@@ -82,7 +96,11 @@ export function worktreeLatestMtime(path: string): number | null {
   if (listed === null) return null
   let latest = 0
   for (const name of listed.split('\0').filter(Boolean)) {
-    try { latest = Math.max(latest, statSync(join(path, name)).mtimeMs) } catch { /* raced */ }
+    try {
+      latest = Math.max(latest, statSync(join(path, name)).mtimeMs)
+    } catch {
+      /* raced */
+    }
   }
   return latest || null
 }
@@ -101,7 +119,9 @@ export type WorktreeExtraction = {
 function runRowExists(id: number): boolean {
   try {
     return db().query('SELECT 1 AS present FROM run WHERE id=?').get(id) != null
-  } catch { return false }
+  } catch {
+    return false
+  }
 }
 
 /** Filesystem-safe encoding of an absolute path for the orphan extraction dir. */
@@ -110,7 +130,11 @@ export function sanitiseOrphanExtractionPath(path: string): string {
   return real.replace(/^[\\/]+/, '').replace(/[^A-Za-z0-9._-]+/g, '--')
 }
 
-export function extractionDest(tree: string, runId: number | null, runsDir = resolveRunsDirectory()): string {
+export function extractionDest(
+  tree: string,
+  runId: number | null,
+  runsDir = resolveRunsDirectory(),
+): string {
   if (runId !== null && runRowExists(runId)) return join(runsDir, String(runId), 'artifacts')
   return join(runsDir, 'orphans', sanitiseOrphanExtractionPath(tree))
 }
@@ -126,7 +150,9 @@ function writeExtractionJson(dest: string, record: WorktreeExtraction): void {
  * and names the step; the tree is left in place.
  */
 export function extractWorktree(
-  tree: string, runId: number | null, runsDir = resolveRunsDirectory(),
+  tree: string,
+  runId: number | null,
+  runsDir = resolveRunsDirectory(),
 ): { ok: true; dest: string; record: WorktreeExtraction } | { ok: false; detail: string } {
   const recordedId = runId !== null && runRowExists(runId) ? runId : null
   const dest = extractionDest(tree, runId, runsDir)
@@ -160,16 +186,22 @@ export function extractWorktree(
   if (!status.ok) return failed('git status', status.stderr)
   if (!status.stdout.trim()) {
     record.ok = true
-    try { writeExtractionJson(dest, record) }
-    catch (error) { return failed('write extraction.json', String(error)) }
+    try {
+      writeExtractionJson(dest, record)
+    } catch (error) {
+      return failed('write extraction.json', String(error))
+    }
     return { ok: true, dest, record }
   }
 
   const diff = gitResult(['diff', 'HEAD'], tree)
   if (!diff.ok) return failed('git diff HEAD', diff.stderr)
   if (diff.stdout.length) {
-    try { writeFileSync(join(dest, 'uncommitted.patch'), diff.stdout) }
-    catch (error) { return failed('write uncommitted.patch', String(error)) }
+    try {
+      writeFileSync(join(dest, 'uncommitted.patch'), diff.stdout)
+    } catch (error) {
+      return failed('write uncommitted.patch', String(error))
+    }
     record.trackedBytes = Buffer.byteLength(diff.stdout)
   }
 
@@ -190,7 +222,10 @@ export function extractWorktree(
   }
 
   record.ok = true
-  try { writeExtractionJson(dest, record) }
-  catch (error) { return failed('write extraction.json', String(error)) }
+  try {
+    writeExtractionJson(dest, record)
+  } catch (error) {
+    return failed('write extraction.json', String(error))
+  }
   return { ok: true, dest, record }
 }

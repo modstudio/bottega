@@ -1,16 +1,25 @@
-import { beforeEach,describe,expect,test } from 'bun:test'
+import { beforeEach, describe, expect, test } from 'bun:test'
 import { join } from 'node:path'
 import { dir as suiteDir } from '../test/fixtures/store.ts'
 import { trackedTestResidue } from '../test/residue.ts'
 import {
-GATE_CONCURRENCY_LIMIT,holdForGateCapacity,shouldHoldShard,withGateSlot,
+  GATE_CONCURRENCY_LIMIT,
+  holdForGateCapacity,
+  shouldHoldShard,
+  withGateSlot,
 } from './gate-load.ts'
 import type { HostLoad } from './gate-load.ts'
 const trackResidue = trackedTestResidue()
-beforeEach(() => { trackResidue(join(suiteDir, 'gates')) })
+beforeEach(() => {
+  trackResidue(join(suiteDir, 'gates'))
+})
 
 const idle = (over: Partial<HostLoad> = {}): HostLoad => ({
-  gates: 1, loadavg: 0.2, ncpu: 8, freeMem: 8 * 1024 * 1024 * 1024, ...over,
+  gates: 1,
+  loadavg: 0.2,
+  ncpu: 8,
+  freeMem: 8 * 1024 * 1024 * 1024,
+  ...over,
 })
 
 describe('gate load hold', () => {
@@ -22,7 +31,9 @@ describe('gate load hold', () => {
         n++
         return n === 1 ? idle({ gates: 3 }) : idle({ gates: 1 })
       },
-      sleep: async (ms) => { sleeps.push(ms) },
+      sleep: async (ms) => {
+        sleeps.push(ms)
+      },
       pollMs: 25,
       maxMs: 1_000,
     })
@@ -35,7 +46,9 @@ describe('gate load hold', () => {
   test('two concurrent gates do not hold a shard', async () => {
     const result = await holdForGateCapacity({
       measure: () => idle({ gates: GATE_CONCURRENCY_LIMIT }),
-      sleep: async () => { throw new Error('must not sleep under the limit') },
+      sleep: async () => {
+        throw new Error('must not sleep under the limit')
+      },
     })
     expect(result.held).toBe(false)
     expect(result.delayedMs).toBe(0)
@@ -57,7 +70,9 @@ describe('gate load hold', () => {
         n++
         return n === 1 ? idle({ gates: 2 }) : idle({ gates: 1 })
       },
-      sleep: async (ms) => { sleeps.push(ms) },
+      sleep: async (ms) => {
+        sleeps.push(ms)
+      },
       pollMs: 25,
       maxMs: 1_000,
     })
@@ -67,5 +82,4 @@ describe('gate load hold', () => {
   })
 })
 
-describe('gate slots under concurrency', () => {
-})
+describe('gate slots under concurrency', () => {})

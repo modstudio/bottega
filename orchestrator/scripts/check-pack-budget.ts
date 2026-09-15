@@ -17,9 +17,11 @@ export function checkPackBudget(): string[] {
   const failures: string[] = []
   for (const project of projects()) {
     for (const job of Object.keys(JOBS)) {
-      try { compilePack({ job, cwd: project.path }) }
-      catch (error) {
-        if (error instanceof CanonBudgetError) failures.push(`${project.name}/${job}\n${error.message}`)
+      try {
+        compilePack({ job, cwd: project.path })
+      } catch (error) {
+        if (error instanceof CanonBudgetError)
+          failures.push(`${project.name}/${job}\n${error.message}`)
         else throw error
       }
     }
@@ -31,7 +33,9 @@ const READY = 'ORCH_PACK_BUDGET_READY'
 
 function report(failures: string[]): never {
   if (failures.length) {
-    console.error(`canon pack budget failed for ${failures.length} project/job combination(s):\n${failures.join('\n\n')}`)
+    console.error(
+      `canon pack budget failed for ${failures.length} project/job combination(s):\n${failures.join('\n\n')}`,
+    )
     process.exit(1)
   }
   console.log(`canon pack budget ok (ceiling ${DEFAULT_PACK_BYTES} bytes)`)
@@ -131,8 +135,11 @@ if (import.meta.main) {
   const kind = storeKind(live)
   if (kind === 'ahead') {
     const d = new Database(live, { readonly: true })
-    try { console.error(migrationRefusal(d)) }
-    finally { d.close() }
+    try {
+      console.error(migrationRefusal(d))
+    } finally {
+      d.close()
+    }
     process.exit(1)
   }
   if (kind === 'ok') {

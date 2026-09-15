@@ -9,28 +9,52 @@ describe('interval union', () => {
   })
 
   test('overlapping spans are counted once', () => {
-    expect(engagedMs([{ start: 0, end: 10_000 }, { start: 5000, end: 15_000 }])).toBe(15_000)
+    expect(
+      engagedMs([
+        { start: 0, end: 10_000 },
+        { start: 5000, end: 15_000 },
+      ]),
+    ).toBe(15_000)
   })
 
   test('a span wholly inside another adds nothing', () => {
-    expect(engagedMs([{ start: 0, end: 10_000 }, { start: 2000, end: 3000 }])).toBe(10_000)
+    expect(
+      engagedMs([
+        { start: 0, end: 10_000 },
+        { start: 2000, end: 3000 },
+      ]),
+    ).toBe(10_000)
   })
 
   test('disjoint spans add', () => {
-    expect(engagedMs([{ start: 0, end: 1000 }, { start: 5000, end: 6000 }])).toBe(2000)
+    expect(
+      engagedMs([
+        { start: 0, end: 1000 },
+        { start: 5000, end: 6000 },
+      ]),
+    ).toBe(2000)
   })
 
   test('touching spans merge into one', () => {
     // A run finishing at the same instant the next message lands is continuous
     // work; a zero-width seam between them would be an artefact.
-    expect(union([{ start: 0, end: 1000 }, { start: 1000, end: 2000 }])).toEqual([
-      { start: 0, end: 2000 },
-    ])
+    expect(
+      union([
+        { start: 0, end: 1000 },
+        { start: 1000, end: 2000 },
+      ]),
+    ).toEqual([{ start: 0, end: 2000 }])
   })
 
   test('input order does not matter', () => {
-    const a = engagedMs([{ start: 5000, end: 15_000 }, { start: 0, end: 10_000 }])
-    const b = engagedMs([{ start: 0, end: 10_000 }, { start: 5000, end: 15_000 }])
+    const a = engagedMs([
+      { start: 5000, end: 15_000 },
+      { start: 0, end: 10_000 },
+    ])
+    const b = engagedMs([
+      { start: 0, end: 10_000 },
+      { start: 5000, end: 15_000 },
+    ])
     expect(a).toBe(b)
   })
 
@@ -47,8 +71,14 @@ describe('interval union', () => {
    * sent no messages while it waited.
    */
   test('two concurrent delegated runs count as their union, not their sum', () => {
-    const run378 = { start: at('2026-09-01T13:32:02.624Z'), end: at('2026-09-01T13:32:02.624Z') + 254_532 }
-    const run379 = { start: at('2026-09-01T13:32:10.630Z'), end: at('2026-09-01T13:32:10.630Z') + 220_158 }
+    const run378 = {
+      start: at('2026-09-01T13:32:02.624Z'),
+      end: at('2026-09-01T13:32:02.624Z') + 254_532,
+    }
+    const run379 = {
+      start: at('2026-09-01T13:32:10.630Z'),
+      end: at('2026-09-01T13:32:10.630Z') + 220_158,
+    }
 
     expect(run379.start).toBeGreaterThan(run378.start)
     expect(run379.end).toBeLessThan(run378.end)
@@ -82,8 +112,9 @@ describe('spans from timestamps', () => {
   test('a gap over the cap is truncated, not dropped', () => {
     // Overnight: the work either side is real, the eight hours between is not.
     const t = at('2026-09-01T10:00:00Z')
-    expect(engagedMs(spansFromTimestamps([t, t + 8 * 3600_000], DEFAULT_IDLE_CAP_MS)))
-      .toBe(DEFAULT_IDLE_CAP_MS)
+    expect(engagedMs(spansFromTimestamps([t, t + 8 * 3600_000], DEFAULT_IDLE_CAP_MS))).toBe(
+      DEFAULT_IDLE_CAP_MS,
+    )
   })
 
   test('a capped gap keeps its real start, so an agent run can overlap it', () => {

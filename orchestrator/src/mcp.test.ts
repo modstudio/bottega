@@ -14,9 +14,18 @@ describe('orch MCP', () => {
     try {
       const fileIssue = (await client.listTools()).tools.find((tool) => tool.name === 'file_issue')
       expect(Object.keys(fileIssue?.inputSchema.properties ?? {}).sort()).toEqual([
-        'affected_project', 'environment', 'evidence', 'expected', 'kind',
-        'monitor_invocation_id', 'not_established', 'reporter_kind', 'reporting_project',
-        'reproduce_command', 'title', 'what_happened',
+        'affected_project',
+        'environment',
+        'evidence',
+        'expected',
+        'kind',
+        'monitor_invocation_id',
+        'not_established',
+        'reporter_kind',
+        'reporting_project',
+        'reproduce_command',
+        'title',
+        'what_happened',
       ])
     } finally {
       await client.close()
@@ -31,11 +40,17 @@ describe('orch MCP', () => {
     await server.connect(serverTransport)
     await client.connect(clientTransport)
     try {
-      const result = await client.callTool({ name: 'file_issue', arguments: {
-        kind: 'defect', what_happened: 'The command failed', expected: 'The command succeeds',
-        environment: 'macOS test fixture', evidence: 'run 123 failed with exit 1',
-        not_established: 'The underlying cause is not established',
-      } })
+      const result = await client.callTool({
+        name: 'file_issue',
+        arguments: {
+          kind: 'defect',
+          what_happened: 'The command failed',
+          expected: 'The command succeeds',
+          environment: 'macOS test fixture',
+          evidence: 'run 123 failed with exit 1',
+          not_established: 'The underlying cause is not established',
+        },
+      })
       expect(result.isError).toBe(true)
       expect(((result as any).content[0] as { text: string }).text).toContain(
         'reproduce_command is required: provide the exact command that reproduces or demonstrates the issue',
@@ -55,10 +70,12 @@ describe('orch MCP', () => {
       not_established: 'Whether clients render every description',
     }
     expect(missingIssueReportFields({ kind: 'defect' })).toEqual([
-      'reproduce_command', 'environment',
+      'reproduce_command',
+      'environment',
     ])
-    expect(missingIssueReportFields({ kind: 'defect', reproduce_command: 'bun run check' }))
-      .toEqual(['environment'])
+    expect(
+      missingIssueReportFields({ kind: 'defect', reproduce_command: 'bun run check' }),
+    ).toEqual(['environment'])
     expect(missingIssueReportFields(completeSuggestion)).toEqual([])
   })
 })
