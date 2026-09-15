@@ -6,6 +6,7 @@ import { targetGitEnvironment } from './git-environment.ts'
 import { pidAlive } from './process-liveness.ts'
 import { withCleanupLock, withWorktreeCreateLock, withWorktreeLease } from './project-lock.ts'
 import { projectAt, projectByName } from './projects.ts'
+import { settleClaims } from './resource-claims.ts'
 import { otherConversationWorktreeSharers } from './resource-ownership.ts'
 import { markedWorktreeSource, orphanSafety } from './worktree-attribution.ts'
 import { branchTip, removeFor, restoreBranch } from './worktree-remove.ts'
@@ -275,6 +276,24 @@ export function reclaimWorktree(
             writeTransaction(() => {
               lockedRows.forEach((record) => {
                 clear.run(minted || null, branchBefore, record.id)
+                settleClaims(db(), {
+                  rootRunId: record.root_id,
+                  kind: 'worktree',
+                  state: 'released',
+                  settledAt: new Date().toISOString(),
+                  detail: removed.detail,
+                  allocationKey: path,
+                })
+                if (keepBranch && minted && branchBefore) {
+                  settleClaims(db(), {
+                    rootRunId: record.root_id,
+                    kind: 'branch',
+                    state: 'retained',
+                    settledAt: new Date().toISOString(),
+                    detail: `branch retained at ${branchBefore}`,
+                    allocationKey: `refs/heads/${minted}`,
+                  })
+                }
               })
             })
           }
@@ -382,11 +401,24 @@ export function reclaimBranch(
               `git did not delete branch ${projectName}:${branch} at proved tip ${tip}: ${deleted.out || 'ref moved'}`,
             )
           }
-          db()
-            .query(
-              'UPDATE run SET branch_kept=NULL, branch_kept_tip=NULL WHERE repo=? AND branch_kept=?',
-            )
-            .run(projectName, branch)
+          const rows = branchRows(projectName, branch)
+          writeTransaction(() => {
+            db()
+              .query(
+                'UPDATE run SET branch_kept=NULL, branch_kept_tip=NULL WHERE repo=? AND branch_kept=?',
+              )
+              .run(projectName, branch)
+            for (const row of rows) {
+              settleClaims(db(), {
+                rootRunId: row.root_id,
+                kind: 'branch',
+                state: 'released',
+                settledAt: new Date().toISOString(),
+                detail: `deleted refs/heads/${branch}`,
+                allocationKey: `refs/heads/${branch}`,
+              })
+            }
+          })
           return { ok: true, action: `reclaimed branch ${projectName}:${branch}` }
         },
         5 * 60_000,

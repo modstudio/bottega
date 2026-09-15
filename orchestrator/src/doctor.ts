@@ -24,6 +24,7 @@ import {
   unavailableReason,
   wakeStatus,
 } from './local-host.ts'
+import { claimCounts, RESOURCE_CLAIM_MIGRATION } from './resource-claims.ts'
 import { terminalDockerRetentionReasonForRun } from './resource-ownership.ts'
 import { DELIVERY, FIDELITY, QUALITY } from './score.ts'
 import { worktreeDirty } from './worktree-attribution.ts'
@@ -308,6 +309,11 @@ export async function doctorCommand(
   // to do about it — reported none.
   log(
     `\nruns ${counts.runs}, scored ${counts.scored}, voided ${counts.voided}, unscored ${counts.unscored}`,
+  )
+  const claims = claimCounts(db())
+  log(
+    `claims: ${claims.claimed} claimed, ${claims.terminal} unsettled on terminal conversations ` +
+      `(since ${RESOURCE_CLAIM_MIGRATION}; historical runs are not backfilled)`,
   )
   const heldCandidates = db()
     .query(

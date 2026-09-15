@@ -13,7 +13,7 @@ import type { Pack } from './canon.ts'
 import { checkoutAliases, realpathOrSpelled } from './checkout-identity.ts'
 import { readStrictCodexSchema } from './codex-schema.ts'
 import { TEXT_REPLY_SCHEMA } from './contract.ts'
-import { db, nowIso, sessionId } from './db.ts'
+import { db, nowIso, sessionId, writeTransaction } from './db.ts'
 import { namesRecordedRunTree } from './dispatch-preflight.ts'
 import { appendRunEvent } from './events.ts'
 import { resolveSupersededTurn } from './failover.ts'
@@ -32,6 +32,7 @@ import { readMcpConfig, wrongProjectReason } from './mcp-probe.ts'
 import { withWorktreeCreateLock, withWorktreeLease } from './project-lock.ts'
 import { projectAt, stackAt } from './projects.ts'
 import { retargetRepositoryPromptForDispatch } from './prompt-retarget.ts'
+import { recordCreatedWorktreeClaims } from './resource-claims.ts'
 import { teardownTerminalRunResources } from './resource-ownership.ts'
 import type { ResumeTreePlan } from './resume-tree.ts'
 import { inferredReadOnlyKey } from './review-target.ts'
@@ -567,20 +568,34 @@ export async function claimRun(input: ClaimInput): Promise<ClaimResult> {
         prepareResumeBranchIfNeeded(repoRoot, resumePlan)
         const resumeCreation = resumeCreationOptions(resumePlan, tool)
         const recordWorktree = (created: Worktree) => {
-          const result = db()
-            .query(
-              'UPDATE run SET cwd=?, worktree=?, branch=?, minted_branch=?, base_commit=?, worktree_source=? WHERE id=?',
-            )
-            .run(
-              created.path,
-              created.path,
-              reviewTarget?.branch ?? (created.branch || null),
-              created.mintedBranch ?? null,
-              coverageBase ?? created.base,
-              created.source ?? null,
-              claim.id,
-            )
-          if (result.changes !== 1) throw new Error(`run ${claim.id} could not record its worktree`)
+          writeTransaction(() => {
+            const result = db()
+              .query(
+                'UPDATE run SET cwd=?, worktree=?, branch=?, minted_branch=?, base_commit=?, worktree_source=? WHERE id=?',
+              )
+              .run(
+                created.path,
+                created.path,
+                reviewTarget?.branch ?? (created.branch || null),
+                created.mintedBranch ?? null,
+                coverageBase ?? created.base,
+                created.source ?? null,
+                claim.id,
+              )
+            if (result.changes !== 1)
+              throw new Error(`run ${claim.id} could not record its worktree`)
+            recordCreatedWorktreeClaims(db(), {
+              rootRunId: sandboxRoot,
+              runId: claim.id,
+              projectId: runProjectId,
+              owned: true,
+              path: created.path,
+              head: created.base,
+              mintedBranch: created.mintedBranch ?? null,
+              label: String(claim.id),
+              claimedAt: nowIso(),
+            })
+          })
         }
         worktree = withWorktreeCreateLock(repoRoot, () => {
           // The PROJECT owns its worktrees. A bare `git worktree add` here would

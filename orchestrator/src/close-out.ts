@@ -4,7 +4,7 @@
  * and reclamation. Must not know routing, contracts, transports, reviews, or
  * the CLI.
  */
-import { db, nowIso, sessionId, writableDb } from './db.ts'
+import { db, nowIso, sessionId, writeTransaction } from './db.ts'
 import { repoRootOf, targetGitEnvironment } from './git-environment.ts'
 import { isGroupKillablePgid, runHasLiveDescendants } from './idle-kill.ts'
 import { pidAlive } from './process-liveness.ts'
@@ -17,6 +17,7 @@ import {
 } from './project-lock.ts'
 import { projectAt, projectByName } from './projects.ts'
 import { proveWorktreeReconstructible } from './reclaim.ts'
+import { recordRetainedRefClaim, settleClaims, settledStateForCloseOut } from './resource-claims.ts'
 import { liveWorktreeSharers, worktreePathSpellings } from './resource-ownership.ts'
 import { processTable, terminateRunProcesses } from './run-process.ts'
 import { worktreeExists } from './worktree.ts'
@@ -135,13 +136,14 @@ function attemptCloseOutRun(
 ): CloseOutResult {
   const row = db()
     .query(
-      `SELECT id, COALESCE(parent_run_id,id) root_id, job, repo, cwd, worktree, branch,
+      `SELECT id, COALESCE(parent_run_id,id) root_id, project_id, job, repo, cwd, worktree, branch,
             base_commit, worktree_source, minted_branch, keep_tree, status, agent_pid
        FROM run WHERE id=?`,
     )
     .get(runId) as {
     id: number
     root_id: number
+    project_id: number | null
     job: string
     repo: string | null
     cwd: string | null
@@ -157,7 +159,7 @@ function attemptCloseOutRun(
   if (!row) throw new Error(`no run ${runId}`)
   const root = db()
     .query(
-      `SELECT job,repo,cwd,worktree,branch,base_commit,worktree_source,minted_branch,keep_tree,status
+      `SELECT project_id,job,repo,cwd,worktree,branch,base_commit,worktree_source,minted_branch,keep_tree,status
        FROM run WHERE id=?`,
     )
     .get(row.root_id) as typeof row
@@ -188,11 +190,31 @@ function attemptCloseOutRun(
   )
   if (terminalHold) return terminalHold
   const retainedBranch = effective.minted_branch ?? effective.branch
-  const recordRetainedBranch = (tip: string | null) => {
+  const recordRetainedBranch = (tip: string | null, retainedRef?: string | null) => {
     if (!retainedBranch || !tip) return
-    db()
-      .query('UPDATE run SET branch_kept=?, branch_kept_tip=? WHERE id=?')
-      .run(retainedBranch, tip, row.root_id)
+    writeTransaction(() => {
+      db()
+        .query('UPDATE run SET branch_kept=?, branch_kept_tip=? WHERE id=?')
+        .run(retainedBranch, tip, row.root_id)
+      settleClaims(db(), {
+        rootRunId: row.root_id,
+        kind: 'branch',
+        state: 'retained',
+        settledAt: nowIso(),
+        detail: `branch retained at ${tip}`,
+        allocationKey: `refs/heads/${retainedBranch}`,
+      })
+      if (retainedRef) {
+        recordRetainedRefClaim(db(), {
+          rootRunId: row.root_id,
+          runId: row.id,
+          projectId: root?.project_id ?? row.project_id,
+          ref: retainedRef,
+          tip,
+          claimedAt: nowIso(),
+        })
+      }
+    })
   }
   const absentResult = absentCloseOutResult({
     runId: row.root_id,
@@ -397,7 +419,7 @@ function attemptCloseOutRun(
             }
             // Publish the recovery identity before a project-owned remover runs: a
             // remover may delete or move the ref before reporting its refusal.
-            recordRetainedBranch(branchSnapshot)
+            recordRetainedBranch(branchSnapshot, retainedRef)
             const result = removeFor(
               {
                 path: treePath,
@@ -458,6 +480,16 @@ function attemptCloseOutRun(
                     (unpinned.stderr.toString().trim() ||
                       `git update-ref exited ${unpinned.exitCode}`),
                 }
+              writeTransaction(() => {
+                settleClaims(db(), {
+                  rootRunId: row.root_id,
+                  kind: 'retained_ref',
+                  state: 'released',
+                  settledAt: nowIso(),
+                  detail: `deleted ${retainedRef}`,
+                  allocationKey: retainedRef,
+                })
+              })
             }
             if (!result.removed)
               return {
@@ -511,13 +543,26 @@ export function closeOutRun(
 ): CloseOutResult {
   const result = attemptCloseOutRun(runId, options)
   if (!options.dryRun) {
-    writableDb()
-      .query(
-        `UPDATE run
-          SET close_out_outcome=?, close_out_detail=?, close_out_attempted_at=?
-        WHERE id=?`,
-      )
-      .run(result.outcome, result.detail, nowIso(), result.runId)
+    writeTransaction(() => {
+      const settled = settledStateForCloseOut(result.outcome, 'worktree')
+      const settledAt = nowIso()
+      db()
+        .query(
+          `UPDATE run
+            SET close_out_outcome=?, close_out_detail=?, close_out_attempted_at=?
+          WHERE id=?`,
+        )
+        .run(result.outcome, result.detail, settledAt, result.runId)
+      if (settled && settled !== 'claimed') {
+        settleClaims(db(), {
+          rootRunId: result.runId,
+          kind: 'worktree',
+          state: settled,
+          settledAt,
+          detail: result.detail,
+        })
+      }
+    })
   }
   return result
 }
