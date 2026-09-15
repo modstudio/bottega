@@ -6,6 +6,7 @@ import { git, gitOk, repoRootOf, targetGitEnvironment } from './git-environment.
 import { withWorktreeCreateLock } from './project-lock.ts'
 import { projectAt, type WorktreeTool } from './projects.ts'
 import { dbNameFor, type Recipe, type RecipeDatabaseProvider, runRecipe } from './recipe.ts'
+import { createTrackedRecipe } from './tracked-recipe.ts'
 import { ORCH_RUN_MARKER } from './worktree-attribution.ts'
 import { resolveBase } from './worktree-caller.ts'
 import { removeFor, removeWorktree } from './worktree-remove.ts'
@@ -223,14 +224,11 @@ function createWithToolUnlocked(
    * writes the script at all, which is the point.
    */
   if (!tool.create) {
-    if (!tool.recipe) {
-      throw new Error(missingRecipeExecutionMessage(tool))
-    }
-    return createFromRecipe(
+    return createWithoutCommand(
       tool,
-      tool.recipe,
       repoRoot,
       runId,
+      seed,
       key,
       baseRef,
       record,
@@ -384,11 +382,54 @@ function createWithToolUnlocked(
   return worktree
 }
 
-function missingRecipeExecutionMessage(tool: WorktreeTool): string {
-  return tool.recipePath
-    ? 'tracked recipes are validated but not yet executable; execution arrives in slice 3'
-    : "this project's worktree settings declare neither `create` nor `recipe`"
+function createWithoutCommand(
+  tool: WorktreeTool,
+  repoRoot: string,
+  runId: number,
+  seed?: string,
+  key?: string,
+  baseRef?: string,
+  record?: RecordWorktree,
+  detached = false,
+  existingBranch?: string,
+  recordRecipeResource?: RecordRecipeResource,
+  claimRecipePort?: ClaimRecipePort,
+): Worktree {
+  if (tool.recipePath) {
+    return createTrackedRecipe({
+      tool,
+      repoRoot,
+      runId,
+      seed,
+      key,
+      baseRef,
+      detached,
+      existingBranch,
+      ...recipeWorktreeIdentity(tool, repoRoot, runId, key, existingBranch),
+      attribute: (worktree) => attributeWorktree(worktree, runId, record),
+      verify: verifyFreshWorktree,
+      remove: (worktree) => removeWorktree(worktree, detached || Boolean(existingBranch)),
+      removeProvisioned: (worktree) => removeFor(worktree, repoRoot, false, false, runId),
+    })
+  }
+  if (!tool.recipe) throw new Error(MISSING_WORKTREE_LIFECYCLE)
+  return createFromRecipe(
+    tool,
+    tool.recipe,
+    repoRoot,
+    runId,
+    key,
+    baseRef,
+    record,
+    detached,
+    existingBranch,
+    recordRecipeResource,
+    claimRecipePort,
+  )
 }
+
+const MISSING_WORKTREE_LIFECYCLE =
+  "this project's worktree settings declare neither `create`, `recipe` nor `recipePath`"
 
 export function createWorktree(
   cwd: string,
@@ -530,13 +571,8 @@ function createFromRecipe(
   recordRecipeResource?: RecordRecipeResource,
   claimRecipePort?: ClaimRecipePort,
 ): Worktree {
-  const branch =
-    existingBranch ??
-    (tool.branch ?? 'orch/{id}').replace(/\{id\}/g, String(runId)).replace(/\{key\}/g, key ?? '')
-  const name = `orch-${runId}`
-  const dir = join(repoRoot, '.claude', 'worktrees')
-  mkdirSync(dir, { recursive: true })
-  const path = join(dir, name)
+  const { branch, path } = recipeWorktreeIdentity(tool, repoRoot, runId, key, existingBranch)
+  mkdirSync(dirname(path), { recursive: true })
   if (existsSync(path)) {
     throw new Error(`worktree ${path} already exists; run ${runId} would overwrite it`)
   }
@@ -584,4 +620,18 @@ function createFromRecipe(
     throw e
   }
   return w
+}
+
+function recipeWorktreeIdentity(
+  tool: WorktreeTool,
+  repoRoot: string,
+  runId: number,
+  key?: string,
+  existingBranch?: string,
+): { branch: string; name: string; path: string } {
+  const branch =
+    existingBranch ??
+    (tool.branch ?? 'orch/{id}').replace(/\{id\}/g, String(runId)).replace(/\{key\}/g, key ?? '')
+  const name = `orch-${runId}`
+  return { branch, name, path: join(repoRoot, '.claude', 'worktrees', name) }
 }

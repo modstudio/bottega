@@ -7,6 +7,7 @@ import { projectAt, type WorktreeTool } from './projects.ts'
 import { databaseDroppedByTeardown, dbNameFor, type Recipe, teardownRecipe } from './recipe.ts'
 import { markedWorktreeRunId, removeSharedRefGuard } from './ref-guard.ts'
 import { recipePortClaimForRun, settleDatabaseClaim } from './resource-claims.ts'
+import { teardownTrackedRecipe } from './tracked-recipe.ts'
 import { extractWorktree, ORCH_RUN_MARKER } from './worktree-attribution.ts'
 import { runShellTool } from './worktree-tool.ts'
 import type { Worktree } from './worktree-types.ts'
@@ -30,7 +31,11 @@ export type Changes = {
   trunkConfigured: boolean
 }
 
-function teardownBuiltInRecipe(recipe: Recipe, w: Worktree, runId: number): void {
+function teardownBuiltInRecipe(
+  recipe: Recipe,
+  w: Worktree,
+  runId: number,
+): { ok: true } | { ok: false; step: string; detail: string } {
   const dbName = dbNameFor(w.repoRoot.split('/').pop() ?? 'app', runId)
   const cwd = existsSync(w.path) ? w.path : w.repoRoot
   const claimedPort = recipe.serve ? recipePortClaimForRun(db(), runId) : null
@@ -41,7 +46,12 @@ function teardownBuiltInRecipe(recipe: Recipe, w: Worktree, runId: number): void
   for (const step of teardown) {
     if (!step.ok) console.error(`orch: ${step.step} failed: ${step.detail.slice(-200)}`)
   }
-  if (!recipe.database || recipe.database.kind === 'none') return
+  const firstFailure = teardown.find((step) => !step.ok)
+  if (!recipe.database || recipe.database.kind === 'none') {
+    return firstFailure
+      ? { ok: false, step: firstFailure.step, detail: firstFailure.detail }
+      : { ok: true }
+  }
   const provider = recipe.database.kind
   const databaseDropped = databaseDroppedByTeardown(provider, teardown)
   writeTransaction(() => {
@@ -54,6 +64,9 @@ function teardownBuiltInRecipe(recipe: Recipe, w: Worktree, runId: number): void
         : `${provider} teardown failed; ${dbName} retained`,
     })
   })
+  return firstFailure
+    ? { ok: false, step: firstFailure.step, detail: firstFailure.detail }
+    : { ok: true }
 }
 
 /**
@@ -148,13 +161,7 @@ export function removeWithTool(
   // goes, because a compose file that lives in the worktree cannot bring
   // anything down once the worktree has been deleted.
   if (!tool.remove) {
-    if (tool.recipe) {
-      // Recipe infrastructure is owned by the run that is being discarded,
-      // never by an id inferred from another run's retained directory.
-      if (runId === undefined) return removeWorktree(w, keepBranch)
-      teardownBuiltInRecipe(tool.recipe, w, runId)
-    }
-    return removeWorktree(w, keepBranch)
+    return removeWithoutCommand(tool, w, keepBranch, runId)
   }
 
   const vars: Record<string, string> = { name, path: w.path }
@@ -221,6 +228,35 @@ export function removeWithTool(
       `--force will not override a project tool's refusal unless the tree carries orch's ` +
       `${ORCH_RUN_MARKER} ownership marker.`,
   }
+}
+
+function removeWithoutCommand(
+  tool: WorktreeTool,
+  w: Worktree,
+  keepBranch: boolean,
+  runId?: number,
+): { removed: boolean; detail: string } {
+  if (tool.recipePath) {
+    if (runId === undefined)
+      return {
+        removed: false,
+        detail:
+          'tracked recipe tree has no recorded recipe snapshot; teardown cannot be established',
+      }
+    return teardownTrackedRecipe({
+      runId,
+      worktree: w,
+      remove: () => removeWorktree(w, keepBranch),
+    })
+  }
+  if (!tool.recipe || runId === undefined) return removeWorktree(w, keepBranch)
+  const teardown = teardownBuiltInRecipe(tool.recipe, w, runId)
+  return teardown.ok
+    ? removeWorktree(w, keepBranch)
+    : {
+        removed: false,
+        detail: `recipe teardown failed at "${teardown.step}": ${teardown.detail.slice(-200)}`,
+      }
 }
 
 export function removeReadOnlyTree(

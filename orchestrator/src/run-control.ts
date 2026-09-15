@@ -245,7 +245,9 @@ function continuationTree(
           branch: recordedBranch,
           recordedTreeMatches,
           hasCreate: Boolean(
-            project.settings.worktree?.create || project.settings.worktree?.recipe,
+            project.settings.worktree?.create ||
+              project.settings.worktree?.recipe ||
+              project.settings.worktree?.recipePath,
           ),
           branchTip: gitContext(
             project.path,

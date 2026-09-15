@@ -36,6 +36,10 @@ export function loadTrackedRecipe(
       ],
     }
   }
+  return parseTrackedRecipe(source, path)
+}
+
+export function parseTrackedRecipe(source: string, label: string): LoadTrackedRecipeResult {
   let parsed: unknown
   try {
     parsed = Bun.JSONC.parse(source)
@@ -43,7 +47,7 @@ export function loadTrackedRecipe(
     return {
       ok: false,
       errors: [
-        `tracked recipe ${path} could not be parsed as JSONC: ${String((error as Error)?.message ?? error)}`,
+        `tracked recipe ${label} could not be parsed as JSONC: ${String((error as Error)?.message ?? error)}`,
       ],
     }
   }
@@ -55,7 +59,7 @@ export function loadTrackedRecipe(
       const at = issue.path.length ? `${issue.path.join('.')}: ` : ''
       const message =
         issue.code === 'unrecognized_keys' ? `unknown-key rule: ${issue.message}` : issue.message
-      return `tracked recipe ${path}: ${at}${message}`
+      return `tracked recipe ${label}: ${at}${message}`
     }),
   }
 }
