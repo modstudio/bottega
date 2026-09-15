@@ -1,22 +1,17 @@
-# local-stack
+## Purpose
 
-Local model serving on a host reached through an SSH tunnel.
+Provide the local model service consumed through an OpenAI-compatible endpoint.
 
-The orchestrator consumes an OpenAI-compatible Responses endpoint exposed on a
-local port; it does not import from this concern. The contract between them is
-the endpoint selected by `ORCH_LOCAL_BASE_URL`, and nothing more.
+## Belongs here
 
-A host is declared by an SSH config alias, the local and remote forwarding
-ports, and `ops/launchd/com.user.local-model-tunnel.plist.template`.
-`LOCAL_MODEL_HOST` supplies the alias when `ops/install.sh` renders the
-template. Keep the server bound to localhost on the model host, because the
-tunnel is the security boundary, and verify that it serves `/v1/responses`.
+Model-host deployment, service configuration, and endpoint smoke checks belong here.
 
-Facts about a particular host belong in machine-scope docs, not this tree:
+## Does not belong here
 
-```
-orch doc list --scope machine
-```
+Host-specific facts belong in machine-scope docs, tunnel installation belongs in `ops/`,
+agent definitions belong in `orchestrator/`, and shared code belongs in `shared/`.
 
-Product-specific deployment stays beside the agent definition that depends on
-it. If a second consumer appears, move that deployment here.
+## May depend on
+
+Local-stack code may depend on `local-stack/` and `shared/` only.
+`scripts/check-architecture.ts` enforces concern isolation.
