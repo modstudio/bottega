@@ -1,29 +1,18 @@
-# ops
+## Purpose
 
-The machine's own upkeep. Runs unattended under launchd, which is the whole
-design constraint: nobody is watching, so it must fail loudly in the log and
-never take a destructive guess.
+Maintain this machine through unattended jobs and their installation assets.
 
-- `bin/projects-morning-refresh.sh` — 06:30 daily. Refreshes the **main
-  checkout** of each family and nothing else.
-- `launchd/` — templates, installed location-independently by `install.sh`.
-  Brew upkeep at 06:00, project refresh at 06:30.
-- `com.user.orch-monitor` — a provisional four-hour operational-state
-  backstop. Its queryable record lives in orch.db; launchd output is only a
-  process log.
-- `com.user.orch-canon-eval` — 07:00 daily. Runs `orch canon eval` from the
-  main checkout's binary into the live store. Probe runs; never routing
-  evidence.
+## Belongs here
 
-Every launchd template renders to a plist that plutil accepts; where plutil is
-unavailable the check reports and does not gate.
+Launchd templates, machine-refresh scripts, upkeep installers, and operational shell
+automation belong here.
 
-**Depth is asked, not assumed.** Each project gets the deepest refresh its own
-`scripts/sync/main` advertises — `--full`, else `--refresh`, else flag-less.
-Detection reads the script, so a project that gains `--full` is picked up with
-no change here. The previous per-project list went stale exactly this way.
+## Does not belong here
 
-**Worktrees are never touched**, and that is deliberate rather than an
-oversight.
+Orchestration belongs in `orchestrator/`, reporting belongs in `hub/`, local model service
+assets belong in `local-stack/`, and reusable application code belongs in `shared/`.
 
-One project failing never aborts the rest.
+## May depend on
+
+Ops code may depend on `ops/` and `shared/` only. `scripts/check-architecture.ts` enforces
+concern isolation.
