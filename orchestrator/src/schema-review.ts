@@ -16,8 +16,8 @@ import {
   REVIEW_REPRODUCED,
   REVIEW_SEVERITY,
 } from './review-vocabulary.ts'
-import { DELIVERY, FIDELITY, QUALITY } from './score.ts'
 import { id, project, run, values } from './schema-core.ts'
+import { DELIVERY, FIDELITY, QUALITY } from './score.ts'
 
 export const review = sqliteTable('review', {
   id: id(),
