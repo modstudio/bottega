@@ -235,6 +235,8 @@ for (const script of [
   'check-run-claim-boundary.ts',
   'check-run-live-boundary.ts',
   'check-run-terminal-boundary.ts',
+  'check-run-close-boundary.ts',
+  'check-run-types-boundary.ts',
   'check-workflows-boundary.ts',
   'check-issue-report-fields-boundary.ts',
   'check-mcp-preflight-boundary.ts',
