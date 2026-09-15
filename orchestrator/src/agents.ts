@@ -897,7 +897,8 @@ function loadedAgents(): Record<string, Agent> {
     const rows = agentRows()
     const loaded = Object.fromEntries(rows.map((row) => [row.name, rowAgent(row)]))
     for (const [name, agent] of Object.entries(loaded)) assertResumableAgent(name, agent, false)
-    return (agentCache = loaded)
+    agentCache = loaded
+    return loaded
   } catch (error) {
     if (String((error as Error).message).includes('database does not exist')) return FALLBACK_AGENTS
     throw error

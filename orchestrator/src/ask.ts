@@ -217,10 +217,11 @@ async function serveAskChannel(channel: AskChannel, runId: number, token: string
     buf += decoder.decode(Buffer.from(chunk), { stream: true })
     // Newline-delimited JSON: a partial line is kept for the next chunk rather
     // than parsed and discarded, which is the standard way this goes wrong.
-    let nl: number
-    while ((nl = buf.indexOf('\n')) !== -1) {
+    let nl = buf.indexOf('\n')
+    while (nl !== -1) {
       const line = buf.slice(0, nl).trim()
       buf = buf.slice(nl + 1)
+      nl = buf.indexOf('\n')
       if (!line) continue
 
       let msg: { id?: unknown; method?: string; params?: any }
