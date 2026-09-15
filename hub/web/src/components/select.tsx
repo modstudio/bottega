@@ -166,7 +166,11 @@ export function Select({
               onPointerEnter={() => setActive(index)}
               onClick={() => choose(index)}
               onKeyDown={(event) => {
-                if (event.key === 'Enter' || event.key === ' ') choose(index)
+                if (event.key === 'Enter' || event.key === ' ') {
+                  event.preventDefault()
+                  event.stopPropagation()
+                  choose(index)
+                }
               }}
             >
               <Check
