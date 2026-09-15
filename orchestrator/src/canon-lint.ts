@@ -62,7 +62,14 @@ export const ISSUE_PATTERNS = [
   /\bFIXME\b/i,
 ]
 
-type Kind = 'entry' | 'rule' | 'context' | 'reference' | 'card' | 'alias' | 'publication'
+export type CanonKind =
+  | 'entry'
+  | 'rule'
+  | 'context'
+  | 'reference'
+  | 'card'
+  | 'alias'
+  | 'publication'
 
 function resolvedTarget(file: CanonFile): string | null {
   if (file.symlinkTarget === undefined) return null
@@ -70,7 +77,7 @@ function resolvedTarget(file: CanonFile): string | null {
   return posix.normalize(posix.join(posix.dirname(file.path), file.symlinkTarget))
 }
 
-function kindOf(file: CanonFile): Kind | null {
+export function classifyCanonFile(file: CanonFile): CanonKind | null {
   if (file.path === 'AGENTS.md') return 'entry'
   if (/^\.agents\/rules\/[^/]+\.md$/.test(file.path)) return 'rule'
   if (/^\.agents\/contexts\/[^/]+\.md$/.test(file.path)) return 'context'
@@ -447,7 +454,7 @@ function chainFiles(path: string, agentsByPath: Map<string, CanonFile>): CanonFi
   })
 }
 
-type Classified = { file: CanonFile; kind: Kind | null }
+type Classified = { file: CanonFile; kind: CanonKind | null }
 type TierFiles = {
   entry: CanonFile | null
   rules: CanonFile[]
@@ -607,7 +614,9 @@ function symlinkFindings(file: CanonFile, paths: Set<string>): Finding[] {
 }
 
 export function lintCanon(input: CanonLintInput): CanonLintResult {
-  const classified = input.files.map((file): Classified => ({ file, kind: kindOf(file) }))
+  const classified = input.files.map(
+    (file): Classified => ({ file, kind: classifyCanonFile(file) }),
+  )
   const tiers = tierFiles(classified)
   const tierMeasurements = tierSummary(tiers)
   const chains = chainMeasurements(classified)

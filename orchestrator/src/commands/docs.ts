@@ -39,12 +39,15 @@ export function register(program: Command): void {
     .option('--job <value>')
     .option('--slug <value>')
     .option('--agent <value>')
+    .option('--project <value>')
+    .option('--reason <value>')
     .option('--baseline <value>')
     .option('--all')
     .option('--json')
     .option('--force')
     .option('--strict')
     .option('--write-baseline')
+    .option('--check')
     .action(async (args, options) => {
       const argv = ['canon', ...args]
       const flags = optionFlags(options)

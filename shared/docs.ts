@@ -6,7 +6,15 @@
  * the other half of a document address change with the scope instead of
  * drifting independently.
  */
-export const DOC_SCOPES = ['project', 'machine', 'agent', 'job', 'global', 'resume'] as const
+export const DOC_SCOPES = [
+  'project',
+  'machine',
+  'agent',
+  'job',
+  'global',
+  'resume',
+  'canon',
+] as const
 export type DocScope = (typeof DOC_SCOPES)[number]
 
 export type DocSubjectKind = 'project' | 'agent' | 'job'
@@ -18,4 +26,5 @@ export const DOC_SCOPE_SUBJECT_KIND = {
   job: 'job',
   global: null,
   resume: 'project',
+  canon: 'project',
 } as const satisfies Record<DocScope, DocSubjectKind | null>

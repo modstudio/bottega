@@ -1,6 +1,14 @@
 // concern: canon-commands
 /** Knows canon command semantics over canon, lint, and evals. Must not know runs, routing, transports, the CLI, or worktrees. */
-import { readFileSync, writeFileSync } from 'node:fs'
+import {
+  lstatSync,
+  mkdirSync,
+  readFileSync,
+  realpathSync,
+  rmSync,
+  symlinkSync,
+  writeFileSync,
+} from 'node:fs'
 import { dirname, resolve } from 'node:path'
 import { z } from 'zod'
 import type { Finding } from '../../shared/ratchet.ts'
@@ -11,9 +19,13 @@ import {
   diffPack,
   findingsForPack,
 } from './canon.ts'
-import { canonGitRoot, collectCanonLintInput } from './canon-files.ts'
-import { introducedCanonFindings, lintCanon } from './canon-lint.ts'
+import { canonGitRoot, collectCanonLintInput, collectCanonTree } from './canon-files.ts'
+import { type CanonRow, planHydration } from './canon-hydrate.ts'
+import { classifyCanonFile, introducedCanonFindings, lintCanon } from './canon-lint.ts'
+import { decideCanonWrite } from './canon-write-gate.ts'
+import { listDocs, setDoc } from './docs.ts'
 import { canonEvalsReport, runCanonEvals } from './evals.ts'
+import { projectByName } from './projects.ts'
 
 type CanonFlags = { has(name: string): boolean; flag(name: string): string | undefined }
 type CanonPresentation = {
@@ -65,6 +77,128 @@ function printFindings(findings: Finding[], log: (...values: unknown[]) => void)
   }
 }
 
+function requestedProject(flags: CanonFlags) {
+  const name = flags.flag('project')
+  if (!name) throw new Error('--project is required')
+  const project = projectByName(name)
+  if (!project) throw new Error(`unknown project ${JSON.stringify(name)}`)
+  return project
+}
+
+function canonRows(project: string): CanonRow[] {
+  return listDocs({ scope: 'canon', subject: project }).map(({ slug, body }) => ({ slug, body }))
+}
+
+function printHydrationPlan(
+  plan: ReturnType<typeof planHydration>,
+  log: (...values: unknown[]) => void,
+): void {
+  for (const row of plan.writes) log(`write ${row.path}`)
+  for (const row of plan.links) log(`link ${row.path} -> ${row.target}`)
+  for (const path of plan.deletes) log(`delete ${path}`)
+}
+
+function applyHydration(root: string, plan: ReturnType<typeof planHydration>): void {
+  for (const path of plan.deletes) rmSync(resolve(root, path))
+  for (const { path, body } of plan.writes) {
+    const target = resolve(root, path)
+    mkdirSync(dirname(target), { recursive: true })
+    const targetStat = statOrNull(target)
+    if (targetStat?.isSymbolicLink()) rmSync(target)
+    writeFileSync(target, body)
+  }
+  for (const { path, target } of plan.links) {
+    const destination = resolve(root, path)
+    mkdirSync(dirname(destination), { recursive: true })
+    if (statOrNull(destination)) rmSync(destination, { recursive: true })
+    symlinkSync(target, destination)
+  }
+}
+
+function statOrNull(path: string): ReturnType<typeof lstatSync> | null {
+  try {
+    return lstatSync(path)
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === 'ENOENT') return null
+    throw error
+  }
+}
+
+function canonImportCommand(flags: CanonFlags, presentation: CanonPresentation): void {
+  const project = requestedProject(flags)
+  const reason = flags.flag('reason')
+  if (!reason?.trim()) throw new Error('--reason is required')
+  const root = canonGitRoot(resolve(flags.flag('cwd') ?? project.path))
+  const collected = collectCanonLintInput(root)
+  const rows = collected.files
+    .filter((file) => file.symlinkTarget === undefined && classifyCanonFile(file) !== null)
+    .map(({ path, text }) => ({ slug: path, body: text }))
+  const current = canonRows(project.name)
+  const findings = decideCanonWrite({
+    current,
+    next: rows,
+    trackedPaths: collected.trackedPaths,
+    packageScripts: collected.packageScripts,
+    sourceTexts: collected.sourceTexts,
+  })
+  const bootstrap = current.length === 0
+  for (const row of rows) {
+    setDoc({
+      scope: 'canon',
+      subject: project.name,
+      slug: row.slug,
+      title: row.slug,
+      body: row.body,
+      delivery: 'demand',
+      reason,
+      canonSet: rows,
+      allowCanonBootstrap: bootstrap,
+    })
+  }
+  presentation.log(`imported ${rows.length} canon rows`)
+  if (bootstrap) {
+    presentation.log(
+      `empty canon store: bypassed introduced-findings comparison (${findings.length} findings)`,
+    )
+  }
+}
+
+function canonHydrateCommand(flags: CanonFlags, presentation: CanonPresentation): void {
+  const project = requestedProject(flags)
+  const requested = flags.flag('cwd')
+  if (!requested) throw new Error('--cwd is required')
+  const root = canonGitRoot(resolve(requested))
+  if (realpathSync(root) === realpathSync(project.path)) {
+    throw new Error(
+      `refusing to hydrate registered main checkout ${project.path}\n` +
+        'invariant: canon hydration writes a disposable project tree, never the main checkout\n' +
+        'cleared by: pass --cwd for a worktree',
+    )
+  }
+  const plan = planHydration({
+    rows: canonRows(project.name),
+    tree: collectCanonTree(root),
+  })
+  printHydrationPlan(plan, presentation.log)
+  const count = plan.writes.length + plan.links.length + plan.deletes.length
+  if (flags.has('check')) {
+    if (count) presentation.exitCode(1)
+    return
+  }
+  applyHydration(root, plan)
+  presentation.log(`hydrated ${count} paths`)
+}
+
+function canonListCommand(flags: CanonFlags, presentation: CanonPresentation): void {
+  const project = requestedProject(flags)
+  for (const row of listDocs({ scope: 'canon', subject: project.name })) {
+    const tier = classifyCanonFile({ path: row.slug, text: row.body })
+    presentation.log(
+      `${row.slug}  ${tier ?? 'invalid'}  ${Buffer.byteLength(row.body)}  ${row.updated_at}`,
+    )
+  }
+}
+
 export function canonLintCommand(flags: CanonFlags, presentation: CanonPresentation): void {
   const requestedCwd = resolve(flags.flag('cwd') ?? presentation.cwd())
   const root = canonGitRoot(requestedCwd)
@@ -102,6 +236,18 @@ export async function canonCommand(
   const sub = argv[1]
   const cwd = flag('cwd') ?? presentation.cwd()
   const jobName = flag('job') ?? 'understand'
+  if (sub === 'import') {
+    canonImportCommand(flags, presentation)
+    return
+  }
+  if (sub === 'hydrate') {
+    canonHydrateCommand(flags, presentation)
+    return
+  }
+  if (sub === 'list') {
+    canonListCommand(flags, presentation)
+    return
+  }
   if (sub === 'eval') {
     const rows = await runCanonEvals({
       slug: flag('slug'),
@@ -194,5 +340,7 @@ export async function canonCommand(
     }
     return
   }
-  throw new Error('unknown: orch canon. Try check | diff | eval | evals | lint')
+  throw new Error(
+    'unknown: orch canon. Try import | hydrate | list | check | diff | eval | evals | lint',
+  )
 }

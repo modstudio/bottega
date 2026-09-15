@@ -20,7 +20,7 @@ const docAddressChecks = <
   check('scope_check', sql`${t.scope} in (${values(DOC_SCOPES)})`),
   check(
     'slug_check',
-    sql`length(${t.slug}) <= 64 and ${t.slug} glob '[a-z0-9]*' and ${t.slug} not glob '*[^a-z0-9-]*'`,
+    sql`(${t.scope} = 'canon' and length(${t.slug}) > 0 and ${t.slug} not glob '/*' and ${t.slug} not glob '*..*') or (${t.scope} <> 'canon' and length(${t.slug}) <= 64 and ${t.slug} glob '[a-z0-9]*' and ${t.slug} not glob '*[^a-z0-9-]*')`,
   ),
   check(
     'subject_check',
