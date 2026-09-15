@@ -140,8 +140,12 @@ function SettingsPage() {
                 title="Schedule and delivery"
                 description="What the daily report sends, and where it goes."
               >
-                <label className="flex items-center gap-2 text-sm font-semibold">
+                <label
+                  htmlFor="report-enabled"
+                  className="flex items-center gap-2 text-sm font-semibold"
+                >
                   <Checkbox
+                    id="report-enabled"
                     checked={form.enabled}
                     onChange={(event) => change({ enabled: event.target.checked })}
                   />
@@ -224,8 +228,13 @@ function SettingsPage() {
                   </div>
                   <div className="flex flex-wrap gap-4">
                     {data.allProjects.map((project) => (
-                      <label key={project} className="flex items-center gap-2 text-sm">
+                      <label
+                        key={project}
+                        htmlFor={`report-project-${project}`}
+                        className="flex items-center gap-2 text-sm"
+                      >
                         <Checkbox
+                          id={`report-project-${project}`}
                           checked={form.projects.includes(project)}
                           onChange={(event) =>
                             change({

@@ -166,20 +166,37 @@ function ProjectsPage() {
             <DialogDescription>Register a checkout through orch.</DialogDescription>
           </DialogHeader>
           <form className="space-y-4" onSubmit={submit}>
-            <label className="block space-y-1">
+            <label htmlFor="new-project-path" className="block space-y-1">
               <span>Path</span>
-              <Input required value={path} onChange={(event) => setPath(event.target.value)} />
+              <Input
+                id="new-project-path"
+                required
+                value={path}
+                onChange={(event) => setPath(event.target.value)}
+              />
             </label>
-            <label className="block space-y-1">
+            <label htmlFor="new-project-name" className="block space-y-1">
               <span>Name</span>
-              <Input value={name} onChange={(event) => setName(event.target.value)} />
+              <Input
+                id="new-project-name"
+                value={name}
+                onChange={(event) => setName(event.target.value)}
+              />
             </label>
-            <label className="block space-y-1">
+            <label htmlFor="new-project-stack" className="block space-y-1">
               <span>Stack</span>
-              <Input value={stack} onChange={(event) => setStack(event.target.value)} />
+              <Input
+                id="new-project-stack"
+                value={stack}
+                onChange={(event) => setStack(event.target.value)}
+              />
             </label>
-            <label className="flex items-center gap-2">
-              <Checkbox checked={canon} onChange={(event) => setCanon(event.target.checked)} />
+            <label htmlFor="new-project-canon" className="flex items-center gap-2">
+              <Checkbox
+                id="new-project-canon"
+                checked={canon}
+                onChange={(event) => setCanon(event.target.checked)}
+              />
               Canon
             </label>
             {error ? <p className="text-destructive">{error}</p> : null}

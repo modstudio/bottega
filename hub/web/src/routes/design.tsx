@@ -184,8 +184,8 @@ function DesignPage() {
           onChange={setSelect}
         />
         <Textarea aria-label="Sample textarea" defaultValue="Textarea" />
-        <label className="flex items-center gap-2">
-          <Checkbox defaultChecked /> Checkbox
+        <label htmlFor="sample-checkbox" className="flex items-center gap-2">
+          <Checkbox id="sample-checkbox" defaultChecked /> Checkbox
         </label>
       </div>
 

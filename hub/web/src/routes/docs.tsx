@@ -250,13 +250,13 @@ function DocsList() {
               </select>
             </label>
           ) : null}
-          <label className="block text-sm">
+          <label htmlFor="new-doc-slug" className="block text-sm">
             <span className="text-muted-foreground">Slug</span>
-            <Input value={slug} onChange={(e) => setSlug(e.target.value)} />
+            <Input id="new-doc-slug" value={slug} onChange={(e) => setSlug(e.target.value)} />
           </label>
-          <label className="block text-sm">
+          <label htmlFor="new-doc-title" className="block text-sm">
             <span className="text-muted-foreground">Title</span>
-            <Input value={title} onChange={(e) => setTitle(e.target.value)} />
+            <Input id="new-doc-title" value={title} onChange={(e) => setTitle(e.target.value)} />
           </label>
           <label className="block text-sm">
             <span className="text-muted-foreground">Delivery</span>

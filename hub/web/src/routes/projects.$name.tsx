@@ -212,8 +212,12 @@ function ProjectForm({ project }: { project: ProjectRow }) {
               label="Canon"
               cli={`orch project set ${shellQuote(project.name)} ${canon ? '--canon' : '--no-canon'}`}
               control={
-                <label className="flex items-center gap-2">
-                  <Checkbox checked={canon} onChange={(event) => setCanon(event.target.checked)} />
+                <label htmlFor="project-canon" className="flex items-center gap-2">
+                  <Checkbox
+                    id="project-canon"
+                    checked={canon}
+                    onChange={(event) => setCanon(event.target.checked)}
+                  />
                   Included in canon
                 </label>
               }
