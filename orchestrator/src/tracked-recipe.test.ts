@@ -198,3 +198,52 @@ describe('tracked recipe execution', () => {
     expect(removed).toBeFalse()
   })
 })
+
+describe('a tree built before its project tracked a recipe', () => {
+  const worktree = {
+    path: '/tree',
+    branch: 'branch',
+    base: 'abc',
+    repoRoot: '/main',
+    source: 'recipe' as const,
+    mintedBranch: 'branch',
+  }
+  const stored = { snapshot: null, key: null, seed: null }
+
+  test('is removed as a plain tree when it holds no live database claim', () => {
+    let removed = false
+    const outcome = teardownTrackedRecipe({
+      runId: 1,
+      worktree,
+      stored,
+      liveDatabaseClaims: 0,
+      remove: () => {
+        removed = true
+        return { removed: true, detail: '/tree' }
+      },
+    })
+    expect(removed).toBeTrue()
+    expect(outcome.removed).toBeTrue()
+    expect(outcome.detail).toContain('no recorded recipe snapshot, removed as a plain tree')
+  })
+
+  test('is kept when a live database claim would be orphaned', () => {
+    let removed = false
+    const outcome = teardownTrackedRecipe({
+      runId: 1,
+      worktree,
+      stored,
+      liveDatabaseClaims: 2,
+      remove: () => {
+        removed = true
+        return { removed: true, detail: '/tree' }
+      },
+    })
+    expect(removed).toBeFalse()
+    expect(outcome).toEqual({
+      removed: false,
+      detail:
+        'tracked recipe tree has no recorded recipe snapshot and 2 live database claim(s); kept',
+    })
+  })
+})
