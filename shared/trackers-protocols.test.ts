@@ -5,7 +5,7 @@ import {
   TRACKER_TITLE_WRITE_REFUSAL, UNKNOWN_TRACKER_REFUSAL, WORKSPACE_CREATE_REFUSAL,
   createTrackerTask, documentsRefusal, trackerCapabilities, trackerSourceFor,
   type ToolCaller, type TrackerProject,
-} from '../../../shared/trackers.ts'
+} from './trackers.ts'
 
 const task = { title: 'Move the adapter', body: 'Protocol-neutral body', status: 'todo' }
 
