@@ -14,6 +14,7 @@ import {
   authorizeRunMutation,
   type RootAuthority,
 } from './run-authority.ts'
+import { inspectTreeOwnership } from './worktree-attribution.ts'
 import {
   branchTip,
   removeBranch,
@@ -21,7 +22,6 @@ import {
   restoreBranch,
   unmergedBranch,
 } from './worktree-remove.ts'
-import { inspectTreeOwnership } from './worktree-attribution.ts'
 import type { Worktree } from './worktree-types.ts'
 
 export type CleanupPresentation = {
@@ -327,6 +327,39 @@ function mintedBranchForCleanup(row: CleanupRow): string | null {
   }
 }
 
+function assertDiscardTreeOwnership(row: CleanupRow, repoRoot: string, force: boolean): void {
+  if (force || !existsSync(row.worktree)) return
+  const conversationIds = (
+    db()
+      .query(
+        `SELECT id FROM run
+         WHERE COALESCE(parent_run_id,id) =
+               (SELECT COALESCE(parent_run_id,id) FROM run WHERE id=?)
+         ORDER BY id`,
+      )
+      .all(row.id) as { id: number }[]
+  ).map((turn) => turn.id)
+  const project = row.repo ? projectByName(row.repo) : projectAt(repoRoot)
+  const ownership = inspectTreeOwnership(
+    row.worktree,
+    repoRoot,
+    conversationIds,
+    project?.settings.worktree?.branch,
+  )
+  if (ownership === 'attached') {
+    throw new Error(
+      `refusing to remove attached tree ${row.worktree}; ` +
+        `clear this conversation's pointer with orch close-out ${row.id}`,
+    )
+  }
+  if (ownership === 'unknown') {
+    throw new Error(
+      `refusing to remove ${row.worktree}: ownership could not be established; ` +
+        'inspect its .orch-run marker or retry with --force',
+    )
+  }
+}
+
 export function discardWorktree(
   row: CleanupRow,
   verb: 'discarded' | 'abandoned',
@@ -337,37 +370,7 @@ export function discardWorktree(
 ): void {
   const repoRoot = cleanupRepoRoot(row) ?? process.cwd()
   withCleanupLock(repoRoot, `${row.id}`, row.worktree, () => {
-    if (!force && existsSync(row.worktree)) {
-      const conversationIds = (
-        db()
-          .query(
-            `SELECT id FROM run
-             WHERE COALESCE(parent_run_id,id) =
-                   (SELECT COALESCE(parent_run_id,id) FROM run WHERE id=?)
-             ORDER BY id`,
-          )
-          .all(row.id) as { id: number }[]
-      ).map((turn) => turn.id)
-      const project = row.repo ? projectByName(row.repo) : projectAt(repoRoot)
-      const ownership = inspectTreeOwnership(
-        row.worktree,
-        repoRoot,
-        conversationIds,
-        project?.settings.worktree?.branch,
-      )
-      if (ownership === 'attached') {
-        throw new Error(
-          `refusing to remove attached tree ${row.worktree}; ` +
-            `clear this conversation's pointer with orch close-out ${row.id}`,
-        )
-      }
-      if (ownership === 'unknown') {
-        throw new Error(
-          `refusing to remove ${row.worktree}: ownership could not be established; ` +
-            'inspect its .orch-run marker or retry with --force',
-        )
-      }
-    }
+    assertDiscardTreeOwnership(row, repoRoot, force)
     const sharers = otherConversationWorktreeSharers(db(), row)
     if (sharers.length) {
       writeTransaction(() => {

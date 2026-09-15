@@ -21,8 +21,8 @@ import { projectAt, projectByName, projects } from './projects.ts'
 import { liveWorktreeSharers, terminalDockerRetentionReasonForRun } from './resource-ownership.ts'
 import { auditRunMutation } from './run-authority.ts'
 import {
-  isOrchWorktree,
   inspectTreeOwnership,
+  isOrchWorktree,
   markedWorktreeSource,
   orphanSafety,
   worktreeNameRunId,
@@ -49,6 +49,23 @@ function orphanKeepReason(detail: string): string {
 
 type NamedRun = { id: number; status: string }
 type ClosedSweepOutcome = 'released' | 'absent' | 'forgotten'
+type SweepCandidate = {
+  id: number
+  root_id: number
+  repo: string | null
+  worktree: string
+  branch: string | null
+  base_commit: string | null
+  status: string
+  worktree_source: Worktree['source'] | null
+  job: string
+  keep_tree: number
+  pid: number | null
+  agent_pid: number | null
+  session_id: string | null
+  session_last_seen: string | null
+}
+type ClosedSweepCounts = Record<ClosedSweepOutcome, number>
 
 function pathIsUnder(path: string | null, root: string): boolean {
   if (!path) return false
@@ -153,6 +170,42 @@ function reportClosedSweepRow(
   return outcome
 }
 
+function sweepTreeIsOwned(row: SweepCandidate): boolean {
+  const project = row.repo ? projectByName(row.repo) : projectAt(row.worktree)
+  if (!project) return false
+  const conversationIds = (
+    db()
+      .query('SELECT id FROM run WHERE id=? OR parent_run_id=? ORDER BY id')
+      .all(row.root_id, row.root_id) as { id: number }[]
+  ).map((turn) => turn.id)
+  return (
+    inspectTreeOwnership(
+      row.worktree,
+      project.path,
+      conversationIds,
+      project.settings.worktree?.branch,
+    ) === 'owned'
+  )
+}
+
+function shouldInventoryBeforeSweep(row: SweepCandidate, dry: boolean): boolean {
+  return !dry && sweepTreeIsOwned(row)
+}
+
+function reportImmediateClosedSweep(
+  closed: ReturnType<typeof closeOutRun>,
+  row: SweepCandidate,
+  dry: boolean,
+  counts: ClosedSweepCounts,
+  presentation: CleanupPresentation,
+): boolean {
+  if (!dry && closed.outcome !== 'forgotten') return false
+  if (!['released', 'absent', 'forgotten'].includes(closed.outcome)) return false
+  const outcome = reportClosedSweepRow(closed.outcome as ClosedSweepOutcome, row, dry, presentation)
+  counts[outcome]++
+  return true
+}
+
 /**
  * Reclaim worktrees, and the infrastructure behind them, without being asked.
  *
@@ -186,29 +239,12 @@ export async function sweepRuns(options: SweepOptions, helpers: SweepHelpers): P
         WHERE r.worktree IS NOT NULL AND r.status IN ('ok','failed','stale','stopped')
         ORDER BY r.id`,
       )
-      .all() as {
-      id: number
-      root_id: number
-      repo: string | null
-      worktree: string
-      branch: string | null
-      base_commit: string | null
-      status: string
-      worktree_source: Worktree['source'] | null
-      job: string
-      keep_tree: number
-      pid: number | null
-      agent_pid: number | null
-      session_id: string | null
-      session_last_seen: string | null
-    }[]
+      .all() as SweepCandidate[]
   ).filter((row) => !selectedProject || projectAt(row.worktree)?.name === selectedProject.name)
 
   const { removeFor, sweepWithTool } = await import('./worktree-remove.ts')
 
-  let released = 0
-  let absent = 0
-  let forgotten = 0
+  const closedCounts: ClosedSweepCounts = { released: 0, absent: 0, forgotten: 0 }
   let cleanupFailed = false
   const inventoryErrors = new Set<string>()
   const leaked = new Map<string, { resource: DockerResource; project: string; runId: number }>()
@@ -221,21 +257,7 @@ export async function sweepRuns(options: SweepOptions, helpers: SweepHelpers): P
       worktree: string | null
     } | null
     if (current?.worktree !== r.worktree) continue
-    const project = r.repo ? projectByName(r.repo) : projectAt(r.worktree)
-    const conversationIds = (
-      db()
-        .query('SELECT id FROM run WHERE id=? OR parent_run_id=? ORDER BY id')
-        .all(r.root_id, r.root_id) as { id: number }[]
-    ).map((turn) => turn.id)
-    const ownership = project
-      ? inspectTreeOwnership(
-          r.worktree,
-          project.path,
-          conversationIds,
-          project.settings.worktree?.branch,
-        )
-      : 'unknown'
-    if (!dry && ownership === 'owned') {
+    if (shouldInventoryBeforeSweep(r, dry)) {
       const before = resourcesForConversation(r.id)
       if (!before.ascertainable) {
         inventoryErrors.add(before.reason)
@@ -246,44 +268,30 @@ export async function sweepRuns(options: SweepOptions, helpers: SweepHelpers): P
       }
     }
     const closed = closeOutRun(r.id, { intent: 'sweep', dryRun: dry })
-    if (
-      closed.outcome === 'released' ||
-      closed.outcome === 'absent' ||
-      closed.outcome === 'forgotten'
-    ) {
-      if (dry) {
-        const outcome = reportClosedSweepRow(closed.outcome, r, true, options.presentation)
-        released += Number(outcome === 'released')
-        absent += Number(outcome === 'absent')
-        forgotten += Number(outcome === 'forgotten')
-      } else if (closed.outcome === 'forgotten') {
-        reportClosedSweepRow(closed.outcome, r, false, options.presentation)
-        forgotten++
+    if (reportImmediateClosedSweep(closed, r, dry, closedCounts, options.presentation)) continue
+    if (closed.outcome === 'released' || closed.outcome === 'absent') {
+      const project = r.repo ?? projectAt(r.worktree)?.name ?? 'unknown'
+      const inventory = resourcesForConversation(r.id)
+      if (!inventory.ascertainable) {
+        inventoryErrors.add(inventory.reason)
+        cleanupFailed = true
+        keep(`${r.id}  inventory unavailable`, 'inventory unavailable')
+        options.presentation.error(`could not verify reclaim ${r.id}: inventory unavailable`)
+      } else if (inventory.resources.length) {
+        cleanupFailed = true
+        for (const resource of inventory.resources)
+          leaked.set(`${resource.kind}:${resource.name}`, {
+            resource,
+            project,
+            runId: r.id,
+          })
+        keep(`${r.id}  leaked Docker resources`, 'leaked Docker resources')
+        options.presentation.error(
+          `could not fully reclaim ${r.id}: project ${project}'s remove tool leaked Docker resources`,
+        )
       } else {
-        const project = r.repo ?? projectAt(r.worktree)?.name ?? 'unknown'
-        const inventory = resourcesForConversation(r.id)
-        if (!inventory.ascertainable) {
-          inventoryErrors.add(inventory.reason)
-          cleanupFailed = true
-          keep(`${r.id}  inventory unavailable`, 'inventory unavailable')
-          options.presentation.error(`could not verify reclaim ${r.id}: inventory unavailable`)
-        } else if (inventory.resources.length) {
-          cleanupFailed = true
-          for (const resource of inventory.resources)
-            leaked.set(`${resource.kind}:${resource.name}`, {
-              resource,
-              project,
-              runId: r.id,
-            })
-          keep(`${r.id}  leaked Docker resources`, 'leaked Docker resources')
-          options.presentation.error(
-            `could not fully reclaim ${r.id}: project ${project}'s remove tool leaked Docker resources`,
-          )
-        } else {
-          const outcome = reportClosedSweepRow(closed.outcome, r, false, options.presentation)
-          released += Number(outcome === 'released')
-          absent += Number(outcome === 'absent')
-        }
+        const outcome = reportClosedSweepRow(closed.outcome, r, false, options.presentation)
+        closedCounts[outcome]++
       }
     } else {
       const reason = closed.detail.startsWith('held by explicit --keep-tree')
@@ -340,7 +348,7 @@ export async function sweepRuns(options: SweepOptions, helpers: SweepHelpers): P
       }
       if (dry) {
         options.presentation.log(`would reclaim ${label}; ${safe.detail}`)
-        released++
+        closedCounts.released++
         continue
       }
 
@@ -435,7 +443,7 @@ export async function sweepRuns(options: SweepOptions, helpers: SweepHelpers): P
                   `branch ${safe.branch} left because run ${owner.id} records it`,
                 )
               }
-              released++
+              closedCounts.released++
             }
           } else {
             cleanupFailed = true
@@ -588,7 +596,15 @@ export async function sweepRuns(options: SweepOptions, helpers: SweepHelpers): P
       options.presentation.error(`  ${dry ? 'would report ' : ''}${error}`)
   }
 
-  printSweepKept(released, absent, forgotten, kept, dry, options.force, options.presentation)
+  printSweepKept(
+    closedCounts.released,
+    closedCounts.absent,
+    closedCounts.forgotten,
+    kept,
+    dry,
+    options.force,
+    options.presentation,
+  )
   if (cleanupFailed) options.presentation.setExitCode(1)
   return
 }

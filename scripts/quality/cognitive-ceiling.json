@@ -170,8 +170,9 @@
   {
     "file": "orchestrator/src/cleanup-sweep.ts",
     "function": "sweepRuns",
-    "line": 123,
-    "score": 153
+    "line": 223,
+    "score": 149,
+    "key": "orchestrator/src/cleanup-sweep.ts\u0000sweepRuns"
   },
   {
     "file": "orchestrator/src/cleanup-sweep.ts",
@@ -184,13 +185,6 @@
     "function": "withCleanupLock callback#1",
     "line": 249,
     "score": 35
-  },
-  {
-    "file": "orchestrator/src/close-out.ts",
-    "function": "attemptCloseOutRun",
-    "line": 36,
-    "score": 19,
-    "key": "orchestrator/src/close-out.ts\u0000attemptCloseOutRun"
   },
   {
     "file": "orchestrator/src/close-out.ts",

@@ -33,6 +33,95 @@ export type CloseOutResult = {
 
 const TERMINAL = new Set(['ok', 'failed', 'stale', 'stopped'])
 
+function terminalHoldResult(
+  runId: number,
+  treePath: string,
+  status: string,
+  keepTree: number,
+): CloseOutResult | null {
+  if (!TERMINAL.has(status)) {
+    return {
+      runId,
+      worktree: treePath,
+      outcome: 'live',
+      detail: `conversation is ${status}`,
+    }
+  }
+  if (keepTree) {
+    return {
+      runId,
+      worktree: treePath,
+      outcome: 'held',
+      detail: `held by explicit --keep-tree; clear with orch discard ${runId}`,
+    }
+  }
+  return null
+}
+
+function ownershipCloseOutResult(input: {
+  runId: number
+  treePath: string
+  repoRoot: string
+  conversationIds: number[]
+  branchTemplate?: string
+  dryRun?: boolean
+}): CloseOutResult | null {
+  const ownership = inspectTreeOwnership(
+    input.treePath,
+    input.repoRoot,
+    input.conversationIds,
+    input.branchTemplate,
+  )
+  if (ownership === 'owned') return null
+  if (ownership === 'unknown') {
+    return {
+      runId: input.runId,
+      worktree: input.treePath,
+      outcome: 'held',
+      detail: `ownership of ${input.treePath} could not be established; pointer and tree retained`,
+    }
+  }
+  if (!input.dryRun) {
+    db()
+      .query(
+        `UPDATE run SET worktree=NULL
+         WHERE worktree=? AND (id=? OR parent_run_id=?)`,
+      )
+      .run(input.treePath, input.runId, input.runId)
+  }
+  return {
+    runId: input.runId,
+    worktree: input.treePath,
+    outcome: 'forgotten',
+    detail: input.dryRun
+      ? `would forget attached tree ${input.treePath}; tree and branch would be left in place`
+      : `attached tree ${input.treePath} is not this run's; pointer cleared, tree left in place`,
+  }
+}
+
+function absentCloseOutResult(input: {
+  runId: number
+  treePath: string
+  repo: string | null
+  cwd: string | null
+  retainedBranch: string | null
+  dryRun?: boolean
+  recordRetainedBranch: (tip: string | null) => void
+}): CloseOutResult | null {
+  if (worktreeExists(input.treePath)) return null
+  const repoRoot =
+    (input.repo ? projectByName(input.repo)?.path : null) ?? repoRootOf(input.treePath) ?? input.cwd
+  if (!input.dryRun && repoRoot && input.retainedBranch) {
+    input.recordRetainedBranch(branchTip(repoRoot, input.retainedBranch))
+  }
+  return {
+    runId: input.runId,
+    worktree: input.treePath,
+    outcome: 'absent',
+    detail: 'worktree was already absent; recorded identity retained',
+  }
+}
+
 /** One cleanup path for terminalisation, explicit close-out, and sweep. */
 function attemptCloseOutRun(
   runId: number,
@@ -91,20 +180,13 @@ function attemptCloseOutRun(
     status: root?.status ?? row.status,
     keep_tree: held.held,
   }
-  if (!TERMINAL.has(effective.status))
-    return {
-      runId: row.root_id,
-      worktree: treePath,
-      outcome: 'live',
-      detail: `conversation is ${effective.status}`,
-    }
-  if (effective.keep_tree)
-    return {
-      runId: row.root_id,
-      worktree: treePath,
-      outcome: 'held',
-      detail: `held by explicit --keep-tree; clear with orch discard ${row.root_id}`,
-    }
+  const terminalHold = terminalHoldResult(
+    row.root_id,
+    treePath,
+    effective.status,
+    effective.keep_tree,
+  )
+  if (terminalHold) return terminalHold
   const retainedBranch = effective.minted_branch ?? effective.branch
   const recordRetainedBranch = (tip: string | null) => {
     if (!retainedBranch || !tip) return
@@ -112,21 +194,16 @@ function attemptCloseOutRun(
       .query('UPDATE run SET branch_kept=?, branch_kept_tip=? WHERE id=?')
       .run(retainedBranch, tip, row.root_id)
   }
-  if (!worktreeExists(treePath)) {
-    const repoRoot =
-      (effective.repo ? projectByName(effective.repo)?.path : null) ??
-      repoRootOf(treePath) ??
-      effective.cwd
-    if (!options.dryRun && repoRoot && retainedBranch) {
-      recordRetainedBranch(branchTip(repoRoot, retainedBranch))
-    }
-    return {
-      runId: row.root_id,
-      worktree: treePath,
-      outcome: 'absent',
-      detail: 'worktree was already absent; recorded identity retained',
-    }
-  }
+  const absentResult = absentCloseOutResult({
+    runId: row.root_id,
+    treePath,
+    repo: effective.repo,
+    cwd: effective.cwd,
+    retainedBranch,
+    dryRun: options.dryRun,
+    recordRetainedBranch,
+  })
+  if (absentResult) return absentResult
   const repoRoot =
     (effective.repo ? projectByName(effective.repo)?.path : null) ??
     repoRootOf(treePath) ??
@@ -146,34 +223,15 @@ function attemptCloseOutRun(
   ).map((turn) => turn.id)
   const branchTemplate = (effective.repo ? projectByName(effective.repo) : projectAt(treePath))
     ?.settings.worktree?.branch
-  const nonOwnedResult = (ownership: 'attached' | 'unknown'): CloseOutResult => {
-    if (ownership === 'unknown') {
-      return {
-        runId: row.root_id,
-        worktree: treePath,
-        outcome: 'held',
-        detail: `ownership of ${treePath} could not be established; pointer and tree retained`,
-      }
-    }
-    if (!options.dryRun) {
-      db()
-        .query(
-          `UPDATE run SET worktree=NULL
-           WHERE worktree=? AND (id=? OR parent_run_id=?)`,
-        )
-        .run(treePath, row.root_id, row.root_id)
-    }
-    return {
-      runId: row.root_id,
-      worktree: treePath,
-      outcome: 'forgotten',
-      detail: options.dryRun
-        ? `would forget attached tree ${treePath}; tree and branch would be left in place`
-        : `attached tree ${treePath} is not this run's; pointer cleared, tree left in place`,
-    }
-  }
-  const ownership = inspectTreeOwnership(treePath, repoRoot, conversationIds, branchTemplate)
-  if (ownership !== 'owned') return nonOwnedResult(ownership)
+  const ownershipResult = ownershipCloseOutResult({
+    runId: row.root_id,
+    treePath,
+    repoRoot,
+    conversationIds,
+    branchTemplate,
+    dryRun: options.dryRun,
+  })
+  if (ownershipResult) return ownershipResult
 
   const liveRows = () => {
     const sharers = liveWorktreeSharers(db(), { id: row.root_id, worktree: treePath })
@@ -287,13 +345,6 @@ function attemptCloseOutRun(
                 outcome: 'live' as const,
                 detail: `live run(s): ${lockedLive.map((owner) => `${owner.id} (${owner.status})`).join(', ')}`,
               }
-            const lockedOwnership = inspectTreeOwnership(
-              treePath,
-              repoRoot,
-              conversationIds,
-              branchTemplate,
-            )
-            if (lockedOwnership !== 'owned') return nonOwnedResult(lockedOwnership)
             const reclaimProof = proveWorktreeReconstructible(treePath)
             if (!reclaimProof.ok)
               return {
