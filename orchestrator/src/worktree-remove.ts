@@ -1,11 +1,12 @@
 // concern: worktree-remove
 import { existsSync } from 'node:fs'
 import { join } from 'node:path'
-import { db } from './db.ts'
+import { db, nowIso, writeTransaction } from './db.ts'
 import { git, gitOk, gitRaw, targetGitEnvironment } from './git-environment.ts'
 import { projectAt, type WorktreeTool } from './projects.ts'
-import { dbNameFor, teardownRecipe } from './recipe.ts'
+import { databaseDroppedByTeardown, dbNameFor, type Recipe, teardownRecipe } from './recipe.ts'
 import { markedWorktreeRunId, removeSharedRefGuard } from './ref-guard.ts'
+import { settleDatabaseClaim } from './resource-claims.ts'
 import { extractWorktree, ORCH_RUN_MARKER } from './worktree-attribution.ts'
 import { portFor, runShellTool } from './worktree-tool.ts'
 import type { Worktree } from './worktree-types.ts'
@@ -23,6 +24,28 @@ export type Changes = {
   trunk: string
   /** Whether trunk came from the project register. */
   trunkConfigured: boolean
+}
+
+function teardownBuiltInRecipe(recipe: Recipe, w: Worktree, runId: number): void {
+  const dbName = dbNameFor(w.repoRoot.split('/').pop() ?? 'app', runId)
+  const cwd = existsSync(w.path) ? w.path : w.repoRoot
+  const teardown = teardownRecipe(recipe, cwd, dbName, String(recipe.serve ? portFor(runId) : ''))
+  for (const step of teardown) {
+    if (!step.ok) console.error(`orch: ${step.step} failed: ${step.detail.slice(-200)}`)
+  }
+  if (!recipe.database || recipe.database.kind === 'none') return
+  const provider = recipe.database.kind
+  const databaseDropped = databaseDroppedByTeardown(provider, teardown)
+  writeTransaction(() => {
+    settleDatabaseClaim(db(), {
+      allocationKey: `${provider}:${dbName}`,
+      databaseDropped,
+      settledAt: nowIso(),
+      detail: databaseDropped
+        ? `${provider} teardown released ${dbName}`
+        : `${provider} teardown failed; ${dbName} retained`,
+    })
+  })
 }
 
 /**
@@ -121,16 +144,7 @@ export function removeWithTool(
       // Recipe infrastructure is owned by the run that is being discarded,
       // never by an id inferred from another run's retained directory.
       if (runId === undefined) return removeWorktree(w, keepBranch)
-      const dbName = dbNameFor(w.repoRoot.split('/').pop() ?? 'app', runId)
-      const cwd = existsSync(w.path) ? w.path : w.repoRoot
-      for (const step of teardownRecipe(
-        tool.recipe,
-        cwd,
-        dbName,
-        String(tool.recipe.serve ? portFor(runId) : ''),
-      )) {
-        if (!step.ok) console.error(`orch: ${step.step} failed: ${step.detail.slice(-200)}`)
-      }
+      teardownBuiltInRecipe(tool.recipe, w, runId)
     }
     return removeWorktree(w, keepBranch)
   }

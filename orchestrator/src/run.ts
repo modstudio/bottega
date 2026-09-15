@@ -20,7 +20,7 @@ import {
   type WorkerReply,
   workerPreamble,
 } from './contract.ts'
-import { db, enableSchemaReload, nowIso, sessionId, writableDb } from './db.ts'
+import { db, enableSchemaReload, nowIso, sessionId, writableDb, writeTransaction } from './db.ts'
 import { preflight } from './dispatch-preflight.ts'
 import { assessEvidencePrompt } from './evidence.ts'
 import { chainTransport } from './failover.ts'
@@ -60,6 +60,7 @@ import {
   prepareSharedRefGuard,
   workerSharedGitRoots,
 } from './ref-guard.ts'
+import { recordSandboxDirectoryClaim } from './resource-claims.ts'
 import { teardownTerminalRunResources } from './resource-ownership.ts'
 import { TRUNCATED_TRANSCRIPT_BYTES } from './result-output.ts'
 import type { ResumeTreePlan } from './resume-tree.ts'
@@ -759,9 +760,27 @@ export async function run(opts: {
   const sandboxRouteReason = sandboxSelection.reason
     ? `${reason}; sandbox host: ${sandboxSelection.reason}`
     : reason
-  db()
-    .query('UPDATE run SET sandbox=?, route_reason=? WHERE id=?')
-    .run(sandboxSelection.sandbox, sandboxRouteReason, claim.id)
+  writeTransaction(() => {
+    db()
+      .query('UPDATE run SET sandbox=?, route_reason=? WHERE id=?')
+      .run(sandboxSelection.sandbox, sandboxRouteReason, claim.id)
+    if (sandboxSelection.profile) {
+      const rootRunId = (
+        db()
+          .query('SELECT COALESCE(parent_run_id,id) root_id FROM run WHERE id=?')
+          .get(claim.id) as {
+          root_id: number
+        }
+      ).root_id
+      recordSandboxDirectoryClaim(db(), {
+        rootRunId,
+        runId: claim.id,
+        projectId: runProjectId,
+        path: sandboxRunDir,
+        claimedAt: nowIso(),
+      })
+    }
+  })
   if (sandboxSelection.reason) {
     const header = `sandbox host: ${sandboxSelection.reason}`
     mcpSetupHeader = mcpSetupHeader ? `${mcpSetupHeader}\n${header}` : header

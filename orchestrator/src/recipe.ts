@@ -75,6 +75,8 @@ export type Recipe = {
 /** One step's outcome, kept so a failure can say which step and why. */
 export type StepResult = { step: string; ok: boolean; detail: string }
 
+export type RecipeDatabaseProvider = Exclude<DbProvider['kind'], 'none'>
+
 function verifySqlCounts(result: StepResult & { out: string }, step: string): StepResult {
   const numbers = result.out.trim().split(/\s+/).map(Number)
   const tables = numbers[0]
@@ -152,7 +154,12 @@ export const fill = (template: string, vars: Record<string, string>) =>
  * nothing, and this whole file exists because that failure reports itself as a
  * pass.
  */
-export function provisionDb(db: DbProvider, dbName: string, cwd: string): StepResult[] {
+export function provisionDb(
+  db: DbProvider,
+  dbName: string,
+  cwd: string,
+  databaseCreated?: (provider: RecipeDatabaseProvider, name: string) => void,
+): StepResult[] {
   switch (db.kind) {
     case 'none':
       return []
@@ -165,6 +172,7 @@ export function provisionDb(db: DbProvider, dbName: string, cwd: string): StepRe
         `${psql} -v ON_ERROR_STOP=1 -c 'CREATE DATABASE "${dbName}" TEMPLATE "${db.template}"'`,
         cwd,
       )
+      if (create.ok) databaseCreated?.(db.kind, dbName)
       const counts = sh(
         `${psql} -v ON_ERROR_STOP=1 -d "${dbName}" -tAc "SELECT (SELECT COUNT(*) FROM information_schema.tables WHERE table_schema NOT IN ('pg_catalog','information_schema')) || ' ' || (SELECT COUNT(*) FROM information_schema.table_constraints WHERE table_schema NOT IN ('pg_catalog','information_schema'))"`,
         cwd,
@@ -186,6 +194,7 @@ export function provisionDb(db: DbProvider, dbName: string, cwd: string): StepRe
         `${mysql} -e 'DROP DATABASE IF EXISTS ${q}${dbName}${q}; CREATE DATABASE ${q}${dbName}${q}'`,
         cwd,
       )
+      if (create.ok) databaseCreated?.(db.kind, dbName)
       const load = sh(`${mysql} ${dbName} < ${fill(db.dump, { db: dbName })}`, cwd)
       const counts = sh(
         `${mysql} -N -e "SELECT (SELECT COUNT(*) FROM information_schema.tables WHERE table_schema='${dbName}') AS tables, (SELECT COUNT(*) FROM information_schema.table_constraints WHERE table_schema='${dbName}') AS constraints"`,
@@ -196,6 +205,7 @@ export function provisionDb(db: DbProvider, dbName: string, cwd: string): StepRe
     }
     case 'compose': {
       const up = sh(fill(db.up, { db: dbName }), cwd)
+      if (up.ok) databaseCreated?.(db.kind, dbName)
       return [{ ...up, step: 'compose up' }]
     }
   }
@@ -261,6 +271,14 @@ export function teardownRecipe(
   return results
 }
 
+export function databaseDroppedByTeardown(
+  provider: RecipeDatabaseProvider,
+  results: StepResult[],
+): boolean {
+  const step = provider === 'compose' ? 'compose down' : 'drop database'
+  return results.some((result) => result.step === step && result.ok)
+}
+
 /**
  * Run a recipe against a worktree that already exists.
  *
@@ -279,6 +297,7 @@ export function runRecipe(
   worktreePath: string,
   dbName: string,
   port: string,
+  databaseCreated?: (provider: RecipeDatabaseProvider, name: string) => void,
 ): StepResult[] {
   const results: StepResult[] = []
   const vars = { db: dbName, path: worktreePath, port, name: worktreePath.split('/').pop() ?? '' }
@@ -290,7 +309,7 @@ export function runRecipe(
 
   if (recipe.install && !step('install', recipe.install)) return results
   if (recipe.database) {
-    const db = provisionDb(recipe.database, dbName, worktreePath)
+    const db = provisionDb(recipe.database, dbName, worktreePath, databaseCreated)
     results.push(...db)
     if (db.some((r) => !r.ok)) return results
   }

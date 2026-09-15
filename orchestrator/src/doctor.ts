@@ -311,8 +311,10 @@ export async function doctorCommand(
     `\nruns ${counts.runs}, scored ${counts.scored}, voided ${counts.voided}, unscored ${counts.unscored}`,
   )
   const claims = claimCounts(db())
+  const claimsByKind = claims.byKind.map(({ kind, count }) => `${kind} ${count}`).join(', ')
   log(
-    `claims: ${claims.claimed} claimed, ${claims.terminal} unsettled on terminal conversations ` +
+    `claims: ${claims.claimed} claimed (${claimsByKind}), ` +
+      `${claims.terminal} unsettled on terminal conversations ` +
       `(since ${RESOURCE_CLAIM_MIGRATION}; historical runs are not backfilled)`,
   )
   const heldCandidates = db()

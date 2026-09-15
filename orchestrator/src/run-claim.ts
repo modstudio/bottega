@@ -18,7 +18,7 @@ import { namesRecordedRunTree } from './dispatch-preflight.ts'
 import { appendRunEvent } from './events.ts'
 import { resolveSupersededTurn } from './failover.ts'
 import { branchOf, git, gitContext, repoRootOf } from './git-environment.ts'
-import { addedGrokTrustHeadings, grokTrustHeadings } from './grok-trust.ts'
+import { addedGrokTrustHeadings, grokTrustHeadings, grokTrustStorePath } from './grok-trust.ts'
 import {
   assertGrokTrustEligible,
   type McpConnection,
@@ -32,7 +32,13 @@ import { readMcpConfig, wrongProjectReason } from './mcp-probe.ts'
 import { withWorktreeCreateLock, withWorktreeLease } from './project-lock.ts'
 import { projectAt, stackAt } from './projects.ts'
 import { retargetRepositoryPromptForDispatch } from './prompt-retarget.ts'
-import { recordCreatedWorktreeClaims } from './resource-claims.ts'
+import {
+  recordCreatedWorktreeClaims,
+  recordDatabaseClaim,
+  recordPortClaim,
+  recordSandboxDirectoryClaim,
+  recordTrustEntryClaims,
+} from './resource-claims.ts'
 import { teardownTerminalRunResources } from './resource-ownership.ts'
 import type { ResumeTreePlan } from './resume-tree.ts'
 import { inferredReadOnlyKey } from './review-target.ts'
@@ -597,6 +603,35 @@ export async function claimRun(input: ClaimInput): Promise<ClaimResult> {
             })
           })
         }
+        const recordRecipeResource: NonNullable<
+          Parameters<typeof createWorkerWorktree>[0]['recordRecipeResource']
+        > = (resource) => {
+          let collidingRoot: number | null = null
+          writeTransaction(() => {
+            const identity = {
+              rootRunId: sandboxRoot,
+              runId: claim.id,
+              projectId: runProjectId,
+              claimedAt: nowIso(),
+            }
+            if (resource.kind === 'port') {
+              collidingRoot = recordPortClaim(db(), { ...identity, port: resource.port })
+            } else {
+              recordDatabaseClaim(db(), {
+                ...identity,
+                provider: resource.provider,
+                name: resource.name,
+              })
+            }
+          })
+          if (collidingRoot !== null) {
+            appendRunEvent(claim.id, {
+              ts: nowIso(),
+              type: 'text',
+              text: `serve port ${resource.kind === 'port' ? resource.port : ''} collides with conversation root ${collidingRoot}; no port claim recorded`,
+            })
+          }
+        }
         worktree = withWorktreeCreateLock(repoRoot, () => {
           // The PROJECT owns its worktrees. A bare `git worktree add` here would
           // produce a directory with no .env, no vendor and no database, in which
@@ -621,6 +656,7 @@ export async function claimRun(input: ClaimInput): Promise<ClaimResult> {
             detached: Boolean(reviewTarget),
             existingBranch: resumeCreation.existingBranch ?? resolvedTaskBranch?.branch,
             existingBranchTip: resumeCreation.existingBranchTip ?? resolvedTaskBranch?.tip,
+            recordRecipeResource,
           })
           const restored = restoreResumeIfNeeded(created, resumePlan, claim.id)
           const current = db().query('SELECT status FROM run WHERE id=?').get(claim.id) as {
@@ -873,6 +909,17 @@ export async function claimRun(input: ClaimInput): Promise<ClaimResult> {
           mcpSetupHeader,
         )
         grokMcpEnvironment = grokScope.environment
+        if (name === 'grok') {
+          writeTransaction(() => {
+            recordSandboxDirectoryClaim(db(), {
+              rootRunId: sandboxRoot,
+              runId: claim.id,
+              projectId: runProjectId,
+              path: sandboxRunDir,
+              claimedAt: nowIso(),
+            })
+          })
+        }
         mcpSetupHeader = grokScope.header
         const recorded = db()
           .query('SELECT id, cwd, worktree, worktree_source FROM run WHERE id=?')
@@ -906,9 +953,19 @@ export async function claimRun(input: ClaimInput): Promise<ClaimResult> {
         } finally {
           if (grokTrust) {
             const added = addedGrokTrustHeadings(beforeTrust, grokTrustHeadings(grokMcpEnvironment))
-            db()
-              .query('UPDATE run SET mcp_trust_path=? WHERE id=?')
-              .run(added.length ? JSON.stringify(added) : null, claim.id)
+            writeTransaction(() => {
+              db()
+                .query('UPDATE run SET mcp_trust_path=? WHERE id=?')
+                .run(added.length ? JSON.stringify(added) : null, claim.id)
+              recordTrustEntryClaims(db(), {
+                rootRunId: sandboxRoot,
+                runId: claim.id,
+                projectId: runProjectId,
+                headings: added,
+                storePath: grokTrustStorePath(grokMcpEnvironment),
+                claimedAt: nowIso(),
+              })
+            })
           }
         }
       }

@@ -5,7 +5,7 @@ import { db } from './db.ts'
 import { git, gitOk, repoRootOf, targetGitEnvironment } from './git-environment.ts'
 import { withWorktreeCreateLock } from './project-lock.ts'
 import { projectAt, type WorktreeTool } from './projects.ts'
-import { dbNameFor, type Recipe, runRecipe } from './recipe.ts'
+import { dbNameFor, type Recipe, type RecipeDatabaseProvider, runRecipe } from './recipe.ts'
 import { ORCH_RUN_MARKER } from './worktree-attribution.ts'
 import { resolveBase } from './worktree-caller.ts'
 import { removeFor } from './worktree-remove.ts'
@@ -14,6 +14,33 @@ import { portFor } from './worktree-tool.ts'
 import type { Worktree } from './worktree-types.ts'
 
 export type RecordWorktree = (worktree: Worktree) => void
+export type RecordRecipeResource = (
+  resource:
+    | { kind: 'port'; port: number }
+    | { kind: 'database'; provider: RecipeDatabaseProvider; name: string },
+) => void
+
+function runRecordedRecipe(
+  worktree: Worktree,
+  recipe: Recipe,
+  runId: number,
+  recordRecipeResource?: RecordRecipeResource,
+): ReturnType<typeof runRecipe> {
+  const dbName = dbNameFor(worktree.repoRoot.split('/').pop() ?? 'app', runId)
+  const servePort = recipe.serve ? portFor(runId) : null
+  try {
+    if (servePort !== null) recordRecipeResource?.({ kind: 'port', port: servePort })
+    return runRecipe(recipe, worktree.path, dbName, String(servePort ?? ''), (provider, name) =>
+      recordRecipeResource?.({ kind: 'database', provider, name }),
+    )
+  } catch (error) {
+    const cleanup = removeFor(worktree, worktree.repoRoot, false, false, runId)
+    throw new Error(
+      `${String((error as Error)?.message ?? error)}\n` +
+        `unrecorded recipe resource cleanup: ${cleanup.removed ? 'removed' : cleanup.detail}`,
+    )
+  }
+}
 
 /** Mark a tree as orch-owned without asking the project to track orch metadata. */
 function markWorktree(
@@ -126,6 +153,7 @@ export function createWithTool(
   record?: RecordWorktree,
   detached = false,
   existingBranch?: string,
+  recordRecipeResource?: RecordRecipeResource,
 ): Worktree {
   const repoRoot = repoRootOf(cwd)
   if (!repoRoot) throw new Error(`not a git repository: ${cwd}`)
@@ -149,6 +177,7 @@ export function createWithTool(
       detached,
       projectName,
       existingBranch,
+      recordRecipeResource,
     ),
   )
 }
@@ -164,6 +193,7 @@ function createWithToolUnlocked(
   detached = false,
   projectName = '(unregistered)',
   existingBranch?: string,
+  recordRecipeResource?: RecordRecipeResource,
 ): Worktree {
   // The project's own naming rule wins where it has one. `orch/<id>` is fine
   // where nothing enforces a convention and is refused outright where something
@@ -192,6 +222,7 @@ function createWithToolUnlocked(
       record,
       detached,
       existingBranch,
+      recordRecipeResource,
     )
   }
 
@@ -475,6 +506,7 @@ function createFromRecipe(
   record?: RecordWorktree,
   detached = false,
   existingBranch?: string,
+  recordRecipeResource?: RecordRecipeResource,
 ): Worktree {
   const branch =
     existingBranch ??
@@ -517,8 +549,7 @@ function createFromRecipe(
   }
   attributeWorktree(w, runId, record)
 
-  const dbName = dbNameFor(repoRoot.split('/').pop() ?? 'app', runId)
-  const steps = runRecipe(recipe, path, dbName, String(recipe.serve ? portFor(runId) : ''))
+  const steps = runRecordedRecipe(w, recipe, runId, recordRecipeResource)
   const failed = steps.find((r) => !r.ok)
   if (failed) {
     removeFor(w, repoRoot, false, false, runId)
