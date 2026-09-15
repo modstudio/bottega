@@ -18,6 +18,7 @@ import {
   validateProjectSettings,
   worktreeWarnings,
 } from './projects.ts'
+import { lifecycleForm } from './worktree-lifecycle.ts'
 import { migrateCreate } from './worktree-template.ts'
 
 type ProjectFlags = { has(name: string): boolean; flag(name: string): string | undefined }
@@ -48,6 +49,7 @@ export function projectCommand(
         JSON.stringify(
           all.map((project) => ({
             ...project,
+            lifecycle_form: lifecycleForm(project.settings.worktree),
             problems: validateProjectSettings(project.settings),
             commit_hooks_skipped: true,
             gate: typeof project.settings.gate === 'string' ? project.settings.gate : null,

@@ -184,6 +184,8 @@ export type WorktreeTool = {
    * correct where a checkout is just files.
    */
   recipe?: import('./recipe.ts').Recipe
+  /** Relative pointer to the project's tracked recipe; the file is not executable configuration. */
+  recipePath?: string
   /** Tears one down, including whatever it provisioned. Optional beside `recipe`. */
   remove?: string
   /**
