@@ -33,9 +33,10 @@ import { withWorktreeCreateLock, withWorktreeLease } from './project-lock.ts'
 import { projectAt, stackAt } from './projects.ts'
 import { retargetRepositoryPromptForDispatch } from './prompt-retarget.ts'
 import {
+  claimRecipePort,
+  RECIPE_PORT_BAND,
   recordCreatedWorktreeClaims,
   recordDatabaseClaim,
-  recordPortClaim,
   recordSandboxDirectoryClaim,
   recordTrustEntryClaims,
 } from './resource-claims.ts'
@@ -606,7 +607,6 @@ export async function claimRun(input: ClaimInput): Promise<ClaimResult> {
         const recordRecipeResource: NonNullable<
           Parameters<typeof createWorkerWorktree>[0]['recordRecipeResource']
         > = (resource) => {
-          let collidingRoot: number | null = null
           writeTransaction(() => {
             const identity = {
               rootRunId: sandboxRoot,
@@ -614,24 +614,23 @@ export async function claimRun(input: ClaimInput): Promise<ClaimResult> {
               projectId: runProjectId,
               claimedAt: nowIso(),
             }
-            if (resource.kind === 'port') {
-              collidingRoot = recordPortClaim(db(), { ...identity, port: resource.port })
-            } else {
-              recordDatabaseClaim(db(), {
-                ...identity,
-                provider: resource.provider,
-                name: resource.name,
-              })
-            }
-          })
-          if (collidingRoot !== null) {
-            appendRunEvent(claim.id, {
-              ts: nowIso(),
-              type: 'text',
-              text: `serve port ${resource.kind === 'port' ? resource.port : ''} collides with conversation root ${collidingRoot}; no port claim recorded`,
+            recordDatabaseClaim(db(), {
+              ...identity,
+              provider: resource.provider,
+              name: resource.name,
             })
-          }
+          })
         }
+        const claimRecipeServePort = () =>
+          writeTransaction(() =>
+            claimRecipePort(db(), {
+              rootRunId: sandboxRoot,
+              runId: claim.id,
+              projectId: runProjectId,
+              claimedAt: nowIso(),
+              band: RECIPE_PORT_BAND,
+            }),
+          )
         worktree = withWorktreeCreateLock(repoRoot, () => {
           // The PROJECT owns its worktrees. A bare `git worktree add` here would
           // produce a directory with no .env, no vendor and no database, in which
@@ -657,6 +656,7 @@ export async function claimRun(input: ClaimInput): Promise<ClaimResult> {
             existingBranch: resumeCreation.existingBranch ?? resolvedTaskBranch?.branch,
             existingBranchTip: resumeCreation.existingBranchTip ?? resolvedTaskBranch?.tip,
             recordRecipeResource,
+            claimRecipePort: claimRecipeServePort,
           })
           const restored = restoreResumeIfNeeded(created, resumePlan, claim.id)
           const current = db().query('SELECT status FROM run WHERE id=?').get(claim.id) as {

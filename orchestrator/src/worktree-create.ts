@@ -8,33 +8,44 @@ import { projectAt, type WorktreeTool } from './projects.ts'
 import { dbNameFor, type Recipe, type RecipeDatabaseProvider, runRecipe } from './recipe.ts'
 import { ORCH_RUN_MARKER } from './worktree-attribution.ts'
 import { resolveBase } from './worktree-caller.ts'
-import { removeFor } from './worktree-remove.ts'
+import { removeFor, removeWorktree } from './worktree-remove.ts'
 import { createArgv, fillArg, fillTool, type WorktreeCreate } from './worktree-template.ts'
-import { portFor } from './worktree-tool.ts'
 import type { Worktree } from './worktree-types.ts'
 
 export type RecordWorktree = (worktree: Worktree) => void
-export type RecordRecipeResource = (
-  resource:
-    | { kind: 'port'; port: number }
-    | { kind: 'database'; provider: RecipeDatabaseProvider; name: string },
-) => void
+export type RecordRecipeResource = (resource: {
+  kind: 'database'
+  provider: RecipeDatabaseProvider
+  name: string
+}) => void
+export type ClaimRecipePort = () => number
 
 function runRecordedRecipe(
   worktree: Worktree,
   recipe: Recipe,
   runId: number,
   recordRecipeResource?: RecordRecipeResource,
+  claimRecipePort?: ClaimRecipePort,
 ): ReturnType<typeof runRecipe> {
   const dbName = dbNameFor(worktree.repoRoot.split('/').pop() ?? 'app', runId)
-  const servePort = recipe.serve ? portFor(runId) : null
+  let recipeStarted = false
   try {
-    if (servePort !== null) recordRecipeResource?.({ kind: 'port', port: servePort })
+    const servePort = recipe.serve
+      ? (
+          claimRecipePort ??
+          (() => {
+            throw new Error('recipe serve requires a claimed port')
+          })
+        )()
+      : null
+    recipeStarted = true
     return runRecipe(recipe, worktree.path, dbName, String(servePort ?? ''), (provider, name) =>
       recordRecipeResource?.({ kind: 'database', provider, name }),
     )
   } catch (error) {
-    const cleanup = removeFor(worktree, worktree.repoRoot, false, false, runId)
+    const cleanup = recipeStarted
+      ? removeFor(worktree, worktree.repoRoot, false, false, runId)
+      : removeWorktree(worktree)
     throw new Error(
       `${String((error as Error)?.message ?? error)}\n` +
         `unrecorded recipe resource cleanup: ${cleanup.removed ? 'removed' : cleanup.detail}`,
@@ -154,6 +165,7 @@ export function createWithTool(
   detached = false,
   existingBranch?: string,
   recordRecipeResource?: RecordRecipeResource,
+  claimRecipePort?: ClaimRecipePort,
 ): Worktree {
   const repoRoot = repoRootOf(cwd)
   if (!repoRoot) throw new Error(`not a git repository: ${cwd}`)
@@ -178,6 +190,7 @@ export function createWithTool(
       projectName,
       existingBranch,
       recordRecipeResource,
+      claimRecipePort,
     ),
   )
 }
@@ -194,6 +207,7 @@ function createWithToolUnlocked(
   projectName = '(unregistered)',
   existingBranch?: string,
   recordRecipeResource?: RecordRecipeResource,
+  claimRecipePort?: ClaimRecipePort,
 ): Worktree {
   // The project's own naming rule wins where it has one. `orch/<id>` is fine
   // where nothing enforces a convention and is refused outright where something
@@ -223,6 +237,7 @@ function createWithToolUnlocked(
       detached,
       existingBranch,
       recordRecipeResource,
+      claimRecipePort,
     )
   }
 
@@ -507,6 +522,7 @@ function createFromRecipe(
   detached = false,
   existingBranch?: string,
   recordRecipeResource?: RecordRecipeResource,
+  claimRecipePort?: ClaimRecipePort,
 ): Worktree {
   const branch =
     existingBranch ??
@@ -549,7 +565,7 @@ function createFromRecipe(
   }
   attributeWorktree(w, runId, record)
 
-  const steps = runRecordedRecipe(w, recipe, runId, recordRecipeResource)
+  const steps = runRecordedRecipe(w, recipe, runId, recordRecipeResource, claimRecipePort)
   const failed = steps.find((r) => !r.ok)
   if (failed) {
     removeFor(w, repoRoot, false, false, runId)

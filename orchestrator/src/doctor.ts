@@ -24,7 +24,7 @@ import {
   unavailableReason,
   wakeStatus,
 } from './local-host.ts'
-import { claimCounts, RESOURCE_CLAIM_MIGRATION } from './resource-claims.ts'
+import { claimCounts, RECIPE_PORT_BAND, RESOURCE_CLAIM_MIGRATION } from './resource-claims.ts'
 import { terminalDockerRetentionReasonForRun } from './resource-ownership.ts'
 import { DELIVERY, FIDELITY, QUALITY } from './score.ts'
 import { worktreeDirty } from './worktree-attribution.ts'
@@ -317,6 +317,8 @@ export async function doctorCommand(
       `${claims.terminal} unsettled on terminal conversations ` +
       `(since ${RESOURCE_CLAIM_MIGRATION}; historical runs are not backfilled)`,
   )
+  const claimedPorts = claims.byKind.find(({ kind }) => kind === 'port')?.count ?? 0
+  log(`ports: ${claimedPorts} of ${RECIPE_PORT_BAND.end - RECIPE_PORT_BAND.start} claimed`)
   const heldCandidates = db()
     .query(
       `SELECT worktree, MAX(keep_tree) keep_tree FROM run
