@@ -122,10 +122,8 @@ function attemptCloseOutRun(
     return {
       runId: row.root_id,
       worktree: treePath,
-      outcome: options.dryRun ? 'released' : 'absent',
-      detail: options.dryRun
-        ? 'would retain the recorded identity for an absent worktree'
-        : 'worktree was already absent; recorded identity retained',
+      outcome: 'absent',
+      detail: 'worktree was already absent; recorded identity retained',
     }
   }
   const repoRoot =
