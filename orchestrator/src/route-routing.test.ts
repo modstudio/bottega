@@ -259,36 +259,35 @@ describe('a repository-reading job gets a disposable writable disk', () => {
   test('the same agent remains fine without tools', () => {
     expect(pick('review-lens', 'codex', 0, false, null).agent).toBe('codex')
   })
-}) +
-  describe('fan-out routing exclusions', () => {
-    test('avoid removes an agent while another eligible agent remains', () => {
-      expect(pick('review-lens', undefined, 0, false, null, { agents: ['grok'] }).agent).toBe(
-        'codex',
-      )
-    })
+})
 
-    test('exhausted exclusions refuse and name the cause', () => {
-      expect(() =>
-        pick('review-lens', undefined, 0, false, null, { agents: ['grok', 'codex'] }),
-      ).toThrow('excluded by constraint: codex: --avoid named codex; grok: --avoid named grok')
-    })
-
-    test('MCP routing no longer excludes codex over the caller checkout', () => {
-      expect(pick('mcp-query', undefined, 0, false, null, { agents: ['grok'] }).agent).toBe('codex')
-    })
-
-    test('an explicit pin that is also avoided is refused', () => {
-      expect(() => pick('review-lens', 'grok', 0, false, null, { agents: ['grok'] })).toThrow(
-        'contradicts',
-      )
-    })
-
-    test('distinct models exclude the agent currently using one', () => {
-      expect(
-        pick('review-lens', undefined, 0, false, null, { models: [AGENTS.grok!.model] }).agent,
-      ).toBe('codex')
-    })
+describe('fan-out routing exclusions', () => {
+  test('avoid removes an agent while another eligible agent remains', () => {
+    expect(pick('review-lens', undefined, 0, false, null, { agents: ['grok'] }).agent).toBe('codex')
   })
+
+  test('exhausted exclusions refuse and name the cause', () => {
+    expect(() =>
+      pick('review-lens', undefined, 0, false, null, { agents: ['grok', 'codex'] }),
+    ).toThrow('excluded by constraint: codex: --avoid named codex; grok: --avoid named grok')
+  })
+
+  test('MCP routing no longer excludes codex over the caller checkout', () => {
+    expect(pick('mcp-query', undefined, 0, false, null, { agents: ['grok'] }).agent).toBe('codex')
+  })
+
+  test('an explicit pin that is also avoided is refused', () => {
+    expect(() => pick('review-lens', 'grok', 0, false, null, { agents: ['grok'] })).toThrow(
+      'contradicts',
+    )
+  })
+
+  test('distinct models exclude the agent currently using one', () => {
+    expect(
+      pick('review-lens', undefined, 0, false, null, { models: [AGENTS.grok!.model] }).agent,
+    ).toBe('codex')
+  })
+})
 
 describe('routing narrows to a stack only when that buys a comparison', () => {
   test('one proven agent on a stack is not enough to narrow', () => {
