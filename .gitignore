@@ -47,6 +47,7 @@ hub.db-wal
 # Backups of it are the same private record, and the orchestrator's are already
 # ignored a few lines up - the pair had drifted.
 hub/hub.db.backup-*
+hub/.serve/
 hub/node_modules
 hub/bun.lock
 hub/web/dist/
