@@ -940,6 +940,8 @@ The invariants are:
   hand-edited. SQL the kit cannot express, including FORCE ROW LEVEL SECURITY,
   grants and seed rows, goes in a custom migration created with
   `drizzle-kit generate --custom --config drizzle.postgres.config.ts --name=<name>`.
+  The migration role holds CREATE on the database so it owns Drizzle's
+  `drizzle` metadata schema; tenant roles have no privilege on that schema.
   The gate proves the snapshot chain is consistent and the schema has no
   ungenerated change. SQLite keeps its hand-written journal because its
   backfill blocks and baseline adoption are not represented by the kit, and no

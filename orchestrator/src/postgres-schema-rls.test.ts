@@ -133,6 +133,7 @@ realPostgres('RLS proof against real Postgres', () => {
       `
       CREATE ROLE record_owner LOGIN PASSWORD 'owner-password' NOSUPERUSER NOBYPASSRLS;
       CREATE ROLE tenant_actor LOGIN PASSWORD 'tenant-password' NOSUPERUSER NOBYPASSRLS;
+      GRANT CREATE ON DATABASE postgres TO record_owner;
       GRANT CREATE ON SCHEMA public TO record_owner;
     `,
     )
@@ -181,6 +182,8 @@ realPostgres('RLS proof against real Postgres', () => {
       `
       DROP TABLE IF EXISTS membership, machine, seq, project, "user", space CASCADE;
       DROP SCHEMA IF EXISTS drizzle CASCADE;
+      REVOKE CREATE ON DATABASE postgres FROM record_owner;
+      REVOKE CREATE ON SCHEMA public FROM record_owner;
       DROP ROLE IF EXISTS tenant_actor;
       DROP ROLE IF EXISTS record_owner;
     `,
@@ -198,6 +201,41 @@ realPostgres('RLS proof against real Postgres', () => {
     `,
     )
     expect(facts).toBe('f|f|f')
+  })
+
+  test('the seq primary key columns are not nullable', () => {
+    const columns = succeeds(
+      'postgres',
+      'postgres',
+      `
+      SELECT column_name, is_nullable
+      FROM information_schema.columns
+      WHERE table_schema = 'public' AND table_name = 'seq'
+        AND column_name IN ('space_id', 'project_id', 'name')
+      ORDER BY ordinal_position;
+    `,
+    )
+    expect(columns.split('\n')).toEqual(['space_id|NO', 'project_id|NO', 'name|NO'])
+
+    const inserted = asSpace(
+      'record_owner',
+      'owner-password',
+      SPACE_A,
+      `INSERT INTO seq (space_id, project_id, name, next)
+       VALUES ('${SPACE_A}', '${PROJECT_A}', NULL, 1);`,
+    )
+    expect(inserted.code).not.toBe(0)
+    expect(inserted.stderr).toContain('null value in column "name"')
+  })
+
+  test('tenant roles cannot read Drizzle migration metadata', () => {
+    const result = psql(
+      'tenant_actor',
+      'tenant-password',
+      'SELECT count(*) FROM drizzle.__drizzle_migrations;',
+    )
+    expect(result.code).not.toBe(0)
+    expect(result.stderr).toContain('permission denied for schema drizzle')
   })
 
   test('same-space SELECT remains visible', () => {
