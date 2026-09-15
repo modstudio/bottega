@@ -1,6 +1,6 @@
 // concern: run-inbox
 /** Owns ask-server setup behavior. Must not know CLI grammar. */
-import { AGENTS } from './agents.ts'
+import { AGENTS } from './agent-registry.ts'
 
 export function setupAskCommand(
   command: string[],

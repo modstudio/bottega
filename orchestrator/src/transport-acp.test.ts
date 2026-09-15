@@ -2,7 +2,7 @@ import { afterEach, describe, expect, test } from 'bun:test'
 import { mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { AGENTS } from './agents.ts'
+import { AGENTS } from './agent-registry.ts'
 import {
   ACP_PILOT_TASK,
   acpRuntimeGaps,
@@ -426,7 +426,7 @@ describe('strict schema matching used on the ACP path', () => {
 
 describe('tool_call_update folds into its tool_call', () => {
   test('a goose-shaped read (call with target, update with only the status) satisfies the readsRepo probe gate', async () => {
-    const { registrationProbeReadsRepo } = await import('./agents.ts')
+    const { registrationProbeReadsRepo } = await import('./agent-probe.ts')
     const result = normalizeAcpTurn({
       sessionId: 's',
       stopReason: 'end_turn',
@@ -476,7 +476,7 @@ describe('tool_call_update folds into its tool_call', () => {
   })
 
   test('an update naming no known call stays its own event, and an unrelated tool plus a hallucinated sentinel still fails the gate', async () => {
-    const { registrationProbeReadsRepo } = await import('./agents.ts')
+    const { registrationProbeReadsRepo } = await import('./agent-probe.ts')
     const result = normalizeAcpTurn({
       sessionId: 's',
       stopReason: 'end_turn',

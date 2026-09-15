@@ -3,12 +3,10 @@
 import { createHash } from 'node:crypto'
 import { mkdirSync, realpathSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
-import {
-  AGENTS,
-  ensureLocalHealth,
-  readStrictCodexSchema,
-  resumePromptByteLimit,
-} from './agents.ts'
+import { AGENTS } from './agent-registry.ts'
+import { resumePromptByteLimit } from './agents.ts'
+import { ensureLocalHealth } from './local-host.ts'
+import { readStrictCodexSchema } from './codex-schema.ts'
 import { flagValue, flagValues, readMessageText } from './args.ts'
 import { contractConflicts } from './contract.ts'
 import { sessionId } from './db.ts'

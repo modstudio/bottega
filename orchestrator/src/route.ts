@@ -1,9 +1,5 @@
-import {
-  AGENTS,
-  fileContractProbeReason,
-  predatesFileContract,
-  unavailableReason,
-} from './agents.ts'
+import { AGENTS } from './agent-registry.ts'
+import { fileContractProbeReason, predatesFileContract, unavailableReason } from './local-host.ts'
 import { calibrationFor } from './calibration-port.ts'
 import { failingDefaultCanonEvals } from './canon-eval-status.ts'
 import { db } from './db.ts'

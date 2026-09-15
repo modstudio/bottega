@@ -6,16 +6,13 @@ import {
   type AgentMutation,
   addAgent,
   agentRows,
-  available,
   type Backend,
-  ensureLocalHealth,
   type Harness,
-  installed,
-  probeAgent,
   removeAgent,
   setAgent,
-  unavailableReason,
-} from './agents.ts'
+} from './agent-registry.ts'
+import { available, ensureLocalHealth, installed, unavailableReason } from './local-host.ts'
+import { probeAgent } from './agent-probe.ts'
 import { flagValue } from './args.ts'
 import { db } from './db.ts'
 

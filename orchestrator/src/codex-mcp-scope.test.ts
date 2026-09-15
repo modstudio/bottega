@@ -1,7 +1,7 @@
 // Tests codex-mcp-scope.ts: explicit Codex CLI configuration and MCP grants.
 import { expect, test } from 'bun:test'
 import { dirname, join } from 'node:path'
-import { AGENTS } from './agents.ts'
+import { AGENTS } from './agent-registry.ts'
 import {
   CODEX_ASK_ENV_VARS,
   CODEX_REASONING_EFFORT,

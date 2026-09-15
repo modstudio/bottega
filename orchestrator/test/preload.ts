@@ -116,7 +116,8 @@ assertOwnedStore()
 bootstrapFixtureStore(template)
 copyFileSync(template, store)
 {
-  const { recordAgentProbe, refreshAgents } = await import('../src/agents.ts')
+  const { recordAgentProbe } = await import('../src/agent-probe.ts')
+  const { refreshAgents } = await import('../src/agent-registry.ts')
   const fileProbe = (harness: string) => ({
     harness,
     ok: true,

@@ -2,10 +2,10 @@
 /** Knows machine and register diagnosis. Must not know transports, routing, run control, the CLI, or reviews by value. */
 import { existsSync } from 'node:fs'
 import { doctorAgentStatus } from './agent-auth.ts'
+import { AGENTS } from './agent-registry.ts'
+import { cliVersion, versionBelow } from './agents.ts'
+import { agentRows } from './agent-registry.ts'
 import {
-  AGENTS,
-  agentRows,
-  cliVersion,
   ensureLocalHealth,
   fileContractProbeReason,
   LOCAL_BASE_URL,
@@ -15,9 +15,8 @@ import {
   predatesFileContract,
   tryWake,
   unavailableReason,
-  versionBelow,
   wakeStatus,
-} from './agents.ts'
+} from './local-host.ts'
 import { gwetAc1, quadraticWeightedKappa } from './agreement.ts'
 import { DATABASE_RESOLUTION, DB_PATH, databaseOpenMode, db } from './db.ts'
 import {
