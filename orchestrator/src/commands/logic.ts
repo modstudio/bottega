@@ -257,7 +257,8 @@ export function register(program: Command): void {
     .option('--detach')
     .option('--porcelain')
     .option('--no-failover')
-    .option('--keep-tree')
+    .option('--keep-tree [hours]')
+    .option('--keep-tree-reason <text>')
     .option('--no-wait-capacity')
     .option('--mcp [mode]')
     .action((_job, _prompt, _options, command) =>

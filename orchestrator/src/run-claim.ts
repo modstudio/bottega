@@ -19,6 +19,7 @@ import { appendRunEvent } from './events.ts'
 import { resolveSupersededTurn } from './failover.ts'
 import { branchOf, git, gitContext, repoRootOf } from './git-environment.ts'
 import { addedGrokTrustHeadings, grokTrustHeadings, grokTrustStorePath } from './grok-trust.ts'
+import { type KeepTreeExemption, keepTreeHold } from './keep-tree-hold.ts'
 import {
   assertGrokTrustEligible,
   type McpConnection,
@@ -156,7 +157,7 @@ type ClaimOptions = {
   review?: string
   model?: string
   lens?: string
-  keepTree?: boolean
+  keepTree?: KeepTreeExemption
   noFailover?: boolean
   key?: string
   cwd?: string
@@ -213,7 +214,7 @@ export type ClaimResult = {
   launchKey: string | null
   runToken: string
   claim: { id: number }
-  keepTree: boolean
+  keepTree: KeepTreeExemption | undefined
   scratchDir: string
   worktree: Worktree | null
   changes: Changes | null
@@ -464,19 +465,38 @@ export async function claimRun(input: ClaimInput): Promise<ClaimResult> {
   }
   const runToken = randomUUID()
   const inheritedKeepTree = opts.resume
-    ? Boolean(
-        (
-          db().query('SELECT keep_tree FROM run WHERE id=?').get(opts.resume.parent) as {
-            keep_tree: number
-          } | null
-        )?.keep_tree,
-      )
-    : false
-  const keepTree = Boolean(opts.keepTree) || inheritedKeepTree
+    ? (() => {
+        const parent = db()
+          .query('SELECT keep_tree,keep_tree_until,keep_tree_reason,started_at FROM run WHERE id=?')
+          .get(opts.resume.parent) as {
+          keep_tree: number
+          keep_tree_until: string | null
+          keep_tree_reason: string | null
+          started_at: string
+        } | null
+        if (!parent?.keep_tree) return undefined
+        const decision = keepTreeHold({
+          keepTree: parent.keep_tree,
+          keepTreeUntil: parent.keep_tree_until,
+          startedAt: parent.started_at,
+          now: nowIso(),
+        })
+        return {
+          until: decision.held
+            ? decision.until
+            : 'expiredAt' in decision
+              ? decision.expiredAt
+              : parent.started_at,
+          reason: parent.keep_tree_reason ?? 'explicit --keep-tree',
+        }
+      })()
+    : undefined
+  const keepTree = opts.keepTree ?? inheritedKeepTree
   db()
     .query(
       `UPDATE run SET stack=?, model=?, run_token=?, mcp=?, mcp_server=?,
-                      mcp_connected=?, mcp_error=?, schema_path=?, lens=?, keep_tree=? WHERE id=?`,
+                      mcp_connected=?, mcp_error=?, schema_path=?, lens=?, keep_tree=?,
+                      keep_tree_until=?, keep_tree_reason=? WHERE id=?`,
     )
     .run(
       stackAt(callerCwd),
@@ -490,6 +510,8 @@ export async function claimRun(input: ClaimInput): Promise<ClaimResult> {
       opts.schemaPath ?? null,
       opts.lens ?? null,
       keepTree ? 1 : 0,
+      keepTree?.until ?? null,
+      keepTree?.reason ?? null,
       claim.id,
     )
   const scratchDir = runScratchDir(claim.id)

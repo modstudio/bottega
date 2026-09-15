@@ -9,6 +9,7 @@ import { join, resolve } from 'node:path'
 import { db, nowIso, sessionId, writeTransaction } from './db.ts'
 import { repoRootOf, targetGitEnvironment } from './git-environment.ts'
 import { isGroupKillablePgid, runHasLiveDescendants } from './idle-kill.ts'
+import { type KeepTreeHoldDecision, keepTreeHold } from './keep-tree-hold.ts'
 import { pidAlive } from './process-liveness.ts'
 import {
   projectLockState,
@@ -42,6 +43,40 @@ export type CloseOutResult = {
 }
 
 const TERMINAL = new Set(['ok', 'failed', 'stale', 'stopped'])
+
+type ConversationKeepTreeHold = KeepTreeHoldDecision & { reason?: string }
+
+function conversationKeepTreeHold(rootId: number, now: string): ConversationKeepTreeHold {
+  const rows = db()
+    .query(
+      `SELECT keep_tree,keep_tree_until,keep_tree_reason,started_at FROM run
+       WHERE id=? OR parent_run_id=? ORDER BY id`,
+    )
+    .all(rootId, rootId) as {
+    keep_tree: number
+    keep_tree_until: string | null
+    keep_tree_reason: string | null
+    started_at: string
+  }[]
+  const expired: { held: false; expiredAt: string }[] = []
+  for (const row of rows) {
+    const decision = keepTreeHold({
+      keepTree: row.keep_tree,
+      keepTreeUntil: row.keep_tree_until,
+      startedAt: row.started_at,
+      now,
+    })
+    if (decision.held) {
+      return {
+        ...decision,
+        reason: row.keep_tree_reason ?? 'explicit --keep-tree',
+      }
+    }
+    if ('expiredAt' in decision) expired.push(decision)
+  }
+  const latest = expired.sort((a, b) => Date.parse(b.expiredAt) - Date.parse(a.expiredAt))[0]
+  return latest ?? { held: false }
+}
 
 export type SandboxReleaseResult = {
   rootId: number
@@ -120,14 +155,15 @@ export function releaseSandboxDirectoryForConversation(
 ): SandboxReleaseResult {
   const path = join(RUNS_DIR, `sandbox-${rootId}`)
   const turns = db()
-    .query('SELECT status,keep_tree FROM run WHERE id=? OR parent_run_id=? ORDER BY id')
-    .all(rootId, rootId) as { status: string; keep_tree: number }[]
+    .query('SELECT status FROM run WHERE id=? OR parent_run_id=? ORDER BY id')
+    .all(rootId, rootId) as { status: string }[]
+  const keepTree = conversationKeepTreeHold(rootId, nowIso())
   const decision = sandboxDirectoryRelease({
     terminal: turns.length > 0 && turns.every((turn) => TERMINAL.has(turn.status)),
     liveTurn: turns.some((turn) => turn.status === 'running' || turn.status === 'asking'),
     liveProcess: conversationProcessState(rootId),
     worktreeState: options.worktreeState ?? recordedWorktreeState(rootId),
-    keepTree: turns.some((turn) => Boolean(turn.keep_tree)),
+    keepTree: keepTree.held,
     directoryExists: existsSync(path),
   })
   if (decision === 'absent') {
@@ -193,7 +229,7 @@ function terminalHoldResult(
   runId: number,
   treePath: string,
   status: string,
-  keepTree: number,
+  hold: ConversationKeepTreeHold,
 ): CloseOutResult | null {
   if (!TERMINAL.has(status)) {
     return {
@@ -203,12 +239,12 @@ function terminalHoldResult(
       detail: `conversation is ${status}`,
     }
   }
-  if (keepTree) {
+  if (hold.held) {
     return {
       runId,
       worktree: treePath,
       outcome: 'held',
-      detail: `held by explicit --keep-tree; clear with orch discard ${runId}`,
+      detail: `held by ${hold.reason} until ${hold.until}; clear with orch discard ${runId}`,
     }
   }
   return null
@@ -287,12 +323,13 @@ function attemptCloseOutRun(
     lockTimeoutMs?: number
     extraPids?: number[]
     pgid?: number | null
+    keepTreeDecision: ConversationKeepTreeHold
   },
 ): CloseOutResult {
   const row = db()
     .query(
       `SELECT id, COALESCE(parent_run_id,id) root_id, project_id, job, repo, cwd, worktree, branch,
-            base_commit, worktree_source, minted_branch, keep_tree, status, agent_pid
+            base_commit, worktree_source, minted_branch, status, agent_pid
        FROM run WHERE id=?`,
     )
     .get(runId) as {
@@ -307,23 +344,19 @@ function attemptCloseOutRun(
     base_commit: string | null
     worktree_source: Worktree['source'] | null
     minted_branch: string | null
-    keep_tree: number
     status: string
     agent_pid: number | null
   } | null
   if (!row) throw new Error(`no run ${runId}`)
   const root = db()
     .query(
-      `SELECT project_id,job,repo,cwd,worktree,branch,base_commit,worktree_source,minted_branch,keep_tree,status
+      `SELECT project_id,job,repo,cwd,worktree,branch,base_commit,worktree_source,minted_branch,status
        FROM run WHERE id=?`,
     )
     .get(row.root_id) as typeof row
   const treePath = row.worktree ?? root?.worktree ?? null
   if (!treePath)
     return { runId: row.root_id, worktree: null, outcome: 'absent', detail: 'no worktree' }
-  const held = db()
-    .query('SELECT MAX(keep_tree) held FROM run WHERE id=? OR parent_run_id=?')
-    .get(row.root_id, row.root_id) as { held: number }
   const effective = {
     id: row.root_id,
     job: root?.job ?? row.job,
@@ -335,13 +368,12 @@ function attemptCloseOutRun(
     worktree_source: root?.worktree_source ?? row.worktree_source,
     minted_branch: root?.minted_branch ?? row.minted_branch,
     status: root?.status ?? row.status,
-    keep_tree: held.held,
   }
   const terminalHold = terminalHoldResult(
     row.root_id,
     treePath,
     effective.status,
-    effective.keep_tree,
+    options.keepTreeDecision,
   )
   if (terminalHold) return terminalHold
   const retainedBranch = effective.minted_branch ?? effective.branch
@@ -696,7 +728,15 @@ export function closeOutRun(
     pgid?: number | null
   },
 ): CloseOutResult {
-  const result = attemptCloseOutRun(runId, options)
+  const root = db()
+    .query('SELECT COALESCE(parent_run_id,id) root_id FROM run WHERE id=?')
+    .get(runId) as { root_id: number } | null
+  if (!root) throw new Error(`no run ${runId}`)
+  const keepTreeDecision = conversationKeepTreeHold(root.root_id, nowIso())
+  const result = attemptCloseOutRun(runId, { ...options, keepTreeDecision })
+  if (!keepTreeDecision.held && 'expiredAt' in keepTreeDecision) {
+    result.detail = `${result.detail}; keep-tree hold expired at ${keepTreeDecision.expiredAt}`
+  }
   if (!options.dryRun) {
     writeTransaction(() => {
       const settled = settledStateForCloseOut(result.outcome, 'worktree')

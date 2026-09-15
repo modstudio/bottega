@@ -297,6 +297,7 @@ for (const script of [
   'check-evidence-query-boundary.ts',
   'check-resource-ownership-boundary.ts',
   'check-resource-claims-boundary.ts',
+  'check-keep-tree-hold-boundary.ts',
   'check-run-liveness-boundary.ts',
   'check-score-boundary.ts',
   'check-duel-boundary.ts',

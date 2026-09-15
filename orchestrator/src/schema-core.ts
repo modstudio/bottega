@@ -154,6 +154,8 @@ export const run = sqliteTable(
     transport: text(),
     preConfinement: text('pre_confinement'),
     keepTree: integer('keep_tree').notNull().default(0),
+    keepTreeUntil: text('keep_tree_until'),
+    keepTreeReason: text('keep_tree_reason'),
     lastEventAt: text('last_event_at'),
     mintedBranch: text('minted_branch'),
     unreconciled: integer().notNull().default(0),

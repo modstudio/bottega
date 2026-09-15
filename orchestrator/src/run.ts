@@ -32,6 +32,7 @@ import {
   worktreeGitDir,
 } from './git-environment.ts'
 import { isReaderJob, type Job, job, jobBoundInstruction, resolveJobTimeoutMs } from './jobs.ts'
+import type { KeepTreeExemption } from './keep-tree-hold.ts'
 import { resolveLens } from './lenses.ts'
 import { ensureLocalHealth, LOCAL_BASE_URL, tryWake } from './local-host.ts'
 import {
@@ -264,7 +265,7 @@ export async function run(opts: {
   /** `orch do --timeout` in minutes. */
   timeoutMinutes?: number
   /** Opt out of reclaim-at-terminalisation for lens and reader jobs. */
-  keepTree?: boolean
+  keepTree?: KeepTreeExemption
   /** Immutable explicit-review target inherited only by automatic failover. */
   resolvedReviewTarget?: { branch: string; commit: string; base: string }
 }): Promise<RunResult> {

@@ -9,6 +9,7 @@ checkModuleBoundary('check-monitor-boundary', 'orchestrator/src/monitor.ts', [
   './db.ts',
   './docker-resources.ts',
   './git-locks.ts',
+  './keep-tree-hold.ts',
   './mcp.ts',
   './monitor-conditions.ts',
   './monitor-notices.ts',

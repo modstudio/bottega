@@ -137,7 +137,7 @@ export function isReaderJob(name: string): name is ReaderJob {
   return (READER_JOBS as readonly string[]).includes(name)
 }
 
-/** Every repository tree is closed out at terminalisation unless `--keep-tree`. */
+/** Every repository tree is closed out at terminalisation unless an active `--keep-tree` hold exists. */
 export function reclaimsTreeByDefault(name: string): boolean {
   const j = JOBS[name]
   return Boolean(j?.needs.readsRepo)

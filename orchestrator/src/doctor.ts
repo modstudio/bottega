@@ -12,6 +12,7 @@ import {
   dockerRunResources,
 } from './docker-resources.ts'
 import { runTotals } from './evidence-query.ts'
+import { keepTreeHold } from './keep-tree-hold.ts'
 import {
   ensureLocalHealth,
   fileContractProbeReason,
@@ -321,15 +322,27 @@ export async function doctorCommand(
   log(`ports: ${claimedPorts} of ${RECIPE_PORT_BAND.end - RECIPE_PORT_BAND.start} claimed`)
   const heldCandidates = db()
     .query(
-      `SELECT worktree, MAX(keep_tree) keep_tree FROM run
+      `SELECT worktree, MAX(keep_tree) keep_tree, MAX(keep_tree_until) keep_tree_until,
+              MIN(started_at) started_at FROM run
       WHERE worktree IS NOT NULL AND status IN ('ok','failed','stale','stopped')
       GROUP BY worktree`,
     )
-    .all() as { worktree: string; keep_tree: number }[]
+    .all() as {
+    worktree: string
+    keep_tree: number
+    keep_tree_until: string | null
+    started_at: string
+  }[]
   let explicitHolds = 0
   let dirtyHolds = 0
   for (const held of heldCandidates) {
-    if (held.keep_tree) explicitHolds++
+    const hold = keepTreeHold({
+      keepTree: held.keep_tree,
+      keepTreeUntil: held.keep_tree_until,
+      startedAt: held.started_at,
+      now: new Date().toISOString(),
+    })
+    if (hold.held) explicitHolds++
     else if (existsSync(held.worktree) && worktreeDirty(held.worktree).dirty) dirtyHolds++
   }
   log(
