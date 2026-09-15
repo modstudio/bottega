@@ -34,6 +34,17 @@ export type DockerInventory =
   | { ascertainable: true; resources: DockerResource[] }
   | { ascertainable: false; reason: string }
 
+export type DockerNetwork = {
+  name: string
+  createdAt: string | null
+  workingDir: string | null
+  runId: number | null
+}
+
+export type DockerNetworkInventory =
+  | { ascertainable: true; networks: DockerNetwork[] }
+  | { ascertainable: false; reason: string }
+
 function list(
   kind: DockerResourceKind,
   timeout: number,
@@ -110,6 +121,88 @@ export function dockerRunResources(): DockerInventory {
     }
   }
   return { ascertainable: true, resources }
+}
+
+/** Inventory Compose networks and the two ownership signals the monitor can prove. */
+export function dockerNetworkInventory(): DockerNetworkInventory {
+  const timeout = dockerInventoryTimeoutMs()
+  let listed: ReturnType<typeof Bun.spawnSync>
+  try {
+    listed = Bun.spawnSync(['docker', 'network', 'ls', '--format', '{{.Name}}'], {
+      stdout: 'pipe',
+      stderr: 'pipe',
+      timeout,
+    })
+  } catch (error) {
+    return {
+      ascertainable: false,
+      reason: `docker network inventory unavailable: ${(error as Error).message}`,
+    }
+  }
+  if (listed.exitedDueToTimeout) {
+    return {
+      ascertainable: false,
+      reason: `docker network inventory unavailable: timed out after ${timeout}ms`,
+    }
+  }
+  if (listed.exitCode !== 0) {
+    return {
+      ascertainable: false,
+      reason: `docker network inventory unavailable: ${listed.stderr?.toString().trim() || `exit ${listed.exitCode}`}`,
+    }
+  }
+  const names = (listed.stdout?.toString() ?? '')
+    .split('\n')
+    .map((name) => name.trim())
+    .filter(Boolean)
+  if (!names.length) return { ascertainable: true, networks: [] }
+
+  let inspected: ReturnType<typeof Bun.spawnSync>
+  try {
+    inspected = Bun.spawnSync(['docker', 'network', 'inspect', ...names], {
+      stdout: 'pipe',
+      stderr: 'pipe',
+      timeout,
+    })
+  } catch (error) {
+    return {
+      ascertainable: false,
+      reason: `docker network inspection unavailable: ${(error as Error).message}`,
+    }
+  }
+  if (inspected.exitedDueToTimeout) {
+    return {
+      ascertainable: false,
+      reason: `docker network inspection unavailable: timed out after ${timeout}ms`,
+    }
+  }
+  if (inspected.exitCode !== 0) {
+    return {
+      ascertainable: false,
+      reason: `docker network inspection unavailable: ${inspected.stderr?.toString().trim() || `exit ${inspected.exitCode}`}`,
+    }
+  }
+  try {
+    const rows = JSON.parse(inspected.stdout?.toString() ?? '') as {
+      Name: string
+      Created?: string
+      Labels?: Record<string, string> | null
+    }[]
+    return {
+      ascertainable: true,
+      networks: rows.map((row) => ({
+        name: row.Name,
+        createdAt: row.Created ?? null,
+        workingDir: row.Labels?.['com.docker.compose.project.working_dir'] ?? null,
+        runId: orchRunId(row.Name),
+      })),
+    }
+  } catch (error) {
+    return {
+      ascertainable: false,
+      reason: `docker network inspection unavailable: ${(error as Error).message}`,
+    }
+  }
 }
 
 export function resourcesForRun(runId: number, inventory = dockerRunResources()): DockerInventory {

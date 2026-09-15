@@ -1,13 +1,18 @@
 // concern: monitor
 /** Owns monitor pass composition, persistence, history, and human-readable reporting. */
 
-import { existsSync, readdirSync, realpathSync, statSync } from 'node:fs'
+import { existsSync, lstatSync, readdirSync, realpathSync, statSync } from 'node:fs'
 import { join } from 'node:path'
 import { PLATFORM_SLUG } from '../../shared/brand.ts'
 import { allInjectChecks, storedPackDrift } from './canon.ts'
 import { db, nowIso, writableDb, writeTransaction } from './db.ts'
-import { classifiedDockerResources, dockerRunResources } from './docker-resources.ts'
+import {
+  classifiedDockerResources,
+  dockerNetworkInventory,
+  dockerRunResources,
+} from './docker-resources.ts'
 import { gitLocks } from './git-locks.ts'
+import { grokTrustHeadings } from './grok-trust.ts'
 import { fileIssue } from './mcp.ts'
 import {
   age,
@@ -16,10 +21,13 @@ import {
   dockerConditions,
   git,
   idleRunConditions,
+  orphanDockerNetworkConditions,
+  orphanSandboxDirectoryConditions,
   reconcileHub,
   refGuardConditions,
   retainedRefConditions,
   rulingConditions,
+  staleTrustEntryConditions,
   terminalCloseOutRuns,
   terminalProcessAliveConditions,
   unscoredRuns,
@@ -37,7 +45,115 @@ import { projectAt, projects } from './projects.ts'
 import { reclaimBranch, reclaimWorktree } from './reclaim.ts'
 import { terminalDockerRetentionReasonForRun } from './resource-ownership.ts'
 import type { MonitorSeverity } from './review-vocabulary.ts'
+import { RUNS_DIR } from './run-artifacts.ts'
 import { worktreeDirty } from './worktree-attribution.ts'
+
+const TERMINAL_STATUSES = new Set(['ok', 'failed', 'stale', 'stopped'])
+
+function directorySize(path: string): number {
+  const entry = lstatSync(path)
+  if (!entry.isDirectory()) return entry.size
+  return readdirSync(path).reduce((total, name) => total + directorySize(join(path, name)), 0)
+}
+
+function sandboxDirectoryInventory(database: ReturnType<typeof db>) {
+  try {
+    const directories = existsSync(RUNS_DIR)
+      ? readdirSync(RUNS_DIR, { withFileTypes: true }).flatMap((entry) => {
+          const match = entry.isDirectory() ? /^sandbox-([1-9]\d*)$/.exec(entry.name) : null
+          if (!match) return []
+          const path = join(RUNS_DIR, entry.name)
+          return [{ rootId: Number(match[1]), path, sizeBytes: directorySize(path) }]
+        })
+      : []
+    const rows = database.query('SELECT id, parent_run_id, status FROM run').all() as {
+      id: number
+      parent_run_id: number | null
+      status: string
+    }[]
+    const statuses = new Map<number, string[]>()
+    for (const row of rows) {
+      const rootId = row.parent_run_id ?? row.id
+      statuses.set(rootId, [...(statuses.get(rootId) ?? []), row.status])
+    }
+    return {
+      ascertainable: true as const,
+      directories,
+      conversations: [...statuses].map(([rootId, values]) => ({
+        rootId,
+        terminal: values.length > 0 && values.every((status) => TERMINAL_STATUSES.has(status)),
+      })),
+    }
+  } catch (error) {
+    return {
+      ascertainable: false as const,
+      reason: `sandbox directory inventory unavailable: ${(error as Error).message}`,
+    }
+  }
+}
+
+function trustEntryInventory(database: ReturnType<typeof db>) {
+  try {
+    const rows = database
+      .query(
+        'SELECT id, worktree, mcp_trust_path FROM run WHERE worktree IS NOT NULL AND mcp_trust_path IS NOT NULL',
+      )
+      .all() as { id: number; worktree: string; mcp_trust_path: string }[]
+    const present = new Set(grokTrustHeadings())
+    const entries = rows.flatMap((row) => {
+      const headings = JSON.parse(row.mcp_trust_path) as unknown
+      if (!Array.isArray(headings) || headings.some((heading) => typeof heading !== 'string')) {
+        throw new Error(`run ${row.id} mcp_trust_path is not a JSON string array`)
+      }
+      return (headings as string[])
+        .filter((heading) => present.has(heading))
+        .map((heading) => ({
+          runId: row.id,
+          heading: heading as string,
+          worktreeExists: existsSync(row.worktree),
+        }))
+    })
+    return { ascertainable: true as const, entries }
+  } catch (error) {
+    return {
+      ascertainable: false as const,
+      reason: `Grok trust inventory unavailable: ${(error as Error).message}`,
+    }
+  }
+}
+
+function observedDockerNetworkInventory(database: ReturnType<typeof db>) {
+  const inventory = dockerNetworkInventory()
+  if (!inventory.ascertainable) return inventory
+  const ownership = new Map<number, { statuses: string[]; worktrees: string[] }>()
+  const rows = database.query('SELECT id, parent_run_id, status, worktree FROM run').all() as {
+    id: number
+    parent_run_id: number | null
+    status: string
+    worktree: string | null
+  }[]
+  for (const row of rows) {
+    const rootId = row.parent_run_id ?? row.id
+    const owner = ownership.get(rootId) ?? { statuses: [], worktrees: [] }
+    owner.statuses.push(row.status)
+    if (row.worktree) owner.worktrees.push(row.worktree)
+    ownership.set(rootId, owner)
+  }
+  return {
+    ascertainable: true as const,
+    networks: inventory.networks.map((network) => ({
+      ...network,
+      workingDirExists: network.workingDir !== null && existsSync(network.workingDir),
+    })),
+    owners: [...ownership].map(([rootId, owner]) => ({
+      rootId,
+      terminal:
+        owner.statuses.length > 0 &&
+        owner.statuses.every((status) => TERMINAL_STATUSES.has(status)),
+      hasWorktree: owner.worktrees.some((worktree) => existsSync(worktree)),
+    })),
+  }
+}
 
 /** Format one monitor pass identically wherever its human-readable history is printed. */
 export function formatMonitorPass(heading: string, conditions: HumanMonitorCondition[]): string[] {
@@ -328,6 +444,20 @@ export async function monitor(
   const docker = dockerConditions(clock)
   conditions.push(...docker.conditions)
   errors.push(...docker.errors)
+  const networkConditions = orphanDockerNetworkConditions(
+    observedDockerNetworkInventory(database),
+    clock,
+  )
+  conditions.push(...networkConditions.conditions)
+  errors.push(...networkConditions.errors)
+
+  const sandboxDirectories = orphanSandboxDirectoryConditions(sandboxDirectoryInventory(database))
+  conditions.push(...sandboxDirectories.conditions)
+  errors.push(...sandboxDirectories.errors)
+
+  const trustEntries = staleTrustEntryConditions(trustEntryInventory(database))
+  conditions.push(...trustEntries.conditions)
+  errors.push(...trustEntries.errors)
   const worktreeDatabases = worktreeDatabaseConditions(clock)
   conditions.push(...worktreeDatabases.conditions)
   errors.push(...worktreeDatabases.errors)
