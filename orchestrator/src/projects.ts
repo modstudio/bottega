@@ -31,7 +31,7 @@ import {
   type SequenceKind,
   type SequenceState,
 } from '../../shared/git.ts'
-import { db, writableDb, writeTransaction } from './db.ts'
+import { db, nowIso, writableDb, writeTransaction } from './db.ts'
 import { type ReadonlyProvision, validateReadonlyProvision } from './readonly-provision.ts'
 import { loadTrackedRecipe, recipePointerErrors } from './recipe-loader.ts'
 import {
@@ -60,6 +60,8 @@ export type Project = {
   stack: string | null
   /** Whether work here counts toward the canon denominator in the ratio. */
   canon: boolean
+  /** ISO timestamp when the row was retired; null while the project is live. */
+  retiredAt: string | null
   /**
    * Per-project settings, as JSON.
    *
@@ -241,6 +243,7 @@ function parse(row: {
   stack: string | null
   canon: number
   settings: string | null
+  retired_at?: string | null
 }): Project {
   let settings: ProjectSettings = {}
   try {
@@ -257,21 +260,48 @@ function parse(row: {
     path: row.path,
     stack: row.stack,
     canon: row.canon === 1,
+    retiredAt: row.retired_at ?? null,
     settings,
   }
 }
 
-export function projects(): Project[] {
-  return (
-    db().query('SELECT * FROM project ORDER BY name').all() as Parameters<typeof parse>[0][]
-  ).map(parse)
+export function projects(opts?: { retired?: boolean }): Project[] {
+  const sql = opts?.retired
+    ? 'SELECT * FROM project WHERE retired_at IS NOT NULL ORDER BY name'
+    : 'SELECT * FROM project WHERE retired_at IS NULL ORDER BY name'
+  return (db().query(sql).all() as Parameters<typeof parse>[0][]).map(parse)
 }
 
-export function projectByName(name: string): Project | null {
+function projectRowByName(name: string): Project | null {
   const r = db().query('SELECT * FROM project WHERE name = ?').get(name) as
     | Parameters<typeof parse>[0]
     | null
   return r ? parse(r) : null
+}
+
+export function projectByName(name: string): Project | null {
+  const project = projectRowByName(name)
+  return project?.retiredAt ? null : project
+}
+
+export function retiredProjectByName(name: string): Project | null {
+  const project = projectRowByName(name)
+  return project?.retiredAt ? project : null
+}
+
+/** Dispatching into a retired project names the undo, not emptiness. */
+export function retiredProjectRefusal(name: string): string {
+  return `project ${name} is retired; cleared by: orch project retire ${name} --undo`
+}
+
+export function retiredProjectAt(cwd: string): Project | null {
+  let best: Project | null = null
+  for (const p of projects({ retired: true })) {
+    if (cwd === p.path || cwd.startsWith(`${p.path}/`)) {
+      if (!best || p.path.length > best.path.length) best = p
+    }
+  }
+  return best
 }
 
 /**
@@ -313,9 +343,10 @@ export function upsertProject(p: {
   writableDb()
   db()
     .query(
-      `INSERT INTO project (name, path, stack, canon, settings) VALUES (?,?,?,?,?)
+      `INSERT INTO project (name, path, stack, canon, settings, retired_at) VALUES (?,?,?,?,?,NULL)
      ON CONFLICT(name) DO UPDATE SET path=excluded.path, stack=excluded.stack,
-                                     canon=excluded.canon, settings=excluded.settings`,
+                                     canon=excluded.canon, settings=excluded.settings,
+                                     retired_at=NULL`,
     )
     .run(
       p.name,
@@ -356,26 +387,87 @@ export function renameProject(currentName: string, nextName: string): void {
   }, d)
 }
 
+export type ProjectReferenceCounts = {
+  run: number
+  resource_claim: number
+  canon_pack: number
+  landing: number
+  landing_override: number
+  landing_review_carry: number
+  doc: number
+  doc_revision: number
+  review: number
+}
+
+const REFERENCE_LABELS: { key: keyof ProjectReferenceCounts; label: string }[] = [
+  { key: 'run', label: 'run' },
+  { key: 'resource_claim', label: 'claim' },
+  { key: 'canon_pack', label: 'canon_pack' },
+  { key: 'landing', label: 'landing' },
+  { key: 'landing_override', label: 'landing_override' },
+  { key: 'landing_review_carry', label: 'landing_review_carry' },
+  { key: 'doc', label: 'doc' },
+  { key: 'doc_revision', label: 'doc_revision' },
+  { key: 'review', label: 'review' },
+]
+
+/** Two anchored lines, or null when the row may be deleted. */
+export function projectRemovalRefusal(
+  name: string,
+  counts: ProjectReferenceCounts,
+): string[] | null {
+  const named = REFERENCE_LABELS.filter(({ key }) => counts[key] > 0).map(
+    ({ key, label }) => `${counts[key]} ${label}(s)`,
+  )
+  if (!named.length) return null
+  return [
+    `project ${name} is referenced by ${named.join(', ')}; removing it would blank their project attribution`,
+    `cleared by: orch project retire ${name}`,
+  ]
+}
+
+export function projectReferenceCounts(projectId: number): ProjectReferenceCounts {
+  const count = (table: string) =>
+    (db().query(`SELECT COUNT(*) AS n FROM ${table} WHERE project_id=?`).get(projectId) as { n: number })
+      .n
+  return {
+    run: count('run'),
+    resource_claim: count('resource_claim'),
+    canon_pack: count('canon_pack'),
+    landing: count('landing'),
+    landing_override: count('landing_override'),
+    landing_review_carry: count('landing_review_carry'),
+    doc: count('doc'),
+    doc_revision: count('doc_revision'),
+    review: count('review'),
+  }
+}
+
 export function removeProject(name: string): boolean {
   writableDb()
   const project = projectByName(name)
   if (!project) return false
-  const d = db()
-  return writeTransaction(() => {
-    for (const table of [
-      'run',
-      'canon_pack',
-      'landing',
-      'landing_override',
-      'landing_review_carry',
-      'doc',
-      'doc_revision',
-      'review',
-    ]) {
-      d.query(`UPDATE ${table} SET project_id=NULL WHERE project_id=?`).run(project.id)
-    }
-    return d.query('DELETE FROM project WHERE id = ?').run(project.id).changes > 0
-  }, d)
+  const refusal = projectRemovalRefusal(name, projectReferenceCounts(project.id))
+  if (refusal) throw new Error(refusal.join('\n'))
+  return db().query('DELETE FROM project WHERE id = ?').run(project.id).changes > 0
+}
+
+export function retireProject(name: string): 'retired' | 'already-retired' {
+  writableDb()
+  const project = projectRowByName(name)
+  if (!project) throw new Error(`no project "${name}"`)
+  if (project.retiredAt) return 'already-retired'
+  db().query('UPDATE project SET retired_at=? WHERE id=?').run(nowIso(), project.id)
+  return 'retired'
+}
+
+export function unretireProject(name: string): boolean {
+  writableDb()
+  const project = projectRowByName(name)
+  if (!project) throw new Error(`no project "${name}"`)
+  if (!project.retiredAt) return false
+  db().query('UPDATE project SET retired_at=NULL WHERE id=?').run(project.id)
+  return true
 }
 
 /**
