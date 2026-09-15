@@ -412,13 +412,12 @@ function createWithoutCommand(
       removeProvisioned: (worktree) => removeFor(worktree, repoRoot, false, false, runId),
     })
   }
-  if (!tool.recipe) throw new Error(missingRecipeExecutionMessage(tool))
+  if (!tool.recipe) throw new Error(MISSING_WORKTREE_LIFECYCLE)
   return createFromRecipe(
     tool,
     tool.recipe,
     repoRoot,
     runId,
-    seed,
     key,
     baseRef,
     record,
@@ -429,9 +428,8 @@ function createWithoutCommand(
   )
 }
 
-function missingRecipeExecutionMessage(_tool: WorktreeTool): string {
-  return "this project's worktree settings declare neither `create` nor `recipe`"
-}
+const MISSING_WORKTREE_LIFECYCLE =
+  "this project's worktree settings declare neither `create`, `recipe` nor `recipePath`"
 
 export function createWorktree(
   cwd: string,
@@ -565,7 +563,6 @@ function createFromRecipe(
   recipe: Recipe,
   repoRoot: string,
   runId: number,
-  _seed?: string,
   key?: string,
   baseRef?: string,
   record?: RecordWorktree,
