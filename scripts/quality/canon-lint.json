@@ -1187,7 +1187,7 @@
     "file": "orchestrator/AGENTS.md",
     "line": 1,
     "rule": "canon/size-chain",
-    "message": "measured 125844 bytes; limit 32768 bytes",
-    "measuredBytes": 125844
+    "message": "measured 125869 bytes; limit 32768 bytes",
+    "measuredBytes": 125869
   }
 ]

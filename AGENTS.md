@@ -17,8 +17,8 @@ The repository contains these independent concerns:
 - `shared/` is the only code that multiple concerns may import.
 
 A concern imports only itself or `shared/`, and `shared/` imports from nobody.
-Each concern owns its database, binary and canon. `scripts/check-boundaries.ts`
-enforces the import boundary.
+Each concern owns its database, binary and canon. `scripts/check-architecture.ts`
+enforces the import boundary from `architecture.ts`.
 
 The product name lives only in `shared/brand.ts`; `bun run check` enforces that
 code does not duplicate it.
