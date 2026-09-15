@@ -32,12 +32,12 @@ export function Sheet({
     // inspect against.
     opener.current = document.activeElement instanceof HTMLElement ? document.activeElement : null
     panel.current?.focus()
-    const escape = (event: KeyboardEvent) => {
+    const escapeHandler = (event: KeyboardEvent) => {
       if (event.key === 'Escape' && !document.querySelector('dialog[open]')) close.current()
     }
-    document.addEventListener('keydown', escape)
+    document.addEventListener('keydown', escapeHandler)
     return () => {
-      document.removeEventListener('keydown', escape)
+      document.removeEventListener('keydown', escapeHandler)
       opener.current?.focus()
     }
   }, [open])
