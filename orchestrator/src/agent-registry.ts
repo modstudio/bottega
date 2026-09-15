@@ -2,9 +2,9 @@
 /** Owns persisted agent rows, hydration, cache, and mutations. Must not know probes or local-host state. */
 import { Database } from 'bun:sqlite'
 import { existsSync } from 'node:fs'
+import { type Agent, assertResumableAgent, BUILTIN_AGENTS } from './agents.ts'
 import type { Caps } from './capabilities.ts'
 import { DB_PATH, db as dbForAgents, ROOT, writableDb } from './db.ts'
-import { type Agent, assertResumableAgent, BUILTIN_AGENTS } from './agents.ts'
 export const HARNESSES = ['codex', 'grok', 'opencode', 'goose', 'claude-code'] as const
 export const BACKENDS = ['vllm', 'ollama', 'lmstudio', 'vendor'] as const
 export type Harness = (typeof HARNESSES)[number]

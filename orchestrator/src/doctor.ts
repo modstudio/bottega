@@ -2,9 +2,16 @@
 /** Knows machine and register diagnosis. Must not know transports, routing, run control, the CLI, or reviews by value. */
 import { existsSync } from 'node:fs'
 import { doctorAgentStatus } from './agent-auth.ts'
-import { AGENTS } from './agent-registry.ts'
+import { AGENTS, agentRows } from './agent-registry.ts'
 import { cliVersion, versionBelow } from './agents.ts'
-import { agentRows } from './agent-registry.ts'
+import { gwetAc1, quadraticWeightedKappa } from './agreement.ts'
+import { DATABASE_RESOLUTION, DB_PATH, databaseOpenMode, db } from './db.ts'
+import {
+  classifiedDockerResources,
+  dockerRemovalCommand,
+  dockerRunResources,
+} from './docker-resources.ts'
+import { runTotals } from './evidence-query.ts'
 import {
   ensureLocalHealth,
   fileContractProbeReason,
@@ -17,14 +24,6 @@ import {
   unavailableReason,
   wakeStatus,
 } from './local-host.ts'
-import { gwetAc1, quadraticWeightedKappa } from './agreement.ts'
-import { DATABASE_RESOLUTION, DB_PATH, databaseOpenMode, db } from './db.ts'
-import {
-  classifiedDockerResources,
-  dockerRemovalCommand,
-  dockerRunResources,
-} from './docker-resources.ts'
-import { runTotals } from './evidence-query.ts'
 import { terminalDockerRetentionReasonForRun } from './resource-ownership.ts'
 import { DELIVERY, FIDELITY, QUALITY } from './score.ts'
 import { worktreeDirty } from './worktree-attribution.ts'

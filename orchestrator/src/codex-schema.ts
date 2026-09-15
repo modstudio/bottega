@@ -1,6 +1,7 @@
 // concern: codex-schema
 /** Owns Codex strict-schema adaptation. Must not know agents, registries, probes, or hosts. */
 import { readFileSync } from 'node:fs'
+
 type JSONSchema = Record<string, unknown>
 
 const STRICT_UNSUPPORTED = new Set([

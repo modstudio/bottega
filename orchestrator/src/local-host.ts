@@ -3,8 +3,8 @@
 import { readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { which } from 'bun'
-import type { Agent } from './agents.ts'
 import { AGENTS } from './agent-registry.ts'
+import type { Agent } from './agents.ts'
 import { ROOT } from './db.ts'
 /** Where a local OpenAI-compatible endpoint lives, e.g. http://127.0.0.1:8010/v1 */
 export const LOCAL_BASE_URL = process.env.ORCH_LOCAL_BASE_URL ?? ''

@@ -1,10 +1,8 @@
 import { randomUUID } from 'node:crypto'
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { basename } from 'node:path'
-import { ensureLocalHealth } from './local-host.ts'
-import { minimumCliVersionRefusal } from './agents.ts'
-import { LOCAL_BASE_URL, tryWake } from './local-host.ts'
 import { requireAgent } from './agent-registry.ts'
+import { minimumCliVersionRefusal } from './agents.ts'
 import type { AskLoopback } from './ask.ts'
 import { compilePack, recordPack } from './canon.ts'
 import { checkoutWatchSet } from './checkout-identity.ts'
@@ -35,6 +33,7 @@ import {
 } from './git-environment.ts'
 import { isReaderJob, type Job, job, jobBoundInstruction, resolveJobTimeoutMs } from './jobs.ts'
 import { resolveLens } from './lenses.ts'
+import { ensureLocalHealth, LOCAL_BASE_URL, tryWake } from './local-host.ts'
 import {
   canonSourceFor,
   canonSourceInstruction,

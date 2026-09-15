@@ -4,16 +4,16 @@ import { createHash } from 'node:crypto'
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { which } from 'bun'
-import type { Caps } from './capabilities.ts'
-import { nowIso, writableDb } from './db.ts'
 import {
   agentRows,
   HARNESSES,
   type Harness,
-  refreshAgents,
   type RegistrationProbeResult,
+  refreshAgents,
   rowAgent,
 } from './agent-registry.ts'
+import type { Caps } from './capabilities.ts'
+import { nowIso, writableDb } from './db.ts'
 import { localReachable } from './local-host.ts'
 export const REGISTRATION_PROBE_FILE = 'probe.txt'
 export const REGISTRATION_PROBE_SENTINEL = 'REGISTRATION_PROBE_FILE_OK'
