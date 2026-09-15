@@ -110,7 +110,7 @@ describe('operational monitor conditions', () => {
       ),
       stderr: Buffer.from(''),
       success: true,
-    } as any)
+    } as unknown as ReturnType<typeof Bun.spawnSync>)
     try {
       const clock = Date.parse('2026-09-04T20:00:00Z')
       expect(reconcileHub(clock).conditions).toEqual([
@@ -152,7 +152,7 @@ describe('operational monitor conditions', () => {
       ),
       stderr: Buffer.from(''),
       success: true,
-    } as any)
+    } as unknown as ReturnType<typeof Bun.spawnSync>)
     try {
       const clock = Date.parse('2026-09-04T20:00:00.000Z')
       expect(rulingConditions(clock)).toEqual({
@@ -519,7 +519,7 @@ describe('operational monitor conditions', () => {
       stdout: Buffer.from(''),
       stderr: Buffer.from('hub database is absent at /tmp/none'),
       success: false,
-    } as any)
+    } as unknown as ReturnType<typeof Bun.spawnSync>)
     try {
       expect(rulingConditions()).toEqual({
         conditions: [],

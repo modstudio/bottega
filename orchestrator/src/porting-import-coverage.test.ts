@@ -95,10 +95,12 @@ describe('port importer', () => {
       text: files.refs,
     })
 
-    const repeatedSkipState = JSON.parse(files.state)
-    const [repeatedPairKey, repeatedPair] = Object.entries(
-      repeatedSkipState.pairs as Record<string, any>,
-    ).find(([, pair]: [string, any]) => Array.isArray(pair.skipped) && pair.skipped.length > 0)!
+    const repeatedSkipState = JSON.parse(files.state) as {
+      pairs: Record<string, { skipped: unknown[] }>
+    }
+    const [repeatedPairKey, repeatedPair] = Object.entries(repeatedSkipState.pairs).find(
+      ([, pair]) => Array.isArray(pair.skipped) && pair.skipped.length > 0,
+    )!
     repeatedPair.skipped.push(structuredClone(repeatedPair.skipped[0]))
     const repeatedSkipFiles = { ...files, state: JSON.stringify(repeatedSkipState) }
     const missingRepeatedSkip = planImport(repeatedSkipFiles, syntheticRegister)

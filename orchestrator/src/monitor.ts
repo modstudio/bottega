@@ -938,19 +938,29 @@ export async function monitor(
   return { id: invocation, startedAt, finishedAt, trigger, conditions, errors, canon }
 }
 
-export function monitorHistory(limit = 20): unknown[] {
-  return db()
-    .query(
-      `SELECT i.*, (SELECT json_group_array(json_object(
+export type MonitorHistoryRow = {
+  id: number
+  started_at: string
+  trigger: string
+  findings: number
+  errors: number
+  conditions: unknown[]
+}
+
+export function monitorHistory(limit = 20): MonitorHistoryRow[] {
+  return (
+    db()
+      .query(
+        `SELECT i.*, (SELECT json_group_array(json_object(
        'kind',c.kind,'subject',c.subject,'condition_since',c.condition_since,
        'age_ms',c.age_ms,'detail',c.detail,'action',c.action,'issue_key',c.issue_key,
        'severity',c.severity
        ,'owner_session_id',c.owner_session_id,'delivered_at',c.delivered_at
      )) FROM monitor_condition c WHERE c.invocation_id=i.id) conditions
        FROM monitor_invocation i ORDER BY i.id DESC LIMIT ?`,
-    )
-    .all(limit)
-    .map((row: any) => ({ ...row, conditions: JSON.parse(row.conditions ?? '[]') }))
+      )
+      .all(limit) as (Omit<MonitorHistoryRow, 'conditions'> & { conditions: string | null })[]
+  ).map((row) => ({ ...row, conditions: JSON.parse(row.conditions ?? '[]') as unknown[] }))
 }
 
 /**

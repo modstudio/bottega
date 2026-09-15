@@ -192,10 +192,9 @@ function validate(scope: string, subject: string | null, slug: string): asserts 
 
 export function docSubjects(): { project: string[]; agent: string[]; job: string[] } {
   return {
-    project: db()
-      .query('SELECT name FROM project ORDER BY name')
-      .all()
-      .map((r: any) => r.name),
+    project: (db().query('SELECT name FROM project ORDER BY name').all() as { name: string }[]).map(
+      (r) => r.name,
+    ),
     agent: Object.keys(AGENTS).sort(),
     job: Object.keys(JOBS).sort(),
   }
@@ -206,10 +205,9 @@ function validSubjects(scope: DocScope): string {
   if (subjectKind === null) return '(none)'
   const values =
     subjectKind === 'project'
-      ? db()
-          .query('SELECT name FROM project ORDER BY name')
-          .all()
-          .map((r: any) => r.name)
+      ? (db().query('SELECT name FROM project ORDER BY name').all() as { name: string }[]).map(
+          (r) => r.name,
+        )
       : Object.keys(subjectKind === 'agent' ? AGENTS : JOBS).sort()
   return values.join(', ') || '(none)'
 }
@@ -217,7 +215,7 @@ function validSubjects(scope: DocScope): string {
 export function listDocs(filters: { scope?: string; subject?: string | null } = {}): Doc[] {
   if (filters.scope !== undefined) validScope(filters.scope)
   const where: string[] = []
-  const values: any[] = []
+  const values: string[] = []
   if (filters.scope !== undefined) {
     where.push('scope = ?')
     values.push(filters.scope)
@@ -245,7 +243,7 @@ export function listDocMetadata(filters: DocListFilters = {}): DocMetadata[] {
   }
 
   const where: string[] = []
-  const values: any[] = []
+  const values: string[] = []
   if (filters.scope !== undefined) {
     where.push('scope = ?')
     values.push(filters.scope)

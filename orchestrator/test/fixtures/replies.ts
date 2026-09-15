@@ -1,7 +1,15 @@
 import { OrchRunEnvelopeSchema } from '../../../shared/orch-contract.ts'
 
+type RunJson = Record<string, unknown> & {
+  id: number
+  turns: { id: number; vendor_tokens: number }[]
+  questions: { answered_at: string | null }[]
+  launch_key: string | null
+  evidence_excluded: string | null
+}
+
 export const runJson = (line: string) =>
-  OrchRunEnvelopeSchema.parse(JSON.parse(line)).data as Record<string, any>
+  OrchRunEnvelopeSchema.parse(JSON.parse(line)).data as RunJson
 
 export const reviewReply = (findings = 1, severity = 'major') => ({
   findings: Array.from({ length: findings }, (_, i) => ({

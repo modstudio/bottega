@@ -107,7 +107,7 @@ export function processTable(): ProcessInventory {
     }
   }
   if (p.exitCode !== 0) {
-    const stderr = p.stderr.length ? `: ${p.stderr.toString().trim()}` : ''
+    const stderr = p.stderr!.length ? `: ${p.stderr!.toString().trim()}` : ''
     if (p.exitCode === null && p.signalCode === 'SIGTERM') {
       return {
         ascertainable: false,
@@ -126,8 +126,8 @@ export function processTable(): ProcessInventory {
   }
   return {
     ascertainable: true,
-    rows: p.stdout
-      .toString()
+    rows: p
+      .stdout!.toString()
       .split('\n')
       .flatMap((line): ProcessRow[] => {
         const match = line.match(/^\s*(\d+)\s+(\d+)\s+(\d+)\s+(.*)$/)

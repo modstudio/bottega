@@ -458,12 +458,18 @@ async function task() {
     if (!status) throw new Error(`project ${project.name} has no open tracker status configured`)
     const client = new Mcp(auth.url, auth.token)
     await client.initialize()
-    const result = (await createTrackerTask(client, project, {
+    const result = await createTrackerTask(client, project, {
       title: required('title'),
       body: required('body'),
       status,
-    })) as any
-    const key = result?.key ?? result?.data?.humanKey ?? result?.task?.key
+    })
+    const record = result && typeof result === 'object' ? (result as Record<string, unknown>) : {}
+    const data = record.data && typeof record.data === 'object' ? record.data : {}
+    const task = record.task && typeof record.task === 'object' ? record.task : {}
+    const key =
+      record.key ??
+      ('humanKey' in data ? data.humanKey : undefined) ??
+      ('key' in task ? task.key : undefined)
     if (typeof key !== 'string' || !key.trim()) {
       throw new Error(`tracker created a task but returned no task key: ${JSON.stringify(result)}`)
     }

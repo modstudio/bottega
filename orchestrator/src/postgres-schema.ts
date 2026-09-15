@@ -1,6 +1,7 @@
 import { sql } from 'drizzle-orm'
 import {
   bigint,
+  type AnyPgColumn,
   boolean,
   foreignKey,
   jsonb,
@@ -23,7 +24,7 @@ const spaceIdentity = () =>
   uuid('space_id')
     .notNull()
     .references(() => space.id)
-const tenantPolicies = (table: string, owner: any) => {
+const tenantPolicies = (table: string, owner: AnyPgColumn) => {
   const ownsRow = sql`${owner} = nullif(current_setting('app.space_id', true), '')::uuid`
   return [
     pgPolicy(`${table}_space_select`, { for: 'select', using: ownsRow }),

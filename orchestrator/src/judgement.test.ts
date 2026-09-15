@@ -204,7 +204,11 @@ describe('score ruling', () => {
     const id = insert()
     score(id, ['full', 'right'], {}, { note: 'first note' })
     score(id, ['partial', 'mixed'], {}, { note: 'second note' })
-    const row = db().query('SELECT delivery,quality,note FROM score WHERE run_id=?').get(id) as any
+    const row = db().query('SELECT delivery,quality,note FROM score WHERE run_id=?').get(id) as {
+      delivery: string
+      quality: string
+      note: string
+    }
     expect(row).toMatchObject({ delivery: 'partial', quality: 'mixed' })
     expect(row.note).toContain('first note')
     expect(row.note).toContain('second note')
@@ -330,14 +334,14 @@ describe('judge ruling', () => {
     const id = insert('ok', 'review-lens')
     db().query('UPDATE run SET lens=?,model=? WHERE id=?').run('existing', 'm', id)
     const reviewId = recordReview(id, reviewReply(1), db())
-    const before = (db().query('SELECT COUNT(*) n FROM review').get() as any).n
+    const before = (db().query('SELECT COUNT(*) n FROM review').get() as { n: number }).n
     score(id, ['partial', 'mixed'], {
       reproduced: 'some',
       coverage: 'partial',
       limits: 'named',
       overlap: 'shared',
     })
-    expect((db().query('SELECT COUNT(*) n FROM review').get() as any).n).toBe(before)
+    expect((db().query('SELECT COUNT(*) n FROM review').get() as { n: number }).n).toBe(before)
     expect(
       db().query('SELECT review_id,reproduced FROM review_lens WHERE run_id=?').get(id),
     ).toEqual({ review_id: reviewId, reproduced: 'some' })
@@ -425,14 +429,14 @@ describe('judge ruling', () => {
   test('score and judge read notes from files and reject shell-fragment notes', () => {
     const scored = insert()
     score(scored, ['full', 'right'], {}, { note: 'long note\nwith a second line' })
-    expect((db().query('SELECT note FROM score WHERE run_id=?').get(scored) as any).note).toContain(
-      'second line',
-    )
+    expect(
+      (db().query('SELECT note FROM score WHERE run_id=?').get(scored) as { note: string }).note,
+    ).toContain('second line')
     const judged = insert('ok', 'implement')
     judge(judged, ['full', 'right', 'faithful'], {}, { note: 'long note\nwith a second line' })
-    expect((db().query('SELECT note FROM score WHERE run_id=?').get(judged) as any).note).toContain(
-      'second line',
-    )
+    expect(
+      (db().query('SELECT note FROM score WHERE run_id=?').get(judged) as { note: string }).note,
+    ).toContain('second line')
   })
 
   test('same task-prompt pairs key on recorded change identity and matching lenses', () => {

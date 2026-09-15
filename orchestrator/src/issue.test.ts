@@ -10,6 +10,7 @@ import {
   validatedTrackerTaskKey,
 } from './issue.ts'
 import { JOBS } from './jobs.ts'
+import type { Project } from './projects.ts'
 
 describe('filed issue coordinator inputs', () => {
   const shown = {
@@ -53,7 +54,7 @@ the cause`,
       stack: null,
       canon: true,
       settings: { worktree: { seeds: ['none', 'minimal', 'full'] } },
-    } as any
+    } as Project
     expect(seedFromReport(project, issue.environment)).toBe('full')
     expect(Object.keys(JSON.parse(boundedIssuePack(issue)))).toEqual([
       'key',
@@ -113,7 +114,7 @@ the legacy uncertainty`
   })
 
   test('does not choose between absent or ambiguous seeds', () => {
-    const project = { settings: { worktree: { seeds: ['none', 'full'] } } } as any
+    const project = { settings: { worktree: { seeds: ['none', 'full'] } } } as unknown as Project
     expect(seedFromReport(project, 'ordinary shell')).toBeNull()
     expect(seedFromReport(project, 'compare none with full')).toBeNull()
   })
@@ -141,7 +142,9 @@ the legacy uncertainty`
   })
 
   test('validates tracker-new stdout with the target project key standard', () => {
-    const project = { settings: { worktree: { keyPattern: '^AB-[1-9][0-9]*$' } } } as any
+    const project = {
+      settings: { worktree: { keyPattern: '^AB-[1-9][0-9]*$' } },
+    } as unknown as Project
     expect(validatedTrackerTaskKey('AB-42', project)).toBe('AB-42')
     expect(() => validatedTrackerTaskKey('', project)).toThrow(
       'hub task tracker-new did not return a valid task key; returned ""',
@@ -169,7 +172,7 @@ the legacy uncertainty`
       blockers: null,
     }
     expect(
-      parseIssueReply<any>(
+      parseIssueReply<typeof reply>(
         `narration {"status":"done"}\n${JSON.stringify(reply)}`,
         ISSUE_DIAGNOSIS_SCHEMA,
       ),
@@ -203,7 +206,7 @@ the legacy uncertainty`
       tests: { command: 'bun test', ran: true, passed: true, detail: '1 test' },
     }
     expect(parseWorkerReplyWithCount(JSON.stringify(reply), ISSUE_WORKER_SCHEMA).reply).toEqual(
-      reply as any,
+      reply,
     )
     expect(JOBS['issue-worker']!.needs).toEqual({
       readsRepo: true,

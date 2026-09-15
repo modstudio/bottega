@@ -138,7 +138,18 @@ async function claudeTokensByDay(since: string) {
     const rl = createInterface({ input: createReadStream(file), crlfDelay: Infinity })
     for await (const line of rl) {
       if (!line.includes('"cache_read_input_tokens"')) continue
-      let d: any
+      let d: {
+        timestamp?: string | number | Date
+        cwd?: string
+        message?: {
+          usage?: {
+            cache_read_input_tokens?: number
+            cache_creation_input_tokens?: number
+            input_tokens?: number
+            output_tokens?: number
+          }
+        }
+      }
       try {
         d = JSON.parse(line)
       } catch {

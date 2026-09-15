@@ -12,7 +12,7 @@ import {
   mcpRequestFromStored,
   preflightMcp,
 } from './mcp-preflight.ts'
-import { upsertProject } from './projects.ts'
+import { upsertProject, type WorktreeTool } from './projects.ts'
 
 const fixtureFiles: string[] = []
 const fixtureFile = (name: string) => {
@@ -110,7 +110,7 @@ test('preflightMcp dispatches from a register-shaped legacy row with declared MC
     name: 'legacy-mcp-project',
     path: dir,
     settings: {
-      worktree: { create: 'scripts/worktree create "{branch}"' } as any,
+      worktree: { create: 'scripts/worktree create "{branch}"' } as unknown as WorktreeTool,
       mcpServer: 'legacy-mcp',
       mcp: { probe_tool: 'task.list' },
     },

@@ -434,7 +434,13 @@ export async function epicChildren(epicKey: string): Promise<EpicChild[]> {
   ])
   if (code !== 0) throw new Error(stderr.trim() || stdout.trim() || `hub exited ${code}`)
   const parsed = JSON.parse(stdout) as unknown
-  if (!Array.isArray(parsed) || parsed.some((row: any) => typeof row?.key !== 'string')) {
+  if (
+    !Array.isArray(parsed) ||
+    parsed.some(
+      (row: unknown) =>
+        !row || typeof row !== 'object' || !('key' in row) || typeof row.key !== 'string',
+    )
+  ) {
     throw new Error('hub task list --parent returned an invalid JSON document')
   }
   return parsed as EpicChild[]

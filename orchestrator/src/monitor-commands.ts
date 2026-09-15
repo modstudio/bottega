@@ -138,7 +138,7 @@ async function showHistory(
   const rows = monitorHistory(limit)
   if (json) await presentation.write(`${JSON.stringify(rows)}\n`)
   else
-    for (const row of rows as any[])
+    for (const row of rows)
       presentation.log(
         formatMonitorPass(
           `monitor ${row.id}  ${row.started_at}  ${row.trigger}  ${row.findings} found, ${row.errors} errors`,

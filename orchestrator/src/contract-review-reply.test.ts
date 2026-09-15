@@ -5,7 +5,7 @@ import { parseReviewReply } from './review.ts'
 describe('review discipline', () => {
   test('review parsing requires one of the three canon provenance values', () => {
     expect(parseReviewReply(reviewReply(0))?.provenance.canon_source).toBe('live database')
-    const missing = reviewReply(0) as Record<string, any>
+    const missing = reviewReply(0)
     delete missing.provenance.canon_source
     expect(parseReviewReply(missing)).toBeNull()
     expect(
@@ -14,7 +14,7 @@ describe('review discipline', () => {
         provenance: { ...reviewReply(0).provenance, canon_source: 'connected' },
       }),
     ).toBeNull()
-    const missingSection = reviewReply(0) as Record<string, any>
+    const missingSection = reviewReply(0)
     delete missingSection.provenance.substitutes
     expect(parseReviewReply(missingSection)?.provenance.substitutes).toEqual([])
   })

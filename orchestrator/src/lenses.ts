@@ -65,7 +65,12 @@ function slotNames(slots: string): { names: string[]; required: string[] } {
   const properties = schema.properties as Record<string, unknown>
   for (const [name, definition] of Object.entries(properties)) {
     stableId(name.replaceAll('_', '-'), 'slot')
-    if (!definition || typeof definition !== 'object' || (definition as any).type !== 'string') {
+    if (
+      !definition ||
+      typeof definition !== 'object' ||
+      !('type' in definition) ||
+      typeof definition.type !== 'string'
+    ) {
       throw new Error(`slot "${name}" must have type string`)
     }
   }

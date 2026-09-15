@@ -59,7 +59,8 @@ async function command(args: string[], stdin = '') {
   }
   try {
     if (args[0] === 'port') await portCommand(args[1], args[2], args, flags, presentation)
-    else if (args[0] === 'review') await reviewCommand(args[1], args, flags, presentation as any)
+    else if (args[0] === 'review')
+      await reviewCommand(args[1], args, flags, presentation as Parameters<typeof reviewCommand>[3])
   } catch (error) {
     code = 1
     err.push((error as Error).message)
@@ -194,7 +195,8 @@ describe('scoped operator docs', () => {
     const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair()
     await server.connect(serverTransport)
     await client.connect(clientTransport)
-    const value = (result: any) => JSON.parse((result.content[0] as { text: string }).text)
+    const value = (result: Awaited<ReturnType<Client['callTool']>>) =>
+      JSON.parse((result.content[0] as { text: string }).text)
     try {
       await client.callTool({
         name: 'set_port_baseline',
@@ -292,7 +294,7 @@ describe('scoped operator docs', () => {
     const rows = listDocRevisions('global', null, 'cli-history')
     const newerId = rows[0]!.id
     const originalId = rows[1]!.id
-    expect(rows.map((row: any) => row.reason)).toEqual(['second', 'first'])
+    expect(rows.map((row) => row.reason)).toEqual(['second', 'first'])
     expect(rows[0]).toMatchObject({
       id: expect.any(Number),
       op: 'set',

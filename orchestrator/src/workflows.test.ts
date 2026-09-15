@@ -137,21 +137,21 @@ describe('workflow definition validation', () => {
     [
       'non-string body',
       (d) => {
-        ;(d.steps[0] as any).body = 42
+        ;(d.steps[0] as unknown as { body: number }).body = 42
       },
       'body must be a string',
     ],
     [
       'non-array mode steps',
       (d) => {
-        ;(d.modes[0] as any).steps = 'x'
+        ;(d.modes[0] as unknown as { steps: string }).steps = 'x'
       },
       'steps must be a string array',
     ],
     [
       'non-boolean required',
       (d) => {
-        ;(d.arguments[0] as any).required = 'yes'
+        ;(d.arguments[0] as unknown as { required: string }).required = 'yes'
       },
       'required must be a boolean',
     ],
@@ -188,7 +188,11 @@ describe('workflow versions and composition', () => {
     expect(showWorkflow('test-flow', 2, d).status).toBe('production')
     retireWorkflow('test-flow', 2, 'withdraw', 'architect', d)
     const versions = workflowVersions('test-flow', d)
-    expect(versions[1]!.events.map((e: any) => e.event)).toEqual(['set', 'promote', 'retire'])
+    expect(versions[1]!.events.map((e: { event: string }) => e.event)).toEqual([
+      'set',
+      'promote',
+      'retire',
+    ])
     expect(() => setWorkflow('x', valid(), '', 'author', d)).toThrow('reason is required')
   })
   test('fork copies a selected version into a new draft', () => {

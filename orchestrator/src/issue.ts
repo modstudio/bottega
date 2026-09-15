@@ -2,7 +2,12 @@ import { copyFileSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { PLATFORM_SLUG } from '../../shared/brand.ts'
-import { ISSUE_WORKER_SCHEMA, type IssueWorkerReply, validatesSchema } from './contract.ts'
+import {
+  ISSUE_WORKER_SCHEMA,
+  type IssueWorkerReply,
+  type JsonSchema,
+  validatesSchema,
+} from './contract.ts'
 import { DB_PATH, db } from './db.ts'
 import { type Project, projectByName } from './projects.ts'
 import { prepareSharedRefGuard } from './ref-guard.ts'
@@ -141,11 +146,25 @@ function section(body: string, heading: string, next: string[], boundary: number
 }
 
 export function parseFiledIssue(shown: unknown): FiledIssue {
-  const task = (shown as any)?.task
-  if (!task || typeof task.key !== 'string' || typeof task.body !== 'string') {
+  const task =
+    shown &&
+    typeof shown === 'object' &&
+    'task' in shown &&
+    shown.task &&
+    typeof shown.task === 'object'
+      ? shown.task
+      : null
+  if (
+    !task ||
+    !('key' in task) ||
+    typeof task.key !== 'string' ||
+    !('body' in task) ||
+    typeof task.body !== 'string'
+  ) {
     throw new Error('filed issue is missing its task body')
   }
   const body = task.body
+  const title = 'title' in task && typeof task.title === 'string' ? task.title : ''
   if (body.startsWith(FILED_ISSUE_DATA_PREFIX)) {
     const lineEnd = body.indexOf('\n')
     const encoded = body.slice(FILED_ISSUE_DATA_PREFIX.length, lineEnd < 0 ? undefined : lineEnd)
@@ -175,7 +194,7 @@ export function parseFiledIssue(shown: unknown): FiledIssue {
     }
     return {
       key: task.key,
-      title: task.title ?? '',
+      title,
       kind,
       reportingProject: value.reporting_project!,
       whatHappened: value.what_happened!,
@@ -211,7 +230,7 @@ export function parseFiledIssue(shown: unknown): FiledIssue {
   const environment = how.match(/(?:^|\n)Environment: ([\s\S]*)$/)?.[1]?.trim() ?? null
   return {
     key: task.key,
-    title: task.title ?? '',
+    title,
     kind,
     reportingProject,
     whatHappened: section(body, 'WHAT HAPPENED', headings, parsedBoundary),
@@ -290,7 +309,7 @@ function jsonObjects(text: string): unknown[] {
   return out.reverse()
 }
 
-export function parseIssueReply<T>(text: string, schema: any): T {
+export function parseIssueReply<T>(text: string, schema: JsonSchema): T {
   const found = jsonObjects(text).find((value) => validatesSchema(value, schema))
   if (!found) throw new Error('issue worker reply did not match its structured contract')
   return found as T
@@ -814,7 +833,7 @@ export async function workIssue(key: string): Promise<void> {
     }
     completed = true
   } catch (cause) {
-    const runId = Number((cause as any)?.runId ?? 0)
+    const runId = Number(cause && typeof cause === 'object' && 'runId' in cause ? cause.runId : 0)
     const row = runId
       ? (db().query('SELECT worktree, branch FROM run WHERE id=?').get(runId) as {
           worktree: string | null

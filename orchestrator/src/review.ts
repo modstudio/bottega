@@ -1,5 +1,5 @@
 // concern: review
-import type { Database } from 'bun:sqlite'
+import type { Database, SQLQueryBindings } from 'bun:sqlite'
 import { REVIEW_SCHEMA, type ReviewReply } from './contract.ts'
 import { db, nowIso, sessionId, writableDb, writeTransaction } from './db.ts'
 
@@ -235,7 +235,24 @@ function reviewReadLenses(reviewId: number, database: Database): ReviewReadLens[
        FROM review_lens rl JOIN run ON run.id=rl.run_id
       WHERE rl.review_id=? ORDER BY rl.id`,
       )
-      .all(reviewId) as any[]
+      .all(reviewId) as {
+      id: number
+      lens: string
+      run_id: number
+      agent: string
+      model: string | null
+      tree_inspected: string | null
+      reviewed_tree: string | null
+      input_tree: string | null
+      branch: string | null
+      base_commit: string | null
+      launch_cwd: string | null
+      head_commit: string | null
+      reproduced: ReviewReadLens['reproduced']
+      coverage: ReviewReadLens['coverageGrade']
+      limits: ReviewReadLens['limits']
+      overlap: ReviewReadLens['overlap']
+    }[]
   ).map((row) => ({
     id: row.id,
     lens: row.lens,
@@ -262,7 +279,7 @@ export function listReviews(
   database: Database = db(),
 ): ReviewListRow[] {
   const where: string[] = []
-  const params: unknown[] = []
+  const params: SQLQueryBindings[] = []
   if (filter.state === 'open')
     where.push(
       '(r.completed_at IS NULL OR EXISTS (SELECT 1 FROM review_finding open_f WHERE open_f.review_id=r.id AND open_f.disposition IS NULL))',
@@ -296,7 +313,26 @@ export function listReviews(
       ORDER BY CASE WHEN r.completed_at IS NULL OR EXISTS (SELECT 1 FROM review_finding order_f WHERE order_f.review_id=r.id AND order_f.disposition IS NULL) THEN 0 ELSE 1 END,
                r.recorded_at DESC, r.id DESC`,
     )
-    .all(...(params as any[])) as any[]
+    .all(...params) as {
+    id: number
+    recorded_at: string
+    completed_at: string | null
+    tier: number | null
+    tier_risk: number | null
+    tier_size: number | null
+    lens_count: number
+    findings_total: number
+    findings_triaged: number
+    findings_accepted: number
+    findings_modified: number
+    findings_rejected: number
+    findings_skipped: number
+    project: string | null
+    patch_id: string | null
+    path_set: string | null
+    commit_message: string | null
+    outdated_reason: string | null
+  }[]
   return rows.map((row) => {
     const lenses = reviewReadLenses(row.id, database)
     return {
@@ -339,7 +375,21 @@ export function getReview(reviewId: number, database: Database = db()) {
       `SELECT id, recorded_at, completed_at, tier, tier_risk, tier_size, tier_reasons, tier_reason,
             patch_id, path_set, commit_message, outdated_at, outdated_reason FROM review WHERE id=?`,
     )
-    .get(reviewId) as any
+    .get(reviewId) as {
+    id: number
+    recorded_at: string
+    completed_at: string | null
+    tier: number | null
+    tier_risk: number | null
+    tier_size: number | null
+    tier_reasons: string | null
+    tier_reason: string | null
+    patch_id: string | null
+    path_set: string | null
+    commit_message: string | null
+    outdated_at: string | null
+    outdated_reason: string | null
+  } | null
   if (!review) throw new Error(`no review ${reviewId}`)
   const lenses = reviewReadLenses(reviewId, database)
   const projects = [
@@ -411,7 +461,15 @@ export function getReview(reviewId: number, database: Database = db()) {
         `SELECT ordinal, severity, location, disposition, rejection_category, evidence, proposed_correction
          FROM review_finding WHERE review_id=? ORDER BY ordinal`,
       )
-      .all(reviewId),
+      .all(reviewId) as {
+      ordinal: number
+      severity: string
+      location: string
+      disposition: string | null
+      rejection_category: string | null
+      evidence: string
+      proposed_correction: string
+    }[],
   }
 }
 

@@ -3,11 +3,14 @@
 
 import {
   AGENTS,
+  type AgentMutation,
   addAgent,
   agentRows,
+  type Backend,
   available,
   ensureLocalHealth,
   installed,
+  type Harness,
   probeAgent,
   removeAgent,
   setAgent,
@@ -24,7 +27,7 @@ const parseJobs = (value: string | undefined) =>
       ? null
       : value.split(',').map((entry) => entry.trim())
 
-function mutation(argv: string[]) {
+function mutation(argv: string[]): AgentMutation {
   const flag = (name: string) => flagValue(argv, name)
   const enabled = flag('enabled')
   if (enabled !== undefined && enabled !== 'true' && enabled !== 'false')
@@ -34,8 +37,8 @@ function mutation(argv: string[]) {
     prefer = flag('prefer'),
     maxConcurrent = flag('max-concurrent')
   return {
-    ...(flag('harness') ? { harness: flag('harness') as any } : {}),
-    ...(flag('backend') ? { backend: flag('backend') as any } : {}),
+    ...(flag('harness') ? { harness: flag('harness') as Harness } : {}),
+    ...(flag('backend') ? { backend: flag('backend') as Backend } : {}),
     ...(flag('model') ? { model: flag('model')! } : {}),
     ...(flag('base-url') ? { baseUrl: flag('base-url')! } : {}),
     ...(context ? { contextTokens: Number(context) } : {}),

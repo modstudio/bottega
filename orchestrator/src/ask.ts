@@ -224,7 +224,11 @@ async function serveAskChannel(channel: AskChannel, runId: number, token: string
       nl = buf.indexOf('\n')
       if (!line) continue
 
-      let msg: { id?: unknown; method?: string; params?: any }
+      let msg: {
+        id?: unknown
+        method?: string
+        params?: { name?: unknown; arguments?: Record<string, unknown> }
+      }
       try {
         msg = JSON.parse(line)
       } catch {

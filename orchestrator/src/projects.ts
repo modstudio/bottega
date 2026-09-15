@@ -259,11 +259,15 @@ function parse(row: {
 }
 
 export function projects(): Project[] {
-  return (db().query('SELECT * FROM project ORDER BY name').all() as any[]).map(parse)
+  return (
+    db().query('SELECT * FROM project ORDER BY name').all() as Parameters<typeof parse>[0][]
+  ).map(parse)
 }
 
 export function projectByName(name: string): Project | null {
-  const r = db().query('SELECT * FROM project WHERE name = ?').get(name) as any
+  const r = db().query('SELECT * FROM project WHERE name = ?').get(name) as
+    | Parameters<typeof parse>[0]
+    | null
   return r ? parse(r) : null
 }
 

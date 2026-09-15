@@ -1,6 +1,7 @@
 import { sql } from 'drizzle-orm'
 import {
   check,
+  type AnySQLiteColumn,
   foreignKey,
   index,
   integer,
@@ -123,7 +124,7 @@ export const run = sqliteTable(
     carryBaseCommit: text('carry_base_commit'),
     carryTrackedPaths: text('carry_tracked_paths'),
     carryUntrackedPaths: text('carry_untracked_paths'),
-    parentRunId: integer('parent_run_id').references((): any => run.id),
+    parentRunId: integer('parent_run_id').references((): AnySQLiteColumn => run.id),
     turn: integer().notNull().default(1),
     filesChanged: integer('files_changed'),
     changedPaths: text('changed_paths'),
@@ -232,7 +233,11 @@ export const score = sqliteTable(
   ],
 )
 
-const docAddressChecks = <T extends { scope: any; subject: any; slug: any }>(t: T) => [
+const docAddressChecks = <
+  T extends { scope: AnySQLiteColumn; subject: AnySQLiteColumn; slug: AnySQLiteColumn },
+>(
+  t: T,
+) => [
   check('scope_check', sql`${t.scope} in (${values(DOC_SCOPES)})`),
   check(
     'slug_check',

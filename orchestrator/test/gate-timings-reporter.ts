@@ -100,11 +100,14 @@ if (enabled) {
 
   const origSpawn = Bun.spawn.bind(Bun)
   const origSpawnSync = Bun.spawnSync.bind(Bun)
-  Bun.spawn = ((cmd: any, opts?: any) => {
+  Bun.spawn = ((cmd: Parameters<typeof Bun.spawn>[0], opts?: Parameters<typeof Bun.spawn>[1]) => {
     recordSpawn('spawn', cmd)
     return origSpawn(cmd, opts)
   }) as typeof Bun.spawn
-  Bun.spawnSync = ((cmd: any, opts?: any) => {
+  Bun.spawnSync = ((
+    cmd: Parameters<typeof Bun.spawnSync>[0],
+    opts?: Parameters<typeof Bun.spawnSync>[1],
+  ) => {
     recordSpawn('spawnSync', cmd)
     return origSpawnSync(cmd, opts)
   }) as typeof Bun.spawnSync

@@ -674,14 +674,29 @@ const BUILTIN_AGENTS: Record<string, Agent> = {
        * final-message boundary, so take it rather than guessing which prose is
        * narration. Schema-constrained runs expose the same terminal boundary.
        */
-      let final: any = null
+      let final: {
+        usage?: Record<string, number>
+        result?: unknown
+        errors?: unknown
+        stop_reason?: unknown
+        total_cost_usd?: number | null
+      } | null = null
       let stream = false
       let stopReason: string | null = null
       for (const line of stdout.split('\n')) {
         const s = line.trimStart()
         if (!s.startsWith('{')) continue
         try {
-          const event = JSON.parse(s)
+          const event = JSON.parse(s) as {
+            type?: string
+            subtype?: string
+            message?: { stop_reason?: unknown }
+            usage?: Record<string, number>
+            result?: unknown
+            errors?: unknown
+            stop_reason?: unknown
+            total_cost_usd?: number | null
+          }
           if (event.type === 'system' && event.subtype === 'init') stream = true
           if (event.type === 'assistant' && event.message?.stop_reason) {
             stopReason = String(event.message.stop_reason)

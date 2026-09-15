@@ -22,6 +22,7 @@ import {
   type ReviewLimits,
   type ReviewOverlap,
   type ReviewReproduced,
+  type ReviewSeverity,
 } from './review-vocabulary.ts'
 import {
   adoptRunMutation,
@@ -225,7 +226,7 @@ export function judgeRun(
     const ordinal = Number(matched[1])
     const disposition = matched[2] as Disposition
     const detail = matched[3]!
-    if (disposition !== 'rejected' && !REVIEW_SEVERITY.includes(detail as any)) {
+    if (disposition !== 'rejected' && !REVIEW_SEVERITY.includes(detail as ReviewSeverity)) {
       throw new Error(`finding ${ordinal} severity must be: ${REVIEW_SEVERITY.join(' | ')}`)
     }
     return {

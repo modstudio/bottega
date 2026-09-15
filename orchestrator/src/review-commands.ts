@@ -84,7 +84,7 @@ export async function reviewCommand(
             .join(' ')}`,
         )
       }
-      for (const finding of review.findings as any[]) {
+      for (const finding of review.findings) {
         log(
           `finding ${finding.ordinal} ${finding.severity} ${finding.location} disposition=${finding.disposition ?? 'untriaged'} category=${finding.rejection_category ?? '—'}`,
         )
