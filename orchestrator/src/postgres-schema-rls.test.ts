@@ -1,14 +1,20 @@
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test'
-import { readFileSync } from 'node:fs'
+import { existsSync, readdirSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { PLATFORM_SLUG } from '../../shared/brand.ts'
+import { migratePostgres } from './postgres-migrate.ts'
 import { newRecordId, PLATFORM_SPACE_ID, PLATFORM_SPACE_NAME } from './postgres-schema.ts'
 
 const container = process.env.ORCH_TEST_POSTGRES_CONTAINER
-const migration = readFileSync(
-  join(import.meta.dir, '..', 'postgres', 'migrations', '0000_substrate.sql'),
-  'utf8',
-)
+const ownerUrl = process.env.ORCH_TEST_POSTGRES_OWNER_URL
+const migrationsFolder = join(import.meta.dir, '..', 'postgres', 'migrations')
+const migration = readdirSync(migrationsFolder, { withFileTypes: true })
+  .filter((entry) => entry.isDirectory())
+  .map((entry) => entry.name)
+  .filter((folder) => existsSync(join(migrationsFolder, folder, 'migration.sql')))
+  .sort()
+  .map((folder) => readFileSync(join(migrationsFolder, folder, 'migration.sql'), 'utf8'))
+  .join('\n')
 const SPACE_A = '01990000-0000-7000-8000-00000000000a'
 const SPACE_B = '01990000-0000-7000-8000-00000000000b'
 const USER_A = '01990000-0000-7000-8000-000000000010'
@@ -96,9 +102,9 @@ describe('Postgres substrate shape', () => {
   })
 })
 
-const realPostgres = container ? describe : describe.skip
+const realPostgres = container && ownerUrl ? describe : describe.skip
 realPostgres('RLS proof against real Postgres', () => {
-  beforeAll(() => {
+  beforeAll(async () => {
     const roleSetup = psql(
       'postgres',
       'postgres',
@@ -110,8 +116,7 @@ realPostgres('RLS proof against real Postgres', () => {
     )
     expect(roleSetup.code, roleSetup.stderr).toBe(0)
 
-    const applied = psql('record_owner', 'owner-password', migration)
-    expect(applied.code, applied.stderr).toBe(0)
+    await migratePostgres(ownerUrl!)
 
     succeeds(
       'postgres',
@@ -153,6 +158,7 @@ realPostgres('RLS proof against real Postgres', () => {
       'postgres',
       `
       DROP TABLE IF EXISTS membership, machine, seq, project, "user", space CASCADE;
+      DROP SCHEMA IF EXISTS drizzle CASCADE;
       DROP ROLE IF EXISTS tenant_actor;
       DROP ROLE IF EXISTS record_owner;
     `,

@@ -72,8 +72,9 @@ try {
   const port = portResult.stdout.toString().trim().split(':').at(-1)
   if (!port) throw new Error('disposable Postgres published no host port')
 
-  const rls = await run(['bun', 'test', '--timeout', '30000', 'src/postgres-rls.test.ts'], {
+  const rls = await run(['bun', 'test', '--timeout', '30000', 'src/postgres-schema-rls.test.ts'], {
     ORCH_TEST_POSTGRES_CONTAINER: container,
+    ORCH_TEST_POSTGRES_OWNER_URL: `postgres://record_owner:owner-password@127.0.0.1:${port}/postgres`,
     ORCH_TEST_POSTGRES_FALSIFY: falsify ? 'drop-project-select' : '',
   })
   if (rls !== 0) process.exitCode = rls
