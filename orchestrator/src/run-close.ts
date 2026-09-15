@@ -5,6 +5,7 @@
  * run control, dispatch surfaces, or the CLI.
  */
 import { existsSync, readFileSync } from 'node:fs'
+import { reclaimTerminalTree } from './close-out.ts'
 import type { WorkerReply } from './contract.ts'
 import { db } from './db.ts'
 import {
@@ -18,7 +19,6 @@ import { type classify, FAILS_OVER, NEEDS_HUMAN, NEEDS_HUMAN_TITLE, notify } fro
 import { type Job, reclaimsTreeByDefault } from './jobs.ts'
 import { mcpRequestFromStored } from './mcp-preflight.ts'
 import { resolveBranchRef, stackAt } from './projects.ts'
-import { reclaimTerminalTree } from './close-out.ts'
 import { CALIBRATION_SUFFIX_RESERVE_BYTES } from './review-calibration.ts'
 import { pick } from './route.ts'
 import { terminateRunProcesses } from './run-process.ts'
