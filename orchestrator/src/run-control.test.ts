@@ -9,7 +9,7 @@ import { packResumePrompt } from './contract.ts'
 import { db } from './db.ts'
 import { recordReview } from './review-triage.ts'
 import { packedResumePrompt } from './run.ts'
-import { continueRun } from './run-control.ts'
+import { type ChainTurn, continuationTurn, continueRun } from './run-control.ts'
 
 const trackResidue = trackedTestResidue()
 
@@ -45,40 +45,29 @@ afterEach(() => {
 })
 
 describe('run continuation', () => {
-  test('a failed pending turn does not replace the started turn used for checkpoint continuation', async () => {
-    const root = addRun({
-      agent: 'codex',
-      job: 'implement',
-      status: 'ok',
-      session: 'orch-test-session',
+  test('a continuation resumes from the newest turn that started, numbered past every turn', () => {
+    const turn = (id: number, agent: string, n: number): ChainTurn => ({
+      id,
+      agent,
+      vendor_session: agent === '(pending)' ? null : 'session',
+      turn: n,
+      cwd: agent === '(pending)' ? null : '/tree',
+      worktree: agent === '(pending)' ? null : '/tree',
+      branch: agent === '(pending)' ? null : 'branch',
+      base_commit: null,
+      worktree_source: agent === '(pending)' ? null : 'git',
     })
-    const prompt = trackResidue(join(dir, `continue-pending-${root}.prompt.txt`))
-    writeFileSync(prompt, 'finish the implementation')
-    db().query('UPDATE run SET cwd=?,prompt_path=? WHERE id=?').run(dir, prompt, root)
-    const pending = addRun({
-      agent: '(pending)',
-      job: 'implement',
-      status: 'failed',
-      parent: root,
-      turn: 2,
-      session: 'orch-test-session',
-    })
-    db()
-      .query('UPDATE run SET cwd=?,failure_kind=? WHERE id=?')
-      .run(join(dir, 'missing-pending-worktree'), 'harness', pending)
-    db()
-      .query(
-        `INSERT INTO run_checkpoint
-           (run_id,checkpoint_no,commit_sha,task_pointer,final,created_at)
-         VALUES (?,?,?,?,?,?)`,
-      )
-      .run(root, 1, 'checkpoint-commit', null, 1, new Date().toISOString())
+    const chain = [
+      turn(10, 'codex', 1),
+      turn(11, 'codex', 2),
+      turn(12, '(pending)', 3),
+      turn(13, '(pending)', 4),
+    ]
 
-    const continued = await continueRun(root, undefined, limit)
+    const { latest, nextTurn } = continuationTurn(10, chain)
 
-    expect(
-      db().query('SELECT parent_run_id,turn FROM run WHERE id=?').get(continued.childId),
-    ).toEqual({ parent_run_id: root, turn: 3 })
+    expect(latest).toMatchObject({ id: 11, agent: 'codex', worktree: '/tree' })
+    expect(nextTurn).toBe(5)
   })
 
   test('a chain with no started turn cannot be continued', async () => {
