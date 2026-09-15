@@ -2,16 +2,17 @@
 /** Owns monitor pass composition, persistence, history, and human-readable reporting. */
 
 import { existsSync, lstatSync, readdirSync, realpathSync, statSync } from 'node:fs'
-import { dirname, join, resolve } from 'node:path'
+import { join } from 'node:path'
 import { PLATFORM_SLUG } from '../../shared/brand.ts'
 import { allInjectChecks, storedPackDrift } from './canon.ts'
-import { DB_PATH, db, nowIso, writableDb, writeTransaction } from './db.ts'
+import { db, nowIso, writableDb, writeTransaction } from './db.ts'
 import {
   classifiedDockerResources,
   dockerNetworkInventory,
   dockerRunResources,
 } from './docker-resources.ts'
 import { gitLocks } from './git-locks.ts'
+import { grokTrustHeadings } from './grok-trust.ts'
 import { fileIssue } from './mcp.ts'
 import {
   age,
@@ -44,12 +45,10 @@ import { projectAt, projects } from './projects.ts'
 import { reclaimBranch, reclaimWorktree } from './reclaim.ts'
 import { terminalDockerRetentionReasonForRun } from './resource-ownership.ts'
 import type { MonitorSeverity } from './review-vocabulary.ts'
+import { RUNS_DIR } from './run-artifacts.ts'
 import { worktreeDirty } from './worktree-attribution.ts'
 
 const TERMINAL_STATUSES = new Set(['ok', 'failed', 'stale', 'stopped'])
-const RUNS_DIR = process.env.ORCH_RUNS
-  ? resolve(process.env.ORCH_RUNS)
-  : join(dirname(DB_PATH), 'runs')
 
 function directorySize(path: string): number {
   const entry = lstatSync(path)
@@ -100,16 +99,19 @@ function trustEntryInventory(database: ReturnType<typeof db>) {
         'SELECT id, worktree, mcp_trust_path FROM run WHERE worktree IS NOT NULL AND mcp_trust_path IS NOT NULL',
       )
       .all() as { id: number; worktree: string; mcp_trust_path: string }[]
+    const present = new Set(grokTrustHeadings())
     const entries = rows.flatMap((row) => {
       const headings = JSON.parse(row.mcp_trust_path) as unknown
       if (!Array.isArray(headings) || headings.some((heading) => typeof heading !== 'string')) {
         throw new Error(`run ${row.id} mcp_trust_path is not a JSON string array`)
       }
-      return headings.map((heading) => ({
-        runId: row.id,
-        heading: heading as string,
-        worktreeExists: existsSync(row.worktree),
-      }))
+      return (headings as string[])
+        .filter((heading) => present.has(heading))
+        .map((heading) => ({
+          runId: row.id,
+          heading: heading as string,
+          worktreeExists: existsSync(row.worktree),
+        }))
     })
     return { ascertainable: true as const, entries }
   } catch (error) {

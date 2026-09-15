@@ -17,7 +17,9 @@ checkModuleBoundary('check-monitor-boundary', 'orchestrator/src/monitor.ts', [
   './project-lock.ts',
   './projects.ts',
   './reclaim.ts',
+  './grok-trust.ts',
   './resource-ownership.ts',
   './review-vocabulary.ts',
+  './run-artifacts.ts',
   './worktree-attribution.ts',
 ])
