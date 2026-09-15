@@ -130,6 +130,7 @@ export type LiveInput = {
   gitConfigEnvironment: Record<string, string> | undefined
   sandboxRunDir: string
   grokMcpEnvironment: Record<string, string>
+  recipeEnvironment: Record<string, string>
   scratchDir: string
   writesJob: boolean
   launchKey: string | null
@@ -206,6 +207,7 @@ export async function runLive(input: LiveInput): Promise<LiveResult> {
     gitConfigEnvironment,
     sandboxRunDir,
     grokMcpEnvironment,
+    recipeEnvironment,
     scratchDir,
     writesJob,
     launchKey,
@@ -312,6 +314,7 @@ export async function runLive(input: LiveInput): Promise<LiveResult> {
           ...(gitConfigEnvironment ?? {}),
           ...sandboxEnvironment,
           ...grokMcpEnvironment,
+          ...recipeEnvironment,
           ORCH_SCRATCH: scratchDir,
           ...(askLoopback ? { ORCH_ASK_URL: askLoopback.url } : {}),
         },

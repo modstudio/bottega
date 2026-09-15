@@ -3,6 +3,7 @@ import {
   compensationPlan,
   destroyPlan,
   lifecycleFailure,
+  serveUndoPlan,
   teardownVars,
   trackedExecutionRefusal,
 } from './recipe-lifecycle.ts'
@@ -21,11 +22,26 @@ describe('tracked recipe lifecycle planning', () => {
   test.each([
     ['env', 7, []],
     ['shared', 8, []],
-    ['serve', 9, {}],
   ] as const)('refuses %s until slice %i', (field, slice, value) => {
     expect(trackedExecutionRefusal(recipe({ [field]: value }))).toBe(
       `tracked recipe declares ${field}, which is not executable yet (Phase 3 slice ${slice})`,
     )
+  })
+
+  test('accepts serve and plans modes in declaration order with steps reversed', () => {
+    const input = recipe({
+      serve: {
+        preview: [step('preview-zero'), step('preview-one')],
+        default: [step('default-zero'), step('default-one')],
+      },
+    })
+    expect(trackedExecutionRefusal(input)).toBeNull()
+    expect(serveUndoPlan(input).map((item) => item.name)).toEqual([
+      'preview-one',
+      'preview-zero',
+      'default-one',
+      'default-zero',
+    ])
   })
 
   test('accepts only the lifecycle arrays executed by this slice', () => {

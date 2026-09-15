@@ -802,7 +802,8 @@
           "required": ["name", "run"],
           "additionalProperties": false
         }
-      }
+      },
+      "description": "rule 1: every serve step \"<name>\" in mode \"<mode>\" must declare undo so teardown can stop anything the worker started."
     },
     "destroy": {
       "type": "array",
