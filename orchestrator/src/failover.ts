@@ -8,6 +8,7 @@ import type { Database } from 'bun:sqlite'
 import { AGENTS } from './agent-registry.ts'
 import { db } from './db.ts'
 import type { McpRequest } from './mcp-preflight.ts'
+import type { ResumeTreePlan } from './resume-tree.ts'
 
 type TransportName = 'cli' | 'acp'
 type RetryWorktree = {
@@ -52,6 +53,7 @@ export type DetachSpec = {
     fresh?: boolean
     sessionId: string | null
     worktree: RetryWorktree | null
+    treePlan?: Extract<ResumeTreePlan, { action: 'recreate-on-branch' | 'recreate-then-restore' }>
   }
 }
 

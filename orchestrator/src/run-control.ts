@@ -1,7 +1,8 @@
 // concern: run-control
 /**
  * Knows run rows, chains, detached continuation, events, output, and exit
- * behaviour. Must not know transports, worktrees, routing, reviews, or the CLI.
+ * behaviour and resume-tree selection. Must not know transports, worktree mechanics,
+ * routing, reviews, or the CLI.
  */
 import { existsSync, readFileSync } from 'node:fs'
 import { CONTINUE_WORKING_FORMS } from './args.ts'
@@ -9,8 +10,11 @@ import { clock } from './clock.ts'
 import { branchNote, failoverSummary, resolveFailover } from './collect.ts'
 import { db, writeTransaction } from './db.ts'
 import { chainTransport } from './failover.ts'
+import { branchOf, gitContext } from './git-environment.ts'
 import { mcpRequestFromStored } from './mcp-preflight.ts'
 import { outcomeOf } from './outcome.ts'
+import { projectAt } from './projects.ts'
+import { type ResumeTreePlan, resumeTreePlan } from './resume-tree.ts'
 import { packedResumePrompt } from './run.ts'
 import { adoptRunMutation, auditRunMutation, authorizeRunMutation } from './run-authority.ts'
 import { detach } from './run-dispatch.ts'
@@ -205,6 +209,111 @@ export function continuationTurn(
   }
 }
 
+type ContinuationLaunch = {
+  launch_cwd: string | null
+  launch_seed: string | null
+  launch_key: string | null
+  launch_base: string | null
+  no_failover: number
+  mcp: number | null
+  mcp_error: string | null
+  lens: string | null
+}
+
+function continuationTree(
+  id: number,
+  row: { branch_kept: string | null; branch_kept_tip: string | null },
+  latest: ChainTurn,
+  launch: ContinuationLaunch,
+) {
+  const recordedBranch = row.branch_kept ?? latest.branch
+  const project = recordedBranch ? projectAt(latest.cwd ?? launch.launch_cwd ?? '') : null
+  if (recordedBranch && !project)
+    throw new Error(
+      `run ${id} cannot be continued: no registered project contains its recorded checkout`,
+    )
+  const recordedTreeMatches = Boolean(
+    recordedBranch &&
+      latest.worktree &&
+      existsSync(latest.worktree) &&
+      branchOf(latest.worktree) === recordedBranch,
+  )
+  const plan =
+    recordedBranch && project
+      ? resumeTreePlan({
+          rootId: id,
+          branch: recordedBranch,
+          recordedTreeMatches,
+          hasCreate: Boolean(
+            project.settings.worktree?.create || project.settings.worktree?.recipe,
+          ),
+          branchTip: gitContext(
+            project.path,
+            'rev-parse',
+            '--verify',
+            `refs/heads/${recordedBranch}^{commit}`,
+          ),
+          retainedTip: gitContext(
+            project.path,
+            'rev-parse',
+            '--verify',
+            `refs/orch/retained/${id}^{commit}`,
+          ),
+          recordedTip: row.branch_kept_tip,
+        })
+      : null
+  if (plan?.action === 'refuse')
+    throw new Error(
+      `run ${id} cannot recreate its continuation tree for branch ${recordedBranch}: ` +
+        `no retained tip exists`,
+    )
+  return { project, recordedTreeMatches, plan }
+}
+
+function effectiveCheckpointContext(
+  saved: string | null,
+  plan: ResumeTreePlan | null,
+): string | null {
+  if (saved) return saved
+  if (!plan || plan.action === 'attach-recorded' || plan.action === 'refuse') return null
+  return `CHECKPOINT RESUME\nResume from retained work at ${plan.tip}.`
+}
+
+function continuationCwd(
+  plan: ResumeTreePlan | null,
+  recordedTreeMatches: boolean,
+  latestCwd: string | null,
+  projectPath: string | null,
+): string {
+  if (!plan) return latestCwd ?? process.cwd()
+  if (recordedTreeMatches) return latestCwd ?? projectPath!
+  return projectPath!
+}
+
+function inheritedResumeWorktree(
+  plan: ResumeTreePlan | null,
+  latest: ChainTurn,
+  projectPath: string | null,
+) {
+  if (plan && plan.action !== 'attach-recorded') return null
+  if (!latest.worktree) return null
+  return {
+    path: latest.worktree,
+    branch: latest.branch ?? '',
+    base: latest.base_commit ?? '',
+    repoRoot: projectPath ?? process.cwd(),
+    source: latest.worktree_source ?? undefined,
+  }
+}
+
+function recreatedTreePlan(
+  plan: ResumeTreePlan | null,
+): Extract<ResumeTreePlan, { action: 'recreate-on-branch' | 'recreate-then-restore' }> | undefined {
+  return plan?.action === 'recreate-on-branch' || plan?.action === 'recreate-then-restore'
+    ? plan
+    : undefined
+}
+
 /** Resume a root run through the one path shared by `continue` and writing retries. */
 export async function continueRun(
   id: number,
@@ -212,11 +321,17 @@ export async function continueRun(
   argvResumeLimit: RunControlPresentation['argvResumeLimit'],
 ): Promise<{ childId: number; job: string }> {
   let authority = authorizeRunMutation(id, 'continue')
-  const row = db().query('SELECT id, job, parent_run_id, status FROM run WHERE id = ?').get(id) as {
+  const row = db()
+    .query(
+      'SELECT id, job, parent_run_id, status, branch_kept, branch_kept_tip FROM run WHERE id = ?',
+    )
+    .get(id) as {
     id: number
     job: string
     parent_run_id: number | null
     status: string
+    branch_kept: string | null
+    branch_kept_tip: string | null
   } | null
   if (!row) throw new Error(`no run ${id}`)
   refuseEscapedChain(id)
@@ -267,11 +382,19 @@ export async function continueRun(
       )
       .all(id, id) as ChainTurn[],
   )
-  const checkpointContext = (await import('./checkpoint.ts')).checkpointResumeContext(
+  const launch = db()
+    .query(
+      `SELECT launch_cwd, launch_seed, launch_key, launch_base, no_failover, mcp, mcp_error, lens
+       FROM run WHERE id=?`,
+    )
+    .get(id) as ContinuationLaunch
+  const { project, recordedTreeMatches, plan: treePlan } = continuationTree(id, row, latest, launch)
+  const savedCheckpointContext = (await import('./checkpoint.ts')).checkpointResumeContext(
     db(),
     id,
     latest.worktree,
   )
+  const checkpointContext = effectiveCheckpointContext(savedCheckpointContext, treePlan)
   const sessionFrom = checkpointContext
     ? null
     : latest.vendor_session
@@ -328,21 +451,6 @@ export async function continueRun(
       )
     }
   }
-  const launch = db()
-    .query(
-      `SELECT launch_cwd, launch_seed, launch_key, launch_base, no_failover, mcp, mcp_error, lens
-       FROM run WHERE id=?`,
-    )
-    .get(id) as {
-    launch_cwd: string | null
-    launch_seed: string | null
-    launch_key: string | null
-    launch_base: string | null
-    no_failover: number
-    mcp: number | null
-    mcp_error: string | null
-    lens: string | null
-  }
   authority = writeTransaction(() => {
     const adopted = adoptRunMutation(authority, 'continue')
     // Stop preserves the artifact specifically so this transition can reopen it.
@@ -350,7 +458,7 @@ export async function continueRun(
     return adopted
   })
   const childId = await detach(row.job, prompt, {
-    cwd: latest.cwd ?? process.cwd(),
+    cwd: continuationCwd(treePlan, recordedTreeMatches, latest.cwd, project?.path ?? null),
     seed: launch.launch_seed ?? undefined,
     key: launch.launch_key ?? undefined,
     base: launch.launch_base ?? undefined,
@@ -365,16 +473,8 @@ export async function continueRun(
       fresh: Boolean(checkpointContext),
       turn: nextTurn,
       sessionId: authority.owner,
-      worktree: latest.worktree
-        ? {
-            path: latest.worktree,
-            branch: latest.branch ?? '',
-            base: latest.base_commit ?? '',
-            repoRoot:
-              (await import('./git-environment.ts')).repoRootOf(latest.worktree) ?? process.cwd(),
-            source: latest.worktree_source ?? undefined,
-          }
-        : null,
+      worktree: inheritedResumeWorktree(treePlan, latest, project?.path ?? null),
+      treePlan: recreatedTreePlan(treePlan),
     },
   })
   auditRunMutation(authority, 'continue', message ?? null)

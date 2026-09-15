@@ -62,6 +62,7 @@ import {
 } from './ref-guard.ts'
 import { teardownTerminalRunResources } from './resource-ownership.ts'
 import { TRUNCATED_TRANSCRIPT_BYTES } from './result-output.ts'
+import type { ResumeTreePlan } from './resume-tree.ts'
 import {
   CALIBRATION_SUFFIX_RESERVE_BYTES,
   calibrationLine,
@@ -255,6 +256,7 @@ export async function run(opts: {
     /** Inherited so the chain stays owned by the session that started it. */
     sessionId: string | null
     worktree: Worktree | null
+    treePlan?: Extract<ResumeTreePlan, { action: 'recreate-on-branch' | 'recreate-then-restore' }>
   }
   /** Declared reader deliverable names, from repeated `--deliverable`. */
   deliverables?: string[]
@@ -284,7 +286,7 @@ export async function run(opts: {
     opts.seed,
     opts.key,
     opts.base,
-    opts.resume?.worktree != null,
+    opts.resume != null,
     opts.reserveId !== undefined,
     opts.lens,
     opts.resolvedReviewTarget ? undefined : opts.review,
