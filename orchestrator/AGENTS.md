@@ -14,4 +14,4 @@ The dashboard and cost-ratio presentation (`hub/`). Machine upkeep (`ops/`). Loc
 
 ## May depend on
 
-`shared/` only. `scripts/check-boundaries.ts` enforces that orchestrator never imports another concern.
+`shared/` only. `scripts/check-architecture.ts` enforces that orchestrator never imports another concern.

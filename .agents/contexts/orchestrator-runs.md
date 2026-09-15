@@ -10,7 +10,7 @@ paths:
 
 A repository job runs in its own throwaway worktree. Orch carries the caller's visible git state (committed, staged, unstaged, deletions, binaries, non-ignored untracked). Ignored runtime state is provisioned by the project's recipe, never copied from another checkout.
 
-The worktree is the safety boundary. A repository agent gets workspace-write for that tree and its linked-worktree git metadata. A writing worker also gets the common object store and the directories holding its own run-branch ref and reflog. The ref guard permits only that exact branch. Do not use `CODEX_EXEC_SANDBOX` for a writing repository run. Inline jobs (`summarize`, `review-lens-inline`) create no worktree.
+The worktree is the safety boundary. A repository agent gets workspace-write for that tree and its linked-worktree git metadata. A writing worker also gets the common object store and the directories holding its own run-branch ref and reflog. The ref guard permits only that exact branch. Never use `CODEX_EXEC_SANDBOX` for a repository run. Inline jobs (`summarize`, `review-lens-inline`) create no worktree.
 
 **A registered main checkout stays clean.** Dispatch refreshes the main index and refuses tracked modifications, naming the dirty paths and the worktree (both anchored lines). Untracked files warn; ignored files are silent. Default on; opt out with `requireCleanMain` false. Resumes skip the check. Bare-main end state: `orch doc show bare-main-end-state --scope project --subject bottega`.
 
