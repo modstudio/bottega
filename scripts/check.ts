@@ -282,6 +282,8 @@ for (const script of [
   'check-mcp-commands-boundary.ts',
   'check-metric-commands-boundary.ts',
   'check-monitor-commands-boundary.ts',
+  'check-monitor-conditions-boundary.ts',
+  'check-monitor-notices-boundary.ts',
   'check-database-boundary.ts',
   'check-store-hooks-boundary.ts',
   'check-review-vocabulary-boundary.ts',
