@@ -3,6 +3,7 @@
 import { existsSync, readFileSync, readlinkSync, writeFileSync } from 'node:fs'
 import { dirname, posix, resolve } from 'node:path'
 import { z } from 'zod'
+import { inspectionGitEnv } from '../../shared/git.ts'
 import { type Finding, introducedFindings } from '../../shared/ratchet.ts'
 import {
   allInjectChecks,
@@ -30,7 +31,11 @@ const findingSchema = z.object({
 })
 
 function git(cwd: string, args: string[]): string {
-  const result = Bun.spawnSync(['git', '-C', cwd, ...args], { stdout: 'pipe', stderr: 'pipe' })
+  const result = Bun.spawnSync(['git', '-C', cwd, ...args], {
+    stdout: 'pipe',
+    stderr: 'pipe',
+    env: inspectionGitEnv(),
+  })
   if (result.exitCode !== 0) {
     const detail = result.stderr.toString().trim()
     throw new Error(`git -C ${cwd} ${args.join(' ')} failed${detail ? `: ${detail}` : ''}`)

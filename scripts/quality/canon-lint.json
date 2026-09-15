@@ -1,0 +1,416 @@
+[
+  {
+    "file": "hub/AGENTS.md",
+    "line": 1,
+    "rule": "canon/card-headings",
+    "message": "missing ## Purpose, ## Belongs here, ## Does not belong here, ## May depend on"
+  },
+  {
+    "file": "local-stack/AGENTS.md",
+    "line": 1,
+    "rule": "canon/card-headings",
+    "message": "missing ## Purpose, ## Belongs here, ## Does not belong here, ## May depend on"
+  },
+  {
+    "file": "ops/AGENTS.md",
+    "line": 1,
+    "rule": "canon/card-headings",
+    "message": "missing ## Purpose, ## Belongs here, ## Does not belong here, ## May depend on"
+  },
+  {
+    "file": "orchestrator/AGENTS.md",
+    "line": 1,
+    "rule": "canon/card-headings",
+    "message": "missing ## Purpose, ## Belongs here, ## Does not belong here, ## May depend on"
+  },
+  {
+    "file": "AGENTS.md",
+    "line": 13,
+    "rule": "canon/history",
+    "message": "matches banned history pattern \\bwas (?:called|named)\\b"
+  },
+  {
+    "file": "AGENTS.md",
+    "line": 32,
+    "rule": "canon/history",
+    "message": "matches banned history pattern \\bused to\\b"
+  },
+  {
+    "file": "AGENTS.md",
+    "line": 94,
+    "rule": "canon/history",
+    "message": "matches banned history pattern \\bused to\\b"
+  },
+  {
+    "file": "AGENTS.md",
+    "line": 370,
+    "rule": "canon/history",
+    "message": "matches banned history pattern \\bused to\\b"
+  },
+  {
+    "file": "AGENTS.md",
+    "line": 375,
+    "rule": "canon/history",
+    "message": "matches banned history pattern \\bused to\\b"
+  },
+  {
+    "file": "AGENTS.md",
+    "line": 414,
+    "rule": "canon/history",
+    "message": "matches banned history pattern \\brenamed\\b"
+  },
+  {
+    "file": "AGENTS.md",
+    "line": 557,
+    "rule": "canon/history",
+    "message": "matches banned history pattern \\bno longer\\b"
+  },
+  {
+    "file": "hub/AGENTS.md",
+    "line": 277,
+    "rule": "canon/history",
+    "message": "matches banned history pattern \\bused to\\b"
+  },
+  {
+    "file": "hub/AGENTS.md",
+    "line": 286,
+    "rule": "canon/history",
+    "message": "matches banned history pattern \\b(?:that|this|it) (?:has )?changed\\b"
+  },
+  {
+    "file": "hub/AGENTS.md",
+    "line": 331,
+    "rule": "canon/history",
+    "message": "matches banned history pattern \\bwas (?:called|named)\\b"
+  },
+  {
+    "file": "orchestrator/AGENTS.md",
+    "line": 16,
+    "rule": "canon/history",
+    "message": "matches banned history pattern \\bused to\\b"
+  },
+  {
+    "file": "orchestrator/AGENTS.md",
+    "line": 20,
+    "rule": "canon/history",
+    "message": "matches banned history pattern \\b(?:that|this|it) (?:has )?changed\\b"
+  },
+  {
+    "file": "orchestrator/AGENTS.md",
+    "line": 22,
+    "rule": "canon/history",
+    "message": "matches banned history pattern \\bused to\\b"
+  },
+  {
+    "file": "orchestrator/AGENTS.md",
+    "line": 69,
+    "rule": "canon/history",
+    "message": "matches banned history pattern \\bused to\\b"
+  },
+  {
+    "file": "orchestrator/AGENTS.md",
+    "line": 91,
+    "rule": "canon/history",
+    "message": "matches banned history pattern \\b20\\d\\d-\\d\\d-\\d\\d\\b"
+  },
+  {
+    "file": "orchestrator/AGENTS.md",
+    "line": 248,
+    "rule": "canon/history",
+    "message": "matches banned history pattern \\bused to\\b"
+  },
+  {
+    "file": "orchestrator/AGENTS.md",
+    "line": 346,
+    "rule": "canon/history",
+    "message": "matches banned history pattern \\b20\\d\\d-\\d\\d-\\d\\d\\b"
+  },
+  {
+    "file": "orchestrator/AGENTS.md",
+    "line": 550,
+    "rule": "canon/history",
+    "message": "matches banned history pattern \\bno longer\\b"
+  },
+  {
+    "file": "orchestrator/AGENTS.md",
+    "line": 579,
+    "rule": "canon/history",
+    "message": "matches banned history pattern \\bused to\\b"
+  },
+  {
+    "file": "orchestrator/AGENTS.md",
+    "line": 802,
+    "rule": "canon/history",
+    "message": "matches banned history pattern \\bwas (?:called|named)\\b"
+  },
+  {
+    "file": "orchestrator/AGENTS.md",
+    "line": 884,
+    "rule": "canon/history",
+    "message": "matches banned history pattern \\b20\\d\\d-\\d\\d-\\d\\d\\b"
+  },
+  {
+    "file": "orchestrator/AGENTS.md",
+    "line": 940,
+    "rule": "canon/history",
+    "message": "matches banned history pattern \\b20\\d\\d-\\d\\d-\\d\\d\\b"
+  },
+  {
+    "file": "orchestrator/AGENTS.md",
+    "line": 1046,
+    "rule": "canon/history",
+    "message": "matches banned history pattern \\b20\\d\\d-\\d\\d-\\d\\d\\b"
+  },
+  {
+    "file": "orchestrator/AGENTS.md",
+    "line": 1050,
+    "rule": "canon/history",
+    "message": "matches banned history pattern \\bno longer\\b"
+  },
+  {
+    "file": "orchestrator/AGENTS.md",
+    "line": 1114,
+    "rule": "canon/history",
+    "message": "matches banned history pattern \\b20\\d\\d-\\d\\d-\\d\\d\\b"
+  },
+  {
+    "file": "orchestrator/AGENTS.md",
+    "line": 1328,
+    "rule": "canon/history",
+    "message": "matches banned history pattern \\b20\\d\\d-\\d\\d-\\d\\d\\b"
+  },
+  {
+    "file": "orchestrator/AGENTS.md",
+    "line": 1690,
+    "rule": "canon/history",
+    "message": "matches banned history pattern \\bused to\\b"
+  },
+  {
+    "file": "orchestrator/AGENTS.md",
+    "line": 1693,
+    "rule": "canon/history",
+    "message": "matches banned history pattern \\bused to\\b"
+  },
+  {
+    "file": "orchestrator/AGENTS.md",
+    "line": 1700,
+    "rule": "canon/history",
+    "message": "matches banned history pattern \\bno longer\\b"
+  },
+  {
+    "file": "hub/AGENTS.md",
+    "line": 155,
+    "rule": "canon/issue",
+    "message": "contains a task key"
+  },
+  {
+    "file": "hub/AGENTS.md",
+    "line": 156,
+    "rule": "canon/issue",
+    "message": "contains a task key"
+  },
+  {
+    "file": "hub/AGENTS.md",
+    "line": 174,
+    "rule": "canon/issue",
+    "message": "contains a task key"
+  },
+  {
+    "file": "hub/AGENTS.md",
+    "line": 204,
+    "rule": "canon/issue",
+    "message": "contains a task key"
+  },
+  {
+    "file": "hub/AGENTS.md",
+    "line": 205,
+    "rule": "canon/issue",
+    "message": "contains a task key"
+  },
+  {
+    "file": "hub/AGENTS.md",
+    "line": 207,
+    "rule": "canon/issue",
+    "message": "contains a task key"
+  },
+  {
+    "file": "orchestrator/AGENTS.md",
+    "line": 578,
+    "rule": "canon/issue",
+    "message": "contains a task key"
+  },
+  {
+    "file": "orchestrator/AGENTS.md",
+    "line": 781,
+    "rule": "canon/issue",
+    "message": "contains a task key"
+  },
+  {
+    "file": "orchestrator/AGENTS.md",
+    "line": 795,
+    "rule": "canon/issue",
+    "message": "contains a task key"
+  },
+  {
+    "file": "orchestrator/AGENTS.md",
+    "line": 802,
+    "rule": "canon/issue",
+    "message": "contains a task key"
+  },
+  {
+    "file": "orchestrator/AGENTS.md",
+    "line": 819,
+    "rule": "canon/issue",
+    "message": "contains a task key"
+  },
+  {
+    "file": "orchestrator/AGENTS.md",
+    "line": 830,
+    "rule": "canon/issue",
+    "message": "contains a task key"
+  },
+  {
+    "file": "orchestrator/AGENTS.md",
+    "line": 868,
+    "rule": "canon/issue",
+    "message": "contains a task key"
+  },
+  {
+    "file": "orchestrator/AGENTS.md",
+    "line": 871,
+    "rule": "canon/issue",
+    "message": "contains a task key"
+  },
+  {
+    "file": "orchestrator/AGENTS.md",
+    "line": 941,
+    "rule": "canon/issue",
+    "message": "contains a task key"
+  },
+  {
+    "file": "orchestrator/AGENTS.md",
+    "line": 978,
+    "rule": "canon/issue",
+    "message": "contains a task key"
+  },
+  {
+    "file": "orchestrator/AGENTS.md",
+    "line": 979,
+    "rule": "canon/issue",
+    "message": "contains a task key"
+  },
+  {
+    "file": "orchestrator/AGENTS.md",
+    "line": 980,
+    "rule": "canon/issue",
+    "message": "contains a task key"
+  },
+  {
+    "file": "orchestrator/AGENTS.md",
+    "line": 981,
+    "rule": "canon/issue",
+    "message": "contains a task key"
+  },
+  {
+    "file": "orchestrator/AGENTS.md",
+    "line": 982,
+    "rule": "canon/issue",
+    "message": "contains a task key"
+  },
+  {
+    "file": "orchestrator/AGENTS.md",
+    "line": 983,
+    "rule": "canon/issue",
+    "message": "contains a task key"
+  },
+  {
+    "file": "orchestrator/AGENTS.md",
+    "line": 984,
+    "rule": "canon/issue",
+    "message": "contains a task key"
+  },
+  {
+    "file": "orchestrator/AGENTS.md",
+    "line": 986,
+    "rule": "canon/issue",
+    "message": "contains a task key"
+  },
+  {
+    "file": "orchestrator/AGENTS.md",
+    "line": 991,
+    "rule": "canon/issue",
+    "message": "matches banned issue pattern \\bworkaround\\b"
+  },
+  {
+    "file": "orchestrator/AGENTS.md",
+    "line": 1111,
+    "rule": "canon/issue",
+    "message": "contains a task key"
+  },
+  {
+    "file": "orchestrator/AGENTS.md",
+    "line": 1113,
+    "rule": "canon/issue",
+    "message": "contains a task key"
+  },
+  {
+    "file": "orchestrator/AGENTS.md",
+    "line": 1330,
+    "rule": "canon/issue",
+    "message": "contains a task key"
+  },
+  {
+    "file": "orchestrator/AGENTS.md",
+    "line": 1335,
+    "rule": "canon/issue",
+    "message": "contains a task key"
+  },
+  {
+    "file": "orchestrator/AGENTS.md",
+    "line": 1336,
+    "rule": "canon/issue",
+    "message": "contains a task key"
+  },
+  {
+    "file": "orchestrator/AGENTS.md",
+    "line": 1342,
+    "rule": "canon/issue",
+    "message": "contains a task key"
+  },
+  {
+    "file": "hub/AGENTS.md",
+    "line": 1,
+    "rule": "canon/size-card",
+    "message": "measured 23667 bytes; limit 2048 bytes"
+  },
+  {
+    "file": "orchestrator/AGENTS.md",
+    "line": 1,
+    "rule": "canon/size-card",
+    "message": "measured 121590 bytes; limit 2048 bytes"
+  },
+  {
+    "file": "hub/AGENTS.md",
+    "line": 1,
+    "rule": "canon/size-chain",
+    "message": "measured 55136 bytes; limit 32768 bytes"
+  },
+  {
+    "file": "ops/AGENTS.md",
+    "line": 1,
+    "rule": "canon/size-chain",
+    "message": "measured 32804 bytes; limit 32768 bytes"
+  },
+  {
+    "file": "orchestrator/AGENTS.md",
+    "line": 1,
+    "rule": "canon/size-chain",
+    "message": "measured 153059 bytes; limit 32768 bytes"
+  },
+  {
+    "file": "AGENTS.md",
+    "line": 1,
+    "rule": "canon/size-entry",
+    "message": "measured 31469 bytes; limit 16384 bytes"
+  }
+]
