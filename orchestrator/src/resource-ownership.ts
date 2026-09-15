@@ -16,7 +16,10 @@ import {
 } from './docker-resources.ts'
 import { chainScoreJoin, EVIDENCE_CLOSED_SQL } from './evidence-query.ts'
 import { repoRootOf } from './git-environment.ts'
+import { pidAlive } from './process-liveness.ts'
 import { withCleanupLock, withWorktreeLease } from './project-lock.ts'
+import { runAlive } from './run-alive.ts'
+import { runLeaseState } from './run-lease.ts'
 
 export type WorktreeSharerRow = { id: number; status: string; scored: number }
 
@@ -33,7 +36,7 @@ function worktreeSharers(
   const candidates = database
     .query(
       `SELECT r.id, COALESCE(r.parent_run_id, r.id) AS root_id,
-            r.status, ${EVIDENCE_CLOSED_SQL} AS scored
+            r.status, r.pid, ${EVIDENCE_CLOSED_SQL} AS scored
        FROM run r ${chainScoreJoin('r', 's')}
       WHERE r.worktree IN (${spellings.map(() => '?').join(',')})
         AND COALESCE(r.parent_run_id, r.id) <>
@@ -41,9 +44,21 @@ function worktreeSharers(
         ${liveOnly ? "AND r.status IN ('running','asking')" : ''}
       ORDER BY r.id`,
     )
-    .all(...spellings, row.id, row.id) as (WorktreeSharerRow & { root_id: number })[]
+    .all(...spellings, row.id, row.id) as (WorktreeSharerRow & {
+    root_id: number
+    pid: number | null
+  })[]
   const roots = new Set<number>()
   return candidates.flatMap((candidate) => {
+    if (
+      liveOnly &&
+      !runAlive({
+        status: candidate.status,
+        lease: runLeaseState(candidate.id),
+        pidAlive: Boolean(candidate.pid && pidAlive(candidate.pid)),
+      })
+    )
+      return []
     if (roots.has(candidate.root_id)) return []
     roots.add(candidate.root_id)
     return [{ ...candidate, id: candidate.root_id }]
@@ -165,9 +180,18 @@ export function terminalDockerRetentionReasonForRun(
 export function hasLiveWorktreeSharer(database: Database, worktree: string): boolean {
   const identity = worktreeIdentity(worktree)
   const live = database
-    .query("SELECT worktree FROM run WHERE worktree IS NOT NULL AND status IN ('running','asking')")
-    .all() as { worktree: string }[]
-  return live.some((row) => worktreeIdentity(row.worktree) === identity)
+    .query(
+      "SELECT id,status,pid,worktree FROM run WHERE worktree IS NOT NULL AND status IN ('running','asking')",
+    )
+    .all() as { id: number; status: string; pid: number | null; worktree: string }[]
+  return live.some(
+    (row) =>
+      runAlive({
+        status: row.status,
+        lease: runLeaseState(row.id),
+        pidAlive: Boolean(row.pid && pidAlive(row.pid)),
+      }) && worktreeIdentity(row.worktree) === identity,
+  )
 }
 
 export type TerminalDockerTeardown = DockerTeardown & {

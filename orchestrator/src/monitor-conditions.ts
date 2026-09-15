@@ -18,6 +18,8 @@ import {
   retainedRefInventory,
   worktreeDatabaseInventory,
 } from './resource-inventory.ts'
+import { runAlive } from './run-alive.ts'
+import { runLeaseState } from './run-lease.ts'
 
 const HUB = new URL('../../bin/hub', import.meta.url).pathname
 
@@ -210,12 +212,21 @@ export function deadRunningProcessConditions(clock = Date.now()): MonitorConditi
     // liveness so the reader can distinguish that transient from a dead worker.
     if (!run.agent_pid || pidAlive(run.agent_pid)) return []
     const ageMs = age(run.started_at, clock)
-    const worker =
-      run.pid && pidAlive(run.pid)
-        ? `worker pid ${run.pid} is still alive (the run may be in teardown)`
+    const lease = runLeaseState(run.id)
+    const coordinatorAlive = runAlive({
+      status: 'running',
+      lease,
+      pidAlive: Boolean(run.pid && pidAlive(run.pid)),
+    })
+    const worker = coordinatorAlive
+      ? lease === 'held'
+        ? `run ${run.id} coordinator lease is held (the run may be in teardown)`
+        : `legacy worker pid ${run.pid} is still alive (the run may be in teardown)`
+      : lease === 'free'
+        ? `run ${run.id} coordinator lease is free`
         : run.pid
-          ? `worker pid ${run.pid} is also gone`
-          : 'worker pid was not recorded'
+          ? `legacy worker pid ${run.pid} is also gone`
+          : 'legacy worker pid was not recorded'
     return [
       {
         kind: 'dead-running-process',
@@ -398,10 +409,20 @@ export function dockerConditions(clock: number): {
 }
 
 function liveRunIds(database: ReturnType<typeof db>): Set<number> {
-  const rows = database.query(`SELECT id FROM run WHERE status IN ('running','asking')`).all() as {
-    id: number
-  }[]
-  return new Set(rows.map((row) => row.id))
+  const rows = database
+    .query(`SELECT id,status,pid FROM run WHERE status IN ('running','asking')`)
+    .all() as { id: number; status: string; pid: number | null }[]
+  return new Set(
+    rows
+      .filter((row) =>
+        runAlive({
+          status: row.status,
+          lease: runLeaseState(row.id),
+          pidAlive: Boolean(row.pid && pidAlive(row.pid)),
+        }),
+      )
+      .map((row) => row.id),
+  )
 }
 
 export function worktreeDatabaseConditions(clock: number): {

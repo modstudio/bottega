@@ -28,7 +28,9 @@ import {
   settledStateForCloseOut,
 } from './resource-claims.ts'
 import { liveWorktreeSharers, worktreePathSpellings } from './resource-ownership.ts'
+import { runAlive } from './run-alive.ts'
 import { RUNS_DIR } from './run-artifacts.ts'
+import { removeFreeRunLease, runLeaseState } from './run-lease.ts'
 import { processTable, terminateRunProcesses } from './run-process.ts'
 import { worktreeExists } from './worktree.ts'
 import { inspectTreeOwnership } from './worktree-attribution.ts'
@@ -43,6 +45,21 @@ export type CloseOutResult = {
 }
 
 const TERMINAL = new Set(['ok', 'failed', 'stale', 'stopped'])
+
+type AliveTurn = { id: number; status: string; pid: number | null }
+
+function aliveConversationTurns(rootId: number): AliveTurn[] {
+  const turns = db()
+    .query('SELECT id,status,pid FROM run WHERE id=? OR parent_run_id=? ORDER BY id')
+    .all(rootId, rootId) as AliveTurn[]
+  return turns.filter((turn) =>
+    runAlive({
+      status: turn.status,
+      lease: runLeaseState(turn.id),
+      pidAlive: Boolean(turn.pid && pidAlive(turn.pid)),
+    }),
+  )
+}
 
 type ConversationKeepTreeHold = KeepTreeHoldDecision & { reason?: string }
 
@@ -155,12 +172,18 @@ export function releaseSandboxDirectoryForConversation(
 ): SandboxReleaseResult {
   const path = join(RUNS_DIR, `sandbox-${rootId}`)
   const turns = db()
-    .query('SELECT status FROM run WHERE id=? OR parent_run_id=? ORDER BY id')
-    .all(rootId, rootId) as { status: string }[]
+    .query('SELECT id,status,pid FROM run WHERE id=? OR parent_run_id=? ORDER BY id')
+    .all(rootId, rootId) as AliveTurn[]
   const keepTree = conversationKeepTreeHold(rootId, nowIso())
   const decision = sandboxDirectoryRelease({
     terminal: turns.length > 0 && turns.every((turn) => TERMINAL.has(turn.status)),
-    liveTurn: turns.some((turn) => turn.status === 'running' || turn.status === 'asking'),
+    liveTurn: turns.some((turn) =>
+      runAlive({
+        status: turn.status,
+        lease: runLeaseState(turn.id),
+        pidAlive: Boolean(turn.pid && pidAlive(turn.pid)),
+      }),
+    ),
     liveProcess: conversationProcessState(rootId),
     worktreeState: options.worktreeState ?? recordedWorktreeState(rootId),
     keepTree: keepTree.held,
@@ -444,12 +467,7 @@ function attemptCloseOutRun(
 
   const liveRows = () => {
     const sharers = liveWorktreeSharers(db(), { id: row.root_id, worktree: treePath })
-    const conversation = db()
-      .query(
-        `SELECT id,status FROM run
-        WHERE status IN ('running','asking') AND (id=? OR parent_run_id=?) ORDER BY id`,
-      )
-      .all(row.root_id, row.root_id) as { id: number; status: string }[]
+    const conversation = aliveConversationTurns(row.root_id)
     return [...conversation, ...sharers]
   }
   const live = liveRows()
@@ -570,19 +588,15 @@ function attemptCloseOutRun(
                 detail: 'would release clean terminal worktree and keep its branch',
               }
             // The coordinator proves its own identity before descendants are signalled.
-            const liveCoordinator = (
-              db()
-                .query(
-                  'SELECT id,pid FROM run WHERE (id=? OR parent_run_id=?) AND pid IS NOT NULL ORDER BY id',
-                )
-                .all(row.root_id, row.root_id) as { id: number; pid: number }[]
-            ).find((turn) => turn.pid !== process.pid && pidAlive(turn.pid))
+            const liveCoordinator = aliveConversationTurns(row.root_id).find(
+              (turn) => turn.pid !== process.pid,
+            )
             if (liveCoordinator)
               return {
                 runId: row.root_id,
                 worktree: treePath,
                 outcome: 'live' as const,
-                detail: `recorded coordinator pid ${liveCoordinator.pid} for run ${liveCoordinator.id} is still alive`,
+                detail: `coordinator lease for run ${liveCoordinator.id} is still held`,
               }
             terminateRunProcesses(row.id, [process.pid])
             const branchSnapshot = retainedBranch ? branchTip(repoRoot, retainedBranch) : null
@@ -773,6 +787,12 @@ export function closeOutRun(
         db().query('UPDATE run SET close_out_detail=? WHERE id=?').run(result.detail, result.runId)
       }
     }
+  }
+  if (!options.dryRun && ['released', 'absent', 'forgotten'].includes(result.outcome)) {
+    const turns = db()
+      .query('SELECT id FROM run WHERE id=? OR parent_run_id=? ORDER BY id')
+      .all(result.runId, result.runId) as { id: number }[]
+    for (const turn of turns) removeFreeRunLease(turn.id)
   }
   return result
 }

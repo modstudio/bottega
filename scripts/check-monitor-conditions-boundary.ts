@@ -15,4 +15,6 @@ checkModuleBoundary('check-monitor-conditions-boundary', 'orchestrator/src/monit
   './projects.ts',
   './resource-claims.ts',
   './resource-inventory.ts',
+  './run-alive.ts',
+  './run-lease.ts',
 ])
