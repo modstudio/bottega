@@ -318,17 +318,23 @@ export function createTrackedRecipe(
   const prepared = prepareTrackedCreate(input, allocator, runStep)
   const { base, snapshot, vars } = prepared
 
-  mkdirSync(dirname(path), { recursive: true })
-  git(
-    [
-      'worktree',
-      'add',
-      ...(input.detached ? ['--detach'] : input.existingBranch ? [] : ['-b', branch]),
-      path,
-      input.existingBranch && !input.detached ? branch : base,
-    ],
-    input.repoRoot,
-  )
+  try {
+    mkdirSync(dirname(path), { recursive: true })
+    git(
+      [
+        'worktree',
+        'add',
+        ...(input.detached ? ['--detach'] : input.existingBranch ? [] : ['-b', branch]),
+        path,
+        input.existingBranch && !input.detached ? branch : base,
+      ],
+      input.repoRoot,
+    )
+  } catch (error) {
+    // No worktree claim exists yet, so nothing else would ever release these.
+    allocator.release(prepared.allocationAttempt, String((error as Error)?.message ?? error))
+    throw error
+  }
   const worktree: Worktree = {
     path,
     branch: input.detached ? '' : branch,
