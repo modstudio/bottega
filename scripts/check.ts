@@ -228,6 +228,8 @@ for (const script of [
   'check-checkout-identity-boundary.ts',
   'check-worktree-mcp-boundary.ts',
   'check-worktree-template-boundary.ts',
+  'check-recipe-schema-boundary.ts',
+  'check-recipe-loader-boundary.ts',
   'check-worktree-attribution-boundary.ts',
   'check-project-lock-boundary.ts',
   'check-ref-guard-boundary.ts',
@@ -329,15 +331,23 @@ for (const script of [
   'check-comment-hygiene.ts',
   'check-brand.ts',
   'check-canon.ts',
+  'generate-recipe-schema.ts',
   '../orchestrator/scripts/check-pack-budget.ts',
   'check-import-cycles.ts',
 ]) {
   const child = track(
-    Bun.spawn(['bun', `${root}scripts/${script}`], {
-      cwd: root,
-      stdout: 'inherit',
-      stderr: 'inherit',
-    }),
+    Bun.spawn(
+      [
+        'bun',
+        `${root}scripts/${script}`,
+        ...(script === 'generate-recipe-schema.ts' ? ['--check'] : []),
+      ],
+      {
+        cwd: root,
+        stdout: 'inherit',
+        stderr: 'inherit',
+      },
+    ),
   )
   if ((await child.exited) !== 0) process.exit(1)
 }

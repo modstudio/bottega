@@ -1,5 +1,10 @@
 import { describe, expect, test } from 'bun:test'
-import { lifecycleForm, recipeElementSupport, trackedRecipeStatus } from './worktree-lifecycle.ts'
+import {
+  lifecycleForm,
+  lifecycleReportLines,
+  recipeElementSupport,
+  trackedRecipeStatus,
+} from './worktree-lifecycle.ts'
 
 describe('worktree lifecycle declarations are measured without inference', () => {
   test('each lifecycle form follows its explicit declaration', () => {
@@ -22,6 +27,29 @@ describe('worktree lifecycle declarations are measured without inference', () =>
     )
     expect(status).toEqual({ path: '/projects/app/.orch/worktree.jsonc', exists: false })
     expect(probed).toEqual(['/projects/app/.orch/worktree.jsonc'])
+  })
+
+  test('doctor lifecycle lines report tracked recipe validity or the first refusal', () => {
+    const projects = [
+      { name: 'app', path: '/projects/app', worktree: { recipePath: '.orch/worktree.jsonc' } },
+    ]
+    expect(
+      lifecycleReportLines(
+        projects,
+        () => true,
+        () => ({ ok: true, recipe: { create: [] } }),
+      )[0],
+    ).toContain('valid')
+    expect(
+      lifecycleReportLines(
+        projects,
+        () => true,
+        () => ({
+          ok: false,
+          errors: ['first refusal', 'second refusal'],
+        }),
+      )[0],
+    ).toContain('invalid (2 error(s)); first: first refusal')
   })
 })
 

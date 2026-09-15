@@ -1,6 +1,7 @@
 // concern: worktree lifecycle measurement
 /** Knows declared lifecycle shapes and recipe-schema support. Must not know execution, the register, databases, or the CLI. */
 import { resolve } from 'node:path'
+import { type LoadTrackedRecipeResult, loadTrackedRecipe } from './recipe-loader.ts'
 
 export type LifecycleForm = 'command-templates' | 'inline-recipe' | 'tracked-recipe' | 'none'
 
@@ -136,10 +137,14 @@ export function declaredInlineElements(recipe: unknown): string[] {
 export function lifecycleReportLines(
   projects: LifecycleProject[],
   fileExists: (path: string) => boolean,
+  loadRecipe: (
+    projectPath: string,
+    recipePath: string,
+  ) => LoadTrackedRecipeResult = loadTrackedRecipe,
 ): string[] {
   const forms = projects.map((project) => lifecycleForm(project.worktree))
   const lines = projects.map((project, index) =>
-    projectLifecycleLine(project, forms[index]!, fileExists),
+    projectLifecycleLine(project, forms[index]!, fileExists, loadRecipe),
   )
   const count = (form: LifecycleForm) => forms.filter((candidate) => candidate === form).length
   lines.push(
@@ -152,6 +157,7 @@ function projectLifecycleLine(
   project: LifecycleProject,
   form: LifecycleForm,
   fileExists: (path: string) => boolean,
+  loadRecipe: (projectPath: string, recipePath: string) => LoadTrackedRecipeResult,
 ): string {
   const worktree = project.worktree
   if (form === 'command-templates') {
@@ -170,8 +176,13 @@ function projectLifecycleLine(
     return `lifecycle ${project.name}: inline-recipe (${elements.join(', ') || 'empty'}); ${suffixes.join('; ') || 'migration-ready'}`
   }
   if (form === 'tracked-recipe') {
+    const pointer = worktree?.recipePath as string
     const status = trackedRecipeStatus(project.path, worktree, fileExists)!
-    return `lifecycle ${project.name}: tracked-recipe (${worktree?.recipePath}); file ${status.exists ? 'exists' : 'MISSING'} at ${status.path}`
+    const loaded = loadRecipe(project.path, pointer)
+    if (loaded.ok) {
+      return `lifecycle ${project.name}: tracked-recipe (${pointer}); valid at ${status.path}`
+    }
+    return `lifecycle ${project.name}: tracked-recipe (${pointer}); invalid (${loaded.errors.length} error(s)); first: ${loaded.errors[0]}`
   }
   return `lifecycle ${project.name}: none; target recipe not declared`
 }

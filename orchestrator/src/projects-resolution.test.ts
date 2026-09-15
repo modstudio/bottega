@@ -1,5 +1,15 @@
-import { describe, expect, test } from 'bun:test'
-import { projectAt, stackAt, upsertProject } from './projects.ts'
+import { afterEach, describe, expect, test } from 'bun:test'
+import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
+import { projectAt, stackAt, upsertProject, validateProjectSettings } from './projects.ts'
+
+let projectDirectory: string | null = null
+
+afterEach(() => {
+  if (projectDirectory) rmSync(projectDirectory, { recursive: true, force: true })
+  projectDirectory = null
+})
 
 describe('projects are data, not code', () => {
   test('a directory belongs to the project that contains it', () => {
@@ -36,5 +46,28 @@ describe('projects are data, not code', () => {
     const p = projectAt('/w/alpha')!
     expect(p.settings.trunk).toBe('develop')
     expect(p.settings.states?.in_progress).toBe('active')
+  })
+
+  test('registration validates a tracked recipe at its project path', () => {
+    projectDirectory = mkdtempSync(join(tmpdir(), 'orch-project-recipe-'))
+    writeFileSync(join(projectDirectory, 'worktree.jsonc'), '{"create":[]}')
+    expect(
+      validateProjectSettings({ worktree: { recipePath: 'worktree.jsonc' } }, projectDirectory),
+    ).toEqual([])
+    writeFileSync(join(projectDirectory, 'worktree.jsonc'), '{"create":[],"unknown":true}')
+    expect(
+      validateProjectSettings(
+        { worktree: { recipePath: 'worktree.jsonc' } },
+        projectDirectory,
+      ).join('\n'),
+    ).toContain('unknown-key rule')
+  })
+
+  test('registration refuses simultaneous inline and tracked recipes', () => {
+    expect(
+      validateProjectSettings({
+        worktree: { recipe: {}, recipePath: '.orch/worktree.jsonc' },
+      }).join('\n'),
+    ).toContain('recipe and recipePath may not both be declared')
   })
 })
