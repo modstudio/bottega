@@ -8,6 +8,7 @@ import { newRecordId, PLATFORM_SPACE_ID, PLATFORM_SPACE_NAME } from './postgres-
 const container = process.env.ORCH_TEST_POSTGRES_CONTAINER
 const ownerUrl = process.env.ORCH_TEST_POSTGRES_OWNER_URL
 const migrationsFolder = join(import.meta.dir, '..', 'postgres', 'migrations')
+const postgresSchema = readFileSync(join(import.meta.dir, 'postgres-schema.ts'), 'utf8')
 const migration = readdirSync(migrationsFolder, { withFileTypes: true })
   .filter((entry) => entry.isDirectory())
   .map((entry) => entry.name)
@@ -92,6 +93,27 @@ describe('Postgres substrate shape', () => {
       expect(migration).toContain(`CREATE POLICY "${table}_space_update"`)
       expect(migration).toContain(`CREATE POLICY "${table}_space_delete"`)
     }
+  })
+
+  test('every schema-first RLS table is forced in migrations', () => {
+    const enabled = new Set(
+      [...migration.matchAll(/ALTER TABLE "([^"]+)" ENABLE ROW LEVEL SECURITY/g)].map(
+        (match) => match[1],
+      ),
+    )
+    const forced = new Set(
+      [...migration.matchAll(/ALTER TABLE "([^"]+)" FORCE ROW LEVEL SECURITY/g)].map(
+        (match) => match[1],
+      ),
+    )
+    const withRls = new Set(
+      [...postgresSchema.matchAll(/pgTable\.withRLS\(\s*['"]([^'"]+)['"]/g)].map(
+        (match) => match[1],
+      ),
+    )
+
+    expect([...enabled].sort()).toEqual([...forced].sort())
+    expect([...withRls].sort()).toEqual([...forced].sort())
   })
 
   test('machine belongs to a user and seq has the fully qualified key', () => {
