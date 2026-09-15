@@ -97,9 +97,11 @@ export const project = pgTable.withRLS(
     colorDark: text('color_dark'),
     envPrefix: text('env_prefix'),
     mcpServer: text('mcp_server'),
+    workerMcpServers: text('worker_mcp_servers').array(),
+    secretPaths: text('secret_paths').array(),
     mcpProbeTool: text('mcp_probe_tool'),
     tracker: jsonb(),
-    worktreeRecipe: jsonb('worktree_recipe'),
+    worktree: jsonb(),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull(),
   },
   (table) => [
