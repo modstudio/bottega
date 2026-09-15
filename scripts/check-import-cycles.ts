@@ -1,5 +1,5 @@
 import { readFileSync } from 'node:fs'
-import { basename, dirname, join, normalize, relative } from 'node:path'
+import { dirname, join, normalize, relative } from 'node:path'
 import { importSpecifiers } from './import-scanner.ts'
 
 export type ImportCycle = string[]

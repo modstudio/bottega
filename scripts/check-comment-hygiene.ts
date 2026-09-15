@@ -1,7 +1,7 @@
 #!/usr/bin/env bun
 /** Comments state the current rule and its reason; git holds their history. */
 import { readFileSync } from 'node:fs'
-import { relative, resolve } from 'node:path'
+import { resolve } from 'node:path'
 
 const ROOTS = ['orchestrator', 'hub', 'shared', 'scripts']
 const GENERATED = /^(?:hub\/web\/src\/routeTree\.gen\.ts|.*(?:^|\/)migrations\/meta(?:\/|$))/
