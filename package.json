@@ -6,6 +6,8 @@
   "type": "module",
   "scripts": {
     "check": "bun scripts/check.ts",
+    "format": "biome format --write .",
+    "lint": "biome check .",
     "orch": "bun orchestrator/src/orch.ts",
     "hub": "bun hub/src/cli.ts"
   },

@@ -165,6 +165,8 @@ const installs = await Promise.all(
 )
 refuseFailed(installs)
 
+if ((await inherit([`${root}node_modules/.bin/biome`, 'ci', '.'])) !== 0) process.exit(1)
+
 if (
   (await inherit([
     // Every .githooks test must be named here. The list is explicit rather than a
