@@ -287,6 +287,10 @@ landed.
 Beyond the value proposition, lean on tried and tested. Do not hand-roll and do
 not reinvent.
 
+Biome formats and lints every TypeScript, TSX and JSON file from one root config,
+and the gate runs it; the settled rules are in biome.jsonc, and a rule is changed
+there, never worked around with a suppression.
+
 Build only what IS the product: the routing algorithm and the evidence model, the
 worker contract and its escalation, review tiers and reviewer calibration, canon,
 docs and the context injection that binds a prompt, the attribution metric, and
