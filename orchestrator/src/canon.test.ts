@@ -32,7 +32,21 @@ import {
   schemaVersionLabel,
   splitMigrationSource,
 } from './migrations.ts'
-import * as declared from './schema.ts'
+import * as declaredCore from './schema-core.ts'
+import * as declaredDocs from './schema-docs.ts'
+import * as declaredLens from './schema-lens.ts'
+import * as declaredPort from './schema-port.ts'
+import * as declaredReview from './schema-review.ts'
+import * as declaredWorkflow from './schema-workflow.ts'
+
+const declaredSchemas = [
+  declaredCore,
+  declaredDocs,
+  declaredReview,
+  declaredLens,
+  declaredWorkflow,
+  declaredPort,
+]
 
 const fresh = () => {
   const d = new Database(':memory:')
@@ -91,7 +105,7 @@ describe('Drizzle migration journal', () => {
 
   test('every typed table and column has the migration NOT NULL and default shape', () => {
     const d = fresh()
-    for (const value of Object.values(declared)) {
+    for (const value of declaredSchemas.flatMap((declared) => Object.values(declared))) {
       if (!value || typeof value !== 'object' || !('getSQL' in value)) continue
       const table = value as SQLiteTable
       const name = getTableName(table)

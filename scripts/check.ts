@@ -206,6 +206,12 @@ refuseFailed(results)
 
 for (const script of [
   'check-boundaries.ts',
+  'check-schema-core-boundary.ts',
+  'check-schema-docs-boundary.ts',
+  'check-schema-review-boundary.ts',
+  'check-schema-lens-boundary.ts',
+  'check-schema-workflow-boundary.ts',
+  'check-schema-port-boundary.ts',
   'check-isolation-boundary.ts',
   'check-review-boundary.ts',
   'check-review-coverage-boundary.ts',
