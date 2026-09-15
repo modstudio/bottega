@@ -226,7 +226,7 @@ export function canonLintCommand(flags: CanonFlags, presentation: CanonPresentat
   if (flags.has('strict') && displayed.length) presentation.exitCode(1)
 }
 
-export async function canonCommand(
+async function canonCommand(
   argv: string[],
   flags: CanonFlags,
   presentation: CanonPresentation,
@@ -236,18 +236,6 @@ export async function canonCommand(
   const sub = argv[1]
   const cwd = flag('cwd') ?? presentation.cwd()
   const jobName = flag('job') ?? 'understand'
-  if (sub === 'import') {
-    canonImportCommand(flags, presentation)
-    return
-  }
-  if (sub === 'hydrate') {
-    canonHydrateCommand(flags, presentation)
-    return
-  }
-  if (sub === 'list') {
-    canonListCommand(flags, presentation)
-    return
-  }
   if (sub === 'eval') {
     const rows = await runCanonEvals({
       slug: flag('slug'),
@@ -343,4 +331,25 @@ export async function canonCommand(
   throw new Error(
     'unknown: orch canon. Try import | hydrate | list | check | diff | eval | evals | lint',
   )
+}
+
+function canonStoreCommand(
+  sub: string | undefined,
+  flags: CanonFlags,
+  presentation: CanonPresentation,
+): boolean {
+  if (sub === 'import') canonImportCommand(flags, presentation)
+  else if (sub === 'hydrate') canonHydrateCommand(flags, presentation)
+  else if (sub === 'list') canonListCommand(flags, presentation)
+  else return false
+  return true
+}
+
+export async function dispatchCanonCommand(
+  argv: string[],
+  flags: CanonFlags,
+  presentation: CanonPresentation,
+): Promise<void> {
+  if (canonStoreCommand(argv[1], flags, presentation)) return
+  await canonCommand(argv, flags, presentation)
 }
