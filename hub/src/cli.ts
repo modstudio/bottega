@@ -308,6 +308,17 @@ function tasks() {
   )
 }
 
+function trackerTaskKey(result: unknown): unknown {
+  const record = result && typeof result === 'object' ? (result as Record<string, unknown>) : {}
+  const data = record.data && typeof record.data === 'object' ? record.data : {}
+  const task = record.task && typeof record.task === 'object' ? record.task : {}
+  return (
+    record.key ??
+    ('humanKey' in data ? data.humanKey : undefined) ??
+    ('key' in task ? task.key : undefined)
+  )
+}
+
 async function task() {
   const sub = argv[1]
   if (taskHelpRequested()) {
@@ -463,13 +474,7 @@ async function task() {
       body: required('body'),
       status,
     })
-    const record = result && typeof result === 'object' ? (result as Record<string, unknown>) : {}
-    const data = record.data && typeof record.data === 'object' ? record.data : {}
-    const task = record.task && typeof record.task === 'object' ? record.task : {}
-    const key =
-      record.key ??
-      ('humanKey' in data ? data.humanKey : undefined) ??
-      ('key' in task ? task.key : undefined)
+    const key = trackerTaskKey(result)
     if (typeof key !== 'string' || !key.trim()) {
       throw new Error(`tracker created a task but returned no task key: ${JSON.stringify(result)}`)
     }

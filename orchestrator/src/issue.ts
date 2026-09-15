@@ -145,7 +145,7 @@ function section(body: string, heading: string, next: string[], boundary: number
   return parsedBody.slice(from, ends.length ? Math.min(...ends) : undefined).trim()
 }
 
-export function parseFiledIssue(shown: unknown): FiledIssue {
+function filedIssueTask(shown: unknown): { key: string; body: string; title: string } {
   const task =
     shown &&
     typeof shown === 'object' &&
@@ -163,8 +163,17 @@ export function parseFiledIssue(shown: unknown): FiledIssue {
   ) {
     throw new Error('filed issue is missing its task body')
   }
+  return {
+    key: task.key as string,
+    body: task.body as string,
+    title: 'title' in task && typeof task.title === 'string' ? task.title : '',
+  }
+}
+
+export function parseFiledIssue(shown: unknown): FiledIssue {
+  const task = filedIssueTask(shown)
   const body = task.body
-  const title = 'title' in task && typeof task.title === 'string' ? task.title : ''
+  const title = task.title
   if (body.startsWith(FILED_ISSUE_DATA_PREFIX)) {
     const lineEnd = body.indexOf('\n')
     const encoded = body.slice(FILED_ISSUE_DATA_PREFIX.length, lineEnd < 0 ? undefined : lineEnd)
@@ -526,6 +535,10 @@ async function release(result: RunResult | null, keepBranch = false): Promise<st
   return removed.removed ? null : removed.detail
 }
 
+function runIdFromCause(cause: unknown): number {
+  return Number(cause && typeof cause === 'object' && 'runId' in cause ? cause.runId : 0)
+}
+
 /** Work exactly one named issue; every durable fact is written before its tree is released. */
 export async function workIssue(key: string): Promise<void> {
   const started = Date.now()
@@ -833,7 +846,7 @@ export async function workIssue(key: string): Promise<void> {
     }
     completed = true
   } catch (cause) {
-    const runId = Number(cause && typeof cause === 'object' && 'runId' in cause ? cause.runId : 0)
+    const runId = runIdFromCause(cause)
     const row = runId
       ? (db().query('SELECT worktree, branch FROM run WHERE id=?').get(runId) as {
           worktree: string | null
