@@ -105,7 +105,9 @@ function measured(file: CanonFile, limit: number): CanonMeasurement {
   return { path: file.path, bytes: bytes(file), limit }
 }
 
-function frontmatter(text: string): { description: string | null; paths: string[] } | null {
+export function canonFrontmatter(
+  text: string,
+): { description: string | null; paths: string[] } | null {
   const match = text.match(/^---\r?\n([\s\S]*?)\r?\n---(?:\r?\n|$)/)
   if (!match) return null
   const yaml = match[1]!
@@ -541,7 +543,7 @@ function chainMeasurements(classified: Classified[]): {
 }
 
 function frontmatterFinding(file: CanonFile, kind: 'rule' | 'context' | 'reference'): Finding[] {
-  const metadata = frontmatter(file.text)
+  const metadata = canonFrontmatter(file.text)
   if (metadata?.description && (kind !== 'context' || metadata.paths.length > 0)) return []
   return [
     {

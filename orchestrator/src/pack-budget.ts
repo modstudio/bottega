@@ -1,6 +1,7 @@
 /**
- * Always-on canon ceilings. A breach is answered by demoting content to
- * on-demand, never by raising the number.
+ * The compiled worker pack (always-on canon, the context index, and inject
+ * docs) is bounded by DEFAULT_PACK_BYTES. A breach is answered by demoting
+ * the largest packed tier, never by raising the number.
  */
 export const DEFAULT_PACK_BYTES = 64 * 1024
 

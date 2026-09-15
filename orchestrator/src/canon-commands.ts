@@ -283,6 +283,8 @@ async function canonCommand(
         job: pack.job,
         project: pack.project,
         bytes: pack.bytes,
+        canonBytes: pack.canonBytes,
+        docBytes: pack.docBytes,
         budgetBytes: pack.budgetBytes,
         sha256: pack.sha256,
       },
@@ -293,7 +295,9 @@ async function canonCommand(
     }
     if (has('json')) log(JSON.stringify(result))
     else {
-      log(`canon: ${pack.bytes}/${pack.budgetBytes} bytes`)
+      log(
+        `canon: ${pack.canonBytes} canon + ${pack.docBytes} docs = ${pack.bytes}/${pack.budgetBytes} bytes`,
+      )
       for (const row of rows.filter((row) => row.findings.length)) {
         log(
           `${row.doc.scope}/${row.doc.subject ?? '_'}/${row.doc.slug} revision ${row.doc.revisionId}`,

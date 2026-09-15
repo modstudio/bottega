@@ -95,6 +95,8 @@ export const canonPack = sqliteTable(
     projectId: integer('project_id').references(() => project.id, { onDelete: 'restrict' }),
     sha256: text().notNull(),
     bytes: integer().notNull(),
+    canonBytes: integer('canon_bytes').notNull().default(0),
+    docBytes: integer('doc_bytes').notNull().default(0),
     docCount: integer('doc_count').notNull(),
     docRevisions: text('doc_revisions').notNull(),
     compiledAt: text('compiled_at').notNull(),
