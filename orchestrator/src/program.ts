@@ -10,6 +10,7 @@ import { register as registerLogic } from './commands/logic.ts'
 import { register as registerReview } from './commands/review.ts'
 import { register as registerRouting } from './commands/routing.ts'
 import { register as registerRunListing } from './commands/run-listing.ts'
+import { register as registerSync } from './commands/sync.ts'
 import { drainStdout, setRawArgv, write } from './commands/support.ts'
 import { recordSessionSeen } from './db.ts'
 
@@ -34,6 +35,7 @@ registerCleanup(program)
 registerJudgement(program)
 registerRouting(program)
 registerLogic(program)
+registerSync(program)
 
 /** Verbs that only read the store must not stamp the session as seen. */
 function isReadOnlyInvocation(argv: string[]): boolean {
