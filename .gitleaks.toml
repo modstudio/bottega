@@ -1,0 +1,4 @@
+# No concern stores a secret.
+# Store references only.
+[extend]
+useDefault = true

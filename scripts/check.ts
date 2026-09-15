@@ -206,7 +206,7 @@ for (const script of [
   'check-standard-transports-boundary.ts', 'check-runtime-registration-boundary.ts',
   'check-sandbox-boundary.ts', 'check-codex-mcp-scope-boundary.ts',
   'check-module-boundaries.ts', 'check-inversion-boundaries.ts',
-  'check-git-environment-spawn.ts', 'check-launchd-templates.ts', 'check-write-transaction-site.ts',
+  'check-git-environment-spawn.ts', 'check-launchd-templates.ts', 'check-gitleaks.ts', 'check-write-transaction-site.ts',
   'check-file-ceiling.ts', 'check-cognitive-ceiling.ts',
   'check-test-fixtures.ts', 'check-test-spawns.ts',
   'check-brand.ts', 'check-canon.ts',
