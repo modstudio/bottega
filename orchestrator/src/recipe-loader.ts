@@ -58,7 +58,9 @@ export function parseTrackedRecipe(source: string, label: string): LoadTrackedRe
     errors: result.error.issues.map((issue) => {
       const at = issue.path.length ? `${issue.path.join('.')}: ` : ''
       const message =
-        issue.code === 'unrecognized_keys' ? `unknown-key rule: ${issue.message}` : issue.message
+        issue.code === 'unrecognized_keys'
+          ? `unknown-key rule: unknown key ${issue.keys.map((key) => `"${key}"`).join(', ')}`
+          : issue.message
       return `tracked recipe ${label}: ${at}${message}`
     }),
   }
