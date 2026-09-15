@@ -2,9 +2,7 @@
   "version": "8",
   "dialect": "postgres",
   "id": "3356f28a-b0bd-4d73-9222-74b652413336",
-  "prevIds": [
-    "595b2a06-936b-4179-9277-05b4fa4875e2"
-  ],
+  "prevIds": ["595b2a06-936b-4179-9277-05b4fa4875e2"],
   "ddl": [
     {
       "isRlsEnabled": false,
@@ -603,14 +601,10 @@
     },
     {
       "nameExplicit": false,
-      "columns": [
-        "user_id"
-      ],
+      "columns": ["user_id"],
       "schemaTo": "public",
       "tableTo": "user",
-      "columnsTo": [
-        "id"
-      ],
+      "columnsTo": ["id"],
       "onUpdate": "NO ACTION",
       "onDelete": "NO ACTION",
       "name": "machine_user_id_user_id_fkey",
@@ -620,14 +614,10 @@
     },
     {
       "nameExplicit": false,
-      "columns": [
-        "space_id"
-      ],
+      "columns": ["space_id"],
       "schemaTo": "public",
       "tableTo": "space",
-      "columnsTo": [
-        "id"
-      ],
+      "columnsTo": ["id"],
       "onUpdate": "NO ACTION",
       "onDelete": "NO ACTION",
       "name": "membership_space_id_space_id_fkey",
@@ -637,14 +627,10 @@
     },
     {
       "nameExplicit": false,
-      "columns": [
-        "user_id"
-      ],
+      "columns": ["user_id"],
       "schemaTo": "public",
       "tableTo": "user",
-      "columnsTo": [
-        "id"
-      ],
+      "columnsTo": ["id"],
       "onUpdate": "NO ACTION",
       "onDelete": "NO ACTION",
       "name": "membership_user_id_user_id_fkey",
@@ -654,14 +640,10 @@
     },
     {
       "nameExplicit": false,
-      "columns": [
-        "space_id"
-      ],
+      "columns": ["space_id"],
       "schemaTo": "public",
       "tableTo": "space",
-      "columnsTo": [
-        "id"
-      ],
+      "columnsTo": ["id"],
       "onUpdate": "NO ACTION",
       "onDelete": "NO ACTION",
       "name": "project_space_id_space_id_fkey",
@@ -671,14 +653,10 @@
     },
     {
       "nameExplicit": false,
-      "columns": [
-        "space_id"
-      ],
+      "columns": ["space_id"],
       "schemaTo": "public",
       "tableTo": "space",
-      "columnsTo": [
-        "id"
-      ],
+      "columnsTo": ["id"],
       "onUpdate": "NO ACTION",
       "onDelete": "NO ACTION",
       "name": "seq_space_id_space_id_fkey",
@@ -688,14 +666,10 @@
     },
     {
       "nameExplicit": false,
-      "columns": [
-        "project_id"
-      ],
+      "columns": ["project_id"],
       "schemaTo": "public",
       "tableTo": "project",
-      "columnsTo": [
-        "id"
-      ],
+      "columnsTo": ["id"],
       "onUpdate": "NO ACTION",
       "onDelete": "NO ACTION",
       "name": "seq_project_id_project_id_fkey",
@@ -705,16 +679,10 @@
     },
     {
       "nameExplicit": true,
-      "columns": [
-        "space_id",
-        "project_id"
-      ],
+      "columns": ["space_id", "project_id"],
       "schemaTo": "public",
       "tableTo": "project",
-      "columnsTo": [
-        "space_id",
-        "id"
-      ],
+      "columnsTo": ["space_id", "id"],
       "onUpdate": "NO ACTION",
       "onDelete": "NO ACTION",
       "name": "seq_space_project_fk",
@@ -723,11 +691,7 @@
       "table": "seq"
     },
     {
-      "columns": [
-        "space_id",
-        "project_id",
-        "name"
-      ],
+      "columns": ["space_id", "project_id", "name"],
       "nameExplicit": false,
       "name": "seq_pkey",
       "entityType": "pks",
@@ -735,9 +699,7 @@
       "table": "seq"
     },
     {
-      "columns": [
-        "id"
-      ],
+      "columns": ["id"],
       "nameExplicit": false,
       "name": "machine_pkey",
       "schema": "public",
@@ -745,9 +707,7 @@
       "entityType": "pks"
     },
     {
-      "columns": [
-        "id"
-      ],
+      "columns": ["id"],
       "nameExplicit": false,
       "name": "membership_pkey",
       "schema": "public",
@@ -755,9 +715,7 @@
       "entityType": "pks"
     },
     {
-      "columns": [
-        "id"
-      ],
+      "columns": ["id"],
       "nameExplicit": false,
       "name": "project_pkey",
       "schema": "public",
@@ -765,9 +723,7 @@
       "entityType": "pks"
     },
     {
-      "columns": [
-        "id"
-      ],
+      "columns": ["id"],
       "nameExplicit": false,
       "name": "space_pkey",
       "schema": "public",
@@ -775,9 +731,7 @@
       "entityType": "pks"
     },
     {
-      "columns": [
-        "id"
-      ],
+      "columns": ["id"],
       "nameExplicit": false,
       "name": "user_pkey",
       "schema": "public",
@@ -786,10 +740,7 @@
     },
     {
       "nameExplicit": true,
-      "columns": [
-        "space_id",
-        "user_id"
-      ],
+      "columns": ["space_id", "user_id"],
       "nullsNotDistinct": false,
       "name": "membership_space_user_unique",
       "entityType": "uniques",
@@ -798,10 +749,7 @@
     },
     {
       "nameExplicit": true,
-      "columns": [
-        "space_id",
-        "name"
-      ],
+      "columns": ["space_id", "name"],
       "nullsNotDistinct": false,
       "name": "project_space_name_unique",
       "entityType": "uniques",
@@ -810,10 +758,7 @@
     },
     {
       "nameExplicit": true,
-      "columns": [
-        "space_id",
-        "id"
-      ],
+      "columns": ["space_id", "id"],
       "nullsNotDistinct": false,
       "name": "project_space_id_unique",
       "entityType": "uniques",
@@ -822,9 +767,7 @@
     },
     {
       "nameExplicit": false,
-      "columns": [
-        "name"
-      ],
+      "columns": ["name"],
       "nullsNotDistinct": false,
       "name": "space_name_key",
       "schema": "public",
@@ -833,9 +776,7 @@
     },
     {
       "nameExplicit": false,
-      "columns": [
-        "email"
-      ],
+      "columns": ["email"],
       "nullsNotDistinct": false,
       "name": "user_email_key",
       "schema": "public",
@@ -845,9 +786,7 @@
     {
       "as": "PERMISSIVE",
       "for": "SELECT",
-      "roles": [
-        "public"
-      ],
+      "roles": ["public"],
       "using": "\"membership\".\"space_id\" = nullif(current_setting('app.space_id', true), '')::uuid",
       "withCheck": null,
       "name": "membership_space_select",
@@ -858,9 +797,7 @@
     {
       "as": "PERMISSIVE",
       "for": "INSERT",
-      "roles": [
-        "public"
-      ],
+      "roles": ["public"],
       "using": null,
       "withCheck": "\"membership\".\"space_id\" = nullif(current_setting('app.space_id', true), '')::uuid",
       "name": "membership_space_insert",
@@ -871,9 +808,7 @@
     {
       "as": "PERMISSIVE",
       "for": "UPDATE",
-      "roles": [
-        "public"
-      ],
+      "roles": ["public"],
       "using": "\"membership\".\"space_id\" = nullif(current_setting('app.space_id', true), '')::uuid",
       "withCheck": "\"membership\".\"space_id\" = nullif(current_setting('app.space_id', true), '')::uuid",
       "name": "membership_space_update",
@@ -884,9 +819,7 @@
     {
       "as": "PERMISSIVE",
       "for": "DELETE",
-      "roles": [
-        "public"
-      ],
+      "roles": ["public"],
       "using": "\"membership\".\"space_id\" = nullif(current_setting('app.space_id', true), '')::uuid",
       "withCheck": null,
       "name": "membership_space_delete",
@@ -897,9 +830,7 @@
     {
       "as": "PERMISSIVE",
       "for": "SELECT",
-      "roles": [
-        "public"
-      ],
+      "roles": ["public"],
       "using": "\"project\".\"space_id\" = nullif(current_setting('app.space_id', true), '')::uuid",
       "withCheck": null,
       "name": "project_space_select",
@@ -910,9 +841,7 @@
     {
       "as": "PERMISSIVE",
       "for": "INSERT",
-      "roles": [
-        "public"
-      ],
+      "roles": ["public"],
       "using": null,
       "withCheck": "\"project\".\"space_id\" = nullif(current_setting('app.space_id', true), '')::uuid",
       "name": "project_space_insert",
@@ -923,9 +852,7 @@
     {
       "as": "PERMISSIVE",
       "for": "UPDATE",
-      "roles": [
-        "public"
-      ],
+      "roles": ["public"],
       "using": "\"project\".\"space_id\" = nullif(current_setting('app.space_id', true), '')::uuid",
       "withCheck": "\"project\".\"space_id\" = nullif(current_setting('app.space_id', true), '')::uuid",
       "name": "project_space_update",
@@ -936,9 +863,7 @@
     {
       "as": "PERMISSIVE",
       "for": "DELETE",
-      "roles": [
-        "public"
-      ],
+      "roles": ["public"],
       "using": "\"project\".\"space_id\" = nullif(current_setting('app.space_id', true), '')::uuid",
       "withCheck": null,
       "name": "project_space_delete",
@@ -949,9 +874,7 @@
     {
       "as": "PERMISSIVE",
       "for": "SELECT",
-      "roles": [
-        "public"
-      ],
+      "roles": ["public"],
       "using": "\"seq\".\"space_id\" = nullif(current_setting('app.space_id', true), '')::uuid",
       "withCheck": null,
       "name": "seq_space_select",
@@ -962,9 +885,7 @@
     {
       "as": "PERMISSIVE",
       "for": "INSERT",
-      "roles": [
-        "public"
-      ],
+      "roles": ["public"],
       "using": null,
       "withCheck": "\"seq\".\"space_id\" = nullif(current_setting('app.space_id', true), '')::uuid",
       "name": "seq_space_insert",
@@ -975,9 +896,7 @@
     {
       "as": "PERMISSIVE",
       "for": "UPDATE",
-      "roles": [
-        "public"
-      ],
+      "roles": ["public"],
       "using": "\"seq\".\"space_id\" = nullif(current_setting('app.space_id', true), '')::uuid",
       "withCheck": "\"seq\".\"space_id\" = nullif(current_setting('app.space_id', true), '')::uuid",
       "name": "seq_space_update",
@@ -988,9 +907,7 @@
     {
       "as": "PERMISSIVE",
       "for": "DELETE",
-      "roles": [
-        "public"
-      ],
+      "roles": ["public"],
       "using": "\"seq\".\"space_id\" = nullif(current_setting('app.space_id', true), '')::uuid",
       "withCheck": null,
       "name": "seq_space_delete",
@@ -1001,9 +918,7 @@
     {
       "as": "PERMISSIVE",
       "for": "SELECT",
-      "roles": [
-        "public"
-      ],
+      "roles": ["public"],
       "using": "\"space\".\"id\" = nullif(current_setting('app.space_id', true), '')::uuid",
       "withCheck": null,
       "name": "space_space_select",
@@ -1014,9 +929,7 @@
     {
       "as": "PERMISSIVE",
       "for": "INSERT",
-      "roles": [
-        "public"
-      ],
+      "roles": ["public"],
       "using": null,
       "withCheck": "\"space\".\"id\" = nullif(current_setting('app.space_id', true), '')::uuid",
       "name": "space_space_insert",
@@ -1027,9 +940,7 @@
     {
       "as": "PERMISSIVE",
       "for": "UPDATE",
-      "roles": [
-        "public"
-      ],
+      "roles": ["public"],
       "using": "\"space\".\"id\" = nullif(current_setting('app.space_id', true), '')::uuid",
       "withCheck": "\"space\".\"id\" = nullif(current_setting('app.space_id', true), '')::uuid",
       "name": "space_space_update",
@@ -1040,9 +951,7 @@
     {
       "as": "PERMISSIVE",
       "for": "DELETE",
-      "roles": [
-        "public"
-      ],
+      "roles": ["public"],
       "using": "\"space\".\"id\" = nullif(current_setting('app.space_id', true), '')::uuid",
       "withCheck": null,
       "name": "space_space_delete",
@@ -1051,7 +960,5 @@
       "table": "space"
     }
   ],
-  "renames": [
-    "public.project.worktree_recipe->public.project.worktree"
-  ]
+  "renames": ["public.project.worktree_recipe->public.project.worktree"]
 }
