@@ -1,5 +1,5 @@
--- The registered project row is the referent everywhere. Keep the text mirrors
--- for one release while readers move to the relational key.
+-- Project names were formerly join keys. Keep the text mirrors for one release,
+-- but make the registered project row the referent everywhere.
 ALTER TABLE run ADD COLUMN project_id INTEGER REFERENCES project(id) ON DELETE RESTRICT;
 --> statement-breakpoint
 ALTER TABLE canon_pack ADD COLUMN project_id INTEGER REFERENCES project(id) ON DELETE RESTRICT;

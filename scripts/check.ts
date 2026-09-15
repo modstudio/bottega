@@ -160,6 +160,7 @@ if (await inherit([
   './scripts/quality/ceiling-decision.test.ts',
   './scripts/quality/test-timing-decision.test.ts',
   './shared/git.test.ts', './shared/orch-contract.test.ts', './shared/interval.test.ts',
+  './shared/trackers-protocols.test.ts',
 ]) !== 0) process.exit(1)
 
 const results = await Promise.all(legs.map((leg) => runLeg({
