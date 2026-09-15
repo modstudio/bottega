@@ -89,7 +89,8 @@
           },
           "additionalProperties": {
             "type": "string"
-          }
+          },
+          "description": "Named claimed string values. Templates may use only {branch} {name} {base} {key} {seed} {path} {main} {index}; include {index} when simultaneous worktrees could otherwise collide."
         }
       },
       "additionalProperties": false
@@ -180,7 +181,7 @@
                         },
                         "omitWhenEmpty": {
                           "type": "string",
-                          "enum": ["branch", "name", "base", "seed", "key", "path"]
+                          "enum": ["branch", "name", "base", "seed", "key", "path", "main", "index"]
                         }
                       },
                       "required": ["value", "omitWhenEmpty"],
@@ -229,7 +230,7 @@
                         },
                         "omitWhenEmpty": {
                           "type": "string",
-                          "enum": ["branch", "name", "base", "seed", "key", "path"]
+                          "enum": ["branch", "name", "base", "seed", "key", "path", "main", "index"]
                         }
                       },
                       "required": ["value", "omitWhenEmpty"],
@@ -279,7 +280,7 @@
                         },
                         "omitWhenEmpty": {
                           "type": "string",
-                          "enum": ["branch", "name", "base", "seed", "key", "path"]
+                          "enum": ["branch", "name", "base", "seed", "key", "path", "main", "index"]
                         }
                       },
                       "required": ["value", "omitWhenEmpty"],
@@ -387,7 +388,7 @@
                         },
                         "omitWhenEmpty": {
                           "type": "string",
-                          "enum": ["branch", "name", "base", "seed", "key", "path"]
+                          "enum": ["branch", "name", "base", "seed", "key", "path", "main", "index"]
                         }
                       },
                       "required": ["value", "omitWhenEmpty"],
@@ -436,7 +437,7 @@
                         },
                         "omitWhenEmpty": {
                           "type": "string",
-                          "enum": ["branch", "name", "base", "seed", "key", "path"]
+                          "enum": ["branch", "name", "base", "seed", "key", "path", "main", "index"]
                         }
                       },
                       "required": ["value", "omitWhenEmpty"],
@@ -486,7 +487,7 @@
                         },
                         "omitWhenEmpty": {
                           "type": "string",
-                          "enum": ["branch", "name", "base", "seed", "key", "path"]
+                          "enum": ["branch", "name", "base", "seed", "key", "path", "main", "index"]
                         }
                       },
                       "required": ["value", "omitWhenEmpty"],
@@ -599,7 +600,16 @@
                           },
                           "omitWhenEmpty": {
                             "type": "string",
-                            "enum": ["branch", "name", "base", "seed", "key", "path"]
+                            "enum": [
+                              "branch",
+                              "name",
+                              "base",
+                              "seed",
+                              "key",
+                              "path",
+                              "main",
+                              "index"
+                            ]
                           }
                         },
                         "required": ["value", "omitWhenEmpty"],
@@ -648,7 +658,16 @@
                           },
                           "omitWhenEmpty": {
                             "type": "string",
-                            "enum": ["branch", "name", "base", "seed", "key", "path"]
+                            "enum": [
+                              "branch",
+                              "name",
+                              "base",
+                              "seed",
+                              "key",
+                              "path",
+                              "main",
+                              "index"
+                            ]
                           }
                         },
                         "required": ["value", "omitWhenEmpty"],
@@ -698,7 +717,16 @@
                           },
                           "omitWhenEmpty": {
                             "type": "string",
-                            "enum": ["branch", "name", "base", "seed", "key", "path"]
+                            "enum": [
+                              "branch",
+                              "name",
+                              "base",
+                              "seed",
+                              "key",
+                              "path",
+                              "main",
+                              "index"
+                            ]
                           }
                         },
                         "required": ["value", "omitWhenEmpty"],
@@ -807,7 +835,7 @@
                         },
                         "omitWhenEmpty": {
                           "type": "string",
-                          "enum": ["branch", "name", "base", "seed", "key", "path"]
+                          "enum": ["branch", "name", "base", "seed", "key", "path", "main", "index"]
                         }
                       },
                       "required": ["value", "omitWhenEmpty"],
@@ -856,7 +884,7 @@
                         },
                         "omitWhenEmpty": {
                           "type": "string",
-                          "enum": ["branch", "name", "base", "seed", "key", "path"]
+                          "enum": ["branch", "name", "base", "seed", "key", "path", "main", "index"]
                         }
                       },
                       "required": ["value", "omitWhenEmpty"],
@@ -906,7 +934,7 @@
                         },
                         "omitWhenEmpty": {
                           "type": "string",
-                          "enum": ["branch", "name", "base", "seed", "key", "path"]
+                          "enum": ["branch", "name", "base", "seed", "key", "path", "main", "index"]
                         }
                       },
                       "required": ["value", "omitWhenEmpty"],
@@ -1014,7 +1042,7 @@
                         },
                         "omitWhenEmpty": {
                           "type": "string",
-                          "enum": ["branch", "name", "base", "seed", "key", "path"]
+                          "enum": ["branch", "name", "base", "seed", "key", "path", "main", "index"]
                         }
                       },
                       "required": ["value", "omitWhenEmpty"],
@@ -1063,7 +1091,7 @@
                         },
                         "omitWhenEmpty": {
                           "type": "string",
-                          "enum": ["branch", "name", "base", "seed", "key", "path"]
+                          "enum": ["branch", "name", "base", "seed", "key", "path", "main", "index"]
                         }
                       },
                       "required": ["value", "omitWhenEmpty"],
@@ -1113,7 +1141,7 @@
                         },
                         "omitWhenEmpty": {
                           "type": "string",
-                          "enum": ["branch", "name", "base", "seed", "key", "path"]
+                          "enum": ["branch", "name", "base", "seed", "key", "path", "main", "index"]
                         }
                       },
                       "required": ["value", "omitWhenEmpty"],
