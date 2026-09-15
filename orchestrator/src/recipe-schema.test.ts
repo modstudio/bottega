@@ -28,7 +28,7 @@ describe('tracked recipe refusal rules', () => {
   })
 
   test('refuses an unknown key', () => {
-    expect(messages({ ...minimal(), mystery: true }).join('\n')).toContain('Unrecognized key')
+    expect(messages({ ...minimal(), mystery: true }).join('\n')).toContain('unknown-key rule')
   })
 
   test('refuses duplicate step names anywhere in one recipe', () => {

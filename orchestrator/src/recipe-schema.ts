@@ -2,107 +2,90 @@
 /** Knows only the stored recipe grammar and its refusal rules. Must not read files, execute steps, or know the project register. */
 import { z } from 'zod'
 
+const strictObject = <Shape extends z.core.$ZodLooseShape>(shape: Shape) =>
+  z.strictObject(shape, { error: 'unknown-key rule: objects may not contain unknown keys' })
+
 const placeholderName = z.enum(['branch', 'name', 'base', 'seed', 'key', 'path'])
 
 const worktreeCreateArgSchema = z.union([
   z.string(),
-  z
-    .object({
-      value: z.string(),
-      omitWhenEmpty: placeholderName,
-    })
-    .strict(),
-  z.object({ expand: z.literal('seed') }).strict(),
+  strictObject({
+    value: z.string(),
+    omitWhenEmpty: placeholderName,
+  }),
+  strictObject({ expand: z.literal('seed') }),
 ])
 
-export const commandSchema = z
-  .object({
-    command: z.string().min(1),
-    args: z.array(worktreeCreateArgSchema),
-    cwd: z.string().optional(),
-  })
-  .strict()
+export const commandSchema = strictObject({
+  command: z.string().min(1),
+  args: z.array(worktreeCreateArgSchema),
+  cwd: z.string().optional(),
+})
 
 export const execContextSchema = z.discriminatedUnion('where', [
-  z.object({ where: z.literal('host') }).strict(),
-  z.object({ where: z.literal('container'), service: z.string().min(1) }).strict(),
-  z.object({ where: z.literal('as-user'), user: z.string().min(1) }).strict(),
+  strictObject({ where: z.literal('host') }),
+  strictObject({ where: z.literal('container'), service: z.string().min(1) }),
+  strictObject({ where: z.literal('as-user'), user: z.string().min(1) }),
 ])
 
-export const stepSchema = z
-  .object({
-    name: z.string().min(1),
-    run: commandSchema,
-    undo: commandSchema.optional(),
-    verify: commandSchema.optional(),
-    exec: execContextSchema.optional(),
-  })
-  .strict()
+export const stepSchema = strictObject({
+  name: z.string().min(1),
+  run: commandSchema,
+  undo: commandSchema.optional(),
+  verify: commandSchema.optional(),
+  exec: execContextSchema.optional(),
+})
 
 const databaseProviderSchema = z.discriminatedUnion('kind', [
-  z
-    .object({
-      kind: z.literal('postgres-template'),
-      template: z.string().min(1),
-      psql: z.string().min(1).optional(),
-    })
-    .strict(),
-  z
-    .object({
-      kind: z.literal('mysql-dump'),
-      dump: z.string().min(1),
-      mysql: z.string().min(1).optional(),
-    })
-    .strict(),
-  z
-    .object({
-      kind: z.literal('compose'),
-      up: z.string().min(1),
-      down: z.string().min(1),
-    })
-    .strict(),
+  strictObject({
+    kind: z.literal('postgres-template'),
+    template: z.string().min(1),
+    psql: z.string().min(1).optional(),
+  }),
+  strictObject({
+    kind: z.literal('mysql-dump'),
+    dump: z.string().min(1),
+    mysql: z.string().min(1).optional(),
+  }),
+  strictObject({
+    kind: z.literal('compose'),
+    up: z.string().min(1),
+    down: z.string().min(1),
+  }),
 ])
 
-export const allocationsSchema = z
-  .object({
-    ports: z.array(z.string().min(1)).optional(),
-    databases: z.record(z.string(), databaseProviderSchema).optional(),
-    strings: z.record(z.string(), z.string()).optional(),
-  })
-  .strict()
+export const allocationsSchema = strictObject({
+  ports: z.array(z.string().min(1)).optional(),
+  databases: z.record(z.string(), databaseProviderSchema).optional(),
+  strings: z.record(z.string(), z.string()).optional(),
+})
 
-export const envFileSchema = z
-  .object({
-    path: z.string().min(1),
-    contents: z.string(),
-    mode: z.enum(['append', 'replace', 'managed-block']).optional(),
-    inherit: z.string().optional(),
-    omit: z.array(z.string()).optional(),
-  })
-  .strict()
+export const envFileSchema = strictObject({
+  path: z.string().min(1),
+  contents: z.string(),
+  mode: z.enum(['append', 'replace', 'managed-block']).optional(),
+  inherit: z.string().optional(),
+  omit: z.array(z.string()).optional(),
+})
 
-export const sharedSchema = z
-  .object({
-    name: z.string().min(1),
-    kind: z.enum(['path', 'volume', 'network', 'service']),
-    from: z.string().min(1),
-    at: z.string().optional(),
-  })
-  .strict()
+export const sharedSchema = strictObject({
+  name: z.string().min(1),
+  kind: z.enum(['path', 'volume', 'network', 'service']),
+  from: z.string().min(1),
+  at: z.string().optional(),
+})
 
-const recipeShape = z
-  .object({
-    baseRef: z.string().optional(),
-    allocate: allocationsSchema.optional(),
-    env: z.array(envFileSchema).optional(),
-    shared: z.array(sharedSchema).optional(),
-    pre: z.array(stepSchema).optional(),
-    create: z.array(stepSchema),
-    serve: z.record(z.string(), z.array(stepSchema)).optional(),
-    destroy: z.array(stepSchema).optional(),
-    verifyDown: z.array(stepSchema).optional(),
-  })
-  .strict()
+const recipeShape = strictObject({
+  baseRef: z.string().optional(),
+  allocate: allocationsSchema.optional(),
+  env: z.array(envFileSchema).optional(),
+  shared: z.array(sharedSchema).optional(),
+  pre: z.array(stepSchema).optional(),
+  create: z.array(stepSchema),
+  serve: z.record(z.string(), z.array(stepSchema)).optional(),
+  destroy: z.array(stepSchema).optional(),
+  verifyDown: z.array(stepSchema).optional(),
+})
 
 type RecipeInput = z.infer<typeof recipeShape>
 type StepInput = z.infer<typeof stepSchema>
