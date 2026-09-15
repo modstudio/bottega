@@ -1,15 +1,65 @@
 // concern: resource-claims
 /**
- * Knows durable claims on git-level resources and their lifecycle states.
+ * Knows durable resource claims and their lifecycle states.
  * Must not know resource creation, Git operations, close-out policy, or the CLI.
  */
 import type { Database } from 'bun:sqlite'
 
 export const RESOURCE_CLAIM_MIGRATION = '0020_resource_claim'
 
-export type ResourceClaimKind = 'worktree' | 'branch' | 'retained_ref'
+export const RESOURCE_CLAIM_KINDS = [
+  'worktree',
+  'branch',
+  'retained_ref',
+  'sandbox_dir',
+  'trust_entry',
+  'port',
+  'database',
+] as const
+
+export type ResourceClaimKind = (typeof RESOURCE_CLAIM_KINDS)[number]
 export type ResourceClaimState = 'claimed' | 'released' | 'retained' | 'forgotten' | 'absent'
 export type CloseOutClaimOutcome = 'released' | 'forgotten' | 'held' | 'live' | 'absent' | 'failed'
+
+export type RecipeDatabaseProvider = 'postgres-template' | 'mysql-dump' | 'compose'
+
+export type ResourceCreation = 'sandbox_directory' | 'trust_heading' | 'serve_port' | 'database'
+
+export function claimKindForCreation(creation: ResourceCreation): ResourceClaimKind {
+  switch (creation) {
+    case 'sandbox_directory':
+      return 'sandbox_dir'
+    case 'trust_heading':
+      return 'trust_entry'
+    case 'serve_port':
+      return 'port'
+    case 'database':
+      return 'database'
+  }
+}
+
+export function claimCreationDecision(
+  existingRootRunId: number | null,
+  requestedRootRunId: number,
+): 'record' | 'duplicate' | 'collision' {
+  if (existingRootRunId === null) return 'record'
+  return existingRootRunId === requestedRootRunId ? 'duplicate' : 'collision'
+}
+
+export function settledStateForDatabaseTeardown(
+  databaseDropped: boolean,
+): Extract<ResourceClaimState, 'released' | 'retained'> {
+  return databaseDropped ? 'released' : 'retained'
+}
+
+export function settledStateForWorktreeResource(
+  worktreeState: Exclude<ResourceClaimState, 'claimed'>,
+  kind: ResourceClaimKind,
+): ResourceClaimState | null {
+  if (worktreeState === 'retained') return null
+  if (kind === 'port') return 'released'
+  return null
+}
 
 export function createdWorktreeClaimKinds(input: {
   owned: boolean
@@ -45,14 +95,15 @@ function insertClaim(
     label: string | null
     claimedAt: string
   },
-): void {
+): 'recorded' | 'duplicate' | 'collision' {
   const existing = database
     .query(
       `SELECT root_run_id FROM resource_claim
        WHERE kind=? AND allocation_key=? AND state='claimed'`,
     )
     .get(claim.kind, claim.allocationKey) as { root_run_id: number } | null
-  if (existing?.root_run_id === claim.rootRunId) return
+  const decision = claimCreationDecision(existing?.root_run_id ?? null, claim.rootRunId)
+  if (decision !== 'record') return decision
   database
     .query(
       `INSERT INTO resource_claim
@@ -69,6 +120,73 @@ function insertClaim(
       claim.label,
       claim.claimedAt,
     )
+  return 'recorded'
+}
+
+export function recordSandboxDirectoryClaim(
+  database: Database,
+  input: ClaimIdentity & { path: string; claimedAt: string },
+): void {
+  insertClaim(database, {
+    ...input,
+    kind: claimKindForCreation('sandbox_directory'),
+    allocationKey: input.path,
+    identity: input.path,
+    label: String(input.rootRunId),
+  })
+}
+
+export function recordTrustEntryClaims(
+  database: Database,
+  input: ClaimIdentity & { headings: string[]; storePath: string; claimedAt: string },
+): void {
+  for (const heading of input.headings) {
+    insertClaim(database, {
+      ...input,
+      kind: claimKindForCreation('trust_heading'),
+      allocationKey: heading,
+      identity: input.storePath,
+      label: String(input.rootRunId),
+    })
+  }
+}
+
+export function recordPortClaim(
+  database: Database,
+  input: ClaimIdentity & { port: number; claimedAt: string },
+): number | null {
+  const result = insertClaim(database, {
+    ...input,
+    kind: claimKindForCreation('serve_port'),
+    allocationKey: `port:${input.port}`,
+    identity: JSON.stringify({ runId: input.runId, projectId: input.projectId }),
+    label: String(input.rootRunId),
+  })
+  if (result !== 'collision') return null
+  const existing = database
+    .query(
+      `SELECT root_run_id FROM resource_claim
+       WHERE kind='port' AND allocation_key=? AND state='claimed'`,
+    )
+    .get(`port:${input.port}`) as { root_run_id: number }
+  return existing.root_run_id
+}
+
+export function recordDatabaseClaim(
+  database: Database,
+  input: ClaimIdentity & {
+    provider: RecipeDatabaseProvider
+    name: string
+    claimedAt: string
+  },
+): void {
+  insertClaim(database, {
+    ...input,
+    kind: claimKindForCreation('database'),
+    allocationKey: `${input.provider}:${input.name}`,
+    identity: input.name,
+    label: String(input.rootRunId),
+  })
 }
 
 export function recordCreatedWorktreeClaims(
@@ -125,7 +243,7 @@ export function settleClaims(
     allocationKey?: string
   },
 ): void {
-  database
+  const settled = database
     .query(
       `UPDATE resource_claim SET state=?, settled_at=?, settled_detail=?
        WHERE root_run_id=? AND kind=?
@@ -142,6 +260,35 @@ export function settleClaims(
       input.allocationKey ?? null,
       input.allocationKey ?? null,
     )
+  if (settled.changes && input.kind === 'worktree') {
+    const portState = settledStateForWorktreeResource(input.state, 'port')
+    if (portState) {
+      database
+        .query(
+          `UPDATE resource_claim SET state=?, settled_at=?, settled_detail=?
+           WHERE root_run_id=? AND kind='port' AND state='claimed'`,
+        )
+        .run(portState, input.settledAt, `worktree claim settled: ${input.detail}`, input.rootRunId)
+    }
+  }
+}
+
+export function settleDatabaseClaim(
+  database: Database,
+  input: {
+    allocationKey: string
+    databaseDropped: boolean
+    settledAt: string
+    detail: string
+  },
+): void {
+  const state = settledStateForDatabaseTeardown(input.databaseDropped)
+  database
+    .query(
+      `UPDATE resource_claim SET state=?, settled_at=?, settled_detail=?
+       WHERE kind='database' AND allocation_key=? AND state='claimed'`,
+    )
+    .run(state, input.settledAt, input.detail, input.allocationKey)
 }
 
 export function claimedClaimsOnTerminalConversations(
@@ -157,12 +304,24 @@ export function claimedClaimsOnTerminalConversations(
     .all() as { kind: ResourceClaimKind; count: number }[]
 }
 
-export function claimCounts(database: Database): { claimed: number; terminal: number } {
+export function claimCounts(database: Database): {
+  claimed: number
+  terminal: number
+  byKind: { kind: ResourceClaimKind; count: number }[]
+} {
   const claimed = database
     .query("SELECT COUNT(*) count FROM resource_claim WHERE state='claimed'")
     .get() as { count: number }
   return {
     claimed: claimed.count,
+    byKind: RESOURCE_CLAIM_KINDS.map((kind) => ({
+      kind,
+      count: (
+        database
+          .query("SELECT COUNT(*) count FROM resource_claim WHERE state='claimed' AND kind=?")
+          .get(kind) as { count: number }
+      ).count,
+    })),
     terminal: claimedClaimsOnTerminalConversations(database).reduce(
       (total, group) => total + group.count,
       0,

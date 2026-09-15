@@ -283,7 +283,10 @@ export const resourceClaim = sqliteTable(
     settledDetail: text('settled_detail'),
   },
   (t) => [
-    check('resource_claim_kind_check', sql`${t.kind} in ('worktree','branch','retained_ref')`),
+    check(
+      'resource_claim_kind_check',
+      sql`${t.kind} in ('worktree','branch','retained_ref','sandbox_dir','trust_entry','port','database')`,
+    ),
     check(
       'resource_claim_state_check',
       sql`${t.state} in ('claimed','released','retained','forgotten','absent')`,

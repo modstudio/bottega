@@ -8,6 +8,7 @@ checkModuleBoundary('check-worktree-remove-boundary', 'orchestrator/src/worktree
   './worktree-attribution.ts',
   './git-environment.ts',
   './ref-guard.ts',
+  './resource-claims.ts',
   './worktree-tool.ts',
   './worktree-types.ts',
 ])

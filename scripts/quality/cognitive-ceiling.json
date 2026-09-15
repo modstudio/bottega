@@ -701,8 +701,9 @@
   {
     "file": "orchestrator/src/run-claim.ts",
     "function": "claimRun",
-    "line": 137,
-    "score": 122
+    "line": 233,
+    "score": 121,
+    "key": "orchestrator/src/run-claim.ts\u0000claimRun"
   },
   {
     "file": "orchestrator/src/run-close.ts",
@@ -837,8 +838,9 @@
   {
     "file": "orchestrator/src/worktree-remove.ts",
     "function": "removeWithTool",
-    "line": 104,
-    "score": 39
+    "line": 127,
+    "score": 26,
+    "key": "orchestrator/src/worktree-remove.ts\u0000removeWithTool"
   },
   {
     "file": "orchestrator/src/worktree-remove.ts",

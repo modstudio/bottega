@@ -28,6 +28,7 @@ import {
   createWithTool,
   createWorktree,
   createWorktreeForBranch,
+  type RecordRecipeResource,
   type RecordWorktree,
 } from './worktree-create.ts'
 import { createReadOnlyWithTool, createReadOnlyWorktree } from './worktree-readonly.ts'
@@ -50,6 +51,7 @@ export type CreateWorkerWorktreeOptions = {
   detached: boolean
   existingBranch?: string
   existingBranchTip?: string
+  recordRecipeResource?: RecordRecipeResource
 }
 
 /** Create the worker tree through the project lifecycle or Git fallback. */
@@ -82,6 +84,7 @@ export function createWorkerWorktree(options: CreateWorkerWorktreeOptions): Work
       options.record,
       options.detached,
       options.existingBranch,
+      options.recordRecipeResource,
     )
   }
   return options.existingBranch

@@ -148,6 +148,13 @@
       "when": 1788900000014,
       "tag": "0020_resource_claim",
       "breakpoints": true
+    },
+    {
+      "idx": 21,
+      "version": "6",
+      "when": 1788900000015,
+      "tag": "0021_resource_claim_kinds",
+      "breakpoints": true
     }
   ]
 }
