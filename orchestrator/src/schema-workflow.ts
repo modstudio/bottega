@@ -116,6 +116,13 @@ export const monitorCondition = sqliteTable(
     ),
     index('monitor_condition_kind').on(t.kind, t.invocationId),
     index('monitor_condition_owner_delivery').on(t.ownerSessionId, t.deliveredAt),
+    index('monitor_condition_latest').on(
+      t.ownerSessionId,
+      t.kind,
+      t.subject,
+      t.conditionSince,
+      t.id,
+    ),
   ],
 )
 
