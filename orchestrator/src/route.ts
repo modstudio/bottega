@@ -109,13 +109,9 @@ export function promptBucketsForJob(jobName: string): PromptSizeBucket[] {
 /**
  * Room a job needs ON TOP OF its working set, for the model to answer in.
  *
- * The comparison used to be `job.contextTokens > agent.contextTokens`, which
- * admits an agent whose window is EXACTLY the size of the working set. That
- * reads as sufficient and is not: vLLM allows `max_model_len − prompt_tokens`
- * for the reply, so an agent that can just barely hold the job has nothing left
- * to say anything with. Run 279 is what that looks like — `finish_reason:
- * length`, `content: None`, 409s and 325k tokens spent thinking with no room
- * left to write the answer down.
+ * Eligibility requires room beyond the working set: vLLM allows
+ * `max_model_len − prompt_tokens` for the reply, so an agent that can just
+ * barely hold the job has nothing left to say anything with.
  *
  * It went unnoticed because for most of this system's life the two numbers were
  * far apart (64K agent, 128K job). Serving the local model at 131,072 made them

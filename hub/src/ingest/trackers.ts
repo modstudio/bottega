@@ -181,8 +181,8 @@ export async function ingestTrackers(
       // A task that CLOSED has left the open list, so the sync will never see
       // it again — and without this it would read as active for ever, which is
       // also how the "done" view would stay permanently empty. Anything this
-      // project previously reported as open and did not return now is looked up
-      // by key to find out what it became.
+      // project reported as open but did not return is looked up by key to find
+      // out what it became.
       const seen = new Set(tasks.map((t) => t.key))
       const vanished = d.query<{ key: string }, [string]>(
         `SELECT key FROM task

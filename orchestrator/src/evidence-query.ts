@@ -9,12 +9,10 @@ import { NOT_EVIDENCE } from './failure.ts'
 /**
  * Why a collided output file cannot be routing evidence.
  *
- * The filename used to be `${Date.now()}-${agent}-${job}`, so runs that
- * started in the same millisecond with the same agent and job wrote one
- * file and the last to finish overwrote the rest. Commit 44f2db3 named
- * files after the run id; the damage that remains is historical. Within a
- * colliding group we cannot tell which run's output survived, so every
- * member is excluded rather than guessing a winner.
+ * Output filenames are keyed by run id. Clock-based names can collide when
+ * runs start in the same millisecond with the same agent and job; within an
+ * existing colliding group we cannot tell which run's output survived, so
+ * every member is excluded rather than guessing a winner.
  */
 export const SHARED_OUTPUT_REASON =
   'shared an output file with other runs; a clock-based name collision destroyed all but one, and we cannot tell which survived'

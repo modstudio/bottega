@@ -19,18 +19,21 @@ describe('comment hygiene', () => {
 
   for (const phrase of phrases) {
     test(`rejects ${phrase}`, () => {
-      expect(checkCommentBody('subject.ts', `// ${phrase} behavior`)).toEqual([
+      const comment = ['/', '/', ` ${phrase} behavior`].join('')
+      expect(checkCommentBody('subject.ts', comment)).toEqual([
         { file: 'subject.ts', line: 1, phrase },
       ])
     })
   }
 
   test('finds a trailing comment', () => {
-    expect(checkCommentBody('subject.ts', 'const value = 1 // previously nullable')).toHaveLength(1)
+    const body = ['const value = 1 ', '/', '/', ' previously nullable'].join('')
+    expect(checkCommentBody('subject.ts', body)).toHaveLength(1)
   })
 
   test('finds a block comment', () => {
-    expect(checkCommentBody('subject.ts', '/*\n * formerly nullable\n */')).toEqual([
+    const body = ['/', '*\n * formerly nullable\n *', '/'].join('')
+    expect(checkCommentBody('subject.ts', body)).toEqual([
       { file: 'subject.ts', line: 2, phrase: 'formerly' },
     ])
   })

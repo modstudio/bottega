@@ -59,11 +59,8 @@ export type JobGuide = {
  */
 export function guide(onlyJob?: string, promptBytes?: number, lens?: string): JobGuide[] {
   // Scores come from candidates(), not from a second copy of the same SQL here.
-  // There used to be one, and the two drifted the moment routing learned to
-  // count failures: the router demoted an agent while the guide, still filtering
-  // to successful runs, went on recommending it. A guide that disagrees with the
-  // router is worse than no guide, because it is consulted precisely when
-  // someone wants to know what the router will do.
+  // A guide that disagrees with the router is worse than no guide, because it is
+  // consulted precisely when someone wants to know what the router will do.
   const raw = db().query(
     `SELECT job, agent, latency_ms, prompt_bytes FROM run
       WHERE status='ok' AND probe=0 AND latency_ms IS NOT NULL`,

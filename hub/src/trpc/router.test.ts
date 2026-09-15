@@ -6,9 +6,9 @@ import { resetFixtureStore } from '../../test/run-fixtures.ts'
 beforeAll(resetFixtureStore)
 
 /**
- * bun:test `mock.module` intercepts `hub/src/orch.ts` before the doc router
- * loads it. router.test.ts previously imported appRouter statically and did
- * not mock; project.list still does not touch orch, so that test is unchanged.
+ * bun:test `mock.module` must intercept `hub/src/orch.ts` before the doc router
+ * loads it. appRouter is imported only after the mock; project.list does not
+ * touch orch and needs no mock.
  */
 const docList = mock(async (_filters?: unknown) => [] as unknown[])
 const docGet = mock(async (_scope: string, _subject: string | null, _slug: string) =>

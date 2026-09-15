@@ -367,11 +367,9 @@ export function summary(windowDays = 14) {
 
   // The headline totals are taken over the SAME days as the four lenses.
   //
-  // They used to be summed over every row while the lenses used only the usable
-  // ones, so the headline quietly counted an excluded day's tasks against its
-  // missing tokens — the exact deflation isGap() exists to prevent, reappearing
-  // in the one number most people read. The two disagreed by about a million
-  // tokens per task, which is small enough to look like rounding and is not.
+  // Summing over every row would count an excluded day's tasks against its
+  // missing tokens, recreating the exact deflation isGap() prevents in the one
+  // number most people read.
   const tokens = usable.reduce((a, r) => a + r.claude_tokens, 0)
   const canonTokens = usable.reduce((a, r) => a + r.canon_tokens, 0)
   const otherTokens = usable.reduce((a, r) => a + r.other_tokens, 0)

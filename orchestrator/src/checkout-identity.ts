@@ -102,14 +102,10 @@ export function checkoutCaseSensitivity(root: string): Omit<CheckoutAliases, 'ro
  * The checkouts a run is confined against: the registered main checkout of
  * the run's OWN project, plus the caller checkout it was dispatched from.
  *
- * It used to be every registered project. Measured on 2026-09-07 with the
- * harness-health surface: 25 runs escaped in one day, 4.9 hours of worker
- * time, and sixteen of them were a THIRD project's checkout changing (a
- * canon edit in adanim, a fixture removed in alephbeis, stopal's release step
- * moving develop to master) while a bottega worker that never touched it was
- * in flight. Every session on the machine was an unwitting adversary to every
- * other session's writers. A change in another project is not this run's
- * escape; `ownProject` null (no project resolved) keeps the wide set, since
+ * A change in an unrelated registered project is not this run's escape. The
+ * own-project and caller scope prevents unrelated sessions from becoming
+ * adversaries while retaining the two checkouts this run can affect.
+ * `ownProject` null (no project resolved) keeps the wide set, since
  * an unregistered caller has no narrower fact to stand on.
  */
 export function checkoutWatchSet(
@@ -145,4 +141,3 @@ export function checkoutWatchSet(
   }
   return { watched, failures }
 }
-
