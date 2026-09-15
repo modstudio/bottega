@@ -34,7 +34,7 @@ function DocumentEditor({ document }: { document: TaskRecordResponse['documents'
   useEffect(() => {
     setTitle(document.title)
     setBody(document.body)
-  }, [document.id, document.version])
+  }, [document.title, document.body])
   const save = useMutation({
     ...trpc.work.setDocument.mutationOptions(),
     onSuccess: async () => {
@@ -74,9 +74,10 @@ export function TaskSheet({ taskKey, onClose }: { taskKey: string; onClose: () =
   const record = useQuery(trpc.work.task.queryOptions({ key: taskKey }))
   const [title, setTitle] = useState('')
   const [comment, setComment] = useState('')
+  const taskTitle = record.data?.task.title
   useEffect(() => {
-    if (record.data) setTitle(record.data.task.title ?? '')
-  }, [record.data?.task.title])
+    if (taskTitle !== undefined) setTitle(taskTitle ?? '')
+  }, [taskTitle])
   const refresh = async () => {
     await queryClient.invalidateQueries()
   }

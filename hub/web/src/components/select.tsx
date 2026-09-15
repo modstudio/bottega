@@ -30,21 +30,26 @@ export function Select({
   const trigger = useRef<HTMLButtonElement>(null)
   const typed = useRef({ text: '', at: 0 })
   const restore = useRef(false)
+  const openChange = useRef(onOpenChange)
   const id = useId()
 
   const selected = options.findIndex((option) => option.value === value)
+  const selectedOnOpen = useRef(selected)
   const current = options[selected >= 0 ? selected : 0]
+  openChange.current = onOpenChange
+  selectedOnOpen.current = selected
 
   // Paired in an effect so the caller's open-count cannot drift: unmounting
   // while open still reports the close.
   useEffect(() => {
     if (!open) return
-    onOpenChange?.(true)
-    return () => onOpenChange?.(false)
+    openChange.current?.(true)
+    return () => openChange.current?.(false)
   }, [open])
 
   useLayoutEffect(() => {
     if (!open) return
+    const selected = selectedOnOpen.current
     setActive(selected >= 0 ? selected : 0)
     list.current?.focus()
   }, [open])
