@@ -91,6 +91,11 @@ function keyPrefixes(settings: JsonObject, project: string): string[] {
   return optionalStringArray(settings, 'keyPrefixes', project) ?? []
 }
 
+function postgresTextArray(sql: Pick<SQL, 'array'>, value: string[] | null) {
+  if (value === null) return null
+  return sql.array(value, 'text')
+}
+
 function mcpProbeTool(settings: JsonObject, project: string): string | null {
   if (settings.mcp === undefined || settings.mcp === null) return null
   const mcp = object(settings.mcp, `project ${project} settings.mcp`)
@@ -176,8 +181,8 @@ export async function importProjects(options: ProjectImportOptions): Promise<Pro
             ${optionalString(settings.colorDark, `project ${row.name} settings.colorDark`)},
             ${optionalString(settings.envPrefix, `project ${row.name} settings.envPrefix`)},
             ${optionalString(settings.mcpServer, `project ${row.name} settings.mcpServer`)},
-            ${workerMcpServers === null ? null : tx.array(workerMcpServers, 'text')},
-            ${secretPaths === null ? null : tx.array(secretPaths, 'text')},
+            ${postgresTextArray(tx, workerMcpServers)},
+            ${postgresTextArray(tx, secretPaths)},
             ${mcpProbeTool(settings, row.name)},
             (${tracker}::jsonb #>> '{}')::jsonb,
             (${worktree}::jsonb #>> '{}')::jsonb,
