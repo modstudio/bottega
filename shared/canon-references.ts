@@ -14,7 +14,8 @@ export const CANON_REFERENCE_EXEMPTIONS: { path: string; reason: string }[] = [
   },
   {
     path: 'progress.json',
-    reason: "a worker's scratch task pointer written under its run scratch directory, never tracked.",
+    reason:
+      "a worker's scratch task pointer written under its run scratch directory, never tracked.",
   },
   {
     path: 'orchestrator/orch.db',

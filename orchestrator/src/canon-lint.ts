@@ -245,8 +245,7 @@ function globPattern(pattern: string): RegExp {
 
 /** URLs, home- or variable-rooted paths and placeholders never name a tracked path. */
 function isNonRepositoryShape(reference: string): boolean {
-  if (/^[A-Za-z][A-Za-z\d+.-]*:\/\//.test(reference) || reference.startsWith('mailto:'))
-    return true
+  if (/^[A-Za-z][A-Za-z\d+.-]*:\/\//.test(reference) || reference.startsWith('mailto:')) return true
   return /^[~/$-]/.test(reference) || /[<>{}]/.test(reference)
 }
 
