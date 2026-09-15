@@ -9,8 +9,8 @@ import { parseConfinement } from './confinement.ts'
 import { db, writeTransaction } from './db.ts'
 import { contentTree, targetGitEnvironment } from './git-environment.ts'
 import { projectByName } from './projects.ts'
-import { resolveRootFromLastTurn } from './run-liveness.ts'
 import { adoptRunMutation, auditRunMutation, authorizeRunMutation } from './run-authority.ts'
+import { resolveRootFromLastTurn } from './run-liveness.ts'
 
 type ConfinementPresentation = { log(...values: unknown[]): void }
 

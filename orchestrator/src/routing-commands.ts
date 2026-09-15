@@ -7,9 +7,9 @@ import { resolveLens } from './lenses.ts'
 import { projectAt } from './projects.ts'
 import { evidenceFor, MIN_SAMPLE, pick, promptSizeBucketLabel, scoreboard } from './route.ts'
 import {
+  type RoutingBacktest,
   routingBacktest,
   routingBacktestEnsemble,
-  type RoutingBacktest,
 } from './routing-backtest.ts'
 
 type RoutingFlags = { has(name: string): boolean; flag(name: string): string | undefined }

@@ -6,25 +6,25 @@
 import { existsSync, readFileSync } from 'node:fs'
 import { AGENTS } from './agents.ts'
 import { ANSWER_WORKING_FORMS, parseAnswerTextSources } from './args.ts'
+import { clock } from './clock.ts'
 import { rulingPrompt } from './contract.ts'
 import { db, writeTransaction } from './db.ts'
-import { clock } from './clock.ts'
 import { chainTransport, retryModelForAgent } from './failover.ts'
+import { job } from './jobs.ts'
+import { mcpRequestFromStored } from './mcp-preflight.ts'
 import { failureReason } from './outcome.ts'
 import { pidAlive } from './process-liveness.ts'
+import { packedResumePrompt } from './run.ts'
 import { KEEP_RUN_FILES_DAYS, readDispatchState } from './run-artifacts.ts'
 import { adoptRunMutation, auditRunMutation, authorizeRunMutation } from './run-authority.ts'
 import {
   continueRun,
   follow,
+  type RunControlPresentation,
   refuseEscapedChain,
   reportContinuedRun,
-  type RunControlPresentation,
 } from './run-control.ts'
 import { detach } from './run-dispatch.ts'
-import { job } from './jobs.ts'
-import { mcpRequestFromStored } from './mcp-preflight.ts'
-import { packedResumePrompt } from './run.ts'
 
 type RunAnswerHelpers = {
   argvResumeLimit(agentName: string): number | undefined

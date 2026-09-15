@@ -1,7 +1,7 @@
 import { afterEach, beforeAll, describe, expect, spyOn, test } from 'bun:test'
+import { ingestRunFixtures, resetFixtureStore, runFixture } from '../test/run-fixtures.ts'
 import { db } from './db.ts'
 import { clearOrchCache, view } from './serve.ts'
-import { ingestRunFixtures, resetFixtureStore, runFixture } from '../test/run-fixtures.ts'
 
 beforeAll(resetFixtureStore)
 afterEach(clearOrchCache)

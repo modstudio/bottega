@@ -3,7 +3,7 @@
  * Knows detached dispatch, run rows, resume claims, and prompt artifacts. Must
  * not know transports, worktrees, routing policy, reviews, or the CLI.
  */
-import { spawn, type ChildProcess } from 'node:child_process'
+import { type ChildProcess, spawn } from 'node:child_process'
 import { createHash } from 'node:crypto'
 import { mkdirSync, writeFileSync } from 'node:fs'
 import { db, nowIso, sessionId, writableDb, writeTransaction } from './db.ts'
@@ -12,8 +12,8 @@ import type { DetachSpec } from './failover.ts'
 import { job } from './jobs.ts'
 import { effectiveMcpRequest, preflightMcp, storedMcpRequest } from './mcp-preflight.ts'
 import { projectByName } from './projects.ts'
-import { RUNS_DIR, runFilePaths } from './run-artifacts.ts'
 import { repoOf } from './run.ts'
+import { RUNS_DIR, runFilePaths } from './run-artifacts.ts'
 
 /**
  * Claim a run id, hand the work to a process that outlives this one, and return.

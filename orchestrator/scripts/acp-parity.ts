@@ -17,9 +17,9 @@ import { db, ROOT } from '../src/db.ts'
 import { run } from '../src/run.ts'
 import {
   outcomeFromTransport,
-  transportFor,
   type TransportName,
   type TransportResult,
+  transportFor,
 } from '../src/transport.ts'
 
 const SCHEMA = {

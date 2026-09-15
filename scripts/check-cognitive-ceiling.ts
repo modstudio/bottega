@@ -1,8 +1,8 @@
 #!/usr/bin/env bun
 import { existsSync, readFileSync, writeFileSync } from 'node:fs'
 import { relative } from 'node:path'
-import ts from 'typescript'
 import { ESLint } from 'eslint'
+import ts from 'typescript'
 import { measuredSourceFiles } from './check-file-ceiling'
 import { decideCeiling } from './quality/ceiling-decision'
 

@@ -1,14 +1,14 @@
-import { useEffect, useState } from 'react'
-import { createFileRoute, useNavigate } from '@tanstack/react-router'
 import { useMutation, useQuery } from '@tanstack/react-query'
+import { createFileRoute, useNavigate } from '@tanstack/react-router'
 import { Pencil, Save, Trash2, X } from 'lucide-react'
-import { Markdown } from '@/components/markdown'
+import { useEffect, useState } from 'react'
 import { Button } from '@/components/button'
 import { Input } from '@/components/input'
+import { Markdown } from '@/components/markdown'
+import { Sheet } from '@/components/sheet'
 import { Textarea } from '@/components/textarea'
 import { queryClient, trpc } from '@/trpc/client'
-import { Sheet } from '@/components/sheet'
-import { DOC_SCOPES, isScope, type DocScope } from './docs'
+import { DOC_SCOPES, type DocScope, isScope } from './docs'
 
 type DocSearch = { edit?: boolean }
 

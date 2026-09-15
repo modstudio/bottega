@@ -8,8 +8,9 @@ import { ARGV_PROMPT_BYTES } from './agents.ts'
 import { packResumePrompt } from './contract.ts'
 import { db } from './db.ts'
 import { recordReview } from './review-triage.ts'
-import { continueRun } from './run-control.ts'
 import { packedResumePrompt } from './run.ts'
+import { continueRun } from './run-control.ts'
+
 const trackResidue = trackedTestResidue()
 
 const limit = () => ARGV_PROMPT_BYTES

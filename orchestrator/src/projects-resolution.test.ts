@@ -1,5 +1,6 @@
 import { describe, expect, test } from 'bun:test'
 import { projectAt, stackAt, upsertProject } from './projects.ts'
+
 describe('projects are data, not code', () => {
   test('a directory belongs to the project that contains it', () => {
     upsertProject({ name: 'alpha', path: '/w/alpha', stack: 'php-laravel' })

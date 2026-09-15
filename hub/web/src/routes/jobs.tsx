@@ -1,11 +1,11 @@
-import { useMemo, useState } from 'react'
-import { createFileRoute, useNavigate } from '@tanstack/react-router'
 import { useQuery } from '@tanstack/react-query'
+import { createFileRoute, useNavigate } from '@tanstack/react-router'
+import { useMemo, useState } from 'react'
 import { Collection, type CollectionColumn } from '@/components/collection'
-import { DisplayRow } from '@/components/fields'
 import { PageHeader } from '@/components/design-system'
+import { DisplayRow } from '@/components/fields'
 import { Sheet } from '@/components/sheet'
-import { trpc, type JobRow } from '@/trpc/client'
+import { type JobRow, trpc } from '@/trpc/client'
 
 export const Route = createFileRoute('/jobs')({
   validateSearch: (search: Record<string, unknown>) => ({

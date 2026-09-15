@@ -1,29 +1,29 @@
-import { useEffect, useMemo, useState } from 'react'
 import { keepPreviousData, useQuery } from '@tanstack/react-query'
 import { useNavigate } from '@tanstack/react-router'
 import { ChevronRight } from 'lucide-react'
+import { useEffect, useMemo, useState } from 'react'
+import { Badge } from '@/components/badge'
+import { Collection, type CollectionColumn } from '@/components/collection'
 import {
   EmptyState,
   LiveDot,
   PageHeader,
   ProjectMark,
+  projectVars,
+  responseSubtitle,
   Segmented,
   SourceMark,
   StatRow,
   StatTile,
-  WindowBar,
-  projectVars,
-  responseSubtitle,
   useProjectColors,
+  WindowBar,
 } from '@/components/design-system'
-import { Badge } from '@/components/badge'
 import { Input } from '@/components/input'
-import { Collection, type CollectionColumn } from '@/components/collection'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/table'
-import { setWorkCounts, useWindowState } from '@/lib/window'
-import { trpc, type BoardResponse, type FlightResponse } from '@/trpc/client'
-import { compactTokens, duration, relativeTime, vendorFigures } from '@/lib/format'
 import { useNow } from '@/lib/clock'
+import { compactTokens, duration, relativeTime, vendorFigures } from '@/lib/format'
+import { setWorkCounts, useWindowState } from '@/lib/window'
+import { type BoardResponse, type FlightResponse, trpc } from '@/trpc/client'
 
 type WorkName = 'flight' | 'done'
 type TaskData = FlightResponse['data']

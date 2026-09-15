@@ -1,19 +1,19 @@
 import { describe, expect, test } from 'bun:test'
 import {
   CURSOR_CREATE_REFUSAL,
+  createTrackerTask,
+  documentsRefusal,
   GIT_WRITE_REFUSAL,
   TASK_STATUSES,
+  type ToolCaller,
   TRACKER_COMMENT_WRITE_REFUSAL,
   TRACKER_STATUS_WRITE_REFUSAL,
   TRACKER_TITLE_WRITE_REFUSAL,
-  UNKNOWN_TRACKER_REFUSAL,
-  WORKSPACE_CREATE_REFUSAL,
-  createTrackerTask,
-  documentsRefusal,
+  type TrackerProject,
   trackerCapabilities,
   trackerSourceFor,
-  type ToolCaller,
-  type TrackerProject,
+  UNKNOWN_TRACKER_REFUSAL,
+  WORKSPACE_CREATE_REFUSAL,
 } from './trackers.ts'
 
 const task = { title: 'Move the adapter', body: 'Protocol-neutral body', status: 'todo' }

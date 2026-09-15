@@ -4,14 +4,10 @@
  * and reclamation. Must not know routing, contracts, transports, reviews, or
  * the CLI.
  */
-import { nowIso, db, sessionId, writableDb } from './db.ts'
-import { liveWorktreeSharers, worktreePathSpellings } from './resource-ownership.ts'
-import { pidAlive } from './process-liveness.ts'
-import { projectByName } from './projects.ts'
-import { proveWorktreeReconstructible } from './reclaim.ts'
-import { processTable, terminateRunProcesses } from './run-process.ts'
+import { db, nowIso, sessionId, writableDb } from './db.ts'
+import { repoRootOf, targetGitEnvironment } from './git-environment.ts'
 import { isGroupKillablePgid, runHasLiveDescendants } from './idle-kill.ts'
-import { branchTip, removeFor, restoreBranch } from './worktree-remove.ts'
+import { pidAlive } from './process-liveness.ts'
 import {
   projectLockState,
   reclaimStaleProjectLock,
@@ -19,9 +15,13 @@ import {
   withWorktreeLease,
   worktreeLeaseName,
 } from './project-lock.ts'
+import { projectByName } from './projects.ts'
+import { proveWorktreeReconstructible } from './reclaim.ts'
+import { liveWorktreeSharers, worktreePathSpellings } from './resource-ownership.ts'
+import { processTable, terminateRunProcesses } from './run-process.ts'
 import { worktreeExists } from './worktree.ts'
+import { branchTip, removeFor, restoreBranch } from './worktree-remove.ts'
 import type { Worktree } from './worktree-types.ts'
-import { repoRootOf, targetGitEnvironment } from './git-environment.ts'
 
 export type CloseOutResult = {
   runId: number

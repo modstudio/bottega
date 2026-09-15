@@ -5,6 +5,8 @@
  * concerns quietly become one, which is the root canon's line and the reason
  * `orch` grew `--json` flags rather than hub growing a second connection.
  */
+
+import { randomUUID } from 'node:crypto'
 import {
   accessSync,
   chmodSync,
@@ -14,34 +16,36 @@ import {
   statSync,
   writeFileSync,
 } from 'node:fs'
-import { randomUUID } from 'node:crypto'
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 import type { DocScope } from '../../shared/docs.ts'
 import {
+  type HarnessHealth,
   HarnessHealthSchema,
+  type OrchBlockers,
   OrchBlockersSchema,
+  type OrchProject,
   OrchProjectListSchema,
   OrchProjectSchema,
+  type OrchRun,
+  type OrchRunDetail,
   OrchRunDetailSchema,
   OrchRunEnvelopeSchema,
+  type OrchRunLineData,
   OrchRunSchema,
   OrchStateSchema,
   OrchUnknownRunSchema,
-  type OrchBlockers,
-  type OrchProject,
-  type OrchRun,
-  type OrchRunDetail,
-  type HarnessHealth,
-  type OrchRunLineData,
 } from '../../shared/orch-contract.ts'
+
 export type { OrchProject, OrchRun, OrchRunDetail, OrchState } from '../../shared/orch-contract.ts'
+
 import {
   DASHBOARD_CAPABILITY_PATH_ENV,
   DASHBOARD_CAPABILITY_TOKEN_ENV,
   type DashboardCapability,
 } from '../../shared/dashboard-capability.ts'
 import { refreshProjects } from './projects.ts'
+
 let dashboardCapability: { dir: string; path: string; token: string } | null = null
 
 /** Resolve the executable for every call made by a long-lived hub process. */

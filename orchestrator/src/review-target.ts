@@ -4,10 +4,9 @@
  * know transports, database write paths, contracts, or routing.
  */
 import { basename } from 'node:path'
-import { gitContext, branchOf } from './git-environment.ts'
+import { branchOf, gitContext, targetGitEnvironment } from './git-environment.ts'
 import { projectAt, resolveBranchRef } from './projects.ts'
 import { resolveBase } from './worktree-caller.ts'
-import { targetGitEnvironment } from './git-environment.ts'
 
 const EXPLICIT_REVIEW_JOBS = new Set(['review-lens', 'safety', 'craft'])
 

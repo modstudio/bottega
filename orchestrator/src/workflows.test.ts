@@ -1,8 +1,8 @@
-import { afterEach, describe, expect, test } from 'bun:test'
 import { Database } from 'bun:sqlite'
-import { mkdtempSync, readFileSync, readdirSync, rmSync, statSync } from 'node:fs'
-import { join } from 'node:path'
+import { afterEach, describe, expect, test } from 'bun:test'
+import { mkdtempSync, readdirSync, readFileSync, rmSync, statSync } from 'node:fs'
 import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 import { applySchema } from './db.ts'
 import {
   composeWorkflow,
@@ -15,8 +15,8 @@ import {
   setWorkflow,
   showWorkflow,
   validateWorkflowDefinition,
-  workflowVersions,
   type WorkflowDefinition,
+  workflowVersions,
 } from './workflows.ts'
 
 const valid = (): WorkflowDefinition => ({

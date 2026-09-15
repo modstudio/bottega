@@ -1,19 +1,20 @@
 /** Run stop knows run terminal writes, worktree ownership, resource reclamation, and branch retention. It must not know transports, routing, reviews, contracts, the CLI, or durable execution. */
-import { db, nowIso, writeTransaction } from './db.ts'
-import { resolveRootFromLastTurn } from './run-liveness.ts'
-import { auditRunMutation, adoptRunMutation, authorizeRunMutation } from './run-authority.ts'
-import { teardownTerminalRunResources } from './resource-ownership.ts'
-import { branchTip, removeBranch, unmergedBranch } from './worktree-remove.ts'
-import type { Worktree } from './worktree-types.ts'
+
 import {
+  type CleanupOptions,
+  type CleanupRow,
   cleanupRepoRoot,
   discardWorktree,
   evidenceOwningBranchOwners,
   verifyBranchOwnershipAfterCleanup,
   withCleanupLock,
-  type CleanupOptions,
-  type CleanupRow,
 } from './cleanup.ts'
+import { db, nowIso, writeTransaction } from './db.ts'
+import { teardownTerminalRunResources } from './resource-ownership.ts'
+import { adoptRunMutation, auditRunMutation, authorizeRunMutation } from './run-authority.ts'
+import { resolveRootFromLastTurn } from './run-liveness.ts'
+import { branchTip, removeBranch, unmergedBranch } from './worktree-remove.ts'
+import type { Worktree } from './worktree-types.ts'
 
 export type RunStopOptions = CleanupOptions & { note?: string }
 export type RunStopHelpers = {

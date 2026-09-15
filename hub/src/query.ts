@@ -1,11 +1,11 @@
-import { db } from './db.ts'
-import { engagedMs, union, DEFAULT_IDLE_CAP_MS, type Span } from '../../shared/interval.ts'
-import { projects } from './projects.ts'
+import { DEFAULT_IDLE_CAP_MS, engagedMs, type Span, union } from '../../shared/interval.ts'
 import {
-  trackerCapabilities,
   type Capabilities,
   type TrackerRowSource,
+  trackerCapabilities,
 } from '../../shared/trackers.ts'
+import { db } from './db.ts'
+import { projects } from './projects.ts'
 
 export type AgentSpend = { agent: string; tokens: number; costUsd: number | null; runs: number }
 

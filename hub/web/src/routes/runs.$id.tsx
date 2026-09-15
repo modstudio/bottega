@@ -1,15 +1,15 @@
-import { useEffect, useState } from 'react'
-import { createFileRoute, useNavigate } from '@tanstack/react-router'
 import { useMutation, useQuery } from '@tanstack/react-query'
+import { createFileRoute, useNavigate } from '@tanstack/react-router'
 import { Copy } from 'lucide-react'
-import { LiveDot, Segmented } from '@/components/design-system'
+import { useEffect, useState } from 'react'
 import { Badge } from '@/components/badge'
 import { Button } from '@/components/button'
+import { LiveDot, Segmented } from '@/components/design-system'
+import { DisplayRow } from '@/components/fields'
 import { Input } from '@/components/input'
+import { Sheet } from '@/components/sheet'
 import { duration, relativeTime } from '@/lib/format'
 import { queryClient, trpc } from '@/trpc/client'
-import { Sheet } from '@/components/sheet'
-import { DisplayRow } from '@/components/fields'
 
 const DELIVERIES = ['none', 'partial', 'full'] as const
 const QUALITIES = ['wrong', 'mixed', 'right'] as const

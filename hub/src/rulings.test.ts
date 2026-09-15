@@ -1,7 +1,7 @@
 import { beforeAll, describe, expect, test } from 'bun:test'
+import { ingestRunFixtures, resetFixtureStore, runFixture } from '../test/run-fixtures.ts'
 import { db } from './db.ts'
 import { listOpenRulings, rulingsPayload, rulingsStaleAfter } from './rulings.ts'
-import { ingestRunFixtures, resetFixtureStore, runFixture } from '../test/run-fixtures.ts'
 
 beforeAll(resetFixtureStore)
 

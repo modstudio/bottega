@@ -1,12 +1,12 @@
-import { useState } from 'react'
-import { createFileRoute, Outlet, useNavigate } from '@tanstack/react-router'
 import { useMutation, useQuery } from '@tanstack/react-query'
+import { createFileRoute, Outlet, useNavigate } from '@tanstack/react-router'
 import { ChevronRight, FolderGit2, Plus } from 'lucide-react'
-import { PageHeader } from '@/components/design-system'
-import { toast } from '@/components/toaster'
+import { useState } from 'react'
 import { Badge } from '@/components/badge'
 import { Button } from '@/components/button'
 import { Checkbox } from '@/components/checkbox'
+import { Collection, type CollectionColumn } from '@/components/collection'
+import { PageHeader } from '@/components/design-system'
 import {
   Dialog,
   DialogContent,
@@ -15,8 +15,8 @@ import {
   DialogTitle,
 } from '@/components/dialog'
 import { Input } from '@/components/input'
-import { queryClient, trpc, type ProjectRow } from '@/trpc/client'
-import { Collection, type CollectionColumn } from '@/components/collection'
+import { toast } from '@/components/toaster'
+import { type ProjectRow, queryClient, trpc } from '@/trpc/client'
 
 function TrackerState({ project }: { project: ProjectRow }) {
   const status = project.trackerStatus

@@ -1,7 +1,7 @@
 import {
   consumeDoc as consumeDocument,
-  importDocs as readDocs,
   removeDoc as deleteDoc,
+  importDocs as readDocs,
   setDoc as writeDoc,
 } from '../../src/docs.ts'
 

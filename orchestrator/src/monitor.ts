@@ -1,27 +1,27 @@
 import { existsSync, readdirSync, realpathSync, statSync } from 'node:fs'
 import { join } from 'node:path'
 import { PLATFORM_SLUG } from '../../shared/brand.ts'
-import { db, liveRuns, nowIso, writableDb, writeTransaction } from './db.ts'
-import { pidAlive } from './process-liveness.ts'
-import { terminalDockerRetentionReasonForRun } from './resource-ownership.ts'
-import { UNSCORED_WHERE } from './evidence-query.ts'
-import type { MonitorSeverity } from './review-vocabulary.ts'
-import { fileIssue } from './mcp.ts'
-import { gitLocks } from './git-locks.ts'
-import { projectAt, projects } from './projects.ts'
-import { pidRecordIdentity, projectLockState } from './project-lock.ts'
-import { targetGitEnvironment } from './git-environment.ts'
-import { worktreeDirty } from './worktree-attribution.ts'
-import { reclaimBranch, reclaimWorktree } from './reclaim.ts'
 import { allInjectChecks, storedPackDrift } from './canon.ts'
-import { idleLabel, idleMsSince, idleWarnMs } from './events.ts'
+import { db, liveRuns, nowIso, writableDb, writeTransaction } from './db.ts'
 import { classifiedDockerResources, dockerRunResources } from './docker-resources.ts'
+import { idleLabel, idleMsSince, idleWarnMs } from './events.ts'
+import { UNSCORED_WHERE } from './evidence-query.ts'
+import { targetGitEnvironment } from './git-environment.ts'
+import { gitLocks } from './git-locks.ts'
 import { runHasLiveDescendants } from './idle-kill.ts'
+import { fileIssue } from './mcp.ts'
+import { pidAlive } from './process-liveness.ts'
+import { pidRecordIdentity, projectLockState } from './project-lock.ts'
+import { projectAt, projects } from './projects.ts'
+import { reclaimBranch, reclaimWorktree } from './reclaim.ts'
 import {
   refGuardInventory,
   retainedRefInventory,
   worktreeDatabaseInventory,
 } from './resource-inventory.ts'
+import { terminalDockerRetentionReasonForRun } from './resource-ownership.ts'
+import type { MonitorSeverity } from './review-vocabulary.ts'
+import { worktreeDirty } from './worktree-attribution.ts'
 
 const HUB = new URL('../../bin/hub', import.meta.url).pathname
 

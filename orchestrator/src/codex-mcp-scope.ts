@@ -5,7 +5,7 @@
  */
 import { dirname, isAbsolute, join, resolve } from 'node:path'
 import { ROOT } from './database-location.ts'
-import { disabledProjectMcpServers, readMcpConfig, type McpServerConfig } from './mcp-probe.ts'
+import { disabledProjectMcpServers, type McpServerConfig, readMcpConfig } from './mcp-probe.ts'
 
 /** Parent environment names Codex may forward into the orch-ask subprocess. */
 export const CODEX_ASK_ENV_VARS = ['ORCH_RUN_ID', 'ORCH_RUN_TOKEN', 'ORCH_DB'] as const

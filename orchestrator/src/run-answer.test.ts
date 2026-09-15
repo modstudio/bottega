@@ -7,9 +7,9 @@ import { ARGV_PROMPT_BYTES } from './agents.ts'
 import { assertWorkerText, readMessageText, readWorkerFile } from './args.ts'
 import { rulingPrompt } from './contract.ts'
 import { db } from './db.ts'
+import { packedResumePrompt } from './run.ts'
 import { answerRun, retryRun } from './run-answer.ts'
 import { continueRun } from './run-control.ts'
-import { packedResumePrompt } from './run.ts'
 
 const trackResidue = trackedTestResidue()
 

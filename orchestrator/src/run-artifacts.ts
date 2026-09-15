@@ -5,22 +5,22 @@
  * contracts, transports, reviews, or worktree isolation.
  */
 import {
-  mkdirSync,
-  readFileSync,
+  copyFileSync,
   existsSync,
-  writeFileSync,
+  mkdirSync,
   readdirSync,
+  readFileSync,
+  renameSync,
   rmSync,
   statSync,
   unlinkSync,
-  copyFileSync,
-  renameSync,
+  writeFileSync,
 } from 'node:fs'
 import { basename, join, relative } from 'node:path'
 import { resolveRunsDirectory } from './database-location.ts'
 import { db, writableDb, writeTransaction } from './db.ts'
-import { teardownTerminalRunResources } from './resource-ownership.ts'
 import { CONNECTION_SCHEMA_INVARIANT } from './migrations.ts'
+import { teardownTerminalRunResources } from './resource-ownership.ts'
 
 /**
  * How long a run's prompt and reply are kept on disk.

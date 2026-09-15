@@ -2,7 +2,6 @@ import { initTRPC, TRPCError } from '@trpc/server'
 import { z } from 'zod'
 import { TASK_STATUSES } from '../../../../shared/trackers.ts'
 import { strip, view } from '../../serve.ts'
-import type { Context } from '../context.ts'
 import {
   commentTask,
   getTaskDocument,
@@ -10,6 +9,7 @@ import {
   taskRecord,
   updateTaskDocument,
 } from '../../task.ts'
+import type { Context } from '../context.ts'
 
 const t = initTRPC.context<Context>().create()
 

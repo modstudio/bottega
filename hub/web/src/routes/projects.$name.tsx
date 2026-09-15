@@ -1,15 +1,15 @@
-import { useState } from 'react'
-import { createFileRoute, useNavigate } from '@tanstack/react-router'
 import { useMutation, useQuery } from '@tanstack/react-query'
+import { createFileRoute, useNavigate } from '@tanstack/react-router'
 import { Save, Trash2 } from 'lucide-react'
-import { toast } from '@/components/toaster'
+import { useState } from 'react'
 import { Button } from '@/components/button'
 import { Checkbox } from '@/components/checkbox'
-import { Input } from '@/components/input'
-import { Textarea } from '@/components/textarea'
-import { queryClient, trpc, type ProjectRow } from '@/trpc/client'
 import { FieldSection, SettingBlock } from '@/components/fields'
+import { Input } from '@/components/input'
 import { Sheet } from '@/components/sheet'
+import { Textarea } from '@/components/textarea'
+import { toast } from '@/components/toaster'
+import { type ProjectRow, queryClient, trpc } from '@/trpc/client'
 
 export const Route = createFileRoute('/projects/$name')({ component: ProjectEditPage })
 

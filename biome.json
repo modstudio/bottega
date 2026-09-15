@@ -6,11 +6,11 @@
       "!!**/node_modules",
       "!!hub/web/src/routeTree.gen.ts",
       "!!**/migrations/meta",
-      "!!**/migrations/meta/**",
+      "!!**/migrations/meta",
       "!!**/dist",
-      "!!**/dist/**",
+      "!!**/dist",
       "!!orchestrator/runs",
-      "!!orchestrator/runs/**"
+      "!!orchestrator/runs"
     ]
   },
   "vcs": {

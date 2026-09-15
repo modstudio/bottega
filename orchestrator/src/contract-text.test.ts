@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'bun:test'
 import {
-  contractConflicts,
   COULD_NOT_VERIFY_INSTRUCTION,
+  contractConflicts,
   INFRASTRUCTURE_RECOVERY,
   NO_REPO_PREAMBLE,
   READER_DELIVERABLE_FIRST,
@@ -11,8 +11,8 @@ import {
   REVIEW_SEVERITY_INSTRUCTION,
   WORKER_PREAMBLE,
 } from './contract.ts'
-import { jobBoundInstructionForContract, JOBS } from './jobs.ts'
 import { contractText } from './contract-text.ts'
+import { JOBS, jobBoundInstructionForContract } from './jobs.ts'
 
 describe('job contracts are visible before submission', () => {
   const contract = (jobName: string) => {

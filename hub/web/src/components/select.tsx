@@ -1,5 +1,5 @@
-import { useEffect, useId, useLayoutEffect, useRef, useState } from 'react'
 import { Check, ChevronDown } from 'lucide-react'
+import { useEffect, useId, useLayoutEffect, useRef, useState } from 'react'
 import { cx } from '@/components/cx'
 
 export type SelectOption = { value: string; label: string; note?: string }

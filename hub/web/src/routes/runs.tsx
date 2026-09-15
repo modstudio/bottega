@@ -1,7 +1,9 @@
-import { useState } from 'react'
-import { createFileRoute, Outlet, useNavigate } from '@tanstack/react-router'
 import { useQuery } from '@tanstack/react-query'
+import { createFileRoute, Outlet, useNavigate } from '@tanstack/react-router'
 import { ChevronRight } from 'lucide-react'
+import { useState } from 'react'
+import { Badge } from '@/components/badge'
+import { Collection, type CollectionColumn } from '@/components/collection'
 import {
   LiveDot,
   PageHeader,
@@ -10,13 +12,9 @@ import {
   StatTile,
   WindowBar,
 } from '@/components/design-system'
-import { Badge } from '@/components/badge'
-import { useWindowState } from '@/lib/window'
-import { collectedTime, compactTokens, duration, vendorFigures } from '@/lib/format'
-import { trpc } from '@/trpc/client'
-import { Collection, type CollectionColumn } from '@/components/collection'
 import { Input } from '@/components/input'
 import { useNow } from '@/lib/clock'
+import { collectedTime, compactTokens, duration, vendorFigures } from '@/lib/format'
 import {
   matchesRunSearch,
   runEasternTime,
@@ -24,6 +22,8 @@ import {
   type SearchableLiveRun,
   type SearchableRun,
 } from '@/lib/run-search'
+import { useWindowState } from '@/lib/window'
+import { trpc } from '@/trpc/client'
 
 type RunRow = SearchableRun
 type LiveRow = SearchableLiveRun

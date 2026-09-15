@@ -1,17 +1,17 @@
 // concern: worktree-readonly
 import { existsSync, mkdirSync } from 'node:fs'
 import { dirname, join } from 'node:path'
+import { git, gitOk, repoRootOf, targetGitEnvironment } from './git-environment.ts'
 import type { WorktreeTool } from './projects.ts'
 import { provisionReadOnlyTree, type ReadonlyProvision } from './readonly-provision.ts'
-import { assertCreateVarsAvailable } from './worktree-template.ts'
-import { git, gitOk, repoRootOf, targetGitEnvironment } from './git-environment.ts'
-import { branchTip, removeReadOnlyTree } from './worktree-remove.ts'
 import {
   attributeWorktree,
+  type RecordWorktree,
   runCreateTool,
   verifyFreshWorktree,
-  type RecordWorktree,
 } from './worktree-create.ts'
+import { branchTip, removeReadOnlyTree } from './worktree-remove.ts'
+import { assertCreateVarsAvailable } from './worktree-template.ts'
 import type { Worktree } from './worktree-types.ts'
 
 export function createReadOnlyWorktree(

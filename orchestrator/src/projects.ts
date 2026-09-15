@@ -32,6 +32,7 @@ import {
   type SequenceState,
 } from '../../shared/git.ts'
 import { db, writableDb, writeTransaction } from './db.ts'
+import { type ReadonlyProvision, validateReadonlyProvision } from './readonly-provision.ts'
 import {
   CREATE_VARS,
   createHasPlaceholder,
@@ -39,7 +40,7 @@ import {
   validateCreate,
   type WorktreeCreate,
 } from './worktree-template.ts'
-import { validateReadonlyProvision, type ReadonlyProvision } from './readonly-provision.ts'
+
 export { migrateCreate, type WorktreeCreate, type WorktreeCreateArg } from './worktree-template.ts'
 
 export type Project = {
@@ -479,7 +480,7 @@ export function registerBranchCheck(
   if (existsSync(canonPath)) {
     const canon = readFileSync(canonPath, 'utf8')
     const match = canon.match(
-      /\bintegration branch\s+(?:is|:)\s*[`'\"]?([A-Za-z0-9](?:[A-Za-z0-9._/-]*[A-Za-z0-9])?)/i,
+      /\bintegration branch\s+(?:is|:)\s*[`'"]?([A-Za-z0-9](?:[A-Za-z0-9._/-]*[A-Za-z0-9])?)/i,
     )
     canonIntegration = match?.[1] ?? null
   }

@@ -1,7 +1,8 @@
 // concern: cli
 /** Commander-only argv plumbing. Must not know any application concern. */
-import type { Command, OptionValues } from 'commander'
+
 import { format } from 'node:util'
+import type { Command, OptionValues } from 'commander'
 
 export type CliFlags = {
   has(name: string): boolean

@@ -1,5 +1,5 @@
-import { introducedFindings, type Finding } from './ratchet'
 import { noExpectFindings } from './no-expect'
+import { type Finding, introducedFindings } from './ratchet'
 
 type Mode = { kind: 'staged' } | { kind: 'base'; ref: string }
 

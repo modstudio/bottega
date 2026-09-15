@@ -1,16 +1,16 @@
-import { useEffect, useState } from 'react'
-import { createFileRoute, Link } from '@tanstack/react-router'
 import { useMutation, useQuery } from '@tanstack/react-query'
+import { createFileRoute, Link } from '@tanstack/react-router'
+import { useEffect, useState } from 'react'
 import { Badge } from '@/components/badge'
 import { Button } from '@/components/button'
 import { Card, CardContent } from '@/components/card'
 import { Checkbox } from '@/components/checkbox'
+import { EmptyState, PageHeader, SectionTitle } from '@/components/design-system'
+import { FieldSection, SettingBlock } from '@/components/fields'
 import { Input } from '@/components/input'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/table'
 import { useWindowState } from '@/lib/window'
-import { queryClient, trpc, type SettingsResponse } from '@/trpc/client'
-import { EmptyState, PageHeader, SectionTitle } from '@/components/design-system'
-import { FieldSection, SettingBlock } from '@/components/fields'
+import { queryClient, type SettingsResponse, trpc } from '@/trpc/client'
 
 type SettingsData = SettingsResponse['data']
 type Report = SettingsData['report']

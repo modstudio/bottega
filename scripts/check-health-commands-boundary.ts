@@ -2,6 +2,7 @@
 /** Keep health command adapters independent of runs, routing, transports, the CLI, and worktrees. */
 import { readFileSync } from 'node:fs'
 import { importSpecifiers } from './import-scanner.ts'
+
 const ROOT = new URL('..', import.meta.url).pathname.replace(/\/$/, '')
 const FILE = 'orchestrator/src/health-commands.ts'
 const FORBIDDEN: [RegExp, string][] = [

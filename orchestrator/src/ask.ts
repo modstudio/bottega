@@ -28,10 +28,11 @@
  * the question in the final answer — which is precisely the durable protocol,
  * so the fast path degrades into the slow one rather than into a hang.
  */
+
+import { createConnection, createServer, type Socket } from 'node:net'
 import { db, nowIso, writableDb } from './db.ts'
 import { appendRunEvent } from './events.ts'
 import { checkMessages, messageArchitect } from './mailbox.ts'
-import { createConnection, createServer, type Socket } from 'node:net'
 
 /**
  * How long a worker waits for a ruling before falling back.

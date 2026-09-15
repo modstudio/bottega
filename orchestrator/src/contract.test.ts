@@ -1,24 +1,24 @@
-import { workerReply } from '../test/fixtures/replies.ts'
-import { detectBlockers } from './failure.ts'
 import { describe, expect, test } from 'bun:test'
-import { JOBS } from './jobs.ts'
+import { workerReply } from '../test/fixtures/replies.ts'
 import {
+  GENERIC_QUESTION_TOKENS,
+  hasRealQuestions,
   ISSUE_WORKER_SCHEMA,
+  missingDeclaredDeliverables,
+  parseReaderReply,
+  parseWorkerReply,
+  parseWorkerReplyWithCount,
   READER_SCHEMA,
   REVIEW_SCHEMA,
+  readerDeliverablesInstruction,
+  realQuestions,
+  resolveReplyDialect,
   TEXT_REPLY_SCHEMA,
   VERIFY_CLAIM_SCHEMA,
   WORKER_SCHEMA,
-  resolveReplyDialect,
-  GENERIC_QUESTION_TOKENS,
-  hasRealQuestions,
-  missingDeclaredDeliverables,
-  parseReaderReply,
-  readerDeliverablesInstruction,
-  parseWorkerReply,
-  parseWorkerReplyWithCount,
-  realQuestions,
 } from './contract.ts'
+import { detectBlockers } from './failure.ts'
+import { JOBS } from './jobs.ts'
 
 const baseWorkerReply = {
   status: 'done',

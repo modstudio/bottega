@@ -4,9 +4,9 @@ import { join, resolve } from 'node:path'
 import {
   ACP_PARITY_REPOSITORY_ROOT,
   caseSemanticallyMatches,
-  requiredParityPassed,
-  type Row,
   parityCaseVerdict,
+  type Row,
+  requiredParityPassed,
 } from './acp-parity.ts'
 
 const row = (

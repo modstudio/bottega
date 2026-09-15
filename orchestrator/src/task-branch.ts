@@ -3,12 +3,13 @@
  * Knows the project register, branch content status, and database reads. Must
  * not know transports, contracts, or routing.
  */
+
+import { realpathOrSpelled } from './checkout-identity.ts'
 import { db } from './db.ts'
+import { repoRootOf, targetGitEnvironment } from './git-environment.ts'
 import { projectAt, projects } from './projects.ts'
 import { reviewRunEvidenceSql } from './review-evidence-sql.ts'
 import type { Worktree } from './worktree-types.ts'
-import { repoRootOf, targetGitEnvironment } from './git-environment.ts'
-import { realpathOrSpelled } from './checkout-identity.ts'
 
 export type TaskBranchCandidate = {
   branch: string

@@ -1,8 +1,8 @@
 import { createRootRoute, Link, Outlet } from '@tanstack/react-router'
 import {
   Activity,
-  Bot,
   BookOpen,
+  Bot,
   BriefcaseBusiness,
   CheckCircle2,
   CircleDollarSign,
@@ -16,9 +16,9 @@ import {
   Route as RouteIcon,
   Settings,
 } from 'lucide-react'
-import { PLATFORM_NAME } from '../../../../shared/brand.ts'
-import { useWindowState } from '@/lib/window'
 import { LiveDot } from '@/components/design-system'
+import { useWindowState } from '@/lib/window'
+import { PLATFORM_NAME } from '../../../../shared/brand.ts'
 
 const nav = [
   { to: '/flight', label: 'Flight', icon: Plane, count: 'flight' },

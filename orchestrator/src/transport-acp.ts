@@ -1,21 +1,21 @@
-import { Readable, Writable } from 'node:stream'
 import { readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
+import { Readable, Writable } from 'node:stream'
 import * as acp from '@agentclientprotocol/sdk'
 import { execa, type ResultPromise } from 'execa'
 import { DEFAULT_IDLE_GRACE_MS, terminateProcessGroup } from './idle-kill.ts'
-import { sandboxLaunchArgv } from './sandbox.ts'
 import type { SandboxRuntimeConfig } from './sandbox.ts'
+import { sandboxLaunchArgv } from './sandbox.ts'
 import {
   ACP_PILOT_TASK,
+  type AgentTransport,
   confineFsPath,
   decideAcpPermission,
+  type NormalizedEvent,
   outcomeFromTransport,
   registerTransport,
   resolveCodexAcpBin,
   stopErrorMessage,
-  type AgentTransport,
-  type NormalizedEvent,
   type TransportHandle,
   type TransportResult,
   type TransportStartOpts,
@@ -154,7 +154,7 @@ export function normalizeAcpTurn(input: AcpTurnInput): TransportResult {
   }
   let costUsd: number | null = null
   if (typeof input.usage?.costUsd === 'number') costUsd = input.usage.costUsd
-  let sessionId = input.sessionId ?? null
+  const sessionId = input.sessionId ?? null
   if (sessionId) events.push({ kind: 'session', sessionId })
   for (const event of input.permissionEvents ?? []) events.push(event)
 

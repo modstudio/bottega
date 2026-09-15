@@ -1,7 +1,7 @@
 import {
+  decideRuntimeBudget,
   HUNG_SUITE_TIMEOUT_MS,
   SUITE_RUNTIME_BUDGET_MS,
-  decideRuntimeBudget,
 } from './check-runtime'
 
 type Command = { cwd: string; argv: string[] }

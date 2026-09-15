@@ -1,7 +1,7 @@
 import { mkdirSync, readFileSync, unlinkSync, writeFileSync } from 'node:fs'
 import { withGateSlot } from '../src/gate-load.ts'
-import { mergeTimings, type GateTimings } from './record-gate-timings.ts'
 import { publishTimingSummary } from './gate-timing-summary.ts'
+import { type GateTimings, mergeTimings } from './record-gate-timings.ts'
 
 const orchRoot = new URL('..', import.meta.url).pathname
 const timingStamp = new Date().toISOString().replace(/[:.]/g, '-')

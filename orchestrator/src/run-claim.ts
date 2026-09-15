@@ -4,55 +4,55 @@
  * provisioning, confinement preparation, and failed-claim teardown. Must not
  * know live worker processes, terminal outcomes, transports, or the CLI.
  */
+
+import { randomUUID } from 'node:crypto'
 import { mkdirSync, writeFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
-import { randomUUID } from 'node:crypto'
 import { type Agent, readStrictCodexSchema } from './agents.ts'
-import { namesRecordedRunTree } from './dispatch-preflight.ts'
+import type { Pack } from './canon.ts'
+import { checkoutAliases, realpathOrSpelled } from './checkout-identity.ts'
+import { TEXT_REPLY_SCHEMA } from './contract.ts'
 import { db, nowIso, sessionId } from './db.ts'
+import { namesRecordedRunTree } from './dispatch-preflight.ts'
+import { appendRunEvent } from './events.ts'
+import { resolveSupersededTurn } from './failover.ts'
 import { branchOf, gitContext, repoRootOf } from './git-environment.ts'
 import { addedGrokTrustHeadings, grokTrustHeadings } from './grok-trust.ts'
 import {
   assertGrokTrustEligible,
-  mcpAttachRefusal,
-  mcpConnectionFor,
-  storedMcpRequest,
   type McpConnection,
   type McpMode,
   type McpRequest,
+  mcpAttachRefusal,
+  mcpConnectionFor,
+  storedMcpRequest,
 } from './mcp-preflight.ts'
-import { appendRunEvent } from './events.ts'
 import { readMcpConfig, wrongProjectReason } from './mcp-probe.ts'
 import { withWorktreeCreateLock, withWorktreeLease } from './project-lock.ts'
 import { projectAt, stackAt } from './projects.ts'
-import { prepareProjectGrokMcpScope } from './sandbox.ts'
-import { resolveSupersededTurn } from './failover.ts'
-import { errorTail, sha } from './run-process.ts'
+import { retargetRepositoryPromptForDispatch } from './prompt-retarget.ts'
+import { teardownTerminalRunResources } from './resource-ownership.ts'
+import { inferredReadOnlyKey } from './review-target.ts'
 import {
   noRepoIsolatePath,
-  runFilePaths,
+  type runFilePaths,
   runScratchDir,
   writeDispatchState,
 } from './run-artifacts.ts'
-import { teardownTerminalRunResources } from './resource-ownership.ts'
+import { errorTail, sha } from './run-process.ts'
+import { prepareProjectGrokMcpScope } from './sandbox.ts'
 import { resolveTaskBranch, type TaskBranchCandidate } from './task-branch.ts'
+import { createWorkerWorktree, worktreeExists } from './worktree.ts'
 import {
   assertCallerAncestry,
+  type CarriedWorkingState,
   carryWorkingState,
   resolveReadOnlyBase,
-  type CarriedWorkingState,
 } from './worktree-caller.ts'
-import { createWorkerWorktree, worktreeExists } from './worktree.ts'
 import { createIsolatedWorkerDirectory, prepareWorkerMcpConfig } from './worktree-mcp.ts'
-import { removeFor, type Changes } from './worktree-remove.ts'
 import { toolFor } from './worktree-preflight.ts'
+import { type Changes, removeFor } from './worktree-remove.ts'
 import type { Worktree } from './worktree-types.ts'
-import { checkoutAliases } from './checkout-identity.ts'
-import { realpathOrSpelled } from './checkout-identity.ts'
-import { retargetRepositoryPromptForDispatch } from './prompt-retarget.ts'
-import { inferredReadOnlyKey } from './review-target.ts'
-import type { Pack } from './canon.ts'
-import { TEXT_REPLY_SCHEMA } from './contract.ts'
 
 type ClaimOptions = {
   reserveId?: number
@@ -419,7 +419,7 @@ export async function claimRun(input: ClaimInput): Promise<ClaimResult> {
    */
   let worktree: Worktree | null = opts.resume?.worktree ?? null
   let carried: CarriedWorkingState | null = null
-  let changes: Changes | null = null
+  const changes: Changes | null = null
   let isolatedCwd: string | null = null
   let removeIsolatedCwd: (() => void) | null = null
   let provisionedMcpConfig: ReturnType<typeof prepareWorkerMcpConfig> | null = null

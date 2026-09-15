@@ -1,6 +1,6 @@
 import { beforeAll, describe, expect, test } from 'bun:test'
-import { attribute, isInjected, keyFromBranch, keyFromWorktree } from './attribute.ts'
 import { resetFixtureStore } from '../test/run-fixtures.ts'
+import { attribute, isInjected, keyFromBranch, keyFromWorktree } from './attribute.ts'
 
 beforeAll(resetFixtureStore)
 

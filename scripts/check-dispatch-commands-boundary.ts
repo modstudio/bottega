@@ -2,6 +2,7 @@
 /** Keep dispatch command adapters independent of transports, routing, worktrees, the CLI, and reviews. */
 import { readFileSync } from 'node:fs'
 import { importSpecifiers } from './import-scanner.ts'
+
 const ROOT = new URL('..', import.meta.url).pathname.replace(/\/$/, '')
 const FILE = 'orchestrator/src/dispatch-commands.ts'
 const FORBIDDEN: [RegExp, string][] = [

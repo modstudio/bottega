@@ -1,14 +1,14 @@
 import { db } from './db.ts'
 import { JOBS } from './jobs.ts'
 import {
-  candidates,
+  type candidates,
   evidenceFor,
-  pick,
   MIN_SAMPLE,
   PROMPT_SIZE_BOUNDARY,
+  type PromptSizeBucket,
+  pick,
   promptBucketsForJob,
   promptSizeBucket,
-  type PromptSizeBucket,
 } from './route.ts'
 import { median } from './statistics.ts'
 

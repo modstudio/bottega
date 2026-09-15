@@ -2,44 +2,45 @@
 /** Knows run rows, reviews and findings, score arithmetic, duel persistence, and judgeability. Must not know transports, worktrees, routing, the CLI, durable execution, dispatch, or cleanup. */
 import { existsSync, readFileSync } from 'node:fs'
 import { db, nowIso, sessionId, writeTransaction } from './db.ts'
-import { recordDuels, recordLosses, recordTies, pairPartners, parseRunIds } from './duel.ts'
-import { job, JOBS } from './jobs.ts'
+import { pairPartners, parseRunIds, recordDuels, recordLosses, recordTies } from './duel.ts'
+import { JOBS, job } from './jobs.ts'
 import { cleanReviewEvidence, parseReviewOutput } from './review.ts'
 import {
   completeReview,
-  gradeReviewLens,
-  triageFinding,
   type Disposition,
+  gradeReviewLens,
   type ReviewGrades,
+  triageFinding,
 } from './review-triage.ts'
 import {
-  REVIEW_REPRODUCED,
   REVIEW_COVERAGE,
   REVIEW_LIMITS,
   REVIEW_OVERLAP,
+  REVIEW_REPRODUCED,
   REVIEW_SEVERITY,
-  type ReviewReproduced,
   type ReviewCoverage,
   type ReviewLimits,
   type ReviewOverlap,
+  type ReviewReproduced,
 } from './review-vocabulary.ts'
 import {
   adoptRunMutation,
   auditRunMutation,
   authorizeRunMutation,
-  runMutationActor,
   type RootAuthority,
+  runMutationActor,
 } from './run-authority.ts'
 import {
   DELIVERY,
-  FIDELITY,
-  QUALITY,
-  judgeability,
-  weigh,
   type Delivery,
+  FIDELITY,
   type Fidelity,
+  judgeability,
+  QUALITY,
   type Quality,
+  weigh,
 } from './score.ts'
+
 type JudgementFlags = {
   has(name: string): boolean
   flag(name: string): string | undefined

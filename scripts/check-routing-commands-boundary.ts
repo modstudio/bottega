@@ -2,6 +2,7 @@
 /** Keep routing command adapters independent of runs, transports, the CLI, worktrees, and reviews by value. */
 import { readFileSync } from 'node:fs'
 import { importSpecifiers } from './import-scanner.ts'
+
 const ROOT = new URL('..', import.meta.url).pathname.replace(/\/$/, '')
 const FILE = 'orchestrator/src/routing-commands.ts'
 const FORBIDDEN: [RegExp, string][] = [

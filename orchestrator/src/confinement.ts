@@ -1,13 +1,13 @@
+import type { Database } from 'bun:sqlite'
 import { createHash } from 'node:crypto'
 import { existsSync, statSync } from 'node:fs'
 import { join } from 'node:path'
-import type { Database } from 'bun:sqlite'
 import {
+  type AttributionKind,
   AttributionKindSchema,
+  type ConfinementClass,
   ConfinementClassSchema,
   emptyAttribution,
-  type AttributionKind,
-  type ConfinementClass,
 } from '../../shared/orch-contract.ts'
 import { targetGitEnvironment } from './git-environment.ts'
 

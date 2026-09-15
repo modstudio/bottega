@@ -1,8 +1,8 @@
-import { afterEach, describe, expect, test } from 'bun:test'
 import { Database } from 'bun:sqlite'
+import { afterEach, describe, expect, test } from 'bun:test'
 import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
-import { join } from 'node:path'
 import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 import { searchRecords, searchSnippet } from './search.ts'
 
 const dirs: string[] = []

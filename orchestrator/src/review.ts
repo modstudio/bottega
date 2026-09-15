@@ -1,12 +1,12 @@
 // concern: review
 import type { Database } from 'bun:sqlite'
-import { db, nowIso, sessionId, writableDb, writeTransaction } from './db.ts'
 import { REVIEW_SCHEMA, type ReviewReply } from './contract.ts'
+import { db, nowIso, sessionId, writableDb, writeTransaction } from './db.ts'
+
 export { parseReviewOutput, parseReviewReply } from './contract.ts'
+
 import { job } from './jobs.ts'
-import type { ReviewTier } from './review-tier.ts'
-import { filesCoveredIntersectChanged } from './review-coverage-match.ts'
-import { projectByName, type Project } from './projects.ts'
+import { type Project, projectByName } from './projects.ts'
 import {
   completedReviews,
   coverageGit,
@@ -15,6 +15,7 @@ import {
   projectRecord,
   reviewCoverageVerdict,
 } from './review-coverage.ts'
+import { filesCoveredIntersectChanged } from './review-coverage-match.ts'
 import {
   git,
   measureChangeIdentity,
@@ -24,6 +25,7 @@ import {
   reviewChangeRange,
   storedChangePathSet,
 } from './review-pins.ts'
+import type { ReviewTier } from './review-tier.ts'
 import type {
   ReviewCarry,
   ReviewListFilter,

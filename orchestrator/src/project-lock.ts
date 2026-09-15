@@ -1,26 +1,27 @@
 // concern: project-lock
+
+import { dlopen, FFIType } from 'bun:ffi'
+import { createHash, randomUUID } from 'node:crypto'
 import {
   closeSync,
   constants,
   existsSync,
   mkdirSync,
   openSync,
+  readdirSync,
   readFileSync,
   realpathSync,
-  readdirSync,
   renameSync,
   rmSync,
   statSync,
   writeFileSync,
 } from 'node:fs'
-import { createHash, randomUUID } from 'node:crypto'
-import { dlopen, FFIType } from 'bun:ffi'
 import { platform } from 'node:os'
 import { join, resolve } from 'node:path'
-import { tryWriteContention } from './db.ts'
-import { pidAlive } from './process-liveness.ts'
-import { git } from './git-environment.ts'
 import { scrubbedGitEnv } from '../../shared/git.ts'
+import { tryWriteContention } from './db.ts'
+import { git } from './git-environment.ts'
+import { pidAlive } from './process-liveness.ts'
 
 const WORKTREE_CREATE_LOCK_TIMEOUT_MS = 5 * 60_000
 const WORKTREE_CREATE_LOCK_POLL_MS = 100

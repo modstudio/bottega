@@ -7,18 +7,20 @@ import { describe, expect, setDefaultTimeout, test } from 'bun:test'
 // landing gate on 2026-09-07. The bound is sized to that work, like the CLI
 // leg's; it is not a hidden widening.
 setDefaultTimeout(30_000)
+
 import { copyFileSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { getTableName } from 'drizzle-orm'
 import { getTableConfig, type SQLiteTable } from 'drizzle-orm/sqlite-core'
-import * as declared from './schema.ts'
+import { PLATFORM_SLUG } from '../../shared/brand.ts'
+import { db, enableSchemaReload, writeTransaction } from './db.ts'
 import {
   applyMigrations,
   BASELINE_SCHEMA_HASH,
   baselineSchemaHash,
-  canonicalSchemaHash,
   CONNECTION_SCHEMA_INVARIANT,
+  canonicalSchemaHash,
   expectedSchemaHash,
   JOURNAL_WHEN_ORDER,
   journalLength,
@@ -30,8 +32,7 @@ import {
   schemaVersionLabel,
   splitMigrationSource,
 } from './migrations.ts'
-import { PLATFORM_SLUG } from '../../shared/brand.ts'
-import { db, enableSchemaReload, writeTransaction } from './db.ts'
+import * as declared from './schema.ts'
 
 const fresh = () => {
   const d = new Database(':memory:')

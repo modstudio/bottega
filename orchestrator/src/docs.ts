@@ -7,15 +7,15 @@
  * architectural judgement instead. If an adopter needs text unchanged,
  * it is canon in the repository; if it describes this estate, it belongs here.
  */
-import { mkdirSync, readFileSync, readdirSync, writeFileSync } from 'node:fs'
+import { mkdirSync, readdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
-import { DOC_SCOPES, DOC_SCOPE_SUBJECT_KIND, type DocScope } from '../../shared/docs.ts'
+import { DOC_SCOPE_SUBJECT_KIND, DOC_SCOPES, type DocScope } from '../../shared/docs.ts'
 import { AGENTS } from './agents.ts'
+import { compileBrief } from './canon.ts'
 import { db, nowIso, sessionId, writableDb, writeTransaction } from './db.ts'
 import { JOBS } from './jobs.ts'
-import { projectAt, projectByName } from './projects.ts'
-import { compileBrief } from './canon.ts'
 import { DEFAULT_PACK_BYTES, MAX_INJECT_DOC_BYTES } from './pack-budget.ts'
+import { projectAt, projectByName } from './projects.ts'
 
 export { DOC_SCOPES, type DocScope }
 

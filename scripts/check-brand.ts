@@ -1,4 +1,5 @@
 #!/usr/bin/env bun
+import { readFileSync } from 'node:fs'
 /**
  * The brand name is written in ONE place, and this is what makes that true.
  *
@@ -24,7 +25,6 @@
  * machine. Renaming one of those is a migration with a rollout.
  */
 import { Glob } from 'bun'
-import { readFileSync } from 'node:fs'
 import { PLATFORM_NAME, PLATFORM_SLUG } from '../shared/brand.ts'
 
 const ROOT = new URL('..', import.meta.url).pathname.replace(/\/$/, '')

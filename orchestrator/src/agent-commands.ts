@@ -1,6 +1,6 @@
 // concern: agent-commands
 /** Owns agent registry mutations and catalogue presentation. Must not know CLI grammar. */
-import { db } from './db.ts'
+
 import {
   AGENTS,
   addAgent,
@@ -14,6 +14,7 @@ import {
   unavailableReason,
 } from './agents.ts'
 import { flagValue } from './args.ts'
+import { db } from './db.ts'
 
 type Presentation = { log(value: string): void; setExitCode(code: number): void }
 const parseJobs = (value: string | undefined) =>

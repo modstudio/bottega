@@ -1,9 +1,9 @@
-import { db, nowIso, type Project } from './db.ts'
-import { tasksInWindow, completedInWindow, reportEngagedMs } from './query.ts'
 import { human } from '../../shared/interval.ts'
-import { getReport, smtpPassword, type Report, type Brief } from './settings.ts'
-import { projectColor } from './projects.ts'
+import { db, nowIso, type Project } from './db.ts'
 import { summarize } from './orch.ts'
+import { projectColor } from './projects.ts'
+import { completedInWindow, reportEngagedMs, tasksInWindow } from './query.ts'
+import { type Brief, getReport, type Report, smtpPassword } from './settings.ts'
 
 export type Item = {
   key: string | null

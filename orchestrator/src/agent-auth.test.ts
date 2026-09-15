@@ -1,9 +1,9 @@
 import { describe, expect, test } from 'bun:test'
 import {
+  type AgentAuthCapture,
   classifyAgentAuth,
   doctorAgentStatus,
   runAgentAuthCheck,
-  type AgentAuthCapture,
 } from './agent-auth.ts'
 
 const capture = (overrides: Partial<AgentAuthCapture> = {}): AgentAuthCapture => ({

@@ -1,9 +1,9 @@
-import { readdirSync, statSync, createReadStream } from 'node:fs'
+import { createReadStream, readdirSync, statSync } from 'node:fs'
 import { join } from 'node:path'
 import { createInterface } from 'node:readline'
-import { db, nowIso } from '../db.ts'
+import { DEFAULT_IDLE_CAP_MS, spansFromTimestamps, union } from '../../../shared/interval.ts'
 import { attribute, isInjected, projectOf } from '../attribute.ts'
-import { spansFromTimestamps, union, DEFAULT_IDLE_CAP_MS } from '../../../shared/interval.ts'
+import { db, nowIso } from '../db.ts'
 
 const CLAUDE_ROOT = `${process.env.HOME}/.claude/projects`
 

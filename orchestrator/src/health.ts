@@ -2,15 +2,15 @@ import type { Database } from 'bun:sqlite'
 import {
   AttributionKindSchema,
   emptyAttribution,
+  type HarnessHealth,
   HarnessHealthSchema,
   HostLoadSchema,
-  type HarnessHealth,
 } from '../../shared/orch-contract.ts'
+import { attributionCounts, parseConfinement } from './confinement.ts'
+import { summarizeContention } from './contention.ts'
 import { db } from './db.ts'
 import { clusterErrorText, FAILURE_KINDS, type FailureKind } from './failure.ts'
 import { parseIdleReclaimedMs } from './idle-kill.ts'
-import { summarizeContention } from './contention.ts'
-import { attributionCounts, parseConfinement } from './confinement.ts'
 import { parseMcpProbe } from './mcp-probe.ts'
 
 export const HEALTH_DEFAULT_DAYS = 14

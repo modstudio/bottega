@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test'
 import { noExpectFindings } from './no-expect'
-import { introducedFindings, type Finding } from './ratchet'
+import { type Finding, introducedFindings } from './ratchet'
 
 const finding = (line: number, message = 'test reaches 0 expect() calls'): Finding => ({
   file: 'example.test.ts',

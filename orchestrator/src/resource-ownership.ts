@@ -5,17 +5,17 @@
 import type { Database } from 'bun:sqlite'
 import { appendFileSync, mkdirSync } from 'node:fs'
 import { dirname, join } from 'node:path'
-import { nowIso, sessionId } from './db.ts'
+import { realpathOrSpelled, withoutTrailingSeparators } from './checkout-identity.ts'
 import { DATABASE_RESOLUTION, resolveRunsDirectory } from './database-location.ts'
+import { nowIso, sessionId } from './db.ts'
 import {
+  type DockerTeardown,
   dockerRunResources,
   resourcesForRuns,
   teardownRunResources,
-  type DockerTeardown,
 } from './docker-resources.ts'
 import { chainScoreJoin, EVIDENCE_CLOSED_SQL } from './evidence-query.ts'
 import { repoRootOf } from './git-environment.ts'
-import { realpathOrSpelled, withoutTrailingSeparators } from './checkout-identity.ts'
 import { withCleanupLock, withWorktreeLease } from './project-lock.ts'
 
 export type WorktreeSharerRow = { id: number; status: string; scored: number }

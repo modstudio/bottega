@@ -2,6 +2,7 @@
 /** Keep metric command adapters independent of the run nucleus and the CLI: they compose concern modules for one verb and own no lifecycle. */
 import { readFileSync } from 'node:fs'
 import { importSpecifiers } from './import-scanner.ts'
+
 const ROOT = new URL('..', import.meta.url).pathname.replace(/\/$/, '')
 const FILE = 'orchestrator/src/metric-commands.ts'
 const FORBIDDEN: [RegExp, string][] = [

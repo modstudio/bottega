@@ -1,10 +1,10 @@
-import { MIGRATED_AGENT_NAMES, type Caps } from './capabilities.ts'
-import { STALE_AFTER_MS } from './run-liveness.ts'
+import { type Caps, MIGRATED_AGENT_NAMES } from './capabilities.ts'
 import {
   DEFAULT_EXTERNAL_WAIT_IDLE_KILL_MS,
   DEFAULT_IDLE_KILL_MS,
   idleKillMs,
 } from './idle-kill.ts'
+import { STALE_AFTER_MS } from './run-liveness.ts'
 
 export type Job = {
   name: string
@@ -212,6 +212,7 @@ export function jobBoundInstructionForContract(j: Job): string {
 }
 
 export { DEFAULT_PACK_BYTES } from './pack-budget.ts'
+
 import { DEFAULT_PACK_BYTES } from './pack-budget.ts'
 
 /**

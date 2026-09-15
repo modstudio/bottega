@@ -1,13 +1,27 @@
 // concern: cli
 /** Registers extracted logic-verb adapters. Must not own application decisions. */
-import type { Command, OptionValues } from 'commander'
+
 import { resolve } from 'node:path'
-import { db } from '../db.ts'
+import type { Command, OptionValues } from 'commander'
+import { agentCommand, agentsCommand } from '../agent-commands.ts'
 import { serveAsk } from '../ask.ts'
-import { migrateCommand, reconcileCommand } from '../database-commands.ts'
+import { setupAskCommand } from '../ask-commands.ts'
+import { closeOutCommand } from '../close-out-command.ts'
+import { peekCommand, resultCommand, waitCommand } from '../collection-commands.ts'
 import { contractCommand } from '../contract-command.ts'
-import { workflowCommand } from '../workflow-commands.ts'
+import { migrateCommand, reconcileCommand } from '../database-commands.ts'
+import { db } from '../db.ts'
+import { doCommand, pickPreviewCommand } from '../dispatch-cli-service.ts'
+import { epicCommand } from '../epic-commands.ts'
+import { jobsCommand } from '../job-commands.ts'
+import { JOBS } from '../jobs.ts'
 import { lensCommand } from '../lens-commands.ts'
+import { tellCommand } from '../mailbox-commands.ts'
+import { mcpCommand } from '../mcp-commands.ts'
+import { metricCommand } from '../metric-commands.ts'
+import { monitorCommand } from '../monitor-commands.ts'
+import { pendingCommand } from '../pending-commands.ts'
+import { reclaimCommand } from '../reclaim-commands.ts'
 import {
   issueCommand,
   noteCommand,
@@ -15,28 +29,15 @@ import {
   serveCommand,
   stateCommand,
 } from '../record-commands.ts'
-import { tellCommand } from '../mailbox-commands.ts'
-import { peekCommand, resultCommand, waitCommand } from '../collection-commands.ts'
-import { reclaimCommand } from '../reclaim-commands.ts'
-import { setupAskCommand } from '../ask-commands.ts'
-import { closeOutCommand } from '../close-out-command.ts'
-import { spawnsCommand } from '../spawn-commands.ts'
-import { pendingCommand } from '../pending-commands.ts'
-import { metricCommand } from '../metric-commands.ts'
-import { epicCommand } from '../epic-commands.ts'
-import { jobsCommand } from '../job-commands.ts'
-import { agentCommand, agentsCommand } from '../agent-commands.ts'
-import { mcpCommand } from '../mcp-commands.ts'
-import { monitorCommand } from '../monitor-commands.ts'
-import { doCommand, pickPreviewCommand } from '../dispatch-cli-service.ts'
-import { answerCommand, continueCommand, retryCommand } from '../run-message-commands.ts'
-import { JOBS } from '../jobs.ts'
 import {
   REVIEW_COVERAGE,
   REVIEW_LIMITS,
   REVIEW_OVERLAP,
   REVIEW_REPRODUCED,
 } from '../review-vocabulary.ts'
+import { answerCommand, continueCommand, retryCommand } from '../run-message-commands.ts'
+import { spawnsCommand } from '../spawn-commands.ts'
+import { workflowCommand } from '../workflow-commands.ts'
 import { collect, log, productArgv, rawArgv, write, writeStdout } from './support.ts'
 
 const presentation = {

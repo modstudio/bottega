@@ -1,8 +1,10 @@
 // concern: contract
-import { REVIEW_SEVERITY } from './review-vocabulary.ts'
+
 import { progressFileInstruction } from './checkpoint.ts'
 import { isReaderJob, type Job } from './jobs.ts'
 import { GENERIC_QUESTION_TOKENS } from './outcome.ts'
+import { REVIEW_SEVERITY } from './review-vocabulary.ts'
+
 export {
   GENERIC_QUESTION_TOKENS,
   hasRealQuestions,

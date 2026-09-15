@@ -1,7 +1,7 @@
 import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
-import { projects, projectRoot, type Project } from './projects.ts'
 import type { OrchRun } from './ingest/runs.ts'
+import { type Project, projectRoot, projects } from './projects.ts'
 
 /** Every ticket key this estate issues, resolved only when attribution first needs it. */
 function keyPrefixes(): string {

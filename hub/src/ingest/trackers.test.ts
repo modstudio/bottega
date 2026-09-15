@@ -1,4 +1,5 @@
 import { beforeAll, describe, expect, test } from 'bun:test'
+import { resetFixtureStore } from '../../test/run-fixtures.ts'
 import { trackerPresentation } from '../projects.ts'
 import { showTask } from '../task.ts'
 import {
@@ -7,7 +8,6 @@ import {
   trackerRegistrations,
   upsertTrackerTask,
 } from './trackers.ts'
-import { resetFixtureStore } from '../../test/run-fixtures.ts'
 
 beforeAll(resetFixtureStore)
 

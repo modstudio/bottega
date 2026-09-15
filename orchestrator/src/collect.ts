@@ -1,12 +1,12 @@
 import type { Database } from 'bun:sqlite'
-import { existsSync, readFileSync, readdirSync, statSync, unlinkSync } from 'node:fs'
+import { existsSync, readdirSync, readFileSync, statSync, unlinkSync } from 'node:fs'
 import { dirname, join } from 'node:path'
-import { FAILS_OVER } from './failure.ts'
-import { failureReason, outcomeOf } from './outcome.ts'
-import type { ObservedDeadRun } from './run-liveness.ts'
-import { TRUNCATED_TRANSCRIPT_BYTES, visibleTranscriptText } from './result-output.ts'
-import { parseMcpProbe } from './mcp-probe.ts'
 import { clock } from './clock.ts'
+import { FAILS_OVER } from './failure.ts'
+import { parseMcpProbe } from './mcp-probe.ts'
+import { failureReason, outcomeOf } from './outcome.ts'
+import { TRUNCATED_TRANSCRIPT_BYTES, visibleTranscriptText } from './result-output.ts'
+import type { ObservedDeadRun } from './run-liveness.ts'
 
 export const COLLECTION_COMMANDS = new Set(['result', 'wait'])
 

@@ -2,13 +2,14 @@ import { beforeEach, describe, expect, test } from 'bun:test'
 import { join } from 'node:path'
 import { dir as suiteDir } from '../test/fixtures/store.ts'
 import { trackedTestResidue } from '../test/residue.ts'
+import type { HostLoad } from './gate-load.ts'
 import {
   GATE_CONCURRENCY_LIMIT,
   holdForGateCapacity,
   shouldHoldShard,
   withGateSlot,
 } from './gate-load.ts'
-import type { HostLoad } from './gate-load.ts'
+
 const trackResidue = trackedTestResidue()
 beforeEach(() => {
   trackResidue(join(suiteDir, 'gates'))

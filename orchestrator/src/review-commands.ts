@@ -8,18 +8,18 @@ import { targetGitEnvironment } from './git-environment.ts'
 import { job } from './jobs.ts'
 import { projectAt, projectByName } from './projects.ts'
 import { getReview, listReviews, parseReviewOutput, recordReviews } from './review.ts'
+import { reviewCalibration, reviewCalibrationFleet } from './review-calibration.ts'
 import { coverageAudit } from './review-coverage.ts'
+import { REVIEW_WINDOW } from './review-evidence-sql.ts'
 import { reviewPins } from './review-pins.ts'
+import { classifyReviewTier, diffNumstat } from './review-tier.ts'
 import {
   completeReview,
   DISPOSITIONS,
+  type Disposition,
   MIN_REVIEW_TRIAGED,
   triageFinding,
-  type Disposition,
 } from './review-triage.ts'
-import { reviewCalibration, reviewCalibrationFleet } from './review-calibration.ts'
-import { REVIEW_WINDOW } from './review-evidence-sql.ts'
-import { classifyReviewTier, diffNumstat } from './review-tier.ts'
 import { REVIEW_SEVERITY } from './review-vocabulary.ts'
 
 type ReviewFlags = { has(name: string): boolean; flag(name: string): string | undefined }

@@ -13,10 +13,10 @@ import {
   writeFileSync,
 } from 'node:fs'
 import { basename, dirname, join, resolve } from 'node:path'
-import { db } from './db.ts'
-import { resolveRunsDirectory } from './database-location.ts'
-import { gitOk, gitResult } from './git-environment.ts'
 import { realpathOrSpelled } from './checkout-identity.ts'
+import { resolveRunsDirectory } from './database-location.ts'
+import { db } from './db.ts'
+import { gitOk, gitResult } from './git-environment.ts'
 import type { Worktree } from './worktree-types.ts'
 
 export type OrphanSafety = {

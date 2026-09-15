@@ -2,10 +2,10 @@
 /** Knows dispatch command preflight and run dispatch. Must not know transports, routing by value, worktrees, the CLI, or reviews. */
 import { existsSync, realpathSync } from 'node:fs'
 import { preflight } from './dispatch-preflight.ts'
-import { isReaderJob, job, reclaimsTreeByDefault, resolveJobTimeoutMs } from './jobs.ts'
-import { projectAt, projectByName, projects } from './projects.ts'
 import type { DetachSpec } from './failover.ts'
+import { isReaderJob, job, reclaimsTreeByDefault, resolveJobTimeoutMs } from './jobs.ts'
 import type { McpRequest } from './mcp-preflight.ts'
+import { projectAt, projectByName, projects } from './projects.ts'
 
 type TransportName = 'cli' | 'acp'
 

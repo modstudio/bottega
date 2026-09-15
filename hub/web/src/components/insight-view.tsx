@@ -1,18 +1,18 @@
-import { useEffect, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import type { inferRouterOutputs } from '@trpc/server'
+import { useEffect, useState } from 'react'
+import { Badge } from '@/components/badge'
 import {
   PageHeader,
+  responseSubtitle,
   SectionTitle,
   StatRow,
   StatTile,
   WindowBar,
-  responseSubtitle,
 } from '@/components/design-system'
-import { Badge } from '@/components/badge'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/table'
-import { setWorkCounts, useWindowState } from '@/lib/window'
 import { compactTokens, duration } from '@/lib/format'
+import { setWorkCounts, useWindowState } from '@/lib/window'
 import { trpc } from '@/trpc/client'
 import type { AppRouter } from '../../../src/trpc/router.ts'
 

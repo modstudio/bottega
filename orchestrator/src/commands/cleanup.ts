@@ -1,12 +1,13 @@
 // concern: cli
 /** Registers cleanup adapters. Must not own cleanup decisions. */
-import type { Command } from 'commander'
+
 import { existsSync, writeFileSync } from 'node:fs'
-import { discardRun, type CleanupPresentation } from '../cleanup.ts'
+import type { Command } from 'commander'
+import { type CleanupPresentation, discardRun } from '../cleanup.ts'
 import { sweepRuns } from '../cleanup-sweep.ts'
-import { abandonRun, stopRun } from '../run-stop.ts'
-import { terminateRunProcesses } from '../run-process.ts'
 import { grokTrustHeadings, grokTrustPathFromHeading } from '../grok-trust.ts'
+import { terminateRunProcesses } from '../run-process.ts'
+import { abandonRun, stopRun } from '../run-stop.ts'
 import { log, optionFlags } from './support.ts'
 
 function keptBranchLine(

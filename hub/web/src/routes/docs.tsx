@@ -1,9 +1,10 @@
-import { useEffect, useMemo, useState } from 'react'
-import { createFileRoute, Outlet, useNavigate } from '@tanstack/react-router'
 import { useMutation, useQuery } from '@tanstack/react-query'
+import { createFileRoute, Outlet, useNavigate } from '@tanstack/react-router'
 import { ChevronRight, Plus } from 'lucide-react'
-import { PageHeader } from '@/components/design-system'
+import { useEffect, useMemo, useState } from 'react'
 import { Button } from '@/components/button'
+import { Collection, type CollectionColumn } from '@/components/collection'
+import { PageHeader } from '@/components/design-system'
 import {
   Dialog,
   DialogContent,
@@ -14,10 +15,9 @@ import {
 } from '@/components/dialog'
 import { Input } from '@/components/input'
 import { Tabs, TabsList, TabsTrigger } from '@/components/tabs'
-import { queryClient, trpc } from '@/trpc/client'
 import { compactBytes, relativeTime } from '@/lib/format'
-import { Collection, type CollectionColumn } from '@/components/collection'
-import { DOC_SCOPES, DOC_SCOPE_SUBJECT_KIND, type DocScope } from '../../../../shared/docs.ts'
+import { queryClient, trpc } from '@/trpc/client'
+import { DOC_SCOPE_SUBJECT_KIND, DOC_SCOPES, type DocScope } from '../../../../shared/docs.ts'
 
 export { DOC_SCOPES, type DocScope }
 

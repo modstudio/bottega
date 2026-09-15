@@ -9,20 +9,20 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { AGENTS } from './agents.ts'
 import { checkDoc, compilePack } from './canon.ts'
+import { DEFAULT_EVAL_AGENT } from './canon-eval-status.ts'
 import {
   hasRealQuestions,
   isAsking,
   parseWorkerReply,
-  realQuestions,
   type ReviewReply,
+  realQuestions,
   type WorkerReply,
 } from './contract.ts'
 import { db, nowIso, writeTransaction } from './db.ts'
-import { auditRunMutation, runMutationActor } from './run-authority.ts'
 import { JOBS } from './jobs.ts'
 import { parseReviewOutput, parseReviewReply } from './review.ts'
 import { run } from './run.ts'
-import { DEFAULT_EVAL_AGENT } from './canon-eval-status.ts'
+import { auditRunMutation, runMutationActor } from './run-authority.ts'
 
 export const CANON_EVAL_LENS = 'canon-eval'
 export const TRACKED_EVAL_PATH = 'scripts/tracked.ts'

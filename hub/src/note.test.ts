@@ -2,6 +2,7 @@ import { afterAll, beforeAll, describe, expect, test } from 'bun:test'
 import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { resetFixtureStore } from '../test/run-fixtures.ts'
 import { db } from './db.ts'
 import {
   acknowledgeNote,
@@ -9,14 +10,13 @@ import {
   deriveNoteAnchor,
   dropNote,
   getNote,
-  mergeNote,
-  staleNotes,
   listActionableNotes,
   listNotes,
-  promoteNote,
+  mergeNote,
   type NoteAnchor,
+  promoteNote,
+  staleNotes,
 } from './note.ts'
-import { resetFixtureStore } from '../test/run-fixtures.ts'
 
 const scratch = mkdtempSync(join(tmpdir(), 'hub-note-'))
 beforeAll(resetFixtureStore)

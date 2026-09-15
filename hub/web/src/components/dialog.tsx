@@ -1,12 +1,12 @@
+import { X } from 'lucide-react'
 import {
   createContext,
+  type HTMLAttributes,
+  type ReactNode,
   useContext,
   useLayoutEffect,
   useRef,
-  type HTMLAttributes,
-  type ReactNode,
 } from 'react'
-import { X } from 'lucide-react'
 import { cx } from '@/components/cx'
 
 type DialogState = { open: boolean; onOpenChange: (open: boolean) => void }

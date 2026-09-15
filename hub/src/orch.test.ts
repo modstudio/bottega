@@ -3,8 +3,8 @@ import {
   chmodSync,
   mkdirSync,
   mkdtempSync,
-  readFileSync,
   readdirSync,
+  readFileSync,
   realpathSync,
   rmSync,
   statSync,
@@ -12,6 +12,7 @@ import {
 } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
+import { encodeOrchRunLine, OrchBlockersSchema } from '../../shared/orch-contract.ts'
 import {
   decodeRunsJson,
   docArgv,
@@ -19,7 +20,6 @@ import {
   startDashboardCapability,
   stopDashboardCapability,
 } from './orch.ts'
-import { encodeOrchRunLine, OrchBlockersSchema } from '../../shared/orch-contract.ts'
 
 const runFixture = {
   id: 42,

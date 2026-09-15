@@ -1,6 +1,7 @@
 import { beforeAll, describe, expect, test } from 'bun:test'
-import { DUPLICATE_TITLE_FIXTURE } from './duplicate-matcher.fixture.ts'
+import { resetFixtureStore } from '../test/run-fixtures.ts'
 import { db } from './db.ts'
+import { DUPLICATE_TITLE_FIXTURE } from './duplicate-matcher.fixture.ts'
 import { upsertTrackerTask } from './ingest/trackers.ts'
 import {
   commentTask,
@@ -11,7 +12,6 @@ import {
   showTask,
   taskRecord,
 } from './task.ts'
-import { resetFixtureStore } from '../test/run-fixtures.ts'
 
 beforeAll(resetFixtureStore)
 

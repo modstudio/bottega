@@ -2,6 +2,7 @@ import { describe, expect, test } from 'bun:test'
 import { addRun } from '../test/fixtures/store.ts'
 import { ask } from './ask.ts'
 import { db } from './db.ts'
+
 describe('the live ask channel always answers', () => {
   test('a live question is answerable through the command, not only in SQL', () => {
     const live = addRun({ agent: 'codex', job: 'implement', status: 'running' })

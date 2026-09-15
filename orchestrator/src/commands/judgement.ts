@@ -1,21 +1,22 @@
 // concern: cli
 /** Registers judgement adapters and validates their CLI-only inputs. */
-import type { Command } from 'commander'
+
+import { timingSafeEqual } from 'node:crypto'
 import { lstatSync, readFileSync } from 'node:fs'
 import { dirname } from 'node:path'
-import { timingSafeEqual } from 'node:crypto'
-import { writableDb } from '../db.ts'
-import { NOT_EVIDENCE } from '../failure.ts'
-import { authorizeRunMutation } from '../run-authority.ts'
-import { discardWorktree, type CleanupPresentation, type CleanupRow } from '../cleanup.ts'
-import { judgeRun, scoreRun } from '../judgement.ts'
-import { pidAlive } from '../process-liveness.ts'
-import { recalibrate } from '../recalibration.ts'
+import type { Command } from 'commander'
 import {
   DASHBOARD_CAPABILITY_PATH_ENV,
   DASHBOARD_CAPABILITY_TOKEN_ENV,
   type DashboardCapability,
 } from '../../../shared/dashboard-capability.ts'
+import { type CleanupPresentation, type CleanupRow, discardWorktree } from '../cleanup.ts'
+import { writableDb } from '../db.ts'
+import { NOT_EVIDENCE } from '../failure.ts'
+import { judgeRun, scoreRun } from '../judgement.ts'
+import { pidAlive } from '../process-liveness.ts'
+import { recalibrate } from '../recalibration.ts'
+import { authorizeRunMutation } from '../run-authority.ts'
 import { collect, log, optionFlags, write } from './support.ts'
 
 const commonValueFlags = [

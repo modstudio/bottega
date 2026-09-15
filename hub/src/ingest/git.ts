@@ -1,7 +1,7 @@
-import { db, nowIso, type Project } from '../db.ts'
-import { keyPattern, projectOfKey } from '../attribute.ts'
-import { projects } from '../projects.ts'
 import { categorizeFile, type FileKind } from '../../../shared/file-kind.ts'
+import { keyPattern, projectOfKey } from '../attribute.ts'
+import { db, nowIso, type Project } from '../db.ts'
+import { projects } from '../projects.ts'
 
 /**
  * Generated files, which are not work.

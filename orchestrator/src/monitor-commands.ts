@@ -1,6 +1,7 @@
 // concern: monitor-commands
 /** Owns monitor invocation, notice delivery authority, reporting, and exit mapping. Must not know CLI grammar. */
-import { basename, dirname } from 'node:path'
+
+import { timingSafeEqual } from 'node:crypto'
 import {
   closeSync,
   constants,
@@ -10,7 +11,7 @@ import {
   readFileSync,
   realpathSync,
 } from 'node:fs'
-import { timingSafeEqual } from 'node:crypto'
+import { basename, dirname } from 'node:path'
 import {
   MONITOR_CAPABILITY_PATH_ENV,
   MONITOR_CAPABILITY_TOKEN_ENV,
@@ -22,10 +23,10 @@ import {
   claimMonitorNotices,
   displayConditions,
   formatMonitorPass,
+  type MonitorNotice,
   markMonitorNoticesDelivered,
   monitor,
   monitorHistory,
-  type MonitorNotice,
 } from './monitor.ts'
 import { pidAlive } from './process-liveness.ts'
 

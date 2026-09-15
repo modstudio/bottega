@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, test } from 'bun:test'
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { homedir, tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { mkdtempSync, readFileSync, rmSync, writeFileSync, mkdirSync } from 'node:fs'
 import { ROOT } from './db.ts'
 import { classify, NOT_EVIDENCE } from './failure.ts'
 import type { Project } from './projects.ts'

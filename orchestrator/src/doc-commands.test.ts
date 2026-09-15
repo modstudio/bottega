@@ -1,6 +1,6 @@
+import { describe, expect, test } from 'bun:test'
 import { Client } from '@modelcontextprotocol/sdk/client/index.js'
 import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js'
-import { describe, expect, test } from 'bun:test'
 import { consumeDoc, removeDoc, setDoc } from '../test/fixtures/docs.ts'
 import { AGENTS } from './agents.ts'
 import {
@@ -15,6 +15,7 @@ import {
 } from './docs.ts'
 import { JOBS } from './jobs.ts'
 import { createDocsMcpServer } from './mcp.ts'
+import { portCommand } from './port-commands.ts'
 import {
   baselineForPair,
   ledgerRef,
@@ -24,7 +25,6 @@ import {
   listSkips,
 } from './porting.ts'
 import { upsertProject } from './projects.ts'
-import { portCommand } from './port-commands.ts'
 import { reviewCommand } from './review-commands.ts'
 
 async function command(args: string[], stdin = '') {

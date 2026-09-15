@@ -1,5 +1,5 @@
-import { expect, test } from 'bun:test'
 import { Database } from 'bun:sqlite'
+import { expect, test } from 'bun:test'
 import { applySchemaForFixture, closeDatabaseForFixture, db, registerOpenHooks } from './db.ts'
 
 test('a writable open refuses when no hooks are registered', () => {

@@ -1,19 +1,19 @@
 import { AGENTS } from './agents.ts'
 import { db } from './db.ts'
-import { chainTerminationAt } from './run-liveness.ts'
-import { weigh } from './score.ts'
 import { COOLS_DOWN } from './failure.ts'
 import { JOBS } from './jobs.ts'
 import {
   COOLDOWN_MIN,
+  currentPolicySelection,
+  isRoutingEvidence,
   MIN_SAMPLE,
   OUTPUT_RESERVE,
   PROMPT_SIZE_BOUNDARY,
-  currentPolicySelection,
-  isRoutingEvidence,
   routingEvidenceWindow,
   thompsonRank,
 } from './route.ts'
+import { chainTerminationAt } from './run-liveness.ts'
+import { weigh } from './score.ts'
 import { median } from './statistics.ts'
 
 export const ROUTING_BACKTEST_SEED = 287

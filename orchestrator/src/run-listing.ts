@@ -1,9 +1,10 @@
 // concern: run-listing
 /** Knows run list and state rendering. Must not know run control, transports, routing, the CLI, or worktrees. */
-import { db } from './db.ts'
+
 import { resolveFailover } from './collect.ts'
+import { db } from './db.ts'
 import { UNSCORED_WHERE } from './evidence-query.ts'
-import { failureReason, outcomeOf, type OutcomeRow } from './outcome.ts'
+import { failureReason, type OutcomeRow, outcomeOf } from './outcome.ts'
 
 type RunListingFlags = {
   has(name: string): boolean

@@ -1,16 +1,16 @@
 import { describe, expect, test } from 'bun:test'
+import { join } from 'node:path'
 import { addRun, dir, score } from '../test/fixtures/store.ts'
 import { db } from './db.ts'
 import {
   excludeSharedOutputRuns,
   pendingForSession,
+  runTotals,
   SHARED_OUTPUT_REASON,
 } from './evidence-query.ts'
 import { candidates } from './route.ts'
 import { weigh } from './score.ts'
 import { runList, state } from './serve.ts'
-import { join } from 'node:path'
-import { runTotals } from './evidence-query.ts'
 
 test('runs --unscored uses the shared definition of an owed judgement', () => {
   const wanted = addRun({ agent: 'grok', job: 'craft', session: 'owed-session' })

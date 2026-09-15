@@ -1,11 +1,10 @@
 import { describe, expect, test } from 'bun:test'
-import { addRun } from '../test/fixtures/store.ts'
-import { db } from './db.ts'
-import { upsertProject } from './projects.ts'
-import { applyMigrations } from './migrations.ts'
-import { sessionId } from './db.ts'
-import { listLenses, resolveLens, selectProjectProfile, setLens, setProfile } from './lenses.ts'
 import { PLATFORM_SLUG } from '../../shared/brand.ts'
+import { addRun } from '../test/fixtures/store.ts'
+import { db, sessionId } from './db.ts'
+import { listLenses, resolveLens, selectProjectProfile, setLens, setProfile } from './lenses.ts'
+import { applyMigrations } from './migrations.ts'
+import { upsertProject } from './projects.ts'
 
 describe('lens catalogue', () => {
   test('six seeded cores render their default profile for every registered project', () => {

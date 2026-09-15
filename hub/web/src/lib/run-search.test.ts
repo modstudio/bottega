@@ -1,12 +1,12 @@
 import { describe, expect, test } from 'bun:test'
 import { vendorFigures } from './format'
+import { PROJECT_FALLBACK } from './project'
 import {
   matchesRunSearch,
   runSearchText,
   type SearchableLiveRun,
   type SearchableRun,
 } from './run-search'
-import { PROJECT_FALLBACK } from './project'
 
 const completed: SearchableRun = {
   id: 42,

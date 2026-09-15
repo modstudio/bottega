@@ -3,8 +3,9 @@
  * Knows MCP request/provenance vocabulary and Grok's connection diagnostic.
  * Must not know run state, transports, routing, or database mutation.
  */
-import type { CanonSource } from './contract.ts'
+
 import { AGENTS } from './agents.ts'
+import type { CanonSource } from './contract.ts'
 import { job } from './jobs.ts'
 import { projectAt, validateStoredProjectSettings } from './projects.ts'
 import { childEnv } from './run-process.ts'

@@ -1,15 +1,9 @@
-import { useState } from 'react'
 import { createFileRoute } from '@tanstack/react-router'
+import { useState } from 'react'
 import { Badge } from '@/components/badge'
 import { Button } from '@/components/button'
 import { Checkbox } from '@/components/checkbox'
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogHeader,
-  DialogTitle,
-} from '@/components/dialog'
+import { Collection } from '@/components/collection'
 import {
   EmptyState,
   LiveDot,
@@ -21,14 +15,20 @@ import {
   StatRow,
   StatTile,
 } from '@/components/design-system'
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/dialog'
+import { Copyable, DisplayRow, FieldSection, SettingBlock } from '@/components/fields'
 import { Input } from '@/components/input'
 import { Select } from '@/components/select'
+import { Sheet } from '@/components/sheet'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/table'
 import { Tabs, TabsList, TabsTrigger } from '@/components/tabs'
 import { Textarea } from '@/components/textarea'
-import { Collection } from '@/components/collection'
-import { Copyable, DisplayRow, FieldSection, SettingBlock } from '@/components/fields'
-import { Sheet } from '@/components/sheet'
 
 const semanticColors = [
   { name: 'success', light: '#1a7f4b', dark: '#4cc98a' },

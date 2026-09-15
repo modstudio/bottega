@@ -1,16 +1,16 @@
-import { db, nowIso, type Project } from '../db.ts'
-import { Mcp, credentials } from '../mcp.ts'
-import { projects } from '../projects.ts'
 import {
-  resolveAssigneeIds,
-  trackerSourceFor,
   type AssigneeRef,
+  resolveAssigneeIds,
   type TrackerSource,
   type TrackerTask,
+  trackerSourceFor,
 } from '../../../shared/trackers.ts'
+import { db, nowIso, type Project } from '../db.ts'
+import { credentials, Mcp } from '../mcp.ts'
+import { projects } from '../projects.ts'
 
-export { resolveAssigneeIds } from '../../../shared/trackers.ts'
 export type { StatusCategory, TrackerTask } from '../../../shared/trackers.ts'
+export { resolveAssigneeIds } from '../../../shared/trackers.ts'
 
 async function resolveCached(
   namespace: string,

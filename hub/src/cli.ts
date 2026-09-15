@@ -1,40 +1,16 @@
 #!/usr/bin/env bun
-import { DB_PATH, db, migrateDatabase, nextImportedTaskKey, nowIso, requireDatabase } from './db.ts'
-import { canonicalSchemaHash, expectedSchemaHash, schemaVersionLabel } from './migrations.ts'
 import { readFileSync, writeFileSync } from 'node:fs'
-import { ingestRuns } from './ingest/runs.ts'
-import { ingestTranscripts } from './ingest/transcripts.ts'
-import { ingestGit } from './ingest/git.ts'
-import { ingestTrackers } from './ingest/trackers.ts'
-import { tasksInWindow, estateEngagedMs, rollUpDays } from './query.ts'
-import { watch, withLease } from './collect.ts'
-import {
-  closeTask,
-  commentTask,
-  createTask,
-  createTaskDocument,
-  deleteTaskDocument,
-  DuplicateTaskError,
-  duplicateCandidates,
-  getTaskDocument,
-  listTaskDocuments,
-  listTasks,
-  setTask,
-  showTask,
-  updateTaskDocument,
-} from './task.ts'
-import { gather, summarise, renderHtml, renderText, send, recordSend } from './report.ts'
-import { getReport } from './settings.ts'
 import { human } from '../../shared/interval.ts'
-import { serve } from './serve.ts'
-import { projectOf } from './attribute.ts'
-import { projects } from './projects.ts'
-import { Mcp, credentials } from './mcp.ts'
 import { createTrackerTask } from '../../shared/trackers.ts'
-import { printReconcile, reconcileOpenIntervals } from './reconcile.ts'
-import { listOpenRulings, rulingsPayload } from './rulings.ts'
-import { startDashboardCapability } from './orch.ts'
-import { hoursAgo } from './time.ts'
+import { projectOf } from './attribute.ts'
+import { watch, withLease } from './collect.ts'
+import { DB_PATH, db, migrateDatabase, nextImportedTaskKey, nowIso, requireDatabase } from './db.ts'
+import { ingestGit } from './ingest/git.ts'
+import { ingestRuns } from './ingest/runs.ts'
+import { ingestTrackers } from './ingest/trackers.ts'
+import { ingestTranscripts } from './ingest/transcripts.ts'
+import { credentials, Mcp } from './mcp.ts'
+import { canonicalSchemaHash, expectedSchemaHash, schemaVersionLabel } from './migrations.ts'
 import {
   acknowledgeNote,
   createNote,
@@ -49,6 +25,30 @@ import {
   setCuratorEnabled,
   staleNotes,
 } from './note.ts'
+import { startDashboardCapability } from './orch.ts'
+import { projects } from './projects.ts'
+import { estateEngagedMs, rollUpDays, tasksInWindow } from './query.ts'
+import { printReconcile, reconcileOpenIntervals } from './reconcile.ts'
+import { gather, recordSend, renderHtml, renderText, send, summarise } from './report.ts'
+import { listOpenRulings, rulingsPayload } from './rulings.ts'
+import { serve } from './serve.ts'
+import { getReport } from './settings.ts'
+import {
+  closeTask,
+  commentTask,
+  createTask,
+  createTaskDocument,
+  DuplicateTaskError,
+  deleteTaskDocument,
+  duplicateCandidates,
+  getTaskDocument,
+  listTaskDocuments,
+  listTasks,
+  setTask,
+  showTask,
+  updateTaskDocument,
+} from './task.ts'
+import { hoursAgo } from './time.ts'
 
 const argv = process.argv.slice(2)
 const cmd = argv[0]

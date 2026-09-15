@@ -1,4 +1,6 @@
 // concern: ref-guard
+
+import { createHash, randomUUID } from 'node:crypto'
 import {
   accessSync,
   closeSync,
@@ -9,19 +11,18 @@ import {
   lstatSync,
   mkdirSync,
   openSync,
+  readdirSync,
   readFileSync,
   realpathSync,
-  readdirSync,
   renameSync,
   rmSync,
   writeFileSync,
 } from 'node:fs'
-import { createHash, randomUUID } from 'node:crypto'
 import { dirname, isAbsolute, join, relative, resolve, sep } from 'node:path'
 import { db, ROOT } from './db.ts'
+import { commonGitDir, gitConfigOk, linkedWorktreePaths } from './git-environment.ts'
 import { pidAlive } from './process-liveness.ts'
 import { ORCH_RUN_MARKER } from './worktree-attribution.ts'
-import { commonGitDir, gitConfigOk, linkedWorktreePaths } from './git-environment.ts'
 
 export type SharedRefGuardEnvironment = {
   GIT_CONFIG_COUNT: string

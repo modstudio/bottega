@@ -1,39 +1,38 @@
 import { existsSync } from 'node:fs'
 import { fetchRequestHandler } from '@trpc/server/adapters/fetch'
-import { db, enableSchemaReload, nowIso } from './db.ts'
+import { engagedMs, human, human as humanMs } from '../../shared/interval.ts'
+import type { OrchBlockers } from '../../shared/orch-contract.ts'
 import { resolveAppStatic } from './app-static.ts'
-import { createContext } from './trpc/context.ts'
-import { appRouter } from './trpc/router.ts'
+import { attributeRun } from './attribute.ts'
+import { collectFast, collectSlow, leaseHolder, watch, withLease } from './collect.ts'
+import { db, enableSchemaReload, nowIso } from './db.ts'
+import { promptLens } from './excerpt.ts'
+import { chainVendorTokens, executionSpans } from './ingest/runs.ts'
+import { state as orchState, blockers as readBlockers, readRuns } from './orch.ts'
+import { projectNames, projects, type RegisteredProject, trackerPresentation } from './projects.ts'
 import {
-  tasksInWindow,
+  boardTasks,
   completedInWindow,
+  endMs,
   intervalsOf,
   ratioSummary,
   spendGrid,
-  endMs,
   stripWindow,
-  boardTasks,
+  tasksInWindow,
 } from './query.ts'
-import { engagedMs, human } from '../../shared/interval.ts'
-import { chainVendorTokens, executionSpans } from './ingest/runs.ts'
-import { attributeRun } from './attribute.ts'
-import { promptLens } from './excerpt.ts'
-import { collectFast, collectSlow, watch, leaseHolder, withLease } from './collect.ts'
-import { hoursAgo } from './time.ts'
-import { blockers as readBlockers, readRuns, state as orchState } from './orch.ts'
-import type { OrchBlockers } from '../../shared/orch-contract.ts'
-import { getReport, secretStatus } from './settings.ts'
 import {
   gather,
   lastSends,
-  summarise,
+  recordSend,
   renderHtml,
   renderText,
   send as sendMail,
-  recordSend,
+  summarise,
 } from './report.ts'
-import { human as humanMs } from '../../shared/interval.ts'
-import { projectNames, projects, trackerPresentation, type RegisteredProject } from './projects.ts'
+import { getReport, secretStatus } from './settings.ts'
+import { hoursAgo } from './time.ts'
+import { createContext } from './trpc/context.ts'
+import { appRouter } from './trpc/router.ts'
 
 export const ORCH_CACHE_TTL_MS = 30_000
 

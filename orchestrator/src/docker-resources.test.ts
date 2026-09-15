@@ -4,12 +4,12 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import {
   classifiedDockerResources,
+  type DockerResource,
   dockerInventoryTimeoutMs,
   dockerRemovalTimeoutMs,
   dockerRunResources,
   orphanedDockerResources,
   teardownRunResources,
-  type DockerResource,
 } from './docker-resources.ts'
 
 afterEach(() => {

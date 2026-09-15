@@ -1,3 +1,4 @@
+import type { Database } from 'bun:sqlite'
 import {
   cpSync,
   existsSync,
@@ -8,7 +9,6 @@ import {
   writeFileSync,
 } from 'node:fs'
 import { dirname, join } from 'node:path'
-import type { Database } from 'bun:sqlite'
 import { nowIso } from './db.ts'
 import { appendRunEvent } from './events.ts'
 import { targetGitEnvironment } from './git-environment.ts'

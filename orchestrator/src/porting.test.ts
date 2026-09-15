@@ -1,5 +1,4 @@
 import { describe, expect, test } from 'bun:test'
-import { upsertProject, projects } from './projects.ts'
 import {
   addDoctrineRule,
   addPair,
@@ -15,6 +14,8 @@ import {
   setBaseline,
   setLedgerRef,
 } from './porting.ts'
+import { projects, upsertProject } from './projects.ts'
+
 describe('porting data model', () => {
   test('stores pair progress and declined candidates with their reasons', () => {
     upsertProject({

@@ -1,8 +1,8 @@
-import type { AppRouter } from '../../../src/trpc/router.ts'
 import { QueryClient } from '@tanstack/react-query'
 import { createTRPCClient, httpBatchLink } from '@trpc/client'
 import type { inferRouterOutputs } from '@trpc/server'
 import { createTRPCOptionsProxy } from '@trpc/tanstack-react-query'
+import type { AppRouter } from '../../../src/trpc/router.ts'
 
 export const queryClient = new QueryClient({
   defaultOptions: { queries: { staleTime: 30_000 } },

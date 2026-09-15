@@ -1,8 +1,8 @@
 import { describe, expect, test } from 'bun:test'
 import {
+  decideRuntimeBudget,
   HUNG_SUITE_TIMEOUT_MS,
   SUITE_RUNTIME_BUDGET_MS,
-  decideRuntimeBudget,
 } from './check-runtime'
 
 describe('suite runtime budget', () => {

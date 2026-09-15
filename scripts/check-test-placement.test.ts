@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, test } from 'bun:test'
 import { mkdirSync, mkdtempSync, readdirSync, rmSync, writeFileSync } from 'node:fs'
-import { relative, resolve } from 'node:path'
 import { tmpdir } from 'node:os'
+import { relative, resolve } from 'node:path'
 import { checkTestFiles, moduleCandidates } from './check-test-placement'
 
 const roots: string[] = []

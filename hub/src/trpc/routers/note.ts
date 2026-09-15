@@ -1,7 +1,7 @@
 import { initTRPC, TRPCError } from '@trpc/server'
 import { z } from 'zod'
-import type { Context } from '../context.ts'
 import { listNotes, promoteNote } from '../../note.ts'
+import type { Context } from '../context.ts'
 
 const t = initTRPC.context<Context>().create()
 

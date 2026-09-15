@@ -1,8 +1,8 @@
 // concern: worktree-caller
 import { cpSync, mkdirSync, realpathSync } from 'node:fs'
 import { dirname, join } from 'node:path'
-import { projectAt } from './projects.ts'
 import { git, gitBytes, gitInput, gitOk, repoRootOf } from './git-environment.ts'
+import { projectAt } from './projects.ts'
 import type { Worktree } from './worktree-types.ts'
 
 export function resolveBase(cwd: string, ref: string): string {

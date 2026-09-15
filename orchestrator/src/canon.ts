@@ -6,9 +6,9 @@ import { CANON_REFERENCE_EXEMPTIONS, canonReferencePath } from '../../shared/can
 import { isCliCommand } from './args.ts'
 import { db, linkedWorktreeReadOnly, nowIso, writeTransaction } from './db.ts'
 import { type Doc, docsForRun, docsMarkdown, listDocs } from './docs.ts'
-import { DEFAULT_PACK_BYTES, JOBS, job as getJob } from './jobs.ts'
-import { projectAt, projectByName, projects } from './projects.ts'
 import { targetGitEnvironment } from './git-environment.ts'
+import { DEFAULT_PACK_BYTES, job as getJob, JOBS } from './jobs.ts'
+import { projectAt, projectByName, projects } from './projects.ts'
 
 export const BRIEF_BYTES = 64 * 1024
 const ROOT = new URL('../..', import.meta.url).pathname.replace(/\/$/, '')

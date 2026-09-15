@@ -6,24 +6,27 @@
 import { existsSync, readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import type { Agent } from './agents.ts'
+import { type AskLoopback, startAskLoopback } from './ask.ts'
 import {
   checkpointRun,
   DEFAULT_CHECKPOINT_MINUTES,
   latestCheckpoint,
   recordFailedIdlePreservation,
 } from './checkpoint.ts'
+import type { CodexMcpServer } from './codex-mcp-scope.ts'
+import type { ConfinementEvent, FreezeFailure } from './confinement.ts'
 import {
-  TEXT_REPLY_SCHEMA,
-  REPLY_FILE_NAME,
   isAsking,
-  realQuestions,
-  validatesSchema,
+  REPLY_FILE_NAME,
   type ReplyDialect,
+  realQuestions,
+  TEXT_REPLY_SCHEMA,
+  validatesSchema,
   type WorkerReply,
 } from './contract.ts'
 import { db, nowIso } from './db.ts'
 import { appendRunEvent, teeTransportEvents } from './events.ts'
-import { FAILS_OVER, classify, hasVendorTerminationMarker, isNonAnswer } from './failure.ts'
+import { classify, FAILS_OVER, hasVendorTerminationMarker, isNonAnswer } from './failure.ts'
 import {
   contentTree,
   gitContext,
@@ -38,26 +41,23 @@ import {
   shouldIdleKill,
   terminateProcessGroup,
 } from './idle-kill.ts'
-import { jobIdleKillMs, type Job } from './jobs.ts'
-import { processStartTime } from './project-lock.ts'
-import { decideOutcome } from './outcome.ts'
+import { type Job, jobIdleKillMs } from './jobs.ts'
 import { receiptWorkerMessages, unreadWorkerMessages } from './mailbox.ts'
+import { decideOutcome } from './outcome.ts'
+import { processStartTime } from './project-lock.ts'
 import { childEnv, errorTail, live, liveCheckpoints } from './run-process.ts'
 import type { SandboxSelection } from './sandbox.ts'
-import { startAskLoopback, type AskLoopback } from './ask.ts'
 import {
   failureKindFromStop,
   schemaMismatchError,
   stopErrorMessage,
-  transportFor,
-  valueMatchesStrictSchema,
   type TransportName,
   type TransportResult,
   type TransportStartOpts,
+  transportFor,
+  valueMatchesStrictSchema,
 } from './transport.ts'
 import type { Worktree } from './worktree-types.ts'
-import type { FreezeFailure, ConfinementEvent } from './confinement.ts'
-import type { CodexMcpServer } from './codex-mcp-scope.ts'
 
 function reviewChangedPaths(cwd: string, base: string, inputTree: string): string[] {
   const args = ['diff', '--name-only', `${base}..${inputTree}`]
@@ -240,12 +240,12 @@ export async function runLive(input: LiveInput): Promise<LiveResult> {
   let status = 'failed'
   let error: string | null = null
   let failureKind: ReturnType<typeof classify> | null = null
-  let artifactsPersisted = true
-  let preConfinement: string | null = null
+  const artifactsPersisted = true
+  const preConfinement: string | null = null
   let vendorTerminatedStream: string | null = null
-  let confinementFailures: FreezeFailure[] = []
-  let confinementEvent: ConfinementEvent | null = null
-  let frozenBefore: import('./confinement.ts').FrozenCheckout[] = []
+  const confinementFailures: FreezeFailure[] = []
+  const confinementEvent: ConfinementEvent | null = null
+  const frozenBefore: import('./confinement.ts').FrozenCheckout[] = []
   let askLoopback: AskLoopback | null = null
 
   try {

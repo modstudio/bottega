@@ -1,14 +1,14 @@
 import { describe, expect, test } from 'bun:test'
+import { CONCERNS, PLATFORM_SLUG } from '../shared/brand.ts'
 import {
   CANON_FILES,
+  type Ctx,
+  checkBody,
   EXEMPTIONS,
   PREFIXES,
-  checkBody,
   parseAlso,
   trackedSet,
-  type Ctx,
 } from './check-canon'
-import { CONCERNS, PLATFORM_SLUG } from '../shared/brand.ts'
 
 /**
  * Every check here has a false-positive twin. A check that fires on ordinary

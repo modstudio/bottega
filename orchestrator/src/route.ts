@@ -1,16 +1,17 @@
-import { db } from './db.ts'
-import { WEIGHT, FIDELITY_PENALTY, weigh } from './score.ts'
 import {
   AGENTS,
   fileContractProbeReason,
   predatesFileContract,
   unavailableReason,
 } from './agents.ts'
-import { job, JOBS } from './jobs.ts'
-import { COOLS_DOWN, NOT_EVIDENCE } from './failure.ts'
 import { calibrationFor } from './calibration-port.ts'
 import { failingDefaultCanonEvals } from './canon-eval-status.ts'
+import { db } from './db.ts'
+import { COOLS_DOWN, NOT_EVIDENCE } from './failure.ts'
+import { JOBS, job } from './jobs.ts'
+import { FIDELITY_PENALTY, WEIGHT, weigh } from './score.ts'
 import { median } from './statistics.ts'
+
 export { median } from './statistics.ts'
 
 export type Candidate = {
@@ -256,7 +257,7 @@ function normal(rng: () => number): number {
 
 /** Marsaglia-Tsang gamma draw, including the standard alpha < 1 transform. */
 function gamma(alpha: number, rng: () => number): number {
-  if (alpha < 1) return gamma(alpha + 1, rng) * Math.pow(Math.max(rng(), Number.EPSILON), 1 / alpha)
+  if (alpha < 1) return gamma(alpha + 1, rng) * Math.max(rng(), Number.EPSILON) ** (1 / alpha)
   const d = alpha - 1 / 3
   const c = 1 / Math.sqrt(9 * d)
   while (true) {

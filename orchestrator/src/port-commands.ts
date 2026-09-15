@@ -1,9 +1,8 @@
 // concern: port-commands
 /** Knows port ledger command semantics and presentation. Must not know runs, routing, transports, the CLI, or worktrees. */
-import { readFileSync, readdirSync, statSync } from 'node:fs'
+import { readdirSync, readFileSync, statSync } from 'node:fs'
 import { join } from 'node:path'
 import { DB_PATH } from './db.ts'
-import { projectByName, projects } from './projects.ts'
 import {
   addDoctrineRule,
   addPair,
@@ -27,6 +26,7 @@ import {
   projectsForDryRun,
   sourceCoverage,
 } from './porting-import.ts'
+import { projectByName, projects } from './projects.ts'
 
 type PortFlags = { has(name: string): boolean; flag(name: string): string | undefined }
 type PortPresentation = {

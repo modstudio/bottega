@@ -1,5 +1,5 @@
-import type { ReactNode } from 'react'
 import { Copy } from 'lucide-react'
+import type { ReactNode } from 'react'
 import { Button } from './button'
 import { toast } from './toaster'
 

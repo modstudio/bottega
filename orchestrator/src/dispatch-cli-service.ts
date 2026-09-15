@@ -11,11 +11,13 @@ import {
 } from './agents.ts'
 import { flagValue, flagValues, readMessageText } from './args.ts'
 import { contractConflicts } from './contract.ts'
+import { sessionId } from './db.ts'
 import { dispatchCommand } from './dispatch-commands.ts'
 import type { DetachSpec } from './failover.ts'
 import { JOBS, job } from './jobs.ts'
 import type { McpRequest } from './mcp-preflight.ts'
 import { stackAt } from './projects.ts'
+import { implicitReviewWarning } from './review-target.ts'
 import {
   REVIEW_COVERAGE,
   REVIEW_LIMITS,
@@ -24,10 +26,9 @@ import {
 } from './review-vocabulary.ts'
 import { pick } from './route.ts'
 import { pickCommand } from './routing-commands.ts'
-import { detach as dispatchDetached } from './run-dispatch.ts'
-import { follow as followRun } from './run-control.ts'
 import { RUNS_DIR } from './run-artifacts.ts'
-import { sessionId } from './db.ts'
+import { follow as followRun } from './run-control.ts'
+import { detach as dispatchDetached } from './run-dispatch.ts'
 import {
   assertAcpAllowed,
   assertAcpReady,
@@ -35,7 +36,6 @@ import {
   selectAgentForTransport,
 } from './transport.ts'
 import { callerDrift, checkoutHasUncommittedWork, resolveBase } from './worktree-caller.ts'
-import { implicitReviewWarning } from './review-target.ts'
 
 type Presentation = {
   error(...values: unknown[]): void

@@ -7,20 +7,20 @@
  * command and its dashboard read 96% on review-lens while the router, counting
  * failures, was using 69%. One page, one scoreboard.
  */
-import { db } from './db.ts'
-import { registerStandardRuntime } from './runtime-registration.ts'
-import { reapStale } from './run-liveness.ts'
-import { runTotals } from './evidence-query.ts'
+
+import { existsSync, readFileSync } from 'node:fs'
 import { AGENTS, refreshAgents } from './agents.ts'
-import { JOBS } from './jobs.ts'
-import { scoreboard } from './route.ts'
-import { summary as metricSummary } from './metric.ts'
+import { db } from './db.ts'
+import { runTotals } from './evidence-query.ts'
 import { guide } from './guide.ts'
-import { candidates } from './route.ts'
-import { readFileSync, existsSync } from 'node:fs'
+import { JOBS } from './jobs.ts'
+import { messagesForRun, receiptMessagesForArchitect } from './mailbox.ts'
+import { summary as metricSummary } from './metric.ts'
 import { projectAt } from './projects.ts'
 import { reviewCalibration } from './review-calibration.ts'
-import { messagesForRun, receiptMessagesForArchitect } from './mailbox.ts'
+import { candidates, scoreboard } from './route.ts'
+import { reapStale } from './run-liveness.ts'
+import { registerStandardRuntime } from './runtime-registration.ts'
 
 registerStandardRuntime()
 

@@ -1,14 +1,14 @@
 // concern: evidence
 import type { Database } from 'bun:sqlite'
 import {
-  readerDeliverablesInstruction,
   missingDeclaredDeliverables,
-  UNEVIDENCED_DELIVERABLE_ERROR,
   type ReaderReply,
   type ReviewReply,
+  readerDeliverablesInstruction,
+  UNEVIDENCED_DELIVERABLE_ERROR,
 } from './contract.ts'
 import { provenanceServer } from './mcp-preflight.ts'
-import { type CleanReviewEvidence } from './review.ts'
+import type { CleanReviewEvidence } from './review.ts'
 import { recordReview } from './review-triage.ts'
 
 export type EvidencePromptFacts = {

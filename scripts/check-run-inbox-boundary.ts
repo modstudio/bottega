@@ -2,6 +2,7 @@
 /** Keep run inbox independent of run control, transports, routing, the CLI, and worktrees. */
 import { readFileSync } from 'node:fs'
 import { importSpecifiers } from './import-scanner.ts'
+
 const ROOT = new URL('..', import.meta.url).pathname.replace(/\/$/, '')
 const FILE = 'orchestrator/src/run-inbox.ts'
 const FORBIDDEN: [RegExp, string][] = [

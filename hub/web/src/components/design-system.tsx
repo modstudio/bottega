@@ -1,10 +1,11 @@
 import { useQuery } from '@tanstack/react-query'
-import { trpc } from '@/trpc/client'
-import type { CSSProperties } from 'react'
-import type { ReactNode } from 'react'
+import { Database, GitCommit, RadioTower } from 'lucide-react'
+import type { CSSProperties, ReactNode } from 'react'
 import { Button } from '@/components/button'
-import { Select, type SelectOption } from '@/components/select'
 import { cx } from '@/components/cx'
+import { Select, type SelectOption } from '@/components/select'
+import { collectedTime, relativeTime } from '@/lib/format'
+import { PROJECT_FALLBACK } from '@/lib/project'
 import {
   clearFilters,
   setFilter,
@@ -13,9 +14,7 @@ import {
   WINDOWS,
   type WindowHours,
 } from '@/lib/window'
-import { collectedTime, relativeTime } from '@/lib/format'
-import { PROJECT_FALLBACK } from '@/lib/project'
-import { Database, GitCommit, RadioTower } from 'lucide-react'
+import { trpc } from '@/trpc/client'
 
 export function PageHeader({
   title,

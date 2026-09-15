@@ -1,12 +1,12 @@
 import { afterEach, beforeAll, describe, expect, test } from 'bun:test'
 import { engagedMs } from '../../shared/interval.ts'
+import { resetFixtureStore } from '../test/run-fixtures.ts'
 import { db } from './db.ts'
 import { upsertTrackerTask } from './ingest/trackers.ts'
 import { boardTasks, endMs, stripWindow } from './query.ts'
 import { gather, renderHtml, renderText } from './report.ts'
 import { clearOrchCache, view } from './serve.ts'
 import { createTask, taskRecord } from './task.ts'
-import { resetFixtureStore } from '../test/run-fixtures.ts'
 
 beforeAll(resetFixtureStore)
 afterEach(clearOrchCache)

@@ -1,9 +1,9 @@
-import { createRequire } from 'node:module'
 import { existsSync, realpathSync } from 'node:fs'
+import { createRequire } from 'node:module'
 import { basename, dirname, isAbsolute, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { job } from './jobs.ts'
 import type { FailureKind } from './failure.ts'
+import { job } from './jobs.ts'
 import type { SandboxRuntimeConfig } from './sandbox.ts'
 
 const requireTransport = createRequire(import.meta.url)

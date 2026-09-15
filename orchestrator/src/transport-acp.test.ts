@@ -18,15 +18,6 @@ import {
   valueMatchesStrictSchema,
 } from './transport.ts'
 import {
-  acpHarnessArgv,
-  acpLeaderSocketPath,
-  acpOutcome,
-  acpSandboxProfile,
-  grokEffectiveModel,
-  grokSessionMeta,
-  normalizeAcpTurn,
-} from './transport-acp.ts'
-import {
   ACP_FIXTURE_CANCELLED_TEXT,
   ACP_FIXTURE_EDIT_PERMISSION,
   ACP_FIXTURE_ELICITATION,
@@ -40,6 +31,15 @@ import {
   ACP_FIXTURE_TRUNCATED,
   ACP_FIXTURE_TRUNCATED_TEXT,
 } from './transport-acp.fixtures.ts'
+import {
+  acpHarnessArgv,
+  acpLeaderSocketPath,
+  acpOutcome,
+  acpSandboxProfile,
+  grokEffectiveModel,
+  grokSessionMeta,
+  normalizeAcpTurn,
+} from './transport-acp.ts'
 
 describe('ACP transport selection', () => {
   test('model-agnostic harnesses expose their ACP stdio command', () => {

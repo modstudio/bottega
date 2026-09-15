@@ -1,15 +1,16 @@
 // concern: doctor
 /** Knows machine and register diagnosis. Must not know transports, routing, run control, the CLI, or reviews by value. */
 import { existsSync } from 'node:fs'
+import { doctorAgentStatus } from './agent-auth.ts'
 import {
   AGENTS,
-  LOCAL_BASE_URL,
-  LOCAL_CONTEXT_TOKENS,
-  LOCAL_MODEL,
   agentRows,
   cliVersion,
   ensureLocalHealth,
   fileContractProbeReason,
+  LOCAL_BASE_URL,
+  LOCAL_CONTEXT_TOKENS,
+  LOCAL_MODEL,
   lastWakeAttempt,
   predatesFileContract,
   tryWake,
@@ -18,7 +19,6 @@ import {
   wakeStatus,
 } from './agents.ts'
 import { gwetAc1, quadraticWeightedKappa } from './agreement.ts'
-import { doctorAgentStatus } from './agent-auth.ts'
 import { DATABASE_RESOLUTION, DB_PATH, databaseOpenMode, db } from './db.ts'
 import {
   classifiedDockerResources,

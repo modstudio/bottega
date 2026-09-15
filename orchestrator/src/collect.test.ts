@@ -2,6 +2,8 @@ import { describe, expect, spyOn, test } from 'bun:test'
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { addRun, dir } from '../test/fixtures/store.ts'
+import { fakeClock, registerClock, systemClock } from './clock.ts'
 import {
   branchNote,
   collectResult,
@@ -10,9 +12,7 @@ import {
   noCommitNote,
   thinOutputWarning,
 } from './collect.ts'
-import { addRun, dir } from '../test/fixtures/store.ts'
 import { db } from './db.ts'
-import { fakeClock, registerClock, systemClock } from './clock.ts'
 
 const recordedResult = (id: number) => {
   const logs: string[] = []

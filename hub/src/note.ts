@@ -1,10 +1,10 @@
 import { existsSync, readFileSync } from 'node:fs'
 import { isAbsolute, resolve } from 'node:path'
-import { db, nowIso } from './db.ts'
 import { projectOf } from './attribute.ts'
+import { db, nowIso } from './db.ts'
+import { dispatchNoteCurator, readRunsById } from './orch.ts'
 import { projects } from './projects.ts'
 import { createTask, duplicateCandidates, type TaskRow } from './task.ts'
-import { dispatchNoteCurator, readRunsById } from './orch.ts'
 
 export type NoteAnchor = {
   cwd: string

@@ -1,104 +1,33 @@
-import { mkdirSync, readFileSync, existsSync, writeFileSync } from 'node:fs'
-import { basename } from 'node:path'
 import { randomUUID } from 'node:crypto'
-import { classify, notify, NEEDS_HUMAN, NEEDS_HUMAN_TITLE, FAILS_OVER } from './failure.ts'
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
+import { basename } from 'node:path'
 import {
-  requireAgent,
   ensureLocalHealth,
-  tryWake,
-  minimumCliVersionRefusal,
   LOCAL_BASE_URL,
+  minimumCliVersionRefusal,
+  requireAgent,
+  tryWake,
 } from './agents.ts'
-import {
-  job,
-  isReaderJob,
-  reclaimsTreeByDefault,
-  resolveJobTimeoutMs,
-  jobBoundInstruction,
-  type Job,
-} from './jobs.ts'
-import { pick } from './route.ts'
-import { gitContext } from './git-environment.ts'
-import {
-  canonSourceFor,
-  canonSourceInstruction,
-  effectiveMcpRequest,
-  mcpAttachRefusal,
-  mcpRequestFromStored,
-  requestedMcpMode,
-  storedMcpRequest,
-  type McpRequest,
-  probeRequestedMcp,
-} from './mcp-preflight.ts'
-import { preflight } from './dispatch-preflight.ts'
-import { implicitReviewCoverageBase, resolveReviewTarget } from './review-target.ts'
-import { db, nowIso, sessionId, writableDb, enableSchemaReload } from './db.ts'
-import { resolveRootFromLastTurn } from './run-liveness.ts'
-import { teardownTerminalRunResources } from './resource-ownership.ts'
-import { toolFor } from './worktree-preflight.ts'
-import type { Changes } from './worktree-remove.ts'
-import { resolveBase, resolveReadOnlyBase } from './worktree-caller.ts'
-import {
-  prepareSharedRefGuard,
-  assertSharedRefGuardOutsideWritableRoots,
-  workerSharedGitRoots,
-} from './ref-guard.ts'
-import type { Worktree } from './worktree-types.ts'
-import {
-  prepareWorktreeObjects,
-  worktreeGitDir,
-  type WorktreeObjectEnvironment,
-} from './git-environment.ts'
+import type { AskLoopback } from './ask.ts'
+import { compilePack, recordPack } from './canon.ts'
 import { checkoutWatchSet } from './checkout-identity.ts'
-import { recipeNotes } from './recipe.ts'
+import { reclaimTerminalTree } from './close-out.ts'
+import { codexMcpSetupHeader, codexProjectServersForRun } from './codex-mcp-scope.ts'
+import { type ConfinementEvent, type FreezeFailure, freezeCheckouts } from './confinement.ts'
 import {
-  workerPreamble,
+  type CanonSource,
+  NO_REPO_PREAMBLE,
   packResumePrompt,
   READONLY_PREAMBLE,
-  NO_REPO_PREAMBLE,
-  replyFileInstruction,
   REVIEW_SEVERITY_INSTRUCTION,
+  type realQuestions,
+  replyFileInstruction,
   resolveReplyDialect,
-  realQuestions,
-  type CanonSource,
   type WorkerReply,
+  workerPreamble,
 } from './contract.ts'
-import {
-  CALIBRATION_SUFFIX_RESERVE_BYTES,
-  calibrationLine,
-  reviewCalibration,
-} from './review-calibration.ts'
-import { projectAt, projectByName, stackAt } from './projects.ts'
-import { compilePack, recordPack } from './canon.ts'
-import { resolveBranchRef } from './projects.ts'
-import { resolveLens } from './lenses.ts'
-import { TRUNCATED_TRANSCRIPT_BYTES } from './result-output.ts'
-import {
-  prepareSandboxHome,
-  resetSandbox,
-  sandboxLaunchArgv,
-  selectReadonlySandbox,
-} from './sandbox.ts'
-import { freezeCheckouts, type ConfinementEvent, type FreezeFailure } from './confinement.ts'
-import {
-  mcpCallEvidence,
-  mcpConfigAllowlist,
-  namesSeenAt,
-  probeMcpServer,
-  readMcpConfig,
-  storedMcpProbe,
-  wrongProjectReason,
-} from './mcp-probe.ts'
-import type { AskLoopback } from './ask.ts'
-import {
-  resolveTransportName,
-  assertAcpAllowed,
-  assertAcpReady,
-  selectAgentForTransport,
-  isTestTransportInstalled,
-  type TransportName,
-} from './transport.ts'
-import { codexMcpSetupHeader, codexProjectServersForRun } from './codex-mcp-scope.ts'
+import { db, enableSchemaReload, nowIso, sessionId, writableDb } from './db.ts'
+import { preflight } from './dispatch-preflight.ts'
 import { assessEvidencePrompt } from './evidence.ts'
 import {
   chainTransport,
@@ -108,12 +37,82 @@ import {
   failoverSuccessorAgent,
   MAX_FAILOVER_ATTEMPTS,
 } from './failover.ts'
-import { bindSignals, childEnv, sha, terminateRunProcesses } from './run-process.ts'
-import { RUNS_DIR, pruneRuns, readDispatchState, runFilePaths } from './run-artifacts.ts'
-import { reclaimTerminalTree } from './close-out.ts'
+import { type classify, FAILS_OVER, NEEDS_HUMAN, NEEDS_HUMAN_TITLE, notify } from './failure.ts'
+import {
+  gitContext,
+  prepareWorktreeObjects,
+  type WorktreeObjectEnvironment,
+  worktreeGitDir,
+} from './git-environment.ts'
+import {
+  isReaderJob,
+  type Job,
+  job,
+  jobBoundInstruction,
+  reclaimsTreeByDefault,
+  resolveJobTimeoutMs,
+} from './jobs.ts'
+import { resolveLens } from './lenses.ts'
+import {
+  canonSourceFor,
+  canonSourceInstruction,
+  effectiveMcpRequest,
+  type McpRequest,
+  mcpAttachRefusal,
+  mcpRequestFromStored,
+  probeRequestedMcp,
+  requestedMcpMode,
+  storedMcpRequest,
+} from './mcp-preflight.ts'
+import {
+  mcpCallEvidence,
+  mcpConfigAllowlist,
+  namesSeenAt,
+  probeMcpServer,
+  readMcpConfig,
+  storedMcpProbe,
+  wrongProjectReason,
+} from './mcp-probe.ts'
+import { projectAt, projectByName, resolveBranchRef, stackAt } from './projects.ts'
+import { recipeNotes } from './recipe.ts'
+import {
+  assertSharedRefGuardOutsideWritableRoots,
+  prepareSharedRefGuard,
+  workerSharedGitRoots,
+} from './ref-guard.ts'
+import { teardownTerminalRunResources } from './resource-ownership.ts'
+import { TRUNCATED_TRANSCRIPT_BYTES } from './result-output.ts'
+import {
+  CALIBRATION_SUFFIX_RESERVE_BYTES,
+  calibrationLine,
+  reviewCalibration,
+} from './review-calibration.ts'
+import { implicitReviewCoverageBase, resolveReviewTarget } from './review-target.ts'
+import { pick } from './route.ts'
+import { pruneRuns, RUNS_DIR, readDispatchState, runFilePaths } from './run-artifacts.ts'
 import { claimRun } from './run-claim.ts'
 import { runLive } from './run-live.ts'
+import { resolveRootFromLastTurn } from './run-liveness.ts'
+import { bindSignals, childEnv, sha, terminateRunProcesses } from './run-process.ts'
 import { finishRun } from './run-terminal.ts'
+import {
+  prepareSandboxHome,
+  resetSandbox,
+  sandboxLaunchArgv,
+  selectReadonlySandbox,
+} from './sandbox.ts'
+import {
+  assertAcpAllowed,
+  assertAcpReady,
+  isTestTransportInstalled,
+  resolveTransportName,
+  selectAgentForTransport,
+  type TransportName,
+} from './transport.ts'
+import { resolveBase, resolveReadOnlyBase } from './worktree-caller.ts'
+import { toolFor } from './worktree-preflight.ts'
+import type { Changes } from './worktree-remove.ts'
+import type { Worktree } from './worktree-types.ts'
 
 export { TRUNCATED_TRANSCRIPT_BYTES }
 

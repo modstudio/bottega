@@ -1,6 +1,6 @@
 import { beforeAll, describe, expect, test } from 'bun:test'
-import { easternTime } from './time.ts'
 import { resetFixtureStore } from '../test/run-fixtures.ts'
+import { easternTime } from './time.ts'
 
 beforeAll(resetFixtureStore)
 

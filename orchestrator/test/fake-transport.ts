@@ -1,12 +1,12 @@
+import { writeFileSync } from 'node:fs'
 import {
-  installTestTransport,
   type AgentTransport,
+  installTestTransport,
   type NormalizedEvent,
   type TransportHandle,
   type TransportResult,
   type TransportStartOpts,
 } from '../src/transport.ts'
-import { writeFileSync } from 'node:fs'
 
 export type ScriptedTransportEvent =
   | { kind: 'started'; pid?: number | null; session?: string | null }

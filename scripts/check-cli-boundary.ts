@@ -1,7 +1,8 @@
 #!/usr/bin/env bun
 /** Keep the bought CLI grammar thin: program.ts and commands/ adapt argv to concern modules and never dispatch through the run nucleus. */
-import { readFileSync, readdirSync } from 'node:fs'
+import { readdirSync, readFileSync } from 'node:fs'
 import { importSpecifiers } from './import-scanner.ts'
+
 const ROOT = new URL('..', import.meta.url).pathname.replace(/\/$/, '')
 const FILES = [
   'orchestrator/src/program.ts',

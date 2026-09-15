@@ -5,39 +5,34 @@
  * live worker execution, run control, dispatch surfaces, or the CLI.
  */
 import { writeFileSync } from 'node:fs'
-import { classify, detectBlockers } from './failure.ts'
-import { isReaderJob, type Job } from './jobs.ts'
-import { db, nowIso, tryWriteContention, writeTransaction } from './db.ts'
-import { resolveRootFromLastTurn } from './run-liveness.ts'
-import { teardownTerminalRunResources } from './resource-ownership.ts'
-import { changesIn, type Changes } from './worktree-remove.ts'
-import type { Worktree } from './worktree-types.ts'
+import type { AskLoopback } from './ask.ts'
+import { checkpointRun, latestCheckpoint } from './checkpoint.ts'
 import {
-  realQuestions,
-  parseReaderOutput,
-  type ReplyDialect,
-  type WorkerReply,
-  type ReviewReply,
-} from './contract.ts'
-import { cleanReviewEvidence } from './review.ts'
-import { projectByName, projects } from './projects.ts'
-import { resetSandbox } from './sandbox.ts'
-import {
-  classifyDivergence,
-  freezeCheckouts,
-  overlappingError,
   type CheckoutToWatch,
   type ConfinementEvent,
+  classifyDivergence,
   type FreezeFailure,
   type FrozenCheckout,
+  freezeCheckouts,
+  overlappingError,
 } from './confinement.ts'
-import type { AskLoopback } from './ask.ts'
-import type { McpConnection, McpMode } from './mcp-preflight.ts'
-import { checkpointRun, latestCheckpoint } from './checkpoint.ts'
-import { finalizeWorkerReply } from './outcome.ts'
+import {
+  parseReaderOutput,
+  type ReplyDialect,
+  type ReviewReply,
+  type realQuestions,
+  type WorkerReply,
+} from './contract.ts'
+import { db, nowIso, tryWriteContention, writeTransaction } from './db.ts'
 import { assessEvidence, recordEvidence } from './evidence.ts'
+import { type classify, detectBlockers } from './failure.ts'
 import { terminateProcessGroup } from './idle-kill.ts'
-import { errorTail, live, liveCheckpoints } from './run-process.ts'
+import { isReaderJob, type Job } from './jobs.ts'
+import type { McpConnection, McpMode } from './mcp-preflight.ts'
+import { finalizeWorkerReply } from './outcome.ts'
+import { projectByName, projects } from './projects.ts'
+import { teardownTerminalRunResources } from './resource-ownership.ts'
+import { cleanReviewEvidence } from './review.ts'
 import {
   persistRunArtifacts,
   persistTerminalSnapshot,
@@ -45,6 +40,11 @@ import {
   runTerminalReplyPath,
   type TerminalSnapshot,
 } from './run-artifacts.ts'
+import { resolveRootFromLastTurn } from './run-liveness.ts'
+import { errorTail, live, liveCheckpoints } from './run-process.ts'
+import { resetSandbox } from './sandbox.ts'
+import { type Changes, changesIn } from './worktree-remove.ts'
+import type { Worktree } from './worktree-types.ts'
 
 type TerminalOptions = {
   job: string

@@ -2,6 +2,7 @@
 /** Keep doctor independent of transports, routing, run control, the CLI, and reviews by value. */
 import { readFileSync } from 'node:fs'
 import { importSpecifiers } from './import-scanner.ts'
+
 const ROOT = new URL('..', import.meta.url).pathname.replace(/\/$/, '')
 const FILE = 'orchestrator/src/doctor.ts'
 const FORBIDDEN: [RegExp, string][] = [

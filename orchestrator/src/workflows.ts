@@ -1,5 +1,5 @@
 import type { Database } from 'bun:sqlite'
-import { existsSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { db, nowIso, sessionId, writableDb, writeTransaction } from './db.ts'
 import { JOBS } from './jobs.ts'
@@ -423,7 +423,7 @@ export function composeWorkflow(
 ) {
   const row = parseVersion(productionVersionRow(slug, d)),
     definition = row.definition
-  let mode = modeSlug
+  const mode = modeSlug
     ? definition.modes.find((m) => m.slug === modeSlug)
     : definition.modes.find((m) => m.default)
   const needs: WorkflowNeeds = {}

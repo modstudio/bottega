@@ -4,13 +4,14 @@
  * persistence. Must not know transports, worktrees, routing, the CLI, durable
  * execution, dispatch, or cleanup.
  */
+
+import { existsSync, readFileSync } from 'node:fs'
 import { createInterface } from 'node:readline/promises'
 import type { Readable, Writable } from 'node:stream'
-import { existsSync, readFileSync } from 'node:fs'
 import { gwetAc1, quadraticWeightedKappa } from './agreement.ts'
 import { db, nowIso, sessionId } from './db.ts'
 import { JOBS } from './jobs.ts'
-import { DELIVERY, FIDELITY, QUALITY, type Delivery, type Fidelity, type Quality } from './score.ts'
+import { DELIVERY, type Delivery, FIDELITY, type Fidelity, QUALITY, type Quality } from './score.ts'
 
 type RecalibrationFlags = { has(name: string): boolean; flag(name: string): string | undefined }
 type RecalibrationPresentation = {

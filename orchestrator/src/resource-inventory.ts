@@ -5,8 +5,8 @@
  */
 import { existsSync, readdirSync, realpathSync, statSync } from 'node:fs'
 import { join } from 'node:path'
-import { projects } from './projects.ts'
 import { targetGitEnvironment } from './git-environment.ts'
+import { projects } from './projects.ts'
 
 export const RESOURCE_INVENTORY_TIMEOUT_MS = 1_000
 

@@ -1,11 +1,15 @@
+import { resolve } from 'node:path'
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js'
-import { resolve } from 'node:path'
 import { z } from 'zod'
 import { PLATFORM_SLUG } from '../../shared/brand.ts'
 import { db, enableSchemaReload, sessionId } from './db.ts'
 import { registerStandardRuntime } from './runtime-registration.ts'
+
 registerStandardRuntime()
+
+import { strictlyAuthenticatedWorkerRun } from './ask.ts'
+import { checkDoc, repoRootForDoc } from './canon.ts'
 import {
   consumeDoc,
   docsMarkdown,
@@ -16,7 +20,12 @@ import {
   listDocs,
   setDoc,
 } from './docs.ts'
-import { projectAt, projectByName, projects } from './projects.ts'
+import { filedIssueDataLine } from './issue.ts'
+import {
+  CONDITIONAL_ISSUE_REPORT_FIELD_REASONS,
+  missingIssueReportFields,
+} from './issue-report-fields.ts'
+import { resolveLens } from './lenses.ts'
 import {
   addDoctrineRule,
   addPair,
@@ -33,16 +42,9 @@ import {
   setBaseline,
   setLedgerRef,
 } from './porting.ts'
-import { composeWorkflow, getWorkflowStep, listWorkflows } from './workflows.ts'
-import { checkDoc, repoRootForDoc } from './canon.ts'
+import { projectAt, projectByName, projects } from './projects.ts'
 import { getReview, listReviews } from './review.ts'
-import { strictlyAuthenticatedWorkerRun } from './ask.ts'
-import { resolveLens } from './lenses.ts'
-import { filedIssueDataLine } from './issue.ts'
-import {
-  CONDITIONAL_ISSUE_REPORT_FIELD_REASONS,
-  missingIssueReportFields,
-} from './issue-report-fields.ts'
+import { composeWorkflow, getWorkflowStep, listWorkflows } from './workflows.ts'
 
 const text = (value: unknown) => ({
   content: [

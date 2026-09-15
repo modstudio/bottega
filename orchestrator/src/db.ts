@@ -1,11 +1,12 @@
 // concern: database
 /** Knows store location, connection authority, schema lifecycle, transactions, and fixture seeding. Must not know worktrees, runs, routing, reviews, contracts, transports, CLI adapters, or Docker resources. */
 import { Database } from 'bun:sqlite'
-import { existsSync, mkdirSync, readFileSync, realpathSync } from 'node:fs'
 import { createHash } from 'node:crypto'
+import { existsSync, mkdirSync, readFileSync, realpathSync } from 'node:fs'
 import { basename, dirname, join, resolve } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { PLATFORM_SLUG } from '../../shared/brand.ts'
+import { contentionTableExists, insertContention } from './contention.ts'
 import {
   DATABASE_RESOLUTION,
   DB_PATH,
@@ -18,9 +19,10 @@ import {
   readUserVersion,
   staleWriteRefusal,
 } from './migrations.ts'
-import { contentionTableExists, insertContention } from './contention.ts'
-export { label } from './outcome.ts'
+
 export { DATABASE_RESOLUTION, DB_PATH, ROOT } from './database-location.ts'
+export { label } from './outcome.ts'
+
 let handle: Database | null = null
 let connectionWritable: boolean | null = null
 let openedUserVersion: number | null = null

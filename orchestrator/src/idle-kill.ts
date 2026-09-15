@@ -6,9 +6,10 @@
  * timeout beside its overall cap. We do the same shape, with a stricter idle
  * test (silence AND no CPU) and a failure kind that is not routing evidence.
  */
-import { pidAlive } from './process-liveness.ts'
-import { idleMsSince } from './events.ts'
+
 import { clock } from './clock.ts'
+import { idleMsSince } from './events.ts'
+import { pidAlive } from './process-liveness.ts'
 
 /**
  * Default 15 minutes. Measured 2026-09-08 against the live store's completed

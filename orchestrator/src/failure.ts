@@ -79,7 +79,7 @@ export function clusterErrorText(value: string | null | undefined): string {
     .replace(/\b[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\b/gi, '<id>')
     .replace(/\b(?:req(?:uest)?[-_]id[-_:=]?|req_)[a-z0-9_-]{6,}\b/gi, '<id>')
     .replace(
-      /\b(task|branch)\s+(?=[a-z0-9._\/-]*[a-z])(?:[a-z][a-z0-9._-]*\/)?[a-z0-9][a-z0-9._-]*\d[a-z0-9._-]*\b/gi,
+      /\b(task|branch)\s+(?=[a-z0-9._/-]*[a-z])(?:[a-z][a-z0-9._-]*\/)?[a-z0-9][a-z0-9._-]*\d[a-z0-9._-]*\b/gi,
       '$1 <id>',
     )
     .replace(/\b(?=[0-9a-f]{7,64}\b)(?=[0-9a-f]*[a-f])[0-9a-f]+\b/gi, '<id>')

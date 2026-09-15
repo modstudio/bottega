@@ -4,7 +4,9 @@
  * worktree paths. Must not know transports, routing, or contracts.
  */
 import { seedGuidance } from './args.ts'
+import { realpathOrSpelled } from './checkout-identity.ts'
 import { db } from './db.ts'
+import { repoRootOf } from './git-environment.ts'
 import { job } from './jobs.ts'
 import { resolveLens } from './lenses.ts'
 import {
@@ -14,12 +16,10 @@ import {
   projectByName,
   validateStoredProjectSettings,
 } from './projects.ts'
-import { createHasPlaceholder } from './worktree-template.ts'
 import { resolveReviewTarget } from './review-target.ts'
 import { resolveBase } from './worktree-caller.ts'
 import { createCommandExists, validateSeedWithTool } from './worktree-preflight.ts'
-import { realpathOrSpelled } from './checkout-identity.ts'
-import { repoRootOf } from './git-environment.ts'
+import { createHasPlaceholder } from './worktree-template.ts'
 
 export const MAX_DEPTH = 1
 export const depth = () => Number(process.env.ORCH_DEPTH ?? 0)

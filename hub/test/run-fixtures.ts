@@ -1,8 +1,8 @@
 import { spyOn } from 'bun:test'
 import { db, writeTransaction } from '../src/db.ts'
+import { ingestRuns } from '../src/ingest/runs.ts'
 import { MIGRATIONS_TABLE } from '../src/migrations.ts'
 import { clearOrchCache } from '../src/serve.ts'
-import { ingestRuns } from '../src/ingest/runs.ts'
 
 export const at = (iso: string) => new Date(iso).getTime()
 

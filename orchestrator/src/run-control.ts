@@ -4,17 +4,17 @@
  * behaviour. Must not know transports, worktrees, routing, reviews, or the CLI.
  */
 import { existsSync, readFileSync } from 'node:fs'
-import { db, writeTransaction } from './db.ts'
-import { branchNote, failoverSummary, resolveFailover } from './collect.ts'
-import { outcomeOf } from './outcome.ts'
-import { reapStale, STALE_AFTER_MS } from './run-liveness.ts'
-import { adoptRunMutation, auditRunMutation, authorizeRunMutation } from './run-authority.ts'
-import { packedResumePrompt } from './run.ts'
-import { mcpRequestFromStored } from './mcp-preflight.ts'
-import { chainTransport } from './failover.ts'
-import { detach } from './run-dispatch.ts'
 import { CONTINUE_WORKING_FORMS } from './args.ts'
 import { clock } from './clock.ts'
+import { branchNote, failoverSummary, resolveFailover } from './collect.ts'
+import { db, writeTransaction } from './db.ts'
+import { chainTransport } from './failover.ts'
+import { mcpRequestFromStored } from './mcp-preflight.ts'
+import { outcomeOf } from './outcome.ts'
+import { packedResumePrompt } from './run.ts'
+import { adoptRunMutation, auditRunMutation, authorizeRunMutation } from './run-authority.ts'
+import { detach } from './run-dispatch.ts'
+import { reapStale, STALE_AFTER_MS } from './run-liveness.ts'
 
 export type RunControlPresentation = {
   dur(ms: number | null | undefined): string

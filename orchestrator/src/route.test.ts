@@ -13,8 +13,8 @@ import {
   voidedSql,
 } from './evidence-query.ts'
 import {
-  classify,
   COOLS_DOWN,
+  classify,
   FAILS_OVER,
   NEEDS_HUMAN,
   NEEDS_HUMAN_TITLE,
@@ -27,18 +27,18 @@ import {
   currentPolicySelection,
   EVIDENCE_WINDOW,
   evidenceFor,
-  median,
   MIN_SAMPLE,
+  median,
   NOISE_BAND,
-  pick,
   POSTERIOR_NOISE_BAND,
+  pick,
   QUALITY_STEP,
-  scoreboard,
   STANDING_EXPLORE_RATE,
+  scoreboard,
   standingExploreRate,
   weightCase,
 } from './route.ts'
-import { weigh, WEIGHT } from './score.ts'
+import { WEIGHT, weigh } from './score.ts'
 
 describe('failure classification', () => {
   test('contract failures fail over as scoreable none evidence without cooldown or notification', () => {

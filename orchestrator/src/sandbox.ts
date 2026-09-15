@@ -3,17 +3,17 @@ import {
   existsSync,
   lstatSync,
   mkdirSync,
-  readFileSync,
   readdirSync,
+  readFileSync,
   realpathSync,
   symlinkSync,
   writeFileSync,
 } from 'node:fs'
-import { delimiter, isAbsolute, join, relative, resolve } from 'node:path'
 import { homedir } from 'node:os'
+import { delimiter, isAbsolute, join, relative, resolve } from 'node:path'
 import {
-  SandboxManager,
   type SandboxRuntimeConfig as LibrarySandboxRuntimeConfig,
+  SandboxManager,
 } from '@anthropic-ai/sandbox-runtime'
 import { ROOT } from './db.ts'
 import { disabledProjectMcpServers } from './mcp-probe.ts'
@@ -321,7 +321,7 @@ function shellCommand(argv: string[]): string {
     .map((arg) => {
       if (arg === '') return "''"
       if (/^[A-Za-z0-9_./:@+,-][A-Za-z0-9_./:=@+,-]*$/.test(arg)) return arg
-      return `'${arg.replaceAll("'", `'\"'\"'`)}'`
+      return `'${arg.replaceAll("'", `'"'"'`)}'`
     })
     .join(' ')
 }

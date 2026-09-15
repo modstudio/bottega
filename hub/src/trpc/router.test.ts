@@ -1,7 +1,7 @@
 import { beforeAll, describe, expect, mock, test } from 'bun:test'
-import { createProjectRouter } from './routers/project.ts'
-import type { RegisteredProject } from '../projects.ts'
 import { resetFixtureStore } from '../../test/run-fixtures.ts'
+import type { RegisteredProject } from '../projects.ts'
+import { createProjectRouter } from './routers/project.ts'
 
 beforeAll(resetFixtureStore)
 

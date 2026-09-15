@@ -4,8 +4,9 @@
  * and branch-ref observation. Must not know lifecycle policy, run state,
  * databases, routing, transports, or contracts.
  */
-import { existsSync, mkdirSync, readFileSync, realpathSync, rmSync } from 'node:fs'
+
 import { randomUUID } from 'node:crypto'
+import { existsSync, mkdirSync, readFileSync, realpathSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
 import { mainCheckoutOf, scrubbedGitEnv } from '../../shared/git.ts'
@@ -293,16 +294,16 @@ export function prepareWorktreeObjects(cwd: string): WorktreeObjectEnvironment {
 }
 
 export {
-  cwdMissing,
-  linkedWorktreePaths,
   commonGitDir,
+  cwdMissing,
   git,
-  gitOk,
-  gitResult,
-  gitConfigOk,
-  gitRaw,
-  gitInput,
   gitBytes,
+  gitConfigOk,
+  gitInput,
+  gitOk,
+  gitRaw,
+  gitResult,
+  linkedWorktreePaths,
 }
 
 /** Read bounded git context without allowing observation failure to fail a run. */

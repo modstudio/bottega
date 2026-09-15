@@ -1,6 +1,6 @@
 import { dirname, resolve } from 'node:path'
-import { trackerSourceFor, type TrackerProject } from '../../shared/trackers.ts'
-import { projectList, type OrchProject } from './orch.ts'
+import { type TrackerProject, trackerSourceFor } from '../../shared/trackers.ts'
+import { type OrchProject, projectList } from './orch.ts'
 
 export type { StatusCategory, TrackerSettings } from '../../shared/trackers.ts'
 

@@ -1,7 +1,7 @@
 import type { ReactNode } from 'react'
+import { EmptyState } from './design-system'
 import { Input } from './input'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from './table'
-import { EmptyState } from './design-system'
 
 export type CollectionColumn<Row> = {
   id: string

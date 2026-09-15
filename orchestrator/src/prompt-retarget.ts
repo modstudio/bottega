@@ -3,9 +3,9 @@
  * Knows confinement snapshots, the project register, and path rewriting. Must
  * not know the database, transports, contracts, or routing.
  */
-import { freezeCheckouts, type CheckoutToWatch } from './confinement.ts'
-import { checkoutWatchSet } from './checkout-identity.ts'
-import { withoutTrailingSeparators } from './checkout-identity.ts'
+
+import { checkoutWatchSet, withoutTrailingSeparators } from './checkout-identity.ts'
+import { type CheckoutToWatch, freezeCheckouts } from './confinement.ts'
 
 export type CheckoutStatusSnapshot = {
   project: string
@@ -136,7 +136,7 @@ function uriAuthorityEnd(prompt: string, offset: number): number | null {
   const scheme = /^[A-Za-z][A-Za-z0-9+.-]*:\/\//.exec(prompt.slice(offset))
   if (!scheme) return null
   let end = offset + scheme[0].length
-  while (end < prompt.length && !/[\/?#\s'"`)\]}>]/.test(prompt[end]!)) end++
+  while (end < prompt.length && !/[/?#\s'"`)\]}>]/.test(prompt[end]!)) end++
   return end
 }
 

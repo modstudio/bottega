@@ -3,12 +3,14 @@ import { beforeAll, describe, expect, test } from 'bun:test'
 import { copyFileSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { resetFixtureStore } from '../test/run-fixtures.ts'
+import { closeDatabaseForFixture, db, enableSchemaReload, writeTransaction } from './db.ts'
 import {
   applyMigrations,
   BASELINE_SCHEMA_HASH,
   baselineSchemaHash,
-  canonicalSchemaHash,
   CONNECTION_SCHEMA_INVARIANT,
+  canonicalSchemaHash,
   expectedSchemaHash,
   JOURNAL_WHEN_ORDER,
   journalLength,
@@ -21,8 +23,6 @@ import {
   schemaVersionLabel,
   splitMigrationSource,
 } from './migrations.ts'
-import { closeDatabaseForFixture, db, enableSchemaReload, writeTransaction } from './db.ts'
-import { resetFixtureStore } from '../test/run-fixtures.ts'
 
 beforeAll(resetFixtureStore)
 

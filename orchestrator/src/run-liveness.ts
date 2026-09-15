@@ -2,11 +2,12 @@
 /**
  * Knows process and chain liveness, stale transition, audit, and root roll-up. Must not know routing, transports, reviews, or CLI adapters.
  */
-import { pidAlive } from './process-liveness.ts'
+
 import type { Database } from 'bun:sqlite'
 import { db, linkedWorktreeReadOnly, writeTransaction } from './db.ts'
-import { auditRunMutation, runMutationAuthority } from './run-authority.ts'
+import { pidAlive } from './process-liveness.ts'
 import { teardownTerminalRunResources } from './resource-ownership.ts'
+import { auditRunMutation, runMutationAuthority } from './run-authority.ts'
 
 /**
  * A process that died mid-run leaves its row at 'running' for ever. Anything

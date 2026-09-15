@@ -1,8 +1,8 @@
 // concern: evidence
 /** Owns issue, note, state, and search command behavior. Must not know CLI grammar. */
 import { db } from './db.ts'
-import { fileNote } from './mcp.ts'
 import { workIssue } from './issue.ts'
+import { fileNote } from './mcp.ts'
 import { searchRecords } from './search.ts'
 import { state } from './serve.ts'
 

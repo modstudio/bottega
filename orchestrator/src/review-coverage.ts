@@ -1,7 +1,7 @@
 // concern: review-coverage
 import type { Database } from 'bun:sqlite'
-import { db } from './db.ts'
 import { changeIdentity } from './change-identity.ts'
+import { db } from './db.ts'
 import { completedReviewEvidenceSql } from './review-evidence-sql.ts'
 import { git, reviewGit, targetGitEnvironment } from './review-pins.ts'
 import type {

@@ -1,16 +1,16 @@
 import { afterEach, beforeAll, describe, expect, spyOn, test } from 'bun:test'
-import * as dbMod from './db.ts'
-import { db } from './db.ts'
-import { runsSince } from './collect.ts'
-import { ingestRuns } from './ingest/runs.ts'
-import { listOpenRulings } from './rulings.ts'
-import { clearOrchCache } from './serve.ts'
 import {
   collectRunsAt,
   ingestRunFixtures,
   resetFixtureStore,
   runFixture,
 } from '../test/run-fixtures.ts'
+import { runsSince } from './collect.ts'
+import * as dbMod from './db.ts'
+import { db } from './db.ts'
+import { ingestRuns } from './ingest/runs.ts'
+import { listOpenRulings } from './rulings.ts'
+import { clearOrchCache } from './serve.ts'
 
 beforeAll(resetFixtureStore)
 afterEach(clearOrchCache)

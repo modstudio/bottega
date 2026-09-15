@@ -8,6 +8,7 @@ import { tryWriteContention, writeTransaction } from './db.ts'
 import { selectProjectProfile } from './lenses.ts'
 import {
   assertRegisterBranches,
+  type ProjectSettings,
   projectByName,
   projects,
   removeProject,
@@ -16,7 +17,6 @@ import {
   upsertProject,
   validateProjectSettings,
   worktreeWarnings,
-  type ProjectSettings,
 } from './projects.ts'
 import { migrateCreate } from './worktree-template.ts'
 

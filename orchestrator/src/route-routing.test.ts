@@ -6,8 +6,8 @@ import {
   candidates,
   EVIDENCE_WINDOW,
   MIN_SAMPLE,
-  pick,
   PROMPT_SIZE_BOUNDARY,
+  pick,
   promptSizeBucket,
   scoreboard,
 } from './route.ts'

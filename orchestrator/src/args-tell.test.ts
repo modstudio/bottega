@@ -2,13 +2,14 @@ import { expect, test } from 'bun:test'
 import { writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { dir } from '../test/fixtures/store.ts'
+import { trackedTestResidue } from '../test/residue.ts'
 import {
-  TELL_WORKING_FORMS,
   assertWorkerText,
   parseWorkerMessageArgs,
   readMessageText,
+  TELL_WORKING_FORMS,
 } from './args.ts'
-import { trackedTestResidue } from '../test/residue.ts'
+
 const trackResidue = trackedTestResidue()
 
 test('tell reads long context from a file without shell interpretation', async () => {

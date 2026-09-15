@@ -1,8 +1,8 @@
 import { db, nowIso } from './db.ts'
-import { ingestRuns } from './ingest/runs.ts'
-import { ingestTranscripts } from './ingest/transcripts.ts'
 import { ingestGit } from './ingest/git.ts'
-import { ingestTrackers, trackerProjects, type TrackerResult } from './ingest/trackers.ts'
+import { ingestRuns } from './ingest/runs.ts'
+import { ingestTrackers, type TrackerResult, trackerProjects } from './ingest/trackers.ts'
+import { ingestTranscripts } from './ingest/transcripts.ts'
 import { rollUpDays } from './query.ts'
 import { hoursAgo } from './time.ts'
 

@@ -1,13 +1,13 @@
-import { useState } from 'react'
-import { createFileRoute } from '@tanstack/react-router'
 import { useMutation, useQuery } from '@tanstack/react-query'
+import { createFileRoute } from '@tanstack/react-router'
+import { useState } from 'react'
 import { Badge } from '@/components/badge'
 import { Button } from '@/components/button'
 import { Checkbox } from '@/components/checkbox'
 import { EmptyState, PageHeader } from '@/components/design-system'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/table'
-import { queryClient, trpc } from '@/trpc/client'
 import { toast } from '@/components/toaster'
+import { queryClient, trpc } from '@/trpc/client'
 
 export const Route = createFileRoute('/notes')({ component: NotesPage })
 

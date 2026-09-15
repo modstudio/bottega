@@ -1,4 +1,5 @@
 #!/usr/bin/env bun
+import { readFileSync } from 'node:fs'
 /**
  * Concerns live side by side here; they do not reach into each other.
  * The only shared code is `shared/`, and it may import nothing back.
@@ -7,7 +8,6 @@
  * guard exists: a rule nobody enforces is a rule that has already drifted.
  */
 import { Glob } from 'bun'
-import { readFileSync } from 'node:fs'
 import { CONCERNS } from '../shared/brand.ts'
 import { importSpecifiers } from './import-scanner.ts'
 

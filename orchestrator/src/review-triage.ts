@@ -1,6 +1,8 @@
 // concern: review-triage
 import type { Database } from 'bun:sqlite'
+import type { ReviewReply } from './contract.ts'
 import { nowIso, writableDb } from './db.ts'
+import { recordReviews } from './review.ts'
 import {
   REVIEW_SEVERITY,
   type ReviewCoverage,
@@ -9,8 +11,6 @@ import {
   type ReviewReproduced,
   type ReviewSeverity,
 } from './review-vocabulary.ts'
-import type { ReviewReply } from './contract.ts'
-import { recordReviews } from './review.ts'
 
 /**
  * Initial safety floor. Re-set this from the observed triage distribution once

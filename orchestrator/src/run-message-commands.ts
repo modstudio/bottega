@@ -17,7 +17,7 @@ import {
   REVIEW_REPRODUCED,
 } from './review-vocabulary.ts'
 import { answerRun, retryRun } from './run-answer.ts'
-import { continueRun, reportContinuedRun, type RunControlPresentation } from './run-control.ts'
+import { continueRun, type RunControlPresentation, reportContinuedRun } from './run-control.ts'
 
 type Flags = { detach: boolean; follow: boolean; quiet: boolean }
 type Presentation = { printRunId(id: number): void }

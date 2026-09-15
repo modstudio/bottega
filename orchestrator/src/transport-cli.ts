@@ -5,11 +5,11 @@ import { eventsFromVendorLine } from './events.ts'
 import { DEFAULT_IDLE_GRACE_MS, terminateProcessGroup } from './idle-kill.ts'
 import { sandboxLaunchArgv } from './sandbox.ts'
 import {
-  outcomeFromTransport,
-  registerTransport,
   type AgentTransport,
   type ArgvOpts,
   type NormalizedEvent,
+  outcomeFromTransport,
+  registerTransport,
   type TransportHandle,
   type TransportResult,
   type TransportStartOpts,

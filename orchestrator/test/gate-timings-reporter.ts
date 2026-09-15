@@ -7,8 +7,9 @@
  * record-gate-timings.ts after the run. Default `bun test` is unchanged: this
  * file is only preloaded when the recorder asks for it.
  */
-import { afterAll } from 'bun:test'
+
 import { Database } from 'bun:sqlite'
+import { afterAll } from 'bun:test'
 import { mkdirSync, writeFileSync } from 'node:fs'
 import { dirname, join, relative } from 'node:path'
 import { fileURLToPath } from 'node:url'

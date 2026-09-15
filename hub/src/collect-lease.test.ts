@@ -4,8 +4,9 @@
  * A separate file so the preloaded migrated store and the process-wide lease
  * handle are isolated from the larger behavioral fixture.
  */
-import { beforeAll, expect, test, describe } from 'bun:test'
+import { beforeAll, describe, expect, test } from 'bun:test'
 import { resetFixtureStore } from '../test/run-fixtures.ts'
+
 const { acquireLease, releaseLease, leaseHolder, withLease } = await import('./collect.ts')
 
 beforeAll(resetFixtureStore)

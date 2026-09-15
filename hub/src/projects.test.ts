@@ -1,7 +1,7 @@
 import { beforeAll, describe, expect, test } from 'bun:test'
+import { resetFixtureStore } from '../test/run-fixtures.ts'
 import { projectOf, projectOfKey } from './attribute.ts'
 import { projectColor, projectNames } from './projects.ts'
-import { resetFixtureStore } from '../test/run-fixtures.ts'
 
 beforeAll(resetFixtureStore)
 

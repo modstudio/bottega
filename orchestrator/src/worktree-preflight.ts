@@ -1,9 +1,9 @@
 // concern: worktree-preflight
 import { accessSync, constants, existsSync, statSync } from 'node:fs'
 import { delimiter, join, resolve } from 'node:path'
+import { targetGitEnvironment } from './git-environment.ts'
 import { projectAt, type WorktreeTool } from './projects.ts'
 import { seedArgv, type WorktreeCreate } from './worktree-template.ts'
-import { targetGitEnvironment } from './git-environment.ts'
 
 function executableFile(path: string): boolean {
   try {

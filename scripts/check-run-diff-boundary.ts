@@ -2,6 +2,7 @@
 /** Keep run diff independent of run control, transports, routing, the CLI, and worktrees by value. */
 import { readFileSync } from 'node:fs'
 import { importSpecifiers } from './import-scanner.ts'
+
 const ROOT = new URL('..', import.meta.url).pathname.replace(/\/$/, '')
 const FILE = 'orchestrator/src/run-diff.ts'
 const FORBIDDEN: [RegExp, string][] = [

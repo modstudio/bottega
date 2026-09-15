@@ -1,7 +1,5 @@
 import { beforeAll, describe, expect, test } from 'bun:test'
 import { engagedMs, human } from '../../../shared/interval.ts'
-import { db } from '../db.ts'
-import { chainVendorTokens, executionSpans } from './runs.ts'
 import {
   at,
   collectRunsAt,
@@ -10,6 +8,8 @@ import {
   resetFixtureStore,
   runFixture,
 } from '../../test/run-fixtures.ts'
+import { db } from '../db.ts'
+import { chainVendorTokens, executionSpans } from './runs.ts'
 
 beforeAll(resetFixtureStore)
 

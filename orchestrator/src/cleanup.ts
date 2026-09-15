@@ -2,16 +2,18 @@
 import { existsSync, realpathSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { db, sessionId, writeTransaction } from './db.ts'
-import { EVIDENCE_CLOSED_SQL, chainScoreJoin } from './evidence-query.ts'
+import { leakedResourceLines, resourcesForRuns } from './docker-resources.ts'
+import { chainScoreJoin, EVIDENCE_CLOSED_SQL } from './evidence-query.ts'
+import { repoRootOf, targetGitEnvironment } from './git-environment.ts'
+import { withCleanupLock as takeCleanupLock, withWorktreeLease } from './project-lock.ts'
 import { projectAt, projectByName } from './projects.ts'
 import { otherConversationWorktreeSharers, type WorktreeSharerRow } from './resource-ownership.ts'
 import {
-  auditRunMutation,
   adoptRunMutation,
+  auditRunMutation,
   authorizeRunMutation,
   type RootAuthority,
 } from './run-authority.ts'
-import { repoRootOf, targetGitEnvironment } from './git-environment.ts'
 import {
   branchTip,
   removeBranch,
@@ -19,9 +21,7 @@ import {
   restoreBranch,
   unmergedBranch,
 } from './worktree-remove.ts'
-import { withCleanupLock as takeCleanupLock, withWorktreeLease } from './project-lock.ts'
 import type { Worktree } from './worktree-types.ts'
-import { resourcesForRuns, leakedResourceLines } from './docker-resources.ts'
 
 export type CleanupPresentation = {
   log: (...values: unknown[]) => void

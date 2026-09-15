@@ -1,29 +1,29 @@
 /** Cleanup sweep knows worktree ownership, leases and the cleanup lock, resource reclamation, and branch retention. It must not know transports, routing, reviews, contracts, the CLI, or durable execution. */
 import { existsSync, readdirSync, realpathSync } from 'node:fs'
 import { basename, join, resolve } from 'node:path'
-import { db, sessionId, writableDb, writeTransaction } from './db.ts'
-import { EVIDENCE_CLOSED_SQL, chainScoreJoin } from './evidence-query.ts'
-import { projectAt, projectByName, projects } from './projects.ts'
-import { liveWorktreeSharers, terminalDockerRetentionReasonForRun } from './resource-ownership.ts'
-import { auditRunMutation } from './run-authority.ts'
-import { closeOutRun } from './close-out.ts'
-import { isOrchWorktree, markedWorktreeSource, orphanSafety } from './worktree-attribution.ts'
-import { branchTip } from './worktree-remove.ts'
-import type { Worktree } from './worktree-types.ts'
 import {
-  classifiedDockerResources,
-  dockerRunResources,
-  leakedResourceLines,
-  orchRunId,
-  type DockerResource,
-} from './docker-resources.ts'
-import {
+  type CleanupPresentation,
   evidenceOwningBranchOwners,
   resourcesForConversation,
   verifyBranchOwnershipAfterCleanup,
   withCleanupLock,
-  type CleanupPresentation,
 } from './cleanup.ts'
+import { closeOutRun } from './close-out.ts'
+import { db, sessionId, writableDb, writeTransaction } from './db.ts'
+import {
+  classifiedDockerResources,
+  type DockerResource,
+  dockerRunResources,
+  leakedResourceLines,
+  orchRunId,
+} from './docker-resources.ts'
+import { chainScoreJoin, EVIDENCE_CLOSED_SQL } from './evidence-query.ts'
+import { projectAt, projectByName, projects } from './projects.ts'
+import { liveWorktreeSharers, terminalDockerRetentionReasonForRun } from './resource-ownership.ts'
+import { auditRunMutation } from './run-authority.ts'
+import { isOrchWorktree, markedWorktreeSource, orphanSafety } from './worktree-attribution.ts'
+import { branchTip } from './worktree-remove.ts'
+import type { Worktree } from './worktree-types.ts'
 
 export type SweepOptions = {
   dryRun: boolean

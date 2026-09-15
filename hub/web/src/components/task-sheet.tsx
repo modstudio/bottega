@@ -1,5 +1,7 @@
-import { useEffect, useState } from 'react'
 import { useMutation, useQuery } from '@tanstack/react-query'
+import { useEffect, useState } from 'react'
+import { relativeTime } from '@/lib/format'
+import { queryClient, type TaskRecordResponse, trpc } from '@/trpc/client'
 import { Badge } from './badge'
 import { Button } from './button'
 import { ProjectMark, SourceMark } from './design-system'
@@ -9,8 +11,6 @@ import { Markdown } from './markdown'
 import { Select } from './select'
 import { Sheet } from './sheet'
 import { Textarea } from './textarea'
-import { relativeTime } from '@/lib/format'
-import { queryClient, trpc, type TaskRecordResponse } from '@/trpc/client'
 
 function reasonRows(capabilities: TaskRecordResponse['capabilities']) {
   const entries = [

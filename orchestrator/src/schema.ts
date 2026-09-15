@@ -11,8 +11,8 @@ import {
   unique,
   uniqueIndex,
 } from 'drizzle-orm/sqlite-core'
-import { DOC_SCOPES, DOC_SCOPE_SUBJECT_KIND } from '../../shared/docs.ts'
-import { DELIVERY, FIDELITY, QUALITY } from './score.ts'
+import { DOC_SCOPE_SUBJECT_KIND, DOC_SCOPES } from '../../shared/docs.ts'
+import { EVENT_KINDS, RESOURCE_KINDS } from './contention.ts'
 import {
   MONITOR_SEVERITY,
   REVIEW_COVERAGE,
@@ -22,7 +22,7 @@ import {
   REVIEW_SEVERITY,
 } from './review-vocabulary.ts'
 import { RUN_MUTATION_ACTIONS } from './run-authority.ts'
-import { EVENT_KINDS, RESOURCE_KINDS } from './contention.ts'
+import { DELIVERY, FIDELITY, QUALITY } from './score.ts'
 
 const values = (items: readonly string[]) => sql.raw(items.map((item) => `'${item}'`).join(','))
 const subjectlessScopes = DOC_SCOPES.filter((scope) => DOC_SCOPE_SUBJECT_KIND[scope] === null)

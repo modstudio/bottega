@@ -1,15 +1,15 @@
 import { existsSync, realpathSync } from 'node:fs'
 import { isAbsolute, relative, resolve, sep } from 'node:path'
 import { db, SESSION_LIVE_MS, sessionId, writableDb, writeTransaction } from './db.ts'
-import { EVIDENCE_CLOSED_SQL, chainScoreJoin } from './evidence-query.ts'
-import { pidAlive } from './process-liveness.ts'
-import { otherConversationWorktreeSharers } from './resource-ownership.ts'
-import { projectAt, projectByName } from './projects.ts'
-import { branchTip, removeFor, restoreBranch } from './worktree-remove.ts'
-import { withCleanupLock, withWorktreeCreateLock, withWorktreeLease } from './project-lock.ts'
-import type { Worktree } from './worktree-types.ts'
-import { markedWorktreeSource, orphanSafety } from './worktree-attribution.ts'
+import { chainScoreJoin, EVIDENCE_CLOSED_SQL } from './evidence-query.ts'
 import { targetGitEnvironment } from './git-environment.ts'
+import { pidAlive } from './process-liveness.ts'
+import { withCleanupLock, withWorktreeCreateLock, withWorktreeLease } from './project-lock.ts'
+import { projectAt, projectByName } from './projects.ts'
+import { otherConversationWorktreeSharers } from './resource-ownership.ts'
+import { markedWorktreeSource, orphanSafety } from './worktree-attribution.ts'
+import { branchTip, removeFor, restoreBranch } from './worktree-remove.ts'
+import type { Worktree } from './worktree-types.ts'
 
 export type ReclaimResult = { ok: boolean; action: string }
 
