@@ -373,9 +373,8 @@ export const nowIso = () => new Date().toISOString()
  * unscored backlog: nobody else can judge whether an answer was useful, because
  * nobody else read it.
  *
- * CLAUDE_CODE_SESSION_ID is the one that is always set, and is the one that
- * identifies a session uniquely. The two that used to be read here do not do
- * that job:
+ * CLAUDE_CODE_SESSION_ID is always set and identifies a session uniquely. The
+ * other available identifiers do not do that job:
  *
  *   - CLAUDE_SESSION_ID does not exist. It never has; the fallback was dead.
  *   - CLAUDE_CODE_BRIDGE_SESSION_ID is set only while Remote Control is

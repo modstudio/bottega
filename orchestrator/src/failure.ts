@@ -156,12 +156,9 @@ const PATTERNS: [FailureKind, RegExp][] = [
   ['content_refusal', /\bcontent was flagged for possible cybersecurity risk\b/i],
   // Headless cannot answer a permission prompt, so the tool call is auto-denied.
   //
-  // A bare `approval` used to be one of these alternatives, and it matched the
-  // wrong thing on nearly every Codex failure: Codex prints `approval: never` in
-  // the banner it echoes before it says anything, and errorTail keeps that
-  // banner. Run 243 — a local-endpoint protocol error, `Unexpected message
-  // role` — was stored as `denied` on that basis. Only the phrasings that mean a
-  // permission was actually refused belong here.
+  // A bare `approval` matches Codex's `approval: never` banner even when the
+  // failure is unrelated. Only phrasings that mean a permission was actually
+  // refused belong here.
   ['denied', /\b(permission (?:that|was) .*denied|auto-denied|requir(?:e|es|ed) the "?\w+"? permission|approval (?:denied|required|rejected))\b/i],
 ]
 

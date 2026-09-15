@@ -387,6 +387,9 @@ thing it serves.
 argv, bounded by `ARG_MAX`; Codex reads stdin and has no ceiling. A pack too
 large for an argv agent excludes it rather than being sent and dying.
 
+Every compiled project and job canon pack fits the declared pack byte ceiling;
+a project or job whose pack cannot compile fails the gate.
+
 **So is context, and that is the one that actually bit.** A job declares roughly
 what its WORKING SET needs — not the prompt, which is small for all of them, but
 everything that accumulates once the agent starts: files opened, canon fetched,
@@ -1676,10 +1679,9 @@ could do. **Web work is allowed, but it declares itself** — `NEEDS-WEB` in the
 first 200 characters of the prompt or description. Only that opening is checked
 so a quoted repository excerpt deep in a prompt does not become a declaration.
 
-**A URL is not a declaration.** It used to be, and that quietly restored the
-rewording path this gate had just removed: any prompt that happened to quote a
-docs link or a stack trace was allowed, without anyone having decided it needed
-the network. A URL is now noted in the log and nothing more.
+**A URL is not a declaration.** A prompt can quote a docs link or stack trace
+without anyone deciding it needs the network. A URL is noted in the log and
+nothing more.
 
 **Denial happens on `PreToolUse` only.** `SubagentStart` carries no prompt to
 judge and its schema rejects a permission decision outright, so emitting one

@@ -76,11 +76,9 @@ export async function detach(jobName: string, prompt: string, spec: DetachSpec, 
   // every detached run showed a blank project in "running now" until its child
   // got far enough to fill the row in. There is no reason to make the page wait
   // for a fact this function already has.
-  // A resume is claimed as a chain member in this same INSERT. Previously the
-  // placeholder became visible as a running root and run() attached its parent
-  // later, leaving inbox a real window in which the old asking root looked
-  // recoverable. One SQLite statement is the claim boundary: readers now see
-  // either no new turn or a running turn already linked to its chain.
+  // A resume is claimed as a chain member in this same INSERT. One SQLite
+  // statement is the claim boundary: readers see either no new turn or a
+  // running turn already linked to its chain.
   const claimed = writeTransaction(() => {
     const projectName = spec.repo ?? repoOf(cwd)
     const projectId = projectName ? projectByName(projectName)?.id ?? null : null

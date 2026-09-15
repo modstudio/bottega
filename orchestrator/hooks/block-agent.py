@@ -35,10 +35,9 @@ prevent them - it is that writing it is deliberate and recorded, so a habit of
 declaring web work that is not web work shows up in the log rather than hiding
 in a regex.
 
-A URL is NOT a declaration. It used to be, and that quietly restored the
-rewording path this gate had just removed: any prompt quoting a docs link or a
-stack trace was allowed, without anyone having decided it needed the network. A
-URL is now recorded in the reason and nothing more.
+A URL is NOT a declaration. A prompt can quote a docs link or a stack trace
+without anyone deciding it needs the network. A URL is recorded in the reason
+and nothing more.
 
 EVERY DECISION IS LOGGED to the orchestrator's `spawn` table - allowed, denied,
 and the tool calls this does not gate at all. Subagents are ~18% of Claude spend
@@ -95,11 +94,9 @@ def log(decision, why, inp, event, payload=None):
     """Record the decision. Never let logging break a session — but never let it
     disappear silently either.
 
-    This used to be a bare `except: pass`, so a locked database produced a gate
-    that still denied and a table that stayed empty, with nothing anywhere
-    saying the two had come apart. A write that fails now says so on stderr
-    (Claude shows it as a non-blocking hook error) and lands in a sidecar log,
-    so the record survives the outage that broke it.
+    A write that fails says so on stderr (Claude shows it as a non-blocking hook
+    error) and lands in a sidecar log, so a locked database cannot leave the
+    gate denying while its record silently stays empty.
 
     The 5s connect timeout is raised to match orch's own busy_timeout: a spawn
     that arrives during a fan-out was being given a third of the patience the

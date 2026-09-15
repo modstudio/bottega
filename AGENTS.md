@@ -46,6 +46,9 @@ Three more separations that matter as much as the import graph:
 - **Canon per concern.** Each directory carries its own `AGENTS.md`; a session
   working in `ops/` is not handed the orchestrator's rules.
 
+Every repository path and package script named by canon resolves to a tracked
+path or a defined script; check-canon enforces it.
+
 ## What bottega is for the other projects
 
 Bottega is the AI orchestration infrastructure for every project on this
@@ -411,6 +414,12 @@ subprocesses are outside the gate. A concern's `test/` holds infrastructure
 only: fixtures, the preload, the gate runner, and timing reporters. There is no
 mirrored `tests/` tree, because a second tree drifts from the source on every
 rename and nothing reports the drift.
+
+Test infrastructure may import production capabilities but never re-exports
+them as a second public surface.
+
+A test mutates process environment only inside a test lifecycle hook and
+restores it, never at module load.
 
 **Suite time is a shared budget**, and the budget is under two minutes on a
 hosted runner. A slow test guarding little makes every future change more
