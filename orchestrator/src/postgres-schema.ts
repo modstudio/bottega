@@ -133,6 +133,11 @@ export const seq = pgTable.withRLS(
 )
 
 /** IDs are minted before a database connection exists; no id column has a default. */
+let lastRecordId = ''
+
 export function newRecordId(): string {
-  return Bun.randomUUIDv7()
+  let candidate = Bun.randomUUIDv7()
+  while (candidate <= lastRecordId) candidate = Bun.randomUUIDv7()
+  lastRecordId = candidate
+  return candidate
 }
