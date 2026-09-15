@@ -26,7 +26,7 @@ export function Select({
   const [open, setOpen] = useState(false)
   const [active, setActive] = useState(0)
   const root = useRef<HTMLDivElement>(null)
-  const list = useRef<HTMLUListElement>(null)
+  const list = useRef<HTMLDivElement>(null)
   const trigger = useRef<HTMLButtonElement>(null)
   const typed = useRef({ text: '', at: 0 })
   const restore = useRef(false)
@@ -143,7 +143,7 @@ export function Select({
       </button>
       <ChevronDown className="pointer-events-none absolute right-2 top-1/2 size-4 -translate-y-1/2" />
       {open ? (
-        <ul
+        <div
           ref={list}
           role="listbox"
           tabIndex={-1}
@@ -153,10 +153,11 @@ export function Select({
           onKeyDown={onKeyDown}
         >
           {options.map((option, index) => (
-            <li
+            <div
               key={option.value}
               id={`${id}-${index}`}
               role="option"
+              tabIndex={-1}
               aria-selected={index === selected}
               className={cx(
                 'flex cursor-default items-center gap-2 whitespace-nowrap py-1 pl-2 pr-4 text-[13px]',
@@ -164,6 +165,9 @@ export function Select({
               )}
               onPointerEnter={() => setActive(index)}
               onClick={() => choose(index)}
+              onKeyDown={(event) => {
+                if (event.key === 'Enter' || event.key === ' ') choose(index)
+              }}
             >
               <Check
                 className={cx(
@@ -173,9 +177,9 @@ export function Select({
               />
               <span>{option.label}</span>
               {option.note ? <span className="text-muted-foreground">({option.note})</span> : null}
-            </li>
+            </div>
           ))}
-        </ul>
+        </div>
       ) : null}
     </div>
   )
