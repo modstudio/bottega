@@ -99,6 +99,18 @@ import { resolveBase, resolveReadOnlyBase } from './worktree-caller.ts'
 import { toolFor } from './worktree-preflight.ts'
 import type { Worktree } from './worktree-types.ts'
 
+function requiredRunLease(
+  runId: number,
+  failed: (cause: unknown) => void,
+): ReturnType<typeof acquireRunLease> {
+  try {
+    return acquireRunLease(runId)
+  } catch (cause) {
+    failed(cause)
+    throw cause
+  }
+}
+
 export { TRUNCATED_TRANSCRIPT_BYTES }
 
 /** Read-only repository jobs isolate scratch objects; writing jobs need durable commits. */
@@ -993,13 +1005,10 @@ export async function run(opts: {
   }))
 
   try {
-    try {
-      runLease = acquireRunLease(claim.id)
-    } catch (cause) {
+    runLease = requiredRunLease(claim.id, (cause) => {
       error = String((cause as Error).message ?? cause)
       failureKind = 'harness'
-      throw cause
-    }
+    })
     ;({
       proc,
       timer,

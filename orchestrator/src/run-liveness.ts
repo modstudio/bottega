@@ -162,17 +162,33 @@ export function resolveRootFromLastTurn(database: Database, rootId: number): num
  */
 export type ObservedDeadRun = { id: number; reason: string }
 
+type RunningRow = {
+  id: number
+  pid: number | null
+  agent_pid: number | null
+  agent: string
+  started_at: string
+}
+
+function runningRowAlive(row: RunningRow): boolean {
+  return runAlive({
+    status: 'running',
+    lease: runLeaseState(row.id),
+    pidAlive: Boolean(row.pid && pidAlive(row.pid)),
+  })
+}
+
+function deadRunReason(row: RunningRow): string {
+  if (runLeaseState(row.id) === 'free') return `run lease ${row.id} is free`
+  if (row.pid) return `pid ${row.pid} is not alive`
+  return 'legacy run has no live pid'
+}
+
 export function reapStale(d: Database = db()): number | ObservedDeadRun[] {
   const bootstrapCutoff = new Date(Date.now() - PENDING_BOOTSTRAP_MS).toISOString()
   const rows = d
     .query(`SELECT id, pid, agent_pid, agent, started_at FROM run WHERE status='running'`)
-    .all() as {
-    id: number
-    pid: number | null
-    agent_pid: number | null
-    agent: string
-    started_at: string
-  }[]
+    .all() as RunningRow[]
 
   const dead: number[] = []
   const abandonedBootstrap: number[] = []
@@ -184,14 +200,7 @@ export function reapStale(d: Database = db()): number | ObservedDeadRun[] {
       if (!r.pid && r.started_at < bootstrapCutoff) abandonedBootstrap.push(r.id)
       continue
     }
-    if (
-      !runAlive({
-        status: 'running',
-        lease: runLeaseState(r.id),
-        pidAlive: Boolean(r.pid && pidAlive(r.pid)),
-      })
-    )
-      dead.push(r.id)
+    if (!runningRowAlive(r)) dead.push(r.id)
   }
   if (linkedWorktreeReadOnly) {
     return [
@@ -199,12 +208,7 @@ export function reapStale(d: Database = db()): number | ObservedDeadRun[] {
         const row = rows.find((candidate) => candidate.id === id)!
         return {
           id,
-          reason:
-            runLeaseState(row.id) === 'free'
-              ? `run lease ${row.id} is free`
-              : row.pid
-                ? `pid ${row.pid} is not alive`
-                : 'legacy run has no live pid',
+          reason: deadRunReason(row),
         }
       }),
       ...abandonedBootstrap.map((id) => ({
@@ -251,12 +255,7 @@ export function reapStale(d: Database = db()): number | ObservedDeadRun[] {
       const vendorAlive = row.agent_pid && pidAlive(row.agent_pid)
       const surviving = vendorAlive ? `; vendor pid ${row.agent_pid} still alive` : ''
       const error = `abandoned: process gone, no terminal state recorded${surviving}`
-      const reason =
-        (runLeaseState(row.id) === 'free'
-          ? `run lease ${row.id} is free`
-          : row.pid
-            ? `pid ${row.pid} is not alive`
-            : 'legacy run has no live pid') + surviving
+      const reason = deadRunReason(row) + surviving
       writeTransaction(() => {
         if (update.run(error, id).changes !== 1) return
         const authority = runMutationAuthority(d, id)

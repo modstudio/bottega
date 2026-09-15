@@ -243,6 +243,18 @@ function shouldInventoryBeforeSweep(row: SweepCandidate, dry: boolean): boolean 
   return !dry && sweepTreeIsOwned(row)
 }
 
+function sweepTerminalRunLeases(dry: boolean): void {
+  if (dry) return
+  for (const runId of runLeaseIds()) {
+    const row = db().query('SELECT status FROM run WHERE id=?').get(runId) as {
+      status: string
+    } | null
+    if (row && ['ok', 'failed', 'stale', 'stopped'].includes(row.status)) {
+      removeFreeRunLease(runId)
+    }
+  }
+}
+
 function reportImmediateClosedSweep(
   closed: ReturnType<typeof closeOutRun>,
   row: SweepCandidate,
@@ -303,16 +315,7 @@ export async function sweepRuns(options: SweepOptions, helpers: SweepHelpers): P
   const keep = (line: string, reason: string) => {
     kept.push({ line, reason })
   }
-  if (!dry) {
-    for (const runId of runLeaseIds()) {
-      const row = db().query('SELECT status FROM run WHERE id=?').get(runId) as {
-        status: string
-      } | null
-      if (row && ['ok', 'failed', 'stale', 'stopped'].includes(row.status)) {
-        removeFreeRunLease(runId)
-      }
-    }
-  }
+  sweepTerminalRunLeases(dry)
   for (const r of rows) {
     const current = db().query('SELECT worktree FROM run WHERE id=?').get(r.id) as {
       worktree: string | null
