@@ -1,12 +1,15 @@
-import { readdirSync, statSync, createReadStream } from 'node:fs'
+import type { Dirent } from 'node:fs'
+import { createReadStream, readdirSync, statSync } from 'node:fs'
 import { join } from 'node:path'
 import { createInterface } from 'node:readline'
 import { clock } from './clock.ts'
 import { db, nowIso, writableDb } from './db.ts'
-import { projects, projectAt } from './projects.ts'
+import { projectAt, projects } from './projects.ts'
 
 const targetGitEnvironment = (repo: string) =>
-  (require('./git-environment.ts') as typeof import('./git-environment.ts')).targetGitEnvironment(repo)
+  (require('./git-environment.ts') as typeof import('./git-environment.ts')).targetGitEnvironment(
+    repo,
+  )
 
 const PROJECTS = `${process.env.HOME}/.claude/projects`
 /**
@@ -33,7 +36,10 @@ const CLONE_ROOT = process.env.ORCH_CLONE_ROOT ?? `${process.env.HOME}/Projects`
  * change the answer inside a long-lived process, and a cached list would keep
  * reporting a newly-registered project's spend as untracked.
  */
-const canonRepos = (): string[] => projects().filter((p) => p.canon).map((p) => p.name)
+const canonRepos = (): string[] =>
+  projects()
+    .filter((p) => p.canon)
+    .map((p) => p.name)
 
 function keyPattern(prefixes: string[] | undefined): RegExp | null {
   if (!prefixes?.length) return null
@@ -64,8 +70,12 @@ const metricDaysAgo = (days: number, now: number): string =>
 
 /** Every .jsonl transcript under ~/.claude/projects. */
 function transcripts(dir: string, out: string[] = []): string[] {
-  let entries
-  try { entries = readdirSync(dir, { withFileTypes: true }) } catch { return out }
+  let entries: Dirent[]
+  try {
+    entries = readdirSync(dir, { withFileTypes: true })
+  } catch {
+    return out
+  }
   for (const e of entries) {
     const p = join(dir, e.name)
     if (e.isDirectory()) transcripts(p, out)
@@ -100,23 +110,51 @@ export function repoOfCwd(cwd: string | undefined): string | null {
   // as untracked — 65% of the window — because most of the estate's
   // transcripts come from numbered checkouts.
   if (!cwd.startsWith(CLONE_ROOT + '/')) return null
-  const seg = cwd.slice(CLONE_ROOT.length + 1).split('/')[0]!.replace(/-\d+$/, '')
+  const seg = cwd
+    .slice(CLONE_ROOT.length + 1)
+    .split('/')[0]!
+    .replace(/-\d+$/, '')
   return canonRepos().includes(seg) ? seg : null
 }
 
 async function claudeTokensByDay(since: string) {
-  const days = new Map<string, {
-    tokens: number; cacheRead: number; messages: number
-    canon: number; other: number
-  }>()
+  const days = new Map<
+    string,
+    {
+      tokens: number
+      cacheRead: number
+      messages: number
+      canon: number
+      other: number
+    }
+  >()
   for (const file of transcripts(PROJECTS)) {
     // Skip files untouched since the window opened — the cheap 90% of the work.
-    try { if (metricCalendarDay(statSync(file).mtime) < since) continue } catch { continue }
+    try {
+      if (metricCalendarDay(statSync(file).mtime) < since) continue
+    } catch {
+      continue
+    }
     const rl = createInterface({ input: createReadStream(file), crlfDelay: Infinity })
     for await (const line of rl) {
       if (!line.includes('"cache_read_input_tokens"')) continue
-      let d: any
-      try { d = JSON.parse(line) } catch { continue }
+      let d: {
+        timestamp?: string | number | Date
+        cwd?: string
+        message?: {
+          usage?: {
+            cache_read_input_tokens?: number
+            cache_creation_input_tokens?: number
+            input_tokens?: number
+            output_tokens?: number
+          }
+        }
+      }
+      try {
+        d = JSON.parse(line)
+      } catch {
+        continue
+      }
       const day = d.timestamp ? metricCalendarDay(d.timestamp) : ''
       if (!day || day < since) continue
       const u = d.message?.usage
@@ -124,7 +162,8 @@ async function claudeTokensByDay(since: string) {
       const row = days.get(day) ?? { tokens: 0, cacheRead: 0, messages: 0, canon: 0, other: 0 }
       const cr = u.cache_read_input_tokens ?? 0
       row.cacheRead += cr
-      const spend = cr + (u.cache_creation_input_tokens ?? 0) + (u.input_tokens ?? 0) + (u.output_tokens ?? 0)
+      const spend =
+        cr + (u.cache_creation_input_tokens ?? 0) + (u.input_tokens ?? 0) + (u.output_tokens ?? 0)
       row.tokens += spend
       // Work outside the canon repos ships no task key, so counting it in the
       // numerator inflates the ratio against a denominator it never touched.
@@ -170,7 +209,10 @@ export type FileKind = 'generated' | 'test' | 'docs' | 'config' | 'product'
  */
 const RULES: [FileKind, RegExp][] = [
   ['generated', /drizzle\/(.*snapshot\.json$|meta\/)/],
-  ['generated', /(^|\/)(package-lock\.json|bun\.lockb?|yarn\.lock|composer\.lock|pnpm-lock\.yaml)$/],
+  [
+    'generated',
+    /(^|\/)(package-lock\.json|bun\.lockb?|yarn\.lock|composer\.lock|pnpm-lock\.yaml)$/,
+  ],
   ['generated', /\.min\.(js|css)$/],
   ['generated', /(^|\/)(dist|build|vendor|node_modules)\//],
   ['generated', /\.(map|snap|svg|png|jpe?g|gif|ico|woff2?|ttf|pdf|lock)$/],
@@ -196,7 +238,9 @@ export function categorize(file: string): FileKind {
 }
 
 export type DayActivity = {
-  tasks: Set<string>; commits: number; files: Set<string>
+  tasks: Set<string>
+  commits: number
+  files: Set<string>
   /** Lines changed per file kind; `product` is the headline denominator. */
   lines: Record<FileKind, number>
 }
@@ -214,28 +258,42 @@ export type DayActivity = {
 function activityByDay(since: string) {
   const days = new Map<string, DayActivity>()
   const get = (d: string) => {
-    if (!days.has(d)) days.set(d, {
-      tasks: new Set(), commits: 0, files: new Set(),
-      lines: { generated: 0, test: 0, docs: 0, config: 0, product: 0 },
-    })
+    if (!days.has(d))
+      days.set(d, {
+        tasks: new Set(),
+        commits: 0,
+        files: new Set(),
+        lines: { generated: 0, test: 0, docs: 0, config: 0, product: 0 },
+      })
     return days.get(d)!
   }
   for (const { name: repo, path, settings } of projects().filter((p) => p.canon)) {
     const key = keyPattern(settings.keyPrefixes)
     const proc = Bun.spawnSync(
-      ['git', '-C', path, 'log', '--all', `--since=${since}`,
-       '--numstat', '--pretty=format:%x00%cI%x09%H%x09%s'],
+      [
+        'git',
+        '-C',
+        path,
+        'log',
+        '--all',
+        `--since=${since}`,
+        '--numstat',
+        '--pretty=format:%x00%cI%x09%H%x09%s',
+      ],
       { env: targetGitEnvironment(path), stdout: 'pipe', stderr: 'ignore' },
     )
     let day: string | null = null
     for (const line of new TextDecoder().decode(proc.stdout).split('\n')) {
       if (line.startsWith('\u0000')) {
         const [d, , subject] = line.slice(1).split('\t')
-        if (!d) { day = null; continue }
+        if (!d) {
+          day = null
+          continue
+        }
         day = metricCalendarDay(d)
         const row = get(day)
         row.commits++
-        for (const k of key ? (subject ?? '').match(key) ?? [] : []) row.tasks.add(`${repo}:${k}`)
+        for (const k of key ? ((subject ?? '').match(key) ?? []) : []) row.tasks.add(`${repo}:${k}`)
         continue
       }
       if (!day) continue
@@ -250,7 +308,6 @@ function activityByDay(since: string) {
   }
   return days
 }
-
 
 export async function collect(windowDays = 30) {
   writableDb()
@@ -297,20 +354,41 @@ export async function collect(windowDays = 30) {
     const t = tok.get(day) ?? { tokens: 0, cacheRead: 0, messages: 0, canon: 0, other: 0 }
     const a = act.get(day)
     stmt.run(
-      day, t.tokens, t.cacheRead, t.messages, a?.tasks.size ?? 0,
-      t.canon, t.other, a?.commits ?? 0, a?.files.size ?? 0,
-      a?.lines.product ?? 0, a?.lines.test ?? 0, a?.lines.docs ?? 0,
-      a?.lines.config ?? 0, a?.lines.generated ?? 0, nowIso(),
+      day,
+      t.tokens,
+      t.cacheRead,
+      t.messages,
+      a?.tasks.size ?? 0,
+      t.canon,
+      t.other,
+      a?.commits ?? 0,
+      a?.files.size ?? 0,
+      a?.lines.product ?? 0,
+      a?.lines.test ?? 0,
+      a?.lines.docs ?? 0,
+      a?.lines.config ?? 0,
+      a?.lines.generated ?? 0,
+      nowIso(),
     )
   }
   return allDays.size
 }
 
 type Row = {
-  day: string; claude_tokens: number; cache_read: number; messages: number; tasks: number
-  canon_tokens: number; other_tokens: number; commits: number; files: number
-  lines_product: number; lines_test: number; lines_docs: number
-  lines_config: number; lines_generated: number
+  day: string
+  claude_tokens: number
+  cache_read: number
+  messages: number
+  tasks: number
+  canon_tokens: number
+  other_tokens: number
+  commits: number
+  files: number
+  lines_product: number
+  lines_test: number
+  lines_docs: number
+  lines_config: number
+  lines_generated: number
 }
 
 /**
@@ -320,25 +398,31 @@ type Row = {
  * differently, and so a lens can never appear without its caveat attached.
  */
 export const LENSES = [
-  { key: 'tasks', label: 'per task',
-    caveat: 'misses any work that carries no ticket - this project is the example' },
-  { key: 'lines_product', label: 'per product line',
-    caveat: 'rewards volume; generated files excluded, tests counted separately' },
-  { key: 'commits', label: 'per commit',
-    caveat: 'follows commit habit rather than effort' },
-  { key: 'files', label: 'per file touched',
-    caveat: 'says nothing about depth of change' },
+  {
+    key: 'tasks',
+    label: 'per task',
+    caveat: 'misses any work that carries no ticket - this project is the example',
+  },
+  {
+    key: 'lines_product',
+    label: 'per product line',
+    caveat: 'rewards volume; generated files excluded, tests counted separately',
+  },
+  { key: 'commits', label: 'per commit', caveat: 'follows commit habit rather than effort' },
+  { key: 'files', label: 'per file touched', caveat: 'says nothing about depth of change' },
 ] as const
 
 /** Rolling ratio: a single day is too noisy — tasks land in bursts. */
 export function summary(windowDays = 14) {
   const now = clock().now()
   const since = metricDaysAgo(windowDays, now)
-  const rows = db().query(
-    `SELECT day, claude_tokens, cache_read, messages, tasks, canon_tokens, other_tokens,
+  const rows = db()
+    .query(
+      `SELECT day, claude_tokens, cache_read, messages, tasks, canon_tokens, other_tokens,
             commits, files, lines_product, lines_test, lines_docs, lines_config, lines_generated
        FROM metric WHERE day >= ? ORDER BY day`,
-  ).all(since) as Row[]
+    )
+    .all(since) as Row[]
 
   // Two kinds of day cannot be read as a ratio and are excluded from the trend.
   //
@@ -356,7 +440,10 @@ export function summary(windowDays = 14) {
   // by three orders of magnitude. Scaled to the window's own median so it
   // needs no tuning as volume changes.
   const GAP_SHARE = 0.05
-  const nonZero = rows.map((r) => r.canon_tokens).filter((t) => t > 0).sort((a, b) => a - b)
+  const nonZero = rows
+    .map((r) => r.canon_tokens)
+    .filter((t) => t > 0)
+    .sort((a, b) => a - b)
   const medianDay = nonZero.length ? nonZero[nonZero.length >> 1]! : 0
   const isGap = (r: { tasks: number; canon_tokens: number }) =>
     r.tasks > 0 && medianDay > 0 && r.canon_tokens < medianDay * GAP_SHARE
@@ -399,8 +486,12 @@ export function summary(windowDays = 14) {
 
   let direction: 'improving' | 'worsening' | 'flat' | 'unknown' = 'unknown'
   let changePct: number | null = null
-  if (earlier.perTask && recent.perTask &&
-      earlier.tasks >= MIN_TASKS && recent.tasks >= MIN_TASKS) {
+  if (
+    earlier.perTask &&
+    recent.perTask &&
+    earlier.tasks >= MIN_TASKS &&
+    recent.tasks >= MIN_TASKS
+  ) {
     changePct = ((recent.perTask - earlier.perTask) / earlier.perTask) * 100
     // Under 10% is inside the noise these bursts generate; calling it a trend
     // would be reading a direction into scheduling.
@@ -415,17 +506,27 @@ export function summary(windowDays = 14) {
     return { ...l, denom, perUnit: denom > 0 ? Math.round(canonTokens / denom) : null }
   })
   const mix = (['product', 'test', 'docs', 'config', 'generated'] as const).map((k) => ({
-    kind: k, lines: rows.reduce((a, r) => a + (r['lines_' + k as keyof Row] as number), 0),
+    kind: k,
+    lines: rows.reduce((a, r) => a + (r[('lines_' + k) as keyof Row] as number), 0),
   }))
 
   return {
-    days: rows.length, tokens, tasks, messages,
-    canonTokens, otherTokens,
+    days: rows.length,
+    tokens,
+    tasks,
+    messages,
+    canonTokens,
+    otherTokens,
     untrackedShare: tokens > 0 ? otherTokens / (canonTokens + otherTokens) : 0,
-    lenses, mix,
+    lenses,
+    mix,
     perTask: tasks > 0 ? Math.round(canonTokens / tasks) : null,
     perMessage: messages > 0 ? Math.round(tokens / messages) : null,
-    earlier, recent, direction, changePct, excluded,
+    earlier,
+    recent,
+    direction,
+    changePct,
+    excluded,
     // Flagged rather than dropped: the chart shows every day, and says which
     // ones the trend could not use.
     series: rows.map((r) => ({

@@ -5,15 +5,9 @@ if (!gitleaks) {
 }
 
 const root = new URL('..', import.meta.url).pathname
-const scan = Bun.spawnSync([
-  gitleaks,
-  'git',
-  root,
-  '--config',
-  `${root}.gitleaks.toml`,
-  '--redact',
-  '--exit-code',
-  '1',
-], { stdout: 'inherit', stderr: 'inherit' })
+const scan = Bun.spawnSync(
+  [gitleaks, 'git', root, '--config', `${root}.gitleaks.toml`, '--redact', '--exit-code', '1'],
+  { stdout: 'inherit', stderr: 'inherit' },
+)
 
 process.exit(scan.exitCode)

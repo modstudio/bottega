@@ -1,15 +1,25 @@
 import { describe, expect, test } from 'bun:test'
 import {
-  chmodSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, realpathSync, rmSync, statSync,
+  chmodSync,
+  mkdirSync,
+  mkdtempSync,
+  readdirSync,
+  readFileSync,
+  realpathSync,
+  rmSync,
+  statSync,
   writeFileSync,
 } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
-import {
-  decodeRunsJson, docArgv, projectArgv,
-  startDashboardCapability, stopDashboardCapability,
-} from './orch.ts'
 import { encodeOrchRunLine, OrchBlockersSchema } from '../../shared/orch-contract.ts'
+import {
+  decodeRunsJson,
+  docArgv,
+  projectArgv,
+  startDashboardCapability,
+  stopDashboardCapability,
+} from './orch.ts'
 
 const runFixture = {
   id: 42,
@@ -30,10 +40,17 @@ const runFixture = {
   delivery: 'full',
   quality: 'right',
   retry_of: null,
-  turns: [{
-    id: 42, started_at: '2026-09-06T12:00:00.000Z', latency_ms: 100,
-    vendor_tokens: 12, vendor_cost_usd: null, status: 'ok', turn: 1,
-  }],
+  turns: [
+    {
+      id: 42,
+      started_at: '2026-09-06T12:00:00.000Z',
+      latency_ms: 100,
+      vendor_tokens: 12,
+      vendor_cost_usd: null,
+      status: 'ok',
+      turn: 1,
+    },
+  ],
   questions: [],
   launch_key: 'DEV-340',
 }
@@ -51,41 +68,58 @@ test('orch-owned run and blocker fields remain optional to hub', () => {
     turns: runFixture.turns.map(({ turn: _turn, ...turn }) => turn),
   }
   expect(decodeRunsJson(encodeOrchRunLine(runWithoutTurn, 2))).toEqual([runWithoutTurn])
-  expect(OrchBlockersSchema.parse({
-    blockers: [{
-      kind: null, source: 'declared', runs: 1, projects: 1,
-      agents: ['codex'], example: null,
-    }],
-  })).toEqual({
-    blockers: [{
-      kind: null, source: 'declared', runs: 1, projects: 1,
-      agents: ['codex'], example: null,
-    }],
+  expect(
+    OrchBlockersSchema.parse({
+      blockers: [
+        {
+          kind: null,
+          source: 'declared',
+          runs: 1,
+          projects: 1,
+          agents: ['codex'],
+          example: null,
+        },
+      ],
+    }),
+  ).toEqual({
+    blockers: [
+      {
+        kind: null,
+        source: 'declared',
+        runs: 1,
+        projects: 1,
+        agents: ['codex'],
+        example: null,
+      },
+    ],
   })
 })
 
 test('malformed NDJSON reports its physical line number', () => {
-  expect(() => decodeRunsJson(`\n${encodeOrchRunLine(runFixture, 2)}\nnot-json`))
-    .toThrow('line 3')
+  expect(() => decodeRunsJson(`\n${encodeOrchRunLine(runFixture, 2)}\nnot-json`)).toThrow('line 3')
 })
 
 test('an unknown envelope kind reports its physical line number', () => {
   const other = JSON.stringify({ schema_version: 2, kind: 'other', data: runFixture })
-  expect(() => decodeRunsJson(`${encodeOrchRunLine(runFixture, 2)}\n\n${other}`))
-    .toThrow('line 3')
+  expect(() => decodeRunsJson(`${encodeOrchRunLine(runFixture, 2)}\n\n${other}`)).toThrow('line 3')
 })
 
 test('only the orch client invokes bin/orch', () => {
   const root = new URL('.', import.meta.url).pathname
-  const files = readdirSync(root, { recursive: true, withFileTypes: true })
-    .filter((entry) => entry.isFile() && entry.name.endsWith('.ts')
-      && entry.name !== 'orch.ts' && !entry.name.endsWith('.test.ts')
-      && !entry.name.endsWith('.fixture.ts'))
+  const files = readdirSync(root, { recursive: true, withFileTypes: true }).filter(
+    (entry) =>
+      entry.isFile() &&
+      entry.name.endsWith('.ts') &&
+      entry.name !== 'orch.ts' &&
+      !entry.name.endsWith('.test.ts') &&
+      !entry.name.endsWith('.fixture.ts'),
+  )
   const violations = files.flatMap((entry) => {
     const path = join(entry.parentPath, entry.name)
     const source = readFileSync(path, 'utf8')
     return /bin\/orch/.test(source) || /\b(?:const|let|var)\s+ORCH\b/.test(source)
-      ? [path.slice(root.length)] : []
+      ? [path.slice(root.length)]
+      : []
   })
   expect(violations).toEqual([])
 })
@@ -158,58 +192,139 @@ describe('docArgv', () => {
   })
 
   test('list with scope', () => {
-    expect(docArgv('list', { scope: 'global' })).toEqual(
-      ['doc', 'list', '--scope', 'global', '--json'],
-    )
+    expect(docArgv('list', { scope: 'global' })).toEqual([
+      'doc',
+      'list',
+      '--scope',
+      'global',
+      '--json',
+    ])
   })
 
   test('list with scope and subject', () => {
-    expect(docArgv('list', { scope: 'project', subject: 'alpha' })).toEqual(
-      ['doc', 'list', '--scope', 'project', '--subject', 'alpha', '--json'],
-    )
+    expect(docArgv('list', { scope: 'project', subject: 'alpha' })).toEqual([
+      'doc',
+      'list',
+      '--scope',
+      'project',
+      '--subject',
+      'alpha',
+      '--json',
+    ])
   })
 
   test('get without subject', () => {
-    expect(docArgv('get', { scope: 'global', subject: null, slug: 'hello' })).toEqual(
-      ['doc', 'show', 'hello', '--scope', 'global', '--json'],
-    )
+    expect(docArgv('get', { scope: 'global', subject: null, slug: 'hello' })).toEqual([
+      'doc',
+      'show',
+      'hello',
+      '--scope',
+      'global',
+      '--json',
+    ])
   })
 
   test('get with subject', () => {
-    expect(docArgv('get', { scope: 'project', subject: 'alpha', slug: 'hello' })).toEqual(
-      ['doc', 'show', 'hello', '--scope', 'project', '--subject', 'alpha', '--json'],
-    )
+    expect(docArgv('get', { scope: 'project', subject: 'alpha', slug: 'hello' })).toEqual([
+      'doc',
+      'show',
+      'hello',
+      '--scope',
+      'project',
+      '--subject',
+      'alpha',
+      '--json',
+    ])
   })
 
   test('set without subject does not put the body in argv', () => {
     const body = "quote' backtick` newline\n"
     const argv = docArgv('set', {
-      scope: 'global', subject: null, slug: 'hello', title: 'Hi', body, reason: 'why',
+      scope: 'global',
+      subject: null,
+      slug: 'hello',
+      title: 'Hi',
+      body,
+      reason: 'why',
     })
-    expect(argv).toEqual(
-      ['doc', 'set', 'hello', '--scope', 'global', '--title', 'Hi', '--reason', 'why', '--author', 'hub-dashboard', '--json'],
-    )
+    expect(argv).toEqual([
+      'doc',
+      'set',
+      'hello',
+      '--scope',
+      'global',
+      '--title',
+      'Hi',
+      '--reason',
+      'why',
+      '--author',
+      'hub-dashboard',
+      '--json',
+    ])
     expect(argv).not.toContain(body)
   })
 
   test('set with subject', () => {
-    expect(docArgv('set', {
-      scope: 'agent', subject: 'codex', slug: 'notes', title: 'Notes', reason: 'why',
-    })).toEqual(
-      ['doc', 'set', 'notes', '--scope', 'agent', '--subject', 'codex', '--title', 'Notes', '--reason', 'why', '--author', 'hub-dashboard', '--json'],
-    )
+    expect(
+      docArgv('set', {
+        scope: 'agent',
+        subject: 'codex',
+        slug: 'notes',
+        title: 'Notes',
+        reason: 'why',
+      }),
+    ).toEqual([
+      'doc',
+      'set',
+      'notes',
+      '--scope',
+      'agent',
+      '--subject',
+      'codex',
+      '--title',
+      'Notes',
+      '--reason',
+      'why',
+      '--author',
+      'hub-dashboard',
+      '--json',
+    ])
   })
 
   test('remove without subject', () => {
-    expect(docArgv('remove', { scope: 'machine', subject: null, slug: 'host', reason: 'why' })).toEqual(
-      ['doc', 'rm', 'host', '--scope', 'machine', '--reason', 'why', '--author', 'hub-dashboard', '--json'],
-    )
+    expect(
+      docArgv('remove', { scope: 'machine', subject: null, slug: 'host', reason: 'why' }),
+    ).toEqual([
+      'doc',
+      'rm',
+      'host',
+      '--scope',
+      'machine',
+      '--reason',
+      'why',
+      '--author',
+      'hub-dashboard',
+      '--json',
+    ])
   })
 
   test('remove with subject', () => {
-    expect(docArgv('remove', { scope: 'job', subject: 'implement', slug: 'notes', reason: 'obsolete' })).toEqual(
-      ['doc', 'rm', 'notes', '--scope', 'job', '--subject', 'implement', '--reason', 'obsolete', '--author', 'hub-dashboard', '--json'],
-    )
+    expect(
+      docArgv('remove', { scope: 'job', subject: 'implement', slug: 'notes', reason: 'obsolete' }),
+    ).toEqual([
+      'doc',
+      'rm',
+      'notes',
+      '--scope',
+      'job',
+      '--subject',
+      'implement',
+      '--reason',
+      'obsolete',
+      '--author',
+      'hub-dashboard',
+      '--json',
+    ])
   })
 
   test('subjects', () => {
@@ -219,34 +334,67 @@ describe('docArgv', () => {
 
 describe('projectArgv', () => {
   test('builds add argv with each canon state and no shell quoting', () => {
-    expect(projectArgv('add', 'named project', {
-      path: '/tmp/a path', stack: 'bun react', canon: true,
-    })).toEqual([
-      'project', 'add', '/tmp/a path', '--name', 'named project',
-      '--stack', 'bun react', '--canon', '--json',
+    expect(
+      projectArgv('add', 'named project', {
+        path: '/tmp/a path',
+        stack: 'bun react',
+        canon: true,
+      }),
+    ).toEqual([
+      'project',
+      'add',
+      '/tmp/a path',
+      '--name',
+      'named project',
+      '--stack',
+      'bun react',
+      '--canon',
+      '--json',
     ])
     expect(projectArgv('add', undefined, { path: '/tmp/project', canon: false })).toEqual([
-      'project', 'add', '/tmp/project', '--no-canon', '--json',
+      'project',
+      'add',
+      '/tmp/project',
+      '--no-canon',
+      '--json',
     ])
     expect(projectArgv('add', undefined, { path: '/tmp/project' })).toEqual([
-      'project', 'add', '/tmp/project', '--json',
+      'project',
+      'add',
+      '/tmp/project',
+      '--json',
     ])
   })
 
   test('builds set argv with optional settings and passes null through JSON', () => {
-    expect(projectArgv('set', 'alpha', {
-      path: '/tmp/a path', stack: 'ts', canon: false,
-      settings: { tracker: null, nested: { value: null } },
-    })).toEqual([
-      'project', 'set', 'alpha', '--path', '/tmp/a path', '--stack', 'ts',
-      '--no-canon', '--settings', '{"tracker":null,"nested":{"value":null}}', '--json',
+    expect(
+      projectArgv('set', 'alpha', {
+        path: '/tmp/a path',
+        stack: 'ts',
+        canon: false,
+        settings: { tracker: null, nested: { value: null } },
+      }),
+    ).toEqual([
+      'project',
+      'set',
+      'alpha',
+      '--path',
+      '/tmp/a path',
+      '--stack',
+      'ts',
+      '--no-canon',
+      '--settings',
+      '{"tracker":null,"nested":{"value":null}}',
+      '--json',
     ])
     expect(projectArgv('set', 'alpha', { canon: true })).toEqual([
-      'project', 'set', 'alpha', '--canon', '--json',
+      'project',
+      'set',
+      'alpha',
+      '--canon',
+      '--json',
     ])
-    expect(projectArgv('set', 'alpha', {})).toEqual([
-      'project', 'set', 'alpha', '--json',
-    ])
+    expect(projectArgv('set', 'alpha', {})).toEqual(['project', 'set', 'alpha', '--json'])
   })
 
   test('builds remove argv as separate array elements', () => {

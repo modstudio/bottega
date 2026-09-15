@@ -5,8 +5,8 @@
  */
 import { existsSync, readdirSync, realpathSync, statSync } from 'node:fs'
 import { join } from 'node:path'
-import { projects } from './projects.ts'
 import { targetGitEnvironment } from './git-environment.ts'
+import { projects } from './projects.ts'
 
 export const RESOURCE_INVENTORY_TIMEOUT_MS = 1_000
 
@@ -55,7 +55,9 @@ export function parseRefGuardRunId(name: string): number | null {
 }
 
 export function databasesFromNames(
-  project: string, engine: 'postgres' | 'mysql', names: string[],
+  project: string,
+  engine: 'postgres' | 'mysql',
+  names: string[],
 ): WorktreeDatabase[] {
   return names.flatMap((name) => {
     const runId = parseWorktreeDatabaseName(name)
@@ -69,12 +71,16 @@ export function installTestDatabaseInventory(inventory: DatabaseInventory | null
 }
 
 function listCommand(
-  argv: string[], cwd: string,
+  argv: string[],
+  cwd: string,
 ): { ascertainable: true; names: string[] } | { ascertainable: false; reason: string } {
   let p: ReturnType<typeof Bun.spawnSync>
   try {
     p = Bun.spawnSync(argv, {
-      cwd, stdout: 'pipe', stderr: 'pipe', timeout: RESOURCE_INVENTORY_TIMEOUT_MS,
+      cwd,
+      stdout: 'pipe',
+      stderr: 'pipe',
+      timeout: RESOURCE_INVENTORY_TIMEOUT_MS,
     })
   } catch (error) {
     return {
@@ -94,7 +100,10 @@ function listCommand(
   }
   return {
     ascertainable: true,
-    names: (p.stdout?.toString() ?? '').split('\n').map((name) => name.trim()).filter(Boolean),
+    names: (p.stdout?.toString() ?? '')
+      .split('\n')
+      .map((name) => name.trim())
+      .filter(Boolean),
   }
 }
 
@@ -104,12 +113,18 @@ export function worktreeDatabaseInventory(): DatabaseInventory {
   const databases: WorktreeDatabase[] = []
   for (const project of projects()) {
     const provider = project.settings.worktree?.recipe?.database
-    if (!provider || (provider.kind !== 'postgres-template' && provider.kind !== 'mysql-dump')) continue
+    if (!provider || (provider.kind !== 'postgres-template' && provider.kind !== 'mysql-dump'))
+      continue
     if (provider.kind === 'postgres-template') {
       const psql = provider.psql ?? 'psql'
       const listed = listCommand(
-        [psql, '-v', 'ON_ERROR_STOP=1', '-tAc',
-          "SELECT datname FROM pg_database WHERE datistemplate = false"],
+        [
+          psql,
+          '-v',
+          'ON_ERROR_STOP=1',
+          '-tAc',
+          'SELECT datname FROM pg_database WHERE datistemplate = false',
+        ],
         project.path,
       )
       if (!listed.ascertainable) return listed
@@ -124,11 +139,17 @@ export function worktreeDatabaseInventory(): DatabaseInventory {
   return { ascertainable: true, databases }
 }
 
-function git(cwd: string, args: string[]): { ok: true; out: string } | { ok: false; reason: string } {
+function git(
+  cwd: string,
+  args: string[],
+): { ok: true; out: string } | { ok: false; reason: string } {
   let p: ReturnType<typeof Bun.spawnSync>
   try {
     p = Bun.spawnSync(['git', ...args], {
-      cwd, env: targetGitEnvironment(cwd), stdout: 'pipe', stderr: 'pipe',
+      cwd,
+      env: targetGitEnvironment(cwd),
+      stdout: 'pipe',
+      stderr: 'pipe',
       timeout: RESOURCE_INVENTORY_TIMEOUT_MS,
     })
   } catch (error) {
@@ -153,7 +174,9 @@ export function retainedRefInventory(): GitResourceInventory<RetainedRef> {
   for (const project of projects()) {
     if (!existsSync(project.path)) continue
     const listed = git(project.path, [
-      'for-each-ref', '--format=%(refname) %(objectname)', 'refs/orch/retained',
+      'for-each-ref',
+      '--format=%(refname) %(objectname)',
+      'refs/orch/retained',
     ])
     if (!listed.ok) return { ascertainable: false, reason: `${project.name}: ${listed.reason}` }
     if (!listed.out) continue
@@ -177,10 +200,16 @@ export function refGuardInventory(): GitResourceInventory<RefGuard> {
     if (!common.ok) return { ascertainable: false, reason: `${project.name}: ${common.reason}` }
     if (!common.out) continue
     let root: string
-    try { root = realpathSync(join(common.out, 'orch-guards')) } catch { continue }
+    try {
+      root = realpathSync(join(common.out, 'orch-guards'))
+    } catch {
+      continue
+    }
     if (!existsSync(root)) continue
     let entries: string[]
-    try { entries = readdirSync(root) } catch (error) {
+    try {
+      entries = readdirSync(root)
+    } catch (error) {
       return {
         ascertainable: false,
         reason: `${project.name} ref-guard inventory unavailable: ${(error as Error).message}`,
@@ -192,7 +221,9 @@ export function refGuardInventory(): GitResourceInventory<RefGuard> {
       const path = join(root, name)
       try {
         if (!statSync(path).isDirectory()) continue
-      } catch { continue }
+      } catch {
+        continue
+      }
       items.push({ path, runId, project: project.name })
     }
   }

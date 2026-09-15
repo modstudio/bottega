@@ -15,7 +15,8 @@ export function grokTrustHeadings(env: NodeJS.ProcessEnv = process.env): string[
   const path = grokTrustStorePath(env)
   if (!existsSync(path)) return []
   try {
-    return readFileSync(path, 'utf8').split(/\r?\n/)
+    return readFileSync(path, 'utf8')
+      .split(/\r?\n/)
       .filter((line) => line.startsWith('[folders.'))
   } catch {
     // Trust-store observation must never turn a vendor grant into a run failure.

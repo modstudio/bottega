@@ -10,11 +10,7 @@ export function normalizedMessage(message: string) {
 }
 
 export function fingerprint(finding: Finding) {
-  return JSON.stringify([
-    finding.file,
-    finding.rule,
-    normalizedMessage(finding.message),
-  ])
+  return JSON.stringify([finding.file, finding.rule, normalizedMessage(finding.message)])
 }
 
 export function introducedFindings(base: Finding[], head: Finding[]) {

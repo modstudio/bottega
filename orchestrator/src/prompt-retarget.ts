@@ -3,9 +3,9 @@
  * Knows confinement snapshots, the project register, and path rewriting. Must
  * not know the database, transports, contracts, or routing.
  */
-import { freezeCheckouts, type CheckoutToWatch } from './confinement.ts'
-import { checkoutWatchSet } from './checkout-identity.ts'
-import { withoutTrailingSeparators } from './checkout-identity.ts'
+
+import { checkoutWatchSet, withoutTrailingSeparators } from './checkout-identity.ts'
+import { type CheckoutToWatch, freezeCheckouts } from './confinement.ts'
 
 export type CheckoutStatusSnapshot = {
   project: string
@@ -31,15 +31,23 @@ const UNICODE_ALPHANUMERIC_OR_MARK = /[\p{L}\p{N}\p{M}]/u
 const PATH_NAME_CHARACTER = /[\p{L}\p{N}\p{M}_.-]/u
 const SHELL_PATH_BOUNDARY = /[;&|<>()`$]/
 const PARTIAL_FULL_CASE_FOLD = new Map([
-  ['İ', 'i\u0307'], ['ß', 'ss'], ['ẞ', 'ss'],
-  ['ﬀ', 'ff'], ['ﬁ', 'fi'], ['ﬂ', 'fl'], ['ﬃ', 'ffi'], ['ﬄ', 'ffl'],
-  ['ﬅ', 'st'], ['ﬆ', 'st'],
+  ['İ', 'i\u0307'],
+  ['ß', 'ss'],
+  ['ẞ', 'ss'],
+  ['ﬀ', 'ff'],
+  ['ﬁ', 'fi'],
+  ['ﬂ', 'fl'],
+  ['ﬃ', 'ffi'],
+  ['ﬄ', 'ffl'],
+  ['ﬅ', 'st'],
+  ['ﬆ', 'st'],
 ])
 
 function partialUnicodeCaseFold(value: string): string {
   return [...value.normalize('NFC')]
     .map((character) => PARTIAL_FULL_CASE_FOLD.get(character) ?? character.toLowerCase())
-    .join('').normalize('NFC')
+    .join('')
+    .normalize('NFC')
 }
 
 function characterAt(value: string, offset: number): string | undefined {
@@ -50,7 +58,7 @@ function characterAt(value: string, offset: number): string | undefined {
 function characterBefore(value: string, offset: number): string | undefined {
   if (offset <= 0) return undefined
   const last = value.charCodeAt(offset - 1)
-  const start = last >= 0xDC00 && last <= 0xDFFF ? offset - 2 : offset - 1
+  const start = last >= 0xdc00 && last <= 0xdfff ? offset - 2 : offset - 1
   return value.slice(Math.max(0, start), offset)
 }
 
@@ -64,7 +72,10 @@ function hasPathEndBoundary(prompt: string, offset: number): boolean {
 }
 
 function pathRootMatchLength(
-  prompt: string, offset: number, root: string, caseInsensitive: boolean,
+  prompt: string,
+  offset: number,
+  root: string,
+  caseInsensitive: boolean,
 ): number | null {
   if (!caseInsensitive) {
     if (prompt.slice(offset, offset + root.length) !== root) return null
@@ -80,8 +91,8 @@ function pathRootMatchLength(
       return hasPathEndBoundary(prompt, end) ? end - offset : null
     }
     const following = characterAt(prompt, end)
-    if (foldedCandidate.length >= foldedRoot.length &&
-        !(following && /\p{M}/u.test(following))) return null
+    if (foldedCandidate.length >= foldedRoot.length && !(following && /\p{M}/u.test(following)))
+      return null
   }
   return null
 }
@@ -100,7 +111,9 @@ function aliasKey(root: string, caseInsensitive: boolean): string {
 }
 
 function invalidRetargeting(
-  callers: string[], targets: string[], caseInsensitive: boolean,
+  callers: string[],
+  targets: string[],
+  caseInsensitive: boolean,
 ): string | null {
   if (targets[0] === '') return 'review path retargeting indeterminate: destination is empty'
   const malformed = [...callers, ...targets].find((root) => root.startsWith('//'))
@@ -111,7 +124,9 @@ function invalidRetargeting(
     return 'review path retargeting indeterminate: caller alias is filesystem root (/)'
   }
   const sourceKeys = new Set(normalizedCallers.map((root) => aliasKey(root, caseInsensitive)))
-  const collision = normalizedTargets.find((root) => sourceKeys.has(aliasKey(root, caseInsensitive)))
+  const collision = normalizedTargets.find((root) =>
+    sourceKeys.has(aliasKey(root, caseInsensitive)),
+  )
   return collision
     ? `review path retargeting indeterminate: alias has both source and target roles (${collision})`
     : null
@@ -121,29 +136,41 @@ function uriAuthorityEnd(prompt: string, offset: number): number | null {
   const scheme = /^[A-Za-z][A-Za-z0-9+.-]*:\/\//.exec(prompt.slice(offset))
   if (!scheme) return null
   let end = offset + scheme[0].length
-  while (end < prompt.length && !/[\/?#\s'"`)\]}>]/.test(prompt[end]!)) end++
+  while (end < prompt.length && !/[/?#\s'"`)\]}>]/.test(prompt[end]!)) end++
   return end
 }
 
 export function retargetRepositoryPrompt(
-  prompt: string, callers: string | string[], worktree: string,
-  caseInsensitive: boolean, protectedWorktreeRoots: string[],
+  prompt: string,
+  callers: string | string[],
+  worktree: string,
+  caseInsensitive: boolean,
+  protectedWorktreeRoots: string[],
 ): RetargetResult {
-  const callerList = (Array.isArray(callers) ? callers : [callers])
+  const callerList = Array.isArray(callers) ? callers : [callers]
   if (callerList.every((root) => root === '')) return { prompt, diagnostic: null }
   const rawTargets = [worktree, ...protectedWorktreeRoots]
   const invalid = invalidRetargeting(callerList, rawTargets, caseInsensitive)
   if (invalid) return { prompt, diagnostic: invalid }
   const aliases: RetargetAlias[] = [
-    ...callerList.filter(Boolean).map((root) =>
-      ({ root: withoutTrailingSeparators(root), role: 'source' as const })),
-    ...rawTargets.filter(Boolean).map((root) =>
-      ({ root: withoutTrailingSeparators(root), role: 'target' as const })),
-  ].filter((alias, index, all) => all.findIndex((other) =>
-    other.role === alias.role &&
-    aliasKey(other.root, caseInsensitive) === aliasKey(alias.root, caseInsensitive)) === index)
-    .sort((a, b) => aliasKey(b.root, caseInsensitive).length -
-      aliasKey(a.root, caseInsensitive).length)
+    ...callerList
+      .filter(Boolean)
+      .map((root) => ({ root: withoutTrailingSeparators(root), role: 'source' as const })),
+    ...rawTargets
+      .filter(Boolean)
+      .map((root) => ({ root: withoutTrailingSeparators(root), role: 'target' as const })),
+  ]
+    .filter(
+      (alias, index, all) =>
+        all.findIndex(
+          (other) =>
+            other.role === alias.role &&
+            aliasKey(other.root, caseInsensitive) === aliasKey(alias.root, caseInsensitive),
+        ) === index,
+    )
+    .sort(
+      (a, b) => aliasKey(b.root, caseInsensitive).length - aliasKey(a.root, caseInsensitive).length,
+    )
   const destination = withoutTrailingSeparators(worktree)
   let rewritten = ''
   let cursor = 0
@@ -161,15 +188,20 @@ export function retargetRepositoryPrompt(
       continue
     }
     authorityPathStart = null
-    const matched = aliases.map((alias) => ({
-      alias,
-      length: pathRootMatchLength(prompt, cursor, alias.root, caseInsensitive),
-    })).find(({ length }) => length !== null)
+    const matched = aliases
+      .map((alias) => ({
+        alias,
+        length: pathRootMatchLength(prompt, cursor, alias.root, caseInsensitive),
+      }))
+      .find(({ length }) => length !== null)
     if (matched) {
       const { alias, length } = matched
-      rewritten += alias.role === 'source'
-        ? (destination === '/' && prompt[cursor + length!] === '/' ? '' : destination)
-        : prompt.slice(cursor, cursor + length!)
+      rewritten +=
+        alias.role === 'source'
+          ? destination === '/' && prompt[cursor + length!] === '/'
+            ? ''
+            : destination
+          : prompt.slice(cursor, cursor + length!)
       cursor += length!
       continue
     }
@@ -179,11 +211,18 @@ export function retargetRepositoryPrompt(
 }
 
 export function retargetRepositoryPromptForDispatch(
-  prompt: string, callers: string | string[], worktree: string,
-  caseInsensitive: boolean, protectedWorktreeRoots: string[],
+  prompt: string,
+  callers: string | string[],
+  worktree: string,
+  caseInsensitive: boolean,
+  protectedWorktreeRoots: string[],
 ): string {
   const result = retargetRepositoryPrompt(
-    prompt, callers, worktree, caseInsensitive, protectedWorktreeRoots,
+    prompt,
+    callers,
+    worktree,
+    caseInsensitive,
+    protectedWorktreeRoots,
   )
   if (result.diagnostic) throw new Error(result.diagnostic)
   return result.prompt

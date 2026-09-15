@@ -6,7 +6,11 @@ describe('tracker poll schedule', () => {
   let now = 1_000_000
   const clock = () => now
   const result = (fields: Partial<TrackerResult> = {}): TrackerResult => ({
-    project: 'alpha', tasks: 10, changed: 0, activity: false, ...fields,
+    project: 'alpha',
+    tasks: 10,
+    changed: 0,
+    activity: false,
+    ...fields,
   })
 
   test('backs a quiet project off and returns to the floor as soon as change is observed', () => {

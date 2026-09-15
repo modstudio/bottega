@@ -1,7 +1,11 @@
+import { DEFAULT_IDLE_CAP_MS, engagedMs, type Span, union } from '../../shared/interval.ts'
+import {
+  type Capabilities,
+  type TrackerRowSource,
+  trackerCapabilities,
+} from '../../shared/trackers.ts'
 import { db } from './db.ts'
-import { engagedMs, union, DEFAULT_IDLE_CAP_MS, type Span } from '../../shared/interval.ts'
 import { projects } from './projects.ts'
-import { trackerCapabilities, type Capabilities, type TrackerRowSource } from '../../shared/trackers.ts'
 
 export type AgentSpend = { agent: string; tokens: number; costUsd: number | null; runs: number }
 
@@ -62,8 +66,9 @@ type WindowIntervalRow = IntervalRow & {
 
 /** One indexed overlap scan, with task metadata only for keys in that window. */
 function intervalsInWindow(from: string, to: string): WindowIntervalRow[] {
-  return db().query<WindowIntervalRow, [string, string]>(
-    `SELECT i.task_key, i.project, i.source, i.agent, i.job, i.start_at, i.end_at, i.open,
+  return db()
+    .query<WindowIntervalRow, [string, string]>(
+      `SELECT i.task_key, i.project, i.source, i.agent, i.job, i.start_at, i.end_at, i.open,
             i.claude_tokens, i.vendor_tokens, i.vendor_cost_usd,
             t.project AS task_project, t.title AS task_title, t.status AS task_status,
             t.status_category AS task_status_category, t.source AS task_source,
@@ -71,7 +76,8 @@ function intervalsInWindow(from: string, to: string): WindowIntervalRow[] {
        FROM interval i LEFT JOIN task t ON t.key = i.task_key
       WHERE i.end_at >= ? AND i.start_at < ?
       ORDER BY i.start_at`,
-  ).all(from, to)
+    )
+    .all(from, to)
 }
 
 /**
@@ -122,7 +128,6 @@ export function tasksInWindow(from: string, to: string): TaskRow[] {
 }
 
 function foldWindow(rows: WindowIntervalRow[]): TaskRow[] {
-
   const groups = new Map<string, WindowIntervalRow[]>()
   for (const r of rows) {
     // An unattributed row is grouped by project, so one project's untracked hours do
@@ -158,14 +163,20 @@ function foldWindow(rows: WindowIntervalRow[]): TaskRow[] {
       status: first.task_status,
       statusCategory: first.task_status_category,
       source: first.task_source ?? (key ? 'git' : null),
-      sourceProtocol: first.task_source === 'mcp'
-        ? projects().find((project) => project.name === first.task_project)?.settings.tracker?.protocol ?? null
+      sourceProtocol:
+        first.task_source === 'mcp'
+          ? (projects().find((project) => project.name === first.task_project)?.settings.tracker
+              ?.protocol ?? null)
+          : null,
+      capabilities: key
+        ? trackerCapabilities({
+            source: (first.task_source ?? 'git') as TrackerRowSource,
+            project:
+              projects().find(
+                (project) => project.name === (first.task_project ?? first.project),
+              ) ?? null,
+          })
         : null,
-      capabilities: key ? trackerCapabilities({
-        source: (first.task_source ?? 'git') as TrackerRowSource,
-        project: projects().find((project) =>
-          project.name === (first.task_project ?? first.project)) ?? null,
-      }) : null,
       engagedMs: engagedMs(spans),
       claudeTokens: list.reduce((s, r) => s + r.claude_tokens, 0),
       vendors: foldVendors(list),
@@ -198,41 +209,51 @@ export function stripWindow(from: string, to: string) {
   const toMs = new Date(to).getTime()
   return {
     tasks: foldWindow(rows),
-    engagedMs: engagedMs(rows.map((row) => ({
-      start: new Date(row.start_at).getTime(),
-      end: Math.min(endMs(row), toMs),
-    }))),
+    engagedMs: engagedMs(
+      rows.map((row) => ({
+        start: new Date(row.start_at).getTime(),
+        end: Math.min(endMs(row), toMs),
+      })),
+    ),
     orchRuns: rows.filter((row) => row.source === 'orch' && row.start_at >= from).length,
   }
 }
 
 /** Tasks whose status became `done` inside the window. */
 export function completedInWindow(from: string, to: string) {
-  return db().query<{ key: string; project: string; title: string | null; at: string
-                      to_status: string }, [string, string]>(
-    `SELECT t.key, t.project, t.title, e.at, e.to_status
+  return db()
+    .query<
+      { key: string; project: string; title: string | null; at: string; to_status: string },
+      [string, string]
+    >(
+      `SELECT t.key, t.project, t.title, e.at, e.to_status
        FROM task_status_event e JOIN task t ON t.key = e.task_key
       WHERE e.at >= ? AND e.at < ? AND e.to_status = 'done'
       ORDER BY e.at DESC`,
-  ).all(from, to)
+    )
+    .all(from, to)
 }
 
 /** The raw spans behind one task, so a surprising number can be traced. */
 export function intervalsOf(key: string | null, project: string | null, from: string, to: string) {
   const d = db()
   return key
-    ? d.query<IntervalRow, [string, string, string]>(
-        `SELECT task_key, project, source, agent, job, start_at, end_at, open,
+    ? d
+        .query<IntervalRow, [string, string, string]>(
+          `SELECT task_key, project, source, agent, job, start_at, end_at, open,
                 claude_tokens, vendor_tokens, vendor_cost_usd
            FROM interval WHERE task_key = ? AND end_at >= ? AND start_at < ?
           ORDER BY start_at`,
-      ).all(key, from, to)
-    : d.query<IntervalRow, [string | null, string, string]>(
-        `SELECT task_key, project, source, agent, job, start_at, end_at, open,
+        )
+        .all(key, from, to)
+    : d
+        .query<IntervalRow, [string | null, string, string]>(
+          `SELECT task_key, project, source, agent, job, start_at, end_at, open,
                 claude_tokens, vendor_tokens, vendor_cost_usd
            FROM interval WHERE task_key IS NULL AND project IS ? AND end_at >= ? AND start_at < ?
           ORDER BY start_at`,
-      ).all(project, from, to)
+        )
+        .all(project, from, to)
 }
 
 /**
@@ -243,15 +264,19 @@ export function intervalsOf(key: string | null, project: string | null, from: st
  * their sum would claim more hours than the day contains.
  */
 export function estateEngagedMs(from: string, to: string): number {
-  const rows = db().query<{ start_at: string; end_at: string; open: number }, [string, string]>(
-    `SELECT start_at, end_at, open FROM interval WHERE end_at >= ? AND start_at < ?`,
-  ).all(from, to)
+  const rows = db()
+    .query<{ start_at: string; end_at: string; open: number }, [string, string]>(
+      `SELECT start_at, end_at, open FROM interval WHERE end_at >= ? AND start_at < ?`,
+    )
+    .all(from, to)
   const toMs = new Date(to).getTime()
-  return engagedMs(rows.map((r) => ({
-    start: new Date(r.start_at).getTime(),
-    // Clamped to the window: an open span runs to now, which may be past `to`.
-    end: Math.min(endMs(r), toMs),
-  })))
+  return engagedMs(
+    rows.map((r) => ({
+      start: new Date(r.start_at).getTime(),
+      // Clamped to the window: an open span runs to now, which may be past `to`.
+      end: Math.min(endMs(r), toMs),
+    })),
+  )
 }
 
 /**
@@ -262,16 +287,19 @@ export function estateEngagedMs(from: string, to: string): number {
  * hours than the window holds. The same rule as the estate total, narrowed.
  */
 export function projectEngagedMs(project: string, from: string, to: string): number {
-  const rows = db().query<{ start_at: string; end_at: string; open: number },
-                          [string, string, string]>(
-    `SELECT start_at, end_at, open FROM interval
+  const rows = db()
+    .query<{ start_at: string; end_at: string; open: number }, [string, string, string]>(
+      `SELECT start_at, end_at, open FROM interval
       WHERE project = ? AND end_at >= ? AND start_at < ?`,
-  ).all(project, from, to)
+    )
+    .all(project, from, to)
   const toMs = new Date(to).getTime()
-  return engagedMs(rows.map((r) => ({
-    start: new Date(r.start_at).getTime(),
-    end: Math.min(endMs(r), toMs),
-  })))
+  return engagedMs(
+    rows.map((r) => ({
+      start: new Date(r.start_at).getTime(),
+      end: Math.min(endMs(r), toMs),
+    })),
+  )
 }
 
 /**
@@ -285,16 +313,20 @@ export function projectEngagedMs(project: string, from: string, to: string): num
  */
 export function tasksEngagedMs(keys: string[], from: string, to: string): number {
   if (!keys.length) return 0
-  const rows = db().query<{ start_at: string; end_at: string; open: number }, string[]>(
-    `SELECT start_at, end_at, open FROM interval
+  const rows = db()
+    .query<{ start_at: string; end_at: string; open: number }, string[]>(
+      `SELECT start_at, end_at, open FROM interval
       WHERE task_key IN (${keys.map(() => '?').join(',')})
         AND end_at >= ? AND start_at < ?`,
-  ).all(...keys, from, to)
+    )
+    .all(...keys, from, to)
   const toMs = new Date(to).getTime()
-  return engagedMs(rows.map((r) => ({
-    start: new Date(r.start_at).getTime(),
-    end: Math.min(endMs(r), toMs),
-  })))
+  return engagedMs(
+    rows.map((r) => ({
+      start: new Date(r.start_at).getTime(),
+      end: Math.min(endMs(r), toMs),
+    })),
+  )
 }
 
 /**
@@ -307,7 +339,10 @@ export function tasksEngagedMs(keys: string[], from: string, to: string): number
  * untasked and ticketed spans are counted only once.
  */
 export function reportEngagedMs(
-  keys: string[], projects: string[], from: string, to: string,
+  keys: string[],
+  projects: string[],
+  from: string,
+  to: string,
 ): number {
   const taskKeys = [...new Set(keys)]
   const untaskedProjects = [...new Set(projects)]
@@ -324,16 +359,20 @@ export function reportEngagedMs(
     params.push(...untaskedProjects)
   }
 
-  const rows = db().query<{ start_at: string; end_at: string; open: number }, string[]>(
-    `SELECT start_at, end_at, open FROM interval
+  const rows = db()
+    .query<{ start_at: string; end_at: string; open: number }, string[]>(
+      `SELECT start_at, end_at, open FROM interval
       WHERE (${clauses.join(' OR ')})
         AND end_at >= ? AND start_at < ?`,
-  ).all(...params, from, to)
+    )
+    .all(...params, from, to)
   const toMs = new Date(to).getTime()
-  return engagedMs(rows.map((r) => ({
-    start: new Date(r.start_at).getTime(),
-    end: Math.min(endMs(r), toMs),
-  })))
+  return engagedMs(
+    rows.map((r) => ({
+      start: new Date(r.start_at).getTime(),
+      end: Math.min(endMs(r), toMs),
+    })),
+  )
 }
 
 export { union }
@@ -357,13 +396,15 @@ export { union }
  */
 export function rollUpDays(): number {
   const d = db()
-  const rows = d.query<{ day: string; claude: number; msgs: number }, []>(
-    `SELECT substr(start_at, 1, 10) AS day,
+  const rows = d
+    .query<{ day: string; claude: number; msgs: number }, []>(
+      `SELECT substr(start_at, 1, 10) AS day,
             SUM(claude_tokens) AS claude,
             COUNT(*)           AS msgs
        FROM interval WHERE source IN ('claude','codex')
       GROUP BY day`,
-  ).all()
+    )
+    .all()
 
   const stmt = d.query(
     `INSERT INTO day (day, claude_tokens, messages, collected_at)
@@ -380,7 +421,9 @@ export function rollUpDays(): number {
                             THEN excluded.messages ELSE day.messages END,
        collected_at  = excluded.collected_at`,
   )
-  const write = d.transaction(() => { for (const r of rows) stmt.run(r.day, r.claude, r.msgs) })
+  const write = d.transaction(() => {
+    for (const r of rows) stmt.run(r.day, r.claude, r.msgs)
+  })
   write()
   return rows.length
 }
@@ -425,21 +468,24 @@ export function ratioDays(days = 14, includeEngaged = true): RatioDay[] {
   const since = new Date(Date.now() - days * 86400_000).toISOString().slice(0, 10)
   const today = new Date().toISOString().slice(0, 10)
 
-  const rows = d.query<DayRow, [string]>(
-    `SELECT day, claude_tokens, tasks, commits, files,
+  const rows = d
+    .query<DayRow, [string]>(
+      `SELECT day, claude_tokens, tasks, commits, files,
             lines_product, lines_test, lines_docs, lines_config, lines_generated
        FROM day WHERE day >= ? ORDER BY day`,
-  ).all(since)
+    )
+    .all(since)
 
-  const nonZero = rows.map((r) => r.claude_tokens).filter((t) => t > 0).sort((a, b) => a - b)
+  const nonZero = rows
+    .map((r) => r.claude_tokens)
+    .filter((t) => t > 0)
+    .sort((a, b) => a - b)
   const median = nonZero.length ? nonZero[Math.floor(nonZero.length / 2)]! : 0
   const floor = median * 0.05
 
   return rows.map((r) => {
     const excluded: RatioDay['excluded'] =
-      r.day === today ? 'today'
-      : r.tasks > 0 && r.claude_tokens < floor ? 'gap'
-      : null
+      r.day === today ? 'today' : r.tasks > 0 && r.claude_tokens < floor ? 'gap' : null
     return {
       ...r,
       excluded,
@@ -492,7 +538,12 @@ export function ratioSummary(windowDays = 14, includeEngaged = true): RatioSumma
 
   return {
     perTask: tasks > 0 ? Math.round(tokens / tasks) : null,
-    tokens, tasks, usableDays: usable.length, direction, changePct, days,
+    tokens,
+    tasks,
+    usableDays: usable.length,
+    direction,
+    changePct,
+    days,
   }
 }
 
@@ -516,18 +567,20 @@ export function spendGrid(windowDays = 14) {
 
   const denominators = {
     'shipped task': days.reduce((s, x) => s + x.tasks, 0),
-    'commit': days.reduce((s, x) => s + x.commits, 0),
+    commit: days.reduce((s, x) => s + x.commits, 0),
     'product line': days.reduce((s, x) => s + x.lines_product, 0),
     'file touched': days.reduce((s, x) => s + x.files, 0),
     'engaged hour': estateEngagedMs(from, to) / 3600_000,
   }
 
-  const vendors = d.query<{ agent: string; tokens: number; cost: number }, [string, string]>(
-    `SELECT agent, SUM(vendor_tokens) AS tokens, SUM(COALESCE(vendor_cost_usd,0)) AS cost
+  const vendors = d
+    .query<{ agent: string; tokens: number; cost: number }, [string, string]>(
+      `SELECT agent, SUM(vendor_tokens) AS tokens, SUM(COALESCE(vendor_cost_usd,0)) AS cost
        FROM interval WHERE source = 'orch' AND agent IS NOT NULL
         AND start_at >= ? AND start_at < ?
       GROUP BY agent HAVING tokens > 0 ORDER BY tokens DESC`,
-  ).all(from, to)
+    )
+    .all(from, to)
 
   const claude = days.reduce((s, x) => s + x.claude_tokens, 0)
   const cost = vendors.reduce((s, v) => s + v.cost, 0)
@@ -622,8 +675,7 @@ export function boardTasks(windowDays = 14, cap = 250): Board {
    * excluded nothing. The `interval` table is the only record of work actually
    * happening, and it is what "recent" has to mean here.
    */
-  const WHERE =
-    `WHERE t.status_category IN ('active','review')
+  const WHERE = `WHERE t.status_category IN ('active','review')
         OR EXISTS (SELECT 1 FROM interval i
                     WHERE i.task_key = t.key AND i.start_at >= ?)
         OR (t.source = 'local'
@@ -642,9 +694,12 @@ export function boardTasks(windowDays = 14, cap = 250): Board {
    */
   const countBy = (expr: string) => {
     const out: Record<string, number> = {}
-    for (const r of db().query<{ bucket: string; n: number }, [string]>(
-      `SELECT ${expr} AS bucket, COUNT(*) AS n FROM task t ${WHERE} GROUP BY bucket`,
-    ).all(since)) out[r.bucket] = r.n
+    for (const r of db()
+      .query<{ bucket: string; n: number }, [string]>(
+        `SELECT ${expr} AS bucket, COUNT(*) AS n FROM task t ${WHERE} GROUP BY bucket`,
+      )
+      .all(since))
+      out[r.bucket] = r.n
     return out
   }
   const totals = {
@@ -661,12 +716,22 @@ export function boardTasks(windowDays = 14, cap = 250): Board {
    * full and the shortfall lands where it costs least: on Done, whose header
    * still reports its true total.
    */
-  const rows = db().query<{
-    key: string; project: string | null; title: string | null; assignee: string | null
-    status: string | null; status_category: string | null
-    source: string; updated_at: string | null; last_seen: string
-  }, [string, number]>(
-    `SELECT t.key, t.project, t.title, t.assignee, t.status, t.status_category, t.source,
+  const rows = db()
+    .query<
+      {
+        key: string
+        project: string | null
+        title: string | null
+        assignee: string | null
+        status: string | null
+        status_category: string | null
+        source: string
+        updated_at: string | null
+        last_seen: string
+      },
+      [string, number]
+    >(
+      `SELECT t.key, t.project, t.title, t.assignee, t.status, t.status_category, t.source,
             t.updated_at, t.last_seen
        FROM task t ${WHERE}
       ORDER BY
@@ -675,14 +740,18 @@ export function boardTasks(windowDays = 14, cap = 250): Board {
           WHEN 'done' THEN 3 WHEN 'dropped' THEN 4 ELSE 2 END,
         COALESCE(t.updated_at, t.last_seen) DESC
       LIMIT ?`,
-  ).all(since, cap)
+    )
+    .all(since, cap)
 
   // Who is being worked on right now, in ONE query rather than one per row.
   const live = new Set(
-    db().query<{ task_key: string }, []>(
-      `SELECT DISTINCT task_key FROM interval
+    db()
+      .query<{ task_key: string }, []>(
+        `SELECT DISTINCT task_key FROM interval
         WHERE open = 1 AND task_key IS NOT NULL`,
-    ).all().map((r) => r.task_key),
+      )
+      .all()
+      .map((r) => r.task_key),
   )
 
   return {
@@ -694,9 +763,11 @@ export function boardTasks(windowDays = 14, cap = 250): Board {
       status: r.status,
       statusCategory: r.status_category,
       source: r.source,
-      sourceProtocol: r.source === 'mcp'
-        ? projects().find((project) => project.name === r.project)?.settings.tracker?.protocol ?? null
-        : null,
+      sourceProtocol:
+        r.source === 'mcp'
+          ? (projects().find((project) => project.name === r.project)?.settings.tracker?.protocol ??
+            null)
+          : null,
       capabilities: trackerCapabilities({
         source: r.source as TrackerRowSource,
         project: projects().find((project) => project.name === r.project) ?? null,

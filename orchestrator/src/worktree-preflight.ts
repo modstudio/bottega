@@ -1,9 +1,9 @@
 // concern: worktree-preflight
 import { accessSync, constants, existsSync, statSync } from 'node:fs'
 import { delimiter, join, resolve } from 'node:path'
+import { targetGitEnvironment } from './git-environment.ts'
 import { projectAt, type WorktreeTool } from './projects.ts'
 import { seedArgv, type WorktreeCreate } from './worktree-template.ts'
-import { targetGitEnvironment } from './git-environment.ts'
 
 function executableFile(path: string): boolean {
   try {
@@ -19,8 +19,9 @@ export function createCommandExists(create: WorktreeCreate | string, repoRoot: s
   if (typeof create === 'string' || !('command' in create)) return true
   const command = create.command
   if (command.includes('/')) return executableFile(resolve(repoRoot, command))
-  return (process.env.PATH ?? '').split(delimiter).some((entry) =>
-    executableFile(resolve(repoRoot, entry || '.', command)))
+  return (process.env.PATH ?? '')
+    .split(delimiter)
+    .some((entry) => executableFile(resolve(repoRoot, entry || '.', command)))
 }
 
 /** The project's own worktree tool, if it declared one. */
@@ -54,7 +55,10 @@ export function validateSeedWithTool(cwd: string, seed?: string): void {
   if (!existsSync(worktreeTool)) return
 
   const usage = Bun.spawnSync([worktreeTool], {
-    cwd: repoRoot, env: targetGitEnvironment(repoRoot), stdout: 'pipe', stderr: 'pipe',
+    cwd: repoRoot,
+    env: targetGitEnvironment(repoRoot),
+    stdout: 'pipe',
+    stderr: 'pipe',
   })
   const advertised = `${usage.stdout.toString()}${usage.stderr.toString()}`
   if (!/scripts\/worktree resolve(?:\s|\[)/.test(advertised)) return
@@ -87,4 +91,3 @@ export function validateSeedWithTool(cwd: string, seed?: string): void {
  * silent and left every business table empty. orch will not reinstate by
  * omission a default that was deliberately removed.
  */
-

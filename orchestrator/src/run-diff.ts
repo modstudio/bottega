@@ -6,42 +6,75 @@ import { targetGitEnvironment } from './git-environment.ts'
 import { projectByName } from './projects.ts'
 
 type RunDiffFlags = { has(name: string): boolean }
-type Changes = { diff: string; files: string[]; insertions: number; deletions: number; since: string; trunk: string; trunkConfigured: boolean }
+type Changes = {
+  diff: string
+  files: string[]
+  insertions: number
+  deletions: number
+  since: string
+  trunk: string
+  trunkConfigured: boolean
+}
 type RunDiffPresentation = {
   error(...values: unknown[]): void
   write(value: string): void
   usage(): never
-  cleanupRepoRoot(row: { repo: string | null; cwd: string | null; worktree: string | null }): string | null
-  changesIn(spec: { path: string; branch: string; base: string; repoRoot: string }, sinceBase: boolean): Changes
+  cleanupRepoRoot(row: {
+    repo: string | null
+    cwd: string | null
+    worktree: string | null
+  }): string | null
+  changesIn(
+    spec: { path: string; branch: string; base: string; repoRoot: string },
+    sinceBase: boolean,
+  ): Changes
   writesRepo(job: string): boolean
 }
 
-export async function runDiffCommand(id: number, flags: RunDiffFlags, presentation: RunDiffPresentation): Promise<void> {
+export async function runDiffCommand(
+  id: number,
+  flags: RunDiffFlags,
+  presentation: RunDiffPresentation,
+): Promise<void> {
   const { has } = flags
   const { error, write, usage, cleanupRepoRoot, changesIn, writesRepo } = presentation
   if (!id) usage()
-  const row = db().query(
-    `SELECT id, repo, cwd, worktree, branch, branch_kept, base_commit,
+  const row = db()
+    .query(
+      `SELECT id, repo, cwd, worktree, branch, branch_kept, base_commit,
             parent_run_id, carry_happened,
             carry_base_commit, carry_tracked_paths, carry_untracked_paths
        FROM run WHERE id = ?`,
-  ).get(id) as
-    { id: number; repo: string | null; cwd: string | null
-      worktree: string | null; branch: string | null
-      branch_kept: string | null; base_commit: string | null
-      parent_run_id: number | null; carry_happened: number | null
-      carry_base_commit: string | null; carry_tracked_paths: string | null
-      carry_untracked_paths: string | null } | null
+    )
+    .get(id) as {
+    id: number
+    repo: string | null
+    cwd: string | null
+    worktree: string | null
+    branch: string | null
+    branch_kept: string | null
+    base_commit: string | null
+    parent_run_id: number | null
+    carry_happened: number | null
+    carry_base_commit: string | null
+    carry_tracked_paths: string | null
+    carry_untracked_paths: string | null
+  } | null
   if (!row) throw new Error(`no run ${id}`)
   if (!row.base_commit) throw new Error(`run ${id} recorded no base commit to diff against`)
   const repoRoot = cleanupRepoRoot(row)
   if (!repoRoot) throw new Error(`run ${id}'s repository root was not found`)
   const worktreePresent = Boolean(row.worktree && existsSync(row.worktree))
   const evidenceBranch = row.branch_kept ?? row.branch
-  const branchPresent = Boolean(evidenceBranch && Bun.spawnSync(
-    ['git', 'show-ref', '--verify', '--quiet', `refs/heads/${evidenceBranch}`],
-    { cwd: repoRoot, env: targetGitEnvironment(repoRoot), stdout: 'ignore', stderr: 'ignore' },
-  ).exitCode === 0)
+  const branchPresent = Boolean(
+    evidenceBranch &&
+      Bun.spawnSync(['git', 'show-ref', '--verify', '--quiet', `refs/heads/${evidenceBranch}`], {
+        cwd: repoRoot,
+        env: targetGitEnvironment(repoRoot),
+        stdout: 'ignore',
+        stderr: 'ignore',
+      }).exitCode === 0,
+  )
   const discarded = !worktreePresent
   let c: Changes
   let commits = ''
@@ -57,7 +90,10 @@ export async function runDiffCommand(id: number, flags: RunDiffFlags, presentati
     let usedRecordedFallback = has('since-base')
     if (!has('since-base')) {
       const mergeBase = Bun.spawnSync(['git', 'merge-base', evidenceBranch, trunk], {
-        cwd: repoRoot, env: targetGitEnvironment(repoRoot), stdout: 'pipe', stderr: 'pipe',
+        cwd: repoRoot,
+        env: targetGitEnvironment(repoRoot),
+        stdout: 'pipe',
+        stderr: 'pipe',
       })
       if (mergeBase.exitCode === 0) {
         since = mergeBase.stdout.toString().trim()
@@ -68,16 +104,32 @@ export async function runDiffCommand(id: number, flags: RunDiffFlags, presentati
         usedRecordedFallback = true
       }
     }
-    const diff = Bun.spawnSync(['git', 'diff', '--no-ext-diff', '--binary', since, evidenceBranch], {
-      cwd: repoRoot, env: targetGitEnvironment(repoRoot), stdout: 'pipe', stderr: 'pipe',
-    })
+    const diff = Bun.spawnSync(
+      ['git', 'diff', '--no-ext-diff', '--binary', since, evidenceBranch],
+      {
+        cwd: repoRoot,
+        env: targetGitEnvironment(repoRoot),
+        stdout: 'pipe',
+        stderr: 'pipe',
+      },
+    )
     if (diff.exitCode !== 0) throw new Error(diff.stderr.toString().trim())
     const names = Bun.spawnSync(['git', 'diff', '--name-only', since, evidenceBranch], {
-      cwd: repoRoot, env: targetGitEnvironment(repoRoot), stdout: 'pipe', stderr: 'pipe',
-    }).stdout.toString().trim()
+      cwd: repoRoot,
+      env: targetGitEnvironment(repoRoot),
+      stdout: 'pipe',
+      stderr: 'pipe',
+    })
+      .stdout.toString()
+      .trim()
     const stat = Bun.spawnSync(['git', 'diff', '--numstat', since, evidenceBranch], {
-      cwd: repoRoot, env: targetGitEnvironment(repoRoot), stdout: 'pipe', stderr: 'pipe',
-    }).stdout.toString().trim()
+      cwd: repoRoot,
+      env: targetGitEnvironment(repoRoot),
+      stdout: 'pipe',
+      stderr: 'pipe',
+    })
+      .stdout.toString()
+      .trim()
     let insertions = 0
     let deletions = 0
     for (const line of stat.split('\n')) {
@@ -86,25 +138,39 @@ export async function runDiffCommand(id: number, flags: RunDiffFlags, presentati
       deletions += Number(del) || 0
     }
     c = {
-      diff: diff.stdout.toString(), files: names ? names.split('\n') : [], insertions, deletions,
-      since, trunk, trunkConfigured: Boolean(configuredTrunk),
+      diff: diff.stdout.toString(),
+      files: names ? names.split('\n') : [],
+      insertions,
+      deletions,
+      since,
+      trunk,
+      trunkConfigured: Boolean(configuredTrunk),
     }
     const logged = Bun.spawnSync(['git', 'log', '--oneline', `${since}..${evidenceBranch}`], {
-      cwd: repoRoot, env: targetGitEnvironment(repoRoot), stdout: 'pipe', stderr: 'pipe',
+      cwd: repoRoot,
+      env: targetGitEnvironment(repoRoot),
+      stdout: 'pipe',
+      stderr: 'pipe',
     })
     commits = logged.exitCode === 0 ? logged.stdout.toString() : ''
     sinceNote = usedRecordedFallback
       ? `${has('since-base') ? 'recorded; --since-base' : 'recorded fallback'}; worktree discarded`
       : `trunk ${trunk}; worktree discarded`
   } else {
-    c = changesIn({
-      path: row.worktree!,
-      branch: row.branch ?? `orch/${id}`,
-      base: row.base_commit,
-      repoRoot,
-    }, has('since-base'))
+    c = changesIn(
+      {
+        path: row.worktree!,
+        branch: row.branch ?? `orch/${id}`,
+        base: row.base_commit,
+        repoRoot,
+      },
+      has('since-base'),
+    )
     const logged = Bun.spawnSync(['git', 'log', '--oneline', `${c.since}..HEAD`], {
-      cwd: row.worktree!, env: targetGitEnvironment(row.worktree!), stdout: 'pipe', stderr: 'pipe',
+      cwd: row.worktree!,
+      env: targetGitEnvironment(row.worktree!),
+      stdout: 'pipe',
+      stderr: 'pipe',
     })
     if (logged.exitCode !== 0) throw new Error(logged.stderr.toString().trim())
     commits = logged.stdout.toString()
@@ -116,7 +182,7 @@ export async function runDiffCommand(id: number, flags: RunDiffFlags, presentati
   if (!writesRepo(runKind.job)) {
     error(
       `WARNING: run ${id} is a review/read job. Its findings are the product; this diff ` +
-      `contains review input and scratch experiments and must not be landed.`,
+        `contains review input and scratch experiments and must not be landed.`,
     )
   }
   // A patch preamble is ignored by `git apply`, while keeping the base in the
@@ -125,16 +191,20 @@ export async function runDiffCommand(id: number, flags: RunDiffFlags, presentati
   write(`since: ${c.since} (${sinceNote})\n`)
   write('commits:\n')
   write(commits || '(none)\n')
-  if (row.carry_happened !== null && row.carry_base_commit &&
-      row.carry_tracked_paths !== null && row.carry_untracked_paths !== null) {
+  if (
+    row.carry_happened !== null &&
+    row.carry_base_commit &&
+    row.carry_tracked_paths !== null &&
+    row.carry_untracked_paths !== null
+  ) {
     const tracked = JSON.parse(row.carry_tracked_paths) as string[]
     const untracked = JSON.parse(row.carry_untracked_paths) as string[]
     write(
       row.carry_happened
         ? `carry: ${tracked.length} tracked path(s), ${untracked.length} untracked path(s)\n` +
-          `carry base: ${row.carry_base_commit}\n` +
-          tracked.map((path) => `carry tracked: ${JSON.stringify(path)}\n`).join('') +
-          untracked.map((path) => `carry untracked: ${JSON.stringify(path)}\n`).join('')
+            `carry base: ${row.carry_base_commit}\n` +
+            tracked.map((path) => `carry tracked: ${JSON.stringify(path)}\n`).join('') +
+            untracked.map((path) => `carry untracked: ${JSON.stringify(path)}\n`).join('')
         : `carry: none (0 tracked paths, 0 untracked paths)\ncarry base: ${row.carry_base_commit}\n`,
     )
   }
@@ -144,14 +214,13 @@ export async function runDiffCommand(id: number, flags: RunDiffFlags, presentati
   if (!has('quiet')) {
     error(
       `\n— run ${id} · ${c.files.length} file(s) · +${c.insertions}/-${c.deletions}` +
-      `\n  base:     ${row.base_commit}` +
-      `\n  worktree: ${row.worktree}` +
-      // The ROOT owns the worktree. Discarding a child would clear that one
-      // row's pointer and leave the root still naming a directory that had
-      // just been deleted.
-      `\n  discard:  orch discard ${row.parent_run_id ?? id}`,
+        `\n  base:     ${row.base_commit}` +
+        `\n  worktree: ${row.worktree}` +
+        // The ROOT owns the worktree. Discarding a child would clear that one
+        // row's pointer and leave the root still naming a directory that had
+        // just been deleted.
+        `\n  discard:  orch discard ${row.parent_run_id ?? id}`,
     )
   }
   return
-    
 }

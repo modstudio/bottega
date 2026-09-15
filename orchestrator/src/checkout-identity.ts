@@ -5,8 +5,8 @@
  */
 import { realpathSync, statSync } from 'node:fs'
 import { dirname, sep } from 'node:path'
-import { projects } from './projects.ts'
 import { targetGitEnvironment } from './git-environment.ts'
+import { projects } from './projects.ts'
 
 /** Preserve the root separator while removing spelling-only trailing separators. */
 export function withoutTrailingSeparators(path: string): string {
@@ -17,7 +17,11 @@ export function withoutTrailingSeparators(path: string): string {
 
 /** Use physical identity where it is available, and the recorded spelling otherwise. */
 export function realpathOrSpelled(path: string): string {
-  try { return realpathSync(path) } catch { return path }
+  try {
+    return realpathSync(path)
+  } catch {
+    return path
+  }
 }
 
 export type CheckoutAliases = {
@@ -32,24 +36,32 @@ export type CheckoutWatchFailure = CheckoutToWatch & { error: string }
 function checkoutRootAsAddressed(cwd: string): string | null {
   try {
     const p = Bun.spawnSync(['git', '-C', cwd, 'rev-parse', '--show-prefix'], {
-      env: targetGitEnvironment(cwd), stdout: 'pipe', stderr: 'ignore',
+      env: targetGitEnvironment(cwd),
+      stdout: 'pipe',
+      stderr: 'ignore',
     })
     if (p.exitCode !== 0) return null
     const prefix = new TextDecoder().decode(p.stdout).trim()
     let root = cwd
     for (const _segment of prefix.split('/').filter(Boolean)) root = dirname(root)
     return root
-  } catch { return null }
+  } catch {
+    return null
+  }
 }
 
 function gitTopLevel(cwd: string): string | null {
   try {
     const p = Bun.spawnSync(['git', '-C', cwd, 'rev-parse', '--show-toplevel'], {
-      env: targetGitEnvironment(cwd), stdout: 'pipe', stderr: 'ignore',
+      env: targetGitEnvironment(cwd),
+      stdout: 'pipe',
+      stderr: 'ignore',
     })
     if (p.exitCode !== 0) return null
     return new TextDecoder().decode(p.stdout).trim() || null
-  } catch { return null }
+  } catch {
+    return null
+  }
 }
 
 function flipOneAsciiLetter(value: string): string | null {
@@ -71,7 +83,11 @@ export function checkoutAliases(cwd: string): CheckoutAliases | null {
   const top = gitTopLevel(cwd)
   if (!addressed || !top) return null
   let canonical: string
-  try { canonical = realpathSync(addressed) } catch { canonical = top }
+  try {
+    canonical = realpathSync(addressed)
+  } catch {
+    canonical = top
+  }
   const roots = [...new Set([addressed, top, canonical])]
   return { roots, ...checkoutCaseSensitivity(addressed) }
 }
@@ -83,7 +99,8 @@ export function checkoutCaseSensitivity(root: string): Omit<CheckoutAliases, 'ro
   const partialFoldLimit =
     'path matching uses a partial Unicode case fold; filesystem-specific folding beyond it is a known limit'
   if (!variant) {
-    diagnostic = `checkout case-sensitivity probe indeterminate: root has no alphabetic character ` +
+    diagnostic =
+      `checkout case-sensitivity probe indeterminate: root has no alphabetic character ` +
       `(${root}); ${partialFoldLimit}`
   } else {
     try {
@@ -91,7 +108,8 @@ export function checkoutCaseSensitivity(root: string): Omit<CheckoutAliases, 'ro
       const changed = statSync(variant)
       caseInsensitive = original.dev === changed.dev && original.ino === changed.ino
     } catch {
-      diagnostic = `checkout case-sensitivity probe indeterminate: could not stat case variant of ` +
+      diagnostic =
+        `checkout case-sensitivity probe indeterminate: could not stat case variant of ` +
         `${root}; ${partialFoldLimit}`
     }
   }
@@ -109,18 +127,21 @@ export function checkoutCaseSensitivity(root: string): Omit<CheckoutAliases, 'ro
  * an unregistered caller has no narrower fact to stand on.
  */
 export function checkoutWatchSet(
-  additional: CheckoutToWatch[] = [], activeWorktree?: string,
+  additional: CheckoutToWatch[] = [],
+  activeWorktree?: string,
   ownProject: string | null | undefined = undefined,
 ): { watched: CheckoutToWatch[]; failures: CheckoutWatchFailure[] } {
   const active = activeWorktree ? realpathSync(activeWorktree) : null
   const watched: CheckoutToWatch[] = []
   const failures: CheckoutWatchFailure[] = []
   const seen = new Set<string>()
-  const registered = projects()
-    .filter(({ name }) => ownProject === undefined || ownProject === null || name === ownProject)
+  const registered = projects().filter(
+    ({ name }) => ownProject === undefined || ownProject === null || name === ownProject,
+  )
   for (const checkout of [
     ...registered.map(({ name, path, settings }) => ({
-      project: name, path,
+      project: name,
+      path,
       expectedHead: typeof settings.trunk === 'string' ? settings.trunk : null,
     })),
     ...additional,
@@ -137,7 +158,11 @@ export function checkoutWatchSet(
     }
     if (canonical === active || seen.has(canonical)) continue
     seen.add(canonical)
-    watched.push({ project: checkout.project, path: canonical, expectedHead: checkout.expectedHead ?? null })
+    watched.push({
+      project: checkout.project,
+      path: canonical,
+      expectedHead: checkout.expectedHead ?? null,
+    })
   }
   return { watched, failures }
 }

@@ -13,7 +13,9 @@ export function reviewRunEvidenceSql(runAlias = 'run', lensAlias = 'rl'): string
 
 /** The complete-review boundary consumed by calibration and review reports. */
 export function completedReviewEvidenceSql(
-  reviewAlias = 'r', runAlias = 'run', lensAlias = 'rl',
+  reviewAlias = 'r',
+  runAlias = 'run',
+  lensAlias = 'rl',
 ): string {
   return `${reviewAlias}.completed_at IS NOT NULL
     AND ${reviewRunEvidenceSql(runAlias, lensAlias)}`

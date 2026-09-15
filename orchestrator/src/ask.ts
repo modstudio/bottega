@@ -28,10 +28,11 @@
  * the question in the final answer — which is precisely the durable protocol,
  * so the fast path degrades into the slow one rather than into a hang.
  */
+
+import { createConnection, createServer, type Socket } from 'node:net'
 import { db, nowIso, writableDb } from './db.ts'
 import { appendRunEvent } from './events.ts'
 import { checkMessages, messageArchitect } from './mailbox.ts'
-import { createConnection, createServer, type Socket } from 'node:net'
 
 /**
  * How long a worker waits for a ruling before falling back.
@@ -75,14 +76,19 @@ export async function ask(o: {
 }): Promise<AskResult> {
   writableDb()
   db().query("UPDATE run SET status='asking' WHERE id=? AND status='running'").run(o.runId)
-  const { id } = db().query(
-    `INSERT INTO question (run_id, asked_at, question, options, recommendation, why)
+  const { id } = db()
+    .query(
+      `INSERT INTO question (run_id, asked_at, question, options, recommendation, why)
      VALUES (?,?,?,?,?,?) RETURNING id`,
-  ).get(
-    o.runId, nowIso(), o.question,
-    o.options?.length ? JSON.stringify(o.options) : null,
-    o.recommendation ?? null, o.why ?? null,
-  ) as { id: number }
+    )
+    .get(
+      o.runId,
+      nowIso(),
+      o.question,
+      o.options?.length ? JSON.stringify(o.options) : null,
+      o.recommendation ?? null,
+      o.why ?? null,
+    ) as { id: number }
 
   const deadline = Date.now() + (o.timeoutMs ?? ASK_TIMEOUT_MS)
   const q = db().query('SELECT answer FROM question WHERE id = ? AND answered_at IS NOT NULL')
@@ -95,7 +101,9 @@ export async function ask(o: {
     if (row) {
       db().query("UPDATE run SET status='running' WHERE id=? AND status='asking'").run(o.runId)
       appendRunEvent(o.runId, {
-        ts: nowIso(), type: 'text', text: 'ruling delivered; worker resumed',
+        ts: nowIso(),
+        type: 'text',
+        text: 'ruling delivered; worker resumed',
       })
       return { answered: true, answer: row.answer ?? '' }
     }
@@ -137,7 +145,6 @@ type AskChannel = {
 
 /** Serve one worker connection, independent of whether its bytes arrive by stdio or loopback. */
 async function serveAskChannel(channel: AskChannel, runId: number, token: string): Promise<void> {
-
   /**
    * WHETHER THIS PROCESS IS ACTUALLY THE WORKER IT CLAIMS TO BE.
    *
@@ -171,7 +178,8 @@ async function serveAskChannel(channel: AskChannel, runId: number, token: string
       properties: {
         question: { type: 'string', description: 'The decision you need made.' },
         options: {
-          type: 'array', items: { type: 'string' },
+          type: 'array',
+          items: { type: 'string' },
           description: 'The choices as you see them.',
         },
         recommendation: { type: 'string', description: 'What you would do, and why.' },
@@ -185,7 +193,8 @@ async function serveAskChannel(channel: AskChannel, runId: number, token: string
       'Send the architect a non-blocking progress or context message and keep working. ' +
       'This is not a question and does not request or wait for a ruling.',
     inputSchema: {
-      type: 'object', required: ['body'],
+      type: 'object',
+      required: ['body'],
       properties: { body: { type: 'string', description: 'The context to put on this run.' } },
     },
   }
@@ -208,13 +217,18 @@ async function serveAskChannel(channel: AskChannel, runId: number, token: string
     buf += decoder.decode(Buffer.from(chunk), { stream: true })
     // Newline-delimited JSON: a partial line is kept for the next chunk rather
     // than parsed and discarded, which is the standard way this goes wrong.
-    let nl: number
-    while ((nl = buf.indexOf('\n')) !== -1) {
+    let nl = buf.indexOf('\n')
+    while (nl !== -1) {
       const line = buf.slice(0, nl).trim()
       buf = buf.slice(nl + 1)
+      nl = buf.indexOf('\n')
       if (!line) continue
 
-      let msg: { id?: unknown; method?: string; params?: any }
+      let msg: {
+        id?: unknown
+        method?: string
+        params?: { name?: unknown; arguments?: Record<string, unknown> }
+      }
       try {
         msg = JSON.parse(line)
       } catch {
@@ -238,11 +252,24 @@ async function serveAskChannel(channel: AskChannel, runId: number, token: string
         try {
           if (!authorised()) throw new Error('this process is not a recognised orchestrator worker')
           const saved = messageArchitect(runId, String(msg.params.arguments?.body ?? ''))
-          reply(msg.id, { content: [{ type: 'text', text: `Message ${saved.id} recorded on run ${saved.root_run_id}. Keep working.` }] })
+          reply(msg.id, {
+            content: [
+              {
+                type: 'text',
+                text: `Message ${saved.id} recorded on run ${saved.root_run_id}. Keep working.`,
+              },
+            ],
+          })
         } catch (e) {
-          reply(msg.id, { content: [{ type: 'text', text: `The message was not recorded (${String(e)}).` }], isError: true })
+          reply(msg.id, {
+            content: [{ type: 'text', text: `The message was not recorded (${String(e)}).` }],
+            isError: true,
+          })
         }
-      } else if (msg.method === 'tools/call' && msg.params?.name === 'check_orchestrator_messages') {
+      } else if (
+        msg.method === 'tools/call' &&
+        msg.params?.name === 'check_orchestrator_messages'
+      ) {
         try {
           if (!authorised()) throw new Error('this process is not a recognised orchestrator worker')
           const messages = checkMessages(runId)
@@ -252,7 +279,10 @@ async function serveAskChannel(channel: AskChannel, runId: number, token: string
             : 'No queued messages. This check read nothing.'
           reply(msg.id, { content: [{ type: 'text', text }] })
         } catch (e) {
-          reply(msg.id, { content: [{ type: 'text', text: `Messages could not be checked (${String(e)}).` }], isError: true })
+          reply(msg.id, {
+            content: [{ type: 'text', text: `Messages could not be checked (${String(e)}).` }],
+            isError: true,
+          })
         }
       } else if (msg.method === 'tools/call' && msg.params?.name === 'ask_orchestrator') {
         const a = msg.params.arguments ?? {}
@@ -261,39 +291,41 @@ async function serveAskChannel(channel: AskChannel, runId: number, token: string
         // that asks twice deadlocks against its own transport.
         void (async () => {
           try {
-          const r = authorised()
-            ? await ask({
-                runId,
-                question: String(a.question ?? ''),
-                options: Array.isArray(a.options) ? a.options.map(String) : undefined,
-                recommendation: a.recommendation ? String(a.recommendation) : undefined,
-                why: a.why ? String(a.why) : undefined,
-              })
-            : {
-                answered: false as const,
-                reason:
-                  'This process is not a recognised orchestrator worker, so there is nobody ' +
-                  'to ask. Return status "blocked" with your question in the final answer.',
-              }
-          reply(msg.id, {
-            content: [{ type: 'text', text: r.answered ? r.answer : r.reason }],
-            // Not `isError`. A timeout is a legitimate outcome carrying an
-            // instruction the worker must follow; flagged as an error, agents
-            // retry it or treat the tool as broken and stop using it.
-          })
+            const r = authorised()
+              ? await ask({
+                  runId,
+                  question: String(a.question ?? ''),
+                  options: Array.isArray(a.options) ? a.options.map(String) : undefined,
+                  recommendation: a.recommendation ? String(a.recommendation) : undefined,
+                  why: a.why ? String(a.why) : undefined,
+                })
+              : {
+                  answered: false as const,
+                  reason:
+                    'This process is not a recognised orchestrator worker, so there is nobody ' +
+                    'to ask. Return status "blocked" with your question in the final answer.',
+                }
+            reply(msg.id, {
+              content: [{ type: 'text', text: r.answered ? r.answer : r.reason }],
+              // Not `isError`. A timeout is a legitimate outcome carrying an
+              // instruction the worker must follow; flagged as an error, agents
+              // retry it or treat the tool as broken and stop using it.
+            })
           } catch (e) {
             // EVERY PATH ANSWERS. Without this, a failed insert — a foreign key
             // against a run that has been deleted, a locked database — throws
             // inside a detached promise and the request id is never replied to,
             // so the worker waits on its own transport for ever.
             reply(msg.id, {
-              content: [{
-                type: 'text',
-                text:
-                  `The orchestrator could not record this question (${String(e)}). ` +
-                  'Do not decide it yourself: return status "blocked" with the question ' +
-                  'in your final answer.',
-              }],
+              content: [
+                {
+                  type: 'text',
+                  text:
+                    `The orchestrator could not record this question (${String(e)}). ` +
+                    'Do not decide it yourself: return status "blocked" with the question ' +
+                    'in your final answer.',
+                },
+              ],
             })
           }
         })()
@@ -304,7 +336,8 @@ async function serveAskChannel(channel: AskChannel, runId: number, token: string
         // there. Either way it must be answered: an unanswered id makes a
         // client wait for ever, which is the one thing this file is about.
         send({
-          jsonrpc: '2.0', id: msg.id,
+          jsonrpc: '2.0',
+          id: msg.id,
           error: { code: -32601, message: `method not found: ${msg.method}` },
         })
       }
@@ -323,10 +356,14 @@ export async function startAskLoopback(runId: number, token: string): Promise<As
   const server = createServer((socket) => {
     sockets.add(socket)
     socket.once('close', () => sockets.delete(socket))
-    void serveAskChannel({
-      input: socket,
-      send: (message) => socket.write(`${JSON.stringify(message)}\n`),
-    }, runId, token).catch(() => socket.destroy())
+    void serveAskChannel(
+      {
+        input: socket,
+        send: (message) => socket.write(`${JSON.stringify(message)}\n`),
+      },
+      runId,
+      token,
+    ).catch(() => socket.destroy())
   })
   await new Promise<void>((resolve, reject) => {
     server.once('error', reject)
@@ -342,10 +379,11 @@ export async function startAskLoopback(runId: number, token: string): Promise<As
   }
   return {
     url: `tcp://127.0.0.1:${address.port}`,
-    close: () => new Promise<void>((resolve) => {
-      for (const socket of sockets) socket.destroy()
-      server.close(() => resolve())
-    }),
+    close: () =>
+      new Promise<void>((resolve) => {
+        for (const socket of sockets) socket.destroy()
+        server.close(() => resolve())
+      }),
   }
 }
 
@@ -373,17 +411,22 @@ export async function serveAsk(): Promise<void> {
   if (loopback) return proxyAsk(loopback)
   const runId = Number(process.env.ORCH_RUN_ID ?? 0)
   const token = process.env.ORCH_RUN_TOKEN ?? ''
-  return serveAskChannel({
-    input: process.stdin,
-    send: (message) => process.stdout.write(`${JSON.stringify(message)}\n`),
-  }, runId, token)
+  return serveAskChannel(
+    {
+      input: process.stdin,
+      send: (message) => process.stdout.write(`${JSON.stringify(message)}\n`),
+    },
+    runId,
+    token,
+  )
 }
 
 /** The single authentication check for tools acting as an orch worker. */
 export function authenticatedWorkerRun(runId: number, token: string): boolean {
   if (!runId) return false
-  const row = db().query('SELECT run_token FROM run WHERE id = ?').get(runId) as
-    { run_token: string | null } | null
+  const row = db().query('SELECT run_token FROM run WHERE id = ?').get(runId) as {
+    run_token: string | null
+  } | null
   if (!row) return false
   // A run recorded before tokens existed has none; those still work, because
   // refusing them would break every in-flight worker on upgrade.
@@ -393,7 +436,8 @@ export function authenticatedWorkerRun(runId: number, token: string): boolean {
 /** Authentication for worker actions that write outside the orchestrator. */
 export function strictlyAuthenticatedWorkerRun(runId: number, token: string): boolean {
   if (!runId) return false
-  const row = db().query('SELECT run_token FROM run WHERE id = ?').get(runId) as
-    { run_token: string | null } | null
+  const row = db().query('SELECT run_token FROM run WHERE id = ?').get(runId) as {
+    run_token: string | null
+  } | null
   return row !== null && row.run_token !== null && row.run_token === token
 }

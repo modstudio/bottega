@@ -6,9 +6,10 @@
  * timeout beside its overall cap. We do the same shape, with a stricter idle
  * test (silence AND no CPU) and a failure kind that is not routing evidence.
  */
-import { pidAlive } from './process-liveness.ts'
-import { idleMsSince } from './events.ts'
+
 import { clock } from './clock.ts'
+import { idleMsSince } from './events.ts'
+import { pidAlive } from './process-liveness.ts'
 
 /**
  * Default 15 minutes. Measured 2026-09-08 against the live store's completed
@@ -87,7 +88,8 @@ export function sampleProcesses(): ProcessSample[] {
   if (testProcessSampler) return testProcessSampler()
   try {
     const p = Bun.spawnSync(['ps', '-axo', 'pid=,ppid=,pgid=,%cpu=,state='], {
-      stdout: 'pipe', stderr: 'pipe',
+      stdout: 'pipe',
+      stderr: 'pipe',
     })
     if (p.exitCode !== 0) return []
     return parsePsTable(p.stdout.toString())
@@ -163,7 +165,10 @@ export function groupHasUninterruptible(pid: number, samples: ProcessSample[]): 
  * and the vendor inherits it). pgid 0 and 1 are rejected outright: 0 is not a
  * process group, and kill(-1) is every process the user can signal.
  */
-export function isGroupKillablePgid(pgid: number | null | undefined, selfPgid: number | null): boolean {
+export function isGroupKillablePgid(
+  pgid: number | null | undefined,
+  selfPgid: number | null,
+): boolean {
   if (pgid == null || pgid <= 1) return false
   if (selfPgid == null) return false
   return pgid !== selfPgid
@@ -185,7 +190,9 @@ export type TerminateResult = {
 }
 const defaultDeps: TerminateDeps = {
   kill(pid, signal) {
-    try { process.kill(pid, signal) } catch (e) {
+    try {
+      process.kill(pid, signal)
+    } catch (e) {
       if ((e as NodeJS.ErrnoException).code !== 'ESRCH') throw e
     }
   },
@@ -199,7 +206,11 @@ const defaultDeps: TerminateDeps = {
 }
 
 function signalTree(
-  pid: number, signal: NodeJS.Signals | number, deps: TerminateDeps, samples: ProcessSample[], skipRoot = false,
+  pid: number,
+  signal: NodeJS.Signals | number,
+  deps: TerminateDeps,
+  samples: ProcessSample[],
+  skipRoot = false,
 ): number | null {
   const self = samples.find((row) => row.pid === pid)
   const pgid = self?.pgid ?? null
@@ -210,8 +221,10 @@ function signalTree(
   // the grace period, and is SIGKILLed with no cleanup.
   // Unknown coordinator pgid means walk descendants — never group-kill on an
   // unproven assumption.
-  if (isGroupKillablePgid(pgid, selfPgid) && pgid != null && signalGroup(pgid, signal, deps)) return pgid
-  for (const child of descendantPids(pid, samples)) if (!skipRoot || child !== pid) deps.kill(child, signal)
+  if (isGroupKillablePgid(pgid, selfPgid) && pgid != null && signalGroup(pgid, signal, deps))
+    return pgid
+  for (const child of descendantPids(pid, samples))
+    if (!skipRoot || child !== pid) deps.kill(child, signal)
   return null
 }
 
@@ -222,7 +235,10 @@ function signalTree(
  * unavailable and the walk over sampled descendants is the delivery path.
  */
 function signalGroup(pgid: number, signal: NodeJS.Signals | number, deps: TerminateDeps): boolean {
-  try { deps.kill(-pgid, signal); return true } catch (e) {
+  try {
+    deps.kill(-pgid, signal)
+    return true
+  } catch (e) {
     if ((e as NodeJS.ErrnoException).code === 'EPERM') return false
     throw e
   }
@@ -240,7 +256,10 @@ function pidsSharingPgid(pgid: number | null | undefined, samples: ProcessSample
  * descendants of every known pid with anyone still in the vendor pgid.
  */
 function rememberTree(
-  root: number, tracked: Set<number>, samples: ProcessSample[], pgid?: number | null,
+  root: number,
+  tracked: Set<number>,
+  samples: ProcessSample[],
+  pgid?: number | null,
 ): void {
   const seeds = new Set<number>([root, ...tracked, ...pidsSharingPgid(pgid, samples)])
   for (const seed of seeds) {
@@ -250,7 +269,10 @@ function rememberTree(
 }
 
 function liveTreePids(
-  root: number, tracked: Set<number>, deps: TerminateDeps, pgid: number | null,
+  root: number,
+  tracked: Set<number>,
+  deps: TerminateDeps,
+  pgid: number | null,
 ): number[] {
   const samples = deps.sample()
   rememberTree(root, tracked, samples, pgid)
@@ -259,7 +281,11 @@ function liveTreePids(
 
 /** Wait on the whole tree, not the root. A wrapper that exits is not the tree dead. */
 async function waitUntilDead(
-  root: number, tracked: Set<number>, budgetMs: number, deps: TerminateDeps, pgid: number | null,
+  root: number,
+  tracked: Set<number>,
+  budgetMs: number,
+  deps: TerminateDeps,
+  pgid: number | null,
 ): Promise<boolean> {
   const started = clock().now()
   while (clock().now() - started < budgetMs) {
@@ -272,7 +298,10 @@ async function waitUntilDead(
 }
 
 function signalSurvivors(
-  tracked: Iterable<number>, signal: NodeJS.Signals | number, deps: TerminateDeps, excluded?: number,
+  tracked: Iterable<number>,
+  signal: NodeJS.Signals | number,
+  deps: TerminateDeps,
+  excluded?: number,
 ): void {
   for (const pid of tracked) {
     if (pid > 1 && pid !== excluded && deps.alive(pid)) deps.kill(pid, signal)
@@ -326,7 +355,8 @@ export async function terminateProcessGroup(
     return { exited: true, unkillable: false, reason: null, pgid, pids: [...tracked] }
   }
   const after = deps.sample()
-  const dState = groupHasUninterruptible(pid, after) ||
+  const dState =
+    groupHasUninterruptible(pid, after) ||
     [...tracked].some((child) => {
       const row = after.find((sample) => sample.pid === child)
       return row ? isUninterruptible(row.state) : false
@@ -363,9 +393,11 @@ export function formatIdleKillError(opts: {
   const reclaimedM = Math.max(0, opts.reclaimedMs / 60_000)
   const wallM = Math.max(0, opts.boundMs / 60_000)
   const idleLabel = idleM >= 1 ? `${Math.floor(idleM)}m` : `${Math.round(opts.idleMs / 1000)}s`
-  const reclaimedLabel = reclaimedM >= 1 ? `${reclaimedM.toFixed(1)}m` : `${Math.round(opts.reclaimedMs / 1000)}s`
+  const reclaimedLabel =
+    reclaimedM >= 1 ? `${reclaimedM.toFixed(1)}m` : `${Math.round(opts.reclaimedMs / 1000)}s`
   const wallLabel = wallM >= 1 ? `${Math.round(wallM)}m` : `${Math.round(opts.boundMs / 1000)}s`
-  const base = `idle-killed after ${idleLabel} with no CPU; reclaimed ${reclaimedLabel} of ${wallLabel} wall ` +
+  const base =
+    `idle-killed after ${idleLabel} with no CPU; reclaimed ${reclaimedLabel} of ${wallLabel} wall ` +
     `[reclaimed_ms=${Math.round(opts.reclaimedMs)} wall_ms=${Math.round(opts.boundMs)}]`
   return opts.unkillable && opts.unkillableReason ? `${base}; ${opts.unkillableReason}` : base
 }

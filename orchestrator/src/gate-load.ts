@@ -44,10 +44,7 @@ function countRunningGates(dir = gatePidDir(), selfPid = process.pid): number {
   return n
 }
 
-function registerGatePid(
-  pid = process.pid,
-  dir = gatePidDir(),
-): () => void {
+function registerGatePid(pid = process.pid, dir = gatePidDir()): () => void {
   mkdirSync(dir, { recursive: true })
   const path = join(dir, String(pid))
   writeFileSync(path, `${pid}\n`)
@@ -79,10 +76,7 @@ type GateHoldOpts = {
   limit?: number
 }
 
-export async function withGateSlot<T>(
-  run: () => Promise<T>,
-  opts: GateHoldOpts = {},
-): Promise<T> {
+export async function withGateSlot<T>(run: () => Promise<T>, opts: GateHoldOpts = {}): Promise<T> {
   // Hold BEFORE registering. A waiter with a PID file counts as a running gate
   // to every other starter, so three that start together each saw gates=3,
   // all held, and all entered when the cap expired (review 346). The measure
@@ -96,8 +90,10 @@ export async function withGateSlot<T>(
   }
   const held = await holdForGateCapacity({ ...opts, measure: asRunner })
   if (held.held) {
-    console.error(`held ${held.delayedMs}ms for host load `
-      + `(gates=${held.load.gates} loadavg=${held.load.loadavg} ncpu=${held.load.ncpu})`)
+    console.error(
+      `held ${held.delayedMs}ms for host load ` +
+        `(gates=${held.load.gates} loadavg=${held.load.loadavg} ncpu=${held.load.ncpu})`,
+    )
   }
   const unregister = registerGatePid()
   try {
@@ -107,9 +103,12 @@ export async function withGateSlot<T>(
   }
 }
 
-export async function holdForGateCapacity(opts: GateHoldOpts = {}): Promise<{ delayedMs: number; held: boolean; load: HostLoad }> {
+export async function holdForGateCapacity(
+  opts: GateHoldOpts = {},
+): Promise<{ delayedMs: number; held: boolean; load: HostLoad }> {
   const measure = opts.measure ?? measureHostLoad
-  const sleep = opts.sleep ?? ((ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms)))
+  const sleep =
+    opts.sleep ?? ((ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms)))
   const now = opts.now ?? Date.now
   const pollMs = opts.pollMs ?? GATE_HOLD_POLL_MS
   const maxMs = opts.maxMs ?? GATE_HOLD_MAX_MS

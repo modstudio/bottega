@@ -4,10 +4,9 @@
  * know transports, database write paths, contracts, or routing.
  */
 import { basename } from 'node:path'
-import { gitContext, branchOf } from './git-environment.ts'
+import { branchOf, gitContext, targetGitEnvironment } from './git-environment.ts'
 import { projectAt, resolveBranchRef } from './projects.ts'
 import { resolveBase } from './worktree-caller.ts'
-import { targetGitEnvironment } from './git-environment.ts'
 
 const EXPLICIT_REVIEW_JOBS = new Set(['review-lens', 'safety', 'craft'])
 
@@ -30,7 +29,10 @@ export function implicitReviewCoverageBase(cwd: string): string | null {
 }
 
 export function resolveReviewTarget(
-  jobName: string, cwd: string, reviewRef?: string, carry = false,
+  jobName: string,
+  cwd: string,
+  reviewRef?: string,
+  carry = false,
 ): { branch: string; commit: string; base: string } | null {
   if (reviewRef === undefined) return null
   if (!EXPLICIT_REVIEW_JOBS.has(jobName)) {
@@ -44,14 +46,14 @@ export function resolveReviewTarget(
   if (carry && branchOf(cwd) !== branch) {
     throw new Error(
       `--review ${reviewRef} resolves to branch ${branch}, but --carry was requested from ` +
-      `${branchOf(cwd) ?? '(detached HEAD)'}; run --carry from that branch's own worktree`,
+        `${branchOf(cwd) ?? '(detached HEAD)'}; run --carry from that branch's own worktree`,
     )
   }
   const trunk = project?.settings.trunk?.trim()
   if (!trunk) {
     throw new Error(
       `project ${project?.name ?? '(unregistered)'} has no trunk configured; ` +
-      '--review needs one to measure the reviewed change',
+        '--review needs one to measure the reviewed change',
     )
   }
   const commit = resolveBase(cwd, `${branch}^{commit}`)
@@ -65,7 +67,9 @@ export function resolveReviewTarget(
 export function implicitReviewWarning(cwd: string): string {
   const branch = branchOf(cwd) ?? '(detached HEAD)'
   const p = Bun.spawnSync(['git', '-C', cwd, 'rev-parse', '--verify', 'HEAD^{commit}'], {
-    env: targetGitEnvironment(cwd), stdout: 'pipe', stderr: 'ignore',
+    env: targetGitEnvironment(cwd),
+    stdout: 'pipe',
+    stderr: 'ignore',
   })
   const commit = p.exitCode === 0 ? p.stdout.toString().trim() : null
   return `reviewing ${branch} at ${commit?.slice(0, 8) ?? 'unknown'}; pass --review <branch> to be explicit`
@@ -85,11 +89,15 @@ function keyIn(name: string, cwd: string): string | null {
   const prefix = prefixes?.length
     ? `(?:${prefixes.map((value) => value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('|')})`
     : '[A-Z][A-Z0-9]+'
-  const candidates = name.match(new RegExp(`(?:^|[^A-Z0-9])(${prefix}-[0-9]+)(?=$|[^A-Z0-9])`, 'g'))
-    ?.map((candidate) => candidate.match(new RegExp(`(${prefix}-[0-9]+)`))?.[1])
-    .filter((candidate): candidate is string => Boolean(candidate)) ?? []
+  const candidates =
+    name
+      .match(new RegExp(`(?:^|[^A-Z0-9])(${prefix}-[0-9]+)(?=$|[^A-Z0-9])`, 'g'))
+      ?.map((candidate) => candidate.match(new RegExp(`(${prefix}-[0-9]+)`))?.[1])
+      .filter((candidate): candidate is string => Boolean(candidate)) ?? []
   const keyPattern = project?.settings.worktree?.keyPattern ?? '^[A-Z][A-Z0-9]+-[0-9]+$'
-  const valid = [...new Set(candidates.filter((candidate) => new RegExp(keyPattern).test(candidate)))]
+  const valid = [
+    ...new Set(candidates.filter((candidate) => new RegExp(keyPattern).test(candidate))),
+  ]
   return valid.length === 1 ? valid[0]! : null
 }
 

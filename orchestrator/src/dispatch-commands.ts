@@ -2,10 +2,10 @@
 /** Knows dispatch command preflight and run dispatch. Must not know transports, routing by value, worktrees, the CLI, or reviews. */
 import { existsSync, realpathSync } from 'node:fs'
 import { preflight } from './dispatch-preflight.ts'
-import { isReaderJob, job, reclaimsTreeByDefault, resolveJobTimeoutMs } from './jobs.ts'
-import { projectAt, projectByName, projects } from './projects.ts'
 import type { DetachSpec } from './failover.ts'
+import { isReaderJob, job, reclaimsTreeByDefault, resolveJobTimeoutMs } from './jobs.ts'
 import type { McpRequest } from './mcp-preflight.ts'
+import { projectAt, projectByName, projects } from './projects.ts'
 
 type TransportName = 'cli' | 'acp'
 
@@ -40,11 +40,34 @@ type DispatchPresentation = {
   follow(id: number, quiet: boolean): Promise<unknown>
 }
 
-const projectNames = () => projects().map((p) => p.name).join(', ') || '(none)'
+const projectNames = () =>
+  projects()
+    .map((p) => p.name)
+    .join(', ') || '(none)'
 
-export async function dispatchCommand(argv: string[], flags: DispatchFlags, presentation: DispatchPresentation): Promise<void> {
+export async function dispatchCommand(
+  argv: string[],
+  flags: DispatchFlags,
+  presentation: DispatchPresentation,
+): Promise<void> {
   const { has, flag, values } = flags
-  const { usage, doUsage, error, printRunId, readPrompt, validateSchema, warnCallerDrift, contractConflicts, warnImplementContractConflicts, checkoutHasUncommittedWork, resolveBase, implicitReviewWarning, resolveDispatchOptions, detach, follow } = presentation
+  const {
+    usage,
+    doUsage,
+    error,
+    printRunId,
+    readPrompt,
+    validateSchema,
+    warnCallerDrift,
+    contractConflicts,
+    warnImplementContractConflicts,
+    checkoutHasUncommittedWork,
+    resolveBase,
+    implicitReviewWarning,
+    resolveDispatchOptions,
+    detach,
+    follow,
+  } = presentation
   const jobName = argv[1]
   if (!jobName) usage()
   if (jobName === '--help' || jobName === '-h') doUsage()
@@ -53,11 +76,14 @@ export async function dispatchCommand(argv: string[], flags: DispatchFlags, pres
     throw new Error('--porcelain cannot be combined with --follow')
   }
   const requested = job(jobName)
-  const { agent, transport, transportExplicit, avoid, distinctModels, mcp } = await resolveDispatchOptions(jobName)
+  const { agent, transport, transportExplicit, avoid, distinctModels, mcp } =
+    await resolveDispatchOptions(jobName)
   const requestedCwd = flag('cwd')
-  if (requestedCwd && !existsSync(requestedCwd)) throw new Error(`--cwd does not exist: ${requestedCwd}`)
+  if (requestedCwd && !existsSync(requestedCwd))
+    throw new Error(`--cwd does not exist: ${requestedCwd}`)
   const callerCwd = requestedCwd ? realpathSync(requestedCwd) : process.cwd()
-  if (requestedCwd && !projectAt(callerCwd)) throw new Error(`--cwd is not inside a registered project: ${callerCwd}`)
+  if (requestedCwd && !projectAt(callerCwd))
+    throw new Error(`--cwd is not inside a registered project: ${callerCwd}`)
   const explicitRepo = flag('repo')
   if (explicitRepo && !projectByName(explicitRepo)) {
     throw new Error(`unknown repo "${explicitRepo}". Registered: ${projectNames()}`)
@@ -73,8 +99,17 @@ export async function dispatchCommand(argv: string[], flags: DispatchFlags, pres
     resolveBase(callerCwd, base)
   }
   const seed = preflight(
-    jobName, callerCwd, flag('seed'), flag('key'), base, false, false, flag('lens'),
-    reviewRef, has('carry'), explicitRepo,
+    jobName,
+    callerCwd,
+    flag('seed'),
+    flag('key'),
+    base,
+    false,
+    false,
+    flag('lens'),
+    reviewRef,
+    has('carry'),
+    explicitRepo,
   )
   if (requested.needs.readsRepo) warnCallerDrift(callerCwd, base)
   if (requested.findings && requested.needs.readsRepo && !reviewRef) {
@@ -99,14 +134,18 @@ export async function dispatchCommand(argv: string[], flags: DispatchFlags, pres
   if (!porcelain && !explicitRepo && !projectAt(callerCwd)) {
     error(
       `! this run will not be attributed to any project; use --repo <name> ` +
-      `(registered: ${projectNames()})`,
+        `(registered: ${projectNames()})`,
     )
   }
-  if (!porcelain && !has('carry') && requested.needs.readsRepo &&
-      checkoutHasUncommittedWork(callerCwd)) {
+  if (
+    !porcelain &&
+    !has('carry') &&
+    requested.needs.readsRepo &&
+    checkoutHasUncommittedWork(callerCwd)
+  ) {
     error(
       '! this checkout has uncommitted work that will not be carried into the worker.\n' +
-      '  pass --carry to send it with the run.',
+        '  pass --carry to send it with the run.',
     )
   }
   const prompt = await readPrompt()
@@ -141,13 +180,28 @@ export async function dispatchCommand(argv: string[], flags: DispatchFlags, pres
   const detachByDefault = !has('follow')
   if (has('detach') || detachByDefault) {
     const id = await detach(jobName, prompt, {
-      agent, schema, label: flag('label'), lens: flag('lens'),
-      mcp: mcp, model: flag('model'), probe: has('probe'), seed, key: flag('key'),
-      repo: explicitRepo, base, avoid, distinctModels,
+      agent,
+      schema,
+      label: flag('label'),
+      lens: flag('lens'),
+      mcp: mcp,
+      model: flag('model'),
+      probe: has('probe'),
+      seed,
+      key: flag('key'),
+      repo: explicitRepo,
+      base,
+      avoid,
+      distinctModels,
       ...(transportExplicit ? { transport } : {}),
-      noFailover: has('no-failover'), noWaitCapacity: has('no-wait-capacity'),
-      carry: has('carry'), review: reviewRef, cwd: callerCwd,
-      deliverables, timeoutMinutes, keepTree,
+      noFailover: has('no-failover'),
+      noWaitCapacity: has('no-wait-capacity'),
+      carry: has('carry'),
+      review: reviewRef,
+      cwd: callerCwd,
+      deliverables,
+      timeoutMinutes,
+      keepTree,
     })
     if (!porcelain) warnImplementContractConflicts(conflicts, id)
     printRunId(id)
@@ -157,9 +211,9 @@ export async function dispatchCommand(argv: string[], flags: DispatchFlags, pres
     if (detachByDefault && !has('detach') && !has('quiet') && !porcelain) {
       error(
         `\n— ${jobName} detached by default; collect it when it finishes.` +
-        `\n  orch wait ${id}      then:  orch result ${id}` +
-        `\n  orch inbox          if it stops to ask` +
-        `\n  --follow            to watch it here instead`,
+          `\n  orch wait ${id}      then:  orch result ${id}` +
+          `\n  orch inbox          if it stops to ask` +
+          `\n  --follow            to watch it here instead`,
       )
     }
     return
@@ -184,12 +238,27 @@ export async function dispatchCommand(argv: string[], flags: DispatchFlags, pres
    * genuinely stuck run still returns control rather than hanging for ever.
    */
   const id = await detach(jobName, prompt, {
-    agent, schema, label: flag('label'), lens: flag('lens'),
-    mcp: mcp, model: flag('model'), probe: has('probe'), seed, key: flag('key'),
-    repo: explicitRepo, base, avoid, distinctModels,
+    agent,
+    schema,
+    label: flag('label'),
+    lens: flag('lens'),
+    mcp: mcp,
+    model: flag('model'),
+    probe: has('probe'),
+    seed,
+    key: flag('key'),
+    repo: explicitRepo,
+    base,
+    avoid,
+    distinctModels,
     ...(transportExplicit ? { transport } : {}),
-    noFailover: has('no-failover'), carry: has('carry'), review: reviewRef, cwd: callerCwd,
-    deliverables, timeoutMinutes, keepTree,
+    noFailover: has('no-failover'),
+    carry: has('carry'),
+    review: reviewRef,
+    cwd: callerCwd,
+    deliverables,
+    timeoutMinutes,
+    keepTree,
   })
   warnImplementContractConflicts(conflicts, id)
 

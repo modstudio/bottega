@@ -29,8 +29,18 @@ export type ProjectImportOptions = {
 }
 
 const PROJECT_SETTING_KEYS = new Set([
-  'color', 'colorDark', 'envPrefix', 'gate', 'keyPrefixes', 'mcp', 'mcpServer',
-  'productionBranch', 'requireCleanMain', 'tracker', 'trunk', 'worktree',
+  'color',
+  'colorDark',
+  'envPrefix',
+  'gate',
+  'keyPrefixes',
+  'mcp',
+  'mcpServer',
+  'productionBranch',
+  'requireCleanMain',
+  'tracker',
+  'trunk',
+  'worktree',
 ])
 
 function object(value: unknown, location: string): JsonObject {
@@ -76,7 +86,9 @@ function mcpProbeTool(settings: JsonObject, project: string): string | null {
   const mcp = object(settings.mcp, `project ${project} settings.mcp`)
   const unknown = Object.keys(mcp).filter((key) => key !== 'probe_tool')
   if (unknown.length) {
-    throw new Error(`project ${project} has unmapped settings.mcp keys: ${unknown.sort().join(', ')}`)
+    throw new Error(
+      `project ${project} has unmapped settings.mcp keys: ${unknown.sort().join(', ')}`,
+    )
   }
   return optionalString(mcp.probe_tool, `project ${project} settings.mcp.probe_tool`)
 }
@@ -86,7 +98,10 @@ function document(value: unknown, location: string): string | null {
   return JSON.stringify(object(value, location))
 }
 
-function readSources(orchDb: string, hubDb: string): {
+function readSources(
+  orchDb: string,
+  hubDb: string,
+): {
   projects: SourceProject[]
   sequences: SourceSequence[]
 } {
@@ -94,9 +109,11 @@ function readSources(orchDb: string, hubDb: string): {
   const hub = new Database(hubDb, { readonly: true })
   try {
     return {
-      projects: orch.query<SourceProject, []>(
-        'SELECT id, name, path, stack, canon, settings FROM project ORDER BY id',
-      ).all(),
+      projects: orch
+        .query<SourceProject, []>(
+          'SELECT id, name, path, stack, canon, settings FROM project ORDER BY id',
+        )
+        .all(),
       sequences: hub.query<SourceSequence, []>('SELECT name, next FROM seq ORDER BY name').all(),
     }
   } finally {
@@ -178,14 +195,17 @@ export async function importProjects(options: ProjectImportOptions): Promise<Pro
         if (!sequence.name.startsWith('task:')) {
           skippedSequences.push({
             ...sequence,
-            reason: 'sequence name has no task: namespace and therefore no determinate project owner',
+            reason:
+              'sequence name has no task: namespace and therefore no determinate project owner',
           })
           continue
         }
         const prefix = sequence.name.slice('task:'.length)
         const owners = prefixOwners.get(prefix) ?? []
         if (owners.length !== 1) {
-          const detail = owners.length ? `matched multiple projects: ${owners.join(', ')}` : 'matched no project'
+          const detail = owners.length
+            ? `matched multiple projects: ${owners.join(', ')}`
+            : 'matched no project'
           throw new Error(`cannot import sequence ${sequence.name}: ${detail}`)
         }
         const projectId = projectIds.get(owners[0]!)!

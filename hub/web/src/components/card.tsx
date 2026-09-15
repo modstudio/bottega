@@ -2,7 +2,12 @@ import type { HTMLAttributes } from 'react'
 import { cx } from '@/components/cx'
 
 export function Card({ className, ...props }: HTMLAttributes<HTMLDivElement>) {
-  return <div className={cx('rounded-none border bg-card text-card-foreground shadow-sm', className)} {...props} />
+  return (
+    <div
+      className={cx('rounded-none border bg-card text-card-foreground shadow-sm', className)}
+      {...props}
+    />
+  )
 }
 
 export function CardContent({ className, ...props }: HTMLAttributes<HTMLDivElement>) {

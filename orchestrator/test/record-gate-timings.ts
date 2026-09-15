@@ -66,7 +66,11 @@ function rel(path: string): string {
 }
 
 function decodeXml(value: string): string {
-  return value.replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&quot;/g, '"').replace(/&amp;/g, '&')
+  return value
+    .replace(/&lt;/g, '<')
+    .replace(/&gt;/g, '>')
+    .replace(/&quot;/g, '"')
+    .replace(/&amp;/g, '&')
 }
 
 function parseJunit(xml: string): {
@@ -91,15 +95,18 @@ function parseJunit(xml: string): {
     }
   }
   const tests: TestRow[] = []
-  for (const node of xml.matchAll(/<testcase\b([^>]*)\/>|<testcase\b([^>]*)>([\s\S]*?)<\/testcase>/g)) {
+  for (const node of xml.matchAll(
+    /<testcase\b([^>]*)\/>|<testcase\b([^>]*)>([\s\S]*?)<\/testcase>/g,
+  )) {
     const tAttrs = node[1] ?? node[2]!
     const tBody = node[3] ?? ''
     const name = decodeXml(tAttrs.match(/\bname="([^"]+)"/)?.[1] ?? '(unnamed)')
     const classname = decodeXml(tAttrs.match(/\bclassname="([^"]+)"/)?.[1] ?? '')
     const testFile = rel(tAttrs.match(/\bfile="([^"]+)"/)?.[1] ?? '')
     const wallMs = Number(tAttrs.match(/\btime="([^"]+)"/)?.[1] ?? 0) * 1000
-    const failure = tBody.match(/<failure\b[^>]*message="([^"]*)"/)?.[1]
-      ?? tBody.match(/<failure\b[^>]*>([\s\S]*?)<\/failure>/)?.[1]
+    const failure =
+      tBody.match(/<failure\b[^>]*message="([^"]*)"/)?.[1] ??
+      tBody.match(/<failure\b[^>]*>([\s\S]*?)<\/failure>/)?.[1]
     tests.push({
       name: classname ? `${classname} > ${name}` : name,
       file: testFile,
@@ -122,19 +129,26 @@ export function mergeTimings(
 ): GateTimings {
   const { tests, fileWall, suiteTests, suiteFailures } = parseJunit(xml)
   const spawnFiles = sidecar.files ?? {}
-  const names = new Set([...Object.keys(spawnFiles), ...fileWall.keys(), ...tests.map((t) => t.file)])
-  const files: FileRow[] = [...names].filter(Boolean).sort().map((file) => {
-    const spawn = spawnFiles[file] ?? emptySpawn()
-    const fileTests = tests.filter((t) => t.file === file)
-    return {
-      file,
-      wallMs: fileWall.get(file) ?? fileTests.reduce((sum, t) => sum + t.wallMs, 0),
-      tests: Math.max(fileTests.length, suiteTests.get(file) ?? 0),
-      failed: Math.max(fileTests.filter((t) => !t.pass).length, suiteFailures.get(file) ?? 0),
-      ...spawn,
-      argv0: { ...spawn.argv0 },
-    }
-  })
+  const names = new Set([
+    ...Object.keys(spawnFiles),
+    ...fileWall.keys(),
+    ...tests.map((t) => t.file),
+  ])
+  const files: FileRow[] = [...names]
+    .filter(Boolean)
+    .sort()
+    .map((file) => {
+      const spawn = spawnFiles[file] ?? emptySpawn()
+      const fileTests = tests.filter((t) => t.file === file)
+      return {
+        file,
+        wallMs: fileWall.get(file) ?? fileTests.reduce((sum, t) => sum + t.wallMs, 0),
+        tests: Math.max(fileTests.length, suiteTests.get(file) ?? 0),
+        failed: Math.max(fileTests.filter((t) => !t.pass).length, suiteFailures.get(file) ?? 0),
+        ...spawn,
+        argv0: { ...spawn.argv0 },
+      }
+    })
   return { ...meta, tests, files }
 }
 
@@ -157,20 +171,31 @@ export function markdownSummary(data: GateTimings, heading: string): string {
     '',
     '| file | wall s | tests | fail | spawn | spawnSync | bootstraps | cli | git | other |',
     '|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|',
-    ...perFile.map((f) =>
-      `| ${f.file} | ${(f.wallMs / 1000).toFixed(2)} | ${f.tests} | ${f.failed} | ${f.spawn} | ${f.spawnSync} | ${f.bootstraps} | ${f.cli} | ${f.git} | ${f.other} |`),
+    ...perFile.map(
+      (f) =>
+        `| ${f.file} | ${(f.wallMs / 1000).toFixed(2)} | ${f.tests} | ${f.failed} | ${f.spawn} | ${f.spawnSync} | ${f.bootstraps} | ${f.cli} | ${f.git} | ${f.other} |`,
+    ),
     '',
     '### Top 20 tests',
     '',
     '| test | file | wall s |',
     '|---|---|---:|',
-    ...top.map((t) => `| ${t.name.replace(/\|/g, '\\|')} | ${t.file} | ${(t.wallMs / 1000).toFixed(3)} |`),
+    ...top.map(
+      (t) => `| ${t.name.replace(/\|/g, '\\|')} | ${t.file} | ${(t.wallMs / 1000).toFixed(3)} |`,
+    ),
     '',
   ]
   if (failed.length) {
     lines.push('### Failures', '')
     for (const t of failed) {
-      lines.push(`- **${t.file}** \`${t.name}\``, '', '```', t.failure ?? '(no failure text)', '```', '')
+      lines.push(
+        `- **${t.file}** \`${t.name}\``,
+        '',
+        '```',
+        t.failure ?? '(no failure text)',
+        '```',
+        '',
+      )
     }
   }
   return lines.join('\n')
@@ -178,7 +203,13 @@ export function markdownSummary(data: GateTimings, heading: string): string {
 
 const recorder = process.argv[1]?.endsWith('record-gate-timings.ts')
 if (recorder) {
-  const command = ['bun', 'test', ...testArgs, '--reporter=junit', `--reporter-outfile=${junitPath}`]
+  const command = [
+    'bun',
+    'test',
+    ...testArgs,
+    '--reporter=junit',
+    `--reporter-outfile=${junitPath}`,
+  ]
   const started = Date.now()
   const child = Bun.spawn(command, {
     cwd: orchRoot,
@@ -190,9 +221,18 @@ if (recorder) {
   const elapsedMs = Date.now() - started
   const sidecarPath = `${jsonPath}.spawn.json`
   let sidecar: { elapsedMs?: number; files?: Record<string, SpawnCounts> } = {}
-  try { sidecar = JSON.parse(readFileSync(sidecarPath, 'utf8')) } catch { /* reporter may have failed */ }
+  try {
+    sidecar = JSON.parse(readFileSync(sidecarPath, 'utf8'))
+  } catch {
+    /* reporter may have failed */
+  }
   const xml = readFileSync(junitPath, 'utf8')
-  const data = mergeTimings(sidecar, xml, { stamp, command: ['bun', 'test', ...testArgs], elapsedMs, exitCode })
+  const data = mergeTimings(sidecar, xml, {
+    stamp,
+    command: ['bun', 'test', ...testArgs],
+    elapsedMs,
+    exitCode,
+  })
   writeFileSync(jsonPath, JSON.stringify(data, null, 2))
   console.log(`\nwrote ${jsonPath}`)
   console.log(markdownSummary(data, 'Process-boundary leg'))

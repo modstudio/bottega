@@ -35,15 +35,19 @@ export type DockerInventory =
   | { ascertainable: false; reason: string }
 
 function list(
-  kind: DockerResourceKind, timeout: number,
+  kind: DockerResourceKind,
+  timeout: number,
 ): { ascertainable: true; names: string[] } | { ascertainable: false; reason: string } {
-  const args = kind === 'container'
-    ? ['docker', 'ps', '-a', '--format', '{{.Names}}']
-    : ['docker', 'volume', 'ls', '--format', '{{.Name}}']
+  const args =
+    kind === 'container'
+      ? ['docker', 'ps', '-a', '--format', '{{.Names}}']
+      : ['docker', 'volume', 'ls', '--format', '{{.Name}}']
   let p: ReturnType<typeof Bun.spawnSync>
   try {
     p = Bun.spawnSync(args, {
-      stdout: 'pipe', stderr: 'pipe', timeout,
+      stdout: 'pipe',
+      stderr: 'pipe',
+      timeout,
     })
   } catch (error) {
     return {
@@ -54,7 +58,8 @@ function list(
   if (p.exitedDueToTimeout) {
     return {
       ascertainable: false,
-      reason: `docker ${args.slice(1, 3).join(' ')} inventory unavailable: ` +
+      reason:
+        `docker ${args.slice(1, 3).join(' ')} inventory unavailable: ` +
         `timed out after ${timeout}ms`,
     }
   }
@@ -67,7 +72,10 @@ function list(
   }
   return {
     ascertainable: true,
-    names: (p.stdout?.toString() ?? '').split('\n').map((name) => name.trim()).filter(Boolean),
+    names: (p.stdout?.toString() ?? '')
+      .split('\n')
+      .map((name) => name.trim())
+      .filter(Boolean),
   }
 }
 
@@ -104,14 +112,13 @@ export function dockerRunResources(): DockerInventory {
   return { ascertainable: true, resources }
 }
 
-export function resourcesForRun(
-  runId: number, inventory = dockerRunResources(),
-): DockerInventory {
+export function resourcesForRun(runId: number, inventory = dockerRunResources()): DockerInventory {
   return resourcesForRuns([runId], inventory)
 }
 
 export function resourcesForRuns(
-  runIds: number[], inventory = dockerRunResources(),
+  runIds: number[],
+  inventory = dockerRunResources(),
 ): DockerInventory {
   if (!inventory.ascertainable) return inventory
   const owned = new Set(runIds)
@@ -130,7 +137,9 @@ export type DockerTeardown = {
 }
 
 export function teardownRunResources(
-  runId: number, inventory = resourcesForRun(runId), canRemove: () => boolean = () => true,
+  runId: number,
+  inventory = resourcesForRun(runId),
+  canRemove: () => boolean = () => true,
 ): DockerTeardown {
   const errors = inventory.ascertainable ? [] : [inventory.reason]
   let removed = 0
@@ -153,7 +162,9 @@ export function teardownRunResources(
     let p: ReturnType<typeof Bun.spawnSync>
     try {
       p = Bun.spawnSync(command.split(' '), {
-        stdout: 'pipe', stderr: 'pipe', timeout: dockerRemovalTimeoutMs(),
+        stdout: 'pipe',
+        stderr: 'pipe',
+        timeout: dockerRemovalTimeoutMs(),
       })
     } catch (error) {
       const detail = `${command} failed: ${(error as Error).message}`
@@ -192,7 +203,8 @@ export type DockerResourceCondition = 'leaked' | 'retained-worktree-resources'
 
 /** Live runs own their infrastructure even before a worktree path exists. */
 export function orphanedDockerResources(
-  resources: DockerResource[], owners: RunResourceOwner[],
+  resources: DockerResource[],
+  owners: RunResourceOwner[],
 ): { resource: DockerResource; project: string }[] {
   const byId = new Map(owners.map((owner) => [owner.id, owner]))
   return resources.flatMap((resource) => {
@@ -203,7 +215,8 @@ export function orphanedDockerResources(
 }
 
 export function classifiedDockerResources(
-  resources: DockerResource[], owners: RunResourceOwner[],
+  resources: DockerResource[],
+  owners: RunResourceOwner[],
 ): {
   resource: DockerResource
   project: string
@@ -213,24 +226,31 @@ export function classifiedDockerResources(
   const byId = new Map(owners.map((owner) => [owner.id, owner]))
   return resources.flatMap((resource) => {
     const owner = byId.get(resource.runId)
-    if (owner && !owner.retentionReason
-      && !['ok', 'failed', 'stale', 'stopped'].includes(owner.status)) return []
-    return [{
-      resource,
-      project: owner?.repo ?? 'unknown',
-      condition: owner?.retentionReason || owner?.worktree && existsSync(owner.worktree)
-        ? 'retained-worktree-resources' as const
-        : 'leaked' as const,
-      reason: owner?.retentionReason ?? null,
-    }]
+    if (
+      owner &&
+      !owner.retentionReason &&
+      !['ok', 'failed', 'stale', 'stopped'].includes(owner.status)
+    )
+      return []
+    return [
+      {
+        resource,
+        project: owner?.repo ?? 'unknown',
+        condition:
+          owner?.retentionReason || (owner?.worktree && existsSync(owner.worktree))
+            ? ('retained-worktree-resources' as const)
+            : ('leaked' as const),
+        reason: owner?.retentionReason ?? null,
+      },
+    ]
   })
 }
 
-export function leakedResourceLines(
-  resources: DockerResource[], project: string,
-): string[] {
-  return resources.map((resource) =>
-    `${resource.kind} ${resource.name} leaked by project ${project} (run ${resource.runId})`)
+export function leakedResourceLines(resources: DockerResource[], project: string): string[] {
+  return resources.map(
+    (resource) =>
+      `${resource.kind} ${resource.name} leaked by project ${project} (run ${resource.runId})`,
+  )
 }
 
 export function dockerRemovalCommand(resource: DockerResource): string {

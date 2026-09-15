@@ -6,10 +6,13 @@
   "type": "module",
   "scripts": {
     "check": "bun scripts/check.ts",
+    "format": "biome format --write .",
+    "lint": "biome check .",
     "orch": "bun orchestrator/src/orch.ts",
     "hub": "bun hub/src/cli.ts"
   },
   "devDependencies": {
+    "@biomejs/biome": "2.5.13",
     "@types/bun": "latest",
     "@typescript-eslint/parser": "8.70.0",
     "eslint": "^10.10.0",

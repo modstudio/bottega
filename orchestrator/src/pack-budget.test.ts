@@ -1,12 +1,12 @@
-import { describe,expect,test } from 'bun:test'
-import { readdirSync,readFileSync } from 'node:fs'
+import { describe, expect, test } from 'bun:test'
+import { readdirSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { checkPackBudget } from '../scripts/check-pack-budget.ts'
 import { setDoc } from '../test/fixtures/docs.ts'
 import { dir } from '../test/fixtures/store.ts'
-import { CanonBudgetError,compilePack } from './canon.ts'
+import { CanonBudgetError, compilePack } from './canon.ts'
 import { JOBS } from './jobs.ts'
-import { DEFAULT_PACK_BYTES,MAX_INJECT_DOC_BYTES } from './pack-budget.ts'
+import { DEFAULT_PACK_BYTES, MAX_INJECT_DOC_BYTES } from './pack-budget.ts'
 import { upsertProject } from './projects.ts'
 
 const ROOT = new URL('../..', import.meta.url).pathname.replace(/\/$/, '')
@@ -42,16 +42,20 @@ describe('canon pack budget', () => {
   test('DEFAULT_PACK_BYTES is assigned in one module and imported by the gate, dispatch and set_doc', () => {
     const files = walkTs(ROOT)
     const assignments = files.filter((path) =>
-      /export const DEFAULT_PACK_BYTES\s*=/.test(readFileSync(path, 'utf8')))
+      /export const DEFAULT_PACK_BYTES\s*=/.test(readFileSync(path, 'utf8')),
+    )
     expect(assignments.map((path) => path.slice(ROOT.length + 1))).toEqual([
       'orchestrator/src/pack-budget.ts',
     ])
-    expect(readFileSync(join(ROOT, 'orchestrator/src/jobs.ts'), 'utf8'))
-      .toContain("from './pack-budget.ts'")
-    expect(readFileSync(join(ROOT, 'orchestrator/src/docs.ts'), 'utf8'))
-      .toContain("from './pack-budget.ts'")
-    expect(readFileSync(join(ROOT, 'orchestrator/scripts/check-pack-budget.ts'), 'utf8'))
-      .toContain("from '../src/pack-budget.ts'")
+    expect(readFileSync(join(ROOT, 'orchestrator/src/jobs.ts'), 'utf8')).toContain(
+      "from './pack-budget.ts'",
+    )
+    expect(readFileSync(join(ROOT, 'orchestrator/src/docs.ts'), 'utf8')).toContain(
+      "from './pack-budget.ts'",
+    )
+    expect(readFileSync(join(ROOT, 'orchestrator/scripts/check-pack-budget.ts'), 'utf8')).toContain(
+      "from '../src/pack-budget.ts'",
+    )
     expect(DEFAULT_PACK_BYTES).toBe(64 * 1024)
     expect(MAX_INJECT_DOC_BYTES).toBe(8 * 1024)
   })
@@ -59,11 +63,17 @@ describe('canon pack budget', () => {
   test('a pack one byte over fails the gate naming the largest item; one byte under passes', () => {
     upsertProject({ name: 'pack-budget', path: dir, settings: { trunk: 'main' } })
     setDoc({
-      scope: 'global', subject: null, slug: 'largest', title: 'Largest',
+      scope: 'global',
+      subject: null,
+      slug: 'largest',
+      title: 'Largest',
       body: 'L'.repeat(40),
     })
     setDoc({
-      scope: 'global', subject: null, slug: 'smallest', title: 'Smallest',
+      scope: 'global',
+      subject: null,
+      slug: 'smallest',
+      title: 'Smallest',
       body: 's',
     })
     const old = JOBS.understand!.packBytes
@@ -72,8 +82,11 @@ describe('canon pack budget', () => {
     try {
       expect(() => compilePack({ job: 'understand', cwd: dir })).toThrow(CanonBudgetError)
       let message = ''
-      try { compilePack({ job: 'understand', cwd: dir }) }
-      catch (error) { message = (error as Error).message }
+      try {
+        compilePack({ job: 'understand', cwd: dir })
+      } catch (error) {
+        message = (error as Error).message
+      }
       expect(message).toContain('global/_/largest')
       expect(message.indexOf('global/_/largest')).toBeLessThan(message.indexOf('global/_/smallest'))
       const failures = checkPackBudget()
@@ -88,19 +101,28 @@ describe('canon pack budget', () => {
   test('a small inject write is refused when its affected pack would cross the ceiling', () => {
     upsertProject({ name: 'proposed-pack-budget', path: dir, settings: { trunk: 'main' } })
     setDoc({
-      scope: 'global', subject: null, slug: 'pack-base', title: 'Pack base',
+      scope: 'global',
+      subject: null,
+      slug: 'pack-base',
+      title: 'Pack base',
       body: 'b'.repeat(2_000),
     })
     const old = JOBS['file-question']!.packBytes
     JOBS['file-question']!.packBytes = compilePack({ job: 'file-question', cwd: dir }).bytes + 5_000
     try {
-      expect(() => setDoc({
-        scope: 'job', subject: 'file-question', slug: 'six-kib', title: 'Six KiB',
-        body: 'x'.repeat(6 * 1024),
-      })).toThrow(/canon pack file-question\/[^ ]+ would be .* bytes over.*largest inject sections to demote/s)
+      expect(() =>
+        setDoc({
+          scope: 'job',
+          subject: 'file-question',
+          slug: 'six-kib',
+          title: 'Six KiB',
+          body: 'x'.repeat(6 * 1024),
+        }),
+      ).toThrow(
+        /canon pack file-question\/[^ ]+ would be .* bytes over.*largest inject sections to demote/s,
+      )
     } finally {
       JOBS['file-question']!.packBytes = old
     }
   })
-
 })

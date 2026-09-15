@@ -1,6 +1,6 @@
 // concern: run-inbox
 /** Knows asking-run and ruling inbox. Must not know run control, transports, routing, the CLI, or worktrees. */
-import { db, sessionId, SESSION_LIVE_MS } from './db.ts'
+import { db, SESSION_LIVE_MS, sessionId } from './db.ts'
 import { activeSql, voidedSql } from './evidence-query.ts'
 import { projectAt } from './projects.ts'
 
@@ -12,24 +12,28 @@ type RunInboxPresentation = {
   strandedRecovery(rootId: number): string
 }
 
-export async function runInboxCommand(flags: RunInboxFlags, presentation: RunInboxPresentation): Promise<void> {
+export async function runInboxCommand(
+  flags: RunInboxFlags,
+  presentation: RunInboxPresentation,
+): Promise<void> {
   const { has } = flags
   const { log, dur, chainHasPendingDelivery, strandedRecovery } = presentation
   const sid = sessionId()
   const mine = !has('all')
   const project = mine ? projectAt(process.cwd()) : null
   const cutoff = new Date(Date.now() - SESSION_LIVE_MS).toISOString()
-  const hasSessionSeen = Boolean(db().query(
-    `SELECT 1 FROM sqlite_master WHERE type='table' AND name='session_seen'`,
-  ).get())
+  const hasSessionSeen = Boolean(
+    db().query(`SELECT 1 FROM sqlite_master WHERE type='table' AND name='session_seen'`).get(),
+  )
   const seenJoin = hasSessionSeen
     ? 'LEFT JOIN session_seen seen ON seen.session_id = r.session_id'
     : ''
   const sessionRecent = hasSessionSeen
     ? 'CASE WHEN r.session_id IS NOT NULL AND seen.last_seen >= ? THEN 1 ELSE 0 END'
     : '0'
-  const allRows = db().query(
-    `SELECT q.id, q.run_id, q.asked_at, q.question, q.options, q.recommendation, q.why,
+  const allRows = db()
+    .query(
+      `SELECT q.id, q.run_id, q.asked_at, q.question, q.options, q.recommendation, q.why,
             r.agent, r.job, r.repo, r.status, r.session_id,
             root.status root_status,
             ${activeSql('root')} root_active,
@@ -39,16 +43,31 @@ export async function runInboxCommand(flags: RunInboxFlags, presentation: RunInb
        FROM question q JOIN run r ON r.id = q.run_id
        JOIN run root ON root.id = COALESCE(r.parent_run_id, r.id)
        ${seenJoin}
-      WHERE ${mine
-        ? `q.answered_at IS NULL AND ${activeSql('root')}`
-        : `q.answered_at IS NULL OR NOT (${activeSql('root')})`}
+      WHERE ${
+        mine
+          ? `q.answered_at IS NULL AND ${activeSql('root')}`
+          : `q.answered_at IS NULL OR NOT (${activeSql('root')})`
+      }
       ORDER BY q.run_id, q.id`,
-  ).all(...(hasSessionSeen ? [cutoff] : [])) as {
-    id: number; run_id: number; asked_at: string; question: string; options: string | null
-    recommendation: string | null; why: string | null
-    agent: string; job: string; repo: string | null; status: string; session_id: string | null
-    root_status: string; root_active: number; root_voided: number
-    root_id: number; session_recent: number
+    )
+    .all(...(hasSessionSeen ? [cutoff] : [])) as {
+    id: number
+    run_id: number
+    asked_at: string
+    question: string
+    options: string | null
+    recommendation: string | null
+    why: string | null
+    agent: string
+    job: string
+    repo: string | null
+    status: string
+    session_id: string | null
+    root_status: string
+    root_active: number
+    root_voided: number
+    root_id: number
+    session_recent: number
   }[]
   // The default is a VIEW of the project containing cwd. Ownership remains
   // the session that dispatched the run; choosing what is visible must never
@@ -64,32 +83,37 @@ export async function runInboxCommand(flags: RunInboxFlags, presentation: RunInb
   const terminal = rows.filter((q) => !active.includes(q))
   const answerable = active.filter((q) => canAnswer(q.session_id))
   const visible = active.filter((q) => !canAnswer(q.session_id))
-  
+
   if (has('json')) {
-    log(JSON.stringify(rows.map((q) => ({
-      question_id: q.id,
-      run_id: q.run_id,
-      answer_id: q.root_id,
-      job: q.job,
-      agent: q.agent,
-      repo: q.repo,
-      asked_at: q.asked_at,
-      // Kept as a nullable compatibility field: false used to assert death,
-      // which a last-seen timestamp cannot establish.
-      session_live: q.session_recent ? true : null,
-      session_liveness: q.session_recent ? 'live' : 'unknown',
-      can_answer: Boolean(q.root_active) && canAnswer(q.session_id),
-      question: q.question,
-      options: q.options ? JSON.parse(q.options) as string[] : [],
-      recommendation: q.recommendation,
-      why: q.why,
-      status: q.root_voided ? 'voided' : q.root_status,
-    }))))
+    log(
+      JSON.stringify(
+        rows.map((q) => ({
+          question_id: q.id,
+          run_id: q.run_id,
+          answer_id: q.root_id,
+          job: q.job,
+          agent: q.agent,
+          repo: q.repo,
+          asked_at: q.asked_at,
+          // Kept as a nullable compatibility field: false used to assert death,
+          // which a last-seen timestamp cannot establish.
+          session_live: q.session_recent ? true : null,
+          session_liveness: q.session_recent ? 'live' : 'unknown',
+          can_answer: Boolean(q.root_active) && canAnswer(q.session_id),
+          question: q.question,
+          options: q.options ? (JSON.parse(q.options) as string[]) : [],
+          recommendation: q.recommendation,
+          why: q.why,
+          status: q.root_voided ? 'voided' : q.root_status,
+        })),
+      ),
+    )
     return
   }
-  
-  const recoverable = db().query(
-    `SELECT root.id, root.agent, root.job, root.repo, root.session_id
+
+  const recoverable = db()
+    .query(
+      `SELECT root.id, root.agent, root.job, root.repo, root.session_id
        FROM run root
       WHERE root.parent_run_id IS NULL
         AND (root.status = 'asking' OR EXISTS (
@@ -98,11 +122,7 @@ export async function runInboxCommand(flags: RunInboxFlags, presentation: RunInb
              AND pending.answered_at IS NOT NULL
              AND pending.delivery_pending_at IS NOT NULL
         ))
-        ${mine
-          ? project
-            ? 'AND root.repo = ?'
-            : 'AND root.session_id = ?'
-          : ''}
+        ${mine ? (project ? 'AND root.repo = ?' : 'AND root.session_id = ?') : ''}
         AND NOT EXISTS (
           SELECT 1 FROM question q JOIN run owner ON owner.id = q.run_id
            WHERE (owner.id = root.id OR owner.parent_run_id = root.id)
@@ -113,13 +133,23 @@ export async function runInboxCommand(flags: RunInboxFlags, presentation: RunInb
            WHERE active.parent_run_id = root.id AND active.status = 'running'
         )
       ORDER BY root.id`,
-  ).all(...(mine ? project ? [project.name] : [sid] : [])) as {
-    id: number; agent: string; job: string; repo: string | null; session_id: string | null
+    )
+    .all(...(mine ? (project ? [project.name] : [sid]) : [])) as {
+    id: number
+    agent: string
+    job: string
+    repo: string | null
+    session_id: string | null
   }[]
-  
+
   if (!rows.length && !recoverable.length) {
-    log(mine && project ? `no open questions for ${project.name}`
-      : mine ? 'no questions waiting on you' : 'no open questions')
+    log(
+      mine && project
+        ? `no open questions for ${project.name}`
+        : mine
+          ? 'no questions waiting on you'
+          : 'no open questions',
+    )
     return
   }
   let lastRun = -1
@@ -142,7 +172,7 @@ export async function runInboxCommand(flags: RunInboxFlags, presentation: RunInb
   if (answerable.length) {
     log(
       `\nrule on them:  orch answer ${lastRoot} "<ruling>"    (one per question, in order)` +
-      `\n               orch answer ${lastRoot} --q<id> "<ruling>"`,
+        `\n               orch answer ${lastRoot} --q<id> "<ruling>"`,
     )
   }
   for (const r of recoverable) {
@@ -150,9 +180,9 @@ export async function runInboxCommand(flags: RunInboxFlags, presentation: RunInb
     if (canAnswer(r.session_id)) {
       log(
         `\nrun ${r.id} · ${r.agent}/${r.job}${r.repo ? ` · ${r.repo}` : ''} · ` +
-        (stranded
-          ? `asking, but no ruling is open — ${strandedRecovery(r.id)}`
-          : `asking, but no ruling is open — recoverable: orch continue ${r.id}`),
+          (stranded
+            ? `asking, but no ruling is open — ${strandedRecovery(r.id)}`
+            : `asking, but no ruling is open — recoverable: orch continue ${r.id}`),
       )
       if (r.session_id === null) {
         log('        unowned — any session may continue it')
@@ -160,21 +190,21 @@ export async function runInboxCommand(flags: RunInboxFlags, presentation: RunInb
     } else {
       log(
         `\nrun ${r.id} · ${r.agent}/${r.job}${r.repo ? ` · ${r.repo}` : ''} · ` +
-        `asking, but no ruling is open · owner ${r.session_id} · visible only; ` +
-        (stranded
-          ? `stranded — only the owning session may use orch retry ${r.id} --agent … or orch abandon ${r.id}`
-          : 'only the owning session may continue it'),
+          `asking, but no ruling is open · owner ${r.session_id} · visible only; ` +
+          (stranded
+            ? `stranded — only the owning session may use orch retry ${r.id} --agent … or orch abandon ${r.id}`
+            : 'only the owning session may continue it'),
       )
     }
   }
   if (visible.length) {
     log('\nvisible here, but owned by another session:')
-  for (const q of visible) {
+    for (const q of visible) {
       const liveness = q.session_recent ? 'live' : 'unknown'
       log(
         `\n  [q${q.id}] run ${q.run_id} · ${q.job} · ${q.agent}` +
-        `${q.repo ? ` · ${q.repo}` : ''} · owner ${q.session_id ?? 'unknown'} · ` +
-        `liveness ${liveness} · waiting ${dur(Date.now() - Date.parse(q.asked_at))}`,
+          `${q.repo ? ` · ${q.repo}` : ''} · owner ${q.session_id ?? 'unknown'} · ` +
+          `liveness ${liveness} · waiting ${dur(Date.now() - Date.parse(q.asked_at))}`,
       )
       log(`        ${q.question}`)
       if (q.why) log(`        why: ${q.why}`)
@@ -188,10 +218,9 @@ export async function runInboxCommand(flags: RunInboxFlags, presentation: RunInb
     const status = q.root_voided ? 'voided' : q.root_status
     log(
       `\nrun ${q.root_id} · ${q.agent}/${q.job}${q.repo ? ` · ${q.repo}` : ''} · ` +
-      `${status} (terminal)`,
+        `${status} (terminal)`,
     )
     log(`  [q${q.id}] ${q.question}`)
   }
   return
-    
 }

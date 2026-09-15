@@ -9,15 +9,27 @@ const cases = [
   ['quoted dynamic import', `import('./dynamic.ts')`, './dynamic.ts'],
   ['template-literal dynamic import', 'import(`./template.ts`)', './template.ts'],
   ['concatenated dynamic import', `import('./' + 'joined.ts')`, './joined.ts'],
-  ['import.meta.resolve dynamic import', `import(import.meta.resolve('./resolved.ts'))`, './resolved.ts'],
-  ['createRequire alias', `const load = createRequire(import.meta.url); load('./loaded.ts')`, './loaded.ts'],
+  [
+    'import.meta.resolve dynamic import',
+    `import(import.meta.resolve('./resolved.ts'))`,
+    './resolved.ts',
+  ],
+  [
+    'createRequire alias',
+    `const load = createRequire(import.meta.url); load('./loaded.ts')`,
+    './loaded.ts',
+  ],
   ['constant indirection', `const target = './indirect.ts'; import(target)`, './indirect.ts'],
 ] as const
 
 describe('import scanner', () => {
   for (const [name, source, expected] of cases) {
     test(name, () => {
-      expect(importSpecifiers(source)).toEqual({ specifiers: [expected], typeOnlySpecifiers: [], unresolvedRelative: [] })
+      expect(importSpecifiers(source)).toEqual({
+        specifiers: [expected],
+        typeOnlySpecifiers: [],
+        unresolvedRelative: [],
+      })
     })
   }
 

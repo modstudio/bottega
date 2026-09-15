@@ -11,12 +11,19 @@ describe('scripted transport', () => {
       { kind: 'completed', output: 'done' },
     ])
     const handle = await fake.transport.start({
-      agent: {} as never, cwd: '/tmp', env: {}, prompt: 'original', outPath: '/tmp/out',
+      agent: {} as never,
+      cwd: '/tmp',
+      env: {},
+      prompt: 'original',
+      outPath: '/tmp/out',
       startedAt: 0,
     })
     await fake.transport.prompt(handle, 'submitted')
     let settled = false
-    const collected = handle.collect().then((value) => { settled = true; return value })
+    const collected = handle.collect().then((value) => {
+      settled = true
+      return value
+    })
     await Promise.resolve()
     expect(settled).toBeFalse()
     fake.injectRuling('Use A')
@@ -28,7 +35,12 @@ describe('scripted transport', () => {
   test('failure and cancellation scripts never spawn and return failed results', async () => {
     const fake = scriptedTransport([{ kind: 'failed', error: 'broken' }])
     const handle = await fake.transport.start({
-      agent: {} as never, cwd: '/tmp', env: {}, prompt: 'p', outPath: '/tmp/out', startedAt: 0,
+      agent: {} as never,
+      cwd: '/tmp',
+      env: {},
+      prompt: 'p',
+      outPath: '/tmp/out',
+      startedAt: 0,
     })
     expect(await handle.collect()).toMatchObject({ status: 'failed', error: 'broken', exitCode: 1 })
   })

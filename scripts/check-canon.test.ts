@@ -1,14 +1,14 @@
 import { describe, expect, test } from 'bun:test'
+import { CONCERNS, PLATFORM_SLUG } from '../shared/brand.ts'
 import {
   CANON_FILES,
+  type Ctx,
+  checkBody,
   EXEMPTIONS,
   PREFIXES,
-  checkBody,
   parseAlso,
   trackedSet,
-  type Ctx,
 } from './check-canon'
-import { CONCERNS, PLATFORM_SLUG } from '../shared/brand.ts'
 
 /**
  * Every check here has a false-positive twin. A check that fires on ordinary
@@ -32,21 +32,13 @@ const DOC = 'AGENTS.md'
 
 describe('prefixes', () => {
   test('are the concerns plus shared, scripts, and .githooks', () => {
-    expect(PREFIXES).toEqual([
-      ...CONCERNS.map((c) => `${c}/`),
-      'shared/',
-      'scripts/',
-      '.githooks/',
-    ])
+    expect(PREFIXES).toEqual([...CONCERNS.map((c) => `${c}/`), 'shared/', 'scripts/', '.githooks/'])
   })
 })
 
 describe('canon files', () => {
   test('are the root AGENTS.md and one per concern, never CLAUDE.md', () => {
-    expect(CANON_FILES).toEqual([
-      'AGENTS.md',
-      ...CONCERNS.map((c) => `${c}/AGENTS.md`),
-    ])
+    expect(CANON_FILES).toEqual(['AGENTS.md', ...CONCERNS.map((c) => `${c}/AGENTS.md`)])
     expect(CANON_FILES.some((f) => f.endsWith('CLAUDE.md'))).toBe(false)
   })
 })

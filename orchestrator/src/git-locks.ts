@@ -1,7 +1,7 @@
 import { existsSync, lstatSync, readdirSync, readFileSync } from 'node:fs'
 import { join, relative, resolve, sep } from 'node:path'
-import { pidAlive } from './process-liveness.ts'
 import { targetGitEnvironment } from './git-environment.ts'
+import { pidAlive } from './process-liveness.ts'
 
 export type GitLock = {
   path: string
@@ -15,7 +15,10 @@ export type GitLock = {
 
 function git(cwd: string, args: string[]): string | null {
   const p = Bun.spawnSync(['git', ...args], {
-    cwd, env: targetGitEnvironment(cwd), stdout: 'pipe', stderr: 'pipe',
+    cwd,
+    env: targetGitEnvironment(cwd),
+    stdout: 'pipe',
+    stderr: 'pipe',
   })
   return p.exitCode === 0 ? p.stdout.toString().trim() : null
 }
@@ -44,16 +47,24 @@ function owningPids(path: string): number[] | null {
   // lsof uses 1 for a successful inventory with no matching open file.
   if (p.exitCode === 1 && !p.stderr?.toString().trim()) return []
   if (p.exitCode !== 0) return null
-  return [...new Set((p.stdout?.toString() ?? '').split('\n')
-    .map((value) => Number(value.trim()))
-    .filter((value) => Number.isInteger(value) && value > 0 && pidAlive(value)))]
+  return [
+    ...new Set(
+      (p.stdout?.toString() ?? '')
+        .split('\n')
+        .map((value) => Number(value.trim()))
+        .filter((value) => Number.isInteger(value) && value > 0 && pidAlive(value)),
+    ),
+  ]
 }
+
+const BINARY_CONTROL_PATTERN = String.raw`[\0-\x08\x0b\x0c\x0e-\x1f]`
+const BINARY_CONTROL_CHARACTER = new RegExp(BINARY_CONTROL_PATTERN)
 
 function lockContents(path: string): string {
   const bytes = readFileSync(path)
   if (bytes.length > 4096) return `[${bytes.length} bytes; content omitted]`
   const text = bytes.toString('utf8')
-  if (/[\0-\x08\x0b\x0c\x0e-\x1f]/.test(text)) return `[${bytes.length} binary bytes]`
+  if (BINARY_CONTROL_CHARACTER.test(text)) return `[${bytes.length} binary bytes]`
   return text.trim()
 }
 
@@ -116,13 +127,19 @@ export function gitLocks(repoRoot: string, clock = Date.now()): GitLock[] {
 export function formatGitLocks(repoRoot: string, clock = Date.now()): string {
   const locks = gitLocks(repoRoot, clock)
   if (!locks.length) return 'git locks:\n  none'
-  return `git locks:\n${locks.map((lock) => {
-    const age = `${Math.max(0, Math.round(lock.ageMs / 1000))}s`
-    const target = lock.target ? `\n    target: ${lock.target}` : ''
-    const resolved = lock.contentRefs.length ? ` -> ${lock.contentRefs.join(', ')}` : ''
-    const contents = lock.contents ? `${lock.contents}${resolved}` : '(empty)'
-    const owner = lock.ownerPids === null ? 'unknown (lsof unavailable)'
-      : lock.ownerPids.length ? `${lock.ownerPids.join(', ')} alive` : 'none alive'
-    return `  ${lock.path} (age ${age})${target}\n    contents: ${contents}\n    owner pid: ${owner}`
-  }).join('\n')}`
+  return `git locks:\n${locks
+    .map((lock) => {
+      const age = `${Math.max(0, Math.round(lock.ageMs / 1000))}s`
+      const target = lock.target ? `\n    target: ${lock.target}` : ''
+      const resolved = lock.contentRefs.length ? ` -> ${lock.contentRefs.join(', ')}` : ''
+      const contents = lock.contents ? `${lock.contents}${resolved}` : '(empty)'
+      const owner =
+        lock.ownerPids === null
+          ? 'unknown (lsof unavailable)'
+          : lock.ownerPids.length
+            ? `${lock.ownerPids.join(', ')} alive`
+            : 'none alive'
+      return `  ${lock.path} (age ${age})${target}\n    contents: ${contents}\n    owner pid: ${owner}`
+    })
+    .join('\n')}`
 }

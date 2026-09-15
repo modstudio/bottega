@@ -3,10 +3,7 @@ import sonarjs from 'eslint-plugin-sonarjs'
 
 export default [
   {
-    ignores: [
-      'hub/web/src/routeTree.gen.ts',
-      '**/migrations/meta/**',
-    ],
+    ignores: ['hub/web/src/routeTree.gen.ts', '**/migrations/meta/**'],
   },
   {
     files: [

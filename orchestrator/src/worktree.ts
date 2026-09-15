@@ -24,7 +24,12 @@
  */
 import { existsSync } from 'node:fs'
 import type { WorktreeTool } from './projects.ts'
-import { createWithTool, createWorktree, createWorktreeForBranch, type RecordWorktree } from './worktree-create.ts'
+import {
+  createWithTool,
+  createWorktree,
+  createWorktreeForBranch,
+  type RecordWorktree,
+} from './worktree-create.ts'
 import { createReadOnlyWithTool, createReadOnlyWorktree } from './worktree-readonly.ts'
 import type { Worktree } from './worktree-types.ts'
 
@@ -52,20 +57,34 @@ export function createWorkerWorktree(options: CreateWorkerWorktreeOptions): Work
   if (!options.writes) {
     return options.tool?.readonly_create
       ? createReadOnlyWithTool(
-          options.tool, options.cwd, options.runId, options.readOnlyBase, options.record,
+          options.tool,
+          options.cwd,
+          options.runId,
+          options.readOnlyBase,
+          options.record,
         )
-      : createReadOnlyWorktree(options.cwd, options.runId, options.readOnlyBase, options.record, options.tool?.readonly_provision)
+      : createReadOnlyWorktree(
+          options.cwd,
+          options.runId,
+          options.readOnlyBase,
+          options.record,
+          options.tool?.readonly_provision,
+        )
   }
   if (options.tool) {
     return createWithTool(
-      options.tool, options.cwd, options.runId, options.seed, options.key,
-      options.existingBranchTip ?? options.baseRef, options.record, options.detached,
+      options.tool,
+      options.cwd,
+      options.runId,
+      options.seed,
+      options.key,
+      options.existingBranchTip ?? options.baseRef,
+      options.record,
+      options.detached,
       options.existingBranch,
     )
   }
   return options.existingBranch
     ? createWorktreeForBranch(options.cwd, options.runId, options.existingBranch, options.record)
-    : createWorktree(
-        options.cwd, options.runId, options.baseRef, options.record, options.detached,
-      )
+    : createWorktree(options.cwd, options.runId, options.baseRef, options.record, options.detached)
 }

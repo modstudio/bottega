@@ -13,7 +13,9 @@ export function migrateCommand(presentation: DatabaseCommandPresentation): void 
     for (const version of migrated.versions) presentation.log(`  applied ${version}`)
   }
   const backfilled = backfillSpecSha()
-  presentation.log(`spec_sha backfill: ${backfilled.updated} updated, ${backfilled.missing} prompt files missing`)
+  presentation.log(
+    `spec_sha backfill: ${backfilled.updated} updated, ${backfilled.missing} prompt files missing`,
+  )
 }
 
 export function reconcileCommand(id: number, presentation: DatabaseCommandPresentation): void {

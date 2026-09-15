@@ -1,4 +1,4 @@
-import { TRPCError, initTRPC } from '@trpc/server'
+import { initTRPC, TRPCError } from '@trpc/server'
 import { z } from 'zod'
 import { collectNow, sendTest, strip, view } from '../../serve.ts'
 import { setReport } from '../../settings.ts'
@@ -30,13 +30,13 @@ function badRequest(cause: unknown): never {
 
 export const settingsRouter = t.router({
   get: t.procedure
-    .input(z.object({ hours: z.union([
-      z.literal(24), z.literal(48), z.literal(168), z.literal(720),
-    ]) }))
+    .input(
+      z.object({ hours: z.union([z.literal(24), z.literal(48), z.literal(168), z.literal(720)]) }),
+    )
     .query(async ({ input }) => ({
       ...strip(input.hours),
       view: 'settings' as const,
-      data: await view('settings', input.hours) as SettingsData,
+      data: (await view('settings', input.hours)) as SettingsData,
     })),
   save: t.procedure.input(reportPatch).mutation(({ input }) => {
     try {

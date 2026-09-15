@@ -1,10 +1,17 @@
-import { db } from './db.ts'; import { WEIGHT, FIDELITY_PENALTY, weigh } from './score.ts'
-import { AGENTS, fileContractProbeReason, predatesFileContract, unavailableReason } from './agents.ts'
-import { job, JOBS } from './jobs.ts'
-import { COOLS_DOWN, NOT_EVIDENCE } from './failure.ts'
+import {
+  AGENTS,
+  fileContractProbeReason,
+  predatesFileContract,
+  unavailableReason,
+} from './agents.ts'
 import { calibrationFor } from './calibration-port.ts'
 import { failingDefaultCanonEvals } from './canon-eval-status.ts'
+import { db } from './db.ts'
+import { COOLS_DOWN, NOT_EVIDENCE } from './failure.ts'
+import { JOBS, job } from './jobs.ts'
+import { FIDELITY_PENALTY, WEIGHT, weigh } from './score.ts'
 import { median } from './statistics.ts'
+
 export { median } from './statistics.ts'
 
 export type Candidate = {
@@ -95,13 +102,15 @@ function promptBucketSql(alias: string, promptBytes: number): string {
 
 /** Populated buckets in stable size order; an untried job has none. */
 export function promptBucketsForJob(jobName: string): PromptSizeBucket[] {
-  const rows = db().query(
-    `SELECT DISTINCT CASE WHEN prompt_bytes < ? THEN 'small' ELSE 'large' END AS bucket
+  const rows = db()
+    .query(
+      `SELECT DISTINCT CASE WHEN prompt_bytes < ? THEN 'small' ELSE 'large' END AS bucket
        FROM run
       WHERE job = ? AND status IN ('ok','failed','stale') AND probe = 0
         AND evidence_excluded IS NULL AND parent_run_id IS NULL
         AND agent != '(pending)'`,
-  ).all(PROMPT_SIZE_BOUNDARY, jobName) as { bucket: PromptSizeBucket }[]
+    )
+    .all(PROMPT_SIZE_BOUNDARY, jobName) as { bucket: PromptSizeBucket }[]
   const have = new Set(rows.map((row) => row.bucket))
   return (['small', 'large'] as const).filter((bucket) => have.has(bucket))
 }
@@ -141,7 +150,7 @@ export type RoutingEvidenceInput = {
 /** The production quality-evidence predicate, shared with causal replay. */
 export function isRoutingEvidence(row: RoutingEvidenceInput): boolean {
   if (!['ok', 'failed', 'stale'].includes(row.status)) return false
-  if (NOT_EVIDENCE.includes(row.failureKind as typeof NOT_EVIDENCE[number])) return false
+  if (NOT_EVIDENCE.includes(row.failureKind as (typeof NOT_EVIDENCE)[number])) return false
   return row.delivery !== null || ['failed', 'stale'].includes(row.status)
 }
 
@@ -159,11 +168,12 @@ type RoutingWindowRow = {
  * routing on noise.
  */
 export function routingEvidenceWindow<T extends RoutingWindowRow>(
-  rows: T[], agent: string, currentModel: string,
+  rows: T[],
+  agent: string,
+  currentModel: string,
 ): { rows: T[]; evidenceModel: string | null } {
-  const modelRows = rows.filter((row) =>
-    row.agent === agent && (row.model === currentModel || row.model === null),
-  )
+  const modelRows = rows
+    .filter((row) => row.agent === agent && (row.model === currentModel || row.model === null))
     .sort((a, b) => b.startedAt.localeCompare(a.startedAt) || b.id - a.id)
     .slice(0, EVIDENCE_WINDOW)
   return { rows: modelRows, evidenceModel: currentModel }
@@ -185,7 +195,7 @@ function coolsDownSql(): string {
 export const EXPLORE_RATE = 0.25
 
 /** Keep testing proven challengers so a leader cannot hold the route forever. */
-export const STANDING_EXPLORE_RATE = 0.10
+export const STANDING_EXPLORE_RATE = 0.1
 export const STANDING_EXPLORE_FLOOR = 0.03
 
 /** The leader's cell evidence decays the standing draw, without retiring it. */
@@ -247,7 +257,7 @@ function normal(rng: () => number): number {
 
 /** Marsaglia-Tsang gamma draw, including the standard alpha < 1 transform. */
 function gamma(alpha: number, rng: () => number): number {
-  if (alpha < 1) return gamma(alpha + 1, rng) * Math.pow(Math.max(rng(), Number.EPSILON), 1 / alpha)
+  if (alpha < 1) return gamma(alpha + 1, rng) * Math.max(rng(), Number.EPSILON) ** (1 / alpha)
   const d = alpha - 1 / 3
   const c = 1 / Math.sqrt(9 * d)
   while (true) {
@@ -256,7 +266,8 @@ function gamma(alpha: number, rng: () => number): number {
     if (v0 <= 0) continue
     const v = v0 ** 3
     const u = rng()
-    if (u < 1 - 0.0331 * x ** 4 || Math.log(u) < 0.5 * x * x + d * (1 - v + Math.log(v))) return d * v
+    if (u < 1 - 0.0331 * x ** 4 || Math.log(u) < 0.5 * x * x + d * (1 - v + Math.log(v)))
+      return d * v
   }
 }
 
@@ -272,7 +283,9 @@ type ThompsonCandidate = Pick<Candidate, 'agent' | 'evidence' | 'score' | 'free'
 
 /** The one Thompson ranking used by every historical replay trajectory. */
 export function thompsonRank<T extends ThompsonCandidate>(
-  candidates: readonly T[], draw = true, rng: () => number = Math.random,
+  candidates: readonly T[],
+  draw = true,
+  rng: () => number = Math.random,
 ): { chosen: T; expected: T; posteriorMean: number; tied: number } {
   const field = candidates
     .filter((candidate) => candidate.evidence >= MIN_SAMPLE && candidate.score !== null)
@@ -286,9 +299,11 @@ export function thompsonRank<T extends ThompsonCandidate>(
     const mean = successes / (successes + failures)
     return { candidate, mean, sample: draw ? beta(successes, failures, rng) : mean }
   })
-  const tie = (a: typeof posterior[number], b: typeof posterior[number]) =>
+  const tie = (a: (typeof posterior)[number], b: (typeof posterior)[number]) =>
     (a.candidate.precision === null || a.candidate.precision === undefined
-      ? (b.candidate.precision === null || b.candidate.precision === undefined ? 0 : 1)
+      ? b.candidate.precision === null || b.candidate.precision === undefined
+        ? 0
+        : 1
       : b.candidate.precision === null || b.candidate.precision === undefined
         ? -1
         : b.candidate.precision - a.candidate.precision) ||
@@ -298,8 +313,7 @@ export function thompsonRank<T extends ThompsonCandidate>(
     a.candidate.agent.localeCompare(b.candidate.agent)
   const rank = (metric: 'mean' | 'sample') => {
     const leader = [...posterior].sort((a, b) => b[metric] - a[metric])[0]!
-    const tied = posterior.filter((row) =>
-      leader[metric] - row[metric] <= POSTERIOR_NOISE_BAND)
+    const tied = posterior.filter((row) => leader[metric] - row[metric] <= POSTERIOR_NOISE_BAND)
     return { row: tied.sort(tie)[0]!, tied: tied.length }
   }
   const expected = rank('mean')
@@ -374,8 +388,12 @@ export function weightCase(): string {
  * invented or tuned.
  */
 export function candidates(
-  jobName: string, promptBytes = 0, stack?: string | null, modelOverride?: string,
-  coolingProbeAgent?: string, lens?: string | null,
+  jobName: string,
+  promptBytes = 0,
+  stack?: string | null,
+  modelOverride?: string,
+  coolingProbeAgent?: string,
+  lens?: string | null,
 ): Candidate[] {
   const j = job(jobName)
   // probe = 0: calibration traffic is deliberately trivial, so counting it would
@@ -438,14 +456,20 @@ export function candidates(
         GROUP BY r.agent`,
     )
     .all(jobName, ...(stack ? [stack] : []), ...(lens ? [lens] : [])) as {
-      agent: string; runs: number; scored: number; failures: number
-      pts: number | null; tokens: number; cost: number
-    }[]
+    agent: string
+    runs: number
+    scored: number
+    failures: number
+    pts: number | null
+    tokens: number
+    cost: number
+  }[]
   const hist = new Map(rows.map((r) => [r.agent, r]))
 
-  const evidenceRows = (db()
-    .query(
-      `SELECT r.id, r.agent, r.model, r.started_at AS startedAt, r.status,
+  const evidenceRows = (
+    db()
+      .query(
+        `SELECT r.id, r.agent, r.model, r.started_at AS startedAt, r.status,
               r.failure_kind AS failureKind, s.delivery, ${weightCase()} AS pts
          FROM run r LEFT JOIN score s ON s.run_id = r.id
         WHERE r.job = ? AND r.status IN ('ok','failed','stale') AND r.probe = 0
@@ -454,11 +478,18 @@ export function candidates(
           AND ${promptBucketSql('r', promptBytes)}
           ${stack ? 'AND r.stack = ?' : ''}
           ${lens ? 'AND EXISTS (SELECT 1 FROM review_lens rl WHERE rl.run_id = r.id AND rl.lens = ?)' : ''}`,
-    )
-    .all(jobName, ...(stack ? [stack] : []), ...(lens ? [lens] : [])) as {
-      id: number; agent: string; model: string | null; startedAt: string; status: string
-      failureKind: string | null; delivery: string | null; pts: number | null
-    }[]).filter(isRoutingEvidence)
+      )
+      .all(jobName, ...(stack ? [stack] : []), ...(lens ? [lens] : [])) as {
+      id: number
+      agent: string
+      model: string | null
+      startedAt: string
+      status: string
+      failureKind: string | null
+      delivery: string | null
+      pts: number | null
+    }[]
+  ).filter(isRoutingEvidence)
 
   type Evidence = { scored: number; failures: number; none: number; pts: number }
   const aggregate = (rs: typeof evidenceRows): Evidence => ({
@@ -479,7 +510,10 @@ export function candidates(
           ${stack ? 'AND stack = ?' : ''}
           ${lens ? 'AND EXISTS (SELECT 1 FROM review_lens rl WHERE rl.run_id = run.id AND rl.lens = ?)' : ''}`,
     )
-    .all(jobName, ...(stack ? [stack] : []), ...(lens ? [lens] : [])) as { agent: string; latency_ms: number }[]
+    .all(jobName, ...(stack ? [stack] : []), ...(lens ? [lens] : [])) as {
+    agent: string
+    latency_ms: number
+  }[]
   const latByAgent = new Map<string, number[]>()
   for (const r of lat) latByAgent.set(r.agent, [...(latByAgent.get(r.agent) ?? []), r.latency_ms])
 
@@ -496,8 +530,10 @@ export function candidates(
   // pretending a trivial reply was real work. Adding `AND probe = 0` here for
   // consistency would remove the only way to clear a cooldown.
   const coolingByAgent = new Map(
-    (db().query(
-      `WITH terminal AS (
+    (
+      db()
+        .query(
+          `WITH terminal AS (
          SELECT id, agent, status, failure_kind,
                 julianday(started_at) + latency_ms / 86400000.0 AS finished_at
            FROM run
@@ -520,53 +556,52 @@ export function candidates(
                  WHERE s.agent = f.agent AND s.status = 'ok'
                    AND s.finished_at > f.finished_at
               )`,
-    ).all(COOLDOWN_MIN) as { agent: string; failure_kind: string; mins_ago: number }[])
-      .map((r) => [r.agent, r]),
+        )
+        .all(COOLDOWN_MIN) as { agent: string; failure_kind: string; mins_ago: number }[]
+    ).map((r) => [r.agent, r]),
   )
 
   const result: Candidate[] = Object.keys(AGENTS).map((name) => {
     const a = AGENTS[name]!
     const currentModel = modelOverride ?? a.model
     const failure = coolingByAgent.get(name)
-    const cooling = failure
-      ? `${failure.failure_kind} ${Math.round(failure.mins_ago)}m ago`
-      : null
+    const cooling = failure ? `${failure.failure_kind} ${Math.round(failure.mins_ago)}m ago` : null
     const h = hist.get(name)
     const window = routingEvidenceWindow(evidenceRows, name, currentModel)
     const recent = aggregate(window.rows)
     const scored = recent.scored
     const failures = recent.failures
     const evidence = scored + failures
-    const score = evidence > 0
-      ? (recent.pts + weigh('none', null) * failures) / evidence
-      : null
+    const score = evidence > 0 ? (recent.pts + weigh('none', null) * failures) / evidence : null
     let eligible = true
     let why = ''
     const unavailable = unavailableReason(name)
-    const runningRunIds = (db().query(
-      "SELECT id FROM run WHERE agent=? AND status='running' AND probe=0 ORDER BY id",
-    ).all(name) as { id: number }[]).map((row) => row.id)
+    const runningRunIds = (
+      db()
+        .query("SELECT id FROM run WHERE agent=? AND status='running' AND probe=0 ORDER BY id")
+        .all(name) as { id: number }[]
+    ).map((row) => row.id)
     const declared = a.jobs ?? null
     const preferred = Boolean(a.preferredJobs?.includes(jobName))
     if (declared && !declared.includes(jobName)) {
       eligible = false
       why = `not declared for ${jobName}`
-    }
-    else if (cooling && coolingProbeAgent !== name) {
+    } else if (cooling && coolingProbeAgent !== name) {
       eligible = false
       why = `vendor ${cooling}; retry after ${COOLDOWN_MIN}m or run a successful probe to clear it`
-    }
-    else if (unavailable) { eligible = false; why = unavailable }
-    else if (a.billing === 'metered') { eligible = false; why = 'metered billing' }
-    else if (j.needs.readsRepo && !a.probedAt) {
+    } else if (unavailable) {
+      eligible = false
+      why = unavailable
+    } else if (a.billing === 'metered') {
+      eligible = false
+      why = 'metered billing'
+    } else if (j.needs.readsRepo && !a.probedAt) {
       eligible = false
       why = 'unprobed agent is ineligible for repository jobs; run orch agent probe ' + name
-    }
-    else if (j.needs.readsRepo && predatesFileContract(a)) {
+    } else if (j.needs.readsRepo && predatesFileContract(a)) {
       eligible = false
       why = fileContractProbeReason(name)
-    }
-    else if (promptBytes > a.maxPromptBytes) {
+    } else if (promptBytes > a.maxPromptBytes) {
       eligible = false
       why = `prompt ${Math.round(promptBytes / 1024)}KB exceeds its ${Math.round(a.maxPromptBytes / 1024)}KB argv limit`
     }
@@ -579,13 +614,17 @@ export function candidates(
     // any of them started.
     else if (a.contextTokens < j.contextTokens + OUTPUT_RESERVE) {
       eligible = false
-      why = `${Math.round(a.contextTokens / 1024)}K context is short of the ` +
-            `~${Math.round(j.contextTokens / 1024)}K this job's working set needs ` +
-            `plus ${Math.round(OUTPUT_RESERVE / 1024)}K to answer in`
-    }
-    else {
+      why =
+        `${Math.round(a.contextTokens / 1024)}K context is short of the ` +
+        `~${Math.round(j.contextTokens / 1024)}K this job's working set needs ` +
+        `plus ${Math.round(OUTPUT_RESERVE / 1024)}K to answer in`
+    } else {
       for (const [cap, need] of Object.entries(j.needs)) {
-        if (need && !a.caps[cap as keyof typeof a.caps]) { eligible = false; why = `lacks ${cap}`; break }
+        if (need && !a.caps[cap as keyof typeof a.caps]) {
+          eligible = false
+          why = `lacks ${cap}`
+          break
+        }
       }
     }
     if (eligible && a.maxConcurrent && runningRunIds.length >= a.maxConcurrent) {
@@ -652,11 +691,13 @@ export type Scored = Candidate & { job: string; promptBucket: PromptSizeBucket }
 export function scoreboard(onlyJob?: string): Scored[] {
   return Object.keys(JOBS)
     .filter((j) => !onlyJob || j === onlyJob)
-    .flatMap((j) => promptBucketsForJob(j).flatMap((bucket) =>
-      candidates(j, bucket === 'small' ? 0 : PROMPT_SIZE_BOUNDARY)
-        .filter((c) => c.runs > 0 || c.failures > 0)
-        .map((c) => ({ ...c, job: j, promptBucket: bucket })),
-    ))
+    .flatMap((j) =>
+      promptBucketsForJob(j).flatMap((bucket) =>
+        candidates(j, bucket === 'small' ? 0 : PROMPT_SIZE_BOUNDARY)
+          .filter((c) => c.runs > 0 || c.failures > 0)
+          .map((c) => ({ ...c, job: j, promptBucket: bucket })),
+      ),
+    )
 }
 
 /**
@@ -692,8 +733,11 @@ export function scoreboard(onlyJob?: string): Scored[] {
  * router knows which it gave you.
  */
 export function evidenceFor(
-  jobName: string, promptBytes: number, stack: string | null | undefined,
-  modelOverride?: string, lens?: string | null,
+  jobName: string,
+  promptBytes: number,
+  stack: string | null | undefined,
+  modelOverride?: string,
+  lens?: string | null,
 ): {
   cands: Candidate[]
   level: 'lens' | 'stack' | 'job'
@@ -702,16 +746,18 @@ export function evidenceFor(
   scoped: Candidate[] | null
   job: Candidate[]
 } {
-  const requested = lens?.trim() && job(jobName).findings
-    ? { level: 'lens' as const, value: lens.trim() }
-    : stack
-      ? { level: 'stack' as const, value: stack }
-      : null
+  const requested =
+    lens?.trim() && job(jobName).findings
+      ? { level: 'lens' as const, value: lens.trim() }
+      : stack
+        ? { level: 'stack' as const, value: stack }
+        : null
   const jobWide = candidates(jobName, promptBytes, undefined, modelOverride)
   if (requested) {
-    const scoped = requested.level === 'lens'
-      ? candidates(jobName, promptBytes, undefined, modelOverride, undefined, requested.value)
-      : candidates(jobName, promptBytes, requested.value, modelOverride)
+    const scoped =
+      requested.level === 'lens'
+        ? candidates(jobName, promptBytes, undefined, modelOverride, undefined, requested.value)
+        : candidates(jobName, promptBytes, requested.value, modelOverride)
     // `!c.cooling` too: pick() discards a cooling agent AFTER this decision, so
     // counting one here could narrow the scope on the strength of an agent that
     // is then thrown away — leaving a scoped view with a single usable
@@ -735,35 +781,41 @@ export function evidenceFor(
      */
     if (proven.length >= 2 || (eligible.length === 1 && proven.length === 1)) {
       return {
-        cands: scoped, level: requested.level,
+        cands: scoped,
+        level: requested.level,
         stack: requested.level === 'stack' ? requested.value : null,
         lens: requested.level === 'lens' ? requested.value : null,
-        scoped, job: jobWide,
+        scoped,
+        job: jobWide,
       }
     }
     return {
-      cands: jobWide, level: 'job',
+      cands: jobWide,
+      level: 'job',
       stack: requested.level === 'stack' ? requested.value : null,
       lens: requested.level === 'lens' ? requested.value : null,
-      scoped, job: jobWide,
+      scoped,
+      job: jobWide,
     }
   }
   return {
-    cands: jobWide, level: 'job', stack: stack ?? null, lens: null,
-    scoped: null, job: jobWide,
+    cands: jobWide,
+    level: 'job',
+    stack: stack ?? null,
+    lens: null,
+    scoped: null,
+    job: jobWide,
   }
 }
 
 type CurrentPolicyCandidate = Pick<
-  Candidate, 'agent' | 'scored' | 'failures' | 'none' | 'evidence' | 'score' | 'shrunk' | 'free' | 'latencyMs'
+  Candidate,
+  'agent' | 'scored' | 'failures' | 'none' | 'evidence' | 'score' | 'shrunk' | 'free' | 'latencyMs'
 > & { precision?: number | null }
 
 /** Failure-only history has already answered whether another run is worthwhile. */
 function worthExploring(c: CurrentPolicyCandidate): boolean {
-  return !(
-    (c.scored === 0 && c.failures > 0) ||
-    (c.scored > 0 && c.none === c.scored)
-  )
+  return !((c.scored === 0 && c.failures > 0) || (c.scored > 0 && c.none === c.scored))
 }
 
 export type CurrentPolicySelection<T extends CurrentPolicyCandidate> = {
@@ -772,9 +824,13 @@ export type CurrentPolicySelection<T extends CurrentPolicyCandidate> = {
   tied: number
 }
 
-function capacityRefusal(candidate: Pick<Candidate, 'agent' | 'maxConcurrent' | 'runningRunIds'>): string {
-  return `agent ${candidate.agent} is at capacity ` +
+function capacityRefusal(
+  candidate: Pick<Candidate, 'agent' | 'maxConcurrent' | 'runningRunIds'>,
+): string {
+  return (
+    `agent ${candidate.agent} is at capacity ` +
     `(${candidate.maxConcurrent} running: ${candidate.runningRunIds.join(', ')})`
+  )
 }
 
 /**
@@ -785,7 +841,10 @@ function capacityRefusal(candidate: Pick<Candidate, 'agent' | 'maxConcurrent' | 
  * this function so the diagnostic cannot grow a second ordering policy.
  */
 export function currentPolicySelection<T extends CurrentPolicyCandidate>(
-  candidates: readonly T[], prefer: readonly string[], explore = true, rng: () => number = Math.random,
+  candidates: readonly T[],
+  prefer: readonly string[],
+  explore = true,
+  rng: () => number = Math.random,
   explorationExcluded: ReadonlySet<string> = new Set(),
   declaredPreferences: ReadonlySet<string> = new Set(),
 ): CurrentPolicySelection<T> {
@@ -794,25 +853,35 @@ export function currentPolicySelection<T extends CurrentPolicyCandidate>(
 
   for (const name of prefer) {
     if (!declaredPreferences.has(name)) continue
-    const preferred = unproven.find((candidate) =>
-      candidate.agent === name && worthExploring(candidate) &&
-      !explorationExcluded.has(candidate.agent))
+    const preferred = unproven.find(
+      (candidate) =>
+        candidate.agent === name &&
+        worthExploring(candidate) &&
+        !explorationExcluded.has(candidate.agent),
+    )
     if (preferred) return { chosen: preferred, mode: 'preference', tied: 0 }
   }
 
   if (proven.length > 0) {
-    const worthTrying = unproven.filter((candidate) =>
-      worthExploring(candidate) && !explorationExcluded.has(candidate.agent))
+    const worthTrying = unproven.filter(
+      (candidate) => worthExploring(candidate) && !explorationExcluded.has(candidate.agent),
+    )
     if (explore && worthTrying.length > 0 && rng() < EXPLORE_RATE) {
       const challenger = [...worthTrying].sort((a, b) => a.evidence - b.evidence)[0]!
       return { chosen: challenger, mode: 'challenger', tied: 0 }
     }
     const ranked = thompsonRank(proven, explore, rng)
     const best = ranked.chosen
-    if (explore && unproven.length === 0 && proven.length === candidates.length &&
-        rng() < standingExploreRate(best.evidence)) {
+    if (
+      explore &&
+      unproven.length === 0 &&
+      proven.length === candidates.length &&
+      rng() < standingExploreRate(best.evidence)
+    ) {
       const challenger = [...proven]
-        .filter((c) => c.agent !== best.agent && worthExploring(c) && !explorationExcluded.has(c.agent))
+        .filter(
+          (c) => c.agent !== best.agent && worthExploring(c) && !explorationExcluded.has(c.agent),
+        )
         .sort((a, b) => a.evidence - b.evidence)[0]
       if (challenger) return { chosen: challenger, mode: 'standing-challenger', tied: ranked.tied }
     }
@@ -847,11 +916,14 @@ export function pick(
   const cands = ev.cands
   // Named in every reason below, so a route drawn from four PHP runs is never
   // mistaken for one drawn from thirty mixed ones.
-  const evidenceCell = ev.level === 'lens'
-    ? `lens ${ev.lens} cell`
-    : ev.level === 'stack' ? `stack ${ev.stack} cell` : 'job-wide cell'
-  const scope = (c: Candidate) => ` in ${evidenceCell}` +
-    (c.evidenceModel ? ` on model ${c.evidenceModel}` : '')
+  const evidenceCell =
+    ev.level === 'lens'
+      ? `lens ${ev.lens} cell`
+      : ev.level === 'stack'
+        ? `stack ${ev.stack} cell`
+        : 'job-wide cell'
+  const scope = (c: Candidate) =>
+    ` in ${evidenceCell}` + (c.evidenceModel ? ` on model ${c.evidenceModel}` : '')
   if (override) {
     if (avoid.agents?.includes(override)) {
       throw new Error(`--agent ${override} contradicts --avoid ${override}`)
@@ -861,8 +933,12 @@ export function pick(
     // other exclusions are evaluated without the cooling circuit in front.
     const probeCandidates = probe
       ? candidates(
-          jobName, promptBytes, ev.level === 'stack' ? ev.stack : undefined,
-          avoid.model, override, ev.level === 'lens' ? ev.lens : undefined,
+          jobName,
+          promptBytes,
+          ev.level === 'stack' ? ev.stack : undefined,
+          avoid.model,
+          override,
+          ev.level === 'lens' ? ev.lens : undefined,
         )
       : cands
     const c = probeCandidates.find((x) => x.agent === override)
@@ -873,14 +949,18 @@ export function pick(
     if (!c.eligible) throw new Error(`agent "${override}" not eligible for ${jobName}: ${c.why}`)
     return { agent: override, reason: 'explicit --agent' }
   }
-  const blockedPreferred = cands.find((candidate) =>
-    candidate.preferred && candidate.why.startsWith('at capacity') && candidate.maxConcurrent !== null &&
-    candidate.runningRunIds.length >= candidate.maxConcurrent)
+  const blockedPreferred = cands.find(
+    (candidate) =>
+      candidate.preferred &&
+      candidate.why.startsWith('at capacity') &&
+      candidate.maxConcurrent !== null &&
+      candidate.runningRunIds.length >= candidate.maxConcurrent,
+  )
   if (blockedPreferred && !avoid.noWaitCapacity) {
     throw new Error(
       `${capacityRefusal(blockedPreferred)}\n` +
-      'invariant: a preferred local lane waits at its declared capacity instead of silently spending another lane\n' +
-      'cleared by: wait for the named runs or pass --no-wait-capacity',
+        'invariant: a preferred local lane waits at its declared capacity instead of silently spending another lane\n' +
+        'cleared by: wait for the named runs or pass --no-wait-capacity',
     )
   }
   let eligible = cands.filter((c) => c.eligible)
@@ -889,14 +969,15 @@ export function pick(
   if (eligible.length === 0) {
     throw new Error(
       `no eligible agent for job "${jobName}"` +
-      (excluded.length ? `; excluded agents: ${excluded.join('; ')}` : ''),
+        (excluded.length ? `; excluded agents: ${excluded.join('; ')}` : ''),
     )
   }
   /** Exclusions are instructions, not preferences. The caller must widen them. */
   const requested = new Set(avoid.agents ?? [])
   const models = new Set(avoid.models ?? [])
-  const constrained = eligible.filter((c) =>
-    !requested.has(c.agent) && !models.has(avoid.model ?? AGENTS[c.agent]!.model))
+  const constrained = eligible.filter(
+    (c) => !requested.has(c.agent) && !models.has(avoid.model ?? AGENTS[c.agent]!.model),
+  )
   if (!constrained.length && (requested.size > 0 || models.size > 0)) {
     const avoided = eligible.map((c) => {
       const reasons = []
@@ -908,9 +989,9 @@ export function pick(
     })
     throw new Error(
       `routing constraints leave no eligible agent for job "${jobName}"; ` +
-      `excluded by constraint: ${avoided.join('; ')}` +
-      (excluded.length ? `; already ineligible: ${excluded.join('; ')}` : '') +
-      `. Widen --avoid or --distinct-from deliberately.`,
+        `excluded by constraint: ${avoided.join('; ')}` +
+        (excluded.length ? `; already ineligible: ${excluded.join('; ')}` : '') +
+        `. Widen --avoid or --distinct-from deliberately.`,
     )
   }
   eligible = constrained
@@ -918,58 +999,77 @@ export function pick(
     eligible = eligible.map((candidate) => ({
       ...candidate,
       precision: calibrationFor(
-        lens.trim(), candidate.agent, avoid.model ?? AGENTS[candidate.agent]!.model,
+        lens.trim(),
+        candidate.agent,
+        avoid.model ?? AGENTS[candidate.agent]!.model,
       ).precision,
     }))
   }
   const failingEvals = failingDefaultCanonEvals()
   const explorationExcluded = new Set(failingEvals.length ? [failingEvals[0]!.agent] : [])
-  const notExplored = failingEvals.map((row) =>
-    `${row.agent} not explored: failing canon eval ${row.slug}`)
+  const notExplored = failingEvals.map(
+    (row) => `${row.agent} not explored: failing canon eval ${row.slug}`,
+  )
   const withConstraint = (reason: string) => [reason, ...notExplored].join('; ')
-  const declaredPreferences = eligible.filter((candidate) => candidate.preferred).map((candidate) => candidate.agent)
+  const declaredPreferences = eligible
+    .filter((candidate) => candidate.preferred)
+    .map((candidate) => candidate.agent)
   const selected = currentPolicySelection(
-    eligible, [...declaredPreferences, ...j.prefer], explore, rng, explorationExcluded,
+    eligible,
+    [...declaredPreferences, ...j.prefer],
+    explore,
+    rng,
+    explorationExcluded,
     new Set(declaredPreferences),
   )
   const chosen = selected.chosen
   const policy = explore ? 'thompson' : 'mean'
-  if (selected.mode === 'challenger') return {
-    agent: chosen.agent,
-    reason: withConstraint(
-      `${policy}; challenger (${chosen.evidence}/${MIN_SAMPLE} judged${scope(chosen)}, exploring)`,
-    ),
-  }
-  if (selected.mode === 'standing-challenger') return {
-    agent: chosen.agent,
-    reason: withConstraint(
-      `${policy}; standing challenger (${chosen.evidence} judged${scope(chosen)}, exploring)`,
-    ),
-  }
-  if (selected.mode === 'preference') return {
-    agent: chosen.agent,
-    reason: withConstraint(
-      `${policy}; preference (only ${chosen.evidence} judged${scope(chosen)}, need ${MIN_SAMPLE})`,
-    ),
-  }
+  if (selected.mode === 'challenger')
+    return {
+      agent: chosen.agent,
+      reason: withConstraint(
+        `${policy}; challenger (${chosen.evidence}/${MIN_SAMPLE} judged${scope(chosen)}, exploring)`,
+      ),
+    }
+  if (selected.mode === 'standing-challenger')
+    return {
+      agent: chosen.agent,
+      reason: withConstraint(
+        `${policy}; standing challenger (${chosen.evidence} judged${scope(chosen)}, exploring)`,
+      ),
+    }
+  if (selected.mode === 'preference')
+    return {
+      agent: chosen.agent,
+      reason: withConstraint(
+        `${policy}; preference (only ${chosen.evidence} judged${scope(chosen)}, need ${MIN_SAMPLE})`,
+      ),
+    }
   if (selected.mode === 'only') {
-    return { agent: chosen.agent, reason: withConstraint(`${policy}; only eligible agent in ${evidenceCell}`) }
+    return {
+      agent: chosen.agent,
+      reason: withConstraint(`${policy}; only eligible agent in ${evidenceCell}`),
+    }
   }
-  const pct = `${(chosen.score! * 100).toFixed(0)}% (shrunk ${(chosen.shrunk! * 100).toFixed(0)}%) ` +
+  const pct =
+    `${(chosen.score! * 100).toFixed(0)}% (shrunk ${(chosen.shrunk! * 100).toFixed(0)}%) ` +
     `over ${chosen.evidence} judged${scope(chosen)}` +
     (chosen.failures ? ` (incl. ${chosen.failures} failed)` : '')
-  const chosenPrecision = 'precision' in chosen && typeof chosen.precision === 'number'
-    ? chosen.precision
-    : null
-  const precision = chosenPrecision !== null
-    ? `; precision ${(chosenPrecision * 100).toFixed(0)}%`
-    : ''
-  if (selected.tied === 1) return {
-    agent: chosen.agent, reason: withConstraint(`${policy}; best score ${pct}${precision}`),
-  }
-  const edge = chosenPrecision !== null
-    ? `review precision ${(chosenPrecision * 100).toFixed(0)}%`
-    : chosen.free ? 'costs no quota' : `fastest at ${Math.round((chosen.latencyMs ?? 0) / 1000)}s`
+  const chosenPrecision =
+    'precision' in chosen && typeof chosen.precision === 'number' ? chosen.precision : null
+  const precision =
+    chosenPrecision !== null ? `; precision ${(chosenPrecision * 100).toFixed(0)}%` : ''
+  if (selected.tied === 1)
+    return {
+      agent: chosen.agent,
+      reason: withConstraint(`${policy}; best score ${pct}${precision}`),
+    }
+  const edge =
+    chosenPrecision !== null
+      ? `review precision ${(chosenPrecision * 100).toFixed(0)}%`
+      : chosen.free
+        ? 'costs no quota'
+        : `fastest at ${Math.round((chosen.latencyMs ?? 0) / 1000)}s`
   return {
     agent: chosen.agent,
     reason: withConstraint(`${policy}; ${pct}, tied with ${selected.tied - 1} other — ${edge}`),

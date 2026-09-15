@@ -4,8 +4,9 @@
  * and branch-ref observation. Must not know lifecycle policy, run state,
  * databases, routing, transports, or contracts.
  */
-import { existsSync, mkdirSync, readFileSync, realpathSync, rmSync } from 'node:fs'
+
 import { randomUUID } from 'node:crypto'
+import { existsSync, mkdirSync, readFileSync, realpathSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
 import { mainCheckoutOf, scrubbedGitEnv } from '../../shared/git.ts'
@@ -40,10 +41,16 @@ function linkedWorktreePaths(cwd: string): {
   const dotGit = join(cwd, '.git')
   if (!existsSync(dotGit)) return null
   let pointer: string
-  try { pointer = readFileSync(dotGit, 'utf8').trim() } catch { return null }
+  try {
+    pointer = readFileSync(dotGit, 'utf8').trim()
+  } catch {
+    return null
+  }
   if (!pointer.startsWith('gitdir: ')) return null
   const gitDir = realpathSync(resolve(cwd, pointer.slice('gitdir: '.length)))
-  const commonDir = realpathSync(resolve(gitDir, readFileSync(join(gitDir, 'commondir'), 'utf8').trim()))
+  const commonDir = realpathSync(
+    resolve(gitDir, readFileSync(join(gitDir, 'commondir'), 'utf8').trim()),
+  )
   const worktrees = realpathSync(join(commonDir, 'worktrees'))
   if (dirname(gitDir) !== worktrees) {
     throw new Error(
@@ -58,7 +65,11 @@ function commonGitDir(cwd: string): string | null {
   if (linked) return linked.commonDir
   const configured = gitConfigOk(['rev-parse', '--path-format=absolute', '--git-common-dir'], cwd)
   if (!configured) return null
-  try { return realpathSync(resolve(cwd, configured)) } catch { return null }
+  try {
+    return realpathSync(resolve(cwd, configured))
+  } catch {
+    return null
+  }
 }
 
 /** Use the isolated object store after it has been provisioned for this worktree. */
@@ -87,10 +98,15 @@ export function targetGitEnvironment(cwd: string): NodeJS.ProcessEnv {
 function git(args: string[], cwd: string): string {
   if (cwdMissing(cwd)) throw new Error(`git ${args[0]}: ${cwd} does not exist`)
   const p = Bun.spawnSync(['git', ...args], {
-    cwd, env: targetGitEnvironment(cwd), stdout: 'pipe', stderr: 'pipe',
+    cwd,
+    env: targetGitEnvironment(cwd),
+    stdout: 'pipe',
+    stderr: 'pipe',
   })
   if (p.exitCode !== 0) {
-    throw new Error(`git ${args.join(' ')} failed: ${p.stderr.toString().trim() || `exit ${p.exitCode}`}`)
+    throw new Error(
+      `git ${args.join(' ')} failed: ${p.stderr.toString().trim() || `exit ${p.exitCode}`}`,
+    )
   }
   return p.stdout.toString().trim()
 }
@@ -99,7 +115,10 @@ function git(args: string[], cwd: string): string {
 function gitOk(args: string[], cwd: string): string | null {
   if (cwdMissing(cwd)) return null
   const p = Bun.spawnSync(['git', ...args], {
-    cwd, env: targetGitEnvironment(cwd), stdout: 'pipe', stderr: 'pipe',
+    cwd,
+    env: targetGitEnvironment(cwd),
+    stdout: 'pipe',
+    stderr: 'pipe',
   })
   return p.exitCode === 0 ? p.stdout.toString().trim() : null
 }
@@ -108,7 +127,10 @@ function gitOk(args: string[], cwd: string): string | null {
 function gitResult(args: string[], cwd: string): { ok: boolean; stdout: string; stderr: string } {
   if (cwdMissing(cwd)) return { ok: false, stdout: '', stderr: `${cwd} does not exist` }
   const p = Bun.spawnSync(['git', ...args], {
-    cwd, env: targetGitEnvironment(cwd), stdout: 'pipe', stderr: 'pipe',
+    cwd,
+    env: targetGitEnvironment(cwd),
+    stdout: 'pipe',
+    stderr: 'pipe',
   })
   return {
     ok: p.exitCode === 0,
@@ -125,22 +147,37 @@ export function contentTree(cwd: string): string {
   const env = { ...targetGitEnvironment(cwd), GIT_INDEX_FILE: index }
   try {
     const read = Bun.spawnSync(['git', 'read-tree', 'HEAD'], {
-      cwd, env, stdout: 'pipe', stderr: 'pipe',
+      cwd,
+      env,
+      stdout: 'pipe',
+      stderr: 'pipe',
     })
     if (read.exitCode !== 0) {
-      throw new Error(`git read-tree HEAD failed while measuring content tree: ${read.stderr.toString().trim() || `exit ${read.exitCode}`}`)
+      throw new Error(
+        `git read-tree HEAD failed while measuring content tree: ${read.stderr.toString().trim() || `exit ${read.exitCode}`}`,
+      )
     }
     const add = Bun.spawnSync(['git', 'add', '-A', '.'], {
-      cwd, env, stdout: 'pipe', stderr: 'pipe',
+      cwd,
+      env,
+      stdout: 'pipe',
+      stderr: 'pipe',
     })
     if (add.exitCode !== 0) {
-      throw new Error(`git add -A . failed while measuring content tree: ${add.stderr.toString().trim() || `exit ${add.exitCode}`}`)
+      throw new Error(
+        `git add -A . failed while measuring content tree: ${add.stderr.toString().trim() || `exit ${add.exitCode}`}`,
+      )
     }
     const write = Bun.spawnSync(['git', 'write-tree'], {
-      cwd, env, stdout: 'pipe', stderr: 'pipe',
+      cwd,
+      env,
+      stdout: 'pipe',
+      stderr: 'pipe',
     })
     if (write.exitCode !== 0) {
-      throw new Error(`git write-tree failed while measuring content tree: ${write.stderr.toString().trim() || `exit ${write.exitCode}`}`)
+      throw new Error(
+        `git write-tree failed while measuring content tree: ${write.stderr.toString().trim() || `exit ${write.exitCode}`}`,
+      )
     }
     return write.stdout.toString().trim()
   } finally {
@@ -154,7 +191,8 @@ function gitConfigOk(args: string[], cwd: string): string | null {
   const p = Bun.spawnSync(['git', ...args], {
     cwd,
     env: { ...targetGitEnvironment(cwd), GIT_CONFIG_COUNT: '0' },
-    stdout: 'pipe', stderr: 'pipe',
+    stdout: 'pipe',
+    stderr: 'pipe',
   })
   return p.exitCode === 0 ? p.stdout.toString().trim() : null
 }
@@ -176,7 +214,10 @@ function gitConfigOk(args: string[], cwd: string): string | null {
 function gitRaw(args: string[], cwd: string): string {
   if (cwdMissing(cwd)) return ''
   const p = Bun.spawnSync(['git', ...args], {
-    cwd, env: targetGitEnvironment(cwd), stdout: 'pipe', stderr: 'pipe',
+    cwd,
+    env: targetGitEnvironment(cwd),
+    stdout: 'pipe',
+    stderr: 'pipe',
   })
   return p.exitCode === 0 ? p.stdout.toString() : ''
 }
@@ -185,11 +226,16 @@ function gitRaw(args: string[], cwd: string): string {
 function gitInput(args: string[], cwd: string, input: Uint8Array): void {
   if (cwdMissing(cwd)) throw new Error(`git ${args[0]}: ${cwd} does not exist`)
   const p = Bun.spawnSync(['git', ...args], {
-    cwd, env: targetGitEnvironment(cwd),
-    stdin: input, stdout: 'pipe', stderr: 'pipe',
+    cwd,
+    env: targetGitEnvironment(cwd),
+    stdin: input,
+    stdout: 'pipe',
+    stderr: 'pipe',
   })
   if (p.exitCode !== 0) {
-    throw new Error(`git ${args.join(' ')} failed: ${p.stderr.toString().trim() || `exit ${p.exitCode}`}`)
+    throw new Error(
+      `git ${args.join(' ')} failed: ${p.stderr.toString().trim() || `exit ${p.exitCode}`}`,
+    )
   }
 }
 
@@ -197,10 +243,15 @@ function gitInput(args: string[], cwd: string, input: Uint8Array): void {
 function gitBytes(args: string[], cwd: string): Buffer {
   if (cwdMissing(cwd)) throw new Error(`git ${args[0]}: ${cwd} does not exist`)
   const p = Bun.spawnSync(['git', ...args], {
-    cwd, env: targetGitEnvironment(cwd), stdout: 'pipe', stderr: 'pipe',
+    cwd,
+    env: targetGitEnvironment(cwd),
+    stdout: 'pipe',
+    stderr: 'pipe',
   })
   if (p.exitCode !== 0) {
-    throw new Error(`git ${args.join(' ')} failed: ${p.stderr.toString().trim() || `exit ${p.exitCode}`}`)
+    throw new Error(
+      `git ${args.join(' ')} failed: ${p.stderr.toString().trim() || `exit ${p.exitCode}`}`,
+    )
   }
   return Buffer.from(p.stdout)
 }
@@ -242,18 +293,33 @@ export function prepareWorktreeObjects(cwd: string): WorktreeObjectEnvironment {
   return worktreeGitEnvironment(cwd)!
 }
 
-
-export { cwdMissing, linkedWorktreePaths, commonGitDir, git, gitOk, gitResult, gitConfigOk, gitRaw, gitInput, gitBytes }
+export {
+  commonGitDir,
+  cwdMissing,
+  git,
+  gitBytes,
+  gitConfigOk,
+  gitInput,
+  gitOk,
+  gitRaw,
+  gitResult,
+  linkedWorktreePaths,
+}
 
 /** Read bounded git context without allowing observation failure to fail a run. */
 export function gitContext(cwd: string, ...args: string[]): string | null {
   try {
-    const p = Bun.spawnSync(['git', '-C', cwd, ...args],
-      { env: targetGitEnvironment(cwd), stdout: 'pipe', stderr: 'ignore' })
+    const p = Bun.spawnSync(['git', '-C', cwd, ...args], {
+      env: targetGitEnvironment(cwd),
+      stdout: 'pipe',
+      stderr: 'ignore',
+    })
     if (p.exitCode !== 0) return null
     const value = new TextDecoder().decode(p.stdout).trim()
     return value ? value.slice(0, 200) : null
-  } catch { return null }
+  } catch {
+    return null
+  }
 }
 
 export function branchOf(cwd: string): string | null {

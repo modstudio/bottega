@@ -1,8 +1,8 @@
 // concern: worktree-caller
 import { cpSync, mkdirSync, realpathSync } from 'node:fs'
 import { dirname, join } from 'node:path'
-import { projectAt } from './projects.ts'
 import { git, gitBytes, gitInput, gitOk, repoRootOf } from './git-environment.ts'
+import { projectAt } from './projects.ts'
 import type { Worktree } from './worktree-types.ts'
 
 export function resolveBase(cwd: string, ref: string): string {
@@ -37,9 +37,9 @@ export function assertCallerAncestry(cwd: string, worktree: Worktree): void {
   if (gitOk(['merge-base', '--is-ancestor', worktree.base, callerHead], cwd) === null) {
     throw new Error(
       `caller HEAD ${callerHead} is behind or diverged from the tree's base ${worktree.base}; ` +
-      `update the caller checkout so its HEAD descends from the tree's base, then retry\n` +
-      `invariant: A resume is always possible on a stale checkout.\n` +
-      `cleared by: git merge --ff-only ${worktree.base}`,
+        `update the caller checkout so its HEAD descends from the tree's base, then retry\n` +
+        `invariant: A resume is always possible on a stale checkout.\n` +
+        `cleared by: git merge --ff-only ${worktree.base}`,
     )
   }
 }
@@ -63,11 +63,10 @@ export function callerDrift(cwd: string, baseRef?: string): CallerDrift | null {
   let ref = baseRef
   if (!ref && tool.recipe?.baseRef) ref = tool.recipe.baseRef
   if (!ref && tool.create) {
-    const trunk = project.settings.trunk
-      ?? gitOk(['symbolic-ref', '--short', 'HEAD'], project.path)
+    const trunk = project.settings.trunk ?? gitOk(['symbolic-ref', '--short', 'HEAD'], project.path)
     if (!trunk) return null
-    ref = gitOk(['rev-parse', '--abbrev-ref', `${trunk}@{upstream}`], project.path)
-      ?? `origin/${trunk}`
+    ref =
+      gitOk(['rev-parse', '--abbrev-ref', `${trunk}@{upstream}`], project.path) ?? `origin/${trunk}`
   }
   if (!ref) return null
 
@@ -87,21 +86,31 @@ export function carryWorkingState(cwd: string, worktree: Worktree): CarriedWorki
   assertCallerAncestry(cwd, worktree)
 
   const patch = gitBytes(['diff', '--binary', '--full-index', worktree.base, '--'], cwd)
-  const tracked = gitBytes(['diff', '--name-only', '-z', worktree.base, '--'], cwd).toString()
-    .split('\0').filter(Boolean)
-  if (patch.byteLength) gitInput(['apply', '--binary', '--whitespace=nowarn', '-'], worktree.path, patch)
+  const tracked = gitBytes(['diff', '--name-only', '-z', worktree.base, '--'], cwd)
+    .toString()
+    .split('\0')
+    .filter(Boolean)
+  if (patch.byteLength)
+    gitInput(['apply', '--binary', '--whitespace=nowarn', '-'], worktree.path, patch)
 
-  const untracked = gitBytes(['ls-files', '--others', '--exclude-standard', '-z'], cwd).toString()
-    .split('\0').filter(Boolean)
+  const untracked = gitBytes(['ls-files', '--others', '--exclude-standard', '-z'], cwd)
+    .toString()
+    .split('\0')
+    .filter(Boolean)
   const otherWorktrees = (gitOk(['worktree', 'list', '--porcelain'], cwd) ?? '')
-    .split('\n').filter((line) => line.startsWith('worktree '))
+    .split('\n')
+    .filter((line) => line.startsWith('worktree '))
     .map((line) => realpathSync(line.slice('worktree '.length)))
     .filter((path) => path !== realpathSync(cwd))
   const copied: string[] = []
   for (const relative of untracked) {
     const source = join(cwd, relative)
     const absoluteSource = realpathSync(source)
-    if (otherWorktrees.some((path) => absoluteSource === path || path.startsWith(`${absoluteSource}/`))) {
+    if (
+      otherWorktrees.some(
+        (path) => absoluteSource === path || path.startsWith(`${absoluteSource}/`),
+      )
+    ) {
       continue
     }
     const destination = join(worktree.path, relative)
@@ -120,4 +129,3 @@ export function carryWorkingState(cwd: string, worktree: Worktree): CarriedWorki
  * a worker runs the suite in it, the suite passes against nothing, and the run
  * comes back green. Better no worktree and a named failure.
  */
-

@@ -2,7 +2,11 @@ import { expect, mock, test } from 'bun:test'
 import type { RegisteredProject } from '../src/projects.ts'
 
 const tracker = (id: number, name: string): RegisteredProject => ({
-  id, name, path: `/fixtures/${name}`, stack: null, canon: true,
+  id,
+  name,
+  path: `/fixtures/${name}`,
+  stack: null,
+  canon: true,
   settings: {
     keyPrefixes: [name.toUpperCase()],
     tracker: { protocol: 'array-mcp', envPrefix: name.toUpperCase(), openStatuses: ['open'] },
@@ -30,8 +34,12 @@ let initialized = 0
 mock.module('../src/mcp.ts', () => ({
   credentials: (name: string) => ({ url: `https://${name}.invalid`, token: 'fixture' }),
   Mcp: class {
-    async initialize() { initialized++ }
-    async callTool() { return [] }
+    async initialize() {
+      initialized++
+    }
+    async callTool() {
+      return []
+    }
   },
 }))
 

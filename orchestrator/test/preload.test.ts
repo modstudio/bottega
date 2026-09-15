@@ -12,7 +12,9 @@ test('the preload creates a store and never clears one', () => {
 test('the suite runs against a store the preload minted under the temporary directory', () => {
   expect(DB_PATH).toBe(process.env.ORCH_DB)
   expect(realpathSync(DB_PATH).startsWith(realpathSync(tmpdir()))).toBe(true)
-  db().query('INSERT INTO session_seen (session_id, last_seen) VALUES (?, ?)').run('preload-test', '2026-09-07T00:00:00.000Z')
+  db()
+    .query('INSERT INTO session_seen (session_id, last_seen) VALUES (?, ?)')
+    .run('preload-test', '2026-09-07T00:00:00.000Z')
 })
 
 test('a row written by one test is absent from the next because the store is fresh, not cleared', () => {

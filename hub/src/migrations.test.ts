@@ -3,10 +3,26 @@ import { beforeAll, describe, expect, test } from 'bun:test'
 import { copyFileSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import {
-  applyMigrations, BASELINE_SCHEMA_HASH, baselineSchemaHash, canonicalSchemaHash, CONNECTION_SCHEMA_INVARIANT, expectedSchemaHash, JOURNAL_WHEN_ORDER, journalLength, MIGRATIONS_FOLDER, MIGRATIONS_TABLE, migrationJournal, migrationRefusal, readUserVersion, SCHEMA_LOCK_TABLE, schemaVersionLabel, splitMigrationSource, } from './migrations.ts'
-import { closeDatabaseForFixture, db, enableSchemaReload, writeTransaction } from './db.ts'
 import { resetFixtureStore } from '../test/run-fixtures.ts'
+import { closeDatabaseForFixture, db, enableSchemaReload, writeTransaction } from './db.ts'
+import {
+  applyMigrations,
+  BASELINE_SCHEMA_HASH,
+  baselineSchemaHash,
+  CONNECTION_SCHEMA_INVARIANT,
+  canonicalSchemaHash,
+  expectedSchemaHash,
+  JOURNAL_WHEN_ORDER,
+  journalLength,
+  MIGRATIONS_FOLDER,
+  MIGRATIONS_TABLE,
+  migrationJournal,
+  migrationRefusal,
+  readUserVersion,
+  SCHEMA_LOCK_TABLE,
+  schemaVersionLabel,
+  splitMigrationSource,
+} from './migrations.ts'
 
 beforeAll(resetFixtureStore)
 
@@ -21,40 +37,58 @@ const baselineFresh = () => {
   const d = new Database(':memory:')
   d.exec('PRAGMA foreign_keys = ON')
   const baseline = migrationJournal()[0]!
-  for (const statement of readFileSync(join(MIGRATIONS_FOLDER, `${baseline.tag}.sql`), 'utf8').split('--> statement-breakpoint')) {
+  for (const statement of readFileSync(
+    join(MIGRATIONS_FOLDER, `${baseline.tag}.sql`),
+    'utf8',
+  ).split('--> statement-breakpoint')) {
     if (statement.trim()) d.exec(statement)
   }
   return d
 }
 
-type ApplicationObject = { type: 'table' | 'index' | 'view' | 'trigger'; name: string; tbl_name: string }
+type ApplicationObject = {
+  type: 'table' | 'index' | 'view' | 'trigger'
+  name: string
+  tbl_name: string
+}
 
-const applicationObjects = (d: Database): ApplicationObject[] => d.query<ApplicationObject, [string, string]>(
-  `SELECT type,name,tbl_name FROM sqlite_master
+const applicationObjects = (d: Database): ApplicationObject[] =>
+  d
+    .query<ApplicationObject, [string, string]>(
+      `SELECT type,name,tbl_name FROM sqlite_master
     WHERE type IN ('table','index','view','trigger')
       AND name NOT LIKE 'sqlite_%' AND name NOT IN (?, ?)
     ORDER BY type,name`,
-).all(MIGRATIONS_TABLE, SCHEMA_LOCK_TABLE)
+    )
+    .all(MIGRATIONS_TABLE, SCHEMA_LOCK_TABLE)
 
-const applicationSchemaRows = (d: Database) => d.query(
-  `SELECT type,name,sql FROM sqlite_master
+const applicationSchemaRows = (d: Database) =>
+  d
+    .query(
+      `SELECT type,name,sql FROM sqlite_master
     WHERE sql IS NOT NULL AND name NOT LIKE 'sqlite_%' AND name NOT IN (?, ?)
     ORDER BY type,name`,
-).all(MIGRATIONS_TABLE, SCHEMA_LOCK_TABLE)
+    )
+    .all(MIGRATIONS_TABLE, SCHEMA_LOCK_TABLE)
 
 const quoteIdentifier = (value: string) => `"${value.replaceAll('"', '""')}"`
 
 /** Reduce any later journal state to the baseline application-object inventory. */
 function stripPostBaselineApplicationObjects(d: Database): void {
-  const foreignKeys = d.query<{ foreign_keys: number }, []>('PRAGMA foreign_keys').get()?.foreign_keys ?? 0
+  const foreignKeys =
+    d.query<{ foreign_keys: number }, []>('PRAGMA foreign_keys').get()?.foreign_keys ?? 0
   // baselineFresh enables enforcement while a live copy uses Bun's default of
   // OFF; normalize the strip itself so both probe paths exercise one behavior.
   d.exec('PRAGMA foreign_keys = OFF')
   try {
     const baseline = baselineFresh()
-    const baselineNames = new Set(applicationObjects(baseline).map((row) => `${row.type}:${row.name}`))
+    const baselineNames = new Set(
+      applicationObjects(baseline).map((row) => `${row.type}:${row.name}`),
+    )
     baseline.close()
-    const extras = applicationObjects(d).filter((row) => !baselineNames.has(`${row.type}:${row.name}`))
+    const extras = applicationObjects(d).filter(
+      (row) => !baselineNames.has(`${row.type}:${row.name}`),
+    )
 
     // Remove dependants before their tables. Indexes and triggers would fall
     // with a table, but dropping them explicitly also handles additions to a
@@ -68,7 +102,9 @@ function stripPostBaselineApplicationObjects(d: Database): void {
     const tables = new Set(extras.filter((row) => row.type === 'table').map((row) => row.name))
     const children = new Map<string, string[]>()
     for (const child of tables) {
-      const references = d.query<{ table: string }, []>(`PRAGMA foreign_key_list(${quoteIdentifier(child)})`).all()
+      const references = d
+        .query<{ table: string }, []>(`PRAGMA foreign_key_list(${quoteIdentifier(child)})`)
+        .all()
       for (const reference of references) {
         if (!tables.has(reference.table)) continue
         const list = children.get(reference.table) ?? []
@@ -97,8 +133,12 @@ describe('hub migration journal', () => {
     const d = fresh()
     expect(canonicalSchemaHash(d)).toBe(expectedSchemaHash())
     expect(BASELINE_SCHEMA_HASH).toBe(baselineSchemaHash())
-    expect(BASELINE_SCHEMA_HASH).toBe('903a8d96fe8c2b5f7edd253f2f85cc6b1dc66d1537b3a94b8cef5f2fb81ddfff')
-    expect(expectedSchemaHash()).toBe('943613471e7150d03db0b3e6116c380fc73ad453f0f055d6de38f291807c5f42')
+    expect(BASELINE_SCHEMA_HASH).toBe(
+      '903a8d96fe8c2b5f7edd253f2f85cc6b1dc66d1537b3a94b8cef5f2fb81ddfff',
+    )
+    expect(expectedSchemaHash()).toBe(
+      '943613471e7150d03db0b3e6116c380fc73ad453f0f055d6de38f291807c5f42',
+    )
     d.close()
   })
 
@@ -111,7 +151,11 @@ describe('hub migration journal', () => {
     d.close()
 
     const ahead = fresh()
-    ahead.query("INSERT INTO hub_migrations (hash,created_at,version) VALUES ('future',9999999999999,'0001_future')").run()
+    ahead
+      .query(
+        "INSERT INTO hub_migrations (hash,created_at,version) VALUES ('future',9999999999999,'0001_future')",
+      )
+      .run()
     expect(migrationRefusal(ahead)).toContain('refusing to open a store ahead')
     expect(migrationRefusal(ahead)).toContain('cleared by: hub migrate')
     ahead.close()
@@ -120,7 +164,11 @@ describe('hub migration journal', () => {
   test('a matching pre-journal store adopts 0000 without rebuilding its schema', () => {
     const d = baselineFresh()
     const before = applicationSchemaRows(d)
-    expect(applyMigrations(d)).toEqual(['0000_hub_baseline', '0001_note', '0002_note_acknowledgement'])
+    expect(applyMigrations(d)).toEqual([
+      '0000_hub_baseline',
+      '0001_note',
+      '0002_note_acknowledgement',
+    ])
     stripPostBaselineApplicationObjects(d)
     const after = applicationSchemaRows(d)
     expect(after).toEqual(before)
@@ -159,16 +207,31 @@ describe('hub migration journal', () => {
     const folder = mkdtempSync(join(tmpdir(), 'hub-adopt-'))
     mkdirSync(join(folder, 'meta'))
     const baseline = migrationJournal()[0]!
-    copyFileSync(join(MIGRATIONS_FOLDER, `${baseline.tag}.sql`), join(folder, `${baseline.tag}.sql`))
-    writeFileSync(join(folder, '0001_after_adoption.sql'),
-      'CREATE TABLE adopted_followup (id INTEGER PRIMARY KEY);\n')
-    writeFileSync(join(folder, 'meta', '_journal.json'), JSON.stringify({
-      version: '7', dialect: 'sqlite', entries: [
-        { ...baseline, version: '6', breakpoints: true },
-        { idx: 1, version: '6', when: baseline.when + 1,
-          tag: '0001_after_adoption', breakpoints: true },
-      ],
-    }))
+    copyFileSync(
+      join(MIGRATIONS_FOLDER, `${baseline.tag}.sql`),
+      join(folder, `${baseline.tag}.sql`),
+    )
+    writeFileSync(
+      join(folder, '0001_after_adoption.sql'),
+      'CREATE TABLE adopted_followup (id INTEGER PRIMARY KEY);\n',
+    )
+    writeFileSync(
+      join(folder, 'meta', '_journal.json'),
+      JSON.stringify({
+        version: '7',
+        dialect: 'sqlite',
+        entries: [
+          { ...baseline, version: '6', breakpoints: true },
+          {
+            idx: 1,
+            version: '6',
+            when: baseline.when + 1,
+            tag: '0001_after_adoption',
+            breakpoints: true,
+          },
+        ],
+      }),
+    )
     const d = baselineFresh()
     expect(applyMigrations(d, folder)).toEqual([baseline.tag, '0001_after_adoption'])
     expect(d.query("SELECT 1 FROM sqlite_master WHERE name='adopted_followup'").get()).toBeDefined()
@@ -180,14 +243,22 @@ describe('hub migration journal', () => {
     const folder = mkdtempSync(join(tmpdir(), 'hub-expected-hash-'))
     mkdirSync(join(folder, 'meta'))
     const baseline = migrationJournal()[0]!
-    copyFileSync(join(MIGRATIONS_FOLDER, `${baseline.tag}.sql`), join(folder, `${baseline.tag}.sql`))
+    copyFileSync(
+      join(MIGRATIONS_FOLDER, `${baseline.tag}.sql`),
+      join(folder, `${baseline.tag}.sql`),
+    )
     writeFileSync(join(folder, '0001_extra.sql'), 'CREATE TABLE extra (id INTEGER PRIMARY KEY);\n')
-    writeFileSync(join(folder, 'meta', '_journal.json'), JSON.stringify({
-      version: '7', dialect: 'sqlite', entries: [
-        { ...baseline, version: '6', breakpoints: true },
-        { idx: 1, version: '6', when: baseline.when + 1, tag: '0001_extra', breakpoints: true },
-      ],
-    }))
+    writeFileSync(
+      join(folder, 'meta', '_journal.json'),
+      JSON.stringify({
+        version: '7',
+        dialect: 'sqlite',
+        entries: [
+          { ...baseline, version: '6', breakpoints: true },
+          { idx: 1, version: '6', when: baseline.when + 1, tag: '0001_extra', breakpoints: true },
+        ],
+      }),
+    )
     const d = new Database(':memory:')
     d.exec('PRAGMA foreign_keys = ON')
     applyMigrations(d, folder)
@@ -198,7 +269,11 @@ describe('hub migration journal', () => {
     d.close()
 
     const legacy = baselineFresh()
-    expect(applyMigrations(legacy)).toEqual(['0000_hub_baseline', '0001_note', '0002_note_acknowledgement'])
+    expect(applyMigrations(legacy)).toEqual([
+      '0000_hub_baseline',
+      '0001_note',
+      '0002_note_acknowledgement',
+    ])
     expect(canonicalSchemaHash(legacy)).toBe(expectedSchemaHash())
     legacy.close()
     rmSync(folder, { recursive: true, force: true })
@@ -251,16 +326,23 @@ describe('hub migration journal', () => {
   test('a colliding later INSERT rolls back tables, user_version, journal and lock', () => {
     const dir = mkdtempSync(join(tmpdir(), 'hub-pk-collide-'))
     mkdirSync(join(dir, 'meta'))
-    writeFileSync(join(dir, '0000_collide.sql'),
-      'CREATE TABLE boom (id INTEGER PRIMARY KEY);\n--> statement-breakpoint\nINSERT INTO boom (id) VALUES (1);\n--> statement-breakpoint\nINSERT INTO boom (id) VALUES (1);\n')
-    writeFileSync(join(dir, 'meta', '_journal.json'), JSON.stringify({
-      version: '7', dialect: 'sqlite', entries: [
-        { idx: 0, version: '6', when: 1, tag: '0000_collide', breakpoints: true },
-      ],
-    }))
+    writeFileSync(
+      join(dir, '0000_collide.sql'),
+      'CREATE TABLE boom (id INTEGER PRIMARY KEY);\n--> statement-breakpoint\nINSERT INTO boom (id) VALUES (1);\n--> statement-breakpoint\nINSERT INTO boom (id) VALUES (1);\n',
+    )
+    writeFileSync(
+      join(dir, 'meta', '_journal.json'),
+      JSON.stringify({
+        version: '7',
+        dialect: 'sqlite',
+        entries: [{ idx: 0, version: '6', when: 1, tag: '0000_collide', breakpoints: true }],
+      }),
+    )
     const d = new Database(':memory:')
     expect(() => applyMigrations(d, dir)).toThrow()
-    expect(d.query("SELECT name FROM sqlite_master WHERE name NOT LIKE 'sqlite_%' ORDER BY name").all()).toEqual([])
+    expect(
+      d.query("SELECT name FROM sqlite_master WHERE name NOT LIKE 'sqlite_%' ORDER BY name").all(),
+    ).toEqual([])
     expect(readUserVersion(d)).toBe(0)
     d.close()
     rmSync(dir, { recursive: true, force: true })
@@ -269,13 +351,18 @@ describe('hub migration journal', () => {
   test('a journal whose entries are idx-ordered but when-unordered is refused at load', () => {
     const dir = mkdtempSync(join(tmpdir(), 'hub-when-unordered-'))
     mkdirSync(join(dir, 'meta'))
-    writeFileSync(join(dir, 'meta', '_journal.json'), JSON.stringify({
-      version: '7', dialect: 'sqlite', entries: [
-        { idx: 0, version: '6', when: 100, tag: '0000_first', breakpoints: true },
-        { idx: 1, version: '6', when: 300, tag: '0001_later', breakpoints: true },
-        { idx: 2, version: '6', when: 200, tag: '0002_earlier', breakpoints: true },
-      ],
-    }))
+    writeFileSync(
+      join(dir, 'meta', '_journal.json'),
+      JSON.stringify({
+        version: '7',
+        dialect: 'sqlite',
+        entries: [
+          { idx: 0, version: '6', when: 100, tag: '0000_first', breakpoints: true },
+          { idx: 1, version: '6', when: 300, tag: '0001_later', breakpoints: true },
+          { idx: 2, version: '6', when: 200, tag: '0002_earlier', breakpoints: true },
+        ],
+      }),
+    )
     expect(() => migrationJournal(dir)).toThrow(`invariant: ${JOURNAL_WHEN_ORDER}`)
     rmSync(dir, { recursive: true, force: true })
   })
@@ -295,9 +382,11 @@ describe('hub migration journal', () => {
     const other = new Database(process.env.HUB_DB!)
     other.exec(`PRAGMA user_version = ${journalLength() + 1}`)
     other.close()
-    expect(() => writeTransaction(() => {
-      db().query('UPDATE setting SET value = value WHERE 0').run()
-    })).toThrow(`invariant: ${CONNECTION_SCHEMA_INVARIANT}`)
+    expect(() =>
+      writeTransaction(() => {
+        db().query('UPDATE setting SET value = value WHERE 0').run()
+      }),
+    ).toThrow(`invariant: ${CONNECTION_SCHEMA_INVARIANT}`)
     closeDatabaseForFixture()
     const reset = new Database(process.env.HUB_DB!)
     applyMigrations(reset)
@@ -313,12 +402,19 @@ describe('hub migration journal', () => {
       d.close()
       return versions
     }
-    const [first, second] = await Promise.all([Promise.resolve().then(run), Promise.resolve().then(run)])
-    expect([...first, ...second].sort()).toEqual(migrationJournal().map((entry) => entry.tag).sort())
+    const [first, second] = await Promise.all([
+      Promise.resolve().then(run),
+      Promise.resolve().then(run),
+    ])
+    expect([...first, ...second].sort()).toEqual(
+      migrationJournal()
+        .map((entry) => entry.tag)
+        .sort(),
+    )
     const seen = new Database(path)
-    expect(seen.query(
-      'SELECT version FROM hub_migrations GROUP BY version HAVING COUNT(*) > 1',
-    ).all()).toEqual([])
+    expect(
+      seen.query('SELECT version FROM hub_migrations GROUP BY version HAVING COUNT(*) > 1').all(),
+    ).toEqual([])
     expect(readUserVersion(seen)).toBe(journalLength())
     seen.close()
     rmSync(dir, { recursive: true, force: true })
@@ -326,11 +422,13 @@ describe('hub migration journal', () => {
 
   test('the ahead ceiling keys on applied count, not the last entry when', () => {
     const d = fresh()
-    const existing = d.query(
-      'SELECT hash, created_at, version FROM hub_migrations LIMIT 1',
-    ).get() as { hash: string; created_at: number; version: string }
+    const existing = d
+      .query('SELECT hash, created_at, version FROM hub_migrations LIMIT 1')
+      .get() as { hash: string; created_at: number; version: string }
     d.query('INSERT INTO hub_migrations (hash, created_at, version) VALUES (?, ?, ?)').run(
-      existing.hash, existing.created_at, existing.version,
+      existing.hash,
+      existing.created_at,
+      existing.version,
     )
     expect(migrationRefusal(d)).toContain('refusing to open a store ahead')
     d.close()
@@ -339,16 +437,28 @@ describe('hub migration journal', () => {
   test('backfill blocks are stripped from the hashed DDL and re-run every migrate', () => {
     const dir = mkdtempSync(join(tmpdir(), 'hub-backfill-block-'))
     mkdirSync(join(dir, 'meta'))
-    writeFileSync(join(dir, '0000_base.sql'), 'CREATE TABLE item (id INTEGER PRIMARY KEY, n INTEGER);\n')
-    writeFileSync(join(dir, '0001_fill.sql'),
-      '-- note\n-- BACKFILL\nINSERT INTO item (n) SELECT 1 WHERE NOT EXISTS (SELECT 1 FROM item WHERE n=1);\n-- /BACKFILL\n')
-    writeFileSync(join(dir, 'meta', '_journal.json'), JSON.stringify({
-      version: '7', dialect: 'sqlite', entries: [
-        { idx: 0, version: '6', when: 1, tag: '0000_base', breakpoints: true },
-        { idx: 1, version: '6', when: 2, tag: '0001_fill', breakpoints: true },
-      ],
-    }))
-    expect(splitMigrationSource(readFileSync(join(dir, '0001_fill.sql'), 'utf8')).ddl).toBe('-- note\n')
+    writeFileSync(
+      join(dir, '0000_base.sql'),
+      'CREATE TABLE item (id INTEGER PRIMARY KEY, n INTEGER);\n',
+    )
+    writeFileSync(
+      join(dir, '0001_fill.sql'),
+      '-- note\n-- BACKFILL\nINSERT INTO item (n) SELECT 1 WHERE NOT EXISTS (SELECT 1 FROM item WHERE n=1);\n-- /BACKFILL\n',
+    )
+    writeFileSync(
+      join(dir, 'meta', '_journal.json'),
+      JSON.stringify({
+        version: '7',
+        dialect: 'sqlite',
+        entries: [
+          { idx: 0, version: '6', when: 1, tag: '0000_base', breakpoints: true },
+          { idx: 1, version: '6', when: 2, tag: '0001_fill', breakpoints: true },
+        ],
+      }),
+    )
+    expect(splitMigrationSource(readFileSync(join(dir, '0001_fill.sql'), 'utf8')).ddl).toBe(
+      '-- note\n',
+    )
     const d = new Database(':memory:')
     expect(applyMigrations(d, dir)).toEqual(['0000_base', '0001_fill'])
     expect(d.query('SELECT COUNT(*) n FROM item').get()).toEqual({ n: 1 })
@@ -363,7 +473,9 @@ describe('hub migration journal', () => {
     closeDatabaseForFixture()
     const seen: number[] = []
     db()
-    enableSchemaReload((_from, to) => { seen.push(to) })
+    enableSchemaReload((_from, to) => {
+      seen.push(to)
+    })
     const other = new Database(process.env.HUB_DB!)
     const next = journalLength() + 1
     other.exec(`PRAGMA user_version = ${next}`)
@@ -387,7 +499,9 @@ describe('hub migration journal', () => {
       db().query("INSERT INTO setting (key, value) VALUES ('held-reload', '1')").run()
     }, held)
     expect(() => held.query('SELECT 1').get()).toThrow('closed')
-    expect(db().query("SELECT value FROM setting WHERE key='held-reload'").get()).toEqual({ value: '1' })
+    expect(db().query("SELECT value FROM setting WHERE key='held-reload'").get()).toEqual({
+      value: '1',
+    })
     closeDatabaseForFixture()
     const reset = new Database(process.env.HUB_DB!)
     applyMigrations(reset)
@@ -398,7 +512,9 @@ describe('hub migration journal', () => {
 describe('stripSqlComments keeps quoted comment markers', () => {
   test('quoted -- and /* survive while real comments are removed', () => {
     const { stripSqlComments } = require('./migrations.ts') as typeof import('./migrations.ts')
-    expect(stripSqlComments("INSERT INTO t (v) VALUES ('a -- b'); -- seed\n")).toBe("INSERT INTO t (v) VALUES ('a -- b'); \n")
+    expect(stripSqlComments("INSERT INTO t (v) VALUES ('a -- b'); -- seed\n")).toBe(
+      "INSERT INTO t (v) VALUES ('a -- b'); \n",
+    )
     expect(stripSqlComments("SELECT '/* x */' /* real */ FROM t")).toBe("SELECT '/* x */'  FROM t")
   })
 })

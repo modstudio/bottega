@@ -4,13 +4,23 @@
  * snapshot-versus-database reconciliation protocol. Must not know routing,
  * contracts, transports, reviews, or worktree isolation.
  */
-import { mkdirSync, readFileSync, existsSync, writeFileSync, readdirSync, rmSync, statSync, unlinkSync, copyFileSync, renameSync, } from 'node:fs'
+import {
+  copyFileSync,
+  existsSync,
+  mkdirSync,
+  readdirSync,
+  readFileSync,
+  renameSync,
+  rmSync,
+  statSync,
+  unlinkSync,
+  writeFileSync,
+} from 'node:fs'
 import { basename, join, relative } from 'node:path'
 import { resolveRunsDirectory } from './database-location.ts'
-import {
-  db, writableDb, writeTransaction } from './db.ts'
-import { teardownTerminalRunResources } from './resource-ownership.ts'
+import { db, writableDb, writeTransaction } from './db.ts'
 import { CONNECTION_SCHEMA_INVARIANT } from './migrations.ts'
+import { teardownTerminalRunResources } from './resource-ownership.ts'
 
 /**
  * How long a run's prompt and reply are kept on disk.
@@ -36,7 +46,11 @@ export const RUNS_DIR = resolveRunsDirectory()
 
 /** The names owned by one run; `unique` is its id once a row has been claimed. */
 export function runFilePaths(
-  dir: string, clock: number, unique: number | string, agent: string, jobName: string,
+  dir: string,
+  clock: number,
+  unique: number | string,
+  agent: string,
+  jobName: string,
 ) {
   const stamp = `${clock}-${unique}-${agent}-${jobName}`
   return {
@@ -59,9 +73,13 @@ export function pruneRuns(dir: string): void {
           db().query('UPDATE run SET prompt_path=NULL WHERE prompt_path=?').run(p)
           db().query('UPDATE run SET output_path=NULL WHERE output_path=?').run(p)
         }
-      } catch { /* raced, or busy */ }
+      } catch {
+        /* raced, or busy */
+      }
     }
-  } catch { /* no directory yet; nothing to prune */ }
+  } catch {
+    /* no directory yet; nothing to prune */
+  }
 }
 
 export function runScratchDir(id: number, runsDir = RUNS_DIR): string {
@@ -136,12 +154,15 @@ export function reconcileRun(id: number): string {
   if (!snapshot) {
     throw new Error(
       `run ${id} has no persisted terminal snapshot\n` +
-      `invariant: ${CONNECTION_SCHEMA_INVARIANT}\n` +
-      `cleared by: the worker must persist reply.txt and result.json before the row write`,
+        `invariant: ${CONNECTION_SCHEMA_INVARIANT}\n` +
+        `cleared by: the worker must persist reply.txt and result.json before the row write`,
     )
   }
-  const row = db().query('SELECT id, unreconciled, status FROM run WHERE id=?').get(id) as
-    { id: number; unreconciled: number; status: string } | null
+  const row = db().query('SELECT id, unreconciled, status FROM run WHERE id=?').get(id) as {
+    id: number
+    unreconciled: number
+    status: string
+  } | null
   if (!row) throw new Error(`no run ${id}`)
   /**
    * Reconciliation can restore an `asking` status only because question rows
@@ -151,25 +172,41 @@ export function reconcileRun(id: number): string {
    * or a failed transaction could reconcile to `asking` with nothing to answer.
    */
   writeTransaction(() => {
-    db().query(
-      `UPDATE run SET latency_ms=?, exit_code=?, output_bytes=?, output_path=?, prompt_path=?,
+    db()
+      .query(
+        `UPDATE run SET latency_ms=?, exit_code=?, output_bytes=?, output_path=?, prompt_path=?,
                       vendor_tokens=?, vendor_cost_usd=?, model=COALESCE(?, model),
                       status=?, error=?, failure_kind=?, vendor_session=COALESCE(?, vendor_session),
                       pre_confinement=?, confinement=?, unreconciled=0,
                       files_changed=?, changed_paths=?, lines_added=?, lines_removed=?,
                       tests_ran=?, tests_passed=?, deviations=?, escalations=?
         WHERE id=?`,
-    ).run(
-      snapshot.latencyMs, snapshot.exitCode,
-      new TextEncoder().encode(snapshot.output).byteLength,
-      snapshot.outputPath, snapshot.promptPath,
-      snapshot.vendorTokens, snapshot.vendorCostUsd, snapshot.model,
-      snapshot.status, snapshot.error, snapshot.failureKind, snapshot.vendorSession,
-      snapshot.preConfinement, snapshot.confinement,
-      snapshot.filesChanged, snapshot.changedPaths, snapshot.linesAdded, snapshot.linesRemoved,
-      snapshot.testsRan, snapshot.testsPassed, snapshot.deviations, snapshot.escalations,
-      id,
-    )
+      )
+      .run(
+        snapshot.latencyMs,
+        snapshot.exitCode,
+        new TextEncoder().encode(snapshot.output).byteLength,
+        snapshot.outputPath,
+        snapshot.promptPath,
+        snapshot.vendorTokens,
+        snapshot.vendorCostUsd,
+        snapshot.model,
+        snapshot.status,
+        snapshot.error,
+        snapshot.failureKind,
+        snapshot.vendorSession,
+        snapshot.preConfinement,
+        snapshot.confinement,
+        snapshot.filesChanged,
+        snapshot.changedPaths,
+        snapshot.linesAdded,
+        snapshot.linesRemoved,
+        snapshot.testsRan,
+        snapshot.testsPassed,
+        snapshot.deviations,
+        snapshot.escalations,
+        id,
+      )
   })
   teardownTerminalRunResources(db(), id)
   return `reconciled run ${id} as ${snapshot.status}`
@@ -182,7 +219,11 @@ export function listRunArtifacts(id: number, runsDir = RUNS_DIR): string[] {
   const files: string[] = []
   for (const name of names) {
     const p = join(dir, String(name))
-    try { if (statSync(p).isFile()) files.push(p) } catch { /* raced */ }
+    try {
+      if (statSync(p).isFile()) files.push(p)
+    } catch {
+      /* raced */
+    }
   }
   return files.sort()
 }
@@ -205,11 +246,16 @@ export function readDispatchState(id: number): DispatchState {
         timeoutMinutes: null,
       }
     }
-    const deliverables = Array.isArray(value.deliverables) &&
-      value.deliverables.every((item) => typeof item === 'string') ? value.deliverables : []
+    const deliverables =
+      Array.isArray(value.deliverables) &&
+      value.deliverables.every((item) => typeof item === 'string')
+        ? value.deliverables
+        : []
     const timeoutMinutes = typeof value.timeoutMinutes === 'number' ? value.timeoutMinutes : null
     return { deliverables, timeoutMinutes }
-  } catch { return { deliverables: [], timeoutMinutes: null } }
+  } catch {
+    return { deliverables: [], timeoutMinutes: null }
+  }
 }
 
 export function readDeclaredDeliverables(id: number): string[] {
@@ -233,15 +279,15 @@ export function persistRunArtifacts(
   }
   if (changes?.diff) writeFileSync(join(artifacts, 'worktree.diff'), changes.diff)
   for (const named of filesWritten ?? []) {
-    const source = named.startsWith('/') ? named
-      : worktree ? join(worktree.path, named) : named
+    const source = named.startsWith('/') ? named : worktree ? join(worktree.path, named) : named
     const destination = join(artifacts, basename(named))
     // Scratch was renamed onto artifacts above. A files_written path that still
     // names the old scratch location (reply.json is the usual case) already
     // lives at the destination.
-    const from = source === scratch || source.startsWith(`${scratch}/`)
-      ? join(artifacts, relative(scratch, source))
-      : source
+    const from =
+      source === scratch || source.startsWith(`${scratch}/`)
+        ? join(artifacts, relative(scratch, source))
+        : source
     if (from === destination && existsSync(destination) && statSync(destination).isFile()) continue
     if (!existsSync(from) || !statSync(from).isFile()) {
       throw new Error(`could not copy named file ${source} to ${destination}: source is not a file`)

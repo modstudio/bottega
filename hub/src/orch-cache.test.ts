@@ -18,18 +18,15 @@ describe('orchestrator procedure cache', () => {
       }))
     for (now = 0; now < 60_000; now += 5_000) {
       for (const name of procedures) {
-        const [left, right] = await Promise.all([
-          procedure(name, 'left'),
-          procedure(name, 'right'),
-        ])
+        const [left, right] = await Promise.all([procedure(name, 'left'), procedure(name, 'right')])
         expect(left.data).toEqual(right.data)
         expect(left.data.spawn).toBe(now < 30_000 ? 1 : 2)
       }
     }
 
-    expect(Object.fromEntries(spawns)).toEqual(Object.fromEntries(
-      procedures.map((name) => [name, 2]),
-    ))
+    expect(Object.fromEntries(spawns)).toEqual(
+      Object.fromEntries(procedures.map((name) => [name, 2])),
+    )
   })
 
   test('no procedure call reaches orch inside a TTL window', async () => {

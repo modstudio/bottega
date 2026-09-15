@@ -17,9 +17,13 @@ export type ParsedIssueReportFields = {
   environment?: string
 }
 
-const DEFECT_FIELDS = Object.keys(CONDITIONAL_ISSUE_REPORT_FIELD_REASONS) as ConditionalIssueReportField[]
+const DEFECT_FIELDS = Object.keys(
+  CONDITIONAL_ISSUE_REPORT_FIELD_REASONS,
+) as ConditionalIssueReportField[]
 
-export function missingIssueReportFields(input: ParsedIssueReportFields): ConditionalIssueReportField[] {
+export function missingIssueReportFields(
+  input: ParsedIssueReportFields,
+): ConditionalIssueReportField[] {
   if (input.kind === 'suggestion') return []
   return DEFECT_FIELDS.filter((field) => input[field] === undefined)
 }

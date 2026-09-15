@@ -1,4 +1,4 @@
-import { TRPCError, initTRPC } from '@trpc/server'
+import { initTRPC, TRPCError } from '@trpc/server'
 import { z } from 'zod'
 import { runDetail as orchRun, score as orchScore } from '../../orch.ts'
 import { cachedOrchResponse, cachedStrip, view } from '../../serve.ts'
@@ -13,45 +13,52 @@ const fidelity = z.enum(['drifted', 'partial', 'faithful'])
 
 export const runRouter = t.router({
   list: t.procedure
-    .input(z.object({
-      hours,
-      agent: z.string().max(64).default(''),
-      project: z.string().max(64).default(''),
-    }))
-    .query(async ({ input }) => cachedOrchResponse(
-      `runs:${input.hours}:${input.agent}:${input.project}`,
-      async () => ({
-        ...await cachedStrip(input.hours),
+    .input(
+      z.object({
+        hours,
+        agent: z.string().max(64).default(''),
+        project: z.string().max(64).default(''),
+      }),
+    )
+    .query(async ({ input }) =>
+      cachedOrchResponse(`runs:${input.hours}:${input.agent}:${input.project}`, async () => ({
+        ...(await cachedStrip(input.hours)),
         view: 'runs' as const,
         data: await view('runs', input.hours, {
           agent: input.agent,
           project: input.project,
         }),
-      }),
-    )),
-  get: t.procedure
-    .input(z.object({ id: z.number().int().positive() }))
-    .query(async ({ input }) => {
-      try {
-        return await orchRun(input.id)
-      } catch (cause) {
-        throw new TRPCError({
-          code: 'NOT_FOUND',
-          message: cause instanceof Error ? cause.message : String(cause),
-        })
-      }
-    }),
+      })),
+    ),
+  get: t.procedure.input(z.object({ id: z.number().int().positive() })).query(async ({ input }) => {
+    try {
+      return await orchRun(input.id)
+    } catch (cause) {
+      throw new TRPCError({
+        code: 'NOT_FOUND',
+        message: cause instanceof Error ? cause.message : String(cause),
+      })
+    }
+  }),
   score: t.procedure
-    .input(z.object({
-      id: z.number().int().positive(),
-      delivery,
-      quality: quality.nullable(),
-      fidelity: fidelity.nullable(),
-      note: z.string().nullable(),
-    }))
+    .input(
+      z.object({
+        id: z.number().int().positive(),
+        delivery,
+        quality: quality.nullable(),
+        fidelity: fidelity.nullable(),
+        note: z.string().nullable(),
+      }),
+    )
     .mutation(async ({ input }) => {
       try {
-        const message = await orchScore(input.id, input.delivery, input.quality, input.fidelity, input.note)
+        const message = await orchScore(
+          input.id,
+          input.delivery,
+          input.quality,
+          input.fidelity,
+          input.note,
+        )
         return { ok: true as const, message }
       } catch (cause) {
         throw new TRPCError({

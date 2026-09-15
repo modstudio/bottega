@@ -1,7 +1,7 @@
 import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
-import { projects, projectRoot, type Project } from './projects.ts'
 import type { OrchRun } from './ingest/runs.ts'
+import { type Project, projectRoot, projects } from './projects.ts'
 
 /** Every ticket key this estate issues, resolved only when attribution first needs it. */
 function keyPrefixes(): string {
@@ -69,13 +69,18 @@ export function projectOf(cwd: string | undefined | null): Project | null {
   if (!cwd) return null
   const path = resolve(cwd)
   const contained = projects()
-    .filter((project) => path === resolve(project.path) || path.startsWith(resolve(project.path) + '/'))
+    .filter(
+      (project) => path === resolve(project.path) || path.startsWith(resolve(project.path) + '/'),
+    )
     .sort((a, b) => resolve(b.path).length - resolve(a.path).length)[0]
   if (contained) return contained.name
 
   const root = projectRoot()
   if (!root || !path.startsWith(root + '/')) return null
-  const clone = path.slice(root.length + 1).split('/')[0]!.match(/^(.+)-\d+$/)?.[1]
+  const clone = path
+    .slice(root.length + 1)
+    .split('/')[0]!
+    .match(/^(.+)-\d+$/)?.[1]
   return projects().find((project) => project.name === clone)?.name ?? null
 }
 
@@ -94,7 +99,15 @@ export type Attribution = {
   project: Project | null
   key: string | null
   /** How the key was decided — recorded so a wrong one is diagnosable. */
-  via: 'launch_key' | 'worktree' | 'commit' | 'prompt' | 'branch' | 'prompt-file' | 'sibling-leg' | null
+  via:
+    | 'launch_key'
+    | 'worktree'
+    | 'commit'
+    | 'prompt'
+    | 'branch'
+    | 'prompt-file'
+    | 'sibling-leg'
+    | null
 }
 
 /**
@@ -171,7 +184,6 @@ export function attribute(input: {
   return { project, key: null, via: null }
 }
 
-
 /**
  * The task a delegated run's FULL prompt names, read from the file orch kept.
  *
@@ -205,7 +217,8 @@ const promptFileKey = new Map<string, string | null>()
  * naming it. This helps where the checkout is on a ticket branch.
  */
 export function keyFromBranch(
-  branch: string | null | undefined, project: Project | null,
+  branch: string | null | undefined,
+  project: Project | null,
 ): string | null {
   if (!branch) return null
   const m = branch.match(worktreeKeyPattern())
@@ -217,7 +230,8 @@ export function keyFromBranch(
 }
 
 export function keyFromPromptFile(
-  path: string | null | undefined, project: Project | null,
+  path: string | null | undefined,
+  project: Project | null,
 ): string | null {
   if (!path) return null
   if (promptFileKey.has(path)) return promptFileKey.get(path) ?? null
@@ -232,7 +246,9 @@ export function keyFromPromptFile(
       key = k
       break
     }
-  } catch { /* the file may have been cleaned up; that is not an error */ }
+  } catch {
+    /* the file may have been cleaned up; that is not an error */
+  }
   promptFileKey.set(path, key)
   return key
 }
@@ -243,9 +259,10 @@ export function keyFromPromptFile(
  * taskRecord reads this decision downstream through interval.task_key.
  */
 export function attributeRun(run: OrchRun): Attribution {
-  const launchKey = typeof run.launch_key === 'string' && run.launch_key.trim()
-    ? run.launch_key.trim().toUpperCase()
-    : null
+  const launchKey =
+    typeof run.launch_key === 'string' && run.launch_key.trim()
+      ? run.launch_key.trim().toUpperCase()
+      : null
   if (launchKey) {
     const project = projectOf(run.cwd)
     return {

@@ -43,7 +43,9 @@ try {
     // not scoring advice that would require loading the job/router graph.
     await collect(database, argv[0] === 'result' ? [...argv, '--quiet'] : argv)
   } catch (collectionError) {
-    console.error(collectionError instanceof Error ? collectionError.message : String(collectionError))
+    console.error(
+      collectionError instanceof Error ? collectionError.message : String(collectionError),
+    )
     process.exit(1)
   }
 }

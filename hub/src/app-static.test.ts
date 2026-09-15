@@ -8,13 +8,15 @@ describe('resolveAppStatic', () => {
 
   test('falls back to the SPA index for routes', () => {
     expect(resolveAppStatic('/projects', true)).toEqual({
-      kind: 'index', relativePath: 'index.html',
+      kind: 'index',
+      relativePath: 'index.html',
     })
   })
 
   test('resolves static assets as files', () => {
     expect(resolveAppStatic('/assets/app.js', true)).toEqual({
-      kind: 'file', relativePath: 'assets/app.js',
+      kind: 'file',
+      relativePath: 'assets/app.js',
     })
   })
 })

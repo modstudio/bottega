@@ -59,9 +59,12 @@ const strategies: Readonly<Record<string, AgentAuthStrategy>> = {
 export function classifyAgentAuth(agent: string, capture: AgentAuthCapture): AgentAuthResult {
   if (capture.timedOut) return { status: 'unknown', detail: 'auth check timed out' }
   if (capture.error) return { status: 'unknown', detail: 'auth check could not run' }
-  return strategies[agent]?.classify(capture) ?? {
-    status: 'unknown', detail: 'no auth check is available',
-  }
+  return (
+    strategies[agent]?.classify(capture) ?? {
+      status: 'unknown',
+      detail: 'no auth check is available',
+    }
+  )
 }
 
 const spawnAuth: AuthSpawn = (argv, options) => {
@@ -84,7 +87,9 @@ export function runAgentAuthCheck(
   let capture: AgentAuthCapture
   try {
     const child = spawn([bin, ...strategy.command], {
-      stdout: 'pipe', stderr: 'pipe', timeout: AUTH_CHECK_TIMEOUT_MS,
+      stdout: 'pipe',
+      stderr: 'pipe',
+      timeout: AUTH_CHECK_TIMEOUT_MS,
     })
     capture = {
       exitCode: child.exitCode,
@@ -95,7 +100,10 @@ export function runAgentAuthCheck(
     }
   } catch (error) {
     capture = {
-      exitCode: null, stdout: '', stderr: '', timedOut: false,
+      exitCode: null,
+      stdout: '',
+      stderr: '',
+      timedOut: false,
       error: error instanceof Error ? error.message : String(error),
     }
   }

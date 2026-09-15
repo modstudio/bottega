@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, test } from 'bun:test'
 import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
-import { join } from 'node:path'
 import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 import { checkCognitiveCeiling } from './check-cognitive-ceiling'
 
 let fixture: string | undefined
@@ -33,11 +33,13 @@ describe('cognitive ceiling check', () => {
       'scripts/quality/cognitive-ceiling.json: complex.ts:10 complex tightened 20 -> 18',
       'baseline tightened; commit scripts/quality/cognitive-ceiling.json and re-run (architecture-rules 16)',
     ])
-    expect(await checkCognitiveCeiling({
-      measure: async () => [{ ...frozen[0]!, key: 'complex.ts\0complex', score: 18 }],
-      reporter: { error: (line) => errors.push(String(line)), log: () => undefined },
-      stateFile,
-    })).toBe(true)
+    expect(
+      await checkCognitiveCeiling({
+        measure: async () => [{ ...frozen[0]!, key: 'complex.ts\0complex', score: 18 }],
+        reporter: { error: (line) => errors.push(String(line)), log: () => undefined },
+        stateFile,
+      }),
+    ).toBe(true)
     expect(errors).toHaveLength(2)
   })
 })

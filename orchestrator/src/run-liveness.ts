@@ -2,11 +2,12 @@
 /**
  * Knows process and chain liveness, stale transition, audit, and root roll-up. Must not know routing, transports, reviews, or CLI adapters.
  */
-import { pidAlive } from './process-liveness.ts'
+
 import type { Database } from 'bun:sqlite'
 import { db, linkedWorktreeReadOnly, writeTransaction } from './db.ts'
-import { auditRunMutation, runMutationAuthority } from './run-authority.ts'
+import { pidAlive } from './process-liveness.ts'
 import { teardownTerminalRunResources } from './resource-ownership.ts'
+import { auditRunMutation, runMutationAuthority } from './run-authority.ts'
 
 /**
  * A process that died mid-run leaves its row at 'running' for ever. Anything
@@ -48,17 +49,24 @@ export const PENDING_BOOTSTRAP_MS = 60_000
  * terminal time and returns null.
  */
 export function chainTerminationAt(database: Database, memberId: number): string | null {
-  const member = database.query('SELECT id, parent_run_id FROM run WHERE id=?').get(memberId) as
-    { id: number; parent_run_id: number | null } | null
+  const member = database.query('SELECT id, parent_run_id FROM run WHERE id=?').get(memberId) as {
+    id: number
+    parent_run_id: number | null
+  } | null
   if (!member) return null
   const rootId = member.parent_run_id ?? member.id
-  const terminal = database.query(
-    `SELECT started_at, latency_ms, status FROM run
+  const terminal = database
+    .query(
+      `SELECT started_at, latency_ms, status FROM run
       WHERE id=? OR parent_run_id=?
       ORDER BY turn DESC, id DESC LIMIT 1`,
-  ).get(rootId, rootId) as
-    { started_at: string; latency_ms: number | null; status: string } | null
-  if (!terminal || !['ok', 'failed', 'stale'].includes(terminal.status) || terminal.latency_ms === null) {
+    )
+    .get(rootId, rootId) as { started_at: string; latency_ms: number | null; status: string } | null
+  if (
+    !terminal ||
+    !['ok', 'failed', 'stale'].includes(terminal.status) ||
+    terminal.latency_ms === null
+  ) {
     return null
   }
   return new Date(Date.parse(terminal.started_at) + terminal.latency_ms).toISOString()
@@ -94,8 +102,9 @@ export function chainTerminationAt(database: Database, memberId: number): string
  * from routing. Those lifecycle outcomes therefore retain the root's kind.
  */
 export function resolveRootFromLastTurn(database: Database, rootId: number): number {
-  return database.query(
-    `UPDATE run AS root
+  return database
+    .query(
+      `UPDATE run AS root
         SET status = (
           SELECT last.status FROM run last
            WHERE last.id = root.id OR last.parent_run_id = root.id
@@ -145,7 +154,8 @@ export function resolveRootFromLastTurn(database: Database, rootId: number): num
            ORDER BY last.turn DESC, last.id DESC
            LIMIT 1
         ) IN ('ok', 'failed', 'stale')`,
-  ).run(rootId).changes
+    )
+    .run(rootId).changes
 }
 
 /**
@@ -170,8 +180,12 @@ export function reapStale(d: Database = db()): number | ObservedDeadRun[] {
   const rows = d
     .query(`SELECT id, pid, agent_pid, agent, started_at FROM run WHERE status='running'`)
     .all() as {
-      id: number; pid: number | null; agent_pid: number | null; agent: string; started_at: string
-    }[]
+    id: number
+    pid: number | null
+    agent_pid: number | null
+    agent: string
+    started_at: string
+  }[]
 
   const dead: number[] = []
   const abandonedBootstrap: number[] = []
@@ -196,10 +210,14 @@ export function reapStale(d: Database = db()): number | ObservedDeadRun[] {
     return [
       ...dead.map((id) => {
         const row = rows.find((candidate) => candidate.id === id)!
-        return { id, reason: row.pid ? `pid ${row.pid} is not alive` : `no pid after ${STALE_AFTER_MS}ms` }
+        return {
+          id,
+          reason: row.pid ? `pid ${row.pid} is not alive` : `no pid after ${STALE_AFTER_MS}ms`,
+        }
       }),
       ...abandonedBootstrap.map((id) => ({
-        id, reason: `pending row had no pid after ${PENDING_BOOTSTRAP_MS}ms`,
+        id,
+        reason: `pending row had no pid after ${PENDING_BOOTSTRAP_MS}ms`,
       })),
     ]
   }
@@ -212,7 +230,12 @@ export function reapStale(d: Database = db()): number | ObservedDeadRun[] {
       writeTransaction(() => {
         if (update.run(id).changes !== 1) return
         const authority = runMutationAuthority(d, id)
-        auditRunMutation(authority, 'reap', `pending row had no pid after ${PENDING_BOOTSTRAP_MS}ms`, d)
+        auditRunMutation(
+          authority,
+          'reap',
+          `pending row had no pid after ${PENDING_BOOTSTRAP_MS}ms`,
+          d,
+        )
       }, d)
     }
   }
@@ -240,8 +263,8 @@ export function reapStale(d: Database = db()): number | ObservedDeadRun[] {
       const vendorAlive = row.agent_pid && pidAlive(row.agent_pid)
       const surviving = vendorAlive ? `; vendor pid ${row.agent_pid} still alive` : ''
       const error = `abandoned: process gone, no terminal state recorded${surviving}`
-      const reason = (row.pid ? `pid ${row.pid} is not alive` : `no pid after ${STALE_AFTER_MS}ms`) +
-        surviving
+      const reason =
+        (row.pid ? `pid ${row.pid} is not alive` : `no pid after ${STALE_AFTER_MS}ms`) + surviving
       writeTransaction(() => {
         if (update.run(error, id).changes !== 1) return
         const authority = runMutationAuthority(d, id)
@@ -251,10 +274,12 @@ export function reapStale(d: Database = db()): number | ObservedDeadRun[] {
   }
   const ended = [...dead, ...abandonedBootstrap]
   if (ended.length) {
-    const roots = d.query(
-      `SELECT DISTINCT COALESCE(parent_run_id, id) AS id FROM run
+    const roots = d
+      .query(
+        `SELECT DISTINCT COALESCE(parent_run_id, id) AS id FROM run
         WHERE id IN (${ended.map(() => '?').join(',')})`,
-    ).all(...ended) as { id: number }[]
+      )
+      .all(...ended) as { id: number }[]
     for (const { id } of roots) resolveRootFromLastTurn(d, id)
     for (const id of ended) teardownTerminalRunResources(d, id)
   }

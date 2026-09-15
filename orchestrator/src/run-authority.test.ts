@@ -31,12 +31,21 @@ describe('session identity is the primary id only', () => {
       process.env.CLAUDE_CODE_BRIDGE_SESSION_ID = 'shared-bridge'
       expect(sessionId()).toBeNull()
       for (const action of [
-        'answer', 'tell', 'stop', 'abandon', 'discard', 'void', 'continue', 'score',
-        'retry', 'receipt',
+        'answer',
+        'tell',
+        'stop',
+        'abandon',
+        'discard',
+        'void',
+        'continue',
+        'score',
+        'retry',
+        'receipt',
       ] as const) {
         const id = addRun({ agent: 'codex', job: 'implement' })
-        expect(() => adoptRunMutation(authorizeRunMutation(id, action), action))
-          .toThrow('CLAUDE_CODE_SESSION_ID')
+        expect(() => adoptRunMutation(authorizeRunMutation(id, action), action)).toThrow(
+          'CLAUDE_CODE_SESSION_ID',
+        )
       }
     } finally {
       restoreSessionEnv(claude, bridge)
@@ -64,9 +73,19 @@ describe('who may judge a run', () => {
     delete process.env.CLAUDE_CODE_SESSION_ID
     delete process.env.CLAUDE_CODE_BRIDGE_SESSION_ID
     try {
-      for (const action of ['answer', 'tell', 'stop', 'abandon', 'discard', 'void', 'retry', 'continue'] as const) {
-        expect(() => authorizeRunMutation(id, action))
-          .toThrow('current session no session identity is present')
+      for (const action of [
+        'answer',
+        'tell',
+        'stop',
+        'abandon',
+        'discard',
+        'void',
+        'retry',
+        'continue',
+      ] as const) {
+        expect(() => authorizeRunMutation(id, action)).toThrow(
+          'current session no session identity is present',
+        )
       }
     } finally {
       if (claude === undefined) delete process.env.CLAUDE_CODE_SESSION_ID
@@ -80,27 +99,39 @@ describe('who may judge a run', () => {
     const prior = process.env.CLAUDE_CODE_SESSION_ID
     try {
       for (const action of [
-        'answer', 'tell', 'stop', 'abandon', 'discard', 'void', 'continue', 'score',
-        'retry', 'receipt',
+        'answer',
+        'tell',
+        'stop',
+        'abandon',
+        'discard',
+        'void',
+        'continue',
+        'score',
+        'retry',
+        'receipt',
       ] as const) {
         const id = addRun({ agent: 'codex', job: 'implement' })
         process.env.CLAUDE_CODE_SESSION_ID = 'session-A'
         const adopted = adoptRunMutation(authorizeRunMutation(id, action), action)
         expect(adopted.owner).toBe('session-A')
-        expect(db().query(
-          'SELECT action, actor_session, reason FROM run_mutation_audit WHERE run_id=?',
-        ).get(id)).toEqual({
-          action: 'adopt', actor_session: 'session-A', reason: `before ${action}`,
+        expect(
+          db()
+            .query('SELECT action, actor_session, reason FROM run_mutation_audit WHERE run_id=?')
+            .get(id),
+        ).toEqual({
+          action: 'adopt',
+          actor_session: 'session-A',
+          reason: `before ${action}`,
         })
 
         process.env.CLAUDE_CODE_SESSION_ID = 'session-B'
-        expect(() => authorizeRunMutation(id, action))
-          .toThrow(`run ${id} is owned by session session-A`)
+        expect(() => authorizeRunMutation(id, action)).toThrow(
+          `run ${id} is owned by session session-A`,
+        )
       }
     } finally {
       if (prior === undefined) delete process.env.CLAUDE_CODE_SESSION_ID
       else process.env.CLAUDE_CODE_SESSION_ID = prior
     }
   })
-
 })

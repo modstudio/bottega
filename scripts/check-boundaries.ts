@@ -1,4 +1,5 @@
 #!/usr/bin/env bun
+import { readFileSync } from 'node:fs'
 /**
  * Concerns live side by side here; they do not reach into each other.
  * The only shared code is `shared/`, and it may import nothing back.
@@ -7,7 +8,6 @@
  * guard exists: a rule nobody enforces is a rule that has already drifted.
  */
 import { Glob } from 'bun'
-import { readFileSync } from 'node:fs'
 import { CONCERNS } from '../shared/brand.ts'
 import { importSpecifiers } from './import-scanner.ts'
 
@@ -33,14 +33,17 @@ for (const concern of CONCERNS) {
         else out.push(p)
       }
       const target = out[0]
-      if (concern === 'hub' && rel.startsWith('web/') && target === 'hub'
-          && out[1] !== 'web') {
+      if (concern === 'hub' && rel.startsWith('web/') && target === 'hub' && out[1] !== 'web') {
         const resolved = out.join('/')
-        const typeOnlyRouter = resolved === 'hub/src/trpc/router.ts'
-          && new RegExp(`import\\s+type\\s+[^\\n]+from\\s+['"]${spec.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}['"]`)
-            .test(src)
+        const typeOnlyRouter =
+          resolved === 'hub/src/trpc/router.ts' &&
+          new RegExp(
+            `import\\s+type\\s+[^\\n]+from\\s+['"]${spec.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}['"]`,
+          ).test(src)
         if (!typeOnlyRouter) {
-          violations.push(`${file}\n    imports "${spec}" -> ${resolved}  (hub/web may import only the hub router type)`)
+          violations.push(
+            `${file}\n    imports "${spec}" -> ${resolved}  (hub/web may import only the hub router type)`,
+          )
         }
         continue
       }

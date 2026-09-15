@@ -9,12 +9,14 @@ export type FailingDefaultCanonEval = {
 
 /** Latest wrong-answer evals for the agent used when `orch canon eval` is unpinned. */
 export function failingDefaultCanonEvals(): FailingDefaultCanonEval[] {
-  return db().query(
-    `SELECT slug, agent
+  return db()
+    .query(
+      `SELECT slug, agent
        FROM canon_eval
       WHERE agent=? AND pass=0 AND id IN (
         SELECT MAX(id) FROM canon_eval WHERE agent=? GROUP BY slug
       )
       ORDER BY slug`,
-  ).all(DEFAULT_EVAL_AGENT, DEFAULT_EVAL_AGENT) as FailingDefaultCanonEval[]
+    )
+    .all(DEFAULT_EVAL_AGENT, DEFAULT_EVAL_AGENT) as FailingDefaultCanonEval[]
 }

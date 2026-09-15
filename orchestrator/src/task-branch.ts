@@ -3,12 +3,13 @@
  * Knows the project register, branch content status, and database reads. Must
  * not know transports, contracts, or routing.
  */
+
+import { realpathOrSpelled } from './checkout-identity.ts'
 import { db } from './db.ts'
+import { repoRootOf, targetGitEnvironment } from './git-environment.ts'
 import { projectAt, projects } from './projects.ts'
 import { reviewRunEvidenceSql } from './review-evidence-sql.ts'
 import type { Worktree } from './worktree-types.ts'
-import { repoRootOf, targetGitEnvironment } from './git-environment.ts'
-import { realpathOrSpelled } from './checkout-identity.ts'
 
 export type TaskBranchCandidate = {
   branch: string
@@ -27,12 +28,14 @@ export function taskBranchCandidacySql(runAlias = 'candidate'): string {
 
 function taskBranchGit(cwd: string, ...args: string[]): string {
   const p = Bun.spawnSync(['git', '-C', cwd, ...args], {
-    env: targetGitEnvironment(cwd), stdout: 'pipe', stderr: 'pipe',
+    env: targetGitEnvironment(cwd),
+    stdout: 'pipe',
+    stderr: 'pipe',
   })
   if (p.exitCode !== 0) {
     throw new Error(
       `git ${args.join(' ')} failed while resolving the task branch: ` +
-      (p.stderr.toString().trim() || `exit ${p.exitCode}`),
+        (p.stderr.toString().trim() || `exit ${p.exitCode}`),
     )
   }
   return p.stdout.toString().trim()
@@ -50,13 +53,17 @@ function checkedOutWorktree(repoRoot: string, branch: string): string | null {
 
 export function resolveTaskBranch(cwd: string, launchKey: string): TaskBranchCandidate | null {
   const repoRoot = repoRootOf(cwd)
-  const project = projectAt(cwd) ?? (repoRoot
-    ? projects().find((candidate) =>
-        realpathOrSpelled(candidate.path) === realpathOrSpelled(repoRoot)) ?? null
-    : null)
+  const project =
+    projectAt(cwd) ??
+    (repoRoot
+      ? (projects().find(
+          (candidate) => realpathOrSpelled(candidate.path) === realpathOrSpelled(repoRoot),
+        ) ?? null)
+      : null)
   if (!project || !repoRoot) return null
-  const rows = db().query(
-    `WITH candidate AS (SELECT run.*, run.id AS run_id FROM run)
+  const rows = db()
+    .query(
+      `WITH candidate AS (SELECT run.*, run.id AS run_id FROM run)
      SELECT candidate.id, candidate.branch, candidate.worktree,
             candidate.worktree_source
        FROM candidate
@@ -66,7 +73,8 @@ export function resolveTaskBranch(cwd: string, launchKey: string): TaskBranchCan
         AND ${taskBranchCandidacySql('candidate')}
         AND ${reviewRunEvidenceSql('candidate', 'candidate')}
       ORDER BY candidate.id`,
-  ).all(launchKey, project.id, project.name) as {
+    )
+    .all(launchKey, project.id, project.name) as {
     id: number
     branch: string
     worktree: string | null
@@ -83,19 +91,31 @@ export function resolveTaskBranch(cwd: string, launchKey: string): TaskBranchCan
 
   const byBranch = new Map<string, typeof rows>()
   for (const row of rows) byBranch.set(row.branch, [...(byBranch.get(row.branch) ?? []), row])
-  const trunkTip = taskBranchGit(repoRoot, 'rev-parse', '--verify', '--end-of-options', `${trunk}^{commit}`)
+  const trunkTip = taskBranchGit(
+    repoRoot,
+    'rev-parse',
+    '--verify',
+    '--end-of-options',
+    `${trunk}^{commit}`,
+  )
   const candidates: TaskBranchCandidate[] = []
   for (const [branch, branchRows] of byBranch) {
     let tip: string
     try {
       tip = taskBranchGit(
-        repoRoot, 'rev-parse', '--verify', '--end-of-options', `refs/heads/${branch}^{commit}`,
+        repoRoot,
+        'rev-parse',
+        '--verify',
+        '--end-of-options',
+        `refs/heads/${branch}^{commit}`,
       )
     } catch {
       continue
     }
     const mergeBase = taskBranchGit(repoRoot, 'merge-base', trunkTip, tip)
-    const commitCount = Number(taskBranchGit(repoRoot, 'rev-list', '--count', `${mergeBase}..${tip}`))
+    const commitCount = Number(
+      taskBranchGit(repoRoot, 'rev-list', '--count', `${mergeBase}..${tip}`),
+    )
     if (!Number.isSafeInteger(commitCount) || commitCount < 1) continue
 
     // The two supported landing shapes leave different patch-id evidence.
@@ -106,47 +126,70 @@ export function resolveTaskBranch(cwd: string, launchKey: string): TaskBranchCan
     if (!individual.split('\n').some((line) => line.startsWith('+ '))) continue
     const tree = taskBranchGit(repoRoot, 'rev-parse', '--verify', `${tip}^{tree}`)
     const squash = taskBranchGit(
-      repoRoot, 'commit-tree', tree, '-p', mergeBase, '-m', `orch task branch ${launchKey}`,
+      repoRoot,
+      'commit-tree',
+      tree,
+      '-p',
+      mergeBase,
+      '-m',
+      `orch task branch ${launchKey}`,
     )
     const cherry = taskBranchGit(repoRoot, 'cherry', trunkTip, squash)
     if (!cherry.split('\n').some((line) => line.startsWith('+ '))) continue
 
     const path = checkedOutWorktree(repoRoot, branch)
-    const attachedRow = path ? branchRows.find((row) =>
-      row.worktree && realpathOrSpelled(row.worktree) === realpathOrSpelled(path),
-    ) : null
+    const attachedRow = path
+      ? branchRows.find(
+          (row) => row.worktree && realpathOrSpelled(row.worktree) === realpathOrSpelled(path),
+        )
+      : null
     const source = attachedRow?.worktree_source
     candidates.push({
-      branch, tip, commitCount, mergeBase,
-      projectId: project.id, projectName: project.name,
+      branch,
+      tip,
+      commitCount,
+      mergeBase,
+      projectId: project.id,
+      projectName: project.name,
       runIds: branchRows.map((row) => row.id),
-      worktree: path ? {
-        path, branch, base: tip, repoRoot,
-        source: source === 'recipe' || source === 'git' || source === 'readonly_recipe'
-          ? source
-          : undefined,
-        // Null records that this run attached; it did not mint the task branch.
-        mintedBranch: null,
-      } : null,
+      worktree: path
+        ? {
+            path,
+            branch,
+            base: tip,
+            repoRoot,
+            source:
+              source === 'recipe' || source === 'git' || source === 'readonly_recipe'
+                ? source
+                : undefined,
+            // Null records that this run attached; it did not mint the task branch.
+            mintedBranch: null,
+          }
+        : null,
     })
   }
 
   if (candidates.length === 0) return null
   if (candidates.length === 1) return candidates[0]!
-  const detail = candidates.map((candidate) =>
-    `  ${candidate.branch} tip ${candidate.tip} commits ${candidate.commitCount}`,
-  ).join('\n')
-  const commands = candidates.map((kept) => {
-    const voidCommands = candidates.filter((candidate) => candidate !== kept)
-      .flatMap((candidate) => candidate.runIds)
-      .map((id) => `    orch score ${id} --void --note "not the live ${launchKey} branch"`)
-      .join('\n')
-    return `  To keep ${kept.branch}:\n${voidCommands}`
-  }).join('\n')
+  const detail = candidates
+    .map(
+      (candidate) => `  ${candidate.branch} tip ${candidate.tip} commits ${candidate.commitCount}`,
+    )
+    .join('\n')
+  const commands = candidates
+    .map((kept) => {
+      const voidCommands = candidates
+        .filter((candidate) => candidate !== kept)
+        .flatMap((candidate) => candidate.runIds)
+        .map((id) => `    orch score ${id} --void --note "not the live ${launchKey} branch"`)
+        .join('\n')
+      return `  To keep ${kept.branch}:\n${voidCommands}`
+    })
+    .join('\n')
   throw new Error(
     `refusing task branch resolution for ${launchKey}: more than one branch carries content not on ${trunk}\n` +
-    `${detail}\n` +
-    `invariant: A task owns one branch.\n` +
-    `Clear the ambiguity by choosing one branch and voiding the candidate runs behind the others:\n${commands}`,
+      `${detail}\n` +
+      `invariant: A task owns one branch.\n` +
+      `Clear the ambiguity by choosing one branch and voiding the candidate runs behind the others:\n${commands}`,
   )
 }

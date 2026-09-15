@@ -1,8 +1,8 @@
-import { describe,expect,test } from 'bun:test'
+import { describe, expect, test } from 'bun:test'
 import { contractConflicts } from './contract.ts'
 
 describe('job contracts are visible before submission', () => {
-test.each([
+  test.each([
     ['Kept separate rather than merged', false],
     ['reset the counter', false],
     ['merging two lists', false],
@@ -25,26 +25,26 @@ test.each([
     ['merge into the main branch', true],
     ['merge from main', false],
   ] as const)('git-sense conflict %j fires=%s', (line, fires) => {
-    expect(contractConflicts(line)).toEqual(
-      fires ? [{ line: 1, text: line }] : [],
-    )
+    expect(contractConflicts(line)).toEqual(fires ? [{ line: 1, text: line }] : [])
   })
-test('repeating the contract prohibitions is not reported as a conflict', () => {
-    expect(contractConflicts([
-      'Do not commit, push, or merge.',
-      'Never push this branch.',
-      'Make the change without committing it.',
-      'There must be no commits.',
-    ].join('\n'))).toEqual([])
+  test('repeating the contract prohibitions is not reported as a conflict', () => {
+    expect(
+      contractConflicts(
+        [
+          'Do not commit, push, or merge.',
+          'Never push this branch.',
+          'Make the change without committing it.',
+          'There must be no commits.',
+        ].join('\n'),
+      ),
+    ).toEqual([])
   })
-test('a prohibition does not hide a conflicting instruction later on its line', () => {
+  test('a prohibition does not hide a conflicting instruction later on its line', () => {
     expect(contractConflicts('Do not commit. Push the branch instead.')).toEqual([
       { line: 1, text: 'Do not commit. Push the branch instead.' },
     ])
   })
-test('a lowercase or preposition continuation joins the previous clause', () => {
-    expect(contractConflicts('Push it\nto the remote')).toEqual([
-      { line: 1, text: 'Push it' },
-    ])
+  test('a lowercase or preposition continuation joins the previous clause', () => {
+    expect(contractConflicts('Push it\nto the remote')).toEqual([{ line: 1, text: 'Push it' }])
   })
 })

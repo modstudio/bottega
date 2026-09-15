@@ -1,7 +1,7 @@
-import { db, nowIso, type Project } from '../db.ts'
-import { keyPattern, projectOfKey } from '../attribute.ts'
-import { projects } from '../projects.ts'
 import { categorizeFile, type FileKind } from '../../../shared/file-kind.ts'
+import { keyPattern, projectOfKey } from '../attribute.ts'
+import { db, nowIso, type Project } from '../db.ts'
+import { projects } from '../projects.ts'
 
 /**
  * Generated files, which are not work.
@@ -37,11 +37,19 @@ export type DayActivity = {
 }
 
 /** Commits seen per task key, for tasks no tracker could tell us about. */
-export type GitTask = { key: string; project: Project; first: string; last: string; commits: number }
+export type GitTask = {
+  key: string
+  project: Project
+  first: string
+  last: string
+  commits: number
+}
 
 function blank(): DayActivity {
   return {
-    tasks: new Set(), commits: 0, files: new Set(),
+    tasks: new Set(),
+    commits: 0,
+    files: new Set(),
     lines: { generated: 0, test: 0, docs: 0, config: 0, product: 0 },
   }
 }
@@ -67,15 +75,26 @@ export function scanGit(since: string) {
   for (const project of projects()) {
     const repo = project.name
     const proc = Bun.spawnSync(
-      ['git', '-C', project.path, 'log', '--all', `--since=${since}`,
-       '--numstat', '--pretty=format:%x00%cs%x09%cI%x09%H%x09%s'],
+      [
+        'git',
+        '-C',
+        project.path,
+        'log',
+        '--all',
+        `--since=${since}`,
+        '--numstat',
+        '--pretty=format:%x00%cs%x09%cI%x09%H%x09%s',
+      ],
       { stdout: 'pipe', stderr: 'ignore' },
     )
     let day: string | null = null
     for (const line of new TextDecoder().decode(proc.stdout).split('\n')) {
       if (line.startsWith('\u0000')) {
         const [d, at, sha, subject] = line.slice(1).split('\t')
-        if (!d) { day = null; continue }
+        if (!d) {
+          day = null
+          continue
+        }
         day = d
         const row = get(day)
         row.commits++
@@ -88,7 +107,13 @@ export function scanGit(since: string) {
             if (d < t.first) t.first = d
             if (d > t.last) t.last = d
           } else {
-            tasks.set(key, { key, project: projectOfKey(key) ?? repo, first: d, last: d, commits: 1 })
+            tasks.set(key, {
+              key,
+              project: projectOfKey(key) ?? repo,
+              first: d,
+              last: d,
+              commits: 1,
+            })
           }
           if (sha && at) commits.push({ sha, repo, key, at })
         }
@@ -154,8 +179,18 @@ export function ingestGit(since: string): { days: number; tasks: number } {
   const write = d.transaction(() => {
     for (const c of commits) commitStmt.run(c.sha, c.repo, c.key, c.at)
     for (const [day, a] of days) {
-      dayStmt.run(day, a.tasks.size, a.commits, a.files.size,
-        a.lines.product, a.lines.test, a.lines.docs, a.lines.config, a.lines.generated, at)
+      dayStmt.run(
+        day,
+        a.tasks.size,
+        a.commits,
+        a.files.size,
+        a.lines.product,
+        a.lines.test,
+        a.lines.docs,
+        a.lines.config,
+        a.lines.generated,
+        at,
+      )
     }
     for (const t of tasks.values()) {
       taskStmt.run(t.key, t.project, t.first, t.last, at, at)

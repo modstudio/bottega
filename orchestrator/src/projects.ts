@@ -23,9 +23,24 @@
  */
 import { existsSync, readFileSync } from 'node:fs'
 import { join, resolve } from 'node:path'
-import { gitToplevel, inspectCheckout, inspectionGitEnv, resolvedPathsEqual, type SequenceKind, type SequenceState, } from '../../shared/git.ts'
+import {
+  gitToplevel,
+  inspectCheckout,
+  inspectionGitEnv,
+  resolvedPathsEqual,
+  type SequenceKind,
+  type SequenceState,
+} from '../../shared/git.ts'
 import { db, writableDb, writeTransaction } from './db.ts'
-import { CREATE_VARS, createHasPlaceholder, placeholders, validateCreate, type WorktreeCreate } from './worktree-template.ts'; import { validateReadonlyProvision, type ReadonlyProvision } from './readonly-provision.ts'
+import { type ReadonlyProvision, validateReadonlyProvision } from './readonly-provision.ts'
+import {
+  CREATE_VARS,
+  createHasPlaceholder,
+  placeholders,
+  validateCreate,
+  type WorktreeCreate,
+} from './worktree-template.ts'
+
 export { migrateCreate, type WorktreeCreate, type WorktreeCreateArg } from './worktree-template.ts'
 
 export type Project = {
@@ -126,7 +141,9 @@ export type ProjectSettings = {
 export function resolveBranchRef(value: string): { branch: string; runId: number | null } {
   if (!/^\d+$/.test(value)) return { branch: value, runId: null }
   const runId = Number(value)
-  const row = db().query('SELECT branch FROM run WHERE id=?').get(runId) as { branch: string | null } | null
+  const row = db().query('SELECT branch FROM run WHERE id=?').get(runId) as {
+    branch: string | null
+  } | null
   if (!row) throw new Error(`no run ${runId}`)
   if (!row.branch) throw new Error(`run ${runId} has no branch and cannot be landed`)
   return { branch: row.branch, runId }
@@ -152,7 +169,8 @@ export type WorktreeTool = {
    * When absent, read-only runs use a plain detached git worktree and no
    * project infrastructure.
    */
-  readonly_create?: WorktreeCreate; readonly_provision?: ReadonlyProvision
+  readonly_create?: WorktreeCreate
+  readonly_provision?: ReadonlyProvision
   /** What a read-only worker is told this project's detached tree can and cannot run. */
   readonly_notes?: string
   /** Optional teardown for readonly_create trees. Receives `{path}` only. */
@@ -214,28 +232,42 @@ export type WorktreeTool = {
 }
 
 function parse(row: {
-  id: number; name: string; path: string; stack: string | null
-  canon: number; settings: string | null
+  id: number
+  name: string
+  path: string
+  stack: string | null
+  canon: number
+  settings: string | null
 }): Project {
   let settings: ProjectSettings = {}
-  try { settings = row.settings ? JSON.parse(row.settings) : {} } catch {
+  try {
+    settings = row.settings ? JSON.parse(row.settings) : {}
+  } catch {
     // Unreadable settings must not take the project out of the register: a
     // typo in one JSON blob would otherwise make a whole repo invisible to
     // routing and reporting at once.
     settings = {}
   }
   return {
-    id: row.id, name: row.name, path: row.path, stack: row.stack,
-    canon: row.canon === 1, settings,
+    id: row.id,
+    name: row.name,
+    path: row.path,
+    stack: row.stack,
+    canon: row.canon === 1,
+    settings,
   }
 }
 
 export function projects(): Project[] {
-  return (db().query('SELECT * FROM project ORDER BY name').all() as any[]).map(parse)
+  return (
+    db().query('SELECT * FROM project ORDER BY name').all() as Parameters<typeof parse>[0][]
+  ).map(parse)
 }
 
 export function projectByName(name: string): Project | null {
-  const r = db().query('SELECT * FROM project WHERE name = ?').get(name) as any
+  const r = db().query('SELECT * FROM project WHERE name = ?').get(name) as
+    | Parameters<typeof parse>[0]
+    | null
   return r ? parse(r) : null
 }
 
@@ -269,18 +301,26 @@ export function stackAt(cwd: string): string | null {
 }
 
 export function upsertProject(p: {
-  name: string; path: string; stack?: string | null; canon?: boolean
+  name: string
+  path: string
+  stack?: string | null
+  canon?: boolean
   settings?: ProjectSettings
 }): void {
   writableDb()
-  db().query(
-    `INSERT INTO project (name, path, stack, canon, settings) VALUES (?,?,?,?,?)
+  db()
+    .query(
+      `INSERT INTO project (name, path, stack, canon, settings) VALUES (?,?,?,?,?)
      ON CONFLICT(name) DO UPDATE SET path=excluded.path, stack=excluded.stack,
                                      canon=excluded.canon, settings=excluded.settings`,
-  ).run(
-    p.name, p.path.replace(/\/$/, ''), p.stack ?? null, p.canon ? 1 : 0,
-    JSON.stringify(p.settings ?? {}),
-  )
+    )
+    .run(
+      p.name,
+      p.path.replace(/\/$/, ''),
+      p.stack ?? null,
+      p.canon ? 1 : 0,
+      JSON.stringify(p.settings ?? {}),
+    )
 }
 
 /** Rename the referent and refresh every deprecated one-release name mirror atomically. */
@@ -289,16 +329,27 @@ export function renameProject(currentName: string, nextName: string): void {
   if (!nextName.trim()) throw new Error('project --name must be non-empty')
   const current = projectByName(currentName)
   if (!current) throw new Error(`no project "${currentName}"`)
-  if (currentName !== nextName && projectByName(nextName)) throw new Error(`project "${nextName}" already exists`)
+  if (currentName !== nextName && projectByName(nextName))
+    throw new Error(`project "${nextName}" already exists`)
   const d = db()
   writeTransaction(() => {
     d.query('UPDATE project SET name=? WHERE id=?').run(nextName, current.id)
     for (const [table, column] of [
-      ['run','repo'], ['canon_pack','project'], ['landing','project'],
-      ['landing_override','project'], ['landing_review_carry','project'],
-    ]) d.query(`UPDATE ${table} SET ${column}=? WHERE project_id=?`).run(nextName,current.id)
-    d.query("UPDATE doc SET subject=? WHERE scope='project' AND project_id=?").run(nextName,current.id)
-    d.query("UPDATE doc_revision SET subject=? WHERE scope='project' AND project_id=?").run(nextName,current.id)
+      ['run', 'repo'],
+      ['canon_pack', 'project'],
+      ['landing', 'project'],
+      ['landing_override', 'project'],
+      ['landing_review_carry', 'project'],
+    ])
+      d.query(`UPDATE ${table} SET ${column}=? WHERE project_id=?`).run(nextName, current.id)
+    d.query("UPDATE doc SET subject=? WHERE scope='project' AND project_id=?").run(
+      nextName,
+      current.id,
+    )
+    d.query("UPDATE doc_revision SET subject=? WHERE scope='project' AND project_id=?").run(
+      nextName,
+      current.id,
+    )
   }, d)
 }
 
@@ -306,13 +357,22 @@ export function removeProject(name: string): boolean {
   writableDb()
   const project = projectByName(name)
   if (!project) return false
-  const d=db()
-  return writeTransaction(()=>{
-    for(const table of ['run','canon_pack','landing','landing_override','landing_review_carry','doc','doc_revision','review']) {
+  const d = db()
+  return writeTransaction(() => {
+    for (const table of [
+      'run',
+      'canon_pack',
+      'landing',
+      'landing_override',
+      'landing_review_carry',
+      'doc',
+      'doc_revision',
+      'review',
+    ]) {
       d.query(`UPDATE ${table} SET project_id=NULL WHERE project_id=?`).run(project.id)
     }
     return d.query('DELETE FROM project WHERE id = ?').run(project.id).changes > 0
-  },d)
+  }, d)
 }
 
 /**
@@ -326,22 +386,27 @@ export function validateProjectSettings(settings: ProjectSettings): string[] {
       settings.worktree?.readonly_create as unknown,
       'worktree.readonly_create',
       new Set(['path', 'base']),
-    ), ...validateReadonlyProvision(settings.worktree?.readonly_provision),
+    ),
+    ...validateReadonlyProvision(settings.worktree?.readonly_provision),
   ]
   if (invalidOptionalStringArray(settings.secretPaths)) {
     problems.push('secretPaths must be an array of non-empty path strings')
   }
-  if (invalidOptionalStringArray(settings.workerMcpServers)) problems.push(
-    'workerMcpServers must be an array of non-empty strings')
+  if (invalidOptionalStringArray(settings.workerMcpServers))
+    problems.push('workerMcpServers must be an array of non-empty strings')
   if (settings.requireCleanMain !== undefined && typeof settings.requireCleanMain !== 'boolean') {
     problems.push('requireCleanMain must be a boolean')
   }
-  if (settings.mcpServer !== undefined &&
-      (typeof settings.mcpServer !== 'string' || !settings.mcpServer.trim())) {
+  if (
+    settings.mcpServer !== undefined &&
+    (typeof settings.mcpServer !== 'string' || !settings.mcpServer.trim())
+  ) {
     problems.push('mcpServer must be a non-empty string')
   }
-  if (settings.mcp !== undefined &&
-      (!settings.mcp || typeof settings.mcp !== 'object' || Array.isArray(settings.mcp))) {
+  if (
+    settings.mcp !== undefined &&
+    (!settings.mcp || typeof settings.mcp !== 'object' || Array.isArray(settings.mcp))
+  ) {
     problems.push('mcp must be an object')
   } else if (settings.mcp?.probe_tool !== undefined) {
     const tool = settings.mcp.probe_tool
@@ -362,7 +427,8 @@ export function validateProjectSettings(settings: ProjectSettings): string[] {
       problems.push('worktree.readonly_remove must be a non-empty template')
     } else {
       const unknown = placeholders(readonlyRemove).find((name) => name !== 'path')
-      if (unknown) problems.push(`worktree.readonly_remove contains unknown placeholder {${unknown}}`)
+      if (unknown)
+        problems.push(`worktree.readonly_remove contains unknown placeholder {${unknown}}`)
       if (!placeholders(readonlyRemove).includes('path')) {
         problems.push('worktree.readonly_remove must contain {path}')
       }
@@ -372,15 +438,21 @@ export function validateProjectSettings(settings: ProjectSettings): string[] {
 }
 
 function invalidOptionalStringArray(value: unknown): boolean {
-  return value !== undefined && (!Array.isArray(value) ||
-    value.some((entry) => typeof entry !== 'string' || !entry.trim()))
+  return (
+    value !== undefined &&
+    (!Array.isArray(value) || value.some((entry) => typeof entry !== 'string' || !entry.trim()))
+  )
 }
 
 /** Validate a stored row without re-refusing its unchanged legacy create string. */
 export function validateStoredProjectSettings(settings: ProjectSettings): string[] {
-  return validateProjectSettings(settings).filter((problem) =>
-    !(typeof settings.worktree?.create === 'string' &&
-      problem === 'worktree.create is a shell string; migrate it (DEV-308)'))
+  return validateProjectSettings(settings).filter(
+    (problem) =>
+      !(
+        typeof settings.worktree?.create === 'string' &&
+        problem === 'worktree.create is a shell string; migrate it (DEV-308)'
+      ),
+  )
 }
 
 export type RegisterBranchCheck = {
@@ -391,27 +463,43 @@ export type RegisterBranchCheck = {
 }
 
 /** Verify branch facts at registration time; never guess a detached HEAD. */
-export function registerBranchCheck(project: Pick<Project, 'name' | 'path' | 'settings'>): RegisterBranchCheck {
-  const landing = typeof project.settings.trunk === 'string' && project.settings.trunk.trim()
-    ? project.settings.trunk.trim() : null
-  const headResult = Bun.spawnSync(['git', '-C', project.path, 'symbolic-ref', '--quiet', '--short', 'HEAD'], {
-    env: inspectionGitEnv(), stdout: 'pipe', stderr: 'ignore',
-  })
+export function registerBranchCheck(
+  project: Pick<Project, 'name' | 'path' | 'settings'>,
+): RegisterBranchCheck {
+  const landing =
+    typeof project.settings.trunk === 'string' && project.settings.trunk.trim()
+      ? project.settings.trunk.trim()
+      : null
+  const headResult = Bun.spawnSync(
+    ['git', '-C', project.path, 'symbolic-ref', '--quiet', '--short', 'HEAD'],
+    {
+      env: inspectionGitEnv(),
+      stdout: 'pipe',
+      stderr: 'ignore',
+    },
+  )
   const head = headResult.exitCode === 0 ? headResult.stdout.toString().trim() || null : null
   let canonIntegration: string | null = null
   const canonPath = join(project.path, 'AGENTS.md')
   if (existsSync(canonPath)) {
     const canon = readFileSync(canonPath, 'utf8')
-    const match = canon.match(/\bintegration branch\s+(?:is|:)\s*[`'\"]?([A-Za-z0-9](?:[A-Za-z0-9._/-]*[A-Za-z0-9])?)/i)
+    const match = canon.match(
+      /\bintegration branch\s+(?:is|:)\s*[`'"]?([A-Za-z0-9](?:[A-Za-z0-9._/-]*[A-Za-z0-9])?)/i,
+    )
     canonIntegration = match?.[1] ?? null
   }
   const problems: string[] = []
-  if (landing && head !== landing) problems.push(`checkout HEAD is ${head ?? 'detached'}, not landing branch ${landing}`)
+  if (landing && head !== landing)
+    problems.push(`checkout HEAD is ${head ?? 'detached'}, not landing branch ${landing}`)
   if (landing && canonIntegration && canonIntegration !== landing) {
-    problems.push(`canon names integration branch ${canonIntegration}, not landing branch ${landing}`)
+    problems.push(
+      `canon names integration branch ${canonIntegration}, not landing branch ${landing}`,
+    )
   }
-  const production = typeof project.settings.productionBranch === 'string'
-    ? project.settings.productionBranch.trim() : ''
+  const production =
+    typeof project.settings.productionBranch === 'string'
+      ? project.settings.productionBranch.trim()
+      : ''
   if (landing && production && production === landing) {
     problems.push(`production branch ${production} must be distinct from landing branch ${landing}`)
   }
@@ -423,8 +511,8 @@ export function assertRegisterBranches(project: Pick<Project, 'name' | 'path' | 
   if (!check.problems.length) return
   throw new Error(
     `${project.name}: ${check.problems.join('; ')}\n` +
-    'invariant: the register landing branch agrees with the main checkout and its integration-branch canon\n' +
-    `cleared by: check out ${check.landing ?? '<landing-branch>'} in ${project.path} or correct it with orch project set ${project.name} --settings '{"trunk":"<branch>"}'`,
+      'invariant: the register landing branch agrees with the main checkout and its integration-branch canon\n' +
+      `cleared by: check out ${check.landing ?? '<landing-branch>'} in ${project.path} or correct it with orch project set ${project.name} --settings '{"trunk":"<branch>"}'`,
   )
 }
 
@@ -487,7 +575,8 @@ function shellQuote(value: string): string {
 }
 
 export function mainCheckoutRefusal(
-  project: Pick<Project, 'name' | 'path'>, dirtyTracked: string[],
+  project: Pick<Project, 'name' | 'path'>,
+  dirtyTracked: string[],
 ): string {
   const hint = mainCheckoutWorktreeHint(project.path)
   return (
@@ -506,7 +595,8 @@ function sequenceClearCommand(kind: SequenceKind, path: string): string {
 }
 
 export function mainCheckoutSequenceRefusal(
-  project: Pick<Project, 'name' | 'path'>, kind: SequenceKind,
+  project: Pick<Project, 'name' | 'path'>,
+  kind: SequenceKind,
 ): string {
   const hint = mainCheckoutWorktreeHint(project.path)
   if (kind === 'cherry-pick') {
@@ -549,9 +639,14 @@ export function assertMainCheckoutClean(
 
 function configuredHooksPath(projectPath: string): string | null {
   if (existsSync(join(projectPath, '.githooks'))) return join(projectPath, '.githooks')
-  const configured = Bun.spawnSync(['git', '-C', projectPath, 'config', '--path', 'core.hooksPath'], {
-    env: inspectionGitEnv(), stdout: 'pipe', stderr: 'ignore',
-  })
+  const configured = Bun.spawnSync(
+    ['git', '-C', projectPath, 'config', '--path', 'core.hooksPath'],
+    {
+      env: inspectionGitEnv(),
+      stdout: 'pipe',
+      stderr: 'ignore',
+    },
+  )
   if (configured.exitCode === 0) {
     const value = configured.stdout.toString().trim()
     if (value) return value.startsWith('/') ? value : resolve(projectPath, value)
@@ -565,8 +660,9 @@ export function undeclaredCommitHooks(project: Project): string | null {
   if (typeof project.settings.gate === 'string' && project.settings.gate.trim()) return null
   const hooks = configuredHooksPath(project.path)
   if (!hooks) return null
-  const checks = ['pre-commit', 'commit-msg', 'pre-push']
-    .filter((name) => existsSync(join(hooks, name)))
+  const checks = ['pre-commit', 'commit-msg', 'pre-push'].filter((name) =>
+    existsSync(join(hooks, name)),
+  )
   if (!checks.length) return null
   return `${project.name}: gate undeclared while hooks carry pre-commit checks (${checks.join(', ')} in ${hooks})`
 }
@@ -582,7 +678,11 @@ export function undeclaredCommitHooks(project: Project): string | null {
 export function sniffStack(path: string): string | null {
   const has = (f: string) => Bun.spawnSync(['test', '-e', `${path}/${f}`]).exitCode === 0
   const read = (f: string) => {
-    try { return Bun.spawnSync(['cat', `${path}/${f}`]).stdout.toString() } catch { return '' }
+    try {
+      return Bun.spawnSync(['cat', `${path}/${f}`]).stdout.toString()
+    } catch {
+      return ''
+    }
   }
   const parts: string[] = []
   if (has('composer.json')) parts.push('php')
@@ -590,8 +690,11 @@ export function sniffStack(path: string): string | null {
   const pkg = has('package.json') ? read('package.json') : ''
   if (pkg && !parts.length) parts.push('node')
   for (const [dep, label] of [
-    ['"vue"', 'vue'], ['"react"', 'react'], ['"next"', 'next'],
-    ['"svelte"', 'svelte'], ['drizzle', 'drizzle'],
+    ['"vue"', 'vue'],
+    ['"react"', 'react'],
+    ['"next"', 'next'],
+    ['"svelte"', 'svelte'],
+    ['drizzle', 'drizzle'],
   ] as const) {
     if (pkg.includes(dep)) parts.push(label)
   }
@@ -600,7 +703,6 @@ export function sniffStack(path: string): string | null {
   if (has('pyproject.toml') || has('requirements.txt')) parts.push('python')
   return parts.length ? parts.join('-') : null
 }
-
 
 /**
  * Ways a project's worktree settings contradict themselves.
@@ -640,12 +742,16 @@ export function worktreeWarnings(p: Project): string[] {
    * problem.
    */
   if (w.create && !w.branch) {
-    out.push('has a create command but no branch template, so runs get orch/<id> - '
-      + 'which a project enforcing a branch format will reject')
+    out.push(
+      'has a create command but no branch template, so runs get orch/<id> - ' +
+        'which a project enforcing a branch format will reject',
+    )
   }
   if (createHasPlaceholder(w.create, 'seed') && !w.seeds?.length) {
-    out.push('has a create command with a {seed} placeholder but no seeds list, so orch cannot '
-      + 'say which values are valid')
+    out.push(
+      'has a create command with a {seed} placeholder but no seeds list, so orch cannot ' +
+        'say which values are valid',
+    )
   }
   return out
 }

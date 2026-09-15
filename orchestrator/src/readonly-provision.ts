@@ -6,12 +6,19 @@ export type ReadonlyProvisionEntry = { path: string; method: 'link' | 'clone' }
 export type ReadonlyProvision = ReadonlyProvisionEntry[]
 
 function targetExists(path: string): boolean {
-  try { lstatSync(path); return true } catch { return false }
+  try {
+    lstatSync(path)
+    return true
+  } catch {
+    return false
+  }
 }
 
 /** Place dependencies that must exist before a read-only sandbox starts. */
 export function provisionReadOnlyTree(
-  main: string, tree: string, provisions: ReadonlyProvision,
+  main: string,
+  tree: string,
+  provisions: ReadonlyProvision,
 ): void {
   for (const provision of provisions) {
     const source = join(main, provision.path)
@@ -26,7 +33,8 @@ export function provisionReadOnlyTree(
       continue
     }
     const copy = Bun.spawnSync(['cp', '-c', '-R', source, target], {
-      stdout: 'pipe', stderr: 'pipe',
+      stdout: 'pipe',
+      stderr: 'pipe',
     })
     if (copy.exitCode !== 0) {
       throw new Error(copy.stderr.toString().trim() || `cp exited ${copy.exitCode}`)
@@ -45,8 +53,12 @@ export function validateReadonlyProvision(value: unknown): string[] {
       continue
     }
     const candidate = entry as Record<string, unknown>
-    if (typeof candidate.path !== 'string' || !candidate.path.trim() ||
-        isAbsolute(candidate.path) || candidate.path.split('/').includes('..')) {
+    if (
+      typeof candidate.path !== 'string' ||
+      !candidate.path.trim() ||
+      isAbsolute(candidate.path) ||
+      candidate.path.split('/').includes('..')
+    ) {
       problems.push('worktree.readonly_provision path must be a non-empty relative path without ..')
     }
     if (candidate.method !== 'link' && candidate.method !== 'clone') {

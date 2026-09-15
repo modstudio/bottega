@@ -1,20 +1,23 @@
-import { useEffect, useMemo, useState } from 'react'
-import { createFileRoute, Outlet, useNavigate } from '@tanstack/react-router'
 import { useMutation, useQuery } from '@tanstack/react-query'
+import { createFileRoute, Outlet, useNavigate } from '@tanstack/react-router'
 import { ChevronRight, Plus } from 'lucide-react'
-import { PageHeader } from '@/components/design-system'
+import { useEffect, useMemo, useState } from 'react'
 import { Button } from '@/components/button'
+import { Collection, type CollectionColumn } from '@/components/collection'
+import { PageHeader } from '@/components/design-system'
 import {
-  Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle,
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
 } from '@/components/dialog'
 import { Input } from '@/components/input'
 import { Tabs, TabsList, TabsTrigger } from '@/components/tabs'
-import { queryClient, trpc } from '@/trpc/client'
 import { compactBytes, relativeTime } from '@/lib/format'
-import { Collection, type CollectionColumn } from '@/components/collection'
-import {
-  DOC_SCOPES, DOC_SCOPE_SUBJECT_KIND, type DocScope,
-} from '../../../../shared/docs.ts'
+import { queryClient, trpc } from '@/trpc/client'
+import { DOC_SCOPE_SUBJECT_KIND, DOC_SCOPES, type DocScope } from '../../../../shared/docs.ts'
 
 export { DOC_SCOPES, type DocScope }
 
@@ -37,7 +40,12 @@ const selectClass =
 export const Route = createFileRoute('/docs')({ component: DocsPage })
 
 function DocsPage() {
-  return <><DocsList /><Outlet /></>
+  return (
+    <>
+      <DocsList />
+      <Outlet />
+    </>
+  )
 }
 
 function DocsList() {
@@ -91,16 +99,35 @@ function DocsList() {
       return doc.slug.toLowerCase().includes(q) || doc.title.toLowerCase().includes(q)
     })
   }, [docs.data, scopeFilter, textFilter])
-  type Row = typeof rows[number]
+  type Row = (typeof rows)[number]
   const columns: CollectionColumn<Row>[] = [
     { id: 'scope', label: 'Scope', render: (doc) => doc.scope },
-    { id: 'subject', label: 'Subject', render: (doc) => <span className="text-muted-foreground">{doc.subject ?? '-'}</span> },
+    {
+      id: 'subject',
+      label: 'Subject',
+      render: (doc) => <span className="text-muted-foreground">{doc.subject ?? '-'}</span>,
+    },
     { id: 'slug', label: 'Slug', render: (doc) => <strong>{doc.slug}</strong> },
     { id: 'title', label: 'Title', render: (doc) => doc.title },
     { id: 'delivery', label: 'Delivery', render: (doc) => doc.delivery },
-    { id: 'size', label: 'Size', className: 'num', render: (doc) => compactBytes(bodyBytes(doc.body)) },
-    { id: 'updated', label: 'Updated', render: (doc) => <span className="text-muted-foreground">{relativeTime(doc.updated_at)}</span> },
-    { id: 'open', label: '', render: () => <ChevronRight size={14} className="text-muted-foreground" /> },
+    {
+      id: 'size',
+      label: 'Size',
+      className: 'num',
+      render: (doc) => compactBytes(bodyBytes(doc.body)),
+    },
+    {
+      id: 'updated',
+      label: 'Updated',
+      render: (doc) => (
+        <span className="text-muted-foreground">{relativeTime(doc.updated_at)}</span>
+      ),
+    },
+    {
+      id: 'open',
+      label: '',
+      render: () => <ChevronRight size={14} className="text-muted-foreground" />,
+    },
   ]
 
   function submitCreate() {
@@ -119,23 +146,72 @@ function DocsList() {
 
   return (
     <section>
-      <PageHeader title="Docs" actions={<Button size="sm" onClick={() => {
-          setScope('global')
-          setSubject('')
-          setSlug('')
-          setTitle('')
-          setDelivery('inject')
-          create.reset()
-          setCreating(true)
-        }}>
-          <Plus size={14} />
-          New doc
-        </Button>} />
+      <PageHeader
+        title="Docs"
+        actions={
+          <Button
+            size="sm"
+            onClick={() => {
+              setScope('global')
+              setSubject('')
+              setSlug('')
+              setTitle('')
+              setDelivery('inject')
+              create.reset()
+              setCreating(true)
+            }}
+          >
+            <Plus size={14} />
+            New doc
+          </Button>
+        }
+      />
       {docs.isPending ? <p className="text-muted-foreground">Loading docs...</p> : null}
       {docs.error ? <p className="text-destructive">{docs.error.message}</p> : null}
-      {docs.data ? <Collection title="Documents" count={rows.length} search={{ query: textFilter, onQueryChange: setTextFilter, placeholder: 'Filter slug or title' }} filters={<Tabs value={scopeFilter} onValueChange={setScopeFilter}><TabsList><TabsTrigger value="all">All</TabsTrigger>{DOC_SCOPES.map((s) => <TabsTrigger key={s} value={s}>{s.charAt(0).toUpperCase() + s.slice(1)}</TabsTrigger>)}</TabsList></Tabs>} columns={columns} rows={rows} getKey={(doc) => `${doc.scope}:${doc.subject ?? '_'}:${doc.slug}`} onOpen={(doc) => void navigate({ to: '/docs/$scope/$subject/$slug', params: { scope: doc.scope, subject: doc.subject ?? '_', slug: doc.slug }, search: {} })} empty={{ title: 'No docs match this view.', hint: 'Change the scope or clear the text filter.' }} /> : null}
+      {docs.data ? (
+        <Collection
+          title="Documents"
+          count={rows.length}
+          search={{
+            query: textFilter,
+            onQueryChange: setTextFilter,
+            placeholder: 'Filter slug or title',
+          }}
+          filters={
+            <Tabs value={scopeFilter} onValueChange={setScopeFilter}>
+              <TabsList>
+                <TabsTrigger value="all">All</TabsTrigger>
+                {DOC_SCOPES.map((s) => (
+                  <TabsTrigger key={s} value={s}>
+                    {s.charAt(0).toUpperCase() + s.slice(1)}
+                  </TabsTrigger>
+                ))}
+              </TabsList>
+            </Tabs>
+          }
+          columns={columns}
+          rows={rows}
+          getKey={(doc) => `${doc.scope}:${doc.subject ?? '_'}:${doc.slug}`}
+          onOpen={(doc) =>
+            void navigate({
+              to: '/docs/$scope/$subject/$slug',
+              params: { scope: doc.scope, subject: doc.subject ?? '_', slug: doc.slug },
+              search: {},
+            })
+          }
+          empty={{
+            title: 'No docs match this view.',
+            hint: 'Change the scope or clear the text filter.',
+          }}
+        />
+      ) : null}
 
-      <Dialog open={creating} onOpenChange={(open) => { if (!open) setCreating(false) }}>
+      <Dialog
+        open={creating}
+        onOpenChange={(open) => {
+          if (!open) setCreating(false)
+        }}
+      >
         <DialogContent>
           <DialogHeader>
             <DialogTitle>New doc</DialogTitle>
@@ -151,7 +227,11 @@ function DocsList() {
                 if (isScope(next)) setScope(next)
               }}
             >
-              {DOC_SCOPES.map((s) => <option key={s} value={s}>{s}</option>)}
+              {DOC_SCOPES.map((s) => (
+                <option key={s} value={s}>
+                  {s}
+                </option>
+              ))}
             </select>
           </label>
           {needsSubject(scope) ? (
@@ -162,7 +242,11 @@ function DocsList() {
                 value={subject}
                 onChange={(e) => setSubject(e.target.value)}
               >
-                {subjectOptions.map((name) => <option key={name} value={name}>{name}</option>)}
+                {subjectOptions.map((name) => (
+                  <option key={name} value={name}>
+                    {name}
+                  </option>
+                ))}
               </select>
             </label>
           ) : null}
@@ -176,15 +260,20 @@ function DocsList() {
           </label>
           <label className="block text-sm">
             <span className="text-muted-foreground">Delivery</span>
-            <select className={selectClass} value={delivery}
-              onChange={(e) => setDelivery(e.target.value as 'inject' | 'demand')}>
+            <select
+              className={selectClass}
+              value={delivery}
+              onChange={(e) => setDelivery(e.target.value as 'inject' | 'demand')}
+            >
               <option value="inject">inject</option>
               <option value="demand">demand</option>
             </select>
           </label>
           {create.error ? <p className="text-destructive">{create.error.message}</p> : null}
           <DialogFooter>
-            <Button variant="outline" onClick={() => setCreating(false)}>Cancel</Button>
+            <Button variant="outline" onClick={() => setCreating(false)}>
+              Cancel
+            </Button>
             <Button
               onClick={submitCreate}
               disabled={create.isPending || !slug || !title || (needsSubject(scope) && !subject)}

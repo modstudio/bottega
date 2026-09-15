@@ -1,12 +1,24 @@
 import { describe, expect, test } from 'bun:test'
 import { AGENTS } from './agents.ts'
-import { decideFailover, detachedRunOptions, retryModelForAgent, writingFailoverRefusal } from './failover.ts'
+import {
+  decideFailover,
+  detachedRunOptions,
+  retryModelForAgent,
+  writingFailoverRefusal,
+} from './failover.ts'
 
 const base = {
-  status: 'failed', failureKind: 'quota', failoverKinds: ['quota'],
-  noFailover: false, writesJob: false, changes: { files: [] },
-  worktree: '(none — read-only job)', attemptCount: 1, maxAttempts: 3,
-  agentsTried: ['grok'], originalPromptAvailable: true,
+  status: 'failed',
+  failureKind: 'quota',
+  failoverKinds: ['quota'],
+  noFailover: false,
+  writesJob: false,
+  changes: { files: [] },
+  worktree: '(none — read-only job)',
+  attemptCount: 1,
+  maxAttempts: 3,
+  agentsTried: ['grok'],
+  originalPromptAvailable: true,
 }
 
 describe('decideFailover', () => {
@@ -22,11 +34,17 @@ describe('decideFailover', () => {
   })
 
   test('writing changes refuse', () => {
-    expect(decideFailover({
-      ...base, writesJob: true, changes: { files: ['src/a.ts'] }, worktree: '/tmp/tree',
-    })).toEqual({
+    expect(
+      decideFailover({
+        ...base,
+        writesJob: true,
+        changes: { files: ['src/a.ts'] },
+        worktree: '/tmp/tree',
+      }),
+    ).toEqual({
       kind: 'refusal',
-      reason: 'writing run has 1 changed file(s); preserving worktree /tmp/tree so two agents never share one diff',
+      reason:
+        'writing run has 1 changed file(s); preserving worktree /tmp/tree so two agents never share one diff',
     })
   })
 
@@ -40,7 +58,8 @@ describe('decideFailover', () => {
   test('missing original prompt refuses', () => {
     expect(decideFailover({ ...base, originalPromptAvailable: false })).toEqual({
       kind: 'refusal',
-      reason: 'the original prompt is no longer on disk; tried grok; worktree (none — read-only job)',
+      reason:
+        'the original prompt is no longer on disk; tried grok; worktree (none — read-only job)',
     })
   })
 
@@ -51,37 +70,85 @@ describe('decideFailover', () => {
   test('selection failure refuses', () => {
     expect(decideFailover({ ...base, selectionError: 'all excluded' })).toEqual({
       kind: 'refusal',
-      reason: 'no eligible agent remains after trying grok: all excluded; worktree (none — read-only job)',
+      reason:
+        'no eligible agent remains after trying grok: all excluded; worktree (none — read-only job)',
     })
   })
 
   test('selected agent becomes successor', () => {
     expect(decideFailover({ ...base, successor: { agent: 'codex' } })).toEqual({
-      kind: 'successor', agent: 'codex',
+      kind: 'successor',
+      agent: 'codex',
     })
   })
 })
 
 test('the detached spec mapping forwards every field to run', () => {
   const resume = {
-    parent: 11, agent: 'codex', session: 'session', turn: 2, sessionId: 'owner',
+    parent: 11,
+    agent: 'codex',
+    session: 'session',
+    turn: 2,
+    sessionId: 'owner',
     worktree: { path: '/tmp/tree', branch: 'DEV-63', base: 'main', repoRoot: '/tmp/repo' },
   }
-  expect(detachedRunOptions('implement', 'prompt', 42, {
-    agent: 'codex', schema: '/tmp/schema.json', mcp: true, model: 'model', probe: true,
-    transport: 'cli', label: 'security lens', lens: 'security', seed: 'small',
-    key: 'DEV-63', repo: 'project', base: 'main', avoid: ['grok'],
-    distinctModels: ['other-model'], retryOf: 7, cwd: '/tmp/repo', noFailover: true,
-    noWaitCapacity: true, carry: true, review: 'feature/DEV-63', ownerSession: 'owner',
-    resume, deliverables: ['timing'], timeoutMinutes: 40, keepTree: true,
-  })).toMatchObject({
-    job: 'implement', prompt: 'prompt', reserveId: 42, agent: 'codex',
-    schemaPath: '/tmp/schema.json', mcp: true, model: 'model', probe: true,
-    transport: 'cli', label: 'security lens', lens: 'security', seed: 'small',
-    key: 'DEV-63', repo: 'project', base: 'main', avoid: ['grok'],
-    distinctModels: ['other-model'], retryOf: 7, cwd: '/tmp/repo', noFailover: true,
-    noWaitCapacity: true, carry: true, review: 'feature/DEV-63', ownerSession: 'owner',
-    resume, deliverables: ['timing'], timeoutMinutes: 40, keepTree: true,
+  expect(
+    detachedRunOptions('implement', 'prompt', 42, {
+      agent: 'codex',
+      schema: '/tmp/schema.json',
+      mcp: true,
+      model: 'model',
+      probe: true,
+      transport: 'cli',
+      label: 'security lens',
+      lens: 'security',
+      seed: 'small',
+      key: 'DEV-63',
+      repo: 'project',
+      base: 'main',
+      avoid: ['grok'],
+      distinctModels: ['other-model'],
+      retryOf: 7,
+      cwd: '/tmp/repo',
+      noFailover: true,
+      noWaitCapacity: true,
+      carry: true,
+      review: 'feature/DEV-63',
+      ownerSession: 'owner',
+      resume,
+      deliverables: ['timing'],
+      timeoutMinutes: 40,
+      keepTree: true,
+    }),
+  ).toMatchObject({
+    job: 'implement',
+    prompt: 'prompt',
+    reserveId: 42,
+    agent: 'codex',
+    schemaPath: '/tmp/schema.json',
+    mcp: true,
+    model: 'model',
+    probe: true,
+    transport: 'cli',
+    label: 'security lens',
+    lens: 'security',
+    seed: 'small',
+    key: 'DEV-63',
+    repo: 'project',
+    base: 'main',
+    avoid: ['grok'],
+    distinctModels: ['other-model'],
+    retryOf: 7,
+    cwd: '/tmp/repo',
+    noFailover: true,
+    noWaitCapacity: true,
+    carry: true,
+    review: 'feature/DEV-63',
+    ownerSession: 'owner',
+    resume,
+    deliverables: ['timing'],
+    timeoutMinutes: 40,
+    keepTree: true,
   })
 })
 
@@ -92,10 +159,26 @@ test('a changed retry agent uses its pin unless an explicit model overrides it',
 })
 
 test('a writing run with edits names and preserves its tree instead of failing over', () => {
-  const changed = { files: ['partial.ts'], diff: 'diff', insertions: 1, deletions: 0, since: 'base', trunk: 'main', trunkConfigured: true }
+  const changed = {
+    files: ['partial.ts'],
+    diff: 'diff',
+    insertions: 1,
+    deletions: 0,
+    since: 'base',
+    trunk: 'main',
+    trunkConfigured: true,
+  }
   expect(writingFailoverRefusal(true, changed, '/tmp/orch-42')).toBe(
     'writing run has 1 changed file(s); preserving worktree /tmp/orch-42 so two agents never share one diff',
   )
-  expect(writingFailoverRefusal(true, { ...changed, files: [], diff: '', insertions: 0 }, '/tmp/orch-42')).toBeNull()
-  expect(writingFailoverRefusal(true, null, '/tmp/orch-42')).toContain('worktree diff could not be read')
+  expect(
+    writingFailoverRefusal(
+      true,
+      { ...changed, files: [], diff: '', insertions: 0 },
+      '/tmp/orch-42',
+    ),
+  ).toBeNull()
+  expect(writingFailoverRefusal(true, null, '/tmp/orch-42')).toContain(
+    'worktree diff could not be read',
+  )
 })

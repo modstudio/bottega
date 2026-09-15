@@ -1,13 +1,27 @@
 // concern: project-lock
-import { closeSync, constants, existsSync, mkdirSync, openSync, readFileSync, realpathSync, readdirSync, renameSync, rmSync, statSync, writeFileSync } from 'node:fs'
-import { createHash, randomUUID } from 'node:crypto'
+
 import { dlopen, FFIType } from 'bun:ffi'
+import { createHash, randomUUID } from 'node:crypto'
+import {
+  closeSync,
+  constants,
+  existsSync,
+  mkdirSync,
+  openSync,
+  readdirSync,
+  readFileSync,
+  realpathSync,
+  renameSync,
+  rmSync,
+  statSync,
+  writeFileSync,
+} from 'node:fs'
 import { platform } from 'node:os'
 import { join, resolve } from 'node:path'
-import { tryWriteContention } from './db.ts'
-import { pidAlive } from './process-liveness.ts'
-import { git } from './git-environment.ts'
 import { scrubbedGitEnv } from '../../shared/git.ts'
+import { tryWriteContention } from './db.ts'
+import { git } from './git-environment.ts'
+import { pidAlive } from './process-liveness.ts'
 
 const WORKTREE_CREATE_LOCK_TIMEOUT_MS = 5 * 60_000
 const WORKTREE_CREATE_LOCK_POLL_MS = 100
@@ -36,24 +50,42 @@ const PROCESS_START_TIME =
 
 function projectLockParticipant(path: string): ProjectLockParticipant | null {
   let value: string
-  try { value = readFileSync(path, 'utf8').trim() } catch { return null }
+  try {
+    value = readFileSync(path, 'utf8').trim()
+  } catch {
+    return null
+  }
   if (/^\d+$/.test(value)) {
     const pid = Number(value)
     return Number.isSafeInteger(pid) && pid > 0
-      ? { pid, startTime: null, incarnation: null, session: null, what: 'worktree creation',
-          since: new Date(0).toISOString() }
+      ? {
+          pid,
+          startTime: null,
+          incarnation: null,
+          session: null,
+          what: 'worktree creation',
+          since: new Date(0).toISOString(),
+        }
       : null
   }
   try {
     const parsed = JSON.parse(value) as Partial<ProjectLockParticipant>
-    return Number.isSafeInteger(parsed.pid) && Number(parsed.pid) > 0 &&
-      typeof parsed.what === 'string' && typeof parsed.since === 'string'
-      ? { pid: Number(parsed.pid), session: typeof parsed.session === 'string' ? parsed.session : null,
-          what: parsed.what, since: parsed.since,
+    return Number.isSafeInteger(parsed.pid) &&
+      Number(parsed.pid) > 0 &&
+      typeof parsed.what === 'string' &&
+      typeof parsed.since === 'string'
+      ? {
+          pid: Number(parsed.pid),
+          session: typeof parsed.session === 'string' ? parsed.session : null,
+          what: parsed.what,
+          since: parsed.since,
           startTime: typeof parsed.startTime === 'string' ? parsed.startTime : null,
-          incarnation: typeof parsed.incarnation === 'string' ? parsed.incarnation : null }
+          incarnation: typeof parsed.incarnation === 'string' ? parsed.incarnation : null,
+        }
       : null
-  } catch { return null }
+  } catch {
+    return null
+  }
 }
 
 export type PidRecordIdentity = 'live' | 'dead' | 'reused' | 'unknown'
@@ -80,12 +112,15 @@ export function processStartTime(pid: number): string | null {
   try {
     const inspected = Bun.spawnSync(['ps', '-o', 'lstart=', '-p', String(pid)], {
       env: { ...scrubbedGitEnv(), LC_ALL: 'C', LANG: 'C' },
-      stdout: 'pipe', stderr: 'ignore',
+      stdout: 'pipe',
+      stderr: 'ignore',
     })
     if (inspected.exitCode !== 0) return null
     const value = inspected.stdout.toString().trim()
     return PROCESS_START_TIME.test(value) ? value : null
-  } catch { return null }
+  } catch {
+    return null
+  }
 }
 
 export function staleProjectLockHolder(holder: ProjectLockParticipant): string | null {
@@ -117,8 +152,13 @@ function legacyProjectLockPath(repoRoot: string, name: string): string {
   return join(common, `orch-${name}.lock`)
 }
 
-function projectLockPaths(repoRoot: string, name: string): {
-  lock: string; owner: string; waiters: string
+function projectLockPaths(
+  repoRoot: string,
+  name: string,
+): {
+  lock: string
+  owner: string
+  waiters: string
 } {
   if (!/^[a-z][a-z0-9-]*$/.test(name)) throw new Error(`invalid project lock name: ${name}`)
   const runtime = projectLockDir(repoRoot)
@@ -136,20 +176,26 @@ function kernelLockHeld(path: string): boolean {
     if (flock(fd, LOCK_EX | LOCK_NB) !== 0) return true
     flock(fd, LOCK_UN)
     return false
-  } finally { closeSync(fd) }
+  } finally {
+    closeSync(fd)
+  }
 }
 
 function lockLabel(name: string): string {
   return name === 'create' || name === 'worktree-create' ? 'worktree creation' : name
 }
 
-function waiterEntries(waitersDir: string): { name: string; participant: ProjectLockParticipant }[] {
+function waiterEntries(
+  waitersDir: string,
+): { name: string; participant: ProjectLockParticipant }[] {
   if (!existsSync(waitersDir)) return []
-  return readdirSync(waitersDir).flatMap((name) => {
-    if (name.startsWith('.')) return []
-    const participant = projectLockParticipant(join(waitersDir, name))
-    return participant && pidAlive(participant.pid) ? [{ name, participant }] : []
-  }).sort((a, b) => a.name.localeCompare(b.name))
+  return readdirSync(waitersDir)
+    .flatMap((name) => {
+      if (name.startsWith('.')) return []
+      const participant = projectLockParticipant(join(waitersDir, name))
+      return participant && pidAlive(participant.pid) ? [{ name, participant }] : []
+    })
+    .sort((a, b) => a.name.localeCompare(b.name))
 }
 
 const TICKET_LOCK_STALE_MS = 10_000
@@ -176,22 +222,34 @@ function nextWaiterTicket(waitersDir: string, deadline: number): string {
       let stale = false
       try {
         const held = JSON.parse(readFileSync(owner, 'utf8')) as { pid?: number; since?: number }
-        stale = !Number.isSafeInteger(held.pid) || !pidAlive(held.pid!) ||
-          !Number.isFinite(held.since) || Date.now() - held.since! > TICKET_LOCK_STALE_MS
+        stale =
+          !Number.isSafeInteger(held.pid) ||
+          !pidAlive(held.pid!) ||
+          !Number.isFinite(held.since) ||
+          Date.now() - held.since! > TICKET_LOCK_STALE_MS
       } catch {
         // No owner file yet: the holder is between mkdir and write, or died there.
-        try { stale = Date.now() - statSync(lock).mtimeMs > TICKET_LOCK_STALE_MS } catch { stale = false }
+        try {
+          stale = Date.now() - statSync(lock).mtimeMs > TICKET_LOCK_STALE_MS
+        } catch {
+          stale = false
+        }
       }
       if (stale) {
         const gone = `${lock}.stale-${process.pid}-${randomUUID()}`
-        try { renameSync(lock, gone); rmSync(gone, { recursive: true, force: true }) } catch { /* lost the race */ }
+        try {
+          renameSync(lock, gone)
+          rmSync(gone, { recursive: true, force: true })
+        } catch {
+          /* lost the race */
+        }
         continue
       }
       if (Date.now() >= deadline) {
         throw new Error(
           `timed out waiting for the waiter-ticket lock ${lock}\n` +
-          'invariant: A lock waiter is served in arrival order.\n' +
-          'cleared by: the holder finishing; orch monitor names a dead holder, which the next arrival reclaims',
+            'invariant: A lock waiter is served in arrival order.\n' +
+            'cleared by: the holder finishing; orch monitor names a dead holder, which the next arrival reclaims',
         )
       }
       Atomics.wait(sleeper, 0, 0, 10)
@@ -199,7 +257,11 @@ function nextWaiterTicket(waitersDir: string, deadline: number): string {
   }
   try {
     let n = 0
-    try { n = Number(readFileSync(file, 'utf8').trim()) } catch { n = 0 }
+    try {
+      n = Number(readFileSync(file, 'utf8').trim())
+    } catch {
+      n = 0
+    }
     if (!Number.isSafeInteger(n) || n < 0) n = 0
     n += 1
     writeFileSync(file, `${n}\n`)
@@ -215,14 +277,17 @@ export function projectLockState(repoRoot: string, name: string): ProjectLockSta
   return {
     path: paths.lock,
     holder: kernelLockHeld(paths.lock) ? projectLockParticipant(paths.owner) : null,
-    waiters: [...waiterEntries(join(paths.waiters, '.legacy')), ...waiterEntries(paths.waiters)]
-      .map((entry) => entry.participant),
+    waiters: [
+      ...waiterEntries(join(paths.waiters, '.legacy')),
+      ...waiterEntries(paths.waiters),
+    ].map((entry) => entry.participant),
   }
 }
 
 /** Kernel locks are released on process death, so there is no stale lock to reclaim. */
 export function reclaimStaleProjectLock(
-  repoRoot: string, name: string,
+  repoRoot: string,
+  name: string,
 ): { holder: ProjectLockParticipant; reason: string; path: string } | null {
   projectLockPaths(repoRoot, name)
   return null
@@ -236,16 +301,24 @@ export function reclaimStaleProjectLock(
  * pass a process that arrived first.
  */
 function withKernelProjectLock<T>(
-  repoRoot: string, name: string, identity: ProjectLockIdentity, action: () => T,
-  timeoutMs = WORKTREE_CREATE_LOCK_TIMEOUT_MS, _exposeWaiters = false,
+  repoRoot: string,
+  name: string,
+  identity: ProjectLockIdentity,
+  action: () => T,
+  timeoutMs = WORKTREE_CREATE_LOCK_TIMEOUT_MS,
+  _exposeWaiters = false,
   onWait?: (holder: ProjectLockParticipant | null, remainingMs: number) => void,
 ): T {
   const paths = projectLockPaths(repoRoot, name)
   if (heldProjectLocks.has(paths.lock)) return action()
   const incarnation = randomUUID()
   const participant: ProjectLockParticipant = {
-    pid: process.pid, startTime: processStartTime(process.pid), incarnation,
-    session: identity.session, what: identity.what, since: new Date().toISOString(),
+    pid: process.pid,
+    startTime: processStartTime(process.pid),
+    incarnation,
+    session: identity.session,
+    what: identity.what,
+    since: new Date().toISOString(),
   }
   mkdirSync(paths.waiters, { recursive: true })
   const deadline = Date.now() + timeoutMs
@@ -265,13 +338,19 @@ function withKernelProjectLock<T>(
   const lockSession = identity.session ?? process.env.CLAUDE_CODE_SESSION_ID ?? null
   const lockContention = { busyTimeoutMs: 0 as const }
   const recordLockTimeout = (held: ProjectLockParticipant | null) => {
-    tryWriteContention({
-      sessionId: lockSession, resourceKind: 'lock', resourceKey: name, eventKind: 'timeout',
-      durationMs: Math.max(0, Date.now() - waitStarted),
-      cause: held
-        ? `holder session ${held.session ?? 'unknown'}, pid ${held.pid}, ${held.what}`
-        : `timed out waiting for ${lockLabel(name)}`,
-    }, lockContention)
+    tryWriteContention(
+      {
+        sessionId: lockSession,
+        resourceKind: 'lock',
+        resourceKey: name,
+        eventKind: 'timeout',
+        durationMs: Math.max(0, Date.now() - waitStarted),
+        cause: held
+          ? `holder session ${held.session ?? 'unknown'}, pid ${held.pid}, ${held.what}`
+          : `timed out waiting for ${lockLabel(name)}`,
+      },
+      lockContention,
+    )
   }
   let waitedMs = 0
   let lockFd: number | null = null
@@ -316,7 +395,9 @@ function withKernelProjectLock<T>(
       }
     }
 
-    try { return action() } finally {
+    try {
+      return action()
+    } finally {
       heldProjectLocks.delete(paths.lock)
       const ours = projectLockParticipant(paths.owner)
       if (lockFd !== null) {
@@ -325,11 +406,17 @@ function withKernelProjectLock<T>(
       }
       if (ours?.incarnation === incarnation) rmSync(paths.owner, { force: true })
       if (waitedMs > 0) {
-        tryWriteContention({
-          sessionId: lockSession, resourceKind: 'lock', resourceKey: name, eventKind: 'wait',
-          durationMs: waitedMs,
-          cause: `waited for ${lockLabel(name)}`,
-        }, lockContention)
+        tryWriteContention(
+          {
+            sessionId: lockSession,
+            resourceKind: 'lock',
+            resourceKey: name,
+            eventKind: 'wait',
+            durationMs: waitedMs,
+            cause: `waited for ${lockLabel(name)}`,
+          },
+          lockContention,
+        )
       }
     }
   } finally {
@@ -346,8 +433,12 @@ function withKernelProjectLock<T>(
  * process predating the migration commit can still be running.
  */
 export function withProjectLock<T>(
-  repoRoot: string, name: string, identity: ProjectLockIdentity, action: () => T,
-  timeoutMs = WORKTREE_CREATE_LOCK_TIMEOUT_MS, exposeWaiters = false,
+  repoRoot: string,
+  name: string,
+  identity: ProjectLockIdentity,
+  action: () => T,
+  timeoutMs = WORKTREE_CREATE_LOCK_TIMEOUT_MS,
+  exposeWaiters = false,
   onWait?: (holder: ProjectLockParticipant | null, remainingMs: number) => void,
 ): T {
   const legacy = legacyProjectLockPath(repoRoot, name)
@@ -361,8 +452,12 @@ export function withProjectLock<T>(
   const paths = projectLockPaths(repoRoot, name)
   const incarnation = randomUUID()
   const participant: ProjectLockParticipant = {
-    pid: process.pid, startTime: processStartTime(process.pid), incarnation,
-    session: identity.session, what: identity.what, since: new Date().toISOString(),
+    pid: process.pid,
+    startTime: processStartTime(process.pid),
+    incarnation,
+    session: identity.session,
+    what: identity.what,
+    since: new Date().toISOString(),
   }
   mkdirSync(paths.waiters, { recursive: true })
   const legacyWaiters = join(paths.waiters, '.legacy')
@@ -371,14 +466,23 @@ export function withProjectLock<T>(
   const waiter = join(legacyWaiters, waiterName)
   writeFileSync(waiter, `${JSON.stringify(participant)}\n`)
   const lockSession = identity.session ?? process.env.CLAUDE_CODE_SESSION_ID ?? null
-  const recordLegacyContention = (eventKind: 'timeout' | 'wait', holder: ProjectLockParticipant | null) => {
-    tryWriteContention({
-      sessionId: lockSession, resourceKind: 'lock', resourceKey: name, eventKind,
-      durationMs: Math.max(0, Date.now() - waitStarted),
-      cause: holder
-        ? `holder session ${holder.session ?? 'unknown'}, pid ${holder.pid}, ${holder.what}`
-        : `${eventKind === 'timeout' ? 'timed out waiting' : 'waited'} for ${lockLabel(name)}`,
-    }, { busyTimeoutMs: 0 })
+  const recordLegacyContention = (
+    eventKind: 'timeout' | 'wait',
+    holder: ProjectLockParticipant | null,
+  ) => {
+    tryWriteContention(
+      {
+        sessionId: lockSession,
+        resourceKind: 'lock',
+        resourceKey: name,
+        eventKind,
+        durationMs: Math.max(0, Date.now() - waitStarted),
+        cause: holder
+          ? `holder session ${holder.session ?? 'unknown'}, pid ${holder.pid}, ${holder.what}`
+          : `${eventKind === 'timeout' ? 'timed out waiting' : 'waited'} for ${lockLabel(name)}`,
+      },
+      { busyTimeoutMs: 0 },
+    )
   }
   try {
     for (;;) {
@@ -406,9 +510,12 @@ export function withProjectLock<T>(
           try {
             renameSync(legacy, gone)
             const renamed = projectLockParticipant(join(gone, 'owner'))
-            if (renamed?.incarnation === holder.incarnation) rmSync(gone, { recursive: true, force: true })
+            if (renamed?.incarnation === holder.incarnation)
+              rmSync(gone, { recursive: true, force: true })
             else renameSync(gone, legacy)
-          } catch { /* another contender changed the legacy gate */ }
+          } catch {
+            /* another contender changed the legacy gate */
+          }
           continue
         }
         if (Date.now() >= deadline) {
@@ -425,7 +532,13 @@ export function withProjectLock<T>(
     rmSync(waiter, { force: true })
     try {
       return withKernelProjectLock(
-        repoRoot, name, identity, action, Math.max(0, deadline - Date.now()), exposeWaiters, onWait,
+        repoRoot,
+        name,
+        identity,
+        action,
+        Math.max(0, deadline - Date.now()),
+        exposeWaiters,
+        onWait,
       )
     } finally {
       if (waitedForLegacy) recordLegacyContention('wait', null)
@@ -439,7 +552,10 @@ export function withProjectLock<T>(
 }
 
 function lockTimeout(
-  name: string, timeoutMs: number, lock: string, held: ProjectLockParticipant | null,
+  name: string,
+  timeoutMs: number,
+  lock: string,
+  held: ProjectLockParticipant | null,
 ): Error {
   const label = lockLabel(name)
   const heldFor = held ? Math.max(0, Date.now() - Date.parse(held.since)) : null
@@ -449,9 +565,9 @@ function lockTimeout(
     : ''
   return new Error(
     `timed out after ${timeoutMs / 1000}s waiting for this project's ${label} lock${detail}: ${lock}\n` +
-    `invariant: A lock waiter is served in arrival order.\n` +
-    `cleared by: the holder${held ? ` (pid ${held.pid})` : ''} finishing; ` +
-    'the kernel releases the lock if its process exits',
+      `invariant: A lock waiter is served in arrival order.\n` +
+      `cleared by: the holder${held ? ` (pid ${held.pid})` : ''} finishing; ` +
+      'the kernel releases the lock if its process exits',
   )
 }
 
@@ -466,14 +582,23 @@ function lockTimeout(
  * the operation that exposed the original race.
  */
 export function withWorktreeCreateLock<T>(
-  repoRoot: string, create: () => T, timeoutMs = WORKTREE_CREATE_LOCK_TIMEOUT_MS,
+  repoRoot: string,
+  create: () => T,
+  timeoutMs = WORKTREE_CREATE_LOCK_TIMEOUT_MS,
 ): T {
-  return withProjectLock(repoRoot, 'create',
-    { session: null, what: 'worktree creation' }, create, timeoutMs)
+  return withProjectLock(
+    repoRoot,
+    'create',
+    { session: null, what: 'worktree creation' },
+    create,
+    timeoutMs,
+  )
 }
 
 export function withCleanupLock<T>(
-  repoRoot: string, identity: ProjectLockIdentity, action: () => T,
+  repoRoot: string,
+  identity: ProjectLockIdentity,
+  action: () => T,
   timeoutMs = WORKTREE_CREATE_LOCK_TIMEOUT_MS,
 ): T {
   return withProjectLock(repoRoot, 'cleanup', identity, action, timeoutMs, true)
@@ -481,7 +606,11 @@ export function withCleanupLock<T>(
 
 export function worktreeLeaseName(worktreePath: string): string {
   let real = worktreePath
-  try { real = realpathSync(worktreePath) } catch { /* the spelled path still keys the artifact */ }
+  try {
+    real = realpathSync(worktreePath)
+  } catch {
+    /* the spelled path still keys the artifact */
+  }
   return `tree-${createHash('sha256').update(real).digest('hex').slice(0, 16)}`
 }
 
@@ -491,10 +620,11 @@ export function worktreeLeaseName(worktreePath: string): string {
  * deadlock with the purpose locks.
  */
 export function withWorktreeLease<T>(
-  repoRoot: string, worktreePath: string, identity: ProjectLockIdentity, action: () => T,
+  repoRoot: string,
+  worktreePath: string,
+  identity: ProjectLockIdentity,
+  action: () => T,
   timeoutMs = WORKTREE_CREATE_LOCK_TIMEOUT_MS,
 ): T {
   return withProjectLock(repoRoot, worktreeLeaseName(worktreePath), identity, action, timeoutMs)
 }
-
-

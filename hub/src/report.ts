@@ -1,9 +1,9 @@
-import { db, nowIso, type Project } from './db.ts'
-import { tasksInWindow, completedInWindow, reportEngagedMs } from './query.ts'
 import { human } from '../../shared/interval.ts'
-import { getReport, smtpPassword, type Report, type Brief } from './settings.ts'
-import { projectColor } from './projects.ts'
+import { db, nowIso, type Project } from './db.ts'
 import { summarize } from './orch.ts'
+import { projectColor } from './projects.ts'
+import { completedInWindow, reportEngagedMs, tasksInWindow } from './query.ts'
+import { type Brief, getReport, type Report, smtpPassword } from './settings.ts'
 
 export type Item = {
   key: string | null
@@ -58,8 +58,10 @@ export function gather(r: Report, hours = r.windowHours) {
       // transition is the only thing hub saw for itself, but the status-event
       // history only starts when the tracker leg does. Some trackers supply
       // updated_at and some do not, so a non-null field fills that gap.
-      closed: !!(t.key && (closed.has(t.key)
-        || (t.statusCategory === 'done' && t.updatedAt && t.updatedAt >= from))),
+      closed: !!(
+        t.key &&
+        (closed.has(t.key) || (t.statusCategory === 'done' && t.updatedAt && t.updatedAt >= from))
+      ),
       engaged: human(t.engagedMs),
       engagedMs: t.engagedMs,
       claudeTokens: t.claudeTokens,
@@ -80,7 +82,12 @@ export function gather(r: Report, hours = r.windowHours) {
         // engagedMs is one wall-clock union of those tasks and this project's
         // untasked bucket. Parallel spans occupy that union only once.
         taskMs: tasks.reduce((s, i) => s + i.engagedMs, 0),
-        engagedMs: reportEngagedMs(tasks.map((i) => i.key!), untasked ? [project] : [], from, to),
+        engagedMs: reportEngagedMs(
+          tasks.map((i) => i.key!),
+          untasked ? [project] : [],
+          from,
+          to,
+        ),
         shipped: tasks.filter((i) => i.closed).length,
         moving: tasks.filter((i) => !i.closed).length,
         claudeTokens: mine.reduce((s, i) => s + i.claudeTokens, 0),
@@ -91,13 +98,16 @@ export function gather(r: Report, hours = r.windowHours) {
     .sort((a, b) => b.engagedMs - a.engagedMs)
 
   return {
-    from, to, hours,
+    from,
+    to,
+    hours,
     items,
     taskMs: items.filter((i) => i.key).reduce((s, i) => s + i.engagedMs, 0),
     engagedMs: reportEngagedMs(
-      items.flatMap((i) => i.key ? [i.key] : []),
-      items.flatMap((i) => i.key ? [] : [i.project]),
-      from, to,
+      items.flatMap((i) => (i.key ? [i.key] : [])),
+      items.flatMap((i) => (i.key ? [] : [i.project])),
+      from,
+      to,
     ),
     projects,
   }
@@ -112,15 +122,15 @@ export function gather(r: Report, hours = r.windowHours) {
  * logs. Its config already named `orch` as the preferred mode; this makes it
  * the only mode.
  */
-export async function summarise(
-  items: Item[], briefs: Brief[] = [],
-): Promise<Map<string, string>> {
+export async function summarise(items: Item[], briefs: Brief[] = []): Promise<Map<string, string>> {
   const tasks = items.filter((i) => i.key)
   if (!tasks.length) return new Map()
   const lines = tasks.map((i) => {
     const b = briefFor(briefs, i.key, i.title)
-    return `${i.key}\t${i.project}\t${i.closed ? 'shipped' : 'in progress'}\t${i.engaged}\t`
-      + `${i.title ?? ''}${b?.brief ? `\tCONTEXT: ${b.brief}` : ''}`
+    return (
+      `${i.key}\t${i.project}\t${i.closed ? 'shipped' : 'in progress'}\t${i.engaged}\t` +
+      `${i.title ?? ''}${b?.brief ? `\tCONTEXT: ${b.brief}` : ''}`
+    )
   })
   const prompt = [
     'Below is a day of software work, one task per line:',
@@ -163,7 +173,10 @@ export async function summarise(
     return new Map()
   }
   try {
-    const json = out.replace(/^```(?:json)?\s*/m, '').replace(/```\s*$/m, '').trim()
+    const json = out
+      .replace(/^```(?:json)?\s*/m, '')
+      .replace(/```\s*$/m, '')
+      .trim()
     const obj = JSON.parse(json) as Record<string, string>
     const got = new Map(Object.entries(obj))
     const missing = tasks.filter((i) => !got.get(i.key!)).map((i) => i.key)
@@ -172,13 +185,15 @@ export async function summarise(
   } catch {
     // A summariser that returns nothing usable must not lose the report. The
     // titles are already true; the sentences are the enrichment.
-    console.error(`report: summarise reply was not JSON; sending titles only\n${out.trim().slice(0, 200)}`)
+    console.error(
+      `report: summarise reply was not JSON; sending titles only\n${out.trim().slice(0, 200)}`,
+    )
     return new Map()
   }
 }
 
-const esc = (s: string) => s.replace(/[&<>"]/g, (c) =>
-  ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]!))
+const esc = (s: string) =>
+  s.replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]!)
 
 /**
  * The email.
@@ -231,8 +246,12 @@ const SANS = "-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-s
 const hours1 = (ms: number) => (ms / 3600_000).toFixed(1)
 
 export function renderHtml(g: ReturnType<typeof gather>, sentences: Map<string, string>) {
-  const day = new Date(g.to).toLocaleDateString('en-US',
-    { weekday: 'long', month: 'long', day: 'numeric', timeZone: 'America/New_York' })
+  const day = new Date(g.to).toLocaleDateString('en-US', {
+    weekday: 'long',
+    month: 'long',
+    day: 'numeric',
+    timeZone: 'America/New_York',
+  })
   const tasks = g.items.filter((i) => i.key)
   const shipped = tasks.filter((i) => i.closed).length
   const moving = tasks.length - shipped
@@ -275,7 +294,9 @@ export function renderHtml(g: ReturnType<typeof gather>, sentences: Map<string, 
                  color:${MUTED};white-space:nowrap">${moving}</td>
     </tr>`
 
-  const perProject = g.projects.map((p) => `
+  const perProject = g.projects
+    .map(
+      (p) => `
     <tr>
       <td style="padding:7px 0;border-top:1px solid ${RULE}">
         <span style="display:inline-block;width:3px;height:11px;background:${projectColor(p.project) ?? MUTED};
@@ -294,7 +315,9 @@ export function renderHtml(g: ReturnType<typeof gather>, sentences: Map<string, 
       <td class="num" style="padding:7px 0 7px 14px;border-top:1px solid ${RULE};text-align:right;
                  font-family:${SANS};font-weight:400;font-size:13px;line-height:1.4;color:${FAINT};white-space:nowrap">
         ${p.moving}</td>
-    </tr>`).join('')
+    </tr>`,
+    )
+    .join('')
 
   const task = (i: Item) => {
     const s = sentences.get(i.key!)
@@ -417,28 +440,35 @@ export function renderText(g: ReturnType<typeof gather>, sentences: Map<string, 
   // The plain part mirrors the HTML's shape, because a reader who gets this one
   // should not get a different report.
   const line = (i: Item) =>
-    [`  ${i.closed ? '+' : ' '} ${i.title || i.key}`,
-     ...(sentences.get(i.key!) ? [`      ${sentences.get(i.key!)}`] : []),
-     `      ${i.key} · ${i.engaged} engaged`].join('\n')
+    [
+      `  ${i.closed ? '+' : ' '} ${i.title || i.key}`,
+      ...(sentences.get(i.key!) ? [`      ${sentences.get(i.key!)}`] : []),
+      `      ${i.key} · ${i.engaged} engaged`,
+    ].join('\n')
   const tasks = g.items.filter((i) => i.key)
   const shipped = tasks.filter((i) => i.closed).length
   return [
-    `${hours1(g.taskMs)}h of task work in ${hours1(g.engagedMs)}h engaged · `
-      + `${shipped} shipped · ${tasks.length - shipped} in progress`,
+    `${hours1(g.taskMs)}h of task work in ${hours1(g.engagedMs)}h engaged · ` +
+      `${shipped} shipped · ${tasks.length - shipped} in progress`,
     `the last ${g.hours} hours across ${g.projects.length} projects`,
     '',
     'BY PROJECT   (task hours add up; engaged includes work carrying no ticket)',
     `  ${'PROJECT'.padEnd(11)} ${'TASK'.padStart(6)} ${'ENGAGED'.padStart(8)}`,
     `  ${'TOTAL'.padEnd(11)} ${(hours1(g.taskMs) + 'h').padStart(6)}` +
-    ` ${(hours1(g.engagedMs) + 'h').padStart(8)}` +
-    `  ${String(shipped).padStart(2)} shipped  ${String(tasks.length - shipped).padStart(2)} open`,
-    ...g.projects.map((p) =>
-      `  ${p.project.padEnd(11)} ${(hours1(p.taskMs) + 'h').padStart(6)}` +
-      ` ${(hours1(p.engagedMs) + 'h').padStart(8)}` +
-      `  ${String(p.shipped).padStart(2)} shipped  ${String(p.moving).padStart(2)} open`),
-    ...g.projects.flatMap((p) => ['', p.project.toUpperCase(),
+      ` ${(hours1(g.engagedMs) + 'h').padStart(8)}` +
+      `  ${String(shipped).padStart(2)} shipped  ${String(tasks.length - shipped).padStart(2)} open`,
+    ...g.projects.map(
+      (p) =>
+        `  ${p.project.padEnd(11)} ${(hours1(p.taskMs) + 'h').padStart(6)}` +
+        ` ${(hours1(p.engagedMs) + 'h').padStart(8)}` +
+        `  ${String(p.shipped).padStart(2)} shipped  ${String(p.moving).padStart(2)} open`,
+    ),
+    ...g.projects.flatMap((p) => [
+      '',
+      p.project.toUpperCase(),
       ...[...p.items.filter((i) => i.closed), ...p.items.filter((i) => !i.closed)].map(line),
-      ...(p.untasked ? [`  NO TICKET\n      ${p.untasked.engaged} not tied to a ticket`] : [])]),
+      ...(p.untasked ? [`  NO TICKET\n      ${p.untasked.engaged} not tied to a ticket`] : []),
+    ]),
   ].join('\n')
 }
 
@@ -451,7 +481,10 @@ export function renderText(g: ReturnType<typeof gather>, sentences: Map<string, 
  * it never appears in the process list where `ps` would show it.
  */
 export async function send(
-  r: Report, subject: string, text: string, html: string,
+  r: Report,
+  subject: string,
+  text: string,
+  html: string,
 ): Promise<{ ok: boolean; error?: string }> {
   const pass = smtpPassword(r.smtpPasswordRef)
   if (!pass) return { ok: false, error: `no password at ${r.smtpPasswordRef}` }
@@ -467,21 +500,33 @@ export async function send(
     '',
     `--${boundary}`,
     'Content-Type: text/plain; charset=utf-8',
-    '', text, '',
+    '',
+    text,
+    '',
     `--${boundary}`,
     'Content-Type: text/html; charset=utf-8',
-    '', html, '',
-    `--${boundary}--`, '',
+    '',
+    html,
+    '',
+    `--${boundary}--`,
+    '',
   ].join('\r\n')
 
   const args = [
-    'curl', '--silent', '--show-error',
-    '--url', `smtp://${r.smtpHost}:${r.smtpPort}`, '--ssl-reqd',
-    '--mail-from', r.fromAddress,
+    'curl',
+    '--silent',
+    '--show-error',
+    '--url',
+    `smtp://${r.smtpHost}:${r.smtpPort}`,
+    '--ssl-reqd',
+    '--mail-from',
+    r.fromAddress,
     ...r.to.flatMap((t) => ['--mail-rcpt', t]),
     // Credentials come from a config file on stdin, never from argv.
-    '--config', '-',
-    '--upload-file', '-',
+    '--config',
+    '-',
+    '--upload-file',
+    '-',
   ]
   // curl reads --config from stdin, then the upload from stdin too, which it
   // cannot do — so the message goes in a temp file and only the credential
@@ -493,29 +538,60 @@ export async function send(
 
   const proc = Bun.spawn(args, {
     stdin: new TextEncoder().encode(`user = "${r.smtpUser}:${pass}"\n`),
-    stdout: 'pipe', stderr: 'pipe',
+    stdout: 'pipe',
+    stderr: 'pipe',
   })
   const [err, code] = await Promise.all([new Response(proc.stderr).text(), proc.exited])
-  try { await Bun.file(tmp).delete() } catch { /* best effort */ }
+  try {
+    await Bun.file(tmp).delete()
+  } catch {
+    /* best effort */
+  }
   return code === 0 ? { ok: true } : { ok: false, error: err.trim() || `curl exited ${code}` }
 }
 
 export function recordSend(
-  g: ReturnType<typeof gather>, r: Report, status: 'sent' | 'skipped' | 'failed',
-  error?: string, opts: { test?: boolean; to?: string[] } = {},
+  g: ReturnType<typeof gather>,
+  r: Report,
+  status: 'sent' | 'skipped' | 'failed',
+  error?: string,
+  opts: { test?: boolean; to?: string[] } = {},
 ) {
-  db().query(
-    `INSERT INTO send (at, window, recipients, projects, items, status, error, test)
+  db()
+    .query(
+      `INSERT INTO send (at, window, recipients, projects, items, status, error, test)
      VALUES (?,?,?,?,?,?,?,?)`,
-  ).run(nowIso(), `${g.hours}h`, (opts.to ?? r.to).join(', '), r.projects.join(', '),
-        g.items.length, status, error ?? null, opts.test ? 1 : 0)
+    )
+    .run(
+      nowIso(),
+      `${g.hours}h`,
+      (opts.to ?? r.to).join(', '),
+      r.projects.join(', '),
+      g.items.length,
+      status,
+      error ?? null,
+      opts.test ? 1 : 0,
+    )
 }
 
 export const lastSends = (n = 10) =>
-  db().query<{ at: string; window: string; recipients: string; projects: string
-               items: number; status: string; error: string | null; test: number }, [number]>(
-    `SELECT at, window, recipients, projects, items, status, error, test
+  db()
+    .query<
+      {
+        at: string
+        window: string
+        recipients: string
+        projects: string
+        items: number
+        status: string
+        error: string | null
+        test: number
+      },
+      [number]
+    >(
+      `SELECT at, window, recipients, projects, items, status, error, test
        FROM send ORDER BY id DESC LIMIT ?`,
-  ).all(n)
+    )
+    .all(n)
 
 export { getReport }

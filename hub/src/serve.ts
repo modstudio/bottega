@@ -1,28 +1,38 @@
 import { existsSync } from 'node:fs'
 import { fetchRequestHandler } from '@trpc/server/adapters/fetch'
-import { db, enableSchemaReload, nowIso } from './db.ts'
+import { engagedMs, human, human as humanMs } from '../../shared/interval.ts'
+import type { OrchBlockers } from '../../shared/orch-contract.ts'
 import { resolveAppStatic } from './app-static.ts'
+import { attributeRun } from './attribute.ts'
+import { collectFast, collectSlow, leaseHolder, watch, withLease } from './collect.ts'
+import { db, enableSchemaReload, nowIso } from './db.ts'
+import { promptLens } from './excerpt.ts'
+import { chainVendorTokens, executionSpans } from './ingest/runs.ts'
+import { state as orchState, blockers as readBlockers, readRuns } from './orch.ts'
+import { projectNames, projects, type RegisteredProject, trackerPresentation } from './projects.ts'
+import {
+  boardTasks,
+  completedInWindow,
+  endMs,
+  intervalsOf,
+  ratioSummary,
+  spendGrid,
+  stripWindow,
+  tasksInWindow,
+} from './query.ts'
+import {
+  gather,
+  lastSends,
+  recordSend,
+  renderHtml,
+  renderText,
+  send as sendMail,
+  summarise,
+} from './report.ts'
+import { getReport, secretStatus } from './settings.ts'
+import { hoursAgo } from './time.ts'
 import { createContext } from './trpc/context.ts'
 import { appRouter } from './trpc/router.ts'
-import {
-  tasksInWindow, completedInWindow, intervalsOf,
-  ratioSummary, spendGrid, endMs, stripWindow,
-  boardTasks,
-} from './query.ts'
-import { engagedMs, human } from '../../shared/interval.ts'
-import { chainVendorTokens, executionSpans } from './ingest/runs.ts'
-import { attributeRun } from './attribute.ts'
-import { promptLens } from './excerpt.ts'
-import { collectFast, collectSlow, watch, leaseHolder, withLease } from './collect.ts'
-import { hoursAgo } from './time.ts'
-import { blockers as readBlockers, readRuns, state as orchState } from './orch.ts'
-import type { OrchBlockers } from '../../shared/orch-contract.ts'
-import { getReport, secretStatus } from './settings.ts'
-import { gather, lastSends, summarise, renderHtml, renderText, send as sendMail, recordSend } from './report.ts'
-import { human as humanMs } from '../../shared/interval.ts'
-import {
-  projectNames, projects, trackerPresentation, type RegisteredProject,
-} from './projects.ts'
 
 export const ORCH_CACHE_TTL_MS = 30_000
 
@@ -44,18 +54,25 @@ export class TtlCache {
       return cached.pending ?? Promise.resolve(cached.value as T)
     }
     if (cached?.pending) return cached.pending
-    const pending = Promise.resolve().then(load).then((value) => {
-      this.entries.set(key, { checkedAt: this.clock(), value })
-      return value
-    }, (cause) => {
-      this.entries.delete(key)
-      throw cause
-    })
+    const pending = Promise.resolve()
+      .then(load)
+      .then(
+        (value) => {
+          this.entries.set(key, { checkedAt: this.clock(), value })
+          return value
+        },
+        (cause) => {
+          this.entries.delete(key)
+          throw cause
+        },
+      )
     this.entries.set(key, { checkedAt: now, value: cached?.value, pending })
     return pending
   }
 
-  clear(): void { this.entries.clear() }
+  clear(): void {
+    this.entries.clear()
+  }
 }
 
 const orchCache = new TtlCache(ORCH_CACHE_TTL_MS)
@@ -66,18 +83,23 @@ export function cachedOrchResponse<T>(key: string, load: () => Promise<T> | T): 
 }
 
 /** Test isolation for suites that replace the orch client or its backing rows. */
-export function clearOrchCache(): void { orchCache.clear() }
+export function clearOrchCache(): void {
+  orchCache.clear()
+}
 
 /** The shared hub.db strip on an orch procedure follows the orch clock too. */
 export function cachedStrip(hours: number) {
   return orchCache.get(`strip:${hours}`, () => strip(hours))
 }
 
-const blockerCache = new Map<number, {
-  checkedAt: number
-  value?: OrchBlockers
-  pending?: Promise<OrchBlockers | null>
-}>()
+const blockerCache = new Map<
+  number,
+  {
+    checkedAt: number
+    value?: OrchBlockers
+    pending?: Promise<OrchBlockers | null>
+  }
+>()
 
 /**
  * Recurring environment problems, through the orchestrator's published CLI.
@@ -111,7 +133,16 @@ async function orchBlockers(days: number): Promise<OrchBlockers | null> {
 }
 
 /** The leaves of the left nav, and the only view names the API will serve. */
-export const VIEWS = ['flight', 'board', 'done', 'ratio', 'spend', 'routing', 'runs', 'settings'] as const
+export const VIEWS = [
+  'flight',
+  'board',
+  'done',
+  'ratio',
+  'spend',
+  'routing',
+  'runs',
+  'settings',
+] as const
 export type View = (typeof VIEWS)[number]
 
 /** Single-quote a value so the command can be pasted into a shell as-is. */
@@ -146,9 +177,10 @@ function presentRegister(rows: RegisteredProject[]) {
       prefixes: p.settings.keyPrefixes ?? [],
       color: p.settings.color ?? null,
       colorDark: p.settings.colorDark ?? null,
-      tracker: trackerStatus.state === 'unusable'
-        ? `${trackerStatus.label} — unusable: ${trackerStatus.error}`
-        : trackerStatus.label,
+      tracker:
+        trackerStatus.state === 'unusable'
+          ? `${trackerStatus.label} — unusable: ${trackerStatus.error}`
+          : trackerStatus.label,
       trackerState: trackerStatus.state,
       trackerError: trackerStatus.error,
       worktree,
@@ -171,11 +203,15 @@ function presentRegister(rows: RegisteredProject[]) {
 }
 
 function setting(key: string): string | null {
-  const row = db().query<{ value: string }, [string]>(
-    `SELECT value FROM setting WHERE key = ?`,
-  ).get(key)
+  const row = db()
+    .query<{ value: string }, [string]>(`SELECT value FROM setting WHERE key = ?`)
+    .get(key)
   if (!row) return null
-  try { return JSON.parse(row.value) as string } catch { return row.value }
+  try {
+    return JSON.parse(row.value) as string
+  } catch {
+    return row.value
+  }
 }
 
 /**
@@ -211,8 +247,9 @@ export function strip(hours: number) {
     counts: {
       // Tasks only. The untracked rows have their own table and counting them
       // here would make the badge disagree with the heading beside it.
-      flight: rows.filter((x) => x.key
-        && (x.workingNow || ['active', 'review'].includes(x.statusCategory ?? ''))).length,
+      flight: rows.filter(
+        (x) => x.key && (x.workingNow || ['active', 'review'].includes(x.statusCategory ?? '')),
+      ).length,
       done: rows.filter((x) => x.key && x.statusCategory === 'done').length,
       // Unscored delegated runs are a real chore queue, so the nav carries the
       // number rather than making you go and look.
@@ -274,21 +311,32 @@ type RunFilters = { agent: string; project: string; source?: string }
 
 /** The UI calls local ownership "hub"; external source values are project names. */
 function matchesSource(row: { source: string | null; project: string | null }, source?: string) {
-  return !source || (source === 'hub' ? row.source === 'local'
-    : row.source !== 'local' && row.project === source)
+  return (
+    !source ||
+    (source === 'hub' ? row.source === 'local' : row.source !== 'local' && row.project === source)
+  )
 }
 
 function sourceFacets(rows: { source: string | null; project: string | null }[]) {
-  return [...new Set([
-    'hub',
-    ...projects().filter((project) => project.settings.tracker).map((project) => project.name),
-    ...rows.filter((row) => row.source !== 'local')
-      .map((row) => row.project).filter((value): value is string => !!value),
-  ])].sort()
+  return [
+    ...new Set([
+      'hub',
+      ...projects()
+        .filter((project) => project.settings.tracker)
+        .map((project) => project.name),
+      ...rows
+        .filter((row) => row.source !== 'local')
+        .map((row) => row.project)
+        .filter((value): value is string => !!value),
+    ]),
+  ].sort()
 }
 
-export async function view(name: View, hours: number,
-                   f: RunFilters = { agent: '', project: '', source: '' }) {
+export async function view(
+  name: View,
+  hours: number,
+  f: RunFilters = { agent: '', project: '', source: '' },
+) {
   const from = hoursAgo(hours)
   const to = nowIso()
 
@@ -299,9 +347,9 @@ export async function view(name: View, hours: number,
     // panel that explains the absences - so filtering later would leave the
     // page explaining why fourteen tasks from one project are missing from a table the
     // reader has just restricted to another project.
-    const rows = all.filter((r) =>
-      (!f.project || r.project === f.project)
-      && matchesSource(r, f.source))
+    const rows = all.filter(
+      (r) => (!f.project || r.project === f.project) && matchesSource(r, f.source),
+    )
     const closedHere = new Set(completedInWindow(from, to).map((c) => c.key))
 
     // IN FLIGHT: being worked on right now, or marked active in the tracker.
@@ -320,15 +368,17 @@ export async function view(name: View, hours: number,
     const inFlight = (r: (typeof rows)[number]) =>
       r.workingNow || ['active', 'review'].includes(r.statusCategory ?? '')
 
-    const want = name === 'done'
-      // Closed in this window, or closed and still worked on inside it.
-      ? rows.filter((r) => r.key && (closedHere.has(r.key) || r.statusCategory === 'done'))
-      : rows.filter(inFlight)
+    const want =
+      name === 'done'
+        ? // Closed in this window, or closed and still worked on inside it.
+          rows.filter((r) => r.key && (closedHere.has(r.key) || r.statusCategory === 'done'))
+        : rows.filter(inFlight)
 
     // Like the dropped groups below, this footnote describes only rows this
     // view actually excluded; a present row must never also be called missing.
-    const unmapped = rows.filter((r) =>
-      r.source === 'mcp' && !!r.status && !r.statusCategory && !want.includes(r))
+    const unmapped = rows.filter(
+      (r) => r.source === 'mcp' && !!r.status && !r.statusCategory && !want.includes(r),
+    )
 
     // What the filter left out, and why.
     //
@@ -339,16 +389,23 @@ export async function view(name: View, hours: number,
     const dropped: { reason: string; tasks: number; engaged: string }[] = []
     if (name === 'flight') {
       const groups: [string, string, (r: (typeof rows)[number]) => boolean][] = [
-        ['unknown', 'no tracker reachable to say whether they are active',
-         (r) => !!r.key && !r.statusCategory && !(r.source === 'mcp' && r.status)],
-        ['open', 'queued in their tracker: backlog, todo or unstarted',
-         (r) => r.statusCategory === 'open'],
+        [
+          'unknown',
+          'no tracker reachable to say whether they are active',
+          (r) => !!r.key && !r.statusCategory && !(r.source === 'mcp' && r.status),
+        ],
+        [
+          'open',
+          'queued in their tracker: backlog, todo or unstarted',
+          (r) => r.statusCategory === 'open',
+        ],
       ]
       for (const [, reason, match] of groups) {
         const hit = rows.filter((r) => match(r) && !inFlight(r))
         if (hit.length) {
           dropped.push({
-            reason, tasks: hit.length,
+            reason,
+            tasks: hit.length,
             engaged: human(hit.reduce((s, r) => s + r.engagedMs, 0)),
           })
         }
@@ -377,12 +434,14 @@ export async function view(name: View, hours: number,
     const uniqT = (xs: (string | null | undefined)[]) =>
       [...new Set(xs.filter((x): x is string => !!x))].sort()
     return {
-      rows: keep, dropped,
+      rows: keep,
+      dropped,
       unmappedStatuses: {
         count: unmapped.length,
         words: [...new Set(unmapped.map((row) => row.status!))].sort(),
       },
-      filters: f, matched: keep.length,
+      filters: f,
+      matched: keep.length,
       facets: {
         projects: uniqT(all.map((r) => r.project)),
         agents: uniqT(shaped.flatMap((r) => (r.runs || []).map((x) => x.agent))),
@@ -394,11 +453,18 @@ export async function view(name: View, hours: number,
   if (name === 'ratio') {
     const s = ratioSummary(14)
     return {
-      perTask: s.perTask, tokens: s.tokens, tasks: s.tasks,
-      usableDays: s.usableDays, direction: s.direction, changePct: s.changePct,
+      perTask: s.perTask,
+      tokens: s.tokens,
+      tasks: s.tasks,
+      usableDays: s.usableDays,
+      direction: s.direction,
+      changePct: s.changePct,
       days: s.days.map((d) => ({
-        day: d.day, ratio: d.ratio, tokens: d.claude_tokens,
-        tasks: d.tasks, excluded: d.excluded,
+        day: d.day,
+        ratio: d.ratio,
+        tokens: d.claude_tokens,
+        tasks: d.tasks,
+        excluded: d.excluded,
       })),
     }
   }
@@ -415,9 +481,9 @@ export async function view(name: View, hours: number,
      * has to know which they can act on here.
      */
     const b = boardTasks()
-    const rows = b.cards.filter((c) =>
-      (!f.project || c.project === f.project)
-      && matchesSource(c, f.source))
+    const rows = b.cards.filter(
+      (c) => (!f.project || c.project === f.project) && matchesSource(c, f.source),
+    )
     /**
      * Facets from the REGISTER, not from the cards.
      *
@@ -437,10 +503,12 @@ export async function view(name: View, hours: number,
      */
     const facets = {
       agents: [] as string[],
-      projects: [...new Set([
-        ...projectNames(),
-        ...Object.keys(b.totals.project).filter((p) => p !== 'elsewhere'),
-      ])].sort() as string[],
+      projects: [
+        ...new Set([
+          ...projectNames(),
+          ...Object.keys(b.totals.project).filter((p) => p !== 'elsewhere'),
+        ]),
+      ].sort() as string[],
       sources: sourceFacets(b.cards),
     }
     return {
@@ -469,11 +537,19 @@ export async function view(name: View, hours: number,
       orchBlockers(days),
     ])
     return {
-      guide: s.guide, matrix: s.matrix, health: s.health,
-      blockerDays: days, blockers: blockers?.blockers ?? null,
-      agents: s.agents, spawns: s.spawns, byRepo: (s as unknown as
-        { byRepo: { repo: string; agent: string; runs: number; toks: number }[] }).byRepo,
-      totals: s.totals, unscored: s.unscored, stale: s.stale,
+      guide: s.guide,
+      matrix: s.matrix,
+      health: s.health,
+      blockerDays: days,
+      blockers: blockers?.blockers ?? null,
+      agents: s.agents,
+      spawns: s.spawns,
+      byRepo: (
+        s as unknown as { byRepo: { repo: string; agent: string; runs: number; toks: number }[] }
+      ).byRepo,
+      totals: s.totals,
+      unscored: s.unscored,
+      stale: s.stale,
     }
   }
 
@@ -500,8 +576,11 @@ export async function view(name: View, hours: number,
     const shaped = raw.map((r) => {
       const a = attributeRun(r)
       return {
-        id: r.id, agent: r.agent, job: r.job,
-        task: a.key, project: a.project ?? r.repo,
+        id: r.id,
+        agent: r.agent,
+        job: r.job,
+        task: a.key,
+        project: a.project ?? r.repo,
         at: r.started_at,
         engaged: human(engagedMs(executionSpans(r, now))),
         running: r.status === 'running',
@@ -520,18 +599,20 @@ export async function view(name: View, hours: number,
     // The dropdowns offer what EXISTS, taken from the whole unfiltered window
     // rather than from the result. A filter that removes its own options from
     // the list is one you cannot climb back out of without a reload.
-    const uniq = (xs: (string | null)[]) =>
-      [...new Set(xs.filter((x): x is string => !!x))].sort()
-    const facets = { agents: uniq(shaped.map((r) => r.agent)),
-                     projects: uniq(shaped.map((r) => r.project)) }
+    const uniq = (xs: (string | null)[]) => [...new Set(xs.filter((x): x is string => !!x))].sort()
+    const facets = {
+      agents: uniq(shaped.map((r) => r.agent)),
+      projects: uniq(shaped.map((r) => r.project)),
+    }
 
     // Filtered BEFORE the 120 cap, never after. Capped first, picking one project
     // would mean "that project's runs among the newest 120 runs" rather than "the
     // newest 120 runs for that project" - a filter that quietly searches a window
     // instead of the history, and reports a project as idle because a busier
     // one crowded it out.
-    const keep = shaped.filter((r) =>
-      (!f.agent || r.agent === f.agent) && (!f.project || r.project === f.project))
+    const keep = shaped.filter(
+      (r) => (!f.agent || r.agent === f.agent) && (!f.project || r.project === f.project),
+    )
 
     const vendorTotals = new Map<string, number>()
     for (const run of shaped) {
@@ -550,15 +631,20 @@ export async function view(name: View, hours: number,
         failed: st.totals.failed,
         stale_n: st.totals.stale_n,
       },
-      vendors, unscored: st.unscored, stale: st.stale,
-      filters: f, facets, matched: keep.length,
+      vendors,
+      unscored: st.unscored,
+      stale: st.stale,
+      filters: f,
+      facets,
+      matched: keep.length,
       // Filtered on the same two axes, so the panel above the table cannot
       // contradict it. A live run carries only its `repo` - it has not been
       // through attribute() - which agrees with `project` for every repo this
       // machine has, and is the honest best available for a run still going.
       live: st.live
-        .filter((l) => (!f.agent || l.agent === f.agent)
-                    && (!f.project || (l.repo ?? '') === f.project))
+        .filter(
+          (l) => (!f.agent || l.agent === f.agent) && (!f.project || (l.repo ?? '') === f.project),
+        )
         .map((l) => ({ ...l, elapsedMs: now - new Date(l.started_at).getTime() })),
       // Uncapped, like a task's run list. The 120 was reaching back three and a
       // half hours on a table claiming 328 matches - a limit that decides how
@@ -599,18 +685,28 @@ export async function sendTest() {
   if (!g.items.length) throw new Error('nothing to report in this window')
   const sentences = await summarise(g.items, r.briefs)
   const shippedN = g.items.filter((i) => i.closed).length
-  const subject = `[test] ${r.subjectPrefix}: ${shippedN} shipped, `
-    + `${humanMs(g.engagedMs)} engaged`
-  const res = await sendMail({ ...r, to }, subject,
-    renderText(g, sentences), renderHtml(g, sentences))
+  const subject =
+    `[test] ${r.subjectPrefix}: ${shippedN} shipped, ` + `${humanMs(g.engagedMs)} engaged`
+  const res = await sendMail(
+    { ...r, to },
+    subject,
+    renderText(g, sentences),
+    renderHtml(g, sentences),
+  )
   recordSend(g, r, res.ok ? 'sent' : 'failed', res.error, { test: true, to })
   if (!res.ok) throw new Error(res.error ?? 'send failed')
   return { ok: true as const, to, items: g.items.length }
 }
 
 export async function collectNow() {
-  return withLease(`refresh:${process.pid}`,
-    async () => { await collectSlow(); await collectFast() }, 15_000)
+  return withLease(
+    `refresh:${process.pid}`,
+    async () => {
+      await collectSlow()
+      await collectFast()
+    },
+    15_000,
+  )
 }
 
 export function serve(port: number) {

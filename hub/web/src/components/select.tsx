@@ -1,5 +1,5 @@
-import { useEffect, useId, useLayoutEffect, useRef, useState } from 'react'
 import { Check, ChevronDown } from 'lucide-react'
+import { useEffect, useId, useLayoutEffect, useRef, useState } from 'react'
 import { cx } from '@/components/cx'
 
 export type SelectOption = { value: string; label: string; note?: string }
@@ -11,7 +11,11 @@ export type SelectOption = { value: string; label: string; note?: string }
  * that is written out here rather than lost.
  */
 export function Select({
-  value, options, onChange, label, onOpenChange,
+  value,
+  options,
+  onChange,
+  label,
+  onOpenChange,
 }: {
   value: string
   options: readonly SelectOption[]
@@ -128,7 +132,9 @@ export function Select({
         }}
       >
         <span className="whitespace-nowrap">{current?.label ?? label}</span>
-        {current?.note ? <span className="ml-1.5 text-muted-foreground">({current.note})</span> : null}
+        {current?.note ? (
+          <span className="ml-1.5 text-muted-foreground">({current.note})</span>
+        ) : null}
       </button>
       <ChevronDown className="pointer-events-none absolute right-2 top-1/2 size-4 -translate-y-1/2" />
       {open ? (
@@ -154,7 +160,12 @@ export function Select({
               onPointerEnter={() => setActive(index)}
               onClick={() => choose(index)}
             >
-              <Check className={cx('size-3.5 shrink-0', index === selected ? 'opacity-100' : 'opacity-0')} />
+              <Check
+                className={cx(
+                  'size-3.5 shrink-0',
+                  index === selected ? 'opacity-100' : 'opacity-0',
+                )}
+              />
               <span>{option.label}</span>
               {option.note ? <span className="text-muted-foreground">({option.note})</span> : null}
             </li>

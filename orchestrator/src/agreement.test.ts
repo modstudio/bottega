@@ -5,7 +5,12 @@ describe('routing agreement statistics', () => {
   test('Gwet AC1 matches a hand-computed three-category table', () => {
     // Agreement is 3/4. Combined marginals are 5/8, 1/4, 1/8, so chance
     // agreement is 17/64 and AC1 is (48/64 - 17/64) / (1 - 17/64) = 31/47.
-    const pairs = [['a', 'a'], ['a', 'a'], ['b', 'b'], ['c', 'a']] as const
+    const pairs = [
+      ['a', 'a'],
+      ['a', 'a'],
+      ['b', 'b'],
+      ['c', 'a'],
+    ] as const
     expect(gwetAc1(pairs, ['a', 'b', 'c'])).toBeCloseTo(31 / 47)
   })
 
@@ -23,7 +28,7 @@ describe('routing agreement statistics', () => {
     expect(fitted.every((row) => Number.isFinite(row.strength) && row.strength > 0)).toBe(true)
     expect(fitted.reduce((sum, row) => sum + row.strength, 0)).toBeCloseTo(3, 10)
 
-    const separated = bradleyTerry(['winner', 'loser'], (winner) => winner === 'winner' ? 100 : 0)
+    const separated = bradleyTerry(['winner', 'loser'], (winner) => (winner === 'winner' ? 100 : 0))
     expect(separated.every((row) => Number.isFinite(row.strength) && row.strength > 0)).toBe(true)
   })
 })

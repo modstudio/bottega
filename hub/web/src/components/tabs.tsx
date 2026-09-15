@@ -1,4 +1,11 @@
-import { createContext, useContext, type ButtonHTMLAttributes, type HTMLAttributes, type KeyboardEvent, type ReactNode } from 'react'
+import {
+  type ButtonHTMLAttributes,
+  createContext,
+  type HTMLAttributes,
+  type KeyboardEvent,
+  type ReactNode,
+  useContext,
+} from 'react'
 import { cx } from '@/components/cx'
 
 type TabsState = { value: string; onValueChange: (value: string) => void }
@@ -11,7 +18,15 @@ function useTabs() {
   return value
 }
 
-export function Tabs({ value, onValueChange, children }: { value: string; onValueChange: (value: string) => void; children: ReactNode }) {
+export function Tabs({
+  value,
+  onValueChange,
+  children,
+}: {
+  value: string
+  onValueChange: (value: string) => void
+  children: ReactNode
+}) {
   return <TabsContext.Provider value={{ value, onValueChange }}>{children}</TabsContext.Provider>
 }
 
@@ -47,7 +62,11 @@ export function TabsList({ className, onKeyDown, ...props }: HTMLAttributes<HTML
   )
 }
 
-export function TabsTrigger({ value, className, ...props }: { value: string } & ButtonHTMLAttributes<HTMLButtonElement>) {
+export function TabsTrigger({
+  value,
+  className,
+  ...props
+}: { value: string } & ButtonHTMLAttributes<HTMLButtonElement>) {
   const tabs = useTabs()
   const selected = tabs.value === value
   return (

@@ -1,8 +1,8 @@
-import { describe, expect, test } from "bun:test"
-import { scrubbedGitEnv } from "./git.ts"
+import { describe, expect, test } from 'bun:test'
+import { scrubbedGitEnv } from './git.ts'
 
 describe('shared git environment decisions', () => {
-test('the shared scrub removes repository-location variables git lists and orch routing, not global-behaviour GIT_*', () => {
+  test('the shared scrub removes repository-location variables git lists and orch routing, not global-behaviour GIT_*', () => {
     const contaminated: NodeJS.ProcessEnv = {
       UNRELATED: 'preserved',
       GIT_DIR: '/worker/git-dir',
@@ -24,9 +24,14 @@ test('the shared scrub removes repository-location variables git lists and orch 
     const scrubbed = scrubbedGitEnv(contaminated)
     expect(scrubbed.UNRELATED).toBe('preserved')
     for (const variable of [
-      'GIT_DIR', 'GIT_WORK_TREE', 'GIT_OBJECT_DIRECTORY', 'GIT_ALTERNATE_OBJECT_DIRECTORIES',
-      'GIT_INDEX_FILE', 'GIT_CONFIG_COUNT',
-      'ORCH_GUARDED_GIT_COMMON_DIR', 'ORCH_ALLOWED_GIT_REF',
+      'GIT_DIR',
+      'GIT_WORK_TREE',
+      'GIT_OBJECT_DIRECTORY',
+      'GIT_ALTERNATE_OBJECT_DIRECTORIES',
+      'GIT_INDEX_FILE',
+      'GIT_CONFIG_COUNT',
+      'ORCH_GUARDED_GIT_COMMON_DIR',
+      'ORCH_ALLOWED_GIT_REF',
     ]) {
       expect(scrubbed[variable]).toBeUndefined()
     }

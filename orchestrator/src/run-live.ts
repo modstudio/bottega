@@ -6,34 +6,70 @@
 import { existsSync, readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import type { Agent } from './agents.ts'
-import { checkpointRun, DEFAULT_CHECKPOINT_MINUTES, latestCheckpoint, recordFailedIdlePreservation } from './checkpoint.ts'
-import { TEXT_REPLY_SCHEMA, REPLY_FILE_NAME, isAsking, realQuestions, validatesSchema, type ReplyDialect, type WorkerReply } from './contract.ts'
+import { type AskLoopback, startAskLoopback } from './ask.ts'
+import {
+  checkpointRun,
+  DEFAULT_CHECKPOINT_MINUTES,
+  latestCheckpoint,
+  recordFailedIdlePreservation,
+} from './checkpoint.ts'
+import type { CodexMcpServer } from './codex-mcp-scope.ts'
+import type { ConfinementEvent, FreezeFailure } from './confinement.ts'
+import {
+  isAsking,
+  REPLY_FILE_NAME,
+  type ReplyDialect,
+  realQuestions,
+  TEXT_REPLY_SCHEMA,
+  validatesSchema,
+  type WorkerReply,
+} from './contract.ts'
 import { db, nowIso } from './db.ts'
 import { appendRunEvent, teeTransportEvents } from './events.ts'
-import { FAILS_OVER, classify, hasVendorTerminationMarker, isNonAnswer } from './failure.ts'
-import { contentTree, gitContext, targetGitEnvironment, type WorktreeObjectEnvironment } from './git-environment.ts'
-import { formatIdleKillError, idleKillMayProceed, idlePollMs, sampleProcesses, shouldIdleKill, terminateProcessGroup } from './idle-kill.ts'
-import { jobIdleKillMs, type Job } from './jobs.ts'
-import { processStartTime } from './project-lock.ts'
-import { decideOutcome } from './outcome.ts'
+import { classify, FAILS_OVER, hasVendorTerminationMarker, isNonAnswer } from './failure.ts'
+import {
+  contentTree,
+  gitContext,
+  targetGitEnvironment,
+  type WorktreeObjectEnvironment,
+} from './git-environment.ts'
+import {
+  formatIdleKillError,
+  idleKillMayProceed,
+  idlePollMs,
+  sampleProcesses,
+  shouldIdleKill,
+  terminateProcessGroup,
+} from './idle-kill.ts'
+import { type Job, jobIdleKillMs } from './jobs.ts'
 import { receiptWorkerMessages, unreadWorkerMessages } from './mailbox.ts'
+import { decideOutcome } from './outcome.ts'
+import { processStartTime } from './project-lock.ts'
 import { childEnv, errorTail, live, liveCheckpoints } from './run-process.ts'
 import type { SandboxSelection } from './sandbox.ts'
-import { startAskLoopback, type AskLoopback } from './ask.ts'
-import { failureKindFromStop, schemaMismatchError, stopErrorMessage, transportFor, valueMatchesStrictSchema, type TransportName, type TransportResult, type TransportStartOpts } from './transport.ts'
+import {
+  failureKindFromStop,
+  schemaMismatchError,
+  stopErrorMessage,
+  type TransportName,
+  type TransportResult,
+  type TransportStartOpts,
+  transportFor,
+  valueMatchesStrictSchema,
+} from './transport.ts'
 import type { Worktree } from './worktree-types.ts'
-import type { FreezeFailure, ConfinementEvent } from './confinement.ts'
-import type { CodexMcpServer } from './codex-mcp-scope.ts'
 
 function reviewChangedPaths(cwd: string, base: string, inputTree: string): string[] {
   const args = ['diff', '--name-only', `${base}..${inputTree}`]
   const p = Bun.spawnSync(['git', '-C', cwd, ...args], {
-    env: targetGitEnvironment(cwd), stdout: 'pipe', stderr: 'pipe',
+    env: targetGitEnvironment(cwd),
+    stdout: 'pipe',
+    stderr: 'pipe',
   })
   if (p.exitCode !== 0) {
     throw new Error(
       `could not measure explicit review paths with git ${args.join(' ')}: ` +
-      (p.stderr.toString().trim() || `exit ${p.exitCode}`),
+        (p.stderr.toString().trim() || `exit ${p.exitCode}`),
     )
   }
   return p.stdout.toString().trim().split('\n').filter(Boolean)
@@ -48,7 +84,11 @@ function presentReplyFileMatches(opts: {
   const schema = opts.schema as Parameters<typeof validatesSchema>[1]
   if (opts.customSchema) {
     let value: unknown
-    try { value = JSON.parse(opts.text) } catch { return false }
+    try {
+      value = JSON.parse(opts.text)
+    } catch {
+      return false
+    }
     return validatesSchema(value, schema)
   }
   return opts.dialect.parse(opts.text).reply !== null
@@ -138,13 +178,43 @@ export type LiveResult = {
 
 export async function runLive(input: LiveInput): Promise<LiveResult> {
   let {
-    repoJob, name, worktree, claim, provisionedMcpConfig, reviewTarget,
-    sandboxSelection, runToken, transportName, a, cwd, prompt, outPath,
-    vendorSession, schemaPath, originalSchemaPath, opts, sandboxEnvironment,
-    writes, usingMcp, mcpServerName, codexMcpScope, mcpTrustGranted,
-    writableRoots, gitObjectEnvironment, gitConfigEnvironment, sandboxRunDir,
-    grokMcpEnvironment, scratchDir, writesJob, launchKey, requestedJob,
-    boundMs, started, textReplyContract, resolvedDialect, mcpSetupHeader,
+    repoJob,
+    name,
+    worktree,
+    claim,
+    provisionedMcpConfig,
+    reviewTarget,
+    sandboxSelection,
+    runToken,
+    transportName,
+    a,
+    cwd,
+    prompt,
+    outPath,
+    vendorSession,
+    schemaPath,
+    originalSchemaPath,
+    opts,
+    sandboxEnvironment,
+    writes,
+    usingMcp,
+    mcpServerName,
+    codexMcpScope,
+    mcpTrustGranted,
+    writableRoots,
+    gitObjectEnvironment,
+    gitConfigEnvironment,
+    sandboxRunDir,
+    grokMcpEnvironment,
+    scratchDir,
+    writesJob,
+    launchKey,
+    requestedJob,
+    boundMs,
+    started,
+    textReplyContract,
+    resolvedDialect,
+    mcpSetupHeader,
   } = input
   let proc: { pid?: number | null; kill(sig?: number | string): void } | null = null
   let timer: ReturnType<typeof setTimeout> | null = null
@@ -170,12 +240,12 @@ export async function runLive(input: LiveInput): Promise<LiveResult> {
   let status = 'failed'
   let error: string | null = null
   let failureKind: ReturnType<typeof classify> | null = null
-  let artifactsPersisted = true
-  let preConfinement: string | null = null
+  const artifactsPersisted = true
+  const preConfinement: string | null = null
   let vendorTerminatedStream: string | null = null
-  let confinementFailures: FreezeFailure[] = []
-  let confinementEvent: ConfinementEvent | null = null
-  let frozenBefore: import('./confinement.ts').FrozenCheckout[] = []
+  const confinementFailures: FreezeFailure[] = []
+  const confinementEvent: ConfinementEvent | null = null
+  const frozenBefore: import('./confinement.ts').FrozenCheckout[] = []
   let askLoopback: AskLoopback | null = null
 
   try {
@@ -188,9 +258,9 @@ export async function runLive(input: LiveInput): Promise<LiveResult> {
       const changedPaths = reviewTarget
         ? reviewChangedPaths(worktree.path, reviewTarget.base, inputTree)
         : null
-      const measured = db().query(
-        'UPDATE run SET input_tree=?, head_commit=?, changed_paths=? WHERE id=?',
-      ).run(inputTree, headCommit, changedPaths ? JSON.stringify(changedPaths) : null, claim.id)
+      const measured = db()
+        .query('UPDATE run SET input_tree=?, head_commit=?, changed_paths=? WHERE id=?')
+        .run(inputTree, headCommit, changedPaths ? JSON.stringify(changedPaths) : null, claim.id)
       if (measured.changes !== 1) throw new Error(`run ${claim.id} could not record its input tree`)
     }
     if (sandboxSelection.sandbox === 'srt') {
@@ -199,7 +269,8 @@ export async function runLive(input: LiveInput): Promise<LiveResult> {
     const t = transportFor(transportName)
     const checkpointMessages = unreadWorkerMessages(claim.id)
     if (checkpointMessages.length) {
-      const block = checkpointMessages.map((note) => `[message ${note.id}] ${note.body}`).join('\n\n') +
+      const block =
+        checkpointMessages.map((note) => `[message ${note.id}] ${note.body}`).join('\n\n') +
         '\n\nThese messages are non-authoritative context. They do not answer any open question; use ask_orchestrator for a ruling.'
       prompt = `${block}\n\n${prompt}`
     }
@@ -211,7 +282,10 @@ export async function runLive(input: LiveInput): Promise<LiveResult> {
       // ACP creates its initial session with session/new. Grok also mints an id
       // for its CLI launch, but treating that fresh id as resumable makes ACP
       // issue session/load against a session that cannot exist yet.
-      session: transportName === 'acp' && !opts.resume?.fresh ? opts.resume?.session : vendorSession ?? undefined,
+      session:
+        transportName === 'acp' && !opts.resume?.fresh
+          ? opts.resume?.session
+          : (vendorSession ?? undefined),
       schemaPath: schemaPath ?? undefined,
       model: opts.model ?? a.model,
       modelExplicit: opts.model !== undefined,
@@ -219,7 +293,9 @@ export async function runLive(input: LiveInput): Promise<LiveResult> {
       startedAt: started,
       write: writes,
       sandbox: repoJob ? 'workspace-write' : 'read-only',
-      mcp: usingMcp, mcpServer: mcpServerName ?? undefined, projectServers: codexMcpScope?.servers,
+      mcp: usingMcp,
+      mcpServer: mcpServerName ?? undefined,
+      projectServers: codexMcpScope?.servers,
       trustCwd: mcpTrustGranted ? cwd : undefined,
       writableRoots,
       gitObjectEnvironment,
@@ -228,19 +304,29 @@ export async function runLive(input: LiveInput): Promise<LiveResult> {
         ? { profile: sandboxSelection.profile, runtimeDir: sandboxRunDir }
         : undefined,
       resume: Boolean(opts.resume && !opts.resume.fresh),
-      env: childEnv(a, claim.id, runToken, {
-        ...(gitConfigEnvironment ?? {}), ...sandboxEnvironment, ...grokMcpEnvironment,
-        ORCH_SCRATCH: scratchDir,
-        ...(askLoopback ? { ORCH_ASK_URL: askLoopback.url } : {}),
-      }, repoJob),
+      env: childEnv(
+        a,
+        claim.id,
+        runToken,
+        {
+          ...(gitConfigEnvironment ?? {}),
+          ...sandboxEnvironment,
+          ...grokMcpEnvironment,
+          ORCH_SCRATCH: scratchDir,
+          ...(askLoopback ? { ORCH_ASK_URL: askLoopback.url } : {}),
+        },
+        repoJob,
+      ),
     }
-    const handle = opts.resume?.session && !opts.resume.fresh
-      ? await t.resume({ ...startOpts, session: opts.resume.session, resume: true })
-      : await t.start(startOpts)
+    const handle =
+      opts.resume?.session && !opts.resume.fresh
+        ? await t.resume({ ...startOpts, session: opts.resume.session, resume: true })
+        : await t.start(startOpts)
     proc = handle
     live.add(handle)
     effectiveModel = handle.effectiveModel ?? null
-    if (effectiveModel) db().query('UPDATE run SET model=? WHERE id=?').run(effectiveModel, claim.id)
+    if (effectiveModel)
+      db().query('UPDATE run SET model=? WHERE id=?').run(effectiveModel, claim.id)
     // The VENDOR CLI pid. pid stays the worker's for the whole run: after the
     // agent exits the worker is still parsing output and writing questions, and
     // a reaper that tested this pid would mark the run stale under a process
@@ -253,36 +339,50 @@ export async function runLive(input: LiveInput): Promise<LiveResult> {
     // cannot burn either budget.
     const vendorStartedAt = Date.now()
     const vendorPid = handle.pid ?? null
-    const vendorSample = vendorPid && vendorPid > 1
-      ? sampleProcesses().find((row) => row.pid === vendorPid)
-      : undefined
+    const vendorSample =
+      vendorPid && vendorPid > 1
+        ? sampleProcesses().find((row) => row.pid === vendorPid)
+        : undefined
     const vendorPgid = vendorSample && vendorSample.pgid > 1 ? vendorSample.pgid : null
     const vendorStartTime = vendorPid && vendorPid > 1 ? processStartTime(vendorPid) : null
-    db().query(
-      `UPDATE run SET agent_pid=?, agent_pgid=?, agent_start_time=?,
+    db()
+      .query(
+        `UPDATE run SET agent_pid=?, agent_pgid=?, agent_start_time=?,
               last_event_at=COALESCE(last_event_at, ?) WHERE id=?`,
-    ).run(vendorPid, vendorPgid, vendorStartTime, nowIso(), claim.id)
+      )
+      .run(vendorPid, vendorPgid, vendorStartTime, nowIso(), claim.id)
 
     const createCheckpoint = (final = false) => {
       if (!writesJob || !worktree || !launchKey) return null
       const result = checkpointRun({
-        database: db(), runId: claim.id, worktree: worktree.path,
-        branch: worktree.branch, taskKey: launchKey, scratchDir,
-        guardEnvironment: gitConfigEnvironment ?? {}, final,
+        database: db(),
+        runId: claim.id,
+        worktree: worktree.path,
+        branch: worktree.branch,
+        taskKey: launchKey,
+        scratchDir,
+        guardEnvironment: gitConfigEnvironment ?? {},
+        final,
       })
       if (result.error) console.error(`orch: run ${claim.id} checkpoint failed: ${result.error}`)
       return result
     }
     if (writesJob) {
       checkpointTimer = setInterval(
-        () => { createCheckpoint(false) },
+        () => {
+          createCheckpoint(false)
+        },
         (requestedJob.checkpointMinutes ?? DEFAULT_CHECKPOINT_MINUTES) * 60_000,
       )
       if (worktree && launchKey) {
         liveCheckpoints.set(handle, {
-          runId: claim.id, rootId: opts.resume?.parent ?? claim.id,
-          worktree: worktree.path, branch: worktree.branch, taskKey: launchKey,
-          scratchDir, guardEnvironment: gitConfigEnvironment ?? {},
+          runId: claim.id,
+          rootId: opts.resume?.parent ?? claim.id,
+          worktree: worktree.path,
+          branch: worktree.branch,
+          taskKey: launchKey,
+          scratchDir,
+          guardEnvironment: gitConfigEnvironment ?? {},
         })
       }
     }
@@ -303,18 +403,26 @@ export async function runLive(input: LiveInput): Promise<LiveResult> {
       forceCollect = resolve
     })
     const maybeIdleKill = async () => {
-      const row = db().query(
-        'SELECT status, last_event_at, started_at FROM run WHERE id=?',
-      ).get(claim.id) as { status: string; last_event_at: string | null; started_at: string } | null
+      const row = db()
+        .query('SELECT status, last_event_at, started_at FROM run WHERE id=?')
+        .get(claim.id) as {
+        status: string
+        last_event_at: string | null
+        started_at: string
+      } | null
       if (!row) return
-      const openQuestion = db().query(
-        'SELECT 1 n FROM question WHERE run_id=? AND answered_at IS NULL LIMIT 1',
-      ).get(claim.id) as { n: number } | null
+      const openQuestion = db()
+        .query('SELECT 1 n FROM question WHERE run_id=? AND answered_at IS NULL LIMIT 1')
+        .get(claim.id) as { n: number } | null
       const idleThresholdMs = jobIdleKillMs(opts.job, process.env, boundMs)
       const decision = shouldIdleKill({
-        lastEventAt: row.last_event_at, startedAt: row.started_at, pid: handle.pid,
-        asking: row.status === 'asking', openQuestion: Boolean(openQuestion),
-        alreadyTimedOut: timedOut, alreadyIdleKilled: idleKilled,
+        lastEventAt: row.last_event_at,
+        startedAt: row.started_at,
+        pid: handle.pid,
+        asking: row.status === 'asking',
+        openQuestion: Boolean(openQuestion),
+        alreadyTimedOut: timedOut,
+        alreadyIdleKilled: idleKilled,
         thresholdMs: idleThresholdMs,
       })
       if (!decision.kill) return
@@ -326,19 +434,22 @@ export async function runLive(input: LiveInput): Promise<LiveResult> {
         boundMs,
       })
       const checkpoint = createCheckpoint(true)
-      const afterCheckpoint = db().query(
-        'SELECT status FROM run WHERE id=?',
-      ).get(claim.id) as { status: string } | null
-      const askedDuringCheckpoint = afterCheckpoint?.status === 'asking' || Boolean(
-        db().query(
-          'SELECT 1 n FROM question WHERE run_id=? AND answered_at IS NULL LIMIT 1',
-        ).get(claim.id),
-      )
+      const afterCheckpoint = db().query('SELECT status FROM run WHERE id=?').get(claim.id) as {
+        status: string
+      } | null
+      const askedDuringCheckpoint =
+        afterCheckpoint?.status === 'asking' ||
+        Boolean(
+          db()
+            .query('SELECT 1 n FROM question WHERE run_id=? AND answered_at IS NULL LIMIT 1')
+            .get(claim.id),
+        )
       if (askedDuringCheckpoint) {
         idleKilled = false
         idleKillError = null
         appendRunEvent(claim.id, {
-          ts: nowIso(), type: 'text',
+          ts: nowIso(),
+          type: 'text',
           text: 'idle kill aborted: worker asked during checkpoint',
         })
         return
@@ -348,9 +459,14 @@ export async function runLive(input: LiveInput): Promise<LiveResult> {
         idleKilled = false
         idleKillError = null
         const why = checkpoint?.error ?? 'checkpoint failed'
-        console.error(`orch: run ${claim.id} idle kill aborted: ${why}; no prior checkpoint, leaving the worker for the wall`)
+        console.error(
+          `orch: run ${claim.id} idle kill aborted: ${why}; no prior checkpoint, leaving the worker for the wall`,
+        )
         recordFailedIdlePreservation({
-          runId: claim.id, scratchDir, worktree: worktree?.path ?? null, error: why,
+          runId: claim.id,
+          scratchDir,
+          worktree: worktree?.path ?? null,
+          error: why,
         })
         return
       }
@@ -371,29 +487,52 @@ export async function runLive(input: LiveInput): Promise<LiveResult> {
           unkillableReason: terminated.reason,
         })
         forceCollect?.({
-          stdout: '', stderr: idleKillError, raw: '', parsed: null, output: '',
-          tokens: null, costUsd: null, sessionId: null, stopReason: 'timeout',
-          error: idleKillError, exitCode: -1, pid: handle.pid ?? 0,
-          events: [], asking: false, failureKind: 'idle', status: 'failed', questions: [],
+          stdout: '',
+          stderr: idleKillError,
+          raw: '',
+          parsed: null,
+          output: '',
+          tokens: null,
+          costUsd: null,
+          sessionId: null,
+          stopReason: 'timeout',
+          error: idleKillError,
+          exitCode: -1,
+          pid: handle.pid ?? 0,
+          events: [],
+          asking: false,
+          failureKind: 'idle',
+          status: 'failed',
+          questions: [],
         })
       }
     }
     let idleCheckInFlight = false
-    idleTimer = setInterval(() => {
-      if (idleCheckInFlight || timedOut || idleKilled) return
-      idleCheckInFlight = true
-      void maybeIdleKill()
-        .catch((error) => {
-          console.error(`orch: run ${claim.id} idle check failed: ${error}`)
-        })
-        .finally(() => { idleCheckInFlight = false })
-    }, idlePollMs(jobIdleKillMs(opts.job, process.env, boundMs)))
+    idleTimer = setInterval(
+      () => {
+        if (idleCheckInFlight || timedOut || idleKilled) return
+        idleCheckInFlight = true
+        void maybeIdleKill()
+          .catch((error) => {
+            console.error(`orch: run ${claim.id} idle check failed: ${error}`)
+          })
+          .finally(() => {
+            idleCheckInFlight = false
+          })
+      },
+      idlePollMs(jobIdleKillMs(opts.job, process.env, boundMs)),
+    )
 
     const teeing = teeTransportEvents(handle.events(), claim.id)
     await t.prompt(handle, prompt)
-    receiptWorkerMessages(claim.id, checkpointMessages.map((message) => message.id))
+    receiptWorkerMessages(
+      claim.id,
+      checkpointMessages.map((message) => message.id),
+    )
     const collected = await Promise.race([handle.collect(), forcedCollect])
-    await teeing.catch(() => { /* the live log is observation, never outcome */ })
+    await teeing.catch(() => {
+      /* the live log is observation, never outcome */
+    })
     const stdout = collected.stdout
     const stderr = collected.stderr
     // One derivation from the raw stream, carried through terminalisation.
@@ -401,8 +540,11 @@ export async function runLive(input: LiveInput): Promise<LiveResult> {
     exitCode = collected.exitCode
     const reply = collected.parsed
     const replyError = reply?.error ?? collected.error
-    const outputCeilingReached = !!reply && !reply.text.trim() &&
-      a.outputCeilingStopReason !== null && reply.stopReason === a.outputCeilingStopReason
+    const outputCeilingReached =
+      !!reply &&
+      !reply.text.trim() &&
+      a.outputCeilingStopReason !== null &&
+      reply.stopReason === a.outputCeilingStopReason
     vendorTokens = collected.tokens
     costUsd = collected.costUsd
     effectiveModel = collected.effectiveModel ?? effectiveModel
@@ -414,12 +556,14 @@ export async function runLive(input: LiveInput): Promise<LiveResult> {
       const fileOutput = readFileSync(replyFile, 'utf8')
       output = fileOutput
       const validationSchema = JSON.parse(readFileSync(originalSchemaPath!, 'utf8'))
-      if (!presentReplyFileMatches({
-        text: fileOutput,
-        schema: validationSchema,
-        customSchema: Boolean(opts.schemaPath),
-        dialect: resolvedDialect,
-      })) {
+      if (
+        !presentReplyFileMatches({
+          text: fileOutput,
+          schema: validationSchema,
+          customSchema: Boolean(opts.schemaPath),
+          dialect: resolvedDialect,
+        })
+      ) {
         replyFileError = `${REPLY_FILE_NAME} did not match the worker contract:\n${fileOutput}`
       } else if (textReplyContract) {
         output = (JSON.parse(fileOutput) as { answer: string }).answer
@@ -431,12 +575,18 @@ export async function runLive(input: LiveInput): Promise<LiveResult> {
       try {
         const value = JSON.parse(output)
         if (valueMatchesStrictSchema(TEXT_REPLY_SCHEMA, value)) output = value.answer
-      } catch { /* Missing-file fallback may be the legacy plain-text result. */ }
+      } catch {
+        /* Missing-file fallback may be the legacy plain-text result. */
+      }
       writeFileSync(outPath, output)
     }
     if (!replyFilePresent && opts.schemaPath) {
       let value: unknown
-      try { value = JSON.parse(output) } catch { value = null }
+      try {
+        value = JSON.parse(output)
+      } catch {
+        value = null
+      }
       const validationSchema = JSON.parse(readFileSync(originalSchemaPath!, 'utf8'))
       if (!valueMatchesStrictSchema(validationSchema, value)) {
         replyFileError = schemaMismatchError(output)
@@ -452,7 +602,8 @@ export async function runLive(input: LiveInput): Promise<LiveResult> {
       : []
     for (const event of collected.events) {
       if (event.kind !== 'permission') continue
-      const line = `permission ${event.decision}: ${event.title}` +
+      const line =
+        `permission ${event.decision}: ${event.title}` +
         (event.toolKind ? ` (${event.toolKind})` : '')
       mcpSetupHeader = mcpSetupHeader ? `${mcpSetupHeader}\n${line}` : line
     }
@@ -495,42 +646,56 @@ export async function runLive(input: LiveInput): Promise<LiveResult> {
     const questionsControlStatus = isAsking(contract) || contract?.status === 'done'
     acceptedQuestions = questionsControlStatus ? realQuestions(contract) : transportQuestions
 
-    const completedReplyAtTimeout = contract?.status === 'done' ||
-      (!writesJob && !replyError && !!output && !isNonAnswer(output))
-    const acpVendorStop = transportName === 'acp' && collected.status === 'failed' &&
+    const completedReplyAtTimeout =
+      contract?.status === 'done' || (!writesJob && !replyError && !!output && !isNonAnswer(output))
+    const acpVendorStop =
+      transportName === 'acp' &&
+      collected.status === 'failed' &&
       Boolean(collected.stopReason && collected.stopReason !== 'end_turn')
     // A completed reply outranks an idle kill, exactly as the wall recovery
     // does: a parsed contract or a reply.json already on disk is finished work,
     // not an idle failure. Idle still outranks the transport stop reason so an
     // ACP/CLI cancel does not rewrite the kill as a timeout.
-    const completedReply = completedReplyAtTimeout ||
+    const completedReply =
+      completedReplyAtTimeout ||
       (replyFilePresent && !replyFileError && (contract?.status === 'done' || !writesJob))
-    const acpFailureKind = collected.failureKind ??
-      failureKindFromStop(collected.stopReason, collected.error)
+    const acpFailureKind =
+      collected.failureKind ?? failureKindFromStop(collected.stopReason, collected.error)
     const replyErrorFailureKind = classify(
-      replyError ?? '', exitCode, timedOut, sandboxSelection.sandbox,
+      replyError ?? '',
+      exitCode,
+      timedOut,
+      sandboxSelection.sandbox,
     )
     const nonAnswer = exitCode === 0 && isNonAnswer(output)
     const nonAnswerFailureKind = classify(output, exitCode, timedOut, sandboxSelection.sandbox)
     const completedContractTerminal = stderr.trim() || stdout.trim()
     const completedContractFailureKind = classify(
-      completedContractTerminal, exitCode, timedOut, sandboxSelection.sandbox,
+      completedContractTerminal,
+      exitCode,
+      timedOut,
+      sandboxSelection.sandbox,
     )
     const missingContractTerminal = stderr.trim() || output || stdout.trim()
     const classifiedMissingContract = classify(
-      missingContractTerminal, exitCode, timedOut, sandboxSelection.sandbox,
+      missingContractTerminal,
+      exitCode,
+      timedOut,
+      sandboxSelection.sandbox,
     )
     const missingContractFailureKind = FAILS_OVER.includes(classifiedMissingContract)
       ? classifiedMissingContract
       : 'other'
-    const defaultError = errorTail(stderr.trim() || stdout.trim() || `exit ${exitCode}, empty output`)
+    const defaultError = errorTail(
+      stderr.trim() || stdout.trim() || `exit ${exitCode}, empty output`,
+    )
     const defaultFailureKind = classify(defaultError, exitCode, timedOut, sandboxSelection.sandbox)
 
     if (idleKilled && completedReply) {
       error = null
       console.error(
         `orch: run ${claim.id} had already returned a complete reply when idle-killed. ` +
-        `Recorded ${acceptedQuestions.length ? 'asking' : 'ok'}.`,
+          `Recorded ${acceptedQuestions.length ? 'asking' : 'ok'}.`,
       )
     } else if (idleKilled && (collected.asking || acceptedQuestions.length)) {
       error = null
@@ -567,8 +732,8 @@ export async function runLive(input: LiveInput): Promise<LiveResult> {
       error = null
       console.error(
         `orch: run ${claim.id} had already returned a complete reply when the ` +
-        `${Math.round(boundMs / 60_000)}m bound killed it. Recorded ` +
-        `${acceptedQuestions.length ? 'asking' : 'ok'}; the bound may be short.`,
+          `${Math.round(boundMs / 60_000)}m bound killed it. Recorded ` +
+          `${acceptedQuestions.length ? 'asking' : 'ok'}; the bound may be short.`,
       )
     } else if (timedOut) {
       error = `no reply within ${Math.round(boundMs / 60_000)}m; ${name} was killed`
@@ -581,11 +746,6 @@ export async function runLive(input: LiveInput): Promise<LiveResult> {
       // crashed, not sit in the table looking like a success until a person
       // reads 57 bytes and works it out.
       error = errorTail(output)
-    } else if (acceptedQuestions.length) {
-      // `asking`, not `blocked`: the worker is doing exactly what it was told
-      // to. The word matters because a `blocker` in this system is the
-      // opposite — an environment problem — and on a page they read alike.
-      error = null
     } else if (contract?.status === 'refused') {
       // The worker read the spec and says it cannot be built as written. That
       // is a real answer and often a correct one, so it is `ok` rather than a
@@ -599,9 +759,11 @@ export async function runLive(input: LiveInput): Promise<LiveResult> {
       // is more honest than either 'ok' (it was interrupted) or a contract
       // complaint about a contract that was satisfied.
       error = errorTail(
-        (FAILS_OVER.includes(completedContractFailureKind) ? `${completedContractTerminal}\n` : '') +
-        `the worker completed and wrote its reply, then the process ended ` +
-        `(exit ${exitCode}). Its work is in the worktree; resume or read the diff.`,
+        (FAILS_OVER.includes(completedContractFailureKind)
+          ? `${completedContractTerminal}\n`
+          : '') +
+          `the worker completed and wrote its reply, then the process ended ` +
+          `(exit ${exitCode}). Its work is in the worktree; resume or read the diff.`,
       )
     } else if (writesJob && !contract) {
       // A writing run whose reply cannot be parsed has not reported what it
@@ -649,11 +811,37 @@ export async function runLive(input: LiveInput): Promise<LiveResult> {
   }
 
   return {
-    proc, timer, checkpointTimer, idleTimer, timedOut, idleKilled, idleKillError,
-    idleUnkillable, idleTreePids, idleTreePgid, exitCode, output, vendorTokens,
-    costUsd, resolvedSession, effectiveModel, replyFileError, replyFilePresent,
-    contract, contractObjects, acceptedQuestions, status, error, failureKind,
-    artifactsPersisted, preConfinement, vendorTerminatedStream, confinementFailures,
-    confinementEvent, frozenBefore, askLoopback, mcpSetupHeader,
+    proc,
+    timer,
+    checkpointTimer,
+    idleTimer,
+    timedOut,
+    idleKilled,
+    idleKillError,
+    idleUnkillable,
+    idleTreePids,
+    idleTreePgid,
+    exitCode,
+    output,
+    vendorTokens,
+    costUsd,
+    resolvedSession,
+    effectiveModel,
+    replyFileError,
+    replyFilePresent,
+    contract,
+    contractObjects,
+    acceptedQuestions,
+    status,
+    error,
+    failureKind,
+    artifactsPersisted,
+    preConfinement,
+    vendorTerminatedStream,
+    confinementFailures,
+    confinementEvent,
+    frozenBefore,
+    askLoopback,
+    mcpSetupHeader,
   }
 }

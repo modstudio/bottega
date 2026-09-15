@@ -1,9 +1,16 @@
 // concern: contract
-import { REVIEW_SEVERITY } from './review-vocabulary.ts'
+
 import { progressFileInstruction } from './checkpoint.ts'
 import { isReaderJob, type Job } from './jobs.ts'
 import { GENERIC_QUESTION_TOKENS } from './outcome.ts'
-export { GENERIC_QUESTION_TOKENS, hasRealQuestions, isRealQuestion, realQuestions } from './outcome.ts'
+import { REVIEW_SEVERITY } from './review-vocabulary.ts'
+
+export {
+  GENERIC_QUESTION_TOKENS,
+  hasRealQuestions,
+  isRealQuestion,
+  realQuestions,
+} from './outcome.ts'
 
 /**
  * What an implementation worker is told, and what it must hand back.
@@ -65,12 +72,15 @@ export const REPLY_FILE_NAME = 'reply.json'
 
 /** The file contract is identical across harnesses; schema flags are an extra guarantee. */
 export function replyFileInstruction(schemaName: string): string {
-  return `REPLY CONTRACT\n\n` +
+  return (
+    `REPLY CONTRACT\n\n` +
     `Your reply schema is ${schemaName}. Before your final message, write the structured reply ` +
     `as valid JSON to $ORCH_SCRATCH/${REPLY_FILE_NAME}. Orch reads that file first and falls back ` +
     `to the final message only when the file is missing. The final message must follow the same schema.` +
     (schemaName === 'WORKER_SCHEMA' || schemaName === 'ISSUE_WORKER_SCHEMA'
-      ? `\n\n${progressFileInstruction()}` : '')
+      ? `\n\n${progressFileInstruction()}`
+      : '')
+  )
 }
 
 export const WORKER_SCHEMA = {
@@ -174,41 +184,80 @@ export type WorkerReply = {
   // Nullable throughout, because the schema requires the keys to be present and
   // a worker with nothing to report sends null rather than omitting them.
   files_changed?: string[] | null
-  questions?: {
-    question: string; options?: string[] | null
-    recommendation?: string | null; why?: string | null
-  }[] | null
+  questions?:
+    | {
+        question: string
+        options?: string[] | null
+        recommendation?: string | null
+        why?: string | null
+      }[]
+    | null
   deviations?: { what: string; why: string }[] | null
   blockers?: { what: string; why: string; impact: string }[] | null
-  tests?: { command?: string | null; ran?: boolean; passed?: boolean | null; detail?: string | null } | null
+  tests?: {
+    command?: string | null
+    ran?: boolean
+    passed?: boolean | null
+    detail?: string | null
+  } | null
 }
 
 const nullableString = { type: ['string', 'null'] } as const
 
 /** Structured evidence returned by the writing half of one filed issue. */
 export const ISSUE_WORKER_SCHEMA = {
-  type: 'object', additionalProperties: false,
-  required: ['status', 'outcome', 'cause_location', 'cause_matched_report',
-    'established_cause', 'reproduction', 'before', 'after', 'plain_gate',
-    'worker_gate', 'blast_radius', 'branch', 'files_changed', 'questions',
-    'not_established', 'blockers', 'summary', 'deviations', 'tests'],
+  type: 'object',
+  additionalProperties: false,
+  required: [
+    'status',
+    'outcome',
+    'cause_location',
+    'cause_matched_report',
+    'established_cause',
+    'reproduction',
+    'before',
+    'after',
+    'plain_gate',
+    'worker_gate',
+    'blast_radius',
+    'branch',
+    'files_changed',
+    'questions',
+    'not_established',
+    'blockers',
+    'summary',
+    'deviations',
+    'tests',
+  ],
   properties: {
     status: { type: 'string', enum: ['done', 'asking', 'refused'] },
-    outcome: { type: ['string', 'null'], enum: ['fixed', 'not-a-defect', 'not-reproducible', 'could-not-attempt', null] },
-    cause_location: { type: ['string', 'null'], enum: ['orch-code', 'register-row', 'project-tool', null] },
+    outcome: {
+      type: ['string', 'null'],
+      enum: ['fixed', 'not-a-defect', 'not-reproducible', 'could-not-attempt', null],
+    },
+    cause_location: {
+      type: ['string', 'null'],
+      enum: ['orch-code', 'register-row', 'project-tool', null],
+    },
     cause_matched_report: { type: ['boolean', 'null'] },
     established_cause: nullableString,
     reproduction: {
-      type: 'object', additionalProperties: false,
+      type: 'object',
+      additionalProperties: false,
       required: ['command', 'base_commit', 'environment', 'seed'],
       properties: {
-        command: { type: 'string' }, base_commit: { type: 'string' },
-        environment: { type: 'string' }, seed: nullableString,
+        command: { type: 'string' },
+        base_commit: { type: 'string' },
+        environment: { type: 'string' },
+        seed: nullableString,
       },
     },
-    before: nullableString, after: nullableString,
-    plain_gate: nullableString, worker_gate: nullableString,
-    blast_radius: { type: 'string' }, branch: nullableString,
+    before: nullableString,
+    after: nullableString,
+    plain_gate: nullableString,
+    worker_gate: nullableString,
+    blast_radius: { type: 'string' },
+    branch: nullableString,
     files_changed: nullableStrings,
     summary: { type: 'string' },
     questions: WORKER_SCHEMA.properties.questions,
@@ -223,10 +272,15 @@ export type IssueWorkerReply = WorkerReply & {
   status: 'done' | 'asking' | 'refused'
   outcome: 'fixed' | 'not-a-defect' | 'not-reproducible' | 'could-not-attempt' | null
   cause_location: 'orch-code' | 'register-row' | 'project-tool' | null
-  cause_matched_report: boolean | null; established_cause: string | null
+  cause_matched_report: boolean | null
+  established_cause: string | null
   reproduction: { command: string; base_commit: string; environment: string; seed: string | null }
-  before: string | null; after: string | null; plain_gate: string | null
-  worker_gate: string | null; blast_radius: string; branch: string | null
+  before: string | null
+  after: string | null
+  plain_gate: string | null
+  worker_gate: string | null
+  blast_radius: string
+  branch: string | null
   files_changed: string[] | null
   not_established: string
 }
@@ -243,11 +297,10 @@ export const CANON_SOURCE_SCHEMA = {
   enum: ['live database', 'mirror', 'unknown'],
 } as const
 
-export type CanonSource = typeof CANON_SOURCE_SCHEMA.enum[number]
+export type CanonSource = (typeof CANON_SOURCE_SCHEMA.enum)[number]
 
 /** Generated from the architect's closed scale so prompt and triage cannot drift. */
-export const REVIEW_SEVERITY_INSTRUCTION =
-  `Every finding severity must use the architect's closed scale: ${REVIEW_SEVERITY.join(' | ')}.`
+export const REVIEW_SEVERITY_INSTRUCTION = `Every finding severity must use the architect's closed scale: ${REVIEW_SEVERITY.join(' | ')}.`
 
 export const COULD_NOT_VERIFY_INSTRUCTION =
   'PROVENANCE is mandatory and must name sources actually read, not intended sources. ' +
@@ -273,7 +326,8 @@ export const REVIEW_SCHEMA = {
     findings: {
       type: 'array',
       items: {
-        type: 'object', additionalProperties: false,
+        type: 'object',
+        additionalProperties: false,
         required: ['severity', 'location', 'evidence', 'proposed_correction'],
         properties: {
           severity: { type: 'string' },
@@ -284,23 +338,45 @@ export const REVIEW_SCHEMA = {
       },
     },
     provenance: {
-      type: 'object', additionalProperties: false,
-      required: ['standards_read', 'model_used', 'files_covered',
-        'commands_run', 'mcp_tools', 'docs_read', 'could_not_verify', 'substitutes', 'canon_source'],
+      type: 'object',
+      additionalProperties: false,
+      required: [
+        'standards_read',
+        'model_used',
+        'files_covered',
+        'commands_run',
+        'mcp_tools',
+        'docs_read',
+        'could_not_verify',
+        'substitutes',
+        'canon_source',
+      ],
       properties: {
         tree_inspected: { type: 'string' },
         standards_read: { type: 'array', items: { type: 'string' } },
         model_used: { type: 'string' },
         files_covered: { type: 'array', items: { type: 'string' } },
         commands_run: { type: 'array', items: { type: 'string' } },
-        mcp_tools: { type: 'array', description: 'MCP tools actually read, including the server name.', items: { type: 'string' } },
-        docs_read: { type: 'array', description: 'Operator documents actually read, named by slug.', items: { type: 'string' } },
+        mcp_tools: {
+          type: 'array',
+          description: 'MCP tools actually read, including the server name.',
+          items: { type: 'string' },
+        },
+        docs_read: {
+          type: 'array',
+          description: 'Operator documents actually read, named by slug.',
+          items: { type: 'string' },
+        },
         could_not_verify: {
           type: 'array',
           description: COULD_NOT_VERIFY_INSTRUCTION,
           items: { type: 'string' },
         },
-        substitutes: { type: 'array', description: 'Any substitute source used in place of a requested source.', items: { type: 'string' } },
+        substitutes: {
+          type: 'array',
+          description: 'Any substitute source used in place of a requested source.',
+          items: { type: 'string' },
+        },
         canon_source: CANON_SOURCE_SCHEMA,
       },
     },
@@ -310,9 +386,15 @@ export const REVIEW_SCHEMA = {
 export type ReviewReply = {
   findings: { severity: string; location: string; evidence: string; proposed_correction: string }[]
   provenance: {
-    tree_inspected?: string; standards_read: string[]; model_used: string
-    files_covered: string[]; commands_run: string[]; mcp_tools: string[]; docs_read: string[]
-    could_not_verify: string[]; substitutes: string[]
+    tree_inspected?: string
+    standards_read: string[]
+    model_used: string
+    files_covered: string[]
+    commands_run: string[]
+    mcp_tools: string[]
+    docs_read: string[]
+    could_not_verify: string[]
+    substitutes: string[]
     canon_source: CanonSource
   }
 }
@@ -323,21 +405,33 @@ const isCanonSource = (v: unknown): v is CanonSource =>
   typeof v === 'string' && (CANON_SOURCE_SCHEMA.enum as readonly string[]).includes(v)
 const exactKeys = (value: object, expected: string[]) => {
   const actual = Object.keys(value).sort()
-  return actual.length === expected.length && actual.every((key, i) => key === [...expected].sort()[i])
+  return (
+    actual.length === expected.length && actual.every((key, i) => key === [...expected].sort()[i])
+  )
 }
 
 export function parseReviewReply(value: unknown): ReviewReply | null {
   const v = value as Partial<ReviewReply> | null
-  if (!v || typeof v !== 'object' || Array.isArray(v) || !exactKeys(v, ['findings', 'provenance']) ||
-      !Array.isArray(v.findings)) return null
+  if (
+    !v ||
+    typeof v !== 'object' ||
+    Array.isArray(v) ||
+    !exactKeys(v, ['findings', 'provenance']) ||
+    !Array.isArray(v.findings)
+  )
+    return null
   const p = v.provenance
   // The three DEV-371 provenance lists are demanded by the schema, but an agent
   // whose schema binding was dropped (codex with MCP tools active) follows the
   // prose contract only; an absent list reads as empty rather than as a
   // malformed reply, so a review is never lost to a missing empty array.
   const provenanceKeys = [
-    'standards_read', 'model_used', 'files_covered', 'commands_run',
-    'could_not_verify', 'canon_source',
+    'standards_read',
+    'model_used',
+    'files_covered',
+    'commands_run',
+    'could_not_verify',
+    'canon_source',
   ]
   const optionalLists = ['mcp_tools', 'docs_read', 'substitutes'] as const
   if (p && typeof p === 'object' && !Array.isArray(p)) {
@@ -346,42 +440,78 @@ export function parseReviewReply(value: unknown): ReviewReply | null {
     }
   }
   const withLists = (keys: string[]) => [...keys, ...optionalLists]
-  if (!p || typeof p !== 'object' || Array.isArray(p) ||
-      !(exactKeys(p, withLists(provenanceKeys)) || exactKeys(p, withLists(['tree_inspected', ...provenanceKeys]))) ||
-      (p.tree_inspected !== undefined && p.tree_inspected !== null &&
-        typeof p.tree_inspected !== 'string') ||
-      typeof p.model_used !== 'string' ||
-      !isStrings(p.standards_read) || !isStrings(p.files_covered) ||
-      !isStrings(p.commands_run) || !isStrings(p.mcp_tools) || !isStrings(p.docs_read) ||
-      !isStrings(p.could_not_verify) || !isStrings(p.substitutes) ||
-      !isCanonSource(p.canon_source)) return null
-  if (!v.findings.every((f) => f && typeof f === 'object' && !Array.isArray(f) &&
-      exactKeys(f, ['severity', 'location', 'evidence', 'proposed_correction']) &&
-      typeof f.severity === 'string' && typeof f.location === 'string' &&
-      typeof f.evidence === 'string' && typeof f.proposed_correction === 'string')) return null
+  if (
+    !p ||
+    typeof p !== 'object' ||
+    Array.isArray(p) ||
+    !(
+      exactKeys(p, withLists(provenanceKeys)) ||
+      exactKeys(p, withLists(['tree_inspected', ...provenanceKeys]))
+    ) ||
+    (p.tree_inspected !== undefined &&
+      p.tree_inspected !== null &&
+      typeof p.tree_inspected !== 'string') ||
+    typeof p.model_used !== 'string' ||
+    !isStrings(p.standards_read) ||
+    !isStrings(p.files_covered) ||
+    !isStrings(p.commands_run) ||
+    !isStrings(p.mcp_tools) ||
+    !isStrings(p.docs_read) ||
+    !isStrings(p.could_not_verify) ||
+    !isStrings(p.substitutes) ||
+    !isCanonSource(p.canon_source)
+  )
+    return null
+  if (
+    !v.findings.every(
+      (f) =>
+        f &&
+        typeof f === 'object' &&
+        !Array.isArray(f) &&
+        exactKeys(f, ['severity', 'location', 'evidence', 'proposed_correction']) &&
+        typeof f.severity === 'string' &&
+        typeof f.location === 'string' &&
+        typeof f.evidence === 'string' &&
+        typeof f.proposed_correction === 'string',
+    )
+  )
+    return null
   if (p.tree_inspected === null) delete (p as Record<string, unknown>).tree_inspected
   return v as ReviewReply
 }
 
 export function parseReviewOutput(text: string): ReviewReply | null {
-  const candidates = [text.trim(), ...(text.match(/```(?:json)?\s*([\s\S]*?)```/gi) ?? [])
-    .map((x) => x.replace(/^```(?:json)?\s*/i, '').replace(/```$/, '').trim())]
+  const candidates = [
+    text.trim(),
+    ...(text.match(/```(?:json)?\s*([\s\S]*?)```/gi) ?? []).map((x) =>
+      x
+        .replace(/^```(?:json)?\s*/i, '')
+        .replace(/```$/, '')
+        .trim(),
+    ),
+  ]
   for (const candidate of candidates) {
     try {
       const parsed = parseReviewReply(JSON.parse(candidate))
       if (parsed) return parsed
-    } catch { /* try an embedded object */ }
+    } catch {
+      /* try an embedded object */
+    }
   }
   const start = text.indexOf('{')
   const end = text.lastIndexOf('}')
   if (start >= 0 && end > start) {
-    try { return parseReviewReply(JSON.parse(text.slice(start, end + 1))) } catch { /* invalid */ }
+    try {
+      return parseReviewReply(JSON.parse(text.slice(start, end + 1)))
+    } catch {
+      /* invalid */
+    }
   }
   return null
 }
 
 export const READER_DELIVERABLE_STATUSES = ['delivered', 'blocked', 'not-applicable'] as const
-export type ReaderDeliverableStatus = typeof READER_DELIVERABLE_STATUSES[number]
+export type ReaderDeliverableStatus = (typeof READER_DELIVERABLE_STATUSES)[number]
 
 /**
  * Bound product of diagnose, understand, and file-question.
@@ -399,7 +529,8 @@ export const READER_SCHEMA = {
     deliverables: {
       type: 'array',
       items: {
-        type: 'object', additionalProperties: false,
+        type: 'object',
+        additionalProperties: false,
         required: ['name', 'status', 'content'],
         properties: {
           name: { type: 'string' },
@@ -420,23 +551,29 @@ export type ReaderReply = {
 }
 
 const isReaderStatus = (value: unknown): value is ReaderDeliverableStatus =>
-  typeof value === 'string' &&
-  (READER_DELIVERABLE_STATUSES as readonly string[]).includes(value)
+  typeof value === 'string' && (READER_DELIVERABLE_STATUSES as readonly string[]).includes(value)
 
 export function parseReaderReply(value: unknown): ReaderReply | null {
   if (!value || typeof value !== 'object' || Array.isArray(value)) return null
   const v = value as Partial<ReaderReply>
   if (!Array.isArray(v.deliverables)) return null
   if (v.narrative !== null && typeof v.narrative !== 'string') return null
-  if (v.files_written !== null && v.files_written !== undefined &&
-      !(Array.isArray(v.files_written) && v.files_written.every((p) => typeof p === 'string'))) {
+  if (
+    v.files_written !== null &&
+    v.files_written !== undefined &&
+    !(Array.isArray(v.files_written) && v.files_written.every((p) => typeof p === 'string'))
+  ) {
     return null
   }
   const deliverables: ReaderReply['deliverables'] = []
   for (const item of v.deliverables) {
     if (!item || typeof item !== 'object' || Array.isArray(item)) return null
     const row = item as { name?: unknown; status?: unknown; content?: unknown }
-    if (typeof row.name !== 'string' || !isReaderStatus(row.status) || typeof row.content !== 'string') {
+    if (
+      typeof row.name !== 'string' ||
+      !isReaderStatus(row.status) ||
+      typeof row.content !== 'string'
+    ) {
       return null
     }
     deliverables.push({ name: row.name, status: row.status, content: row.content })
@@ -449,18 +586,31 @@ export function parseReaderReply(value: unknown): ReaderReply | null {
 }
 
 export function parseReaderOutput(text: string): ReaderReply | null {
-  const candidates = [text.trim(), ...(text.match(/```(?:json)?\s*([\s\S]*?)```/gi) ?? [])
-    .map((x) => x.replace(/^```(?:json)?\s*/i, '').replace(/```$/, '').trim())]
+  const candidates = [
+    text.trim(),
+    ...(text.match(/```(?:json)?\s*([\s\S]*?)```/gi) ?? []).map((x) =>
+      x
+        .replace(/^```(?:json)?\s*/i, '')
+        .replace(/```$/, '')
+        .trim(),
+    ),
+  ]
   for (const candidate of candidates) {
     try {
       const parsed = parseReaderReply(JSON.parse(candidate))
       if (parsed) return parsed
-    } catch { /* try an embedded object */ }
+    } catch {
+      /* try an embedded object */
+    }
   }
   const start = text.indexOf('{')
   const end = text.lastIndexOf('}')
   if (start >= 0 && end > start) {
-    try { return parseReaderReply(JSON.parse(text.slice(start, end + 1))) } catch { /* invalid */ }
+    try {
+      return parseReaderReply(JSON.parse(text.slice(start, end + 1)))
+    } catch {
+      /* invalid */
+    }
   }
   return null
 }
@@ -469,7 +619,8 @@ export const UNEVIDENCED_DELIVERABLE_ERROR = 'missing declared deliverable witho
 
 /** A declared deliverable is evidenced when delivered, not-applicable, or blocked with a reason. */
 export function missingDeclaredDeliverables(
-  declared: string[], reply: ReaderReply | null,
+  declared: string[],
+  reply: ReaderReply | null,
 ): string[] {
   if (!declared.length) return []
   const byName = new Map<string, ReaderReply['deliverables'][number]>()
@@ -638,8 +789,7 @@ files, deviations, and tests fields that the issue schema also requires.`
 
 /** The writing contract is selected by job, never by a caller-controlled flag. */
 export function workerPreamble(jobName: string): string {
-  return jobName === 'issue-worker' ? ISSUE_WORKER_PREAMBLE
-    : WORKER_PREAMBLE
+  return jobName === 'issue-worker' ? ISSUE_WORKER_PREAMBLE : WORKER_PREAMBLE
 }
 
 export function workerResumeGuard(_jobName: string): string {
@@ -670,7 +820,9 @@ export function rulingPrompt(answers: { question: string; answer: string }[]): s
  * courtesy, not a precondition, and a missing file must not strand the chain.
  */
 export function packResumePrompt(
-  job: string, turnPrompt: string, originalSpec: string | null,
+  job: string,
+  turnPrompt: string,
+  originalSpec: string | null,
 ): string {
   if (originalSpec === null) return turnPrompt
   return [
@@ -721,7 +873,8 @@ export function validatesSchema(value: unknown, schema: JsonSchema): boolean {
     const matches = types.some((type) => {
       if (type === 'null') return value === null
       if (type === 'array') return Array.isArray(value)
-      if (type === 'object') return value !== null && typeof value === 'object' && !Array.isArray(value)
+      if (type === 'object')
+        return value !== null && typeof value === 'object' && !Array.isArray(value)
       return typeof value === type
     })
     if (!matches) return false
@@ -751,11 +904,13 @@ export type ContractReply = WorkerReply | IssueWorkerReply
 export type ParsedWorkerReply = { reply: ContractReply | null; contractObjects: number }
 
 export function parseWorkerReplyWithCount(text: string): {
-  reply: WorkerReply | null; contractObjects: number
+  reply: WorkerReply | null
+  contractObjects: number
 }
 export function parseWorkerReplyWithCount(text: string, schema: JsonSchema): ParsedWorkerReply
 export function parseWorkerReplyWithCount(
-  text: string, schema: JsonSchema = WORKER_SCHEMA,
+  text: string,
+  schema: JsonSchema = WORKER_SCHEMA,
 ): ParsedWorkerReply {
   const t = text.trim()
 
@@ -778,7 +933,10 @@ export function parseWorkerReplyWithCount(
    * brace.
    */
   const objects: string[] = []
-  let depth = 0, start = -1, inStr = false, esc = false
+  let depth = 0,
+    start = -1,
+    inStr = false,
+    esc = false
   for (let i = 0; i < t.length; i++) {
     const ch = t[i]!
     if (inStr) {
@@ -787,11 +945,21 @@ export function parseWorkerReplyWithCount(
       else if (ch === '"') inStr = false
       continue
     }
-    if (ch === '"') { inStr = true; continue }
-    if (ch === '{') { if (depth === 0) start = i; depth++; continue }
+    if (ch === '"') {
+      inStr = true
+      continue
+    }
+    if (ch === '{') {
+      if (depth === 0) start = i
+      depth++
+      continue
+    }
     if (ch === '}') {
       depth--
-      if (depth === 0 && start !== -1) { objects.push(t.slice(start, i + 1)); start = -1 }
+      if (depth === 0 && start !== -1) {
+        objects.push(t.slice(start, i + 1))
+        start = -1
+      }
     }
   }
   objects.reverse()
@@ -830,7 +998,9 @@ export function parseWorkerReplyWithCount(
        * nested value rejects this candidate before any part of it is acted on.
        */
       if (validatesSchema(o, schema)) valid.push(o as ContractReply)
-    } catch { /* try the next shape */ }
+    } catch {
+      /* try the next shape */
+    }
   }
   return { reply: valid[0] ?? null, contractObjects: valid.length }
 }
@@ -848,7 +1018,11 @@ export type ReplyDialect = {
 
 function parseSchemaReply(text: string, schema: JsonSchema): DialectParseResult {
   let value: unknown
-  try { value = JSON.parse(text) } catch { return { reply: null, contractObjects: 0 } }
+  try {
+    value = JSON.parse(text)
+  } catch {
+    return { reply: null, contractObjects: 0 }
+  }
   return validatesSchema(value, schema)
     ? { reply: value, contractObjects: 1 }
     : { reply: null, contractObjects: 0 }
@@ -897,7 +1071,6 @@ export function resolveReplyDialect(j: Job): ReplyDialect {
     parse: (text) => parseSchemaReply(text, TEXT_REPLY_SCHEMA),
   }
 }
-
 
 /**
  * Whether a reply is a worker stopping to ask.
@@ -986,10 +1159,14 @@ export type ContractConflict = { line: number; text: string }
 const GIT_ACTION_SOURCE = String.raw`\b(?:push(?:es|ed|ing)?|merges?|merged|merging|rebas(?:e|es|ed|ing)|reset(?:s|ting)?|amend(?:s|ed|ing)?)\b`
 const GIT_ACTION = new RegExp(GIT_ACTION_SOURCE, 'i')
 const GIT_PREFIXED = new RegExp(String.raw`\bgit ${GIT_ACTION_SOURCE.slice(2)}`, 'i')
-const GIT_OBJECT = /\b(?:git|origin|remote|upstream|HEAD|commit|ref|tag|PR|pull request|force)\b|(?<![\w-])(?:--force|-f)(?![\w-])/i
+const GIT_OBJECT =
+  /\b(?:git|origin|remote|upstream|HEAD|commit|ref|tag|PR|pull request|force)\b|(?<![\w-])(?:--force|-f)(?![\w-])/i
 const POSITION_WORD = '(?:main|branch|trunk|master)'
 const THE_POSITION = new RegExp(String.raw`^\s+the\s+${POSITION_WORD}\b`, 'i')
-const PREP_POSITION = new RegExp(String.raw`\b(?:onto|into|to)\s+(?:the\s+)?${POSITION_WORD}\b`, 'i')
+const PREP_POSITION = new RegExp(
+  String.raw`\b(?:onto|into|to)\s+(?:the\s+)?${POSITION_WORD}\b`,
+  'i',
+)
 const IMPERATIVE = /^(?:push|rebase|amend)$/i
 const FILLER = /^(?:then|and|now|please)$/i
 const JOIN_PREPOSITION = /^(?:to|onto|into|from|off|on|with)$/i
@@ -1027,17 +1204,20 @@ function hasActionRelativeObject(clause: string): boolean {
 }
 
 function isGitSense(clause: string): boolean {
-  return isFirstWordImperative(clause)
-    || GIT_PREFIXED.test(clause)
-    || GIT_OBJECT.test(clause)
-    || hasActionRelativeObject(clause)
+  return (
+    isFirstWordImperative(clause) ||
+    GIT_PREFIXED.test(clause) ||
+    GIT_OBJECT.test(clause) ||
+    hasActionRelativeObject(clause)
+  )
 }
 
 export function contractConflicts(spec: string): ContractConflict[] {
-  const prohibition = /\b(?:do not|don't|never|must not|should not|may not|cannot|can't|without)\b[^.;]*\b(?:push(?:es|ed|ing)?|merges?|merged|merging|rebas(?:e|es|ed|ing)|reset(?:s|ting)?|amend(?:s|ed|ing)?)\b/i
+  const prohibition =
+    /\b(?:do not|don't|never|must not|should not|may not|cannot|can't|without)\b[^.;]*\b(?:push(?:es|ed|ing)?|merges?|merged|merging|rebas(?:e|es|ed|ing)|reset(?:s|ting)?|amend(?:s|ed|ing)?)\b/i
   const noAction = /\bno\s+(?:push(?:es)?|merges?|rebases?|resets?|amendments?)\b/i
 
-  const groups: { line: number, text: string, folded: string }[] = []
+  const groups: { line: number; text: string; folded: string }[] = []
   for (const [index, text] of spec.split(/\r?\n/).entries()) {
     if (groups.length > 0 && isContinuationLine(text)) {
       groups[groups.length - 1].folded += ` ${text}`
@@ -1047,11 +1227,15 @@ export function contractConflicts(spec: string): ContractConflict[] {
   }
 
   return groups.flatMap(({ line, text, folded }) =>
-    folded.split(/[.;]/).some((clause) =>
-      GIT_ACTION.test(clause)
-      && isGitSense(clause)
-      && !prohibition.test(clause)
-      && !noAction.test(clause))
+    folded
+      .split(/[.;]/)
+      .some(
+        (clause) =>
+          GIT_ACTION.test(clause) &&
+          isGitSense(clause) &&
+          !prohibition.test(clause) &&
+          !noAction.test(clause),
+      )
       ? [{ line, text }]
       : [],
   )

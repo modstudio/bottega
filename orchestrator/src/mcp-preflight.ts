@@ -3,8 +3,9 @@
  * Knows MCP request/provenance vocabulary and Grok's connection diagnostic.
  * Must not know run state, transports, routing, or database mutation.
  */
-import type { CanonSource } from './contract.ts'
+
 import { AGENTS } from './agents.ts'
+import type { CanonSource } from './contract.ts'
 import { job } from './jobs.ts'
 import { projectAt, validateStoredProjectSettings } from './projects.ts'
 import { childEnv } from './run-process.ts'
@@ -58,7 +59,8 @@ export function storedMcpRequest(request: McpRequest | undefined): number {
 
 /** Read the tri-state request while preserving compatibility with older mirror rows. */
 export function mcpRequestFromStored(
-  stored: number | null, error: string | null = null,
+  stored: number | null,
+  error: string | null = null,
 ): McpMode | undefined {
   if (stored === 2) return 'prefer'
   if (stored === 1) return error?.startsWith('mirror:') ? 'prefer' : 'require'
@@ -90,20 +92,35 @@ export function canonSourceInstruction(source: CanonSource): string {
  * clamp from the run's GROK_HOME. Caller-checkout probes do not pass trust.
  */
 export function grokMcpConnection(
-  bin: string, cwd: string, server: string, env: Record<string, string>, trust = false,
+  bin: string,
+  cwd: string,
+  server: string,
+  env: Record<string, string>,
+  trust = false,
 ): McpConnection {
-  const p = Bun.spawnSync([
-    bin, ...(trust ? ['--cwd', cwd, '--trust'] : []), 'mcp', 'doctor', server, '--json',
-  ], {
-    cwd, env, stdout: 'pipe', stderr: 'pipe',
-  })
+  const p = Bun.spawnSync(
+    [bin, ...(trust ? ['--cwd', cwd, '--trust'] : []), 'mcp', 'doctor', server, '--json'],
+    {
+      cwd,
+      env,
+      stdout: 'pipe',
+      stderr: 'pipe',
+    },
+  )
   const stdout = p.stdout.toString().trim()
   const stderr = p.stderr.toString().trim()
   try {
     const report = JSON.parse(stdout) as {
-      servers?: { name?: string; healthy?: boolean; checks?: {
-        passed?: boolean; label?: string; detail?: string; hint?: string
-      }[] }[]
+      servers?: {
+        name?: string
+        healthy?: boolean
+        checks?: {
+          passed?: boolean
+          label?: string
+          detail?: string
+          hint?: string
+        }[]
+      }[]
     }
     const found = report.servers?.find((candidate) => candidate.name === server)
     const available = (report.servers ?? [])
@@ -114,19 +131,25 @@ export function grokMcpConnection(
         .filter((check) => check.passed === false)
         .map((check) => [check.label, check.detail, check.hint].filter(Boolean).join(': '))
         .join('; ')
-      return { server, connected: found.healthy === true, error: error || null, namesSeen: available }
+      return {
+        server,
+        connected: found.healthy === true,
+        error: error || null,
+        namesSeen: available,
+      }
     }
     const listed = available.length ? available.join(', ') : '(none)'
     return {
       server,
       connected: false,
       namesSeen: available,
-      error: [
-        stderr, stdout,
-        `MCP server '${server}' was not reported. Available: ${listed}`,
-      ].filter(Boolean).join('\n'),
+      error: [stderr, stdout, `MCP server '${server}' was not reported. Available: ${listed}`]
+        .filter(Boolean)
+        .join('\n'),
     }
-  } catch { /* preserve the client's actual diagnostic below */ }
+  } catch {
+    /* preserve the client's actual diagnostic below */
+  }
   return {
     server,
     connected: false,
@@ -135,12 +158,22 @@ export function grokMcpConnection(
 }
 
 export function mcpConnectionFor(
-  name: string, cwd: string, server: string, trust = false, includeStore = true,
+  name: string,
+  cwd: string,
+  server: string,
+  trust = false,
+  includeStore = true,
   env: Record<string, string> = {},
 ): McpConnection {
   if (name === 'grok') {
     const grok = AGENTS.grok!
-    return grokMcpConnection(grok.bin, cwd, server, childEnv(grok, undefined, undefined, env, includeStore), trust)
+    return grokMcpConnection(
+      grok.bin,
+      cwd,
+      server,
+      childEnv(grok, undefined, undefined, env, includeStore),
+      trust,
+    )
   }
   return {
     server,
@@ -167,18 +200,26 @@ export function assertGrokTrustEligible(
   } | null,
   isolatePath: string,
 ): void {
-  const orchCut = recorded?.worktree === cwd &&
+  const orchCut =
+    recorded?.worktree === cwd &&
     ['recipe', 'git', 'readonly_recipe'].includes(recorded.worktree_source ?? '')
-  const orchIsolate = recorded?.worktree === null && recorded.id !== undefined &&
-    recorded.cwd === cwd && isolatePath === cwd
+  const orchIsolate =
+    recorded?.worktree === null &&
+    recorded.id !== undefined &&
+    recorded.cwd === cwd &&
+    isolatePath === cwd
   if (orchCut || orchIsolate) return
   throw new Error(
     `refusing Grok trust for ${cwd}: trust is granted only to trees orch cut; ` +
-    'removed tree paths never recur',
+      'removed tree paths never recur',
   )
 }
 
-export function probeRequestedMcp(mcp: McpRequest | undefined, agent: string, cwd: string): McpConnection | null {
+export function probeRequestedMcp(
+  mcp: McpRequest | undefined,
+  agent: string,
+  cwd: string,
+): McpConnection | null {
   if (!requestedMcpMode(mcp)) return null
   const project = projectAt(cwd)
   if (!project) return null

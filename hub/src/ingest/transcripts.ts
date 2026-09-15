@@ -1,16 +1,21 @@
-import { readdirSync, statSync, createReadStream } from 'node:fs'
+import type { Dirent } from 'node:fs'
+import { createReadStream, readdirSync, statSync } from 'node:fs'
 import { join } from 'node:path'
 import { createInterface } from 'node:readline'
-import { db, nowIso } from '../db.ts'
+import { DEFAULT_IDLE_CAP_MS, spansFromTimestamps, union } from '../../../shared/interval.ts'
 import { attribute, isInjected, projectOf } from '../attribute.ts'
-import { spansFromTimestamps, union, DEFAULT_IDLE_CAP_MS } from '../../../shared/interval.ts'
+import { db, nowIso } from '../db.ts'
 
 const CLAUDE_ROOT = `${process.env.HOME}/.claude/projects`
 
 /** Every .jsonl transcript under a root. */
 function transcripts(dir: string, out: string[] = []): string[] {
-  let entries
-  try { entries = readdirSync(dir, { withFileTypes: true }) } catch { return out }
+  let entries: Dirent[]
+  try {
+    entries = readdirSync(dir, { withFileTypes: true })
+  } catch {
+    return out
+  }
   for (const e of entries) {
     const p = join(dir, e.name)
     if (e.isDirectory()) transcripts(p, out)
@@ -37,10 +42,12 @@ type Leg = {
 }
 
 function usageSpend(u: Record<string, number | undefined>): number {
-  return (u.cache_read_input_tokens ?? 0)
-    + (u.cache_creation_input_tokens ?? 0)
-    + (u.input_tokens ?? 0)
-    + (u.output_tokens ?? 0)
+  return (
+    (u.cache_read_input_tokens ?? 0) +
+    (u.cache_creation_input_tokens ?? 0) +
+    (u.input_tokens ?? 0) +
+    (u.output_tokens ?? 0)
+  )
 }
 
 function userText(msg: unknown): string | null {
@@ -65,8 +72,18 @@ async function legsOf(file: string, ref: string, sinceMs: number): Promise<Leg[]
   const rl = createInterface({ input: createReadStream(file), crlfDelay: Infinity })
 
   for await (const line of rl) {
-    let d: { timestamp?: string; cwd?: string; sessionId?: string; type?: string; message?: unknown }
-    try { d = JSON.parse(line) } catch { continue }
+    let d: {
+      timestamp?: string
+      cwd?: string
+      sessionId?: string
+      type?: string
+      message?: unknown
+    }
+    try {
+      d = JSON.parse(line)
+    } catch {
+      continue
+    }
     const ts = d.timestamp ? new Date(d.timestamp).getTime() : NaN
     if (!Number.isFinite(ts) || ts < sinceMs) continue
     const cwd = d.cwd ?? ''
@@ -107,8 +124,7 @@ async function legsOf(file: string, ref: string, sinceMs: number): Promise<Leg[]
  * the reconciliation against the day grain meaningful.
  */
 export function spendingSpans(leg: Leg, idleCapMs: number) {
-  const spans = union(spansFromTimestamps(leg.stamps, idleCapMs))
-    .map((s) => ({ ...s, tokens: 0 }))
+  const spans = union(spansFromTimestamps(leg.stamps, idleCapMs)).map((s) => ({ ...s, tokens: 0 }))
 
   if (!spans.length) {
     if (!leg.spend.length) return []
@@ -122,9 +138,10 @@ export function spendingSpans(leg: Leg, idleCapMs: number) {
     // every token, which is the point.
     let idx = spans.findIndex((s) => at >= s.start && at < s.end)
     if (idx < 0) {
-      idx = at <= spans[0]!.start
-        ? 0
-        : spans.reduce((best, s, i) => (at >= s.start ? i : best), spans.length - 1)
+      idx =
+        at <= spans[0]!.start
+          ? 0
+          : spans.reduce((best, s, i) => (at >= s.start ? i : best), spans.length - 1)
     }
     spans[idx]!.tokens += tokens
   }
@@ -171,7 +188,11 @@ export async function ingestTranscripts(
   for (const file of transcripts(CLAUDE_ROOT)) {
     // The cheap 90%: a file untouched since the window opened cannot contain a
     // message inside it.
-    try { if (statSync(file).mtime.toISOString().slice(0, 10) < sinceDay) continue } catch { continue }
+    try {
+      if (statSync(file).mtime.toISOString().slice(0, 10) < sinceDay) continue
+    } catch {
+      continue
+    }
     files++
 
     const ref = file.startsWith(CLAUDE_ROOT + '/') ? file.slice(CLAUDE_ROOT.length + 1) : file
@@ -190,7 +211,8 @@ export async function ingestTranscripts(
       // where the next leg begins, which is precisely when the working
       // directory changed between two adjacent messages — common, not exotic.
       const shaped = legs.map((leg, i) => ({
-        leg, i,
+        leg,
+        i,
         a: attribute({ cwd: leg.cwd, prompts: leg.prompts }),
         spans: spendingSpans(leg, idleCapMs),
       }))
@@ -212,25 +234,31 @@ export async function ingestTranscripts(
        * only, because a session moves between repos and the nearest leg in time
        * may be in a different one.
        */
-      const anchors = shaped.filter((x) =>
-        x.a.key && (x.a.via === 'worktree' || x.a.via === 'prompt') && x.spans.length)
+      const anchors = shaped.filter(
+        (x) => x.a.key && (x.a.via === 'worktree' || x.a.via === 'prompt') && x.spans.length,
+      )
       const startOf = (x: (typeof shaped)[number]) => Math.min(...x.spans.map((s) => s.start))
       for (const x of shaped) {
         if (x.a.key || !x.spans.length) continue
         const near = anchors
           .filter((an) => an.a.project === x.a.project)
           .sort((p, q) => Math.abs(startOf(p) - startOf(x)) - Math.abs(startOf(q) - startOf(x)))[0]
-        if (near) { x.a.key = near.a.key; x.a.via = 'sibling-leg' }
+        if (near) {
+          x.a.key = near.a.key
+          x.a.via = 'sibling-leg'
+        }
       }
 
       shaped.forEach(({ leg, i, a, spans }) => {
         for (const s of spans) {
           stmt.run(
-            a.key, a.project,
+            a.key,
+            a.project,
             new Date(s.start).toISOString(),
             new Date(s.end).toISOString(),
             s.tokens,
-            `claude:${leg.ref}:${i}`, a.via,
+            `claude:${leg.ref}:${i}`,
+            a.via,
           )
           rows++
         }

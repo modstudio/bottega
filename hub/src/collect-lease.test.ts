@@ -4,8 +4,9 @@
  * A separate file so the preloaded migrated store and the process-wide lease
  * handle are isolated from the larger behavioral fixture.
  */
-import { beforeAll, expect, test, describe } from 'bun:test'
+import { beforeAll, describe, expect, test } from 'bun:test'
 import { resetFixtureStore } from '../test/run-fixtures.ts'
+
 const { acquireLease, releaseLease, leaseHolder, withLease } = await import('./collect.ts')
 
 beforeAll(resetFixtureStore)
@@ -27,7 +28,13 @@ describe('collect lease', () => {
     // identical collects beside `hub serve` disagreed by two hours.
     acquireLease('watcher')
     let ran = false
-    const r = await withLease('one-shot', async () => { ran = true }, 300)
+    const r = await withLease(
+      'one-shot',
+      async () => {
+        ran = true
+      },
+      300,
+    )
     expect(r.ran).toBe(false)
     expect(ran).toBe(false)
     if (!r.ran) expect(r.heldBy).toBe('watcher')
@@ -38,7 +45,13 @@ describe('collect lease', () => {
     acquireLease('watcher')
     setTimeout(() => releaseLease('watcher'), 100)
     let ran = false
-    const r = await withLease('one-shot', async () => { ran = true }, 5000)
+    const r = await withLease(
+      'one-shot',
+      async () => {
+        ran = true
+      },
+      5000,
+    )
     expect(r.ran).toBe(true)
     expect(ran).toBe(true)
     // Handed back on the way out, so the next collector is not made to wait.
@@ -46,8 +59,15 @@ describe('collect lease', () => {
   })
 
   test('the lease is released even when the collect throws', async () => {
-    await expect(withLease('boom', async () => { throw new Error('leg failed') }, 500))
-      .rejects.toThrow('leg failed')
+    await expect(
+      withLease(
+        'boom',
+        async () => {
+          throw new Error('leg failed')
+        },
+        500,
+      ),
+    ).rejects.toThrow('leg failed')
     expect(leaseHolder()).toBeNull()
   })
 })

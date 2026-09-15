@@ -1,6 +1,14 @@
-import { cpSync, existsSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
-import { dirname, join } from 'node:path'
 import type { Database } from 'bun:sqlite'
+import {
+  cpSync,
+  existsSync,
+  mkdirSync,
+  readdirSync,
+  readFileSync,
+  rmSync,
+  writeFileSync,
+} from 'node:fs'
+import { dirname, join } from 'node:path'
 import { nowIso } from './db.ts'
 import { appendRunEvent } from './events.ts'
 import { targetGitEnvironment } from './git-environment.ts'
@@ -16,10 +24,12 @@ export const PRESERVATION_FAILED_FILE = 'preservation-failed.json'
 export const DEFAULT_CHECKPOINT_MINUTES = 10
 
 export function progressFileInstruction(): string {
-  return `CHECKPOINT PROGRESS\n\nThe harness checkpoints tracked changes for you. ` +
+  return (
+    `CHECKPOINT PROGRESS\n\nThe harness checkpoints tracked changes for you. ` +
     `After completing an item, write {"task_pointer":"<last completed item>"} as valid JSON to ` +
     `$ORCH_SCRATCH/${PROGRESS_FILE_NAME}; the latest value is injected when a preserved run continues. ` +
     `You may rely on the harness to preserve staged and modified tracked work at limits and on stop.`
+  )
 }
 
 export function readTaskPointer(scratchDir: string): string | null {
@@ -30,14 +40,20 @@ export function readTaskPointer(scratchDir: string): string | null {
     return typeof value.task_pointer === 'string' && value.task_pointer.trim()
       ? value.task_pointer.trim().slice(0, 1000)
       : null
-  } catch { return null }
+  } catch {
+    return null
+  }
 }
 
 function git(
-  cwd: string, args: string[], guardEnvironment: NodeJS.ProcessEnv,
+  cwd: string,
+  args: string[],
+  guardEnvironment: NodeJS.ProcessEnv,
 ): { ok: boolean; out: string; error: string } {
   const p = Bun.spawnSync(['git', '-C', cwd, ...args], {
-    env: { ...targetGitEnvironment(cwd), ...guardEnvironment }, stdout: 'pipe', stderr: 'pipe',
+    env: { ...targetGitEnvironment(cwd), ...guardEnvironment },
+    stdout: 'pipe',
+    stderr: 'pipe',
   })
   return {
     ok: p.exitCode === 0,
@@ -65,22 +81,30 @@ export function checkpointRun(input: {
   guardEnvironment: NodeJS.ProcessEnv
   final?: boolean
 }): CheckpointResult {
-  const previous = input.database.query(
-    'SELECT COALESCE(MAX(checkpoint_no),0) n FROM run_checkpoint WHERE run_id=?',
-  ).get(input.runId) as { n: number }
+  const previous = input.database
+    .query('SELECT COALESCE(MAX(checkpoint_no),0) n FROM run_checkpoint WHERE run_id=?')
+    .get(input.runId) as { n: number }
   const checkpointNo = previous.n + 1
   const taskPointer = readTaskPointer(input.scratchDir)
   const refusal = (error: string): CheckpointResult => {
     appendRunEvent(input.runId, { ts: nowIso(), type: 'text', text: `checkpoint failed: ${error}` })
     return { created: false, commit: null, checkpointNo, taskPointer, error }
   }
-  const dirty = git(input.worktree, ['status', '--porcelain', '--untracked-files=no'], input.guardEnvironment)
+  const dirty = git(
+    input.worktree,
+    ['status', '--porcelain', '--untracked-files=no'],
+    input.guardEnvironment,
+  )
   if (!dirty.ok) return refusal(dirty.error)
   if (!dirty.out) return { created: false, commit: null, checkpointNo, taskPointer, error: null }
   const staged = git(input.worktree, ['add', '-u'], input.guardEnvironment)
   if (!staged.ok) return refusal(staged.error)
   // Adjacent to commit so the checked branch is the ref the commit will move.
-  const currentBranch = git(input.worktree, ['symbolic-ref', '--short', 'HEAD'], input.guardEnvironment)
+  const currentBranch = git(
+    input.worktree,
+    ['symbolic-ref', '--short', 'HEAD'],
+    input.guardEnvironment,
+  )
   if (!currentBranch.ok || currentBranch.out !== input.branch) {
     return refusal(
       `checkpoint refused: expected branch ${input.branch}, found ${currentBranch.out || currentBranch.error}`,
@@ -91,10 +115,12 @@ export function checkpointRun(input: {
   if (!committed.ok) return refusal(committed.error)
   const commit = git(input.worktree, ['rev-parse', 'HEAD'], input.guardEnvironment)
   if (!commit.ok) return refusal(commit.error)
-  input.database.query(
-    `INSERT INTO run_checkpoint (run_id,checkpoint_no,commit_sha,task_pointer,final,created_at)
+  input.database
+    .query(
+      `INSERT INTO run_checkpoint (run_id,checkpoint_no,commit_sha,task_pointer,final,created_at)
      VALUES (?,?,?,?,?,?)`,
-  ).run(input.runId, checkpointNo, commit.out, taskPointer, input.final ? 1 : 0, nowIso())
+    )
+    .run(input.runId, checkpointNo, commit.out, taskPointer, input.final ? 1 : 0, nowIso())
   return { created: true, commit: commit.out, checkpointNo, taskPointer, error: null }
 }
 
@@ -111,40 +137,64 @@ export function recordFailedIdlePreservation(input: {
 }): { notePath: string; snapshotDir: string } {
   const at = nowIso()
   appendRunEvent(input.runId, {
-    ts: at, type: 'text',
+    ts: at,
+    type: 'text',
     text: `idle kill aborted: preservation failed: ${input.error}; no prior checkpoint, leaving the worker for the wall`,
   })
   mkdirSync(input.scratchDir, { recursive: true })
   let files: string[] | null = null
   if (input.worktree && existsSync(input.worktree)) {
-    try { files = readdirSync(input.worktree) } catch { files = null }
+    try {
+      files = readdirSync(input.worktree)
+    } catch {
+      files = null
+    }
   }
   const notePath = join(input.scratchDir, PRESERVATION_FAILED_FILE)
-  writeFileSync(notePath, `${JSON.stringify({
-    preservation_failed: true, error: input.error, at, files,
-  })}\n`)
+  writeFileSync(
+    notePath,
+    `${JSON.stringify({
+      preservation_failed: true,
+      error: input.error,
+      at,
+      files,
+    })}\n`,
+  )
   const snapshotDir = join(dirname(input.scratchDir), 'preservation')
   try {
     if (existsSync(snapshotDir)) rmSync(snapshotDir, { recursive: true, force: true })
     cpSync(input.scratchDir, snapshotDir, { recursive: true })
-  } catch { /* the event log and the note are the minimum */ }
+  } catch {
+    /* the event log and the note are the minimum */
+  }
   return { notePath, snapshotDir }
 }
 
-export function latestCheckpoint(database: Database, rootId: number): {
-  commit_sha: string; checkpoint_no: number; task_pointer: string | null
+export function latestCheckpoint(
+  database: Database,
+  rootId: number,
+): {
+  commit_sha: string
+  checkpoint_no: number
+  task_pointer: string | null
 } | null {
-  return database.query(
-    `SELECT c.commit_sha,c.checkpoint_no,c.task_pointer
+  return database
+    .query(
+      `SELECT c.commit_sha,c.checkpoint_no,c.task_pointer
        FROM run_checkpoint c JOIN run r ON r.id=c.run_id
       WHERE r.id=? OR r.parent_run_id=? ORDER BY c.id DESC LIMIT 1`,
-  ).get(rootId, rootId) as {
-    commit_sha: string; checkpoint_no: number; task_pointer: string | null
+    )
+    .get(rootId, rootId) as {
+    commit_sha: string
+    checkpoint_no: number
+    task_pointer: string | null
   } | null
 }
 
 export function checkpointResumeContext(
-  database: Database, rootId: number, worktree: string | null,
+  database: Database,
+  rootId: number,
+  worktree: string | null,
 ): string | null {
   const checkpoint = latestCheckpoint(database, rootId)
   if (!checkpoint) return null
@@ -156,5 +206,7 @@ export function checkpointResumeContext(
     `Resume from checkpoint #${checkpoint.checkpoint_no} at ${checkpoint.commit_sha}.`,
     checkpoint.task_pointer ? `Last completed item: ${checkpoint.task_pointer}` : null,
     log ? `Recent branch history:\n${log}` : null,
-  ].filter(Boolean).join('\n')
+  ]
+    .filter(Boolean)
+    .join('\n')
 }

@@ -1,7 +1,6 @@
 // concern: cli
 /** Owns the bought CLI grammar. Must not own application behavior. */
 import { Command, CommanderError } from 'commander'
-import { recordSessionSeen } from './db.ts'
 import { register as registerCleanup } from './commands/cleanup.ts'
 import { register as registerDocs } from './commands/docs.ts'
 import { register as registerHealth } from './commands/health.ts'
@@ -12,6 +11,7 @@ import { register as registerReview } from './commands/review.ts'
 import { register as registerRouting } from './commands/routing.ts'
 import { register as registerRunListing } from './commands/run-listing.ts'
 import { drainStdout, setRawArgv, write } from './commands/support.ts'
+import { recordSessionSeen } from './db.ts'
 
 export const program = new Command()
   .name('orch')
@@ -64,7 +64,8 @@ export async function run(argv: string[]): Promise<number> {
     return Number(process.exitCode ?? 0)
   } catch (error) {
     const code = exitCodeFor(error)
-    if (!(error instanceof CommanderError)) console.error(error instanceof Error ? error.message : String(error))
+    if (!(error instanceof CommanderError))
+      console.error(error instanceof Error ? error.message : String(error))
     return code
   }
 }

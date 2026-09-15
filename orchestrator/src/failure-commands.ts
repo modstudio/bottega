@@ -13,21 +13,30 @@ type FailurePresentation = { log(...values: unknown[]): void }
  * failure is evidence, and changing its meaning on anything less than that
  * row's own vendor error would rewrite the agent's record.
  */
-export function reclassifyFailuresCommand(flags: FailureFlags, presentation: FailurePresentation): void {
+export function reclassifyFailuresCommand(
+  flags: FailureFlags,
+  presentation: FailurePresentation,
+): void {
   const { has } = flags
   const { log } = presentation
   type FailureRow = {
-    id: number; agent: string; job: string; status: string
-    failure_kind: string | null; error: string
+    id: number
+    agent: string
+    job: string
+    status: string
+    failure_kind: string | null
+    error: string
   }
   type CountRow = { agent: string; failure_kind: string | null; count: number }
 
-  const all = db().query(
-    `SELECT id, agent, job, status, failure_kind, error
+  const all = db()
+    .query(
+      `SELECT id, agent, job, status, failure_kind, error
        FROM run
       WHERE status IN ('failed', 'stale')
       ORDER BY id`,
-  ).all() as FailureRow[]
+    )
+    .all() as FailureRow[]
   const matched = all.flatMap((row) => {
     if ((row.failure_kind !== 'other' && row.failure_kind !== null) || !row.error) return []
     const kind = classify(row.error)
@@ -42,8 +51,11 @@ export function reclassifyFailuresCommand(flags: FailureFlags, presentation: Fai
       if (existing) existing.count++
       else grouped.set(key, { agent: row.agent, failure_kind: row.failure_kind, count: 1 })
     }
-    return [...grouped.values()].sort((a, b) =>
-      a.agent.localeCompare(b.agent) || (a.failure_kind ?? '').localeCompare(b.failure_kind ?? ''))
+    return [...grouped.values()].sort(
+      (a, b) =>
+        a.agent.localeCompare(b.agent) ||
+        (a.failure_kind ?? '').localeCompare(b.failure_kind ?? ''),
+    )
   }
   const printCounts = (label: string, rows: CountRow[]) => {
     log(`${label} (all failed/stale rows)`)
@@ -55,22 +67,28 @@ export function reclassifyFailuresCommand(flags: FailureFlags, presentation: Fai
 
   const before = counts(all)
   const replacement = new Map(matched.map(({ row, kind }) => [row.id, kind]))
-  const projected = counts(all.map((row) => ({
-    agent: row.agent,
-    failure_kind: replacement.get(row.id) ?? row.failure_kind,
-  })))
+  const projected = counts(
+    all.map((row) => ({
+      agent: row.agent,
+      failure_kind: replacement.get(row.id) ?? row.failure_kind,
+    })),
+  )
 
   printCounts('BEFORE', before)
   log(`\nPLAN (${matched.length} matched row${matched.length === 1 ? '' : 's'})`)
   for (const { row, kind } of matched) {
-    log(`run ${row.id}  ${row.agent}/${row.job}  [${row.status}]  ${row.failure_kind ?? 'null'} -> ${kind}`)
+    log(
+      `run ${row.id}  ${row.agent}/${row.job}  [${row.status}]  ${row.failure_kind ?? 'null'} -> ${kind}`,
+    )
     log(row.error)
   }
   log('')
   printCounts('AFTER', projected)
 
   if (has('dry-run')) {
-    log(`\n${matched.length} row${matched.length === 1 ? '' : 's'} would be reclassified — dry run, no writes.`)
+    log(
+      `\n${matched.length} row${matched.length === 1 ? '' : 's'} would be reclassified — dry run, no writes.`,
+    )
     return
   }
 
@@ -88,7 +106,8 @@ export function reclassifyFailuresCommand(flags: FailureFlags, presentation: Fai
       changed += result.changes
       if (result.changes) {
         auditRunMutation(
-          runMutationActor(row.id), 'reclassify',
+          runMutationActor(row.id),
+          'reclassify',
           `${row.failure_kind ?? 'null'} -> ${kind}`,
         )
       }

@@ -7,8 +7,9 @@
  * record-gate-timings.ts after the run. Default `bun test` is unchanged: this
  * file is only preloaded when the recorder asks for it.
  */
-import { afterAll } from 'bun:test'
+
 import { Database } from 'bun:sqlite'
+import { afterAll } from 'bun:test'
 import { mkdirSync, writeFileSync } from 'node:fs'
 import { dirname, join, relative } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -17,9 +18,10 @@ const enabled = process.env.ORCH_GATE_TIMINGS
 if (enabled) {
   const orchRoot = join(import.meta.dir, '..')
   const stamp = new Date().toISOString().replace(/[:.]/g, '-')
-  const outPath = enabled.includes('/') || enabled.endsWith('.json')
-    ? enabled
-    : join(orchRoot, 'runs', 'gate-timings', `${stamp}.json`)
+  const outPath =
+    enabled.includes('/') || enabled.endsWith('.json')
+      ? enabled
+      : join(orchRoot, 'runs', 'gate-timings', `${stamp}.json`)
   const sidecarPath = `${outPath}.spawn.json`
 
   type Kind = 'cli' | 'git' | 'other'
@@ -98,11 +100,14 @@ if (enabled) {
 
   const origSpawn = Bun.spawn.bind(Bun)
   const origSpawnSync = Bun.spawnSync.bind(Bun)
-  Bun.spawn = ((cmd: any, opts?: any) => {
+  Bun.spawn = ((cmd: Parameters<typeof Bun.spawn>[0], opts?: Parameters<typeof Bun.spawn>[1]) => {
     recordSpawn('spawn', cmd)
     return origSpawn(cmd, opts)
   }) as typeof Bun.spawn
-  Bun.spawnSync = ((cmd: any, opts?: any) => {
+  Bun.spawnSync = ((
+    cmd: Parameters<typeof Bun.spawnSync>[0],
+    opts?: Parameters<typeof Bun.spawnSync>[1],
+  ) => {
     recordSpawn('spawnSync', cmd)
     return origSpawnSync(cmd, opts)
   }) as typeof Bun.spawnSync

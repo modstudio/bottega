@@ -4,21 +4,28 @@
  * and reclamation. Must not know routing, contracts, transports, reviews, or
  * the CLI.
  */
-import { nowIso, db, sessionId, writableDb } from './db.ts'
-import { liveWorktreeSharers, worktreePathSpellings } from './resource-ownership.ts'
+import { db, nowIso, sessionId, writableDb } from './db.ts'
+import { repoRootOf, targetGitEnvironment } from './git-environment.ts'
+import { isGroupKillablePgid, runHasLiveDescendants } from './idle-kill.ts'
 import { pidAlive } from './process-liveness.ts'
+import {
+  projectLockState,
+  reclaimStaleProjectLock,
+  withCleanupLock,
+  withWorktreeLease,
+  worktreeLeaseName,
+} from './project-lock.ts'
 import { projectByName } from './projects.ts'
 import { proveWorktreeReconstructible } from './reclaim.ts'
+import { liveWorktreeSharers, worktreePathSpellings } from './resource-ownership.ts'
 import { processTable, terminateRunProcesses } from './run-process.ts'
-import { isGroupKillablePgid, runHasLiveDescendants } from './idle-kill.ts'
-import { branchTip, removeFor, restoreBranch } from './worktree-remove.ts'
-import { projectLockState, reclaimStaleProjectLock, withCleanupLock, withWorktreeLease, worktreeLeaseName } from './project-lock.ts'
 import { worktreeExists } from './worktree.ts'
+import { branchTip, removeFor, restoreBranch } from './worktree-remove.ts'
 import type { Worktree } from './worktree-types.ts'
-import { repoRootOf, targetGitEnvironment } from './git-environment.ts'
 
 export type CloseOutResult = {
-  runId: number; worktree: string | null
+  runId: number
+  worktree: string | null
   outcome: 'released' | 'held' | 'live' | 'absent' | 'failed'
   detail: string
 }
@@ -27,31 +34,49 @@ const TERMINAL = new Set(['ok', 'failed', 'stale', 'stopped'])
 
 /** One cleanup path for terminalisation, explicit close-out, and sweep. */
 function attemptCloseOutRun(
-  runId: number, options: {
-    intent: 'terminal' | 'explicit' | 'sweep'; dryRun?: boolean; lockTimeoutMs?: number
-    extraPids?: number[]; pgid?: number | null
+  runId: number,
+  options: {
+    intent: 'terminal' | 'explicit' | 'sweep'
+    dryRun?: boolean
+    lockTimeoutMs?: number
+    extraPids?: number[]
+    pgid?: number | null
   },
 ): CloseOutResult {
-  const row = db().query(
-    `SELECT id, COALESCE(parent_run_id,id) root_id, job, repo, cwd, worktree, branch,
+  const row = db()
+    .query(
+      `SELECT id, COALESCE(parent_run_id,id) root_id, job, repo, cwd, worktree, branch,
             base_commit, worktree_source, minted_branch, keep_tree, status, agent_pid
        FROM run WHERE id=?`,
-  ).get(runId) as {
-    id: number; root_id: number; job: string; repo: string | null; cwd: string | null
-    worktree: string | null; branch: string | null; base_commit: string | null
-    worktree_source: Worktree['source'] | null; minted_branch: string | null
-    keep_tree: number; status: string; agent_pid: number | null
+    )
+    .get(runId) as {
+    id: number
+    root_id: number
+    job: string
+    repo: string | null
+    cwd: string | null
+    worktree: string | null
+    branch: string | null
+    base_commit: string | null
+    worktree_source: Worktree['source'] | null
+    minted_branch: string | null
+    keep_tree: number
+    status: string
+    agent_pid: number | null
   } | null
   if (!row) throw new Error(`no run ${runId}`)
-  const root = db().query(
-    `SELECT job,repo,cwd,worktree,branch,base_commit,worktree_source,minted_branch,keep_tree,status
+  const root = db()
+    .query(
+      `SELECT job,repo,cwd,worktree,branch,base_commit,worktree_source,minted_branch,keep_tree,status
        FROM run WHERE id=?`,
-  ).get(row.root_id) as typeof row
+    )
+    .get(row.root_id) as typeof row
   const treePath = row.worktree ?? root?.worktree ?? null
-  if (!treePath) return { runId: row.root_id, worktree: null, outcome: 'absent', detail: 'no worktree' }
-  const held = db().query(
-    'SELECT MAX(keep_tree) held FROM run WHERE id=? OR parent_run_id=?',
-  ).get(row.root_id, row.root_id) as { held: number }
+  if (!treePath)
+    return { runId: row.root_id, worktree: null, outcome: 'absent', detail: 'no worktree' }
+  const held = db()
+    .query('SELECT MAX(keep_tree) held FROM run WHERE id=? OR parent_run_id=?')
+    .get(row.root_id, row.root_id) as { held: number }
   const effective = {
     id: row.root_id,
     job: root?.job ?? row.job,
@@ -65,72 +90,108 @@ function attemptCloseOutRun(
     status: root?.status ?? row.status,
     keep_tree: held.held,
   }
-  if (!TERMINAL.has(effective.status)) return {
-    runId: row.root_id, worktree: treePath, outcome: 'live',
-    detail: `conversation is ${effective.status}`,
-  }
-  if (effective.keep_tree) return {
-    runId: row.root_id, worktree: treePath, outcome: 'held',
-    detail: `held by explicit --keep-tree; clear with orch discard ${row.root_id}`,
-  }
+  if (!TERMINAL.has(effective.status))
+    return {
+      runId: row.root_id,
+      worktree: treePath,
+      outcome: 'live',
+      detail: `conversation is ${effective.status}`,
+    }
+  if (effective.keep_tree)
+    return {
+      runId: row.root_id,
+      worktree: treePath,
+      outcome: 'held',
+      detail: `held by explicit --keep-tree; clear with orch discard ${row.root_id}`,
+    }
   const retainedBranch = effective.minted_branch ?? effective.branch
   const recordRetainedBranch = (tip: string | null) => {
     if (!retainedBranch || !tip) return
-    db().query('UPDATE run SET branch_kept=?, branch_kept_tip=? WHERE id=?')
+    db()
+      .query('UPDATE run SET branch_kept=?, branch_kept_tip=? WHERE id=?')
       .run(retainedBranch, tip, row.root_id)
   }
   if (!worktreeExists(treePath)) {
-    const repoRoot = (effective.repo ? projectByName(effective.repo)?.path : null) ??
-      repoRootOf(treePath) ?? effective.cwd
+    const repoRoot =
+      (effective.repo ? projectByName(effective.repo)?.path : null) ??
+      repoRootOf(treePath) ??
+      effective.cwd
     if (!options.dryRun && repoRoot && retainedBranch) {
       recordRetainedBranch(branchTip(repoRoot, retainedBranch))
     }
     return {
-      runId: row.root_id, worktree: treePath,
+      runId: row.root_id,
+      worktree: treePath,
       outcome: options.dryRun ? 'released' : 'absent',
       detail: options.dryRun
         ? 'would retain the recorded identity for an absent worktree'
         : 'worktree was already absent; recorded identity retained',
     }
   }
-  const repoRoot = (effective.repo ? projectByName(effective.repo)?.path : null) ??
-    repoRootOf(treePath) ?? effective.cwd
-  if (!repoRoot) return { runId: row.root_id, worktree: treePath, outcome: 'failed', detail: 'repository root not found' }
+  const repoRoot =
+    (effective.repo ? projectByName(effective.repo)?.path : null) ??
+    repoRootOf(treePath) ??
+    effective.cwd
+  if (!repoRoot)
+    return {
+      runId: row.root_id,
+      worktree: treePath,
+      outcome: 'failed',
+      detail: 'repository root not found',
+    }
 
   const liveRows = () => {
     const sharers = liveWorktreeSharers(db(), { id: row.root_id, worktree: treePath })
-    const conversation = db().query(
-      `SELECT id,status FROM run
+    const conversation = db()
+      .query(
+        `SELECT id,status FROM run
         WHERE status IN ('running','asking') AND (id=? OR parent_run_id=?) ORDER BY id`,
-    ).all(row.root_id, row.root_id) as { id: number; status: string }[]
+      )
+      .all(row.root_id, row.root_id) as { id: number; status: string }[]
     return [...conversation, ...sharers]
   }
   const live = liveRows()
-  if (live.length) return {
-    runId: row.root_id, worktree: treePath, outcome: 'live',
-    detail: `live run(s): ${live.map((owner) => `${owner.id} (${owner.status})`).join(', ')}`,
-  }
+  if (live.length)
+    return {
+      runId: row.root_id,
+      worktree: treePath,
+      outcome: 'live',
+      detail: `live run(s): ${live.map((owner) => `${owner.id} (${owner.status})`).join(', ')}`,
+    }
   // Every recorded spelling of this tree, not one string: a trailing separator
   // or an unresolved symlink makes two rows for one worktree, and matching only
   // the spelling in hand releases a tree whose other owner is still running.
   const spellings = worktreePathSpellings(db(), treePath)
   const vendorRows = spellings.length
-    ? (db().query(
-        `SELECT agent_pid, agent_pgid FROM run
+    ? (db()
+        .query(
+          `SELECT agent_pid, agent_pgid FROM run
           WHERE worktree IN (${spellings.map(() => '?').join(',')}) ORDER BY id`,
-      ).all(...spellings) as { agent_pid: number | null; agent_pgid: number | null }[])
+        )
+        .all(...spellings) as { agent_pid: number | null; agent_pgid: number | null }[])
     : []
   const agentPids = vendorRows.map((turn) => turn.agent_pid)
-  const recordedPgids = [...new Set(
-    vendorRows.map((turn) => turn.agent_pgid).filter((pgid): pgid is number => pgid != null && pgid > 1),
-  )]
+  const recordedPgids = [
+    ...new Set(
+      vendorRows
+        .map((turn) => turn.agent_pgid)
+        .filter((pgid): pgid is number => pgid != null && pgid > 1),
+    ),
+  ]
   const processInventory = processTable()
-  if (!processInventory.ascertainable) return {
-    runId: row.root_id, worktree: treePath, outcome: 'live',
-    detail: `${processInventory.reason}; retained because process liveness could not be established`,
-  }
+  if (!processInventory.ascertainable)
+    return {
+      runId: row.root_id,
+      worktree: treePath,
+      outcome: 'live',
+      detail: `${processInventory.reason}; retained because process liveness could not be established`,
+    }
   const processSamples = processInventory.rows.map((processRow) => ({
-    pid: processRow.pid, ppid: processRow.ppid, pgid: processRow.pgid, cpu: 0, state: '',
+    pid: processRow.pid,
+    ppid: processRow.ppid,
+    pgid: processRow.pgid,
+    cpu: 0,
+    state: '',
   }))
   const sample = () => processSamples
   // The caller's own process group is never a vendor tree. A stub or CLI that
@@ -148,139 +209,231 @@ function attemptCloseOutRun(
   // the tree when the recorded vendor, a captured process group, or a
   // persisted vendor pgid still has a live member. Close-out does not signal
   // unverified leftovers; the monitor reports them.
-  const treeStillAlive = runHasLiveDescendants(
-    agentPids, options.extraPids ?? [], { sample },
-    vendorGroupAlive(options.pgid) ? options.pgid : null,
-  ) || recordedPgids.some((pgid) => vendorGroupAlive(pgid))
-  if (treeStillAlive) return {
-    runId: row.root_id, worktree: treePath, outcome: 'live',
-    detail: 'process tree still alive',
-  }
+  const treeStillAlive =
+    runHasLiveDescendants(
+      agentPids,
+      options.extraPids ?? [],
+      { sample },
+      vendorGroupAlive(options.pgid) ? options.pgid : null,
+    ) || recordedPgids.some((pgid) => vendorGroupAlive(pgid))
+  if (treeStillAlive)
+    return {
+      runId: row.root_id,
+      worktree: treePath,
+      outcome: 'live',
+      detail: 'process tree still alive',
+    }
   const lease = worktreeLeaseName(treePath)
   reclaimStaleProjectLock(repoRoot, lease)
   const holder = projectLockState(repoRoot, lease).holder
-  if (holder) return {
-    runId: row.root_id, worktree: treePath, outcome: 'live',
-    detail: `live worktree lease held by pid ${holder.pid}`,
-  }
+  if (holder)
+    return {
+      runId: row.root_id,
+      worktree: treePath,
+      outcome: 'live',
+      detail: `live worktree lease held by pid ${holder.pid}`,
+    }
 
   try {
-    return withWorktreeLease(repoRoot, treePath,
-      { session: sessionId(), what: `close-out ${row.root_id}` }, () =>
-      withCleanupLock(repoRoot, { session: sessionId(), what: `close-out ${row.root_id}` }, () => {
-        const lockedLive = liveRows()
-        if (lockedLive.length) return {
-          runId: row.root_id, worktree: treePath, outcome: 'live' as const,
-          detail: `live run(s): ${lockedLive.map((owner) => `${owner.id} (${owner.status})`).join(', ')}`,
-        }
-        const reclaimProof = proveWorktreeReconstructible(treePath)
-        if (!reclaimProof.ok) return {
-          runId: row.root_id, worktree: treePath, outcome: 'held' as const,
-          detail: reclaimProof.action,
-        }
-        if (options.dryRun) return {
-          runId: row.root_id, worktree: treePath, outcome: 'released' as const,
-          detail: 'would release clean terminal worktree and keep its branch',
-        }
-        // The coordinator proves its own identity before descendants are signalled.
-        const liveCoordinator = (db().query(
-          'SELECT id,pid FROM run WHERE (id=? OR parent_run_id=?) AND pid IS NOT NULL ORDER BY id',
-        ).all(row.root_id, row.root_id) as { id: number; pid: number }[])
-          .find((turn) => turn.pid !== process.pid && pidAlive(turn.pid))
-        if (liveCoordinator) return {
-          runId: row.root_id, worktree: treePath, outcome: 'live' as const,
-          detail: `recorded coordinator pid ${liveCoordinator.pid} for run ${liveCoordinator.id} is still alive`,
-        }
-        terminateRunProcesses(row.id, [process.pid])
-        const branchSnapshot = retainedBranch ? branchTip(repoRoot, retainedBranch) : null
-        const retainedRef = branchSnapshot ? `refs/orch/retained/${row.root_id}` : null
-        if (retainedRef && branchSnapshot) {
-          const pinned = Bun.spawnSync(['git', 'update-ref', retainedRef, branchSnapshot], {
-            cwd: repoRoot, env: targetGitEnvironment(repoRoot), stdout: 'pipe', stderr: 'pipe',
-          })
-          if (pinned.exitCode !== 0) return {
-            runId: row.root_id, worktree: treePath, outcome: 'failed' as const,
-            detail: `could not protect retained branch ${retainedBranch} at ${branchSnapshot}: ` +
-              (pinned.stderr.toString().trim() || `git update-ref exited ${pinned.exitCode}`),
-          }
-        }
-        // Publish the recovery identity before a project-owned remover runs: a
-        // remover may delete or move the ref before reporting its refusal.
-        recordRetainedBranch(branchSnapshot)
-        const result = removeFor({
-          path: treePath, branch: effective.branch ?? '', base: effective.base_commit ?? '',
-          repoRoot, source: effective.worktree_source ?? undefined,
-          mintedBranch: effective.minted_branch,
-        }, repoRoot, false, true, row.root_id, false)
-        if (retainedBranch && branchSnapshot) {
-          const branchAfter = branchTip(repoRoot, retainedBranch)
-          if (branchAfter === null) {
-            const restored = restoreBranch(repoRoot, retainedBranch, branchSnapshot)
-            if (!restored.ok) return {
-              runId: row.root_id, worktree: treePath, outcome: 'failed' as const,
-              detail: `project remove tool deleted retained branch ${retainedBranch} at ${branchSnapshot}, ` +
-                `and restoration failed: ${restored.error}`,
+    return withWorktreeLease(
+      repoRoot,
+      treePath,
+      { session: sessionId(), what: `close-out ${row.root_id}` },
+      () =>
+        withCleanupLock(
+          repoRoot,
+          { session: sessionId(), what: `close-out ${row.root_id}` },
+          () => {
+            const lockedLive = liveRows()
+            if (lockedLive.length)
+              return {
+                runId: row.root_id,
+                worktree: treePath,
+                outcome: 'live' as const,
+                detail: `live run(s): ${lockedLive.map((owner) => `${owner.id} (${owner.status})`).join(', ')}`,
+              }
+            const reclaimProof = proveWorktreeReconstructible(treePath)
+            if (!reclaimProof.ok)
+              return {
+                runId: row.root_id,
+                worktree: treePath,
+                outcome: 'held' as const,
+                detail: reclaimProof.action,
+              }
+            if (options.dryRun)
+              return {
+                runId: row.root_id,
+                worktree: treePath,
+                outcome: 'released' as const,
+                detail: 'would release clean terminal worktree and keep its branch',
+              }
+            // The coordinator proves its own identity before descendants are signalled.
+            const liveCoordinator = (
+              db()
+                .query(
+                  'SELECT id,pid FROM run WHERE (id=? OR parent_run_id=?) AND pid IS NOT NULL ORDER BY id',
+                )
+                .all(row.root_id, row.root_id) as { id: number; pid: number }[]
+            ).find((turn) => turn.pid !== process.pid && pidAlive(turn.pid))
+            if (liveCoordinator)
+              return {
+                runId: row.root_id,
+                worktree: treePath,
+                outcome: 'live' as const,
+                detail: `recorded coordinator pid ${liveCoordinator.pid} for run ${liveCoordinator.id} is still alive`,
+              }
+            terminateRunProcesses(row.id, [process.pid])
+            const branchSnapshot = retainedBranch ? branchTip(repoRoot, retainedBranch) : null
+            const retainedRef = branchSnapshot ? `refs/orch/retained/${row.root_id}` : null
+            if (retainedRef && branchSnapshot) {
+              const pinned = Bun.spawnSync(['git', 'update-ref', retainedRef, branchSnapshot], {
+                cwd: repoRoot,
+                env: targetGitEnvironment(repoRoot),
+                stdout: 'pipe',
+                stderr: 'pipe',
+              })
+              if (pinned.exitCode !== 0)
+                return {
+                  runId: row.root_id,
+                  worktree: treePath,
+                  outcome: 'failed' as const,
+                  detail:
+                    `could not protect retained branch ${retainedBranch} at ${branchSnapshot}: ` +
+                    (pinned.stderr.toString().trim() || `git update-ref exited ${pinned.exitCode}`),
+                }
             }
-          } else if (branchAfter !== branchSnapshot) {
+            // Publish the recovery identity before a project-owned remover runs: a
+            // remover may delete or move the ref before reporting its refusal.
             recordRetainedBranch(branchSnapshot)
-            return {
-              runId: row.root_id, worktree: treePath, outcome: 'failed' as const,
-              detail: `project remove tool moved unique branch ${retainedBranch} from ` +
-                `${branchSnapshot} to ${branchAfter}; it was left at the new tip`,
+            const result = removeFor(
+              {
+                path: treePath,
+                branch: effective.branch ?? '',
+                base: effective.base_commit ?? '',
+                repoRoot,
+                source: effective.worktree_source ?? undefined,
+                mintedBranch: effective.minted_branch,
+              },
+              repoRoot,
+              false,
+              true,
+              row.root_id,
+              false,
+            )
+            if (retainedBranch && branchSnapshot) {
+              const branchAfter = branchTip(repoRoot, retainedBranch)
+              if (branchAfter === null) {
+                const restored = restoreBranch(repoRoot, retainedBranch, branchSnapshot)
+                if (!restored.ok)
+                  return {
+                    runId: row.root_id,
+                    worktree: treePath,
+                    outcome: 'failed' as const,
+                    detail:
+                      `project remove tool deleted retained branch ${retainedBranch} at ${branchSnapshot}, ` +
+                      `and restoration failed: ${restored.error}`,
+                  }
+              } else if (branchAfter !== branchSnapshot) {
+                recordRetainedBranch(branchSnapshot)
+                return {
+                  runId: row.root_id,
+                  worktree: treePath,
+                  outcome: 'failed' as const,
+                  detail:
+                    `project remove tool moved unique branch ${retainedBranch} from ` +
+                    `${branchSnapshot} to ${branchAfter}; it was left at the new tip`,
+                }
+              }
             }
-          }
-        }
-        if (retainedRef) {
-          const unpinned = Bun.spawnSync(['git', 'update-ref', '-d', retainedRef, branchSnapshot!], {
-            cwd: repoRoot, env: targetGitEnvironment(repoRoot), stdout: 'pipe', stderr: 'pipe',
-          })
-          if (unpinned.exitCode !== 0) return {
-            runId: row.root_id, worktree: treePath, outcome: 'failed' as const,
-            detail: `retained branch ${retainedBranch} was verified, but ${retainedRef} could not be removed: ` +
-              (unpinned.stderr.toString().trim() || `git update-ref exited ${unpinned.exitCode}`),
-          }
-        }
-        if (!result.removed) return {
-          runId: row.root_id, worktree: treePath, outcome: 'failed' as const, detail: result.detail,
-        }
-        const acquired = liveRows()
-        if (acquired.length) {
-          return {
-            runId: row.root_id, worktree: treePath, outcome: 'failed' as const,
-            detail: `worktree was acquired during cleanup by run(s): ` +
-              acquired.map((owner) => `${owner.id} (${owner.status})`).join(', '),
-          }
-        }
-        return {
-          runId: row.root_id, worktree: treePath, outcome: 'released' as const,
-          detail: result.output ? `${result.detail}\n${result.output}` : result.detail,
-        }
-      }, options.lockTimeoutMs), options.lockTimeoutMs)
+            if (retainedRef) {
+              const unpinned = Bun.spawnSync(
+                ['git', 'update-ref', '-d', retainedRef, branchSnapshot!],
+                {
+                  cwd: repoRoot,
+                  env: targetGitEnvironment(repoRoot),
+                  stdout: 'pipe',
+                  stderr: 'pipe',
+                },
+              )
+              if (unpinned.exitCode !== 0)
+                return {
+                  runId: row.root_id,
+                  worktree: treePath,
+                  outcome: 'failed' as const,
+                  detail:
+                    `retained branch ${retainedBranch} was verified, but ${retainedRef} could not be removed: ` +
+                    (unpinned.stderr.toString().trim() ||
+                      `git update-ref exited ${unpinned.exitCode}`),
+                }
+            }
+            if (!result.removed)
+              return {
+                runId: row.root_id,
+                worktree: treePath,
+                outcome: 'failed' as const,
+                detail: result.detail,
+              }
+            const acquired = liveRows()
+            if (acquired.length) {
+              return {
+                runId: row.root_id,
+                worktree: treePath,
+                outcome: 'failed' as const,
+                detail:
+                  `worktree was acquired during cleanup by run(s): ` +
+                  acquired.map((owner) => `${owner.id} (${owner.status})`).join(', '),
+              }
+            }
+            return {
+              runId: row.root_id,
+              worktree: treePath,
+              outcome: 'released' as const,
+              detail: result.output ? `${result.detail}\n${result.output}` : result.detail,
+            }
+          },
+          options.lockTimeoutMs,
+        ),
+      options.lockTimeoutMs,
+    )
   } catch (error) {
-    return { runId: row.root_id, worktree: treePath, outcome: 'failed', detail: String((error as Error).message ?? error) }
+    return {
+      runId: row.root_id,
+      worktree: treePath,
+      outcome: 'failed',
+      detail: String((error as Error).message ?? error),
+    }
   }
 }
 
 /** Run one close-out attempt and retain its outcome for observation and retry. */
 export function closeOutRun(
-  runId: number, options: {
-    intent: 'terminal' | 'explicit' | 'sweep'; dryRun?: boolean; lockTimeoutMs?: number
-    extraPids?: number[]; pgid?: number | null
+  runId: number,
+  options: {
+    intent: 'terminal' | 'explicit' | 'sweep'
+    dryRun?: boolean
+    lockTimeoutMs?: number
+    extraPids?: number[]
+    pgid?: number | null
   },
 ): CloseOutResult {
   const result = attemptCloseOutRun(runId, options)
   if (!options.dryRun) {
-    writableDb().query(
-      `UPDATE run
+    writableDb()
+      .query(
+        `UPDATE run
           SET close_out_outcome=?, close_out_detail=?, close_out_attempted_at=?
         WHERE id=?`,
-    ).run(result.outcome, result.detail, nowIso(), result.runId)
+      )
+      .run(result.outcome, result.detail, nowIso(), result.runId)
   }
   return result
 }
 
 export function reclaimTerminalTree(
-  runId: number, worktree: Worktree, extraPids: number[] = [], pgid: number | null = null,
+  runId: number,
+  worktree: Worktree,
+  extraPids: number[] = [],
+  pgid: number | null = null,
 ): void {
   try {
     const result = closeOutRun(runId, { intent: 'terminal', extraPids, pgid })

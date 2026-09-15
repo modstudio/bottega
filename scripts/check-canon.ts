@@ -28,10 +28,7 @@
  */
 import { existsSync, readFileSync } from 'node:fs'
 import { CONCERNS, PLATFORM_SLUG } from '../shared/brand.ts'
-import {
-  CANON_REFERENCE_EXEMPTIONS,
-  canonReferencePath,
-} from '../shared/canon-references.ts'
+import { CANON_REFERENCE_EXEMPTIONS, canonReferencePath } from '../shared/canon-references.ts'
 
 const ROOT = new URL('..', import.meta.url).pathname.replace(/\/$/, '')
 
@@ -39,18 +36,10 @@ const ROOT = new URL('..', import.meta.url).pathname.replace(/\/$/, '')
  * Backticked paths must start with one of these. Written here so the cut is
  * readable, not inferred from whatever directories happen to exist.
  */
-export const PREFIXES = [
-  ...CONCERNS.map((c) => `${c}/`),
-  'shared/',
-  'scripts/',
-  '.githooks/',
-]
+export const PREFIXES = [...CONCERNS.map((c) => `${c}/`), 'shared/', 'scripts/', '.githooks/']
 
 /** In-repo canon. CLAUDE.md is a symlink at the root and in two concerns; do not read it. */
-export const CANON_FILES = [
-  'AGENTS.md',
-  ...CONCERNS.map((c) => `${c}/AGENTS.md`),
-]
+export const CANON_FILES = ['AGENTS.md', ...CONCERNS.map((c) => `${c}/AGENTS.md`)]
 
 /**
  * A path the build writes. Absence means the checkout is unbuilt, which is a
@@ -203,7 +192,10 @@ export function parseAlso(argv: string[]): string[] {
   return also
 }
 
-export function run(root: string, also: string[]): {
+export function run(
+  root: string,
+  also: string[],
+): {
   findings: Finding[]
   examined: number
   files: string[]
@@ -282,9 +274,11 @@ function main(): number {
   for (const e of EXEMPTIONS) console.log(`  exempt  ${e.path}  ${e.reason}`)
 
   if (findings.length) {
-    console.error(`\ncheck-canon: ${findings.length} violation(s)` +
-      (paths || scripts ? ` (${paths} path, ${scripts} bun run)` : '') +
-      `\n`)
+    console.error(
+      `\ncheck-canon: ${findings.length} violation(s)` +
+        (paths || scripts ? ` (${paths} path, ${scripts} bun run)` : '') +
+        `\n`,
+    )
     for (const f of findings) console.error(`  ${f.message}\n`)
     return 1
   }

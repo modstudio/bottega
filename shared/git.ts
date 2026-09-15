@@ -32,7 +32,9 @@ function localEnvVarNames(): string[] {
   if (listedLocalEnvVars) return listedLocalEnvVars
   try {
     const result = Bun.spawnSync(['git', 'rev-parse', '--local-env-vars'], {
-      stdout: 'pipe', stderr: 'pipe', env: localEnvVarQueryEnv(),
+      stdout: 'pipe',
+      stderr: 'pipe',
+      env: localEnvVarQueryEnv(),
     })
     if (result.exitCode !== 0) {
       throw new Error(
@@ -43,13 +45,17 @@ function localEnvVarNames(): string[] {
     // GIT_DIR is the minimum useful answer, not a fallback list. Without it,
     // the query cannot establish that repository routing will be removed.
     if (!names.includes('GIT_DIR')) {
-      throw new Error('refusing operational git: git rev-parse --local-env-vars did not list GIT_DIR')
+      throw new Error(
+        'refusing operational git: git rev-parse --local-env-vars did not list GIT_DIR',
+      )
     }
     listedLocalEnvVars = names
     return names
   } catch (error) {
     if (error instanceof Error && error.message.startsWith('refusing operational git:')) throw error
-    throw new Error(`refusing operational git: could not run git rev-parse --local-env-vars: ${String(error)}`)
+    throw new Error(
+      `refusing operational git: could not run git rev-parse --local-env-vars: ${String(error)}`,
+    )
   }
 }
 
@@ -85,7 +91,9 @@ function gitAt(path: string, args: string[]): GitResult {
     env.LC_ALL = 'C'
     env.LANG = 'C'
     const result = Bun.spawnSync(['git', '-C', path, '--no-optional-locks', ...args], {
-      env, stdout: 'pipe', stderr: 'pipe',
+      env,
+      stdout: 'pipe',
+      stderr: 'pipe',
     })
     return { code: result.exitCode ?? 128, stdout: result.stdout?.toString() ?? '' }
   } catch {
@@ -94,13 +102,17 @@ function gitAt(path: string, args: string[]): GitResult {
 }
 
 /** Resolve the main checkout belonging to a checkout or linked worktree. */
-export function mainCheckoutOf(cwd: string, env?: Record<string, string | undefined>): string | null {
+export function mainCheckoutOf(
+  cwd: string,
+  env?: Record<string, string | undefined>,
+): string | null {
   if (!existsSync(cwd)) return null
-  const result = Bun.spawnSync(
-    ['git', 'rev-parse', '--path-format=absolute', '--git-common-dir'],
-    { cwd, env: env ?? inspectionGitEnv(),
-      stdout: 'pipe', stderr: 'ignore' },
-  )
+  const result = Bun.spawnSync(['git', 'rev-parse', '--path-format=absolute', '--git-common-dir'], {
+    cwd,
+    env: env ?? inspectionGitEnv(),
+    stdout: 'pipe',
+    stderr: 'ignore',
+  })
   if (result.exitCode !== 0) return null
   const common = result.stdout.toString().trim()
   return common ? dirname(common) : null
@@ -181,8 +193,10 @@ function inspectSequence(cwd: string): SequenceState {
   const status = gitAt(cwd, ['-c', 'color.status=false', 'status', '--untracked-files=no'])
   if (status.code !== 0) return INDETERMINATE
   const text = status.stdout
-  if (/still merging|you have unmerged paths/i.test(text)) return { status: 'in-progress', kind: 'merge' }
-  if (/rebase in progress|currently rebasing/i.test(text)) return { status: 'in-progress', kind: 'rebase' }
+  if (/still merging|you have unmerged paths/i.test(text))
+    return { status: 'in-progress', kind: 'merge' }
+  if (/rebase in progress|currently rebasing/i.test(text))
+    return { status: 'in-progress', kind: 'rebase' }
   if (/am session/i.test(text)) return { status: 'in-progress', kind: 'am' }
   if (/currently bisecting/i.test(text)) return { status: 'in-progress', kind: 'bisect' }
   if (/currently reverting/i.test(text)) return { status: 'in-progress', kind: 'revert' }
@@ -202,10 +216,18 @@ function inspectSequence(cwd: string): SequenceState {
  */
 export function inspectCheckout(path: string): CheckoutState {
   const indeterminate = (sequence: SequenceState = INDETERMINATE): CheckoutState => ({
-    cleanliness: 'indeterminate', dirtyTracked: [], untracked: [], sequence,
+    cleanliness: 'indeterminate',
+    dirtyTracked: [],
+    untracked: [],
+    sequence,
   })
   const status = gitAt(path, [
-    'status', '--porcelain=v1', '-z', '--untracked-files=all', '--ignore-submodules=untracked', '--',
+    'status',
+    '--porcelain=v1',
+    '-z',
+    '--untracked-files=all',
+    '--ignore-submodules=untracked',
+    '--',
   ])
   if (status.code !== 0) return indeterminate()
   const { dirtyTracked, untracked } = parsePorcelain(status.stdout)

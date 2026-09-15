@@ -3,7 +3,7 @@
  * Knows detached dispatch, run rows, resume claims, and prompt artifacts. Must
  * not know transports, worktrees, routing policy, reviews, or the CLI.
  */
-import { spawn, type ChildProcess } from 'node:child_process'
+import { type ChildProcess, spawn } from 'node:child_process'
 import { createHash } from 'node:crypto'
 import { mkdirSync, writeFileSync } from 'node:fs'
 import { db, nowIso, sessionId, writableDb, writeTransaction } from './db.ts'
@@ -12,8 +12,8 @@ import type { DetachSpec } from './failover.ts'
 import { job } from './jobs.ts'
 import { effectiveMcpRequest, preflightMcp, storedMcpRequest } from './mcp-preflight.ts'
 import { projectByName } from './projects.ts'
-import { RUNS_DIR, runFilePaths } from './run-artifacts.ts'
 import { repoOf } from './run.ts'
+import { RUNS_DIR, runFilePaths } from './run-artifacts.ts'
 
 /**
  * Claim a run id, hand the work to a process that outlives this one, and return.
@@ -28,7 +28,12 @@ import { repoOf } from './run.ts'
  * caller-side workaround got wrong — a shell wrapper dies and takes the agent
  * with it, and `setsid` does not exist on macOS.
  */
-export async function detach(jobName: string, prompt: string, spec: DetachSpec, selectedAgent?: string): Promise<number> {
+export async function detach(
+  jobName: string,
+  prompt: string,
+  spec: DetachSpec,
+  selectedAgent?: string,
+): Promise<number> {
   writableDb()
   /**
    * The depth check happens HERE TOO, before a row exists.
@@ -54,8 +59,17 @@ export async function detach(jobName: string, prompt: string, spec: DetachSpec, 
   const seed = spec.resume
     ? spec.seed
     : preflight(
-        jobName, cwd, spec.seed, spec.key, spec.base, false, false, spec.lens,
-        spec.review, spec.carry, spec.repo,
+        jobName,
+        cwd,
+        spec.seed,
+        spec.key,
+        spec.base,
+        false,
+        false,
+        spec.lens,
+        spec.review,
+        spec.carry,
+        spec.repo,
       )
   if (!spec.resume && mcpRequest) {
     // Who will run is knowable here, and a proven-failed grok attach must not
@@ -81,9 +95,10 @@ export async function detach(jobName: string, prompt: string, spec: DetachSpec, 
   // running turn already linked to its chain.
   const claimed = writeTransaction(() => {
     const projectName = spec.repo ?? repoOf(cwd)
-    const projectId = projectName ? projectByName(projectName)?.id ?? null : null
-    const inserted = db().query(
-      `INSERT INTO run (started_at, agent, job, repo, project_id, cwd, prompt_sha, spec_sha, prompt_bytes,
+    const projectId = projectName ? (projectByName(projectName)?.id ?? null) : null
+    const inserted = db()
+      .query(
+        `INSERT INTO run (started_at, agent, job, repo, project_id, cwd, prompt_sha, spec_sha, prompt_bytes,
                       prompt_head, label, status, session_id, probe, parent_run_id, turn, mcp,
                       vendor_session)
        SELECT ?, '(pending)', ?, ?, ?, ?, ?, ?, ?, ?, ?, 'running', ?, ?, ?, ?, ?, ?
@@ -95,40 +110,63 @@ export async function detach(jobName: string, prompt: string, spec: DetachSpec, 
           )
         )
        RETURNING id`,
-    ).get(
-      nowIso(), jobName, projectName, projectId, null,
-      createHash('sha256').update(prompt).digest('hex').slice(0, 16),
-      createHash('sha256').update(prompt).digest('hex').slice(0, 16),
-      prompt.length, prompt.slice(0, 200).replace(/\s+/g, ' '), spec.label ?? null,
-      sessionId(), spec.probe ? 1 : 0, spec.resume?.parent ?? null,
-      spec.resume?.turn ?? 1, storedMcpRequest(mcpRequest), spec.resume?.session ?? null,
-      spec.resume?.parent ?? null, spec.resume?.parent ?? null,
-      spec.resume?.parent ?? null, spec.resume?.parent ?? null,
-    ) as { id: number } | null
-    const deliveryRoot = spec.resume?.parent ?? (spec.retryOf
-      ? (db().query('SELECT COALESCE(parent_run_id,id) root_id FROM run WHERE id=?')
-          .get(spec.retryOf) as { root_id: number } | null)?.root_id
-      : undefined)
+      )
+      .get(
+        nowIso(),
+        jobName,
+        projectName,
+        projectId,
+        null,
+        createHash('sha256').update(prompt).digest('hex').slice(0, 16),
+        createHash('sha256').update(prompt).digest('hex').slice(0, 16),
+        prompt.length,
+        prompt.slice(0, 200).replace(/\s+/g, ' '),
+        spec.label ?? null,
+        sessionId(),
+        spec.probe ? 1 : 0,
+        spec.resume?.parent ?? null,
+        spec.resume?.turn ?? 1,
+        storedMcpRequest(mcpRequest),
+        spec.resume?.session ?? null,
+        spec.resume?.parent ?? null,
+        spec.resume?.parent ?? null,
+        spec.resume?.parent ?? null,
+        spec.resume?.parent ?? null,
+      ) as { id: number } | null
+    const deliveryRoot =
+      spec.resume?.parent ??
+      (spec.retryOf
+        ? (
+            db()
+              .query('SELECT COALESCE(parent_run_id,id) root_id FROM run WHERE id=?')
+              .get(spec.retryOf) as { root_id: number } | null
+          )?.root_id
+        : undefined)
     if (inserted && deliveryRoot) {
-      db().query(
-        `UPDATE question SET delivery_pending_at=NULL
+      db()
+        .query(
+          `UPDATE question SET delivery_pending_at=NULL
           WHERE delivery_pending_at IS NOT NULL AND run_id IN
             (SELECT id FROM run WHERE id=? OR parent_run_id=?)`,
-      ).run(deliveryRoot, deliveryRoot)
+        )
+        .run(deliveryRoot, deliveryRoot)
     }
     return inserted
   })
   if (!claimed) {
-    const root = db().query('SELECT status FROM run WHERE id=?').get(spec.resume!.parent) as
-      { status: string } | null
+    const root = db().query('SELECT status FROM run WHERE id=?').get(spec.resume!.parent) as {
+      status: string
+    } | null
     if (root?.status === 'stale') {
       throw new Error(`run ${spec.resume!.parent} is ${root.status} and cannot be continued`)
     }
-    const running = db().query(
-      `SELECT id, turn FROM run
+    const running = db()
+      .query(
+        `SELECT id, turn FROM run
         WHERE (id = ? OR parent_run_id = ?) AND status = 'running'
         ORDER BY turn DESC, id DESC LIMIT 1`,
-    ).get(spec.resume!.parent, spec.resume!.parent) as { id: number; turn: number }
+      )
+      .get(spec.resume!.parent, spec.resume!.parent) as { id: number; turn: number }
     throw new Error(
       `run ${spec.resume!.parent} already has running turn ${running.id} (turn ${running.turn})`,
     )
@@ -170,7 +208,10 @@ export async function detach(jobName: string, prompt: string, spec: DetachSpec, 
      * catch, turning a broken sibling into a recorded failure with a reason.
      */
     new URL('exec.ts', import.meta.url).pathname,
-    String(id), promptPath, jobName, JSON.stringify({ ...spec, seed }),
+    String(id),
+    promptPath,
+    jobName,
+    JSON.stringify({ ...spec, seed }),
   ]
   const spawnOpts = {
     cwd,
@@ -184,9 +225,9 @@ export async function detach(jobName: string, prompt: string, spec: DetachSpec, 
 
   const failSpawn = (err: unknown): never => {
     const why = `spawn failed: ${String((err as Error)?.message ?? err)}`
-    db().query(
-      `UPDATE run SET status='failed', failure_kind='harness', error=? WHERE id=?`,
-    ).run(why, id)
+    db()
+      .query(`UPDATE run SET status='failed', failure_kind='harness', error=? WHERE id=?`)
+      .run(why, id)
     throw err
   }
 

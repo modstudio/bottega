@@ -1,5 +1,5 @@
 import { readFileSync } from 'node:fs'
-import { basename, dirname, join, normalize, relative } from 'node:path'
+import { dirname, join, normalize, relative } from 'node:path'
 import { importSpecifiers } from './import-scanner.ts'
 
 export type ImportCycle = string[]
@@ -10,7 +10,8 @@ type AllowedCycle = { cycle: ImportCycle; reason: string }
 export const ALLOWED_IMPORT_CYCLES: AllowedCycle[] = [
   {
     cycle: ['canon.ts', 'docs.ts', 'canon.ts'],
-    reason: 'Pre-existing operator-doc/canon compilation cycle outside the three specified inversions.',
+    reason:
+      'Pre-existing operator-doc/canon compilation cycle outside the three specified inversions.',
   },
 ]
 
@@ -41,13 +42,15 @@ function canonicalCycle(cycle: ImportCycle): ImportCycle {
 export function findImportCycles(root: string): ImportCycle[] {
   const files = productionFiles(root)
   const fileSet = new Set(files)
-  const graph = new Map(files.map((file) => {
-    const scan = importSpecifiers(readFileSync(file, 'utf8'))
-    const imports = [...scan.specifiers, ...scan.typeOnlySpecifiers]
-      .map((specifier) => resolveRelative(file, specifier, fileSet))
-      .filter((path): path is string => path !== null)
-    return [file, [...new Set(imports)].sort()] as const
-  }))
+  const graph = new Map(
+    files.map((file) => {
+      const scan = importSpecifiers(readFileSync(file, 'utf8'))
+      const imports = [...scan.specifiers, ...scan.typeOnlySpecifiers]
+        .map((specifier) => resolveRelative(file, specifier, fileSet))
+        .filter((path): path is string => path !== null)
+      return [file, [...new Set(imports)].sort()] as const
+    }),
+  )
   const found = new Map<string, ImportCycle>()
 
   for (const start of files) {
@@ -73,7 +76,8 @@ export function findImportCycles(root: string): ImportCycle[] {
 }
 
 export function unexpectedImportCycles(
-  cycles: ImportCycle[], allowlist: AllowedCycle[] = ALLOWED_IMPORT_CYCLES,
+  cycles: ImportCycle[],
+  allowlist: AllowedCycle[] = ALLOWED_IMPORT_CYCLES,
 ): ImportCycle[] {
   const allowed = new Set(allowlist.map(({ cycle }) => canonicalCycle(cycle).join(' -> ')))
   return cycles.filter((cycle) => !allowed.has(canonicalCycle(cycle).join(' -> ')))
@@ -90,9 +94,12 @@ if (import.meta.main) {
   )
   if (unexpected.length || stale.length) {
     if (stale.length) {
-      console.error(`check-import-cycles: ${stale.length} stale allowlist entry/entries must be removed`)
+      console.error(
+        `check-import-cycles: ${stale.length} stale allowlist entry/entries must be removed`,
+      )
     }
-    if (unexpected.length) console.error(`check-import-cycles: ${unexpected.length} unexpected cycle(s)`)
+    if (unexpected.length)
+      console.error(`check-import-cycles: ${unexpected.length} unexpected cycle(s)`)
     process.exit(1)
   }
   console.log(`check-import-cycles: ok (${cycles.length} allowed cycle(s))`)

@@ -2,11 +2,11 @@
 import { existsSync } from 'node:fs'
 import { join } from 'node:path'
 import { db } from './db.ts'
-import { projectAt, type WorktreeTool } from './projects.ts'
-import { teardownRecipe, dbNameFor } from './recipe.ts'
-import { ORCH_RUN_MARKER, extractWorktree } from './worktree-attribution.ts'
 import { git, gitOk, gitRaw, targetGitEnvironment } from './git-environment.ts'
+import { projectAt, type WorktreeTool } from './projects.ts'
+import { dbNameFor, teardownRecipe } from './recipe.ts'
 import { markedWorktreeRunId, removeSharedRefGuard } from './ref-guard.ts'
+import { extractWorktree, ORCH_RUN_MARKER } from './worktree-attribution.ts'
 import { portFor, runShellTool } from './worktree-tool.ts'
 import type { Worktree } from './worktree-types.ts'
 
@@ -102,7 +102,10 @@ export function changesIn(w: Worktree, sinceBase = false): Changes {
  * how a machine fills up with databases nobody can name.
  */
 export function removeWithTool(
-  tool: WorktreeTool, w: Worktree, forceOrchTree = false, keepBranch = false,
+  tool: WorktreeTool,
+  w: Worktree,
+  forceOrchTree = false,
+  keepBranch = false,
   runId?: number,
 ): { removed: boolean; detail: string; output?: string } {
   const name = w.path.split('/').pop() ?? w.path
@@ -121,7 +124,10 @@ export function removeWithTool(
       const dbName = dbNameFor(w.repoRoot.split('/').pop() ?? 'app', runId)
       const cwd = existsSync(w.path) ? w.path : w.repoRoot
       for (const step of teardownRecipe(
-        tool.recipe, cwd, dbName, String(tool.recipe.serve ? portFor(runId) : ''),
+        tool.recipe,
+        cwd,
+        dbName,
+        String(tool.recipe.serve ? portFor(runId) : ''),
       )) {
         if (!step.ok) console.error(`orch: ${step.step} failed: ${step.detail.slice(-200)}`)
       }
@@ -134,15 +140,19 @@ export function removeWithTool(
   const r = runShellTool(tool.remove, vars, w.repoRoot)
   if (r.ok && !existsSync(w.path)) {
     const branchAfter = branchTip(w.repoRoot, w.branch)
-    if (branchAfter !== null && branchAfter !== branchBefore &&
-        (uniqueBefore !== null || !keepBranch)) {
+    if (
+      branchAfter !== null &&
+      branchAfter !== branchBefore &&
+      (uniqueBefore !== null || !keepBranch)
+    ) {
       return {
         removed: false,
-        detail: branchBefore === null
-          ? `project remove tool created unprotected branch ${w.branch} at ${branchAfter}; it was left in place`
-          : uniqueBefore
-          ? `project remove tool moved unique branch ${w.branch} from ${branchBefore} to ${branchAfter}; it was left in place`
-          : `project remove tool moved unprotected branch ${w.branch} from ${branchBefore} to ${branchAfter}; it was left in place`,
+        detail:
+          branchBefore === null
+            ? `project remove tool created unprotected branch ${w.branch} at ${branchAfter}; it was left in place`
+            : uniqueBefore
+              ? `project remove tool moved unique branch ${w.branch} from ${branchBefore} to ${branchAfter}; it was left in place`
+              : `project remove tool moved unprotected branch ${w.branch} from ${branchBefore} to ${branchAfter}; it was left in place`,
         ...(r.out ? { output: r.out } : {}),
       }
     }
@@ -192,14 +202,17 @@ export function removeWithTool(
 }
 
 export function removeReadOnlyTree(
-  tool: WorktreeTool, w: Worktree, keepBranch = false,
+  tool: WorktreeTool,
+  w: Worktree,
+  keepBranch = false,
 ): { removed: boolean; detail: string; output?: string } {
   if (!tool.readonly_remove) return removeWorktree(w, keepBranch)
   const result = runShellTool(tool.readonly_remove, { path: w.path }, w.repoRoot)
   if (!result.ok) {
     return {
       removed: false,
-      detail: `${w.path} was NOT removed — the project's read-only remove tool refused:\n` +
+      detail:
+        `${w.path} was NOT removed — the project's read-only remove tool refused:\n` +
         `${result.out.slice(-600) || `exit code from ${tool.readonly_remove}`}`,
     }
   }
@@ -210,17 +223,24 @@ export function removeReadOnlyTree(
 function mintedBranchOwnedBy(w: Worktree, runId?: number): string | null {
   if (runId !== undefined) {
     try {
-      const row = db().query('SELECT minted_branch FROM run WHERE id=?').get(runId) as
-        { minted_branch: string | null } | null
+      const row = db().query('SELECT minted_branch FROM run WHERE id=?').get(runId) as {
+        minted_branch: string | null
+      } | null
       if (row) return row.minted_branch
-    } catch { /* a store mid-migrate has no minted_branch yet */ }
+    } catch {
+      /* a store mid-migrate has no minted_branch yet */
+    }
   }
   return w.mintedBranch ?? null
 }
 
 /** Remove a tree through the lifecycle declared by its registered project. */
 export function removeFor(
-  w: Worktree, repoRoot: string, forceOrchTree = false, keepBranch = false, runId?: number,
+  w: Worktree,
+  repoRoot: string,
+  forceOrchTree = false,
+  keepBranch = false,
+  runId?: number,
   forceUnmerged = false,
 ): { removed: boolean; detail: string; output?: string } {
   // The marker identifies who created a tree; it does not transfer that run's
@@ -237,8 +257,8 @@ export function removeFor(
   const owned = { ...w, branch: minted ?? '' }
   const project = projectAt(repoRoot)
   const tool = project?.settings.worktree
-  const retainBranch = keepBranch || !minted ||
-    (!forceUnmerged && unmergedBranch(repoRoot, minted, null) !== null)
+  const retainBranch =
+    keepBranch || !minted || (!forceUnmerged && unmergedBranch(repoRoot, minted, null) !== null)
   let result: { removed: boolean; detail: string; output?: string }
   if (w.source === 'readonly_recipe') {
     const removed = removeReadOnlyTree(tool ?? {}, owned, retainBranch)
@@ -246,11 +266,11 @@ export function removeFor(
       ? { ...removed, output: `${project!.name} readonly remove:\n${removed.output}` }
       : removed
   } else {
-    const projectOwned = w.source === 'recipe' ||
-      (w.source === undefined && Boolean(tool))
-    const removed: { removed: boolean; detail: string; output?: string } = tool && projectOwned
-      ? removeWithTool(tool, owned, forceOrchTree, retainBranch, runId)
-      : removeWorktree(owned, retainBranch)
+    const projectOwned = w.source === 'recipe' || (w.source === undefined && Boolean(tool))
+    const removed: { removed: boolean; detail: string; output?: string } =
+      tool && projectOwned
+        ? removeWithTool(tool, owned, forceOrchTree, retainBranch, runId)
+        : removeWorktree(owned, retainBranch)
     result = removed.output
       ? { ...removed, output: `${project!.name} remove:\n${removed.output}` }
       : removed
@@ -263,14 +283,18 @@ export function removeFor(
 
 /** Reclaim orphans the project knows about — databases, containers, metadata. */
 export function sweepWithTool(
-  tool: WorktreeTool, repoRoot: string,
+  tool: WorktreeTool,
+  repoRoot: string,
 ): { ok: boolean; out: string; exitCode: number | null } | null {
   if (!tool.sweep) return null
   const result = runShellTool(tool.sweep, {}, repoRoot)
   return { ok: result.ok, out: result.out, exitCode: result.exitCode }
 }
 
-export function removeWorktree(w: Worktree, keepBranch = false): { removed: boolean; detail: string } {
+export function removeWorktree(
+  w: Worktree,
+  keepBranch = false,
+): { removed: boolean; detail: string } {
   const deleteBranch = Boolean(w.branch) && !keepBranch
   // Never prune the repository; remove only this worktree's own record.
   // Already gone is a SUCCESS, not an error. A worktree deleted by hand, or one
@@ -281,7 +305,10 @@ export function removeWorktree(w: Worktree, keepBranch = false): { removed: bool
     if (deleteBranch) gitOk(['branch', '-D', w.branch], w.repoRoot)
     const branch = deleteBranch ? branchTip(w.repoRoot, w.branch) : null
     return branch !== null
-      ? { removed: false, detail: `git could not remove branch ${w.branch}; it remains at ${branch}` }
+      ? {
+          removed: false,
+          detail: `git could not remove branch ${w.branch}; it remains at ${branch}`,
+        }
       : { removed: true, detail: `${w.path} was already gone` }
   }
   // REPORTED, not swallowed. This function's own comment says a removal that
@@ -296,8 +323,11 @@ export function removeWorktree(w: Worktree, keepBranch = false): { removed: bool
   return (gone || !existsSync(w.path)) && (!deleteBranch || branch === null)
     ? { removed: true, detail: w.path }
     : branch !== null
-    ? { removed: false, detail: `git could not remove branch ${w.branch}; it remains at ${branch}` }
-    : { removed: false, detail: `git could not remove ${w.path}; it is still on disk` }
+      ? {
+          removed: false,
+          detail: `git could not remove branch ${w.branch}; it remains at ${branch}`,
+        }
+      : { removed: false, detail: `git could not remove ${w.path}; it is still on disk` }
 }
 
 /** Delete a local branch when it exists, reporting whether there was work to do. */
@@ -325,7 +355,9 @@ export type UnmergedBranch = { count: number; tip: string }
  * deleting the ref must not lose its cut commit after another ref is rewound.
  */
 export function unmergedBranch(
-  repoRoot: string, branch: string, baseCommit: string | null,
+  repoRoot: string,
+  branch: string,
+  baseCommit: string | null,
 ): UnmergedBranch | null {
   const ref = `refs/heads/${branch}`
   if (gitOk(['show-ref', '--verify', '--quiet', ref], repoRoot) === null) return null
@@ -339,7 +371,9 @@ export function unmergedBranch(
 
 /** Restore a protected branch, retaining git's refusal for an actionable cleanup report. */
 export function restoreBranch(
-  repoRoot: string, branch: string, tip: string,
+  repoRoot: string,
+  branch: string,
+  tip: string,
 ): { ok: true } | { ok: false; error: string } {
   const ref = `refs/heads/${branch}`
   const existing = gitOk(['rev-parse', '--verify', ref], repoRoot)
@@ -349,10 +383,12 @@ export function restoreBranch(
   }
   const zero = '0000000000000000000000000000000000000000'
   const p = Bun.spawnSync(['git', 'update-ref', ref, tip, zero], {
-    cwd: repoRoot, env: targetGitEnvironment(repoRoot), stdout: 'pipe', stderr: 'pipe',
+    cwd: repoRoot,
+    env: targetGitEnvironment(repoRoot),
+    stdout: 'pipe',
+    stderr: 'pipe',
   })
   return p.exitCode === 0
     ? { ok: true }
     : { ok: false, error: p.stderr.toString().trim() || `exit ${p.exitCode}` }
 }
-

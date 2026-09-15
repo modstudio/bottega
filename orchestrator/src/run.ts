@@ -1,73 +1,118 @@
-import { mkdirSync, readFileSync, existsSync, writeFileSync, } from 'node:fs'
-import { basename } from 'node:path'
 import { randomUUID } from 'node:crypto'
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
+import { basename } from 'node:path'
 import {
-  classify, notify, NEEDS_HUMAN, NEEDS_HUMAN_TITLE, FAILS_OVER, } from './failure.ts'
-import {
-  requireAgent, ensureLocalHealth, tryWake, minimumCliVersionRefusal, LOCAL_BASE_URL, } from './agents.ts'
-import {
-  job, isReaderJob, reclaimsTreeByDefault, resolveJobTimeoutMs, jobBoundInstruction, type Job, } from './jobs.ts'
-import { pick } from './route.ts'
-import { gitContext } from './git-environment.ts'
-import {
-  canonSourceFor, canonSourceInstruction, effectiveMcpRequest, mcpAttachRefusal, mcpRequestFromStored, requestedMcpMode, storedMcpRequest, type McpRequest, probeRequestedMcp, } from './mcp-preflight.ts'
-import { preflight } from './dispatch-preflight.ts'
-import {
-  implicitReviewCoverageBase, resolveReviewTarget, } from './review-target.ts'
-import { db, nowIso, sessionId, writableDb, enableSchemaReload } from './db.ts'; import { resolveRootFromLastTurn } from './run-liveness.ts'; import { teardownTerminalRunResources } from './resource-ownership.ts'
-import { toolFor } from './worktree-preflight.ts'; import type { Changes } from './worktree-remove.ts'
-import { resolveBase, resolveReadOnlyBase } from './worktree-caller.ts'
-import { prepareSharedRefGuard, assertSharedRefGuardOutsideWritableRoots, workerSharedGitRoots } from './ref-guard.ts'; import type { Worktree } from './worktree-types.ts'
-import { prepareWorktreeObjects, worktreeGitDir, type WorktreeObjectEnvironment } from './git-environment.ts'
-import { checkoutWatchSet } from './checkout-identity.ts'
-import { recipeNotes } from './recipe.ts'
-import {
-  workerPreamble, packResumePrompt, READONLY_PREAMBLE, NO_REPO_PREAMBLE,
-  replyFileInstruction,
-  REVIEW_SEVERITY_INSTRUCTION,
-  resolveReplyDialect,
-  realQuestions,
-  type CanonSource, type WorkerReply,
-} from './contract.ts'
-import {
-  CALIBRATION_SUFFIX_RESERVE_BYTES, calibrationLine, reviewCalibration,
-} from './review-calibration.ts'
-import { projectAt, projectByName, stackAt } from './projects.ts'
-import { compilePack, recordPack } from './canon.ts'
-import { resolveBranchRef } from './projects.ts'
-import { resolveLens } from './lenses.ts'
-import { TRUNCATED_TRANSCRIPT_BYTES } from './result-output.ts'
-import { prepareSandboxHome, resetSandbox, sandboxLaunchArgv, selectReadonlySandbox } from './sandbox.ts'
-import {
-  freezeCheckouts,
-  type ConfinementEvent, type FreezeFailure,
-} from './confinement.ts'
-import {
-  mcpCallEvidence, mcpConfigAllowlist, namesSeenAt, probeMcpServer, readMcpConfig,
-  storedMcpProbe, wrongProjectReason,
-} from './mcp-probe.ts'
+  ensureLocalHealth,
+  LOCAL_BASE_URL,
+  minimumCliVersionRefusal,
+  requireAgent,
+  tryWake,
+} from './agents.ts'
 import type { AskLoopback } from './ask.ts'
-import {
-  resolveTransportName, assertAcpAllowed, assertAcpReady,
-  selectAgentForTransport, isTestTransportInstalled,
-  type TransportName,
-} from './transport.ts'
+import { compilePack, recordPack } from './canon.ts'
+import { checkoutWatchSet } from './checkout-identity.ts'
+import { reclaimTerminalTree } from './close-out.ts'
 import { codexMcpSetupHeader, codexProjectServersForRun } from './codex-mcp-scope.ts'
+import { type ConfinementEvent, type FreezeFailure, freezeCheckouts } from './confinement.ts'
+import {
+  type CanonSource,
+  NO_REPO_PREAMBLE,
+  packResumePrompt,
+  READONLY_PREAMBLE,
+  REVIEW_SEVERITY_INSTRUCTION,
+  type realQuestions,
+  replyFileInstruction,
+  resolveReplyDialect,
+  type WorkerReply,
+  workerPreamble,
+} from './contract.ts'
+import { db, enableSchemaReload, nowIso, sessionId, writableDb } from './db.ts'
+import { preflight } from './dispatch-preflight.ts'
 import { assessEvidencePrompt } from './evidence.ts'
 import {
-  chainTransport, decideFailover, failoverAttempts, failoverRefusalReason, failoverSuccessorAgent,
+  chainTransport,
+  decideFailover,
+  failoverAttempts,
+  failoverRefusalReason,
+  failoverSuccessorAgent,
   MAX_FAILOVER_ATTEMPTS,
 } from './failover.ts'
+import { type classify, FAILS_OVER, NEEDS_HUMAN, NEEDS_HUMAN_TITLE, notify } from './failure.ts'
 import {
-  bindSignals, childEnv, sha, terminateRunProcesses,
-} from './run-process.ts'
+  gitContext,
+  prepareWorktreeObjects,
+  type WorktreeObjectEnvironment,
+  worktreeGitDir,
+} from './git-environment.ts'
 import {
-  RUNS_DIR, pruneRuns, readDispatchState, runFilePaths,
-} from './run-artifacts.ts'
-import { reclaimTerminalTree } from './close-out.ts'
+  isReaderJob,
+  type Job,
+  job,
+  jobBoundInstruction,
+  reclaimsTreeByDefault,
+  resolveJobTimeoutMs,
+} from './jobs.ts'
+import { resolveLens } from './lenses.ts'
+import {
+  canonSourceFor,
+  canonSourceInstruction,
+  effectiveMcpRequest,
+  type McpRequest,
+  mcpAttachRefusal,
+  mcpRequestFromStored,
+  probeRequestedMcp,
+  requestedMcpMode,
+  storedMcpRequest,
+} from './mcp-preflight.ts'
+import {
+  mcpCallEvidence,
+  mcpConfigAllowlist,
+  namesSeenAt,
+  probeMcpServer,
+  readMcpConfig,
+  storedMcpProbe,
+  wrongProjectReason,
+} from './mcp-probe.ts'
+import { projectAt, projectByName, resolveBranchRef, stackAt } from './projects.ts'
+import { recipeNotes } from './recipe.ts'
+import {
+  assertSharedRefGuardOutsideWritableRoots,
+  prepareSharedRefGuard,
+  workerSharedGitRoots,
+} from './ref-guard.ts'
+import { teardownTerminalRunResources } from './resource-ownership.ts'
+import { TRUNCATED_TRANSCRIPT_BYTES } from './result-output.ts'
+import {
+  CALIBRATION_SUFFIX_RESERVE_BYTES,
+  calibrationLine,
+  reviewCalibration,
+} from './review-calibration.ts'
+import { implicitReviewCoverageBase, resolveReviewTarget } from './review-target.ts'
+import { pick } from './route.ts'
+import { pruneRuns, RUNS_DIR, readDispatchState, runFilePaths } from './run-artifacts.ts'
 import { claimRun } from './run-claim.ts'
 import { runLive } from './run-live.ts'
+import { resolveRootFromLastTurn } from './run-liveness.ts'
+import { bindSignals, childEnv, sha, terminateRunProcesses } from './run-process.ts'
 import { finishRun } from './run-terminal.ts'
+import {
+  prepareSandboxHome,
+  resetSandbox,
+  sandboxLaunchArgv,
+  selectReadonlySandbox,
+} from './sandbox.ts'
+import {
+  assertAcpAllowed,
+  assertAcpReady,
+  isTestTransportInstalled,
+  resolveTransportName,
+  selectAgentForTransport,
+  type TransportName,
+} from './transport.ts'
+import { resolveBase, resolveReadOnlyBase } from './worktree-caller.ts'
+import { toolFor } from './worktree-preflight.ts'
+import type { Changes } from './worktree-remove.ts'
+import type { Worktree } from './worktree-types.ts'
 
 export { TRUNCATED_TRANSCRIPT_BYTES }
 
@@ -97,7 +142,9 @@ export function gitObjectEnvironmentFor(
   requestedJob: Job,
   worktree: Worktree | null,
 ): WorktreeObjectEnvironment | undefined {
-  return agent === 'codex' && requestedJob.needs.readsRepo && worktree &&
+  return agent === 'codex' &&
+    requestedJob.needs.readsRepo &&
+    worktree &&
     !requestedJob.needs.writesRepo
     ? prepareWorktreeObjects(worktree.path)
     : undefined
@@ -117,16 +164,17 @@ function resolveRunTransport(opts: {
 export { resolveRootFromLastTurn }
 
 function appendFailoverRefusal(id: number, reason: string): void {
-  db().query(
-    `UPDATE run SET error=COALESCE(error || '\n', '') || ? WHERE id=?`,
-  ).run(`Failover refused: ${reason}`, id)
+  db()
+    .query(`UPDATE run SET error=COALESCE(error || '\n', '') || ? WHERE id=?`)
+    .run(`Failover refused: ${reason}`, id)
 }
 
-
-const CANON_SOURCE_PROMPT_RESERVE_BYTES = Math.max(
-  ...(['live database', 'mirror', 'unknown'] as CanonSource[])
-    .map((source) => Buffer.byteLength(canonSourceInstruction(source))),
-) + 2
+const CANON_SOURCE_PROMPT_RESERVE_BYTES =
+  Math.max(
+    ...(['live database', 'mirror', 'unknown'] as CanonSource[]).map((source) =>
+      Buffer.byteLength(canonSourceInstruction(source)),
+    ),
+  ) + 2
 
 /**
  * Which project a directory belongs to, ASKED rather than inferred.
@@ -159,8 +207,9 @@ export function repoOf(cwd: string): string | null {
  * same bytes the agent will receive.
  */
 export function packedResumePrompt(job: string, turnPrompt: string, parentId: number): string {
-  const root = db().query('SELECT prompt_path FROM run WHERE id=?').get(parentId) as
-    { prompt_path: string | null } | null
+  const root = db().query('SELECT prompt_path FROM run WHERE id=?').get(parentId) as {
+    prompt_path: string | null
+  } | null
   // A root whose prompt has aged out of runs/ (30 days) is still
   // resumable: the reminder is a courtesy to the worker, not a
   // precondition, and refusing here would strand the chain.
@@ -264,7 +313,8 @@ export async function run(opts: {
   writableDb()
   enableSchemaReload(() => {})
 
-  const requestedJob = job(opts.job), mcpRequest = effectiveMcpRequest(opts.mcp, requestedJob)
+  const requestedJob = job(opts.job),
+    mcpRequest = effectiveMcpRequest(opts.mcp, requestedJob)
   const inheritedDispatch = opts.resume ? readDispatchState(opts.resume.parent) : null
   const declaredDeliverables = opts.deliverables ?? inheritedDispatch?.deliverables ?? []
   const timeoutMinutes = opts.timeoutMinutes ?? inheritedDispatch?.timeoutMinutes ?? undefined
@@ -274,17 +324,23 @@ export async function run(opts: {
   const requestedTransport = resolveRunTransport(opts)
   const callerCwd = opts.cwd ?? process.cwd()
   const seed = preflight(
-    opts.job, callerCwd, opts.seed, opts.key, opts.base,
+    opts.job,
+    callerCwd,
+    opts.seed,
+    opts.key,
+    opts.base,
     opts.resume?.worktree != null,
     opts.reserveId !== undefined,
-    opts.lens, opts.resolvedReviewTarget ? undefined : opts.review, opts.carry, opts.repo,
+    opts.lens,
+    opts.resolvedReviewTarget ? undefined : opts.review,
+    opts.carry,
+    opts.repo,
   )
-  const reviewTarget = opts.resolvedReviewTarget ?? resolveReviewTarget(
-    opts.job, opts.cwd ?? process.cwd(), opts.review, opts.carry,
-  )
-  const implicitCoverageBase = !reviewTarget && requestedJob.findings
-    ? implicitReviewCoverageBase(callerCwd)
-    : null
+  const reviewTarget =
+    opts.resolvedReviewTarget ??
+    resolveReviewTarget(opts.job, opts.cwd ?? process.cwd(), opts.review, opts.carry)
+  const implicitCoverageBase =
+    !reviewTarget && requestedJob.findings ? implicitReviewCoverageBase(callerCwd) : null
   const coverageBase = reviewTarget?.base ?? implicitCoverageBase
   // Programmatic callers get the same ordering guarantee as the CLI: a bad
   // ref is refused before a run row or worktree exists.
@@ -294,9 +350,10 @@ export async function run(opts: {
       throw new Error('--base is only valid for the implement and fix jobs')
     }
   }
-  const readOnlyBase = repoJob && !writesJob && !opts.resume?.worktree
-    ? resolveReadOnlyBase(callerCwd, reviewTarget?.commit ?? opts.base ?? 'HEAD')
-    : null
+  const readOnlyBase =
+    repoJob && !writesJob && !opts.resume?.worktree
+      ? resolveReadOnlyBase(callerCwd, reviewTarget?.commit ?? opts.base ?? 'HEAD')
+      : null
   if (opts.base && readOnlyBase === null) resolveBase(callerCwd, opts.base)
   // REACHABILITY IS A ROUTING INPUT, not a run outcome, and this is the line
   // that makes it one. `available()` had only ever checked that an endpoint was
@@ -367,26 +424,25 @@ export async function run(opts: {
     const tool = toolFor(opts.cwd ?? process.cwd())
     if (!tool) return ''
     if (!writesJob && (!tool.readonly_create || tool.readonly_notes !== undefined)) {
-      const tree = tool.readonly_notes !== undefined
-        ? `This read-only run has the project's files at ${readOnlyBase}. ${tool.readonly_notes}`
-        : `This read-only run has the project's files at ${readOnlyBase} with NO provisioned ` +
-          `infrastructure (no databases, no generated env, no vendor tree).`
-      return `${tree} Do not treat a test suite that cannot start as a finding; ` +
+      const tree =
+        tool.readonly_notes !== undefined
+          ? `This read-only run has the project's files at ${readOnlyBase}. ${tool.readonly_notes}`
+          : `This read-only run has the project's files at ${readOnlyBase} with NO provisioned ` +
+            `infrastructure (no databases, no generated env, no vendor tree).`
+      return (
+        `${tree} Do not treat a test suite that cannot start as a finding; ` +
         `record what you could not run in could_not_verify.`
+      )
     }
-    const generated = tool.recipe
-      ? recipeNotes(tool.recipe, '<this worktree\'s database>', '')
-      : ''
+    const generated = tool.recipe ? recipeNotes(tool.recipe, "<this worktree's database>", '') : ''
     return [tool.notes ?? '', generated].filter(Boolean).join('\n\n')
   })()
   const originalPrompt = opts.prompt
   const resolvedDialect = resolveReplyDialect(requestedJob)
   const generatedSchema = resolvedDialect.schema
-  const replySchemaName = opts.schemaPath
-    ? basename(opts.schemaPath)
-    : resolvedDialect.schemaName
+  const replySchemaName = opts.schemaPath ? basename(opts.schemaPath) : resolvedDialect.schemaName
   const runProjectName = opts.repo ?? repoOf(callerCwd)
-  const runProjectId = runProjectName ? projectByName(runProjectName)?.id ?? null : null
+  const runProjectId = runProjectName ? (projectByName(runProjectName)?.id ?? null) : null
   let pack: ReturnType<typeof compilePack> | null = null
   if (!opts.resume) {
     try {
@@ -395,42 +451,69 @@ export async function run(opts: {
     } catch (cause) {
       const message = (cause as Error).message
       let failedId = opts.reserveId
-      if (failedId) db().query(
-        `UPDATE run SET status='failed', failure_kind='harness', error=? WHERE id=?`,
-      ).run(message, failedId)
-      else failedId = (db().query(
-        `INSERT INTO run (started_at,agent,job,repo,project_id,cwd,prompt_sha,spec_sha,prompt_bytes,prompt_head,
+      if (failedId)
+        db()
+          .query(`UPDATE run SET status='failed', failure_kind='harness', error=? WHERE id=?`)
+          .run(message, failedId)
+      else
+        failedId = (
+          db()
+            .query(
+              `INSERT INTO run (started_at,agent,job,repo,project_id,cwd,prompt_sha,spec_sha,prompt_bytes,prompt_head,
           status,session_id,failure_kind,error,docs_injected,mcp)
          VALUES (?,'(pending)',?,?,?,?,?,?,?,?,'failed',?,'harness',?,0,?) RETURNING id`,
-      ).get(nowIso(), opts.job, runProjectName, runProjectId, callerCwd, sha(originalPrompt), sha(originalPrompt),
-        Buffer.byteLength(originalPrompt), originalPrompt.slice(0, 200).replace(/\s+/g, ' '),
-        opts.ownerSession ?? sessionId(), message, storedMcpRequest(mcpRequest)) as { id: number }).id
-      throw Object.assign(new Error(`run ${failedId} could not start: ${message}`), { runId: failedId })
+            )
+            .get(
+              nowIso(),
+              opts.job,
+              runProjectName,
+              runProjectId,
+              callerCwd,
+              sha(originalPrompt),
+              sha(originalPrompt),
+              Buffer.byteLength(originalPrompt),
+              originalPrompt.slice(0, 200).replace(/\s+/g, ' '),
+              opts.ownerSession ?? sessionId(),
+              message,
+              storedMcpRequest(mcpRequest),
+            ) as { id: number }
+        ).id
+      throw Object.assign(new Error(`run ${failedId} could not start: ${message}`), {
+        runId: failedId,
+      })
     }
   }
   const docsSection = pack?.docs.length
     ? `WHAT THE OPERATOR WANTS YOU TO KNOW\n\n${pack.markdown}`
     : ''
-  let prompt = writesJob && (!opts.resume || opts.resume.fresh)
-    ? [
-        workerPreamble(opts.job),
-        infra ? `\nYOUR WORKTREE'S INFRASTRUCTURE\n\n${infra}` : '',
-        docsSection ? `\n${docsSection}` : '',
-        `\n---\n\nTHE SPEC\n\n${originalPrompt}`,
-      ].filter(Boolean).join('\n')
-    // A read-only worker gets a much shorter brief, and only on a first turn.
-    : opts.resume && !opts.resume.fresh
-      ? packedResumePrompt(opts.job, originalPrompt, opts.resume.parent)
-      : [repoJob ? READONLY_PREAMBLE : NO_REPO_PREAMBLE,
-          infra ? `YOUR WORKTREE'S INFRASTRUCTURE\n\n${infra}` : '',
-          docsSection, `---\n\n${originalPrompt}`]
-          .filter(Boolean).join('\n\n')
+  let prompt =
+    writesJob && (!opts.resume || opts.resume.fresh)
+      ? [
+          workerPreamble(opts.job),
+          infra ? `\nYOUR WORKTREE'S INFRASTRUCTURE\n\n${infra}` : '',
+          docsSection ? `\n${docsSection}` : '',
+          `\n---\n\nTHE SPEC\n\n${originalPrompt}`,
+        ]
+          .filter(Boolean)
+          .join('\n')
+      : // A read-only worker gets a much shorter brief, and only on a first turn.
+        opts.resume && !opts.resume.fresh
+        ? packedResumePrompt(opts.job, originalPrompt, opts.resume.parent)
+        : [
+            repoJob ? READONLY_PREAMBLE : NO_REPO_PREAMBLE,
+            infra ? `YOUR WORKTREE'S INFRASTRUCTURE\n\n${infra}` : '',
+            docsSection,
+            `---\n\n${originalPrompt}`,
+          ]
+            .filter(Boolean)
+            .join('\n\n')
 
   if (requestedJob.findings && (!opts.resume || opts.resume.fresh)) {
     prompt = `${REVIEW_SEVERITY_INSTRUCTION}\n\n${prompt}`
     const resolvedLens = resolveLens(opts.lens!, opts.repo ?? repoOf(callerCwd))
     if (resolvedLens) prompt += `\n\n${resolvedLens.body}`
-    else console.error(`lens ${opts.lens}: no catalogue row; dispatching the free-form lens unchanged`)
+    else
+      console.error(`lens ${opts.lens}: no catalogue row; dispatching the free-form lens unchanged`)
   }
   const evidencePrompt = assessEvidencePrompt({
     findingsJob: Boolean(requestedJob.findings),
@@ -452,19 +535,30 @@ export async function run(opts: {
   const { agent: name, reason } = opts.resume
     ? {
         agent: opts.resume.agent,
-        reason: `resumed run ${opts.resume.parent} (turn ${opts.resume.turn}); ` +
+        reason:
+          `resumed run ${opts.resume.parent} (turn ${opts.resume.turn}); ` +
           'repository path retargeting not applied because the turn is already bound to its worktree',
       }
-    // The STACK steers the route: an agent strong on PHP and weak on a Vue
-    // component is two different agents to a router, and only this tells them
-    // apart. Backs off to job-wide evidence until a stack cell has earned it.
-    : pick(opts.job, selectAgentForTransport(requestedTransport, opts.agent),
-           Buffer.byteLength(prompt) + (requestedJob.findings ? CALIBRATION_SUFFIX_RESERVE_BYTES : 0) +
-             (requiresCanonSource ? CANON_SOURCE_PROMPT_RESERVE_BYTES : 0),
-           true, stackAt(callerCwd),
-           { agents: opts.avoid, models: opts.distinctModels, model: opts.model,
-             noWaitCapacity: opts.noWaitCapacity },
-           opts.probe, opts.lens)
+    : // The STACK steers the route: an agent strong on PHP and weak on a Vue
+      // component is two different agents to a router, and only this tells them
+      // apart. Backs off to job-wide evidence until a stack cell has earned it.
+      pick(
+        opts.job,
+        selectAgentForTransport(requestedTransport, opts.agent),
+        Buffer.byteLength(prompt) +
+          (requestedJob.findings ? CALIBRATION_SUFFIX_RESERVE_BYTES : 0) +
+          (requiresCanonSource ? CANON_SOURCE_PROMPT_RESERVE_BYTES : 0),
+        true,
+        stackAt(callerCwd),
+        {
+          agents: opts.avoid,
+          models: opts.distinctModels,
+          model: opts.model,
+          noWaitCapacity: opts.noWaitCapacity,
+        },
+        opts.probe,
+        opts.lens,
+      )
   const a = requireAgent(name)
   let boundMs: number
   try {
@@ -483,11 +577,13 @@ export async function run(opts: {
   if (!opts.resume) {
     const boundLine = `\n\n${jobBoundInstruction(requestedJob, boundMs)}`
     const split = prompt.lastIndexOf('\n---\n')
-    prompt = split >= 0 ? prompt.slice(0, split) + boundLine + prompt.slice(split) : prompt + boundLine
+    prompt =
+      split >= 0 ? prompt.slice(0, split) + boundLine + prompt.slice(split) : prompt + boundLine
   }
-  const transportName = opts.resume || opts.transport !== undefined || process.env.ORCH_TRANSPORT
-    ? requestedTransport
-    : a.defaultTransport
+  const transportName =
+    opts.resume || opts.transport !== undefined || process.env.ORCH_TRANSPORT
+      ? requestedTransport
+      : a.defaultTransport
   if (transportName === 'acp') {
     try {
       assertAcpAllowed(opts.job, name, a)
@@ -549,9 +645,8 @@ export async function run(opts: {
   // Minted before the spawn when the agent lets us choose, so the resume handle
   // exists even for a worker that dies mid-turn. codex and qwen name their own
   // and are read back afterwards instead.
-  const vendorSession: string | null = opts.resume && !opts.resume.fresh
-    ? opts.resume.session ?? null
-    : a.mintSession?.() ?? null
+  const vendorSession: string | null =
+    opts.resume && !opts.resume.fresh ? (opts.resume.session ?? null) : (a.mintSession?.() ?? null)
 
   const runsDir = RUNS_DIR
   mkdirSync(runsDir, { recursive: true })
@@ -578,18 +673,61 @@ export async function run(opts: {
   const stamp = paths.output.slice(runsDir.length + 1, -4)
   const outPath = paths.output
   let {
-    promptPath, originalSchemaPath, textReplyContract, schemaPath, started, launchKey,
-    runToken, claim, keepTree, scratchDir, worktree, changes,
-    isolatedCwd, removeIsolatedCwd, provisionedMcpConfig, retargetDiagnostic,
-    mcpSetupHeader, mcpTrustGranted, grokMcpEnvironment, sandboxRunDir, cwd,
-    prompt: claimedBoundPrompt, mcpConnection: claimedMcpConnection,
+    promptPath,
+    originalSchemaPath,
+    textReplyContract,
+    schemaPath,
+    started,
+    launchKey,
+    runToken,
+    claim,
+    keepTree,
+    scratchDir,
+    worktree,
+    changes,
+    isolatedCwd,
+    removeIsolatedCwd,
+    provisionedMcpConfig,
+    retargetDiagnostic,
+    mcpSetupHeader,
+    mcpTrustGranted,
+    grokMcpEnvironment,
+    sandboxRunDir,
+    cwd,
+    prompt: claimedBoundPrompt,
+    mcpConnection: claimedMcpConnection,
     usingMcp: claimedUsingMcp,
   } = await claimRun({
-    opts, runsDir, paths, stamp, name, generatedSchema, originalPrompt,
-    prompt, callerCwd, seed, writesJob, repoJob, runProjectName, runProjectId,
-    reason, vendorSession, pack, mcpRequest, transportName, a, mcpConnection,
-    mcpMode, declaredDeliverables, timeoutMinutes, forbidsRepo, reviewTarget,
-    coverageBase, readOnlyBase, deferredCwdMcpPreflight, usingMcp,
+    opts,
+    runsDir,
+    paths,
+    stamp,
+    name,
+    generatedSchema,
+    originalPrompt,
+    prompt,
+    callerCwd,
+    seed,
+    writesJob,
+    repoJob,
+    runProjectName,
+    runProjectId,
+    reason,
+    vendorSession,
+    pack,
+    mcpRequest,
+    transportName,
+    a,
+    mcpConnection,
+    mcpMode,
+    declaredDeliverables,
+    timeoutMinutes,
+    forbidsRepo,
+    reviewTarget,
+    coverageBase,
+    readOnlyBase,
+    deferredCwdMcpPreflight,
+    usingMcp,
   })
   prompt = claimedBoundPrompt
   mcpConnection = claimedMcpConnection
@@ -618,9 +756,20 @@ export async function run(opts: {
     assertSharedRefGuardOutsideWritableRoots(gitConfigEnvironment.GIT_CONFIG_VALUE_0, writableRoots)
   }
   const mcpConfig = readMcpConfig(cwd)
-  const codexMcpScope = codexProjectServersForRun(name, transportName, usingMcp, mcpConfig, projectAt(callerCwd), cwd)
+  const codexMcpScope = codexProjectServersForRun(
+    name,
+    transportName,
+    usingMcp,
+    mcpConfig,
+    projectAt(callerCwd),
+    cwd,
+  )
   mcpSetupHeader = codexMcpSetupHeader(mcpSetupHeader, codexMcpScope)
-  const mcpServerName = mcpConnection?.server ?? projectAt(callerCwd)?.settings.mcpServer ?? projectAt(callerCwd)?.name ?? null
+  const mcpServerName =
+    mcpConnection?.server ??
+    projectAt(callerCwd)?.settings.mcpServer ??
+    projectAt(callerCwd)?.name ??
+    null
   const mcpAllowlist = mcpConfigAllowlist(mcpConfig)
   let sandboxSelection: ReturnType<typeof selectReadonlySandbox>
   try {
@@ -636,23 +785,25 @@ export async function run(opts: {
       override: process.env.ORCH_SANDBOX,
       path: process.env.PATH,
       localBaseUrl: LOCAL_BASE_URL,
-      mcp: Boolean(mcpMode), mcpAllowlist: mcpMode ? mcpAllowlist : [],
+      mcp: Boolean(mcpMode),
+      mcpAllowlist: mcpMode ? mcpAllowlist : [],
     })
   } catch (e) {
     const why = String((e as Error)?.message ?? e)
-    db().query(
-      `UPDATE run SET status='failed', error=?, failure_kind='harness', latency_ms=? WHERE id=?`,
-    ).run(why, Date.now() - started, claim.id)
+    db()
+      .query(
+        `UPDATE run SET status='failed', error=?, failure_kind='harness', latency_ms=? WHERE id=?`,
+      )
+      .run(why, Date.now() - started, claim.id)
     teardownTerminalRunResources(db(), claim.id)
     throw Object.assign(new Error(`run ${claim.id} could not start: ${why}`), { runId: claim.id })
   }
-  const sandboxEnvironment = sandboxSelection.profile
-    ? prepareSandboxHome(name, sandboxRunDir)
-    : {}
+  const sandboxEnvironment = sandboxSelection.profile ? prepareSandboxHome(name, sandboxRunDir) : {}
   const sandboxRouteReason = sandboxSelection.reason
     ? `${reason}; sandbox host: ${sandboxSelection.reason}`
     : reason
-  db().query('UPDATE run SET sandbox=?, route_reason=? WHERE id=?')
+  db()
+    .query('UPDATE run SET sandbox=?, route_reason=? WHERE id=?')
     .run(sandboxSelection.sandbox, sandboxRouteReason, claim.id)
   if (sandboxSelection.reason) {
     const header = `sandbox host: ${sandboxSelection.reason}`
@@ -665,7 +816,8 @@ export async function run(opts: {
     if (probeConfig?.url || probeConfig?.command) {
       try {
         const projectSettings = projectAt(callerCwd)?.settings as
-          { mcp?: { probe_tool?: string } } | undefined
+          | { mcp?: { probe_tool?: string } }
+          | undefined
         const probeTool = projectSettings?.mcp?.probe_tool ?? null
         const wrap = sandboxSelection.profile
           ? (bin: string, args: string[]) => sandboxLaunchArgv(sandboxSelection.profile!, bin, args)
@@ -674,9 +826,17 @@ export async function run(opts: {
           server: mcpServerName,
           config: probeConfig,
           cwd,
-          env: childEnv(a, claim.id, runToken, {
-            ...(gitConfigEnvironment ?? {}), ...sandboxEnvironment, ...grokMcpEnvironment,
-          }, repoJob),
+          env: childEnv(
+            a,
+            claim.id,
+            runToken,
+            {
+              ...(gitConfigEnvironment ?? {}),
+              ...sandboxEnvironment,
+              ...grokMcpEnvironment,
+            },
+            repoJob,
+          ),
           probeTool,
           wrap,
         })
@@ -684,41 +844,52 @@ export async function run(opts: {
         // wrong-project question is already answered; the doctor path asks it.
         const recorded = probe
         const callEvidence = mcpCallEvidence(recorded)
-        db().query(
-          'UPDATE run SET mcp_probe=?, mcp_connected=?, mcp_error=? WHERE id=?',
-        ).run(storedMcpProbe(recorded), callEvidence.connected, callEvidence.error, claim.id)
+        db()
+          .query('UPDATE run SET mcp_probe=?, mcp_connected=?, mcp_error=? WHERE id=?')
+          .run(storedMcpProbe(recorded), callEvidence.connected, callEvidence.error, claim.id)
         if (callEvidence.connected !== 1 && mcpMode === 'require') {
-          const why = callEvidence.connected === 0
-            ? `MCP tool call failed on ${mcpServerName}: ${callEvidence.error}`
-            : `mcp unverifiable on ${name}: ${callEvidence.error}` +
-              `\ninvariant: --mcp means a proven tool call, never a handshake` +
-              `\ncleared by: orch project set ${projectAt(callerCwd)?.name ?? '<project>'} --settings '{"mcp":{"probe_tool":"<a cheap read tool on ${mcpServerName}>"}}'`
-          db().query(
-            `UPDATE run SET status='failed', error=?, failure_kind='mcp_unverified', latency_ms=? WHERE id=?`,
-          ).run(why, Date.now() - started, claim.id)
+          const why =
+            callEvidence.connected === 0
+              ? `MCP tool call failed on ${mcpServerName}: ${callEvidence.error}`
+              : `mcp unverifiable on ${name}: ${callEvidence.error}` +
+                `\ninvariant: --mcp means a proven tool call, never a handshake` +
+                `\ncleared by: orch project set ${projectAt(callerCwd)?.name ?? '<project>'} --settings '{"mcp":{"probe_tool":"<a cheap read tool on ${mcpServerName}>"}}'`
+          db()
+            .query(
+              `UPDATE run SET status='failed', error=?, failure_kind='mcp_unverified', latency_ms=? WHERE id=?`,
+            )
+            .run(why, Date.now() - started, claim.id)
           await resetSandbox()
           teardownTerminalRunResources(db(), claim.id)
-          throw Object.assign(new Error(`run ${claim.id} could not start: ${why}`), { runId: claim.id })
+          throw Object.assign(new Error(`run ${claim.id} could not start: ${why}`), {
+            runId: claim.id,
+          })
         }
         if (!recorded.ok) {
           mcpConnection = {
-            server: mcpServerName, connected: false, error: recorded.error,
+            server: mcpServerName,
+            connected: false,
+            error: recorded.error,
             namesSeen: recorded.namesSeen,
           }
-          db().query(
-            `UPDATE run SET mcp_connected=0, mcp_error=? WHERE id=?`,
-          ).run(recorded.error, claim.id)
+          db()
+            .query(`UPDATE run SET mcp_connected=0, mcp_error=? WHERE id=?`)
+            .run(recorded.error, claim.id)
           usingMcp = false
         }
       } catch (error) {
         if ((error as { runId?: number }).runId === claim.id) throw error
         const why = String((error as Error)?.message ?? error)
-        db().query(
-          `UPDATE run SET status='failed', error=?, failure_kind='harness', latency_ms=? WHERE id=?`,
-        ).run(why, Date.now() - started, claim.id)
+        db()
+          .query(
+            `UPDATE run SET status='failed', error=?, failure_kind='harness', latency_ms=? WHERE id=?`,
+          )
+          .run(why, Date.now() - started, claim.id)
         await resetSandbox()
         teardownTerminalRunResources(db(), claim.id)
-        throw Object.assign(new Error(`run ${claim.id} could not start: ${why}`), { runId: claim.id })
+        throw Object.assign(new Error(`run ${claim.id} could not start: ${why}`), {
+          runId: claim.id,
+        })
       }
     } else {
       const namesSeen = namesSeenAt(cwd)
@@ -734,18 +905,25 @@ export async function run(opts: {
           namesSeen,
         }
         mcpConnection = {
-          server: mcpServerName, connected: false, error: mismatched, namesSeen,
+          server: mcpServerName,
+          connected: false,
+          error: mismatched,
+          namesSeen,
         }
-        db().query(
-          'UPDATE run SET mcp_connected=0, mcp_error=?, mcp_probe=? WHERE id=?',
-        ).run(mismatched, storedMcpProbe(recorded), claim.id)
+        db()
+          .query('UPDATE run SET mcp_connected=0, mcp_error=?, mcp_probe=? WHERE id=?')
+          .run(mismatched, storedMcpProbe(recorded), claim.id)
         if (mcpMode === 'require') {
           const why = mcpAttachRefusal(mcpConnection)!
-          db().query(
-            `UPDATE run SET status='failed', error=?, failure_kind='harness', latency_ms=? WHERE id=?`,
-          ).run(why, Date.now() - started, claim.id)
+          db()
+            .query(
+              `UPDATE run SET status='failed', error=?, failure_kind='harness', latency_ms=? WHERE id=?`,
+            )
+            .run(why, Date.now() - started, claim.id)
           teardownTerminalRunResources(db(), claim.id)
-          throw Object.assign(new Error(`run ${claim.id} could not start: ${why}`), { runId: claim.id })
+          throw Object.assign(new Error(`run ${claim.id} could not start: ${why}`), {
+            runId: claim.id,
+          })
         }
         mcpConnection = { ...mcpConnection, error: `mirror: ${mismatched}` }
         usingMcp = false
@@ -757,7 +935,8 @@ export async function run(opts: {
   if (requiresCanonSource) {
     prompt += `\n\n${canonSourceInstruction(canonSourceFor(true, mcpConnection, repoJob))}`
     writeFileSync(promptPath.replace(/\.prompt\.txt$/, '.bound.txt'), prompt)
-    db().query('UPDATE run SET prompt_sha=?, prompt_bytes=? WHERE id=?')
+    db()
+      .query('UPDATE run SET prompt_sha=?, prompt_bytes=? WHERE id=?')
       .run(sha(prompt), Buffer.byteLength(prompt), claim.id)
   }
 
@@ -800,62 +979,167 @@ export async function run(opts: {
   // wrote it: an architect or concurrent landing can change a watched checkout.
   const callerProject = projectAt(callerCwd)
   const callerCheckout = callerProject
-    ? gitContext(callerCwd, 'rev-parse', '--show-toplevel') ?? callerCwd
+    ? (gitContext(callerCwd, 'rev-parse', '--show-toplevel') ?? callerCwd)
     : null
-  const callerWatch = callerCheckout && callerCheckout !== isolatedCwd
-    ? [{ project: callerProject!.name, path: callerCheckout }]
-    : []
+  const callerWatch =
+    callerCheckout && callerCheckout !== isolatedCwd
+      ? [{ project: callerProject!.name, path: callerCheckout }]
+      : []
   const candidates = checkoutWatchSet(
-    callerWatch, worktree?.path, opts.repo ?? callerProject?.name ?? null,
+    callerWatch,
+    worktree?.path,
+    opts.repo ?? callerProject?.name ?? null,
   )
   const beforeFreeze = freezeCheckouts(candidates.watched)
   const skipped = [...candidates.failures, ...beforeFreeze.failures]
   // A detached child's stderr reaches nobody, so the skip also rides the output
   // header that `orch result` prints (lens run 2290): the register is stale and
   // the project unwatched on every later run until somebody reads this.
-  const skipLines = skipped.map((failure) =>
-    `confinement watch skipped ${failure.project} at ${failure.path}: ${failure.error}; ` +
-    'fix the register with orch project set')
+  const skipLines = skipped.map(
+    (failure) =>
+      `confinement watch skipped ${failure.project} at ${failure.path}: ${failure.error}; ` +
+      'fix the register with orch project set',
+  )
   for (const line of skipLines) console.error(line)
   if (skipLines.length) {
-    mcpSetupHeader = mcpSetupHeader ? `${mcpSetupHeader}\n${skipLines.join('\n')}` : skipLines.join('\n')
+    mcpSetupHeader = mcpSetupHeader
+      ? `${mcpSetupHeader}\n${skipLines.join('\n')}`
+      : skipLines.join('\n')
   }
   frozenBefore = beforeFreeze.snapshots
   const watchedCheckouts = frozenBefore.map(({ project, path, expectedHead }) => ({
-    project, path, expectedHead: expectedHead ?? undefined,
+    project,
+    path,
+    expectedHead: expectedHead ?? undefined,
   }))
 
   try {
-    ({
-      proc, timer, checkpointTimer, idleTimer,
-      idleUnkillable, idleTreePids, idleTreePgid, exitCode, output, vendorTokens,
-      costUsd, resolvedSession, effectiveModel,
-      contract, contractObjects, acceptedQuestions, status, error, failureKind,
-      artifactsPersisted, preConfinement, vendorTerminatedStream, confinementFailures,
-      confinementEvent, frozenBefore, askLoopback, mcpSetupHeader,
+    ;({
+      proc,
+      timer,
+      checkpointTimer,
+      idleTimer,
+      idleUnkillable,
+      idleTreePids,
+      idleTreePgid,
+      exitCode,
+      output,
+      vendorTokens,
+      costUsd,
+      resolvedSession,
+      effectiveModel,
+      contract,
+      contractObjects,
+      acceptedQuestions,
+      status,
+      error,
+      failureKind,
+      artifactsPersisted,
+      preConfinement,
+      vendorTerminatedStream,
+      confinementFailures,
+      confinementEvent,
+      frozenBefore,
+      askLoopback,
+      mcpSetupHeader,
     } = await runLive({
-      repoJob, name, worktree, claim, provisionedMcpConfig, reviewTarget,
-      sandboxSelection, runToken, transportName, a, cwd, prompt, outPath,
-      vendorSession, schemaPath, originalSchemaPath, opts, sandboxEnvironment,
-      writes, usingMcp, mcpServerName, codexMcpScope, mcpTrustGranted,
-      writableRoots, gitObjectEnvironment, gitConfigEnvironment, sandboxRunDir,
-      grokMcpEnvironment, scratchDir, writesJob, launchKey, requestedJob,
-      boundMs, started, textReplyContract, resolvedDialect, mcpSetupHeader,
+      repoJob,
+      name,
+      worktree,
+      claim,
+      provisionedMcpConfig,
+      reviewTarget,
+      sandboxSelection,
+      runToken,
+      transportName,
+      a,
+      cwd,
+      prompt,
+      outPath,
+      vendorSession,
+      schemaPath,
+      originalSchemaPath,
+      opts,
+      sandboxEnvironment,
+      writes,
+      usingMcp,
+      mcpServerName,
+      codexMcpScope,
+      mcpTrustGranted,
+      writableRoots,
+      gitObjectEnvironment,
+      gitConfigEnvironment,
+      sandboxRunDir,
+      grokMcpEnvironment,
+      scratchDir,
+      writesJob,
+      launchKey,
+      requestedJob,
+      boundMs,
+      started,
+      textReplyContract,
+      resolvedDialect,
+      mcpSetupHeader,
     }))
   } finally {
-    ({
-      status, error, failureKind, changes, output, acceptedQuestions,
-      confinementEvent, preConfinement, artifactsPersisted,
+    ;({
+      status,
+      error,
+      failureKind,
+      changes,
+      output,
+      acceptedQuestions,
+      confinementEvent,
+      preConfinement,
+      artifactsPersisted,
     } = await finishRun({
-      timer, checkpointTimer, idleTimer, proc, askLoopback, claim, writesJob,
-      worktree, launchKey, failureKind, scratchDir, gitConfigEnvironment, opts,
-      watchedCheckouts, confinementFailures, frozenBefore, removeIsolatedCwd,
-      changes, provisionedMcpConfig, started, retargetDiagnostic, error, contract,
-      status, contractObjects, vendorTerminatedStream, acceptedQuestions,
-      requestedJob, output, confinementEvent, resolvedDialect, runProjectName,
-      mcpConnection, mcpMode, declaredDeliverables, mcpSetupHeader, outPath,
-      preConfinement, callerCwd, promptPath, exitCode, vendorTokens, costUsd,
-      effectiveModel, resolvedSession, name, artifactsPersisted,
+      timer,
+      checkpointTimer,
+      idleTimer,
+      proc,
+      askLoopback,
+      claim,
+      writesJob,
+      worktree,
+      launchKey,
+      failureKind,
+      scratchDir,
+      gitConfigEnvironment,
+      opts,
+      watchedCheckouts,
+      confinementFailures,
+      frozenBefore,
+      removeIsolatedCwd,
+      changes,
+      provisionedMcpConfig,
+      started,
+      retargetDiagnostic,
+      error,
+      contract,
+      status,
+      contractObjects,
+      vendorTerminatedStream,
+      acceptedQuestions,
+      requestedJob,
+      output,
+      confinementEvent,
+      resolvedDialect,
+      runProjectName,
+      mcpConnection,
+      mcpMode,
+      declaredDeliverables,
+      mcpSetupHeader,
+      outPath,
+      preConfinement,
+      callerCwd,
+      promptPath,
+      exitCode,
+      vendorTokens,
+      costUsd,
+      effectiveModel,
+      resolvedSession,
+      name,
+      artifactsPersisted,
     }))
   }
 
@@ -882,25 +1166,44 @@ export async function run(opts: {
 
     const attempts = failoverAttempts(claim.id)
     const tried = attempts.map((attempt) => attempt.agent)
-    const first = db().query(
-      `SELECT prompt_path, launch_cwd, launch_seed, launch_key, launch_base,
+    const first = db()
+      .query(
+        `SELECT prompt_path, launch_cwd, launch_seed, launch_key, launch_base,
               no_failover, session_id, mcp, mcp_error, schema_path, probe, label, lens, repo,
               base_commit, head_commit, review_ref, transport
          FROM run WHERE id=?`,
-    ).get(attempts[0]!.id) as {
-      prompt_path: string | null; launch_cwd: string | null; launch_seed: string | null
-      launch_key: string | null; launch_base: string | null; no_failover: number
-      session_id: string | null; mcp: number | null; mcp_error: string | null; schema_path: string | null
-      probe: number; label: string | null; lens: string | null; repo: string | null
-      base_commit: string | null; head_commit: string | null; review_ref: string | null
+      )
+      .get(attempts[0]!.id) as {
+      prompt_path: string | null
+      launch_cwd: string | null
+      launch_seed: string | null
+      launch_key: string | null
+      launch_base: string | null
+      no_failover: number
+      session_id: string | null
+      mcp: number | null
+      mcp_error: string | null
+      schema_path: string | null
+      probe: number
+      label: string | null
+      lens: string | null
+      repo: string | null
+      base_commit: string | null
+      head_commit: string | null
+      review_ref: string | null
       transport: TransportName | null
     }
     const treeName = worktree?.path ?? '(none — read-only job)'
     const failoverFacts = {
-      status, failureKind, failoverKinds: FAILS_OVER,
+      status,
+      failureKind,
+      failoverKinds: FAILS_OVER,
       noFailover: Boolean(first.no_failover || opts.noFailover),
-      writesJob, changes, worktree: treeName,
-      attemptCount: attempts.length, maxAttempts: MAX_FAILOVER_ATTEMPTS,
+      writesJob,
+      changes,
+      worktree: treeName,
+      attemptCount: attempts.length,
+      maxAttempts: MAX_FAILOVER_ATTEMPTS,
       agentsTried: tried,
       originalPromptAvailable: Boolean(first.prompt_path && existsSync(first.prompt_path)),
     }
@@ -911,8 +1214,11 @@ export async function run(opts: {
       try {
         const originalPrompt = readFileSync(first.prompt_path!, 'utf8')
         const selected = pick(
-          opts.job, undefined,
-          Buffer.byteLength(originalPrompt) + (requestedJob.findings ? CALIBRATION_SUFFIX_RESERVE_BYTES : 0), true,
+          opts.job,
+          undefined,
+          Buffer.byteLength(originalPrompt) +
+            (requestedJob.findings ? CALIBRATION_SUFFIX_RESERVE_BYTES : 0),
+          true,
           stackAt(first.launch_cwd ?? callerCwd),
           { agents: [...new Set([...(opts.avoid ?? []), ...tried])] },
           false,
@@ -923,7 +1229,7 @@ export async function run(opts: {
         )
         console.error(
           `orch: run ${claim.id} failed over after ${name} ${failureKind}; ` +
-          `starting the same prompt on ${successorAgent}`,
+            `starting the same prompt on ${successorAgent}`,
         )
         // The recursive successor has its own terminalisation path. Reclaim
         // this completed attempt before returning into it, otherwise this
@@ -935,8 +1241,8 @@ export async function run(opts: {
           job: opts.job,
           prompt: originalPrompt,
           agent: successorAgent,
-          transport: first.transport === 'cli' || first.transport === 'acp'
-            ? first.transport : undefined,
+          transport:
+            first.transport === 'cli' || first.transport === 'acp' ? first.transport : undefined,
           schemaPath: first.schema_path ?? undefined,
           mcp: mcpRequestFromStored(first.mcp, first.mcp_error),
           probe: !!first.probe,
@@ -960,27 +1266,40 @@ export async function run(opts: {
           deliverables: declaredDeliverables,
           timeoutMinutes,
           keepTree,
-          resolvedReviewTarget: first.review_ref && first.base_commit && first.head_commit
-            ? {
-                branch: resolveBranchRef(first.review_ref).branch,
-                commit: first.head_commit,
-                base: first.base_commit,
-              }
-            : undefined,
+          resolvedReviewTarget:
+            first.review_ref && first.base_commit && first.head_commit
+              ? {
+                  branch: resolveBranchRef(first.review_ref).branch,
+                  commit: first.head_commit,
+                  base: first.base_commit,
+                }
+              : undefined,
         })
       } catch (e) {
         const successor = db().query('SELECT id FROM run WHERE retry_of=?').get(claim.id)
         // Once a successor exists its own terminal row is the explanation.
         if (successor) throw e
-        appendFailoverRefusal(claim.id, failoverRefusalReason(decideFailover({
-          ...failoverFacts, selectionError: String((e as Error)?.message ?? e),
-        }))!)
+        appendFailoverRefusal(
+          claim.id,
+          failoverRefusalReason(
+            decideFailover({
+              ...failoverFacts,
+              selectionError: String((e as Error)?.message ?? e),
+            }),
+          )!,
+        )
       }
     }
   }
 
-  if (artifactsPersisted && worktree && reclaimsTreeByDefault(opts.job) &&
-      status !== 'asking' && status !== 'running' && status !== 'stopped') {
+  if (
+    artifactsPersisted &&
+    worktree &&
+    reclaimsTreeByDefault(opts.job) &&
+    status !== 'asking' &&
+    status !== 'running' &&
+    status !== 'stopped'
+  ) {
     reclaimTerminalTree(claim.id, worktree, idleTreePids, idleTreePgid)
   }
 
@@ -988,7 +1307,18 @@ export async function run(opts: {
     throw Object.assign(new Error(`run ${claim.id} failed: ${error}`), { runId: claim.id })
   }
   return {
-    id: claim.id, agent: name, reason, output, latencyMs: Date.now() - started, exitCode,
-    vendorTokens, costUsd, outPath, worktree, changes, contract, status,
+    id: claim.id,
+    agent: name,
+    reason,
+    output,
+    latencyMs: Date.now() - started,
+    exitCode,
+    vendorTokens,
+    costUsd,
+    outPath,
+    worktree,
+    changes,
+    contract,
+    status,
   }
 }

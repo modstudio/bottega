@@ -11,9 +11,14 @@ export default defineConfig({
   plugins: [tanstackRouter({ target: 'react', autoCodeSplitting: true }), react(), tailwindcss()],
   resolve: { alias: { '@': path.resolve(__dirname, './src') } },
   server: {
-    proxy: Object.fromEntries(['/trpc', '/api'].map((route) => [route, {
-      target: `http://127.0.0.1:${hubPort}`,
-      changeOrigin: true,
-    }])),
+    proxy: Object.fromEntries(
+      ['/trpc', '/api'].map((route) => [
+        route,
+        {
+          target: `http://127.0.0.1:${hubPort}`,
+          changeOrigin: true,
+        },
+      ]),
+    ),
   },
 })

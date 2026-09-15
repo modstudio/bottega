@@ -20,7 +20,9 @@ for (const rule of rules) {
 }
 
 if (violations.length) {
-  console.error(`check-inversion-boundaries: ${violations.length} violation(s)\n${violations.join('\n')}`)
+  console.error(
+    `check-inversion-boundaries: ${violations.length} violation(s)\n${violations.join('\n')}`,
+  )
   process.exit(1)
 }
 console.log('check-inversion-boundaries: ok')

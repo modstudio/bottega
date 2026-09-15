@@ -7,7 +7,9 @@ export type ImportScan = {
 }
 
 function staticString(
-  node: ts.Expression, constants: Map<string, ts.Expression>, seen = new Set<string>(),
+  node: ts.Expression,
+  constants: Map<string, ts.Expression>,
+  seen = new Set<string>(),
 ): string | null {
   if (ts.isStringLiteral(node) || ts.isNoSubstitutionTemplateLiteral(node)) return node.text
   if (ts.isIdentifier(node) && constants.has(node.text) && !seen.has(node.text)) {
@@ -28,12 +30,14 @@ function staticString(
     }
     return value
   }
-  if (ts.isCallExpression(node)
-      && ts.isPropertyAccessExpression(node.expression)
-      && node.expression.name.text === 'resolve'
-      && ts.isMetaProperty(node.expression.expression)
-      && node.expression.expression.keywordToken === ts.SyntaxKind.ImportKeyword
-      && node.arguments.length === 1) {
+  if (
+    ts.isCallExpression(node) &&
+    ts.isPropertyAccessExpression(node.expression) &&
+    node.expression.name.text === 'resolve' &&
+    ts.isMetaProperty(node.expression.expression) &&
+    node.expression.expression.keywordToken === ts.SyntaxKind.ImportKeyword &&
+    node.arguments.length === 1
+  ) {
     return staticString(node.arguments[0]!, constants, seen)
   }
   return null
@@ -47,12 +51,14 @@ function beginsRelative(node: ts.Expression, constants: Map<string, ts.Expressio
     return beginsRelative(node.left, constants)
   }
   if (ts.isTemplateExpression(node)) return node.head.text.startsWith('.')
-  if (ts.isCallExpression(node)
-      && ts.isPropertyAccessExpression(node.expression)
-      && node.expression.name.text === 'resolve'
-      && ts.isMetaProperty(node.expression.expression)
-      && node.expression.expression.keywordToken === ts.SyntaxKind.ImportKeyword
-      && node.arguments.length === 1) {
+  if (
+    ts.isCallExpression(node) &&
+    ts.isPropertyAccessExpression(node.expression) &&
+    node.expression.name.text === 'resolve' &&
+    ts.isMetaProperty(node.expression.expression) &&
+    node.expression.expression.keywordToken === ts.SyntaxKind.ImportKeyword &&
+    node.arguments.length === 1
+  ) {
     return beginsRelative(node.arguments[0]!, constants)
   }
   return false
@@ -66,7 +72,11 @@ function location(sourceFile: ts.SourceFile, node: ts.Node): string {
 /** Resolve statically knowable module specifiers and expose unresolved relative calls. */
 export function importSpecifiers(source: string): ImportScan {
   const sourceFile = ts.createSourceFile(
-    'source.tsx', source, ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX,
+    'source.tsx',
+    source,
+    ts.ScriptTarget.Latest,
+    true,
+    ts.ScriptKind.TSX,
   )
   const specifiers: string[] = []
   const typeOnlySpecifiers: string[] = []
@@ -76,9 +86,11 @@ export function importSpecifiers(source: string): ImportScan {
   const constants = new Map<string, ts.Expression>()
 
   for (const statement of sourceFile.statements) {
-    if (ts.isImportDeclaration(statement)
-        && ts.isStringLiteral(statement.moduleSpecifier)
-        && statement.moduleSpecifier.text === 'node:module') {
+    if (
+      ts.isImportDeclaration(statement) &&
+      ts.isStringLiteral(statement.moduleSpecifier) &&
+      statement.moduleSpecifier.text === 'node:module'
+    ) {
       const bindings = statement.importClause?.namedBindings
       for (const element of bindings && ts.isNamedImports(bindings) ? bindings.elements : []) {
         if ((element.propertyName ?? element.name).text === 'createRequire') {
@@ -89,19 +101,23 @@ export function importSpecifiers(source: string): ImportScan {
   }
 
   function collectCreateRequireAliases(node: ts.Node): void {
-    if (ts.isVariableDeclaration(node)
-        && ts.isIdentifier(node.name)
-        && node.initializer
-        && ts.isCallExpression(node.initializer)
-        && ts.isIdentifier(node.initializer.expression)
-        && createRequireNames.has(node.initializer.expression.text)) {
+    if (
+      ts.isVariableDeclaration(node) &&
+      ts.isIdentifier(node.name) &&
+      node.initializer &&
+      ts.isCallExpression(node.initializer) &&
+      ts.isIdentifier(node.initializer.expression) &&
+      createRequireNames.has(node.initializer.expression.text)
+    ) {
       requireNames.add(node.name.text)
     }
-    if (ts.isVariableDeclaration(node)
-        && ts.isIdentifier(node.name)
-        && node.initializer
-        && ts.isVariableDeclarationList(node.parent)
-        && (node.parent.flags & ts.NodeFlags.Const) !== 0) {
+    if (
+      ts.isVariableDeclaration(node) &&
+      ts.isIdentifier(node.name) &&
+      node.initializer &&
+      ts.isVariableDeclarationList(node.parent) &&
+      (node.parent.flags & ts.NodeFlags.Const) !== 0
+    ) {
       constants.set(node.name.text, node.initializer)
     }
     ts.forEachChild(node, collectCreateRequireAliases)
@@ -111,7 +127,8 @@ export function importSpecifiers(source: string): ImportScan {
   function record(argument: ts.Expression, call: ts.Node): void {
     const specifier = staticString(argument, constants)
     if (specifier !== null) specifiers.push(specifier)
-    else if (beginsRelative(argument, constants)) unresolvedRelative.push(location(sourceFile, call))
+    else if (beginsRelative(argument, constants))
+      unresolvedRelative.push(location(sourceFile, call))
   }
 
   function recordDeclaration(node: ts.ImportDeclaration | ts.ExportDeclaration): void {
@@ -130,9 +147,11 @@ export function importSpecifiers(source: string): ImportScan {
         record(node.arguments[0]!, node)
       } else if (ts.isIdentifier(node.expression) && requireNames.has(node.expression.text)) {
         record(node.arguments[0]!, node)
-      } else if (ts.isCallExpression(node.expression)
-          && ts.isIdentifier(node.expression.expression)
-          && createRequireNames.has(node.expression.expression.text)) {
+      } else if (
+        ts.isCallExpression(node.expression) &&
+        ts.isIdentifier(node.expression.expression) &&
+        createRequireNames.has(node.expression.expression.text)
+      ) {
         record(node.arguments[0]!, node)
       }
     }

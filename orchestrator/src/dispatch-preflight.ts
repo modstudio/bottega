@@ -4,17 +4,22 @@
  * worktree paths. Must not know transports, routing, or contracts.
  */
 import { seedGuidance } from './args.ts'
+import { realpathOrSpelled } from './checkout-identity.ts'
 import { db } from './db.ts'
+import { repoRootOf } from './git-environment.ts'
 import { job } from './jobs.ts'
 import { resolveLens } from './lenses.ts'
 import {
-  assertMainCheckoutClean, assertRegisterBranches, projectAt, projectByName, validateStoredProjectSettings, } from './projects.ts'
-import { createHasPlaceholder } from './worktree-template.ts'
+  assertMainCheckoutClean,
+  assertRegisterBranches,
+  projectAt,
+  projectByName,
+  validateStoredProjectSettings,
+} from './projects.ts'
 import { resolveReviewTarget } from './review-target.ts'
 import { resolveBase } from './worktree-caller.ts'
 import { createCommandExists, validateSeedWithTool } from './worktree-preflight.ts'
-import { realpathOrSpelled } from './checkout-identity.ts'
-import { repoRootOf } from './git-environment.ts'
+import { createHasPlaceholder } from './worktree-template.ts'
 
 export const MAX_DEPTH = 1
 export const depth = () => Number(process.env.ORCH_DEPTH ?? 0)
@@ -69,7 +74,9 @@ export function preflight(
   resolveReviewTarget(jobName, cwd, reviewRef, carry)
   const writesJob = Boolean(j.needs.writesRepo)
   if (j.findings && !lens?.trim()) {
-    throw new Error(`${jobName} produces review findings and requires a stable lens identity.\n  --lens <id>`)
+    throw new Error(
+      `${jobName} produces review findings and requires a stable lens identity.\n  --lens <id>`,
+    )
   }
   if (!j.findings && lens !== undefined) {
     throw new Error('--lens is only valid for jobs whose output is review findings')
@@ -84,7 +91,7 @@ export function preflight(
   if (jobName === 'review-lens' && repoRoot === null) {
     throw new Error(
       `a review lens reads a change, and ${cwd} is not inside a git checkout, so there is no change to read.\n` +
-      `Run it from the checkout that holds the change.`,
+        `Run it from the checkout that holds the change.`,
     )
   }
   // The key belongs to the branch of a newly cut worktree. Inline jobs never
@@ -118,34 +125,35 @@ export function preflight(
   if (writesJob && tool?.create && !tool.branch) {
     problems.push(
       `this project's worktree create command has no branch template.\n` +
-      `Set the worktree branch key with:\n` +
-      `  orch project set ${project!.name} --settings '{"worktree":{"branch":"<template>"}}'`,
+        `Set the worktree branch key with:\n` +
+        `  orch project set ${project!.name} --settings '{"worktree":{"branch":"<template>"}}'`,
     )
   }
   if (writesJob && tool?.branch?.includes('{key}') && !key) {
     problems.push(
       `this project's branch names must carry a ticket key (${tool.branch}), and orch will ` +
-      `not invent one.\n  --key <KEY-123>`,
+        `not invent one.\n  --key <KEY-123>`,
     )
   }
   if (writesJob && tool?.seeds?.length && !effectiveSeed) {
     problems.push(
       `this project requires a database size for a new worktree, and has no default.\n` +
-      `${seedGuidance(tool.seeds)}\n\n` +
-      `Choosing is the architect's call: it depends on what the task touches.`,
+        `${seedGuidance(tool.seeds)}\n\n` +
+        `Choosing is the architect's call: it depends on what the task touches.`,
     )
   } else if (writesJob && createHasPlaceholder(tool?.create, 'seed') && !effectiveSeed) {
     problems.push(
       `this project's worktree create arguments contain {seed}, so a seed is required.\n` +
-      `  --seed <value>`,
+        `  --seed <value>`,
     )
   }
   if (problems.length) throw new Error(problems.join('\n'))
   const selectedCreate = writesJob ? tool?.create : tool?.readonly_create
   if (project && selectedCreate && !createCommandExists(selectedCreate, project.path)) {
-    const command = typeof selectedCreate === 'object' && 'command' in selectedCreate
-      ? selectedCreate.command
-      : 'sh'
+    const command =
+      typeof selectedCreate === 'object' && 'command' in selectedCreate
+        ? selectedCreate.command
+        : 'sh'
     throw new Error(
       `project ${project.name} worktree create command ${command} is absent or not executable`,
     )
@@ -161,11 +169,16 @@ export function preflight(
  */
 function recordedChainRootsForWorktree(path: string): number[] {
   const real = realpathOrSpelled(path)
-  const rows = real === path
-    ? db().query('SELECT COALESCE(parent_run_id, id) AS root FROM run WHERE worktree = ?')
-        .all(path) as { root: number }[]
-    : db().query('SELECT COALESCE(parent_run_id, id) AS root FROM run WHERE worktree = ? OR worktree = ?')
-        .all(path, real) as { root: number }[]
+  const rows =
+    real === path
+      ? (db()
+          .query('SELECT COALESCE(parent_run_id, id) AS root FROM run WHERE worktree = ?')
+          .all(path) as { root: number }[])
+      : (db()
+          .query(
+            'SELECT COALESCE(parent_run_id, id) AS root FROM run WHERE worktree = ? OR worktree = ?',
+          )
+          .all(path, real) as { root: number }[])
   return [...new Set(rows.map((row) => row.root))]
 }
 
@@ -182,8 +195,9 @@ export function namesRecordedRunTree(opts: {
   resume?: { parent: number; worktree: { path: string } | null }
 }): boolean {
   if (opts.resume) {
-    const row = db().query('SELECT worktree FROM run WHERE id = ?').get(opts.resume.parent) as
-      { worktree: string | null } | null
+    const row = db().query('SELECT worktree FROM run WHERE id = ?').get(opts.resume.parent) as {
+      worktree: string | null
+    } | null
     const recorded = row?.worktree ?? opts.resume.worktree?.path
     if (!recorded) return false
     return realpathOrSpelled(recorded) === realpathOrSpelled(opts.cwd)
@@ -191,14 +205,20 @@ export function namesRecordedRunTree(opts: {
   if (opts.explicitCwd) return recordedChainRootsForWorktree(opts.cwd).length === 1
   if (!opts.base) return false
   const roots = new Set(
-    (db().query('SELECT COALESCE(parent_run_id, id) AS root FROM run WHERE branch = ?')
-      .all(opts.base) as { root: number }[]).map((row) => row.root),
+    (
+      db()
+        .query('SELECT COALESCE(parent_run_id, id) AS root FROM run WHERE branch = ?')
+        .all(opts.base) as { root: number }[]
+    ).map((row) => row.root),
   )
   try {
     const oid = resolveBase(opts.cwd, opts.base)
-    const byCommit = db().query('SELECT COALESCE(parent_run_id, id) AS root FROM run WHERE head_commit = ?')
+    const byCommit = db()
+      .query('SELECT COALESCE(parent_run_id, id) AS root FROM run WHERE head_commit = ?')
       .all(oid) as { root: number }[]
     for (const row of byCommit) roots.add(row.root)
-  } catch { /* --base is not a commit here */ }
+  } catch {
+    /* --base is not a commit here */
+  }
   return roots.size === 1
 }

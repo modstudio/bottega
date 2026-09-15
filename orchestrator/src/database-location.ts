@@ -2,7 +2,11 @@ import { existsSync, readFileSync, statSync } from 'node:fs'
 import { basename, dirname, join, resolve } from 'node:path'
 import { inspectionGitEnv } from '../../shared/git.ts'
 
-export type DatabaseResolutionMethod = 'ORCH_DB' | 'git-common-dir' | 'git-pointer' | 'binary-relative'
+export type DatabaseResolutionMethod =
+  | 'ORCH_DB'
+  | 'git-common-dir'
+  | 'git-pointer'
+  | 'binary-relative'
 
 export type DatabaseResolution = {
   path: string
@@ -29,8 +33,12 @@ type RepositoryRoot = {
 function repositoryRootFromGit(cwd: string): RepositoryRoot | null {
   try {
     const git = Bun.spawnSync(
-      ['git', 'rev-parse', '--is-bare-repository', '--git-dir', '--git-common-dir'], {
-      cwd, env: inspectionGitEnv(), stdout: 'pipe', stderr: 'ignore',
+      ['git', 'rev-parse', '--is-bare-repository', '--git-dir', '--git-common-dir'],
+      {
+        cwd,
+        env: inspectionGitEnv(),
+        stdout: 'pipe',
+        stderr: 'ignore',
       },
     )
     if (git.exitCode !== 0) return null
@@ -62,17 +70,24 @@ function repositoryRootFromDotGit(cwd: string): RepositoryRoot | null {
         if (statSync(dotGit).isDirectory()) {
           return { root: current, method: 'git-pointer', linked: false }
         }
-        const match = readFileSync(dotGit, 'utf8').trim().match(/^gitdir: (.+)$/)
+        const match = readFileSync(dotGit, 'utf8')
+          .trim()
+          .match(/^gitdir: (.+)$/)
         if (!match) throw new Error(`invalid git worktree pointer: ${dotGit}`)
         const gitDir = resolve(current, match[1]!)
         const worktrees = dirname(gitDir)
         const common = dirname(worktrees)
-        if (basename(worktrees) !== 'worktrees' || basename(common) !== '.git' || dirname(gitDir) === gitDir) {
+        if (
+          basename(worktrees) !== 'worktrees' ||
+          basename(common) !== '.git' ||
+          dirname(gitDir) === gitDir
+        ) {
           throw new Error(`invalid git worktree pointer: ${dotGit}`)
         }
         return { root: dirname(common), method: 'git-pointer', linked: true }
       } catch (error) {
-        if (error instanceof Error && error.message.startsWith('invalid git worktree pointer:')) throw error
+        if (error instanceof Error && error.message.startsWith('invalid git worktree pointer:'))
+          throw error
         throw new Error(`cannot read git repository marker: ${dotGit}: ${String(error)}`)
       }
     }
@@ -88,11 +103,18 @@ export function resolveDatabase(
   binaryRoot = ROOT,
 ): DatabaseResolution {
   const binaryRepository = repositoryRootFromGit(binaryRoot) ?? repositoryRootFromDotGit(binaryRoot)
-  const mainStorePath = binaryRepository ? join(binaryRepository.root, 'orchestrator', 'orch.db') : null
+  const mainStorePath = binaryRepository
+    ? join(binaryRepository.root, 'orchestrator', 'orch.db')
+    : null
   if (env.ORCH_DB) {
     return {
-      path: resolve(env.ORCH_DB), method: 'ORCH_DB', tried: [resolve(env.ORCH_DB)], registeredPath: null,
-      repositoryRoot: null, repositoryCandidate: null, repositoryCandidateExisted: false,
+      path: resolve(env.ORCH_DB),
+      method: 'ORCH_DB',
+      tried: [resolve(env.ORCH_DB)],
+      registeredPath: null,
+      repositoryRoot: null,
+      repositoryCandidate: null,
+      repositoryCandidateExisted: false,
       initializable: true,
       linkedWorktreeBinary: Boolean(binaryRepository?.linked),
       mainStorePath,
@@ -108,11 +130,16 @@ export function resolveDatabase(
     const candidateExists = existsSync(candidate)
     // Before the database can confirm the register, Git establishes identity:
     // cwd and the binary source belong to the same common repository root.
-    const ownsSource = binaryRepository && resolve(binaryRepository.root) === resolve(repository.root)
+    const ownsSource =
+      binaryRepository && resolve(binaryRepository.root) === resolve(repository.root)
     if (candidateExists || ownsSource) {
       return {
-        path: candidate, method: repository.method, tried, registeredPath: null,
-        repositoryRoot: repository.root, repositoryCandidate: candidate,
+        path: candidate,
+        method: repository.method,
+        tried,
+        registeredPath: null,
+        repositoryRoot: repository.root,
+        repositoryCandidate: candidate,
         repositoryCandidateExisted: candidateExists,
         // A worktree-local binary may diagnose its main checkout, but only the
         // main checkout's binary may initialize that checkout.
@@ -128,10 +155,14 @@ export function resolveDatabase(
     if (!tried.includes(mainCandidate)) tried.push(mainCandidate)
     if (existsSync(mainCandidate)) {
       return {
-        path: mainCandidate, method: binaryRepository.method, tried, registeredPath: null,
+        path: mainCandidate,
+        method: binaryRepository.method,
+        tried,
+        registeredPath: null,
         repositoryRoot: repository?.root ?? null,
         repositoryCandidate: repository ? join(repository.root, 'orchestrator', 'orch.db') : null,
-        repositoryCandidateExisted: false, initializable: false,
+        repositoryCandidateExisted: false,
+        initializable: false,
         linkedWorktreeBinary: true,
         mainStorePath,
       }
@@ -141,10 +172,14 @@ export function resolveDatabase(
   tried.push(binaryRelative)
   if (binaryRepository && !binaryRepository.linked) {
     return {
-      path: binaryRelative, method: 'binary-relative', tried, registeredPath: null,
+      path: binaryRelative,
+      method: 'binary-relative',
+      tried,
+      registeredPath: null,
       repositoryRoot: repository?.root ?? null,
       repositoryCandidate: repository ? join(repository.root, 'orchestrator', 'orch.db') : null,
-      repositoryCandidateExisted: false, initializable: true,
+      repositoryCandidateExisted: false,
+      initializable: true,
       linkedWorktreeBinary: false,
       mainStorePath,
     }
@@ -152,7 +187,7 @@ export function resolveDatabase(
 
   throw new Error(
     `orchestrator database could not be resolved; tried:\n${tried.map((path) => `  ${path}`).join('\n')}\n` +
-    `run orch init-db from the main checkout to create it`,
+      `run orch init-db from the main checkout to create it`,
   )
 }
 
@@ -168,10 +203,13 @@ export function registeredRepositoryMissingDatabase(
   registeredRoot: string,
 ): string | null {
   if (
-    resolution.repositoryRoot && resolution.repositoryCandidate &&
-    !resolution.repositoryCandidateExisted && resolution.path !== resolution.repositoryCandidate &&
+    resolution.repositoryRoot &&
+    resolution.repositoryCandidate &&
+    !resolution.repositoryCandidateExisted &&
+    resolution.path !== resolution.repositoryCandidate &&
     resolve(registeredRoot) === resolve(resolution.repositoryRoot)
-  ) return resolution.repositoryCandidate
+  )
+    return resolution.repositoryCandidate
   return null
 }
 

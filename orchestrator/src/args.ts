@@ -24,13 +24,16 @@ function shellValue(value: string): string {
   return `"${value.replace(/[\\"$`]/g, '\\$&')}"`
 }
 
-export const ANSWER_WORKING_FORMS = `  orch answer <id> --q<id> "<ruling>"\n` +
+export const ANSWER_WORKING_FORMS =
+  `  orch answer <id> --q<id> "<ruling>"\n` +
   `  orch answer <id> --q<id> --file <path>\n  orch answer <id> --file <path>\n` +
   `  orch answer <id> "<ruling>"`
-export const TELL_WORKING_FORMS = `  orch tell <id> "<message>"\n` +
+export const TELL_WORKING_FORMS =
+  `  orch tell <id> "<message>"\n` +
   `  orch tell <id> --file <path>\n  orch tell <id> --ping "<message>"\n` +
   `  orch tell <id>  (message on stdin)`
-export const CONTINUE_WORKING_FORMS = `  orch continue <id> "<what next>"\n` +
+export const CONTINUE_WORKING_FORMS =
+  `  orch continue <id> "<what next>"\n` +
   `  orch continue <id> --file <path>\n  orch continue <id>  (message on stdin)`
 
 /** Empty, whitespace-only, or a single token beginning with `--` is a mis-parse. */
@@ -45,12 +48,14 @@ export function misparsedMessage(text: string): 'empty' | 'dash-token' | null {
 export function refuseMisparsedMessage(text: string, noun: string, workingForms: string): void {
   const kind = misparsedMessage(text)
   if (kind === 'empty') {
-    throw new Error(`empty ${noun}: received ${JSON.stringify(text)}\nworking forms:\n${workingForms}`)
+    throw new Error(
+      `empty ${noun}: received ${JSON.stringify(text)}\nworking forms:\n${workingForms}`,
+    )
   }
   if (kind === 'dash-token') {
     throw new Error(
       `received ${JSON.stringify(text)} as a ${noun}; a single token beginning with -- is a mis-parse, not a decision\n` +
-      `working forms:\n${workingForms}`,
+        `working forms:\n${workingForms}`,
     )
   }
 }
@@ -68,7 +73,10 @@ export function invalidUtf8Offset(bytes: Uint8Array): number | null {
       }
       return true
     }
-    if (b <= 0x7f) { i += 1; continue }
+    if (b <= 0x7f) {
+      i += 1
+      continue
+    }
     if (b >= 0xc2 && b <= 0xdf) {
       if (rest < 2 || !cont(1)) return fail()
       i += 2
@@ -114,28 +122,61 @@ export function invalidUtf8Offset(bytes: Uint8Array): number | null {
   return null
 }
 
-export function nulByteOffset(text: string): number | null { const at = text.indexOf('\0'); return at < 0 ? null : Buffer.byteLength(text.slice(0, at), 'utf8') }
-function decodeWorkerBytes(bytes: Uint8Array, source: string): string { const at = invalidUtf8Offset(bytes); if (at !== null) throw new Error(`invalid UTF-8 in ${source} at byte offset ${at}`); return new TextDecoder('utf-8', { fatal: true }).decode(bytes) }
-export function readWorkerFile(path: string): string { return decodeWorkerBytes(readFileSync(path), path) }
-export function assertWorkerText(text: string, noun: string, forms: string, limit?: number): void {
-  refuseMisparsedMessage(text, noun, forms); const nul = nulByteOffset(text)
-  if (nul !== null) throw new Error(`${noun} contains a NUL at byte offset ${nul}\nworking forms:\n${forms}`)
-  const bytes = Buffer.byteLength(text, 'utf8'); if (limit !== undefined && bytes > limit) throw new Error(`${noun} is ${bytes} bytes; this agent's resume transport is bounded at ${limit} bytes\nworking forms:\n${forms}`)
+export function nulByteOffset(text: string): number | null {
+  const at = text.indexOf('\0')
+  return at < 0 ? null : Buffer.byteLength(text.slice(0, at), 'utf8')
 }
-type MessageTextOptions = { missing: string; exclusive?: string; optional?: boolean; sources: { commandFile?: string; positionals: string[] } }
-export async function readMessageText(opts: MessageTextOptions, stdin: { isTTY?: boolean; bytes(): Promise<Uint8Array> } = Bun.stdin): Promise<string | undefined> {
-  const commandFile = opts.sources.commandFile; const positional = opts.sources.positionals
+function decodeWorkerBytes(bytes: Uint8Array, source: string): string {
+  const at = invalidUtf8Offset(bytes)
+  if (at !== null) throw new Error(`invalid UTF-8 in ${source} at byte offset ${at}`)
+  return new TextDecoder('utf-8', { fatal: true }).decode(bytes)
+}
+export function readWorkerFile(path: string): string {
+  return decodeWorkerBytes(readFileSync(path), path)
+}
+export function assertWorkerText(text: string, noun: string, forms: string, limit?: number): void {
+  refuseMisparsedMessage(text, noun, forms)
+  const nul = nulByteOffset(text)
+  if (nul !== null)
+    throw new Error(`${noun} contains a NUL at byte offset ${nul}\nworking forms:\n${forms}`)
+  const bytes = Buffer.byteLength(text, 'utf8')
+  if (limit !== undefined && bytes > limit)
+    throw new Error(
+      `${noun} is ${bytes} bytes; this agent's resume transport is bounded at ${limit} bytes\nworking forms:\n${forms}`,
+    )
+}
+type MessageTextOptions = {
+  missing: string
+  exclusive?: string
+  optional?: boolean
+  sources: { commandFile?: string; positionals: string[] }
+}
+export async function readMessageText(
+  opts: MessageTextOptions,
+  stdin: { isTTY?: boolean; bytes(): Promise<Uint8Array> } = Bun.stdin,
+): Promise<string | undefined> {
+  const commandFile = opts.sources.commandFile
+  const positional = opts.sources.positionals
   if (commandFile && positional.length && opts.exclusive) throw new Error(opts.exclusive)
-  if (commandFile) return readWorkerFile(commandFile); if (positional.length) return positional.join(' ')
+  if (commandFile) return readWorkerFile(commandFile)
+  if (positional.length) return positional.join(' ')
   if (!stdin.isTTY) return decodeWorkerBytes(new Uint8Array(await stdin.bytes()), 'stdin')
   if (opts.optional) return undefined
   throw new Error(opts.missing)
 }
 export type QuestionTextSource = { id: number; file?: string; text?: string }
 
-export type AnswerTextSources = { byId: QuestionTextSource[]; commandFile: string | undefined; positionals: string[] }
+export type AnswerTextSources = {
+  byId: QuestionTextSource[]
+  commandFile: string | undefined
+  positionals: string[]
+}
 
-function takeFilePath(args: string[], index: number, usage: string): { path: string; next: number } {
+function takeFilePath(
+  args: string[],
+  index: number,
+  usage: string,
+): { path: string; next: number } {
   const arg = args[index]!
   if (arg.startsWith('--file=')) {
     const path = arg.slice('--file='.length)
@@ -158,8 +199,9 @@ export function parseWorkerMessageArgs(
   args: string[],
   options: { booleans?: Iterable<string>; questions?: boolean; usage?: string } = {},
 ): AnswerTextSources {
-  const usage = options.usage
-    ?? 'orch answer <id> ["<ruling>"] [--file PATH] [--q<ID> "<ruling>"] [--q<ID> --file PATH] [--follow]'
+  const usage =
+    options.usage ??
+    'orch answer <id> ["<ruling>"] [--file PATH] [--q<ID> "<ruling>"] [--q<ID> --file PATH] [--follow]'
   const booleans = new Set(options.booleans ?? [])
   const questions = options.questions ?? false
   const byId: QuestionTextSource[] = []
@@ -219,21 +261,74 @@ export function seedGuidance(seeds: string[]): string {
     const value = shellValue(seed)
     return [`  --seed ${value}`, `  --seed=${value}`]
   })
-  return forms.join('\n') +
+  return (
+    forms.join('\n') +
     `\nMulti-token seed specs must be quoted as one value, for example:\n` +
     `  --seed "--bundle=catalog --budget-mb=700"\n` +
     `  --seed="--bundle=catalog --budget-mb=700"`
+  )
 }
 
-
 export const CLI_COMMANDS = new Set([
-  "abandon", "agent", "agents", "answer", "ask-server", "blockers", "canon", "close-out",
-  "confinement", "continue", "contract", "diff", "discard", "do", "doc", "doctor", "epic",
-  "guide", "health", "inbox", "init-db", "issue", "jobs", "judge", "lens", "mcp",
-  "metric", "migrate", "monitor", "note", "peek", "pending", "pick", "port", "project",
-  "recalibrate", "reclaim", "reclassify-failures", "reconcile", "result", "retry", "review",
-  "routing-backtest", "run", "runs", "score", "search", "serve", "setup-ask", "spawns",
-  "state", "stats", "stop", "sweep", "tell", "wait", "workflow",
+  'abandon',
+  'agent',
+  'agents',
+  'answer',
+  'ask-server',
+  'blockers',
+  'canon',
+  'close-out',
+  'confinement',
+  'continue',
+  'contract',
+  'diff',
+  'discard',
+  'do',
+  'doc',
+  'doctor',
+  'epic',
+  'guide',
+  'health',
+  'inbox',
+  'init-db',
+  'issue',
+  'jobs',
+  'judge',
+  'lens',
+  'mcp',
+  'metric',
+  'migrate',
+  'monitor',
+  'note',
+  'peek',
+  'pending',
+  'pick',
+  'port',
+  'project',
+  'recalibrate',
+  'reclaim',
+  'reclassify-failures',
+  'reconcile',
+  'result',
+  'retry',
+  'review',
+  'routing-backtest',
+  'run',
+  'runs',
+  'score',
+  'search',
+  'serve',
+  'setup-ask',
+  'spawns',
+  'state',
+  'stats',
+  'stop',
+  'sweep',
+  'tell',
+  'wait',
+  'workflow',
 ])
 
-export function isCliCommand(name: string): boolean { return CLI_COMMANDS.has(name) }
+export function isCliCommand(name: string): boolean {
+  return CLI_COMMANDS.has(name)
+}

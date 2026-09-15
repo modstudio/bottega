@@ -8,15 +8,34 @@ import { pickCommand, statsCommand } from './routing-commands.ts'
 
 const preview = (avoid: string[] = [], distinctModels: string[] = []) => {
   const lines: string[] = []
-  pickCommand({ jobName: 'review-lens', stack: null, avoid, distinctModels, lens: undefined, selectedAgent: undefined },
-    { has: () => false, flag: () => undefined }, { log: (...parts) => lines.push(parts.join(' ')), agents: AGENTS })
+  pickCommand(
+    {
+      jobName: 'review-lens',
+      stack: null,
+      avoid,
+      distinctModels,
+      lens: undefined,
+      selectedAgent: undefined,
+    },
+    { has: () => false, flag: () => undefined },
+    { log: (...parts) => lines.push(parts.join(' ')), agents: AGENTS },
+  )
   return lines.join('\n')
 }
 
 test('stats reports Bradley-Terry strengths once a job reaches MIN_SAMPLE duels', () => {
-  for (let i = 0; i < MIN_SAMPLE; i++) recordDuels(addRun({ agent: 'codex', job: 'craft' }), [addRun({ agent: 'grok', job: 'craft' })], 's', new Date().toISOString())
+  for (let i = 0; i < MIN_SAMPLE; i++)
+    recordDuels(
+      addRun({ agent: 'codex', job: 'craft' }),
+      [addRun({ agent: 'grok', job: 'craft' })],
+      's',
+      new Date().toISOString(),
+    )
   const lines: string[] = []
-  statsCommand({ flag: (name) => name === 'job' ? 'craft' : undefined, has: () => false }, { log: (...parts) => lines.push(parts.join(' ')), dur: String })
+  statsCommand(
+    { flag: (name) => (name === 'job' ? 'craft' : undefined), has: () => false },
+    { log: (...parts) => lines.push(parts.join(' ')), dur: String },
+  )
   expect(lines.join('\n')).toContain(`craft Bradley-Terry strengths (${MIN_SAMPLE} duels)`)
   expect(lines.join('\n')).toContain('codex')
 })

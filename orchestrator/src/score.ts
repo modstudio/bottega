@@ -153,13 +153,8 @@ export type Judgeability =
   /** The run belongs to a different session, and both ids are known. */
   | { verdict: 'foreign'; owner: string }
 
-export function judgeability(
-  runSession: string | null,
-  caller: string | null,
-): Judgeability {
+export function judgeability(runSession: string | null, caller: string | null): Judgeability {
   if (!runSession) return { verdict: 'unattributed' }
   if (!caller) return { verdict: 'anonymous', owner: runSession }
-  return runSession === caller
-    ? { verdict: 'own' }
-    : { verdict: 'foreign', owner: runSession }
+  return runSession === caller ? { verdict: 'own' } : { verdict: 'foreign', owner: runSession }
 }

@@ -14,7 +14,9 @@ export function visibleTranscriptText(agent: string, transcript: string): string
       for (const block of event.message.content) {
         if (typeof block?.text === 'string' && block.text) parts.push(block.text)
       }
-    } catch { /* A half-written terminal line has no recoverable visible text. */ }
+    } catch {
+      /* A half-written terminal line has no recoverable visible text. */
+    }
   }
   return parts.join('\n\n')
 }

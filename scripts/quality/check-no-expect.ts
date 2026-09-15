@@ -1,7 +1,7 @@
-import { introducedFindings, type Finding } from './ratchet'
 import { noExpectFindings } from './no-expect'
+import { type Finding, introducedFindings } from './ratchet'
 
-type Mode = { kind: 'staged' } | { kind: 'base', ref: string }
+type Mode = { kind: 'staged' } | { kind: 'base'; ref: string }
 
 function git(args: string[]) {
   const result = Bun.spawnSync(['git', ...args], { stdout: 'pipe', stderr: 'pipe' })
