@@ -84,9 +84,15 @@ function resumeCreationOptions(
   existingBranch: string | undefined
   existingBranchTip: string | undefined
 } {
-  if (!plan) return { tool, baseRef: undefined, existingBranch: undefined, existingBranchTip: undefined }
+  if (!plan)
+    return { tool, baseRef: undefined, existingBranch: undefined, existingBranchTip: undefined }
   if (plan.action === 'recreate-on-branch') {
-    return { tool: null, baseRef: undefined, existingBranch: plan.branch, existingBranchTip: plan.tip }
+    return {
+      tool: null,
+      baseRef: undefined,
+      existingBranch: plan.branch,
+      existingBranchTip: plan.tip,
+    }
   }
   return { tool, baseRef: plan.tip, existingBranch: undefined, existingBranchTip: undefined }
 }
@@ -592,10 +598,10 @@ export async function claimRun(input: ClaimInput): Promise<ClaimResult> {
             baseRef:
               resumeCreation.baseRef ??
               reviewTarget?.commit ??
-                  opts.base ??
-                  (writesJob && !resolvedTaskBranch
-                    ? resolveReadOnlyBase(callerCwd, 'HEAD')
-                    : undefined),
+              opts.base ??
+              (writesJob && !resolvedTaskBranch
+                ? resolveReadOnlyBase(callerCwd, 'HEAD')
+                : undefined),
             record: recordWorktree,
             detached: Boolean(reviewTarget),
             existingBranch: resumeCreation.existingBranch ?? resolvedTaskBranch?.branch,
