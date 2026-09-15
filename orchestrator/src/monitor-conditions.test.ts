@@ -1,12 +1,12 @@
 import { describe, expect, spyOn, test } from 'bun:test'
 import { addRun, score } from '../test/fixtures/store.ts'
 import { db, nowIso } from './db.ts'
+import { monitor, monitorHistory } from './monitor.ts'
 import {
   deadRunningProcessConditions,
   reconcileHub,
   rulingConditions,
 } from './monitor-conditions.ts'
-import { monitor, monitorHistory } from './monitor.ts'
 import { claimMonitorNotices, markMonitorNoticesDelivered } from './monitor-notices.ts'
 
 function persistAddressedCondition(

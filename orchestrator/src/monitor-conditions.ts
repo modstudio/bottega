@@ -8,6 +8,7 @@ import { idleLabel, idleMsSince, idleWarnMs } from './events.ts'
 import { UNSCORED_WHERE } from './evidence-query.ts'
 import { targetGitEnvironment } from './git-environment.ts'
 import { runHasLiveDescendants } from './idle-kill.ts'
+import type { MonitorCondition } from './monitor-types.ts'
 import { pidAlive } from './process-liveness.ts'
 import { pidRecordIdentity } from './project-lock.ts'
 import { projects } from './projects.ts'
@@ -16,7 +17,6 @@ import {
   retainedRefInventory,
   worktreeDatabaseInventory,
 } from './resource-inventory.ts'
-import type { MonitorCondition } from './monitor-types.ts'
 
 const HUB = new URL('../../bin/hub', import.meta.url).pathname
 
