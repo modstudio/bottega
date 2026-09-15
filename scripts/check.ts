@@ -206,6 +206,9 @@ refuseFailed(results)
 
 for (const script of [
   'check-postgres-migrations.ts',
+  'check-postgres-schema-run-boundary.ts',
+  'check-machine-identity-boundary.ts',
+  'check-record-sync-boundary.ts',
   'check-architecture.ts',
   'check-isolation-boundary.ts',
   'check-review-boundary.ts',
