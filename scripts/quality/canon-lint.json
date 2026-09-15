@@ -378,39 +378,51 @@
     "message": "contains a task key"
   },
   {
+    "file": "orchestrator/AGENTS.md",
+    "line": 2018,
+    "rule": "canon/issue",
+    "message": "contains a task key"
+  },
+  {
     "file": "hub/AGENTS.md",
     "line": 1,
     "rule": "canon/size-card",
-    "message": "measured 23667 bytes; limit 2048 bytes"
+    "message": "measured 23667 bytes; limit 2048 bytes",
+    "measuredBytes": 23667
   },
   {
     "file": "orchestrator/AGENTS.md",
     "line": 1,
     "rule": "canon/size-card",
-    "message": "measured 121590 bytes; limit 2048 bytes"
+    "message": "measured 121590 bytes; limit 2048 bytes",
+    "measuredBytes": 121590
   },
   {
     "file": "hub/AGENTS.md",
     "line": 1,
     "rule": "canon/size-chain",
-    "message": "measured 55136 bytes; limit 32768 bytes"
+    "message": "measured 55136 bytes; limit 32768 bytes",
+    "measuredBytes": 55136
   },
   {
     "file": "ops/AGENTS.md",
     "line": 1,
     "rule": "canon/size-chain",
-    "message": "measured 32804 bytes; limit 32768 bytes"
+    "message": "measured 32804 bytes; limit 32768 bytes",
+    "measuredBytes": 32804
   },
   {
     "file": "orchestrator/AGENTS.md",
     "line": 1,
     "rule": "canon/size-chain",
-    "message": "measured 153059 bytes; limit 32768 bytes"
+    "message": "measured 153059 bytes; limit 32768 bytes",
+    "measuredBytes": 153059
   },
   {
     "file": "AGENTS.md",
     "line": 1,
     "rule": "canon/size-entry",
-    "message": "measured 31469 bytes; limit 16384 bytes"
+    "message": "measured 31469 bytes; limit 16384 bytes",
+    "measuredBytes": 31469
   }
 ]

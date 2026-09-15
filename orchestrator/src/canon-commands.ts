@@ -1,10 +1,9 @@
 // concern: canon-commands
 /** Knows canon command semantics over canon, lint, and evals. Must not know runs, routing, transports, the CLI, or worktrees. */
-import { existsSync, readFileSync, readlinkSync, writeFileSync } from 'node:fs'
-import { dirname, posix, resolve } from 'node:path'
+import { readFileSync, writeFileSync } from 'node:fs'
+import { dirname, resolve } from 'node:path'
 import { z } from 'zod'
-import { inspectionGitEnv } from '../../shared/git.ts'
-import { type Finding, introducedFindings } from '../../shared/ratchet.ts'
+import type { Finding } from '../../shared/ratchet.ts'
 import {
   allInjectChecks,
   allNumericLiterals,
@@ -12,9 +11,9 @@ import {
   diffPack,
   findingsForPack,
 } from './canon.ts'
-import { type CanonFile, lintCanon } from './canon-lint.ts'
+import { canonGitRoot, collectCanonFiles } from './canon-files.ts'
+import { introducedCanonFindings, lintCanon } from './canon-lint.ts'
 import { canonEvalsReport, runCanonEvals } from './evals.ts'
-import { projectAt, projects } from './projects.ts'
 
 type CanonFlags = { has(name: string): boolean; flag(name: string): string | undefined }
 type CanonPresentation = {
@@ -28,57 +27,8 @@ const findingSchema = z.object({
   line: z.number().int(),
   rule: z.string(),
   message: z.string(),
+  measuredBytes: z.number().int().nonnegative().optional(),
 })
-
-function git(cwd: string, args: string[]): string {
-  const result = Bun.spawnSync(['git', '-C', cwd, ...args], {
-    stdout: 'pipe',
-    stderr: 'pipe',
-    env: inspectionGitEnv(),
-  })
-  if (result.exitCode !== 0) {
-    const detail = result.stderr.toString().trim()
-    throw new Error(`git -C ${cwd} ${args.join(' ')} failed${detail ? `: ${detail}` : ''}`)
-  }
-  return result.stdout.toString()
-}
-
-function isCanonPath(path: string): boolean {
-  return (
-    posix.basename(path) === 'AGENTS.md' ||
-    posix.basename(path) === 'CLAUDE.md' ||
-    /^\.agents\/(?:rules|contexts|reference)\/[^/]+\.md$/.test(path)
-  )
-}
-
-function collectCanonFiles(root: string): CanonFile[] {
-  const entries = git(root, ['ls-files', '-s', '-z'])
-    .split('\0')
-    .filter(Boolean)
-    .map((entry) => {
-      const match = entry.match(/^(\d+) [0-9a-f]+ \d+\t([\s\S]+)$/)
-      if (!match) throw new Error(`could not parse git ls-files entry ${JSON.stringify(entry)}`)
-      return { mode: match[1]!, path: match[2]! }
-    })
-    .filter(({ path }) => isCanonPath(path))
-  const tracked = new Set(entries.map(({ path }) => path))
-  return entries.map(({ mode, path }) => {
-    const absolute = resolve(root, path)
-    if (mode !== '120000') return { path, text: readFileSync(absolute, 'utf8') }
-    const symlinkTarget = readlinkSync(absolute)
-    const targetPath = posix.isAbsolute(symlinkTarget)
-      ? posix.normalize(symlinkTarget)
-      : posix.normalize(posix.join(posix.dirname(path), symlinkTarget))
-    return {
-      path,
-      text:
-        tracked.has(targetPath) && existsSync(resolve(root, targetPath))
-          ? readFileSync(resolve(root, targetPath), 'utf8')
-          : '',
-      symlinkTarget,
-    }
-  })
-}
 
 function printMeasurements(
   result: ReturnType<typeof lintCanon>,
@@ -117,16 +67,8 @@ function printFindings(findings: Finding[], log: (...values: unknown[]) => void)
 
 export function canonLintCommand(flags: CanonFlags, presentation: CanonPresentation): void {
   const requestedCwd = resolve(flags.flag('cwd') ?? presentation.cwd())
-  if (!projectAt(requestedCwd)) {
-    throw new Error(
-      `${requestedCwd} is not inside a registered project; cleared by: orch project add ${requestedCwd}`,
-    )
-  }
-  const root = git(requestedCwd, ['rev-parse', '--show-toplevel']).trim()
-  const result = lintCanon({
-    files: collectCanonFiles(root),
-    taskKeyPrefixes: projects().flatMap((project) => project.settings.keyPrefixes ?? []),
-  })
+  const root = canonGitRoot(requestedCwd)
+  const result = lintCanon({ files: collectCanonFiles(root) })
   const baselineFlag = flags.flag('baseline')
   if ((flags.has('strict') || flags.has('write-baseline')) && !baselineFlag) {
     throw new Error('--strict and --write-baseline require --baseline FILE')
@@ -140,7 +82,7 @@ export function canonLintCommand(flags: CanonFlags, presentation: CanonPresentat
   let displayed = result.findings
   if (flags.has('strict')) {
     const baseline = findingSchema.array().parse(JSON.parse(readFileSync(baselinePath!, 'utf8')))
-    displayed = introducedFindings(baseline, result.findings)
+    displayed = introducedCanonFindings(baseline, result.findings)
   }
   if (flags.has('json')) presentation.log(JSON.stringify({ ...result, findings: displayed }))
   else {

@@ -8,12 +8,16 @@ import {
   REFERENCE_BYTES,
   RULE_BYTES,
 } from './canon-budget.ts'
-import { type CanonFile, lintCanon } from './canon-lint.ts'
+import {
+  type CanonFile,
+  type CanonFinding,
+  introducedCanonFindings,
+  lintCanon,
+} from './canon-lint.ts'
 
-const lint = (files: CanonFile[], taskKeyPrefixes: string[] = ['DEV']) =>
-  lintCanon({ files, taskKeyPrefixes })
-const rules = (files: CanonFile[], rule: string, prefixes?: string[]) =>
-  lint(files, prefixes).findings.filter((finding) => finding.rule === rule)
+const lint = (files: CanonFile[]) => lintCanon({ files })
+const rules = (files: CanonFile[], rule: string) =>
+  lint(files).findings.filter((finding) => finding.rule === rule)
 const text = (bytes: number) => 'x'.repeat(bytes)
 const card = (extra = '') =>
   `## Purpose\n\nP\n\n## Belongs here\n\nB\n\n## Does not belong here\n\nD\n\n## May depend on\n\nM\n${extra}`
@@ -113,18 +117,40 @@ describe('canon prose rules', () => {
     expect(rules([{ path: 'AGENTS.md', text: 'Current rule.' }], 'canon/history')).toEqual([])
   })
 
-  test('issue reports prose and task keys in inline code but ignores other code spans', () => {
+  test('issue reports generic task keys, exempts standard tokens, and ignores fenced code', () => {
     const result = rules(
       [
         {
           path: 'AGENTS.md',
-          text: 'Known issue here.\n`workaround`\n`DEV-572`\n```\nDEV-573 known issue\n```\n',
+          text: 'Known issue here.\n`workaround`\n`DEV-572`\nAB-2418\nSTAR-4622\nUTF-8 SHA-256 ISO-8601 RFC-3339\n```\nDEV-573 known issue\n```\n',
         },
       ],
       'canon/issue',
     )
-    expect(result.map((finding) => finding.line)).toEqual([1, 3])
+    expect(result.map((finding) => finding.line)).toEqual([1, 3, 4, 5])
     expect(rules([{ path: 'AGENTS.md', text: 'Current rule.' }], 'canon/issue')).toEqual([])
+  })
+})
+
+describe('canon strict comparison', () => {
+  const sizeFinding = (file: string, measuredBytes: number): CanonFinding => ({
+    file,
+    line: 1,
+    rule: 'canon/size-card',
+    message: `measured ${measuredBytes} bytes; limit 2048 bytes`,
+    measuredBytes,
+  })
+
+  test('size findings pass at or below baseline and fail above it or on a new file', () => {
+    const baseline = [sizeFinding('src/AGENTS.md', 3_000)]
+    expect(introducedCanonFindings(baseline, [sizeFinding('src/AGENTS.md', 3_000)])).toEqual([])
+    expect(introducedCanonFindings(baseline, [sizeFinding('src/AGENTS.md', 2_999)])).toEqual([])
+    expect(introducedCanonFindings(baseline, [sizeFinding('src/AGENTS.md', 3_001)])).toEqual([
+      sizeFinding('src/AGENTS.md', 3_001),
+    ])
+    expect(introducedCanonFindings(baseline, [sizeFinding('new/AGENTS.md', 3_000)])).toEqual([
+      sizeFinding('new/AGENTS.md', 3_000),
+    ])
   })
 })
 

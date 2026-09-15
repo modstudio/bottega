@@ -277,6 +277,7 @@ for (const script of [
   'check-dispatch-commands-boundary.ts',
   'check-canon-commands-boundary.ts',
   'check-canon-budget-boundary.ts',
+  'check-canon-files-boundary.ts',
   'check-canon-lint-boundary.ts',
   'check-routing-commands-boundary.ts',
   'check-failure-commands-boundary.ts',
@@ -356,16 +357,7 @@ for (const script of [
   if ((await child.exited) !== 0) process.exit(1)
 }
 
-if (
-  (await inherit([
-    `${root}bin/orch`,
-    'canon',
-    'lint',
-    '--strict',
-    '--baseline',
-    'scripts/quality/canon-lint.json',
-  ])) !== 0
-)
+if ((await inherit(['bun', `${root}orchestrator/scripts/check-canon-lint.ts`])) !== 0)
   process.exit(1)
 
 let qualityMode: string

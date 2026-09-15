@@ -1,7 +1,7 @@
 // concern: canon-lint
 /** Knows pure canon classification and lint rules. Must not know filesystems, stores, commands, or processes. */
 import { posix } from 'node:path'
-import type { Finding } from '../../shared/ratchet.ts'
+import { type Finding, introducedFindings } from '../../shared/ratchet.ts'
 import {
   ALWAYS_ON_TOTAL_BYTES,
   CARD_BYTES,
@@ -13,6 +13,7 @@ import {
 } from './canon-budget.ts'
 
 export type CanonFile = { path: string; text: string; symlinkTarget?: string }
+export type CanonFinding = Finding & { measuredBytes?: number }
 
 export type CanonMeasurement = { path: string; bytes: number; limit: number }
 export type CanonLintSummary = {
@@ -26,7 +27,10 @@ export type CanonLintSummary = {
   }
   chains: CanonMeasurement[]
 }
-export type CanonLintResult = { summary: CanonLintSummary; findings: Finding[] }
+export type CanonLintResult = { summary: CanonLintSummary; findings: CanonFinding[] }
+
+export const TASK_KEY_PATTERN = /\b[A-Z][A-Z0-9]{1,9}-\d+\b/
+export const TASK_KEY_EXEMPTIONS = ['UTF', 'SHA', 'ISO', 'RFC', 'ES', 'TLS', 'HTTP', 'IPV']
 
 export const HISTORY_PATTERNS = [
   /\bused to\b/i,
@@ -69,12 +73,13 @@ function bytes(file: CanonFile): number {
   return Buffer.byteLength(file.text, 'utf8')
 }
 
-function sizeFinding(file: CanonFile, rule: string, measured: number, limit: number): Finding {
+function sizeFinding(file: CanonFile, rule: string, measured: number, limit: number): CanonFinding {
   return {
     file: file.path,
     line: 1,
     rule,
     message: `measured ${measured} bytes; limit ${limit} bytes`,
+    measuredBytes: measured,
   }
 }
 
@@ -115,7 +120,15 @@ function frontmatter(text: string): { description: string | null; paths: string[
   return { description: validDescription, paths }
 }
 
-function proseFindings(file: CanonFile, taskKeyPattern: RegExp | null, findings: Finding[]): void {
+function containsTaskKey(line: string): boolean {
+  const exemptions = new Set(TASK_KEY_EXEMPTIONS)
+  return [...line.matchAll(new RegExp(TASK_KEY_PATTERN.source, 'g'))].some((match) => {
+    const prefix = match[0].slice(0, match[0].lastIndexOf('-'))
+    return !exemptions.has(prefix)
+  })
+}
+
+function proseFindings(file: CanonFile, findings: CanonFinding[]): void {
   let fence: '`' | '~' | null = null
   for (const [index, line] of file.text.split(/\r?\n/).entries()) {
     const marker = line.match(/^\s*(`{3,}|~{3,})/)?.[1]?.[0] as '`' | '~' | undefined
@@ -136,7 +149,7 @@ function proseFindings(file: CanonFile, taskKeyPattern: RegExp | null, findings:
       })
     }
     const issuePattern = ISSUE_PATTERNS.find((pattern) => pattern.test(withoutInlineCode))
-    if (taskKeyPattern?.test(line)) {
+    if (containsTaskKey(line)) {
       findings.push({
         file: file.path,
         line: index + 1,
@@ -152,13 +165,6 @@ function proseFindings(file: CanonFile, taskKeyPattern: RegExp | null, findings:
       })
     }
   }
-}
-
-function taskPattern(prefixes: string[]): RegExp | null {
-  const escaped = [...new Set(prefixes.filter(Boolean))].map((prefix) =>
-    prefix.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'),
-  )
-  return escaped.length ? new RegExp(`\\b(?:${escaped.join('|')})-\\d+\\b`, 'i') : null
 }
 
 function chainFiles(path: string, agentsByPath: Map<string, CanonFile>): CanonFile[] {
@@ -209,8 +215,8 @@ function tierSummary(tiers: TierFiles): CanonLintSummary['tiers'] {
   }
 }
 
-function sizeFindings(tiers: TierFiles, summary: CanonLintSummary['tiers']): Finding[] {
-  const findings: Finding[] = []
+function sizeFindings(tiers: TierFiles, summary: CanonLintSummary['tiers']): CanonFinding[] {
+  const findings: CanonFinding[] = []
   if (tiers.entry && bytes(tiers.entry) > ENTRY_BYTES) {
     findings.push(sizeFinding(tiers.entry, 'canon/size-entry', bytes(tiers.entry), ENTRY_BYTES))
   }
@@ -220,6 +226,7 @@ function sizeFindings(tiers: TierFiles, summary: CanonLintSummary['tiers']): Fin
       line: 1,
       rule: 'canon/size-always-on',
       message: `measured ${summary.alwaysOn.bytes} bytes; limit ${ALWAYS_ON_TOTAL_BYTES} bytes`,
+      measuredBytes: summary.alwaysOn.bytes,
     })
   }
   for (const [files, rule, limit] of [
@@ -237,9 +244,9 @@ function sizeFindings(tiers: TierFiles, summary: CanonLintSummary['tiers']): Fin
 
 function chainMeasurements(classified: Classified[]): {
   measurements: CanonMeasurement[]
-  findings: Finding[]
+  findings: CanonFinding[]
 } {
-  const findings: Finding[] = []
+  const findings: CanonFinding[] = []
   const measurements: CanonMeasurement[] = []
   const agentsByPath = new Map(
     classified
@@ -291,11 +298,11 @@ function cardHeadingFindings(file: CanonFile): Finding[] {
     : []
 }
 
-function contentFindings(classified: Classified, taskKeyPattern: RegExp | null): Finding[] {
+function contentFindings(classified: Classified): CanonFinding[] {
   const { file, kind } = classified
   if (!kind || kind === 'alias' || kind === 'publication') return []
-  const findings: Finding[] = []
-  proseFindings(file, taskKeyPattern, findings)
+  const findings: CanonFinding[] = []
+  proseFindings(file, findings)
   if (kind === 'rule' || kind === 'context' || kind === 'reference') {
     findings.push(...frontmatterFinding(file, kind))
   }
@@ -328,20 +335,16 @@ function symlinkFindings(file: CanonFile, paths: Set<string>): Finding[] {
   return findings
 }
 
-export function lintCanon(input: {
-  files: CanonFile[]
-  taskKeyPrefixes: string[]
-}): CanonLintResult {
+export function lintCanon(input: { files: CanonFile[] }): CanonLintResult {
   const classified = input.files.map((file): Classified => ({ file, kind: kindOf(file) }))
   const tiers = tierFiles(classified)
   const tierMeasurements = tierSummary(tiers)
   const chains = chainMeasurements(classified)
-  const taskKeyPattern = taskPattern(input.taskKeyPrefixes)
   const paths = new Set(input.files.map((file) => file.path))
   const findings = [
     ...sizeFindings(tiers, tierMeasurements),
     ...chains.findings,
-    ...classified.flatMap((file) => contentFindings(file, taskKeyPattern)),
+    ...classified.flatMap(contentFindings),
     ...input.files.flatMap((file) => symlinkFindings(file, paths)),
   ]
   findings.sort(
@@ -355,4 +358,34 @@ export function lintCanon(input: {
     summary: { tiers: tierMeasurements, chains: chains.measurements },
     findings,
   }
+}
+
+function isSizeFinding(finding: CanonFinding): boolean {
+  return finding.rule.startsWith('canon/size-')
+}
+
+export function introducedCanonFindings(
+  baseline: CanonFinding[],
+  findings: CanonFinding[],
+): CanonFinding[] {
+  const introduced = introducedFindings(
+    baseline.filter((finding) => !isSizeFinding(finding)),
+    findings.filter((finding) => !isSizeFinding(finding)),
+  )
+  for (const finding of findings.filter(isSizeFinding)) {
+    const previousMeasured = baseline.find(
+      (candidate) =>
+        candidate.file === finding.file &&
+        candidate.rule === finding.rule &&
+        candidate.measuredBytes !== undefined,
+    )?.measuredBytes
+    if (
+      finding.measuredBytes === undefined ||
+      previousMeasured === undefined ||
+      finding.measuredBytes > previousMeasured
+    ) {
+      introduced.push(finding)
+    }
+  }
+  return introduced
 }
