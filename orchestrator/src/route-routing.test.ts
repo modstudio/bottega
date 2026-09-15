@@ -5,12 +5,14 @@ import { guide } from './guide.ts'
 import {
   candidates,
   EVIDENCE_WINDOW,
+  evidenceFor,
   MIN_SAMPLE,
   PROMPT_SIZE_BOUNDARY,
   pick,
   promptSizeBucket,
   scoreboard,
 } from './route.ts'
+import { weigh } from './score.ts'
 
 describe('one score, reported the same everywhere', () => {
   function judged(agent: string, rights: number, wrongs: number) {
@@ -256,5 +258,78 @@ describe('a repository-reading job gets a disposable writable disk', () => {
   })
   test('the same agent remains fine without tools', () => {
     expect(pick('review-lens', 'codex', 0, false, null).agent).toBe('codex')
+  })
+}) +
+  describe('fan-out routing exclusions', () => {
+    test('avoid removes an agent while another eligible agent remains', () => {
+      expect(pick('review-lens', undefined, 0, false, null, { agents: ['grok'] }).agent).toBe(
+        'codex',
+      )
+    })
+
+    test('exhausted exclusions refuse and name the cause', () => {
+      expect(() =>
+        pick('review-lens', undefined, 0, false, null, { agents: ['grok', 'codex'] }),
+      ).toThrow('excluded by constraint: codex: --avoid named codex; grok: --avoid named grok')
+    })
+
+    test('MCP routing no longer excludes codex over the caller checkout', () => {
+      expect(pick('mcp-query', undefined, 0, false, null, { agents: ['grok'] }).agent).toBe('codex')
+    })
+
+    test('an explicit pin that is also avoided is refused', () => {
+      expect(() => pick('review-lens', 'grok', 0, false, null, { agents: ['grok'] })).toThrow(
+        'contradicts',
+      )
+    })
+
+    test('distinct models exclude the agent currently using one', () => {
+      expect(
+        pick('review-lens', undefined, 0, false, null, { models: [AGENTS.grok!.model] }).agent,
+      ).toBe('codex')
+    })
+  })
+
+describe('routing narrows to a stack only when that buys a comparison', () => {
+  test('one proven agent on a stack is not enough to narrow', () => {
+    // Narrowing here would demote an agent with a long job-wide record to
+    // "unproven" and hand the work to whichever one reached five on this stack
+    // first — the incumbency problem, arriving by a different door.
+    for (let i = 0; i < 6; i++)
+      score(addRun({ agent: 'codex', job: 'craft', stack: 'php' }), 'full', 'right')
+    for (let i = 0; i < 9; i++)
+      score(addRun({ agent: 'grok', job: 'craft', stack: 'node' }), 'full', 'right')
+    expect(evidenceFor('craft', 0, 'php').level).toBe('job')
+  })
+
+  test('two proven agents on a stack is a real comparison', () => {
+    for (let i = 0; i < 6; i++)
+      score(addRun({ agent: 'codex', job: 'craft', stack: 'php' }), 'full', 'right')
+    for (let i = 0; i < 6; i++)
+      score(addRun({ agent: 'grok', job: 'craft', stack: 'php' }), 'full', 'mixed')
+    const ev = evidenceFor('craft', 0, 'php')
+    expect(ev.level).toBe('stack')
+    expect(ev.stack).toBe('php')
+  })
+
+  test('evidence from another stack does not leak into a scoped view', () => {
+    for (let i = 0; i < 6; i++)
+      score(addRun({ agent: 'codex', job: 'craft', stack: 'php' }), 'full', 'right')
+    for (let i = 0; i < 6; i++)
+      score(addRun({ agent: 'grok', job: 'craft', stack: 'php' }), 'full', 'right')
+    // A disaster on a different stack must not touch the php verdict.
+    for (let i = 0; i < 9; i++)
+      addRun({ agent: 'codex', job: 'craft', stack: 'node', status: 'failed' })
+    const scoped = evidenceFor('craft', 0, 'php').cands.find((c) => c.agent === 'codex')!
+    expect(scoped.evidence).toBe(6)
+    expect(scoped.score).toBe(weigh('full', 'right'))
+  })
+
+  test('no stack at all behaves exactly as it always did', () => {
+    for (let i = 0; i < 6; i++) score(addRun({ agent: 'codex', job: 'craft' }), 'full', 'right')
+    expect(evidenceFor('craft', 0, null).level).toBe('job')
+    expect(
+      evidenceFor('craft', 0, undefined).cands.find((c) => c.agent === 'codex')!.evidence,
+    ).toBe(6)
   })
 })
