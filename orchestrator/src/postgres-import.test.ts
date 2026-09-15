@@ -83,8 +83,8 @@ realPostgres('project import against copied live SQLite data', () => {
       'mcpServer',
       'tracker',
       'trunk',
-      'worktree',
       'workerMcpServers',
+      'worktree',
     ])
 
     const first = await importProjects({
