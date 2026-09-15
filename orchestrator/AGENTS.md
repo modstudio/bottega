@@ -1451,7 +1451,9 @@ A run's tree is closed out when the run terminalises. Close-out and `orch sweep`
 release a tree unless someone is alive on it or it holds work that exists
 nowhere else: uncommitted changes or commits on no other ref. The branch is
 always kept. Sweep reports what it released, what was already absent while its
-recorded identity remains, and what it kept and why. A restore path that runs
+recorded identity remains, and what it kept and why. Automatic teardown removes
+only a tree carrying the run's own ownership label; a tree the run attached to
+is forgotten, never removed. A restore path that runs
 SQL checks table and constraint counts after, never exit status alone. Then
 each project's own sweep runs, because a
 database whose worktree directory somebody deleted by hand is invisible to orch

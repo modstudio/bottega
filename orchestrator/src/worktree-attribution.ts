@@ -27,6 +27,104 @@ export type OrphanSafety = {
 
 export const ORCH_RUN_MARKER = '.orch-run'
 
+export type TreeOwnership = 'owned' | 'attached' | 'unknown'
+
+export type TreeOwnershipInput = {
+  conversationRunIds: readonly number[]
+  directoryName: string
+  repoRoot: string
+  branchTemplate?: string
+  checkout: boolean | 'unknown'
+  marker:
+    | { state: 'absent' }
+    | { state: 'unreadable' }
+    | { state: 'present'; runId: number | null; repoRoot: string | null }
+}
+
+/** Read the run id carried by a current or legacy worktree directory name. */
+export function worktreeNameRunId(name: string, branchTemplate?: string): number | null {
+  const conventional = name.match(/^orch-(\d+)$/)
+  if (conventional) return Number(conventional[1])
+  if (!branchTemplate?.includes('{id}')) return null
+
+  let idGroup = 0
+  const pattern = basename(branchTemplate)
+    .split(/(\{id\}|\{key\})/g)
+    .map((part) => {
+      if (part === '{id}') {
+        idGroup++
+        return idGroup === 1 ? '(\\d+)' : '\\d+'
+      }
+      if (part === '{key}') return '[^/]+'
+      return part.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+    })
+    .join('')
+  const match = name.match(new RegExp(`^${pattern}$`))
+  return match?.[1] ? Number(match[1]) : null
+}
+
+/** Decide whether this conversation owns a checkout without reading process state or storage. */
+export function treeOwnership(input: TreeOwnershipInput): TreeOwnership {
+  if (input.checkout === 'unknown') return 'unknown'
+  if (!input.checkout) return 'unknown'
+  if (input.marker.state === 'unreadable') return 'unknown'
+
+  const conversation = new Set(input.conversationRunIds)
+  if (input.marker.state === 'present') {
+    if (input.marker.runId === null || input.marker.repoRoot === null) return 'unknown'
+    const markerRoot = resolve(input.marker.repoRoot).replace(/\/$/, '')
+    const expectedRoot = resolve(input.repoRoot).replace(/\/$/, '')
+    return conversation.has(input.marker.runId) && markerRoot === expectedRoot
+      ? 'owned'
+      : 'attached'
+  }
+
+  const namedRun = worktreeNameRunId(input.directoryName, input.branchTemplate)
+  return namedRun !== null && conversation.has(namedRun) ? 'owned' : 'attached'
+}
+
+/** Gather marker and checkout facts at the storage edge, then apply the ownership decision. */
+export function inspectTreeOwnership(
+  path: string,
+  repoRoot: string,
+  conversationRunIds: readonly number[],
+  branchTemplate?: string,
+): TreeOwnership {
+  if (!existsSync(path)) {
+    return treeOwnership({
+      conversationRunIds,
+      directoryName: basename(path),
+      repoRoot,
+      branchTemplate,
+      checkout: 'unknown',
+      marker: { state: 'absent' },
+    })
+  }
+  const checkout = gitOk(['rev-parse', '--is-inside-work-tree'], path)
+  const markerPath = join(path, ORCH_RUN_MARKER)
+  let marker: TreeOwnershipInput['marker'] = { state: 'absent' }
+  if (existsSync(markerPath)) {
+    try {
+      const [runIdLine, markerRoot] = readFileSync(markerPath, 'utf8').split('\n')
+      marker = {
+        state: 'present',
+        runId: /^\d+$/.test(runIdLine ?? '') ? Number(runIdLine) : null,
+        repoRoot: markerRoot?.trim() || null,
+      }
+    } catch {
+      marker = { state: 'unreadable' }
+    }
+  }
+  return treeOwnership({
+    conversationRunIds,
+    directoryName: basename(path),
+    repoRoot,
+    branchTemplate,
+    checkout: checkout === null ? 'unknown' : checkout === 'true',
+    marker,
+  })
+}
+
 /** Read lifecycle provenance from current markers; legacy markers have none. */
 export function markedWorktreeSource(path: string): Worktree['source'] | undefined {
   try {
@@ -45,15 +143,7 @@ export function markedWorktreeSource(path: string): Worktree['source'] | undefin
 /** Recognise current markers and the naming schemes used before markers existed. */
 export function isOrchWorktree(path: string, branchTemplate?: string): boolean {
   if (existsSync(join(path, ORCH_RUN_MARKER))) return true
-  const name = basename(path)
-  if (/^orch-\d+$/.test(name)) return true
-  if (!branchTemplate?.includes('{id}')) return false
-  const templateName = basename(branchTemplate)
-  const pattern = templateName
-    .replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
-    .replace(/\\\{id\\\}/g, '\\d+')
-    .replace(/\\\{key\\\}/g, '[^/]+')
-  return new RegExp(`^${pattern}$`).test(name)
+  return worktreeNameRunId(basename(path), branchTemplate) !== null
 }
 
 /**
