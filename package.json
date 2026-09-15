@@ -15,6 +15,7 @@
     "@biomejs/biome": "2.5.13",
     "@types/bun": "latest",
     "@typescript-eslint/parser": "8.70.0",
+    "dependency-cruiser": "18.3.1",
     "eslint": "^10.10.0",
     "eslint-plugin-sonarjs": "4.2.0",
     "typescript": "^5"
