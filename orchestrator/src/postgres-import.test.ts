@@ -28,8 +28,8 @@ async function targetState(sql: SQL): Promise<unknown> {
   const projects = await sql`
     SELECT id, space_id, name, key_prefixes, checkout_path, stack, canon,
       landing_branch, production_branch, gate, require_clean_main, color,
-      color_dark, env_prefix, mcp_server, mcp_probe_tool, tracker,
-      worktree_recipe, created_at
+      color_dark, env_prefix, mcp_server, worker_mcp_servers, secret_paths,
+      mcp_probe_tool, tracker, worktree, created_at
     FROM project ORDER BY name
   `
   const sequences = await sql`
@@ -84,6 +84,7 @@ realPostgres('project import against copied live SQLite data', () => {
       'tracker',
       'trunk',
       'worktree',
+      'workerMcpServers',
     ])
 
     const first = await importProjects({
@@ -113,9 +114,11 @@ realPostgres('project import against copied live SQLite data', () => {
       keyPrefixes: 'key_prefixes',
       mcp: 'mcp_probe_tool',
       mcpServer: 'mcp_server',
+      secretPaths: 'secret_paths',
       tracker: 'tracker',
       trunk: 'landing_branch',
-      worktree: 'worktree_recipe',
+      worktree: 'worktree',
+      workerMcpServers: 'worker_mcp_servers',
     }
     for (const source of sourceProjects) {
       const settings = JSON.parse(source.settings) as Record<string, unknown>
@@ -130,6 +133,12 @@ realPostgres('project import against copied live SQLite data', () => {
 
     const platform = imported.find((row) => row.name === PLATFORM_SLUG)!
     expect(platform).toBeDefined()
+    const platformSettings = JSON.parse(
+      sourceProjects.find((row) => row.name === PLATFORM_SLUG)!.settings,
+    ) as Record<string, unknown>
+    expect(platform.worker_mcp_servers).toEqual(platformSettings.workerMcpServers)
+    expect(platform.worktree).toEqual(platformSettings.worktree)
+    expect(platform.secret_paths).toBeNull()
     const adanim = imported.find((row) => row.name === 'adanim')!
     expect(adanim.key_prefixes).toEqual(['ADN', 'SHUL'])
 
