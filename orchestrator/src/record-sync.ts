@@ -23,6 +23,7 @@ export type RecordSyncOptions = {
   local?: Database
   openSql?: (url: string) => SQL
   now?: () => string
+  identity?: { id: string; name: string }
 }
 
 function payload(source: string): Payload {
@@ -110,21 +111,25 @@ function runValues(row: Payload, projectId: string) {
   }
 }
 
-async function upsertMachine(postgres: SQL, seenAt: string): Promise<void> {
+async function upsertMachine(
+  postgres: SQL,
+  seenAt: string,
+  identity: { id: string; name: string },
+): Promise<void> {
   await postgres.begin(async (tx) => {
     const record = drizzle({ client: tx })
     await record
       .insert(machine)
       .values({
-        id: machineId(),
+        id: identity.id,
         userId: PLATFORM_OPERATOR_USER_ID,
-        name: machineName(),
+        name: identity.name,
         registeredAt: date(seenAt),
         lastSeen: date(seenAt),
       })
       .onConflictDoUpdate({
         target: machine.id,
-        set: { userId: PLATFORM_OPERATOR_USER_ID, name: machineName(), lastSeen: date(seenAt) },
+        set: { userId: PLATFORM_OPERATOR_USER_ID, name: identity.name, lastSeen: date(seenAt) },
       })
   })
 }
@@ -156,7 +161,11 @@ export async function syncRecord(options: RecordSyncOptions = {}): Promise<Recor
   let pushed = 0
   let failed = 0
   try {
-    await upsertMachine(postgres, (options.now ?? nowIso)())
+    await upsertMachine(
+      postgres,
+      (options.now ?? nowIso)(),
+      options.identity ?? { id: machineId(), name: machineName() },
+    )
     const rows = local
       .query<OutboxRow, []>(
         'SELECT id, record_id, payload FROM outbox WHERE synced_at IS NULL ORDER BY id',

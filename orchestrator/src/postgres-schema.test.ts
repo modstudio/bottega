@@ -24,7 +24,10 @@ test('newRecordId is strictly increasing and unique in a tight loop', () => {
 test('newRecordId retries after Bun UUIDv7 counter rollover', () => {
   const previous = newRecordId()
   const next = nextUuid(previous)
-  const random = spyOn(Bun, 'randomUUIDv7').mockReturnValueOnce(previous).mockReturnValueOnce(next)
+  const candidates = [previous, next]
+  const random = spyOn(Bun, 'randomUUIDv7').mockImplementation(
+    (() => candidates.shift()!) as typeof Bun.randomUUIDv7,
+  )
   try {
     expect(newRecordId()).toBe(next)
     expect(random).toHaveBeenCalledTimes(2)
