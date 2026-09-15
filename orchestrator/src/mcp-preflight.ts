@@ -4,7 +4,7 @@
  * Must not know run state, transports, routing, or database mutation.
  */
 
-import { AGENTS } from './agents.ts'
+import { AGENTS } from './agent-registry.ts'
 import type { CanonSource } from './contract.ts'
 import { job } from './jobs.ts'
 import { projectAt, validateStoredProjectSettings } from './projects.ts'

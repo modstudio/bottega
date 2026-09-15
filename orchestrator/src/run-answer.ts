@@ -4,7 +4,7 @@
  * turns. Must not know transports, worktrees, routing, reviews, or the CLI.
  */
 import { existsSync, readFileSync } from 'node:fs'
-import { AGENTS } from './agents.ts'
+import { AGENTS } from './agent-registry.ts'
 import { ANSWER_WORKING_FORMS, parseAnswerTextSources } from './args.ts'
 import { clock } from './clock.ts'
 import { rulingPrompt } from './contract.ts'

@@ -3,6 +3,7 @@ import { checkModuleBoundary } from './module-boundary.ts'
 
 checkModuleBoundary('check-run-claim-boundary', 'orchestrator/src/run-claim.ts', [
   './agents.ts',
+  './codex-schema.ts',
   './canon.ts',
   './checkout-identity.ts',
   './contract.ts',

@@ -1,4 +1,4 @@
-import { AGENTS } from '../../src/agents.ts'
+import { AGENTS } from '../../src/agent-registry.ts'
 import { db } from '../../src/db.ts'
 import { terminateProcessGroup } from '../../src/idle-kill.ts'
 import { dir as preloadDir } from '../preload.ts'

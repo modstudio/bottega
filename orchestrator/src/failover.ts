@@ -5,7 +5,7 @@
  * database write helpers.
  */
 import type { Database } from 'bun:sqlite'
-import { AGENTS } from './agents.ts'
+import { AGENTS } from './agent-registry.ts'
 import { db } from './db.ts'
 import type { McpRequest } from './mcp-preflight.ts'
 

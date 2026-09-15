@@ -114,7 +114,7 @@
     "score": 17
   },
   {
-    "file": "orchestrator/src/agents.ts",
+    "file": "orchestrator/src/codex-schema.ts",
     "function": "visit",
     "line": 190,
     "score": 25
@@ -126,19 +126,19 @@
     "score": 29
   },
   {
-    "file": "orchestrator/src/agents.ts",
+    "file": "orchestrator/src/agent-registry.ts",
     "function": "assertAgentMutation",
     "line": 952,
     "score": 22
   },
   {
-    "file": "orchestrator/src/agents.ts",
+    "file": "orchestrator/src/agent-registry.ts",
     "function": "setAgent",
     "line": 999,
     "score": 40
   },
   {
-    "file": "orchestrator/src/agents.ts",
+    "file": "orchestrator/src/agent-probe.ts",
     "function": "probeAgent",
     "line": 1151,
     "score": 40

@@ -9,7 +9,7 @@
  */
 
 import { existsSync, readFileSync } from 'node:fs'
-import { AGENTS, refreshAgents } from './agents.ts'
+import { AGENTS, refreshAgents } from './agent-registry.ts'
 import { db } from './db.ts'
 import { runTotals } from './evidence-query.ts'
 import { guide } from './guide.ts'

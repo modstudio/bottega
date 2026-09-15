@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test'
 import { addRun, score } from '../test/fixtures/store.ts'
-import { AGENTS } from './agents.ts'
+import { AGENTS } from './agent-registry.ts'
 import { guide } from './guide.ts'
 import {
   candidates,

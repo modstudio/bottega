@@ -3,18 +3,16 @@
 import { createHash } from 'node:crypto'
 import { mkdirSync, realpathSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
-import {
-  AGENTS,
-  ensureLocalHealth,
-  readStrictCodexSchema,
-  resumePromptByteLimit,
-} from './agents.ts'
+import { AGENTS } from './agent-registry.ts'
+import { resumePromptByteLimit } from './agents.ts'
 import { flagValue, flagValues, readMessageText } from './args.ts'
+import { readStrictCodexSchema } from './codex-schema.ts'
 import { contractConflicts } from './contract.ts'
 import { sessionId } from './db.ts'
 import { dispatchCommand } from './dispatch-commands.ts'
 import type { DetachSpec } from './failover.ts'
 import { JOBS, job } from './jobs.ts'
+import { ensureLocalHealth } from './local-host.ts'
 import type { McpRequest } from './mcp-preflight.ts'
 import { stackAt } from './projects.ts'
 import { implicitReviewWarning } from './review-target.ts'

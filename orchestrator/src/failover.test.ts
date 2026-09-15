@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test'
-import { AGENTS } from './agents.ts'
+import { AGENTS } from './agent-registry.ts'
 import {
   decideFailover,
   detachedRunOptions,
