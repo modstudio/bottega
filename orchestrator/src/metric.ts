@@ -1,3 +1,4 @@
+import type { Dirent } from 'node:fs'
 import { createReadStream, readdirSync, statSync } from 'node:fs'
 import { join } from 'node:path'
 import { createInterface } from 'node:readline'
@@ -69,7 +70,7 @@ const metricDaysAgo = (days: number, now: number): string =>
 
 /** Every .jsonl transcript under ~/.claude/projects. */
 function transcripts(dir: string, out: string[] = []): string[] {
-  let entries
+  let entries: Dirent[]
   try {
     entries = readdirSync(dir, { withFileTypes: true })
   } catch {

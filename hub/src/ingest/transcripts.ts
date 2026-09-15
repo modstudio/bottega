@@ -1,3 +1,4 @@
+import type { Dirent } from 'node:fs'
 import { createReadStream, readdirSync, statSync } from 'node:fs'
 import { join } from 'node:path'
 import { createInterface } from 'node:readline'
@@ -9,7 +10,7 @@ const CLAUDE_ROOT = `${process.env.HOME}/.claude/projects`
 
 /** Every .jsonl transcript under a root. */
 function transcripts(dir: string, out: string[] = []): string[] {
-  let entries
+  let entries: Dirent[]
   try {
     entries = readdirSync(dir, { withFileTypes: true })
   } catch {

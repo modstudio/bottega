@@ -93,7 +93,7 @@ export function installTestProcessInventory(inventory: ProcessInventory | null):
 
 export function processTable(): ProcessInventory {
   if (testProcessInventory) return testProcessInventory
-  let p
+  let p: ReturnType<typeof Bun.spawnSync>
   try {
     p = Bun.spawnSync(['ps', '-axo', 'pid=,ppid=,pgid=,command='], {
       stdout: 'pipe',

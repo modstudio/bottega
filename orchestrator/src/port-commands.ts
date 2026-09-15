@@ -98,7 +98,7 @@ export async function portCommand(
         })
       }
     }
-    let plan
+    let plan: ReturnType<typeof planImport>
     if (ioRefusals.length) {
       plan = {
         pairs: [],

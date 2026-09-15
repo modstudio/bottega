@@ -413,7 +413,7 @@ async function task() {
             Bun.sleepSync(delay)
           }
         : undefined
-    let row
+    let row: ReturnType<typeof createTask>
     try {
       row = createTask(
         { project, title, status: flag('status'), parent: flag('parent'), body },
