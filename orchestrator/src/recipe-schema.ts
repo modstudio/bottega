@@ -177,6 +177,15 @@ function validateAllocationUndo(recipe: RecipeInput, context: z.RefinementCtx): 
 
 function validateWorkingDirectories(recipe: RecipeInput, context: z.RefinementCtx): void {
   for (const step of allSteps(recipe)) {
+    if (
+      step.exec?.where === 'container' &&
+      [step.run, step.undo, step.verify].some((command) => command?.cwd !== undefined)
+    ) {
+      context.addIssue({
+        code: 'custom',
+        message: `cwd rule: step "${step.name}" runs in a container, where cwd is not supported`,
+      })
+    }
     if (step.run.cwd !== undefined) validateCwd(step.run.cwd, step.name, 'run', context)
     if (step.undo?.cwd !== undefined) validateCwd(step.undo.cwd, step.name, 'undo', context)
     if (step.verify?.cwd !== undefined) validateCwd(step.verify.cwd, step.name, 'verify', context)
