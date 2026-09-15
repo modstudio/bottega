@@ -31,6 +31,8 @@ import {
   terminalCloseOutRuns,
   terminalProcessAliveConditions,
   unscoredRuns,
+  unsettledClaimConditions,
+  unsettledClaimInventory,
   worktreeDatabaseConditions,
 } from './monitor-conditions.ts'
 import type {
@@ -454,6 +456,10 @@ export async function monitor(
   const sandboxDirectories = orphanSandboxDirectoryConditions(sandboxDirectoryInventory(database))
   conditions.push(...sandboxDirectories.conditions)
   errors.push(...sandboxDirectories.errors)
+
+  const unsettledClaims = unsettledClaimConditions(unsettledClaimInventory(database), clock)
+  conditions.push(...unsettledClaims.conditions)
+  errors.push(...unsettledClaims.errors)
 
   const trustEntries = staleTrustEntryConditions(trustEntryInventory(database))
   conditions.push(...trustEntries.conditions)

@@ -1,5 +1,5 @@
 /** Cleanup sweep knows worktree ownership, leases and the cleanup lock, resource reclamation, and branch retention. It must not know transports, routing, reviews, contracts, the CLI, or durable execution. */
-import { existsSync, readdirSync, realpathSync } from 'node:fs'
+import { existsSync, lstatSync, readdirSync, realpathSync } from 'node:fs'
 import { join, resolve } from 'node:path'
 import {
   type CleanupPresentation,
@@ -8,7 +8,7 @@ import {
   verifyBranchOwnershipAfterCleanup,
   withCleanupLock,
 } from './cleanup.ts'
-import { closeOutRun } from './close-out.ts'
+import { closeOutRun, releaseSandboxDirectoryForConversation } from './close-out.ts'
 import { db, sessionId, writableDb, writeTransaction } from './db.ts'
 import {
   classifiedDockerResources,
@@ -19,6 +19,7 @@ import {
 } from './docker-resources.ts'
 import { projectAt, projectByName, projects } from './projects.ts'
 import { liveWorktreeSharers, terminalDockerRetentionReasonForRun } from './resource-ownership.ts'
+import { RUNS_DIR } from './run-artifacts.ts'
 import { auditRunMutation } from './run-authority.ts'
 import {
   inspectTreeOwnership,
@@ -116,9 +117,11 @@ function printSweepKept(
   dry: boolean,
   force: boolean,
   presentation: CleanupPresentation,
+  sandbox: { released: number; kept: number },
 ): void {
   presentation.log(
-    `\n${dry ? 'would reclaim' : 'reclaimed'} ${released}, already absent ${absent}, forgotten ${forgotten}, kept ${kept.length}`,
+    `\n${dry ? 'would reclaim' : 'reclaimed'} ${released}, already absent ${absent}, forgotten ${forgotten}, kept ${kept.length}; ` +
+      `${dry ? 'would release' : 'released'} sandbox ${sandbox.released}, kept sandbox ${sandbox.kept}`,
   )
   const listAll = dry
   const fits = kept.length <= KEPT_ROW_LIMIT
@@ -140,6 +143,44 @@ function printSweepKept(
     if (force) parts.push('--force')
     presentation.log(`  ${parts.join(' ')} lists every kept row`)
   }
+}
+
+function directorySize(path: string): number {
+  const entry = lstatSync(path)
+  if (!entry.isDirectory()) return entry.size
+  return readdirSync(path).reduce((total, name) => total + directorySize(join(path, name)), 0)
+}
+
+function sweepSandboxDirectories(
+  dry: boolean,
+  presentation: CleanupPresentation,
+): { released: number; kept: number } {
+  const counts = { released: 0, kept: 0 }
+  if (!existsSync(RUNS_DIR)) return counts
+  for (const entry of readdirSync(RUNS_DIR, { withFileTypes: true })) {
+    const match = entry.isDirectory() ? /^sandbox-([1-9]\d*)$/.exec(entry.name) : null
+    if (!match) continue
+    const rootId = Number(match[1])
+    const path = join(RUNS_DIR, entry.name)
+    let bytes: number
+    let result: ReturnType<typeof releaseSandboxDirectoryForConversation>
+    try {
+      bytes = directorySize(path)
+      result = releaseSandboxDirectoryForConversation(rootId, { dryRun: dry })
+    } catch (error) {
+      counts.kept++
+      presentation.log(`kept sandbox ${rootId}: ${String((error as Error).message ?? error)}`)
+      continue
+    }
+    if (result.outcome === 'released') {
+      counts.released++
+      presentation.log(`${dry ? 'would release' : 'released'} sandbox ${rootId} ${bytes}`)
+    } else {
+      counts.kept++
+      presentation.log(`kept sandbox ${rootId}: ${result.detail}`)
+    }
+  }
+  return counts
 }
 
 function reportClosedSweepRow(
@@ -596,6 +637,8 @@ export async function sweepRuns(options: SweepOptions, helpers: SweepHelpers): P
       options.presentation.error(`  ${dry ? 'would report ' : ''}${error}`)
   }
 
+  const sandboxCounts = sweepSandboxDirectories(dry, options.presentation)
+
   printSweepKept(
     closedCounts.released,
     closedCounts.absent,
@@ -604,6 +647,7 @@ export async function sweepRuns(options: SweepOptions, helpers: SweepHelpers): P
     dry,
     options.force,
     options.presentation,
+    sandboxCounts,
   )
   if (cleanupFailed) options.presentation.setExitCode(1)
   return

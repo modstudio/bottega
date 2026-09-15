@@ -1450,7 +1450,8 @@ and stamping `consumed`. Declining must not consume anything.
 A run's tree is closed out when the run terminalises. Close-out and `orch sweep`
 release a tree unless someone is alive on it or it holds work that exists
 nowhere else: uncommitted changes or commits on no other ref. The branch is
-always kept. Sweep reports what it released, what was already absent while its
+always kept. A finished conversation's sandbox directory is released with its tree.
+Sweep reports what it released, what was already absent while its
 recorded identity remains, and what it kept and why. Automatic teardown removes
 only a tree carrying the run's own ownership label; a tree the run attached to
 is forgotten, never removed. A restore path that runs
