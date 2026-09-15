@@ -183,6 +183,13 @@
       "when": 1788900000019,
       "tag": "0025_resource_claim_allocation_kinds",
       "breakpoints": true
+    },
+    {
+      "idx": 26,
+      "version": "6",
+      "when": 1788900000020,
+      "tag": "0026_canon_doc_scope",
+      "breakpoints": true
     }
   ]
 }

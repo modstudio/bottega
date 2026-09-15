@@ -1,7 +1,7 @@
 // concern: cli
 /** Registers documentation and register adapters. Must not own their behavior. */
 import type { Command } from 'commander'
-import { canonCommand, canonLintCommand } from '../canon-commands.ts'
+import { canonLintCommand, dispatchCanonCommand } from '../canon-commands.ts'
 import { docCommand } from '../doc-commands.ts'
 import { portCommand } from '../port-commands.ts'
 import { projectCommand } from '../project-commands.ts'
@@ -39,12 +39,15 @@ export function register(program: Command): void {
     .option('--job <value>')
     .option('--slug <value>')
     .option('--agent <value>')
+    .option('--project <value>')
+    .option('--reason <value>')
     .option('--baseline <value>')
     .option('--all')
     .option('--json')
     .option('--force')
     .option('--strict')
     .option('--write-baseline')
+    .option('--check')
     .action(async (args, options) => {
       const argv = ['canon', ...args]
       const flags = optionFlags(options)
@@ -59,7 +62,7 @@ export function register(program: Command): void {
         })
         return
       }
-      await canonCommand(argv, flags, {
+      await dispatchCanonCommand(argv, flags, {
         log,
         exitCode: (code) => {
           process.exitCode = code

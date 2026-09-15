@@ -26,6 +26,10 @@ function isCanonPath(path: string): boolean {
   )
 }
 
+function isHydrationPath(path: string): boolean {
+  return isCanonPath(path) || path === '.claude/rules' || path === '.agents/rules/contexts'
+}
+
 export function canonGitRoot(cwd: string): string {
   return git(cwd, ['rev-parse', '--show-toplevel']).trim()
 }
@@ -41,8 +45,12 @@ function trackedEntries(root: string): { mode: string; path: string }[] {
     })
 }
 
-function readCanonFiles(root: string, entries: { mode: string; path: string }[]): CanonFile[] {
-  const canonEntries = entries.filter(({ path }) => isCanonPath(path))
+function readCanonFiles(
+  root: string,
+  entries: { mode: string; path: string }[],
+  include = isCanonPath,
+): CanonFile[] {
+  const canonEntries = entries.filter(({ path }) => include(path))
   const tracked = new Set(entries.map(({ path }) => path))
   return canonEntries.map(({ mode, path }) => {
     const absolute = resolve(root, path)
@@ -97,4 +105,9 @@ export function collectCanonLintInput(root: string): CanonLintInput {
     packageScripts: readPackageScripts(root, entries),
     sourceTexts: readSourceTexts(root, entries),
   }
+}
+
+export function collectCanonTree(root: string): CanonFile[] {
+  const entries = trackedEntries(root)
+  return readCanonFiles(root, entries, isHydrationPath)
 }

@@ -4,14 +4,17 @@
  * subject; resume briefs attach to a project (the epic is the slug); machine facts
  * describe the host itself. Worker prompts receive only global, job, and
  * current-project documents; agent, machine, and resume notes serve routing and
- * architectural judgement instead. If an adopter needs text unchanged,
- * it is canon in the repository; if it describes this estate, it belongs here.
+ * architectural judgement instead. Canon docs are the source for a project's
+ * hydrated instruction tree and are never injected into worker prompts here.
  */
 import { mkdirSync, readdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { DOC_SCOPE_SUBJECT_KIND, DOC_SCOPES, type DocScope } from '../../shared/docs.ts'
 import { AGENTS } from './agent-registry.ts'
 import { compileBrief } from './canon.ts'
+import { collectCanonLintInput } from './canon-files.ts'
+import type { CanonRow } from './canon-hydrate.ts'
+import { decideCanonWrite } from './canon-write-gate.ts'
 import { db, nowIso, sessionId, writableDb, writeTransaction } from './db.ts'
 import { JOBS } from './jobs.ts'
 import { DEFAULT_PACK_BYTES, MAX_INJECT_DOC_BYTES } from './pack-budget.ts'
@@ -69,7 +72,14 @@ export type DocRevisionMetadata = Omit<
 > & {
   bytes: number
 }
-export type DocWriteContext = { author?: string; reason: string; forceInject?: string }
+export type DocWriteContext = {
+  author?: string
+  reason: string
+  forceInject?: string
+  /** A complete preflighted set used only while bootstrapping an empty canon store. */
+  canonSet?: CanonRow[]
+  allowCanonBootstrap?: boolean
+}
 
 function assertInjectSize(input: {
   scope: string
@@ -163,6 +173,12 @@ function validScope(scope: string): asserts scope is DocScope {
 
 function validateHistoricAddress(scope: string, slug: string): asserts scope is DocScope {
   validScope(scope)
+  if (scope === 'canon') {
+    if (!slug || slug.startsWith('/') || slug.includes('..')) {
+      throw new Error('invalid canon slug; use a repository-relative canon mirror path')
+    }
+    return
+  }
   if (!/^[a-z0-9][a-z0-9-]*$/.test(slug) || slug.length > 64) {
     throw new Error(
       'invalid slug; use 1-64 lowercase letters, digits, or hyphens, starting with a letter or digit',
@@ -347,7 +363,37 @@ function setDocWithOp(
   validate(input.scope, input.subject, input.slug)
   writeIdentity(input)
   const prior = getDoc(input.scope, input.subject, input.slug)
-  assertInjectSize({ ...input, delivery: input.delivery ?? prior?.delivery ?? 'inject' })
+  assertInjectSize({
+    ...input,
+    delivery: input.scope === 'canon' ? 'demand' : (input.delivery ?? prior?.delivery ?? 'inject'),
+  })
+  if (input.scope === 'canon') {
+    const project = projectByName(input.subject!)!
+    const current = listDocs({ scope: 'canon', subject: input.subject }).map((doc) => ({
+      slug: doc.slug,
+      body: doc.body,
+    }))
+    const next = input.canonSet ?? [
+      ...current.filter(({ slug }) => slug !== input.slug),
+      { slug: input.slug, body: input.body },
+    ]
+    const collected = collectCanonLintInput(project.path)
+    const findings = decideCanonWrite({
+      current,
+      next,
+      trackedPaths: collected.trackedPaths,
+      packageScripts: collected.packageScripts,
+      sourceTexts: collected.sourceTexts,
+    })
+    if (findings.length && !input.allowCanonBootstrap) {
+      throw new Error(
+        `refusing canon write; introduced ${findings.length} finding${findings.length === 1 ? '' : 's'}:\n` +
+          findings
+            .map((finding) => `${finding.file}:${finding.line} ${finding.rule} ${finding.message}`)
+            .join('\n'),
+      )
+    }
+  }
   return writeTransaction(() => {
     const existing = getDoc(input.scope, input.subject, input.slug)
     const at = nowIso()
@@ -355,7 +401,13 @@ function setDocWithOp(
     if (existing) {
       db()
         .query('UPDATE doc SET title=?, body=?, delivery=?, updated_at=? WHERE id=?')
-        .run(input.title, input.body, input.delivery ?? existing.delivery, at, existing.id)
+        .run(
+          input.title,
+          input.body,
+          input.scope === 'canon' ? 'demand' : (input.delivery ?? existing.delivery),
+          at,
+          existing.id,
+        )
       doc = getDoc(input.scope, input.subject, input.slug)!
     } else {
       const id = (
@@ -367,11 +419,13 @@ function setDocWithOp(
           .get(
             input.scope,
             input.subject,
-            input.scope === 'project' ? projectByName(input.subject!)!.id : null,
+            input.scope === 'project' || input.scope === 'canon'
+              ? projectByName(input.subject!)!.id
+              : null,
             input.slug,
             input.title,
             input.body,
-            input.delivery ?? 'inject',
+            input.scope === 'canon' ? 'demand' : (input.delivery ?? 'inject'),
             at,
             at,
           ) as { id: number }
