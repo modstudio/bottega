@@ -243,6 +243,7 @@ for (const script of [
   'check-run-terminal-boundary.ts',
   'check-run-close-boundary.ts',
   'check-run-types-boundary.ts',
+  'check-resume-tree-boundary.ts',
   'check-workflows-boundary.ts',
   'check-issue-report-fields-boundary.ts',
   'check-mcp-preflight-boundary.ts',

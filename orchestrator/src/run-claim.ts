@@ -17,7 +17,7 @@ import { db, nowIso, sessionId } from './db.ts'
 import { namesRecordedRunTree } from './dispatch-preflight.ts'
 import { appendRunEvent } from './events.ts'
 import { resolveSupersededTurn } from './failover.ts'
-import { branchOf, gitContext, repoRootOf } from './git-environment.ts'
+import { branchOf, git, gitContext, repoRootOf } from './git-environment.ts'
 import { addedGrokTrustHeadings, grokTrustHeadings } from './grok-trust.ts'
 import {
   assertGrokTrustEligible,
@@ -33,6 +33,7 @@ import { withWorktreeCreateLock, withWorktreeLease } from './project-lock.ts'
 import { projectAt, stackAt } from './projects.ts'
 import { retargetRepositoryPromptForDispatch } from './prompt-retarget.ts'
 import { teardownTerminalRunResources } from './resource-ownership.ts'
+import type { ResumeTreePlan } from './resume-tree.ts'
 import { inferredReadOnlyKey } from './review-target.ts'
 import {
   noRepoIsolatePath,
@@ -54,6 +55,80 @@ import { createIsolatedWorkerDirectory, prepareWorkerMcpConfig } from './worktre
 import { toolFor } from './worktree-preflight.ts'
 import { type Changes, removeFor } from './worktree-remove.ts'
 import type { Worktree } from './worktree-types.ts'
+
+type RecreateResumeTreePlan = Extract<
+  ResumeTreePlan,
+  { action: 'recreate-on-branch' | 'recreate-then-restore' }
+>
+
+function prepareResumeBranchIfNeeded(
+  repoRoot: string,
+  plan: RecreateResumeTreePlan | undefined,
+): void {
+  if (plan?.action !== 'recreate-on-branch') return
+  const current = gitContext(
+    repoRoot,
+    'rev-parse',
+    '--verify',
+    `refs/heads/${plan.branch}^{commit}`,
+  )
+  if (!current) git(['update-ref', `refs/heads/${plan.branch}`, plan.tip], repoRoot)
+}
+
+function resumeCreationOptions(
+  plan: RecreateResumeTreePlan | undefined,
+  tool: ReturnType<typeof toolFor>,
+): {
+  tool: ReturnType<typeof toolFor>
+  baseRef: string | undefined
+  existingBranch: string | undefined
+  existingBranchTip: string | undefined
+} {
+  if (!plan) return { tool, baseRef: undefined, existingBranch: undefined, existingBranchTip: undefined }
+  if (plan.action === 'recreate-on-branch') {
+    return { tool: null, baseRef: undefined, existingBranch: plan.branch, existingBranchTip: plan.tip }
+  }
+  return { tool, baseRef: plan.tip, existingBranch: undefined, existingBranchTip: undefined }
+}
+
+function restoreResumeIfNeeded(
+  created: Worktree,
+  plan: RecreateResumeTreePlan | undefined,
+  runId: number,
+): Worktree {
+  return plan ? restoreResumedTree(created, plan, runId) : created
+}
+
+function taskBranchKey(
+  launchKey: string | null,
+  plan: RecreateResumeTreePlan | undefined,
+): string | null {
+  return plan ? null : launchKey
+}
+
+function restoreResumedTree(
+  created: Worktree,
+  plan: RecreateResumeTreePlan,
+  runId: number,
+): Worktree {
+  if (plan.action === 'recreate-then-restore') {
+    try {
+      git(['reset', '--hard', plan.tip], created.path)
+    } catch {
+      // The postcondition below gives the one harness failure shape for both a
+      // refused reset and a reset that landed anywhere except the retained tip.
+    }
+  }
+  const actual = gitContext(created.path, 'rev-parse', '--verify', 'HEAD^{commit}')
+  if (actual !== plan.tip) {
+    const cleanup = removeFor(created, created.repoRoot, false, true, runId)
+    throw new Error(
+      `resumed tree postcondition failed: expected ${plan.tip}, got ${actual ?? '(unresolved)'}; ` +
+        `cleanup: ${cleanup.removed ? 'removed tree and kept every branch' : cleanup.detail}`,
+    )
+  }
+  return { ...created, base: plan.tip }
+}
 
 type ClaimOptions = {
   reserveId?: number
@@ -78,6 +153,7 @@ type ClaimOptions = {
     turn: number
     sessionId: string | null
     worktree: Worktree | null
+    treePlan?: Extract<ResumeTreePlan, { action: 'recreate-on-branch' | 'recreate-then-restore' }>
   }
 }
 
@@ -448,9 +524,11 @@ export async function claimRun(input: ClaimInput): Promise<ClaimResult> {
   let cwd = callerCwd
   try {
     const worktreeTool = repoJob ? toolFor(callerCwd) : null
+    const resumePlan = opts.resume?.treePlan
     let resolvedTaskBranch: TaskBranchCandidate | null = null
-    if (repoJob && writesJob && !worktree && launchKey) {
-      resolvedTaskBranch = resolveTaskBranch(callerCwd, launchKey)
+    const attachableTaskKey = taskBranchKey(launchKey, resumePlan)
+    if (repoJob && writesJob && !worktree && attachableTaskKey) {
+      resolvedTaskBranch = resolveTaskBranch(callerCwd, attachableTaskKey)
       if (resolvedTaskBranch?.worktree) {
         worktree = resolvedTaskBranch.worktree
         taskBranchAttachment = true
@@ -480,6 +558,8 @@ export async function claimRun(input: ClaimInput): Promise<ClaimResult> {
       if (creating) {
         const repoRoot = repoRootOf(callerCwd)
         if (!repoRoot) throw new Error(`not a git repository: ${callerCwd}`)
+        prepareResumeBranchIfNeeded(repoRoot, resumePlan)
+        const resumeCreation = resumeCreationOptions(resumePlan, tool)
         const recordWorktree = (created: Worktree) => {
           const result = db()
             .query(
@@ -502,7 +582,7 @@ export async function claimRun(input: ClaimInput): Promise<ClaimResult> {
           // every test the worker runs is meaningless and green. The isolation
           // module selects the declared lifecycle or Git fallback as one operation.
           const created = createWorkerWorktree({
-            tool,
+            tool: resumeCreation.tool,
             cwd: callerCwd,
             runId: claim.id,
             writes: writesJob,
@@ -510,21 +590,23 @@ export async function claimRun(input: ClaimInput): Promise<ClaimResult> {
             seed,
             key: opts.key,
             baseRef:
+              resumeCreation.baseRef ??
               reviewTarget?.commit ??
-              opts.base ??
-              (writesJob && !resolvedTaskBranch
-                ? resolveReadOnlyBase(callerCwd, 'HEAD')
-                : undefined),
+                  opts.base ??
+                  (writesJob && !resolvedTaskBranch
+                    ? resolveReadOnlyBase(callerCwd, 'HEAD')
+                    : undefined),
             record: recordWorktree,
             detached: Boolean(reviewTarget),
-            existingBranch: resolvedTaskBranch?.branch,
-            existingBranchTip: resolvedTaskBranch?.tip,
+            existingBranch: resumeCreation.existingBranch ?? resolvedTaskBranch?.branch,
+            existingBranchTip: resumeCreation.existingBranchTip ?? resolvedTaskBranch?.tip,
           })
+          const restored = restoreResumeIfNeeded(created, resumePlan, claim.id)
           const current = db().query('SELECT status FROM run WHERE id=?').get(claim.id) as {
             status: string
           }
           if (current.status === 'stopped') {
-            const cleanup = removeFor(created, created.repoRoot, false, false, claim.id)
+            const cleanup = removeFor(restored, restored.repoRoot, false, false, claim.id)
             if (cleanup.removed) {
               db().query('UPDATE run SET worktree=NULL WHERE id=?').run(claim.id)
             }
@@ -560,19 +642,19 @@ export async function claimRun(input: ClaimInput): Promise<ClaimResult> {
                 resume: opts.resume,
               })
             ) {
-              assertCallerAncestry(callerCwd, created)
+              assertCallerAncestry(callerCwd, restored)
             }
             carried = opts.carry
-              ? carryWorkingState(callerCwd, created)
-              : { base: created.base, tracked: [], untracked: [] }
+              ? carryWorkingState(callerCwd, restored)
+              : { base: restored.base, tracked: [], untracked: [] }
           } catch (e) {
-            const cleanup = removeFor(created, created.repoRoot, false, false, claim.id)
+            const cleanup = removeFor(restored, restored.repoRoot, false, false, claim.id)
             throw new Error(
               `${String((e as Error)?.message ?? e)}\n` +
                 `incomplete worktree cleanup: ${cleanup.removed ? 'removed' : cleanup.detail}`,
             )
           }
-          return created
+          return restored
         })
       }
     }
