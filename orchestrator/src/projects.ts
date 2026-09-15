@@ -33,6 +33,7 @@ import {
 } from '../../shared/git.ts'
 import { db, writableDb, writeTransaction } from './db.ts'
 import { type ReadonlyProvision, validateReadonlyProvision } from './readonly-provision.ts'
+import { loadTrackedRecipe, recipePointerErrors } from './recipe-loader.ts'
 import {
   CREATE_VARS,
   createHasPlaceholder,
@@ -381,7 +382,7 @@ export function removeProject(name: string): boolean {
  * Refuse malformed lifecycle declarations while the operator is registering
  * them, before a worker is waiting on a vendor clone to discover the mistake.
  */
-export function validateProjectSettings(settings: ProjectSettings): string[] {
+export function validateProjectSettings(settings: ProjectSettings, projectPath?: string): string[] {
   const problems = [
     ...validateCreate(settings.worktree?.create as unknown, 'worktree.create', CREATE_VARS),
     ...validateCreate(
@@ -390,7 +391,9 @@ export function validateProjectSettings(settings: ProjectSettings): string[] {
       new Set(['path', 'base']),
     ),
     ...validateReadonlyProvision(settings.worktree?.readonly_provision),
+    ...trackedRecipeProblems(settings.worktree, projectPath),
   ]
+
   if (invalidOptionalStringArray(settings.secretPaths)) {
     problems.push('secretPaths must be an array of non-empty path strings')
   }
@@ -439,6 +442,28 @@ export function validateProjectSettings(settings: ProjectSettings): string[] {
   return problems
 }
 
+function trackedRecipeProblems(worktree: WorktreeTool | undefined, projectPath?: string): string[] {
+  const problems: string[] = []
+  if (worktree?.recipe !== undefined && worktree.recipePath !== undefined) {
+    problems.push('worktree recipe rule: recipe and recipePath may not both be declared')
+  }
+  if (worktree?.recipePath !== undefined) {
+    if (typeof worktree.recipePath !== 'string') {
+      problems.push('recipe path rule: worktree.recipePath must be a string')
+    } else {
+      const pointerProblems = recipePointerErrors(worktree.recipePath).map(
+        (problem) => `worktree.recipePath: ${problem}`,
+      )
+      problems.push(...pointerProblems)
+      if (!pointerProblems.length && projectPath) {
+        const loaded = loadTrackedRecipe(projectPath, worktree.recipePath)
+        if (!loaded.ok) problems.push(...loaded.errors)
+      }
+    }
+  }
+  return problems
+}
+
 function invalidOptionalStringArray(value: unknown): boolean {
   return (
     value !== undefined &&
@@ -447,8 +472,11 @@ function invalidOptionalStringArray(value: unknown): boolean {
 }
 
 /** Validate a stored row without re-refusing its unchanged legacy create string. */
-export function validateStoredProjectSettings(settings: ProjectSettings): string[] {
-  return validateProjectSettings(settings).filter(
+export function validateStoredProjectSettings(
+  settings: ProjectSettings,
+  projectPath?: string,
+): string[] {
+  return validateProjectSettings(settings, projectPath).filter(
     (problem) =>
       !(
         typeof settings.worktree?.create === 'string' &&

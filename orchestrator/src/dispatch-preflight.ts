@@ -113,7 +113,7 @@ export function preflight(
   if (project?.settings.worktree) assertRegisterBranches(project)
   const tool = project?.settings.worktree ?? null
   if (project) {
-    const malformed = validateStoredProjectSettings(project.settings)
+    const malformed = validateStoredProjectSettings(project.settings, project.path)
     if (malformed.length) throw new Error(malformed.join('\n'))
   }
   const effectiveSeed = seed

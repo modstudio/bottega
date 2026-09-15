@@ -236,7 +236,7 @@ export function preflightMcp(opts: {
   if (!mode) return
   const project = projectAt(opts.cwd)
   if (!project) return
-  const malformed = validateStoredProjectSettings(project.settings)
+  const malformed = validateStoredProjectSettings(project.settings, project.path)
   if (malformed.length) throw new Error(malformed.join('\n'))
   const selected = AGENTS[opts.selectedAgent]!
   if (!job(opts.job).needs.readsRepo || selected.caps.discoversMcpFromCwd) return

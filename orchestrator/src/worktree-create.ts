@@ -224,7 +224,7 @@ function createWithToolUnlocked(
    */
   if (!tool.create) {
     if (!tool.recipe) {
-      throw new Error("this project's worktree settings declare neither `create` nor `recipe`")
+      throw new Error(missingRecipeExecutionMessage(tool))
     }
     return createFromRecipe(
       tool,
@@ -382,6 +382,12 @@ function createWithToolUnlocked(
     throw new Error(`${String((e as Error)?.message ?? e)}${leftover(path)}`)
   }
   return worktree
+}
+
+function missingRecipeExecutionMessage(tool: WorktreeTool): string {
+  return tool.recipePath
+    ? 'tracked recipes are validated but not yet executable; execution arrives in slice 3'
+    : "this project's worktree settings declare neither `create` nor `recipe`"
 }
 
 export function createWorktree(

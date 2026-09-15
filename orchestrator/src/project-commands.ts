@@ -50,7 +50,7 @@ export function projectCommand(
           all.map((project) => ({
             ...project,
             lifecycle_form: lifecycleForm(project.settings.worktree),
-            problems: validateProjectSettings(project.settings),
+            problems: validateProjectSettings(project.settings, project.path),
             commit_hooks_skipped: true,
             gate: typeof project.settings.gate === 'string' ? project.settings.gate : null,
           })),
@@ -74,7 +74,7 @@ export function projectCommand(
       )
       const keys = Object.keys(p.settings)
       if (keys.length) presentation.log(`${' '.repeat(14)} settings: ${keys.join(', ')}`)
-      for (const problem of validateProjectSettings(p.settings)) {
+      for (const problem of validateProjectSettings(p.settings, p.path)) {
         presentation.log(`${p.name}: ${problem}`)
       }
       // Reported, not enforced: a half-configured project should say so and
@@ -102,7 +102,7 @@ export function projectCommand(
       } catch (e) {
         throw new Error(`--settings must be JSON: ${e}`)
       }
-      const malformed = validateProjectSettings(settings)
+      const malformed = validateProjectSettings(settings, path)
       if (malformed.length) throw new Error(malformed.join('\n'))
     }
     const candidate = { id: 0, name, path, stack, canon: !has('no-canon'), settings }
@@ -186,7 +186,7 @@ export function projectCommand(
       canon: has('no-canon') ? false : has('canon') ? true : p.canon,
       settings,
     }
-    const malformed = validateProjectSettings(candidate.settings).filter(
+    const malformed = validateProjectSettings(candidate.settings, candidate.path).filter(
       (problem) =>
         !(
           typeof p.settings.worktree?.create === 'string' &&
