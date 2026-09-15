@@ -38,9 +38,11 @@ const PROJECT_SETTING_KEYS = new Set([
   'mcpServer',
   'productionBranch',
   'requireCleanMain',
+  'secretPaths',
   'tracker',
   'trunk',
   'worktree',
+  'workerMcpServers',
 ])
 
 function object(value: unknown, location: string): JsonObject {
@@ -72,13 +74,26 @@ function projectSettings(row: SourceProject): JsonObject {
   return settings
 }
 
-function keyPrefixes(settings: JsonObject, project: string): string[] {
-  const value = settings.keyPrefixes
-  if (value === undefined) return []
+function optionalStringArray(
+  settings: JsonObject,
+  key: 'keyPrefixes' | 'secretPaths' | 'workerMcpServers',
+  project: string,
+): string[] | null {
+  const value = settings[key]
+  if (value === undefined || value === null) return null
   if (!Array.isArray(value) || value.some((item) => typeof item !== 'string')) {
-    throw new Error(`project ${project} settings.keyPrefixes must be an array of strings`)
+    throw new Error(`project ${project} settings.${key} must be an array of strings`)
   }
   return value as string[]
+}
+
+function keyPrefixes(settings: JsonObject, project: string): string[] {
+  return optionalStringArray(settings, 'keyPrefixes', project) ?? []
+}
+
+function postgresTextArray(sql: Pick<SQL, 'array'>, value: string[] | null) {
+  if (value === null) return null
+  return sql.array(value, 'text')
 }
 
 function mcpProbeTool(settings: JsonObject, project: string): string | null {
@@ -147,12 +162,14 @@ export async function importProjects(options: ProjectImportOptions): Promise<Pro
         const id = existing.length ? String(existing[0]!.id) : newRecordId()
         const tracker = document(settings.tracker, `project ${row.name} settings.tracker`)
         const worktree = document(settings.worktree, `project ${row.name} settings.worktree`)
+        const workerMcpServers = optionalStringArray(settings, 'workerMcpServers', row.name)
+        const secretPaths = optionalStringArray(settings, 'secretPaths', row.name)
         await tx`
           INSERT INTO project (
             id, space_id, name, key_prefixes, checkout_path, stack, canon,
             landing_branch, production_branch, gate, require_clean_main, color,
-            color_dark, env_prefix, mcp_server, mcp_probe_tool, tracker,
-            worktree_recipe, created_at
+            color_dark, env_prefix, mcp_server, worker_mcp_servers, secret_paths,
+            mcp_probe_tool, tracker, worktree, created_at
           ) VALUES (
             ${id}::uuid, ${options.spaceId}::uuid, ${row.name}, ${tx.array(prefixes, 'text')},
             ${row.path}, ${row.stack}, ${row.canon !== 0},
@@ -164,6 +181,8 @@ export async function importProjects(options: ProjectImportOptions): Promise<Pro
             ${optionalString(settings.colorDark, `project ${row.name} settings.colorDark`)},
             ${optionalString(settings.envPrefix, `project ${row.name} settings.envPrefix`)},
             ${optionalString(settings.mcpServer, `project ${row.name} settings.mcpServer`)},
+            ${postgresTextArray(tx, workerMcpServers)},
+            ${postgresTextArray(tx, secretPaths)},
             ${mcpProbeTool(settings, row.name)},
             (${tracker}::jsonb #>> '{}')::jsonb,
             (${worktree}::jsonb #>> '{}')::jsonb,
@@ -182,9 +201,11 @@ export async function importProjects(options: ProjectImportOptions): Promise<Pro
             color_dark = EXCLUDED.color_dark,
             env_prefix = EXCLUDED.env_prefix,
             mcp_server = EXCLUDED.mcp_server,
+            worker_mcp_servers = EXCLUDED.worker_mcp_servers,
+            secret_paths = EXCLUDED.secret_paths,
             mcp_probe_tool = EXCLUDED.mcp_probe_tool,
             tracker = EXCLUDED.tracker,
-            worktree_recipe = EXCLUDED.worktree_recipe
+            worktree = EXCLUDED.worktree
         `
         projectIds.set(row.name, id)
       }
