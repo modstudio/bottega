@@ -257,6 +257,22 @@ const rawReply = (stdout: string) => ({ text: stdout.trim(), tokens: null, costU
  * Repository jobs are safe under that implication because run() gives each one
  * a disposable worktree and grants only its linked metadata directory.
  */
+/**
+ * Variables pinned inside the worker's tool shell, not only the Codex process
+ * environment: a variable the process received does not reliably reach the
+ * shell the worker runs its commands in.
+ */
+function codexShellEnvironmentArgs(
+  ...environments: (Record<string, string> | undefined)[]
+): string[] {
+  return environments.flatMap((environment) =>
+    Object.entries(environment ?? {}).flatMap(([key, value]) => [
+      '-c',
+      `shell_environment_policy.set.${key}=${JSON.stringify(value)}`,
+    ]),
+  )
+}
+
 function codexCommon(o: Omit<ArgvOpts, 'prompt'>): string[] {
   // -m always, never the config file's default: see Agent.model for why an
   // unpinned model quietly rewrites the meaning of every score already taken.
@@ -305,16 +321,13 @@ function codexCommon(o: Omit<ArgvOpts, 'prompt'>): string[] {
   if (o.writableRoots?.length) {
     a.push('-c', `sandbox_workspace_write.writable_roots=${JSON.stringify(o.writableRoots)}`)
   }
-  if (o.gitObjectEnvironment) {
-    for (const [key, value] of Object.entries(o.gitObjectEnvironment)) {
-      a.push('-c', `shell_environment_policy.set.${key}=${JSON.stringify(value)}`)
-    }
-  }
-  if (o.gitConfigEnvironment) {
-    for (const [key, value] of Object.entries(o.gitConfigEnvironment)) {
-      a.push('-c', `shell_environment_policy.set.${key}=${JSON.stringify(value)}`)
-    }
-  }
+  a.push(
+    ...codexShellEnvironmentArgs(
+      o.gitObjectEnvironment,
+      o.gitConfigEnvironment,
+      o.recipeEnvironment,
+    ),
+  )
   if (o.mcp) {
     a.push('--approve-for-me')
   } else if (o.sandbox === 'exec') a.push('-s', CODEX_EXEC_SANDBOX)

@@ -121,13 +121,13 @@ function generatedWorktreeNotes(tool: WorktreeTool, callerCwd: string): string {
   return ''
 }
 
+/** From the run's recorded recipe, never a second register read that can differ from the one that built the tree. */
 function trackedWorkerEnvironment(
   writesJob: boolean,
   worktree: Worktree | null,
-  tool: WorktreeTool | null,
   runId: number,
 ): Record<string, string> {
-  return writesJob && worktree && tool?.recipePath ? trackedRecipeEnvironment(runId) : {}
+  return writesJob && worktree ? trackedRecipeEnvironment(runId) : {}
 }
 
 /** Read-only repository jobs isolate scratch objects; writing jobs need durable commits. */
@@ -741,12 +741,7 @@ export async function run(opts: {
         writesJob && requestedJob.name !== 'land' ? `refs/heads/${worktree.branch}` : undefined,
       )
     : undefined
-  const recipeEnvironment = trackedWorkerEnvironment(
-    writesJob,
-    worktree,
-    toolFor(callerCwd),
-    claim.id,
-  )
+  const recipeEnvironment = trackedWorkerEnvironment(writesJob, worktree, claim.id)
   if (gitConfigEnvironment) {
     assertSharedRefGuardOutsideWritableRoots(gitConfigEnvironment.GIT_CONFIG_VALUE_0, writableRoots)
   }
