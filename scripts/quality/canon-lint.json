@@ -1200,30 +1200,6 @@
     "message": "repository path config.json is not tracked"
   },
   {
-    "file": "AGENTS.md",
-    "line": 107,
-    "rule": "canon/reference-path",
-    "message": "repository path .claude/worktrees is not tracked"
-  },
-  {
-    "file": "AGENTS.md",
-    "line": 413,
-    "rule": "canon/reference-path",
-    "message": "repository path <module>.test.ts is not tracked"
-  },
-  {
-    "file": "hub/AGENTS.md",
-    "line": 9,
-    "rule": "canon/reference-path",
-    "message": "repository path hub/web/dist is not tracked"
-  },
-  {
-    "file": "orchestrator/AGENTS.md",
-    "line": 863,
-    "rule": "canon/reference-path",
-    "message": "repository path progress.json is not tracked"
-  },
-  {
     "file": "orchestrator/AGENTS.md",
     "line": 926,
     "rule": "canon/reference-path",
@@ -1240,30 +1216,6 @@
     "line": 954,
     "rule": "canon/reference-path",
     "message": "repository path test/fixture.ts is not tracked"
-  },
-  {
-    "file": "orchestrator/AGENTS.md",
-    "line": 1084,
-    "rule": "canon/reference-path",
-    "message": "repository path $ORCH_SCRATCH/progress.json is not tracked"
-  },
-  {
-    "file": "orchestrator/AGENTS.md",
-    "line": 1206,
-    "rule": "canon/reference-path",
-    "message": "repository path $ORCH_SCRATCH/reply.json is not tracked"
-  },
-  {
-    "file": "orchestrator/AGENTS.md",
-    "line": 1371,
-    "rule": "canon/reference-path",
-    "message": "repository path ~/.claude.json is not tracked"
-  },
-  {
-    "file": "orchestrator/AGENTS.md",
-    "line": 1501,
-    "rule": "canon/reference-path",
-    "message": "repository path ~/.claude.json is not tracked"
   },
   {
     "file": "orchestrator/AGENTS.md",

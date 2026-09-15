@@ -160,17 +160,17 @@ describe('canon current reference rules', () => {
     ).toHaveLength(3)
   })
 
-  test('extension references are candidates even with placeholders', () => {
+  test('placeholders and home- or variable-rooted paths are never candidates', () => {
     expect(
-      inputRules('`src/<name>.ts` and `src/{name}.ts`', 'canon/reference-path', {
-        trackedPaths: ['src/real.ts'],
-      }),
-    ).toHaveLength(2)
-    expect(
-      inputRules('`src/<name>` and `src/{name}`', 'canon/reference-path', {
-        trackedPaths: ['src/real.ts'],
-      }),
+      inputRules(
+        '`src/<name>.ts`, `src/{name}.ts`, `<module>.test.ts`, `~/.claude.json` and `$ORCH_SCRATCH/reply.json`',
+        'canon/reference-path',
+        { trackedPaths: ['src/real.ts'] },
+      ),
     ).toEqual([])
+    expect(
+      inputRules('`ghost.ts`', 'canon/reference-path', { trackedPaths: ['src/real.ts'] }),
+    ).toHaveLength(1)
   })
 
   test('reference exemptions are exact', () => {

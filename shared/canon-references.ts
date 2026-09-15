@@ -5,6 +5,18 @@
  */
 export const CANON_REFERENCE_EXEMPTIONS: { path: string; reason: string }[] = [
   {
+    path: '.claude/worktrees',
+    reason: 'gitignored directory where each project creates its worktrees; canon must name it.',
+  },
+  {
+    path: 'hub/web/dist',
+    reason: 'build output of the hub web app; absent until built and never tracked.',
+  },
+  {
+    path: 'progress.json',
+    reason: "a worker's scratch task pointer written under its run scratch directory, never tracked.",
+  },
+  {
     path: 'orchestrator/orch.db',
     reason:
       'gitignored runtime store; canon must name it, and it is per-machine state rather than a repository artifact.',

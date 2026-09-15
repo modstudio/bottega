@@ -243,10 +243,14 @@ function globPattern(pattern: string): RegExp {
   return new RegExp(`${source}$`)
 }
 
-function isRepositoryCandidate(reference: string, firstSegments: Set<string>): boolean {
+/** URLs, home- or variable-rooted paths and placeholders never name a tracked path. */
+function isNonRepositoryShape(reference: string): boolean {
   if (/^[A-Za-z][A-Za-z\d+.-]*:\/\//.test(reference) || reference.startsWith('mailto:'))
-    return false
-  if (/^[~/$-]/.test(reference) || /[<>{}]/.test(reference)) return false
+    return true
+  return /^[~/$-]/.test(reference) || /[<>{}]/.test(reference)
+}
+
+function isRepositoryCandidate(reference: string, firstSegments: Set<string>): boolean {
   return firstSegments.has(reference.split('/')[0]!)
 }
 
@@ -320,7 +324,11 @@ function referenceFindings(file: CanonFile, input: CanonLintInput): CanonFinding
   for (const { content: candidate, line } of referencePieces(file)) {
     const unsuffixedPath = stripReferenceSuffix(candidate)
     const path = unsuffixedPath.replace(/\/$/, '')
-    if (!FILE_REFERENCE.test(path) && !isRepositoryCandidate(path, firstSegments)) continue
+    if (
+      isNonRepositoryShape(path) ||
+      (!FILE_REFERENCE.test(path) && !isRepositoryCandidate(path, firstSegments))
+    )
+      continue
     const matchedPaths = resolvedReferencePaths(path, file.path, input.trackedPaths)
     if (!matchedPaths.length) {
       findings.push({
