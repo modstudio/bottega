@@ -45,6 +45,55 @@ afterEach(() => {
 })
 
 describe('run continuation', () => {
+  test('a failed pending turn does not replace the started turn used for checkpoint continuation', async () => {
+    const root = addRun({
+      agent: 'codex',
+      job: 'implement',
+      status: 'ok',
+      session: 'orch-test-session',
+    })
+    const prompt = trackResidue(join(dir, `continue-pending-${root}.prompt.txt`))
+    writeFileSync(prompt, 'finish the implementation')
+    db().query('UPDATE run SET cwd=?,prompt_path=? WHERE id=?').run(dir, prompt, root)
+    const pending = addRun({
+      agent: '(pending)',
+      job: 'implement',
+      status: 'failed',
+      parent: root,
+      turn: 2,
+      session: 'orch-test-session',
+    })
+    db()
+      .query('UPDATE run SET cwd=?,failure_kind=? WHERE id=?')
+      .run(join(dir, 'missing-pending-worktree'), 'harness', pending)
+    db()
+      .query(
+        `INSERT INTO run_checkpoint
+           (run_id,checkpoint_no,commit_sha,task_pointer,final,created_at)
+         VALUES (?,?,?,?,?,?)`,
+      )
+      .run(root, 1, 'checkpoint-commit', null, 1, new Date().toISOString())
+
+    const continued = await continueRun(root, undefined, limit)
+
+    expect(
+      db().query('SELECT parent_run_id,turn FROM run WHERE id=?').get(continued.childId),
+    ).toEqual({ parent_run_id: root, turn: 3 })
+  })
+
+  test('a chain with no started turn cannot be continued', async () => {
+    const root = addRun({
+      agent: '(pending)',
+      job: 'implement',
+      status: 'failed',
+      session: 'orch-test-session',
+    })
+
+    await expect(continueRun(root, undefined, limit)).rejects.toThrow(
+      `run ${root} cannot be continued: no turn in its chain ever started`,
+    )
+  })
+
   test('a findings root with a recorded review cannot be re-terminalised', async () => {
     const root = addRun({
       agent: 'codex',

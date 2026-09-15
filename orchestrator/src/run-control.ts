@@ -172,6 +172,32 @@ export function refuseEscapedChain(id: number): void {
   )
 }
 
+type StartedTurn = {
+  id: number
+  agent: string
+  vendor_session: string | null
+  turn: number
+  cwd: string | null
+  worktree: string | null
+  branch: string | null
+  base_commit: string | null
+  worktree_source: 'recipe' | 'git' | 'readonly_recipe' | null
+}
+
+function latestStartedTurn(rootId: number): StartedTurn {
+  const row = db()
+    .query(
+      `SELECT id, agent, vendor_session, turn, cwd, worktree, branch, base_commit, worktree_source
+       FROM run WHERE (id = ? OR parent_run_id = ?) AND agent <> '(pending)'
+       ORDER BY turn DESC LIMIT 1`,
+    )
+    .get(rootId, rootId) as StartedTurn | null
+  if (!row) {
+    throw new Error(`run ${rootId} cannot be continued: no turn in its chain ever started`)
+  }
+  return row
+}
+
 /** Resume a root run through the one path shared by `continue` and writing retries. */
 export async function continueRun(
   id: number,
@@ -225,23 +251,13 @@ export async function continueRun(
   // prevent.
   if (open.n)
     throw new Error(`run ${id} is waiting on ${open.n} question(s): orch answer ${id} ...`)
-  const latest = db()
+  const latest = latestStartedTurn(id)
+  const lastTurn = db()
     .query(
-      `SELECT id, agent, vendor_session, turn, cwd, worktree, branch, base_commit, worktree_source
-       FROM run WHERE id = ? OR parent_run_id = ?
-      ORDER BY turn DESC LIMIT 1`,
+      `SELECT MAX(turn) turn FROM run
+       WHERE id = ? OR parent_run_id = ?`,
     )
-    .get(id, id) as {
-    id: number
-    agent: string
-    vendor_session: string | null
-    turn: number
-    cwd: string | null
-    worktree: string | null
-    branch: string | null
-    base_commit: string | null
-    worktree_source: 'recipe' | 'git' | 'readonly_recipe' | null
-  }
+    .get(id, id) as { turn: number }
   const checkpointContext = (await import('./checkpoint.ts')).checkpointResumeContext(
     db(),
     id,
@@ -254,7 +270,8 @@ export async function continueRun(
       : (db()
           .query(
             `SELECT id, agent, vendor_session, turn
-           FROM run WHERE (id = ? OR parent_run_id = ?) AND vendor_session IS NOT NULL
+           FROM run WHERE (id = ? OR parent_run_id = ?)
+             AND agent <> '(pending)' AND vendor_session IS NOT NULL
           ORDER BY turn DESC LIMIT 1`,
           )
           .get(id, id) as {
@@ -337,7 +354,7 @@ export async function continueRun(
       agent: checkpointContext ? latest.agent : sessionFrom!.agent,
       session: checkpointContext ? undefined : (sessionFrom!.vendor_session ?? undefined),
       fresh: Boolean(checkpointContext),
-      turn: latest.turn + 1,
+      turn: lastTurn.turn + 1,
       sessionId: authority.owner,
       worktree: latest.worktree
         ? {
