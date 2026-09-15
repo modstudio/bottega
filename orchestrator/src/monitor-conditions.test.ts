@@ -4,8 +4,11 @@ import { db, nowIso } from './db.ts'
 import { monitor, monitorHistory } from './monitor.ts'
 import {
   deadRunningProcessConditions,
+  orphanDockerNetworkConditions,
+  orphanSandboxDirectoryConditions,
   reconcileHub,
   rulingConditions,
+  staleTrustEntryConditions,
 } from './monitor-conditions.ts'
 import { claimMonitorNotices, markMonitorNoticesDelivered } from './monitor-notices.ts'
 
@@ -35,6 +38,152 @@ function persistAddressedCondition(
 }
 
 describe('operational monitor conditions', () => {
+  test('reports only orphan Docker networks and preserves an unavailable detector', () => {
+    const clock = Date.parse('2026-09-15T12:00:00Z')
+    const orphan = {
+      name: 'app-orch-41-default',
+      createdAt: '2026-09-15T11:00:00Z',
+      workingDir: '/trees/orch-41',
+      workingDirExists: false,
+      runId: 41,
+    }
+    const terminalOwner = {
+      name: 'app-orch-42-default',
+      createdAt: null,
+      workingDir: null,
+      workingDirExists: false,
+      runId: 42,
+    }
+    expect(
+      orphanDockerNetworkConditions(
+        {
+          ascertainable: true,
+          networks: [orphan, terminalOwner],
+          owners: [
+            { rootId: 41, terminal: true, hasWorktree: false },
+            { rootId: 42, terminal: true, hasWorktree: false },
+          ],
+        },
+        clock,
+      ),
+    ).toEqual({
+      conditions: [
+        {
+          kind: 'orphan-docker-network',
+          subject: 'app-orch-41-default',
+          since: '2026-09-15T11:00:00.000Z',
+          ageMs: 3_600_000,
+          detail:
+            'Docker network app-orch-41-default; compose working directory is gone: /trees/orch-41',
+          action: 'reported; no established removal verb',
+        },
+        {
+          kind: 'orphan-docker-network',
+          subject: 'app-orch-42-default',
+          since: null,
+          ageMs: null,
+          detail: 'Docker network app-orch-42-default; terminal conversation 42 has no worktree',
+          action: 'reported; no established removal verb',
+        },
+      ],
+      errors: [],
+    })
+    expect(
+      orphanDockerNetworkConditions(
+        {
+          ascertainable: true,
+          networks: [{ ...orphan, workingDirExists: true }],
+          owners: [{ rootId: 41, terminal: false, hasWorktree: true }],
+        },
+        clock,
+      ),
+    ).toEqual({ conditions: [], errors: [] })
+    expect(
+      orphanDockerNetworkConditions(
+        { ascertainable: false, reason: 'docker network inventory unavailable: denied' },
+        clock,
+      ),
+    ).toEqual({
+      conditions: [],
+      errors: ['docker network inventory unavailable: denied'],
+    })
+  })
+
+  test('reports sandbox directories only after every conversation turn is terminal', () => {
+    expect(
+      orphanSandboxDirectoryConditions({
+        ascertainable: true,
+        directories: [{ rootId: 52, path: '/runs/sandbox-52', sizeBytes: 8192 }],
+        conversations: [{ rootId: 52, terminal: true }],
+      }),
+    ).toEqual({
+      conditions: [
+        {
+          kind: 'orphan-sandbox-dir',
+          subject: '/runs/sandbox-52',
+          since: null,
+          ageMs: null,
+          detail: 'sandbox directory for terminal conversation 52 uses 8192 bytes',
+          action: 'reported; no established removal verb',
+        },
+      ],
+      errors: [],
+    })
+    expect(
+      orphanSandboxDirectoryConditions({
+        ascertainable: true,
+        directories: [{ rootId: 52, path: '/runs/sandbox-52', sizeBytes: 8192 }],
+        conversations: [{ rootId: 52, terminal: false }],
+      }),
+    ).toEqual({ conditions: [], errors: [] })
+    expect(
+      orphanSandboxDirectoryConditions({
+        ascertainable: false,
+        reason: 'sandbox directory inventory unavailable: denied',
+      }),
+    ).toEqual({
+      conditions: [],
+      errors: ['sandbox directory inventory unavailable: denied'],
+    })
+  })
+
+  test('reports trust headings only after their recorded worktree disappears', () => {
+    expect(
+      staleTrustEntryConditions({
+        ascertainable: true,
+        entries: [{ runId: 63, heading: '[folders."/trees/63"]', worktreeExists: false }],
+      }),
+    ).toEqual({
+      conditions: [
+        {
+          kind: 'stale-trust-entry',
+          subject: 'run:63:[folders."/trees/63"]',
+          since: null,
+          ageMs: null,
+          detail:
+            'run 63 recorded Grok trust heading [folders."/trees/63"] after its worktree disappeared',
+          action: 'reported; prune by hand in the vendor trust store',
+        },
+      ],
+      errors: [],
+    })
+    expect(
+      staleTrustEntryConditions({
+        ascertainable: true,
+        entries: [{ runId: 63, heading: '[folders."/trees/63"]', worktreeExists: true }],
+      }),
+    ).toEqual({ conditions: [], errors: [] })
+    expect(
+      staleTrustEntryConditions({
+        ascertainable: false,
+        reason: 'Grok trust inventory unavailable: unreadable row',
+      }),
+    ).toEqual({
+      conditions: [],
+      errors: ['Grok trust inventory unavailable: unreadable row'],
+    })
+  })
+
   test('reports a running row whose agent process is gone with elapsed time and output size', () => {
     const clock = Date.parse('2026-09-04T20:00:10Z')
     const id = addRun({
