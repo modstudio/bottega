@@ -350,7 +350,9 @@ function scripts(root: string): Set<string> {
     if (!existsSync(path)) continue
     try {
       const json = JSON.parse(readFileSync(path, 'utf8')) as { scripts?: Record<string, string> }
-      Object.keys(json.scripts ?? {}).forEach((name) => result.add(name))
+      Object.keys(json.scripts ?? {}).forEach((name) => {
+        result.add(name)
+      })
     } catch {
       /* A warning pass must never turn a document write into a refusal. */
     }

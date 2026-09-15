@@ -517,7 +517,7 @@ export function recordReviews(
         JSON.stringify(output.provenance.docs_read),
         JSON.stringify(output.provenance.substitutes),
       ) as { id: number }
-      output.findings.forEach((finding) =>
+      output.findings.forEach((finding) => {
         insert.run(
           review.id,
           lens.id,
@@ -526,8 +526,8 @@ export function recordReviews(
           finding.location,
           finding.evidence,
           finding.proposed_correction,
-        ),
-      )
+        )
+      })
     })
     return review.id
   }, database)

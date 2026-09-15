@@ -272,9 +272,11 @@ export function reclaimWorktree(
           }
           if (lockedRows.length) {
             const clear = db().query('UPDATE run SET branch_kept=?, branch_kept_tip=? WHERE id=?')
-            writeTransaction(() =>
-              lockedRows.forEach((record) => clear.run(minted || null, branchBefore, record.id)),
-            )
+            writeTransaction(() => {
+              lockedRows.forEach((record) => {
+                clear.run(minted || null, branchBefore, record.id)
+              })
+            })
           }
           const kept =
             keepBranch && minted && branchBefore

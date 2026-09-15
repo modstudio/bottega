@@ -142,9 +142,9 @@ describe('run listing', () => {
           startedAt: starts[turn - 1],
         }),
       )
-    ids.forEach((id, i) =>
-      db().query('UPDATE run SET vendor_tokens=? WHERE id=?').run(tokens[i], id),
-    )
+    ids.forEach((id, i) => {
+      db().query('UPDATE run SET vendor_tokens=? WHERE id=?').run(tokens[i], id)
+    })
     const row = runJson((await command({ json: true, since: ['2026-09-01T12:20:00.000Z'] }))[0]!)
     expect(row.turns.map((turn: { id: number }) => turn.id)).toEqual(ids)
     expect(

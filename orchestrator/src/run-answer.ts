@@ -466,9 +466,9 @@ export async function answerRun(
   const answeredBy = callerSession ?? 'anonymous (no session id)'
   writeTransaction(() => {
     answerAuthority = adoptRunMutation(answerAuthority, 'answer')
-    open.forEach((q, i) =>
-      upd.run(answers[i]!.answer, now, answeredBy, ownersLive ? null : now, q.id),
-    )
+    open.forEach((q, i) => {
+      upd.run(answers[i]!.answer, now, answeredBy, ownersLive ? null : now, q.id)
+    })
     if (skipResume) db().query("UPDATE run SET status='asking' WHERE id=?").run(id)
     auditRunMutation(answerAuthority, 'answer')
   })

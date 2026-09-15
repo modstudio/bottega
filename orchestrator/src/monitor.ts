@@ -837,15 +837,15 @@ export async function monitor(
   // A tool that could not look has not established emptiness. Persist the
   // exact refusal beside findings so history is useful after launchd's process
   // log has rotated away.
-  errors.forEach((detail, index) =>
+  errors.forEach((detail, index) => {
     add({
       kind: 'observation-error',
       subject: `invocation:${invocation}:${index + 1}`,
       since: startedAt,
       detail,
       action: 'reported; no state was inferred from the unavailable observation',
-    }),
-  )
+    })
+  })
 
   // Delivery inheritance is one atomic read/write unit. Two monitor passes may
   // otherwise both observe no prior delivery and create duplicate pending rows.
