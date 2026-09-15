@@ -890,16 +890,21 @@ try {
     }
     case 'serve-stop': {
       const port = Number(flag('port'))
+      if (!Number.isInteger(port) || port < 1 || port > 65_535) {
+        console.error('usage: hub serve-stop --port N')
+        process.exitCode = 2
+        break
+      }
       if (!(await stopRecordedServe(port))) process.exitCode = 1
       break
     }
     case 'serve-check': {
-      if (!has('down')) {
+      const port = Number(flag('port'))
+      if (!has('down') || !Number.isInteger(port) || port < 1 || port > 65_535) {
         console.error('usage: hub serve-check --port N --down')
         process.exitCode = 2
         break
       }
-      const port = Number(flag('port'))
       const free = await servePortIsFree(port)
       console.log(
         free ? `hub: port ${port} is free` : `hub: port ${port} is still accepting connections`,
