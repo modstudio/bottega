@@ -85,6 +85,7 @@ export const sharedSchema = strictObject({
 })
 
 const recipeShape = strictObject({
+  $schema: z.string().describe('Path or URL of this JSON Schema, for editors.').optional(),
   baseRef: z.string().optional(),
   allocate: allocationsSchema.optional(),
   env: z.array(envFileSchema).optional(),
