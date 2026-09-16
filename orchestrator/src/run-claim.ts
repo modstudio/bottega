@@ -100,11 +100,16 @@ function resumeCreationOptions(
     return {
       tool: null,
       baseRef: undefined,
-      existingBranch: plan.branch,
+      existingBranch: plan.existingBranch,
       existingBranchTip: plan.tip,
     }
   }
-  return { tool, baseRef: plan.tip, existingBranch: undefined, existingBranchTip: undefined }
+  return {
+    tool,
+    baseRef: undefined,
+    existingBranch: plan.existingBranch,
+    existingBranchTip: plan.tip,
+  }
 }
 
 function restoreResumeIfNeeded(

@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test'
-import { type ResumeTreeFacts, resumeTreePlan } from './resume-tree.ts'
+import { continuationBranchPlan, type ResumeTreeFacts, resumeTreePlan } from './resume-tree.ts'
 
 const base: ResumeTreeFacts = {
   rootId: 3970,
@@ -25,6 +25,7 @@ describe('resume tree decision', () => {
       action: 'attach-recorded',
       branch: 'technical/ADN-123-orch-3970',
       tip: null,
+      tipSource: null,
       rootId: 3970,
     })
   })
@@ -33,7 +34,9 @@ describe('resume tree decision', () => {
     expect(resumeTreePlan(base)).toEqual({
       action: 'recreate-on-branch',
       branch: 'technical/ADN-123-orch-3970',
+      existingBranch: 'technical/ADN-123-orch-3970',
       tip: 'branch-tip',
+      tipSource: 'branch ref',
       rootId: 3970,
     })
   })
@@ -42,7 +45,9 @@ describe('resume tree decision', () => {
     expect(resumeTreePlan({ ...base, hasCreate: true })).toEqual({
       action: 'recreate-then-restore',
       branch: 'technical/ADN-123-orch-3970',
+      existingBranch: 'technical/ADN-123-orch-3970',
       tip: 'branch-tip',
+      tipSource: 'branch ref',
       rootId: 3970,
     })
   })
@@ -54,6 +59,7 @@ describe('resume tree decision', () => {
       action: 'refuse',
       branch: 'technical/ADN-123-orch-3970',
       tip: null,
+      tipSource: null,
       rootId: 3970,
     })
   })
@@ -64,5 +70,35 @@ describe('resume tree decision', () => {
     ['recorded close-out tip', { ...base, branchTip: null, retainedTip: null }, 'recorded-tip'],
   ] as const)('uses the %s tip before lower-precedence sources', (_name, facts, tip) => {
     expect(resumeTreePlan(facts)).toMatchObject({ action: 'recreate-on-branch', tip })
+  })
+})
+
+describe('continuation branch decision', () => {
+  test('rejects the mutation that lets the root branch override the latest turn branch and tip', () => {
+    expect(
+      continuationBranchPlan({
+        latestBranch: 'DEV-623-orch-4286',
+        latestBranchTip: 'checkpoint-tip',
+        rootBranch: 'DEV-623-orch-4285',
+      }),
+    ).toEqual({
+      branch: 'DEV-623-orch-4286',
+      tip: 'checkpoint-tip',
+      source: 'latest turn branch',
+    })
+  })
+
+  test('rejects the mutation that reuses a latest turn branch after its ref is gone', () => {
+    expect(
+      continuationBranchPlan({
+        latestBranch: 'DEV-623-orch-4286',
+        latestBranchTip: null,
+        rootBranch: 'DEV-623-orch-4285',
+      }),
+    ).toEqual({
+      branch: 'DEV-623-orch-4285',
+      tip: null,
+      source: 'root retained branch',
+    })
   })
 })

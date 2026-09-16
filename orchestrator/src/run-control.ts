@@ -8,13 +8,14 @@ import { existsSync, readFileSync } from 'node:fs'
 import { CONTINUE_WORKING_FORMS } from './args.ts'
 import { clock } from './clock.ts'
 import { branchNote, failoverSummary, resolveFailover } from './collect.ts'
-import { db, writeTransaction } from './db.ts'
+import { db, nowIso, writeTransaction } from './db.ts'
+import { appendRunEvent } from './events.ts'
 import { chainTransport } from './failover.ts'
 import { branchOf, gitContext } from './git-environment.ts'
 import { mcpRequestFromStored } from './mcp-preflight.ts'
 import { outcomeOf } from './outcome.ts'
 import { projectAt, resolvedWorktreeTool } from './projects.ts'
-import { type ResumeTreePlan, resumeTreePlan } from './resume-tree.ts'
+import { continuationBranchPlan, type ResumeTreePlan, resumeTreePlan } from './resume-tree.ts'
 import { packedResumePrompt } from './run.ts'
 import { adoptRunMutation, auditRunMutation, authorizeRunMutation } from './run-authority.ts'
 import { detach } from './run-dispatch.ts'
@@ -226,7 +227,22 @@ function continuationTree(
   latest: ChainTurn,
   launch: ContinuationLaunch,
 ) {
-  const recordedBranch = row.branch_kept ?? latest.branch
+  const latestProject = projectAt(latest.cwd ?? launch.launch_cwd ?? '')
+  const latestBranchTip =
+    latest.branch && latestProject
+      ? gitContext(
+          latestProject.path,
+          'rev-parse',
+          '--verify',
+          `refs/heads/${latest.branch}^{commit}`,
+        )
+      : null
+  const branchPlan = continuationBranchPlan({
+    latestBranch: latest.branch,
+    latestBranchTip,
+    rootBranch: row.branch_kept,
+  })
+  const recordedBranch = branchPlan.branch
   const project = recordedBranch ? projectAt(latest.cwd ?? launch.launch_cwd ?? '') : null
   if (recordedBranch && !project)
     throw new Error(
@@ -248,12 +264,14 @@ function continuationTree(
           hasCreate: Boolean(
             worktreeTool?.create || worktreeTool?.recipe || worktreeTool?.recipePath,
           ),
-          branchTip: gitContext(
-            project.path,
-            'rev-parse',
-            '--verify',
-            `refs/heads/${recordedBranch}^{commit}`,
-          ),
+          branchTip:
+            branchPlan.tip ??
+            gitContext(
+              project.path,
+              'rev-parse',
+              '--verify',
+              `refs/heads/${recordedBranch}^{commit}`,
+            ),
           retainedTip: gitContext(
             project.path,
             'rev-parse',
@@ -268,7 +286,7 @@ function continuationTree(
       `run ${id} cannot recreate its continuation tree for branch ${recordedBranch}: ` +
         `no retained tip exists`,
     )
-  return { project, recordedTreeMatches, plan }
+  return { project, recordedTreeMatches, plan, branchSource: branchPlan.source }
 }
 
 function effectiveCheckpointContext(
@@ -313,6 +331,20 @@ function recreatedTreePlan(
   return plan?.action === 'recreate-on-branch' || plan?.action === 'recreate-then-restore'
     ? plan
     : undefined
+}
+
+function recordContinuationTreeSource(
+  childId: number,
+  branchSource: ReturnType<typeof continuationBranchPlan>['source'],
+  treePlan: ResumeTreePlan | null,
+): void {
+  let text = `continuation tree source: ${branchSource}; no repository branch`
+  if (treePlan) {
+    const ref = treePlan.tipSource ?? 'no ref'
+    const tip = treePlan.tip ? ` ${treePlan.tip}` : ''
+    text = `continuation tree source: ${branchSource}; ${ref}${tip}; branch ${treePlan.branch}`
+  }
+  appendRunEvent(childId, { ts: nowIso(), type: 'text', text })
 }
 
 /** Resume a root run through the one path shared by `continue` and writing retries. */
@@ -389,7 +421,12 @@ export async function continueRun(
        FROM run WHERE id=?`,
     )
     .get(id) as ContinuationLaunch
-  const { project, recordedTreeMatches, plan: treePlan } = continuationTree(id, row, latest, launch)
+  const {
+    project,
+    recordedTreeMatches,
+    plan: treePlan,
+    branchSource,
+  } = continuationTree(id, row, latest, launch)
   const savedCheckpointContext = (await import('./checkpoint.ts')).checkpointResumeContext(
     db(),
     id,
@@ -478,6 +515,7 @@ export async function continueRun(
       treePlan: recreatedTreePlan(treePlan),
     },
   })
+  recordContinuationTreeSource(childId, branchSource, treePlan)
   auditRunMutation(authority, 'continue', message ?? null)
   return { childId, job: row.job }
 }

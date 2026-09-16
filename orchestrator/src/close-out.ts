@@ -7,7 +7,7 @@
 import { existsSync, rmSync } from 'node:fs'
 import { join, resolve } from 'node:path'
 import { db, nowIso, sessionId, writeTransaction } from './db.ts'
-import { repoRootOf, targetGitEnvironment } from './git-environment.ts'
+import { gitContext, repoRootOf, targetGitEnvironment } from './git-environment.ts'
 import { HOOK_TREE_JOB, hookTreeHoldDecision } from './hook-tree.ts'
 import { isGroupKillablePgid, runHasLiveDescendants } from './idle-kill.ts'
 import { type KeepTreeHoldDecision, keepTreeHold } from './keep-tree-hold.ts'
@@ -421,12 +421,21 @@ function attemptCloseOutRun(
   )
   if (terminalHold) return terminalHold
   const retainedBranch = effective.minted_branch ?? effective.branch
+  const turnBranch = row.branch ?? row.minted_branch
+  const turnTip = existsSync(treePath)
+    ? gitContext(treePath, 'rev-parse', '--verify', 'HEAD^{commit}')
+    : null
   const recordRetainedBranch = (tip: string | null, retainedRef?: string | null) => {
     if (!retainedBranch || !tip) return
     writeTransaction(() => {
       db()
         .query('UPDATE run SET branch_kept=?, branch_kept_tip=? WHERE id=?')
         .run(retainedBranch, tip, row.root_id)
+      if (row.id !== row.root_id && turnBranch && turnTip) {
+        db()
+          .query('UPDATE run SET branch_kept=?, branch_kept_tip=? WHERE id=?')
+          .run(turnBranch, turnTip, row.id)
+      }
       settleClaims(db(), {
         rootRunId: row.root_id,
         kind: 'branch',
@@ -654,7 +663,7 @@ function attemptCloseOutRun(
               repoRoot,
               false,
               true,
-              row.root_id,
+              extractionRunId(row),
               false,
             )
             if (retainedBranch && branchSnapshot) {
@@ -750,6 +759,11 @@ function attemptCloseOutRun(
       detail: String((error as Error).message ?? error),
     }
   }
+}
+
+/** Extraction evidence belongs to the turn whose tree is being removed. */
+export function extractionRunId(row: { id: number }): number {
+  return row.id
 }
 
 /** Run one close-out attempt and retain its outcome for observation and retry. */

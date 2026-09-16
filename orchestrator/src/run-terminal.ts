@@ -115,6 +115,16 @@ export type TerminalResult = {
   artifactsPersisted: boolean
 }
 
+/** Every writing turn gets one last chance to preserve tracked work. */
+export function shouldCheckpointAtTerminal(input: {
+  writesJob: boolean
+  hasWorktree: boolean
+  launchKey: string | null
+  status: string
+}): boolean {
+  return Boolean(input.status) && input.writesJob && input.hasWorktree && Boolean(input.launchKey)
+}
+
 function boundedConfinementError(message: string): string {
   const bytes = Buffer.from(message)
   if (bytes.length <= 1500) return message
@@ -199,19 +209,12 @@ export async function finishRun(input: TerminalInput): Promise<TerminalResult> {
   if (askLoopback) await askLoopback.close()
   await resetSandbox()
 
-  const recordedState = db().query('SELECT status FROM run WHERE id=?').get(claim.id) as {
-    status: string
-  } | null
-  const preserveAtTerminal =
-    writesJob &&
-    worktree &&
-    launchKey &&
-    (recordedState?.status === 'stopped' ||
-      failureKind === 'timeout' ||
-      failureKind === 'idle' ||
-      failureKind === 'quota' ||
-      failureKind === 'context' ||
-      failureKind === 'cost')
+  const preserveAtTerminal = shouldCheckpointAtTerminal({
+    writesJob,
+    hasWorktree: Boolean(worktree),
+    launchKey,
+    status,
+  })
   if (preserveAtTerminal) {
     const checkpoint = checkpointRun({
       database: db(),
