@@ -8,7 +8,7 @@ import { bearerHeaders, RECORD_SIGN_IN_REMEDY, recordAuth } from './record-auth.
 import { storedRecordToken } from './record-session.ts'
 import { refuseOwnerConnection } from './record-sync.ts'
 
-export type RecordDoctorStatus = 'pass' | 'fail' | 'skipped'
+type RecordDoctorStatus = 'pass' | 'fail' | 'skipped'
 export type RecordDoctorCheck = {
   name: string
   status: RecordDoctorStatus

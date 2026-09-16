@@ -6,7 +6,7 @@ import {
   migratePostgres,
   recordMigrationCount,
 } from './postgres-migrate.ts'
-import { diagnoseRecord, recordDoctorExitCode } from './record-doctor.ts'
+import { diagnoseRecord, recordDoctorExitCode, redactRecordPasswords } from './record-doctor.ts'
 import {
   acceptRecordInvitation,
   inviteToActiveRecordSpace,
@@ -27,9 +27,16 @@ function recordUrl(): string {
 export async function recordMigrateCommand(presentation: Presentation): Promise<void> {
   const url = process.env.ORCH_RECORD_MIGRATE_URL
   if (!url) throw new Error('ORCH_RECORD_MIGRATE_URL is required to migrate the record')
-  const before = await appliedRecordMigrationCount(url)
-  await migratePostgres(url)
-  const after = await appliedRecordMigrationCount(url)
+  let before: number
+  let after: number
+  try {
+    before = await appliedRecordMigrationCount(url)
+    await migratePostgres(url)
+    after = await appliedRecordMigrationCount(url)
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error)
+    throw new Error(redactRecordPasswords(message, [url]))
+  }
   presentation.log(
     `record migrations applied before ${before}; after ${after}; shipped ${recordMigrationCount()}`,
   )

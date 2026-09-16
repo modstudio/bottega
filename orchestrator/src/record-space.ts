@@ -6,8 +6,8 @@ import { newRecordId } from './postgres-schema.ts'
 import { setActiveRecordSpace } from './record-auth.ts'
 import { currentRecordUserSession } from './record-session.ts'
 
-export const RECORD_INVITATION_TTL_DAYS = 7
-export const RECORD_SPACE_ROLES = ['member', 'owner'] as const
+const RECORD_INVITATION_TTL_DAYS = 7
+const RECORD_SPACE_ROLES = ['member', 'owner'] as const
 export type RecordSpaceRole = (typeof RECORD_SPACE_ROLES)[number]
 
 export type RecordMembership = {
@@ -32,7 +32,7 @@ export function recordSpaceRole(value: string): RecordSpaceRole {
   throw new Error('record invitation role must be member or owner')
 }
 
-export function resolveRecordSpace(
+function resolveRecordSpace(
   value: string,
   memberships: readonly RecordMembership[],
 ): RecordMembership {
