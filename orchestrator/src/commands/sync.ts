@@ -5,5 +5,9 @@ import { syncCommand } from '../record-sync-command.ts'
 import { log } from './support.ts'
 
 export function register(program: Command): void {
-  program.command('sync').action(() => syncCommand({ log }))
+  program
+    .command('sync')
+    .option('--backfill')
+    .allowExcessArguments(false)
+    .action((options) => syncCommand({ backfill: Boolean(options.backfill) }, { log }))
 }

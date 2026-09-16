@@ -9,6 +9,7 @@ type SourceProject = {
   stack: string | null
   canon: number
   settings: string | null
+  retired_at: string | null
 }
 
 type SourceSequence = { name: string; next: number }
@@ -126,7 +127,7 @@ function readSources(
     return {
       projects: orch
         .query<SourceProject, []>(
-          'SELECT id, name, path, stack, canon, settings FROM project ORDER BY id',
+          'SELECT id, name, path, stack, canon, settings, retired_at FROM project ORDER BY id',
         )
         .all(),
       sequences: hub.query<SourceSequence, []>('SELECT name, next FROM seq ORDER BY name').all(),
@@ -135,6 +136,39 @@ function readSources(
     orch.close()
     hub.close()
   }
+}
+
+function sequenceImportDecision(
+  sequence: SourceSequence,
+  prefixOwners: Map<string, string[]>,
+  retiredPrefixOwners: Map<string, string[]>,
+): { owner: string } | { skip: SequenceSkip } {
+  if (!sequence.name.startsWith('task:')) {
+    return {
+      skip: {
+        ...sequence,
+        reason: 'sequence name has no task: namespace and therefore no determinate project owner',
+      },
+    }
+  }
+  const prefix = sequence.name.slice('task:'.length)
+  const owners = prefixOwners.get(prefix) ?? []
+  const retiredOwners = retiredPrefixOwners.get(prefix) ?? []
+  if (owners.length === 0 && retiredOwners.length > 0) {
+    return {
+      skip: {
+        ...sequence,
+        reason: `prefix is owned only by retired project${retiredOwners.length === 1 ? '' : 's'}: ${retiredOwners.join(', ')}`,
+      },
+    }
+  }
+  if (owners.length !== 1) {
+    const detail = owners.length
+      ? `matched multiple projects: ${owners.join(', ')}`
+      : 'matched no project'
+    throw new Error(`cannot import sequence ${sequence.name}: ${detail}`)
+  }
+  return { owner: owners[0]! }
 }
 
 export async function importProjects(options: ProjectImportOptions): Promise<ProjectImportResult> {
@@ -149,11 +183,13 @@ export async function importProjects(options: ProjectImportOptions): Promise<Pro
 
       const projectIds = new Map<string, string>()
       const prefixOwners = new Map<string, string[]>()
+      const retiredPrefixOwners = new Map<string, string[]>()
       for (const row of source.projects) {
         const settings = projectSettings(row)
         const prefixes = keyPrefixes(settings, row.name)
         for (const prefix of prefixes) {
-          prefixOwners.set(prefix, [...(prefixOwners.get(prefix) ?? []), row.name])
+          const owners = row.retired_at === null ? prefixOwners : retiredPrefixOwners
+          owners.set(prefix, [...(owners.get(prefix) ?? []), row.name])
         }
 
         const existing = await tx`
@@ -169,7 +205,7 @@ export async function importProjects(options: ProjectImportOptions): Promise<Pro
             id, space_id, name, key_prefixes, checkout_path, stack, canon,
             landing_branch, production_branch, gate, require_clean_main, color,
             color_dark, env_prefix, mcp_server, worker_mcp_servers, secret_paths,
-            mcp_probe_tool, tracker, worktree, created_at
+            mcp_probe_tool, tracker, worktree, retired_at, created_at
           ) VALUES (
             ${id}::uuid, ${options.spaceId}::uuid, ${row.name}, ${tx.array(prefixes, 'text')},
             ${row.path}, ${row.stack}, ${row.canon !== 0},
@@ -186,6 +222,7 @@ export async function importProjects(options: ProjectImportOptions): Promise<Pro
             ${mcpProbeTool(settings, row.name)},
             (${tracker}::jsonb #>> '{}')::jsonb,
             (${worktree}::jsonb #>> '{}')::jsonb,
+            ${row.retired_at},
             now()
           )
           ON CONFLICT (space_id, name) DO UPDATE SET
@@ -205,7 +242,8 @@ export async function importProjects(options: ProjectImportOptions): Promise<Pro
             secret_paths = EXCLUDED.secret_paths,
             mcp_probe_tool = EXCLUDED.mcp_probe_tool,
             tracker = EXCLUDED.tracker,
-            worktree = EXCLUDED.worktree
+            worktree = EXCLUDED.worktree,
+            retired_at = EXCLUDED.retired_at
         `
         projectIds.set(row.name, id)
       }
@@ -213,23 +251,12 @@ export async function importProjects(options: ProjectImportOptions): Promise<Pro
       const skippedSequences: SequenceSkip[] = []
       let importedSequences = 0
       for (const sequence of source.sequences) {
-        if (!sequence.name.startsWith('task:')) {
-          skippedSequences.push({
-            ...sequence,
-            reason:
-              'sequence name has no task: namespace and therefore no determinate project owner',
-          })
+        const decision = sequenceImportDecision(sequence, prefixOwners, retiredPrefixOwners)
+        if ('skip' in decision) {
+          skippedSequences.push(decision.skip)
           continue
         }
-        const prefix = sequence.name.slice('task:'.length)
-        const owners = prefixOwners.get(prefix) ?? []
-        if (owners.length !== 1) {
-          const detail = owners.length
-            ? `matched multiple projects: ${owners.join(', ')}`
-            : 'matched no project'
-          throw new Error(`cannot import sequence ${sequence.name}: ${detail}`)
-        }
-        const projectId = projectIds.get(owners[0]!)!
+        const projectId = projectIds.get(decision.owner)!
         await tx`
           INSERT INTO seq (space_id, project_id, name, next)
           VALUES (${options.spaceId}::uuid, ${projectId}::uuid, ${sequence.name}, ${sequence.next})

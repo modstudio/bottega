@@ -103,6 +103,7 @@ export const project = pgTable.withRLS(
     mcpProbeTool: text('mcp_probe_tool'),
     tracker: jsonb(),
     worktree: jsonb(),
+    retiredAt: timestamp('retired_at', { withTimezone: true }),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull(),
   },
   (table) => [

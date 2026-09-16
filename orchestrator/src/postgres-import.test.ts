@@ -6,6 +6,8 @@ import { PLATFORM_SLUG } from '../../shared/brand.ts'
 import { importProjects } from './postgres-import.ts'
 import { migratePostgres } from './postgres-migrate.ts'
 import { PLATFORM_SPACE_ID } from './postgres-schema.ts'
+import { syncRecord } from './record-sync.ts'
+import { backfillRunRecords } from './run-outbox.ts'
 
 const container = process.env.ORCH_TEST_POSTGRES_CONTAINER
 const databaseUrl = process.env.ORCH_TEST_POSTGRES_URL
@@ -17,6 +19,7 @@ const realPostgres =
 type SourceProject = {
   name: string
   settings: string
+  retired_at: string | null
 }
 
 type ImportedProject = Record<string, unknown> & {
@@ -29,7 +32,7 @@ async function targetState(sql: SQL): Promise<unknown> {
     SELECT id, space_id, name, key_prefixes, checkout_path, stack, canon,
       landing_branch, production_branch, gate, require_clean_main, color,
       color_dark, env_prefix, mcp_server, worker_mcp_servers, secret_paths,
-      mcp_probe_tool, tracker, worktree, created_at
+      mcp_probe_tool, tracker, worktree, retired_at, created_at
     FROM project ORDER BY name
   `
   const sequences = await sql`
@@ -41,6 +44,8 @@ async function targetState(sql: SQL): Promise<unknown> {
 realPostgres('project import against copied live SQLite data', () => {
   const sources = { orchDb: sourceOrchDb!, hubDb: sourceHubDb! }
   const unownedHubDb = `${sourceHubDb!}-unowned.db`
+  const retiredOrchDb = `${sourceOrchDb!}-retired.db`
+  const retiredHubDb = `${sourceHubDb!}-retired.db`
   const sql = new SQL(databaseUrl!)
 
   beforeAll(async () => {
@@ -54,6 +59,8 @@ realPostgres('project import against copied live SQLite data', () => {
     await sql.unsafe('DROP SCHEMA IF EXISTS drizzle CASCADE')
     await sql.close()
     rmSync(unownedHubDb, { force: true })
+    rmSync(retiredOrchDb, { force: true })
+    rmSync(retiredHubDb, { force: true })
   })
 
   test('maps every source setting, reports the legacy skip, and is idempotent', async () => {
@@ -62,7 +69,7 @@ realPostgres('project import against copied live SQLite data', () => {
     const orch = new Database(sources.orchDb, { readonly: true })
     const hub = new Database(sources.hubDb, { readonly: true })
     const sourceProjects = orch
-      .query<SourceProject, []>('SELECT name, settings FROM project ORDER BY name')
+      .query<SourceProject, []>('SELECT name, settings, retired_at FROM project ORDER BY name')
       .all()
     const sourceSequences = hub
       .query<{ name: string; next: number }, []>('SELECT name, next FROM seq ORDER BY name')
@@ -123,6 +130,9 @@ realPostgres('project import against copied live SQLite data', () => {
     for (const source of sourceProjects) {
       const settings = JSON.parse(source.settings) as Record<string, unknown>
       const target = imported.find((row) => row.name === source.name)!
+      expect(target.retired_at).toEqual(
+        source.retired_at === null ? null : new Date(source.retired_at),
+      )
       for (const key of Object.keys(settings)) {
         expect(columnForSetting[key], `source setting ${key} has a target column`).toBeDefined()
         const expected =
@@ -169,6 +179,102 @@ realPostgres('project import against copied live SQLite data', () => {
     })
     expect(second).toEqual(first)
     expect(await targetState(sql)).toEqual(before)
+  })
+
+  test('a retired project owns no imported sequence', async () => {
+    copyFileSync(sources.orchDb, retiredOrchDb)
+    copyFileSync(sources.hubDb, retiredHubDb)
+    const orch = new Database(retiredOrchDb)
+    const retired = orch
+      .query<{ settings: string; retired_at: string | null }, []>(
+        "SELECT settings, retired_at FROM project WHERE name='recipetrial'",
+      )
+      .get()!
+    expect(retired.retired_at).not.toBeNull()
+    const settings = JSON.parse(retired.settings) as Record<string, unknown>
+    settings.keyPrefixes = ['RETIRED']
+    orch
+      .query("UPDATE project SET settings=? WHERE name='recipetrial'")
+      .run(JSON.stringify(settings))
+    orch.close()
+    const hub = new Database(retiredHubDb)
+    hub.query('INSERT INTO seq (name, next) VALUES (?, ?)').run('task:RETIRED', 7)
+    hub.close()
+
+    const result = await importProjects({
+      orchDb: retiredOrchDb,
+      hubDb: retiredHubDb,
+      databaseUrl: databaseUrl!,
+      spaceId: PLATFORM_SPACE_ID,
+    })
+    expect(result.skippedSequences).toContainEqual({
+      name: 'task:RETIRED',
+      next: 7,
+      reason: 'prefix is owned only by retired project: recipetrial',
+    })
+    const imported = await sql`SELECT count(*)::int AS count FROM seq WHERE name='task:RETIRED'`
+    expect(imported[0]!.count).toBe(0)
+  })
+
+  test('backfills the copied live store and syncs every finished turn through the outbox', async () => {
+    const source = new Database(sources.orchDb)
+    const noProject = source
+      .query<{ count: number }, []>(
+        "SELECT count(*) AS count FROM run WHERE project_id IS NULL AND status <> 'running'",
+      )
+      .get()!.count
+    const sourceMachineId = source
+      .query<{ value: string }, []>("SELECT value FROM schema_meta WHERE key='machine_id'")
+      .get()!.value
+    source.query("UPDATE outbox SET synced_at=NULL WHERE kind='run'").run()
+    const backfill = backfillRunRecords(source, sourceMachineId)
+    console.log(
+      `live-copy backfill: minted ${backfill.minted}, enqueued ${backfill.enqueued}, skipped-live ${backfill.skippedLive}`,
+    )
+    const expectedRecordRuns = source
+      .query<{ count: number }, []>(
+        `SELECT count(DISTINCT r.id) AS count
+         FROM run r JOIN outbox o ON o.record_id=r.record_id AND o.kind='run'`,
+      )
+      .get()!.count
+    const synced = await syncRecord({
+      recordUrl: databaseUrl!,
+      local: source,
+      identity: {
+        id: sourceMachineId,
+        name: 'live-copy-proof',
+      },
+      now: () => '2026-09-16T00:00:00.000Z',
+    })
+    console.log(
+      `live-copy sync: pushed ${synced.pushed}, failed ${synced.failed}, pending ${synced.pending}`,
+    )
+    expect(synced.failed).toBe(0)
+    expect(synced.pending).toBe(0)
+    const recordCount = await sql`SELECT count(*)::int AS count FROM run`
+    expect(recordCount[0]!.count).toBe(expectedRecordRuns)
+    const missingOutbox = source
+      .query<{ count: number }, []>(
+        `SELECT count(*) AS count FROM run r
+         WHERE r.status <> 'running'
+           AND NOT EXISTS (SELECT 1 FROM outbox o WHERE o.kind='run' AND o.record_id=r.record_id)`,
+      )
+      .get()!.count
+    expect(missingOutbox).toBe(0)
+    const missingChains = await sql`
+      SELECT count(*)::int AS count
+      FROM run child
+      LEFT JOIN run retry ON retry.id=child.retry_of
+      LEFT JOIN run parent ON parent.id=child.parent_run_id
+      WHERE (child.retry_of IS NOT NULL AND retry.id IS NULL)
+         OR (child.parent_run_id IS NOT NULL AND parent.id IS NULL)
+    `
+    expect(missingChains[0]!.count).toBe(0)
+    const recordNoProject =
+      await sql`SELECT count(*)::int AS count FROM run WHERE project_id IS NULL`
+    expect(noProject).toBe(97)
+    expect(recordNoProject[0]!.count).toBe(noProject)
+    source.close()
   })
 
   test('an unexpectedly unowned namespaced sequence aborts without partial writes', async () => {
