@@ -1,7 +1,7 @@
 import { describe, expect, spyOn, test } from 'bun:test'
 import { addRun, score } from '../test/fixtures/store.ts'
 import { db, nowIso } from './db.ts'
-import { monitor, monitorHistory } from './monitor.ts'
+import { groupMonitorConditions, monitor, monitorHistory } from './monitor.ts'
 import {
   deadRunningProcessConditions,
   orphanDockerNetworkConditions,
@@ -12,6 +12,42 @@ import {
   unsettledClaimConditions,
 } from './monitor-conditions.ts'
 import { claimMonitorNotices, markMonitorNoticesDelivered } from './monitor-notices.ts'
+import { upsertProject } from './projects.ts'
+
+const condition = (overrides: Partial<import('./monitor-types.ts').MonitorCondition> = {}) => ({
+  kind: 'sample',
+  subject: 'subject',
+  since: '2026-09-16T00:00:00.000Z',
+  ageMs: 1,
+  detail: 'detail',
+  action: 'reported',
+  ...overrides,
+})
+
+function insertRun4177PackRows(): void {
+  const root = new URL('../..', import.meta.url).pathname.replace(/\/$/, '')
+  upsertProject({ name: 'bottega', path: root, settings: { trunk: 'main' } })
+  const projectId = (
+    db().query('SELECT id FROM project WHERE name=?').get('bottega') as { id: number }
+  ).id
+  const docs = JSON.stringify([
+    {
+      revisionId: 4177,
+      scope: 'global',
+      subject: null,
+      slug: 'removed-run-4177-doc',
+      title: 'Removed',
+      bytes: 1,
+    },
+  ])
+  const insert = db().query(
+    `INSERT INTO canon_pack
+     (job,project,project_id,sha256,bytes,doc_count,doc_revisions,compiled_at,findings)
+     VALUES (?,?,?,?,?,?,?,?,0)`,
+  )
+  insert.run('review-lens', null, null, 'global', 1, 1, docs, '2026-09-16T00:00:00.000Z')
+  insert.run('review-lens', 'bottega', projectId, 'project', 1, 1, docs, '2026-09-16T00:00:00.000Z')
+}
 
 function persistAddressedCondition(
   kind: string,
@@ -39,6 +75,91 @@ function persistAddressedCondition(
 }
 
 describe('operational monitor conditions', () => {
+  test('identical conditions collapse without an anomaly', () => {
+    const duplicate = condition()
+    expect(groupMonitorConditions([duplicate, { ...duplicate }])).toEqual({
+      conditions: [duplicate],
+      anomalies: [],
+    })
+  })
+
+  test('conflicting conditions keep the first and report the dropped duplicate', () => {
+    const first = condition()
+    const grouped = groupMonitorConditions([first, condition({ detail: 'different detail' })])
+    expect(grouped.conditions).toEqual([first])
+    expect(grouped.anomalies).toEqual([
+      expect.objectContaining({
+        kind: 'observation-error',
+        subject: expect.stringContaining('sample'),
+        detail: expect.stringMatching(/sample.*subject.*dropped 1/),
+      }),
+    ])
+  })
+
+  test('unrelated conditions preserve their order', () => {
+    const first = condition({ kind: 'first', subject: 'one' })
+    const second = condition({ kind: 'second', subject: 'two' })
+    expect(groupMonitorConditions([first, second])).toEqual({
+      conditions: [first, second],
+      anomalies: [],
+    })
+  })
+
+  test('the persistence path inserts the run 4177 de-duplicated condition set', async () => {
+    insertRun4177PackRows()
+    const spawn = spyOn(Bun, 'spawnSync').mockReturnValue({
+      exitCode: 0,
+      stdout: Buffer.from(''),
+      stderr: Buffer.from(''),
+      success: true,
+    } as unknown as ReturnType<typeof Bun.spawnSync>)
+    try {
+      const result = await monitor('invoked')
+      const drift = result.conditions.filter(
+        ({ kind, subject }) => kind === 'canon-pack-drift' && subject === 'review-lens/bottega',
+      )
+      expect(drift).toHaveLength(1)
+      expect(
+        db()
+          .query(
+            `SELECT kind, subject FROM monitor_condition
+           WHERE invocation_id=? AND kind='canon-pack-drift' AND subject='review-lens/bottega'`,
+          )
+          .all(result.id),
+      ).toEqual([{ kind: 'canon-pack-drift', subject: 'review-lens/bottega' }])
+    } finally {
+      spawn.mockRestore()
+    }
+  })
+
+  test('a persistence failure completes the invocation with an error before rethrowing', async () => {
+    addRun({ agent: 'codex', job: 'implement', status: 'stale' })
+    const spawn = spyOn(Bun, 'spawnSync').mockReturnValue({
+      exitCode: 0,
+      stdout: Buffer.from(''),
+      stderr: Buffer.from(''),
+      success: true,
+    } as unknown as ReturnType<typeof Bun.spawnSync>)
+    db().exec(
+      `CREATE TRIGGER fail_monitor_condition
+       BEFORE INSERT ON monitor_condition BEGIN SELECT RAISE(ABORT, 'fixture persistence failure'); END`,
+    )
+    try {
+      await expect(monitor('invoked')).rejects.toThrow('fixture persistence failure')
+      const invocation = db()
+        .query(
+          `SELECT finished_at IS NOT NULL finished, findings, errors
+           FROM monitor_invocation ORDER BY id DESC LIMIT 1`,
+        )
+        .get() as { finished: number; findings: number; errors: number }
+      expect(invocation.finished).toBe(1)
+      expect(invocation.findings).toBe(0)
+      expect(invocation.errors).toBeGreaterThan(0)
+    } finally {
+      spawn.mockRestore()
+    }
+  })
+
   test('reports claimed allocations only after a conversation has been terminal over one hour', () => {
     const clock = Date.parse('2026-09-15T12:00:00Z')
     const claim = {

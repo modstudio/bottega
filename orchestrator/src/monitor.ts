@@ -176,6 +176,130 @@ export function formatMonitorPass(heading: string, conditions: HumanMonitorCondi
   return lines
 }
 
+const conditionSemantics = (condition: MonitorCondition) =>
+  JSON.stringify([
+    condition.kind,
+    condition.subject,
+    condition.since,
+    condition.detail,
+    condition.action,
+    condition.ownerSession ?? null,
+    condition.severity ?? null,
+    condition.issueKey ?? null,
+  ])
+
+/** Collapse repeated findings and turn conflicting detector output into visible anomalies. */
+export function groupMonitorConditions(conditions: MonitorCondition[]): {
+  conditions: MonitorCondition[]
+  anomalies: MonitorCondition[]
+} {
+  const groups = new Map<string, { first: MonitorCondition; semantic: string; dropped: number }>()
+  const grouped: MonitorCondition[] = []
+  for (const condition of conditions) {
+    const address = JSON.stringify([condition.kind, condition.subject])
+    const existing = groups.get(address)
+    if (!existing) {
+      groups.set(address, {
+        first: condition,
+        semantic: conditionSemantics(condition),
+        dropped: 0,
+      })
+      grouped.push(condition)
+      continue
+    }
+    existing.dropped += 1
+  }
+  const anomalies = [...groups.values()].flatMap(({ first, semantic, dropped }) => {
+    if (dropped === 0) return []
+    const address = JSON.stringify([first.kind, first.subject])
+    const variants = conditions.filter(
+      (condition) =>
+        JSON.stringify([condition.kind, condition.subject]) === address &&
+        conditionSemantics(condition) !== semantic,
+    )
+    if (variants.length === 0) return []
+    return [
+      {
+        kind: 'observation-error',
+        subject: `duplicate-condition:${address}`,
+        since: null,
+        ageMs: null,
+        detail: `${first.kind} condition for ${first.subject} differed across duplicate observations; dropped ${dropped}`,
+        action: 'reported; repair the detector that emitted conflicting conditions',
+      },
+    ]
+  })
+  return { conditions: grouped, anomalies }
+}
+
+function conditionsForPersistence(conditions: MonitorCondition[]): MonitorCondition[] {
+  const grouped = groupMonitorConditions(conditions)
+  return [...grouped.conditions, ...grouped.anomalies]
+}
+
+function completeMonitorInvocation(
+  database: ReturnType<typeof writableDb>,
+  invocation: number,
+  findings: number,
+  errors: number,
+): string {
+  const finishedAt = nowIso()
+  database
+    .query('UPDATE monitor_invocation SET finished_at=?, findings=?, errors=? WHERE id=?')
+    .run(finishedAt, findings, errors, invocation)
+  return finishedAt
+}
+
+function persistMonitorConditions(
+  database: ReturnType<typeof writableDb>,
+  invocation: number,
+  conditions: MonitorCondition[],
+  observationErrorCount: number,
+): MonitorCondition[] {
+  const persistedConditions = conditionsForPersistence(conditions)
+  try {
+    writeTransaction(() => {
+      const insert = database.query(
+        `INSERT INTO monitor_condition
+        (invocation_id,kind,subject,condition_since,age_ms,detail,action,issue_key,severity,
+         owner_session_id,delivered_at)
+       VALUES (?,?,?,?,?,?,?,?,?,?,?)`,
+      )
+      const priorDelivery = database.query(
+        `SELECT delivered_at FROM monitor_condition
+        WHERE kind=? AND subject=? AND condition_since IS ? AND owner_session_id IS ?
+          AND delivered_at IS NOT NULL
+        ORDER BY id DESC LIMIT 1`,
+      )
+      for (const condition of persistedConditions) {
+        const owner = condition.ownerSession ?? null
+        const prior = owner
+          ? (priorDelivery.get(condition.kind, condition.subject, condition.since, owner) as {
+              delivered_at: string
+            } | null)
+          : null
+        insert.run(
+          invocation,
+          condition.kind,
+          condition.subject,
+          condition.since,
+          condition.ageMs,
+          condition.detail,
+          condition.action,
+          condition.issueKey ?? null,
+          condition.severity ?? null,
+          owner,
+          prior?.delivered_at ?? null,
+        )
+      }
+    }, database)
+  } catch (cause) {
+    completeMonitorInvocation(database, invocation, 0, observationErrorCount + 1)
+    throw cause
+  }
+  return persistedConditions
+}
+
 /** Observe machine state, record the pass, and make no judgement-shaped repair. */
 export async function monitor(
   trigger: 'invoked' | 'backstop' = 'invoked',
@@ -509,39 +633,13 @@ export async function monitor(
 
   // Delivery inheritance is one atomic read/write unit. Two monitor passes may
   // otherwise both observe no prior delivery and create duplicate pending rows.
-  writeTransaction(() => {
-    const insert = database.query(
-      `INSERT INTO monitor_condition
-        (invocation_id,kind,subject,condition_since,age_ms,detail,action,issue_key,severity,
-         owner_session_id,delivered_at)
-       VALUES (?,?,?,?,?,?,?,?,?,?,?)`,
-    )
-    const priorDelivery = database.query(
-      `SELECT delivered_at FROM monitor_condition
-        WHERE kind=? AND subject=? AND condition_since IS ? AND owner_session_id IS ?
-          AND delivered_at IS NOT NULL
-        ORDER BY id DESC LIMIT 1`,
-    )
-    for (const c of conditions) {
-      const owner = c.ownerSession ?? null
-      const prior = owner
-        ? (priorDelivery.get(c.kind, c.subject, c.since, owner) as { delivered_at: string } | null)
-        : null
-      insert.run(
-        invocation,
-        c.kind,
-        c.subject,
-        c.since,
-        c.ageMs,
-        c.detail,
-        c.action,
-        c.issueKey ?? null,
-        c.severity ?? null,
-        owner,
-        prior?.delivered_at ?? null,
-      )
-    }
-  }, database)
+  const persistedConditions = persistMonitorConditions(
+    database,
+    invocation,
+    conditions,
+    errors.length,
+  )
+  conditions.splice(0, conditions.length, ...persistedConditions)
 
   const unavailable = conditions.filter(
     (c) => c.kind === 'detector-unavailable' || c.kind === 'dead-lock',
@@ -591,10 +689,12 @@ export async function monitor(
     }
   }
 
-  const finishedAt = nowIso()
-  database
-    .query('UPDATE monitor_invocation SET finished_at=?, findings=?, errors=? WHERE id=?')
-    .run(finishedAt, conditions.length, errors.length, invocation)
+  const finishedAt = completeMonitorInvocation(
+    database,
+    invocation,
+    conditions.length,
+    errors.length,
+  )
   return { id: invocation, startedAt, finishedAt, trigger, conditions, errors, canon }
 }
 
