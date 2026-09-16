@@ -7,7 +7,11 @@ import { db, nowIso } from './db.ts'
 import { machineId, machineName } from './machine-identity.ts'
 import { machine, PLATFORM_OPERATOR_USER_ID, PLATFORM_SPACE_ID } from './postgres-schema.ts'
 import { run as runRecord } from './postgres-schema-run.ts'
-import { RUN_RECORD_PAYLOAD_COLUMNS } from './run-outbox.ts'
+import {
+  backfillRunRecords,
+  RUN_RECORD_PAYLOAD_COLUMNS,
+  type RunRecordBackfillResult,
+} from './run-outbox.ts'
 
 type OutboxRow = { id: number; record_id: string; payload: string }
 type Payload = Record<(typeof RUN_RECORD_PAYLOAD_COLUMNS)[number], unknown>
@@ -17,8 +21,10 @@ export type RecordSyncResult = {
   failed: number
   pending: number
   configured: boolean
+  backfill?: RunRecordBackfillResult
 }
 export type RecordSyncOptions = {
+  backfill?: boolean
   recordUrl?: string
   local?: Database
   openSql?: (url: string) => SQL
@@ -46,7 +52,7 @@ const nullableBigint = (value: unknown) => (value == null ? null : bigint(value)
 const nullableNumber = (value: unknown) => (value == null ? null : Number(value))
 const nullableString = (value: unknown) => (value == null ? null : String(value))
 
-function runValues(row: Payload, projectId: string) {
+function runValues(row: Payload, projectId: string | null) {
   return {
     id: String(row.id),
     spaceId: String(row.spaceId),
@@ -137,14 +143,19 @@ async function upsertMachine(
 async function pushRun(postgres: SQL, row: Payload): Promise<void> {
   await postgres.begin(async (tx) => {
     await tx`SELECT set_config('app.space_id', ${PLATFORM_SPACE_ID}, true)`
-    const projects = await tx`
-      SELECT id FROM project
-      WHERE space_id=${PLATFORM_SPACE_ID}::uuid AND name=${String(row.projectName)}
-    `
-    if (projects.length !== 1) {
-      throw new Error(`record project is absent: ${String(row.projectName)}`)
+    const projectName = nullableString(row.projectName)
+    let projectId: string | null = null
+    if (projectName !== null) {
+      const projects = await tx`
+        SELECT id FROM project
+        WHERE space_id=${PLATFORM_SPACE_ID}::uuid AND name=${projectName}
+      `
+      if (projects.length !== 1) {
+        throw new Error(`record project is absent: ${projectName}`)
+      }
+      projectId = String(projects[0]!.id)
     }
-    const values = runValues(row, String(projects[0]!.id))
+    const values = runValues(row, projectId)
     const { id: _id, createdAt: _createdAt, ...updates } = values
     await drizzle({ client: tx })
       .insert(runRecord)
@@ -155,18 +166,25 @@ async function pushRun(postgres: SQL, row: Payload): Promise<void> {
 
 export async function syncRecord(options: RecordSyncOptions = {}): Promise<RecordSyncResult> {
   const recordUrl = options.recordUrl ?? process.env.ORCH_RECORD_URL
-  if (!recordUrl) return { pushed: 0, failed: 0, pending: 0, configured: false }
-  const local = options.local ?? db()
+  const identity = options.identity ?? { id: machineId(), name: machineName() }
+  const local = options.local ?? (recordUrl || options.backfill ? db() : undefined)
+  const backfill = options.backfill ? backfillRunRecords(local!, identity.id) : undefined
+  if (!recordUrl) {
+    return {
+      pushed: 0,
+      failed: 0,
+      pending: 0,
+      configured: false,
+      ...(backfill ? { backfill } : {}),
+    }
+  }
+  const writableLocal = local!
   const postgres = (options.openSql ?? ((url) => new SQL(url)))(recordUrl)
   let pushed = 0
   let failed = 0
   try {
-    await upsertMachine(
-      postgres,
-      (options.now ?? nowIso)(),
-      options.identity ?? { id: machineId(), name: machineName() },
-    )
-    const rows = local
+    await upsertMachine(postgres, (options.now ?? nowIso)(), identity)
+    const rows = writableLocal
       .query<OutboxRow, []>(
         'SELECT id, record_id, payload FROM outbox WHERE synced_at IS NULL ORDER BY id',
       )
@@ -174,23 +192,23 @@ export async function syncRecord(options: RecordSyncOptions = {}): Promise<Recor
     for (const row of rows) {
       try {
         await pushRun(postgres, payload(row.payload))
-        local
+        writableLocal
           .query('UPDATE outbox SET synced_at=?, last_error=NULL WHERE id=?')
           .run((options.now ?? nowIso)(), row.id)
         pushed++
       } catch (error) {
         const detail = error instanceof Error ? error.message : String(error)
-        local
+        writableLocal
           .query('UPDATE outbox SET attempts=attempts+1, last_error=? WHERE id=?')
           .run(detail, row.id)
         failed++
         break
       }
     }
-    const pending = local
+    const pending = writableLocal
       .query<{ count: number }, []>('SELECT count(*) AS count FROM outbox WHERE synced_at IS NULL')
       .get()!.count
-    return { pushed, failed, pending, configured: true }
+    return { pushed, failed, pending, configured: true, ...(backfill ? { backfill } : {}) }
   } finally {
     await postgres.close()
   }

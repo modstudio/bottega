@@ -1,7 +1,7 @@
 // concern: run-outbox
 /** Knows how a terminal local run becomes an ordered hosted-record mutation. Must not know Postgres. */
 import type { Database } from 'bun:sqlite'
-import { PLATFORM_SPACE_ID } from './postgres-schema.ts'
+import { newRecordId, PLATFORM_SPACE_ID } from './postgres-schema.ts'
 
 export const RUN_RECORD_PAYLOAD_COLUMNS = [
   'id',
@@ -71,10 +71,13 @@ type LocalRun = Record<string, unknown> & {
   record_id: string
   project_name: string | null
   started_at: string
-  retry_of: number | null
   retry_record_id: string | null
-  parent_run_id: number | null
   parent_record_id: string | null
+}
+
+type EnqueueRun = LocalRun & {
+  retry_of: number | null
+  parent_run_id: number | null
 }
 
 export type RunRecordBackfillResult = {
@@ -164,7 +167,7 @@ export function enqueueRunRecord(
   finishedAt: string,
 ): void {
   const row = database
-    .query<LocalRun, [number]>(
+    .query<EnqueueRun, [number]>(
       `SELECT r.*, project.name AS project_name,
               retry.record_id AS retry_record_id, parent.record_id AS parent_record_id
          FROM run r
