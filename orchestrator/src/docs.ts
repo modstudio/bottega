@@ -191,6 +191,12 @@ function validate(scope: string, subject: string | null, slug: string): asserts 
   if (subjectKind === 'project' && !projectByName(subject)) {
     throw new Error(`unknown project subject "${subject}"; valid values: ${validSubjects(scope)}`)
   }
+  if (
+    subjectKind === 'stack' &&
+    !db().query('SELECT 1 FROM project WHERE stack=? AND retired_at IS NULL LIMIT 1').get(subject)
+  ) {
+    throw new Error(`unknown stack subject "${subject}"; valid values: ${validSubjects(scope)}`)
+  }
   if (subjectKind === 'agent' && !AGENTS[subject]) {
     throw new Error(`unknown agent subject "${subject}"; valid values: ${validSubjects(scope)}`)
   }
@@ -199,11 +205,21 @@ function validate(scope: string, subject: string | null, slug: string): asserts 
   }
 }
 
-export function docSubjects(): { project: string[]; agent: string[]; job: string[] } {
+export function docSubjects(): {
+  project: string[]
+  stack: string[]
+  agent: string[]
+  job: string[]
+} {
   return {
     project: (db().query('SELECT name FROM project ORDER BY name').all() as { name: string }[]).map(
       (r) => r.name,
     ),
+    stack: (
+      db()
+        .query('SELECT DISTINCT stack FROM project WHERE stack IS NOT NULL ORDER BY stack')
+        .all() as { stack: string }[]
+    ).map((r) => r.stack),
     agent: Object.keys(AGENTS).sort(),
     job: Object.keys(JOBS).sort(),
   }
@@ -217,7 +233,13 @@ function validSubjects(scope: DocScope): string {
       ? (db().query('SELECT name FROM project ORDER BY name').all() as { name: string }[]).map(
           (r) => r.name,
         )
-      : Object.keys(subjectKind === 'agent' ? AGENTS : JOBS).sort()
+      : subjectKind === 'stack'
+        ? (
+            db()
+              .query('SELECT DISTINCT stack FROM project WHERE stack IS NOT NULL ORDER BY stack')
+              .all() as { stack: string }[]
+          ).map((r) => r.stack)
+        : Object.keys(subjectKind === 'agent' ? AGENTS : JOBS).sort()
   return values.join(', ') || '(none)'
 }
 

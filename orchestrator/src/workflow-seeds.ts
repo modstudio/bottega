@@ -15,7 +15,7 @@ const seedDefinition = (definition: unknown) => JSON.stringify(definition)
 const seeds = [
   {
     slug: 'ship',
-    revision: 2,
+    revision: 3,
     definition: {
       title: 'Ship a task',
       description:
@@ -111,7 +111,7 @@ const seeds = [
   },
   {
     slug: 'fix-defect',
-    revision: 3,
+    revision: 4,
     definition: {
       title: 'Fix one reported defect',
       description: "A projection of the 'orch fix-defect' command's coordinator for inspection.",
@@ -178,6 +178,93 @@ const seeds = [
   },
 ]
 
+const floors: Record<string, Record<string, string[]>> = {
+  ship: {
+    rebase: ['command-exit'],
+    lens: ['recorded-artifact'],
+    score: ['recorded-artifact'],
+    triage: ['human-ruling'],
+    complete: ['recorded-artifact'],
+    fix: ['command-exit', 'recorded-artifact'],
+    pr: ['command-exit', 'recorded-artifact'],
+    merge: ['command-exit', 'recorded-artifact'],
+    close: ['tracker-transition'],
+  },
+  'fix-defect': {
+    diagnose: ['recorded-artifact'],
+    fix: ['recorded-artifact'],
+    verify: ['command-exit'],
+    'blast-radius': ['recorded-artifact'],
+    triage: ['human-ruling'],
+    ship: ['command-exit', 'recorded-artifact'],
+  },
+}
+const sharedConflicts = new Set(['fix', 'triage'])
+const catalogueSlug = (workflow: string, step: string) =>
+  sharedConflicts.has(step) ? `${workflow}-${step}` : step
+
+type LegacySeed = (typeof seeds)[number]
+type SeedCatalogueStep = {
+  slug: string
+  title: string
+  body: string
+  floor: string[]
+  job: string | null
+  autonomy: 'auto' | 'ask' | 'manual'
+  needs: string[]
+}
+function catalogueDefinition() {
+  const steps: SeedCatalogueStep[] = []
+  for (const seed of seeds) {
+    for (const legacy of seed.definition.steps) {
+      const runsGate = legacy.gate !== null
+      let body = legacy.body.replaceAll('bun run check', '{{gate}}')
+      if (seed.slug === 'fix-defect' && legacy.slug === 'verify')
+        body = 'Reproduce the original condition before and after the fix, then run `{{gate}}`.'
+      steps.push({
+        slug: catalogueSlug(seed.slug, legacy.slug),
+        title: legacy.title,
+        body,
+        floor: floors[seed.slug]![legacy.slug]!,
+        job: legacy.job,
+        autonomy: legacy.autonomy as SeedCatalogueStep['autonomy'],
+        needs: runsGate ? ['gate'] : [],
+      })
+    }
+  }
+  return { steps }
+}
+
+function workflowDefinition(seed: LegacySeed) {
+  const { steps: _steps, ...definition } = seed.definition
+  return {
+    ...definition,
+    modes: definition.modes.map((mode) => ({
+      ...mode,
+      steps: mode.steps.map((step) => catalogueSlug(seed.slug, step)),
+    })),
+  }
+}
+
+function seedCatalogue(d: Database, now: string): void {
+  const definition = JSON.stringify(catalogueDefinition()),
+    reason = 'seed r1'
+  let catalogue = d.query("SELECT id FROM step_catalogue WHERE slug='shared'").get() as {
+    id: number
+  } | null
+  if (!catalogue) {
+    catalogue = d
+      .query("INSERT INTO step_catalogue (slug,created_at) VALUES ('shared',?) RETURNING id")
+      .get(now) as { id: number }
+    d.query(
+      `INSERT INTO step_catalogue_version (catalogue_id,n,status,definition,author,reason,created_at,promoted_at) VALUES (?,1,'production',?,'seed',?,?,?)`,
+    ).run(catalogue.id, definition, reason, now, now)
+    d.query(
+      `INSERT INTO step_catalogue_event (catalogue_id,version_n,event,author,reason,session_id,at) VALUES (?,1,'set','seed',?,NULL,?)`,
+    ).run(catalogue.id, reason, now)
+  }
+}
+
 function storedSeedRevision(d: Database, workflowId: number): number {
   const events = d
     .query("SELECT reason FROM workflow_event WHERE workflow_id=? AND author='seed'")
@@ -192,6 +279,7 @@ function storedSeedRevision(d: Database, workflowId: number): number {
 export function seedWorkflows(d: Database): void {
   const now = nowIso()
   writeTransaction(() => {
+    seedCatalogue(d, now)
     for (const seed of seeds) {
       const reason = `seed r${seed.revision}`
       let workflow = d.query('SELECT id FROM workflow WHERE slug=?').get(seed.slug) as {
@@ -205,7 +293,7 @@ export function seedWorkflows(d: Database): void {
           (workflow_id,n,status,definition,author,reason,created_at,promoted_at)
           VALUES (?,1,'production',?,'seed',?,?,?)`).run(
           workflow.id,
-          seedDefinition(seed.definition),
+          seedDefinition(workflowDefinition(seed)),
           reason,
           now,
           now,
@@ -237,7 +325,7 @@ export function seedWorkflows(d: Database): void {
         VALUES (?,?,'production',?,'seed',?,?,?)`).run(
         workflow.id,
         n,
-        seedDefinition(seed.definition),
+        seedDefinition(workflowDefinition(seed)),
         reason,
         now,
         now,

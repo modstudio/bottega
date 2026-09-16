@@ -11,10 +11,7 @@ const release: ReleaseSettings = {
 }
 
 const docs: DocsSettings = {
-  protocol: 'mcp',
-  server: 'fixture',
-  read: ['get_doc'],
-  write: ['set_doc'],
+  protocol: 'array-mcp',
 }
 
 describe('project workflow injection', () => {
@@ -54,14 +51,19 @@ describe('project workflow injection', () => {
       'stack',
     ])
     const typedRelease: ReleaseSettings = resolved.release
-    const typedDocs: DocsSettings = resolved.docs
+    const typedDocs = resolved.docs
 
     expect({ ...resolved, release: typedRelease, docs: typedDocs }).toEqual({
       tracker: { kind: 'fixture', protocol: 'array-mcp' },
       gate: 'bun run check',
       worktree: { branch: '{key}-orch-{id}' },
       release,
-      docs,
+      docs: {
+        protocol: 'array-mcp',
+        server: 'fixture',
+        read: ['doc_search', 'doc_get', 'doc_list'],
+        write: ['doc_create', 'doc_update'],
+      },
       stack: 'node',
     })
   })
@@ -79,7 +81,7 @@ describe('project workflow injection', () => {
 
     expect(() => resolveInjection(project, ['docs', 'stack'])).toThrow(
       'project fixture is missing workflow injection facts:\n' +
-        `- docs; set with: orch project set fixture --settings '{"docs":{"protocol":"<orch-docs|mcp>"}}'\n` +
+        `- docs; set with: orch project set fixture --settings '{"docs":{"protocol":"<orch-docs|workspace-mcp|cursor-mcp|array-mcp>"}}'\n` +
         '- stack; set with: orch project set fixture --stack <stack>',
     )
   })

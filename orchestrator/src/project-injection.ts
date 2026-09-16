@@ -5,7 +5,7 @@ import type { TrackerSettings } from '../../shared/trackers.ts'
 
 const strictObject = <Shape extends z.core.$ZodLooseShape>(shape: Shape) => z.strictObject(shape)
 
-export const releaseSchema = strictObject({
+const releaseSchema = strictObject({
   rungs: z.array(
     strictObject({
       name: z.string(),
@@ -19,20 +19,38 @@ export const releaseSchema = strictObject({
   observationWindowHours: z.number().int().positive().optional(),
 })
 
-export const docsSchema = z.discriminatedUnion('protocol', [
+const docsSchema = z.discriminatedUnion('protocol', [
   strictObject({ protocol: z.literal('orch-docs') }),
-  strictObject({
-    protocol: z.literal('mcp'),
-    server: z.string(),
-    read: z.array(z.string()).min(1),
-    write: z.array(z.string()),
-  }),
+  strictObject({ protocol: z.literal('workspace-mcp') }),
+  strictObject({ protocol: z.literal('cursor-mcp') }),
+  strictObject({ protocol: z.literal('array-mcp') }),
 ])
 
-export const gateSchema = z.string().trim().min(1)
+const gateSchema = z.string().trim().min(1)
 
 export type ReleaseSettings = z.infer<typeof releaseSchema>
 export type DocsSettings = z.infer<typeof docsSchema>
+type ResolvedDocs = DocsSettings & {
+  server?: string
+  read: string[]
+  write: string[]
+}
+
+const docsAdapters: Record<DocsSettings['protocol'], { read: string[]; write: string[] }> = {
+  'workspace-mcp': {
+    read: ['search-articles-tool', 'get-article-tool', 'list-rules-tool', 'get-rule-tool'],
+    write: ['create-article-tool', 'update-article-tool', 'update-rule-tool'],
+  },
+  'cursor-mcp': {
+    read: ['document_list', 'document_get', 'document_getByKey'],
+    write: ['document_create', 'document_update'],
+  },
+  'array-mcp': {
+    read: ['doc_search', 'doc_get', 'doc_list'],
+    write: ['doc_create', 'doc_update'],
+  },
+  'orch-docs': { read: ['list_docs', 'get_doc'], write: ['set_doc'] },
+}
 
 type InjectionSettings = {
   tracker?: TrackerSettings
@@ -56,7 +74,7 @@ type InjectionValues<Project extends InjectableProject> = {
   gate: NonNullable<Project['settings']['gate']>
   worktree: NonNullable<Project['settings']['worktree']>
   release: NonNullable<Project['settings']['release']>
-  docs: NonNullable<Project['settings']['docs']>
+  docs: ResolvedDocs
   stack: NonNullable<Project['stack']>
 }
 
@@ -70,7 +88,7 @@ const settingCommands: Record<Exclude<InjectionSource, 'stack'>, string> = {
   gate: `--settings '{"gate":"<command>"}'`,
   worktree: `--settings '{"worktree":{}}'`,
   release: `--settings '{"release":{"rungs":[],"mergeMethod":"<merge-method>","requiredChecks":[]}}'`,
-  docs: `--settings '{"docs":{"protocol":"<orch-docs|mcp>"}}'`,
+  docs: `--settings '{"docs":{"protocol":"<orch-docs|workspace-mcp|cursor-mcp|array-mcp>"}}'`,
 }
 
 function commandFor(project: InjectableProject, source: InjectionSource): string {
@@ -99,7 +117,16 @@ export function resolveInjection<
   const resolved: Partial<InjectionValues<Project>> = {}
   for (const source of needs) {
     const value = source === 'stack' ? project.stack : project.settings[source]
-    Object.assign(resolved, { [source]: value })
+    if (source === 'docs') {
+      const docs = value as DocsSettings
+      Object.assign(resolved, {
+        docs: {
+          ...docs,
+          ...(docs.protocol === 'orch-docs' ? {} : { server: project.name }),
+          ...docsAdapters[docs.protocol],
+        },
+      })
+    } else Object.assign(resolved, { [source]: value })
   }
   return resolved as ResolvedInjection<Project, Needs>
 }

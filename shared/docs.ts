@@ -12,12 +12,13 @@ export const DOC_SCOPES = [
   'agent',
   'job',
   'global',
+  'stack',
   'resume',
   'canon',
 ] as const
 export type DocScope = (typeof DOC_SCOPES)[number]
 
-export type DocSubjectKind = 'project' | 'agent' | 'job'
+export type DocSubjectKind = 'project' | 'stack' | 'agent' | 'job'
 
 export const DOC_SCOPE_SUBJECT_KIND = {
   project: 'project',
@@ -25,6 +26,7 @@ export const DOC_SCOPE_SUBJECT_KIND = {
   agent: 'agent',
   job: 'job',
   global: null,
+  stack: 'stack',
   resume: 'project',
   canon: 'project',
 } as const satisfies Record<DocScope, DocSubjectKind | null>
