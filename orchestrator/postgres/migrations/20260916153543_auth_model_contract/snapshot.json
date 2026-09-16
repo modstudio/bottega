@@ -1,8 +1,8 @@
 {
   "version": "8",
   "dialect": "postgres",
-  "id": "3307fb95-02ab-4d12-bdfc-627c1f572fea",
-  "prevIds": ["11be5efe-a036-42ef-84d4-5f6500e71df8"],
+  "id": "3c91c48a-774f-4746-9f4f-fcad69702aec",
+  "prevIds": ["4bcec8df-7b21-4966-9336-2785e66c6e9b"],
   "ddl": [
     {
       "isRlsEnabled": false,
@@ -4057,7 +4057,7 @@
       "tableTo": "space",
       "columnsTo": ["id"],
       "onUpdate": "NO ACTION",
-      "onDelete": "NO ACTION",
+      "onDelete": "SET NULL",
       "name": "session_active_space_id_space_id_fkey",
       "entityType": "fks",
       "schema": "public",

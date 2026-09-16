@@ -3,6 +3,7 @@ SET "slug" = 'bottega'
 WHERE "id" = '01990000-0000-7000-8000-000000000001' AND "slug" IS NULL;
 
 ALTER TABLE "space" ALTER COLUMN "slug" SET NOT NULL;
+ALTER TABLE "space" ADD CONSTRAINT "space_slug_key" UNIQUE ("slug");
 ALTER TABLE "invitation" FORCE ROW LEVEL SECURITY;
 
 DROP POLICY "membership_space_select" ON "membership";

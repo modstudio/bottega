@@ -1,8 +1,8 @@
 {
   "version": "8",
   "dialect": "postgres",
-  "id": "fe813042-be62-4fc2-b4e5-8f512be11a99",
-  "prevIds": ["46793ed9-7fac-42bb-8885-56980f91698a"],
+  "id": "4bcec8df-7b21-4966-9336-2785e66c6e9b",
+  "prevIds": ["4a356412-93b5-4300-a87e-3d1a6dde82f6"],
   "ddl": [
     {
       "isRlsEnabled": false,
@@ -628,7 +628,7 @@
     {
       "type": "text",
       "typeSchema": null,
-      "notNull": false,
+      "notNull": true,
       "dimensions": 0,
       "default": null,
       "generated": null,
@@ -4701,7 +4701,7 @@
       "as": "PERMISSIVE",
       "for": "SELECT",
       "roles": ["public"],
-      "using": "\"membership\".\"space_id\" = nullif(current_setting('app.space_id', true), '')::uuid",
+      "using": "\"membership\".\"space_id\" = nullif(current_setting('app.space_id', true), '')::uuid OR \"membership\".\"user_id\" = nullif(current_setting('app.user_id', true), '')::uuid",
       "withCheck": null,
       "name": "membership_space_select",
       "entityType": "policies",
@@ -4833,7 +4833,7 @@
       "as": "PERMISSIVE",
       "for": "SELECT",
       "roles": ["public"],
-      "using": "\"space\".\"id\" = nullif(current_setting('app.space_id', true), '')::uuid",
+      "using": "\"space\".\"id\" = nullif(current_setting('app.space_id', true), '')::uuid OR EXISTS (\n          SELECT 1 FROM membership m WHERE m.space_id = \"space\".\"id\" AND m.user_id = nullif(current_setting('app.user_id', true), '')::uuid\n        )",
       "withCheck": null,
       "name": "space_space_select",
       "entityType": "policies",

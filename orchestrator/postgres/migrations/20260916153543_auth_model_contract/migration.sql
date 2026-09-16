@@ -1,0 +1,2 @@
+ALTER TABLE "user" DROP CONSTRAINT "user_personal_space_id_space_id_fkey", ADD CONSTRAINT "user_personal_space_id_space_id_fkey" FOREIGN KEY ("personal_space_id") REFERENCES "space"("id") ON DELETE SET NULL;--> statement-breakpoint
+ALTER TABLE "session" DROP CONSTRAINT "session_active_space_id_space_id_fkey", ADD CONSTRAINT "session_active_space_id_space_id_fkey" FOREIGN KEY ("active_space_id") REFERENCES "space"("id") ON DELETE SET NULL;

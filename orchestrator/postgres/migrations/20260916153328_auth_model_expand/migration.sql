@@ -55,7 +55,6 @@ ALTER TABLE "user" ADD COLUMN "image" text;--> statement-breakpoint
 ALTER TABLE "user" ADD COLUMN "personal_space_id" uuid;--> statement-breakpoint
 ALTER TABLE "user" ADD COLUMN "updated_at" timestamp with time zone DEFAULT now() NOT NULL;--> statement-breakpoint
 ALTER TABLE "membership" ALTER COLUMN "permission" SET DEFAULT 'write';--> statement-breakpoint
-ALTER TABLE "space" ADD CONSTRAINT "space_slug_key" UNIQUE("slug");--> statement-breakpoint
 CREATE INDEX "account_user_id_idx" ON "account" ("user_id");--> statement-breakpoint
 CREATE INDEX "invitation_space_id_idx" ON "invitation" ("space_id");--> statement-breakpoint
 CREATE INDEX "invitation_email_idx" ON "invitation" ("email");--> statement-breakpoint

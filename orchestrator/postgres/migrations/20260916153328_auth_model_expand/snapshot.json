@@ -1,7 +1,7 @@
 {
   "version": "8",
   "dialect": "postgres",
-  "id": "fe813042-be62-4fc2-b4e5-8f512be11a99",
+  "id": "4a356412-93b5-4300-a87e-3d1a6dde82f6",
   "prevIds": ["46793ed9-7fac-42bb-8885-56980f91698a"],
   "ddl": [
     {
@@ -4666,15 +4666,6 @@
       "columns": ["name"],
       "nullsNotDistinct": false,
       "name": "space_name_key",
-      "schema": "public",
-      "table": "space",
-      "entityType": "uniques"
-    },
-    {
-      "nameExplicit": false,
-      "columns": ["slug"],
-      "nullsNotDistinct": false,
-      "name": "space_slug_key",
       "schema": "public",
       "table": "space",
       "entityType": "uniques"
