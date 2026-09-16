@@ -5,8 +5,8 @@ import { SQL } from 'bun'
 import { drizzle } from 'drizzle-orm/bun-sql'
 import { db, nowIso } from './db.ts'
 import { machineId, machineName } from './machine-identity.ts'
-import { run as runRecord } from './postgres-schema-run.ts'
 import { machine, PLATFORM_OPERATOR_USER_ID, PLATFORM_SPACE_ID } from './postgres-schema.ts'
+import { run as runRecord } from './postgres-schema-run.ts'
 import { RUN_RECORD_PAYLOAD_COLUMNS } from './run-outbox.ts'
 
 type OutboxRow = { id: number; record_id: string; payload: string }

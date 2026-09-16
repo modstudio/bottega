@@ -4,14 +4,14 @@ import { existsSync, readdirSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { PLATFORM_SLUG } from '../../shared/brand.ts'
 import { migratePostgres } from './postgres-migrate.ts'
-import { syncRecord } from './record-sync.ts'
-import { RUN_RECORD_PAYLOAD_COLUMNS } from './run-outbox.ts'
 import {
   newRecordId,
   PLATFORM_OPERATOR_USER_ID,
   PLATFORM_SPACE_ID,
   PLATFORM_SPACE_NAME,
 } from './postgres-schema.ts'
+import { syncRecord } from './record-sync.ts'
+import { RUN_RECORD_PAYLOAD_COLUMNS } from './run-outbox.ts'
 
 const container = process.env.ORCH_TEST_POSTGRES_CONTAINER
 const ownerUrl = process.env.ORCH_TEST_POSTGRES_OWNER_URL

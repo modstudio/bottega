@@ -30,9 +30,9 @@ import {
   storedMcpRequest,
 } from './mcp-preflight.ts'
 import { readMcpConfig, wrongProjectReason } from './mcp-probe.ts'
+import { newRecordId } from './postgres-schema.ts'
 import { withWorktreeCreateLock, withWorktreeLease } from './project-lock.ts'
 import { projectAt, stackAt } from './projects.ts'
-import { newRecordId } from './postgres-schema.ts'
 import { retargetRepositoryPromptForDispatch } from './prompt-retarget.ts'
 import {
   claimRecipePort,
