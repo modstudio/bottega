@@ -12,7 +12,7 @@ import {
   taskBranchPatchEquivalent,
 } from './task-branch.ts'
 
-export const GH_MERGED_PR_LIMIT = 1000
+const GH_MERGED_PR_LIMIT = 1000
 
 type RunRow = {
   id: number
@@ -24,7 +24,7 @@ type RunRow = {
   status: string
 }
 
-export type BranchReportRow = BranchLanding & {
+type BranchReportRow = BranchLanding & {
   branch: string
   tip: string
   commitsNotOnTrunk: number
@@ -33,7 +33,7 @@ export type BranchReportRow = BranchLanding & {
   runIds: number[]
 }
 
-export type BranchReportProject = {
+type BranchReportProject = {
   project: string
   trunk: string
   error?: string
