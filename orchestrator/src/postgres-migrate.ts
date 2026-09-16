@@ -23,6 +23,23 @@ export async function probeRecord(url: string): Promise<void> {
   }
 }
 
+export async function appliedRecordMigrationCount(url: string): Promise<number> {
+  const sql = new SQL(url)
+  try {
+    const present = await sql`
+      SELECT EXISTS (
+        SELECT 1 FROM information_schema.tables
+        WHERE table_schema='drizzle' AND table_name='__drizzle_migrations'
+      ) AS present
+    `
+    if (!present[0]?.present) return 0
+    const rows = await sql`SELECT count(*)::integer AS count FROM drizzle.__drizzle_migrations`
+    return Number(rows[0]?.count ?? 0)
+  } finally {
+    await sql.close()
+  }
+}
+
 export async function migratePostgres(url = process.env.ORCH_RECORD_MIGRATE_URL): Promise<void> {
   if (!url) throw new Error('ORCH_RECORD_MIGRATE_URL is required to migrate the record')
   const sql = new SQL(url)

@@ -35,7 +35,7 @@ describe('record API', () => {
     expect(response.status).toBe(409)
     expect(await response.json()).toEqual({
       error: 'record session has no active space',
-      remedy: 'run `orch record space` to select an active space',
+      remedy: 'run `orch record space switch <slug>` to select an active space',
     })
   })
 

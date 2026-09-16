@@ -391,12 +391,6 @@
   },
   {
     "workspace": "orchestrator",
-    "file": "orchestrator/src/postgres-migrate.ts",
-    "issueType": "exports",
-    "symbol": "migratePostgres"
-  },
-  {
-    "workspace": "orchestrator",
     "file": "orchestrator/src/postgres-schema.ts",
     "issueType": "exports",
     "symbol": "PLATFORM_OPERATOR_USER_ID"
@@ -436,12 +430,6 @@
     "file": "orchestrator/src/recipe-schema.ts",
     "issueType": "types",
     "symbol": "ProjectConfigDocument"
-  },
-  {
-    "workspace": "orchestrator",
-    "file": "orchestrator/src/record-auth.ts",
-    "issueType": "exports",
-    "symbol": "setActiveRecordSpace"
   },
   {
     "workspace": "orchestrator",
@@ -1870,12 +1858,6 @@
     "file": "orchestrator/src/record-auth-command.ts",
     "issueType": "unneededExports",
     "symbol": "recordPassword"
-  },
-  {
-    "workspace": "orchestrator",
-    "file": "orchestrator/src/record-session.ts",
-    "issueType": "unneededExports",
-    "symbol": "storedRecordToken"
   },
   {
     "workspace": "orchestrator",

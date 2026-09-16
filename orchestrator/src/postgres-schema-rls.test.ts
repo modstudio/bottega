@@ -4,7 +4,11 @@ import { existsSync, readdirSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { PLATFORM_SLUG } from '../../shared/brand.ts'
 import { db } from './db.ts'
-import { migratePostgres } from './postgres-migrate.ts'
+import {
+  appliedRecordMigrationCount,
+  migratePostgres,
+  recordMigrationCount,
+} from './postgres-migrate.ts'
 import {
   newRecordId,
   PLATFORM_OPERATOR_USER_ID,
@@ -15,8 +19,16 @@ import {
   RECORD_READER_ROLE,
 } from './postgres-schema.ts'
 import { startRecordApiServer } from './record-api-server.ts'
-import { bearerHeaders, recordAuth } from './record-auth.ts'
+import { bearerHeaders, recordAuth, setActiveRecordSpace } from './record-auth.ts'
 import { signInCommand, signUpCommand, whoamiCommand } from './record-auth-command.ts'
+import { diagnoseRecord, recordDoctorExitCode } from './record-doctor.ts'
+import {
+  acceptRecordInvitation,
+  inviteToActiveRecordSpace,
+  pendingRecordInvitations,
+  recordMemberships,
+  switchRecordSpace,
+} from './record-space.ts'
 import { syncRecord } from './record-sync.ts'
 import { RUN_RECORD_PAYLOAD_COLUMNS } from './run-outbox.ts'
 
@@ -57,6 +69,9 @@ const RUN_A = '01990000-0000-7000-8000-00000000003a'
 const RUN_B = '01990000-0000-7000-8000-00000000003b'
 const REVIEW_A = '01990000-0000-7000-8000-00000000004a'
 const REVIEW_B = '01990000-0000-7000-8000-00000000004b'
+const WRONG_EMAIL_INVITATION = '01990000-0000-7000-8000-00000000012a'
+const EXPIRED_INVITATION = '01990000-0000-7000-8000-00000000012b'
+const ACCEPTED_INVITATION = '01990000-0000-7000-8000-00000000012c'
 
 type PsqlResult = { code: number; stdout: string; stderr: string }
 
@@ -186,6 +201,8 @@ realPostgres('RLS proof against real Postgres', () => {
   let repairSpace = ''
   let tokenA = ''
   let tokenB = ''
+  let repairToken = ''
+  let pendingInvitation = ''
   const authProjectA = newRecordId()
   const authProjectB = newRecordId()
   const authRunA = newRecordId()
@@ -311,6 +328,7 @@ realPostgres('RLS proof against real Postgres', () => {
       body: { email: AUTH_EMAIL_REPAIR, name: 'Auth Repair', password: AUTH_PASSWORD },
     })
     if (!repair.token) throw new Error('repair signup has no bearer token')
+    repairToken = repair.token
     const repairSession = await recordAuth(actorUrl!).api.getSession({
       headers: bearerHeaders(repair.token),
     })
@@ -331,6 +349,24 @@ realPostgres('RLS proof against real Postgres', () => {
        ) VALUES
         ('${authRunA}','${authSpaceA}','${authProjectA}','${MACHINE_A}',101,now(),'proof','proof','a',1,'a',false,'ok',1,false,false,false,now(),now()),
         ('${authRunB}','${authSpaceB}','${authProjectB}','${MACHINE_A}',102,now(),'proof','proof','b',1,'b',false,'ok',1,false,false,false,now(),now());`,
+    )
+
+    db()
+      .query(
+        `INSERT INTO schema_meta (key,value) VALUES ('record_session',?)
+         ON CONFLICT(key) DO UPDATE SET value=excluded.value`,
+      )
+      .run(tokenA)
+    pendingInvitation = await inviteToActiveRecordSpace(actorUrl!, AUTH_EMAIL_B, 'member')
+    succeeds(
+      'postgres',
+      'postgres',
+      `INSERT INTO invitation
+        (id,space_id,email,inviter_id,role,status,expires_at,created_at)
+       VALUES
+        ('${WRONG_EMAIL_INVITATION}','${authSpaceA}','${AUTH_EMAIL_A}','${authUserA}','member','pending',now() + interval '1 day',now()),
+        ('${EXPIRED_INVITATION}','${authSpaceA}','${AUTH_EMAIL_B}','${authUserA}','member','pending',now() - interval '1 day',now()),
+        ('${ACCEPTED_INVITATION}','${authSpaceA}','${AUTH_EMAIL_B}','${authUserA}','member','accepted',now() + interval '1 day',now());`,
     )
   })
 
@@ -420,6 +456,215 @@ realPostgres('RLS proof against real Postgres', () => {
     expect(shown.user.id).toBe(authUserB)
     expect(shown.activeSpaceId).toBe(authSpaceB)
     expect(shown.memberships.map((row) => row.space_id)).toEqual([authSpaceB])
+  })
+
+  test('space list and switch repair a session with no active space', async () => {
+    succeeds(
+      'postgres',
+      'postgres',
+      `UPDATE session SET active_space_id=NULL WHERE token='${tokenB}';`,
+    )
+    db()
+      .query(
+        `INSERT INTO schema_meta (key,value) VALUES ('record_session',?)
+         ON CONFLICT(key) DO UPDATE SET value=excluded.value`,
+      )
+      .run(tokenB)
+    const listed = await recordMemberships(actorUrl!)
+    expect(listed.activeSpaceId).toBeNull()
+    expect(listed.memberships.map((row) => row.spaceId)).toEqual([authSpaceB])
+    expect((await switchRecordSpace(actorUrl!, listed.memberships[0]!.slug)).spaceId).toBe(
+      authSpaceB,
+    )
+  })
+
+  test('a non-owner cannot invite into the active space', async () => {
+    succeeds(
+      'postgres',
+      'postgres',
+      `INSERT INTO membership (id,space_id,user_id,role,permission,created_at)
+       VALUES ('01990000-0000-7000-8000-00000000013a','${authSpaceA}',
+         (SELECT id FROM "user" WHERE email='${AUTH_EMAIL_REPAIR}'),'member','write',now());`,
+    )
+    await setActiveRecordSpace(actorUrl!, repairToken, authSpaceA)
+    db()
+      .query(
+        `INSERT INTO schema_meta (key,value) VALUES ('record_session',?)
+         ON CONFLICT(key) DO UPDATE SET value=excluded.value`,
+      )
+      .run(repairToken)
+    await expect(
+      inviteToActiveRecordSpace(actorUrl!, 'nobody@example.test', 'member'),
+    ).rejects.toThrow('requires the owner role')
+  })
+
+  test('an owner does not list invitations they sent into their active space', async () => {
+    db()
+      .query(
+        `INSERT INTO schema_meta (key,value) VALUES ('record_session',?)
+         ON CONFLICT(key) DO UPDATE SET value=excluded.value`,
+      )
+      .run(tokenA)
+    const invited = await inviteToActiveRecordSpace(actorUrl!, 'owner-sent@example.test', 'member')
+    expect((await pendingRecordInvitations(actorUrl!)).map((row) => row.id)).not.toContain(invited)
+  })
+
+  test('an expired pending invitation does not block re-inviting', async () => {
+    db()
+      .query(
+        `INSERT INTO schema_meta (key,value) VALUES ('record_session',?)
+         ON CONFLICT(key) DO UPDATE SET value=excluded.value`,
+      )
+      .run(tokenA)
+    const email = 'expired-reinvite@example.test'
+    succeeds(
+      'postgres',
+      'postgres',
+      `INSERT INTO invitation
+        (id,space_id,email,inviter_id,role,status,expires_at,created_at)
+       VALUES ('${newRecordId()}','${authSpaceA}','${email}','${authUserA}',
+         'member','pending',now() - interval '1 day',now());`,
+    )
+    await expect(inviteToActiveRecordSpace(actorUrl!, email, 'member')).resolves.toBeString()
+  })
+
+  test('invitees see only their invitations and acceptance joins and switches space', async () => {
+    const visibleToInvitee = psql(
+      RECORD_ACTOR_ROLE,
+      'actor-password',
+      `SET app.user_id='${authUserB}'; SET app.space_id='${authSpaceB}';
+       SELECT id FROM invitation ORDER BY id;`,
+    )
+    expect(visibleToInvitee.code, visibleToInvitee.stderr).toBe(0)
+    expect(visibleToInvitee.stdout.split('\n')).toEqual(
+      [WRONG_EMAIL_INVITATION, EXPIRED_INVITATION, ACCEPTED_INVITATION, pendingInvitation]
+        .filter((id) => id !== WRONG_EMAIL_INVITATION)
+        .sort(),
+    )
+    const visibleToOther = psql(
+      RECORD_ACTOR_ROLE,
+      'actor-password',
+      `WITH settings AS MATERIALIZED (
+         SELECT set_config('app.user_id',(SELECT id::text FROM "user" WHERE email='${AUTH_EMAIL_REPAIR}'),false),
+                set_config('app.space_id','${repairSpace}',false)
+       ) SELECT count(*) FROM settings, invitation;`,
+    )
+    expect(visibleToOther.code, visibleToOther.stderr).toBe(0)
+    expect(visibleToOther.stdout).toBe('0')
+
+    db()
+      .query(
+        `INSERT INTO schema_meta (key,value) VALUES ('record_session',?)
+         ON CONFLICT(key) DO UPDATE SET value=excluded.value`,
+      )
+      .run(tokenB)
+    expect((await pendingRecordInvitations(actorUrl!)).map((row) => row.id)).toEqual([
+      pendingInvitation,
+    ])
+    await expect(acceptRecordInvitation(actorUrl!, WRONG_EMAIL_INVITATION)).rejects.toThrow(
+      'record invitation is unavailable',
+    )
+    await expect(acceptRecordInvitation(actorUrl!, EXPIRED_INVITATION)).rejects.toThrow(
+      'record invitation has expired',
+    )
+    await expect(acceptRecordInvitation(actorUrl!, ACCEPTED_INVITATION)).rejects.toThrow(
+      'record invitation is not pending',
+    )
+
+    expect(await acceptRecordInvitation(actorUrl!, pendingInvitation)).toBe(authSpaceA)
+    const session = await recordAuth(actorUrl!).api.getSession({ headers: bearerHeaders(tokenB) })
+    expect(session?.session.activeOrganizationId).toBe(authSpaceA)
+    const joined = psql(
+      RECORD_ACTOR_ROLE,
+      'actor-password',
+      `SET app.user_id='${authUserB}'; SET app.space_id='${authSpaceA}';
+       SELECT role || '|' || permission FROM membership
+         WHERE user_id='${authUserB}' AND space_id='${authSpaceA}';
+       SELECT name FROM project WHERE id='${authProjectA}';`,
+    )
+    expect(joined.code, joined.stderr).toBe(0)
+    expect(joined.stdout.split('\n')).toEqual(['member|write', 'auth-a-project'])
+
+    db()
+      .query(
+        `INSERT INTO schema_meta (key,value) VALUES ('record_session',?)
+         ON CONFLICT(key) DO UPDATE SET value=excluded.value`,
+      )
+      .run(tokenA)
+    const second = newRecordId()
+    succeeds(
+      'postgres',
+      'postgres',
+      `INSERT INTO invitation
+        (id,space_id,email,inviter_id,role,status,expires_at,created_at)
+       VALUES ('${second}','${authSpaceA}','${AUTH_EMAIL_B}','${authUserA}',
+         'member','pending',now() + interval '1 day',now());`,
+    )
+    db()
+      .query(
+        `INSERT INTO schema_meta (key,value) VALUES ('record_session',?)
+         ON CONFLICT(key) DO UPDATE SET value=excluded.value`,
+      )
+      .run(tokenB)
+    await expect(acceptRecordInvitation(actorUrl!, second)).rejects.toThrow(
+      'record user is already a member',
+    )
+  })
+
+  test('migrate is idempotent and record doctor diagnoses ownership', async () => {
+    const before = await appliedRecordMigrationCount(ownerUrl!)
+    await migratePostgres(ownerUrl!)
+    const after = await appliedRecordMigrationCount(ownerUrl!)
+    expect(after).toBe(before)
+    expect(after).toBe(recordMigrationCount())
+
+    db()
+      .query(
+        `INSERT INTO schema_meta (key,value) VALUES ('record_session',?)
+         ON CONFLICT(key) DO UPDATE SET value=excluded.value`,
+      )
+      .run(tokenB)
+    const healthy = await diagnoseRecord({ recordUrl: actorUrl!, migrateUrl: ownerUrl! })
+    expect(recordDoctorExitCode(healthy), JSON.stringify(healthy)).toBe(0)
+    succeeds('postgres', 'postgres', 'ALTER SCHEMA public OWNER TO postgres;')
+    try {
+      const unhealthy = await diagnoseRecord({ recordUrl: actorUrl!, migrateUrl: ownerUrl! })
+      expect(recordDoctorExitCode(unhealthy)).toBe(1)
+      expect(unhealthy).toContainEqual({
+        name: 'schema public owned by record_owner',
+        status: 'fail',
+        detail: 'schema public is not owned by record_owner',
+      })
+    } finally {
+      succeeds('postgres', 'postgres', `ALTER SCHEMA public OWNER TO ${RECORD_OWNER_ROLE};`)
+    }
+  })
+
+  test('doctor fails and names project DELETE after that grant is revoked', async () => {
+    db()
+      .query(
+        `INSERT INTO schema_meta (key,value) VALUES ('record_session',?)
+         ON CONFLICT(key) DO UPDATE SET value=excluded.value`,
+      )
+      .run(tokenB)
+    succeeds(
+      RECORD_OWNER_ROLE,
+      'owner-password',
+      `REVOKE DELETE ON project FROM ${RECORD_ACTOR_ROLE};`,
+    )
+    try {
+      const unhealthy = await diagnoseRecord({ recordUrl: actorUrl!, migrateUrl: ownerUrl! })
+      expect(recordDoctorExitCode(unhealthy)).toBe(1)
+      const grants = unhealthy.find((check) => check.name === 'record_actor representative grants')
+      expect(grants?.status).toBe('fail')
+      expect(grants?.detail ?? '').toContain('project DELETE')
+    } finally {
+      succeeds(
+        RECORD_OWNER_ROLE,
+        'owner-password',
+        `GRANT DELETE ON project TO ${RECORD_ACTOR_ROLE};`,
+      )
+    }
   })
 
   test('HTTP bearer round trip signs up, identifies, lists, and isolates runs', async () => {
