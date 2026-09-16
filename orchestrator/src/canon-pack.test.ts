@@ -2,7 +2,7 @@ import { describe, expect, test } from 'bun:test'
 import { PLATFORM_SLUG } from '../../shared/brand.ts'
 import { setDoc } from '../test/fixtures/docs.ts'
 import { dir } from '../test/fixtures/store.ts'
-import { CanonBudgetError, compileBrief, compilePack, storedPackDrift } from './canon.ts'
+import { CanonBudgetError, compilePack, storedPackDrift } from './canon.ts'
 import { db } from './db.ts'
 import { docsForRun, docsMarkdown } from './docs.ts'
 import { JOBS } from './jobs.ts'
@@ -87,8 +87,6 @@ describe('worker pack canon', () => {
       pack.markdown.indexOf('RULE-BODY-UNIQUE'),
     )
     expect(pack.docs.map((doc) => doc.slug)).toEqual(['operator'])
-    expect(compileBrief(dir).markdown).not.toContain('ENTRY-BODY-UNIQUE')
-    expect(compileBrief(dir).markdown).not.toContain('RULE-BODY-UNIQUE')
   })
 
   test('global always-on rows pack before project rows of the same tier', () => {

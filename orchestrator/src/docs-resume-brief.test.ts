@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'bun:test'
 import { consumeDoc, setDoc } from '../test/fixtures/docs.ts'
 import { db } from './db.ts'
-import { brief, listOpenResumes, parseResumeFrontmatter, resumeAge } from './docs.ts'
+import { listOpenResumes, parseResumeFrontmatter, resumeAge } from './docs.ts'
 import { upsertProject } from './projects.ts'
 
 describe('scoped operator docs', () => {
@@ -136,7 +136,6 @@ describe('scoped operator docs', () => {
       ],
       unreadable: [{ slug: 'broken', reason: 'no-frontmatter' }],
     })
-    expect(brief('/w/known/src')).not.toContain('Newer epic')
   })
 
   test('indented resume frontmatter cases A-D parse and list, with top-level keys winning', () => {

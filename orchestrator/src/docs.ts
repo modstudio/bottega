@@ -13,7 +13,6 @@ import { mkdirSync, readdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { DOC_SCOPE_SUBJECT_KIND, DOC_SCOPES, type DocScope } from '../../shared/docs.ts'
 import { AGENTS } from './agent-registry.ts'
-import { compileBrief } from './canon.ts'
 import { collectCanonLintInput } from './canon-files.ts'
 import { type CanonRow, composeCanonRows } from './canon-hydrate.ts'
 import { decideCanonWrite } from './canon-write-gate.ts'
@@ -613,10 +612,6 @@ export function docsForRun(input: { job: string; cwd: string }): InjectedDoc[] {
 
 export function docsMarkdown(docs: Doc[]): string {
   return docs.map((doc) => `## ${doc.title}\n\n${doc.body}`).join('\n\n')
-}
-
-export function brief(cwd: string): string {
-  return compileBrief(cwd).markdown
 }
 
 const RESUME_FRONTMATTER_KEYS = [

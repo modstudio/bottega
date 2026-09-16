@@ -12,7 +12,6 @@ import { targetGitEnvironment } from './git-environment.ts'
 import { DEFAULT_PACK_BYTES, job as getJob, JOBS } from './jobs.ts'
 import { projectAt, projectByName, projects } from './projects.ts'
 
-const BRIEF_BYTES = 64 * 1024
 const ROOT = new URL('../..', import.meta.url).pathname.replace(/\/$/, '')
 const PREFIXES = [
   'orchestrator/',
@@ -398,21 +397,6 @@ function buildPack(job: string, cwd: string, budgetBytes: number): Pack {
 export function compilePack(input: { job: string; cwd: string }): Pack {
   const selected = getJob(input.job)
   return buildPack(input.job, input.cwd, selected.packBytes ?? DEFAULT_PACK_BYTES)
-}
-
-export function compileBrief(cwd: string): Pack {
-  const markdown = ''
-  return {
-    job: 'session',
-    project: projectAt(cwd)?.name ?? null,
-    docs: [],
-    markdown,
-    bytes: 0,
-    canonBytes: 0,
-    docBytes: 0,
-    budgetBytes: BRIEF_BYTES,
-    sha256: createHash('sha256').update(markdown).digest('hex'),
-  }
 }
 
 function tracked(root: string): Set<string> | null {
