@@ -401,11 +401,12 @@ describe('scoped operator docs', () => {
 
   test('orch doc resumes reports unreadable briefs without changing human stdout', () => {
     upsertProject({ name: 'known', path: '/w/known', stack: null, canon: true, settings: {} })
-    for (const [slug, body] of [
+    const invalidBriefs: Array<[string, string]> = [
       ['no-frontmatter', 'BODY'],
       ['no-status', '---\nepic: demo\n---\n\nBODY'],
       ['pending-brief', resumeBody('pending')],
-    ]) {
+    ]
+    for (const [slug, body] of invalidBriefs) {
       setDoc({ scope: 'resume', subject: 'known', slug, title: slug, body: resumeBody('open') })
       db()
         .query('UPDATE doc SET body=? WHERE scope=? AND subject=? AND slug=?')

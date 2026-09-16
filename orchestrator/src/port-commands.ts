@@ -237,10 +237,12 @@ export async function portCommand(
   if (group === 'baseline' && action === 'set') {
     const sourceName = argv[3]
     const targetName = argv[4]
-    const commit = has('clear') ? null : argv[5]
-    if (!sourceName || !targetName || (!has('clear') && !commit)) {
+    const clear = has('clear')
+    const rawCommit = argv[5]
+    if (!sourceName || !targetName || (!clear && !rawCommit)) {
       throw new Error('orch port baseline set <source> <target> <commit> [--json] | --clear')
     }
+    const commit = clear ? null : (rawCommit ?? null)
     const { pair } = namedPair(sourceName, targetName, true)
     const baseline = setBaseline(pair!.id, commit)
     output(

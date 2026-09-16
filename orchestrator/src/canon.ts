@@ -278,11 +278,9 @@ function packBudgetRows(
 }
 
 export class CanonBudgetError extends Error {
-  constructor(
-    public pack: Pack,
-    alwaysOnBytes = 0,
-    contextIndexBytes = 0,
-  ) {
+  public pack: Pack
+
+  constructor(pack: Pack, alwaysOnBytes = 0, contextIndexBytes = 0) {
     const rows = packBudgetRows(pack, alwaysOnBytes, contextIndexBytes)
     const largest = rows[0]?.label
     super(
@@ -293,6 +291,7 @@ export class CanonBudgetError extends Error {
         'remedy: demote the named largest tier; never raise the pack budget (orchestrator/src/pack-budget.ts)',
       ].join('\n'),
     )
+    this.pack = pack
     this.name = 'CanonBudgetError'
   }
 }

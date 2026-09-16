@@ -33,8 +33,11 @@ export type DuplicateCandidate = {
 }
 
 export class DuplicateTaskError extends Error {
-  constructor(readonly candidates: DuplicateCandidate[]) {
+  readonly candidates: DuplicateCandidate[]
+
+  constructor(candidates: DuplicateCandidate[]) {
     super('possible duplicate tasks')
+    this.candidates = candidates
   }
 }
 

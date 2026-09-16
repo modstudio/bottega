@@ -1,21 +1,5 @@
 {
-  "compilerOptions": {
-    "target": "ESNext",
-    "module": "ESNext",
-    "moduleResolution": "bundler",
-    // "@types/bun", not "bun-types": the latter is the old package name and does
-    // not resolve, which made `tsc` fail before it read a single source file —
-    // so `bun run typecheck` had never once run to completion.
-    "types": ["bun"],
-    "strict": true,
-    "skipLibCheck": true,
-    "noEmit": true,
-    // Every internal import here is written with its .ts extension, because Bun
-    // runs the sources directly and there is no build step to rewrite them.
-    "allowImportingTsExtensions": true,
-    "noUnusedLocals": true,
-    "noFallthroughCasesInSwitch": true
-  },
+  "extends": "../tsconfig.base.json",
   // src only. `hooks/` is Python, and asking tsc to parse it was never going to
   // do anything but fail.
   "include": ["src"]

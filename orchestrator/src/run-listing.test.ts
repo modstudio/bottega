@@ -136,18 +136,23 @@ describe('run listing', () => {
     const tokens = [260552, 62612, 1904392, 261452, 9309615]
     const root = addRun({ agent: 'codex', job: 'implement', startedAt: starts[0] })
     const ids = [root]
-    for (let turn = 2; turn <= 5; turn++)
+    for (let turn = 2; turn <= 5; turn++) {
+      const startedAt = starts[turn - 1]
+      if (!startedAt) throw new Error(`missing start for turn ${turn}`)
       ids.push(
         addRun({
           agent: 'codex',
           job: 'implement',
           parent: root,
           turn,
-          startedAt: starts[turn - 1],
+          startedAt,
         }),
       )
+    }
     ids.forEach((id, i) => {
-      db().query('UPDATE run SET vendor_tokens=? WHERE id=?').run(tokens[i], id)
+      const tokenCount = tokens[i]
+      if (tokenCount === undefined) throw new Error(`missing token count for run ${id}`)
+      db().query('UPDATE run SET vendor_tokens=? WHERE id=?').run(tokenCount, id)
     })
     const row = runJson((await command({ json: true, since: ['2026-09-01T12:20:00.000Z'] }))[0]!)
     expect(row.turns.map((turn: { id: number }) => turn.id)).toEqual(ids)
@@ -186,10 +191,11 @@ describe('run listing', () => {
     db()
       .query('INSERT INTO question (run_id,asked_at,question,answered_at) VALUES (?,?,?,?)')
       .run(id, '2026-09-04T16:00:00.000Z', 'need a ruling', '2026-09-04T19:55:00.000Z')
-    expect(
-      runJson((await command({ json: true, since: ['2026-09-04T18:00:00.000Z'] }))[0]!).questions[0]
-        .answered_at,
-    ).toBe('2026-09-04T19:55:00.000Z')
+    const question = runJson(
+      (await command({ json: true, since: ['2026-09-04T18:00:00.000Z'] }))[0]!,
+    ).questions[0]
+    expect(question).toBeDefined()
+    expect(question?.answered_at).toBe('2026-09-04T19:55:00.000Z')
   })
 
   test('runs --json --since still publishes an unanswered question older than the cutoff', async () => {

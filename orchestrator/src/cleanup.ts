@@ -64,16 +64,18 @@ type BranchOwnerRow = {
 }
 
 class SharedWorktreeClaimError extends Error {
-  constructor(
-    readonly worktree: string,
-    readonly sharers: WorktreeSharerRow[],
-  ) {
+  readonly worktree: string
+  readonly sharers: WorktreeSharerRow[]
+
+  constructor(worktree: string, sharers: WorktreeSharerRow[]) {
     super(
       `worktree ${worktree} is still claimed by other conversations:\n` +
         sharers
           .map((row) => `  run ${row.id} is ${row.status}${row.scored ? '' : ' and unscored'}`)
           .join('\n'),
     )
+    this.worktree = worktree
+    this.sharers = sharers
   }
 }
 export function cleanupRepoRoot(row: {

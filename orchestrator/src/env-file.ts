@@ -67,10 +67,11 @@ export function managedBlockPlan(base: string, treeName: string, body: string): 
     }
   }
   const replacement = blockText(opening, closing, body)
-  if (!blocks.length) {
+  const block = blocks[0]
+  if (!block) {
     return { ok: true, text: `${base}${appendSeparator(base)}${replacement}` }
   }
-  const [{ open, close }] = blocks
+  const { open, close } = block
   return {
     ok: true,
     text: `${base.slice(0, open.start)}${replacement}${closingLineEnding(base, close)}${base.slice(close.end)}`,

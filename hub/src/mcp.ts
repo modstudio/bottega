@@ -18,12 +18,15 @@ export class McpError extends Error {}
 export class Mcp {
   private sessionId: string | null = null
   private nextId = 1
+  private url: string
+  private token: string
+  private timeoutMs: number
 
-  constructor(
-    private url: string,
-    private token: string,
-    private timeoutMs = 30_000,
-  ) {}
+  constructor(url: string, token: string, timeoutMs = 30_000) {
+    this.url = url
+    this.token = token
+    this.timeoutMs = timeoutMs
+  }
 
   private headers(): Record<string, string> {
     const h: Record<string, string> = {

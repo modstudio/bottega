@@ -242,7 +242,7 @@ const NON_ANSWER = [
 export function isNonAnswer(text: string): boolean {
   const t = text.trim()
   if (!t) return true
-  const first = t.split('\n', 1)[0]
+  const [first = ''] = t.split('\n', 1)
   try {
     const event = JSON.parse(first)
     if (event?.type === 'system' && event?.subtype === 'init') return true

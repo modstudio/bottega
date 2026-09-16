@@ -172,13 +172,14 @@ export async function docCommand(
   }
   if (sub === 'history' || sub === 'diff' || sub === 'restore') {
     const addressScope = argv[2]
-    const addressSubject = argv[3] === '-' ? null : argv[3]
+    const rawAddressSubject = argv[3]
     const slug = argv[4]
-    if (!addressScope || argv[3] === undefined || !slug) {
+    if (!addressScope || rawAddressSubject === undefined || !slug) {
       throw new Error(
         `orch doc ${sub} <scope> <subject|-> <slug>${sub === 'restore' ? ' <rev> --reason TEXT' : ''}`,
       )
     }
+    const addressSubject = rawAddressSubject === '-' ? null : rawAddressSubject
     const revisions = listDocRevisions(addressScope, addressSubject, slug)
     if (sub === 'history') {
       if (has('json')) presentation.log(JSON.stringify(revisions))

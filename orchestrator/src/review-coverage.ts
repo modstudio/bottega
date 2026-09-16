@@ -407,12 +407,13 @@ export function coverageText(
 }
 
 export class ReviewCoverageRefusal extends Error {
-  constructor(
-    message: string,
-    readonly missing: string[],
-    readonly reviewRework: { id: number; reason: string }[],
-  ) {
+  readonly missing: string[]
+  readonly reviewRework: { id: number; reason: string }[]
+
+  constructor(message: string, missing: string[], reviewRework: { id: number; reason: string }[]) {
     super(message)
+    this.missing = missing
+    this.reviewRework = reviewRework
   }
 }
 
