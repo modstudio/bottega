@@ -17,6 +17,7 @@ import {
   leakedResourceLines,
   orchRunId,
 } from './docker-resources.ts'
+import { shouldSweepHookTree } from './hook-tree.ts'
 import { pidAlive } from './process-liveness.ts'
 import { projectAt, projectByName, projects } from './projects.ts'
 import { liveWorktreeSharers, terminalDockerRetentionReasonForRun } from './resource-ownership.ts'
@@ -303,7 +304,9 @@ export async function sweepRuns(options: SweepOptions, helpers: SweepHelpers): P
         ORDER BY r.id`,
       )
       .all() as SweepCandidate[]
-  ).filter((row) => !selectedProject || projectAt(row.worktree)?.name === selectedProject.name)
+  )
+    .filter(shouldSweepHookTree)
+    .filter((row) => !selectedProject || projectAt(row.worktree)?.name === selectedProject.name)
 
   const { removeFor, sweepWithTool } = await import('./worktree-remove.ts')
 

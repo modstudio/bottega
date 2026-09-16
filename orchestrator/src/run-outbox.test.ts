@@ -1,6 +1,7 @@
 import { Database } from 'bun:sqlite'
 import { expect, test } from 'bun:test'
 import { applySchemaForFixture } from './db.ts'
+import { HOOK_TREE_JOB } from './hook-tree.ts'
 import {
   backfillRunRecords,
   buildRunRecordPayload,
@@ -96,5 +97,28 @@ test('backfill mints in order, resolves chains, enqueues finished turns once, an
   expect(
     database.query<{ count: number }, []>('SELECT count(*) AS count FROM outbox').get()!.count,
   ).toBe(4)
+  database.close()
+})
+
+test('backfill leaves hook-tree rows local', () => {
+  const database = new Database(':memory:')
+  applySchemaForFixture(database)
+  database
+    .query(
+      `INSERT INTO run
+       (started_at,agent,job,prompt_sha,prompt_bytes,prompt_head,status,evidence_excluded)
+       VALUES ('2026-09-16T00:00:00.000Z','(hook)',?,'sha',4,'tree','ok','hook tree')`,
+    )
+    .run(HOOK_TREE_JOB)
+
+  expect(backfillRunRecords(database, '01990000-0000-7000-8000-000000000099')).toEqual({
+    minted: 0,
+    enqueued: 0,
+    skippedLive: 0,
+  })
+  expect(database.query('SELECT record_id FROM run').get()).toEqual({ record_id: null })
+  expect(
+    database.query<{ count: number }, []>('SELECT count(*) count FROM outbox').get()!.count,
+  ).toBe(0)
   database.close()
 })

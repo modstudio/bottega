@@ -30,7 +30,11 @@ import {
   teardownVars,
 } from './recipe-lifecycle.ts'
 import { parseTrackedRecipe } from './recipe-loader.ts'
-import { allocationEnvironmentVariable, type TrackedRecipe } from './recipe-schema.ts'
+import {
+  allocationEnvironmentVariable,
+  hookBranchName,
+  type TrackedRecipe,
+} from './recipe-schema.ts'
 import {
   runStep as kernelRunStep,
   runUndo as kernelRunUndo,
@@ -276,6 +280,17 @@ function loadRecipeAtBase(input: { tool: WorktreeTool; repoRoot: string; baseRef
     recipe = read()
   }
   return { base, recipe, snapshot: { source: { path: pointer, commit: base }, recipe } }
+}
+
+/** Read the same tracked config used by creation and decide its hook branch. */
+export function trackedHookBranch(input: {
+  tool: WorktreeTool
+  repoRoot: string
+  baseRef?: string
+  name: string
+}): string {
+  const { recipe } = loadRecipeAtBase(input)
+  return hookBranchName(recipe.hookBranch, input.name)
 }
 
 function renderedPlaceholder(name: string): string {

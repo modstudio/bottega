@@ -5,6 +5,7 @@
 import type { Database } from 'bun:sqlite'
 import { db } from './db.ts'
 import { NOT_EVIDENCE } from './failure.ts'
+import { nonHookTreeStatsSql } from './hook-tree.ts'
 
 /**
  * Why a collided output file cannot be routing evidence.
@@ -201,7 +202,7 @@ export function runTotals(sinceIso?: string): RunTotals {
             COALESCE(SUM(CASE WHEN ${SCORED_EVIDENCE_SQL} THEN 1 ELSE 0 END), 0) scored,
             COALESCE(SUM(CASE WHEN ${VOIDED_SQL} THEN 1 ELSE 0 END), 0) voided
        FROM run r LEFT JOIN score s ON s.run_id = r.id
-      ${sinceIso ? 'WHERE r.started_at >= ?' : ''}`,
+      WHERE ${nonHookTreeStatsSql('r')}${sinceIso ? ' AND r.started_at >= ?' : ''}`,
     )
     .get(...(sinceIso ? [sinceIso] : [])) as Omit<RunTotals, 'unscored'>
   return { ...row, unscored: unscoredCount(sinceIso) }

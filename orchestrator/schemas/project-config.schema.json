@@ -12,6 +12,10 @@
         "baseRef": {
           "type": "string"
         },
+        "hookBranch": {
+          "type": "string",
+          "minLength": 1
+        },
         "allocate": {
           "type": "object",
           "properties": {

@@ -327,6 +327,7 @@ export const CLI_COMMANDS = new Set([
   'sync',
   'sweep',
   'tell',
+  'tree',
   'wait',
   'workflow',
 ])
