@@ -1,11 +1,11 @@
 import { db } from './db.ts'
 
-export const RULINGS_STALE_AFTER_KEY = 'rulings.stale_after'
-export const RULINGS_STALE_AFTER_DEFAULT = '1h'
+const RULINGS_STALE_AFTER_KEY = 'rulings.stale_after'
+const RULINGS_STALE_AFTER_DEFAULT = '1h'
 
 const UNITS: Record<string, number> = { s: 1000, m: 60_000, h: 3_600_000, d: 86_400_000 }
 
-export function durationMs(value: string): number | null {
+function durationMs(value: string): number | null {
   const match = value.match(/^(\d+(?:\.\d+)?)([smhd])$/)
   return match ? Math.round(Number(match[1]) * UNITS[match[2]!]!) : null
 }

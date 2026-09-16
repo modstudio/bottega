@@ -15,7 +15,7 @@ type OpenInterval = {
   ref: string
 }
 
-export type ReconcileItem = OpenInterval & {
+type ReconcileItem = OpenInterval & {
   runId: number | null
   status: string | null
   reason: string

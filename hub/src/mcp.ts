@@ -13,7 +13,7 @@ import { readFileSync } from 'node:fs'
  * bridge for Claude Code's benefit — underneath, each is a plain endpoint with
  * a bearer token.
  */
-export class McpError extends Error {}
+class McpError extends Error {}
 
 export class Mcp {
   private sessionId: string | null = null

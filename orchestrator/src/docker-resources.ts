@@ -1,8 +1,8 @@
 import { existsSync } from 'node:fs'
 
-export const DOCKER_INVENTORY_TIMEOUT_MS = 1_000
-export const DOCKER_INVENTORY_RETRY_TIMEOUT_MS = 10_000
-export const DOCKER_REMOVAL_TIMEOUT_MS = 10_000
+const DOCKER_INVENTORY_TIMEOUT_MS = 1_000
+const DOCKER_INVENTORY_RETRY_TIMEOUT_MS = 10_000
+const DOCKER_REMOVAL_TIMEOUT_MS = 10_000
 
 export function dockerInventoryTimeoutMs(
   env: Record<string, string | undefined> = process.env,
@@ -22,7 +22,7 @@ export function dockerRemovalTimeoutMs(
   return Number.isFinite(n) && n > 0 ? n : DOCKER_REMOVAL_TIMEOUT_MS
 }
 
-export type DockerResourceKind = 'container' | 'volume'
+type DockerResourceKind = 'container' | 'volume'
 
 export type DockerResource = {
   kind: DockerResourceKind
@@ -30,13 +30,13 @@ export type DockerResource = {
   runId: number
 }
 
-export const ORCH_RUN_LABEL_KEY = 'orch.run'
+const ORCH_RUN_LABEL_KEY = 'orch.run'
 
 export type DockerInventory =
   | { ascertainable: true; resources: DockerResource[] }
   | { ascertainable: false; reason: string }
 
-export type DockerNetwork = {
+type DockerNetwork = {
   name: string
   createdAt: string | null
   workingDir: string | null
@@ -229,7 +229,7 @@ export function dockerNetworkInventory(): DockerNetworkInventory {
   }
 }
 
-export function resourcesForRun(runId: number, inventory = dockerRunResources()): DockerInventory {
+function resourcesForRun(runId: number, inventory = dockerRunResources()): DockerInventory {
   return resourcesForRuns([runId], inventory)
 }
 

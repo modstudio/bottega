@@ -9,7 +9,7 @@ import { HOOK_TREE_JOB } from './hook-tree.ts'
 export const RESOURCE_CLAIM_MIGRATION = '0020_resource_claim'
 export const RECIPE_PORT_BAND: PortBand = { start: 21000, end: 25000 }
 
-export const RESOURCE_CLAIM_KINDS = [
+const RESOURCE_CLAIM_KINDS = [
   'worktree',
   'branch',
   'retained_ref',
@@ -638,7 +638,7 @@ export function settleDatabaseClaim(
     .run(state, input.settledAt, input.detail, input.allocationKey)
 }
 
-export function claimedClaimsOnTerminalConversations(
+function claimedClaimsOnTerminalConversations(
   database: Database,
 ): { kind: ResourceClaimKind; count: number }[] {
   return database

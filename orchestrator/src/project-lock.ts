@@ -103,7 +103,7 @@ export function pidRecordIdentity(
   return actual === recordedStartTime ? 'live' : 'reused'
 }
 
-export function staleProjectLockHolder(holder: ProjectLockParticipant): string | null {
+function staleProjectLockHolder(holder: ProjectLockParticipant): string | null {
   if (!pidAlive(holder.pid)) return `dead holder pid ${holder.pid}`
   if (holder.startTime === null) return null
   const actual = processStartTime(holder.pid)
@@ -157,7 +157,7 @@ export function acquireKernelLease(path: string): KernelLease {
   return lease
 }
 
-export function projectLockDir(repoRoot: string): string {
+function projectLockDir(repoRoot: string): string {
   const common = realpathSync(resolve(repoRoot, git(['rev-parse', '--git-common-dir'], repoRoot)))
   return join(common, 'orch', 'locks')
 }
@@ -443,7 +443,7 @@ function withKernelProjectLock<T>(
  * from overlapping one loaded after it. The legacy gate can be removed once no
  * process predating the migration commit can still be running.
  */
-export function withProjectLock<T>(
+function withProjectLock<T>(
   repoRoot: string,
   name: string,
   identity: ProjectLockIdentity,

@@ -6,7 +6,7 @@ import { type Agent, assertResumableAgent, BUILTIN_AGENTS } from './agents.ts'
 import type { Caps } from './capabilities.ts'
 import { DB_PATH, db as dbForAgents, ROOT, writableDb } from './db.ts'
 export const HARNESSES = ['codex', 'grok', 'opencode', 'goose', 'claude-code'] as const
-export const BACKENDS = ['vllm', 'ollama', 'lmstudio', 'vendor'] as const
+const BACKENDS = ['vllm', 'ollama', 'lmstudio', 'vendor'] as const
 export type Harness = (typeof HARNESSES)[number]
 export type Backend = (typeof BACKENDS)[number]
 export type AgentRow = {

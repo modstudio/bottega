@@ -139,7 +139,7 @@ export function processTable(): ProcessInventory {
   }
 }
 
-export function verifiedProcessTree(
+function verifiedProcessTree(
   table: ProcessRow[],
   id: number,
   rootPid: number,

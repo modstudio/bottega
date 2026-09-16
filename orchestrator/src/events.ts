@@ -19,9 +19,9 @@ export type StreamEvent =
       locations?: Array<{ path: string }>
     }
 
-export const DEFAULT_IDLE_WARN_MS = 5 * 60_000
-export const DEFAULT_PEEK_EVENTS = 5
-export const PEEK_TEXT_CHARS = 120
+const DEFAULT_IDLE_WARN_MS = 5 * 60_000
+const DEFAULT_PEEK_EVENTS = 5
+const PEEK_TEXT_CHARS = 120
 
 export type RunLogEvent =
   | { ts: string; type: 'text'; text: string }
@@ -35,7 +35,7 @@ export type RunLogEvent =
   | { ts: string; type: 'tool_result'; status?: string; bytes?: number }
   | { ts: string; type: 'usage'; tokens: number; costUsd?: number | null }
 
-export type PeekEventSummary =
+type PeekEventSummary =
   | { type: 'text'; text: string }
   | { type: 'tool_call'; title: string; target?: string }
   | { type: 'tool_result'; status?: string; bytes?: number }

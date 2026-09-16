@@ -58,7 +58,7 @@ async function modelForDistinct(id: number): Promise<string> {
   }
 }
 
-export async function routeConstraints(
+async function routeConstraints(
   argv: string[],
   agent?: string,
 ): Promise<{ avoid: string[]; distinctModels: string[] }> {

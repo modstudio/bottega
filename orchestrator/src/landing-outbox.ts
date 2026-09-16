@@ -128,7 +128,7 @@ const enqueue = (
     .run(kind, recordId, JSON.stringify(value), at)
 }
 
-export function buildLandingRecordPayload(row: LocalRow, machineId: string, at: string) {
+function buildLandingRecordPayload(row: LocalRow, machineId: string, at: string) {
   return {
     id: row.record_id,
     spaceId: PLATFORM_SPACE_ID,
@@ -152,7 +152,7 @@ export function buildLandingRecordPayload(row: LocalRow, machineId: string, at: 
   }
 }
 
-export function buildLandingOverrideRecordPayload(row: LocalRow, machineId: string, at: string) {
+function buildLandingOverrideRecordPayload(row: LocalRow, machineId: string, at: string) {
   return {
     id: row.record_id,
     spaceId: PLATFORM_SPACE_ID,
@@ -170,7 +170,7 @@ export function buildLandingOverrideRecordPayload(row: LocalRow, machineId: stri
   }
 }
 
-export function buildLandingReviewCarryRecordPayload(row: LocalRow, machineId: string, at: string) {
+function buildLandingReviewCarryRecordPayload(row: LocalRow, machineId: string, at: string) {
   return {
     id: row.record_id,
     spaceId: PLATFORM_SPACE_ID,
@@ -193,7 +193,7 @@ export function buildLandingReviewCarryRecordPayload(row: LocalRow, machineId: s
   }
 }
 
-export function buildContentionRecordPayload(row: LocalRow, machineId: string, at: string) {
+function buildContentionRecordPayload(row: LocalRow, machineId: string, at: string) {
   return {
     id: row.record_id,
     spaceId: PLATFORM_SPACE_ID,
@@ -213,7 +213,7 @@ export function buildContentionRecordPayload(row: LocalRow, machineId: string, a
   }
 }
 
-export function buildTestFlakeRecordPayload(row: LocalRow, machineId: string, at: string) {
+function buildTestFlakeRecordPayload(row: LocalRow, machineId: string, at: string) {
   return {
     id: row.record_id,
     spaceId: PLATFORM_SPACE_ID,
@@ -230,7 +230,7 @@ export function buildTestFlakeRecordPayload(row: LocalRow, machineId: string, at
   }
 }
 
-export function enqueueLanding(database: Database, id: number, at = nowIso()): void {
+function enqueueLanding(database: Database, id: number, at = nowIso()): void {
   const row = database
     .query<LocalRow, [number]>(
       `SELECT landing.*, project.name AS project_name,
@@ -246,7 +246,7 @@ export function enqueueLanding(database: Database, id: number, at = nowIso()): v
   enqueue(database, 'landing', String(row.record_id), value, at)
 }
 
-export function enqueueLandingOverride(database: Database, id: number, at = nowIso()): void {
+function enqueueLandingOverride(database: Database, id: number, at = nowIso()): void {
   const row = database
     .query<LocalRow, [number]>(
       `SELECT landing_override.*, project.name AS project_name FROM landing_override
@@ -291,7 +291,7 @@ export function enqueueContention(database: Database, id: number, at = nowIso())
   enqueue(database, 'contention', String(row.record_id), value, at)
 }
 
-export function enqueueTestFlake(database: Database, id: number, at = nowIso()): void {
+function enqueueTestFlake(database: Database, id: number, at = nowIso()): void {
   const row = database.query<LocalRow, [number]>('SELECT * FROM test_flake WHERE id=?').get(id)
   if (!row?.record_id) throw new Error(`test flake ${id} has no record id`)
   const value = buildTestFlakeRecordPayload(row, localMachineId(database), at)

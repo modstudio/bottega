@@ -54,11 +54,11 @@ function requireOpenHooksForWritableMode(): void {
 function runOpenHooks(moment: keyof OpenHooks, database: Database): void {
   for (const hook of registeredOpenHooks()[moment] ?? []) hook(database)
 }
-export const LINKED_WORKTREE_WRITE_REFUSAL =
+const LINKED_WORKTREE_WRITE_REFUSAL =
   'refusing to write run or project rows to the registered main store from a linked worktree\n' +
   'invariant: A linked-worktree binary cannot write lifecycle rows to the registered main store.\n' +
   'cleared by: orch <command> with ORCH_DB_WRITE=1, or set ORCH_DB to a scratch copy'
-export const LINKED_WORKTREE_SCHEMA_REFUSAL =
+const LINKED_WORKTREE_SCHEMA_REFUSAL =
   'refusing to migrate the store from a linked-worktree binary; run it from the main checkout\n' +
   "invariant: Only the main checkout's binary migrates the store.\n" +
   'cleared by: orch migrate'
@@ -109,7 +109,7 @@ export function writableDb(): Database {
 }
 
 /** Already-open writable handle, or null. Does not open a connection. */
-export function openWritableHandle(): Database | null {
+function openWritableHandle(): Database | null {
   if (
     !handle ||
     linkedWorktreeReadOnly ||

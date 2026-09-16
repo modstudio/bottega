@@ -9,7 +9,7 @@ import type { RunLeaseState } from './run-alive.ts'
 
 const leaseDirectory = () => join(resolveRunsDirectory(), 'leases')
 
-export function runLeasePath(runId: number): string {
+function runLeasePath(runId: number): string {
   return join(leaseDirectory(), `${runId}.lock`)
 }
 

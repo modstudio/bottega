@@ -14,8 +14,8 @@ const RESOURCE_KINDS = [
 ] as const
 const EVENT_KINDS = ['wait', 'refusal', 'invalidation', 'retry', 'timeout'] as const
 
-export type ResourceKind = (typeof RESOURCE_KINDS)[number]
-export type EventKind = (typeof EVENT_KINDS)[number]
+type ResourceKind = (typeof RESOURCE_KINDS)[number]
+type EventKind = (typeof EVENT_KINDS)[number]
 
 export type ContentionWrite = {
   at?: string
@@ -29,7 +29,7 @@ export type ContentionWrite = {
   landingId?: number | null
 }
 
-export type ContentionResourceSummary = {
+type ContentionResourceSummary = {
   kind: ResourceKind
   count: number
   totalDurationMs: number
@@ -37,7 +37,7 @@ export type ContentionResourceSummary = {
   topKeys: { key: string; count: number }[]
 }
 
-export type ContentionSessionSummary = {
+type ContentionSessionSummary = {
   sessionId: string
   waitsSuffered: number
   invalidationsCaused: number
@@ -59,7 +59,7 @@ type ContentionRow = {
   at: string
 }
 
-export const emptyContention = (): ContentionSummary => ({
+const emptyContention = (): ContentionSummary => ({
   resources: RESOURCE_KINDS.map((kind) => ({
     kind,
     count: 0,

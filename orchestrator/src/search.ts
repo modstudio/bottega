@@ -1,9 +1,9 @@
 import type { Database } from 'bun:sqlite'
 import { existsSync, readFileSync } from 'node:fs'
 
-export type RecordSource = 'score' | 'ruling' | 'review' | 'output'
+type RecordSource = 'score' | 'ruling' | 'review' | 'output'
 
-export type RecordSearchResult = {
+type RecordSearchResult = {
   source: RecordSource
   record_id: number
   run_id: number

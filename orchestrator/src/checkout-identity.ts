@@ -92,7 +92,7 @@ export function checkoutAliases(cwd: string): CheckoutAliases | null {
   return { roots, ...checkoutCaseSensitivity(addressed) }
 }
 
-export function checkoutCaseSensitivity(root: string): Omit<CheckoutAliases, 'roots'> {
+function checkoutCaseSensitivity(root: string): Omit<CheckoutAliases, 'roots'> {
   const variant = flipOneAsciiLetter(root)
   let caseInsensitive = false
   let diagnostic: string | null = null

@@ -44,7 +44,7 @@ export function isTaskBranchSuperseded(branch: string, rows: readonly TaskBranch
   )
 }
 
-export function taskBranchCandidacySql(runAlias = 'candidate'): string {
+function taskBranchCandidacySql(runAlias = 'candidate'): string {
   return `${runAlias}.status <> 'stopped'`
 }
 

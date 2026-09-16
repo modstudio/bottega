@@ -3,12 +3,12 @@
 
 export const HOOK_TREE_JOB = 'hook-tree'
 export const HOOK_TREE_AGENT = '(hook)'
-export const HOOK_TREE_EVIDENCE_EXCLUSION = 'hook tree lifecycle row; not agent execution'
+const HOOK_TREE_EVIDENCE_EXCLUSION = 'hook tree lifecycle row; not agent execution'
 export const HOOK_TREE_NOTICE_AFTER_MS = 7 * 24 * 60 * 60 * 1000
 
 export type HookTreeIdentity = { job: string }
 
-export function isHookTree(run: HookTreeIdentity): boolean {
+function isHookTree(run: HookTreeIdentity): boolean {
   return run.job === HOOK_TREE_JOB
 }
 

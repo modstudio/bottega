@@ -95,7 +95,7 @@ function transcripts(dir: string, out: string[] = []): string[] {
  * about what it touched, and one session moved between two projects inside a
  * single file.
  */
-export function repoOfCwd(cwd: string | undefined): string | null {
+function repoOfCwd(cwd: string | undefined): string | null {
   if (!cwd) return null
   // The register first: it knows where each project actually is, including
   // ones that live nowhere near a common root.
@@ -185,7 +185,7 @@ async function claudeTokensByDay(since: string) {
  * migration, so adding one column reads as a 23,000-line day. Left in, the
  * lines lens measures the ORM's verbosity rather than anything anyone did.
  */
-export type FileKind = 'generated' | 'test' | 'docs' | 'config' | 'product'
+type FileKind = 'generated' | 'test' | 'docs' | 'config' | 'product'
 
 /**
  * What kind of file a change touched.
@@ -230,12 +230,12 @@ const RULES: [FileKind, RegExp][] = [
   ['config', /(^|\/)(tsconfig|package)\.json$/],
 ]
 
-export function categorize(file: string): FileKind {
+function categorize(file: string): FileKind {
   for (const [kind, re] of RULES) if (re.test(file)) return kind
   return 'product'
 }
 
-export type DayActivity = {
+type DayActivity = {
   tasks: Set<string>
   commits: number
   files: Set<string>
@@ -395,7 +395,7 @@ type Row = {
  * They are listed so the dashboard and the CLI cannot describe them
  * differently, and so a lens can never appear without its caveat attached.
  */
-export const LENSES = [
+const LENSES = [
   {
     key: 'tasks',
     label: 'per task',

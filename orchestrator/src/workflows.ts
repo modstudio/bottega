@@ -4,15 +4,15 @@ import { join } from 'node:path'
 import { db, nowIso, sessionId, writableDb, writeTransaction } from './db.ts'
 import { JOBS } from './jobs.ts'
 
-export type WorkflowArgument = { name: string; required: boolean; description: string }
-export type WorkflowMode = {
+type WorkflowArgument = { name: string; required: boolean; description: string }
+type WorkflowMode = {
   slug: string
   title: string
   default?: boolean
   entry?: string
   steps: string[]
 }
-export type WorkflowStep = {
+type WorkflowStep = {
   slug: string
   title: string
   job: string | null
@@ -411,7 +411,7 @@ export function workflowVersions(slug: string, d: Database = db()) {
   }))
 }
 
-export type WorkflowNeeds = {
+type WorkflowNeeds = {
   mode?: { slug: string; title: string; entry: string }[]
   arguments?: string[]
 }

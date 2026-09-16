@@ -43,8 +43,6 @@ import {
   type WorktreeCreate,
 } from './worktree-template.ts'
 
-export type { WorktreeCreate } from './worktree-template.ts'
-
 export type Project = {
   id: number
   /** What it is called. Matches the directory name by default, not necessarily. */
@@ -448,7 +446,7 @@ export function projectRemovalRefusal(
   ]
 }
 
-export function projectReferenceCounts(projectId: number): ProjectReferenceCounts {
+function projectReferenceCounts(projectId: number): ProjectReferenceCounts {
   const count = (table: string) =>
     (
       db().query(`SELECT COUNT(*) AS n FROM ${table} WHERE project_id=?`).get(projectId) as {
@@ -667,19 +665,18 @@ export function assertRegisterBranches(project: Pick<Project, 'name' | 'path' | 
   )
 }
 
-export const MAIN_CHECKOUT_INVARIANT =
-  'A registered main checkout stays clean; work happens in a worktree'
+const MAIN_CHECKOUT_INVARIANT = 'A registered main checkout stays clean; work happens in a worktree'
 
 /** Default ON. Only an explicit false is an exemption. */
-export function requiresCleanMain(settings: ProjectSettings): boolean {
+function requiresCleanMain(settings: ProjectSettings): boolean {
   return settings.requireCleanMain !== false
 }
 
-export function mainCheckoutWorktreeHint(projectPath: string): string {
+function mainCheckoutWorktreeHint(projectPath: string): string {
   return join(projectPath, '.claude', 'worktrees')
 }
 
-export type MainCheckoutInspection = {
+type MainCheckoutInspection = {
   dirtyTracked: string[]
   untracked: string[]
   sequence: SequenceState
@@ -707,7 +704,7 @@ export type MainCheckoutInspection = {
  * The registered path must be the git toplevel; a subdirectory is not a main
  * checkout and is left alone.
  */
-export function inspectMainCheckout(projectPath: string): MainCheckoutInspection | null {
+function inspectMainCheckout(projectPath: string): MainCheckoutInspection | null {
   const toplevel = gitToplevel(projectPath)
   if (!toplevel) return null
   if (!resolvedPathsEqual(projectPath, toplevel)) return null
@@ -725,7 +722,7 @@ function shellQuote(value: string): string {
   return `'${value.replace(/'/g, "'\\''")}'`
 }
 
-export function mainCheckoutRefusal(
+function mainCheckoutRefusal(
   project: Pick<Project, 'name' | 'path'>,
   dirtyTracked: string[],
 ): string {
@@ -745,7 +742,7 @@ function sequenceClearCommand(kind: SequenceKind, path: string): string {
   return `git -C ${quoted} ${kind} --abort`
 }
 
-export function mainCheckoutSequenceRefusal(
+function mainCheckoutSequenceRefusal(
   project: Pick<Project, 'name' | 'path'>,
   kind: SequenceKind,
 ): string {

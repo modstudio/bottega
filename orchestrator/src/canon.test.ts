@@ -26,6 +26,7 @@ import {
   SCHEMA_LOCK_TABLE,
   schemaVersionLabel,
   splitMigrationSource,
+  stripSqlComments,
 } from './migrations.ts'
 
 const journalLength = () => migrationJournal().length
@@ -634,7 +635,6 @@ describe('schema coexistence', () => {
 
 describe('stripSqlComments feeds exec text that keeps quoted comment markers', () => {
   test('a quoted -- or /* survives, real comments go, and a trailing comment cannot swallow a failure', () => {
-    const { stripSqlComments } = require('./migrations.ts') as typeof import('./migrations.ts')
     expect(stripSqlComments("INSERT INTO t (v) VALUES ('a -- b'); -- seed\n")).toBe(
       "INSERT INTO t (v) VALUES ('a -- b'); \n",
     )

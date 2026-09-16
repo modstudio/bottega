@@ -64,7 +64,7 @@ export const TEXT_REPLY_SCHEMA = {
 } as const
 
 /** Prompt-facing name of TEXT_REPLY_SCHEMA; the printed result stays the unwrapped string. */
-export const TEXT_REPLY_SCHEMA_NAME = 'text-reply'
+const TEXT_REPLY_SCHEMA_NAME = 'text-reply'
 
 export const REPLY_FILE_NAME = 'reply.json'
 
@@ -290,7 +290,7 @@ export type IssueWorkerReply = WorkerReply & {
  * provenance dialects. `unknown` is deliberately distinct from either source:
  * some clients expose no diagnostic and orch must not invent one for them.
  */
-export const CANON_SOURCE_SCHEMA = {
+const CANON_SOURCE_SCHEMA = {
   type: 'string',
   enum: ['live database', 'mirror', 'unknown'],
 } as const
@@ -508,8 +508,8 @@ export function parseReviewOutput(text: string): ReviewReply | null {
   return null
 }
 
-export const READER_DELIVERABLE_STATUSES = ['delivered', 'blocked', 'not-applicable'] as const
-export type ReaderDeliverableStatus = (typeof READER_DELIVERABLE_STATUSES)[number]
+const READER_DELIVERABLE_STATUSES = ['delivered', 'blocked', 'not-applicable'] as const
+type ReaderDeliverableStatus = (typeof READER_DELIVERABLE_STATUSES)[number]
 
 /**
  * Bound product of diagnose, understand, and file-question.
@@ -774,7 +774,7 @@ fix, and you carry on without it and say so.
 ${INFRASTRUCTURE_RECOVERY}
 `.trim()
 
-export const ISSUE_WORKER_PREAMBLE = `${WORKER_PREAMBLE}
+const ISSUE_WORKER_PREAMBLE = `${WORKER_PREAMBLE}
 
 ISSUE-WORKER RETURN CONTRACT
 
@@ -790,7 +790,7 @@ export function workerPreamble(jobName: string): string {
   return jobName === 'issue-worker' ? ISSUE_WORKER_PREAMBLE : WORKER_PREAMBLE
 }
 
-export function workerResumeGuard(_jobName: string): string {
+function workerResumeGuard(_jobName: string): string {
   return 'You may commit to your own throwaway branch. Do not push, merge into trunk, or rewrite history.'
 }
 
@@ -1007,7 +1007,7 @@ export function parseWorkerReply(text: string): WorkerReply | null {
   return parseWorkerReplyWithCount(text).reply as WorkerReply | null
 }
 
-export type DialectParseResult = { reply: unknown | null; contractObjects: number }
+type DialectParseResult = { reply: unknown | null; contractObjects: number }
 export type ReplyDialect = {
   schema: JsonSchema
   schemaName: string

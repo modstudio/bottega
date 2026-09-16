@@ -8,9 +8,9 @@ import { join } from 'node:path'
 import { targetGitEnvironment } from './git-environment.ts'
 import { projects } from './projects.ts'
 
-export const RESOURCE_INVENTORY_TIMEOUT_MS = 1_000
+const RESOURCE_INVENTORY_TIMEOUT_MS = 1_000
 
-export type WorktreeDatabase = {
+type WorktreeDatabase = {
   engine: 'postgres' | 'mysql'
   name: string
   runId: number
@@ -39,22 +39,22 @@ export type GitResourceInventory<T> =
   | { ascertainable: false; reason: string }
 
 /** Names bottega derives for recipe databases end in `_wt_<runId>`. */
-export function parseWorktreeDatabaseName(name: string): number | null {
+function parseWorktreeDatabaseName(name: string): number | null {
   const match = name.match(/_wt_([1-9]\d*)$/)
   return match ? Number(match[1]) : null
 }
 
-export function parseRetainedRef(ref: string): number | null {
+function parseRetainedRef(ref: string): number | null {
   const match = ref.match(/^refs\/orch\/retained\/([1-9]\d*)$/)
   return match ? Number(match[1]) : null
 }
 
-export function parseRefGuardRunId(name: string): number | null {
+function parseRefGuardRunId(name: string): number | null {
   if (!/^[1-9]\d*$/.test(name)) return null
   return Number(name)
 }
 
-export function databasesFromNames(
+function databasesFromNames(
   project: string,
   engine: 'postgres' | 'mysql',
   names: string[],

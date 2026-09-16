@@ -287,4 +287,4 @@ function DocsList() {
   )
 }
 
-export { isScope, needsSubject }
+export { isScope }

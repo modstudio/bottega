@@ -16,19 +16,19 @@ const worktreeCreateArgSchema = z.union([
   strictObject({ expand: z.literal('seed') }),
 ])
 
-export const commandSchema = strictObject({
+const commandSchema = strictObject({
   command: z.string().min(1),
   args: z.array(worktreeCreateArgSchema),
   cwd: z.string().optional(),
 })
 
-export const execContextSchema = z.discriminatedUnion('where', [
+const execContextSchema = z.discriminatedUnion('where', [
   strictObject({ where: z.literal('host') }),
   strictObject({ where: z.literal('container'), service: z.string().min(1) }),
   strictObject({ where: z.literal('as-user'), user: z.string().min(1) }),
 ])
 
-export const stepSchema = strictObject({
+const stepSchema = strictObject({
   name: z.string().min(1),
   run: commandSchema,
   undo: commandSchema
@@ -40,7 +40,7 @@ export const stepSchema = strictObject({
   exec: execContextSchema.optional(),
 })
 
-export const databaseAllocationSchema = strictObject({
+const databaseAllocationSchema = strictObject({
   engine: z.enum(['postgres', 'mysql', 'mariadb', 'sqlite', 'other']),
   name: z
     .string()
@@ -50,7 +50,7 @@ export const databaseAllocationSchema = strictObject({
     ),
 })
 
-export const allocationsSchema = strictObject({
+const allocationsSchema = strictObject({
   ports: z.array(z.string().min(1)).optional(),
   databases: z.record(z.string(), databaseAllocationSchema).optional(),
   strings: z
@@ -61,7 +61,7 @@ export const allocationsSchema = strictObject({
     .optional(),
 })
 
-export const envFileSchema = strictObject({
+const envFileSchema = strictObject({
   path: z
     .string()
     .min(1)
@@ -87,7 +87,7 @@ export const envFileSchema = strictObject({
     .optional(),
 })
 
-export const sharedSchema = strictObject({
+const sharedSchema = strictObject({
   name: z.string().min(1).describe('Unique name for this shared declaration.'),
   kind: z.enum(['path', 'volume', 'network', 'service']),
   from: z

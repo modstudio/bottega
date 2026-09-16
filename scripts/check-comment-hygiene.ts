@@ -7,7 +7,7 @@ const ROOTS = ['orchestrator', 'hub', 'shared', 'scripts']
 const GENERATED = /^(?:hub\/web\/src\/routeTree\.gen\.ts|.*(?:^|\/)migrations\/meta(?:\/|$))/
 const SOURCE = /\.tsx?$/
 
-export const HISTORY_PHRASE =
+const HISTORY_PHRASE =
   /\b(?:used to (?:be|have)|formerly|back when|previously|was omitted|this replac(?:es|ed)|the first draft|restores the (?:earlier|old|previous))\b/gi
 
 export type CommentHygieneFinding = {
@@ -17,7 +17,7 @@ export type CommentHygieneFinding = {
 }
 
 /** Block and line comment spans; a URL's `//` does not open a comment. */
-export function commentSpans(text: string): [number, number][] {
+function commentSpans(text: string): [number, number][] {
   const spans: [number, number][] = []
   for (const re of [/\/\*[\s\S]*?\*\//g, /(?<!:)\/\/[^\n]*/g]) {
     for (const match of text.matchAll(re)) {
@@ -56,7 +56,7 @@ function trackedSources(root: string): string[] {
     .filter((file) => SOURCE.test(file) && !GENERATED.test(file))
 }
 
-export function checkTrackedComments(root: string): CommentHygieneFinding[] {
+function checkTrackedComments(root: string): CommentHygieneFinding[] {
   return trackedSources(root).flatMap((file) =>
     checkCommentBody(file, readFileSync(resolve(root, file), 'utf8')),
   )

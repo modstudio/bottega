@@ -24,7 +24,7 @@ import { parseReviewOutput, parseReviewReply } from './review.ts'
 import { run } from './run.ts'
 import { auditRunMutation, runMutationActor } from './run-authority.ts'
 
-export const CANON_EVAL_LENS = 'canon-eval'
+const CANON_EVAL_LENS = 'canon-eval'
 export const TRACKED_EVAL_PATH = 'scripts/tracked.ts'
 export const UNTRACKED_EVAL_PATH = 'scripts/present.ts'
 
@@ -265,7 +265,7 @@ for (const ev of CANON_EVALS) {
   }
 }
 
-export function evalBySlug(slug: string): CanonEval {
+function evalBySlug(slug: string): CanonEval {
   const found = CANON_EVALS.find((ev) => ev.slug === slug)
   if (!found) {
     throw new Error(
@@ -553,7 +553,7 @@ export function latestCanonEvals(): CanonEvalLatest[] {
   }))
 }
 
-export function lastKnownGoodCanonEvals(): CanonEvalKnownGood[] {
+function lastKnownGoodCanonEvals(): CanonEvalKnownGood[] {
   return db()
     .query(
       `SELECT slug, agent, canon_sha, at

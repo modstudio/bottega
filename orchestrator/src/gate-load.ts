@@ -11,9 +11,9 @@ export type HostLoad = {
 
 /** Two concurrent gates is the measured safe operating point (DEV-375). */
 export const GATE_CONCURRENCY_LIMIT = 2
-export const FREE_MEM_FLOOR_BYTES = 1024 * 1024 * 1024
-export const GATE_HOLD_POLL_MS = 250
-export const GATE_HOLD_MAX_MS = 10 * 60_000
+const FREE_MEM_FLOOR_BYTES = 1024 * 1024 * 1024
+const GATE_HOLD_POLL_MS = 250
+const GATE_HOLD_MAX_MS = 10 * 60_000
 
 function gatePidDir(env: NodeJS.ProcessEnv = process.env): string {
   return env.ORCH_GATE_PIDS ?? join(tmpdir(), 'orch-gates')
@@ -51,10 +51,7 @@ function registerGatePid(pid = process.pid, dir = gatePidDir()): () => void {
   return () => rmSync(path, { force: true })
 }
 
-export function measureHostLoad(
-  env: NodeJS.ProcessEnv = process.env,
-  selfPid = process.pid,
-): HostLoad {
+function measureHostLoad(env: NodeJS.ProcessEnv = process.env, selfPid = process.pid): HostLoad {
   return {
     gates: countRunningGates(gatePidDir(env), selfPid),
     loadavg: loadavg()[0] ?? 0,

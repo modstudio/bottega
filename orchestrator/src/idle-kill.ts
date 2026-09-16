@@ -33,9 +33,9 @@ export const DEFAULT_IDLE_KILL_MS = 15 * 60_000
  */
 export const DEFAULT_EXTERNAL_WAIT_IDLE_KILL_MS = 30 * 60_000
 export const DEFAULT_IDLE_GRACE_MS = 5_000
-export const DEFAULT_IDLE_KILL_CONFIRM_MS = 5_000
+const DEFAULT_IDLE_KILL_CONFIRM_MS = 5_000
 /** ps %cpu of a sleeping process is 0.0; a busy loop is ~100. 1% is scheduler noise, not work. */
-export const CPU_IDLE_PERCENT = 1
+const CPU_IDLE_PERCENT = 1
 
 export function idleKillMs(env: NodeJS.ProcessEnv = process.env): number {
   const raw = env.ORCH_IDLE_KILL_MS
@@ -56,7 +56,7 @@ export type ProcessSample = {
   state: string
 }
 
-export function parsePsTable(text: string): ProcessSample[] {
+function parsePsTable(text: string): ProcessSample[] {
   const samples: ProcessSample[] = []
   for (const line of text.split('\n')) {
     const trimmed = line.trim()
@@ -92,7 +92,7 @@ export function sampleProcesses(): ProcessSample[] {
   }
 }
 
-export function descendantPids(root: number, samples: ProcessSample[]): number[] {
+function descendantPids(root: number, samples: ProcessSample[]): number[] {
   const children = new Map<number, number[]>()
   for (const row of samples) {
     const list = children.get(row.ppid) ?? []
@@ -121,7 +121,7 @@ export function descendantPids(root: number, samples: ProcessSample[]): number[]
  * to the longer one for every job; only a job known to be entirely CPU-local
  * may use the short measured bound.
  */
-export function processGroupCpuPercent(pid: number, samples: ProcessSample[]): number | null {
+function processGroupCpuPercent(pid: number, samples: ProcessSample[]): number | null {
   if (pid <= 0) return null
   const pids = new Set(descendantPids(pid, samples))
   if (!pids.size) return null
@@ -136,11 +136,11 @@ export function processGroupCpuPercent(pid: number, samples: ProcessSample[]): n
 }
 
 /** Linux D-state and macOS U-state are the same limit: SIGKILL will not land until the syscall returns. */
-export function isUninterruptible(state: string): boolean {
+function isUninterruptible(state: string): boolean {
   return /[DU]/.test(state)
 }
 
-export function groupHasUninterruptible(pid: number, samples: ProcessSample[]): boolean {
+function groupHasUninterruptible(pid: number, samples: ProcessSample[]): boolean {
   const pids = new Set(descendantPids(pid, samples))
   return samples.some((row) => pids.has(row.pid) && isUninterruptible(row.state))
 }

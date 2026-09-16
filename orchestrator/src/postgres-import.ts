@@ -15,7 +15,7 @@ type SourceProject = {
 type SourceSequence = { name: string; next: number }
 type JsonObject = Record<string, unknown>
 
-export type SequenceSkip = { name: string; next: number; reason: string }
+type SequenceSkip = { name: string; next: number; reason: string }
 export type ProjectImportResult = {
   projects: number
   sequences: number

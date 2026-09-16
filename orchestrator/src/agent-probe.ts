@@ -15,8 +15,9 @@ import {
 import type { Caps } from './capabilities.ts'
 import { nowIso, writableDb } from './db.ts'
 import { localReachable } from './local-host.ts'
-export const REGISTRATION_PROBE_FILE = 'probe.txt'
-export const REGISTRATION_PROBE_SENTINEL = 'REGISTRATION_PROBE_FILE_OK'
+
+const REGISTRATION_PROBE_FILE = 'probe.txt'
+const REGISTRATION_PROBE_SENTINEL = 'REGISTRATION_PROBE_FILE_OK'
 
 function namesProbeFile(value: string): boolean {
   const normalized = value.replaceAll('\\', '/')

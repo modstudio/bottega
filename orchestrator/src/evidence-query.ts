@@ -75,7 +75,7 @@ export const UNSCORED_WHERE = `r.status = 'ok' AND r.evidence_excluded IS NULL A
  * same way chainScoreJoin makes it see the root's score, or a no-verdict
  * void would still pin a tree held by a later turn.
  */
-export const EVIDENCE_EXCLUDED_SQL = `(SELECT evidence_root.evidence_excluded FROM run evidence_root
+const EVIDENCE_EXCLUDED_SQL = `(SELECT evidence_root.evidence_excluded FROM run evidence_root
      WHERE evidence_root.id = COALESCE(r.parent_run_id, r.id))`
 
 export const EVIDENCE_CLOSED_SQL = `(s.delivery IS NOT NULL OR ${EVIDENCE_EXCLUDED_SQL} IS NOT NULL)`
@@ -103,7 +103,7 @@ export function activeSql(alias = 'r'): string {
 
 const NOT_EVIDENCE_SQL = NOT_EVIDENCE.map((kind) => `'${kind}'`).join(', ')
 
-export const SCORED_EVIDENCE_SQL = `s.delivery IS NOT NULL
+const SCORED_EVIDENCE_SQL = `s.delivery IS NOT NULL
    AND r.evidence_excluded IS NULL
    AND COALESCE(r.failure_kind, '') NOT IN (${NOT_EVIDENCE_SQL})`
 

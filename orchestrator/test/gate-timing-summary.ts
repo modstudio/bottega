@@ -2,7 +2,7 @@
  * Publishes the latest gate measurement and compares package totals with the
  * committed surface. It knows timing rows, not how the gate runs tests.
  */
-import { readFileSync, writeFileSync } from 'node:fs'
+import { writeFileSync } from 'node:fs'
 import {
   baselineDisposition,
   decideTestTiming,
@@ -10,11 +10,11 @@ import {
 import type { FileRow } from './record-gate-timings.ts'
 
 const root = new URL('../..', import.meta.url).pathname.replace(/\/$/, '')
-export const TIMING_SUMMARY_LABEL = 'scripts/quality/test-timings.json'
-export const TIMING_SUMMARY_PATH = `${root}/${TIMING_SUMMARY_LABEL}`
+const TIMING_SUMMARY_LABEL = 'scripts/quality/test-timings.json'
+const TIMING_SUMMARY_PATH = `${root}/${TIMING_SUMMARY_LABEL}`
 const GROWTH_LIMIT = 0.05
 
-export type CommittedTestTiming = {
+type CommittedTestTiming = {
   path: string
   wallMs: number
   tests: number
@@ -22,14 +22,14 @@ export type CommittedTestTiming = {
   spawns: number
 }
 
-export type CommittedTimingSummary = {
+type CommittedTimingSummary = {
   unitElapsedMs: number
   files: CommittedTestTiming[]
 }
 
 type Reporter = Pick<Console, 'error' | 'log'>
 
-export function readCommittedTimingSummary(): CommittedTimingSummary | undefined {
+function readCommittedTimingSummary(): CommittedTimingSummary | undefined {
   const result = Bun.spawnSync(['git', 'show', `HEAD:${TIMING_SUMMARY_LABEL}`], {
     cwd: root,
     stdout: 'pipe',
@@ -100,7 +100,7 @@ function unitTimingResult(
   return { changed: false, fatal: false, nextMs: committedMs!, initial: false }
 }
 
-export function summaryRows(files: FileRow[]): CommittedTestTiming[] {
+function summaryRows(files: FileRow[]): CommittedTestTiming[] {
   return files
     .filter((file) => file.file.endsWith('.test.ts'))
     .map((file) => ({
@@ -197,11 +197,4 @@ export function publishTimingSummary(
   }
   reporter.log(`test timing ratchet: ok (${current.length} files)`)
   return !fatal
-}
-
-export function readTimingSummary(): CommittedTestTiming[] {
-  const parsed = JSON.parse(readFileSync(TIMING_SUMMARY_PATH, 'utf8')) as
-    | CommittedTimingSummary
-    | CommittedTestTiming[]
-  return Array.isArray(parsed) ? parsed : parsed.files
 }

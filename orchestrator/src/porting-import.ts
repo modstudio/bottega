@@ -5,7 +5,7 @@ import { importDoc, listDocs, removeDoc } from './docs.ts'
 import { addDoctrineRule, addPair, addSkip, setBaseline, setLedgerRef } from './porting.ts'
 import type { Project } from './projects.ts'
 
-export type ImportIssue = {
+type ImportIssue = {
   kind: 'refusal' | 'exclusion'
   what: string
   where: string
@@ -13,7 +13,7 @@ export type ImportIssue = {
   value?: string
 }
 export type ImportRefusal = ImportIssue & { kind: 'refusal' }
-export type ImportExclusion = ImportIssue & { kind: 'exclusion' }
+type ImportExclusion = ImportIssue & { kind: 'exclusion' }
 
 export type ImportPlan = {
   pairs: { source: string; target: string; sourceId: number; targetId: number }[]

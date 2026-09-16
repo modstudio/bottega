@@ -1,7 +1,7 @@
 export type StatusCategory = 'open' | 'active' | 'review' | 'done' | 'dropped'
 export const TASK_STATUSES = ['open', 'active', 'review', 'done', 'dropped'] as const
 
-export type TrackerSettings = {
+type TrackerSettings = {
   kind?: string
   protocol?: 'workspace-mcp' | 'cursor-mcp' | 'array-mcp' | string
   assigneeLookup?: 'person-lookup' | 'task-detail'
@@ -20,7 +20,7 @@ export type TrackerProject = {
 }
 
 export type TrackerRowSource = 'local' | 'mcp' | 'git'
-export type Capability = { allowed: true } | { allowed: false; reason: string }
+type Capability = { allowed: true } | { allowed: false; reason: string }
 export type Capabilities = {
   create: Capability
   setStatus: Capability

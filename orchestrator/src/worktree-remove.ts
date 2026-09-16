@@ -145,7 +145,7 @@ export function changesIn(w: Worktree, sinceBase = false): Changes {
  * knows about none of that. Removing the directory without calling the tool is
  * how a machine fills up with databases nobody can name.
  */
-export function removeWithTool(
+function removeWithTool(
   tool: WorktreeTool,
   w: Worktree,
   forceOrchTree = false,

@@ -34,7 +34,7 @@ import { hoursAgo } from './time.ts'
 import { createContext } from './trpc/context.ts'
 import { appRouter } from './trpc/router.ts'
 
-export const ORCH_CACHE_TTL_MS = 30_000
+const ORCH_CACHE_TTL_MS = 30_000
 
 type CacheEntry<T> = { checkedAt: number; value?: T; pending?: Promise<T> }
 
@@ -135,16 +135,7 @@ async function orchBlockers(days: number): Promise<OrchBlockers | null> {
 }
 
 /** The leaves of the left nav, and the only view names the API will serve. */
-export const VIEWS = [
-  'flight',
-  'board',
-  'done',
-  'ratio',
-  'spend',
-  'routing',
-  'runs',
-  'settings',
-] as const
+const VIEWS = ['flight', 'board', 'done', 'ratio', 'spend', 'routing', 'runs', 'settings'] as const
 export type View = (typeof VIEWS)[number]
 
 /** Single-quote a value so the command can be pasted into a shell as-is. */

@@ -30,7 +30,7 @@ export type SpawnCounts = {
   argv0: Record<string, number>
 }
 
-export type TestRow = {
+type TestRow = {
   name: string
   file: string
   wallMs: number
@@ -152,7 +152,7 @@ export function mergeTimings(
   return { ...meta, tests, files }
 }
 
-export function markdownSummary(data: GateTimings, heading: string): string {
+function markdownSummary(data: GateTimings, heading: string): string {
   const totalSpawn = data.files.reduce((s, f) => s + f.spawn + f.spawnSync, 0)
   const totalBoot = data.files.reduce((s, f) => s + f.bootstraps, 0)
   const failed = data.tests.filter((t) => !t.pass)

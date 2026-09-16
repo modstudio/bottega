@@ -168,7 +168,7 @@ export function acknowledgeNote(value: number | string, session: string): NoteAc
   return { note, alreadyAcknowledged: false }
 }
 
-export function noteCandidates(text: string, project?: string): NoteCandidate[] {
+function noteCandidates(text: string, project?: string): NoteCandidate[] {
   const notes = listNotes({ ...(project ? { project } : {}), stale: false })
   const byId = new Map(notes.map((note) => [String(note.id), note]))
   return duplicateCandidates(

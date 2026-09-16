@@ -19,7 +19,7 @@ export type ReviewYieldFilters = {
   agent?: string
 }
 
-export type ReviewYieldOverlap = {
+type ReviewYieldOverlap = {
   unique: number
   shared: number
   none: number
@@ -28,7 +28,7 @@ export type ReviewYieldOverlap = {
   invalid: number
 }
 
-export type ReviewYieldRow = {
+type ReviewYieldRow = {
   key: string
   runs: number
   reviews: { recorded: number; completed: number }

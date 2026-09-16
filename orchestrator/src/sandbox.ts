@@ -35,7 +35,7 @@ export type SandboxRuntimeConfig = {
   }
 }
 
-export type RunSandbox = 'host' | 'srt'
+type RunSandbox = 'host' | 'srt'
 
 /** Sensitive operator paths denied by every readonly-lens profile. */
 export const READONLY_LENS_DENY_PATHS = [
@@ -48,7 +48,7 @@ export const READONLY_LENS_DENY_PATHS = [
 ] as const
 
 /** Host-control sockets: Docker access is equivalent to escaping the sandbox. */
-export const READONLY_LENS_DENY_SOCKETS = ['/var/run/docker.sock', '/run/docker.sock'] as const
+const READONLY_LENS_DENY_SOCKETS = ['/var/run/docker.sock', '/run/docker.sock'] as const
 
 export const SRT_LIBRARY = join(
   ROOT,
@@ -66,7 +66,7 @@ function expandHome(path: string): string {
   return path
 }
 
-export function resolveSecretPaths(project: Project | null): string[] {
+function resolveSecretPaths(project: Project | null): string[] {
   if (!project) return []
   return (project.settings.secretPaths ?? []).map((entry) => {
     const expanded = expandHome(entry)
@@ -79,7 +79,7 @@ export function resolveSecretPaths(project: Project | null): string[] {
  * checkout. Only directory entries named node_modules are followed; arbitrary
  * symlinks are not promoted into sandbox read grants.
  */
-export function linkedNodeModules(worktree: string): string[] {
+function linkedNodeModules(worktree: string): string[] {
   const found = new Set<string>()
   const visit = (dir: string, depth: number) => {
     if (depth > 4) return

@@ -22,8 +22,6 @@ import { JOBS } from './jobs.ts'
 import { DEFAULT_PACK_BYTES, MAX_INJECT_DOC_BYTES } from './pack-budget.ts'
 import { projectAt, projectByName } from './projects.ts'
 
-export { DOC_SCOPES, type DocScope }
-
 export type Doc = {
   id: number
   scope: DocScope
@@ -44,14 +42,7 @@ export type DocMetadata = Pick<
   bytes: number
 }
 
-export type DocRevisionOp =
-  | 'create'
-  | 'set'
-  | 'consume'
-  | 'delete'
-  | 'restore'
-  | 'import'
-  | 'backfill'
+type DocRevisionOp = 'create' | 'set' | 'consume' | 'delete' | 'restore' | 'import' | 'backfill'
 export type DocRevision = {
   id: number
   doc_id: number
@@ -637,7 +628,7 @@ const RESUME_FRONTMATTER_KEYS = [
   'consumed_by',
 ] as const
 export type ResumeFrontmatter = { [K in (typeof RESUME_FRONTMATTER_KEYS)[number]]?: string }
-export type ResolvedStatus = {
+type ResolvedStatus = {
   value: string
   valueStart: number
   valueEnd: number
@@ -652,7 +643,7 @@ export type ResolvedStatus = {
  * parser behaviour and the common YAML-loader treatment of duplicate keys. When
  * there is no column-zero status, the last nested occurrence wins instead.
  */
-export function resolveStatus(yaml: string): ResolvedStatus | null {
+function resolveStatus(yaml: string): ResolvedStatus | null {
   const topLevel = /(^|\r?\n)(status[ \t]*:[ \t]*)([^\r\n]*)(?=\r?\n|$)/g
   const nested = /(^|\r?\n)([ \t]+status[ \t]*:[ \t]*)([^\r\n]*)(?=\r?\n|$)/g
   const matches = [...yaml.matchAll(topLevel)]
@@ -731,8 +722,8 @@ export function resumeAge(fromMs: number, now = Date.now()): string {
   return `${Math.floor(h / 24)}d`
 }
 
-export type OpenResume = { slug: string; title: string; age: string; at: number }
-export type UnreadableResume = {
+type OpenResume = { slug: string; title: string; age: string; at: number }
+type UnreadableResume = {
   slug: string
   reason: 'no-frontmatter' | 'no-readable-status' | 'unrecognised-status'
 }

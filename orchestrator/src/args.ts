@@ -122,7 +122,7 @@ export function invalidUtf8Offset(bytes: Uint8Array): number | null {
   return null
 }
 
-export function nulByteOffset(text: string): number | null {
+function nulByteOffset(text: string): number | null {
   const at = text.indexOf('\0')
   return at < 0 ? null : Buffer.byteLength(text.slice(0, at), 'utf8')
 }
@@ -164,7 +164,7 @@ export async function readMessageText(
   if (opts.optional) return undefined
   throw new Error(opts.missing)
 }
-export type QuestionTextSource = { id: number; file?: string; text?: string }
+type QuestionTextSource = { id: number; file?: string; text?: string }
 
 export type AnswerTextSources = {
   byId: QuestionTextSource[]

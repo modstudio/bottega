@@ -2,7 +2,7 @@
 import { existsSync, lstatSync, mkdirSync, readdirSync, symlinkSync } from 'node:fs'
 import { dirname, isAbsolute, join } from 'node:path'
 
-export type ReadonlyProvisionEntry = { path: string; method: 'link' | 'clone' }
+type ReadonlyProvisionEntry = { path: string; method: 'link' | 'clone' }
 export type ReadonlyProvision = ReadonlyProvisionEntry[]
 
 function targetExists(path: string): boolean {

@@ -93,7 +93,7 @@ type TerminalWorktreeSafety =
   | { safe: true; worktree: string; repoRoot: string }
   | { safe: false; reason: TerminalDockerRetentionReason }
 
-export function worktreeIdentity(path: string): string {
+function worktreeIdentity(path: string): string {
   return withoutTrailingSeparators(realpathOrSpelled(path))
 }
 
@@ -148,7 +148,7 @@ function terminalWorktreeSafety(
   return { safe: true, worktree, repoRoot }
 }
 
-export function terminalDockerRetentionReason(
+function terminalDockerRetentionReason(
   database: Database,
   worktree: string | null,
 ): TerminalDockerRetentionReason | null {
@@ -177,7 +177,7 @@ export function terminalDockerRetentionReasonForRun(
   return null
 }
 
-export function hasLiveWorktreeSharer(database: Database, worktree: string): boolean {
+function hasLiveWorktreeSharer(database: Database, worktree: string): boolean {
   const identity = worktreeIdentity(worktree)
   const live = database
     .query(

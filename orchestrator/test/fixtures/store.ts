@@ -1,7 +1,6 @@
 import { newRecordId } from '../../../shared/record/schema.ts'
 import { AGENTS } from '../../src/agent-registry.ts'
 import { db } from '../../src/db.ts'
-import { terminateProcessGroup } from '../../src/idle-kill.ts'
 import { dir as preloadDir } from '../preload.ts'
 
 export const dir = preloadDir
@@ -67,17 +66,4 @@ export function score(
   db()
     .query('INSERT INTO score (run_id, delivery, quality, fidelity, scored_at) VALUES (?,?,?,?,?)')
     .run(runId, delivery, quality, fidelity, new Date().toISOString())
-}
-export async function reapTestProcess(pid: number | null | undefined): Promise<void> {
-  if (!pid || pid <= 1 || pid === process.pid) return
-  await terminateProcessGroup(pid, { graceMs: 500, killConfirmMs: 500 })
-}
-export async function reapTestRun(runId: number | null | undefined): Promise<void> {
-  if (!runId) return
-  const row = db().query('SELECT pid, agent_pid FROM run WHERE id=?').get(runId) as {
-    pid: number | null
-    agent_pid: number | null
-  } | null
-  await reapTestProcess(row?.agent_pid)
-  if (row?.pid !== row?.agent_pid) await reapTestProcess(row?.pid)
 }

@@ -11,10 +11,10 @@ import {
 } from '../../shared/orch-contract.ts'
 import { targetGitEnvironment } from './git-environment.ts'
 
-export const UNTRUSTED_INDEX_WINDOW_MS = 1000
-export const UNTRUSTED_RETRY_WAIT_MS = 1100
+const UNTRUSTED_INDEX_WINDOW_MS = 1000
+const UNTRUSTED_RETRY_WAIT_MS = 1100
 
-export type { AttributionKind, ConfinementClass }
+export type { AttributionKind }
 
 export type FrozenCheckout = {
   project: string
@@ -28,7 +28,7 @@ export type FrozenCheckout = {
   untrusted: boolean
 }
 
-export type ConfinementLockHolder = {
+type ConfinementLockHolder = {
   pid: number
   command: string | null
   sessionId: string | null
@@ -67,7 +67,7 @@ function git(cwd: string, args: string[]): { ok: boolean; stdout: string; stderr
   }
 }
 
-export function porcelainPaths(status: string): string[] {
+function porcelainPaths(status: string): string[] {
   const parts = status.split('\0').filter(Boolean)
   const paths: string[] = []
   for (let i = 0; i < parts.length; i++) {
@@ -89,24 +89,24 @@ export function porcelainPaths(status: string): string[] {
   return [...new Set(paths)]
 }
 
-export function untrackedPathHash(cwd: string): string | null {
+function untrackedPathHash(cwd: string): string | null {
   const listed = git(cwd, ['ls-files', '--others', '--exclude-standard', '-z'])
   if (!listed.ok) return null
   const paths = listed.stdout.split('\0').filter(Boolean).sort()
   return createHash('sha256').update(paths.join('\0')).digest('hex')
 }
 
-export function indexTreeHash(cwd: string): string | null {
+function indexTreeHash(cwd: string): string | null {
   const written = git(cwd, ['write-tree'])
   return written.ok ? written.stdout.trim() || null : null
 }
 
-export function headOid(cwd: string): string | null {
+function headOid(cwd: string): string | null {
   const parsed = git(cwd, ['rev-parse', 'HEAD'])
   return parsed.ok ? parsed.stdout.trim() || null : null
 }
 
-export function indexPath(cwd: string): string | null {
+function indexPath(cwd: string): string | null {
   const parsed = git(cwd, ['rev-parse', '--git-path', 'index'])
   if (!parsed.ok) return null
   const path = parsed.stdout.trim()
@@ -114,7 +114,7 @@ export function indexPath(cwd: string): string | null {
   return path.startsWith('/') ? path : join(cwd, path)
 }
 
-export function indexIsUntrusted(cwd: string, now = Date.now()): boolean {
+function indexIsUntrusted(cwd: string, now = Date.now()): boolean {
   const path = indexPath(cwd)
   if (!path || !existsSync(path)) return false
   try {
@@ -139,7 +139,7 @@ function samplePorcelain(
   }
 }
 
-export function freezeCheckout(
+function freezeCheckout(
   checkout: CheckoutToWatch,
   opts: { now?: number; wait?: (ms: number) => void } = {},
 ): FrozenCheckout {
@@ -208,14 +208,14 @@ function lockHolderPids(checkout: string): ConfinementLockHolder[] {
   return holders.filter((holder) => Number.isInteger(holder.pid) && holder.pid > 0)
 }
 
-export function sessionForPid(database: Database, pid: number): string | null {
+function sessionForPid(database: Database, pid: number): string | null {
   const row = database
     .query(`SELECT session_id FROM run WHERE pid=? OR agent_pid=? ORDER BY id DESC LIMIT 1`)
     .get(pid, pid) as { session_id: string | null } | null
   return row?.session_id ?? null
 }
 
-export function landingThatMovedHead(
+function landingThatMovedHead(
   database: Database,
   project: string,
   startedAt: string,
@@ -231,7 +231,7 @@ export function landingThatMovedHead(
   return row ? { sessionId: row.session_id, landingId: row.id } : null
 }
 
-export function attributeDivergence(
+function attributeDivergence(
   database: Database,
   checkout: FrozenCheckout,
   opts: { startedAt: string; headMoved: boolean },
