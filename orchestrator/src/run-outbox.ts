@@ -69,16 +69,25 @@ export const RUN_RECORD_PAYLOAD_COLUMNS = [
 type LocalRun = Record<string, unknown> & {
   id: number
   record_id: string
-  project_name: string
+  project_name: string | null
   started_at: string
+  retry_of: number | null
   retry_record_id: string | null
+  parent_run_id: number | null
   parent_record_id: string | null
+}
+
+export type RunRecordBackfillResult = {
+  minted: number
+  enqueued: number
+  skippedLive: number
 }
 
 function json(value: unknown): unknown {
   return value == null ? null : JSON.parse(String(value))
 }
 
+/** Terminal payloads use last_event_at as finished_at when present, otherwise started_at. */
 export function buildRunRecordPayload(
   row: LocalRun,
   machineId: string,
@@ -159,13 +168,19 @@ export function enqueueRunRecord(
       `SELECT r.*, project.name AS project_name,
               retry.record_id AS retry_record_id, parent.record_id AS parent_record_id
          FROM run r
-         JOIN project ON project.id=r.project_id
+         LEFT JOIN project ON project.id=r.project_id
          LEFT JOIN run retry ON retry.id=r.retry_of
          LEFT JOIN run parent ON parent.id=r.parent_run_id
         WHERE r.id=?`,
     )
     .get(runId)
-  if (!row) throw new Error(`run ${runId} has no project-backed row to enqueue`)
+  if (!row) throw new Error(`run ${runId} does not exist and cannot be enqueued`)
+  if (row.retry_of !== null && row.retry_record_id === null) {
+    throw new Error(`run ${runId} has retry_of ${row.retry_of} without a record id`)
+  }
+  if (row.parent_run_id !== null && row.parent_record_id === null) {
+    throw new Error(`run ${runId} has parent_run_id ${row.parent_run_id} without a record id`)
+  }
   const payload = buildRunRecordPayload(row, machineId, finishedAt)
   database
     .query(
@@ -173,4 +188,37 @@ export function enqueueRunRecord(
        VALUES ('run', ?, ?, ?)`,
     )
     .run(row.record_id, JSON.stringify(payload), finishedAt)
+}
+
+export function backfillRunRecords(database: Database, machineId: string): RunRecordBackfillResult {
+  return database
+    .transaction(() => {
+      const missing = database
+        .query<{ id: number }, []>('SELECT id FROM run WHERE record_id IS NULL ORDER BY id')
+        .all()
+      for (const row of missing) {
+        database.query('UPDATE run SET record_id=? WHERE id=?').run(newRecordId(), row.id)
+      }
+
+      const terminal = database
+        .query<{ id: number; finished_at: string }, []>(
+          `SELECT r.id, COALESCE(r.last_event_at, r.started_at) AS finished_at
+           FROM run r
+          WHERE r.status IN ('ok', 'failed', 'stale', 'stopped')
+            AND NOT EXISTS (
+              SELECT 1 FROM outbox WHERE kind='run' AND record_id=r.record_id
+            )
+          ORDER BY r.id`,
+        )
+        .all()
+      for (const row of terminal) enqueueRunRecord(database, row.id, machineId, row.finished_at)
+
+      const skippedLive = database
+        .query<{ count: number }, []>(
+          `SELECT count(*) AS count FROM run WHERE status IN ('running', 'asking')`,
+        )
+        .get()!.count
+      return { minted: missing.length, enqueued: terminal.length, skippedLive }
+    })
+    .immediate()
 }
