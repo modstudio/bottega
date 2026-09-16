@@ -80,6 +80,7 @@ test('every registered top-level command is recognised as canon', () => {
     'confinement',
     'reconcile',
     'epic',
+    'sync',
   ]
   for (const command of commands) expect(isCliCommand(command)).toBeTrue()
   expect(isCliCommand('nosuch')).toBeFalse()
