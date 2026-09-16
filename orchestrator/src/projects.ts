@@ -127,6 +127,10 @@ export type ProjectSettings = {
   requireCleanMain?: boolean
   /** Display colour, for anything that draws a project. */
   color?: string
+  /** Display colour used on dark surfaces. */
+  colorDark?: string
+  /** Prefix used for project-scoped environment variables. */
+  envPrefix?: string
   /**
    * How THIS project makes a worktree, and how it takes one down.
    *
@@ -149,7 +153,6 @@ export type ProjectSettings = {
    * instance.
    */
   worktree?: WorktreeTool
-  [k: string]: unknown
 }
 
 export function resolveBranchRef(value: string): { branch: string; runId: number | null } {
