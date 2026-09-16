@@ -14,9 +14,9 @@ import {
   RECORD_OWNER_ROLE,
   RECORD_READER_ROLE,
 } from './postgres-schema.ts'
+import { startRecordApiServer } from './record-api-server.ts'
 import { bearerHeaders, recordAuth } from './record-auth.ts'
 import { signInCommand, signUpCommand, whoamiCommand } from './record-auth-command.ts'
-import { startRecordApiServer } from './record-api-server.ts'
 import { syncRecord } from './record-sync.ts'
 import { RUN_RECORD_PAYLOAD_COLUMNS } from './run-outbox.ts'
 

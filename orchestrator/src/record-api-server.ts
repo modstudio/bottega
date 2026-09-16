@@ -1,8 +1,8 @@
 // concern: record-api-server
 /** Composes and serves the record API. Must not own record queries or authentication policy. */
+import { probeRecord, recordMigrationCount } from './postgres-migrate.ts'
 import { recordApi } from './record-api.ts'
 import { recordAuth, recordIdentity } from './record-auth.ts'
-import { probeRecord, recordMigrationCount } from './postgres-migrate.ts'
 import { listRecordRuns } from './record-runs.ts'
 
 type ServerEnvironment = Record<string, string | undefined>

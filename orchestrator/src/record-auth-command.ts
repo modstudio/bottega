@@ -3,10 +3,10 @@
 import { db, writeTransaction } from './db.ts'
 import {
   currentRecordSession,
-  recordIdentity,
   RECORD_SESSION_KEY,
   RECORD_SIGN_IN_REMEDY,
   recordAuth,
+  recordIdentity,
 } from './record-auth.ts'
 
 type Presentation = { log(value: string): void }
