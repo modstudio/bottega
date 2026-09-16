@@ -10,7 +10,7 @@ import {
   NEEDS_HUMAN_TITLE,
   NOT_EVIDENCE,
 } from './failure.ts'
-import { candidates, scoreboard } from './route.ts'
+import { candidates, isRoutingEvidence, scoreboard } from './route.ts'
 import { WEIGHT, weigh } from './score.ts'
 
 describe('failure classification', () => {
@@ -176,6 +176,7 @@ describe('failure classification', () => {
     // process tree, and orch itself being wrong are not capability evidence.
     // None of them may be averaged in with the agent's actual work.
     expect(NOT_EVIDENCE).toEqual([
+      'capacity',
       'quota',
       'auth',
       'entitlement',
@@ -241,6 +242,26 @@ describe('failure classification', () => {
     expect(NOT_EVIDENCE).toContain('content_refusal')
     expect(COOLS_DOWN).not.toContain('content_refusal')
     expect(NEEDS_HUMAN).not.toContain('content_refusal')
+  })
+
+  test('capacity fails over without cooling or paging and is excluded by the routing predicate', () => {
+    expect(FAILS_OVER).toContain('capacity')
+    expect(NOT_EVIDENCE).toContain('capacity')
+    expect(COOLS_DOWN).not.toContain('capacity')
+    expect(NEEDS_HUMAN).not.toContain('capacity')
+    expect(isRoutingEvidence({ status: 'failed', delivery: null, failureKind: 'capacity' })).toBe(
+      false,
+    )
+
+    score(addRun({ agent: 'codex', job: 'craft' }), 'full', 'right')
+    addRun({ agent: 'codex', job: 'craft', status: 'failed', kind: 'capacity' })
+    const routed = candidates('craft').find((item) => item.agent === 'codex')!
+    expect(routed).toMatchObject({ failures: 0, evidence: 1, cooling: null })
+    expect(scoreboard('craft').find((item) => item.agent === 'codex')).toMatchObject({
+      failures: 0,
+      evidence: 1,
+      cooling: null,
+    })
   })
 
   test('unreachable tells a person but does not cool the agent down', () => {

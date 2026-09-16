@@ -24,6 +24,37 @@ describe('stale-login classification', () => {
   })
 })
 
+describe('vendor capacity classification', () => {
+  const capacityMessage = 'Selected model is at capacity. Please try a different model.'
+
+  test('classifies the recorded vendor message and the same message inside an event stream', () => {
+    expect(classify(capacityMessage)).toBe('capacity')
+    expect(
+      classify(
+        [
+          '{"type":"thread.started","thread_id":"0199"}',
+          '{"type":"item.completed","item":{"type":"reasoning","text":"unrelated"}}',
+          JSON.stringify({ type: 'turn.failed', error: { message: capacityMessage } }),
+        ].join('\n'),
+      ),
+    ).toBe('capacity')
+  })
+
+  test('run 4073 capacity wins over unrelated authentication vocabulary', () => {
+    expect(classify(`${capacityMessage}\n401 unauthorized`)).toBe('capacity')
+  })
+
+  test('recognises close capacity variants without treating a bare 503 as capacity', () => {
+    expect(classify('The selected model is overloaded.')).toBe('capacity')
+    expect(classify('The server is busy.')).toBe('capacity')
+    expect(classify('Unable to serve this request due to capacity constraints.')).toBe('capacity')
+    expect(classify('The model is temporarily unavailable.')).toBe('capacity')
+    expect(classify('The engine for this request is temporarily unavailable.')).toBe('capacity')
+    expect(classify('HTTP 503')).not.toBe('capacity')
+    expect(classify('The service is temporarily unavailable.')).not.toBe('capacity')
+  })
+})
+
 describe('failure text clustering', () => {
   test('normalises the measured 14-day failure shapes without volatile values', () => {
     const fixtures = [
