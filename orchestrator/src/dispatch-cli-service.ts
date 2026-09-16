@@ -27,6 +27,7 @@ import { pickCommand } from './routing-commands.ts'
 import { RUNS_DIR } from './run-artifacts.ts'
 import { follow as followRun } from './run-control.ts'
 import { detach as dispatchDetached } from './run-dispatch.ts'
+import { resolveTaskBranch } from './task-branch.ts'
 import {
   assertAcpAllowed,
   assertAcpReady,
@@ -105,6 +106,21 @@ function warnCallerDrift(
   }
   error(
     `! caller checkout HEAD ${drift.callerHead} is behind or diverged from ${drift.baseRef} (${drift.base}).\n  Update the caller checkout; repository runs from it are still dispatched.`,
+  )
+}
+
+function warnTaskBranchBypass(
+  cwd: string,
+  key: string | null,
+  error: (...values: unknown[]) => void,
+): void {
+  if (!key) return
+  const candidate = resolveTaskBranch(cwd, key)
+  if (!candidate) return
+  error(
+    `! explicit --base bypasses task branch ${candidate.branch} at tip ${candidate.tip} ` +
+      `(${candidate.commitCount} ${candidate.commitCount === 1 ? 'commit' : 'commits'}); ` +
+      `it is now superseded for ${key}.`,
   )
 }
 
@@ -207,6 +223,7 @@ export async function doCommand(argv: string[], presentation: Presentation): Pro
       readPrompt: prompt,
       validateSchema: readStrictCodexSchema,
       warnCallerDrift: (cwd, base) => warnCallerDrift(cwd, base, presentation.error),
+      warnTaskBranchBypass: (cwd, key) => warnTaskBranchBypass(cwd, key, presentation.error),
       contractConflicts,
       warnImplementContractConflicts: (conflicts, id) => {
         if (!conflicts.length) return
