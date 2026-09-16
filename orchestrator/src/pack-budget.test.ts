@@ -63,15 +63,15 @@ describe('canon pack budget', () => {
   test('a pack one byte over fails the gate naming the largest item; one byte under passes', () => {
     upsertProject({ name: 'pack-budget', path: dir, settings: { trunk: 'main' } })
     setDoc({
-      scope: 'global',
-      subject: null,
+      scope: 'job',
+      subject: 'understand',
       slug: 'largest',
       title: 'Largest',
       body: 'L'.repeat(40),
     })
     setDoc({
-      scope: 'global',
-      subject: null,
+      scope: 'job',
+      subject: 'understand',
       slug: 'smallest',
       title: 'Smallest',
       body: 's',
@@ -87,10 +87,12 @@ describe('canon pack budget', () => {
       } catch (error) {
         message = (error as Error).message
       }
-      expect(message).toContain('global/_/largest')
-      expect(message.indexOf('global/_/largest')).toBeLessThan(message.indexOf('global/_/smallest'))
+      expect(message).toContain('job/understand/largest')
+      expect(message.indexOf('job/understand/largest')).toBeLessThan(
+        message.indexOf('job/understand/smallest'),
+      )
       const failures = checkPackBudget()
-      expect(failures.some((row) => row.includes('global/_/largest'))).toBe(true)
+      expect(failures.some((row) => row.includes('job/understand/largest'))).toBe(true)
     } finally {
       JOBS.understand!.packBytes = measured.bytes
     }
@@ -101,8 +103,8 @@ describe('canon pack budget', () => {
   test('a small inject write is refused when its affected pack would cross the ceiling', () => {
     upsertProject({ name: 'proposed-pack-budget', path: dir, settings: { trunk: 'main' } })
     setDoc({
-      scope: 'global',
-      subject: null,
+      scope: 'job',
+      subject: 'file-question',
       slug: 'pack-base',
       title: 'Pack base',
       body: 'b'.repeat(2_000),

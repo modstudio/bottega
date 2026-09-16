@@ -1,7 +1,18 @@
 import { describe, expect, test } from 'bun:test'
-import { planHydration } from './canon-hydrate.ts'
+import { composeCanonRows, planHydration } from './canon-hydrate.ts'
 
 describe('planHydration', () => {
+  test('global and project rows rendering to one path refuse and name both', () => {
+    expect(() =>
+      composeCanonRows(
+        [{ subject: null, slug: '.agents/rules/shared.md', body: 'global' }],
+        [{ subject: 'known', slug: '.agents/rules/shared.md', body: 'project' }],
+      ),
+    ).toThrow(
+      'canon/_/.agents/rules/shared.md and canon/known/.agents/rules/shared.md render to the same path',
+    )
+  })
+
   test('an identical tree has an empty plan', () => {
     expect(
       planHydration({

@@ -10,10 +10,10 @@ import { upsertProject } from './projects.ts'
 
 const AT = '2026-09-15T00:00:00.000Z'
 
-function putCanon(subject: string, slug: string, body: string): void {
-  const projectId = (
-    db().query('SELECT id FROM project WHERE name=?').get(subject) as { id: number }
-  ).id
+function putCanon(subject: string | null, slug: string, body: string): void {
+  const projectId = subject
+    ? (db().query('SELECT id FROM project WHERE name=?').get(subject) as { id: number }).id
+    : null
   const id = (
     db()
       .query(
@@ -33,6 +33,10 @@ function putCanon(subject: string, slug: string, body: string): void {
 
 function operatorPack(cwd: string): string {
   return docsMarkdown(docsForRun({ job: 'understand', cwd }))
+}
+
+function putOperator(body: string): void {
+  setDoc({ scope: 'job', subject: 'understand', slug: 'operator', title: 'Operator', body })
 }
 
 describe('worker pack canon', () => {
@@ -67,13 +71,7 @@ describe('worker pack canon', () => {
 
   test('always-on rows appear in the pack in entry-then-rules order', () => {
     upsertProject({ name: 'pack-canon-order', path: dir, settings: { trunk: 'main' } })
-    setDoc({
-      scope: 'global',
-      subject: null,
-      slug: 'operator',
-      title: 'Operator',
-      body: 'OPERATOR-DOC-UNIQUE',
-    })
+    putOperator('OPERATOR-DOC-UNIQUE')
     putCanon('pack-canon-order', 'AGENTS.md', 'ENTRY-BODY-UNIQUE\n')
     putCanon(
       'pack-canon-order',
@@ -93,15 +91,23 @@ describe('worker pack canon', () => {
     expect(compileBrief(dir).markdown).not.toContain('RULE-BODY-UNIQUE')
   })
 
+  test('global always-on rows pack before project rows of the same tier', () => {
+    upsertProject({ name: 'pack-global-order', path: dir, settings: { trunk: 'main' } })
+    putCanon(null, '.agents/rules/global.md', '---\ndescription: Global\n---\nGLOBAL-RULE-UNIQUE\n')
+    putCanon(
+      'pack-global-order',
+      '.agents/rules/project.md',
+      '---\ndescription: Project\n---\nPROJECT-RULE-UNIQUE\n',
+    )
+    const markdown = compilePack({ job: 'understand', cwd: dir }).markdown
+    expect(markdown.indexOf('GLOBAL-RULE-UNIQUE')).toBeLessThan(
+      markdown.indexOf('PROJECT-RULE-UNIQUE'),
+    )
+  })
+
   test('a context row contributes one index line and never its body', () => {
     upsertProject({ name: 'pack-canon-context', path: dir, settings: { trunk: 'main' } })
-    setDoc({
-      scope: 'global',
-      subject: null,
-      slug: 'operator',
-      title: 'Operator',
-      body: 'operator',
-    })
+    putOperator('operator')
     putCanon(
       'pack-canon-context',
       '.agents/contexts/api.md',
@@ -121,13 +127,7 @@ describe('worker pack canon', () => {
 
   test('a card row contributes nothing', () => {
     upsertProject({ name: 'pack-canon-card', path: dir, settings: { trunk: 'main' } })
-    setDoc({
-      scope: 'global',
-      subject: null,
-      slug: 'operator',
-      title: 'Operator',
-      body: 'operator',
-    })
+    putOperator('operator')
     putCanon(
       'pack-canon-card',
       'hub/AGENTS.md',
@@ -142,13 +142,7 @@ describe('worker pack canon', () => {
 
   test('the pack refuses over budget with a message naming the tier to demote', () => {
     upsertProject({ name: 'pack-canon-budget', path: dir, settings: { trunk: 'main' } })
-    setDoc({
-      scope: 'global',
-      subject: null,
-      slug: 'tiny',
-      title: 'Tiny',
-      body: 't',
-    })
+    putOperator('t')
     putCanon('pack-canon-budget', 'AGENTS.md', `${'E'.repeat(400)}\n`)
     const measured = compilePack({ job: 'understand', cwd: dir })
     const old = JOBS.understand!.packBytes
@@ -173,8 +167,8 @@ describe('worker pack canon', () => {
   test("a project with no canon rows produces today's pack exactly", () => {
     upsertProject({ name: 'pack-canon-none', path: dir, settings: { trunk: 'main' } })
     setDoc({
-      scope: 'global',
-      subject: null,
+      scope: 'job',
+      subject: 'understand',
       slug: 'injected',
       title: 'Injected',
       body: 'today',

@@ -197,12 +197,12 @@ describe('scoped operator docs', () => {
     }
   })
 
-  test('brief contains global then current-project markdown, and is empty otherwise', () => {
+  test('brief emits no document body', () => {
     expect(brief('/nowhere')).toBe('')
     upsertProject({ name: 'known', path: '/w/known', stack: null, canon: true, settings: {} })
     setDoc({ scope: 'project', subject: 'known', slug: 'p', title: 'Project', body: 'P' })
     setDoc({ scope: 'global', subject: null, slug: 'g', title: 'Global', body: 'G' })
-    expect(brief('/w/known/src')).toBe('## Global\n\nG\n\n## Project\n\nP')
+    expect(brief('/w/known/src')).toBe('')
   })
 
   test('canon check keeps its exit-zero JSON contract for a missing cwd', () => {

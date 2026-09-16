@@ -1,8 +1,7 @@
 import { describe, expect, test } from 'bun:test'
 import { consumeDoc, removeDoc, setDoc } from '../test/fixtures/docs.ts'
 import { dir } from '../test/fixtures/store.ts'
-import { CanonBudgetError, compileBrief, compilePack } from './canon.ts'
-import { db } from './db.ts'
+import { compilePack } from './canon.ts'
 import {
   consumeDoc as consumeDocument,
   removeDoc as deleteDoc,
@@ -50,6 +49,7 @@ describe('scoped operator docs', () => {
       slug: 'revision-life',
       title: 'First',
       body: '---\nstatus: open\n---\n\none',
+      delivery: 'demand',
       author: 'creator',
       reason: 'create it',
     })
@@ -100,7 +100,7 @@ describe('scoped operator docs', () => {
     expect(getDocRevision(revisions[3]!.id)?.body).toBe(beforeDelete.body)
     expect(getDocRevision(revisions[1]!.id)?.delivery).toBe('demand')
     expect(restored.body).toBe('---\nstatus: open\n---\n\none')
-    expect(restored.delivery).toBe('inject')
+    expect(restored.delivery).toBe('demand')
     expect(restored.updated_at).not.toBe(created.updated_at)
   })
 
@@ -112,6 +112,7 @@ describe('scoped operator docs', () => {
         slug: 'no-reason',
         title: 'T',
         body: 'B',
+        delivery: 'demand',
         reason: '  ',
       }),
     ).toThrow('reason is required')
@@ -136,6 +137,7 @@ describe('scoped operator docs', () => {
         slug: 'session-author',
         title: 'T',
         body: 'B',
+        delivery: 'demand',
         reason: 'test',
       })
       delete process.env.CLAUDE_CODE_SESSION_ID
@@ -146,6 +148,7 @@ describe('scoped operator docs', () => {
         slug: 'unknown-author',
         title: 'T',
         body: 'B',
+        delivery: 'demand',
         reason: 'test',
       })
       expect(listDocRevisions('global', null, 'session-author')[0]!.author).toBe('doc-session')
@@ -165,6 +168,7 @@ describe('scoped operator docs', () => {
       slug: 'diffed',
       title: 'T',
       body: 'one\n',
+      delivery: 'demand',
       reason: 'first',
     })
     writeDoc({
@@ -173,6 +177,7 @@ describe('scoped operator docs', () => {
       slug: 'diffed',
       title: 'T',
       body: 'two\n',
+      delivery: 'demand',
       reason: 'second',
     })
     const [latest, previous] = listDocRevisions('global', null, 'diffed')
@@ -261,7 +266,7 @@ describe('scoped operator docs', () => {
     expect(put('resume', 'known').scope).toBe('resume')
   })
 
-  test('docsForRun orders global, job, then project and omits absent scopes', () => {
+  test('docsForRun injects job docs and omits demand and non-run scopes', () => {
     upsertProject({ name: 'known', path: '/w/known', stack: null, canon: true, settings: {} })
     expect(docsForRun({ job: 'file-question', cwd: '/elsewhere' })).toEqual([])
     setDoc({ scope: 'project', subject: 'known', slug: 'project', title: 'Project', body: 'P' })
@@ -277,15 +282,13 @@ describe('scoped operator docs', () => {
       body: '---\nstatus: open\n---\n\nR',
     })
     expect(docsForRun({ job: 'file-question', cwd: '/w/known/src' }).map((d) => d.title)).toEqual([
-      'Global',
       'Job',
-      'Project',
     ])
   })
 
   test('delivery is round-tripped and demand docs never enter a compiled pack', () => {
     upsertProject({ name: 'known', path: dir, stack: null, canon: true, settings: {} })
-    setDoc({ scope: 'global', subject: null, slug: 'injected', title: 'Injected', body: 'é' })
+    setDoc({ scope: 'machine', subject: null, slug: 'injected', title: 'Injected', body: 'é' })
     setDoc({
       scope: 'global',
       subject: null,
@@ -297,7 +300,7 @@ describe('scoped operator docs', () => {
     setDoc({ scope: 'job', subject: 'understand', slug: 'job', title: 'Job', body: 'J' })
     setDoc({ scope: 'project', subject: 'known', slug: 'project', title: 'Project', body: 'P' })
     const pack = compilePack({ job: 'understand', cwd: dir })
-    expect(pack.docs.map((doc) => doc.title)).toEqual(['Injected', 'Job', 'Project'])
+    expect(pack.docs.map((doc) => doc.title)).toEqual(['Job'])
     expect(pack.docs.every((doc) => doc.revisionId > 0)).toBe(true)
     expect(pack.bytes).toBe(Buffer.byteLength(pack.markdown))
     expect(pack.sha256).toHaveLength(64)
@@ -307,26 +310,61 @@ describe('scoped operator docs', () => {
     )
   })
 
-  test('brief has its own 64 KiB refusal', () => {
-    const doc = setDoc({
-      scope: 'global',
-      subject: null,
-      slug: 'too-big',
-      title: 'Large',
-      body: 'x'.repeat(70 * 1024),
-      delivery: 'demand',
-    })
-    // Bypass the write gate to retain coverage of the independent read-time guard.
-    db().query("UPDATE doc SET delivery='inject' WHERE id=?").run(doc.id)
-    expect(() => compileBrief(dir)).toThrow(CanonBudgetError)
+  test('setDoc closes project and global inject while allowing canon and estate facts', () => {
+    upsertProject({ name: 'known', path: dir, stack: null, canon: false, settings: {} })
+    for (const [scope, subject] of [
+      ['global', null],
+      ['project', 'known'],
+    ] as const) {
+      expect(() =>
+        writeDoc({
+          scope,
+          subject,
+          slug: `refused-${scope}`,
+          title: 'Refused',
+          body: 'B',
+          delivery: 'inject',
+          reason: 'test refusal',
+        }),
+      ).toThrow('make the instruction canon, or write the operator document with delivery demand')
+    }
+    expect(
+      writeDoc({
+        scope: 'canon',
+        subject: null,
+        slug: '.agents/rules/global.md',
+        title: 'Global canon',
+        body: '---\ndescription: Global\n---\n\nRule.\n',
+        delivery: 'inject',
+        reason: 'test global canon',
+        allowCanonBootstrap: true,
+      }).scope,
+    ).toBe('canon')
+    for (const [scope, subject] of [
+      ['machine', null],
+      ['agent', 'codex'],
+      ['job', 'understand'],
+    ] as const) {
+      expect(
+        writeDoc({
+          scope,
+          subject,
+          slug: `allowed-${scope}`,
+          title: 'Allowed',
+          body: 'B',
+          delivery: 'inject',
+          reason: 'test estate fact',
+        }).delivery,
+      ).toBe('inject')
+    }
   })
 
-  test('inject writes above 8 KiB refuse unless force-inject; demand of any size succeeds', () => {
+  test('inject estate facts above 8 KiB refuse unless force-inject; demand of any size succeeds', () => {
     const body = 'x'.repeat(9 * 1024)
     expect(() =>
       setDoc({
-        scope: 'global',
-        subject: null,
+        scope: 'job',
+        subject: 'understand',
         slug: 'inject-too-big',
         title: 'Too big',
         body,
@@ -337,8 +375,8 @@ describe('scoped operator docs', () => {
     )
     expect(() =>
       setDoc({
-        scope: 'global',
-        subject: null,
+        scope: 'job',
+        subject: 'understand',
         slug: 'inject-too-big',
         title: 'Too big',
         body,
@@ -347,8 +385,8 @@ describe('scoped operator docs', () => {
     ).toThrow('invariant: oversized narrative belongs on demand')
     expect(() =>
       setDoc({
-        scope: 'global',
-        subject: null,
+        scope: 'job',
+        subject: 'understand',
         slug: 'inject-too-big',
         title: 'Too big',
         body,
@@ -356,8 +394,8 @@ describe('scoped operator docs', () => {
       }),
     ).toThrow('cleared by: use --delivery demand')
     const forced = setDoc({
-      scope: 'global',
-      subject: null,
+      scope: 'job',
+      subject: 'understand',
       slug: 'inject-forced',
       title: 'Forced',
       body,

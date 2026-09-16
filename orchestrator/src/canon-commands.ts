@@ -20,12 +20,12 @@ import {
   findingsForPack,
 } from './canon.ts'
 import { canonGitRoot, collectCanonLintInput, collectCanonTree } from './canon-files.ts'
-import { type CanonRow, planHydration } from './canon-hydrate.ts'
+import { composeCanonRows, planHydration } from './canon-hydrate.ts'
 import { classifyCanonFile, introducedCanonFindings, lintCanon } from './canon-lint.ts'
 import { decideCanonWrite } from './canon-write-gate.ts'
 import { listDocs, removeDoc, setDoc } from './docs.ts'
 import { canonEvalsReport, runCanonEvals } from './evals.ts'
-import { projectByName } from './projects.ts'
+import { projectAt, projectByName } from './projects.ts'
 
 type CanonFlags = { has(name: string): boolean; flag(name: string): string | undefined }
 type CanonPresentation = {
@@ -85,8 +85,11 @@ function requestedProject(flags: CanonFlags) {
   return project
 }
 
-function canonRows(project: string): CanonRow[] {
-  return listDocs({ scope: 'canon', subject: project }).map(({ slug, body }) => ({ slug, body }))
+function canonRows(project: string) {
+  return composeCanonRows(
+    listDocs({ scope: 'canon', subject: null }),
+    listDocs({ scope: 'canon', subject: project }),
+  )
 }
 
 export function canonSlugsToRemove(currentSlugs: string[], treeSlugs: string[]): string[] {
@@ -137,25 +140,41 @@ function canonImportCommand(flags: CanonFlags, presentation: CanonPresentation):
   const requestedCwd = resolve(flags.flag('cwd') ?? project.path)
   const root = canonGitRoot(requestedCwd)
   const collected = collectCanonLintInput(root)
-  const rows = collected.files
+  const renderedRows = collected.files
     .filter((file) => file.symlinkTarget === undefined && classifyCanonFile(file) !== null)
     .map(({ path, text }) => ({ slug: path, body: text }))
-  if (rows.length === 0) {
+  if (renderedRows.length === 0) {
     throw new Error(`refusing canon import: no canon rows found under --cwd ${requestedCwd}`)
   }
-  const current = canonRows(project.name)
+  const global = listDocs({ scope: 'canon', subject: null })
+  const globalBySlug = new Map(global.map((row) => [row.slug, row]))
+  for (const row of renderedRows) {
+    const globalRow = globalBySlug.get(row.slug)
+    if (globalRow && globalRow.body !== row.body) {
+      throw new Error(
+        `refusing canon import: rendered ${row.slug} differs from canon/_/${row.slug}; edit the global canon row`,
+      )
+    }
+  }
+  const rows = renderedRows.filter((row) => !globalBySlug.has(row.slug))
+  const current = canonRows(project.name).map(({ slug, body }) => ({ slug, body }))
+  const next = composeCanonRows(
+    global,
+    rows.map((row) => ({ ...row, subject: project.name })),
+  ).map(({ slug, body }) => ({ slug, body }))
+  const projectSlugs = listDocs({ scope: 'canon', subject: project.name }).map(({ slug }) => slug)
   const removals = canonSlugsToRemove(
-    current.map(({ slug }) => slug),
+    projectSlugs,
     rows.map(({ slug }) => slug),
   )
   const findings = decideCanonWrite({
     current,
-    next: rows,
+    next,
     trackedPaths: collected.trackedPaths,
     packageScripts: collected.packageScripts,
     sourceTexts: collected.sourceTexts,
   })
-  const bootstrap = current.length === 0
+  const bootstrap = projectSlugs.length === 0
   for (const row of rows) {
     setDoc({
       scope: 'canon',
@@ -212,10 +231,10 @@ function canonHydrateCommand(flags: CanonFlags, presentation: CanonPresentation)
 
 function canonListCommand(flags: CanonFlags, presentation: CanonPresentation): void {
   const project = requestedProject(flags)
-  for (const row of listDocs({ scope: 'canon', subject: project.name })) {
+  for (const row of canonRows(project.name)) {
     const tier = classifyCanonFile({ path: row.slug, text: row.body })
     presentation.log(
-      `${row.slug}  ${tier ?? 'invalid'}  ${Buffer.byteLength(row.body)}  ${row.updated_at}`,
+      `${row.subject ?? '_'}  ${row.slug}  ${tier ?? 'invalid'}  ${Buffer.byteLength(row.body)}  ${row.updated_at}`,
     )
   }
 }
@@ -223,6 +242,10 @@ function canonListCommand(flags: CanonFlags, presentation: CanonPresentation): v
 export function canonLintCommand(flags: CanonFlags, presentation: CanonPresentation): void {
   const requestedCwd = resolve(flags.flag('cwd') ?? presentation.cwd())
   const root = canonGitRoot(requestedCwd)
+  const namedProject = flags.flag('project')
+  const project = namedProject ? projectByName(namedProject) : projectAt(root)
+  if (namedProject && !project) throw new Error(`unknown project ${JSON.stringify(namedProject)}`)
+  if (project) canonRows(project.name)
   const result = lintCanon(collectCanonLintInput(root))
   const baselineFlag = flags.flag('baseline')
   if ((flags.has('strict') || flags.has('write-baseline')) && !baselineFlag) {

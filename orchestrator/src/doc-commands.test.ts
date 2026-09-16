@@ -291,6 +291,7 @@ describe('scoped operator docs', () => {
       slug: 'cli-history',
       title: 'T',
       body: 'one\n',
+      delivery: 'demand',
       reason: 'first',
     })
     writeDoc({
@@ -299,6 +300,7 @@ describe('scoped operator docs', () => {
       slug: 'cli-history',
       title: 'T',
       body: 'two\n',
+      delivery: 'demand',
       reason: 'second',
     })
     const rows = listDocRevisions('global', null, 'cli-history')

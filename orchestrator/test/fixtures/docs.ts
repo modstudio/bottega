@@ -7,7 +7,13 @@ import {
 
 export type TestDocInput = Parameters<typeof writeDoc>[0]
 export const setDoc = (input: Omit<TestDocInput, 'reason'> & { reason?: string }) =>
-  writeDoc({ ...input, reason: input.reason ?? 'test write' })
+  writeDoc({
+    ...input,
+    delivery:
+      input.delivery ??
+      (input.scope === 'project' || input.scope === 'global' ? 'demand' : undefined),
+    reason: input.reason ?? 'test write',
+  })
 export const consumeDoc = (
   scope: string,
   subject: string | null,

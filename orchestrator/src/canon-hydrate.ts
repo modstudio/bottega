@@ -4,10 +4,26 @@ import { posix } from 'node:path'
 import { type CanonFile, classifyCanonFile } from './canon-lint.ts'
 
 export type CanonRow = { slug: string; body: string }
+export type AddressedCanonRow = CanonRow & { subject: string | null }
 export type HydrationPlan = {
   writes: { path: string; body: string }[]
   links: { path: string; target: string }[]
   deletes: string[]
+}
+
+/** Global canon precedes project canon; duplicate mirror paths have no precedence rule. */
+export function composeCanonRows<G extends AddressedCanonRow, P extends AddressedCanonRow>(
+  globalRows: G[],
+  projectRows: P[],
+): (G | P)[] {
+  const globalBySlug = new Map(globalRows.map((row) => [row.slug, row]))
+  for (const row of projectRows) {
+    if (!globalBySlug.has(row.slug)) continue
+    throw new Error(
+      `refusing canon path collision: canon/_/${row.slug} and canon/${row.subject}/${row.slug} render to the same path`,
+    )
+  }
+  return [...globalRows, ...projectRows]
 }
 
 function generatedLinks(rows: CanonRow[]): { path: string; target: string }[] {

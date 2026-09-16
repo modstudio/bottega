@@ -1,11 +1,13 @@
 /**
  * Operator documents are scoped facts about the installation around this router.
- * Global facts apply everywhere; project, agent, and job facts attach to one named
+ * Machine, agent, and job facts describe this estate and may be injected. Project
+ * and global operator documents are demand-only; software-building instructions are
+ * canon. Project, agent, and job facts attach to one named
  * subject; resume briefs attach to a project (the epic is the slug); machine facts
- * describe the host itself. Worker prompts receive only global, job, and
- * current-project documents; agent, machine, and resume notes serve routing and
- * architectural judgement instead. Canon docs are the source for a project's
- * hydrated instruction tree and are never injected into worker prompts here.
+ * describe the host itself. Worker prompts receive job injects; agent and machine
+ * notes serve routing and architectural judgement, while resume notes serve session
+ * recovery. Canon docs are the source for the global and
+ * project hydrated instruction tree and enter worker packs through the canon path.
  */
 import { mkdirSync, readdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
@@ -13,7 +15,7 @@ import { DOC_SCOPE_SUBJECT_KIND, DOC_SCOPES, type DocScope } from '../../shared/
 import { AGENTS } from './agent-registry.ts'
 import { compileBrief } from './canon.ts'
 import { collectCanonLintInput } from './canon-files.ts'
-import type { CanonRow } from './canon-hydrate.ts'
+import { type CanonRow, composeCanonRows } from './canon-hydrate.ts'
 import { decideCanonWrite } from './canon-write-gate.ts'
 import { db, nowIso, sessionId, writableDb, writeTransaction } from './db.ts'
 import { JOBS } from './jobs.ts'
@@ -188,6 +190,7 @@ function validateHistoricAddress(scope: string, slug: string): asserts scope is 
 
 function validate(scope: string, subject: string | null, slug: string): asserts scope is DocScope {
   validateHistoricAddress(scope, slug)
+  if (scope === 'canon' && subject === null) return
   const subjectKind = DOC_SCOPE_SUBJECT_KIND[scope]
   if (subjectKind === null) {
     if (subject !== null) throw new Error(`${scope} docs take no subject; remove --subject`)
@@ -348,52 +351,86 @@ function insertRevision(doc: Doc, op: DocRevisionOp, context: DocWriteContext, a
     )
 }
 
-function setDocWithOp(
-  input: {
-    scope: string
-    subject: string | null
-    slug: string
-    title: string
-    body: string
-    delivery?: 'inject' | 'demand'
-  } & DocWriteContext,
-  requestedOp?: 'import',
-): Doc {
-  writableDb()
-  validate(input.scope, input.subject, input.slug)
-  writeIdentity(input)
-  const prior = getDoc(input.scope, input.subject, input.slug)
-  assertInjectSize({
-    ...input,
-    delivery: input.scope === 'canon' ? 'demand' : (input.delivery ?? prior?.delivery ?? 'inject'),
-  })
-  if (input.scope === 'canon') {
-    const project = projectByName(input.subject!)!
-    const current = listDocs({ scope: 'canon', subject: input.subject }).map((doc) => ({
-      slug: doc.slug,
-      body: doc.body,
+type DocWriteInput = {
+  scope: string
+  subject: string | null
+  slug: string
+  title: string
+  body: string
+  delivery?: 'inject' | 'demand'
+} & DocWriteContext
+
+function assertCanonWriteAllowed(input: DocWriteInput): void {
+  if (input.scope !== 'canon') return
+  const project = input.subject ? projectByName(input.subject)! : null
+  const global = listDocs({ scope: 'canon', subject: null })
+  const projectRows = input.subject ? listDocs({ scope: 'canon', subject: input.subject }) : []
+  const changedRows = input.canonSet ?? [
+    ...(project ? projectRows : global).filter(({ slug }) => slug !== input.slug),
+    { slug: input.slug, body: input.body },
+  ]
+  const next = composeCanonRows(
+    (project ? global : changedRows).map((row) => ({ ...row, subject: null })),
+    (project ? changedRows : projectRows).map((row) => ({
+      ...row,
+      subject: project?.name ?? '',
+    })),
+  ).map(({ slug, body }) => ({ slug, body }))
+  const projectsToCheck = project
+    ? [project]
+    : (db().query('SELECT name,path FROM project WHERE canon=1 ORDER BY name').all() as {
+        name: string
+        path: string
+      }[])
+  const findings = projectsToCheck.flatMap((target) => {
+    const targetProjectRows = listDocs({ scope: 'canon', subject: target.name })
+    const targetCurrent = composeCanonRows(global, targetProjectRows).map(({ slug, body }) => ({
+      slug,
+      body,
     }))
-    const next = input.canonSet ?? [
-      ...current.filter(({ slug }) => slug !== input.slug),
-      { slug: input.slug, body: input.body },
-    ]
-    const collected = collectCanonLintInput(project.path)
-    const findings = decideCanonWrite({
-      current,
-      next,
+    const targetNext = project
+      ? next
+      : composeCanonRows(
+          changedRows.map((row) => ({ ...row, subject: null })),
+          targetProjectRows,
+        ).map(({ slug, body }) => ({ slug, body }))
+    const collected = collectCanonLintInput(target.path)
+    return decideCanonWrite({
+      current: targetCurrent,
+      next: targetNext,
       trackedPaths: collected.trackedPaths,
       packageScripts: collected.packageScripts,
       sourceTexts: collected.sourceTexts,
     })
-    if (findings.length && !input.allowCanonBootstrap) {
-      throw new Error(
-        `refusing canon write; introduced ${findings.length} finding${findings.length === 1 ? '' : 's'}:\n` +
-          findings
-            .map((finding) => `${finding.file}:${finding.line} ${finding.rule} ${finding.message}`)
-            .join('\n'),
-      )
-    }
+  })
+  if (findings.length && !input.allowCanonBootstrap) {
+    throw new Error(
+      `refusing canon write; introduced ${findings.length} finding${findings.length === 1 ? '' : 's'}:\n` +
+        findings
+          .map((finding) => `${finding.file}:${finding.line} ${finding.rule} ${finding.message}`)
+          .join('\n'),
+    )
   }
+}
+
+function setDocWithOp(input: DocWriteInput, requestedOp?: 'import'): Doc {
+  writableDb()
+  validate(input.scope, input.subject, input.slug)
+  writeIdentity(input)
+  const prior = getDoc(input.scope, input.subject, input.slug)
+  const delivery =
+    input.scope === 'canon' ? 'demand' : (input.delivery ?? prior?.delivery ?? 'inject')
+  if ((input.scope === 'project' || input.scope === 'global') && delivery === 'inject') {
+    throw new Error(
+      `refusing inject ${input.scope} document: inject operator docs describe this estate; software-building instructions are canon\n` +
+        'cleared by: make the instruction canon, or write the operator document with delivery demand',
+    )
+  }
+  assertInjectSize({
+    ...input,
+    delivery,
+  })
+  assertCanonWriteAllowed(input)
   return writeTransaction(() => {
     const existing = getDoc(input.scope, input.subject, input.slug)
     const at = nowIso()
@@ -419,7 +456,7 @@ function setDocWithOp(
           .get(
             input.scope,
             input.subject,
-            input.scope === 'project' || input.scope === 'canon'
+            input.scope === 'project' || (input.scope === 'canon' && input.subject)
               ? projectByName(input.subject!)!.id
               : null,
             input.slug,
@@ -750,6 +787,24 @@ export function exportDocs(dir: string): number {
   return docs.length
 }
 
+function importedDoc(path: string, fileName: string): { title: string; body: string } {
+  const raw = readFileSync(path, 'utf8')
+  const match = raw.match(/^---\r?\ntitle:\s*(.+)\r?\n---\r?\n(?:\r?\n)?([\s\S]*)$/)
+  if (!match) throw new Error(`${fileName}: expected YAML frontmatter with a title`)
+  let title: unknown
+  try {
+    title = JSON.parse(match[1]!)
+  } catch {
+    throw new Error(`${fileName}: title must be a YAML double-quoted string`)
+  }
+  if (typeof title !== 'string') throw new Error(`${fileName}: title must be a string`)
+  return { title, body: match[2]! }
+}
+
+function importedDelivery(scope: DocScope): 'demand' | undefined {
+  return scope === 'project' || scope === 'global' ? 'demand' : undefined
+}
+
 export function importDocs(dir: string, context: DocWriteContext): number {
   writableDb()
   writeIdentity(context)
@@ -765,18 +820,16 @@ export function importDocs(dir: string, context: DocWriteContext): number {
         withFileTypes: true,
       })) {
         if (!file.isFile() || !file.name.endsWith('.md')) continue
-        const raw = readFileSync(join(dir, scope, subjectEntry.name, file.name), 'utf8')
-        const match = raw.match(/^---\r?\ntitle:\s*(.+)\r?\n---\r?\n(?:\r?\n)?([\s\S]*)$/)
-        if (!match) throw new Error(`${file.name}: expected YAML frontmatter with a title`)
-        let title: string
-        try {
-          title = JSON.parse(match[1]!)
-        } catch {
-          throw new Error(`${file.name}: title must be a YAML double-quoted string`)
-        }
-        if (typeof title !== 'string') throw new Error(`${file.name}: title must be a string`)
+        const parsed = importedDoc(join(dir, scope, subjectEntry.name, file.name), file.name)
         setDocWithOp(
-          { scope, subject, slug: file.name.slice(0, -3), title, body: match[2]!, ...context },
+          {
+            scope,
+            subject,
+            slug: file.name.slice(0, -3),
+            ...parsed,
+            delivery: importedDelivery(scope),
+            ...context,
+          },
           'import',
         )
         count++
