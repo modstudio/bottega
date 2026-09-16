@@ -4,6 +4,7 @@ import { join } from 'node:path'
 import { CONCERNS } from '../../shared/brand.ts'
 import { CANON_REFERENCE_EXEMPTIONS, canonReferencePath } from '../../shared/canon-references.ts'
 import { isCliCommand } from './args.ts'
+import { composeCanonRows } from './canon-hydrate.ts'
 import { canonFrontmatter, classifyCanonFile } from './canon-lint.ts'
 import { db, linkedWorktreeReadOnly, nowIso, writeTransaction } from './db.ts'
 import { type Doc, docsForRun, docsMarkdown, listDocs } from './docs.ts'
@@ -324,16 +325,24 @@ export function packedCanonMarkdown(projectName: string | null): {
   contextIndexBytes: number
 } {
   if (!projectName) return { markdown: '', alwaysOnBytes: 0, contextIndexBytes: 0 }
-  const rows = listDocs({ scope: 'canon', subject: projectName })
+  const globalRows = listDocs({ scope: 'canon', subject: null })
+  const projectRows = listDocs({ scope: 'canon', subject: projectName })
+  const rows = composeCanonRows(globalRows, projectRows)
   if (!rows.length) return { markdown: '', alwaysOnBytes: 0, contextIndexBytes: 0 }
   const classified = rows.map((row) => ({
     row,
     kind: classifyCanonFile({ path: row.slug, text: row.body }),
   }))
-  const alwaysOn = joinPackSections(
-    ...classified.filter(({ kind }) => kind === 'entry').map(({ row }) => row.body),
-    ...classified.filter(({ kind }) => kind === 'rule').map(({ row }) => row.body),
-  )
+  const alwaysOnFor = (subject: string | null) =>
+    joinPackSections(
+      ...classified
+        .filter(({ row, kind }) => row.subject === subject && kind === 'entry')
+        .map(({ row }) => row.body),
+      ...classified
+        .filter(({ row, kind }) => row.subject === subject && kind === 'rule')
+        .map(({ row }) => row.body),
+    )
+  const alwaysOn = joinPackSections(alwaysOnFor(null), alwaysOnFor(projectName))
   const index = contextIndexMarkdown(
     classified.filter(({ kind }) => kind === 'context').map(({ row }) => row),
   )
@@ -344,14 +353,9 @@ export function packedCanonMarkdown(projectName: string | null): {
   }
 }
 
-function buildPack(job: string, cwd: string, budgetBytes: number, brief = false): Pack {
+function buildPack(job: string, cwd: string, budgetBytes: number): Pack {
   const project = projectAt(cwd)
-  const selected = brief
-    ? [
-        ...listDocs({ scope: 'global', subject: null }),
-        ...(project ? listDocs({ scope: 'project', subject: project.name }) : []),
-      ].filter((doc) => doc.delivery === 'inject')
-    : docsForRun({ job, cwd })
+  const selected = docsForRun({ job, cwd })
   const latest = db().query('SELECT MAX(id) AS id FROM doc_revision WHERE doc_id=?')
   const withRevisions = selected.map((doc: Doc & { revision_id?: number }) => {
     const revisionId = doc.revision_id ?? (latest.get(doc.id) as { id: number | null }).id
@@ -370,9 +374,7 @@ function buildPack(job: string, cwd: string, budgetBytes: number, brief = false)
     title: doc.title,
     bytes: Buffer.byteLength(`## ${doc.title}\n\n${doc.body}`),
   }))
-  const canon = brief
-    ? { markdown: '', alwaysOnBytes: 0, contextIndexBytes: 0 }
-    : packedCanonMarkdown(project?.name ?? null)
+  const canon = packedCanonMarkdown(project?.name ?? null)
   const markdown = joinPackSections(canon.markdown, operatorMarkdown)
   const bytes = Buffer.byteLength(markdown)
   const docBytes = Buffer.byteLength(operatorMarkdown)
@@ -399,7 +401,18 @@ export function compilePack(input: { job: string; cwd: string }): Pack {
 }
 
 export function compileBrief(cwd: string): Pack {
-  return buildPack('session', cwd, BRIEF_BYTES, true)
+  const markdown = ''
+  return {
+    job: 'session',
+    project: projectAt(cwd)?.name ?? null,
+    docs: [],
+    markdown,
+    bytes: 0,
+    canonBytes: 0,
+    docBytes: 0,
+    budgetBytes: BRIEF_BYTES,
+    sha256: createHash('sha256').update(markdown).digest('hex'),
+  }
 }
 
 function tracked(root: string): Set<string> | null {

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""SessionStart hook: operator/resume briefs and monitor findings addressed here."""
+"""SessionStart hook: resume briefs and monitor findings addressed here."""
 import json
 import os
 import re
@@ -66,7 +66,7 @@ def _resume_sentence(source, open_briefs):
 
 
 def main() -> int:
-    brief_p = resumes_p = inbox_p = monitor_p = None
+    resumes_p = inbox_p = monitor_p = None
     capability_dir = None
     output = None
     monitor_notices = []
@@ -91,7 +91,6 @@ def main() -> int:
                 "systemMessage": message,
             }
             return 0
-        brief_p = _start(orch, "doc", "brief", "--cwd", cwd)
         resumes_p = _start(orch, "doc", "resumes", "--cwd", cwd, "--json")
         inbox_env = os.environ.copy()
         if sid:
@@ -113,11 +112,10 @@ def main() -> int:
             except Exception:
                 monitor_failure = "Monitor notice delivery failed; addressed condition state is unknown."
         deadline = time.monotonic() + 10
-        brief = _wait(brief_p, deadline)
         resumes = _wait(resumes_p, deadline)
         inbox = _wait(inbox_p, deadline)
 
-        context = brief.stdout if brief.returncode == 0 else ""
+        context = ""
         open_briefs = []
         lines = []
         unreadable = []
@@ -217,11 +215,6 @@ def main() -> int:
             )
 
         notices = []
-        if brief.returncode != 0:
-            first = next((line.strip() for line in (brief.stderr or "").splitlines() if line.strip()),
-                         None)
-            if first:
-                notices.append(f"operator brief refused: {first}")
         if inbox_failure:
             notices.append(inbox_failure)
         if resume_failure:
@@ -364,7 +357,6 @@ def main() -> int:
                 )
             except Exception:
                 pass
-        _kill(brief_p)
         _kill(resumes_p)
         _kill(inbox_p)
         _kill(monitor_p)

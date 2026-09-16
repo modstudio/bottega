@@ -24,7 +24,7 @@ const docAddressChecks = <
   ),
   check(
     'subject_check',
-    sql`(${t.scope} in (${values(subjectlessScopes)}) and ${t.subject} is null) or (${t.scope} in (${values(subjectScopes)}) and ${t.subject} is not null)`,
+    sql`(${t.scope} in (${values(subjectlessScopes)}) and ${t.subject} is null) or (${t.scope} in (${values(subjectScopes.filter((scope) => scope !== 'canon'))}) and ${t.subject} is not null) or ${t.scope} = 'canon'`,
   ),
 ]
 

@@ -286,8 +286,9 @@
   {
     "file": "orchestrator/src/docs.ts",
     "function": "importDocs",
-    "line": 574,
-    "score": 30
+    "line": 808,
+    "score": 18,
+    "key": "orchestrator/src/docs.ts\u0000importDocs"
   },
   {
     "file": "orchestrator/src/doctor.ts",
@@ -480,8 +481,9 @@
   {
     "file": "orchestrator/src/porting-import.ts",
     "function": "writeTransaction callback",
-    "line": 686,
-    "score": 18
+    "line": 949,
+    "score": 16,
+    "key": "orchestrator/src/porting-import.ts\u0000writeTransaction callback"
   },
   {
     "file": "orchestrator/src/project-commands.ts",
