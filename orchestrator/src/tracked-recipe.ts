@@ -295,6 +295,7 @@ export function trackedHookBranch(input: {
 
 function renderedPlaceholder(name: string): string {
   if (name === 'main') return name
+  if (name === 'tree_exists') return 'true'
   if (name === 'index') return '$ORCH_INDEX'
   if (name === 'label') return '$ORCH_RUN_LABEL'
   const allocation = name.match(/^(ports|db|alloc)\.(.+)$/)
@@ -390,6 +391,7 @@ export function trackedRecipeVars(
     ...staticVars,
     index: String(allocations.index),
     label: orchRunLabel(rootRunId),
+    tree_exists: 'true',
   }
   for (const [portName, port] of Object.entries(allocations.ports)) {
     vars[`ports.${portName}`] = String(port)
@@ -547,7 +549,7 @@ function prepareTrackedCreate(
   const vars = trackedRecipeVars(staticVars, allocations, readSnapshot(input.runId).rootRunId)
   executeTrackedPreSteps(
     loaded.recipe,
-    { treeRoot: input.repoRoot, vars },
+    { treeRoot: input.repoRoot, vars: { ...vars, tree_exists: 'false' } },
     allocationAttempt,
     allocator,
     runStep,
@@ -699,6 +701,7 @@ export function teardownTrackedRecipe(
         }
       : removal
   }
+  const treeExists = input.treeExists ?? existsSync(input.worktree.path)
   const vars = teardownVars({
     path: input.worktree.path,
     branch: input.worktree.branch,
@@ -707,9 +710,9 @@ export function teardownTrackedRecipe(
     seed: stored.seed,
     main: input.worktree.repoRoot,
     label: orchRunLabel(stored.rootRunId ?? readSnapshot(input.runId).rootRunId),
+    treeExists,
     allocations: stored.snapshot.allocations,
   })
-  const treeExists = input.treeExists ?? existsSync(input.worktree.path)
   const context = { treeRoot: treeExists ? input.worktree.path : input.worktree.repoRoot, vars }
   const results = serveUndoPlan(stored.snapshot.recipe).map((step) => runUndo(step, context))
   for (const { step, phase } of destroyPlan(stored.snapshot.recipe))

@@ -42,10 +42,16 @@ describe('tracked recipe refusal rules', () => {
     ).toContain('duplicate step name')
   })
 
-  test('refuses an unknown placeholder', () => {
+  test('catches replacing the unknown-placeholder refusal with permissive validation', () => {
     const recipe = minimal()
     recipe.create[0]!.run = { command: 'true', args: ['{mystery}'] }
     expect(messages(recipe).join('\n')).toContain('unknown placeholder {mystery}')
+  })
+
+  test('catches removing tree_exists from the step placeholder allowlist', () => {
+    const recipe = minimal()
+    recipe.create[0]!.run = { command: 'true', args: ['{tree_exists}'] }
+    expect(recipeSchema.safeParse(recipe).success).toBe(true)
   })
 
   test('accepts the ownership label in tracked steps but not allocation templates', () => {

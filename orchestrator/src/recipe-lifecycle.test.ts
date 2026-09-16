@@ -102,6 +102,7 @@ describe('tracked recipe lifecycle planning', () => {
         seed: null,
         main: '/main',
         label: 'orch.run=2',
+        treeExists: true,
         allocations: {
           index: 3,
           ports: { web: 21002 },
@@ -112,6 +113,7 @@ describe('tracked recipe lifecycle planning', () => {
     ).toMatchObject({
       index: '3',
       label: 'orch.run=2',
+      tree_exists: 'true',
       'ports.web': '21002',
       'db.app': 'app_3',
       'alloc.cookie': 'tree-3',

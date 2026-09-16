@@ -39,6 +39,7 @@ export function teardownVars(input: {
   seed: string | null
   main: string
   label: string
+  treeExists: boolean
   allocations?: {
     index: number
     ports: Record<string, number>
@@ -55,6 +56,7 @@ export function teardownVars(input: {
     seed: input.seed ?? '',
     main: input.main,
     label: input.label,
+    tree_exists: String(input.treeExists),
   }
   if (!input.allocations) return vars
   vars.index = String(input.allocations.index)
