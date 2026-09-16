@@ -157,14 +157,16 @@ export function acquireKernelLease(path: string): KernelLease {
   return lease
 }
 
+export function projectGitCommonDir(repoRoot: string): string {
+  return realpathSync(resolve(repoRoot, git(['rev-parse', '--git-common-dir'], repoRoot)))
+}
+
 function projectLockDir(repoRoot: string): string {
-  const common = realpathSync(resolve(repoRoot, git(['rev-parse', '--git-common-dir'], repoRoot)))
-  return join(common, 'orch', 'locks')
+  return join(projectGitCommonDir(repoRoot), 'orch', 'locks')
 }
 
 function legacyProjectLockPath(repoRoot: string, name: string): string {
-  const common = realpathSync(resolve(repoRoot, git(['rev-parse', '--git-common-dir'], repoRoot)))
-  return join(common, `orch-${name}.lock`)
+  return join(projectGitCommonDir(repoRoot), `orch-${name}.lock`)
 }
 
 function projectLockPaths(

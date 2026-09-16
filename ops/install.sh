@@ -20,9 +20,11 @@ UID_NUM="$(id -u)"
 # so four hours catches every measured case without hourly noise. Each pass
 # records condition ages; revisit this after a week of that evidence.
 PROVISIONAL_MONITOR_BACKSTOP_SECONDS=$((4 * 60 * 60))
+FIX_DEFECT_BACKSTOP_SECONDS=$((12 * 60 * 60))
 
 mkdir -p "$AGENTS_DIR" "$HOME/Library/Logs/brew-upgrade" "$HOME/Library/Logs/projects-refresh" \
-  "$HOME/Library/Logs/orch-monitor" "$HOME/Library/Logs/orch-canon-eval"
+  "$HOME/Library/Logs/orch-monitor" "$HOME/Library/Logs/orch-fix-defect" \
+  "$HOME/Library/Logs/orch-canon-eval"
 
 for tmpl in "$REPO"/launchd/*.plist.template; do
   label="$(basename "$tmpl" .plist.template)"
@@ -54,6 +56,7 @@ for tmpl in "$REPO"/launchd/*.plist.template; do
   sed -e "s#__REPO__#${REPO}#g" -e "s#__ROOT__#${ROOT}#g" \
       -e "s#__HOME__#${HOME}#g" \
       -e "s#__MONITOR_BACKSTOP_SECONDS__#${PROVISIONAL_MONITOR_BACKSTOP_SECONDS}#g" \
+      -e "s#__FIX_DEFECT_BACKSTOP_SECONDS__#${FIX_DEFECT_BACKSTOP_SECONDS}#g" \
       -e "s#__MODEL_HOST__#${LOCAL_MODEL_HOST:-}#g" "$tmpl" > "$target"
 
   # Load it.
@@ -63,5 +66,5 @@ done
 
 echo
 echo "Active agents:"
-launchctl list | grep -E 'brew-auto-upgrade|projects-morning-refresh|local-model-tunnel|orch-sweep|orch-monitor|orch-canon-eval|hub-note-maintenance|hub-tunnel' \
+launchctl list | grep -E 'brew-auto-upgrade|projects-morning-refresh|local-model-tunnel|orch-sweep|orch-monitor|orch-fix-defect|orch-canon-eval|hub-note-maintenance|hub-tunnel' \
   || echo "  (none found)"

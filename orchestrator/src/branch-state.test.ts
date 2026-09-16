@@ -2,10 +2,35 @@ import { describe, expect, test } from 'bun:test'
 import {
   type BranchLanding,
   decideBranchState,
+  decideProtectedBranch,
   decidePruneEligibility,
   type MergedPullRequest,
   pullRequestCarriesKey,
 } from './branch-state.ts'
+
+describe('protected project branch decision', () => {
+  test('trunk protection mutation: refuses the registered trunk', () => {
+    expect(
+      decideProtectedBranch({ branch: 'develop', trunk: 'develop', productionBranch: 'main' }),
+    ).toBe('trunk')
+  })
+
+  test('production protection mutation: refuses the registered production branch', () => {
+    expect(
+      decideProtectedBranch({ branch: 'main', trunk: 'develop', productionBranch: 'main' }),
+    ).toBe('production')
+  })
+
+  test('ordinary branch mutation: allows a run branch', () => {
+    expect(
+      decideProtectedBranch({
+        branch: 'DEV-616-orch-4346',
+        trunk: 'develop',
+        productionBranch: 'main',
+      }),
+    ).toBeNull()
+  })
+})
 
 const pullRequest: MergedPullRequest = {
   number: 42,

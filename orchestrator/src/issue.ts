@@ -1,7 +1,8 @@
-import { copyFileSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
-import { tmpdir } from 'node:os'
+import { copyFileSync, existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { homedir, tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { PLATFORM_SLUG } from '../../shared/brand.ts'
+import { PLATFORM_NAME, PLATFORM_SLUG } from '../../shared/brand.ts'
+import { closeOutRun } from './close-out.ts'
 import {
   ISSUE_WORKER_SCHEMA,
   type IssueWorkerReply,
@@ -9,12 +10,26 @@ import {
   validatesSchema,
 } from './contract.ts'
 import { DB_PATH, db } from './db.ts'
+import { repoRootOf } from './git-environment.ts'
+import { catchFixTreeDisposition } from './issue-catch.ts'
+import {
+  filedIssueCommandPlan,
+  issueFixReady,
+  issueRunAsked,
+  runFiledIssueCommand,
+  workerGateEnvironment,
+} from './issue-shell.ts'
 import { type Project, projectByName } from './projects.ts'
 import { prepareSharedRefGuard } from './ref-guard.ts'
 import { parseReviewOutput } from './review.ts'
 import { run } from './run.ts'
+import { terminateRunProcesses } from './run-process.ts'
+import { abandonRun } from './run-stop.ts'
 import type { RunResult } from './run-types.ts'
-import { removeFor } from './worktree-remove.ts'
+import { resetSandbox, resolveSecretPaths, sandboxLaunchArgv, srtInstalled } from './sandbox.ts'
+import { trackedRecipeEnvironment } from './tracked-recipe.ts'
+import { worktreeDirty } from './worktree-attribution.ts'
+import type { Worktree } from './worktree-types.ts'
 
 const HUB = new URL('../../bin/hub', import.meta.url).pathname
 
@@ -411,13 +426,31 @@ function requestText(
   ].join('\n')
 }
 
-function diagnosisPrompt(issue: FiledIssue): string {
+function diagnosisPrompt(issue: FiledIssue, priorRecord: string): string {
   return `Independently reproduce and diagnose this filed issue in the reporting project's checkout.
 Call project_brief for ${issue.reportingProject} LIVE before concluding where the cause is.
 Do not edit files. Establish whether the cause is orch code, the live register row, or this project's own tool.
 NOT REPRODUCIBLE is permitted only after attempting the supplied command in this worktree and environment.
 Return only the bound structured result. The bounded issue pack contains exactly the filing fields, and nothing else:
-${boundedIssuePack(issue)}`
+${boundedIssuePack(issue)}${priorRecord ? `\n\nPrior record on this issue, including any ruling - a ruling here is binding:\n${priorRecord}` : ''}`
+}
+
+async function priorIssueRecord(shown: {
+  comments?: { body?: unknown }[]
+  documents?: { id?: unknown; role?: unknown }[]
+}): Promise<string> {
+  const comments = (shown.comments ?? []).flatMap((item) =>
+    typeof item.body === 'string' ? [item.body] : [],
+  )
+  const documents: string[] = []
+  for (const document of shown.documents ?? []) {
+    if (document.role !== 'handoff' || typeof document.id !== 'number') continue
+    const full = JSON.parse(await hub(['task', 'doc', 'show', String(document.id), '--json'])) as {
+      body?: unknown
+    }
+    if (typeof full.body === 'string') documents.push(full.body)
+  }
+  return [...comments, ...documents].join('\n\n---\n\n')
 }
 
 function fixPrompt(issue: FiledIssue, diagnosis: Diagnosis): string {
@@ -431,14 +464,39 @@ DIAGNOSIS EVIDENCE:
 ${JSON.stringify(diagnosis, null, 2)}`
 }
 
-function shell(
+function diagnosedTarget(diagnosis: Diagnosis, reporting: Project): Project | null {
+  if (diagnosis.cause_location === 'orch-code') return projectByName(PLATFORM_SLUG)
+  if (diagnosis.target_project) return projectByName(diagnosis.target_project)
+  return reporting
+}
+
+async function shell(
   command: string,
   cwd: string,
-  env = process.env,
-): { ok: boolean; text: string; exitCode: number } {
-  const p = Bun.spawnSync(['sh', '-lc', command], { cwd, env, stdout: 'pipe', stderr: 'pipe' })
-  const text = `${p.stdout.toString()}${p.stderr.toString()}`.trim()
-  return { ok: p.exitCode === 0, text: text || `exit ${p.exitCode}`, exitCode: p.exitCode }
+  input: {
+    project: Project
+    sandboxHome: string
+    workerEnvironment?: Record<string, string>
+    orchStore?: string
+  },
+): Promise<{ ok: boolean; text: string; exitCode: number }> {
+  const plan = filedIssueCommandPlan({
+    command,
+    worktree: cwd,
+    sandboxHome: input.sandboxHome,
+    path: process.env.PATH ?? '/usr/bin:/bin',
+    lang: process.env.LANG ?? 'C.UTF-8',
+    operatorEnvPath: join(homedir(), '.claude', '.env'),
+    secretPaths: resolveSecretPaths(input.project),
+    workerEnvironment: input.workerEnvironment,
+  })
+  if (input.orchStore) plan.env.ORCH_DB = input.orchStore
+  try {
+    const launch = await sandboxLaunchArgv(plan.profile, plan.argv[0], plan.argv.slice(1))
+    return await runFiledIssueCommand(launch, cwd, plan.env)
+  } finally {
+    await resetSandbox()
+  }
 }
 
 function argv(
@@ -451,27 +509,138 @@ function argv(
   return { ok: p.exitCode === 0, text: text || `exit ${p.exitCode}`, exitCode: p.exitCode }
 }
 
-function workerEnv(): Record<string, string> {
-  const exact = new Set([
-    'PATH',
-    'HOME',
-    'USER',
-    'SHELL',
-    'LANG',
-    'TERM',
-    'TMPDIR',
-    'SSH_AUTH_SOCK',
+async function handbackAskingIssue(
+  issue: FiledIssue,
+  result: Diagnosis | IssueWorkerReply,
+  run: RunResult,
+  stage: 'diagnosis' | 'fix',
+): Promise<void> {
+  const body = outcomeDocument(issue, result, undefined, [
+    `Open questions: ${JSON.stringify(result.questions ?? [])}`,
+    `Work: ${stage} run ${run.id}`,
   ])
-  const env: Record<string, string> = {}
-  for (const [key, value] of Object.entries(process.env)) {
-    if (
-      value &&
-      (exact.has(key) ||
-        /^(LC_|XDG_|OPENAI_|XAI_|GROK_|GEMINI_|GOOGLE_|CODEX_|QWEN_|ORCH_)/.test(key))
-    )
-      env[key] = value
+  await handoff(issue.key, `Issue handback from ${stage} ${run.id}`, body)
+  if (run.status !== 'asking') return
+  await abandonRun(
+    run.id,
+    {
+      force: false,
+      note: 'issue coordinator: worker asked; questions recorded on the task',
+      auditReason: null,
+      presentation: {
+        log: console.error,
+        error: console.error,
+        setExitCode: () => {},
+        keptBranchLine: (branch, unique, after, id) =>
+          `kept branch ${branch}: ${unique} unique, ${after ?? 'n/a'} after cut (run ${id})`,
+      },
+    },
+    { lifecycleCheckpoint: () => {}, terminateRunProcesses },
+  )
+}
+
+async function verifyOrHandbackFix(
+  issue: FiledIssue,
+  diagnosis: Diagnosis,
+  diagnosisRun: RunResult,
+  fixRun: RunResult,
+  fix: IssueWorkerReply,
+  reporting: Project,
+  target: Project,
+  sandboxHome: string,
+  branchKey: string,
+): Promise<void> {
+  if (issueRunAsked(fixRun, fix)) {
+    await handbackAskingIssue(issue, fix, fixRun, 'fix')
+    return
   }
-  return env
+  await comment(
+    issue.key,
+    `Fix run ${fixRun.id} completed on branch ${fixRun.worktree?.branch ?? fix.branch ?? 'unknown'}; committed work is durable and coordinator verification is starting.`,
+  )
+  const before =
+    diagnosisRun.worktree && issue.reproduceCommand
+      ? await shell(issue.reproduceCommand, diagnosisRun.worktree.path, {
+          project: reporting,
+          sandboxHome,
+        })
+      : { ok: false, text: 'no reproduction command', exitCode: -1 }
+  const after =
+    fixRun.worktree && issue.reproduceCommand
+      ? await shell(issue.reproduceCommand, fixRun.worktree.path, {
+          project: target,
+          sandboxHome,
+        })
+      : { ok: false, text: 'no reproduction command', exitCode: -1 }
+  const gate = target.settings.gate
+  const plainGate =
+    gate && fixRun.worktree
+      ? await shell(gate, fixRun.worktree.path, { project: target, sandboxHome })
+      : { ok: false, text: 'project has no configured gate', exitCode: -1 }
+  const environmentGate =
+    gate && fixRun.worktree
+      ? await shell(gate, fixRun.worktree.path, {
+          project: target,
+          sandboxHome,
+          workerEnvironment: {
+            ...workerGateEnvironment(process.env),
+            ...trackedRecipeEnvironment(fixRun.id),
+            ...prepareSharedRefGuard(fixRun.worktree.path, `refs/heads/${fixRun.worktree.branch}`),
+          },
+        })
+      : { ok: false, text: 'project has no configured gate', exitCode: -1 }
+  await comment(
+    issue.key,
+    `Independent measurements and both gates completed for run ${fixRun.id}; blast-radius review is starting.`,
+  )
+  const lens = fixRun.worktree
+    ? await run({
+        job: 'review-lens',
+        cwd: fixRun.worktree.path,
+        lens: 'issue-blast-radius',
+        key: branchKey,
+        carry: true,
+        prompt: `Independently inspect task ${issue.key} and the current commit/diff. What is wrong with this change through the single lens: what else uses what it touched? Do not seek agreement and do not use any worker conclusion. Task filing:\n${boundedIssuePack(issue)}`,
+        label: `issue ${issue.key} blast radius`,
+      })
+    : null
+  const review = lens ? parseReviewOutput(lens.output) : null
+  // Findings runs record their review as part of terminalisation. Parsing it
+  // here still decides coordinator readiness; capture no longer needs a
+  // second, issue-specific write.
+  const ready = issueFixReady(
+    fix,
+    diagnosis,
+    before.text,
+    after.text,
+    plainGate.ok,
+    environmentGate.ok,
+    review?.findings.length ?? -1,
+  )
+  const extra = [
+    `Coordinator before: ${before.text}`,
+    `Coordinator after: ${after.text}`,
+    `Coordinator plain gate: ${plainGate.text}`,
+    `Coordinator worker-environment gate: ${environmentGate.text}`,
+    `Blast-radius lens run: ${lens?.id ?? 'not run'}; findings: ${JSON.stringify(review?.findings ?? null)}`,
+    `Ready to land: ${ready ? 'yes' : 'no — handed back'}`,
+    `Fix run: ${fixRun.id}`,
+  ]
+  await handoff(
+    issue.key,
+    ready ? 'Issue outcome: fixed, ready to land' : 'Issue handback after verification',
+    outcomeDocument(issue, fix, fix, extra),
+  )
+  await comment(
+    issue.key,
+    `${ready ? 'FIXED and ready to land' : 'Handed back'} on branch ${fixRun.worktree?.branch ?? fix.branch ?? 'unknown'}; coordinator evidence is in the task document.`,
+  )
+  if (fix.cause_matched_report === false) {
+    await comment(
+      issue.key,
+      `Reporter correction: the established cause differed from the report. ${fix.established_cause ?? 'See the outcome document for the measured cause.'}`,
+    )
+  }
 }
 
 function outcomeDocument(
@@ -505,39 +674,83 @@ function outcomeDocument(
   ].join('\n\n')
 }
 
-async function release(result: RunResult | null, keepBranch = false): Promise<string | null> {
+async function release(result: RunResult | null): Promise<string | null> {
   if (!result?.worktree) return null
-  const head = keepBranch
-    ? argv(['git', '-C', result.worktree.path, 'rev-parse', 'HEAD'], result.worktree.path)
-    : null
-  const removed = removeFor(result.worktree, result.worktree.repoRoot, false, keepBranch, result.id)
-  if (removed.removed && keepBranch && head?.ok) {
-    const exists = argv(
-      [
-        'git',
-        '-C',
-        result.worktree.repoRoot,
-        'show-ref',
-        '--verify',
-        '--quiet',
-        `refs/heads/${result.worktree.branch}`,
-      ],
-      result.worktree.repoRoot,
-    )
-    if (!exists.ok) {
-      const restored = argv(
-        ['git', '-C', result.worktree.repoRoot, 'branch', result.worktree.branch, head.text],
-        result.worktree.repoRoot,
-      )
-      if (!restored.ok)
-        return `released tree but could not preserve branch ${result.worktree.branch}: ${restored.text}`
-    }
-  }
-  return removed.removed ? null : removed.detail
+  const closed = closeOutRun(result.id, { intent: 'terminal' })
+  return ['released', 'absent', 'forgotten'].includes(closed.outcome) ? null : closed.detail
 }
 
 function runIdFromCause(cause: unknown): number {
   return Number(cause && typeof cause === 'object' && 'runId' in cause ? cause.runId : 0)
+}
+
+async function recordIssueFailure(
+  issue: FiledIssue,
+  cause: unknown,
+  fixRun: RunResult | null,
+): Promise<boolean> {
+  const runId = runIdFromCause(cause)
+  const row = runId
+    ? (db()
+        .query(
+          'SELECT job, repo, cwd, worktree, branch, base_commit, worktree_source, minted_branch FROM run WHERE id=?',
+        )
+        .get(runId) as {
+        job: string
+        repo: string | null
+        cwd: string | null
+        worktree: string | null
+        branch: string | null
+        base_commit: string | null
+        worktree_source: Worktree['source'] | null
+        minted_branch: string | null
+      } | null)
+    : null
+  const failedFix =
+    !fixRun?.worktree && row?.job === 'issue-worker' && row.worktree && existsSync(row.worktree)
+      ? ({
+          id: runId,
+          worktree: {
+            path: row.worktree,
+            branch: row.branch ?? 'unknown',
+            base: row.base_commit ?? '',
+            repoRoot:
+              (row.repo ? projectByName(row.repo)?.path : null) ??
+              repoRootOf(row.worktree) ??
+              row.cwd ??
+              process.cwd(),
+            source: row.worktree_source ?? undefined,
+            mintedBranch: row.minted_branch,
+          },
+        } as RunResult)
+      : null
+  const catchFix = fixRun?.worktree ? fixRun : failedFix
+  const disposition = catchFix?.worktree
+    ? catchFixTreeDisposition(catchFix.worktree, worktreeDirty(catchFix.worktree.path).dirty)
+    : catchFixTreeDisposition(null, false)
+  let treeRecord = disposition.handoff
+  if (disposition.action === 'release' && catchFix) {
+    const failure = await release(catchFix)
+    if (failure)
+      treeRecord = `Worktree was not released: ${failure}. Branch: ${catchFix.worktree?.branch ?? 'unknown'}.`
+  }
+  const body = [
+    `Coordinator stopped: ${String((cause as Error)?.message ?? cause)}`,
+    `Run: ${runId || 'none'}`,
+    treeRecord,
+    `Resume with: orch fix-defect ${issue.key}`,
+    'What remains unresolved: the coordinator pass did not reach a recorded outcome.',
+  ].join('\n\n')
+  await handoff(
+    issue.key,
+    `Issue handback after coordinator failure${runId ? ` ${runId}` : ''}`,
+    body,
+  )
+  await comment(
+    issue.key,
+    `Issue coordinator stopped; handback recorded${runId ? ` for run ${runId}` : ''}.`,
+  )
+  return disposition.action !== 'none'
 }
 
 /** Work exactly one named issue; every durable fact is written before its tree is released. */
@@ -545,6 +758,7 @@ export async function workIssue(key: string): Promise<void> {
   const started = Date.now()
   const shown = JSON.parse(await hub(['task', 'show', key, '--json']))
   const issue = parseFiledIssue(shown)
+  const priorRecord = await priorIssueRecord(shown)
   if (issue.kind !== 'defect') {
     const body = [
       `This first vertical slice requires a reproducible defect; ${issue.key} is a suggestion.`,
@@ -561,6 +775,20 @@ export async function workIssue(key: string): Promise<void> {
   }
   const reporting = projectByName(issue.reportingProject)
   if (!reporting) throw new Error(`unknown reporting project "${issue.reportingProject}"`)
+  if (!srtInstalled()) {
+    const body = [
+      'Coordinator could not attempt this issue because the sandbox runtime is not installed.',
+      `Install it with \`bun install\` at the ${PLATFORM_NAME} repository root, then retry.`,
+      'No reproduction or gate command was run on the host.',
+      `Resume with: orch fix-defect ${issue.key}`,
+    ].join('\n\n')
+    await handoff(issue.key, 'Issue handback: sandbox runtime is missing', body)
+    await comment(
+      issue.key,
+      'Could not attempt: sandbox runtime is missing; no host fallback was used.',
+    )
+    return
+  }
   const seeds = reporting.settings.worktree?.seeds ?? []
   const seed = seedFromReport(reporting, issue.environment)
   if (seeds.length && !seed) {
@@ -579,9 +807,12 @@ export async function workIssue(key: string): Promise<void> {
   }
 
   const scratch = mkdtempSync(join(tmpdir(), 'orch-issue-'))
+  const sandboxHome = join(scratch, 'home')
+  mkdirSync(sandboxHome)
   let diagnosisRun: RunResult | null = null
   let fixRun: RunResult | null = null
   let completed = false
+  let fixTreeSettled = false
   try {
     const diagnosisSchema = join(scratch, 'diagnosis.schema.json')
     writeFileSync(diagnosisSchema, JSON.stringify(ISSUE_DIAGNOSIS_SCHEMA, null, 2))
@@ -591,7 +822,7 @@ export async function workIssue(key: string): Promise<void> {
     )
     diagnosisRun = await run({
       job: 'diagnose',
-      prompt: diagnosisPrompt(issue),
+      prompt: diagnosisPrompt(issue, priorRecord),
       cwd: reporting.path,
       schemaPath: diagnosisSchema,
       mcp: true,
@@ -604,12 +835,8 @@ export async function workIssue(key: string): Promise<void> {
       `Issue diagnosis run ${diagnosisRun.id}: ${diagnosis.established_cause ?? diagnosis.outcome ?? diagnosis.status}. Evidence has been captured before release.`,
     )
 
-    if (diagnosis.status !== 'done' || diagnosis.questions?.length) {
-      const body = outcomeDocument(issue, diagnosis, undefined, [
-        `Open questions: ${JSON.stringify(diagnosis.questions ?? [])}`,
-        `Work: diagnosis run ${diagnosisRun.id}`,
-      ])
-      await handoff(issue.key, `Issue handback from diagnosis ${diagnosisRun.id}`, body)
+    if (issueRunAsked(diagnosisRun, diagnosis)) {
+      await handbackAskingIssue(issue, diagnosis, diagnosisRun, 'diagnosis')
       completed = true
       return
     }
@@ -657,7 +884,10 @@ export async function workIssue(key: string): Promise<void> {
         .reduce<unknown>((value, part) => ({ [part]: value }), proposed)
       const before =
         diagnosisRun.worktree && issue.reproduceCommand
-          ? shell(issue.reproduceCommand, diagnosisRun.worktree.path)
+          ? await shell(issue.reproduceCommand, diagnosisRun.worktree.path, {
+              project: reporting,
+              sandboxHome,
+            })
           : { ok: false, text: 'no reproduction command', exitCode: -1 }
       const applied = argv(
         [
@@ -673,9 +903,10 @@ export async function workIssue(key: string): Promise<void> {
       )
       const after =
         applied.ok && diagnosisRun.worktree && issue.reproduceCommand
-          ? shell(issue.reproduceCommand, diagnosisRun.worktree.path, {
-              ...process.env,
-              ORCH_DB: copy,
+          ? await shell(issue.reproduceCommand, diagnosisRun.worktree.path, {
+              project: reporting,
+              sandboxHome,
+              orchStore: copy,
             })
           : {
               ok: false,
@@ -716,12 +947,7 @@ export async function workIssue(key: string): Promise<void> {
       completed = true
       return
     }
-    const target =
-      diagnosis.cause_location === 'orch-code'
-        ? projectByName(PLATFORM_SLUG)
-        : diagnosis.target_project
-          ? projectByName(diagnosis.target_project)
-          : reporting
+    const target = diagnosedTarget(diagnosis, reporting)
     if (!target) throw new Error('diagnosis did not resolve a registered target project')
     let branchKey = issue.key
     if (target.name !== PLATFORM_SLUG) {
@@ -768,116 +994,25 @@ export async function workIssue(key: string): Promise<void> {
       label: `issue ${issue.key} fix`,
     })
     const fix = parseIssueReply<IssueWorkerReply>(fixRun.output, ISSUE_WORKER_SCHEMA)
-    await comment(
-      issue.key,
-      `Fix run ${fixRun.id} completed on branch ${fixRun.worktree?.branch ?? fix.branch ?? 'unknown'}; committed work is durable and coordinator verification is starting.`,
+    await verifyOrHandbackFix(
+      issue,
+      diagnosis,
+      diagnosisRun,
+      fixRun,
+      fix,
+      reporting,
+      target,
+      sandboxHome,
+      branchKey,
     )
-    const before =
-      diagnosisRun.worktree && issue.reproduceCommand
-        ? shell(issue.reproduceCommand, diagnosisRun.worktree.path)
-        : { ok: false, text: 'no reproduction command', exitCode: -1 }
-    const after =
-      fixRun.worktree && issue.reproduceCommand
-        ? shell(issue.reproduceCommand, fixRun.worktree.path)
-        : { ok: false, text: 'no reproduction command', exitCode: -1 }
-    const gate = target.settings.gate
-    const plainGate =
-      gate && fixRun.worktree
-        ? shell(gate, fixRun.worktree.path)
-        : { ok: false, text: 'project has no configured gate', exitCode: -1 }
-    const environmentGate =
-      gate && fixRun.worktree
-        ? shell(gate, fixRun.worktree.path, {
-            ...workerEnv(),
-            ...prepareSharedRefGuard(fixRun.worktree.path, `refs/heads/${fixRun.worktree.branch}`),
-          })
-        : { ok: false, text: 'project has no configured gate', exitCode: -1 }
-    await comment(
-      issue.key,
-      `Independent measurements and both gates completed for run ${fixRun.id}; blast-radius review is starting.`,
-    )
-    const lens = fixRun.worktree
-      ? await run({
-          job: 'review-lens',
-          cwd: fixRun.worktree.path,
-          lens: 'issue-blast-radius',
-          key: branchKey,
-          carry: true,
-          prompt: `Independently inspect task ${issue.key} and the current commit/diff. What is wrong with this change through the single lens: what else uses what it touched? Do not seek agreement and do not use any worker conclusion. Task filing:\n${boundedIssuePack(issue)}`,
-          label: `issue ${issue.key} blast radius`,
-        })
-      : null
-    const review = lens ? parseReviewOutput(lens.output) : null
-    // Findings runs record their review as part of terminalisation. Parsing it
-    // here still decides coordinator readiness; capture no longer needs a
-    // second, issue-specific write.
-    const ready =
-      fix.status === 'done' &&
-      fix.outcome === 'fixed' &&
-      fix.cause_location === diagnosis.cause_location &&
-      before.text === diagnosis.before &&
-      after.text === fix.after &&
-      before.text !== after.text &&
-      plainGate.ok &&
-      environmentGate.ok &&
-      review?.findings.length === 0
-    const extra = [
-      `Coordinator before: ${before.text}`,
-      `Coordinator after: ${after.text}`,
-      `Coordinator plain gate: ${plainGate.text}`,
-      `Coordinator worker-environment gate: ${environmentGate.text}`,
-      `Blast-radius lens run: ${lens?.id ?? 'not run'}; findings: ${JSON.stringify(review?.findings ?? null)}`,
-      `Ready to land: ${ready ? 'yes' : 'no — handed back'}`,
-      `Fix run: ${fixRun.id}`,
-    ]
-    await handoff(
-      issue.key,
-      ready ? 'Issue outcome: fixed, ready to land' : 'Issue handback after verification',
-      outcomeDocument(issue, fix, fix, extra),
-    )
-    await comment(
-      issue.key,
-      `${ready ? 'FIXED and ready to land' : 'Handed back'} on branch ${fixRun.worktree?.branch ?? fix.branch ?? 'unknown'}; coordinator evidence is in the task document.`,
-    )
-    if (fix.cause_matched_report === false) {
-      await comment(
-        issue.key,
-        `Reporter correction: the established cause differed from the report. ${fix.established_cause ?? 'See the outcome document for the measured cause.'}`,
-      )
-    }
     completed = true
   } catch (cause) {
-    const runId = runIdFromCause(cause)
-    const row = runId
-      ? (db().query('SELECT worktree, branch FROM run WHERE id=?').get(runId) as {
-          worktree: string | null
-          branch: string | null
-        } | null)
-      : null
-    const body = [
-      `Coordinator stopped: ${String((cause as Error)?.message ?? cause)}`,
-      `Run: ${runId || 'none'}`,
-      `Worktree held because failed-run state may not be reconstructible: ${row?.worktree ?? 'none recorded'}`,
-      `Branch: ${row?.branch ?? 'none recorded'}`,
-      `Resume with: orch fix-defect ${issue.key}`,
-      `What remains unresolved: the coordinator pass did not reach a recorded outcome.`,
-    ].join('\n\n')
-    await handoff(
-      issue.key,
-      `Issue handback after coordinator failure${runId ? ` ${runId}` : ''}`,
-      body,
-    )
-    await comment(
-      issue.key,
-      `Issue coordinator stopped; handback recorded${runId ? ` for run ${runId}` : ''}.`,
-    )
+    fixTreeSettled = await recordIssueFailure(issue, cause, fixRun)
     completed = true
     throw cause
   } finally {
     const failures = completed
-      ? [await release(fixRun, Boolean(fixRun?.worktree)), await release(diagnosisRun)].filter(
-          Boolean,
-        )
+      ? [fixTreeSettled ? null : await release(fixRun), await release(diagnosisRun)].filter(Boolean)
       : []
     rmSync(scratch, { recursive: true, force: true })
     if (failures.length)
