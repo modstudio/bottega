@@ -14,7 +14,12 @@ import {
   TEST_FLAKE_RECORD_PAYLOAD_COLUMNS,
 } from './landing-outbox.ts'
 import { machineId, machineName } from './machine-identity.ts'
-import { machine, PLATFORM_OPERATOR_USER_ID, PLATFORM_SPACE_ID } from './postgres-schema.ts'
+import {
+  machine,
+  PLATFORM_OPERATOR_USER_ID,
+  PLATFORM_SPACE_ID,
+  RECORD_OWNER_ROLE,
+} from './postgres-schema.ts'
 import {
   contention as contentionRecord,
   landingOverride as landingOverrideRecord,
@@ -185,6 +190,15 @@ async function upsertMachine(
         set: { userId: PLATFORM_OPERATOR_USER_ID, name: identity.name, lastSeen: date(seenAt) },
       })
   })
+}
+
+async function refuseOwnerConnection(postgres: SQL): Promise<void> {
+  const principals = await postgres`SELECT current_user AS principal`
+  if (principals[0]?.principal === RECORD_OWNER_ROLE) {
+    throw new Error(
+      `record sync refuses ${RECORD_OWNER_ROLE} credentials; set ORCH_RECORD_URL to the record_actor connection`,
+    )
+  }
 }
 
 async function pushRun(postgres: SQL, row: Payload): Promise<void> {
@@ -513,6 +527,7 @@ export async function syncRecord(options: RecordSyncOptions = {}): Promise<Recor
   let pushed = 0
   let failed = 0
   try {
+    await refuseOwnerConnection(postgres)
     await upsertMachine(postgres, (options.now ?? nowIso)(), identity)
     const rows = writableLocal
       .query<OutboxRow, []>(

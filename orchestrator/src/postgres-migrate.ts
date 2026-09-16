@@ -7,7 +7,8 @@ import { migrate } from 'drizzle-orm/bun-sql/migrator'
 
 const POSTGRES_MIGRATIONS_FOLDER = join(import.meta.dir, '..', 'postgres', 'migrations')
 
-export async function migratePostgres(url: string): Promise<void> {
+export async function migratePostgres(url = process.env.ORCH_RECORD_MIGRATE_URL): Promise<void> {
+  if (!url) throw new Error('ORCH_RECORD_MIGRATE_URL is required to migrate the record')
   const sql = new SQL(url)
   try {
     await migrate(drizzle({ client: sql }), { migrationsFolder: POSTGRES_MIGRATIONS_FOLDER })
