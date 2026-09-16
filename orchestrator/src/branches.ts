@@ -193,9 +193,15 @@ function branchReportFor(project: Project, keyFilter?: string): BranchReportProj
         .sort(([left], [right]) => left.localeCompare(right))
         .map(([branch, branchRuns]): BranchReportRow => {
           const tip = branches.get(branch)!
+          const commitCount = Number(
+            git(project.path, 'rev-list', '--count', tip, '--not', trunkTip),
+          )
+          if (!Number.isSafeInteger(commitCount) || commitCount < 0) {
+            throw new Error(`git rev-list returned an invalid commit count for ${branch}`)
+          }
           const matchingPr = pullRequests.some((pr) => pr.headRefName === branch)
           let patchEquivalent = null
-          if (!matchingPr) {
+          if (!matchingPr && commitCount > 0) {
             const mergeBase = git(project.path, 'merge-base', trunkTip, tip)
             patchEquivalent = taskBranchPatchEquivalent({
               cwd: project.path,
@@ -209,16 +215,10 @@ function branchReportFor(project: Project, keyFilter?: string): BranchReportProj
             branch,
             mergedPullRequests: pullRequests,
             mergedPullRequestsTruncated: truncated,
+            commitsNotOnTrunk: commitCount,
             patchEquivalent,
-            keyRunRows: keyRows,
             superseded: isTaskBranchSuperseded(branch, keyRows),
           })
-          const commitCount = Number(
-            git(project.path, 'rev-list', '--count', tip, '--not', trunkTip),
-          )
-          if (!Number.isSafeInteger(commitCount) || commitCount < 0) {
-            throw new Error(`git rev-list returned an invalid commit count for ${branch}`)
-          }
           return {
             branch,
             tip,

@@ -10,13 +10,6 @@ export type MergedPullRequest = {
 
 export type PatchEquivalentForm = 'commits' | 'squash'
 
-export type BranchRunRow = {
-  id: number
-  parent_run_id: number | null
-  branch: string
-  launch_base: string | null
-}
-
 export type BranchLanding =
   | {
       state: 'landed'
@@ -31,14 +24,14 @@ export type BranchLanding =
       state: 'landed'
       landedBy: { type: 'patch-equivalent'; form: PatchEquivalentForm }
     }
-  | { state: 'superseded' | 'unlanded' | 'unknown' }
+  | { state: 'empty' | 'superseded' | 'unlanded' | 'unknown' }
 
 export function decideBranchState(input: {
   branch: string
   mergedPullRequests: readonly MergedPullRequest[]
   mergedPullRequestsTruncated: boolean
+  commitsNotOnTrunk: number
   patchEquivalent: PatchEquivalentForm | null
-  keyRunRows: readonly BranchRunRow[]
   superseded: boolean
 }): BranchLanding {
   const pullRequest = input.mergedPullRequests.find((pr) => pr.headRefName === input.branch)
@@ -53,6 +46,7 @@ export function decideBranchState(input: {
       },
     }
   }
+  if (input.commitsNotOnTrunk === 0) return { state: 'empty' }
   if (input.patchEquivalent) {
     return {
       state: 'landed',

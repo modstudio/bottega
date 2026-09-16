@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test'
-import { type BranchRunRow, decideBranchState, type MergedPullRequest } from './branch-state.ts'
+import { decideBranchState, type MergedPullRequest } from './branch-state.ts'
 
 const pullRequest: MergedPullRequest = {
   number: 42,
@@ -8,20 +8,13 @@ const pullRequest: MergedPullRequest = {
   mergedAt: '2026-09-16T12:00:00Z',
 }
 
-const row: BranchRunRow = {
-  id: 4235,
-  parent_run_id: null,
-  branch: pullRequest.headRefName,
-  launch_base: 'main',
-}
-
 function decide(overrides: Partial<Parameters<typeof decideBranchState>[0]> = {}) {
   return decideBranchState({
     branch: pullRequest.headRefName,
     mergedPullRequests: [],
     mergedPullRequestsTruncated: false,
+    commitsNotOnTrunk: 1,
     patchEquivalent: null,
-    keyRunRows: [row],
     superseded: false,
     ...overrides,
   })
@@ -49,6 +42,19 @@ describe('run branch state decision', () => {
 
   test('landing signal order mutation: a matching PR wins over patch equivalence', () => {
     expect(decide({ mergedPullRequests: [pullRequest], patchEquivalent: 'squash' })).toMatchObject({
+      state: 'landed',
+      landedBy: { type: 'pr' },
+    })
+  })
+
+  test('empty precedence mutation: empty beats patch equivalence', () => {
+    expect(decide({ commitsNotOnTrunk: 0, patchEquivalent: 'commits' })).toEqual({
+      state: 'empty',
+    })
+  })
+
+  test('PR proof precedence mutation: a matching PR beats empty', () => {
+    expect(decide({ mergedPullRequests: [pullRequest], commitsNotOnTrunk: 0 })).toMatchObject({
       state: 'landed',
       landedBy: { type: 'pr' },
     })
