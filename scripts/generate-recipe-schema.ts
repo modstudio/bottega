@@ -2,12 +2,8 @@
 /** Generate the editor-facing project config schema from its one Zod definition. */
 import { existsSync, readFileSync, writeFileSync } from 'node:fs'
 import { recipeJsonSchema } from '../orchestrator/src/recipe-schema.ts'
-import { PLATFORM_SLUG } from '../shared/brand.ts'
 
-const outputPath = new URL(
-  `../orchestrator/schemas/${PLATFORM_SLUG}-config.schema.json`,
-  import.meta.url,
-)
+const outputPath = new URL('../orchestrator/schemas/project-config.schema.json', import.meta.url)
 
 export function generatedRecipeSchema(): string {
   const schema = recipeJsonSchema()

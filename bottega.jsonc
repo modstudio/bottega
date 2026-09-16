@@ -1,5 +1,5 @@
 {
-  "$schema": "orchestrator/schemas/bottega-config.schema.json",
+  "$schema": "orchestrator/schemas/project-config.schema.json",
   "worktree": {
     "allocate": { "ports": ["hub"] },
     "create": [
