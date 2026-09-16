@@ -18,7 +18,7 @@ export async function proveScoreRecordSync(input: {
   otherSpaceId: string
   projectName: string
   asSpace: (user: string, password: string, spaceId: string, statement: string) => PsqlResult
-}): Promise<void> {
+}): Promise<{ actorRead: PsqlResult; otherSpaceRead: PsqlResult; rescoredRead: PsqlResult }> {
   const local = new Database(':memory:')
   local.exec(`CREATE TABLE outbox (
     id INTEGER PRIMARY KEY, kind TEXT NOT NULL, record_id TEXT NOT NULL, payload TEXT NOT NULL,
@@ -86,11 +86,7 @@ export async function proveScoreRecordSync(input: {
       `SELECT ${expression} FROM run_score WHERE run_id='${recordId}';`,
     )
   const actorRead = select(input.spaceId, "delivery || '|' || quality || '|' || note")
-  expect(actorRead.code, actorRead.stderr).toBe(0)
-  expect(actorRead.stdout).toBe('full|right|first')
   const otherSpaceRead = select(input.otherSpaceId, 'run_id')
-  expect(otherSpaceRead.code, otherSpaceRead.stderr).toBe(0)
-  expect(otherSpaceRead.stdout).toBe('')
 
   Object.assign(score, {
     delivery: 'partial',
@@ -104,10 +100,9 @@ export async function proveScoreRecordSync(input: {
     .run(recordId, JSON.stringify(score), String(score.scoredAt))
   expect(await sync(input.actorUrl)).toMatchObject({ pushed: 1, failed: 0, pending: 0 })
   const rescoredRead = select(input.spaceId, "delivery || '|' || quality || '|' || note")
-  expect(rescoredRead.code, rescoredRead.stderr).toBe(0)
-  expect(rescoredRead.stdout).toBe('partial|mixed|updated')
   await expect(sync(input.ownerUrl)).rejects.toThrow(
     `record sync refuses ${input.ownerRole} credentials; set ORCH_RECORD_URL to the ${input.actorRole} connection`,
   )
   local.close()
+  return { actorRead, otherSpaceRead, rescoredRead }
 }

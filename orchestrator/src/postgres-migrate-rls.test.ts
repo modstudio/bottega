@@ -944,7 +944,7 @@ realPostgres('RLS proof against real Postgres', () => {
   })
 
   test('sync round trip writes and updates a tenant-confined score', async () => {
-    await proveScoreRecordSync({
+    const { actorRead, otherSpaceRead, rescoredRead } = await proveScoreRecordSync({
       actorUrl: actorUrl!,
       ownerUrl: ownerUrl!,
       actorRole: RECORD_ACTOR_ROLE,
@@ -956,6 +956,12 @@ realPostgres('RLS proof against real Postgres', () => {
       projectName: PLATFORM_SLUG,
       asSpace,
     })
+    expect(actorRead.code, actorRead.stderr).toBe(0)
+    expect(actorRead.stdout).toBe('full|right|first')
+    expect(otherSpaceRead.code, otherSpaceRead.stderr).toBe(0)
+    expect(otherSpaceRead.stdout).toBe('')
+    expect(rescoredRead.code, rescoredRead.stderr).toBe(0)
+    expect(rescoredRead.stdout).toBe('partial|mixed|updated')
   })
 
   test('cross-space write is refused', () => {
