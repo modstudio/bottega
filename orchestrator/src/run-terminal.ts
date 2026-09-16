@@ -120,9 +120,8 @@ export function shouldCheckpointAtTerminal(input: {
   writesJob: boolean
   hasWorktree: boolean
   launchKey: string | null
-  status: string
 }): boolean {
-  return Boolean(input.status) && input.writesJob && input.hasWorktree && Boolean(input.launchKey)
+  return input.writesJob && input.hasWorktree && Boolean(input.launchKey)
 }
 
 function boundedConfinementError(message: string): string {
@@ -213,7 +212,6 @@ export async function finishRun(input: TerminalInput): Promise<TerminalResult> {
     writesJob,
     hasWorktree: Boolean(worktree),
     launchKey,
-    status,
   })
   if (preserveAtTerminal) {
     const checkpoint = checkpointRun({

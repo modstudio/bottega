@@ -8,7 +8,6 @@ describe('terminal checkpoint decision', () => {
         writesJob: true,
         hasWorktree: true,
         launchKey: 'DEV-623',
-        status: 'ok',
       }),
     ).toBe(true)
   })
@@ -19,7 +18,6 @@ describe('terminal checkpoint decision', () => {
         writesJob: false,
         hasWorktree: true,
         launchKey: 'DEV-623',
-        status: 'ok',
       }),
     ).toBe(false)
   })
