@@ -641,16 +641,20 @@ export function allInjectChecks(): { doc: PackDoc; findings: Finding[] }[] {
 }
 
 export function storedPackDrift(): PackDiff[] {
-  const rows = db().query('SELECT job, project FROM canon_pack').all() as {
+  const rows = db().query('SELECT job, project FROM canon_pack ORDER BY id').all() as {
     job: string
     project: string | null
   }[]
+  const seen = new Set<string>()
   return rows.flatMap((row) => {
     if (!JOBS[row.job]) return []
     const cwd = row.project ? projectByName(row.project)?.path : ROOT
     if (!cwd) return []
     try {
       const diff = diffPack({ job: row.job, cwd })
+      const address = JSON.stringify([diff.job, diff.project])
+      if (seen.has(address)) return []
+      seen.add(address)
       return diff.removed.length || (diff.stored && diff.bytesDelta < -(diff.stored.bytes * 0.25))
         ? [diff]
         : []
