@@ -5,6 +5,7 @@ import { settleDeletedBranch } from './branch-settlement.ts'
 import {
   type BranchLanding,
   decideBranchState,
+  decideProtectedBranch,
   decidePruneEligibility,
   type MergedPullRequest,
   type PatchEquivalentForm,
@@ -47,6 +48,7 @@ type BranchReportProject = {
   trunk: string
   error?: string
   truncated: boolean
+  protected: { branch: string; runIds: number[] }[]
   keys: { key: string; branches: BranchReportRow[] }[]
 }
 
@@ -225,6 +227,7 @@ function checkedOutBranches(project: Project): Set<string> {
 function branchReportFor(project: Project, keyFilter?: string): BranchReportProject {
   const trunk = project.settings.trunk?.trim() ?? ''
   if (!trunk) throw new Error(`project ${project.name} has no trunk configured`)
+  const productionBranch = project.settings.productionBranch?.trim() ?? ''
   git(project.path, 'remote', 'get-url', 'origin')
   const { pullRequests: listedPullRequests, truncated } = mergedPullRequests(project)
   const pullRequests = listedPullRequests.sort((left, right) =>
@@ -242,10 +245,15 @@ function branchReportFor(project: Project, keyFilter?: string): BranchReportProj
     `${trunk}^{commit}`,
   )
   const minted = new Map<string, Map<string, RunRow[]>>()
+  const protectedRuns = new Map<string, RunRow[]>()
   for (const run of runs) {
     if (!run.minted_branch || !branches.has(run.minted_branch)) continue
     const key = run.launch_key ?? 'unkeyed'
     if (keyFilter !== undefined && key !== keyFilter) continue
+    if (decideProtectedBranch({ branch: run.minted_branch, trunk, productionBranch }) !== null) {
+      protectedRuns.set(run.minted_branch, [...(protectedRuns.get(run.minted_branch) ?? []), run])
+      continue
+    }
     const byBranch = minted.get(key) ?? new Map<string, RunRow[]>()
     byBranch.set(run.minted_branch, [...(byBranch.get(run.minted_branch) ?? []), run])
     minted.set(key, byBranch)
@@ -346,7 +354,10 @@ function branchReportFor(project: Project, keyFilter?: string): BranchReportProj
         )
       return { key, branches: reportBranches }
     })
-  return { project: project.name, trunk, truncated, keys }
+  const protectedBranches = [...protectedRuns]
+    .sort(([left], [right]) => left.localeCompare(right))
+    .map(([branch, branchRuns]) => ({ branch, runIds: branchRuns.map((run) => run.id) }))
+  return { project: project.name, trunk, truncated, protected: protectedBranches, keys }
 }
 
 function observationError(project: Project, error: unknown): BranchReportProject {
@@ -361,6 +372,7 @@ function observationError(project: Project, error: unknown): BranchReportProject
     trunk: project.settings.trunk?.trim() ?? '',
     error: `${detail}; fix: ${fix}`,
     truncated: false,
+    protected: [],
     keys: [],
   }
 }
@@ -423,6 +435,14 @@ function deleteAndSettleBranch(
   row: BranchReportRow,
   report: BranchPruneReport,
 ): void {
+  const trunk = project.settings.trunk?.trim() ?? ''
+  const productionBranch = project.settings.productionBranch?.trim() ?? ''
+  const protectedKind = decideProtectedBranch({ branch: row.branch, trunk, productionBranch })
+  if (protectedKind !== null) {
+    report.kept.push({ branch: row.branch, reason: `registered ${protectedKind}` })
+    report.errors.push(`${row.branch}: refusing to delete registered ${protectedKind} branch`)
+    return
+  }
   try {
     writableDb()
     command(
@@ -518,7 +538,11 @@ function renderProject(project: BranchReportProject): string[] {
   if (project.truncated) {
     lines.push(`  merged PR listing reached ${GH_MERGED_PR_LIMIT}; unmatched branches are unknown`)
   }
-  if (project.keys.length === 0) lines.push('  no run-minted local branches')
+  for (const row of project.protected) {
+    lines.push(`  protected: ${row.branch}  runs ${row.runIds.join(',')}`)
+  }
+  if (project.keys.length === 0 && project.protected.length === 0)
+    lines.push('  no run-minted local branches')
   for (const key of project.keys) {
     lines.push(`  ${key}`)
     lines.push(...key.branches.map(renderBranch))

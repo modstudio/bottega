@@ -45,6 +45,19 @@ export type BranchLanding =
 
 export type PullRequestCommitCheck = { number: number } | { error: string } | null
 
+export type ProtectedBranchKind = 'trunk' | 'production'
+
+/** Decides whether a branch is reserved by the project's registered branch settings. */
+export function decideProtectedBranch(input: {
+  branch: string
+  trunk: string
+  productionBranch: string
+}): ProtectedBranchKind | null {
+  if (input.branch === input.trunk) return 'trunk'
+  if (input.productionBranch && input.branch === input.productionBranch) return 'production'
+  return null
+}
+
 type LaterTurnBranch = { branch: string; state: BranchLanding }
 
 export function decideBranchState(input: {
