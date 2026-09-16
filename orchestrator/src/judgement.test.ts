@@ -268,6 +268,21 @@ describe('score ruling', () => {
     })
   })
 
+  test('score and re-score enqueue the stored verdict with its merged note', () => {
+    const id = insert()
+    score(id, ['full', 'right'], {}, { note: 'first' })
+    score(id, ['partial', 'mixed'], {}, { note: 'second' })
+    const payloads = db()
+      .query<{ payload: string }, []>("SELECT payload FROM outbox WHERE kind='score' ORDER BY id")
+      .all()
+      .map((row) => JSON.parse(row.payload) as Record<string, unknown>)
+    expect(payloads).toHaveLength(2)
+    expect(payloads[0]).toMatchObject({ delivery: 'full', quality: 'right', note: 'first' })
+    expect(payloads[1]).toMatchObject({ delivery: 'partial', quality: 'mixed' })
+    expect(payloads[1]!.note).toContain('first')
+    expect(payloads[1]!.note).toContain('second')
+  })
+
   test('no pair offer across different spec_sha', () => {
     const a = insert()
     const b = insert()
@@ -509,6 +524,17 @@ describe('voided output evidence', () => {
       delivery: 'none',
       quality: null,
     })
+    const outbox = db()
+      .query<{ kind: string; payload: string }, [number]>(
+        `SELECT kind,payload FROM outbox
+          WHERE record_id=(SELECT record_id FROM run WHERE id=?) ORDER BY id`,
+      )
+      .all(id)
+    expect(outbox.map((row) => row.kind)).toEqual(['score', 'run'])
+    expect(JSON.parse(outbox[0]!.payload)).toMatchObject({ delivery: 'none', quality: null })
+    expect(JSON.parse(outbox[1]!.payload)).toMatchObject({
+      evidenceExcluded: 'voided with orch score --void',
+    })
     expect(
       db().query('SELECT COUNT(*) n FROM duel WHERE winner_run_id=? OR loser_run_id=?').get(id, id),
     ).toEqual({ n: 0 })
@@ -531,6 +557,13 @@ describe('voided output evidence', () => {
       evidence_excluded: null,
     })
     expect(db().query('SELECT COUNT(*) n FROM score WHERE run_id=?').get(id)).toEqual({ n: 0 })
+    expect(
+      db()
+        .query<{ n: number }, [number]>(
+          'SELECT COUNT(*) n FROM outbox WHERE record_id=(SELECT record_id FROM run WHERE id=?)',
+        )
+        .get(id),
+    ).toEqual({ n: 0 })
   })
 
   test('score --void says why a NOT_EVIDENCE failure verdict was not recorded', () => {

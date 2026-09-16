@@ -1,9 +1,11 @@
 // concern: postgres-schema-run
 /** Knows the hosted run record shape. Must not know local execution state or synchronization. */
+import { sql } from 'drizzle-orm'
 import {
   type AnyPgColumn,
   bigint,
   boolean,
+  check,
   doublePrecision,
   integer,
   jsonb,
@@ -84,5 +86,36 @@ export const run = pgTable.withRLS(
   (table) => [
     unique('run_machine_local_unique').on(table.machineId, table.localId),
     ...tenantPolicies('run', table.spaceId),
+  ],
+)
+
+export const runScore = pgTable.withRLS(
+  'run_score',
+  {
+    runId: uuid('run_id').primaryKey(),
+    spaceId: spaceIdentity(),
+    delivery: text().notNull(),
+    quality: text(),
+    fidelity: text(),
+    note: text(),
+    scoredAt: timestamp('scored_at', { withTimezone: true }).notNull(),
+    scoredBy: text('scored_by').notNull(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull(),
+  },
+  (table) => [
+    check('run_score_delivery_check', sql`${table.delivery} IN ('none', 'partial', 'full')`),
+    check(
+      'run_score_quality_check',
+      sql`${table.quality} IS NULL OR ${table.quality} IN ('wrong', 'mixed', 'right')`,
+    ),
+    check(
+      'run_score_fidelity_check',
+      sql`${table.fidelity} IS NULL OR ${table.fidelity} IN ('drifted', 'partial', 'faithful')`,
+    ),
+    check(
+      'run_score_delivery_quality_check',
+      sql`(${table.delivery} = 'none') = (${table.quality} IS NULL)`,
+    ),
+    ...tenantPolicies('run_score', table.spaceId),
   ],
 )

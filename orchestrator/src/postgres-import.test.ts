@@ -12,6 +12,7 @@ import { RECORD_SESSION_KEY, recordAuth, setActiveRecordSpace } from './record-a
 import { syncRecord } from './record-sync.ts'
 import { backfillReviewRecords } from './review-outbox.ts'
 import { backfillRunRecords } from './run-outbox.ts'
+import { backfillScoreRecords } from './score-outbox.ts'
 
 const container = process.env.ORCH_TEST_POSTGRES_CONTAINER
 const databaseUrl = process.env.ORCH_TEST_POSTGRES_URL
@@ -79,7 +80,7 @@ realPostgres('project import against copied live SQLite data', () => {
   afterAll(async () => {
     delete process.env.BETTER_AUTH_SECRET
     await sql.unsafe(
-      'DROP TABLE IF EXISTS membership, machine, seq, project, "user", space CASCADE',
+      'DROP TABLE IF EXISTS run_score, membership, machine, seq, project, "user", space CASCADE',
     )
     await sql.unsafe('DROP SCHEMA IF EXISTS drizzle CASCADE')
     await sql.close()
@@ -260,11 +261,13 @@ realPostgres('project import against copied live SQLite data', () => {
       .get()!.value
     source.query('UPDATE outbox SET synced_at=NULL').run()
     const backfill = backfillRunRecords(source, sourceMachineId)
+    const scoreBackfill = backfillScoreRecords(source, sourceMachineId)
     const reviewBackfill = backfillReviewRecords(source)
     const landingEvidenceBackfill = backfillLandingEvidenceRecords(source)
     console.log(
       `live-copy backfill: minted ${backfill.minted}, enqueued ${backfill.enqueued}, skipped-live ${backfill.skippedLive}`,
     )
+    console.log(`live-copy score backfill: enqueued ${scoreBackfill}`)
     console.log(
       `live-copy review backfill: minted ${reviewBackfill.mintedReviews} reviews, ${reviewBackfill.mintedLenses} lenses, ${reviewBackfill.mintedFindings} findings; enqueued ${reviewBackfill.enqueuedReviews} reviews`,
     )
@@ -305,6 +308,13 @@ realPostgres('project import against copied live SQLite data', () => {
          FROM run r JOIN outbox o ON o.record_id=r.record_id AND o.kind='run'`,
       )
       .get()!.count
+    const expectedRecordScores = source
+      .query<{ count: number }, []>(
+        `SELECT count(*) AS count
+           FROM score s JOIN run r ON r.id=s.run_id
+          WHERE r.record_id IS NOT NULL`,
+      )
+      .get()!.count
     const synced = await syncRecord({
       recordUrl: actorUrl!,
       local: source,
@@ -321,6 +331,8 @@ realPostgres('project import against copied live SQLite data', () => {
     expect(synced.pending).toBe(0)
     const recordCount = await sql`SELECT count(*)::int AS count FROM run`
     expect(recordCount[0]!.count).toBe(expectedRecordRuns)
+    const recordScoreCount = await sql`SELECT count(*)::int AS count FROM run_score`
+    expect(recordScoreCount[0]!.count).toBe(expectedRecordScores)
     const recordReviewCounts = await sql`
       SELECT (SELECT count(*)::int FROM review) AS reviews,
              (SELECT count(*)::int FROM review_lens) AS lenses,

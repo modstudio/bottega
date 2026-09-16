@@ -5,7 +5,7 @@ import { importSpecifiers } from './import-scanner.ts'
 
 const ROOT = new URL('..', import.meta.url).pathname.replace(/\/$/, '')
 const FILE = 'shared/record/schema-run.ts'
-const ALLOWED = new Set(['drizzle-orm/pg-core', './schema.ts'])
+const ALLOWED = new Set(['drizzle-orm', 'drizzle-orm/pg-core', './schema.ts'])
 const imports = importSpecifiers(readFileSync(`${ROOT}/${FILE}`, 'utf8'))
 const violations = [...imports.specifiers, ...imports.typeOnlySpecifiers]
   .filter((specifier) => !ALLOWED.has(specifier))

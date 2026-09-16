@@ -16,7 +16,7 @@ import {
   reviewLens as reviewLensRecord,
   review as reviewRecord,
 } from '../../shared/record/schema-review.ts'
-import { run as runRecord } from '../../shared/record/schema-run.ts'
+import { run as runRecord, runScore as runScoreRecord } from '../../shared/record/schema-run.ts'
 import { db, nowIso } from './db.ts'
 import {
   backfillLandingEvidenceRecords,
@@ -41,6 +41,7 @@ import {
   RUN_RECORD_PAYLOAD_COLUMNS,
   type RunRecordBackfillResult,
 } from './run-outbox.ts'
+import { backfillScoreRecords, SCORE_RECORD_PAYLOAD_COLUMNS } from './score-outbox.ts'
 
 type OutboxRow = { id: number; kind: string; record_id: string; payload: string }
 type Payload = Record<string, unknown>
@@ -51,6 +52,7 @@ export type RecordSyncResult = {
   pending: number
   configured: boolean
   backfill?: RunRecordBackfillResult & {
+    scores: number
     reviews: ReviewRecordBackfillResult
     landingEvidence: LandingEvidenceBackfillResult
   }
@@ -169,6 +171,20 @@ function runValues(row: Payload, projectId: string | null) {
     closeOutOutcome: nullableString(row.closeOutOutcome),
     closeOutDetail: nullableString(row.closeOutDetail),
     createdAt: date(row.createdAt),
+    updatedAt: date(row.updatedAt),
+  }
+}
+
+function scoreValues(row: Payload) {
+  return {
+    runId: String(row.id),
+    spaceId: String(row.spaceId),
+    delivery: String(row.delivery),
+    quality: nullableString(row.quality),
+    fidelity: nullableString(row.fidelity),
+    note: nullableString(row.note),
+    scoredAt: date(row.scoredAt),
+    scoredBy: String(row.scoredBy),
     updatedAt: date(row.updatedAt),
   }
 }
@@ -406,6 +422,19 @@ async function projectRecordId(
 
 const recordKinds = {
   run: { columns: RUN_RECORD_PAYLOAD_COLUMNS, push: pushRun },
+  score: {
+    columns: SCORE_RECORD_PAYLOAD_COLUMNS,
+    push: async (postgres: SQL, row: Payload, principal: RecordPrincipal) =>
+      postgres.begin(async (tx) => {
+        await bindPrincipal(tx, principal)
+        const values = scoreValues(row)
+        const { runId: _runId, ...updates } = values
+        await drizzle({ client: tx })
+          .insert(runScoreRecord)
+          .values(values)
+          .onConflictDoUpdate({ target: runScoreRecord.runId, set: updates })
+      }),
+  },
   review: {
     columns: REVIEW_RECORD_PAYLOAD_COLUMNS,
     push: async (postgres: SQL, row: Payload, principal: RecordPrincipal) =>
@@ -519,6 +548,7 @@ export async function syncRecord(options: RecordSyncOptions = {}): Promise<Recor
   const backfill = options.backfill
     ? {
         ...backfillRunRecords(local!, identity.id),
+        scores: backfillScoreRecords(local!, identity.id),
         reviews: backfillReviewRecords(local!),
         landingEvidence: backfillLandingEvidenceRecords(local!),
       }
