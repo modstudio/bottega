@@ -66,7 +66,7 @@
           },
           "contents": {
             "type": "string",
-            "description": "Filled from the recipe static values, {index}, {ports.*}, {db.*}, and {alloc.*}. Secret values must never appear in errors, logs, run records, or the store."
+            "description": "Filled from the recipe static values, {label}, {index}, {ports.*}, {db.*}, and {alloc.*}. Secret values must never appear in errors, logs, run records, or the store."
           },
           "mode": {
             "type": "string",

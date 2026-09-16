@@ -16,6 +16,7 @@ import {
 } from 'node:fs'
 import { basename, dirname, join } from 'node:path'
 import { db, nowIso, writeTransaction } from './db.ts'
+import { orchRunLabel } from './docker-resources.ts'
 import { managedBlockPlan, omitKeys } from './env-file.ts'
 import { git, gitOk } from './git-environment.ts'
 import type { WorktreeTool } from './projects.ts'
@@ -280,6 +281,7 @@ function loadRecipeAtBase(input: { tool: WorktreeTool; repoRoot: string; baseRef
 function renderedPlaceholder(name: string): string {
   if (name === 'main') return name
   if (name === 'index') return '$ORCH_INDEX'
+  if (name === 'label') return '$ORCH_RUN_LABEL'
   const allocation = name.match(/^(ports|db|alloc)\.(.+)$/)
   if (allocation) {
     return `$${allocationEnvironmentVariable(
@@ -346,9 +348,12 @@ export function trackedRecipeNotes(tool: WorktreeTool, repoRoot: string): string
 
 export function recipeAllocationEnvironment(
   allocations: RecipeAllocations | undefined,
+  rootRunId?: number,
 ): Record<string, string> {
-  if (!allocations) return {}
-  const environment: Record<string, string> = { ORCH_INDEX: String(allocations.index) }
+  const environment: Record<string, string> = {}
+  if (rootRunId !== undefined) environment.ORCH_RUN_LABEL = orchRunLabel(rootRunId)
+  if (!allocations) return environment
+  environment.ORCH_INDEX = String(allocations.index)
   for (const [name, port] of Object.entries(allocations.ports)) {
     environment[allocationEnvironmentVariable('ports', name)] = String(port)
   }
@@ -361,8 +366,31 @@ export function recipeAllocationEnvironment(
   return environment
 }
 
+export function trackedRecipeVars(
+  staticVars: Record<string, string>,
+  allocations: RecipeAllocations,
+  rootRunId: number,
+): Record<string, string> {
+  const vars: Record<string, string> = {
+    ...staticVars,
+    index: String(allocations.index),
+    label: orchRunLabel(rootRunId),
+  }
+  for (const [portName, port] of Object.entries(allocations.ports)) {
+    vars[`ports.${portName}`] = String(port)
+  }
+  for (const [databaseName, value] of Object.entries(allocations.databases)) {
+    vars[`db.${databaseName}`] = value
+  }
+  for (const [allocationName, value] of Object.entries(allocations.strings)) {
+    vars[`alloc.${allocationName}`] = value
+  }
+  return vars
+}
+
 export function trackedRecipeEnvironment(runId: number): Record<string, string> {
-  return recipeAllocationEnvironment(readSnapshot(runId).snapshot?.allocations)
+  const stored = readSnapshot(runId)
+  return recipeAllocationEnvironment(stored.snapshot?.allocations, stored.rootRunId)
 }
 
 export function executeTrackedCreateSteps(
@@ -435,17 +463,24 @@ function readSnapshot(runId: number): {
   snapshot: RecipeSnapshot | null
   key: string | null
   seed: string | null
+  rootRunId: number
 } {
   const row = db()
     .query(
-      `SELECT recipe_snapshot snapshot, launch_key key, launch_seed seed FROM run
+      `SELECT id root_run_id,recipe_snapshot snapshot,launch_key key,launch_seed seed FROM run
        WHERE id=(SELECT COALESCE(parent_run_id,id) FROM run WHERE id=?)`,
     )
-    .get(runId) as { snapshot: string | null; key: string | null; seed: string | null } | null
+    .get(runId) as {
+    root_run_id: number
+    snapshot: string | null
+    key: string | null
+    seed: string | null
+  } | null
   return {
     snapshot: row?.snapshot ? (JSON.parse(row.snapshot) as RecipeSnapshot) : null,
     key: row?.key ?? null,
     seed: row?.seed ?? null,
+    rootRunId: row?.root_run_id ?? runId,
   }
 }
 
@@ -494,16 +529,7 @@ function prepareTrackedCreate(
     staticVars,
   })
   const { allocations } = allocationAttempt
-  const vars: Record<string, string> = { ...staticVars, index: String(allocations.index) }
-  for (const [portName, port] of Object.entries(allocations.ports)) {
-    vars[`ports.${portName}`] = String(port)
-  }
-  for (const [databaseName, value] of Object.entries(allocations.databases)) {
-    vars[`db.${databaseName}`] = value
-  }
-  for (const [allocationName, value] of Object.entries(allocations.strings)) {
-    vars[`alloc.${allocationName}`] = value
-  }
+  const vars = trackedRecipeVars(staticVars, allocations, readSnapshot(input.runId).rootRunId)
   executeTrackedPreSteps(
     loaded.recipe,
     { treeRoot: input.repoRoot, vars },
@@ -629,7 +655,12 @@ export function teardownTrackedRecipe(
     runId: number
     worktree: Worktree
     remove(): { removed: boolean; detail: string }
-    stored?: { snapshot: RecipeSnapshot | null; key: string | null; seed: string | null }
+    stored?: {
+      snapshot: RecipeSnapshot | null
+      key: string | null
+      seed: string | null
+      rootRunId?: number
+    }
     treeExists?: boolean
     liveDatabaseClaims?: number
   },
@@ -660,6 +691,7 @@ export function teardownTrackedRecipe(
     key: stored.key,
     seed: stored.seed,
     main: input.worktree.repoRoot,
+    label: orchRunLabel(stored.rootRunId ?? readSnapshot(input.runId).rootRunId),
     allocations: stored.snapshot.allocations,
   })
   const treeExists = input.treeExists ?? existsSync(input.worktree.path)
