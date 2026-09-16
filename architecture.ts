@@ -40,6 +40,7 @@ export const concerns: ConcernManifest = {
 }
 
 export const modules: ArchitectureModule[] = [
+  module('orchestrator/src/artifact-paths.ts', ['node:path']),
   module('orchestrator/src/agent-probe.ts', [
     './agent-registry.ts',
     './agents.ts',

@@ -3,6 +3,7 @@ import { readFileSync } from 'node:fs'
 import { dirname, relative, resolve } from 'node:path'
 
 const DEGRADED_COLLECTION_GRAPH = [
+  'artifact-paths.ts',
   'clock.ts',
   'collect.ts',
   'failure.ts',
