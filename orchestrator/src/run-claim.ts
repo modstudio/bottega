@@ -43,7 +43,11 @@ import {
   recordTrustEntryClaims,
 } from './resource-claims.ts'
 import { teardownTerminalRunResources } from './resource-ownership.ts'
-import type { ResumeTreePlan } from './resume-tree.ts'
+import {
+  type ResumeCreationLifecycle,
+  type ResumeTreePlan,
+  resumeCreationOptions,
+} from './resume-tree.ts'
 import { inferredReadOnlyKey } from './review-target.ts'
 import {
   noRepoIsolatePath,
@@ -85,31 +89,17 @@ function prepareResumeBranchIfNeeded(
   if (!current) git(['update-ref', `refs/heads/${plan.branch}`, plan.tip], repoRoot)
 }
 
-function resumeCreationOptions(
-  plan: RecreateResumeTreePlan | undefined,
+function resumeCreationLifecycle(tool: ReturnType<typeof toolFor>): ResumeCreationLifecycle {
+  if (tool?.create) return 'command-template'
+  if (tool?.recipe || tool?.recipePath) return 'recipe'
+  return 'built-in-git'
+}
+
+function resumeCreationTool(
+  useCreateTool: boolean,
   tool: ReturnType<typeof toolFor>,
-): {
-  tool: ReturnType<typeof toolFor>
-  baseRef: string | undefined
-  existingBranch: string | undefined
-  existingBranchTip: string | undefined
-} {
-  if (!plan)
-    return { tool, baseRef: undefined, existingBranch: undefined, existingBranchTip: undefined }
-  if (plan.action === 'recreate-on-branch') {
-    return {
-      tool: null,
-      baseRef: undefined,
-      existingBranch: plan.existingBranch,
-      existingBranchTip: plan.tip,
-    }
-  }
-  return {
-    tool,
-    baseRef: undefined,
-    existingBranch: plan.existingBranch,
-    existingBranchTip: plan.tip,
-  }
+): ReturnType<typeof toolFor> {
+  return useCreateTool ? tool : null
 }
 
 function restoreResumeIfNeeded(
@@ -630,7 +620,8 @@ export async function claimRun(input: ClaimInput): Promise<ClaimResult> {
         const repoRoot = repoRootOf(callerCwd)
         if (!repoRoot) throw new Error(`not a git repository: ${callerCwd}`)
         prepareResumeBranchIfNeeded(repoRoot, resumePlan)
-        const resumeCreation = resumeCreationOptions(resumePlan, tool)
+        const resumeCreation = resumeCreationOptions(resumePlan, resumeCreationLifecycle(tool))
+        const creationTool = resumeCreationTool(resumeCreation.useCreateTool, tool)
         const recordWorktree = (created: Worktree) => {
           writeTransaction(() => {
             const result = db()
@@ -694,7 +685,7 @@ export async function claimRun(input: ClaimInput): Promise<ClaimResult> {
           // every test the worker runs is meaningless and green. The isolation
           // module selects the declared lifecycle or Git fallback as one operation.
           const created = createWorkerWorktree({
-            tool: resumeCreation.tool,
+            tool: creationTool,
             cwd: callerCwd,
             runId: claim.id,
             writes: writesJob,

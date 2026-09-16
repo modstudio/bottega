@@ -1,5 +1,10 @@
 import { describe, expect, test } from 'bun:test'
-import { continuationBranchPlan, type ResumeTreeFacts, resumeTreePlan } from './resume-tree.ts'
+import {
+  continuationBranchPlan,
+  type ResumeTreeFacts,
+  resumeCreationOptions,
+  resumeTreePlan,
+} from './resume-tree.ts'
 
 const base: ResumeTreeFacts = {
   rootId: 3970,
@@ -99,6 +104,40 @@ describe('continuation branch decision', () => {
       branch: 'DEV-623-orch-4285',
       tip: null,
       source: 'root retained branch',
+    })
+  })
+})
+
+describe('resume creation decision', () => {
+  const plan = resumeTreePlan({ ...base, hasCreate: true })
+  if (plan.action === 'attach-recorded' || plan.action === 'refuse') {
+    throw new Error('bad fixture')
+  }
+
+  test('rejects passing the existing branch to a command-template create tool', () => {
+    expect(resumeCreationOptions(plan, 'command-template')).toEqual({
+      baseRef: 'branch-tip',
+      existingBranch: undefined,
+      existingBranchTip: undefined,
+      useCreateTool: true,
+    })
+  })
+
+  test('rejects minting a new branch or skipping provisioning for a tracked or inline recipe', () => {
+    expect(resumeCreationOptions(plan, 'recipe')).toEqual({
+      baseRef: undefined,
+      existingBranch: 'technical/ADN-123-orch-3970',
+      existingBranchTip: 'branch-tip',
+      useCreateTool: true,
+    })
+  })
+
+  test('rejects invoking a tool or minting a new branch for built-in Git creation', () => {
+    expect(resumeCreationOptions(plan, 'built-in-git')).toEqual({
+      baseRef: undefined,
+      existingBranch: 'technical/ADN-123-orch-3970',
+      existingBranchTip: 'branch-tip',
+      useCreateTool: false,
     })
   })
 })

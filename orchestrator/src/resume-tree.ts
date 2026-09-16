@@ -40,6 +40,45 @@ export type ContinuationBranchPlan = {
   source: 'latest turn branch' | 'root retained branch' | 'latest recorded branch' | 'none'
 }
 
+export type ResumeCreationLifecycle = 'command-template' | 'recipe' | 'built-in-git'
+
+export type ResumeCreationOptions = {
+  baseRef: string | undefined
+  existingBranch: string | undefined
+  existingBranchTip: string | undefined
+  useCreateTool: boolean
+}
+
+/** Keep command-owned branch creation; recipes and Git recreate the conversation branch. */
+export function resumeCreationOptions(
+  plan:
+    | Extract<ResumeTreePlan, { action: 'recreate-on-branch' | 'recreate-then-restore' }>
+    | undefined,
+  lifecycle: ResumeCreationLifecycle,
+): ResumeCreationOptions {
+  if (!plan)
+    return {
+      baseRef: undefined,
+      existingBranch: undefined,
+      existingBranchTip: undefined,
+      useCreateTool: lifecycle !== 'built-in-git',
+    }
+  if (lifecycle === 'command-template') {
+    return {
+      baseRef: plan.tip,
+      existingBranch: undefined,
+      existingBranchTip: undefined,
+      useCreateTool: true,
+    }
+  }
+  return {
+    baseRef: undefined,
+    existingBranch: plan.existingBranch,
+    existingBranchTip: plan.tip,
+    useCreateTool: lifecycle === 'recipe',
+  }
+}
+
 /** Prefer the latest turn's live branch, then preserve the prior fallback order. */
 export function continuationBranchPlan(input: {
   latestBranch: string | null
