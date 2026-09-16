@@ -310,7 +310,7 @@ describe('doc router', () => {
   })
 
   test('subjects returns what docSubjects returns', async () => {
-    const subjects = { project: ['alpha'], agent: ['codex'], job: ['implement'] }
+    const subjects = { project: ['alpha'], stack: ['bun'], agent: ['codex'], job: ['implement'] }
     docSubjects.mockResolvedValueOnce(subjects)
     expect(await caller.doc.subjects()).toEqual(subjects)
     expect(docSubjects).toHaveBeenCalled()

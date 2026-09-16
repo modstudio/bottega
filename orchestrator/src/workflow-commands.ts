@@ -3,6 +3,16 @@
 import { readFileSync } from 'node:fs'
 import { flagValue, flagValues } from './args.ts'
 import {
+  exportStepCatalogue,
+  forkStepCatalogue,
+  importStepCatalogue,
+  promoteStepCatalogue,
+  retireStepCatalogue,
+  setStepCatalogue,
+  showStepCatalogue,
+  stepCatalogueVersions,
+} from './step-catalogue.ts'
+import {
   composeWorkflow,
   exportWorkflows,
   forkWorkflow,
@@ -30,7 +40,8 @@ export function workflowCommand(argv: string[], presentation: Presentation): voi
   const flag = (name: string) => flagValue(argv, name)
   const print = (value: unknown, line?: string) =>
     presentation.log(json ? JSON.stringify(value) : (line ?? JSON.stringify(value, null, 2)))
-  if (sub === 'list') {
+  if (sub === 'catalogue') catalogueCommand(argv.slice(1), print)
+  else if (sub === 'list') {
     const rows = listWorkflows()
     print(
       rows,
@@ -42,13 +53,8 @@ export function workflowCommand(argv: string[], presentation: Presentation): voi
         .join('\n'),
     )
   } else if (sub === 'show') print(showWorkflow(argv[2]!, positive(flag('version'), '--version')))
-  else if (sub === 'set') {
-    const file = flag('file')
-    if (!file) throw new Error('file is required')
-    print(
-      setWorkflow(argv[2]!, JSON.parse(readFileSync(file, 'utf8')), flag('reason'), flag('author')),
-    )
-  } else if (sub === 'promote')
+  else if (sub === 'set') setWorkflowCommand(argv, print)
+  else if (sub === 'promote')
     print(promoteWorkflow(argv[2]!, positive(argv[3], 'version')!, flag('reason'), flag('author')))
   else if (sub === 'retire')
     print(retireWorkflow(argv[2]!, positive(argv[3], 'version')!, flag('reason'), flag('author')))
@@ -56,14 +62,55 @@ export function workflowCommand(argv: string[], presentation: Presentation): voi
     print(forkWorkflow(argv[2]!, positive(flag('from'), '--from'), flag('reason'), flag('author')))
   else if (sub === 'versions') print(workflowVersions(argv[2]!))
   else if (sub === 'compose') composeCommand(argv, json, print, presentation)
-  else if (sub === 'step') {
-    const step = getWorkflowStep(argv[2]!, argv[3]!, workflowArgs(argv))
-    print(step, step.body)
-  } else if (sub === 'export') exportWorkflows(argv[2]!)
+  else if (sub === 'step') stepCommand(argv, print)
+  else if (sub === 'export') exportWorkflows(argv[2]!)
   else if (sub === 'import') print(importWorkflows(argv[2]!, flag('reason'), flag('author')))
   else
     throw new Error(
       'unknown: orch workflow. Try list | show | set | promote | retire | fork | versions | compose | step | export | import',
+    )
+}
+
+function setWorkflowCommand(argv: string[], print: (value: unknown, line?: string) => void): void {
+  const file = flagValue(argv, 'file')
+  if (!file) throw new Error('file is required')
+  print(
+    setWorkflow(
+      argv[2]!,
+      JSON.parse(readFileSync(file, 'utf8')),
+      flagValue(argv, 'reason'),
+      flagValue(argv, 'author'),
+    ),
+  )
+}
+
+function stepCommand(argv: string[], print: (value: unknown, line?: string) => void): void {
+  const project = flagValue(argv, 'project')
+  if (!project) throw new Error('--project is required')
+  const step = getWorkflowStep(argv[2]!, project, argv[3]!, workflowArgs(argv))
+  print(step, step.body)
+}
+
+function catalogueCommand(argv: string[], print: (value: unknown, line?: string) => void): void {
+  const sub = argv[1]
+  const flag = (name: string) => flagValue(argv, name)
+  if (sub === 'show') print(showStepCatalogue(positive(flag('version'), '--version')))
+  else if (sub === 'set') {
+    const file = flag('file')
+    if (!file) throw new Error('file is required')
+    print(setStepCatalogue(JSON.parse(readFileSync(file, 'utf8')), flag('reason'), flag('author')))
+  } else if (sub === 'promote')
+    print(promoteStepCatalogue(positive(argv[2], 'version')!, flag('reason'), flag('author')))
+  else if (sub === 'retire')
+    print(retireStepCatalogue(positive(argv[2], 'version')!, flag('reason'), flag('author')))
+  else if (sub === 'fork')
+    print(forkStepCatalogue(positive(flag('from'), '--from'), flag('reason'), flag('author')))
+  else if (sub === 'versions') print(stepCatalogueVersions())
+  else if (sub === 'export') exportStepCatalogue(argv[2]!)
+  else if (sub === 'import') print(importStepCatalogue(argv[2]!, flag('reason'), flag('author')))
+  else
+    throw new Error(
+      'unknown: orch workflow catalogue. Try show | set | promote | retire | fork | versions | export | import',
     )
 }
 
@@ -83,7 +130,9 @@ function composeCommand(
   print: (value: unknown, line?: string) => void,
   presentation: Presentation,
 ): void {
-  const result = composeWorkflow(argv[2]!, flagValue(argv, 'mode'), workflowArgs(argv))
+  const project = flagValue(argv, 'project')
+  if (!project) throw new Error('--project is required')
+  const result = composeWorkflow(argv[2]!, project, flagValue(argv, 'mode'), workflowArgs(argv))
   print(
     result,
     json
@@ -96,7 +145,7 @@ function composeCommand(
             : []),
           ...result.steps.map(
             (step) =>
-              `${step.n}. ${step.slug} — ${step.title} [job=${step.job ?? '-'} autonomy=${step.autonomy} gate=${step.gate ?? '-'}]`,
+              `${step.n}. ${step.slug} — ${step.title} [job=${step.job ?? '-'} autonomy=${step.autonomy} floor=${step.floor.join('|')} needs=${step.needs.join('|') || '-'}]`,
           ),
         ].join('\n'),
   )
