@@ -147,6 +147,7 @@ export const modules: ArchitectureModule[] = [
     './record-session.ts',
   ]),
   module('orchestrator/src/landing-outbox.ts', ['../../shared/record/schema.ts']),
+  module('orchestrator/src/score-outbox.ts', ['../../shared/record/schema.ts']),
   module('orchestrator/src/project-lock.ts', [
     './db.ts',
     './git-environment.ts',

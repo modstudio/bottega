@@ -29,6 +29,7 @@ import {
 } from './record-space.ts'
 import { syncRecord } from './record-sync.ts'
 import { RUN_RECORD_PAYLOAD_COLUMNS } from './run-outbox.ts'
+import { SCORE_RECORD_PAYLOAD_COLUMNS } from './score-outbox.ts'
 
 const OPERATOR_USER_ID = '01990000-0000-7000-8000-000000000002'
 const SPACE_NAME = PLATFORM_SLUG
@@ -379,7 +380,7 @@ realPostgres('RLS proof against real Postgres', () => {
       'postgres',
       'postgres',
       `
-      DROP TABLE IF EXISTS invitation, verification, account, session, test_flake, contention, landing_review_carry, landing_override, landing, review_finding, review_lens, review, run, membership, machine, seq, project, "user", space CASCADE;
+      DROP TABLE IF EXISTS invitation, verification, account, session, test_flake, contention, landing_review_carry, landing_override, landing, review_finding, review_lens, review, run_score, run, membership, machine, seq, project, "user", space CASCADE;
       DROP SCHEMA IF EXISTS drizzle CASCADE;
     `,
     )
@@ -945,7 +946,7 @@ realPostgres('RLS proof against real Postgres', () => {
     expect(result.stdout.split('\n').at(-1)).toBe('')
   })
 
-  test('sync round trip writes a run readable by the tenant role', async () => {
+  test('sync round trip writes and updates a tenant-confined score', async () => {
     const local = new Database(':memory:')
     local.exec(`CREATE TABLE outbox (
       id INTEGER PRIMARY KEY, kind TEXT NOT NULL, record_id TEXT NOT NULL, payload TEXT NOT NULL,
@@ -997,6 +998,81 @@ realPostgres('RLS proof against real Postgres', () => {
     )
     expect(read.code, read.stderr).toBe(0)
     expect(read.stdout.split('\n').at(-1)).toBe(recordId)
+
+    const score = Object.fromEntries(SCORE_RECORD_PAYLOAD_COLUMNS.map((column) => [column, null]))
+    Object.assign(score, {
+      id: recordId,
+      spaceId: PLATFORM_SPACE_ID,
+      machineId: MACHINE_A,
+      localId: 99,
+      delivery: 'full',
+      quality: 'right',
+      fidelity: null,
+      note: 'first',
+      scoredAt: '2026-09-15T01:02:00.000Z',
+      scoredBy: 'architect',
+      updatedAt: '2026-09-15T01:02:00.000Z',
+    })
+    local
+      .query(
+        `INSERT INTO outbox (id, kind, record_id, payload, created_at)
+         VALUES (2, 'score', ?, ?, ?)`,
+      )
+      .run(recordId, JSON.stringify(score), String(score.scoredAt))
+    expect(
+      await syncRecord({
+        recordUrl: actorUrl!,
+        local,
+        identity: { id: MACHINE_A, name: 'proof-machine' },
+        principal: { userId: OPERATOR_USER_ID, spaceId: PLATFORM_SPACE_ID },
+      }),
+    ).toEqual({ pushed: 1, failed: 0, pending: 0, configured: true })
+    const actorRead = asSpace(
+      RECORD_ACTOR_ROLE,
+      'actor-password',
+      PLATFORM_SPACE_ID,
+      `SELECT delivery || '|' || quality || '|' || note FROM run_score WHERE run_id='${recordId}';`,
+    )
+    expect(actorRead.code, actorRead.stderr).toBe(0)
+    expect(actorRead.stdout).toBe('full|right|first')
+    const otherSpaceRead = asSpace(
+      RECORD_ACTOR_ROLE,
+      'actor-password',
+      SPACE_A,
+      `SELECT run_id FROM run_score WHERE run_id='${recordId}';`,
+    )
+    expect(otherSpaceRead.code, otherSpaceRead.stderr).toBe(0)
+    expect(otherSpaceRead.stdout).toBe('')
+
+    Object.assign(score, {
+      delivery: 'partial',
+      quality: 'mixed',
+      note: 'updated',
+      scoredAt: '2026-09-15T01:03:00.000Z',
+      updatedAt: '2026-09-15T01:03:00.000Z',
+    })
+    local
+      .query(
+        `INSERT INTO outbox (id, kind, record_id, payload, created_at)
+         VALUES (3, 'score', ?, ?, ?)`,
+      )
+      .run(recordId, JSON.stringify(score), String(score.scoredAt))
+    expect(
+      await syncRecord({
+        recordUrl: actorUrl!,
+        local,
+        identity: { id: MACHINE_A, name: 'proof-machine' },
+        principal: { userId: OPERATOR_USER_ID, spaceId: PLATFORM_SPACE_ID },
+      }),
+    ).toMatchObject({ pushed: 1, failed: 0, pending: 0 })
+    expect(
+      asSpace(
+        RECORD_ACTOR_ROLE,
+        'actor-password',
+        PLATFORM_SPACE_ID,
+        `SELECT delivery || '|' || quality || '|' || note FROM run_score WHERE run_id='${recordId}';`,
+      ).stdout,
+    ).toBe('partial|mixed|updated')
 
     await expect(
       syncRecord({
