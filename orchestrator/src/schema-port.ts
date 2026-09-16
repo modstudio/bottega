@@ -104,6 +104,7 @@ export const landingOverride = sqliteTable(
   'landing_override',
   {
     id: id(),
+    recordId: text('record_id').unique(),
     /** @deprecated Use projectId. */ project: text().notNull(),
     projectId: integer('project_id').references(() => project.id, { onDelete: 'restrict' }),
     branch: text().notNull(),
@@ -120,6 +121,7 @@ export const landing = sqliteTable(
   'landing',
   {
     id: id(),
+    recordId: text('record_id').unique(),
     /** @deprecated Use projectId. */ project: text().notNull(),
     projectId: integer('project_id').references(() => project.id, { onDelete: 'restrict' }),
     branch: text().notNull(),
@@ -151,6 +153,7 @@ export const landing = sqliteTable(
 
 export const landingReviewCarry = sqliteTable('landing_review_carry', {
   id: id(),
+  recordId: text('record_id').unique(),
   /** @deprecated Use projectId. */ project: text().notNull(),
   projectId: integer('project_id').references(() => project.id, { onDelete: 'restrict' }),
   branch: text().notNull(),

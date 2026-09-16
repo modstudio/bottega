@@ -3,8 +3,42 @@ import { readFileSync } from 'node:fs'
 import { reviewReply } from '../test/fixtures/replies.ts'
 import { addRun } from '../test/fixtures/store.ts'
 import { db } from './db.ts'
+import { newRecordId } from './postgres-schema.ts'
+import { recordReviewCarry } from './review.ts'
 import { filesCoveredIntersectChanged } from './review-coverage-match.ts'
 import { recordReview, triageFinding } from './review-triage.ts'
+
+test('recording a carried review enqueues the carry in the same write path', () => {
+  const review = db()
+    .query(
+      "INSERT INTO review (record_id,recorded_at) VALUES (?,'2026-09-15T00:00:00Z') RETURNING id",
+    )
+    .get(newRecordId()) as { id: number }
+  recordReviewCarry({
+    project: 'fixture',
+    branch: 'DEV-597-orch-4145',
+    tip: 'tip',
+    tree: 'tree',
+    reviewId: review.id,
+    reviewedCommit: 'commit',
+    reviewedTree: 'reviewed-tree',
+    patchId: 'patch',
+    oldBase: 'old',
+    newBase: 'new',
+  })
+  const carry = db()
+    .query<{ record_id: string }, []>(
+      'SELECT record_id FROM landing_review_carry ORDER BY id DESC LIMIT 1',
+    )
+    .get()!
+  expect(
+    db()
+      .query<{ kind: string }, [string]>(
+        "SELECT kind FROM outbox WHERE kind='landing_review_carry' AND record_id=?",
+      )
+      .get(carry.record_id),
+  ).toEqual({ kind: 'landing_review_carry' })
+})
 
 describe('review triage', () => {
   test('review triage --severity stores explicit agreement and omission stores null', () => {

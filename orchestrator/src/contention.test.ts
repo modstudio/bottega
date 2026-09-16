@@ -23,6 +23,17 @@ describe('contention ledger', () => {
         .query("SELECT resource_kind, event_kind FROM contention WHERE resource_key='fixture'")
         .get(),
     ).toEqual({ resource_kind: 'cpu', event_kind: 'timeout' })
+    const outbox = db()
+      .query<{ kind: string; payload: string }, []>(
+        "SELECT kind,payload FROM outbox WHERE kind='contention' ORDER BY id DESC LIMIT 1",
+      )
+      .get()!
+    expect(outbox.kind).toBe('contention')
+    expect(JSON.parse(outbox.payload)).toMatchObject({
+      resourceKind: 'cpu',
+      resourceKey: 'fixture',
+      eventKind: 'timeout',
+    })
   })
 })
 

@@ -107,6 +107,8 @@ export const modules: ArchitectureModule[] = [
   module('orchestrator/src/monitor-types.ts', ['./review-vocabulary.ts']),
   module('orchestrator/src/postgres-migrate.ts', []),
   module('orchestrator/src/postgres-schema-review.ts', ['./postgres-schema.ts']),
+  module('orchestrator/src/postgres-schema-landing.ts', ['./postgres-schema.ts']),
+  module('orchestrator/src/landing-outbox.ts', ['./postgres-schema.ts']),
   module('orchestrator/src/project-lock.ts', [
     './db.ts',
     './git-environment.ts',

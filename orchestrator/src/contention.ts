@@ -1,4 +1,6 @@
 import type { Database } from 'bun:sqlite'
+import { enqueueContention } from './landing-outbox.ts'
+import { newRecordId } from './postgres-schema.ts'
 
 export const RESOURCE_KINDS = [
   'trunk',
@@ -73,21 +75,26 @@ export function contentionTableExists(d: Database): boolean {
 }
 
 export function insertContention(d: Database, row: ContentionWrite): void {
-  d.query(
-    `INSERT INTO contention
-       (at, session_id, resource_kind, resource_key, event_kind, duration_ms, cause, run_id, landing_id)
-     VALUES (?,?,?,?,?,?,?,?,?)`,
-  ).run(
-    row.at ?? new Date().toISOString(),
-    row.sessionId === undefined ? (process.env.CLAUDE_CODE_SESSION_ID ?? null) : row.sessionId,
-    row.resourceKind,
-    row.resourceKey,
-    row.eventKind,
-    row.durationMs ?? null,
-    row.cause ?? null,
-    row.runId ?? null,
-    row.landingId ?? null,
-  )
+  const at = row.at ?? new Date().toISOString()
+  const inserted = d
+    .query(
+      `INSERT INTO contention
+         (record_id, at, session_id, resource_kind, resource_key, event_kind, duration_ms, cause, run_id, landing_id)
+       VALUES (?,?,?,?,?,?,?,?,?,?) RETURNING id`,
+    )
+    .get(
+      newRecordId(),
+      at,
+      row.sessionId === undefined ? (process.env.CLAUDE_CODE_SESSION_ID ?? null) : row.sessionId,
+      row.resourceKind,
+      row.resourceKey,
+      row.eventKind,
+      row.durationMs ?? null,
+      row.cause ?? null,
+      row.runId ?? null,
+      row.landingId ?? null,
+    ) as { id: number }
+  enqueueContention(d, inserted.id, at)
 }
 
 /** Best-effort insert that never throws, for lock sites that must not change behaviour. */

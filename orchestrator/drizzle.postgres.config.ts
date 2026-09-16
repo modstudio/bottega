@@ -6,6 +6,7 @@ export default defineConfig({
     './src/postgres-schema.ts',
     './src/postgres-schema-run.ts',
     './src/postgres-schema-review.ts',
+    './src/postgres-schema-landing.ts',
   ],
   out: './postgres/migrations',
 })

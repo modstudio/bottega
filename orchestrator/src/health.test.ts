@@ -147,7 +147,6 @@ describe('harness health', () => {
       resourceKey: 'victim',
       eventKind: 'invalidation',
       cause: 'review 9',
-      landingId: 4,
     })
     insertContention(db(), {
       at: '2026-09-06T10:00:00.000Z',

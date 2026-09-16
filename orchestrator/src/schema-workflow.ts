@@ -130,6 +130,7 @@ export const contention = sqliteTable(
   'contention',
   {
     id: id(),
+    recordId: text('record_id').unique(),
     at: text().notNull(),
     sessionId: text('session_id'),
     resourceKind: text('resource_kind').notNull(),
@@ -153,6 +154,7 @@ export const testFlake = sqliteTable(
   'test_flake',
   {
     id: id(),
+    recordId: text('record_id').unique(),
     test: text().notNull(),
     file: text().notNull(),
     loadAtFailure: text('load_at_failure').notNull(),

@@ -3,6 +3,7 @@ import { afterAll, beforeAll, describe, expect, test } from 'bun:test'
 import { copyFileSync, existsSync, rmSync } from 'node:fs'
 import { SQL } from 'bun'
 import { PLATFORM_SLUG } from '../../shared/brand.ts'
+import { backfillLandingEvidenceRecords } from './landing-outbox.ts'
 import { applyMigrations } from './migrations.ts'
 import { importProjects } from './postgres-import.ts'
 import { migratePostgres } from './postgres-migrate.ts'
@@ -232,12 +233,32 @@ realPostgres('project import against copied live SQLite data', () => {
     source.query("UPDATE outbox SET synced_at=NULL WHERE kind='run'").run()
     const backfill = backfillRunRecords(source, sourceMachineId)
     const reviewBackfill = backfillReviewRecords(source)
+    const landingEvidenceBackfill = backfillLandingEvidenceRecords(source)
     console.log(
       `live-copy backfill: minted ${backfill.minted}, enqueued ${backfill.enqueued}, skipped-live ${backfill.skippedLive}`,
     )
     console.log(
       `live-copy review backfill: minted ${reviewBackfill.mintedReviews} reviews, ${reviewBackfill.mintedLenses} lenses, ${reviewBackfill.mintedFindings} findings; enqueued ${reviewBackfill.enqueuedReviews} reviews`,
     )
+    console.log(`live-copy landing evidence backfill: ${JSON.stringify(landingEvidenceBackfill)}`)
+    const sourceEvidenceCounts = source
+      .query<
+        {
+          landings: number
+          overrides: number
+          carries: number
+          contentions: number
+          flakes: number
+        },
+        []
+      >(
+        `SELECT (SELECT count(*) FROM landing) AS landings,
+                (SELECT count(*) FROM landing_override) AS overrides,
+                (SELECT count(*) FROM landing_review_carry) AS carries,
+                (SELECT count(*) FROM contention) AS contentions,
+                (SELECT count(*) FROM test_flake) AS flakes`,
+      )
+      .get()!
     const sourceReviewCounts = source
       .query<{ reviews: number; lenses: number; findings: number }, []>(
         `SELECT (SELECT count(*) FROM review) AS reviews,
@@ -278,6 +299,14 @@ realPostgres('project import against copied live SQLite data', () => {
              (SELECT count(*)::int FROM review_finding) AS findings
     `
     expect(recordReviewCounts[0]).toMatchObject(sourceReviewCounts)
+    const recordEvidenceCounts = await sql`
+      SELECT (SELECT count(*)::int FROM landing) AS landings,
+             (SELECT count(*)::int FROM landing_override) AS overrides,
+             (SELECT count(*)::int FROM landing_review_carry) AS carries,
+             (SELECT count(*)::int FROM contention) AS contentions,
+             (SELECT count(*)::int FROM test_flake) AS flakes
+    `
+    expect(recordEvidenceCounts[0]).toMatchObject(sourceEvidenceCounts)
     const missingLensReferences = await sql`
       SELECT count(*)::int AS count FROM review_lens lens
       LEFT JOIN review ON review.id=lens.review_id
@@ -292,6 +321,24 @@ realPostgres('project import against copied live SQLite data', () => {
       WHERE review.id IS NULL OR lens.id IS NULL
     `
     expect(missingFindingReferences[0]!.count).toBe(0)
+    const missingCarryReferences = await sql`
+      SELECT count(*)::int AS count FROM landing_review_carry carry
+      LEFT JOIN review ON review.id=carry.review_id
+      WHERE review.id IS NULL
+    `
+    expect(missingCarryReferences[0]!.count).toBe(0)
+    const missingContentionReferences = await sql`
+      SELECT count(*)::int AS count FROM contention evidence
+      LEFT JOIN run ON run.id=evidence.run_id
+      LEFT JOIN landing ON landing.id=evidence.landing_id
+      WHERE (evidence.run_id IS NOT NULL AND run.id IS NULL)
+         OR (evidence.landing_id IS NOT NULL AND landing.id IS NULL)
+    `
+    expect(missingContentionReferences[0]!.count).toBe(0)
+    const flakeProjects = await sql`
+      SELECT count(*)::int AS count FROM test_flake WHERE project_id IS NOT NULL
+    `
+    expect(flakeProjects[0]!.count).toBe(0)
     const recordNullPatchIdentity = await sql`
       SELECT count(*)::int AS count FROM review WHERE patch_id IS NULL AND path_set IS NULL
     `

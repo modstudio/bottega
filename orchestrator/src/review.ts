@@ -2,6 +2,7 @@
 import type { Database, SQLQueryBindings } from 'bun:sqlite'
 import { REVIEW_SCHEMA, type ReviewReply } from './contract.ts'
 import { db, nowIso, sessionId, writableDb, writeTransaction } from './db.ts'
+import { enqueueLandingReviewCarry } from './landing-outbox.ts'
 import { newRecordId } from './postgres-schema.ts'
 import { enqueueReview } from './review-outbox.ts'
 
@@ -43,28 +44,34 @@ const diffNumstat: typeof import('./review-tier.ts').diffNumstat = (...args) =>
 
 export function recordReviewCarry(carry: ReviewCarry | null): void {
   if (!carry) return
-  db()
-    .query(
-      `INSERT INTO landing_review_carry
-       (project,project_id,branch,tip,tree,review_id,reviewed_commit,reviewed_tree,patch_id,
-        old_base,new_base,session_id,at)
-     VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)`,
-    )
-    .run(
-      carry.project,
-      projectByName(carry.project)?.id ?? null,
-      carry.branch,
-      carry.tip,
-      carry.tree,
-      carry.reviewId,
-      carry.reviewedCommit,
-      carry.reviewedTree,
-      carry.patchId,
-      carry.oldBase,
-      carry.newBase,
-      sessionId(),
-      nowIso(),
-    )
+  const database = writableDb()
+  writeTransaction(() => {
+    const at = nowIso()
+    const inserted = database
+      .query(
+        `INSERT INTO landing_review_carry
+         (record_id,project,project_id,branch,tip,tree,review_id,reviewed_commit,reviewed_tree,
+          patch_id,old_base,new_base,session_id,at)
+       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?) RETURNING id`,
+      )
+      .get(
+        newRecordId(),
+        carry.project,
+        projectByName(carry.project)?.id ?? null,
+        carry.branch,
+        carry.tip,
+        carry.tree,
+        carry.reviewId,
+        carry.reviewedCommit,
+        carry.reviewedTree,
+        carry.patchId,
+        carry.oldBase,
+        carry.newBase,
+        sessionId(),
+        at,
+      ) as { id: number }
+    enqueueLandingReviewCarry(database, inserted.id, at)
+  }, database)
   console.log(
     `review ${carry.reviewId} carried: patch-id ${carry.patchId} unchanged across rebase ` +
       `${carry.oldBase}..${carry.newBase}; gate green on ${carry.tip}`,
