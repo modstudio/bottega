@@ -21,7 +21,7 @@ export function pullRequestCarriesKey(
 
 export type PatchEquivalentForm = 'commits' | 'squash'
 
-export type RecordedBranchLanding = {
+type RecordedBranchLanding = {
   number: number
   mergeCommit: string | null
   mergedAt: string
