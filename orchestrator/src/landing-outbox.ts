@@ -1,7 +1,6 @@
 // concern: landing-outbox
 /** Knows how local landing history and operational evidence become hosted-record mutations. Must not know Postgres. */
 import type { Database } from 'bun:sqlite'
-import { nowIso } from './db.ts'
 import { newRecordId, PLATFORM_SPACE_ID } from './postgres-schema.ts'
 
 export const LANDING_RECORD_PAYLOAD_COLUMNS = [
@@ -107,6 +106,7 @@ export type LandingEvidenceBackfillResult = {
 
 type LocalRow = Record<string, unknown>
 const json = (value: unknown): unknown => (value == null ? null : JSON.parse(String(value)))
+const nowIso = (): string => new Date().toISOString()
 const localMachineId = (database: Database): string => {
   const row = database
     .query<{ value: string }, []>("SELECT value FROM schema_meta WHERE key='machine_id'")
