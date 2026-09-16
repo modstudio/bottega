@@ -1,13 +1,5 @@
 import { afterAll, beforeAll, expect, test } from 'bun:test'
-import { db } from './db.ts'
-import {
-  currentRecordSession,
-  ensurePersonalSpace,
-  type PersonalSpace,
-  RECORD_SESSION_KEY,
-  RECORD_SIGN_IN_REMEDY,
-  recordAuth,
-} from './record-auth.ts'
+import { ensurePersonalSpace, type PersonalSpace, recordAuth } from './record-auth.ts'
 
 let priorSecret: string | undefined
 beforeAll(() => {
@@ -38,11 +30,4 @@ test('personal-space decision reuses an existing space and creates only when abs
   expect(first.slug).toBe('user-01990000-0000-7000-8000-000000000010')
   expect(await ensurePersonalSpace('01990000-0000-7000-8000-000000000010', port)).toEqual(first)
   expect(creates).toBe(1)
-})
-
-test('record session refuses with the sign-in remedy when no bearer is stored', async () => {
-  db().query('DELETE FROM schema_meta WHERE key=?').run(RECORD_SESSION_KEY)
-  await expect(currentRecordSession('postgres://record.invalid/database')).rejects.toThrow(
-    RECORD_SIGN_IN_REMEDY,
-  )
 })

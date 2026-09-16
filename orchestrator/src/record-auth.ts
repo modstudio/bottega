@@ -1,27 +1,17 @@
 // concern: record-auth
 /** Owns record identity, bearer sessions, and personal-space repair. Must not know run phases. */
 
-import type { Database } from 'bun:sqlite'
 import { drizzleAdapter } from '@better-auth/drizzle-adapter/relations-v2'
 import { betterAuth } from 'better-auth'
 import { bearer, organization } from 'better-auth/plugins'
 import { SQL } from 'bun'
 import { drizzle } from 'drizzle-orm/bun-sql'
-import { db } from './db.ts'
 import { membership, newRecordId, space, user } from './postgres-schema.ts'
 import { account, invitation, session, verification } from './postgres-schema-auth.ts'
 
 export const RECORD_SESSION_KEY = 'record_session'
 export const RECORD_SIGN_IN_REMEDY =
   'record session is missing or expired; run `orch record sign-in --email <email>`'
-
-export function storedRecordToken(local: Database = db()): string | null {
-  return (
-    local
-      .query<{ value: string }, [string]>('SELECT value FROM schema_meta WHERE key=?')
-      .get(RECORD_SESSION_KEY)?.value ?? null
-  )
-}
 
 export type PersonalSpace = { id: string; name: string; slug: string }
 export type PersonalSpacePort = {
@@ -198,15 +188,6 @@ export async function recordIdentity(
 }
 
 export const bearerHeaders = (token: string) => new Headers({ Authorization: `Bearer ${token}` })
-
-export async function currentRecordSession(url: string, local: Database = db()) {
-  const token = storedRecordToken(local)
-  if (!token) throw new Error(RECORD_SIGN_IN_REMEDY)
-  const current = await recordAuth(url).api.getSession({ headers: bearerHeaders(token) })
-  const activeSpaceId = current?.session.activeOrganizationId
-  if (!current || !activeSpaceId) throw new Error(RECORD_SIGN_IN_REMEDY)
-  return { token, user: current.user, session: current.session, activeSpaceId }
-}
 
 export async function setActiveRecordSpace(
   url: string,
