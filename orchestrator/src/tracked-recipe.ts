@@ -24,12 +24,14 @@ import {
   type StepResult,
 } from './recipe-step.ts'
 import {
+  claimDatabaseName,
   claimIndex,
   claimRecipePort,
   claimString,
   fillStringAllocationTemplate,
   RECIPE_PORT_BAND,
   releaseRecipeAllocationClaims,
+  settleClaims,
 } from './resource-claims.ts'
 import { resolveBase } from './worktree-caller.ts'
 import type { Worktree } from './worktree-types.ts'
@@ -42,6 +44,7 @@ export type RecipeSnapshot = {
 export type RecipeAllocations = {
   index: number
   ports: Record<string, number>
+  databases: Record<string, string>
   strings: Record<string, string>
 }
 export type AllocationAttempt = { allocations: RecipeAllocations; insertedClaimIds: number[] }
@@ -88,16 +91,26 @@ export const trackedAllocator: TrackedAllocator = {
         const value = fillStringAllocationTemplate(name, template, stringVars)
         strings[name] = claimString(database, { ...identity, name, value })
       }
+      const databases: Record<string, string> = {}
+      for (const [name, allocation] of Object.entries(input.recipe.allocate?.databases ?? {})) {
+        const value = fillStringAllocationTemplate(name, allocation.name, stringVars)
+        databases[name] = claimDatabaseName(database, {
+          ...identity,
+          name,
+          engine: allocation.engine,
+          value,
+        })
+      }
       const insertedClaimIds = (
         database
           .query(
             `SELECT id FROM resource_claim
-             WHERE id>? AND root_run_id=? AND run_id=? AND kind IN ('port','index','string')
+             WHERE id>? AND root_run_id=? AND run_id=? AND kind IN ('port','index','string','database')
              ORDER BY id`,
           )
           .all(before, owner.root_run_id, input.runId) as { id: number }[]
       ).map((row) => row.id)
-      return { allocations: { index, ports, strings }, insertedClaimIds }
+      return { allocations: { index, ports, databases, strings }, insertedClaimIds }
     })
   },
   release(attempt, reason) {
@@ -146,9 +159,12 @@ function loadRecipeAtBase(input: { tool: WorktreeTool; repoRoot: string; baseRef
 function renderedPlaceholder(name: string): string {
   if (name === 'main') return name
   if (name === 'index') return '$ORCH_INDEX'
-  const allocation = name.match(/^(ports|alloc)\.(.+)$/)
+  const allocation = name.match(/^(ports|db|alloc)\.(.+)$/)
   if (allocation) {
-    return `$${allocationEnvironmentVariable(allocation[1] as 'ports' | 'alloc', allocation[2]!)}`
+    return `$${allocationEnvironmentVariable(
+      allocation[1] as 'ports' | 'db' | 'alloc',
+      allocation[2]!,
+    )}`
   }
   return `<${name}>`
 }
@@ -208,6 +224,9 @@ export function recipeAllocationEnvironment(
   const environment: Record<string, string> = { ORCH_INDEX: String(allocations.index) }
   for (const [name, port] of Object.entries(allocations.ports)) {
     environment[allocationEnvironmentVariable('ports', name)] = String(port)
+  }
+  for (const [name, value] of Object.entries(allocations.databases ?? {})) {
+    environment[allocationEnvironmentVariable('db', name)] = value
   }
   for (const [name, value] of Object.entries(allocations.strings)) {
     environment[allocationEnvironmentVariable('alloc', name)] = value
@@ -347,6 +366,9 @@ function prepareTrackedCreate(
   const vars: Record<string, string> = { ...staticVars, index: String(allocations.index) }
   for (const [portName, port] of Object.entries(allocations.ports)) {
     vars[`ports.${portName}`] = String(port)
+  }
+  for (const [databaseName, value] of Object.entries(allocations.databases)) {
+    vars[`db.${databaseName}`] = value
   }
   for (const [allocationName, value] of Object.entries(allocations.strings)) {
     vars[`alloc.${allocationName}`] = value
@@ -501,10 +523,25 @@ export function teardownTrackedRecipe(
     results.push(phase === 'run' ? runStep(step, context) : runUndo(step, context))
   for (const step of stored.snapshot.recipe.verifyDown ?? []) results.push(runStep(step, context))
   const failed = lifecycleFailure(results)
-  return failed
-    ? {
-        removed: false,
-        detail: `recipe teardown failed at "${failed.name}" (${failed.phase}): ${failed.detail}`,
-      }
-    : input.remove()
+  if (failed) {
+    return {
+      removed: false,
+      detail: `recipe teardown failed at "${failed.name}" (${failed.phase}): ${failed.detail}`,
+    }
+  }
+  writeTransaction(() => {
+    const owner = db()
+      .query('SELECT COALESCE(parent_run_id,id) root_run_id FROM run WHERE id=?')
+      .get(input.runId) as { root_run_id: number } | null
+    if (owner) {
+      settleClaims(db(), {
+        rootRunId: owner.root_run_id,
+        kind: 'database',
+        state: 'released',
+        settledAt: nowIso(),
+        detail: 'tracked recipe teardown completed',
+      })
+    }
+  })
+  return input.remove()
 }

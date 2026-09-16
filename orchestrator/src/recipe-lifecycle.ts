@@ -6,9 +6,6 @@ import type { Step, StepResult } from './recipe-step.ts'
 const deferred = { env: 7, shared: 8 } as const
 
 export function trackedExecutionRefusal(recipe: TrackedRecipe): string | null {
-  if (recipe.allocate?.databases !== undefined) {
-    return 'tracked recipe declares allocate.databases, which is not executable yet (Phase 3 slice 6)'
-  }
   for (const [field, slice] of Object.entries(deferred)) {
     if (recipe[field as keyof typeof deferred] !== undefined) {
       return `tracked recipe declares ${field}, which is not executable yet (Phase 3 slice ${slice})`
@@ -47,6 +44,7 @@ export function teardownVars(input: {
   allocations?: {
     index: number
     ports: Record<string, number>
+    databases: Record<string, string>
     strings: Record<string, string>
   }
 }): Record<string, string> {
@@ -63,6 +61,9 @@ export function teardownVars(input: {
   vars.index = String(input.allocations.index)
   for (const [name, port] of Object.entries(input.allocations.ports)) {
     vars[`ports.${name}`] = String(port)
+  }
+  for (const [name, value] of Object.entries(input.allocations.databases ?? {})) {
+    vars[`db.${name}`] = value
   }
   for (const [name, value] of Object.entries(input.allocations.strings)) {
     vars[`alloc.${name}`] = value

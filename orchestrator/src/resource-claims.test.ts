@@ -2,6 +2,7 @@ import { describe, expect, test } from 'bun:test'
 import { db, nowIso, writeTransaction } from './db.ts'
 import {
   claimCreationDecision,
+  claimDatabaseName,
   claimIndex,
   claimKindForCreation,
   claimRecipePort,
@@ -285,6 +286,43 @@ describe('resource claim decisions', () => {
     )
   })
 
+  test('database claims reuse by root and name and collide only within an engine', () => {
+    const database = db()
+    const projectId = Number(
+      database
+        .query("INSERT INTO project(name,path,canon) VALUES ('databases','/databases',1)")
+        .run().lastInsertRowid,
+    )
+    const insertRun = database.query(
+      `INSERT INTO run
+       (started_at,agent,job,prompt_sha,prompt_bytes,prompt_head,status,project_id,turn)
+       VALUES (?,'codex','implement','sha',1,'database allocation','running',?,1)`,
+    )
+    const first = Number(insertRun.run(nowIso(), projectId).lastInsertRowid)
+    const second = Number(insertRun.run(nowIso(), projectId).lastInsertRowid)
+    const claim = (rootRunId: number, engine: string, value: string) =>
+      writeTransaction(
+        () =>
+          claimDatabaseName(database, {
+            rootRunId,
+            runId: rootRunId,
+            projectId,
+            name: 'app',
+            engine,
+            value,
+            claimedAt: nowIso(),
+          }),
+        database,
+      )
+
+    expect(claim(first, 'postgres', 'app_1')).toBe('app_1')
+    expect(claim(first, 'postgres', 'changed_template')).toBe('app_1')
+    expect(() => claim(second, 'postgres', 'app_1')).toThrow(
+      `database allocation "app" value "app_1" is held by run ${first}; include {index} in its template`,
+    )
+    expect(claim(second, 'mysql', 'app_1')).toBe('app_1')
+  })
+
   test('worktree settlement releases index and string claims unless the tree is retained', () => {
     const database = db()
     const root = Number(
@@ -341,18 +379,30 @@ describe('resource claim decisions', () => {
     const insert = database.query(
       `INSERT INTO resource_claim
        (root_run_id,run_id,kind,allocation_key,state,claimed_at)
-       VALUES (?,?,'index',?,'claimed',?)`,
+       VALUES (?,?,?,?, 'claimed',?)`,
     )
-    const previousId = Number(insert.run(root, root, 'index:1:1', nowIso()).lastInsertRowid)
-    const attemptId = Number(insert.run(root, root, 'index:1:2', nowIso()).lastInsertRowid)
+    const previousId = Number(
+      insert.run(root, root, 'database', 'postgres:existing', nowIso()).lastInsertRowid,
+    )
+    const attemptId = Number(insert.run(root, root, 'index', 'index:1:2', nowIso()).lastInsertRowid)
+    const databaseId = Number(
+      database
+        .query(
+          `INSERT INTO resource_claim
+           (root_run_id,run_id,kind,allocation_key,state,claimed_at)
+           VALUES (?,?,'database','postgres:app_1','claimed',?)`,
+        )
+        .run(root, root, nowIso()).lastInsertRowid,
+    )
     releaseRecipeAllocationClaims(database, {
-      claimIds: [attemptId],
+      claimIds: [attemptId, databaseId],
       settledAt: nowIso(),
       reason: 'pre failed',
     })
     expect(database.query('SELECT id,state FROM resource_claim ORDER BY id').all()).toEqual([
       { id: previousId, state: 'claimed' },
       { id: attemptId, state: 'released' },
+      { id: databaseId, state: 'released' },
     ])
   })
 

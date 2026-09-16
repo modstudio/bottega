@@ -52,11 +52,13 @@ describe('tracked recipe lifecycle planning', () => {
     ).toBeNull()
     expect(
       trackedExecutionRefusal(
-        recipe({ allocate: { databases: { app: { kind: 'compose', up: 'up', down: 'down' } } } }),
+        recipe({
+          allocate: {
+            databases: { app: { engine: 'postgres', name: 'app_{index}' } },
+          },
+        }),
       ),
-    ).toBe(
-      'tracked recipe declares allocate.databases, which is not executable yet (Phase 3 slice 6)',
-    )
+    ).toBeNull()
   })
 
   test('compensates the failed step and earlier undoable steps in reverse', () => {
@@ -109,9 +111,15 @@ describe('tracked recipe lifecycle planning', () => {
         allocations: {
           index: 3,
           ports: { web: 21002 },
+          databases: { app: 'app_3' },
           strings: { cookie: 'tree-3' },
         },
       }),
-    ).toMatchObject({ index: '3', 'ports.web': '21002', 'alloc.cookie': 'tree-3' })
+    ).toMatchObject({
+      index: '3',
+      'ports.web': '21002',
+      'db.app': 'app_3',
+      'alloc.cookie': 'tree-3',
+    })
   })
 })

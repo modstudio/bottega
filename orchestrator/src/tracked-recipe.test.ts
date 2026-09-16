@@ -1,4 +1,5 @@
 import { describe, expect, test } from 'bun:test'
+import { db, nowIso } from './db.ts'
 import type { TrackedRecipe } from './recipe-schema.ts'
 import type { Step, StepResult } from './recipe-step.ts'
 import {
@@ -10,6 +11,7 @@ import {
   renderTrackedRecipeNotes,
   type TrackedAllocator,
   teardownTrackedRecipe,
+  trackedAllocator,
 } from './tracked-recipe.ts'
 
 const command = { command: 'true', args: [] }
@@ -28,7 +30,7 @@ const context = { treeRoot: '/tree', vars: {} }
 describe('tracked recipe execution', () => {
   test('a pre failure releases only the claims inserted by this allocation attempt', () => {
     const attempt: AllocationAttempt = {
-      allocations: { index: 2, ports: { web: 21001 }, strings: {} },
+      allocations: { index: 2, ports: { web: 21001 }, databases: {}, strings: {} },
       insertedClaimIds: [12, 14],
     }
     const released: { attempt: AllocationAttempt; reason: string }[] = []
@@ -142,14 +144,67 @@ describe('tracked recipe execution', () => {
       recipeAllocationEnvironment({
         index: 4,
         ports: { hub: 21003, 'api-v2': 21004 },
+        databases: { app: 'app_4', audit: 'audit_4' },
         strings: { token: 'tree-4' },
       }),
     ).toEqual({
       ORCH_INDEX: '4',
       ORCH_PORTS_HUB: '21003',
       ORCH_PORTS_API_V2: '21004',
+      ORCH_DB_APP: 'app_4',
+      ORCH_DB_AUDIT: 'audit_4',
       ORCH_ALLOC_TOKEN: 'tree-4',
     })
+  })
+
+  test('claims every database before a pre step can run and exposes their filled names', () => {
+    const database = db()
+    const projectId = Number(
+      database.query("INSERT INTO project(name,path,canon) VALUES ('tracked','/tracked',1)").run()
+        .lastInsertRowid,
+    )
+    const runId = Number(
+      database
+        .query(
+          `INSERT INTO run
+           (started_at,agent,job,prompt_sha,prompt_bytes,prompt_head,status,project_id,turn)
+           VALUES (?,'codex','implement','sha',1,'tracked databases','running',?,1)`,
+        )
+        .run(nowIso(), projectId).lastInsertRowid,
+    )
+    const recipe: TrackedRecipe = {
+      allocate: {
+        databases: {
+          app: { engine: 'postgres', name: 'app_{index}' },
+          audit: { engine: 'mysql', name: '{name}_audit_{index}' },
+        },
+      },
+      pre: [step('pre')],
+      create: [],
+    }
+    const attempt = trackedAllocator.allocate({
+      runId,
+      recipe,
+      staticVars: { name: 'tree' },
+    })
+    const seen: unknown[] = []
+    executeTrackedPreSteps(recipe, context, attempt, trackedAllocator, (item) => {
+      seen.push(
+        database
+          .query(
+            "SELECT kind,allocation_key,state FROM resource_claim WHERE root_run_id=? AND kind='database' ORDER BY allocation_key",
+          )
+          .all(runId),
+      )
+      return result(item.name, 'run', true)
+    })
+    expect(attempt.allocations.databases).toEqual({ app: 'app_1', audit: 'tree_audit_1' })
+    expect(seen).toEqual([
+      [
+        { kind: 'database', allocation_key: 'mysql:tree_audit_1', state: 'claimed' },
+        { kind: 'database', allocation_key: 'postgres:app_1', state: 'claimed' },
+      ],
+    ])
   })
 
   test('runs serve undos before destroy undos and keeps the tree after a serve failure', () => {
@@ -196,6 +251,65 @@ describe('tracked recipe execution', () => {
     expect(calls).toEqual(['undo:serve', 'run:destroy'])
     expect(outcome.detail).toContain('recipe teardown failed at "serve" (undo)')
     expect(removed).toBeFalse()
+  })
+
+  test('releases database claims only after every teardown result succeeds', () => {
+    const database = db()
+    const projectId = Number(
+      database.query("INSERT INTO project(name,path,canon) VALUES ('teardown','/teardown',1)").run()
+        .lastInsertRowid,
+    )
+    const insertRun = database.query(
+      `INSERT INTO run
+       (started_at,agent,job,prompt_sha,prompt_bytes,prompt_head,status,project_id,turn)
+       VALUES (?,'codex','implement','sha',1,'database teardown','running',?,1)`,
+    )
+    const successfulRun = Number(insertRun.run(nowIso(), projectId).lastInsertRowid)
+    const failedRun = Number(insertRun.run(nowIso(), projectId).lastInsertRowid)
+    const insertClaim = database.query(
+      `INSERT INTO resource_claim
+       (root_run_id,run_id,project_id,kind,allocation_key,state,claimed_at)
+       VALUES (?,?,?,'database',?,'claimed',?)`,
+    )
+    insertClaim.run(successfulRun, successfulRun, projectId, 'postgres:app_ok', nowIso())
+    insertClaim.run(failedRun, failedRun, projectId, 'postgres:app_failed', nowIso())
+    const snapshot: RecipeSnapshot = {
+      source: { path: '.orch/worktree.jsonc', commit: 'abc' },
+      recipe: { create: [step('database')] },
+      allocations: { index: 1, ports: {}, databases: { app: 'app' }, strings: {} },
+    }
+    const teardown = (runId: number, undoOk: boolean) =>
+      teardownTrackedRecipe(
+        {
+          runId,
+          worktree: {
+            path: '/tree',
+            branch: 'branch',
+            base: 'abc',
+            repoRoot: '/main',
+            source: 'recipe',
+            mintedBranch: 'branch',
+          },
+          stored: { snapshot, key: null, seed: null },
+          treeExists: true,
+          remove: () => ({ removed: true, detail: '/tree' }),
+        },
+        (item) => result(item.name, 'run', true),
+        (item) => result(item.name, 'undo', undoOk),
+      )
+
+    expect(teardown(successfulRun, true).removed).toBeTrue()
+    expect(teardown(failedRun, false).removed).toBeFalse()
+    expect(
+      database
+        .query(
+          "SELECT root_run_id,state FROM resource_claim WHERE kind='database' ORDER BY root_run_id",
+        )
+        .all(),
+    ).toEqual([
+      { root_run_id: successfulRun, state: 'released' },
+      { root_run_id: failedRun, state: 'claimed' },
+    ])
   })
 })
 

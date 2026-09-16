@@ -25,65 +25,20 @@
             "type": "string"
           },
           "additionalProperties": {
-            "oneOf": [
-              {
-                "type": "object",
-                "properties": {
-                  "kind": {
-                    "type": "string",
-                    "const": "postgres-template"
-                  },
-                  "template": {
-                    "type": "string",
-                    "minLength": 1
-                  },
-                  "psql": {
-                    "type": "string",
-                    "minLength": 1
-                  }
-                },
-                "required": ["kind", "template"],
-                "additionalProperties": false
+            "type": "object",
+            "properties": {
+              "engine": {
+                "type": "string",
+                "enum": ["postgres", "mysql", "mariadb", "sqlite", "other"]
               },
-              {
-                "type": "object",
-                "properties": {
-                  "kind": {
-                    "type": "string",
-                    "const": "mysql-dump"
-                  },
-                  "dump": {
-                    "type": "string",
-                    "minLength": 1
-                  },
-                  "mysql": {
-                    "type": "string",
-                    "minLength": 1
-                  }
-                },
-                "required": ["kind", "dump"],
-                "additionalProperties": false
-              },
-              {
-                "type": "object",
-                "properties": {
-                  "kind": {
-                    "type": "string",
-                    "const": "compose"
-                  },
-                  "up": {
-                    "type": "string",
-                    "minLength": 1
-                  },
-                  "down": {
-                    "type": "string",
-                    "minLength": 1
-                  }
-                },
-                "required": ["kind", "up", "down"],
-                "additionalProperties": false
+              "name": {
+                "type": "string",
+                "minLength": 1,
+                "description": "Claimed database name. Templates may use only {branch} {name} {base} {key} {seed} {path} {main} {index}; include {index} when simultaneous worktrees could otherwise collide. The project create step makes the database and its undo drops it."
               }
-            ]
+            },
+            "required": ["engine", "name"],
+            "additionalProperties": false
           }
         },
         "strings": {
