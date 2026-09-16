@@ -11,6 +11,9 @@ describe('review triage', () => {
     const runId = addRun({ agent: 'codex', job: 'review-lens', model: 'm', lens: 'triage' })
     const reviewId = recordReview(runId, reviewReply(2, 'high'), db())
     triageFinding(reviewId, 1, 'accepted', undefined, 'high', db())
+    expect(
+      db().query<{ kind: string }, []>('SELECT kind FROM outbox ORDER BY id DESC LIMIT 1').get(),
+    ).toEqual({ kind: 'review_finding' })
     triageFinding(reviewId, 2, 'accepted', undefined, undefined, db())
     expect(
       db()

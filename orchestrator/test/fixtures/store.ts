@@ -1,6 +1,7 @@
 import { AGENTS } from '../../src/agent-registry.ts'
 import { db } from '../../src/db.ts'
 import { terminateProcessGroup } from '../../src/idle-kill.ts'
+import { newRecordId } from '../../src/postgres-schema.ts'
 import { dir as preloadDir } from '../preload.ts'
 
 export const dir = preloadDir
@@ -28,12 +29,13 @@ export function addRun(o: {
   return (
     db()
       .query(
-        `INSERT INTO run (started_at, agent, job, prompt_sha, spec_sha, prompt_bytes, prompt_head,
+        `INSERT INTO run (record_id, started_at, agent, job, prompt_sha, spec_sha, prompt_bytes, prompt_head,
                       status, latency_ms, probe, failure_kind, parent_run_id, turn, session_id, stack,
                       model, lens, repo, input_tree, head_commit)
-     VALUES (?,?,?,?,?,?,'head',?,?,?,?,?,?,?,?,?,?,?,?,?) RETURNING id`,
+     VALUES (?,?,?,?,?,?,?,'head',?,?,?,?,?,?,?,?,?,?,?,?,?) RETURNING id`,
       )
       .get(
+        newRecordId(),
         o.startedAt ?? new Date().toISOString(),
         o.agent,
         o.job,

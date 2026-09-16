@@ -2,6 +2,8 @@
 import type { Database, SQLQueryBindings } from 'bun:sqlite'
 import { REVIEW_SCHEMA, type ReviewReply } from './contract.ts'
 import { db, nowIso, sessionId, writableDb, writeTransaction } from './db.ts'
+import { newRecordId } from './postgres-schema.ts'
+import { enqueueReview } from './review-outbox.ts'
 
 export { parseReviewOutput, parseReviewReply } from './contract.ts'
 
@@ -528,11 +530,12 @@ export function recordReviews(
     const tier = tierForRuns(runs, database)
     const review = database
       .query(
-        `INSERT INTO review (recorded_at, tier, tier_risk, tier_size, tier_reasons, tier_reason, project_id,
+        `INSERT INTO review (record_id, recorded_at, tier, tier_risk, tier_size, tier_reasons, tier_reason, project_id,
                            patch_id, path_set, commit_message)
-       VALUES (?,?,?,?,?,?,?,?,?,?) RETURNING id`,
+       VALUES (?,?,?,?,?,?,?,?,?,?,?) RETURNING id`,
       )
       .get(
+        newRecordId(),
         nowIso(),
         tier?.tier ?? null,
         tier?.risk ?? null,
@@ -546,20 +549,21 @@ export function recordReviews(
       ) as { id: number }
     const insertLens = database.query(
       `INSERT INTO review_lens
-         (review_id, run_id, lens, agent, model, tree_inspected, reviewed_tree, standards_read,
+         (record_id, review_id, run_id, lens, agent, model, tree_inspected, reviewed_tree, standards_read,
           files_covered, commands_run, could_not_verify, mcp_tools, docs_read, substitutes)
-       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?) RETURNING id`,
+       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?) RETURNING id`,
     )
     const insert = database.query(
       `INSERT INTO review_finding
-         (review_id, review_lens_id, ordinal, severity, location, evidence, proposed_correction)
-       VALUES (?,?,?,?,?,?,?)`,
+         (record_id, review_id, review_lens_id, ordinal, severity, location, evidence, proposed_correction)
+       VALUES (?,?,?,?,?,?,?,?)`,
     )
     let ordinal = 0
     entries.forEach(({ output }, index) => {
       const run = runs[index]!
       output.provenance.files_covered = output.provenance.files_covered.map(normalizeCoveredPath)
       const lens = insertLens.get(
+        newRecordId(),
         review.id,
         run.id,
         run.lens,
@@ -577,6 +581,7 @@ export function recordReviews(
       ) as { id: number }
       output.findings.forEach((finding) => {
         insert.run(
+          newRecordId(),
           review.id,
           lens.id,
           ++ordinal,
@@ -587,6 +592,7 @@ export function recordReviews(
         )
       })
     })
+    enqueueReview(database, review.id)
     return review.id
   }, database)
   pinReviewedCommits(runs, database)

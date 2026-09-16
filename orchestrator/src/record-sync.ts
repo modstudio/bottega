@@ -6,22 +6,34 @@ import { drizzle } from 'drizzle-orm/bun-sql'
 import { db, nowIso } from './db.ts'
 import { machineId, machineName } from './machine-identity.ts'
 import { machine, PLATFORM_OPERATOR_USER_ID, PLATFORM_SPACE_ID } from './postgres-schema.ts'
+import {
+  reviewFinding as reviewFindingRecord,
+  reviewLens as reviewLensRecord,
+  review as reviewRecord,
+} from './postgres-schema-review.ts'
 import { run as runRecord } from './postgres-schema-run.ts'
+import {
+  backfillReviewRecords,
+  REVIEW_FINDING_RECORD_PAYLOAD_COLUMNS,
+  REVIEW_LENS_RECORD_PAYLOAD_COLUMNS,
+  REVIEW_RECORD_PAYLOAD_COLUMNS,
+  type ReviewRecordBackfillResult,
+} from './review-outbox.ts'
 import {
   backfillRunRecords,
   RUN_RECORD_PAYLOAD_COLUMNS,
   type RunRecordBackfillResult,
 } from './run-outbox.ts'
 
-type OutboxRow = { id: number; record_id: string; payload: string }
-type Payload = Record<(typeof RUN_RECORD_PAYLOAD_COLUMNS)[number], unknown>
+type OutboxRow = { id: number; kind: string; record_id: string; payload: string }
+type Payload = Record<string, unknown>
 
 export type RecordSyncResult = {
   pushed: number
   failed: number
   pending: number
   configured: boolean
-  backfill?: RunRecordBackfillResult
+  backfill?: RunRecordBackfillResult & { reviews: ReviewRecordBackfillResult }
 }
 export type RecordSyncOptions = {
   backfill?: boolean
@@ -32,15 +44,15 @@ export type RecordSyncOptions = {
   identity?: { id: string; name: string }
 }
 
-function payload(source: string): Payload {
+function payload(source: string, kind: keyof typeof recordKinds): Payload {
   const parsed = JSON.parse(source) as unknown
   if (parsed === null || typeof parsed !== 'object' || Array.isArray(parsed)) {
     throw new Error('outbox payload must be a JSON object')
   }
   const keys = Object.keys(parsed).sort()
-  const expected = [...RUN_RECORD_PAYLOAD_COLUMNS].sort()
+  const expected = [...recordKinds[kind].columns].sort()
   if (keys.length !== expected.length || keys.some((key, index) => key !== expected[index])) {
-    throw new Error('run outbox payload has an unexpected column set')
+    throw new Error(`${kind} outbox payload has an unexpected column set`)
   }
   return parsed as Payload
 }
@@ -180,11 +192,139 @@ async function pushRun(postgres: SQL, row: Payload): Promise<void> {
   })
 }
 
+function reviewValues(row: Payload, projectId: string | null) {
+  return {
+    id: String(row.id),
+    spaceId: String(row.spaceId),
+    projectId,
+    machineId: String(row.machineId),
+    localId: bigint(row.localId),
+    recordedAt: date(row.recordedAt),
+    completedAt: nullableDate(row.completedAt),
+    tier: nullableNumber(row.tier),
+    tierRisk: nullableNumber(row.tierRisk),
+    tierSize: nullableNumber(row.tierSize),
+    tierReasons: jsonString(row.tierReasons),
+    tierReason: nullableString(row.tierReason),
+    patchId: nullableString(row.patchId),
+    pathSet: jsonString(row.pathSet),
+    commitMessage: nullableString(row.commitMessage),
+    outdatedAt: nullableDate(row.outdatedAt),
+    outdatedReason: nullableString(row.outdatedReason),
+    createdAt: date(row.createdAt),
+    updatedAt: date(row.updatedAt),
+  }
+}
+
+const commonReviewValues = (row: Payload) => ({
+  id: String(row.id),
+  spaceId: String(row.spaceId),
+  machineId: String(row.machineId),
+  localId: bigint(row.localId),
+  createdAt: date(row.createdAt),
+  updatedAt: date(row.updatedAt),
+})
+
+function reviewLensValues(row: Payload) {
+  return {
+    ...commonReviewValues(row),
+    reviewId: String(row.reviewId),
+    runId: String(row.runId),
+    lens: String(row.lens),
+    agent: String(row.agent),
+    model: nullableString(row.model),
+    treeInspected: nullableString(row.treeInspected),
+    reviewedTree: nullableString(row.reviewedTree),
+    standardsRead: jsonString(row.standardsRead)!,
+    filesCovered: jsonString(row.filesCovered)!,
+    commandsRun: jsonString(row.commandsRun)!,
+    couldNotVerify: jsonString(row.couldNotVerify)!,
+    mcpTools: jsonString(row.mcpTools)!,
+    docsRead: jsonString(row.docsRead)!,
+    substitutes: jsonString(row.substitutes)!,
+    reproduced: nullableString(row.reproduced),
+    coverage: nullableString(row.coverage),
+    limits: nullableString(row.limits),
+    overlap: nullableString(row.overlap),
+  }
+}
+
+function reviewFindingValues(row: Payload) {
+  return {
+    ...commonReviewValues(row),
+    reviewId: String(row.reviewId),
+    reviewLensId: String(row.reviewLensId),
+    ordinal: Number(row.ordinal),
+    severity: String(row.severity),
+    location: String(row.location),
+    evidence: String(row.evidence),
+    proposedCorrection: String(row.proposedCorrection),
+    disposition: nullableString(row.disposition),
+    rejectionCategory: nullableString(row.rejectionCategory),
+    triagedSeverity: nullableString(row.triagedSeverity),
+    triagedAt: nullableDate(row.triagedAt),
+  }
+}
+
+async function projectRecordId(tx: SQL, row: Payload): Promise<string | null> {
+  const projectName = nullableString(row.projectName)
+  if (projectName === null) return null
+  const projects = await tx`SELECT id FROM project
+    WHERE space_id=${PLATFORM_SPACE_ID}::uuid AND name=${projectName}`
+  if (projects.length !== 1) throw new Error(`record project is absent: ${projectName}`)
+  return String(projects[0]!.id)
+}
+
+const recordKinds = {
+  run: { columns: RUN_RECORD_PAYLOAD_COLUMNS, push: pushRun },
+  review: {
+    columns: REVIEW_RECORD_PAYLOAD_COLUMNS,
+    push: async (postgres: SQL, row: Payload) =>
+      postgres.begin(async (tx) => {
+        await tx`SELECT set_config('app.space_id', ${PLATFORM_SPACE_ID}, true)`
+        const values = reviewValues(row, await projectRecordId(tx, row))
+        const { id: _id, createdAt: _createdAt, ...updates } = values
+        await drizzle({ client: tx })
+          .insert(reviewRecord)
+          .values(values)
+          .onConflictDoUpdate({ target: reviewRecord.id, set: updates })
+      }),
+  },
+  review_lens: {
+    columns: REVIEW_LENS_RECORD_PAYLOAD_COLUMNS,
+    push: async (postgres: SQL, row: Payload) =>
+      postgres.begin(async (tx) => {
+        await tx`SELECT set_config('app.space_id', ${PLATFORM_SPACE_ID}, true)`
+        const values = reviewLensValues(row)
+        const { id: _id, createdAt: _createdAt, ...updates } = values
+        await drizzle({ client: tx })
+          .insert(reviewLensRecord)
+          .values(values)
+          .onConflictDoUpdate({ target: reviewLensRecord.id, set: updates })
+      }),
+  },
+  review_finding: {
+    columns: REVIEW_FINDING_RECORD_PAYLOAD_COLUMNS,
+    push: async (postgres: SQL, row: Payload) =>
+      postgres.begin(async (tx) => {
+        await tx`SELECT set_config('app.space_id', ${PLATFORM_SPACE_ID}, true)`
+        const values = reviewFindingValues(row)
+        const { id: _id, createdAt: _createdAt, ...updates } = values
+        await drizzle({ client: tx })
+          .insert(reviewFindingRecord)
+          .values(values)
+          .onConflictDoUpdate({ target: reviewFindingRecord.id, set: updates })
+      }),
+  },
+} as const
+
 export async function syncRecord(options: RecordSyncOptions = {}): Promise<RecordSyncResult> {
   const recordUrl = options.recordUrl ?? process.env.ORCH_RECORD_URL
   const identity = options.identity ?? { id: machineId(), name: machineName() }
   const local = options.local ?? (recordUrl || options.backfill ? db() : undefined)
-  const backfill = options.backfill ? backfillRunRecords(local!, identity.id) : undefined
+  const backfill = options.backfill
+    ? { ...backfillRunRecords(local!, identity.id), reviews: backfillReviewRecords(local!) }
+    : undefined
   if (!recordUrl) {
     return {
       pushed: 0,
@@ -202,18 +342,20 @@ export async function syncRecord(options: RecordSyncOptions = {}): Promise<Recor
     await upsertMachine(postgres, (options.now ?? nowIso)(), identity)
     const rows = writableLocal
       .query<OutboxRow, []>(
-        'SELECT id, record_id, payload FROM outbox WHERE synced_at IS NULL ORDER BY id',
+        'SELECT id, kind, record_id, payload FROM outbox WHERE synced_at IS NULL ORDER BY id',
       )
       .all()
     for (const row of rows) {
       try {
-        const run = payload(row.payload)
-        if (String(run.machineId) !== identity.id) {
+        if (!(row.kind in recordKinds)) throw new Error(`unknown outbox kind: ${row.kind}`)
+        const kind = row.kind as keyof typeof recordKinds
+        const record = payload(row.payload, kind)
+        if (String(record.machineId) !== identity.id) {
           throw new Error(
-            `run outbox machine ${String(run.machineId)} does not match invoking machine ${identity.id}`,
+            `${kind} outbox machine ${String(record.machineId)} does not match invoking machine ${identity.id}`,
           )
         }
-        await pushRun(postgres, run)
+        await recordKinds[kind].push(postgres, record)
         writableLocal
           .query('UPDATE outbox SET synced_at=?, last_error=NULL WHERE id=?')
           .run((options.now ?? nowIso)(), row.id)

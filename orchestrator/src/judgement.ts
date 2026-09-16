@@ -5,6 +5,7 @@ import { db, nowIso, sessionId, writeTransaction } from './db.ts'
 import { pairPartners, parseRunIds, recordDuels, recordLosses, recordTies } from './duel.ts'
 import { JOBS, job } from './jobs.ts'
 import { cleanReviewEvidence, parseReviewOutput } from './review.ts'
+import { enqueueReview } from './review-outbox.ts'
 import {
   completeReview,
   type Disposition,
@@ -325,6 +326,7 @@ export function judgeRun(
     if (reviewId) {
       if (delivery === 'none') {
         db().query('UPDATE review SET completed_at=? WHERE id=?').run(scoredAt, reviewId)
+        enqueueReview(db(), reviewId)
       } else {
         for (const finding of parsedFindings) {
           triageFinding(

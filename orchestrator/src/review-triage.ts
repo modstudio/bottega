@@ -1,8 +1,9 @@
 // concern: review-triage
 import type { Database } from 'bun:sqlite'
 import type { ReviewReply } from './contract.ts'
-import { nowIso, writableDb } from './db.ts'
+import { nowIso, writableDb, writeTransaction } from './db.ts'
 import { recordReviews } from './review.ts'
+import { enqueueReview, enqueueReviewFinding, enqueueReviewLens } from './review-outbox.ts'
 import {
   REVIEW_SEVERITY,
   type ReviewCoverage,
@@ -59,6 +60,10 @@ export type ReviewGrades = {
   overlap: ReviewOverlap
 }
 
+function atomic<T>(database: Database, operation: () => T): T {
+  return database.inTransaction ? operation() : writeTransaction(operation, database)
+}
+
 export function recordReview(runId: number, output: ReviewReply, database: Database): number {
   return recordReviews([{ runId, output }], database)
 }
@@ -84,9 +89,12 @@ export function gradeReviewLens(
     }
     if (row.review_id !== reviewId) throw new Error(`run ${runId} review capture did not persist`)
   }
-  database
-    .query(`UPDATE review_lens SET reproduced=?, coverage=?, limits=?, overlap=? WHERE id=?`)
-    .run(grades.reproduced, grades.coverage, grades.limits, grades.overlap, row.id)
+  atomic(database, () => {
+    database
+      .query(`UPDATE review_lens SET reproduced=?, coverage=?, limits=?, overlap=? WHERE id=?`)
+      .run(grades.reproduced, grades.coverage, grades.limits, grades.overlap, row.id)
+    enqueueReviewLens(database, row.id)
+  })
   return row.review_id
 }
 
@@ -118,20 +126,28 @@ export function triageFinding(
   if (severity && !REVIEW_SEVERITY.includes(severity as ReviewSeverity)) {
     throw new Error(`severity must be: ${REVIEW_SEVERITY.join(' | ')}`)
   }
-  const result = database
-    .query(
-      `UPDATE review_finding SET disposition=?, rejection_category=?, triaged_severity=?, triaged_at=?
-       WHERE review_id=? AND ordinal=?`,
-    )
-    .run(
-      disposition,
-      disposition === 'rejected' ? rejectionCategory!.trim() : null,
-      severity ?? null,
-      nowIso(),
-      reviewId,
-      ordinal,
-    )
-  if (result.changes !== 1) throw new Error(`review ${reviewId} has no finding ${ordinal}`)
+  atomic(database, () => {
+    const result = database
+      .query(
+        `UPDATE review_finding SET disposition=?, rejection_category=?, triaged_severity=?, triaged_at=?
+         WHERE review_id=? AND ordinal=?`,
+      )
+      .run(
+        disposition,
+        disposition === 'rejected' ? rejectionCategory!.trim() : null,
+        severity ?? null,
+        nowIso(),
+        reviewId,
+        ordinal,
+      )
+    if (result.changes !== 1) throw new Error(`review ${reviewId} has no finding ${ordinal}`)
+    const updated = database
+      .query<{ id: number }, [number, number]>(
+        'SELECT id FROM review_finding WHERE review_id=? AND ordinal=?',
+      )
+      .get(reviewId, ordinal)!
+    enqueueReviewFinding(database, updated.id)
+  })
 }
 
 export function completeReview(reviewId: number, database: Database = writableDb()): void {
@@ -146,5 +162,8 @@ export function completeReview(reviewId: number, database: Database = writableDb
   if (!review) throw new Error(`no review ${reviewId}`)
   if ((row.untriaged ?? 0) > 0)
     throw new Error(`review ${reviewId} still has ${row.untriaged} untriaged findings`)
-  database.query('UPDATE review SET completed_at=? WHERE id=?').run(nowIso(), reviewId)
+  atomic(database, () => {
+    database.query('UPDATE review SET completed_at=? WHERE id=?').run(nowIso(), reviewId)
+    enqueueReview(database, reviewId)
+  })
 }

@@ -21,6 +21,7 @@ import { DELIVERY, FIDELITY, QUALITY } from './score.ts'
 
 export const review = sqliteTable('review', {
   id: id(),
+  recordId: text('record_id').unique(),
   recordedAt: text('recorded_at').notNull(),
   completedAt: text('completed_at'),
   tier: integer(),
@@ -40,6 +41,7 @@ export const reviewLens = sqliteTable(
   'review_lens',
   {
     id: id(),
+    recordId: text('record_id').unique(),
     reviewId: integer('review_id')
       .notNull()
       .references(() => review.id, { onDelete: 'cascade' }),
@@ -89,6 +91,7 @@ export const reviewFinding = sqliteTable(
   'review_finding',
   {
     id: id(),
+    recordId: text('record_id').unique(),
     reviewId: integer('review_id')
       .notNull()
       .references(() => review.id, { onDelete: 'cascade' }),

@@ -106,6 +106,7 @@ export const modules: ArchitectureModule[] = [
   ]),
   module('orchestrator/src/monitor-types.ts', ['./review-vocabulary.ts']),
   module('orchestrator/src/postgres-migrate.ts', []),
+  module('orchestrator/src/postgres-schema-review.ts', ['./postgres-schema.ts']),
   module('orchestrator/src/project-lock.ts', [
     './db.ts',
     './git-environment.ts',
@@ -146,7 +147,9 @@ export const modules: ArchitectureModule[] = [
     './review-vocabulary.ts',
     './contract.ts',
     './review.ts',
+    './review-outbox.ts',
   ]),
+  module('orchestrator/src/review-outbox.ts', ['./db.ts', './postgres-schema.ts']),
   module('orchestrator/src/review-types.ts', ['./review-vocabulary.ts', './change-identity.ts']),
   module('orchestrator/src/run-alive.ts', []),
   module('orchestrator/src/run-claim.ts', [

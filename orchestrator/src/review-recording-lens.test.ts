@@ -34,6 +34,23 @@ describe('review discipline', () => {
       { run_id: first, lens: 'safety', agent: 'codex', model: 'effective-a', completed_at: null },
       { run_id: second, lens: 'craft', agent: 'grok', model: 'effective-b', completed_at: null },
     ])
+    expect(
+      db()
+        .query<{ kind: string; count: number }, []>(
+          `SELECT kind, count(*) AS count FROM outbox
+           WHERE record_id=(SELECT record_id FROM review WHERE id=${review})
+              OR record_id IN (SELECT record_id FROM review_lens WHERE review_id=${review})
+              OR record_id IN (SELECT record_id FROM review_finding WHERE review_id=${review})
+           GROUP BY kind ORDER BY kind`,
+        )
+        .all(),
+    ).toEqual(
+      expect.arrayContaining([
+        { kind: 'review', count: 1 },
+        { kind: 'review_finding', count: 1 },
+        { kind: 'review_lens', count: 2 },
+      ]),
+    )
     expect(() => completeReview(review)).toThrow('untriaged')
     triageFinding(review, 1, 'accepted')
     completeReview(review)
@@ -42,6 +59,21 @@ describe('review discipline', () => {
         completed_at: string
       },
     ).toHaveProperty('completed_at')
+  })
+  test('a failed review insert rolls back both record rows and outbox rows', () => {
+    const runId = addRun({ agent: 'codex', job: 'review-lens', model: 'm', lens: 'rollback' })
+    const before = db().query<{ count: number }, []>('SELECT count(*) AS count FROM outbox').get()!
+    db().exec(`CREATE TEMP TRIGGER fail_review_lens BEFORE INSERT ON review_lens
+      BEGIN SELECT RAISE(ABORT, 'forced lens insert failure'); END`)
+    try {
+      expect(() => recordReview(runId, reviewReply(1), db())).toThrow('forced lens insert failure')
+      expect(db().query('SELECT id FROM review_lens WHERE run_id=?').get(runId)).toBeNull()
+      expect(
+        db().query<{ count: number }, []>('SELECT count(*) AS count FROM outbox').get(),
+      ).toEqual(before)
+    } finally {
+      db().exec('DROP TRIGGER fail_review_lens')
+    }
   })
   test('records orch-measured trees, refuses mixed measured content, and keeps claims optional', () => {
     const tree = '1111111111111111111111111111111111111111'
