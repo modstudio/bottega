@@ -1,6 +1,16 @@
 // Decisions of terminateProcessGroup's signalling path, beside idle-kill.ts; the file that owns the idle decisions is frozen.
 import { expect, test } from 'bun:test'
-import { terminateProcessGroup } from './idle-kill.ts'
+import { isGroupKillablePgid, terminateProcessGroup } from './idle-kill.ts'
+
+test('group kill is only allowed for a known pgid that is not the caller', () => {
+  expect(isGroupKillablePgid(50, 1)).toBe(true)
+  expect(isGroupKillablePgid(50, 50)).toBe(false)
+  expect(isGroupKillablePgid(50, null)).toBe(false)
+  expect(isGroupKillablePgid(1, 2)).toBe(false)
+  expect(isGroupKillablePgid(0, 2)).toBe(false)
+  expect(isGroupKillablePgid(null, 2)).toBe(false)
+  expect(isGroupKillablePgid(undefined, 2)).toBe(false)
+})
 
 test('a group signal refused with EPERM falls through to the sampled descendants', async () => {
   const signals: Array<{ pid: number; signal: NodeJS.Signals | number }> = []

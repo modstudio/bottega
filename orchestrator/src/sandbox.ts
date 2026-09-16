@@ -48,7 +48,7 @@ export const READONLY_LENS_DENY_PATHS = [
 ] as const
 
 /** Host-control sockets: Docker access is equivalent to escaping the sandbox. */
-const READONLY_LENS_DENY_SOCKETS = ['/var/run/docker.sock', '/run/docker.sock'] as const
+export const READONLY_LENS_DENY_SOCKETS = ['/var/run/docker.sock', '/run/docker.sock'] as const
 
 export const SRT_LIBRARY = join(
   ROOT,
@@ -60,13 +60,13 @@ export const SRT_LIBRARY = join(
 )
 let sandboxInitialized = false
 
-function expandHome(path: string): string {
+export function expandHome(path: string): string {
   if (path === '~') return homedir()
   if (path.startsWith('~/')) return join(homedir(), path.slice(2))
   return path
 }
 
-function resolveSecretPaths(project: Project | null): string[] {
+export function resolveSecretPaths(project: Project | null): string[] {
   if (!project) return []
   return (project.settings.secretPaths ?? []).map((entry) => {
     const expanded = expandHome(entry)

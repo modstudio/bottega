@@ -23,6 +23,7 @@ try {
       .replaceAll('__REPO__', '/tmp/repo/ops')
       .replaceAll('__HOME__', '/tmp')
       .replaceAll('__MONITOR_BACKSTOP_SECONDS__', '14400')
+      .replaceAll('__FIX_DEFECT_BACKSTOP_SECONDS__', '43200')
       .replaceAll('__MODEL_HOST__', 'example')
     const path = join(renderedDirectory, name.replace(/\.template$/, ''))
     writeFileSync(path, rendered)
