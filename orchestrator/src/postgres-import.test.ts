@@ -41,7 +41,7 @@ async function targetState(sql: SQL): Promise<unknown> {
     SELECT id, space_id, name, key_prefixes, checkout_path, stack, canon,
       landing_branch, production_branch, gate, require_clean_main, color,
       color_dark, env_prefix, mcp_server, worker_mcp_servers, secret_paths,
-      mcp_probe_tool, tracker, worktree, retired_at, created_at
+      mcp_probe_tool, docs, release, states, tracker, worktree, retired_at, created_at
     FROM project ORDER BY name
   `
   const sequences = await sql`
@@ -109,6 +109,7 @@ realPostgres('project import against copied live SQLite data', () => {
     expect([...sourceKeySet].sort()).toEqual([
       'color',
       'colorDark',
+      'docs',
       'envPrefix',
       'gate',
       'keyPrefixes',
@@ -142,12 +143,17 @@ realPostgres('project import against copied live SQLite data', () => {
     const columnForSetting: Record<string, string> = {
       color: 'color',
       colorDark: 'color_dark',
+      docs: 'docs',
       envPrefix: 'env_prefix',
       gate: 'gate',
       keyPrefixes: 'key_prefixes',
       mcp: 'mcp_probe_tool',
       mcpServer: 'mcp_server',
+      productionBranch: 'production_branch',
+      release: 'release',
+      requireCleanMain: 'require_clean_main',
       secretPaths: 'secret_paths',
+      states: 'states',
       tracker: 'tracker',
       trunk: 'landing_branch',
       worktree: 'worktree',

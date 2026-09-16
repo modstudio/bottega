@@ -1,6 +1,7 @@
 import { Database } from 'bun:sqlite'
 import { SQL } from 'bun'
 import { newRecordId } from '../../shared/record/schema.ts'
+import type { ProjectSettings } from './projects.ts'
 
 type SourceProject = {
   id: number
@@ -29,22 +30,25 @@ export type ProjectImportOptions = {
   spaceId: string
 }
 
-const PROJECT_SETTING_KEYS = new Set([
-  'color',
-  'colorDark',
-  'envPrefix',
-  'gate',
-  'keyPrefixes',
-  'mcp',
-  'mcpServer',
-  'productionBranch',
-  'requireCleanMain',
-  'secretPaths',
-  'tracker',
-  'trunk',
-  'worktree',
-  'workerMcpServers',
-])
+const PROJECT_SETTING_COLUMNS = {
+  color: 'color',
+  colorDark: 'color_dark',
+  docs: 'docs',
+  envPrefix: 'env_prefix',
+  gate: 'gate',
+  keyPrefixes: 'key_prefixes',
+  mcp: 'mcp_probe_tool',
+  mcpServer: 'mcp_server',
+  productionBranch: 'production_branch',
+  release: 'release',
+  requireCleanMain: 'require_clean_main',
+  secretPaths: 'secret_paths',
+  states: 'states',
+  tracker: 'tracker',
+  trunk: 'landing_branch',
+  worktree: 'worktree',
+  workerMcpServers: 'worker_mcp_servers',
+} satisfies Record<keyof Required<ProjectSettings>, string>
 
 function object(value: unknown, location: string): JsonObject {
   if (value === null || typeof value !== 'object' || Array.isArray(value)) {
@@ -68,7 +72,9 @@ function projectSettings(row: SourceProject): JsonObject {
     throw new Error(`project ${row.name} settings is not valid JSON`)
   }
   const settings = object(parsed, `project ${row.name} settings`)
-  const unknown = Object.keys(settings).filter((key) => !PROJECT_SETTING_KEYS.has(key))
+  const unknown = Object.keys(settings).filter(
+    (key) => !Object.hasOwn(PROJECT_SETTING_COLUMNS, key),
+  )
   if (unknown.length) {
     throw new Error(`project ${row.name} has unmapped settings keys: ${unknown.sort().join(', ')}`)
   }
@@ -196,6 +202,9 @@ export async function importProjects(options: ProjectImportOptions): Promise<Pro
           SELECT id FROM project WHERE space_id = ${options.spaceId}::uuid AND name = ${row.name}
         `
         const id = existing.length ? String(existing[0]!.id) : newRecordId()
+        const docs = document(settings.docs, `project ${row.name} settings.docs`)
+        const release = document(settings.release, `project ${row.name} settings.release`)
+        const states = document(settings.states, `project ${row.name} settings.states`)
         const tracker = document(settings.tracker, `project ${row.name} settings.tracker`)
         const worktree = document(settings.worktree, `project ${row.name} settings.worktree`)
         const workerMcpServers = optionalStringArray(settings, 'workerMcpServers', row.name)
@@ -205,7 +214,7 @@ export async function importProjects(options: ProjectImportOptions): Promise<Pro
             id, space_id, name, key_prefixes, checkout_path, stack, canon,
             landing_branch, production_branch, gate, require_clean_main, color,
             color_dark, env_prefix, mcp_server, worker_mcp_servers, secret_paths,
-            mcp_probe_tool, tracker, worktree, retired_at, created_at
+            mcp_probe_tool, docs, release, states, tracker, worktree, retired_at, created_at
           ) VALUES (
             ${id}::uuid, ${options.spaceId}::uuid, ${row.name}, ${tx.array(prefixes, 'text')},
             ${row.path}, ${row.stack}, ${row.canon !== 0},
@@ -220,6 +229,9 @@ export async function importProjects(options: ProjectImportOptions): Promise<Pro
             ${postgresTextArray(tx, workerMcpServers)},
             ${postgresTextArray(tx, secretPaths)},
             ${mcpProbeTool(settings, row.name)},
+            (${docs}::jsonb #>> '{}')::jsonb,
+            (${release}::jsonb #>> '{}')::jsonb,
+            (${states}::jsonb #>> '{}')::jsonb,
             (${tracker}::jsonb #>> '{}')::jsonb,
             (${worktree}::jsonb #>> '{}')::jsonb,
             ${row.retired_at},
@@ -241,6 +253,9 @@ export async function importProjects(options: ProjectImportOptions): Promise<Pro
             worker_mcp_servers = EXCLUDED.worker_mcp_servers,
             secret_paths = EXCLUDED.secret_paths,
             mcp_probe_tool = EXCLUDED.mcp_probe_tool,
+            docs = EXCLUDED.docs,
+            release = EXCLUDED.release,
+            states = EXCLUDED.states,
             tracker = EXCLUDED.tracker,
             worktree = EXCLUDED.worktree,
             retired_at = EXCLUDED.retired_at
