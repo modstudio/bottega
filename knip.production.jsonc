@@ -1,8 +1,9 @@
 {
-  // The unneeded-export pass: tests are entries. Entries must match knip.production.jsonc;
-  // a mismatch surfaces as a new finding in the other pass.
+  // The dead-code pass: production sources only, in-file use counts as use.
+  // Entries must match knip.jsonc; a mismatch surfaces as a new finding in the other pass.
   "$schema": "https://unpkg.com/knip@6.36.0/schema.json",
   "includeEntryExports": true,
+  "ignoreExportsUsedInFile": true,
   "workspaces": {
     ".": {
       "entry": [
@@ -14,13 +15,20 @@
         "ops/bin/*.sh!",
         "scripts/check.ts!",
         "scripts/check-*.ts!",
-        "scripts/**/*.test.ts",
-        "shared/**/*.test.ts",
+        "!scripts/**/*.test.ts",
         "!scripts/check-runtime.ts",
         "scripts/generate-recipe-schema.ts!",
         "scripts/quality/check-no-expect.ts!"
       ],
-      "project": ["scripts/**/*.ts!", "shared/**/*.ts!", "architecture.ts!"],
+      "project": [
+        "scripts/**/*.ts!",
+        "!scripts/**/*.test.ts",
+        "!scripts/quality/test-timing-decision.ts",
+        "shared/**/*.ts!",
+        "!shared/**/*.test.ts",
+        "!shared/test-*.ts",
+        "architecture.ts!"
+      ],
       // Invoked through node_modules/.bin/depcruise in scripts/check-architecture.ts.
       "ignoreDependencies": ["dependency-cruiser"]
     },
@@ -29,15 +37,23 @@
         "hooks/*!",
         "src/orch.ts!",
         "src/record-api-server.ts!",
-        "src/**/*.test.ts",
+        // Launched by path from src/sandbox.ts for Grok's MCP configuration.
+        "src/ask-proxy.ts!",
         "scripts/acp-parity.ts!",
-        "scripts/**/*.test.ts",
         "scripts/check-canon-lint.ts!",
         "scripts/check-pack-budget.ts!",
         "scripts/import-postgres-projects.ts!",
         "scripts/test-postgres-rls.ts!"
       ],
-      "project": ["src/**/*.ts!", "scripts/**/*.ts!", "test/**/*.ts"],
+      "project": [
+        "src/**/*.ts!",
+        "!src/**/*.test.ts",
+        "!src/**/*.fixture*.ts",
+        "!src/gate-load.ts",
+        "scripts/**/*.ts!",
+        "!scripts/**/*.test.ts",
+        "!test/**/*.ts"
+      ],
       "ignoreDependencies": [
         // Invoked through node_modules/.bin/codex-acp in src/transport.ts.
         "@agentclientprotocol/codex-acp",
@@ -46,11 +62,11 @@
       ]
     },
     "hub": {
-      "entry": ["src/cli.ts!", "src/**/*.test.ts"],
-      "project": ["src/**/*.ts!", "test/**/*.ts"]
+      "entry": ["src/cli.ts!"],
+      "project": ["src/**/*.ts!", "!src/**/*.test.ts", "!src/**/*.fixture*.ts", "!test/**/*.ts"]
     },
     "hub/web": {
-      "entry": ["src/main.tsx!", "src/**/*.test.{ts,tsx}"],
+      "entry": ["src/main.tsx!"],
       "project": ["src/**/*.{ts,tsx}!", "vite.config.ts!"],
       // Loaded through the CSS import in src/app/globals.css.
       "ignoreDependencies": ["tailwindcss"]

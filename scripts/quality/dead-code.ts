@@ -1,6 +1,6 @@
 import { type Finding, fingerprint, introducedFindings } from '../../shared/ratchet'
 
-export const DEAD_CODE_ISSUE_TYPES = [
+const KNIP_ISSUE_TYPES = [
   'files',
   'dependencies',
   'devDependencies',
@@ -15,6 +15,13 @@ export const DEAD_CODE_ISSUE_TYPES = [
   'namespaceMembers',
 ] as const
 
+export const DEAD_CODE_ISSUE_TYPES = [
+  ...KNIP_ISSUE_TYPES,
+  'unneededExports',
+  'unneededTypes',
+] as const
+
+type KnipIssueType = (typeof KNIP_ISSUE_TYPES)[number]
 export type DeadCodeIssueType = (typeof DEAD_CODE_ISSUE_TYPES)[number]
 export type DeadCodeFinding = {
   workspace: string
@@ -26,7 +33,7 @@ export type DeadCodeFinding = {
 
 type KnipItem = { name: string; line?: number }
 type KnipReport = {
-  issues: Array<{ file: string } & Partial<Record<DeadCodeIssueType, KnipItem[]>>>
+  issues: Array<{ file: string } & Partial<Record<KnipIssueType, KnipItem[]>>>
 }
 
 function workspaceFor(file: string) {
@@ -38,7 +45,7 @@ function workspaceFor(file: string) {
 
 export function normalizeKnipReport(
   report: KnipReport,
-  issueTypes: readonly DeadCodeIssueType[] = DEAD_CODE_ISSUE_TYPES,
+  issueTypes: readonly KnipIssueType[] = KNIP_ISSUE_TYPES,
 ): DeadCodeFinding[] {
   const findings = report.issues.flatMap((entry) =>
     issueTypes.flatMap((issueType) =>
@@ -52,6 +59,25 @@ export function normalizeKnipReport(
     ),
   )
   return findings.sort(compareFindings)
+}
+
+export function unneededExportFindings(
+  production: DeadCodeFinding[],
+  defaultMode: DeadCodeFinding[],
+): DeadCodeFinding[] {
+  const productionSymbols = new Set(
+    production.map((finding) => `${finding.workspace}\0${finding.file}\0${finding.symbol}`),
+  )
+  return defaultMode
+    .filter((finding) => finding.issueType === 'exports' || finding.issueType === 'types')
+    .filter(
+      (finding) =>
+        !productionSymbols.has(`${finding.workspace}\0${finding.file}\0${finding.symbol}`),
+    )
+    .map((finding) => ({
+      ...finding,
+      issueType: finding.issueType === 'exports' ? 'unneededExports' : 'unneededTypes',
+    }))
 }
 
 function compareFindings(a: DeadCodeFinding, b: DeadCodeFinding) {

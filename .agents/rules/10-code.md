@@ -49,6 +49,6 @@ A production or test file at the ceiling may only shrink. Split out and name ano
 
 A function at the cognitive complexity ceiling may only become simpler. Extract a decision when a function needs more complexity. The cognitive complexity rule in `eslint.config.js` owns the ceiling, and `scripts/check-cognitive-ceiling.ts` enforces the frozen-function ratchet.
 
-## Remove dead code
+## Remove dead code and unneeded exports
 
-Dead code fails the gate. The baseline only shrinks; `scripts/check-dead-code.ts` enforces it.
+Code unused by production is dead and must be deleted with any test that exists only for it. A symbol used by production but imported only by tests has an unneeded export keyword. The baseline only shrinks; `scripts/check-dead-code.ts` enforces both classes.
