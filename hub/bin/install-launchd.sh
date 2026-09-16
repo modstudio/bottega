@@ -55,7 +55,7 @@ if launchctl print "gui/$UID_NUM/com.user.work-report" >/dev/null 2>&1; then
 fi
 
 echo "  logs: $HOME/Library/Logs/hub/"
-for LABEL in com.user.hub-collect com.user.hub-send; do
+for LABEL in com.user.hub-collect com.user.hub-send com.user.hub-serve; do
   launchctl print "gui/$UID_NUM/$LABEL" 2>/dev/null \
     | grep -E "^\sstate = " | sed "s#^#  $LABEL #" || echo "  $LABEL NOT LOADED"
 done
