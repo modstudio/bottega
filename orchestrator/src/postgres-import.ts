@@ -9,6 +9,7 @@ type SourceProject = {
   stack: string | null
   canon: number
   settings: string | null
+  retired_at: string | null
 }
 
 type SourceSequence = { name: string; next: number }
@@ -126,7 +127,7 @@ function readSources(
     return {
       projects: orch
         .query<SourceProject, []>(
-          'SELECT id, name, path, stack, canon, settings FROM project ORDER BY id',
+          'SELECT id, name, path, stack, canon, settings, retired_at FROM project ORDER BY id',
         )
         .all(),
       sequences: hub.query<SourceSequence, []>('SELECT name, next FROM seq ORDER BY name').all(),
@@ -149,11 +150,13 @@ export async function importProjects(options: ProjectImportOptions): Promise<Pro
 
       const projectIds = new Map<string, string>()
       const prefixOwners = new Map<string, string[]>()
+      const retiredPrefixOwners = new Map<string, string[]>()
       for (const row of source.projects) {
         const settings = projectSettings(row)
         const prefixes = keyPrefixes(settings, row.name)
         for (const prefix of prefixes) {
-          prefixOwners.set(prefix, [...(prefixOwners.get(prefix) ?? []), row.name])
+          const owners = row.retired_at === null ? prefixOwners : retiredPrefixOwners
+          owners.set(prefix, [...(owners.get(prefix) ?? []), row.name])
         }
 
         const existing = await tx`
@@ -169,7 +172,7 @@ export async function importProjects(options: ProjectImportOptions): Promise<Pro
             id, space_id, name, key_prefixes, checkout_path, stack, canon,
             landing_branch, production_branch, gate, require_clean_main, color,
             color_dark, env_prefix, mcp_server, worker_mcp_servers, secret_paths,
-            mcp_probe_tool, tracker, worktree, created_at
+            mcp_probe_tool, tracker, worktree, retired_at, created_at
           ) VALUES (
             ${id}::uuid, ${options.spaceId}::uuid, ${row.name}, ${tx.array(prefixes, 'text')},
             ${row.path}, ${row.stack}, ${row.canon !== 0},
@@ -186,6 +189,7 @@ export async function importProjects(options: ProjectImportOptions): Promise<Pro
             ${mcpProbeTool(settings, row.name)},
             (${tracker}::jsonb #>> '{}')::jsonb,
             (${worktree}::jsonb #>> '{}')::jsonb,
+            ${row.retired_at},
             now()
           )
           ON CONFLICT (space_id, name) DO UPDATE SET
@@ -205,7 +209,8 @@ export async function importProjects(options: ProjectImportOptions): Promise<Pro
             secret_paths = EXCLUDED.secret_paths,
             mcp_probe_tool = EXCLUDED.mcp_probe_tool,
             tracker = EXCLUDED.tracker,
-            worktree = EXCLUDED.worktree
+            worktree = EXCLUDED.worktree,
+            retired_at = EXCLUDED.retired_at
         `
         projectIds.set(row.name, id)
       }
@@ -223,6 +228,14 @@ export async function importProjects(options: ProjectImportOptions): Promise<Pro
         }
         const prefix = sequence.name.slice('task:'.length)
         const owners = prefixOwners.get(prefix) ?? []
+        const retiredOwners = retiredPrefixOwners.get(prefix) ?? []
+        if (owners.length === 0 && retiredOwners.length > 0) {
+          skippedSequences.push({
+            ...sequence,
+            reason: `prefix is owned only by retired project${retiredOwners.length === 1 ? '' : 's'}: ${retiredOwners.join(', ')}`,
+          })
+          continue
+        }
         if (owners.length !== 1) {
           const detail = owners.length
             ? `matched multiple projects: ${owners.join(', ')}`
