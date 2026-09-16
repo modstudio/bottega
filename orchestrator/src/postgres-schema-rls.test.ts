@@ -16,7 +16,12 @@ import { RUN_RECORD_PAYLOAD_COLUMNS } from './run-outbox.ts'
 const container = process.env.ORCH_TEST_POSTGRES_CONTAINER
 const ownerUrl = process.env.ORCH_TEST_POSTGRES_OWNER_URL
 const migrationsFolder = join(import.meta.dir, '..', 'postgres', 'migrations')
-const postgresSchema = ['postgres-schema.ts', 'postgres-schema-run.ts', 'postgres-schema-review.ts']
+const postgresSchema = [
+  'postgres-schema.ts',
+  'postgres-schema-run.ts',
+  'postgres-schema-review.ts',
+  'postgres-schema-landing.ts',
+]
   .map((file) => readFileSync(join(import.meta.dir, file), 'utf8'))
   .join('\n')
 const migration = readdirSync(migrationsFolder, { withFileTypes: true })
@@ -111,6 +116,11 @@ describe('Postgres substrate shape', () => {
       'review',
       'review_lens',
       'review_finding',
+      'landing',
+      'landing_override',
+      'landing_review_carry',
+      'contention',
+      'test_flake',
       'seq',
     ]) {
       expect(migration).toContain(`ALTER TABLE "${table}" ENABLE ROW LEVEL SECURITY`)
@@ -220,6 +230,32 @@ realPostgres('RLS proof against real Postgres', () => {
       VALUES
         ('01990000-0000-7000-8000-00000000006a', '${SPACE_A}', '${REVIEW_A}', '01990000-0000-7000-8000-00000000005a', '${MACHINE_A}', 1, 1, 'major', 'a', 'a', 'a', now(), now()),
         ('01990000-0000-7000-8000-00000000006b', '${SPACE_B}', '${REVIEW_B}', '01990000-0000-7000-8000-00000000005b', '${MACHINE_A}', 2, 1, 'major', 'b', 'b', 'b', now(), now());
+      INSERT INTO landing
+        (id, space_id, project_id, machine_id, local_id, branch, status, started_at, created_at, updated_at)
+      VALUES
+        ('01990000-0000-7000-8000-00000000007a', '${SPACE_A}', '${PROJECT_A}', '${MACHINE_A}', 1, 'a', 'landed', now(), now(), now()),
+        ('01990000-0000-7000-8000-00000000007b', '${SPACE_B}', '${PROJECT_B}', '${MACHINE_A}', 2, 'b', 'landed', now(), now(), now());
+      INSERT INTO landing_override
+        (id, space_id, project_id, machine_id, local_id, branch, tip, tree, reason, at, created_at, updated_at)
+      VALUES
+        ('01990000-0000-7000-8000-00000000008a', '${SPACE_A}', '${PROJECT_A}', '${MACHINE_A}', 1, 'a', 'tip', 'tree', 'reason', now(), now(), now()),
+        ('01990000-0000-7000-8000-00000000008b', '${SPACE_B}', '${PROJECT_B}', '${MACHINE_A}', 2, 'b', 'tip', 'tree', 'reason', now(), now(), now());
+      INSERT INTO landing_review_carry
+        (id, space_id, project_id, machine_id, local_id, branch, tip, tree, review_id,
+         reviewed_commit, reviewed_tree, patch_id, old_base, new_base, at, created_at, updated_at)
+      VALUES
+        ('01990000-0000-7000-8000-00000000009a', '${SPACE_A}', '${PROJECT_A}', '${MACHINE_A}', 1, 'a', 'tip', 'tree', '${REVIEW_A}', 'commit', 'tree', 'patch', 'old', 'new', now(), now(), now()),
+        ('01990000-0000-7000-8000-00000000009b', '${SPACE_B}', '${PROJECT_B}', '${MACHINE_A}', 2, 'b', 'tip', 'tree', '${REVIEW_B}', 'commit', 'tree', 'patch', 'old', 'new', now(), now(), now());
+      INSERT INTO contention
+        (id, space_id, machine_id, local_id, at, resource_kind, resource_key, event_kind, created_at, updated_at)
+      VALUES
+        ('01990000-0000-7000-8000-00000000010a', '${SPACE_A}', '${MACHINE_A}', 1, now(), 'lock', 'a', 'wait', now(), now()),
+        ('01990000-0000-7000-8000-00000000010b', '${SPACE_B}', '${MACHINE_A}', 2, now(), 'lock', 'b', 'wait', now(), now());
+      INSERT INTO test_flake
+        (id, space_id, project_id, machine_id, local_id, test, file, load_at_failure, at, created_at, updated_at)
+      VALUES
+        ('01990000-0000-7000-8000-00000000011a', '${SPACE_A}', '${PROJECT_A}', '${MACHINE_A}', 1, 'a', 'a.ts', '{}', now(), now(), now()),
+        ('01990000-0000-7000-8000-00000000011b', '${SPACE_B}', '${PROJECT_B}', '${MACHINE_A}', 2, 'b', 'b.ts', '{}', now(), now(), now());
     `,
     )
 
@@ -239,7 +275,7 @@ realPostgres('RLS proof against real Postgres', () => {
       'postgres',
       'postgres',
       `
-      DROP TABLE IF EXISTS review_finding, review_lens, review, run, membership, machine, seq, project, "user", space CASCADE;
+      DROP TABLE IF EXISTS test_flake, contention, landing_review_carry, landing_override, landing, review_finding, review_lens, review, run, membership, machine, seq, project, "user", space CASCADE;
       DROP SCHEMA IF EXISTS drizzle CASCADE;
       REVOKE CREATE ON DATABASE postgres FROM record_owner;
       REVOKE CREATE ON SCHEMA public FROM record_owner;
@@ -324,6 +360,25 @@ realPostgres('RLS proof against real Postgres', () => {
       ['review', REVIEW_B],
       ['review_lens', '01990000-0000-7000-8000-00000000005b'],
       ['review_finding', '01990000-0000-7000-8000-00000000006b'],
+    ]) {
+      const result = asSpace(
+        'tenant_actor',
+        'tenant-password',
+        SPACE_A,
+        `SELECT id FROM ${table} WHERE id = '${id}';`,
+      )
+      expect(result.code, result.stderr).toBe(0)
+      expect(result.stdout).toBe('')
+    }
+  })
+
+  test('cross-space landing evidence reads return nothing', () => {
+    for (const [table, id] of [
+      ['landing', '01990000-0000-7000-8000-00000000007b'],
+      ['landing_override', '01990000-0000-7000-8000-00000000008b'],
+      ['landing_review_carry', '01990000-0000-7000-8000-00000000009b'],
+      ['contention', '01990000-0000-7000-8000-00000000010b'],
+      ['test_flake', '01990000-0000-7000-8000-00000000011b'],
     ]) {
       const result = asSpace(
         'tenant_actor',
