@@ -13,6 +13,11 @@
  */
 /** Runtime vocabulary as well as a type: reporting must show zeroes for new kinds. */
 export const FAILURE_KINDS = [
+  /**
+   * The vendor is saturated for this model right now. This is not exhausted
+   * plan quota, stale authentication, or a refusal to serve the prompt.
+   */
+  'capacity',
   'quota',
   'auth',
   /**
@@ -145,6 +150,13 @@ const PATTERNS: [FailureKind, RegExp][] = [
     /\b(context (?:window|length|limit)|maximum context|max(?:imum)? tokens for (?:this )?context)\b/i,
   ],
   ['cost', /\b(cost limit|budget (?:limit )?(?:exceeded|reached)|maximum cost)\b/i],
+  // The vendor is busy, so another agent should take the prompt immediately.
+  // Keep this before account failures: the stored error is a whole event stream
+  // and an unrelated event may contain quota, entitlement or authentication text.
+  [
+    'capacity',
+    /\b(?:at capacity|overloaded|server is busy|capacity constraints|(?:model|engine)\b[\s\S]{0,80}\btemporarily unavailable|temporarily unavailable\b[\s\S]{0,80}\b(?:model|engine))\b/i,
+  ],
   // The plan is out. Distinct from `auth` because waiting fixes it.
   [
     'quota',
@@ -336,6 +348,7 @@ export const COOLS_DOWN: FailureKind[] = ['quota', 'auth', 'entitlement']
 
 /** Failures where another vendor should receive the same prompt immediately. */
 export const FAILS_OVER: FailureKind[] = [
+  'capacity',
   'quota',
   'auth',
   'entitlement',
@@ -347,9 +360,9 @@ export const FAILS_OVER: FailureKind[] = [
 /**
  * Kinds that must never count as evidence about an agent.
  *
- * Separate from NEEDS_HUMAN, which is about who can fix it. Quota and auth
- * failures describe whether the vendor will serve this account right now, not
- * whether the agent can do the work. An unreachable endpoint is likewise
+ * Separate from NEEDS_HUMAN, which is about who can fix it. Capacity, quota and
+ * auth failures describe whether the vendor will serve this account right now,
+ * not whether the agent can do the work. An unreachable endpoint is likewise
  * neither the agent's doing nor its record. A content refusal describes vendor
  * policy for a prompt class, not the agent's competence at the job.
  *
@@ -362,6 +375,7 @@ export const FAILS_OVER: FailureKind[] = [
  * `unreachable` was carved out to stop.
  */
 export const NOT_EVIDENCE: FailureKind[] = [
+  'capacity',
   'quota',
   'auth',
   'entitlement',

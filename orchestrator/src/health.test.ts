@@ -5,6 +5,24 @@ import { db } from './db.ts'
 import { harnessHealth } from './health.ts'
 
 describe('harness health', () => {
+  test('reports vendor capacity as its own operator-facing failure class', () => {
+    const now = new Date('2026-09-07T12:00:00.000Z')
+    const run = addRun({
+      agent: 'codex',
+      job: 'implement',
+      status: 'failed',
+      kind: 'capacity',
+      startedAt: '2026-09-07T11:00:00.000Z',
+    })
+    db()
+      .query('UPDATE run SET error=? WHERE id=?')
+      .run('Selected model is at capacity. Please try a different model.', run)
+
+    const capacity = harnessHealth(1, db(), now).classes.find((row) => row.kind === 'capacity')
+    expect(capacity).toMatchObject({ count: 1 })
+    expect(capacity?.clusters[0]?.text).toContain('capacity')
+  })
+
   test('counts substituted and silent provenance by agent', () => {
     const now = new Date('2026-09-07T12:00:00.000Z')
     const substituted = addRun({
