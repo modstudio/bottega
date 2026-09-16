@@ -14,7 +14,7 @@ The worktree is the safety boundary. A repository agent gets workspace-write for
 
 **A registered main checkout stays clean.** Dispatch refreshes the main index and refuses tracked modifications, naming the dirty paths and the worktree (both anchored lines). Untracked files warn; ignored files are silent. Default on; opt out with `requireCleanMain` false. Resumes skip the check. Bare-main end state: `orch doc show bare-main-end-state --scope project --subject bottega`.
 
-A review agent may edit and run tests to verify a hypothesis. Those edits are scratch evidence; a review worktree diff must not be landed. Implement and fix agents may commit to their run branch; they may not push, merge into trunk, or rewrite history. Review agents do not commit, push or merge. Admission to trunk is a GitHub pull request merged on GitHub after the local gate.
+A review agent may edit and run tests to verify a hypothesis; those edits are scratch evidence, never landed, and a review agent never commits, pushes or merges. Implement and fix agents commit to their run branch; they never push, merge into trunk or rewrite history. Trunk admits work only by GitHub pull request after the local gate; after merging a reworked run, run `orch branches landed`.
 
 `hooks/protect-main-checkout.py` denies tracked-file `Write`/`Edit`/`NotebookEdit` inside a registered main checkout and names the worktree (both anchored lines). Not on Bash. `requireCleanMain` false is exempt. Fail-open on a missing database, malformed payload, or git failure. `hooks/no-attribution.py` denies `git commit`/`git merge`/`gh pr create` whose message credits an AI, including `-F` and `--body-file`. `.githooks/commit-msg` refuses the same patterns. Enable with `git config core.hooksPath .githooks`.
 

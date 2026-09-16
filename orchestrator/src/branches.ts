@@ -1,18 +1,21 @@
 // concern: branches
 /** Observes registered projects and assembles the run-minted branch report. */
 
+import { type PullRequestLandingEvidence, verifyBranchLanding } from './branch-landing-record.ts'
 import { settleDeletedBranch } from './branch-settlement.ts'
 import {
-  type BranchLanding,
+  type BranchLandingRecord,
+  type BranchStateDecision,
   decideBranchState,
   decideProtectedBranch,
   decidePruneEligibility,
+  findRecordedBranchLanding,
   type MergedPullRequest,
   type PatchEquivalentForm,
   type PullRequestCommitCheck,
   pullRequestCarriesKey,
 } from './branch-state.ts'
-import { db, writableDb } from './db.ts'
+import { db, nowIso, sessionId, writableDb, writeTransaction } from './db.ts'
 import { targetGitEnvironment } from './git-environment.ts'
 import type { Project } from './projects.ts'
 import { projectByName, projects } from './projects.ts'
@@ -34,7 +37,7 @@ type RunRow = {
   status: string
 }
 
-type BranchReportRow = BranchLanding & {
+type BranchReportRow = BranchStateDecision & {
   branch: string
   tip: string
   commitsNotOnTrunk: number
@@ -70,12 +73,23 @@ type BranchPruneReport = {
   errors: string[]
 }
 
+type BranchLandingRecordRow = {
+  project: string
+  branch: string
+  tip: string
+  pr_number: number
+  merge_commit: string | null
+  merged_at: string
+}
+
 function command(cwd: string, argv: string[], label: string): string {
   let process: ReturnType<typeof Bun.spawnSync>
   try {
+    // Output is parsed, so a forced-colour environment must not reach gh or git.
+    const { FORCE_COLOR: _force, CLICOLOR_FORCE: _clicolor, ...env } = targetGitEnvironment(cwd)
     process = Bun.spawnSync(argv, {
       cwd,
-      env: targetGitEnvironment(cwd),
+      env: { ...env, NO_COLOR: '1' },
       stdout: 'pipe',
       stderr: 'pipe',
     })
@@ -92,6 +106,24 @@ function command(cwd: string, argv: string[], label: string): string {
 
 function git(cwd: string, ...args: string[]): string {
   return command(cwd, ['git', ...args], `git ${args.join(' ')}`)
+}
+
+function recordedBranchLandings(): BranchLandingRecord[] {
+  const rows = db()
+    .query(
+      `SELECT project,branch,tip,pr_number,merge_commit,merged_at
+         FROM branch_landing_record
+        ORDER BY project,branch`,
+    )
+    .all() as BranchLandingRecordRow[]
+  return rows.map((row) => ({
+    project: row.project,
+    branch: row.branch,
+    tip: row.tip,
+    number: row.pr_number,
+    mergeCommit: row.merge_commit,
+    mergedAt: row.merged_at,
+  }))
 }
 
 function mergedPullRequests(project: Project): {
@@ -237,6 +269,7 @@ function branchReportFor(project: Project, keyFilter?: string): BranchReportProj
   const runs = projectRuns(project)
   const branches = localBranches(project)
   const checkedOut = checkedOutBranches(project)
+  const recordedLandings = recordedBranchLandings()
   const trunkTip = git(
     project.path,
     'rev-parse',
@@ -307,11 +340,12 @@ function branchReportFor(project: Project, keyFilter?: string): BranchReportProj
                   fetchedPullRequests,
                 )
               : null,
+          recordedLanding: findRecordedBranchLanding(recordedLandings, project.name, branch),
           superseded: isTaskBranchSuperseded(branch, keyRows),
           turns: new Map(branchRuns.map((run) => [run.parent_run_id ?? run.id, run.id] as const)),
         }
       })
-      const decided = new Map<string, BranchLanding>()
+      const decided = new Map<string, BranchStateDecision>()
       for (const row of [...observed].sort(
         (left, right) => Math.max(...right.runIds) - Math.max(...left.runIds),
       )) {
@@ -331,11 +365,13 @@ function branchReportFor(project: Project, keyFilter?: string): BranchReportProj
           row.branch,
           decideBranchState({
             branch: row.branch,
+            tip: row.tip,
             mergedPullRequests: pullRequests,
             mergedPullRequestsTruncated: truncated,
             commitsNotOnTrunk: row.commitsNotOnTrunk,
             patchEquivalent: row.patchEquivalent,
             pullRequestCommitCheck: row.pullRequestCommitCheck,
+            recordedLanding: row.recordedLanding,
             laterTurnBranches,
             superseded: row.superseded,
           }),
@@ -347,6 +383,7 @@ function branchReportFor(project: Project, keyFilter?: string): BranchReportProj
           ({
             patchEquivalent: _patchEquivalent,
             pullRequestCommitCheck: _pullRequestCommitCheck,
+            recordedLanding: _recordedLanding,
             superseded: _superseded,
             turns: _turns,
             ...row
@@ -392,6 +429,119 @@ export function branchesReport(options: { project?: string; key?: string }): Bra
   }
 }
 
+type BranchRunIdentity = { project_name: string; launch_key: string | null }
+
+function branchRunIdentity(branch: string): {
+  project: Project
+  taskKey: string
+} {
+  const matches = db()
+    .query(
+      `SELECT DISTINCT p.name project_name,r.launch_key
+         FROM run r
+         JOIN project p ON p.id=r.project_id OR (r.project_id IS NULL AND p.name=r.repo)
+        WHERE r.minted_branch=?`,
+    )
+    .all(branch) as BranchRunIdentity[]
+  if (matches.length === 0) throw new Error(`branch ${branch} is not a recorded run branch`)
+  if (matches.length !== 1) {
+    throw new Error(`branch ${branch} belongs to more than one recorded project or task key`)
+  }
+  const match = matches[0]!
+  if (!match.launch_key) throw new Error(`branch ${branch} has no recorded task key`)
+  const project = projectByName(match.project_name)
+  if (!project) throw new Error(`project ${match.project_name} is not active`)
+  return { project, taskKey: match.launch_key }
+}
+
+function pullRequestLanding(project: Project, number: number): PullRequestLandingEvidence {
+  const output = command(
+    project.path,
+    [
+      'gh',
+      'pr',
+      'view',
+      String(number),
+      '--json',
+      'number,state,title,headRefName,mergeCommit,mergedAt',
+    ],
+    `pull-request verification for PR #${number}`,
+  )
+  let value: unknown
+  try {
+    value = JSON.parse(output)
+  } catch (error) {
+    throw new Error(
+      `pull-request verification returned invalid JSON: ${error instanceof Error ? error.message : String(error)}`,
+    )
+  }
+  if (!isPullRequestLandingEvidence(value)) {
+    throw new Error('pull-request verification returned an unexpected JSON shape')
+  }
+  return value
+}
+
+function isPullRequestLandingEvidence(value: unknown): value is PullRequestLandingEvidence {
+  if (!value || typeof value !== 'object') return false
+  const row = value as Record<string, unknown>
+  const mergeCommit = row.mergeCommit
+  return (
+    Number.isInteger(row.number) &&
+    typeof row.state === 'string' &&
+    typeof row.title === 'string' &&
+    typeof row.headRefName === 'string' &&
+    (typeof row.mergedAt === 'string' || row.mergedAt === null) &&
+    (mergeCommit === null ||
+      (typeof mergeCommit === 'object' &&
+        mergeCommit !== null &&
+        typeof (mergeCommit as Record<string, unknown>).oid === 'string'))
+  )
+}
+
+export type RecordedLandingReport = {
+  branch: string
+  taskKey: string
+  number: number
+  mergeCommit: string | null
+  mergedAt: string
+  recordedAt: string
+}
+
+/** Verify GitHub's merged PR evidence, then persist one explicit landing row. */
+export function recordBranchLanding(branch: string, number: number): RecordedLandingReport {
+  if (!branch.trim()) throw new Error('branch must be non-empty')
+  if (!Number.isSafeInteger(number) || number < 1) throw new Error('PR number must be positive')
+  writableDb()
+  const { project, taskKey } = branchRunIdentity(branch)
+  const verification = verifyBranchLanding(taskKey, pullRequestLanding(project, number))
+  if (!verification.accepted) throw new Error(`refusing to record landing: ${verification.reason}`)
+  const tip = git(project.path, 'rev-parse', '--verify', '--end-of-options', `${branch}^{commit}`)
+  const recordedAt = nowIso()
+  writeTransaction(() => {
+    db()
+      .query(
+        `INSERT INTO branch_landing_record
+           (project,branch,tip,pr_number,merge_commit,merged_at,recording_session,recorded_at)
+         VALUES (?,?,?,?,?,?,?,?)
+         ON CONFLICT(project,branch) DO UPDATE SET
+           tip=excluded.tip, pr_number=excluded.pr_number, merge_commit=excluded.merge_commit,
+           merged_at=excluded.merged_at, recording_session=excluded.recording_session,
+           recorded_at=excluded.recorded_at`,
+      )
+      .run(
+        project.name,
+        branch,
+        tip,
+        verification.landing.number,
+        verification.landing.mergeCommit,
+        verification.landing.mergedAt,
+        sessionId(),
+        recordedAt,
+      )
+  })
+  return { branch, taskKey, ...verification.landing, recordedAt }
+}
+
 function listOperatorBranch(row: BranchReportRow, report: BranchPruneReport): boolean {
   if (row.state !== 'unlanded' && row.state !== 'unknown') return false
   report.operator.push({
@@ -415,7 +565,10 @@ function tipStillEligible(
     currentTip = localBranches(project).get(row.branch)
   } catch (error) {
     const reason = error instanceof Error ? error.message : String(error)
-    report.kept.push({ branch: row.branch, reason: 'tip could not be rechecked' })
+    report.kept.push({
+      branch: row.branch,
+      reason: 'tip could not be rechecked',
+    })
     report.errors.push(`${row.branch}: ${reason}`)
     return false
   }
@@ -474,7 +627,10 @@ export function pruneBranches(options: {
   key: string
   dryRun?: boolean
 }): BranchPruneReport {
-  const observed = branchesReport({ project: options.project, key: options.key })
+  const observed = branchesReport({
+    project: options.project,
+    key: options.key,
+  })
   const projectReport = observed.projects[0]!
   if (projectReport.error) throw new Error(projectReport.error)
   const project = projectByName(options.project)!
@@ -508,6 +664,9 @@ function landedByText(row: BranchReportRow): string {
   }
   if (row.landedBy.type === 'turn') return `landed (turn ${row.landedBy.branch})`
   if (row.landedBy.type === 'pr-commits') return `landed (PR #${row.landedBy.number} commits)`
+  if (row.landedBy.type === 'recorded') {
+    return `landed (recorded PR #${row.landedBy.number}, merge ${row.landedBy.mergeCommit ?? 'none'}, ${row.landedBy.mergedAt})`
+  }
   return `landed (PR #${row.landedBy.number}, merge ${row.landedBy.mergeCommit ?? 'none'}, ${row.landedBy.mergedAt})`
 }
 
@@ -544,7 +703,7 @@ function renderProject(project: BranchReportProject): string[] {
   if (project.keys.length === 0 && project.protected.length === 0)
     lines.push('  no run-minted local branches')
   for (const key of project.keys) {
-    lines.push(`  ${key}`)
+    lines.push(`  ${key.key}`)
     lines.push(...key.branches.map(renderBranch))
   }
   return lines
@@ -553,5 +712,6 @@ function renderProject(project: BranchReportProject): string[] {
 function renderBranch(branch: BranchReportRow): string {
   const state =
     branch.state === 'unknown' && branch.error ? `unknown (${branch.error})` : landedByText(branch)
-  return `    ${branch.branch}  ${state}  tip ${branch.tip}  commits-not-on-trunk ${branch.commitsNotOnTrunk}  checked-out ${branch.checkedOut ? 'yes' : 'no'}  live-run ${branch.liveRun ? 'yes' : 'no'}  runs ${branch.runIds.join(',')}`
+  const note = branch.note ? `  ${branch.note}` : ''
+  return `    ${branch.branch}  ${state}${note}  tip ${branch.tip}  commits-not-on-trunk ${branch.commitsNotOnTrunk}  checked-out ${branch.checkedOut ? 'yes' : 'no'}  live-run ${branch.liveRun ? 'yes' : 'no'}  runs ${branch.runIds.join(',')}`
 }

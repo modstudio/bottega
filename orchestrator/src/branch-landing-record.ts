@@ -1,0 +1,49 @@
+// concern: branch-landing-record
+/** Validates GitHub evidence before a reworked run branch is recorded as landed. */
+
+import { pullRequestCarriesKey } from './branch-state.ts'
+
+export type PullRequestLandingEvidence = {
+  number: number
+  state: string
+  title: string
+  headRefName: string
+  mergeCommit: { oid: string } | null
+  mergedAt: string | null
+}
+
+type VerifiedBranchLanding = {
+  number: number
+  mergeCommit: string | null
+  mergedAt: string
+}
+
+type LandingVerification =
+  | { accepted: true; landing: VerifiedBranchLanding }
+  | { accepted: false; reason: string }
+
+export function verifyBranchLanding(
+  taskKey: string,
+  pullRequest: PullRequestLandingEvidence,
+): LandingVerification {
+  if (pullRequest.state !== 'MERGED' || pullRequest.mergedAt === null) {
+    return {
+      accepted: false,
+      reason: `PR #${pullRequest.number} is not merged`,
+    }
+  }
+  if (!pullRequestCarriesKey(pullRequest, taskKey)) {
+    return {
+      accepted: false,
+      reason: `PR #${pullRequest.number} carries task key neither in its title nor in its head branch: ${taskKey}`,
+    }
+  }
+  return {
+    accepted: true,
+    landing: {
+      number: pullRequest.number,
+      mergeCommit: pullRequest.mergeCommit?.oid ?? null,
+      mergedAt: pullRequest.mergedAt,
+    },
+  }
+}
