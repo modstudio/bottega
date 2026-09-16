@@ -1,7 +1,7 @@
 // concern: clock
 /** Time and timer primitives. Knows no orchestrator concern. */
 
-export type ClockHandle = ReturnType<typeof globalThis.setTimeout>
+type ClockHandle = ReturnType<typeof globalThis.setTimeout>
 
 export type Clock = {
   now(): number

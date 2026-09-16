@@ -10,7 +10,7 @@ export type ReviewTier = {
 
 export type ReviewTierFile = { path: string; insertions: number; deletions: number }
 
-export const REVIEW_HOT_PATHS: readonly {
+const REVIEW_HOT_PATHS: readonly {
   tier: 1 | 2 | 3
   pattern: RegExp
   reason: string

@@ -7,7 +7,7 @@ import {
 import { db } from './db.ts'
 import { projects } from './projects.ts'
 
-export type AgentSpend = { agent: string; tokens: number; costUsd: number | null; runs: number }
+type AgentSpend = { agent: string; tokens: number; costUsd: number | null; runs: number }
 
 export type TaskRow = {
   key: string | null
@@ -373,7 +373,7 @@ export function rollUpDays(): number {
   return rows.length
 }
 
-export type DayRow = {
+type DayRow = {
   day: string
   claude_tokens: number
   tasks: number
@@ -408,7 +408,7 @@ export type RatioDay = DayRow & {
  *   just as surely as one carrying none — and reading it as a ratio flatters
  *   the number by three orders of magnitude.
  */
-export function ratioDays(days = 14, includeEngaged = true): RatioDay[] {
+function ratioDays(days = 14, includeEngaged = true): RatioDay[] {
   const d = db()
   const since = new Date(Date.now() - days * 86400_000).toISOString().slice(0, 10)
   const today = new Date().toISOString().slice(0, 10)
@@ -551,7 +551,7 @@ export function spendGrid(windowDays = 14) {
 }
 
 /** One card on the board. */
-export type BoardTask = {
+type BoardTask = {
   key: string
   project: string | null
   title: string | null

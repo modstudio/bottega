@@ -3,7 +3,7 @@ import { z } from 'zod'
 const nullableString = z.string().nullable()
 const nullableNumber = z.number().finite().nullable()
 
-export const OrchTrackerSettingsSchema = z
+const OrchTrackerSettingsSchema = z
   .object({
     kind: z.string().optional(),
     protocol: z.string().optional(),
@@ -37,7 +37,7 @@ export const OrchProjectSchema = z
 
 export const OrchProjectListSchema = z.array(OrchProjectSchema)
 
-export const OrchTurnSchema = z
+const OrchTurnSchema = z
   .object({
     id: z.number().int(),
     started_at: z.iso.datetime(),
@@ -49,7 +49,7 @@ export const OrchTurnSchema = z
   })
   .passthrough()
 
-export const OrchQuestionSchema = z
+const OrchQuestionSchema = z
   .object({
     id: z.number().int(),
     run_id: z.number().int(),
@@ -106,7 +106,7 @@ export const OrchUnknownRunSchema = z
   })
   .strict()
 
-export const OrchRunLineDataSchema = z.union([OrchRunSchema, OrchUnknownRunSchema])
+const OrchRunLineDataSchema = z.union([OrchRunSchema, OrchUnknownRunSchema])
 
 export const OrchRunEnvelopeSchema = z
   .object({
@@ -251,7 +251,7 @@ export const ConfinementClassSchema = z.enum([
 export type AttributionKind = z.infer<typeof AttributionKindSchema>
 export type ConfinementClass = z.infer<typeof ConfinementClassSchema>
 
-export const AttributionCountsSchema = z.object(
+const AttributionCountsSchema = z.object(
   Object.fromEntries(
     AttributionKindSchema.options.map((kind) => [kind, z.number().int().nonnegative()]),
   ) as { [K in AttributionKind]: z.ZodNumber },

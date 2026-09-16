@@ -4,9 +4,6 @@ import type { Caps } from './capabilities.ts'
 import { codexScopeArgs } from './codex-mcp-scope.ts'
 import type { ArgvOpts } from './transport.ts'
 
-export type { Caps } from './capabilities.ts'
-export type { ArgvOpts } from './transport.ts'
-
 /**
  * What `exec` means to codex.
  *
@@ -14,7 +11,7 @@ export type { ArgvOpts } from './transport.ts'
  * that decides what the widest level actually grants, and so the grant is
  * legible when someone comes looking for it.
  */
-export const CODEX_EXEC_SANDBOX = 'danger-full-access'
+const CODEX_EXEC_SANDBOX = 'danger-full-access'
 /**
  * Policy and capabilities for a vendor. How it is spawned lives on
  * `AgentTransport` (`cli` by default; `acp` is selectable for paid read-only jobs).
@@ -191,7 +188,7 @@ export type Agent = {
   notes: string
 }
 
-export function parsedCliVersion(text: string): string | null {
+function parsedCliVersion(text: string): string | null {
   return text.match(/\b\d+\.\d+\.\d+\b/)?.[0] ?? null
 }
 

@@ -92,7 +92,7 @@ function assertProductionSourcesAnalyzed(findings: DeadCodeFinding[]) {
   }
 }
 
-export function checkDeadCode(write = process.argv.includes('--write-baseline')) {
+function checkDeadCode(write = process.argv.includes('--write-baseline')) {
   const results = PASSES.map(runPass)
   assertProductionSourcesAnalyzed(results[0]!.findings)
   const [production, defaultMode] = results

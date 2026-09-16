@@ -21,7 +21,7 @@ function normalizeQuestionField(value: string | null | undefined): string {
 }
 
 /** Whether one schema-valid question contains both a decision and its consequence. */
-export function isRealQuestion(item: WorkerQuestion): boolean {
+function isRealQuestion(item: WorkerQuestion): boolean {
   const generic = new Set<string>(GENERIC_QUESTION_TOKENS)
   const question = normalizeQuestionField(item.question)
     .replace(/^\p{P}+|\p{P}+$/gu, '')

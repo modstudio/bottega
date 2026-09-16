@@ -12,7 +12,7 @@ const requireTransport = createRequire(import.meta.url)
 export const ACP_PILOT_TASK = 'DEV-352'
 
 /** Read-only jobs the ACP pilot may run. Anything else is refused. */
-export const ACP_PILOT_JOBS = ['understand', 'file-question', 'verify-claim', 'summarize'] as const
+const ACP_PILOT_JOBS = ['understand', 'file-question', 'verify-claim', 'summarize'] as const
 
 export type AcpPilotJob = (typeof ACP_PILOT_JOBS)[number]
 
@@ -36,7 +36,7 @@ export type TransportName = 'cli' | 'acp'
  * disposable worktree; a job that does not read a repository stays read-only.
  * Isolation is the worktree, not a per-project vendor-sandbox knob.
  */
-export type SandboxLevel = 'read-only' | 'workspace-write' | 'exec'
+type SandboxLevel = 'read-only' | 'workspace-write' | 'exec'
 
 /**
  * Everything an agent needs to build a command line, for a first turn or a
@@ -142,7 +142,7 @@ export type NormalizedEvent =
   | { kind: 'error'; error: string }
   | { kind: 'stop'; reason: string }
 
-export type ParsedReply = {
+type ParsedReply = {
   text: string
   tokens: number | null
   costUsd: number | null

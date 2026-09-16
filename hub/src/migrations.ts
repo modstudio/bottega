@@ -9,9 +9,9 @@ import { join } from 'node:path'
 export const MIGRATIONS_FOLDER = join(import.meta.dir, '..', 'migrations')
 export const MIGRATIONS_TABLE = 'hub_migrations'
 export const SCHEMA_LOCK_TABLE = 'hub_schema_lock'
-export const SCHEMA_INVARIANT = 'Only hub migrate changes the store schema.'
+const SCHEMA_INVARIANT = 'Only hub migrate changes the store schema.'
 export const JOURNAL_WHEN_ORDER = 'migration journal when values must be strictly increasing'
-export const BACKFILL_UNCLOSED = 'migration backfill blocks must be closed by -- /BACKFILL'
+const BACKFILL_UNCLOSED = 'migration backfill blocks must be closed by -- /BACKFILL'
 
 export type JournalEntry = { idx: number; when: number; tag: string }
 type ColumnShape = {
@@ -108,7 +108,7 @@ export function readUserVersion(d: Database): number {
   return (d.query('PRAGMA user_version').get() as { user_version: number }).user_version
 }
 
-export function stampUserVersion(d: Database, version: number): void {
+function stampUserVersion(d: Database, version: number): void {
   if (!Number.isInteger(version) || version < 0) throw new Error(`invalid user_version ${version}`)
   d.exec(`PRAGMA user_version = ${version}`)
 }
@@ -123,7 +123,7 @@ function tableExists(d: Database, table: string): boolean {
   return !!d.query("SELECT 1 FROM sqlite_master WHERE type='table' AND name=?").get(table)
 }
 
-export function migrationState(
+function migrationState(
   d: Database,
   folder = MIGRATIONS_FOLDER,
 ): { pending: JournalEntry[]; ahead: string | null } {

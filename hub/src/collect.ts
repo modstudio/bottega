@@ -13,7 +13,7 @@ import { hoursAgo } from './time.ts'
  * second; the trackers are four remote round trips and take seconds, so they
  * run rarely. Git is cheap but only changes on commit, so it rides with them.
  */
-export const FAST_MS = 20_000
+const FAST_MS = 20_000
 export const SLOW_MS = 5 * 60_000
 
 const QUIET_MAX_MS = 15 * 60_000

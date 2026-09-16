@@ -7,8 +7,8 @@ import { STALE_AFTER_MS } from './run-liveness.ts'
 const HUB = new URL('../../bin/hub', import.meta.url).pathname
 
 export type EpicChild = { key: string; title?: string; status?: string | null }
-export type NotRecorded = { metric: string; needed: string }
-export type EpicTaskScore = {
+type NotRecorded = { metric: string; needed: string }
+type EpicTaskScore = {
   key: string
   title: string
   status: string | null
@@ -122,7 +122,7 @@ type ReviewRow = {
   project_id: number | null
 }
 
-export const keyInBranch = (branch: string | null, keys: readonly string[]): string | null => {
+const keyInBranch = (branch: string | null, keys: readonly string[]): string | null => {
   if (!branch) return null
   return (
     keys.find((key) =>

@@ -16,10 +16,7 @@ const SOURCE_ROOTS = [
   'scripts',
 ]
 
-export const GENERATED_EXCLUSIONS = [
-  /^hub\/web\/src\/routeTree\.gen\.ts$/,
-  /(^|\/)migrations\/meta\//,
-]
+const GENERATED_EXCLUSIONS = [/^hub\/web\/src\/routeTree\.gen\.ts$/, /(^|\/)migrations\/meta\//]
 
 function sourceFiles(): string[] {
   const files: string[] = []

@@ -5,7 +5,7 @@ import type { Context } from '../context.ts'
 
 const t = initTRPC.context<Context>().create()
 
-export function createNoteRouter(deps = { listNotes, promoteNote }) {
+function createNoteRouter(deps = { listNotes, promoteNote }) {
   return t.router({
     list: t.procedure
       .input(

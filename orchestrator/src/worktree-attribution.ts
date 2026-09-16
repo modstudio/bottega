@@ -192,12 +192,12 @@ function runRowExists(id: number): boolean {
 }
 
 /** Filesystem-safe encoding of an absolute path for the orphan extraction dir. */
-export function sanitiseOrphanExtractionPath(path: string): string {
+function sanitiseOrphanExtractionPath(path: string): string {
   const real = existsSync(path) ? realpathOrSpelled(path) : resolve(path)
   return real.replace(/^[\\/]+/, '').replace(/[^A-Za-z0-9._-]+/g, '--')
 }
 
-export function extractionDest(
+function extractionDest(
   tree: string,
   runId: number | null,
   runsDir = resolveRunsDirectory(),

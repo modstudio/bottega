@@ -18,6 +18,7 @@ import {
   SCHEMA_LOCK_TABLE,
   schemaVersionLabel,
   splitMigrationSource,
+  stripSqlComments,
 } from './migrations.ts'
 
 beforeAll(resetFixtureStore)
@@ -465,7 +466,6 @@ describe('hub migration journal', () => {
 
 describe('stripSqlComments keeps quoted comment markers', () => {
   test('quoted -- and /* survive while real comments are removed', () => {
-    const { stripSqlComments } = require('./migrations.ts') as typeof import('./migrations.ts')
     expect(stripSqlComments("INSERT INTO t (v) VALUES ('a -- b'); -- seed\n")).toBe(
       "INSERT INTO t (v) VALUES ('a -- b'); \n",
     )

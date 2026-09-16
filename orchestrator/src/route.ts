@@ -186,11 +186,11 @@ function coolsDownSql(): string {
  * own decline cannot be noticed. Scoring exists to compare agents; a policy that
  * stops gathering comparisons defeats it.
  */
-export const EXPLORE_RATE = 0.25
+const EXPLORE_RATE = 0.25
 
 /** Keep testing proven challengers so a leader cannot hold the route forever. */
 export const STANDING_EXPLORE_RATE = 0.1
-export const STANDING_EXPLORE_FLOOR = 0.03
+const STANDING_EXPLORE_FLOOR = 0.03
 
 /** The leader's cell evidence decays the standing draw, without retiring it. */
 export function standingExploreRate(leaderEvidence: number): number {

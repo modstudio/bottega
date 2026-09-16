@@ -85,7 +85,7 @@ function writeState(stateFile: string, entries: FrozenFunction[]) {
   writeFileSync(stateFile, `${JSON.stringify(entries, null, 2)}\n`)
 }
 
-export async function measureCognitiveComplexity(): Promise<MeasuredFunction[]> {
+async function measureCognitiveComplexity(): Promise<MeasuredFunction[]> {
   const results = await new ESLint({ cwd: ROOT }).lintFiles(
     measuredSourceFiles().map(({ absolute }) => absolute),
   )

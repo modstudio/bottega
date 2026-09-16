@@ -218,7 +218,7 @@ async function spawnCli(opts: TransportStartOpts): Promise<TransportHandle> {
   return handle
 }
 
-export const cliTransport: AgentTransport = {
+const cliTransport: AgentTransport = {
   name: 'cli',
   start(opts) {
     return spawnCli(opts)

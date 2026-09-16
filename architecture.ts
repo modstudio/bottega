@@ -13,8 +13,8 @@ type ConcernManifest = {
 }
 
 export type ArchitectureModule = { file: string; allowed: string[] }
-export type ArchitectureInversion = { from: string; to: string }
-export type ArchitectureCycle = { cycle: string[]; reason: string }
+type ArchitectureInversion = { from: string; to: string }
+type ArchitectureCycle = { cycle: string[]; reason: string }
 
 const module = (file: string, allowed: string[]): ArchitectureModule => ({
   file,
@@ -23,7 +23,7 @@ const module = (file: string, allowed: string[]): ArchitectureModule => ({
   ),
 })
 
-export const concerns: ConcernManifest = {
+const concerns: ConcernManifest = {
   roots: CONCERNS,
   shared: {
     root: 'shared',
@@ -387,7 +387,7 @@ export const inversions: ArchitectureInversion[] = [
   { from: 'orchestrator/src/transport.ts', to: 'orchestrator/src/transport-acp.ts' },
 ]
 
-export const allowedCycles: ArchitectureCycle[] = [
+const allowedCycles: ArchitectureCycle[] = [
   {
     cycle: ['orchestrator/src/canon.ts', 'orchestrator/src/docs.ts', 'orchestrator/src/canon.ts'],
     reason: 'Pre-existing operator-doc/canon compilation cycle outside the specified inversions.',
@@ -397,7 +397,7 @@ export const allowedCycles: ArchitectureCycle[] = [
 export const exactArchitecturePath = (path: string) =>
   `^${path.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`
 
-export type ArchitectureRule = {
+type ArchitectureRule = {
   name: string
   severity: 'error'
   comment?: string

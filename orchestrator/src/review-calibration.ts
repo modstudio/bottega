@@ -36,7 +36,7 @@ export type ReviewCalibration = {
   tiers: Record<'0' | '1' | '2' | '3' | 'unclassified', TierCalibration>
 }
 
-export type TierCalibration = {
+type TierCalibration = {
   reviews: number
   lenses: number
   findings_accepted: number
@@ -44,13 +44,13 @@ export type TierCalibration = {
   rounds: { min: number | null; median: number | null; max: number | null }
 }
 
-export type GradeDistribution<T extends string> = {
+type GradeDistribution<T extends string> = {
   counts: Record<T, number>
   shares: Record<T, number | null>
   ungraded: number
 }
 
-export type SeverityAgreement = {
+type SeverityAgreement = {
   counts: { agreed: number; changed: number; not_comparable: number; not_assessed: number }
   shares: {
     agreed: number | null

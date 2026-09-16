@@ -51,7 +51,7 @@ function boundedTimeout(): number {
   // prevent — `ORCH_ASK_TIMEOUT_MS=Infinity` would restore it in one word.
   return Number.isFinite(raw) && raw > 0 ? raw : 10 * 60_000
 }
-export const ASK_TIMEOUT_MS = boundedTimeout()
+const ASK_TIMEOUT_MS = boundedTimeout()
 
 /** How often to look for a ruling. Cheap: one indexed read of a local file. */
 const POLL_MS = 1_000
@@ -422,7 +422,7 @@ export async function serveAsk(): Promise<void> {
 }
 
 /** The single authentication check for tools acting as an orch worker. */
-export function authenticatedWorkerRun(runId: number, token: string): boolean {
+function authenticatedWorkerRun(runId: number, token: string): boolean {
   if (!runId) return false
   const row = db().query('SELECT run_token FROM run WHERE id = ?').get(runId) as {
     run_token: string | null

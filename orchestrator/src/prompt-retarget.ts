@@ -119,7 +119,7 @@ function uriAuthorityEnd(prompt: string, offset: number): number | null {
   return end
 }
 
-export function retargetRepositoryPrompt(
+function retargetRepositoryPrompt(
   prompt: string,
   callers: string | string[],
   worktree: string,

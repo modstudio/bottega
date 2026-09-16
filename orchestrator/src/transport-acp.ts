@@ -717,7 +717,7 @@ async function openAcp(opts: TransportStartOpts): Promise<TransportHandle> {
   return handle
 }
 
-export const acpTransport: AgentTransport = {
+const acpTransport: AgentTransport = {
   name: 'acp',
   start(opts) {
     return openAcp(opts)

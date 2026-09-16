@@ -91,7 +91,7 @@ export function canonSourceInstruction(source: CanonSource): string {
  * Grok gates repo-local MCP behind folder trust and reads its scoped server
  * clamp from the run's GROK_HOME. Caller-checkout probes do not pass trust.
  */
-export function grokMcpConnection(
+function grokMcpConnection(
   bin: string,
   cwd: string,
   server: string,

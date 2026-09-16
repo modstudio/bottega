@@ -15,14 +15,10 @@ const KNIP_ISSUE_TYPES = [
   'namespaceMembers',
 ] as const
 
-export const DEAD_CODE_ISSUE_TYPES = [
-  ...KNIP_ISSUE_TYPES,
-  'unneededExports',
-  'unneededTypes',
-] as const
+const DEAD_CODE_ISSUE_TYPES = [...KNIP_ISSUE_TYPES, 'unneededExports', 'unneededTypes'] as const
 
 type KnipIssueType = (typeof KNIP_ISSUE_TYPES)[number]
-export type DeadCodeIssueType = (typeof DEAD_CODE_ISSUE_TYPES)[number]
+type DeadCodeIssueType = (typeof DEAD_CODE_ISSUE_TYPES)[number]
 export type DeadCodeFinding = {
   workspace: string
   file: string

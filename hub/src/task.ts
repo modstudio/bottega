@@ -4,8 +4,6 @@ import { db, nowIso } from './db.ts'
 import { projects, type StatusCategory } from './projects.ts'
 import { runRef } from './reconcile.ts'
 
-export { TASK_STATUSES }
-
 export type TaskRow = {
   key: string
   project: string
@@ -84,8 +82,8 @@ export function duplicateCandidates(tasks: TaskRow[], title: string): DuplicateC
     .slice(0, DUPLICATE_LIMIT)
 }
 
-export const TASK_DOCUMENT_ROLES = ['handoff'] as const
-export type TaskDocumentRole = (typeof TASK_DOCUMENT_ROLES)[number]
+const TASK_DOCUMENT_ROLES = ['handoff'] as const
+type TaskDocumentRole = (typeof TASK_DOCUMENT_ROLES)[number]
 export type TaskDocumentSummary = {
   id: number
   task_key: string

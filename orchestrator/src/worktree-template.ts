@@ -13,7 +13,7 @@
  * and expansion is the one deliberate boundary where a seed string becomes
  * several argv entries.
  */
-export type WorktreeCreateArg =
+type WorktreeCreateArg =
   | string
   | {
       value: string

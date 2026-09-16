@@ -42,7 +42,7 @@ let localHealth: { ok: boolean; detail: string; contextTokens?: number } | null 
  * contract with local-stack the same shape it always was: an endpoint and some
  * environment, never an import.
  */
-export const LOCAL_WOL_MAC = process.env.ORCH_LOCAL_WOL_MAC ?? ''
+const LOCAL_WOL_MAC = process.env.ORCH_LOCAL_WOL_MAC ?? ''
 
 /**
  * How long to leave the box alone after sending a magic packet.
@@ -51,7 +51,7 @@ export const LOCAL_WOL_MAC = process.env.ORCH_LOCAL_WOL_MAC ?? ''
  * turn one wake into a stream of packets. Leave enough time for the host and
  * model server to start.
  */
-export const WAKE_COOLDOWN_MS = 10 * 60_000
+const WAKE_COOLDOWN_MS = 10 * 60_000
 
 const wakeStampPath = () => join(ROOT, '.last-wake')
 
@@ -71,12 +71,10 @@ export function lastWakeAttempt(): Date | null {
  * rather than by powering a machine off to see what happens — which is the only
  * way the real thing can be exercised.
  */
-export function wakeDecision(o: {
-  mac: string
-  haveBinary: boolean
-  last: Date | null
-  now: number
-}): { send: boolean; detail: string } {
+function wakeDecision(o: { mac: string; haveBinary: boolean; last: Date | null; now: number }): {
+  send: boolean
+  detail: string
+} {
   if (!o.mac) return { send: false, detail: 'ORCH_LOCAL_WOL_MAC not set — waking is opt-in' }
   if (!o.haveBinary) {
     return { send: false, detail: 'wakeonlan not installed (brew install wakeonlan)' }

@@ -229,7 +229,7 @@ export function keyFromBranch(
   return key
 }
 
-export function keyFromPromptFile(
+function keyFromPromptFile(
   path: string | null | undefined,
   project: Project | null,
 ): string | null {

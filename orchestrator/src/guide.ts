@@ -12,7 +12,7 @@ import {
 } from './route.ts'
 import { median } from './statistics.ts'
 
-export type AgentOnJob = {
+type AgentOnJob = {
   agent: string
   runs: number
   scored: number

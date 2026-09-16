@@ -126,7 +126,7 @@ function trackedWorkerEnvironment(
 }
 
 /** Read-only repository jobs isolate scratch objects; writing jobs need durable commits. */
-export function gitObjectEnvironmentFor(
+function gitObjectEnvironmentFor(
   agent: string,
   requestedJob: Job,
   worktree: Worktree | null,

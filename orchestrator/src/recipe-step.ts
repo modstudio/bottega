@@ -11,7 +11,7 @@ export type StepContext = { treeRoot: string; vars: Record<string, string> }
 
 export type CommandPlan = { ok: true; argv: string[]; cwd: string } | { ok: false; reason: string }
 
-export type SpawnResult = {
+type SpawnResult = {
   exitCode: number | null
   stdout: string
   stderr: string
@@ -141,7 +141,7 @@ export function stepOutcome(
   }
 }
 
-export const defaultSpawn: Spawn = (argv, cwd) => {
+const defaultSpawn: Spawn = (argv, cwd) => {
   const result = Bun.spawnSync(argv, {
     cwd,
     env: process.env,

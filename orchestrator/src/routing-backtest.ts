@@ -16,7 +16,7 @@ import { chainTerminationAt } from './run-liveness.ts'
 import { weigh } from './score.ts'
 import { median } from './statistics.ts'
 
-export const ROUTING_BACKTEST_SEED = 287
+const ROUTING_BACKTEST_SEED = 287
 export const ROUTING_BACKTEST_SEEDS = Object.freeze(Array.from({ length: 20 }, (_, i) => i + 1))
 
 type Event = {
@@ -52,7 +52,7 @@ type ReplayOptions = { includeVoided?: boolean; cooldowns?: boolean }
 type History = Event[]
 type PolicyChoice = { agent: string; expected: string }
 
-export type BacktestJob = {
+type BacktestJob = {
   job: string
   runs: number
   agreements: number

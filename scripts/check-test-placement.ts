@@ -52,7 +52,7 @@ function trackedFiles(root: string): string[] {
   return listed.stdout.toString().trim().split('\n').filter(Boolean)
 }
 
-export function checkTrackedTestPlacement(root: string): TestPlacementFinding[] {
+function checkTrackedTestPlacement(root: string): TestPlacementFinding[] {
   return checkTestFiles(trackedFiles(root))
 }
 

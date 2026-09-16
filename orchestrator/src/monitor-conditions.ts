@@ -522,7 +522,7 @@ export function refGuardConditions(clock: number): {
   return { conditions, errors: [] }
 }
 
-export type DockerNetworkOwner = {
+type DockerNetworkOwner = {
   rootId: number
   terminal: boolean
   hasWorktree: boolean

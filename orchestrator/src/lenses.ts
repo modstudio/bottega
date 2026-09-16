@@ -2,7 +2,7 @@ import type { Database } from 'bun:sqlite'
 import { db, nowIso, sessionId, writableDb, writeTransaction } from './db.ts'
 import { projectByName } from './projects.ts'
 
-export const LENS_AXES = ['framework', 'architecture'] as const
+const LENS_AXES = ['framework', 'architecture'] as const
 export type LensAxis = (typeof LENS_AXES)[number]
 
 type CoreRow = {
@@ -339,7 +339,7 @@ export function selectProjectProfile(input: {
   }
 }
 
-export const disabledLensRefusal = (id: string, what: string) =>
+const disabledLensRefusal = (id: string, what: string) =>
   `${what}\ninvariant: A disabled catalogue lens or selected profile never dispatches.\ncleared by: enable ${id} or select an enabled profile`
 
 export function resolveLens(id: string, projectName: string | null, d: Database = db()) {

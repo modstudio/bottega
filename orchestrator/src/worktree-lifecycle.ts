@@ -5,7 +5,7 @@ import { PLATFORM_SLUG } from '../../shared/brand.ts'
 import { type LoadTrackedRecipeResult, loadTrackedRecipe } from './recipe-loader.ts'
 
 export type LifecycleForm = 'command-templates' | 'inline-recipe' | 'tracked-recipe' | 'none'
-export type TrackedRecipeSource = 'declared' | 'default'
+type TrackedRecipeSource = 'declared' | 'default'
 
 export const DEFAULT_PROJECT_CONFIG_PATH = `${PLATFORM_SLUG}.jsonc`
 
@@ -135,16 +135,14 @@ function legacyMigrationGaps(value: Record<string, unknown>): string[] {
   return migrationGaps
 }
 
-export function declaredCommandTemplates(
-  worktree: WorktreeDeclaration | null | undefined,
-): string[] {
+function declaredCommandTemplates(worktree: WorktreeDeclaration | null | undefined): string[] {
   if (!worktree) return []
   return ['create', 'remove', 'sweep'].filter(
     (key) => worktree[key as keyof WorktreeDeclaration] !== undefined,
   )
 }
 
-export function declaredInlineElements(recipe: unknown): string[] {
+function declaredInlineElements(recipe: unknown): string[] {
   if (!isRecord(recipe)) return []
   return Object.entries(recipe).map(([key, value]) => {
     if (key === 'database' && isRecord(value) && typeof value.kind === 'string') {

@@ -12,7 +12,7 @@ import { targetGitEnvironment } from './git-environment.ts'
 import { DEFAULT_PACK_BYTES, job as getJob, JOBS } from './jobs.ts'
 import { projectAt, projectByName, projects } from './projects.ts'
 
-export const BRIEF_BYTES = 64 * 1024
+const BRIEF_BYTES = 64 * 1024
 const ROOT = new URL('../..', import.meta.url).pathname.replace(/\/$/, '')
 const PREFIXES = [
   'orchestrator/',
@@ -56,7 +56,7 @@ export type Finding = {
   message: string
 }
 
-export type NumericLiteralClass = 'RESTATED' | 'OWNED' | 'CHECKED' | 'EVIDENCE' | 'UNCLASSIFIED'
+type NumericLiteralClass = 'RESTATED' | 'OWNED' | 'CHECKED' | 'EVIDENCE' | 'UNCLASSIFIED'
 
 export type NumericLiteral = {
   source: string
@@ -319,7 +319,7 @@ function contextIndexMarkdown(rows: Doc[]): string {
 }
 
 /** Always-on bodies plus a context index; cards, references, and aliases are omitted. */
-export function packedCanonMarkdown(projectName: string | null): {
+function packedCanonMarkdown(projectName: string | null): {
   markdown: string
   alwaysOnBytes: number
   contextIndexBytes: number

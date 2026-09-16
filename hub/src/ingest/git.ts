@@ -29,7 +29,7 @@ export function categorize(file: string): FileKind {
   return categorizeFile(file)
 }
 
-export type DayActivity = {
+type DayActivity = {
   tasks: Set<string>
   commits: number
   files: Set<string>
@@ -37,7 +37,7 @@ export type DayActivity = {
 }
 
 /** Commits seen per task key, for tasks no tracker could tell us about. */
-export type GitTask = {
+type GitTask = {
   key: string
   project: Project
   first: string
@@ -63,7 +63,7 @@ function blank(): DayActivity {
  * commits follow habit rather than effort, and files touched says nothing about
  * depth.
  */
-export function scanGit(since: string) {
+function scanGit(since: string) {
   const days = new Map<string, DayActivity>()
   const tasks = new Map<string, GitTask>()
   const commits: { sha: string; repo: string; key: string; at: string }[] = []

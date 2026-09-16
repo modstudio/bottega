@@ -5,7 +5,7 @@ import { recipeJsonSchema } from '../orchestrator/src/recipe-schema.ts'
 
 const outputPath = new URL('../orchestrator/schemas/project-config.schema.json', import.meta.url)
 
-export function generatedRecipeSchema(): string {
+function generatedRecipeSchema(): string {
   const schema = recipeJsonSchema()
   const unformatted = `${JSON.stringify(schema, null, 2)}\n`
   const formatted = Bun.spawnSync(

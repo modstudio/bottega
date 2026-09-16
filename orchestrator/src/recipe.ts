@@ -34,7 +34,7 @@ import { join } from 'node:path'
  * chosen size, and a third brings up a container per tree. `none` is first because
  * it is the honest default and the other three are opt-in.
  */
-export type DbProvider =
+type DbProvider =
   | { kind: 'none' }
   /**
    * `CREATE DATABASE <name> TEMPLATE <template>` — the cheapest real database
@@ -126,7 +126,7 @@ export function dbNameFor(base: string, runId: number): string {
 const fillPlain = (s: string, vars: Record<string, string>) =>
   s.replace(/\{(\w+)\}/g, (_, k: string) => vars[k] ?? '')
 
-export const fill = (template: string, vars: Record<string, string>) =>
+const fill = (template: string, vars: Record<string, string>) =>
   template.replace(/\{(\w+)\}/g, (placeholder, k: string, offset: number) => {
     const value = vars[k] ?? ''
     let quote: "'" | '"' | null = null
@@ -154,7 +154,7 @@ export const fill = (template: string, vars: Record<string, string>) =>
  * nothing, and this whole file exists because that failure reports itself as a
  * pass.
  */
-export function provisionDb(
+function provisionDb(
   db: DbProvider,
   dbName: string,
   cwd: string,
@@ -212,7 +212,7 @@ export function provisionDb(
 }
 
 /** Take a worktree's database down again. Best effort: a sweep is the backstop. */
-export function teardownDb(db: DbProvider, dbName: string, cwd: string): StepResult[] {
+function teardownDb(db: DbProvider, dbName: string, cwd: string): StepResult[] {
   switch (db.kind) {
     case 'none':
       return []

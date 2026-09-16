@@ -23,8 +23,8 @@ export type CanonLintInput = {
 }
 export type CanonFinding = Finding & { measuredBytes?: number }
 
-export type CanonMeasurement = { path: string; bytes: number; limit: number }
-export type CanonLintSummary = {
+type CanonMeasurement = { path: string; bytes: number; limit: number }
+type CanonLintSummary = {
   tiers: {
     entry: CanonMeasurement | null
     alwaysOn: { bytes: number; limit: number }
@@ -37,13 +37,13 @@ export type CanonLintSummary = {
 }
 export type CanonLintResult = { summary: CanonLintSummary; findings: CanonFinding[] }
 
-export const TASK_KEY_PATTERN = /\b[A-Z][A-Z0-9]{1,9}-\d+\b/
-export const TASK_KEY_EXEMPTIONS = ['UTF', 'SHA', 'ISO', 'RFC', 'ES', 'TLS', 'HTTP', 'IPV']
+const TASK_KEY_PATTERN = /\b[A-Z][A-Z0-9]{1,9}-\d+\b/
+const TASK_KEY_EXEMPTIONS = ['UTF', 'SHA', 'ISO', 'RFC', 'ES', 'TLS', 'HTTP', 'IPV']
 
-export const REFERENCE_EXEMPTIONS: { reference: string; reason: string }[] =
+const REFERENCE_EXEMPTIONS: { reference: string; reason: string }[] =
   CANON_REFERENCE_EXEMPTIONS.map(({ path, reason }) => ({ reference: path, reason }))
 
-export const HISTORY_PATTERNS = [
+const HISTORY_PATTERNS = [
   /\bused to\b/i,
   /\bwas (?:called|named)\b/i,
   /\brenamed\b/i,
@@ -54,7 +54,7 @@ export const HISTORY_PATTERNS = [
   /\b20\d\d-\d\d-\d\d\b/i,
 ]
 
-export const ISSUE_PATTERNS = [
+const ISSUE_PATTERNS = [
   /\bworkaround\b/i,
   /\bknown issue\b/i,
   /\buntil (?:it is |this is )?fixed\b/i,

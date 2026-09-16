@@ -54,7 +54,7 @@ function nullable(schema: JSONSchema): JSONSchema {
  * remain supported. Keeping this list beside the transformer makes a vendor
  * change visible instead of spending another run to discover it.
  */
-export function strictCodexSchema(input: unknown): JSONSchema {
+function strictCodexSchema(input: unknown): JSONSchema {
   if (!isSchemaObject(input)) throw new Error('schema at $ must be a JSON object')
   if (input.type !== 'object') {
     const keyword = 'oneOf' in input ? 'oneOf' : 'anyOf' in input ? 'anyOf' : 'type'

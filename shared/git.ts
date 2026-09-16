@@ -133,7 +133,7 @@ export type SequenceState =
   | { status: 'in-progress'; kind: SequenceKind }
   | { status: 'residue'; kind: SequenceKind }
 
-export type CheckoutCleanliness = 'clean' | 'dirty' | 'indeterminate'
+type CheckoutCleanliness = 'clean' | 'dirty' | 'indeterminate'
 
 export type CheckoutState = {
   cleanliness: CheckoutCleanliness

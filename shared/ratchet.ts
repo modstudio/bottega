@@ -5,7 +5,7 @@ export type Finding = {
   message: string
 }
 
-export function normalizedMessage(message: string) {
+function normalizedMessage(message: string) {
   return message.replace(/\d+/g, '#')
 }
 

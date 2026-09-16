@@ -13,9 +13,9 @@ import { clusterErrorText, FAILURE_KINDS, type FailureKind } from './failure.ts'
 import { parseIdleReclaimedMs } from './idle-kill.ts'
 import { parseMcpProbe } from './mcp-probe.ts'
 
-export const HEALTH_DEFAULT_DAYS = 14
-export const HEALTH_CLASSES = [...FAILURE_KINDS, 'stale'] as const
-export type HealthClass = FailureKind | 'stale' | 'stopped'
+const HEALTH_DEFAULT_DAYS = 14
+const HEALTH_CLASSES = [...FAILURE_KINDS, 'stale'] as const
+type HealthClass = FailureKind | 'stale' | 'stopped'
 
 type HealthClassRow = HarnessHealth['classes'][number] & { kind: HealthClass }
 type HealthVerdictRow = HarnessHealth['falseVerdicts'][number]

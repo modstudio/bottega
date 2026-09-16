@@ -22,7 +22,7 @@ import { resolveBase } from './worktree-caller.ts'
 import { createCommandExists, validateSeedWithTool } from './worktree-preflight.ts'
 import { createHasPlaceholder } from './worktree-template.ts'
 
-export const MAX_DEPTH = 1
+const MAX_DEPTH = 1
 export const depth = () => Number(process.env.ORCH_DEPTH ?? 0)
 
 const warnedMainCheckouts = new Set<string>()

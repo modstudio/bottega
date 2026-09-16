@@ -97,11 +97,11 @@ export function noRepoIsolatePath(id: number, runsDir = RUNS_DIR): string {
 export const runArtifactsDir = (id: number, runsDir = RUNS_DIR): string =>
   artifactDirectory(id, runsDir)
 
-export function declaredDeliverablesPath(id: number, runsDir = RUNS_DIR): string {
+function declaredDeliverablesPath(id: number, runsDir = RUNS_DIR): string {
   return join(runsDir, String(id), 'deliverables.json')
 }
 
-export function runTerminalResultPath(id: number, runsDir = RUNS_DIR): string {
+function runTerminalResultPath(id: number, runsDir = RUNS_DIR): string {
   return join(runsDir, String(id), 'result.json')
 }
 
@@ -140,7 +140,7 @@ export function persistTerminalSnapshot(id: number, snapshot: TerminalSnapshot):
   writeFileSync(runTerminalResultPath(id), JSON.stringify(snapshot))
 }
 
-export function readTerminalSnapshot(id: number): TerminalSnapshot | null {
+function readTerminalSnapshot(id: number): TerminalSnapshot | null {
   const path = runTerminalResultPath(id)
   if (!existsSync(path)) return null
   try {
