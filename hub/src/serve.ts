@@ -71,6 +71,10 @@ export class TtlCache {
     this.entries.set(key, { checkedAt: now, value: cached?.value, pending })
     return pending
   }
+
+  clear(): void {
+    this.entries.clear()
+  }
 }
 
 const orchCache = new TtlCache(ORCH_CACHE_TTL_MS)
@@ -78,6 +82,11 @@ const orchCache = new TtlCache(ORCH_CACHE_TTL_MS)
 /** Cache a complete orch-backed procedure response, including its strip. */
 export function cachedOrchResponse<T>(key: string, load: () => Promise<T> | T): Promise<T> {
   return orchCache.get(key, load)
+}
+
+/** Test isolation for suites that replace the orch client or its backing rows. */
+export function clearOrchCache(): void {
+  orchCache.clear()
 }
 
 /** The shared hub.db strip on an orch procedure follows the orch clock too. */

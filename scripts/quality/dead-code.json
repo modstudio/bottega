@@ -1,5 +1,17 @@
 [
   {
+    "workspace": "hub",
+    "file": "hub/src/db.ts",
+    "issueType": "exports",
+    "symbol": "closeDatabaseForFixture"
+  },
+  {
+    "workspace": "hub",
+    "file": "hub/src/serve.ts",
+    "issueType": "exports",
+    "symbol": "clearOrchCache"
+  },
+  {
     "workspace": "orchestrator",
     "file": "orchestrator/src/agents.ts",
     "issueType": "exports",

@@ -2,6 +2,7 @@ import { spyOn } from 'bun:test'
 import { db } from '../src/db.ts'
 import { ingestRuns } from '../src/ingest/runs.ts'
 import { MIGRATIONS_TABLE } from '../src/migrations.ts'
+import { clearOrchCache } from '../src/serve.ts'
 
 export const at = (iso: string) => new Date(iso).getTime()
 
@@ -21,6 +22,7 @@ export function resetFixtureStore() {
       database.exec('PRAGMA foreign_keys = ON')
     })
     .immediate()
+  clearOrchCache()
 }
 
 export const runFixture = (overrides: Record<string, unknown> = {}) => ({

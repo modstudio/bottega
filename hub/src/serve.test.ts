@@ -1,9 +1,10 @@
-import { beforeAll, describe, expect, spyOn, test } from 'bun:test'
+import { afterEach, beforeAll, describe, expect, spyOn, test } from 'bun:test'
 import { ingestRunFixtures, resetFixtureStore, runFixture } from '../test/run-fixtures.ts'
 import { db } from './db.ts'
-import { view } from './serve.ts'
+import { clearOrchCache, view } from './serve.ts'
 
 beforeAll(resetFixtureStore)
+afterEach(clearOrchCache)
 
 describe('run ingest', () => {
   test('launch_key beats a contradicting prompt in ingest and the runs view', async () => {
@@ -73,7 +74,7 @@ describe('run ingest', () => {
       kill() {},
     })) as unknown as typeof Bun.spawn)
     try {
-      const result = (await view('runs', 48)) as {
+      const result = (await view('runs', 24)) as {
         totals: { scored: number; voided: number }
         rows: { id: number; evidence_excluded: string | null; delivery: string | null }[]
       }
@@ -118,7 +119,7 @@ describe('run ingest', () => {
       kill() {},
     })) as unknown as typeof Bun.spawn)
     try {
-      const result = (await view('runs', 168)) as {
+      const result = (await view('runs', 24)) as {
         totals: Record<string, number>
         vendors: { agent: string; tokens: number }[]
       }

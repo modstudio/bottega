@@ -4,7 +4,7 @@ import { copyFileSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSy
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { resetFixtureStore } from '../test/run-fixtures.ts'
-import { db, enableSchemaReload } from './db.ts'
+import { closeDatabaseForFixture, db, enableSchemaReload } from './db.ts'
 import {
   applyMigrations,
   canonicalSchemaHash,
@@ -444,6 +444,7 @@ describe('hub migration journal', () => {
   })
 
   test('reload mode reloads the query layer after user_version changes', () => {
+    closeDatabaseForFixture()
     const seen: number[] = []
     db()
     enableSchemaReload((_from, to) => {
@@ -455,10 +456,10 @@ describe('hub migration journal', () => {
     other.close()
     db()
     expect(seen).toEqual([next])
+    closeDatabaseForFixture()
     const reset = new Database(process.env.HUB_DB!)
     applyMigrations(reset)
     reset.close()
-    db()
   })
 })
 

@@ -23,6 +23,13 @@ export function requireDatabase(): void {
   }
 }
 
+export function closeDatabaseForFixture(): void {
+  handle?.close()
+  handle = null
+  openedUserVersion = null
+  schemaReload = null
+}
+
 /** Long-lived processes (hub serve) reload instead of refusing a write after a migrate. */
 export function enableSchemaReload(onReload: (from: number, to: number) => void): void {
   schemaReload = onReload
