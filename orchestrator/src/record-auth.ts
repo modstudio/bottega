@@ -13,6 +13,27 @@ export const RECORD_SESSION_KEY = 'record_session'
 export const RECORD_SIGN_IN_REMEDY =
   'record session is missing or expired; run `orch record sign-in --email <email>`'
 
+type RecordAuthEnvironment = Record<string, string | undefined>
+
+export function recordAllowedOrigins(environment: RecordAuthEnvironment = process.env): string[] {
+  const configured = environment.RECORD_API_ALLOWED_ORIGINS
+  if (configured === undefined) return []
+  const origins = configured.split(',').map((value) => value.trim())
+  if (origins.some((value) => !value))
+    throw new Error('RECORD_API_ALLOWED_ORIGINS must contain comma-separated origins')
+  for (const origin of origins) {
+    let parsed: URL
+    try {
+      parsed = new URL(origin)
+    } catch {
+      throw new Error(`RECORD_API_ALLOWED_ORIGINS contains an invalid origin: ${origin}`)
+    }
+    if (parsed.origin !== origin)
+      throw new Error(`RECORD_API_ALLOWED_ORIGINS contains an invalid origin: ${origin}`)
+  }
+  return origins
+}
+
 export type PersonalSpace = { id: string; name: string; slug: string }
 export type PersonalSpacePort = {
   find(userId: string): Promise<PersonalSpace | null>
@@ -101,15 +122,18 @@ function personalSpacePort(client: SQL): PersonalSpacePort {
   }
 }
 
-export function recordAuth(url: string) {
-  const secret = process.env.BETTER_AUTH_SECRET
+export function recordAuth(url: string, environment: RecordAuthEnvironment = process.env) {
+  const secret = environment.BETTER_AUTH_SECRET
   if (!secret) throw new Error('BETTER_AUTH_SECRET is required for record authentication')
+  const trustedOrigins = recordAllowedOrigins(environment)
+  const cookieDomain = environment.RECORD_AUTH_COOKIE_DOMAIN
   // Auth instances are short-lived at the CLI boundary; a one-connection pool keeps repeated
   // commands from reserving the database's entire connection budget before garbage collection.
   const client = new SQL(url, { max: 1 })
   const personalSpaces = personalSpacePort(client)
   return betterAuth({
     secret,
+    ...(trustedOrigins.length ? { trustedOrigins } : {}),
     database: drizzleAdapter(drizzle({ client }), {
       provider: 'pg',
       schema: { user, session, account, verification, space, membership, invitation },
@@ -119,7 +143,12 @@ export function recordAuth(url: string) {
     session: { modelName: 'session' },
     account: { modelName: 'account' },
     verification: { modelName: 'verification' },
-    advanced: { database: { generateId: () => newRecordId() } },
+    advanced: {
+      database: { generateId: () => newRecordId() },
+      ...(cookieDomain
+        ? { crossSubDomainCookies: { enabled: true, domain: cookieDomain }, useSecureCookies: true }
+        : {}),
+    },
     plugins: [
       organization({
         schema: {

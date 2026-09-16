@@ -1,5 +1,10 @@
 import { afterAll, beforeAll, expect, test } from 'bun:test'
-import { ensurePersonalSpace, type PersonalSpace, recordAuth } from './record-auth.ts'
+import {
+  ensurePersonalSpace,
+  type PersonalSpace,
+  recordAllowedOrigins,
+  recordAuth,
+} from './record-auth.ts'
 
 let priorSecret: string | undefined
 beforeAll(() => {
@@ -13,6 +18,18 @@ afterAll(() => {
 
 test('auth instance builds without connecting to a database', () => {
   expect(recordAuth('postgres://record.invalid/database').api.signInEmail).toBeFunction()
+})
+
+test('browser origins are exact and optional', () => {
+  expect(recordAllowedOrigins({})).toEqual([])
+  expect(
+    recordAllowedOrigins({
+      RECORD_API_ALLOWED_ORIGINS: 'https://hub.example.test, https://other.example.test',
+    }),
+  ).toEqual(['https://hub.example.test', 'https://other.example.test'])
+  expect(() =>
+    recordAllowedOrigins({ RECORD_API_ALLOWED_ORIGINS: 'https://hub.example.test/path' }),
+  ).toThrow('contains an invalid origin')
 })
 
 test('personal-space decision reuses an existing space and creates only when absent', async () => {

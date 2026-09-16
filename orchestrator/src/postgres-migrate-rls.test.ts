@@ -701,6 +701,10 @@ realPostgres('RLS proof against real Postgres', () => {
 
       const httpProject = newRecordId()
       const httpRun = newRecordId()
+      const httpRunOlder = newRecordId()
+      const httpReview = newRecordId()
+      const httpLens = newRecordId()
+      const httpFinding = newRecordId()
       succeeds(
         'postgres',
         'postgres',
@@ -712,22 +716,70 @@ realPostgres('RLS proof against real Postgres', () => {
            work_preserved,created_at,updated_at
          ) VALUES
            ('${httpRun}','${identity.activeSpaceId}','${httpProject}','${MACHINE_A}',103,now(),
-            'proof','proof','http',1,'http',false,'ok',1,false,false,false,now(),now());`,
+            'proof','proof','http',1,'http',false,'ok',1,false,false,false,now(),now()),
+           ('${httpRunOlder}','${identity.activeSpaceId}','${httpProject}','${MACHINE_A}',104,now() - interval '1 minute',
+            'proof','proof','older',1,'older',false,'ok',1,false,false,false,now(),now());
+         INSERT INTO run_score (run_id,space_id,delivery,quality,fidelity,note,scored_at,scored_by,updated_at)
+           VALUES ('${httpRun}','${identity.activeSpaceId}','full','right','faithful','good',now(),'architect',now());
+         INSERT INTO review (id,space_id,project_id,machine_id,local_id,recorded_at,created_at,updated_at)
+           VALUES ('${httpReview}','${identity.activeSpaceId}','${httpProject}','${MACHINE_A}',103,now(),now(),now());
+         INSERT INTO review_lens (id,space_id,review_id,run_id,machine_id,local_id,lens,agent,standards_read,files_covered,commands_run,could_not_verify,mcp_tools,docs_read,substitutes,created_at,updated_at)
+           VALUES ('${httpLens}','${identity.activeSpaceId}','${httpReview}','${httpRun}','${MACHINE_A}',103,'correctness','proof','[]','[]','[]','[]','[]','[]','[]',now(),now());
+         INSERT INTO review_finding (id,space_id,review_id,review_lens_id,machine_id,local_id,ordinal,severity,location,evidence,proposed_correction,created_at,updated_at)
+           VALUES ('${httpFinding}','${identity.activeSpaceId}','${httpReview}','${httpLens}','${MACHINE_A}',103,1,'major','file:1','evidence','fix',now(),now());`,
       )
 
       const ownRuns = await fetch(`${origin}/v1/runs`, {
         headers: { Authorization: `Bearer ${created.token}` },
       })
       expect(ownRuns.status).toBe(200)
-      expect(((await ownRuns.json()) as { id: string }[]).map((run) => run.id)).toEqual([httpRun])
+      const ownPage = (await ownRuns.json()) as {
+        items: { id: string; score: { delivery: string } | null }[]
+      }
+      expect(ownPage.items.find((run) => run.id === httpRun)?.score?.delivery).toBe('full')
+
+      const runDetail = await fetch(`${origin}/v1/runs/${httpRun}`, {
+        headers: { Authorization: `Bearer ${created.token}` },
+      })
+      expect(runDetail.status).toBe(200)
+      expect(((await runDetail.json()) as { score: { note: string } }).score.note).toBe('good')
+
+      const hiddenRun = await fetch(`${origin}/v1/runs/${authRunB}`, {
+        headers: { Authorization: `Bearer ${created.token}` },
+      })
+      expect(hiddenRun.status).toBe(404)
+
+      const reviewDetail = await fetch(`${origin}/v1/reviews/${httpReview}`, {
+        headers: { Authorization: `Bearer ${created.token}` },
+      })
+      expect(reviewDetail.status).toBe(200)
+      expect(
+        ((await reviewDetail.json()) as { lenses: { findings: unknown[] }[] }).lenses[0]?.findings,
+      ).toHaveLength(1)
+
+      const firstPage = await fetch(`${origin}/v1/runs?limit=1`, {
+        headers: { Authorization: `Bearer ${created.token}` },
+      })
+      const firstPayload = (await firstPage.json()) as {
+        items: { id: string }[]
+        nextCursor: string
+      }
+      const secondPage = await fetch(
+        `${origin}/v1/runs?limit=1&before=${encodeURIComponent(firstPayload.nextCursor)}`,
+        { headers: { Authorization: `Bearer ${created.token}` } },
+      )
+      const secondPayload = (await secondPage.json()) as { items: { id: string }[] }
+      expect(firstPayload.items[0]?.id).not.toBe(secondPayload.items[0]?.id)
 
       const otherRuns = await fetch(`${origin}/v1/runs`, {
         headers: { Authorization: `Bearer ${tokenB}` },
       })
       expect(otherRuns.status).toBe(200)
-      expect(((await otherRuns.json()) as { id: string }[]).some((run) => run.id === httpRun)).toBe(
-        false,
-      )
+      expect(
+        ((await otherRuns.json()) as { items: { id: string }[] }).items.some(
+          (run) => run.id === httpRun,
+        ),
+      ).toBe(false)
     } finally {
       server.stop(true)
     }
