@@ -4,8 +4,19 @@
 export type MergedPullRequest = {
   number: number
   headRefName: string
+  headRefOid: string
+  title: string
   mergeCommit: { oid: string } | null
   mergedAt: string
+}
+
+export function pullRequestCarriesKey(
+  pullRequest: Pick<MergedPullRequest, 'headRefName' | 'title'>,
+  key: string,
+): boolean {
+  const escaped = key.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+  const token = new RegExp(`(^|[^A-Za-z0-9])${escaped}($|[^A-Za-z0-9])`)
+  return token.test(pullRequest.headRefName) || token.test(pullRequest.title)
 }
 
 export type PatchEquivalentForm = 'commits' | 'squash'
@@ -24,11 +35,15 @@ export type BranchLanding =
       state: 'landed'
       landedBy: { type: 'patch-equivalent'; form: PatchEquivalentForm }
     }
+  | { state: 'landed'; landedBy: { type: 'pr-commits'; number: number } }
   | {
       state: 'landed'
       landedBy: { type: 'turn'; branch: string }
     }
-  | { state: 'empty' | 'superseded' | 'unlanded' | 'unknown' }
+  | { state: 'empty' | 'superseded' | 'unlanded' }
+  | { state: 'unknown'; error?: string }
+
+export type PullRequestCommitCheck = { number: number } | { error: string } | null
 
 type LaterTurnBranch = { branch: string; state: BranchLanding }
 
@@ -38,6 +53,7 @@ export function decideBranchState(input: {
   mergedPullRequestsTruncated: boolean
   commitsNotOnTrunk: number
   patchEquivalent: PatchEquivalentForm | null
+  pullRequestCommitCheck: PullRequestCommitCheck
   laterTurnBranches: readonly LaterTurnBranch[]
   superseded: boolean
 }): BranchLanding {
@@ -60,6 +76,12 @@ export function decideBranchState(input: {
       landedBy: { type: 'patch-equivalent', form: input.patchEquivalent },
     }
   }
+  if (input.pullRequestCommitCheck && 'number' in input.pullRequestCommitCheck) {
+    return {
+      state: 'landed',
+      landedBy: { type: 'pr-commits', number: input.pullRequestCommitCheck.number },
+    }
+  }
   const landedTurn = input.laterTurnBranches.find(
     (candidate) => candidate.state.state === 'landed' && candidate.state.landedBy.type !== 'turn',
   )
@@ -70,6 +92,9 @@ export function decideBranchState(input: {
     }
   }
   if (input.superseded) return { state: 'superseded' }
+  if (input.pullRequestCommitCheck && 'error' in input.pullRequestCommitCheck) {
+    return { state: 'unknown', error: input.pullRequestCommitCheck.error }
+  }
   if (input.mergedPullRequestsTruncated) return { state: 'unknown' }
   return { state: 'unlanded' }
 }

@@ -8,6 +8,8 @@ import {
   decidePruneEligibility,
   type MergedPullRequest,
   type PatchEquivalentForm,
+  type PullRequestCommitCheck,
+  pullRequestCarriesKey,
 } from './branch-state.ts'
 import { db, writableDb } from './db.ts'
 import { targetGitEnvironment } from './git-environment.ts'
@@ -105,7 +107,7 @@ function mergedPullRequests(project: Project): {
       '--limit',
       String(GH_MERGED_PR_LIMIT),
       '--json',
-      'number,headRefName,mergeCommit,mergedAt',
+      'number,headRefName,headRefOid,title,mergeCommit,mergedAt',
     ],
     'merged pull-request listing',
   )
@@ -130,12 +132,57 @@ function isMergedPullRequest(value: unknown): value is MergedPullRequest {
   return (
     Number.isInteger(row.number) &&
     typeof row.headRefName === 'string' &&
+    typeof row.headRefOid === 'string' &&
+    typeof row.title === 'string' &&
     typeof row.mergedAt === 'string' &&
     (mergeCommit === null ||
       (typeof mergeCommit === 'object' &&
         mergeCommit !== null &&
         typeof (mergeCommit as Record<string, unknown>).oid === 'string'))
   )
+}
+
+function fetchPullRequest(project: Project, pullRequest: MergedPullRequest): string | null {
+  try {
+    git(project.path, 'fetch', '--no-tags', 'origin', pullRequest.headRefOid)
+    return null
+  } catch (shaError) {
+    try {
+      git(project.path, 'fetch', '--no-tags', 'origin', `refs/pull/${pullRequest.number}/head`)
+      return null
+    } catch (refError) {
+      return `PR #${pullRequest.number} fetch failed by SHA (${String(shaError)}) and pull ref (${String(refError)})`
+    }
+  }
+}
+
+function pullRequestCommitCheck(
+  project: Project,
+  pullRequests: readonly MergedPullRequest[],
+  branchTip: string,
+  fetched: Map<number, string | null>,
+): PullRequestCommitCheck {
+  let failure: string | null = null
+  for (const pullRequest of pullRequests) {
+    let fetchFailure = fetched.get(pullRequest.number)
+    if (fetchFailure === undefined) {
+      fetchFailure = fetchPullRequest(project, pullRequest)
+      fetched.set(pullRequest.number, fetchFailure)
+    }
+    if (fetchFailure) {
+      failure ??= fetchFailure
+      continue
+    }
+    try {
+      const cherry = git(project.path, 'cherry', pullRequest.headRefOid, branchTip)
+      if (!cherry.split('\n').some((line) => line.startsWith('+'))) {
+        return { number: pullRequest.number }
+      }
+    } catch (error) {
+      failure ??= `PR #${pullRequest.number} commit check failed: ${String(error)}`
+    }
+  }
+  return failure ? { error: failure } : null
 }
 
 function projectRuns(project: Project): RunRow[] {
@@ -178,7 +225,12 @@ function checkedOutBranches(project: Project): Set<string> {
 function branchReportFor(project: Project, keyFilter?: string): BranchReportProject {
   const trunk = project.settings.trunk?.trim() ?? ''
   if (!trunk) throw new Error(`project ${project.name} has no trunk configured`)
-  const { pullRequests, truncated } = mergedPullRequests(project)
+  git(project.path, 'remote', 'get-url', 'origin')
+  const { pullRequests: listedPullRequests, truncated } = mergedPullRequests(project)
+  const pullRequests = listedPullRequests.sort((left, right) =>
+    right.mergedAt.localeCompare(left.mergedAt),
+  )
+  const fetchedPullRequests = new Map<number, string | null>()
   const runs = projectRuns(project)
   const branches = localBranches(project)
   const checkedOut = checkedOutBranches(project)
@@ -238,6 +290,15 @@ function branchReportFor(project: Project, keyFilter?: string): BranchReportProj
           liveRun: branchRuns.some((run) => run.status === 'running' || run.status === 'asking'),
           runIds: branchRuns.map((run) => run.id),
           patchEquivalent: patchEquivalent as PatchEquivalentForm | null,
+          pullRequestCommitCheck:
+            !matchingPr && commitCount > 0 && !patchEquivalent && key !== 'unkeyed'
+              ? pullRequestCommitCheck(
+                  project,
+                  pullRequests.filter((pullRequest) => pullRequestCarriesKey(pullRequest, key)),
+                  tip,
+                  fetchedPullRequests,
+                )
+              : null,
           superseded: isTaskBranchSuperseded(branch, keyRows),
           turns: new Map(branchRuns.map((run) => [run.parent_run_id ?? run.id, run.id] as const)),
         }
@@ -266,6 +327,7 @@ function branchReportFor(project: Project, keyFilter?: string): BranchReportProj
             mergedPullRequestsTruncated: truncated,
             commitsNotOnTrunk: row.commitsNotOnTrunk,
             patchEquivalent: row.patchEquivalent,
+            pullRequestCommitCheck: row.pullRequestCommitCheck,
             laterTurnBranches,
             superseded: row.superseded,
           }),
@@ -274,8 +336,13 @@ function branchReportFor(project: Project, keyFilter?: string): BranchReportProj
       const reportBranches = observed
         .sort((left, right) => left.branch.localeCompare(right.branch))
         .map(
-          ({ patchEquivalent: _patchEquivalent, superseded: _superseded, turns: _turns, ...row }) =>
-            ({ ...row, ...decided.get(row.branch)! }) satisfies BranchReportRow,
+          ({
+            patchEquivalent: _patchEquivalent,
+            pullRequestCommitCheck: _pullRequestCommitCheck,
+            superseded: _superseded,
+            turns: _turns,
+            ...row
+          }) => ({ ...row, ...decided.get(row.branch)! }) satisfies BranchReportRow,
         )
       return { key, branches: reportBranches }
     })
@@ -286,7 +353,9 @@ function observationError(project: Project, error: unknown): BranchReportProject
   const detail = error instanceof Error ? error.message : String(error)
   const fix = detail.startsWith('merged pull-request listing')
     ? 'install gh, run gh auth login, and configure a GitHub remote for this checkout'
-    : 'repair the registered checkout and trunk, then rerun orch branches'
+    : detail.startsWith('git remote get-url origin')
+      ? 'add an origin remote for this checkout, then rerun orch branches'
+      : 'repair the registered checkout and trunk, then rerun orch branches'
   return {
     project: project.name,
     trunk: project.settings.trunk?.trim() ?? '',
@@ -320,6 +389,7 @@ function listOperatorBranch(row: BranchReportRow, report: BranchPruneReport): bo
     command: `git branch -D ${row.branch}`,
   })
   report.kept.push({ branch: row.branch, reason: row.state })
+  if (row.state === 'unknown' && row.error) report.errors.push(`${row.branch}: ${row.error}`)
   return true
 }
 
@@ -417,6 +487,7 @@ function landedByText(row: BranchReportRow): string {
     return `landed (patch-equivalent ${row.landedBy.form})`
   }
   if (row.landedBy.type === 'turn') return `landed (turn ${row.landedBy.branch})`
+  if (row.landedBy.type === 'pr-commits') return `landed (PR #${row.landedBy.number} commits)`
   return `landed (PR #${row.landedBy.number}, merge ${row.landedBy.mergeCommit ?? 'none'}, ${row.landedBy.mergedAt})`
 }
 
@@ -456,5 +527,7 @@ function renderProject(project: BranchReportProject): string[] {
 }
 
 function renderBranch(branch: BranchReportRow): string {
-  return `    ${branch.branch}  ${landedByText(branch)}  tip ${branch.tip}  commits-not-on-trunk ${branch.commitsNotOnTrunk}  checked-out ${branch.checkedOut ? 'yes' : 'no'}  live-run ${branch.liveRun ? 'yes' : 'no'}  runs ${branch.runIds.join(',')}`
+  const state =
+    branch.state === 'unknown' && branch.error ? `unknown (${branch.error})` : landedByText(branch)
+  return `    ${branch.branch}  ${state}  tip ${branch.tip}  commits-not-on-trunk ${branch.commitsNotOnTrunk}  checked-out ${branch.checkedOut ? 'yes' : 'no'}  live-run ${branch.liveRun ? 'yes' : 'no'}  runs ${branch.runIds.join(',')}`
 }
