@@ -38,6 +38,7 @@ Two lock purposes, two files. Creation and resume attachment take `project-lock.
 - Record roles are `record_owner` for migrations, `record_actor` for the application, and `record_reader` for reporting. The actor may select, insert and update `machine` and `user`, never delete them; the reader selects both.
 - `ORCH_RECORD_MIGRATE_URL` carries the owner connection and `ORCH_RECORD_URL` the actor connection; the database creator must first run `ALTER SCHEMA public OWNER TO record_owner`.
 - Better Auth owns identity: a space is an organization and every user has a self-healing personal space. The CLI bearer is in `schema_meta`; sync uses its user and active space. Required columns follow expand, backfill, contract.
+- The hosted record API is a surface over record services: it resolves a Better Auth session for every request, and each tenant query sets `app.user_id` and `app.space_id` inside its transaction. The CLI still talks directly to the record until the CLI-over-API slice. Deployment configuration lives in `orchestrator/deploy/api`; secrets live only in the Fly app.
 - Grants live in the custom `record_grants` migration, whose `ALTER DEFAULT PRIVILEGES` rules make later tables inherit actor and reader access.
 - **A linked-worktree binary reads the main store and never writes it, whatever names the path.** `db.ts:linkedWorktreeReadOnly` refuses at the write handle; `ORCH_DB_WRITE` is the operator's explicit insistence. Tests refuse any store their preload did not mint under the temporary directory.
 - **A lock waiter is served in arrival order** (`project-lock.ts:withProjectLock`, monotonic ticket under mkdir-atomic discipline).
@@ -49,7 +50,7 @@ Detach claims a reserved id before routing; the asking session still owns the ru
 
 # Delegating implementation
 
-An implement or fix worker gets a throwaway worktree, a spec, and a contract. It may commit to its own branch; it may not push, merge into trunk, or rewrite history. The architect judges the branch diff. The harness checkpoints every `DEFAULT_CHECKPOINT_MINUTES` and at every limit or stop. The worker writes `$ORCH_SCRATCH/progress.json` after each item. GitHub squash-merge folds checkpoint commits. `worktree-remove.ts:changesIn` stages everything and diffs against the immutable run base, so `orch diff` shows what it did while history shows authorship.
+Writing runs checkpoint every `DEFAULT_CHECKPOINT_MINUTES` and at limits or stop. The worker updates `$ORCH_SCRATCH/progress.json` after each item. `worktree-remove.ts:changesIn` stages everything and diffs against the immutable run base, so `orch diff` shows the work while history shows authorship.
 
 **Done describes the work, not the knowledge.** Consult a landed task's record instead of deriving it again.
 
