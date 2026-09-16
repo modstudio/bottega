@@ -43,7 +43,6 @@ const legs: Leg[] = [
   {
     name: 'orchestrator',
     commands: [
-      { cwd: `${root}orchestrator`, argv: ['bun', 'install', '--silent'] },
       { cwd: `${root}orchestrator`, argv: ['bun', 'run', 'typecheck'] },
       // The unit gate runs once under the shared host-load hold.
       { cwd: `${root}orchestrator`, argv: ['bun', 'run', 'test:gate'] },
@@ -52,7 +51,6 @@ const legs: Leg[] = [
   {
     name: 'hub',
     commands: [
-      { cwd: `${root}hub`, argv: ['bun', 'install', '--silent'] },
       { cwd: `${root}hub`, argv: ['bun', 'run', 'typecheck'] },
       { cwd: `${root}hub`, argv: ['bun', 'run', 'test'] },
     ],
@@ -60,7 +58,6 @@ const legs: Leg[] = [
   {
     name: 'hub/web',
     commands: [
-      { cwd: `${root}hub/web`, argv: ['bun', 'install', '--silent'] },
       { cwd: `${root}hub/web`, argv: ['bun', 'run', 'typecheck'] },
       { cwd: `${root}hub/web`, argv: ['bun', 'run', 'test'] },
       { cwd: `${root}hub/web`, argv: ['bun', 'run', 'build'] },
@@ -155,16 +152,6 @@ function refuseFailed(results: LegResult[]) {
 
 if ((await inherit(['bun', 'install', '--silent'])) !== 0) process.exit(1)
 
-const installs = await Promise.all(
-  legs.map((leg) =>
-    runLeg({
-      name: leg.name,
-      commands: [leg.commands[0]!],
-    }),
-  ),
-)
-refuseFailed(installs)
-
 if ((await inherit([`${root}node_modules/.bin/biome`, 'ci', '.'])) !== 0) process.exit(1)
 
 if (
@@ -198,7 +185,7 @@ const results = await Promise.all(
   legs.map((leg) =>
     runLeg({
       name: leg.name,
-      commands: leg.commands.slice(1),
+      commands: leg.commands,
     }),
   ),
 )

@@ -25,12 +25,8 @@ ops/logs/
 .claude/skills/port-feature/*
 !.claude/skills/port-feature/SKILL.md
 
-# orchestrator: bun installs typecheck deps locally; never shared
+# Bun installs workspace dependencies locally from the tracked root lockfile.
 orchestrator/node_modules
-# Root too, for the same reason the two below are ignored: a delegated
-# worker's install step creates one, and it would otherwise ride into an
-# unrelated change.
-bun.lock
 orchestrator/bun.lock
 orchestrator/spawn-fallback.log
 orchestrator/orch.db.backup-*
@@ -52,7 +48,7 @@ hub/node_modules
 hub/bun.lock
 hub/web/dist/
 hub/web/node_modules
-!hub/web/bun.lock
+hub/web/bun.lock
 
 # Screenshots and page snapshots taken while checking the dashboard by eye.
 # Working material, not the deliverable.

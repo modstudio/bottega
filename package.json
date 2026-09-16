@@ -2,6 +2,11 @@
   "name": "bottega",
   "version": "0.1.0",
   "private": true,
+  "workspaces": [
+    "orchestrator",
+    "hub",
+    "hub/web"
+  ],
   "description": "One designer, many hands: delegate the building, keep the design.",
   "type": "module",
   "scripts": {
