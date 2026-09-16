@@ -7,54 +7,19 @@ import { PLATFORM_SLUG } from '../../shared/brand.ts'
 import { resolveRunsDirectory } from './database-location.ts'
 import { db } from './db.ts'
 import { parseFiledIssue, workIssue } from './issue.ts'
+import {
+  eligibleFiledIssueTasks,
+  type FiledIssueTaskRow,
+  filedIssueQueueStop,
+  MAX_HELD_ISSUE_TREES,
+  MAX_ISSUES_PER_PASS,
+} from './issue-queue.ts'
 import { type KernelLease, tryKernelLease } from './project-lock.ts'
 import { worktreeDirty } from './worktree-attribution.ts'
 
 const HUB = new URL('../../bin/hub', import.meta.url).pathname
 
-export const MAX_ISSUES_PER_PASS = 5
-export const MAX_HELD_ISSUE_TREES = 3
-
-export type FiledIssueTaskRow = {
-  key: string
-  title: string | null
-  body: string | null
-  status_category: string | null
-  opened_at: string | null
-}
-
-export type HeldIssueTree = { runId: number; path: string; why: string }
-
-export function eligibleFiledIssueTasks(
-  rows: FiledIssueTaskRow[],
-  claimIsLive: (key: string) => boolean,
-): FiledIssueTaskRow[] {
-  return rows
-    .filter((task) => {
-      try {
-        if (parseFiledIssue({ task }).kind !== 'defect') return false
-      } catch {
-        return false
-      }
-      return (
-        task.status_category === 'open' ||
-        (task.status_category === 'active' && !claimIsLive(task.key))
-      )
-    })
-    .sort(
-      (left, right) =>
-        (left.opened_at ?? '').localeCompare(right.opened_at ?? '') ||
-        left.key.localeCompare(right.key),
-    )
-}
-
-export type QueueStop = 'issue-limit' | 'held-tree-limit' | null
-
-export function filedIssueQueueStop(issuesTaken: number, heldTreeCount: number): QueueStop {
-  if (heldTreeCount >= MAX_HELD_ISSUE_TREES) return 'held-tree-limit'
-  if (issuesTaken >= MAX_ISSUES_PER_PASS) return 'issue-limit'
-  return null
-}
+type HeldIssueTree = { runId: number; path: string; why: string }
 
 function leasePath(key: string): string {
   if (!/^[A-Z][A-Z0-9]*-[0-9]+$/.test(key)) throw new Error(`invalid task key ${key}`)
@@ -171,7 +136,7 @@ async function claimAndWork(key: string, queueMode: boolean): Promise<boolean> {
   }
 }
 
-export function heldIssueTrees(): HeldIssueTree[] {
+function heldIssueTrees(): HeldIssueTree[] {
   const rows = db()
     .query(
       `SELECT id, worktree, keep_tree, keep_tree_reason, status FROM run

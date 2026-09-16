@@ -5,7 +5,7 @@ import {
   filedIssueQueueStop,
   MAX_HELD_ISSUE_TREES,
   MAX_ISSUES_PER_PASS,
-} from './issue-dispatch.ts'
+} from './issue-queue.ts'
 
 const filed = (key: string, kind: 'defect' | 'suggestion', status: string, opened: string) =>
   ({
