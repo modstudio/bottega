@@ -258,7 +258,7 @@ realPostgres('project import against copied live SQLite data', () => {
     const sourceMachineId = source
       .query<{ value: string }, []>("SELECT value FROM schema_meta WHERE key='machine_id'")
       .get()!.value
-    source.query("UPDATE outbox SET synced_at=NULL WHERE kind='run'").run()
+    source.query('UPDATE outbox SET synced_at=NULL').run()
     const backfill = backfillRunRecords(source, sourceMachineId)
     const reviewBackfill = backfillReviewRecords(source)
     const landingEvidenceBackfill = backfillLandingEvidenceRecords(source)

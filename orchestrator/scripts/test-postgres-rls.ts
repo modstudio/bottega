@@ -55,6 +55,8 @@ try {
     '127.0.0.1::5432',
     '-d',
     'postgres:18-alpine',
+    '-c',
+    'max_connections=200',
   ])
   if (start !== 0) process.exit(start)
   started = true

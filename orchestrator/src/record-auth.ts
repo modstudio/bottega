@@ -168,6 +168,35 @@ export function recordAuth(url: string) {
 
 export type RecordAuth = ReturnType<typeof recordAuth>
 
+export type RecordIdentity = {
+  user: Record<string, unknown> & { id: string }
+  activeSpaceId: string | null
+  memberships: Record<string, unknown>[]
+}
+
+export async function recordIdentity(
+  url: string,
+  user: Record<string, unknown> & { id: string },
+  activeSpaceId: string | null,
+): Promise<RecordIdentity> {
+  if (!activeSpaceId) return { user, activeSpaceId, memberships: [] }
+  const sql = new SQL(url)
+  try {
+    const memberships = await sql.begin(async (tx) => {
+      await tx`SELECT set_config('app.user_id', ${user.id}, true)`
+      await tx`SELECT set_config('app.space_id', ${activeSpaceId}, true)`
+      return tx`
+        SELECT s.id AS space_id, s.name, s.slug, m.role, m.permission
+        FROM membership m JOIN space s ON s.id=m.space_id
+        WHERE m.user_id=${user.id}::uuid ORDER BY s.slug
+      `
+    })
+    return { user, activeSpaceId, memberships: [...memberships] }
+  } finally {
+    await sql.close()
+  }
+}
+
 export const bearerHeaders = (token: string) => new Headers({ Authorization: `Bearer ${token}` })
 
 export async function currentRecordSession(url: string, local: Database = db()) {
