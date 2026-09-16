@@ -115,12 +115,21 @@ function warnTaskBranchBypass(
   error: (...values: unknown[]) => void,
 ): void {
   if (!key) return
-  const candidate = resolveTaskBranch(cwd, key)
+  // Best effort: --base is how a caller escapes an ambiguous or unresolvable
+  // task branch, so failing to name the bypassed branch must not refuse it.
+  let candidate: ReturnType<typeof resolveTaskBranch>
+  try {
+    candidate = resolveTaskBranch(cwd, key)
+  } catch (cause) {
+    const reason = String((cause as Error)?.message ?? cause).split('\n', 1)[0]
+    error(`! explicit --base bypasses task-branch reuse for ${key}; ${reason}`)
+    return
+  }
   if (!candidate) return
   error(
     `! explicit --base bypasses task branch ${candidate.branch} at tip ${candidate.tip} ` +
       `(${candidate.commitCount} ${candidate.commitCount === 1 ? 'commit' : 'commits'}); ` +
-      `it is now superseded for ${key}.`,
+      `once this run is recorded it supersedes that branch for ${key}.`,
   )
 }
 
