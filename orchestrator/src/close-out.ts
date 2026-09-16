@@ -358,6 +358,16 @@ function absentCloseOutResult(input: {
   }
 }
 
+function turnHeadForCloseOut(
+  row: { branch: string | null; minted_branch: string | null },
+  treePath: string,
+): { branch: string; tip: string } | null {
+  const branch = row.branch ?? row.minted_branch
+  if (!branch || !existsSync(treePath)) return null
+  const tip = gitContext(treePath, 'rev-parse', '--verify', 'HEAD^{commit}')
+  return tip ? { branch, tip } : null
+}
+
 /** One cleanup path for terminalisation, explicit close-out, and sweep. */
 function attemptCloseOutRun(
   runId: number,
@@ -421,20 +431,17 @@ function attemptCloseOutRun(
   )
   if (terminalHold) return terminalHold
   const retainedBranch = effective.minted_branch ?? effective.branch
-  const turnBranch = row.branch ?? row.minted_branch
-  const turnTip = existsSync(treePath)
-    ? gitContext(treePath, 'rev-parse', '--verify', 'HEAD^{commit}')
-    : null
+  const turnHead = turnHeadForCloseOut(row, treePath)
   const recordRetainedBranch = (tip: string | null, retainedRef?: string | null) => {
     if (!retainedBranch || !tip) return
     writeTransaction(() => {
       db()
         .query('UPDATE run SET branch_kept=?, branch_kept_tip=? WHERE id=?')
         .run(retainedBranch, tip, row.root_id)
-      if (row.id !== row.root_id && turnBranch && turnTip) {
+      if (row.id !== row.root_id && turnHead) {
         db()
           .query('UPDATE run SET branch_kept=?, branch_kept_tip=? WHERE id=?')
-          .run(turnBranch, turnTip, row.id)
+          .run(turnHead.branch, turnHead.tip, row.id)
       }
       settleClaims(db(), {
         rootRunId: row.root_id,
