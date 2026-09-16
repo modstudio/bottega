@@ -9,12 +9,16 @@ import {
   PLATFORM_OPERATOR_USER_ID,
   PLATFORM_SPACE_ID,
   PLATFORM_SPACE_NAME,
+  RECORD_ACTOR_ROLE,
+  RECORD_OWNER_ROLE,
+  RECORD_READER_ROLE,
 } from './postgres-schema.ts'
 import { syncRecord } from './record-sync.ts'
 import { RUN_RECORD_PAYLOAD_COLUMNS } from './run-outbox.ts'
 
 const container = process.env.ORCH_TEST_POSTGRES_CONTAINER
-const ownerUrl = process.env.ORCH_TEST_POSTGRES_OWNER_URL
+const ownerUrl = process.env.ORCH_RECORD_MIGRATE_URL
+const actorUrl = process.env.ORCH_RECORD_URL
 const migrationsFolder = join(import.meta.dir, '..', 'postgres', 'migrations')
 const postgresSchema = [
   'postgres-schema.ts',
@@ -161,28 +165,15 @@ describe('Postgres substrate shape', () => {
   })
 })
 
-const realPostgres = container && ownerUrl ? describe : describe.skip
+const realPostgres = container && ownerUrl && actorUrl ? describe : describe.skip
 realPostgres('RLS proof against real Postgres', () => {
   beforeAll(async () => {
-    const roleSetup = psql(
-      'postgres',
-      'postgres',
-      `
-      CREATE ROLE record_owner LOGIN PASSWORD 'owner-password' NOSUPERUSER NOBYPASSRLS;
-      CREATE ROLE tenant_actor LOGIN PASSWORD 'tenant-password' NOSUPERUSER NOBYPASSRLS;
-      GRANT CREATE ON DATABASE postgres TO record_owner;
-      GRANT CREATE ON SCHEMA public TO record_owner;
-    `,
-    )
-    expect(roleSetup.code, roleSetup.stderr).toBe(0)
-
-    await migratePostgres(ownerUrl!)
+    await migratePostgres()
 
     succeeds(
       'postgres',
       'postgres',
       `
-      GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA public TO tenant_actor;
       INSERT INTO space (id, name, created_at) VALUES
         ('${SPACE_A}', 'space-a', now()), ('${SPACE_B}', 'space-b', now());
       INSERT INTO "user" (id, email, name, created_at)
@@ -259,13 +250,13 @@ realPostgres('RLS proof against real Postgres', () => {
     `,
     )
 
-    if (process.env.ORCH_TEST_POSTGRES_FALSIFY === 'drop-project-select') {
-      const dropped = psql(
-        'record_owner',
+    if (process.env.ORCH_TEST_POSTGRES_FALSIFY === 'revoke-project-select') {
+      const revoked = psql(
+        RECORD_OWNER_ROLE,
         'owner-password',
-        'DROP POLICY project_space_select ON project;',
+        `REVOKE SELECT ON project FROM ${RECORD_ACTOR_ROLE};`,
       )
-      expect(dropped.code, dropped.stderr).toBe(0)
+      expect(revoked.code, revoked.stderr).toBe(0)
     }
   })
 
@@ -277,25 +268,43 @@ realPostgres('RLS proof against real Postgres', () => {
       `
       DROP TABLE IF EXISTS test_flake, contention, landing_review_carry, landing_override, landing, review_finding, review_lens, review, run, membership, machine, seq, project, "user", space CASCADE;
       DROP SCHEMA IF EXISTS drizzle CASCADE;
-      REVOKE CREATE ON DATABASE postgres FROM record_owner;
-      REVOKE CREATE ON SCHEMA public FROM record_owner;
-      DROP ROLE IF EXISTS tenant_actor;
-      DROP ROLE IF EXISTS record_owner;
     `,
     )
   })
 
-  test('proof role neither owns tables nor holds BYPASSRLS', () => {
+  test('record roles are nonsuperuser without BYPASSRLS and only owner owns tables', () => {
     const facts = succeeds(
       'postgres',
       'postgres',
       `
-      SELECT r.rolsuper, r.rolbypassrls,
+      SELECT r.rolname, r.rolsuper, r.rolbypassrls,
         EXISTS (SELECT 1 FROM pg_class c WHERE c.relname = 'project' AND c.relowner = r.oid)
-      FROM pg_roles r WHERE r.rolname = 'tenant_actor';
+      FROM pg_roles r
+      WHERE r.rolname IN ('${RECORD_OWNER_ROLE}', '${RECORD_ACTOR_ROLE}', '${RECORD_READER_ROLE}')
+      ORDER BY r.rolname;
     `,
     )
-    expect(facts).toBe('f|f|f')
+    expect(facts.split('\n')).toEqual([
+      `${RECORD_ACTOR_ROLE}|f|f|f`,
+      `${RECORD_OWNER_ROLE}|f|f|t`,
+      `${RECORD_READER_ROLE}|f|f|f`,
+    ])
+  })
+
+  test('user-scoped table grants stay narrow', () => {
+    const facts = succeeds(
+      'postgres',
+      'postgres',
+      `SELECT
+        has_table_privilege('${RECORD_ACTOR_ROLE}', 'machine', 'SELECT'),
+        has_table_privilege('${RECORD_ACTOR_ROLE}', 'machine', 'INSERT'),
+        has_table_privilege('${RECORD_ACTOR_ROLE}', 'machine', 'UPDATE'),
+        has_table_privilege('${RECORD_ACTOR_ROLE}', 'machine', 'DELETE'),
+        has_table_privilege('${RECORD_ACTOR_ROLE}', '"user"', 'SELECT'),
+        has_table_privilege('${RECORD_READER_ROLE}', 'machine', 'SELECT'),
+        has_table_privilege('${RECORD_READER_ROLE}', '"user"', 'SELECT');`,
+    )
+    expect(facts).toBe('t|t|t|f|t|t|t')
   })
 
   test('the seq primary key columns are not nullable', () => {
@@ -313,7 +322,7 @@ realPostgres('RLS proof against real Postgres', () => {
     expect(columns.split('\n')).toEqual(['space_id|NO', 'project_id|NO', 'name|NO'])
 
     const inserted = asSpace(
-      'record_owner',
+      RECORD_OWNER_ROLE,
       'owner-password',
       SPACE_A,
       `INSERT INTO seq (space_id, project_id, name, next)
@@ -323,20 +332,88 @@ realPostgres('RLS proof against real Postgres', () => {
     expect(inserted.stderr).toContain('null value in column "name"')
   })
 
-  test('tenant roles cannot read Drizzle migration metadata', () => {
+  test('record actor cannot create tables', () => {
+    const result = psql(RECORD_ACTOR_ROLE, 'actor-password', 'CREATE TABLE actor_table (id int);')
+    expect(result.code).not.toBe(0)
+    expect(result.stderr).toContain('permission denied for schema public')
+  })
+
+  test('record actor cannot read Drizzle migration metadata', () => {
     const result = psql(
-      'tenant_actor',
-      'tenant-password',
+      RECORD_ACTOR_ROLE,
+      'actor-password',
       'SELECT count(*) FROM drizzle.__drizzle_migrations;',
     )
     expect(result.code).not.toBe(0)
     expect(result.stderr).toContain('permission denied for schema drizzle')
   })
 
+  test('PUBLIC has no table privilege', () => {
+    expect(
+      succeeds(
+        'postgres',
+        'postgres',
+        `SELECT has_table_privilege('public_probe', 'project', 'SELECT');`,
+      ),
+    ).toBe('f')
+    const result = asSpace(
+      'public_probe',
+      'public-password',
+      SPACE_A,
+      `SELECT name FROM public.project WHERE id = '${PROJECT_A}';`,
+    )
+    expect(result.code).not.toBe(0)
+    expect(result.stderr).toContain('permission denied for schema public')
+  })
+
+  test('record reader can read its space and cannot insert', () => {
+    const read = asSpace(
+      RECORD_READER_ROLE,
+      'reader-password',
+      SPACE_A,
+      `SELECT name FROM project WHERE id = '${PROJECT_A}';`,
+    )
+    expect(read.code, read.stderr).toBe(0)
+    expect(read.stdout).toBe('alpha')
+
+    const write = asSpace(
+      RECORD_READER_ROLE,
+      'reader-password',
+      SPACE_A,
+      `INSERT INTO project (id, space_id, name, created_at)
+       VALUES ('01990000-0000-7000-8000-00000000002c', '${SPACE_A}', 'reader-write', now());`,
+    )
+    expect(write.code).not.toBe(0)
+    expect(write.stderr).toContain('permission denied for table project')
+  })
+
+  test('tables created later inherit actor and reader grants', () => {
+    succeeds(
+      RECORD_OWNER_ROLE,
+      'owner-password',
+      'CREATE TABLE grant_inheritance_probe (id int); INSERT INTO grant_inheritance_probe VALUES (1);',
+    )
+    const actor = psql(
+      RECORD_ACTOR_ROLE,
+      'actor-password',
+      'SELECT id FROM grant_inheritance_probe;',
+    )
+    expect(actor.code, actor.stderr).toBe(0)
+    expect(actor.stdout).toBe('1')
+    const reader = psql(
+      RECORD_READER_ROLE,
+      'reader-password',
+      'SELECT id FROM grant_inheritance_probe;',
+    )
+    expect(reader.code, reader.stderr).toBe(0)
+    expect(reader.stdout).toBe('1')
+    succeeds(RECORD_OWNER_ROLE, 'owner-password', 'DROP TABLE grant_inheritance_probe;')
+  })
+
   test('same-space SELECT remains visible', () => {
     const result = asSpace(
-      'tenant_actor',
-      'tenant-password',
+      RECORD_ACTOR_ROLE,
+      'actor-password',
       SPACE_A,
       `SELECT name FROM project WHERE id = '${PROJECT_A}';`,
     )
@@ -346,8 +423,8 @@ realPostgres('RLS proof against real Postgres', () => {
 
   test('cross-space SELECT returns nothing', () => {
     const result = asSpace(
-      'tenant_actor',
-      'tenant-password',
+      RECORD_ACTOR_ROLE,
+      'actor-password',
       SPACE_A,
       `SELECT name FROM project WHERE id = '${PROJECT_B}';`,
     )
@@ -362,8 +439,8 @@ realPostgres('RLS proof against real Postgres', () => {
       ['review_finding', '01990000-0000-7000-8000-00000000006b'],
     ]) {
       const result = asSpace(
-        'tenant_actor',
-        'tenant-password',
+        RECORD_ACTOR_ROLE,
+        'actor-password',
         SPACE_A,
         `SELECT id FROM ${table} WHERE id = '${id}';`,
       )
@@ -381,8 +458,8 @@ realPostgres('RLS proof against real Postgres', () => {
       ['test_flake', '01990000-0000-7000-8000-00000000011b'],
     ]) {
       const result = asSpace(
-        'tenant_actor',
-        'tenant-password',
+        RECORD_ACTOR_ROLE,
+        'actor-password',
         SPACE_A,
         `SELECT id FROM ${table} WHERE id = '${id}';`,
       )
@@ -393,8 +470,8 @@ realPostgres('RLS proof against real Postgres', () => {
 
   test('cross-space run SELECT returns nothing', () => {
     const result = asSpace(
-      'tenant_actor',
-      'tenant-password',
+      RECORD_ACTOR_ROLE,
+      'actor-password',
       SPACE_A,
       `SELECT id FROM run WHERE id = '${RUN_B}';`,
     )
@@ -439,27 +516,37 @@ realPostgres('RLS proof against real Postgres', () => {
       )
       .run(recordId, JSON.stringify(values), String(values.createdAt))
     const result = await syncRecord({
-      recordUrl: ownerUrl!,
+      recordUrl: actorUrl!,
       local,
       identity: { id: MACHINE_A, name: 'proof-machine' },
       now: () => '2026-09-15T01:01:00.000Z',
     })
     expect(result).toEqual({ pushed: 1, failed: 0, pending: 0, configured: true })
     const read = asSpace(
-      'tenant_actor',
-      'tenant-password',
+      RECORD_ACTOR_ROLE,
+      'actor-password',
       PLATFORM_SPACE_ID,
       `SELECT id FROM run WHERE id='${recordId}';`,
     )
     expect(read.code, read.stderr).toBe(0)
     expect(read.stdout.split('\n').at(-1)).toBe(recordId)
+
+    await expect(
+      syncRecord({
+        recordUrl: ownerUrl!,
+        local,
+        identity: { id: MACHINE_A, name: 'proof-machine' },
+      }),
+    ).rejects.toThrow(
+      `record sync refuses ${RECORD_OWNER_ROLE} credentials; set ORCH_RECORD_URL to the ${RECORD_ACTOR_ROLE} connection`,
+    )
     local.close()
   })
 
   test('cross-space write is refused', () => {
     const result = asSpace(
-      'tenant_actor',
-      'tenant-password',
+      RECORD_ACTOR_ROLE,
+      'actor-password',
       SPACE_A,
       `
       INSERT INTO project (id, space_id, name, created_at)
@@ -472,7 +559,7 @@ realPostgres('RLS proof against real Postgres', () => {
 
   test('the table owner is still confined by FORCE ROW LEVEL SECURITY', () => {
     const result = asSpace(
-      'record_owner',
+      RECORD_OWNER_ROLE,
       'owner-password',
       SPACE_A,
       'SELECT name FROM project ORDER BY name;',
@@ -483,8 +570,8 @@ realPostgres('RLS proof against real Postgres', () => {
 
   test('same prefix is allowed in separate projects', () => {
     const rows = asSpace(
-      'tenant_actor',
-      'tenant-password',
+      RECORD_ACTOR_ROLE,
+      'actor-password',
       SPACE_A,
       'SELECT project_id, name, next FROM seq ORDER BY next;',
     )

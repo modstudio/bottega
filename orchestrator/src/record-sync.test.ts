@@ -2,6 +2,7 @@ import { Database } from 'bun:sqlite'
 import { expect, test } from 'bun:test'
 import type { SQL } from 'bun'
 import { PLATFORM_SLUG } from '../../shared/brand.ts'
+import { RECORD_ACTOR_ROLE, RECORD_OWNER_ROLE } from './postgres-schema.ts'
 import { syncRecord } from './record-sync.ts'
 import { RUN_RECORD_PAYLOAD_COLUMNS } from './run-outbox.ts'
 
@@ -52,7 +53,10 @@ function localOutbox(
   return local
 }
 
-function fakePostgres(failFirstRun = false): {
+function fakePostgres(
+  failFirstRun = false,
+  principal: string = RECORD_ACTOR_ROLE,
+): {
   sql: SQL
   statements: string[]
   parameters: unknown[][]
@@ -75,10 +79,16 @@ function fakePostgres(failFirstRun = false): {
     }
     return []
   }) as SQL['unsafe']
-  const sql = {
-    begin: async (operation: (client: SQL) => unknown) => operation(tx),
-    close: async () => {},
-  } as unknown as SQL
+  const sql = Object.assign(
+    async (parts: TemplateStringsArray) => {
+      statements.push(parts.join('?'))
+      return [{ principal }]
+    },
+    {
+      begin: async (operation: (client: SQL) => unknown) => operation(tx),
+      close: async () => {},
+    },
+  ) as unknown as SQL
   return { sql, statements, parameters }
 }
 
@@ -111,6 +121,16 @@ test('sync upserts once and a second pass has no run mutation', async () => {
   expect(
     remote.statements.filter((sql) => sql.toLowerCase().includes('insert into "run"')),
   ).toHaveLength(firstRunWrites)
+  local.close()
+})
+
+test('sync refuses the migration owner before any record write', async () => {
+  const local = localOutbox(1)
+  const remote = fakePostgres(false, RECORD_OWNER_ROLE)
+  await expect(syncRecord(options(local, remote))).rejects.toThrow(
+    `record sync refuses ${RECORD_OWNER_ROLE} credentials; set ORCH_RECORD_URL to the ${RECORD_ACTOR_ROLE} connection`,
+  )
+  expect(remote.statements).toEqual(['SELECT current_user AS principal'])
   local.close()
 })
 

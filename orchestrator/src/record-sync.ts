@@ -18,6 +18,7 @@ import {
   machine,
   PLATFORM_OPERATOR_USER_ID,
   PLATFORM_SPACE_ID,
+  RECORD_ACTOR_ROLE,
   RECORD_OWNER_ROLE,
 } from './postgres-schema.ts'
 import {
@@ -196,7 +197,7 @@ async function refuseOwnerConnection(postgres: SQL): Promise<void> {
   const principals = await postgres`SELECT current_user AS principal`
   if (principals[0]?.principal === RECORD_OWNER_ROLE) {
     throw new Error(
-      `record sync refuses ${RECORD_OWNER_ROLE} credentials; set ORCH_RECORD_URL to the record_actor connection`,
+      `record sync refuses ${RECORD_OWNER_ROLE} credentials; set ORCH_RECORD_URL to the ${RECORD_ACTOR_ROLE} connection`,
     )
   }
 }
