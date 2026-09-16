@@ -96,7 +96,8 @@
         "properties": {
           "name": {
             "type": "string",
-            "minLength": 1
+            "minLength": 1,
+            "description": "Unique name for this shared declaration."
           },
           "kind": {
             "type": "string",
@@ -104,10 +105,12 @@
           },
           "from": {
             "type": "string",
-            "minLength": 1
+            "minLength": 1,
+            "description": "Existing resource owned outside this run. Paths and volumes must be relative with no .. segment; networks and services are identifiers containing no slash."
           },
           "at": {
-            "type": "string"
+            "type": "string",
+            "description": "Location inside the tree. Must be relative with no .. segment and defaults to from's basename. Shared entries are reported only and are never created, claimed, verified, or removed by the run."
           }
         },
         "required": ["name", "kind", "from"],

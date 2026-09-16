@@ -168,6 +168,81 @@ describe('tracked recipe execution', () => {
     )
   })
 
+  test('reports every shared kind after serve modes and omits the section when absent', () => {
+    const serve: TrackedRecipe['serve'] = {
+      default: [
+        {
+          name: 'web',
+          run: { command: 'serve', args: [] },
+          undo: { command: 'stop', args: [] },
+        },
+      ],
+    }
+    const withoutShared = renderTrackedRecipeNotes({ create: [], serve }, '/main')
+    expect(withoutShared).not.toContain('shared declarations:')
+    const notes = renderTrackedRecipeNotes(
+      {
+        create: [],
+        serve,
+        shared: [
+          { name: 'vendor', kind: 'path', from: 'main/vendor', at: 'vendor' },
+          { name: 'modules', kind: 'volume', from: 'modules', at: 'node_modules' },
+          { name: 'edge', kind: 'network', from: 'edge', at: 'edge' },
+          { name: 'redis', kind: 'service', from: 'redis', at: 'redis' },
+        ],
+      },
+      '/main',
+    )
+    expect(notes.indexOf('shared declarations:')).toBeGreaterThan(
+      notes.indexOf('serve mode default:'),
+    )
+    expect(notes).toContain(
+      'path vendor: main/vendor -> vendor (shared; not created or removed by this run)',
+    )
+    expect(notes).toContain(
+      'volume modules: modules -> node_modules (shared; not created or removed by this run)',
+    )
+    expect(notes).toContain(
+      'network edge: edge -> edge (shared; not created or removed by this run)',
+    )
+    expect(notes).toContain(
+      'service redis: redis -> redis (shared; not created or removed by this run)',
+    )
+  })
+
+  test('shared declarations add no claims to the recipe allocation set', () => {
+    const database = db()
+    const projectId = Number(
+      database.query("INSERT INTO project(name,path,canon) VALUES ('shared','/shared',1)").run()
+        .lastInsertRowid,
+    )
+    const runId = Number(
+      database
+        .query(
+          `INSERT INTO run
+           (started_at,agent,job,prompt_sha,prompt_bytes,prompt_head,status,project_id,turn)
+           VALUES (?,'codex','implement','sha',1,'shared claims','running',?,1)`,
+        )
+        .run(nowIso(), projectId).lastInsertRowid,
+    )
+    const plain = trackedAllocator.allocate({ runId, recipe: { create: [] }, staticVars: {} })
+    const shared = trackedAllocator.allocate({
+      runId,
+      recipe: {
+        create: [],
+        shared: [
+          { name: 'vendor', kind: 'path', from: 'vendor', at: 'vendor' },
+          { name: 'modules', kind: 'volume', from: 'modules', at: 'modules' },
+          { name: 'edge', kind: 'network', from: 'edge', at: 'edge' },
+          { name: 'redis', kind: 'service', from: 'redis', at: 'redis' },
+        ],
+      },
+      staticVars: {},
+    })
+    expect(shared.allocations).toEqual(plain.allocations)
+    expect(shared.insertedClaimIds).toEqual([])
+  })
+
   test('builds the worker environment from recorded allocations', () => {
     expect(
       recipeAllocationEnvironment({

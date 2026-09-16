@@ -124,6 +124,91 @@ describe('tracked recipe refusal rules', () => {
     }
   })
 
+  test('refuses duplicate shared names', () => {
+    expect(
+      messages({
+        create: [],
+        shared: [
+          { name: 'cache', kind: 'path', from: 'cache' },
+          { name: 'cache', kind: 'volume', from: 'volume' },
+        ],
+      }).join('\n'),
+    ).toContain('shared-name rule: duplicate shared name "cache" within recipe')
+  })
+
+  test('refuses absolute and parent-traversing shared path and volume sources', () => {
+    for (const [kind, from] of [
+      ['path', '/main/vendor'],
+      ['path', 'main/../vendor'],
+      ['volume', 'C:\\volumes\\cache'],
+      ['volume', 'volumes\\..\\cache'],
+    ] as const) {
+      expect(
+        messages({ create: [], shared: [{ name: 'shared', kind, from }] }).join('\n'),
+      ).toContain(`shared from rule: ${kind} "shared"`)
+    }
+  })
+
+  test('refuses slashes in network and service source identifiers', () => {
+    for (const kind of ['network', 'service'] as const) {
+      expect(
+        messages({
+          create: [],
+          shared: [{ name: 'shared', kind, from: 'compose/shared' }],
+        }).join('\n'),
+      ).toContain(`shared from rule: ${kind} "shared" must be an identifier containing no slash`)
+    }
+  })
+
+  test('refuses absolute and parent-traversing shared targets', () => {
+    for (const at of ['/tree/vendor', 'tree/../vendor', 'C:\\tree\\vendor']) {
+      expect(
+        messages({
+          create: [],
+          shared: [{ name: 'vendor', kind: 'path', from: 'vendor', at }],
+        }).join('\n'),
+      ).toContain('shared at rule: shared "vendor"')
+    }
+  })
+
+  test('refuses shared target collisions naming both declarations', () => {
+    const errors = messages({
+      create: [],
+      shared: [
+        { name: 'vendor', kind: 'path', from: 'vendor', at: 'deps' },
+        { name: 'modules', kind: 'volume', from: 'modules', at: 'deps' },
+      ],
+    }).join('\n')
+    expect(errors).toContain('shared "vendor" and shared "modules" both declare at "deps"')
+  })
+
+  test('refuses a shared target colliding with an env path naming both', () => {
+    const errors = messages({
+      create: [],
+      env: [{ path: '.env', contents: '' }],
+      shared: [{ name: 'settings', kind: 'path', from: 'settings', at: '.env' }],
+    }).join('\n')
+    expect(errors).toContain('shared "settings" at ".env" collides with env path ".env"')
+  })
+
+  test('parses every shared kind and defaults targets to source basenames', () => {
+    const parsed = recipeSchema.parse({
+      create: [],
+      shared: [
+        { name: 'vendor', kind: 'path', from: 'main/vendor' },
+        { name: 'modules', kind: 'volume', from: 'cache/node_modules' },
+        { name: 'edge', kind: 'network', from: 'edge' },
+        { name: 'redis', kind: 'service', from: 'redis' },
+      ],
+    })
+    expect(parsed.shared?.map((entry) => entry.at)).toEqual([
+      'vendor',
+      'node_modules',
+      'edge',
+      'redis',
+    ])
+  })
+
   test('rule 1 refuses an allocating create step without undo', () => {
     const recipe = {
       allocate: { ports: ['web'] },

@@ -51,6 +51,33 @@ describe('worktree lifecycle declarations are measured without inference', () =>
       )[0],
     ).toContain('invalid (2 error(s)); first: first refusal')
   })
+
+  test('doctor reports declared sharing only when present', () => {
+    const projects = [
+      { name: 'app', path: '/projects/app', worktree: { recipePath: '.orch/worktree.jsonc' } },
+    ]
+    const withoutShared = lifecycleReportLines(
+      projects,
+      () => true,
+      () => ({ ok: true, recipe: { create: [] } }),
+    )[0]!
+    const withShared = lifecycleReportLines(
+      projects,
+      () => true,
+      () => ({
+        ok: true,
+        recipe: {
+          create: [],
+          shared: [
+            { name: 'vendor', kind: 'path' as const, from: 'vendor', at: 'vendor' },
+            { name: 'redis', kind: 'service' as const, from: 'redis', at: 'redis' },
+          ],
+        },
+      }),
+    )[0]!
+    expect(withoutShared).not.toContain('shared:')
+    expect(withShared).toContain('shared: 2 declared')
+  })
 })
 
 describe('inline recipe element support', () => {

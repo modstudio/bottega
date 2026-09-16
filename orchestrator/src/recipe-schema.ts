@@ -88,10 +88,20 @@ export const envFileSchema = strictObject({
 })
 
 export const sharedSchema = strictObject({
-  name: z.string().min(1),
+  name: z.string().min(1).describe('Unique name for this shared declaration.'),
   kind: z.enum(['path', 'volume', 'network', 'service']),
-  from: z.string().min(1),
-  at: z.string().optional(),
+  from: z
+    .string()
+    .min(1)
+    .describe(
+      'Existing resource owned outside this run. Paths and volumes must be relative with no .. segment; networks and services are identifiers containing no slash.',
+    ),
+  at: z
+    .string()
+    .describe(
+      "Location inside the tree. Must be relative with no .. segment and defaults to from's basename. Shared entries are reported only and are never created, claimed, verified, or removed by the run.",
+    )
+    .optional(),
 })
 
 const recipeShape = strictObject({
@@ -114,6 +124,7 @@ const recipeShape = strictObject({
 
 type RecipeInput = z.infer<typeof recipeShape>
 type StepInput = z.infer<typeof stepSchema>
+type SharedInput = z.infer<typeof sharedSchema>
 
 const STATIC_PLACEHOLDERS = new Set([
   'branch',
@@ -315,7 +326,71 @@ function validateEnvPaths(recipe: RecipeInput, context: z.RefinementCtx): void {
   }
 }
 
-export const recipeSchema = recipeShape.superRefine((recipe, context) => {
+function isAbsoluteOrParentPath(path: string): boolean {
+  return /^[\\/]/.test(path) || /^[A-Za-z]:[\\/]/.test(path) || path.split(/[\\/]+/).includes('..')
+}
+
+function sharedTarget(entry: SharedInput): string {
+  if (entry.at !== undefined) return entry.at
+  const segments = entry.from.split(/[\\/]+/).filter(Boolean)
+  return segments.at(-1) ?? entry.from
+}
+
+function validateSharedSource(entry: SharedInput, index: number, context: z.RefinementCtx): void {
+  const pathKind = entry.kind === 'path' || entry.kind === 'volume'
+  if (!(pathKind ? isAbsoluteOrParentPath(entry.from) : entry.from.includes('/'))) return
+  context.addIssue({
+    code: 'custom',
+    path: ['shared', index, 'from'],
+    message: pathKind
+      ? `shared from rule: ${entry.kind} "${entry.name}" must be relative and contain no .. segment`
+      : `shared from rule: ${entry.kind} "${entry.name}" must be an identifier containing no slash`,
+  })
+}
+
+function validateShared(recipe: RecipeInput, context: z.RefinementCtx): void {
+  const names = new Set<string>()
+  const targets = new Map<string, string>()
+  const envPaths = new Set((recipe.env ?? []).map((envFile) => envFile.path))
+  for (const [index, entry] of (recipe.shared ?? []).entries()) {
+    if (names.has(entry.name)) {
+      context.addIssue({
+        code: 'custom',
+        path: ['shared', index, 'name'],
+        message: `shared-name rule: duplicate shared name "${entry.name}" within recipe`,
+      })
+    }
+    names.add(entry.name)
+    validateSharedSource(entry, index, context)
+    const target = sharedTarget(entry)
+    if (isAbsoluteOrParentPath(target)) {
+      context.addIssue({
+        code: 'custom',
+        path: ['shared', index, 'at'],
+        message: `shared at rule: shared "${entry.name}" at "${target}" must be relative to the tree root and contain no .. segment`,
+      })
+    }
+    const prior = targets.get(target)
+    if (prior !== undefined) {
+      context.addIssue({
+        code: 'custom',
+        path: ['shared', index, 'at'],
+        message: `shared at rule: shared "${prior}" and shared "${entry.name}" both declare at "${target}"`,
+      })
+    } else {
+      targets.set(target, entry.name)
+    }
+    if (envPaths.has(target)) {
+      context.addIssue({
+        code: 'custom',
+        path: ['shared', index, 'at'],
+        message: `shared at rule: shared "${entry.name}" at "${target}" collides with env path "${target}"`,
+      })
+    }
+  }
+}
+
+const validatedRecipeSchema = recipeShape.superRefine((recipe, context) => {
   validateStepNames(recipe, context)
   validatePlaceholders(recipe, context)
   validateStringAllocationTemplates(recipe, context)
@@ -324,7 +399,15 @@ export const recipeSchema = recipeShape.superRefine((recipe, context) => {
   validateAllocationEnvironmentNames(recipe, context)
   validateWorkingDirectories(recipe, context)
   validateEnvPaths(recipe, context)
+  validateShared(recipe, context)
 })
+
+export const recipeSchema = validatedRecipeSchema.transform((recipe) => ({
+  ...recipe,
+  ...(recipe.shared === undefined
+    ? {}
+    : { shared: recipe.shared.map((entry) => ({ ...entry, at: sharedTarget(entry) })) }),
+}))
 
 function validateCwd(
   cwd: string,
@@ -345,5 +428,5 @@ function validateCwd(
 export type TrackedRecipe = z.infer<typeof recipeSchema>
 
 export function recipeJsonSchema(): unknown {
-  return z.toJSONSchema(recipeSchema, { target: 'draft-2020-12' })
+  return z.toJSONSchema(validatedRecipeSchema, { target: 'draft-2020-12' })
 }

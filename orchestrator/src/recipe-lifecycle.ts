@@ -3,15 +3,12 @@
 import type { TrackedRecipe } from './recipe-schema.ts'
 import type { Step, StepResult } from './recipe-step.ts'
 
-const deferred = { shared: 8 } as const
-
-export function trackedExecutionRefusal(recipe: TrackedRecipe): string | null {
-  for (const [field, slice] of Object.entries(deferred)) {
-    if (recipe[field as keyof typeof deferred] !== undefined) {
-      return `tracked recipe declares ${field}, which is not executable yet (Phase 3 slice ${slice})`
-    }
-  }
-  return null
+/** Report declarations that remain outside allocation, creation, and teardown plans. */
+export function sharedDeclarations(recipe: TrackedRecipe): string[] {
+  return (recipe.shared ?? []).map(
+    (entry) =>
+      `${entry.kind} ${entry.name}: ${entry.from} -> ${entry.at} (shared; not created or removed by this run)`,
+  )
 }
 
 export function compensationPlan(recipe: TrackedRecipe, failedIndex: number): Step[] {

@@ -24,9 +24,9 @@ import {
   destroyPlan,
   lifecycleFailure,
   serveUndoPlan,
+  sharedDeclarations,
   snapshotlessTeardown,
   teardownVars,
-  trackedExecutionRefusal,
 } from './recipe-lifecycle.ts'
 import { parseTrackedRecipe } from './recipe-loader.ts'
 import { allocationEnvironmentVariable, type TrackedRecipe } from './recipe-schema.ts'
@@ -313,7 +313,6 @@ export function renderTrackedRecipeNotes(recipe: TrackedRecipe, main: string): s
         ...entries.filter(([mode]) => mode !== 'default'),
       ]
     : entries
-  if (!modes.length) return ''
   const lines: string[] = []
   for (const [mode, steps] of modes) {
     lines.push(`serve mode ${mode}:`)
@@ -322,8 +321,15 @@ export function renderTrackedRecipeNotes(recipe: TrackedRecipe, main: string): s
       lines.push(`  stop: ${renderCommand(step.undo!, main)}`)
     }
   }
-  lines.push('NEVER verify against a server you did not start for this worktree. Borrowing one')
-  lines.push('tests a different branch and PASSES, which is worse than failing.')
+  if (modes.length) {
+    lines.push('NEVER verify against a server you did not start for this worktree. Borrowing one')
+    lines.push('tests a different branch and PASSES, which is worse than failing.')
+  }
+  const shared = sharedDeclarations(recipe)
+  if (shared.length) {
+    lines.push('shared declarations:')
+    lines.push(...shared.map((declaration) => `  ${declaration}`))
+  }
   return lines.join('\n')
 }
 
@@ -473,8 +479,6 @@ function prepareTrackedCreate(
   allocationAttempt: AllocationAttempt
 } {
   const loaded = loadRecipeAtBase(input)
-  const refusal = trackedExecutionRefusal(loaded.recipe)
-  if (refusal) throw new Error(refusal)
   const staticVars = {
     branch: input.branch,
     name: input.name,
