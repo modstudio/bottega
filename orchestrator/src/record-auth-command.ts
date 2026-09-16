@@ -2,12 +2,12 @@
 /** Owns record sign-in presentation and local bearer storage. Must not know run phases. */
 import { db, writeTransaction } from './db.ts'
 import {
-  currentRecordSession,
   RECORD_SESSION_KEY,
   RECORD_SIGN_IN_REMEDY,
   recordAuth,
   recordIdentity,
 } from './record-auth.ts'
+import { currentRecordSession } from './record-session.ts'
 
 type Presentation = { log(value: string): void }
 

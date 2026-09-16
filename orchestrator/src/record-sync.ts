@@ -28,7 +28,7 @@ import {
   review as reviewRecord,
 } from './postgres-schema-review.ts'
 import { run as runRecord } from './postgres-schema-run.ts'
-import { currentRecordSession } from './record-auth.ts'
+import { currentRecordSession } from './record-session.ts'
 import {
   backfillReviewRecords,
   REVIEW_FINDING_RECORD_PAYLOAD_COLUMNS,
