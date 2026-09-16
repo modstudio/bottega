@@ -5,7 +5,7 @@ import {
   type TrackerTask,
   trackerSourceFor,
 } from '../../../shared/trackers.ts'
-import { db, nowIso, type Project } from '../db.ts'
+import { db, nowIso, type Project, writeTransaction } from '../db.ts'
 import { credentials, Mcp } from '../mcp.ts'
 import { projects } from '../projects.ts'
 
@@ -257,7 +257,7 @@ export async function ingestTrackers(
           )
 
           let changed = 0
-          const write = d.transaction(() => {
+          writeTransaction(() => {
             for (const t of unique.values()) {
               const was = before.get(t.key)
               upsertTrackerTask(t, at)
@@ -270,7 +270,6 @@ export async function ingestTrackers(
               }
             }
           })
-          write()
 
           // Use the connection which already proved reachable for the handful of
           // closed tasks recent work names. A failed full sync is not immediately

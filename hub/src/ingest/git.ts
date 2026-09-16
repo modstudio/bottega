@@ -1,6 +1,6 @@
 import { categorizeFile, type FileKind } from '../../../shared/file-kind.ts'
 import { keyPattern, projectOfKey } from '../attribute.ts'
-import { db, nowIso, type Project } from '../db.ts'
+import { db, nowIso, type Project, writeTransaction } from '../db.ts'
 import { projects } from '../projects.ts'
 
 /**
@@ -176,7 +176,7 @@ export function ingestGit(since: string): { days: number; tasks: number } {
      ON CONFLICT(sha) DO NOTHING`,
   )
 
-  const write = d.transaction(() => {
+  writeTransaction(() => {
     for (const c of commits) commitStmt.run(c.sha, c.repo, c.key, c.at)
     for (const [day, a] of days) {
       dayStmt.run(
@@ -196,7 +196,6 @@ export function ingestGit(since: string): { days: number; tasks: number } {
       taskStmt.run(t.key, t.project, t.first, t.last, at, at)
     }
   })
-  write()
 
   d.query(`INSERT INTO setting (key, value) VALUES ('collect.git.at', ?)
            ON CONFLICT(key) DO UPDATE SET value = excluded.value`).run(JSON.stringify(at))

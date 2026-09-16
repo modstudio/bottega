@@ -4,7 +4,7 @@ import { join } from 'node:path'
 import { createInterface } from 'node:readline'
 import { DEFAULT_IDLE_CAP_MS, spansFromTimestamps, union } from '../../../shared/interval.ts'
 import { attribute, isInjected, projectOf } from '../attribute.ts'
-import { db, nowIso } from '../db.ts'
+import { db, nowIso, writeTransaction } from '../db.ts'
 
 const CLAUDE_ROOT = `${process.env.HOME}/.claude/projects`
 
@@ -203,7 +203,7 @@ export async function ingestTranscripts(
       .filter((l) => projectOf(l.cwd))
     if (!legs.length) continue
 
-    const write = d.transaction(() => {
+    writeTransaction(() => {
       for (const ref of new Set(legs.map((l) => l.ref))) clear.run(`claude:${ref}:%`, since)
 
       // The leg ordinal is part of the ref. Without it two legs of one session
@@ -264,7 +264,6 @@ export async function ingestTranscripts(
         }
       })
     })
-    write()
   }
 
   d.query(`INSERT INTO setting (key, value) VALUES ('collect.transcripts.at', ?)

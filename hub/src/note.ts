@@ -1,7 +1,7 @@
 import { existsSync, readFileSync } from 'node:fs'
 import { isAbsolute, resolve } from 'node:path'
 import { projectOf } from './attribute.ts'
-import { db, nowIso } from './db.ts'
+import { db, nowIso, writeTransaction } from './db.ts'
 import { dispatchNoteCurator, readRunsById } from './orch.ts'
 import { projects } from './projects.ts'
 import { createTask, duplicateCandidates, type TaskRow } from './task.ts'
@@ -202,7 +202,7 @@ export function mergeNote(targetValue: number | string, sourceValue: number | st
   const sourceId = noteId(sourceValue)
   if (targetId === sourceId) throw new Error('a note cannot be merged with itself')
   const d = db()
-  d.transaction(() => {
+  writeTransaction(() => {
     const target = getNote(targetId)
     const source = getNote(sourceId)
     if (target.project !== source.project)
@@ -214,7 +214,7 @@ export function mergeNote(targetValue: number | string, sourceValue: number | st
       targetId,
     )
     d.query('DELETE FROM note WHERE id=?').run(sourceId)
-  }).immediate()
+  })
   return getNote(targetId)
 }
 
@@ -356,7 +356,7 @@ export async function staleNotes(deps: Partial<StaleDeps> = {}): Promise<StaleRe
   const cutoff = new Date(clock.getTime() - 30 * 86_400_000).toISOString()
   const d = db()
   let deleted = 0
-  d.transaction(() => {
+  writeTransaction(() => {
     for (const item of reasons) {
       d.query('UPDATE note SET stale_at=?, stale_reason=? WHERE id=? AND stale_at IS NULL').run(
         at,
@@ -371,7 +371,7 @@ export async function staleNotes(deps: Partial<StaleDeps> = {}): Promise<StaleRe
       )
       .run(cutoff)
     deleted = result.changes
-  }).immediate()
+  })
   return { marked: reasons.length, deleted, reasons }
 }
 
