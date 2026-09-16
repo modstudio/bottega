@@ -2,7 +2,7 @@ import type { Database } from 'bun:sqlite'
 import { enqueueContention } from './landing-outbox.ts'
 import { newRecordId } from './postgres-schema.ts'
 
-export const RESOURCE_KINDS = [
+const RESOURCE_KINDS = [
   'trunk',
   'main_checkout',
   'store',
@@ -12,7 +12,7 @@ export const RESOURCE_KINDS = [
   'register',
   'lock',
 ] as const
-export const EVENT_KINDS = ['wait', 'refusal', 'invalidation', 'retry', 'timeout'] as const
+const EVENT_KINDS = ['wait', 'refusal', 'invalidation', 'retry', 'timeout'] as const
 
 export type ResourceKind = (typeof RESOURCE_KINDS)[number]
 export type EventKind = (typeof EVENT_KINDS)[number]

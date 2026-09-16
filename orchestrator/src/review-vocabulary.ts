@@ -18,5 +18,5 @@ export type ReviewLimits = (typeof REVIEW_LIMITS)[number]
 export type ReviewOverlap = (typeof REVIEW_OVERLAP)[number]
 export type ReviewSeverity = (typeof REVIEW_SEVERITY)[number]
 
-export const MONITOR_SEVERITY = ['informational', 'attention'] as const
+const MONITOR_SEVERITY = ['informational', 'attention'] as const
 export type MonitorSeverity = (typeof MONITOR_SEVERITY)[number]

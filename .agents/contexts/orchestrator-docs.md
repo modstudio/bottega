@@ -3,7 +3,6 @@ description: Docs, canon store, resume briefs, the project register, the subagen
 paths:
   - orchestrator/src/docs.ts
   - orchestrator/src/doc-commands.ts
-  - orchestrator/src/schema-docs.ts
   - orchestrator/src/canon*.ts
   - orchestrator/src/projects.ts
   - orchestrator/src/project-commands.ts

@@ -11,8 +11,6 @@ setDefaultTimeout(30_000)
 import { copyFileSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { getTableName } from 'drizzle-orm'
-import { getTableConfig, type SQLiteTable } from 'drizzle-orm/sqlite-core'
 import { PLATFORM_SLUG } from '../../shared/brand.ts'
 import { db, enableSchemaReload, writeTransaction } from './db.ts'
 import {
@@ -32,21 +30,6 @@ import {
   schemaVersionLabel,
   splitMigrationSource,
 } from './migrations.ts'
-import * as declaredCore from './schema-core.ts'
-import * as declaredDocs from './schema-docs.ts'
-import * as declaredLens from './schema-lens.ts'
-import * as declaredPort from './schema-port.ts'
-import * as declaredReview from './schema-review.ts'
-import * as declaredWorkflow from './schema-workflow.ts'
-
-const declaredSchemas = [
-  declaredCore,
-  declaredDocs,
-  declaredReview,
-  declaredLens,
-  declaredWorkflow,
-  declaredPort,
-]
 
 const fresh = () => {
   const d = new Database(':memory:')
@@ -100,38 +83,6 @@ describe('Drizzle migration journal', () => {
         sql: "CREATE UNIQUE INDEX doc_address ON doc(scope, COALESCE(subject, ''), slug)",
       },
     ])
-    d.close()
-  })
-
-  test('every typed table and column has the migration NOT NULL and default shape', () => {
-    const d = fresh()
-    for (const value of declaredSchemas.flatMap((declared) => Object.values(declared))) {
-      if (!value || typeof value !== 'object' || !('getSQL' in value)) continue
-      const table = value as SQLiteTable
-      const name = getTableName(table)
-      const config = getTableConfig(table)
-      const actual = d.query(`PRAGMA table_info("${name}")`).all() as {
-        name: string
-        notnull: number
-        dflt_value: string | null
-      }[]
-      expect(actual.length, name).toBe(config.columns.length)
-      for (const column of config.columns) {
-        const row = actual.find((candidate) => candidate.name === column.name)
-        expect(row, `${name}.${column.name}`).toBeDefined()
-        const primaryKeyNotNull = column.primary
-        expect(Boolean(row!.notnull || primaryKeyNotNull), `${name}.${column.name} NOT NULL`).toBe(
-          column.notNull || primaryKeyNotNull,
-        )
-        const expectedDefault =
-          column.default === undefined
-            ? null
-            : typeof column.default === 'string'
-              ? `'${column.default}'`
-              : String(column.default)
-        expect(row!.dflt_value, `${name}.${column.name} default`).toBe(expectedDefault)
-      }
-    }
     d.close()
   })
 
