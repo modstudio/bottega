@@ -1,0 +1,1 @@
+ALTER TABLE "session" DROP CONSTRAINT "session_active_space_id_space_id_fkey", ADD CONSTRAINT "session_active_space_id_space_id_fkey" FOREIGN KEY ("active_space_id") REFERENCES "space"("id") ON DELETE SET NULL;
