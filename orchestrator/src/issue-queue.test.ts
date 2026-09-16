@@ -2,6 +2,7 @@ import { describe, expect, test } from 'bun:test'
 import {
   eligibleFiledIssueTasks,
   type FiledIssueTaskRow,
+  filedIssueLoopRun,
   filedIssueQueueStop,
   MAX_HELD_ISSUE_TREES,
   MAX_ISSUES_PER_PASS,
@@ -51,6 +52,30 @@ describe('filed issue queue decisions', () => {
     expect(filedIssueQueueStop(MAX_ISSUES_PER_PASS, 0)).toBe('issue-limit')
     expect(filedIssueQueueStop(0, MAX_HELD_ISSUE_TREES)).toBe('held-tree-limit')
     expect(filedIssueQueueStop(MAX_ISSUES_PER_PASS, MAX_HELD_ISSUE_TREES)).toBe('held-tree-limit')
+  })
+
+  test('identifies workIssue-started runs from the label and job they record', () => {
+    expect(filedIssueLoopRun({ id: 11, job: 'diagnose', label: 'issue DEV-1 diagnosis' })).toEqual({
+      runId: 11,
+      job: 'diagnose',
+      issueKey: 'DEV-1',
+    })
+    expect(filedIssueLoopRun({ id: 12, job: 'issue-worker', label: 'issue DEV-1 fix' })).toEqual({
+      runId: 12,
+      job: 'issue-worker',
+      issueKey: 'DEV-1',
+    })
+    expect(
+      filedIssueLoopRun({ id: 13, job: 'review-lens', label: 'issue DEV-1 blast radius' }),
+    ).toEqual({ runId: 13, job: 'review-lens', issueKey: 'DEV-1' })
+    expect(filedIssueLoopRun({ id: 14, job: 'diagnose', label: null })).toBeNull()
+    expect(
+      filedIssueLoopRun({ id: 15, job: 'diagnose', label: 'hand-dispatched diagnosis' }),
+    ).toBeNull()
+    expect(filedIssueLoopRun({ id: 16, job: 'diagnose', label: 'issue DEV-1 fix' })).toBeNull()
+    expect(
+      filedIssueLoopRun({ id: 17, job: 'implement', label: 'issue DEV-1 diagnosis' }),
+    ).toBeNull()
   })
 
   test('continues after a durably recorded queue failure so the next candidate can run', () => {

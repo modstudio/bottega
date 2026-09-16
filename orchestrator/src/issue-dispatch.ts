@@ -5,10 +5,13 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { PLATFORM_SLUG } from '../../shared/brand.ts'
 import { db } from './db.ts'
+import { UNSCORED_WHERE } from './evidence-query.ts'
 import { parseFiledIssue, workIssue } from './issue.ts'
 import {
   eligibleFiledIssueTasks,
+  type FiledIssueLoopRun,
   type FiledIssueTaskRow,
+  filedIssueLoopRun,
   filedIssueQueueStop,
   MAX_HELD_ISSUE_TREES,
   MAX_ISSUES_PER_PASS,
@@ -227,6 +230,23 @@ export type FiledIssueQueueState = {
   waiting: ListedIssue[]
   unworked: ListedIssue[]
   blocked: null | { held: HeldIssueTree[]; limit: number }
+  unscored: FiledIssueLoopRun[]
+}
+
+export function unscoredFiledIssueLoopRuns(): FiledIssueLoopRun[] {
+  const rows = db()
+    .query(
+      `SELECT r.id, r.job, r.label
+       FROM run r LEFT JOIN score s ON s.run_id = r.id
+       WHERE r.job IN ('diagnose','issue-worker','review-lens')
+         AND ${UNSCORED_WHERE}
+       ORDER BY r.id`,
+    )
+    .all() as { id: number; job: string; label: string | null }[]
+  return rows.flatMap((row) => {
+    const found = filedIssueLoopRun(row)
+    return found ? [found] : []
+  })
 }
 
 export async function filedIssueQueueState(): Promise<FiledIssueQueueState> {
@@ -251,5 +271,6 @@ export async function filedIssueQueueState(): Promise<FiledIssueQueueState> {
     waiting,
     unworked,
     blocked: held.length >= MAX_HELD_ISSUE_TREES ? { held, limit: MAX_HELD_ISSUE_TREES } : null,
+    unscored: unscoredFiledIssueLoopRuns(),
   }
 }

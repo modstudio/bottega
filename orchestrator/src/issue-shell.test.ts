@@ -81,7 +81,6 @@ describe('filed issue command confinement', () => {
   })
 
   test('a timed-out command is a failed result naming the limit', () => {
-    expect(FILED_ISSUE_COMMAND_TIMEOUT_MS).toBe(20 * 60_000)
     expect(
       filedIssueCommandResult({
         exitCode: null,
@@ -92,6 +91,22 @@ describe('filed issue command confinement', () => {
     ).toEqual({
       ok: false,
       text: `timed out after ${FILED_ISSUE_COMMAND_TIMEOUT_MS}ms`,
+      exitCode: -1,
+    })
+  })
+
+  test('a timed-out command names remaining group members when they survive the kill', () => {
+    expect(
+      filedIssueCommandResult({
+        exitCode: null,
+        stdout: '',
+        stderr: '',
+        exitedDueToTimeout: true,
+        groupRemains: true,
+      }),
+    ).toEqual({
+      ok: false,
+      text: `timed out after ${FILED_ISSUE_COMMAND_TIMEOUT_MS}ms; process group still has members`,
       exitCode: -1,
     })
   })

@@ -13,12 +13,10 @@ import { DB_PATH, db } from './db.ts'
 import { repoRootOf } from './git-environment.ts'
 import { catchFixTreeDisposition } from './issue-catch.ts'
 import {
-  FILED_ISSUE_COMMAND_KILL_SIGNAL,
-  FILED_ISSUE_COMMAND_TIMEOUT_MS,
   filedIssueCommandPlan,
-  filedIssueCommandResult,
   issueFixReady,
   issueRunAsked,
+  runFiledIssueCommand,
   workerGateEnvironment,
 } from './issue-shell.ts'
 import { type Project, projectByName } from './projects.ts'
@@ -495,15 +493,7 @@ async function shell(
   if (input.orchStore) plan.env.ORCH_DB = input.orchStore
   try {
     const launch = await sandboxLaunchArgv(plan.profile, plan.argv[0], plan.argv.slice(1))
-    const p = Bun.spawnSync(launch, {
-      cwd,
-      env: plan.env,
-      stdout: 'pipe',
-      stderr: 'pipe',
-      timeout: FILED_ISSUE_COMMAND_TIMEOUT_MS,
-      killSignal: FILED_ISSUE_COMMAND_KILL_SIGNAL,
-    })
-    return filedIssueCommandResult(p)
+    return await runFiledIssueCommand(launch, cwd, plan.env)
   } finally {
     await resetSandbox()
   }

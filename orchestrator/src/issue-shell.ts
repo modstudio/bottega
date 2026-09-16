@@ -1,7 +1,9 @@
 // concern: filed-issue command confinement
-/** Pure policy for coordinator-run reproduction and gate commands. */
+/** Policy and execution for coordinator-run reproduction and gate commands. */
 
+import { type ChildProcess, spawn } from 'node:child_process'
 import { resolve } from 'node:path'
+import { isGroupKillablePgid, sampleProcesses, terminateProcessGroup } from './idle-kill.ts'
 import {
   expandHome,
   READONLY_LENS_DENY_PATHS,
@@ -10,7 +12,7 @@ import {
 } from './sandbox.ts'
 
 export const FILED_ISSUE_COMMAND_TIMEOUT_MS = 20 * 60_000
-export const FILED_ISSUE_COMMAND_KILL_SIGNAL = 'SIGKILL'
+const FILED_ISSUE_COMMAND_KILL_SIGNAL = 'SIGKILL'
 
 const WORKER_GATE_ENV_EXACT = new Set([
   'PATH',
@@ -79,11 +81,13 @@ export function filedIssueCommandResult(spawn: {
   stdout: { toString(): string }
   stderr: { toString(): string }
   exitedDueToTimeout?: boolean
+  groupRemains?: boolean
 }): { ok: boolean; text: string; exitCode: number } {
   if (spawn.exitedDueToTimeout) {
+    const limit = `timed out after ${FILED_ISSUE_COMMAND_TIMEOUT_MS}ms`
     return {
       ok: false,
-      text: `timed out after ${FILED_ISSUE_COMMAND_TIMEOUT_MS}ms`,
+      text: spawn.groupRemains ? `${limit}; process group still has members` : limit,
       exitCode: spawn.exitCode ?? -1,
     }
   }
@@ -93,6 +97,76 @@ export function filedIssueCommandResult(spawn: {
     text: text || `exit ${spawn.exitCode}`,
     exitCode: spawn.exitCode ?? -1,
   }
+}
+
+function waitForFiledIssueCommand(
+  child: ChildProcess,
+  timeoutMs: number,
+): Promise<'exit' | 'timeout'> {
+  return new Promise((resolve) => {
+    let settled = false
+    let timer: ReturnType<typeof setTimeout>
+    const finish = (outcome: 'exit' | 'timeout') => {
+      if (settled) return
+      settled = true
+      clearTimeout(timer)
+      resolve(outcome)
+    }
+    timer = setTimeout(() => finish('timeout'), timeoutMs)
+    child.once('close', () => finish('exit'))
+    child.once('error', () => finish('exit'))
+  })
+}
+
+async function killFiledIssueCommandGroup(pid: number): Promise<boolean> {
+  const samples = sampleProcesses()
+  const pgid = samples.find((row) => row.pid === pid)?.pgid ?? null
+  const selfPgid = samples.find((row) => row.pid === process.pid)?.pgid ?? null
+  if (isGroupKillablePgid(pgid, selfPgid) && pgid != null) {
+    try {
+      process.kill(-pgid, FILED_ISSUE_COMMAND_KILL_SIGNAL)
+    } catch (error) {
+      const code = (error as NodeJS.ErrnoException).code
+      if (code !== 'ESRCH' && code !== 'EPERM') throw error
+    }
+  }
+  const killed = await terminateProcessGroup(pid, { graceMs: 0 })
+  return !killed.exited
+}
+
+/** Run a confined command in its own process group and SIGKILL that group on timeout. */
+export async function runFiledIssueCommand(
+  launch: string[],
+  cwd: string,
+  env: Record<string, string>,
+): Promise<{ ok: boolean; text: string; exitCode: number }> {
+  const child = spawn(launch[0]!, launch.slice(1), {
+    cwd,
+    env,
+    stdio: ['ignore', 'pipe', 'pipe'],
+    detached: true,
+  })
+  let stdout = ''
+  let stderr = ''
+  child.stdout?.on('data', (chunk) => {
+    stdout += String(chunk)
+  })
+  child.stderr?.on('data', (chunk) => {
+    stderr += String(chunk)
+  })
+  const pid = child.pid ?? 0
+  const outcome = await waitForFiledIssueCommand(child, FILED_ISSUE_COMMAND_TIMEOUT_MS)
+  if (outcome !== 'timeout') {
+    return filedIssueCommandResult({ exitCode: child.exitCode, stdout, stderr })
+  }
+  const groupRemains = pid > 1 ? await killFiledIssueCommandGroup(pid) : true
+  return filedIssueCommandResult({
+    exitCode: child.exitCode ?? -1,
+    stdout,
+    stderr,
+    exitedDueToTimeout: true,
+    groupRemains,
+  })
 }
 
 export function filedIssueCommandPlan(input: {

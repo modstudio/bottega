@@ -218,6 +218,7 @@ def main() -> int:
 
         waiting_issues = []
         unworked_issues = []
+        unscored_loop_runs = []
         blocked_issue_loop = None
         waiting_failure = None
         if waiting.returncode == 0:
@@ -227,6 +228,7 @@ def main() -> int:
                     raise ValueError("invalid filed issue waiting JSON")
                 waiting_issues = issue_state.get("waiting")
                 unworked_issues = issue_state.get("unworked")
+                unscored_loop_runs = issue_state.get("unscored")
                 blocked_issue_loop = issue_state.get("blocked")
                 for issues in (waiting_issues, unworked_issues):
                     if not isinstance(issues, list) or not all(
@@ -236,6 +238,14 @@ def main() -> int:
                         for item in issues
                     ):
                         raise ValueError("invalid filed issue waiting JSON")
+                if not isinstance(unscored_loop_runs, list) or not all(
+                    isinstance(item, dict)
+                    and isinstance(item.get("runId"), int)
+                    and isinstance(item.get("job"), str)
+                    and isinstance(item.get("issueKey"), str)
+                    for item in unscored_loop_runs
+                ):
+                    raise ValueError("invalid filed issue unscored JSON")
                 if blocked_issue_loop is not None and (
                     not isinstance(blocked_issue_loop, dict)
                     or not isinstance(blocked_issue_loop.get("limit"), int)
@@ -252,6 +262,7 @@ def main() -> int:
             except Exception:
                 waiting_issues = []
                 unworked_issues = []
+                unscored_loop_runs = []
                 blocked_issue_loop = None
                 waiting_failure = "Filed issue waiting response was invalid; waiting state is unknown."
         elif waiting.returncode == -1:
@@ -290,6 +301,11 @@ def main() -> int:
             keys = ", ".join(item["key"] for item in unworked_issues)
             notices.append(
                 f"{len(unworked_issues)} filed issue(s) not yet worked: {keys} - run orch fix-defect"
+            )
+        if unscored_loop_runs:
+            ids = ", ".join(str(item["runId"]) for item in unscored_loop_runs)
+            notices.append(
+                f"{len(unscored_loop_runs)} filed-issue loop run(s) await scoring: {ids} - read with orch result <id>, score with orch judge <id>"
             )
         if blocked_issue_loop:
             held = blocked_issue_loop["held"]

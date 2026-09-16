@@ -44,3 +44,25 @@ export function filedIssueQueueStop(issuesTaken: number, heldTreeCount: number):
   if (issuesTaken >= MAX_ISSUES_PER_PASS) return 'issue-limit'
   return null
 }
+
+const LOOP_STAGE_JOB = {
+  diagnosis: 'diagnose',
+  fix: 'issue-worker',
+  'blast radius': 'review-lens',
+} as const
+
+export type FiledIssueLoopRun = { runId: number; job: string; issueKey: string }
+
+/** Identify a workIssue-started run from the label and job it records. */
+export function filedIssueLoopRun(row: {
+  id: number
+  job: string
+  label: string | null
+}): FiledIssueLoopRun | null {
+  const match = row.label?.match(/^issue ([A-Z][A-Z0-9]*-[0-9]+) (diagnosis|fix|blast radius)$/)
+  if (!match) return null
+  const issueKey = match[1]!
+  const stage = match[2] as keyof typeof LOOP_STAGE_JOB
+  if (row.job !== LOOP_STAGE_JOB[stage]) return null
+  return { runId: row.id, job: row.job, issueKey }
+}
