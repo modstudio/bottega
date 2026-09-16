@@ -16,6 +16,7 @@ import {
 } from './postgres-schema.ts'
 import { bearerHeaders, recordAuth } from './record-auth.ts'
 import { signInCommand, signUpCommand, whoamiCommand } from './record-auth-command.ts'
+import { startRecordApiServer } from './record-api-server.ts'
 import { syncRecord } from './record-sync.ts'
 import { RUN_RECORD_PAYLOAD_COLUMNS } from './run-outbox.ts'
 
@@ -45,6 +46,7 @@ const USER_A = '01990000-0000-7000-8000-000000000010'
 const AUTH_EMAIL_A = 'auth-a@example.test'
 const AUTH_EMAIL_B = 'auth-b@example.test'
 const AUTH_EMAIL_REPAIR = 'auth-repair@example.test'
+const AUTH_EMAIL_HTTP = 'auth-http@example.test'
 const AUTH_PASSWORD = 'correct-horse-battery-staple'
 const PROJECT_A = '01990000-0000-7000-8000-00000000001a'
 const PROJECT_A2 = '01990000-0000-7000-8000-00000000002a'
@@ -191,6 +193,7 @@ realPostgres('RLS proof against real Postgres', () => {
 
   beforeAll(async () => {
     process.env.BETTER_AUTH_SECRET = 'postgres-harness-secret-at-least-thirty-two-characters'
+    process.env.BETTER_AUTH_URL = 'http://127.0.0.1'
     await migratePostgres()
 
     succeeds(
@@ -333,6 +336,7 @@ realPostgres('RLS proof against real Postgres', () => {
 
   afterAll(() => {
     delete process.env.BETTER_AUTH_SECRET
+    delete process.env.BETTER_AUTH_URL
     if (!container) return
     psql(
       'postgres',
@@ -416,6 +420,73 @@ realPostgres('RLS proof against real Postgres', () => {
     expect(shown.user.id).toBe(authUserB)
     expect(shown.activeSpaceId).toBe(authSpaceB)
     expect(shown.memberships.map((row) => row.space_id)).toEqual([authSpaceB])
+  })
+
+  test('HTTP bearer round trip signs up, identifies, lists, and isolates runs', async () => {
+    const server = startRecordApiServer({
+      ...process.env,
+      PORT: '0',
+      ORCH_RECORD_URL: actorUrl!,
+      BETTER_AUTH_SECRET: process.env.BETTER_AUTH_SECRET,
+      BETTER_AUTH_URL: process.env.BETTER_AUTH_URL,
+    })
+    const origin = `http://127.0.0.1:${server.port}`
+    try {
+      const signup = await fetch(`${origin}/api/auth/sign-up/email`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          email: AUTH_EMAIL_HTTP,
+          name: 'Auth HTTP',
+          password: AUTH_PASSWORD,
+        }),
+      })
+      expect(signup.status).toBe(200)
+      const created = (await signup.json()) as { token: string; user: { id: string } }
+      expect(created.token).toBeString()
+
+      const whoami = await fetch(`${origin}/v1/whoami`, {
+        headers: { Authorization: `Bearer ${created.token}` },
+      })
+      expect(whoami.status).toBe(200)
+      const identity = (await whoami.json()) as {
+        user: { id: string }
+        activeSpaceId: string
+      }
+      expect(identity.user.id).toBe(created.user.id)
+
+      const httpProject = newRecordId()
+      const httpRun = newRecordId()
+      succeeds(
+        'postgres',
+        'postgres',
+        `INSERT INTO project (id,space_id,name,key_prefixes,created_at)
+           VALUES ('${httpProject}','${identity.activeSpaceId}','auth-http-project',ARRAY['HTTP'],now());
+         INSERT INTO run (
+           id,space_id,project_id,machine_id,local_id,started_at,agent,job,prompt_sha,
+           prompt_bytes,prompt_head,probe,status,turn,no_failover,automatic_failover,
+           work_preserved,created_at,updated_at
+         ) VALUES
+           ('${httpRun}','${identity.activeSpaceId}','${httpProject}','${MACHINE_A}',103,now(),
+            'proof','proof','http',1,'http',false,'ok',1,false,false,false,now(),now());`,
+      )
+
+      const ownRuns = await fetch(`${origin}/v1/runs`, {
+        headers: { Authorization: `Bearer ${created.token}` },
+      })
+      expect(ownRuns.status).toBe(200)
+      expect(((await ownRuns.json()) as { id: string }[]).map((run) => run.id)).toEqual([httpRun])
+
+      const otherRuns = await fetch(`${origin}/v1/runs`, {
+        headers: { Authorization: `Bearer ${tokenB}` },
+      })
+      expect(otherRuns.status).toBe(200)
+      expect(((await otherRuns.json()) as { id: string }[]).some((run) => run.id === httpRun)).toBe(
+        false,
+      )
+    } finally {
+      server.stop(true)
+    }
   })
 
   test('record roles are nonsuperuser without BYPASSRLS and only owner owns tables', () => {

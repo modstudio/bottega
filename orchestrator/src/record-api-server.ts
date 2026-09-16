@@ -15,8 +15,8 @@ function required(environment: ServerEnvironment, name: string): string {
 
 export function recordApiServerConfig(environment: ServerEnvironment = process.env) {
   const port = Number(environment.PORT ?? '3000')
-  if (!Number.isInteger(port) || port < 1 || port > 65_535) {
-    throw new Error('PORT must be an integer from 1 through 65535')
+  if (!Number.isInteger(port) || port < 0 || port > 65_535) {
+    throw new Error('PORT must be an integer from 0 through 65535')
   }
   return {
     port,
