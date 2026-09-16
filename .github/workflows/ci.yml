@@ -41,11 +41,7 @@ jobs:
           bun-version: 1.3.14
 
       - name: Install
-        run: |
-          bun install --silent
-          (cd orchestrator && bun install --silent)
-          (cd hub && bun install --silent)
-          (cd hub/web && bun install --silent)
+        run: bun install --silent
 
       # One command, the same one the local gate runs: typechecks, every
       # suite, the web build, and the boundary, ceiling, timing, spawn,
