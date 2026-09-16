@@ -1,7 +1,7 @@
 // concern: review-triage
 import type { Database } from 'bun:sqlite'
 import type { ReviewReply } from './contract.ts'
-import { nowIso, writableDb } from './db.ts'
+import { nowIso, writableDb, writeTransaction } from './db.ts'
 import { recordReviews } from './review.ts'
 import { enqueueReview, enqueueReviewFinding, enqueueReviewLens } from './review-outbox.ts'
 import {
@@ -61,7 +61,7 @@ export type ReviewGrades = {
 }
 
 function atomic<T>(database: Database, operation: () => T): T {
-  return database.inTransaction ? operation() : database.transaction(operation).immediate()
+  return database.inTransaction ? operation() : writeTransaction(operation, database)
 }
 
 export function recordReview(runId: number, output: ReviewReply, database: Database): number {
