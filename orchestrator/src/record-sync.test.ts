@@ -1,6 +1,7 @@
 import { Database } from 'bun:sqlite'
 import { expect, test } from 'bun:test'
 import type { SQL } from 'bun'
+import { PLATFORM_SLUG } from '../../shared/brand.ts'
 import { syncRecord } from './record-sync.ts'
 import { RUN_RECORD_PAYLOAD_COLUMNS } from './run-outbox.ts'
 
@@ -20,7 +21,7 @@ function localOutbox(count: number): Database {
     Object.assign(values, {
       id: `${RECORD_ID.slice(0, -1)}${id}`,
       spaceId: '01990000-0000-7000-8000-000000000001',
-      projectName: 'bottega',
+      projectName: PLATFORM_SLUG,
       machineId: MACHINE_ID,
       localId: id,
       startedAt: STAMP,
