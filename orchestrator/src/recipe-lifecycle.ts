@@ -38,6 +38,7 @@ export function teardownVars(input: {
   key: string | null
   seed: string | null
   main: string
+  label: string
   allocations?: {
     index: number
     ports: Record<string, number>
@@ -53,6 +54,7 @@ export function teardownVars(input: {
     key: input.key ?? '',
     seed: input.seed ?? '',
     main: input.main,
+    label: input.label,
   }
   if (!input.allocations) return vars
   vars.index = String(input.allocations.index)

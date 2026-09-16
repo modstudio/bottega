@@ -43,6 +43,22 @@ describe('tracked recipe refusal rules', () => {
     expect(messages(recipe).join('\n')).toContain('unknown placeholder {mystery}')
   })
 
+  test('accepts the ownership label in tracked steps but not allocation templates', () => {
+    expect(
+      recipeSchema.safeParse({
+        create: [
+          {
+            name: 'compose',
+            run: { command: 'docker', args: ['run', '--label', '{label}'] },
+          },
+        ],
+      }).success,
+    ).toBe(true)
+    expect(
+      messages({ allocate: { strings: { resource: '{label}' } }, create: [] }).join('\n'),
+    ).toContain('string allocation "resource" may use only')
+  })
+
   test('refuses a named port that was not declared', () => {
     const recipe = minimal()
     recipe.create[0]!.run = { command: 'true', args: ['{ports.web}'] }

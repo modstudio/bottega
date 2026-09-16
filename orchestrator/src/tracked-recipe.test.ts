@@ -23,6 +23,8 @@ import {
   type TrackedAllocator,
   teardownTrackedRecipe,
   trackedAllocator,
+  trackedRecipeEnvironment,
+  trackedRecipeVars,
   writeTrackedEnvFiles,
 } from './tracked-recipe.ts'
 
@@ -243,15 +245,19 @@ describe('tracked recipe execution', () => {
     expect(shared.insertedClaimIds).toEqual([])
   })
 
-  test('builds the worker environment from recorded allocations', () => {
+  test('builds the worker environment from recorded allocations and the root label', () => {
     expect(
-      recipeAllocationEnvironment({
-        index: 4,
-        ports: { hub: 21003, 'api-v2': 21004 },
-        databases: { app: 'app_4', audit: 'audit_4' },
-        strings: { token: 'tree-4' },
-      }),
+      recipeAllocationEnvironment(
+        {
+          index: 4,
+          ports: { hub: 21003, 'api-v2': 21004 },
+          databases: { app: 'app_4', audit: 'audit_4' },
+          strings: { token: 'tree-4' },
+        },
+        17,
+      ),
     ).toEqual({
+      ORCH_RUN_LABEL: 'orch.run=17',
       ORCH_INDEX: '4',
       ORCH_PORTS_HUB: '21003',
       ORCH_PORTS_API_V2: '21004',
@@ -259,6 +265,62 @@ describe('tracked recipe execution', () => {
       ORCH_DB_AUDIT: 'audit_4',
       ORCH_ALLOC_TOKEN: 'tree-4',
     })
+  })
+
+  test('creation variables carry the conversation root label', () => {
+    expect(
+      trackedRecipeVars(
+        { branch: 'DEV-596', path: '/tree' },
+        { index: 6, ports: { hub: 21005 }, databases: {}, strings: {} },
+        17,
+      ),
+    ).toMatchObject({
+      branch: 'DEV-596',
+      path: '/tree',
+      index: '6',
+      label: 'orch.run=17',
+      'ports.hub': '21005',
+    })
+  })
+
+  test('the worker environment uses the conversation root label for a resumed turn', () => {
+    const database = db()
+    const projectId = Number(
+      database.query("INSERT INTO project(name,path,canon) VALUES ('resume','/resume',1)").run()
+        .lastInsertRowid,
+    )
+    const rootId = Number(
+      database
+        .query(
+          `INSERT INTO run
+           (started_at,agent,job,prompt_sha,prompt_bytes,prompt_head,status,project_id,turn,recipe_snapshot)
+           VALUES (?,'codex','implement','sha',1,'root','asking',?,1,?)`,
+        )
+        .run(
+          nowIso(),
+          projectId,
+          JSON.stringify({
+            source: { path: '.orch/worktree.jsonc', commit: 'abc' },
+            recipe: { create: [] },
+            allocations: { index: 6, ports: {}, databases: {}, strings: {} },
+          }),
+        ).lastInsertRowid,
+    )
+    const turnId = Number(
+      database
+        .query(
+          `INSERT INTO run
+           (started_at,agent,job,prompt_sha,prompt_bytes,prompt_head,status,project_id,turn,parent_run_id)
+           VALUES (?,'codex','implement','sha',1,'resume','running',?,2,?)`,
+        )
+        .run(nowIso(), projectId, rootId).lastInsertRowid,
+    )
+
+    expect(trackedRecipeEnvironment(turnId)).toMatchObject({
+      ORCH_RUN_LABEL: `orch.run=${rootId}`,
+      ORCH_INDEX: '6',
+    })
+    expect(turnId).not.toBe(rootId)
   })
 
   test('claims every database before a pre step can run and exposes their filled names', () => {

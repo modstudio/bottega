@@ -30,6 +30,8 @@ export type DockerResource = {
   runId: number
 }
 
+export const ORCH_RUN_LABEL_KEY = 'orch.run'
+
 export type DockerInventory =
   | { ascertainable: true; resources: DockerResource[] }
   | { ascertainable: false; reason: string }
@@ -48,11 +50,13 @@ export type DockerNetworkInventory =
 function list(
   kind: DockerResourceKind,
   timeout: number,
-): { ascertainable: true; names: string[] } | { ascertainable: false; reason: string } {
+):
+  | { ascertainable: true; rows: { name: string; labels: Record<string, string> }[] }
+  | { ascertainable: false; reason: string } {
   const args =
     kind === 'container'
-      ? ['docker', 'ps', '-a', '--format', '{{.Names}}']
-      : ['docker', 'volume', 'ls', '--format', '{{.Name}}']
+      ? ['docker', 'ps', '-a', '--format', `{{.Names}}\t{{.Label "${ORCH_RUN_LABEL_KEY}"}}`]
+      : ['docker', 'volume', 'ls', '--format', `{{.Name}}\t{{.Label "${ORCH_RUN_LABEL_KEY}"}}`]
   let p: ReturnType<typeof Bun.spawnSync>
   try {
     p = Bun.spawnSync(args, {
@@ -83,10 +87,16 @@ function list(
   }
   return {
     ascertainable: true,
-    names: (p.stdout?.toString() ?? '')
+    rows: (p.stdout?.toString() ?? '')
       .split('\n')
-      .map((name) => name.trim())
-      .filter(Boolean),
+      .map((line) => line.trim())
+      .filter(Boolean)
+      .map((line) => {
+        const [name, label = ''] = line.split('\t')
+        const labels: Record<string, string> = {}
+        if (label) labels[ORCH_RUN_LABEL_KEY] = label
+        return { name: name!, labels }
+      }),
   }
 }
 
@@ -97,8 +107,22 @@ export function orchRunId(name: string): number | null {
   return Number(match[1])
 }
 
-export function dockerRunResource(name: string): { runId: number } | null {
-  const runId = orchRunId(name)
+export function orchRunLabel(rootRunId: number): string {
+  return `${ORCH_RUN_LABEL_KEY}=${rootRunId}`
+}
+
+export function runIdFromLabels(labels: Record<string, string> | null | undefined): number | null {
+  const value = labels?.[ORCH_RUN_LABEL_KEY]
+  if (!value || !/^\d+$/.test(value)) return null
+  const runId = Number(value)
+  return Number.isSafeInteger(runId) ? runId : null
+}
+
+export function dockerRunResource(
+  name: string,
+  labels?: Record<string, string> | null,
+): { runId: number } | null {
+  const runId = runIdFromLabels(labels) ?? orchRunId(name)
   return runId === null ? null : { runId }
 }
 
@@ -115,9 +139,9 @@ export function dockerRunResources(): DockerInventory {
       found = list(kind, DOCKER_INVENTORY_RETRY_TIMEOUT_MS)
     }
     if (!found.ascertainable) return found
-    for (const name of found.names) {
-      const parsed = dockerRunResource(name)
-      if (parsed) resources.push({ kind, name, runId: parsed.runId })
+    for (const row of found.rows) {
+      const parsed = dockerRunResource(row.name, row.labels)
+      if (parsed) resources.push({ kind, name: row.name, runId: parsed.runId })
     }
   }
   return { ascertainable: true, resources }
@@ -194,7 +218,7 @@ export function dockerNetworkInventory(): DockerNetworkInventory {
         name: row.Name,
         createdAt: row.Created ?? null,
         workingDir: row.Labels?.['com.docker.compose.project.working_dir'] ?? null,
-        runId: orchRunId(row.Name),
+        runId: runIdFromLabels(row.Labels) ?? orchRunId(row.Name),
       })),
     }
   } catch (error) {

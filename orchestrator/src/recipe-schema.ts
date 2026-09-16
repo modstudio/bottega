@@ -69,7 +69,7 @@ export const envFileSchema = strictObject({
   contents: z
     .string()
     .describe(
-      'Filled from the recipe static values, {index}, {ports.*}, {db.*}, and {alloc.*}. Secret values must never appear in errors, logs, run records, or the store.',
+      'Filled from the recipe static values, {label}, {index}, {ports.*}, {db.*}, and {alloc.*}. Secret values must never appear in errors, logs, run records, or the store.',
     ),
   mode: z
     .enum(['append', 'replace', 'managed-block'])
@@ -135,7 +135,11 @@ const STATIC_PLACEHOLDERS = new Set([
   'path',
   'main',
   'index',
+  'label',
 ])
+const ALLOCATION_STATIC_PLACEHOLDERS = new Set(
+  [...STATIC_PLACEHOLDERS].filter((name) => name !== 'label'),
+)
 const ALLOCATION_PLACEHOLDER = /^(ports|db|alloc)\.([^{}.]+)$/
 
 function allSteps(recipe: RecipeInput): StepInput[] {
@@ -206,7 +210,7 @@ function validateAllocationTemplate(
   context: z.RefinementCtx,
 ): void {
   const invalid = [...template.matchAll(/\{([^{}]+)\}/g)].some(
-    (match) => !STATIC_PLACEHOLDERS.has(match[1]!),
+    (match) => !ALLOCATION_STATIC_PLACEHOLDERS.has(match[1]!),
   )
   if (invalid) {
     context.addIssue({
