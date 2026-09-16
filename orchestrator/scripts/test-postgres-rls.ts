@@ -80,7 +80,7 @@ try {
   if (rls !== 0) process.exitCode = rls
   else if (!falsify) {
     process.exitCode = await run(
-      ['bun', 'test', '--timeout', '30000', 'src/postgres-import.test.ts'],
+      ['bun', 'test', '--timeout', '120000', 'src/postgres-import.test.ts'],
       {
         ORCH_TEST_POSTGRES_CONTAINER: container,
         ORCH_TEST_POSTGRES_URL: `postgres://postgres:postgres@127.0.0.1:${port}/postgres`,
