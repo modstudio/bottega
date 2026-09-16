@@ -8,7 +8,7 @@ export type RecordRun = {
   agent: string
   job: string
   status: string
-  latencyMs: bigint | null
+  latencyMs: number | null
   promptHead: string
 }
 
@@ -29,13 +29,13 @@ export async function listRecordRuns(input: {
         ORDER BY started_at DESC, id DESC
         LIMIT ${input.limit}
       `
-      return rows.map((row) => ({
+      return rows.map((row: Record<string, unknown>) => ({
         id: String(row.id),
         startedAt: new Date(String(row.started_at)),
         agent: String(row.agent),
         job: String(row.job),
         status: String(row.status),
-        latencyMs: row.latency_ms == null ? null : BigInt(String(row.latency_ms)),
+        latencyMs: row.latency_ms == null ? null : Number(row.latency_ms),
         promptHead: String(row.prompt_head),
       }))
     })

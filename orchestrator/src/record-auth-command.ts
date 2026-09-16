@@ -1,9 +1,9 @@
 // concern: record-auth-command
 /** Owns record sign-in presentation and local bearer storage. Must not know run phases. */
-import { SQL } from 'bun'
 import { db, writeTransaction } from './db.ts'
 import {
   currentRecordSession,
+  recordIdentity,
   RECORD_SESSION_KEY,
   RECORD_SIGN_IN_REMEDY,
   recordAuth,
@@ -63,25 +63,5 @@ export async function signInCommand(
 export async function whoamiCommand(presentation: Presentation): Promise<void> {
   const url = recordUrl()
   const current = await currentRecordSession(url)
-  const sql = new SQL(url)
-  try {
-    const memberships = await sql.begin(async (tx) => {
-      await tx`SELECT set_config('app.user_id', ${current.user.id}, true)`
-      await tx`SELECT set_config('app.space_id', ${current.activeSpaceId}, true)`
-      return tx`
-        SELECT s.id AS space_id, s.name, s.slug, m.role, m.permission
-        FROM membership m JOIN space s ON s.id=m.space_id
-        WHERE m.user_id=${current.user.id}::uuid ORDER BY s.slug
-      `
-    })
-    presentation.log(
-      JSON.stringify({
-        user: current.user,
-        activeSpaceId: current.activeSpaceId,
-        memberships,
-      }),
-    )
-  } finally {
-    await sql.close()
-  }
+  presentation.log(JSON.stringify(await recordIdentity(url, current.user, current.activeSpaceId)))
 }
