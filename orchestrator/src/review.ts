@@ -2,9 +2,9 @@
 import type { Database, SQLQueryBindings } from 'bun:sqlite'
 import { REVIEW_SCHEMA, type ReviewReply } from './contract.ts'
 import { db, nowIso, sessionId, writableDb, writeTransaction } from './db.ts'
+import { enqueueLandingReviewCarry } from './landing-outbox.ts'
 import { newRecordId } from './postgres-schema.ts'
 import { enqueueReview } from './review-outbox.ts'
-import { enqueueLandingReviewCarry } from './landing-outbox.ts'
 
 export { parseReviewOutput, parseReviewReply } from './contract.ts'
 

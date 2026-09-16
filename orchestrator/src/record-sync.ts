@@ -4,13 +4,22 @@ import type { Database } from 'bun:sqlite'
 import { SQL } from 'bun'
 import { drizzle } from 'drizzle-orm/bun-sql'
 import { db, nowIso } from './db.ts'
+import {
+  backfillLandingEvidenceRecords,
+  CONTENTION_RECORD_PAYLOAD_COLUMNS,
+  LANDING_OVERRIDE_RECORD_PAYLOAD_COLUMNS,
+  LANDING_RECORD_PAYLOAD_COLUMNS,
+  LANDING_REVIEW_CARRY_RECORD_PAYLOAD_COLUMNS,
+  type LandingEvidenceBackfillResult,
+  TEST_FLAKE_RECORD_PAYLOAD_COLUMNS,
+} from './landing-outbox.ts'
 import { machineId, machineName } from './machine-identity.ts'
 import { machine, PLATFORM_OPERATOR_USER_ID, PLATFORM_SPACE_ID } from './postgres-schema.ts'
 import {
   contention as contentionRecord,
   landingOverride as landingOverrideRecord,
-  landingReviewCarry as landingReviewCarryRecord,
   landing as landingRecord,
+  landingReviewCarry as landingReviewCarryRecord,
   testFlake as testFlakeRecord,
 } from './postgres-schema-landing.ts'
 import {
@@ -31,15 +40,6 @@ import {
   RUN_RECORD_PAYLOAD_COLUMNS,
   type RunRecordBackfillResult,
 } from './run-outbox.ts'
-import {
-  backfillLandingEvidenceRecords,
-  CONTENTION_RECORD_PAYLOAD_COLUMNS,
-  LANDING_OVERRIDE_RECORD_PAYLOAD_COLUMNS,
-  LANDING_RECORD_PAYLOAD_COLUMNS,
-  LANDING_REVIEW_CARRY_RECORD_PAYLOAD_COLUMNS,
-  type LandingEvidenceBackfillResult,
-  TEST_FLAKE_RECORD_PAYLOAD_COLUMNS,
-} from './landing-outbox.ts'
 
 type OutboxRow = { id: number; kind: string; record_id: string; payload: string }
 type Payload = Record<string, unknown>

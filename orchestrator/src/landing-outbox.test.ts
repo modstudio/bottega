@@ -91,11 +91,9 @@ test('landing evidence backfill mints references in order, maps every column, an
     CONTENTION_RECORD_PAYLOAD_COLUMNS,
     TEST_FLAKE_RECORD_PAYLOAD_COLUMNS,
   ]
-  rows.forEach((row, index) =>
-    expect(Object.keys(JSON.parse(row.payload)).sort()).toEqual(
-      [...expectedColumns[index]!].sort(),
-    ),
-  )
+  rows.forEach((row, index) => {
+    expect(Object.keys(JSON.parse(row.payload)).sort()).toEqual([...expectedColumns[index]!].sort())
+  })
   const firstLanding = JSON.parse(rows[0]!.payload)
   expect(firstLanding).not.toHaveProperty('claimPid')
   expect(firstLanding).not.toHaveProperty('claimSession')
