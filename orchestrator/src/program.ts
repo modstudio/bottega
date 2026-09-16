@@ -19,6 +19,7 @@ import { recordSessionSeen } from './db.ts'
 export const program = new Command()
   .name('orch')
   .version('0.1.0')
+  .enablePositionalOptions()
   .exitOverride()
   .configureOutput({
     writeOut: (value) => write(value),

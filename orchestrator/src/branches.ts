@@ -1,6 +1,7 @@
 // concern: branches
 /** Observes registered projects and assembles the run-minted branch report. */
 
+import { settleDeletedBranch } from './branch-settlement.ts'
 import {
   type BranchLanding,
   decideBranchState,
@@ -12,7 +13,6 @@ import { db, writableDb } from './db.ts'
 import { targetGitEnvironment } from './git-environment.ts'
 import type { Project } from './projects.ts'
 import { projectByName, projects } from './projects.ts'
-import { settleDeletedBranch } from './reclaim.ts'
 import {
   isTaskBranchSuperseded,
   type TaskBranchRunRow,
@@ -311,6 +311,73 @@ export function branchesReport(options: { project?: string; key?: string }): Bra
   }
 }
 
+function listOperatorBranch(row: BranchReportRow, report: BranchPruneReport): boolean {
+  if (row.state !== 'unlanded' && row.state !== 'unknown') return false
+  report.operator.push({
+    branch: row.branch,
+    state: row.state,
+    commitsNotOnTrunk: row.commitsNotOnTrunk,
+    command: `git branch -D ${row.branch}`,
+  })
+  report.kept.push({ branch: row.branch, reason: row.state })
+  return true
+}
+
+function tipStillEligible(
+  project: Project,
+  row: BranchReportRow,
+  report: BranchPruneReport,
+): boolean {
+  let currentTip: string | undefined
+  try {
+    currentTip = localBranches(project).get(row.branch)
+  } catch (error) {
+    const reason = error instanceof Error ? error.message : String(error)
+    report.kept.push({ branch: row.branch, reason: 'tip could not be rechecked' })
+    report.errors.push(`${row.branch}: ${reason}`)
+    return false
+  }
+  const eligibility = decidePruneEligibility({
+    state: row.state,
+    checkedOut: row.checkedOut,
+    liveRun: row.liveRun,
+    tipMoved: currentTip !== row.tip,
+  })
+  if (eligibility.eligible) return true
+  report.kept.push({ branch: row.branch, reason: eligibility.reason })
+  return false
+}
+
+function deleteAndSettleBranch(
+  project: Project,
+  row: BranchReportRow,
+  report: BranchPruneReport,
+): void {
+  try {
+    writableDb()
+    command(
+      project.path,
+      ['git', 'update-ref', '-d', `refs/heads/${row.branch}`, row.tip],
+      `delete branch ${row.branch}`,
+    )
+    if (localBranches(project).has(row.branch)) {
+      throw new Error('branch still exists after compare-at-tip deletion')
+    }
+    report.deleted.push(row.branch)
+  } catch (error) {
+    const reason = error instanceof Error ? error.message : String(error)
+    report.kept.push({ branch: row.branch, reason: 'deletion failed' })
+    report.errors.push(`${row.branch}: ${reason}`)
+    return
+  }
+  try {
+    settleDeletedBranch(project.name, row.branch)
+  } catch (error) {
+    const reason = error instanceof Error ? error.message : String(error)
+    report.errors.push(`${row.branch}: branch deleted but claims could not be settled: ${reason}`)
+  }
+}
+
 /** Observe once, then delete only branches whose safety facts still hold. */
 export function pruneBranches(options: {
   project: string
@@ -333,62 +400,13 @@ export function pruneBranches(options: {
     errors: [],
   }
   for (const row of keyReport?.branches ?? []) {
-    if (row.state === 'unlanded' || row.state === 'unknown') {
-      report.operator.push({
-        branch: row.branch,
-        state: row.state,
-        commitsNotOnTrunk: row.commitsNotOnTrunk,
-        command: `git branch -D ${row.branch}`,
-      })
-      report.kept.push({ branch: row.branch, reason: row.state })
-      continue
-    }
-    let currentTip: string | undefined
-    try {
-      currentTip = localBranches(project).get(row.branch)
-    } catch (error) {
-      const reason = error instanceof Error ? error.message : String(error)
-      report.kept.push({ branch: row.branch, reason: 'tip could not be rechecked' })
-      report.errors.push(`${row.branch}: ${reason}`)
-      continue
-    }
-    const eligibility = decidePruneEligibility({
-      state: row.state,
-      checkedOut: row.checkedOut,
-      liveRun: row.liveRun,
-      tipMoved: currentTip !== row.tip,
-    })
-    if (!eligibility.eligible) {
-      report.kept.push({ branch: row.branch, reason: eligibility.reason })
-      continue
-    }
+    if (listOperatorBranch(row, report)) continue
+    if (!tipStillEligible(project, row, report)) continue
     if (report.dryRun) {
       report.wouldDelete.push(row.branch)
       continue
     }
-    try {
-      writableDb()
-      command(
-        project.path,
-        ['git', 'update-ref', '-d', `refs/heads/${row.branch}`, row.tip],
-        `delete branch ${row.branch}`,
-      )
-      if (localBranches(project).has(row.branch)) {
-        throw new Error('branch still exists after compare-at-tip deletion')
-      }
-      report.deleted.push(row.branch)
-    } catch (error) {
-      const reason = error instanceof Error ? error.message : String(error)
-      report.kept.push({ branch: row.branch, reason: 'deletion failed' })
-      report.errors.push(`${row.branch}: ${reason}`)
-      continue
-    }
-    try {
-      settleDeletedBranch(project.name, row.branch)
-    } catch (error) {
-      const reason = error instanceof Error ? error.message : String(error)
-      report.errors.push(`${row.branch}: branch deleted but claims could not be settled: ${reason}`)
-    }
+    deleteAndSettleBranch(project, row, report)
   }
   return report
 }

@@ -16,6 +16,7 @@ export function register(program: Command): void {
     .option('--project <name>')
     .option('--key <KEY>')
     .option('--json')
+    .passThroughOptions()
     .allowExcessArguments(false)
     .action((options) => {
       const report = branchesReport({ project: options.project, key: options.key })

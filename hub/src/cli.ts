@@ -342,6 +342,26 @@ async function task() {
         `${row.project.padEnd(12)} ${row.title ?? ''}`,
     )
   }
+
+  async function closeAndPruneTask(key: string) {
+    const closed = closeTask(key)
+    printRow(closed)
+    if (has('keep-branches')) return
+    try {
+      const pruned = await pruneTaskBranches(closed.project, closed.key)
+      console.log(`branches: deleted ${pruned.deleted.length}; kept ${pruned.kept.length}`)
+      for (const branch of pruned.operator) {
+        console.log(
+          `${branch.state}: ${branch.branch} (${branch.commitsNotOnTrunk} commits not on trunk); ${branch.command}`,
+        )
+      }
+    } catch (error) {
+      const detail = error instanceof Error ? error.message : String(error)
+      console.error(`branch prune failed: ${detail}`)
+      console.error(`retry: orch branches prune --project ${closed.project} --key ${closed.key}`)
+      process.exitCode = 1
+    }
+  }
   const newBody = () => {
     if (has('body') && has('body-file')) {
       throw new Error('--body and --body-file are mutually exclusive')
@@ -534,24 +554,7 @@ async function task() {
     return
   }
   if (sub === 'close') {
-    const closed = closeTask(argv[2] ?? '')
-    printRow(closed)
-    if (!has('keep-branches')) {
-      try {
-        const pruned = await pruneTaskBranches(closed.project, closed.key)
-        console.log(`branches: deleted ${pruned.deleted.length}; kept ${pruned.kept.length}`)
-        for (const branch of pruned.operator) {
-          console.log(
-            `${branch.state}: ${branch.branch} (${branch.commitsNotOnTrunk} commits not on trunk); ${branch.command}`,
-          )
-        }
-      } catch (error) {
-        const detail = error instanceof Error ? error.message : String(error)
-        console.error(`branch prune failed: ${detail}`)
-        console.error(`retry: orch branches prune --project ${closed.project} --key ${closed.key}`)
-        process.exitCode = 1
-      }
-    }
+    await closeAndPruneTask(argv[2] ?? '')
     return
   }
   if (sub === 'comment') {
