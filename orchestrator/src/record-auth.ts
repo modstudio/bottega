@@ -104,7 +104,9 @@ function personalSpacePort(client: SQL): PersonalSpacePort {
 export function recordAuth(url: string) {
   const secret = process.env.BETTER_AUTH_SECRET
   if (!secret) throw new Error('BETTER_AUTH_SECRET is required for record authentication')
-  const client = new SQL(url)
+  // Auth instances are short-lived at the CLI boundary; a one-connection pool keeps repeated
+  // commands from reserving the database's entire connection budget before garbage collection.
+  const client = new SQL(url, { max: 1 })
   const personalSpaces = personalSpacePort(client)
   return betterAuth({
     secret,

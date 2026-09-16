@@ -119,7 +119,24 @@ export const modules: ArchitectureModule[] = [
   module('orchestrator/src/postgres-migrate.ts', []),
   module('orchestrator/src/postgres-schema-review.ts', ['./postgres-schema.ts']),
   module('orchestrator/src/postgres-schema-landing.ts', ['./postgres-schema.ts']),
+  module('orchestrator/src/record-command.ts', [
+    './postgres-migrate.ts',
+    './record-doctor.ts',
+    './record-space.ts',
+  ]),
+  module('orchestrator/src/record-doctor.ts', [
+    './postgres-migrate.ts',
+    './postgres-schema.ts',
+    './record-auth.ts',
+    './record-session.ts',
+    './record-sync.ts',
+  ]),
   module('orchestrator/src/record-session.ts', ['./db.ts', './record-auth.ts']),
+  module('orchestrator/src/record-space.ts', [
+    './postgres-schema.ts',
+    './record-auth.ts',
+    './record-session.ts',
+  ]),
   module('orchestrator/src/landing-outbox.ts', ['./postgres-schema.ts']),
   module('orchestrator/src/project-lock.ts', [
     './db.ts',

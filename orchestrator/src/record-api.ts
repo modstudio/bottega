@@ -21,7 +21,7 @@ type RecordApiDeps = {
 }
 
 const limitSchema = z.coerce.number().int().min(1).max(100).default(20)
-const activeSpaceRemedy = 'run `orch record space` to select an active space'
+const activeSpaceRemedy = 'run `orch record space switch <slug>` to select an active space'
 
 export function recordApi(deps: RecordApiDeps): Hono<RecordApiEnvironment> {
   const app = new Hono<RecordApiEnvironment>()

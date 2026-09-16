@@ -1,6 +1,7 @@
 // concern: postgres-schema-auth
 /** Better Auth-owned record tables. Must not know local execution state or run phases. */
-import { index, pgTable, text, timestamp, uuid } from 'drizzle-orm/pg-core'
+import { sql } from 'drizzle-orm'
+import { index, pgPolicy, pgTable, text, timestamp, uuid } from 'drizzle-orm/pg-core'
 import { space, spaceIdentity, tenantPolicies, user } from './postgres-schema.ts'
 
 const identity = () => uuid('id').primaryKey()
@@ -72,5 +73,23 @@ export const invitation = pgTable.withRLS(
     index('invitation_space_id_idx').on(table.spaceId),
     index('invitation_email_idx').on(table.email),
     ...tenantPolicies('invitation', table.spaceId),
+    pgPolicy('invitation_invitee_select', {
+      for: 'select',
+      using: sql`lower(${table.email}) = (
+        SELECT lower(u.email) FROM "user" u
+        WHERE u.id = nullif(current_setting('app.user_id', true), '')::uuid
+      )`,
+    }),
+    pgPolicy('invitation_invitee_update', {
+      for: 'update',
+      using: sql`lower(${table.email}) = (
+        SELECT lower(u.email) FROM "user" u
+        WHERE u.id = nullif(current_setting('app.user_id', true), '')::uuid
+      )`,
+      withCheck: sql`lower(${table.email}) = (
+        SELECT lower(u.email) FROM "user" u
+        WHERE u.id = nullif(current_setting('app.user_id', true), '')::uuid
+      )`,
+    }),
   ],
 )
