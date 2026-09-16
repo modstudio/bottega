@@ -1,7 +1,8 @@
-import { copyFileSync, existsSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
-import { tmpdir } from 'node:os'
+import { copyFileSync, existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { homedir, tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { PLATFORM_SLUG } from '../../shared/brand.ts'
+import { PLATFORM_NAME, PLATFORM_SLUG } from '../../shared/brand.ts'
+import { closeOutRun } from './close-out.ts'
 import {
   ISSUE_WORKER_SCHEMA,
   type IssueWorkerReply,
@@ -11,13 +12,14 @@ import {
 import { DB_PATH, db } from './db.ts'
 import { repoRootOf } from './git-environment.ts'
 import { catchFixTreeDisposition } from './issue-catch.ts'
+import { filedIssueCommandPlan } from './issue-shell.ts'
 import { type Project, projectByName } from './projects.ts'
 import { prepareSharedRefGuard } from './ref-guard.ts'
 import { parseReviewOutput } from './review.ts'
 import { run } from './run.ts'
 import type { RunResult } from './run-types.ts'
+import { resetSandbox, resolveSecretPaths, sandboxLaunchArgv, srtInstalled } from './sandbox.ts'
 import { worktreeDirty } from './worktree-attribution.ts'
-import { removeFor } from './worktree-remove.ts'
 import type { Worktree } from './worktree-types.ts'
 
 const HUB = new URL('../../bin/hub', import.meta.url).pathname
@@ -453,14 +455,45 @@ DIAGNOSIS EVIDENCE:
 ${JSON.stringify(diagnosis, null, 2)}`
 }
 
-function shell(
+function diagnosedTarget(diagnosis: Diagnosis, reporting: Project): Project | null {
+  if (diagnosis.cause_location === 'orch-code') return projectByName(PLATFORM_SLUG)
+  if (diagnosis.target_project) return projectByName(diagnosis.target_project)
+  return reporting
+}
+
+async function shell(
   command: string,
   cwd: string,
-  env = process.env,
-): { ok: boolean; text: string; exitCode: number } {
-  const p = Bun.spawnSync(['sh', '-lc', command], { cwd, env, stdout: 'pipe', stderr: 'pipe' })
-  const text = `${p.stdout.toString()}${p.stderr.toString()}`.trim()
-  return { ok: p.exitCode === 0, text: text || `exit ${p.exitCode}`, exitCode: p.exitCode }
+  input: {
+    project: Project
+    sandboxHome: string
+    workerEnvironment?: Record<string, string>
+    orchStore?: string
+  },
+): Promise<{ ok: boolean; text: string; exitCode: number }> {
+  const platform = projectByName(PLATFORM_SLUG)
+  if (!platform) throw new Error(`unknown platform project "${PLATFORM_SLUG}"`)
+  const plan = filedIssueCommandPlan({
+    command,
+    worktree: cwd,
+    sandboxHome: input.sandboxHome,
+    path: process.env.PATH ?? '/usr/bin:/bin',
+    lang: process.env.LANG ?? 'C.UTF-8',
+    operatorEnvPath: join(homedir(), '.claude', '.env'),
+    secretPaths: resolveSecretPaths(input.project),
+    liveOrchStore: DB_PATH,
+    liveHubStore: process.env.HUB_DB ?? join(platform.path, 'hub', 'hub.db'),
+    workerEnvironment: input.workerEnvironment,
+  })
+  if (input.orchStore) plan.env.ORCH_DB = input.orchStore
+  try {
+    const launch = await sandboxLaunchArgv(plan.profile, plan.argv[0], plan.argv.slice(1))
+    const p = Bun.spawnSync(launch, { cwd, env: plan.env, stdout: 'pipe', stderr: 'pipe' })
+    const text = `${p.stdout.toString()}${p.stderr.toString()}`.trim()
+    return { ok: p.exitCode === 0, text: text || `exit ${p.exitCode}`, exitCode: p.exitCode }
+  } finally {
+    await resetSandbox()
+  }
 }
 
 function argv(
@@ -527,35 +560,10 @@ function outcomeDocument(
   ].join('\n\n')
 }
 
-async function release(result: RunResult | null, keepBranch = false): Promise<string | null> {
+async function release(result: RunResult | null): Promise<string | null> {
   if (!result?.worktree) return null
-  const head = keepBranch
-    ? argv(['git', '-C', result.worktree.path, 'rev-parse', 'HEAD'], result.worktree.path)
-    : null
-  const removed = removeFor(result.worktree, result.worktree.repoRoot, false, keepBranch, result.id)
-  if (removed.removed && keepBranch && head?.ok) {
-    const exists = argv(
-      [
-        'git',
-        '-C',
-        result.worktree.repoRoot,
-        'show-ref',
-        '--verify',
-        '--quiet',
-        `refs/heads/${result.worktree.branch}`,
-      ],
-      result.worktree.repoRoot,
-    )
-    if (!exists.ok) {
-      const restored = argv(
-        ['git', '-C', result.worktree.repoRoot, 'branch', result.worktree.branch, head.text],
-        result.worktree.repoRoot,
-      )
-      if (!restored.ok)
-        return `released tree but could not preserve branch ${result.worktree.branch}: ${restored.text}`
-    }
-  }
-  return removed.removed ? null : removed.detail
+  const closed = closeOutRun(result.id, { intent: 'terminal' })
+  return ['released', 'absent', 'forgotten'].includes(closed.outcome) ? null : closed.detail
 }
 
 function runIdFromCause(cause: unknown): number {
@@ -608,7 +616,7 @@ async function recordIssueFailure(
     : catchFixTreeDisposition(null, false)
   let treeRecord = disposition.handoff
   if (disposition.action === 'release' && catchFix) {
-    const failure = await release(catchFix, true)
+    const failure = await release(catchFix)
     if (failure)
       treeRecord = `Worktree was not released: ${failure}. Branch: ${catchFix.worktree?.branch ?? 'unknown'}.`
   }
@@ -653,6 +661,20 @@ export async function workIssue(key: string): Promise<void> {
   }
   const reporting = projectByName(issue.reportingProject)
   if (!reporting) throw new Error(`unknown reporting project "${issue.reportingProject}"`)
+  if (!srtInstalled()) {
+    const body = [
+      'Coordinator could not attempt this issue because the sandbox runtime is not installed.',
+      `Install it with \`bun install\` at the ${PLATFORM_NAME} repository root, then retry.`,
+      'No reproduction or gate command was run on the host.',
+      `Resume with: orch fix-defect ${issue.key}`,
+    ].join('\n\n')
+    await handoff(issue.key, 'Issue handback: sandbox runtime is missing', body)
+    await comment(
+      issue.key,
+      'Could not attempt: sandbox runtime is missing; no host fallback was used.',
+    )
+    return
+  }
   const seeds = reporting.settings.worktree?.seeds ?? []
   const seed = seedFromReport(reporting, issue.environment)
   if (seeds.length && !seed) {
@@ -671,6 +693,8 @@ export async function workIssue(key: string): Promise<void> {
   }
 
   const scratch = mkdtempSync(join(tmpdir(), 'orch-issue-'))
+  const sandboxHome = join(scratch, 'home')
+  mkdirSync(sandboxHome)
   let diagnosisRun: RunResult | null = null
   let fixRun: RunResult | null = null
   let completed = false
@@ -750,7 +774,10 @@ export async function workIssue(key: string): Promise<void> {
         .reduce<unknown>((value, part) => ({ [part]: value }), proposed)
       const before =
         diagnosisRun.worktree && issue.reproduceCommand
-          ? shell(issue.reproduceCommand, diagnosisRun.worktree.path)
+          ? await shell(issue.reproduceCommand, diagnosisRun.worktree.path, {
+              project: reporting,
+              sandboxHome,
+            })
           : { ok: false, text: 'no reproduction command', exitCode: -1 }
       const applied = argv(
         [
@@ -766,9 +793,10 @@ export async function workIssue(key: string): Promise<void> {
       )
       const after =
         applied.ok && diagnosisRun.worktree && issue.reproduceCommand
-          ? shell(issue.reproduceCommand, diagnosisRun.worktree.path, {
-              ...process.env,
-              ORCH_DB: copy,
+          ? await shell(issue.reproduceCommand, diagnosisRun.worktree.path, {
+              project: reporting,
+              sandboxHome,
+              orchStore: copy,
             })
           : {
               ok: false,
@@ -809,12 +837,7 @@ export async function workIssue(key: string): Promise<void> {
       completed = true
       return
     }
-    const target =
-      diagnosis.cause_location === 'orch-code'
-        ? projectByName(PLATFORM_SLUG)
-        : diagnosis.target_project
-          ? projectByName(diagnosis.target_project)
-          : reporting
+    const target = diagnosedTarget(diagnosis, reporting)
     if (!target) throw new Error('diagnosis did not resolve a registered target project')
     let branchKey = issue.key
     if (target.name !== PLATFORM_SLUG) {
@@ -867,22 +890,35 @@ export async function workIssue(key: string): Promise<void> {
     )
     const before =
       diagnosisRun.worktree && issue.reproduceCommand
-        ? shell(issue.reproduceCommand, diagnosisRun.worktree.path)
+        ? await shell(issue.reproduceCommand, diagnosisRun.worktree.path, {
+            project: reporting,
+            sandboxHome,
+          })
         : { ok: false, text: 'no reproduction command', exitCode: -1 }
     const after =
       fixRun.worktree && issue.reproduceCommand
-        ? shell(issue.reproduceCommand, fixRun.worktree.path)
+        ? await shell(issue.reproduceCommand, fixRun.worktree.path, {
+            project: target,
+            sandboxHome,
+          })
         : { ok: false, text: 'no reproduction command', exitCode: -1 }
     const gate = target.settings.gate
     const plainGate =
       gate && fixRun.worktree
-        ? shell(gate, fixRun.worktree.path)
+        ? await shell(gate, fixRun.worktree.path, { project: target, sandboxHome })
         : { ok: false, text: 'project has no configured gate', exitCode: -1 }
     const environmentGate =
       gate && fixRun.worktree
-        ? shell(gate, fixRun.worktree.path, {
-            ...workerEnv(),
-            ...prepareSharedRefGuard(fixRun.worktree.path, `refs/heads/${fixRun.worktree.branch}`),
+        ? await shell(gate, fixRun.worktree.path, {
+            project: target,
+            sandboxHome,
+            workerEnvironment: {
+              ...workerEnv(),
+              ...prepareSharedRefGuard(
+                fixRun.worktree.path,
+                `refs/heads/${fixRun.worktree.branch}`,
+              ),
+            },
           })
         : { ok: false, text: 'project has no configured gate', exitCode: -1 }
     await comment(
@@ -945,10 +981,7 @@ export async function workIssue(key: string): Promise<void> {
     throw cause
   } finally {
     const failures = completed
-      ? [
-          fixTreeSettled ? null : await release(fixRun, Boolean(fixRun?.worktree)),
-          await release(diagnosisRun),
-        ].filter(Boolean)
+      ? [fixTreeSettled ? null : await release(fixRun), await release(diagnosisRun)].filter(Boolean)
       : []
     rmSync(scratch, { recursive: true, force: true })
     if (failures.length)

@@ -6,6 +6,7 @@
  */
 import { existsSync, rmSync } from 'node:fs'
 import { join, resolve } from 'node:path'
+import { adoptedTreeCloseOutDecision } from './close-out-adoption.ts'
 import { db, nowIso, sessionId, writeTransaction } from './db.ts'
 import { gitContext, repoRootOf, targetGitEnvironment } from './git-environment.ts'
 import { HOOK_TREE_JOB, hookTreeHoldDecision } from './hook-tree.ts'
@@ -28,7 +29,11 @@ import {
   settleClaims,
   settledStateForCloseOut,
 } from './resource-claims.ts'
-import { liveWorktreeSharers, worktreePathSpellings } from './resource-ownership.ts'
+import {
+  liveWorktreeSharers,
+  otherConversationWorktreeSharers,
+  worktreePathSpellings,
+} from './resource-ownership.ts'
 import { runAlive } from './run-alive.ts'
 import { RUNS_DIR } from './run-artifacts.ts'
 import { removeFreeRunLease, runLeaseState } from './run-lease.ts'
@@ -297,19 +302,11 @@ function terminalHoldResult(
 function ownershipCloseOutResult(input: {
   runId: number
   treePath: string
-  repoRoot: string
-  conversationIds: number[]
-  branchTemplate?: string
+  decision: ReturnType<typeof adoptedTreeCloseOutDecision>
   dryRun?: boolean
 }): CloseOutResult | null {
-  const ownership = inspectTreeOwnership(
-    input.treePath,
-    input.repoRoot,
-    input.conversationIds,
-    input.branchTemplate,
-  )
-  if (ownership === 'owned') return null
-  if (ownership === 'unknown') {
+  if (input.decision === 'ordinary' || input.decision === 'release-adopted') return null
+  if (input.decision === 'held') {
     return {
       runId: input.runId,
       worktree: input.treePath,
@@ -333,6 +330,35 @@ function ownershipCloseOutResult(input: {
       ? `would forget attached tree ${input.treePath}; tree and branch would be left in place`
       : `attached tree ${input.treePath} is not this run's; pointer cleared, tree left in place`,
   }
+}
+
+function adoptedTreeOwners(
+  decision: ReturnType<typeof adoptedTreeCloseOutDecision>,
+  runId: number,
+  treePath: string,
+) {
+  if (decision !== 'release-adopted') return []
+  return otherConversationWorktreeSharers(db(), { id: runId, worktree: treePath })
+}
+
+function settleAdoptedTreeClaims(
+  owners: ReturnType<typeof otherConversationWorktreeSharers>,
+  adoptingRunId: number,
+  detail: string,
+): void {
+  if (!owners.length) return
+  writeTransaction(() => {
+    const settledAt = nowIso()
+    for (const owner of owners) {
+      settleClaims(db(), {
+        rootRunId: owner.id,
+        kind: 'worktree',
+        state: 'released',
+        settledAt,
+        detail: `adopted tree released by run ${adoptingRunId}: ${detail}`,
+      })
+    }
+  })
 }
 
 function absentCloseOutResult(input: {
@@ -492,15 +518,22 @@ function attemptCloseOutRun(
   ).map((turn) => turn.id)
   const branchTemplate = (effective.repo ? projectByName(effective.repo) : projectAt(treePath))
     ?.settings.worktree?.branch
+  const ownership = inspectTreeOwnership(treePath, repoRoot, conversationIds, branchTemplate)
+  const liveSharers = liveWorktreeSharers(db(), { id: row.root_id, worktree: treePath })
+  const liveConversation = aliveConversationTurns(row.root_id)
+  const adoptionDecision = adoptedTreeCloseOutDecision({
+    ownership,
+    ownerAlive: liveSharers.length > 0,
+    sharerAlive: liveConversation.length > 0,
+  })
   const ownershipResult = ownershipCloseOutResult({
     runId: row.root_id,
     treePath,
-    repoRoot,
-    conversationIds,
-    branchTemplate,
+    decision: adoptionDecision,
     dryRun: options.dryRun,
   })
   if (ownershipResult) return ownershipResult
+  const adoptedOwners = adoptedTreeOwners(adoptionDecision, row.root_id, treePath)
 
   const liveRows = () => {
     const sharers = liveWorktreeSharers(db(), { id: row.root_id, worktree: treePath })
@@ -736,6 +769,7 @@ function attemptCloseOutRun(
                 outcome: 'failed' as const,
                 detail: result.detail,
               }
+            settleAdoptedTreeClaims(adoptedOwners, row.root_id, result.detail)
             const acquired = liveRows()
             if (acquired.length) {
               return {

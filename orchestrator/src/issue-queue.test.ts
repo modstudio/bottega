@@ -6,6 +6,7 @@ import {
   MAX_HELD_ISSUE_TREES,
   MAX_ISSUES_PER_PASS,
 } from './issue-queue.ts'
+import { filedIssueQueueFailureAction } from './issue-queue-failure.ts'
 
 const filed = (key: string, kind: 'defect' | 'suggestion', status: string, opened: string) =>
   ({
@@ -50,5 +51,31 @@ describe('filed issue queue decisions', () => {
     expect(filedIssueQueueStop(MAX_ISSUES_PER_PASS, 0)).toBe('issue-limit')
     expect(filedIssueQueueStop(0, MAX_HELD_ISSUE_TREES)).toBe('held-tree-limit')
     expect(filedIssueQueueStop(MAX_ISSUES_PER_PASS, MAX_HELD_ISSUE_TREES)).toBe('held-tree-limit')
+  })
+
+  test('continues after a durably recorded queue failure so the next candidate can run', () => {
+    const actions = [
+      filedIssueQueueFailureAction({
+        queueMode: true,
+        failureRecorded: true,
+        movedToReview: true,
+      }),
+      'worked',
+    ]
+    expect(actions).toEqual(['continue', 'worked'])
+    expect(
+      filedIssueQueueFailureAction({
+        queueMode: false,
+        failureRecorded: true,
+        movedToReview: true,
+      }),
+    ).toBe('throw')
+    expect(
+      filedIssueQueueFailureAction({
+        queueMode: true,
+        failureRecorded: false,
+        movedToReview: true,
+      }),
+    ).toBe('throw')
   })
 })

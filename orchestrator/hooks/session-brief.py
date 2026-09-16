@@ -217,19 +217,42 @@ def main() -> int:
             )
 
         waiting_issues = []
+        unworked_issues = []
+        blocked_issue_loop = None
         waiting_failure = None
         if waiting.returncode == 0:
             try:
-                waiting_issues = json.loads(waiting.stdout)
-                if not isinstance(waiting_issues, list) or not all(
-                    isinstance(item, dict)
-                    and isinstance(item.get("key"), str)
-                    and (item.get("title") is None or isinstance(item.get("title"), str))
-                    for item in waiting_issues
-                ):
+                issue_state = json.loads(waiting.stdout)
+                if not isinstance(issue_state, dict):
                     raise ValueError("invalid filed issue waiting JSON")
+                waiting_issues = issue_state.get("waiting")
+                unworked_issues = issue_state.get("unworked")
+                blocked_issue_loop = issue_state.get("blocked")
+                for issues in (waiting_issues, unworked_issues):
+                    if not isinstance(issues, list) or not all(
+                        isinstance(item, dict)
+                        and isinstance(item.get("key"), str)
+                        and (item.get("title") is None or isinstance(item.get("title"), str))
+                        for item in issues
+                    ):
+                        raise ValueError("invalid filed issue waiting JSON")
+                if blocked_issue_loop is not None and (
+                    not isinstance(blocked_issue_loop, dict)
+                    or not isinstance(blocked_issue_loop.get("limit"), int)
+                    or not isinstance(blocked_issue_loop.get("held"), list)
+                    or not all(
+                        isinstance(item, dict)
+                        and isinstance(item.get("runId"), int)
+                        and isinstance(item.get("path"), str)
+                        and isinstance(item.get("why"), str)
+                        for item in blocked_issue_loop["held"]
+                    )
+                ):
+                    raise ValueError("invalid filed issue blocked JSON")
             except Exception:
                 waiting_issues = []
+                unworked_issues = []
+                blocked_issue_loop = None
                 waiting_failure = "Filed issue waiting response was invalid; waiting state is unknown."
         elif waiting.returncode == -1:
             waiting_failure = "Filed issue waiting observation timed out; waiting state is unknown."
@@ -262,6 +285,17 @@ def main() -> int:
             keys = ", ".join(item["key"] for item in waiting_issues)
             notices.append(
                 f"{len(waiting_issues)} filed issue(s) waiting on a person: {keys}"
+            )
+        if unworked_issues:
+            keys = ", ".join(item["key"] for item in unworked_issues)
+            notices.append(
+                f"{len(unworked_issues)} filed issue(s) not yet worked: {keys} - run orch fix-defect"
+            )
+        if blocked_issue_loop:
+            held = blocked_issue_loop["held"]
+            paths = ", ".join(item["path"] for item in held)
+            notices.append(
+                f"Filed-issue loop blocked: {len(held)} held issue trees ({paths}) - clear them before it takes more work"
             )
         if open_briefs:
             slugs = ", ".join(f"`{item['slug']}`" for item in open_briefs)

@@ -4,7 +4,6 @@
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { PLATFORM_SLUG } from '../../shared/brand.ts'
-import { resolveRunsDirectory } from './database-location.ts'
 import { db } from './db.ts'
 import { parseFiledIssue, workIssue } from './issue.ts'
 import {
@@ -14,16 +13,24 @@ import {
   MAX_HELD_ISSUE_TREES,
   MAX_ISSUES_PER_PASS,
 } from './issue-queue.ts'
-import { type KernelLease, tryKernelLease } from './project-lock.ts'
+import { filedIssueQueueFailureAction } from './issue-queue-failure.ts'
+import { type KernelLease, projectGitCommonDir, tryKernelLease } from './project-lock.ts'
+import { projectByName } from './projects.ts'
 import { worktreeDirty } from './worktree-attribution.ts'
 
 const HUB = new URL('../../bin/hub', import.meta.url).pathname
 
 type HeldIssueTree = { runId: number; path: string; why: string }
 
+function issueLeaseDirectory(): string {
+  const platform = projectByName(PLATFORM_SLUG)
+  if (!platform) throw new Error(`unknown platform project "${PLATFORM_SLUG}"`)
+  return join(projectGitCommonDir(platform.path), 'orch-issue-leases')
+}
+
 function leasePath(key: string): string {
   if (!/^[A-Z][A-Z0-9]*-[0-9]+$/.test(key)) throw new Error(`invalid task key ${key}`)
-  return join(resolveRunsDirectory(), 'issue-leases', `${key}.lock`)
+  return join(issueLeaseDirectory(), `${key}.lock`)
 }
 
 function liveLease(key: string): boolean {
@@ -46,7 +53,7 @@ function leaseHolder(key: string): string {
 
 function acquireIssueLease(key: string): KernelLease | null {
   const path = leasePath(key)
-  mkdirSync(join(resolveRunsDirectory(), 'issue-leases'), { recursive: true })
+  mkdirSync(issueLeaseDirectory(), { recursive: true })
   const lease = tryKernelLease(path, true)
   if (lease)
     writeFileSync(
@@ -81,10 +88,12 @@ function claimable(shown: { task: FiledIssueTaskRow }, queueMode: boolean): bool
   return shown.task.status_category === 'open' || shown.task.status_category === 'active'
 }
 
-async function claimAndWork(key: string, queueMode: boolean): Promise<boolean> {
+type ClaimResult = { claimed: boolean; failed: boolean }
+
+async function claimAndWork(key: string, queueMode: boolean): Promise<ClaimResult> {
   const lease = acquireIssueLease(key)
   if (!lease) {
-    if (queueMode) return false
+    if (queueMode) return { claimed: false, failed: false }
     throw new Error(
       `${key} is claimed by ${leaseHolder(key)}; check it with ps -p <pid> and retry after that process exits`,
     )
@@ -93,7 +102,7 @@ async function claimAndWork(key: string, queueMode: boolean): Promise<boolean> {
   try {
     const shown = await task(key)
     if (!claimable(shown, queueMode)) {
-      if (queueMode) return false
+      if (queueMode) return { claimed: false, failed: false }
       throw new Error(
         `${key} is not claimable: expected a filed issue in open or stale active state`,
       )
@@ -127,9 +136,17 @@ async function claimAndWork(key: string, queueMode: boolean): Promise<boolean> {
         throw statusCause
       }
       console.log(`${key} -> review (coordinator failed)`)
+      if (
+        filedIssueQueueFailureAction({
+          queueMode,
+          failureRecorded: true,
+          movedToReview: true,
+        }) === 'continue'
+      )
+        return { claimed: true, failed: true }
       throw cause
     }
-    return true
+    return { claimed: true, failed: false }
   } finally {
     lease.release()
     if (!claimed && !queueMode) console.error(`${key}: claim was not taken`)
@@ -170,10 +187,10 @@ function printHeldStop(trees: HeldIssueTree[]): void {
   console.log(`stopped: ${MAX_HELD_ISSUE_TREES} held issue trees are already on disk`)
 }
 
-export async function dispatchFiledIssues(key?: string): Promise<void> {
+export async function dispatchFiledIssues(key?: string): Promise<boolean> {
   if (key) {
     await claimAndWork(key.toUpperCase(), false)
-    return
+    return false
   }
   const rows = JSON.parse(
     await hub(['task', 'list', '--project', PLATFORM_SLUG, '--json']),
@@ -181,36 +198,58 @@ export async function dispatchFiledIssues(key?: string): Promise<void> {
   const candidates = eligibleFiledIssueTasks(rows, liveLease)
   const dispatched = new Set<string>()
   let taken = 0
+  let failed = false
   for (const candidate of candidates) {
     const trees = heldIssueTrees()
     const stop = filedIssueQueueStop(taken, trees.length)
     if (stop === 'held-tree-limit') {
       printHeldStop(trees)
-      return
+      return failed
     }
     if (stop === 'issue-limit') {
       console.log(`stopped: reached the ${MAX_ISSUES_PER_PASS}-issue pass limit`)
-      return
+      return failed
     }
     if (dispatched.has(candidate.key)) continue
     dispatched.add(candidate.key)
-    if (await claimAndWork(candidate.key, true)) taken++
+    const result = await claimAndWork(candidate.key, true)
+    if (result.claimed) taken++
+    if (result.failed) failed = true
   }
   if (taken >= MAX_ISSUES_PER_PASS)
     console.log(`stopped: reached the ${MAX_ISSUES_PER_PASS}-issue pass limit`)
+  return failed
 }
 
-export async function waitingFiledIssues(): Promise<{ key: string; title: string | null }[]> {
+type ListedIssue = { key: string; title: string | null }
+
+export type FiledIssueQueueState = {
+  waiting: ListedIssue[]
+  unworked: ListedIssue[]
+  blocked: null | { held: HeldIssueTree[]; limit: number }
+}
+
+export async function filedIssueQueueState(): Promise<FiledIssueQueueState> {
   const rows = JSON.parse(
-    await hub(['task', 'list', '--project', PLATFORM_SLUG, '--status', 'review', '--json']),
+    await hub(['task', 'list', '--project', PLATFORM_SLUG, '--json']),
   ) as FiledIssueTaskRow[]
-  return rows.flatMap((task) => {
+  const waiting = rows.flatMap((task) => {
     try {
-      return parseFiledIssue({ task }).kind === 'defect'
+      return task.status_category === 'review' && parseFiledIssue({ task }).kind === 'defect'
         ? [{ key: task.key, title: task.title }]
         : []
     } catch {
       return []
     }
   })
+  const unworked = eligibleFiledIssueTasks(rows, liveLease).map(({ key, title }) => ({
+    key,
+    title,
+  }))
+  const held = heldIssueTrees()
+  return {
+    waiting,
+    unworked,
+    blocked: held.length >= MAX_HELD_ISSUE_TREES ? { held, limit: MAX_HELD_ISSUE_TREES } : null,
+  }
 }
