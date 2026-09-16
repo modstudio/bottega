@@ -3,7 +3,7 @@
 import { SQL } from 'bun'
 
 export type RecordCursor = { at: string; id: string }
-export type RecordScore = {
+type RecordScore = {
   runId?: string
   delivery: string
   quality: string | null
