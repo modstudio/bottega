@@ -406,7 +406,7 @@ function requestText(
     `Recommendation: ${recommendation}`,
     `What it blocks: ${why}`,
     'What was established: the filed report was read; reproduction has not started.',
-    `Resume with: orch issue ${issue.key}`,
+    `Resume with: orch fix-defect ${issue.key}`,
     `What is not established: ${issue.notEstablished}`,
   ].join('\n')
 }
@@ -501,7 +501,7 @@ function outcomeDocument(
       : []),
     ...extra,
     `What could not be established: ${result.not_established}`,
-    `Resume with: orch issue ${issue.key}`,
+    `Resume with: orch fix-defect ${issue.key}`,
   ].join('\n\n')
 }
 
@@ -550,7 +550,7 @@ export async function workIssue(key: string): Promise<void> {
       `This first vertical slice requires a reproducible defect; ${issue.key} is a suggestion.`,
       'No reproduction or change was attempted.',
       `What remains unresolved: ${issue.notEstablished}`,
-      `Resume with: orch issue ${issue.key} after a suggestion workflow is specified.`,
+      `Resume with: orch fix-defect ${issue.key} after a suggestion workflow is specified.`,
     ].join('\n\n')
     await handoff(issue.key, 'Issue handback: suggestion is outside the reproduction slice', body)
     await comment(
@@ -859,7 +859,7 @@ export async function workIssue(key: string): Promise<void> {
       `Run: ${runId || 'none'}`,
       `Worktree held because failed-run state may not be reconstructible: ${row?.worktree ?? 'none recorded'}`,
       `Branch: ${row?.branch ?? 'none recorded'}`,
-      `Resume with: orch issue ${issue.key}`,
+      `Resume with: orch fix-defect ${issue.key}`,
       `What remains unresolved: the coordinator pass did not reach a recorded outcome.`,
     ].join('\n\n')
     await handoff(

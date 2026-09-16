@@ -26,7 +26,7 @@ test('every registered top-level command is recognised as canon', () => {
   const commands = [
     'init-db',
     'migrate',
-    'issue',
+    'fix-defect',
     'contract',
     'doc',
     'canon',

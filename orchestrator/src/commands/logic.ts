@@ -23,7 +23,7 @@ import { monitorCommand } from '../monitor-commands.ts'
 import { pendingCommand } from '../pending-commands.ts'
 import { reclaimCommand } from '../reclaim-commands.ts'
 import {
-  issueCommand,
+  fixDefectCommand,
   noteCommand,
   searchCommand,
   serveCommand,
@@ -117,9 +117,9 @@ export function register(program: Command): void {
     .option('--json')
     .action((args, options) => lensCommand(productArgv('lens', args, options), presentation))
   program
-    .command('issue <key>')
+    .command('fix-defect <key>')
     .allowExcessArguments(false)
-    .action((key) => issueCommand(key))
+    .action((key) => fixDefectCommand(key))
   program
     .command('note <text>')
     .option('--same-as <value>')

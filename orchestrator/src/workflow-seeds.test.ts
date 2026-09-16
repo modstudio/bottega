@@ -1,6 +1,7 @@
 import { Database } from 'bun:sqlite'
 import { describe, expect, test } from 'bun:test'
 import { applySchema } from './db.ts'
+import { journalLength } from './migrations.ts'
 import {
   listWorkflows,
   showWorkflow,
@@ -59,14 +60,17 @@ describe('workflow projection and seeds', () => {
         `INSERT INTO workflow_event (workflow_id,version_n,event,author,reason,session_id,at) VALUES (?,?,'set',?,'operator edit',NULL,?)`,
       ).run(id, n, author, at)
   }
-  test('fresh stores seed revision 2 as production version 1', () => {
+  test('fresh stores seed current revisions as production version 1', () => {
     const d = database()
-    expect(listWorkflows(d).filter((w) => ['ship', 'filed-issue'].includes(w.slug)).length).toBe(2)
-    for (const slug of ['ship', 'filed-issue']) {
+    expect(listWorkflows(d).filter((w) => ['ship', 'fix-defect'].includes(w.slug)).length).toBe(2)
+    for (const [slug, revision] of [
+      ['ship', 2],
+      ['fix-defect', 3],
+    ] as const) {
       const version = showWorkflow(slug, 1, d)
       expect(version.status).toBe('production')
       expect(version.author).toBe('seed')
-      expect(version.reason).toBe('seed r2')
+      expect(version.reason).toBe(`seed r${revision}`)
       expect(
         events(d, slug).map(({ version_n, event, author, reason, session_id }) => ({
           version_n,
@@ -76,7 +80,13 @@ describe('workflow projection and seeds', () => {
           session_id,
         })),
       ).toEqual([
-        { version_n: 1, event: 'set', author: 'seed', reason: 'seed r2', session_id: null },
+        {
+          version_n: 1,
+          event: 'set',
+          author: 'seed',
+          reason: `seed r${revision}`,
+          session_id: null,
+        },
       ])
       expect(validateWorkflowDefinition(version.definition)).toEqual([])
     }
@@ -84,16 +94,16 @@ describe('workflow projection and seeds', () => {
   test('legacy seed revisions upgrade both live shapes', () => {
     const d = database()
     makeLegacy(d, 'ship', 2, 'operator')
-    makeLegacy(d, 'filed-issue', 1)
+    makeLegacy(d, 'fix-defect', 1)
     applySchema(d)
     expect(showWorkflow('ship', 3, d).status).toBe('production')
-    expect(showWorkflow('filed-issue', 2, d).status).toBe('production')
-    for (const [slug, prior, next] of [
-      ['ship', 2, 3],
-      ['filed-issue', 1, 2],
+    expect(showWorkflow('fix-defect', 2, d).status).toBe('production')
+    for (const [slug, prior, next, revision] of [
+      ['ship', 2, 3, 2],
+      ['fix-defect', 1, 2, 3],
     ] as const) {
       expect(showWorkflow(slug, prior, d).status).toBe('retired')
-      expect(showWorkflow(slug, next, d).reason).toBe('seed r2')
+      expect(showWorkflow(slug, next, d).reason).toBe(`seed r${revision}`)
       expect(
         events(d, slug)
           .slice(-3)
@@ -110,7 +120,7 @@ describe('workflow projection and seeds', () => {
           version_n: prior,
           event: 'retire',
           author: 'seed',
-          reason: 'seed r2',
+          reason: `seed r${revision}`,
           session_id: null,
           at: expect.any(String),
         },
@@ -118,7 +128,7 @@ describe('workflow projection and seeds', () => {
           version_n: next,
           event: 'set',
           author: 'seed',
-          reason: 'seed r2',
+          reason: `seed r${revision}`,
           session_id: null,
           at: expect.any(String),
         },
@@ -126,12 +136,33 @@ describe('workflow projection and seeds', () => {
           version_n: next,
           event: 'promote',
           author: 'seed',
-          reason: 'seed r2',
+          reason: `seed r${revision}`,
           session_id: null,
           at: expect.any(String),
         },
       ])
     }
+  })
+  test('migration renames a legacy workflow in place before seeding its new revision', () => {
+    const d = database()
+    const id = workflowId(d, 'fix-defect')
+    d.query("UPDATE workflow SET slug='filed-issue' WHERE id=?").run(id)
+    makeLegacy(d, 'filed-issue', 2, 'architect')
+    d.query("DELETE FROM orch_migrations WHERE version='0033_fix_defect_workflow'").run()
+    d.exec(`PRAGMA user_version = ${journalLength() - 1}`)
+
+    applySchema(d)
+
+    expect(d.query("SELECT COUNT(*) AS n FROM workflow WHERE slug='filed-issue'").get()).toEqual({
+      n: 0,
+    })
+    expect(d.query("SELECT id FROM workflow WHERE slug='fix-defect'").get()).toEqual({ id })
+    expect(workflowVersions('fix-defect', d).map(({ n }) => n)).toEqual([1, 2, 3])
+    expect(showWorkflow('fix-defect', 2, d).author).toBe('architect')
+    expect(showWorkflow('fix-defect', 3, d).reason).toBe('seed r3')
+    expect(
+      listWorkflows(d).filter(({ slug }) => slug === 'fix-defect' || slug === 'filed-issue'),
+    ).toHaveLength(1)
   })
   test('revision seeding is idempotent', () => {
     const d = database()
