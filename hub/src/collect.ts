@@ -32,8 +32,11 @@ type PollState = { nextAt: number; quiet: number; failures: number }
  */
 export class TrackerPollSchedule {
   private state = new Map<string, PollState>()
+  private clock: () => number
 
-  constructor(private clock: () => number = Date.now) {}
+  constructor(clock: () => number = Date.now) {
+    this.clock = clock
+  }
 
   due(projects: readonly string[]): Set<string> {
     const now = this.clock()

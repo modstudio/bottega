@@ -915,8 +915,11 @@ export function projectsForDryRun(path: string): Project[] {
 }
 
 export class ImportRefusalError extends Error {
-  constructor(public refusals: ImportRefusal[]) {
+  public refusals: ImportRefusal[]
+
+  constructor(refusals: ImportRefusal[]) {
     super(`port import refused with ${refusals.length} refusal(s)`)
+    this.refusals = refusals
   }
 }
 

@@ -1219,8 +1219,9 @@ export function contractConflicts(spec: string): ContractConflict[] {
 
   const groups: { line: number; text: string; folded: string }[] = []
   for (const [index, text] of spec.split(/\r?\n/).entries()) {
-    if (groups.length > 0 && isContinuationLine(text)) {
-      groups[groups.length - 1].folded += ` ${text}`
+    const previous = groups.at(-1)
+    if (previous && isContinuationLine(text)) {
+      previous.folded += ` ${text}`
     } else {
       groups.push({ line: index + 1, text, folded: text })
     }

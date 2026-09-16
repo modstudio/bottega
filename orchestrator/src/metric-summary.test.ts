@@ -16,13 +16,14 @@ describe('metric canon headline and calendar halves', () => {
                            canon_tokens, other_tokens, collected_at)
        VALUES (?,?,?,?,?,?,?,?)`,
     )
-    for (const [ago, canon, other, tasks] of [
+    const rows: Array<[number, number, number, number]> = [
       [13, 300, 30, 3],
       [12, 300, 30, 3],
       [10, 1, 0, 100],
       [2, 150, 15, 3],
       [1, 150, 15, 3],
-    ])
+    ]
+    for (const [ago, canon, other, tasks] of rows)
       insert.run(day(ago), canon + other, 0, 1, tasks, canon, other, new Date().toISOString())
 
     const s = summary(14)

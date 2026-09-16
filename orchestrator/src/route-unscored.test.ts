@@ -144,7 +144,8 @@ describe('the Stop hook and orch agree on what is unscored', () => {
     const kept = disjuncts.filter((d) => !listed(d))
     if (kept.length === disjuncts.length) return trimmed
     if (kept.length === 0) return null
-    if (kept.length === 1) return kept[0].trim()
+    const [only] = kept
+    if (only !== undefined && kept.length === 1) return only.trim()
     const joined = kept.join(' OR ')
     return trimmed.startsWith('(') ? `(${joined})` : joined
   }

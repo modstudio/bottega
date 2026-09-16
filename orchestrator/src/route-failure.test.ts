@@ -149,7 +149,10 @@ describe('failure classification', () => {
       expect(COOLS_DOWN).not.toContain(kind)
       addRun({ agent: 'grok', job: 'file-question', status: 'failed', kind })
     }
-    expect(NEEDS_HUMAN_TITLE.escaped('grok')).toBe('outside change observed during grok run')
+    const escapedTitle = NEEDS_HUMAN_TITLE.escaped
+    expect(escapedTitle).toBeDefined()
+    if (!escapedTitle) throw new Error('escaped failure title is not defined')
+    expect(escapedTitle('grok')).toBe('outside change observed during grok run')
     expect(candidates('file-question').find((item) => item.agent === 'grok')).toMatchObject({
       failures: 0,
       evidence: 0,

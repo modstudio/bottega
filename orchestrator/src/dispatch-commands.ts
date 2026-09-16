@@ -93,7 +93,10 @@ export async function dispatchCommand(
     follow,
   } = presentation
   const jobName = argv[1]
-  if (!jobName) usage()
+  if (!jobName) {
+    usage()
+    return
+  }
   if (jobName === '--help' || jobName === '-h') doUsage()
   const porcelain = has('porcelain')
   if (porcelain && has('follow')) {

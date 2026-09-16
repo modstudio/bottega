@@ -81,7 +81,11 @@ export function git(cwd: string, args: string[]): string | null {
 function durationMs(value: string): number | null {
   const units: Record<string, number> = { s: 1000, m: 60_000, h: 3_600_000, d: 86_400_000 }
   const match = value.match(/^(\d+(?:\.\d+)?)([smhd])$/)
-  return match ? Math.round(Number(match[1]) * units[match[2]]!) : null
+  if (!match) return null
+  const [, amount, unit] = match
+  if (!amount || !unit) return null
+  const multiplier = units[unit]
+  return multiplier === undefined ? null : Math.round(Number(amount) * multiplier)
 }
 
 function elapsedDetail(elapsedMs: number | null): string {

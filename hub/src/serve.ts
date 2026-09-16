@@ -41,11 +41,13 @@ type CacheEntry<T> = { checkedAt: number; value?: T; pending?: Promise<T> }
 /** One load per key and TTL, including when several clients arrive together. */
 export class TtlCache {
   private entries = new Map<string, CacheEntry<unknown>>()
+  private readonly ttlMs: number
+  private readonly clock: () => number
 
-  constructor(
-    private readonly ttlMs: number,
-    private readonly clock: () => number = Date.now,
-  ) {}
+  constructor(ttlMs: number, clock: () => number = Date.now) {
+    this.ttlMs = ttlMs
+    this.clock = clock
+  }
 
   get<T>(key: string, load: () => Promise<T> | T): Promise<T> {
     const now = this.clock()

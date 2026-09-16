@@ -61,9 +61,9 @@ export function bradleyTerry(
       return denominator === 0 ? 1 : numerator / denominator
     })
     const mean = next.reduce((sum, value) => sum + value, 0) / next.length
-    for (let i = 0; i < next.length; i++) next[i] /= mean
-    const change = Math.max(...next.map((value, i) => Math.abs(value - strengths[i]!)))
-    strengths = next
+    const normalized = next.map((value) => value / mean)
+    const change = Math.max(...normalized.map((value, i) => Math.abs(value - strengths[i]!)))
+    strengths = normalized
     if (change < 1e-12) break
   }
   return agents

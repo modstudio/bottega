@@ -548,7 +548,7 @@ export function recordReviews(
         tier?.risk ?? null,
         tier?.size ?? null,
         tier ? JSON.stringify(tier.reasons) : null,
-        tier ? tier.reasons[tier.risk >= tier.size ? 0 : 1] : null,
+        tier?.reasons[tier.risk >= tier.size ? 0 : 1] ?? null,
         runs.every((run) => run.project_id === runs[0]!.project_id) ? runs[0]!.project_id : null,
         identity?.patchId ?? null,
         identity ? JSON.stringify(identity.paths) : null,

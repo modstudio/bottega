@@ -63,7 +63,8 @@ describe('port importer', () => {
       ...new Set(
         Object.keys(refs)
           .filter((key) => !key.startsWith('_'))
-          .map((key) => key.split('-')[0]),
+          .map((key) => key.split('-')[0])
+          .filter((prefix): prefix is string => prefix !== undefined),
       ),
     ]
     const syntheticRegister = projectNames.map((name, index) => ({
