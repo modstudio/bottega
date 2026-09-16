@@ -296,24 +296,6 @@ export const modules: ArchitectureModule[] = [
     './standard-transports.ts',
   ]),
   module('orchestrator/src/sandbox.ts', ['./db.ts', './mcp-probe.ts', './projects.ts']),
-  module('orchestrator/src/schema-core.ts', [
-    '../../shared/docs.ts',
-    './run-authority.ts',
-    './score.ts',
-  ]),
-  module('orchestrator/src/schema-docs.ts', ['../../shared/docs.ts', './schema-core.ts']),
-  module('orchestrator/src/schema-lens.ts', ['./schema-core.ts']),
-  module('orchestrator/src/schema-port.ts', ['./schema-core.ts', './schema-review.ts']),
-  module('orchestrator/src/schema-review.ts', [
-    './review-vocabulary.ts',
-    './schema-core.ts',
-    './score.ts',
-  ]),
-  module('orchestrator/src/schema-workflow.ts', [
-    './contention.ts',
-    './review-vocabulary.ts',
-    './schema-core.ts',
-  ]),
   module('orchestrator/src/standard-calibration.ts', [
     './calibration-port.ts',
     './review-calibration.ts',

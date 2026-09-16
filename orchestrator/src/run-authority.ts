@@ -5,7 +5,7 @@
 import type { Database } from 'bun:sqlite'
 import { db, nowIso, sessionId, writableDb } from './db.ts'
 
-export const RUN_MUTATION_ACTIONS = [
+const RUN_MUTATION_ACTIONS = [
   'adopt',
   'answer',
   'tell',
