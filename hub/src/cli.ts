@@ -25,7 +25,7 @@ import {
   setCuratorEnabled,
   staleNotes,
 } from './note.ts'
-import { startDashboardCapability } from './orch.ts'
+import { pruneTaskBranches, startDashboardCapability } from './orch.ts'
 import { projects } from './projects.ts'
 import { estateEngagedMs, rollUpDays, tasksInWindow } from './query.ts'
 import { printReconcile, reconcileOpenIntervals } from './reconcile.ts'
@@ -187,7 +187,7 @@ const TASK_USAGE = `hub task new --project X --title "..." [--status Y] [--paren
   hub task show <KEY> [--json]
   hub task set <KEY> [--title "..."] [--status Y] [--parent KEY|--no-parent]
                [--body "..."] [--force]
-  hub task close <KEY>
+  hub task close <KEY> [--keep-branches]
   hub task comment <KEY> "..."
   hub task tracker-new --project X --title "..." --body "..."
   hub task doc new <KEY> --title "..." [--role handoff]
@@ -341,6 +341,26 @@ async function task() {
       `${row.key.padEnd(10)} ${(row.status_category ?? '').padEnd(8)} ` +
         `${row.project.padEnd(12)} ${row.title ?? ''}`,
     )
+  }
+
+  async function closeAndPruneTask(key: string) {
+    const closed = closeTask(key)
+    printRow(closed)
+    if (has('keep-branches')) return
+    try {
+      const pruned = await pruneTaskBranches(closed.project, closed.key)
+      console.log(`branches: deleted ${pruned.deleted.length}; kept ${pruned.kept.length}`)
+      for (const branch of pruned.operator) {
+        console.log(
+          `${branch.state}: ${branch.branch} (${branch.commitsNotOnTrunk} commits not on trunk); ${branch.command}`,
+        )
+      }
+    } catch (error) {
+      const detail = error instanceof Error ? error.message : String(error)
+      console.error(`branch prune failed: ${detail}`)
+      console.error(`retry: orch branches prune --project ${closed.project} --key ${closed.key}`)
+      process.exitCode = 1
+    }
   }
   const newBody = () => {
     if (has('body') && has('body-file')) {
@@ -534,7 +554,7 @@ async function task() {
     return
   }
   if (sub === 'close') {
-    printRow(closeTask(argv[2] ?? ''))
+    await closeAndPruneTask(argv[2] ?? '')
     return
   }
   if (sub === 'comment') {

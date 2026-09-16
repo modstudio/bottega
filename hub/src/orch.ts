@@ -273,6 +273,34 @@ export async function projectRemove(name: string): Promise<void> {
   refreshProjects()
 }
 
+type BranchPruneResult = {
+  project: string
+  key: string
+  dryRun: boolean
+  deleted: string[]
+  wouldDelete: string[]
+  kept: { branch: string; reason: string }[]
+  operator: {
+    branch: string
+    state: 'unlanded' | 'unknown'
+    commitsNotOnTrunk: number
+    command: string
+  }[]
+  errors: string[]
+}
+
+/** Ask orchestrator to prune a closed task's run-minted branches. */
+export const pruneTaskBranches = (project: string, key: string): Promise<BranchPruneResult> =>
+  jsonDocument<BranchPruneResult>([
+    'branches',
+    'prune',
+    '--project',
+    project,
+    '--key',
+    key,
+    '--json',
+  ])
+
 export const state = (days: number | null) =>
   json(['state', ...(days ? ['--days', String(days)] : [])], OrchStateSchema)
 
