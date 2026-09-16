@@ -1,5 +1,6 @@
 ---
 description: Inbox-zero task policy and the suggestion-box lifecycle
+always: true
 ---
 
 # Tasks are current work

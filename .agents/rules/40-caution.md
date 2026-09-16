@@ -1,5 +1,6 @@
 ---
 description: Reversible cleanup, conservative destructive defaults, liveness, claims, and visible escalation
+always: true
 ---
 
 # Reasonable caution with measurement
@@ -14,6 +15,8 @@ The task that provisions a resource tears it down. Standing up and tearing down
 are paired ordinary steps, without ceremony or a separate request. Release
 everything the normal path can release; only residue a stopped process cannot
 release needs a conversation.
+
+Fixtures obey the same provisioning and release rule.
 
 Do not retain a resource because it might be useful later. Name what would be
 lost and where another copy exists. Reprovisionable databases and work already
@@ -49,4 +52,3 @@ regardless of state. Clear claims instead of orphaning them.
 
 These are examples of the governing rule, not an exhaustive lookup table. A
 new caller names and answers its own question.
-

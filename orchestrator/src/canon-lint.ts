@@ -105,9 +105,13 @@ function measured(file: CanonFile, limit: number): CanonMeasurement {
   return { path: file.path, bytes: bytes(file), limit }
 }
 
-export function canonFrontmatter(
-  text: string,
-): { description: string | null; paths: string[] } | null {
+export function canonFrontmatter(text: string): {
+  description: string | null
+  paths: string[]
+  declaresPaths: boolean
+  always: boolean | null
+  declaresAlways: boolean
+} | null {
   const match = text.match(/^---\r?\n([\s\S]*?)\r?\n---(?:\r?\n|$)/)
   if (!match) return null
   const yaml = match[1]!
@@ -117,10 +121,16 @@ export function canonFrontmatter(
     cleanDescription && !['null', '~', '[]', '{}'].includes(cleanDescription)
       ? cleanDescription
       : null
+  const alwaysValue = yaml.match(/^always:\s*(.*?)\s*$/m)?.[1]
+  const declaresAlways = alwaysValue !== undefined
+  const always = alwaysValue === 'true' ? true : alwaysValue === 'false' ? false : null
   const inlinePaths = yaml.match(/^paths:\s*\[(.*?)\]\s*$/m)?.[1]
   if (inlinePaths !== undefined) {
     return {
       description: validDescription,
+      declaresPaths: true,
+      always,
+      declaresAlways,
       paths: inlinePaths
         .split(',')
         .map((value) => value.trim().replace(/^['"]|['"]$/g, ''))
@@ -137,7 +147,13 @@ export function canonFrontmatter(
       paths.push(item.replace(/^['"]|['"]$/g, ''))
     }
   }
-  return { description: validDescription, paths }
+  return {
+    description: validDescription,
+    paths,
+    declaresPaths: pathsAt >= 0,
+    always,
+    declaresAlways,
+  }
 }
 
 function containsTaskKey(line: string): boolean {
@@ -558,6 +574,26 @@ function frontmatterFinding(file: CanonFile, kind: 'rule' | 'context' | 'referen
   ]
 }
 
+function tierDeclarationFinding(file: CanonFile, kind: 'rule' | 'context'): Finding[] {
+  const metadata = canonFrontmatter(file.text)
+  const valid =
+    kind === 'rule'
+      ? metadata?.always === true && !metadata.declaresPaths
+      : metadata?.declaresPaths === true && !metadata.declaresAlways
+  if (valid) return []
+  return [
+    {
+      file: file.path,
+      line: 1,
+      rule: 'canon/tier-declaration',
+      message:
+        kind === 'rule'
+          ? 'rule files require always: true and must not declare paths'
+          : 'context files require paths and must not declare always',
+    },
+  ]
+}
+
 function cardHeadingFindings(file: CanonFile): Finding[] {
   const required = ['## Purpose', '## Belongs here', '## Does not belong here', '## May depend on']
   const lines = file.text.split(/\r?\n/)
@@ -585,6 +621,9 @@ function contentFindings(classified: Classified, input: CanonLintInput): CanonFi
   findings.push(...numeralFindings(file))
   if (kind === 'rule' || kind === 'context' || kind === 'reference') {
     findings.push(...frontmatterFinding(file, kind))
+  }
+  if (kind === 'rule' || kind === 'context') {
+    findings.push(...tierDeclarationFinding(file, kind))
   }
   if (kind === 'card') findings.push(...cardHeadingFindings(file))
   return findings

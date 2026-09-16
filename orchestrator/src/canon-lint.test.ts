@@ -30,7 +30,7 @@ const inputRules = (text: string, rule: string, extra: Partial<Omit<CanonLintInp
 const text = (bytes: number) => 'x'.repeat(bytes)
 const card = (extra = '') =>
   `## Purpose\n\nP\n\n## Belongs here\n\nB\n\n## Does not belong here\n\nD\n\n## May depend on\n\nM\n${extra}`
-const ruleDoc = (body = 'Current rule.') => `---\ndescription: A rule\n---\n${body}\n`
+const ruleDoc = (body = 'Current rule.') => `---\ndescription: A rule\nalways: true\n---\n${body}\n`
 const contextDoc = (body = 'Current context.') =>
   `---\ndescription: A context\npaths:\n  - src/**\n---\n${body}\n`
 const referenceDoc = (body = 'Current reference.') =>
@@ -337,6 +337,48 @@ describe('canon structure rules', () => {
           { path: '.agents/reference/a.md', text: referenceDoc() },
         ],
         'canon/frontmatter',
+      ),
+    ).toEqual([])
+  })
+
+  test('tier declarations follow their authoritative locations', () => {
+    expect(
+      rules(
+        [
+          {
+            path: '.agents/rules/a.md',
+            text: '---\ndescription: A rule\nalways: true\npaths: [src/**]\n---\n',
+          },
+        ],
+        'canon/tier-declaration',
+      ),
+    ).toEqual([
+      expect.objectContaining({
+        message: 'rule files require always: true and must not declare paths',
+      }),
+    ])
+    expect(
+      rules(
+        [
+          {
+            path: '.agents/contexts/a.md',
+            text: '---\ndescription: A context\npaths: [src/**]\nalways: true\n---\n',
+          },
+        ],
+        'canon/tier-declaration',
+      ),
+    ).toEqual([
+      expect.objectContaining({
+        message: 'context files require paths and must not declare always',
+      }),
+    ])
+    expect(
+      rules(
+        [
+          { path: '.agents/rules/a.md', text: ruleDoc() },
+          { path: '.agents/contexts/a.md', text: contextDoc() },
+        ],
+        'canon/tier-declaration',
       ),
     ).toEqual([])
   })
