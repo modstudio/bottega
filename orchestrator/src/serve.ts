@@ -13,7 +13,7 @@ import { AGENTS, refreshAgents } from './agent-registry.ts'
 import { db } from './db.ts'
 import { runTotals } from './evidence-query.ts'
 import { guide } from './guide.ts'
-import { nonHookTreeStatsSql } from './hook-tree.ts'
+import { HOOK_TREE_JOB, nonHookTreeStatsSql } from './hook-tree.ts'
 import { JOBS } from './jobs.ts'
 import { messagesForRun, receiptMessagesForArchitect } from './mailbox.ts'
 import { summary as metricSummary } from './metric.ts'
@@ -126,9 +126,9 @@ export function state(sinceDays: number | null = null) {
               WHERE q.run_id = run.id AND q.answered_at IS NULL) AS open_questions,
             (status = 'asking' AND (SELECT COUNT(*) FROM question q
               WHERE q.run_id = run.id AND q.answered_at IS NULL) > 0) AS waiting
-       FROM run WHERE status IN ('running','asking') AND job<>'hook-tree' ORDER BY waiting DESC, id DESC`,
+       FROM run WHERE status IN ('running','asking') AND job<>? ORDER BY waiting DESC, id DESC`,
     )
-    .all()
+    .all(HOOK_TREE_JOB)
 
   const stale = (d.query(`SELECT COUNT(*) n FROM run WHERE status='stale'`).get() as { n: number })
     .n

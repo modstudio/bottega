@@ -124,7 +124,7 @@ export const modules: ArchitectureModule[] = [
     './worktree-attribution.ts',
     './git-environment.ts',
   ]),
-  module('orchestrator/src/resource-claims.ts', []),
+  module('orchestrator/src/resource-claims.ts', ['./hook-tree.ts']),
   module('orchestrator/src/resume-tree.ts', []),
   module('orchestrator/src/review-calibration.ts', [
     './db.ts',

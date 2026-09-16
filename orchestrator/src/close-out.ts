@@ -105,6 +105,14 @@ function conversationKeepTreeHold(rootId: number, now: string): ConversationKeep
   )
 }
 
+function closeOutKeepTreeDecision(
+  rootId: number,
+  intent: 'terminal' | 'explicit' | 'sweep' | 'tree-remove',
+): ConversationKeepTreeHold {
+  if (intent === 'tree-remove') return { held: false }
+  return conversationKeepTreeHold(rootId, nowIso())
+}
+
 export type SandboxReleaseResult = {
   rootId: number
   path: string
@@ -759,10 +767,7 @@ export function closeOutRun(
     .query('SELECT COALESCE(parent_run_id,id) root_id FROM run WHERE id=?')
     .get(runId) as { root_id: number } | null
   if (!root) throw new Error(`no run ${runId}`)
-  const keepTreeDecision =
-    options.intent === 'tree-remove'
-      ? ({ held: false } as const)
-      : conversationKeepTreeHold(root.root_id, nowIso())
+  const keepTreeDecision = closeOutKeepTreeDecision(root.root_id, options.intent)
   const result = attemptCloseOutRun(runId, { ...options, keepTreeDecision })
   if (!keepTreeDecision.held && 'expiredAt' in keepTreeDecision) {
     result.detail = `${result.detail}; keep-tree hold expired at ${keepTreeDecision.expiredAt}`

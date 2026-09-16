@@ -215,7 +215,9 @@ export function backfillRunRecords(database: Database, machineId: string): RunRe
   for (const row of terminal) enqueueRunRecord(database, row.id, machineId, row.finished_at)
 
   const skippedLive = database
-    .query<{ count: number }, []>(`SELECT count(*) AS count FROM run WHERE status='running'`)
+    .query<{ count: number }, []>(
+      `SELECT count(*) AS count FROM run WHERE status='running' AND evidence_excluded IS NULL`,
+    )
     .get()!.count
   return { minted: missing.length, enqueued: terminal.length, skippedLive }
 }

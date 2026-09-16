@@ -49,9 +49,10 @@ export function terminalCloseOutRuns(database = db()): TerminalCloseOutRun[] {
       `SELECT id, started_at, close_out_outcome, close_out_detail, close_out_attempted_at, session_id
        FROM run
       WHERE status IN ('ok','failed','stale','stopped')
+        AND job<>?
         AND close_out_outcome IN ('held','failed')`,
     )
-    .all() as TerminalCloseOutRun[]
+    .all(HOOK_TREE_JOB) as TerminalCloseOutRun[]
 }
 
 export function unscoredRuns(database = db()): AddressedRun[] {
@@ -73,7 +74,8 @@ export function hookTreeConditions(database = db(), clock = Date.now()): Monitor
   const rows = database
     .query(
       `SELECT id,job,worktree path,started_at FROM run
-       WHERE job=? AND worktree IS NOT NULL AND status='ok' ORDER BY id`,
+       WHERE job=? AND worktree IS NOT NULL
+         AND status IN ('ok','failed','stale','stopped') ORDER BY id`,
     )
     .all(HOOK_TREE_JOB) as { id: number; job: string; path: string; started_at: string }[]
   return rows.flatMap((row) => {
