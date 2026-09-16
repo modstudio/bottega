@@ -108,6 +108,22 @@ describe('tracked recipe refusal rules', () => {
     }
   })
 
+  test('refuses absolute and parent-traversing env paths and inherited paths', () => {
+    for (const [field, path] of [
+      ['path', '/tmp/.env'],
+      ['path', 'config/../.env'],
+      ['inherit', '/main/.env'],
+      ['inherit', 'config/../.env'],
+    ] as const) {
+      expect(
+        messages({
+          create: [],
+          env: [{ path: '.env', contents: '', [field]: path }],
+        }).join('\n'),
+      ).toContain(`env-file ${field} rule`)
+    }
+  })
+
   test('rule 1 refuses an allocating create step without undo', () => {
     const recipe = {
       allocate: { ports: ['web'] },

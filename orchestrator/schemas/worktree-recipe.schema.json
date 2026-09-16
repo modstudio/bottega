@@ -61,23 +61,28 @@
         "properties": {
           "path": {
             "type": "string",
-            "minLength": 1
+            "minLength": 1,
+            "description": "Relative to the worktree root; absolute paths and .. segments are refused."
           },
           "contents": {
-            "type": "string"
+            "type": "string",
+            "description": "Filled from the recipe static values, {index}, {ports.*}, {db.*}, and {alloc.*}. Secret values must never appear in errors, logs, run records, or the store."
           },
           "mode": {
             "type": "string",
-            "enum": ["append", "replace", "managed-block"]
+            "enum": ["append", "replace", "managed-block"],
+            "description": "Defaults to managed-block when omitted."
           },
           "inherit": {
-            "type": "string"
+            "type": "string",
+            "description": "Optional path relative to the project root; absolute paths and .. segments are refused."
           },
           "omit": {
             "type": "array",
             "items": {
               "type": "string"
-            }
+            },
+            "description": "Assignment keys removed from the inherited base before contents are applied."
           }
         },
         "required": ["path", "contents"],

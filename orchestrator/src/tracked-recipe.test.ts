@@ -1,4 +1,15 @@
-import { describe, expect, test } from 'bun:test'
+import { afterEach, describe, expect, test } from 'bun:test'
+import {
+  chmodSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+  statSync,
+  writeFileSync,
+} from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 import { db, nowIso } from './db.ts'
 import type { TrackedRecipe } from './recipe-schema.ts'
 import type { Step, StepResult } from './recipe-step.ts'
@@ -12,6 +23,7 @@ import {
   type TrackedAllocator,
   teardownTrackedRecipe,
   trackedAllocator,
+  writeTrackedEnvFiles,
 } from './tracked-recipe.ts'
 
 const command = { command: 'true', args: [] }
@@ -26,6 +38,23 @@ const result = (name: string, phase: StepResult['phase'], ok: boolean): StepResu
   durationMs: 0,
 })
 const context = { treeRoot: '/tree', vars: {} }
+const directories: string[] = []
+
+function temporaryTree(): { project: string; tree: string } {
+  const project = mkdtempSync(join(tmpdir(), 'orch-env-project-'))
+  const tree = join(project, 'tree-name')
+  mkdirSync(tree)
+  directories.push(project)
+  return { project, tree }
+}
+
+afterEach(() => {
+  for (const directory of directories.splice(0)) rmSync(directory, { recursive: true, force: true })
+})
+
+function writeEnv(recipe: TrackedRecipe, tree: string, project: string, vars = {}) {
+  return writeTrackedEnvFiles(recipe, { treeRoot: tree, vars }, project)
+}
 
 describe('tracked recipe execution', () => {
   test('a pre failure releases only the claims inserted by this allocation attempt', () => {
@@ -359,5 +388,136 @@ describe('a tree built before its project tracked a recipe', () => {
       detail:
         'tracked recipe tree has no recorded recipe snapshot and 2 live database claim(s); kept',
     })
+  })
+})
+
+describe('tracked recipe env writes', () => {
+  test('fills every allocation family and index', () => {
+    const { project, tree } = temporaryTree()
+    const recipe: TrackedRecipe = {
+      create: [],
+      env: [
+        {
+          path: '.env',
+          mode: 'replace',
+          contents: '{index}|{ports.web}|{db.app}|{alloc.cookie}',
+        },
+      ],
+    }
+    expect(
+      writeEnv(recipe, tree, project, {
+        index: '4',
+        'ports.web': '21004',
+        'db.app': 'app_4',
+        'alloc.cookie': 'tree-4',
+      }),
+    ).toBeNull()
+    expect(readFileSync(join(tree, '.env'), 'utf8')).toBe('4|21004|app_4|tree-4')
+  })
+
+  test('a missing placeholder refuses before touching the target', () => {
+    const { project, tree } = temporaryTree()
+    const target = join(tree, '.env')
+    writeFileSync(target, 'old-secret')
+    const failure = writeEnv(
+      { create: [], env: [{ path: '.env', mode: 'replace', contents: '{ports.missing}' }] },
+      tree,
+      project,
+    )
+    expect(failure?.detail).toContain('unavailable placeholder {ports.missing}')
+    expect(readFileSync(target, 'utf8')).toBe('old-secret')
+  })
+
+  test('preflights every placeholder before writing an earlier declared file', () => {
+    const { project, tree } = temporaryTree()
+    const failure = writeEnv(
+      {
+        create: [],
+        env: [
+          { path: '.first', mode: 'replace', contents: 'FIRST=yes' },
+          { path: '.second', mode: 'replace', contents: '{db.missing}' },
+        ],
+      },
+      tree,
+      project,
+    )
+    expect(failure?.detail).toContain('unavailable placeholder {db.missing}')
+    expect(() => statSync(join(tree, '.first'))).toThrow()
+  })
+
+  test('inherits from the project and omits selected assignments', () => {
+    const { project, tree } = temporaryTree()
+    writeFileSync(join(project, '.env.main'), 'KEEP=yes\nDROP=secret\n')
+    expect(
+      writeEnv(
+        {
+          create: [],
+          env: [
+            {
+              path: '.env',
+              inherit: '.env.main',
+              omit: ['DROP'],
+              mode: 'append',
+              contents: 'TREE=yes\n',
+            },
+          ],
+        },
+        tree,
+        project,
+      ),
+    ).toBeNull()
+    expect(readFileSync(join(tree, '.env'), 'utf8')).toBe('KEEP=yes\nTREE=yes\n')
+  })
+
+  test('refuses a missing inherited file without creating the target', () => {
+    const { project, tree } = temporaryTree()
+    const failure = writeEnv(
+      {
+        create: [],
+        env: [{ path: '.env', inherit: '.env.missing', contents: 'TREE=yes' }],
+      },
+      tree,
+      project,
+    )
+    expect(failure?.detail).toContain('could not read inherited path ".env.missing"')
+    expect(() => statSync(join(tree, '.env'))).toThrow()
+  })
+
+  test('creates a new file as 0600 and preserves an existing 0644 mode', () => {
+    const { project, tree } = temporaryTree()
+    const fresh = join(tree, '.fresh')
+    const existing = join(tree, '.existing')
+    writeFileSync(existing, 'old')
+    chmodSync(existing, 0o644)
+    expect(
+      writeEnv(
+        {
+          create: [],
+          env: [
+            { path: '.fresh', mode: 'replace', contents: 'fresh' },
+            { path: '.existing', mode: 'replace', contents: 'new' },
+          ],
+        },
+        tree,
+        project,
+      ),
+    ).toBeNull()
+    expect(statSync(fresh).mode & 0o777).toBe(0o600)
+    expect(statSync(existing).mode & 0o777).toBe(0o644)
+  })
+
+  test('a refusing plan leaves the existing target intact', () => {
+    const { project, tree } = temporaryTree()
+    const target = join(tree, '.env')
+    const old = '# >>> orch-worktree tree-name\nold-secret'
+    writeFileSync(target, old)
+    const failure = writeEnv(
+      { create: [], env: [{ path: '.env', contents: 'NEW=yes' }] },
+      tree,
+      project,
+    )
+    expect(failure?.detail).toContain('line 1')
+    expect(failure?.detail).toContain('.env')
+    expect(readFileSync(target, 'utf8')).toBe(old)
   })
 })

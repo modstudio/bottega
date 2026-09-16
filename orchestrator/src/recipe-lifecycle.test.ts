@@ -19,13 +19,11 @@ const step = (name: string, undo = true): Step => ({
 const recipe = (extra: Partial<TrackedRecipe> = {}): TrackedRecipe => ({ create: [], ...extra })
 
 describe('tracked recipe lifecycle planning', () => {
-  test.each([
-    ['env', 7, []],
-    ['shared', 8, []],
-  ] as const)('refuses %s until slice %i', (field, slice, value) => {
-    expect(trackedExecutionRefusal(recipe({ [field]: value }))).toBe(
-      `tracked recipe declares ${field}, which is not executable yet (Phase 3 slice ${slice})`,
+  test('refuses shared until slice 8 and accepts env', () => {
+    expect(trackedExecutionRefusal(recipe({ shared: [] }))).toBe(
+      'tracked recipe declares shared, which is not executable yet (Phase 3 slice 8)',
     )
+    expect(trackedExecutionRefusal(recipe({ env: [] }))).toBeNull()
   })
 
   test('accepts serve and plans modes in declaration order with steps reversed', () => {
