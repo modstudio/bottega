@@ -11,6 +11,9 @@ export async function syncCommand(
     presentation.log(
       `backfill minted ${result.backfill.minted}, enqueued ${result.backfill.enqueued}, skipped-live ${result.backfill.skippedLive}`,
     )
+    presentation.log(
+      `review backfill minted ${result.backfill.reviews.mintedReviews} reviews, ${result.backfill.reviews.mintedLenses} lenses, ${result.backfill.reviews.mintedFindings} findings; enqueued ${result.backfill.reviews.enqueuedReviews} reviews`,
+    )
   }
   if (!result.configured) {
     presentation.log('no record configured')

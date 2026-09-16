@@ -16,7 +16,7 @@ import { RUN_RECORD_PAYLOAD_COLUMNS } from './run-outbox.ts'
 const container = process.env.ORCH_TEST_POSTGRES_CONTAINER
 const ownerUrl = process.env.ORCH_TEST_POSTGRES_OWNER_URL
 const migrationsFolder = join(import.meta.dir, '..', 'postgres', 'migrations')
-const postgresSchema = ['postgres-schema.ts', 'postgres-schema-run.ts']
+const postgresSchema = ['postgres-schema.ts', 'postgres-schema-run.ts', 'postgres-schema-review.ts']
   .map((file) => readFileSync(join(import.meta.dir, file), 'utf8'))
   .join('\n')
 const migration = readdirSync(migrationsFolder, { withFileTypes: true })
@@ -36,6 +36,8 @@ const PLATFORM_PROJECT = '01990000-0000-7000-8000-00000000001c'
 const MACHINE_A = '01990000-0000-7000-8000-000000000019'
 const RUN_A = '01990000-0000-7000-8000-00000000003a'
 const RUN_B = '01990000-0000-7000-8000-00000000003b'
+const REVIEW_A = '01990000-0000-7000-8000-00000000004a'
+const REVIEW_B = '01990000-0000-7000-8000-00000000004b'
 
 type PsqlResult = { code: number; stdout: string; stderr: string }
 
@@ -101,7 +103,16 @@ describe('Postgres substrate shape', () => {
   })
 
   test('tenanted tables force RLS and keep read and write policies separate', () => {
-    for (const table of ['space', 'membership', 'project', 'run', 'seq']) {
+    for (const table of [
+      'space',
+      'membership',
+      'project',
+      'run',
+      'review',
+      'review_lens',
+      'review_finding',
+      'seq',
+    ]) {
       expect(migration).toContain(`ALTER TABLE "${table}" ENABLE ROW LEVEL SECURITY`)
       expect(migration).toContain(`ALTER TABLE "${table}" FORCE ROW LEVEL SECURITY`)
       expect(migration).toContain(`CREATE POLICY "${table}_space_select"`)
@@ -189,6 +200,26 @@ realPostgres('RLS proof against real Postgres', () => {
         ('${SPACE_A}', '${PROJECT_A}', 'dev', 21),
         ('${SPACE_A}', '${PROJECT_A2}', 'task:DEV', 12),
         ('${SPACE_B}', '${PROJECT_B}', 'task:DEV', 9);
+      INSERT INTO review
+        (id, space_id, project_id, machine_id, local_id, recorded_at, created_at, updated_at)
+      VALUES
+        ('${REVIEW_A}', '${SPACE_A}', '${PROJECT_A}', '${MACHINE_A}', 1, now(), now(), now()),
+        ('${REVIEW_B}', '${SPACE_B}', '${PROJECT_B}', '${MACHINE_A}', 2, now(), now(), now());
+      INSERT INTO review_lens
+        (id, space_id, review_id, run_id, machine_id, local_id, lens, agent,
+         standards_read, files_covered, commands_run, could_not_verify, mcp_tools, docs_read,
+         substitutes, created_at, updated_at)
+      VALUES
+        ('01990000-0000-7000-8000-00000000005a', '${SPACE_A}', '${REVIEW_A}', '${RUN_A}', '${MACHINE_A}', 1,
+         'craft', 'proof', '[]', '[]', '[]', '[]', '[]', '[]', '[]', now(), now()),
+        ('01990000-0000-7000-8000-00000000005b', '${SPACE_B}', '${REVIEW_B}', '${RUN_B}', '${MACHINE_A}', 2,
+         'craft', 'proof', '[]', '[]', '[]', '[]', '[]', '[]', '[]', now(), now());
+      INSERT INTO review_finding
+        (id, space_id, review_id, review_lens_id, machine_id, local_id, ordinal, severity,
+         location, evidence, proposed_correction, created_at, updated_at)
+      VALUES
+        ('01990000-0000-7000-8000-00000000006a', '${SPACE_A}', '${REVIEW_A}', '01990000-0000-7000-8000-00000000005a', '${MACHINE_A}', 1, 1, 'major', 'a', 'a', 'a', now(), now()),
+        ('01990000-0000-7000-8000-00000000006b', '${SPACE_B}', '${REVIEW_B}', '01990000-0000-7000-8000-00000000005b', '${MACHINE_A}', 2, 1, 'major', 'b', 'b', 'b', now(), now());
     `,
     )
 
@@ -208,7 +239,7 @@ realPostgres('RLS proof against real Postgres', () => {
       'postgres',
       'postgres',
       `
-      DROP TABLE IF EXISTS run, membership, machine, seq, project, "user", space CASCADE;
+      DROP TABLE IF EXISTS review_finding, review_lens, review, run, membership, machine, seq, project, "user", space CASCADE;
       DROP SCHEMA IF EXISTS drizzle CASCADE;
       REVOKE CREATE ON DATABASE postgres FROM record_owner;
       REVOKE CREATE ON SCHEMA public FROM record_owner;
@@ -286,6 +317,23 @@ realPostgres('RLS proof against real Postgres', () => {
     )
     expect(result.code, result.stderr).toBe(0)
     expect(result.stdout.split('\n').at(-1)).toBe('')
+  })
+
+  test('cross-space review graph reads return nothing', () => {
+    for (const [table, id] of [
+      ['review', REVIEW_B],
+      ['review_lens', '01990000-0000-7000-8000-00000000005b'],
+      ['review_finding', '01990000-0000-7000-8000-00000000006b'],
+    ]) {
+      const result = asSpace(
+        'tenant_actor',
+        'tenant-password',
+        SPACE_A,
+        `SELECT id FROM ${table} WHERE id = '${id}';`,
+      )
+      expect(result.code, result.stderr).toBe(0)
+      expect(result.stdout).toBe('')
+    }
   })
 
   test('cross-space run SELECT returns nothing', () => {

@@ -5,8 +5,10 @@ import { SQL } from 'bun'
 import { PLATFORM_SLUG } from '../../shared/brand.ts'
 import { importProjects } from './postgres-import.ts'
 import { migratePostgres } from './postgres-migrate.ts'
+import { applyMigrations } from './migrations.ts'
 import { PLATFORM_SPACE_ID } from './postgres-schema.ts'
 import { syncRecord } from './record-sync.ts'
+import { backfillReviewRecords } from './review-outbox.ts'
 import { backfillRunRecords } from './run-outbox.ts'
 
 const container = process.env.ORCH_TEST_POSTGRES_CONTAINER
@@ -218,6 +220,7 @@ realPostgres('project import against copied live SQLite data', () => {
 
   test('backfills the copied live store and syncs every finished turn through the outbox', async () => {
     const source = new Database(sources.orchDb)
+    applyMigrations(source)
     const noProject = source
       .query<{ count: number }, []>(
         "SELECT count(*) AS count FROM run WHERE project_id IS NULL AND status <> 'running'",
@@ -228,9 +231,25 @@ realPostgres('project import against copied live SQLite data', () => {
       .get()!.value
     source.query("UPDATE outbox SET synced_at=NULL WHERE kind='run'").run()
     const backfill = backfillRunRecords(source, sourceMachineId)
+    const reviewBackfill = backfillReviewRecords(source)
     console.log(
       `live-copy backfill: minted ${backfill.minted}, enqueued ${backfill.enqueued}, skipped-live ${backfill.skippedLive}`,
     )
+    console.log(
+      `live-copy review backfill: minted ${reviewBackfill.mintedReviews} reviews, ${reviewBackfill.mintedLenses} lenses, ${reviewBackfill.mintedFindings} findings; enqueued ${reviewBackfill.enqueuedReviews} reviews`,
+    )
+    const sourceReviewCounts = source
+      .query<{ reviews: number; lenses: number; findings: number }, []>(
+        `SELECT (SELECT count(*) FROM review) AS reviews,
+              (SELECT count(*) FROM review_lens) AS lenses,
+              (SELECT count(*) FROM review_finding) AS findings`,
+      )
+      .get()!
+    const sourceNullPatchIdentity = source
+      .query<{ count: number }, []>(
+        'SELECT count(*) AS count FROM review WHERE patch_id IS NULL AND path_set IS NULL',
+      )
+      .get()!.count
     const expectedRecordRuns = source
       .query<{ count: number }, []>(
         `SELECT count(DISTINCT r.id) AS count
@@ -253,6 +272,31 @@ realPostgres('project import against copied live SQLite data', () => {
     expect(synced.pending).toBe(0)
     const recordCount = await sql`SELECT count(*)::int AS count FROM run`
     expect(recordCount[0]!.count).toBe(expectedRecordRuns)
+    const recordReviewCounts = await sql`
+      SELECT (SELECT count(*)::int FROM review) AS reviews,
+             (SELECT count(*)::int FROM review_lens) AS lenses,
+             (SELECT count(*)::int FROM review_finding) AS findings
+    `
+    expect(recordReviewCounts[0]).toMatchObject(sourceReviewCounts)
+    const missingLensReferences = await sql`
+      SELECT count(*)::int AS count FROM review_lens lens
+      LEFT JOIN review ON review.id=lens.review_id
+      LEFT JOIN run ON run.id=lens.run_id
+      WHERE review.id IS NULL OR run.id IS NULL
+    `
+    expect(missingLensReferences[0]!.count).toBe(0)
+    const missingFindingReferences = await sql`
+      SELECT count(*)::int AS count FROM review_finding finding
+      LEFT JOIN review ON review.id=finding.review_id
+      LEFT JOIN review_lens lens ON lens.id=finding.review_lens_id
+      WHERE review.id IS NULL OR lens.id IS NULL
+    `
+    expect(missingFindingReferences[0]!.count).toBe(0)
+    const recordNullPatchIdentity = await sql`
+      SELECT count(*)::int AS count FROM review WHERE patch_id IS NULL AND path_set IS NULL
+    `
+    expect(sourceNullPatchIdentity).toBe(369)
+    expect(recordNullPatchIdentity[0]!.count).toBe(sourceNullPatchIdentity)
     const missingOutbox = source
       .query<{ count: number }, []>(
         `SELECT count(*) AS count FROM run r
