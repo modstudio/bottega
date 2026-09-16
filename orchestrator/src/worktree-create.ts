@@ -167,7 +167,7 @@ export function createWithTool(
   existingBranch?: string,
   recordRecipeResource?: RecordRecipeResource,
   claimRecipePort?: ClaimRecipePort,
-  requestedName?: string,
+  requestedBranch?: string,
 ): Worktree {
   const repoRoot = repoRootOf(cwd)
   if (!repoRoot) throw new Error(`not a git repository: ${cwd}`)
@@ -193,7 +193,7 @@ export function createWithTool(
       existingBranch,
       recordRecipeResource,
       claimRecipePort,
-      requestedName,
+      requestedBranch,
     ),
   )
 }
@@ -211,7 +211,7 @@ function createWithToolUnlocked(
   existingBranch?: string,
   recordRecipeResource?: RecordRecipeResource,
   claimRecipePort?: ClaimRecipePort,
-  requestedName?: string,
+  requestedBranch?: string,
 ): Worktree {
   // The project's own naming rule wins where it has one. `orch/<id>` is fine
   // where nothing enforces a convention and is refused outright where something
@@ -239,7 +239,7 @@ function createWithToolUnlocked(
       existingBranch,
       recordRecipeResource,
       claimRecipePort,
-      requestedName,
+      requestedBranch,
     )
   }
 
@@ -398,7 +398,7 @@ function createWithoutCommand(
   existingBranch?: string,
   recordRecipeResource?: RecordRecipeResource,
   claimRecipePort?: ClaimRecipePort,
-  requestedName?: string,
+  requestedBranch?: string,
 ): Worktree {
   if (tool.recipePath) {
     return createTrackedRecipe({
@@ -410,7 +410,7 @@ function createWithoutCommand(
       baseRef,
       detached,
       existingBranch,
-      ...recipeWorktreeIdentity(tool, repoRoot, runId, key, existingBranch, requestedName),
+      ...recipeWorktreeIdentity(tool, repoRoot, runId, key, existingBranch, requestedBranch),
       attribute: (worktree) => attributeWorktree(worktree, runId, record),
       verify: verifyFreshWorktree,
       remove: (worktree) => removeWorktree(worktree, detached || Boolean(existingBranch)),
@@ -633,16 +633,12 @@ function recipeWorktreeIdentity(
   runId: number,
   key?: string,
   existingBranch?: string,
-  requestedName?: string,
+  requestedBranch?: string,
 ): { branch: string; name: string; path: string } {
-  const branchTemplate = (tool.branch ?? 'orch/{id}')
-    .replace(/\{id\}/g, String(runId))
-    .replace(/\{key\}/g, key ?? '')
   const branch =
     existingBranch ??
-    (requestedName === undefined
-      ? branchTemplate
-      : branchTemplate.replace(/\{name\}/g, requestedName))
+    requestedBranch ??
+    (tool.branch ?? 'orch/{id}').replace(/\{id\}/g, String(runId)).replace(/\{key\}/g, key ?? '')
   const name = `orch-${runId}`
   return { branch, name, path: join(repoRoot, '.claude', 'worktrees', name) }
 }

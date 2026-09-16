@@ -29,7 +29,13 @@ describe('hook-tree lifecycle decisions', () => {
     const clock = Date.parse('2026-09-16T12:00:00.000Z')
     const old = new Date(clock - HOOK_TREE_NOTICE_AFTER_MS - 1).toISOString()
     const boundary = new Date(clock - HOOK_TREE_NOTICE_AFTER_MS).toISOString()
-    const hook = { id: 41, job: HOOK_TREE_JOB, path: '/trees/orch-41', startedAt: old }
+    const hook = {
+      id: 41,
+      job: HOOK_TREE_JOB,
+      status: 'ok',
+      path: '/trees/orch-41',
+      startedAt: old,
+    }
     expect(hookTreeNotice(hook, clock)).toMatchObject({
       kind: 'hook-tree-old',
       detail: 'hook tree /trees/orch-41 remains provisioned',
@@ -37,6 +43,22 @@ describe('hook-tree lifecycle decisions', () => {
     })
     expect(hookTreeNotice({ ...hook, startedAt: boundary }, clock)).toBeNull()
     expect(hookTreeNotice({ ...hook, job: 'implement' }, clock)).toBeNull()
+  })
+
+  test('notices a non-ok hook tree immediately', () => {
+    const clock = Date.parse('2026-09-16T12:00:00.000Z')
+    const hook = {
+      id: 42,
+      job: HOOK_TREE_JOB,
+      status: 'stale',
+      path: '/trees/orch-42',
+      startedAt: new Date(clock).toISOString(),
+    }
+    expect(hookTreeNotice(hook, clock)).toMatchObject({
+      kind: 'hook-tree-failed',
+      detail: 'hook tree /trees/orch-42 has run status stale',
+      action: 'orch tree remove /trees/orch-42',
+    })
   })
 
   test('excludes lifecycle rows from evidence, reminders, and stats', () => {

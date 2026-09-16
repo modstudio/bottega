@@ -29,13 +29,26 @@ export function shouldSweepHookTree(run: HookTreeIdentity): boolean {
 
 export type HookTreeNoticeInput = HookTreeIdentity & {
   id: number
+  status: string
   path: string
   startedAt: string
 }
 
-/** A terminal hook tree becomes an informational operator notice after the named age. */
+/** A failed hook tree is immediate; a successful one becomes a notice after the named age. */
 export function hookTreeNotice(run: HookTreeNoticeInput, clock: number) {
   if (!isHookTree(run)) return null
+  if (run.status !== 'ok') {
+    const startedAt = Date.parse(run.startedAt)
+    return {
+      kind: 'hook-tree-failed',
+      subject: `run:${run.id}`,
+      since: run.startedAt,
+      ageMs: Number.isFinite(startedAt) ? Math.max(0, clock - startedAt) : null,
+      detail: `hook tree ${run.path} has run status ${run.status}`,
+      action: `orch tree remove ${run.path}`,
+      severity: 'informational' as const,
+    }
+  }
   const startedAt = Date.parse(run.startedAt)
   if (!Number.isFinite(startedAt)) return null
   const ageMs = Math.max(0, clock - startedAt)

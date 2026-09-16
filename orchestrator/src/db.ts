@@ -13,7 +13,6 @@ import {
   missingDatabaseMessage,
   registeredRepositoryMissingDatabase,
 } from './database-location.ts'
-import { HOOK_TREE_JOB } from './hook-tree.ts'
 import {
   applyMigrations,
   migrationRefusal,
@@ -267,9 +266,7 @@ export function db(writable = false): Database {
 }
 
 export function liveRuns(database: Database = db()): { worktree: string | null }[] {
-  return database
-    .query(`SELECT worktree FROM run WHERE status IN ('running','asking') AND job<>?`)
-    .all(HOOK_TREE_JOB) as {
+  return database.query(`SELECT worktree FROM run WHERE status IN ('running','asking')`).all() as {
     worktree: string | null
   }[]
 }

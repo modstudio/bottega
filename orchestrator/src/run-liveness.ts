@@ -5,7 +5,6 @@
 
 import type { Database } from 'bun:sqlite'
 import { db, linkedWorktreeReadOnly, writeTransaction } from './db.ts'
-import { HOOK_TREE_JOB } from './hook-tree.ts'
 import { pidAlive } from './process-liveness.ts'
 import { teardownTerminalRunResources } from './resource-ownership.ts'
 import { runAlive } from './run-alive.ts'
@@ -188,10 +187,8 @@ function deadRunReason(row: RunningRow): string {
 export function reapStale(d: Database = db()): number | ObservedDeadRun[] {
   const bootstrapCutoff = new Date(Date.now() - PENDING_BOOTSTRAP_MS).toISOString()
   const rows = d
-    .query(
-      `SELECT id, pid, agent_pid, agent, started_at FROM run WHERE status='running' AND job<>?`,
-    )
-    .all(HOOK_TREE_JOB) as RunningRow[]
+    .query(`SELECT id, pid, agent_pid, agent, started_at FROM run WHERE status='running'`)
+    .all() as RunningRow[]
 
   const dead: number[] = []
   const abandonedBootstrap: number[] = []

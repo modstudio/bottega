@@ -1,6 +1,7 @@
 // concern: run-outbox
 /** Knows how a terminal local run becomes an ordered hosted-record mutation. Must not know Postgres. */
 import type { Database } from 'bun:sqlite'
+import { HOOK_TREE_JOB } from './hook-tree.ts'
 import { newRecordId, PLATFORM_SPACE_ID } from './postgres-schema.ts'
 
 export const RUN_RECORD_PAYLOAD_COLUMNS = [
@@ -195,29 +196,30 @@ export function enqueueRunRecord(
 
 export function backfillRunRecords(database: Database, machineId: string): RunRecordBackfillResult {
   const missing = database
-    .query<{ id: number }, []>('SELECT id FROM run WHERE record_id IS NULL ORDER BY id')
-    .all()
+    .query<{ id: number }, [string]>(
+      'SELECT id FROM run WHERE record_id IS NULL AND job<>? ORDER BY id',
+    )
+    .all(HOOK_TREE_JOB)
   for (const row of missing) {
     database.query('UPDATE run SET record_id=? WHERE id=?').run(newRecordId(), row.id)
   }
 
   const terminal = database
-    .query<{ id: number; finished_at: string }, []>(
+    .query<{ id: number; finished_at: string }, [string]>(
       `SELECT r.id, COALESCE(r.last_event_at, r.started_at) AS finished_at
            FROM run r
           WHERE r.status IN ('ok', 'failed', 'stale', 'stopped', 'asking')
+            AND r.job<>?
             AND NOT EXISTS (
               SELECT 1 FROM outbox WHERE kind='run' AND record_id=r.record_id
             )
           ORDER BY r.id`,
     )
-    .all()
+    .all(HOOK_TREE_JOB)
   for (const row of terminal) enqueueRunRecord(database, row.id, machineId, row.finished_at)
 
   const skippedLive = database
-    .query<{ count: number }, []>(
-      `SELECT count(*) AS count FROM run WHERE status='running' AND evidence_excluded IS NULL`,
-    )
+    .query<{ count: number }, []>(`SELECT count(*) AS count FROM run WHERE status='running'`)
     .get()!.count
   return { minted: missing.length, enqueued: terminal.length, skippedLive }
 }

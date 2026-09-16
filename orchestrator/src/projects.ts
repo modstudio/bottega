@@ -208,8 +208,8 @@ export type WorktreeTool = {
    * key that its own tooling reads — and orch imposing a name of its own is
    * exactly the mistake that delegating the lifecycle was meant to stop.
    *
-   * Placeholders: `{id}` the run id, `{key}` a ticket key when the architect
-   * supplied one with `--key`, and `{name}` when a project hook creates a tree.
+   * Placeholders: `{id}` the run id and `{key}` a ticket key when the architect
+   * supplied one with `--key`.
    * A template naming `{key}` makes that flag required, because inventing a
    * ticket number would be worse than refusing.
    */

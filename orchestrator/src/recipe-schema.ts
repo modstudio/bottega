@@ -106,6 +106,20 @@ export const sharedSchema = strictObject({
 
 const recipeShape = strictObject({
   baseRef: z.string().optional(),
+  hookBranch: z
+    .string()
+    .min(1)
+    .superRefine((template, context) => {
+      for (const match of template.matchAll(/\{([^{}]+)\}/g)) {
+        if (match[1] !== 'name') {
+          context.addIssue({
+            code: 'custom',
+            message: `hook-branch placeholder rule: hookBranch may use only {name}, not {${match[1]}}`,
+          })
+        }
+      }
+    })
+    .optional(),
   allocate: allocationsSchema.optional(),
   env: z.array(envFileSchema).optional(),
   shared: z.array(sharedSchema).optional(),
@@ -441,6 +455,11 @@ function validateCwd(
 export type TrackedRecipe = z.infer<typeof recipeSchema>
 
 export type ProjectConfigDocument = z.infer<typeof configDocumentSchema>
+
+/** Fill the validated hook-only branch template. */
+export function hookBranchName(template: string | undefined, name: string): string {
+  return (template ?? 'worktree-{name}').replace(/\{name\}/g, name)
+}
 
 export function recipeJsonSchema(): unknown {
   return z.toJSONSchema(configDocumentJsonSchema, { target: 'draft-2020-12' })

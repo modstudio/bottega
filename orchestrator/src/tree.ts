@@ -6,9 +6,12 @@ import { existsSync, realpathSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { closeOutRun } from './close-out.ts'
 import { db, nowIso, sessionId, writableDb, writeTransaction } from './db.ts'
+import { git } from './git-environment.ts'
 import { HOOK_TREE_AGENT, HOOK_TREE_JOB, hookTreeEvidenceDecision } from './hook-tree.ts'
 import { projectAt, resolvedWorktreeTool, stackAt } from './projects.ts'
 import { recordCreatedWorktreeClaims } from './resource-claims.ts'
+import { acquireRunLease } from './run-lease.ts'
+import { trackedHookBranch } from './tracked-recipe.ts'
 import { createWithTool } from './worktree-create.ts'
 import { resolveWorktreeLifecycle } from './worktree-lifecycle.ts'
 import type { Worktree } from './worktree-types.ts'
@@ -29,11 +32,6 @@ function validateKey(
   if (key && !new RegExp(keyPattern).test(key)) {
     throw new Error(`key "${key}" does not match ${keyPattern}`)
   }
-  if (tool.branch?.includes('{key}') && !key) {
-    throw new Error(
-      `this project's branch names must carry a ticket key (${tool.branch}), and orch will not invent one.\n  --key <KEY-123>`,
-    )
-  }
 }
 
 export function createHookTree(input: {
@@ -53,6 +51,19 @@ export function createHookTree(input: {
   }
   if (!input.name.trim()) throw new Error('--name must contain text')
   validateKey(tool, input.key)
+  const hookBranch = trackedHookBranch({
+    tool,
+    repoRoot: project.path,
+    baseRef: input.base,
+    name: input.name,
+  })
+  try {
+    git(['check-ref-format', '--branch', hookBranch], project.path)
+  } catch {
+    throw new Error(
+      `name "${input.name}" produces invalid hook branch "${hookBranch}"; git check-ref-format --branch refused it`,
+    )
+  }
   writableDb()
 
   const startedAt = nowIso()
@@ -62,8 +73,8 @@ export function createHookTree(input: {
     .query(
       `INSERT INTO run
        (started_at,agent,job,repo,project_id,cwd,prompt_sha,prompt_bytes,prompt_head,status,
-        session_id,launch_cwd,launch_key,launch_base,stack,evidence_excluded)
-       VALUES (?,?,?,?,?,?,?,?,?,'running',?,?,?,?,?,?) RETURNING id`,
+        session_id,launch_cwd,launch_key,launch_base,stack,evidence_excluded,pid)
+       VALUES (?,?,?,?,?,?,?,?,?,'running',?,?,?,?,?,?,?) RETURNING id`,
     )
     .get(
       startedAt,
@@ -81,6 +92,7 @@ export function createHookTree(input: {
       input.base ?? null,
       stackAt(project.path),
       evidence.evidenceExcluded,
+      process.pid,
     ) as { id: number }
 
   const record = (created: Worktree) => {
@@ -115,7 +127,9 @@ export function createHookTree(input: {
     })
   }
 
+  let runLease: ReturnType<typeof acquireRunLease> | null = null
   try {
+    runLease = acquireRunLease(inserted.id)
     const created = createWithTool(
       tool,
       project.path,
@@ -128,7 +142,7 @@ export function createHookTree(input: {
       undefined,
       undefined,
       undefined,
-      input.name,
+      hookBranch,
     )
     db()
       .query(`UPDATE run SET status='ok',latency_ms=?,exit_code=0 WHERE id=?`)
@@ -140,6 +154,8 @@ export function createHookTree(input: {
       .query(`UPDATE run SET status='failed',latency_ms=?,exit_code=1,error=? WHERE id=?`)
       .run(Math.max(0, Date.now() - Date.parse(startedAt)), detail, inserted.id)
     throw error
+  } finally {
+    runLease?.release()
   }
 }
 

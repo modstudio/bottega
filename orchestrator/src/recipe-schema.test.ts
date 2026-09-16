@@ -2,6 +2,7 @@ import { describe, expect, test } from 'bun:test'
 import {
   allocationEnvironmentVariable,
   configDocumentSchema,
+  hookBranchName,
   recipeSchema,
 } from './recipe-schema.ts'
 
@@ -282,6 +283,22 @@ describe('tracked recipe refusal rules', () => {
 })
 
 describe('project config document', () => {
+  test('decides default and declared hook branches and refuses other placeholders', () => {
+    const defaulted = configDocumentSchema.parse({ worktree: minimal() }).worktree!
+    expect(hookBranchName(defaulted.hookBranch, 'alice')).toBe('worktree-alice')
+
+    const declared = configDocumentSchema.parse({
+      worktree: { ...minimal(), hookBranch: 'session/{name}' },
+    }).worktree!
+    expect(hookBranchName(declared.hookBranch, 'alice')).toBe('session/alice')
+
+    const refused = configDocumentSchema.safeParse({
+      worktree: { ...minimal(), hookBranch: 'session/{id}' },
+    })
+    expect(refused.success).toBe(false)
+    if (!refused.success) expect(refused.error.issues[0]?.message).toContain('may use only {name}')
+  })
+
   test('accepts a nested worktree recipe and an optional root schema', () => {
     expect(
       configDocumentSchema.safeParse({ $schema: 'schema.json', worktree: minimal() }).success,

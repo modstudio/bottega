@@ -73,11 +73,16 @@ export const age = (since: string | null, clock: number) => {
 export function hookTreeConditions(database = db(), clock = Date.now()): MonitorCondition[] {
   const rows = database
     .query(
-      `SELECT id,job,worktree path,started_at FROM run
-       WHERE job=? AND worktree IS NOT NULL
-         AND status IN ('ok','failed','stale','stopped') ORDER BY id`,
+      `SELECT id,job,status,worktree path,started_at FROM run
+       WHERE job=? AND worktree IS NOT NULL ORDER BY id`,
     )
-    .all(HOOK_TREE_JOB) as { id: number; job: string; path: string; started_at: string }[]
+    .all(HOOK_TREE_JOB) as {
+    id: number
+    job: string
+    status: string
+    path: string
+    started_at: string
+  }[]
   return rows.flatMap((row) => {
     const condition = hookTreeNotice({ ...row, startedAt: row.started_at }, clock)
     return condition ? [condition] : []
@@ -116,9 +121,9 @@ export function idleRunConditions(clock = Date.now()): MonitorCondition[] {
   const threshold = idleWarnMs()
   const running = db()
     .query(
-      `SELECT id, started_at, last_event_at, agent, job, session_id FROM run WHERE status='running' AND job<>?`,
+      `SELECT id, started_at, last_event_at, agent, job, session_id FROM run WHERE status='running'`,
     )
-    .all(HOOK_TREE_JOB) as {
+    .all() as {
     id: number
     started_at: string
     last_event_at: string | null
@@ -215,9 +220,9 @@ export function terminalProcessAliveConditions(clock = Date.now()): MonitorCondi
 export function deadRunningProcessConditions(clock = Date.now()): MonitorCondition[] {
   const running = db()
     .query(
-      `SELECT id, started_at, pid, agent_pid, output_bytes, session_id FROM run WHERE status='running' AND job<>?`,
+      `SELECT id, started_at, pid, agent_pid, output_bytes, session_id FROM run WHERE status='running'`,
     )
-    .all(HOOK_TREE_JOB) as {
+    .all() as {
     id: number
     started_at: string
     pid: number | null
@@ -430,8 +435,8 @@ export function dockerConditions(clock: number): {
 
 function liveRunIds(database: ReturnType<typeof db>): Set<number> {
   const rows = database
-    .query(`SELECT id,status,pid FROM run WHERE status IN ('running','asking') AND job<>?`)
-    .all(HOOK_TREE_JOB) as { id: number; status: string; pid: number | null }[]
+    .query(`SELECT id,status,pid FROM run WHERE status IN ('running','asking')`)
+    .all() as { id: number; status: string; pid: number | null }[]
   return new Set(
     rows
       .filter((row) =>
