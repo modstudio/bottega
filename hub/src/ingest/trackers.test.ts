@@ -1,13 +1,9 @@
 import { beforeAll, describe, expect, test } from 'bun:test'
+import { resolveAssigneeIds } from '../../../shared/trackers.ts'
 import { resetFixtureStore } from '../../test/run-fixtures.ts'
 import { trackerPresentation } from '../projects.ts'
 import { showTask } from '../task.ts'
-import {
-  ingestTrackers,
-  resolveAssigneeIds,
-  trackerRegistrations,
-  upsertTrackerTask,
-} from './trackers.ts'
+import { ingestTrackers, trackerRegistrations, upsertTrackerTask } from './trackers.ts'
 
 beforeAll(resetFixtureStore)
 

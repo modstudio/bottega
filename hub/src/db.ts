@@ -2,12 +2,7 @@ import { Database } from 'bun:sqlite'
 import { existsSync, mkdirSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { mainCheckoutOf } from '../../shared/git.ts'
-import {
-  applyMigrations,
-  migrationRefusal,
-  readUserVersion,
-  staleWriteRefusal,
-} from './migrations.ts'
+import { applyMigrations, migrationRefusal, readUserVersion } from './migrations.ts'
 
 export type { Project } from './projects.ts'
 
@@ -40,11 +35,7 @@ export function enableSchemaReload(onReload: (from: number, to: number) => void)
   schemaReload = onReload
 }
 
-export function openedSchemaVersion(): number | null {
-  return openedUserVersion
-}
-
-function refuseOrReloadStaleSchema(d: Database, forWrite: boolean): Database {
+function refuseOrReloadStaleSchema(d: Database): Database {
   if (handle && d !== handle) return d
   const actual = readUserVersion(d)
   const opened = openedUserVersion
@@ -57,12 +48,11 @@ function refuseOrReloadStaleSchema(d: Database, forWrite: boolean): Database {
     schemaReload(from, actual)
     return db()
   }
-  if (!forWrite) return d
-  throw new Error(staleWriteRefusal(actual, opened, 'restart this process after hub migrate'))
+  return d
 }
 
 export function db(): Database {
-  if (handle) return refuseOrReloadStaleSchema(handle, false)
+  if (handle) return refuseOrReloadStaleSchema(handle)
   requireDatabase()
   const d = new Database(DB_PATH!, { readwrite: true, create: false })
   d.exec('PRAGMA busy_timeout = 15000; PRAGMA foreign_keys = ON;')
@@ -82,26 +72,7 @@ export function db(): Database {
   return d
 }
 
-/** Open the only sanctioned multi-statement write transaction. */
-export function writeTransaction<T>(fn: () => T, database: Database = db()): T {
-  const conn = refuseOrReloadStaleSchema(database, true)
-  return conn.transaction(fn).immediate()
-}
-
 export const nowIso = () => new Date().toISOString()
-
-/** Fixture-only: build a scratch store through the production migration journal. */
-export function bootstrapFixtureStore(path: string): string {
-  mkdirSync(dirname(path), { recursive: true })
-  const d = new Database(path, { create: true })
-  try {
-    d.exec('PRAGMA foreign_keys = ON;')
-    applyMigrations(d)
-  } finally {
-    d.close()
-  }
-  return path
-}
 
 /** The only production path that creates or changes the hub schema. */
 export function migrateDatabase(): { path: string; versions: string[] } {

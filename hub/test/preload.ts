@@ -1,3 +1,4 @@
+import { Database } from 'bun:sqlite'
 import { afterAll, beforeEach } from 'bun:test'
 import { chmodSync, mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
@@ -12,8 +13,11 @@ const databaseDir = mkdtempSync(join(tmpdir(), 'hub-test-'))
 process.env.HUB_DB = join(databaseDir, 'hub.db')
 const assertTestHubDatabase = createTestHubDatabaseGuard(new URL('../..', import.meta.url).pathname)
 assertTestHubDatabase()
-const { bootstrapFixtureStore } = await import('../src/db.ts')
-bootstrapFixtureStore(process.env.HUB_DB)
+const { applyMigrations } = await import('../src/migrations.ts')
+const database = new Database(process.env.HUB_DB, { create: true })
+database.exec('PRAGMA foreign_keys = ON;')
+applyMigrations(database)
+database.close()
 
 beforeEach(assertTestHubDatabase)
 

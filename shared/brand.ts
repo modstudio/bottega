@@ -45,14 +45,6 @@ export const PLATFORM_NAME = 'Bottega'
 export const PLATFORM_SLUG = 'bottega'
 
 /**
- * One line on what it is, for a README or a `--help` header.
- *
- * Kept here rather than in each concern's own docs because a tagline repeated
- * in four places is a tagline that will disagree with itself within a month.
- */
-export const PLATFORM_TAGLINE = 'One designer, many hands: delegate the building, keep the design.'
-
-/**
  * The concerns, which are the reason this is a platform rather than a tool.
  *
  * Listed here because more than one thing needs to enumerate them — the
@@ -61,4 +53,3 @@ export const PLATFORM_TAGLINE = 'One designer, many hands: delegate the building
  * policed by none of them.
  */
 export const CONCERNS = ['orchestrator', 'hub', 'ops', 'local-stack'] as const
-export type Concern = (typeof CONCERNS)[number]

@@ -4,16 +4,12 @@ import { copyFileSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSy
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { resetFixtureStore } from '../test/run-fixtures.ts'
-import { closeDatabaseForFixture, db, enableSchemaReload, writeTransaction } from './db.ts'
+import { closeDatabaseForFixture, db, enableSchemaReload } from './db.ts'
 import {
   applyMigrations,
-  BASELINE_SCHEMA_HASH,
-  baselineSchemaHash,
-  CONNECTION_SCHEMA_INVARIANT,
   canonicalSchemaHash,
   expectedSchemaHash,
   JOURNAL_WHEN_ORDER,
-  journalLength,
   MIGRATIONS_FOLDER,
   MIGRATIONS_TABLE,
   migrationJournal,
@@ -132,10 +128,6 @@ describe('hub migration journal', () => {
   test('fresh migrations equal trunk schema by structural hash', () => {
     const d = fresh()
     expect(canonicalSchemaHash(d)).toBe(expectedSchemaHash())
-    expect(BASELINE_SCHEMA_HASH).toBe(baselineSchemaHash())
-    expect(BASELINE_SCHEMA_HASH).toBe(
-      '903a8d96fe8c2b5f7edd253f2f85cc6b1dc66d1537b3a94b8cef5f2fb81ddfff',
-    )
     expect(expectedSchemaHash()).toBe(
       '943613471e7150d03db0b3e6116c380fc73ad453f0f055d6de38f291807c5f42',
     )
@@ -263,7 +255,6 @@ describe('hub migration journal', () => {
     d.exec('PRAGMA foreign_keys = ON')
     applyMigrations(d, folder)
     expect(canonicalSchemaHash(d)).toBe(expectedSchemaHash(folder))
-    expect(canonicalSchemaHash(d)).not.toBe(BASELINE_SCHEMA_HASH)
     d.exec('ALTER TABLE extra ADD COLUMN x TEXT')
     expect(canonicalSchemaHash(d)).not.toBe(expectedSchemaHash(folder))
     d.close()
@@ -369,28 +360,11 @@ describe('hub migration journal', () => {
 
   test('the migrator stamps user_version to the journal length even when nothing is pending', () => {
     const d = fresh()
-    expect(readUserVersion(d)).toBe(journalLength())
-    expect(schemaVersionLabel(d)).toBe(String(journalLength()))
+    expect(readUserVersion(d)).toBe(migrationJournal().length)
+    expect(schemaVersionLabel(d)).toBe(String(migrationJournal().length))
     expect(applyMigrations(d)).toEqual([])
-    expect(readUserVersion(d)).toBe(journalLength())
+    expect(readUserVersion(d)).toBe(migrationJournal().length)
     d.close()
-  })
-
-  test('a connection opened before a migration refuses its next write', () => {
-    closeDatabaseForFixture()
-    db()
-    const other = new Database(process.env.HUB_DB!)
-    other.exec(`PRAGMA user_version = ${journalLength() + 1}`)
-    other.close()
-    expect(() =>
-      writeTransaction(() => {
-        db().query('UPDATE setting SET value = value WHERE 0').run()
-      }),
-    ).toThrow(`invariant: ${CONNECTION_SCHEMA_INVARIANT}`)
-    closeDatabaseForFixture()
-    const reset = new Database(process.env.HUB_DB!)
-    applyMigrations(reset)
-    reset.close()
   })
 
   test('two concurrent migrates serialise on the schema lock', async () => {
@@ -415,7 +389,7 @@ describe('hub migration journal', () => {
     expect(
       seen.query('SELECT version FROM hub_migrations GROUP BY version HAVING COUNT(*) > 1').all(),
     ).toEqual([])
-    expect(readUserVersion(seen)).toBe(journalLength())
+    expect(readUserVersion(seen)).toBe(migrationJournal().length)
     seen.close()
     rmSync(dir, { recursive: true, force: true })
   })
@@ -477,31 +451,11 @@ describe('hub migration journal', () => {
       seen.push(to)
     })
     const other = new Database(process.env.HUB_DB!)
-    const next = journalLength() + 1
+    const next = migrationJournal().length + 1
     other.exec(`PRAGMA user_version = ${next}`)
     other.close()
     db()
     expect(seen).toEqual([next])
-    closeDatabaseForFixture()
-    const reset = new Database(process.env.HUB_DB!)
-    applyMigrations(reset)
-    reset.close()
-  })
-
-  test('writeTransaction after reload writes on the new handle, not the closed one', () => {
-    closeDatabaseForFixture()
-    enableSchemaReload(() => {})
-    const held = db()
-    const other = new Database(process.env.HUB_DB!)
-    other.exec(`PRAGMA user_version = ${journalLength() + 1}`)
-    other.close()
-    writeTransaction(() => {
-      db().query("INSERT INTO setting (key, value) VALUES ('held-reload', '1')").run()
-    }, held)
-    expect(() => held.query('SELECT 1').get()).toThrow('closed')
-    expect(db().query("SELECT value FROM setting WHERE key='held-reload'").get()).toEqual({
-      value: '1',
-    })
     closeDatabaseForFixture()
     const reset = new Database(process.env.HUB_DB!)
     applyMigrations(reset)

@@ -3,7 +3,7 @@ import { attributeRun } from '../attribute.ts'
 import { db, nowIso } from '../db.ts'
 import { readRuns } from '../orch.ts'
 
-export type { OrchQuestion, OrchRun, OrchTurn } from '../../../shared/orch-contract.ts'
+export type { OrchRun } from '../../../shared/orch-contract.ts'
 
 /**
  * Delegated agent runs, as intervals.

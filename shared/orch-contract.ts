@@ -116,11 +116,6 @@ export const OrchRunEnvelopeSchema = z
   })
   .strict()
 
-export function encodeOrchRunLine(value: unknown, version: 1 | 2 = 2): string {
-  const data = OrchRunLineDataSchema.parse(value)
-  return JSON.stringify(version === 1 ? data : { schema_version: 2, kind: 'run', data })
-}
-
 const guideCandidate = z
   .object({
     agent: z.string(),
@@ -390,11 +385,8 @@ export const OrchRunDetailSchema = z
 export type OrchProject = z.infer<typeof OrchProjectSchema>
 export type OrchRun = z.infer<typeof OrchRunSchema>
 export type OrchTurn = z.infer<typeof OrchTurnSchema>
-export type OrchQuestion = z.infer<typeof OrchQuestionSchema>
 export type OrchUnknownRun = z.infer<typeof OrchUnknownRunSchema>
 export type OrchRunLineData = z.infer<typeof OrchRunLineDataSchema>
-export type OrchRunEnvelope = z.infer<typeof OrchRunEnvelopeSchema>
-export type OrchState = z.infer<typeof OrchStateSchema>
 export type OrchBlockers = z.infer<typeof OrchBlockersSchema>
 export type HarnessHealth = z.infer<typeof HarnessHealthSchema>
 export type OrchRunDetail = z.infer<typeof OrchRunDetailSchema>
