@@ -4,11 +4,14 @@ import {
   decideBranchState,
   decidePruneEligibility,
   type MergedPullRequest,
+  pullRequestCarriesKey,
 } from './branch-state.ts'
 
 const pullRequest: MergedPullRequest = {
   number: 42,
   headRefName: 'DEV-616-orch-4235',
+  headRefOid: 'def456',
+  title: 'DEV-616: branch recognition',
   mergeCommit: { oid: 'abc123' },
   mergedAt: '2026-09-16T12:00:00Z',
 }
@@ -20,11 +23,30 @@ function decide(overrides: Partial<Parameters<typeof decideBranchState>[0]> = {}
     mergedPullRequestsTruncated: false,
     commitsNotOnTrunk: 1,
     patchEquivalent: null,
+    pullRequestCommitCheck: null,
     laterTurnBranches: [],
     superseded: false,
     ...overrides,
   })
 }
+
+describe('pull request task-key matching', () => {
+  test('head token mutation: recognises a key token in the head branch', () => {
+    expect(
+      pullRequestCarriesKey({ headRefName: 'DEV-616-ship', title: 'Ship work' }, 'DEV-616'),
+    ).toBe(true)
+  })
+
+  test('title token mutation: recognises a key token in the title', () => {
+    expect(
+      pullRequestCarriesKey({ headRefName: 'release', title: 'Ship DEV-616 now' }, 'DEV-616'),
+    ).toBe(true)
+  })
+
+  test('prefix mutation: does not mistake a longer key for the requested key', () => {
+    expect(pullRequestCarriesKey(pullRequest, 'DEV-61')).toBe(false)
+  })
+})
 
 describe('run branch state decision', () => {
   test('PR landing precedence mutation: landed by PR beats superseded', () => {
@@ -130,6 +152,66 @@ describe('run branch state decision', () => {
   test('empty precedence mutation: empty beats patch equivalence', () => {
     expect(decide({ commitsNotOnTrunk: 0, patchEquivalent: 'commits' })).toEqual({
       state: 'empty',
+    })
+  })
+
+  test('PR commits precedence mutation: a PR-name match beats a commit match', () => {
+    expect(
+      decide({ mergedPullRequests: [pullRequest], pullRequestCommitCheck: { number: 43 } }),
+    ).toMatchObject({ landedBy: { type: 'pr', number: 42 } })
+  })
+
+  test('PR commits empty precedence mutation: empty beats a commit match', () => {
+    expect(decide({ commitsNotOnTrunk: 0, pullRequestCommitCheck: { number: 43 } })).toEqual({
+      state: 'empty',
+    })
+  })
+
+  test('PR commits patch precedence mutation: patch equivalence beats a commit match', () => {
+    expect(decide({ patchEquivalent: 'commits', pullRequestCommitCheck: { number: 43 } })).toEqual({
+      state: 'landed',
+      landedBy: { type: 'patch-equivalent', form: 'commits' },
+    })
+  })
+
+  test('PR commits turn precedence mutation: a commit match beats a later landed turn', () => {
+    expect(
+      decide({
+        pullRequestCommitCheck: { number: 43 },
+        laterTurnBranches: [
+          {
+            branch: 'DEV-616-orch-4240',
+            state: { state: 'landed', landedBy: { type: 'patch-equivalent', form: 'commits' } },
+          },
+        ],
+      }),
+    ).toEqual({ state: 'landed', landedBy: { type: 'pr-commits', number: 43 } })
+  })
+
+  test('PR commits superseded precedence mutation: a commit match beats supersession', () => {
+    expect(decide({ pullRequestCommitCheck: { number: 43 }, superseded: true })).toEqual({
+      state: 'landed',
+      landedBy: { type: 'pr-commits', number: 43 },
+    })
+  })
+
+  test('turn PR commits mutation: a later turn landed by PR commits lands the earlier branch', () => {
+    expect(
+      decide({
+        laterTurnBranches: [
+          {
+            branch: 'DEV-616-orch-4240',
+            state: { state: 'landed', landedBy: { type: 'pr-commits', number: 43 } },
+          },
+        ],
+      }),
+    ).toEqual({ state: 'landed', landedBy: { type: 'turn', branch: 'DEV-616-orch-4240' } })
+  })
+
+  test('PR check failure mutation: a failed check makes the branch unknown', () => {
+    expect(decide({ pullRequestCommitCheck: { error: 'fetch refused' } })).toEqual({
+      state: 'unknown',
+      error: 'fetch refused',
     })
   })
 
