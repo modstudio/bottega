@@ -1,5 +1,6 @@
 ---
 description: Test value, placement, isolation, runtime, and suite-budget rules
+always: true
 ---
 
 # Tests earn their standing cost
@@ -40,4 +41,3 @@ test lifecycle hook and always restore it; never mutate it at module load.
 
 Suite time is shared and `bun run check` reports the budget. Prefer deleting a
 slow, low-value test to nursing it.
-

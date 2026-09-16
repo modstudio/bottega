@@ -1,5 +1,6 @@
 ---
 description: Product boundaries, research duties, review scope, and failure-class measurement
+always: true
 ---
 
 # Build, buy and measure
@@ -54,4 +55,3 @@ surface shows afterwards.
 
 A fix without class-level measurement is instance patching. The monitor ranks
 above a patch because it reveals prevalence, cost and unseen paths.
-

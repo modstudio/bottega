@@ -1,5 +1,6 @@
 ---
 description: Rules for current, compact, resolvable canon and documentation
+always: true
 ---
 
 # Writing canon
@@ -34,4 +35,3 @@ preserving the rule.
 Every new canon file must have no `orch canon lint` findings. Regenerate
 `scripts/quality/canon-lint.json` so it records only findings in files outside
 the change. Never add a changed file's finding to the baseline.
-

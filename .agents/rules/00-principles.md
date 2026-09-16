@@ -1,5 +1,6 @@
 ---
 description: Product purpose, delegation contract, evidence routing, and the authority of canon
+always: true
 ---
 
 # Principles
@@ -75,4 +76,3 @@ nothing.
 Replace a rule deliberately: bring the evidence and replacement together,
 name the rule being overruled and record the ruling. This openness matters
 because quietly obeying a lesser rule leaves no failure for review to detect.
-
