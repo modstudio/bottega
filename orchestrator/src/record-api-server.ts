@@ -2,8 +2,10 @@
 /** Composes and serves the record API. Must not own record queries or authentication policy. */
 import { probeRecord, recordMigrationCount } from './postgres-migrate.ts'
 import { recordApi } from './record-api.ts'
-import { recordAuth, recordIdentity } from './record-auth.ts'
-import { listRecordRuns } from './record-runs.ts'
+import { recordAllowedOrigins, recordAuth, recordIdentity } from './record-auth.ts'
+import { listRecordProjects } from './record-projects.ts'
+import { getRecordReview, listRecordReviews } from './record-reviews.ts'
+import { getRecordRun, listRecordRuns } from './record-runs.ts'
 
 type ServerEnvironment = Record<string, string | undefined>
 
@@ -23,15 +25,17 @@ export function recordApiServerConfig(environment: ServerEnvironment = process.e
     recordUrl: required(environment, 'ORCH_RECORD_URL'),
     authSecret: required(environment, 'BETTER_AUTH_SECRET'),
     authUrl: required(environment, 'BETTER_AUTH_URL'),
+    allowedOrigins: recordAllowedOrigins(environment),
   }
 }
 
 export function startRecordApiServer(environment: ServerEnvironment = process.env) {
   const config = recordApiServerConfig(environment)
-  const auth = recordAuth(config.recordUrl)
+  const auth = recordAuth(config.recordUrl, environment)
   const migrations = recordMigrationCount()
   const app = recordApi({
     recordUrl: config.recordUrl,
+    allowedOrigins: config.allowedOrigins,
     auth,
     readSession: async (headers) => {
       const current = await auth.api.getSession({ headers })
@@ -51,6 +55,10 @@ export function startRecordApiServer(environment: ServerEnvironment = process.en
       }
     },
     readRuns: listRecordRuns,
+    readRun: getRecordRun,
+    readReviews: listRecordReviews,
+    readReview: getRecordReview,
+    readProjects: listRecordProjects,
   })
   return Bun.serve({
     hostname: '0.0.0.0',

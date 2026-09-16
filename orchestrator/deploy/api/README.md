@@ -14,6 +14,12 @@ fly ips allocate-v6 -a bottega-api
 fly certs add api.bottega.run -a bottega-api
 ```
 
+For browser clients, set `RECORD_API_ALLOWED_ORIGINS` to a comma-separated list of exact
+origins. This enables credentialed CORS for those origins and also configures Better Auth's
+trusted origins. When the browser and API use sibling subdomains, set
+`RECORD_AUTH_COOKIE_DOMAIN` to their shared cookie domain; this enables secure cross-subdomain
+session cookies. Leave both variables unset for the existing CLI-only behavior.
+
 At the DNS provider, create an `A` record for `api.bottega.run` with the shared IPv4 address printed by `fly ips allocate-v4`, and an `AAAA` record with the IPv6 address printed by `fly ips allocate-v6`. Check certificate and DNS validation with `fly certs check api.bottega.run -a bottega-api`.
 
 Verify the public surface after the certificate is ready:

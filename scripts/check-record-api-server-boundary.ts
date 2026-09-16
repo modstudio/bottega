@@ -11,6 +11,8 @@ const ALLOWED = new Set([
   './record-api.ts',
   './record-auth.ts',
   './record-runs.ts',
+  './record-reviews.ts',
+  './record-projects.ts',
 ])
 const FORBIDDEN_FILES = new Set(['orchestrator/src/database-location.ts', 'orchestrator/src/db.ts'])
 const entryImports = importSpecifiers(readFileSync(`${ROOT}/${FILE}`, 'utf8'))
