@@ -94,6 +94,11 @@ references live in the doc store. Canon rows use doc-store scope
 `canon` and reach the tree through `orch canon hydrate`. Research and plans
 live in the doc store, not always-on files.
 
+Edit canon in the store, never in the tree. Change the row with `orch doc
+set` at scope `canon`, sync it into your worktree with `orch canon hydrate`,
+then commit the files hydrate wrote. A canon file edited by hand is
+overwritten at the next hydrate and never becomes canon.
+
 Every `AGENTS.md` has a sibling `CLAUDE.md` symlink. `.claude/rules` exposes the
 always-on rules. `orch canon lint` gates tier budgets, metadata, writing rules
 and citations.
