@@ -61,10 +61,10 @@ try {
 
   let ready = false
   for (let attempt = 0; attempt < 40; attempt++) {
-    const probe = Bun.spawnSync(['docker', 'exec', container, 'pg_isready', '-U', 'postgres'], {
-      stdout: 'ignore',
-      stderr: 'ignore',
-    })
+    const probe = Bun.spawnSync(
+      ['docker', 'exec', container, 'pg_isready', '-h', '127.0.0.1', '-U', 'postgres'],
+      { stdout: 'ignore', stderr: 'ignore' },
+    )
     if (probe.exitCode === 0) {
       ready = true
       break

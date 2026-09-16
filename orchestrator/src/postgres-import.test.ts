@@ -7,7 +7,8 @@ import { backfillLandingEvidenceRecords } from './landing-outbox.ts'
 import { applyMigrations } from './migrations.ts'
 import { importProjects } from './postgres-import.ts'
 import { migratePostgres } from './postgres-migrate.ts'
-import { PLATFORM_SPACE_ID } from './postgres-schema.ts'
+import { newRecordId, PLATFORM_SPACE_ID } from './postgres-schema.ts'
+import { RECORD_SESSION_KEY, recordAuth, setActiveRecordSpace } from './record-auth.ts'
 import { syncRecord } from './record-sync.ts'
 import { backfillReviewRecords } from './review-outbox.ts'
 import { backfillRunRecords } from './run-outbox.ts'
@@ -54,12 +55,29 @@ realPostgres('project import against copied live SQLite data', () => {
   const retiredOrchDb = `${sourceOrchDb!}-retired.db`
   const retiredHubDb = `${sourceHubDb!}-retired.db`
   const sql = new SQL(databaseUrl!)
+  let recordToken = ''
 
   beforeAll(async () => {
+    process.env.BETTER_AUTH_SECRET = 'postgres-import-secret-at-least-thirty-two-characters'
     await migratePostgres()
+    const signedUp = await recordAuth(actorUrl!).api.signUpEmail({
+      body: {
+        email: 'live-copy@example.test',
+        name: 'Live Copy',
+        password: 'correct-horse-battery-staple',
+      },
+    })
+    if (!signedUp.token) throw new Error('live-copy signup returned no bearer token')
+    recordToken = signedUp.token
+    await sql`
+      INSERT INTO membership (id,space_id,user_id,role,permission,created_at)
+      VALUES (${newRecordId()}::uuid, ${PLATFORM_SPACE_ID}::uuid, ${signedUp.user.id}::uuid, 'owner', 'write', now())
+    `
+    await setActiveRecordSpace(actorUrl!, recordToken, PLATFORM_SPACE_ID)
   })
 
   afterAll(async () => {
+    delete process.env.BETTER_AUTH_SECRET
     await sql.unsafe(
       'DROP TABLE IF EXISTS membership, machine, seq, project, "user", space CASCADE',
     )
@@ -226,6 +244,12 @@ realPostgres('project import against copied live SQLite data', () => {
   test('backfills the copied live store and syncs every finished turn through the outbox', async () => {
     const source = new Database(sources.orchDb)
     applyMigrations(source)
+    source
+      .query(
+        `INSERT INTO schema_meta (key,value) VALUES (?,?)
+         ON CONFLICT(key) DO UPDATE SET value=excluded.value`,
+      )
+      .run(RECORD_SESSION_KEY, recordToken)
     const noProject = source
       .query<{ count: number }, []>(
         "SELECT count(*) AS count FROM run WHERE project_id IS NULL AND status <> 'running'",

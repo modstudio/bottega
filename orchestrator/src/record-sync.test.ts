@@ -98,6 +98,10 @@ const options = (local: Database, remote: ReturnType<typeof fakePostgres>) => ({
   openSql: () => remote.sql,
   now: () => STAMP,
   identity: { id: MACHINE_ID, name: 'test-machine' },
+  principal: {
+    userId: '01990000-0000-7000-8000-000000000002',
+    spaceId: '01990000-0000-7000-8000-000000000001',
+  },
 })
 
 test('sync upserts once and a second pass has no run mutation', async () => {

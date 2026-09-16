@@ -19,11 +19,13 @@
     "typescript": "^5"
   },
   "dependencies": {
+    "@better-auth/drizzle-adapter": "1.7.5",
     "@agentclientprotocol/codex-acp": "^1.10.0",
     "@agentclientprotocol/sdk": "^1.4.0",
     "@anthropic-ai/sandbox-runtime": "^0.0.75",
     "@modelcontextprotocol/sdk": "^1.30.0",
     "ajv": "^8.20.0",
+    "better-auth": "1.7.5",
     "commander": "15.0.0",
     "drizzle-orm": "1.0.0-rc.4",
     "execa": "10.0.1",

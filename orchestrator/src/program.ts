@@ -7,6 +7,7 @@ import { register as registerHealth } from './commands/health.ts'
 import { register as registerInbox } from './commands/inbox.ts'
 import { register as registerJudgement } from './commands/judgement.ts'
 import { register as registerLogic } from './commands/logic.ts'
+import { register as registerRecordAuth } from './commands/record-auth.ts'
 import { register as registerReview } from './commands/review.ts'
 import { register as registerRouting } from './commands/routing.ts'
 import { register as registerRunListing } from './commands/run-listing.ts'
@@ -27,6 +28,7 @@ export const program = new Command()
   .showSuggestionAfterError()
 
 registerReview(program)
+registerRecordAuth(program)
 registerDocs(program)
 registerRunListing(program)
 registerHealth(program)
