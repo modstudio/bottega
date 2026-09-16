@@ -1885,6 +1885,24 @@
   },
   {
     "workspace": "orchestrator",
+    "file": "orchestrator/src/hook-tree.ts",
+    "issueType": "exports",
+    "symbol": "HOOK_TREE_EVIDENCE_EXCLUSION"
+  },
+  {
+    "workspace": "orchestrator",
+    "file": "orchestrator/src/hook-tree.ts",
+    "issueType": "exports",
+    "symbol": "HOOK_TREE_NOTICE_AFTER_MS"
+  },
+  {
+    "workspace": "orchestrator",
+    "file": "orchestrator/src/hook-tree.ts",
+    "issueType": "exports",
+    "symbol": "isHookTree"
+  },
+  {
+    "workspace": "orchestrator",
     "file": "orchestrator/src/idle-kill.ts",
     "issueType": "exports",
     "symbol": "CPU_IDLE_PERCENT"
@@ -3207,7 +3225,19 @@
     "workspace": "orchestrator",
     "file": "orchestrator/src/task-branch.ts",
     "issueType": "exports",
+    "symbol": "isTaskBranchSuperseded"
+  },
+  {
+    "workspace": "orchestrator",
+    "file": "orchestrator/src/task-branch.ts",
+    "issueType": "exports",
     "symbol": "taskBranchCandidacySql"
+  },
+  {
+    "workspace": "orchestrator",
+    "file": "orchestrator/src/task-branch.ts",
+    "issueType": "types",
+    "symbol": "TaskBranchRunRow"
   },
   {
     "workspace": "orchestrator",
