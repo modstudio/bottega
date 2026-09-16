@@ -62,11 +62,29 @@ export const allocationsSchema = strictObject({
 })
 
 export const envFileSchema = strictObject({
-  path: z.string().min(1),
-  contents: z.string(),
-  mode: z.enum(['append', 'replace', 'managed-block']).optional(),
-  inherit: z.string().optional(),
-  omit: z.array(z.string()).optional(),
+  path: z
+    .string()
+    .min(1)
+    .describe('Relative to the worktree root; absolute paths and .. segments are refused.'),
+  contents: z
+    .string()
+    .describe(
+      'Filled from the recipe static values, {index}, {ports.*}, {db.*}, and {alloc.*}. Secret values must never appear in errors, logs, run records, or the store.',
+    ),
+  mode: z
+    .enum(['append', 'replace', 'managed-block'])
+    .describe('Defaults to managed-block when omitted.')
+    .optional(),
+  inherit: z
+    .string()
+    .describe(
+      'Optional path relative to the project root; absolute paths and .. segments are refused.',
+    )
+    .optional(),
+  omit: z
+    .array(z.string())
+    .describe('Assignment keys removed from the inherited base before contents are applied.')
+    .optional(),
 })
 
 export const sharedSchema = strictObject({
@@ -274,6 +292,29 @@ function validateWorkingDirectories(recipe: RecipeInput, context: z.RefinementCt
   }
 }
 
+function validateRelativePath(
+  path: string,
+  field: 'path' | 'inherit',
+  context: z.RefinementCtx,
+): void {
+  const absolute = path.startsWith('/') || /^[A-Za-z]:[\\/]/.test(path)
+  const parent = path.split(/[\\/]+/).includes('..')
+  if (absolute || parent) {
+    context.addIssue({
+      code: 'custom',
+      path: ['env'],
+      message: `env-file ${field} rule: ${field} must be relative to the ${field === 'path' ? 'tree' : 'project'} root and contain no .. segment`,
+    })
+  }
+}
+
+function validateEnvPaths(recipe: RecipeInput, context: z.RefinementCtx): void {
+  for (const envFile of recipe.env ?? []) {
+    validateRelativePath(envFile.path, 'path', context)
+    if (envFile.inherit !== undefined) validateRelativePath(envFile.inherit, 'inherit', context)
+  }
+}
+
 export const recipeSchema = recipeShape.superRefine((recipe, context) => {
   validateStepNames(recipe, context)
   validatePlaceholders(recipe, context)
@@ -282,6 +323,7 @@ export const recipeSchema = recipeShape.superRefine((recipe, context) => {
   validateServeUndo(recipe, context)
   validateAllocationEnvironmentNames(recipe, context)
   validateWorkingDirectories(recipe, context)
+  validateEnvPaths(recipe, context)
 })
 
 function validateCwd(

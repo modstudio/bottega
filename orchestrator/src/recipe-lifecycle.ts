@@ -3,7 +3,7 @@
 import type { TrackedRecipe } from './recipe-schema.ts'
 import type { Step, StepResult } from './recipe-step.ts'
 
-const deferred = { env: 7, shared: 8 } as const
+const deferred = { shared: 8 } as const
 
 export function trackedExecutionRefusal(recipe: TrackedRecipe): string | null {
   for (const [field, slice] of Object.entries(deferred)) {

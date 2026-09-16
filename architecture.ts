@@ -55,6 +55,7 @@ export const modules: ArchitectureModule[] = [
   module('orchestrator/src/capabilities.ts', []),
   module('orchestrator/src/codex-mcp-scope.ts', ['./database-location.ts', './mcp-probe.ts']),
   module('orchestrator/src/codex-schema.ts', []),
+  module('orchestrator/src/env-file.ts', []),
   module('orchestrator/src/keep-tree-hold.ts', []),
   module('orchestrator/src/local-host.ts', ['./agent-registry.ts', './agents.ts', './db.ts']),
   module('orchestrator/src/monitor.ts', [
