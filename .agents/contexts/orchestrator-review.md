@@ -38,9 +38,9 @@ Precision measures false positives among findings raised. It says nothing about 
 
 `orch do` detaches so concurrent review can run.
 
-Review breadth follows a tier computed as the higher of risk and cognitive size (`review-tier.ts:classifyReviewTier`). Risk comes from the surface touched, never from line count. Tier `0` means the architect reads the diff and runs no lens; until tier-`0` recording has its own mechanism, land it as unreviewed with a reason. Tier `1` runs one `correctness` lens. Tier `2` runs `correctness` plus the surface lens: `migration-safety` for `db.ts`, `craft` for a new module, or `teardown-safety` for `worktree.ts`. Tier `3` is tier `2` with a second model on at least one lens. One lens round per tier is the default. Counting lens rounds on the branch, not fix rounds, tier `0` permits none, tier `1` one pass with no re-lens, tier `2` at most two rounds, and tier `3` at most three; after the third, the architect stops and asks the operator instead of dispatching a fourth.
+Review breadth follows a tier computed as the higher of risk and cognitive size (`review-tier.ts:classifyReviewTier`). Risk comes from the surface touched, never from line count. Tier `0` means the architect reads the diff and runs no lens; until tier-`0` recording has its own mechanism, land it as unreviewed with a reason. Tier `1` runs one `correctness` lens. Tier `2` runs `correctness` plus the surface lens: `migration-safety` for `db.ts`, `craft` for a new module, or `teardown-safety` for `worktree.ts`. Tier `3` is tier `2` with a second model on at least one lens.
 
-After a fix round, re-lens only at tier `3` or when the fix itself touched a tier-`3` path. Otherwise the architect reads the fix and lands it. Real findings are fixed. Small and formatting findings are fixed inline in the same round, without re-review. Speculation is dropped in triage as `below-bar`; file it only when it is high or critical, or observed in a real run. The loop ends.
+The round ceiling and when to re-lens are always-on canon in `.agents/rules/20-build-and-buy.md`. Small and formatting findings are fixed inline in the same round, without re-review. Speculation is dropped in triage as `below-bar`; file it only when it is high or critical, or observed in a real run.
 
 Move the tier boundaries from the per-tier calibration as evidence accumulates.
 
@@ -62,7 +62,7 @@ When an agent or gate trips — a harness refusal, lockout, dead resume, or unre
 
 ## Review
 
-Tier decides the lens count as above. The architect reads an inline fix round after a lens and before opening the pull request; do not re-lens it except at tier `3` when the fix itself touched the hot path. The per-tier round ceilings are hard: reaching one means stop and ask, not dispatch another round. Read both lenses in a tier-`3` pair before writing their single fix round, because acting on half the review defeats the pair.
+Tier decides the lens count as above, and the always-on review budget governs rounds. Read both lenses in a tier-`3` pair before writing their single fix round, because acting on half the review defeats the pair.
 
 ## Admission
 
