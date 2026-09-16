@@ -56,8 +56,10 @@ poll, start a background process, or leave a process behind.
    pointer when answering CLAIMED. If exactly 100000 envelopes return, say the
    interface reached its cap and do not claim that an unmentioned resource has
    no run owner.
-4. Run `./bin/orch land --status`. Landing queues, in-review branches, path
-   sets, and locks are active lifecycle evidence, not cleanup candidates.
+4. Run `./bin/orch branches --json`. It reports run-minted local branches by
+   project and task key, including landed, superseded, unlanded, and unknown
+   states. Preserve project observation errors and truncated GitHub histories;
+   neither is evidence that an unmatched branch is unlanded.
 5. In the current repository run `git worktree list --porcelain`. Its question
    is only which git worktrees this repository currently registers. It does
    not establish run ownership or machine-wide absence. For worktrees in other

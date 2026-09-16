@@ -68,7 +68,7 @@ function landingNoticeDetail(row: {
         ? 'LANDING-REBASE-REQUIRED'
         : 'LANDING-INSTALL-FAILED'
   const branch = row.branch.replace(/[\t\r\n]/g, ' ')
-  return `${event} ${row.id}/${branch} ${duration}; inspect with 'orch land --status'`
+  return `${event} ${row.id}/${branch} ${duration}; inspect with 'orch branches'`
 }
 
 function currentAddressedSubjects(kinds: Set<string>): Map<string, Set<string>> {

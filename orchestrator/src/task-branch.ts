@@ -4,6 +4,7 @@
  * not know transports, contracts, or routing.
  */
 
+import type { PatchEquivalentForm } from './branch-state.ts'
 import { realpathOrSpelled } from './checkout-identity.ts'
 import { db } from './db.ts'
 import { repoRootOf, targetGitEnvironment } from './git-environment.ts'
@@ -60,6 +61,30 @@ function taskBranchGit(cwd: string, ...args: string[]): string {
     )
   }
   return p.stdout.toString().trim()
+}
+
+/** Which existing task-branch landing shape, if any, is already present on trunk. */
+export function taskBranchPatchEquivalent(input: {
+  cwd: string
+  trunkTip: string
+  branchTip: string
+  mergeBase: string
+  commitMessage: string
+}): PatchEquivalentForm | null {
+  const individual = taskBranchGit(input.cwd, 'cherry', input.trunkTip, input.branchTip)
+  if (!individual.split('\n').some((line) => line.startsWith('+ '))) return 'commits'
+  const tree = taskBranchGit(input.cwd, 'rev-parse', '--verify', `${input.branchTip}^{tree}`)
+  const squash = taskBranchGit(
+    input.cwd,
+    'commit-tree',
+    tree,
+    '-p',
+    input.mergeBase,
+    '-m',
+    input.commitMessage,
+  )
+  const cherry = taskBranchGit(input.cwd, 'cherry', input.trunkTip, squash)
+  return cherry.split('\n').some((line) => line.startsWith('+ ')) ? null : 'squash'
 }
 
 function checkedOutWorktree(repoRoot: string, branch: string): string | null {
@@ -138,24 +163,16 @@ export function resolveTaskBranch(cwd: string, launchKey: string): TaskBranchCan
     )
     if (!Number.isSafeInteger(commitCount) || commitCount < 1) continue
 
-    // The two supported landing shapes leave different patch-id evidence.
-    // Preserve the original commits for a multi-commit cherry-pick, then also
-    // compare the net patch for a squash landing. An ancestry-only merged check
-    // cannot see either and must not decide task ownership.
-    const individual = taskBranchGit(repoRoot, 'cherry', trunkTip, tip)
-    if (!individual.split('\n').some((line) => line.startsWith('+ '))) continue
-    const tree = taskBranchGit(repoRoot, 'rev-parse', '--verify', `${tip}^{tree}`)
-    const squash = taskBranchGit(
-      repoRoot,
-      'commit-tree',
-      tree,
-      '-p',
-      mergeBase,
-      '-m',
-      `orch task branch ${launchKey}`,
+    if (
+      taskBranchPatchEquivalent({
+        cwd: repoRoot,
+        trunkTip,
+        branchTip: tip,
+        mergeBase,
+        commitMessage: `orch task branch ${launchKey}`,
+      })
     )
-    const cherry = taskBranchGit(repoRoot, 'cherry', trunkTip, squash)
-    if (!cherry.split('\n').some((line) => line.startsWith('+ '))) continue
+      continue
 
     const path = checkedOutWorktree(repoRoot, branch)
     const attachedRow = path

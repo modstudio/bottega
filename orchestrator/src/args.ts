@@ -276,6 +276,7 @@ export const CLI_COMMANDS = new Set([
   'answer',
   'ask-server',
   'blockers',
+  'branches',
   'canon',
   'close-out',
   'confinement',
