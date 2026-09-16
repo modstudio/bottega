@@ -76,6 +76,7 @@ export const modules: ArchitectureModule[] = [
   module('orchestrator/src/hook-tree.ts', []),
   module('orchestrator/src/keep-tree-hold.ts', []),
   module('orchestrator/src/local-host.ts', ['./agent-registry.ts', './agents.ts', './db.ts']),
+  module('orchestrator/src/mcp-doc-write.ts', []),
   module('orchestrator/src/monitor.ts', [
     'node:fs',
     'node:path',

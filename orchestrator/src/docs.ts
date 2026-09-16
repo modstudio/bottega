@@ -415,6 +415,17 @@ function assertCanonWriteAllowed(input: DocWriteInput): void {
       sourceTexts: collected.sourceTexts,
     })
   })
+  if (!project && projectsToCheck.length === 0) {
+    findings.push(
+      ...decideCanonWrite({
+        current: global.map(({ slug, body }) => ({ slug, body })),
+        next,
+        trackedPaths: [],
+        packageScripts: [],
+        sourceTexts: [],
+      }),
+    )
+  }
   if (findings.length && !input.allowCanonBootstrap) {
     throw new Error(
       `refusing canon write; introduced ${findings.length} finding${findings.length === 1 ? '' : 's'}:\n` +
@@ -425,6 +436,17 @@ function assertCanonWriteAllowed(input: DocWriteInput): void {
   }
 }
 
+function assertDocWriteAllowed(input: DocWriteInput & { delivery: 'inject' | 'demand' }): void {
+  if ((input.scope === 'project' || input.scope === 'global') && input.delivery === 'inject') {
+    throw new Error(
+      `refusing inject ${input.scope} document: inject operator docs describe this estate; software-building instructions are canon\n` +
+        'cleared by: make the instruction canon, or write the operator document with delivery demand',
+    )
+  }
+  assertInjectSize(input)
+  assertCanonWriteAllowed(input)
+}
+
 function setDocWithOp(input: DocWriteInput, requestedOp?: 'import'): Doc {
   writableDb()
   validate(input.scope, input.subject, input.slug)
@@ -432,17 +454,7 @@ function setDocWithOp(input: DocWriteInput, requestedOp?: 'import'): Doc {
   const prior = getDoc(input.scope, input.subject, input.slug)
   const delivery =
     input.scope === 'canon' ? 'demand' : (input.delivery ?? prior?.delivery ?? 'inject')
-  if ((input.scope === 'project' || input.scope === 'global') && delivery === 'inject') {
-    throw new Error(
-      `refusing inject ${input.scope} document: inject operator docs describe this estate; software-building instructions are canon\n` +
-        'cleared by: make the instruction canon, or write the operator document with delivery demand',
-    )
-  }
-  assertInjectSize({
-    ...input,
-    delivery,
-  })
-  assertCanonWriteAllowed(input)
+  assertDocWriteAllowed({ ...input, delivery })
   return writeTransaction(() => {
     const existing = getDoc(input.scope, input.subject, input.slug)
     const at = nowIso()
@@ -884,6 +896,15 @@ export function restoreDoc(
   ) {
     throw new Error(`no revision ${revisionId} for ${scope}/${subject ?? '_'}/${slug}`)
   }
+  assertDocWriteAllowed({
+    scope,
+    subject,
+    slug,
+    title: revision.title,
+    body: revision.body,
+    delivery: revision.delivery,
+    ...context,
+  })
   return writeTransaction(() => {
     const existing = getDoc(scope, subject, slug)
     const at = nowIso()
