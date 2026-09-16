@@ -152,13 +152,6 @@ export function tryWake(now = Date.now()): { sent: boolean; detail: string } {
  * `stats` is deliberately absent — it reports recorded history, and history does
  * not change when a machine is switched off.
  */
-export const NEEDS_HEALTH = new Set(['do', 'pick', 'guide', 'doctor', 'agents'])
-
-/** What the probe found, without running one. Null until something has asked. */
-export function localHealthCached() {
-  return localHealth
-}
-
 /**
  * Probe the local endpoint once per process, and remember the answer.
  *
@@ -183,10 +176,6 @@ export async function ensureLocalHealth(opts: { force?: boolean; baseUrl?: strin
  * process. Whoever holds a process open longer than a run is responsible for
  * calling this.
  */
-export function resetLocalHealth() {
-  localHealth = null
-}
-
 /**
  * Why this agent cannot be used at all, or null if it can.
  *

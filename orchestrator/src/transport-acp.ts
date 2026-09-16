@@ -291,10 +291,6 @@ export function normalizeAcpTurn(input: AcpTurnInput): TransportResult {
   }
 }
 
-export function acpOutcome(result: TransportResult): 'ok' | 'asking' | 'failed' {
-  return result.status
-}
-
 function webStream(child: ResultPromise): ReturnType<typeof acp.ndJsonStream> {
   if (!child.stdin || !child.stdout) throw new Error('ACP agent stdio is not a pipe')
   const input = Writable.toWeb(child.stdin)

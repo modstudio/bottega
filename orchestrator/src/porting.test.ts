@@ -1,4 +1,5 @@
 import { describe, expect, test } from 'bun:test'
+import { db } from './db.ts'
 import {
   addDoctrineRule,
   addPair,
@@ -7,14 +8,16 @@ import {
   ledgerRef,
   listDoctrineRules,
   listLedgerRefs,
-  listPairs,
   listSkips,
+  type PortPair,
   resolveLedgerRef,
   retireDoctrineRule,
   setBaseline,
   setLedgerRef,
 } from './porting.ts'
 import { projects, upsertProject } from './projects.ts'
+
+const listPairs = () => db().query('SELECT * FROM port_pair ORDER BY id').all() as PortPair[]
 
 describe('porting data model', () => {
   test('stores pair progress and declined candidates with their reasons', () => {

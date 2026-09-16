@@ -455,8 +455,6 @@ function validateCwd(
 
 export type TrackedRecipe = z.infer<typeof recipeSchema>
 
-export type ProjectConfigDocument = z.infer<typeof configDocumentSchema>
-
 /** Fill the validated hook-only branch template. */
 export function hookBranchName(template: string | undefined, name: string): string {
   return (template ?? 'worktree-{name}').replace(/\{name\}/g, name)

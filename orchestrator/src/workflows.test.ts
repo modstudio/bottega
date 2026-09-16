@@ -3,7 +3,8 @@ import { afterEach, describe, expect, test } from 'bun:test'
 import { mkdtempSync, readdirSync, readFileSync, rmSync, statSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { applySchema } from './db.ts'
+import { applyMigrations } from './migrations.ts'
+import { seedWorkflows } from './workflow-seeds.ts'
 import {
   composeWorkflow,
   exportWorkflows,
@@ -38,7 +39,8 @@ const valid = (): WorkflowDefinition => ({
 const database = () => {
   const d = new Database(':memory:')
   d.exec('PRAGMA foreign_keys=ON')
-  applySchema(d)
+  applyMigrations(d)
+  seedWorkflows(d)
   return d
 }
 const temps: string[] = []

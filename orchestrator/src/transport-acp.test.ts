@@ -34,7 +34,6 @@ import {
 import {
   acpHarnessArgv,
   acpLeaderSocketPath,
-  acpOutcome,
   acpSandboxProfile,
   grokEffectiveModel,
   grokSessionMeta,
@@ -122,7 +121,7 @@ describe('ACP transport selection', () => {
 describe('ACP event fixtures normalise to orch outcomes', () => {
   test('a structured reply is ok with text and tokens', () => {
     const result = normalizeAcpTurn(ACP_FIXTURE_STRUCTURED_OK)
-    expect(acpOutcome(result)).toBe('ok')
+    expect(result.status).toBe('ok')
     expect(outcomeFromTransport(result)).toEqual({ status: 'ok', failureKind: null })
     expect(result.output).toBe('{"status":"ok"}')
     expect(result.tokens).toBe(1200)
@@ -173,7 +172,7 @@ describe('ACP event fixtures normalise to orch outcomes', () => {
 
   test('a tool-using read records the tool and the answer', () => {
     const result = normalizeAcpTurn(ACP_FIXTURE_TOOL_READ)
-    expect(acpOutcome(result)).toBe('ok')
+    expect(result.status).toBe('ok')
     expect(result.output).toBe('"@devbox/orchestrator"')
     expect(result.events.some((event) => event.kind === 'tool' && event.toolKind === 'read')).toBe(
       true,
@@ -220,13 +219,13 @@ describe('ACP event fixtures normalise to orch outcomes', () => {
 
   test('a schema-shaped reply is ok with the JSON body', () => {
     const result = normalizeAcpTurn(ACP_FIXTURE_SCHEMA)
-    expect(acpOutcome(result)).toBe('ok')
+    expect(result.status).toBe('ok')
     expect(result.output).toBe('{"verdict":"true"}')
   })
 
   test('a forced timeout is failed with timeout', () => {
     const result = normalizeAcpTurn(ACP_FIXTURE_TIMEOUT)
-    expect(acpOutcome(result)).toBe('failed')
+    expect(result.status).toBe('failed')
     expect(result.stopReason).toBe('timeout')
     expect(failureKindFromStop(result.stopReason, result.error)).toBe('timeout')
     expect(result.output).toBe('')
@@ -236,36 +235,36 @@ describe('ACP event fixtures normalise to orch outcomes', () => {
     // Completeness of JSON is a later contract check. The transport's job is
     // to hand the bytes through; a single '{' is a successful turn with odd text.
     const result = normalizeAcpTurn(ACP_FIXTURE_MALFORMED)
-    expect(acpOutcome(result)).toBe('ok')
+    expect(result.status).toBe('ok')
     expect(result.output).toBe('{')
   })
 
   test('elicitation maps to asking', () => {
     const result = normalizeAcpTurn(ACP_FIXTURE_ELICITATION)
-    expect(acpOutcome(result)).toBe('asking')
+    expect(result.status).toBe('asking')
     expect(outcomeFromTransport(result).status).toBe('asking')
     expect(result.questions[0]?.question).toContain('two designs')
   })
 
   test('max_tokens and refusal map to orch failure kinds', () => {
     const truncated = normalizeAcpTurn(ACP_FIXTURE_TRUNCATED)
-    expect(acpOutcome(truncated)).toBe('failed')
+    expect(truncated.status).toBe('failed')
     expect(failureKindFromStop(truncated.stopReason, truncated.error)).toBe('truncated')
     expect(truncated.error).toBe(stopErrorMessage('max_tokens'))
     const refused = normalizeAcpTurn(ACP_FIXTURE_REFUSAL)
-    expect(acpOutcome(refused)).toBe('failed')
+    expect(refused.status).toBe('failed')
     expect(failureKindFromStop(refused.stopReason, refused.error)).toBe('content_refusal')
     expect(refused.error).toBe(stopErrorMessage('refusal'))
   })
 
   test('partial text does not rescue a non-end_turn stop', () => {
     const truncated = normalizeAcpTurn(ACP_FIXTURE_TRUNCATED_TEXT)
-    expect(acpOutcome(truncated)).toBe('failed')
+    expect(truncated.status).toBe('failed')
     expect(truncated.failureKind).toBe('truncated')
     expect(truncated.output).toBe('partial answer')
     expect(truncated.exitCode).not.toBe(0)
     const cancelled = normalizeAcpTurn(ACP_FIXTURE_CANCELLED_TEXT)
-    expect(acpOutcome(cancelled)).toBe('failed')
+    expect(cancelled.status).toBe('failed')
     expect(cancelled.failureKind).toBe('interrupted')
     expect(cancelled.output).toBe('partial before cancel')
     expect(cancelled.exitCode).not.toBe(0)

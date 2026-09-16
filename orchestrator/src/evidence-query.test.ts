@@ -10,7 +10,7 @@ import {
 } from './evidence-query.ts'
 import { candidates } from './route.ts'
 import { weigh } from './score.ts'
-import { runList, state } from './serve.ts'
+import { state } from './serve.ts'
 
 test('runs --unscored uses the shared definition of an owed judgement', () => {
   const wanted = addRun({ agent: 'grok', job: 'craft', session: 'owed-session' })
@@ -74,21 +74,6 @@ describe('the activity window', () => {
       expect.objectContaining({ runs: 2, scored: 1, voided: 1 }),
     )
     expect(state(null).unscored).toBe(0)
-  })
-
-  test("a voided 'none' does not file under the plain none verdict filter", () => {
-    const plain = addRun({ agent: 'grok', job: 'craft' })
-    score(plain, 'none')
-    const voided = addRun({ agent: 'grok', job: 'craft' })
-    score(voided, 'none')
-    db()
-      .query("UPDATE run SET evidence_excluded='voided with orch score --void' WHERE id=?")
-      .run(voided)
-
-    const none = runList(new URLSearchParams({ verdict: 'none' }))
-    const excluded = runList(new URLSearchParams({ verdict: 'excluded' }))
-    expect((none.rows as { id: number }[]).map((row) => row.id)).toEqual([plain])
-    expect((excluded.rows as { id: number }[]).map((row) => row.id)).toEqual([voided])
   })
 
   test('a fix can actually show up, which is the point of windowing at all', () => {

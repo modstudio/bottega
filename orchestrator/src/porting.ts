@@ -46,10 +46,6 @@ export type DoctrineRule = {
   retired_at: string | null
 }
 
-export function listPairs(): PortPair[] {
-  return db().query('SELECT * FROM port_pair ORDER BY id').all() as PortPair[]
-}
-
 export function pairByProjects(sourceProjectId: number, targetProjectId: number): PortPair | null {
   return db()
     .query('SELECT * FROM port_pair WHERE source_project_id=? AND target_project_id=?')
@@ -74,11 +70,6 @@ export function addPair(sourceProjectId: number, targetProjectId: number, at = n
       .run(pair.id)
   })
   return pairByProjects(sourceProjectId, targetProjectId)!
-}
-
-export function removePair(id: number): boolean {
-  writableDb()
-  return db().query('DELETE FROM port_pair WHERE id=?').run(id).changes > 0
 }
 
 export function baselineForPair(pairId: number): PortBaseline | null {
@@ -123,11 +114,6 @@ export function addSkip(
       .get(pairId, candidate, reason, skippedAt) as { id: number }
   ).id
   return db().query('SELECT * FROM port_skip WHERE id=?').get(id) as PortSkip
-}
-
-export function removeSkip(id: number): boolean {
-  writableDb()
-  return db().query('DELETE FROM port_skip WHERE id=?').run(id).changes > 0
 }
 
 function projectForTaskKey(taskKey: string): Project {

@@ -106,8 +106,6 @@ export function weigh(
 }
 
 /** The best a judgement can be, so a percentage has a denominator. */
-export const WEIGHT_MAX = 1
-
 /**
  * The vocabulary, in one place.
  *

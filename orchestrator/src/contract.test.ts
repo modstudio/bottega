@@ -1,7 +1,6 @@
 import { describe, expect, test } from 'bun:test'
 import { workerReply } from '../test/fixtures/replies.ts'
 import {
-  GENERIC_QUESTION_TOKENS,
   hasRealQuestions,
   ISSUE_WORKER_SCHEMA,
   missingDeclaredDeliverables,
@@ -19,6 +18,7 @@ import {
 } from './contract.ts'
 import { detectBlockers } from './failure.ts'
 import { JOBS } from './jobs.ts'
+import { GENERIC_QUESTION_TOKENS } from './outcome.ts'
 
 const baseWorkerReply = {
   status: 'done',

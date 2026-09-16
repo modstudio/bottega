@@ -13,12 +13,8 @@ import {
   unique,
   uuid,
 } from 'drizzle-orm/pg-core'
-import { PLATFORM_SLUG } from '../../shared/brand.ts'
-
 /** Stable id and application-owned name for the platform tenant. */
 export const PLATFORM_SPACE_ID = '01990000-0000-7000-8000-000000000001' as const
-export const PLATFORM_OPERATOR_USER_ID = '01990000-0000-7000-8000-000000000002' as const
-export const PLATFORM_SPACE_NAME = PLATFORM_SLUG
 export const RECORD_OWNER_ROLE = 'record_owner' as const
 export const RECORD_ACTOR_ROLE = 'record_actor' as const
 export const RECORD_READER_ROLE = 'record_reader' as const

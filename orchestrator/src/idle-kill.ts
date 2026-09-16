@@ -77,15 +77,7 @@ export function parsePsTable(text: string): ProcessSample[] {
   return samples
 }
 
-/** Test-only override so idle detection does not depend on `ps`. */
-let testProcessSampler: (() => ProcessSample[]) | null = null
-
-export function installTestProcessSampler(sampler: (() => ProcessSample[]) | null): void {
-  testProcessSampler = sampler
-}
-
 export function sampleProcesses(): ProcessSample[] {
-  if (testProcessSampler) return testProcessSampler()
   try {
     const p = Bun.spawnSync(['ps', '-axo', 'pid=,ppid=,pgid=,%cpu=,state='], {
       stdout: 'pipe',
@@ -141,11 +133,6 @@ export function processGroupCpuPercent(pid: number, samples: ProcessSample[]): n
     seen = true
   }
   return seen ? total : null
-}
-
-export function isWorkerCpuIdle(pid: number, samples = sampleProcesses()): boolean {
-  const cpu = processGroupCpuPercent(pid, samples)
-  return cpu !== null && cpu < CPU_IDLE_PERCENT
 }
 
 /** Linux D-state and macOS U-state are the same limit: SIGKILL will not land until the syscall returns. */
@@ -370,16 +357,6 @@ export async function terminateProcessGroup(
     pgid,
     pids: [...tracked],
   }
-}
-
-export function idlePastThreshold(
-  lastEventAt: string | null | undefined,
-  startedAt: string,
-  now = Date.now(),
-  thresholdMs = idleKillMs(),
-): boolean {
-  const since = idleMsSince(lastEventAt, startedAt, now)
-  return since !== null && since >= thresholdMs
 }
 
 export function formatIdleKillError(opts: {

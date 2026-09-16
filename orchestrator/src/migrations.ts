@@ -111,10 +111,6 @@ export function stampUserVersion(d: Database, version: number): void {
   d.exec(`PRAGMA user_version = ${version}`)
 }
 
-export function journalLength(folder = MIGRATIONS_FOLDER): number {
-  return migrationJournal(folder).length
-}
-
 export function schemaVersionLabel(d: Database): string {
   const version = readUserVersion(d)
   if (version === 0) return 'unstamped'
@@ -441,19 +437,6 @@ function applyBackfills(d: Database, folder: string): void {
     if (backfill.trim()) executeStatements(d, backfill)
   }
 }
-
-export function baselineSchemaHash(folder = MIGRATIONS_FOLDER): string {
-  const baseline = migrationJournal(folder)[0]!
-  const d = new Database(':memory:')
-  try {
-    executeMigrationSource(d, migrationSource(baseline, folder))
-    return canonicalSchemaHash(d)
-  } finally {
-    d.close()
-  }
-}
-
-export const BASELINE_SCHEMA_HASH = baselineSchemaHash()
 
 const expectedSchemaHashes = new Map<string, string>()
 

@@ -11,13 +11,12 @@ import {
 } from './postgres-migrate.ts'
 import {
   newRecordId,
-  PLATFORM_OPERATOR_USER_ID,
   PLATFORM_SPACE_ID,
-  PLATFORM_SPACE_NAME,
   RECORD_ACTOR_ROLE,
   RECORD_OWNER_ROLE,
   RECORD_READER_ROLE,
 } from './postgres-schema.ts'
+
 import { startRecordApiServer } from './record-api-server.ts'
 import { bearerHeaders, recordAuth, setActiveRecordSpace } from './record-auth.ts'
 import { signInCommand, signUpCommand, whoamiCommand } from './record-auth-command.ts'
@@ -31,6 +30,9 @@ import {
 } from './record-space.ts'
 import { syncRecord } from './record-sync.ts'
 import { RUN_RECORD_PAYLOAD_COLUMNS } from './run-outbox.ts'
+
+const OPERATOR_USER_ID = '01990000-0000-7000-8000-000000000002'
+const SPACE_NAME = PLATFORM_SLUG
 
 const container = process.env.ORCH_TEST_POSTGRES_CONTAINER
 const ownerUrl = process.env.ORCH_RECORD_MIGRATE_URL
@@ -127,11 +129,10 @@ describe('Postgres substrate shape', () => {
   })
 
   test('seeds the fixed platform space and stand-in operator', () => {
-    expect(PLATFORM_SPACE_NAME).toBe(PLATFORM_SLUG)
     expect(migration).toContain(
-      `VALUES ('${PLATFORM_SPACE_ID}', '${PLATFORM_SPACE_NAME}', '2026-09-09T00:00:00Z')`,
+      `VALUES ('${PLATFORM_SPACE_ID}', '${SPACE_NAME}', '2026-09-09T00:00:00Z')`,
     )
-    expect(migration).toContain(`'${PLATFORM_OPERATOR_USER_ID}'`)
+    expect(migration).toContain(`'${OPERATOR_USER_ID}'`)
     expect(migration).toContain(`'operator@${PLATFORM_SLUG}.local'`)
     expect(migration.match(/^INSERT INTO /gm)).toHaveLength(3)
   })
@@ -984,7 +985,7 @@ realPostgres('RLS proof against real Postgres', () => {
       recordUrl: actorUrl!,
       local,
       identity: { id: MACHINE_A, name: 'proof-machine' },
-      principal: { userId: PLATFORM_OPERATOR_USER_ID, spaceId: PLATFORM_SPACE_ID },
+      principal: { userId: OPERATOR_USER_ID, spaceId: PLATFORM_SPACE_ID },
       now: () => '2026-09-15T01:01:00.000Z',
     })
     expect(result).toEqual({ pushed: 1, failed: 0, pending: 0, configured: true })
@@ -1002,7 +1003,7 @@ realPostgres('RLS proof against real Postgres', () => {
         recordUrl: ownerUrl!,
         local,
         identity: { id: MACHINE_A, name: 'proof-machine' },
-        principal: { userId: PLATFORM_OPERATOR_USER_ID, spaceId: PLATFORM_SPACE_ID },
+        principal: { userId: OPERATOR_USER_ID, spaceId: PLATFORM_SPACE_ID },
       }),
     ).rejects.toThrow(
       `record sync refuses ${RECORD_OWNER_ROLE} credentials; set ORCH_RECORD_URL to the ${RECORD_ACTOR_ROLE} connection`,

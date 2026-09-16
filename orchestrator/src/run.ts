@@ -64,7 +64,6 @@ import {
 } from './ref-guard.ts'
 import { recordSandboxDirectoryClaim } from './resource-claims.ts'
 import { teardownTerminalRunResources } from './resource-ownership.ts'
-import { TRUNCATED_TRANSCRIPT_BYTES } from './result-output.ts'
 import type { ResumeTreePlan } from './resume-tree.ts'
 import {
   CALIBRATION_SUFFIX_RESERVE_BYTES,
@@ -78,7 +77,6 @@ import { claimRun } from './run-claim.ts'
 import { closeRun } from './run-close.ts'
 import { acquireRunLease } from './run-lease.ts'
 import { runLive } from './run-live.ts'
-import { resolveRootFromLastTurn } from './run-liveness.ts'
 import { bindSignals, childEnv, sha } from './run-process.ts'
 import { finishRun } from './run-terminal.ts'
 import type { RunResult } from './run-types.ts'
@@ -92,7 +90,6 @@ import { trackedRecipeEnvironment, trackedRecipeNotes } from './tracked-recipe.t
 import {
   assertAcpAllowed,
   assertAcpReady,
-  isTestTransportInstalled,
   resolveTransportName,
   selectAgentForTransport,
   type TransportName,
@@ -112,8 +109,6 @@ function requiredRunLease(
     throw cause
   }
 }
-
-export { TRUNCATED_TRANSCRIPT_BYTES }
 
 function generatedWorktreeNotes(tool: WorktreeTool, callerCwd: string): string {
   if (tool.recipe) return recipeNotes(tool.recipe, "<this worktree's database>", '')
@@ -154,8 +149,6 @@ function resolveRunTransport(opts: {
   }
   return resolveTransportName(opts.transport)
 }
-
-export { resolveRootFromLastTurn }
 
 const CANON_SOURCE_PROMPT_RESERVE_BYTES =
   Math.max(
@@ -576,7 +569,7 @@ export async function run(opts: {
   if (transportName === 'acp') {
     try {
       assertAcpAllowed(opts.job, name, a)
-      if (!isTestTransportInstalled()) assertAcpReady(name, a)
+      assertAcpReady(name, a)
     } catch (e) {
       if (opts.reserveId) db().query('DELETE FROM run WHERE id=?').run(opts.reserveId)
       throw e

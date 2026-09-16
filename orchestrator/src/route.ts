@@ -8,8 +8,6 @@ import { fileContractProbeReason, predatesFileContract, unavailableReason } from
 import { FIDELITY_PENALTY, WEIGHT, weigh } from './score.ts'
 import { median } from './statistics.ts'
 
-export { median } from './statistics.ts'
-
 export type Candidate = {
   agent: string
   runs: number

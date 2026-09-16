@@ -158,8 +158,6 @@ export function recordAuth(url: string) {
   })
 }
 
-export type RecordAuth = ReturnType<typeof recordAuth>
-
 export type RecordIdentity = {
   user: Record<string, unknown> & { id: string }
   activeSpaceId: string | null

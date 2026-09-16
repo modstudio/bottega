@@ -1,11 +1,11 @@
 import { Database } from 'bun:sqlite'
 import { expect, test } from 'bun:test'
-import { applySchemaForFixture } from './db.ts'
+import { applyMigrations } from './migrations.ts'
 import { backfillReviewRecords } from './review-outbox.ts'
 
 test('review backfill mints parent rows before children, enqueues the graph, and is idempotent', () => {
   const database = new Database(':memory:')
-  applySchemaForFixture(database)
+  applyMigrations(database)
   database
     .query(`INSERT INTO run
     (id, record_id, started_at, agent, job, prompt_sha, prompt_bytes, prompt_head, status)

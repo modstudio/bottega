@@ -1,8 +1,8 @@
 import { writeFileSync } from 'node:fs'
 import {
   type AgentTransport,
-  installTestTransport,
   type NormalizedEvent,
+  registerTransport,
   type TransportHandle,
   type TransportResult,
   type TransportStartOpts,
@@ -90,7 +90,10 @@ export function scriptedTransportSequence(
     prompts,
     starts: () => index,
     startOptions: () => options,
-    install: () => installTestTransport(transport),
+    install: () => {
+      registerTransport('cli', () => transport)
+      registerTransport('acp', () => transport)
+    },
     injectRuling: (ruling) => {
       if (active) active.injectRuling(ruling)
       else queuedRuling = ruling
@@ -302,7 +305,8 @@ export function scriptedTransport(script: ScriptedTransportEvent[]): ScriptedTra
     prompts,
     events: seen,
     install() {
-      installTestTransport(transport)
+      registerTransport('cli', () => transport)
+      registerTransport('acp', () => transport)
     },
     injectRuling(value) {
       if (ruling) {

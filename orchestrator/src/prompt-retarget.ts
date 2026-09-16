@@ -4,28 +4,7 @@
  * not know the database, transports, contracts, or routing.
  */
 
-import { checkoutWatchSet, withoutTrailingSeparators } from './checkout-identity.ts'
-import { type CheckoutToWatch, freezeCheckouts } from './confinement.ts'
-
-export type CheckoutStatusSnapshot = {
-  project: string
-  path: string
-  status: string
-  head?: string | null
-  expectedHead?: string | null
-}
-
-export function snapshotRegisteredCheckouts(
-  additional: CheckoutToWatch[] = [],
-): CheckoutStatusSnapshot[] {
-  return freezeCheckouts(checkoutWatchSet(additional).watched).snapshots.map((snapshot) => ({
-    project: snapshot.project,
-    path: snapshot.path,
-    status: snapshot.status,
-    head: snapshot.head,
-    expectedHead: snapshot.expectedHead,
-  }))
-}
+import { withoutTrailingSeparators } from './checkout-identity.ts'
 
 const UNICODE_ALPHANUMERIC_OR_MARK = /[\p{L}\p{N}\p{M}]/u
 const PATH_NAME_CHARACTER = /[\p{L}\p{N}\p{M}_.-]/u

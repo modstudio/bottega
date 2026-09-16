@@ -14,7 +14,6 @@ import { addRun, dir } from '../test/fixtures/store.ts'
 import { db } from './db.ts'
 import {
   KEEP_RUN_FILES_DAYS,
-  listRunArtifacts,
   persistRunArtifacts,
   pruneRuns,
   readDispatchState,
@@ -99,12 +98,11 @@ test('artifacts are copied and listed', () => {
   writeFileSync(join(tree, 'named-evidence.txt'), 'failing test\n')
   try {
     persistRunArtifacts(id, ['named-evidence.txt'], { path: tree }, { diff: 'fixture changed\n' })
-    const files = listRunArtifacts(id)
-    expect(files.some((path) => path.endsWith('timing-table.txt'))).toBe(true)
-    expect(
-      readFileSync(files.find((path) => path.endsWith('named-evidence.txt'))!, 'utf8'),
-    ).toContain('failing test')
-    expect(readFileSync(files.find((path) => path.endsWith('worktree.diff'))!, 'utf8')).toContain(
+    expect(readFileSync(join(runArtifactsDir(id), 'timing-table.txt'), 'utf8')).toContain('a,1')
+    expect(readFileSync(join(runArtifactsDir(id), 'named-evidence.txt'), 'utf8')).toContain(
+      'failing test',
+    )
+    expect(readFileSync(join(runArtifactsDir(id), 'worktree.diff'), 'utf8')).toContain(
       'fixture changed',
     )
   } finally {
@@ -119,7 +117,7 @@ test('a reclaimed lens tree leaves its artifacts', () => {
   persistRunArtifacts(id, null, { path: tree }, null)
   rmSync(tree, { recursive: true, force: true })
   expect(existsSync(runArtifactsDir(id))).toBe(true)
-  expect(listRunArtifacts(id).some((path) => path.endsWith('lens-note.txt'))).toBe(true)
+  expect(existsSync(join(runArtifactsDir(id), 'lens-note.txt'))).toBe(true)
 })
 test('an artifact copy failure records a harness failure and preserves the tree', () => {
   const id = addRun({ agent: 'codex', job: 'diagnose' })

@@ -65,11 +65,6 @@ export function databasesFromNames(
   })
 }
 
-let testDatabaseInventory: DatabaseInventory | null = null
-export function installTestDatabaseInventory(inventory: DatabaseInventory | null): void {
-  testDatabaseInventory = inventory
-}
-
 function listCommand(
   argv: string[],
   cwd: string,
@@ -109,7 +104,6 @@ function listCommand(
 
 /** Inventory recipe-provisioned Postgres and MySQL databases. Never mutates them. */
 export function worktreeDatabaseInventory(): DatabaseInventory {
-  if (testDatabaseInventory) return testDatabaseInventory
   const databases: WorktreeDatabase[] = []
   for (const project of projects()) {
     const provider = project.settings.worktree?.recipe?.database

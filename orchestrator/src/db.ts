@@ -21,7 +21,6 @@ import {
 } from './migrations.ts'
 
 export { DATABASE_RESOLUTION, DB_PATH, ROOT } from './database-location.ts'
-export { label } from './outcome.ts'
 
 let handle: Database | null = null
 let connectionWritable: boolean | null = null
@@ -159,10 +158,6 @@ export function enableSchemaReload(onReload: (from: number, to: number) => void)
   schemaReload = onReload
 }
 
-export function openedSchemaVersion(): number | null {
-  return openedUserVersion
-}
-
 function refuseOrReloadStaleSchema(d: Database, forWrite: boolean): Database {
   if (handle && d !== handle) return d
   const actual = readUserVersion(d)
@@ -271,10 +266,6 @@ export function liveRuns(database: Database = db()): { worktree: string | null }
   }[]
 }
 
-export function liveRunCount(database: Database = db()): number {
-  return liveRuns(database).length
-}
-
 /** Open the only sanctioned multi-statement write transaction. */
 export function writeTransaction<T>(fn: () => T, database: Database = db(true)): T {
   const conn = refuseOrReloadStaleSchema(database, true)
@@ -336,13 +327,6 @@ export function initializeDatabase(): string {
   return DB_PATH
 }
 
-/** Fixture-only: build scratch stores through the same migration journal as production. */
-export function applySchemaForFixture(d: Database): void {
-  applyMigrations(d)
-  runOpenHooks('afterSchemaApply', d)
-}
-export const applySchema = applySchemaForFixture
-
 /** Seed the project register once from paths already recorded in run history. */
 function seedProjects(d: Database): void {
   const { n } = d.query('SELECT COUNT(*) AS n FROM project').get() as { n: number }
@@ -367,22 +351,6 @@ function seedProjects(d: Database): void {
       /* one malformed historical row does not block the remaining seed */
     }
   }
-}
-
-/** Fixture-only: create or open a scratch store through the migrator. */
-export function bootstrapFixtureStore(path: string): string {
-  registeredOpenHooks()
-  mkdirSync(dirname(path), { recursive: true })
-  const d = new Database(path, { create: true })
-  try {
-    d.exec('PRAGMA foreign_keys = ON;')
-    applyMigrations(d)
-    seedProjects(d)
-    runOpenHooks('afterInitialize', d)
-  } finally {
-    d.close()
-  }
-  return path
 }
 
 /** Main-checkout binary only: apply pending, ordered Drizzle migrations. */
