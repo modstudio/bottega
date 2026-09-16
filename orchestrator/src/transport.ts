@@ -240,6 +240,11 @@ export function registerTransport(name: TransportName, factory: TransportFactory
   transports.set(name, factory)
 }
 
+/** Test-only reset for proving the unregistered refusal. */
+export function clearRegisteredTransportsForTest(): void {
+  transports.clear()
+}
+
 export function isAcpPilotJob(name: string): name is AcpPilotJob {
   return (ACP_PILOT_JOBS as readonly string[]).includes(name)
 }
