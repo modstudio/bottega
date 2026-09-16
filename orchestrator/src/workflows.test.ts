@@ -116,4 +116,24 @@ describe('workflow versions and project composition', () => {
     )
     expect(() => promoteStepCatalogue(draft.n, 'publish', 'a', d)).toThrow('ship: lens')
   })
+  test('workflow promotion refuses a draft whose step the catalogue has since dropped', () => {
+    const d = database(),
+      current = productionStepCatalogue(d).definition,
+      lens = current.steps.find((step) => step.slug === 'lens')!
+    const withTemp = setStepCatalogue(
+      { steps: [...current.steps, { ...lens, slug: 'temp' }] },
+      'add temp',
+      'a',
+      d,
+    )
+    promoteStepCatalogue(withTemp.n, 'publish', 'a', d)
+    const definition = valid()
+    definition.modes[0]!.steps = ['temp']
+    const draft = setWorkflow('stale-flow', definition, 'uses temp', 'a', d)
+    const withoutTemp = setStepCatalogue({ steps: current.steps }, 'drop temp', 'a', d)
+    promoteStepCatalogue(withoutTemp.n, 'publish', 'a', d)
+    expect(() => promoteWorkflow('stale-flow', draft.n, 'publish', 'a', d)).toThrow(
+      'references missing step "temp"',
+    )
+  })
 })

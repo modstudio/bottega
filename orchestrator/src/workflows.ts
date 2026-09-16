@@ -245,7 +245,11 @@ export function promoteWorkflow(
   authorValue?: string,
   d: Database = writableDb(),
 ) {
-  return workflowLifecycle.promote(slug, n, reasonValue, authorValue, d)
+  // A draft is validated against the catalogue it was written for; the
+  // production catalogue may have dropped one of its steps since.
+  return workflowLifecycle.promote(slug, n, reasonValue, authorValue, d, (definition, database) =>
+    requireValid(definition, database),
+  )
 }
 export function retireWorkflow(
   slug: string,
