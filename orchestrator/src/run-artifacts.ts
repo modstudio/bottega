@@ -16,7 +16,12 @@ import {
   unlinkSync,
   writeFileSync,
 } from 'node:fs'
-import { basename, join, relative } from 'node:path'
+import { join, relative } from 'node:path'
+import {
+  runArtifactsDir as artifactDirectory,
+  persistedRunArtifactPath,
+  runScratchDir as scratchDirectory,
+} from './artifact-paths.ts'
 import { resolveRunsDirectory } from './database-location.ts'
 import { db, writableDb, writeTransaction } from './db.ts'
 import { CONNECTION_SCHEMA_INVARIANT } from './migrations.ts'
@@ -82,17 +87,15 @@ export function pruneRuns(dir: string): void {
   }
 }
 
-export function runScratchDir(id: number, runsDir = RUNS_DIR): string {
-  return join(runsDir, String(id), 'scratch')
-}
+export const runScratchDir = (id: number, runsDir = RUNS_DIR): string =>
+  scratchDirectory(id, runsDir)
 
 export function noRepoIsolatePath(id: number, runsDir = RUNS_DIR): string {
   return join(runsDir, 'isolates', String(id))
 }
 
-export function runArtifactsDir(id: number, runsDir = RUNS_DIR): string {
-  return join(runsDir, String(id), 'artifacts')
-}
+export const runArtifactsDir = (id: number, runsDir = RUNS_DIR): string =>
+  artifactDirectory(id, runsDir)
 
 export function declaredDeliverablesPath(id: number, runsDir = RUNS_DIR): string {
   return join(runsDir, String(id), 'deliverables.json')
@@ -280,7 +283,7 @@ export function persistRunArtifacts(
   if (changes?.diff) writeFileSync(join(artifacts, 'worktree.diff'), changes.diff)
   for (const named of filesWritten ?? []) {
     const source = named.startsWith('/') ? named : worktree ? join(worktree.path, named) : named
-    const destination = join(artifacts, basename(named))
+    const destination = persistedRunArtifactPath(id, RUNS_DIR, named, worktree?.path ?? null)
     // Scratch was renamed onto artifacts above. A files_written path that still
     // names the old scratch location (reply.json is the usual case) already
     // lives at the destination.

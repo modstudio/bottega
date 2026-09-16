@@ -1,6 +1,7 @@
 import type { Database } from 'bun:sqlite'
 import { existsSync, readdirSync, readFileSync, statSync, unlinkSync } from 'node:fs'
 import { dirname, join } from 'node:path'
+import { persistedRunArtifactPath, rewriteFilesWrittenPaths } from './artifact-paths.ts'
 import { clock } from './clock.ts'
 import { FAILS_OVER } from './failure.ts'
 import { parseMcpProbe } from './mcp-probe.ts'
@@ -367,6 +368,13 @@ function utf8Tail(text: string, bytes: number): string {
   return encoded.subarray(start).toString('utf8')
 }
 
+function collectionRunsDirectory(): string | null {
+  return (
+    process.env.ORCH_RUNS ??
+    (process.env.ORCH_DB ? join(dirname(process.env.ORCH_DB), 'runs') : null)
+  )
+}
+
 export type CollectResultPresentation = {
   log(...values: unknown[]): void
   error(...values: unknown[]): void
@@ -428,9 +436,7 @@ export function collectResult(
   if (!row) throw new Error(`no run ${id}`)
 
   if (argv.includes('--artifacts')) {
-    const runsRoot =
-      process.env.ORCH_RUNS ??
-      (process.env.ORCH_DB ? join(dirname(process.env.ORCH_DB), 'runs') : null)
+    const runsRoot = collectionRunsDirectory()
     const dir = runsRoot ? join(runsRoot, String(chain.finalId), 'artifacts') : ''
     const files: string[] = []
     if (existsSync(dir)) {
@@ -484,7 +490,13 @@ export function collectResult(
       }
     }
   } else if (output !== null) {
-    presentation.log(output)
+    const runsRoot = collectionRunsDirectory()
+    const rewritten = runsRoot
+      ? rewriteFilesWrittenPaths(output, (entry) =>
+          persistedRunArtifactPath(row.id, runsRoot, entry, row.cwd),
+        )
+      : null
+    presentation.log(rewritten ?? output)
   }
   const chainNote = failoverSummary(chain.attempts)
   if (chainNote) presentation.error(`\n— ${chainNote}`)
