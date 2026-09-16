@@ -1,5 +1,5 @@
 ---
-description: Product boundaries, research duties, review scope, and failure-class measurement
+description: Product boundaries, research duties, review budget, and failure-class measurement
 always: true
 ---
 
@@ -36,11 +36,20 @@ the halves usually have different build-or-buy answers. Record negative
 results in the specification so later work does not pay to repeat the same
 search.
 
-## Review only what the prior round opens
+## Review within the tier's budget
 
-The initial review is the only full review. A later round repeats only lenses
-whose dimensions the fix touched, carrying forward the prior findings instead
-of deriving them again. A clean round ends the ladder.
+`review-tier.ts:classifyReviewTier` sets a change's tier from the higher of
+risk and cognitive size. The tier fixes the lens count and a hard ceiling on
+lens rounds, counted on the branch: tier `0` runs none, tier `1` one, tier `2`
+two, tier `3` three. Check the tier before the first lens and before every
+later round. At the ceiling, stop and ask the operator; never dispatch another
+round, whatever the new findings' severity.
+
+The initial review is the only full review. After a fix round the architect
+reads the fix and lands it. Re-lens only at tier `3`, only when the fix touched
+a tier-`3` path, and only with the lenses whose dimension the fix touched,
+carrying the prior findings forward. Fix real findings in the round that
+raised them and drop speculation in triage. A clean round ends the ladder.
 
 Respect the review concurrency ceiling defined by the orchestration policy.
 When a gate cannot run, record why and land on the evidence available; do not
