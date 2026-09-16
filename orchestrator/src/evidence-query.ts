@@ -80,8 +80,6 @@ export const EVIDENCE_EXCLUDED_SQL = `(SELECT evidence_root.evidence_excluded FR
 
 export const EVIDENCE_CLOSED_SQL = `(s.delivery IS NOT NULL OR ${EVIDENCE_EXCLUDED_SQL} IS NOT NULL)`
 
-export const EVIDENCE_OPEN_SQL = `(s.delivery IS NULL AND ${EVIDENCE_EXCLUDED_SQL} IS NULL)`
-
 /**
  * Voided is the exclusion stamp, not a routing-evidence count, so it does
  * not apply the NOT_EVIDENCE filter the scored count uses. A voided

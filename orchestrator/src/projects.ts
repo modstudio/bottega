@@ -43,7 +43,7 @@ import {
   type WorktreeCreate,
 } from './worktree-template.ts'
 
-export { migrateCreate, type WorktreeCreate, type WorktreeCreateArg } from './worktree-template.ts'
+export type { WorktreeCreate } from './worktree-template.ts'
 
 export type Project = {
   id: number

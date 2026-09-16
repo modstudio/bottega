@@ -240,22 +240,6 @@ export function registerTransport(name: TransportName, factory: TransportFactory
   transports.set(name, factory)
 }
 
-/** Test-only reset for proving the unregistered refusal. */
-export function clearRegisteredTransportsForTest(): void {
-  transports.clear()
-}
-
-/** Test-only override so run() can be driven without a vendor binary. */
-let testTransport: AgentTransport | null = null
-
-export function installTestTransport(transport: AgentTransport | null): void {
-  testTransport = transport
-}
-
-export function isTestTransportInstalled(): boolean {
-  return testTransport !== null
-}
-
 export function isAcpPilotJob(name: string): name is AcpPilotJob {
   return (ACP_PILOT_JOBS as readonly string[]).includes(name)
 }
@@ -358,7 +342,6 @@ export function assertAcpReady(agentName = 'codex', agent?: TransportAgent): voi
 }
 
 export function transportFor(name: TransportName): AgentTransport {
-  if (testTransport) return testTransport
   const factory = transports.get(name)
   if (!factory) {
     throw new Error(

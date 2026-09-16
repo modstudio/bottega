@@ -1,3 +1,4 @@
+import { Database } from 'bun:sqlite'
 import { afterAll, afterEach, beforeEach } from 'bun:test'
 import {
   chmodSync,
@@ -70,7 +71,7 @@ chmodSync(join(cleanDockerBin, 'docker'), 0o755)
 // registry and the evidence, never from which vendor CLIs this host has, so
 // every registered binary name resolves to a stand-in that answers a version
 // probe and nothing else; no test spawns an agent.
-for (const bin of ['codex', 'grok', 'agy', 'qwen', 'goose']) {
+for (const bin of ['codex', 'codex-acp', 'grok', 'agy', 'qwen', 'goose']) {
   writeFileSync(join(cleanDockerBin, bin), '#!/bin/sh\necho "stand-in 999.0.0"\n')
   chmodSync(join(cleanDockerBin, bin), 0o755)
 }
@@ -85,8 +86,11 @@ assertTestHubDatabase()
 
 const { registerStandardRuntime } = await import('../src/runtime-registration.ts')
 registerStandardRuntime()
-const { DB_PATH, bootstrapFixtureStore, closeDatabaseForFixture } = await import('../src/db.ts')
-const { installTestTransport } = await import('../src/transport.ts')
+const { DB_PATH, closeDatabaseForFixture } = await import('../src/db.ts')
+const { applyMigrations } = await import('../src/migrations.ts')
+const { excludeSharedOutputRuns } = await import('../src/evidence-query.ts')
+const { seedWorkflows } = await import('../src/workflow-seeds.ts')
+const { registerStandardTransports } = await import('../src/standard-transports.ts')
 
 /**
  * The store db.ts resolved must be the one minted above, inside a directory
@@ -113,7 +117,18 @@ function assertOwnedStore(): void {
 }
 
 assertOwnedStore()
-bootstrapFixtureStore(template)
+mkdirSync(dirname(template), { recursive: true })
+{
+  const fixture = new Database(template, { create: true })
+  try {
+    fixture.exec('PRAGMA foreign_keys = ON;')
+    applyMigrations(fixture)
+    excludeSharedOutputRuns(fixture)
+    seedWorkflows(fixture)
+  } finally {
+    fixture.close()
+  }
+}
 copyFileSync(template, store)
 {
   const { recordAgentProbe } = await import('../src/agent-probe.ts')
@@ -152,7 +167,7 @@ let sequence: { name: string; seq: number }[] = []
 let childrenBeforeTest = new Set<string>()
 
 beforeEach(() => {
-  installTestTransport(null)
+  registerStandardTransports()
   assertTestHubDatabase()
   if (process.env.ORCH_DB && resolve(process.env.ORCH_DB) === REGISTERED_LIVE_STORE) {
     throw new Error(`test process refuses registered live store: ${REGISTERED_LIVE_STORE}`)

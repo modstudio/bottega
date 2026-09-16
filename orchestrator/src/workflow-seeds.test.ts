@@ -1,7 +1,7 @@
 import { Database } from 'bun:sqlite'
 import { describe, expect, test } from 'bun:test'
-import { applySchema } from './db.ts'
-import { journalLength } from './migrations.ts'
+import { applyMigrations, migrationJournal } from './migrations.ts'
+import { seedWorkflows } from './workflow-seeds.ts'
 import {
   listWorkflows,
   showWorkflow,
@@ -12,7 +12,8 @@ import {
 const database = () => {
   const d = new Database(':memory:')
   d.exec('PRAGMA foreign_keys=ON')
-  applySchema(d)
+  applyMigrations(d)
+  seedWorkflows(d)
   return d
 }
 
@@ -95,7 +96,7 @@ describe('workflow projection and seeds', () => {
     const d = database()
     makeLegacy(d, 'ship', 2, 'operator')
     makeLegacy(d, 'fix-defect', 1)
-    applySchema(d)
+    seedWorkflows(d)
     expect(showWorkflow('ship', 3, d).status).toBe('production')
     expect(showWorkflow('fix-defect', 2, d).status).toBe('production')
     for (const [slug, prior, next, revision] of [
@@ -149,9 +150,10 @@ describe('workflow projection and seeds', () => {
     d.query("UPDATE workflow SET slug='filed-issue' WHERE id=?").run(id)
     makeLegacy(d, 'filed-issue', 2, 'architect')
     d.query("DELETE FROM orch_migrations WHERE version='0033_fix_defect_workflow'").run()
-    d.exec(`PRAGMA user_version = ${journalLength() - 1}`)
+    d.exec(`PRAGMA user_version = ${migrationJournal().length - 1}`)
 
-    applySchema(d)
+    applyMigrations(d)
+    seedWorkflows(d)
 
     expect(d.query("SELECT COUNT(*) AS n FROM workflow WHERE slug='filed-issue'").get()).toEqual({
       n: 0,
@@ -167,14 +169,14 @@ describe('workflow projection and seeds', () => {
   test('revision seeding is idempotent', () => {
     const d = database()
     makeLegacy(d, 'ship', 1)
-    applySchema(d)
-    applySchema(d)
+    seedWorkflows(d)
+    seedWorkflows(d)
     expect(workflowVersions('ship', d).map((version) => version.n)).toEqual([1, 2])
   })
   test('seed revision replaces but retains an operator production version', () => {
     const d = database()
     makeLegacy(d, 'ship', 2, 'architect')
-    applySchema(d)
+    seedWorkflows(d)
     expect(showWorkflow('ship', 2, d).status).toBe('retired')
     expect(showWorkflow('ship', 2, d).author).toBe('architect')
     expect(showWorkflow('ship', 3, d).status).toBe('production')
@@ -187,7 +189,7 @@ describe('workflow projection and seeds', () => {
       "UPDATE workflow_version SET status='retired',retired_at=? WHERE status='production'",
     ).run(new Date().toISOString())
     const before = events(d, 'ship').length
-    applySchema(d)
+    seedWorkflows(d)
     expect(showWorkflow('ship', 2, d).status).toBe('production')
     expect(
       events(d, 'ship')

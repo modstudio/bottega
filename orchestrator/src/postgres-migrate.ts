@@ -3,8 +3,6 @@
 import { existsSync, readdirSync } from 'node:fs'
 import { join } from 'node:path'
 import { SQL } from 'bun'
-import { drizzle } from 'drizzle-orm/bun-sql'
-import { migrate } from 'drizzle-orm/bun-sql/migrator'
 
 const POSTGRES_MIGRATIONS_FOLDER = join(import.meta.dir, '..', 'postgres', 'migrations')
 

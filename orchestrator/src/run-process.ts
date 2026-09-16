@@ -86,13 +86,7 @@ type ProcessInventory =
   | { ascertainable: true; rows: ProcessRow[] }
   | { ascertainable: false; reason: string }
 
-let testProcessInventory: ProcessInventory | null = null
-export function installTestProcessInventory(inventory: ProcessInventory | null): void {
-  testProcessInventory = inventory
-}
-
 export function processTable(): ProcessInventory {
-  if (testProcessInventory) return testProcessInventory
   let p: ReturnType<typeof Bun.spawnSync>
   try {
     p = Bun.spawnSync(['ps', '-axo', 'pid=,ppid=,pgid=,command='], {

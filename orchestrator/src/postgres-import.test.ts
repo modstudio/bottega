@@ -3,12 +3,12 @@ import { afterAll, beforeAll, describe, expect, test } from 'bun:test'
 import { copyFileSync, existsSync, rmSync } from 'node:fs'
 import { SQL } from 'bun'
 import { PLATFORM_SLUG } from '../../shared/brand.ts'
+import { migrateFixturePostgres } from '../test/fixtures/postgres.ts'
 import { backfillLandingEvidenceRecords } from './landing-outbox.ts'
 import { applyMigrations } from './migrations.ts'
 import { importProjects } from './postgres-import.ts'
-import { migratePostgres } from './postgres-migrate.ts'
 import { newRecordId, PLATFORM_SPACE_ID } from './postgres-schema.ts'
-import { RECORD_SESSION_KEY, recordAuth, setActiveRecordSpace } from './record-auth.ts'
+import { bearerHeaders, RECORD_SESSION_KEY, recordAuth } from './record-auth.ts'
 import { syncRecord } from './record-sync.ts'
 import { backfillReviewRecords } from './review-outbox.ts'
 import { backfillRunRecords } from './run-outbox.ts'
@@ -59,7 +59,7 @@ realPostgres('project import against copied live SQLite data', () => {
 
   beforeAll(async () => {
     process.env.BETTER_AUTH_SECRET = 'postgres-import-secret-at-least-thirty-two-characters'
-    await migratePostgres()
+    await migrateFixturePostgres()
     const signedUp = await recordAuth(actorUrl!).api.signUpEmail({
       body: {
         email: 'live-copy@example.test',
@@ -73,7 +73,18 @@ realPostgres('project import against copied live SQLite data', () => {
       INSERT INTO membership (id,space_id,user_id,role,permission,created_at)
       VALUES (${newRecordId()}::uuid, ${PLATFORM_SPACE_ID}::uuid, ${signedUp.user.id}::uuid, 'owner', 'write', now())
     `
-    await setActiveRecordSpace(actorUrl!, recordToken, PLATFORM_SPACE_ID)
+    const current = await recordAuth(actorUrl!).api.getSession({
+      headers: bearerHeaders(recordToken),
+    })
+    if (!current) throw new Error('record fixture session was not created')
+    await sql.begin(async (tx) => {
+      await tx`SELECT set_config('app.user_id', ${current.user.id}, true)`
+      await tx`SELECT set_config('app.space_id', ${PLATFORM_SPACE_ID}, true)`
+      await tx`
+        UPDATE session SET active_space_id=${PLATFORM_SPACE_ID}::uuid, updated_at=now()
+        WHERE token=${recordToken}
+      `
+    })
   })
 
   afterAll(async () => {

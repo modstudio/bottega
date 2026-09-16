@@ -318,19 +318,6 @@ export type RunResourceOwner = {
 
 export type DockerResourceCondition = 'leaked' | 'retained-worktree-resources'
 
-/** Live runs own their infrastructure even before a worktree path exists. */
-export function orphanedDockerResources(
-  resources: DockerResource[],
-  owners: RunResourceOwner[],
-): { resource: DockerResource; project: string }[] {
-  const byId = new Map(owners.map((owner) => [owner.id, owner]))
-  return resources.flatMap((resource) => {
-    const owner = byId.get(resource.runId)
-    if (owner && !['ok', 'failed', 'stale', 'stopped'].includes(owner.status)) return []
-    return [{ resource, project: owner?.repo ?? 'unknown' }]
-  })
-}
-
 export function classifiedDockerResources(
   resources: DockerResource[],
   owners: RunResourceOwner[],

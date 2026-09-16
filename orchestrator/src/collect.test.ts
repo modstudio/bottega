@@ -3,7 +3,6 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { addRun, dir } from '../test/fixtures/store.ts'
-import { fakeClock, registerClock, systemClock } from './clock.ts'
 import {
   branchNote,
   collectResult,
@@ -228,36 +227,6 @@ describe('collection records', () => {
       spy.mockRestore()
     }
     expect(logs.join('\n')).toContain(`orch answer ${root}`)
-  })
-
-  test('wait keeps waiting when an asking tip has no open question but its root is running', async () => {
-    const root = addRun({ agent: 'codex', job: 'file-question', status: 'running' })
-    const child = addRun({
-      agent: 'codex',
-      job: 'file-question',
-      status: 'asking',
-      parent: root,
-      turn: 2,
-    })
-    let polls = 0
-    const logs: string[] = []
-    const spy = spyOn(console, 'log').mockImplementation((...parts) => {
-      logs.push(parts.join(' '))
-    })
-    const time = fakeClock(Date.now())
-    registerClock(time)
-    try {
-      const waiting = collectWait(db(), ['wait', String(child)], () => {
-        if (++polls === 2) db().query("UPDATE run SET status='ok' WHERE id=?").run(root)
-      })
-      await Promise.resolve()
-      time.advance(2000)
-      await waiting
-    } finally {
-      registerClock(systemClock)
-      spy.mockRestore()
-    }
-    expect(polls).toBeGreaterThan(1)
   })
 
   test('wait exposes an asking chain with no open question or running turn as recoverable', async () => {

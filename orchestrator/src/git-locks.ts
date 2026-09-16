@@ -123,23 +123,3 @@ export function gitLocks(repoRoot: string, clock = Date.now()): GitLock[] {
   }
   return locks
 }
-
-export function formatGitLocks(repoRoot: string, clock = Date.now()): string {
-  const locks = gitLocks(repoRoot, clock)
-  if (!locks.length) return 'git locks:\n  none'
-  return `git locks:\n${locks
-    .map((lock) => {
-      const age = `${Math.max(0, Math.round(lock.ageMs / 1000))}s`
-      const target = lock.target ? `\n    target: ${lock.target}` : ''
-      const resolved = lock.contentRefs.length ? ` -> ${lock.contentRefs.join(', ')}` : ''
-      const contents = lock.contents ? `${lock.contents}${resolved}` : '(empty)'
-      const owner =
-        lock.ownerPids === null
-          ? 'unknown (lsof unavailable)'
-          : lock.ownerPids.length
-            ? `${lock.ownerPids.join(', ')} alive`
-            : 'none alive'
-      return `  ${lock.path} (age ${age})${target}\n    contents: ${contents}\n    owner pid: ${owner}`
-    })
-    .join('\n')}`
-}

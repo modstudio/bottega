@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, test } from 'bun:test'
+import { describe, expect, test } from 'bun:test'
 import { reviewReply } from '../test/fixtures/replies.ts'
 import { addRun, score } from '../test/fixtures/store.ts'
 import { db } from './db.ts'
@@ -11,9 +11,6 @@ import {
   triageFinding,
 } from './review-triage.ts'
 import { state } from './serve.ts'
-import { installTestTransport } from './transport.ts'
-
-afterEach(() => installTestTransport(null))
 
 describe('review discipline', () => {
   test('fleet calibration groups graded models and emits null-model empty record pairs', () => {

@@ -97,16 +97,6 @@ export function insertContention(d: Database, row: ContentionWrite): void {
   enqueueContention(d, inserted.id, at)
 }
 
-/** Best-effort insert that never throws, for lock sites that must not change behaviour. */
-export function tryInsertContention(handle: Database | null, row: ContentionWrite): void {
-  try {
-    if (!handle || !contentionTableExists(handle)) return
-    insertContention(handle, row)
-  } catch {
-    /* CONSTRAINTS: recording must not change lock, landing or detector behaviour */
-  }
-}
-
 export function summarizeContention(d: Database, from: string): ContentionSummary {
   if (!contentionTableExists(d)) return emptyContention()
   const rows = d
@@ -152,22 +142,4 @@ export function summarizeContention(d: Database, from: string): ContentionSummar
     resources,
     sessions: [...sessions.values()].sort((a, b) => a.sessionId.localeCompare(b.sessionId)),
   }
-}
-
-export function reviewInvalidationsSince(
-  d: Database,
-  project: string,
-  from: string,
-): { resourceKey: string; landingId: number | null; cause: string | null }[] {
-  if (!contentionTableExists(d)) return []
-  return d
-    .query(
-      `SELECT c.resource_key AS resourceKey, c.landing_id AS landingId, c.cause AS cause
-       FROM contention c
-       JOIN landing l ON l.id = c.landing_id
-      WHERE c.resource_kind='review' AND c.event_kind='invalidation'
-        AND l.project=? AND datetime(c.at) >= datetime(?)
-      ORDER BY c.id`,
-    )
-    .all(project, from) as { resourceKey: string; landingId: number | null; cause: string | null }[]
 }

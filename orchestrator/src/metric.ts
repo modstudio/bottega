@@ -56,8 +56,6 @@ export function metricCalendarDay(value: string | number | Date): string {
   return `${y}-${m}-${day}`
 }
 
-export const localDay = metricCalendarDay
-
 function metricDayStart(days: number, now: number): Date {
   const d = new Date(now)
   d.setHours(0, 0, 0, 0)

@@ -1,6 +1,5 @@
 import { Database } from 'bun:sqlite'
 import { expect, test } from 'bun:test'
-import { applySchemaForFixture } from './db.ts'
 import {
   backfillLandingEvidenceRecords,
   CONTENTION_RECORD_PAYLOAD_COLUMNS,
@@ -9,10 +8,11 @@ import {
   LANDING_REVIEW_CARRY_RECORD_PAYLOAD_COLUMNS,
   TEST_FLAKE_RECORD_PAYLOAD_COLUMNS,
 } from './landing-outbox.ts'
+import { applyMigrations } from './migrations.ts'
 
 test('landing evidence backfill mints references in order, maps every column, and is idempotent', () => {
   const database = new Database(':memory:')
-  applySchemaForFixture(database)
+  applyMigrations(database)
   database.query("INSERT INTO schema_meta (key,value) VALUES ('machine_id','machine-record')").run()
   database
     .query(`INSERT INTO run

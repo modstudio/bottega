@@ -1,7 +1,7 @@
 import { Database } from 'bun:sqlite'
 import { expect, test } from 'bun:test'
-import { applySchemaForFixture } from './db.ts'
 import { HOOK_TREE_JOB } from './hook-tree.ts'
+import { applyMigrations } from './migrations.ts'
 import {
   backfillRunRecords,
   buildRunRecordPayload,
@@ -42,7 +42,7 @@ test('terminal payload maps every hosted run column and no execution-state colum
 
 test('backfill mints in order, resolves chains, enqueues finished turns once, and skips running rows', () => {
   const database = new Database(':memory:')
-  applySchemaForFixture(database)
+  applyMigrations(database)
   database
     .query(
       `INSERT INTO project (id, name, path, canon, settings)
@@ -102,7 +102,7 @@ test('backfill mints in order, resolves chains, enqueues finished turns once, an
 
 test('backfill leaves hook-tree rows local', () => {
   const database = new Database(':memory:')
-  applySchemaForFixture(database)
+  applyMigrations(database)
   database
     .query(
       `INSERT INTO run

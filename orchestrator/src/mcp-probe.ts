@@ -180,10 +180,6 @@ export function mcpConfigAllowlist(
   ]
 }
 
-export function resolveMcpServerUrl(config: McpServerConfig | undefined): string | null {
-  return config?.url ?? null
-}
-
 /**
  * A tree is the wrong project's only when the REQUIRED server is absent and
  * another project's server is what the tree sees instead (DEV-194's shape: a

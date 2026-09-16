@@ -5,9 +5,7 @@ import { codexScopeArgs } from './codex-mcp-scope.ts'
 import type { ArgvOpts } from './transport.ts'
 
 export type { Caps } from './capabilities.ts'
-export { MIGRATED_AGENT_NAMES } from './capabilities.ts'
-export { CODEX_ASK_ENV_VARS } from './codex-mcp-scope.ts'
-export type { ArgvOpts, SandboxLevel } from './transport.ts'
+export type { ArgvOpts } from './transport.ts'
 
 /**
  * What `exec` means to codex.

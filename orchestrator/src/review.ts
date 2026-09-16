@@ -1,23 +1,14 @@
 // concern: review
 import type { Database, SQLQueryBindings } from 'bun:sqlite'
-import { REVIEW_SCHEMA, type ReviewReply } from './contract.ts'
-import { db, nowIso, sessionId, writableDb, writeTransaction } from './db.ts'
-import { enqueueLandingReviewCarry } from './landing-outbox.ts'
+import type { ReviewReply } from './contract.ts'
+import { db, nowIso, writableDb, writeTransaction } from './db.ts'
 import { newRecordId } from './postgres-schema.ts'
 import { enqueueReview } from './review-outbox.ts'
 
 export { parseReviewOutput, parseReviewReply } from './contract.ts'
 
 import { job } from './jobs.ts'
-import { type Project, projectByName } from './projects.ts'
-import {
-  completedReviews,
-  coverageGit,
-  coverageOutput,
-  currentCoverage,
-  projectRecord,
-  reviewCoverageVerdict,
-} from './review-coverage.ts'
+import { currentCoverage, projectRecord } from './review-coverage.ts'
 import { filesCoveredIntersectChanged } from './review-coverage-match.ts'
 import {
   git,
@@ -29,93 +20,12 @@ import {
   storedChangePathSet,
 } from './review-pins.ts'
 import type { ReviewTier } from './review-tier.ts'
-import type {
-  ReviewCarry,
-  ReviewListFilter,
-  ReviewListRow,
-  ReviewReadLens,
-  RunRow,
-} from './review-types.ts'
+import type { ReviewListFilter, ReviewListRow, ReviewReadLens, RunRow } from './review-types.ts'
 
 const classifyReviewTier: typeof import('./review-tier.ts').classifyReviewTier = (...args) =>
   (require('./review-tier.ts') as typeof import('./review-tier.ts')).classifyReviewTier(...args)
 const diffNumstat: typeof import('./review-tier.ts').diffNumstat = (...args) =>
   (require('./review-tier.ts') as typeof import('./review-tier.ts')).diffNumstat(...args)
-
-export function recordReviewCarry(carry: ReviewCarry | null): void {
-  if (!carry) return
-  const database = writableDb()
-  writeTransaction(() => {
-    const at = nowIso()
-    const inserted = database
-      .query(
-        `INSERT INTO landing_review_carry
-         (record_id,project,project_id,branch,tip,tree,review_id,reviewed_commit,reviewed_tree,
-          patch_id,old_base,new_base,session_id,at)
-       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?) RETURNING id`,
-      )
-      .get(
-        newRecordId(),
-        carry.project,
-        projectByName(carry.project)?.id ?? null,
-        carry.branch,
-        carry.tip,
-        carry.tree,
-        carry.reviewId,
-        carry.reviewedCommit,
-        carry.reviewedTree,
-        carry.patchId,
-        carry.oldBase,
-        carry.newBase,
-        sessionId(),
-        at,
-      ) as { id: number }
-    enqueueLandingReviewCarry(database, inserted.id, at)
-  }, database)
-  console.log(
-    `review ${carry.reviewId} carried: patch-id ${carry.patchId} unchanged across rebase ` +
-      `${carry.oldBase}..${carry.newBase}; gate green on ${carry.tip}`,
-  )
-}
-
-export function recordReviewInvalidations(
-  project: Project,
-  repoRoot: string,
-  trunkOid: string,
-  landedBranch: string,
-): { branch: string; reviewId: number }[] {
-  const invalidations: { branch: string; reviewId: number }[] = []
-  for (const review of completedReviews(project.name)) {
-    const branch = review.lenses.find((lens) => lens.branch)?.branch
-    if (!branch || branch === landedBranch) continue
-    try {
-      const gitCwd = review.lenses.find((lens) => lens.launchCwd)?.launchCwd ?? repoRoot
-      const runner = coverageGit(gitCwd)
-      if (!runner(['show-ref', '--verify', '--quiet', `refs/heads/${branch}`]).ok) continue
-      const tipArgs = ['rev-parse', '--verify', `refs/heads/${branch}^{commit}`]
-      const victimTip = coverageOutput(runner(tipArgs), tipArgs)
-      // Replay onto the new trunk so merge-base(tip, trunk) is the landed tip and
-      // patch-id/content compare the replay, not the unrebased tree. skipExact is
-      // required: the unrebased victim tree still matches the review.
-      const merge = runner(['merge-tree', '--write-tree', trunkOid, victimTip])
-      const mergeTree = merge.out.split('\n')[0]?.trim() ?? ''
-      const treeArgs = ['rev-parse', `${victimTip}^{tree}`]
-      const tree = /^[0-9a-f]{40,}$/i.test(mergeTree)
-        ? mergeTree
-        : coverageOutput(runner(treeArgs), treeArgs)
-      const syntheticArgs = ['commit-tree', tree, '-p', trunkOid, '-m', 'orch-contention-coverage']
-      const synthetic = coverageOutput(runner(syntheticArgs), syntheticArgs)
-      const verdict = reviewCoverageVerdict(gitCwd, review, synthetic, trunkOid, runner, {
-        skipExact: true,
-      })
-      if (verdict.kind !== 'invalid') continue
-      invalidations.push({ branch, reviewId: review.id })
-    } catch {
-      /* a missing path or tree is not this landing's invalidation */
-    }
-  }
-  return invalidations
-}
 
 export const UNEVIDENCED_REVIEW_ERROR =
   'clean review with no evidence: files_covered and commands_run are empty'
@@ -605,5 +515,3 @@ export function recordReviews(
   pinReviewedCommits(runs, database)
   return reviewId
 }
-
-export { REVIEW_SCHEMA }

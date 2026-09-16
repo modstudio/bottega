@@ -2,72 +2,16 @@
 import type { Database } from 'bun:sqlite'
 import { changeIdentity } from './change-identity.ts'
 import { db } from './db.ts'
-import { completedReviewEvidenceSql } from './review-evidence-sql.ts'
 import { git, reviewGit, targetGitEnvironment } from './review-pins.ts'
 import type {
   CoverageGitResult,
   CoverageGitRunner,
   CoverageVerdict,
-  ReviewCarry,
   ReviewCoverageInput,
   ReviewListRow,
 } from './review-types.ts'
 
-export function completedReviews(project: string): ReviewCoverageInput[] {
-  const rows = db()
-    .query(
-      `SELECT r.id, r.patch_id, r.path_set, r.commit_message, r.outdated_reason,
-            rl.lens, rl.reviewed_tree, run.input_tree,
-            run.branch, run.base_commit, run.launch_cwd, run.head_commit
-       FROM review r
-       JOIN review_lens rl ON rl.review_id=r.id
-       JOIN run ON run.id=rl.run_id
-      WHERE ${completedReviewEvidenceSql('r', 'run', 'rl')} AND EXISTS (
-        SELECT 1 FROM review_lens project_lens
-        JOIN run project_run ON project_run.id=project_lens.run_id
-        WHERE project_lens.review_id=r.id AND project_run.repo=?
-      )
-      ORDER BY r.id, rl.id`,
-    )
-    .all(project) as {
-    id: number
-    patch_id: string | null
-    path_set: string | null
-    commit_message: string | null
-    outdated_reason: string | null
-    lens: string
-    reviewed_tree: string | null
-    input_tree: string | null
-    branch: string | null
-    base_commit: string | null
-    launch_cwd: string | null
-    head_commit: string | null
-  }[]
-  const grouped = new Map<number, ReviewCoverageInput>()
-  for (const row of rows) {
-    const review = grouped.get(row.id) ?? {
-      id: row.id,
-      patchId: row.patch_id,
-      pathSet: row.path_set,
-      commitMessage: row.commit_message,
-      outdatedReason: row.outdated_reason,
-      lenses: [],
-    }
-    review.lenses.push({
-      lens: row.lens,
-      tree: row.reviewed_tree,
-      inputTree: row.input_tree,
-      branch: row.branch,
-      baseCommit: row.base_commit,
-      launchCwd: row.launch_cwd,
-      headCommit: row.head_commit,
-    })
-    grouped.set(row.id, review)
-  }
-  return [...grouped.values()]
-}
-
-export function coverageGit(repoRoot: string): CoverageGitRunner {
+function coverageGit(repoRoot: string): CoverageGitRunner {
   return (args, stdin) => {
     const p = Bun.spawnSync(['git', ...args], {
       cwd: repoRoot,
@@ -85,7 +29,7 @@ export function coverageGit(repoRoot: string): CoverageGitRunner {
   }
 }
 
-export function coverageOutput(result: CoverageGitResult, args: string[]): string {
+function coverageOutput(result: CoverageGitResult, args: string[]): string {
   if (!result.ok) throw new Error(`git ${args.join(' ')} failed: ${result.err}`)
   return result.out
 }
@@ -147,11 +91,7 @@ function changedPaths(runner: CoverageGitRunner, from: string, to: string): Set<
   return new Set(output ? output.split('\n') : [])
 }
 
-export function reviewBelongsToCandidate(review: ReviewCoverageInput, branch: string): boolean {
-  return review.lenses.some((lens) => lens.branch === branch)
-}
-
-export function reviewCoverageVerdict(
+function reviewCoverageVerdict(
   repoRoot: string,
   review: ReviewCoverageInput,
   tip: string,
@@ -259,206 +199,6 @@ export function reviewCoverageVerdict(
     oldBase,
     newBase,
   }
-}
-
-type ReviewCoverageSummary = {
-  candidateTree: string
-  candidatePatch: string
-  candidatePaths: string[]
-  relevant: ReviewCoverageInput[]
-  verdicts: { review: ReviewCoverageInput; verdict: CoverageVerdict }[]
-  valid: {
-    review: ReviewCoverageInput
-    verdict: Extract<CoverageVerdict, { kind: 'exact' | 'carried' }>
-  }[]
-  present: string[]
-  missing: string[]
-  dataProblems: { count: number; example: string | null }
-}
-
-function reviewPathSet(review: ReviewCoverageInput): string[] | null {
-  if (review.pathSet === null || review.pathSet === undefined) return null
-  try {
-    const parsed = JSON.parse(review.pathSet)
-    return Array.isArray(parsed) && parsed.every((path) => typeof path === 'string')
-      ? [...parsed].sort()
-      : null
-  } catch {
-    return null
-  }
-}
-
-function reviewCoverageSummary(
-  project: string,
-  repoRoot: string,
-  branch: string,
-  tip: string,
-  trunk: string,
-): ReviewCoverageSummary {
-  const treeArgs = ['rev-parse', `${tip}^{tree}`]
-  const candidateTree = coverageOutput(coverageGit(repoRoot)(treeArgs), treeArgs)
-  const reviews = completedReviews(project)
-  const runner = coverageGit(repoRoot)
-  const baseArgs = ['merge-base', tip, trunk]
-  const baseResult = runner(baseArgs)
-  const newBase = baseResult.ok ? baseResult.out : null
-  const candidatePatch = newBase
-    ? changeIdentity(runner, newBase, tip)
-    : `unavailable (git ${baseArgs.join(' ')} failed: ${baseResult.err})`
-  const candidatePaths = newBase ? [...changedPaths(runner, newBase, tip)].sort() : []
-  const sameIdentity = (review: ReviewCoverageInput) =>
-    newBase !== null &&
-    review.patchId === candidatePatch &&
-    JSON.stringify(reviewPathSet(review)) === JSON.stringify(candidatePaths)
-  // Branch metadata scopes stale diagnostics. Stable patch-id plus path set lets
-  // the same reviewed diff survive a branch rename without admitting unrelated
-  // project reviews into the landing decision. Every review that belongs to the
-  // candidate reaches the verdict so legacy tree-plus-base evidence can resolve
-  // its identity there.
-  const relevant = reviews.filter(
-    (review) => reviewBelongsToCandidate(review, branch) || sameIdentity(review),
-  )
-  const verdicts = relevant.map((review) => ({
-    review,
-    verdict: reviewCoverageVerdict(repoRoot, review, tip, trunk),
-  }))
-  const valid = verdicts.filter(
-    (
-      item,
-    ): item is {
-      review: ReviewCoverageInput
-      verdict: Extract<CoverageVerdict, { kind: 'exact' | 'carried' }>
-    } => item.verdict.kind === 'exact' || item.verdict.kind === 'carried',
-  )
-  const present = [
-    ...new Set(valid.flatMap(({ review }) => review.lenses.map((lens) => lens.lens))),
-  ].sort()
-  const branchReviews = relevant.filter((review) => reviewBelongsToCandidate(review, branch))
-  const expectedFrom = branchReviews.at(-1)
-  const expected = expectedFrom
-    ? [...new Set(expectedFrom.lenses.map((lens) => lens.lens))].sort()
-    : ['correctness']
-  const missing = expected.filter((lens) => !present.includes(lens))
-  const catalogue = new Set(
-    (db().query('SELECT id FROM lens').all() as { id: string }[]).map(({ id }) => id),
-  )
-  const absent = reviews.flatMap((review) =>
-    review.lenses
-      .filter((lens) => !catalogue.has(lens.lens))
-      .map((lens) => ({ review: review.id, lens: lens.lens })),
-  )
-  return {
-    candidateTree,
-    candidatePatch,
-    candidatePaths,
-    relevant,
-    verdicts,
-    valid,
-    present,
-    missing,
-    dataProblems: {
-      count: absent.length,
-      example: absent[0] ? `review ${absent[0].review} names absent lens ${absent[0].lens}` : null,
-    },
-  }
-}
-
-export function coverageText(
-  project: string,
-  repoRoot: string,
-  branch: string,
-  tip: string,
-  trunk: string,
-  summary = reviewCoverageSummary(project, repoRoot, branch, tip, trunk),
-): string {
-  const notEvidence = summary.verdicts.filter(({ verdict }) => verdict.kind === 'invalid')
-  const example = notEvidence[0]
-  const lines = [
-    `branch: ${branch}`,
-    `candidate tree: ${summary.candidateTree}`,
-    `current patch-id: ${summary.candidatePatch}`,
-    `lenses present: ${summary.present.join(', ') || 'none'}`,
-    `lenses missing: ${summary.missing.join(', ') || 'none'}`,
-  ]
-  const evidence = summary.valid[0]
-  if (evidence?.verdict.kind === 'exact') lines.push(`review ${evidence.review.id}: exact`)
-  if (evidence?.verdict.kind === 'carried') {
-    lines.push(
-      `review ${evidence.review.id}: carried (patch-id ${evidence.verdict.patchId}; ` +
-        `class ${evidence.verdict.class}; ${evidence.verdict.oldBase}..${evidence.verdict.newBase}) ` +
-        `(commit from ${evidence.verdict.resolution})`,
-    )
-  }
-  if (notEvidence.length) {
-    lines.push(
-      `${notEvidence.length} review${notEvidence.length === 1 ? '' : 's'} not evidence` +
-        (example && example.verdict.kind === 'invalid'
-          ? ` (example: review ${example.review.id}, ${example.verdict.reason})`
-          : ''),
-    )
-  }
-  if (summary.dataProblems.count) {
-    lines.push(
-      `review data problems: ${summary.dataProblems.count}` +
-        (summary.dataProblems.example ? ` (example: ${summary.dataProblems.example})` : ''),
-    )
-  }
-  return lines.join('\n')
-}
-
-export class ReviewCoverageRefusal extends Error {
-  readonly missing: string[]
-  readonly reviewRework: { id: number; reason: string }[]
-
-  constructor(message: string, missing: string[], reviewRework: { id: number; reason: string }[]) {
-    super(message)
-    this.missing = missing
-    this.reviewRework = reviewRework
-  }
-}
-
-export function requireReviewCoverage(
-  project: string,
-  repoRoot: string,
-  branch: string,
-  tip: string,
-  trunk: string,
-): { tree: string; carry: ReviewCarry | null; validReviewIds: number[] } {
-  const summary = reviewCoverageSummary(project, repoRoot, branch, tip, trunk)
-  if (summary.dataProblems.count) {
-    console.error(
-      `review data problems: ${summary.dataProblems.count}` +
-        (summary.dataProblems.example ? ` (example: ${summary.dataProblems.example})` : ''),
-    )
-  }
-  const exact = summary.valid.filter(({ verdict }) => verdict.kind === 'exact')
-  if (exact.length) {
-    return {
-      tree: summary.candidateTree,
-      carry: null,
-      validReviewIds: exact.map(({ review }) => review.id),
-    }
-  }
-  const carried = summary.valid.find((item) => item.verdict.kind === 'carried')
-  if (carried?.verdict.kind === 'carried') {
-    return {
-      tree: summary.candidateTree,
-      carry: { project, branch, ...carried.verdict },
-      validReviewIds: [carried.review.id],
-    }
-  }
-  const reworked = summary.verdicts.flatMap(({ review, verdict }) =>
-    verdict.kind === 'invalid' &&
-    ['patch-id differs', 'path set differs'].includes(verdict.reason) &&
-    reviewBelongsToCandidate(review, branch)
-      ? [{ id: review.id, reason: verdict.reason }]
-      : [],
-  )
-  throw new ReviewCoverageRefusal(
-    coverageText(project, repoRoot, branch, tip, trunk, summary),
-    summary.missing,
-    reworked,
-  )
 }
 
 export function projectRecord(

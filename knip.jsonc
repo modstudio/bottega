@@ -29,6 +29,12 @@
         "hooks/*!",
         "src/orch.ts!",
         "src/record-api-server.ts!",
+        // Loaded as schema entries by drizzle.postgres.config.ts.
+        "src/postgres-schema.ts!",
+        "src/postgres-schema-auth.ts!",
+        "src/postgres-schema-run.ts!",
+        "src/postgres-schema-review.ts!",
+        "src/postgres-schema-landing.ts!",
         "src/**/*.test.ts",
         "scripts/acp-parity.ts!",
         "scripts/**/*.test.ts",
@@ -38,6 +44,14 @@
         "scripts/test-postgres-rls.ts!"
       ],
       "project": ["src/**/*.ts!", "scripts/**/*.ts!", "test/**/*.ts"],
+      // drizzle.postgres.config.ts loads every exported table from these files.
+      "ignoreIssues": {
+        "src/postgres-schema.ts": ["exports", "types"],
+        "src/postgres-schema-auth.ts": ["exports", "types"],
+        "src/postgres-schema-run.ts": ["exports", "types"],
+        "src/postgres-schema-review.ts": ["exports", "types"],
+        "src/postgres-schema-landing.ts": ["exports", "types"]
+      },
       "ignoreDependencies": [
         // Invoked through node_modules/.bin/codex-acp in src/transport.ts.
         "@agentclientprotocol/codex-acp",

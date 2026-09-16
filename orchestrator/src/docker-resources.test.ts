@@ -1,5 +1,5 @@
 import { afterEach, expect, mock, spyOn, test } from 'bun:test'
-import { mkdirSync, mkdtempSync, rmSync } from 'node:fs'
+import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import {
@@ -11,7 +11,6 @@ import {
   dockerRunResource,
   dockerRunResources,
   orchRunLabel,
-  orphanedDockerResources,
   runIdFromLabels,
   teardownRunResources,
 } from './docker-resources.ts'
@@ -120,43 +119,6 @@ test('the default Docker inventory timeout retries once with the longer load bou
   } finally {
     if (prior === undefined) delete process.env.ORCH_DOCKER_INVENTORY_TIMEOUT_MS
     else process.env.ORCH_DOCKER_INVENTORY_TIMEOUT_MS = prior
-  }
-})
-
-test('terminal resources are orphaned even while their worktree survives', () => {
-  const root = mkdtempSync(join(tmpdir(), 'orch-terminal-resource-'))
-  const worktree = join(root, 'orch-41')
-  mkdirSync(worktree)
-  const resources: DockerResource[] = [
-    { kind: 'container', name: 'app-orch-41-web', runId: 41 },
-    { kind: 'volume', name: 'app_orch-41_data', runId: 41 },
-  ]
-  try {
-    expect(
-      orphanedDockerResources(resources, [{ id: 41, repo: 'app', worktree, status: 'ok' }]),
-    ).toEqual(resources.map((resource) => ({ resource, project: 'app' })))
-  } finally {
-    rmSync(root, { recursive: true, force: true })
-  }
-})
-
-test('live and asking runs own resources before and after their worktree exists', () => {
-  const root = mkdtempSync(join(tmpdir(), 'orch-live-resource-'))
-  const worktree = join(root, 'orch-42')
-  mkdirSync(worktree)
-  const resources: DockerResource[] = [
-    { kind: 'container', name: 'app-orch-42-web', runId: 42 },
-    { kind: 'volume', name: 'app_orch-43_data', runId: 43 },
-  ]
-  try {
-    expect(
-      orphanedDockerResources(resources, [
-        { id: 42, repo: 'app', worktree, status: 'running' },
-        { id: 43, repo: 'app', worktree: null, status: 'asking' },
-      ]),
-    ).toEqual([])
-  } finally {
-    rmSync(root, { recursive: true, force: true })
   }
 })
 

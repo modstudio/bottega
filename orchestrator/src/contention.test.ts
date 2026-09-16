@@ -1,17 +1,10 @@
 import { Database } from 'bun:sqlite'
 import { describe, expect, test } from 'bun:test'
-import { insertContention, tryInsertContention } from './contention.ts'
+import { insertContention } from './contention.ts'
 import { db } from './db.ts'
 
 describe('contention ledger', () => {
-  test('tryInsertContention never throws when the handle is missing', () => {
-    expect(() =>
-      tryInsertContention(null, {
-        resourceKind: 'lock',
-        resourceKey: 'landing',
-        eventKind: 'wait',
-      }),
-    ).not.toThrow()
+  test('contention writes enqueue their record', () => {
     insertContention(db(), {
       resourceKind: 'cpu',
       resourceKey: 'fixture',

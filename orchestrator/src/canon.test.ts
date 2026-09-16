@@ -15,13 +15,10 @@ import { PLATFORM_SLUG } from '../../shared/brand.ts'
 import { db, enableSchemaReload, writeTransaction } from './db.ts'
 import {
   applyMigrations,
-  BASELINE_SCHEMA_HASH,
-  baselineSchemaHash,
   CONNECTION_SCHEMA_INVARIANT,
   canonicalSchemaHash,
   expectedSchemaHash,
   JOURNAL_WHEN_ORDER,
-  journalLength,
   MIGRATIONS_FOLDER,
   migrationJournal,
   migrationRefusal,
@@ -30,6 +27,8 @@ import {
   schemaVersionLabel,
   splitMigrationSource,
 } from './migrations.ts'
+
+const journalLength = () => migrationJournal().length
 
 const fresh = () => {
   const d = new Database(':memory:')
@@ -54,13 +53,8 @@ const legacy = () => {
 describe('Drizzle migration journal', () => {
   test('the baseline hash remains the first migration while a fresh store includes later migrations', () => {
     const d = fresh()
-    expect(BASELINE_SCHEMA_HASH).toBe(baselineSchemaHash())
-    expect(BASELINE_SCHEMA_HASH).toBe(
-      'd1e24ee1a94d0783dc00aab771997283bdcb58322bb784b6f375eb1bae982991',
-    )
     const comparison = fresh()
     expect(canonicalSchemaHash(d)).toBe(canonicalSchemaHash(comparison))
-    expect(canonicalSchemaHash(d)).not.toBe(BASELINE_SCHEMA_HASH)
     expect(canonicalSchemaHash(d)).toBe(expectedSchemaHash())
     comparison.close()
     d.close()

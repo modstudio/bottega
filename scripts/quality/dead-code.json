@@ -1,9 +1,153 @@
 [
   {
+    "workspace": ".",
+    "file": "shared/brand.ts",
+    "issueType": "exports",
+    "symbol": "PLATFORM_TAGLINE"
+  },
+  {
+    "workspace": ".",
+    "file": "shared/brand.ts",
+    "issueType": "types",
+    "symbol": "Concern"
+  },
+  {
+    "workspace": ".",
+    "file": "shared/interval.ts",
+    "issueType": "exports",
+    "symbol": "engagedMsWithin"
+  },
+  {
+    "workspace": ".",
+    "file": "shared/orch-contract.ts",
+    "issueType": "exports",
+    "symbol": "encodeOrchRunLine"
+  },
+  {
+    "workspace": ".",
+    "file": "shared/orch-contract.ts",
+    "issueType": "types",
+    "symbol": "OrchQuestion"
+  },
+  {
+    "workspace": ".",
+    "file": "shared/orch-contract.ts",
+    "issueType": "types",
+    "symbol": "OrchRunEnvelope"
+  },
+  {
+    "workspace": ".",
+    "file": "shared/orch-contract.ts",
+    "issueType": "types",
+    "symbol": "OrchState"
+  },
+  {
+    "workspace": "hub",
+    "file": "hub/src/db.ts",
+    "issueType": "exports",
+    "symbol": "bootstrapFixtureStore"
+  },
+  {
     "workspace": "hub",
     "file": "hub/src/db.ts",
     "issueType": "exports",
     "symbol": "closeDatabaseForFixture"
+  },
+  {
+    "workspace": "hub",
+    "file": "hub/src/db.ts",
+    "issueType": "exports",
+    "symbol": "openedSchemaVersion"
+  },
+  {
+    "workspace": "hub",
+    "file": "hub/src/db.ts",
+    "issueType": "exports",
+    "symbol": "writeTransaction"
+  },
+  {
+    "workspace": "hub",
+    "file": "hub/src/ingest/runs.ts",
+    "issueType": "types",
+    "symbol": "OrchQuestion"
+  },
+  {
+    "workspace": "hub",
+    "file": "hub/src/ingest/runs.ts",
+    "issueType": "types",
+    "symbol": "OrchTurn"
+  },
+  {
+    "workspace": "hub",
+    "file": "hub/src/ingest/trackers.ts",
+    "issueType": "exports",
+    "symbol": "resolveAssigneeIds"
+  },
+  {
+    "workspace": "hub",
+    "file": "hub/src/ingest/trackers.ts",
+    "issueType": "types",
+    "symbol": "StatusCategory"
+  },
+  {
+    "workspace": "hub",
+    "file": "hub/src/migrations.ts",
+    "issueType": "exports",
+    "symbol": "BASELINE_SCHEMA_HASH"
+  },
+  {
+    "workspace": "hub",
+    "file": "hub/src/migrations.ts",
+    "issueType": "exports",
+    "symbol": "journalLength"
+  },
+  {
+    "workspace": "hub",
+    "file": "hub/src/orch.ts",
+    "issueType": "types",
+    "symbol": "OrchAgent"
+  },
+  {
+    "workspace": "hub",
+    "file": "hub/src/orch.ts",
+    "issueType": "types",
+    "symbol": "OrchState"
+  },
+  {
+    "workspace": "hub",
+    "file": "hub/src/projects.ts",
+    "issueType": "types",
+    "symbol": "TrackerSettings"
+  },
+  {
+    "workspace": "hub",
+    "file": "hub/src/query.ts",
+    "issueType": "exports",
+    "symbol": "projectEngagedMs"
+  },
+  {
+    "workspace": "hub",
+    "file": "hub/src/query.ts",
+    "issueType": "exports",
+    "symbol": "tasksEngagedMs"
+  },
+  {
+    "workspace": "hub",
+    "file": "hub/src/query.ts",
+    "issueType": "exports",
+    "symbol": "union"
+  },
+  {
+    "workspace": "hub",
+    "file": "hub/src/query.ts",
+    "issueType": "types",
+    "symbol": "SpendCell"
+  },
+  {
+    "workspace": "hub",
+    "file": "hub/src/report.ts",
+    "issueType": "exports",
+    "symbol": "getReport"
   },
   {
     "workspace": "hub",
@@ -12,70 +156,46 @@
     "symbol": "clearOrchCache"
   },
   {
-    "workspace": "orchestrator",
-    "file": "orchestrator/src/agents.ts",
+    "workspace": "hub",
+    "file": "hub/src/time.ts",
     "issueType": "exports",
-    "symbol": "CODEX_ASK_ENV_VARS"
+    "symbol": "easternTime"
   },
   {
-    "workspace": "orchestrator",
-    "file": "orchestrator/src/agents.ts",
+    "workspace": "hub/web",
+    "file": "hub/web/src/lib/window.ts",
     "issueType": "exports",
-    "symbol": "MIGRATED_AGENT_NAMES"
+    "symbol": "clearRunFilters"
   },
   {
-    "workspace": "orchestrator",
-    "file": "orchestrator/src/agents.ts",
+    "workspace": "hub/web",
+    "file": "hub/web/src/lib/window.ts",
+    "issueType": "exports",
+    "symbol": "setRunFilter"
+  },
+  {
+    "workspace": "hub/web",
+    "file": "hub/web/src/lib/window.ts",
+    "issueType": "exports",
+    "symbol": "setWindowHours"
+  },
+  {
+    "workspace": "hub/web",
+    "file": "hub/web/src/trpc/client.ts",
     "issueType": "types",
-    "symbol": "SandboxLevel"
+    "symbol": "DocRow"
   },
   {
-    "workspace": "orchestrator",
-    "file": "orchestrator/src/clock.ts",
-    "issueType": "exports",
-    "symbol": "fakeClock"
+    "workspace": "hub/web",
+    "file": "hub/web/src/trpc/client.ts",
+    "issueType": "types",
+    "symbol": "DocSubjects"
   },
   {
-    "workspace": "orchestrator",
-    "file": "orchestrator/src/clock.ts",
-    "issueType": "exports",
-    "symbol": "registerClock"
-  },
-  {
-    "workspace": "orchestrator",
-    "file": "orchestrator/src/contention.ts",
-    "issueType": "exports",
-    "symbol": "reviewInvalidationsSince"
-  },
-  {
-    "workspace": "orchestrator",
-    "file": "orchestrator/src/contention.ts",
-    "issueType": "exports",
-    "symbol": "tryInsertContention"
-  },
-  {
-    "workspace": "orchestrator",
-    "file": "orchestrator/src/contract.ts",
-    "issueType": "exports",
-    "symbol": "GENERIC_QUESTION_TOKENS"
-  },
-  {
-    "workspace": "orchestrator",
-    "file": "orchestrator/src/contract.ts",
-    "issueType": "exports",
-    "symbol": "isRealQuestion"
-  },
-  {
-    "workspace": "orchestrator",
-    "file": "orchestrator/src/db.ts",
-    "issueType": "exports",
-    "symbol": "applySchema"
-  },
-  {
-    "workspace": "orchestrator",
-    "file": "orchestrator/src/db.ts",
-    "issueType": "exports",
-    "symbol": "bootstrapFixtureStore"
+    "workspace": "hub/web",
+    "file": "hub/web/src/trpc/client.ts",
+    "issueType": "types",
+    "symbol": "DoneResponse"
   },
   {
     "workspace": "orchestrator",
@@ -85,273 +205,39 @@
   },
   {
     "workspace": "orchestrator",
-    "file": "orchestrator/src/db.ts",
-    "issueType": "exports",
-    "symbol": "label"
+    "file": "orchestrator/src/schema-core.ts",
+    "issueType": "files",
+    "symbol": "orchestrator/src/schema-core.ts"
   },
   {
     "workspace": "orchestrator",
-    "file": "orchestrator/src/db.ts",
-    "issueType": "exports",
-    "symbol": "liveRunCount"
+    "file": "orchestrator/src/schema-docs.ts",
+    "issueType": "files",
+    "symbol": "orchestrator/src/schema-docs.ts"
   },
   {
     "workspace": "orchestrator",
-    "file": "orchestrator/src/db.ts",
-    "issueType": "exports",
-    "symbol": "openedSchemaVersion"
+    "file": "orchestrator/src/schema-lens.ts",
+    "issueType": "files",
+    "symbol": "orchestrator/src/schema-lens.ts"
   },
   {
     "workspace": "orchestrator",
-    "file": "orchestrator/src/docker-resources.ts",
-    "issueType": "exports",
-    "symbol": "orphanedDockerResources"
+    "file": "orchestrator/src/schema-port.ts",
+    "issueType": "files",
+    "symbol": "orchestrator/src/schema-port.ts"
   },
   {
     "workspace": "orchestrator",
-    "file": "orchestrator/src/evals.ts",
-    "issueType": "exports",
-    "symbol": "lastCanonEvalAt"
+    "file": "orchestrator/src/schema-review.ts",
+    "issueType": "files",
+    "symbol": "orchestrator/src/schema-review.ts"
   },
   {
     "workspace": "orchestrator",
-    "file": "orchestrator/src/evidence-query.ts",
-    "issueType": "exports",
-    "symbol": "EVIDENCE_OPEN_SQL"
-  },
-  {
-    "workspace": "orchestrator",
-    "file": "orchestrator/src/git-locks.ts",
-    "issueType": "exports",
-    "symbol": "formatGitLocks"
-  },
-  {
-    "workspace": "orchestrator",
-    "file": "orchestrator/src/idle-kill.ts",
-    "issueType": "exports",
-    "symbol": "idlePastThreshold"
-  },
-  {
-    "workspace": "orchestrator",
-    "file": "orchestrator/src/idle-kill.ts",
-    "issueType": "exports",
-    "symbol": "installTestProcessSampler"
-  },
-  {
-    "workspace": "orchestrator",
-    "file": "orchestrator/src/idle-kill.ts",
-    "issueType": "exports",
-    "symbol": "isWorkerCpuIdle"
-  },
-  {
-    "workspace": "orchestrator",
-    "file": "orchestrator/src/local-host.ts",
-    "issueType": "exports",
-    "symbol": "localHealthCached"
-  },
-  {
-    "workspace": "orchestrator",
-    "file": "orchestrator/src/local-host.ts",
-    "issueType": "exports",
-    "symbol": "NEEDS_HEALTH"
-  },
-  {
-    "workspace": "orchestrator",
-    "file": "orchestrator/src/local-host.ts",
-    "issueType": "exports",
-    "symbol": "resetLocalHealth"
-  },
-  {
-    "workspace": "orchestrator",
-    "file": "orchestrator/src/mcp-probe.ts",
-    "issueType": "exports",
-    "symbol": "resolveMcpServerUrl"
-  },
-  {
-    "workspace": "orchestrator",
-    "file": "orchestrator/src/metric.ts",
-    "issueType": "exports",
-    "symbol": "localDay"
-  },
-  {
-    "workspace": "orchestrator",
-    "file": "orchestrator/src/migrations.ts",
-    "issueType": "exports",
-    "symbol": "BASELINE_SCHEMA_HASH"
-  },
-  {
-    "workspace": "orchestrator",
-    "file": "orchestrator/src/migrations.ts",
-    "issueType": "exports",
-    "symbol": "journalLength"
-  },
-  {
-    "workspace": "orchestrator",
-    "file": "orchestrator/src/porting.ts",
-    "issueType": "exports",
-    "symbol": "listPairs"
-  },
-  {
-    "workspace": "orchestrator",
-    "file": "orchestrator/src/porting.ts",
-    "issueType": "exports",
-    "symbol": "removePair"
-  },
-  {
-    "workspace": "orchestrator",
-    "file": "orchestrator/src/porting.ts",
-    "issueType": "exports",
-    "symbol": "removeSkip"
-  },
-  {
-    "workspace": "orchestrator",
-    "file": "orchestrator/src/postgres-schema.ts",
-    "issueType": "exports",
-    "symbol": "PLATFORM_OPERATOR_USER_ID"
-  },
-  {
-    "workspace": "orchestrator",
-    "file": "orchestrator/src/postgres-schema.ts",
-    "issueType": "exports",
-    "symbol": "PLATFORM_SPACE_NAME"
-  },
-  {
-    "workspace": "orchestrator",
-    "file": "orchestrator/src/postgres-schema.ts",
-    "issueType": "exports",
-    "symbol": "seq"
-  },
-  {
-    "workspace": "orchestrator",
-    "file": "orchestrator/src/projects.ts",
-    "issueType": "exports",
-    "symbol": "migrateCreate"
-  },
-  {
-    "workspace": "orchestrator",
-    "file": "orchestrator/src/projects.ts",
-    "issueType": "types",
-    "symbol": "WorktreeCreateArg"
-  },
-  {
-    "workspace": "orchestrator",
-    "file": "orchestrator/src/prompt-retarget.ts",
-    "issueType": "exports",
-    "symbol": "snapshotRegisteredCheckouts"
-  },
-  {
-    "workspace": "orchestrator",
-    "file": "orchestrator/src/recipe-schema.ts",
-    "issueType": "types",
-    "symbol": "ProjectConfigDocument"
-  },
-  {
-    "workspace": "orchestrator",
-    "file": "orchestrator/src/record-auth.ts",
-    "issueType": "types",
-    "symbol": "RecordAuth"
-  },
-  {
-    "workspace": "orchestrator",
-    "file": "orchestrator/src/resource-inventory.ts",
-    "issueType": "exports",
-    "symbol": "installTestDatabaseInventory"
-  },
-  {
-    "workspace": "orchestrator",
-    "file": "orchestrator/src/review-coverage.ts",
-    "issueType": "exports",
-    "symbol": "requireReviewCoverage"
-  },
-  {
-    "workspace": "orchestrator",
-    "file": "orchestrator/src/review.ts",
-    "issueType": "exports",
-    "symbol": "recordReviewCarry"
-  },
-  {
-    "workspace": "orchestrator",
-    "file": "orchestrator/src/review.ts",
-    "issueType": "exports",
-    "symbol": "recordReviewInvalidations"
-  },
-  {
-    "workspace": "orchestrator",
-    "file": "orchestrator/src/review.ts",
-    "issueType": "exports",
-    "symbol": "REVIEW_SCHEMA"
-  },
-  {
-    "workspace": "orchestrator",
-    "file": "orchestrator/src/route.ts",
-    "issueType": "exports",
-    "symbol": "median"
-  },
-  {
-    "workspace": "orchestrator",
-    "file": "orchestrator/src/run-artifacts.ts",
-    "issueType": "exports",
-    "symbol": "listRunArtifacts"
-  },
-  {
-    "workspace": "orchestrator",
-    "file": "orchestrator/src/run-artifacts.ts",
-    "issueType": "exports",
-    "symbol": "readDeclaredDeliverables"
-  },
-  {
-    "workspace": "orchestrator",
-    "file": "orchestrator/src/run-process.ts",
-    "issueType": "exports",
-    "symbol": "installTestProcessInventory"
-  },
-  {
-    "workspace": "orchestrator",
-    "file": "orchestrator/src/run.ts",
-    "issueType": "exports",
-    "symbol": "resolveRootFromLastTurn"
-  },
-  {
-    "workspace": "orchestrator",
-    "file": "orchestrator/src/run.ts",
-    "issueType": "exports",
-    "symbol": "TRUNCATED_TRANSCRIPT_BYTES"
-  },
-  {
-    "workspace": "orchestrator",
-    "file": "orchestrator/src/score.ts",
-    "issueType": "exports",
-    "symbol": "WEIGHT_MAX"
-  },
-  {
-    "workspace": "orchestrator",
-    "file": "orchestrator/src/serve.ts",
-    "issueType": "exports",
-    "symbol": "runList"
-  },
-  {
-    "workspace": "orchestrator",
-    "file": "orchestrator/src/transport-acp.ts",
-    "issueType": "exports",
-    "symbol": "acpOutcome"
-  },
-  {
-    "workspace": "orchestrator",
-    "file": "orchestrator/src/transport.ts",
-    "issueType": "exports",
-    "symbol": "clearRegisteredTransportsForTest"
-  },
-  {
-    "workspace": "orchestrator",
-    "file": "orchestrator/src/transport.ts",
-    "issueType": "exports",
-    "symbol": "installTestTransport"
-  },
-  {
-    "workspace": "orchestrator",
-    "file": "orchestrator/src/worktree-attribution.ts",
-    "issueType": "exports",
-    "symbol": "worktreeLatestMtime"
+    "file": "orchestrator/src/schema-workflow.ts",
+    "issueType": "files",
+    "symbol": "orchestrator/src/schema-workflow.ts"
   },
   {
     "workspace": ".",
@@ -1543,12 +1429,6 @@
   },
   {
     "workspace": "orchestrator",
-    "file": "orchestrator/src/prompt-retarget.ts",
-    "issueType": "unneededTypes",
-    "symbol": "CheckoutStatusSnapshot"
-  },
-  {
-    "workspace": "orchestrator",
     "file": "orchestrator/src/readonly-provision.ts",
     "issueType": "unneededTypes",
     "symbol": "ReadonlyProvisionEntry"
@@ -1639,6 +1519,12 @@
   },
   {
     "workspace": "orchestrator",
+    "file": "orchestrator/src/record-session.ts",
+    "issueType": "unneededExports",
+    "symbol": "storedRecordToken"
+  },
+  {
+    "workspace": "orchestrator",
     "file": "orchestrator/src/resource-claims.ts",
     "issueType": "unneededExports",
     "symbol": "claimedClaimsOnTerminalConversations"
@@ -1720,24 +1606,6 @@
     "file": "orchestrator/src/review-calibration.ts",
     "issueType": "unneededTypes",
     "symbol": "TierCalibration"
-  },
-  {
-    "workspace": "orchestrator",
-    "file": "orchestrator/src/review-coverage.ts",
-    "issueType": "unneededExports",
-    "symbol": "coverageText"
-  },
-  {
-    "workspace": "orchestrator",
-    "file": "orchestrator/src/review-coverage.ts",
-    "issueType": "unneededExports",
-    "symbol": "reviewBelongsToCandidate"
-  },
-  {
-    "workspace": "orchestrator",
-    "file": "orchestrator/src/review-coverage.ts",
-    "issueType": "unneededExports",
-    "symbol": "ReviewCoverageRefusal"
   },
   {
     "workspace": "orchestrator",
@@ -1840,6 +1708,270 @@
     "file": "orchestrator/src/sandbox.ts",
     "issueType": "unneededTypes",
     "symbol": "RunSandbox"
+  },
+  {
+    "workspace": "orchestrator",
+    "file": "orchestrator/src/schema-core.ts",
+    "issueType": "unneededExports",
+    "symbol": "agent"
+  },
+  {
+    "workspace": "orchestrator",
+    "file": "orchestrator/src/schema-core.ts",
+    "issueType": "unneededExports",
+    "symbol": "blocker"
+  },
+  {
+    "workspace": "orchestrator",
+    "file": "orchestrator/src/schema-core.ts",
+    "issueType": "unneededExports",
+    "symbol": "metric"
+  },
+  {
+    "workspace": "orchestrator",
+    "file": "orchestrator/src/schema-core.ts",
+    "issueType": "unneededExports",
+    "symbol": "outbox"
+  },
+  {
+    "workspace": "orchestrator",
+    "file": "orchestrator/src/schema-core.ts",
+    "issueType": "unneededExports",
+    "symbol": "question"
+  },
+  {
+    "workspace": "orchestrator",
+    "file": "orchestrator/src/schema-core.ts",
+    "issueType": "unneededExports",
+    "symbol": "resourceClaim"
+  },
+  {
+    "workspace": "orchestrator",
+    "file": "orchestrator/src/schema-core.ts",
+    "issueType": "unneededExports",
+    "symbol": "runCheckpoint"
+  },
+  {
+    "workspace": "orchestrator",
+    "file": "orchestrator/src/schema-core.ts",
+    "issueType": "unneededExports",
+    "symbol": "runMessage"
+  },
+  {
+    "workspace": "orchestrator",
+    "file": "orchestrator/src/schema-core.ts",
+    "issueType": "unneededExports",
+    "symbol": "runMutationAudit"
+  },
+  {
+    "workspace": "orchestrator",
+    "file": "orchestrator/src/schema-core.ts",
+    "issueType": "unneededExports",
+    "symbol": "schemaMeta"
+  },
+  {
+    "workspace": "orchestrator",
+    "file": "orchestrator/src/schema-core.ts",
+    "issueType": "unneededExports",
+    "symbol": "score"
+  },
+  {
+    "workspace": "orchestrator",
+    "file": "orchestrator/src/schema-core.ts",
+    "issueType": "unneededExports",
+    "symbol": "sessionSeen"
+  },
+  {
+    "workspace": "orchestrator",
+    "file": "orchestrator/src/schema-core.ts",
+    "issueType": "unneededExports",
+    "symbol": "spawn"
+  },
+  {
+    "workspace": "orchestrator",
+    "file": "orchestrator/src/schema-docs.ts",
+    "issueType": "unneededExports",
+    "symbol": "canonEval"
+  },
+  {
+    "workspace": "orchestrator",
+    "file": "orchestrator/src/schema-docs.ts",
+    "issueType": "unneededExports",
+    "symbol": "canonPack"
+  },
+  {
+    "workspace": "orchestrator",
+    "file": "orchestrator/src/schema-docs.ts",
+    "issueType": "unneededExports",
+    "symbol": "doc"
+  },
+  {
+    "workspace": "orchestrator",
+    "file": "orchestrator/src/schema-docs.ts",
+    "issueType": "unneededExports",
+    "symbol": "docRevision"
+  },
+  {
+    "workspace": "orchestrator",
+    "file": "orchestrator/src/schema-lens.ts",
+    "issueType": "unneededExports",
+    "symbol": "lens"
+  },
+  {
+    "workspace": "orchestrator",
+    "file": "orchestrator/src/schema-lens.ts",
+    "issueType": "unneededExports",
+    "symbol": "lensProfile"
+  },
+  {
+    "workspace": "orchestrator",
+    "file": "orchestrator/src/schema-lens.ts",
+    "issueType": "unneededExports",
+    "symbol": "lensProfileRevision"
+  },
+  {
+    "workspace": "orchestrator",
+    "file": "orchestrator/src/schema-lens.ts",
+    "issueType": "unneededExports",
+    "symbol": "lensRevision"
+  },
+  {
+    "workspace": "orchestrator",
+    "file": "orchestrator/src/schema-lens.ts",
+    "issueType": "unneededExports",
+    "symbol": "projectLensProfile"
+  },
+  {
+    "workspace": "orchestrator",
+    "file": "orchestrator/src/schema-lens.ts",
+    "issueType": "unneededExports",
+    "symbol": "projectLensProfileRevision"
+  },
+  {
+    "workspace": "orchestrator",
+    "file": "orchestrator/src/schema-port.ts",
+    "issueType": "unneededExports",
+    "symbol": "landing"
+  },
+  {
+    "workspace": "orchestrator",
+    "file": "orchestrator/src/schema-port.ts",
+    "issueType": "unneededExports",
+    "symbol": "landingOverride"
+  },
+  {
+    "workspace": "orchestrator",
+    "file": "orchestrator/src/schema-port.ts",
+    "issueType": "unneededExports",
+    "symbol": "landingReviewCarry"
+  },
+  {
+    "workspace": "orchestrator",
+    "file": "orchestrator/src/schema-port.ts",
+    "issueType": "unneededExports",
+    "symbol": "portBaseline"
+  },
+  {
+    "workspace": "orchestrator",
+    "file": "orchestrator/src/schema-port.ts",
+    "issueType": "unneededExports",
+    "symbol": "portDoctrine"
+  },
+  {
+    "workspace": "orchestrator",
+    "file": "orchestrator/src/schema-port.ts",
+    "issueType": "unneededExports",
+    "symbol": "portPair"
+  },
+  {
+    "workspace": "orchestrator",
+    "file": "orchestrator/src/schema-port.ts",
+    "issueType": "unneededExports",
+    "symbol": "portRef"
+  },
+  {
+    "workspace": "orchestrator",
+    "file": "orchestrator/src/schema-port.ts",
+    "issueType": "unneededExports",
+    "symbol": "portRefSource"
+  },
+  {
+    "workspace": "orchestrator",
+    "file": "orchestrator/src/schema-port.ts",
+    "issueType": "unneededExports",
+    "symbol": "portSkip"
+  },
+  {
+    "workspace": "orchestrator",
+    "file": "orchestrator/src/schema-review.ts",
+    "issueType": "unneededExports",
+    "symbol": "calibration"
+  },
+  {
+    "workspace": "orchestrator",
+    "file": "orchestrator/src/schema-review.ts",
+    "issueType": "unneededExports",
+    "symbol": "comparedPair"
+  },
+  {
+    "workspace": "orchestrator",
+    "file": "orchestrator/src/schema-review.ts",
+    "issueType": "unneededExports",
+    "symbol": "duel"
+  },
+  {
+    "workspace": "orchestrator",
+    "file": "orchestrator/src/schema-review.ts",
+    "issueType": "unneededExports",
+    "symbol": "reviewFinding"
+  },
+  {
+    "workspace": "orchestrator",
+    "file": "orchestrator/src/schema-review.ts",
+    "issueType": "unneededExports",
+    "symbol": "reviewLens"
+  },
+  {
+    "workspace": "orchestrator",
+    "file": "orchestrator/src/schema-workflow.ts",
+    "issueType": "unneededExports",
+    "symbol": "contention"
+  },
+  {
+    "workspace": "orchestrator",
+    "file": "orchestrator/src/schema-workflow.ts",
+    "issueType": "unneededExports",
+    "symbol": "monitorCondition"
+  },
+  {
+    "workspace": "orchestrator",
+    "file": "orchestrator/src/schema-workflow.ts",
+    "issueType": "unneededExports",
+    "symbol": "monitorInvocation"
+  },
+  {
+    "workspace": "orchestrator",
+    "file": "orchestrator/src/schema-workflow.ts",
+    "issueType": "unneededExports",
+    "symbol": "testFlake"
+  },
+  {
+    "workspace": "orchestrator",
+    "file": "orchestrator/src/schema-workflow.ts",
+    "issueType": "unneededExports",
+    "symbol": "workflow"
+  },
+  {
+    "workspace": "orchestrator",
+    "file": "orchestrator/src/schema-workflow.ts",
+    "issueType": "unneededExports",
+    "symbol": "workflowEvent"
+  },
+  {
+    "workspace": "orchestrator",
+    "file": "orchestrator/src/schema-workflow.ts",
+    "issueType": "unneededExports",
+    "symbol": "workflowVersion"
   },
   {
     "workspace": "orchestrator",

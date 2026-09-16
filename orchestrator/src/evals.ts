@@ -573,13 +573,6 @@ export function failingCanonEvalSlugs(): string[] {
   return slugs
 }
 
-export function lastCanonEvalAt(): string | null {
-  const row = db().query('SELECT MAX(at) AS at FROM canon_eval').get() as {
-    at: string | null
-  } | null
-  return row?.at ?? null
-}
-
 export function canonEvalsReport(): {
   latest: CanonEvalLatest[]
   last_known_good: CanonEvalKnownGood[]

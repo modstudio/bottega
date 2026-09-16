@@ -25,7 +25,7 @@ export type ReviewCoverageInput = {
   }[]
 }
 
-export type ReviewCarry = {
+type ReviewCarry = {
   project: string
   branch: string
   tip: string

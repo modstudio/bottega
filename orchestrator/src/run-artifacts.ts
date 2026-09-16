@@ -215,22 +215,6 @@ export function reconcileRun(id: number): string {
   return `reconciled run ${id} as ${snapshot.status}`
 }
 
-export function listRunArtifacts(id: number, runsDir = RUNS_DIR): string[] {
-  const dir = runArtifactsDir(id, runsDir)
-  if (!existsSync(dir)) return []
-  const names = readdirSync(dir, { recursive: true })
-  const files: string[] = []
-  for (const name of names) {
-    const p = join(dir, String(name))
-    try {
-      if (statSync(p).isFile()) files.push(p)
-    } catch {
-      /* raced */
-    }
-  }
-  return files.sort()
-}
-
 export type DispatchState = { deliverables: string[]; timeoutMinutes: number | null }
 
 export function writeDispatchState(id: number, state: DispatchState): void {
@@ -259,10 +243,6 @@ export function readDispatchState(id: number): DispatchState {
   } catch {
     return { deliverables: [], timeoutMinutes: null }
   }
-}
-
-export function readDeclaredDeliverables(id: number): string[] {
-  return readDispatchState(id).deliverables
 }
 
 export function persistRunArtifacts(

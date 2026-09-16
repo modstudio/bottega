@@ -3,15 +3,7 @@
  * Knows worktree markers, ownership, dirty state, orphan safety, and extraction
  * to artifacts. Must not know routing, contracts, transports, run state, or CLI adapters.
  */
-import {
-  cpSync,
-  existsSync,
-  mkdirSync,
-  readFileSync,
-  realpathSync,
-  statSync,
-  writeFileSync,
-} from 'node:fs'
+import { cpSync, existsSync, mkdirSync, readFileSync, realpathSync, writeFileSync } from 'node:fs'
 import { basename, dirname, join, resolve } from 'node:path'
 import { realpathOrSpelled } from './checkout-identity.ts'
 import { resolveRunsDirectory } from './database-location.ts'
@@ -178,21 +170,6 @@ export function worktreeDirty(path: string): { dirty: boolean; detail: string } 
   return status
     ? { dirty: true, detail: 'has uncommitted or untracked changes' }
     : { dirty: false, detail: 'all work is committed' }
-}
-
-/** Latest activity among files owned by the checkout (tracked plus untracked). */
-export function worktreeLatestMtime(path: string): number | null {
-  const listed = gitOk(['ls-files', '-co', '--exclude-standard', '-z'], path)
-  if (listed === null) return null
-  let latest = 0
-  for (const name of listed.split('\0').filter(Boolean)) {
-    try {
-      latest = Math.max(latest, statSync(join(path, name)).mtimeMs)
-    } catch {
-      /* raced */
-    }
-  }
-  return latest || null
 }
 
 export type WorktreeExtraction = {

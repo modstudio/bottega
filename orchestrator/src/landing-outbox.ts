@@ -258,7 +258,7 @@ export function enqueueLandingOverride(database: Database, id: number, at = nowI
   enqueue(database, 'landing_override', String(row.record_id), value, at)
 }
 
-export function enqueueLandingReviewCarry(database: Database, id: number, at = nowIso()): void {
+function enqueueLandingReviewCarry(database: Database, id: number, at = nowIso()): void {
   const row = database
     .query<LocalRow, [number]>(
       `SELECT carry.*, project.name AS project_name, review.record_id AS review_record_id
