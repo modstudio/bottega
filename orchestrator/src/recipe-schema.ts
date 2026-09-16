@@ -149,9 +149,10 @@ const STATIC_PLACEHOLDERS = new Set([
   'main',
   'index',
   'label',
+  'tree_exists',
 ])
 const ALLOCATION_STATIC_PLACEHOLDERS = new Set(
-  [...STATIC_PLACEHOLDERS].filter((name) => name !== 'label'),
+  [...STATIC_PLACEHOLDERS].filter((name) => name !== 'label' && name !== 'tree_exists'),
 )
 const ALLOCATION_PLACEHOLDER = /^(ports|db|alloc)\.([^{}.]+)$/
 

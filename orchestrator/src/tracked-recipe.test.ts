@@ -152,7 +152,7 @@ describe('tracked recipe execution', () => {
         default: [
           {
             name: 'default web',
-            run: { command: 'bun', args: ['{main}/app.ts', '{index}'] },
+            run: { command: 'bun', args: ['{main}/app.ts', '{index}', '{tree_exists}'] },
             undo: { command: 'kill', args: ['{branch}'] },
           },
         ],
@@ -160,7 +160,7 @@ describe('tracked recipe execution', () => {
     }
     expect(renderTrackedRecipeNotes(recipe, '/main')).toBe(
       'serve mode default:\n' +
-        '  bun /main/app.ts $ORCH_INDEX   default web\n' +
+        '  bun /main/app.ts $ORCH_INDEX true   default web\n' +
         '  stop: kill <branch>\n' +
         'serve mode preview:\n' +
         '  serve <path> $ORCH_PORTS_HUB   preview web\n' +
@@ -371,6 +371,64 @@ describe('tracked recipe execution', () => {
         { kind: 'database', allocation_key: 'postgres:app_1', state: 'claimed' },
       ],
     ])
+  })
+
+  test('catches rendering tree_exists=false while teardown still runs in the present tree', () => {
+    const seen: { treeRoot: string; treeExists: string | undefined }[] = []
+    const snapshot: RecipeSnapshot = {
+      source: { path: '.orch/worktree.jsonc', commit: 'abc' },
+      recipe: { create: [], destroy: [step('destroy')] },
+    }
+    teardownTrackedRecipe(
+      {
+        runId: 1,
+        worktree: {
+          path: '/tree',
+          branch: 'branch',
+          base: 'abc',
+          repoRoot: '/main',
+          source: 'recipe',
+          mintedBranch: 'branch',
+        },
+        stored: { snapshot, key: null, seed: null },
+        treeExists: true,
+        remove: () => ({ removed: true, detail: '/tree' }),
+      },
+      (_item, stepContext) => {
+        seen.push({ treeRoot: stepContext.treeRoot, treeExists: stepContext.vars.tree_exists })
+        return result('destroy', 'run', false)
+      },
+    )
+    expect(seen).toEqual([{ treeRoot: '/tree', treeExists: 'true' }])
+  })
+
+  test('catches rendering tree_exists=true while missing-tree teardown runs in main', () => {
+    const seen: { treeRoot: string; treeExists: string | undefined }[] = []
+    const snapshot: RecipeSnapshot = {
+      source: { path: '.orch/worktree.jsonc', commit: 'abc' },
+      recipe: { create: [], destroy: [step('destroy')] },
+    }
+    teardownTrackedRecipe(
+      {
+        runId: 1,
+        worktree: {
+          path: '/tree',
+          branch: 'branch',
+          base: 'abc',
+          repoRoot: '/main',
+          source: 'recipe',
+          mintedBranch: 'branch',
+        },
+        stored: { snapshot, key: null, seed: null },
+        treeExists: false,
+        remove: () => ({ removed: true, detail: '/tree' }),
+      },
+      (_item, stepContext) => {
+        seen.push({ treeRoot: stepContext.treeRoot, treeExists: stepContext.vars.tree_exists })
+        return result('destroy', 'run', false)
+      },
+    )
+    expect(seen).toEqual([{ treeRoot: '/main', treeExists: 'false' }])
   })
 
   test('runs serve undos before destroy undos and keeps the tree after a serve failure', () => {
