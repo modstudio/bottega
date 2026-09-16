@@ -1,7 +1,7 @@
 // concern: filed-issue command confinement
 /** Pure policy for coordinator-run reproduction and gate commands. */
 
-import { dirname, resolve } from 'node:path'
+import { resolve } from 'node:path'
 import type { SandboxRuntimeConfig } from './sandbox.ts'
 
 export type FiledIssueCommandPlan = {
@@ -18,20 +18,11 @@ export function filedIssueCommandPlan(input: {
   lang: string
   operatorEnvPath: string
   secretPaths: readonly string[]
-  liveOrchStore: string
-  liveHubStore: string
   workerEnvironment?: Readonly<Record<string, string>>
 }): FiledIssueCommandPlan {
   const worktree = resolve(input.worktree)
   const sandboxHome = resolve(input.sandboxHome)
-  const denied = [
-    ...input.secretPaths,
-    input.operatorEnvPath,
-    input.liveOrchStore,
-    dirname(input.liveOrchStore),
-    input.liveHubStore,
-    dirname(input.liveHubStore),
-  ].map((path) => resolve(path))
+  const denied = [...input.secretPaths, input.operatorEnvPath].map((path) => resolve(path))
   return {
     argv: ['sh', '-lc', input.command],
     env: {
@@ -39,13 +30,14 @@ export function filedIssueCommandPlan(input: {
       PATH: input.path,
       HOME: sandboxHome,
       LANG: input.lang,
+      TMPDIR: sandboxHome,
     },
     profile: {
       network: {
         allowedDomains: [],
         deniedDomains: [],
         allowUnixSockets: [],
-        allowLocalBinding: false,
+        allowLocalBinding: true,
       },
       filesystem: {
         denyRead: [...new Set(denied)],

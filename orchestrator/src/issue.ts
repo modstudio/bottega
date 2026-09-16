@@ -471,8 +471,6 @@ async function shell(
     orchStore?: string
   },
 ): Promise<{ ok: boolean; text: string; exitCode: number }> {
-  const platform = projectByName(PLATFORM_SLUG)
-  if (!platform) throw new Error(`unknown platform project "${PLATFORM_SLUG}"`)
   const plan = filedIssueCommandPlan({
     command,
     worktree: cwd,
@@ -481,8 +479,6 @@ async function shell(
     lang: process.env.LANG ?? 'C.UTF-8',
     operatorEnvPath: join(homedir(), '.claude', '.env'),
     secretPaths: resolveSecretPaths(input.project),
-    liveOrchStore: DB_PATH,
-    liveHubStore: process.env.HUB_DB ?? join(platform.path, 'hub', 'hub.db'),
     workerEnvironment: input.workerEnvironment,
   })
   if (input.orchStore) plan.env.ORCH_DB = input.orchStore
