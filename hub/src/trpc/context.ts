@@ -1,7 +1,13 @@
 import type { FetchCreateContextFnOptions } from '@trpc/server/adapters/fetch'
 
-export type Context = Record<string, never>
+export type Context = {
+  cookie?: string
+  authorization?: string
+}
 
-export function createContext(_options: FetchCreateContextFnOptions): Context {
-  return {}
+export function createContext(options: FetchCreateContextFnOptions): Context {
+  return {
+    cookie: options.req.headers.get('cookie') ?? undefined,
+    authorization: options.req.headers.get('authorization') ?? undefined,
+  }
 }

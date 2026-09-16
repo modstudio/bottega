@@ -6,9 +6,11 @@ import { Badge } from '@/components/badge'
 import { Button } from '@/components/button'
 import { LiveDot, Segmented } from '@/components/design-system'
 import { DisplayRow } from '@/components/fields'
+import { HostedRunDetail } from '@/components/hosted-run-detail'
 import { Input } from '@/components/input'
 import { Sheet } from '@/components/sheet'
 import { duration, relativeTime } from '@/lib/format'
+import { isHostedMode } from '@/lib/hub-mode'
 import { queryClient, trpc } from '@/trpc/client'
 
 const DELIVERIES = ['none', 'partial', 'full'] as const
@@ -39,11 +41,16 @@ type RunDetail = {
   scoreAxes: ('delivery' | 'quality' | 'fidelity')[]
 }
 
-export const Route = createFileRoute('/runs/$id')({ component: RunDetailPage })
+export const Route = createFileRoute('/runs/$id')({ component: RunDetailRoute })
 
-function RunDetailPage() {
-  const navigate = useNavigate()
+function RunDetailRoute() {
   const { id } = Route.useParams()
+  if (isHostedMode()) return <HostedRunDetail id={id} />
+  return <RunDetailPage id={id} />
+}
+
+function RunDetailPage({ id }: { id: string }) {
+  const navigate = useNavigate()
   const numericId = Number(id)
   const detail = useQuery(trpc.run.get.queryOptions({ id: numericId }))
   const run = detail.data as RunDetail | undefined

@@ -21,11 +21,14 @@ import { Route as JobsRouteImport } from './routes/jobs'
 import { Route as NotesRouteImport } from './routes/notes'
 import { Route as ProjectsRouteImport } from './routes/projects'
 import { Route as RatioRouteImport } from './routes/ratio'
+import { Route as ReviewsRouteImport } from './routes/reviews'
 import { Route as RoutingRouteImport } from './routes/routing'
 import { Route as RunsRouteImport } from './routes/runs'
 import { Route as SettingsRouteImport } from './routes/settings'
+import { Route as SignInRouteImport } from './routes/sign-in'
 import { Route as SpendRouteImport } from './routes/spend'
 import { Route as ProjectsNameRouteImport } from './routes/projects.$name'
+import { Route as ReviewsIdRouteImport } from './routes/reviews.$id'
 import { Route as RunsIdRouteImport } from './routes/runs.$id'
 import { Route as BoardTasksKeyRouteImport } from './routes/board.tasks.$key'
 import { Route as DoneTasksKeyRouteImport } from './routes/done.tasks.$key'
@@ -92,6 +95,11 @@ const RatioRoute = RatioRouteImport.update({
   path: '/ratio',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ReviewsRoute = ReviewsRouteImport.update({
+  id: '/reviews',
+  path: '/reviews',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const RoutingRoute = RoutingRouteImport.update({
   id: '/routing',
   path: '/routing',
@@ -107,6 +115,11 @@ const SettingsRoute = SettingsRouteImport.update({
   path: '/settings',
   getParentRoute: () => rootRouteImport,
 } as any)
+const SignInRoute = SignInRouteImport.update({
+  id: '/sign-in',
+  path: '/sign-in',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const SpendRoute = SpendRouteImport.update({
   id: '/spend',
   path: '/spend',
@@ -116,6 +129,11 @@ const ProjectsNameRoute = ProjectsNameRouteImport.update({
   id: '/$name',
   path: '/$name',
   getParentRoute: () => ProjectsRoute,
+} as any)
+const ReviewsIdRoute = ReviewsIdRouteImport.update({
+  id: '/$id',
+  path: '/$id',
+  getParentRoute: () => ReviewsRoute,
 } as any)
 const RunsIdRoute = RunsIdRouteImport.update({
   id: '/$id',
@@ -156,11 +174,14 @@ export interface FileRoutesByFullPath {
   '/notes': typeof NotesRoute
   '/projects': typeof ProjectsRouteWithChildren
   '/ratio': typeof RatioRoute
+  '/reviews': typeof ReviewsRouteWithChildren
   '/routing': typeof RoutingRoute
   '/runs': typeof RunsRouteWithChildren
   '/settings': typeof SettingsRoute
+  '/sign-in': typeof SignInRoute
   '/spend': typeof SpendRoute
   '/projects/$name': typeof ProjectsNameRoute
+  '/reviews/$id': typeof ReviewsIdRoute
   '/runs/$id': typeof RunsIdRoute
   '/board/tasks/$key': typeof BoardTasksKeyRoute
   '/done/tasks/$key': typeof DoneTasksKeyRoute
@@ -180,11 +201,14 @@ export interface FileRoutesByTo {
   '/notes': typeof NotesRoute
   '/projects': typeof ProjectsRouteWithChildren
   '/ratio': typeof RatioRoute
+  '/reviews': typeof ReviewsRouteWithChildren
   '/routing': typeof RoutingRoute
   '/runs': typeof RunsRouteWithChildren
   '/settings': typeof SettingsRoute
+  '/sign-in': typeof SignInRoute
   '/spend': typeof SpendRoute
   '/projects/$name': typeof ProjectsNameRoute
+  '/reviews/$id': typeof ReviewsIdRoute
   '/runs/$id': typeof RunsIdRoute
   '/board/tasks/$key': typeof BoardTasksKeyRoute
   '/done/tasks/$key': typeof DoneTasksKeyRoute
@@ -205,11 +229,14 @@ export interface FileRoutesById {
   '/notes': typeof NotesRoute
   '/projects': typeof ProjectsRouteWithChildren
   '/ratio': typeof RatioRoute
+  '/reviews': typeof ReviewsRouteWithChildren
   '/routing': typeof RoutingRoute
   '/runs': typeof RunsRouteWithChildren
   '/settings': typeof SettingsRoute
+  '/sign-in': typeof SignInRoute
   '/spend': typeof SpendRoute
   '/projects/$name': typeof ProjectsNameRoute
+  '/reviews/$id': typeof ReviewsIdRoute
   '/runs/$id': typeof RunsIdRoute
   '/board/tasks/$key': typeof BoardTasksKeyRoute
   '/done/tasks/$key': typeof DoneTasksKeyRoute
@@ -231,11 +258,14 @@ export interface FileRouteTypes {
     | '/notes'
     | '/projects'
     | '/ratio'
+    | '/reviews'
     | '/routing'
     | '/runs'
     | '/settings'
+    | '/sign-in'
     | '/spend'
     | '/projects/$name'
+    | '/reviews/$id'
     | '/runs/$id'
     | '/board/tasks/$key'
     | '/done/tasks/$key'
@@ -255,11 +285,14 @@ export interface FileRouteTypes {
     | '/notes'
     | '/projects'
     | '/ratio'
+    | '/reviews'
     | '/routing'
     | '/runs'
     | '/settings'
+    | '/sign-in'
     | '/spend'
     | '/projects/$name'
+    | '/reviews/$id'
     | '/runs/$id'
     | '/board/tasks/$key'
     | '/done/tasks/$key'
@@ -279,11 +312,14 @@ export interface FileRouteTypes {
     | '/notes'
     | '/projects'
     | '/ratio'
+    | '/reviews'
     | '/routing'
     | '/runs'
     | '/settings'
+    | '/sign-in'
     | '/spend'
     | '/projects/$name'
+    | '/reviews/$id'
     | '/runs/$id'
     | '/board/tasks/$key'
     | '/done/tasks/$key'
@@ -304,9 +340,11 @@ export interface RootRouteChildren {
   NotesRoute: typeof NotesRoute
   ProjectsRoute: typeof ProjectsRouteWithChildren
   RatioRoute: typeof RatioRoute
+  ReviewsRoute: typeof ReviewsRouteWithChildren
   RoutingRoute: typeof RoutingRoute
   RunsRoute: typeof RunsRouteWithChildren
   SettingsRoute: typeof SettingsRoute
+  SignInRoute: typeof SignInRoute
   SpendRoute: typeof SpendRoute
 }
 
@@ -396,6 +434,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof RatioRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/reviews': {
+      id: '/reviews'
+      path: '/reviews'
+      fullPath: '/reviews'
+      preLoaderRoute: typeof ReviewsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/routing': {
       id: '/routing'
       path: '/routing'
@@ -417,6 +462,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof SettingsRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/sign-in': {
+      id: '/sign-in'
+      path: '/sign-in'
+      fullPath: '/sign-in'
+      preLoaderRoute: typeof SignInRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/spend': {
       id: '/spend'
       path: '/spend'
@@ -430,6 +482,13 @@ declare module '@tanstack/react-router' {
       fullPath: '/projects/$name'
       preLoaderRoute: typeof ProjectsNameRouteImport
       parentRoute: typeof ProjectsRoute
+    }
+    '/reviews/$id': {
+      id: '/reviews/$id'
+      path: '/$id'
+      fullPath: '/reviews/$id'
+      preLoaderRoute: typeof ReviewsIdRouteImport
+      parentRoute: typeof ReviewsRoute
     }
     '/runs/$id': {
       id: '/runs/$id'
@@ -522,6 +581,17 @@ const ProjectsRouteWithChildren = ProjectsRoute._addFileChildren(
   ProjectsRouteChildren,
 )
 
+interface ReviewsRouteChildren {
+  ReviewsIdRoute: typeof ReviewsIdRoute
+}
+
+const ReviewsRouteChildren: ReviewsRouteChildren = {
+  ReviewsIdRoute: ReviewsIdRoute,
+}
+
+const ReviewsRouteWithChildren =
+  ReviewsRoute._addFileChildren(ReviewsRouteChildren)
+
 interface RunsRouteChildren {
   RunsIdRoute: typeof RunsIdRoute
 }
@@ -545,9 +615,11 @@ const rootRouteChildren: RootRouteChildren = {
   NotesRoute: NotesRoute,
   ProjectsRoute: ProjectsRouteWithChildren,
   RatioRoute: RatioRoute,
+  ReviewsRoute: ReviewsRouteWithChildren,
   RoutingRoute: RoutingRoute,
   RunsRoute: RunsRouteWithChildren,
   SettingsRoute: SettingsRoute,
+  SignInRoute: SignInRoute,
   SpendRoute: SpendRoute,
 }
 export const routeTree = rootRouteImport

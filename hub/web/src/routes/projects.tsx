@@ -14,8 +14,10 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/dialog'
+import { HostedProjects } from '@/components/hosted-projects'
 import { Input } from '@/components/input'
 import { toast } from '@/components/toaster'
+import { isHostedMode } from '@/lib/hub-mode'
 import { type ProjectRow, queryClient, trpc } from '@/trpc/client'
 
 function TrackerState({ project }: { project: ProjectRow }) {
@@ -55,6 +57,7 @@ function useProjects() {
 export const Route = createFileRoute('/projects')({ component: ProjectsRoute })
 
 function ProjectsRoute() {
+  if (isHostedMode()) return <HostedProjects />
   return (
     <>
       <ProjectsPage />
