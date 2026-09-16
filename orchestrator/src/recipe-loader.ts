@@ -2,10 +2,10 @@
 /** Knows how to resolve, read, parse, and validate one tracked recipe. Must not execute it or know register persistence. */
 import { readFileSync } from 'node:fs'
 import { isAbsolute, resolve } from 'node:path'
-import { recipeSchema, type TrackedRecipe } from './recipe-schema.ts'
+import { configDocumentSchema, type TrackedRecipe } from './recipe-schema.ts'
 
 export type LoadTrackedRecipeResult =
-  | { ok: true; recipe: TrackedRecipe }
+  | { ok: true; recipe: TrackedRecipe | null }
   | { ok: false; errors: string[] }
 
 export function recipePointerErrors(recipePath: string): string[] {
@@ -51,8 +51,8 @@ export function parseTrackedRecipe(source: string, label: string): LoadTrackedRe
       ],
     }
   }
-  const result = recipeSchema.safeParse(parsed)
-  if (result.success) return { ok: true, recipe: result.data }
+  const result = configDocumentSchema.safeParse(parsed)
+  if (result.success) return { ok: true, recipe: result.data.worktree ?? null }
   return {
     ok: false,
     errors: result.error.issues.map((issue) => {

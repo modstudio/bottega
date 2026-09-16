@@ -37,6 +37,8 @@ const ALLOWED = new Set([
   'scripts/check-brand.ts',
   // The package manifest: read by tooling that runs before any import exists.
   'package.json',
+  // The platform's own mandated project config must point editors at its named schema.
+  `${PLATFORM_SLUG}.jsonc`,
 ])
 
 const NAME = new RegExp(`\\b${PLATFORM_NAME}\\b|\\b${PLATFORM_SLUG}\\b`, 'i')

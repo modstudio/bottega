@@ -3,7 +3,7 @@ import { existsSync } from 'node:fs'
 import { join } from 'node:path'
 import { db, nowIso, writeTransaction } from './db.ts'
 import { git, gitOk, gitRaw, targetGitEnvironment } from './git-environment.ts'
-import { projectAt, type WorktreeTool } from './projects.ts'
+import { projectAt, resolvedWorktreeTool, type WorktreeTool } from './projects.ts'
 import { databaseDroppedByTeardown, dbNameFor, type Recipe, teardownRecipe } from './recipe.ts'
 import { markedWorktreeRunId, removeSharedRefGuard } from './ref-guard.ts'
 import { recipePortClaimForRun, settleDatabaseClaim } from './resource-claims.ts'
@@ -314,7 +314,7 @@ export function removeFor(
   // tree only. Minted: the tool receives that branch name, never ''.
   const owned = { ...w, branch: minted ?? '' }
   const project = projectAt(repoRoot)
-  const tool = project?.settings.worktree
+  const tool = resolvedWorktreeTool(project)
   const retainBranch =
     keepBranch || !minted || (!forceUnmerged && unmergedBranch(repoRoot, minted, null) !== null)
   let result: { removed: boolean; detail: string; output?: string }

@@ -34,6 +34,7 @@ import {
 import { db, nowIso, writableDb, writeTransaction } from './db.ts'
 import { type ReadonlyProvision, validateReadonlyProvision } from './readonly-provision.ts'
 import { loadTrackedRecipe, recipePointerErrors } from './recipe-loader.ts'
+import { DEFAULT_PROJECT_CONFIG_PATH, resolveWorktreeLifecycle } from './worktree-lifecycle.ts'
 import {
   CREATE_VARS,
   createHasPlaceholder,
@@ -234,6 +235,26 @@ export type WorktreeTool = {
    * Prose, verbatim into the prompt, because only the project knows it.
    */
   notes?: string
+}
+
+/** Apply the repository-local default without persisting derived config into the register. */
+export function resolvedWorktreeTool(
+  project: Pick<Project, 'path' | 'settings'> | null | undefined,
+  fileExists: (path: string) => boolean = existsSync,
+): WorktreeTool | null {
+  if (!project) return null
+  const declared = project.settings.worktree
+  let resolution = resolveWorktreeLifecycle(declared)
+  if (resolution.form === 'none') {
+    resolution = resolveWorktreeLifecycle(
+      declared,
+      fileExists(resolve(project.path, DEFAULT_PROJECT_CONFIG_PATH)),
+    )
+  }
+  if (resolution.form === 'tracked-recipe' && resolution.source === 'default') {
+    return { ...declared, recipePath: resolution.recipePath }
+  }
+  return declared ?? null
 }
 
 function parse(row: {
@@ -539,21 +560,25 @@ export function validateProjectSettings(settings: ProjectSettings, projectPath?:
 
 function trackedRecipeProblems(worktree: WorktreeTool | undefined, projectPath?: string): string[] {
   const problems: string[] = []
-  if (worktree?.recipe !== undefined && worktree.recipePath !== undefined) {
-    problems.push('worktree recipe rule: recipe and recipePath may not both be declared')
+  if (worktree?.recipePath !== undefined && typeof worktree.recipePath !== 'string') {
+    problems.push('recipe path rule: worktree.recipePath must be a string')
+    return problems
   }
-  if (worktree?.recipePath !== undefined) {
-    if (typeof worktree.recipePath !== 'string') {
-      problems.push('recipe path rule: worktree.recipePath must be a string')
-    } else {
-      const pointerProblems = recipePointerErrors(worktree.recipePath).map(
-        (problem) => `worktree.recipePath: ${problem}`,
-      )
-      problems.push(...pointerProblems)
-      if (!pointerProblems.length && projectPath) {
-        const loaded = loadTrackedRecipe(projectPath, worktree.recipePath)
-        if (!loaded.ok) problems.push(...loaded.errors)
-      }
+  let resolution = resolveWorktreeLifecycle(worktree)
+  if (resolution.form === 'none' && projectPath) {
+    resolution = resolveWorktreeLifecycle(
+      worktree,
+      existsSync(resolve(projectPath, DEFAULT_PROJECT_CONFIG_PATH)),
+    )
+  }
+  if (resolution.form === 'tracked-recipe') {
+    const pointerProblems = recipePointerErrors(resolution.recipePath).map(
+      (problem) => `worktree.recipePath: ${problem}`,
+    )
+    problems.push(...pointerProblems)
+    if (!pointerProblems.length && projectPath) {
+      const loaded = loadTrackedRecipe(projectPath, resolution.recipePath)
+      if (!loaded.ok) problems.push(...loaded.errors)
     }
   }
   return problems
