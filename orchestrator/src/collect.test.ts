@@ -30,7 +30,7 @@ const base = '3646a62f6abd4486aeb2c27744d2f69ba7210828'
 const changed = JSON.stringify(['.githooks/pre-commit'])
 
 describe('no-commit report', () => {
-  test('a branch left at its base with changed paths names the extracted copies that exist', () => {
+  test('rejects comparing no-commit evidence against any base and head except the turn own', () => {
     const dir = mkdtempSync(join(tmpdir(), 'orch-no-commit-'))
     try {
       writeFileSync(join(dir, 'uncommitted.patch'), 'diff\n')
@@ -164,12 +164,27 @@ describe('collection records', () => {
     expect(branchNote(db(), id)).toBe('')
   })
 
-  test('a resumed chain reports its owned branch, not the turn branch', () => {
+  test('a resumed chain reports the branch the turn actually ran on', () => {
     const root = addRun({ agent: 'codex', job: 'implement' })
     const child = addRun({ agent: 'codex', job: 'implement', parent: root, turn: 2 })
     db().query('UPDATE run SET minted_branch=? WHERE id=?').run('root-owned', root)
     db().query('UPDATE run SET branch=?,minted_branch=NULL WHERE id=?').run('turn-branch', child)
-    expect(mintedBranchForRun(db(), child)).toBe('root-owned')
+    expect(mintedBranchForRun(db(), child)).toBe('turn-branch')
+  })
+
+  test('a root authored commit does not suppress the turn own no-commit warning', () => {
+    const root = addRun({ agent: 'codex', job: 'implement' })
+    const child = addRun({ agent: 'codex', job: 'implement', parent: root, turn: 2 })
+    db()
+      .query('UPDATE run SET branch=?,base_commit=?,branch_kept_tip=?,changed_paths=? WHERE id=?')
+      .run('root-branch', base, 'f'.repeat(40), changed, root)
+    db()
+      .query('UPDATE run SET branch=?,base_commit=?,branch_kept_tip=?,changed_paths=? WHERE id=?')
+      .run('turn-branch', base, base, changed, child)
+
+    const note = branchNote(db(), child)
+    expect(note).toContain('branch:    turn-branch')
+    expect(note).toContain('no commit authored')
   })
 
   test('waiting on ok and asking runs succeeds and points to the inbox', async () => {

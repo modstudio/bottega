@@ -209,27 +209,14 @@ function evidenceNote(row: { evidence_excluded: string | null }): string {
   return row.evidence_excluded ? `\n  not routing evidence: ${row.evidence_excluded}` : ''
 }
 
-/** The branch created for this run or for the conversation it belongs to. */
+/** The branch this turn actually ran on. */
 export function mintedBranchForRun(database: Database, runId: number): string | null {
-  const run = database
-    .query('SELECT id, parent_run_id, minted_branch FROM run WHERE id=?')
-    .get(runId) as {
-    id: number
-    parent_run_id: number | null
+  const run = database.query('SELECT branch, minted_branch FROM run WHERE id=?').get(runId) as {
+    branch: string | null
     minted_branch: string | null
   } | null
   if (!run) return null
-  if (run.minted_branch) return run.minted_branch
-
-  const rootId = run.parent_run_id ?? run.id
-  const chained = database
-    .query(
-      `SELECT minted_branch FROM run
-      WHERE minted_branch IS NOT NULL AND (id=? OR parent_run_id=?)
-      ORDER BY id LIMIT 1`,
-    )
-    .get(rootId, rootId) as { minted_branch: string | null } | null
-  return chained?.minted_branch ?? null
+  return run.branch ?? run.minted_branch
 }
 
 /**
@@ -270,24 +257,15 @@ export function noCommitNote(
 export function branchNote(database: Database, runId: number): string {
   const branch = mintedBranchForRun(database, runId)
   if (!branch) return ''
-  const row = database
-    .query('SELECT COALESCE(parent_run_id, id) root_id FROM run WHERE id=?')
-    .get(runId) as { root_id: number } | null
-  const root = row
-    ? (database
-        .query(
-          'SELECT base_commit, branch_kept_tip, changed_paths, prompt_path FROM run WHERE id=?',
-        )
-        .get(row.root_id) as
-        | (Parameters<typeof noCommitNote>[0] & { prompt_path: string | null })
-        | null)
-    : null
+  const turn = database
+    .query('SELECT base_commit, branch_kept_tip, changed_paths, prompt_path FROM run WHERE id=?')
+    .get(runId) as (Parameters<typeof noCommitNote>[0] & { prompt_path: string | null }) | null
   // Prompts and per-run artifacts share the runs directory; derive it from the
   // row rather than importing the artifact module into the degraded graph.
-  const artifacts = root?.prompt_path
-    ? join(dirname(root.prompt_path), String(row!.root_id), 'artifacts')
+  const artifacts = turn?.prompt_path
+    ? join(dirname(turn.prompt_path), String(runId), 'artifacts')
     : null
-  return `\n  branch:    ${branch}` + (root ? noCommitNote(root, artifacts) : '')
+  return `\n  branch:    ${branch}${turn ? noCommitNote(turn, artifacts) : ''}`
 }
 
 function shellArg(value: string): string {

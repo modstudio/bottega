@@ -7,7 +7,7 @@
 import { existsSync, rmSync } from 'node:fs'
 import { join, resolve } from 'node:path'
 import { db, nowIso, sessionId, writeTransaction } from './db.ts'
-import { repoRootOf, targetGitEnvironment } from './git-environment.ts'
+import { gitContext, repoRootOf, targetGitEnvironment } from './git-environment.ts'
 import { HOOK_TREE_JOB, hookTreeHoldDecision } from './hook-tree.ts'
 import { isGroupKillablePgid, runHasLiveDescendants } from './idle-kill.ts'
 import { type KeepTreeHoldDecision, keepTreeHold } from './keep-tree-hold.ts'
@@ -358,6 +358,16 @@ function absentCloseOutResult(input: {
   }
 }
 
+function turnHeadForCloseOut(
+  row: { branch: string | null; minted_branch: string | null },
+  treePath: string,
+): { branch: string; tip: string } | null {
+  const branch = row.branch ?? row.minted_branch
+  if (!branch || !existsSync(treePath)) return null
+  const tip = gitContext(treePath, 'rev-parse', '--verify', 'HEAD^{commit}')
+  return tip ? { branch, tip } : null
+}
+
 /** One cleanup path for terminalisation, explicit close-out, and sweep. */
 function attemptCloseOutRun(
   runId: number,
@@ -421,12 +431,18 @@ function attemptCloseOutRun(
   )
   if (terminalHold) return terminalHold
   const retainedBranch = effective.minted_branch ?? effective.branch
+  const turnHead = turnHeadForCloseOut(row, treePath)
   const recordRetainedBranch = (tip: string | null, retainedRef?: string | null) => {
     if (!retainedBranch || !tip) return
     writeTransaction(() => {
       db()
         .query('UPDATE run SET branch_kept=?, branch_kept_tip=? WHERE id=?')
         .run(retainedBranch, tip, row.root_id)
+      if (row.id !== row.root_id && turnHead) {
+        db()
+          .query('UPDATE run SET branch_kept=?, branch_kept_tip=? WHERE id=?')
+          .run(turnHead.branch, turnHead.tip, row.id)
+      }
       settleClaims(db(), {
         rootRunId: row.root_id,
         kind: 'branch',
@@ -654,7 +670,7 @@ function attemptCloseOutRun(
               repoRoot,
               false,
               true,
-              row.root_id,
+              extractionRunId(row),
               false,
             )
             if (retainedBranch && branchSnapshot) {
@@ -750,6 +766,11 @@ function attemptCloseOutRun(
       detail: String((error as Error).message ?? error),
     }
   }
+}
+
+/** Extraction evidence belongs to the turn whose tree is being removed. */
+export function extractionRunId(row: { id: number }): number {
+  return row.id
 }
 
 /** Run one close-out attempt and retain its outcome for observation and retry. */
