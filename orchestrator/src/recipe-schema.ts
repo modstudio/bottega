@@ -105,7 +105,6 @@ export const sharedSchema = strictObject({
 })
 
 const recipeShape = strictObject({
-  $schema: z.string().describe('Path or URL of this JSON Schema, for editors.').optional(),
   baseRef: z.string().optional(),
   allocate: allocationsSchema.optional(),
   env: z.array(envFileSchema).optional(),
@@ -413,6 +412,16 @@ export const recipeSchema = validatedRecipeSchema.transform((recipe) => ({
     : { shared: recipe.shared.map((entry) => ({ ...entry, at: sharedTarget(entry) })) }),
 }))
 
+export const configDocumentSchema = strictObject({
+  $schema: z.string().describe('Path or URL of this JSON Schema, for editors.').optional(),
+  worktree: recipeSchema.optional(),
+})
+
+const configDocumentJsonSchema = strictObject({
+  $schema: z.string().describe('Path or URL of this JSON Schema, for editors.').optional(),
+  worktree: validatedRecipeSchema.optional(),
+})
+
 function validateCwd(
   cwd: string,
   stepName: string,
@@ -431,6 +440,8 @@ function validateCwd(
 
 export type TrackedRecipe = z.infer<typeof recipeSchema>
 
+export type ProjectConfigDocument = z.infer<typeof configDocumentSchema>
+
 export function recipeJsonSchema(): unknown {
-  return z.toJSONSchema(validatedRecipeSchema, { target: 'draft-2020-12' })
+  return z.toJSONSchema(configDocumentJsonSchema, { target: 'draft-2020-12' })
 }

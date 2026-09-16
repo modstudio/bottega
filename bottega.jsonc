@@ -1,0 +1,41 @@
+{
+  "$schema": "orchestrator/schemas/project-config.schema.json",
+  "worktree": {
+    "allocate": { "ports": ["hub"] },
+    "create": [
+      { "name": "root-deps", "run": { "command": "bun", "args": ["install", "--silent"] } },
+      {
+        "name": "orchestrator-deps",
+        "run": { "command": "bun", "args": ["install", "--silent"], "cwd": "orchestrator" }
+      },
+      {
+        "name": "hub-deps",
+        "run": { "command": "bun", "args": ["install", "--silent"], "cwd": "hub" }
+      }
+    ],
+    "serve": {
+      "default": [
+        {
+          "name": "hub",
+          "run": {
+            "command": "bun",
+            "args": ["hub/src/cli.ts", "serve", "--port", "{ports.hub}"]
+          },
+          "undo": {
+            "command": "bun",
+            "args": ["hub/src/cli.ts", "serve-stop", "--port", "{ports.hub}"]
+          }
+        }
+      ]
+    },
+    "verifyDown": [
+      {
+        "name": "hub-down",
+        "run": {
+          "command": "bun",
+          "args": ["hub/src/cli.ts", "serve-check", "--port", "{ports.hub}", "--down"]
+        }
+      }
+    ]
+  }
+}

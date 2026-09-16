@@ -21,11 +21,11 @@ describe('tracked recipe loading', () => {
     const project = projectDirectory()
     writeFileSync(
       join(project, 'recipe.jsonc'),
-      '{ // the step name is stable\n "create": [{"name":"create","run":{"command":"true","args":[],},}],\n}',
+      '{ // the step name is stable\n "worktree": {"create": [{"name":"create","run":{"command":"true","args":[],},}],},\n}',
     )
     const loaded = loadTrackedRecipe(project, 'recipe.jsonc')
     expect(loaded.ok).toBe(true)
-    if (loaded.ok) expect(loaded.recipe.create[0]?.name).toBe('create')
+    if (loaded.ok) expect(loaded.recipe?.create[0]?.name).toBe('create')
   })
 
   test('returns the resolved path when the file is missing', () => {
@@ -62,12 +62,29 @@ describe('tracked recipe loading', () => {
 
   test('reports strict validation errors with their rule and path', () => {
     const project = projectDirectory()
-    writeFileSync(join(project, 'recipe.jsonc'), '{"create":[],"mystery":true}')
+    writeFileSync(join(project, 'recipe.jsonc'), '{"worktree":{"create":[]},"mystery":true}')
     const loaded = loadTrackedRecipe(project, 'recipe.jsonc')
     expect(loaded.ok).toBe(false)
     if (!loaded.ok) {
       expect(loaded.errors.join('\n')).toContain('unknown-key rule')
       expect(loaded.errors.join('\n')).toContain(join(project, 'recipe.jsonc'))
     }
+  })
+
+  test('accepts a root schema and no worktree as no lifecycle', () => {
+    const project = projectDirectory()
+    writeFileSync(join(project, 'recipe.jsonc'), '{"$schema":"schema.json"}')
+    expect(loadTrackedRecipe(project, 'recipe.jsonc')).toEqual({ ok: true, recipe: null })
+  })
+
+  test('refuses a schema declaration inside worktree', () => {
+    const project = projectDirectory()
+    writeFileSync(
+      join(project, 'recipe.jsonc'),
+      '{"worktree":{"$schema":"schema.json","create":[]}}',
+    )
+    const loaded = loadTrackedRecipe(project, 'recipe.jsonc')
+    expect(loaded.ok).toBe(false)
+    if (!loaded.ok) expect(loaded.errors.join('\n')).toContain('unknown-key rule')
   })
 })

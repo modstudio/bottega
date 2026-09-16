@@ -13,7 +13,7 @@ import { chainTransport } from './failover.ts'
 import { branchOf, gitContext } from './git-environment.ts'
 import { mcpRequestFromStored } from './mcp-preflight.ts'
 import { outcomeOf } from './outcome.ts'
-import { projectAt } from './projects.ts'
+import { projectAt, resolvedWorktreeTool } from './projects.ts'
 import { type ResumeTreePlan, resumeTreePlan } from './resume-tree.ts'
 import { packedResumePrompt } from './run.ts'
 import { adoptRunMutation, auditRunMutation, authorizeRunMutation } from './run-authority.ts'
@@ -238,6 +238,7 @@ function continuationTree(
       existsSync(latest.worktree) &&
       branchOf(latest.worktree) === recordedBranch,
   )
+  const worktreeTool = resolvedWorktreeTool(project)
   const plan =
     recordedBranch && project
       ? resumeTreePlan({
@@ -245,9 +246,7 @@ function continuationTree(
           branch: recordedBranch,
           recordedTreeMatches,
           hasCreate: Boolean(
-            project.settings.worktree?.create ||
-              project.settings.worktree?.recipe ||
-              project.settings.worktree?.recipePath,
+            worktreeTool?.create || worktreeTool?.recipe || worktreeTool?.recipePath,
           ),
           branchTip: gitContext(
             project.path,

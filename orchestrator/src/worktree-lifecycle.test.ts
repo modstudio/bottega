@@ -1,18 +1,49 @@
 import { describe, expect, test } from 'bun:test'
+import { PLATFORM_SLUG } from '../../shared/brand.ts'
 import {
+  DEFAULT_PROJECT_CONFIG_PATH,
   lifecycleForm,
   lifecycleReportLines,
   recipeElementSupport,
+  resolveWorktreeLifecycle,
   trackedRecipeStatus,
 } from './worktree-lifecycle.ts'
 
 describe('worktree lifecycle declarations are measured without inference', () => {
   test('each lifecycle form follows its explicit declaration', () => {
     expect(lifecycleForm({ create: { command: 'make', args: [] } })).toBe('command-templates')
+    expect(lifecycleForm({ remove: 'remove', sweep: 'sweep' })).toBe('none')
     expect(lifecycleForm({ recipe: {} })).toBe('inline-recipe')
     expect(lifecycleForm({ recipePath: '.orch/worktree.jsonc' })).toBe('tracked-recipe')
     expect(lifecycleForm({})).toBe('none')
     expect(lifecycleForm(undefined)).toBe('none')
+  })
+
+  test('the default project config path is composed from the platform slug', () => {
+    expect(DEFAULT_PROJECT_CONFIG_PATH).toBe(`${PLATFORM_SLUG}.jsonc`)
+  })
+
+  test('resolution applies the declared precedence before the default', () => {
+    expect(
+      resolveWorktreeLifecycle(
+        { create: { command: 'make', args: [] }, recipe: {}, recipePath: 'custom.jsonc' },
+        true,
+      ),
+    ).toEqual({ form: 'command-templates' })
+    expect(resolveWorktreeLifecycle({ recipe: {}, recipePath: 'custom.jsonc' }, true)).toEqual({
+      form: 'inline-recipe',
+    })
+    expect(resolveWorktreeLifecycle({ recipePath: 'custom.jsonc' }, true)).toEqual({
+      form: 'tracked-recipe',
+      recipePath: 'custom.jsonc',
+      source: 'declared',
+    })
+    expect(resolveWorktreeLifecycle(undefined, true)).toEqual({
+      form: 'tracked-recipe',
+      recipePath: DEFAULT_PROJECT_CONFIG_PATH,
+      source: 'default',
+    })
+    expect(resolveWorktreeLifecycle(undefined, false)).toEqual({ form: 'none' })
   })
 
   test('a missing tracked recipe stays classified and is reported missing without being read', () => {
@@ -50,6 +81,22 @@ describe('worktree lifecycle declarations are measured without inference', () =>
         }),
       )[0],
     ).toContain('invalid (2 error(s)); first: first refusal')
+  })
+
+  test('doctor names a default tracked path and distinguishes it from a declaration', () => {
+    const valid = () => ({ ok: true as const, recipe: { create: [] } })
+    const declared = lifecycleReportLines(
+      [{ name: 'declared', path: '/projects/declared', worktree: { recipePath: 'custom.jsonc' } }],
+      () => true,
+      valid,
+    )[0]!
+    const inferred = lifecycleReportLines(
+      [{ name: 'default', path: '/projects/default' }],
+      () => true,
+      valid,
+    )[0]!
+    expect(declared).toContain('(custom.jsonc, declared)')
+    expect(inferred).toContain(`(${DEFAULT_PROJECT_CONFIG_PATH}, default)`)
   })
 
   test('doctor reports declared sharing only when present', () => {

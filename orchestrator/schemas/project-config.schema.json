@@ -1,0 +1,1306 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "$schema": {
+      "type": "string",
+      "description": "Path or URL of this JSON Schema, for editors."
+    },
+    "worktree": {
+      "type": "object",
+      "properties": {
+        "baseRef": {
+          "type": "string"
+        },
+        "allocate": {
+          "type": "object",
+          "properties": {
+            "ports": {
+              "type": "array",
+              "items": {
+                "type": "string",
+                "minLength": 1
+              }
+            },
+            "databases": {
+              "type": "object",
+              "propertyNames": {
+                "type": "string"
+              },
+              "additionalProperties": {
+                "type": "object",
+                "properties": {
+                  "engine": {
+                    "type": "string",
+                    "enum": ["postgres", "mysql", "mariadb", "sqlite", "other"]
+                  },
+                  "name": {
+                    "type": "string",
+                    "minLength": 1,
+                    "description": "Claimed database name. Templates may use only {branch} {name} {base} {key} {seed} {path} {main} {index}; include {index} when simultaneous worktrees could otherwise collide. The project create step makes the database and its undo drops it."
+                  }
+                },
+                "required": ["engine", "name"],
+                "additionalProperties": false
+              }
+            },
+            "strings": {
+              "type": "object",
+              "propertyNames": {
+                "type": "string"
+              },
+              "additionalProperties": {
+                "type": "string"
+              },
+              "description": "Named claimed string values. Templates may use only {branch} {name} {base} {key} {seed} {path} {main} {index}; include {index} when simultaneous worktrees could otherwise collide."
+            }
+          },
+          "additionalProperties": false
+        },
+        "env": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "path": {
+                "type": "string",
+                "minLength": 1,
+                "description": "Relative to the worktree root; absolute paths and .. segments are refused."
+              },
+              "contents": {
+                "type": "string",
+                "description": "Filled from the recipe static values, {label}, {index}, {ports.*}, {db.*}, and {alloc.*}. Secret values must never appear in errors, logs, run records, or the store."
+              },
+              "mode": {
+                "type": "string",
+                "enum": ["append", "replace", "managed-block"],
+                "description": "Defaults to managed-block when omitted."
+              },
+              "inherit": {
+                "type": "string",
+                "description": "Optional path relative to the project root; absolute paths and .. segments are refused."
+              },
+              "omit": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                },
+                "description": "Assignment keys removed from the inherited base before contents are applied."
+              }
+            },
+            "required": ["path", "contents"],
+            "additionalProperties": false
+          }
+        },
+        "shared": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "name": {
+                "type": "string",
+                "minLength": 1,
+                "description": "Unique name for this shared declaration."
+              },
+              "kind": {
+                "type": "string",
+                "enum": ["path", "volume", "network", "service"]
+              },
+              "from": {
+                "type": "string",
+                "minLength": 1,
+                "description": "Existing resource owned outside this run. Paths and volumes must be relative with no .. segment; networks and services are identifiers containing no slash."
+              },
+              "at": {
+                "type": "string",
+                "description": "Location inside the tree. Must be relative with no .. segment and defaults to from's basename. Shared entries are reported only and are never created, claimed, verified, or removed by the run."
+              }
+            },
+            "required": ["name", "kind", "from"],
+            "additionalProperties": false
+          }
+        },
+        "pre": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "name": {
+                "type": "string",
+                "minLength": 1
+              },
+              "run": {
+                "type": "object",
+                "properties": {
+                  "command": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "args": {
+                    "type": "array",
+                    "items": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "object",
+                          "properties": {
+                            "value": {
+                              "type": "string"
+                            },
+                            "omitWhenEmpty": {
+                              "type": "string",
+                              "enum": [
+                                "branch",
+                                "name",
+                                "base",
+                                "seed",
+                                "key",
+                                "path",
+                                "main",
+                                "index"
+                              ]
+                            }
+                          },
+                          "required": ["value", "omitWhenEmpty"],
+                          "additionalProperties": false
+                        },
+                        {
+                          "type": "object",
+                          "properties": {
+                            "expand": {
+                              "type": "string",
+                              "const": "seed"
+                            }
+                          },
+                          "required": ["expand"],
+                          "additionalProperties": false
+                        }
+                      ]
+                    }
+                  },
+                  "cwd": {
+                    "type": "string"
+                  }
+                },
+                "required": ["command", "args"],
+                "additionalProperties": false
+              },
+              "undo": {
+                "type": "object",
+                "properties": {
+                  "command": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "args": {
+                    "type": "array",
+                    "items": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "object",
+                          "properties": {
+                            "value": {
+                              "type": "string"
+                            },
+                            "omitWhenEmpty": {
+                              "type": "string",
+                              "enum": [
+                                "branch",
+                                "name",
+                                "base",
+                                "seed",
+                                "key",
+                                "path",
+                                "main",
+                                "index"
+                              ]
+                            }
+                          },
+                          "required": ["value", "omitWhenEmpty"],
+                          "additionalProperties": false
+                        },
+                        {
+                          "type": "object",
+                          "properties": {
+                            "expand": {
+                              "type": "string",
+                              "const": "seed"
+                            }
+                          },
+                          "required": ["expand"],
+                          "additionalProperties": false
+                        }
+                      ]
+                    }
+                  },
+                  "cwd": {
+                    "type": "string"
+                  }
+                },
+                "required": ["command", "args"],
+                "additionalProperties": false,
+                "description": "Reverses this step. Must succeed when the step never ran or only partly ran: compensation after a failed create and teardown both run it without knowing how far creation got. Teardown uses the recipe recorded when the tree was built, never the current file; any failed undo or verifyDown keeps the tree and its claims."
+              },
+              "verify": {
+                "type": "object",
+                "properties": {
+                  "command": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "args": {
+                    "type": "array",
+                    "items": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "object",
+                          "properties": {
+                            "value": {
+                              "type": "string"
+                            },
+                            "omitWhenEmpty": {
+                              "type": "string",
+                              "enum": [
+                                "branch",
+                                "name",
+                                "base",
+                                "seed",
+                                "key",
+                                "path",
+                                "main",
+                                "index"
+                              ]
+                            }
+                          },
+                          "required": ["value", "omitWhenEmpty"],
+                          "additionalProperties": false
+                        },
+                        {
+                          "type": "object",
+                          "properties": {
+                            "expand": {
+                              "type": "string",
+                              "const": "seed"
+                            }
+                          },
+                          "required": ["expand"],
+                          "additionalProperties": false
+                        }
+                      ]
+                    }
+                  },
+                  "cwd": {
+                    "type": "string"
+                  }
+                },
+                "required": ["command", "args"],
+                "additionalProperties": false
+              },
+              "exec": {
+                "oneOf": [
+                  {
+                    "type": "object",
+                    "properties": {
+                      "where": {
+                        "type": "string",
+                        "const": "host"
+                      }
+                    },
+                    "required": ["where"],
+                    "additionalProperties": false
+                  },
+                  {
+                    "type": "object",
+                    "properties": {
+                      "where": {
+                        "type": "string",
+                        "const": "container"
+                      },
+                      "service": {
+                        "type": "string",
+                        "minLength": 1
+                      }
+                    },
+                    "required": ["where", "service"],
+                    "additionalProperties": false
+                  },
+                  {
+                    "type": "object",
+                    "properties": {
+                      "where": {
+                        "type": "string",
+                        "const": "as-user"
+                      },
+                      "user": {
+                        "type": "string",
+                        "minLength": 1
+                      }
+                    },
+                    "required": ["where", "user"],
+                    "additionalProperties": false
+                  }
+                ]
+              }
+            },
+            "required": ["name", "run"],
+            "additionalProperties": false
+          }
+        },
+        "create": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "name": {
+                "type": "string",
+                "minLength": 1
+              },
+              "run": {
+                "type": "object",
+                "properties": {
+                  "command": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "args": {
+                    "type": "array",
+                    "items": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "object",
+                          "properties": {
+                            "value": {
+                              "type": "string"
+                            },
+                            "omitWhenEmpty": {
+                              "type": "string",
+                              "enum": [
+                                "branch",
+                                "name",
+                                "base",
+                                "seed",
+                                "key",
+                                "path",
+                                "main",
+                                "index"
+                              ]
+                            }
+                          },
+                          "required": ["value", "omitWhenEmpty"],
+                          "additionalProperties": false
+                        },
+                        {
+                          "type": "object",
+                          "properties": {
+                            "expand": {
+                              "type": "string",
+                              "const": "seed"
+                            }
+                          },
+                          "required": ["expand"],
+                          "additionalProperties": false
+                        }
+                      ]
+                    }
+                  },
+                  "cwd": {
+                    "type": "string"
+                  }
+                },
+                "required": ["command", "args"],
+                "additionalProperties": false
+              },
+              "undo": {
+                "type": "object",
+                "properties": {
+                  "command": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "args": {
+                    "type": "array",
+                    "items": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "object",
+                          "properties": {
+                            "value": {
+                              "type": "string"
+                            },
+                            "omitWhenEmpty": {
+                              "type": "string",
+                              "enum": [
+                                "branch",
+                                "name",
+                                "base",
+                                "seed",
+                                "key",
+                                "path",
+                                "main",
+                                "index"
+                              ]
+                            }
+                          },
+                          "required": ["value", "omitWhenEmpty"],
+                          "additionalProperties": false
+                        },
+                        {
+                          "type": "object",
+                          "properties": {
+                            "expand": {
+                              "type": "string",
+                              "const": "seed"
+                            }
+                          },
+                          "required": ["expand"],
+                          "additionalProperties": false
+                        }
+                      ]
+                    }
+                  },
+                  "cwd": {
+                    "type": "string"
+                  }
+                },
+                "required": ["command", "args"],
+                "additionalProperties": false,
+                "description": "Reverses this step. Must succeed when the step never ran or only partly ran: compensation after a failed create and teardown both run it without knowing how far creation got. Teardown uses the recipe recorded when the tree was built, never the current file; any failed undo or verifyDown keeps the tree and its claims."
+              },
+              "verify": {
+                "type": "object",
+                "properties": {
+                  "command": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "args": {
+                    "type": "array",
+                    "items": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "object",
+                          "properties": {
+                            "value": {
+                              "type": "string"
+                            },
+                            "omitWhenEmpty": {
+                              "type": "string",
+                              "enum": [
+                                "branch",
+                                "name",
+                                "base",
+                                "seed",
+                                "key",
+                                "path",
+                                "main",
+                                "index"
+                              ]
+                            }
+                          },
+                          "required": ["value", "omitWhenEmpty"],
+                          "additionalProperties": false
+                        },
+                        {
+                          "type": "object",
+                          "properties": {
+                            "expand": {
+                              "type": "string",
+                              "const": "seed"
+                            }
+                          },
+                          "required": ["expand"],
+                          "additionalProperties": false
+                        }
+                      ]
+                    }
+                  },
+                  "cwd": {
+                    "type": "string"
+                  }
+                },
+                "required": ["command", "args"],
+                "additionalProperties": false
+              },
+              "exec": {
+                "oneOf": [
+                  {
+                    "type": "object",
+                    "properties": {
+                      "where": {
+                        "type": "string",
+                        "const": "host"
+                      }
+                    },
+                    "required": ["where"],
+                    "additionalProperties": false
+                  },
+                  {
+                    "type": "object",
+                    "properties": {
+                      "where": {
+                        "type": "string",
+                        "const": "container"
+                      },
+                      "service": {
+                        "type": "string",
+                        "minLength": 1
+                      }
+                    },
+                    "required": ["where", "service"],
+                    "additionalProperties": false
+                  },
+                  {
+                    "type": "object",
+                    "properties": {
+                      "where": {
+                        "type": "string",
+                        "const": "as-user"
+                      },
+                      "user": {
+                        "type": "string",
+                        "minLength": 1
+                      }
+                    },
+                    "required": ["where", "user"],
+                    "additionalProperties": false
+                  }
+                ]
+              }
+            },
+            "required": ["name", "run"],
+            "additionalProperties": false
+          }
+        },
+        "serve": {
+          "type": "object",
+          "propertyNames": {
+            "type": "string"
+          },
+          "additionalProperties": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "name": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "run": {
+                  "type": "object",
+                  "properties": {
+                    "command": {
+                      "type": "string",
+                      "minLength": 1
+                    },
+                    "args": {
+                      "type": "array",
+                      "items": {
+                        "anyOf": [
+                          {
+                            "type": "string"
+                          },
+                          {
+                            "type": "object",
+                            "properties": {
+                              "value": {
+                                "type": "string"
+                              },
+                              "omitWhenEmpty": {
+                                "type": "string",
+                                "enum": [
+                                  "branch",
+                                  "name",
+                                  "base",
+                                  "seed",
+                                  "key",
+                                  "path",
+                                  "main",
+                                  "index"
+                                ]
+                              }
+                            },
+                            "required": ["value", "omitWhenEmpty"],
+                            "additionalProperties": false
+                          },
+                          {
+                            "type": "object",
+                            "properties": {
+                              "expand": {
+                                "type": "string",
+                                "const": "seed"
+                              }
+                            },
+                            "required": ["expand"],
+                            "additionalProperties": false
+                          }
+                        ]
+                      }
+                    },
+                    "cwd": {
+                      "type": "string"
+                    }
+                  },
+                  "required": ["command", "args"],
+                  "additionalProperties": false
+                },
+                "undo": {
+                  "type": "object",
+                  "properties": {
+                    "command": {
+                      "type": "string",
+                      "minLength": 1
+                    },
+                    "args": {
+                      "type": "array",
+                      "items": {
+                        "anyOf": [
+                          {
+                            "type": "string"
+                          },
+                          {
+                            "type": "object",
+                            "properties": {
+                              "value": {
+                                "type": "string"
+                              },
+                              "omitWhenEmpty": {
+                                "type": "string",
+                                "enum": [
+                                  "branch",
+                                  "name",
+                                  "base",
+                                  "seed",
+                                  "key",
+                                  "path",
+                                  "main",
+                                  "index"
+                                ]
+                              }
+                            },
+                            "required": ["value", "omitWhenEmpty"],
+                            "additionalProperties": false
+                          },
+                          {
+                            "type": "object",
+                            "properties": {
+                              "expand": {
+                                "type": "string",
+                                "const": "seed"
+                              }
+                            },
+                            "required": ["expand"],
+                            "additionalProperties": false
+                          }
+                        ]
+                      }
+                    },
+                    "cwd": {
+                      "type": "string"
+                    }
+                  },
+                  "required": ["command", "args"],
+                  "additionalProperties": false,
+                  "description": "Reverses this step. Must succeed when the step never ran or only partly ran: compensation after a failed create and teardown both run it without knowing how far creation got. Teardown uses the recipe recorded when the tree was built, never the current file; any failed undo or verifyDown keeps the tree and its claims."
+                },
+                "verify": {
+                  "type": "object",
+                  "properties": {
+                    "command": {
+                      "type": "string",
+                      "minLength": 1
+                    },
+                    "args": {
+                      "type": "array",
+                      "items": {
+                        "anyOf": [
+                          {
+                            "type": "string"
+                          },
+                          {
+                            "type": "object",
+                            "properties": {
+                              "value": {
+                                "type": "string"
+                              },
+                              "omitWhenEmpty": {
+                                "type": "string",
+                                "enum": [
+                                  "branch",
+                                  "name",
+                                  "base",
+                                  "seed",
+                                  "key",
+                                  "path",
+                                  "main",
+                                  "index"
+                                ]
+                              }
+                            },
+                            "required": ["value", "omitWhenEmpty"],
+                            "additionalProperties": false
+                          },
+                          {
+                            "type": "object",
+                            "properties": {
+                              "expand": {
+                                "type": "string",
+                                "const": "seed"
+                              }
+                            },
+                            "required": ["expand"],
+                            "additionalProperties": false
+                          }
+                        ]
+                      }
+                    },
+                    "cwd": {
+                      "type": "string"
+                    }
+                  },
+                  "required": ["command", "args"],
+                  "additionalProperties": false
+                },
+                "exec": {
+                  "oneOf": [
+                    {
+                      "type": "object",
+                      "properties": {
+                        "where": {
+                          "type": "string",
+                          "const": "host"
+                        }
+                      },
+                      "required": ["where"],
+                      "additionalProperties": false
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "where": {
+                          "type": "string",
+                          "const": "container"
+                        },
+                        "service": {
+                          "type": "string",
+                          "minLength": 1
+                        }
+                      },
+                      "required": ["where", "service"],
+                      "additionalProperties": false
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "where": {
+                          "type": "string",
+                          "const": "as-user"
+                        },
+                        "user": {
+                          "type": "string",
+                          "minLength": 1
+                        }
+                      },
+                      "required": ["where", "user"],
+                      "additionalProperties": false
+                    }
+                  ]
+                }
+              },
+              "required": ["name", "run"],
+              "additionalProperties": false
+            }
+          },
+          "description": "rule 1: every serve step \"<name>\" in mode \"<mode>\" must declare undo so teardown can stop anything the worker started."
+        },
+        "destroy": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "name": {
+                "type": "string",
+                "minLength": 1
+              },
+              "run": {
+                "type": "object",
+                "properties": {
+                  "command": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "args": {
+                    "type": "array",
+                    "items": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "object",
+                          "properties": {
+                            "value": {
+                              "type": "string"
+                            },
+                            "omitWhenEmpty": {
+                              "type": "string",
+                              "enum": [
+                                "branch",
+                                "name",
+                                "base",
+                                "seed",
+                                "key",
+                                "path",
+                                "main",
+                                "index"
+                              ]
+                            }
+                          },
+                          "required": ["value", "omitWhenEmpty"],
+                          "additionalProperties": false
+                        },
+                        {
+                          "type": "object",
+                          "properties": {
+                            "expand": {
+                              "type": "string",
+                              "const": "seed"
+                            }
+                          },
+                          "required": ["expand"],
+                          "additionalProperties": false
+                        }
+                      ]
+                    }
+                  },
+                  "cwd": {
+                    "type": "string"
+                  }
+                },
+                "required": ["command", "args"],
+                "additionalProperties": false
+              },
+              "undo": {
+                "type": "object",
+                "properties": {
+                  "command": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "args": {
+                    "type": "array",
+                    "items": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "object",
+                          "properties": {
+                            "value": {
+                              "type": "string"
+                            },
+                            "omitWhenEmpty": {
+                              "type": "string",
+                              "enum": [
+                                "branch",
+                                "name",
+                                "base",
+                                "seed",
+                                "key",
+                                "path",
+                                "main",
+                                "index"
+                              ]
+                            }
+                          },
+                          "required": ["value", "omitWhenEmpty"],
+                          "additionalProperties": false
+                        },
+                        {
+                          "type": "object",
+                          "properties": {
+                            "expand": {
+                              "type": "string",
+                              "const": "seed"
+                            }
+                          },
+                          "required": ["expand"],
+                          "additionalProperties": false
+                        }
+                      ]
+                    }
+                  },
+                  "cwd": {
+                    "type": "string"
+                  }
+                },
+                "required": ["command", "args"],
+                "additionalProperties": false,
+                "description": "Reverses this step. Must succeed when the step never ran or only partly ran: compensation after a failed create and teardown both run it without knowing how far creation got. Teardown uses the recipe recorded when the tree was built, never the current file; any failed undo or verifyDown keeps the tree and its claims."
+              },
+              "verify": {
+                "type": "object",
+                "properties": {
+                  "command": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "args": {
+                    "type": "array",
+                    "items": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "object",
+                          "properties": {
+                            "value": {
+                              "type": "string"
+                            },
+                            "omitWhenEmpty": {
+                              "type": "string",
+                              "enum": [
+                                "branch",
+                                "name",
+                                "base",
+                                "seed",
+                                "key",
+                                "path",
+                                "main",
+                                "index"
+                              ]
+                            }
+                          },
+                          "required": ["value", "omitWhenEmpty"],
+                          "additionalProperties": false
+                        },
+                        {
+                          "type": "object",
+                          "properties": {
+                            "expand": {
+                              "type": "string",
+                              "const": "seed"
+                            }
+                          },
+                          "required": ["expand"],
+                          "additionalProperties": false
+                        }
+                      ]
+                    }
+                  },
+                  "cwd": {
+                    "type": "string"
+                  }
+                },
+                "required": ["command", "args"],
+                "additionalProperties": false
+              },
+              "exec": {
+                "oneOf": [
+                  {
+                    "type": "object",
+                    "properties": {
+                      "where": {
+                        "type": "string",
+                        "const": "host"
+                      }
+                    },
+                    "required": ["where"],
+                    "additionalProperties": false
+                  },
+                  {
+                    "type": "object",
+                    "properties": {
+                      "where": {
+                        "type": "string",
+                        "const": "container"
+                      },
+                      "service": {
+                        "type": "string",
+                        "minLength": 1
+                      }
+                    },
+                    "required": ["where", "service"],
+                    "additionalProperties": false
+                  },
+                  {
+                    "type": "object",
+                    "properties": {
+                      "where": {
+                        "type": "string",
+                        "const": "as-user"
+                      },
+                      "user": {
+                        "type": "string",
+                        "minLength": 1
+                      }
+                    },
+                    "required": ["where", "user"],
+                    "additionalProperties": false
+                  }
+                ]
+              }
+            },
+            "required": ["name", "run"],
+            "additionalProperties": false
+          }
+        },
+        "verifyDown": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "name": {
+                "type": "string",
+                "minLength": 1
+              },
+              "run": {
+                "type": "object",
+                "properties": {
+                  "command": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "args": {
+                    "type": "array",
+                    "items": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "object",
+                          "properties": {
+                            "value": {
+                              "type": "string"
+                            },
+                            "omitWhenEmpty": {
+                              "type": "string",
+                              "enum": [
+                                "branch",
+                                "name",
+                                "base",
+                                "seed",
+                                "key",
+                                "path",
+                                "main",
+                                "index"
+                              ]
+                            }
+                          },
+                          "required": ["value", "omitWhenEmpty"],
+                          "additionalProperties": false
+                        },
+                        {
+                          "type": "object",
+                          "properties": {
+                            "expand": {
+                              "type": "string",
+                              "const": "seed"
+                            }
+                          },
+                          "required": ["expand"],
+                          "additionalProperties": false
+                        }
+                      ]
+                    }
+                  },
+                  "cwd": {
+                    "type": "string"
+                  }
+                },
+                "required": ["command", "args"],
+                "additionalProperties": false
+              },
+              "undo": {
+                "type": "object",
+                "properties": {
+                  "command": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "args": {
+                    "type": "array",
+                    "items": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "object",
+                          "properties": {
+                            "value": {
+                              "type": "string"
+                            },
+                            "omitWhenEmpty": {
+                              "type": "string",
+                              "enum": [
+                                "branch",
+                                "name",
+                                "base",
+                                "seed",
+                                "key",
+                                "path",
+                                "main",
+                                "index"
+                              ]
+                            }
+                          },
+                          "required": ["value", "omitWhenEmpty"],
+                          "additionalProperties": false
+                        },
+                        {
+                          "type": "object",
+                          "properties": {
+                            "expand": {
+                              "type": "string",
+                              "const": "seed"
+                            }
+                          },
+                          "required": ["expand"],
+                          "additionalProperties": false
+                        }
+                      ]
+                    }
+                  },
+                  "cwd": {
+                    "type": "string"
+                  }
+                },
+                "required": ["command", "args"],
+                "additionalProperties": false,
+                "description": "Reverses this step. Must succeed when the step never ran or only partly ran: compensation after a failed create and teardown both run it without knowing how far creation got. Teardown uses the recipe recorded when the tree was built, never the current file; any failed undo or verifyDown keeps the tree and its claims."
+              },
+              "verify": {
+                "type": "object",
+                "properties": {
+                  "command": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "args": {
+                    "type": "array",
+                    "items": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "object",
+                          "properties": {
+                            "value": {
+                              "type": "string"
+                            },
+                            "omitWhenEmpty": {
+                              "type": "string",
+                              "enum": [
+                                "branch",
+                                "name",
+                                "base",
+                                "seed",
+                                "key",
+                                "path",
+                                "main",
+                                "index"
+                              ]
+                            }
+                          },
+                          "required": ["value", "omitWhenEmpty"],
+                          "additionalProperties": false
+                        },
+                        {
+                          "type": "object",
+                          "properties": {
+                            "expand": {
+                              "type": "string",
+                              "const": "seed"
+                            }
+                          },
+                          "required": ["expand"],
+                          "additionalProperties": false
+                        }
+                      ]
+                    }
+                  },
+                  "cwd": {
+                    "type": "string"
+                  }
+                },
+                "required": ["command", "args"],
+                "additionalProperties": false
+              },
+              "exec": {
+                "oneOf": [
+                  {
+                    "type": "object",
+                    "properties": {
+                      "where": {
+                        "type": "string",
+                        "const": "host"
+                      }
+                    },
+                    "required": ["where"],
+                    "additionalProperties": false
+                  },
+                  {
+                    "type": "object",
+                    "properties": {
+                      "where": {
+                        "type": "string",
+                        "const": "container"
+                      },
+                      "service": {
+                        "type": "string",
+                        "minLength": 1
+                      }
+                    },
+                    "required": ["where", "service"],
+                    "additionalProperties": false
+                  },
+                  {
+                    "type": "object",
+                    "properties": {
+                      "where": {
+                        "type": "string",
+                        "const": "as-user"
+                      },
+                      "user": {
+                        "type": "string",
+                        "minLength": 1
+                      }
+                    },
+                    "required": ["where", "user"],
+                    "additionalProperties": false
+                  }
+                ]
+              }
+            },
+            "required": ["name", "run"],
+            "additionalProperties": false
+          }
+        }
+      },
+      "required": ["create"],
+      "additionalProperties": false
+    }
+  },
+  "additionalProperties": false
+}

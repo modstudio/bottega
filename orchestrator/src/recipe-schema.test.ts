@@ -1,5 +1,9 @@
 import { describe, expect, test } from 'bun:test'
-import { allocationEnvironmentVariable, recipeSchema } from './recipe-schema.ts'
+import {
+  allocationEnvironmentVariable,
+  configDocumentSchema,
+  recipeSchema,
+} from './recipe-schema.ts'
 
 const command: { command: string; args: string[]; cwd?: string } = { command: 'true', args: [] }
 const minimal = () => ({ create: [{ name: 'create', run: command }] })
@@ -274,5 +278,31 @@ describe('tracked recipe refusal rules', () => {
     expect(allocationEnvironmentVariable('ports', 'hub')).toBe('ORCH_PORTS_HUB')
     expect(allocationEnvironmentVariable('ports', 'api-v2')).toBe('ORCH_PORTS_API_V2')
     expect(allocationEnvironmentVariable('db', 'app-v2')).toBe('ORCH_DB_APP_V2')
+  })
+})
+
+describe('project config document', () => {
+  test('accepts a nested worktree recipe and an optional root schema', () => {
+    expect(
+      configDocumentSchema.safeParse({ $schema: 'schema.json', worktree: minimal() }).success,
+    ).toBe(true)
+  })
+
+  test('accepts a document with no worktree lifecycle', () => {
+    expect(configDocumentSchema.safeParse({}).success).toBe(true)
+  })
+
+  test('refuses unknown top-level keys', () => {
+    const parsed = configDocumentSchema.safeParse({ mystery: true })
+    expect(parsed.success).toBe(false)
+    if (!parsed.success) expect(parsed.error.issues[0]?.message).toContain('unknown-key rule')
+  })
+
+  test('refuses a schema declaration inside the worktree recipe', () => {
+    const parsed = configDocumentSchema.safeParse({
+      worktree: { $schema: 'schema.json', ...minimal() },
+    })
+    expect(parsed.success).toBe(false)
+    if (!parsed.success) expect(parsed.error.issues[0]?.message).toContain('unknown-key rule')
   })
 })

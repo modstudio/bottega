@@ -266,7 +266,7 @@ function loadRecipeAtBase(input: { tool: WorktreeTool; repoRoot: string; baseRef
     }
     const loaded = parseTrackedRecipe(source, `${pointer} at ${base}`)
     if (!loaded.ok) throw new Error(loaded.errors.join('\n'))
-    return loaded.recipe
+    return loaded.recipe ?? { create: [] }
   }
   let recipe = read()
   if (!input.baseRef && recipe.baseRef) {

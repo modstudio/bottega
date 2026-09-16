@@ -1,9 +1,13 @@
 // concern: worktree lifecycle measurement
 /** Knows declared lifecycle shapes and recipe-schema support. Must not know execution, the register, databases, or the CLI. */
 import { resolve } from 'node:path'
+import { PLATFORM_SLUG } from '../../shared/brand.ts'
 import { type LoadTrackedRecipeResult, loadTrackedRecipe } from './recipe-loader.ts'
 
 export type LifecycleForm = 'command-templates' | 'inline-recipe' | 'tracked-recipe' | 'none'
+export type TrackedRecipeSource = 'declared' | 'default'
+
+export const DEFAULT_PROJECT_CONFIG_PATH = `${PLATFORM_SLUG}.jsonc`
 
 type WorktreeDeclaration = {
   recipePath?: unknown
@@ -31,6 +35,10 @@ type LifecycleProject = {
   worktree?: WorktreeDeclaration
 }
 
+export type LifecycleResolution =
+  | { form: 'command-templates' | 'inline-recipe' | 'none' }
+  | { form: 'tracked-recipe'; recipePath: string; source: TrackedRecipeSource }
+
 const LEGACY_KEYS = new Set([
   'baseRef',
   'install',
@@ -43,21 +51,29 @@ const LEGACY_KEYS = new Set([
 ])
 const TARGET_ONLY_KEYS = new Set(['allocate', 'shared', 'pre', 'create', 'destroy', 'verifyDown'])
 
-/** Classify only what the project declared; never infer a lifecycle from repository contents. */
-export function lifecycleForm(worktree: WorktreeDeclaration | null | undefined): LifecycleForm {
-  if (!worktree) return 'none'
-  if (typeof worktree.recipePath === 'string' && worktree.recipePath.trim()) {
-    return 'tracked-recipe'
+/** Resolve the one lifecycle form used by validation, execution, and reporting. */
+export function resolveWorktreeLifecycle(
+  worktree: WorktreeDeclaration | null | undefined,
+  defaultConfigExists = false,
+): LifecycleResolution {
+  if (worktree?.create !== undefined) {
+    return { form: 'command-templates' }
   }
-  if (worktree.recipe !== undefined) return 'inline-recipe'
-  if (
-    worktree.create !== undefined ||
-    worktree.remove !== undefined ||
-    worktree.sweep !== undefined
-  ) {
-    return 'command-templates'
+  if (worktree?.recipe !== undefined) return { form: 'inline-recipe' }
+  if (typeof worktree?.recipePath === 'string') {
+    return { form: 'tracked-recipe', recipePath: worktree.recipePath, source: 'declared' }
   }
-  return 'none'
+  if (defaultConfigExists) {
+    return { form: 'tracked-recipe', recipePath: DEFAULT_PROJECT_CONFIG_PATH, source: 'default' }
+  }
+  return { form: 'none' }
+}
+
+export function lifecycleForm(
+  worktree: WorktreeDeclaration | null | undefined,
+  defaultConfigExists = false,
+): LifecycleForm {
+  return resolveWorktreeLifecycle(worktree, defaultConfigExists).form
 }
 
 /** Resolve and probe a tracked pointer without reading or parsing the recipe. */
@@ -66,8 +82,13 @@ export function trackedRecipeStatus(
   worktree: WorktreeDeclaration | null | undefined,
   fileExists: (path: string) => boolean,
 ): TrackedRecipeStatus | null {
-  if (lifecycleForm(worktree) !== 'tracked-recipe') return null
-  const pointer = (worktree!.recipePath as string).trim()
+  const defaultPath = resolve(projectPath, DEFAULT_PROJECT_CONFIG_PATH)
+  let resolution = resolveWorktreeLifecycle(worktree)
+  if (resolution.form === 'none') {
+    resolution = resolveWorktreeLifecycle(worktree, fileExists(defaultPath))
+  }
+  if (resolution.form !== 'tracked-recipe') return null
+  const pointer = resolution.recipePath.trim()
   const path = resolve(projectPath, pointer)
   return { path, exists: fileExists(path) }
 }
@@ -142,9 +163,18 @@ export function lifecycleReportLines(
     recipePath: string,
   ) => LoadTrackedRecipeResult = loadTrackedRecipe,
 ): string[] {
-  const forms = projects.map((project) => lifecycleForm(project.worktree))
+  const resolutions = projects.map((project) => {
+    const declared = resolveWorktreeLifecycle(project.worktree)
+    return declared.form === 'none'
+      ? resolveWorktreeLifecycle(
+          project.worktree,
+          fileExists(resolve(project.path, DEFAULT_PROJECT_CONFIG_PATH)),
+        )
+      : declared
+  })
+  const forms = resolutions.map((resolution) => resolution.form)
   const lines = projects.map((project, index) =>
-    projectLifecycleLine(project, forms[index]!, fileExists, loadRecipe),
+    projectLifecycleLine(project, resolutions[index]!, fileExists, loadRecipe),
   )
   const count = (form: LifecycleForm) => forms.filter((candidate) => candidate === form).length
   lines.push(
@@ -155,10 +185,11 @@ export function lifecycleReportLines(
 
 function projectLifecycleLine(
   project: LifecycleProject,
-  form: LifecycleForm,
+  resolution: LifecycleResolution,
   fileExists: (path: string) => boolean,
   loadRecipe: (projectPath: string, recipePath: string) => LoadTrackedRecipeResult,
 ): string {
+  const form = resolution.form
   const worktree = project.worktree
   if (form === 'command-templates') {
     const verbs = declaredCommandTemplates(worktree)
@@ -176,13 +207,16 @@ function projectLifecycleLine(
     return `lifecycle ${project.name}: inline-recipe (${elements.join(', ') || 'empty'}); ${suffixes.join('; ') || 'migration-ready'}`
   }
   if (form === 'tracked-recipe') {
-    const pointer = worktree?.recipePath as string
+    const pointer = resolution.recipePath
     const status = trackedRecipeStatus(project.path, worktree, fileExists)!
     const loaded = loadRecipe(project.path, pointer)
     if (loaded.ok) {
+      if (!loaded.recipe) {
+        return `lifecycle ${project.name}: none; ${pointer} (${resolution.source}) declares no worktree lifecycle`
+      }
       const shared = loaded.recipe.shared?.length ?? 0
       const declaration = shared > 0 ? `; shared: ${shared} declared` : ''
-      return `lifecycle ${project.name}: tracked-recipe (${pointer}); valid at ${status.path}${declaration}`
+      return `lifecycle ${project.name}: tracked-recipe (${pointer}, ${resolution.source}); valid at ${status.path}${declaration}`
     }
     return `lifecycle ${project.name}: tracked-recipe (${pointer}); invalid (${loaded.errors.length} error(s)); first: ${loaded.errors[0]}`
   }

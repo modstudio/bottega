@@ -14,6 +14,7 @@ import {
   assertRegisterBranches,
   projectAt,
   projectByName,
+  resolvedWorktreeTool,
   validateStoredProjectSettings,
 } from './projects.ts'
 import { resolveReviewTarget } from './review-target.ts'
@@ -111,7 +112,7 @@ export function preflight(
   if (reusesWorktree) return seed
   const project = projectAt(cwd)
   if (project?.settings.worktree) assertRegisterBranches(project)
-  const tool = project?.settings.worktree ?? null
+  const tool = resolvedWorktreeTool(project)
   if (project) {
     const malformed = validateStoredProjectSettings(project.settings, project.path)
     if (malformed.length) throw new Error(malformed.join('\n'))

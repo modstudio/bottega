@@ -78,11 +78,14 @@ describe('projects are data, not code', () => {
 
   test('registration validates a tracked recipe at its project path', () => {
     projectDirectory = mkdtempSync(join(tmpdir(), 'orch-project-recipe-'))
-    writeFileSync(join(projectDirectory, 'worktree.jsonc'), '{"create":[]}')
+    writeFileSync(join(projectDirectory, 'worktree.jsonc'), '{"worktree":{"create":[]}}')
     expect(
       validateProjectSettings({ worktree: { recipePath: 'worktree.jsonc' } }, projectDirectory),
     ).toEqual([])
-    writeFileSync(join(projectDirectory, 'worktree.jsonc'), '{"create":[],"unknown":true}')
+    writeFileSync(
+      join(projectDirectory, 'worktree.jsonc'),
+      '{"worktree":{"create":[],"unknown":true}}',
+    )
     expect(
       validateProjectSettings(
         { worktree: { recipePath: 'worktree.jsonc' } },
@@ -91,12 +94,12 @@ describe('projects are data, not code', () => {
     ).toContain('unknown-key rule')
   })
 
-  test('registration refuses simultaneous inline and tracked recipes', () => {
+  test('registration accepts a shadowed tracked recipe beside an inline recipe', () => {
     expect(
       validateProjectSettings({
         worktree: { recipe: {}, recipePath: '.orch/worktree.jsonc' },
-      }).join('\n'),
-    ).toContain('recipe and recipePath may not both be declared')
+      }),
+    ).toEqual([])
   })
 })
 

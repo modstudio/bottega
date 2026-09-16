@@ -1,9 +1,9 @@
 #!/usr/bin/env bun
-/** Generate the editor-facing tracked worktree recipe schema from its one Zod definition. */
+/** Generate the editor-facing project config schema from its one Zod definition. */
 import { existsSync, readFileSync, writeFileSync } from 'node:fs'
 import { recipeJsonSchema } from '../orchestrator/src/recipe-schema.ts'
 
-const outputPath = new URL('../orchestrator/schemas/worktree-recipe.schema.json', import.meta.url)
+const outputPath = new URL('../orchestrator/schemas/project-config.schema.json', import.meta.url)
 
 export function generatedRecipeSchema(): string {
   const schema = recipeJsonSchema()
@@ -26,7 +26,7 @@ const generated = generatedRecipeSchema()
 if (process.argv.includes('--check')) {
   const committed = existsSync(outputPath) ? readFileSync(outputPath, 'utf8') : ''
   if (committed !== generated) {
-    console.error('worktree recipe JSON Schema is stale; run bun scripts/generate-recipe-schema.ts')
+    console.error('project config JSON Schema is stale; run bun scripts/generate-recipe-schema.ts')
     process.exit(1)
   }
   console.log('check-recipe-schema: ok')
