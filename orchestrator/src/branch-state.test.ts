@@ -94,7 +94,7 @@ describe('recorded branch landing lookup', () => {
             ...recordedLanding,
           },
         ],
-        'bottega',
+        'alpha',
         pullRequest.headRefName,
       ),
     ).toBeNull()
