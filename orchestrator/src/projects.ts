@@ -872,6 +872,10 @@ export function sniffStack(path: string): string | null {
 export function worktreeWarnings(p: Project): string[] {
   const w = p.settings.worktree
   if (!w) return []
+  const resolved = resolveWorktreeLifecycle(
+    w,
+    existsSync(resolve(p.path, DEFAULT_PROJECT_CONFIG_PATH)),
+  )
   const out: string[] = []
   if (w.create && !w.remove) {
     out.push('has a create command but no remove: orch cannot tear down what it makes')
@@ -879,8 +883,10 @@ export function worktreeWarnings(p: Project): string[] {
   if (w.create && w.recipe) {
     out.push('declares both create and recipe; create wins and the recipe is ignored')
   }
-  if (!w.create && !w.recipe && !w.recipePath) {
-    out.push('declares neither create, recipe nor recipePath, so it cannot make a worktree at all')
+  if (resolved.form === 'none') {
+    out.push(
+      `declares no worktree lifecycle and has no ${DEFAULT_PROJECT_CONFIG_PATH}, so it cannot make a worktree at all`,
+    )
   }
   /*
    * Only for a project running its OWN script.
