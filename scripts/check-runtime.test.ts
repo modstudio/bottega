@@ -2,23 +2,31 @@ import { describe, expect, test } from 'bun:test'
 import {
   decideRuntimeBudget,
   HUNG_SUITE_TIMEOUT_MS,
+  SUITE_CPU_BUDGET_MS,
   SUITE_RUNTIME_BUDGET_MS,
 } from './check-runtime'
 
 describe('suite runtime budget', () => {
-  test.each([
-    { elapsedMs: 121_000, ci: false, verdict: 'over-informational' },
-    { elapsedMs: 121_000, ci: true, verdict: 'over-fatal' },
-    { elapsedMs: 119_000, ci: true, verdict: 'within' },
-    { elapsedMs: 119_000, ci: false, verdict: 'within' },
-  ] as const)('$verdict when elapsed=$elapsedMs and ci=$ci', ({ elapsedMs, ci, verdict }) => {
+  test('CPU time over budget under CI is fatal', () => {
     expect(
       decideRuntimeBudget({
-        elapsedMs,
-        budgetMs: SUITE_RUNTIME_BUDGET_MS,
-        ci,
+        elapsedMs: SUITE_CPU_BUDGET_MS + 1,
+        budgetMs: SUITE_CPU_BUDGET_MS,
+        ci: true,
+        measure: 'cpu',
       }),
-    ).toBe(verdict)
+    ).toBe('over-fatal')
+  })
+
+  test('wall clock over budget under CI is informational', () => {
+    expect(
+      decideRuntimeBudget({
+        elapsedMs: SUITE_RUNTIME_BUDGET_MS + 1,
+        budgetMs: SUITE_RUNTIME_BUDGET_MS,
+        ci: true,
+        measure: 'wall',
+      }),
+    ).toBe('over-informational')
   })
 
   test('hung-suite timeout remains separate from the regression budget', () => {

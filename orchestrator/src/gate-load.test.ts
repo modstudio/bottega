@@ -66,6 +66,7 @@ describe('gate load hold', () => {
     let n = 0
     const sleeps: number[] = []
     const result = await withGateSlot(async () => 'ok', {
+      env: { ...process.env, CI: undefined },
       // The measure reports OTHER runners; withGateSlot adds this one.
       measure: () => {
         n++
@@ -80,6 +81,17 @@ describe('gate load hold', () => {
     expect(result).toBe('ok')
     expect(sleeps.length).toBeGreaterThan(0)
     expect(n).toBe(2)
+  })
+
+  test('withGateSlot does not hold for host load under CI', async () => {
+    const result = await withGateSlot(async () => 'ok', {
+      env: { ...process.env, CI: '1' },
+      measure: () => idle({ gates: 3, loadavg: 8, ncpu: 8 }),
+      sleep: async () => {
+        throw new Error('must not sleep under CI')
+      },
+    })
+    expect(result).toBe('ok')
   })
 })
 
