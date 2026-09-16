@@ -4,6 +4,7 @@ import {
   decideBranchState,
   decideProtectedBranch,
   decidePruneEligibility,
+  findRecordedBranchLanding,
   type MergedPullRequest,
   pullRequestCarriesKey,
 } from './branch-state.ts'
@@ -42,6 +43,7 @@ const pullRequest: MergedPullRequest = {
 }
 
 const recordedLanding = {
+  tip: 'def456',
   number: 190,
   mergeCommit: 'abc123',
   mergedAt: '2026-09-16T12:00:00Z',
@@ -50,6 +52,7 @@ const recordedLanding = {
 function decide(overrides: Partial<Parameters<typeof decideBranchState>[0]> = {}) {
   return decideBranchState({
     branch: pullRequest.headRefName,
+    tip: 'def456',
     mergedPullRequests: [],
     mergedPullRequestsTruncated: false,
     commitsNotOnTrunk: 1,
@@ -80,6 +83,24 @@ describe('pull request task-key matching', () => {
   })
 })
 
+describe('recorded branch landing lookup', () => {
+  test('project identity mutation: a record from another project does not apply', () => {
+    expect(
+      findRecordedBranchLanding(
+        [
+          {
+            project: 'other',
+            branch: pullRequest.headRefName,
+            ...recordedLanding,
+          },
+        ],
+        'bottega',
+        pullRequest.headRefName,
+      ),
+    ).toBeNull()
+  })
+})
+
 describe('run branch state decision', () => {
   test('PR landing precedence mutation: landed by PR beats superseded', () => {
     expect(decide({ mergedPullRequests: [pullRequest], superseded: true })).toEqual({
@@ -100,10 +121,23 @@ describe('run branch state decision', () => {
     })
   })
 
-  test('recorded landing mutation: a recorded landing lands a branch', () => {
+  test('recorded landing tip mutation: a matching tip is landed by the record', () => {
     expect(decide({ recordedLanding })).toEqual({
       state: 'landed',
-      landedBy: { type: 'recorded', ...recordedLanding },
+      landedBy: {
+        type: 'recorded',
+        number: 190,
+        mergeCommit: 'abc123',
+        mergedAt: '2026-09-16T12:00:00Z',
+      },
+    })
+  })
+
+  test('recorded landing stale mutation: a different tip falls through to the next route', () => {
+    expect(decide({ recordedLanding, patchEquivalent: 'commits', tip: 'advanced789' })).toEqual({
+      state: 'landed',
+      landedBy: { type: 'patch-equivalent', form: 'commits' },
+      note: 'recorded landing stale (branch advanced)',
     })
   })
 
@@ -117,21 +151,36 @@ describe('run branch state decision', () => {
   test('recorded landing empty precedence mutation: recorded beats empty', () => {
     expect(decide({ commitsNotOnTrunk: 0, recordedLanding })).toEqual({
       state: 'landed',
-      landedBy: { type: 'recorded', ...recordedLanding },
+      landedBy: {
+        type: 'recorded',
+        number: 190,
+        mergeCommit: 'abc123',
+        mergedAt: '2026-09-16T12:00:00Z',
+      },
     })
   })
 
   test('recorded landing patch precedence mutation: recorded beats patch equivalence', () => {
     expect(decide({ patchEquivalent: 'commits', recordedLanding })).toEqual({
       state: 'landed',
-      landedBy: { type: 'recorded', ...recordedLanding },
+      landedBy: {
+        type: 'recorded',
+        number: 190,
+        mergeCommit: 'abc123',
+        mergedAt: '2026-09-16T12:00:00Z',
+      },
     })
   })
 
   test('recorded landing PR commits precedence mutation: recorded beats a commit match', () => {
     expect(decide({ pullRequestCommitCheck: { number: 43 }, recordedLanding })).toEqual({
       state: 'landed',
-      landedBy: { type: 'recorded', ...recordedLanding },
+      landedBy: {
+        type: 'recorded',
+        number: 190,
+        mergeCommit: 'abc123',
+        mergedAt: '2026-09-16T12:00:00Z',
+      },
     })
   })
 
@@ -148,14 +197,24 @@ describe('run branch state decision', () => {
       }),
     ).toEqual({
       state: 'landed',
-      landedBy: { type: 'recorded', ...recordedLanding },
+      landedBy: {
+        type: 'recorded',
+        number: 190,
+        mergeCommit: 'abc123',
+        mergedAt: '2026-09-16T12:00:00Z',
+      },
     })
   })
 
   test('recorded landing superseded precedence mutation: recorded beats superseded', () => {
     expect(decide({ recordedLanding, superseded: true })).toEqual({
       state: 'landed',
-      landedBy: { type: 'recorded', ...recordedLanding },
+      landedBy: {
+        type: 'recorded',
+        number: 190,
+        mergeCommit: 'abc123',
+        mergedAt: '2026-09-16T12:00:00Z',
+      },
     })
   })
 
