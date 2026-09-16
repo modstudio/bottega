@@ -9,8 +9,9 @@ export function adoptedTreeCloseOutDecision(input: {
   ownership: TreeOwnership
   ownerAlive: boolean
   sharerAlive: boolean
+  ownerHeld: boolean
 }): AdoptedTreeCloseOutDecision {
   if (input.ownership === 'owned') return 'ordinary'
   if (input.ownership === 'unknown') return 'held'
-  return input.ownerAlive || input.sharerAlive ? 'forgotten' : 'release-adopted'
+  return input.ownerAlive || input.sharerAlive || input.ownerHeld ? 'forgotten' : 'release-adopted'
 }

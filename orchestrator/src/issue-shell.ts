@@ -2,12 +2,62 @@
 /** Pure policy for coordinator-run reproduction and gate commands. */
 
 import { resolve } from 'node:path'
-import type { SandboxRuntimeConfig } from './sandbox.ts'
+import {
+  expandHome,
+  READONLY_LENS_DENY_PATHS,
+  READONLY_LENS_DENY_SOCKETS,
+  type SandboxRuntimeConfig,
+} from './sandbox.ts'
+
+export const FILED_ISSUE_COMMAND_TIMEOUT_MS = 20 * 60_000
+
+const WORKER_GATE_ENV_EXACT = new Set([
+  'PATH',
+  'USER',
+  'SHELL',
+  'LANG',
+  'TERM',
+  'ORCH_GUARDED_GIT_COMMON_DIR',
+  'ORCH_ALLOWED_GIT_REF',
+])
 
 export type FiledIssueCommandPlan = {
   argv: [string, '-lc', string]
   env: Record<string, string>
   profile: SandboxRuntimeConfig
+}
+
+/** Non-secret host env the worker-environment gate may inherit. */
+export function workerGateEnvironment(
+  source: Readonly<Record<string, string | undefined>>,
+): Record<string, string> {
+  const env: Record<string, string> = {}
+  for (const [key, value] of Object.entries(source)) {
+    if (!value) continue
+    if (WORKER_GATE_ENV_EXACT.has(key) || key.startsWith('LC_')) env[key] = value
+  }
+  return env
+}
+
+export function filedIssueCommandResult(spawn: {
+  exitCode: number | null
+  stdout: { toString(): string }
+  stderr: { toString(): string }
+  exitedDueToTimeout?: boolean
+}): { ok: boolean; text: string; exitCode: number } {
+  if (spawn.exitedDueToTimeout) {
+    return {
+      ok: false,
+      text: `timed out after ${FILED_ISSUE_COMMAND_TIMEOUT_MS}ms`,
+      exitCode: spawn.exitCode ?? -1,
+    }
+  }
+  const text = `${spawn.stdout.toString()}${spawn.stderr.toString()}`.trim()
+  return {
+    ok: spawn.exitCode === 0,
+    text: text || `exit ${spawn.exitCode}`,
+    exitCode: spawn.exitCode ?? -1,
+  }
 }
 
 export function filedIssueCommandPlan(input: {
@@ -22,7 +72,12 @@ export function filedIssueCommandPlan(input: {
 }): FiledIssueCommandPlan {
   const worktree = resolve(input.worktree)
   const sandboxHome = resolve(input.sandboxHome)
-  const denied = [...input.secretPaths, input.operatorEnvPath].map((path) => resolve(path))
+  const denied = [
+    ...READONLY_LENS_DENY_PATHS.map(expandHome).map((path) => resolve(path)),
+    ...READONLY_LENS_DENY_SOCKETS,
+    ...input.secretPaths,
+    input.operatorEnvPath,
+  ].map((path) => resolve(path))
   return {
     argv: ['sh', '-lc', input.command],
     env: {

@@ -60,7 +60,7 @@ export const SRT_LIBRARY = join(
 )
 let sandboxInitialized = false
 
-function expandHome(path: string): string {
+export function expandHome(path: string): string {
   if (path === '~') return homedir()
   if (path.startsWith('~/')) return join(homedir(), path.slice(2))
   return path
