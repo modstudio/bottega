@@ -14,6 +14,10 @@ export async function syncCommand(
     presentation.log(
       `review backfill minted ${result.backfill.reviews.mintedReviews} reviews, ${result.backfill.reviews.mintedLenses} lenses, ${result.backfill.reviews.mintedFindings} findings; enqueued ${result.backfill.reviews.enqueuedReviews} reviews`,
     )
+    const evidence = result.backfill.landingEvidence
+    presentation.log(
+      `landing evidence backfill minted ${evidence.mintedLandings} landings, ${evidence.mintedOverrides} overrides, ${evidence.mintedCarries} carries, ${evidence.mintedContentions} contentions, ${evidence.mintedFlakes} flakes; enqueued ${evidence.enqueuedLandings}, ${evidence.enqueuedOverrides}, ${evidence.enqueuedCarries}, ${evidence.enqueuedContentions}, ${evidence.enqueuedFlakes}`,
+    )
   }
   if (!result.configured) {
     presentation.log('no record configured')

@@ -7,6 +7,13 @@ import { db, nowIso } from './db.ts'
 import { machineId, machineName } from './machine-identity.ts'
 import { machine, PLATFORM_OPERATOR_USER_ID, PLATFORM_SPACE_ID } from './postgres-schema.ts'
 import {
+  contention as contentionRecord,
+  landingOverride as landingOverrideRecord,
+  landingReviewCarry as landingReviewCarryRecord,
+  landing as landingRecord,
+  testFlake as testFlakeRecord,
+} from './postgres-schema-landing.ts'
+import {
   reviewFinding as reviewFindingRecord,
   reviewLens as reviewLensRecord,
   review as reviewRecord,
@@ -24,6 +31,15 @@ import {
   RUN_RECORD_PAYLOAD_COLUMNS,
   type RunRecordBackfillResult,
 } from './run-outbox.ts'
+import {
+  backfillLandingEvidenceRecords,
+  CONTENTION_RECORD_PAYLOAD_COLUMNS,
+  LANDING_OVERRIDE_RECORD_PAYLOAD_COLUMNS,
+  LANDING_RECORD_PAYLOAD_COLUMNS,
+  LANDING_REVIEW_CARRY_RECORD_PAYLOAD_COLUMNS,
+  type LandingEvidenceBackfillResult,
+  TEST_FLAKE_RECORD_PAYLOAD_COLUMNS,
+} from './landing-outbox.ts'
 
 type OutboxRow = { id: number; kind: string; record_id: string; payload: string }
 type Payload = Record<string, unknown>
@@ -33,7 +49,10 @@ export type RecordSyncResult = {
   failed: number
   pending: number
   configured: boolean
-  backfill?: RunRecordBackfillResult & { reviews: ReviewRecordBackfillResult }
+  backfill?: RunRecordBackfillResult & {
+    reviews: ReviewRecordBackfillResult
+    landingEvidence: LandingEvidenceBackfillResult
+  }
 }
 export type RecordSyncOptions = {
   backfill?: boolean
@@ -266,6 +285,92 @@ function reviewFindingValues(row: Payload) {
   }
 }
 
+const landingCommonValues = (row: Payload) => ({
+  id: String(row.id),
+  spaceId: String(row.spaceId),
+  machineId: String(row.machineId),
+  localId: bigint(row.localId),
+  createdAt: date(row.createdAt),
+  updatedAt: date(row.updatedAt),
+})
+
+function landingValues(row: Payload, projectId: string | null) {
+  return {
+    ...landingCommonValues(row),
+    projectId,
+    branch: String(row.branch),
+    tip: nullableString(row.tip),
+    trunkBefore: nullableString(row.trunkBefore),
+    status: String(row.status),
+    error: nullableString(row.error),
+    sessionId: nullableString(row.sessionId),
+    startedAt: date(row.startedAt),
+    finishedAt: nullableDate(row.finishedAt),
+    pathSet: jsonString(row.pathSet),
+    requestedAt: nullableDate(row.requestedAt),
+    steps: jsonString(row.steps),
+    causingLandingId: nullableString(row.causingLandingId),
+  }
+}
+
+function landingOverrideValues(row: Payload, projectId: string | null) {
+  return {
+    ...landingCommonValues(row),
+    projectId,
+    branch: String(row.branch),
+    tip: String(row.tip),
+    tree: String(row.tree),
+    reason: String(row.reason),
+    sessionId: nullableString(row.sessionId),
+    at: date(row.at),
+  }
+}
+
+function landingReviewCarryValues(row: Payload, projectId: string | null) {
+  return {
+    ...landingCommonValues(row),
+    projectId,
+    branch: String(row.branch),
+    tip: String(row.tip),
+    tree: String(row.tree),
+    reviewId: String(row.reviewId),
+    reviewedCommit: String(row.reviewedCommit),
+    reviewedTree: String(row.reviewedTree),
+    patchId: String(row.patchId),
+    oldBase: String(row.oldBase),
+    newBase: String(row.newBase),
+    sessionId: nullableString(row.sessionId),
+    at: date(row.at),
+  }
+}
+
+function contentionValues(row: Payload) {
+  return {
+    ...landingCommonValues(row),
+    at: date(row.at),
+    sessionId: nullableString(row.sessionId),
+    resourceKind: String(row.resourceKind),
+    resourceKey: String(row.resourceKey),
+    eventKind: String(row.eventKind),
+    durationMs: nullableBigint(row.durationMs),
+    cause: nullableString(row.cause),
+    runId: nullableString(row.runId),
+    landingId: nullableString(row.landingId),
+  }
+}
+
+function testFlakeValues(row: Payload) {
+  return {
+    ...landingCommonValues(row),
+    projectId: null,
+    test: String(row.test),
+    file: String(row.file),
+    loadAtFailure: jsonString(row.loadAtFailure)!,
+    signal: nullableString(row.signal),
+    at: date(row.at),
+  }
+}
+
 async function projectRecordId(tx: SQL, row: Payload): Promise<string | null> {
   const projectName = nullableString(row.projectName)
   if (projectName === null) return null
@@ -316,6 +421,71 @@ const recordKinds = {
           .onConflictDoUpdate({ target: reviewFindingRecord.id, set: updates })
       }),
   },
+  landing: {
+    columns: LANDING_RECORD_PAYLOAD_COLUMNS,
+    push: async (postgres: SQL, row: Payload) =>
+      postgres.begin(async (tx) => {
+        await tx`SELECT set_config('app.space_id', ${PLATFORM_SPACE_ID}, true)`
+        const values = landingValues(row, await projectRecordId(tx, row))
+        const { id: _id, createdAt: _createdAt, ...updates } = values
+        await drizzle({ client: tx })
+          .insert(landingRecord)
+          .values(values)
+          .onConflictDoUpdate({ target: landingRecord.id, set: updates })
+      }),
+  },
+  landing_override: {
+    columns: LANDING_OVERRIDE_RECORD_PAYLOAD_COLUMNS,
+    push: async (postgres: SQL, row: Payload) =>
+      postgres.begin(async (tx) => {
+        await tx`SELECT set_config('app.space_id', ${PLATFORM_SPACE_ID}, true)`
+        const values = landingOverrideValues(row, await projectRecordId(tx, row))
+        const { id: _id, createdAt: _createdAt, ...updates } = values
+        await drizzle({ client: tx })
+          .insert(landingOverrideRecord)
+          .values(values)
+          .onConflictDoUpdate({ target: landingOverrideRecord.id, set: updates })
+      }),
+  },
+  landing_review_carry: {
+    columns: LANDING_REVIEW_CARRY_RECORD_PAYLOAD_COLUMNS,
+    push: async (postgres: SQL, row: Payload) =>
+      postgres.begin(async (tx) => {
+        await tx`SELECT set_config('app.space_id', ${PLATFORM_SPACE_ID}, true)`
+        const values = landingReviewCarryValues(row, await projectRecordId(tx, row))
+        const { id: _id, createdAt: _createdAt, ...updates } = values
+        await drizzle({ client: tx })
+          .insert(landingReviewCarryRecord)
+          .values(values)
+          .onConflictDoUpdate({ target: landingReviewCarryRecord.id, set: updates })
+      }),
+  },
+  contention: {
+    columns: CONTENTION_RECORD_PAYLOAD_COLUMNS,
+    push: async (postgres: SQL, row: Payload) =>
+      postgres.begin(async (tx) => {
+        await tx`SELECT set_config('app.space_id', ${PLATFORM_SPACE_ID}, true)`
+        const values = contentionValues(row)
+        const { id: _id, createdAt: _createdAt, ...updates } = values
+        await drizzle({ client: tx })
+          .insert(contentionRecord)
+          .values(values)
+          .onConflictDoUpdate({ target: contentionRecord.id, set: updates })
+      }),
+  },
+  test_flake: {
+    columns: TEST_FLAKE_RECORD_PAYLOAD_COLUMNS,
+    push: async (postgres: SQL, row: Payload) =>
+      postgres.begin(async (tx) => {
+        await tx`SELECT set_config('app.space_id', ${PLATFORM_SPACE_ID}, true)`
+        const values = testFlakeValues(row)
+        const { id: _id, createdAt: _createdAt, ...updates } = values
+        await drizzle({ client: tx })
+          .insert(testFlakeRecord)
+          .values(values)
+          .onConflictDoUpdate({ target: testFlakeRecord.id, set: updates })
+      }),
+  },
 } as const
 
 export async function syncRecord(options: RecordSyncOptions = {}): Promise<RecordSyncResult> {
@@ -323,7 +493,11 @@ export async function syncRecord(options: RecordSyncOptions = {}): Promise<Recor
   const identity = options.identity ?? { id: machineId(), name: machineName() }
   const local = options.local ?? (recordUrl || options.backfill ? db() : undefined)
   const backfill = options.backfill
-    ? { ...backfillRunRecords(local!, identity.id), reviews: backfillReviewRecords(local!) }
+    ? {
+        ...backfillRunRecords(local!, identity.id),
+        reviews: backfillReviewRecords(local!),
+        landingEvidence: backfillLandingEvidenceRecords(local!),
+      }
     : undefined
   if (!recordUrl) {
     return {
