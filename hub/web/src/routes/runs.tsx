@@ -12,9 +12,11 @@ import {
   StatTile,
   WindowBar,
 } from '@/components/design-system'
+import { HostedRuns } from '@/components/hosted-runs'
 import { Input } from '@/components/input'
 import { useNow } from '@/lib/clock'
 import { collectedTime, compactTokens, duration, vendorFigures } from '@/lib/format'
+import { isHostedMode } from '@/lib/hub-mode'
 import {
   matchesRunSearch,
   runEasternTime,
@@ -92,6 +94,7 @@ function Verdict({ row }: { row: RunRow }) {
 export const Route = createFileRoute('/runs')({ component: RunsPage })
 
 function RunsPage() {
+  if (isHostedMode()) return <HostedRuns />
   return (
     <>
       <RunsList />

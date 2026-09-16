@@ -1,0 +1,184 @@
+import { useQuery } from '@tanstack/react-query'
+import { Outlet, useNavigate } from '@tanstack/react-router'
+import { ChevronRight } from 'lucide-react'
+import { useState } from 'react'
+import { Badge } from '@/components/badge'
+import { Button } from '@/components/button'
+import { Collection, type CollectionColumn } from '@/components/collection'
+import { PageHeader, ProjectMark } from '@/components/design-system'
+import { hostedProjectColors } from '@/components/hosted-projects'
+import { Input } from '@/components/input'
+import { duration } from '@/lib/format'
+import { runEasternTime } from '@/lib/run-search'
+import { trpc } from '@/trpc/client'
+
+type HostedRun = {
+  id: string
+  projectName: string | null
+  startedAt: string
+  agent: string
+  job: string
+  status: string
+  latencyMs: number | null
+  vendorCostUsd: number | null
+  score: {
+    delivery: string
+    quality: string | null
+    fidelity: string | null
+  } | null
+}
+
+function ScoreBadge({ score, status }: { score: HostedRun['score']; status: string }) {
+  if (!score) return <Badge variant="outline">{status}</Badge>
+  const variant =
+    score.quality === 'wrong' || score.delivery === 'none'
+      ? 'danger'
+      : score.quality === 'mixed' || score.delivery === 'partial'
+        ? 'warning'
+        : score.quality === 'right' || score.delivery === 'full'
+          ? 'success'
+          : 'outline'
+  const text = [score.delivery, score.quality, score.fidelity].filter(Boolean).join(' / ')
+  return <Badge variant={variant}>{text}</Badge>
+}
+
+export function HostedRuns() {
+  return (
+    <>
+      <HostedRunsList />
+      <Outlet />
+    </>
+  )
+}
+
+function HostedRunsList() {
+  const navigate = useNavigate()
+  const [draft, setDraft] = useState({ project: '', agent: '', status: '' })
+  const [filters, setFilters] = useState(draft)
+  const [pages, setPages] = useState<HostedRun[][]>([])
+  const [cursor, setCursor] = useState<string | undefined>(undefined)
+  const projects = useQuery(trpc.record.projects.queryOptions())
+  const colors = hostedProjectColors(projects.data ?? [])
+  const query = useQuery(
+    trpc.record.runs.queryOptions({
+      limit: 20,
+      cursor,
+      project: filters.project || undefined,
+      agent: filters.agent || undefined,
+      status: filters.status || undefined,
+    }),
+  )
+
+  const applied = query.data
+  const rows = applied
+    ? cursor
+      ? [...pages.flat(), ...applied.items]
+      : applied.items
+    : pages.flat()
+
+  const applyFilters = (event: React.FormEvent) => {
+    event.preventDefault()
+    setPages([])
+    setCursor(undefined)
+    setFilters(draft)
+  }
+
+  const loadMore = () => {
+    if (!applied?.nextCursor) return
+    setPages((current) => [...current, applied.items])
+    setCursor(applied.nextCursor)
+  }
+
+  const columns: CollectionColumn<HostedRun>[] = [
+    { id: 'started', label: 'Started', render: (row) => runEasternTime(row.startedAt, true) },
+    {
+      id: 'project',
+      label: 'Project',
+      render: (row) => <ProjectMark name={row.projectName} colors={colors} />,
+    },
+    { id: 'agent', label: 'Agent', render: (row) => row.agent },
+    {
+      id: 'job',
+      label: 'Job',
+      render: (row) => <span className="text-muted-foreground">{row.job}</span>,
+    },
+    { id: 'status', label: 'Status', render: (row) => row.status },
+    {
+      id: 'latency',
+      label: 'Latency',
+      className: 'num',
+      render: (row) => (row.latencyMs == null ? '-' : duration(row.latencyMs)),
+    },
+    {
+      id: 'cost',
+      label: 'Cost',
+      className: 'num',
+      render: (row) => (row.vendorCostUsd == null ? '-' : `$${row.vendorCostUsd.toFixed(2)}`),
+    },
+    {
+      id: 'score',
+      label: 'Score',
+      render: (row) => <ScoreBadge score={row.score} status={row.status} />,
+    },
+    {
+      id: 'open',
+      label: '',
+      render: () => <ChevronRight size={14} className="text-muted-foreground" />,
+    },
+  ]
+
+  return (
+    <section>
+      <PageHeader
+        title="Runs"
+        subtitle={query.isPending && !rows.length ? 'Loading runs...' : `${rows.length} loaded`}
+        actions={
+          <form className="flex flex-wrap items-center gap-2" onSubmit={applyFilters}>
+            <Input
+              className="h-8 w-36"
+              placeholder="Project"
+              value={draft.project}
+              onChange={(event) => setDraft({ ...draft, project: event.target.value })}
+            />
+            <Input
+              className="h-8 w-36"
+              placeholder="Agent"
+              value={draft.agent}
+              onChange={(event) => setDraft({ ...draft, agent: event.target.value })}
+            />
+            <Input
+              className="h-8 w-28"
+              placeholder="Status"
+              value={draft.status}
+              onChange={(event) => setDraft({ ...draft, status: event.target.value })}
+            />
+            <Button type="submit" size="sm" variant="outline">
+              Filter
+            </Button>
+          </form>
+        }
+      />
+      {query.error ? (
+        <p className="text-destructive">could not load: {query.error.message}</p>
+      ) : null}
+      <Collection
+        title="Runs"
+        count={rows.length}
+        columns={columns}
+        rows={rows}
+        getKey={(row) => row.id}
+        onOpen={(row) => void navigate({ to: '/runs/$id', params: { id: row.id } })}
+        empty={{
+          title: query.isPending ? 'Loading runs...' : 'No runs match these filters.',
+        }}
+      />
+      {applied?.nextCursor ? (
+        <div className="mt-4">
+          <Button variant="outline" size="sm" disabled={query.isFetching} onClick={loadMore}>
+            {query.isFetching ? 'Loading...' : 'Load more'}
+          </Button>
+        </div>
+      ) : null}
+    </section>
+  )
+}

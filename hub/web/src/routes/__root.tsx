@@ -1,46 +1,32 @@
-import { createRootRoute, Link, Outlet } from '@tanstack/react-router'
-import {
-  Activity,
-  BookOpen,
-  Bot,
-  BriefcaseBusiness,
-  CheckCircle2,
-  CircleDollarSign,
-  FolderGit2,
-  GitCompareArrows,
-  Kanban,
-  NotebookPen,
-  Palette,
-  Plane,
-  Play,
-  Route as RouteIcon,
-  Settings,
-} from 'lucide-react'
+import { useQuery } from '@tanstack/react-query'
+import { createRootRoute, Link, Outlet, redirect, useRouterState } from '@tanstack/react-router'
+import { Button } from '@/components/button'
 import { LiveDot } from '@/components/design-system'
+import { signOutFromRecord } from '@/lib/hosted-auth'
+import { isHostedMode, isHostedPath, navForMode } from '@/lib/hub-mode'
 import { useWindowState } from '@/lib/window'
+import { trpc } from '@/trpc/client'
 import { PLATFORM_NAME } from '../../../../shared/brand.ts'
 
-const nav = [
-  { to: '/flight', label: 'Flight', icon: Plane, count: 'flight' },
-  { to: '/board', label: 'Board', icon: Kanban },
-  { to: '/done', label: 'Done', icon: CheckCircle2, count: 'done' },
-  { to: '/projects', label: 'Projects', icon: FolderGit2 },
-  { to: '/docs', label: 'Docs', icon: BookOpen },
-  { to: '/notes', label: 'Notes', icon: NotebookPen },
-  { to: '/runs', label: 'Runs', icon: Play, count: 'runs' },
-  { to: '/jobs', label: 'Jobs', icon: BriefcaseBusiness },
-  { to: '/agents', label: 'Agents', icon: Bot },
-  { to: '/routing', label: 'Routing', icon: RouteIcon },
-  { to: '/health', label: 'Health', icon: Activity },
-  { to: '/ratio', label: 'Ratio', icon: GitCompareArrows },
-  { to: '/spend', label: 'Spend', icon: CircleDollarSign },
-  { to: '/settings', label: 'Settings', icon: Settings },
-  { to: '/design', label: 'Design', icon: Palette },
-] as const
-
 export const Route = createRootRoute({
+  beforeLoad: ({ location }) => {
+    if (!isHostedMode()) return
+    if (!isHostedPath(location.pathname)) throw redirect({ to: '/runs' })
+  },
   component: function Shell() {
+    const hosted = isHostedMode()
+    const nav = navForMode(hosted ? 'hosted' : 'local')
     const { counts } = useWindowState()
+    const pathname = useRouterState({ select: (state) => state.location.pathname })
+    const whoami = useQuery({
+      ...trpc.record.whoami.queryOptions(),
+      enabled: hosted && pathname !== '/sign-in',
+      retry: false,
+    })
+    const signOut = async () => {
+      await signOutFromRecord()
+      window.location.assign('/sign-in')
+    }
     return (
       <div className="flex min-h-screen bg-background text-foreground">
         <aside className="w-52 shrink-0 border-r border-border">
@@ -57,13 +43,25 @@ export const Route = createRootRoute({
               >
                 <Icon size={16} strokeWidth={1.5} />
                 {label}
-                {to === '/flight' && counts?.flight ? <LiveDot /> : null}
+                {to === '/flight' && 'count' in item && counts?.flight ? <LiveDot /> : null}
                 {'count' in item && counts?.[item.count] ? (
                   <span className="ml-auto text-muted-foreground">{counts[item.count]}</span>
                 ) : null}
               </Link>
             ))}
           </nav>
+          {hosted && pathname !== '/sign-in' ? (
+            <div className="space-y-2 p-3">
+              {whoami.data?.user && 'email' in whoami.data.user ? (
+                <p className="truncate px-3 text-muted-foreground">
+                  {String(whoami.data.user.email)}
+                </p>
+              ) : null}
+              <Button variant="outline" size="sm" className="w-full" onClick={() => void signOut()}>
+                Sign out
+              </Button>
+            </div>
+          ) : null}
         </aside>
         <main className="min-w-0 flex-1 px-8 pb-8">
           <div className="max-w-[1160px]">
