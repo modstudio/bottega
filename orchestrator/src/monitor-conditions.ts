@@ -7,6 +7,7 @@ import { db, liveRuns } from './db.ts'
 import { idleLabel, idleMsSince, idleWarnMs } from './events.ts'
 import { UNSCORED_WHERE } from './evidence-query.ts'
 import { targetGitEnvironment } from './git-environment.ts'
+import { HOOK_TREE_JOB, hookTreeNotice } from './hook-tree.ts'
 import { runHasLiveDescendants } from './idle-kill.ts'
 import type { MonitorCondition } from './monitor-types.ts'
 import { pidAlive } from './process-liveness.ts'
@@ -68,6 +69,19 @@ export const age = (since: string | null, clock: number) => {
   return Number.isFinite(at) ? Math.max(0, clock - at) : null
 }
 
+export function hookTreeConditions(database = db(), clock = Date.now()): MonitorCondition[] {
+  const rows = database
+    .query(
+      `SELECT id,job,worktree path,started_at FROM run
+       WHERE job=? AND worktree IS NOT NULL AND status='ok' ORDER BY id`,
+    )
+    .all(HOOK_TREE_JOB) as { id: number; job: string; path: string; started_at: string }[]
+  return rows.flatMap((row) => {
+    const condition = hookTreeNotice({ ...row, startedAt: row.started_at }, clock)
+    return condition ? [condition] : []
+  })
+}
+
 export function git(cwd: string, args: string[]): string | null {
   const p = Bun.spawnSync(['git', ...args], {
     cwd,
@@ -100,9 +114,9 @@ export function idleRunConditions(clock = Date.now()): MonitorCondition[] {
   const threshold = idleWarnMs()
   const running = db()
     .query(
-      `SELECT id, started_at, last_event_at, agent, job, session_id FROM run WHERE status='running'`,
+      `SELECT id, started_at, last_event_at, agent, job, session_id FROM run WHERE status='running' AND job<>?`,
     )
-    .all() as {
+    .all(HOOK_TREE_JOB) as {
     id: number
     started_at: string
     last_event_at: string | null
@@ -199,9 +213,9 @@ export function terminalProcessAliveConditions(clock = Date.now()): MonitorCondi
 export function deadRunningProcessConditions(clock = Date.now()): MonitorCondition[] {
   const running = db()
     .query(
-      `SELECT id, started_at, pid, agent_pid, output_bytes, session_id FROM run WHERE status='running'`,
+      `SELECT id, started_at, pid, agent_pid, output_bytes, session_id FROM run WHERE status='running' AND job<>?`,
     )
-    .all() as {
+    .all(HOOK_TREE_JOB) as {
     id: number
     started_at: string
     pid: number | null
@@ -414,8 +428,8 @@ export function dockerConditions(clock: number): {
 
 function liveRunIds(database: ReturnType<typeof db>): Set<number> {
   const rows = database
-    .query(`SELECT id,status,pid FROM run WHERE status IN ('running','asking')`)
-    .all() as { id: number; status: string; pid: number | null }[]
+    .query(`SELECT id,status,pid FROM run WHERE status IN ('running','asking') AND job<>?`)
+    .all(HOOK_TREE_JOB) as { id: number; status: string; pid: number | null }[]
   return new Set(
     rows
       .filter((row) =>
@@ -637,7 +651,7 @@ export function unsettledClaimInventory(database = db()): UnsettledClaimInventor
       .all() as { root_run_id: number; kind: ResourceClaimKind; allocation_key: string }[]
     const turns = database
       .query(
-        `SELECT id,parent_run_id,turn,status,started_at,latency_ms FROM run
+        `SELECT id,parent_run_id,turn,status,started_at,latency_ms,job FROM run
          ORDER BY COALESCE(parent_run_id,id),turn,id`,
       )
       .all() as {
@@ -647,6 +661,7 @@ export function unsettledClaimInventory(database = db()): UnsettledClaimInventor
       status: string
       started_at: string
       latency_ms: number | null
+      job: string
     }[]
     const byRoot = new Map<number, typeof turns>()
     for (const turn of turns) {
@@ -664,6 +679,7 @@ export function unsettledClaimInventory(database = db()): UnsettledClaimInventor
       }
     >()
     for (const claim of claims) {
+      if (byRoot.get(claim.root_run_id)?.some((turn) => turn.job === HOOK_TREE_JOB)) continue
       const key = `${claim.kind}:${claim.root_run_id}`
       const conversation = byRoot.get(claim.root_run_id) ?? []
       const terminal =

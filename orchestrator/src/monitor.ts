@@ -21,6 +21,7 @@ import {
   deadRunningProcessConditions,
   dockerConditions,
   git,
+  hookTreeConditions,
   idleRunConditions,
   orphanDockerNetworkConditions,
   orphanSandboxDirectoryConditions,
@@ -595,6 +596,7 @@ export async function monitor(
   const unsettledClaims = unsettledClaimConditions(unsettledClaimInventory(database), clock)
   conditions.push(...unsettledClaims.conditions)
   errors.push(...unsettledClaims.errors)
+  conditions.push(...hookTreeConditions(database, clock))
 
   const trustEntries = staleTrustEntryConditions(trustEntryInventory(database))
   conditions.push(...trustEntries.conditions)

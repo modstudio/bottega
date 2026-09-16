@@ -37,6 +37,7 @@ import {
 } from '../review-vocabulary.ts'
 import { answerCommand, continueCommand, retryCommand } from '../run-message-commands.ts'
 import { spawnsCommand } from '../spawn-commands.ts'
+import { treeCreateCommand, treeRemoveCommand } from '../tree-commands.ts'
 import { workflowCommand } from '../workflow-commands.ts'
 import { collect, log, productArgv, rawArgv, write, writeStdout } from './support.ts'
 
@@ -64,6 +65,24 @@ const runFlags = (options: OptionValues) => ({
 })
 
 export function register(program: Command): void {
+  const tree = program.command('tree')
+  tree
+    .command('create')
+    .requiredOption('--name <text>')
+    .option('--key <KEY>')
+    .option('--base <ref>')
+    .option('--cwd <path>', '', process.cwd())
+    .allowExcessArguments(false)
+    .action((options) =>
+      treeCreateCommand(
+        { cwd: options.cwd, name: options.name, key: options.key, base: options.base },
+        { writePath: (path) => write(`${path}\n`) },
+      ),
+    )
+  tree
+    .command('remove <path>')
+    .allowExcessArguments(false)
+    .action((path) => treeRemoveCommand(path))
   program
     .command('migrate')
     .option('--backfill-spec-sha')

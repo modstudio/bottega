@@ -8,6 +8,7 @@ import { existsSync, rmSync } from 'node:fs'
 import { join, resolve } from 'node:path'
 import { db, nowIso, sessionId, writeTransaction } from './db.ts'
 import { repoRootOf, targetGitEnvironment } from './git-environment.ts'
+import { HOOK_TREE_JOB, hookTreeHoldDecision } from './hook-tree.ts'
 import { isGroupKillablePgid, runHasLiveDescendants } from './idle-kill.ts'
 import { type KeepTreeHoldDecision, keepTreeHold } from './keep-tree-hold.ts'
 import { pidAlive } from './process-liveness.ts'
@@ -61,15 +62,18 @@ function aliveConversationTurns(rootId: number): AliveTurn[] {
   )
 }
 
-type ConversationKeepTreeHold = KeepTreeHoldDecision & { reason?: string }
+type ConversationKeepTreeHold =
+  | (KeepTreeHoldDecision & { reason?: string })
+  | { held: true; until: null; reason: string }
 
 function conversationKeepTreeHold(rootId: number, now: string): ConversationKeepTreeHold {
   const rows = db()
     .query(
-      `SELECT keep_tree,keep_tree_until,keep_tree_reason,started_at FROM run
+      `SELECT job,keep_tree,keep_tree_until,keep_tree_reason,started_at FROM run
        WHERE id=? OR parent_run_id=? ORDER BY id`,
     )
     .all(rootId, rootId) as {
+    job: string
     keep_tree: number
     keep_tree_until: string | null
     keep_tree_reason: string | null
@@ -84,15 +88,21 @@ function conversationKeepTreeHold(rootId: number, now: string): ConversationKeep
       now,
     })
     if (decision.held) {
-      return {
-        ...decision,
-        reason: row.keep_tree_reason ?? 'explicit --keep-tree',
-      }
+      return hookTreeHoldDecision(
+        { job: row.job },
+        {
+          ...decision,
+          reason: row.keep_tree_reason ?? 'explicit --keep-tree',
+        },
+      )
     }
     if ('expiredAt' in decision) expired.push(decision)
   }
   const latest = expired.sort((a, b) => Date.parse(b.expiredAt) - Date.parse(a.expiredAt))[0]
-  return latest ?? { held: false }
+  return hookTreeHoldDecision(
+    { job: rows.some((row) => row.job === HOOK_TREE_JOB) ? HOOK_TREE_JOB : '' },
+    latest ?? { held: false as const },
+  )
 }
 
 export type SandboxReleaseResult = {
@@ -267,7 +277,10 @@ function terminalHoldResult(
       runId,
       worktree: treePath,
       outcome: 'held',
-      detail: `held by ${hold.reason} until ${hold.until}; clear with orch discard ${runId}`,
+      detail:
+        hold.until === null
+          ? hold.reason
+          : `held by ${hold.reason} until ${hold.until}; clear with orch discard ${runId}`,
     }
   }
   return null
@@ -341,7 +354,7 @@ function absentCloseOutResult(input: {
 function attemptCloseOutRun(
   runId: number,
   options: {
-    intent: 'terminal' | 'explicit' | 'sweep'
+    intent: 'terminal' | 'explicit' | 'sweep' | 'tree-remove'
     dryRun?: boolean
     lockTimeoutMs?: number
     extraPids?: number[]
@@ -735,7 +748,7 @@ function attemptCloseOutRun(
 export function closeOutRun(
   runId: number,
   options: {
-    intent: 'terminal' | 'explicit' | 'sweep'
+    intent: 'terminal' | 'explicit' | 'sweep' | 'tree-remove'
     dryRun?: boolean
     lockTimeoutMs?: number
     extraPids?: number[]
@@ -746,7 +759,10 @@ export function closeOutRun(
     .query('SELECT COALESCE(parent_run_id,id) root_id FROM run WHERE id=?')
     .get(runId) as { root_id: number } | null
   if (!root) throw new Error(`no run ${runId}`)
-  const keepTreeDecision = conversationKeepTreeHold(root.root_id, nowIso())
+  const keepTreeDecision =
+    options.intent === 'tree-remove'
+      ? ({ held: false } as const)
+      : conversationKeepTreeHold(root.root_id, nowIso())
   const result = attemptCloseOutRun(runId, { ...options, keepTreeDecision })
   if (!keepTreeDecision.held && 'expiredAt' in keepTreeDecision) {
     result.detail = `${result.detail}; keep-tree hold expired at ${keepTreeDecision.expiredAt}`

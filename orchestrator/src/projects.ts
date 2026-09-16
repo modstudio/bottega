@@ -209,8 +209,9 @@ export type WorktreeTool = {
    * exactly the mistake that delegating the lifecycle was meant to stop.
    *
    * Placeholders: `{id}` the run id, `{key}` a ticket key when the architect
-   * supplied one with `--key`. A template naming `{key}` makes that flag
-   * required, because inventing a ticket number would be worse than refusing.
+   * supplied one with `--key`, and `{name}` when a project hook creates a tree.
+   * A template naming `{key}` makes that flag required, because inventing a
+   * ticket number would be worse than refusing.
    */
   branch?: string
   /** Pattern accepted for a ticket key supplied with `--key`. */

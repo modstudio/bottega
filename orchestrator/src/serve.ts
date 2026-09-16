@@ -13,6 +13,7 @@ import { AGENTS, refreshAgents } from './agent-registry.ts'
 import { db } from './db.ts'
 import { runTotals } from './evidence-query.ts'
 import { guide } from './guide.ts'
+import { nonHookTreeStatsSql } from './hook-tree.ts'
 import { JOBS } from './jobs.ts'
 import { messagesForRun, receiptMessagesForArchitect } from './mailbox.ts'
 import { summary as metricSummary } from './metric.ts'
@@ -125,7 +126,7 @@ export function state(sinceDays: number | null = null) {
               WHERE q.run_id = run.id AND q.answered_at IS NULL) AS open_questions,
             (status = 'asking' AND (SELECT COUNT(*) FROM question q
               WHERE q.run_id = run.id AND q.answered_at IS NULL) > 0) AS waiting
-       FROM run WHERE status IN ('running','asking') ORDER BY waiting DESC, id DESC`,
+       FROM run WHERE status IN ('running','asking') AND job<>'hook-tree' ORDER BY waiting DESC, id DESC`,
     )
     .all()
 
@@ -154,7 +155,7 @@ export function state(sinceDays: number | null = null) {
     .query(
       `SELECT COALESCE(r.repo,'—') repo, r.agent, COUNT(*) runs,
             SUM(COALESCE(r.vendor_tokens,0)) toks
-       FROM run r WHERE r.status='ok' AND r.probe=0
+       FROM run r WHERE r.status='ok' AND r.probe=0 AND ${nonHookTreeStatsSql('r')}
       GROUP BY r.repo, r.agent ORDER BY runs DESC`,
     )
     .all()
@@ -172,7 +173,11 @@ export function state(sinceDays: number | null = null) {
 
   // The runs tab counts everything ever, whatever the band is showing, so the
   // badge on it does not change meaning when the window does.
-  const allTimeRuns = (d.query(`SELECT COUNT(*) n FROM run`).get() as { n: number }).n
+  const allTimeRuns = (
+    d.query(`SELECT COUNT(*) n FROM run r WHERE ${nonHookTreeStatsSql('r')}`).get() as {
+      n: number
+    }
+  ).n
 
   // A first run has no metric table, which is not a fault. Anything else is,
   // and the dashboard has been through this once already: a swallowed render
