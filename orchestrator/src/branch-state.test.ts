@@ -20,6 +20,8 @@ function decide(overrides: Partial<Parameters<typeof decideBranchState>[0]> = {}
     mergedPullRequestsTruncated: false,
     commitsNotOnTrunk: 1,
     patchEquivalent: null,
+    contained: false,
+    recordedLanding: null,
     laterTurnBranches: [],
     superseded: false,
     ...overrides,
@@ -46,13 +48,48 @@ describe('run branch state decision', () => {
     })
   })
 
+  test('content containment lands a branch', () => {
+    expect(decide({ contained: true })).toEqual({
+      state: 'landed',
+      landedBy: { type: 'contained' },
+    })
+  })
+
+  test('a recorded landing wins over content containment', () => {
+    expect(
+      decide({
+        contained: true,
+        recordedLanding: {
+          number: 190,
+          mergeCommit: 'abc123',
+          mergedAt: '2026-09-16T12:00:00Z',
+        },
+      }),
+    ).toEqual({
+      state: 'landed',
+      landedBy: {
+        type: 'recorded',
+        number: 190,
+        mergeCommit: 'abc123',
+        mergedAt: '2026-09-16T12:00:00Z',
+      },
+    })
+  })
+
+  test('failed content containment leaves an otherwise unmatched branch unlanded', () => {
+    expect(decide({ contained: false })).toEqual({ state: 'unlanded' })
+  })
+
   test('turn landing mutation: a later landed turn lands the earlier branch', () => {
     expect(
       decide({
         laterTurnBranches: [
           {
             branch: 'DEV-616-orch-4240',
-            state: { state: 'landed', landedBy: { type: 'patch-equivalent', form: 'squash' } },
+            state: {
+              state: 'landed',
+              landedBy: { type: 'patch-equivalent', form: 'squash' },
+            },
           },
         ],
       }),
@@ -89,7 +126,10 @@ describe('run branch state decision', () => {
           },
         ],
       }),
-    ).toEqual({ state: 'landed', landedBy: { type: 'patch-equivalent', form: 'commits' } })
+    ).toEqual({
+      state: 'landed',
+      landedBy: { type: 'patch-equivalent', form: 'commits' },
+    })
   })
 
   test('turn order mutation: a matching PR beats a later landed turn', () => {
@@ -99,7 +139,10 @@ describe('run branch state decision', () => {
         laterTurnBranches: [
           {
             branch: 'DEV-616-orch-4240',
-            state: { state: 'landed', landedBy: { type: 'patch-equivalent', form: 'commits' } },
+            state: {
+              state: 'landed',
+              landedBy: { type: 'patch-equivalent', form: 'commits' },
+            },
           },
         ],
       }),
@@ -113,7 +156,10 @@ describe('run branch state decision', () => {
         laterTurnBranches: [
           {
             branch: 'DEV-616-orch-4240',
-            state: { state: 'landed', landedBy: { type: 'patch-equivalent', form: 'commits' } },
+            state: {
+              state: 'landed',
+              landedBy: { type: 'patch-equivalent', form: 'commits' },
+            },
           },
         ],
       }),
@@ -149,12 +195,17 @@ describe('run branch state decision', () => {
   })
 
   test('truncation safety mutation: an unmatched branch is unknown when the PR list is capped', () => {
-    expect(decide({ mergedPullRequestsTruncated: true })).toEqual({ state: 'unknown' })
+    expect(decide({ mergedPullRequestsTruncated: true })).toEqual({
+      state: 'unknown',
+    })
   })
 
   test('truncated-match mutation: a matching PR remains landed when the PR list is capped', () => {
     expect(
-      decide({ mergedPullRequests: [pullRequest], mergedPullRequestsTruncated: true }),
+      decide({
+        mergedPullRequests: [pullRequest],
+        mergedPullRequestsTruncated: true,
+      }),
     ).toMatchObject({ state: 'landed', landedBy: { type: 'pr' } })
   })
 })
@@ -166,7 +217,12 @@ describe('branch prune eligibility decision', () => {
       for (const liveRun of [false, true]) {
         for (const tipMoved of [false, true]) {
           test(`prune guard mutation: ${state}, checked-out=${checkedOut}, live=${liveRun}, tip-moved=${tipMoved}`, () => {
-            const result = decidePruneEligibility({ state, checkedOut, liveRun, tipMoved })
+            const result = decidePruneEligibility({
+              state,
+              checkedOut,
+              liveRun,
+              tipMoved,
+            })
             expect(result.eligible).toBe(
               ['landed', 'empty', 'superseded'].includes(state) &&
                 !checkedOut &&

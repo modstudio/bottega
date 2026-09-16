@@ -10,6 +10,12 @@ export type MergedPullRequest = {
 
 export type PatchEquivalentForm = 'commits' | 'squash'
 
+export type RecordedBranchLanding = {
+  number: number
+  mergeCommit: string | null
+  mergedAt: string
+}
+
 export type BranchLanding =
   | {
       state: 'landed'
@@ -26,6 +32,14 @@ export type BranchLanding =
     }
   | {
       state: 'landed'
+      landedBy: { type: 'contained' }
+    }
+  | {
+      state: 'landed'
+      landedBy: { type: 'recorded' } & RecordedBranchLanding
+    }
+  | {
+      state: 'landed'
       landedBy: { type: 'turn'; branch: string }
     }
   | { state: 'empty' | 'superseded' | 'unlanded' | 'unknown' }
@@ -38,6 +52,8 @@ export function decideBranchState(input: {
   mergedPullRequestsTruncated: boolean
   commitsNotOnTrunk: number
   patchEquivalent: PatchEquivalentForm | null
+  contained: boolean | null
+  recordedLanding: RecordedBranchLanding | null
   laterTurnBranches: readonly LaterTurnBranch[]
   superseded: boolean
 }): BranchLanding {
@@ -53,6 +69,12 @@ export function decideBranchState(input: {
       },
     }
   }
+  if (input.recordedLanding) {
+    return {
+      state: 'landed',
+      landedBy: { type: 'recorded', ...input.recordedLanding },
+    }
+  }
   if (input.commitsNotOnTrunk === 0) return { state: 'empty' }
   if (input.patchEquivalent) {
     return {
@@ -60,6 +82,7 @@ export function decideBranchState(input: {
       landedBy: { type: 'patch-equivalent', form: input.patchEquivalent },
     }
   }
+  if (input.contained) return { state: 'landed', landedBy: { type: 'contained' } }
   const landedTurn = input.laterTurnBranches.find(
     (candidate) => candidate.state.state === 'landed' && candidate.state.landedBy.type !== 'turn',
   )
