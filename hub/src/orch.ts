@@ -37,7 +37,7 @@ import {
   OrchUnknownRunSchema,
 } from '../../shared/orch-contract.ts'
 
-export type { OrchProject, OrchRun, OrchRunDetail, OrchState } from '../../shared/orch-contract.ts'
+export type { OrchProject, OrchRun, OrchRunDetail } from '../../shared/orch-contract.ts'
 
 import {
   DASHBOARD_CAPABILITY_PATH_ENV,
@@ -271,15 +271,6 @@ export async function projectSet(name: string, body: ProjectWriteBody): Promise<
 export async function projectRemove(name: string): Promise<void> {
   await orchProcess(projectArgv('remove', name))
   refreshProjects()
-}
-
-export type OrchAgent = {
-  agent: string
-  billing: string
-  cooling: number | null
-  lastStatus: string | null
-  lastKind: string | null
-  minsAgo: number | null
 }
 
 export const state = (days: number | null) =>

@@ -94,9 +94,4 @@ export function useWindowState() {
   )
 }
 
-// The Runs view was written against these names at the same time as the work
-// views were written against the ones above; both stores were one store by design.
 export const WINDOWS = [24, 48, 168, 720] as const
-export const setWindowHours = setHours
-export const setRunFilter = setFilter
-export const clearRunFilters = clearFilters

@@ -15,11 +15,8 @@ const client = createTRPCClient<AppRouter>({
 export const trpc = createTRPCOptionsProxy<AppRouter>({ client, queryClient })
 
 export type ProjectRow = inferRouterOutputs<AppRouter>['project']['list'][number]
-export type DocRow = inferRouterOutputs<AppRouter>['doc']['list'][number]
-export type DocSubjects = inferRouterOutputs<AppRouter>['doc']['subjects']
 export type FlightResponse = inferRouterOutputs<AppRouter>['work']['flight']
 export type BoardResponse = inferRouterOutputs<AppRouter>['work']['board']
-export type DoneResponse = inferRouterOutputs<AppRouter>['work']['done']
 export type SettingsResponse = inferRouterOutputs<AppRouter>['settings']['get']
 export type TaskRecordResponse = inferRouterOutputs<AppRouter>['work']['task']
 export type JobRow = inferRouterOutputs<AppRouter>['catalog']['jobs'][number]

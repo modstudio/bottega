@@ -1,26 +1,26 @@
 import { spyOn } from 'bun:test'
-import { db, writeTransaction } from '../src/db.ts'
+import { db } from '../src/db.ts'
 import { ingestRuns } from '../src/ingest/runs.ts'
 import { MIGRATIONS_TABLE } from '../src/migrations.ts'
-import { clearOrchCache } from '../src/serve.ts'
 
 export const at = (iso: string) => new Date(iso).getTime()
 
 export function resetFixtureStore() {
   const database = db()
-  writeTransaction(() => {
-    database.exec('PRAGMA foreign_keys = OFF')
-    const tables = database
-      .query<{ name: string }, [string]>(
-        `SELECT name FROM sqlite_master
+  database
+    .transaction(() => {
+      database.exec('PRAGMA foreign_keys = OFF')
+      const tables = database
+        .query<{ name: string }, [string]>(
+          `SELECT name FROM sqlite_master
         WHERE type = 'table' AND name <> ? AND name NOT LIKE 'sqlite_%'`,
-      )
-      .all(MIGRATIONS_TABLE)
-    for (const { name } of tables) database.exec(`DELETE FROM "${name}"`)
-    database.exec('DELETE FROM sqlite_sequence')
-    database.exec('PRAGMA foreign_keys = ON')
-  }, database)
-  clearOrchCache()
+        )
+        .all(MIGRATIONS_TABLE)
+      for (const { name } of tables) database.exec(`DELETE FROM "${name}"`)
+      database.exec('DELETE FROM sqlite_sequence')
+      database.exec('PRAGMA foreign_keys = ON')
+    })
+    .immediate()
 }
 
 export const runFixture = (overrides: Record<string, unknown> = {}) => ({

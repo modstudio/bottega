@@ -12,7 +12,7 @@ import {
 } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
-import { encodeOrchRunLine, OrchBlockersSchema } from '../../shared/orch-contract.ts'
+import { OrchBlockersSchema } from '../../shared/orch-contract.ts'
 import {
   decodeRunsJson,
   docArgv,
@@ -55,9 +55,12 @@ const runFixture = {
   launch_key: 'DEV-340',
 }
 
+const runLine = (value: unknown, version: 1 | 2 = 2) =>
+  JSON.stringify(version === 1 ? value : { schema_version: 2, kind: 'run', data: value })
+
 test('v1 and v2 run lines decode to the same run', () => {
-  const v1 = encodeOrchRunLine(runFixture, 1)
-  const v2 = encodeOrchRunLine(runFixture, 2)
+  const v1 = runLine(runFixture, 1)
+  const v2 = runLine(runFixture, 2)
   expect(decodeRunsJson(v1)).toEqual(decodeRunsJson(v2))
   expect(decodeRunsJson(v2)).toEqual([runFixture])
 })
@@ -67,7 +70,7 @@ test('orch-owned run and blocker fields remain optional to hub', () => {
     ...runFixture,
     turns: runFixture.turns.map(({ turn: _turn, ...turn }) => turn),
   }
-  expect(decodeRunsJson(encodeOrchRunLine(runWithoutTurn, 2))).toEqual([runWithoutTurn])
+  expect(decodeRunsJson(runLine(runWithoutTurn, 2))).toEqual([runWithoutTurn])
   expect(
     OrchBlockersSchema.parse({
       blockers: [
@@ -96,12 +99,12 @@ test('orch-owned run and blocker fields remain optional to hub', () => {
 })
 
 test('malformed NDJSON reports its physical line number', () => {
-  expect(() => decodeRunsJson(`\n${encodeOrchRunLine(runFixture, 2)}\nnot-json`)).toThrow('line 3')
+  expect(() => decodeRunsJson(`\n${runLine(runFixture, 2)}\nnot-json`)).toThrow('line 3')
 })
 
 test('an unknown envelope kind reports its physical line number', () => {
   const other = JSON.stringify({ schema_version: 2, kind: 'other', data: runFixture })
-  expect(() => decodeRunsJson(`${encodeOrchRunLine(runFixture, 2)}\n\n${other}`)).toThrow('line 3')
+  expect(() => decodeRunsJson(`${runLine(runFixture, 2)}\n\n${other}`)).toThrow('line 3')
 })
 
 test('only the orch client invokes bin/orch', () => {

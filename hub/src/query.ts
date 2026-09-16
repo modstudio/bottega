@@ -1,4 +1,4 @@
-import { DEFAULT_IDLE_CAP_MS, engagedMs, type Span, union } from '../../shared/interval.ts'
+import { DEFAULT_IDLE_CAP_MS, engagedMs, type Span } from '../../shared/interval.ts'
 import {
   type Capabilities,
   type TrackerRowSource,
@@ -280,61 +280,8 @@ export function estateEngagedMs(from: string, to: string): number {
 }
 
 /**
- * Engaged time for ONE project, unioned.
- *
- * Not the sum of its tasks: two tasks worked in parallel in two worktrees
- * occupied one stretch of wall clock, so adding them would give a project more
- * hours than the window holds. The same rule as the estate total, narrowed.
- */
-export function projectEngagedMs(project: string, from: string, to: string): number {
-  const rows = db()
-    .query<{ start_at: string; end_at: string; open: number }, [string, string, string]>(
-      `SELECT start_at, end_at, open FROM interval
-      WHERE project = ? AND end_at >= ? AND start_at < ?`,
-    )
-    .all(project, from, to)
-  const toMs = new Date(to).getTime()
-  return engagedMs(
-    rows.map((r) => ({
-      start: new Date(r.start_at).getTime(),
-      end: Math.min(endMs(r), toMs),
-    })),
-  )
-}
-
-/**
- * Wall clock occupied by a specific SET of tasks.
- *
- * `projectEngagedMs` unions everything in a project, untracked work included,
- * which made a project's engaged time exceed the task hours listed under it -
- * one project showed 12.1h of task work inside 14.0h engaged, which is impossible
- * as stated and was really "plus 2h nobody had ticketed". A report that lists
- * tasks has to measure the same tasks in both columns.
- */
-export function tasksEngagedMs(keys: string[], from: string, to: string): number {
-  if (!keys.length) return 0
-  const rows = db()
-    .query<{ start_at: string; end_at: string; open: number }, string[]>(
-      `SELECT start_at, end_at, open FROM interval
-      WHERE task_key IN (${keys.map(() => '?').join(',')})
-        AND end_at >= ? AND start_at < ?`,
-    )
-    .all(...keys, from, to)
-  const toMs = new Date(to).getTime()
-  return engagedMs(
-    rows.map((r) => ({
-      start: new Date(r.start_at).getTime(),
-      end: Math.min(endMs(r), toMs),
-    })),
-  )
-}
-
-/**
  * Wall clock represented by a report's visible work.
  *
- * This cannot reuse `tasksEngagedMs`, because a report also includes the
- * untasked bucket for each selected project, or `projectEngagedMs`, because
- * that would put task keys removed by a brief's exclusion back into ENGAGED.
  * Select both visible populations here and take one union, so overlapping
  * untasked and ticketed spans are counted only once.
  */
@@ -374,8 +321,6 @@ export function reportEngagedMs(
     })),
   )
 }
-
-export { union }
 
 // ---------------------------------------------------------------------------
 // Cost: the ratio, and the spend axis
@@ -546,8 +491,6 @@ export function ratioSummary(windowDays = 14, includeEngaged = true): RatioSumma
     days,
   }
 }
-
-export type SpendCell = { numerator: string; denominator: string; value: number | null }
 
 /**
  * The spend axis: every currency against every denominator.

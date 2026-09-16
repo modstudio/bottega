@@ -1,4 +1,4 @@
-import { afterEach, beforeAll, describe, expect, spyOn, test } from 'bun:test'
+import { beforeAll, describe, expect, spyOn, test } from 'bun:test'
 import {
   collectRunsAt,
   ingestRunFixtures,
@@ -10,10 +10,8 @@ import * as dbMod from './db.ts'
 import { db } from './db.ts'
 import { ingestRuns } from './ingest/runs.ts'
 import { listOpenRulings } from './rulings.ts'
-import { clearOrchCache } from './serve.ts'
 
 beforeAll(resetFixtureStore)
-afterEach(clearOrchCache)
 
 describe('run ingest', () => {
   test('runsSince keeps the two-hour window when collection is current', () => {

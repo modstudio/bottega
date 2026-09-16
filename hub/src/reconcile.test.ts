@@ -1,5 +1,4 @@
 import { beforeAll, describe, expect, spyOn, test } from 'bun:test'
-import { encodeOrchRunLine } from '../../shared/orch-contract.ts'
 import { resetFixtureStore } from '../test/run-fixtures.ts'
 
 const { db } = await import('./db.ts')
@@ -40,40 +39,44 @@ function orchAnswers(rows: object[]) {
 }
 
 function runLine(row: object): string {
-  if ('unknown' in row) return encodeOrchRunLine(row)
+  if ('unknown' in row) return JSON.stringify({ schema_version: 2, kind: 'run', data: row })
   const value = row as { id: number; status: string }
-  return encodeOrchRunLine({
-    id: value.id,
-    started_at: '2026-09-03T00:00:00.000Z',
-    agent: 'codex',
-    job: 'implement',
-    repo: null,
-    cwd: null,
-    session_id: null,
-    latency_ms: null,
-    vendor_tokens: null,
-    vendor_cost_usd: null,
-    prompt_head: '',
-    prompt_path: null,
-    branch: null,
-    probe: 0,
-    status: value.status,
-    delivery: null,
-    quality: null,
-    retry_of: null,
-    turns: [
-      {
-        id: value.id,
-        started_at: '2026-09-03T00:00:00.000Z',
-        latency_ms: null,
-        vendor_tokens: null,
-        vendor_cost_usd: null,
-        status: value.status,
-        turn: 1,
-      },
-    ],
-    questions: [],
-    launch_key: null,
+  return JSON.stringify({
+    schema_version: 2,
+    kind: 'run',
+    data: {
+      id: value.id,
+      started_at: '2026-09-03T00:00:00.000Z',
+      agent: 'codex',
+      job: 'implement',
+      repo: null,
+      cwd: null,
+      session_id: null,
+      latency_ms: null,
+      vendor_tokens: null,
+      vendor_cost_usd: null,
+      prompt_head: '',
+      prompt_path: null,
+      branch: null,
+      probe: 0,
+      status: value.status,
+      delivery: null,
+      quality: null,
+      retry_of: null,
+      turns: [
+        {
+          id: value.id,
+          started_at: '2026-09-03T00:00:00.000Z',
+          latency_ms: null,
+          vendor_tokens: null,
+          vendor_cost_usd: null,
+          status: value.status,
+          turn: 1,
+        },
+      ],
+      questions: [],
+      launch_key: null,
+    },
   })
 }
 

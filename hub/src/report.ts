@@ -3,7 +3,7 @@ import { db, nowIso, type Project } from './db.ts'
 import { summarize } from './orch.ts'
 import { projectColor } from './projects.ts'
 import { completedInWindow, reportEngagedMs, tasksInWindow } from './query.ts'
-import { type Brief, getReport, type Report, smtpPassword } from './settings.ts'
+import { type Brief, type Report, smtpPassword } from './settings.ts'
 
 export type Item = {
   key: string | null
@@ -593,5 +593,3 @@ export const lastSends = (n = 10) =>
        FROM send ORDER BY id DESC LIMIT ?`,
     )
     .all(n)
-
-export { getReport }

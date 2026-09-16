@@ -34,15 +34,6 @@ export function engagedMs(spans: Span[]): number {
   return union(spans).reduce((sum, s) => sum + (s.end - s.start), 0)
 }
 
-/** Milliseconds of the union that fall inside `[from, to)`. */
-export function engagedMsWithin(spans: Span[], from: number, to: number): number {
-  return union(spans).reduce((sum, s) => {
-    const start = Math.max(s.start, from)
-    const end = Math.min(s.end, to)
-    return sum + Math.max(0, end - start)
-  }, 0)
-}
-
 /**
  * Turn a session's message timestamps into spans.
  *
