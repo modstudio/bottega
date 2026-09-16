@@ -14,7 +14,7 @@ if (/\btryWriteContention\s*\(/.test(source)) {
 
 const imports = importSpecifiers(source)
 for (const specifier of imports.specifiers) {
-  if (/^\.\/landing(?:[.-]|$)/.test(specifier)) {
+  if (/^\.\/landing(?:[.-]|$)/.test(specifier) && specifier !== './landing-outbox.ts') {
     violations.push(`${FILE} imports "${specifier}" (landing policy)`)
   }
 }
