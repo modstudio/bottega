@@ -1,15 +1,27 @@
 // concern: evidence
 /** Owns fix-defect, note, state, and search command behavior. Must not know CLI grammar. */
 import { db } from './db.ts'
-import { workIssue } from './issue.ts'
+import { dispatchFiledIssues, waitingFiledIssues } from './issue-dispatch.ts'
 import { fileNote } from './mcp.ts'
 import { searchRecords } from './search.ts'
 import { state } from './serve.ts'
 
 type Presentation = { log(value: string): void }
 
-export async function fixDefectCommand(key: string): Promise<void> {
-  await workIssue(key.toUpperCase())
+export async function fixDefectCommand(
+  key: string | undefined,
+  options: { waiting: boolean; json: boolean },
+  presentation: Presentation,
+): Promise<void> {
+  if (options.waiting) {
+    const waiting = await waitingFiledIssues()
+    if (options.json) presentation.log(JSON.stringify(waiting))
+    else
+      for (const issue of waiting) presentation.log(`${issue.key}  ${issue.title ?? ''}`.trimEnd())
+    return
+  }
+  if (options.json) throw new Error('--json requires --waiting')
+  await dispatchFiledIssues(key)
 }
 
 export async function noteCommand(

@@ -137,9 +137,17 @@ export function register(program: Command): void {
     .option('--json')
     .action((args, options) => lensCommand(productArgv('lens', args, options), presentation))
   program
-    .command('fix-defect <key>')
+    .command('fix-defect [key]')
+    .option('--waiting')
+    .option('--json')
     .allowExcessArguments(false)
-    .action((key) => fixDefectCommand(key))
+    .action((key, options) =>
+      fixDefectCommand(
+        key,
+        { waiting: Boolean(options.waiting), json: Boolean(options.json) },
+        presentation,
+      ),
+    )
   program
     .command('note <text>')
     .option('--same-as <value>')

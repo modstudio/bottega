@@ -1,4 +1,4 @@
-import { copyFileSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { copyFileSync, existsSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { PLATFORM_SLUG } from '../../shared/brand.ts'
@@ -9,12 +9,16 @@ import {
   validatesSchema,
 } from './contract.ts'
 import { DB_PATH, db } from './db.ts'
+import { repoRootOf } from './git-environment.ts'
+import { catchFixTreeDisposition } from './issue-catch.ts'
 import { type Project, projectByName } from './projects.ts'
 import { prepareSharedRefGuard } from './ref-guard.ts'
 import { parseReviewOutput } from './review.ts'
 import { run } from './run.ts'
 import type { RunResult } from './run-types.ts'
+import { worktreeDirty } from './worktree-attribution.ts'
 import { removeFor } from './worktree-remove.ts'
+import type { Worktree } from './worktree-types.ts'
 
 const HUB = new URL('../../bin/hub', import.meta.url).pathname
 
@@ -411,13 +415,31 @@ function requestText(
   ].join('\n')
 }
 
-function diagnosisPrompt(issue: FiledIssue): string {
+function diagnosisPrompt(issue: FiledIssue, priorRecord: string): string {
   return `Independently reproduce and diagnose this filed issue in the reporting project's checkout.
 Call project_brief for ${issue.reportingProject} LIVE before concluding where the cause is.
 Do not edit files. Establish whether the cause is orch code, the live register row, or this project's own tool.
 NOT REPRODUCIBLE is permitted only after attempting the supplied command in this worktree and environment.
 Return only the bound structured result. The bounded issue pack contains exactly the filing fields, and nothing else:
-${boundedIssuePack(issue)}`
+${boundedIssuePack(issue)}${priorRecord ? `\n\nPrior record on this issue, including any ruling - a ruling here is binding:\n${priorRecord}` : ''}`
+}
+
+async function priorIssueRecord(shown: {
+  comments?: { body?: unknown }[]
+  documents?: { id?: unknown; role?: unknown }[]
+}): Promise<string> {
+  const comments = (shown.comments ?? []).flatMap((item) =>
+    typeof item.body === 'string' ? [item.body] : [],
+  )
+  const documents: string[] = []
+  for (const document of shown.documents ?? []) {
+    if (document.role !== 'handoff' || typeof document.id !== 'number') continue
+    const full = JSON.parse(await hub(['task', 'doc', 'show', String(document.id), '--json'])) as {
+      body?: unknown
+    }
+    if (typeof full.body === 'string') documents.push(full.body)
+  }
+  return [...comments, ...documents].join('\n\n---\n\n')
 }
 
 function fixPrompt(issue: FiledIssue, diagnosis: Diagnosis): string {
@@ -540,11 +562,81 @@ function runIdFromCause(cause: unknown): number {
   return Number(cause && typeof cause === 'object' && 'runId' in cause ? cause.runId : 0)
 }
 
+async function recordIssueFailure(
+  issue: FiledIssue,
+  cause: unknown,
+  fixRun: RunResult | null,
+): Promise<boolean> {
+  const runId = runIdFromCause(cause)
+  const row = runId
+    ? (db()
+        .query(
+          'SELECT job, repo, cwd, worktree, branch, base_commit, worktree_source, minted_branch FROM run WHERE id=?',
+        )
+        .get(runId) as {
+        job: string
+        repo: string | null
+        cwd: string | null
+        worktree: string | null
+        branch: string | null
+        base_commit: string | null
+        worktree_source: Worktree['source'] | null
+        minted_branch: string | null
+      } | null)
+    : null
+  const failedFix =
+    !fixRun?.worktree && row?.job === 'issue-worker' && row.worktree && existsSync(row.worktree)
+      ? ({
+          id: runId,
+          worktree: {
+            path: row.worktree,
+            branch: row.branch ?? 'unknown',
+            base: row.base_commit ?? '',
+            repoRoot:
+              (row.repo ? projectByName(row.repo)?.path : null) ??
+              repoRootOf(row.worktree) ??
+              row.cwd ??
+              process.cwd(),
+            source: row.worktree_source ?? undefined,
+            mintedBranch: row.minted_branch,
+          },
+        } as RunResult)
+      : null
+  const catchFix = fixRun?.worktree ? fixRun : failedFix
+  const disposition = catchFix?.worktree
+    ? catchFixTreeDisposition(catchFix.worktree, worktreeDirty(catchFix.worktree.path).dirty)
+    : catchFixTreeDisposition(null, false)
+  let treeRecord = disposition.handoff
+  if (disposition.action === 'release' && catchFix) {
+    const failure = await release(catchFix, true)
+    if (failure)
+      treeRecord = `Worktree was not released: ${failure}. Branch: ${catchFix.worktree?.branch ?? 'unknown'}.`
+  }
+  const body = [
+    `Coordinator stopped: ${String((cause as Error)?.message ?? cause)}`,
+    `Run: ${runId || 'none'}`,
+    treeRecord,
+    `Resume with: orch fix-defect ${issue.key}`,
+    'What remains unresolved: the coordinator pass did not reach a recorded outcome.',
+  ].join('\n\n')
+  await handoff(
+    issue.key,
+    `Issue handback after coordinator failure${runId ? ` ${runId}` : ''}`,
+    body,
+  )
+  await comment(
+    issue.key,
+    `Issue coordinator stopped; handback recorded${runId ? ` for run ${runId}` : ''}.`,
+  )
+  return disposition.action !== 'none'
+}
+
 /** Work exactly one named issue; every durable fact is written before its tree is released. */
 export async function workIssue(key: string): Promise<void> {
   const started = Date.now()
   const shown = JSON.parse(await hub(['task', 'show', key, '--json']))
   const issue = parseFiledIssue(shown)
+  const priorRecord = await priorIssueRecord(shown)
   if (issue.kind !== 'defect') {
     const body = [
       `This first vertical slice requires a reproducible defect; ${issue.key} is a suggestion.`,
@@ -582,6 +674,7 @@ export async function workIssue(key: string): Promise<void> {
   let diagnosisRun: RunResult | null = null
   let fixRun: RunResult | null = null
   let completed = false
+  let fixTreeSettled = false
   try {
     const diagnosisSchema = join(scratch, 'diagnosis.schema.json')
     writeFileSync(diagnosisSchema, JSON.stringify(ISSUE_DIAGNOSIS_SCHEMA, null, 2))
@@ -591,7 +684,7 @@ export async function workIssue(key: string): Promise<void> {
     )
     diagnosisRun = await run({
       job: 'diagnose',
-      prompt: diagnosisPrompt(issue),
+      prompt: diagnosisPrompt(issue, priorRecord),
       cwd: reporting.path,
       schemaPath: diagnosisSchema,
       mcp: true,
@@ -849,16 +942,54 @@ export async function workIssue(key: string): Promise<void> {
   } catch (cause) {
     const runId = runIdFromCause(cause)
     const row = runId
-      ? (db().query('SELECT worktree, branch FROM run WHERE id=?').get(runId) as {
+      ? (db()
+          .query(
+            'SELECT job, repo, cwd, worktree, branch, base_commit, worktree_source, minted_branch FROM run WHERE id=?',
+          )
+          .get(runId) as {
+          job: string
+          repo: string | null
+          cwd: string | null
           worktree: string | null
           branch: string | null
+          base_commit: string | null
+          worktree_source: Worktree['source'] | null
+          minted_branch: string | null
         } | null)
       : null
+    const failedFix =
+      !fixRun?.worktree && row?.job === 'issue-worker' && row.worktree && existsSync(row.worktree)
+        ? ({
+            id: runId,
+            worktree: {
+              path: row.worktree,
+              branch: row.branch ?? 'unknown',
+              base: row.base_commit ?? '',
+              repoRoot:
+                (row.repo ? projectByName(row.repo)?.path : null) ??
+                repoRootOf(row.worktree) ??
+                row.cwd ??
+                process.cwd(),
+              source: row.worktree_source ?? undefined,
+              mintedBranch: row.minted_branch,
+            },
+          } as RunResult)
+        : null
+    const catchFix = fixRun?.worktree ? fixRun : failedFix
+    const disposition = catchFix?.worktree
+      ? catchFixTreeDisposition(catchFix.worktree, worktreeDirty(catchFix.worktree.path).dirty)
+      : catchFixTreeDisposition(null, false)
+    let treeRecord = disposition.handoff
+    if (disposition.action === 'release' && catchFix) {
+      const failure = await release(catchFix, true)
+      fixTreeSettled = true
+      if (failure)
+        treeRecord = `Worktree was not released: ${failure}. Branch: ${catchFix.worktree?.branch ?? 'unknown'}.`
+    } else if (disposition.action === 'hold') fixTreeSettled = true
     const body = [
       `Coordinator stopped: ${String((cause as Error)?.message ?? cause)}`,
       `Run: ${runId || 'none'}`,
-      `Worktree held because failed-run state may not be reconstructible: ${row?.worktree ?? 'none recorded'}`,
-      `Branch: ${row?.branch ?? 'none recorded'}`,
+      treeRecord,
       `Resume with: orch fix-defect ${issue.key}`,
       `What remains unresolved: the coordinator pass did not reach a recorded outcome.`,
     ].join('\n\n')
@@ -875,9 +1006,10 @@ export async function workIssue(key: string): Promise<void> {
     throw cause
   } finally {
     const failures = completed
-      ? [await release(fixRun, Boolean(fixRun?.worktree)), await release(diagnosisRun)].filter(
-          Boolean,
-        )
+      ? [
+          fixTreeSettled ? null : await release(fixRun, Boolean(fixRun?.worktree)),
+          await release(diagnosisRun),
+        ].filter(Boolean)
       : []
     rmSync(scratch, { recursive: true, force: true })
     if (failures.length)

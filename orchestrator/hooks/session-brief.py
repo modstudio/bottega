@@ -66,7 +66,7 @@ def _resume_sentence(source, open_briefs):
 
 
 def main() -> int:
-    resumes_p = inbox_p = monitor_p = None
+    resumes_p = inbox_p = waiting_p = monitor_p = None
     capability_dir = None
     output = None
     monitor_notices = []
@@ -96,6 +96,7 @@ def main() -> int:
         if sid:
             inbox_env["CLAUDE_CODE_SESSION_ID"] = sid
         inbox_p = _start(orch, "inbox", "--all", "--json", env=inbox_env)
+        waiting_p = _start(orch, "fix-defect", "--waiting", "--json")
         monitor_failure = None
         if sid:
             try:
@@ -114,6 +115,7 @@ def main() -> int:
         deadline = time.monotonic() + 10
         resumes = _wait(resumes_p, deadline)
         inbox = _wait(inbox_p, deadline)
+        waiting = _wait(waiting_p, deadline)
 
         context = ""
         open_briefs = []
@@ -214,11 +216,36 @@ def main() -> int:
                 f"Inbox command failed with exit {inbox.returncode}; question state is unknown."
             )
 
+        waiting_issues = []
+        waiting_failure = None
+        if waiting.returncode == 0:
+            try:
+                waiting_issues = json.loads(waiting.stdout)
+                if not isinstance(waiting_issues, list) or not all(
+                    isinstance(item, dict)
+                    and isinstance(item.get("key"), str)
+                    and (item.get("title") is None or isinstance(item.get("title"), str))
+                    for item in waiting_issues
+                ):
+                    raise ValueError("invalid filed issue waiting JSON")
+            except Exception:
+                waiting_issues = []
+                waiting_failure = "Filed issue waiting response was invalid; waiting state is unknown."
+        elif waiting.returncode == -1:
+            waiting_failure = "Filed issue waiting observation timed out; waiting state is unknown."
+        else:
+            waiting_failure = (
+                f"Filed issue waiting command failed with exit {waiting.returncode}; "
+                "waiting state is unknown."
+            )
+
         notices = []
         if inbox_failure:
             notices.append(inbox_failure)
         if resume_failure:
             notices.append(resume_failure)
+        if waiting_failure:
+            notices.append(waiting_failure)
         if answerable_count:
             noun = "question" if answerable_count == 1 else "questions"
             notices.append(f"{answerable_count} {noun} waiting on your ruling.")
@@ -231,6 +258,11 @@ def main() -> int:
             noun = "question" if unknown_count == 1 else "questions"
             verb = "has" if unknown_count == 1 else "have"
             notices.append(f"{unknown_count} visible {noun} {verb} unknown owner liveness.")
+        if waiting_issues:
+            keys = ", ".join(item["key"] for item in waiting_issues)
+            notices.append(
+                f"{len(waiting_issues)} filed issue(s) waiting on a person: {keys}"
+            )
         if open_briefs:
             slugs = ", ".join(f"`{item['slug']}`" for item in open_briefs)
             noun = "brief" if len(open_briefs) == 1 else "briefs"
@@ -359,6 +391,7 @@ def main() -> int:
                 pass
         _kill(resumes_p)
         _kill(inbox_p)
+        _kill(waiting_p)
         _kill(monitor_p)
         if capability_dir:
             shutil.rmtree(capability_dir, ignore_errors=True)
