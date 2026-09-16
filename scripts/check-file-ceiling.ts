@@ -116,7 +116,7 @@ export function checkFileCeiling(options: FileCeilingOptions = {}) {
     if (decision === 'fail') {
       violations.push(
         `${path}: ${lines} code lines, frozen at ${frozen[path] ?? CEILING}; ` +
-          'split a concern out (architecture-rules 15)',
+          'split a concern out (canon 10-code: Respect the file ceiling)',
       )
     }
   }
@@ -130,7 +130,9 @@ export function checkFileCeiling(options: FileCeilingOptions = {}) {
   for (const tightening of tightenings) reporter.error(tightening)
   for (const violation of violations) reporter.error(violation)
   if (tightenings.length) {
-    reporter.error(`baseline tightened; commit ${STATE_LABEL} and re-run (architecture-rules 15)`)
+    reporter.error(
+      `baseline tightened; commit ${STATE_LABEL} and re-run (canon 10-code: Respect the file ceiling)`,
+    )
   }
   if (violations.length || tightenings.length) {
     return false

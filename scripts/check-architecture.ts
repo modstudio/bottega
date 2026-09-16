@@ -23,7 +23,7 @@ for (const root of ['orchestrator/src', 'hub/src']) {
     const customBoundary = `scripts/check-${concern}-boundary.ts`
     if (!existsSync(join(ROOT, customBoundary))) {
       violations.push(
-        `${file}: missing manifest module or ${customBoundary} (architecture-rules 1)`,
+        `${file}: missing manifest module or ${customBoundary} (canon 10-code: A module is one concern)`,
       )
     }
   }
