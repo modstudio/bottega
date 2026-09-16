@@ -1,5 +1,5 @@
 // concern: evidence
-/** Owns issue, note, state, and search command behavior. Must not know CLI grammar. */
+/** Owns fix-defect, note, state, and search command behavior. Must not know CLI grammar. */
 import { db } from './db.ts'
 import { workIssue } from './issue.ts'
 import { fileNote } from './mcp.ts'
@@ -8,7 +8,7 @@ import { state } from './serve.ts'
 
 type Presentation = { log(value: string): void }
 
-export async function issueCommand(key: string): Promise<void> {
+export async function fixDefectCommand(key: string): Promise<void> {
   await workIssue(key.toUpperCase())
 }
 

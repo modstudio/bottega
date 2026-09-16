@@ -291,7 +291,7 @@ export const CLI_COMMANDS = new Set([
   'health',
   'inbox',
   'init-db',
-  'issue',
+  'fix-defect',
   'jobs',
   'judge',
   'lens',

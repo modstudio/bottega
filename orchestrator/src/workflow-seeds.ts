@@ -110,11 +110,11 @@ const seeds = [
     },
   },
   {
-    slug: 'filed-issue',
-    revision: 2,
+    slug: 'fix-defect',
+    revision: 3,
     definition: {
-      title: 'Resolve a filed issue',
-      description: "A projection of issue.ts's coordinator for inspection.",
+      title: 'Fix one reported defect',
+      description: "A projection of the 'orch fix-defect' command's coordinator for inspection.",
       arguments: [{ name: 'key', required: true, description: 'The filed task key.' }],
       modes: [
         {

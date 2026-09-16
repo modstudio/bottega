@@ -232,6 +232,13 @@
       "when": 1788900000026,
       "tag": "0032_global_canon",
       "breakpoints": true
+    },
+    {
+      "idx": 33,
+      "version": "6",
+      "when": 1788900000027,
+      "tag": "0033_fix_defect_workflow",
+      "breakpoints": true
     }
   ]
 }
