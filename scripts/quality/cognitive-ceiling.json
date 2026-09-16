@@ -788,8 +788,9 @@
   {
     "file": "orchestrator/src/task-branch.ts",
     "function": "resolveTaskBranch",
-    "line": 51,
-    "score": 23
+    "line": 100,
+    "score": 21,
+    "key": "orchestrator/src/task-branch.ts\u0000resolveTaskBranch"
   },
   {
     "file": "orchestrator/src/transport-acp.ts",

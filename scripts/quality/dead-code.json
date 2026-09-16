@@ -3225,19 +3225,7 @@
     "workspace": "orchestrator",
     "file": "orchestrator/src/task-branch.ts",
     "issueType": "exports",
-    "symbol": "isTaskBranchSuperseded"
-  },
-  {
-    "workspace": "orchestrator",
-    "file": "orchestrator/src/task-branch.ts",
-    "issueType": "exports",
     "symbol": "taskBranchCandidacySql"
-  },
-  {
-    "workspace": "orchestrator",
-    "file": "orchestrator/src/task-branch.ts",
-    "issueType": "types",
-    "symbol": "TaskBranchRunRow"
   },
   {
     "workspace": "orchestrator",

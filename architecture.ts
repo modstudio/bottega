@@ -41,6 +41,14 @@ export const concerns: ConcernManifest = {
 
 export const modules: ArchitectureModule[] = [
   module('orchestrator/src/artifact-paths.ts', ['node:path']),
+  module('orchestrator/src/branch-state.ts', []),
+  module('orchestrator/src/branches.ts', [
+    './branch-state.ts',
+    './db.ts',
+    './git-environment.ts',
+    './projects.ts',
+    './task-branch.ts',
+  ]),
   module('orchestrator/src/agent-probe.ts', [
     './agent-registry.ts',
     './agents.ts',
