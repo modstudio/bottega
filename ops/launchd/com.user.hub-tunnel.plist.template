@@ -3,7 +3,7 @@
 <plist version="1.0">
 <dict>
   <key>Label</key><string>com.user.hub-tunnel</string>
-  <!-- Publishes the local dashboard at app.bottega.run through Cloudflare
+  <!-- Publishes the local dashboard at its public hostname through Cloudflare
        Tunnel. Cloudflare Access in front of that hostname is the only login;
        the dashboard itself authenticates nobody. The config and the tunnel
        credentials live in ~/.cloudflared, which cloudflared owns; install.sh
@@ -13,7 +13,7 @@
     <string>/opt/homebrew/bin/cloudflared</string>
     <string>tunnel</string>
     <string>--no-autoupdate</string>
-    <string>--config</string><string>__HOME__/.cloudflared/bottega-hub.yml</string>
+    <string>--config</string><string>__HOME__/.cloudflared/hub-tunnel.yml</string>
     <string>run</string>
   </array>
   <key>RunAtLoad</key><true/>

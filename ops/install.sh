@@ -34,8 +34,8 @@ for tmpl in "$REPO"/launchd/*.plist.template; do
   if [[ "$label" == "com.user.local-model-tunnel" ]]; then
     mkdir -p "$HOME/Library/Logs/local-model-tunnel"
   fi
-  if [[ "$label" == "com.user.hub-tunnel" && ! -f "$HOME/.cloudflared/bottega-hub.yml" ]]; then
-    echo "skipped: $label ($HOME/.cloudflared/bottega-hub.yml is absent)"
+  if [[ "$label" == "com.user.hub-tunnel" && ! -f "$HOME/.cloudflared/hub-tunnel.yml" ]]; then
+    echo "skipped: $label ($HOME/.cloudflared/hub-tunnel.yml is absent)"
     continue
   fi
   if [[ "$label" == "com.user.hub-tunnel" ]]; then

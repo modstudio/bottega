@@ -6,7 +6,7 @@
     <string>com.user.hub-serve</string>
 
     <!-- The dashboard on loopback. ops' com.user.hub-tunnel publishes this
-         port at app.bottega.run behind Cloudflare Access, so it must be up
+         port at its public hostname behind Cloudflare Access, so it must be up
          whether or not anyone started it by hand. -->
     <key>ProgramArguments</key>
     <array>
