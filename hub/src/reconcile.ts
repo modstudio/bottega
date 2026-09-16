@@ -1,6 +1,6 @@
 import { human } from '../../shared/interval.ts'
 import type { OrchRun, OrchTurn, OrchUnknownRun } from '../../shared/orch-contract.ts'
-import { db } from './db.ts'
+import { db, writeTransaction } from './db.ts'
 import { readRunsById } from './orch.ts'
 
 type RunAnswer = OrchRun | OrchUnknownRun
@@ -104,9 +104,9 @@ export async function reconcileOpenIntervals(
 
   if (!options.dryRun && closed.length) {
     const close = d.query(`UPDATE interval SET open = 0 WHERE id = ? AND open = 1`)
-    d.transaction(() => {
+    writeTransaction(() => {
       for (const interval of closed) close.run(interval.id)
-    })()
+    })
   }
   return { dryRun: options.dryRun ?? false, closed, leftOpen }
 }

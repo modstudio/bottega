@@ -1,4 +1,3 @@
-import { Database } from 'bun:sqlite'
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test'
 import { existsSync, readdirSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
@@ -10,6 +9,7 @@ import {
   RECORD_OWNER_ROLE,
   RECORD_READER_ROLE,
 } from '../../shared/record/schema.ts'
+import { proveScoreRecordSync } from '../test/postgres-score-proof.ts'
 import { db } from './db.ts'
 import {
   appliedRecordMigrationCount,
@@ -27,8 +27,6 @@ import {
   recordMemberships,
   switchRecordSpace,
 } from './record-space.ts'
-import { syncRecord } from './record-sync.ts'
-import { RUN_RECORD_PAYLOAD_COLUMNS } from './run-outbox.ts'
 
 const OPERATOR_USER_ID = '01990000-0000-7000-8000-000000000002'
 const SPACE_NAME = PLATFORM_SLUG
@@ -379,7 +377,7 @@ realPostgres('RLS proof against real Postgres', () => {
       'postgres',
       'postgres',
       `
-      DROP TABLE IF EXISTS invitation, verification, account, session, test_flake, contention, landing_review_carry, landing_override, landing, review_finding, review_lens, review, run, membership, machine, seq, project, "user", space CASCADE;
+      DROP TABLE IF EXISTS invitation, verification, account, session, test_flake, contention, landing_review_carry, landing_override, landing, review_finding, review_lens, review, run_score, run, membership, machine, seq, project, "user", space CASCADE;
       DROP SCHEMA IF EXISTS drizzle CASCADE;
     `,
     )
@@ -945,70 +943,25 @@ realPostgres('RLS proof against real Postgres', () => {
     expect(result.stdout.split('\n').at(-1)).toBe('')
   })
 
-  test('sync round trip writes a run readable by the tenant role', async () => {
-    const local = new Database(':memory:')
-    local.exec(`CREATE TABLE outbox (
-      id INTEGER PRIMARY KEY, kind TEXT NOT NULL, record_id TEXT NOT NULL, payload TEXT NOT NULL,
-      created_at TEXT NOT NULL, attempts INTEGER NOT NULL DEFAULT 0, last_error TEXT, synced_at TEXT
-    )`)
-    const values = Object.fromEntries(RUN_RECORD_PAYLOAD_COLUMNS.map((column) => [column, null]))
-    const recordId = newRecordId()
-    Object.assign(values, {
-      id: recordId,
-      spaceId: PLATFORM_SPACE_ID,
-      projectName: PLATFORM_SLUG,
+  test('sync round trip writes and updates a tenant-confined score', async () => {
+    const { actorRead, otherSpaceRead, rescoredRead } = await proveScoreRecordSync({
+      actorUrl: actorUrl!,
+      ownerUrl: ownerUrl!,
+      actorRole: RECORD_ACTOR_ROLE,
+      ownerRole: RECORD_OWNER_ROLE,
       machineId: MACHINE_A,
-      localId: 99,
-      startedAt: '2026-09-15T01:00:00.000Z',
-      finishedAt: '2026-09-15T01:01:00.000Z',
-      agent: 'codex',
-      job: 'probe',
-      promptSha: 'prompt',
-      promptBytes: 6,
-      promptHead: 'prompt',
-      probe: true,
-      status: 'ok',
-      turn: 1,
-      noFailover: false,
-      automaticFailover: false,
-      workPreserved: false,
-      createdAt: '2026-09-15T01:00:00.000Z',
-      updatedAt: '2026-09-15T01:01:00.000Z',
+      userId: OPERATOR_USER_ID,
+      spaceId: PLATFORM_SPACE_ID,
+      otherSpaceId: SPACE_A,
+      projectName: PLATFORM_SLUG,
+      asSpace,
     })
-    local
-      .query(
-        `INSERT INTO outbox (id, kind, record_id, payload, created_at)
-         VALUES (1, 'run', ?, ?, ?)`,
-      )
-      .run(recordId, JSON.stringify(values), String(values.createdAt))
-    const result = await syncRecord({
-      recordUrl: actorUrl!,
-      local,
-      identity: { id: MACHINE_A, name: 'proof-machine' },
-      principal: { userId: OPERATOR_USER_ID, spaceId: PLATFORM_SPACE_ID },
-      now: () => '2026-09-15T01:01:00.000Z',
-    })
-    expect(result).toEqual({ pushed: 1, failed: 0, pending: 0, configured: true })
-    const read = asSpace(
-      RECORD_ACTOR_ROLE,
-      'actor-password',
-      PLATFORM_SPACE_ID,
-      `SELECT id FROM run WHERE id='${recordId}';`,
-    )
-    expect(read.code, read.stderr).toBe(0)
-    expect(read.stdout.split('\n').at(-1)).toBe(recordId)
-
-    await expect(
-      syncRecord({
-        recordUrl: ownerUrl!,
-        local,
-        identity: { id: MACHINE_A, name: 'proof-machine' },
-        principal: { userId: OPERATOR_USER_ID, spaceId: PLATFORM_SPACE_ID },
-      }),
-    ).rejects.toThrow(
-      `record sync refuses ${RECORD_OWNER_ROLE} credentials; set ORCH_RECORD_URL to the ${RECORD_ACTOR_ROLE} connection`,
-    )
-    local.close()
+    expect(actorRead.code, actorRead.stderr).toBe(0)
+    expect(actorRead.stdout).toBe('full|right|first')
+    expect(otherSpaceRead.code, otherSpaceRead.stderr).toBe(0)
+    expect(otherSpaceRead.stdout).toBe('')
+    expect(rescoredRead.code, rescoredRead.stderr).toBe(0)
+    expect(rescoredRead.stdout).toBe('partial|mixed|updated')
   })
 
   test('cross-space write is refused', () => {

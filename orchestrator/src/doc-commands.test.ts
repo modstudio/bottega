@@ -270,6 +270,7 @@ describe('scoped operator docs', () => {
     upsertProject({ name: 'known', path: '/w/known', stack: null, canon: true, settings: {} })
     expect(docSubjects()).toEqual({
       project: ['known'],
+      stack: [],
       agent: Object.keys(AGENTS).sort(),
       job: Object.keys(JOBS).sort(),
     })

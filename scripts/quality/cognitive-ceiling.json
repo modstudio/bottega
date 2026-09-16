@@ -25,8 +25,8 @@
   },
   {
     "file": "hub/src/ingest/runs.ts",
-    "function": "transaction callback",
-    "line": 94,
+    "function": "writeTransaction callback",
+    "line": 92,
     "score": 34
   },
   {
@@ -268,8 +268,9 @@
   {
     "file": "orchestrator/src/doc-commands.ts",
     "function": "docCommand",
-    "line": 23,
-    "score": 111
+    "line": 33,
+    "score": 110,
+    "key": "orchestrator/src/doc-commands.ts\u0000docCommand"
   },
   {
     "file": "orchestrator/src/docker-resources.ts",
@@ -769,8 +770,9 @@
   {
     "file": "orchestrator/src/run-terminal.ts",
     "function": "finishRun",
-    "line": 120,
-    "score": 98
+    "line": 151,
+    "score": 97,
+    "key": "orchestrator/src/run-terminal.ts\u0000finishRun"
   },
   {
     "file": "orchestrator/src/run-terminal.ts",
@@ -820,8 +822,9 @@
   {
     "file": "orchestrator/src/workflows.ts",
     "function": "validateWorkflowDefinition",
-    "line": 30,
-    "score": 100
+    "line": 32,
+    "score": 68,
+    "key": "orchestrator/src/workflows.ts\u0000validateWorkflowDefinition"
   },
   {
     "file": "orchestrator/src/worktree-attribution.ts",

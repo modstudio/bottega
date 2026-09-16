@@ -409,11 +409,12 @@ export function createDocsMcpServer(): McpServer {
       description: 'Compose a workflow index without returning step bodies.',
       inputSchema: {
         slug: z.string().trim().min(1),
+        project: z.string().trim().min(1),
         mode: z.string().trim().min(1).optional(),
         args: z.record(z.string(), z.string()).optional(),
       },
     },
-    async ({ slug, mode, args }) => text(composeWorkflow(slug, mode, args ?? {})),
+    async ({ slug, project, mode, args }) => text(composeWorkflow(slug, project, mode, args ?? {})),
   )
 
   server.registerTool(
@@ -422,11 +423,12 @@ export function createDocsMcpServer(): McpServer {
       description: 'Fetch one reached workflow step with argument substitutions applied.',
       inputSchema: {
         slug: z.string().trim().min(1),
+        project: z.string().trim().min(1),
         step: z.string().trim().min(1),
         args: z.record(z.string(), z.string()).optional(),
       },
     },
-    async ({ slug, step, args }) => text(getWorkflowStep(slug, step, args ?? {})),
+    async ({ slug, project, step, args }) => text(getWorkflowStep(slug, project, step, args ?? {})),
   )
 
   server.registerTool(

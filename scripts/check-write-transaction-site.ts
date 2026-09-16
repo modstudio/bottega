@@ -17,6 +17,7 @@ function collect(directory: string) {
 
 collect(join(root, 'orchestrator', 'src'))
 collect(join(root, 'shared'))
+collect(join(root, 'hub', 'src'))
 
 const violations: string[] = []
 for (const path of files) {
@@ -54,7 +55,9 @@ for (const path of files) {
 if (violations.length) {
   for (const violation of violations)
     console.error(
-      `${violation}: only orchestrator/src/db.ts:writeTransaction may open a production transaction`,
+      violation.startsWith('hub/')
+        ? `${violation}: only hub/src/db.ts:writeTransaction may open a production transaction`
+        : `${violation}: only orchestrator/src/db.ts:writeTransaction may open a production transaction`,
     )
   process.exit(1)
 }

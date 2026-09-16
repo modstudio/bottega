@@ -4,6 +4,7 @@ import { existsSync, readFileSync } from 'node:fs'
 import { db, nowIso, sessionId, writeTransaction } from './db.ts'
 import { pairPartners, parseRunIds, recordDuels, recordLosses, recordTies } from './duel.ts'
 import { JOBS, job } from './jobs.ts'
+import { machineId } from './machine-identity.ts'
 import { cleanReviewEvidence, parseReviewOutput } from './review.ts'
 import { enqueueReview } from './review-outbox.ts'
 import {
@@ -32,6 +33,7 @@ import {
   type RootAuthority,
   runMutationActor,
 } from './run-authority.ts'
+import { enqueueRunRecord } from './run-outbox.ts'
 import {
   DELIVERY,
   type Delivery,
@@ -42,6 +44,7 @@ import {
   type Quality,
   weigh,
 } from './score.ts'
+import { enqueueScoreRecord } from './score-outbox.ts'
 
 type JudgementFlags = {
   has(name: string): boolean
@@ -86,6 +89,17 @@ function recordScoreVerdict(
                                        scored_at=excluded.scored_at`,
     )
     .run(id, delivery, quality, fidelity, note, scoredAt, scorer)
+  enqueueScoreRecord(db(), id, machineId())
+}
+
+function enqueueVoidedRunRecord(id: number): void {
+  const row = db()
+    .query<{ record_id: string | null; finished_at: string }, [number]>(
+      `SELECT record_id, COALESCE(last_event_at, started_at) AS finished_at FROM run
+        WHERE id=? AND status IN ('ok','failed','stale','stopped')`,
+    )
+    .get(id)
+  if (row?.record_id) enqueueRunRecord(db(), id, machineId(), row.finished_at)
 }
 export function judgeRun(
   requestedId: number,
@@ -301,28 +315,15 @@ export function judgeRun(
     if (findingsJob && delivery !== 'none') {
       reviewId = gradeReviewLens(id, parsedOutput, gradeValues as ReviewGrades)
     }
-    db()
-      .query(
-        `INSERT INTO score (run_id, delivery, quality, fidelity, note, scored_at, scored_by)
-     VALUES (?,?,?,?,?,?,?)
-     ON CONFLICT(run_id) DO UPDATE SET delivery=excluded.delivery, quality=excluded.quality,
-       fidelity=excluded.fidelity,
-       note=CASE
-         WHEN score.note IS NULL OR trim(score.note) = '' THEN excluded.note
-         WHEN excluded.note IS NULL OR trim(excluded.note) = '' THEN score.note
-         ELSE score.note || '\n\n--- re-scored ' || excluded.scored_at || ' ---\n' || excluded.note
-       END,
-       scored_at=excluded.scored_at`,
-      )
-      .run(
-        id,
-        delivery!,
-        quality ?? null,
-        writes && delivery !== 'none' ? (fidelity ?? null) : null,
-        note,
-        scoredAt,
-        process.env.ORCH_SCORER ?? 'claude',
-      )
+    recordScoreVerdict(
+      id,
+      delivery!,
+      quality ?? null,
+      writes && delivery !== 'none' ? (fidelity ?? null) : null,
+      note,
+      scoredAt,
+      process.env.ORCH_SCORER ?? 'claude',
+    )
     if (reviewId) {
       if (delivery === 'none') {
         db().query('UPDATE review SET completed_at=? WHERE id=?').run(scoredAt, reviewId)
@@ -459,6 +460,7 @@ export function scoreRun(
           scorer ?? process.env.ORCH_SCORER ?? 'claude',
         )
       }
+      enqueueVoidedRunRecord(id)
       auditRunMutation(voidAuthority!, 'void', options.auditReason)
     })
     const verdictResult = cannotRecord

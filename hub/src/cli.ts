@@ -4,7 +4,15 @@ import { human } from '../../shared/interval.ts'
 import { createTrackerTask } from '../../shared/trackers.ts'
 import { projectOf } from './attribute.ts'
 import { watch, withLease } from './collect.ts'
-import { DB_PATH, db, migrateDatabase, nextImportedTaskKey, nowIso, requireDatabase } from './db.ts'
+import {
+  DB_PATH,
+  db,
+  migrateDatabase,
+  nextImportedTaskKey,
+  nowIso,
+  requireDatabase,
+  writeTransaction,
+} from './db.ts'
 import { ingestGit } from './ingest/git.ts'
 import { ingestRuns } from './ingest/runs.ts'
 import { ingestTrackers } from './ingest/trackers.ts'
@@ -605,7 +613,7 @@ async function task() {
                          closed_at, updated_at, source, first_seen, last_seen)
        VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'local', ?, ?)`,
     )
-    const write = d.transaction(() => {
+    writeTransaction(() => {
       for (const t of items) {
         const key = nextImportedTaskKey(prefix)
         const done = !!t.closed
@@ -637,7 +645,6 @@ async function task() {
         }
       }
     })
-    write()
     console.log(`imported ${items.length} tasks`)
     return
   }

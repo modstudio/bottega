@@ -65,8 +65,8 @@ describe('workflow projection and seeds', () => {
     const d = database()
     expect(listWorkflows(d).filter((w) => ['ship', 'fix-defect'].includes(w.slug)).length).toBe(2)
     for (const [slug, revision] of [
-      ['ship', 2],
-      ['fix-defect', 3],
+      ['ship', 3],
+      ['fix-defect', 4],
     ] as const) {
       const version = showWorkflow(slug, 1, d)
       expect(version.status).toBe('production')
@@ -100,8 +100,8 @@ describe('workflow projection and seeds', () => {
     expect(showWorkflow('ship', 3, d).status).toBe('production')
     expect(showWorkflow('fix-defect', 2, d).status).toBe('production')
     for (const [slug, prior, next, revision] of [
-      ['ship', 2, 3, 2],
-      ['fix-defect', 1, 2, 3],
+      ['ship', 2, 3, 3],
+      ['fix-defect', 1, 2, 4],
     ] as const) {
       expect(showWorkflow(slug, prior, d).status).toBe('retired')
       expect(showWorkflow(slug, next, d).reason).toBe(`seed r${revision}`)
@@ -161,7 +161,7 @@ describe('workflow projection and seeds', () => {
     expect(d.query("SELECT id FROM workflow WHERE slug='fix-defect'").get()).toEqual({ id })
     expect(workflowVersions('fix-defect', d).map(({ n }) => n)).toEqual([1, 2, 3])
     expect(showWorkflow('fix-defect', 2, d).author).toBe('architect')
-    expect(showWorkflow('fix-defect', 3, d).reason).toBe('seed r3')
+    expect(showWorkflow('fix-defect', 3, d).reason).toBe('seed r4')
     expect(
       listWorkflows(d).filter(({ slug }) => slug === 'fix-defect' || slug === 'filed-issue'),
     ).toHaveLength(1)

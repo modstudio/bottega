@@ -1,7 +1,7 @@
 export type StatusCategory = 'open' | 'active' | 'review' | 'done' | 'dropped'
 export const TASK_STATUSES = ['open', 'active', 'review', 'done', 'dropped'] as const
 
-type TrackerSettings = {
+export type TrackerSettings = {
   kind?: string
   protocol?: 'workspace-mcp' | 'cursor-mcp' | 'array-mcp' | string
   assigneeLookup?: 'person-lookup' | 'task-detail'

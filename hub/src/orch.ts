@@ -387,6 +387,7 @@ export type DocRow = {
 
 export type DocSubjects = {
   project: string[]
+  stack: string[]
   agent: string[]
   job: string[]
 }

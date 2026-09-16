@@ -10,6 +10,7 @@ export const MIGRATIONS_FOLDER = join(import.meta.dir, '..', 'migrations')
 export const MIGRATIONS_TABLE = 'hub_migrations'
 export const SCHEMA_LOCK_TABLE = 'hub_schema_lock'
 const SCHEMA_INVARIANT = 'Only hub migrate changes the store schema.'
+export const CONNECTION_SCHEMA_INVARIANT = 'A process writes only the schema version it opened.'
 export const JOURNAL_WHEN_ORDER = 'migration journal when values must be strictly increasing'
 const BACKFILL_UNCLOSED = 'migration backfill blocks must be closed by -- /BACKFILL'
 
@@ -117,6 +118,13 @@ export function schemaVersionLabel(d: Database): string {
   const version = readUserVersion(d)
   if (version === 0) return 'unstamped'
   return String(version)
+}
+
+export function staleWriteRefusal(actual: number, opened: number, clearedBy: string): string {
+  return (
+    `refusing to write: the store schema is newer than this process (user_version ${actual}, opened ${opened})\n` +
+    `invariant: ${CONNECTION_SCHEMA_INVARIANT}\ncleared by: ${clearedBy}`
+  )
 }
 
 function tableExists(d: Database, table: string): boolean {

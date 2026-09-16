@@ -1,6 +1,6 @@
 import type { OrchRun } from '../../../shared/orch-contract.ts'
 import { attributeRun } from '../attribute.ts'
-import { db, nowIso } from '../db.ts'
+import { db, nowIso, writeTransaction } from '../db.ts'
 import { readRuns } from '../orch.ts'
 
 export type { OrchRun } from '../../../shared/orch-contract.ts'
@@ -89,8 +89,8 @@ export async function ingestRuns(since: string): Promise<{ rows: number; skipped
   let rows = 0
   let skipped = 0
   const now = Date.now()
-  const write = d.transaction((batch: OrchRun[]) => {
-    for (const r of batch) {
+  writeTransaction(() => {
+    for (const r of runs) {
       const a = attributeRun(r)
 
       const root = rootRef(r.id)
@@ -162,7 +162,6 @@ export async function ingestRuns(since: string): Promise<{ rows: number; skipped
       }
     }
   })
-  write(runs)
 
   d.query(`INSERT INTO setting (key, value) VALUES ('collect.runs.at', ?)
            ON CONFLICT(key) DO UPDATE SET value = excluded.value`).run(JSON.stringify(snapshot))

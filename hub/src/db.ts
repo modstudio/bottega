@@ -2,7 +2,12 @@ import { Database } from 'bun:sqlite'
 import { existsSync, mkdirSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { mainCheckoutOf } from '../../shared/git.ts'
-import { applyMigrations, migrationRefusal, readUserVersion } from './migrations.ts'
+import {
+  applyMigrations,
+  migrationRefusal,
+  readUserVersion,
+  staleWriteRefusal,
+} from './migrations.ts'
 
 export type { Project } from './projects.ts'
 
@@ -35,7 +40,7 @@ export function enableSchemaReload(onReload: (from: number, to: number) => void)
   schemaReload = onReload
 }
 
-function refuseOrReloadStaleSchema(d: Database): Database {
+function refuseOrReloadStaleSchema(d: Database, forWrite: boolean): Database {
   if (handle && d !== handle) return d
   const actual = readUserVersion(d)
   const opened = openedUserVersion
@@ -48,11 +53,12 @@ function refuseOrReloadStaleSchema(d: Database): Database {
     schemaReload(from, actual)
     return db()
   }
-  return d
+  if (!forWrite) return d
+  throw new Error(staleWriteRefusal(actual, opened, 'restart this process after hub migrate'))
 }
 
 export function db(): Database {
-  if (handle) return refuseOrReloadStaleSchema(handle)
+  if (handle) return refuseOrReloadStaleSchema(handle, false)
   requireDatabase()
   const d = new Database(DB_PATH!, { readwrite: true, create: false })
   d.exec('PRAGMA busy_timeout = 15000; PRAGMA foreign_keys = ON;')
@@ -70,6 +76,12 @@ export function db(): Database {
   handle = d
   openedUserVersion = readUserVersion(d)
   return d
+}
+
+/** Open the only sanctioned multi-statement write transaction. */
+export function writeTransaction<T>(fn: () => T, database: Database = db()): T {
+  const conn = refuseOrReloadStaleSchema(database, true)
+  return conn.transaction(fn).immediate()
 }
 
 export const nowIso = () => new Date().toISOString()
