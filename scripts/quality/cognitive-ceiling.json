@@ -373,8 +373,8 @@
   {
     "file": "orchestrator/src/issue.ts",
     "function": "workIssue",
-    "line": 643,
-    "score": 59,
+    "line": 769,
+    "score": 44,
     "key": "orchestrator/src/issue.ts\u0000workIssue"
   },
   {

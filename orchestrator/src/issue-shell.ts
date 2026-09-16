@@ -39,6 +39,40 @@ export function workerGateEnvironment(
   return env
 }
 
+export function issueRunAsked(
+  run: { status: string },
+  reply: { status: string; questions?: unknown[] | null },
+): boolean {
+  return run.status === 'asking' || reply.status !== 'done' || Boolean(reply.questions?.length)
+}
+
+export function issueFixReady(
+  fix: {
+    status: string
+    outcome: string | null
+    cause_location: string | null
+    after: string | null
+  },
+  diagnosis: { cause_location: string | null; before: string | null },
+  before: string,
+  after: string,
+  plainGateOk: boolean,
+  environmentGateOk: boolean,
+  findings: number,
+): boolean {
+  return (
+    fix.status === 'done' &&
+    fix.outcome === 'fixed' &&
+    fix.cause_location === diagnosis.cause_location &&
+    before === diagnosis.before &&
+    after === fix.after &&
+    before !== after &&
+    plainGateOk &&
+    environmentGateOk &&
+    findings === 0
+  )
+}
+
 export function filedIssueCommandResult(spawn: {
   exitCode: number | null
   stdout: { toString(): string }

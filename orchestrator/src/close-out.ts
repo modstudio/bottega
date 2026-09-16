@@ -521,10 +521,15 @@ function attemptCloseOutRun(
   const ownership = inspectTreeOwnership(treePath, repoRoot, conversationIds, branchTemplate)
   const liveSharers = liveWorktreeSharers(db(), { id: row.root_id, worktree: treePath })
   const liveConversation = aliveConversationTurns(row.root_id)
+  const ownerHeld = otherConversationWorktreeSharers(db(), {
+    id: row.root_id,
+    worktree: treePath,
+  }).some((holder) => conversationKeepTreeHold(holder.id, nowIso()).held)
   const adoptionDecision = adoptedTreeCloseOutDecision({
     ownership,
     ownerAlive: liveSharers.length > 0,
     sharerAlive: liveConversation.length > 0,
+    ownerHeld,
   })
   const ownershipResult = ownershipCloseOutResult({
     runId: row.root_id,

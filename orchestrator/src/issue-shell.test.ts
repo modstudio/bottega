@@ -1,5 +1,13 @@
 import { describe, expect, test } from 'bun:test'
-import { filedIssueCommandPlan } from './issue-shell.ts'
+import { resolve } from 'node:path'
+import {
+  FILED_ISSUE_COMMAND_TIMEOUT_MS,
+  filedIssueCommandPlan,
+  filedIssueCommandResult,
+  issueRunAsked,
+  workerGateEnvironment,
+} from './issue-shell.ts'
+import { expandHome, READONLY_LENS_DENY_PATHS, READONLY_LENS_DENY_SOCKETS } from './sandbox.ts'
 
 describe('filed issue command confinement', () => {
   test('denies secrets without carrying the coordinator environment', () => {
@@ -19,6 +27,8 @@ describe('filed issue command confinement', () => {
     expect(plan.profile.network.allowedDomains).toEqual([])
     expect(plan.profile.filesystem.allowWrite).toEqual(['/trees/DEV-392', '/tmp/issue-home'])
     expect(plan.profile.filesystem.denyRead).toEqual([
+      ...READONLY_LENS_DENY_PATHS.map(expandHome).map((path) => resolve(path)),
+      ...READONLY_LENS_DENY_SOCKETS,
       '/project/.env',
       '/keys/token',
       '/Users/operator/.claude/.env',
@@ -31,5 +41,58 @@ describe('filed issue command confinement', () => {
       TMPDIR: '/tmp/issue-home',
     })
     expect(plan.env).not.toHaveProperty('UNRELATED_COORDINATOR_VALUE')
+  })
+
+  test('worker gate environment withholds credentials and SSH_AUTH_SOCK', () => {
+    expect(
+      workerGateEnvironment({
+        PATH: '/bin',
+        USER: 'operator',
+        SHELL: '/bin/zsh',
+        LANG: 'C.UTF-8',
+        TERM: 'xterm',
+        LC_ALL: 'en_US.UTF-8',
+        OPENAI_API_KEY: 'sk-secret',
+        SSH_AUTH_SOCK: '/tmp/ssh.sock',
+        ORCH_RUN_ID: '41',
+        ORCH_GUARDED_GIT_COMMON_DIR: '/repo/.git',
+        ORCH_ALLOWED_GIT_REF: 'refs/heads/DEV-1',
+        HOME: '/Users/operator',
+      }),
+    ).toEqual({
+      PATH: '/bin',
+      USER: 'operator',
+      SHELL: '/bin/zsh',
+      LANG: 'C.UTF-8',
+      TERM: 'xterm',
+      LC_ALL: 'en_US.UTF-8',
+      ORCH_GUARDED_GIT_COMMON_DIR: '/repo/.git',
+      ORCH_ALLOWED_GIT_REF: 'refs/heads/DEV-1',
+    })
+  })
+
+  test('an asking run or non-done reply is treated as asking', () => {
+    expect(issueRunAsked({ status: 'asking' }, { status: 'done', questions: null })).toBe(true)
+    expect(issueRunAsked({ status: 'ok' }, { status: 'asking', questions: null })).toBe(true)
+    expect(
+      issueRunAsked({ status: 'ok' }, { status: 'done', questions: [{ question: 'which?' }] }),
+    ).toBe(true)
+    expect(issueRunAsked({ status: 'ok' }, { status: 'done', questions: null })).toBe(false)
+  })
+
+  test('a timed-out command is a failed result naming the limit', () => {
+    expect(FILED_ISSUE_COMMAND_TIMEOUT_MS).toBe(20 * 60_000)
+    expect(
+      filedIssueCommandResult({
+        exitCode: null,
+        stdout: '',
+        stderr: '',
+        exitedDueToTimeout: true,
+      }),
+    ).toEqual({
+      ok: false,
+      text: `timed out after ${FILED_ISSUE_COMMAND_TIMEOUT_MS}ms`,
+      exitCode: -1,
+    })
   })
 })

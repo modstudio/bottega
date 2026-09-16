@@ -12,11 +12,20 @@ import {
 import { DB_PATH, db } from './db.ts'
 import { repoRootOf } from './git-environment.ts'
 import { catchFixTreeDisposition } from './issue-catch.ts'
-import { filedIssueCommandPlan } from './issue-shell.ts'
+import {
+  FILED_ISSUE_COMMAND_TIMEOUT_MS,
+  filedIssueCommandPlan,
+  filedIssueCommandResult,
+  issueFixReady,
+  issueRunAsked,
+  workerGateEnvironment,
+} from './issue-shell.ts'
 import { type Project, projectByName } from './projects.ts'
 import { prepareSharedRefGuard } from './ref-guard.ts'
 import { parseReviewOutput } from './review.ts'
 import { run } from './run.ts'
+import { terminateRunProcesses } from './run-process.ts'
+import { abandonRun } from './run-stop.ts'
 import type { RunResult } from './run-types.ts'
 import { resetSandbox, resolveSecretPaths, sandboxLaunchArgv, srtInstalled } from './sandbox.ts'
 import { worktreeDirty } from './worktree-attribution.ts'
@@ -484,9 +493,15 @@ async function shell(
   if (input.orchStore) plan.env.ORCH_DB = input.orchStore
   try {
     const launch = await sandboxLaunchArgv(plan.profile, plan.argv[0], plan.argv.slice(1))
-    const p = Bun.spawnSync(launch, { cwd, env: plan.env, stdout: 'pipe', stderr: 'pipe' })
-    const text = `${p.stdout.toString()}${p.stderr.toString()}`.trim()
-    return { ok: p.exitCode === 0, text: text || `exit ${p.exitCode}`, exitCode: p.exitCode }
+    const p = Bun.spawnSync(launch, {
+      cwd,
+      env: plan.env,
+      stdout: 'pipe',
+      stderr: 'pipe',
+      timeout: FILED_ISSUE_COMMAND_TIMEOUT_MS,
+      killSignal: 'SIGTERM',
+    })
+    return filedIssueCommandResult(p)
   } finally {
     await resetSandbox()
   }
@@ -502,27 +517,137 @@ function argv(
   return { ok: p.exitCode === 0, text: text || `exit ${p.exitCode}`, exitCode: p.exitCode }
 }
 
-function workerEnv(): Record<string, string> {
-  const exact = new Set([
-    'PATH',
-    'HOME',
-    'USER',
-    'SHELL',
-    'LANG',
-    'TERM',
-    'TMPDIR',
-    'SSH_AUTH_SOCK',
+async function handbackAskingIssue(
+  issue: FiledIssue,
+  result: Diagnosis | IssueWorkerReply,
+  run: RunResult,
+  stage: 'diagnosis' | 'fix',
+): Promise<void> {
+  const body = outcomeDocument(issue, result, undefined, [
+    `Open questions: ${JSON.stringify(result.questions ?? [])}`,
+    `Work: ${stage} run ${run.id}`,
   ])
-  const env: Record<string, string> = {}
-  for (const [key, value] of Object.entries(process.env)) {
-    if (
-      value &&
-      (exact.has(key) ||
-        /^(LC_|XDG_|OPENAI_|XAI_|GROK_|GEMINI_|GOOGLE_|CODEX_|QWEN_|ORCH_)/.test(key))
-    )
-      env[key] = value
+  await handoff(issue.key, `Issue handback from ${stage} ${run.id}`, body)
+  if (run.status !== 'asking') return
+  await abandonRun(
+    run.id,
+    {
+      force: false,
+      note: 'issue coordinator: worker asked; questions recorded on the task',
+      auditReason: null,
+      presentation: {
+        log: console.error,
+        error: console.error,
+        setExitCode: () => {},
+        keptBranchLine: (branch, unique, after, id) =>
+          `kept branch ${branch}: ${unique} unique, ${after ?? 'n/a'} after cut (run ${id})`,
+      },
+    },
+    { lifecycleCheckpoint: () => {}, terminateRunProcesses },
+  )
+}
+
+async function verifyOrHandbackFix(
+  issue: FiledIssue,
+  diagnosis: Diagnosis,
+  diagnosisRun: RunResult,
+  fixRun: RunResult,
+  fix: IssueWorkerReply,
+  reporting: Project,
+  target: Project,
+  sandboxHome: string,
+  branchKey: string,
+): Promise<void> {
+  if (issueRunAsked(fixRun, fix)) {
+    await handbackAskingIssue(issue, fix, fixRun, 'fix')
+    return
   }
-  return env
+  await comment(
+    issue.key,
+    `Fix run ${fixRun.id} completed on branch ${fixRun.worktree?.branch ?? fix.branch ?? 'unknown'}; committed work is durable and coordinator verification is starting.`,
+  )
+  const before =
+    diagnosisRun.worktree && issue.reproduceCommand
+      ? await shell(issue.reproduceCommand, diagnosisRun.worktree.path, {
+          project: reporting,
+          sandboxHome,
+        })
+      : { ok: false, text: 'no reproduction command', exitCode: -1 }
+  const after =
+    fixRun.worktree && issue.reproduceCommand
+      ? await shell(issue.reproduceCommand, fixRun.worktree.path, {
+          project: target,
+          sandboxHome,
+        })
+      : { ok: false, text: 'no reproduction command', exitCode: -1 }
+  const gate = target.settings.gate
+  const plainGate =
+    gate && fixRun.worktree
+      ? await shell(gate, fixRun.worktree.path, { project: target, sandboxHome })
+      : { ok: false, text: 'project has no configured gate', exitCode: -1 }
+  const environmentGate =
+    gate && fixRun.worktree
+      ? await shell(gate, fixRun.worktree.path, {
+          project: target,
+          sandboxHome,
+          workerEnvironment: {
+            ...workerGateEnvironment(process.env),
+            ...prepareSharedRefGuard(fixRun.worktree.path, `refs/heads/${fixRun.worktree.branch}`),
+          },
+        })
+      : { ok: false, text: 'project has no configured gate', exitCode: -1 }
+  await comment(
+    issue.key,
+    `Independent measurements and both gates completed for run ${fixRun.id}; blast-radius review is starting.`,
+  )
+  const lens = fixRun.worktree
+    ? await run({
+        job: 'review-lens',
+        cwd: fixRun.worktree.path,
+        lens: 'issue-blast-radius',
+        key: branchKey,
+        carry: true,
+        prompt: `Independently inspect task ${issue.key} and the current commit/diff. What is wrong with this change through the single lens: what else uses what it touched? Do not seek agreement and do not use any worker conclusion. Task filing:\n${boundedIssuePack(issue)}`,
+        label: `issue ${issue.key} blast radius`,
+      })
+    : null
+  const review = lens ? parseReviewOutput(lens.output) : null
+  // Findings runs record their review as part of terminalisation. Parsing it
+  // here still decides coordinator readiness; capture no longer needs a
+  // second, issue-specific write.
+  const ready = issueFixReady(
+    fix,
+    diagnosis,
+    before.text,
+    after.text,
+    plainGate.ok,
+    environmentGate.ok,
+    review?.findings.length ?? -1,
+  )
+  const extra = [
+    `Coordinator before: ${before.text}`,
+    `Coordinator after: ${after.text}`,
+    `Coordinator plain gate: ${plainGate.text}`,
+    `Coordinator worker-environment gate: ${environmentGate.text}`,
+    `Blast-radius lens run: ${lens?.id ?? 'not run'}; findings: ${JSON.stringify(review?.findings ?? null)}`,
+    `Ready to land: ${ready ? 'yes' : 'no — handed back'}`,
+    `Fix run: ${fixRun.id}`,
+  ]
+  await handoff(
+    issue.key,
+    ready ? 'Issue outcome: fixed, ready to land' : 'Issue handback after verification',
+    outcomeDocument(issue, fix, fix, extra),
+  )
+  await comment(
+    issue.key,
+    `${ready ? 'FIXED and ready to land' : 'Handed back'} on branch ${fixRun.worktree?.branch ?? fix.branch ?? 'unknown'}; coordinator evidence is in the task document.`,
+  )
+  if (fix.cause_matched_report === false) {
+    await comment(
+      issue.key,
+      `Reporter correction: the established cause differed from the report. ${fix.established_cause ?? 'See the outcome document for the measured cause.'}`,
+    )
+  }
 }
 
 function outcomeDocument(
@@ -717,12 +842,8 @@ export async function workIssue(key: string): Promise<void> {
       `Issue diagnosis run ${diagnosisRun.id}: ${diagnosis.established_cause ?? diagnosis.outcome ?? diagnosis.status}. Evidence has been captured before release.`,
     )
 
-    if (diagnosis.status !== 'done' || diagnosis.questions?.length) {
-      const body = outcomeDocument(issue, diagnosis, undefined, [
-        `Open questions: ${JSON.stringify(diagnosis.questions ?? [])}`,
-        `Work: diagnosis run ${diagnosisRun.id}`,
-      ])
-      await handoff(issue.key, `Issue handback from diagnosis ${diagnosisRun.id}`, body)
+    if (issueRunAsked(diagnosisRun, diagnosis)) {
+      await handbackAskingIssue(issue, diagnosis, diagnosisRun, 'diagnosis')
       completed = true
       return
     }
@@ -880,96 +1001,17 @@ export async function workIssue(key: string): Promise<void> {
       label: `issue ${issue.key} fix`,
     })
     const fix = parseIssueReply<IssueWorkerReply>(fixRun.output, ISSUE_WORKER_SCHEMA)
-    await comment(
-      issue.key,
-      `Fix run ${fixRun.id} completed on branch ${fixRun.worktree?.branch ?? fix.branch ?? 'unknown'}; committed work is durable and coordinator verification is starting.`,
+    await verifyOrHandbackFix(
+      issue,
+      diagnosis,
+      diagnosisRun,
+      fixRun,
+      fix,
+      reporting,
+      target,
+      sandboxHome,
+      branchKey,
     )
-    const before =
-      diagnosisRun.worktree && issue.reproduceCommand
-        ? await shell(issue.reproduceCommand, diagnosisRun.worktree.path, {
-            project: reporting,
-            sandboxHome,
-          })
-        : { ok: false, text: 'no reproduction command', exitCode: -1 }
-    const after =
-      fixRun.worktree && issue.reproduceCommand
-        ? await shell(issue.reproduceCommand, fixRun.worktree.path, {
-            project: target,
-            sandboxHome,
-          })
-        : { ok: false, text: 'no reproduction command', exitCode: -1 }
-    const gate = target.settings.gate
-    const plainGate =
-      gate && fixRun.worktree
-        ? await shell(gate, fixRun.worktree.path, { project: target, sandboxHome })
-        : { ok: false, text: 'project has no configured gate', exitCode: -1 }
-    const environmentGate =
-      gate && fixRun.worktree
-        ? await shell(gate, fixRun.worktree.path, {
-            project: target,
-            sandboxHome,
-            workerEnvironment: {
-              ...workerEnv(),
-              ...prepareSharedRefGuard(
-                fixRun.worktree.path,
-                `refs/heads/${fixRun.worktree.branch}`,
-              ),
-            },
-          })
-        : { ok: false, text: 'project has no configured gate', exitCode: -1 }
-    await comment(
-      issue.key,
-      `Independent measurements and both gates completed for run ${fixRun.id}; blast-radius review is starting.`,
-    )
-    const lens = fixRun.worktree
-      ? await run({
-          job: 'review-lens',
-          cwd: fixRun.worktree.path,
-          lens: 'issue-blast-radius',
-          key: branchKey,
-          carry: true,
-          prompt: `Independently inspect task ${issue.key} and the current commit/diff. What is wrong with this change through the single lens: what else uses what it touched? Do not seek agreement and do not use any worker conclusion. Task filing:\n${boundedIssuePack(issue)}`,
-          label: `issue ${issue.key} blast radius`,
-        })
-      : null
-    const review = lens ? parseReviewOutput(lens.output) : null
-    // Findings runs record their review as part of terminalisation. Parsing it
-    // here still decides coordinator readiness; capture no longer needs a
-    // second, issue-specific write.
-    const ready =
-      fix.status === 'done' &&
-      fix.outcome === 'fixed' &&
-      fix.cause_location === diagnosis.cause_location &&
-      before.text === diagnosis.before &&
-      after.text === fix.after &&
-      before.text !== after.text &&
-      plainGate.ok &&
-      environmentGate.ok &&
-      review?.findings.length === 0
-    const extra = [
-      `Coordinator before: ${before.text}`,
-      `Coordinator after: ${after.text}`,
-      `Coordinator plain gate: ${plainGate.text}`,
-      `Coordinator worker-environment gate: ${environmentGate.text}`,
-      `Blast-radius lens run: ${lens?.id ?? 'not run'}; findings: ${JSON.stringify(review?.findings ?? null)}`,
-      `Ready to land: ${ready ? 'yes' : 'no — handed back'}`,
-      `Fix run: ${fixRun.id}`,
-    ]
-    await handoff(
-      issue.key,
-      ready ? 'Issue outcome: fixed, ready to land' : 'Issue handback after verification',
-      outcomeDocument(issue, fix, fix, extra),
-    )
-    await comment(
-      issue.key,
-      `${ready ? 'FIXED and ready to land' : 'Handed back'} on branch ${fixRun.worktree?.branch ?? fix.branch ?? 'unknown'}; coordinator evidence is in the task document.`,
-    )
-    if (fix.cause_matched_report === false) {
-      await comment(
-        issue.key,
-        `Reporter correction: the established cause differed from the report. ${fix.established_cause ?? 'See the outcome document for the measured cause.'}`,
-      )
-    }
     completed = true
   } catch (cause) {
     fixTreeSettled = await recordIssueFailure(issue, cause, fixRun)
