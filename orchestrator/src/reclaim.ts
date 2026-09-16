@@ -96,6 +96,27 @@ function branchRows(project: string, branch: string): ReclaimRun[] {
     .all(project, branch) as ReclaimRun[]
 }
 
+/** Settle every recorded claim after a run-minted branch has been deleted. */
+export function settleDeletedBranch(project: string, branch: string): void {
+  writableDb()
+  const rows = branchRows(project, branch)
+  writeTransaction(() => {
+    db()
+      .query('UPDATE run SET branch_kept=NULL, branch_kept_tip=NULL WHERE repo=? AND branch_kept=?')
+      .run(project, branch)
+    for (const row of rows) {
+      settleClaims(db(), {
+        rootRunId: row.root_id,
+        kind: 'branch',
+        state: 'released',
+        settledAt: new Date().toISOString(),
+        detail: `deleted refs/heads/${branch}`,
+        allocationKey: `refs/heads/${branch}`,
+      })
+    }
+  })
+}
+
 function liveOwner(row: ReclaimRun): string | null {
   return runAlive({
     status: row.status,
@@ -409,24 +430,7 @@ export function reclaimBranch(
               `git did not delete branch ${projectName}:${branch} at proved tip ${tip}: ${deleted.out || 'ref moved'}`,
             )
           }
-          const rows = branchRows(projectName, branch)
-          writeTransaction(() => {
-            db()
-              .query(
-                'UPDATE run SET branch_kept=NULL, branch_kept_tip=NULL WHERE repo=? AND branch_kept=?',
-              )
-              .run(projectName, branch)
-            for (const row of rows) {
-              settleClaims(db(), {
-                rootRunId: row.root_id,
-                kind: 'branch',
-                state: 'released',
-                settledAt: new Date().toISOString(),
-                detail: `deleted refs/heads/${branch}`,
-                allocationKey: `refs/heads/${branch}`,
-              })
-            }
-          })
+          settleDeletedBranch(projectName, branch)
           return { ok: true, action: `reclaimed branch ${projectName}:${branch}` }
         },
         5 * 60_000,
