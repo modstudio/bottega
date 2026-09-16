@@ -214,6 +214,8 @@ for (const script of [
   'check-record-api-server-boundary.ts',
   'check-record-api-boundary.ts',
   'check-record-runs-boundary.ts',
+  'check-record-reviews-boundary.ts',
+  'check-record-projects-boundary.ts',
   'check-record-auth-command-boundary.ts',
   'check-record-sync-command-boundary.ts',
   'check-run-outbox-boundary.ts',

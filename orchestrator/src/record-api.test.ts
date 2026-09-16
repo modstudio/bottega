@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test'
-import { recordApi } from './record-api.ts'
+import { decodeRecordCursor, encodeRecordCursor, recordApi } from './record-api.ts'
 import type { RecordIdentity } from './record-auth.ts'
 
 const identity: RecordIdentity = {
@@ -10,13 +10,18 @@ const identity: RecordIdentity = {
   ],
 }
 
-function appWith(session: RecordIdentity | null) {
+function appWith(session: RecordIdentity | null, overrides: Record<string, unknown> = {}) {
   return recordApi({
     recordUrl: 'postgres://record.test/record',
     auth: { handler: () => Response.json({ handled: true }) },
     readSession: async () => session,
     readHealth: async () => ({ ok: true, migrations: 14 }),
     readRuns: async () => [],
+    readRun: async () => null,
+    readReviews: async () => [],
+    readReview: async () => null,
+    readProjects: async () => [],
+    ...overrides,
   })
 }
 
@@ -49,5 +54,92 @@ describe('record API', () => {
     const app = appWith(identity)
     expect(await (await app.request('/api/auth/session')).json()).toEqual({ handled: true })
     expect(await (await app.request('/health')).json()).toEqual({ ok: true, migrations: 14 })
+  })
+})
+
+describe('record API presentation routes', () => {
+  const id = '01990000-0000-7000-8000-000000000001'
+
+  test('cursor encode/decode round trips and malformed cursors are rejected', async () => {
+    const cursor = { at: '2026-01-02T03:04:05.000Z', id }
+    expect(decodeRecordCursor(encodeRecordCursor(cursor))).toEqual(cursor)
+    const response = await appWith(identity).request('/v1/runs?before=broken')
+    expect(response.status).toBe(400)
+    expect(await response.json()).toEqual({ error: 'invalid before cursor' })
+  })
+
+  test('validates filters and passes exact filter values', async () => {
+    let received: Record<string, unknown> = {}
+    const app = appWith(identity, {
+      readRuns: async (input: Record<string, unknown>) => {
+        received = input
+        return []
+      },
+    })
+    expect((await app.request('/v1/runs?agent=')).status).toBe(400)
+    expect((await app.request('/v1/runs?limit=101')).status).toBe(400)
+    expect((await app.request('/v1/runs?project=p&agent=a&job=j&status=ok')).status).toBe(200)
+    expect(received).toMatchObject({ project: 'p', agent: 'a', job: 'j', status: 'ok' })
+  })
+
+  test('returns stable 400 and 404 error shapes', async () => {
+    expect(await (await appWith(identity).request('/v1/runs/not-a-uuid')).json()).toEqual({
+      error: 'run id must be a uuid',
+    })
+    const missing = await appWith(identity).request(`/v1/runs/${id}`)
+    expect(missing.status).toBe(404)
+    expect(await missing.json()).toEqual({ error: 'run not found' })
+  })
+
+  test('projects contain only the presentation allowlist', async () => {
+    const project = {
+      name: 'one',
+      keyPrefixes: ['ONE'],
+      stack: null,
+      landingBranch: 'main',
+      color: null,
+      colorDark: null,
+      retiredAt: null,
+    }
+    const response = await appWith(identity, { readProjects: async () => [project] }).request(
+      '/v1/projects',
+    )
+    const rows = (await response.json()) as Record<string, unknown>[]
+    expect(Object.keys(rows[0]!).sort()).toEqual([
+      'color',
+      'colorDark',
+      'keyPrefixes',
+      'landingBranch',
+      'name',
+      'retiredAt',
+      'stack',
+    ])
+    for (const forbidden of [
+      'checkoutPath',
+      'secretPaths',
+      'worktree',
+      'tracker',
+      'mcpServer',
+      'workerMcpServers',
+      'mcpProbeTool',
+      'envPrefix',
+      'gate',
+    ])
+      expect(forbidden in rows[0]!).toBe(false)
+  })
+
+  test('CORS allows configured origins with credentials and omits headers otherwise', async () => {
+    const app = appWith(identity, { allowedOrigins: ['https://hub.example.test'] })
+    const allowed = await app.request('/v1/runs', {
+      method: 'OPTIONS',
+      headers: { Origin: 'https://hub.example.test', 'Access-Control-Request-Method': 'GET' },
+    })
+    expect(allowed.headers.get('access-control-allow-origin')).toBe('https://hub.example.test')
+    expect(allowed.headers.get('access-control-allow-credentials')).toBe('true')
+    const denied = await app.request('/v1/runs', {
+      method: 'OPTIONS',
+      headers: { Origin: 'https://other.example.test', 'Access-Control-Request-Method': 'GET' },
+    })
+    expect(denied.headers.get('access-control-allow-origin')).toBeNull()
   })
 })

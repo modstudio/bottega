@@ -1,10 +1,13 @@
 // concern: branch-landing-record
 /** Validates GitHub evidence before a reworked run branch is recorded as landed. */
 
+import { pullRequestCarriesKey } from './branch-state.ts'
+
 export type PullRequestLandingEvidence = {
   number: number
   state: string
   title: string
+  headRefName: string
   mergeCommit: { oid: string } | null
   mergedAt: string | null
 }
@@ -19,12 +22,6 @@ type LandingVerification =
   | { accepted: true; landing: VerifiedBranchLanding }
   | { accepted: false; reason: string }
 
-/** A key matches only as a whole key: DEV-61 does not match a title naming DEV-617. */
-function titleNamesTaskKey(title: string, taskKey: string): boolean {
-  const escaped = taskKey.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
-  return new RegExp(`(^|[^A-Za-z0-9-])${escaped}(?![A-Za-z0-9])`).test(title)
-}
-
 export function verifyBranchLanding(
   taskKey: string,
   pullRequest: PullRequestLandingEvidence,
@@ -35,7 +32,7 @@ export function verifyBranchLanding(
       reason: `PR #${pullRequest.number} is not merged`,
     }
   }
-  if (!titleNamesTaskKey(pullRequest.title, taskKey)) {
+  if (!pullRequestCarriesKey(pullRequest, taskKey)) {
     return {
       accepted: false,
       reason: `PR #${pullRequest.number} title does not contain task key ${taskKey}`,

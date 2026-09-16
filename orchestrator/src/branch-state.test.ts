@@ -4,12 +4,21 @@ import {
   decideBranchState,
   decidePruneEligibility,
   type MergedPullRequest,
+  pullRequestCarriesKey,
 } from './branch-state.ts'
 
 const pullRequest: MergedPullRequest = {
   number: 42,
   headRefName: 'DEV-616-orch-4235',
+  headRefOid: 'def456',
+  title: 'DEV-616: branch recognition',
   mergeCommit: { oid: 'abc123' },
+  mergedAt: '2026-09-16T12:00:00Z',
+}
+
+const recordedLanding = {
+  number: 190,
+  mergeCommit: 'abc123',
   mergedAt: '2026-09-16T12:00:00Z',
 }
 
@@ -20,13 +29,31 @@ function decide(overrides: Partial<Parameters<typeof decideBranchState>[0]> = {}
     mergedPullRequestsTruncated: false,
     commitsNotOnTrunk: 1,
     patchEquivalent: null,
-    contained: false,
+    pullRequestCommitCheck: null,
     recordedLanding: null,
     laterTurnBranches: [],
     superseded: false,
     ...overrides,
   })
 }
+
+describe('pull request task-key matching', () => {
+  test('head token mutation: recognises a key token in the head branch', () => {
+    expect(
+      pullRequestCarriesKey({ headRefName: 'DEV-616-ship', title: 'Ship work' }, 'DEV-616'),
+    ).toBe(true)
+  })
+
+  test('title token mutation: recognises a key token in the title', () => {
+    expect(
+      pullRequestCarriesKey({ headRefName: 'release', title: 'Ship DEV-616 now' }, 'DEV-616'),
+    ).toBe(true)
+  })
+
+  test('prefix mutation: does not mistake a longer key for the requested key', () => {
+    expect(pullRequestCarriesKey(pullRequest, 'DEV-61')).toBe(false)
+  })
+})
 
 describe('run branch state decision', () => {
   test('PR landing precedence mutation: landed by PR beats superseded', () => {
@@ -48,36 +75,63 @@ describe('run branch state decision', () => {
     })
   })
 
-  test('content containment lands a branch', () => {
-    expect(decide({ contained: true })).toEqual({
+  test('recorded landing mutation: a recorded landing lands a branch', () => {
+    expect(decide({ recordedLanding })).toEqual({
       state: 'landed',
-      landedBy: { type: 'contained' },
+      landedBy: { type: 'recorded', ...recordedLanding },
     })
   })
 
-  test('a recorded landing wins over content containment', () => {
+  test('recorded landing precedence mutation: a matching PR beats a recorded landing', () => {
+    expect(decide({ mergedPullRequests: [pullRequest], recordedLanding })).toMatchObject({
+      state: 'landed',
+      landedBy: { type: 'pr' },
+    })
+  })
+
+  test('recorded landing empty precedence mutation: recorded beats empty', () => {
+    expect(decide({ commitsNotOnTrunk: 0, recordedLanding })).toEqual({
+      state: 'landed',
+      landedBy: { type: 'recorded', ...recordedLanding },
+    })
+  })
+
+  test('recorded landing patch precedence mutation: recorded beats patch equivalence', () => {
+    expect(decide({ patchEquivalent: 'commits', recordedLanding })).toEqual({
+      state: 'landed',
+      landedBy: { type: 'recorded', ...recordedLanding },
+    })
+  })
+
+  test('recorded landing PR commits precedence mutation: recorded beats a commit match', () => {
+    expect(decide({ pullRequestCommitCheck: { number: 43 }, recordedLanding })).toEqual({
+      state: 'landed',
+      landedBy: { type: 'recorded', ...recordedLanding },
+    })
+  })
+
+  test('recorded landing turn precedence mutation: recorded beats a later landed turn', () => {
     expect(
       decide({
-        contained: true,
-        recordedLanding: {
-          number: 190,
-          mergeCommit: 'abc123',
-          mergedAt: '2026-09-16T12:00:00Z',
-        },
+        recordedLanding,
+        laterTurnBranches: [
+          {
+            branch: 'DEV-616-orch-4240',
+            state: { state: 'landed', landedBy: { type: 'patch-equivalent', form: 'commits' } },
+          },
+        ],
       }),
     ).toEqual({
       state: 'landed',
-      landedBy: {
-        type: 'recorded',
-        number: 190,
-        mergeCommit: 'abc123',
-        mergedAt: '2026-09-16T12:00:00Z',
-      },
+      landedBy: { type: 'recorded', ...recordedLanding },
     })
   })
 
-  test('failed content containment leaves an otherwise unmatched branch unlanded', () => {
-    expect(decide({ contained: false })).toEqual({ state: 'unlanded' })
+  test('recorded landing superseded precedence mutation: recorded beats superseded', () => {
+    expect(decide({ recordedLanding, superseded: true })).toEqual({
+      state: 'landed',
+      landedBy: { type: 'recorded', ...recordedLanding },
+    })
   })
 
   test('turn landing mutation: a later landed turn lands the earlier branch', () => {
@@ -86,10 +140,7 @@ describe('run branch state decision', () => {
         laterTurnBranches: [
           {
             branch: 'DEV-616-orch-4240',
-            state: {
-              state: 'landed',
-              landedBy: { type: 'patch-equivalent', form: 'squash' },
-            },
+            state: { state: 'landed', landedBy: { type: 'patch-equivalent', form: 'squash' } },
           },
         ],
       }),
@@ -126,10 +177,7 @@ describe('run branch state decision', () => {
           },
         ],
       }),
-    ).toEqual({
-      state: 'landed',
-      landedBy: { type: 'patch-equivalent', form: 'commits' },
-    })
+    ).toEqual({ state: 'landed', landedBy: { type: 'patch-equivalent', form: 'commits' } })
   })
 
   test('turn order mutation: a matching PR beats a later landed turn', () => {
@@ -139,10 +187,7 @@ describe('run branch state decision', () => {
         laterTurnBranches: [
           {
             branch: 'DEV-616-orch-4240',
-            state: {
-              state: 'landed',
-              landedBy: { type: 'patch-equivalent', form: 'commits' },
-            },
+            state: { state: 'landed', landedBy: { type: 'patch-equivalent', form: 'commits' } },
           },
         ],
       }),
@@ -156,10 +201,7 @@ describe('run branch state decision', () => {
         laterTurnBranches: [
           {
             branch: 'DEV-616-orch-4240',
-            state: {
-              state: 'landed',
-              landedBy: { type: 'patch-equivalent', form: 'commits' },
-            },
+            state: { state: 'landed', landedBy: { type: 'patch-equivalent', form: 'commits' } },
           },
         ],
       }),
@@ -179,6 +221,66 @@ describe('run branch state decision', () => {
     })
   })
 
+  test('PR commits precedence mutation: a PR-name match beats a commit match', () => {
+    expect(
+      decide({ mergedPullRequests: [pullRequest], pullRequestCommitCheck: { number: 43 } }),
+    ).toMatchObject({ landedBy: { type: 'pr', number: 42 } })
+  })
+
+  test('PR commits empty precedence mutation: empty beats a commit match', () => {
+    expect(decide({ commitsNotOnTrunk: 0, pullRequestCommitCheck: { number: 43 } })).toEqual({
+      state: 'empty',
+    })
+  })
+
+  test('PR commits patch precedence mutation: patch equivalence beats a commit match', () => {
+    expect(decide({ patchEquivalent: 'commits', pullRequestCommitCheck: { number: 43 } })).toEqual({
+      state: 'landed',
+      landedBy: { type: 'patch-equivalent', form: 'commits' },
+    })
+  })
+
+  test('PR commits turn precedence mutation: a commit match beats a later landed turn', () => {
+    expect(
+      decide({
+        pullRequestCommitCheck: { number: 43 },
+        laterTurnBranches: [
+          {
+            branch: 'DEV-616-orch-4240',
+            state: { state: 'landed', landedBy: { type: 'patch-equivalent', form: 'commits' } },
+          },
+        ],
+      }),
+    ).toEqual({ state: 'landed', landedBy: { type: 'pr-commits', number: 43 } })
+  })
+
+  test('PR commits superseded precedence mutation: a commit match beats supersession', () => {
+    expect(decide({ pullRequestCommitCheck: { number: 43 }, superseded: true })).toEqual({
+      state: 'landed',
+      landedBy: { type: 'pr-commits', number: 43 },
+    })
+  })
+
+  test('turn PR commits mutation: a later turn landed by PR commits lands the earlier branch', () => {
+    expect(
+      decide({
+        laterTurnBranches: [
+          {
+            branch: 'DEV-616-orch-4240',
+            state: { state: 'landed', landedBy: { type: 'pr-commits', number: 43 } },
+          },
+        ],
+      }),
+    ).toEqual({ state: 'landed', landedBy: { type: 'turn', branch: 'DEV-616-orch-4240' } })
+  })
+
+  test('PR check failure mutation: a failed check makes the branch unknown', () => {
+    expect(decide({ pullRequestCommitCheck: { error: 'fetch refused' } })).toEqual({
+      state: 'unknown',
+      error: 'fetch refused',
+    })
+  })
+
   test('PR proof precedence mutation: a matching PR beats empty', () => {
     expect(decide({ mergedPullRequests: [pullRequest], commitsNotOnTrunk: 0 })).toMatchObject({
       state: 'landed',
@@ -195,17 +297,12 @@ describe('run branch state decision', () => {
   })
 
   test('truncation safety mutation: an unmatched branch is unknown when the PR list is capped', () => {
-    expect(decide({ mergedPullRequestsTruncated: true })).toEqual({
-      state: 'unknown',
-    })
+    expect(decide({ mergedPullRequestsTruncated: true })).toEqual({ state: 'unknown' })
   })
 
   test('truncated-match mutation: a matching PR remains landed when the PR list is capped', () => {
     expect(
-      decide({
-        mergedPullRequests: [pullRequest],
-        mergedPullRequestsTruncated: true,
-      }),
+      decide({ mergedPullRequests: [pullRequest], mergedPullRequestsTruncated: true }),
     ).toMatchObject({ state: 'landed', landedBy: { type: 'pr' } })
   })
 })
@@ -217,12 +314,7 @@ describe('branch prune eligibility decision', () => {
       for (const liveRun of [false, true]) {
         for (const tipMoved of [false, true]) {
           test(`prune guard mutation: ${state}, checked-out=${checkedOut}, live=${liveRun}, tip-moved=${tipMoved}`, () => {
-            const result = decidePruneEligibility({
-              state,
-              checkedOut,
-              liveRun,
-              tipMoved,
-            })
+            const result = decidePruneEligibility({ state, checkedOut, liveRun, tipMoved })
             expect(result.eligible).toBe(
               ['landed', 'empty', 'superseded'].includes(state) &&
                 !checkedOut &&
