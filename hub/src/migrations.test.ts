@@ -4,9 +4,10 @@ import { copyFileSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSy
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { resetFixtureStore } from '../test/run-fixtures.ts'
-import { closeDatabaseForFixture, db, enableSchemaReload } from './db.ts'
+import { closeDatabaseForFixture, db, enableSchemaReload, writeTransaction } from './db.ts'
 import {
   applyMigrations,
+  CONNECTION_SCHEMA_INVARIANT,
   canonicalSchemaHash,
   expectedSchemaHash,
   JOURNAL_WHEN_ORDER,
@@ -368,6 +369,23 @@ describe('hub migration journal', () => {
     d.close()
   })
 
+  test('a connection opened before a migration refuses its next write', () => {
+    closeDatabaseForFixture()
+    db()
+    const other = new Database(process.env.HUB_DB!)
+    other.exec(`PRAGMA user_version = ${migrationJournal().length + 1}`)
+    other.close()
+    expect(() =>
+      writeTransaction(() => {
+        db().query('UPDATE setting SET value = value WHERE 0').run()
+      }),
+    ).toThrow(`invariant: ${CONNECTION_SCHEMA_INVARIANT}`)
+    closeDatabaseForFixture()
+    const reset = new Database(process.env.HUB_DB!)
+    applyMigrations(reset)
+    reset.close()
+  })
+
   test('two concurrent migrates serialise on the schema lock', async () => {
     const dir = mkdtempSync(join(tmpdir(), 'hub-concurrent-migrate-'))
     const path = join(dir, 'store.db')
@@ -457,6 +475,26 @@ describe('hub migration journal', () => {
     other.close()
     db()
     expect(seen).toEqual([next])
+    closeDatabaseForFixture()
+    const reset = new Database(process.env.HUB_DB!)
+    applyMigrations(reset)
+    reset.close()
+  })
+
+  test('writeTransaction after reload writes on the new handle, not the closed one', () => {
+    closeDatabaseForFixture()
+    enableSchemaReload(() => {})
+    const held = db()
+    const other = new Database(process.env.HUB_DB!)
+    other.exec(`PRAGMA user_version = ${migrationJournal().length + 1}`)
+    other.close()
+    writeTransaction(() => {
+      db().query("INSERT INTO setting (key, value) VALUES ('held-reload', '1')").run()
+    }, held)
+    expect(() => held.query('SELECT 1').get()).toThrow('closed')
+    expect(db().query("SELECT value FROM setting WHERE key='held-reload'").get()).toEqual({
+      value: '1',
+    })
     closeDatabaseForFixture()
     const reset = new Database(process.env.HUB_DB!)
     applyMigrations(reset)

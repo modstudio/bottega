@@ -4,7 +4,7 @@ import {
   type TrackerRowSource,
   trackerCapabilities,
 } from '../../shared/trackers.ts'
-import { db } from './db.ts'
+import { db, writeTransaction } from './db.ts'
 import { projects } from './projects.ts'
 
 type AgentSpend = { agent: string; tokens: number; costUsd: number | null; runs: number }
@@ -366,10 +366,9 @@ export function rollUpDays(): number {
                             THEN excluded.messages ELSE day.messages END,
        collected_at  = excluded.collected_at`,
   )
-  const write = d.transaction(() => {
+  writeTransaction(() => {
     for (const r of rows) stmt.run(r.day, r.claude, r.msgs)
   })
-  write()
   return rows.length
 }
 

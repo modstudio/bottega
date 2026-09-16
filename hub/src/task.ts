@@ -1,6 +1,6 @@
 import { randomBytes } from 'node:crypto'
 import { TASK_STATUSES, trackerCapabilities } from '../../shared/trackers.ts'
-import { db, nowIso } from './db.ts'
+import { db, nowIso, writeTransaction } from './db.ts'
 import { projects, type StatusCategory } from './projects.ts'
 import { runRef } from './reconcile.ts'
 
@@ -161,7 +161,7 @@ export function createTask(
   assertParent(parent)
   const d = db()
   const at = nowIso()
-  const issue = d.transaction(() => {
+  const key = writeTransaction(() => {
     const candidates = duplicateCandidates(listTasks({ project: input.project }), input.title)
     options.afterDuplicateSearch?.()
     if (options.allowDuplicateReason !== undefined && !options.allowDuplicateReason.trim()) {
@@ -214,7 +214,6 @@ export function createTask(
     }
     return key
   })
-  const key = issue.immediate()
   return showTask(key).task
 }
 
@@ -343,7 +342,7 @@ export function setTask(
 ): TaskRow {
   const upper = key.toUpperCase()
   const d = db()
-  const write = d.transaction(() => {
+  writeTransaction(() => {
     const current = showTask(upper).task
     if (current.source !== 'local') throw new Error(`task ${upper} is not local`)
     if (
@@ -388,7 +387,6 @@ export function setTask(
   })
   // The body guard and update share the same write lock, so another setter
   // cannot add a body between the check and the update.
-  write.immediate()
   return showTask(upper).task
 }
 
@@ -462,7 +460,7 @@ export function updateTaskDocument(
 ): TaskDocument {
   const id = documentId(idValue)
   const d = db()
-  const write = d.transaction(() => {
+  writeTransaction(() => {
     const current = getTaskDocument(id)
     const task = showTask(current.task_key).task
     if (task.source !== 'local') throw new Error(`task ${current.task_key} is not local`)
@@ -502,7 +500,6 @@ export function updateTaskDocument(
       )
     }
   })
-  write.immediate()
   return getTaskDocument(id)
 }
 
@@ -510,12 +507,11 @@ export function deleteTaskDocument(idValue: number | string): TaskDocument {
   const id = documentId(idValue)
   const d = db()
   let removed: TaskDocument | null = null
-  const write = d.transaction(() => {
+  writeTransaction(() => {
     removed = getTaskDocument(id)
     const task = showTask(removed.task_key).task
     if (task.source !== 'local') throw new Error(`task ${removed.task_key} is not local`)
     d.query(`DELETE FROM task_document WHERE id = ?`).run(id)
   })
-  write.immediate()
   return removed!
 }
