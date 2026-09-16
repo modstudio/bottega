@@ -16,11 +16,10 @@ import {
 import { machineId, machineName } from './machine-identity.ts'
 import {
   machine,
-  PLATFORM_OPERATOR_USER_ID,
-  PLATFORM_SPACE_ID,
   RECORD_ACTOR_ROLE,
   RECORD_OWNER_ROLE,
 } from './postgres-schema.ts'
+import { currentRecordSession } from './record-auth.ts'
 import {
   contention as contentionRecord,
   landingOverride as landingOverrideRecord,
@@ -67,6 +66,14 @@ export type RecordSyncOptions = {
   openSql?: (url: string) => SQL
   now?: () => string
   identity?: { id: string; name: string }
+  principal?: { userId: string; spaceId: string }
+}
+
+type RecordPrincipal = { userId: string; spaceId: string }
+
+async function bindPrincipal(tx: SQL, principal: RecordPrincipal): Promise<void> {
+  await tx`SELECT set_config('app.user_id', ${principal.userId}, true)`
+  await tx`SELECT set_config('app.space_id', ${principal.spaceId}, true)`
 }
 
 function payload(source: string, kind: keyof typeof recordKinds): Payload {
@@ -174,21 +181,23 @@ async function upsertMachine(
   postgres: SQL,
   seenAt: string,
   identity: { id: string; name: string },
+  principal: RecordPrincipal,
 ): Promise<void> {
   await postgres.begin(async (tx) => {
+    await bindPrincipal(tx, principal)
     const record = drizzle({ client: tx })
     await record
       .insert(machine)
       .values({
         id: identity.id,
-        userId: PLATFORM_OPERATOR_USER_ID,
+        userId: principal.userId,
         name: identity.name,
         registeredAt: date(seenAt),
         lastSeen: date(seenAt),
       })
       .onConflictDoUpdate({
         target: machine.id,
-        set: { userId: PLATFORM_OPERATOR_USER_ID, name: identity.name, lastSeen: date(seenAt) },
+        set: { userId: principal.userId, name: identity.name, lastSeen: date(seenAt) },
       })
   })
 }
@@ -202,15 +211,15 @@ async function refuseOwnerConnection(postgres: SQL): Promise<void> {
   }
 }
 
-async function pushRun(postgres: SQL, row: Payload): Promise<void> {
+async function pushRun(postgres: SQL, row: Payload, principal: RecordPrincipal): Promise<void> {
   await postgres.begin(async (tx) => {
-    await tx`SELECT set_config('app.space_id', ${PLATFORM_SPACE_ID}, true)`
+    await bindPrincipal(tx, principal)
     const projectName = nullableString(row.projectName)
     let projectId: string | null = null
     if (projectName !== null) {
       const projects = await tx`
         SELECT id FROM project
-        WHERE space_id=${PLATFORM_SPACE_ID}::uuid AND name=${projectName}
+        WHERE space_id=${principal.spaceId}::uuid AND name=${projectName}
       `
       if (projects.length !== 1) {
         throw new Error(`record project is absent: ${projectName}`)
@@ -386,11 +395,15 @@ function testFlakeValues(row: Payload) {
   }
 }
 
-async function projectRecordId(tx: SQL, row: Payload): Promise<string | null> {
+async function projectRecordId(
+  tx: SQL,
+  row: Payload,
+  principal: RecordPrincipal,
+): Promise<string | null> {
   const projectName = nullableString(row.projectName)
   if (projectName === null) return null
   const projects = await tx`SELECT id FROM project
-    WHERE space_id=${PLATFORM_SPACE_ID}::uuid AND name=${projectName}`
+    WHERE space_id=${principal.spaceId}::uuid AND name=${projectName}`
   if (projects.length !== 1) throw new Error(`record project is absent: ${projectName}`)
   return String(projects[0]!.id)
 }
@@ -399,10 +412,10 @@ const recordKinds = {
   run: { columns: RUN_RECORD_PAYLOAD_COLUMNS, push: pushRun },
   review: {
     columns: REVIEW_RECORD_PAYLOAD_COLUMNS,
-    push: async (postgres: SQL, row: Payload) =>
+    push: async (postgres: SQL, row: Payload, principal: RecordPrincipal) =>
       postgres.begin(async (tx) => {
-        await tx`SELECT set_config('app.space_id', ${PLATFORM_SPACE_ID}, true)`
-        const values = reviewValues(row, await projectRecordId(tx, row))
+        await bindPrincipal(tx, principal)
+        const values = reviewValues(row, await projectRecordId(tx, row, principal))
         const { id: _id, createdAt: _createdAt, ...updates } = values
         await drizzle({ client: tx })
           .insert(reviewRecord)
@@ -412,9 +425,9 @@ const recordKinds = {
   },
   review_lens: {
     columns: REVIEW_LENS_RECORD_PAYLOAD_COLUMNS,
-    push: async (postgres: SQL, row: Payload) =>
+    push: async (postgres: SQL, row: Payload, principal: RecordPrincipal) =>
       postgres.begin(async (tx) => {
-        await tx`SELECT set_config('app.space_id', ${PLATFORM_SPACE_ID}, true)`
+        await bindPrincipal(tx, principal)
         const values = reviewLensValues(row)
         const { id: _id, createdAt: _createdAt, ...updates } = values
         await drizzle({ client: tx })
@@ -425,9 +438,9 @@ const recordKinds = {
   },
   review_finding: {
     columns: REVIEW_FINDING_RECORD_PAYLOAD_COLUMNS,
-    push: async (postgres: SQL, row: Payload) =>
+    push: async (postgres: SQL, row: Payload, principal: RecordPrincipal) =>
       postgres.begin(async (tx) => {
-        await tx`SELECT set_config('app.space_id', ${PLATFORM_SPACE_ID}, true)`
+        await bindPrincipal(tx, principal)
         const values = reviewFindingValues(row)
         const { id: _id, createdAt: _createdAt, ...updates } = values
         await drizzle({ client: tx })
@@ -438,10 +451,10 @@ const recordKinds = {
   },
   landing: {
     columns: LANDING_RECORD_PAYLOAD_COLUMNS,
-    push: async (postgres: SQL, row: Payload) =>
+    push: async (postgres: SQL, row: Payload, principal: RecordPrincipal) =>
       postgres.begin(async (tx) => {
-        await tx`SELECT set_config('app.space_id', ${PLATFORM_SPACE_ID}, true)`
-        const values = landingValues(row, await projectRecordId(tx, row))
+        await bindPrincipal(tx, principal)
+        const values = landingValues(row, await projectRecordId(tx, row, principal))
         const { id: _id, createdAt: _createdAt, ...updates } = values
         await drizzle({ client: tx })
           .insert(landingRecord)
@@ -451,10 +464,10 @@ const recordKinds = {
   },
   landing_override: {
     columns: LANDING_OVERRIDE_RECORD_PAYLOAD_COLUMNS,
-    push: async (postgres: SQL, row: Payload) =>
+    push: async (postgres: SQL, row: Payload, principal: RecordPrincipal) =>
       postgres.begin(async (tx) => {
-        await tx`SELECT set_config('app.space_id', ${PLATFORM_SPACE_ID}, true)`
-        const values = landingOverrideValues(row, await projectRecordId(tx, row))
+        await bindPrincipal(tx, principal)
+        const values = landingOverrideValues(row, await projectRecordId(tx, row, principal))
         const { id: _id, createdAt: _createdAt, ...updates } = values
         await drizzle({ client: tx })
           .insert(landingOverrideRecord)
@@ -464,10 +477,10 @@ const recordKinds = {
   },
   landing_review_carry: {
     columns: LANDING_REVIEW_CARRY_RECORD_PAYLOAD_COLUMNS,
-    push: async (postgres: SQL, row: Payload) =>
+    push: async (postgres: SQL, row: Payload, principal: RecordPrincipal) =>
       postgres.begin(async (tx) => {
-        await tx`SELECT set_config('app.space_id', ${PLATFORM_SPACE_ID}, true)`
-        const values = landingReviewCarryValues(row, await projectRecordId(tx, row))
+        await bindPrincipal(tx, principal)
+        const values = landingReviewCarryValues(row, await projectRecordId(tx, row, principal))
         const { id: _id, createdAt: _createdAt, ...updates } = values
         await drizzle({ client: tx })
           .insert(landingReviewCarryRecord)
@@ -477,9 +490,9 @@ const recordKinds = {
   },
   contention: {
     columns: CONTENTION_RECORD_PAYLOAD_COLUMNS,
-    push: async (postgres: SQL, row: Payload) =>
+    push: async (postgres: SQL, row: Payload, principal: RecordPrincipal) =>
       postgres.begin(async (tx) => {
-        await tx`SELECT set_config('app.space_id', ${PLATFORM_SPACE_ID}, true)`
+        await bindPrincipal(tx, principal)
         const values = contentionValues(row)
         const { id: _id, createdAt: _createdAt, ...updates } = values
         await drizzle({ client: tx })
@@ -490,9 +503,9 @@ const recordKinds = {
   },
   test_flake: {
     columns: TEST_FLAKE_RECORD_PAYLOAD_COLUMNS,
-    push: async (postgres: SQL, row: Payload) =>
+    push: async (postgres: SQL, row: Payload, principal: RecordPrincipal) =>
       postgres.begin(async (tx) => {
-        await tx`SELECT set_config('app.space_id', ${PLATFORM_SPACE_ID}, true)`
+        await bindPrincipal(tx, principal)
         const values = testFlakeValues(row)
         const { id: _id, createdAt: _createdAt, ...updates } = values
         await drizzle({ client: tx })
@@ -529,7 +542,13 @@ export async function syncRecord(options: RecordSyncOptions = {}): Promise<Recor
   let failed = 0
   try {
     await refuseOwnerConnection(postgres)
-    await upsertMachine(postgres, (options.now ?? nowIso)(), identity)
+    const principal: RecordPrincipal =
+      options.principal ??
+      (await currentRecordSession(recordUrl, writableLocal).then((current) => ({
+        userId: current.user.id,
+        spaceId: current.activeSpaceId,
+      })))
+    await upsertMachine(postgres, (options.now ?? nowIso)(), identity, principal)
     const rows = writableLocal
       .query<OutboxRow, []>(
         'SELECT id, kind, record_id, payload FROM outbox WHERE synced_at IS NULL ORDER BY id',
@@ -545,7 +564,7 @@ export async function syncRecord(options: RecordSyncOptions = {}): Promise<Recor
             `${kind} outbox machine ${String(record.machineId)} does not match invoking machine ${identity.id}`,
           )
         }
-        await recordKinds[kind].push(postgres, record)
+        await recordKinds[kind].push(postgres, record, principal)
         writableLocal
           .query('UPDATE outbox SET synced_at=?, last_error=NULL WHERE id=?')
           .run((options.now ?? nowIso)(), row.id)

@@ -3,7 +3,10 @@ import { afterAll, beforeAll, describe, expect, test } from 'bun:test'
 import { existsSync, readdirSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { PLATFORM_SLUG } from '../../shared/brand.ts'
+import { db } from './db.ts'
 import { migratePostgres } from './postgres-migrate.ts'
+import { bearerHeaders, recordAuth } from './record-auth.ts'
+import { signInCommand, signUpCommand, whoamiCommand } from './record-auth-command.ts'
 import {
   newRecordId,
   PLATFORM_OPERATOR_USER_ID,
@@ -22,6 +25,7 @@ const actorUrl = process.env.ORCH_RECORD_URL
 const migrationsFolder = join(import.meta.dir, '..', 'postgres', 'migrations')
 const postgresSchema = [
   'postgres-schema.ts',
+  'postgres-schema-auth.ts',
   'postgres-schema-run.ts',
   'postgres-schema-review.ts',
   'postgres-schema-landing.ts',
@@ -38,6 +42,10 @@ const migration = readdirSync(migrationsFolder, { withFileTypes: true })
 const SPACE_A = '01990000-0000-7000-8000-00000000000a'
 const SPACE_B = '01990000-0000-7000-8000-00000000000b'
 const USER_A = '01990000-0000-7000-8000-000000000010'
+const AUTH_EMAIL_A = 'auth-a@example.test'
+const AUTH_EMAIL_B = 'auth-b@example.test'
+const AUTH_EMAIL_REPAIR = 'auth-repair@example.test'
+const AUTH_PASSWORD = 'correct-horse-battery-staple'
 const PROJECT_A = '01990000-0000-7000-8000-00000000001a'
 const PROJECT_A2 = '01990000-0000-7000-8000-00000000002a'
 const PROJECT_B = '01990000-0000-7000-8000-00000000001b'
@@ -126,6 +134,7 @@ describe('Postgres substrate shape', () => {
       'contention',
       'test_flake',
       'seq',
+      'invitation',
     ]) {
       expect(migration).toContain(`ALTER TABLE "${table}" ENABLE ROW LEVEL SECURITY`)
       expect(migration).toContain(`ALTER TABLE "${table}" FORCE ROW LEVEL SECURITY`)
@@ -167,15 +176,29 @@ describe('Postgres substrate shape', () => {
 
 const realPostgres = container && ownerUrl && actorUrl ? describe : describe.skip
 realPostgres('RLS proof against real Postgres', () => {
+  const cliOutput: string[] = []
+  let authUserA = ''
+  let authUserB = ''
+  let authSpaceA = ''
+  let authSpaceB = ''
+  let repairSpace = ''
+  let tokenA = ''
+  let tokenB = ''
+  const authProjectA = newRecordId()
+  const authProjectB = newRecordId()
+  const authRunA = newRecordId()
+  const authRunB = newRecordId()
+
   beforeAll(async () => {
+    process.env.BETTER_AUTH_SECRET = 'postgres-harness-secret-at-least-thirty-two-characters'
     await migratePostgres()
 
     succeeds(
       'postgres',
       'postgres',
       `
-      INSERT INTO space (id, name, created_at) VALUES
-        ('${SPACE_A}', 'space-a', now()), ('${SPACE_B}', 'space-b', now());
+      INSERT INTO space (id, name, slug, created_at) VALUES
+        ('${SPACE_A}', 'space-a', 'space-a', now()), ('${SPACE_B}', 'space-b', 'space-b', now());
       INSERT INTO "user" (id, email, name, created_at)
         VALUES ('${USER_A}', 'owner@example.test', 'Owner', now());
       INSERT INTO membership (id, space_id, user_id, role, permission, created_at)
@@ -258,18 +281,141 @@ realPostgres('RLS proof against real Postgres', () => {
       )
       expect(revoked.code, revoked.stderr).toBe(0)
     }
+
+    const storedToken = () =>
+      db()
+        .query<{ value: string }, []>("SELECT value FROM schema_meta WHERE key='record_session'")
+        .get()!.value
+    await signUpCommand(AUTH_EMAIL_A, 'Auth A', async () => AUTH_PASSWORD, {
+      log: (value) => cliOutput.push(value),
+    })
+    tokenA = storedToken()
+    const first = await recordAuth(actorUrl!).api.getSession({ headers: bearerHeaders(tokenA) })
+    if (!first?.session.activeOrganizationId) throw new Error('first signup has no active space')
+    authUserA = first.user.id
+    authSpaceA = first.session.activeOrganizationId
+
+    await signUpCommand(AUTH_EMAIL_B, 'Auth B', async () => AUTH_PASSWORD, {
+      log: (value) => cliOutput.push(value),
+    })
+    tokenB = storedToken()
+    const second = await recordAuth(actorUrl!).api.getSession({ headers: bearerHeaders(tokenB) })
+    if (!second?.session.activeOrganizationId) throw new Error('second signup has no active space')
+    authUserB = second.user.id
+    authSpaceB = second.session.activeOrganizationId
+
+    const repair = await recordAuth(actorUrl!).api.signUpEmail({
+      body: { email: AUTH_EMAIL_REPAIR, name: 'Auth Repair', password: AUTH_PASSWORD },
+    })
+    if (!repair.token) throw new Error('repair signup has no bearer token')
+    const repairSession = await recordAuth(actorUrl!).api.getSession({
+      headers: bearerHeaders(repair.token),
+    })
+    if (!repairSession?.session.activeOrganizationId)
+      throw new Error('repair signup has no active space')
+    repairSpace = repairSession.session.activeOrganizationId
+
+    succeeds(
+      'postgres',
+      'postgres',
+      `INSERT INTO project (id,space_id,name,key_prefixes,created_at) VALUES
+        ('${authProjectA}','${authSpaceA}','auth-a-project',ARRAY['AA'],now()),
+        ('${authProjectB}','${authSpaceB}','auth-b-project',ARRAY['BB'],now());
+       INSERT INTO run (
+         id,space_id,project_id,machine_id,local_id,started_at,agent,job,prompt_sha,
+         prompt_bytes,prompt_head,probe,status,turn,no_failover,automatic_failover,
+         work_preserved,created_at,updated_at
+       ) VALUES
+        ('${authRunA}','${authSpaceA}','${authProjectA}','${MACHINE_A}',101,now(),'proof','proof','a',1,'a',false,'ok',1,false,false,false,now(),now()),
+        ('${authRunB}','${authSpaceB}','${authProjectB}','${MACHINE_A}',102,now(),'proof','proof','b',1,'b',false,'ok',1,false,false,false,now(),now());`,
+    )
   })
 
   afterAll(() => {
+    delete process.env.BETTER_AUTH_SECRET
     if (!container) return
     psql(
       'postgres',
       'postgres',
       `
-      DROP TABLE IF EXISTS test_flake, contention, landing_review_carry, landing_override, landing, review_finding, review_lens, review, run, membership, machine, seq, project, "user", space CASCADE;
+      DROP TABLE IF EXISTS invitation, verification, account, session, test_flake, contention, landing_review_carry, landing_override, landing, review_finding, review_lens, review, run, membership, machine, seq, project, "user", space CASCADE;
       DROP SCHEMA IF EXISTS drizzle CASCADE;
     `,
     )
+  })
+
+  test('CLI sign-up creates one owner membership and bearer identity is not interchangeable', async () => {
+    expect(cliOutput).toEqual([`signed up ${AUTH_EMAIL_A}`, `signed up ${AUTH_EMAIL_B}`])
+    const facts = succeeds(
+      'postgres',
+      'postgres',
+      `SELECT u.email, count(m.id), min(m.role), min(m.permission)
+       FROM "user" u JOIN membership m ON m.user_id=u.id
+       WHERE u.id IN ('${authUserA}', '${authUserB}')
+       GROUP BY u.email ORDER BY u.email;`,
+    )
+    expect(facts.split('\n')).toEqual([
+      `${AUTH_EMAIL_A}|1|owner|write`,
+      `${AUTH_EMAIL_B}|1|owner|write`,
+    ])
+    const auth = recordAuth(actorUrl!)
+    expect((await auth.api.getSession({ headers: bearerHeaders(tokenA) }))?.user.id).toBe(authUserA)
+    expect((await auth.api.getSession({ headers: bearerHeaders(tokenB) }))?.user.id).toBe(authUserB)
+  })
+
+  test('sign-in repairs a missing personal space before making it active', async () => {
+    succeeds(
+      'postgres',
+      'postgres',
+      `DELETE FROM membership WHERE space_id='${repairSpace}';
+       DELETE FROM space WHERE id='${repairSpace}';`,
+    )
+    const output: string[] = []
+    await signInCommand(AUTH_EMAIL_REPAIR, async () => AUTH_PASSWORD, {
+      log: (value) => output.push(value),
+    })
+    expect(output).toEqual([`signed in ${AUTH_EMAIL_REPAIR}`])
+    const repaired = succeeds(
+      'postgres',
+      'postgres',
+      `SELECT s.id=m.space_id, m.role, m.permission
+       FROM "user" u JOIN membership m ON m.user_id=u.id JOIN space s ON s.id=m.space_id
+       WHERE u.email='${AUTH_EMAIL_REPAIR}';`,
+    )
+    expect(repaired).toBe('t|owner|write')
+  })
+
+  test('signed-in users see their memberships and spaces but not another space records', () => {
+    const visible = psql(
+      RECORD_ACTOR_ROLE,
+      'actor-password',
+      `SET app.user_id='${authUserB}'; SET app.space_id='${authSpaceB}';
+       SELECT count(*) FROM membership WHERE user_id='${authUserB}';
+       SELECT count(*) FROM space WHERE id='${authSpaceB}';
+       SELECT count(*) FROM project WHERE id='${authProjectA}';
+       SELECT count(*) FROM run WHERE id='${authRunA}';`,
+    )
+    expect(visible.code, visible.stderr).toBe(0)
+    expect(visible.stdout.split('\n')).toEqual(['1', '1', '0', '0'])
+  })
+
+  test('CLI whoami prints the user, active space, and only that user memberships', async () => {
+    db()
+      .query(
+        `INSERT INTO schema_meta (key,value) VALUES ('record_session',?)
+         ON CONFLICT(key) DO UPDATE SET value=excluded.value`,
+      )
+      .run(tokenB)
+    const output: string[] = []
+    await whoamiCommand({ log: (value) => output.push(value) })
+    const shown = JSON.parse(output[0]!) as {
+      user: { id: string }
+      activeSpaceId: string
+      memberships: { space_id: string }[]
+    }
+    expect(shown.user.id).toBe(authUserB)
+    expect(shown.activeSpaceId).toBe(authSpaceB)
+    expect(shown.memberships.map((row) => row.space_id)).toEqual([authSpaceB])
   })
 
   test('record roles are nonsuperuser without BYPASSRLS and only owner owns tables', () => {
@@ -519,6 +665,7 @@ realPostgres('RLS proof against real Postgres', () => {
       recordUrl: actorUrl!,
       local,
       identity: { id: MACHINE_A, name: 'proof-machine' },
+      principal: { userId: PLATFORM_OPERATOR_USER_ID, spaceId: PLATFORM_SPACE_ID },
       now: () => '2026-09-15T01:01:00.000Z',
     })
     expect(result).toEqual({ pushed: 1, failed: 0, pending: 0, configured: true })
@@ -536,6 +683,7 @@ realPostgres('RLS proof against real Postgres', () => {
         recordUrl: ownerUrl!,
         local,
         identity: { id: MACHINE_A, name: 'proof-machine' },
+        principal: { userId: PLATFORM_OPERATOR_USER_ID, spaceId: PLATFORM_SPACE_ID },
       }),
     ).rejects.toThrow(
       `record sync refuses ${RECORD_OWNER_ROLE} credentials; set ORCH_RECORD_URL to the ${RECORD_ACTOR_ROLE} connection`,

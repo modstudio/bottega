@@ -1,0 +1,201 @@
+// concern: record-auth
+/** Owns record identity, bearer sessions, and personal-space repair. Must not know run phases. */
+import { SQL } from 'bun'
+import { drizzleAdapter } from '@better-auth/drizzle-adapter/relations-v2'
+import { betterAuth } from 'better-auth'
+import { bearer, organization } from 'better-auth/plugins'
+import { drizzle } from 'drizzle-orm/bun-sql'
+import { type Database } from 'bun:sqlite'
+import { db } from './db.ts'
+import { account, invitation, session, verification } from './postgres-schema-auth.ts'
+import { membership, newRecordId, space, user } from './postgres-schema.ts'
+
+export const RECORD_SESSION_KEY = 'record_session'
+export const RECORD_SIGN_IN_REMEDY = 'record session is missing or expired; run `orch record sign-in --email <email>`'
+
+export function storedRecordToken(local: Database = db()): string | null {
+  return (
+    local
+      .query<{ value: string }, [string]>('SELECT value FROM schema_meta WHERE key=?')
+      .get(RECORD_SESSION_KEY)?.value ?? null
+  )
+}
+
+export type PersonalSpace = { id: string; name: string; slug: string }
+export type PersonalSpacePort = {
+  find(userId: string): Promise<PersonalSpace | null>
+  create(input: PersonalSpace & { userId: string; membershipId: string }): Promise<PersonalSpace>
+}
+
+/** The same decision runs after signup and before every session, making interrupted provisioning repairable. */
+export async function ensurePersonalSpace(
+  userId: string,
+  port: PersonalSpacePort,
+): Promise<PersonalSpace> {
+  const existing = await port.find(userId)
+  if (existing) return existing
+  return port.create({
+    id: newRecordId(),
+    userId,
+    membershipId: newRecordId(),
+    name: userId,
+    slug: `user-${userId}`,
+  })
+}
+
+function personalSpacePort(client: SQL): PersonalSpacePort {
+  return {
+    async find(userId) {
+      const rows = await client`
+        SELECT s.id, s.name, s.slug
+        FROM "user" u
+        LEFT JOIN space s ON s.id=u.personal_space_id
+        LEFT JOIN membership m ON m.space_id=s.id AND m.user_id=u.id
+        WHERE u.id=${userId}::uuid
+          AND m.id IS NOT NULL
+      `
+      const row = rows[0]
+      return row?.id
+        ? { id: String(row.id), name: String(row.name), slug: String(row.slug) }
+        : null
+    },
+    async create(input) {
+      return client.begin(async (tx) => {
+        const users = await tx`
+          SELECT name, personal_space_id FROM "user" WHERE id=${input.userId}::uuid FOR UPDATE
+        `
+        const owner = users[0]
+        if (!owner) throw new Error(`record user is absent: ${input.userId}`)
+        if (owner.personal_space_id) {
+          await tx`SELECT set_config('app.user_id', ${input.userId}, true)`
+          const existing = await tx`
+            SELECT id, name, slug FROM space WHERE id=${String(owner.personal_space_id)}::uuid
+          `
+          if (existing[0]) {
+            await tx`
+              INSERT INTO membership (id,space_id,user_id,role,permission,created_at)
+              VALUES (${input.membershipId}::uuid, ${String(owner.personal_space_id)}::uuid,
+                ${input.userId}::uuid, 'owner', 'write', now())
+              ON CONFLICT (space_id,user_id) DO UPDATE SET role='owner', permission='write'
+            `
+            return {
+              id: String(existing[0].id),
+              name: String(existing[0].name),
+              slug: String(existing[0].slug),
+            }
+          }
+        }
+        await tx`SELECT set_config('app.user_id', ${input.userId}, true)`
+        await tx`SELECT set_config('app.space_id', ${input.id}, true)`
+        await tx`
+          INSERT INTO space (id,name,slug,created_at)
+          VALUES (${input.id}::uuid, ${String(owner.name)}, ${input.slug}, now())
+        `
+        await tx`
+          INSERT INTO membership (id,space_id,user_id,role,permission,created_at)
+          VALUES (${input.membershipId}::uuid, ${input.id}::uuid, ${input.userId}::uuid, 'owner', 'write', now())
+        `
+        await tx`
+          UPDATE "user" SET personal_space_id=${input.id}::uuid, updated_at=now()
+          WHERE id=${input.userId}::uuid
+        `
+        return { id: input.id, name: String(owner.name), slug: input.slug }
+      })
+    },
+  }
+}
+
+export function recordAuth(url: string) {
+  const secret = process.env.BETTER_AUTH_SECRET
+  if (!secret) throw new Error('BETTER_AUTH_SECRET is required for record authentication')
+  const client = new SQL(url)
+  const personalSpaces = personalSpacePort(client)
+  return betterAuth({
+    secret,
+    database: drizzleAdapter(drizzle({ client }), {
+      provider: 'pg',
+      schema: { user, session, account, verification, space, membership, invitation },
+    }),
+    emailAndPassword: { enabled: true },
+    user: { modelName: 'user' },
+    session: { modelName: 'session' },
+    account: { modelName: 'account' },
+    verification: { modelName: 'verification' },
+    advanced: { database: { generateId: () => newRecordId() } },
+    plugins: [
+      organization({
+        schema: {
+          organization: { modelName: 'space' },
+          member: {
+            modelName: 'membership',
+            fields: { organizationId: 'spaceId' },
+            additionalFields: {
+              permission: { type: 'string', required: true, defaultValue: 'write' },
+            },
+          },
+          invitation: { modelName: 'invitation', fields: { organizationId: 'spaceId' } },
+          session: { fields: { activeOrganizationId: 'activeSpaceId' } },
+        },
+      }),
+      bearer(),
+    ],
+    databaseHooks: {
+      user: {
+        create: {
+          // Better Auth documents no personal-organization convention; the record repairs it here.
+          after: async (created) => {
+            await ensurePersonalSpace(created.id, personalSpaces)
+          },
+        },
+      },
+      session: {
+        create: {
+          before: async (created) => {
+            const personal = await ensurePersonalSpace(created.userId, personalSpaces)
+            return { data: { ...created, activeOrganizationId: personal.id } }
+          },
+        },
+      },
+    },
+  })
+}
+
+export type RecordAuth = ReturnType<typeof recordAuth>
+
+export const bearerHeaders = (token: string) => new Headers({ Authorization: `Bearer ${token}` })
+
+export async function currentRecordSession(url: string, local: Database = db()) {
+  const token = storedRecordToken(local)
+  if (!token) throw new Error(RECORD_SIGN_IN_REMEDY)
+  const current = await recordAuth(url).api.getSession({ headers: bearerHeaders(token) })
+  const activeSpaceId = current?.session.activeOrganizationId
+  if (!current || !activeSpaceId) throw new Error(RECORD_SIGN_IN_REMEDY)
+  return { token, user: current.user, session: current.session, activeSpaceId }
+}
+
+export async function setActiveRecordSpace(
+  url: string,
+  token: string,
+  spaceId: string,
+): Promise<void> {
+  const auth = recordAuth(url)
+  const current = await auth.api.getSession({ headers: bearerHeaders(token) })
+  if (!current) throw new Error(RECORD_SIGN_IN_REMEDY)
+  const sql = new SQL(url)
+  try {
+    await sql.begin(async (tx) => {
+      await tx`SELECT set_config('app.user_id', ${current.user.id}, true)`
+      await tx`SELECT set_config('app.space_id', ${spaceId}, true)`
+      const memberships = await tx`
+        SELECT 1 FROM membership WHERE user_id=${current.user.id}::uuid AND space_id=${spaceId}::uuid
+      `
+      if (memberships.length !== 1) throw new Error(`record user is not a member of space ${spaceId}`)
+      await tx`
+        UPDATE session SET active_space_id=${spaceId}::uuid, updated_at=now()
+        WHERE token=${token}
+      `
+    })
+  } finally {
+    await sql.close()
+  }
+}

@@ -43,16 +43,41 @@ export const space = pgTable.withRLS(
   {
     id: identity(),
     name: text().notNull().unique(),
+    slug: text().notNull().unique(),
+    logo: text(),
+    metadata: jsonb(),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull(),
   },
-  (table) => tenantPolicies('space', table.id),
+  (table) => {
+    const currentSpace = sql`nullif(current_setting('app.space_id', true), '')::uuid`
+    const currentUser = sql`nullif(current_setting('app.user_id', true), '')::uuid`
+    return [
+      pgPolicy('space_space_select', {
+        for: 'select',
+        using: sql`${table.id} = ${currentSpace} OR EXISTS (
+          SELECT 1 FROM membership m WHERE m.space_id = ${table.id} AND m.user_id = ${currentUser}
+        )`,
+      }),
+      pgPolicy('space_space_insert', { for: 'insert', withCheck: sql`${table.id} = ${currentSpace}` }),
+      pgPolicy('space_space_update', {
+        for: 'update',
+        using: sql`${table.id} = ${currentSpace}`,
+        withCheck: sql`${table.id} = ${currentSpace}`,
+      }),
+      pgPolicy('space_space_delete', { for: 'delete', using: sql`${table.id} = ${currentSpace}` }),
+    ]
+  },
 )
 
 export const user = pgTable('user', {
   id: identity(),
   email: text().notNull().unique(),
   name: text().notNull(),
+  emailVerified: boolean('email_verified').notNull().default(false),
+  image: text(),
+  personalSpaceId: uuid('personal_space_id').references(() => space.id, { onDelete: 'set null' }),
   createdAt: timestamp('created_at', { withTimezone: true }).notNull(),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
 })
 
 export const membership = pgTable.withRLS(
@@ -64,13 +89,33 @@ export const membership = pgTable.withRLS(
       .notNull()
       .references(() => user.id),
     role: text().notNull(),
-    permission: text().notNull(),
+    permission: text().notNull().default('write'),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull(),
   },
-  (table) => [
-    unique('membership_space_user_unique').on(table.spaceId, table.userId),
-    ...tenantPolicies('membership', table.spaceId),
-  ],
+  (table) => {
+    const currentSpace = sql`nullif(current_setting('app.space_id', true), '')::uuid`
+    const currentUser = sql`nullif(current_setting('app.user_id', true), '')::uuid`
+    return [
+      unique('membership_space_user_unique').on(table.spaceId, table.userId),
+      pgPolicy('membership_space_select', {
+        for: 'select',
+        using: sql`${table.spaceId} = ${currentSpace} OR ${table.userId} = ${currentUser}`,
+      }),
+      pgPolicy('membership_space_insert', {
+        for: 'insert',
+        withCheck: sql`${table.spaceId} = ${currentSpace}`,
+      }),
+      pgPolicy('membership_space_update', {
+        for: 'update',
+        using: sql`${table.spaceId} = ${currentSpace}`,
+        withCheck: sql`${table.spaceId} = ${currentSpace}`,
+      }),
+      pgPolicy('membership_space_delete', {
+        for: 'delete',
+        using: sql`${table.spaceId} = ${currentSpace}`,
+      }),
+    ]
+  },
 )
 
 export const machine = pgTable('machine', {
