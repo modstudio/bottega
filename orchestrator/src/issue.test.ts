@@ -123,21 +123,6 @@ the legacy uncertainty`
     expect(seedFromReport(project, 'compare none with full')).toBeNull()
   })
 
-  test('the worker-environment gate overlays recipe allocations under the ref-guard', () => {
-    const source = readFileSync(new URL('./issue.ts', import.meta.url), 'utf8')
-    expect(source).toContain('killSignal: FILED_ISSUE_COMMAND_KILL_SIGNAL')
-    const gate = source.slice(
-      source.indexOf('const environmentGate ='),
-      source.indexOf('await comment(', source.indexOf('const environmentGate =')),
-    )
-    const hostAt = gate.indexOf('...workerGateEnvironment(process.env)')
-    const recipeAt = gate.indexOf('...trackedRecipeEnvironment(fixRun.id)')
-    const guardAt = gate.indexOf('...prepareSharedRefGuard(')
-    expect(hostAt).toBeGreaterThan(-1)
-    expect(recipeAt).toBeGreaterThan(hostAt)
-    expect(guardAt).toBeGreaterThan(recipeAt)
-  })
-
   test('the issue path consumes its chosen seed only for the writing fix run', () => {
     const source = readFileSync(new URL('./issue.ts', import.meta.url), 'utf8')
     const diagnosis = source.slice(

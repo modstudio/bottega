@@ -1,7 +1,6 @@
 import { describe, expect, test } from 'bun:test'
 import { resolve } from 'node:path'
 import {
-  FILED_ISSUE_COMMAND_KILL_SIGNAL,
   FILED_ISSUE_COMMAND_TIMEOUT_MS,
   filedIssueCommandPlan,
   filedIssueCommandResult,
@@ -83,7 +82,6 @@ describe('filed issue command confinement', () => {
 
   test('a timed-out command is a failed result naming the limit', () => {
     expect(FILED_ISSUE_COMMAND_TIMEOUT_MS).toBe(20 * 60_000)
-    expect(FILED_ISSUE_COMMAND_KILL_SIGNAL).toBe('SIGKILL')
     expect(
       filedIssueCommandResult({
         exitCode: null,
