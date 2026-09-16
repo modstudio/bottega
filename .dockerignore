@@ -9,6 +9,13 @@
 !orchestrator/tsconfig.json
 !orchestrator/src/
 !hub/package.json
+!hub/tsconfig.json
+!hub/src/
 !hub/web/package.json
+!hub/web/tsconfig.json
+!hub/web/vite.config.ts
+!hub/web/index.html
+!hub/web/src/
 **/*.test.ts
+**/*.test.tsx
 **/node_modules

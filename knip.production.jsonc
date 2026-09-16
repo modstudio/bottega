@@ -77,7 +77,7 @@
       ]
     },
     "hub": {
-      "entry": ["src/cli.ts!"],
+      "entry": ["src/cli.ts!", "src/hosted.ts!"],
       "project": ["src/**/*.ts!", "!src/**/*.test.ts", "!src/**/*.fixture*.ts", "!test/**/*.ts"]
     },
     "hub/web": {

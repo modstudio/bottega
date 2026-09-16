@@ -212,6 +212,7 @@ for (const script of [
   'check-record-sync-boundary.ts',
   'check-record-auth-boundary.ts',
   'check-record-api-server-boundary.ts',
+  'check-hosted-hub-server-boundary.ts',
   'check-record-api-boundary.ts',
   'check-record-runs-boundary.ts',
   'check-record-reviews-boundary.ts',

@@ -5,6 +5,7 @@ import { docRouter } from './routers/doc.ts'
 import { insightRouter } from './routers/insight.ts'
 import { noteRouter } from './routers/note.ts'
 import { projectRouter } from './routers/project.ts'
+import { recordRouter } from './routers/record.ts'
 import { runRouter } from './routers/run.ts'
 import { settingsRouter } from './routers/settings.ts'
 import { workRouter } from './routers/work.ts'
@@ -20,6 +21,7 @@ export const appRouter = t.router({
   settings: settingsRouter,
   catalog: catalogRouter,
   note: noteRouter,
+  record: recordRouter,
 })
 
 export type AppRouter = typeof appRouter
