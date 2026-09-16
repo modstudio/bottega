@@ -4,6 +4,14 @@
   "$schema": "https://unpkg.com/knip@6.36.0/schema.json",
   "includeEntryExports": true,
   "ignoreExportsUsedInFile": true,
+  // shared/record/drizzle.config.ts loads every exported table from these files.
+  "ignoreIssues": {
+    "shared/record/schema.ts": ["exports", "types"],
+    "shared/record/schema-auth.ts": ["exports", "types"],
+    "shared/record/schema-run.ts": ["exports", "types"],
+    "shared/record/schema-review.ts": ["exports", "types"],
+    "shared/record/schema-landing.ts": ["exports", "types"]
+  },
   "workspaces": {
     ".": {
       "entry": [
@@ -36,14 +44,6 @@
         "architecture.ts!"
       ],
       "drizzle": { "config": ["shared/record/drizzle.config.ts"] },
-      // shared/record/drizzle.config.ts loads every exported table from these files.
-      "ignoreIssues": {
-        "shared/record/schema.ts": ["exports", "types"],
-        "shared/record/schema-auth.ts": ["exports", "types"],
-        "shared/record/schema-run.ts": ["exports", "types"],
-        "shared/record/schema-review.ts": ["exports", "types"],
-        "shared/record/schema-landing.ts": ["exports", "types"]
-      },
       // Invoked through node_modules/.bin/depcruise in scripts/check-architecture.ts.
       "ignoreDependencies": ["dependency-cruiser"]
     },
