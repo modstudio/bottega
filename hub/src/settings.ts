@@ -1,4 +1,4 @@
-import { db, type Project } from './db.ts'
+import { db, type Project, writeTransaction } from './db.ts'
 import { projectNames } from './projects.ts'
 
 /**
@@ -111,10 +111,12 @@ export function setReport(patch: Partial<Report>): Report {
   next.projects = next.projects.filter((project) => registered.has(project))
   next.to = next.to.map((s) => s.trim()).filter(Boolean)
   next.briefs = (next.briefs ?? []).filter((b) => b && b.name && b.match?.length)
-  db()
-    .query(`INSERT INTO setting (key, value) VALUES ('report', ?)
-              ON CONFLICT(key) DO UPDATE SET value = excluded.value`)
-    .run(JSON.stringify(next))
+  writeTransaction((conn) =>
+    conn
+      .query(`INSERT INTO setting (key, value) VALUES ('report', ?)
+                ON CONFLICT(key) DO UPDATE SET value = excluded.value`)
+      .run(JSON.stringify(next)),
+  )
   return next
 }
 

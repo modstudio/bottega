@@ -159,9 +159,8 @@ export function createTask(
   const category = status(input.status)
   const parent = input.parent?.toUpperCase()
   assertParent(parent)
-  const d = db()
   const at = nowIso()
-  const key = writeTransaction(() => {
+  const key = writeTransaction((conn) => {
     const candidates = duplicateCandidates(listTasks({ project: input.project }), input.title)
     options.afterDuplicateSearch?.()
     if (options.allowDuplicateReason !== undefined && !options.allowDuplicateReason.trim()) {
@@ -171,46 +170,48 @@ export function createTask(
       throw new DuplicateTaskError(candidates)
     }
     const pattern = new RegExp(`^${prefix.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}-(\\d+)$`, 'i')
-    const highest = d
+    const highest = conn
       .query<{ key: string }, []>(`SELECT key FROM task`)
       .all()
       .reduce((max, row) => {
         const match = pattern.exec(row.key)
         return match ? Math.max(max, Number(match[1])) : max
       }, 0)
-    const sequence = d
+    const sequence = conn
       .query<{ next: number }, [string]>(`SELECT next FROM seq WHERE name = ?`)
       .get(`task:${prefix}`)
     const number = Math.max(highest + 1, sequence?.next ?? 1)
     const key = `${prefix.toUpperCase()}-${number}`
-    d.query(
-      `INSERT INTO task (key, project, title, status, status_category, parent_key, body,
+    conn
+      .query(
+        `INSERT INTO task (key, project, title, status, status_category, parent_key, body,
                          opened_at, closed_at, updated_at, source, first_seen, last_seen)
        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'local', ?, ?)`,
-    ).run(
-      key,
-      input.project,
-      input.title,
-      category,
-      category,
-      parent ?? null,
-      input.body ?? null,
-      at,
-      category === 'done' ? at : null,
-      at,
-      at,
-      at,
-    )
-    d.query(
-      `INSERT INTO seq (name, next) VALUES (?, ?)
-       ON CONFLICT(name) DO UPDATE SET next = excluded.next`,
-    ).run(`task:${prefix}`, number + 1)
-    if (options.allowDuplicateReason !== undefined) {
-      d.query(`INSERT INTO task_comment (task_key, body, created_at) VALUES (?, ?, ?)`).run(
+      )
+      .run(
         key,
-        options.allowDuplicateReason,
+        input.project,
+        input.title,
+        category,
+        category,
+        parent ?? null,
+        input.body ?? null,
+        at,
+        category === 'done' ? at : null,
+        at,
+        at,
         at,
       )
+    conn
+      .query(
+        `INSERT INTO seq (name, next) VALUES (?, ?)
+       ON CONFLICT(name) DO UPDATE SET next = excluded.next`,
+      )
+      .run(`task:${prefix}`, number + 1)
+    if (options.allowDuplicateReason !== undefined) {
+      conn
+        .query(`INSERT INTO task_comment (task_key, body, created_at) VALUES (?, ?, ?)`)
+        .run(key, options.allowDuplicateReason, at)
     }
     return key
   })
@@ -341,8 +342,7 @@ export function setTask(
   options: { force?: boolean } = {},
 ): TaskRow {
   const upper = key.toUpperCase()
-  const d = db()
-  writeTransaction(() => {
+  writeTransaction((conn) => {
     const current = showTask(upper).task
     if (current.source !== 'local') throw new Error(`task ${upper} is not local`)
     if (
@@ -361,28 +361,32 @@ export function setTask(
       changes.parent === undefined ? current.parent_key : (changes.parent?.toUpperCase() ?? null)
     assertParent(parent)
     const at = nowIso()
-    d.query(
-      `UPDATE task SET title = ?, status = ?, status_category = ?, parent_key = ?, body = ?,
+    conn
+      .query(
+        `UPDATE task SET title = ?, status = ?, status_category = ?, parent_key = ?, body = ?,
                        closed_at = CASE WHEN ? = 'done' THEN COALESCE(closed_at, ?) ELSE NULL END,
                        updated_at = ?, last_seen = ?
         WHERE key = ?`,
-    ).run(
-      changes.title ?? current.title,
-      category,
-      category,
-      parent,
-      changes.body ?? current.body,
-      category,
-      at,
-      at,
-      at,
-      upper,
-    )
+      )
+      .run(
+        changes.title ?? current.title,
+        category,
+        category,
+        parent,
+        changes.body ?? current.body,
+        category,
+        at,
+        at,
+        at,
+        upper,
+      )
     if (changes.status !== undefined && current.status_category !== category) {
-      d.query(
-        `INSERT OR IGNORE INTO task_status_event (task_key, at, from_status, to_status)
+      conn
+        .query(
+          `INSERT OR IGNORE INTO task_status_event (task_key, at, from_status, to_status)
          VALUES (?, ?, ?, ?)`,
-      ).run(upper, at, current.status_category, category)
+        )
+        .run(upper, at, current.status_category, category)
     }
   })
   // The body guard and update share the same write lock, so another setter
@@ -397,10 +401,13 @@ export function commentTask(key: string, body: string): TaskComment {
   const current = showTask(upper).task
   if (current.source !== 'local') throw new Error(`task ${upper} is not local`)
   const at = nowIso()
-  const result = db()
-    .query(`INSERT INTO task_comment (task_key, body, created_at) VALUES (?, ?, ?)`)
-    .run(upper, body, at)
-  db().query(`UPDATE task SET updated_at = ?, last_seen = ? WHERE key = ?`).run(at, at, upper)
+  const result = writeTransaction((conn) => {
+    const inserted = conn
+      .query(`INSERT INTO task_comment (task_key, body, created_at) VALUES (?, ?, ?)`)
+      .run(upper, body, at)
+    conn.query(`UPDATE task SET updated_at = ?, last_seen = ? WHERE key = ?`).run(at, at, upper)
+    return inserted
+  })
   return { id: Number(result.lastInsertRowid), task_key: upper, body, created_at: at }
 }
 
@@ -440,12 +447,22 @@ export function createTaskDocument(input: {
   const task = showTask(upper).task
   if (task.source !== 'local') throw new Error(`task ${upper} is not local`)
   const at = nowIso()
-  const result = db()
-    .query(
-      `INSERT INTO task_document (task_key, role, title, body, version, created_at, updated_at)
+  const result = writeTransaction((conn) =>
+    conn
+      .query(
+        `INSERT INTO task_document (task_key, role, title, body, version, created_at, updated_at)
      VALUES (?, ?, ?, ?, ?, ?, ?)`,
-    )
-    .run(upper, documentRole(input.role), input.title, input.body ?? '', documentVersion(), at, at)
+      )
+      .run(
+        upper,
+        documentRole(input.role),
+        input.title,
+        input.body ?? '',
+        documentVersion(),
+        at,
+        at,
+      ),
+  )
   return getTaskDocument(Number(result.lastInsertRowid))
 }
 
@@ -459,8 +476,7 @@ export function updateTaskDocument(
   },
 ): TaskDocument {
   const id = documentId(idValue)
-  const d = db()
-  writeTransaction(() => {
+  writeTransaction((conn) => {
     const current = getTaskDocument(id)
     const task = showTask(current.task_key).task
     if (task.source !== 'local') throw new Error(`task ${current.task_key} is not local`)
@@ -471,7 +487,7 @@ export function updateTaskDocument(
       if (!changes.expectedVersion) {
         throw new Error('a body update requires --version from `hub task doc show`')
       }
-      const result = d
+      const result = conn
         .query(
           `UPDATE task_document
             SET title = ?, role = ?, body = ?, version = ?, updated_at = ?
@@ -492,12 +508,9 @@ export function updateTaskDocument(
         )
       }
     } else {
-      d.query(`UPDATE task_document SET title = ?, role = ?, updated_at = ? WHERE id = ?`).run(
-        changes.title ?? current.title,
-        role,
-        at,
-        id,
-      )
+      conn
+        .query(`UPDATE task_document SET title = ?, role = ?, updated_at = ? WHERE id = ?`)
+        .run(changes.title ?? current.title, role, at, id)
     }
   })
   return getTaskDocument(id)
@@ -505,13 +518,12 @@ export function updateTaskDocument(
 
 export function deleteTaskDocument(idValue: number | string): TaskDocument {
   const id = documentId(idValue)
-  const d = db()
   let removed: TaskDocument | null = null
-  writeTransaction(() => {
+  writeTransaction((conn) => {
     removed = getTaskDocument(id)
     const task = showTask(removed.task_key).task
     if (task.source !== 'local') throw new Error(`task ${removed.task_key} is not local`)
-    d.query(`DELETE FROM task_document WHERE id = ?`).run(id)
+    conn.query(`DELETE FROM task_document WHERE id = ?`).run(id)
   })
   return removed!
 }

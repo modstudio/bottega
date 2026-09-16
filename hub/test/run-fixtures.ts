@@ -1,3 +1,4 @@
+import { Database } from 'bun:sqlite'
 import { spyOn } from 'bun:test'
 import { db } from '../src/db.ts'
 import { ingestRuns } from '../src/ingest/runs.ts'
@@ -7,21 +8,24 @@ import { clearOrchCache } from '../src/serve.ts'
 export const at = (iso: string) => new Date(iso).getTime()
 
 export function resetFixtureStore() {
-  const database = db()
-  database
-    .transaction(() => {
-      database.exec('PRAGMA foreign_keys = OFF')
-      const tables = database
-        .query<{ name: string }, [string]>(
-          `SELECT name FROM sqlite_master
-        WHERE type = 'table' AND name <> ? AND name NOT LIKE 'sqlite_%'`,
-        )
-        .all(MIGRATIONS_TABLE)
-      for (const { name } of tables) database.exec(`DELETE FROM "${name}"`)
-      database.exec('DELETE FROM sqlite_sequence')
-      database.exec('PRAGMA foreign_keys = ON')
-    })
-    .immediate()
+  const database = new Database(process.env.HUB_DB!)
+  try {
+    database.exec('PRAGMA query_only = OFF; PRAGMA foreign_keys = OFF')
+    const tables = database
+      .query<{ name: string }, [string]>(
+        `SELECT name FROM sqlite_master
+          WHERE type = 'table' AND name <> ? AND name NOT LIKE 'sqlite_%'`,
+      )
+      .all(MIGRATIONS_TABLE)
+    for (const { name } of tables) database.exec(`DELETE FROM "${name}"`)
+    const sequence = database
+      .query<{ name: string }, []>("SELECT name FROM sqlite_master WHERE name = 'sqlite_sequence'")
+      .get()
+    if (sequence) database.exec('DELETE FROM sqlite_sequence')
+    database.exec('PRAGMA foreign_keys = ON')
+  } finally {
+    database.close()
+  }
   clearOrchCache()
 }
 

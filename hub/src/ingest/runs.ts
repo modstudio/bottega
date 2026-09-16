@@ -1,6 +1,6 @@
 import type { OrchRun } from '../../../shared/orch-contract.ts'
 import { attributeRun } from '../attribute.ts'
-import { db, nowIso, writeTransaction } from '../db.ts'
+import { nowIso, writeTransaction } from '../db.ts'
 import { readRuns } from '../orch.ts'
 
 export type { OrchRun } from '../../../shared/orch-contract.ts'
@@ -45,9 +45,12 @@ export async function ingestRuns(since: string): Promise<{ rows: number; skipped
   // re-fetched next time. Overlap is cheap; a missed answer is not.
   const snapshot = nowIso()
   const runs = await readRuns(since)
-  const d = db()
-  const stmt = d.query(
-    `INSERT INTO interval (task_key, project, source, agent, job, start_at, end_at,
+  let rows = 0
+  let skipped = 0
+  const now = Date.now()
+  writeTransaction((conn) => {
+    const stmt = conn.query(
+      `INSERT INTO interval (task_key, project, source, agent, job, start_at, end_at,
                            claude_tokens, vendor_tokens, vendor_cost_usd, ref, via, open, session_id)
      VALUES (?,?,'orch',?,?,?,?,0,?,?,?,?,?,?)
      ON CONFLICT(source, ref, start_at) DO UPDATE SET
@@ -60,9 +63,9 @@ export async function ingestRuns(since: string): Promise<{ rows: number; skipped
        via             = excluded.via,
        open            = excluded.open,
        session_id      = excluded.session_id`,
-  )
-  const upsertQuestion = d.query(
-    `INSERT INTO question (question_id, run_ref, root_ref, task_key, session_id, asked_at, answered_at)
+    )
+    const upsertQuestion = conn.query(
+      `INSERT INTO question (question_id, run_ref, root_ref, task_key, session_id, asked_at, answered_at)
      VALUES (?,?,?,?,?,?,?)
      ON CONFLICT(question_id) DO UPDATE SET
        run_ref     = excluded.run_ref,
@@ -71,25 +74,20 @@ export async function ingestRuns(since: string): Promise<{ rows: number; skipped
        session_id  = excluded.session_id,
        asked_at    = excluded.asked_at,
        answered_at = excluded.answered_at`,
-  )
-  const deleteRootQuestions = d.query(`DELETE FROM question WHERE root_ref = ?`)
-  const close = d.query(`UPDATE interval SET open = 0 WHERE source = 'orch' AND ref = ?`)
-  const removeOtherStarts = d.query(
-    `DELETE FROM interval WHERE source = 'orch' AND ref = ? AND start_at <> ?`,
-  )
-  const clearChain = d.query(
-    `DELETE FROM interval WHERE source = 'orch' AND (ref = ? OR ref LIKE ?)`,
-  )
-  const closeReplaced = d.query(
-    `UPDATE interval SET open = 0
+    )
+    const deleteRootQuestions = conn.query(`DELETE FROM question WHERE root_ref = ?`)
+    const close = conn.query(`UPDATE interval SET open = 0 WHERE source = 'orch' AND ref = ?`)
+    const removeOtherStarts = conn.query(
+      `DELETE FROM interval WHERE source = 'orch' AND ref = ? AND start_at <> ?`,
+    )
+    const clearChain = conn.query(
+      `DELETE FROM interval WHERE source = 'orch' AND (ref = ? OR ref LIKE ?)`,
+    )
+    const closeReplaced = conn.query(
+      `UPDATE interval SET open = 0
       WHERE source = 'orch' AND open = 1
         AND (ref = ? OR ref LIKE ?)`,
-  )
-
-  let rows = 0
-  let skipped = 0
-  const now = Date.now()
-  writeTransaction(() => {
+    )
     for (const r of runs) {
       const a = attributeRun(r)
 
@@ -161,9 +159,10 @@ export async function ingestRuns(since: string): Promise<{ rows: number; skipped
         rows++
       }
     }
+    conn
+      .query(`INSERT INTO setting (key, value) VALUES ('collect.runs.at', ?)
+                ON CONFLICT(key) DO UPDATE SET value = excluded.value`)
+      .run(JSON.stringify(snapshot))
   })
-
-  d.query(`INSERT INTO setting (key, value) VALUES ('collect.runs.at', ?)
-           ON CONFLICT(key) DO UPDATE SET value = excluded.value`).run(JSON.stringify(snapshot))
   return { rows, skipped }
 }

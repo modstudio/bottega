@@ -1,4 +1,4 @@
-import { db, nowIso } from './db.ts'
+import { db, nowIso, writeTransaction } from './db.ts'
 import { ingestGit } from './ingest/git.ts'
 import { ingestRuns } from './ingest/runs.ts'
 import { ingestTrackers, type TrackerResult, trackerProjects } from './ingest/trackers.ts'
@@ -78,18 +78,20 @@ const LEASE_MS = 60_000
  * A holder that dies renews nothing and the lease expires on its own.
  */
 export function acquireLease(holder: string): boolean {
-  const d = db()
   const now = Date.now()
-  d.query(
-    `INSERT INTO setting (key, value) VALUES ('collect.lease', ?)
-     ON CONFLICT(key) DO UPDATE SET value = excluded.value
-      WHERE COALESCE(json_extract(setting.value, '$.until'), 0) <= ?
-         OR json_extract(setting.value, '$.holder') = ?`,
-  ).run(JSON.stringify({ holder, until: now + LEASE_MS }), now, holder)
-
-  const row = d
-    .query<{ value: string }, []>(`SELECT value FROM setting WHERE key = 'collect.lease'`)
-    .get()
+  const row = writeTransaction((conn) => {
+    conn
+      .query(
+        `INSERT INTO setting (key, value) VALUES ('collect.lease', ?)
+         ON CONFLICT(key) DO UPDATE SET value = excluded.value
+          WHERE COALESCE(json_extract(setting.value, '$.until'), 0) <= ?
+             OR json_extract(setting.value, '$.holder') = ?`,
+      )
+      .run(JSON.stringify({ holder, until: now + LEASE_MS }), now, holder)
+    return conn
+      .query<{ value: string }, []>(`SELECT value FROM setting WHERE key = 'collect.lease'`)
+      .get()
+  })
   try {
     return (JSON.parse(row!.value) as { holder: string }).holder === holder
   } catch {
@@ -106,12 +108,14 @@ export function acquireLease(holder: string): boolean {
  * relies on expiry, which is why the timeout exists at all.
  */
 export function releaseLease(holder: string) {
-  db()
-    .query(
-      `DELETE FROM setting WHERE key = 'collect.lease'
+  writeTransaction((conn) =>
+    conn
+      .query(
+        `DELETE FROM setting WHERE key = 'collect.lease'
        AND json_extract(value, '$.holder') = ?`,
-    )
-    .run(holder)
+      )
+      .run(holder),
+  )
 }
 
 /**
@@ -163,10 +167,12 @@ export function leaseHolder(): string | null {
 }
 
 const stamp = (key: string) =>
-  db()
-    .query(`INSERT INTO setting (key, value) VALUES (?, ?)
-              ON CONFLICT(key) DO UPDATE SET value = excluded.value`)
-    .run(key, JSON.stringify(nowIso()))
+  writeTransaction((conn) =>
+    conn
+      .query(`INSERT INTO setting (key, value) VALUES (?, ?)
+                ON CONFLICT(key) DO UPDATE SET value = excluded.value`)
+      .run(key, JSON.stringify(nowIso())),
+  )
 
 /**
  * How far back the fast runs collect looks.

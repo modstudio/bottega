@@ -1,5 +1,5 @@
 import { human } from '../../shared/interval.ts'
-import { db, nowIso, type Project } from './db.ts'
+import { db, nowIso, type Project, writeTransaction } from './db.ts'
 import { summarize } from './orch.ts'
 import { projectColor } from './projects.ts'
 import { completedInWindow, reportEngagedMs, tasksInWindow } from './query.ts'
@@ -557,21 +557,23 @@ export function recordSend(
   error?: string,
   opts: { test?: boolean; to?: string[] } = {},
 ) {
-  db()
-    .query(
-      `INSERT INTO send (at, window, recipients, projects, items, status, error, test)
+  writeTransaction((conn) =>
+    conn
+      .query(
+        `INSERT INTO send (at, window, recipients, projects, items, status, error, test)
      VALUES (?,?,?,?,?,?,?,?)`,
-    )
-    .run(
-      nowIso(),
-      `${g.hours}h`,
-      (opts.to ?? r.to).join(', '),
-      r.projects.join(', '),
-      g.items.length,
-      status,
-      error ?? null,
-      opts.test ? 1 : 0,
-    )
+      )
+      .run(
+        nowIso(),
+        `${g.hours}h`,
+        (opts.to ?? r.to).join(', '),
+        r.projects.join(', '),
+        g.items.length,
+        status,
+        error ?? null,
+        opts.test ? 1 : 0,
+      ),
+  )
 }
 
 export const lastSends = (n = 10) =>

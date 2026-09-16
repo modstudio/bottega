@@ -1,3 +1,4 @@
+import type { Database } from 'bun:sqlite'
 import {
   type AssigneeRef,
   resolveAssigneeIds,
@@ -30,12 +31,14 @@ async function resolveCached(
   const before = cache.size
   const out = await resolveAssigneeIds(refs, cache, lookup)
   if (cache.size !== before) {
-    db()
-      .query(
-        `INSERT INTO setting (key, value) VALUES (?, ?)
+    writeTransaction((conn) =>
+      conn
+        .query(
+          `INSERT INTO setting (key, value) VALUES (?, ?)
        ON CONFLICT(key) DO UPDATE SET value = excluded.value`,
-      )
-      .run(key, JSON.stringify([...cache]))
+        )
+        .run(key, JSON.stringify([...cache])),
+    )
   }
   return out
 }
@@ -99,8 +102,8 @@ function differs(t: TrackerTask, old: ExistingTask | undefined): boolean {
 }
 
 /** Write the tracker-owned fields without ever replacing a locally-owned task. */
-export function upsertTrackerTask(t: TrackerTask, at = nowIso()) {
-  db()
+function upsertTrackerTaskOn(conn: Database, t: TrackerTask, at: string) {
+  conn
     .query(
       `INSERT INTO task (key, project, title, status, status_category, updated_at, assignee,
                        closed_at, source, first_seen, last_seen)
@@ -126,6 +129,10 @@ export function upsertTrackerTask(t: TrackerTask, at = nowIso()) {
       at,
       at,
     )
+}
+
+export function upsertTrackerTask(t: TrackerTask, at = nowIso()) {
+  writeTransaction((conn) => upsertTrackerTaskOn(conn, t, at))
 }
 
 /**
@@ -186,11 +193,6 @@ export async function ingestTrackers(
 
   // A tracker row always wins over a git-derived one: git knows a key, never a
   // title or a status.
-  const event = d.query(
-    `INSERT OR IGNORE INTO task_status_event (task_key, at, from_status, to_status)
-     VALUES (?,?,?,?)`,
-  )
-
   const results = await Promise.all(
     trackers.map(
       async (
@@ -257,10 +259,14 @@ export async function ingestTrackers(
           )
 
           let changed = 0
-          writeTransaction(() => {
+          writeTransaction((conn) => {
+            const event = conn.query(
+              `INSERT OR IGNORE INTO task_status_event (task_key, at, from_status, to_status)
+               VALUES (?,?,?,?)`,
+            )
             for (const t of unique.values()) {
               const was = before.get(t.key)
-              upsertTrackerTask(t, at)
+              upsertTrackerTaskOn(conn, t, at)
               // A key whose category was never observed records no transition.
               // Otherwise the first collect reports every closed task in the
               // tracker's history as having just closed.
@@ -317,7 +323,11 @@ export async function ingestTrackers(
   const out = results.map((item) => item.result)
   if (filled) out.push({ project: 'backfill', tasks: filled, changed: 0, activity: true })
 
-  d.query(`INSERT INTO setting (key, value) VALUES ('collect.trackers.at', ?)
-           ON CONFLICT(key) DO UPDATE SET value = excluded.value`).run(JSON.stringify(at))
+  writeTransaction((conn) =>
+    conn
+      .query(`INSERT INTO setting (key, value) VALUES ('collect.trackers.at', ?)
+                ON CONFLICT(key) DO UPDATE SET value = excluded.value`)
+      .run(JSON.stringify(at)),
+  )
   return out
 }

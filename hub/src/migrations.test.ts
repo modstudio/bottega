@@ -376,8 +376,8 @@ describe('hub migration journal', () => {
     other.exec(`PRAGMA user_version = ${migrationJournal().length + 1}`)
     other.close()
     expect(() =>
-      writeTransaction(() => {
-        db().query('UPDATE setting SET value = value WHERE 0').run()
+      writeTransaction((conn) => {
+        conn.query('UPDATE setting SET value = value WHERE 0').run()
       }),
     ).toThrow(`invariant: ${CONNECTION_SCHEMA_INVARIANT}`)
     closeDatabaseForFixture()
@@ -488,8 +488,8 @@ describe('hub migration journal', () => {
     const other = new Database(process.env.HUB_DB!)
     other.exec(`PRAGMA user_version = ${migrationJournal().length + 1}`)
     other.close()
-    writeTransaction(() => {
-      db().query("INSERT INTO setting (key, value) VALUES ('held-reload', '1')").run()
+    writeTransaction((conn) => {
+      conn.query("INSERT INTO setting (key, value) VALUES ('held-reload', '1')").run()
     }, held)
     expect(() => held.query('SELECT 1').get()).toThrow('closed')
     expect(db().query("SELECT value FROM setting WHERE key='held-reload'").get()).toEqual({
