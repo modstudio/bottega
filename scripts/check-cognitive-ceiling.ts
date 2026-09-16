@@ -135,7 +135,7 @@ function assessMeasurement(
     return {
       violation:
         `${current.file}:${current.line} ${current.function}: complexity ${current.score}, ` +
-        `frozen at ${prior?.score ?? CEILING}; extract a decision (architecture-rules 16)`,
+        `frozen at ${prior?.score ?? CEILING}; extract a decision (canon 10-code: Respect the complexity ceiling)`,
     }
   }
   return {}
@@ -171,7 +171,9 @@ export async function checkCognitiveCeiling(options: CognitiveCeilingOptions = {
   for (const tightening of tightenings) reporter.error(tightening)
   for (const violation of violations) reporter.error(violation)
   if (tightenings.length) {
-    reporter.error(`baseline tightened; commit ${STATE_LABEL} and re-run (architecture-rules 16)`)
+    reporter.error(
+      `baseline tightened; commit ${STATE_LABEL} and re-run (canon 10-code: Respect the complexity ceiling)`,
+    )
   }
   if (violations.length || tightenings.length) {
     return false

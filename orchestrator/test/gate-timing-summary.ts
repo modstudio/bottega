@@ -93,7 +93,7 @@ function unitTimingResult(
       `${TIMING_SUMMARY_LABEL}: orchestrator unit total ${unitElapsedMs}ms exceeds 5% growth limit ${limitMs}ms (committed ${committedMs}ms)`,
     )
     reporter.error(
-      `${TIMING_SUMMARY_LABEL}: growth is informational; the suite runtime budget is the gate`,
+      `${TIMING_SUMMARY_LABEL}: growth is informational; the suite CPU budget is the gate on CI`,
     )
     return { changed: false, fatal: false, nextMs: committedMs!, initial: false }
   }
@@ -167,10 +167,10 @@ export function publishTimingSummary(
     // Wall clock cannot separate a slower suite from a busier machine, so growth
     // is informational everywhere: the baseline is measured on one machine and
     // its band is narrower than run-to-run jitter, so growth is a trend to read,
-    // and the absolute suite runtime budget in scripts/check-runtime.ts is the
-    // check that fails a slow suite.
+    // and the suite CPU budget in scripts/check-runtime.ts is the check that
+    // fails a slow suite on CI.
     reporter.error(
-      `${TIMING_SUMMARY_LABEL}: growth is informational; the suite runtime budget is the gate`,
+      `${TIMING_SUMMARY_LABEL}: growth is informational; the suite CPU budget is the gate on CI`,
     )
   }
   const next = committed

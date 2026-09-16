@@ -31,7 +31,7 @@ describe('cognitive ceiling check', () => {
     ])
     expect(errors).toEqual([
       'scripts/quality/cognitive-ceiling.json: complex.ts:10 complex tightened 20 -> 18',
-      'baseline tightened; commit scripts/quality/cognitive-ceiling.json and re-run (architecture-rules 16)',
+      'baseline tightened; commit scripts/quality/cognitive-ceiling.json and re-run (canon 10-code: Respect the complexity ceiling)',
     ])
     expect(
       await checkCognitiveCeiling({

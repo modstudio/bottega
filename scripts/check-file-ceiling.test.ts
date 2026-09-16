@@ -29,7 +29,7 @@ describe('file ceiling check', () => {
     expect(JSON.parse(readFileSync(stateFile, 'utf8'))).toEqual({ 'large.ts': 1100 })
     expect(errors).toEqual([
       'scripts/quality/file-ceiling.json: large.ts tightened 1200 -> 1100',
-      'baseline tightened; commit scripts/quality/file-ceiling.json and re-run (architecture-rules 15)',
+      'baseline tightened; commit scripts/quality/file-ceiling.json and re-run (canon 10-code: Respect the file ceiling)',
     ])
     expect(
       checkFileCeiling({
