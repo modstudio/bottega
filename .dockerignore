@@ -1,0 +1,15 @@
+# The record API image is built from the repository root. Only what the server
+# runs from is sent; local stores, run files, checkouts and git never are.
+*
+!package.json
+!bun.lock
+!tsconfig.base.json
+!shared/
+!orchestrator/package.json
+!orchestrator/tsconfig.json
+!orchestrator/src/
+!orchestrator/postgres/
+!hub/package.json
+!hub/web/package.json
+**/*.test.ts
+**/node_modules
