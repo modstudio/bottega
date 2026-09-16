@@ -1,0 +1,54 @@
+{
+  "$schema": "https://unpkg.com/knip@6.36.0/schema.json",
+  "includeEntryExports": true,
+  "workspaces": {
+    ".": {
+      "entry": [
+        ".githooks/*!",
+        "bin/{hub,orch}!",
+        "hub/bin/*.sh!",
+        "local-stack/bin/*.sh!",
+        "ops/install.sh!",
+        "ops/bin/*.sh!",
+        "scripts/check.ts!",
+        "scripts/check-*.ts!",
+        "!scripts/**/*.test.ts",
+        "!scripts/check-runtime.ts",
+        "scripts/generate-recipe-schema.ts!",
+        "scripts/quality/check-no-expect.ts!"
+      ],
+      "project": ["scripts/**/*.ts!", "shared/**/*.ts!", "architecture.ts!"],
+      // Invoked through node_modules/.bin/depcruise in scripts/check-architecture.ts.
+      "ignoreDependencies": ["dependency-cruiser"]
+    },
+    "orchestrator": {
+      "entry": [
+        "hooks/*!",
+        "src/orch.ts!",
+        "src/record-api-server.ts!",
+        "scripts/acp-parity.ts!",
+        "scripts/check-canon-lint.ts!",
+        "scripts/check-pack-budget.ts!",
+        "scripts/import-postgres-projects.ts!",
+        "scripts/test-postgres-rls.ts!"
+      ],
+      "project": ["src/**/*.ts!", "scripts/**/*.ts!", "test/**/*.ts"],
+      "ignoreDependencies": [
+        // Invoked through node_modules/.bin/codex-acp in src/transport.ts.
+        "@agentclientprotocol/codex-acp",
+        // Loaded dynamically through requireTransport('ajv/dist/2020.js') in src/transport.ts.
+        "ajv"
+      ]
+    },
+    "hub": {
+      "entry": ["src/cli.ts!"],
+      "project": ["src/**/*.ts!", "test/**/*.ts"]
+    },
+    "hub/web": {
+      "entry": ["src/main.tsx!"],
+      "project": ["src/**/*.{ts,tsx}!", "vite.config.ts!"],
+      // Loaded through the CSS import in src/app/globals.css.
+      "ignoreDependencies": ["tailwindcss"]
+    }
+  }
+}
