@@ -9,7 +9,9 @@ export const session = pgTable(
   'session',
   {
     id: identity(),
-    userId: uuid('user_id').notNull().references(() => user.id, { onDelete: 'cascade' }),
+    userId: uuid('user_id')
+      .notNull()
+      .references(() => user.id, { onDelete: 'cascade' }),
     token: text().notNull().unique(),
     expiresAt: timestamp('expires_at', { withTimezone: true }).notNull(),
     ipAddress: text('ip_address'),
@@ -25,7 +27,9 @@ export const account = pgTable(
   'account',
   {
     id: identity(),
-    userId: uuid('user_id').notNull().references(() => user.id, { onDelete: 'cascade' }),
+    userId: uuid('user_id')
+      .notNull()
+      .references(() => user.id, { onDelete: 'cascade' }),
     accountId: text('account_id').notNull(),
     providerId: text('provider_id').notNull(),
     accessToken: text('access_token'),
@@ -56,7 +60,9 @@ export const invitation = pgTable.withRLS(
     id: identity(),
     spaceId: spaceIdentity(),
     email: text().notNull(),
-    inviterId: uuid('inviter_id').notNull().references(() => user.id),
+    inviterId: uuid('inviter_id')
+      .notNull()
+      .references(() => user.id),
     role: text(),
     status: text().notNull(),
     expiresAt: timestamp('expires_at', { withTimezone: true }).notNull(),

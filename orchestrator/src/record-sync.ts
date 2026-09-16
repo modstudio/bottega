@@ -14,12 +14,7 @@ import {
   TEST_FLAKE_RECORD_PAYLOAD_COLUMNS,
 } from './landing-outbox.ts'
 import { machineId, machineName } from './machine-identity.ts'
-import {
-  machine,
-  RECORD_ACTOR_ROLE,
-  RECORD_OWNER_ROLE,
-} from './postgres-schema.ts'
-import { currentRecordSession } from './record-auth.ts'
+import { machine, RECORD_ACTOR_ROLE, RECORD_OWNER_ROLE } from './postgres-schema.ts'
 import {
   contention as contentionRecord,
   landingOverride as landingOverrideRecord,
@@ -33,6 +28,7 @@ import {
   review as reviewRecord,
 } from './postgres-schema-review.ts'
 import { run as runRecord } from './postgres-schema-run.ts'
+import { currentRecordSession } from './record-auth.ts'
 import {
   backfillReviewRecords,
   REVIEW_FINDING_RECORD_PAYLOAD_COLUMNS,

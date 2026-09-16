@@ -5,8 +5,6 @@ import { join } from 'node:path'
 import { PLATFORM_SLUG } from '../../shared/brand.ts'
 import { db } from './db.ts'
 import { migratePostgres } from './postgres-migrate.ts'
-import { bearerHeaders, recordAuth } from './record-auth.ts'
-import { signInCommand, signUpCommand, whoamiCommand } from './record-auth-command.ts'
 import {
   newRecordId,
   PLATFORM_OPERATOR_USER_ID,
@@ -16,6 +14,8 @@ import {
   RECORD_OWNER_ROLE,
   RECORD_READER_ROLE,
 } from './postgres-schema.ts'
+import { bearerHeaders, recordAuth } from './record-auth.ts'
+import { signInCommand, signUpCommand, whoamiCommand } from './record-auth-command.ts'
 import { syncRecord } from './record-sync.ts'
 import { RUN_RECORD_PAYLOAD_COLUMNS } from './run-outbox.ts'
 
@@ -447,10 +447,13 @@ realPostgres('RLS proof against real Postgres', () => {
         has_table_privilege('${RECORD_ACTOR_ROLE}', 'machine', 'UPDATE'),
         has_table_privilege('${RECORD_ACTOR_ROLE}', 'machine', 'DELETE'),
         has_table_privilege('${RECORD_ACTOR_ROLE}', '"user"', 'SELECT'),
+        has_table_privilege('${RECORD_ACTOR_ROLE}', '"user"', 'INSERT'),
+        has_table_privilege('${RECORD_ACTOR_ROLE}', '"user"', 'UPDATE'),
+        has_table_privilege('${RECORD_ACTOR_ROLE}', '"user"', 'DELETE'),
         has_table_privilege('${RECORD_READER_ROLE}', 'machine', 'SELECT'),
         has_table_privilege('${RECORD_READER_ROLE}', '"user"', 'SELECT');`,
     )
-    expect(facts).toBe('t|t|t|f|t|t|t')
+    expect(facts).toBe('t|t|t|f|t|t|t|f|t|t')
   })
 
   test('the seq primary key columns are not nullable', () => {

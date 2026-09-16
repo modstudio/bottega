@@ -20,7 +20,9 @@ export function register(program: Command): void {
     .command('sign-up')
     .requiredOption('--email <email>')
     .requiredOption('--name <name>')
-    .action((options) => signUpCommand(String(options.email), String(options.name), promptPassword, { log }))
+    .action((options) =>
+      signUpCommand(String(options.email), String(options.name), promptPassword, { log }),
+    )
   record
     .command('sign-in')
     .requiredOption('--email <email>')

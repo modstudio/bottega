@@ -4,9 +4,9 @@ import { SQL } from 'bun'
 import { db, writeTransaction } from './db.ts'
 import {
   currentRecordSession,
-  recordAuth,
   RECORD_SESSION_KEY,
   RECORD_SIGN_IN_REMEDY,
+  recordAuth,
 } from './record-auth.ts'
 
 type Presentation = { log(value: string): void }

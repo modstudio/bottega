@@ -1,17 +1,19 @@
 // concern: record-auth
 /** Owns record identity, bearer sessions, and personal-space repair. Must not know run phases. */
-import { SQL } from 'bun'
+
+import type { Database } from 'bun:sqlite'
 import { drizzleAdapter } from '@better-auth/drizzle-adapter/relations-v2'
 import { betterAuth } from 'better-auth'
 import { bearer, organization } from 'better-auth/plugins'
+import { SQL } from 'bun'
 import { drizzle } from 'drizzle-orm/bun-sql'
-import { type Database } from 'bun:sqlite'
 import { db } from './db.ts'
-import { account, invitation, session, verification } from './postgres-schema-auth.ts'
 import { membership, newRecordId, space, user } from './postgres-schema.ts'
+import { account, invitation, session, verification } from './postgres-schema-auth.ts'
 
 export const RECORD_SESSION_KEY = 'record_session'
-export const RECORD_SIGN_IN_REMEDY = 'record session is missing or expired; run `orch record sign-in --email <email>`'
+export const RECORD_SIGN_IN_REMEDY =
+  'record session is missing or expired; run `orch record sign-in --email <email>`'
 
 export function storedRecordToken(local: Database = db()): string | null {
   return (
@@ -46,18 +48,21 @@ export async function ensurePersonalSpace(
 function personalSpacePort(client: SQL): PersonalSpacePort {
   return {
     async find(userId) {
-      const rows = await client`
-        SELECT s.id, s.name, s.slug
-        FROM "user" u
-        LEFT JOIN space s ON s.id=u.personal_space_id
-        LEFT JOIN membership m ON m.space_id=s.id AND m.user_id=u.id
-        WHERE u.id=${userId}::uuid
-          AND m.id IS NOT NULL
-      `
-      const row = rows[0]
-      return row?.id
-        ? { id: String(row.id), name: String(row.name), slug: String(row.slug) }
-        : null
+      return client.begin(async (tx) => {
+        await tx`SELECT set_config('app.user_id', ${userId}, true)`
+        const rows = await tx`
+          SELECT s.id, s.name, s.slug
+          FROM "user" u
+          LEFT JOIN space s ON s.id=u.personal_space_id
+          LEFT JOIN membership m ON m.space_id=s.id AND m.user_id=u.id
+          WHERE u.id=${userId}::uuid
+            AND m.id IS NOT NULL
+        `
+        const row = rows[0]
+        return row?.id
+          ? { id: String(row.id), name: String(row.name), slug: String(row.slug) }
+          : null
+      })
     },
     async create(input) {
       return client.begin(async (tx) => {
@@ -68,6 +73,7 @@ function personalSpacePort(client: SQL): PersonalSpacePort {
         if (!owner) throw new Error(`record user is absent: ${input.userId}`)
         if (owner.personal_space_id) {
           await tx`SELECT set_config('app.user_id', ${input.userId}, true)`
+          await tx`SELECT set_config('app.space_id', ${String(owner.personal_space_id)}, true)`
           const existing = await tx`
             SELECT id, name, slug FROM space WHERE id=${String(owner.personal_space_id)}::uuid
           `
@@ -189,7 +195,8 @@ export async function setActiveRecordSpace(
       const memberships = await tx`
         SELECT 1 FROM membership WHERE user_id=${current.user.id}::uuid AND space_id=${spaceId}::uuid
       `
-      if (memberships.length !== 1) throw new Error(`record user is not a member of space ${spaceId}`)
+      if (memberships.length !== 1)
+        throw new Error(`record user is not a member of space ${spaceId}`)
       await tx`
         UPDATE session SET active_space_id=${spaceId}::uuid, updated_at=now()
         WHERE token=${token}

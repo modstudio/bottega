@@ -58,7 +58,10 @@ export const space = pgTable.withRLS(
           SELECT 1 FROM membership m WHERE m.space_id = ${table.id} AND m.user_id = ${currentUser}
         )`,
       }),
-      pgPolicy('space_space_insert', { for: 'insert', withCheck: sql`${table.id} = ${currentSpace}` }),
+      pgPolicy('space_space_insert', {
+        for: 'insert',
+        withCheck: sql`${table.id} = ${currentSpace}`,
+      }),
       pgPolicy('space_space_update', {
         for: 'update',
         using: sql`${table.id} = ${currentSpace}`,

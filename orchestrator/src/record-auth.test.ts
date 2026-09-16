@@ -4,9 +4,9 @@ import {
   currentRecordSession,
   ensurePersonalSpace,
   type PersonalSpace,
-  recordAuth,
   RECORD_SESSION_KEY,
   RECORD_SIGN_IN_REMEDY,
+  recordAuth,
 } from './record-auth.ts'
 
 let priorSecret: string | undefined
