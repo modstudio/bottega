@@ -4,6 +4,7 @@ import {
   compareDeadCodeFindings,
   type DeadCodeFinding,
   normalizeKnipReport,
+  productionSourcesAnalyzed,
   stableFinding,
 } from './quality/dead-code'
 
@@ -14,6 +15,9 @@ const BASELINE_LABEL = 'scripts/quality/dead-code.json'
 
 const PRODUCTION_ISSUES = [
   'files',
+  'dependencies',
+  'unlisted',
+  'unresolved',
   'exports',
   'nsExports',
   'types',
@@ -78,8 +82,17 @@ function describeFinding(finding: DeadCodeFinding) {
   return `${finding.file}${finding.line ? `:${finding.line}` : ''} ${finding.issueType} ${finding.symbol}`
 }
 
+function assertProductionSourcesAnalyzed(findings: DeadCodeFinding[]) {
+  if (!productionSourcesAnalyzed(findings)) {
+    throw new Error(
+      'knip production pass analysed no sources: known-live dependency commander was reported unused',
+    )
+  }
+}
+
 export function checkDeadCode(write = process.argv.includes('--write-baseline')) {
   const results = PASSES.map(runPass)
+  assertProductionSourcesAnalyzed(results[0]!.findings)
   const current = results.flatMap((result) => result.findings)
   if (write) {
     writeBaseline(current)

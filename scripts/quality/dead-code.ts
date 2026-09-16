@@ -68,6 +68,12 @@ export function stableFinding(finding: DeadCodeFinding): DeadCodeFinding {
   return stable
 }
 
+export function productionSourcesAnalyzed(findings: DeadCodeFinding[]) {
+  return !findings.some(
+    (finding) => finding.issueType === 'dependencies' && finding.symbol === 'commander',
+  )
+}
+
 function ratchetFinding(finding: DeadCodeFinding): Finding {
   return {
     file: `${finding.workspace}\0${finding.file}`,

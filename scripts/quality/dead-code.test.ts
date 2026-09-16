@@ -1,5 +1,10 @@
 import { describe, expect, test } from 'bun:test'
-import { compareDeadCodeFindings, type DeadCodeFinding, normalizeKnipReport } from './dead-code'
+import {
+  compareDeadCodeFindings,
+  type DeadCodeFinding,
+  normalizeKnipReport,
+  productionSourcesAnalyzed,
+} from './dead-code'
 
 const baseline: DeadCodeFinding = {
   workspace: 'orchestrator',
@@ -38,5 +43,19 @@ describe('dead-code ratchet', () => {
       introduced: [],
       vanished: [],
     })
+  })
+
+  test('an unused known-live dependency means production analysed no sources', () => {
+    expect(
+      productionSourcesAnalyzed([
+        {
+          workspace: 'orchestrator',
+          file: 'orchestrator/package.json',
+          issueType: 'dependencies',
+          symbol: 'commander',
+        },
+      ]),
+    ).toBeFalse()
+    expect(productionSourcesAnalyzed([])).toBeTrue()
   })
 })
