@@ -14,10 +14,14 @@ import { backfillRunRecords } from './run-outbox.ts'
 
 const container = process.env.ORCH_TEST_POSTGRES_CONTAINER
 const databaseUrl = process.env.ORCH_TEST_POSTGRES_URL
+const migrateUrl = process.env.ORCH_RECORD_MIGRATE_URL
+const actorUrl = process.env.ORCH_RECORD_URL
 const sourceOrchDb = process.env.ORCH_TEST_SOURCE_ORCH_DB
 const sourceHubDb = process.env.ORCH_TEST_SOURCE_HUB_DB
 const realPostgres =
-  container && databaseUrl && sourceOrchDb && sourceHubDb ? describe : describe.skip
+  container && databaseUrl && migrateUrl && actorUrl && sourceOrchDb && sourceHubDb
+    ? describe
+    : describe.skip
 
 type SourceProject = {
   name: string
@@ -52,7 +56,7 @@ realPostgres('project import against copied live SQLite data', () => {
   const sql = new SQL(databaseUrl!)
 
   beforeAll(async () => {
-    await migratePostgres(databaseUrl!)
+    await migratePostgres()
   })
 
   afterAll(async () => {
@@ -278,7 +282,7 @@ realPostgres('project import against copied live SQLite data', () => {
       )
       .get()!.count
     const synced = await syncRecord({
-      recordUrl: databaseUrl!,
+      recordUrl: actorUrl!,
       local: source,
       identity: {
         id: sourceMachineId,
