@@ -35,7 +35,7 @@ export function verifyBranchLanding(
   if (!pullRequestCarriesKey(pullRequest, taskKey)) {
     return {
       accepted: false,
-      reason: `PR #${pullRequest.number} title does not contain task key ${taskKey}`,
+      reason: `PR #${pullRequest.number} carries task key neither in its title nor in its head branch: ${taskKey}`,
     }
   }
   return {

@@ -80,9 +80,11 @@ type BranchLandingRecordRow = {
 function command(cwd: string, argv: string[], label: string): string {
   let process: ReturnType<typeof Bun.spawnSync>
   try {
+    // Output is parsed, so a forced-colour environment must not reach gh or git.
+    const { FORCE_COLOR: _force, CLICOLOR_FORCE: _clicolor, ...env } = targetGitEnvironment(cwd)
     process = Bun.spawnSync(argv, {
       cwd,
-      env: targetGitEnvironment(cwd),
+      env: { ...env, NO_COLOR: '1' },
       stdout: 'pipe',
       stderr: 'pipe',
     })

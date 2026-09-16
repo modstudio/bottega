@@ -26,14 +26,14 @@ describe('branch landing record verification', () => {
       }),
     ).toEqual({
       accepted: false,
-      reason: 'PR #190 title does not contain task key DEV-602',
+      reason: 'PR #190 carries task key neither in its title nor in its head branch: DEV-602',
     })
   })
 
   test('refuses a title that only contains the key as a prefix of a longer key', () => {
     expect(verifyBranchLanding('DEV-61', mergedPullRequest)).toEqual({
       accepted: false,
-      reason: 'PR #190 title does not contain task key DEV-61',
+      reason: 'PR #190 carries task key neither in its title nor in its head branch: DEV-61',
     })
   })
 
