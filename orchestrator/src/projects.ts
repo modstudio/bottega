@@ -31,7 +31,13 @@ import {
   type SequenceKind,
   type SequenceState,
 } from '../../shared/git.ts'
+import type { TrackerSettings } from '../../shared/trackers.ts'
 import { db, nowIso, writableDb, writeTransaction } from './db.ts'
+import {
+  type DocsSettings,
+  type ReleaseSettings,
+  validateProjectInjectionSettings,
+} from './project-injection.ts'
 import { type ReadonlyProvision, validateReadonlyProvision } from './readonly-provision.ts'
 import { loadTrackedRecipe, recipePointerErrors } from './recipe-loader.ts'
 import { DEFAULT_PROJECT_CONFIG_PATH, resolveWorktreeLifecycle } from './worktree-lifecycle.ts'
@@ -90,6 +96,8 @@ export type ProjectSettings = {
   workerMcpServers?: string[]
   /** A cheap plain-named read tool used to prove the MCP attachment. */
   mcp?: { probe_tool?: string }
+  /** How this project's task tracker is reached and how its vocabulary maps. */
+  tracker?: TrackerSettings
   /**
    * How this tracker's task states map onto the vocabulary used here.
    *
@@ -106,6 +114,10 @@ export type ProjectSettings = {
   productionBranch?: string
   /** The project's complete landing gate, run from the branch worktree. */
   gate?: string
+  /** Ordered promotion and remote-admission facts after the landing branch merges. */
+  release?: ReleaseSettings
+  /** Where shared workflows read and write this project's docs and canon. */
+  docs?: DocsSettings
   /**
    * Whether dispatch refuses tracked modifications in this project's main
    * checkout. Default ON: absent and true both enforce it. A project opts out
@@ -499,6 +511,7 @@ export function unretireProject(name: string): boolean {
  */
 export function validateProjectSettings(settings: ProjectSettings, projectPath?: string): string[] {
   const problems = [
+    ...validateProjectInjectionSettings(settings),
     ...validateCreate(settings.worktree?.create as unknown, 'worktree.create', CREATE_VARS),
     ...validateCreate(
       settings.worktree?.readonly_create as unknown,

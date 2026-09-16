@@ -153,6 +153,7 @@ export const modules: ArchitectureModule[] = [
     './git-environment.ts',
     '../../shared/process-identity.ts',
   ]),
+  module('orchestrator/src/project-injection.ts', ['zod', '../../shared/trackers.ts']),
   module('orchestrator/src/ref-guard.ts', [
     './db.ts',
     './process-liveness.ts',
