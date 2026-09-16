@@ -4,10 +4,10 @@ import { copyFileSync, existsSync, rmSync } from 'node:fs'
 import { SQL } from 'bun'
 import { PLATFORM_SLUG } from '../../shared/brand.ts'
 import { importProjects } from './postgres-import.ts'
-import { syncRecord } from './record-sync.ts'
-import { backfillRunRecords } from './run-outbox.ts'
 import { migratePostgres } from './postgres-migrate.ts'
 import { PLATFORM_SPACE_ID } from './postgres-schema.ts'
+import { syncRecord } from './record-sync.ts'
+import { backfillRunRecords } from './run-outbox.ts'
 
 const container = process.env.ORCH_TEST_POSTGRES_CONTAINER
 const databaseUrl = process.env.ORCH_TEST_POSTGRES_URL
