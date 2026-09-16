@@ -298,7 +298,7 @@ export function tryWriteContention(
         const opened = openedUserVersion
         if (opened !== null && readUserVersion(d) !== opened) return
         if (!contentionTableExists(d)) return
-        d.transaction(() => insertContention(d, row)).immediate()
+        writeTransaction(() => insertContention(d, row), d)
       } finally {
         d.close()
       }
