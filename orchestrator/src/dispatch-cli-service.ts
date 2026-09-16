@@ -27,6 +27,7 @@ import { pickCommand } from './routing-commands.ts'
 import { RUNS_DIR } from './run-artifacts.ts'
 import { follow as followRun } from './run-control.ts'
 import { detach as dispatchDetached } from './run-dispatch.ts'
+import { resolveTaskBranch } from './task-branch.ts'
 import {
   assertAcpAllowed,
   assertAcpReady,
@@ -105,6 +106,30 @@ function warnCallerDrift(
   }
   error(
     `! caller checkout HEAD ${drift.callerHead} is behind or diverged from ${drift.baseRef} (${drift.base}).\n  Update the caller checkout; repository runs from it are still dispatched.`,
+  )
+}
+
+function warnTaskBranchBypass(
+  cwd: string,
+  key: string | null,
+  error: (...values: unknown[]) => void,
+): void {
+  if (!key) return
+  // Best effort: --base is how a caller escapes an ambiguous or unresolvable
+  // task branch, so failing to name the bypassed branch must not refuse it.
+  let candidate: ReturnType<typeof resolveTaskBranch>
+  try {
+    candidate = resolveTaskBranch(cwd, key)
+  } catch (cause) {
+    const reason = String((cause as Error)?.message ?? cause).split('\n', 1)[0]
+    error(`! explicit --base bypasses task-branch reuse for ${key}; ${reason}`)
+    return
+  }
+  if (!candidate) return
+  error(
+    `! explicit --base bypasses task branch ${candidate.branch} at tip ${candidate.tip} ` +
+      `(${candidate.commitCount} ${candidate.commitCount === 1 ? 'commit' : 'commits'}); ` +
+      `once this run is recorded it supersedes that branch for ${key}.`,
   )
 }
 
@@ -207,6 +232,7 @@ export async function doCommand(argv: string[], presentation: Presentation): Pro
       readPrompt: prompt,
       validateSchema: readStrictCodexSchema,
       warnCallerDrift: (cwd, base) => warnCallerDrift(cwd, base, presentation.error),
+      warnTaskBranchBypass: (cwd, key) => warnTaskBranchBypass(cwd, key, presentation.error),
       contractConflicts,
       warnImplementContractConflicts: (conflicts, id) => {
         if (!conflicts.length) return

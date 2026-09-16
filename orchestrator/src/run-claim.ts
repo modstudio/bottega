@@ -122,6 +122,23 @@ function taskBranchKey(
   return plan ? null : launchKey
 }
 
+function shouldResolveTaskBranch(input: {
+  repoJob: boolean
+  writesJob: boolean
+  hasWorktree: boolean
+  taskKey: string | null
+  isResume: boolean
+  hasExplicitBase: boolean
+}): boolean {
+  return (
+    input.repoJob &&
+    input.writesJob &&
+    !input.hasWorktree &&
+    input.taskKey !== null &&
+    (!input.hasExplicitBase || input.isResume)
+  )
+}
+
 function restoreResumedTree(
   created: Worktree,
   plan: RecreateResumeTreePlan,
@@ -567,8 +584,17 @@ export async function claimRun(input: ClaimInput): Promise<ClaimResult> {
     const resumePlan = opts.resume?.treePlan
     let resolvedTaskBranch: TaskBranchCandidate | null = null
     const attachableTaskKey = taskBranchKey(launchKey, resumePlan)
-    if (repoJob && writesJob && !worktree && attachableTaskKey) {
-      resolvedTaskBranch = resolveTaskBranch(callerCwd, attachableTaskKey)
+    if (
+      shouldResolveTaskBranch({
+        repoJob,
+        writesJob,
+        hasWorktree: Boolean(worktree),
+        taskKey: attachableTaskKey,
+        isResume: Boolean(opts.resume),
+        hasExplicitBase: opts.base !== undefined,
+      })
+    ) {
+      resolvedTaskBranch = resolveTaskBranch(callerCwd, attachableTaskKey!)
       if (resolvedTaskBranch?.worktree) {
         worktree = resolvedTaskBranch.worktree
         taskBranchAttachment = true

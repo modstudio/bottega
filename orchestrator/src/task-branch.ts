@@ -22,6 +22,27 @@ export type TaskBranchCandidate = {
   worktree: Worktree | null
 }
 
+export type TaskBranchRunRow = {
+  id: number
+  parent_run_id: number | null
+  branch: string
+  launch_base: string | null
+}
+
+/** Whether a later explicit-base root moved the task's ownership to another branch. */
+export function isTaskBranchSuperseded(branch: string, rows: readonly TaskBranchRunRow[]): boolean {
+  const branchRunIds = rows.filter((row) => row.branch === branch).map((row) => row.id)
+  if (branchRunIds.length === 0) return false
+  const latestBranchRunId = Math.max(...branchRunIds)
+  return rows.some(
+    (row) =>
+      row.id > latestBranchRunId &&
+      row.parent_run_id === null &&
+      row.launch_base !== null &&
+      row.branch !== branch,
+  )
+}
+
 export function taskBranchCandidacySql(runAlias = 'candidate'): string {
   return `${runAlias}.status <> 'stopped'`
 }
@@ -64,8 +85,8 @@ export function resolveTaskBranch(cwd: string, launchKey: string): TaskBranchCan
   const rows = db()
     .query(
       `WITH candidate AS (SELECT run.*, run.id AS run_id FROM run)
-     SELECT candidate.id, candidate.branch, candidate.worktree,
-            candidate.worktree_source
+     SELECT candidate.id, candidate.parent_run_id, candidate.branch,
+            candidate.launch_base, candidate.worktree, candidate.worktree_source
        FROM candidate
       WHERE candidate.launch_key=?
         AND (candidate.project_id=? OR (candidate.project_id IS NULL AND candidate.repo=?))
@@ -74,12 +95,10 @@ export function resolveTaskBranch(cwd: string, launchKey: string): TaskBranchCan
         AND ${reviewRunEvidenceSql('candidate', 'candidate')}
       ORDER BY candidate.id`,
     )
-    .all(launchKey, project.id, project.name) as {
-    id: number
-    branch: string
+    .all(launchKey, project.id, project.name) as (TaskBranchRunRow & {
     worktree: string | null
     worktree_source: string | null
-  }[]
+  })[]
   if (rows.length === 0) return null
 
   const trunk = project.settings.trunk?.trim()
@@ -99,7 +118,8 @@ export function resolveTaskBranch(cwd: string, launchKey: string): TaskBranchCan
     `${trunk}^{commit}`,
   )
   const candidates: TaskBranchCandidate[] = []
-  for (const [branch, branchRows] of byBranch) {
+  const liveBranches = [...byBranch].filter(([branch]) => !isTaskBranchSuperseded(branch, rows))
+  for (const [branch, branchRows] of liveBranches) {
     let tip: string
     try {
       tip = taskBranchGit(

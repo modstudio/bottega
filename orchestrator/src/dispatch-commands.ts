@@ -38,6 +38,7 @@ type DispatchPresentation = {
   readPrompt(): Promise<string>
   validateSchema(path: string): unknown
   warnCallerDrift(cwd: string, baseRef?: string): void
+  warnTaskBranchBypass(cwd: string, key: string | null): void
   contractConflicts(prompt: string): { line: number; text: string }[]
   warnImplementContractConflicts(conflicts: { line: number; text: string }[], runId: number): void
   checkoutHasUncommittedWork(cwd: string): boolean
@@ -46,6 +47,14 @@ type DispatchPresentation = {
   resolveDispatchOptions(jobName: string): Promise<DispatchOptions>
   detach(jobName: string, prompt: string, spec: DetachSpec): Promise<number>
   follow(id: number, quiet: boolean): Promise<unknown>
+}
+
+function taskBranchBypassWarningKey(
+  base: string | undefined,
+  writesRepo: boolean,
+  key: string | undefined,
+): string | null {
+  return base && writesRepo ? (key ?? null) : null
 }
 
 const projectNames = () =>
@@ -83,6 +92,7 @@ export async function dispatchCommand(
     readPrompt,
     validateSchema,
     warnCallerDrift,
+    warnTaskBranchBypass,
     contractConflicts,
     warnImplementContractConflicts,
     checkoutHasUncommittedWork,
@@ -135,6 +145,10 @@ export async function dispatchCommand(
     explicitRepo,
   )
   if (requested.needs.readsRepo) warnCallerDrift(callerCwd, base)
+  warnTaskBranchBypass(
+    callerCwd,
+    taskBranchBypassWarningKey(base, Boolean(requested.needs.writesRepo), flag('key')),
+  )
   if (requested.findings && requested.needs.readsRepo && !reviewRef) {
     error(`! ${implicitReviewWarning(callerCwd)}`)
   }
