@@ -291,7 +291,7 @@ function branchReportFor(project: Project, keyFilter?: string): BranchReportProj
           runIds: branchRuns.map((run) => run.id),
           patchEquivalent: patchEquivalent as PatchEquivalentForm | null,
           pullRequestCommitCheck:
-            !matchingPr && commitCount > 0 && !patchEquivalent
+            !matchingPr && commitCount > 0 && !patchEquivalent && key !== 'unkeyed'
               ? pullRequestCommitCheck(
                   project,
                   pullRequests.filter((pullRequest) => pullRequestCarriesKey(pullRequest, key)),
