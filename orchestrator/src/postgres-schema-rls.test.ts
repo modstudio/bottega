@@ -26,6 +26,8 @@ import {
   acceptRecordInvitation,
   inviteToActiveRecordSpace,
   pendingRecordInvitations,
+  recordMemberships,
+  switchRecordSpace,
 } from './record-space.ts'
 import { syncRecord } from './record-sync.ts'
 import { RUN_RECORD_PAYLOAD_COLUMNS } from './run-outbox.ts'
@@ -454,6 +456,26 @@ realPostgres('RLS proof against real Postgres', () => {
     expect(shown.user.id).toBe(authUserB)
     expect(shown.activeSpaceId).toBe(authSpaceB)
     expect(shown.memberships.map((row) => row.space_id)).toEqual([authSpaceB])
+  })
+
+  test('space list and switch repair a session with no active space', async () => {
+    succeeds(
+      'postgres',
+      'postgres',
+      `UPDATE session SET active_space_id=NULL WHERE token='${tokenB}';`,
+    )
+    db()
+      .query(
+        `INSERT INTO schema_meta (key,value) VALUES ('record_session',?)
+         ON CONFLICT(key) DO UPDATE SET value=excluded.value`,
+      )
+      .run(tokenB)
+    const listed = await recordMemberships(actorUrl!)
+    expect(listed.activeSpaceId).toBeNull()
+    expect(listed.memberships.map((row) => row.spaceId)).toEqual([authSpaceB])
+    expect((await switchRecordSpace(actorUrl!, listed.memberships[0]!.slug)).spaceId).toBe(
+      authSpaceB,
+    )
   })
 
   test('a non-owner cannot invite into the active space', async () => {

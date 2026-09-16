@@ -83,6 +83,21 @@ export const user = pgTable('user', {
   updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
 })
 
+export const inviteePolicies = (table: string, email: AnyPgColumn) => {
+  const ownsInvitation = sql`lower(${email}) = (
+    SELECT lower(u.email) FROM "user" u
+    WHERE u.id = nullif(current_setting('app.user_id', true), '')::uuid
+  )`
+  return [
+    pgPolicy(`${table}_invitee_select`, { for: 'select', using: ownsInvitation }),
+    pgPolicy(`${table}_invitee_update`, {
+      for: 'update',
+      using: ownsInvitation,
+      withCheck: ownsInvitation,
+    }),
+  ]
+}
+
 export const membership = pgTable.withRLS(
   'membership',
   {

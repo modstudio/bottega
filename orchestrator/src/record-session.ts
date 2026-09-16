@@ -17,11 +17,21 @@ export function storedRecordToken(local: Database = db()): string | null {
   )
 }
 
-export async function currentRecordSession(url: string, local: Database = db()) {
+export async function currentRecordUserSession(url: string, local: Database = db()) {
   const token = storedRecordToken(local)
   if (!token) throw new Error(RECORD_SIGN_IN_REMEDY)
   const current = await recordAuth(url).api.getSession({ headers: bearerHeaders(token) })
-  const activeSpaceId = current?.session.activeOrganizationId
-  if (!current || !activeSpaceId) throw new Error(RECORD_SIGN_IN_REMEDY)
-  return { token, user: current.user, session: current.session, activeSpaceId }
+  if (!current) throw new Error(RECORD_SIGN_IN_REMEDY)
+  return {
+    token,
+    user: current.user,
+    session: current.session,
+    activeSpaceId: current.session.activeOrganizationId ?? null,
+  }
+}
+
+export async function currentRecordSession(url: string, local: Database = db()) {
+  const current = await currentRecordUserSession(url, local)
+  if (!current.activeSpaceId) throw new Error(RECORD_SIGN_IN_REMEDY)
+  return { ...current, activeSpaceId: current.activeSpaceId }
 }
