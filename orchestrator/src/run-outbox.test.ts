@@ -1,5 +1,11 @@
+import { Database } from 'bun:sqlite'
 import { expect, test } from 'bun:test'
-import { buildRunRecordPayload, RUN_RECORD_PAYLOAD_COLUMNS } from './run-outbox.ts'
+import { applySchemaForFixture } from './db.ts'
+import {
+  backfillRunRecords,
+  buildRunRecordPayload,
+  RUN_RECORD_PAYLOAD_COLUMNS,
+} from './run-outbox.ts'
 
 test('terminal payload maps every hosted run column and no execution-state column', () => {
   const payload = buildRunRecordPayload(
@@ -31,4 +37,64 @@ test('terminal payload maps every hosted run column and no execution-state colum
   expect(payload).not.toHaveProperty('cwd')
   expect(payload).not.toHaveProperty('outputPath')
   expect(payload).not.toHaveProperty('vendorSession')
+})
+
+test('backfill mints in order, resolves chains, enqueues finished turns once, and skips running rows', () => {
+  const database = new Database(':memory:')
+  applySchemaForFixture(database)
+  database
+    .query(
+      `INSERT INTO project (id, name, path, canon, settings)
+       VALUES (1, 'project', '/project', 1, '{}')`,
+    )
+    .run()
+  const insert = database.query(
+    `INSERT INTO run (
+       id, started_at, last_event_at, agent, job, project_id, prompt_sha, prompt_bytes,
+       prompt_head, status, retry_of, parent_run_id
+     ) VALUES (?, ?, ?, 'codex', 'implement', ?, 'sha', 4, 'head', ?, ?, ?)`,
+  )
+  insert.run(1, '2026-09-15T01:00:00.000Z', '2026-09-15T01:01:00.000Z', null, 'ok', null, null)
+  insert.run(2, '2026-09-15T02:00:00.000Z', null, 1, 'failed', 1, null)
+  insert.run(3, '2026-09-15T03:00:00.000Z', null, 1, 'stale', null, 1)
+  insert.run(4, '2026-09-15T04:00:00.000Z', null, 1, 'asking', null, null)
+  insert.run(5, '2026-09-15T05:00:00.000Z', null, 1, 'running', null, null)
+
+  expect(backfillRunRecords(database, '01990000-0000-7000-8000-000000000099')).toEqual({
+    minted: 5,
+    enqueued: 4,
+    skippedLive: 1,
+  })
+  const runs = database
+    .query<{ id: number; record_id: string; status: string }, []>(
+      'SELECT id, record_id, status FROM run ORDER BY id',
+    )
+    .all()
+  expect(runs.map((row) => row.record_id)).toEqual(runs.map((row) => row.record_id).toSorted())
+  expect(runs.slice(3).map((row) => row.status)).toEqual(['asking', 'running'])
+
+  const payloads = database
+    .query<{ payload: string }, []>("SELECT payload FROM outbox WHERE kind='run' ORDER BY id")
+    .all()
+    .map((row) => JSON.parse(row.payload) as Record<string, unknown>)
+  expect(payloads).toHaveLength(4)
+  expect(payloads[0]).toMatchObject({
+    projectName: null,
+    finishedAt: '2026-09-15T01:01:00.000Z',
+  })
+  expect(payloads[1]).toMatchObject({
+    retryOf: runs[0]!.record_id,
+    finishedAt: '2026-09-15T02:00:00.000Z',
+  })
+  expect(payloads[2]).toMatchObject({ parentRunId: runs[0]!.record_id })
+  expect(payloads[3]).toMatchObject({ status: 'asking' })
+  expect(backfillRunRecords(database, '01990000-0000-7000-8000-000000000099')).toEqual({
+    minted: 0,
+    enqueued: 0,
+    skippedLive: 1,
+  })
+  expect(
+    database.query<{ count: number }, []>('SELECT count(*) AS count FROM outbox').get()!.count,
+  ).toBe(4)
+  database.close()
 })

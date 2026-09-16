@@ -51,6 +51,22 @@ const bigint = (value: unknown) => BigInt(String(value))
 const nullableBigint = (value: unknown) => (value == null ? null : bigint(value))
 const nullableNumber = (value: unknown) => (value == null ? null : Number(value))
 const nullableString = (value: unknown) => (value == null ? null : String(value))
+const jsonString = (value: unknown) => (value == null ? null : JSON.stringify(value))
+
+function errorDetail(error: unknown): string {
+  const details: string[] = []
+  const seen = new Set<unknown>()
+  let current: unknown = error
+  while (current !== null && typeof current === 'object' && !seen.has(current)) {
+    seen.add(current)
+    const message = current instanceof Error ? current.message : String(current)
+    const code = 'code' in current && typeof current.code === 'string' ? current.code : null
+    const detail = code ? `[${code}] ${message}` : message
+    if (!details.includes(detail)) details.push(detail)
+    current = 'cause' in current ? current.cause : null
+  }
+  return details.join('\ncaused by: ')
+}
 
 function runValues(row: Payload, projectId: string | null) {
   return {
@@ -82,7 +98,7 @@ function runValues(row: Payload, projectId: string | null) {
     parentRunId: nullableString(row.parentRunId),
     turn: Number(row.turn),
     filesChanged: nullableNumber(row.filesChanged),
-    changedPaths: row.changedPaths,
+    changedPaths: jsonString(row.changedPaths),
     linesAdded: nullableNumber(row.linesAdded),
     linesRemoved: nullableNumber(row.linesRemoved),
     testsRan: nullableNumber(row.testsRan),
@@ -99,15 +115,15 @@ function runValues(row: Payload, projectId: string | null) {
     baseCommit: nullableString(row.baseCommit),
     mintedBranch: nullableString(row.mintedBranch),
     docsInjected: nullableNumber(row.docsInjected),
-    docRevisions: row.docRevisions,
+    docRevisions: jsonString(row.docRevisions),
     canonSha: nullableString(row.canonSha),
     transport: nullableString(row.transport),
     sessionId: nullableString(row.sessionId),
     routeReason: nullableString(row.routeReason),
     noFailover: Boolean(row.noFailover),
     automaticFailover: Boolean(row.automaticFailover),
-    outsideWorktreeWrites: row.outsideWorktreeWrites,
-    reviewProvenance: row.reviewProvenance,
+    outsideWorktreeWrites: jsonString(row.outsideWorktreeWrites),
+    reviewProvenance: jsonString(row.reviewProvenance),
     provenanceStatus: nullableString(row.provenanceStatus),
     workPreserved: Boolean(row.workPreserved),
     closeOutOutcome: nullableString(row.closeOutOutcome),
@@ -191,13 +207,19 @@ export async function syncRecord(options: RecordSyncOptions = {}): Promise<Recor
       .all()
     for (const row of rows) {
       try {
-        await pushRun(postgres, payload(row.payload))
+        const run = payload(row.payload)
+        if (String(run.machineId) !== identity.id) {
+          throw new Error(
+            `run outbox machine ${String(run.machineId)} does not match invoking machine ${identity.id}`,
+          )
+        }
+        await pushRun(postgres, run)
         writableLocal
           .query('UPDATE outbox SET synced_at=?, last_error=NULL WHERE id=?')
           .run((options.now ?? nowIso)(), row.id)
         pushed++
       } catch (error) {
-        const detail = error instanceof Error ? error.message : String(error)
+        const detail = errorDetail(error)
         writableLocal
           .query('UPDATE outbox SET attempts=attempts+1, last_error=? WHERE id=?')
           .run(detail, row.id)

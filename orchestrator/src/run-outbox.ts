@@ -207,7 +207,7 @@ export function backfillRunRecords(database: Database, machineId: string): RunRe
         .query<{ id: number; finished_at: string }, []>(
           `SELECT r.id, COALESCE(r.last_event_at, r.started_at) AS finished_at
            FROM run r
-          WHERE r.status IN ('ok', 'failed', 'stale', 'stopped')
+          WHERE r.status IN ('ok', 'failed', 'stale', 'stopped', 'asking')
             AND NOT EXISTS (
               SELECT 1 FROM outbox WHERE kind='run' AND record_id=r.record_id
             )
@@ -217,9 +217,7 @@ export function backfillRunRecords(database: Database, machineId: string): RunRe
       for (const row of terminal) enqueueRunRecord(database, row.id, machineId, row.finished_at)
 
       const skippedLive = database
-        .query<{ count: number }, []>(
-          `SELECT count(*) AS count FROM run WHERE status IN ('running', 'asking')`,
-        )
+        .query<{ count: number }, []>(`SELECT count(*) AS count FROM run WHERE status='running'`)
         .get()!.count
       return { minted: missing.length, enqueued: terminal.length, skippedLive }
     })
