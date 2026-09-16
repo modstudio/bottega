@@ -9,7 +9,7 @@ export type PullRequestLandingEvidence = {
   mergedAt: string | null
 }
 
-export type VerifiedBranchLanding = {
+type VerifiedBranchLanding = {
   number: number
   mergeCommit: string | null
   mergedAt: string
