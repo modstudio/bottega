@@ -1,6 +1,7 @@
 import {
   decideRuntimeBudget,
   HUNG_SUITE_TIMEOUT_MS,
+  SUITE_CPU_BUDGET_MS,
   SUITE_RUNTIME_BUDGET_MS,
 } from './check-runtime'
 
@@ -12,6 +13,7 @@ const root = new URL('..', import.meta.url).pathname
 const checkStartedAt = performance.now()
 
 const activeChildren = new Set<Bun.Subprocess>()
+let suiteCpuMicroseconds = 0n
 let excludedGateWaitMs = 0
 let runtimeDeadline: ReturnType<typeof setTimeout>
 
@@ -35,7 +37,13 @@ armRuntimeDeadline()
 
 function track(child: Bun.Subprocess) {
   activeChildren.add(child)
-  void child.exited.finally(() => activeChildren.delete(child))
+  void child.exited.finally(() => {
+    const cpuTime = child.resourceUsage()?.cpuTime
+    if (cpuTime) {
+      suiteCpuMicroseconds += BigInt(cpuTime.user) + BigInt(cpuTime.system)
+    }
+    activeChildren.delete(child)
+  })
   return child
 }
 
@@ -78,6 +86,8 @@ function qualityBaseArgument() {
     stdout: 'pipe',
     stderr: 'pipe',
   })
+  suiteCpuMicroseconds +=
+    BigInt(result.resourceUsage.cpuTime.user) + BigInt(result.resourceUsage.cpuTime.system)
   if (result.exitCode !== 0) {
     const detail = result.stderr.toString().trim()
     throw new Error(
@@ -325,9 +335,13 @@ if ((await inherit(['bun', `${root}scripts/quality/check-no-expect.ts`, qualityM
 }
 
 const elapsedMs = performance.now() - checkStartedAt - excludedGateWaitMs
+const cpuMs = Number(suiteCpuMicroseconds) / 1_000
 clearTimeout(runtimeDeadline)
 console.log(
   `suite runtime: ${(elapsedMs / 1000).toFixed(2)}s / ${(SUITE_RUNTIME_BUDGET_MS / 1000).toFixed(0)}s budget`,
+)
+console.log(
+  `suite cpu: ${(cpuMs / 1000).toFixed(2)}s / ${(SUITE_CPU_BUDGET_MS / 1000).toFixed(0)}s budget`,
 )
 if (excludedGateWaitMs)
   console.log(`gate admission wait excluded: ${(excludedGateWaitMs / 1000).toFixed(2)}s`)
@@ -335,15 +349,25 @@ const runtimeBudgetVerdict = decideRuntimeBudget({
   elapsedMs,
   budgetMs: SUITE_RUNTIME_BUDGET_MS,
   ci: Boolean(process.env.CI),
+  measure: 'wall',
 })
 if (runtimeBudgetVerdict === 'over-informational') {
   console.log(
-    'suite runtime budget is informational locally because wall clock cannot separate a slower suite from a busier machine',
+    'suite runtime budget is informational because wall clock cannot separate a slower suite from a busier machine',
   )
 }
-if (runtimeBudgetVerdict === 'over-fatal') {
+const cpuBudgetVerdict = decideRuntimeBudget({
+  elapsedMs: cpuMs,
+  budgetMs: SUITE_CPU_BUDGET_MS,
+  ci: Boolean(process.env.CI),
+  measure: 'cpu',
+})
+if (cpuBudgetVerdict === 'over-informational') {
+  console.log('suite CPU budget is informational locally')
+}
+if (cpuBudgetVerdict === 'over-fatal') {
   console.error(
-    `suite runtime budget exceeded by ${((elapsedMs - SUITE_RUNTIME_BUDGET_MS) / 1000).toFixed(2)}s`,
+    `suite CPU budget exceeded by ${((cpuMs - SUITE_CPU_BUDGET_MS) / 1000).toFixed(2)}s`,
   )
   process.exit(1)
 }

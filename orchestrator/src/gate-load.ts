@@ -68,6 +68,7 @@ export function shouldHoldShard(load: HostLoad, limit = GATE_CONCURRENCY_LIMIT):
 }
 
 type GateHoldOpts = {
+  env?: NodeJS.ProcessEnv
   measure?: () => HostLoad
   sleep?: (ms: number) => Promise<void>
   now?: () => number
@@ -83,19 +84,22 @@ export async function withGateSlot<T>(run: () => Promise<T>, opts: GateHoldOpts 
   // counts only registered runners, so the would-be self is added here to
   // keep shouldHoldShard's meaning: total gates including this one, over the
   // limit, holds.
-  const measure = opts.measure ?? measureHostLoad
-  const asRunner = (): HostLoad => {
-    const load = measure()
-    return { ...load, gates: load.gates + 1 }
+  const env = opts.env ?? process.env
+  if (!env.CI) {
+    const measure = opts.measure ?? (() => measureHostLoad(env))
+    const asRunner = (): HostLoad => {
+      const load = measure()
+      return { ...load, gates: load.gates + 1 }
+    }
+    const held = await holdForGateCapacity({ ...opts, measure: asRunner })
+    if (held.held) {
+      console.error(
+        `held ${held.delayedMs}ms for host load ` +
+          `(gates=${held.load.gates} loadavg=${held.load.loadavg} ncpu=${held.load.ncpu})`,
+      )
+    }
   }
-  const held = await holdForGateCapacity({ ...opts, measure: asRunner })
-  if (held.held) {
-    console.error(
-      `held ${held.delayedMs}ms for host load ` +
-        `(gates=${held.load.gates} loadavg=${held.load.loadavg} ncpu=${held.load.ncpu})`,
-    )
-  }
-  const unregister = registerGatePid()
+  const unregister = registerGatePid(process.pid, gatePidDir(env))
   try {
     return await run()
   } finally {
