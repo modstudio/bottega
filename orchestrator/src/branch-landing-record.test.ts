@@ -29,6 +29,13 @@ describe('branch landing record verification', () => {
     })
   })
 
+  test('refuses a title that only contains the key as a prefix of a longer key', () => {
+    expect(verifyBranchLanding('DEV-61', mergedPullRequest)).toEqual({
+      accepted: false,
+      reason: 'PR #190 title does not contain task key DEV-61',
+    })
+  })
+
   test('accepts a merged pull request whose title contains the run task key', () => {
     expect(verifyBranchLanding('DEV-617', mergedPullRequest)).toEqual({
       accepted: true,
