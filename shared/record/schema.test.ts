@@ -1,5 +1,5 @@
 import { expect, spyOn, test } from 'bun:test'
-import { newRecordId } from './postgres-schema.ts'
+import { newRecordId } from './schema.ts'
 
 function nextUuid(id: string): string {
   const digits = [...id]

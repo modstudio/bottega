@@ -6,7 +6,14 @@ import { SQL } from 'bun'
 import { drizzle } from 'drizzle-orm/bun-sql'
 import { migrate } from 'drizzle-orm/bun-sql/migrator'
 
-const POSTGRES_MIGRATIONS_FOLDER = join(import.meta.dir, '..', 'postgres', 'migrations')
+const POSTGRES_MIGRATIONS_FOLDER = join(
+  import.meta.dir,
+  '..',
+  '..',
+  'shared',
+  'record',
+  'migrations',
+)
 
 export function recordMigrationCount(folder = POSTGRES_MIGRATIONS_FOLDER): number {
   return readdirSync(folder, { withFileTypes: true }).filter(

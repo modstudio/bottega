@@ -13,7 +13,7 @@ import {
   unique,
   uuid,
 } from 'drizzle-orm/pg-core'
-import { machine, project, spaceIdentity, tenantPolicies } from './postgres-schema.ts'
+import { machine, project, spaceIdentity, tenantPolicies } from './schema.ts'
 
 export const run = pgTable.withRLS(
   'run',

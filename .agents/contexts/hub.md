@@ -64,7 +64,7 @@ project because it is the blind spot in every task denominator.
 # Orchestrator boundary and schema
 
 Hub reads orchestrator data through the `orch runs` CLI interface and never opens
-`orch.db`. Concerns do not share a database.
+`orch.db`. Concerns do not share a local store.
 
 Opening `hub.db` never changes its schema. `hub migrate` is the only schema writer and
 applies the ordered, checksummed journal in `hub/migrations`. Ordinary opens refuse stores

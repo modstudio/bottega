@@ -5,7 +5,7 @@ import { importSpecifiers } from './import-scanner.ts'
 
 const ROOT = new URL('..', import.meta.url).pathname.replace(/\/$/, '')
 const FILE = 'orchestrator/src/run-outbox.ts'
-const ALLOWED = new Set(['bun:sqlite', './hook-tree.ts', './postgres-schema.ts'])
+const ALLOWED = new Set(['bun:sqlite', './hook-tree.ts', '../../shared/record/schema.ts'])
 const imports = importSpecifiers(readFileSync(`${ROOT}/${FILE}`, 'utf8'))
 const violations = [...imports.specifiers, ...imports.typeOnlySpecifiers]
   .filter((specifier) => !ALLOWED.has(specifier))

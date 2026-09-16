@@ -8,6 +8,7 @@
 import { randomUUID } from 'node:crypto'
 import { mkdirSync, writeFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
+import { newRecordId } from '../../shared/record/schema.ts'
 import type { Agent } from './agents.ts'
 import type { Pack } from './canon.ts'
 import { checkoutAliases, realpathOrSpelled } from './checkout-identity.ts'
@@ -30,7 +31,6 @@ import {
   storedMcpRequest,
 } from './mcp-preflight.ts'
 import { readMcpConfig, wrongProjectReason } from './mcp-probe.ts'
-import { newRecordId } from './postgres-schema.ts'
 import { withWorktreeCreateLock, withWorktreeLease } from './project-lock.ts'
 import { projectAt, stackAt } from './projects.ts'
 import { retargetRepositoryPromptForDispatch } from './prompt-retarget.ts'

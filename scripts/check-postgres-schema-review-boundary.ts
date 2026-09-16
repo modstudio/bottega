@@ -4,8 +4,8 @@ import { readFileSync } from 'node:fs'
 import { importSpecifiers } from './import-scanner.ts'
 
 const ROOT = new URL('..', import.meta.url).pathname.replace(/\/$/, '')
-const FILE = 'orchestrator/src/postgres-schema-review.ts'
-const ALLOWED = new Set(['drizzle-orm/pg-core', './postgres-schema.ts'])
+const FILE = 'shared/record/schema-review.ts'
+const ALLOWED = new Set(['drizzle-orm/pg-core', './schema.ts'])
 const imports = importSpecifiers(readFileSync(`${ROOT}/${FILE}`, 'utf8'))
 const violations = [...imports.specifiers, ...imports.typeOnlySpecifiers]
   .filter((specifier) => !ALLOWED.has(specifier))

@@ -1,8 +1,8 @@
 // concern: run-outbox
 /** Knows how a terminal local run becomes an ordered hosted-record mutation. Must not know Postgres. */
 import type { Database } from 'bun:sqlite'
+import { newRecordId, PLATFORM_SPACE_ID } from '../../shared/record/schema.ts'
 import { HOOK_TREE_JOB } from './hook-tree.ts'
-import { newRecordId, PLATFORM_SPACE_ID } from './postgres-schema.ts'
 
 export const RUN_RECORD_PAYLOAD_COLUMNS = [
   'id',

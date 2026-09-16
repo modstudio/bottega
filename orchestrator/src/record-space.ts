@@ -2,7 +2,7 @@
 /** Owns record membership, invitations, and active-space changes. Must not know CLI presentation. */
 
 import { SQL } from 'bun'
-import { newRecordId } from './postgres-schema.ts'
+import { newRecordId } from '../../shared/record/schema.ts'
 import { setActiveRecordSpace } from './record-auth.ts'
 import { currentRecordUserSession } from './record-session.ts'
 

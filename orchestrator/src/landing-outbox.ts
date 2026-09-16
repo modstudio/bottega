@@ -1,7 +1,7 @@
 // concern: landing-outbox
 /** Knows how local landing history and operational evidence become hosted-record mutations. Must not know Postgres. */
 import type { Database } from 'bun:sqlite'
-import { newRecordId, PLATFORM_SPACE_ID } from './postgres-schema.ts'
+import { newRecordId, PLATFORM_SPACE_ID } from '../../shared/record/schema.ts'
 
 export const LANDING_RECORD_PAYLOAD_COLUMNS = [
   'id',

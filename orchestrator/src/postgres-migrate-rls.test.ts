@@ -3,20 +3,19 @@ import { afterAll, beforeAll, describe, expect, test } from 'bun:test'
 import { existsSync, readdirSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { PLATFORM_SLUG } from '../../shared/brand.ts'
-import { db } from './db.ts'
-import {
-  appliedRecordMigrationCount,
-  migratePostgres,
-  recordMigrationCount,
-} from './postgres-migrate.ts'
 import {
   newRecordId,
   PLATFORM_SPACE_ID,
   RECORD_ACTOR_ROLE,
   RECORD_OWNER_ROLE,
   RECORD_READER_ROLE,
-} from './postgres-schema.ts'
-
+} from '../../shared/record/schema.ts'
+import { db } from './db.ts'
+import {
+  appliedRecordMigrationCount,
+  migratePostgres,
+  recordMigrationCount,
+} from './postgres-migrate.ts'
 import { startRecordApiServer } from './record-api-server.ts'
 import { bearerHeaders, recordAuth, setActiveRecordSpace } from './record-auth.ts'
 import { signInCommand, signUpCommand, whoamiCommand } from './record-auth-command.ts'
@@ -37,15 +36,16 @@ const SPACE_NAME = PLATFORM_SLUG
 const container = process.env.ORCH_TEST_POSTGRES_CONTAINER
 const ownerUrl = process.env.ORCH_RECORD_MIGRATE_URL
 const actorUrl = process.env.ORCH_RECORD_URL
-const migrationsFolder = join(import.meta.dir, '..', 'postgres', 'migrations')
+const recordFolder = join(import.meta.dir, '..', '..', 'shared', 'record')
+const migrationsFolder = join(recordFolder, 'migrations')
 const postgresSchema = [
-  'postgres-schema.ts',
-  'postgres-schema-auth.ts',
-  'postgres-schema-run.ts',
-  'postgres-schema-review.ts',
-  'postgres-schema-landing.ts',
+  'schema.ts',
+  'schema-auth.ts',
+  'schema-run.ts',
+  'schema-review.ts',
+  'schema-landing.ts',
 ]
-  .map((file) => readFileSync(join(import.meta.dir, file), 'utf8'))
+  .map((file) => readFileSync(join(recordFolder, file), 'utf8'))
   .join('\n')
 const migration = readdirSync(migrationsFolder, { withFileTypes: true })
   .filter((entry) => entry.isDirectory())

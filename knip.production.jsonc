@@ -4,9 +4,23 @@
   "$schema": "https://unpkg.com/knip@6.36.0/schema.json",
   "includeEntryExports": true,
   "ignoreExportsUsedInFile": true,
+  // shared/record/drizzle.config.ts loads every exported table from these files.
+  "ignoreIssues": {
+    "shared/record/schema.ts": ["exports", "types"],
+    "shared/record/schema-auth.ts": ["exports", "types"],
+    "shared/record/schema-run.ts": ["exports", "types"],
+    "shared/record/schema-review.ts": ["exports", "types"],
+    "shared/record/schema-landing.ts": ["exports", "types"]
+  },
   "workspaces": {
     ".": {
       "entry": [
+        // Loaded as schema entries by shared/record/drizzle.config.ts.
+        "shared/record/schema.ts!",
+        "shared/record/schema-auth.ts!",
+        "shared/record/schema-run.ts!",
+        "shared/record/schema-review.ts!",
+        "shared/record/schema-landing.ts!",
         ".githooks/*!",
         "bin/{hub,orch}!",
         "hub/bin/*.sh!",
@@ -29,6 +43,7 @@
         "!shared/test-*.ts",
         "architecture.ts!"
       ],
+      "drizzle": { "config": ["shared/record/drizzle.config.ts"] },
       // Invoked through node_modules/.bin/depcruise in scripts/check-architecture.ts.
       "ignoreDependencies": ["dependency-cruiser"]
     },
@@ -39,12 +54,6 @@
         "src/record-api-server.ts!",
         // Launched by path from src/sandbox.ts for Grok's MCP configuration.
         "src/ask-proxy.ts!",
-        // Loaded as schema entries by drizzle.postgres.config.ts.
-        "src/postgres-schema.ts!",
-        "src/postgres-schema-auth.ts!",
-        "src/postgres-schema-run.ts!",
-        "src/postgres-schema-review.ts!",
-        "src/postgres-schema-landing.ts!",
         "scripts/acp-parity.ts!",
         "scripts/check-canon-lint.ts!",
         "scripts/check-pack-budget.ts!",
@@ -60,14 +69,6 @@
         "!scripts/**/*.test.ts",
         "!test/**/*.ts"
       ],
-      // drizzle.postgres.config.ts loads every exported table from these files.
-      "ignoreIssues": {
-        "src/postgres-schema.ts": ["exports", "types"],
-        "src/postgres-schema-auth.ts": ["exports", "types"],
-        "src/postgres-schema-run.ts": ["exports", "types"],
-        "src/postgres-schema-review.ts": ["exports", "types"],
-        "src/postgres-schema-landing.ts": ["exports", "types"]
-      },
       "ignoreDependencies": [
         // Invoked through node_modules/.bin/codex-acp in src/transport.ts.
         "@agentclientprotocol/codex-acp",
