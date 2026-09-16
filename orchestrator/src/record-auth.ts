@@ -6,8 +6,8 @@ import { betterAuth } from 'better-auth'
 import { bearer, organization } from 'better-auth/plugins'
 import { SQL } from 'bun'
 import { drizzle } from 'drizzle-orm/bun-sql'
-import { membership, newRecordId, space, user } from './postgres-schema.ts'
-import { account, invitation, session, verification } from './postgres-schema-auth.ts'
+import { membership, newRecordId, space, user } from '../../shared/record/schema.ts'
+import { account, invitation, session, verification } from '../../shared/record/schema-auth.ts'
 
 export const RECORD_SESSION_KEY = 'record_session'
 export const RECORD_SIGN_IN_REMEDY =

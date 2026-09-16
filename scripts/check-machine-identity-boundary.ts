@@ -5,7 +5,7 @@ import { importSpecifiers } from './import-scanner.ts'
 
 const ROOT = new URL('..', import.meta.url).pathname.replace(/\/$/, '')
 const FILE = 'orchestrator/src/machine-identity.ts'
-const ALLOWED = new Set(['node:os', './db.ts', './postgres-schema.ts'])
+const ALLOWED = new Set(['node:os', './db.ts', '../../shared/record/schema.ts'])
 const imports = importSpecifiers(readFileSync(`${ROOT}/${FILE}`, 'utf8'))
 const violations = [...imports.specifiers, ...imports.typeOnlySpecifiers]
   .filter((specifier) => !ALLOWED.has(specifier))

@@ -401,7 +401,7 @@
       "spawns": 0
     },
     {
-      "path": "orchestrator/src/postgres-schema-rls.test.ts",
+      "path": "orchestrator/src/postgres-migrate-rls.test.ts",
       "wallMs": 20,
       "tests": 12,
       "cliShaped": false,

@@ -1,7 +1,7 @@
 // concern: postgres-schema-auth
 /** Better Auth-owned record tables. Must not know local execution state or run phases. */
 import { index, pgTable, text, timestamp, uuid } from 'drizzle-orm/pg-core'
-import { inviteePolicies, space, spaceIdentity, tenantPolicies, user } from './postgres-schema.ts'
+import { inviteePolicies, space, spaceIdentity, tenantPolicies, user } from './schema.ts'
 
 const identity = () => uuid('id').primaryKey()
 

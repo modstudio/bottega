@@ -1,8 +1,8 @@
 // concern: review
 import type { Database, SQLQueryBindings } from 'bun:sqlite'
+import { newRecordId } from '../../shared/record/schema.ts'
 import type { ReviewReply } from './contract.ts'
 import { db, nowIso, writableDb, writeTransaction } from './db.ts'
-import { newRecordId } from './postgres-schema.ts'
 import { enqueueReview } from './review-outbox.ts'
 
 export { parseReviewOutput, parseReviewReply } from './contract.ts'

@@ -8,7 +8,6 @@
 !orchestrator/package.json
 !orchestrator/tsconfig.json
 !orchestrator/src/
-!orchestrator/postgres/
 !hub/package.json
 !hub/web/package.json
 **/*.test.ts

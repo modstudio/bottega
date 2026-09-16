@@ -1,6 +1,6 @@
 import { Database } from 'bun:sqlite'
 import { SQL } from 'bun'
-import { newRecordId } from './postgres-schema.ts'
+import { newRecordId } from '../../shared/record/schema.ts'
 
 type SourceProject = {
   id: number

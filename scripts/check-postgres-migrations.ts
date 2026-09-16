@@ -2,12 +2,11 @@
 import { join } from 'node:path'
 
 const root = new URL('..', import.meta.url).pathname
-const orchestrator = join(root, 'orchestrator')
-const drizzleKit = join(orchestrator, 'node_modules', '.bin', 'drizzle-kit')
+const drizzleKit = join(root, 'node_modules', '.bin', 'drizzle-kit')
 
 function run(args: string[]): string {
   const result = Bun.spawnSync([drizzleKit, ...args], {
-    cwd: orchestrator,
+    cwd: root,
     stdout: 'pipe',
     stderr: 'pipe',
   })
@@ -19,11 +18,11 @@ function run(args: string[]): string {
   return stdout
 }
 
-run(['check', '--config', 'drizzle.postgres.config.ts', '--output', 'json'])
+run(['check', '--config', 'shared/record/drizzle.config.ts', '--output', 'json'])
 const explained = run([
   'generate',
   '--config',
-  'drizzle.postgres.config.ts',
+  'shared/record/drizzle.config.ts',
   '--explain',
   '--output',
   'json',

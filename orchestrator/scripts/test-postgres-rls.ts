@@ -4,7 +4,11 @@ import { copyFileSync, existsSync, mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { mainCheckoutOf } from '../../shared/git.ts'
-import { RECORD_ACTOR_ROLE, RECORD_OWNER_ROLE, RECORD_READER_ROLE } from '../src/postgres-schema.ts'
+import {
+  RECORD_ACTOR_ROLE,
+  RECORD_OWNER_ROLE,
+  RECORD_READER_ROLE,
+} from '../../shared/record/schema.ts'
 
 const falsify = process.argv.includes('--falsify')
 const container = `dev-445-postgres-${randomUUID().slice(0, 8)}`
@@ -95,7 +99,7 @@ try {
   const ownerUrl = `postgres://${RECORD_OWNER_ROLE}:owner-password@127.0.0.1:${port}/postgres`
   const actorUrl = `postgres://${RECORD_ACTOR_ROLE}:actor-password@127.0.0.1:${port}/postgres`
 
-  const rls = await run(['bun', 'test', '--timeout', '30000', 'src/postgres-schema-rls.test.ts'], {
+  const rls = await run(['bun', 'test', '--timeout', '30000', 'src/postgres-migrate-rls.test.ts'], {
     ORCH_TEST_POSTGRES_CONTAINER: container,
     ORCH_RECORD_MIGRATE_URL: ownerUrl,
     ORCH_RECORD_URL: actorUrl,

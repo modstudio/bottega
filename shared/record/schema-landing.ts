@@ -1,7 +1,7 @@
 // concern: postgres-schema-landing
 /** Knows the hosted landing and operational-evidence record shape. Must not know local execution or synchronization. */
 import { bigint, jsonb, pgTable, text, timestamp, unique, uuid } from 'drizzle-orm/pg-core'
-import { machine, project, spaceIdentity, tenantPolicies } from './postgres-schema.ts'
+import { machine, project, spaceIdentity, tenantPolicies } from './schema.ts'
 
 const recordIdentity = () => uuid().primaryKey()
 const machineIdentity = () =>

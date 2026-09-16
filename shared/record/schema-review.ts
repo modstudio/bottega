@@ -1,7 +1,7 @@
 // concern: postgres-schema-review
 /** Knows the hosted review record shape. Must not know local review or synchronization behavior. */
 import { bigint, integer, jsonb, pgTable, text, timestamp, unique, uuid } from 'drizzle-orm/pg-core'
-import { machine, project, spaceIdentity, tenantPolicies } from './postgres-schema.ts'
+import { machine, project, spaceIdentity, tenantPolicies } from './schema.ts'
 
 const recordIdentity = () => uuid().primaryKey()
 const machineIdentity = () =>

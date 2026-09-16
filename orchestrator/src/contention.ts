@@ -1,6 +1,6 @@
 import type { Database } from 'bun:sqlite'
+import { newRecordId } from '../../shared/record/schema.ts'
 import { enqueueContention } from './landing-outbox.ts'
-import { newRecordId } from './postgres-schema.ts'
 
 const RESOURCE_KINDS = [
   'trunk',

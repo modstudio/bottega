@@ -6,6 +6,12 @@
   "workspaces": {
     ".": {
       "entry": [
+        // Loaded as schema entries by shared/record/drizzle.config.ts.
+        "shared/record/schema.ts!",
+        "shared/record/schema-auth.ts!",
+        "shared/record/schema-run.ts!",
+        "shared/record/schema-review.ts!",
+        "shared/record/schema-landing.ts!",
         ".githooks/*!",
         "bin/{hub,orch}!",
         "hub/bin/*.sh!",
@@ -21,6 +27,15 @@
         "scripts/quality/check-no-expect.ts!"
       ],
       "project": ["scripts/**/*.ts!", "shared/**/*.ts!", "architecture.ts!"],
+      "drizzle": { "config": ["shared/record/drizzle.config.ts"] },
+      // shared/record/drizzle.config.ts loads every exported table from these files.
+      "ignoreIssues": {
+        "shared/record/schema.ts": ["exports", "types"],
+        "shared/record/schema-auth.ts": ["exports", "types"],
+        "shared/record/schema-run.ts": ["exports", "types"],
+        "shared/record/schema-review.ts": ["exports", "types"],
+        "shared/record/schema-landing.ts": ["exports", "types"]
+      },
       // Invoked through node_modules/.bin/depcruise in scripts/check-architecture.ts.
       "ignoreDependencies": ["dependency-cruiser"]
     },
@@ -29,12 +44,6 @@
         "hooks/*!",
         "src/orch.ts!",
         "src/record-api-server.ts!",
-        // Loaded as schema entries by drizzle.postgres.config.ts.
-        "src/postgres-schema.ts!",
-        "src/postgres-schema-auth.ts!",
-        "src/postgres-schema-run.ts!",
-        "src/postgres-schema-review.ts!",
-        "src/postgres-schema-landing.ts!",
         "src/**/*.test.ts",
         "scripts/acp-parity.ts!",
         "scripts/**/*.test.ts",
@@ -44,14 +53,6 @@
         "scripts/test-postgres-rls.ts!"
       ],
       "project": ["src/**/*.ts!", "scripts/**/*.ts!", "test/**/*.ts"],
-      // drizzle.postgres.config.ts loads every exported table from these files.
-      "ignoreIssues": {
-        "src/postgres-schema.ts": ["exports", "types"],
-        "src/postgres-schema-auth.ts": ["exports", "types"],
-        "src/postgres-schema-run.ts": ["exports", "types"],
-        "src/postgres-schema-review.ts": ["exports", "types"],
-        "src/postgres-schema-landing.ts": ["exports", "types"]
-      },
       "ignoreDependencies": [
         // Invoked through node_modules/.bin/codex-acp in src/transport.ts.
         "@agentclientprotocol/codex-acp",

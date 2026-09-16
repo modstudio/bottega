@@ -1,8 +1,8 @@
 // concern: machine-identity
 /** Knows the durable identity and display name of this machine. Must not know runs or hosted records. */
 import { hostname } from 'node:os'
+import { newRecordId } from '../../shared/record/schema.ts'
 import { db, writeTransaction } from './db.ts'
-import { newRecordId } from './postgres-schema.ts'
 
 const MACHINE_ID_KEY = 'machine_id'
 

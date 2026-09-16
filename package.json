@@ -21,12 +21,14 @@
     "@types/bun": "latest",
     "@typescript-eslint/parser": "8.70.0",
     "dependency-cruiser": "18.3.1",
+    "drizzle-kit": "1.0.0-rc.4",
     "eslint": "^10.10.0",
     "eslint-plugin-sonarjs": "4.2.0",
     "knip": "6.36.0",
     "typescript": "^5"
   },
   "dependencies": {
+    "drizzle-orm": "1.0.0-rc.4",
     "zod": "^4.5.4"
   }
 }

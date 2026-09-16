@@ -2,7 +2,7 @@ import { Database } from 'bun:sqlite'
 import { expect, test } from 'bun:test'
 import type { SQL } from 'bun'
 import { PLATFORM_SLUG } from '../../shared/brand.ts'
-import { RECORD_ACTOR_ROLE, RECORD_OWNER_ROLE } from './postgres-schema.ts'
+import { RECORD_ACTOR_ROLE, RECORD_OWNER_ROLE } from '../../shared/record/schema.ts'
 import { syncRecord } from './record-sync.ts'
 import { RUN_RECORD_PAYLOAD_COLUMNS } from './run-outbox.ts'
 

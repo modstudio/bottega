@@ -1,5 +1,6 @@
 import { describe, expect, test } from 'bun:test'
 import { readFileSync } from 'node:fs'
+import { newRecordId } from '../../shared/record/schema.ts'
 import { reviewReply } from '../test/fixtures/replies.ts'
 import { addRun } from '../test/fixtures/store.ts'
 import { db } from './db.ts'
