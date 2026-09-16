@@ -1,4 +1,5 @@
 import { describe, expect, spyOn, test } from 'bun:test'
+import { PLATFORM_SLUG } from '../../shared/brand.ts'
 import { addRun, score } from '../test/fixtures/store.ts'
 import { db, nowIso } from './db.ts'
 import { groupMonitorConditions, monitor, monitorHistory } from './monitor.ts'
@@ -26,9 +27,9 @@ const condition = (overrides: Partial<import('./monitor-types.ts').MonitorCondit
 
 function insertRun4177PackRows(): void {
   const root = new URL('../..', import.meta.url).pathname.replace(/\/$/, '')
-  upsertProject({ name: 'bottega', path: root, settings: { trunk: 'main' } })
+  upsertProject({ name: PLATFORM_SLUG, path: root, settings: { trunk: 'main' } })
   const projectId = (
-    db().query('SELECT id FROM project WHERE name=?').get('bottega') as { id: number }
+    db().query('SELECT id FROM project WHERE name=?').get(PLATFORM_SLUG) as { id: number }
   ).id
   const docs = JSON.stringify([
     {
@@ -46,7 +47,16 @@ function insertRun4177PackRows(): void {
      VALUES (?,?,?,?,?,?,?,?,0)`,
   )
   insert.run('review-lens', null, null, 'global', 1, 1, docs, '2026-09-16T00:00:00.000Z')
-  insert.run('review-lens', 'bottega', projectId, 'project', 1, 1, docs, '2026-09-16T00:00:00.000Z')
+  insert.run(
+    'review-lens',
+    PLATFORM_SLUG,
+    projectId,
+    'project',
+    1,
+    1,
+    docs,
+    '2026-09-16T00:00:00.000Z',
+  )
 }
 
 function persistAddressedCondition(
@@ -115,18 +125,19 @@ describe('operational monitor conditions', () => {
     } as unknown as ReturnType<typeof Bun.spawnSync>)
     try {
       const result = await monitor('invoked')
+      const subject = `review-lens/${PLATFORM_SLUG}`
       const drift = result.conditions.filter(
-        ({ kind, subject }) => kind === 'canon-pack-drift' && subject === 'review-lens/bottega',
+        (condition) => condition.kind === 'canon-pack-drift' && condition.subject === subject,
       )
       expect(drift).toHaveLength(1)
       expect(
         db()
           .query(
             `SELECT kind, subject FROM monitor_condition
-           WHERE invocation_id=? AND kind='canon-pack-drift' AND subject='review-lens/bottega'`,
+           WHERE invocation_id=? AND kind='canon-pack-drift' AND subject=?`,
           )
-          .all(result.id),
-      ).toEqual([{ kind: 'canon-pack-drift', subject: 'review-lens/bottega' }])
+          .all(result.id, subject),
+      ).toEqual([{ kind: 'canon-pack-drift', subject }])
     } finally {
       spawn.mockRestore()
     }

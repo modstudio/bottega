@@ -1,4 +1,5 @@
 import { describe, expect, test } from 'bun:test'
+import { PLATFORM_SLUG } from '../../shared/brand.ts'
 import { setDoc } from '../test/fixtures/docs.ts'
 import { dir } from '../test/fixtures/store.ts'
 import { CanonBudgetError, compileBrief, compilePack, storedPackDrift } from './canon.ts'
@@ -35,11 +36,11 @@ function operatorPack(cwd: string): string {
 }
 
 describe('worker pack canon', () => {
-  test('run 4177 canon-pack-drift review-lens/bottega resolves global and project rows once', () => {
+  test(`run 4177 canon-pack-drift review-lens/${PLATFORM_SLUG} resolves global and project rows once`, () => {
     const root = new URL('../..', import.meta.url).pathname.replace(/\/$/, '')
-    upsertProject({ name: 'bottega', path: root, settings: { trunk: 'main' } })
+    upsertProject({ name: PLATFORM_SLUG, path: root, settings: { trunk: 'main' } })
     const projectId = (
-      db().query('SELECT id FROM project WHERE name=?').get('bottega') as { id: number }
+      db().query('SELECT id FROM project WHERE name=?').get(PLATFORM_SLUG) as { id: number }
     ).id
     const docs = JSON.stringify([
       {
@@ -57,10 +58,10 @@ describe('worker pack canon', () => {
        VALUES (?,?,?,?,?,?,?,?,0)`,
     )
     insert.run('review-lens', null, null, 'global', 1, 1, docs, AT)
-    insert.run('review-lens', 'bottega', projectId, 'project', 1, 1, docs, AT)
+    insert.run('review-lens', PLATFORM_SLUG, projectId, 'project', 1, 1, docs, AT)
 
     expect(storedPackDrift().map(({ job, project }) => [job, project])).toEqual([
-      ['review-lens', 'bottega'],
+      ['review-lens', PLATFORM_SLUG],
     ])
   })
 
