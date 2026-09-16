@@ -522,7 +522,11 @@ export function recordBranchLanding(branch: string, number: number): RecordedLan
       .query(
         `INSERT INTO branch_landing_record
            (project,branch,tip,pr_number,merge_commit,merged_at,recording_session,recorded_at)
-         VALUES (?,?,?,?,?,?,?,?)`,
+         VALUES (?,?,?,?,?,?,?,?)
+         ON CONFLICT(project,branch) DO UPDATE SET
+           tip=excluded.tip, pr_number=excluded.pr_number, merge_commit=excluded.merge_commit,
+           merged_at=excluded.merged_at, recording_session=excluded.recording_session,
+           recorded_at=excluded.recorded_at`,
       )
       .run(
         project.name,
