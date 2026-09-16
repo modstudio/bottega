@@ -50,7 +50,7 @@ Detach claims a reserved id before routing; the asking session still owns the ru
 
 # Delegating implementation
 
-Writing runs checkpoint every `DEFAULT_CHECKPOINT_MINUTES` and at limits or stop. The worker updates `$ORCH_SCRATCH/progress.json` after each item. `worktree-remove.ts:changesIn` stages everything and diffs against the immutable run base, so `orch diff` shows the work while history shows authorship.
+Writing runs checkpoint on schedule and at limits or stop. Update `$ORCH_SCRATCH/progress.json` after each item. `worktree-remove.ts:changesIn` preserves the full diff against the immutable run base.
 
 **Done describes the work, not the knowledge.** Consult a landed task's record instead of deriving it again.
 
