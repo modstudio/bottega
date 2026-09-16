@@ -188,3 +188,31 @@ export async function recordIdentity(
 }
 
 export const bearerHeaders = (token: string) => new Headers({ Authorization: `Bearer ${token}` })
+
+export async function setActiveRecordSpace(
+  url: string,
+  token: string,
+  spaceId: string,
+): Promise<void> {
+  const auth = recordAuth(url)
+  const current = await auth.api.getSession({ headers: bearerHeaders(token) })
+  if (!current) throw new Error(RECORD_SIGN_IN_REMEDY)
+  const sql = new SQL(url)
+  try {
+    await sql.begin(async (tx) => {
+      await tx`SELECT set_config('app.user_id', ${current.user.id}, true)`
+      await tx`SELECT set_config('app.space_id', ${spaceId}, true)`
+      const memberships = await tx`
+        SELECT 1 FROM membership WHERE user_id=${current.user.id}::uuid AND space_id=${spaceId}::uuid
+      `
+      if (memberships.length !== 1)
+        throw new Error(`record user is not a member of space ${spaceId}`)
+      await tx`
+        UPDATE session SET active_space_id=${spaceId}::uuid, updated_at=now()
+        WHERE token=${token}
+      `
+    })
+  } finally {
+    await sql.close()
+  }
+}

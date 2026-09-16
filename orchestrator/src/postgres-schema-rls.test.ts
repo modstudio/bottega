@@ -3,7 +3,6 @@ import { afterAll, beforeAll, describe, expect, test } from 'bun:test'
 import { existsSync, readdirSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { PLATFORM_SLUG } from '../../shared/brand.ts'
-import { migrateFixturePostgres } from '../test/fixtures/postgres.ts'
 import { db } from './db.ts'
 import {
   appliedRecordMigrationCount,
@@ -18,9 +17,6 @@ import {
   RECORD_READER_ROLE,
 } from './postgres-schema.ts'
 
-const OPERATOR_USER_ID = '01990000-0000-7000-8000-000000000002'
-const SPACE_NAME = PLATFORM_SLUG
-
 import { startRecordApiServer } from './record-api-server.ts'
 import { bearerHeaders, recordAuth, setActiveRecordSpace } from './record-auth.ts'
 import { signInCommand, signUpCommand, whoamiCommand } from './record-auth-command.ts'
@@ -34,6 +30,9 @@ import {
 } from './record-space.ts'
 import { syncRecord } from './record-sync.ts'
 import { RUN_RECORD_PAYLOAD_COLUMNS } from './run-outbox.ts'
+
+const OPERATOR_USER_ID = '01990000-0000-7000-8000-000000000002'
+const SPACE_NAME = PLATFORM_SLUG
 
 const container = process.env.ORCH_TEST_POSTGRES_CONTAINER
 const ownerUrl = process.env.ORCH_RECORD_MIGRATE_URL
@@ -213,7 +212,7 @@ realPostgres('RLS proof against real Postgres', () => {
   beforeAll(async () => {
     process.env.BETTER_AUTH_SECRET = 'postgres-harness-secret-at-least-thirty-two-characters'
     process.env.BETTER_AUTH_URL = 'http://127.0.0.1'
-    await migrateFixturePostgres()
+    await migratePostgres()
 
     succeeds(
       'postgres',
