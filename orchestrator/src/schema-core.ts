@@ -74,6 +74,7 @@ export const run = sqliteTable(
   'run',
   {
     id: id(),
+    recordId: text('record_id'),
     startedAt: text('started_at').notNull(),
     agent: text().notNull(),
     job: text().notNull(),
@@ -187,7 +188,23 @@ export const run = sqliteTable(
     ),
     index('run_job_agent').on(t.job, t.agent),
     index('run_parent_turn').on(t.parentRunId, t.turn),
+    uniqueIndex('run_record_id_unique').on(t.recordId),
   ],
+)
+
+export const outbox = sqliteTable(
+  'outbox',
+  {
+    id: id(),
+    kind: text().notNull(),
+    recordId: text('record_id').notNull(),
+    payload: text().notNull(),
+    createdAt: text('created_at').notNull(),
+    attempts: integer().notNull().default(0),
+    lastError: text('last_error'),
+    syncedAt: text('synced_at'),
+  },
+  (table) => [index('outbox_synced_at').on(table.syncedAt)],
 )
 
 export const runCheckpoint = sqliteTable(

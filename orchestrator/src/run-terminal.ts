@@ -28,6 +28,7 @@ import { assessEvidence, recordEvidence } from './evidence.ts'
 import { type classify, detectBlockers } from './failure.ts'
 import { terminateProcessGroup } from './idle-kill.ts'
 import { isReaderJob, type Job } from './jobs.ts'
+import { machineId } from './machine-identity.ts'
 import type { McpConnection, McpMode } from './mcp-preflight.ts'
 import { finalizeWorkerReply } from './outcome.ts'
 import { projectByName, projects } from './projects.ts'
@@ -41,6 +42,7 @@ import {
   type TerminalSnapshot,
 } from './run-artifacts.ts'
 import { resolveRootFromLastTurn } from './run-liveness.ts'
+import { enqueueRunRecord } from './run-outbox.ts'
 import { errorTail, live, liveCheckpoints } from './run-process.ts'
 import { resetSandbox } from './sandbox.ts'
 import { type Changes, changesIn } from './worktree-remove.ts'
@@ -526,8 +528,10 @@ export async function finishRun(input: TerminalInput): Promise<TerminalResult> {
     (parsedReview.provenance.substitutes.length > 0 ||
       (mcpMode !== null && mcpConnection?.connected !== true) ||
       Boolean(provenanceWrongProjectTool))
+  const localMachineId = machineId()
   const writeTerminalRow = () =>
     writeTransaction(() => {
+      const finishedAt = nowIso()
       db()
         .query(
           `UPDATE run SET latency_ms=?, exit_code=?, output_bytes=?, output_path=?, prompt_path=?,
@@ -629,6 +633,7 @@ export async function finishRun(input: TerminalInput): Promise<TerminalResult> {
       if (parsedReview && (status === 'ok' || failureKind === 'escaped')) {
         recordEvidence(db(), opts.resume?.parent ?? claim.id, parsedReview)
       }
+      enqueueRunRecord(db(), claim.id, localMachineId, finishedAt)
     })
   try {
     writeTerminalRow()

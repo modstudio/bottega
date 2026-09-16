@@ -323,6 +323,7 @@ export const CLI_COMMANDS = new Set([
   'state',
   'stats',
   'stop',
+  'sync',
   'sweep',
   'tell',
   'wait',

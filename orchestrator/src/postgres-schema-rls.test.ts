@@ -1,14 +1,24 @@
+import { Database } from 'bun:sqlite'
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test'
 import { existsSync, readdirSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { PLATFORM_SLUG } from '../../shared/brand.ts'
 import { migratePostgres } from './postgres-migrate.ts'
-import { newRecordId, PLATFORM_SPACE_ID, PLATFORM_SPACE_NAME } from './postgres-schema.ts'
+import {
+  newRecordId,
+  PLATFORM_OPERATOR_USER_ID,
+  PLATFORM_SPACE_ID,
+  PLATFORM_SPACE_NAME,
+} from './postgres-schema.ts'
+import { syncRecord } from './record-sync.ts'
+import { RUN_RECORD_PAYLOAD_COLUMNS } from './run-outbox.ts'
 
 const container = process.env.ORCH_TEST_POSTGRES_CONTAINER
 const ownerUrl = process.env.ORCH_TEST_POSTGRES_OWNER_URL
 const migrationsFolder = join(import.meta.dir, '..', 'postgres', 'migrations')
-const postgresSchema = readFileSync(join(import.meta.dir, 'postgres-schema.ts'), 'utf8')
+const postgresSchema = ['postgres-schema.ts', 'postgres-schema-run.ts']
+  .map((file) => readFileSync(join(import.meta.dir, file), 'utf8'))
+  .join('\n')
 const migration = readdirSync(migrationsFolder, { withFileTypes: true })
   .filter((entry) => entry.isDirectory())
   .map((entry) => entry.name)
@@ -22,6 +32,10 @@ const USER_A = '01990000-0000-7000-8000-000000000010'
 const PROJECT_A = '01990000-0000-7000-8000-00000000001a'
 const PROJECT_A2 = '01990000-0000-7000-8000-00000000002a'
 const PROJECT_B = '01990000-0000-7000-8000-00000000001b'
+const PLATFORM_PROJECT = '01990000-0000-7000-8000-00000000001c'
+const MACHINE_A = '01990000-0000-7000-8000-000000000019'
+const RUN_A = '01990000-0000-7000-8000-00000000003a'
+const RUN_B = '01990000-0000-7000-8000-00000000003b'
 
 type PsqlResult = { code: number; stdout: string; stderr: string }
 
@@ -76,16 +90,18 @@ describe('Postgres substrate shape', () => {
     expect(migration).not.toMatch(/"id" uuid DEFAULT/i)
   })
 
-  test('seeds only the fixed platform space', () => {
+  test('seeds the fixed platform space and stand-in operator', () => {
     expect(PLATFORM_SPACE_NAME).toBe(PLATFORM_SLUG)
     expect(migration).toContain(
       `VALUES ('${PLATFORM_SPACE_ID}', '${PLATFORM_SPACE_NAME}', '2026-09-09T00:00:00Z')`,
     )
-    expect(migration.match(/^INSERT INTO /gm)).toHaveLength(1)
+    expect(migration).toContain(`'${PLATFORM_OPERATOR_USER_ID}'`)
+    expect(migration).toContain(`'operator@${PLATFORM_SLUG}.local'`)
+    expect(migration.match(/^INSERT INTO /gm)).toHaveLength(3)
   })
 
   test('tenanted tables force RLS and keep read and write policies separate', () => {
-    for (const table of ['space', 'membership', 'project', 'seq']) {
+    for (const table of ['space', 'membership', 'project', 'run', 'seq']) {
       expect(migration).toContain(`ALTER TABLE "${table}" ENABLE ROW LEVEL SECURITY`)
       expect(migration).toContain(`ALTER TABLE "${table}" FORCE ROW LEVEL SECURITY`)
       expect(migration).toContain(`CREATE POLICY "${table}_space_select"`)
@@ -155,7 +171,19 @@ realPostgres('RLS proof against real Postgres', () => {
       INSERT INTO project (id, space_id, name, key_prefixes, created_at) VALUES
         ('${PROJECT_A}', '${SPACE_A}', 'alpha', ARRAY['DEV'], now()),
         ('${PROJECT_A2}', '${SPACE_A}', 'alpha-two', ARRAY['DEV'], now()),
-        ('${PROJECT_B}', '${SPACE_B}', 'beta', ARRAY['DEV'], now());
+        ('${PROJECT_B}', '${SPACE_B}', 'beta', ARRAY['DEV'], now()),
+        ('${PLATFORM_PROJECT}', '${PLATFORM_SPACE_ID}', '${PLATFORM_SLUG}', ARRAY['DEV'], now());
+      INSERT INTO machine (id, user_id, name, registered_at, last_seen)
+        VALUES ('${MACHINE_A}', '${USER_A}', 'proof-machine', now(), now());
+      INSERT INTO run (
+        id, space_id, project_id, machine_id, local_id, started_at, agent, job,
+        prompt_sha, prompt_bytes, prompt_head, probe, status, turn, no_failover,
+        automatic_failover, work_preserved, created_at, updated_at
+      ) VALUES
+        ('${RUN_A}', '${SPACE_A}', '${PROJECT_A}', '${MACHINE_A}', 1, now(), 'proof', 'proof',
+         'a', 1, 'a', false, 'ok', 1, false, false, false, now(), now()),
+        ('${RUN_B}', '${SPACE_B}', '${PROJECT_B}', '${MACHINE_A}', 2, now(), 'proof', 'proof',
+         'b', 1, 'b', false, 'ok', 1, false, false, false, now(), now());
       INSERT INTO seq (space_id, project_id, name, next) VALUES
         ('${SPACE_A}', '${PROJECT_A}', 'task:DEV', 446),
         ('${SPACE_A}', '${PROJECT_A}', 'dev', 21),
@@ -180,7 +208,7 @@ realPostgres('RLS proof against real Postgres', () => {
       'postgres',
       'postgres',
       `
-      DROP TABLE IF EXISTS membership, machine, seq, project, "user", space CASCADE;
+      DROP TABLE IF EXISTS run, membership, machine, seq, project, "user", space CASCADE;
       DROP SCHEMA IF EXISTS drizzle CASCADE;
       REVOKE CREATE ON DATABASE postgres FROM record_owner;
       REVOKE CREATE ON SCHEMA public FROM record_owner;
@@ -258,6 +286,71 @@ realPostgres('RLS proof against real Postgres', () => {
     )
     expect(result.code, result.stderr).toBe(0)
     expect(result.stdout.split('\n').at(-1)).toBe('')
+  })
+
+  test('cross-space run SELECT returns nothing', () => {
+    const result = asSpace(
+      'tenant_actor',
+      'tenant-password',
+      SPACE_A,
+      `SELECT id FROM run WHERE id = '${RUN_B}';`,
+    )
+    expect(result.code, result.stderr).toBe(0)
+    expect(result.stdout.split('\n').at(-1)).toBe('')
+  })
+
+  test('sync round trip writes a run readable by the tenant role', async () => {
+    const local = new Database(':memory:')
+    local.exec(`CREATE TABLE outbox (
+      id INTEGER PRIMARY KEY, kind TEXT NOT NULL, record_id TEXT NOT NULL, payload TEXT NOT NULL,
+      created_at TEXT NOT NULL, attempts INTEGER NOT NULL DEFAULT 0, last_error TEXT, synced_at TEXT
+    )`)
+    const values = Object.fromEntries(RUN_RECORD_PAYLOAD_COLUMNS.map((column) => [column, null]))
+    const recordId = newRecordId()
+    Object.assign(values, {
+      id: recordId,
+      spaceId: PLATFORM_SPACE_ID,
+      projectName: PLATFORM_SLUG,
+      machineId: MACHINE_A,
+      localId: 99,
+      startedAt: '2026-09-15T01:00:00.000Z',
+      finishedAt: '2026-09-15T01:01:00.000Z',
+      agent: 'codex',
+      job: 'probe',
+      promptSha: 'prompt',
+      promptBytes: 6,
+      promptHead: 'prompt',
+      probe: true,
+      status: 'ok',
+      turn: 1,
+      noFailover: false,
+      automaticFailover: false,
+      workPreserved: false,
+      createdAt: '2026-09-15T01:00:00.000Z',
+      updatedAt: '2026-09-15T01:01:00.000Z',
+    })
+    local
+      .query(
+        `INSERT INTO outbox (id, kind, record_id, payload, created_at)
+         VALUES (1, 'run', ?, ?, ?)`,
+      )
+      .run(recordId, JSON.stringify(values), String(values.createdAt))
+    const result = await syncRecord({
+      recordUrl: ownerUrl!,
+      local,
+      identity: { id: MACHINE_A, name: 'proof-machine' },
+      now: () => '2026-09-15T01:01:00.000Z',
+    })
+    expect(result).toEqual({ pushed: 1, failed: 0, pending: 0, configured: true })
+    const read = asSpace(
+      'tenant_actor',
+      'tenant-password',
+      PLATFORM_SPACE_ID,
+      `SELECT id FROM run WHERE id='${recordId}';`,
+    )
+    expect(read.code, read.stderr).toBe(0)
+    expect(read.stdout.split('\n').at(-1)).toBe(recordId)
+    local.close()
   })
 
   test('cross-space write is refused', () => {
