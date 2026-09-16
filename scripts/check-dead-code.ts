@@ -6,12 +6,14 @@ import {
   normalizeKnipReport,
   productionSourcesAnalyzed,
   stableFinding,
+  unneededExportFindings,
 } from './quality/dead-code'
 
 const ROOT = new URL('..', import.meta.url).pathname.replace(/\/$/, '')
 const KNIP = `${ROOT}/node_modules/.bin/knip`
 const BASELINE = `${ROOT}/scripts/quality/dead-code.json`
 const BASELINE_LABEL = 'scripts/quality/dead-code.json'
+const PRODUCTION_CONFIG = `${ROOT}/knip.production.jsonc`
 
 const PRODUCTION_ISSUES = [
   'files',
@@ -36,13 +38,13 @@ const DEPENDENCY_ISSUES = [
 const PASSES = [
   {
     name: 'production',
-    args: ['--production'],
+    args: ['--production', '--config', PRODUCTION_CONFIG],
     issueTypes: PRODUCTION_ISSUES,
   },
   {
-    name: 'dependencies',
+    name: 'default',
     args: [],
-    issueTypes: DEPENDENCY_ISSUES,
+    issueTypes: [...DEPENDENCY_ISSUES, 'exports', 'types'],
   },
 ] as const
 
@@ -93,7 +95,12 @@ function assertProductionSourcesAnalyzed(findings: DeadCodeFinding[]) {
 export function checkDeadCode(write = process.argv.includes('--write-baseline')) {
   const results = PASSES.map(runPass)
   assertProductionSourcesAnalyzed(results[0]!.findings)
-  const current = results.flatMap((result) => result.findings)
+  const [production, defaultMode] = results
+  const dependencyFindings = defaultMode!.findings.filter((finding) =>
+    DEPENDENCY_ISSUES.includes(finding.issueType as (typeof DEPENDENCY_ISSUES)[number]),
+  )
+  const unneededExports = unneededExportFindings(production!.findings, defaultMode!.findings)
+  const current = [...production!.findings, ...dependencyFindings, ...unneededExports]
   if (write) {
     writeBaseline(current)
     console.log(`check-dead-code: wrote ${current.length} findings to ${BASELINE_LABEL}`)
@@ -102,9 +109,11 @@ export function checkDeadCode(write = process.argv.includes('--write-baseline'))
 
   const { introduced, vanished } = compareDeadCodeFindings(readBaseline(), current)
   for (const finding of introduced) {
-    console.error(
-      `${describeFinding(finding)} is new; remove the code, or ask for an entry declaration`,
-    )
+    const remedy =
+      finding.issueType === 'unneededExports' || finding.issueType === 'unneededTypes'
+        ? 'remove the export keyword'
+        : 'delete it and any test that exists only for it'
+    console.error(`${describeFinding(finding)} is new; ${remedy}`)
   }
   for (const finding of vanished) {
     console.error(`${describeFinding(finding)} no longer appears`)
@@ -116,9 +125,8 @@ export function checkDeadCode(write = process.argv.includes('--write-baseline'))
   }
   if (introduced.length || vanished.length) return false
 
-  const [production, dependencies] = results
   console.log(
-    `check-dead-code: ok (${current.length} findings; production ${production!.elapsedMs.toFixed(0)}ms, dependencies ${dependencies!.elapsedMs.toFixed(0)}ms)`,
+    `check-dead-code: ok (${current.length} findings; production ${production!.elapsedMs.toFixed(0)}ms, default ${defaultMode!.elapsedMs.toFixed(0)}ms)`,
   )
   return true
 }

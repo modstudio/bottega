@@ -4,6 +4,7 @@ import {
   type DeadCodeFinding,
   normalizeKnipReport,
   productionSourcesAnalyzed,
+  unneededExportFindings,
 } from './dead-code'
 
 const baseline: DeadCodeFinding = {
@@ -57,5 +58,16 @@ describe('dead-code ratchet', () => {
       ]),
     ).toBeFalse()
     expect(productionSourcesAnalyzed([])).toBeTrue()
+  })
+
+  test('production dead code wins over an unneeded export finding', () => {
+    const unneeded = { ...baseline, line: 12 }
+    expect(unneededExportFindings([baseline], [unneeded])).toEqual([])
+    expect(
+      unneededExportFindings([], [unneeded, { ...unneeded, issueType: 'types', symbol: 'Shape' }]),
+    ).toEqual([
+      { ...unneeded, issueType: 'unneededExports' },
+      { ...unneeded, issueType: 'unneededTypes', symbol: 'Shape' },
+    ])
   })
 })
