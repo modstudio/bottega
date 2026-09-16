@@ -28,7 +28,7 @@ export function enableSchemaReload(onReload: (from: number, to: number) => void)
   schemaReload = onReload
 }
 
-function reloadStaleSchema(d: Database): Database {
+function refuseOrReloadStaleSchema(d: Database): Database {
   if (handle && d !== handle) return d
   const actual = readUserVersion(d)
   const opened = openedUserVersion
@@ -45,7 +45,7 @@ function reloadStaleSchema(d: Database): Database {
 }
 
 export function db(): Database {
-  if (handle) return reloadStaleSchema(handle)
+  if (handle) return refuseOrReloadStaleSchema(handle)
   requireDatabase()
   const d = new Database(DB_PATH!, { readwrite: true, create: false })
   d.exec('PRAGMA busy_timeout = 15000; PRAGMA foreign_keys = ON;')
