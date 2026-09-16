@@ -1,0 +1,46 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.user.hub-serve</string>
+
+    <!-- The dashboard on loopback. ops' com.user.hub-tunnel publishes this
+         port at app.bottega.run behind Cloudflare Access, so it must be up
+         whether or not anyone started it by hand. -->
+    <key>ProgramArguments</key>
+    <array>
+        <string>__REPO__/bin/hub</string>
+        <string>serve</string>
+        <string>--port</string>
+        <string>7778</string>
+    </array>
+
+    <key>RunAtLoad</key>
+    <true/>
+    <key>KeepAlive</key>
+    <true/>
+    <!-- A port already held by a hand-started dashboard makes serve exit at
+         once; throttle the respawn rather than spinning. -->
+    <key>ThrottleInterval</key>
+    <integer>30</integer>
+
+    <!-- PATH is not inherited under launchd, and the dashboard shells `orch`
+         and `bun`. -->
+    <key>EnvironmentVariables</key>
+    <dict>
+        <key>PATH</key>
+        <string>/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin:__HOME__/.local/bin</string>
+        <key>HOME</key>
+        <string>__HOME__</string>
+    </dict>
+
+    <key>WorkingDirectory</key>
+    <string>__REPO__</string>
+
+    <key>StandardOutPath</key>
+    <string>__HOME__/Library/Logs/hub/serve.log</string>
+    <key>StandardErrorPath</key>
+    <string>__HOME__/Library/Logs/hub/serve.log</string>
+</dict>
+</plist>

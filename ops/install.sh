@@ -34,6 +34,13 @@ for tmpl in "$REPO"/launchd/*.plist.template; do
   if [[ "$label" == "com.user.local-model-tunnel" ]]; then
     mkdir -p "$HOME/Library/Logs/local-model-tunnel"
   fi
+  if [[ "$label" == "com.user.hub-tunnel" && ! -f "$HOME/.cloudflared/bottega-hub.yml" ]]; then
+    echo "skipped: $label ($HOME/.cloudflared/bottega-hub.yml is absent)"
+    continue
+  fi
+  if [[ "$label" == "com.user.hub-tunnel" ]]; then
+    mkdir -p "$HOME/Library/Logs/hub-tunnel"
+  fi
 
   target="$AGENTS_DIR/$label.plist"
 
@@ -56,5 +63,5 @@ done
 
 echo
 echo "Active agents:"
-launchctl list | grep -E 'brew-auto-upgrade|projects-morning-refresh|local-model-tunnel|orch-sweep|orch-monitor|orch-canon-eval|hub-note-maintenance' \
+launchctl list | grep -E 'brew-auto-upgrade|projects-morning-refresh|local-model-tunnel|orch-sweep|orch-monitor|orch-canon-eval|hub-note-maintenance|hub-tunnel' \
   || echo "  (none found)"
