@@ -27,7 +27,6 @@ import {
   sharedDeclarations,
   snapshotlessTeardown,
   teardownVars,
-  trackedExecutionRefusal,
 } from './recipe-lifecycle.ts'
 import { parseTrackedRecipe } from './recipe-loader.ts'
 import { allocationEnvironmentVariable, type TrackedRecipe } from './recipe-schema.ts'
@@ -480,8 +479,6 @@ function prepareTrackedCreate(
   allocationAttempt: AllocationAttempt
 } {
   const loaded = loadRecipeAtBase(input)
-  const refusal = trackedExecutionRefusal(loaded.recipe)
-  if (refusal) throw new Error(refusal)
   const staticVars = {
     branch: input.branch,
     name: input.name,

@@ -3,10 +3,6 @@
 import type { TrackedRecipe } from './recipe-schema.ts'
 import type { Step, StepResult } from './recipe-step.ts'
 
-export function trackedExecutionRefusal(_recipe: TrackedRecipe): string | null {
-  return null
-}
-
 /** Report declarations that remain outside allocation, creation, and teardown plans. */
 export function sharedDeclarations(recipe: TrackedRecipe): string[] {
   return (recipe.shared ?? []).map(

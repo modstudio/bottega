@@ -6,7 +6,6 @@ import {
   serveUndoPlan,
   sharedDeclarations,
   teardownVars,
-  trackedExecutionRefusal,
 } from './recipe-lifecycle.ts'
 import type { TrackedRecipe } from './recipe-schema.ts'
 import type { Step, StepResult } from './recipe-step.ts'
@@ -20,11 +19,6 @@ const step = (name: string, undo = true): Step => ({
 const recipe = (extra: Partial<TrackedRecipe> = {}): TrackedRecipe => ({ create: [], ...extra })
 
 describe('tracked recipe lifecycle planning', () => {
-  test('accepts shared and env declarations', () => {
-    expect(trackedExecutionRefusal(recipe({ shared: [] }))).toBeNull()
-    expect(trackedExecutionRefusal(recipe({ env: [] }))).toBeNull()
-  })
-
   test('renders shared declarations without adding them to destroy planning', () => {
     const plain = recipe({ create: [step('create')] })
     const shared = recipe({
@@ -52,30 +46,12 @@ describe('tracked recipe lifecycle planning', () => {
         default: [step('default-zero'), step('default-one')],
       },
     })
-    expect(trackedExecutionRefusal(input)).toBeNull()
     expect(serveUndoPlan(input).map((item) => item.name)).toEqual([
       'preview-one',
       'preview-zero',
       'default-one',
       'default-zero',
     ])
-  })
-
-  test('accepts only the lifecycle arrays executed by this slice', () => {
-    expect(
-      trackedExecutionRefusal(
-        recipe({ allocate: { ports: ['web'], strings: { cookie: 'x-{index}' } } }),
-      ),
-    ).toBeNull()
-    expect(
-      trackedExecutionRefusal(
-        recipe({
-          allocate: {
-            databases: { app: { engine: 'postgres', name: 'app_{index}' } },
-          },
-        }),
-      ),
-    ).toBeNull()
   })
 
   test('compensates the failed step and earlier undoable steps in reverse', () => {
