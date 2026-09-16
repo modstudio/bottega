@@ -6,8 +6,8 @@ import { type InjectionSource, resolveInjection } from './project-injection.ts'
 import { productionStepCatalogue } from './step-catalogue.ts'
 import { type VersionEvent, versionedLifecycle } from './versioned-lifecycle.ts'
 
-export type WorkflowArgument = { name: string; required: boolean; description: string }
-export type WorkflowMode = {
+type WorkflowArgument = { name: string; required: boolean; description: string }
+type WorkflowMode = {
   slug: string
   title: string
   default?: boolean
@@ -274,7 +274,7 @@ export function workflowVersions(slug: string, d: Database = db()) {
   return workflowLifecycle.versions(slug, d)
 }
 
-export type WorkflowNeeds = {
+type WorkflowNeeds = {
   mode?: { slug: string; title: string; entry: string }[]
   arguments?: string[]
 }
