@@ -1,6 +1,7 @@
 // concern: run-outbox
 /** Knows how a terminal local run becomes an ordered hosted-record mutation. Must not know Postgres. */
 import type { Database } from 'bun:sqlite'
+import { writeTransaction } from './db.ts'
 import { newRecordId, PLATFORM_SPACE_ID } from './postgres-schema.ts'
 
 export const RUN_RECORD_PAYLOAD_COLUMNS = [
@@ -194,32 +195,30 @@ export function enqueueRunRecord(
 }
 
 export function backfillRunRecords(database: Database, machineId: string): RunRecordBackfillResult {
-  return database
-    .transaction(() => {
-      const missing = database
-        .query<{ id: number }, []>('SELECT id FROM run WHERE record_id IS NULL ORDER BY id')
-        .all()
-      for (const row of missing) {
-        database.query('UPDATE run SET record_id=? WHERE id=?').run(newRecordId(), row.id)
-      }
+  return writeTransaction(() => {
+    const missing = database
+      .query<{ id: number }, []>('SELECT id FROM run WHERE record_id IS NULL ORDER BY id')
+      .all()
+    for (const row of missing) {
+      database.query('UPDATE run SET record_id=? WHERE id=?').run(newRecordId(), row.id)
+    }
 
-      const terminal = database
-        .query<{ id: number; finished_at: string }, []>(
-          `SELECT r.id, COALESCE(r.last_event_at, r.started_at) AS finished_at
+    const terminal = database
+      .query<{ id: number; finished_at: string }, []>(
+        `SELECT r.id, COALESCE(r.last_event_at, r.started_at) AS finished_at
            FROM run r
           WHERE r.status IN ('ok', 'failed', 'stale', 'stopped', 'asking')
             AND NOT EXISTS (
               SELECT 1 FROM outbox WHERE kind='run' AND record_id=r.record_id
             )
           ORDER BY r.id`,
-        )
-        .all()
-      for (const row of terminal) enqueueRunRecord(database, row.id, machineId, row.finished_at)
+      )
+      .all()
+    for (const row of terminal) enqueueRunRecord(database, row.id, machineId, row.finished_at)
 
-      const skippedLive = database
-        .query<{ count: number }, []>(`SELECT count(*) AS count FROM run WHERE status='running'`)
-        .get()!.count
-      return { minted: missing.length, enqueued: terminal.length, skippedLive }
-    })
-    .immediate()
+    const skippedLive = database
+      .query<{ count: number }, []>(`SELECT count(*) AS count FROM run WHERE status='running'`)
+      .get()!.count
+    return { minted: missing.length, enqueued: terminal.length, skippedLive }
+  }, database)
 }
