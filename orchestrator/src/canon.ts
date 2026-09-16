@@ -4,6 +4,7 @@ import { join } from 'node:path'
 import { CONCERNS } from '../../shared/brand.ts'
 import { CANON_REFERENCE_EXEMPTIONS, canonReferencePath } from '../../shared/canon-references.ts'
 import { isCliCommand } from './args.ts'
+import { canonFrontmatter, classifyCanonFile } from './canon-lint.ts'
 import { db, linkedWorktreeReadOnly, nowIso, writeTransaction } from './db.ts'
 import { type Doc, docsForRun, docsMarkdown, listDocs } from './docs.ts'
 import { targetGitEnvironment } from './git-environment.ts'
@@ -41,6 +42,8 @@ export type Pack = {
   docs: PackDoc[]
   markdown: string
   bytes: number
+  canonBytes: number
+  docBytes: number
   budgetBytes: number
   sha256: string
 }
@@ -255,19 +258,90 @@ export function allNumericLiterals(cwd: string): {
   return { numericLiterals: report, canonFiles }
 }
 
+type PackBudgetRow = { bytes: number; label: string }
+
+function packBudgetRows(
+  pack: Pack,
+  alwaysOnBytes: number,
+  contextIndexBytes: number,
+): PackBudgetRow[] {
+  return [
+    { bytes: alwaysOnBytes, label: 'always-on' },
+    { bytes: contextIndexBytes, label: 'context-index' },
+    ...pack.docs.map((doc) => ({
+      bytes: doc.bytes,
+      label: `${doc.scope}/${doc.subject ?? '_'}/${doc.slug}`,
+    })),
+  ]
+    .filter((row) => row.bytes > 0)
+    .sort((a, b) => b.bytes - a.bytes)
+}
+
 export class CanonBudgetError extends Error {
-  constructor(public pack: Pack) {
-    const rows = [...pack.docs]
-      .sort((a, b) => b.bytes - a.bytes)
-      .map((doc) => `  ${doc.bytes}  ${doc.scope}/${doc.subject ?? '_'}/${doc.slug}`)
+  constructor(
+    public pack: Pack,
+    alwaysOnBytes = 0,
+    contextIndexBytes = 0,
+  ) {
+    const rows = packBudgetRows(pack, alwaysOnBytes, contextIndexBytes)
+    const largest = rows[0]?.label
     super(
       [
         `canon pack is ${pack.bytes} bytes; budget is ${pack.budgetBytes} bytes`,
-        ...rows,
-        'remedy: demote the named largest inject sections to demand documents',
+        ...rows.map((row) => `  ${row.bytes}  ${row.label}`),
+        ...(largest ? [`largest packed tier: ${largest}`] : []),
+        'remedy: demote the named largest tier; never raise the pack budget (orchestrator/src/pack-budget.ts)',
       ].join('\n'),
     )
     this.name = 'CanonBudgetError'
+  }
+}
+
+const CONTEXT_INDEX_HEADING = [
+  '## Path-scoped contexts',
+  '',
+  'Read the context file in your worktree before editing a path it governs.',
+].join('\n')
+
+function joinPackSections(...sections: string[]): string {
+  return sections.filter((section) => section.length > 0).join('\n\n')
+}
+
+function contextIndexMarkdown(rows: Doc[]): string {
+  if (!rows.length) return ''
+  const lines = rows.map((row) => {
+    const meta = canonFrontmatter(row.body)
+    const description = meta?.description ?? ''
+    const globs = (meta?.paths ?? []).map((path) => `\`${path}\``).join(', ')
+    return `- \`${row.slug}\` — ${description} — ${globs}`
+  })
+  return `${CONTEXT_INDEX_HEADING}\n\n${lines.join('\n')}`
+}
+
+/** Always-on bodies plus a context index; cards, references, and aliases are omitted. */
+export function packedCanonMarkdown(projectName: string | null): {
+  markdown: string
+  alwaysOnBytes: number
+  contextIndexBytes: number
+} {
+  if (!projectName) return { markdown: '', alwaysOnBytes: 0, contextIndexBytes: 0 }
+  const rows = listDocs({ scope: 'canon', subject: projectName })
+  if (!rows.length) return { markdown: '', alwaysOnBytes: 0, contextIndexBytes: 0 }
+  const classified = rows.map((row) => ({
+    row,
+    kind: classifyCanonFile({ path: row.slug, text: row.body }),
+  }))
+  const alwaysOn = joinPackSections(
+    ...classified.filter(({ kind }) => kind === 'entry').map(({ row }) => row.body),
+    ...classified.filter(({ kind }) => kind === 'rule').map(({ row }) => row.body),
+  )
+  const index = contextIndexMarkdown(
+    classified.filter(({ kind }) => kind === 'context').map(({ row }) => row),
+  )
+  return {
+    markdown: joinPackSections(alwaysOn, index),
+    alwaysOnBytes: Buffer.byteLength(alwaysOn),
+    contextIndexBytes: Buffer.byteLength(index),
   }
 }
 
@@ -288,7 +362,7 @@ function buildPack(job: string, cwd: string, budgetBytes: number, brief = false)
       )
     return { doc, revisionId }
   })
-  const markdown = docsMarkdown(withRevisions.map(({ doc }) => doc))
+  const operatorMarkdown = docsMarkdown(withRevisions.map(({ doc }) => doc))
   const docs = withRevisions.map(({ doc, revisionId }) => ({
     revisionId,
     scope: doc.scope,
@@ -297,17 +371,26 @@ function buildPack(job: string, cwd: string, budgetBytes: number, brief = false)
     title: doc.title,
     bytes: Buffer.byteLength(`## ${doc.title}\n\n${doc.body}`),
   }))
+  const canon = brief
+    ? { markdown: '', alwaysOnBytes: 0, contextIndexBytes: 0 }
+    : packedCanonMarkdown(project?.name ?? null)
+  const markdown = joinPackSections(canon.markdown, operatorMarkdown)
   const bytes = Buffer.byteLength(markdown)
+  const docBytes = Buffer.byteLength(operatorMarkdown)
   const pack: Pack = {
     job,
     project: project?.name ?? null,
     docs,
     markdown,
     bytes,
+    canonBytes: bytes - docBytes,
+    docBytes,
     budgetBytes,
     sha256: createHash('sha256').update(markdown).digest('hex'),
   }
-  if (bytes > budgetBytes) throw new CanonBudgetError(pack)
+  if (bytes > budgetBytes) {
+    throw new CanonBudgetError(pack, canon.alwaysOnBytes, canon.contextIndexBytes)
+  }
   return pack
 }
 
@@ -468,14 +551,16 @@ export function recordPack(pack: Pack): void {
     const projectId = pack.project ? (projectByName(pack.project)?.id ?? null) : null
     db()
       .query(`INSERT INTO canon_pack
-      (job,project,project_id,sha256,bytes,doc_count,doc_revisions,compiled_at,findings)
-      VALUES (?,?,?,?,?,?,?,?,?)`)
+      (job,project,project_id,sha256,bytes,canon_bytes,doc_bytes,doc_count,doc_revisions,compiled_at,findings)
+      VALUES (?,?,?,?,?,?,?,?,?,?,?)`)
       .run(
         pack.job,
         pack.project,
         projectId,
         pack.sha256,
         pack.bytes,
+        pack.canonBytes,
+        pack.docBytes,
         pack.docs.length,
         JSON.stringify(pack.docs),
         nowIso(),
