@@ -13,6 +13,7 @@ import { DB_PATH, db } from './db.ts'
 import { repoRootOf } from './git-environment.ts'
 import { catchFixTreeDisposition } from './issue-catch.ts'
 import {
+  FILED_ISSUE_COMMAND_KILL_SIGNAL,
   FILED_ISSUE_COMMAND_TIMEOUT_MS,
   filedIssueCommandPlan,
   filedIssueCommandResult,
@@ -28,6 +29,7 @@ import { terminateRunProcesses } from './run-process.ts'
 import { abandonRun } from './run-stop.ts'
 import type { RunResult } from './run-types.ts'
 import { resetSandbox, resolveSecretPaths, sandboxLaunchArgv, srtInstalled } from './sandbox.ts'
+import { trackedRecipeEnvironment } from './tracked-recipe.ts'
 import { worktreeDirty } from './worktree-attribution.ts'
 import type { Worktree } from './worktree-types.ts'
 
@@ -499,7 +501,7 @@ async function shell(
       stdout: 'pipe',
       stderr: 'pipe',
       timeout: FILED_ISSUE_COMMAND_TIMEOUT_MS,
-      killSignal: 'SIGTERM',
+      killSignal: FILED_ISSUE_COMMAND_KILL_SIGNAL,
     })
     return filedIssueCommandResult(p)
   } finally {
@@ -592,6 +594,7 @@ async function verifyOrHandbackFix(
           sandboxHome,
           workerEnvironment: {
             ...workerGateEnvironment(process.env),
+            ...trackedRecipeEnvironment(fixRun.id),
             ...prepareSharedRefGuard(fixRun.worktree.path, `refs/heads/${fixRun.worktree.branch}`),
           },
         })

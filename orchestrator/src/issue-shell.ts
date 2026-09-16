@@ -10,6 +10,7 @@ import {
 } from './sandbox.ts'
 
 export const FILED_ISSUE_COMMAND_TIMEOUT_MS = 20 * 60_000
+export const FILED_ISSUE_COMMAND_KILL_SIGNAL = 'SIGKILL'
 
 const WORKER_GATE_ENV_EXACT = new Set([
   'PATH',

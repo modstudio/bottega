@@ -332,6 +332,35 @@ function ownershipCloseOutResult(input: {
   }
 }
 
+function otherConversationKeepTreeHeld(rootId: number, treePath: string): boolean {
+  return otherConversationWorktreeSharers(db(), {
+    id: rootId,
+    worktree: treePath,
+  }).some((holder) => conversationKeepTreeHold(holder.id, nowIso()).held)
+}
+
+function lockedLiveOrForgottenHold(
+  runId: number,
+  treePath: string,
+  live: { id: number; status: string }[],
+  dryRun?: boolean,
+): CloseOutResult | null {
+  if (live.length)
+    return {
+      runId,
+      worktree: treePath,
+      outcome: 'live',
+      detail: `live run(s): ${live.map((owner) => `${owner.id} (${owner.status})`).join(', ')}`,
+    }
+  if (!otherConversationKeepTreeHeld(runId, treePath)) return null
+  return ownershipCloseOutResult({
+    runId,
+    treePath,
+    decision: 'forgotten',
+    dryRun,
+  })
+}
+
 function adoptedTreeOwners(
   decision: ReturnType<typeof adoptedTreeCloseOutDecision>,
   runId: number,
@@ -521,10 +550,7 @@ function attemptCloseOutRun(
   const ownership = inspectTreeOwnership(treePath, repoRoot, conversationIds, branchTemplate)
   const liveSharers = liveWorktreeSharers(db(), { id: row.root_id, worktree: treePath })
   const liveConversation = aliveConversationTurns(row.root_id)
-  const ownerHeld = otherConversationWorktreeSharers(db(), {
-    id: row.root_id,
-    worktree: treePath,
-  }).some((holder) => conversationKeepTreeHold(holder.id, nowIso()).held)
+  const ownerHeld = otherConversationKeepTreeHeld(row.root_id, treePath)
   const adoptionDecision = adoptedTreeCloseOutDecision({
     ownership,
     ownerAlive: liveSharers.length > 0,
@@ -639,14 +665,13 @@ function attemptCloseOutRun(
           repoRoot,
           { session: sessionId(), what: `close-out ${row.root_id}` },
           () => {
-            const lockedLive = liveRows()
-            if (lockedLive.length)
-              return {
-                runId: row.root_id,
-                worktree: treePath,
-                outcome: 'live' as const,
-                detail: `live run(s): ${lockedLive.map((owner) => `${owner.id} (${owner.status})`).join(', ')}`,
-              }
+            const lockedHold = lockedLiveOrForgottenHold(
+              row.root_id,
+              treePath,
+              liveRows(),
+              options.dryRun,
+            )
+            if (lockedHold) return lockedHold
             const reclaimProof = proveWorktreeReconstructible(treePath)
             if (!reclaimProof.ok)
               return {
