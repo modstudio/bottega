@@ -11,7 +11,7 @@ import {
   numericLiteralReport,
 } from './canon.ts'
 import { db } from './db.ts'
-import { brief, docsForRun, exportDocs, getDoc, listDocMetadata } from './docs.ts'
+import { docsForRun, exportDocs, getDoc, listDocMetadata } from './docs.ts'
 import { upsertProject } from './projects.ts'
 
 describe('scoped operator docs', () => {
@@ -195,14 +195,6 @@ describe('scoped operator docs', () => {
     } finally {
       rmSync(target, { recursive: true, force: true })
     }
-  })
-
-  test('brief emits no document body', () => {
-    expect(brief('/nowhere')).toBe('')
-    upsertProject({ name: 'known', path: '/w/known', stack: null, canon: true, settings: {} })
-    setDoc({ scope: 'project', subject: 'known', slug: 'p', title: 'Project', body: 'P' })
-    setDoc({ scope: 'global', subject: null, slug: 'g', title: 'Global', body: 'G' })
-    expect(brief('/w/known/src')).toBe('')
   })
 
   test('canon check keeps its exit-zero JSON contract for a missing cwd', () => {

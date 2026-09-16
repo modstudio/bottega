@@ -268,8 +268,9 @@
   {
     "file": "orchestrator/src/doc-commands.ts",
     "function": "docCommand",
-    "line": 23,
-    "score": 111
+    "line": 33,
+    "score": 110,
+    "key": "orchestrator/src/doc-commands.ts\u0000docCommand"
   },
   {
     "file": "orchestrator/src/docker-resources.ts",

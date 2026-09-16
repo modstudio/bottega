@@ -6,7 +6,6 @@
 import { readFileSync } from 'node:fs'
 import { checkDoc, repoRootForDoc } from './canon.ts'
 import {
-  brief,
   consumeDoc,
   diffDocRevisions,
   docSubjects,
@@ -220,10 +219,6 @@ export async function docCommand(
     )
     return
   }
-  if (sub === 'brief') {
-    presentation.write(brief(flag('cwd') ?? presentation.cwd()))
-    return
-  }
   if (sub === 'resumes') {
     const result = listOpenResumes(flag('cwd') ?? presentation.cwd())
     if (has('json')) {
@@ -239,6 +234,6 @@ export async function docCommand(
     return
   }
   throw new Error(
-    `unknown: orch doc ${sub}. Try list | show | set | consume | rm | history | diff | restore | subjects | export | import | brief | resumes`,
+    `unknown: orch doc ${sub}. Try list | show | set | consume | rm | history | diff | restore | subjects | export | import | resumes`,
   )
 }
