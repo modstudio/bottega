@@ -6,12 +6,12 @@ import { drizzle } from 'drizzle-orm/bun-sql'
 import { db, nowIso } from './db.ts'
 import { machineId, machineName } from './machine-identity.ts'
 import { machine, PLATFORM_OPERATOR_USER_ID, PLATFORM_SPACE_ID } from './postgres-schema.ts'
-import { run as runRecord } from './postgres-schema-run.ts'
 import {
-  review as reviewRecord,
   reviewFinding as reviewFindingRecord,
   reviewLens as reviewLensRecord,
+  review as reviewRecord,
 } from './postgres-schema-review.ts'
+import { run as runRecord } from './postgres-schema-run.ts'
 import {
   backfillReviewRecords,
   REVIEW_FINDING_RECORD_PAYLOAD_COLUMNS,
