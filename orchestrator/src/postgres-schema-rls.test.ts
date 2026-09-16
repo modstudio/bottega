@@ -498,6 +498,36 @@ realPostgres('RLS proof against real Postgres', () => {
     ).rejects.toThrow('requires the owner role')
   })
 
+  test('an owner does not list invitations they sent into their active space', async () => {
+    db()
+      .query(
+        `INSERT INTO schema_meta (key,value) VALUES ('record_session',?)
+         ON CONFLICT(key) DO UPDATE SET value=excluded.value`,
+      )
+      .run(tokenA)
+    const invited = await inviteToActiveRecordSpace(actorUrl!, 'owner-sent@example.test', 'member')
+    expect((await pendingRecordInvitations(actorUrl!)).map((row) => row.id)).not.toContain(invited)
+  })
+
+  test('an expired pending invitation does not block re-inviting', async () => {
+    db()
+      .query(
+        `INSERT INTO schema_meta (key,value) VALUES ('record_session',?)
+         ON CONFLICT(key) DO UPDATE SET value=excluded.value`,
+      )
+      .run(tokenA)
+    const email = 'expired-reinvite@example.test'
+    succeeds(
+      'postgres',
+      'postgres',
+      `INSERT INTO invitation
+        (id,space_id,email,inviter_id,role,status,expires_at,created_at)
+       VALUES ('${newRecordId()}','${authSpaceA}','${email}','${authUserA}',
+         'member','pending',now() - interval '1 day',now());`,
+    )
+    await expect(inviteToActiveRecordSpace(actorUrl!, email, 'member')).resolves.toBeString()
+  })
+
   test('invitees see only their invitations and acceptance joins and switches space', async () => {
     const visibleToInvitee = psql(
       RECORD_ACTOR_ROLE,
@@ -607,6 +637,33 @@ realPostgres('RLS proof against real Postgres', () => {
       })
     } finally {
       succeeds('postgres', 'postgres', `ALTER SCHEMA public OWNER TO ${RECORD_OWNER_ROLE};`)
+    }
+  })
+
+  test('doctor fails and names project DELETE after that grant is revoked', async () => {
+    db()
+      .query(
+        `INSERT INTO schema_meta (key,value) VALUES ('record_session',?)
+         ON CONFLICT(key) DO UPDATE SET value=excluded.value`,
+      )
+      .run(tokenB)
+    succeeds(
+      RECORD_OWNER_ROLE,
+      'owner-password',
+      `REVOKE DELETE ON project FROM ${RECORD_ACTOR_ROLE};`,
+    )
+    try {
+      const unhealthy = await diagnoseRecord({ recordUrl: actorUrl!, migrateUrl: ownerUrl! })
+      expect(recordDoctorExitCode(unhealthy)).toBe(1)
+      const grants = unhealthy.find((check) => check.name === 'record_actor representative grants')
+      expect(grants?.status).toBe('fail')
+      expect(grants?.detail ?? '').toContain('project DELETE')
+    } finally {
+      succeeds(
+        RECORD_OWNER_ROLE,
+        'owner-password',
+        `GRANT DELETE ON project TO ${RECORD_ACTOR_ROLE};`,
+      )
     }
   })
 

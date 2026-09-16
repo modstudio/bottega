@@ -118,7 +118,7 @@ export async function inviteToActiveRecordSpace(
     const pending = await tx`
       SELECT id FROM invitation
       WHERE space_id=${current.activeSpaceId}::uuid AND lower(email)=${normalizedEmail}
-        AND status='pending'
+        AND status='pending' AND expires_at > now()
       ORDER BY created_at LIMIT 1
     `
     if (pending[0]) {
@@ -137,11 +137,12 @@ export async function inviteToActiveRecordSpace(
 }
 
 export async function pendingRecordInvitations(url: string): Promise<RecordInvitation[]> {
-  return withRecordSession(url, async (tx) => {
+  return withRecordSession(url, async (tx, current) => {
     const rows = await tx`
       SELECT i.id, i.space_id, i.role, i.expires_at, u.email AS inviter_email
       FROM invitation i JOIN "user" u ON u.id=i.inviter_id
       WHERE i.status='pending' AND i.expires_at > now()
+        AND lower(i.email)=${current.user.email.toLowerCase()}
       ORDER BY i.expires_at, i.id
     `
     const invitations: RecordInvitation[] = []

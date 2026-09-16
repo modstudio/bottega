@@ -147,12 +147,29 @@ export async function diagnoseRecord(
     await run(ownerChecks[3]!, async () => {
       const rows = await owner`
         SELECT
-          has_table_privilege(${RECORD_ACTOR_ROLE}, 'project', 'SELECT,INSERT,UPDATE,DELETE') AS project,
-          has_table_privilege(${RECORD_ACTOR_ROLE}, 'invitation', 'SELECT,INSERT,UPDATE,DELETE') AS invitation,
-          has_table_privilege(${RECORD_ACTOR_ROLE}, '"user"', 'SELECT,INSERT,UPDATE') AS identity
+          CASE table_name WHEN '"user"' THEN 'user' ELSE table_name END AS table_name,
+          privilege
+        FROM (VALUES
+          ('project', 'SELECT'),
+          ('project', 'INSERT'),
+          ('project', 'UPDATE'),
+          ('project', 'DELETE'),
+          ('invitation', 'SELECT'),
+          ('invitation', 'INSERT'),
+          ('invitation', 'UPDATE'),
+          ('invitation', 'DELETE'),
+          ('"user"', 'SELECT'),
+          ('"user"', 'INSERT'),
+          ('"user"', 'UPDATE')
+        ) AS required(table_name, privilege)
+        WHERE NOT has_table_privilege(${RECORD_ACTOR_ROLE}, table_name, privilege)
+        ORDER BY table_name, privilege
       `
-      if (!rows[0]?.project || !rows[0]?.invitation || !rows[0]?.identity) {
-        throw new Error(`${RECORD_ACTOR_ROLE} is missing representative table grants`)
+      if (rows.length) {
+        const missing = rows.map((row: Record<string, unknown>) => {
+          return `${String(row.table_name)} ${String(row.privilege)}`
+        })
+        throw new Error(missing.join(', '))
       }
     })
   } finally {
