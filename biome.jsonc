@@ -38,7 +38,9 @@
     "rules": {
       "preset": "recommended",
       "correctness": {
-        "noUnusedImports": "error"
+        "noUnusedImports": "error",
+        "noUnusedPrivateClassMembers": "error",
+        "noUnusedVariables": "error"
       },
       "style": {
         "useImportType": {

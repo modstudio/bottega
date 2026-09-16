@@ -48,3 +48,7 @@ A production or test file at the ceiling may only shrink. Split out and name ano
 ## Respect the complexity ceiling
 
 A function at the cognitive complexity ceiling may only become simpler. Extract a decision when a function needs more complexity. The cognitive complexity rule in `eslint.config.js` owns the ceiling, and `scripts/check-cognitive-ceiling.ts` enforces the frozen-function ratchet.
+
+## Remove dead code
+
+Dead code fails the gate. The baseline only shrinks; `scripts/check-dead-code.ts` enforces it.

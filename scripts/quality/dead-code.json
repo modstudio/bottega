@@ -1,0 +1,26 @@
+[
+  {
+    "workspace": ".",
+    "file": "package.json",
+    "issueType": "devDependencies",
+    "symbol": "dependency-cruiser"
+  },
+  {
+    "workspace": "hub/web",
+    "file": "hub/web/package.json",
+    "issueType": "devDependencies",
+    "symbol": "tailwindcss"
+  },
+  {
+    "workspace": "orchestrator",
+    "file": "orchestrator/package.json",
+    "issueType": "dependencies",
+    "symbol": "@agentclientprotocol/codex-acp"
+  },
+  {
+    "workspace": "orchestrator",
+    "file": "orchestrator/package.json",
+    "issueType": "dependencies",
+    "symbol": "ajv"
+  }
+]
