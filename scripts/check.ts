@@ -200,6 +200,8 @@ for (const script of [
   'check-machine-identity-boundary.ts',
   'check-record-sync-boundary.ts',
   'check-record-auth-boundary.ts',
+  'check-record-api-boundary.ts',
+  'check-record-runs-boundary.ts',
   'check-record-auth-command-boundary.ts',
   'check-record-sync-command-boundary.ts',
   'check-run-outbox-boundary.ts',
