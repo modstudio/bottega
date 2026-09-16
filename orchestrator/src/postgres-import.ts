@@ -138,6 +138,39 @@ function readSources(
   }
 }
 
+function sequenceImportDecision(
+  sequence: SourceSequence,
+  prefixOwners: Map<string, string[]>,
+  retiredPrefixOwners: Map<string, string[]>,
+): { owner: string } | { skip: SequenceSkip } {
+  if (!sequence.name.startsWith('task:')) {
+    return {
+      skip: {
+        ...sequence,
+        reason: 'sequence name has no task: namespace and therefore no determinate project owner',
+      },
+    }
+  }
+  const prefix = sequence.name.slice('task:'.length)
+  const owners = prefixOwners.get(prefix) ?? []
+  const retiredOwners = retiredPrefixOwners.get(prefix) ?? []
+  if (owners.length === 0 && retiredOwners.length > 0) {
+    return {
+      skip: {
+        ...sequence,
+        reason: `prefix is owned only by retired project${retiredOwners.length === 1 ? '' : 's'}: ${retiredOwners.join(', ')}`,
+      },
+    }
+  }
+  if (owners.length !== 1) {
+    const detail = owners.length
+      ? `matched multiple projects: ${owners.join(', ')}`
+      : 'matched no project'
+    throw new Error(`cannot import sequence ${sequence.name}: ${detail}`)
+  }
+  return { owner: owners[0]! }
+}
+
 export async function importProjects(options: ProjectImportOptions): Promise<ProjectImportResult> {
   if (!options.spaceId) throw new Error('spaceId is required')
   const source = readSources(options.orchDb, options.hubDb)
@@ -218,31 +251,12 @@ export async function importProjects(options: ProjectImportOptions): Promise<Pro
       const skippedSequences: SequenceSkip[] = []
       let importedSequences = 0
       for (const sequence of source.sequences) {
-        if (!sequence.name.startsWith('task:')) {
-          skippedSequences.push({
-            ...sequence,
-            reason:
-              'sequence name has no task: namespace and therefore no determinate project owner',
-          })
+        const decision = sequenceImportDecision(sequence, prefixOwners, retiredPrefixOwners)
+        if ('skip' in decision) {
+          skippedSequences.push(decision.skip)
           continue
         }
-        const prefix = sequence.name.slice('task:'.length)
-        const owners = prefixOwners.get(prefix) ?? []
-        const retiredOwners = retiredPrefixOwners.get(prefix) ?? []
-        if (owners.length === 0 && retiredOwners.length > 0) {
-          skippedSequences.push({
-            ...sequence,
-            reason: `prefix is owned only by retired project${retiredOwners.length === 1 ? '' : 's'}: ${retiredOwners.join(', ')}`,
-          })
-          continue
-        }
-        if (owners.length !== 1) {
-          const detail = owners.length
-            ? `matched multiple projects: ${owners.join(', ')}`
-            : 'matched no project'
-          throw new Error(`cannot import sequence ${sequence.name}: ${detail}`)
-        }
-        const projectId = projectIds.get(owners[0]!)!
+        const projectId = projectIds.get(decision.owner)!
         await tx`
           INSERT INTO seq (space_id, project_id, name, next)
           VALUES (${options.spaceId}::uuid, ${projectId}::uuid, ${sequence.name}, ${sequence.next})
