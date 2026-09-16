@@ -23,7 +23,7 @@ import { canonGitRoot, collectCanonLintInput, collectCanonTree } from './canon-f
 import { type CanonRow, planHydration } from './canon-hydrate.ts'
 import { classifyCanonFile, introducedCanonFindings, lintCanon } from './canon-lint.ts'
 import { decideCanonWrite } from './canon-write-gate.ts'
-import { listDocs, setDoc } from './docs.ts'
+import { listDocs, removeDoc, setDoc } from './docs.ts'
 import { canonEvalsReport, runCanonEvals } from './evals.ts'
 import { projectByName } from './projects.ts'
 
@@ -89,6 +89,12 @@ function canonRows(project: string): CanonRow[] {
   return listDocs({ scope: 'canon', subject: project }).map(({ slug, body }) => ({ slug, body }))
 }
 
+export function canonSlugsToRemove(currentSlugs: string[], treeSlugs: string[]): string[] {
+  if (treeSlugs.length === 0) return []
+  const tree = new Set(treeSlugs)
+  return currentSlugs.filter((slug) => !tree.has(slug))
+}
+
 function printHydrationPlan(
   plan: ReturnType<typeof planHydration>,
   log: (...values: unknown[]) => void,
@@ -128,12 +134,20 @@ function canonImportCommand(flags: CanonFlags, presentation: CanonPresentation):
   const project = requestedProject(flags)
   const reason = flags.flag('reason')
   if (!reason?.trim()) throw new Error('--reason is required')
-  const root = canonGitRoot(resolve(flags.flag('cwd') ?? project.path))
+  const requestedCwd = resolve(flags.flag('cwd') ?? project.path)
+  const root = canonGitRoot(requestedCwd)
   const collected = collectCanonLintInput(root)
   const rows = collected.files
     .filter((file) => file.symlinkTarget === undefined && classifyCanonFile(file) !== null)
     .map(({ path, text }) => ({ slug: path, body: text }))
+  if (rows.length === 0) {
+    throw new Error(`refusing canon import: no canon rows found under --cwd ${requestedCwd}`)
+  }
   const current = canonRows(project.name)
+  const removals = canonSlugsToRemove(
+    current.map(({ slug }) => slug),
+    rows.map(({ slug }) => slug),
+  )
   const findings = decideCanonWrite({
     current,
     next: rows,
@@ -155,7 +169,14 @@ function canonImportCommand(flags: CanonFlags, presentation: CanonPresentation):
       allowCanonBootstrap: bootstrap,
     })
   }
-  presentation.log(`imported ${rows.length} canon rows`)
+  let removed = 0
+  for (const slug of removals) {
+    if (removeDoc('canon', project.name, slug, { reason })) {
+      presentation.log(`removed ${slug}`)
+      removed++
+    }
+  }
+  presentation.log(`imported ${rows.length} canon rows, removed ${removed}`)
   if (bootstrap) {
     presentation.log(
       `empty canon store: bypassed introduced-findings comparison (${findings.length} findings)`,
