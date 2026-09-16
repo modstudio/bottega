@@ -419,13 +419,80 @@ export function claimString(
   }
 }
 
+export function claimDatabaseName(
+  database: Database,
+  input: ClaimIdentity & {
+    projectId: number
+    name: string
+    engine: string
+    value: string
+    claimedAt: string
+  },
+): string {
+  const existing = database
+    .query(
+      `SELECT allocation_key FROM resource_claim
+       WHERE root_run_id=? AND project_id=? AND kind='database' AND state='claimed'
+         AND json_extract(CASE WHEN json_valid(identity) THEN identity END,'$.name')=?
+       ORDER BY id DESC LIMIT 1`,
+    )
+    .get(input.rootRunId, input.projectId, input.name) as { allocation_key: string } | null
+  const existingSeparator = existing?.allocation_key.indexOf(':') ?? -1
+  const existingValue = existing ? existing.allocation_key.slice(existingSeparator + 1) : null
+  const allocationKey = `${input.engine}:${input.value}`
+  const holder = database
+    .query(
+      `SELECT root_run_id FROM resource_claim
+       WHERE kind='database' AND allocation_key=? AND state='claimed'`,
+    )
+    .get(allocationKey) as { root_run_id: number } | null
+  const decision = stringClaimDecision(existingValue, holder?.root_run_id ?? null, input.rootRunId)
+  if (decision === 'reuse') return existingValue ?? input.value
+  if (decision === 'collision') {
+    throw new Error(
+      `database allocation "${input.name}" value "${input.value}" is held by run ${holder!.root_run_id}; include {index} in its template`,
+    )
+  }
+  try {
+    database
+      .query(
+        `INSERT INTO resource_claim
+         (root_run_id,run_id,project_id,kind,allocation_key,identity,label,state,claimed_at)
+         VALUES (?,?,?,'database',?,?,?,'claimed',?)`,
+      )
+      .run(
+        input.rootRunId,
+        input.runId,
+        input.projectId,
+        allocationKey,
+        JSON.stringify({ runId: input.runId, projectId: input.projectId, name: input.name }),
+        String(input.rootRunId),
+        input.claimedAt,
+      )
+    return input.value
+  } catch (error) {
+    if (!String((error as Error)?.message ?? error).includes('UNIQUE constraint failed')) {
+      throw error
+    }
+    const collided = database
+      .query(
+        `SELECT root_run_id FROM resource_claim
+         WHERE kind='database' AND allocation_key=? AND state='claimed'`,
+      )
+      .get(allocationKey) as { root_run_id: number }
+    throw new Error(
+      `database allocation "${input.name}" value "${input.value}" is held by run ${collided.root_run_id}; include {index} in its template`,
+    )
+  }
+}
+
 export function releaseRecipeAllocationClaims(
   database: Database,
   input: { claimIds: readonly number[]; settledAt: string; reason: string },
 ): void {
   const update = database.query(
     `UPDATE resource_claim SET state='released',settled_at=?,settled_detail=?
-     WHERE id=? AND state='claimed' AND kind IN ('port','index','string')`,
+     WHERE id=? AND state='claimed' AND kind IN ('port','index','string','database')`,
   )
   for (const id of input.claimIds) {
     update.run(input.settledAt, `tracked creation failed: ${input.reason}`, id)

@@ -40,27 +40,19 @@ export const stepSchema = strictObject({
   exec: execContextSchema.optional(),
 })
 
-const databaseProviderSchema = z.discriminatedUnion('kind', [
-  strictObject({
-    kind: z.literal('postgres-template'),
-    template: z.string().min(1),
-    psql: z.string().min(1).optional(),
-  }),
-  strictObject({
-    kind: z.literal('mysql-dump'),
-    dump: z.string().min(1),
-    mysql: z.string().min(1).optional(),
-  }),
-  strictObject({
-    kind: z.literal('compose'),
-    up: z.string().min(1),
-    down: z.string().min(1),
-  }),
-])
+export const databaseAllocationSchema = strictObject({
+  engine: z.enum(['postgres', 'mysql', 'mariadb', 'sqlite', 'other']),
+  name: z
+    .string()
+    .min(1)
+    .describe(
+      'Claimed database name. Templates may use only {branch} {name} {base} {key} {seed} {path} {main} {index}; include {index} when simultaneous worktrees could otherwise collide. The project create step makes the database and its undo drops it.',
+    ),
+})
 
 export const allocationsSchema = strictObject({
   ports: z.array(z.string().min(1)).optional(),
-  databases: z.record(z.string(), databaseProviderSchema).optional(),
+  databases: z.record(z.string(), databaseAllocationSchema).optional(),
   strings: z
     .record(z.string(), z.string())
     .describe(
@@ -178,18 +170,30 @@ function validatePlaceholders(recipe: RecipeInput, context: z.RefinementCtx): vo
   }
 }
 
+function validateAllocationTemplate(
+  allocation: 'string' | 'database',
+  name: string,
+  template: string,
+  context: z.RefinementCtx,
+): void {
+  const invalid = [...template.matchAll(/\{([^{}]+)\}/g)].some(
+    (match) => !STATIC_PLACEHOLDERS.has(match[1]!),
+  )
+  if (invalid) {
+    context.addIssue({
+      code: 'custom',
+      path: ['allocate', allocation === 'string' ? 'strings' : 'databases', name],
+      message: `placeholder rule: ${allocation} allocation "${name}" may use only {branch} {name} {base} {key} {seed} {path} {main} {index}`,
+    })
+  }
+}
+
 function validateStringAllocationTemplates(recipe: RecipeInput, context: z.RefinementCtx): void {
   for (const [name, template] of Object.entries(recipe.allocate?.strings ?? {})) {
-    const invalid = [...template.matchAll(/\{([^{}]+)\}/g)].some(
-      (match) => !STATIC_PLACEHOLDERS.has(match[1]!),
-    )
-    if (invalid) {
-      context.addIssue({
-        code: 'custom',
-        path: ['allocate', 'strings', name],
-        message: `placeholder rule: string allocation "${name}" may use only {branch} {name} {base} {key} {seed} {path} {main} {index}`,
-      })
-    }
+    validateAllocationTemplate('string', name, template, context)
+  }
+  for (const [name, allocation] of Object.entries(recipe.allocate?.databases ?? {})) {
+    validateAllocationTemplate('database', name, allocation.name, context)
   }
 }
 
@@ -205,9 +209,13 @@ function validateAllocationUndo(recipe: RecipeInput, context: z.RefinementCtx): 
   }
 }
 
-export function allocationEnvironmentVariable(kind: 'ports' | 'alloc', name: string): string {
+export function allocationEnvironmentVariable(
+  kind: 'ports' | 'db' | 'alloc',
+  name: string,
+): string {
   const normalized = name.toUpperCase().replace(/[^A-Z0-9]/g, '_')
-  return `ORCH_${kind === 'ports' ? 'PORTS' : 'ALLOC'}_${normalized}`
+  const family = kind === 'ports' ? 'PORTS' : kind === 'db' ? 'DB' : 'ALLOC'
+  return `ORCH_${family}_${normalized}`
 }
 
 function validateServeUndo(recipe: RecipeInput, context: z.RefinementCtx): void {
@@ -225,8 +233,9 @@ function validateServeUndo(recipe: RecipeInput, context: z.RefinementCtx): void 
 }
 
 function validateAllocationEnvironmentNames(recipe: RecipeInput, context: z.RefinementCtx): void {
-  const allocations: ['ports' | 'alloc', string][] = [
+  const allocations: ['ports' | 'db' | 'alloc', string][] = [
     ...(recipe.allocate?.ports ?? []).map((name): ['ports', string] => ['ports', name]),
+    ...Object.keys(recipe.allocate?.databases ?? {}).map((name): ['db', string] => ['db', name]),
     ...Object.keys(recipe.allocate?.strings ?? {}).map((name): ['alloc', string] => [
       'alloc',
       name,
@@ -239,7 +248,7 @@ function validateAllocationEnvironmentNames(recipe: RecipeInput, context: z.Refi
     if (prior !== undefined) {
       context.addIssue({
         code: 'custom',
-        path: ['allocate', kind === 'ports' ? 'ports' : 'strings'],
+        path: ['allocate', kind === 'ports' ? 'ports' : kind === 'db' ? 'databases' : 'strings'],
         message: `allocation names "${prior}" and "${name}" map to the same environment variable ${variable}`,
       })
     } else {

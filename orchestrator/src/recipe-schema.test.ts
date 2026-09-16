@@ -66,6 +66,40 @@ describe('tracked recipe refusal rules', () => {
     )
   })
 
+  test('a database name may use static values and index but not another allocation', () => {
+    expect(
+      recipeSchema.safeParse({
+        allocate: {
+          databases: {
+            app: { engine: 'postgres', name: '{name}_{index}' },
+            audit: { engine: 'mysql', name: '{branch}_audit' },
+          },
+        },
+        create: [],
+      }).success,
+    ).toBe(true)
+    expect(
+      messages({
+        allocate: {
+          ports: ['web'],
+          databases: { app: { engine: 'postgres', name: '{ports.web}' } },
+        },
+        create: [],
+      }).join('\n'),
+    ).toContain(
+      'placeholder rule: database allocation "app" may use only {branch} {name} {base} {key} {seed} {path} {main} {index}',
+    )
+  })
+
+  test('a database allocation no longer accepts a provider object', () => {
+    expect(
+      messages({
+        allocate: { databases: { app: { kind: 'compose', up: 'up', down: 'down' } } },
+        create: [],
+      }).join('\n'),
+    ).toContain('unknown-key rule')
+  })
+
   test('refuses absolute and parent-traversing command working directories', () => {
     for (const cwd of ['/tmp/app', 'packages/../other']) {
       const recipe = minimal()
@@ -106,10 +140,22 @@ describe('tracked recipe refusal rules', () => {
     ).toContain(
       'allocation names "api-v2" and "api.v2" map to the same environment variable ORCH_PORTS_API_V2',
     )
+    expect(
+      messages({
+        allocate: {
+          databases: {
+            'app-v2': { engine: 'postgres', name: 'app_{index}' },
+            'app.v2': { engine: 'postgres', name: 'other_{index}' },
+          },
+        },
+        create: [],
+      }).join('\n'),
+    ).toContain('map to the same environment variable ORCH_DB_APP_V2')
   })
 
   test('names allocation environment variables', () => {
     expect(allocationEnvironmentVariable('ports', 'hub')).toBe('ORCH_PORTS_HUB')
     expect(allocationEnvironmentVariable('ports', 'api-v2')).toBe('ORCH_PORTS_API_V2')
+    expect(allocationEnvironmentVariable('db', 'app-v2')).toBe('ORCH_DB_APP_V2')
   })
 })
