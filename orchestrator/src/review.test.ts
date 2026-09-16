@@ -15,7 +15,7 @@ test('recording a carried review enqueues the carry in the same write path', () 
     )
     .get(newRecordId()) as { id: number }
   recordReviewCarry({
-    project: 'bottega',
+    project: 'fixture',
     branch: 'DEV-597-orch-4145',
     tip: 'tip',
     tree: 'tree',

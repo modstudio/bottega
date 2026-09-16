@@ -28,25 +28,25 @@ test('landing evidence backfill mints references in order, maps every column, an
     .query(`INSERT INTO landing
       (id,project,branch,tip,trunk_before,status,error,session_id,started_at,finished_at,
        heartbeat_delivered_at,path_set,requested_at,steps,claim_pid,claim_session)
-      VALUES (1,'bottega','DEV-1','tip','trunk','landed',NULL,'session','2026-09-15T00:02:00Z',
+      VALUES (1,'fixture','DEV-1','tip','trunk','landed',NULL,'session','2026-09-15T00:02:00Z',
        '2026-09-15T00:03:00Z','2026-09-15T00:04:00Z','["a.ts"]','2026-09-15T00:01:00Z',
        '["gate"]',42,'claim')`)
     .run()
   database
     .query(`INSERT INTO landing
       (id,project,branch,status,started_at,causing_landing_id)
-      VALUES (2,'bottega','DEV-2','refused','2026-09-15T00:05:00Z',1)`)
+      VALUES (2,'fixture','DEV-2','refused','2026-09-15T00:05:00Z',1)`)
     .run()
   database
     .query(`INSERT INTO landing_override
       (id,project,branch,tip,tree,reason,session_id,at)
-      VALUES (1,'bottega','DEV-1','tip','tree','reason','session','2026-09-15T00:06:00Z')`)
+      VALUES (1,'fixture','DEV-1','tip','tree','reason','session','2026-09-15T00:06:00Z')`)
     .run()
   database
     .query(`INSERT INTO landing_review_carry
       (id,project,branch,tip,tree,review_id,reviewed_commit,reviewed_tree,patch_id,
        old_base,new_base,session_id,at)
-      VALUES (1,'bottega','DEV-1','tip','tree',1,'commit','reviewed-tree','patch',
+      VALUES (1,'fixture','DEV-1','tip','tree',1,'commit','reviewed-tree','patch',
        'old','new','session','2026-09-15T00:07:00Z')`)
     .run()
   database
