@@ -20,9 +20,7 @@ export const run = pgTable.withRLS(
   {
     id: uuid().primaryKey(),
     spaceId: spaceIdentity(),
-    projectId: uuid('project_id')
-      .notNull()
-      .references(() => project.id),
+    projectId: uuid('project_id').references(() => project.id),
     machineId: uuid('machine_id')
       .notNull()
       .references(() => machine.id),
