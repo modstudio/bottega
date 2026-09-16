@@ -940,68 +940,7 @@ export async function workIssue(key: string): Promise<void> {
     }
     completed = true
   } catch (cause) {
-    const runId = runIdFromCause(cause)
-    const row = runId
-      ? (db()
-          .query(
-            'SELECT job, repo, cwd, worktree, branch, base_commit, worktree_source, minted_branch FROM run WHERE id=?',
-          )
-          .get(runId) as {
-          job: string
-          repo: string | null
-          cwd: string | null
-          worktree: string | null
-          branch: string | null
-          base_commit: string | null
-          worktree_source: Worktree['source'] | null
-          minted_branch: string | null
-        } | null)
-      : null
-    const failedFix =
-      !fixRun?.worktree && row?.job === 'issue-worker' && row.worktree && existsSync(row.worktree)
-        ? ({
-            id: runId,
-            worktree: {
-              path: row.worktree,
-              branch: row.branch ?? 'unknown',
-              base: row.base_commit ?? '',
-              repoRoot:
-                (row.repo ? projectByName(row.repo)?.path : null) ??
-                repoRootOf(row.worktree) ??
-                row.cwd ??
-                process.cwd(),
-              source: row.worktree_source ?? undefined,
-              mintedBranch: row.minted_branch,
-            },
-          } as RunResult)
-        : null
-    const catchFix = fixRun?.worktree ? fixRun : failedFix
-    const disposition = catchFix?.worktree
-      ? catchFixTreeDisposition(catchFix.worktree, worktreeDirty(catchFix.worktree.path).dirty)
-      : catchFixTreeDisposition(null, false)
-    let treeRecord = disposition.handoff
-    if (disposition.action === 'release' && catchFix) {
-      const failure = await release(catchFix, true)
-      fixTreeSettled = true
-      if (failure)
-        treeRecord = `Worktree was not released: ${failure}. Branch: ${catchFix.worktree?.branch ?? 'unknown'}.`
-    } else if (disposition.action === 'hold') fixTreeSettled = true
-    const body = [
-      `Coordinator stopped: ${String((cause as Error)?.message ?? cause)}`,
-      `Run: ${runId || 'none'}`,
-      treeRecord,
-      `Resume with: orch fix-defect ${issue.key}`,
-      `What remains unresolved: the coordinator pass did not reach a recorded outcome.`,
-    ].join('\n\n')
-    await handoff(
-      issue.key,
-      `Issue handback after coordinator failure${runId ? ` ${runId}` : ''}`,
-      body,
-    )
-    await comment(
-      issue.key,
-      `Issue coordinator stopped; handback recorded${runId ? ` for run ${runId}` : ''}.`,
-    )
+    fixTreeSettled = await recordIssueFailure(issue, cause, fixRun)
     completed = true
     throw cause
   } finally {
