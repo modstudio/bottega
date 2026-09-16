@@ -180,7 +180,9 @@ function projectLifecycleLine(
     const status = trackedRecipeStatus(project.path, worktree, fileExists)!
     const loaded = loadRecipe(project.path, pointer)
     if (loaded.ok) {
-      return `lifecycle ${project.name}: tracked-recipe (${pointer}); valid at ${status.path}`
+      const shared = loaded.recipe.shared?.length ?? 0
+      const declaration = shared > 0 ? `; shared: ${shared} declared` : ''
+      return `lifecycle ${project.name}: tracked-recipe (${pointer}); valid at ${status.path}${declaration}`
     }
     return `lifecycle ${project.name}: tracked-recipe (${pointer}); invalid (${loaded.errors.length} error(s)); first: ${loaded.errors[0]}`
   }

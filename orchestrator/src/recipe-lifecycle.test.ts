@@ -4,6 +4,7 @@ import {
   destroyPlan,
   lifecycleFailure,
   serveUndoPlan,
+  sharedDeclarations,
   teardownVars,
   trackedExecutionRefusal,
 } from './recipe-lifecycle.ts'
@@ -19,11 +20,29 @@ const step = (name: string, undo = true): Step => ({
 const recipe = (extra: Partial<TrackedRecipe> = {}): TrackedRecipe => ({ create: [], ...extra })
 
 describe('tracked recipe lifecycle planning', () => {
-  test('refuses shared until slice 8 and accepts env', () => {
-    expect(trackedExecutionRefusal(recipe({ shared: [] }))).toBe(
-      'tracked recipe declares shared, which is not executable yet (Phase 3 slice 8)',
-    )
+  test('accepts shared and env declarations', () => {
+    expect(trackedExecutionRefusal(recipe({ shared: [] }))).toBeNull()
     expect(trackedExecutionRefusal(recipe({ env: [] }))).toBeNull()
+  })
+
+  test('renders shared declarations without adding them to destroy planning', () => {
+    const plain = recipe({ create: [step('create')] })
+    const shared = recipe({
+      create: plain.create,
+      shared: [
+        { name: 'vendor', kind: 'path', from: 'vendor', at: 'vendor' },
+        { name: 'cache', kind: 'volume', from: 'cache', at: 'cache' },
+        { name: 'edge', kind: 'network', from: 'edge', at: 'edge' },
+        { name: 'redis', kind: 'service', from: 'redis', at: 'redis' },
+      ],
+    })
+    expect(sharedDeclarations(shared)).toEqual([
+      'path vendor: vendor -> vendor (shared; not created or removed by this run)',
+      'volume cache: cache -> cache (shared; not created or removed by this run)',
+      'network edge: edge -> edge (shared; not created or removed by this run)',
+      'service redis: redis -> redis (shared; not created or removed by this run)',
+    ])
+    expect(destroyPlan(shared)).toEqual(destroyPlan(plain))
   })
 
   test('accepts serve and plans modes in declaration order with steps reversed', () => {
