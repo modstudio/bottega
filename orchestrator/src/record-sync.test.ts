@@ -48,7 +48,7 @@ function localOutbox(
     })
     local
       .query("INSERT INTO outbox (id,kind,record_id,payload,created_at) VALUES (?,'run',?,?,?)")
-      .run(id, values.id, JSON.stringify(values), STAMP)
+      .run(id, values.id ?? null, JSON.stringify(values), STAMP)
   }
   return local
 }
