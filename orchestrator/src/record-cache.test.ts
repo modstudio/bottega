@@ -41,6 +41,7 @@ describe('record cache pull', () => {
       getDoc: async () => ({}),
       listRevisions: async () => [],
       upsertDoc: async () => ({ id: docId, revisionId: docId }),
+      importDoc: async () => ({ id: docId, revisionIds: [docId] }),
       deleteDoc: async () => ({ id: docId, revisionId: docId }),
       consumeDoc: async () => ({ id: docId, revisionId: docId, alreadyConsumed: false }),
       restoreDoc: async () => ({ id: docId, revisionId: docId }),

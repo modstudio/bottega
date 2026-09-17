@@ -39,6 +39,34 @@ export type RecordDocRevision = {
   at: string
 }
 
+export type RecordDocImportInput = {
+  doc: {
+    scope: string
+    subject: string | null
+    slug: string
+    title: string
+    body: string
+    delivery: DocDelivery
+    projectName?: string | null
+    createdAt: string
+    updatedAt: string
+    deletedAt: string | null
+  }
+  revisions: Array<{
+    scope: string
+    subject: string | null
+    slug: string
+    op: DocRevisionOp
+    title: string
+    body: string
+    delivery: DocDelivery
+    author: string
+    reason: string
+    sessionId?: string | null
+    at: string
+  }>
+}
+
 export class RecordDocError extends Error {
   status: 400 | 404 | 409 | 422
   constructor(message: string, status: 400 | 404 | 409 | 422 = 400) {
@@ -544,5 +572,113 @@ export async function countRecordDocs(input: Tenant): Promise<{ docs: number; re
     const revisions =
       await tx`SELECT count(*)::integer AS n FROM doc_revision WHERE space_id=${input.spaceId}::uuid`
     return { docs: Number(docs[0]?.n ?? 0), revisions: Number(revisions[0]?.n ?? 0) }
+  })
+}
+
+async function existingDocAtAddress(
+  tx: SQL,
+  spaceId: string,
+  doc: RecordDocImportInput['doc'],
+): Promise<Record<string, unknown> | undefined> {
+  const rows = await tx`
+    SELECT * FROM doc
+    WHERE space_id=${spaceId}::uuid
+      AND scope=${doc.scope}
+      AND COALESCE(subject, '')=${doc.subject ?? ''}
+      AND slug=${doc.slug}
+    ORDER BY (deleted_at IS NULL) DESC, updated_at DESC, id DESC
+    LIMIT 1
+  `
+  return rows[0] as Record<string, unknown> | undefined
+}
+
+function refuseNewerHosted(
+  existing: Record<string, unknown> | undefined,
+  incoming: RecordDocImportInput['doc'],
+): void {
+  if (!existing || existing.deleted_at != null) return
+  if (String(existing.body) === incoming.body) return
+  const hostedUpdated = Date.parse(iso(existing.updated_at) ?? '')
+  const incomingUpdated = Date.parse(incoming.updatedAt)
+  if (!Number.isFinite(hostedUpdated) || hostedUpdated <= incomingUpdated) return
+  const subject = existing.subject == null ? '' : String(existing.subject)
+  throw new RecordDocError(
+    `refusing import: hosted doc at ${String(existing.scope)}/${subject}/${String(existing.slug)} has a different body and newer updated_at`,
+    409,
+  )
+}
+
+async function writeImportedDoc(
+  tx: SQL,
+  input: {
+    spaceId: string
+    id: string
+    exists: boolean
+    projectId: string | null
+    doc: RecordDocImportInput['doc']
+  },
+): Promise<void> {
+  const { doc, spaceId, id, projectId } = input
+  if (input.exists) {
+    await tx`
+      UPDATE doc
+      SET title=${doc.title}, body=${doc.body}, delivery=${doc.delivery},
+          project_id=${projectId}::uuid,
+          created_at=${doc.createdAt}::timestamptz,
+          updated_at=${doc.updatedAt}::timestamptz,
+          deleted_at=${doc.deletedAt}::timestamptz
+      WHERE id=${id}::uuid AND space_id=${spaceId}::uuid
+    `
+    return
+  }
+  await tx`
+    INSERT INTO doc (
+      id, space_id, scope, subject, slug, title, body, delivery, project_id,
+      created_at, updated_at, deleted_at
+    ) VALUES (
+      ${id}::uuid, ${spaceId}::uuid, ${doc.scope}, ${doc.subject}, ${doc.slug},
+      ${doc.title}, ${doc.body}, ${doc.delivery}, ${projectId}::uuid,
+      ${doc.createdAt}::timestamptz, ${doc.updatedAt}::timestamptz, ${doc.deletedAt}::timestamptz
+    )
+  `
+}
+
+export async function importRecordDoc(
+  input: Tenant & RecordDocImportInput,
+): Promise<{ id: string; revisionIds: string[] }> {
+  return tenant(input, async (tx) => {
+    const existing = await existingDocAtAddress(tx, input.spaceId, input.doc)
+    refuseNewerHosted(existing, input.doc)
+    const resolvedProject = await projectId(tx, input.spaceId, input.doc.projectName)
+    const id = existing ? String(existing.id) : newRecordId()
+    await writeImportedDoc(tx, {
+      spaceId: input.spaceId,
+      id,
+      exists: Boolean(existing),
+      projectId: resolvedProject,
+      doc: input.doc,
+    })
+    const revisionIds: string[] = []
+    for (const revision of input.revisions) {
+      revisionIds.push(
+        await insertRevision(tx, {
+          spaceId: input.spaceId,
+          docId: id,
+          scope: revision.scope,
+          subject: revision.subject,
+          slug: revision.slug,
+          projectId: resolvedProject,
+          op: revision.op,
+          title: revision.title,
+          body: revision.body,
+          delivery: revision.delivery,
+          author: revision.author,
+          reason: revision.reason,
+          sessionId: revision.sessionId ?? null,
+          at: revision.at,
+        }),
+      )
+    }
+    return { id, revisionIds }
   })
 }

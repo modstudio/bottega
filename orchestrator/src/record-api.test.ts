@@ -25,6 +25,7 @@ function appWith(session: RecordIdentity | null, overrides: Record<string, unkno
     readDoc: async () => null,
     listDocRevisions: async () => [],
     upsertDoc: async () => ({ id, revisionId: id }),
+    importDoc: async () => ({ id, revisionIds: [id] }),
     deleteDoc: async () => ({ id, revisionId: id }),
     consumeDoc: async () => ({ id, revisionId: id, alreadyConsumed: false }),
     restoreDoc: async () => ({ id, revisionId: id }),

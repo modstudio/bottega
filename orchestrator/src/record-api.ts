@@ -6,7 +6,7 @@ import { Hono } from 'hono'
 import { cors } from 'hono/cors'
 import { z } from 'zod'
 import { RECORD_SIGN_IN_REMEDY, type RecordIdentity } from './record-auth.ts'
-import type { RecordDoc, RecordDocRevision } from './record-docs.ts'
+import type { RecordDoc, RecordDocImportInput, RecordDocRevision } from './record-docs.ts'
 import { RecordDocError } from './record-docs.ts'
 import type { RecordProject } from './record-projects.ts'
 import type { RecordCursor, RecordRun, RecordRunDetail } from './record-runs.ts'
@@ -68,6 +68,7 @@ type Deps = {
       revisionId?: string
     },
   ): Promise<{ id: string; revisionId: string }>
+  importDoc(input: Tenant & RecordDocImportInput): Promise<{ id: string; revisionIds: string[] }>
   deleteDoc(
     input: Tenant & { id: string; reason: string; author: string },
   ): Promise<{ id: string; revisionId: string }>
@@ -102,7 +103,47 @@ type Deps = {
 const limitSchema = z.coerce.number().int().min(1).max(100).default(20)
 const filterSchema = z.string().min(1).optional()
 const idSchema = z.string().uuid()
-const cursorSchema = z.object({ at: z.string().datetime({ offset: true }), id: z.string().uuid() })
+const isoSchema = z.string().datetime({ offset: true })
+const cursorSchema = z.object({ at: isoSchema, id: z.string().uuid() })
+const deliverySchema = z.enum(['inject', 'demand'])
+const revisionOpSchema = z.enum([
+  'create',
+  'set',
+  'consume',
+  'delete',
+  'restore',
+  'import',
+  'backfill',
+])
+const docImportSchema = z.object({
+  doc: z.object({
+    scope: z.string().min(1),
+    subject: z.string().nullable(),
+    slug: z.string().min(1),
+    title: z.string(),
+    body: z.string(),
+    delivery: deliverySchema,
+    projectName: z.string().nullable().optional(),
+    createdAt: isoSchema,
+    updatedAt: isoSchema,
+    deletedAt: isoSchema.nullable(),
+  }),
+  revisions: z.array(
+    z.object({
+      scope: z.string().min(1),
+      subject: z.string().nullable(),
+      slug: z.string().min(1),
+      op: revisionOpSchema,
+      title: z.string(),
+      body: z.string(),
+      delivery: deliverySchema,
+      author: z.string().trim().min(1),
+      reason: z.string().trim().min(1),
+      sessionId: z.string().nullable().optional(),
+      at: isoSchema,
+    }),
+  ),
+})
 const activeSpaceRemedy = 'run `orch record space switch <slug>` to select an active space'
 
 export const encodeRecordCursor = (cursor: RecordCursor) => btoa(JSON.stringify(cursor))
@@ -304,15 +345,13 @@ export function recordApi(deps: Deps): Hono<ApiEnvironment> {
         slug: z.string().min(1),
         title: z.string(),
         body: z.string(),
-        delivery: z.enum(['inject', 'demand']),
+        delivery: deliverySchema,
         projectName: z.string().nullable().optional(),
         reason: z.string().trim().min(1),
         author: z.string().trim().min(1),
         forceInject: z.string().min(1).optional(),
-        op: z
-          .enum(['create', 'set', 'consume', 'delete', 'restore', 'import', 'backfill'])
-          .optional(),
-        at: z.string().datetime({ offset: true }).optional(),
+        op: revisionOpSchema.optional(),
+        at: isoSchema.optional(),
         id: z.string().uuid().optional(),
         revisionId: z.string().uuid().optional(),
       })
@@ -320,6 +359,17 @@ export function recordApi(deps: Deps): Hono<ApiEnvironment> {
     if (!body.success) return context.json({ error: 'invalid doc upsert' }, 400)
     try {
       return context.json(await deps.upsertDoc({ ...tenant, ...body.data }))
+    } catch (error) {
+      return writeError(context, error)
+    }
+  })
+  app.post('/v1/docs/import', async (context) => {
+    const tenant = scope(context)
+    if (!tenant) return noSpace(context)
+    const body = docImportSchema.safeParse(await context.req.json().catch(() => null))
+    if (!body.success) return context.json({ error: 'invalid doc import' }, 400)
+    try {
+      return context.json(await deps.importDoc({ ...tenant, ...body.data }))
     } catch (error) {
       return writeError(context, error)
     }
