@@ -5,7 +5,7 @@
  */
 import { existsSync, readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
-import type { Agent } from './agents.ts'
+import type { Agent } from './agent/agents.ts'
 import { type AskLoopback, startAskLoopback } from './ask/ask.ts'
 import {
   checkpointRun,

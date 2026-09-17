@@ -1,6 +1,6 @@
 import { describe, expect, spyOn, test } from 'bun:test'
 import { createMemoryRecordApiClient } from '../../test/fixtures/record-api.ts'
-import { agentsCommand } from '../agent-commands.ts'
+import { agentsCommand } from '../agent/agent-commands.ts'
 import { blockersCommand, healthCommand } from '../health-commands.ts'
 import { jobsCommand } from '../job-commands.ts'
 import { stateCommand } from './record-commands.ts'

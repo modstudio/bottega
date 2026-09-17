@@ -1,4 +1,4 @@
-import { AGENTS } from '../agent-registry.ts'
+import { AGENTS } from '../agent/agent-registry.ts'
 import { calibrationFor } from '../calibration-port.ts'
 import { failingDefaultCanonEvals } from '../canon/canon-eval-status.ts'
 import { db } from '../db.ts'

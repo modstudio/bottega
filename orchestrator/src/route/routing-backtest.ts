@@ -1,4 +1,4 @@
-import { AGENTS } from '../agent-registry.ts'
+import { AGENTS } from '../agent/agent-registry.ts'
 import { db } from '../db.ts'
 import { COOLS_DOWN } from '../failure/failure.ts'
 import { JOBS } from '../jobs.ts'

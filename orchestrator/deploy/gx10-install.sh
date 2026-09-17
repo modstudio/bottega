@@ -24,7 +24,7 @@ GPU_UTIL="${GPU_UTIL:-0.50}"  # 35GB of FP8 weights need ~59GB to leave KV room
 # The context window, and it is a ROUTING input: a job whose working set will not
 # fit excludes this agent outright, so the number here decides what the local
 # model is allowed to do. Keep it in step with LOCAL_CONTEXT_TOKENS in
-# src/agents.ts — `orch doctor` reads the served value back and reports a
+# src/agent/agents.ts — `orch doctor` reads the served value back and reports a
 # mismatch rather than letting the two drift.
 #
 # It was left unset, so this took vLLM's default and the running server had been

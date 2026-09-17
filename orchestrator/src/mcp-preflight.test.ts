@@ -2,7 +2,7 @@ import { afterEach, describe, expect, test } from 'bun:test'
 import { chmodSync, rmSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { dir } from '../test/fixtures/store.ts'
-import { AGENTS } from './agent-registry.ts'
+import { AGENTS } from './agent/agent-registry.ts'
 import {
   assertGrokTrustEligible,
   canonSourceFor,

@@ -4,6 +4,9 @@ import { createHash } from 'node:crypto'
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { which } from 'bun'
+import type { Caps } from '../capabilities.ts'
+import { nowIso, writableDb } from '../db.ts'
+import { localReachable } from '../local-host.ts'
 import {
   agentRows,
   HARNESSES,
@@ -12,9 +15,6 @@ import {
   refreshAgents,
   rowAgent,
 } from './agent-registry.ts'
-import type { Caps } from './capabilities.ts'
-import { nowIso, writableDb } from './db.ts'
-import { localReachable } from './local-host.ts'
 
 const REGISTRATION_PROBE_FILE = 'probe.txt'
 const REGISTRATION_PROBE_SENTINEL = 'REGISTRATION_PROBE_FILE_OK'
@@ -32,7 +32,7 @@ function namesProbeFile(value: string): boolean {
 
 /** True only for a completed read of the probe file whose result or final reply carries the sentinel. */
 export function registrationProbeReadsRepo(
-  events: import('./transport/transport.ts').NormalizedEvent[],
+  events: import('../transport/transport.ts').NormalizedEvent[],
   output: string,
 ): boolean {
   const reads = events.filter(
@@ -111,9 +111,9 @@ export async function probeAgent(name: string): Promise<RegistrationProbeResult>
       properties: { status: { type: 'string', enum: ['ok'] } },
     }),
   )
-  const { transportFor, valueMatchesStrictSchema } = await import('./transport/transport.ts')
-  const { mintStdioPingServer, mcpToolCallsObservable } = await import('./mcp-probe.ts')
-  const { JOBS } = await import('./jobs.ts')
+  const { transportFor, valueMatchesStrictSchema } = await import('../transport/transport.ts')
+  const { mintStdioPingServer, mcpToolCallsObservable } = await import('../mcp-probe.ts')
+  const { JOBS } = await import('../jobs.ts')
   mintStdioPingServer(join(scratch, 'repo'))
   const declared = row.jobs ? (JSON.parse(row.jobs) as string[]) : null
   const declaredJobs = declared ?? Object.keys(JOBS)
@@ -206,7 +206,7 @@ export async function probeAgent(name: string): Promise<RegistrationProbeResult>
         status: 'failed' as const,
         output: detail,
         parsed: null,
-        events: [] as import('./transport/transport.ts').NormalizedEvent[],
+        events: [] as import('../transport/transport.ts').NormalizedEvent[],
       }
     }
   }
@@ -219,7 +219,7 @@ export async function probeAgent(name: string): Promise<RegistrationProbeResult>
     : {
         status: 'ok' as const,
         output: 'skipped: not required for declared jobs',
-        events: [] as import('./transport/transport.ts').NormalizedEvent[],
+        events: [] as import('../transport/transport.ts').NormalizedEvent[],
       }
   const replyPath = join(scratch, 'reply.json')
   rmSync(replyPath, { force: true })
@@ -233,7 +233,7 @@ export async function probeAgent(name: string): Promise<RegistrationProbeResult>
         status: 'ok' as const,
         output: 'skipped: not required for declared jobs',
         parsed: { text: '{"status":"ok"}' },
-        events: [] as import('./transport/transport.ts').NormalizedEvent[],
+        events: [] as import('../transport/transport.ts').NormalizedEvent[],
       }
   const mcpRun =
     needs.mcp || !declared
@@ -246,7 +246,7 @@ export async function probeAgent(name: string): Promise<RegistrationProbeResult>
       : {
           status: 'ok' as const,
           output: 'skipped: not required for declared jobs',
-          events: [] as import('./transport/transport.ts').NormalizedEvent[],
+          events: [] as import('../transport/transport.ts').NormalizedEvent[],
         }
   const parsedSchema = (() => {
     try {

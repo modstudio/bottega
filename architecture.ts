@@ -111,17 +111,21 @@ export const modules: ArchitectureModule[] = [
     '../projects.ts',
     '../task-branch.ts',
   ]),
-  module('orchestrator/src/agent-probe.ts', [
+  module('orchestrator/src/agent/agent-probe.ts', [
     './agent-registry.ts',
     './agents.ts',
-    './capabilities.ts',
-    './db.ts',
-    './jobs.ts',
-    './local-host.ts',
-    './mcp-probe.ts',
-    './transport/transport.ts',
+    '../capabilities.ts',
+    '../db.ts',
+    '../jobs.ts',
+    '../local-host.ts',
+    '../mcp-probe.ts',
+    '../transport/transport.ts',
   ]),
-  module('orchestrator/src/agent-registry.ts', ['./agents.ts', './capabilities.ts', './db.ts']),
+  module('orchestrator/src/agent/agent-registry.ts', [
+    './agents.ts',
+    '../capabilities.ts',
+    '../db.ts',
+  ]),
   module('orchestrator/src/calibration-port.ts', []),
   module('orchestrator/src/capabilities.ts', []),
   module('orchestrator/src/codex-mcp-scope.ts', ['./database-location.ts', './mcp-probe.ts']),
@@ -131,8 +135,8 @@ export const modules: ArchitectureModule[] = [
   module('orchestrator/src/keep-tree-hold.ts', []),
   module('orchestrator/src/local-host.ts', [
     '../../shared/state-directory.ts',
-    './agent-registry.ts',
-    './agents.ts',
+    './agent/agent-registry.ts',
+    './agent/agents.ts',
     './db.ts',
   ]),
   module('orchestrator/src/mcp-doc-write.ts', []),
@@ -230,7 +234,7 @@ export const modules: ArchitectureModule[] = [
   module('orchestrator/src/reclaim/reclaim-residue.ts', [
     'node:fs',
     'node:path',
-    '../agent-registry.ts',
+    '../agent/agent-registry.ts',
     '../db.ts',
     '../git-environment.ts',
     '../grok-trust.ts',
@@ -278,7 +282,7 @@ export const modules: ArchitectureModule[] = [
   module('orchestrator/src/review-types.ts', ['./review-vocabulary.ts', './change-identity.ts']),
   module('orchestrator/src/run-alive.ts', []),
   module('orchestrator/src/run-claim.ts', [
-    './agents.ts',
+    './agent/agents.ts',
     './codex-schema.ts',
     './canon/canon.ts',
     './checkout-identity.ts',
@@ -335,7 +339,7 @@ export const modules: ArchitectureModule[] = [
     './run-alive.ts',
   ]),
   module('orchestrator/src/run-live.ts', [
-    './agents.ts',
+    './agent/agents.ts',
     './ask/ask.ts',
     './checkpoint.ts',
     './codex-mcp-scope.ts',
@@ -485,10 +489,10 @@ export const modules: ArchitectureModule[] = [
 ]
 
 export const inversions: ArchitectureInversion[] = [
-  { from: 'orchestrator/src/jobs.ts', to: 'orchestrator/src/agents.ts' },
+  { from: 'orchestrator/src/jobs.ts', to: 'orchestrator/src/agent/agents.ts' },
   { from: 'orchestrator/src/route/route.ts', to: 'orchestrator/src/review.ts' },
   { from: 'orchestrator/src/review.ts', to: 'orchestrator/src/route/route.ts' },
-  { from: 'orchestrator/src/transport/transport.ts', to: 'orchestrator/src/agents.ts' },
+  { from: 'orchestrator/src/transport/transport.ts', to: 'orchestrator/src/agent/agents.ts' },
   {
     from: 'orchestrator/src/transport/transport.ts',
     to: 'orchestrator/src/transport/transport-cli.ts',

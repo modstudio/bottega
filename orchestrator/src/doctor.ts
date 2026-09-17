@@ -1,9 +1,9 @@
 // concern: doctor
 /** Knows machine and register diagnosis. Must not know transports, routing, run control, the CLI, or reviews by value. */
 import { existsSync } from 'node:fs'
-import { doctorAgentStatus } from './agent-auth.ts'
-import { AGENTS, agentRows } from './agent-registry.ts'
-import { cliVersion, versionBelow } from './agents.ts'
+import { doctorAgentStatus } from './agent/agent-auth.ts'
+import { AGENTS, agentRows } from './agent/agent-registry.ts'
+import { cliVersion, versionBelow } from './agent/agents.ts'
 import { gwetAc1, quadraticWeightedKappa } from './agreement.ts'
 import { DATABASE_RESOLUTION, DB_PATH, databaseOpenMode, db } from './db.ts'
 import {
