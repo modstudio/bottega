@@ -179,12 +179,22 @@ export function legacyDatabaseRefusal(
     'orchestrator',
     FROZEN_STATE_NAMES.orchestratorDatabase,
   )
-  return legacyStoreRefusal(existsSync(legacyStore), {
-    legacyStore,
-    destinationStore: resolution.path,
-    legacyRuns: join(binaryRepository.root, 'orchestrator', FROZEN_STATE_NAMES.runsDirectory),
-    destinationRuns: resolveRunsDirectory(env),
-  })
+  const legacyRuns = join(binaryRepository.root, 'orchestrator', FROZEN_STATE_NAMES.runsDirectory)
+  return legacyStoreRefusal(
+    {
+      store: existsSync(legacyStore),
+      wal: existsSync(`${legacyStore}-wal`),
+      shm: existsSync(`${legacyStore}-shm`),
+      runs: existsSync(legacyRuns),
+      destinationStore: existsSync(resolution.path),
+    },
+    {
+      legacyStore,
+      destinationStore: resolution.path,
+      legacyRuns,
+      destinationRuns: resolveRunsDirectory(env),
+    },
+  )
 }
 
 export { resolveRunsDirectory } from '../../shared/state-directory.ts'

@@ -59,30 +59,60 @@ describe('state root resolution', () => {
 })
 
 test('legacy store refusal names every orchestrator move', () => {
-  const refusal = legacyStoreRefusal(true, {
-    legacyStore: '/checkout/orchestrator/orch.db',
-    destinationStore: '/state/orchestrator/orch.db',
-    legacyRuns: '/checkout/orchestrator/runs',
-    destinationRuns: '/state/orchestrator/runs',
-  })
+  const refusal = legacyStoreRefusal(
+    { store: true, wal: true, shm: true, runs: true, destinationStore: false },
+    {
+      legacyStore: '/checkout/orchestrator/orch.db',
+      destinationStore: '/state/orchestrator/orch.db',
+      legacyRuns: '/checkout/orchestrator/runs',
+      destinationRuns: '/state/orchestrator/runs',
+    },
+  )
   expect(refusal).toContain('/checkout/orchestrator/orch.db -> /state/orchestrator/orch.db')
   expect(refusal).toContain('/checkout/orchestrator/orch.db-wal -> /state/orchestrator/orch.db-wal')
   expect(refusal).toContain('/checkout/orchestrator/orch.db-shm -> /state/orchestrator/orch.db-shm')
   expect(refusal).toContain('/checkout/orchestrator/runs -> /state/orchestrator/runs')
   expect(refusal).toContain('check any existing destination before moving')
   expect(
-    legacyStoreRefusal(false, {
-      legacyStore: '/legacy',
-      destinationStore: '/state',
-    }),
+    legacyStoreRefusal(
+      { store: false, wal: false, shm: false, destinationStore: false },
+      { legacyStore: '/legacy', destinationStore: '/state' },
+    ),
   ).toBeNull()
 })
 
+test('legacy store refusal lists only a remaining sidecar', () => {
+  const refusal = legacyStoreRefusal(
+    { store: false, wal: true, shm: false, destinationStore: false },
+    { legacyStore: '/legacy/orch.db', destinationStore: '/state/orch.db' },
+  )
+  expect(refusal).toContain('/legacy/orch.db-wal -> /state/orch.db-wal')
+  expect(refusal).not.toContain('/legacy/orch.db -> /state/orch.db')
+  expect(refusal).not.toContain('/legacy/orch.db-shm')
+})
+
+test('legacy store refusal lists only a remaining runs directory', () => {
+  const refusal = legacyStoreRefusal(
+    { store: false, wal: false, shm: false, runs: true, destinationStore: false },
+    {
+      legacyStore: '/legacy/orch.db',
+      destinationStore: '/state/orch.db',
+      legacyRuns: '/legacy/runs',
+      destinationRuns: '/state/runs',
+    },
+  )
+  expect(refusal).toContain('/legacy/runs -> /state/runs')
+  expect(refusal).not.toContain('/legacy/orch.db -> /state/orch.db')
+})
+
 test('legacy store refusal applies even when the destination already exists', () => {
-  expect(
-    legacyStoreRefusal(true, {
+  const refusal = legacyStoreRefusal(
+    { store: true, wal: false, shm: false, destinationStore: true },
+    {
       legacyStore: '/legacy',
       destinationStore: '/existing-state',
-    }),
-  ).toContain('/legacy -> /existing-state')
+    },
+  )
+  expect(refusal).toContain('destination store already exists')
+  expect(refusal).toContain('/legacy -> /existing-state')
 })

@@ -21,10 +21,18 @@ export const DB_PATH = livePath
 
 function legacyDatabaseRefusal(): string | null {
   if (process.env.HUB_DB || !legacyPath) return null
-  return legacyStoreRefusal(existsSync(legacyPath), {
-    legacyStore: legacyPath,
-    destinationStore: DB_PATH,
-  })
+  return legacyStoreRefusal(
+    {
+      store: existsSync(legacyPath),
+      wal: existsSync(`${legacyPath}-wal`),
+      shm: existsSync(`${legacyPath}-shm`),
+      destinationStore: existsSync(DB_PATH),
+    },
+    {
+      legacyStore: legacyPath,
+      destinationStore: DB_PATH,
+    },
+  )
 }
 
 /** A test process never falls back to the live hub store; production still does. */

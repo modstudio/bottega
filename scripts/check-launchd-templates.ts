@@ -48,6 +48,7 @@ try {
       .replaceAll('__HOME__', '/tmp')
       .replaceAll('__STATE_HOME_ENV__', `${PLATFORM_SLUG.toUpperCase()}_STATE_HOME`)
       .replaceAll('__STATE_HOME__', `/tmp/${PLATFORM_SLUG}-state`)
+      .replaceAll('__HUB_HOSTED_URL__', 'https://hub.example')
       .replaceAll('__MONITOR_BACKSTOP_SECONDS__', '14400')
       .replaceAll('__FIX_DEFECT_BACKSTOP_SECONDS__', '43200')
       .replaceAll('__MODEL_HOST__', 'example')

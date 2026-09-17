@@ -81,22 +81,26 @@ export type LegacyStoreMove = {
   destinationRuns?: string
 }
 
+export type LegacyStoreFacts = {
+  store: boolean
+  wal: boolean
+  shm: boolean
+  runs?: boolean
+  destinationStore: boolean
+}
+
 /** Pure refusal decision shared by both stores; callers supply filesystem facts. */
-export function legacyStoreRefusal(
-  legacyStoreExists: boolean,
-  move: LegacyStoreMove,
-): string | null {
-  if (!legacyStoreExists) return null
-  const paths = [
-    [move.legacyStore, move.destinationStore],
-    [`${move.legacyStore}-wal`, `${move.destinationStore}-wal`],
-    [`${move.legacyStore}-shm`, `${move.destinationStore}-shm`],
-    ...(move.legacyRuns && move.destinationRuns
-      ? ([[move.legacyRuns, move.destinationRuns]] as const)
-      : []),
-  ]
+export function legacyStoreRefusal(facts: LegacyStoreFacts, move: LegacyStoreMove): string | null {
+  const paths: [string, string][] = []
+  if (facts.store) paths.push([move.legacyStore, move.destinationStore])
+  if (facts.wal) paths.push([`${move.legacyStore}-wal`, `${move.destinationStore}-wal`])
+  if (facts.shm) paths.push([`${move.legacyStore}-shm`, `${move.destinationStore}-shm`])
+  if (facts.runs && move.legacyRuns && move.destinationRuns) {
+    paths.push([move.legacyRuns, move.destinationRuns])
+  }
+  if (paths.length === 0) return null
   return (
-    `refusing to open state while the legacy store exists\n` +
+    `refusing to open state while legacy state exists${facts.destinationStore ? ' and the destination store already exists' : ''}\n` +
     `check any existing destination before moving, then move the existing state before retrying (sidecars and runs when present):\n` +
     paths.map(([source, destination]) => `  ${source} -> ${destination}`).join('\n')
   )

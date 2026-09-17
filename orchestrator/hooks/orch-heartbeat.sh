@@ -61,6 +61,7 @@ else
     exit 2
   }
 fi
+export ORCH_DB="$DB_PATH"
 
 SID="${1:?session id required (Claude session_id; orch records it on every run)}"
 INTERVAL="${2:-60}"
