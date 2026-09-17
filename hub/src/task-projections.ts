@@ -8,6 +8,174 @@ import {
 
 export type ProjectionProject = TrackerProject
 
+export type DayRow = {
+  day: string
+  claude_tokens: number
+  tasks: number
+  commits: number
+  files: number
+  lines_product: number
+  lines_test: number
+  lines_docs: number
+  lines_config: number
+  lines_generated: number
+}
+
+export type DayIntervalRow = {
+  start_at: string
+  end_at: string
+  open: number
+}
+
+export type VendorSpendRow = { agent: string; tokens: number; cost: number }
+export type RollupIntervalRow = { source: string; start_at: string; claude_tokens: number }
+
+export function projectRollUpDays(rows: RollupIntervalRow[]) {
+  const grouped = new Map<string, { day: string; claude: number; msgs: number }>()
+  for (const row of rows) {
+    if (row.source !== 'claude' && row.source !== 'codex') continue
+    const day = row.start_at.slice(0, 10)
+    const current = grouped.get(day) ?? { day, claude: 0, msgs: 0 }
+    current.claude += row.claude_tokens
+    current.msgs += 1
+    grouped.set(day, current)
+  }
+  return [...grouped.values()].sort((left, right) => left.day.localeCompare(right.day))
+}
+
+type RatioDay = DayRow & {
+  ratio: number | null
+  excluded: 'today' | 'gap' | null
+  engagedMs: number
+}
+
+export type RatioSummary = {
+  perTask: number | null
+  tokens: number
+  tasks: number
+  usableDays: number
+  direction: 'improving' | 'flat' | 'worsening' | 'unknown'
+  changePct: number | null
+  days: RatioDay[]
+}
+
+const MIN_RATIO_TASKS = 5
+
+export function projectRatioSummary(
+  rows: DayRow[],
+  intervals: DayIntervalRow[],
+  now: number,
+  includeEngaged = true,
+): RatioSummary {
+  const today = new Date(now).toISOString().slice(0, 10)
+  const nonZero = rows
+    .map((row) => row.claude_tokens)
+    .filter((value) => value > 0)
+    .sort((a, b) => a - b)
+  const floor = (nonZero.length ? nonZero[Math.floor(nonZero.length / 2)]! : 0) * 0.05
+  const days = rows.map((row): RatioDay => {
+    const excluded: RatioDay['excluded'] =
+      row.day === today ? 'today' : row.tasks > 0 && row.claude_tokens < floor ? 'gap' : null
+    const from = `${row.day}T00:00:00.000Z`
+    const to = `${row.day}T23:59:59.999Z`
+    return {
+      ...row,
+      excluded,
+      ratio: row.tasks > 0 ? Math.round(row.claude_tokens / row.tasks) : null,
+      engagedMs: includeEngaged
+        ? engagedMs(
+            intervals
+              .filter((item) => item.end_at >= from && item.start_at < to)
+              .map((item) => ({
+                start: new Date(item.start_at).getTime(),
+                end: Math.min(intervalEndMs(item, now), new Date(to).getTime()),
+              })),
+          )
+        : 0,
+    }
+  })
+  const usable = days.filter((day) => !day.excluded && day.tasks > 0)
+  const tokens = usable.reduce((sum, day) => sum + day.claude_tokens, 0)
+  const tasks = usable.reduce((sum, day) => sum + day.tasks, 0)
+  const half = Math.floor(usable.length / 2)
+  const earlier = usable.slice(0, half)
+  const recent = usable.slice(usable.length - half)
+  const sum = (items: RatioDay[], key: 'claude_tokens' | 'tasks') =>
+    items.reduce((total, day) => total + day[key], 0)
+  let direction: RatioSummary['direction'] = 'unknown'
+  let changePct: number | null = null
+  if (
+    half > 0 &&
+    sum(earlier, 'tasks') >= MIN_RATIO_TASKS &&
+    sum(recent, 'tasks') >= MIN_RATIO_TASKS
+  ) {
+    const before = sum(earlier, 'claude_tokens') / sum(earlier, 'tasks')
+    const after = sum(recent, 'claude_tokens') / sum(recent, 'tasks')
+    changePct = ((after - before) / before) * 100
+    direction = Math.abs(changePct) < 10 ? 'flat' : changePct < 0 ? 'improving' : 'worsening'
+  }
+  return {
+    perTask: tasks ? Math.round(tokens / tasks) : null,
+    tokens,
+    tasks,
+    usableDays: usable.length,
+    direction,
+    changePct,
+    days,
+  }
+}
+
+export function projectSpendGrid(
+  summary: RatioSummary,
+  vendors: VendorSpendRow[],
+  intervals: DayIntervalRow[],
+  now: number,
+) {
+  const days = summary.days.filter((day) => !day.excluded)
+  const from = days.length ? `${days[0]!.day}T00:00:00.000Z` : new Date(now).toISOString()
+  const denominators = {
+    'shipped task': days.reduce((sum, day) => sum + day.tasks, 0),
+    commit: days.reduce((sum, day) => sum + day.commits, 0),
+    'product line': days.reduce((sum, day) => sum + day.lines_product, 0),
+    'file touched': days.reduce((sum, day) => sum + day.files, 0),
+    'engaged hour':
+      engagedMs(
+        intervals
+          .filter((row) => row.end_at >= from && new Date(row.start_at).getTime() < now)
+          .map((row) => ({
+            start: new Date(row.start_at).getTime(),
+            end: Math.min(intervalEndMs(row, now), now),
+          })),
+      ) / 3_600_000,
+  }
+  const cost = vendors.reduce((sum, vendor) => sum + vendor.cost, 0)
+  return {
+    from: from.slice(0, 10),
+    days: days.length,
+    numerators: [
+      {
+        name: 'claude',
+        total: days.reduce((sum, day) => sum + day.claude_tokens, 0),
+        kind: 'tokens' as const,
+      },
+      ...vendors.map((vendor) => ({
+        name: vendor.agent,
+        total: vendor.tokens,
+        kind: 'tokens' as const,
+      })),
+      { name: 'cost', total: cost, kind: 'usd' as const },
+    ],
+    denominators,
+    lineMix: {
+      generated: days.reduce((sum, day) => sum + day.lines_generated, 0),
+      product: days.reduce((sum, day) => sum + day.lines_product, 0),
+      test: days.reduce((sum, day) => sum + day.lines_test, 0),
+      docs: days.reduce((sum, day) => sum + day.lines_docs, 0),
+      config: days.reduce((sum, day) => sum + day.lines_config, 0),
+    },
+  }
+}
+
 export type IntervalRow = {
   task_key: string | null
   project: string | null

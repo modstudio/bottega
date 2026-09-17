@@ -3,6 +3,7 @@ import type { inferRouterOutputs } from '@trpc/server'
 import { useEffect } from 'react'
 import { responseSubtitle, WindowControl } from '@/components/design-system'
 import { compactTokens, duration } from '@/lib/format'
+import { isHostedMode } from '@/lib/hub-mode'
 import { setWorkCounts, useWindowState } from '@/lib/window'
 import { trpc } from '@/trpc/client'
 import { Badge } from '@/ui/badge/badge'
@@ -653,6 +654,10 @@ export function HealthView({ data }: { data: HealthData }) {
 }
 
 function RatioQuery() {
+  return isHostedMode() ? <HostedRatioQuery /> : <LocalRatioQuery />
+}
+
+function LocalRatioQuery() {
   const windowState = useWindowState()
   const input = { hours: windowState.hours, filters: windowState.filters }
   const query = useQuery(trpc.insight.ratio.queryOptions(input, { refetchInterval: 10_000 }))
@@ -671,10 +676,60 @@ function RatioQuery() {
   )
 }
 
+function HostedRatioQuery() {
+  const windowState = useWindowState()
+  const query = useQuery(
+    trpc.record.ratio.queryOptions(
+      { hours: windowState.hours, filters: { ...windowState.filters, source: '' } },
+      { refetchInterval: 10_000 },
+    ),
+  )
+  if (query.isPending) return <p className="text-text-muted">Loading ratio...</p>
+  if (query.error)
+    return (
+      <p data-tone="error" className="text-status-text">
+        could not load: {query.error.message}
+      </p>
+    )
+  return (
+    <section>
+      <InsightChrome title="Ratio" response={query.data} />
+      <RatioView data={query.data.data} />
+    </section>
+  )
+}
+
 function SpendQuery() {
+  return isHostedMode() ? <HostedSpendQuery /> : <LocalSpendQuery />
+}
+
+function LocalSpendQuery() {
   const windowState = useWindowState()
   const input = { hours: windowState.hours, filters: windowState.filters }
   const query = useQuery(trpc.insight.spend.queryOptions(input, { refetchInterval: 10_000 }))
+  if (query.isPending) return <p className="text-text-muted">Loading spend...</p>
+  if (query.error)
+    return (
+      <p data-tone="error" className="text-status-text">
+        could not load: {query.error.message}
+      </p>
+    )
+  return (
+    <section>
+      <InsightChrome title="Spend" response={query.data} />
+      <SpendView data={query.data.data} />
+    </section>
+  )
+}
+
+function HostedSpendQuery() {
+  const windowState = useWindowState()
+  const query = useQuery(
+    trpc.record.spend.queryOptions(
+      { hours: windowState.hours, filters: { ...windowState.filters, source: '' } },
+      { refetchInterval: 10_000 },
+    ),
+  )
   if (query.isPending) return <p className="text-text-muted">Loading spend...</p>
   if (query.error)
     return (

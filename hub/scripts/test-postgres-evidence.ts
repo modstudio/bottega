@@ -29,7 +29,14 @@ import {
   patchHostedTask,
   softDeleteHostedDocuments,
 } from '../src/hosted-tasks.ts'
-import { hostedFlightDone, hostedTaskDetail } from '../src/hosted-work.ts'
+import {
+  hostedFlightDone,
+  hostedNotes,
+  hostedRatio,
+  hostedSettings,
+  hostedSpend,
+  hostedTaskDetail,
+} from '../src/hosted-work.ts'
 
 const adminUrl = process.env.ORCH_TEST_POSTGRES_URL
 const actorUrl = process.env.ORCH_RECORD_URL
@@ -336,6 +343,24 @@ try {
       throw new Error('another space observed the report setting')
     if ((await listHostedSends(actorUrl, otherIdentity, {})).sends.length)
       throw new Error('another space observed send history')
+
+    const pageNotes = await hostedNotes(actorUrl, identity, { stale: false })
+    if (!pageNotes.notes.some((row) => row.id === allocatedNote.number))
+      throw new Error('hosted notes page adapter did not return the seeded note')
+    const pageRatio = await hostedRatio(actorUrl, identity, 14)
+    if (!pageRatio.days.some((row) => row.day === '2026-09-17'))
+      throw new Error('hosted ratio adapter did not return the seeded day')
+    const pageSpend = await hostedSpend(actorUrl, identity, 14)
+    if (!pageSpend.numerators.some((row) => row.name === 'codex'))
+      throw new Error('hosted spend adapter did not return the seeded interval')
+    const pageSettings = await hostedSettings(actorUrl, identity, [PLATFORM_SLUG])
+    if (!pageSettings.report.enabled || pageSettings.sends.length !== 1)
+      throw new Error('hosted settings adapter did not return the setting and send')
+    const emptyNotes = await hostedNotes(actorUrl, otherIdentity, { stale: false })
+    const emptyRatio = await hostedRatio(actorUrl, otherIdentity, 14)
+    const emptySettings = await hostedSettings(actorUrl, otherIdentity, [])
+    if (emptyNotes.notes.length || emptyRatio.days.length || emptySettings.sends.length)
+      throw new Error('another space observed a hosted page adapter row')
   } finally {
     await client.close()
   }

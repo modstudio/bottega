@@ -1,6 +1,14 @@
 import { initTRPC, TRPCError } from '@trpc/server'
 import { z } from 'zod'
-import { hostedBoard, hostedFlightDone, hostedTaskDetail } from '../../hosted-work.ts'
+import {
+  hostedBoard,
+  hostedFlightDone,
+  hostedNotes,
+  hostedRatio,
+  hostedSettings,
+  hostedSpend,
+  hostedTaskDetail,
+} from '../../hosted-work.ts'
 import { routingViewData } from '../../orch-transforms.ts'
 import { createRecordClient } from '../../record-client.ts'
 import { selectSnapshot } from '../../snapshot-selection.ts'
@@ -129,6 +137,68 @@ export const recordRouter = t.router({
       projects: await client.projects(),
     })
   }),
+  notes: t.procedure
+    .input(
+      z.object({
+        project: z.string().trim().min(1).max(64).optional(),
+        stale: z.boolean().default(false),
+      }),
+    )
+    .query(async ({ ctx, input }) => {
+      const { identity } = await hostedIdentity(ctx)
+      return hostedNotes(recordDatabaseUrl(), identity, input)
+    }),
+  ratio: t.procedure.input(workInput).query(async ({ ctx, input }) => {
+    const { client, identity } = await hostedIdentity(ctx)
+    const projects = await client.projects()
+    const chrome = await hostedFlightDone(recordDatabaseUrl(), identity, {
+      ...input,
+      name: 'flight',
+      projects,
+    })
+    const summary = await hostedRatio(recordDatabaseUrl(), identity)
+    return {
+      ...chrome,
+      view: 'ratio' as const,
+      data: {
+        ...summary,
+        days: summary.days.map((day) => ({
+          day: day.day,
+          ratio: day.ratio,
+          tokens: day.claude_tokens,
+          tasks: day.tasks,
+          excluded: day.excluded,
+        })),
+      },
+    }
+  }),
+  spend: t.procedure.input(workInput).query(async ({ ctx, input }) => {
+    const { client, identity } = await hostedIdentity(ctx)
+    const projects = await client.projects()
+    const chrome = await hostedFlightDone(recordDatabaseUrl(), identity, {
+      ...input,
+      name: 'flight',
+      projects,
+    })
+    return {
+      ...chrome,
+      view: 'spend' as const,
+      data: await hostedSpend(recordDatabaseUrl(), identity),
+    }
+  }),
+  settings: t.procedure
+    .input(
+      z.object({ hours: z.union([z.literal(24), z.literal(48), z.literal(168), z.literal(720)]) }),
+    )
+    .query(async ({ ctx }) => {
+      const { client, identity } = await hostedIdentity(ctx)
+      const projects = await client.projects()
+      return hostedSettings(
+        recordDatabaseUrl(),
+        identity,
+        projects.map((project) => project.name),
+      )
+    }),
   task: t.procedure
     .input(z.object({ key: z.string().min(1).max(64) }))
     .query(async ({ ctx, input }) => {

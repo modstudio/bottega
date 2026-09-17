@@ -52,3 +52,25 @@ export type Brief = {
   brief?: string
   exclude?: boolean
 }
+
+const REPORT_DEFAULTS: Report = {
+  enabled: false,
+  to: [],
+  fromName: 'Daily Work Report',
+  fromAddress: '',
+  subjectPrefix: 'Daily Work Report',
+  smtpHost: 'smtp.gmail.com',
+  smtpPort: 587,
+  smtpUser: '',
+  smtpPasswordRef: 'keychain:work-report-smtp',
+  windowHours: 24,
+  minMinutes: 15,
+  projects: [],
+  briefs: [],
+  testTo: '',
+}
+
+export const reportDefaults = (projects: string[]): Report => ({
+  ...REPORT_DEFAULTS,
+  projects,
+})

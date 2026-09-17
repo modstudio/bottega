@@ -1,6 +1,7 @@
 import { useMutation, useQuery } from '@tanstack/react-query'
 import { createFileRoute, Link } from '@tanstack/react-router'
 import { useEffect, useState } from 'react'
+import { isHostedMode } from '@/lib/hub-mode'
 import { useWindowState } from '@/lib/window'
 import { queryClient, type SettingsResponse, trpc } from '@/trpc/client'
 import { Badge } from '@/ui/badge/badge'
@@ -43,6 +44,10 @@ function formFrom(report: Report): FormState {
 export const Route = createFileRoute('/settings')({ component: SettingsPage })
 
 function SettingsPage() {
+  return isHostedMode() ? <HostedSettingsPage /> : <LocalSettingsPage />
+}
+
+function LocalSettingsPage() {
   const { hours } = useWindowState()
   const query = useQuery(trpc.settings.get.queryOptions({ hours }, { refetchInterval: 10_000 }))
   const payload = query.data
@@ -354,6 +359,91 @@ function SettingsPage() {
             </div>
           </Panel>
         </>
+      ) : null}
+    </section>
+  )
+}
+
+export function HostedSettingsPage() {
+  const { hours } = useWindowState()
+  const query = useQuery(trpc.record.settings.queryOptions({ hours }, { refetchInterval: 10_000 }))
+  const data = query.data
+  const display = (value: unknown) =>
+    Array.isArray(value)
+      ? value.join(', ') || '-'
+      : typeof value === 'object' && value !== null
+        ? JSON.stringify(value)
+        : String(value ?? '-')
+  return (
+    <section>
+      <PageHeader title="Daily report" subtitle="Hosted report settings · read only" />
+      {query.error ? (
+        <p data-tone="error" className="text-status-text">
+          could not load: {query.error.message}
+        </p>
+      ) : null}
+      {data ? (
+        <>
+          <div className="max-w-[640px]">
+            <SectionTitle>Stored values</SectionTitle>
+          </div>
+          <Panel className="mb-6 max-w-[640px]">
+            <dl className="grid gap-3 md:grid-cols-2">
+              {Object.entries(data.report).map(([name, value]) => (
+                <div key={name}>
+                  <dt className="text-xs text-text-muted">{name}</dt>
+                  <dd className="break-words text-sm">
+                    {name === 'smtpPasswordRef'
+                      ? data.secrets.smtpPassword.configured
+                        ? 'Reference stored; resolution unavailable on hosted server'
+                        : 'No reference stored; resolution unavailable on hosted server'
+                      : display(value)}
+                  </dd>
+                </div>
+              ))}
+            </dl>
+          </Panel>
+          <div className="max-w-[640px]">
+            <SectionTitle>Recent sends</SectionTitle>
+          </div>
+          <div className="mb-6 max-w-[640px] border border-border-default">
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>When</TableHead>
+                  <TableHead>Result</TableHead>
+                  <TableHead numeric>Items</TableHead>
+                  <TableHead>Detail</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {data.sends.map((row) => (
+                  <TableRow key={`${row.at}:${row.recipients}`}>
+                    <TableCell muted>{row.at.slice(0, 16).replace('T', ' ')}</TableCell>
+                    <TableCell>
+                      <Badge tone={row.status === 'failed' ? 'error' : 'neutral'}>
+                        {String(row.status)}
+                      </Badge>
+                    </TableCell>
+                    <TableCell numeric>{row.items.toLocaleString()}</TableCell>
+                    <TableCell muted>
+                      {row.test ? <Badge className="mr-2">test</Badge> : null}
+                      {String(row.error || row.recipients)}
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+            {!data.sends.length ? (
+              <EmptyState
+                title="No reports have been sent."
+                hint="No send records exist for this space."
+              />
+            ) : null}
+          </div>
+        </>
+      ) : query.isPending ? (
+        <p className="text-text-muted">Loading settings...</p>
       ) : null}
     </section>
   )

@@ -17,10 +17,14 @@ test('hosted mode exposes only read-only hosted routes', () => {
       '/flight',
       '/health',
       '/jobs',
+      '/notes',
       '/projects',
+      '/ratio',
       '/reviews',
       '/routing',
       '/runs',
+      '/settings',
+      '/spend',
     ].sort(),
   )
   for (const item of hosted) expect(isHostedPath(item.to)).toBe(true)
@@ -41,6 +45,7 @@ test('hosted mode exposes only read-only hosted routes', () => {
   expect(isHostedPath('/flight/tasks/DEV-701')).toBe(true)
   expect(isHostedPath('/board/tasks/DEV-701')).toBe(true)
   expect(isHostedPath('/done/tasks/DEV-701')).toBe(true)
-  expect(isHostedPath('/settings')).toBe(false)
+  expect(isHostedPath('/settings')).toBe(true)
+  expect(isHostedPath('/design')).toBe(false)
   expect(isHostedPath('/projects/alpha')).toBe(false)
 })
