@@ -18,8 +18,9 @@ export function ProjectName({
     : undefined
   return (
     <span
+      data-project=""
       style={style}
-      className="inline-flex items-center gap-2 whitespace-nowrap font-medium [--project:var(--project-light,var(--border-strong))] dark:[--project:var(--project-dark,var(--border-strong))]"
+      className="inline-flex items-center gap-2 whitespace-nowrap font-medium"
     >
       <span aria-hidden className="h-3.5 w-[3px] shrink-0 bg-project" />
       {name}

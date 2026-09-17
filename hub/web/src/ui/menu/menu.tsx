@@ -14,7 +14,7 @@ import { type Align, panelClasses, placementClasses, type Side } from '../popove
 import { moveIndex, typeaheadIndex } from '../state/list-navigation'
 import { classes } from '../text/classes'
 
-export type MenuItem = {
+type MenuItem = {
   label: string
   onSelect: () => void
   icon?: LucideIcon

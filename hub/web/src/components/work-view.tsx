@@ -12,7 +12,6 @@ import {
 import { type ReactNode, useEffect, useMemo, useState } from 'react'
 import { Collection, type CollectionChildRow, type CollectionColumn } from '@/components/collection'
 import {
-  LiveDot,
   ProjectMark,
   projectVars,
   responseSubtitle,
@@ -28,6 +27,8 @@ import { taskStatusLook } from '@/lib/task-status'
 import { setWorkCounts, useWindowState } from '@/lib/window'
 import { type BoardResponse, type FlightResponse, trpc } from '@/trpc/client'
 import { Badge } from '@/ui/badge/badge'
+import { LiveDot } from '@/ui/badge/live-dot'
+import { TextButton } from '@/ui/button/button'
 import { Docked } from '@/ui/companion/companion'
 import { EmptyState } from '@/ui/empty-state/empty-state'
 import { Input } from '@/ui/field/input'
@@ -544,7 +545,8 @@ function BoardCardView({ card }: { card: BoardCard }) {
       params={{ key: card.key }}
       resetScroll={false}
       data-record-key={card.key}
-      className="block cursor-pointer border border-border-default border-l-[3px] border-l-project p-3 [--project:var(--project-light,var(--border-strong))] dark:[--project:var(--project-dark,var(--border-strong))]"
+      data-project=""
+      className="block cursor-pointer border border-border-default border-l-[3px] border-l-project p-3"
       style={projectVars(colors, card.project)}
     >
       <Identifier className="block">{card.key}</Identifier>
@@ -782,9 +784,7 @@ export function BoardView() {
         <p className="mt-5 text-text-muted">
           Source glyphs distinguish hub, external trackers, and git-derived records without using
           state colour{response.data.scoped ? ' - counts are for this project' : ''}.{' '}
-          <button type="button" className="underline" onClick={() => setWhy((open) => !open)}>
-            why these cards?
-          </button>
+          <TextButton onClick={() => setWhy((open) => !open)}>why these cards?</TextButton>
         </p>
         {why ? (
           <p className="mt-2 max-w-4xl text-text-muted">

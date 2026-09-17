@@ -15,14 +15,51 @@ canonical hub operation rather than duplicating its query or write. A screen the
 adds a route, a procedure over the canonical operation, and navigation without defining a
 second data model in the browser.
 
-Use native browser controls and the existing small helpers. The selected window, filters,
-and navigation counts share the external store in `hub/web/src/lib/window.ts`. Live-query
-polling pauses while redrawing would disrupt an open control, and it reads only completed
-collection state because collection has its own cadence and lease.
+The selected window, filters and navigation counts share the external store in
+`hub/web/src/lib/window.ts`. Live-query polling pauses while redrawing would disrupt an
+open control, and it reads only completed collection state because collection has its
+own cadence and lease.
 
 Serve the current worktree before checking a screen, then verify direct navigation and a
 hard refresh against that server. Filtering happens before any cap, because capping first
 can hide matching rows behind another project's traffic.
+
+# Design system
+
+Build screens from `hub/web/src/ui`, and leave no control wearing the browser's own
+appearance. `ui/` imports nothing from the app, its layers are declared in
+`architecture.ts`, and `hub/web/lint/layout-only-classname.grit` refuses appearance
+classes passed to its components: change a component's look through a variant it owns and
+pass it margin, size and placement only. Browser behaviour, such as the dialog element,
+the popover attribute and anchor positioning, is used beneath our own styling; no
+component library is added, and a component's keyboard behaviour follows its WAI-ARIA APG
+pattern.
+
+Presentation that knows no domain belongs in `ui/`, while a component that knows what a
+project, run or tracker is belongs beside the screens using it. `ProjectName` renders a
+name and a colour; `ProjectMark` knows where a project's colour comes from.
+
+Colour, type and measurement come from `hub/web/src/styles/tokens.css` through the
+Tailwind bridge in `hub/web/src/styles/theme.css`: raw values, then the meanings the
+`dark` class overrides, then shared measurements. Name a token; never write a colour
+literal or a default Tailwind palette class. Colour that reports a status is selected by
+`data-tone`, which derives that role's whole triad from one anchor. Check a new pair's
+contrast in the browser against WCAG AA, and mix colour in sRGB because mixing in OKLCH
+rotates hue.
+
+A meaning that differs between light and dark is defined in the token file, so no screen
+carries a `dark:` colour decision of its own. Colour supplied by data is not a token: the
+element receives its pair and the token file decides which one applies, as `data-project`
+does.
+
+Figures and page titles use the mono family, and everything else the sans family; both
+are named by their token.
+
+The responsive measure is a card's own container rather than the viewport, so a docked
+panel collapses a toolbar on any screen. Every collection is a `TableCard` with the same
+toolbar slots, which give up room by kind as the card narrows and fold into one band of
+cells on a phone, where the page header's actions join them. Opening a docked panel
+collapses the rail.
 
 # Engaged time
 
