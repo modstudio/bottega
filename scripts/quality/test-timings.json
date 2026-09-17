@@ -289,7 +289,7 @@
       "spawns": 0
     },
     {
-      "path": "orchestrator/src/mailbox-message.test.ts",
+      "path": "orchestrator/src/mailbox/mailbox-message.test.ts",
       "wallMs": 47,
       "tests": 10,
       "cliShaped": false,

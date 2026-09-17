@@ -42,7 +42,7 @@ import {
   terminateProcessGroup,
 } from './idle-kill.ts'
 import { type Job, jobIdleKillMs } from './jobs.ts'
-import { receiptWorkerMessages, unreadWorkerMessages } from './mailbox.ts'
+import { receiptWorkerMessages, unreadWorkerMessages } from './mailbox/mailbox.ts'
 import { decideOutcome } from './outcome.ts'
 import { processStartTime } from './project-lock.ts'
 import { childEnv, errorTail, live, liveCheckpoints } from './run-process.ts'
