@@ -2,7 +2,7 @@
 /** Registers health reporting adapters. Must not own their behavior. */
 import type { Command } from 'commander'
 import { doctorCommand } from '../doctor.ts'
-import { reclassifyFailuresCommand } from '../failure-commands.ts'
+import { reclassifyFailuresCommand } from '../failure/failure-commands.ts'
 import { blockersCommand, healthCommand } from '../health-commands.ts'
 import { JOBS } from '../jobs.ts'
 import { candidates, pick } from '../route.ts'

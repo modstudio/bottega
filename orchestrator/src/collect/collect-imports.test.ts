@@ -8,7 +8,7 @@ const DEGRADED_COLLECTION_GRAPH = [
   'artifact-paths.ts',
   'clock.ts',
   'collect/collect.ts',
-  'failure.ts',
+  'failure/failure.ts',
   'mcp-probe.ts',
   'orch.ts',
   'outcome.ts',
@@ -70,7 +70,7 @@ function assertDegradedCollectionGraph(files: Iterable<string>): void {
 describe('degraded collection import graph', () => {
   test('derived closure matches the declared set and includes failure.ts without a hand-written copy list', () => {
     const files = staticRelativeImportClosure(resolve(SRC_DIR, '../orch.ts'))
-    expect(files).toContain('failure.ts')
+    expect(files).toContain('failure/failure.ts')
     assertDegradedCollectionGraph(files)
   })
   test('heavy-module assertion fails by name if cli.ts, run.ts or agents.ts enter the graph', () => {
@@ -85,9 +85,9 @@ describe('degraded collection import graph', () => {
     expect(
       staticRelativeSpecifiers("import type { ObservedDeadRun } from './run-liveness.ts'\n"),
     ).toEqual([])
-    expect(staticRelativeSpecifiers("import { FAILS_OVER } from './failure.ts'\n")).toEqual([
-      './failure.ts',
-    ])
+    expect(staticRelativeSpecifiers("import { FAILS_OVER } from './failure/failure.ts'\n")).toEqual(
+      ['./failure/failure.ts'],
+    )
     expect(staticRelativeSpecifiers("await import('./cli.ts')\n")).toEqual([])
     expect(
       staticRelativeSpecifiers("const { initializeDatabase } = await import('./db.ts')\n"),
