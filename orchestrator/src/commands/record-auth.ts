@@ -12,6 +12,7 @@ import {
   recordSpaceListCommand,
   recordSpaceSwitchCommand,
 } from '../record-command.ts'
+import { pushDocsCommand } from '../record-push-docs.ts'
 import { log } from './support.ts'
 
 async function promptPassword(): Promise<string> {
@@ -57,6 +58,10 @@ export function register(program: Command): void {
     .command('accept')
     .argument('<invitation-id>')
     .action((value) => recordSpaceAcceptCommand(String(value), presentation))
+  record
+    .command('push-docs')
+    .option('--dry-run')
+    .action((options) => pushDocsCommand({ dryRun: Boolean(options.dryRun) }, { log }))
   record.command('doctor').action(() =>
     recordDoctorCommand({
       log,

@@ -157,3 +157,101 @@ describe('record API presentation routes', () => {
     expect(denied.headers.get('access-control-allow-origin')).toBeNull()
   })
 })
+
+describe('record API doc write refusals', () => {
+  async function put(body: Record<string, unknown>, upsert = appWith(identity).request) {
+    const app = appWith(identity, {
+      upsertDoc: async (input: {
+        scope: string
+        subject: string | null
+        slug: string
+        body: string
+        delivery: 'inject' | 'demand'
+        forceInject?: string
+      }) => {
+        const { refuseDocWrite } = await import('./doc-write-allowed.ts')
+        const { RecordDocError } = await import('./record-docs.ts')
+        const refusal = refuseDocWrite({
+          scope: input.scope,
+          subject: input.subject,
+          slug: input.slug,
+          body: input.body,
+          delivery: input.delivery,
+          forceInject: input.forceInject,
+          packBytes: 0,
+          globalCanonSlugs: ['.agents/rules/shared.md'],
+          projectCanonSlugs: [],
+          currentCanon: [],
+          nextCanon: [{ slug: input.slug, body: input.body }],
+        })
+        if (refusal) throw new RecordDocError(refusal)
+        return { id, revisionId: id }
+      },
+    })
+    return app.request('/v1/docs', {
+      method: 'PUT',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        subject: null,
+        title: 'T',
+        reason: 'test',
+        author: 'tester',
+        ...body,
+      }),
+    })
+  }
+
+  test('refuses project and global inject', async () => {
+    const response = await put({
+      scope: 'global',
+      slug: 'refused',
+      body: 'B',
+      delivery: 'inject',
+    })
+    expect(response.status).toBe(400)
+    expect(await response.json()).toMatchObject({
+      error: expect.stringContaining('make the instruction canon'),
+    })
+  })
+
+  test('refuses oversized inject', async () => {
+    const response = await put({
+      scope: 'job',
+      subject: 'understand',
+      slug: 'big',
+      body: 'x'.repeat(9 * 1024),
+      delivery: 'inject',
+    })
+    expect(response.status).toBe(400)
+    expect(await response.json()).toMatchObject({
+      error: expect.stringContaining('threshold is 8192 bytes'),
+    })
+  })
+
+  test('refuses a colliding canon path', async () => {
+    const response = await put({
+      scope: 'canon',
+      subject: 'known',
+      slug: '.agents/rules/shared.md',
+      body: '---\ndescription: Shared\n---\n\nRule.\n',
+      delivery: 'demand',
+    })
+    expect(response.status).toBe(400)
+    expect(await response.json()).toMatchObject({
+      error: expect.stringContaining('refusing canon path collision'),
+    })
+  })
+
+  test('refuses an unlinted global canon write', async () => {
+    const response = await put({
+      scope: 'canon',
+      slug: '.agents/rules/unlinted.md',
+      body: 'Rule without required metadata.\n',
+      delivery: 'demand',
+    })
+    expect(response.status).toBe(400)
+    expect(await response.json()).toMatchObject({
+      error: expect.stringContaining('refusing canon write'),
+    })
+  })
+})

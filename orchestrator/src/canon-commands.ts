@@ -133,7 +133,7 @@ function statOrNull(path: string): ReturnType<typeof lstatSync> | null {
   }
 }
 
-function canonImportCommand(flags: CanonFlags, presentation: CanonPresentation): void {
+async function canonImportCommand(flags: CanonFlags, presentation: CanonPresentation): Promise<void> {
   const project = requestedProject(flags)
   const reason = flags.flag('reason')
   if (!reason?.trim()) throw new Error('--reason is required')
@@ -176,7 +176,7 @@ function canonImportCommand(flags: CanonFlags, presentation: CanonPresentation):
   })
   const bootstrap = projectSlugs.length === 0
   for (const row of rows) {
-    setDoc({
+    await setDoc({
       scope: 'canon',
       subject: project.name,
       slug: row.slug,
@@ -190,7 +190,7 @@ function canonImportCommand(flags: CanonFlags, presentation: CanonPresentation):
   }
   let removed = 0
   for (const slug of removals) {
-    if (removeDoc('canon', project.name, slug, { reason })) {
+    if (await removeDoc('canon', project.name, slug, { reason })) {
       presentation.log(`removed ${slug}`)
       removed++
     }
@@ -381,12 +381,12 @@ async function canonCommand(
   )
 }
 
-function canonStoreCommand(
+async function canonStoreCommand(
   sub: string | undefined,
   flags: CanonFlags,
   presentation: CanonPresentation,
-): boolean {
-  if (sub === 'import') canonImportCommand(flags, presentation)
+): Promise<boolean> {
+  if (sub === 'import') await canonImportCommand(flags, presentation)
   else if (sub === 'hydrate') canonHydrateCommand(flags, presentation)
   else if (sub === 'list') canonListCommand(flags, presentation)
   else return false
@@ -398,6 +398,6 @@ export async function dispatchCanonCommand(
   flags: CanonFlags,
   presentation: CanonPresentation,
 ): Promise<void> {
-  if (canonStoreCommand(argv[1], flags, presentation)) return
+  if (await canonStoreCommand(argv[1], flags, presentation)) return
   await canonCommand(argv, flags, presentation)
 }

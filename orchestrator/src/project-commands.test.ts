@@ -5,10 +5,10 @@ import { join } from 'node:path'
 import { projectCommand } from './project-commands.ts'
 import { projectByName, projects, retireProject, upsertProject } from './projects.ts'
 
-function runProject(args: string[], flags: Record<string, string | boolean> = {}) {
+async function runProject(args: string[], flags: Record<string, string | boolean> = {}) {
   const present = new Set(Object.keys(flags))
   const out: string[] = []
-  projectCommand(
+  await projectCommand(
     args[1] ?? 'list',
     args,
     {
@@ -27,11 +27,11 @@ function runProject(args: string[], flags: Record<string, string | boolean> = {}
 }
 
 describe('orch project retire', () => {
-  test('list omits retired rows unless --retired', () => {
+  test('list omits retired rows unless --retired', async () => {
     upsertProject({ name: 'listed-live', path: '/w/listed-live' })
     upsertProject({ name: 'listed-retired', path: '/w/listed-retired' })
     expect(retireProject('listed-retired')).toBe('retired')
-    const live = runProject(['project', 'list'])
+    const live = await runProject(['project', 'list'])
     expect(live).toContain('listed-live')
     expect(live).not.toContain('listed-retired')
     const retired = runProject(['project', 'list'], { retired: true })

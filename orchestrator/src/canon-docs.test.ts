@@ -119,23 +119,23 @@ describe('scoped operator docs', () => {
     )
   })
 
-  test('metadata listing omits bodies and supports discovery filters without widening exact matches', () => {
+  test('metadata listing omits bodies and supports discovery filters without widening exact matches', async () => {
     upsertProject({ name: 'known', path: '/w/known', stack: null, canon: true, settings: {} })
-    setDoc({
+    await setDoc({
       scope: 'project',
       subject: 'known',
       slug: 'mcp-scope',
       title: 'MCP Scope',
       body: 'first',
     })
-    setDoc({
+    await setDoc({
       scope: 'agent',
       subject: 'codex',
       slug: 'capabilities',
       title: 'Capabilities',
       body: 'MCP scoping details',
     })
-    setDoc({ scope: 'global', subject: null, slug: 'other', title: 'Other', body: 'é' })
+    await setDoc({ scope: 'global', subject: null, slug: 'other', title: 'Other', body: 'é' })
     db().query('UPDATE doc SET updated_at=? WHERE slug=?').run('2026-09-01T00:00:00.000Z', 'other')
     db()
       .query('UPDATE doc SET updated_at=? WHERE slug=?')
@@ -166,16 +166,16 @@ describe('scoped operator docs', () => {
     )
   })
 
-  test('export and import preserve title and markdown body', () => {
+  test('export and import preserve title and markdown body', async () => {
     upsertProject({ name: 'known', path: '/w/known', stack: null, canon: true, settings: {} })
-    setDoc({
+    await setDoc({
       scope: 'global',
       subject: null,
       slug: 'quoted',
       title: 'A "title"',
       body: '# Body\n\nText\n',
     })
-    setDoc({
+    await setDoc({
       scope: 'project',
       subject: 'known',
       slug: 'project',
@@ -186,7 +186,7 @@ describe('scoped operator docs', () => {
     try {
       expect(exportDocs(target)).toBe(2)
       db().exec('DELETE FROM doc')
-      expect(importDocs(target)).toBe(2)
+      expect(await importDocs(target)).toBe(2)
       expect(getDoc('global', null, 'quoted')).toMatchObject({
         title: 'A "title"',
         body: '# Body\n\nText\n',

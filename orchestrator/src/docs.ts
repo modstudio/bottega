@@ -857,7 +857,7 @@ function importedDelivery(scope: DocScope): 'demand' | undefined {
   return scope === 'project' || scope === 'global' ? 'demand' : undefined
 }
 
-export function importDocs(dir: string, context: DocWriteContext): number {
+export async function importDocs(dir: string, context: DocWriteContext): Promise<number> {
   writableDb()
   writeIdentity(context)
   let count = 0
@@ -873,7 +873,7 @@ export function importDocs(dir: string, context: DocWriteContext): number {
       })) {
         if (!file.isFile() || !file.name.endsWith('.md')) continue
         const parsed = importedDoc(join(dir, scope, subjectEntry.name, file.name), file.name)
-        setDocWithOp(
+        await setDocWithOp(
           {
             scope,
             subject,
@@ -937,7 +937,19 @@ export async function restoreDoc(
     delivery: revision.delivery,
     ...context,
   })
-  let recordId = getDoc(scope, subject, slug)?.record_id ?? revision.record_id
+  let recordId = getDoc(scope, subject, slug)?.record_id
+  if (!recordId) {
+    const listed = await recordApiClient().listDocs({
+      scope,
+      subject,
+      includeDeleted: true,
+      limit: 100,
+    })
+    const match = listed.items.find(
+      (row) => String(row.slug) === slug && (row.subject ?? null) === subject,
+    )
+    recordId = match && typeof match.id === 'string' ? match.id : null
+  }
   if (!recordId) {
     recordId = (
       await recordApiClient().upsertDoc({

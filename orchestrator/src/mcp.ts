@@ -579,7 +579,7 @@ export function createDocsMcpServer(): McpServer {
     async ({ scope, subject, slug, title, body, delivery, force_inject, reason, author }) => {
       const refusal = decideMcpDocWrite('set_doc', scope)
       if (refusal) throw new Error(refusal)
-      const doc = setDoc({
+      const doc = await setDoc({
         scope,
         subject: subject ?? null,
         slug,
@@ -609,7 +609,7 @@ export function createDocsMcpServer(): McpServer {
     async ({ scope, subject, slug }) => {
       const refusal = decideMcpDocWrite('consume_doc', scope)
       if (refusal) throw new Error(refusal)
-      return text(consumeDoc(scope, subject ?? null, slug, { reason: 'consumed by session' }))
+      return text(await consumeDoc(scope, subject ?? null, slug, { reason: 'consumed by session' }))
     },
   )
 

@@ -169,12 +169,12 @@ function retireProjectCommand(
   presentation.log(outcome === 'already-retired' ? `already retired ${name}` : `retired ${name}`)
 }
 
-export function projectCommand(
+export async function projectCommand(
   sub: string,
   argv: string[],
   flags: ProjectFlags,
   presentation: ProjectPresentation,
-): void {
+): Promise<void> {
   const { has, flag } = flags
 
   if (sub === 'list') {
@@ -263,7 +263,7 @@ export function projectCommand(
     )
     if (incomplete.length && !has('allow-incomplete')) throw new Error(incomplete.join('\n'))
     assertRegisterBranches(candidate)
-    if (nextName !== name) renameProject(name, nextName)
+    if (nextName !== name) await renameProject(name, nextName)
     const previousTrunk = typeof p.settings.trunk === 'string' ? p.settings.trunk : null
     const nextTrunk = typeof candidate.settings.trunk === 'string' ? candidate.settings.trunk : null
     writeTransaction(() => {

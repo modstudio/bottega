@@ -60,16 +60,16 @@ describe('canon pack budget', () => {
     expect(MAX_INJECT_DOC_BYTES).toBe(8 * 1024)
   })
 
-  test('a pack one byte over fails the gate naming the largest item; one byte under passes', () => {
+  test('a pack one byte over fails the gate naming the largest item; one byte under passes', async () => {
     upsertProject({ name: 'pack-budget', path: dir, settings: { trunk: 'main' } })
-    setDoc({
+    await setDoc({
       scope: 'job',
       subject: 'understand',
       slug: 'largest',
       title: 'Largest',
       body: 'L'.repeat(40),
     })
-    setDoc({
+    await setDoc({
       scope: 'job',
       subject: 'understand',
       slug: 'smallest',
@@ -100,9 +100,9 @@ describe('canon pack budget', () => {
     JOBS.understand!.packBytes = old
   })
 
-  test('a small inject write is refused when its affected pack would cross the ceiling', () => {
+  test('a small inject write is refused when its affected pack would cross the ceiling', async () => {
     upsertProject({ name: 'proposed-pack-budget', path: dir, settings: { trunk: 'main' } })
-    setDoc({
+    await setDoc({
       scope: 'job',
       subject: 'file-question',
       slug: 'pack-base',
@@ -112,7 +112,7 @@ describe('canon pack budget', () => {
     const old = JOBS['file-question']!.packBytes
     JOBS['file-question']!.packBytes = compilePack({ job: 'file-question', cwd: dir }).bytes + 5_000
     try {
-      expect(() =>
+      await expect(
         setDoc({
           scope: 'job',
           subject: 'file-question',
@@ -120,7 +120,7 @@ describe('canon pack budget', () => {
           title: 'Six KiB',
           body: 'x'.repeat(6 * 1024),
         }),
-      ).toThrow(
+      ).rejects.toThrow(
         /canon pack file-question\/[^ ]+ would be .* bytes over.*largest inject sections to demote/s,
       )
     } finally {

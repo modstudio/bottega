@@ -41,6 +41,7 @@ import {
   RUN_RECORD_PAYLOAD_COLUMNS,
   type RunRecordBackfillResult,
 } from './run-outbox.ts'
+import { pullRecordCache } from './record-cache.ts'
 import { backfillScoreRecords, SCORE_RECORD_PAYLOAD_COLUMNS } from './score-outbox.ts'
 
 type OutboxRow = { id: number; kind: string; record_id: string; payload: string }
@@ -239,6 +240,10 @@ async function pushRun(postgres: SQL, row: Payload, principal: RecordPrincipal):
       projectId = String(projects[0]!.id)
     }
     const values = runValues(row, projectId)
+    const exclusion = await tx`
+      SELECT reason FROM run_exclusion WHERE run_id=${values.id}::uuid AND space_id=${principal.spaceId}::uuid
+    `
+    if (exclusion[0]?.reason) values.evidenceExcluded = String(exclusion[0].reason)
     const { id: _id, createdAt: _createdAt, ...updates } = values
     await drizzle({ client: tx })
       .insert(runRecord)
@@ -607,6 +612,7 @@ export async function syncRecord(options: RecordSyncOptions = {}): Promise<Recor
     const pending = writableLocal
       .query<{ count: number }, []>('SELECT count(*) AS count FROM outbox WHERE synced_at IS NULL')
       .get()!.count
+    await pullRecordCache(writableLocal)
     return { pushed, failed, pending, configured: true, ...(backfill ? { backfill } : {}) }
   } finally {
     await postgres.close()

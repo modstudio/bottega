@@ -155,6 +155,10 @@ copyFileSync(template, store)
   refreshAgents()
 }
 
+const { installRecordApiClient } = await import('../src/record-api-client.ts')
+const { createMemoryRecordApiClient } = await import('./fixtures/record-api.ts')
+installRecordApiClient(createMemoryRecordApiClient())
+
 const { db } = await import('../src/db.ts')
 
 /**
@@ -167,6 +171,7 @@ let sequence: { name: string; seq: number }[] = []
 let childrenBeforeTest = new Set<string>()
 
 beforeEach(() => {
+  installRecordApiClient(createMemoryRecordApiClient())
   registerStandardTransports()
   assertTestHubDatabase()
   if (process.env.ORCH_DB && resolve(process.env.ORCH_DB) === REGISTERED_LIVE_STORE) {

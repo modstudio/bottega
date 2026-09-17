@@ -44,7 +44,8 @@ import {
   type Quality,
   weigh,
 } from './score.ts'
-import { enqueueScoreRecord } from './score-outbox.ts'
+import { recordApiClient } from './record-api-client.ts'
+import { newRecordId } from '../../shared/record/schema.ts'
 
 type JudgementFlags = {
   has(name: string): boolean
@@ -89,7 +90,36 @@ function recordScoreVerdict(
                                        scored_at=excluded.scored_at`,
     )
     .run(id, delivery, quality, fidelity, note, scoredAt, scorer)
-  enqueueScoreRecord(db(), id, machineId())
+}
+
+function hostedRunId(id: number): string {
+  const row = db()
+    .query<{ record_id: string | null }, [number]>('SELECT record_id FROM run WHERE id=?')
+    .get(id)
+  if (!row) throw new Error(`no run ${id}`)
+  if (row.record_id) return row.record_id
+  const minted = newRecordId()
+  db().query('UPDATE run SET record_id=? WHERE id=?').run(minted, id)
+  return minted
+}
+
+async function pushHostedScore(
+  id: number,
+  delivery: Delivery,
+  quality: Quality | null,
+  fidelity: Fidelity | null,
+  note: string | null,
+  scoredAt: string,
+  scorer: string,
+): Promise<void> {
+  await recordApiClient().putScore(hostedRunId(id), {
+    delivery,
+    quality,
+    fidelity,
+    note,
+    scoredAt,
+    scoredBy: scorer,
+  })
 }
 
 function enqueueVoidedRunRecord(id: number): void {
@@ -101,7 +131,7 @@ function enqueueVoidedRunRecord(id: number): void {
     .get(id)
   if (row?.record_id) enqueueRunRecord(db(), id, machineId(), row.finished_at)
 }
-export function judgeRun(
+export async function judgeRun(
   requestedId: number,
   flags: JudgementFlags,
   options: JudgeOptions,
@@ -310,6 +340,16 @@ export function judgeRun(
   let authority = runMutationActor(id)
   const scoredAt = nowIso()
   const wasScored = Boolean(db().query('SELECT 1 FROM score WHERE run_id=?').get(id))
+  const scorer = process.env.ORCH_SCORER ?? 'claude'
+  await pushHostedScore(
+    id,
+    delivery!,
+    quality ?? null,
+    writes && delivery !== 'none' ? (fidelity ?? null) : null,
+    note,
+    scoredAt,
+    scorer,
+  )
   writeTransaction(() => {
     if (!(flags.has('force') && !authority.actor)) authority = adoptRunMutation(authority, 'score')
     if (findingsJob && delivery !== 'none') {
@@ -322,7 +362,7 @@ export function judgeRun(
       writes && delivery !== 'none' ? (fidelity ?? null) : null,
       note,
       scoredAt,
-      process.env.ORCH_SCORER ?? 'claude',
+      scorer,
     )
     if (reviewId) {
       if (delivery === 'none') {
@@ -355,7 +395,7 @@ export function judgeRun(
   )
   return { id, row, reviewId, comparison }
 }
-export function scoreRun(
+export async function scoreRun(
   requestedId: number,
   flags: JudgementFlags,
   options: ScoreOptions,
@@ -444,11 +484,23 @@ export function scoreRun(
       scoredFidelity = needsFidelity ? fidelity : undefined
     }
     const scoredAt = nowIso()
+    const voidReason = 'voided with orch score --void'
+    const hostedId = hostedRunId(id)
+    await recordApiClient().voidRun(hostedId, { reason: voidReason })
+    if (!cannotRecord && delivery) {
+      await pushHostedScore(
+        id,
+        delivery,
+        quality ?? null,
+        scoredFidelity ?? null,
+        note,
+        scoredAt,
+        scorer ?? process.env.ORCH_SCORER ?? 'claude',
+      )
+    }
     writeTransaction(() => {
       voidAuthority = adoptRunMutation(voidAuthority!, 'void')
-      db()
-        .query('UPDATE run SET evidence_excluded=? WHERE id=?')
-        .run('voided with orch score --void', id)
+      db().query('UPDATE run SET evidence_excluded=? WHERE id=?').run(voidReason, id)
       if (!cannotRecord && delivery) {
         recordScoreVerdict(
           id,
@@ -637,6 +689,16 @@ export function scoreRun(
   }
   const wasScored = Boolean(db().query('SELECT 1 FROM score WHERE run_id=?').get(id))
   const scoredAt = nowIso()
+  const recordedBy = scorer ?? process.env.ORCH_SCORER ?? 'claude'
+  await pushHostedScore(
+    id,
+    delivery,
+    quality ?? null,
+    scoredFidelity ?? null,
+    note,
+    scoredAt,
+    recordedBy,
+  )
   writeTransaction(() => {
     if (!dashboardAuthorized && !(flags.has('force') && !scoreAuthority.actor)) {
       scoreAuthority = adoptRunMutation(scoreAuthority, 'score')
@@ -649,7 +711,7 @@ export function scoreRun(
       scoredFidelity ?? null,
       note,
       scoredAt,
-      scorer ?? process.env.ORCH_SCORER ?? 'claude',
+      recordedBy,
     )
     auditRunMutation(scoreAuthority, wasScored ? 'rescore' : 'score', options.auditReason)
   })

@@ -221,6 +221,8 @@ for (const script of [
   'check-record-docs-boundary.ts',
   'check-record-verdicts-boundary.ts',
   'check-record-api-client-boundary.ts',
+  'check-record-cache-boundary.ts',
+  'check-record-push-docs-boundary.ts',
   'check-doc-write-allowed-boundary.ts',
   'check-record-auth-command-boundary.ts',
   'check-record-sync-command-boundary.ts',

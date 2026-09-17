@@ -9,6 +9,7 @@ import {
   RECORD_OWNER_ROLE,
   RECORD_READER_ROLE,
 } from '../../shared/record/schema.ts'
+import { proveHostedDocs } from '../test/postgres-docs-proof.ts'
 import { proveScoreRecordSync } from '../test/postgres-score-proof.ts'
 import { db } from './db.ts'
 import {
@@ -152,6 +153,9 @@ describe('Postgres substrate shape', () => {
       'test_flake',
       'seq',
       'invitation',
+      'doc',
+      'doc_revision',
+      'run_exclusion',
     ]) {
       expect(migration).toContain(`ALTER TABLE "${table}" ENABLE ROW LEVEL SECURITY`)
       expect(migration).toContain(`ALTER TABLE "${table}" FORCE ROW LEVEL SECURITY`)
@@ -781,6 +785,25 @@ realPostgres('RLS proof against real Postgres', () => {
           (run) => run.id === httpRun,
         ),
       ).toBe(false)
+    } finally {
+      server.stop(true)
+    }
+  })
+
+  test('hosted docs write through the API, hide soft deletes, and isolate spaces', async () => {
+    const server = startRecordApiServer({
+      ...process.env,
+      PORT: '0',
+      ORCH_RECORD_URL: actorUrl!,
+      BETTER_AUTH_SECRET: process.env.BETTER_AUTH_SECRET,
+      BETTER_AUTH_URL: process.env.BETTER_AUTH_URL,
+    })
+    try {
+      await proveHostedDocs({
+        origin: `http://127.0.0.1:${server.port}`,
+        token: tokenA,
+        otherToken: tokenB,
+      })
     } finally {
       server.stop(true)
     }

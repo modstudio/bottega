@@ -112,8 +112,8 @@ export function register(program: Command): void {
     .option('--apply')
     .option('--retired')
     .option('--undo')
-    .action((args, options) => {
+    .action(async (args, options) => {
       const argv = ['project', ...args]
-      projectCommand(argv[1] ?? 'list', argv, optionFlags(options), { log, cwd: process.cwd })
+      await projectCommand(argv[1] ?? 'list', argv, optionFlags(options), { log, cwd: process.cwd })
     })
 }
