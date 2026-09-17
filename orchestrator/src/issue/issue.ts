@@ -19,12 +19,7 @@ import { run } from '../run/run.ts'
 import { terminateRunProcesses } from '../run/run-process.ts'
 import { abandonRun } from '../run/run-stop.ts'
 import type { RunResult } from '../run/run-types.ts'
-import {
-  resetSandbox,
-  resolveSecretPaths,
-  sandboxLaunchArgv,
-  srtInstalled,
-} from '../sandbox/sandbox.ts'
+import * as sandbox from '../sandbox/sandbox.ts'
 import { DEFAULT_KEEP_TREE_HOURS, keepTreeExemption } from '../worktree/keep-tree-hold.ts'
 import { worktreeDirty } from '../worktree/worktree-attribution.ts'
 import type { Worktree } from '../worktree/worktree-types.ts'
@@ -493,15 +488,15 @@ async function shell(
     path: process.env.PATH ?? '/usr/bin:/bin',
     lang: process.env.LANG ?? 'C.UTF-8',
     operatorEnvPath: join(homedir(), '.claude', '.env'),
-    secretPaths: resolveSecretPaths(input.project),
+    secretPaths: sandbox.resolveSecretPaths(input.project),
     workerEnvironment: input.workerEnvironment,
   })
   if (input.orchStore) plan.env.ORCH_DB = input.orchStore
   try {
-    const launch = await sandboxLaunchArgv(plan.profile, plan.argv[0], plan.argv.slice(1))
+    const launch = await sandbox.sandboxLaunchArgv(plan.profile, plan.argv[0], plan.argv.slice(1))
     return await runFiledIssueCommand(launch, cwd, plan.env)
   } finally {
-    await resetSandbox()
+    await sandbox.resetSandbox()
   }
 }
 
@@ -791,7 +786,7 @@ export async function workIssue(key: string): Promise<void> {
   }
   const reporting = projectByName(issue.reportingProject)
   if (!reporting) throw new Error(`unknown reporting project "${issue.reportingProject}"`)
-  if (!srtInstalled()) {
+  if (!sandbox.srtInstalled()) {
     const body = [
       'Coordinator could not attempt this issue because the sandbox runtime is not installed.',
       `Install it with \`bun install\` at the ${PLATFORM_NAME} repository root, then retry.`,
