@@ -30,7 +30,7 @@ export function Segmented({
           aria-pressed={value === option.value}
           onClick={() => onChange(option.value)}
           className={classes(
-            'inline-flex items-center gap-1.5 border-border-default border-l bg-surface-sunken px-3 text-text-muted tabular-nums first:border-l-0 hover:text-text-primary [&_svg]:size-3.5 [&_svg]:text-border-strong [&_svg]:opacity-80',
+            'inline-flex items-center gap-1.5 border-border-default border-l bg-surface-sunken px-3 text-text-muted tabular-nums first-of-type:border-l-0 hover:text-text-primary [&_svg]:size-3.5 [&_svg]:text-border-strong [&_svg]:opacity-80',
             'aria-pressed:bg-surface-page aria-pressed:font-medium aria-pressed:text-text-primary aria-pressed:[&_svg]:text-text-secondary',
             size === 'sm' ? 'h-full text-sm' : 'h-full',
           )}
