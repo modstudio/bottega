@@ -35,7 +35,7 @@ const ALLOWED = new Set([
   'shared/brand.ts',
   // This file, which has to mention it in order to look for it.
   'scripts/check-brand.ts',
-  // The package manifest: read by tooling that runs before any import exists.
+  // Every package manifest, matched by basename: read by tooling that runs before any import exists.
   'package.json',
 ])
 
