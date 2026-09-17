@@ -2,7 +2,7 @@
 /** Registers record authentication grammar. Must not own authentication behavior. */
 import { createInterface } from 'node:readline/promises'
 import type { Command } from 'commander'
-import { signInCommand, signUpCommand, whoamiCommand } from '../record-auth-command.ts'
+import { signInCommand, signUpCommand, whoamiCommand } from '../record/record-auth-command.ts'
 import {
   recordDoctorCommand,
   recordMigrateCommand,
@@ -11,9 +11,9 @@ import {
   recordSpaceInviteCommand,
   recordSpaceListCommand,
   recordSpaceSwitchCommand,
-} from '../record-command.ts'
-import { publishSnapshotsCommand } from '../record-publish.ts'
-import { pushDocsCommand } from '../record-push-docs.ts'
+} from '../record/record-command.ts'
+import { publishSnapshotsCommand } from '../record/record-publish.ts'
+import { pushDocsCommand } from '../record/record-push-docs.ts'
 import { log } from './support.ts'
 
 async function promptPassword(): Promise<string> {

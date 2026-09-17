@@ -5,8 +5,8 @@ import {
   readRecordSessionToken,
   type SecurityRunner,
   writeRecordSessionToken,
-} from '../../shared/record-session.ts'
-import { DATABASE_RESOLUTION, db, writeTransaction } from './db.ts'
+} from '../../../shared/record-session.ts'
+import { DATABASE_RESOLUTION, db, writeTransaction } from '../db.ts'
 import {
   bearerHeaders,
   RECORD_SESSION_KEY,

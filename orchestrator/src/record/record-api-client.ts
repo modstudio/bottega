@@ -1,8 +1,8 @@
 // concern: record-api-client
 /** HTTP client for the record API. Must not know SQL or local table shape. */
 
-import type { DocDelivery, DocRevisionOp } from './doc/doc-write-allowed.ts'
-import { RECORD_WRITE_REMEDY } from './doc/doc-write-allowed.ts'
+import type { DocDelivery, DocRevisionOp } from '../doc/doc-write-allowed.ts'
+import { RECORD_WRITE_REMEDY } from '../doc/doc-write-allowed.ts'
 import { bearerHeaders, RECORD_SIGN_IN_REMEDY } from './record-auth.ts'
 import { storedRecordToken } from './record-session.ts'
 import type { SnapshotKind } from './record-snapshots.ts'

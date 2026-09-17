@@ -190,25 +190,25 @@ export const modules: ArchitectureModule[] = [
   module('shared/state-directory.ts', ['./brand.ts']),
   module('shared/record/schema.ts', ['../brand.ts']),
   module('shared/record-session.ts', ['./brand.ts']),
-  module('orchestrator/src/record-command.ts', [
-    './postgres/postgres-migrate.ts',
+  module('orchestrator/src/record/record-command.ts', [
+    '../postgres/postgres-migrate.ts',
     './record-doctor.ts',
     './record-space.ts',
   ]),
-  module('orchestrator/src/record-doctor.ts', [
-    './postgres/postgres-migrate.ts',
-    '../../shared/record/schema.ts',
+  module('orchestrator/src/record/record-doctor.ts', [
+    '../postgres/postgres-migrate.ts',
+    '../../../shared/record/schema.ts',
     './record-auth.ts',
     './record-session.ts',
     './record-sync.ts',
   ]),
-  module('orchestrator/src/record-session.ts', [
-    '../../shared/record-session.ts',
-    './db.ts',
+  module('orchestrator/src/record/record-session.ts', [
+    '../../../shared/record-session.ts',
+    '../db.ts',
     './record-auth.ts',
   ]),
-  module('orchestrator/src/record-space.ts', [
-    '../../shared/record/schema.ts',
+  module('orchestrator/src/record/record-space.ts', [
+    '../../../shared/record/schema.ts',
     './record-auth.ts',
     './record-session.ts',
   ]),
@@ -651,7 +651,7 @@ export function architectureRules() {
       name: 'import-record-api-server-transitive-boundary',
       severity: 'error',
       comment: 'Enforce the record-api-server concern boundary.',
-      from: { path: exactArchitecturePath('orchestrator/src/record-api-server.ts') },
+      from: { path: exactArchitecturePath('orchestrator/src/record/record-api-server.ts') },
       to: {
         path: '^(?:orchestrator/src/(?:database-location|db)\\.ts|bun:sqlite)$',
         reachable: true,

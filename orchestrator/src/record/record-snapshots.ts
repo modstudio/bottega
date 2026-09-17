@@ -1,7 +1,7 @@
 // concern: record-snapshots
 /** Owns tenant-bound latest orchestrator snapshots. Must not know HTTP or local commands. */
 import { SQL } from 'bun'
-import { newRecordId } from '../../shared/record/schema.ts'
+import { newRecordId } from '../../../shared/record/schema.ts'
 
 export const SNAPSHOT_KINDS = ['state', 'blockers', 'health', 'jobs', 'agents'] as const
 export type SnapshotKind = (typeof SNAPSHOT_KINDS)[number]

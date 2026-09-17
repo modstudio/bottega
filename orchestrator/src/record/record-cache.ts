@@ -1,7 +1,7 @@
 // concern: record-cache
 /** Pulls hosted docs and verdicts into the local offline cache. Must not know CLI presentation. */
 import type { Database } from 'bun:sqlite'
-import { db, nowIso, writeTransaction } from './db.ts'
+import { db, nowIso, writeTransaction } from '../db.ts'
 import { recordApiClient } from './record-api-client.ts'
 
 const DOCS_CURSOR = 'record_docs_cursor'

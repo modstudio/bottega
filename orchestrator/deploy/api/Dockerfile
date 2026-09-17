@@ -11,4 +11,4 @@ RUN bun install --frozen-lockfile
 COPY . .
 
 EXPOSE 3000
-CMD ["bun", "orchestrator/src/record-api-server.ts"]
+CMD ["bun", "orchestrator/src/record/record-api-server.ts"]

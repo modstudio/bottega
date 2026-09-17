@@ -1,6 +1,6 @@
 // concern: record-auth-command
 /** Owns record sign-in presentation and local bearer storage. Must not know run phases. */
-import { writeRecordSessionToken } from '../../shared/record-session.ts'
+import { writeRecordSessionToken } from '../../../shared/record-session.ts'
 import { RECORD_SIGN_IN_REMEDY, recordAuth, recordIdentity } from './record-auth.ts'
 import { currentRecordSession } from './record-session.ts'
 

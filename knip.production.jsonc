@@ -59,7 +59,7 @@
       "entry": [
         "hooks/*!",
         "src/orch.ts!",
-        "src/record-api-server.ts!",
+        "src/record/record-api-server.ts!",
         // Launched by path from src/sandbox.ts for Grok's MCP configuration.
         "src/ask/ask-proxy.ts!",
         "scripts/acp-parity.ts!",

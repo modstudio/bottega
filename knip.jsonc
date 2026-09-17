@@ -52,7 +52,7 @@
       "entry": [
         "hooks/*!",
         "src/orch.ts!",
-        "src/record-api-server.ts!",
+        "src/record/record-api-server.ts!",
         "src/**/*.test.ts",
         "scripts/acp-parity.ts!",
         "scripts/**/*.test.ts",

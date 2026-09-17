@@ -6,8 +6,8 @@ import {
   RECORD_ACTOR_ROLE,
   RECORD_OWNER_ROLE,
   RECORD_READER_ROLE,
-} from '../../shared/record/schema.ts'
-import { appliedRecordMigrationCount, recordMigrationCount } from './postgres/postgres-migrate.ts'
+} from '../../../shared/record/schema.ts'
+import { appliedRecordMigrationCount, recordMigrationCount } from '../postgres/postgres-migrate.ts'
 import { bearerHeaders, RECORD_SIGN_IN_REMEDY, recordAuth } from './record-auth.ts'
 import { storedRecordToken } from './record-session.ts'
 import { refuseOwnerConnection } from './record-sync.ts'

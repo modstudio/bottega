@@ -6,7 +6,7 @@ import { db, nowIso, sessionId, writeTransaction } from './db.ts'
 import { pairPartners, parseRunIds, recordDuels, recordLosses, recordTies } from './duel.ts'
 import { JOBS, job } from './jobs.ts'
 import { machineId } from './machine-identity.ts'
-import { recordApiClient } from './record-api-client.ts'
+import { recordApiClient } from './record/record-api-client.ts'
 import { cleanReviewEvidence, parseReviewOutput } from './review.ts'
 import { enqueueReview } from './review-outbox.ts'
 import {
