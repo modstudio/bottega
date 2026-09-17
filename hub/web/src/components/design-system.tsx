@@ -51,6 +51,7 @@ function Filter({
   ]
   return (
     <Select
+      size="sm"
       label={label}
       value={value}
       options={choices}
