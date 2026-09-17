@@ -34,8 +34,10 @@ const DEFAULTS: Report = {
   testTo: '',
 }
 
+export const reportDefaults = (names: string[]): Report => ({ ...DEFAULTS, projects: names })
+
 export function getReport(): Report {
-  const defaults = { ...DEFAULTS, projects: projectNames() }
+  const defaults = reportDefaults(projectNames())
   const row = db()
     .query<{ value: string }, []>(`SELECT value FROM setting WHERE key = 'report'`)
     .get()

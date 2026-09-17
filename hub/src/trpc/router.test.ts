@@ -125,6 +125,15 @@ describe('insight.health', () => {
   })
 })
 
+describe('hosted page inputs', () => {
+  test('new hosted procedures refuse malformed bodies before reading the record', async () => {
+    await expect(caller.record.notes({ stale: 'yes' } as never)).rejects.toMatchObject({ code: 'BAD_REQUEST' })
+    await expect(caller.record.ratio({ hours: 12, filters: { agent: '', project: '', source: '' } } as never)).rejects.toMatchObject({ code: 'BAD_REQUEST' })
+    await expect(caller.record.spend({ hours: 24, filters: { agent: '', project: '', source: 7 } } as never)).rejects.toMatchObject({ code: 'BAD_REQUEST' })
+    await expect(caller.record.settings({ hours: 1 } as never)).rejects.toMatchObject({ code: 'BAD_REQUEST' })
+  })
+})
+
 describe('work.task', () => {
   const fakeStrip = (() => ({})) as never
   const fakeView = (async () => ({})) as never

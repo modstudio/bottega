@@ -100,12 +100,22 @@ const HOSTED_NAV: NavSection[] = [
         label: 'Delegation',
         icon: Bot,
         items: [
+          { to: '/notes', label: 'Notes', icon: NotebookPen },
           { to: '/jobs', label: 'Jobs', icon: BriefcaseBusiness },
           { to: '/agents', label: 'Agents', icon: Bot },
           { to: '/routing', label: 'Routing', icon: RouteIcon },
         ],
       },
-      { to: '/health', label: 'Health', icon: Activity },
+      {
+        label: 'Machine',
+        icon: Activity,
+        items: [
+          { to: '/health', label: 'Health', icon: Activity },
+          { to: '/ratio', label: 'Ratio', icon: GitCompareArrows },
+          { to: '/spend', label: 'Spend', icon: CircleDollarSign },
+        ],
+      },
+      { label: 'Settings', icon: Settings, items: [{ to: '/settings', label: 'Hub settings', icon: Settings }] },
     ],
   },
 ]
@@ -129,6 +139,10 @@ export function isHostedPath(pathname: string) {
     path === '/agents' ||
     path === '/routing' ||
     path === '/health'
+    || path === '/notes'
+    || path === '/ratio'
+    || path === '/spend'
+    || path === '/settings'
   ) {
     return true
   }

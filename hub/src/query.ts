@@ -5,7 +5,13 @@ import { projects } from './projects.ts'
 import {
   intervalEndMs,
   projectBoard,
+  projectRatioSummary,
+  projectRollUpDays,
+  projectSpendGrid,
   projectTasksInWindow,
+  type DayIntervalRow,
+  type DayRow,
+  type RatioSummary,
   type WindowIntervalRow,
 } from './task-projections.ts'
 
@@ -168,15 +174,11 @@ export function reportEngagedMs(
  */
 export function rollUpDays(): number {
   const d = db()
-  const rows = d
-    .query<{ day: string; claude: number; msgs: number }, []>(
-      `SELECT substr(start_at, 1, 10) AS day,
-            SUM(claude_tokens) AS claude,
-            COUNT(*)           AS msgs
-       FROM interval WHERE source IN ('claude','codex')
-      GROUP BY day`,
-    )
-    .all()
+  const rows = projectRollUpDays(
+    d.query<{ source: string; start_at: string; claude_tokens: number }, []>(
+      `SELECT source,start_at,claude_tokens FROM interval WHERE source IN ('claude','codex')`,
+    ).all(),
+  )
 
   writeTransaction((conn) => {
     const stmt = conn.query(
@@ -199,25 +201,7 @@ export function rollUpDays(): number {
   return rows.length
 }
 
-type DayRow = {
-  day: string
-  claude_tokens: number
-  tasks: number
-  commits: number
-  files: number
-  lines_product: number
-  lines_test: number
-  lines_docs: number
-  lines_config: number
-  lines_generated: number
-}
-
-export type RatioDay = DayRow & {
-  ratio: number | null
-  /** Why a day does not count, or null when it does. */
-  excluded: 'today' | 'gap' | null
-  engagedMs: number
-}
+export type { RatioDay, RatioSummary } from './task-projections.ts'
 
 /**
  * Claude tokens per shipped task, per day, with the days that cannot be read
@@ -234,88 +218,17 @@ export type RatioDay = DayRow & {
  *   just as surely as one carrying none — and reading it as a ratio flatters
  *   the number by three orders of magnitude.
  */
-function ratioDays(days = 14, includeEngaged = true): RatioDay[] {
-  const d = db()
-  const since = new Date(Date.now() - days * 86400_000).toISOString().slice(0, 10)
-  const today = new Date().toISOString().slice(0, 10)
-
-  const rows = d
-    .query<DayRow, [string]>(
-      `SELECT day, claude_tokens, tasks, commits, files,
-            lines_product, lines_test, lines_docs, lines_config, lines_generated
-       FROM day WHERE day >= ? ORDER BY day`,
-    )
-    .all(since)
-
-  const nonZero = rows
-    .map((r) => r.claude_tokens)
-    .filter((t) => t > 0)
-    .sort((a, b) => a - b)
-  const median = nonZero.length ? nonZero[Math.floor(nonZero.length / 2)]! : 0
-  const floor = median * 0.05
-
-  return rows.map((r) => {
-    const excluded: RatioDay['excluded'] =
-      r.day === today ? 'today' : r.tasks > 0 && r.claude_tokens < floor ? 'gap' : null
-    return {
-      ...r,
-      excluded,
-      ratio: r.tasks > 0 ? Math.round(r.claude_tokens / r.tasks) : null,
-      engagedMs: includeEngaged
-        ? estateEngagedMs(`${r.day}T00:00:00.000Z`, `${r.day}T23:59:59.999Z`)
-        : 0,
-    }
-  })
-}
-
-export type RatioSummary = {
-  perTask: number | null
-  tokens: number
-  tasks: number
-  usableDays: number
-  direction: 'improving' | 'flat' | 'worsening' | 'unknown'
-  changePct: number | null
-  days: RatioDay[]
-}
-
-/** Fewer than this in either half and the denominator moves more than the thing measured. */
-const MIN_TASKS = 5
-
 export function ratioSummary(windowDays = 14, includeEngaged = true): RatioSummary {
-  const days = ratioDays(windowDays, includeEngaged)
-  const usable = days.filter((d) => !d.excluded && d.tasks > 0)
-  const tokens = usable.reduce((s, d) => s + d.claude_tokens, 0)
-  const tasks = usable.reduce((s, d) => s + d.tasks, 0)
-
-  // Halves of the window, not consecutive days: tasks land in bursts, so
-  // day-on-day says nothing. Each half is totalled and divided ONCE — averaging
-  // daily ratios would weigh a quiet day with one task as heavily as a busy one
-  // with thirty.
-  const half = Math.floor(usable.length / 2)
-  const earlier = usable.slice(0, half)
-  const recent = usable.slice(usable.length - half)
-  const sum = (xs: RatioDay[], k: 'claude_tokens' | 'tasks') => xs.reduce((s, d) => s + d[k], 0)
-
-  let direction: RatioSummary['direction'] = 'unknown'
-  let changePct: number | null = null
-  if (half > 0 && sum(earlier, 'tasks') >= MIN_TASKS && sum(recent, 'tasks') >= MIN_TASKS) {
-    const a = sum(earlier, 'claude_tokens') / sum(earlier, 'tasks')
-    const b = sum(recent, 'claude_tokens') / sum(recent, 'tasks')
-    changePct = ((b - a) / a) * 100
-    // Inside the noise these bursts generate, calling a direction would be
-    // reading intent into scheduling.
-    direction = Math.abs(changePct) < 10 ? 'flat' : changePct < 0 ? 'improving' : 'worsening'
-  }
-
-  return {
-    perTask: tasks > 0 ? Math.round(tokens / tasks) : null,
-    tokens,
-    tasks,
-    usableDays: usable.length,
-    direction,
-    changePct,
-    days,
-  }
+  const now = Date.now()
+  const since = new Date(now - windowDays * 86400_000).toISOString().slice(0, 10)
+  const rows = db().query<DayRow, [string]>(
+    `SELECT day,claude_tokens,tasks,commits,files,lines_product,lines_test,lines_docs,lines_config,lines_generated
+     FROM day WHERE day >= ? ORDER BY day`,
+  ).all(since)
+  const intervals = includeEngaged
+    ? db().query<DayIntervalRow, [string]>(`SELECT start_at,end_at,open FROM interval WHERE end_at >= ? ORDER BY start_at`).all(`${since}T00:00:00.000Z`)
+    : []
+  return projectRatioSummary(rows, intervals, now, includeEngaged)
 }
 
 /**
@@ -329,18 +242,11 @@ export function ratioSummary(windowDays = 14, includeEngaged = true): RatioSumma
  * those.
  */
 export function spendGrid(windowDays = 14) {
-  const days = ratioDays(windowDays).filter((d) => !d.excluded)
+  const summary = ratioSummary(windowDays)
+  const days = summary.days.filter((d) => !d.excluded)
   const d = db()
   const from = days.length ? `${days[0]!.day}T00:00:00.000Z` : new Date().toISOString()
   const to = new Date().toISOString()
-
-  const denominators = {
-    'shipped task': days.reduce((s, x) => s + x.tasks, 0),
-    commit: days.reduce((s, x) => s + x.commits, 0),
-    'product line': days.reduce((s, x) => s + x.lines_product, 0),
-    'file touched': days.reduce((s, x) => s + x.files, 0),
-    'engaged hour': estateEngagedMs(from, to) / 3600_000,
-  }
 
   const vendors = d
     .query<{ agent: string; tokens: number; cost: number }, [string, string]>(
@@ -351,29 +257,7 @@ export function spendGrid(windowDays = 14) {
     )
     .all(from, to)
 
-  const claude = days.reduce((s, x) => s + x.claude_tokens, 0)
-  const cost = vendors.reduce((s, v) => s + v.cost, 0)
-
-  // Columns are separate currencies and are never summed with one another.
-  const numerators = [
-    { name: 'claude', total: claude, kind: 'tokens' as const },
-    ...vendors.map((v) => ({ name: v.agent, total: v.tokens, kind: 'tokens' as const })),
-    { name: 'cost', total: cost, kind: 'usd' as const },
-  ]
-
-  return {
-    from: from.slice(0, 10),
-    days: days.length,
-    numerators,
-    denominators,
-    lineMix: {
-      generated: days.reduce((s, x) => s + x.lines_generated, 0),
-      product: days.reduce((s, x) => s + x.lines_product, 0),
-      test: days.reduce((s, x) => s + x.lines_test, 0),
-      docs: days.reduce((s, x) => s + x.lines_docs, 0),
-      config: days.reduce((s, x) => s + x.lines_config, 0),
-    },
-  }
+  return projectSpendGrid(summary, vendors, Date.now())
 }
 
 /** One card on the board. */
