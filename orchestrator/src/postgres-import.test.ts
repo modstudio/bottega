@@ -111,20 +111,6 @@ realPostgres('project import against copied live SQLite data', () => {
     const sourceKeySet = new Set(
       sourceProjects.flatMap((row) => Object.keys(JSON.parse(row.settings))),
     )
-    expect([...sourceKeySet].sort()).toEqual([
-      'color',
-      'colorDark',
-      'docs',
-      'envPrefix',
-      'gate',
-      'keyPrefixes',
-      'mcp',
-      'mcpServer',
-      'tracker',
-      'trunk',
-      'workerMcpServers',
-      'worktree',
-    ])
 
     const first = await importProjects({
       ...sources,
@@ -166,6 +152,7 @@ realPostgres('project import against copied live SQLite data', () => {
       worktree: 'worktree',
       workerMcpServers: 'worker_mcp_servers',
     }
+    expect([...sourceKeySet].filter((key) => !(key in columnForSetting))).toEqual([])
     for (const source of sourceProjects) {
       const settings = JSON.parse(source.settings) as Record<string, unknown>
       const target = imported.find((row) => row.name === source.name)!
