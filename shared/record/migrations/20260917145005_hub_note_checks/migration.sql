@@ -1,0 +1,2 @@
+ALTER TABLE "hub_note" ADD CONSTRAINT "hub_note_sightings_check" CHECK ("sightings" > 0);--> statement-breakpoint
+ALTER TABLE "hub_note_acknowledgement" ADD CONSTRAINT "hub_note_ack_sightings_check" CHECK ("sightings" > 0);
