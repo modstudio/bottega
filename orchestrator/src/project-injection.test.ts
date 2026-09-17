@@ -76,6 +76,7 @@ describe('project workflow injection', () => {
         server: 'fixture',
         actions: {
           search: 'task_list',
+          get: 'task_list',
           create: 'task_create',
           update: 'fixture_task_update',
         },
@@ -112,7 +113,12 @@ describe('project workflow injection', () => {
         status: 'task_update',
         comment: 'comment_add',
       },
-      'array-mcp': { search: 'task_list', create: 'task_create', update: 'task_update' },
+      'array-mcp': {
+        search: 'task_list',
+        get: 'task_list',
+        create: 'task_create',
+        update: 'task_update',
+      },
       hub: {
         search: 'hub task list --project fixture',
         get: 'hub task show {key}',

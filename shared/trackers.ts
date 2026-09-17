@@ -26,6 +26,9 @@ export const trackerProtocolActions = {
   },
   'array-mcp': {
     search: { agent: 'task_list' },
+    // The server has no single-task read; arrayMcpSource.lookup reads one by key
+    // through a task_list search, so that is its get.
+    get: { agent: 'task_list' },
     create: { agent: 'task_create' },
     update: { agent: 'task_update' },
   },
@@ -490,7 +493,7 @@ function arrayMcpSource(
       return out
     },
     async lookup(m, key) {
-      const r = (await m.callTool(trackerWireAction('array-mcp', 'search'), { search: key })) as {
+      const r = (await m.callTool(trackerWireAction('array-mcp', 'get'), { search: key })) as {
         key?: string
         title?: string
         status?: string
