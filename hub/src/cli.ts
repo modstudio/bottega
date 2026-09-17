@@ -13,6 +13,7 @@ import {
   requireDatabase,
   writeTransaction,
 } from './db.ts'
+import { reclaimFixtureQuestions } from './fixture-question-reclaim.ts'
 import { ingestGit } from './ingest/git.ts'
 import { ingestRuns } from './ingest/runs.ts'
 import { ingestTrackers } from './ingest/trackers.ts'
@@ -39,7 +40,6 @@ import { estateEngagedMs, rollUpDays, tasksInWindow } from './query.ts'
 import { printReconcile, reconcileOpenIntervals } from './reconcile.ts'
 import { gather, recordSend, renderHtml, renderText, send, summarise } from './report.ts'
 import { listOpenRulings, rulingsPayload } from './rulings.ts'
-import { reclaimFixtureQuestions } from './fixture-question-reclaim.ts'
 import { serve } from './serve.ts'
 import { ownServeRecord, servePortIsFree, stopRecordedServe } from './serve-lifecycle.ts'
 import { getReport } from './settings.ts'
@@ -949,7 +949,11 @@ try {
     case 'reclaim-fixture-questions': {
       const rows = reclaimFixtureQuestions(has('dry-run'))
       if (has('json')) console.log(JSON.stringify({ rows }))
-      else for (const row of rows) console.log(`${has('dry-run') ? 'would remove' : 'removed'} question ${row.question_id} ${row.session_id} ${row.run_ref}`)
+      else
+        for (const row of rows)
+          console.log(
+            `${has('dry-run') ? 'would remove' : 'removed'} question ${row.question_id} ${row.session_id} ${row.run_ref}`,
+          )
       break
     }
     case 'rulings': {

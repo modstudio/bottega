@@ -81,7 +81,7 @@ export type LiveCheckpoint = {
 }
 export const liveCheckpoints = new Map<LiveProcess, LiveCheckpoint>()
 
-export type ProcessRow = { pid: number; ppid: number; pgid: number; command: string }
+type ProcessRow = { pid: number; ppid: number; pgid: number; command: string }
 type ProcessInventory =
   | { ascertainable: true; rows: ProcessRow[] }
   | { ascertainable: false; reason: string }

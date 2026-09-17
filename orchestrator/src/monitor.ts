@@ -394,7 +394,9 @@ export async function monitor(
   }
 
   const stale = database
-    .query(`SELECT id, started_at, error, session_id FROM run WHERE status='stale' AND evidence_excluded IS NULL`)
+    .query(
+      `SELECT id, started_at, error, session_id FROM run WHERE status='stale' AND evidence_excluded IS NULL`,
+    )
     .all() as { id: number; started_at: string; error: string | null; session_id: string | null }[]
   for (const run of stale)
     add({
