@@ -10,17 +10,18 @@ import {
   RECORD_READER_ROLE,
 } from '../../../shared/record/schema.ts'
 import {
+  registerInvitationAuthProofs,
+  SIGN_UP_AUTH,
+  SIGN_UP_CLI_OUTPUT,
+  signUpInvitationFixtures,
+} from '../../test/fixtures/record-auth-postgres.ts'
+import {
   installRecordSessionRunner,
   memoryRecordSession,
 } from '../../test/fixtures/record-session.ts'
 import { proveHostedDocs, proveScoreRecordSync } from '../../test/postgres-score-proof.ts'
 import { startRecordApiServer } from '../record/record-api-server.ts'
-import {
-  bearerHeaders,
-  RECORD_SIGN_UP_INVITATION_REQUIRED,
-  recordAuth,
-  setActiveRecordSpace,
-} from '../record/record-auth.ts'
+import { bearerHeaders, recordAuth, setActiveRecordSpace } from '../record/record-auth.ts'
 import { signInCommand, signUpCommand, whoamiCommand } from '../record/record-auth-command.ts'
 import { diagnoseRecord, recordDoctorExitCode } from '../record/record-doctor.ts'
 import {
@@ -66,16 +67,7 @@ const migration = readdirSync(migrationsFolder, { withFileTypes: true })
 const SPACE_A = '01990000-0000-7000-8000-00000000000a'
 const SPACE_B = '01990000-0000-7000-8000-00000000000b'
 const USER_A = '01990000-0000-7000-8000-000000000010'
-const AUTH_EMAIL_A = 'auth-a@example.test'
-const AUTH_EMAIL_B = 'auth-b@example.test'
-const AUTH_EMAIL_REPAIR = 'auth-repair@example.test'
 const AUTH_EMAIL_HTTP = 'auth-http@example.test'
-const AUTH_EMAIL_CASE = 'auth-case@example.test'
-const AUTH_EMAIL_SHORT_PASSWORD = 'auth-short-password@example.test'
-const AUTH_EMAIL_NO_INVITATION = 'auth-no-invitation@example.test'
-const AUTH_EMAIL_EXPIRED = 'auth-expired@example.test'
-const AUTH_EMAIL_ACCEPTED = 'auth-accepted@example.test'
-const AUTH_PASSWORD = 'correct-horse-battery-staple'
 const PROJECT_A = '01990000-0000-7000-8000-00000000001a'
 const PROJECT_A2 = '01990000-0000-7000-8000-00000000002a'
 const PROJECT_B = '01990000-0000-7000-8000-00000000001b'
@@ -88,13 +80,6 @@ const REVIEW_B = '01990000-0000-7000-8000-00000000004b'
 const WRONG_EMAIL_INVITATION = '01990000-0000-7000-8000-00000000012a'
 const EXPIRED_INVITATION = '01990000-0000-7000-8000-00000000012b'
 const ACCEPTED_INVITATION = '01990000-0000-7000-8000-00000000012c'
-const SIGN_UP_INVITATION_A = '01990000-0000-7000-8000-00000000014a'
-const SIGN_UP_INVITATION_B = '01990000-0000-7000-8000-00000000014b'
-const SIGN_UP_INVITATION_REPAIR = '01990000-0000-7000-8000-00000000014c'
-const SIGN_UP_INVITATION_CASE = '01990000-0000-7000-8000-00000000014d'
-const SIGN_UP_INVITATION_SHORT = '01990000-0000-7000-8000-00000000014e'
-const SIGN_UP_INVITATION_EXPIRED = '01990000-0000-7000-8000-00000000014f'
-const SIGN_UP_INVITATION_ACCEPTED = '01990000-0000-7000-8000-000000000150'
 
 type PsqlResult = { code: number; stdout: string; stderr: string }
 
@@ -251,13 +236,7 @@ realPostgres('RLS proof against real Postgres', () => {
       INSERT INTO invitation
         (id,space_id,email,inviter_id,role,status,expires_at,created_at)
       VALUES
-        ('${SIGN_UP_INVITATION_A}','${SPACE_A}','${AUTH_EMAIL_A}','${USER_A}','member','pending',now() + interval '1 day',now()),
-        ('${SIGN_UP_INVITATION_B}','${SPACE_A}','${AUTH_EMAIL_B}','${USER_A}','member','pending',now() + interval '1 day',now()),
-        ('${SIGN_UP_INVITATION_REPAIR}','${SPACE_A}','${AUTH_EMAIL_REPAIR}','${USER_A}','member','pending',now() + interval '1 day',now()),
-        ('${SIGN_UP_INVITATION_CASE}','${SPACE_A}',' AUTH-CASE@EXAMPLE.TEST ','${USER_A}','member','pending',now() + interval '1 day',now()),
-        ('${SIGN_UP_INVITATION_SHORT}','${SPACE_A}','${AUTH_EMAIL_SHORT_PASSWORD}','${USER_A}','member','pending',now() + interval '1 day',now()),
-        ('${SIGN_UP_INVITATION_EXPIRED}','${SPACE_A}','${AUTH_EMAIL_EXPIRED}','${USER_A}','member','pending',now() - interval '1 day',now()),
-        ('${SIGN_UP_INVITATION_ACCEPTED}','${SPACE_A}','${AUTH_EMAIL_ACCEPTED}','${USER_A}','member','accepted',now() + interval '1 day',now());
+        ${signUpInvitationFixtures(SPACE_A, USER_A)};
       INSERT INTO project (id, space_id, name, key_prefixes, created_at) VALUES
         ('${PROJECT_A}', '${SPACE_A}', 'alpha', ARRAY['DEV'], now()),
         ('${PROJECT_A2}', '${SPACE_A}', 'alpha-two', ARRAY['DEV'], now()),
@@ -339,7 +318,7 @@ realPostgres('RLS proof against real Postgres', () => {
 
     installRecordSessionRunner(recordSession.runner)
     const storedToken = () => recordSession.token()!
-    await signUpCommand(AUTH_EMAIL_A, 'Auth A', async () => AUTH_PASSWORD, {
+    await signUpCommand(SIGN_UP_AUTH.emailA, 'Auth A', async () => SIGN_UP_AUTH.password, {
       log: (value) => cliOutput.push(value),
     })
     tokenA = storedToken()
@@ -348,7 +327,7 @@ realPostgres('RLS proof against real Postgres', () => {
     authUserA = first.user.id
     authSpaceA = first.session.activeOrganizationId
 
-    await signUpCommand(AUTH_EMAIL_B, 'Auth B', async () => AUTH_PASSWORD, {
+    await signUpCommand(SIGN_UP_AUTH.emailB, 'Auth B', async () => SIGN_UP_AUTH.password, {
       log: (value) => cliOutput.push(value),
     })
     tokenB = storedToken()
@@ -358,7 +337,7 @@ realPostgres('RLS proof against real Postgres', () => {
     authSpaceB = second.session.activeOrganizationId
 
     const repair = await recordAuth(actorUrl!).api.signUpEmail({
-      body: { email: AUTH_EMAIL_REPAIR, name: 'Auth Repair', password: AUTH_PASSWORD },
+      body: SIGN_UP_AUTH.repairBody,
     })
     if (!repair.token) throw new Error('repair signup has no bearer token')
     repairToken = repair.token
@@ -373,7 +352,7 @@ realPostgres('RLS proof against real Postgres', () => {
       'postgres',
       'postgres',
       `DELETE FROM invitation WHERE id IN
-        ('${SIGN_UP_INVITATION_A}','${SIGN_UP_INVITATION_B}','${SIGN_UP_INVITATION_REPAIR}');
+        ('${SIGN_UP_AUTH.invitationA}','${SIGN_UP_AUTH.invitationB}','${SIGN_UP_AUTH.invitationRepair}');
        INSERT INTO project (id,space_id,name,key_prefixes,created_at) VALUES
         ('${authProjectA}','${authSpaceA}','auth-a-project',ARRAY['AA'],now()),
         ('${authProjectB}','${authSpaceB}','auth-b-project',ARRAY['BB'],now());
@@ -387,16 +366,16 @@ realPostgres('RLS proof against real Postgres', () => {
     )
 
     recordSession.setToken(tokenA)
-    pendingInvitation = await inviteToActiveRecordSpace(actorUrl!, AUTH_EMAIL_B, 'member')
+    pendingInvitation = await inviteToActiveRecordSpace(actorUrl!, SIGN_UP_AUTH.emailB, 'member')
     succeeds(
       'postgres',
       'postgres',
       `INSERT INTO invitation
         (id,space_id,email,inviter_id,role,status,expires_at,created_at)
        VALUES
-        ('${WRONG_EMAIL_INVITATION}','${authSpaceA}','${AUTH_EMAIL_A}','${authUserA}','member','pending',now() + interval '1 day',now()),
-        ('${EXPIRED_INVITATION}','${authSpaceA}','${AUTH_EMAIL_B}','${authUserA}','member','pending',now() - interval '1 day',now()),
-        ('${ACCEPTED_INVITATION}','${authSpaceA}','${AUTH_EMAIL_B}','${authUserA}','member','accepted',now() + interval '1 day',now());`,
+        ('${WRONG_EMAIL_INVITATION}','${authSpaceA}','${SIGN_UP_AUTH.emailA}','${authUserA}','member','pending',now() + interval '1 day',now()),
+        ('${EXPIRED_INVITATION}','${authSpaceA}','${SIGN_UP_AUTH.emailB}','${authUserA}','member','pending',now() - interval '1 day',now()),
+        ('${ACCEPTED_INVITATION}','${authSpaceA}','${SIGN_UP_AUTH.emailB}','${authUserA}','member','accepted',now() + interval '1 day',now());`,
     )
   })
 
@@ -416,73 +395,10 @@ realPostgres('RLS proof against real Postgres', () => {
     )
   })
 
-  test('the invitation predicate reveals only eligibility to the actor', () => {
-    const eligibility = psql(
-      RECORD_ACTOR_ROLE,
-      'actor-password',
-      `SELECT public.invitation_open_for('${AUTH_EMAIL_CASE}');
-       SELECT public.invitation_open_for('${AUTH_EMAIL_EXPIRED}');
-       SELECT public.invitation_open_for('${AUTH_EMAIL_ACCEPTED}');
-       SELECT count(*) FROM invitation;`,
-    )
-    expect(eligibility.code, eligibility.stderr).toBe(0)
-    expect(eligibility.stdout.split('\n')).toEqual(['t', 'f', 'f', '0'])
-  })
-
-  test('sign-up requires the same pending invitation state without leaking its status', async () => {
-    const rejectedMessage = async (email: string, password = AUTH_PASSWORD): Promise<string> => {
-      try {
-        await recordAuth(actorUrl!).api.signUpEmail({
-          body: { email, name: 'Rejected sign-up', password },
-        })
-        return 'sign-up unexpectedly succeeded'
-      } catch (error) {
-        return error instanceof Error ? error.message : String(error)
-      }
-    }
-
-    const messages = await Promise.all([
-      rejectedMessage(AUTH_EMAIL_NO_INVITATION),
-      rejectedMessage(AUTH_EMAIL_EXPIRED),
-      rejectedMessage(AUTH_EMAIL_ACCEPTED),
-    ])
-    expect(messages).toEqual([
-      RECORD_SIGN_UP_INVITATION_REQUIRED,
-      RECORD_SIGN_UP_INVITATION_REQUIRED,
-      RECORD_SIGN_UP_INVITATION_REQUIRED,
-    ])
-    expect(
-      succeeds(
-        'postgres',
-        'postgres',
-        `SELECT (SELECT count(*) FROM "user" WHERE email='${AUTH_EMAIL_NO_INVITATION}') || '|' ||
-          (SELECT count(*) FROM account a JOIN "user" u ON u.id=a.user_id
-           WHERE u.email='${AUTH_EMAIL_NO_INVITATION}');`,
-      ),
-    ).toBe('0|0')
-
-    await expect(
-      recordAuth(actorUrl!).api.signUpEmail({
-        body: { email: AUTH_EMAIL_CASE, name: 'Case Match', password: AUTH_PASSWORD },
-      }),
-    ).resolves.toMatchObject({ user: { email: AUTH_EMAIL_CASE } })
-
-    expect(await rejectedMessage(AUTH_EMAIL_SHORT_PASSWORD, 'elevenchars')).toBe(
-      'Password too short',
-    )
-    expect(
-      succeeds(
-        'postgres',
-        'postgres',
-        `SELECT (SELECT count(*) FROM "user" WHERE email='${AUTH_EMAIL_SHORT_PASSWORD}') || '|' ||
-          (SELECT count(*) FROM account a JOIN "user" u ON u.id=a.user_id
-           WHERE u.email='${AUTH_EMAIL_SHORT_PASSWORD}');`,
-      ),
-    ).toBe('0|0')
-  })
+  registerInvitationAuthProofs(psql, actorUrl!, succeeds, SIGN_UP_AUTH.password)
 
   test('CLI sign-up creates one owner membership and bearer identity is not interchangeable', async () => {
-    expect(cliOutput).toEqual([`signed up ${AUTH_EMAIL_A}`, `signed up ${AUTH_EMAIL_B}`])
+    expect(cliOutput).toEqual(SIGN_UP_CLI_OUTPUT)
     const facts = succeeds(
       'postgres',
       'postgres',
@@ -492,8 +408,8 @@ realPostgres('RLS proof against real Postgres', () => {
        GROUP BY u.email ORDER BY u.email;`,
     )
     expect(facts.split('\n')).toEqual([
-      `${AUTH_EMAIL_A}|1|owner|write`,
-      `${AUTH_EMAIL_B}|1|owner|write`,
+      `${SIGN_UP_AUTH.emailA}|1|owner|write`,
+      `${SIGN_UP_AUTH.emailB}|1|owner|write`,
     ])
     const auth = recordAuth(actorUrl!)
     expect((await auth.api.getSession({ headers: bearerHeaders(tokenA) }))?.user.id).toBe(authUserA)
@@ -508,16 +424,16 @@ realPostgres('RLS proof against real Postgres', () => {
        DELETE FROM space WHERE id='${repairSpace}';`,
     )
     const output: string[] = []
-    await signInCommand(AUTH_EMAIL_REPAIR, async () => AUTH_PASSWORD, {
+    await signInCommand(SIGN_UP_AUTH.emailRepair, async () => SIGN_UP_AUTH.password, {
       log: (value) => output.push(value),
     })
-    expect(output).toEqual([`signed in ${AUTH_EMAIL_REPAIR}`])
+    expect(output).toEqual([`signed in ${SIGN_UP_AUTH.emailRepair}`])
     const repaired = succeeds(
       'postgres',
       'postgres',
       `SELECT s.id=m.space_id, m.role, m.permission
        FROM "user" u JOIN membership m ON m.user_id=u.id JOIN space s ON s.id=m.space_id
-       WHERE u.email='${AUTH_EMAIL_REPAIR}';`,
+       WHERE u.email='${SIGN_UP_AUTH.emailRepair}';`,
     )
     expect(repaired).toBe('t|owner|write')
   })
@@ -571,7 +487,7 @@ realPostgres('RLS proof against real Postgres', () => {
       'postgres',
       `INSERT INTO membership (id,space_id,user_id,role,permission,created_at)
        VALUES ('01990000-0000-7000-8000-00000000013a','${authSpaceA}',
-         (SELECT id FROM "user" WHERE email='${AUTH_EMAIL_REPAIR}'),'member','write',now());`,
+         (SELECT id FROM "user" WHERE email='${SIGN_UP_AUTH.emailRepair}'),'member','write',now());`,
     )
     await setActiveRecordSpace(actorUrl!, repairToken, authSpaceA)
     recordSession.setToken(repairToken)
@@ -617,7 +533,7 @@ realPostgres('RLS proof against real Postgres', () => {
       RECORD_ACTOR_ROLE,
       'actor-password',
       `WITH settings AS MATERIALIZED (
-         SELECT set_config('app.user_id',(SELECT id::text FROM "user" WHERE email='${AUTH_EMAIL_REPAIR}'),false),
+         SELECT set_config('app.user_id',(SELECT id::text FROM "user" WHERE email='${SIGN_UP_AUTH.emailRepair}'),false),
                 set_config('app.space_id','${repairSpace}',false)
        ) SELECT count(*) FROM settings, invitation;`,
     )
@@ -659,7 +575,7 @@ realPostgres('RLS proof against real Postgres', () => {
       'postgres',
       `INSERT INTO invitation
         (id,space_id,email,inviter_id,role,status,expires_at,created_at)
-       VALUES ('${second}','${authSpaceA}','${AUTH_EMAIL_B}','${authUserA}',
+       VALUES ('${second}','${authSpaceA}','${SIGN_UP_AUTH.emailB}','${authUserA}',
          'member','pending',now() + interval '1 day',now());`,
     )
     recordSession.setToken(tokenB)
@@ -739,7 +655,7 @@ realPostgres('RLS proof against real Postgres', () => {
         body: JSON.stringify({
           email: AUTH_EMAIL_HTTP,
           name: 'Auth HTTP',
-          password: AUTH_PASSWORD,
+          password: SIGN_UP_AUTH.password,
         }),
       })
       expect(signup.status).toBe(200)
