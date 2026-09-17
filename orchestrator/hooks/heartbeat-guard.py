@@ -19,6 +19,13 @@ import sys
 import tempfile
 
 
+ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "../.."))
+DB = os.environ.get("ORCH_DB") or subprocess.check_output(
+    ["bun", os.path.join(ROOT, "shared", "state-directory.ts"), "orchestrator", "database"],
+    text=True,
+).strip()
+
+
 def heartbeat_path() -> str:
     return os.path.abspath(os.path.join(os.path.dirname(__file__), "orch-heartbeat.sh"))
 
@@ -54,9 +61,7 @@ def heartbeat_armed(session_id: str) -> bool | None:
 
 
 def landing_db_path() -> str:
-    return os.environ.get("ORCH_DB") or os.path.abspath(
-        os.path.join(os.path.dirname(__file__), "..", "orch.db")
-    )
+    return DB
 
 
 def live_landing_ids(session_id: str):

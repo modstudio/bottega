@@ -6,7 +6,7 @@ import type { Database } from 'bun:sqlite'
 import { appendFileSync, mkdirSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { realpathOrSpelled, withoutTrailingSeparators } from './checkout-identity.ts'
-import { DATABASE_RESOLUTION, resolveRunsDirectory } from './database-location.ts'
+import { resolveRunsDirectory } from './database-location.ts'
 import { nowIso, sessionId } from './db.ts'
 import {
   type DockerTeardown,
@@ -278,7 +278,7 @@ export function teardownTerminalRunResources(
   }
   if (failures.size) {
     try {
-      const path = join(resolveRunsDirectory(DATABASE_RESOLUTION), String(runId), 'events.jsonl')
+      const path = join(resolveRunsDirectory(process.env), String(runId), 'events.jsonl')
       mkdirSync(dirname(path), { recursive: true })
       appendFileSync(
         path,

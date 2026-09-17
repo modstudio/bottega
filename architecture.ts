@@ -83,7 +83,12 @@ export const modules: ArchitectureModule[] = [
   module('orchestrator/src/env-file.ts', []),
   module('orchestrator/src/hook-tree.ts', []),
   module('orchestrator/src/keep-tree-hold.ts', []),
-  module('orchestrator/src/local-host.ts', ['./agent-registry.ts', './agents.ts', './db.ts']),
+  module('orchestrator/src/local-host.ts', [
+    '../../shared/state-directory.ts',
+    './agent-registry.ts',
+    './agents.ts',
+    './db.ts',
+  ]),
   module('orchestrator/src/mcp-doc-write.ts', []),
   module('orchestrator/src/monitor.ts', [
     'node:fs',
@@ -135,6 +140,8 @@ export const modules: ArchitectureModule[] = [
   ]),
   module('orchestrator/src/monitor-types.ts', ['./review-vocabulary.ts']),
   module('orchestrator/src/postgres-migrate.ts', []),
+  module('shared/gate-timing-directory.ts', ['./brand.ts', './state-directory.ts']),
+  module('shared/state-directory.ts', ['./brand.ts']),
   module('shared/record/schema.ts', ['../brand.ts']),
   module('shared/record-session.ts', ['./brand.ts']),
   module('orchestrator/src/record-command.ts', [
@@ -418,7 +425,10 @@ export const modules: ArchitectureModule[] = [
   module('orchestrator/src/worktree-tool.ts', ['./worktree-template.ts', './git-environment.ts']),
   module('orchestrator/src/worktree-types.ts', []),
   module('hub/src/fixture-question-reclaim.ts', ['./db.ts', './orch.ts', './reconcile.ts']),
-  module('hub/src/serve-lifecycle.ts', ['../../shared/process-identity.ts']),
+  module('hub/src/serve-lifecycle.ts', [
+    '../../shared/process-identity.ts',
+    '../../shared/state-directory.ts',
+  ]),
 ]
 
 export const inversions: ArchitectureInversion[] = [

@@ -21,7 +21,11 @@ if (argv[0] === 'init-db') {
 }
 
 try {
-  const { DB_PATH, missingDatabaseMessage } = await import('./database-location.ts')
+  const { DB_PATH, legacyDatabaseRefusal, missingDatabaseMessage } = await import(
+    './database-location.ts'
+  )
+  const legacyRefusal = legacyDatabaseRefusal()
+  if (legacyRefusal) throw new Error(legacyRefusal)
   const { existsSync } = await import('node:fs')
   if (!existsSync(DB_PATH)) throw new Error(missingDatabaseMessage())
   const { registerStandardRuntime } = await import('./runtime-registration.ts')
@@ -37,7 +41,7 @@ try {
     // ORCH_DB is always passed to detached workers. Keep that emergency seam
     // independent of the ordinary resolver so collection still works while a
     // neighbouring source file is temporarily broken during an edit.
-    const path = process.env.ORCH_DB ?? (await import('./database-location.ts')).DB_PATH
+    const path = process.env.ORCH_DB || (await import('./database-location.ts')).DB_PATH
     const database = new Database(path, { readonly: true })
     // The degraded path is deliberately only collection: output and status,
     // not scoring advice that would require loading the job/router graph.

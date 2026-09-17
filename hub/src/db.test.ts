@@ -13,11 +13,21 @@ describe('hub database path decision', () => {
     )
   })
 
+  test('test-process empty HUB_DB mutation: refuses the live fallback', () => {
+    expect(() => decideHubDatabasePath(true, '', livePath)).toThrow(
+      'test process refuses hub database: HUB_DB resolved <unset>',
+    )
+  })
+
   test('test-process temp HUB_DB mutation: uses the scratch store', () => {
     expect(decideHubDatabasePath(true, tempPath, livePath)).toBe(tempPath)
   })
 
   test('non-test unset HUB_DB mutation: falls back to the live store', () => {
     expect(decideHubDatabasePath(false, undefined, livePath)).toBe(livePath)
+  })
+
+  test('non-test empty HUB_DB mutation: falls back to the live store', () => {
+    expect(decideHubDatabasePath(false, '', livePath)).toBe(livePath)
   })
 })

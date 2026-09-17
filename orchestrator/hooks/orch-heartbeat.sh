@@ -40,6 +40,7 @@
 # Arm it under the Monitor tool; each emitted line becomes one notification.
 set -uo pipefail
 
+CALLER_DIRECTORY="$PWD"
 ROOT=$(cd "$(dirname "$0")/.." 2>/dev/null && pwd -P) || {
   echo "DEGRADED: launch directory removed; re-arm from the main checkout"
   exit 2
@@ -49,6 +50,18 @@ cd "$ROOT" 2>/dev/null || {
   exit 2
 }
 ORCH="$ROOT/../bin/orch"
+if [ -n "${ORCH_DB:-}" ]; then
+  case "$ORCH_DB" in
+    /*) DB_PATH="$ORCH_DB" ;;
+    *) DB_PATH="$CALLER_DIRECTORY/$ORCH_DB" ;;
+  esac
+else
+  DB_PATH=$(bun "$ROOT/../shared/state-directory.ts" orchestrator database) || {
+    echo "DEGRADED: cannot resolve orchestrator database"
+    exit 2
+  }
+fi
+export ORCH_DB="$DB_PATH"
 
 SID="${1:?session id required (Claude session_id; orch records it on every run)}"
 INTERVAL="${2:-60}"
@@ -191,7 +204,7 @@ for event in events:
   # session. Read only the small session slice directly from the store; this is
   # part of health computation and therefore remains ahead of all supplemental
   # monitor-notice work (DEV-390).
-  landings_observed=$(SID="$SID" ORCH_DB_PATH="${ORCH_DB:-$ROOT/orch.db}" python3 -c '
+  landings_observed=$(SID="$SID" ORCH_DB_PATH="$DB_PATH" python3 -c '
 import datetime, json, os, sqlite3, sys
 path = os.environ["ORCH_DB_PATH"]
 if not os.path.exists(path):

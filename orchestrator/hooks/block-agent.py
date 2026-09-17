@@ -53,17 +53,19 @@ Allowed through:
 DENIAL ONLY HAPPENS ON PreToolUse. SubagentStart cannot carry a permission
 decision and has no prompt to judge, so it is audit-only.
 """
-import json, os, re, sqlite3, sys, time
+import json, os, re, sqlite3, subprocess, sys, time
 
 ALLOW = {"claude-code-guide"}
 
-DB = os.environ.get("ORCH_DB") or os.path.join(
-    os.path.dirname(os.path.abspath(__file__)), "..", "orch.db"
-)
+ORCHESTRATOR_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
+DB = os.environ.get("ORCH_DB") or subprocess.check_output(
+    ["bun", os.path.join(ORCHESTRATOR_ROOT, "..", "shared", "state-directory.ts"),
+     "orchestrator", "database"], text=True,
+).strip()
 # Where a decision goes when sqlite will not take it. A gate that cannot say
 # what it did is the thing this table exists to prevent, so a failed write has
 # to leave a mark somewhere rather than evaporate.
-FALLBACK_LOG = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "spawn-fallback.log")
+FALLBACK_LOG = os.path.join(os.path.dirname(DB), "spawn-fallback.log")
 
 # A declaration, not a vocabulary match. The old fuzzy list ("online", "docs",
 # "benchmark", "pricing") is gone: it is what made rewording work.
@@ -118,7 +120,7 @@ def log(decision, why, inp, event, payload=None):
         # No CREATE TABLE here: orch owns the schema and creates it on open.
         # Taking a schema lock on every spawn only contended with the writers
         # this then had to wait for.
-        db = sqlite3.connect(DB, timeout=15)
+        db = sqlite3.connect(f"file:{DB}?mode=rw", uri=True, timeout=15)
         db.execute("PRAGMA busy_timeout = 15000")
         db.execute(
             "INSERT INTO spawn (at, session_id, cwd, event, subagent_type,"

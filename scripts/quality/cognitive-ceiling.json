@@ -201,15 +201,16 @@
   },
   {
     "file": "orchestrator/src/collect.ts",
-    "function": "collectResult",
-    "line": 211,
-    "score": 56
-  },
-  {
-    "file": "orchestrator/src/collect.ts",
     "function": "collectWait",
     "line": 317,
     "score": 46
+  },
+  {
+    "file": "orchestrator/src/collect.ts",
+    "function": "collectResult",
+    "line": 362,
+    "score": 52,
+    "key": "orchestrator/src/collect.ts\u0000collectResult"
   },
   {
     "file": "orchestrator/src/confinement.ts",
@@ -236,16 +237,11 @@
     "score": 22
   },
   {
-    "file": "orchestrator/src/database-location.ts",
-    "function": "resolveDatabase",
-    "line": 85,
-    "score": 19
-  },
-  {
     "file": "orchestrator/src/db.ts",
     "function": "db",
-    "line": 174,
-    "score": 25
+    "line": 179,
+    "score": 24,
+    "key": "orchestrator/src/db.ts\u0000db"
   },
   {
     "file": "orchestrator/src/dispatch-commands.ts",

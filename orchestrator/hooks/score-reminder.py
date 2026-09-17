@@ -13,9 +13,11 @@ import json, os, sqlite3, subprocess, sys, time
 
 GLOBAL_BUDGET_SECONDS = 20
 
-DB = os.environ.get("ORCH_DB") or os.path.join(
-    os.path.dirname(os.path.abspath(__file__)), "..", "orch.db"
-)
+ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "../.."))
+DB = os.environ.get("ORCH_DB") or subprocess.check_output(
+    ["bun", os.path.join(ROOT, "shared", "state-directory.ts"), "orchestrator", "database"],
+    text=True,
+).strip()
 
 
 def hub_bin():

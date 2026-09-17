@@ -44,6 +44,13 @@ export const PLATFORM_NAME = 'Bottega'
 /** Machine form: the directory, the package name, anything a path needs. */
 export const PLATFORM_SLUG = 'bottega'
 
+/** On-disk state names are protocol: changing one requires an operator migration. */
+export const FROZEN_STATE_NAMES = {
+  orchestratorDatabase: 'orch.db',
+  hubDatabase: 'hub.db',
+  runsDirectory: 'runs',
+} as const
+
 /**
  * The concerns, which are the reason this is a platform rather than a tool.
  *

@@ -1,8 +1,18 @@
 #!/usr/bin/env bun
 import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { resolve } from 'node:path'
+import { resolveGateTimingDirectory } from '../shared/gate-timing-directory.ts'
+import { mainCheckoutOf } from '../shared/git.ts'
 
 const ROOT = new URL('..', import.meta.url).pathname.replace(/\/$/, '')
-const GATE_TIMING_DIR = `${ROOT}/orchestrator/runs/gate-timings`
+const checkout = resolve(ROOT)
+const GATE_TIMING_DIR = resolveGateTimingDirectory(
+  checkout,
+  mainCheckoutOf(checkout) !== checkout,
+  process.env,
+  tmpdir(),
+)
 const SPAWN_LIMIT = 20
 const STATIC_TEST_ROOTS = ['.githooks', 'hub', 'scripts', 'shared']
 

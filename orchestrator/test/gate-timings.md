@@ -3,7 +3,7 @@
 The orchestrator gate is one `bun test src` invocation under the shared
 host-load hold. It preloads the isolated store environment, writes junit and
 spawn sidecars while the invocation runs, merges them into
-`orchestrator/runs/gate-timings/<stamp>.json`, and removes the transient
+`<state>/orchestrator/runs/gate-timings/<stamp>.json`, and removes the transient
 sidecars.
 
 The committed baseline is `scripts/quality/test-timings.json`. It records the

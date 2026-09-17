@@ -8,6 +8,8 @@ REPO="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # The checkout itself. `bin/` holds each concern's binary and sits above ops/,
 # so an agent that runs one needs the root rather than this directory.
 ROOT="$(cd "$REPO/.." && pwd)"
+STATE_HOME_ENV="$(bun "$ROOT/shared/state-directory.ts" environment)"
+STATE_HOME="$(bun "$ROOT/shared/state-directory.ts" root)"
 if [[ -f "$ROOT/.git" ]]; then
   GIT_COMMON_DIR="$(git -C "$ROOT" rev-parse --path-format=absolute --git-common-dir)"
   MAIN_CHECKOUT="$(cd "$GIT_COMMON_DIR/.." && pwd)"
@@ -85,6 +87,8 @@ for tmpl in "$REPO"/launchd/*.plist.template; do
   #   __MODEL_HOST__ -> the configured SSH alias
   sed -e "s#__REPO__#${REPO}#g" -e "s#__ROOT__#${ROOT}#g" \
       -e "s#__HOME__#${HOME}#g" \
+      -e "s#__STATE_HOME_ENV__#${STATE_HOME_ENV}#g" \
+      -e "s#__STATE_HOME__#${STATE_HOME}#g" \
       -e "s#__MONITOR_BACKSTOP_SECONDS__#${PROVISIONAL_MONITOR_BACKSTOP_SECONDS}#g" \
       -e "s#__FIX_DEFECT_BACKSTOP_SECONDS__#${FIX_DEFECT_BACKSTOP_SECONDS}#g" \
       -e "s#__MODEL_HOST__#${LOCAL_MODEL_HOST:-}#g" "$tmpl" > "$target"

@@ -215,7 +215,7 @@ function sanitiseOrphanExtractionPath(path: string): string {
 function extractionDest(
   tree: string,
   runId: number | null,
-  runsDir = resolveRunsDirectory(),
+  runsDir = resolveRunsDirectory(process.env),
 ): string {
   if (runId !== null && runRowExists(runId)) return join(runsDir, String(runId), 'artifacts')
   return join(runsDir, 'orphans', sanitiseOrphanExtractionPath(tree))
@@ -234,7 +234,7 @@ function writeExtractionJson(dest: string, record: WorktreeExtraction): void {
 export function extractWorktree(
   tree: string,
   runId: number | null,
-  runsDir = resolveRunsDirectory(),
+  runsDir = resolveRunsDirectory(process.env),
 ): { ok: true; dest: string; record: WorktreeExtraction } | { ok: false; detail: string } {
   const recordedId = runId !== null && runRowExists(runId) ? runId : null
   const dest = extractionDest(tree, runId, runsDir)

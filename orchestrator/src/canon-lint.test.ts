@@ -175,13 +175,13 @@ describe('canon current reference rules', () => {
 
   test('reference exemptions are exact', () => {
     expect(
-      inputRules('`orchestrator/orch.db`', 'canon/reference-path', {
-        trackedPaths: ['orchestrator/src/orch.ts'],
+      inputRules('`scripts/worktree`', 'canon/reference-path', {
+        trackedPaths: ['scripts/actual.ts'],
       }),
     ).toEqual([])
     expect(
-      inputRules('`orchestrator/orch.db-copy`', 'canon/reference-path', {
-        trackedPaths: ['orchestrator/src/orch.ts'],
+      inputRules('`scripts/worktree/missing`', 'canon/reference-path', {
+        trackedPaths: ['scripts/actual.ts'],
       }),
     ).toHaveLength(1)
   })

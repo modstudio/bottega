@@ -10,8 +10,8 @@ import { contentionTableExists, insertContention } from './contention.ts'
 import {
   DATABASE_RESOLUTION,
   DB_PATH,
+  legacyDatabaseRefusal,
   missingDatabaseMessage,
-  registeredRepositoryMissingDatabase,
 } from './database-location.ts'
 import {
   applyMigrations,
@@ -94,8 +94,7 @@ export const linkedWorktreeReadOnly =
   DATABASE_RESOLUTION.linkedWorktreeBinary &&
   process.env.ORCH_DB_WRITE !== '1' &&
   (DATABASE_RESOLUTION.method !== 'ORCH_DB' ||
-    (DATABASE_RESOLUTION.mainStorePath !== null &&
-      sameStore(DB_PATH, DATABASE_RESOLUTION.mainStorePath)))
+    sameStore(DB_PATH, DATABASE_RESOLUTION.mainStorePath))
 
 let registeredStoreWriteProtected = false
 
@@ -182,6 +181,8 @@ export function db(writable = false): Database {
     if (writable && registeredStoreWriteProtected) throw new Error(LINKED_WORKTREE_WRITE_REFUSAL)
     return refuseOrReloadStaleSchema(handle, writable)
   }
+  const legacyRefusal = legacyDatabaseRefusal()
+  if (legacyRefusal) throw new Error(legacyRefusal)
   if (!existsSync(DB_PATH)) throw new Error(missingDatabaseMessage())
   requireOpenHooksForWritableMode()
   const sidecarsExist = existsSync(`${DB_PATH}-wal`) || existsSync(`${DB_PATH}-shm`)
@@ -228,22 +229,13 @@ export function db(writable = false): Database {
   const registered = d.query('SELECT path FROM project WHERE name = ?').get(PLATFORM_SLUG) as {
     path: string
   } | null
-  DATABASE_RESOLUTION.registeredPath = registered
-    ? join(registered.path, 'orchestrator', 'orch.db')
-    : null
+  DATABASE_RESOLUTION.registeredPath = registered ? DATABASE_RESOLUTION.mainStorePath : null
   registeredStoreWriteProtected = Boolean(
     DATABASE_RESOLUTION.linkedWorktreeBinary &&
       DATABASE_RESOLUTION.registeredPath &&
       sameStore(DATABASE_RESOLUTION.registeredPath, DB_PATH) &&
       process.env.ORCH_DB_WRITE !== '1',
   )
-  const registeredMissing = registered
-    ? registeredRepositoryMissingDatabase(DATABASE_RESOLUTION, registered.path)
-    : null
-  if (registeredMissing) {
-    d.close()
-    throw new Error(missingDatabaseMessage(registeredMissing))
-  }
   if (!linkedWorktreeReadOnly && !registeredStoreWriteProtected && databaseWritable(d)) {
     d.exec(`
       PRAGMA journal_mode = WAL;
@@ -308,6 +300,8 @@ export function initializeDatabase(): string {
   if (DATABASE_RESOLUTION.linkedWorktreeBinary) throw new Error(LINKED_WORKTREE_SCHEMA_REFUSAL)
   if (existsSync(DB_PATH))
     throw new Error(`refusing to initialize: orchestrator database already exists: ${DB_PATH}`)
+  const legacyRefusal = legacyDatabaseRefusal()
+  if (legacyRefusal) throw new Error(legacyRefusal)
   if (!DATABASE_RESOLUTION.initializable) {
     throw new Error(
       `refusing to initialize from a worktree binary: ${DB_PATH}\nrun orch init-db from the main checkout`,
@@ -356,6 +350,8 @@ function seedProjects(d: Database): void {
 /** Main-checkout binary only: apply pending, ordered Drizzle migrations. */
 export function migrateDatabase(): { path: string; versions: string[] } {
   if (DATABASE_RESOLUTION.linkedWorktreeBinary) throw new Error(LINKED_WORKTREE_SCHEMA_REFUSAL)
+  const legacyRefusal = legacyDatabaseRefusal()
+  if (legacyRefusal) throw new Error(legacyRefusal)
   if (!existsSync(DB_PATH)) throw new Error(missingDatabaseMessage())
   registeredOpenHooks()
   const d = new Database(DB_PATH, { readwrite: true, create: false })

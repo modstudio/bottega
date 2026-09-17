@@ -28,7 +28,6 @@
  * to be the code that still works when the code is broken.
  */
 import { Database } from 'bun:sqlite'
-import { join } from 'node:path'
 
 const [idArg, promptPath, jobName, specJson] = process.argv.slice(2)
 const id = Number(idArg)
@@ -37,9 +36,10 @@ const id = Number(idArg)
 function recordStartupFailure(reason: string): void {
   if (!id) return
   try {
-    const path =
-      process.env.ORCH_DB ??
-      join(new URL('..', import.meta.url).pathname.replace(/\/$/, ''), 'orch.db')
+    // The dispatcher always exports the already-resolved store to detached
+    // workers. Do not independently derive either the current or legacy root.
+    const path = process.env.ORCH_DB
+    if (!path) return
     // `readwrite` explicitly: Bun refuses `{ create: false }` on its own with
     // "flags must include SQLITE_OPEN_READONLY or SQLITE_OPEN_READWRITE", and
     // this function swallows its own errors by design — so the first version

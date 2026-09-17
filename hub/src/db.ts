@@ -1,7 +1,9 @@
 import { Database } from 'bun:sqlite'
 import { existsSync, mkdirSync } from 'node:fs'
 import { dirname, join } from 'node:path'
+import { FROZEN_STATE_NAMES } from '../../shared/brand.ts'
 import { mainCheckoutOf } from '../../shared/git.ts'
+import { legacyStoreRefusal, resolveHubDatabase } from '../../shared/state-directory.ts'
 import {
   applyMigrations,
   migrationRefusal,
@@ -13,8 +15,25 @@ export type { Project } from './projects.ts'
 
 const checkout = new URL('../..', import.meta.url).pathname
 const mainCheckout = mainCheckoutOf(checkout)
-const livePath = mainCheckout ? join(mainCheckout, 'hub', 'hub.db') : null
-export const DB_PATH = process.env.HUB_DB ?? livePath
+const livePath = resolveHubDatabase(process.env)
+const legacyPath = mainCheckout ? join(mainCheckout, 'hub', FROZEN_STATE_NAMES.hubDatabase) : null
+export const DB_PATH = livePath
+
+function legacyDatabaseRefusal(): string | null {
+  if (process.env.HUB_DB || !legacyPath) return null
+  return legacyStoreRefusal(
+    {
+      store: existsSync(legacyPath),
+      wal: existsSync(`${legacyPath}-wal`),
+      shm: existsSync(`${legacyPath}-shm`),
+      destinationStore: existsSync(DB_PATH),
+    },
+    {
+      legacyStore: legacyPath,
+      destinationStore: DB_PATH,
+    },
+  )
+}
 
 /** A test process never falls back to the live hub store; production still does. */
 export function decideHubDatabasePath(
@@ -22,7 +41,7 @@ export function decideHubDatabasePath(
   hubDb: string | undefined,
   liveStore: string | null,
 ): string | null {
-  if (hubDb !== undefined) return hubDb
+  if (hubDb) return hubDb
   if (isTestProcess) {
     throw new Error(
       `test process refuses hub database: HUB_DB resolved <unset>; live store is ${liveStore ?? '<none>'}\n` +
@@ -40,7 +59,8 @@ const writeDepth = new WeakMap<Database, number>()
 
 /** Refuse a query when there is no store to query; never manufacture an empty finding. */
 export function requireDatabase(): void {
-  if (!DB_PATH) throw new Error(`cannot resolve hub database: ${checkout} has no main git checkout`)
+  const refusal = legacyDatabaseRefusal()
+  if (refusal) throw new Error(refusal)
   if (!existsSync(DB_PATH)) {
     throw new Error(`hub database is absent at ${DB_PATH}; cannot answer from missing data`)
   }
@@ -121,7 +141,8 @@ export const nowIso = () => new Date().toISOString()
 
 /** The only production path that creates or changes the hub schema. */
 export function migrateDatabase(): { path: string; versions: string[] } {
-  if (!DB_PATH) throw new Error(`cannot resolve hub database: ${checkout} has no main git checkout`)
+  const refusal = legacyDatabaseRefusal()
+  if (refusal) throw new Error(refusal)
   mkdirSync(dirname(DB_PATH), { recursive: true })
   const d = new Database(DB_PATH, { create: true })
   try {

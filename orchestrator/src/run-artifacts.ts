@@ -47,7 +47,7 @@ export const KEEP_RUN_FILES_DAYS = 30
  * database, so a worktree cannot strand its evidence when it is swept.
  * ORCH_RUNS remains the deliberate override used by the suite.
  */
-export const RUNS_DIR = resolveRunsDirectory()
+export const RUNS_DIR = resolveRunsDirectory(process.env)
 
 /** The names owned by one run; `unique` is its id once a row has been claimed. */
 export function runFilePaths(
