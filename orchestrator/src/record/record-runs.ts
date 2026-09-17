@@ -1,6 +1,7 @@
 // concern: record-runs
 /** Owns tenant-bound record run reads. Must not know local run phases or CLI presentation. */
 import { SQL } from 'bun'
+import { bindTenant, type TenantPrincipal } from '../../../shared/record/tenant.ts'
 
 export type RecordCursor = { at: string; id: string }
 type RecordScore = {
@@ -15,6 +16,8 @@ type RecordScore = {
 }
 export type RecordRun = {
   id: string
+  spaceId: string
+  spaceName: string
   projectName: string | null
   startedAt: string
   finishedAt: string | null
@@ -35,10 +38,8 @@ export type RecordRun = {
 }
 export type RecordRunDetail = RecordRun & Record<string, unknown> & { reviews: unknown[] }
 
-type RunListInput = {
+type RunListInput = TenantPrincipal & {
   url: string
-  userId: string
-  spaceId: string
   limit: number
   before: RecordCursor | null
   project?: string
@@ -65,6 +66,8 @@ const presentation = (row: Record<string, unknown>) =>
 function runRow(row: Record<string, unknown>): RecordRun {
   return {
     id: String(row.id),
+    spaceId: String(row.space_id),
+    spaceName: String(row.space_name),
     projectName: row.project_name == null ? null : String(row.project_name),
     startedAt: iso(row.started_at)!,
     finishedAt: iso(row.finished_at),
@@ -93,15 +96,11 @@ function runRow(row: Record<string, unknown>): RecordRun {
   }
 }
 
-async function tenant<T>(
-  input: { url: string; userId: string; spaceId: string },
-  read: (tx: SQL) => Promise<T>,
-) {
+async function tenant<T>(input: { url: string } & TenantPrincipal, read: (tx: SQL) => Promise<T>) {
   const client = new SQL(input.url)
   try {
     return await client.begin(async (tx) => {
-      await tx`SELECT set_config('app.user_id', ${input.userId}, true)`
-      await tx`SELECT set_config('app.space_id', ${input.spaceId}, true)`
+      await bindTenant(tx, input)
       return read(tx)
     })
   } finally {
@@ -112,11 +111,13 @@ async function tenant<T>(
 export async function listRecordRuns(input: RunListInput): Promise<RecordRun[]> {
   return tenant(input, async (tx) => {
     const rows = await tx`
-      SELECT r.id, p.name AS project_name, r.started_at, r.finished_at, r.agent, r.job,
+      SELECT r.id, r.space_id, sp.name AS space_name, p.name AS project_name,
+        r.started_at, r.finished_at, r.agent, r.job,
         r.status, r.latency_ms, r.prompt_head, r.failure_kind, r.vendor_tokens,
         r.vendor_cost_usd, r.label, r.lens, r.parent_run_id, r.turn, r.evidence_excluded,
         s.delivery, s.quality, s.fidelity, s.scored_at
-      FROM run r LEFT JOIN project p ON p.id=r.project_id LEFT JOIN run_score s ON s.run_id=r.id
+      FROM run r JOIN space sp ON sp.id=r.space_id
+      LEFT JOIN project p ON p.id=r.project_id LEFT JOIN run_score s ON s.run_id=r.id
       WHERE (${input.before?.at ?? null}::timestamptz IS NULL OR (r.started_at, r.id) < (${input.before?.at ?? null}::timestamptz, ${input.before?.id ?? null}::uuid))
         AND (${input.project ?? null}::text IS NULL OR p.name=${input.project ?? null})
         AND (${input.agent ?? null}::text IS NULL OR r.agent=${input.agent ?? null})
@@ -132,13 +133,16 @@ export async function getRecordRun(input: {
   url: string
   userId: string
   spaceId: string
+  spaceIds?: string[]
   id: string
 }): Promise<RecordRunDetail | null> {
   return tenant(input, async (tx) => {
     const rows = await tx`
-      SELECT r.*, p.name AS project_name, s.delivery, s.quality, s.fidelity, s.scored_at,
+      SELECT r.*, sp.name AS space_name, p.name AS project_name,
+        s.delivery, s.quality, s.fidelity, s.scored_at,
         s.note, s.scored_by, s.updated_at AS score_updated_at
-      FROM run r LEFT JOIN project p ON p.id=r.project_id LEFT JOIN run_score s ON s.run_id=r.id
+      FROM run r JOIN space sp ON sp.id=r.space_id
+      LEFT JOIN project p ON p.id=r.project_id LEFT JOIN run_score s ON s.run_id=r.id
       WHERE r.id=${input.id}::uuid
     `
     const row = rows[0] as Record<string, unknown> | undefined
@@ -160,7 +164,6 @@ export async function getRecordRun(input: {
     `
     const detail = presentation(row)
     for (const key of [
-      'spaceId',
       'delivery',
       'quality',
       'fidelity',

@@ -2,10 +2,11 @@
 /** Owns tenant-bound latest orchestrator snapshots. Must not know HTTP or local commands. */
 import { SQL } from 'bun'
 import { newRecordId } from '../../../shared/record/schema.ts'
+import { bindTenant, type TenantPrincipal } from '../../../shared/record/tenant.ts'
 
 export const SNAPSHOT_KINDS = ['state', 'blockers', 'health', 'jobs', 'agents'] as const
 export type SnapshotKind = (typeof SNAPSHOT_KINDS)[number]
-type Tenant = { url: string; userId: string; spaceId: string }
+type Tenant = { url: string } & TenantPrincipal
 
 export type RecordSnapshot = {
   id: string
@@ -19,8 +20,7 @@ async function tenant<T>(input: Tenant, work: (tx: SQL) => Promise<T>): Promise<
   const client = new SQL(input.url)
   try {
     return await client.begin(async (tx) => {
-      await tx`SELECT set_config('app.user_id', ${input.userId}, true)`
-      await tx`SELECT set_config('app.space_id', ${input.spaceId}, true)`
+      await bindTenant(tx, input)
       return work(tx)
     })
   } finally {

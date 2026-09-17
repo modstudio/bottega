@@ -275,6 +275,7 @@ export function recordAuth(
 export type RecordIdentity = {
   user: Record<string, unknown> & { id: string }
   activeSpaceId: string | null
+  personalSpaceId: string | null
   memberships: Record<string, unknown>[]
 }
 
@@ -283,19 +284,23 @@ export async function recordIdentity(
   user: Record<string, unknown> & { id: string },
   activeSpaceId: string | null,
 ): Promise<RecordIdentity> {
-  if (!activeSpaceId) return { user, activeSpaceId, memberships: [] }
   const sql = new SQL(url)
   try {
-    const memberships = await sql.begin(async (tx) => {
+    return await sql.begin(async (tx) => {
       await tx`SELECT set_config('app.user_id', ${user.id}, true)`
-      await tx`SELECT set_config('app.space_id', ${activeSpaceId}, true)`
-      return tx`
+      await tx`SELECT set_config('app.space_id', ${activeSpaceId ?? ''}, true)`
+      const users = await tx`SELECT personal_space_id FROM "user" WHERE id=${user.id}::uuid`
+      const personalSpaceId = users[0]?.personal_space_id
+        ? String(users[0].personal_space_id)
+        : null
+      if (!activeSpaceId) return { user, activeSpaceId, personalSpaceId, memberships: [] }
+      const memberships = await tx`
         SELECT s.id AS space_id, s.name, s.slug, m.role, m.permission
         FROM membership m JOIN space s ON s.id=m.space_id
         WHERE m.user_id=${user.id}::uuid ORDER BY s.slug
       `
+      return { user, activeSpaceId, personalSpaceId, memberships: [...memberships] }
     })
-    return { user, activeSpaceId, memberships: [...memberships] }
   } finally {
     await sql.close()
   }

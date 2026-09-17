@@ -1,7 +1,8 @@
 import { SQL } from 'bun'
 import { newRecordId } from '../../shared/record/schema.ts'
+import { bindTenant, type TenantPrincipal } from '../../shared/record/tenant.ts'
 
-export type TaskIdentity = { userId: string; spaceId: string }
+export type TaskIdentity = TenantPrincipal
 export type HostedTask = {
   id: string
   key: string
@@ -66,8 +67,7 @@ export async function withHostedTenant<T>(
   const client = new SQL(url)
   try {
     return await client.begin(async (tx) => {
-      await tx`SELECT set_config('app.user_id', ${identity.userId}, true)`
-      await tx`SELECT set_config('app.space_id', ${identity.spaceId}, true)`
+      await bindTenant(tx, identity)
       return work(tx)
     })
   } finally {

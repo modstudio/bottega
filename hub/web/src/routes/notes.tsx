@@ -144,6 +144,7 @@ export function HostedNotesPage() {
             <TableHeader>
               <TableRow>
                 <TableHead>Note</TableHead>
+                <TableHead>Space</TableHead>
                 <TableHead>Project</TableHead>
                 <TableHead>Area</TableHead>
                 <TableHead>Sightings</TableHead>
@@ -153,9 +154,11 @@ export function HostedNotesPage() {
             </TableHeader>
             <TableBody>
               {query.data.notes.map((note) => {
-                const noteAcks = acknowledgements.filter((ack) => ack.note_id === note.id)
+                const noteAcks = acknowledgements.filter(
+                  (ack) => ack.space_id === note.space_id && ack.note_id === note.id,
+                )
                 return (
-                  <TableRow key={note.id}>
+                  <TableRow key={`${note.space_id}:${note.id}`}>
                     <TableCell>
                       <div className="max-w-xl whitespace-pre-wrap">{note.text}</div>
                       <div className="mt-1 text-xs text-text-muted">
@@ -177,6 +180,7 @@ export function HostedNotesPage() {
                         <div className="mt-1 text-xs text-text-muted">{note.stale_reason}</div>
                       ) : null}
                     </TableCell>
+                    <TableCell>{note.space_name}</TableCell>
                     <TableCell>{note.project}</TableCell>
                     <TableCell>{note.area ?? '-'}</TableCell>
                     <TableCell>{note.sightings}</TableCell>

@@ -11,6 +11,7 @@ import { Markdown } from './markdown'
 
 type HostedDetail = {
   task: {
+    space_name: string
     key: string
     project: string
     title: string | null
@@ -98,7 +99,10 @@ function Intervals({ rows }: { rows: HostedDetail['intervals'] }) {
 }
 
 export function HostedTaskSheet({ taskKey, onClose }: { taskKey: string; onClose: () => void }) {
-  const query = useQuery(trpc.record.task.queryOptions({ key: taskKey }))
+  const separator = taskKey.indexOf(':')
+  const spaceId = separator > 0 ? taskKey.slice(0, separator) : undefined
+  const key = separator > 0 ? taskKey.slice(separator + 1) : taskKey
+  const query = useQuery(trpc.record.task.queryOptions({ key, spaceId }))
   const detail = query.data as HostedDetail | undefined
   return (
     <Companion
@@ -110,7 +114,7 @@ export function HostedTaskSheet({ taskKey, onClose }: { taskKey: string; onClose
             <ProjectMark name={detail.task.project} />
           </span>
         ) : (
-          taskKey
+          key
         )
       }
       subtitle={detail?.task.title ?? 'Loading task...'}
@@ -134,6 +138,7 @@ export function HostedTaskSheet({ taskKey, onClose }: { taskKey: string; onClose
               )
             }
           />
+          <DisplayRow label="Space" value={String(detail.task.space_name)} />
           <DisplayRow label="Assignee" value={detail.task.assignee ?? 'unassigned'} />
           <DisplayRow label="Parent" value={detail.task.parent_key ?? '-'} />
           <DisplayRow label="Updated" value={relativeTime(detail.task.updated_at)} />

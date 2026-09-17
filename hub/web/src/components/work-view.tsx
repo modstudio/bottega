@@ -127,6 +127,7 @@ function WindowChrome({
 }
 
 const columns = [
+  { id: 'space', label: 'Space', numeric: false, get: (row: TaskRow) => row.spaceName || '' },
   { id: 'project', label: 'Project', numeric: false, get: (row: TaskRow) => row.project || '' },
   { id: 'task', label: 'Task', numeric: false, get: (row: TaskRow) => row.key || '' },
   { id: 'title', label: 'Title', numeric: false, get: (row: TaskRow) => row.title || '' },
@@ -201,6 +202,7 @@ function TaskUpdated({ row }: { row: TaskRow }) {
 /** One cell of the task table, by column. */
 function taskCell(column: Sort['col'], row: TaskRow, now: number, fetchedAt: number): ReactNode {
   const cells: Record<Sort['col'], () => ReactNode> = {
+    space: () => row.spaceName,
     project: () => (
       <span className="inline-flex items-center gap-2">
         <ProjectMark name={row.project} />
@@ -245,7 +247,7 @@ function TaskTable({
   const [sort, setSort] = useState<Sort>({ col: 'updated', dir: -1 })
   const [opened, setOpened] = useState<Set<string>>(() => new Set())
   const sorted = useMemo(() => {
-    const column = columns.find((candidate) => candidate.id === sort.col) ?? columns[4]
+    const column = columns.find((candidate) => candidate.id === sort.col) ?? columns[5]
     return [...rows].sort((a, b) => {
       const x = column.get(a) ?? 0
       const y = column.get(b) ?? 0
@@ -290,11 +292,11 @@ function TaskTable({
       selectedKey={openKey}
       columns={collectionColumns}
       rows={sorted}
-      getKey={(row) => row.key!}
+      getKey={(row) => `${row.spaceId ?? ''}:${row.key}`}
       onOpen={(row) =>
         void navigate({
           to: from === 'flight' ? '/flight/tasks/$key' : '/done/tasks/$key',
-          params: { key: row.key! },
+          params: { key: row.spaceId ? `${row.spaceId}:${row.key}` : row.key! },
           resetScroll: false,
         })
       }
@@ -578,7 +580,7 @@ function BoardCardView({ card }: { card: BoardCard }) {
   return (
     <Link
       to="/board/tasks/$key"
-      params={{ key: card.key }}
+      params={{ key: card.spaceId ? `${card.spaceId}:${card.key}` : card.key }}
       resetScroll={false}
       data-record-key={card.key}
       data-project=""
@@ -586,6 +588,7 @@ function BoardCardView({ card }: { card: BoardCard }) {
       style={projectVars(colors, card.project)}
     >
       <Identifier className="block">{card.key}</Identifier>
+      <div className="mt-1 text-xs text-text-muted">{card.spaceName}</div>
       <div className="mt-1 text-sm">
         {card.title || <span className="text-text-muted">No title from its tracker</span>}
       </div>
@@ -752,7 +755,9 @@ export function BoardView() {
                   </h2>
                   <div className="space-y-2">
                     {rows.length ? (
-                      rows.map((card) => <BoardCardView key={card.key} card={card} />)
+                      rows.map((card) => (
+                        <BoardCardView key={`${card.spaceId ?? ''}:${card.key}`} card={card} />
+                      ))
                     ) : (
                       <div className="border border-border-default p-4 text-text-muted">
                         {group.empty}
@@ -779,6 +784,11 @@ export function BoardView() {
                   title={group.label}
                   count={rows.length}
                   columns={[
+                    {
+                      id: 'space',
+                      label: 'Space',
+                      render: (card) => card.spaceName,
+                    },
                     {
                       id: 'task',
                       label: 'Task',
@@ -824,11 +834,13 @@ export function BoardView() {
                     },
                   ]}
                   rows={rows}
-                  getKey={(card) => card.key}
+                  getKey={(card) => `${card.spaceId ?? ''}:${card.key}`}
                   onOpen={(card) =>
                     void navigate({
                       to: '/board/tasks/$key',
-                      params: { key: card.key },
+                      params: {
+                        key: card.spaceId ? `${card.spaceId}:${card.key}` : card.key,
+                      },
                       resetScroll: false,
                     })
                   }

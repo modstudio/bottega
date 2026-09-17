@@ -9,6 +9,8 @@ test('hosted notes render their records without disposition controls', () => {
     notes: [
       {
         id: 7,
+        space_id: '00000000-0000-4000-8000-000000000001',
+        space_name: 'Workshop',
         project: 'workshop',
         text: 'Keep the boundary',
         area: 'hub',
@@ -23,6 +25,7 @@ test('hosted notes render their records without disposition controls', () => {
     ],
     acknowledgements: [
       {
+        space_id: '00000000-0000-4000-8000-000000000001',
         note_id: 7,
         session_id: 'session-1',
         acknowledged_at: '2026-09-17T11:30:00.000Z',
@@ -36,6 +39,7 @@ test('hosted notes render their records without disposition controls', () => {
     </QueryClientProvider>,
   )
   expect(notes).toContain('Keep the boundary')
+  expect(notes).toContain('Workshop')
   expect(notes).toContain('session-1')
   expect(notes).not.toContain('Promote')
   expect(notes).not.toContain('Keep note')

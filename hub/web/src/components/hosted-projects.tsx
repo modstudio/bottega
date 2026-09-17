@@ -7,6 +7,8 @@ import { Badge } from '@/ui/badge/badge'
 import { PageHeader } from '@/ui/page-header/page-header'
 
 type HostedProject = {
+  spaceId: string
+  spaceName: string
   name: string
   keyPrefixes: string[]
   stack: string | null
@@ -28,6 +30,7 @@ export function HostedProjects() {
   const query = useQuery(trpc.record.projects.queryOptions())
   const colors = hostedProjectColors(query.data ?? [])
   const columns: CollectionColumn<HostedProject>[] = [
+    { id: 'space', label: 'Space', render: (project) => project.spaceName },
     {
       id: 'name',
       label: 'Name',
@@ -71,7 +74,7 @@ export function HostedProjects() {
           count={query.data.length}
           columns={columns}
           rows={query.data}
-          getKey={(project) => project.name}
+          getKey={(project) => `${project.spaceId}:${project.name}`}
           onOpen={() => undefined}
           empty={{ title: 'No projects in this space.' }}
         />

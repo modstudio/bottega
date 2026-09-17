@@ -275,6 +275,8 @@ export function spendGrid(windowDays = 14) {
 
 /** One card on the board. */
 type BoardTask = {
+  spaceId?: string
+  spaceName?: string
   key: string
   project: string | null
   title: string | null

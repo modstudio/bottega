@@ -211,7 +211,10 @@ export const hubSend = pgTable.withRLS(
     check('hub_send_test_check', sql`${table.test} IN (0,1)`),
     pgPolicy('hub_send_space_select', {
       for: 'select',
-      using: sql`${table.spaceId} = nullif(current_setting('app.space_id', true), '')::uuid`,
+      using: sql`${table.spaceId} = ANY(COALESCE(
+        string_to_array(nullif(current_setting('app.space_ids', true), ''), ',')::uuid[],
+        ARRAY[nullif(current_setting('app.space_id', true), '')::uuid]
+      ))`,
     }),
     pgPolicy('hub_send_space_insert', {
       for: 'insert',

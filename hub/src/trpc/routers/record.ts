@@ -51,7 +51,16 @@ async function hostedIdentity(ctx: Context) {
       code: 'PRECONDITION_FAILED',
       message: 'record session has no active space',
     })
-  return { client, identity: { userId: who.user.id, spaceId: who.activeSpaceId } }
+  const membershipSpaceIds = who.memberships.map((row) => String(row.space_id))
+  return {
+    client,
+    identity: {
+      userId: who.user.id,
+      spaceId: who.activeSpaceId,
+      spaceIds:
+        who.activeSpaceId === who.personalSpaceId ? membershipSpaceIds : [who.activeSpaceId],
+    },
+  }
 }
 
 const machineInput = z.object({ machineId: z.string().uuid().optional() })
@@ -211,10 +220,15 @@ export const recordRouter = t.router({
       )
     }),
   task: t.procedure
-    .input(z.object({ key: z.string().min(1).max(64) }))
+    .input(z.object({ key: z.string().min(1).max(64), spaceId: uuid.optional() }))
     .query(async ({ ctx, input }) => {
       const { identity } = await hostedIdentity(ctx)
-      const detail = await hostedTaskDetail(recordDatabaseUrl(), identity, input.key)
+      const detail = await hostedTaskDetail(
+        recordDatabaseUrl(),
+        identity,
+        input.spaceId ?? identity.spaceId,
+        input.key,
+      )
       if (!detail) throw new TRPCError({ code: 'NOT_FOUND', message: `no task ${input.key}` })
       return detail
     }),

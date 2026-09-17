@@ -6,7 +6,7 @@ import {
   trackerCapabilities,
 } from '../../shared/trackers.ts'
 
-export type ProjectionProject = TrackerProject
+export type ProjectionProject = TrackerProject & { spaceId?: string; spaceName?: string }
 
 export type DayRow = {
   day: string
@@ -177,6 +177,8 @@ export function projectSpendGrid(
 }
 
 export type IntervalRow = {
+  space_id?: string
+  space_name?: string
   task_key: string | null
   project: string | null
   source: string
@@ -202,6 +204,8 @@ export type WindowIntervalRow = IntervalRow & {
 
 type AgentSpend = { agent: string; tokens: number; costUsd: number | null; runs: number }
 export type ProjectedTask = {
+  spaceId?: string
+  spaceName?: string
   key: string | null
   project: string | null
   title: string | null
@@ -244,14 +248,15 @@ export function projectTasksInWindow(
 ): ProjectedTask[] {
   const groups = new Map<string, WindowIntervalRow[]>()
   for (const row of rows) {
-    const id = row.task_key ?? `\0unattributed:${row.project ?? 'unknown'}`
+    const id = `${row.space_id ?? ''}\0${row.task_key ?? `unattributed:${row.project ?? 'unknown'}`}`
     groups.set(id, [...(groups.get(id) ?? []), row])
   }
-  const project = (name: string | null) => projectRows.find((item) => item.name === name) ?? null
+  const project = (spaceId: string | undefined, name: string | null) =>
+    projectRows.find((item) => item.spaceId === spaceId && item.name === name) ?? null
   const output: ProjectedTask[] = []
-  for (const [id, list] of groups) {
-    const key = id.startsWith('\0') ? null : id
+  for (const list of groups.values()) {
     const first = list[0]!
+    const key = first.task_key
     const spans: Span[] = list.map((row) => ({
       start: new Date(row.start_at).getTime(),
       end: intervalEndMs(row, now),
@@ -259,6 +264,8 @@ export function projectTasksInWindow(
     const projectName = first.task_project ?? first.project
     const source = first.task_source ?? (key ? 'git' : null)
     output.push({
+      spaceId: first.space_id,
+      spaceName: first.space_name,
       key,
       project: projectName,
       title: first.task_title,
@@ -266,9 +273,14 @@ export function projectTasksInWindow(
       statusCategory: first.task_status_category,
       source,
       sourceProtocol:
-        source === 'mcp' ? (project(projectName)?.settings.tracker?.protocol ?? null) : null,
+        source === 'mcp'
+          ? (project(first.space_id, projectName)?.settings.tracker?.protocol ?? null)
+          : null,
       capabilities: key
-        ? trackerCapabilities({ source: source as TrackerRowSource, project: project(projectName) })
+        ? trackerCapabilities({
+            source: source as TrackerRowSource,
+            project: project(first.space_id, projectName),
+          })
         : null,
       engagedMs: engagedMs(spans),
       claudeTokens: list.reduce((sum, row) => sum + row.claude_tokens, 0),
@@ -289,6 +301,7 @@ export function projectTasksInWindow(
 }
 
 export type CompletedRow = {
+  space_id?: string
   key: string
   project: string
   title: string | null
@@ -340,12 +353,18 @@ export function projectFlightDone(input: {
       (!input.filters.project || row.project === input.filters.project) &&
       sourceMatches(row, input.filters.source),
   )
-  const closed = new Set(input.completed.map((row) => row.key))
+  const identity = (row: { spaceId?: string; key: string | null }) =>
+    `${row.spaceId ?? ''}\0${row.key}`
+  const closed = new Set(
+    input.completed.map((row) => identity({ spaceId: row.space_id, key: row.key })),
+  )
   const inFlight = (row: ProjectedTask) =>
     row.workingNow || ['active', 'review'].includes(row.statusCategory ?? '')
   const wanted =
     input.name === 'done'
-      ? rows.filter((row) => row.key && (closed.has(row.key) || row.statusCategory === 'done'))
+      ? rows.filter(
+          (row) => row.key && (closed.has(identity(row)) || row.statusCategory === 'done'),
+        )
       : rows.filter(inFlight)
   const unmapped = rows.filter(
     (row) => row.source === 'mcp' && row.status && !row.statusCategory && !wanted.includes(row),
@@ -377,7 +396,9 @@ export function projectFlightDone(input: {
     engaged: human(row.engagedMs),
     runs: row.key
       ? projectRuns(
-          input.intervals.filter((item) => item.task_key === row.key),
+          input.intervals.filter(
+            (item) => item.task_key === row.key && item.space_id === row.spaceId,
+          ),
           input.now,
         )
       : [],
@@ -407,6 +428,8 @@ export function projectFlightDone(input: {
 }
 
 export type BoardSourceRow = {
+  space_id?: string
+  space_name?: string
   key: string
   project: string | null
   title: string | null
@@ -425,8 +448,12 @@ export function projectBoardCards(
 ) {
   const live = new Set(liveKeys)
   return rows.map((row) => {
-    const project = projectRows.find((item) => item.name === row.project) ?? null
+    const project =
+      projectRows.find((item) => item.spaceId === row.space_id && item.name === row.project) ?? null
+    const identity = row.space_id ? `${row.space_id}\0${row.key}` : row.key
     return {
+      spaceId: row.space_id,
+      spaceName: row.space_name,
       key: row.key,
       project: row.project,
       title: row.title,
@@ -437,7 +464,7 @@ export function projectBoardCards(
       sourceProtocol: row.source === 'mcp' ? (project?.settings.tracker?.protocol ?? null) : null,
       capabilities: trackerCapabilities({ source: row.source as TrackerRowSource, project }),
       updatedAt: row.updated_at ?? row.last_seen,
-      workingNow: live.has(row.key),
+      workingNow: live.has(identity),
     }
   })
 }
@@ -453,7 +480,7 @@ export function projectBoard(input: {
   const eligible = input.rows.filter(
     (row) =>
       ['active', 'review'].includes(row.status_category ?? '') ||
-      recent.has(row.key) ||
+      recent.has(row.space_id ? `${row.space_id}\0${row.key}` : row.key) ||
       (row.source === 'local' && !['done', 'dropped'].includes(row.status_category ?? '')),
   )
   const count = (bucket: (row: BoardSourceRow) => string) =>

@@ -128,6 +128,20 @@ function asSpace(user: string, password: string, spaceId: string, statement: str
   return psql(user, password, `SET app.space_id = '${spaceId}';\n${statement}`)
 }
 
+function asSpaces(
+  user: string,
+  password: string,
+  activeSpaceId: string,
+  spaceIds: string[],
+  statement: string,
+): PsqlResult {
+  return psql(
+    user,
+    password,
+    `SET app.space_id = '${activeSpaceId}';\nSET app.space_ids = '${spaceIds.join(',')}';\n${statement}`,
+  )
+}
+
 describe('Postgres substrate shape', () => {
   test('uses application-minted UUIDv7 ids and declares no id default', () => {
     const generated = newRecordId()
@@ -234,7 +248,9 @@ realPostgres('RLS proof against real Postgres', () => {
       INSERT INTO "user" (id, email, name, created_at)
         VALUES ('${USER_A}', 'owner@example.test', 'Owner', now());
       INSERT INTO membership (id, space_id, user_id, role, permission, created_at)
-        VALUES ('01990000-0000-7000-8000-000000000011', '${SPACE_A}', '${USER_A}', 'member', 'write', now());
+        VALUES
+        ('01990000-0000-7000-8000-000000000011', '${SPACE_A}', '${USER_A}', 'member', 'write', now()),
+        ('01990000-0000-7000-8000-000000000012', '${SPACE_B}', '${USER_A}', 'member', 'write', now());
       INSERT INTO invitation
         (id,space_id,email,inviter_id,role,status,expires_at,created_at)
       VALUES
@@ -969,6 +985,71 @@ realPostgres('RLS proof against real Postgres', () => {
     )
     expect(result.code, result.stderr).toBe(0)
     expect(result.stdout.split('\n').at(-1)).toBe('')
+  })
+
+  test('member-space lens returns two spaces and excludes the third under FORCE RLS', () => {
+    for (const role of [RECORD_ACTOR_ROLE, RECORD_OWNER_ROLE]) {
+      const password = role === RECORD_ACTOR_ROLE ? 'actor-password' : 'owner-password'
+      const result = asSpaces(
+        role,
+        password,
+        SPACE_A,
+        [SPACE_A, SPACE_B],
+        `SELECT name FROM project ORDER BY name;`,
+      )
+      expect(result.code, result.stderr).toBe(0)
+      expect(result.stdout.split('\n')).toEqual(['alpha', 'alpha-two', 'beta'])
+    }
+  })
+
+  test('a member-space set never authorizes a cross-space write', () => {
+    const result = asSpaces(
+      RECORD_ACTOR_ROLE,
+      'actor-password',
+      SPACE_A,
+      [SPACE_A, SPACE_B],
+      `INSERT INTO project (id,space_id,name,created_at)
+       VALUES ('01990000-0000-7000-8000-00000000002d','${SPACE_B}','lens-write',now());`,
+    )
+    expect(result.code).not.toBe(0)
+    expect(result.stderr).toContain('violates row-level security policy')
+  })
+
+  test('a member-space set without one active space refuses writes', () => {
+    const result = psql(
+      RECORD_ACTOR_ROLE,
+      'actor-password',
+      `SET app.space_ids = '${SPACE_A},${SPACE_B}';
+       INSERT INTO project (id,space_id,name,created_at)
+       VALUES ('01990000-0000-7000-8000-00000000002e','${SPACE_A}','set-only-write',now());`,
+    )
+    expect(result.code).not.toBe(0)
+    expect(result.stderr).toContain('violates row-level security policy')
+  })
+
+  test('removing a membership removes that space from the next derived lens read', () => {
+    const lens = () =>
+      psql(
+        RECORD_ACTOR_ROLE,
+        'actor-password',
+        `SET app.user_id = '${USER_A}';
+         SELECT set_config('app.space_ids', COALESCE((
+           SELECT string_agg(space_id::text, ',' ORDER BY space_id)
+           FROM membership WHERE user_id='${USER_A}'::uuid
+         ), ''), false);
+         SELECT name FROM project ORDER BY name;`,
+      )
+    const before = lens()
+    expect(before.code, before.stderr).toBe(0)
+    expect(before.stdout.split('\n').slice(1)).toEqual(['alpha', 'alpha-two', 'beta'])
+    succeeds(
+      'postgres',
+      'postgres',
+      `DELETE FROM membership WHERE user_id='${USER_A}'::uuid AND space_id='${SPACE_B}'::uuid;`,
+    )
+    const after = lens()
+    expect(after.code, after.stderr).toBe(0)
+    expect(after.stdout.split('\n').slice(1)).toEqual(['alpha', 'alpha-two'])
   })
 
   test('cross-space review graph reads return nothing', () => {

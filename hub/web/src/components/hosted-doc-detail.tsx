@@ -4,7 +4,7 @@ import { Markdown } from '@/components/markdown'
 import { trpc } from '@/trpc/client'
 import { Sheet } from '@/ui/sheet/sheet'
 
-type HostedDoc = { body: string }
+type HostedDoc = { body: string; spaceName: string }
 type HostedRevision = { id: string; op: string; author: string; reason: string; at: string }
 
 export function HostedDocContent({
@@ -16,6 +16,7 @@ export function HostedDocContent({
 }) {
   return (
     <>
+      <p className="mb-4 text-sm text-text-muted">Space: {doc.spaceName}</p>
       <Markdown content={doc.body} />
       <div className="mt-8 border-t border-border-default pt-4">
         <h2 className="mb-3 text-sm font-semibold">History</h2>
