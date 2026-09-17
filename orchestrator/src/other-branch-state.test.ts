@@ -21,6 +21,7 @@ function decide(overrides: Partial<Parameters<typeof decideOtherBranchState>[0]>
     branch: 'feature/DEV-616-report',
     mergedPullRequests: [],
     mergedPullRequestsTruncated: false,
+    pullRequestNameCheck: null,
     commitsNotOnTrunk: 1,
     patchEquivalent: null,
     pullRequestCommitCheck: null,
@@ -42,10 +43,24 @@ describe('other local branch state decision', () => {
   })
 
   test('PR-name mutation: a merged PR head lands the same-named branch', () => {
-    expect(decide({ mergedPullRequests: [pullRequest] })).toMatchObject({
+    expect(
+      decide({
+        mergedPullRequests: [pullRequest],
+        pullRequestNameCheck: { pullRequest, containsTip: true },
+      }),
+    ).toMatchObject({
       state: 'landed',
       landedBy: { type: 'pr', number: 42 },
     })
+  })
+
+  test('PR-head containment mutation: a reused name whose PR head does not contain the tip is not landed by PR', () => {
+    expect(
+      decide({
+        mergedPullRequests: [pullRequest],
+        pullRequestNameCheck: { pullRequest, containsTip: false },
+      }),
+    ).toEqual({ state: 'unlanded' })
   })
 
   test('patch-equivalent mutation: equivalent content lands without a PR-name match', () => {

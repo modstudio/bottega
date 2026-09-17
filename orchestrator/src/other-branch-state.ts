@@ -23,6 +23,11 @@ export type OtherBranchLanding =
   | { state: 'empty' | 'unlanded' | 'held' }
   | { state: 'unknown'; error?: string }
 
+export type PullRequestNameCheck =
+  | { pullRequest: MergedPullRequest; containsTip: boolean }
+  | { error: string }
+  | null
+
 export function isHeldBranch(branch: string): boolean {
   return (
     branch.endsWith('-keep') || branch.includes('-escaped-keep') || branch.includes('-wip-keep')
@@ -45,14 +50,16 @@ export function decideOtherBranchState(input: {
   branch: string
   mergedPullRequests: readonly MergedPullRequest[]
   mergedPullRequestsTruncated: boolean
+  pullRequestNameCheck: PullRequestNameCheck
   commitsNotOnTrunk: number
   patchEquivalent: PatchEquivalentForm | null
   pullRequestCommitCheck: PullRequestCommitCheck
   checkError?: string
 }): OtherBranchLanding {
   if (isHeldBranch(input.branch)) return { state: 'held' }
-  const pullRequest = input.mergedPullRequests.find((pr) => pr.headRefName === input.branch)
-  if (pullRequest) {
+  const nameCheck = input.pullRequestNameCheck
+  if (nameCheck && 'pullRequest' in nameCheck && nameCheck.containsTip) {
+    const pullRequest = nameCheck.pullRequest
     return {
       state: 'landed',
       landedBy: {
@@ -63,6 +70,7 @@ export function decideOtherBranchState(input: {
       },
     }
   }
+  if (nameCheck && 'error' in nameCheck) return { state: 'unknown', error: nameCheck.error }
   if (input.checkError) return { state: 'unknown', error: input.checkError }
   if (input.commitsNotOnTrunk === 0) return { state: 'empty' }
   if (input.patchEquivalent) {

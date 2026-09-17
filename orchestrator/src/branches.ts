@@ -22,6 +22,7 @@ import {
   decideOtherPruneEligibility,
   isHeldBranch,
   type OtherBranchLanding,
+  type PullRequestNameCheck,
   taskKeyToken,
 } from './other-branch-state.ts'
 import type { Project } from './projects.ts'
@@ -235,6 +236,37 @@ function pullRequestCommitCheck(
     }
   }
   return failure ? { error: failure } : null
+}
+
+function pullRequestNameCheck(
+  project: Project,
+  pullRequests: readonly MergedPullRequest[],
+  branch: string,
+  branchTip: string,
+  fetched: Map<number, string | null>,
+): PullRequestNameCheck {
+  let failure: string | null = null
+  let mismatch: MergedPullRequest | null = null
+  for (const pullRequest of pullRequests.filter((candidate) => candidate.headRefName === branch)) {
+    let fetchFailure = fetched.get(pullRequest.number)
+    if (fetchFailure === undefined) {
+      fetchFailure = fetchPullRequest(project, pullRequest)
+      fetched.set(pullRequest.number, fetchFailure)
+    }
+    if (fetchFailure) {
+      failure ??= fetchFailure
+      continue
+    }
+    try {
+      const mergeBase = git(project.path, 'merge-base', branchTip, pullRequest.headRefOid)
+      if (mergeBase === branchTip) return { pullRequest, containsTip: true }
+      mismatch = pullRequest
+    } catch (error) {
+      failure ??= `PR #${pullRequest.number} head containment check failed: ${String(error)}`
+    }
+  }
+  if (failure) return { error: failure }
+  return mismatch ? { pullRequest: mismatch, containsTip: false } : null
 }
 
 function projectRuns(project: Project): RunRow[] {
@@ -490,6 +522,7 @@ function otherBranchReportRow(input: {
   let commitsNotOnTrunk = 0
   let patchEquivalent: PatchEquivalentForm | null = null
   let commitCheck: PullRequestCommitCheck = null
+  let nameCheck: PullRequestNameCheck = null
   let checkError: string | undefined
   try {
     commitsNotOnTrunk = Number(
@@ -498,8 +531,16 @@ function otherBranchReportRow(input: {
     if (!Number.isSafeInteger(commitsNotOnTrunk) || commitsNotOnTrunk < 0) {
       throw new Error(`git rev-list returned an invalid commit count for ${branch}`)
     }
-    const matchingPr = input.pullRequests.some((pr) => pr.headRefName === branch)
-    if (!matchingPr && commitsNotOnTrunk > 0) {
+    nameCheck = pullRequestNameCheck(
+      project,
+      input.pullRequests,
+      branch,
+      detail.tip,
+      input.fetchedPullRequests,
+    )
+    const landedByName = nameCheck && 'pullRequest' in nameCheck && nameCheck.containsTip
+    const nameCheckFailed = nameCheck && 'error' in nameCheck
+    if (!landedByName && !nameCheckFailed && commitsNotOnTrunk > 0) {
       const mergeBase = git(project.path, 'merge-base', input.trunkTip, detail.tip)
       patchEquivalent = taskBranchPatchEquivalent({
         cwd: project.path,
@@ -532,6 +573,7 @@ function otherBranchReportRow(input: {
       branch,
       mergedPullRequests: input.pullRequests,
       mergedPullRequestsTruncated: input.truncated,
+      pullRequestNameCheck: nameCheck,
       commitsNotOnTrunk,
       patchEquivalent,
       pullRequestCommitCheck: commitCheck,
