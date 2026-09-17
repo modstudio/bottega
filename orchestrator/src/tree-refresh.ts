@@ -3,7 +3,7 @@
 
 import { resolve } from 'node:path'
 import { PLATFORM_SLUG } from '../../shared/brand.ts'
-import { gitToplevel, inspectCheckout } from '../../shared/git.ts'
+import { gitToplevel, inspectCheckout, resolvedPathsEqual } from '../../shared/git.ts'
 import { recordedChainRootsForWorktree } from './dispatch-preflight.ts'
 import { orchRunLabel } from './docker-resources.ts'
 import { git, repoRootOf } from './git-environment.ts'
@@ -122,10 +122,10 @@ function refreshTree(path: string): string[] {
     throw new Error(`path ${requested} is not a git worktree of a registered project`)
   }
   const main = repoRootOf(treeRoot)
-  if (!main || main !== project.path) {
+  if (!main || !resolvedPathsEqual(main, project.path)) {
     throw new Error(`path ${treeRoot} is not a git worktree of a registered project`)
   }
-  if (treeRoot === main) {
+  if (resolvedPathsEqual(treeRoot, main)) {
     throw new Error(
       `path ${treeRoot} is the main checkout for project ${project.name}, not a worktree`,
     )
