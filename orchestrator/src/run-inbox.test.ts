@@ -133,9 +133,15 @@ test('inbox --all --active --json includes active foreign and omits terminal que
     session: 'foreign',
   })
   question(active, 'active?')
+  db()
+    .query('INSERT INTO question (run_id,asked_at,question,answer,answered_at) VALUES (?,?,?,?,?)')
+    .run(active, new Date().toISOString(), 'already answered?', 'ruled', new Date().toISOString())
   question(terminal, 'terminal?')
   const rows = JSON.parse(await inbox({ all: true, active: true, json: true }))
-  expect(rows).toContainEqual(expect.objectContaining({ run_id: active, can_answer: false }))
+  expect(rows).toContainEqual(
+    expect.objectContaining({ run_id: active, can_answer: false, question: 'active?' }),
+  )
+  expect(rows).not.toContainEqual(expect.objectContaining({ question: 'already answered?' }))
   expect(rows).not.toContainEqual(expect.objectContaining({ run_id: terminal }))
   expect(rows[0]).toMatchObject({
     session_live: null,

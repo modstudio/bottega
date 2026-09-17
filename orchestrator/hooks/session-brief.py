@@ -198,15 +198,21 @@ def main() -> int:
                 if not isinstance(questions, list) or not all(
                     isinstance(item, dict)
                     and item.get("session_liveness") in ("live", "unknown")
+                    and isinstance(item.get("answer_id"), int)
                     and isinstance(item.get("can_answer"), bool)
                     for item in questions
                 ):
                     raise ValueError("invalid inbox JSON")
                 answerable_count = sum(item["can_answer"] for item in questions)
-                foreign_count = len(questions) - answerable_count
-                unknown_count = sum(
-                    not item["can_answer"] and item["session_liveness"] == "unknown"
-                    for item in questions
+                foreign_count = len(
+                    {item["answer_id"] for item in questions if not item["can_answer"]}
+                )
+                unknown_count = len(
+                    {
+                        item["answer_id"]
+                        for item in questions
+                        if not item["can_answer"] and item["session_liveness"] == "unknown"
+                    }
                 )
             except Exception:
                 inbox_failure = "Inbox response was invalid; question state is unknown."
