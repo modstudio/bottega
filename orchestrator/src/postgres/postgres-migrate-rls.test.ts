@@ -8,6 +8,14 @@ import {
   RECORD_READER_ROLE,
 } from '../../../shared/record/schema.ts'
 import {
+  asSpace,
+  asSpaces,
+  migration,
+  postgresSchema,
+  psql,
+  succeeds,
+} from '../../test/fixtures/postgres-rls.ts'
+import {
   registerInvitationAuthProofs,
   SIGN_UP_AUTH,
   SIGN_UP_CLI_OUTPUT,
@@ -20,14 +28,6 @@ import {
 import { registerProjectSpaceProofs } from '../../test/postgres-project-space-proof.ts'
 import { registerActiveSpaceProofs } from '../../test/postgres-remembered-space-proof.ts'
 import { proveHostedDocs, proveScoreRecordSync } from '../../test/postgres-score-proof.ts'
-import {
-  asSpace,
-  asSpaces,
-  migration,
-  postgresSchema,
-  psql,
-  succeeds,
-} from '../../test/fixtures/postgres-rls.ts'
 import { startRecordApiServer } from '../record/record-api-server.ts'
 import { bearerHeaders, recordAuth, setActiveRecordSpace } from '../record/record-auth.ts'
 import { signInCommand, signUpCommand, whoamiCommand } from '../record/record-auth-command.ts'
