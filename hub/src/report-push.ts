@@ -43,6 +43,7 @@ export async function pushReports(options: ReportClientOptions & { dryRun?: bool
   const hosted = await hostedReportCounts(requestOptions)
   if (setting) {
     const current = await hostedGetReportSetting(requestOptions)
+    if (!current) throw new Error('hosted report setting is missing after mirror')
     writeTransaction((conn) => cacheHostedReportSetting(conn, current))
   }
   return { local, hosted, match: JSON.stringify(local) === JSON.stringify(hosted) }

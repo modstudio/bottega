@@ -17,6 +17,65 @@ const call = <T>(stub: unknown, real: T): T => {
   return (stub ?? real) as T
 }
 
+const sendFilters = (url: URL) => ({
+  limit: url.searchParams.has('limit') ? Number(url.searchParams.get('limit')) : undefined,
+  updatedSince: url.searchParams.get('updatedSince') ?? undefined,
+  cursor: url.searchParams.get('cursor') ?? undefined,
+})
+
+async function dispatchReportRequest(
+  request: Request,
+  url: URL,
+  config: Config,
+  dependencies: Dependencies,
+  who: { userId: string; spaceId: string },
+  body: Record<string, unknown> | null,
+) {
+  if (request.method === 'GET' && url.pathname === '/v1/report-setting') {
+    const value = await call(dependencies.getSetting, getHostedReportSetting)(
+      config.recordDatabaseUrl,
+      who,
+    )
+    return value ? json(value) : json({ error: 'report setting is not configured' }, 404)
+  }
+  if (request.method === 'PUT' && url.pathname === '/v1/report-setting')
+    return json(
+      await call(dependencies.putSetting, putHostedReportSetting)(
+        config.recordDatabaseUrl,
+        who,
+        body as never,
+      ),
+    )
+  if (request.method === 'GET' && url.pathname === '/v1/sends/counts')
+    return json(await call(dependencies.counts, hostedReportCounts)(config.recordDatabaseUrl, who))
+  if (request.method === 'GET' && url.pathname === '/v1/sends')
+    return json(
+      await call(dependencies.listSends, listHostedSends)(
+        config.recordDatabaseUrl,
+        who,
+        sendFilters(url),
+      ),
+    )
+  if (request.method === 'POST' && url.pathname === '/v1/sends')
+    return json(
+      await call(dependencies.appendSend, appendHostedSend)(
+        config.recordDatabaseUrl,
+        who,
+        body as never,
+      ),
+      201,
+    )
+  if (request.method === 'PUT' && url.pathname === '/v1/sends/mirror')
+    return json(
+      await call(dependencies.mirror, mirrorHostedReports)(
+        config.recordDatabaseUrl,
+        who,
+        body as never,
+      ),
+    )
+  return new Response('not found', { status: 404 })
+}
+
 export async function reportApi(
   request: Request,
   config: Config,
@@ -44,51 +103,7 @@ export async function reportApi(
       ? null
       : ((await request.json().catch(() => null)) as Record<string, unknown> | null)
   try {
-    if (request.method === 'GET' && url.pathname === '/v1/report-setting') {
-      const value = await call(dependencies.getSetting, getHostedReportSetting)(
-        config.recordDatabaseUrl,
-        who,
-      )
-      return value ? json(value) : json({ error: 'report setting is not configured' }, 404)
-    }
-    if (request.method === 'PUT' && url.pathname === '/v1/report-setting')
-      return json(
-        await call(dependencies.putSetting, putHostedReportSetting)(
-          config.recordDatabaseUrl,
-          who,
-          body as never,
-        ),
-      )
-    if (request.method === 'GET' && url.pathname === '/v1/sends/counts')
-      return json(
-        await call(dependencies.counts, hostedReportCounts)(config.recordDatabaseUrl, who),
-      )
-    if (request.method === 'GET' && url.pathname === '/v1/sends')
-      return json(
-        await call(dependencies.listSends, listHostedSends)(config.recordDatabaseUrl, who, {
-          limit: url.searchParams.has('limit') ? Number(url.searchParams.get('limit')) : undefined,
-          updatedSince: url.searchParams.get('updatedSince') ?? undefined,
-          cursor: url.searchParams.get('cursor') ?? undefined,
-        }),
-      )
-    if (request.method === 'POST' && url.pathname === '/v1/sends')
-      return json(
-        await call(dependencies.appendSend, appendHostedSend)(
-          config.recordDatabaseUrl,
-          who,
-          body as never,
-        ),
-        201,
-      )
-    if (request.method === 'PUT' && url.pathname === '/v1/sends/mirror')
-      return json(
-        await call(dependencies.mirror, mirrorHostedReports)(
-          config.recordDatabaseUrl,
-          who,
-          body as never,
-        ),
-      )
-    return new Response('not found', { status: 404 })
+    return await dispatchReportRequest(request, url, config, dependencies, who, body)
   } catch (error) {
     return json({ error: (error as Error).message }, 409)
   }

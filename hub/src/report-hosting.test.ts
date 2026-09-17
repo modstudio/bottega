@@ -3,14 +3,15 @@ import { chmodSync, existsSync, mkdtempSync, rmSync, writeFileSync } from 'node:
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { resetFixtureStore } from '../test/run-fixtures.ts'
-import { db } from './db.ts'
+import { db, writeTransaction } from './db.ts'
 import {
   assertReportPasswordReference,
   assertReportVersion,
   type HostedReportSetting,
+  type HostedSend,
 } from './hosted-reports.ts'
-import { type Item, recordOutcomeAfterEmail } from './report.ts'
-import { pullHostedReports } from './report-cache.ts'
+import { type Item, lastSends, recordOutcomeAfterEmail, recordSend } from './report.ts'
+import { pullHostedReports, refreshHostedReportSetting } from './report-cache.ts'
 import type { Report } from './settings.ts'
 
 beforeAll(resetFixtureStore)
@@ -63,6 +64,103 @@ describe('hosted report setting and send safety', () => {
       .query<{ value: string }, []>("SELECT value FROM setting WHERE key='report'")
       .get()
     expect((JSON.parse(cached!.value) as Report).subjectPrefix).toBe('Hosted value')
+  })
+
+  test('a missing setting clears the cache and the pull still applies sends', async () => {
+    writeTransaction((conn) => {
+      conn
+        .query("INSERT OR REPLACE INTO setting(key,value) VALUES ('report', ?)")
+        .run(JSON.stringify(report))
+      conn
+        .query(
+          "INSERT OR REPLACE INTO setting(key,value) VALUES ('collect.hosted-report.version','7')",
+        )
+        .run()
+    })
+    const send: HostedSend = {
+      id: '01994d99-7c00-7000-8000-000000000001',
+      legacy_local_id: null,
+      at: '2026-09-17T16:00:00.000Z',
+      window: '24h',
+      recipients: '',
+      projects: 'workshop',
+      items: 0,
+      status: 'skipped',
+      error: 'disabled',
+      test: 0,
+      created_at: '2026-09-17T16:00:00.000Z',
+      machine: 'test-host',
+    }
+
+    const result = await pullHostedReports({
+      baseUrl: 'https://hub.example.test',
+      token: 'test',
+      fetch: async (input) => {
+        if (new URL(input).pathname === '/v1/report-setting')
+          return Response.json({ error: 'report setting not found' }, { status: 404 })
+        return Response.json({ sends: [send], cursor: send.created_at })
+      },
+    })
+
+    expect(result).toEqual({ setting: 0, sends: 1, cursor: send.created_at })
+    expect(
+      db()
+        .query("SELECT value FROM setting WHERE key IN ('report','collect.hosted-report.version')")
+        .all(),
+    ).toHaveLength(0)
+    expect(db().query('SELECT id FROM send WHERE record_id=?').get(send.id)).not.toBeNull()
+  })
+
+  test('a missing setting makes send use disabled defaults and record the skip', async () => {
+    const appended: HostedSend = {
+      id: '01994d99-7c00-7000-8000-000000000002',
+      legacy_local_id: null,
+      at: '2026-09-17T17:00:00.000Z',
+      window: '24h',
+      recipients: '',
+      projects: 'alpha, beta, gamma, delta, workshop, nested',
+      items: 0,
+      status: 'skipped',
+      error: 'disabled',
+      test: 0,
+      created_at: '2026-09-17T17:00:00.000Z',
+      machine: 'test-host',
+    }
+    const client = {
+      baseUrl: 'https://hub.example.test',
+      token: 'test',
+      fetch: async (input: string, init?: RequestInit) => {
+        const path = new URL(input).pathname
+        if (path === '/v1/report-setting')
+          return Response.json({ error: 'report setting not found' }, { status: 404 })
+        if (path === '/v1/sends' && init?.method === 'POST') return Response.json(appended)
+        return Response.json({ error: 'unexpected request' }, { status: 500 })
+      },
+    }
+    const defaults = await refreshHostedReportSetting(client)
+    expect(defaults.enabled).toBeFalse()
+    expect(defaults.projects).toEqual(['alpha', 'beta', 'gamma', 'delta', 'workshop', 'nested'])
+    const gathered = {
+      hours: defaults.windowHours,
+      from: '2026-09-16T17:00:00.000Z',
+      to: '2026-09-17T17:00:00.000Z',
+      items: [],
+      projects: [],
+      taskMs: 0,
+      engagedMs: 0,
+    }
+    await recordSend(gathered, defaults, 'skipped', 'disabled', { client })
+    expect(lastSends(1)[0]).toMatchObject({ status: 'skipped', error: 'disabled' })
+  })
+
+  test('a non-404 setting failure is refused', async () => {
+    await expect(
+      refreshHostedReportSetting({
+        baseUrl: 'https://hub.example.test',
+        token: 'test',
+        fetch: async () => Response.json({ error: 'unavailable' }, { status: 503 }),
+      }),
+    ).rejects.toThrow('503')
   })
 
   test('a record failure after delivery reports the unrecorded outcome', async () => {

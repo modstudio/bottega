@@ -6,6 +6,7 @@ import {
   hostedSendChanges,
   type ReportClientOptions,
 } from './report-client.ts'
+import { getReport } from './settings.ts'
 
 const SETTING_VERSION_KEY = 'collect.hosted-report.version'
 const SEND_CURSOR_KEY = 'collect.hosted-sends.cursor'
@@ -19,6 +20,10 @@ export function cacheHostedReportSetting(conn: Database, setting: HostedReportSe
     .query(`INSERT INTO setting(key,value) VALUES (?,?)
       ON CONFLICT(key) DO UPDATE SET value=excluded.value`)
     .run(SETTING_VERSION_KEY, String(setting.version))
+}
+
+function clearHostedReportSetting(conn: Database) {
+  conn.query("DELETE FROM setting WHERE key IN ('report', ?)").run(SETTING_VERSION_KEY)
 }
 
 export function cachedReportVersion() {
@@ -76,8 +81,11 @@ export function cacheHostedSend(conn: Database, row: HostedSend) {
 
 export async function refreshHostedReportSetting(options: ReportClientOptions = {}) {
   const setting = await hostedGetReportSetting(options)
-  writeTransaction((conn) => cacheHostedReportSetting(conn, setting))
-  return setting.value
+  writeTransaction((conn) => {
+    if (setting) cacheHostedReportSetting(conn, setting)
+    else clearHostedReportSetting(conn)
+  })
+  return getReport()
 }
 
 export async function pullHostedReports(options: ReportClientOptions = {}) {
@@ -90,7 +98,8 @@ export async function pullHostedReports(options: ReportClientOptions = {}) {
     hostedSendChanges(cursor, options),
   ])
   writeTransaction((conn) => {
-    cacheHostedReportSetting(conn, setting)
+    if (setting) cacheHostedReportSetting(conn, setting)
+    else clearHostedReportSetting(conn)
     changes.sends.forEach((row) => {
       cacheHostedSend(conn, row)
     })
@@ -99,5 +108,5 @@ export async function pullHostedReports(options: ReportClientOptions = {}) {
       ON CONFLICT(key) DO UPDATE SET value=excluded.value`)
       .run(SEND_CURSOR_KEY, changes.cursor)
   })
-  return { setting: 1, sends: changes.sends.length, cursor: changes.cursor }
+  return { setting: setting ? 1 : 0, sends: changes.sends.length, cursor: changes.cursor }
 }

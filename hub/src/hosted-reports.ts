@@ -1,7 +1,7 @@
 import { SQL } from 'bun'
 import { newRecordId } from '../../shared/record/schema.ts'
 import type { TaskIdentity } from './hosted-tasks.ts'
-import type { Report } from './settings.ts'
+import type { Report } from './report-types.ts'
 
 export type HostedReportSetting = {
   value: Report
