@@ -19,7 +19,7 @@ export const SNAPSHOT_MAX_BYTES = 1024 * 1024
 
 type AuthHandler = { handler(request: Request): Response | Promise<Response> }
 type ApiEnvironment = { Variables: { identity: RecordIdentity } }
-type Tenant = { url: string; userId: string; spaceId: string }
+type Tenant = { url: string; userId: string; spaceId: string; spaceIds: string[] }
 type Deps = {
   recordUrl: string
   allowedOrigins?: string[]
@@ -67,7 +67,7 @@ type Deps = {
       reason: string
       author: string
       forceInject?: string
-      op?: string
+      op?: RecordDocRevision['op']
       at?: string
       id?: string
       revisionId?: string
@@ -220,9 +220,17 @@ export function recordApi(deps: Deps): Hono<ApiEnvironment> {
   })
   const scope = (context: Context<ApiEnvironment>): Tenant | null => {
     const identity = context.get('identity') as RecordIdentity
-    return identity.activeSpaceId
-      ? { url: deps.recordUrl, userId: identity.user.id, spaceId: identity.activeSpaceId }
-      : null
+    if (!identity.activeSpaceId) return null
+    const memberships = identity.memberships.map((row) => String(row.space_id))
+    return {
+      url: deps.recordUrl,
+      userId: identity.user.id,
+      spaceId: identity.activeSpaceId,
+      spaceIds:
+        identity.activeSpaceId === identity.personalSpaceId
+          ? memberships
+          : [identity.activeSpaceId],
+    }
   }
   app.get('/v1/runs', async (context) => {
     const tenant = scope(context)

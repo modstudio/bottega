@@ -16,6 +16,7 @@ import { PageHeader } from '@/ui/page-header/page-header'
 
 type HostedReview = {
   id: string
+  spaceName: string
   recordedAt: string
   projectName?: string | null
   completedAt?: string | null
@@ -112,6 +113,7 @@ function HostedReviewsList() {
       label: 'Recorded',
       render: (row) => runEasternTime(row.recordedAt, true),
     },
+    { id: 'space', label: 'Space', render: (row) => row.spaceName },
     {
       id: 'project',
       label: 'Project',
@@ -213,6 +215,7 @@ export function HostedReviewDetail({ id }: { id: string }) {
       actions={typeof review.tier === 'number' ? <Badge>tier {review.tier}</Badge> : undefined}
     >
       <DisplayRow label="Project" value={<ProjectMark name={projectName} colors={colors} />} />
+      <DisplayRow label="Space" value={String(review.spaceName)} />
       <DisplayRow label="Recorded" value={String(review.recordedAt)} />
       <DisplayRow
         label="Completed"

@@ -2,6 +2,7 @@
 /** Owns tenant-bound hosted document reads and writes. Must not know local cache, CLI, or HTTP. */
 import { SQL } from 'bun'
 import { newRecordId } from '../../../shared/record/schema.ts'
+import { bindTenant, type TenantPrincipal } from '../../../shared/record/tenant.ts'
 import {
   consumeDocBody,
   type DocDelivery,
@@ -11,6 +12,8 @@ import {
 
 export type RecordDoc = {
   id: string
+  spaceId: string
+  spaceName: string
   scope: string
   subject: string | null
   slug: string
@@ -75,7 +78,7 @@ export class RecordDocError extends Error {
   }
 }
 
-type Tenant = { url: string; userId: string; spaceId: string }
+type Tenant = { url: string } & TenantPrincipal
 type RecordCursor = { at: string; id: string }
 
 const iso = (value: unknown) => (value == null ? null : new Date(String(value)).toISOString())
@@ -84,8 +87,7 @@ async function tenant<T>(input: Tenant, read: (tx: SQL) => Promise<T>): Promise<
   const client = new SQL(input.url)
   try {
     return await client.begin(async (tx) => {
-      await tx`SELECT set_config('app.user_id', ${input.userId}, true)`
-      await tx`SELECT set_config('app.space_id', ${input.spaceId}, true)`
+      await bindTenant(tx, input)
       return read(tx)
     })
   } finally {
@@ -96,6 +98,8 @@ async function tenant<T>(input: Tenant, read: (tx: SQL) => Promise<T>): Promise<
 function docRow(row: Record<string, unknown>): RecordDoc {
   return {
     id: String(row.id),
+    spaceId: String(row.space_id),
+    spaceName: String(row.space_name),
     scope: String(row.scope),
     subject: row.subject == null ? null : String(row.subject),
     slug: String(row.slug),
@@ -196,8 +200,9 @@ export async function listRecordDocs(
 ): Promise<RecordDoc[]> {
   return tenant(input, async (tx) => {
     const rows = await tx`
-      SELECT d.*, p.name AS project_name
+      SELECT d.*, s.name AS space_name, p.name AS project_name
       FROM doc d
+      JOIN space s ON s.id=d.space_id
       LEFT JOIN project p ON p.id=d.project_id
       WHERE d.space_id=${input.spaceId}::uuid
         AND (${input.scope ?? null}::text IS NULL OR d.scope=${input.scope ?? null})
@@ -225,10 +230,11 @@ export async function listRecordDocs(
 export async function getRecordDoc(input: Tenant & { id: string }): Promise<RecordDoc | null> {
   return tenant(input, async (tx) => {
     const rows = await tx`
-      SELECT d.*, p.name AS project_name
+      SELECT d.*, s.name AS space_name, p.name AS project_name
       FROM doc d
+      JOIN space s ON s.id=d.space_id
       LEFT JOIN project p ON p.id=d.project_id
-      WHERE d.space_id=${input.spaceId}::uuid AND d.id=${input.id}::uuid
+      WHERE d.id=${input.id}::uuid
     `
     return rows[0] ? docRow(rows[0] as Record<string, unknown>) : null
   })
@@ -238,12 +244,11 @@ export async function listRecordDocRevisions(
   input: Tenant & { id: string },
 ): Promise<RecordDocRevision[] | null> {
   return tenant(input, async (tx) => {
-    const docs =
-      await tx`SELECT id FROM doc WHERE space_id=${input.spaceId}::uuid AND id=${input.id}::uuid`
+    const docs = await tx`SELECT id,space_id FROM doc WHERE id=${input.id}::uuid`
     if (!docs.length) return null
     const rows = await tx`
       SELECT * FROM doc_revision
-      WHERE space_id=${input.spaceId}::uuid AND doc_id=${input.id}::uuid
+      WHERE space_id=${String(docs[0]!.space_id)}::uuid AND doc_id=${input.id}::uuid
       ORDER BY at DESC, id DESC
     `
     return rows.map((row: Record<string, unknown>) => revisionRow(row))

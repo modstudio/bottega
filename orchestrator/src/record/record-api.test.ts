@@ -10,6 +10,7 @@ import type { RecordIdentity } from './record-auth.ts'
 const identity: RecordIdentity = {
   user: { id: 'user-a', email: 'a@example.test' },
   activeSpaceId: 'space-a',
+  personalSpaceId: 'space-a',
   memberships: [
     { space_id: 'space-a', name: 'Space A', slug: 'space-a', role: 'owner', permission: 'write' },
   ],
@@ -72,6 +73,37 @@ describe('record API', () => {
     const response = await appWith(identity).request('/v1/whoami')
     expect(response.status).toBe(200)
     expect(await response.json()).toEqual(identity)
+  })
+
+  test('personal reads bind current memberships while a space read stays single-space', async () => {
+    const seen: string[][] = []
+    const personal = {
+      ...identity,
+      memberships: [
+        ...identity.memberships,
+        { space_id: 'space-b', name: 'Space B', slug: 'space-b' },
+      ],
+    }
+    const app = (session: RecordIdentity) =>
+      appWith(session, {
+        readProjects: async (input: { spaceIds: string[] }) => {
+          seen.push(input.spaceIds)
+          return []
+        },
+      })
+    expect((await app(personal).request('/v1/projects')).status).toBe(200)
+    expect(
+      (
+        await app({
+          ...personal,
+          memberships: identity.memberships,
+        }).request('/v1/projects')
+      ).status,
+    ).toBe(200)
+    expect(
+      (await app({ ...personal, activeSpaceId: 'space-b' }).request('/v1/projects')).status,
+    ).toBe(200)
+    expect(seen).toEqual([['space-a', 'space-b'], ['space-a'], ['space-b']])
   })
 
   test('sets only a member space and refuses a non-member space', async () => {

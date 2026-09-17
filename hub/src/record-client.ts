@@ -35,6 +35,8 @@ const scoreSchema = z
 
 const runSchema = z.object({
   id: z.string().uuid(),
+  spaceId: z.string().uuid(),
+  spaceName: z.string(),
   projectName: z.string().nullable(),
   startedAt: z.string(),
   finishedAt: z.string().nullable(),
@@ -66,10 +68,13 @@ const runDetailSchema = runSchema.passthrough().extend({
 const whoamiSchema = z.object({
   user: z.object({ id: z.string() }).passthrough(),
   activeSpaceId: z.string().nullable(),
+  personalSpaceId: z.string().nullable(),
   memberships: z.array(z.record(z.string(), z.unknown())),
 })
 
 const projectSchema = z.object({
+  spaceId: z.string().uuid(),
+  spaceName: z.string(),
   name: z.string(),
   keyPrefixes: z.array(z.string()),
   stack: z.string().nullable(),
@@ -82,6 +87,8 @@ const projectSchema = z.object({
 const reviewListItemSchema = z
   .object({
     id: z.string().uuid(),
+    spaceId: z.string().uuid(),
+    spaceName: z.string(),
     recordedAt: z.string(),
     projectName: z.string().nullable().optional(),
     completedAt: z.string().nullable().optional(),
@@ -166,6 +173,8 @@ const snapshotsSchema = z.object({ items: z.array(z.unknown()) }).transform(({ i
 
 const docSchema = z.object({
   id: z.string().uuid(),
+  spaceId: z.string().uuid(),
+  spaceName: z.string(),
   scope: z.string(),
   subject: z.string().nullable(),
   slug: z.string(),

@@ -1,8 +1,11 @@
 // concern: record-projects
 /** Owns the presentation-safe tenant project projection. */
 import { SQL } from 'bun'
+import { bindTenant, type TenantPrincipal } from '../../../shared/record/tenant.ts'
 
 export type RecordProject = {
+  spaceId: string
+  spaceName: string
   name: string
   keyPrefixes: string[]
   stack: string | null
@@ -12,19 +15,20 @@ export type RecordProject = {
   retiredAt: string | null
 }
 
-export async function listRecordProjects(input: {
-  url: string
-  userId: string
-  spaceId: string
-}): Promise<RecordProject[]> {
+export async function listRecordProjects(
+  input: { url: string } & TenantPrincipal,
+): Promise<RecordProject[]> {
   const client = new SQL(input.url)
   try {
     return await client.begin(async (tx) => {
-      await tx`SELECT set_config('app.user_id', ${input.userId}, true)`
-      await tx`SELECT set_config('app.space_id', ${input.spaceId}, true)`
+      await bindTenant(tx, input)
       const rows =
-        await tx`SELECT name, key_prefixes, stack, landing_branch, color, color_dark, retired_at FROM project ORDER BY name`
+        await tx`SELECT p.space_id, s.name AS space_name, p.name, p.key_prefixes, p.stack,
+          p.landing_branch, p.color, p.color_dark, p.retired_at
+          FROM project p JOIN space s ON s.id=p.space_id ORDER BY s.name,p.name`
       return rows.map((row: Record<string, unknown>) => ({
+        spaceId: String(row.space_id),
+        spaceName: String(row.space_name),
         name: String(row.name),
         keyPrefixes: row.key_prefixes as string[],
         stack: row.stack == null ? null : String(row.stack),

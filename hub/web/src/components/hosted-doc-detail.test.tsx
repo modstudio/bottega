@@ -5,7 +5,7 @@ import { HostedDocContent } from './hosted-doc-detail'
 test('hosted document content renders read-only without mutation controls', () => {
   const html = renderToStaticMarkup(
     <HostedDocContent
-      doc={{ body: '# Hosted document' }}
+      doc={{ body: '# Hosted document', spaceName: 'Personal' }}
       revisions={[
         {
           id: 'revision-a',
@@ -18,6 +18,7 @@ test('hosted document content renders read-only without mutation controls', () =
     />,
   )
   expect(html).toContain('Hosted document')
+  expect(html).toContain('Space: Personal')
   expect(html).toContain('History')
   expect(html).not.toContain('>Edit<')
   expect(html).not.toContain('>Delete<')

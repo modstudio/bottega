@@ -16,6 +16,7 @@ import { PageHeader } from '@/ui/page-header/page-header'
 
 type HostedRun = {
   id: string
+  spaceName: string
   projectName: string | null
   startedAt: string
   agent: string
@@ -81,6 +82,7 @@ function HostedRunsList() {
 
   const columns: CollectionColumn<HostedRun>[] = [
     { id: 'started', label: 'Started', render: (row) => runEasternTime(row.startedAt, true) },
+    { id: 'space', label: 'Space', render: (row) => row.spaceName },
     {
       id: 'project',
       label: 'Project',

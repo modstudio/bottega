@@ -1,5 +1,6 @@
 import { SQL } from 'bun'
 import { newRecordId } from '../../shared/record/schema.ts'
+import { bindTenant } from '../../shared/record/tenant.ts'
 import {
   confirmSoftDelete,
   createHostedTaskInTransaction,
@@ -41,8 +42,7 @@ async function tenant<T>(url: string, identity: TaskIdentity, work: (tx: SQL) =>
   const client = new SQL(url)
   try {
     return await client.begin(async (tx) => {
-      await tx`SELECT set_config('app.user_id', ${identity.userId}, true)`
-      await tx`SELECT set_config('app.space_id', ${identity.spaceId}, true)`
+      await bindTenant(tx, identity)
       return work(tx)
     })
   } finally {

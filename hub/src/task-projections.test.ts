@@ -112,3 +112,16 @@ test('board bucketing fields and live state are shaped outside either database a
     workingNow: true,
   })
 })
+
+test('lens projections keep duplicate task keys separate and label their spaces', () => {
+  const rows = [
+    { ...row, space_id: 'space-a', space_name: 'Personal' },
+    { ...row, space_id: 'space-b', space_name: 'Workshop' },
+  ]
+  const tasks = projectTasksInWindow(rows, project, now)
+  expect(tasks).toHaveLength(2)
+  expect(tasks.map(({ spaceId, spaceName }) => ({ spaceId, spaceName }))).toEqual([
+    { spaceId: 'space-a', spaceName: 'Personal' },
+    { spaceId: 'space-b', spaceName: 'Workshop' },
+  ])
+})

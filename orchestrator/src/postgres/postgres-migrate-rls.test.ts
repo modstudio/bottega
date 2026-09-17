@@ -1,6 +1,4 @@
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test'
-import { existsSync, readdirSync, readFileSync } from 'node:fs'
-import { join } from 'node:path'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import {
   newRecordId,
@@ -9,6 +7,14 @@ import {
   RECORD_OWNER_ROLE,
   RECORD_READER_ROLE,
 } from '../../../shared/record/schema.ts'
+import {
+  asSpace,
+  asSpaces,
+  migration,
+  postgresSchema,
+  psql,
+  succeeds,
+} from '../../test/fixtures/postgres-rls.ts'
 import {
   registerInvitationAuthProofs,
   SIGN_UP_AUTH,
@@ -45,27 +51,6 @@ const recordSession = memoryRecordSession()
 const container = process.env.ORCH_TEST_POSTGRES_CONTAINER
 const ownerUrl = process.env.ORCH_RECORD_MIGRATE_URL
 const actorUrl = process.env.ORCH_RECORD_URL
-const recordFolder = join(import.meta.dir, '..', '..', '..', 'shared', 'record')
-const migrationsFolder = join(recordFolder, 'migrations')
-const postgresSchema =
-  [
-    'schema.ts',
-    'schema-auth.ts',
-    'schema-run.ts',
-    'schema-review.ts',
-    'schema-landing.ts',
-    'schema-hub.ts',
-    'schema-snapshots.ts',
-  ]
-    .map((file) => readFileSync(join(recordFolder, file), 'utf8'))
-    .join('\n') + readFileSync(join(recordFolder, 'schema-docs.ts'), 'utf8')
-const migration = readdirSync(migrationsFolder, { withFileTypes: true })
-  .filter((entry) => entry.isDirectory())
-  .map((entry) => entry.name)
-  .filter((folder) => existsSync(join(migrationsFolder, folder, 'migration.sql')))
-  .sort()
-  .map((folder) => readFileSync(join(migrationsFolder, folder, 'migration.sql'), 'utf8'))
-  .join('\n')
 const SPACE_A = '01990000-0000-7000-8000-00000000000a'
 const SPACE_B = '01990000-0000-7000-8000-00000000000b'
 const USER_A = '01990000-0000-7000-8000-000000000010'
@@ -82,51 +67,6 @@ const REVIEW_B = '01990000-0000-7000-8000-00000000004b'
 const WRONG_EMAIL_INVITATION = '01990000-0000-7000-8000-00000000012a'
 const EXPIRED_INVITATION = '01990000-0000-7000-8000-00000000012b'
 const ACCEPTED_INVITATION = '01990000-0000-7000-8000-00000000012c'
-
-type PsqlResult = { code: number; stdout: string; stderr: string }
-
-function psql(user: string, password: string, source: string): PsqlResult {
-  if (!container) throw new Error('ORCH_TEST_POSTGRES_CONTAINER is required')
-  const result = Bun.spawnSync(
-    [
-      'docker',
-      'exec',
-      '-i',
-      '-e',
-      `PGPASSWORD=${password}`,
-      container,
-      'psql',
-      '-h',
-      '127.0.0.1',
-      '-U',
-      user,
-      '-d',
-      'postgres',
-      '-X',
-      '-A',
-      '-t',
-      '-q',
-      '-v',
-      'ON_ERROR_STOP=1',
-    ],
-    { stdin: new Blob([source]), stdout: 'pipe', stderr: 'pipe' },
-  )
-  return {
-    code: result.exitCode,
-    stdout: result.stdout.toString().trim(),
-    stderr: result.stderr.toString().trim(),
-  }
-}
-
-function succeeds(user: string, password: string, source: string): string {
-  const result = psql(user, password, source)
-  if (result.code !== 0) throw new Error(result.stderr)
-  return result.stdout
-}
-
-function asSpace(user: string, password: string, spaceId: string, statement: string): PsqlResult {
-  return psql(user, password, `SET app.space_id = '${spaceId}';\n${statement}`)
-}
 
 describe('Postgres substrate shape', () => {
   test('uses application-minted UUIDv7 ids and declares no id default', () => {
@@ -234,7 +174,9 @@ realPostgres('RLS proof against real Postgres', () => {
       INSERT INTO "user" (id, email, name, created_at)
         VALUES ('${USER_A}', 'owner@example.test', 'Owner', now());
       INSERT INTO membership (id, space_id, user_id, role, permission, created_at)
-        VALUES ('01990000-0000-7000-8000-000000000011', '${SPACE_A}', '${USER_A}', 'member', 'write', now());
+        VALUES
+        ('01990000-0000-7000-8000-000000000011', '${SPACE_A}', '${USER_A}', 'member', 'write', now()),
+        ('01990000-0000-7000-8000-000000000012', '${SPACE_B}', '${USER_A}', 'member', 'write', now());
       INSERT INTO invitation
         (id,space_id,email,inviter_id,role,status,expires_at,created_at)
       VALUES
@@ -969,6 +911,71 @@ realPostgres('RLS proof against real Postgres', () => {
     )
     expect(result.code, result.stderr).toBe(0)
     expect(result.stdout.split('\n').at(-1)).toBe('')
+  })
+
+  test('member-space lens returns two spaces and excludes the third under FORCE RLS', () => {
+    for (const role of [RECORD_ACTOR_ROLE, RECORD_OWNER_ROLE]) {
+      const password = role === RECORD_ACTOR_ROLE ? 'actor-password' : 'owner-password'
+      const result = asSpaces(
+        role,
+        password,
+        SPACE_A,
+        [SPACE_A, SPACE_B],
+        `SELECT name FROM project ORDER BY name;`,
+      )
+      expect(result.code, result.stderr).toBe(0)
+      expect(result.stdout.split('\n')).toEqual(['alpha', 'alpha-two', 'beta'])
+    }
+  })
+
+  test('a member-space set never authorizes a cross-space write', () => {
+    const result = asSpaces(
+      RECORD_ACTOR_ROLE,
+      'actor-password',
+      SPACE_A,
+      [SPACE_A, SPACE_B],
+      `INSERT INTO project (id,space_id,name,created_at)
+       VALUES ('01990000-0000-7000-8000-00000000002d','${SPACE_B}','lens-write',now());`,
+    )
+    expect(result.code).not.toBe(0)
+    expect(result.stderr).toContain('violates row-level security policy')
+  })
+
+  test('a member-space set without one active space refuses writes', () => {
+    const result = psql(
+      RECORD_ACTOR_ROLE,
+      'actor-password',
+      `SET app.space_ids = '${SPACE_A},${SPACE_B}';
+       INSERT INTO project (id,space_id,name,created_at)
+       VALUES ('01990000-0000-7000-8000-00000000002e','${SPACE_A}','set-only-write',now());`,
+    )
+    expect(result.code).not.toBe(0)
+    expect(result.stderr).toContain('violates row-level security policy')
+  })
+
+  test('removing a membership removes that space from the next derived lens read', () => {
+    const lens = () =>
+      psql(
+        RECORD_ACTOR_ROLE,
+        'actor-password',
+        `SET app.user_id = '${USER_A}';
+         SELECT set_config('app.space_ids', COALESCE((
+           SELECT string_agg(space_id::text, ',' ORDER BY space_id)
+           FROM membership WHERE user_id='${USER_A}'::uuid
+         ), ''), false);
+         SELECT name FROM project ORDER BY name;`,
+      )
+    const before = lens()
+    expect(before.code, before.stderr).toBe(0)
+    expect(before.stdout.split('\n').slice(1)).toEqual(['alpha', 'alpha-two', 'beta'])
+    succeeds(
+      'postgres',
+      'postgres',
+      `DELETE FROM membership WHERE user_id='${USER_A}'::uuid AND space_id='${SPACE_B}'::uuid;`,
+    )
+    const after = lens()
+    expect(after.code, after.stderr).toBe(0)
+    expect(after.stdout.split('\n').slice(1)).toEqual(['alpha', 'alpha-two'])
   })
 
   test('cross-space review graph reads return nothing', () => {

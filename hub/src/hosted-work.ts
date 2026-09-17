@@ -1,5 +1,4 @@
 import { engagedMs, human } from '../../shared/interval.ts'
-import type { TrackerProject } from '../../shared/trackers.ts'
 import { type TaskIdentity, withHostedTenant } from './hosted-tasks.ts'
 import { reportDefaults } from './report-types.ts'
 import {
@@ -8,6 +7,7 @@ import {
   type DayIntervalRow,
   type DayRow,
   type IntervalRow,
+  type ProjectionProject,
   projectBoard,
   projectFlightDone,
   projectRatioSummary,
@@ -21,9 +21,19 @@ const iso = (value: SqlTime | null) => (value == null ? null : new Date(value).t
 const number = (value: string | number | bigint | null | undefined) => Number(value ?? 0)
 const HOSTED_STARTED_AT = new Date().toISOString()
 
-type ProjectInput = { name: string; keyPrefixes: string[] }
-const projectsOf = (rows: ProjectInput[]): TrackerProject[] =>
-  rows.map((row) => ({ name: row.name, settings: { keyPrefixes: row.keyPrefixes } }))
+type ProjectInput = {
+  spaceId: string
+  spaceName: string
+  name: string
+  keyPrefixes: string[]
+}
+const projectsOf = (rows: ProjectInput[]): ProjectionProject[] =>
+  rows.map((row) => ({
+    name: row.name,
+    spaceId: row.spaceId,
+    spaceName: row.spaceName,
+    settings: { keyPrefixes: row.keyPrefixes },
+  }))
 
 type RawInterval = Omit<IntervalRow, 'start_at' | 'end_at'> & {
   start_at: SqlTime
@@ -68,17 +78,19 @@ async function windowFacts(databaseUrl: string, identity: TaskIdentity, from: st
   return withHostedTenant(databaseUrl, identity, async (tx) => {
     const windowRows = rows<RawWindow>(
       await tx`
-      SELECT i.task_key, i.project_name AS project, i.source, i.agent, i.job,
+      SELECT i.space_id, s.name AS space_name, i.task_key, i.project_name AS project,
+        i.source, i.agent, i.job,
         i.start_at, i.end_at, i.claude_tokens, i.vendor_tokens, i.vendor_cost_usd, i.open,
         t.project AS task_project, t.title AS task_title, t.status AS task_status,
         t.status_category AS task_status_category, t.source AS task_source,
         t.updated_at AS task_updated_at, t.closed_at AS task_closed_at
-      FROM hub_interval i LEFT JOIN hub_task t
+      FROM hub_interval i JOIN space s ON s.id=i.space_id LEFT JOIN hub_task t
         ON t.space_id=i.space_id AND t.key=i.task_key AND t.deleted_at IS NULL
-      WHERE i.space_id=${identity.spaceId}::uuid AND i.end_at >= ${from}::timestamptz
+      WHERE i.end_at >= ${from}::timestamptz
         AND i.start_at < ${to}::timestamptz ORDER BY i.start_at`,
     )
     const completed = rows<{
+      space_id: string
       key: string
       project: string
       title: string | null
@@ -86,22 +98,22 @@ async function windowFacts(databaseUrl: string, identity: TaskIdentity, from: st
       to_status: string
     }>(
       await tx`
-      SELECT t.key,t.project,t.title,e.at,e.to_status FROM hub_task_status_event e
+      SELECT e.space_id,t.key,t.project,t.title,e.at,e.to_status FROM hub_task_status_event e
       JOIN hub_task t ON t.space_id=e.space_id AND t.key=e.task_key
-      WHERE e.space_id=${identity.spaceId}::uuid AND e.deleted_at IS NULL AND t.deleted_at IS NULL
+      WHERE e.deleted_at IS NULL AND t.deleted_at IS NULL
         AND e.at >= ${from}::timestamptz AND e.at < ${to}::timestamptz AND e.to_status='done'
       ORDER BY e.at DESC`,
     )
     const collected = rows<{ collected_at: SqlTime }>(
       await tx`
-      SELECT collected_at FROM hub_day WHERE space_id=${identity.spaceId}::uuid
+      SELECT collected_at FROM hub_day
       ORDER BY collected_at DESC LIMIT 1`,
     )[0]
     const since = new Date(new Date(to).getTime() - 14 * 86_400_000).toISOString().slice(0, 10)
     const shipped = rows<{ total: string | number }>(
       await tx`
       SELECT COALESCE(SUM(tasks),0) total FROM hub_day
-      WHERE space_id=${identity.spaceId}::uuid AND day >= ${since}`,
+      WHERE day >= ${since}`,
     )[0]
     return {
       intervals: windowRows.map(windowInterval),
@@ -204,18 +216,19 @@ export async function hostedBoard(
       }
     >(
       await tx`
-      SELECT t.key,t.project,t.title,t.assignee,t.status,t.status_category,t.source,t.updated_at,t.last_seen
-      FROM hub_task t WHERE t.space_id=${identity.spaceId}::uuid AND t.deleted_at IS NULL`,
+      SELECT t.space_id,s.name AS space_name,t.key,t.project,t.title,t.assignee,t.status,
+        t.status_category,t.source,t.updated_at,t.last_seen
+      FROM hub_task t JOIN space s ON s.id=t.space_id WHERE t.deleted_at IS NULL`,
     )
-    const live = rows<{ task_key: string }>(
+    const live = rows<{ space_id: string; task_key: string }>(
       await tx`
-      SELECT DISTINCT task_key FROM hub_interval WHERE space_id=${identity.spaceId}::uuid
-        AND open=1 AND task_key IS NOT NULL`,
+      SELECT DISTINCT space_id,task_key FROM hub_interval
+      WHERE open=1 AND task_key IS NOT NULL`,
     )
-    const recent = rows<{ task_key: string }>(
+    const recent = rows<{ space_id: string; task_key: string }>(
       await tx`
-      SELECT DISTINCT task_key FROM hub_interval WHERE space_id=${identity.spaceId}::uuid
-        AND task_key IS NOT NULL AND start_at >= ${since}::timestamptz`,
+      SELECT DISTINCT space_id,task_key FROM hub_interval
+      WHERE task_key IS NOT NULL AND start_at >= ${since}::timestamptz`,
     )
     return projectBoard({
       rows: sourceRows.map((row) => ({
@@ -223,8 +236,8 @@ export async function hostedBoard(
         updated_at: iso(row.updated_at),
         last_seen: iso(row.last_seen)!,
       })),
-      recentKeys: recent.map((row) => row.task_key),
-      liveKeys: live.map((row) => row.task_key),
+      recentKeys: recent.map((row) => `${row.space_id}\0${row.task_key}`),
+      liveKeys: live.map((row) => `${row.space_id}\0${row.task_key}`),
       projects: projectRows,
       cap: 250,
     })
@@ -264,36 +277,42 @@ export async function hostedBoard(
   }
 }
 
-export async function hostedTaskDetail(databaseUrl: string, identity: TaskIdentity, key: string) {
+export async function hostedTaskDetail(
+  databaseUrl: string,
+  identity: TaskIdentity,
+  key: string,
+  spaceId = identity.spaceId,
+) {
   return withHostedTenant(databaseUrl, identity, async (tx) => {
     const task = rows<Record<string, unknown>>(
       await tx`
-      SELECT * FROM hub_task WHERE space_id=${identity.spaceId}::uuid AND key=${key}
+      SELECT t.*,s.name AS space_name FROM hub_task t JOIN space s ON s.id=t.space_id
+      WHERE t.space_id=${spaceId}::uuid AND key=${key}
         AND deleted_at IS NULL`,
     )[0]
     if (!task) return null
     const comments = rows<Record<string, unknown>>(
       await tx`
-      SELECT id,body,created_at FROM hub_task_comment WHERE space_id=${identity.spaceId}::uuid
+      SELECT id,body,created_at FROM hub_task_comment WHERE space_id=${spaceId}::uuid
         AND task_key=${key} AND deleted_at IS NULL ORDER BY created_at,id`,
     )
     const documents = rows<Record<string, unknown>>(
       await tx`
       SELECT id,role,title,body,version,created_at,updated_at FROM hub_task_document
-      WHERE space_id=${identity.spaceId}::uuid AND task_key=${key} AND deleted_at IS NULL
+      WHERE space_id=${spaceId}::uuid AND task_key=${key} AND deleted_at IS NULL
       ORDER BY created_at,id`,
     )
     const statusHistory = rows<Record<string, unknown>>(
       await tx`
       SELECT id,at,from_status,to_status FROM hub_task_status_event
-      WHERE space_id=${identity.spaceId}::uuid AND task_key=${key} AND deleted_at IS NULL
+      WHERE space_id=${spaceId}::uuid AND task_key=${key} AND deleted_at IS NULL
       ORDER BY at DESC,id`,
     )
     const intervals = rows<RawInterval>(
       await tx`
       SELECT task_key,project_name AS project,source,agent,job,start_at,end_at,claude_tokens,
         vendor_tokens,vendor_cost_usd,open FROM hub_interval
-      WHERE space_id=${identity.spaceId}::uuid AND task_key=${key} ORDER BY start_at DESC`,
+      WHERE space_id=${spaceId}::uuid AND task_key=${key} ORDER BY start_at DESC`,
     )
     const timeFields = (row: Record<string, unknown>) =>
       Object.fromEntries(
@@ -319,6 +338,8 @@ export async function hostedNotes(
 ) {
   return withHostedTenant(databaseUrl, identity, async (tx) => {
     type HostedNoteView = {
+      space_id: string
+      space_name: string
       number: string | number
       project: string
       text: string
@@ -332,27 +353,31 @@ export async function hostedNotes(
       promoted_task: string | null
     }
     const noteRows = rows<HostedNoteView>(
-      await tx`SELECT id,number,project,text,area,anchors,sightings,created_at,last_seen_at,
-        stale_at,stale_reason,promoted_task FROM hub_note
-        WHERE space_id=${identity.spaceId}::uuid AND deleted_at IS NULL
+      await tx`SELECT n.id,n.space_id,s.name AS space_name,n.number,n.project,n.text,n.area,
+        n.anchors,n.sightings,n.created_at,n.last_seen_at,n.stale_at,n.stale_reason,n.promoted_task
+        FROM hub_note n JOIN space s ON s.id=n.space_id
+        WHERE n.deleted_at IS NULL
           AND (${input.project ?? null}::text IS NULL OR project=${input.project ?? null})
           AND (${input.stale}::boolean = (stale_at IS NOT NULL))
         ORDER BY last_seen_at DESC,number DESC`,
     )
     const acknowledgements = rows<{
+      space_id: string
       note_id: string | number
       session_id: string
       acknowledged_at: SqlTime
       sightings: string | number
     }>(
-      await tx`SELECT n.number AS note_id,a.session_id,a.acknowledged_at,a.sightings FROM hub_note_acknowledgement a
+      await tx`SELECT a.space_id,n.number AS note_id,a.session_id,a.acknowledged_at,a.sightings FROM hub_note_acknowledgement a
         JOIN hub_note n ON n.space_id=a.space_id AND n.id=a.note_id AND n.deleted_at IS NULL
-        WHERE a.space_id=${identity.spaceId}::uuid AND a.deleted_at IS NULL
+        WHERE a.deleted_at IS NULL
         ORDER BY a.acknowledged_at DESC`,
     )
     return {
       notes: noteRows.map((row) => ({
         id: number(row.number),
+        space_id: row.space_id,
+        space_name: row.space_name,
         project: row.project,
         text: row.text,
         area: row.area,
@@ -368,6 +393,7 @@ export async function hostedNotes(
         promoted_task: row.promoted_task,
       })),
       acknowledgements: acknowledgements.map((row) => ({
+        space_id: row.space_id,
         note_id: number(row.note_id),
         session_id: row.session_id,
         acknowledged_at: iso(row.acknowledged_at)!,

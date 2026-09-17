@@ -47,6 +47,7 @@ export function HostedRunDetail({ id }: { id: string }) {
       actions={<Badge>{run.status}</Badge>}
     >
       <DisplayRow label="Project" value={<ProjectMark name={run.projectName} colors={colors} />} />
+      <DisplayRow label="Space" value={run.spaceName} />
       <DisplayRow label="Agent" value={run.agent} />
       <DisplayRow label="Job" value={run.job} />
       <DisplayRow label="Status" value={run.status} />
