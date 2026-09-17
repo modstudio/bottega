@@ -305,7 +305,7 @@ function ownershipCloseOutResult(input: {
   decision: ReturnType<typeof adoptedTreeCloseOutDecision>
   dryRun?: boolean
 }): CloseOutResult | null {
-  if (input.decision === 'ordinary' || input.decision === 'release-adopted') return null
+  if (input.decision === 'ordinary') return null
   if (input.decision === 'held') {
     return {
       runId: input.runId,
@@ -313,14 +313,6 @@ function ownershipCloseOutResult(input: {
       outcome: 'held',
       detail: `ownership of ${input.treePath} could not be established; pointer and tree retained`,
     }
-  }
-  if (!input.dryRun) {
-    db()
-      .query(
-        `UPDATE run SET worktree=NULL
-         WHERE worktree=? AND (id=? OR parent_run_id=?)`,
-      )
-      .run(input.treePath, input.runId, input.runId)
   }
   return {
     runId: input.runId,
@@ -358,35 +350,6 @@ function lockedLiveOrForgottenHold(
     treePath,
     decision: 'forgotten',
     dryRun,
-  })
-}
-
-function adoptedTreeOwners(
-  decision: ReturnType<typeof adoptedTreeCloseOutDecision>,
-  runId: number,
-  treePath: string,
-) {
-  if (decision !== 'release-adopted') return []
-  return otherConversationWorktreeSharers(db(), { id: runId, worktree: treePath })
-}
-
-function settleAdoptedTreeClaims(
-  owners: ReturnType<typeof otherConversationWorktreeSharers>,
-  adoptingRunId: number,
-  detail: string,
-): void {
-  if (!owners.length) return
-  writeTransaction(() => {
-    const settledAt = nowIso()
-    for (const owner of owners) {
-      settleClaims(db(), {
-        rootRunId: owner.id,
-        kind: 'worktree',
-        state: 'released',
-        settledAt,
-        detail: `adopted tree released by run ${adoptingRunId}: ${detail}`,
-      })
-    }
   })
 }
 
@@ -548,15 +511,7 @@ function attemptCloseOutRun(
   const branchTemplate = (effective.repo ? projectByName(effective.repo) : projectAt(treePath))
     ?.settings.worktree?.branch
   const ownership = inspectTreeOwnership(treePath, repoRoot, conversationIds, branchTemplate)
-  const liveSharers = liveWorktreeSharers(db(), { id: row.root_id, worktree: treePath })
-  const liveConversation = aliveConversationTurns(row.root_id)
-  const ownerHeld = otherConversationKeepTreeHeld(row.root_id, treePath)
-  const adoptionDecision = adoptedTreeCloseOutDecision({
-    ownership,
-    ownerAlive: liveSharers.length > 0,
-    sharerAlive: liveConversation.length > 0,
-    ownerHeld,
-  })
+  const adoptionDecision = adoptedTreeCloseOutDecision(ownership)
   const ownershipResult = ownershipCloseOutResult({
     runId: row.root_id,
     treePath,
@@ -564,7 +519,6 @@ function attemptCloseOutRun(
     dryRun: options.dryRun,
   })
   if (ownershipResult) return ownershipResult
-  const adoptedOwners = adoptedTreeOwners(adoptionDecision, row.root_id, treePath)
 
   const liveRows = () => {
     const sharers = liveWorktreeSharers(db(), { id: row.root_id, worktree: treePath })
@@ -799,7 +753,6 @@ function attemptCloseOutRun(
                 outcome: 'failed' as const,
                 detail: result.detail,
               }
-            settleAdoptedTreeClaims(adoptedOwners, row.root_id, result.detail)
             const acquired = liveRows()
             if (acquired.length) {
               return {
@@ -837,6 +790,33 @@ export function extractionRunId(row: { id: number }): number {
   return row.id
 }
 
+/** Every recorded spelling of each tree this conversation points at, keyed by each spelling. */
+function conversationWorktreeSpellings(rootId: number): Map<string, string[]> {
+  const rows = db()
+    .query(
+      `SELECT DISTINCT worktree FROM run
+        WHERE (id=? OR parent_run_id=?) AND worktree IS NOT NULL`,
+    )
+    .all(rootId, rootId) as { worktree: string }[]
+  const byPath = new Map<string, string[]>()
+  for (const { worktree } of rows) {
+    const spellings = [...new Set([worktree, ...worktreePathSpellings(db(), worktree)])]
+    for (const spelling of spellings) byPath.set(spelling, spellings)
+  }
+  return byPath
+}
+
+/**
+ * A pointer outlives its tree only while something may still use that tree. A
+ * failed close-out can fail after the removal itself, so a vanished directory
+ * clears the pointer too; otherwise a tree later created at the same path would
+ * be taken for this run's.
+ */
+function pointerMustClear(outcome: CloseOutResult['outcome'], worktree: string): boolean {
+  if (outcome === 'released' || outcome === 'forgotten') return true
+  return outcome === 'failed' && !existsSync(worktree)
+}
+
 /** Run one close-out attempt and retain its outcome for observation and retry. */
 export function closeOutRun(
   runId: number,
@@ -853,6 +833,9 @@ export function closeOutRun(
     .get(runId) as { root_id: number } | null
   if (!root) throw new Error(`no run ${runId}`)
   const keepTreeDecision = closeOutKeepTreeDecision(root.root_id, options.intent)
+  // Spellings are taken while the tree still exists, because a removed
+  // symlinked path no longer resolves to the identity its other rows share.
+  const spellingsBefore = conversationWorktreeSpellings(root.root_id)
   const result = attemptCloseOutRun(runId, { ...options, keepTreeDecision })
   if (!keepTreeDecision.held && 'expiredAt' in keepTreeDecision) {
     result.detail = `${result.detail}; keep-tree hold expired at ${keepTreeDecision.expiredAt}`
@@ -868,6 +851,16 @@ export function closeOutRun(
           WHERE id=?`,
         )
         .run(result.outcome, result.detail, settledAt, result.runId)
+      if (result.worktree && pointerMustClear(result.outcome, result.worktree)) {
+        const spellings = spellingsBefore.get(result.worktree) ?? [result.worktree]
+        db()
+          .query(
+            `UPDATE run SET worktree=NULL
+             WHERE (id=? OR parent_run_id=?)
+               AND worktree IN (${spellings.map(() => '?').join(',')})`,
+          )
+          .run(result.runId, result.runId, ...spellings)
+      }
       if (settled && settled !== 'claimed') {
         settleClaims(db(), {
           rootRunId: result.runId,

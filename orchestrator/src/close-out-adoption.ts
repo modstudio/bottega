@@ -1,17 +1,12 @@
 // concern: adopted worktree close-out decision
-/** Decides whether an attached tree can be released without taking it from a live run. */
+/** Decides whether a tree belongs to this run's automatic teardown. */
 
 import type { TreeOwnership } from './worktree-attribution.ts'
 
-export type AdoptedTreeCloseOutDecision = 'ordinary' | 'release-adopted' | 'forgotten' | 'held'
+export type AdoptedTreeCloseOutDecision = 'ordinary' | 'forgotten' | 'held'
 
-export function adoptedTreeCloseOutDecision(input: {
-  ownership: TreeOwnership
-  ownerAlive: boolean
-  sharerAlive: boolean
-  ownerHeld: boolean
-}): AdoptedTreeCloseOutDecision {
-  if (input.ownership === 'owned') return 'ordinary'
-  if (input.ownership === 'unknown') return 'held'
-  return input.ownerAlive || input.sharerAlive || input.ownerHeld ? 'forgotten' : 'release-adopted'
+export function adoptedTreeCloseOutDecision(ownership: TreeOwnership): AdoptedTreeCloseOutDecision {
+  if (ownership === 'owned') return 'ordinary'
+  if (ownership === 'unknown') return 'held'
+  return 'forgotten'
 }
