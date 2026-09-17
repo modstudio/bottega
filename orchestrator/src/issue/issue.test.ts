@@ -4,7 +4,9 @@ import {
   ISSUE_WORKER_SCHEMA,
   type IssueWorkerReply,
   parseWorkerReplyWithCount,
-} from './contract.ts'
+} from '../contract.ts'
+import { JOBS } from '../jobs.ts'
+import type { Project } from '../projects.ts'
 import {
   boundedIssuePack,
   ISSUE_DIAGNOSIS_SCHEMA,
@@ -13,8 +15,6 @@ import {
   seedFromReport,
   validatedTrackerTaskKey,
 } from './issue.ts'
-import { JOBS } from './jobs.ts'
-import type { Project } from './projects.ts'
 
 describe('filed issue coordinator inputs', () => {
   const shown = {

@@ -348,17 +348,17 @@
     "score": 20
   },
   {
-    "file": "orchestrator/src/issue.ts",
+    "file": "orchestrator/src/issue/issue.ts",
     "function": "jsonObjects",
     "line": 174,
     "score": 18
   },
   {
-    "file": "orchestrator/src/issue.ts",
+    "file": "orchestrator/src/issue/issue.ts",
     "function": "workIssue",
     "line": 769,
     "score": 44,
-    "key": "orchestrator/src/issue.ts\u0000workIssue"
+    "key": "orchestrator/src/issue/issue.ts\u0000workIssue"
   },
   {
     "file": "orchestrator/src/judgement.ts",

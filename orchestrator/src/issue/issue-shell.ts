@@ -3,13 +3,13 @@
 
 import { type ChildProcess, spawn } from 'node:child_process'
 import { resolve } from 'node:path'
-import { isGroupKillablePgid, sampleProcesses, terminateProcessGroup } from './idle-kill.ts'
+import { isGroupKillablePgid, sampleProcesses, terminateProcessGroup } from '../idle-kill.ts'
 import {
   expandHome,
   READONLY_LENS_DENY_PATHS,
   READONLY_LENS_DENY_SOCKETS,
   type SandboxRuntimeConfig,
-} from './sandbox.ts'
+} from '../sandbox.ts'
 
 export const FILED_ISSUE_COMMAND_TIMEOUT_MS = 20 * 60_000
 const FILED_ISSUE_COMMAND_KILL_SIGNAL = 'SIGKILL'

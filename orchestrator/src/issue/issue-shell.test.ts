@@ -1,5 +1,6 @@
 import { describe, expect, test } from 'bun:test'
 import { resolve } from 'node:path'
+import { expandHome, READONLY_LENS_DENY_PATHS, READONLY_LENS_DENY_SOCKETS } from '../sandbox.ts'
 import {
   FILED_ISSUE_COMMAND_TIMEOUT_MS,
   filedIssueCommandPlan,
@@ -7,7 +8,6 @@ import {
   issueRunAsked,
   workerGateEnvironment,
 } from './issue-shell.ts'
-import { expandHome, READONLY_LENS_DENY_PATHS, READONLY_LENS_DENY_SOCKETS } from './sandbox.ts'
 
 describe('filed issue command confinement', () => {
   test('denies secrets without carrying the coordinator environment', () => {

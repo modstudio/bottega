@@ -3,9 +3,12 @@
 
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
-import { PLATFORM_SLUG } from '../../shared/brand.ts'
-import { db } from './db.ts'
-import { UNSCORED_WHERE } from './evidence-query.ts'
+import { PLATFORM_SLUG } from '../../../shared/brand.ts'
+import { db } from '../db.ts'
+import { UNSCORED_WHERE } from '../evidence-query.ts'
+import { type KernelLease, projectGitCommonDir, tryKernelLease } from '../project-lock.ts'
+import { projectByName } from '../projects.ts'
+import { worktreeDirty } from '../worktree-attribution.ts'
 import { parseFiledIssue, workIssue } from './issue.ts'
 import {
   eligibleFiledIssueTasks,
@@ -17,11 +20,8 @@ import {
   MAX_ISSUES_PER_PASS,
 } from './issue-queue.ts'
 import { filedIssueQueueFailureAction } from './issue-queue-failure.ts'
-import { type KernelLease, projectGitCommonDir, tryKernelLease } from './project-lock.ts'
-import { projectByName } from './projects.ts'
-import { worktreeDirty } from './worktree-attribution.ts'
 
-const HUB = new URL('../../bin/hub', import.meta.url).pathname
+const HUB = new URL('../../../bin/hub', import.meta.url).pathname
 
 type HeldIssueTree = { runId: number; path: string; why: string }
 
