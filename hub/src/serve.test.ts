@@ -121,12 +121,12 @@ describe('run ingest', () => {
     try {
       const result = (await view('runs', 24)) as {
         totals: Record<string, number>
-        vendors: { agent: string; tokens: number }[]
+        vendors: { agent: string; tokens: number; runs: number }[]
       }
       expect(result.totals).not.toHaveProperty('toks')
       expect(result.vendors).toEqual([
-        { agent: 'grok', tokens: 1_200_000 },
-        { agent: 'codex', tokens: 340_000 },
+        { agent: 'grok', tokens: 1_200_000, runs: 1 },
+        { agent: 'codex', tokens: 340_000, runs: 1 },
       ])
     } finally {
       spawn.mockRestore()

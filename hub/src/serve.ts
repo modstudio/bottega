@@ -637,13 +637,17 @@ export async function view(
         (r) => (!f.agent || r.agent === f.agent) && (!f.project || r.project === f.project),
       )
 
+      // Tokens stay per agent: vendors count them differently, so they are never summed.
+      // Runs are one currency and are counted beside them.
       const vendorTotals = new Map<string, number>()
+      const agentRuns = new Map<string, number>()
       for (const run of shaped) {
+        agentRuns.set(run.agent, (agentRuns.get(run.agent) ?? 0) + 1)
         if (run.tokens == null) continue
         vendorTotals.set(run.agent, (vendorTotals.get(run.agent) ?? 0) + run.tokens)
       }
       const vendors = [...vendorTotals]
-        .map(([agent, tokens]) => ({ agent, tokens }))
+        .map(([agent, tokens]) => ({ agent, tokens, runs: agentRuns.get(agent) ?? 0 }))
         .sort((a, b) => b.tokens - a.tokens || a.agent.localeCompare(b.agent))
 
       return {

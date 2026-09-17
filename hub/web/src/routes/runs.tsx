@@ -58,7 +58,7 @@ type RunsPayload = {
   activeAgents: string[]
   data: {
     totals: { runs: number; scored: number; voided?: number; failed: number; stale_n: number }
-    vendors: { agent: string; tokens: number }[]
+    vendors: { agent: string; tokens: number; runs: number }[]
     unscored: number
     facets: { agents: string[]; projects: string[] }
     matched: number
@@ -275,12 +275,20 @@ function RunsList() {
               />
             ))}
             <StatTile
-              label="vendor tokens"
-              hint="separate currencies, never summed"
-              breakdown={data.vendors.map((vendor) => ({
-                label: vendor.agent,
-                value: compactTokens(vendor.tokens),
-              }))}
+              label="agents"
+              hint="tokens are per agent, never summed"
+              breakdown={[
+                {
+                  label: 'runs, all agents',
+                  value: data.vendors
+                    .reduce((sum, vendor) => sum + vendor.runs, 0)
+                    .toLocaleString(),
+                },
+                ...data.vendors.map((vendor) => ({
+                  label: `${vendor.agent} tokens · ${vendor.runs.toLocaleString()} runs`,
+                  value: compactTokens(vendor.tokens),
+                })),
+              ]}
             />
           </StatRow>
           {filtered ? (
