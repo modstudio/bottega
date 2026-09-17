@@ -6550,7 +6550,7 @@
         "space_id",
         "id"
       ],
-      "onUpdate": "NO ACTION",
+      "onUpdate": "CASCADE",
       "onDelete": "NO ACTION",
       "name": "seq_space_project_fk",
       "entityType": "fks"

@@ -12,6 +12,7 @@ import {
   recordSpaceInvitationsCommand,
   recordSpaceInviteCommand,
   recordSpaceListCommand,
+  recordSpaceMoveProjectCommand,
   recordSpaceSwitchCommand,
 } from '../record/record-command.ts'
 import { publishSnapshotsCommand } from '../record/record-publish.ts'
@@ -68,6 +69,23 @@ export function register(program: Command): void {
     .command('accept')
     .argument('<invitation-id>')
     .action((value) => recordSpaceAcceptCommand(String(value), presentation))
+  space
+    .command('move-project')
+    .argument('<project>')
+    .requiredOption('--to <slug-or-id>')
+    .option('--dry-run')
+    .option('--confirm <count>')
+    .action((project, options) =>
+      recordSpaceMoveProjectCommand(
+        String(project),
+        String(options.to),
+        {
+          dryRun: Boolean(options.dryRun),
+          ...(options.confirm === undefined ? {} : { confirm: Number(options.confirm) }),
+        },
+        presentation,
+      ),
+    )
   record
     .command('push-docs')
     .option('--dry-run')

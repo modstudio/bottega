@@ -38,6 +38,7 @@ DECLARE
   changed boolean;
   total bigint;
   collisions text;
+  project_collision boolean;
 BEGIN
   IF actor_id IS NULL THEN
     RAISE EXCEPTION 'record project move requires a signed-in user';
@@ -140,6 +141,15 @@ BEGIN
     EXIT WHEN NOT changed;
   END LOOP;
 
+  -- Intervals without a project_name still belong to a project when their task
+  -- key resolves to that project's task in the same space.
+  UPDATE move_plan
+  SET predicate = predicate || format(
+        ' OR EXISTS (SELECT 1 FROM hub_task p WHERE p.space_id=%L::uuid AND p.key=t.task_key AND p.project_name=%L)',
+        source_id, project_name),
+      path = 'project_name or hub_task.task_key'
+  WHERE name='hub_interval';
+
   FOR candidate IN SELECT name FROM move_plan ORDER BY name LOOP
     EXECUTE format('LOCK TABLE %I IN SHARE ROW EXCLUSIVE MODE', candidate.name);
   END LOOP;
@@ -150,31 +160,57 @@ BEGIN
     row_count bigint NOT NULL,
     moved boolean NOT NULL
   ) ON COMMIT DROP;
+  CREATE TEMP TABLE move_row(
+    table_name text NOT NULL,
+    locator tid NOT NULL,
+    PRIMARY KEY(table_name, locator)
+  ) ON COMMIT DROP;
   FOR candidate IN
-    SELECT c.table_name, mp.predicate, mp.path
-    FROM (SELECT DISTINCT table_name FROM information_schema.columns
-          WHERE table_schema='public' AND column_name='space_id') c
-    LEFT JOIN move_plan mp ON mp.name=c.table_name
-    ORDER BY c.table_name
+    SELECT c.tenant_table, mp.predicate, mp.path
+    FROM (SELECT DISTINCT ic.table_name AS tenant_table FROM information_schema.columns ic
+          WHERE ic.table_schema='public' AND ic.column_name='space_id') c
+    LEFT JOIN move_plan mp ON mp.name=c.tenant_table
+    ORDER BY c.tenant_table
   LOOP
     IF candidate.predicate IS NULL THEN
-      INSERT INTO move_result VALUES (candidate.table_name, 'space-wide; no project path', 0, false);
+      INSERT INTO move_result VALUES (
+        candidate.tenant_table,
+        CASE candidate.tenant_table
+          WHEN 'hub_day' THEN 'space-and-day aggregate; no project attribution'
+          WHEN 'hub_send' THEN 'space send; projects may name several projects'
+          WHEN 'hub_report_setting' THEN 'space-level setting; no project attribution'
+          WHEN 'orch_snapshot' THEN 'space-level snapshot; no project attribution'
+          ELSE 'no direct project identity or moving parent row'
+        END,
+        0,
+        false
+      );
     ELSE
-      EXECUTE format('SELECT count(*) FROM %I t WHERE t.space_id=$1 AND (%s)', candidate.table_name, candidate.predicate)
-        INTO total USING source_id;
-      INSERT INTO move_result VALUES (candidate.table_name, candidate.path, total, false);
+      EXECUTE format(
+        'INSERT INTO move_row(table_name,locator) SELECT %L,t.ctid FROM %I t WHERE t.space_id=$1 AND (%s)',
+        candidate.tenant_table, candidate.tenant_table, candidate.predicate
+      ) USING source_id;
+      SELECT count(*) INTO total FROM move_row mr WHERE mr.table_name=candidate.tenant_table;
+      INSERT INTO move_result VALUES (candidate.tenant_table, candidate.path, total, false);
     END IF;
   END LOOP;
   SELECT sum(mr.row_count) INTO total FROM move_result mr;
 
+  ALTER TABLE hub_task NO FORCE ROW LEVEL SECURITY;
   EXECUTE 'SELECT string_agg(src.key, '', '' ORDER BY src.key) FROM hub_task src '
        || 'JOIN hub_task dst ON dst.space_id=$1 AND dst.key=src.key '
        || 'WHERE src.space_id=$2 AND src.project_name=$3'
     INTO collisions USING destination_id, source_id, project_name;
+  ALTER TABLE hub_task FORCE ROW LEVEL SECURITY;
   IF collisions IS NOT NULL THEN
     RAISE EXCEPTION 'destination record space has colliding task keys: %', collisions;
   END IF;
-  IF EXISTS (SELECT 1 FROM project p WHERE p.space_id=destination_id AND p.name=project_name) THEN
+  ALTER TABLE project NO FORCE ROW LEVEL SECURITY;
+  SELECT EXISTS (
+    SELECT 1 FROM project p WHERE p.space_id=destination_id AND p.name=project_name
+  ) INTO project_collision;
+  ALTER TABLE project FORCE ROW LEVEL SECURITY;
+  IF project_collision THEN
     RAISE EXCEPTION 'destination record space already has project name %', project_name;
   END IF;
 
@@ -182,17 +218,24 @@ BEGIN
     IF confirmed_total <> total THEN
       RAISE EXCEPTION 'confirmation count % does not match current total %; run the dry run again', confirmed_total, total;
     END IF;
-    FOR candidate IN SELECT * FROM move_plan WHERE name <> 'project' ORDER BY name LOOP
-      EXECUTE format('ALTER TABLE %I NO FORCE ROW LEVEL SECURITY', candidate.name);
-      EXECUTE format('UPDATE %I t SET space_id=$1 WHERE t.space_id=$2 AND (%s)', candidate.name, candidate.predicate)
-        USING destination_id, source_id;
-      EXECUTE format('ALTER TABLE %I FORCE ROW LEVEL SECURITY', candidate.name);
-    END LOOP;
+    -- Moving the project first cascades the composite project key into seq.
+    -- Every other project reference uses the stable project id alone.
     SELECT * INTO candidate FROM move_plan WHERE name='project';
     ALTER TABLE project NO FORCE ROW LEVEL SECURITY;
     UPDATE project SET space_id=destination_id WHERE id=project_id AND space_id=source_id;
     ALTER TABLE project FORCE ROW LEVEL SECURITY;
-    UPDATE move_result SET moved=row_count > 0 WHERE table_name IN (SELECT name FROM move_plan);
+    FOR candidate IN
+      SELECT * FROM move_plan WHERE name NOT IN ('project', 'seq') ORDER BY name
+    LOOP
+      EXECUTE format('ALTER TABLE %I NO FORCE ROW LEVEL SECURITY', candidate.name);
+      EXECUTE format(
+        'UPDATE %I t SET space_id=$1 FROM move_row mr WHERE mr.table_name=%L AND t.ctid=mr.locator',
+        candidate.name, candidate.name
+      ) USING destination_id;
+      EXECUTE format('ALTER TABLE %I FORCE ROW LEVEL SECURITY', candidate.name);
+    END LOOP;
+    UPDATE move_result mr SET moved=mr.row_count > 0
+    WHERE mr.table_name IN (SELECT mp.name FROM move_plan mp);
   END IF;
 
   RETURN QUERY SELECT mr.table_name, mr.reached_by, mr.row_count, mr.moved
