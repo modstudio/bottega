@@ -91,9 +91,9 @@ export function refuseCanonWrite(input: {
   const findings = decideCanonWrite({
     current: input.current,
     next: input.next,
-    trackedPaths: input.trackedPaths ?? [],
-    packageScripts: input.packageScripts ?? [],
-    sourceTexts: input.sourceTexts ?? [],
+    trackedPaths: input.trackedPaths,
+    packageScripts: input.packageScripts,
+    sourceTexts: input.sourceTexts,
   })
   if (!findings.length) return null
   return (
