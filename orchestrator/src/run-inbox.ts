@@ -20,6 +20,7 @@ export async function runInboxCommand(
   const { log, dur, chainHasPendingDelivery, strandedRecovery } = presentation
   const sid = sessionId()
   const mine = !has('all')
+  const activeOnly = has('active')
   const project = mine ? projectAt(process.cwd()) : null
   const cutoff = new Date(Date.now() - SESSION_LIVE_MS).toISOString()
   const hasSessionSeen = Boolean(
@@ -44,7 +45,7 @@ export async function runInboxCommand(
        JOIN run root ON root.id = COALESCE(r.parent_run_id, r.id)
        ${seenJoin}
       WHERE ${
-        mine
+        mine || activeOnly
           ? `q.answered_at IS NULL AND ${activeSql('root')}`
           : `q.answered_at IS NULL OR NOT (${activeSql('root')})`
       }
@@ -99,7 +100,6 @@ export async function runInboxCommand(
           // which a last-seen timestamp cannot establish.
           session_live: q.session_recent ? true : null,
           session_liveness: q.session_recent ? 'live' : 'unknown',
-          active: Boolean(q.root_active),
           can_answer: Boolean(q.root_active) && canAnswer(q.session_id),
           question: q.question,
           options: q.options ? (JSON.parse(q.options) as string[]) : [],

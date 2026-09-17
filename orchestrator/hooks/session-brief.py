@@ -95,7 +95,7 @@ def main() -> int:
         inbox_env = os.environ.copy()
         if sid:
             inbox_env["CLAUDE_CODE_SESSION_ID"] = sid
-        inbox_p = _start(orch, "inbox", "--all", "--json", env=inbox_env)
+        inbox_p = _start(orch, "inbox", "--all", "--active", "--json", env=inbox_env)
         waiting_p = _start(orch, "fix-defect", "--waiting", "--json")
         monitor_failure = None
         if sid:
@@ -198,16 +198,15 @@ def main() -> int:
                 if not isinstance(questions, list) or not all(
                     isinstance(item, dict)
                     and item.get("session_liveness") in ("live", "unknown")
-                    and isinstance(item.get("active"), bool)
                     and isinstance(item.get("can_answer"), bool)
                     for item in questions
                 ):
                     raise ValueError("invalid inbox JSON")
-                active_questions = [item for item in questions if item["active"]]
-                answerable_count = sum(item["can_answer"] for item in active_questions)
-                foreign_count = len(active_questions) - answerable_count
+                answerable_count = sum(item["can_answer"] for item in questions)
+                foreign_count = len(questions) - answerable_count
                 unknown_count = sum(
-                    item["session_liveness"] == "unknown" for item in active_questions
+                    not item["can_answer"] and item["session_liveness"] == "unknown"
+                    for item in questions
                 )
             except Exception:
                 inbox_failure = "Inbox response was invalid; question state is unknown."
@@ -286,14 +285,27 @@ def main() -> int:
             noun = "question" if answerable_count == 1 else "questions"
             notices.append(f"{answerable_count} {noun} waiting on your ruling.")
         if foreign_count:
-            noun = "question" if foreign_count == 1 else "questions"
-            notices.append(
-                f"{foreign_count} other-session {noun} visible; only their owners may rule."
-            )
+            if foreign_count == 1:
+                notices.append(
+                    "1 worker dispatched by another session is waiting on an answer. "
+                    "Only the session that dispatched it can answer it."
+                )
+            else:
+                notices.append(
+                    f"{foreign_count} workers dispatched by other sessions are waiting on an "
+                    "answer. Only the session that dispatched each one can answer it."
+                )
         if unknown_count:
-            noun = "question" if unknown_count == 1 else "questions"
-            verb = "has" if unknown_count == 1 else "have"
-            notices.append(f"{unknown_count} visible {noun} {verb} unknown owner liveness.")
+            if unknown_count == 1:
+                notices.append(
+                    "1 of those is from a session not seen recently. It may be closed, and that "
+                    "worker may never get an answer."
+                )
+            else:
+                notices.append(
+                    f"{unknown_count} of those are from a session not seen recently. They may be "
+                    "closed, and those workers may never get an answer."
+                )
         if waiting_issues:
             keys = ", ".join(item["key"] for item in waiting_issues)
             notices.append(

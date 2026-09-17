@@ -25,10 +25,10 @@ test('inbox voided membership is VOIDED_SQL, not a second copy', () => {
 beforeEach(() => {
   process.env.CLAUDE_CODE_SESSION_ID = 'orch-test-session'
 })
-async function inbox(options: { all?: boolean; json?: boolean } = {}) {
+async function inbox(options: { all?: boolean; active?: boolean; json?: boolean } = {}) {
   const lines: string[] = []
   await runInboxCommand(
-    { has: (name) => Boolean(options[name as 'all' | 'json']) },
+    { has: (name) => Boolean(options[name as keyof typeof options]) },
     {
       log: (...values) => lines.push(values.join(' ')),
       dur: (ms) => String(ms ?? 0),
@@ -124,7 +124,7 @@ test('inbox --all shows a foreign recoverable root without offering authority', 
   expect(shown).toContain(`run ${id}`)
   expect(shown).toContain('only the owning session may continue it')
 })
-test('inbox --all --json reports liveness and active chain state', async () => {
+test('inbox --all --active --json includes active foreign and omits terminal questions', async () => {
   const active = addRun({ agent: 'codex', job: 'implement', status: 'asking', session: 'foreign' })
   const terminal = addRun({
     agent: 'codex',
@@ -134,9 +134,9 @@ test('inbox --all --json reports liveness and active chain state', async () => {
   })
   question(active, 'active?')
   question(terminal, 'terminal?')
-  const rows = JSON.parse(await inbox({ all: true, json: true }))
-  expect(rows).toContainEqual(expect.objectContaining({ run_id: active, active: true }))
-  expect(rows).toContainEqual(expect.objectContaining({ run_id: terminal, active: false }))
+  const rows = JSON.parse(await inbox({ all: true, active: true, json: true }))
+  expect(rows).toContainEqual(expect.objectContaining({ run_id: active, can_answer: false }))
+  expect(rows).not.toContainEqual(expect.objectContaining({ run_id: terminal }))
   expect(rows[0]).toMatchObject({
     session_live: null,
     session_liveness: 'unknown',
