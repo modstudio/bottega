@@ -7,7 +7,7 @@ Run commands from the repository root. Create the private bucket and scoped R2 c
 ```sh
 fly apps create bottega-record-backup --org bottega
 fly secrets set -a bottega-record-backup \
-  RECORD_BACKUP_DATABASE_URL='postgres://record_owner:<password>@bottega-record.flycast:5432/record' \
+  RECORD_BACKUP_DATABASE_URL='postgres://record_backup:<password>@bottega-record.flycast:5432/record' \
   R2_BUCKET='<private-bucket>' \
   R2_ENDPOINT='https://<account-id>.r2.cloudflarestorage.com' \
   R2_ACCESS_KEY_ID='<access-key-id>' \
@@ -15,7 +15,15 @@ fly secrets set -a bottega-record-backup \
   BACKUP_RETENTION_DAYS='30'
 ```
 
-`RECORD_BACKUP_DATABASE_URL` may use a read-only role only after proving it can dump every object in both the `public` and `drizzle` schemas. Otherwise use the owner role. Keep all values above as Fly secrets; do not put them in this tree or shell history.
+`RECORD_BACKUP_DATABASE_URL` uses the dedicated `record_backup` role. Record tables use `FORCE ROW LEVEL SECURITY`, which confines even their owner, so `pg_dump` as `record_owner` refuses with "query would be affected by row-level security policy". The backup role must bypass row security and read every schema. As the cluster administrator:
+
+```sql
+CREATE ROLE record_backup LOGIN BYPASSRLS PASSWORD '<generated>';
+GRANT pg_read_all_data TO record_backup;
+GRANT CONNECT ON DATABASE record TO record_backup;
+```
+
+Keep all values above as Fly secrets; do not put them in this tree or shell history.
 
 ## Schedule and manual run
 
@@ -72,7 +80,7 @@ The check creates the `record_owner`, `record_actor`, and `record_reader` roles 
    pg_restore --exit-on-error --dbname '<replacement-owner-url>' ./record-<UTC timestamp>.dump
    ```
 
-   Do not use `--no-owner` for the real restore. Archive ownership and grants depend on the three roles already existing. Confirm that `public` and restored application objects are owned by `record_owner`, and that the `drizzle` migration schema and journal were restored.
+   Run `pg_restore` as a role that bypasses row security (the cluster administrator), because `FORCE ROW LEVEL SECURITY` refuses row loads from any other role. Do not use `--no-owner` for the real restore. Archive ownership and grants depend on the three roles already existing. Confirm that `public` and restored application objects are owned by `record_owner`, and that the `drizzle` migration schema and journal were restored.
 5. Run SQL checks for table count, constraint count, and the five row counts used by `restore-check.sh`. Also test an actor connection and a reader connection so grants and row-level security behavior are not inferred from a successful `pg_restore` exit alone.
 6. Point the API and migration secrets at the replacement database, start the writers, and verify API health plus a read. Keep the previous database intact until those checks pass. If the database must retain the name `record`, perform the final rename or drop/recreate only during the maintenance window, with all connections terminated and a rollback copy available.
 
