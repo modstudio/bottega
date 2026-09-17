@@ -398,6 +398,7 @@ export async function staleNotes(deps: Partial<StaleDeps> = {}): Promise<StaleRe
       stale: reasons.map((row) => ({ number: row.id, reason: row.reason, at })),
       deleted: deletedIds,
       confirmation: deletedIds.length,
+      cutoff,
     },
     deps.hosted,
   )

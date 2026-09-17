@@ -172,8 +172,8 @@ try {
           sightings: 1,
           created_at: noteStamp,
           last_seen_at: noteStamp,
-          stale_at: null,
-          stale_reason: null,
+          stale_at: noteStamp,
+          stale_reason: 'gone',
           promoted_task: null,
           updated_at: noteStamp,
           deleted_at: null,
@@ -214,7 +214,44 @@ try {
     const promoted = await promoteHostedNote(actorUrl, identity, allocatedNote.number)
     if (!promoted?.task.key || promoted.note.promoted_task !== promoted.task.key)
       throw new Error('promotion did not create a task and mark its note')
-    await reapHostedNotes(actorUrl, identity, { stale: [], deleted: [800], confirmation: 1 })
+    await mirrorHostedNotes(actorUrl, identity, {
+      notes: [
+        {
+          id: '01990000-0000-7000-8000-00000000066e',
+          number: 802,
+          project: PLATFORM_SLUG,
+          project_name: PLATFORM_SLUG,
+          text: 'Re-sighted note',
+          area: null,
+          anchors: '[]',
+          sightings: 2,
+          created_at: noteStamp,
+          last_seen_at: noteStamp,
+          stale_at: noteStamp,
+          stale_reason: 'gone',
+          promoted_task: null,
+          updated_at: noteStamp,
+          deleted_at: null,
+        },
+      ],
+    })
+    const cutoff = noteStamp
+    let refusedResighted = false
+    try {
+      await reapHostedNotes(actorUrl, identity, {
+        stale: [],
+        deleted: [802],
+        confirmation: 1,
+        cutoff,
+      })
+    } catch (error) {
+      if (!String((error as Error).message).includes('local cache is behind the record')) throw error
+      refusedResighted = true
+    }
+    if (!refusedResighted) throw new Error('reap of a re-sighted note was not refused')
+    if (!(await getHostedNote(actorUrl, identity, 802)))
+      throw new Error('re-sighted note was deleted')
+    await reapHostedNotes(actorUrl, identity, { stale: [], deleted: [800], confirmation: 1, cutoff })
     const visibleNotes = await listHostedNotes(actorUrl, identity, {})
     if (visibleNotes.notes.some((row) => Number(row.number) === 800))
       throw new Error('soft-deleted note was visible in the default list')

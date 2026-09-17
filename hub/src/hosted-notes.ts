@@ -307,6 +307,7 @@ export async function reapHostedNotes(
     stale: Array<{ number: number; reason: string; at: string }>
     deleted: number[]
     confirmation: number
+    cutoff: string
   },
 ) {
   return tenant(url, identity, async (tx) => {
@@ -317,9 +318,13 @@ export async function reapHostedNotes(
     const found = input.deleted.length
       ? rows<{ number: number }>(
           await tx`SELECT number FROM hub_note WHERE space_id=${identity.spaceId}::uuid
-          AND number IN ${tx(input.deleted)} AND deleted_at IS NULL FOR UPDATE`,
+          AND number IN ${tx(input.deleted)} AND deleted_at IS NULL
+          AND stale_at IS NOT NULL AND sightings=1 AND promoted_task IS NULL
+          AND last_seen_at <= ${input.cutoff}::timestamptz FOR UPDATE`,
         )
       : []
+    if (found.length < input.deleted.length)
+      throw new Error('local cache is behind the record; the next maintenance pass will recompute')
     confirmSoftDelete(found.length, input.confirmation)
     if (found.length)
       await tx`UPDATE hub_note SET deleted_at=now(),updated_at=now() WHERE space_id=${identity.spaceId}::uuid

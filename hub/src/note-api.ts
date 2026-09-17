@@ -141,10 +141,14 @@ async function noteActionRoute(context: RouteContext): Promise<Response | null> 
 
 async function batchRoute(context: RouteContext): Promise<Response | null> {
   const { request, url, config, dependencies, who, body } = context
-  if (request.method === 'POST' && url.pathname === '/v1/notes/reap')
+  if (request.method === 'POST' && url.pathname === '/v1/notes/reap') {
+    const cutoff = body?.cutoff
+    if (typeof cutoff !== 'string' || !Number.isFinite(Date.parse(cutoff)))
+      throw new Error('reap requires a staleness cutoff')
     return json(
       await call(dependencies.reap, reapHostedNotes)(config.recordDatabaseUrl, who, body as never),
     )
+  }
   if (request.method === 'PUT' && url.pathname === '/v1/notes/mirror')
     return json(
       await call(dependencies.mirror, mirrorHostedNotes)(
