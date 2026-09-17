@@ -14,8 +14,7 @@ import { projectNames, projects, type RegisteredProject, trackerPresentation } f
 import {
   boardTasks,
   completedInWindow,
-  endMs,
-  intervalsOf,
+  intervalsInWindow,
   ratioSummary,
   spendGrid,
   stripWindow,
@@ -41,6 +40,7 @@ import {
   type SearchableLiveRun,
 } from './run-display.ts'
 import { getReport, secretStatus } from './settings.ts'
+import { projectFlightDone } from './task-projections.ts'
 import { hoursAgo } from './time.ts'
 import { createContext } from './trpc/context.ts'
 import { appRouter } from './trpc/router.ts'
@@ -279,55 +279,6 @@ export function strip(hours: number) {
   }
 }
 
-const shapeTask = (r: ReturnType<typeof tasksInWindow>[number]) => ({
-  key: r.key,
-  project: r.project,
-  title: r.title,
-  status: r.status,
-  statusCategory: r.statusCategory,
-  source: r.source,
-  sourceProtocol: r.sourceProtocol,
-  capabilities: r.capabilities,
-  engaged: human(r.engagedMs),
-  engagedMs: r.engagedMs,
-  claudeTokens: r.claudeTokens,
-  vendors: r.vendors,
-  activeAgents: r.activeAgents,
-  workingNow: r.workingNow,
-  lastAt: r.lastAt,
-})
-
-/**
- * Every delegated run on a task, live ones first.
- *
- * They are COLLAPSED behind a disclosure on the row rather than always drawn.
- * Drawing them all buried the tasks; drawing only the recent ones and adding a
- * "N more finished earlier" row per task was worse - it put a second, empty
- * row between every pair of tasks and made the table look like it had twice as
- * many things in it as it did. A count you can open costs one line and hides
- * nothing.
- *
- * Nothing is returned for an untracked bucket: its runs are not working on one
- * thing, so listing them together implies a coherence they do not have.
- */
-function runsFor(key: string | null, project: string | null, from: string, to: string) {
-  if (!key) return { runs: [] }
-  const now = Date.now()
-  const runs = intervalsOf(key, project, from, to)
-    .filter((i) => i.source === 'orch')
-    .map((i) => ({
-      agent: i.agent,
-      job: i.job,
-      start: i.start_at,
-      ms: endMs(i, now) - new Date(i.start_at).getTime(),
-      running: !!i.open,
-      tokens: i.vendor_tokens,
-      costUsd: i.vendor_cost_usd,
-    }))
-    .sort((a, b) => Number(b.running) - Number(a.running) || b.start.localeCompare(a.start))
-  return { runs }
-}
-
 type RunFilters = {
   agent: string
   project: string
@@ -369,113 +320,15 @@ export async function view(
   const to = nowIso()
 
   if (name === 'flight' || name === 'done') {
-    const all = tasksInWindow(from, to)
-    // Narrowed HERE, at the top, rather than on the way out. Everything below
-    // is derived from this list - what counts as in flight, and the `dropped`
-    // panel that explains the absences - so filtering later would leave the
-    // page explaining why fourteen tasks from one project are missing from a table the
-    // reader has just restricted to another project.
-    const rows = all.filter(
-      (r) => (!f.project || r.project === f.project) && matchesSource(r, f.source),
-    )
-    const closedHere = new Set(completedInWindow(from, to).map((c) => c.key))
-
-    // IN FLIGHT: being worked on right now, or marked active in the tracker.
-    //
-    // Not "open", and not "touched recently". A backlog or todo item somebody
-    // spent twenty minutes on is not in flight - it is a queued item that got
-    // some attention - and including it filled most of the table with work
-    // nobody is carrying. Waiting on review IS in flight: the task has not
-    // landed, and an agent reviewing it is engaged time by this system's own
-    // definition.
-    //
-    // A task with no known status qualifies only by being worked on now. That
-    // is the honest reading: "we cannot ask its tracker" is not "it is active",
-    // and treating it as active was putting 14 rows from a trackerless project in the list on the
-    // strength of not knowing.
-    const inFlight = (r: (typeof rows)[number]) =>
-      r.workingNow || ['active', 'review'].includes(r.statusCategory ?? '')
-
-    const want =
-      name === 'done'
-        ? // Closed in this window, or closed and still worked on inside it.
-          rows.filter((r) => r.key && (closedHere.has(r.key) || r.statusCategory === 'done'))
-        : rows.filter(inFlight)
-
-    // Like the dropped groups below, this footnote describes only rows this
-    // view actually excluded; a present row must never also be called missing.
-    const unmapped = rows.filter(
-      (r) => r.source === 'mcp' && !!r.status && !r.statusCategory && !want.includes(r),
-    )
-
-    // What the filter left out, and why.
-    //
-    // Excluding a task is a claim, and an unexplained absence is worse than a
-    // crowded table: 14 tasks from a trackerless project carrying 20 hours of real work drop out
-    // here purely because no tracker is reachable to say they are active, which
-    // is not the same as being told they are not.
-    const dropped: { reason: string; tasks: number; engaged: string }[] = []
-    if (name === 'flight') {
-      const groups: [string, string, (r: (typeof rows)[number]) => boolean][] = [
-        [
-          'unknown',
-          'no tracker reachable to say whether they are active',
-          (r) => !!r.key && !r.statusCategory && !(r.source === 'mcp' && r.status),
-        ],
-        [
-          'open',
-          'queued in their tracker: backlog, todo or unstarted',
-          (r) => r.statusCategory === 'open',
-        ],
-      ]
-      for (const [, reason, match] of groups) {
-        const hit = rows.filter((r) => match(r) && !inFlight(r))
-        if (hit.length) {
-          dropped.push({
-            reason,
-            tasks: hit.length,
-            engaged: human(hit.reduce((s, r) => s + r.engagedMs, 0)),
-          })
-        }
-      }
-    }
-
-    const shaped = want.map((r) => ({ ...shapeTask(r), ...runsFor(r.key, r.project, from, to) }))
-
-    // "Which tasks did this agent work on", which is the only sense an agent
-    // filter has on a table whose rows are TASKS rather than runs.
-    //
-    // The matching rows are left INTACT rather than having their run lists
-    // narrowed to that agent too. A task's engaged time is the union of every
-    // agent and session on it, so a row showing four hours above a single grok
-    // run would be a row contradicting itself - and the question the filter
-    // answers is which tasks it touched, not how much of each it did.
-    const keep = f.agent
-      ? shaped.filter((r) => (r.runs || []).some((x) => x.agent === f.agent))
-      : shaped
-
-    // Projects come from the unfiltered window; agents can only come from the
-    // shaped rows, because an agent is not a column on a task - it is reached
-    // through runsFor(), one query per task. So the agent list narrows with the
-    // project, and a filter that outlives its options is kept visible by the
-    // control rather than silently reading "all".
-    const uniqT = (xs: (string | null | undefined)[]) =>
-      [...new Set(xs.filter((x): x is string => !!x))].sort()
-    return {
-      rows: keep,
-      dropped,
-      unmappedStatuses: {
-        count: unmapped.length,
-        words: [...new Set(unmapped.map((row) => row.status!))].sort(),
-      },
-      filters: f,
-      matched: keep.length,
-      facets: {
-        projects: uniqT(all.map((r) => r.project)),
-        agents: uniqT(shaped.flatMap((r) => (r.runs || []).map((x) => x.agent))),
-        sources: sourceFacets(all),
-      },
-    }
+    return projectFlightDone({
+      name,
+      tasks: tasksInWindow(from, to),
+      completed: completedInWindow(from, to),
+      intervals: intervalsInWindow(from, to),
+      filters: { agent: f.agent, project: f.project, source: f.source ?? '' },
+      projects: projects(),
+      now: Date.now(),
+    })
   }
 
   if (name === 'ratio') {

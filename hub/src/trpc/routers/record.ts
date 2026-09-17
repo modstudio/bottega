@@ -1,5 +1,6 @@
 import { initTRPC, TRPCError } from '@trpc/server'
 import { z } from 'zod'
+import { hostedBoard, hostedFlightDone, hostedTaskDetail } from '../../hosted-work.ts'
 import { routingViewData } from '../../orch-transforms.ts'
 import { createRecordClient } from '../../record-client.ts'
 import { selectSnapshot } from '../../snapshot-selection.ts'
@@ -24,7 +25,36 @@ function recordClient(ctx: Context) {
   })
 }
 
+function recordDatabaseUrl() {
+  const value = process.env.HUB_RECORD_DATABASE_URL
+  if (!value)
+    throw new TRPCError({
+      code: 'INTERNAL_SERVER_ERROR',
+      message: 'HUB_RECORD_DATABASE_URL is required',
+    })
+  return value
+}
+
+async function hostedIdentity(ctx: Context) {
+  const client = recordClient(ctx)
+  const who = await client.whoami()
+  if (!who.activeSpaceId)
+    throw new TRPCError({
+      code: 'PRECONDITION_FAILED',
+      message: 'record session has no active space',
+    })
+  return { client, identity: { userId: who.user.id, spaceId: who.activeSpaceId } }
+}
+
 const machineInput = z.object({ machineId: z.string().uuid().optional() })
+const workInput = z.object({
+  hours: z.union([z.literal(24), z.literal(48), z.literal(168), z.literal(720)]),
+  filters: z.object({
+    agent: z.string().max(64),
+    project: z.string().max(64),
+    source: z.string().max(64),
+  }),
+})
 
 function requiredSnapshot<T extends { machineId: string; takenAt: string }>(
   items: T[],
@@ -76,6 +106,37 @@ export const recordRouter = t.router({
   docRevisions: t.procedure
     .input(z.object({ id: uuid }))
     .query(({ ctx, input }) => recordClient(ctx).docRevisions(input.id)),
+  flight: t.procedure.input(workInput).query(async ({ ctx, input }) => {
+    const { client, identity } = await hostedIdentity(ctx)
+    return hostedFlightDone(recordDatabaseUrl(), identity, {
+      ...input,
+      name: 'flight',
+      projects: await client.projects(),
+    })
+  }),
+  done: t.procedure.input(workInput).query(async ({ ctx, input }) => {
+    const { client, identity } = await hostedIdentity(ctx)
+    return hostedFlightDone(recordDatabaseUrl(), identity, {
+      ...input,
+      name: 'done',
+      projects: await client.projects(),
+    })
+  }),
+  board: t.procedure.input(workInput).query(async ({ ctx, input }) => {
+    const { client, identity } = await hostedIdentity(ctx)
+    return hostedBoard(recordDatabaseUrl(), identity, {
+      ...input,
+      projects: await client.projects(),
+    })
+  }),
+  task: t.procedure
+    .input(z.object({ key: z.string().min(1).max(64) }))
+    .query(async ({ ctx, input }) => {
+      const { identity } = await hostedIdentity(ctx)
+      const detail = await hostedTaskDetail(recordDatabaseUrl(), identity, input.key)
+      if (!detail) throw new TRPCError({ code: 'NOT_FOUND', message: `no task ${input.key}` })
+      return detail
+    }),
   routing: t.procedure.input(machineInput).query(async ({ ctx, input }) => {
     const snapshots = await recordClient(ctx).snapshots()
     const states = snapshots.items.filter((item) => item.kind === 'state')

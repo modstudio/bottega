@@ -58,7 +58,11 @@ export type HostedStatusEvent = {
   deleted_at: string | null
 }
 
-async function tenant<T>(url: string, identity: TaskIdentity, work: (tx: SQL) => Promise<T>) {
+export async function withHostedTenant<T>(
+  url: string,
+  identity: TaskIdentity,
+  work: (tx: SQL) => Promise<T>,
+) {
   const client = new SQL(url)
   try {
     return await client.begin(async (tx) => {
@@ -85,7 +89,7 @@ export async function listHostedTasks(
     cursor?: string
   },
 ) {
-  return tenant(url, identity, async (tx) => {
+  return withHostedTenant(url, identity, async (tx) => {
     const since = filters.updatedSince ?? filters.cursor ?? '1970-01-01T00:00:00.000Z'
     const tasks = rows<HostedTask>(
       await tx`
@@ -128,7 +132,7 @@ export async function listHostedTasks(
 }
 
 export async function getHostedTask(url: string, identity: TaskIdentity, key: string) {
-  return tenant(url, identity, async (tx) => {
+  return withHostedTenant(url, identity, async (tx) => {
     const task = rows<HostedTask>(
       await tx`
       SELECT * FROM hub_task WHERE space_id=${identity.spaceId}::uuid AND key=${key}
@@ -163,7 +167,7 @@ export async function createHostedTask(
     updated_at?: string
   },
 ) {
-  return tenant(url, identity, (tx) => createHostedTaskInTransaction(tx, identity, input))
+  return withHostedTenant(url, identity, (tx) => createHostedTaskInTransaction(tx, identity, input))
 }
 
 export async function createHostedTaskInTransaction(
@@ -221,7 +225,7 @@ export async function patchHostedTask(
     Pick<HostedTask, 'title' | 'status' | 'status_category' | 'parent_key' | 'body' | 'assignee'>
   >,
 ) {
-  return tenant(url, identity, async (tx) => {
+  return withHostedTenant(url, identity, async (tx) => {
     const current = rows<HostedTask>(
       await tx`SELECT * FROM hub_task
       WHERE space_id=${identity.spaceId}::uuid AND key=${key} AND deleted_at IS NULL FOR UPDATE`,
@@ -261,7 +265,7 @@ export async function addHostedComment(
   key: string,
   body: string,
 ) {
-  return tenant(url, identity, async (tx) => {
+  return withHostedTenant(url, identity, async (tx) => {
     const project = rows<{ project_name: string }>(
       await tx`SELECT project_name FROM hub_task
       WHERE space_id=${identity.spaceId}::uuid AND key=${key} AND deleted_at IS NULL`,
@@ -284,7 +288,7 @@ export async function createHostedDocument(
   key: string,
   input: { title: string; body?: string; role?: string | null; version: string },
 ) {
-  return tenant(url, identity, async (tx) => {
+  return withHostedTenant(url, identity, async (tx) => {
     const project = rows<{ project_name: string }>(
       await tx`SELECT project_name FROM hub_task
       WHERE space_id=${identity.spaceId}::uuid AND key=${key} AND deleted_at IS NULL`,
@@ -311,7 +315,7 @@ export async function patchHostedDocument(
     version: string
   },
 ) {
-  return tenant(url, identity, async (tx) => {
+  return withHostedTenant(url, identity, async (tx) => {
     const current = rows<HostedDocument>(
       await tx`SELECT * FROM hub_task_document WHERE
       space_id=${identity.spaceId}::uuid AND id=${id}::uuid AND deleted_at IS NULL FOR UPDATE`,
@@ -339,7 +343,7 @@ export async function softDeleteHostedDocuments(
   ids: string[],
   confirmation?: number,
 ) {
-  return tenant(url, identity, async (tx) => {
+  return withHostedTenant(url, identity, async (tx) => {
     const found = rows<{ id: string }>(
       await tx`SELECT id FROM hub_task_document WHERE
       space_id=${identity.spaceId}::uuid AND id IN ${tx(ids)} AND deleted_at IS NULL FOR UPDATE`,
@@ -367,7 +371,7 @@ export async function mirrorHostedTasks(url: string, identity: TaskIdentity, bod
     (body.documents?.length ?? 0) +
     (body.statusEvents?.length ?? 0)
   if (total > 500) throw new Error('mirror accepts at most 500 rows')
-  return tenant(url, identity, async (tx) => {
+  return withHostedTenant(url, identity, async (tx) => {
     for (const row of body.tasks)
       await tx`INSERT INTO hub_task
       (id,space_id,project_name,key,project,title,status,status_category,parent_key,body,assignee,
@@ -404,7 +408,7 @@ export async function mirrorHostedTasks(url: string, identity: TaskIdentity, bod
 }
 
 export async function hostedTaskCounts(url: string, identity: TaskIdentity) {
-  return tenant(url, identity, async (tx) => ({
+  return withHostedTenant(url, identity, async (tx) => ({
     task: rows<{ source: string; count: number }>(
       await tx`SELECT source,count(*)::int count FROM hub_task WHERE space_id=${identity.spaceId}::uuid AND deleted_at IS NULL GROUP BY source ORDER BY source`,
     ),

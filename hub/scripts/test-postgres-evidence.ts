@@ -29,6 +29,7 @@ import {
   patchHostedTask,
   softDeleteHostedDocuments,
 } from '../src/hosted-tasks.ts'
+import { hostedFlightDone, hostedTaskDetail } from '../src/hosted-work.ts'
 
 const adminUrl = process.env.ORCH_TEST_POSTGRES_URL
 const actorUrl = process.env.ORCH_RECORD_URL
@@ -155,6 +156,22 @@ try {
       throw new Error('soft-deleted document was visible in the default list')
     if (visible.statusEvents.length !== 1)
       throw new Error('status patch did not append exactly one event')
+    await upsertIntervals(actorUrl, identity, [
+      { ...interval, task_key: created.key, ref: 'orch:hosted-view-fixture' },
+    ])
+    const hostedDone = await hostedFlightDone(actorUrl, identity, {
+      name: 'done',
+      hours: 720,
+      filters: { agent: '', project: '', source: '' },
+      projects: [{ name: PLATFORM_SLUG, keyPrefixes: ['DEV'] }],
+    })
+    if (!hostedDone.data.rows.some((row) => row.key === created.key && row.runs.length === 1))
+      throw new Error('hosted done adapter did not return the seeded task and interval')
+    const detail = await hostedTaskDetail(actorUrl, identity, created.key)
+    if (detail?.statusHistory.length !== 1 || detail.intervals.length !== 1)
+      throw new Error('hosted task detail did not return status history and intervals')
+    if (await hostedTaskDetail(actorUrl, { userId: USER, spaceId: SPACE_B }, created.key))
+      throw new Error('another space observed hosted task detail')
     const other = await listHostedTasks(actorUrl, { userId: USER, spaceId: SPACE_B }, {})
     if (
       other.tasks.length ||

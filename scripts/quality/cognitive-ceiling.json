@@ -57,15 +57,9 @@
     "score": 37
   },
   {
-    "file": "hub/src/serve.ts",
-    "function": "view",
-    "line": 355,
-    "score": 20
-  },
-  {
     "file": "hub/web/src/components/task-sheet.tsx",
     "function": "TaskSheet",
-    "line": 76,
+    "line": 87,
     "score": 40,
     "key": "hub/web/src/components/task-sheet.tsx\u0000TaskSheet"
   },
@@ -256,12 +250,6 @@
     "key": "orchestrator/src/doc/doc-commands.ts\u0000docCommand"
   },
   {
-    "file": "orchestrator/src/docker-resources.ts",
-    "function": "teardownRunResources",
-    "line": 132,
-    "score": 17
-  },
-  {
     "file": "orchestrator/src/doc/docs.ts",
     "function": "listDocMetadata",
     "line": 191,
@@ -273,6 +261,12 @@
     "line": 808,
     "score": 18,
     "key": "orchestrator/src/doc/docs.ts\u0000importDocs"
+  },
+  {
+    "file": "orchestrator/src/docker-resources.ts",
+    "function": "teardownRunResources",
+    "line": 132,
+    "score": 17
   },
   {
     "file": "orchestrator/src/doctor.ts",

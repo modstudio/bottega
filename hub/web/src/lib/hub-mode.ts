@@ -84,6 +84,9 @@ const HOSTED_NAV: NavSection[] = [
   {
     id: 'work',
     entries: [
+      { to: '/flight', label: 'Flight', icon: Plane },
+      { to: '/board', label: 'Board', icon: Kanban },
+      { to: '/done', label: 'Done', icon: CheckCircle2 },
       { to: '/runs', label: 'Runs', icon: Play },
       { to: '/reviews', label: 'Reviews', icon: ScanSearch },
       { to: '/projects', label: 'Projects', icon: FolderGit2 },
@@ -115,6 +118,9 @@ export function isHostedPath(pathname: string) {
   const path = pathname.length > 1 && pathname.endsWith('/') ? pathname.slice(0, -1) : pathname
   if (
     path === '/sign-in' ||
+    path === '/flight' ||
+    path === '/board' ||
+    path === '/done' ||
     path === '/runs' ||
     path === '/reviews' ||
     path === '/projects' ||
@@ -127,6 +133,9 @@ export function isHostedPath(pathname: string) {
     return true
   }
   if (path.startsWith('/runs/')) return true
+  if (path.startsWith('/flight/tasks/')) return true
+  if (path.startsWith('/board/tasks/')) return true
+  if (path.startsWith('/done/tasks/')) return true
   if (path.startsWith('/reviews/')) return true
   if (path.startsWith('/docs/')) return true
   return false

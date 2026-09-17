@@ -6,13 +6,25 @@ const destinations = (mode: 'hosted' | 'local') =>
     section.entries.flatMap((entry) => ('items' in entry ? entry.items : [entry])),
   )
 
-test('hosted mode hides local routes', () => {
+test('hosted mode exposes only read-only hosted routes', () => {
   const hosted = destinations('hosted')
   expect(hosted.map((item) => item.to).sort()).toEqual(
-    ['/agents', '/docs', '/health', '/jobs', '/projects', '/reviews', '/routing', '/runs'].sort(),
+    [
+      '/agents',
+      '/board',
+      '/docs',
+      '/done',
+      '/flight',
+      '/health',
+      '/jobs',
+      '/projects',
+      '/reviews',
+      '/routing',
+      '/runs',
+    ].sort(),
   )
   for (const item of hosted) expect(isHostedPath(item.to)).toBe(true)
-  expect(hosted.map((item) => item.label)).not.toContain('Flight')
+  expect(hosted.map((item) => item.label)).toContain('Flight')
   expect(destinations('local').map((item) => item.to)).toContain('/flight')
   expect(isHostedPath('/runs')).toBe(true)
   expect(isHostedPath('/runs/01990000-0000-7000-8000-000000000001')).toBe(true)
@@ -25,7 +37,10 @@ test('hosted mode hides local routes', () => {
   expect(isHostedPath('/agents')).toBe(true)
   expect(isHostedPath('/routing')).toBe(true)
   expect(isHostedPath('/health')).toBe(true)
-  expect(isHostedPath('/flight')).toBe(false)
+  expect(isHostedPath('/flight')).toBe(true)
+  expect(isHostedPath('/flight/tasks/DEV-701')).toBe(true)
+  expect(isHostedPath('/board/tasks/DEV-701')).toBe(true)
+  expect(isHostedPath('/done/tasks/DEV-701')).toBe(true)
   expect(isHostedPath('/settings')).toBe(false)
   expect(isHostedPath('/projects/alpha')).toBe(false)
 })

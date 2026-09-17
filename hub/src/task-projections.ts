@@ -1,0 +1,322 @@
+import { DEFAULT_IDLE_CAP_MS, engagedMs, human, type Span } from '../../shared/interval.ts'
+import {
+  type Capabilities,
+  type TrackerProject,
+  type TrackerRowSource,
+  trackerCapabilities,
+} from '../../shared/trackers.ts'
+
+export type ProjectionProject = TrackerProject
+
+export type IntervalRow = {
+  task_key: string | null
+  project: string | null
+  source: string
+  agent: string | null
+  job: string | null
+  start_at: string
+  end_at: string
+  claude_tokens: number
+  vendor_tokens: number
+  vendor_cost_usd: number | null
+  open: number
+}
+
+export type WindowIntervalRow = IntervalRow & {
+  task_project: string | null
+  task_title: string | null
+  task_status: string | null
+  task_status_category: string | null
+  task_source: string | null
+  task_updated_at: string | null
+  task_closed_at: string | null
+}
+
+type AgentSpend = { agent: string; tokens: number; costUsd: number | null; runs: number }
+export type ProjectedTask = {
+  key: string | null
+  project: string | null
+  title: string | null
+  status: string | null
+  statusCategory: string | null
+  source: string | null
+  sourceProtocol: string | null
+  capabilities: Capabilities | null
+  engagedMs: number
+  claudeTokens: number
+  vendors: AgentSpend[]
+  activeAgents: string[]
+  workingNow: boolean
+  updatedAt: string | null
+  closedAt: string | null
+  intervals: number
+  lastAt: number
+}
+
+export const intervalEndMs = (row: { end_at: string; open: number }, now: number) =>
+  row.open ? Math.max(now, new Date(row.end_at).getTime()) : new Date(row.end_at).getTime()
+
+function foldVendors(rows: IntervalRow[]): AgentSpend[] {
+  const by = new Map<string, AgentSpend>()
+  for (const row of rows) {
+    if (row.source !== 'orch' || !row.agent) continue
+    const current = by.get(row.agent) ?? { agent: row.agent, tokens: 0, costUsd: null, runs: 0 }
+    current.tokens += row.vendor_tokens
+    current.runs += 1
+    if (row.vendor_cost_usd != null) current.costUsd = (current.costUsd ?? 0) + row.vendor_cost_usd
+    by.set(row.agent, current)
+  }
+  return [...by.values()].sort((a, b) => b.tokens - a.tokens)
+}
+
+export function projectTasksInWindow(
+  rows: WindowIntervalRow[],
+  projectRows: ProjectionProject[],
+  now: number,
+): ProjectedTask[] {
+  const groups = new Map<string, WindowIntervalRow[]>()
+  for (const row of rows) {
+    const id = row.task_key ?? `\0unattributed:${row.project ?? 'unknown'}`
+    groups.set(id, [...(groups.get(id) ?? []), row])
+  }
+  const project = (name: string | null) => projectRows.find((item) => item.name === name) ?? null
+  const output: ProjectedTask[] = []
+  for (const [id, list] of groups) {
+    const key = id.startsWith('\0') ? null : id
+    const first = list[0]!
+    const spans: Span[] = list.map((row) => ({
+      start: new Date(row.start_at).getTime(),
+      end: intervalEndMs(row, now),
+    }))
+    const projectName = first.task_project ?? first.project
+    const source = first.task_source ?? (key ? 'git' : null)
+    output.push({
+      key,
+      project: projectName,
+      title: first.task_title,
+      status: first.task_status,
+      statusCategory: first.task_status_category,
+      source,
+      sourceProtocol:
+        source === 'mcp' ? (project(projectName)?.settings.tracker?.protocol ?? null) : null,
+      capabilities: key
+        ? trackerCapabilities({ source: source as TrackerRowSource, project: project(projectName) })
+        : null,
+      engagedMs: engagedMs(spans),
+      claudeTokens: list.reduce((sum, row) => sum + row.claude_tokens, 0),
+      vendors: foldVendors(list),
+      activeAgents: [
+        ...new Set(list.filter((row) => row.agent && row.open).map((row) => row.agent!)),
+      ],
+      workingNow: list.some(
+        (row) => row.open || intervalEndMs(row, now) >= now - DEFAULT_IDLE_CAP_MS,
+      ),
+      updatedAt: first.task_updated_at,
+      closedAt: first.task_closed_at,
+      intervals: list.length,
+      lastAt: Math.max(...spans.map((span) => span.end)),
+    })
+  }
+  return output.sort((a, b) => b.lastAt - a.lastAt)
+}
+
+export type CompletedRow = {
+  key: string
+  project: string
+  title: string | null
+  at: string
+  to_status: string
+}
+
+export type TaskRun = {
+  agent: string | null
+  job: string | null
+  start: string
+  ms: number
+  running: boolean
+  tokens: number
+  costUsd: number | null
+}
+
+function projectRuns(rows: IntervalRow[], now: number): TaskRun[] {
+  return rows
+    .filter((row) => row.source === 'orch')
+    .map((row) => ({
+      agent: row.agent,
+      job: row.job,
+      start: row.start_at,
+      ms: intervalEndMs(row, now) - new Date(row.start_at).getTime(),
+      running: Boolean(row.open),
+      tokens: row.vendor_tokens,
+      costUsd: row.vendor_cost_usd,
+    }))
+    .sort((a, b) => Number(b.running) - Number(a.running) || b.start.localeCompare(a.start))
+}
+
+const sourceMatches = (row: { source: string | null; project: string | null }, source: string) =>
+  !source ||
+  (source === 'hub' ? row.source === 'local' : row.source !== 'local' && row.project === source)
+
+export function projectFlightDone(input: {
+  name: 'flight' | 'done'
+  tasks: ProjectedTask[]
+  completed: CompletedRow[]
+  intervals: IntervalRow[]
+  filters: { agent: string; project: string; source: string }
+  projects: ProjectionProject[]
+  now: number
+}) {
+  const all = input.tasks
+  const rows = all.filter(
+    (row) =>
+      (!input.filters.project || row.project === input.filters.project) &&
+      sourceMatches(row, input.filters.source),
+  )
+  const closed = new Set(input.completed.map((row) => row.key))
+  const inFlight = (row: ProjectedTask) =>
+    row.workingNow || ['active', 'review'].includes(row.statusCategory ?? '')
+  const wanted =
+    input.name === 'done'
+      ? rows.filter((row) => row.key && (closed.has(row.key) || row.statusCategory === 'done'))
+      : rows.filter(inFlight)
+  const unmapped = rows.filter(
+    (row) => row.source === 'mcp' && row.status && !row.statusCategory && !wanted.includes(row),
+  )
+  const dropped: { reason: string; tasks: number; engaged: string }[] = []
+  if (input.name === 'flight') {
+    const groups: [string, (row: ProjectedTask) => boolean][] = [
+      [
+        'no tracker reachable to say whether they are active',
+        (row) => !!row.key && !row.statusCategory && !(row.source === 'mcp' && row.status),
+      ],
+      [
+        'queued in their tracker: backlog, todo or unstarted',
+        (row) => row.statusCategory === 'open',
+      ],
+    ]
+    for (const [reason, match] of groups) {
+      const hit = rows.filter((row) => match(row) && !inFlight(row))
+      if (hit.length)
+        dropped.push({
+          reason,
+          tasks: hit.length,
+          engaged: human(hit.reduce((sum, row) => sum + row.engagedMs, 0)),
+        })
+    }
+  }
+  const shaped = wanted.map((row) => ({
+    ...row,
+    engaged: human(row.engagedMs),
+    runs: row.key
+      ? projectRuns(
+          input.intervals.filter((item) => item.task_key === row.key),
+          input.now,
+        )
+      : [],
+  }))
+  const kept = input.filters.agent
+    ? shaped.filter((row) => row.runs.some((run) => run.agent === input.filters.agent))
+    : shaped
+  const strings = (values: (string | null | undefined)[]) =>
+    [...new Set(values.filter((value): value is string => Boolean(value)))].sort()
+  const sources = strings([
+    'hub',
+    ...input.projects.filter((item) => item.settings.tracker).map((item) => item.name),
+    ...all.filter((row) => row.source !== 'local').map((row) => row.project),
+  ])
+  return {
+    rows: kept,
+    dropped,
+    unmappedStatuses: { count: unmapped.length, words: strings(unmapped.map((row) => row.status)) },
+    filters: input.filters,
+    matched: kept.length,
+    facets: {
+      projects: strings(all.map((row) => row.project)),
+      agents: strings(shaped.flatMap((row) => row.runs.map((run) => run.agent))),
+      sources,
+    },
+  }
+}
+
+export type BoardSourceRow = {
+  key: string
+  project: string | null
+  title: string | null
+  assignee: string | null
+  status: string | null
+  status_category: string | null
+  source: string
+  updated_at: string | null
+  last_seen: string
+}
+
+export function projectBoardCards(
+  rows: BoardSourceRow[],
+  liveKeys: string[],
+  projectRows: ProjectionProject[],
+) {
+  const live = new Set(liveKeys)
+  return rows.map((row) => {
+    const project = projectRows.find((item) => item.name === row.project) ?? null
+    return {
+      key: row.key,
+      project: row.project,
+      title: row.title,
+      assignee: row.assignee,
+      status: row.status,
+      statusCategory: row.status_category,
+      source: row.source,
+      sourceProtocol: row.source === 'mcp' ? (project?.settings.tracker?.protocol ?? null) : null,
+      capabilities: trackerCapabilities({ source: row.source as TrackerRowSource, project }),
+      updatedAt: row.updated_at ?? row.last_seen,
+      workingNow: live.has(row.key),
+    }
+  })
+}
+
+export function projectBoard(input: {
+  rows: BoardSourceRow[]
+  recentKeys: string[]
+  liveKeys: string[]
+  projects: ProjectionProject[]
+  cap: number
+}) {
+  const recent = new Set(input.recentKeys)
+  const eligible = input.rows.filter(
+    (row) =>
+      ['active', 'review'].includes(row.status_category ?? '') ||
+      recent.has(row.key) ||
+      (row.source === 'local' && !['done', 'dropped'].includes(row.status_category ?? '')),
+  )
+  const count = (bucket: (row: BoardSourceRow) => string) =>
+    eligible.reduce<Record<string, number>>((out, row) => {
+      const key = bucket(row)
+      out[key] = (out[key] ?? 0) + 1
+      return out
+    }, {})
+  const rank = (status: string | null) =>
+    status === 'active'
+      ? 0
+      : status === 'review'
+        ? 1
+        : status === 'done'
+          ? 3
+          : status === 'dropped'
+            ? 4
+            : 2
+  const rows = [...eligible]
+    .sort(
+      (a, b) =>
+        rank(a.status_category) - rank(b.status_category) ||
+        (b.updated_at ?? b.last_seen).localeCompare(a.updated_at ?? a.last_seen),
+    )
+    .slice(0, input.cap)
+  return {
+    cards: projectBoardCards(rows, input.liveKeys, input.projects),
+    totals: {
+      status: count((row) => row.status_category ?? 'unknown'),
+      project: count((row) => row.project ?? 'elsewhere'),
+    },
+    cap: input.cap,
+  }
+}
