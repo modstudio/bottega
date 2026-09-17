@@ -3,6 +3,7 @@ import {
   cloneElement,
   type KeyboardEvent,
   type ReactElement,
+  type ReactNode,
   type ToggleEvent,
   useRef,
   useState,
@@ -37,9 +38,12 @@ export function Menu({
   items,
   side = 'bottom',
   align = 'start',
+  header,
 }: {
   trigger: ReactElement<TriggerProps>
   items: readonly MenuItem[]
+  /** Context above the items, such as who is signed in. Not interactive. */
+  header?: ReactNode
   side?: Side
   align?: Align
 }) {
@@ -106,6 +110,9 @@ export function Menu({
         }}
         className={classes(placementClasses(side, align), panelClasses, 'min-w-44 py-1')}
       >
+        {header ? (
+          <div className="mb-1 border-border-subtle border-b px-3 pt-1.5 pb-2">{header}</div>
+        ) : null}
         {items.map((item) => {
           const Icon = item.icon
           return (

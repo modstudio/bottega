@@ -1,4 +1,4 @@
-import { Menu as MenuIcon, PanelLeftClose, PanelLeftOpen, X } from 'lucide-react'
+import { ChevronRight, Menu as MenuIcon, PanelLeftClose, PanelLeftOpen, X } from 'lucide-react'
 import {
   type ComponentType,
   type ReactElement,
@@ -10,17 +10,28 @@ import {
 import { IconButton } from '../button/button'
 import { useMediaQuery } from '../dom/use-media-query'
 import { useStoredState } from '../dom/use-stored-state'
+import { Popover } from '../popover/popover'
 import { classes } from '../text/classes'
+
+type Icon = ComponentType<{ className?: string; 'aria-hidden'?: boolean }>
 
 export type NavItem = {
   to: string
   label: string
-  icon: ComponentType<{ className?: string; 'aria-hidden'?: boolean }>
-  /** Items with the same group sit together; a hairline separates groups. */
-  group: string
+  icon: Icon
   count?: number
   live?: boolean
 }
+
+/** Pages visited less often, behind one rail entry that opens them beside the rail. */
+export type NavGroup = { label: string; icon: Icon; items: readonly NavItem[] }
+
+export type NavEntry = NavItem | NavGroup
+
+/** Entries in one section sit together; a hairline separates sections. */
+export type NavSection = { id: string; entries: readonly NavEntry[] }
+
+const isGroup = (entry: NavEntry): entry is NavGroup => 'items' in entry
 
 /** Renders one navigation link; the router marks the current one `data-status="active"`. */
 export type RenderLink = (
@@ -30,34 +41,23 @@ export type RenderLink = (
 
 const MOBILE_QUERY = '(max-width: 767px)'
 
+// The inline padding centres an 18px icon in the collapsed rail, so labels open
+// beside icons that never move.
 const linkBase =
-  'relative flex h-10 items-center gap-3 px-3 text-text-secondary outline-none transition-colors hover:bg-control-hover hover:text-text-primary focus-visible:bg-control-hover data-[status=active]:bg-control-selected data-[status=active]:text-text-primary [&_svg]:size-[18px] [&_svg]:shrink-0'
+  'relative flex h-10 items-center gap-3 border border-transparent px-[1.0625rem] text-text-secondary outline-none transition-colors hover:bg-control-hover hover:text-text-primary focus-visible:bg-control-hover data-[status=active]:border-border-default data-[status=active]:bg-surface-sunken data-[status=active]:text-text-primary [&_svg]:size-[18px] [&_svg]:shrink-0 [&_svg]:stroke-[1.5]'
 
-function groups(items: readonly NavItem[]) {
-  const out: NavItem[][] = []
-  for (const item of items) {
-    const last = out.at(-1)
-    if (last && last[0]!.group === item.group) last.push(item)
-    else out.push([item])
-  }
-  return out
-}
-
-function Marks({ item, labelled }: { item: NavItem; labelled: boolean }) {
+function Marks({ item, labelClass }: { item: NavItem; labelClass: string }) {
   return (
     <>
       {item.live ? (
         <span
           aria-hidden
           data-tone="success"
-          className={classes(
-            'size-1.5 shrink-0 rounded-full bg-status-fill',
-            labelled ? '' : 'absolute top-2 right-2',
-          )}
+          className="absolute top-2 left-9 size-1.5 shrink-0 rounded-full bg-status-fill"
         />
       ) : null}
-      {labelled && item.count ? (
-        <span className="ml-auto text-sm text-text-muted tabular-nums">
+      {item.count ? (
+        <span className={classes(labelClass, 'ml-auto text-sm text-text-muted tabular-nums')}>
           {item.count.toLocaleString()}
         </span>
       ) : null}
@@ -65,51 +65,114 @@ function Marks({ item, labelled }: { item: NavItem; labelled: boolean }) {
   )
 }
 
+function ItemContent({ item, labelClass }: { item: NavItem; labelClass: string }) {
+  const Icon = item.icon
+  return (
+    <>
+      <Icon aria-hidden />
+      <span className={labelClass}>{item.label}</span>
+      <Marks item={item} labelClass={labelClass} />
+    </>
+  )
+}
+
+function GroupEntry({
+  group,
+  renderLink,
+  labelClass,
+  active,
+}: {
+  group: NavGroup
+  renderLink: RenderLink
+  labelClass: string
+  active: boolean
+}) {
+  const Icon = group.icon
+  const panel = useRef<HTMLDivElement>(null)
+  return (
+    <Popover
+      ref={panel}
+      label={group.label}
+      side="right"
+      trigger={
+        <button
+          type="button"
+          data-status={active ? 'active' : undefined}
+          className={classes(linkBase, 'w-full')}
+        >
+          <Icon aria-hidden />
+          <span className={classes(labelClass, 'flex-1 text-left')}>{group.label}</span>
+          <ChevronRight aria-hidden className={classes(labelClass, 'ml-auto !size-3.5')} />
+        </button>
+      }
+    >
+      <div className="-m-3 flex min-w-48 flex-col gap-px p-1">
+        <div className="px-3 pt-2 pb-1 font-medium text-sm text-text-muted">{group.label}</div>
+        {group.items.map((item) => (
+          <div key={item.to}>
+            {renderLink(item, {
+              className: linkBase,
+              onClick: () => panel.current?.hidePopover(),
+              children: <ItemContent item={item} labelClass="truncate" />,
+            })}
+          </div>
+        ))}
+      </div>
+    </Popover>
+  )
+}
+
 function NavList({
-  items,
+  sections,
   renderLink,
   labelled,
+  isActive,
   onNavigate,
 }: {
-  items: readonly NavItem[]
+  sections: readonly NavSection[]
   renderLink: RenderLink
-  labelled: boolean | 'hover'
+  /** `hover`: labels exist but show only while the rail is open. `full`: groups unfold in place. */
+  labelled: 'hover' | 'always' | 'full'
+  isActive: (to: string) => boolean
   onNavigate?: () => void
 }) {
-  // With `hover`, labels exist for every width but only show while the rail is open.
   const labelClass =
     labelled === 'hover'
       ? 'truncate opacity-0 transition-opacity duration-(--duration-fast) group-hover/rail:opacity-100 group-focus-within/rail:opacity-100'
       : 'truncate'
+  const link = (item: NavItem) => (
+    <div key={item.to}>
+      {renderLink(item, {
+        className: linkBase,
+        onClick: onNavigate,
+        children: <ItemContent item={item} labelClass={labelClass} />,
+      })}
+    </div>
+  )
   return (
-    <nav aria-label="Main" className="flex flex-col py-2">
-      {groups(items).map((group, index) => (
-        <div
-          key={group[0]!.group}
-          className={classes(
-            'flex flex-col gap-px px-2 py-1',
-            index > 0 && 'border-border-subtle border-t',
-          )}
-        >
-          {group.map((item) => {
-            const Icon = item.icon
-            return (
-              <div key={item.to}>
-                {renderLink(item, {
-                  className: linkBase,
-                  onClick: onNavigate,
-                  children: (
-                    <>
-                      <Icon aria-hidden />
-                      {labelled ? <span className={labelClass}>{item.label}</span> : null}
-                      <Marks item={item} labelled={Boolean(labelled)} />
-                      {labelled ? null : <span className="sr-only">{item.label}</span>}
-                    </>
-                  ),
-                })}
+    <nav aria-label="Main" className="flex flex-col py-3">
+      {sections.map((section, index) => (
+        <div key={section.id} className={classes('flex flex-col gap-1 px-2', index > 0 && 'mt-4')}>
+          {section.entries.map((entry) =>
+            !isGroup(entry) ? (
+              link(entry)
+            ) : labelled === 'full' ? (
+              <div key={entry.label} className="flex flex-col gap-px">
+                <div className="px-3 pt-2 pb-1 font-medium text-sm text-text-muted">
+                  {entry.label}
+                </div>
+                {entry.items.map(link)}
               </div>
-            )
-          })}
+            ) : (
+              <GroupEntry
+                key={entry.label}
+                group={entry}
+                renderLink={renderLink}
+                labelClass={labelClass}
+                active={entry.items.some((item) => isActive(item.to))}
+              />
+            ),
+          )}
         </div>
       ))}
     </nav>
@@ -120,15 +183,17 @@ function MobileMenu({
   open,
   onClose,
   brand,
-  items,
+  sections,
   renderLink,
+  isActive,
   footer,
 }: {
   open: boolean
   onClose: () => void
   brand: ReactNode
-  items: readonly NavItem[]
+  sections: readonly NavSection[]
   renderLink: RenderLink
+  isActive: (to: string) => boolean
   footer?: ReactNode
 }) {
   const ref = useRef<HTMLDialogElement>(null)
@@ -152,7 +217,13 @@ function MobileMenu({
           </IconButton>
         </div>
         <div className="min-h-0 flex-1 overflow-y-auto">
-          <NavList items={items} renderLink={renderLink} labelled onNavigate={onClose} />
+          <NavList
+            sections={sections}
+            renderLink={renderLink}
+            labelled="full"
+            isActive={isActive}
+            onNavigate={onClose}
+          />
         </div>
         {footer ? <div className="border-border-default border-t p-4">{footer}</div> : null}
       </div>
@@ -171,6 +242,7 @@ export function AppShell({
   mark,
   nav,
   renderLink,
+  isActive,
   topbar,
   railFooter,
   collapsed = false,
@@ -181,8 +253,10 @@ export function AppShell({
   name: string
   /** The product mark, shown alone in the collapsed rail. */
   mark: ReactNode
-  nav: readonly NavItem[]
+  nav: readonly NavSection[]
   renderLink: RenderLink
+  /** Whether a destination is the current page, for marking its group. */
+  isActive: (to: string) => boolean
   /** Controls on the right of the top bar. */
   topbar?: ReactNode
   /** Controls at the foot of the rail and the mobile menu. */
@@ -237,7 +311,12 @@ export function AppShell({
               </span>
             </div>
             <div className="min-h-0 flex-1 overflow-y-auto overflow-x-hidden">
-              <NavList items={nav} renderLink={renderLink} labelled={pinned ? true : 'hover'} />
+              <NavList
+                sections={nav}
+                renderLink={renderLink}
+                labelled={pinned ? 'always' : 'hover'}
+                isActive={isActive}
+              />
             </div>
             <div className="flex flex-col gap-2 border-border-default border-t p-2">
               {railFooter}
@@ -272,8 +351,9 @@ export function AppShell({
           open={menuOpen}
           onClose={() => setMenuOpen(false)}
           brand={brand}
-          items={nav}
+          sections={nav}
           renderLink={renderLink}
+          isActive={isActive}
           footer={railFooter}
         />
       ) : null}

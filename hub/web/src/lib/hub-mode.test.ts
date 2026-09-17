@@ -1,21 +1,19 @@
 import { expect, test } from 'bun:test'
 import { isHostedPath, navForMode } from './hub-mode.ts'
 
+const destinations = (mode: 'hosted' | 'local') =>
+  navForMode(mode).flatMap((section) =>
+    section.entries.flatMap((entry) => ('items' in entry ? entry.items : [entry])),
+  )
+
 test('hosted mode hides local routes', () => {
-  const hosted = navForMode('hosted')
-  expect(hosted.map((item) => item.to)).toEqual([
-    '/runs',
-    '/reviews',
-    '/projects',
-    '/docs',
-    '/jobs',
-    '/agents',
-    '/routing',
-    '/health',
-  ])
+  const hosted = destinations('hosted')
+  expect(hosted.map((item) => item.to).sort()).toEqual(
+    ['/agents', '/docs', '/health', '/jobs', '/projects', '/reviews', '/routing', '/runs'].sort(),
+  )
+  for (const item of hosted) expect(isHostedPath(item.to)).toBe(true)
   expect(hosted.map((item) => item.label)).not.toContain('Flight')
-  expect(hosted.map((item) => item.label)).not.toContain('Settings')
-  expect(navForMode('local').map((item) => item.to)).toContain('/flight')
+  expect(destinations('local').map((item) => item.to)).toContain('/flight')
   expect(isHostedPath('/runs')).toBe(true)
   expect(isHostedPath('/runs/01990000-0000-7000-8000-000000000001')).toBe(true)
   expect(isHostedPath('/reviews')).toBe(true)

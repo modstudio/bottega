@@ -7,15 +7,12 @@ import {
   redirect,
   useRouterState,
 } from '@tanstack/react-router'
-import { LogOut } from 'lucide-react'
 import { signOutFromRecord } from '@/lib/hosted-auth'
 import { isHostedMode, isHostedPath, navForMode } from '@/lib/hub-mode'
 import { useWindowState } from '@/lib/window'
 import { trpc } from '@/trpc/client'
-import { IconButton } from '@/ui/button/button'
-import { AppShell, type NavItem, type RenderLink } from '@/ui/shell/app-shell'
-import { ThemeToggle } from '@/ui/shell/theme-toggle'
-import { Tooltip } from '@/ui/tooltip/tooltip'
+import { AppShell, type NavItem, type NavSection, type RenderLink } from '@/ui/shell/app-shell'
+import { UserMenu } from '@/ui/shell/user-menu'
 import { PLATFORM_NAME } from '../../../../shared/brand.ts'
 
 const THEME_KEY = 'hub:theme'
@@ -47,17 +44,25 @@ export const Route = createRootRoute({
       enabled: hosted && pathname !== '/sign-in',
       retry: false,
     })
-    const nav: NavItem[] = navForMode(hosted ? 'hosted' : 'local').map((item) => {
-      const counted = 'count' in item ? counts?.[item.count] : undefined
-      return {
-        to: item.to,
-        label: item.label,
-        icon: item.icon,
-        group: item.group,
-        count: counted || undefined,
-        live: item.to === '/flight' && Boolean(counts?.flight),
-      }
+    const withCounts = (item: {
+      to: string
+      label: string
+      icon: NavItem['icon']
+      count?: 'flight' | 'done' | 'runs'
+    }): NavItem => ({
+      to: item.to,
+      label: item.label,
+      icon: item.icon,
+      count: (item.count && counts?.[item.count]) || undefined,
+      live: item.to === '/flight' && Boolean(counts?.flight),
     })
+    const nav: NavSection[] = navForMode(hosted ? 'hosted' : 'local').map((section) => ({
+      id: section.id,
+      entries: section.entries.map((entry) =>
+        'items' in entry ? { ...entry, items: entry.items.map(withCounts) } : withCounts(entry),
+      ),
+    }))
+    const isActive = (to: string) => pathname === to || pathname.startsWith(`${to}/`)
     const signOut = async () => {
       await signOutFromRecord()
       window.location.assign('/sign-in')
@@ -70,18 +75,15 @@ export const Route = createRootRoute({
         mark={mark}
         nav={nav}
         renderLink={renderLink}
+        isActive={isActive}
         storageKey={RAIL_KEY}
-        topbar={
-          <>
-            <ThemeToggle storageKey={THEME_KEY} />
-            {hosted && pathname !== '/sign-in' ? (
-              <Tooltip label={email ? `Sign out ${email}` : 'Sign out'}>
-                <IconButton label="Sign out" onClick={() => void signOut()}>
-                  <LogOut />
-                </IconButton>
-              </Tooltip>
-            ) : null}
-          </>
+        railFooter={
+          <UserMenu
+            name={hosted ? (email ?? 'Signed in') : 'Local'}
+            detail={hosted ? 'Hosted hub' : 'This machine'}
+            themeKey={THEME_KEY}
+            onSignOut={hosted && pathname !== '/sign-in' ? () => void signOut() : undefined}
+          />
         }
       >
         <div className="mx-auto max-w-[90rem]">
