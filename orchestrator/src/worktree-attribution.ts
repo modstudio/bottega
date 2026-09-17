@@ -162,14 +162,29 @@ export function orphanSafety(path: string, repoRoot: string, _trunk: string): Or
   return { removable: true, branch, detail: 'committed work is retained by its branch' }
 }
 
-/** The one retention fact a checkout can hold that its branch cannot. */
-export function worktreeDirty(path: string): { dirty: boolean; detail: string } {
-  const status = gitOk(['status', '--porcelain', '--untracked-files=all'], path)
-  if (status === null)
-    return { dirty: true, detail: 'could not inspect uncommitted or untracked work' }
-  return status
+/** Classify git-status exit, stdout and stderr without running git. */
+export function classifyWorktreeDirty(
+  exitCode: number,
+  stdout: string,
+  stderr: string,
+): { dirty: boolean; detail: string } {
+  const err = stderr.trim()
+  if (exitCode !== 0 || err) {
+    const firstLine = err.split(/\r?\n/, 1)[0] ?? ''
+    return {
+      dirty: true,
+      detail: `could not inspect uncommitted or untracked work: ${firstLine}`,
+    }
+  }
+  return stdout.trim()
     ? { dirty: true, detail: 'has uncommitted or untracked changes' }
     : { dirty: false, detail: 'all work is committed' }
+}
+
+/** The one retention fact a checkout can hold that its branch cannot. */
+export function worktreeDirty(path: string): { dirty: boolean; detail: string } {
+  const status = gitResult(['status', '--porcelain', '--untracked-files=all'], path)
+  return classifyWorktreeDirty(status.ok ? 0 : 1, status.stdout, status.stderr)
 }
 
 export type WorktreeExtraction = {
