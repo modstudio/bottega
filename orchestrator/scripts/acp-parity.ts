@@ -12,6 +12,7 @@
 import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
+import { PLATFORM_SLUG } from '../../shared/brand.ts'
 import { AGENTS } from '../src/agent-registry.ts'
 import { db, ROOT } from '../src/db.ts'
 import { run } from '../src/run.ts'
@@ -39,6 +40,7 @@ type CaseSpec = {
 }
 
 export const ACP_PARITY_REPOSITORY_ROOT = resolve(import.meta.dir, '../..')
+const ORCHESTRATOR_PACKAGE_NAME = `@${PLATFORM_SLUG}/orchestrator`
 
 const parsedJson = (reply: SemanticReply): unknown => {
   try {
@@ -64,7 +66,7 @@ const CASES: CaseSpec[] = [
   {
     id: 'tool-read',
     prompt: 'Read orchestrator/package.json and quote the JSON "name" field in one line.',
-    expected: (reply) => (reply.parsed?.text ?? reply.output).includes('@bottega/orchestrator'),
+    expected: (reply) => (reply.parsed?.text ?? reply.output).includes(ORCHESTRATOR_PACKAGE_NAME),
   },
   {
     id: 'schema',
