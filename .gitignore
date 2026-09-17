@@ -26,8 +26,6 @@ ops/logs/
 !.claude/skills/port-feature/SKILL.md
 
 # Bun installs workspace dependencies locally from the tracked root lockfile.
-orchestrator/node_modules
-orchestrator/bun.lock
 orchestrator/spawn-fallback.log
 orchestrator/orch.db.backup-*
 
@@ -44,11 +42,7 @@ hub.db-wal
 # ignored a few lines up - the pair had drifted.
 hub/hub.db.backup-*
 hub/.serve/
-hub/node_modules
-hub/bun.lock
 hub/web/dist/
-hub/web/node_modules
-hub/web/bun.lock
 
 # Screenshots and page snapshots taken while checking the dashboard by eye.
 # Working material, not the deliverable.

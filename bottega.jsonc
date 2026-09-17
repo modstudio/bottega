@@ -3,15 +3,7 @@
   "worktree": {
     "allocate": { "ports": ["hub"] },
     "create": [
-      { "name": "root-deps", "run": { "command": "bun", "args": ["install", "--silent"] } },
-      {
-        "name": "orchestrator-deps",
-        "run": { "command": "bun", "args": ["install", "--silent"], "cwd": "orchestrator" }
-      },
-      {
-        "name": "hub-deps",
-        "run": { "command": "bun", "args": ["install", "--silent"], "cwd": "hub" }
-      }
+      { "name": "root-deps", "run": { "command": "bun", "args": ["install", "--silent"] } }
     ],
     "serve": {
       "default": [
