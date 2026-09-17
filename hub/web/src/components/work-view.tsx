@@ -1,8 +1,8 @@
 import { keepPreviousData, useQuery } from '@tanstack/react-query'
 import { Link, useNavigate } from '@tanstack/react-router'
-import { ChevronRight } from 'lucide-react'
+import { ArrowDown, ArrowUp, ChevronRight } from 'lucide-react'
 import { useEffect, useMemo, useState } from 'react'
-import { Collection, type CollectionColumn } from '@/components/collection'
+import { Collection, type CollectionChildRow, type CollectionColumn } from '@/components/collection'
 import {
   EmptyState,
   LiveDot,
@@ -136,30 +136,20 @@ const columns = [
 
 type Sort = { col: (typeof columns)[number]['id']; dir: 1 | -1 }
 
-function RunLine({ run, now }: { run: Run; now: number }) {
-  return (
-    <div className="ml-6 grid grid-cols-[8rem_minmax(8rem,1fr)_6rem_5rem_7rem] gap-3 px-3 py-1 text-muted-foreground">
-      <span>{run.agent ?? '-'}</span>
-      <span>{run.job || ''}</span>
-      <span className="text-right">
-        {formatMs(run.running ? now - new Date(run.start).getTime() : run.ms)}
-      </span>
-      <span className={run.running ? 'inline-flex items-center gap-2 text-live' : ''}>
-        {run.running ? (
-          <>
-            <LiveDot />
-            running
-          </>
-        ) : (
-          'done'
-        )}
-      </span>
-      <span className="text-right">
-        {compact(run.tokens)}
-        {run.costUsd != null ? ` $${run.costUsd.toFixed(2)}` : ''}
-      </span>
-    </div>
-  )
+function runCells(run: Run, now: number): CollectionChildRow['cells'] {
+  return {
+    task: <span className="pl-4">{run.agent ?? '-'}</span>,
+    title: run.job || '',
+    status: run.running ? (
+      <Badge tone="progress" dot>
+        Running
+      </Badge>
+    ) : (
+      <Badge icon={false}>Done</Badge>
+    ),
+    engaged: formatMs(run.running ? now - new Date(run.start).getTime() : run.ms),
+    vendor: `${compact(run.tokens)}${run.costUsd != null ? ` $${run.costUsd.toFixed(2)}` : ''}`,
+  }
 }
 
 function TaskTable({
@@ -191,12 +181,29 @@ function TaskTable({
   const collectionColumns: CollectionColumn<TaskRow>[] = columns.slice(0, -1).map((column) => ({
     id: column.id,
     label: (
-      <button type="button" onClick={() => changeSort(column.id)}>
+      <button
+        type="button"
+        className="inline-flex items-center gap-1 whitespace-nowrap"
+        onClick={() => changeSort(column.id)}
+      >
         {column.label}
-        {sort.col === column.id ? (sort.dir < 0 ? ' v' : ' ^') : ''}
+        {sort.col === column.id ? (
+          sort.dir < 0 ? (
+            <ArrowDown size={12} aria-label="descending" />
+          ) : (
+            <ArrowUp size={12} aria-label="ascending" />
+          )
+        ) : null}
       </button>
     ),
-    className: `px-3 py-2 ${column.numeric ? 'text-right' : ''}`,
+    priority: column.id === 'claude' || column.id === 'vendor' ? ('low' as const) : undefined,
+    className: `px-3 py-2 ${
+      column.numeric
+        ? 'whitespace-nowrap text-right tabular-nums'
+        : column.id === 'title'
+          ? 'w-full max-w-0'
+          : 'whitespace-nowrap'
+    }`,
     render: (row) =>
       column.id === 'project' ? (
         <span className="inline-flex items-center gap-2">
@@ -208,7 +215,11 @@ function TaskTable({
           <Identifier>{row.key}</Identifier>
         ) : null
       ) : column.id === 'title' ? (
-        row.title || (
+        row.title ? (
+          <span className="block truncate" title={row.title}>
+            {row.title}
+          </span>
+        ) : (
           <span className="text-muted-foreground">
             {row.source === 'git'
               ? 'title not known, derived from commits'
@@ -274,16 +285,13 @@ function TaskTable({
           '-'
         )
       }}
-      renderExpanded={(row) => {
+      childRows={(row) => {
         const runs = row.runs ?? []
         const visible = row.key && opened.has(row.key) ? runs : runs.filter((run) => run.running)
-        return visible.length ? (
-          <div className="bg-muted/20 px-5 py-1">
-            {visible.map((run) => (
-              <RunLine key={`${run.start}:${run.agent}:${run.job}`} run={run} now={now} />
-            ))}
-          </div>
-        ) : null
+        return visible.map((run) => ({
+          key: `${run.start}:${run.agent}:${run.job}`,
+          cells: runCells(run, now),
+        }))
       }}
       empty={{ title: 'No tasks.' }}
     />
