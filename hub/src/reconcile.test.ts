@@ -2,7 +2,9 @@ import { beforeAll, describe, expect, spyOn, test } from 'bun:test'
 import { resetFixtureStore } from '../test/run-fixtures.ts'
 
 const { db, writeTransaction } = await import('./db.ts')
-const { reconcileOpenIntervals } = await import('./reconcile.ts')
+const { indexRunAnswers, reconcileOpenIntervals, runRef, statusFor } = await import(
+  './reconcile.ts'
+)
 
 beforeAll(resetFixtureStore)
 
@@ -82,6 +84,50 @@ function runLine(row: object): string {
   })
 }
 
+function statusOf(
+  ref: string,
+  answers: Parameters<typeof indexRunAnswers>[0],
+): string | null {
+  const parsed = runRef(ref)
+  expect(parsed).not.toBeNull()
+  return statusFor(indexRunAnswers(answers).get(parsed!.root), parsed!.turn)
+}
+
+function chain(row: {
+  id: number
+  status: string
+  requested_id?: number
+  resolved_from?: string
+  turns: { id: number; status: string }[]
+}): Parameters<typeof indexRunAnswers>[0][number] {
+  return {
+    id: row.id,
+    started_at: '2026-09-03T00:00:00.000Z',
+    agent: 'codex',
+    job: 'implement',
+    repo: null,
+    cwd: null,
+    session_id: null,
+    latency_ms: null,
+    vendor_tokens: null,
+    vendor_cost_usd: null,
+    prompt_head: '',
+    questions: [],
+    probe: 0,
+    status: row.status,
+    turns: row.turns.map((turn) => ({
+      id: turn.id,
+      started_at: '2026-09-03T00:00:00.000Z',
+      latency_ms: null,
+      vendor_tokens: null,
+      vendor_cost_usd: null,
+      status: turn.status,
+    })),
+    requested_id: row.requested_id,
+    resolved_from: row.resolved_from,
+  } as Parameters<typeof indexRunAnswers>[0][number]
+}
+
 describe('open interval reconciliation', () => {
   test('dry-run reports terminal, live, and unknown rows without writing', async () => {
     add(1, 'orch:1205', '2026-09-03T00:00:01.000Z')
@@ -151,5 +197,39 @@ describe('open interval reconciliation', () => {
     } finally {
       secondSpawn.mockRestore()
     }
+  })
+
+  test('bare turn ref resolves to the turn status (mutation: index answers only by id)', () => {
+    expect(
+      statusOf('orch:2072', [
+        chain({
+          id: 2032,
+          status: 'ok',
+          requested_id: 2072,
+          resolved_from: 'turn',
+          turns: [
+            { id: 2032, status: 'ok' },
+            { id: 2072, status: 'delivered' },
+          ],
+        }),
+      ]),
+    ).toBe('delivered')
+  })
+
+  test('bare root ref still resolves to the root status (mutation: read a turn when resolved_from is not turn)', () => {
+    expect(
+      statusOf('orch:2032', [
+        chain({
+          id: 2032,
+          status: 'ok',
+          requested_id: 2032,
+          resolved_from: 'root',
+          turns: [
+            { id: 2032, status: 'failed' },
+            { id: 2072, status: 'delivered' },
+          ],
+        }),
+      ]),
+    ).toBe('ok')
   })
 })
