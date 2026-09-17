@@ -19,12 +19,7 @@ import {
 } from '../contract/contract.ts'
 import { db, nowIso } from '../database/db.ts'
 import { appendRunEvent, teeTransportEvents } from '../events.ts'
-import {
-  classify,
-  FAILS_OVER,
-  hasVendorTerminationMarker,
-  isNonAnswer,
-} from '../failure/failure.ts'
+import { type classify, hasVendorTerminationMarker } from '../failure/failure.ts'
 import {
   contentTree,
   gitContext,
@@ -40,15 +35,14 @@ import {
   terminateProcessGroup,
 } from '../idle-kill.ts'
 import { type Job, jobIdleKillMs } from '../jobs/jobs.ts'
+import { deriveLiveOutcome } from '../live-outcome.ts'
 import { receiptWorkerMessages, unreadWorkerMessages } from '../mailbox/mailbox.ts'
 import { decideOutcome } from '../outcome.ts'
 import { processStartTime } from '../project/project-lock.ts'
 import type { CodexMcpServer } from '../sandbox/codex-mcp-scope.ts'
 import type { SandboxSelection } from '../sandbox/sandbox.ts'
 import {
-  failureKindFromStop,
   schemaMismatchError,
-  stopErrorMessage,
   type TransportName,
   type TransportResult,
   type TransportStartOpts,
@@ -655,70 +649,49 @@ export async function runLive(input: LiveInput): Promise<LiveResult> {
     const questionsControlStatus = isAsking(contract) || contract?.status === 'done'
     acceptedQuestions = questionsControlStatus ? realQuestions(contract) : transportQuestions
 
-    const completedReplyAtTimeout =
-      contract?.status === 'done' || (!writesJob && !replyError && !!output && !isNonAnswer(output))
-    const acpVendorStop =
-      transportName === 'acp' &&
-      collected.status === 'failed' &&
-      Boolean(collected.stopReason && collected.stopReason !== 'end_turn')
-    // A completed reply outranks an idle kill, exactly as the wall recovery
-    // does: a parsed contract or a reply.json already on disk is finished work,
-    // not an idle failure. Idle still outranks the transport stop reason so an
-    // ACP/CLI cancel does not rewrite the kill as a timeout.
-    const completedReply =
-      completedReplyAtTimeout ||
-      (replyFilePresent && !replyFileError && (contract?.status === 'done' || !writesJob))
-    const acpFailureKind =
-      collected.failureKind ?? failureKindFromStop(collected.stopReason, collected.error)
-    const replyErrorFailureKind = classify(
-      replyError ?? '',
-      exitCode,
+    const derived = deriveLiveOutcome({
+      writesJob,
+      contractStatus: contract?.status ?? null,
+      replyError,
+      output,
+      replyFilePresent,
+      replyFileError,
+      transportName,
+      transportStatus: collected.status,
+      transportStopReason: collected.stopReason,
+      transportError: collected.error,
+      transportFailureKind: collected.failureKind,
+      collectedAsking: collected.asking,
+      acceptedQuestions: acceptedQuestions.length > 0,
+      idleKilled,
+      idleKillError,
+      outputCeilingReached,
+      outputCeilingStopReason: reply?.stopReason ?? null,
       timedOut,
-      sandboxSelection.sandbox,
-    )
-    const nonAnswer = exitCode === 0 && isNonAnswer(output)
-    const nonAnswerFailureKind = classify(output, exitCode, timedOut, sandboxSelection.sandbox)
-    const completedContractTerminal = stderr.trim() || stdout.trim()
-    const completedContractFailureKind = classify(
-      completedContractTerminal,
+      stderr,
+      stdout,
       exitCode,
-      timedOut,
-      sandboxSelection.sandbox,
-    )
-    const missingContractTerminal = stderr.trim() || output || stdout.trim()
-    const classifiedMissingContract = classify(
-      missingContractTerminal,
-      exitCode,
-      timedOut,
-      sandboxSelection.sandbox,
-    )
-    const missingContractFailureKind = FAILS_OVER.includes(classifiedMissingContract)
-      ? classifiedMissingContract
-      : 'other'
-    const defaultError = errorTail(
-      stderr.trim() || stdout.trim() || `exit ${exitCode}, empty output`,
-    )
-    const defaultFailureKind = classify(defaultError, exitCode, timedOut, sandboxSelection.sandbox)
+      sandbox: sandboxSelection.sandbox,
+      boundMs,
+      agentName: name,
+    })
+    error = derived.error
 
-    if (idleKilled && completedReply) {
-      error = null
+    if (idleKilled && derived.inputs.completedReply) {
       console.error(
         `orch: run ${claim.id} had already returned a complete reply when idle-killed. ` +
           `Recorded ${acceptedQuestions.length ? 'asking' : 'ok'}.`,
       )
-    } else if (idleKilled && (collected.asking || acceptedQuestions.length)) {
-      error = null
-    } else if (idleKilled) {
-      error = errorTail(idleKillError ?? 'idle-killed with no CPU')
-    } else if (acpVendorStop) {
-      error = errorTail(collected.error ?? stopErrorMessage(collected.stopReason!))
-    } else if (replyFileError) {
-      error = errorTail(replyFileError)
-    } else if (collected.asking || acceptedQuestions.length) {
-      error = null
-    } else if (outputCeilingReached) {
-      error = `response truncated at output ceiling (${reply!.stopReason})`
-    } else if (timedOut && completedReplyAtTimeout) {
+    } else if (
+      timedOut &&
+      derived.inputs.completedReplyAtTimeout &&
+      !idleKilled &&
+      !derived.inputs.acpVendorStop &&
+      !replyFileError &&
+      !collected.asking &&
+      !acceptedQuestions.length &&
+      !outputCeilingReached
+    ) {
       /**
        * IT FINISHED, AND THEN WE KILLED IT.
        *
@@ -738,79 +711,14 @@ export async function runLive(input: LiveInput): Promise<LiveResult> {
        * worth knowing about — the bound may be too short for this job — but it
        * is a note on a successful run, not a failure.
        */
-      error = null
       console.error(
         `orch: run ${claim.id} had already returned a complete reply when the ` +
           `${Math.round(boundMs / 60_000)}m bound killed it. Recorded ` +
           `${acceptedQuestions.length ? 'asking' : 'ok'}; the bound may be short.`,
       )
-    } else if (timedOut) {
-      error = `no reply within ${Math.round(boundMs / 60_000)}m; ${name} was killed`
-    } else if (replyError) {
-      error = errorTail(replyError)
-    } else if (nonAnswer) {
-      // Exit 0 and non-empty, but what came back is the vendor saying it
-      // failed. Recorded as the failure it is rather than stored as an answer:
-      // a run nobody can use should cost the agent the same as one that
-      // crashed, not sit in the table looking like a success until a person
-      // reads 57 bytes and works it out.
-      error = errorTail(output)
-    } else if (contract?.status === 'refused') {
-      // The worker read the spec and says it cannot be built as written. That
-      // is a real answer and often a correct one, so it is `ok` rather than a
-      // failure: the agent did its job. Whether the refusal was RIGHT is a
-      // quality judgement, which is the architect's to make and the score's to
-      // record — not something to decide here from the word alone.
-      error = null
-    } else if (exitCode !== 0 && contract?.status === 'done') {
-      // The agent finished and wrote a complete reply, and THEN the process
-      // died — a killed process group, most often. The work exists; saying so
-      // is more honest than either 'ok' (it was interrupted) or a contract
-      // complaint about a contract that was satisfied.
-      error = errorTail(
-        (FAILS_OVER.includes(completedContractFailureKind)
-          ? `${completedContractTerminal}\n`
-          : '') +
-          `the worker completed and wrote its reply, then the process ended ` +
-          `(exit ${exitCode}). Its work is in the worktree; resume or read the diff.`,
-      )
-    } else if (writesJob && !contract) {
-      // A writing run whose reply cannot be parsed has not reported what it
-      // did, and its diff may be anything at all. Recording it `ok` would put
-      // an unverifiable change set into the record as a completed one.
-      if (FAILS_OVER.includes(classifiedMissingContract)) {
-        error = errorTail(missingContractTerminal)
-      } else {
-        error = errorTail(`reply did not match the worker contract:\n${output}`)
-      }
-    } else {
-      error = exitCode === 0 && output ? null : defaultError
     }
 
-    ;({ status, failureKind } = decideOutcome({
-      idleKilled,
-      completedReply,
-      collectedAsking: collected.asking,
-      acceptedQuestions: acceptedQuestions.length > 0,
-      acpVendorStop,
-      acpFailureKind,
-      replyFileError: Boolean(replyFileError),
-      replyFilePresent,
-      outputCeilingReached,
-      timedOut,
-      completedReplyAtTimeout,
-      replyError: Boolean(replyError),
-      replyErrorFailureKind,
-      nonAnswer,
-      nonAnswerFailureKind,
-      contractStatus: contract?.status ?? null,
-      exitCode,
-      completedContractFailureKind,
-      missingRequiredContract: writesJob && !contract,
-      missingContractFailureKind,
-      outputPresent: Boolean(output),
-      defaultFailureKind,
-    }))
+    ;({ status, failureKind } = decideOutcome(derived.inputs))
   } catch (e) {
     // Spawn refused, a pipe broke, the output file could not be written. The row
     // exists and must not be left claiming to run.
