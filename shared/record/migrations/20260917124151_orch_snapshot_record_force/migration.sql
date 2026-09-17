@@ -1,0 +1,1 @@
+ALTER TABLE "orch_snapshot" FORCE ROW LEVEL SECURITY;

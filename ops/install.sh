@@ -44,7 +44,7 @@ bootstrap_with_retry() {
 
 mkdir -p "$AGENTS_DIR" "$HOME/Library/Logs/brew-upgrade" "$HOME/Library/Logs/projects-refresh" \
   "$HOME/Library/Logs/orch-monitor" "$HOME/Library/Logs/orch-fix-defect" \
-  "$HOME/Library/Logs/orch-canon-eval" "$HOME/Library/Logs/orch-record-sync"
+  "$HOME/Library/Logs/orch-canon-eval"
 
 for tmpl in "$REPO"/launchd/*.plist.template; do
   label="$(basename "$tmpl" .plist.template)"
@@ -66,6 +66,9 @@ for tmpl in "$REPO"/launchd/*.plist.template; do
   if [[ "$label" == "com.user.orch-record-sync" && ! -f "$HOME/.claude/.env" ]]; then
     echo "skipped: $label ($HOME/.claude/.env is absent)"
     continue
+  fi
+  if [[ "$label" == "com.user.orch-record-sync" ]]; then
+    mkdir -p "$HOME/Library/Logs/orch-record-sync"
   fi
 
   target="$AGENTS_DIR/$label.plist"

@@ -1,20 +1,18 @@
 #!/usr/bin/env bun
-/** Enforce the record-api concern boundary. */
+/** Enforce that snapshot publishing composes only the existing view services and record client. */
 import { readFileSync } from 'node:fs'
 import { importSpecifiers } from './import-scanner.ts'
 
 const ROOT = new URL('..', import.meta.url).pathname.replace(/\/$/, '')
-const FILE = 'orchestrator/src/record-api.ts'
+const FILE = 'orchestrator/src/record-publish.ts'
 const ALLOWED = new Set([
-  'hono',
-  'hono/cors',
-  'zod',
-  './record-auth.ts',
-  './record-docs.ts',
-  './record-projects.ts',
-  './record-runs.ts',
+  './agent-commands.ts',
+  './health-commands.ts',
+  './job-commands.ts',
+  './machine-identity.ts',
+  './record-api-client.ts',
   './record-snapshots.ts',
-  './record-verdicts.ts',
+  './serve.ts',
 ])
 const imports = importSpecifiers(readFileSync(`${ROOT}/${FILE}`, 'utf8'))
 const violations = [...imports.specifiers, ...imports.typeOnlySpecifiers]
@@ -23,8 +21,8 @@ const violations = [...imports.specifiers, ...imports.typeOnlySpecifiers]
 for (const expression of imports.unresolvedRelative)
   violations.push(`${FILE} has an unresolved relative import at ${expression}`)
 if (violations.length) {
-  console.error(`check-record-api-boundary: ${violations.length} violation(s)\n`)
+  console.error(`check-record-publish-boundary: ${violations.length} violation(s)\n`)
   for (const violation of violations) console.error(`  ${violation}\n`)
   process.exit(1)
 }
-console.log('check-record-api-boundary: ok')
+console.log('check-record-publish-boundary: ok')
