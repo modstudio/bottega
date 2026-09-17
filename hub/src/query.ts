@@ -5,7 +5,7 @@ import { projects } from './projects.ts'
 import {
   type IntervalRow,
   intervalEndMs,
-  projectBoardCards,
+  projectBoard,
   projectTasksInWindow,
   type WindowIntervalRow,
 } from './task-projections.ts'
@@ -467,38 +467,6 @@ export function boardTasks(windowDays = 14, cap = 250): Board {
    * excluded nothing. The `interval` table is the only record of work actually
    * happening, and it is what "recent" has to mean here.
    */
-  const WHERE = `WHERE t.status_category IN ('active','review')
-        OR EXISTS (SELECT 1 FROM interval i
-                    WHERE i.task_key = t.key AND i.start_at >= ?)
-        OR (t.source = 'local'
-            AND (t.status_category IS NULL
-                 OR t.status_category NOT IN ('done','dropped')))`
-
-  /**
-   * TRUE TOTALS, counted with the same filter rather than by bucketing the page.
-   *
-   * Borrowed from a sibling project's own board, whose repository says it plainly: a
-   * board buckets the rows it was given, so a column header counting them
-   * reports the page rather than the filter — understating every column once
-   * the set outgrows one fetch, and saying nothing at all about a column whose
-   * rows all fell outside it. A surface showing part of a set has to be able to
-   * say so instead of looking complete.
-   */
-  const countBy = (expr: string) => {
-    const out: Record<string, number> = {}
-    for (const r of db()
-      .query<{ bucket: string; n: number }, [string]>(
-        `SELECT ${expr} AS bucket, COUNT(*) AS n FROM task t ${WHERE} GROUP BY bucket`,
-      )
-      .all(since))
-      out[r.bucket] = r.n
-    return out
-  }
-  const totals = {
-    status: countBy("COALESCE(t.status_category, 'unknown')"),
-    project: countBy("COALESCE(t.project, 'elsewhere')"),
-  }
-
   /**
    * SPEND THE BUDGET ON OPEN WORK — also borrowed from that sibling project, and the reason a capped
    * board is usable at all.
@@ -521,19 +489,20 @@ export function boardTasks(windowDays = 14, cap = 250): Board {
         updated_at: string | null
         last_seen: string
       },
-      [string, number]
+      []
     >(
       `SELECT t.key, t.project, t.title, t.assignee, t.status, t.status_category, t.source,
             t.updated_at, t.last_seen
-       FROM task t ${WHERE}
-      ORDER BY
-        CASE t.status_category
-          WHEN 'active' THEN 0 WHEN 'review' THEN 1
-          WHEN 'done' THEN 3 WHEN 'dropped' THEN 4 ELSE 2 END,
-        COALESCE(t.updated_at, t.last_seen) DESC
-      LIMIT ?`,
+       FROM task t`,
     )
-    .all(since, cap)
+    .all()
+
+  const recent = db()
+    .query<{ task_key: string }, [string]>(
+      `SELECT DISTINCT task_key FROM interval WHERE task_key IS NOT NULL AND start_at >= ?`,
+    )
+    .all(since)
+    .map((row) => row.task_key)
 
   // Who is being worked on right now, in ONE query rather than one per row.
   const live = new Set(
@@ -546,9 +515,5 @@ export function boardTasks(windowDays = 14, cap = 250): Board {
       .map((r) => r.task_key),
   )
 
-  return {
-    cards: projectBoardCards(rows, [...live], projects()),
-    totals,
-    cap,
-  }
+  return projectBoard({ rows, recentKeys: recent, liveKeys: [...live], projects: projects(), cap })
 }

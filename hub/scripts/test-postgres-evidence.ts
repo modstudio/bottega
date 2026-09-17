@@ -168,7 +168,7 @@ try {
     if (!hostedDone.data.rows.some((row) => row.key === created.key && row.runs.length === 1))
       throw new Error('hosted done adapter did not return the seeded task and interval')
     const detail = await hostedTaskDetail(actorUrl, identity, created.key)
-    if (!detail || detail.statusHistory.length !== 1 || detail.intervals.length !== 1)
+    if (detail?.statusHistory.length !== 1 || detail.intervals.length !== 1)
       throw new Error('hosted task detail did not return status history and intervals')
     if (await hostedTaskDetail(actorUrl, { userId: USER, spaceId: SPACE_B }, created.key))
       throw new Error('another space observed hosted task detail')

@@ -484,18 +484,38 @@ function useTaskViewQuery(
   },
   menus: number,
 ) {
+  const hosted = isHostedMode()
   const common = {
     placeholderData: keepPreviousData,
     refetchInterval: (menus ? false : 10_000) as false | number,
   }
-  if (isHostedMode()) {
-    return name === 'flight'
-      ? useQuery({ ...trpc.record.flight.queryOptions(input), ...common })
-      : useQuery({ ...trpc.record.done.queryOptions(input), ...common })
-  }
-  return name === 'flight'
-    ? useQuery({ ...trpc.work.flight.queryOptions(input), ...common })
-    : useQuery({ ...trpc.work.done.queryOptions(input), ...common })
+  const hostedFlight = useQuery({
+    ...trpc.record.flight.queryOptions(input),
+    ...common,
+    enabled: hosted && name === 'flight',
+  })
+  const hostedDone = useQuery({
+    ...trpc.record.done.queryOptions(input),
+    ...common,
+    enabled: hosted && name === 'done',
+  })
+  const localFlight = useQuery({
+    ...trpc.work.flight.queryOptions(input),
+    ...common,
+    enabled: !hosted && name === 'flight',
+  })
+  const localDone = useQuery({
+    ...trpc.work.done.queryOptions(input),
+    ...common,
+    enabled: !hosted && name === 'done',
+  })
+  return hosted
+    ? name === 'flight'
+      ? hostedFlight
+      : hostedDone
+    : name === 'flight'
+      ? localFlight
+      : localDone
 }
 
 export function TaskView({ name }: { name: WorkName }) {
@@ -592,13 +612,22 @@ function useBoardQuery(
   },
   menus: number,
 ) {
+  const hosted = isHostedMode()
   const common = {
     placeholderData: keepPreviousData,
     refetchInterval: (menus ? false : 10_000) as false | number,
   }
-  return isHostedMode()
-    ? useQuery({ ...trpc.record.board.queryOptions(input), ...common })
-    : useQuery({ ...trpc.work.board.queryOptions(input), ...common })
+  const hostedQuery = useQuery({
+    ...trpc.record.board.queryOptions(input),
+    ...common,
+    enabled: hosted,
+  })
+  const localQuery = useQuery({
+    ...trpc.work.board.queryOptions(input),
+    ...common,
+    enabled: !hosted,
+  })
+  return hosted ? hostedQuery : localQuery
 }
 
 export function BoardView() {
