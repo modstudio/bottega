@@ -228,7 +228,28 @@ export function resolveInjection<
   return resolved as ResolvedInjection<Project, Needs>
 }
 
-type ValidatedInjectionSettings = Pick<InjectionSettings, 'tracker' | 'trunk' | 'release' | 'docs' | 'gate'>
+/** Sources the workflow compose index resolves beside the steps' declared needs. */
+export const composeIndexSources = ['docs', 'stack'] as const satisfies readonly InjectionSource[]
+
+/** Resolve declared needs plus extras together; `facts` carries only the declared needs. */
+export function resolveDeclaredFacts<Project extends InjectableProject>(
+  project: Project,
+  needs: readonly InjectionSource[],
+  args: Record<string, string> = {},
+  extras: readonly InjectionSource[] = [],
+) {
+  const declared = [...new Set(needs)]
+  const resolved = resolveInjection(project, [...extras, ...declared], args)
+  const facts = Object.fromEntries(declared.map((source) => [source, resolved[source]])) as Partial<
+    InjectionValues<Project>
+  >
+  return { resolved, facts }
+}
+
+type ValidatedInjectionSettings = Pick<
+  InjectionSettings,
+  'tracker' | 'trunk' | 'release' | 'docs' | 'gate'
+>
 
 /** Validate the workflow-specific portion of a project settings blob at the register edge. */
 export function validateProjectInjectionSettings(settings: ValidatedInjectionSettings): string[] {
