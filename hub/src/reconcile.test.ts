@@ -84,10 +84,7 @@ function runLine(row: object): string {
   })
 }
 
-function statusOf(
-  ref: string,
-  answers: Parameters<typeof indexRunAnswers>[0],
-): string | null {
+function statusOf(ref: string, answers: Parameters<typeof indexRunAnswers>[0]): string | null {
   const parsed = runRef(ref)
   expect(parsed).not.toBeNull()
   return statusFor(indexRunAnswers(answers).get(parsed!.root), parsed!.turn)

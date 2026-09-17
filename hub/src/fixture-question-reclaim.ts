@@ -45,7 +45,7 @@ export function fixtureQuestionsWithoutRuns(
 
 export function fixtureIntervalsWithoutRuns(
   intervals: FixtureInterval[],
-  answersById: ReadonlyMap<number, { unknown?: unknown }>,
+  answersById: ReadonlyMap<number, unknown>,
 ): FixtureInterval[] {
   return intervals.filter((interval) => {
     if (interval.source !== 'orch') return false
@@ -53,7 +53,7 @@ export function fixtureIntervalsWithoutRuns(
     const parsed = runRef(interval.ref)
     if (!parsed) return false
     const answer = answersById.get(parsed.turn ?? parsed.root)
-    return !answer || 'unknown' in answer
+    return answer == null || (typeof answer === 'object' && answer !== null && 'unknown' in answer)
   })
 }
 
