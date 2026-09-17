@@ -178,7 +178,17 @@ export function recordApi(deps: Deps): Hono<ApiEnvironment> {
     const health = await deps.readHealth()
     return context.json(health, health.ok ? 200 : 503)
   })
-  app.all('/api/auth/*', (context) => deps.auth.handler(context.req.raw))
+  app.all('/api/auth/*', async (context) => {
+    const response = await deps.auth.handler(context.req.raw)
+    // A reset request never reveals whether mail was sent or the client-IP limit was reached.
+    if (context.req.path === '/api/auth/request-password-reset' && response.status === 429) {
+      return context.json({
+        status: true,
+        message: 'If this email exists in our system, check your email for the reset link',
+      })
+    }
+    return response
+  })
   app.use('/v1/*', async (context, next) => {
     const identity = await deps.readSession(context.req.raw.headers)
     if (!identity)

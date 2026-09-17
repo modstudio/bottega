@@ -1,4 +1,4 @@
-import { useNavigate } from '@tanstack/react-router'
+import { Link, useNavigate } from '@tanstack/react-router'
 import { useState } from 'react'
 import { signInWithEmail } from '@/lib/hosted-auth'
 import { Button } from '@/ui/button/button'
@@ -60,6 +60,11 @@ export function HostedSignIn() {
         <Button variant="primary" type="submit" disabled={pending}>
           {pending ? 'Signing in...' : 'Sign in'}
         </Button>
+        <p>
+          <Link to="/forgot-password" className="text-link hover:underline">
+            Forgot password?
+          </Link>
+        </p>
       </form>
     </section>
   )
