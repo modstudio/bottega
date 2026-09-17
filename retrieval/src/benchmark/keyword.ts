@@ -69,7 +69,7 @@ export async function keywordRanking(
         '--glob',
         '*.ts',
         '--glob',
-        '*.md',
+        '.agents/**/*.md',
         '--regexp',
         terms.join('|'),
         'orchestrator/src',
