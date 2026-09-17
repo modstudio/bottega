@@ -43,6 +43,7 @@ export const modules: ArchitectureModule[] = [
   module('orchestrator/src/artifact-paths.ts', ['node:path']),
   module('orchestrator/src/branch-landing-record.ts', ['./branch-state.ts']),
   module('orchestrator/src/branch-state.ts', []),
+  module('orchestrator/src/other-branch-state.ts', ['./branch-state.ts']),
   module('orchestrator/src/branch-settlement.ts', [
     './db.ts',
     './evidence-query.ts',
@@ -54,6 +55,7 @@ export const modules: ArchitectureModule[] = [
     './branch-settlement.ts',
     './db.ts',
     './git-environment.ts',
+    './other-branch-state.ts',
     './projects.ts',
     './task-branch.ts',
   ]),
