@@ -4,7 +4,7 @@
  * not know transports, contracts, or routing.
  */
 
-import { type PatchEquivalentForm, pullRequestCarriesKey } from './branch-state.ts'
+import { type PatchEquivalentForm, pullRequestCarriesKey } from './branch/branch-state.ts'
 import { realpathOrSpelled } from './checkout-identity.ts'
 import { db } from './db.ts'
 import { repoRootOf, targetGitEnvironment } from './git-environment.ts'

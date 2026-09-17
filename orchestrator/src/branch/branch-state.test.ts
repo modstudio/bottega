@@ -1,4 +1,5 @@
 import { describe, expect, test } from 'bun:test'
+import type { MergedPullRequest } from '../merged-pull-request.ts'
 import {
   type BranchLanding,
   decideBranchState,
@@ -7,7 +8,6 @@ import {
   findRecordedBranchLanding,
   pullRequestCarriesKey,
 } from './branch-state.ts'
-import type { MergedPullRequest } from './merged-pull-request.ts'
 
 describe('protected project branch decision', () => {
   test('trunk protection mutation: refuses the registered trunk', () => {

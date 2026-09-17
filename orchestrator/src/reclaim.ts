@@ -1,6 +1,6 @@
 import { existsSync, realpathSync } from 'node:fs'
 import { isAbsolute, relative, resolve, sep } from 'node:path'
-import { branchRows, type ReclaimRun, settleDeletedBranch } from './branch-settlement.ts'
+import { branchRows, type ReclaimRun, settleDeletedBranch } from './branch/branch-settlement.ts'
 import { db, sessionId, writableDb, writeTransaction } from './db.ts'
 import { chainScoreJoin, EVIDENCE_CLOSED_SQL } from './evidence-query.ts'
 import { targetGitEnvironment } from './git-environment.ts'

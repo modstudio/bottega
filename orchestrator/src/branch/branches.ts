@@ -1,6 +1,31 @@
 // concern: branches
 /** Observes registered projects and assembles the run-minted branch report. */
 
+import { db, nowIso, sessionId, writableDb, writeTransaction } from '../db.ts'
+import { targetGitEnvironment } from '../git-environment.ts'
+import {
+  GH_MERGED_PR_LIMIT,
+  type MergedPullRequest,
+  mergedPullRequests,
+  type PullRequestCommitCheck,
+  type PullRequestNameCheck,
+  pullRequestCommitCheck,
+  pullRequestNameCheck,
+} from '../merged-pull-request.ts'
+import {
+  decideOtherBranchState,
+  decideOtherPruneEligibility,
+  isHeldBranch,
+  type OtherBranchLanding,
+  taskKeyToken,
+} from '../other-branch-state.ts'
+import type { Project } from '../projects.ts'
+import { projectByName, projects } from '../projects.ts'
+import {
+  isTaskBranchSuperseded,
+  type TaskBranchRunRow,
+  taskBranchPatchEquivalent,
+} from '../task-branch.ts'
 import { type PullRequestLandingEvidence, verifyBranchLanding } from './branch-landing-record.ts'
 import { settleDeletedBranch } from './branch-settlement.ts'
 import {
@@ -13,31 +38,6 @@ import {
   type PatchEquivalentForm,
   pullRequestCarriesKey,
 } from './branch-state.ts'
-import { db, nowIso, sessionId, writableDb, writeTransaction } from './db.ts'
-import { targetGitEnvironment } from './git-environment.ts'
-import {
-  GH_MERGED_PR_LIMIT,
-  type MergedPullRequest,
-  mergedPullRequests,
-  type PullRequestCommitCheck,
-  type PullRequestNameCheck,
-  pullRequestCommitCheck,
-  pullRequestNameCheck,
-} from './merged-pull-request.ts'
-import {
-  decideOtherBranchState,
-  decideOtherPruneEligibility,
-  isHeldBranch,
-  type OtherBranchLanding,
-  taskKeyToken,
-} from './other-branch-state.ts'
-import type { Project } from './projects.ts'
-import { projectByName, projects } from './projects.ts'
-import {
-  isTaskBranchSuperseded,
-  type TaskBranchRunRow,
-  taskBranchPatchEquivalent,
-} from './task-branch.ts'
 
 type RunRow = {
   id: number

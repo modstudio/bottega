@@ -936,7 +936,7 @@ export const importBoundaries: ImportBoundary[] = [
       './merged-pull-request.ts',
       './projects.ts',
       './review-evidence-sql.ts',
-      './branch-state.ts',
+      './branch/branch-state.ts',
       './worktree-types.ts',
     ],
     'Keep task branch identity independent of transports, contracts, and routing.',
