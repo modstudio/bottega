@@ -116,6 +116,8 @@ export function register(program: Command): void {
     .option('--from <value>')
     .option('--mode <value>')
     .option('--project <value>')
+    .option('--cwd <value>')
+    .option('--check')
     .option('--arg <value>', '', collect, [])
     .option('--json')
     .action((args, options) =>

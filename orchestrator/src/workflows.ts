@@ -1,7 +1,5 @@
 import type { Database } from 'bun:sqlite'
-import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from 'node:fs'
-import { join } from 'node:path'
-import { db, writableDb, writeTransaction } from './db.ts'
+import { db, writableDb } from './db.ts'
 import { type InjectionSource, resolveInjection } from './project-injection.ts'
 import { productionStepCatalogue } from './step-catalogue.ts'
 import { type VersionEvent, versionedLifecycle } from './versioned-lifecycle.ts'
@@ -29,7 +27,26 @@ const object = (value: unknown): value is Record<string, unknown> =>
   typeof value === 'object' && value !== null && !Array.isArray(value)
 const text = (value: unknown) => (typeof value === 'string' ? value : '')
 
-export function validateWorkflowDefinition(value: unknown, d?: Database): string[] {
+function workflowStepSlugs(
+  d: Database | undefined,
+  knownStepSlugs: ReadonlySet<string> | undefined,
+  errors: string[],
+): ReadonlySet<string> | null {
+  if (knownStepSlugs) return knownStepSlugs
+  if (!d) return null
+  try {
+    return new Set(productionStepCatalogue(d).definition.steps.map((step) => step.slug))
+  } catch (error) {
+    errors.push(error instanceof Error ? error.message : String(error))
+    return null
+  }
+}
+
+export function validateWorkflowDefinition(
+  value: unknown,
+  d?: Database,
+  knownStepSlugs?: ReadonlySet<string>,
+): string[] {
   const errors: string[] = []
   if (!object(value)) return ['definition must be an object']
   if (typeof value.title !== 'string') errors.push('title must be a string')
@@ -104,13 +121,7 @@ export function validateWorkflowDefinition(value: unknown, d?: Database): string
     }
   }
 
-  let stepNames: Set<string> | null = null
-  if (d)
-    try {
-      stepNames = new Set(productionStepCatalogue(d).definition.steps.map((step) => step.slug))
-    } catch (error) {
-      errors.push(error instanceof Error ? error.message : String(error))
-    }
+  const stepNames = workflowStepSlugs(d, knownStepSlugs, errors)
   for (const mode of modes) {
     if (!object(mode)) continue
     if (!Array.isArray(mode.steps) || mode.steps.length === 0) {
@@ -125,8 +136,12 @@ export function validateWorkflowDefinition(value: unknown, d?: Database): string
   return [...new Set(errors)]
 }
 
-function requireValid(value: unknown, d: Database): asserts value is WorkflowDefinition {
-  const errors = validateWorkflowDefinition(value, d)
+function requireValid(
+  value: unknown,
+  d: Database,
+  knownStepSlugs?: ReadonlySet<string>,
+): asserts value is WorkflowDefinition {
+  const errors = validateWorkflowDefinition(value, d, knownStepSlugs)
   if (errors.length)
     throw new Error(`invalid workflow definition:\n${errors.map((e) => `- ${e}`).join('\n')}`)
 }
@@ -204,20 +219,35 @@ export function listWorkflows(d: Database = db()) {
     }
   })
 }
+
+export function productionWorkflows(
+  d: Database = db(),
+): { slug: string; definition: WorkflowDefinition }[] {
+  return (
+    d
+      .query(
+        `SELECT w.slug,v.definition FROM workflow w JOIN workflow_version v ON v.workflow_id=w.id
+         WHERE v.status='production' ORDER BY w.slug`,
+      )
+      .all() as { slug: string; definition: string }[]
+  ).map((row) => ({ slug: row.slug, definition: JSON.parse(row.definition) as WorkflowDefinition }))
+}
 export function showWorkflow(slug: string, n?: number, d: Database = db()) {
   return parseVersion(versionRow(slug, n, d))
 }
 
-const workflowLifecycle = versionedLifecycle<WorkflowDefinition>({
-  noun: 'workflow',
-  identityTable: 'workflow',
-  versionTable: 'workflow_version',
-  eventTable: 'workflow_event',
-  foreignKey: 'workflow_id',
-  validate(value, d) {
-    requireValid(value, d)
-  },
-})
+const workflowLifecycleFor = (knownStepSlugs?: ReadonlySet<string>) =>
+  versionedLifecycle<WorkflowDefinition>({
+    noun: 'workflow',
+    identityTable: 'workflow',
+    versionTable: 'workflow_version',
+    eventTable: 'workflow_event',
+    foreignKey: 'workflow_id',
+    validate(value, d) {
+      requireValid(value, d, knownStepSlugs)
+    },
+  })
+const workflowLifecycle = workflowLifecycleFor()
 function writeDraft(
   slug: string,
   definition: unknown,
@@ -225,10 +255,18 @@ function writeDraft(
   authorValue?: string,
   kind: Extract<VersionEvent, 'set' | 'fork' | 'import'> = 'set',
   d: Database = writableDb(),
+  knownStepSlugs?: ReadonlySet<string>,
 ) {
   requireSlug(slug)
   requireSlug(slug)
-  return workflowLifecycle.write(slug, definition, reasonValue, authorValue, kind, d)
+  return (knownStepSlugs ? workflowLifecycleFor(knownStepSlugs) : workflowLifecycle).write(
+    slug,
+    definition,
+    reasonValue,
+    authorValue,
+    kind,
+    d,
+  )
 }
 export const setWorkflow = (
   slug: string,
@@ -391,61 +429,14 @@ export function getWorkflowStep(
   }
 }
 
-function sorted(value: unknown): unknown {
-  if (Array.isArray(value)) return value.map(sorted)
-  if (!object(value)) return value
-  return Object.fromEntries(
-    Object.keys(value)
-      .sort()
-      .map((key) => [key, sorted(value[key])]),
-  )
-}
-const pretty = (value: unknown) => `${JSON.stringify(sorted(value), null, 2)}\n`
-export function exportWorkflows(dir: string, d: Database = db()): void {
-  mkdirSync(dir, { recursive: true })
-  for (const workflow of listWorkflows(d)) {
-    const target = join(dir, workflow.slug)
-    mkdirSync(target, { recursive: true })
-    const versions = workflowVersions(workflow.slug, d)
-    for (const version of versions)
-      writeFileSync(
-        join(target, `v${version.n}.json`),
-        pretty(showWorkflow(workflow.slug, Number(version.n), d).definition),
-      )
-    writeFileSync(
-      join(target, 'README.md'),
-      `# ${workflow.slug}\n\n${versions.map((v) => `- v${v.n}: ${v.status}`).join('\n')}\n`,
-    )
-  }
-}
-export function importWorkflows(
-  dir: string,
+export function importWorkflow(
+  slug: string,
+  definition: unknown,
   reason: string | undefined,
   author?: string,
   d: Database = writableDb(),
+  knownStepSlugs?: ReadonlySet<string>,
 ) {
   required(reason, 'reason')
-  if (!existsSync(dir)) throw new Error(`no such directory: ${dir}`)
-  const definitions: { slug: string; definition: unknown }[] = []
-  for (const slug of readdirSync(dir).sort()) {
-    const folder = join(dir, slug)
-    const files = readdirSync(folder)
-      .filter((f) => /^v\d+\.json$/.test(f))
-      .sort((a, b) => Number(a.slice(1)) - Number(b.slice(1)))
-    for (const file of files) {
-      const definition = JSON.parse(readFileSync(join(folder, file), 'utf8'))
-      requireSlug(slug)
-      requireValid(definition, d)
-      definitions.push({ slug, definition })
-    }
-  }
-  // vN.json only orders the read. Each file becomes a new draft at MAX(n)+1;
-  // import does not restore version numbers or statuses.
-  return writeTransaction(
-    () =>
-      definitions.map(({ slug, definition }) =>
-        writeDraft(slug, definition, reason, author, 'import', d),
-      ),
-    d,
-  )
+  return writeDraft(slug, definition, reason, author, 'import', d, knownStepSlugs)
 }
