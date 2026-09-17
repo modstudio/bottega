@@ -29,6 +29,6 @@ always: true
 
 **Claim** — any recorded pointer to a resource, regardless of whether its participant is alive.
 
-**Record** — the hosted copy of execution evidence reached only through idempotent outbox synchronization.
+**Record** — the hosted system of record: evidence arrives by idempotent outbox sync; hosted-only data is written through its services.
 
 **Note** — a one-line observation whose project, run, branch, session, commit, and file anchor are derived when filed.
