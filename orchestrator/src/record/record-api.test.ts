@@ -20,6 +20,7 @@ function appWith(session: RecordIdentity | null, overrides: Record<string, unkno
     recordUrl: 'postgres://record.test/record',
     auth: { handler: () => Response.json({ handled: true }) },
     readSession: async () => session,
+    setActiveSpace: async () => undefined,
     readHealth: async () => ({ ok: true, migrations: 14 }),
     readRuns: async () => [],
     readRun: async () => null,
@@ -71,6 +72,34 @@ describe('record API', () => {
     const response = await appWith(identity).request('/v1/whoami')
     expect(response.status).toBe(200)
     expect(await response.json()).toEqual(identity)
+  })
+
+  test('sets only a member space and refuses a non-member space', async () => {
+    let selected = ''
+    const member = appWith(identity, {
+      setActiveSpace: async (_headers: Headers, spaceId: string) => {
+        selected = spaceId
+      },
+    })
+    const response = await member.request('/v1/active-space', {
+      method: 'PUT',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ spaceId: id }),
+    })
+    expect(response.status).toBe(200)
+    expect(selected).toBe(id)
+
+    const outsider = appWith(identity, {
+      setActiveSpace: async () => {
+        throw new Error(`record user is not a member of space ${id}`)
+      },
+    })
+    const refused = await outsider.request('/v1/active-space', {
+      method: 'PUT',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ spaceId: id }),
+    })
+    expect(refused.status).toBe(403)
   })
 
   test('passes auth routes to Better Auth and reports shipped migrations', async () => {

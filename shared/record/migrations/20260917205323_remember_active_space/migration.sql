@@ -1,0 +1,2 @@
+ALTER TABLE "user" ADD COLUMN "last_active_space_id" uuid;--> statement-breakpoint
+ALTER TABLE "user" ADD CONSTRAINT "user_last_active_space_id_space_id_fkey" FOREIGN KEY ("last_active_space_id") REFERENCES "space"("id") ON DELETE SET NULL;

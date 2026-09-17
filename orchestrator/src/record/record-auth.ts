@@ -43,6 +43,22 @@ export type PersonalSpacePort = {
   create(input: PersonalSpace & { userId: string; membershipId: string }): Promise<PersonalSpace>
 }
 
+export type SessionSpaceFacts = {
+  rememberedSpaceId: string | null
+  personalSpaceId: string
+  membershipSpaceIds: string[]
+}
+
+/** Memberships are ordered oldest first by the adapter. */
+export function sessionSpace(facts: SessionSpaceFacts): string {
+  if (facts.rememberedSpaceId && facts.membershipSpaceIds.includes(facts.rememberedSpaceId))
+    return facts.rememberedSpaceId
+  return (
+    facts.membershipSpaceIds.find((spaceId) => spaceId !== facts.personalSpaceId) ??
+    facts.personalSpaceId
+  )
+}
+
 /** The same decision runs after signup and before every session, making interrupted provisioning repairable. */
 export async function ensurePersonalSpace(
   userId: string,
@@ -123,6 +139,26 @@ function personalSpacePort(client: SQL): PersonalSpacePort {
       })
     },
   }
+}
+
+async function sessionSpaceForUser(client: SQL, userId: string, personalSpaceId: string) {
+  return client.begin(async (tx) => {
+    await tx`SELECT set_config('app.user_id', ${userId}, true)`
+    const users = await tx`
+      SELECT last_active_space_id FROM "user" WHERE id=${userId}::uuid
+    `
+    const memberships = await tx`
+      SELECT space_id FROM membership WHERE user_id=${userId}::uuid
+      ORDER BY created_at, id
+    `
+    return sessionSpace({
+      rememberedSpaceId: users[0]?.last_active_space_id
+        ? String(users[0].last_active_space_id)
+        : null,
+      personalSpaceId,
+      membershipSpaceIds: memberships.map((row: Record<string, unknown>) => String(row.space_id)),
+    })
+  })
 }
 
 type ResetPasswordSender = typeof sendPasswordResetEmail
@@ -227,7 +263,8 @@ export function recordAuth(
         create: {
           before: async (created) => {
             const personal = await ensurePersonalSpace(created.userId, personalSpaces)
-            return { data: { ...created, activeOrganizationId: personal.id } }
+            const activeSpaceId = await sessionSpaceForUser(client, created.userId, personal.id)
+            return { data: { ...created, activeOrganizationId: activeSpaceId } }
           },
         },
       },
@@ -271,8 +308,16 @@ export async function setActiveRecordSpace(
   token: string,
   spaceId: string,
 ): Promise<void> {
+  return setActiveRecordSpaceForSession(url, bearerHeaders(token), spaceId)
+}
+
+export async function setActiveRecordSpaceForSession(
+  url: string,
+  headers: Headers,
+  spaceId: string,
+): Promise<void> {
   const auth = recordAuth(url)
-  const current = await auth.api.getSession({ headers: bearerHeaders(token) })
+  const current = await auth.api.getSession({ headers })
   if (!current) throw new Error(RECORD_SIGN_IN_REMEDY)
   const sql = new SQL(url)
   try {
@@ -286,7 +331,11 @@ export async function setActiveRecordSpace(
         throw new Error(`record user is not a member of space ${spaceId}`)
       await tx`
         UPDATE session SET active_space_id=${spaceId}::uuid, updated_at=now()
-        WHERE token=${token}
+        WHERE id=${current.session.id}::uuid
+      `
+      await tx`
+        UPDATE "user" SET last_active_space_id=${spaceId}::uuid, updated_at=now()
+        WHERE id=${current.user.id}::uuid
       `
     })
   } finally {

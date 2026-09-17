@@ -83,6 +83,9 @@ function optionalSnapshot<T extends { machineId: string; takenAt: string }>(
 
 export const recordRouter = t.router({
   whoami: t.procedure.query(({ ctx }) => recordClient(ctx).whoami()),
+  setActiveSpace: t.procedure
+    .input(z.object({ spaceId: uuid }))
+    .mutation(({ ctx, input }) => recordClient(ctx).setActiveSpace(input.spaceId)),
   runs: t.procedure
     .input(
       z.object({

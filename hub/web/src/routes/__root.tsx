@@ -1,4 +1,4 @@
-import { useQuery } from '@tanstack/react-query'
+import { useMutation, useQuery } from '@tanstack/react-query'
 import {
   createRootRoute,
   Link,
@@ -11,7 +11,7 @@ import { AppMark } from '@/components/app-mark'
 import { signOutFromRecord } from '@/lib/hosted-auth'
 import { isHostedMode, isHostedPath, navForMode } from '@/lib/hub-mode'
 import { useWindowState } from '@/lib/window'
-import { trpc } from '@/trpc/client'
+import { queryClient, trpc } from '@/trpc/client'
 import { AppShell, type NavItem, type NavSection, type RenderLink } from '@/ui/shell/app-shell'
 import { UserMenu } from '@/ui/shell/user-menu'
 import { PLATFORM_NAME } from '../../../../shared/brand.ts'
@@ -52,17 +52,27 @@ function identityForMode(hosted: boolean, email: string | null) {
 export function RailFooterIdentity({
   hosted,
   email,
+  activeSpaceId = null,
+  spaces = [],
+  onSelectSpace,
   onSignOut,
 }: {
   hosted: boolean
   email: string | null
+  activeSpaceId?: string | null
+  spaces?: readonly { id: string; name: string }[]
+  onSelectSpace?: (spaceId: string) => void
   onSignOut: () => void
 }) {
   const identity = identityForMode(hosted, email)
+  const activeSpace = spaces.find((space) => space.id === activeSpaceId)
   return (
     <UserMenu
       name={identity.name}
-      detail={identity.detail}
+      detail={hosted && activeSpace ? activeSpace.name : identity.detail}
+      spaces={hosted ? spaces : []}
+      activeSpaceId={activeSpaceId ?? undefined}
+      onSelectSpace={hosted ? onSelectSpace : undefined}
       themeKey={THEME_KEY}
       onSignOut={identity.canSignOut ? onSignOut : undefined}
     />
@@ -98,6 +108,13 @@ function AppLayout({ hosted, pathname }: { hosted: boolean; pathname: string }) 
     enabled: hosted,
     retry: false,
   })
+  const switchSpace = useMutation({
+    ...trpc.record.setActiveSpace.mutationOptions(),
+    onSuccess: async () => {
+      await queryClient.invalidateQueries()
+      window.location.reload()
+    },
+  })
   const withCounts = (item: {
     to: string
     label: string
@@ -123,6 +140,11 @@ function AppLayout({ hosted, pathname }: { hosted: boolean; pathname: string }) 
   }
   const email =
     whoami.data?.user && 'email' in whoami.data.user ? String(whoami.data.user.email) : null
+  const spaces = (whoami.data?.memberships ?? []).flatMap((membership) => {
+    const id = membership.space_id
+    const name = membership.name
+    return typeof id === 'string' && typeof name === 'string' ? [{ id, name }] : []
+  })
   return (
     <AppShell
       name={PLATFORM_NAME}
@@ -132,7 +154,14 @@ function AppLayout({ hosted, pathname }: { hosted: boolean; pathname: string }) 
       isActive={isActive}
       storageKey={RAIL_KEY}
       railFooter={
-        <RailFooterIdentity hosted={hosted} email={email} onSignOut={() => void signOut()} />
+        <RailFooterIdentity
+          hosted={hosted}
+          email={email}
+          activeSpaceId={whoami.data?.activeSpaceId ?? null}
+          spaces={spaces}
+          onSelectSpace={(spaceId) => switchSpace.mutate({ spaceId })}
+          onSignOut={() => void signOut()}
+        />
       }
     >
       <div className="mx-auto max-w-[90rem]">
