@@ -16,8 +16,8 @@ const boundary = (
   reason,
 })
 
-// These rows replace the former one-script-per-file import checks. Each row freezes the
-// dependency surface that satisfied its script, which is stricter than the old deny lists.
+// Each row lists every import its file may use; anything else fails check-architecture.
+// Widen a row deliberately, with its reason still true, rather than routing around it.
 export const importBoundaries: ImportBoundary[] = [
   boundary(
     'agent-commands-boundary',
