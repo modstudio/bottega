@@ -15,7 +15,12 @@ export type SecurityRunner = (argv: string[], stdin?: Uint8Array) => SecurityRes
 const decoder = new TextDecoder()
 const encoder = new TextEncoder()
 
+const RUNNER_KEY = Symbol.for('orch.record-session-runner')
+
 function runSecurity(argv: string[], stdin?: Uint8Array): SecurityResult {
+  const holder = globalThis as typeof globalThis & { [RUNNER_KEY]?: SecurityRunner }
+  const injected = holder[RUNNER_KEY]
+  if (injected) return injected(argv, stdin)
   if (process.env.NODE_ENV === 'test') {
     throw new Error('record session keychain access requires an injected security runner in tests')
   }

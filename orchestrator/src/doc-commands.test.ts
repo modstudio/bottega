@@ -276,20 +276,20 @@ describe('scoped operator docs', () => {
     })
   })
 
-  test('orch doc rm --json reports whether a row was removed', () => {
-    setDoc({ scope: 'global', subject: null, slug: 'gone', title: 'T', body: 'B' })
-    expect(removeDoc('global', null, 'gone')).toBe(true)
-    expect(removeDoc('global', null, 'gone')).toBe(false)
+  test('orch doc rm --json reports whether a row was removed', async () => {
+    await setDoc({ scope: 'global', subject: null, slug: 'gone', title: 'T', body: 'B' })
+    expect(await removeDoc('global', null, 'gone')).toBe(true)
+    expect(await removeDoc('global', null, 'gone')).toBe(false)
   })
 
-  test('orch doc set --json round-trips a body with quote, backtick and newline', () => {
+  test('orch doc set --json round-trips a body with quote, backtick and newline', async () => {
     const body = "quote' backtick` newline\n"
-    setDoc({ scope: 'global', subject: null, slug: 'round-trip', title: 'T', body })
+    await setDoc({ scope: 'global', subject: null, slug: 'round-trip', title: 'T', body })
     expect(getDoc('global', null, 'round-trip')?.body).toBe(body)
   })
 
-  test('orch doc history, diff, and restore operate on revisions without rewinding', () => {
-    writeDoc({
+  test('orch doc history, diff, and restore operate on revisions without rewinding', async () => {
+    await writeDoc({
       scope: 'global',
       subject: null,
       slug: 'cli-history',
@@ -298,7 +298,7 @@ describe('scoped operator docs', () => {
       delivery: 'demand',
       reason: 'first',
     })
-    writeDoc({
+    await writeDoc({
       scope: 'global',
       subject: null,
       slug: 'cli-history',
@@ -320,20 +320,20 @@ describe('scoped operator docs', () => {
       bytes: 4,
     })
     expect(diffDocRevisions(originalId, newerId)).toContain('-one\n+two')
-    deleteDoc('global', null, 'cli-history', { reason: 'gone' })
-    restoreDoc('global', null, 'cli-history', originalId, { reason: 'undo delete' })
+    await deleteDoc('global', null, 'cli-history', { reason: 'gone' })
+    await restoreDoc('global', null, 'cli-history', originalId, { reason: 'undo delete' })
     expect(getDoc('global', null, 'cli-history')?.body).toBe('one\n')
     expect(listDocRevisions('global', null, 'cli-history')[0]?.op).toBe('restore')
   }, 20_000)
 
-  test('orch doc consume stamps the session and preserves the document outside its fields', () => {
+  test('orch doc consume stamps the session and preserves the document outside its fields', async () => {
     const body =
       '---\r\nstatus: open\r\nepic: demo\r\nproject: known\r\nwritten: 2026-09-03T00:00:00.000Z\r\n---\r\n\r\nNEXT ACTION  \r\n'
-    setDoc({ scope: 'global', subject: null, slug: 'take-it', title: 'Take it', body })
+    await setDoc({ scope: 'global', subject: null, slug: 'take-it', title: 'Take it', body })
     const priorSession = process.env.CLAUDE_CODE_SESSION_ID
     process.env.CLAUDE_CODE_SESSION_ID = 'consume-test-session'
     try {
-      const result = consumeDoc('global', null, 'take-it')
+      const result = await consumeDoc('global', null, 'take-it')
       expect(result.already_consumed).toBe(false)
       const consumed = getDoc('global', null, 'take-it')!.body
       expect(consumed).toMatch(
@@ -350,12 +350,12 @@ describe('scoped operator docs', () => {
     }
   })
 
-  test('orch doc consume reports an already-consumed document without rewriting it', () => {
+  test('orch doc consume reports an already-consumed document without rewriting it', async () => {
     const body =
       '---\nstatus: consumed\nconsumed: 2026-09-03T01:02:03.000Z\nconsumed_by: first-session\nepic: demo\n---\n\nBODY\n'
-    setDoc({ scope: 'global', subject: null, slug: 'taken', title: 'Taken', body })
+    await setDoc({ scope: 'global', subject: null, slug: 'taken', title: 'Taken', body })
     const before = getDoc('global', null, 'taken')!
-    expect(consumeDoc('global', null, 'taken').already_consumed).toBe(true)
+    expect((await consumeDoc('global', null, 'taken')).already_consumed).toBe(true)
     expect(getDoc('global', null, 'taken')).toEqual(before)
   })
 })

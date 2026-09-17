@@ -9,8 +9,8 @@ import {
   RECORD_OWNER_ROLE,
   RECORD_READER_ROLE,
 } from '../../shared/record/schema.ts'
-import { proveScoreRecordSync } from '../test/postgres-score-proof.ts'
-import { db } from './db.ts'
+import { installRecordSessionRunner, memoryRecordSession } from '../test/fixtures/record-session.ts'
+import { proveHostedDocs, proveScoreRecordSync } from '../test/postgres-score-proof.ts'
 import {
   appliedRecordMigrationCount,
   migratePostgres,
@@ -29,22 +29,17 @@ import {
 } from './record-space.ts'
 
 const OPERATOR_USER_ID = '01990000-0000-7000-8000-000000000002'
-const SPACE_NAME = PLATFORM_SLUG
+const recordSession = memoryRecordSession()
 
 const container = process.env.ORCH_TEST_POSTGRES_CONTAINER
 const ownerUrl = process.env.ORCH_RECORD_MIGRATE_URL
 const actorUrl = process.env.ORCH_RECORD_URL
 const recordFolder = join(import.meta.dir, '..', '..', 'shared', 'record')
 const migrationsFolder = join(recordFolder, 'migrations')
-const postgresSchema = [
-  'schema.ts',
-  'schema-auth.ts',
-  'schema-run.ts',
-  'schema-review.ts',
-  'schema-landing.ts',
-]
-  .map((file) => readFileSync(join(recordFolder, file), 'utf8'))
-  .join('\n')
+const postgresSchema =
+  ['schema.ts', 'schema-auth.ts', 'schema-run.ts', 'schema-review.ts', 'schema-landing.ts']
+    .map((file) => readFileSync(join(recordFolder, file), 'utf8'))
+    .join('\n') + readFileSync(join(recordFolder, 'schema-docs.ts'), 'utf8')
 const migration = readdirSync(migrationsFolder, { withFileTypes: true })
   .filter((entry) => entry.isDirectory())
   .map((entry) => entry.name)
@@ -128,7 +123,7 @@ describe('Postgres substrate shape', () => {
 
   test('seeds the fixed platform space and stand-in operator', () => {
     expect(migration).toContain(
-      `VALUES ('${PLATFORM_SPACE_ID}', '${SPACE_NAME}', '2026-09-09T00:00:00Z')`,
+      `VALUES ('${PLATFORM_SPACE_ID}', '${PLATFORM_SLUG}', '2026-09-09T00:00:00Z')`,
     )
     expect(migration).toContain(`'${OPERATOR_USER_ID}'`)
     expect(migration).toContain(`'operator@${PLATFORM_SLUG}.local'`)
@@ -301,10 +296,8 @@ realPostgres('RLS proof against real Postgres', () => {
       expect(revoked.code, revoked.stderr).toBe(0)
     }
 
-    const storedToken = () =>
-      db()
-        .query<{ value: string }, []>("SELECT value FROM schema_meta WHERE key='record_session'")
-        .get()!.value
+    installRecordSessionRunner(recordSession.runner)
+    const storedToken = () => recordSession.token()!
     await signUpCommand(AUTH_EMAIL_A, 'Auth A', async () => AUTH_PASSWORD, {
       log: (value) => cliOutput.push(value),
     })
@@ -350,12 +343,7 @@ realPostgres('RLS proof against real Postgres', () => {
         ('${authRunB}','${authSpaceB}','${authProjectB}','${MACHINE_A}',102,now(),'proof','proof','b',1,'b',false,'ok',1,false,false,false,now(),now());`,
     )
 
-    db()
-      .query(
-        `INSERT INTO schema_meta (key,value) VALUES ('record_session',?)
-         ON CONFLICT(key) DO UPDATE SET value=excluded.value`,
-      )
-      .run(tokenA)
+    recordSession.setToken(tokenA)
     pendingInvitation = await inviteToActiveRecordSpace(actorUrl!, AUTH_EMAIL_B, 'member')
     succeeds(
       'postgres',
@@ -370,6 +358,7 @@ realPostgres('RLS proof against real Postgres', () => {
   })
 
   afterAll(() => {
+    installRecordSessionRunner(null)
     delete process.env.BETTER_AUTH_SECRET
     delete process.env.BETTER_AUTH_URL
     if (!container) return
@@ -377,7 +366,7 @@ realPostgres('RLS proof against real Postgres', () => {
       'postgres',
       'postgres',
       `
-      DROP TABLE IF EXISTS invitation, verification, account, session, test_flake, contention, landing_review_carry, landing_override, landing, review_finding, review_lens, review, run_score, run, membership, machine, seq, project, "user", space CASCADE;
+      DROP TABLE IF EXISTS invitation, verification, account, session, test_flake, contention, landing_review_carry, landing_override, landing, review_finding, review_lens, review, run_exclusion, run_score, run, doc_revision, doc, membership, machine, seq, project, "user", space CASCADE;
       DROP SCHEMA IF EXISTS drizzle CASCADE;
     `,
     )
@@ -439,12 +428,7 @@ realPostgres('RLS proof against real Postgres', () => {
   })
 
   test('CLI whoami prints the user, active space, and only that user memberships', async () => {
-    db()
-      .query(
-        `INSERT INTO schema_meta (key,value) VALUES ('record_session',?)
-         ON CONFLICT(key) DO UPDATE SET value=excluded.value`,
-      )
-      .run(tokenB)
+    recordSession.setToken(tokenB)
     const output: string[] = []
     await whoamiCommand({ log: (value) => output.push(value) })
     const shown = JSON.parse(output[0]!) as {
@@ -463,12 +447,7 @@ realPostgres('RLS proof against real Postgres', () => {
       'postgres',
       `UPDATE session SET active_space_id=NULL WHERE token='${tokenB}';`,
     )
-    db()
-      .query(
-        `INSERT INTO schema_meta (key,value) VALUES ('record_session',?)
-         ON CONFLICT(key) DO UPDATE SET value=excluded.value`,
-      )
-      .run(tokenB)
+    recordSession.setToken(tokenB)
     const listed = await recordMemberships(actorUrl!)
     expect(listed.activeSpaceId).toBeNull()
     expect(listed.memberships.map((row) => row.spaceId)).toEqual([authSpaceB])
@@ -486,35 +465,20 @@ realPostgres('RLS proof against real Postgres', () => {
          (SELECT id FROM "user" WHERE email='${AUTH_EMAIL_REPAIR}'),'member','write',now());`,
     )
     await setActiveRecordSpace(actorUrl!, repairToken, authSpaceA)
-    db()
-      .query(
-        `INSERT INTO schema_meta (key,value) VALUES ('record_session',?)
-         ON CONFLICT(key) DO UPDATE SET value=excluded.value`,
-      )
-      .run(repairToken)
+    recordSession.setToken(repairToken)
     await expect(
       inviteToActiveRecordSpace(actorUrl!, 'nobody@example.test', 'member'),
     ).rejects.toThrow('requires the owner role')
   })
 
   test('an owner does not list invitations they sent into their active space', async () => {
-    db()
-      .query(
-        `INSERT INTO schema_meta (key,value) VALUES ('record_session',?)
-         ON CONFLICT(key) DO UPDATE SET value=excluded.value`,
-      )
-      .run(tokenA)
+    recordSession.setToken(tokenA)
     const invited = await inviteToActiveRecordSpace(actorUrl!, 'owner-sent@example.test', 'member')
     expect((await pendingRecordInvitations(actorUrl!)).map((row) => row.id)).not.toContain(invited)
   })
 
   test('an expired pending invitation does not block re-inviting', async () => {
-    db()
-      .query(
-        `INSERT INTO schema_meta (key,value) VALUES ('record_session',?)
-         ON CONFLICT(key) DO UPDATE SET value=excluded.value`,
-      )
-      .run(tokenA)
+    recordSession.setToken(tokenA)
     const email = 'expired-reinvite@example.test'
     succeeds(
       'postgres',
@@ -551,12 +515,7 @@ realPostgres('RLS proof against real Postgres', () => {
     expect(visibleToOther.code, visibleToOther.stderr).toBe(0)
     expect(visibleToOther.stdout).toBe('0')
 
-    db()
-      .query(
-        `INSERT INTO schema_meta (key,value) VALUES ('record_session',?)
-         ON CONFLICT(key) DO UPDATE SET value=excluded.value`,
-      )
-      .run(tokenB)
+    recordSession.setToken(tokenB)
     expect((await pendingRecordInvitations(actorUrl!)).map((row) => row.id)).toEqual([
       pendingInvitation,
     ])
@@ -584,12 +543,7 @@ realPostgres('RLS proof against real Postgres', () => {
     expect(joined.code, joined.stderr).toBe(0)
     expect(joined.stdout.split('\n')).toEqual(['member|write', 'auth-a-project'])
 
-    db()
-      .query(
-        `INSERT INTO schema_meta (key,value) VALUES ('record_session',?)
-         ON CONFLICT(key) DO UPDATE SET value=excluded.value`,
-      )
-      .run(tokenA)
+    recordSession.setToken(tokenA)
     const second = newRecordId()
     succeeds(
       'postgres',
@@ -599,12 +553,7 @@ realPostgres('RLS proof against real Postgres', () => {
        VALUES ('${second}','${authSpaceA}','${AUTH_EMAIL_B}','${authUserA}',
          'member','pending',now() + interval '1 day',now());`,
     )
-    db()
-      .query(
-        `INSERT INTO schema_meta (key,value) VALUES ('record_session',?)
-         ON CONFLICT(key) DO UPDATE SET value=excluded.value`,
-      )
-      .run(tokenB)
+    recordSession.setToken(tokenB)
     await expect(acceptRecordInvitation(actorUrl!, second)).rejects.toThrow(
       'record user is already a member',
     )
@@ -617,12 +566,7 @@ realPostgres('RLS proof against real Postgres', () => {
     expect(after).toBe(before)
     expect(after).toBe(recordMigrationCount())
 
-    db()
-      .query(
-        `INSERT INTO schema_meta (key,value) VALUES ('record_session',?)
-         ON CONFLICT(key) DO UPDATE SET value=excluded.value`,
-      )
-      .run(tokenB)
+    recordSession.setToken(tokenB)
     const healthy = await diagnoseRecord({ recordUrl: actorUrl!, migrateUrl: ownerUrl! })
     expect(recordDoctorExitCode(healthy), JSON.stringify(healthy)).toBe(0)
     succeeds('postgres', 'postgres', 'ALTER SCHEMA public OWNER TO postgres;')
@@ -640,12 +584,7 @@ realPostgres('RLS proof against real Postgres', () => {
   })
 
   test('doctor fails and names project DELETE after that grant is revoked', async () => {
-    db()
-      .query(
-        `INSERT INTO schema_meta (key,value) VALUES ('record_session',?)
-         ON CONFLICT(key) DO UPDATE SET value=excluded.value`,
-      )
-      .run(tokenB)
+    recordSession.setToken(tokenB)
     succeeds(
       RECORD_OWNER_ROLE,
       'owner-password',
@@ -780,6 +719,7 @@ realPostgres('RLS proof against real Postgres', () => {
           (run) => run.id === httpRun,
         ),
       ).toBe(false)
+      await proveHostedDocs({ origin, token: created.token, otherToken: tokenB })
     } finally {
       server.stop(true)
     }

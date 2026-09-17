@@ -198,7 +198,7 @@ export async function portCommand(
       return
     }
     try {
-      applyImport(plan, { replace: has('replace'), sourceLabel: dir })
+      await applyImport(plan, { replace: has('replace'), sourceLabel: dir })
     } catch (error) {
       if (!(error instanceof ImportRefusalError)) throw error
       plan.refusals.push(...error.refusals.filter((refusal) => !plan.refusals.includes(refusal)))

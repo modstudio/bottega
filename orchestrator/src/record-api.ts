@@ -6,8 +6,12 @@ import { Hono } from 'hono'
 import { cors } from 'hono/cors'
 import { z } from 'zod'
 import { RECORD_SIGN_IN_REMEDY, type RecordIdentity } from './record-auth.ts'
+import type { RecordDoc, RecordDocRevision } from './record-docs.ts'
+import { RecordDocError } from './record-docs.ts'
 import type { RecordProject } from './record-projects.ts'
 import type { RecordCursor, RecordRun, RecordRunDetail } from './record-runs.ts'
+import type { RecordScore } from './record-verdicts.ts'
+import { RecordVerdictError } from './record-verdicts.ts'
 
 type AuthHandler = { handler(request: Request): Response | Promise<Response> }
 type ApiEnvironment = { Variables: { identity: RecordIdentity } }
@@ -34,6 +38,65 @@ type Deps = {
   ): Promise<Record<string, unknown>[]>
   readReview(input: Tenant & { id: string }): Promise<Record<string, unknown> | null>
   readProjects(input: Tenant): Promise<RecordProject[]>
+  listDocs(
+    input: Tenant & {
+      scope?: string
+      subject?: string | null
+      updatedSince?: string
+      limit: number
+      cursor: RecordCursor | null
+      includeDeleted: boolean
+    },
+  ): Promise<RecordDoc[]>
+  readDoc(input: Tenant & { id: string }): Promise<RecordDoc | null>
+  listDocRevisions(input: Tenant & { id: string }): Promise<RecordDocRevision[] | null>
+  upsertDoc(
+    input: Tenant & {
+      scope: string
+      subject: string | null
+      slug: string
+      title: string
+      body: string
+      delivery: 'inject' | 'demand'
+      projectName?: string | null
+      reason: string
+      author: string
+      forceInject?: string
+      op?: string
+      at?: string
+      id?: string
+      revisionId?: string
+    },
+  ): Promise<{ id: string; revisionId: string }>
+  deleteDoc(
+    input: Tenant & { id: string; reason: string; author: string },
+  ): Promise<{ id: string; revisionId: string }>
+  consumeDoc(
+    input: Tenant & { id: string; reason: string; author: string },
+  ): Promise<{ id: string; revisionId: string; alreadyConsumed: boolean }>
+  restoreDoc(
+    input: Tenant & { id: string; revisionId: string; reason: string; author: string },
+  ): Promise<{ id: string; revisionId: string }>
+  renameDocSubject(
+    input: Tenant & { from: string; to: string; count: number },
+  ): Promise<{ docs: number; revisions: number }>
+  countDocs(input: Tenant): Promise<{ docs: number; revisions: number }>
+  upsertScore(
+    input: Tenant & {
+      id: string
+      delivery: string
+      quality: string | null
+      fidelity: string | null
+      note: string | null
+      scoredAt: string
+      scoredBy: string
+    },
+  ): Promise<void>
+  voidRun(input: Tenant & { id: string; reason: string }): Promise<void>
+  listScores(
+    input: Tenant & { updatedSince?: string; limit: number; cursor: RecordCursor | null },
+  ): Promise<RecordScore[]>
+  countScores(input: Tenant): Promise<{ scores: number; voids: number }>
 }
 
 const limitSchema = z.coerce.number().int().min(1).max(100).default(20)
@@ -56,7 +119,7 @@ export function recordApi(deps: Deps): Hono<ApiEnvironment> {
       origin: (origin: string) => (allowed.has(origin) ? origin : undefined),
       credentials: true,
       allowHeaders: ['Authorization', 'Content-Type'],
-      allowMethods: ['GET', 'POST', 'OPTIONS'],
+      allowMethods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
     }
     app.use('/v1/*', cors(options))
     app.use('/api/auth/*', cors(options))
@@ -159,6 +222,239 @@ export function recordApi(deps: Deps): Hono<ApiEnvironment> {
   app.get('/v1/projects', async (context) => {
     const tenant = scope(context)
     return tenant ? context.json(await deps.readProjects(tenant)) : noSpace(context)
+  })
+  const writeError = (context: Context<ApiEnvironment>, error: unknown) => {
+    if (error instanceof RecordDocError || error instanceof RecordVerdictError) {
+      return context.json({ error: error.message }, error.status)
+    }
+    throw error
+  }
+  const page = <T>(items: T[], limit: number, cursorOf: (item: T) => RecordCursor) => {
+    const hasMore = items.length > limit
+    if (hasMore) items.pop()
+    const last = items.at(-1)
+    return { items, nextCursor: hasMore && last ? encodeRecordCursor(cursorOf(last)) : null }
+  }
+  app.get('/v1/docs', async (context) => {
+    const tenant = scope(context)
+    if (!tenant) return noSpace(context)
+    const query = z
+      .object({
+        scope: filterSchema,
+        subject: z.string().optional(),
+        updatedSince: z.string().datetime({ offset: true }).optional(),
+        limit: limitSchema,
+        cursor: z.string().optional(),
+        includeDeleted: z
+          .enum(['true', 'false'])
+          .optional()
+          .transform((value) => value === 'true'),
+      })
+      .safeParse(context.req.query())
+    if (!query.success) return context.json({ error: 'invalid doc list query' }, 400)
+    let cursor: RecordCursor | null = null
+    try {
+      cursor = query.data.cursor ? decodeRecordCursor(query.data.cursor) : null
+    } catch {
+      return context.json({ error: 'invalid cursor' }, 400)
+    }
+    const items = await deps.listDocs({
+      ...tenant,
+      scope: query.data.scope,
+      subject: query.data.subject === undefined ? undefined : query.data.subject || null,
+      updatedSince: query.data.updatedSince,
+      limit: query.data.limit,
+      cursor,
+      includeDeleted: Boolean(query.data.includeDeleted),
+    })
+    return context.json(
+      page(items, query.data.limit, (item) => ({ at: item.updatedAt, id: item.id })),
+    )
+  })
+  app.get('/v1/docs/counts', async (context) => {
+    const tenant = scope(context)
+    if (!tenant) return noSpace(context)
+    const docs = await deps.countDocs(tenant)
+    const scores = await deps.countScores(tenant)
+    return context.json({ ...docs, ...scores })
+  })
+  app.get('/v1/docs/:id', async (context) => {
+    const tenant = scope(context)
+    if (!tenant) return noSpace(context)
+    const id = idSchema.safeParse(context.req.param('id'))
+    if (!id.success) return context.json({ error: 'doc id must be a uuid' }, 400)
+    const doc = await deps.readDoc({ ...tenant, id: id.data })
+    return doc ? context.json(doc) : context.json({ error: 'doc not found' }, 404)
+  })
+  app.get('/v1/docs/:id/revisions', async (context) => {
+    const tenant = scope(context)
+    if (!tenant) return noSpace(context)
+    const id = idSchema.safeParse(context.req.param('id'))
+    if (!id.success) return context.json({ error: 'doc id must be a uuid' }, 400)
+    const items = await deps.listDocRevisions({ ...tenant, id: id.data })
+    return items ? context.json({ items }) : context.json({ error: 'doc not found' }, 404)
+  })
+  app.put('/v1/docs', async (context) => {
+    const tenant = scope(context)
+    if (!tenant) return noSpace(context)
+    const body = z
+      .object({
+        scope: z.string().min(1),
+        subject: z.string().nullable(),
+        slug: z.string().min(1),
+        title: z.string(),
+        body: z.string(),
+        delivery: z.enum(['inject', 'demand']),
+        projectName: z.string().nullable().optional(),
+        reason: z.string().trim().min(1),
+        author: z.string().trim().min(1),
+        forceInject: z.string().min(1).optional(),
+        op: z
+          .enum(['create', 'set', 'consume', 'delete', 'restore', 'import', 'backfill'])
+          .optional(),
+        at: z.string().datetime({ offset: true }).optional(),
+        id: z.string().uuid().optional(),
+        revisionId: z.string().uuid().optional(),
+      })
+      .safeParse(await context.req.json().catch(() => null))
+    if (!body.success) return context.json({ error: 'invalid doc upsert' }, 400)
+    try {
+      return context.json(await deps.upsertDoc({ ...tenant, ...body.data }))
+    } catch (error) {
+      return writeError(context, error)
+    }
+  })
+  app.delete('/v1/docs/:id', async (context) => {
+    const tenant = scope(context)
+    if (!tenant) return noSpace(context)
+    const id = idSchema.safeParse(context.req.param('id'))
+    if (!id.success) return context.json({ error: 'doc id must be a uuid' }, 400)
+    const body = z
+      .object({ reason: z.string().trim().min(1), author: z.string().trim().min(1) })
+      .safeParse(await context.req.json().catch(() => null))
+    if (!body.success) return context.json({ error: 'invalid doc delete' }, 400)
+    try {
+      return context.json(await deps.deleteDoc({ ...tenant, id: id.data, ...body.data }))
+    } catch (error) {
+      return writeError(context, error)
+    }
+  })
+  app.post('/v1/docs/:id/consume', async (context) => {
+    const tenant = scope(context)
+    if (!tenant) return noSpace(context)
+    const id = idSchema.safeParse(context.req.param('id'))
+    if (!id.success) return context.json({ error: 'doc id must be a uuid' }, 400)
+    const body = z
+      .object({ reason: z.string().trim().min(1), author: z.string().trim().min(1) })
+      .safeParse(await context.req.json().catch(() => null))
+    if (!body.success) return context.json({ error: 'invalid doc consume' }, 400)
+    try {
+      return context.json(await deps.consumeDoc({ ...tenant, id: id.data, ...body.data }))
+    } catch (error) {
+      return writeError(context, error)
+    }
+  })
+  app.post('/v1/docs/:id/restore', async (context) => {
+    const tenant = scope(context)
+    if (!tenant) return noSpace(context)
+    const id = idSchema.safeParse(context.req.param('id'))
+    if (!id.success) return context.json({ error: 'doc id must be a uuid' }, 400)
+    const body = z
+      .object({
+        revisionId: z.string().uuid(),
+        reason: z.string().trim().min(1),
+        author: z.string().trim().min(1),
+      })
+      .safeParse(await context.req.json().catch(() => null))
+    if (!body.success) return context.json({ error: 'invalid doc restore' }, 400)
+    try {
+      return context.json(await deps.restoreDoc({ ...tenant, id: id.data, ...body.data }))
+    } catch (error) {
+      return writeError(context, error)
+    }
+  })
+  app.post('/v1/docs/rename-subject', async (context) => {
+    const tenant = scope(context)
+    if (!tenant) return noSpace(context)
+    const body = z
+      .object({
+        from: z.string().min(1),
+        to: z.string().min(1),
+        count: z.number().int().nonnegative(),
+      })
+      .safeParse(await context.req.json().catch(() => null))
+    if (!body.success) return context.json({ error: 'invalid subject rename' }, 400)
+    try {
+      return context.json(await deps.renameDocSubject({ ...tenant, ...body.data }))
+    } catch (error) {
+      return writeError(context, error)
+    }
+  })
+  app.get('/v1/scores', async (context) => {
+    const tenant = scope(context)
+    if (!tenant) return noSpace(context)
+    const query = z
+      .object({
+        updatedSince: z.string().datetime({ offset: true }).optional(),
+        limit: limitSchema,
+        cursor: z.string().optional(),
+      })
+      .safeParse(context.req.query())
+    if (!query.success) return context.json({ error: 'invalid score list query' }, 400)
+    let cursor: RecordCursor | null = null
+    try {
+      cursor = query.data.cursor ? decodeRecordCursor(query.data.cursor) : null
+    } catch {
+      return context.json({ error: 'invalid cursor' }, 400)
+    }
+    const items = await deps.listScores({
+      ...tenant,
+      updatedSince: query.data.updatedSince,
+      limit: query.data.limit,
+      cursor,
+    })
+    return context.json(
+      page(items, query.data.limit, (item) => ({ at: item.updatedAt, id: item.runId })),
+    )
+  })
+  app.put('/v1/runs/:id/score', async (context) => {
+    const tenant = scope(context)
+    if (!tenant) return noSpace(context)
+    const id = idSchema.safeParse(context.req.param('id'))
+    if (!id.success) return context.json({ error: 'run id must be a uuid' }, 400)
+    const body = z
+      .object({
+        delivery: z.string(),
+        quality: z.string().nullable(),
+        fidelity: z.string().nullable(),
+        note: z.string().nullable(),
+        scoredAt: z.string().datetime({ offset: true }),
+        scoredBy: z.string().min(1),
+      })
+      .safeParse(await context.req.json().catch(() => null))
+    if (!body.success) return context.json({ error: 'invalid score upsert' }, 400)
+    try {
+      await deps.upsertScore({ ...tenant, id: id.data, ...body.data })
+      return context.json({ ok: true })
+    } catch (error) {
+      return writeError(context, error)
+    }
+  })
+  app.post('/v1/runs/:id/void', async (context) => {
+    const tenant = scope(context)
+    if (!tenant) return noSpace(context)
+    const id = idSchema.safeParse(context.req.param('id'))
+    if (!id.success) return context.json({ error: 'run id must be a uuid' }, 400)
+    const body = z
+      .object({ reason: z.string().min(1).default('voided with orch score --void') })
+      .safeParse(await context.req.json().catch(() => ({})))
+    if (!body.success) return context.json({ error: 'invalid void' }, 400)
+    try {
+      await deps.voidRun({ ...tenant, id: id.data, reason: body.data.reason })
+      return context.json({ ok: true })
+    } catch (error) {
+      return writeError(context, error)
+    }
   })
   return app
 }

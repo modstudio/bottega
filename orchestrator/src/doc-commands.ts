@@ -92,7 +92,7 @@ export async function docCommand(
     const forceInject = flag('force-inject')
     if (has('force-inject') && !forceInject?.trim())
       throw new Error('--force-inject requires a non-empty reason')
-    const doc = setDoc({
+    const doc = await setDoc({
       scope,
       subject,
       slug,
@@ -115,7 +115,7 @@ export async function docCommand(
   if (sub === 'consume') {
     const slug = argv[2]
     if (!slug || !scope) throw new Error('orch doc consume <slug> --scope S [--subject X]')
-    const result = consumeDoc(scope, subject, slug, {
+    const result = await consumeDoc(scope, subject, slug, {
       reason: flag('reason') ?? 'consumed by session',
       author: flag('author'),
     })
@@ -135,7 +135,7 @@ export async function docCommand(
     const reason = flag('reason')
     if (!slug || !scope || !reason?.trim())
       throw new Error('orch doc rm <slug> --scope S [--subject X] --reason TEXT')
-    const removed = removeDoc(scope, subject, slug, { reason, author: flag('author') })
+    const removed = await removeDoc(scope, subject, slug, { reason, author: flag('author') })
     if (has('json')) {
       presentation.log(JSON.stringify({ removed }))
       return
@@ -165,7 +165,7 @@ export async function docCommand(
     const count =
       sub === 'export'
         ? exportDocs(dir)
-        : importDocs(dir, { reason: reason!, author: flag('author') })
+        : await importDocs(dir, { reason: reason!, author: flag('author') })
     presentation.log(`${sub === 'export' ? 'exported' : 'imported'} ${count} docs`)
     return
   }
@@ -208,7 +208,7 @@ export async function docCommand(
     if (!revisionId || !reason?.trim()) {
       throw new Error('orch doc restore <scope> <subject|-> <slug> <rev> --reason TEXT')
     }
-    const restored = restoreDoc(addressScope, addressSubject, slug, revisionId, {
+    const restored = await restoreDoc(addressScope, addressSubject, slug, revisionId, {
       reason,
       author: flag('author'),
     })

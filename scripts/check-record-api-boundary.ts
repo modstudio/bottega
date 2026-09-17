@@ -10,8 +10,10 @@ const ALLOWED = new Set([
   'hono/cors',
   'zod',
   './record-auth.ts',
+  './record-docs.ts',
   './record-projects.ts',
   './record-runs.ts',
+  './record-verdicts.ts',
 ])
 const imports = importSpecifiers(readFileSync(`${ROOT}/${FILE}`, 'utf8'))
 const violations = [...imports.specifiers, ...imports.typeOnlySpecifiers]

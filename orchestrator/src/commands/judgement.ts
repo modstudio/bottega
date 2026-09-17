@@ -145,10 +145,10 @@ function addJudgementOptions(command: Command, judge: boolean): Command {
 
 export function register(program: Command): void {
   addJudgementOptions(program.command('judge <run-id> [words...]'), true).action(
-    (id, words, options) => {
+    async (id, words, options) => {
       const flags = optionFlags(options)
       writableDb()
-      const result = judgeRun(
+      const result = await judgeRun(
         Number(id),
         flags,
         {
@@ -173,10 +173,10 @@ export function register(program: Command): void {
   )
 
   addJudgementOptions(program.command('score <run-id> [words...]'), false).action(
-    (id, words, options) => {
+    async (id, words, options) => {
       const flags = optionFlags(options)
       writableDb()
-      scoreRun(
+      await scoreRun(
         Number(id),
         flags,
         {

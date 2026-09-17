@@ -40,6 +40,7 @@ import {
 } from './project-injection.ts'
 import { type ReadonlyProvision, validateReadonlyProvision } from './readonly-provision.ts'
 import { loadTrackedRecipe, recipePointerErrors } from './recipe-loader.ts'
+import { recordApiClient } from './record-api-client.ts'
 import { DEFAULT_PROJECT_CONFIG_PATH, resolveWorktreeLifecycle } from './worktree-lifecycle.ts'
 import {
   CREATE_VARS,
@@ -393,7 +394,7 @@ export function upsertProject(p: {
 }
 
 /** Rename the referent and refresh every deprecated one-release name mirror atomically. */
-export function renameProject(currentName: string, nextName: string): void {
+export async function renameProject(currentName: string, nextName: string): Promise<void> {
   writableDb()
   if (!nextName.trim()) throw new Error('project --name must be non-empty')
   const current = projectByName(currentName)
@@ -401,6 +402,19 @@ export function renameProject(currentName: string, nextName: string): void {
   if (currentName !== nextName && projectByName(nextName))
     throw new Error(`project "${nextName}" already exists`)
   const d = db()
+  const docs =
+    d
+      .query<{ n: number }, [string]>('SELECT count(*) AS n FROM doc WHERE subject=?')
+      .get(currentName)?.n ?? 0
+  const revisions =
+    d
+      .query<{ n: number }, [string]>('SELECT count(*) AS n FROM doc_revision WHERE subject=?')
+      .get(currentName)?.n ?? 0
+  await recordApiClient().renameSubject({
+    from: currentName,
+    to: nextName,
+    count: docs + revisions,
+  })
   writeTransaction(() => {
     d.query('UPDATE project SET name=? WHERE id=?').run(nextName, current.id)
     for (const [table, column] of [
@@ -411,14 +425,8 @@ export function renameProject(currentName: string, nextName: string): void {
       ['landing_review_carry', 'project'],
     ])
       d.query(`UPDATE ${table} SET ${column}=? WHERE project_id=?`).run(nextName, current.id)
-    d.query("UPDATE doc SET subject=? WHERE scope='project' AND project_id=?").run(
-      nextName,
-      current.id,
-    )
-    d.query("UPDATE doc_revision SET subject=? WHERE scope='project' AND project_id=?").run(
-      nextName,
-      current.id,
-    )
+    d.query('UPDATE doc SET subject=? WHERE subject=?').run(nextName, currentName)
+    d.query('UPDATE doc_revision SET subject=? WHERE subject=?').run(nextName, currentName)
   }, d)
 }
 

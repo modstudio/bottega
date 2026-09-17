@@ -19,8 +19,8 @@ import {
 import { retireProject, upsertProject } from './projects.ts'
 
 describe('scoped operator docs', () => {
-  test('CRUD round-trips and set is a uniqueness-preserving upsert', () => {
-    const first = setDoc({
+  test('CRUD round-trips and set is a uniqueness-preserving upsert', async () => {
+    const first = await setDoc({
       scope: 'global',
       subject: null,
       slug: 'hello',
@@ -28,7 +28,7 @@ describe('scoped operator docs', () => {
       body: 'one',
     })
     expect(getDoc('global', null, 'hello')?.body).toBe('one')
-    const second = setDoc({
+    const second = await setDoc({
       scope: 'global',
       subject: null,
       slug: 'hello',
@@ -39,12 +39,12 @@ describe('scoped operator docs', () => {
     expect(listDocs()).toHaveLength(1)
     expect(second.created_at).toBe(first.created_at)
     expect(second.body).toBe('two')
-    expect(removeDoc('global', null, 'hello')).toBe(true)
+    expect(await removeDoc('global', null, 'hello')).toBe(true)
     expect(getDoc('global', null, 'hello')).toBeNull()
   })
 
   test('create, set, consume, delete, and restore append complete state revisions', async () => {
-    const created = writeDoc({
+    const created = await writeDoc({
       scope: 'global',
       subject: null,
       slug: 'revision-life',
@@ -54,7 +54,7 @@ describe('scoped operator docs', () => {
       author: 'creator',
       reason: 'create it',
     })
-    writeDoc({
+    await writeDoc({
       scope: 'global',
       subject: null,
       slug: 'revision-life',
@@ -64,11 +64,11 @@ describe('scoped operator docs', () => {
       author: 'editor',
       reason: 'update it',
     })
-    consumeDoc('global', null, 'revision-life', { author: 'consumer', reason: 'finish it' })
+    await consumeDoc('global', null, 'revision-life', { author: 'consumer', reason: 'finish it' })
     const beforeDelete = getDoc('global', null, 'revision-life')!
-    deleteDoc('global', null, 'revision-life', { author: 'deleter', reason: 'remove it' })
+    await deleteDoc('global', null, 'revision-life', { author: 'deleter', reason: 'remove it' })
     await Bun.sleep(2)
-    const restored = restoreDoc(
+    const restored = await restoreDoc(
       'global',
       null,
       'revision-life',
@@ -105,8 +105,8 @@ describe('scoped operator docs', () => {
     expect(restored.updated_at).not.toBe(created.updated_at)
   })
 
-  test('restore refuses a legacy global inject revision with the existing remedy', () => {
-    const legacy = writeDoc({
+  test('restore refuses a legacy global inject revision with the existing remedy', async () => {
+    const legacy = await writeDoc({
       scope: 'global',
       subject: null,
       slug: 'legacy-inject',
@@ -118,16 +118,18 @@ describe('scoped operator docs', () => {
     db().query("UPDATE doc_revision SET delivery='inject' WHERE doc_id=?").run(legacy.id)
     const revision = listDocRevisions('global', null, 'legacy-inject')[0]!
 
-    expect(() =>
+    await expect(
       restoreDoc('global', null, 'legacy-inject', revision.id, { reason: 'restore legacy state' }),
-    ).toThrow('make the instruction canon, or write the operator document with delivery demand')
+    ).rejects.toThrow(
+      'make the instruction canon, or write the operator document with delivery demand',
+    )
   })
 
-  test('restore refuses a canon path colliding with the other level', () => {
+  test('restore refuses a canon path colliding with the other level', async () => {
     upsertProject({ name: 'known', path: process.cwd(), stack: null, canon: true, settings: {} })
     const slug = '.agents/rules/shared.md'
     const body = '---\ndescription: Shared rule\nalways: true\n---\n\nRule.\n'
-    const projectDoc = writeDoc({
+    const projectDoc = await writeDoc({
       scope: 'canon',
       subject: 'known',
       slug,
@@ -137,8 +139,8 @@ describe('scoped operator docs', () => {
       allowCanonBootstrap: true,
     })
     const revision = listDocRevisions('canon', 'known', slug)[0]!
-    deleteDoc('canon', 'known', slug, { reason: 'make the historic row restorable' })
-    writeDoc({
+    await deleteDoc('canon', 'known', slug, { reason: 'make the historic row restorable' })
+    await writeDoc({
       scope: 'canon',
       subject: null,
       slug,
@@ -148,15 +150,15 @@ describe('scoped operator docs', () => {
       allowCanonBootstrap: true,
     })
 
-    expect(() =>
+    await expect(
       restoreDoc('canon', 'known', projectDoc.slug, revision.id, {
         reason: 'restore colliding project rule',
       }),
-    ).toThrow('refusing canon path collision')
+    ).rejects.toThrow('refusing canon path collision')
   })
 
-  test('global canon writes are linted without a canon-enabled project', () => {
-    expect(() =>
+  test('global canon writes are linted without a canon-enabled project', async () => {
+    await expect(
       writeDoc({
         scope: 'canon',
         subject: null,
@@ -165,11 +167,11 @@ describe('scoped operator docs', () => {
         body: 'Rule without required metadata.\n',
         reason: 'prove global-only lint gate',
       }),
-    ).toThrow('refusing canon write; introduced')
+    ).rejects.toThrow('refusing canon write; introduced')
   })
 
-  test('write reasons are required and author defaults to the session or unknown', () => {
-    expect(() =>
+  test('write reasons are required and author defaults to the session or unknown', async () => {
+    await expect(
       writeDoc({
         scope: 'global',
         subject: null,
@@ -179,14 +181,14 @@ describe('scoped operator docs', () => {
         delivery: 'demand',
         reason: '  ',
       }),
-    ).toThrow('reason is required')
-    expect(() => consumeDocument('global', null, 'missing', { reason: '' })).toThrow(
+    ).rejects.toThrow('reason is required')
+    await expect(consumeDocument('global', null, 'missing', { reason: '' })).rejects.toThrow(
       'reason is required',
     )
-    expect(() => deleteDoc('global', null, 'missing', { reason: '\t' })).toThrow(
+    await expect(deleteDoc('global', null, 'missing', { reason: '\t' })).rejects.toThrow(
       'reason is required',
     )
-    expect(() => readDocs('/missing', { reason: ' ' })).toThrow('reason is required')
+    await expect(readDocs('/missing', { reason: ' ' })).rejects.toThrow('reason is required')
 
     // sessionId() used to fall back to the Remote Control bridge id, which is
     // set in a real Claude shell; clear the primary or the "unknown" branch
@@ -195,7 +197,7 @@ describe('scoped operator docs', () => {
     const bridgeBefore = process.env.CLAUDE_CODE_BRIDGE_SESSION_ID
     try {
       process.env.CLAUDE_CODE_SESSION_ID = 'doc-session'
-      writeDoc({
+      await writeDoc({
         scope: 'global',
         subject: null,
         slug: 'session-author',
@@ -206,7 +208,7 @@ describe('scoped operator docs', () => {
       })
       delete process.env.CLAUDE_CODE_SESSION_ID
       delete process.env.CLAUDE_CODE_BRIDGE_SESSION_ID
-      writeDoc({
+      await writeDoc({
         scope: 'global',
         subject: null,
         slug: 'unknown-author',
@@ -225,8 +227,8 @@ describe('scoped operator docs', () => {
     }
   })
 
-  test('revision diff renders a one-line replacement', () => {
-    writeDoc({
+  test('revision diff renders a one-line replacement', async () => {
+    await writeDoc({
       scope: 'global',
       subject: null,
       slug: 'diffed',
@@ -235,7 +237,7 @@ describe('scoped operator docs', () => {
       delivery: 'demand',
       reason: 'first',
     })
-    writeDoc({
+    await writeDoc({
       scope: 'global',
       subject: null,
       slug: 'diffed',
@@ -248,23 +250,23 @@ describe('scoped operator docs', () => {
     expect(diffDocRevisions(previous!.id, latest!.id)).toContain('-one\n+two')
   })
 
-  test('history and restore survive retirement of the addressed project', () => {
+  test('history and restore survive retirement of the addressed project', async () => {
     upsertProject({ name: 'former', path: '/w/former', stack: null, canon: true, settings: {} })
-    setDoc({
+    await setDoc({
       scope: 'project',
       subject: 'former',
       slug: 'historic',
       title: 'Historic',
       body: 'kept',
     })
-    removeDoc('project', 'former', 'historic')
+    await removeDoc('project', 'former', 'historic')
     expect(retireProject('former')).toBe('retired')
 
     expect(
       listDocRevisions('project', 'former', 'historic').map((revision) => revision.op),
     ).toEqual(['delete', 'create'])
     expect(
-      restoreDoc(
+      await restoreDoc(
         'project',
         'former',
         'historic',
@@ -282,16 +284,16 @@ describe('scoped operator docs', () => {
     })
   })
 
-  test('consume survives retirement of the addressed project', () => {
+  test('consume survives retirement of the addressed project', async () => {
     upsertProject({ name: 'former', path: '/w/former', stack: null, canon: true, settings: {} })
-    setDoc({
+    await setDoc({
       scope: 'resume',
       subject: 'former',
       slug: 'epic',
       title: 'Resume',
       body: '---\nstatus: open\n---\n\nresume',
     })
-    setDoc({
+    await setDoc({
       scope: 'project',
       subject: 'former',
       slug: 'note',
@@ -300,13 +302,13 @@ describe('scoped operator docs', () => {
     })
     expect(retireProject('former')).toBe('retired')
 
-    expect(consumeDoc('resume', 'former', 'epic').body).toContain('status: consumed')
-    expect(consumeDoc('project', 'former', 'note').body).toContain('status: consumed')
+    expect((await consumeDoc('resume', 'former', 'epic')).body).toContain('status: consumed')
+    expect((await consumeDoc('project', 'former', 'note')).body).toContain('status: consumed')
     expect(listDocRevisions('resume', 'former', 'epic')[0]?.op).toBe('consume')
     expect(listDocRevisions('project', 'former', 'note')[0]?.op).toBe('consume')
   })
 
-  test('scope, slug, and every subject rule name a usable fix', () => {
+  test('scope, slug, and every subject rule name a usable fix', async () => {
     upsertProject({ name: 'known', path: '/w/known', stack: null, canon: true, settings: {} })
     const put = (scope: string, subject: string | null, slug = 'ok') =>
       setDoc({
@@ -316,29 +318,35 @@ describe('scoped operator docs', () => {
         title: 'T',
         body: scope === 'resume' ? '---\nstatus: open\n---\n\nB' : 'B',
       })
-    expect(() => put('global', null, 'Bad')).toThrow('1-64')
-    expect(() => put('global', null, 'a'.repeat(65))).toThrow('1-64')
-    expect(() => put('unknown', null)).toThrow('valid scopes')
-    expect(() => put('project', 'missing')).toThrow('valid values: known')
-    expect(() => put('agent', 'missing')).toThrow(`valid values:`)
-    expect(() => put('job', 'missing')).toThrow(`valid values:`)
-    expect(() => put('machine', 'host')).toThrow('remove --subject')
-    expect(() => put('global', 'all')).toThrow('remove --subject')
-    expect(() => put('project', null)).toThrow('require --subject')
-    expect(() => put('resume', null)).toThrow('require --subject')
-    expect(() => put('resume', 'missing')).toThrow('valid values: known')
-    expect(put('resume', 'known').scope).toBe('resume')
+    await expect(put('global', null, 'Bad')).rejects.toThrow('1-64')
+    await expect(put('global', null, 'a'.repeat(65))).rejects.toThrow('1-64')
+    await expect(put('unknown', null)).rejects.toThrow('valid scopes')
+    await expect(put('project', 'missing')).rejects.toThrow('valid values: known')
+    await expect(put('agent', 'missing')).rejects.toThrow(`valid values:`)
+    await expect(put('job', 'missing')).rejects.toThrow(`valid values:`)
+    await expect(put('machine', 'host')).rejects.toThrow('remove --subject')
+    await expect(put('global', 'all')).rejects.toThrow('remove --subject')
+    await expect(put('project', null)).rejects.toThrow('require --subject')
+    await expect(put('resume', null)).rejects.toThrow('require --subject')
+    await expect(put('resume', 'missing')).rejects.toThrow('valid values: known')
+    expect((await put('resume', 'known')).scope).toBe('resume')
   })
 
-  test('docsForRun injects job docs and omits demand and non-run scopes', () => {
+  test('docsForRun injects job docs and omits demand and non-run scopes', async () => {
     upsertProject({ name: 'known', path: '/w/known', stack: null, canon: true, settings: {} })
     expect(docsForRun({ job: 'file-question', cwd: '/elsewhere' })).toEqual([])
-    setDoc({ scope: 'project', subject: 'known', slug: 'project', title: 'Project', body: 'P' })
-    setDoc({ scope: 'job', subject: 'file-question', slug: 'job', title: 'Job', body: 'J' })
-    setDoc({ scope: 'global', subject: null, slug: 'global', title: 'Global', body: 'G' })
-    setDoc({ scope: 'agent', subject: 'codex', slug: 'agent', title: 'Agent', body: 'A' })
-    setDoc({ scope: 'machine', subject: null, slug: 'machine', title: 'Machine', body: 'M' })
-    setDoc({
+    await setDoc({
+      scope: 'project',
+      subject: 'known',
+      slug: 'project',
+      title: 'Project',
+      body: 'P',
+    })
+    await setDoc({ scope: 'job', subject: 'file-question', slug: 'job', title: 'Job', body: 'J' })
+    await setDoc({ scope: 'global', subject: null, slug: 'global', title: 'Global', body: 'G' })
+    await setDoc({ scope: 'agent', subject: 'codex', slug: 'agent', title: 'Agent', body: 'A' })
+    await setDoc({ scope: 'machine', subject: null, slug: 'machine', title: 'Machine', body: 'M' })
+    await setDoc({
       scope: 'resume',
       subject: 'known',
       slug: 'epic',
@@ -350,10 +358,16 @@ describe('scoped operator docs', () => {
     ])
   })
 
-  test('delivery is round-tripped and demand docs never enter a compiled pack', () => {
+  test('delivery is round-tripped and demand docs never enter a compiled pack', async () => {
     upsertProject({ name: 'known', path: dir, stack: null, canon: true, settings: {} })
-    setDoc({ scope: 'machine', subject: null, slug: 'injected', title: 'Injected', body: 'é' })
-    setDoc({
+    await setDoc({
+      scope: 'machine',
+      subject: null,
+      slug: 'injected',
+      title: 'Injected',
+      body: 'é',
+    })
+    await setDoc({
       scope: 'global',
       subject: null,
       slug: 'demand',
@@ -361,8 +375,14 @@ describe('scoped operator docs', () => {
       body: 'large',
       delivery: 'demand',
     })
-    setDoc({ scope: 'job', subject: 'understand', slug: 'job', title: 'Job', body: 'J' })
-    setDoc({ scope: 'project', subject: 'known', slug: 'project', title: 'Project', body: 'P' })
+    await setDoc({ scope: 'job', subject: 'understand', slug: 'job', title: 'Job', body: 'J' })
+    await setDoc({
+      scope: 'project',
+      subject: 'known',
+      slug: 'project',
+      title: 'Project',
+      body: 'P',
+    })
     const pack = compilePack({ job: 'understand', cwd: dir })
     expect(pack.docs.map((doc) => doc.title)).toEqual(['Job'])
     expect(pack.docs.every((doc) => doc.revisionId > 0)).toBe(true)
@@ -374,13 +394,13 @@ describe('scoped operator docs', () => {
     )
   })
 
-  test('setDoc closes project and global inject while allowing canon and estate facts', () => {
+  test('setDoc closes project and global inject while allowing canon and estate facts', async () => {
     upsertProject({ name: 'known', path: dir, stack: null, canon: false, settings: {} })
     for (const [scope, subject] of [
       ['global', null],
       ['project', 'known'],
     ] as const) {
-      expect(() =>
+      await expect(
         writeDoc({
           scope,
           subject,
@@ -390,19 +410,23 @@ describe('scoped operator docs', () => {
           delivery: 'inject',
           reason: 'test refusal',
         }),
-      ).toThrow('make the instruction canon, or write the operator document with delivery demand')
+      ).rejects.toThrow(
+        'make the instruction canon, or write the operator document with delivery demand',
+      )
     }
     expect(
-      writeDoc({
-        scope: 'canon',
-        subject: null,
-        slug: '.agents/rules/global.md',
-        title: 'Global canon',
-        body: '---\ndescription: Global\n---\n\nRule.\n',
-        delivery: 'inject',
-        reason: 'test global canon',
-        allowCanonBootstrap: true,
-      }).scope,
+      (
+        await writeDoc({
+          scope: 'canon',
+          subject: null,
+          slug: '.agents/rules/global.md',
+          title: 'Global canon',
+          body: '---\ndescription: Global\n---\n\nRule.\n',
+          delivery: 'inject',
+          reason: 'test global canon',
+          allowCanonBootstrap: true,
+        })
+      ).scope,
     ).toBe('canon')
     for (const [scope, subject] of [
       ['machine', null],
@@ -410,22 +434,24 @@ describe('scoped operator docs', () => {
       ['job', 'understand'],
     ] as const) {
       expect(
-        writeDoc({
-          scope,
-          subject,
-          slug: `allowed-${scope}`,
-          title: 'Allowed',
-          body: 'B',
-          delivery: 'inject',
-          reason: 'test estate fact',
-        }).delivery,
+        (
+          await writeDoc({
+            scope,
+            subject,
+            slug: `allowed-${scope}`,
+            title: 'Allowed',
+            body: 'B',
+            delivery: 'inject',
+            reason: 'test estate fact',
+          })
+        ).delivery,
       ).toBe('inject')
     }
   })
 
-  test('inject estate facts above 8 KiB refuse unless force-inject; demand of any size succeeds', () => {
+  test('inject estate facts above 8 KiB refuse unless force-inject; demand of any size succeeds', async () => {
     const body = 'x'.repeat(9 * 1024)
-    expect(() =>
+    await expect(
       setDoc({
         scope: 'job',
         subject: 'understand',
@@ -434,10 +460,10 @@ describe('scoped operator docs', () => {
         body,
         delivery: 'inject',
       }),
-    ).toThrow(
+    ).rejects.toThrow(
       /inject document is \d+ bytes; threshold is 8192 bytes; current pack is \d+ bytes with -?\d+ bytes headroom/,
     )
-    expect(() =>
+    await expect(
       setDoc({
         scope: 'job',
         subject: 'understand',
@@ -446,8 +472,8 @@ describe('scoped operator docs', () => {
         body,
         delivery: 'inject',
       }),
-    ).toThrow('invariant: oversized narrative belongs on demand')
-    expect(() =>
+    ).rejects.toThrow('invariant: oversized narrative belongs on demand')
+    await expect(
       setDoc({
         scope: 'job',
         subject: 'understand',
@@ -456,8 +482,8 @@ describe('scoped operator docs', () => {
         body,
         delivery: 'inject',
       }),
-    ).toThrow('cleared by: use --delivery demand')
-    const forced = setDoc({
+    ).rejects.toThrow('cleared by: use --delivery demand')
+    const forced = await setDoc({
       scope: 'job',
       subject: 'understand',
       slug: 'inject-forced',
@@ -467,7 +493,7 @@ describe('scoped operator docs', () => {
       forceInject: 'operator override',
     })
     expect(forced.delivery).toBe('inject')
-    const demand = setDoc({
+    const demand = await setDoc({
       scope: 'global',
       subject: null,
       slug: 'demand-any-size',

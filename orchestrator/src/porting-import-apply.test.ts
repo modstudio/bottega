@@ -197,7 +197,7 @@ describe('port importer', () => {
       expect.objectContaining({ what: 'workspace and stack sections' }),
     ])
   })
-  test('a refusal makes apply all-or-nothing', () => {
+  test('a refusal makes apply all-or-nothing', async () => {
     const plan = planImport(fixture(), registered())
     plan.refusals.push({
       kind: 'refusal',
@@ -205,7 +205,7 @@ describe('port importer', () => {
       where: 'fixture row',
       why: 'cannot resolve it',
     })
-    expect(() => applyImport(plan)).toThrow(ImportRefusalError)
+    await expect(applyImport(plan)).rejects.toThrow(ImportRefusalError)
     expect(listPairs()).toEqual([])
     expect(listDoctrineRules()).toEqual([])
     expect(getDoc('global', null, 'port-category-map')).toBeNull()
@@ -215,17 +215,17 @@ describe('port importer', () => {
       expect.arrayContaining(Object.values(fixture())),
     )
   })
-  test('a destination refusal makes the plan report its whole input uncovered', () => {
+  test('a destination refusal makes the plan report its whole input uncovered', async () => {
     const files = fixture()
-    applyImport(planImport(files, registered()))
+    await applyImport(planImport(files, registered()))
     const refused = planImport(files, projects())
-    expect(() => applyImport(refused)).toThrow(ImportRefusalError)
+    await expect(applyImport(refused)).rejects.toThrow(ImportRefusalError)
     expect(refused.refusals).toEqual([
       expect.objectContaining({ what: 'existing port data', kind: 'refusal' }),
     ])
     expect(sourceCoverage(refused, files)).toHaveLength(6)
   })
-  test('persists every exclusion and its original value inside the import transaction', () => {
+  test('persists every exclusion and its original value inside the import transaction', async () => {
     const state = JSON.stringify({
       pairs: {
         'alpha-invented->beta-invented': {
@@ -238,7 +238,7 @@ describe('port importer', () => {
     })
     const plan = planImport(fixture({ state }), registered())
     expect(plan.refusals).toEqual([])
-    applyImport(plan)
+    await applyImport(plan)
     expect(getDoc('global', null, 'port-import-exclusions')).toMatchObject({
       title: 'Port import exclusions',
       body: expect.stringContaining('Original value:\nOriginal text that must survive verbatim.'),
@@ -249,17 +249,17 @@ describe('port importer', () => {
       reason: 'port import from source corpus',
     })
   })
-  test('a second import refuses existing data and replace atomically rewrites it', () => {
+  test('a second import refuses existing data and replace atomically rewrites it', async () => {
     const plan = planImport(fixture(), registered())
-    applyImport(plan)
-    expect(() => applyImport(plan)).toThrow(ImportRefusalError)
+    await applyImport(plan)
+    await expect(applyImport(plan)).rejects.toThrow(ImportRefusalError)
     const replacement = planImport(
       fixture({
         doctrine: '# Doctrine\n\nNew preface.\n\n2. **Replacement rule** Replacement body.\n',
       }),
       projects(),
     )
-    applyImport(replacement, { replace: true })
+    await applyImport(replacement, { replace: true })
     expect(listDoctrineRules().map((row) => row.number)).toEqual([2])
     expect(listPairs()).toHaveLength(1)
     expect(getDoc('global', null, 'port-doctrine-preface')?.body).toContain('New preface.')
@@ -267,26 +267,26 @@ describe('port importer', () => {
       listDocRevisions('global', null, 'port-doctrine-preface').map((revision) => revision.op),
     ).toEqual(['import', 'delete', 'import'])
   })
-  test('an importer-owned doc alone makes the destination non-empty', () => {
+  test('an importer-owned doc alone makes the destination non-empty', async () => {
     const plan = planImport(fixture(), registered())
-    setDoc({
+    await setDoc({
       scope: 'global',
       subject: null,
       slug: 'port-category-map',
       title: 'Existing',
       body: 'Keep me.',
     })
-    expect(() => applyImport(plan)).toThrow(ImportRefusalError)
+    await expect(applyImport(plan)).rejects.toThrow(ImportRefusalError)
     expect(getDoc('global', null, 'port-category-map')).toMatchObject({
       title: 'Existing',
       body: 'Keep me.',
     })
     expect(listPairs()).toEqual([])
   })
-  test('a late doctrine constraint failure rolls back every preceding write', () => {
+  test('a late doctrine constraint failure rolls back every preceding write', async () => {
     const plan = planImport(fixture(), registered())
     plan.doctrine.push({ ...plan.doctrine[0]!, title: 'Duplicate' })
-    expect(() => applyImport(plan)).toThrow()
+    await expect(applyImport(plan)).rejects.toThrow()
     expect(listPairs()).toEqual([])
     expect(db().query('SELECT COUNT(*) n FROM port_baseline').get()).toEqual({ n: 0 })
     expect(db().query('SELECT COUNT(*) n FROM port_skip').get()).toEqual({ n: 0 })
@@ -295,9 +295,9 @@ describe('port importer', () => {
     expect(listDoctrineRules()).toEqual([])
     expect(listDocs().filter((doc) => doc.slug.startsWith('port-'))).toEqual([])
   })
-  test('a late replacement failure restores all deleted prior data and docs', () => {
+  test('a late replacement failure restores all deleted prior data and docs', async () => {
     const original = planImport(fixture(), registered())
-    applyImport(original)
+    await applyImport(original)
     const priorPair = listPairs()
     const priorBaseline = baselineForPair(priorPair[0]!.id)
     const priorSkips = listSkips(priorPair[0]!.id)
@@ -305,7 +305,7 @@ describe('port importer', () => {
     const priorDoc = getDoc('global', null, 'port-category-map')
     const replacement = planImport(fixture(), projects())
     replacement.doctrine.push({ ...replacement.doctrine[0]!, title: 'Duplicate' })
-    expect(() => applyImport(replacement, { replace: true })).toThrow()
+    await expect(applyImport(replacement, { replace: true })).rejects.toThrow()
     expect(listPairs()).toEqual(priorPair)
     expect(baselineForPair(priorPair[0]!.id)).toEqual(priorBaseline)
     expect(listSkips(priorPair[0]!.id)).toEqual(priorSkips)

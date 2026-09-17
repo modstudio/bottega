@@ -3,9 +3,26 @@
 import { probeRecord, recordMigrationCount } from './postgres-migrate.ts'
 import { recordApi } from './record-api.ts'
 import { recordAllowedOrigins, recordAuth, recordIdentity } from './record-auth.ts'
+import {
+  consumeRecordDoc,
+  countRecordDocs,
+  deleteRecordDoc,
+  getRecordDoc,
+  listRecordDocRevisions,
+  listRecordDocs,
+  renameRecordDocSubject,
+  restoreRecordDoc,
+  upsertRecordDoc,
+} from './record-docs.ts'
 import { listRecordProjects } from './record-projects.ts'
 import { getRecordReview, listRecordReviews } from './record-reviews.ts'
 import { getRecordRun, listRecordRuns } from './record-runs.ts'
+import {
+  countRecordScores,
+  listRecordScores,
+  upsertRecordScore,
+  voidRecordRun,
+} from './record-verdicts.ts'
 
 type ServerEnvironment = Record<string, string | undefined>
 
@@ -59,6 +76,25 @@ export function startRecordApiServer(environment: ServerEnvironment = process.en
     readReviews: listRecordReviews,
     readReview: getRecordReview,
     readProjects: listRecordProjects,
+    listDocs: listRecordDocs,
+    readDoc: getRecordDoc,
+    listDocRevisions: listRecordDocRevisions,
+    upsertDoc: upsertRecordDoc,
+    deleteDoc: deleteRecordDoc,
+    consumeDoc: consumeRecordDoc,
+    restoreDoc: restoreRecordDoc,
+    renameDocSubject: renameRecordDocSubject,
+    countDocs: countRecordDocs,
+    upsertScore: async (input) =>
+      upsertRecordScore({
+        ...input,
+        delivery: input.delivery as 'none' | 'partial' | 'full',
+        quality: input.quality as 'wrong' | 'mixed' | 'right' | null,
+        fidelity: input.fidelity as 'drifted' | 'partial' | 'faithful' | null,
+      }),
+    voidRun: voidRecordRun,
+    listScores: listRecordScores,
+    countScores: countRecordScores,
   })
   return Bun.serve({
     hostname: '0.0.0.0',
