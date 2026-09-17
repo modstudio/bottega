@@ -2,7 +2,7 @@ import { describe, expect, test } from 'bun:test'
 import { addRun, score } from '../test/fixtures/store.ts'
 import { label } from './outcome.ts'
 import { candidates, MIN_SAMPLE, NOISE_BAND, QUALITY_STEP, weightCase } from './route.ts'
-import { WEIGHT, weigh } from './score.ts'
+import { WEIGHT, weigh } from './score/score.ts'
 import { median } from './statistics.ts'
 
 describe('the scoring matrix', () => {

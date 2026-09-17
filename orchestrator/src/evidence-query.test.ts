@@ -9,7 +9,7 @@ import {
   SHARED_OUTPUT_REASON,
 } from './evidence-query.ts'
 import { candidates } from './route.ts'
-import { weigh } from './score.ts'
+import { weigh } from './score/score.ts'
 import { state } from './serve.ts'
 
 test('runs --unscored uses the shared definition of an owed judgement', () => {

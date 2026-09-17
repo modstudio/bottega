@@ -1,7 +1,7 @@
 // concern: score-outbox
 /** Knows how a local verdict becomes an ordered hosted-record mutation. Must not know Postgres. */
 import type { Database } from 'bun:sqlite'
-import { PLATFORM_SPACE_ID } from '../../shared/record/schema.ts'
+import { PLATFORM_SPACE_ID } from '../../../shared/record/schema.ts'
 
 export const SCORE_RECORD_PAYLOAD_COLUMNS = [
   'id',

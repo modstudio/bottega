@@ -618,7 +618,7 @@
       "spawns": 0
     },
     {
-      "path": "orchestrator/src/score.test.ts",
+      "path": "orchestrator/src/score/score.test.ts",
       "wallMs": 31,
       "tests": 15,
       "cliShaped": false,

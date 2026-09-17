@@ -1,7 +1,14 @@
 // concern: record-verdicts
 /** Owns tenant-bound hosted run verdicts and evidence exclusion. Must not know local cache, CLI, or HTTP. */
 import { SQL } from 'bun'
-import { DELIVERY, type Delivery, FIDELITY, type Fidelity, QUALITY, type Quality } from './score.ts'
+import {
+  DELIVERY,
+  type Delivery,
+  FIDELITY,
+  type Fidelity,
+  QUALITY,
+  type Quality,
+} from './score/score.ts'
 
 export class RecordVerdictError extends Error {
   status: 400 | 404 | 409

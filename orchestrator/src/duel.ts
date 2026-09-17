@@ -4,7 +4,7 @@
  */
 import { db, writableDb, writeTransaction } from './db.ts'
 import { changeIdentityJoin, pairReasonSql, sameChangeSql, sameTaskSql } from './evidence-query.ts'
-import { judgeability } from './score.ts'
+import { judgeability } from './score/score.ts'
 
 export type DuelJobMatrix = {
   job: string

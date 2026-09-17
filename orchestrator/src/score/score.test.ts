@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test'
-import { addRun, score } from '../test/fixtures/store.ts'
-import { candidates } from './route.ts'
+import { addRun, score } from '../../test/fixtures/store.ts'
+import { candidates } from '../route.ts'
 import { FIDELITY_PENALTY, judgeability, weigh } from './score.ts'
 
 describe('fidelity: did it build what it was asked to build', () => {
