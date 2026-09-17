@@ -4,10 +4,17 @@
  * not know transports, contracts, or routing.
  */
 
-import type { PatchEquivalentForm } from './branch-state.ts'
+import { type PatchEquivalentForm, pullRequestCarriesKey } from './branch-state.ts'
 import { realpathOrSpelled } from './checkout-identity.ts'
 import { db } from './db.ts'
 import { repoRootOf, targetGitEnvironment } from './git-environment.ts'
+import {
+  GH_MERGED_PR_LIMIT,
+  mergedPullRequests,
+  pullRequestCommitCheck,
+  pullRequestNameCheck,
+} from './merged-pull-request.ts'
+import type { Project } from './projects.ts'
 import { projectAt, projects } from './projects.ts'
 import { reviewRunEvidenceSql } from './review-evidence-sql.ts'
 import type { Worktree } from './worktree-types.ts'
@@ -28,6 +35,118 @@ export type TaskBranchRunRow = {
   parent_run_id: number | null
   branch: string
   launch_base: string | null
+}
+
+export type TaskBranchPullRequestCheck =
+  | { state: 'landed'; landedBy: 'name' | 'pr-commits'; number: number }
+  | { state: 'unmatched' }
+  | { state: 'unknown'; reason: string }
+
+export type TaskBranchLandingDecision =
+  | { action: 'skip'; number?: number }
+  | { action: 'keep' }
+  | { action: 'refuse'; message: string }
+
+/** Decide whether dispatch may reuse one observed task branch. */
+export function decideTaskBranchLanding(input: {
+  branch: string
+  tip: string
+  trunk: string
+  localCheck: PatchEquivalentForm | null
+  pullRequestCheck: TaskBranchPullRequestCheck
+}): TaskBranchLandingDecision {
+  if (input.localCheck) return { action: 'skip' }
+  if (input.pullRequestCheck.state === 'landed') {
+    return { action: 'skip', number: input.pullRequestCheck.number }
+  }
+  if (input.pullRequestCheck.state === 'unknown') {
+    return {
+      action: 'refuse',
+      message:
+        `refusing task branch ${input.branch} tip ${input.tip}: ` +
+        `GitHub landing check could not complete: ${input.pullRequestCheck.reason}; ` +
+        `rerun with --base ${input.trunk}`,
+    }
+  }
+  return { action: 'keep' }
+}
+
+/** Observe whether a merged pull request contains one task branch's content. */
+function taskBranchPullRequestCheck(input: {
+  project: Project
+  launchKey: string
+  branch: string
+  tip: string
+}): TaskBranchPullRequestCheck {
+  let listing: ReturnType<typeof mergedPullRequests>
+  try {
+    listing = mergedPullRequests(input.project)
+  } catch (error) {
+    return { state: 'unknown', reason: error instanceof Error ? error.message : String(error) }
+  }
+  const pullRequests = listing.pullRequests.sort((left, right) =>
+    right.mergedAt.localeCompare(left.mergedAt),
+  )
+  const fetched = new Map<number, string | null>()
+  const nameCheck = pullRequestNameCheck(
+    input.project,
+    pullRequests,
+    input.branch,
+    input.tip,
+    fetched,
+  )
+  if (nameCheck && 'error' in nameCheck) return { state: 'unknown', reason: nameCheck.error }
+  if (nameCheck && 'pullRequest' in nameCheck && nameCheck.containsTip) {
+    return { state: 'landed', landedBy: 'name', number: nameCheck.pullRequest.number }
+  }
+  const commitCheck = pullRequestCommitCheck(
+    input.project,
+    pullRequests.filter((pullRequest) => pullRequestCarriesKey(pullRequest, input.launchKey)),
+    input.tip,
+    fetched,
+  )
+  if (commitCheck && 'error' in commitCheck) {
+    return { state: 'unknown', reason: commitCheck.error }
+  }
+  if (commitCheck && 'number' in commitCheck) {
+    return { state: 'landed', landedBy: 'pr-commits', number: commitCheck.number }
+  }
+  if (listing.truncated) {
+    return {
+      state: 'unknown',
+      reason: `merged pull-request listing reached ${GH_MERGED_PR_LIMIT} entries and may be truncated`,
+    }
+  }
+  return { state: 'unmatched' }
+}
+
+function taskBranchAlreadyLanded(input: {
+  project: Project
+  repoRoot: string
+  launchKey: string
+  branch: string
+  tip: string
+  trunk: string
+  trunkTip: string
+  mergeBase: string
+}): boolean {
+  const localCheck = taskBranchPatchEquivalent({
+    cwd: input.repoRoot,
+    trunkTip: input.trunkTip,
+    branchTip: input.tip,
+    mergeBase: input.mergeBase,
+    commitMessage: `orch task branch ${input.launchKey}`,
+  })
+  if (localCheck) return true
+  const landing = decideTaskBranchLanding({
+    branch: input.branch,
+    tip: input.tip,
+    trunk: input.trunk,
+    localCheck,
+    pullRequestCheck: taskBranchPullRequestCheck(input),
+  })
+  if (landing.action === 'refuse') throw new Error(landing.message)
+  return landing.action === 'skip'
 }
 
 /** Whether a later explicit-base root moved the task's ownership to another branch. */
@@ -164,12 +283,15 @@ export function resolveTaskBranch(cwd: string, launchKey: string): TaskBranchCan
     if (!Number.isSafeInteger(commitCount) || commitCount < 1) continue
 
     if (
-      taskBranchPatchEquivalent({
-        cwd: repoRoot,
+      taskBranchAlreadyLanded({
+        project,
+        repoRoot,
+        launchKey,
+        branch,
+        tip,
+        trunk,
         trunkTip,
-        branchTip: tip,
         mergeBase,
-        commitMessage: `orch task branch ${launchKey}`,
       })
     )
       continue
