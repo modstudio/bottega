@@ -16,13 +16,14 @@ fly deploy --config hub/deploy/fly.toml \
 fly ips allocate-v4 --shared -a bottega-hub
 fly ips allocate-v6 -a bottega-hub
 fly certs add app.bottega.run -a bottega-hub
+fly certs add next.bottega.run -a bottega-hub
 ```
 
 On the record API app, allow the hub origin and share the parent cookie domain:
 
 ```sh
 fly secrets set -a bottega-api \
-  RECORD_API_ALLOWED_ORIGINS='https://app.bottega.run' \
+  RECORD_API_ALLOWED_ORIGINS='https://app.bottega.run,https://next.bottega.run' \
   RECORD_AUTH_COOKIE_DOMAIN='.bottega.run'
 ```
 

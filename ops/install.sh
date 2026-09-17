@@ -58,13 +58,6 @@ for tmpl in "$REPO"/launchd/*.plist.template; do
   if [[ "$label" == "com.user.local-model-tunnel" ]]; then
     mkdir -p "$HOME/Library/Logs/local-model-tunnel"
   fi
-  if [[ "$label" == "com.user.hub-tunnel" && ! -f "$HOME/.cloudflared/hub-tunnel.yml" ]]; then
-    echo "skipped: $label ($HOME/.cloudflared/hub-tunnel.yml is absent)"
-    continue
-  fi
-  if [[ "$label" == "com.user.hub-tunnel" ]]; then
-    mkdir -p "$HOME/Library/Logs/hub-tunnel"
-  fi
   if [[ "$label" == "com.user.orch-record-sync" && ! -f "$HOME/.claude/.env" ]]; then
     echo "skipped: $label ($HOME/.claude/.env is absent)"
     continue
@@ -104,7 +97,7 @@ done
 
 echo
 echo "Active agents:"
-launchctl list | grep -E 'brew-auto-upgrade|projects-morning-refresh|local-model-tunnel|orch-sweep|orch-monitor|orch-fix-defect|orch-canon-eval|orch-record-sync|hub-note-maintenance|hub-tunnel' \
+launchctl list | grep -E 'brew-auto-upgrade|projects-morning-refresh|local-model-tunnel|orch-sweep|orch-monitor|orch-fix-defect|orch-canon-eval|orch-record-sync|hub-note-maintenance' \
   || echo "  (none found)"
 
 if ((${#FAILED_LABELS[@]})); then

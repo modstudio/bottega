@@ -5,9 +5,9 @@
     <key>Label</key>
     <string>com.user.hub-serve</string>
 
-    <!-- The dashboard on loopback. ops' com.user.hub-tunnel publishes this
-         port at its public hostname behind Cloudflare Access, so it must be up
-         whether or not anyone started it by hand. -->
+    <!-- The dashboard on loopback, the only place hub writes are offered. The
+         public hostname serves the hosted hub, which is read-only, so this must
+         be up whether or not anyone started it by hand. -->
     <key>ProgramArguments</key>
     <array>
         <string>__REPO__/bin/hub</string>
