@@ -14,7 +14,6 @@ import {
   listNotes,
   mergeNote,
   type NoteAnchor,
-  promoteNote,
   staleNotes,
 } from './note.ts'
 
@@ -115,7 +114,14 @@ describe('suggestion notes', () => {
       const update = conn.query('UPDATE note SET anchors=? WHERE id=?')
       for (const note of [open, promoted, dropped]) update.run(anchor, note.id)
     })
-    promoteNote(promoted.id)
+    writeTransaction((conn) => {
+      const at = new Date().toISOString()
+      conn
+        .query(`INSERT INTO task(key,project,title,status,status_category,source,first_seen,last_seen)
+        VALUES ('DEV-9998','workshop','promoted','open','open','local',?,?)`)
+        .run(at, at)
+      conn.query(`UPDATE note SET promoted_task='DEV-9998' WHERE id=?`).run(promoted.id)
+    })
     dropNote(dropped.id, 'resolved')
     expect(listActionableNotes({ session }).map((note) => note.id)).toEqual([open.id])
   })

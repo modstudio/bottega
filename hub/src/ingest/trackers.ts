@@ -1,4 +1,5 @@
 import type { Database } from 'bun:sqlite'
+import { newRecordId } from '../../../shared/record/schema.ts'
 import {
   type AssigneeRef,
   resolveAssigneeIds,
@@ -9,6 +10,7 @@ import {
 import { db, nowIso, type Project, writeTransaction } from '../db.ts'
 import { credentials, Mcp } from '../mcp.ts'
 import { projects } from '../projects.ts'
+import { hostedMirrorTasks } from '../task-client.ts'
 
 export type { TrackerTask } from '../../../shared/trackers.ts'
 
@@ -143,6 +145,159 @@ export function upsertTrackerTask(t: TrackerTask, at = nowIso()) {
   writeTransaction((conn) => upsertTrackerTaskOn(conn, t, at))
 }
 
+async function mirrorTrackerSnapshot(
+  tasks: TrackerTask[],
+  local: ReadonlySet<string>,
+  before: ReadonlyMap<string, string>,
+  at: string,
+): Promise<Error | null> {
+  const mirroredTasks = tasks
+    .filter((task) => !local.has(task.key))
+    .map((task) => ({
+      id: newRecordId(),
+      key: task.key,
+      project: task.project,
+      project_name: task.project,
+      title: task.title,
+      status: task.status,
+      status_category: task.category,
+      parent_key: null,
+      body: null,
+      assignee: task.assignee,
+      opened_at: task.updatedAt ?? at,
+      closed_at: task.category === 'done' ? at : null,
+      source: 'mcp' as const,
+      first_seen: at,
+      last_seen: at,
+      created_at: at,
+      updated_at: task.updatedAt ?? at,
+      deleted_at: null,
+    }))
+  const mirroredEvents = tasks.flatMap((task) => {
+    const was = before.get(task.key)
+    return !local.has(task.key) && was !== undefined && was !== task.category
+      ? [
+          {
+            id: newRecordId(),
+            legacy_local_id: null,
+            task_key: task.key,
+            project_name: task.project,
+            at,
+            from_status: was,
+            to_status: task.category,
+            created_at: at,
+            updated_at: at,
+            deleted_at: null,
+          },
+        ]
+      : []
+  })
+  try {
+    for (let index = 0; index < mirroredTasks.length; index += 500)
+      await hostedMirrorTasks({ tasks: mirroredTasks.slice(index, index + 500) })
+    for (let index = 0; index < mirroredEvents.length; index += 500)
+      await hostedMirrorTasks({ tasks: [], statusEvents: mirroredEvents.slice(index, index + 500) })
+    return null
+  } catch (error) {
+    return error as Error
+  }
+}
+
+async function fetchTrackerTasks(source: TrackerSource, client: Mcp): Promise<TrackerTask[]> {
+  const tasks = await source.fetch(client)
+  const seen = new Set(tasks.map((task) => task.key))
+  const vanished = db()
+    .query<{ key: string }, [string]>(
+      `SELECT key FROM task
+       WHERE project = ? AND source = 'mcp'
+         AND status_category IN ('open','active','review')`,
+    )
+    .all(source.project)
+    .filter((row) => !seen.has(row.key))
+  for (const { key } of vanished.slice(0, 200)) {
+    try {
+      const task = source.lookup ? await source.lookup(client, key) : null
+      if (task) tasks.push(task)
+    } catch {
+      /* unfindable: leave it as it was rather than guess */
+    }
+  }
+  return tasks
+}
+
+function writeTrackerCache(
+  tasks: Iterable<TrackerTask>,
+  before: ReadonlyMap<string, string>,
+  local: ReadonlySet<string>,
+  at: string,
+): number {
+  let changed = 0
+  writeTransaction((conn) => {
+    const event = conn.query(
+      `INSERT OR IGNORE INTO task_status_event (task_key, at, from_status, to_status)
+       VALUES (?,?,?,?)`,
+    )
+    for (const task of tasks) {
+      const was = before.get(task.key)
+      upsertTrackerTaskOn(conn, task, at)
+      if (!local.has(task.key) && was !== undefined && was !== task.category) {
+        event.run(task.key, at, was, task.category)
+        changed++
+      }
+    }
+  })
+  return changed
+}
+
+async function backfillTrackerTasks(
+  source: TrackerSource,
+  client: Mcp,
+  missing: { task_key: string; project: string }[],
+  local: ReadonlySet<string>,
+  existing: ReadonlyMap<string, ExistingTask>,
+  at: string,
+): Promise<{ filled: number; activity: boolean }> {
+  let filled = 0
+  let activity = false
+  if (!source.lookup) return { filled, activity }
+  for (const { task_key } of missing.filter((row) => row.project === source.project)) {
+    try {
+      const task = await source.lookup(client, task_key)
+      if (!task) continue
+      await hostedMirrorTasks({
+        tasks: [
+          {
+            id: newRecordId(),
+            key: task.key,
+            project: task.project,
+            project_name: task.project,
+            title: task.title,
+            status: task.status,
+            status_category: task.category,
+            parent_key: null,
+            body: null,
+            assignee: task.assignee,
+            opened_at: task.updatedAt ?? at,
+            closed_at: task.category === 'done' ? at : null,
+            source: 'mcp',
+            first_seen: at,
+            last_seen: at,
+            created_at: at,
+            updated_at: task.updatedAt ?? at,
+            deleted_at: null,
+          },
+        ],
+      })
+      upsertTrackerTask(task, at)
+      filled++
+      if (!local.has(task.key) && differs(task, existing.get(task.key))) activity = true
+    } catch {
+      /* not findable; it stays git-derived and says so */
+    }
+  }
+  return { filled, activity }
+}
+
 /**
  * Snapshot every reachable tracker into the task table, recording transitions.
  *
@@ -231,32 +386,7 @@ export async function ingestTrackers(
         try {
           const m = new Mcp(creds.url, creds.token)
           await m.initialize()
-          const tasks = await s.fetch(m)
-
-          // A task that CLOSED has left the open list, so the sync will never see
-          // it again — and without this it would read as active for ever, which is
-          // also how the "done" view would stay permanently empty. Anything this
-          // project reported as open but did not return is looked up by key to find
-          // out what it became.
-          const seen = new Set(tasks.map((t) => t.key))
-          // Re-read the handle after the awaits above: a schema reload may have replaced it.
-          const vanished = db()
-            .query<{ key: string }, [string]>(
-              `SELECT key FROM task
-          WHERE project = ? AND source = 'mcp'
-            AND status_category IN ('open','active','review')`,
-            )
-            .all(s.project)
-            .filter((r) => !seen.has(r.key))
-
-          for (const { key } of vanished.slice(0, 200)) {
-            try {
-              const t = s.lookup ? await s.lookup(m, key) : null
-              if (t) tasks.push(t)
-            } catch {
-              /* unfindable: leave it as it was rather than guess */
-            }
-          }
+          const tasks = await fetchTrackerTasks(s, m)
 
           // One row per key. A key can arrive twice in a pass - once from the sync
           // and once from the vanished lookup - and writing both compares the second
@@ -267,43 +397,29 @@ export async function ingestTrackers(
             (t) => !local.has(t.key) && differs(t, existing.get(t.key)),
           )
 
-          let changed = 0
-          writeTransaction((conn) => {
-            const event = conn.query(
-              `INSERT OR IGNORE INTO task_status_event (task_key, at, from_status, to_status)
-               VALUES (?,?,?,?)`,
-            )
-            for (const t of unique.values()) {
-              const was = before.get(t.key)
-              upsertTrackerTaskOn(conn, t, at)
-              // A key whose category was never observed records no transition.
-              // Otherwise the first collect reports every closed task in the
-              // tracker's history as having just closed.
-              if (!local.has(t.key) && was !== undefined && was !== t.category) {
-                event.run(t.key, at, was, t.category)
-                changed++
-              }
+          const mirrorError = await mirrorTrackerSnapshot([...unique.values()], local, before, at)
+          if (mirrorError) {
+            return {
+              result: {
+                project: s.project,
+                tasks: 0,
+                changed: 0,
+                error: `hosted mirror skipped: ${mirrorError.message}`,
+              },
+              filled: 0,
             }
-          })
+          }
+          const changed = writeTrackerCache(unique.values(), before, local, at)
 
           // Use the connection which already proved reachable for the handful of
           // closed tasks recent work names. A failed full sync is not immediately
           // retried here: that doubled traffic precisely when a server was down.
-          let filled = 0
-          if (s.lookup) {
-            for (const { task_key } of missing.filter((row) => row.project === s.project)) {
-              try {
-                const t = await s.lookup(m, task_key)
-                if (!t) continue
-                upsertTrackerTask(t, at)
-                filled++
-                if (!local.has(t.key) && differs(t, existing.get(t.key))) activity = true
-              } catch {
-                /* not findable; it stays git-derived and says so */
-              }
-            }
+          const backfill = await backfillTrackerTasks(s, m, missing, local, existing, at)
+          activity ||= backfill.activity
+          return {
+            result: { project: s.project, tasks: unique.size, changed, activity },
+            filled: backfill.filled,
           }
-          return { result: { project: s.project, tasks: unique.size, changed, activity }, filled }
         } catch (e) {
           // One unreachable tracker must not take the collect down: the other
           // projects' work is still worth showing.

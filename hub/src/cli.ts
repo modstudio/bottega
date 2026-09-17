@@ -4,15 +4,7 @@ import { human } from '../../shared/interval.ts'
 import { createTrackerTask } from '../../shared/trackers.ts'
 import { projectOf } from './attribute.ts'
 import { watch, withLease } from './collect.ts'
-import {
-  DB_PATH,
-  db,
-  migrateDatabase,
-  nextImportedTaskKey,
-  nowIso,
-  requireDatabase,
-  writeTransaction,
-} from './db.ts'
+import { DB_PATH, db, migrateDatabase, nowIso, requireDatabase, writeTransaction } from './db.ts'
 import { reclaimFixtureQuestions } from './fixture-question-reclaim.ts'
 import { ingestGit } from './ingest/git.ts'
 import { ingestRuns } from './ingest/runs.ts'
@@ -34,7 +26,7 @@ import {
   setCuratorEnabled,
   staleNotes,
 } from './note.ts'
-import { pruneTaskBranches, startDashboardCapability } from './orch.ts'
+import { startDashboardCapability } from './orch.ts'
 import { projects } from './projects.ts'
 import { estateEngagedMs, rollUpDays, tasksInWindow } from './query.ts'
 import { printReconcile, reconcileOpenIntervals } from './reconcile.ts'
@@ -45,7 +37,6 @@ import { ownServeRecord, servePortIsFree, stopRecordedServe } from './serve-life
 import { getReport } from './settings.ts'
 import { printSyncResult, syncEvidence } from './sync.ts'
 import {
-  closeTask,
   commentTask,
   createTask,
   createTaskDocument,
@@ -59,6 +50,8 @@ import {
   showTask,
   updateTaskDocument,
 } from './task.ts'
+import { closeThenPrune } from './task-close.ts'
+import { pushTasks } from './task-push.ts'
 import { hoursAgo } from './time.ts'
 
 const argv = process.argv.slice(2)
@@ -100,11 +93,15 @@ const taskCommandShapes = new Map<
   ['show', { positionalCount: 1, valueFlags: new Set() }],
   [
     'set',
-    { positionalCount: 1, valueFlags: new Set(['--title', '--status', '--parent', '--body']) },
+    {
+      positionalCount: 1,
+      valueFlags: new Set(['--title', '--status', '--parent', '--body', '--assignee']),
+    },
   ],
   ['close', { positionalCount: 1, valueFlags: new Set() }],
   ['comment', { positionalCount: 2, valueFlags: new Set() }],
   ['import', { positionalCount: 1, valueFlags: new Set() }],
+  ['push', { positionalCount: 0, valueFlags: new Set() }],
   [
     'doc new',
     { positionalCount: 1, valueFlags: new Set(['--title', '--role', '--body', '--body-file']) },
@@ -196,7 +193,7 @@ const TASK_USAGE = `hub task new --project X --title "..." [--status Y] [--paren
   hub task list [--project X] [--status Y] [--parent KEY] [--json]
   hub task show <KEY> [--json]
   hub task set <KEY> [--title "..."] [--status Y] [--parent KEY|--no-parent]
-               [--body "..."] [--force]
+               [--body "..."] [--assignee NAME] [--force]
   hub task close <KEY> [--keep-branches]
   hub task comment <KEY> "..."
   hub task tracker-new --project X --title "..." --body "..."
@@ -207,7 +204,8 @@ const TASK_USAGE = `hub task new --project X --title "..." [--status Y] [--paren
   hub task doc set <ID> [--title "..."] [--role handoff|--no-role]
                [--body "..."|--body-file PATH] [--version TOKEN]
   hub task doc rm <ID>
-  hub task import <file.json> backfill from a clustered commit history`
+  hub task import <file.json> backfill from a clustered commit history
+  hub task push [--dry-run]   migrate and verify the local task cache`
 
 const USAGE = `hub — every project's tasks in flight, what each cost, and the daily report
 
@@ -260,7 +258,7 @@ async function collect() {
   const t0 = Date.now()
 
   if (run('git')) {
-    const g = ingestGit(since.slice(0, 10))
+    const g = await ingestGit(since.slice(0, 10))
     console.log(`git          ${g.days} days, ${g.tasks} task keys`)
   }
   if (run('runs')) {
@@ -338,6 +336,99 @@ function trackerTaskKey(result: unknown): unknown {
   )
 }
 
+async function importTasks(file: string) {
+  const project = projectOf(new URL('../..', import.meta.url).pathname)
+  const registered = projects().find((candidate) => candidate.name === project)
+  const prefix = registered?.settings.keyPrefixes?.[0]
+  if (!project || !prefix) throw new Error('the local project must declare a key prefix')
+  const items = JSON.parse(readFileSync(file, 'utf8')) as {
+    title: string
+    opened: string
+    closed: string | null
+    shas: string[]
+  }[]
+  const log = Bun.spawnSync(
+    ['git', '-C', new URL('../..', import.meta.url).pathname, 'log', '--all', '--format=%H%x09%cI'],
+    { stdout: 'pipe', stderr: 'ignore' },
+  )
+  const stamps = new Map(
+    new TextDecoder()
+      .decode(log.stdout)
+      .split('\n')
+      .filter(Boolean)
+      .map((line) => line.split('\t') as [string, string]),
+  )
+  const imported: Array<{ key: string; shas: string[] }> = []
+  for (const item of items) {
+    const done = !!item.closed
+    const row = await createTask(
+      {
+        project,
+        title: item.title,
+        status: done ? 'done' : 'open',
+        openedAt: item.opened,
+        closedAt: item.closed,
+      },
+      { skipDuplicateCheck: true },
+    )
+    imported.push({ key: row.key, shas: item.shas })
+  }
+  writeTransaction((conn) => {
+    for (const item of imported) {
+      for (const sha of item.shas) {
+        const at = stamps.get(sha)
+        if (!at) continue
+        conn
+          .query(`INSERT OR IGNORE INTO commit_key (sha, repo, task_key, at) VALUES (?,?,?,?)`)
+          .run(sha, project, item.key, at)
+      }
+    }
+  })
+  console.log(`imported ${items.length} tasks`)
+}
+
+async function createTaskCommand(
+  required: (name: string) => string,
+  newBody: () => string | undefined,
+) {
+  const project = required('project')
+  const title = required('title')
+  const body = newBody()
+  const override = flag('allow-duplicate')
+  const delay = Number(process.env.HUB_TEST_DUPLICATE_DELAY_MS ?? 0)
+  const afterDuplicateSearch =
+    delay > 0
+      ? () => {
+          const marker = process.env.HUB_TEST_DUPLICATE_MARKER
+          if (marker) writeFileSync(marker, '')
+          Bun.sleepSync(delay)
+        }
+      : undefined
+  try {
+    const row = await createTask(
+      { project, title, status: flag('status'), parent: flag('parent'), body },
+      {
+        allowDuplicateReason: has('allow-duplicate') ? override : undefined,
+        afterDuplicateSearch,
+      },
+    )
+    console.log(row.key)
+  } catch (error) {
+    if (!(error instanceof DuplicateTaskError)) throw error
+    throw new Error(
+      [
+        'possible duplicate tasks:',
+        ...error.candidates.map(
+          (candidate) =>
+            `${candidate.key} [${candidate.status ?? 'unknown'}] score ${candidate.score.toFixed(3)}  ${candidate.title}`,
+        ),
+        '',
+        'Refusing to create a duplicate. Pass --allow-duplicate "reason" to override.',
+      ].join('\n'),
+    )
+  }
+}
+
 async function task() {
   const sub = argv[1]
   if (taskHelpRequested()) {
@@ -359,22 +450,20 @@ async function task() {
   }
 
   async function closeAndPruneTask(key: string) {
-    const closed = closeTask(key)
+    const { closed, pruned, pruneError } = await closeThenPrune(key, has('keep-branches'))
     printRow(closed)
-    if (has('keep-branches')) return
-    try {
-      const pruned = await pruneTaskBranches(closed.project, closed.key)
-      console.log(`branches: deleted ${pruned.deleted.length}; kept ${pruned.kept.length}`)
-      for (const branch of pruned.operator) {
-        console.log(
-          `${branch.state}: ${branch.branch} (${branch.commitsNotOnTrunk} commits not on trunk); ${branch.command}`,
-        )
-      }
-    } catch (error) {
-      const detail = error instanceof Error ? error.message : String(error)
-      console.error(`branch prune failed: ${detail}`)
+    if (pruneError) {
+      console.error(`branch prune failed: ${pruneError.message}`)
       console.error(`retry: orch branches prune --project ${closed.project} --key ${closed.key}`)
       process.exitCode = 1
+      return
+    }
+    if (!pruned) return
+    console.log(`branches: deleted ${pruned.deleted.length}; kept ${pruned.kept.length}`)
+    for (const branch of pruned.operator) {
+      console.log(
+        `${branch.state}: ${branch.branch} (${branch.commitsNotOnTrunk} commits not on trunk); ${branch.command}`,
+      )
     }
   }
   const newBody = () => {
@@ -390,7 +479,7 @@ async function task() {
     const action = argv[2]
     const ref = argv[3] ?? ''
     if (action === 'new') {
-      const document = createTaskDocument({
+      const document = await createTaskDocument({
         task: ref,
         title: required('title'),
         body: newBody(),
@@ -437,12 +526,12 @@ async function task() {
       }
       if (!Object.keys(changes).length)
         throw new Error('hub task doc set requires a field to change')
-      const document = updateTaskDocument(ref, changes)
+      const document = await updateTaskDocument(ref, changes)
       console.log(`${document.id} updated; version ${document.version}`)
       return
     }
     if (action === 'rm') {
-      const document = deleteTaskDocument(ref)
+      const document = await deleteTaskDocument(ref)
       console.log(`${document.id} removed from ${document.task_key}`)
       return
     }
@@ -450,43 +539,7 @@ async function task() {
   }
 
   if (sub === 'new') {
-    const project = required('project')
-    const title = required('title')
-    const body = newBody()
-    const override = flag('allow-duplicate')
-    const delay = Number(process.env.HUB_TEST_DUPLICATE_DELAY_MS ?? 0)
-    const afterDuplicateSearch =
-      delay > 0
-        ? () => {
-            const marker = process.env.HUB_TEST_DUPLICATE_MARKER
-            if (marker) writeFileSync(marker, '')
-            Bun.sleepSync(delay)
-          }
-        : undefined
-    let row: ReturnType<typeof createTask>
-    try {
-      row = createTask(
-        { project, title, status: flag('status'), parent: flag('parent'), body },
-        {
-          allowDuplicateReason: has('allow-duplicate') ? override : undefined,
-          afterDuplicateSearch,
-        },
-      )
-    } catch (error) {
-      if (!(error instanceof DuplicateTaskError)) throw error
-      throw new Error(
-        [
-          'possible duplicate tasks:',
-          ...error.candidates.map(
-            (candidate) =>
-              `${candidate.key} [${candidate.status ?? 'unknown'}] score ${candidate.score.toFixed(3)}  ${candidate.title}`,
-          ),
-          '',
-          'Refusing to create a duplicate. Pass --allow-duplicate "reason" to override.',
-        ].join('\n'),
-      )
-    }
-    console.log(row.key)
+    await createTaskCommand(required, newBody)
     return
   }
   if (sub === 'duplicates') {
@@ -563,9 +616,10 @@ async function task() {
           ? { parent: null }
           : {}),
       ...(has('body') ? { body: required('body') } : {}),
+      ...(has('assignee') ? { assignee: required('assignee') } : {}),
     }
     if (!Object.keys(changes).length) throw new Error('hub task set requires a field to change')
-    printRow(setTask(argv[2] ?? '', changes, { force: has('force') }))
+    printRow(await setTask(argv[2] ?? '', changes, { force: has('force') }))
     return
   }
   if (sub === 'close') {
@@ -575,86 +629,23 @@ async function task() {
   if (sub === 'comment') {
     const body = argv[3]
     if (!body) throw new Error('hub task comment <KEY> "..."')
-    const comment = commentTask(argv[2] ?? '', body)
+    const comment = await commentTask(argv[2] ?? '', body)
     console.log(`${comment.task_key} commented ${comment.created_at}`)
     return
   }
   if (sub === 'import') {
-    const at = nowIso()
-    const project = projectOf(new URL('../..', import.meta.url).pathname)
-    const registered = projects().find((candidate) => candidate.name === project)
-    const prefix = registered?.settings.keyPrefixes?.[0]
-    if (!project || !prefix) throw new Error('the local project must declare a key prefix')
     const file = argv[2]
     if (!file) throw new Error('hub task import <file.json>')
-    const items = JSON.parse(readFileSync(file, 'utf8')) as {
-      title: string
-      opened: string
-      closed: string | null
-      shas: string[]
-    }[]
-    // One pass over git for every commit's real instant, rather than a
-    // subprocess per sha.
-    const log = Bun.spawnSync(
-      [
-        'git',
-        '-C',
-        new URL('../..', import.meta.url).pathname,
-        'log',
-        '--all',
-        '--format=%H%x09%cI',
-      ],
-      { stdout: 'pipe', stderr: 'ignore' },
-    )
-    const stamps = new Map(
-      new TextDecoder()
-        .decode(log.stdout)
-        .split('\n')
-        .filter(Boolean)
-        .map((l) => l.split('\t') as [string, string]),
-    )
-
-    writeTransaction((conn) => {
-      const ins = conn.query(
-        `INSERT INTO task (key, project, title, status, status_category, opened_at,
-                         closed_at, updated_at, source, first_seen, last_seen)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'local', ?, ?)`,
-      )
-      for (const t of items) {
-        const key = nextImportedTaskKey(prefix, conn)
-        const done = !!t.closed
-        ins.run(
-          key,
-          project,
-          t.title,
-          done ? 'Done' : 'Open',
-          done ? 'done' : 'open',
-          t.opened,
-          t.closed,
-          t.closed ?? t.opened,
-          at,
-          at,
-        )
-        // Backfilled tasks carry their commits, so commit-window attribution
-        // can find them.
-        //
-        // With the REAL commit timestamp, not the task's date. Every other row
-        // in this table holds a full ISO instant, and "2026-08-31" sorts BEFORE
-        // "2026-08-31T14:00:00Z" — so a date-only row falls outside every window
-        // that contains its own day, and matches nothing, silently.
-        for (const sha of t.shas) {
-          const at = stamps.get(sha)
-          if (!at) continue
-          conn
-            .query(`INSERT OR IGNORE INTO commit_key (sha, repo, task_key, at) VALUES (?,?,?,?)`)
-            .run(sha, project, key, at)
-        }
-      }
-    })
-    console.log(`imported ${items.length} tasks`)
+    await importTasks(file)
     return
   }
-  throw new Error('hub task <new|list|show|set|close|comment|import>')
+  if (sub === 'push') {
+    const result = await pushTasks({ dryRun: has('dry-run') })
+    console.log(JSON.stringify(result, null, 2))
+    if (result.match === false) process.exitCode = 1
+    return
+  }
+  throw new Error('hub task <new|list|show|set|close|comment|import|push>')
 }
 
 async function note() {
@@ -706,7 +697,7 @@ async function note() {
     return
   }
   if (sub === 'promote') {
-    const row = promoteNote(argv[2] ?? '')
+    const row = await promoteNote(argv[2] ?? '')
     console.log(`${row.promoted_task}`)
     return
   }

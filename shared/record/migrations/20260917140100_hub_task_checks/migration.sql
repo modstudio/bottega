@@ -1,0 +1,3 @@
+ALTER TABLE "hub_task" ADD CONSTRAINT "hub_task_status_category_check" CHECK ("status_category" IS NULL OR "status_category" IN ('open','active','review','done','dropped'));--> statement-breakpoint
+ALTER TABLE "hub_task" ADD CONSTRAINT "hub_task_source_check" CHECK ("source" IN ('mcp','git','local'));--> statement-breakpoint
+ALTER TABLE "hub_task_document" ADD CONSTRAINT "hub_task_document_role_check" CHECK ("role" IS NULL OR "role" = 'handoff');

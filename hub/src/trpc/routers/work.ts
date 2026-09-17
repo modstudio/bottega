@@ -28,9 +28,9 @@ function asWriteError(cause: unknown, conflict?: { from: string; to: string }): 
   return new TRPCError({ code: 'BAD_REQUEST', message, cause })
 }
 
-function write<T>(operation: () => T): T {
+async function write<T>(operation: () => T | Promise<T>): Promise<T> {
   try {
-    return operation()
+    return await operation()
   } catch (cause) {
     throw asWriteError(cause)
   }
@@ -123,9 +123,9 @@ export function createWorkRouter(given: Partial<WorkDeps> = {}) {
           version: z.string().min(1),
         }),
       )
-      .mutation(({ input: value }) => {
+      .mutation(async ({ input: value }) => {
         try {
-          return deps.updateTaskDocument(value.id, {
+          return await deps.updateTaskDocument(value.id, {
             title: value.title,
             body: value.body,
             expectedVersion: value.version,

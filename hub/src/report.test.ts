@@ -6,9 +6,23 @@ import { upsertTrackerTask } from './ingest/trackers.ts'
 import { boardTasks, endMs, stripWindow } from './query.ts'
 import { gather, renderHtml, renderText } from './report.ts'
 import { view } from './serve.ts'
-import { createTask, taskRecord } from './task.ts'
+import { showTask, taskRecord } from './task.ts'
 
 beforeAll(resetFixtureStore)
+
+let seededTask = 8_000
+function seedLocalTask(title: string) {
+  const key = `DEV-${seededTask++}`
+  const at = new Date().toISOString()
+  writeTransaction((conn) =>
+    conn
+      .query(`INSERT INTO task
+    (key,project,title,status,status_category,source,first_seen,last_seen)
+    VALUES (?,'workshop',?,'open','open','local',?,?)`)
+      .run(key, title, at, at),
+  )
+  return showTask(key).task
+}
 
 describe('daily report untasked bucket', () => {
   test('shows untasked work separately and unions it into ENGAGED once', () => {
@@ -90,7 +104,7 @@ describe('Eastern timestamps', () => {
 
 describe('heterogeneous work rows', () => {
   test('the windowed strip returns the same rows as the unfiltered task join', () => {
-    const task = createTask({ project: 'workshop', title: 'Strip window fixture' })
+    const task = seedLocalTask('Strip window fixture')
     writeTransaction((conn) =>
       conn
         .query(
@@ -189,7 +203,7 @@ describe('heterogeneous work rows', () => {
   })
 
   test('row assembly attaches capabilities and the source filter narrows before serving', async () => {
-    const local = createTask({ project: 'workshop', title: 'Source-filter local row' })
+    const local = seedLocalTask('Source-filter local row')
     upsertTrackerTask({
       key: 'ALP-999',
       project: 'alpha',

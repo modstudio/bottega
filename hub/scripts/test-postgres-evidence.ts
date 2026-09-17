@@ -7,6 +7,14 @@ import {
   upsertDays,
   upsertIntervals,
 } from '../src/hosted-evidence.ts'
+import {
+  createHostedDocument,
+  createHostedTask,
+  listHostedTasks,
+  mirrorHostedTasks,
+  patchHostedTask,
+  softDeleteHostedDocuments,
+} from '../src/hosted-tasks.ts'
 
 const adminUrl = process.env.ORCH_TEST_POSTGRES_URL
 const actorUrl = process.env.ORCH_RECORD_URL
@@ -15,6 +23,7 @@ if (!adminUrl || !actorUrl) throw new Error('Postgres evidence proof requires te
 const USER = '01990000-0000-7000-8000-000000000650'
 const SPACE_A = '01990000-0000-7000-8000-00000000065a'
 const SPACE_B = '01990000-0000-7000-8000-00000000065b'
+const PROJECT_A = '01990000-0000-7000-8000-00000000065c'
 const interval: IntervalEvidence = {
   task_key: 'DEV-655',
   project_name: PLATFORM_SLUG,
@@ -39,6 +48,8 @@ try {
   await admin`INSERT INTO space (id,name,slug,created_at) VALUES
     (${SPACE_A}::uuid,'Evidence A','evidence-a',now()),
     (${SPACE_B}::uuid,'Evidence B','evidence-b',now())`
+  await admin`INSERT INTO project(id,space_id,name,key_prefixes,created_at)
+    VALUES (${PROJECT_A}::uuid,${SPACE_A}::uuid,${PLATFORM_SLUG},ARRAY['DEV'],now())`
 
   await upsertIntervals(actorUrl, { userId: USER, spaceId: SPACE_A }, [interval])
   await upsertIntervals(actorUrl, { userId: USER, spaceId: SPACE_A }, [interval])
@@ -84,10 +95,74 @@ try {
     ])
     if ((await count(SPACE_A, 'hub_interval')) !== 0)
       throw new Error('vanished interval was not deleted')
+
+    const identity = { userId: USER, spaceId: SPACE_A }
+    const stamp = '2026-09-17T12:10:00.000Z'
+    const mirrored = {
+      id: '01990000-0000-7000-8000-00000000065d',
+      key: 'DEV-700',
+      project: PLATFORM_SLUG,
+      project_name: PLATFORM_SLUG,
+      title: 'Mirror fixture',
+      status: 'open',
+      status_category: 'open',
+      parent_key: null,
+      body: null,
+      assignee: null,
+      opened_at: stamp,
+      closed_at: null,
+      source: 'mcp' as const,
+      first_seen: stamp,
+      last_seen: stamp,
+      created_at: stamp,
+      updated_at: stamp,
+      deleted_at: null,
+    }
+    await mirrorHostedTasks(actorUrl, identity, { tasks: [mirrored] })
+    await mirrorHostedTasks(actorUrl, identity, { tasks: [mirrored] })
+    const created = await createHostedTask(actorUrl, identity, {
+      project: PLATFORM_SLUG,
+      title: 'Allocated fixture',
+    })
+    if (created.key !== 'DEV-701') throw new Error(`task allocation returned ${created.key}`)
+    await patchHostedTask(actorUrl, identity, created.key, {
+      status: 'done',
+      status_category: 'done',
+    })
+    const document = await createHostedDocument(actorUrl, identity, created.key, {
+      title: 'Disposable',
+      version: 'v1',
+    })
+    if (!document) throw new Error('task document create did not find its task')
+    await softDeleteHostedDocuments(actorUrl, identity, [document.id])
+    const visible = await listHostedTasks(actorUrl, identity, {})
+    if (visible.tasks.length !== 2) throw new Error('mirror re-push was not idempotent')
+    if (visible.documents.some((row) => row.id === document.id))
+      throw new Error('soft-deleted document was visible in the default list')
+    if (visible.statusEvents.length !== 1)
+      throw new Error('status patch did not append exactly one event')
+    const other = await listHostedTasks(actorUrl, { userId: USER, spaceId: SPACE_B }, {})
+    if (
+      other.tasks.length ||
+      other.comments.length ||
+      other.documents.length ||
+      other.statusEvents.length
+    )
+      throw new Error('another space observed hosted tasks')
   } finally {
     await client.close()
   }
-  console.log('hub postgres evidence proof: ok')
+  console.log('hub postgres evidence and task proof: ok')
 } finally {
+  await admin`DELETE FROM hub_task_status_event WHERE space_id IN (${SPACE_A}::uuid, ${SPACE_B}::uuid)`
+  await admin`DELETE FROM hub_task_document WHERE space_id IN (${SPACE_A}::uuid, ${SPACE_B}::uuid)`
+  await admin`DELETE FROM hub_task_comment WHERE space_id IN (${SPACE_A}::uuid, ${SPACE_B}::uuid)`
+  await admin`DELETE FROM hub_task WHERE space_id IN (${SPACE_A}::uuid, ${SPACE_B}::uuid)`
+  await admin`DELETE FROM hub_interval WHERE space_id IN (${SPACE_A}::uuid, ${SPACE_B}::uuid)`
+  await admin`DELETE FROM hub_day WHERE space_id IN (${SPACE_A}::uuid, ${SPACE_B}::uuid)`
+  await admin`DELETE FROM seq WHERE space_id IN (${SPACE_A}::uuid, ${SPACE_B}::uuid)`
+  await admin`DELETE FROM project WHERE space_id IN (${SPACE_A}::uuid, ${SPACE_B}::uuid)`
+  await admin`DELETE FROM space WHERE id IN (${SPACE_A}::uuid, ${SPACE_B}::uuid)`
+  await admin`DELETE FROM "user" WHERE id = ${USER}::uuid`
   await admin.close()
 }

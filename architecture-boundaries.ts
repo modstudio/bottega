@@ -442,7 +442,7 @@ export const importBoundaries: ImportBoundary[] = [
   boundary(
     'postgres-schema-hub-boundary',
     'shared/record/schema-hub.ts',
-    ['drizzle-orm/pg-core', './schema.ts'],
+    ['drizzle-orm', 'drizzle-orm/pg-core', './schema.ts'],
     'Enforce the hosted hub evidence schema concern boundary.',
   ),
   boundary(

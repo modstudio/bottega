@@ -176,6 +176,7 @@ function noteCandidates(text: string, project?: string): NoteCandidate[] {
   return duplicateCandidates(
     notes.map(
       (note): TaskRow => ({
+        record_id: null,
         key: String(note.id),
         project: note.project,
         title: note.text,
@@ -260,7 +261,7 @@ export function createNote(input: {
   return { note: getNote(Number(result.lastInsertRowid)), candidates }
 }
 
-export function promoteNote(value: number | string): NoteRow {
+export async function promoteNote(value: number | string): Promise<NoteRow> {
   const note = getNote(value)
   if (note.promoted_task)
     throw new Error(`note ${note.id} is already promoted to ${note.promoted_task}`)
@@ -270,7 +271,7 @@ export function promoteNote(value: number | string): NoteRow {
         `Sighting ${index + 1}: cwd=${anchor.cwd}; branch=${anchor.branch ?? '-'}; commit=${anchor.commit ?? '-'}; run=${anchor.run_id ?? '-'}; session=${anchor.session_id ?? '-'}`,
     )
     .join('\n')
-  const task = createTask({
+  const task = await createTask({
     project: note.project,
     title: note.text,
     body: `${note.text}\n\nSIGHTINGS (${note.sightings})\n${evidence}`,

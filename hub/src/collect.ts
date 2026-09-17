@@ -5,6 +5,7 @@ import { ingestTrackers, type TrackerResult, trackerProjects } from './ingest/tr
 import { ingestTranscripts } from './ingest/transcripts.ts'
 import { rollUpDays } from './query.ts'
 import { syncEvidence } from './sync.ts'
+import { pullHostedTasks } from './task-cache.ts'
 import { hoursAgo } from './time.ts'
 
 /**
@@ -217,7 +218,7 @@ export async function collectFast() {
 
 /** The remote and commit-shaped legs. */
 export async function collectSlow(scheduled = false) {
-  ingestGit(hoursAgo(24 * 7).slice(0, 10))
+  await ingestGit(hoursAgo(24 * 7).slice(0, 10))
   const due = scheduled ? trackerSchedule.due(trackerProjects()) : null
   const results = due?.size === 0 ? [] : await ingestTrackers(due)
   if (scheduled) for (const result of results) trackerSchedule.record(result)
@@ -227,6 +228,11 @@ export async function collectSlow(scheduled = false) {
       await syncEvidence()
     } catch (error) {
       console.error(`hub: evidence sync failed: ${(error as Error).message}`)
+    }
+    try {
+      await pullHostedTasks()
+    } catch (error) {
+      console.error(`hub: hosted task pull skipped: ${(error as Error).message}`)
     }
   }
 }

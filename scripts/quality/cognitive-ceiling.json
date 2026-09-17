@@ -2,8 +2,9 @@
   {
     "file": "hub/src/cli.ts",
     "function": "task",
-    "line": 233,
-    "score": 176
+    "line": 432,
+    "score": 135,
+    "key": "hub/src/cli.ts\u0000task"
   },
   {
     "file": "hub/src/cli.ts",
@@ -28,12 +29,6 @@
     "function": "writeTransaction callback",
     "line": 92,
     "score": 34
-  },
-  {
-    "file": "hub/src/ingest/trackers.ts",
-    "function": "map callback#5",
-    "line": 163,
-    "score": 23
   },
   {
     "file": "hub/src/ingest/transcripts.ts",
