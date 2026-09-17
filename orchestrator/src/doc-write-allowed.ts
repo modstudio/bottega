@@ -47,7 +47,7 @@ export function refuseOversizedInject(input: {
   )
 }
 
-export function refuseCanonPathCollision(input: {
+function refuseCanonPathCollision(input: {
   scope: string
   subject: string | null
   slug: string

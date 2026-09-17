@@ -74,13 +74,19 @@ export type RecordApiClient = {
   counts(): Promise<{ docs: number; revisions: number; scores: number; voids: number }>
 }
 
-let injected: RecordApiClient | null = null
+const INJECT_KEY = Symbol.for('bottega.record-api-client')
+type InjectSlot = { current: RecordApiClient | null }
 
-export function installRecordApiClient(client: RecordApiClient | null): void {
-  injected = client
+function injectSlot(): InjectSlot {
+  const holder = globalThis as typeof globalThis & { [INJECT_KEY]?: InjectSlot }
+  return (holder[INJECT_KEY] ??= { current: null })
 }
 
-export function recordApiUnreachable(error: unknown): Error {
+function injectedClient(): RecordApiClient | null {
+  return injectSlot().current
+}
+
+function recordApiUnreachable(error: unknown): Error {
   const detail = error instanceof Error ? error.message : String(error)
   return new Error(`${detail}\n${RECORD_WRITE_REMEDY}`)
 }
@@ -88,7 +94,7 @@ export function recordApiUnreachable(error: unknown): Error {
 function recordApiBaseUrl(): string {
   const url = process.env.ORCH_RECORD_API_URL
   if (!url) throw recordApiUnreachable(new Error('ORCH_RECORD_API_URL is not set'))
-  if (process.env.NODE_ENV === 'test' && !injected) throw new Error(TEST_REFUSAL)
+  if (process.env.NODE_ENV === 'test' && !injectedClient()) throw new Error(TEST_REFUSAL)
   return url.replace(/\/$/, '')
 }
 
@@ -125,6 +131,7 @@ function ids(body: unknown): { id: string; revisionId: string } {
 }
 
 export function recordApiClient(): RecordApiClient {
+  const injected = injectedClient()
   if (injected) return injected
   if (process.env.NODE_ENV === 'test') throw new Error(TEST_REFUSAL)
   return {

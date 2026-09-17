@@ -155,8 +155,9 @@ copyFileSync(template, store)
   refreshAgents()
 }
 
-const { installRecordApiClient } = await import('../src/record-api-client.ts')
-const { createMemoryRecordApiClient } = await import('./fixtures/record-api.ts')
+const { createMemoryRecordApiClient, installRecordApiClient } = await import(
+  './fixtures/record-api.ts'
+)
 installRecordApiClient(createMemoryRecordApiClient())
 
 const { db } = await import('../src/db.ts')

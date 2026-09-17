@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test'
-import { createMemoryRecordApiClient } from '../test/fixtures/record-api.ts'
-import { installRecordApiClient, recordApiClient } from './record-api-client.ts'
+import { createMemoryRecordApiClient, installRecordApiClient } from '../test/fixtures/record-api.ts'
+import { recordApiClient } from './record-api-client.ts'
 
 describe('record API client test safety', () => {
   test('refuses a real base URL unless a stub is injected', () => {

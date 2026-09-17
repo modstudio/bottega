@@ -32,6 +32,15 @@ type StoredRevision = {
   at: string
 }
 
+const INJECT_KEY = Symbol.for('bottega.record-api-client')
+
+export function installRecordApiClient(client: RecordApiClient | null): void {
+  const holder = globalThis as typeof globalThis & {
+    [INJECT_KEY]?: { current: RecordApiClient | null }
+  }
+  ;(holder[INJECT_KEY] ??= { current: null }).current = client
+}
+
 export function createMemoryRecordApiClient(): RecordApiClient {
   const docs = new Map<string, StoredDoc>()
   const revisions = new Map<string, StoredRevision[]>()
