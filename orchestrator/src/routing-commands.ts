@@ -3,7 +3,7 @@
 import { bradleyTerry } from './agreement.ts'
 import { duelMatrices } from './duel.ts'
 import { guide } from './guide.ts'
-import { resolveLens } from './lenses.ts'
+import { resolveLens } from './lens/lenses.ts'
 import { projectAt } from './projects.ts'
 import { evidenceFor, MIN_SAMPLE, pick, promptSizeBucketLabel, scoreboard } from './route.ts'
 import {

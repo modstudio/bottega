@@ -282,7 +282,7 @@
       "spawns": 0
     },
     {
-      "path": "orchestrator/src/lenses.test.ts",
+      "path": "orchestrator/src/lens/lenses.test.ts",
       "wallMs": 37,
       "tests": 5,
       "cliShaped": false,

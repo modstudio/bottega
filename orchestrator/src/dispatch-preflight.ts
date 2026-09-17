@@ -8,7 +8,7 @@ import { realpathOrSpelled } from './checkout-identity.ts'
 import { db } from './db.ts'
 import { repoRootOf } from './git-environment.ts'
 import { job } from './jobs.ts'
-import { resolveLens } from './lenses.ts'
+import { resolveLens } from './lens/lenses.ts'
 import {
   assertMainCheckoutClean,
   assertRegisterBranches,

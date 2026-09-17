@@ -5,7 +5,7 @@
  */
 import { existsSync } from 'node:fs'
 import { tryWriteContention, writeTransaction } from './db.ts'
-import { selectProjectProfile } from './lenses.ts'
+import { selectProjectProfile } from './lens/lenses.ts'
 import {
   assertRegisterBranches,
   type Project,
