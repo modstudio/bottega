@@ -1,5 +1,9 @@
 import { describe, expect, test } from 'bun:test'
-import { isTaskBranchSuperseded, type TaskBranchRunRow } from './task-branch.ts'
+import {
+  decideTaskBranchLanding,
+  isTaskBranchSuperseded,
+  type TaskBranchRunRow,
+} from './task-branch.ts'
 
 const row = (
   id: number,
@@ -48,5 +52,60 @@ describe('task branch supersession', () => {
         row(11, 'DEV-609-old', 'main'),
       ]),
     ).toBe(false)
+  })
+})
+
+const landingInput = {
+  branch: 'DEV-650-orch-4390',
+  tip: '6347bc9a',
+  trunk: 'develop',
+  localCheck: null,
+  pullRequestCheck: { state: 'unmatched' } as const,
+}
+
+describe('task branch landing decision', () => {
+  test('local-check mutation: patch-equivalent content is skipped before an unknown PR result', () => {
+    expect(
+      decideTaskBranchLanding({
+        ...landingInput,
+        localCheck: 'commits',
+        pullRequestCheck: { state: 'unknown', reason: 'gh failed' },
+      }),
+    ).toEqual({ action: 'skip' })
+  })
+
+  test('PR-name mutation: a containing merged PR head skips the branch', () => {
+    expect(
+      decideTaskBranchLanding({
+        ...landingInput,
+        pullRequestCheck: { state: 'landed', landedBy: 'name', number: 216 },
+      }),
+    ).toEqual({ action: 'skip', number: 216 })
+  })
+
+  test('PR-commits mutation: a patch-matching merged PR skips the branch', () => {
+    expect(
+      decideTaskBranchLanding({
+        ...landingInput,
+        pullRequestCheck: { state: 'landed', landedBy: 'pr-commits', number: 217 },
+      }),
+    ).toEqual({ action: 'skip', number: 217 })
+  })
+
+  test('no-match mutation: a completed unmatched PR check keeps the candidate', () => {
+    expect(decideTaskBranchLanding(landingInput)).toEqual({ action: 'keep' })
+  })
+
+  test('unknown-state mutation: an incomplete PR check refuses with the explicit-base remedy', () => {
+    expect(
+      decideTaskBranchLanding({
+        ...landingInput,
+        pullRequestCheck: { state: 'unknown', reason: 'merged PR listing was truncated' },
+      }),
+    ).toEqual({
+      action: 'refuse',
+      message:
+        'refusing task branch DEV-650-orch-4390 tip 6347bc9a: GitHub landing check could not complete: merged PR listing was truncated; rerun with --base develop',
+    })
   })
 })

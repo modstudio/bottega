@@ -1,14 +1,7 @@
 // concern: branch-state
 /** Decides a run-minted branch's reported state from already-observed facts. */
 
-export type MergedPullRequest = {
-  number: number
-  headRefName: string
-  headRefOid: string
-  title: string
-  mergeCommit: { oid: string } | null
-  mergedAt: string
-}
+import type { MergedPullRequest, PullRequestCommitCheck } from './merged-pull-request.ts'
 
 export function pullRequestCarriesKey(
   pullRequest: Pick<MergedPullRequest, 'headRefName' | 'title'>,
@@ -78,8 +71,6 @@ export type BranchLanding =
 export type BranchStateDecision = BranchLanding & {
   note?: typeof STALE_RECORDED_LANDING
 }
-
-export type PullRequestCommitCheck = { number: number } | { error: string } | null
 
 export type ProtectedBranchKind = 'trunk' | 'production'
 

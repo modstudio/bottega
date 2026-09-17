@@ -1,12 +1,12 @@
 // concern: branch-state
 /** Pure policy for local branches that were not minted by an orchestrator run. */
 
+import type { PatchEquivalentForm, ProtectedBranchKind } from './branch-state.ts'
 import type {
   MergedPullRequest,
-  PatchEquivalentForm,
-  ProtectedBranchKind,
   PullRequestCommitCheck,
-} from './branch-state.ts'
+  PullRequestNameCheck,
+} from './merged-pull-request.ts'
 
 export type OtherBranchLanding =
   | {
@@ -22,11 +22,6 @@ export type OtherBranchLanding =
   | { state: 'landed'; landedBy: { type: 'pr-commits'; number: number } }
   | { state: 'empty' | 'unlanded' | 'held' }
   | { state: 'unknown'; error?: string }
-
-export type PullRequestNameCheck =
-  | { pullRequest: MergedPullRequest; containsTip: boolean }
-  | { error: string }
-  | null
 
 export function isHeldBranch(branch: string): boolean {
   return (

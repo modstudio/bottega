@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test'
-import type { MergedPullRequest } from './branch-state.ts'
+import type { MergedPullRequest } from './merged-pull-request.ts'
 import {
   decideOtherBranchState,
   decideOtherPruneEligibility,
