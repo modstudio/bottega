@@ -3,8 +3,8 @@ import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'no
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { Glob } from 'bun'
-import { architectureRules, dependencyCruiserConfig, modules } from './architecture.ts'
 import { CONCERNS } from '../shared/brand.ts'
+import { architectureRules, dependencyCruiserConfig, modules } from './architecture.ts'
 import { importSpecifiers } from './import-scanner.ts'
 
 const ROOT = new URL('..', import.meta.url).pathname.replace(/\/$/, '')

@@ -1,6 +1,6 @@
 import { dirname, join, normalize } from 'node:path'
-import { importBoundaries } from './architecture-boundaries.ts'
 import { CONCERNS } from '../shared/brand.ts'
+import { importBoundaries } from './architecture-boundaries.ts'
 
 type ConcernManifest = {
   roots: typeof CONCERNS
