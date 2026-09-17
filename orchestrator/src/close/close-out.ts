@@ -6,42 +6,42 @@
  */
 import { existsSync, rmSync } from 'node:fs'
 import { join, resolve } from 'node:path'
-import { adoptedTreeCloseOutDecision } from './close-out-adoption.ts'
-import { db, nowIso, sessionId, writeTransaction } from './db.ts'
-import { gitContext, repoRootOf, targetGitEnvironment } from './git-environment.ts'
-import { HOOK_TREE_JOB, hookTreeHoldDecision } from './hook-tree.ts'
-import { isGroupKillablePgid, runHasLiveDescendants } from './idle-kill.ts'
-import { type KeepTreeHoldDecision, keepTreeHold } from './keep-tree-hold.ts'
-import { pidAlive } from './process-liveness.ts'
+import { db, nowIso, sessionId, writeTransaction } from '../db.ts'
+import { gitContext, repoRootOf, targetGitEnvironment } from '../git-environment.ts'
+import { HOOK_TREE_JOB, hookTreeHoldDecision } from '../hook-tree.ts'
+import { isGroupKillablePgid, runHasLiveDescendants } from '../idle-kill.ts'
+import { type KeepTreeHoldDecision, keepTreeHold } from '../keep-tree-hold.ts'
+import { pidAlive } from '../process-liveness.ts'
 import {
   projectLockState,
   reclaimStaleProjectLock,
   withCleanupLock,
   withWorktreeLease,
   worktreeLeaseName,
-} from './project-lock.ts'
-import { projectAt, projectByName } from './projects.ts'
-import { proveWorktreeReconstructible } from './reclaim/reclaim.ts'
+} from '../project-lock.ts'
+import { projectAt, projectByName } from '../projects.ts'
+import { proveWorktreeReconstructible } from '../reclaim/reclaim.ts'
 import {
   type ResourceClaimState,
   recordRetainedRefClaim,
   sandboxDirectoryRelease,
   settleClaims,
   settledStateForCloseOut,
-} from './resource-claims.ts'
+} from '../resource-claims.ts'
 import {
   liveWorktreeSharers,
   otherConversationWorktreeSharers,
   worktreePathSpellings,
-} from './resource-ownership.ts'
-import { runAlive } from './run-alive.ts'
-import { RUNS_DIR } from './run-artifacts.ts'
-import { removeFreeRunLease, runLeaseState } from './run-lease.ts'
-import { processTable, terminateRunProcesses } from './run-process.ts'
-import { worktreeExists } from './worktree.ts'
-import { inspectTreeOwnership } from './worktree-attribution.ts'
-import { branchTip, removeFor, restoreBranch } from './worktree-remove.ts'
-import type { Worktree } from './worktree-types.ts'
+} from '../resource-ownership.ts'
+import { runAlive } from '../run-alive.ts'
+import { RUNS_DIR } from '../run-artifacts.ts'
+import { removeFreeRunLease, runLeaseState } from '../run-lease.ts'
+import { processTable, terminateRunProcesses } from '../run-process.ts'
+import { worktreeExists } from '../worktree.ts'
+import { inspectTreeOwnership } from '../worktree-attribution.ts'
+import { branchTip, removeFor, restoreBranch } from '../worktree-remove.ts'
+import type { Worktree } from '../worktree-types.ts'
+import { adoptedTreeCloseOutDecision } from './close-out-adoption.ts'
 
 export type CloseOutResult = {
   runId: number
