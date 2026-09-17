@@ -1,6 +1,7 @@
 import { expect, test } from 'bun:test'
 import { renderToStaticMarkup } from 'react-dom/server'
 import { HostedSignInFrame, RailFooterIdentity } from '@/routes/__root'
+import { spaceMenuItems } from '@/ui/shell/user-menu'
 import { PLATFORM_NAME } from '../../../../shared/brand.ts'
 
 test('hosted sign-in renders without application navigation or a rail footer', () => {
@@ -31,6 +32,51 @@ test('hosted identity with a session renders its email and can sign out', () => 
 
   expect(html).toContain('reader@example.test')
   expect(html).toContain('Sign out</button>')
+})
+
+test('hosted rail names its only active space without offering a switcher', () => {
+  const html = renderToStaticMarkup(
+    <RailFooterIdentity
+      hosted
+      email="reader@example.test"
+      activeSpaceId="space-a"
+      spaces={[{ id: 'space-a', name: 'Space A' }]}
+      onSelectSpace={() => {}}
+      onSignOut={() => {}}
+    />,
+  )
+
+  expect(html).toContain('Space A')
+  expect(html).not.toContain('Space A ✓')
+})
+
+test('hosted rail offers all memberships and choosing one sets the active space', () => {
+  let selected = ''
+  const spaces = [
+    { id: 'space-a', name: 'Space A' },
+    { id: 'space-b', name: 'Space B' },
+  ]
+  const html = renderToStaticMarkup(
+    <RailFooterIdentity
+      hosted
+      email="reader@example.test"
+      activeSpaceId="space-a"
+      spaces={spaces}
+      onSelectSpace={(spaceId) => {
+        selected = spaceId
+      }}
+      onSignOut={() => {}}
+    />,
+  )
+
+  expect(html).toContain('Space A ✓')
+  expect(html).toContain('Space B')
+  spaceMenuItems(spaces, 'space-a', (spaceId) => {
+    selected = spaceId
+  })
+    .find((item) => item.label === 'Space B')
+    ?.onSelect()
+  expect(selected).toBe('space-b')
 })
 
 test('local identity is unchanged', () => {

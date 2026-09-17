@@ -1,9 +1,23 @@
-import { LogOut, Monitor, Moon, Sun } from 'lucide-react'
+import { Building2, LogOut, Monitor, Moon, Sun } from 'lucide-react'
 import { type ThemeChoice, useTheme } from '../dom/use-theme'
 import { Menu } from '../menu/menu'
 
 const themeIcons = { system: Monitor, light: Sun, dark: Moon } as const
 const themeLabels = { system: 'System theme', light: 'Light theme', dark: 'Dark theme' } as const
+
+export function spaceMenuItems(
+  spaces: readonly { id: string; name: string }[],
+  activeSpaceId: string | undefined,
+  onSelectSpace: (spaceId: string) => void,
+) {
+  if (spaces.length <= 1) return []
+  return spaces.map((space) => ({
+    label: space.id === activeSpaceId ? `${space.name} ✓` : space.name,
+    icon: Building2,
+    disabled: space.id === activeSpaceId,
+    onSelect: () => onSelectSpace(space.id),
+  }))
+}
 
 function initials(name: string) {
   const words = name.split(/[\s@._-]+/).filter(Boolean)
@@ -18,11 +32,17 @@ function initials(name: string) {
 export function UserMenu({
   name,
   detail,
+  spaces = [],
+  activeSpaceId,
+  onSelectSpace,
   themeKey,
   onSignOut,
 }: {
   name: string
   detail?: string
+  spaces?: readonly { id: string; name: string }[]
+  activeSpaceId?: string
+  onSelectSpace?: (spaceId: string) => void
   themeKey: string
   onSignOut?: () => void
 }) {
@@ -43,6 +63,7 @@ export function UserMenu({
         </div>
       }
       items={[
+        ...(onSelectSpace ? spaceMenuItems(spaces, activeSpaceId, onSelectSpace) : []),
         theme('system'),
         theme('light'),
         theme('dark'),

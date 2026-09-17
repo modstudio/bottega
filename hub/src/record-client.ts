@@ -229,13 +229,14 @@ async function request<T>(
   options: RecordClientOptions,
   path: string,
   schema: z.ZodType<T>,
+  init: RequestInit = {},
 ): Promise<T> {
-  const headers = new Headers()
+  const headers = new Headers(init.headers)
   if (options.headers.cookie) headers.set('Cookie', options.headers.cookie)
   if (options.headers.authorization) headers.set('Authorization', options.headers.authorization)
   const url = `${options.baseUrl.replace(/\/$/, '')}${path}`
   const fetchImpl = options.fetch ?? globalThis.fetch
-  const response = await fetchImpl(url, { headers })
+  const response = await fetchImpl(url, { ...init, headers })
   const body = await response.json().catch(() => null)
   if (!response.ok) throw mappedError(response.status, body)
   const parsed = schema.safeParse(body)
@@ -251,6 +252,12 @@ async function request<T>(
 export function createRecordClient(options: RecordClientOptions) {
   return {
     whoami: () => request(options, '/v1/whoami', whoamiSchema),
+    setActiveSpace: (spaceId: string) =>
+      request(options, '/v1/active-space', z.object({ activeSpaceId: z.string() }), {
+        method: 'PUT',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ spaceId }),
+      }),
     runs: (input: RecordRunListInput = {}) =>
       request(
         options,

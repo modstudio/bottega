@@ -2,7 +2,12 @@
 /** Composes and serves the record API. Must not own record queries or authentication policy. */
 import { probeRecord, recordMigrationCount } from '../postgres/postgres-migrate.ts'
 import { recordApi } from './record-api.ts'
-import { recordAllowedOrigins, recordAuth, recordIdentity } from './record-auth.ts'
+import {
+  recordAllowedOrigins,
+  recordAuth,
+  recordIdentity,
+  setActiveRecordSpaceForSession,
+} from './record-auth.ts'
 import {
   consumeRecordDoc,
   countRecordDocs,
@@ -66,6 +71,8 @@ export function startRecordApiServer(environment: ServerEnvironment = process.en
         current.session.activeOrganizationId ?? null,
       )
     },
+    setActiveSpace: (headers, spaceId) =>
+      setActiveRecordSpaceForSession(config.recordUrl, headers, spaceId),
     readHealth: async () => {
       try {
         await probeRecord(config.recordUrl)

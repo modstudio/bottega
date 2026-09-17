@@ -19,6 +19,7 @@ import {
   installRecordSessionRunner,
   memoryRecordSession,
 } from '../../test/fixtures/record-session.ts'
+import { proveRememberedSpace } from '../../test/postgres-remembered-space-proof.ts'
 import { proveHostedDocs, proveScoreRecordSync } from '../../test/postgres-score-proof.ts'
 import { startRecordApiServer } from '../record/record-api-server.ts'
 import { bearerHeaders, recordAuth, setActiveRecordSpace } from '../record/record-auth.ts'
@@ -479,6 +480,16 @@ realPostgres('RLS proof against real Postgres', () => {
     expect((await switchRecordSpace(actorUrl!, listed.memberships[0]!.slug)).spaceId).toBe(
       authSpaceB,
     )
+  })
+
+  test('remembered space survives a new session for the same user', async () => {
+    await proveRememberedSpace({
+      actorUrl: actorUrl!,
+      rememberedSpaceId: authSpaceA,
+      outsiderSpaceId: SPACE_B,
+      password: AUTH_PASSWORD,
+      executeAsOwner: (sql) => succeeds('postgres', 'postgres', sql),
+    })
   })
 
   test('a non-owner cannot invite into the active space', async () => {

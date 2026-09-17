@@ -4,6 +4,7 @@ import {
   type PersonalSpace,
   recordAllowedOrigins,
   recordAuth,
+  sessionSpace,
 } from './record-auth.ts'
 
 let priorSecret: string | undefined
@@ -82,4 +83,31 @@ test('personal-space decision reuses an existing space and creates only when abs
   expect(first.slug).toBe('user-01990000-0000-7000-8000-000000000010')
   expect(await ensurePersonalSpace('01990000-0000-7000-8000-000000000010', port)).toEqual(first)
   expect(creates).toBe(1)
+})
+
+test('session activates a remembered membership instead of the personal space', () => {
+  expect(
+    sessionSpace({
+      rememberedSpaceId: 'work',
+      personalSpaceId: 'personal',
+      membershipSpaceIds: ['personal', 'work'],
+    }),
+  ).toBe('work')
+})
+
+test('session ignores a departed remembered space and falls back through memberships', () => {
+  expect(
+    sessionSpace({
+      rememberedSpaceId: 'departed',
+      personalSpaceId: 'personal',
+      membershipSpaceIds: ['personal', 'oldest-work', 'newest-work'],
+    }),
+  ).toBe('oldest-work')
+  expect(
+    sessionSpace({
+      rememberedSpaceId: 'departed',
+      personalSpaceId: 'personal',
+      membershipSpaceIds: ['personal'],
+    }),
+  ).toBe('personal')
 })

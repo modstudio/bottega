@@ -38,6 +38,17 @@ describe('record client', () => {
     expect(captured.authorization).toBe('Bearer tok')
   })
 
+  test('sets the active space through the authenticated record API', async () => {
+    const captured = { method: '', body: '' }
+    const fetch: RecordFetch = async (_input, init) => {
+      captured.method = init?.method ?? ''
+      captured.body = String(init?.body)
+      return jsonResponse({ activeSpaceId: 'space-b' })
+    }
+    await clientWith(fetch).setActiveSpace('space-b')
+    expect(captured).toEqual({ method: 'PUT', body: JSON.stringify({ spaceId: 'space-b' }) })
+  })
+
   test('maps 401 to UNAUTHORIZED with the API remedy text', async () => {
     const fetch: RecordFetch = async () =>
       jsonResponse({ error: 'record authentication required', remedy: 'sign in again' }, 401)

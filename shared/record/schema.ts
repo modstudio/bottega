@@ -75,6 +75,9 @@ export const user = pgTable('user', {
   emailVerified: boolean('email_verified').notNull().default(false),
   image: text(),
   personalSpaceId: uuid('personal_space_id').references(() => space.id, { onDelete: 'set null' }),
+  lastActiveSpaceId: uuid('last_active_space_id').references(() => space.id, {
+    onDelete: 'set null',
+  }),
   createdAt: timestamp('created_at', { withTimezone: true }).notNull(),
   updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
 })

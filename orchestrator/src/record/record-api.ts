@@ -26,6 +26,7 @@ type Deps = {
   auth: AuthHandler
   readSession(headers: Headers): Promise<RecordIdentity | null>
   readHealth(): Promise<{ ok: boolean; migrations: number }>
+  setActiveSpace(headers: Headers, spaceId: string): Promise<void>
   readRuns(
     input: Tenant & {
       limit: number
@@ -202,6 +203,20 @@ export function recordApi(deps: Deps): Hono<ApiEnvironment> {
   app.get('/v1/whoami', (context) => {
     const identity = context.get('identity')
     return identity.activeSpaceId ? context.json(identity) : noSpace(context)
+  })
+  app.put('/v1/active-space', async (context) => {
+    const input = z
+      .object({ spaceId: idSchema })
+      .safeParse(await context.req.json().catch(() => null))
+    if (!input.success) return context.json({ error: 'active space id must be a uuid' }, 400)
+    try {
+      await deps.setActiveSpace(context.req.raw.headers, input.data.spaceId)
+      return context.json({ activeSpaceId: input.data.spaceId })
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error)
+      if (message.includes('is not a member of space')) return context.json({ error: message }, 403)
+      throw error
+    }
   })
   const scope = (context: Context<ApiEnvironment>): Tenant | null => {
     const identity = context.get('identity') as RecordIdentity
