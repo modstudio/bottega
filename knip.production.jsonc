@@ -49,7 +49,7 @@
         "shared/**/*.ts!",
         "!shared/**/*.test.ts",
         "!shared/test-*.ts",
-        "architecture.ts!"
+        "scripts/architecture.ts!"
       ],
       "drizzle": { "config": ["shared/record/drizzle.config.ts"] },
       // Invoked through node_modules/.bin/depcruise in scripts/check-architecture.ts.

@@ -38,12 +38,12 @@
         "scripts/check-*.ts!",
         "scripts/**/*.test.ts",
         "shared/**/*.test.ts",
-        "architecture.test.ts",
+        "scripts/architecture.test.ts",
         "!scripts/check-runtime.ts",
         "scripts/generate-recipe-schema.ts!",
         "scripts/quality/check-no-expect.ts!"
       ],
-      "project": ["scripts/**/*.ts!", "shared/**/*.ts!", "architecture.ts!"],
+      "project": ["scripts/**/*.ts!", "shared/**/*.ts!", "scripts/architecture.ts!"],
       "drizzle": { "config": ["shared/record/drizzle.config.ts"] },
       // Invoked through node_modules/.bin/depcruise in scripts/check-architecture.ts.
       "ignoreDependencies": ["dependency-cruiser"]

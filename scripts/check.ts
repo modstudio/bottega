@@ -179,7 +179,7 @@ if (
     './scripts/check-file-ceiling.test.ts',
     './scripts/check-cognitive-ceiling.test.ts',
     './scripts/quality/dead-code.test.ts',
-    './architecture.test.ts',
+    './scripts/architecture.test.ts',
     './scripts/import-scanner.test.ts',
     './scripts/quality/no-expect.test.ts',
     './shared/ratchet.test.ts',

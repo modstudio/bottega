@@ -1,6 +1,6 @@
 import { dirname, join, normalize } from 'node:path'
+import { CONCERNS } from '../shared/brand.ts'
 import { importBoundaries } from './architecture-boundaries.ts'
-import { CONCERNS } from './shared/brand.ts'
 
 type ConcernManifest = {
   roots: typeof CONCERNS
@@ -733,7 +733,7 @@ export function dependencyCruiserConfig() {
   return {
     ...architectureRules(),
     options: {
-      tsConfig: { fileName: join(import.meta.dir, 'orchestrator/tsconfig.json') },
+      tsConfig: { fileName: join(import.meta.dir, '..', 'orchestrator/tsconfig.json') },
       tsPreCompilationDeps: true,
       doNotFollow: { path: 'node_modules' },
       exclude: { path: '^hub/web/src/routeTree\\.gen\\.ts$' },
