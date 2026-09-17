@@ -1,8 +1,8 @@
 // concern: canon-lint
 /** Knows pure canon classification and lint rules. Must not know filesystems, stores, commands, or processes. */
 import { posix } from 'node:path'
-import { CANON_REFERENCE_EXEMPTIONS } from '../../shared/canon-references.ts'
-import { type Finding, introducedFindings } from '../../shared/ratchet.ts'
+import { CANON_REFERENCE_EXEMPTIONS } from '../../../shared/canon-references.ts'
+import { type Finding, introducedFindings } from '../../../shared/ratchet.ts'
 import {
   ALWAYS_ON_TOTAL_BYTES,
   CARD_BYTES,

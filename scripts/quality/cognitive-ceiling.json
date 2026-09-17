@@ -137,13 +137,13 @@
     "score": 41
   },
   {
-    "file": "orchestrator/src/canon-commands.ts",
+    "file": "orchestrator/src/canon/canon-commands.ts",
     "function": "canonCommand",
     "line": 9,
     "score": 67
   },
   {
-    "file": "orchestrator/src/canon.ts",
+    "file": "orchestrator/src/canon/canon.ts",
     "function": "forEach callback#2",
     "line": 309,
     "score": 23

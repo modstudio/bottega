@@ -1,18 +1,18 @@
 import { createHash } from 'node:crypto'
 import { existsSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
-import { CONCERNS } from '../../shared/brand.ts'
-import { CANON_REFERENCE_EXEMPTIONS, canonReferencePath } from '../../shared/canon-references.ts'
-import { isCliCommand } from './args.ts'
+import { CONCERNS } from '../../../shared/brand.ts'
+import { CANON_REFERENCE_EXEMPTIONS, canonReferencePath } from '../../../shared/canon-references.ts'
+import { isCliCommand } from '../args.ts'
+import { db, linkedWorktreeReadOnly, nowIso, writeTransaction } from '../db.ts'
+import { type Doc, docsForRun, docsMarkdown, listDocs } from '../doc/docs.ts'
+import { targetGitEnvironment } from '../git-environment.ts'
+import { DEFAULT_PACK_BYTES, job as getJob, JOBS } from '../jobs.ts'
+import { projectAt, projectByName, projects } from '../projects.ts'
 import { composeCanonRows } from './canon-hydrate.ts'
 import { canonFrontmatter, classifyCanonFile } from './canon-lint.ts'
-import { db, linkedWorktreeReadOnly, nowIso, writeTransaction } from './db.ts'
-import { type Doc, docsForRun, docsMarkdown, listDocs } from './doc/docs.ts'
-import { targetGitEnvironment } from './git-environment.ts'
-import { DEFAULT_PACK_BYTES, job as getJob, JOBS } from './jobs.ts'
-import { projectAt, projectByName, projects } from './projects.ts'
 
-const ROOT = new URL('../..', import.meta.url).pathname.replace(/\/$/, '')
+const ROOT = new URL('../../..', import.meta.url).pathname.replace(/\/$/, '')
 const PREFIXES = [
   'orchestrator/',
   'ops/',

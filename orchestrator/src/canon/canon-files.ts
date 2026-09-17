@@ -2,7 +2,7 @@
 /** Knows how to collect committed canon files from a git tree. Must not know stores, commands, runs, routing, transports, or worktrees. */
 import { existsSync, readFileSync, readlinkSync } from 'node:fs'
 import { posix, resolve } from 'node:path'
-import { inspectionGitEnv } from '../../shared/git.ts'
+import { inspectionGitEnv } from '../../../shared/git.ts'
 import type { CanonFile, CanonLintInput, CanonSourceText } from './canon-lint.ts'
 
 function git(cwd: string, args: string[]): string {
