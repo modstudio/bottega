@@ -3,7 +3,7 @@
 import { registerOpenHooks } from './db.ts'
 import { excludeSharedOutputRuns } from './evidence-query.ts'
 import { reapStale } from './run-liveness.ts'
-import { seedWorkflows } from './workflow-seeds.ts'
+import { seedWorkflows } from './workflow/workflow-seeds.ts'
 
 let registered = false
 

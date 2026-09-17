@@ -2,13 +2,13 @@
 /** Owns production workflow-tree reads and atomic draft imports. Must not know commands, filesystems, projects, runs, or transports. */
 import type { Database } from 'bun:sqlite'
 import { isDeepStrictEqual } from 'node:util'
-import { db, writableDb, writeTransaction } from './db.ts'
+import { db, writableDb, writeTransaction } from '../db.ts'
 import {
   type CatalogueStep,
   importStepCatalogue,
   productionStepCatalogue,
   validateStepCatalogue,
-} from './step-catalogue.ts'
+} from '../step-catalogue.ts'
 import type { WorkflowTreeStore } from './workflow-tree.ts'
 import { importWorkflow, productionWorkflows, validateWorkflowDefinition } from './workflows.ts'
 

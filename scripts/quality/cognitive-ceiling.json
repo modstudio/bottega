@@ -792,11 +792,11 @@
     "score": 20
   },
   {
-    "file": "orchestrator/src/workflows.ts",
+    "file": "orchestrator/src/workflow/workflows.ts",
     "function": "validateWorkflowDefinition",
     "line": 45,
     "score": 62,
-    "key": "orchestrator/src/workflows.ts\u0000validateWorkflowDefinition"
+    "key": "orchestrator/src/workflow/workflows.ts\u0000validateWorkflowDefinition"
   },
   {
     "file": "orchestrator/src/worktree-attribution.ts",

@@ -923,7 +923,7 @@ export const importBoundaries: ImportBoundary[] = [
   boundary(
     'store-hooks-boundary',
     'orchestrator/src/store-hooks.ts',
-    ['./db.ts', './evidence-query.ts', './run-liveness.ts', './workflow-seeds.ts'],
+    ['./db.ts', './evidence-query.ts', './run-liveness.ts', './workflow/workflow-seeds.ts'],
     'Enforce the store-hooks concern boundary.',
   ),
   boundary(
@@ -943,8 +943,8 @@ export const importBoundaries: ImportBoundary[] = [
   ),
   boundary(
     'workflows-boundary',
-    'orchestrator/src/workflow-seeds.ts',
-    ['./db.ts', './review-vocabulary.ts', 'bun:sqlite'],
+    'orchestrator/src/workflow/workflow-seeds.ts',
+    ['../db.ts', '../review-vocabulary.ts', 'bun:sqlite'],
     'Keep workflow seeds dependent only on database transactions and review vocabulary.',
   ),
   boundary(
