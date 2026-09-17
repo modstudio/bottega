@@ -210,7 +210,7 @@ export function terminalProcessAliveConditions(clock = Date.now()): MonitorCondi
         since: run.started_at,
         ageMs: age(run.started_at, clock),
         detail: `terminal run ${run.id} still has live ${who}; an unverified process is reported and never killed`,
-        action: `run orch close-out ${run.id}; an unverified process is reported and never killed`,
+        action: `run orch reclaim process ${run.id} --dry-run, then orch reclaim process ${run.id}`,
       },
     ]
   })
@@ -319,7 +319,9 @@ export function rulingConditions(clock = Date.now()): {
           since: row.asked_at,
           ageMs,
           detail: `task ${task} waiting on a ruling; session ${session}; ${elapsedDetail(ageMs)}`,
-          action: 'reported; it does not answer',
+          action: ['sess-a', 'sess-b', 'sess-old', 'sess-probe'].includes(session)
+            ? 'run orch reclaim fixture-questions --dry-run, then orch reclaim fixture-questions'
+            : 'reported; it does not answer',
           severity: ageMs >= threshold ? 'attention' : 'informational',
           ownerSession: row.session_id,
         },
@@ -490,7 +492,7 @@ export function retainedRefConditions(clock: number): {
         since: null,
         ageMs: age(null, clock),
         detail: `${item.ref} at ${item.sha} pins ${item.project} run ${item.runId}`,
-        action: 'reported; no established removal verb',
+        action: `run orch reclaim retained-ref ${item.project}:${item.runId} --dry-run, then orch reclaim retained-ref ${item.project}:${item.runId}`,
         affectedProject: item.project,
       },
     ]
@@ -514,7 +516,7 @@ export function refGuardConditions(clock: number): {
         since: null,
         ageMs: age(null, clock),
         detail: `shared ref-guard metadata for ${item.project} run ${item.runId} remains at ${item.path}`,
-        action: 'reported; no established removal verb',
+        action: `run orch reclaim ref-guard ${item.project}:${item.runId} --dry-run, then orch reclaim ref-guard ${item.project}:${item.runId}`,
         affectedProject: item.project,
       },
     ]
@@ -598,7 +600,7 @@ export function orphanSandboxDirectoryConditions(inventory: SandboxDirectoryInve
         since: null,
         ageMs: null,
         detail: `sandbox directory for terminal conversation ${directory.rootId} uses ${directory.sizeBytes} bytes`,
-        action: 'reported; no established removal verb',
+        action: `run orch reclaim sandbox ${directory.rootId} --dry-run, then orch reclaim sandbox ${directory.rootId}`,
       },
     ]
   })
@@ -608,7 +610,7 @@ export function orphanSandboxDirectoryConditions(inventory: SandboxDirectoryInve
 export type TrustEntryInventory =
   | {
       ascertainable: true
-      entries: { runId: number; heading: string; worktreeExists: boolean }[]
+      entries: { runId: number; heading: string; worktreeExists: boolean; mainCheckout?: boolean }[]
     }
   | { ascertainable: false; reason: string }
 
@@ -619,7 +621,7 @@ export function staleTrustEntryConditions(inventory: TrustEntryInventory): {
 } {
   if (!inventory.ascertainable) return { conditions: [], errors: [inventory.reason] }
   const conditions = inventory.entries.flatMap((entry): MonitorCondition[] => {
-    if (entry.worktreeExists) return []
+    if (entry.worktreeExists || entry.mainCheckout) return []
     return [
       {
         kind: 'stale-trust-entry',
@@ -627,7 +629,7 @@ export function staleTrustEntryConditions(inventory: TrustEntryInventory): {
         since: null,
         ageMs: null,
         detail: `run ${entry.runId} recorded Grok trust heading ${entry.heading} after its worktree disappeared`,
-        action: 'reported; prune by hand in the vendor trust store',
+        action: `run orch reclaim trust ${entry.runId} --dry-run, then orch reclaim trust ${entry.runId}`,
       },
     ]
   })

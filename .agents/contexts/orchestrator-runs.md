@@ -28,7 +28,7 @@ Two lock purposes, two files. Creation and resume attachment take `project-lock.
 
 - **No limit loses staged work.** Writing runs checkpoint staged and modified tracked files every `DEFAULT_CHECKPOINT_MINUTES` and once more on wall, quota, context, cost, or operator stop. The checkpoint binds its commit to `$ORCH_SCRATCH/progress.json`; continuation receives that pointer. Stop keeps the worktree and branch.
 - **The guard lives outside every root the worker can write.** Dispatch refuses a run whose guard path falls inside a writable root; it is published under the common git dir.
-- **Orch never edits a vendor's trust store.** Leftover Grok trust is residue; sweep reports it for pruning.
+- **Vendor trust changes only via `orch reclaim trust`**: one recorded absent orch worktree, never main.
 - **Every write transaction is `IMMEDIATE`.** A deferred transaction that later writes is a lock-upgrade race under concurrent dispatch.
 - **Divergence is classified and attributed, never fatal by itself.** Launch freezes tree hash (`git write-tree` plus untracked non-ignored paths) and `HEAD` for the run's project main and the caller checkout; exit re-hashes. Porcelain is a field of that freeze, not a second detector. A sample within `UNTRUSTED_INDEX_WINDOW_MS` of index mtime is untrusted and re-taken. A `HEAD` that moved with a clean tree is someone else's edit-commit cycle. Attribution is the `index.lock` holder, a historical landing row, or unattributed. The register names the landing branch.
 - **Watch the run project and caller checkout, never a third project.**

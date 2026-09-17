@@ -2,7 +2,7 @@
 /** Owns monitor pass composition, persistence, history, and human-readable reporting. */
 
 import { existsSync, lstatSync, readdirSync, realpathSync, statSync } from 'node:fs'
-import { join } from 'node:path'
+import { join, resolve } from 'node:path'
 import { PLATFORM_SLUG } from '../../shared/brand.ts'
 import { allInjectChecks, storedPackDrift } from './canon.ts'
 import { db, nowIso, writableDb, writeTransaction } from './db.ts'
@@ -115,6 +115,13 @@ function trustEntryInventory(database: ReturnType<typeof db>) {
           runId: row.id,
           heading: heading as string,
           worktreeExists: existsSync(row.worktree),
+          mainCheckout: projects().some((project) => {
+            try {
+              return realpathSync(project.path) === realpathSync(row.worktree)
+            } catch {
+              return resolve(project.path) === resolve(row.worktree)
+            }
+          }),
         }))
     })
     return { ascertainable: true as const, entries }
@@ -333,8 +340,8 @@ export async function monitor(
       kind: 'asking-run',
       subject: `run:${run.id}`,
       since: run.started_at,
-      detail: `run ${run.id} is waiting on a ruling; session ${run.session_id ?? 'unknown'}`,
-      action: 'reported; abandoning or resuming is an intent decision',
+      detail: `run ${run.id} is marked asking but has no unanswered question (stranded)`,
+      action: `run orch abandon ${run.id} to close it, or orch continue ${run.id} to resume it; an intent decision`,
       ownerSession: run.session_id,
     })
 
@@ -387,7 +394,9 @@ export async function monitor(
   }
 
   const stale = database
-    .query(`SELECT id, started_at, error, session_id FROM run WHERE status='stale'`)
+    .query(
+      `SELECT id, started_at, error, session_id FROM run WHERE status='stale' AND evidence_excluded IS NULL`,
+    )
     .all() as { id: number; started_at: string; error: string | null; session_id: string | null }[]
   for (const run of stale)
     add({
@@ -395,7 +404,7 @@ export async function monitor(
       subject: `run:${run.id}`,
       since: run.started_at,
       detail: run.error ?? `run ${run.id} is stale`,
-      action: 'reported; disposition requires intent',
+      action: `run orch reclaim stale-run ${run.id} --dry-run, then orch reclaim stale-run ${run.id}`,
       ownerSession: run.session_id,
     })
 
