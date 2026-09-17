@@ -224,7 +224,7 @@ function RunsList() {
                 className="h-8 w-56"
                 value={search}
                 onChange={(event) => setSearch(event.target.value)}
-                placeholder="Search visible runs"
+                placeholder="Search runs"
               />
               <WindowBar
                 projects={data.facets.projects}

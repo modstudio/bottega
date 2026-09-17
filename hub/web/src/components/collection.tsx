@@ -1,5 +1,7 @@
-import type { ReactNode } from 'react'
+import { type ReactNode, useState } from 'react'
 import { Input } from '@/ui/field/input'
+import { PAGE_SIZES, Pagination } from '@/ui/pagination/pagination'
+import { pageSlice } from '@/ui/state/pagination'
 import { EmptyState } from './design-system'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from './table'
 
@@ -45,6 +47,9 @@ export function Collection<Row>({
   empty: { title: string; hint?: string }
   childRows?: (row: Row) => CollectionChildRow[]
 }) {
+  const [page, setPage] = useState(1)
+  const [pageSize, setPageSize] = useState<number>(PAGE_SIZES[1])
+  const visible = pageSlice(rows, page, pageSize)
   const openFromKeyboard = (event: React.KeyboardEvent, row: Row) => {
     if (event.key === 'Enter') {
       event.preventDefault()
@@ -82,7 +87,7 @@ export function Collection<Row>({
             </TableRow>
           </TableHeader>
           <TableBody>
-            {rows.flatMap((row) => {
+            {visible.rows.flatMap((row) => {
               const key = getKey(row)
               const children = childRows?.(row) ?? []
               return [
@@ -127,6 +132,19 @@ export function Collection<Row>({
         </Table>
         {!rows.length ? <EmptyState title={empty.title} hint={empty.hint} /> : null}
       </div>
+      {rows.length > PAGE_SIZES[0] ? (
+        <Pagination
+          className="mt-2"
+          page={visible.page}
+          pageSize={pageSize}
+          total={rows.length}
+          onPageChange={setPage}
+          onPageSizeChange={(size) => {
+            setPageSize(size)
+            setPage(1)
+          }}
+        />
+      ) : null}
     </section>
   )
 }
