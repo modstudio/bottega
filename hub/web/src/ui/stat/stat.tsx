@@ -1,37 +1,47 @@
-import { Children, type ReactNode } from 'react'
+import { Children, type ReactNode, useState } from 'react'
 import { classes } from '../text/classes'
 
-const BREAKDOWN_SHOWN = 3
+const FIGURE = 'truncate font-medium text-2xl tabular-nums tracking-tight @lg/stats:text-3xl'
 
 type Breakdown = readonly { label: string; value: string }[]
 
-/** Several figures that must not be added together, one per line; the rest behind a count. */
-function BreakdownList({ items }: { items: Breakdown }) {
-  const shown = items.slice(0, BREAKDOWN_SHOWN)
-  const rest = items.slice(BREAKDOWN_SHOWN)
+/**
+ * Figures that must not be added together, one at a time at headline size,
+ * with a dot per figure to switch between them.
+ */
+function BreakdownFigure({ items }: { items: Breakdown }) {
+  const [index, setIndex] = useState(0)
+  const current = items[Math.min(index, items.length - 1)]
+  if (!current) return <div className={FIGURE}>-</div>
   return (
-    <dl className="m-0 flex flex-col gap-0.5">
-      {shown.map((item) => (
-        <div key={item.label} className="flex items-baseline justify-between gap-3">
-          <dt className="truncate text-text-secondary">{item.label}</dt>
-          <dd className="m-0 font-medium text-lg tabular-nums">{item.value}</dd>
-        </div>
-      ))}
-      {rest.length ? (
-        <div
-          className="text-sm text-text-muted"
-          title={rest.map((item) => `${item.label} ${item.value}`).join(', ')}
-        >
-          +{rest.length} more
+    <>
+      <div className="flex min-w-0 items-baseline gap-2">
+        <span className={FIGURE} title={current.value}>
+          {current.value}
+        </span>
+        <span className="truncate text-sm text-text-secondary">{current.label}</span>
+      </div>
+      {items.length > 1 ? (
+        <div className="flex items-center gap-1.5" role="group" aria-label="Choose a figure">
+          {items.map((item, i) => (
+            <button
+              key={item.label}
+              type="button"
+              aria-label={`${item.label}: ${item.value}`}
+              aria-pressed={i === index}
+              onClick={() => setIndex(i)}
+              className="size-2 rounded-full bg-border-strong hover:bg-text-muted aria-pressed:bg-accent-fill"
+            />
+          ))}
         </div>
       ) : null}
-    </dl>
+    </>
   )
 }
 
 /**
  * One headline figure: what it measures, the figure, and what bounds it. A
- * `breakdown` replaces the figure when the values are separate currencies.
+ * `breakdown` shows figures that are separate currencies one at a time.
  */
 export function StatTile({
   figure,
@@ -51,15 +61,12 @@ export function StatTile({
     <div className="-mr-px -mb-px flex min-w-0 flex-col gap-1 border-border-default border-r border-b p-4 @lg/stats:p-5">
       <div className="text-sm text-text-secondary">{label}</div>
       {breakdown ? (
-        <BreakdownList items={breakdown} />
+        <BreakdownFigure items={breakdown} />
       ) : (
         <div
           data-tone={live ? 'success' : undefined}
           title={typeof figure === 'string' ? figure : undefined}
-          className={classes(
-            'truncate font-medium text-2xl tabular-nums tracking-tight @lg/stats:text-3xl',
-            live && 'text-status-text',
-          )}
+          className={classes(FIGURE, live && 'text-status-text')}
         >
           {figure}
         </div>
