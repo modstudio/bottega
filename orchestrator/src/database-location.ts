@@ -179,7 +179,7 @@ export function legacyDatabaseRefusal(
     'orchestrator',
     FROZEN_STATE_NAMES.orchestratorDatabase,
   )
-  return legacyStoreRefusal(existsSync(resolution.path), existsSync(legacyStore), {
+  return legacyStoreRefusal(existsSync(legacyStore), {
     legacyStore,
     destinationStore: resolution.path,
     legacyRuns: join(binaryRepository.root, 'orchestrator', FROZEN_STATE_NAMES.runsDirectory),

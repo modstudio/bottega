@@ -120,7 +120,7 @@ def log(decision, why, inp, event, payload=None):
         # No CREATE TABLE here: orch owns the schema and creates it on open.
         # Taking a schema lock on every spawn only contended with the writers
         # this then had to wait for.
-        db = sqlite3.connect(DB, timeout=15)
+        db = sqlite3.connect(f"file:{DB}?mode=rw", uri=True, timeout=15)
         db.execute("PRAGMA busy_timeout = 15000")
         db.execute(
             "INSERT INTO spawn (at, session_id, cwd, event, subagent_type,"
@@ -132,7 +132,6 @@ def log(decision, why, inp, event, payload=None):
     except Exception as e:
         print(f"orch: spawn not logged ({e.__class__.__name__}: {e})", file=sys.stderr)
         try:
-            os.makedirs(os.path.dirname(FALLBACK_LOG), exist_ok=True)
             with open(FALLBACK_LOG, "a") as fh:
                 fh.write("\t".join("" if v is None else str(v) for v in row) + "\n")
         except Exception:
@@ -146,7 +145,6 @@ def main() -> int:
         print(f"orch: hook payload could not be parsed ({e.__class__.__name__}: {e})", file=sys.stderr)
         try:
             row = (time.strftime("%Y-%m-%dT%H:%M:%S"), "payload could not be parsed")
-            os.makedirs(os.path.dirname(FALLBACK_LOG), exist_ok=True)
             with open(FALLBACK_LOG, "a") as fh:
                 fh.write("\t".join(row) + "\n")
         except Exception:

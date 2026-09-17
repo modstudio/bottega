@@ -11,9 +11,11 @@
 import { Database } from 'bun:sqlite'
 import { afterAll } from 'bun:test'
 import { mkdirSync, writeFileSync } from 'node:fs'
-import { dirname, join, relative } from 'node:path'
+import { tmpdir } from 'node:os'
+import { dirname, join, relative, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { resolveGateTimingDirectory } from '../../shared/gate-timing-directory.ts'
+import { mainCheckoutOf } from '../../shared/git.ts'
 
 const enabled = process.env.ORCH_GATE_TIMINGS
 if (enabled) {
@@ -22,10 +24,18 @@ if (enabled) {
   const outPath =
     enabled.includes('/') || enabled.endsWith('.json')
       ? enabled
-      : join(
-          resolveGateTimingDirectory(join(import.meta.dir, '../..'), process.env),
-          `${stamp}.json`,
-        )
+      : (() => {
+          const checkout = resolve(import.meta.dir, '../..')
+          return join(
+            resolveGateTimingDirectory(
+              checkout,
+              mainCheckoutOf(checkout) !== checkout,
+              process.env,
+              tmpdir(),
+            ),
+            `${stamp}.json`,
+          )
+        })()
   const sidecarPath = `${outPath}.spawn.json`
 
   type Kind = 'cli' | 'git' | 'other'

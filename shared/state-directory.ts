@@ -83,11 +83,10 @@ export type LegacyStoreMove = {
 
 /** Pure refusal decision shared by both stores; callers supply filesystem facts. */
 export function legacyStoreRefusal(
-  defaultStoreExists: boolean,
   legacyStoreExists: boolean,
   move: LegacyStoreMove,
 ): string | null {
-  if (defaultStoreExists || !legacyStoreExists) return null
+  if (!legacyStoreExists) return null
   const paths = [
     [move.legacyStore, move.destinationStore],
     [`${move.legacyStore}-wal`, `${move.destinationStore}-wal`],
@@ -97,8 +96,8 @@ export function legacyStoreRefusal(
       : []),
   ]
   return (
-    `refusing to create or open an empty state store while the legacy store exists\n` +
-    `move the existing state before retrying (sidecars and runs when present):\n` +
+    `refusing to open state while the legacy store exists\n` +
+    `check any existing destination before moving, then move the existing state before retrying (sidecars and runs when present):\n` +
     paths.map(([source, destination]) => `  ${source} -> ${destination}`).join('\n')
   )
 }

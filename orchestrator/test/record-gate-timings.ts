@@ -8,13 +8,21 @@
  *   bun test/record-gate-timings.ts src/route.test.ts
  */
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs'
-import { join, relative } from 'node:path'
+import { tmpdir } from 'node:os'
+import { join, relative, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { resolveGateTimingDirectory } from '../../shared/gate-timing-directory.ts'
+import { mainCheckoutOf } from '../../shared/git.ts'
 
 const orchRoot = join(import.meta.dir, '..')
 const stamp = new Date().toISOString().replace(/[:.]/g, '-')
-const outDir = resolveGateTimingDirectory(join(orchRoot, '..'), process.env)
+const checkout = resolve(orchRoot, '..')
+const outDir = resolveGateTimingDirectory(
+  checkout,
+  mainCheckoutOf(checkout) !== checkout,
+  process.env,
+  tmpdir(),
+)
 mkdirSync(outDir, { recursive: true })
 const jsonPath = join(outDir, `${stamp}.json`)
 const junitPath = join(outDir, `${stamp}.junit.xml`)

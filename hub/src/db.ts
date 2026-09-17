@@ -20,8 +20,8 @@ const legacyPath = mainCheckout ? join(mainCheckout, 'hub', FROZEN_STATE_NAMES.h
 export const DB_PATH = livePath
 
 function legacyDatabaseRefusal(): string | null {
-  if (process.env.HUB_DB !== undefined || !legacyPath) return null
-  return legacyStoreRefusal(existsSync(DB_PATH), existsSync(legacyPath), {
+  if (process.env.HUB_DB || !legacyPath) return null
+  return legacyStoreRefusal(existsSync(legacyPath), {
     legacyStore: legacyPath,
     destinationStore: DB_PATH,
   })
@@ -33,7 +33,7 @@ export function decideHubDatabasePath(
   hubDb: string | undefined,
   liveStore: string | null,
 ): string | null {
-  if (hubDb !== undefined) return hubDb
+  if (hubDb) return hubDb
   if (isTestProcess) {
     throw new Error(
       `test process refuses hub database: HUB_DB resolved <unset>; live store is ${liveStore ?? '<none>'}\n` +

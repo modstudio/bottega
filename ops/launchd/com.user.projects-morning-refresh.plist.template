@@ -10,6 +10,12 @@
         <string>__REPO__/bin/projects-morning-refresh.sh</string>
     </array>
 
+    <key>EnvironmentVariables</key>
+    <dict>
+        <key>__STATE_HOME_ENV__</key>
+        <string>__STATE_HOME__</string>
+    </dict>
+
     <key>StartCalendarInterval</key>
     <dict>
         <key>Hour</key>

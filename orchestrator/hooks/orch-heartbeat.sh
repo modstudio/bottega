@@ -40,6 +40,7 @@
 # Arm it under the Monitor tool; each emitted line becomes one notification.
 set -uo pipefail
 
+CALLER_DIRECTORY="$PWD"
 ROOT=$(cd "$(dirname "$0")/.." 2>/dev/null && pwd -P) || {
   echo "DEGRADED: launch directory removed; re-arm from the main checkout"
   exit 2
@@ -50,7 +51,10 @@ cd "$ROOT" 2>/dev/null || {
 }
 ORCH="$ROOT/../bin/orch"
 if [ -n "${ORCH_DB:-}" ]; then
-  DB_PATH="$ORCH_DB"
+  case "$ORCH_DB" in
+    /*) DB_PATH="$ORCH_DB" ;;
+    *) DB_PATH="$CALLER_DIRECTORY/$ORCH_DB" ;;
+  esac
 else
   DB_PATH=$(bun "$ROOT/../shared/state-directory.ts" orchestrator database) || {
     echo "DEGRADED: cannot resolve orchestrator database"
