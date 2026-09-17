@@ -1,6 +1,6 @@
 import type { Database } from 'bun:sqlite'
 import { db } from './db.ts'
-import { attributedTaskKey } from './epic.ts'
+import { attributedTaskKey } from './epic/epic.ts'
 import { reviewRunEvidenceSql } from './review-evidence-sql.ts'
 import { reviewTriageBag } from './review-triage.ts'
 import {
