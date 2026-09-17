@@ -287,7 +287,7 @@ export const importBoundaries: ImportBoundary[] = [
   ),
   boundary(
     'epic-commands-boundary',
-    'orchestrator/src/epic-commands.ts',
+    'orchestrator/src/epic/epic-commands.ts',
     ['./epic.ts'],
     'Keep epic command adapters independent of the run nucleus and the CLI: they compose concern modules for one verb and own no lifecycle.',
   ),

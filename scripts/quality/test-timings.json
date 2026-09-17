@@ -170,7 +170,7 @@
       "spawns": 0
     },
     {
-      "path": "orchestrator/src/epic.test.ts",
+      "path": "orchestrator/src/epic/epic.test.ts",
       "wallMs": 72,
       "tests": 11,
       "cliShaped": false,
