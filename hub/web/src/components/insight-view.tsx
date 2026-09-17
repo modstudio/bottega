@@ -277,7 +277,7 @@ function GuideCell({ candidate, lead }: { candidate: unknown; lead: 'score' | 't
 const bucketLabel = (bucket: 'small' | 'large' | null) =>
   bucket === 'small' ? '<16 KiB' : bucket === 'large' ? '>=16 KiB' : null
 
-function RoutingView({ data }: { data: RoutingData }) {
+export function RoutingView({ data }: { data: RoutingData }) {
   const jobs = [...new Set(data.matrix.map((cell) => `${cell.job}:${cell.promptBucket}`))].sort()
   const agents = [...new Set(data.matrix.map((cell) => cell.agent))].sort()
   const at = (jobBucket: string, agent: string) =>

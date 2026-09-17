@@ -43,6 +43,11 @@ const HOSTED_NAV = [
   { to: '/runs', label: 'Runs', icon: Play },
   { to: '/reviews', label: 'Reviews', icon: ScanSearch },
   { to: '/projects', label: 'Projects', icon: FolderGit2 },
+  { to: '/docs', label: 'Docs', icon: BookOpen },
+  { to: '/jobs', label: 'Jobs', icon: BriefcaseBusiness },
+  { to: '/agents', label: 'Agents', icon: Bot },
+  { to: '/routing', label: 'Routing', icon: RouteIcon },
+  { to: '/health', label: 'Health', icon: Activity },
 ] as const
 
 export function navForMode(mode: 'hosted' | 'local') {
@@ -51,11 +56,22 @@ export function navForMode(mode: 'hosted' | 'local') {
 
 export function isHostedPath(pathname: string) {
   const path = pathname.length > 1 && pathname.endsWith('/') ? pathname.slice(0, -1) : pathname
-  if (path === '/sign-in' || path === '/runs' || path === '/reviews' || path === '/projects') {
+  if (
+    path === '/sign-in' ||
+    path === '/runs' ||
+    path === '/reviews' ||
+    path === '/projects' ||
+    path === '/docs' ||
+    path === '/jobs' ||
+    path === '/agents' ||
+    path === '/routing' ||
+    path === '/health'
+  ) {
     return true
   }
   if (path.startsWith('/runs/')) return true
   if (path.startsWith('/reviews/')) return true
+  if (path.startsWith('/docs/')) return true
   return false
 }
 

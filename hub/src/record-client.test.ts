@@ -70,4 +70,20 @@ describe('record client', () => {
       message: 'record API returned an invalid body',
     })
   })
+
+  test('rejects malformed snapshot and document bodies', async () => {
+    const fetch: RecordFetch = async () => jsonResponse({ items: [{ nope: true }] })
+    const client = clientWith(fetch)
+    for (const request of [
+      () => client.snapshots(),
+      () => client.docs(),
+      () => client.doc('01990000-0000-7000-8000-000000000001'),
+      () => client.docRevisions('01990000-0000-7000-8000-000000000001'),
+    ]) {
+      await expect(request()).rejects.toMatchObject({
+        code: 'INTERNAL_SERVER_ERROR',
+        message: 'record API returned an invalid body',
+      })
+    }
+  })
 })
