@@ -173,6 +173,7 @@ export const modules: ArchitectureModule[] = [
     './git-environment.ts',
   ]),
   module('orchestrator/src/reclaim-residue-policy.ts', []),
+  module('orchestrator/src/reclaim-worktree-dirty.ts', []),
   module('orchestrator/src/reclaim-residue.ts', [
     'node:fs',
     'node:path',

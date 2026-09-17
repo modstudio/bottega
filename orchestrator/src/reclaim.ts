@@ -8,11 +8,12 @@ import { keepTreeHold } from './keep-tree-hold.ts'
 import { pidAlive } from './process-liveness.ts'
 import { withCleanupLock, withWorktreeCreateLock, withWorktreeLease } from './project-lock.ts'
 import { projectAt, projectByName } from './projects.ts'
+import { reclaimDirtyTreeRefusal } from './reclaim-worktree-dirty.ts'
 import { settleClaims } from './resource-claims.ts'
 import { otherConversationWorktreeSharers } from './resource-ownership.ts'
 import { runAlive } from './run-alive.ts'
 import { runLeaseState } from './run-lease.ts'
-import { markedWorktreeSource, orphanSafety } from './worktree-attribution.ts'
+import { markedWorktreeSource, orphanSafety, worktreeDirty } from './worktree-attribution.ts'
 import { branchTip, removeFor, restoreBranch } from './worktree-remove.ts'
 
 export type ReclaimResult = { ok: boolean; action: string }
@@ -104,6 +105,19 @@ function fullClaimRefusal(path: string, runId: number): ReclaimResult | null {
   )
 }
 
+function existingTreeGitRefusal(path: string, repoRoot: string): ReclaimResult | null {
+  if (!existsSync(path)) return null
+  const safety = orphanSafety(path, repoRoot, '')
+  if (!safety.removable) {
+    return refuse(`worktree safety could not be proved: ${safety.detail}`)
+  }
+  return reclaimDirtyTreeRefusal({
+    path,
+    treeExists: true,
+    dirty: worktreeDirty(path),
+  })
+}
+
 function proveWorktree(path: string, clock: number, _allowDirty = false): WorktreeProof {
   const rows = runRows(path)
   const row = rows[0]
@@ -144,12 +158,8 @@ function proveWorktree(path: string, clock: number, _allowDirty = false): Worktr
         }
     }
   }
-  if (existsSync(path)) {
-    const safety = orphanSafety(path, project.path, '')
-    if (!safety.removable) {
-      return { result: refuse(`worktree safety could not be proved: ${safety.detail}`) }
-    }
-  }
+  const gitRefusal = existingTreeGitRefusal(path, project.path)
+  if (gitRefusal) return { result: gitRefusal }
   return {
     result: {
       ok: true,

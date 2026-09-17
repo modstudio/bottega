@@ -1,5 +1,9 @@
 import { describe, expect, test } from 'bun:test'
-import { type TreeOwnershipInput, treeOwnership } from './worktree-attribution.ts'
+import {
+  classifyWorktreeDirty,
+  type TreeOwnershipInput,
+  treeOwnership,
+} from './worktree-attribution.ts'
 
 const base: TreeOwnershipInput = {
   conversationRunIds: [40, 41],
@@ -48,5 +52,35 @@ describe('treeOwnership', () => {
 
   test('keeps a checkout whose marker cannot be read', () => {
     expect(treeOwnership({ ...base, marker: { state: 'unreadable' } })).toBe('unknown')
+  })
+})
+
+describe('classifyWorktreeDirty', () => {
+  test('stderr warning with exit 0 is uninspectable — catches treating a permission warning as clean', () => {
+    expect(
+      classifyWorktreeDirty(
+        0,
+        '',
+        "warning: could not open directory 'secret/': Permission denied\n",
+      ),
+    ).toEqual({
+      dirty: true,
+      detail:
+        "could not inspect uncommitted or untracked work: warning: could not open directory 'secret/': Permission denied",
+    })
+  })
+
+  test('clean status is not dirty — catches treating empty porcelain as dirty', () => {
+    expect(classifyWorktreeDirty(0, '', '')).toEqual({
+      dirty: false,
+      detail: 'all work is committed',
+    })
+  })
+
+  test('porcelain output is dirty — catches ignoring uncommitted or untracked lines', () => {
+    expect(classifyWorktreeDirty(0, '?? untracked.txt\n', '')).toEqual({
+      dirty: true,
+      detail: 'has uncommitted or untracked changes',
+    })
   })
 })
