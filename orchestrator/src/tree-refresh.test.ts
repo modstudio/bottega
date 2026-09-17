@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test'
-import type { TrackedRecipe } from './recipe-schema.ts'
+import type { TrackedRecipe } from './recipe/recipe-schema.ts'
 import { executeTrackedRefreshSteps, type RecipeSnapshot } from './tracked-recipe.ts'
 import {
   decideTreeRefresh,

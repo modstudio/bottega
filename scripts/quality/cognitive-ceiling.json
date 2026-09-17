@@ -507,7 +507,7 @@
     "score": 46
   },
   {
-    "file": "orchestrator/src/recipe.ts",
+    "file": "orchestrator/src/recipe/recipe.ts",
     "function": "replace callback#2",
     "line": 123,
     "score": 16

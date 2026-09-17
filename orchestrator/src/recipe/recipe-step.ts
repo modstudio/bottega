@@ -1,8 +1,8 @@
 // concern: tracked recipe step execution
 /** Knows only how to plan and execute one validated recipe step. Must not know recipe ordering, worktree lifecycle, claims, or the project register. */
 import { isAbsolute, relative, resolve } from 'node:path'
+import { expandedSeed } from '../worktree-template.ts'
 import type { TrackedRecipe } from './recipe-schema.ts'
-import { expandedSeed } from './worktree-template.ts'
 
 export type Step = TrackedRecipe['create'][number]
 export type Command = Step['run']

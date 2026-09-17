@@ -56,7 +56,7 @@ import {
   wrongProjectReason,
 } from './mcp-probe.ts'
 import { projectAt, projectByName, stackAt, type WorktreeTool } from './projects.ts'
-import { recipeNotes } from './recipe.ts'
+import { recipeNotes } from './recipe/recipe.ts'
 import {
   assertSharedRefGuardOutsideWritableRoots,
   prepareSharedRefGuard,

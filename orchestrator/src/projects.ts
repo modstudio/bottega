@@ -39,7 +39,7 @@ import {
   validateProjectInjectionSettings,
 } from './project-injection.ts'
 import { type ReadonlyProvision, validateReadonlyProvision } from './readonly-provision.ts'
-import { loadTrackedRecipe, recipePointerErrors } from './recipe-loader.ts'
+import { loadTrackedRecipe, recipePointerErrors } from './recipe/recipe-loader.ts'
 import { recordApiClient } from './record-api-client.ts'
 import { DEFAULT_PROJECT_CONFIG_PATH, resolveWorktreeLifecycle } from './worktree-lifecycle.ts'
 import {
@@ -201,7 +201,7 @@ export type WorktreeTool = {
    * serve/stop. Every step optional; an empty recipe is plain git, which is
    * correct where a checkout is just files.
    */
-  recipe?: import('./recipe.ts').Recipe
+  recipe?: import('./recipe/recipe.ts').Recipe
   /** Relative pointer to the project's tracked recipe; the file is not executable configuration. */
   recipePath?: string
   /** Tears one down, including whatever it provisioned. Optional beside `recipe`. */

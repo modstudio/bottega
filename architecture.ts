@@ -385,7 +385,7 @@ export const modules: ArchitectureModule[] = [
   module('orchestrator/src/worktree-create.ts', [
     './db.ts',
     './projects.ts',
-    './recipe.ts',
+    './recipe/recipe.ts',
     './tracked-recipe.ts',
     './worktree-template.ts',
     './worktree-attribution.ts',
@@ -413,7 +413,7 @@ export const modules: ArchitectureModule[] = [
   module('orchestrator/src/worktree-remove.ts', [
     './db.ts',
     './projects.ts',
-    './recipe.ts',
+    './recipe/recipe.ts',
     './tracked-recipe.ts',
     './worktree-attribution.ts',
     './git-environment.ts',

@@ -31,20 +31,20 @@ import {
   sharedDeclarations,
   snapshotlessTeardown,
   teardownVars,
-} from './recipe-lifecycle.ts'
-import { parseTrackedRecipe } from './recipe-loader.ts'
+} from './recipe/recipe-lifecycle.ts'
+import { parseTrackedRecipe } from './recipe/recipe-loader.ts'
 import {
   allocationEnvironmentVariable,
   hookBranchName,
   type TrackedRecipe,
-} from './recipe-schema.ts'
+} from './recipe/recipe-schema.ts'
 import {
   runStep as kernelRunStep,
   runUndo as kernelRunUndo,
   type Step,
   type StepContext,
   type StepResult,
-} from './recipe-step.ts'
+} from './recipe/recipe-step.ts'
 import {
   claimDatabaseName,
   claimIndex,
