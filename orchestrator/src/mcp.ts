@@ -26,6 +26,7 @@ import {
   missingIssueReportFields,
 } from './issue-report-fields.ts'
 import { resolveLens } from './lenses.ts'
+import { decideMcpDocWrite } from './mcp-doc-write.ts'
 import {
   addDoctrineRule,
   addPair,
@@ -576,6 +577,8 @@ export function createDocsMcpServer(): McpServer {
       },
     },
     async ({ scope, subject, slug, title, body, delivery, force_inject, reason, author }) => {
+      const refusal = decideMcpDocWrite('set_doc', scope)
+      if (refusal) throw new Error(refusal)
       const doc = setDoc({
         scope,
         subject: subject ?? null,
@@ -603,8 +606,11 @@ export function createDocsMcpServer(): McpServer {
         slug: z.string(),
       },
     },
-    async ({ scope, subject, slug }) =>
-      text(consumeDoc(scope, subject ?? null, slug, { reason: 'consumed by session' })),
+    async ({ scope, subject, slug }) => {
+      const refusal = decideMcpDocWrite('consume_doc', scope)
+      if (refusal) throw new Error(refusal)
+      return text(consumeDoc(scope, subject ?? null, slug, { reason: 'consumed by session' }))
+    },
   )
 
   server.registerTool(

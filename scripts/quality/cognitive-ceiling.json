@@ -823,8 +823,8 @@
   {
     "file": "orchestrator/src/workflows.ts",
     "function": "validateWorkflowDefinition",
-    "line": 32,
-    "score": 68,
+    "line": 45,
+    "score": 62,
     "key": "orchestrator/src/workflows.ts\u0000validateWorkflowDefinition"
   },
   {

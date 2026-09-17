@@ -5,6 +5,7 @@ import type { Command } from 'commander'
 import {
   branchesReport,
   pruneBranches,
+  recordBranchLanding,
   renderBranchesReport,
   renderBranchPruneReport,
 } from '../branches.ts'
@@ -19,9 +20,27 @@ export function register(program: Command): void {
     .passThroughOptions()
     .allowExcessArguments(false)
     .action((options) => {
-      const report = branchesReport({ project: options.project, key: options.key })
+      const report = branchesReport({
+        project: options.project,
+        key: options.key,
+      })
       log(options.json ? JSON.stringify(report) : renderBranchesReport(report))
       if (report.projects.some((project) => project.error)) process.exitCode = 1
+    })
+
+  branches
+    .command('landed')
+    .argument('<branch>')
+    .requiredOption('--pr <number>')
+    .option('--json')
+    .allowExcessArguments(false)
+    .action((branch, options) => {
+      const report = recordBranchLanding(branch, Number(options.pr))
+      log(
+        options.json
+          ? JSON.stringify(report)
+          : `${report.branch}: recorded PR #${report.number} (merge ${report.mergeCommit ?? 'none'}, ${report.mergedAt})`,
+      )
     })
 
   branches

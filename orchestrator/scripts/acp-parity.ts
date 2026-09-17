@@ -12,7 +12,7 @@
 import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
-import { AGENTS } from '../src/agents.ts'
+import { AGENTS } from '../src/agent-registry.ts'
 import { db, ROOT } from '../src/db.ts'
 import { run } from '../src/run.ts'
 import {

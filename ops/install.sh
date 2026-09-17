@@ -22,6 +22,26 @@ UID_NUM="$(id -u)"
 PROVISIONAL_MONITOR_BACKSTOP_SECONDS=$((4 * 60 * 60))
 FIX_DEFECT_BACKSTOP_SECONDS=$((12 * 60 * 60))
 
+LOAD_WAIT_TRIES=20
+LOAD_WAIT_SECONDS=0.25
+FAILED_LABELS=()
+
+wait_unloaded() {
+  local tries=0
+  while launchctl print "gui/$UID_NUM/$1" >/dev/null 2>&1; do
+    ((++tries > LOAD_WAIT_TRIES)) && return 0
+    sleep "$LOAD_WAIT_SECONDS"
+  done
+}
+
+bootstrap_with_retry() {
+  local tries=0
+  until launchctl bootstrap "gui/$UID_NUM" "$1"; do
+    ((++tries >= LOAD_WAIT_TRIES)) && return 1
+    sleep "$LOAD_WAIT_SECONDS"
+  done
+}
+
 mkdir -p "$AGENTS_DIR" "$HOME/Library/Logs/brew-upgrade" "$HOME/Library/Logs/projects-refresh" \
   "$HOME/Library/Logs/orch-monitor" "$HOME/Library/Logs/orch-fix-defect" \
   "$HOME/Library/Logs/orch-canon-eval"
@@ -47,7 +67,10 @@ for tmpl in "$REPO"/launchd/*.plist.template; do
   target="$AGENTS_DIR/$label.plist"
 
   # Unload any existing version first (and drop a stale symlink from older installs).
+  # bootout returns before launchd has released the label; bootstrapping in that
+  # window fails with EIO, so wait until the label is gone.
   launchctl bootout "gui/$UID_NUM/$label" 2>/dev/null || true
+  wait_unloaded "$label"
   rm -f "$target"
 
   # Render template -> real plist with absolute paths for this machine.
@@ -59,12 +82,21 @@ for tmpl in "$REPO"/launchd/*.plist.template; do
       -e "s#__FIX_DEFECT_BACKSTOP_SECONDS__#${FIX_DEFECT_BACKSTOP_SECONDS}#g" \
       -e "s#__MODEL_HOST__#${LOCAL_MODEL_HOST:-}#g" "$tmpl" > "$target"
 
-  # Load it.
-  launchctl bootstrap "gui/$UID_NUM" "$target"
-  echo "installed: $label ($target)"
+  # Load it. A label that still will not load is reported and the rest continue.
+  if bootstrap_with_retry "$target"; then
+    echo "installed: $label ($target)"
+  else
+    echo "FAILED to load: $label ($target); retry with: launchctl bootstrap gui/$UID_NUM $target" >&2
+    FAILED_LABELS+=("$label")
+  fi
 done
 
 echo
 echo "Active agents:"
 launchctl list | grep -E 'brew-auto-upgrade|projects-morning-refresh|local-model-tunnel|orch-sweep|orch-monitor|orch-fix-defect|orch-canon-eval|hub-note-maintenance|hub-tunnel' \
   || echo "  (none found)"
+
+if ((${#FAILED_LABELS[@]})); then
+  echo "not loaded: ${FAILED_LABELS[*]}" >&2
+  exit 1
+fi

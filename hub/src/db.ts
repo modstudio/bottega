@@ -13,8 +13,25 @@ export type { Project } from './projects.ts'
 
 const checkout = new URL('../..', import.meta.url).pathname
 const mainCheckout = mainCheckoutOf(checkout)
-export const DB_PATH =
-  process.env.HUB_DB ?? (mainCheckout ? join(mainCheckout, 'hub', 'hub.db') : null)
+const livePath = mainCheckout ? join(mainCheckout, 'hub', 'hub.db') : null
+export const DB_PATH = process.env.HUB_DB ?? livePath
+
+/** A test process never falls back to the live hub store; production still does. */
+export function decideHubDatabasePath(
+  isTestProcess: boolean,
+  hubDb: string | undefined,
+  liveStore: string | null,
+): string | null {
+  if (hubDb !== undefined) return hubDb
+  if (isTestProcess) {
+    throw new Error(
+      `test process refuses hub database: HUB_DB resolved <unset>; live store is ${liveStore ?? '<none>'}\n` +
+        'invariant: A test suite never falls back to the live hub database.\n' +
+        'cleared by: set HUB_DB to a scratch store before importing hub/src/db.ts',
+    )
+  }
+  return liveStore
+}
 
 let handle: Database | null = null
 let openedUserVersion: number | null = null
@@ -60,6 +77,8 @@ function refuseOrReloadStaleSchema(d: Database, forWrite: boolean): Database {
 
 export function db(): Database {
   if (handle) return refuseOrReloadStaleSchema(handle, false)
+  // bun test sets NODE_ENV=test; an unset HUB_DB must not fall back to the live store.
+  decideHubDatabasePath(process.env.NODE_ENV === 'test', process.env.HUB_DB, livePath)
   requireDatabase()
   const d = new Database(DB_PATH!, { readwrite: true, create: false })
   d.exec('PRAGMA busy_timeout = 15000; PRAGMA foreign_keys = ON;')

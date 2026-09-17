@@ -1,6 +1,6 @@
 {
   "extends": "../tsconfig.base.json",
-  // src only. `hooks/` is Python, and asking tsc to parse it was never going to
-  // do anything but fail.
-  "include": ["src"]
+  // `hooks/` is Python, and asking tsc to parse it was never going to do
+  // anything but fail.
+  "include": ["src", "scripts"]
 }

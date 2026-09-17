@@ -47,8 +47,8 @@ function canonicalPath(path: string): string {
 }
 
 /** Refuse any test process state in which hub would open the live task board. */
-export function createTestHubDatabaseGuard(checkout: string): () => void {
-  const liveStore = canonicalPath(liveHubDatabase(checkout))
+export function createTestHubDatabaseGuard(checkout: string, liveStorePath?: string): () => void {
+  const liveStore = canonicalPath(liveStorePath ?? liveHubDatabase(checkout))
   return () => {
     const configured = process.env.HUB_DB
     const resolved = configured

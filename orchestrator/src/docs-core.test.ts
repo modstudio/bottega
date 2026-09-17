@@ -2,6 +2,7 @@ import { describe, expect, test } from 'bun:test'
 import { consumeDoc, removeDoc, setDoc } from '../test/fixtures/docs.ts'
 import { dir } from '../test/fixtures/store.ts'
 import { compilePack } from './canon.ts'
+import { db } from './db.ts'
 import {
   consumeDoc as consumeDocument,
   removeDoc as deleteDoc,
@@ -102,6 +103,69 @@ describe('scoped operator docs', () => {
     expect(restored.body).toBe('---\nstatus: open\n---\n\none')
     expect(restored.delivery).toBe('demand')
     expect(restored.updated_at).not.toBe(created.updated_at)
+  })
+
+  test('restore refuses a legacy global inject revision with the existing remedy', () => {
+    const legacy = writeDoc({
+      scope: 'global',
+      subject: null,
+      slug: 'legacy-inject',
+      title: 'Legacy',
+      body: 'legacy',
+      delivery: 'demand',
+      reason: 'create revision shell',
+    })
+    db().query("UPDATE doc_revision SET delivery='inject' WHERE doc_id=?").run(legacy.id)
+    const revision = listDocRevisions('global', null, 'legacy-inject')[0]!
+
+    expect(() =>
+      restoreDoc('global', null, 'legacy-inject', revision.id, { reason: 'restore legacy state' }),
+    ).toThrow('make the instruction canon, or write the operator document with delivery demand')
+  })
+
+  test('restore refuses a canon path colliding with the other level', () => {
+    upsertProject({ name: 'known', path: process.cwd(), stack: null, canon: true, settings: {} })
+    const slug = '.agents/rules/shared.md'
+    const body = '---\ndescription: Shared rule\nalways: true\n---\n\nRule.\n'
+    const projectDoc = writeDoc({
+      scope: 'canon',
+      subject: 'known',
+      slug,
+      title: 'Project rule',
+      body,
+      reason: 'create project revision',
+      allowCanonBootstrap: true,
+    })
+    const revision = listDocRevisions('canon', 'known', slug)[0]!
+    deleteDoc('canon', 'known', slug, { reason: 'make the historic row restorable' })
+    writeDoc({
+      scope: 'canon',
+      subject: null,
+      slug,
+      title: 'Global rule',
+      body,
+      reason: 'occupy the global path',
+      allowCanonBootstrap: true,
+    })
+
+    expect(() =>
+      restoreDoc('canon', 'known', projectDoc.slug, revision.id, {
+        reason: 'restore colliding project rule',
+      }),
+    ).toThrow('refusing canon path collision')
+  })
+
+  test('global canon writes are linted without a canon-enabled project', () => {
+    expect(() =>
+      writeDoc({
+        scope: 'canon',
+        subject: null,
+        slug: '.agents/rules/unlinted.md',
+        title: 'Unlinted',
+        body: 'Rule without required metadata.\n',
+        reason: 'prove global-only lint gate',
+      }),
+    ).toThrow('refusing canon write; introduced')
   })
 
   test('write reasons are required and author defaults to the session or unknown', () => {

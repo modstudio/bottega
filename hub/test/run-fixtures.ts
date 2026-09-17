@@ -1,5 +1,6 @@
 import { Database } from 'bun:sqlite'
 import { spyOn } from 'bun:test'
+import { createTestHubDatabaseGuard } from '../../shared/test-hub-database.ts'
 import { db } from '../src/db.ts'
 import { ingestRuns } from '../src/ingest/runs.ts'
 import { MIGRATIONS_TABLE } from '../src/migrations.ts'
@@ -7,7 +8,11 @@ import { clearOrchCache } from '../src/serve.ts'
 
 export const at = (iso: string) => new Date(iso).getTime()
 
-export function resetFixtureStore() {
+const checkout = new URL('../..', import.meta.url).pathname
+
+export function resetFixtureStore(assertSafe?: () => void) {
+  const guard = assertSafe ?? createTestHubDatabaseGuard(checkout)
+  guard()
   const database = new Database(process.env.HUB_DB!)
   try {
     database.exec('PRAGMA query_only = OFF; PRAGMA foreign_keys = OFF')

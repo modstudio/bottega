@@ -41,6 +41,7 @@ const concerns: ConcernManifest = {
 
 export const modules: ArchitectureModule[] = [
   module('orchestrator/src/artifact-paths.ts', ['node:path']),
+  module('orchestrator/src/branch-landing-record.ts', ['./branch-state.ts']),
   module('orchestrator/src/branch-state.ts', []),
   module('orchestrator/src/branch-settlement.ts', [
     './db.ts',
@@ -48,6 +49,7 @@ export const modules: ArchitectureModule[] = [
     './resource-claims.ts',
   ]),
   module('orchestrator/src/branches.ts', [
+    './branch-landing-record.ts',
     './branch-state.ts',
     './branch-settlement.ts',
     './db.ts',
@@ -74,6 +76,7 @@ export const modules: ArchitectureModule[] = [
   module('orchestrator/src/hook-tree.ts', []),
   module('orchestrator/src/keep-tree-hold.ts', []),
   module('orchestrator/src/local-host.ts', ['./agent-registry.ts', './agents.ts', './db.ts']),
+  module('orchestrator/src/mcp-doc-write.ts', []),
   module('orchestrator/src/monitor.ts', [
     'node:fs',
     'node:path',
@@ -329,6 +332,16 @@ export const modules: ArchitectureModule[] = [
     './worktree-create.ts',
     './worktree-lifecycle.ts',
     './worktree-types.ts',
+  ]),
+  module('orchestrator/src/workflow-tree.ts', ['./step-catalogue.ts', './workflows.ts']),
+  module('orchestrator/src/workflow-tree-files.ts', ['node:fs', 'node:path', './workflow-tree.ts']),
+  module('orchestrator/src/workflow-tree-store.ts', [
+    'bun:sqlite',
+    'node:util',
+    './db.ts',
+    './step-catalogue.ts',
+    './workflow-tree.ts',
+    './workflows.ts',
   ]),
   module('orchestrator/src/worktree-caller.ts', [
     './projects.ts',
