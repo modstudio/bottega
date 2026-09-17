@@ -5,7 +5,7 @@ floor:
 job: null
 autonomy: auto
 needs:
-  []
+  - worktree
 ---
 Before reading code, run this project's registered worktree refresh recipe in the run's worktree. Use the recipe as declared; do not substitute project-specific commands or refresh another checkout. If the code moves, discard conclusions based on the old revision and inspect it again.
 

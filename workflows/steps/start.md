@@ -5,7 +5,8 @@ floor:
 job: null
 autonomy: auto
 needs:
-  []
+  - tracker
+  - worktree
 ---
 Use this project's tracker to move the task into its active state and assign it according to the project's normal policy. Read the current state immediately before changing it rather than trusting an earlier copy. Then use the project's registered worktree recipe to create the isolated branch and worktree for the exact key the tracker returned; use the recipe's own naming, base, install, and environment rules.
 
