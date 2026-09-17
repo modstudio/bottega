@@ -52,3 +52,7 @@ A function at the cognitive complexity ceiling may only become simpler. Extract 
 ## Remove dead code and unneeded exports
 
 Code unused by production is dead and must be deleted with any test that exists only for it. A symbol used by production but imported only by tests has an unneeded export keyword. The baseline only shrinks; `scripts/check-dead-code.ts` enforces both classes.
+
+## Name workspace packages by platform scope
+
+A workspace package is named `@bottega/<concern>`; a nested package appends its part, as in `@bottega/hub-web`. This rule is enforced by review.

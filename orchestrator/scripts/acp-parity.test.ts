@@ -1,6 +1,7 @@
 import { describe, expect, test } from 'bun:test'
 import { existsSync } from 'node:fs'
 import { join, resolve } from 'node:path'
+import { PLATFORM_SLUG } from '../../shared/brand.ts'
 import {
   ACP_PARITY_REPOSITORY_ROOT,
   caseSemanticallyMatches,
@@ -8,6 +9,8 @@ import {
   type Row,
   requiredParityPassed,
 } from './acp-parity.ts'
+
+const ORCHESTRATOR_PACKAGE_NAME = `@${PLATFORM_SLUG}/orchestrator`
 
 const row = (
   caseName: string,
@@ -51,12 +54,12 @@ describe('ACP parity exit verdict', () => {
       stopReason,
     })
     expect(caseSemanticallyMatches('tool-read', reply('path does not exist'))).toBe(false)
-    expect(caseSemanticallyMatches('tool-read', reply('@devbox/orchestrator'))).toBe(true)
+    expect(caseSemanticallyMatches('tool-read', reply(ORCHESTRATOR_PACKAGE_NAME))).toBe(true)
     expect(parityCaseVerdict('tool-read', 'ok', null, reply('path does not exist'))).toEqual({
       outcome: 'failed',
       failureKind: 'semantic',
     })
-    expect(parityCaseVerdict('tool-read', 'ok', null, reply('@devbox/orchestrator'))).toEqual({
+    expect(parityCaseVerdict('tool-read', 'ok', null, reply(ORCHESTRATOR_PACKAGE_NAME))).toEqual({
       outcome: 'ok',
       failureKind: '—',
     })

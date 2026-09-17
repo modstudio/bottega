@@ -35,7 +35,7 @@ const ALLOWED = new Set([
   'shared/brand.ts',
   // This file, which has to mention it in order to look for it.
   'scripts/check-brand.ts',
-  // The package manifest: read by tooling that runs before any import exists.
+  // Every package manifest, matched by basename: read by tooling that runs before any import exists.
   'package.json',
 ])
 
@@ -49,7 +49,7 @@ for (const rel of new Glob('**/*.{ts,tsx,js,mjs,json,py,sh}').scanSync({ cwd: RO
   // session context quotes the canon that opens with the name. Policing them
   // would keep this check red after every run and teach everyone to skip it.
   if (rel.startsWith('orchestrator/runs/')) continue
-  if (ALLOWED.has(rel)) continue
+  if (ALLOWED.has(rel) || ALLOWED.has(rel.split('/').at(-1) ?? rel)) continue
   // A lockfile records dependency names it did not choose.
   if (rel.endsWith('bun.lock') || rel.endsWith('package-lock.json')) continue
 

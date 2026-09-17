@@ -1,3 +1,7 @@
+import { PLATFORM_SLUG } from '../../shared/brand.ts'
+
+const ORCHESTRATOR_PACKAGE_NAME = `@${PLATFORM_SLUG}/orchestrator`
+
 /**
  * ACP session-update fixtures, redacted from the 2026-09-06 parity run
  * against real codex-acp 1.10.0. Session ids and usage counts are generic;
@@ -38,7 +42,7 @@ export const ACP_FIXTURE_TOOL_READ = {
       sessionId: 'sess_parity_read',
       update: {
         sessionUpdate: 'agent_message_chunk',
-        content: { type: 'text', text: '"@devbox/orchestrator"' },
+        content: { type: 'text', text: `"${ORCHESTRATOR_PACKAGE_NAME}"` },
       },
     },
     {
@@ -173,7 +177,7 @@ export const ACP_FIXTURE_GROK = {
       sessionId: 'sess_grok_read',
       update: {
         sessionUpdate: 'agent_message_chunk',
-        content: { type: 'text', text: '@devbox/orchestrator' },
+        content: { type: 'text', text: ORCHESTRATOR_PACKAGE_NAME },
       },
     },
   ],
