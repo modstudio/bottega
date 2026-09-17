@@ -1,5 +1,13 @@
 import { afterEach, describe, expect, test } from 'bun:test'
-import { chmodSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import {
+  chmodSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  realpathSync,
+  rmSync,
+  writeFileSync,
+} from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { upsertProject } from './projects.ts'
@@ -80,7 +88,7 @@ describe('worktree removal safety', () => {
       settings: {
         worktree: {
           recipe: {
-            stop: `test "{path}" = '${path}' && test "$PWD" != '${repoRoot}'`,
+            stop: `test "{path}" = '${path}' && test "$(pwd -P)" != '${realpathSync(repoRoot)}'`,
           },
         },
       },
