@@ -19,7 +19,7 @@ import {
   installRecordSessionRunner,
   memoryRecordSession,
 } from '../../test/fixtures/record-session.ts'
-import { proveRememberedSpace } from '../../test/postgres-remembered-space-proof.ts'
+import { registerActiveSpaceProofs } from '../../test/postgres-remembered-space-proof.ts'
 import { proveHostedDocs, proveScoreRecordSync } from '../../test/postgres-score-proof.ts'
 import { startRecordApiServer } from '../record/record-api-server.ts'
 import { bearerHeaders, recordAuth, setActiveRecordSpace } from '../record/record-auth.ts'
@@ -467,29 +467,17 @@ realPostgres('RLS proof against real Postgres', () => {
     expect(shown.memberships.map((row) => row.space_id)).toEqual([authSpaceB])
   })
 
-  test('space list and switch repair a session with no active space', async () => {
-    succeeds(
-      'postgres',
-      'postgres',
-      `UPDATE session SET active_space_id=NULL WHERE token='${tokenB}';`,
-    )
-    recordSession.setToken(tokenB)
-    const listed = await recordMemberships(actorUrl!)
-    expect(listed.activeSpaceId).toBeNull()
-    expect(listed.memberships.map((row) => row.spaceId)).toEqual([authSpaceB])
-    expect((await switchRecordSpace(actorUrl!, listed.memberships[0]!.slug)).spaceId).toBe(
-      authSpaceB,
-    )
-  })
-
-  test('remembered space survives a new session for the same user', async () => {
-    await proveRememberedSpace({
-      actorUrl: actorUrl!,
-      rememberedSpaceId: authSpaceA,
-      outsiderSpaceId: SPACE_B,
-      password: AUTH_PASSWORD,
-      executeAsOwner: (sql) => succeeds('postgres', 'postgres', sql),
-    })
+  registerActiveSpaceProofs({
+    actorUrl: () => actorUrl!,
+    tokenB: () => tokenB,
+    spaceB: () => authSpaceB,
+    rememberedSpaceId: () => authSpaceA,
+    outsiderSpaceId: SPACE_B,
+    password: SIGN_UP_AUTH.password,
+    executeAsOwner: (sql) => succeeds('postgres', 'postgres', sql),
+    setToken: (token) => recordSession.setToken(token),
+    memberships: recordMemberships,
+    switchSpace: switchRecordSpace,
   })
 
   test('a non-owner cannot invite into the active space', async () => {

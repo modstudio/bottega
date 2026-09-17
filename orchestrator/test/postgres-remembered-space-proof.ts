@@ -1,8 +1,8 @@
-import { expect } from 'bun:test'
+import { expect, test } from 'bun:test'
 import { newRecordId } from '../../shared/record/schema.ts'
 import { bearerHeaders, recordAuth, setActiveRecordSpace } from '../src/record/record-auth.ts'
 
-export async function proveRememberedSpace(input: {
+async function proveRememberedSpace(input: {
   actorUrl: string
   rememberedSpaceId: string
   outsiderSpaceId: string
@@ -28,4 +28,45 @@ export async function proveRememberedSpace(input: {
   await expect(
     setActiveRecordSpace(input.actorUrl, signedIn.token, input.outsiderSpaceId),
   ).rejects.toThrow('is not a member of space')
+}
+
+/**
+ * The active-space proofs. They live here rather than inline so the RLS suite
+ * stays under its file ceiling, following the invitation proofs' registrar.
+ */
+export function registerActiveSpaceProofs(input: {
+  actorUrl: () => string
+  tokenB: () => string
+  spaceB: () => string
+  rememberedSpaceId: () => string
+  outsiderSpaceId: string
+  password: string
+  executeAsOwner: (sql: string) => string
+  setToken: (token: string) => void
+  memberships: (url: string) => Promise<{
+    activeSpaceId: string | null
+    memberships: { spaceId: string; slug: string }[]
+  }>
+  switchSpace: (url: string, slug: string) => Promise<{ spaceId: string }>
+}) {
+  test('space list and switch repair a session with no active space', async () => {
+    input.executeAsOwner(`UPDATE session SET active_space_id=NULL WHERE token='${input.tokenB()}';`)
+    input.setToken(input.tokenB())
+    const listed = await input.memberships(input.actorUrl())
+    expect(listed.activeSpaceId).toBeNull()
+    expect(listed.memberships.map((row) => row.spaceId)).toEqual([input.spaceB()])
+    expect((await input.switchSpace(input.actorUrl(), listed.memberships[0]!.slug)).spaceId).toBe(
+      input.spaceB(),
+    )
+  })
+
+  test('remembered space survives a new session for the same user', async () => {
+    await proveRememberedSpace({
+      actorUrl: input.actorUrl(),
+      rememberedSpaceId: input.rememberedSpaceId(),
+      outsiderSpaceId: input.outsiderSpaceId,
+      password: input.password,
+      executeAsOwner: input.executeAsOwner,
+    })
+  })
 }
