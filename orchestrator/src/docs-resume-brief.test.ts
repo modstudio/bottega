@@ -159,7 +159,13 @@ describe('scoped operator docs', () => {
       ],
     ] as const
     for (const [slug, body, expected] of cases) {
-      await setDoc({ scope: 'resume', subject: 'known', slug, title: slug, body: resumeBody('open') })
+      await setDoc({
+        scope: 'resume',
+        subject: 'known',
+        slug,
+        title: slug,
+        body: resumeBody('open'),
+      })
       db()
         .query('UPDATE doc SET body=? WHERE scope=? AND subject=? AND slug=?')
         .run(body, 'resume', 'known', slug)
@@ -406,7 +412,13 @@ describe('scoped operator docs', () => {
       ['pending-brief', resumeBody('pending')],
     ]
     for (const [slug, body] of invalidBriefs) {
-      await setDoc({ scope: 'resume', subject: 'known', slug, title: slug, body: resumeBody('open') })
+      await setDoc({
+        scope: 'resume',
+        subject: 'known',
+        slug,
+        title: slug,
+        body: resumeBody('open'),
+      })
       db()
         .query('UPDATE doc SET body=? WHERE scope=? AND subject=? AND slug=?')
         .run(body, 'resume', 'known', slug)

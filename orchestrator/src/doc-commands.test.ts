@@ -320,7 +320,7 @@ describe('scoped operator docs', () => {
       bytes: 4,
     })
     expect(diffDocRevisions(originalId, newerId)).toContain('-one\n+two')
-    deleteDoc('global', null, 'cli-history', { reason: 'gone' })
+    await deleteDoc('global', null, 'cli-history', { reason: 'gone' })
     await restoreDoc('global', null, 'cli-history', originalId, { reason: 'undo delete' })
     expect(getDoc('global', null, 'cli-history')?.body).toBe('one\n')
     expect(listDocRevisions('global', null, 'cli-history')[0]?.op).toBe('restore')

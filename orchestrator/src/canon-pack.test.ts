@@ -69,7 +69,7 @@ describe('worker pack canon', () => {
     ])
   })
 
-  test('always-on rows appear in the pack in entry-then-rules order', () => {
+  test('always-on rows appear in the pack in entry-then-rules order', async () => {
     upsertProject({ name: 'pack-canon-order', path: dir, settings: { trunk: 'main' } })
     await putOperator('OPERATOR-DOC-UNIQUE')
     putCanon('pack-canon-order', 'AGENTS.md', 'ENTRY-BODY-UNIQUE\n')
@@ -89,7 +89,7 @@ describe('worker pack canon', () => {
     expect(pack.docs.map((doc) => doc.slug)).toEqual(['operator'])
   })
 
-  test('global always-on rows pack before project rows of the same tier', () => {
+  test('global always-on rows pack before project rows of the same tier', async () => {
     upsertProject({ name: 'pack-global-order', path: dir, settings: { trunk: 'main' } })
     putCanon(null, '.agents/rules/global.md', '---\ndescription: Global\n---\nGLOBAL-RULE-UNIQUE\n')
     putCanon(
@@ -103,7 +103,7 @@ describe('worker pack canon', () => {
     )
   })
 
-  test('a context row contributes one index line and never its body', () => {
+  test('a context row contributes one index line and never its body', async () => {
     upsertProject({ name: 'pack-canon-context', path: dir, settings: { trunk: 'main' } })
     await putOperator('operator')
     putCanon(
@@ -123,7 +123,7 @@ describe('worker pack canon', () => {
     expect(pack.docs.map((doc) => doc.slug)).toEqual(['operator'])
   })
 
-  test('a card row contributes nothing', () => {
+  test('a card row contributes nothing', async () => {
     upsertProject({ name: 'pack-canon-card', path: dir, settings: { trunk: 'main' } })
     await putOperator('operator')
     putCanon(
@@ -138,7 +138,7 @@ describe('worker pack canon', () => {
     expect(pack.docBytes).toBe(pack.bytes)
   })
 
-  test('the pack refuses over budget with a message naming the tier to demote', () => {
+  test('the pack refuses over budget with a message naming the tier to demote', async () => {
     upsertProject({ name: 'pack-canon-budget', path: dir, settings: { trunk: 'main' } })
     await putOperator('t')
     putCanon('pack-canon-budget', 'AGENTS.md', `${'E'.repeat(400)}\n`)

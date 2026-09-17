@@ -1,10 +1,12 @@
 // concern: judgement
 /** Knows run rows, reviews and findings, score arithmetic, duel persistence, and judgeability. Must not know transports, worktrees, routing, the CLI, durable execution, dispatch, or cleanup. */
 import { existsSync, readFileSync } from 'node:fs'
+import { newRecordId } from '../../shared/record/schema.ts'
 import { db, nowIso, sessionId, writeTransaction } from './db.ts'
 import { pairPartners, parseRunIds, recordDuels, recordLosses, recordTies } from './duel.ts'
 import { JOBS, job } from './jobs.ts'
 import { machineId } from './machine-identity.ts'
+import { recordApiClient } from './record-api-client.ts'
 import { cleanReviewEvidence, parseReviewOutput } from './review.ts'
 import { enqueueReview } from './review-outbox.ts'
 import {
@@ -44,8 +46,6 @@ import {
   type Quality,
   weigh,
 } from './score.ts'
-import { recordApiClient } from './record-api-client.ts'
-import { newRecordId } from '../../shared/record/schema.ts'
 
 type JudgementFlags = {
   has(name: string): boolean
@@ -400,7 +400,7 @@ export async function scoreRun(
   flags: JudgementFlags,
   options: ScoreOptions,
   presentation: JudgementPresentation,
-): void {
+): Promise<void> {
   const row = db()
     .query(
       `SELECT root.id, root.agent, root.job, root.session_id, root.parent_run_id,

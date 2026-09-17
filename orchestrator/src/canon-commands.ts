@@ -133,7 +133,10 @@ function statOrNull(path: string): ReturnType<typeof lstatSync> | null {
   }
 }
 
-async function canonImportCommand(flags: CanonFlags, presentation: CanonPresentation): Promise<void> {
+async function canonImportCommand(
+  flags: CanonFlags,
+  presentation: CanonPresentation,
+): Promise<void> {
   const project = requestedProject(flags)
   const reason = flags.flag('reason')
   if (!reason?.trim()) throw new Error('--reason is required')

@@ -33,7 +33,6 @@ import {
 } from '../../shared/git.ts'
 import type { TrackerSettings } from '../../shared/trackers.ts'
 import { db, nowIso, writableDb, writeTransaction } from './db.ts'
-import { recordApiClient } from './record-api-client.ts'
 import {
   type DocsSettings,
   type ReleaseSettings,
@@ -41,6 +40,7 @@ import {
 } from './project-injection.ts'
 import { type ReadonlyProvision, validateReadonlyProvision } from './readonly-provision.ts'
 import { loadTrackedRecipe, recipePointerErrors } from './recipe-loader.ts'
+import { recordApiClient } from './record-api-client.ts'
 import { DEFAULT_PROJECT_CONFIG_PATH, resolveWorktreeLifecycle } from './worktree-lifecycle.ts'
 import {
   CREATE_VARS,
@@ -402,16 +402,19 @@ export async function renameProject(currentName: string, nextName: string): Prom
   if (currentName !== nextName && projectByName(nextName))
     throw new Error(`project "${nextName}" already exists`)
   const d = db()
-  const docs = (
-    d.query<{ n: number }, [string]>('SELECT count(*) AS n FROM doc WHERE subject=?').get(currentName)
-  )?.n ?? 0
+  const docs =
+    d
+      .query<{ n: number }, [string]>('SELECT count(*) AS n FROM doc WHERE subject=?')
+      .get(currentName)?.n ?? 0
   const revisions =
-    (
-      d
-        .query<{ n: number }, [string]>('SELECT count(*) AS n FROM doc_revision WHERE subject=?')
-        .get(currentName)
-    )?.n ?? 0
-  await recordApiClient().renameSubject({ from: currentName, to: nextName, count: docs + revisions })
+    d
+      .query<{ n: number }, [string]>('SELECT count(*) AS n FROM doc_revision WHERE subject=?')
+      .get(currentName)?.n ?? 0
+  await recordApiClient().renameSubject({
+    from: currentName,
+    to: nextName,
+    count: docs + revisions,
+  })
   writeTransaction(() => {
     d.query('UPDATE project SET name=? WHERE id=?').run(nextName, current.id)
     for (const [table, column] of [

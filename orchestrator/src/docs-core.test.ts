@@ -120,7 +120,9 @@ describe('scoped operator docs', () => {
 
     await expect(
       restoreDoc('global', null, 'legacy-inject', revision.id, { reason: 'restore legacy state' }),
-    ).rejects.toThrow('make the instruction canon, or write the operator document with delivery demand')
+    ).rejects.toThrow(
+      'make the instruction canon, or write the operator document with delivery demand',
+    )
   })
 
   test('restore refuses a canon path colliding with the other level', async () => {
@@ -333,7 +335,13 @@ describe('scoped operator docs', () => {
   test('docsForRun injects job docs and omits demand and non-run scopes', async () => {
     upsertProject({ name: 'known', path: '/w/known', stack: null, canon: true, settings: {} })
     expect(docsForRun({ job: 'file-question', cwd: '/elsewhere' })).toEqual([])
-    await setDoc({ scope: 'project', subject: 'known', slug: 'project', title: 'Project', body: 'P' })
+    await setDoc({
+      scope: 'project',
+      subject: 'known',
+      slug: 'project',
+      title: 'Project',
+      body: 'P',
+    })
     await setDoc({ scope: 'job', subject: 'file-question', slug: 'job', title: 'Job', body: 'J' })
     await setDoc({ scope: 'global', subject: null, slug: 'global', title: 'Global', body: 'G' })
     await setDoc({ scope: 'agent', subject: 'codex', slug: 'agent', title: 'Agent', body: 'A' })
@@ -352,7 +360,13 @@ describe('scoped operator docs', () => {
 
   test('delivery is round-tripped and demand docs never enter a compiled pack', async () => {
     upsertProject({ name: 'known', path: dir, stack: null, canon: true, settings: {} })
-    await setDoc({ scope: 'machine', subject: null, slug: 'injected', title: 'Injected', body: 'é' })
+    await setDoc({
+      scope: 'machine',
+      subject: null,
+      slug: 'injected',
+      title: 'Injected',
+      body: 'é',
+    })
     await setDoc({
       scope: 'global',
       subject: null,
@@ -362,7 +376,13 @@ describe('scoped operator docs', () => {
       delivery: 'demand',
     })
     await setDoc({ scope: 'job', subject: 'understand', slug: 'job', title: 'Job', body: 'J' })
-    await setDoc({ scope: 'project', subject: 'known', slug: 'project', title: 'Project', body: 'P' })
+    await setDoc({
+      scope: 'project',
+      subject: 'known',
+      slug: 'project',
+      title: 'Project',
+      body: 'P',
+    })
     const pack = compilePack({ job: 'understand', cwd: dir })
     expect(pack.docs.map((doc) => doc.title)).toEqual(['Job'])
     expect(pack.docs.every((doc) => doc.revisionId > 0)).toBe(true)
@@ -390,19 +410,23 @@ describe('scoped operator docs', () => {
           delivery: 'inject',
           reason: 'test refusal',
         }),
-      ).rejects.toThrow('make the instruction canon, or write the operator document with delivery demand')
+      ).rejects.toThrow(
+        'make the instruction canon, or write the operator document with delivery demand',
+      )
     }
     expect(
-      (await writeDoc({
-        scope: 'canon',
-        subject: null,
-        slug: '.agents/rules/global.md',
-        title: 'Global canon',
-        body: '---\ndescription: Global\n---\n\nRule.\n',
-        delivery: 'inject',
-        reason: 'test global canon',
-        allowCanonBootstrap: true,
-      })).scope,
+      (
+        await writeDoc({
+          scope: 'canon',
+          subject: null,
+          slug: '.agents/rules/global.md',
+          title: 'Global canon',
+          body: '---\ndescription: Global\n---\n\nRule.\n',
+          delivery: 'inject',
+          reason: 'test global canon',
+          allowCanonBootstrap: true,
+        })
+      ).scope,
     ).toBe('canon')
     for (const [scope, subject] of [
       ['machine', null],
@@ -410,15 +434,17 @@ describe('scoped operator docs', () => {
       ['job', 'understand'],
     ] as const) {
       expect(
-        (await writeDoc({
-          scope,
-          subject,
-          slug: `allowed-${scope}`,
-          title: 'Allowed',
-          body: 'B',
-          delivery: 'inject',
-          reason: 'test estate fact',
-        })).delivery,
+        (
+          await writeDoc({
+            scope,
+            subject,
+            slug: `allowed-${scope}`,
+            title: 'Allowed',
+            body: 'B',
+            delivery: 'inject',
+            reason: 'test estate fact',
+          })
+        ).delivery,
       ).toBe('inject')
     }
   })

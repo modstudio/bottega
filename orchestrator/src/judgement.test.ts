@@ -127,8 +127,9 @@ describe('score ruling', () => {
     expect(db().query('SELECT scored_by FROM score WHERE run_id=?').get(id)).toEqual({
       scored_by: 'hub-dashboard',
     })
-    await expect(score(id, [], { void: true, scorer: 'hub-dashboard' }, { dashboardAuthorized: true }),
-    ).toThrow('owned by session owner-session')
+    await expect(
+      score(id, [], { void: true, scorer: 'hub-dashboard' }, { dashboardAuthorized: true }),
+    ).rejects.toThrow('owned by session owner-session')
   })
 
   test('an anonymous caller cannot score an unowned run', async () => {
@@ -181,13 +182,14 @@ describe('score ruling', () => {
 
   test('score refuses review grades on a job that does not produce findings', async () => {
     const id = insert()
-    await expect(score(id, ['full', 'right'], {
+    await expect(
+      score(id, ['full', 'right'], {
         reproduced: 'all',
         coverage: 'adequate',
         limits: 'named',
         overlap: 'unique',
       }),
-    ).toThrow('not a findings-producing lens')
+    ).rejects.toThrow('not a findings-producing lens')
     expect(db().query('SELECT id FROM score WHERE run_id=?').get(id)).toBeNull()
   })
 
@@ -266,19 +268,21 @@ describe('score ruling', () => {
     })
   })
 
-  test('score and re-score enqueue the stored verdict with its merged note', async () => {
+  test('score and re-score store the merged note locally without enqueueing the score outbox', async () => {
     const id = insert()
     await score(id, ['full', 'right'], {}, { note: 'first' })
     await score(id, ['partial', 'mixed'], {}, { note: 'second' })
-    const payloads = db()
-      .query<{ payload: string }, []>("SELECT payload FROM outbox WHERE kind='score' ORDER BY id")
-      .all()
-      .map((row) => JSON.parse(row.payload) as Record<string, unknown>)
-    expect(payloads).toHaveLength(2)
-    expect(payloads[0]).toMatchObject({ delivery: 'full', quality: 'right', note: 'first' })
-    expect(payloads[1]).toMatchObject({ delivery: 'partial', quality: 'mixed' })
-    expect(payloads[1]!.note).toContain('first')
-    expect(payloads[1]!.note).toContain('second')
+    const stored = db()
+      .query<{ delivery: string; quality: string; note: string }, [number]>(
+        'SELECT delivery, quality, note FROM score WHERE run_id=?',
+      )
+      .get(id)
+    expect(stored).toMatchObject({ delivery: 'partial', quality: 'mixed' })
+    expect(stored!.note).toContain('first')
+    expect(stored!.note).toContain('second')
+    expect(
+      db().query<{ n: number }, []>("SELECT count(*) AS n FROM outbox WHERE kind='score'").get()!.n,
+    ).toBe(0)
   })
 
   test('no pair offer across different spec_sha', async () => {
@@ -372,9 +376,9 @@ describe('judge ruling', () => {
     db()
       .query("UPDATE run SET failure_kind='unevidenced',lens='empty',model='m' WHERE id=?")
       .run(id)
-    await expect(score(id, ['full', 'right'], { coverage: 'empty', limits: 'named' })).rejects.toThrow(
-      'unevidenced review',
-    )
+    await expect(
+      score(id, ['full', 'right'], { coverage: 'empty', limits: 'named' }),
+    ).rejects.toThrow('unevidenced review')
     expect(db().query('SELECT id FROM score WHERE run_id=?').get(id)).toBeNull()
   })
 
@@ -385,13 +389,14 @@ describe('judge ruling', () => {
     db()
       .query('UPDATE run SET lens=?,model=?,output_path=? WHERE id=?')
       .run('duplicate', 'm', output, id)
-    await expect(score(id, ['full', 'right'], {
+    await expect(
+      score(id, ['full', 'right'], {
         reproduced: 'banana',
         coverage: 'adequate',
         limits: 'named',
         overlap: 'unique',
       }),
-    ).toThrow('--reproduced')
+    ).rejects.toThrow('--reproduced')
   })
 
   test('judge closes a two-finding review and pair in one transaction', async () => {
@@ -426,15 +431,15 @@ describe('judge ruling', () => {
     const id = insert('ok', 'review-lens')
     db().query("UPDATE run SET lens='correctness',model='m' WHERE id=?").run(id)
     recordReview(id, reviewReply(1), db())
-    expect(() =>
-      await judge(id, ['full', 'right'], {
+    await expect(
+      judge(id, ['full', 'right'], {
         reproduced: 'all',
         coverage: 'adequate',
         limits: 'absent',
         overlap: 'alone',
         finding: ['2=accepted:high'],
       }),
-    ).toThrow('has no finding 2')
+    ).rejects.toThrow('has no finding 2')
     expect(db().query('SELECT id FROM score WHERE run_id=?').get(id)).toBeNull()
   })
 
@@ -445,7 +450,12 @@ describe('judge ruling', () => {
       (db().query('SELECT note FROM score WHERE run_id=?').get(scored) as { note: string }).note,
     ).toContain('second line')
     const judged = insert('ok', 'implement')
-    await judge(judged, ['full', 'right', 'faithful'], {}, { note: 'long note\nwith a second line' })
+    await judge(
+      judged,
+      ['full', 'right', 'faithful'],
+      {},
+      { note: 'long note\nwith a second line' },
+    )
     expect(
       (db().query('SELECT note FROM score WHERE run_id=?').get(judged) as { note: string }).note,
     ).toContain('second line')
@@ -527,9 +537,8 @@ describe('voided output evidence', () => {
           WHERE record_id=(SELECT record_id FROM run WHERE id=?) ORDER BY id`,
       )
       .all(id)
-    expect(outbox.map((row) => row.kind)).toEqual(['score', 'run'])
-    expect(JSON.parse(outbox[0]!.payload)).toMatchObject({ delivery: 'none', quality: null })
-    expect(JSON.parse(outbox[1]!.payload)).toMatchObject({
+    expect(outbox.map((row) => row.kind)).toEqual(['run'])
+    expect(JSON.parse(outbox[0]!.payload)).toMatchObject({
       evidenceExcluded: 'voided with orch score --void',
     })
     expect(

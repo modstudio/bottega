@@ -229,11 +229,7 @@ export function recordApi(deps: Deps): Hono<ApiEnvironment> {
     }
     throw error
   }
-  const page = <T extends { id?: string; updatedAt?: string; scoredAt?: string }>(
-    items: T[],
-    limit: number,
-    cursorOf: (item: T) => RecordCursor,
-  ) => {
+  const page = <T>(items: T[], limit: number, cursorOf: (item: T) => RecordCursor) => {
     const hasMore = items.length > limit
     if (hasMore) items.pop()
     const last = items.at(-1)

@@ -28,6 +28,7 @@ import {
   TEST_FLAKE_RECORD_PAYLOAD_COLUMNS,
 } from './landing-outbox.ts'
 import { machineId, machineName } from './machine-identity.ts'
+import { pullRecordCache } from './record-cache.ts'
 import { currentRecordSession } from './record-session.ts'
 import {
   backfillReviewRecords,
@@ -41,7 +42,6 @@ import {
   RUN_RECORD_PAYLOAD_COLUMNS,
   type RunRecordBackfillResult,
 } from './run-outbox.ts'
-import { pullRecordCache } from './record-cache.ts'
 import { backfillScoreRecords, SCORE_RECORD_PAYLOAD_COLUMNS } from './score-outbox.ts'
 
 type OutboxRow = { id: number; kind: string; record_id: string; payload: string }

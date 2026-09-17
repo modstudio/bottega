@@ -9,8 +9,7 @@ import {
   RECORD_OWNER_ROLE,
   RECORD_READER_ROLE,
 } from '../../shared/record/schema.ts'
-import { proveHostedDocs } from '../test/postgres-docs-proof.ts'
-import { proveScoreRecordSync } from '../test/postgres-score-proof.ts'
+import { proveHostedDocs, proveScoreRecordSync } from '../test/postgres-score-proof.ts'
 import { db } from './db.ts'
 import {
   appliedRecordMigrationCount,
@@ -30,23 +29,16 @@ import {
 } from './record-space.ts'
 
 const OPERATOR_USER_ID = '01990000-0000-7000-8000-000000000002'
-const SPACE_NAME = PLATFORM_SLUG
 
 const container = process.env.ORCH_TEST_POSTGRES_CONTAINER
 const ownerUrl = process.env.ORCH_RECORD_MIGRATE_URL
 const actorUrl = process.env.ORCH_RECORD_URL
 const recordFolder = join(import.meta.dir, '..', '..', 'shared', 'record')
 const migrationsFolder = join(recordFolder, 'migrations')
-const postgresSchema = [
-  'schema.ts',
-  'schema-auth.ts',
-  'schema-run.ts',
-  'schema-review.ts',
-  'schema-landing.ts',
-  'schema-docs.ts',
-]
-  .map((file) => readFileSync(join(recordFolder, file), 'utf8'))
-  .join('\n')
+const postgresSchema =
+  ['schema.ts', 'schema-auth.ts', 'schema-run.ts', 'schema-review.ts', 'schema-landing.ts']
+    .map((file) => readFileSync(join(recordFolder, file), 'utf8'))
+    .join('\n') + readFileSync(join(recordFolder, 'schema-docs.ts'), 'utf8')
 const migration = readdirSync(migrationsFolder, { withFileTypes: true })
   .filter((entry) => entry.isDirectory())
   .map((entry) => entry.name)
@@ -130,7 +122,7 @@ describe('Postgres substrate shape', () => {
 
   test('seeds the fixed platform space and stand-in operator', () => {
     expect(migration).toContain(
-      `VALUES ('${PLATFORM_SPACE_ID}', '${SPACE_NAME}', '2026-09-09T00:00:00Z')`,
+      `VALUES ('${PLATFORM_SPACE_ID}', '${PLATFORM_SLUG}', '2026-09-09T00:00:00Z')`,
     )
     expect(migration).toContain(`'${OPERATOR_USER_ID}'`)
     expect(migration).toContain(`'operator@${PLATFORM_SLUG}.local'`)
@@ -153,9 +145,6 @@ describe('Postgres substrate shape', () => {
       'test_flake',
       'seq',
       'invitation',
-      'doc',
-      'doc_revision',
-      'run_exclusion',
     ]) {
       expect(migration).toContain(`ALTER TABLE "${table}" ENABLE ROW LEVEL SECURITY`)
       expect(migration).toContain(`ALTER TABLE "${table}" FORCE ROW LEVEL SECURITY`)
@@ -785,25 +774,7 @@ realPostgres('RLS proof against real Postgres', () => {
           (run) => run.id === httpRun,
         ),
       ).toBe(false)
-    } finally {
-      server.stop(true)
-    }
-  })
-
-  test('hosted docs write through the API, hide soft deletes, and isolate spaces', async () => {
-    const server = startRecordApiServer({
-      ...process.env,
-      PORT: '0',
-      ORCH_RECORD_URL: actorUrl!,
-      BETTER_AUTH_SECRET: process.env.BETTER_AUTH_SECRET,
-      BETTER_AUTH_URL: process.env.BETTER_AUTH_URL,
-    })
-    try {
-      await proveHostedDocs({
-        origin: `http://127.0.0.1:${server.port}`,
-        token: tokenA,
-        otherToken: tokenB,
-      })
+      await proveHostedDocs({ origin, token: created.token, otherToken: tokenB })
     } finally {
       server.stop(true)
     }

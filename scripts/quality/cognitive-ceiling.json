@@ -481,13 +481,6 @@
     "score": 33
   },
   {
-    "file": "orchestrator/src/porting-import.ts",
-    "function": "writeTransaction callback",
-    "line": 949,
-    "score": 16,
-    "key": "orchestrator/src/porting-import.ts\u0000writeTransaction callback"
-  },
-  {
     "file": "orchestrator/src/project-commands.ts",
     "function": "projectCommand",
     "line": 165,

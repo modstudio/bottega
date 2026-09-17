@@ -5,6 +5,8 @@ import { syncRecord } from '../src/record-sync.ts'
 import { RUN_RECORD_PAYLOAD_COLUMNS } from '../src/run-outbox.ts'
 import { SCORE_RECORD_PAYLOAD_COLUMNS } from '../src/score-outbox.ts'
 
+export { proveHostedDocs } from './postgres-docs-proof.ts'
+
 type PsqlResult = { code: number; stdout: string; stderr: string }
 
 export async function proveScoreRecordSync(input: {

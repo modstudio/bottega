@@ -73,7 +73,6 @@ describe('record API', () => {
 })
 
 describe('record API presentation routes', () => {
-
   test('cursor encode/decode round trips and malformed cursors are rejected', async () => {
     const cursor = { at: '2026-01-02T03:04:05.000Z', id }
     expect(decodeRecordCursor(encodeRecordCursor(cursor))).toEqual(cursor)
@@ -159,7 +158,7 @@ describe('record API presentation routes', () => {
 })
 
 describe('record API doc write refusals', () => {
-  async function put(body: Record<string, unknown>, upsert = appWith(identity).request) {
+  async function put(body: Record<string, unknown>) {
     const app = appWith(identity, {
       upsertDoc: async (input: {
         scope: string
