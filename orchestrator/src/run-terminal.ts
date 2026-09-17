@@ -23,7 +23,7 @@ import {
   type ReviewReply,
   type realQuestions,
   type WorkerReply,
-} from './contract.ts'
+} from './contract/contract.ts'
 import { db, nowIso, tryWriteContention, writeTransaction } from './db.ts'
 import { assessEvidence, recordEvidence } from './evidence.ts'
 import { type classify, detectBlockers } from './failure.ts'

@@ -1,6 +1,6 @@
 // concern: review-triage
 import type { Database } from 'bun:sqlite'
-import type { ReviewReply } from './contract.ts'
+import type { ReviewReply } from './contract/contract.ts'
 import { nowIso, writableDb, writeTransaction } from './db.ts'
 import { recordReviews } from './review.ts'
 import { enqueueReview, enqueueReviewFinding, enqueueReviewLens } from './review-outbox.ts'

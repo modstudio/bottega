@@ -1,12 +1,16 @@
 #!/usr/bin/env bun
 /** Keep review verdicts independent of landing policy and run-chain ownership. */
 import { readFileSync } from 'node:fs'
-import { importSpecifiers } from './import-scanner.ts'
+import { importSpecifiers, repositoryRelativeImport } from './import-scanner.ts'
 
 const ROOT = new URL('..', import.meta.url).pathname.replace(/\/$/, '')
 const FILE = 'orchestrator/src/review.ts'
 const source = readFileSync(`${ROOT}/${FILE}`, 'utf8')
 const violations: string[] = []
+const LANDING_OUTBOX_FILES = new Set([
+  'orchestrator/src/landing-outbox.ts',
+  'orchestrator/src/landing/landing-outbox.ts',
+])
 
 if (/\btryWriteContention\s*\(/.test(source)) {
   violations.push(`${FILE} calls tryWriteContention (machine-local coordination policy)`)
@@ -14,7 +18,11 @@ if (/\btryWriteContention\s*\(/.test(source)) {
 
 const imports = importSpecifiers(source)
 for (const specifier of imports.specifiers) {
-  if (/^\.\/landing(?:[.-]|$)/.test(specifier) && specifier !== './landing-outbox.ts') {
+  const resolved = repositoryRelativeImport(FILE, specifier)
+  if (
+    /^orchestrator\/src\/landing(?:[./-]|$)/.test(resolved) &&
+    !LANDING_OUTBOX_FILES.has(resolved)
+  ) {
     violations.push(`${FILE} imports "${specifier}" (landing policy)`)
   }
 }

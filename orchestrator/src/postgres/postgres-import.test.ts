@@ -14,7 +14,7 @@ import { RECORD_SESSION_KEY, recordAuth, setActiveRecordSpace } from '../record/
 import { syncRecord } from '../record/record-sync.ts'
 import { backfillReviewRecords } from '../review-outbox.ts'
 import { backfillRunRecords } from '../run-outbox.ts'
-import { backfillScoreRecords } from '../score-outbox.ts'
+import { backfillScoreRecords } from '../score/score-outbox.ts'
 import { importProjects } from './postgres-import.ts'
 import { migratePostgres } from './postgres-migrate.ts'
 

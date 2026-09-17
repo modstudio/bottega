@@ -5,7 +5,7 @@
  */
 
 import { AGENTS } from './agent-registry.ts'
-import type { CanonSource } from './contract.ts'
+import type { CanonSource } from './contract/contract.ts'
 import { job } from './jobs.ts'
 import { projectAt, validateStoredProjectSettings } from './projects.ts'
 import { childEnv } from './run-process.ts'

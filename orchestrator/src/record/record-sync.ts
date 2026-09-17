@@ -42,7 +42,7 @@ import {
   RUN_RECORD_PAYLOAD_COLUMNS,
   type RunRecordBackfillResult,
 } from '../run-outbox.ts'
-import { backfillScoreRecords, SCORE_RECORD_PAYLOAD_COLUMNS } from '../score-outbox.ts'
+import { backfillScoreRecords, SCORE_RECORD_PAYLOAD_COLUMNS } from '../score/score-outbox.ts'
 
 type OutboxRow = { id: number; kind: string; record_id: string; payload: string }
 type Payload = Record<string, unknown>

@@ -3,7 +3,7 @@ import { expect } from 'bun:test'
 import { newRecordId } from '../../shared/record/schema.ts'
 import { syncRecord } from '../src/record/record-sync.ts'
 import { RUN_RECORD_PAYLOAD_COLUMNS } from '../src/run-outbox.ts'
-import { SCORE_RECORD_PAYLOAD_COLUMNS } from '../src/score-outbox.ts'
+import { SCORE_RECORD_PAYLOAD_COLUMNS } from '../src/score/score-outbox.ts'
 
 export { proveHostedDocs } from './postgres-docs-proof.ts'
 

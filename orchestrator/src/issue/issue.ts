@@ -8,7 +8,7 @@ import {
   type IssueWorkerReply,
   type JsonSchema,
   validatesSchema,
-} from '../contract.ts'
+} from '../contract/contract.ts'
 import { DB_PATH, db } from '../db.ts'
 import { repoRootOf } from '../git-environment.ts'
 import { DEFAULT_KEEP_TREE_HOURS, keepTreeExemption } from '../keep-tree-hold.ts'

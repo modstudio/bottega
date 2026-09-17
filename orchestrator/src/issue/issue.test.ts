@@ -4,7 +4,7 @@ import {
   ISSUE_WORKER_SCHEMA,
   type IssueWorkerReply,
   parseWorkerReplyWithCount,
-} from '../contract.ts'
+} from '../contract/contract.ts'
 import { JOBS } from '../jobs.ts'
 import type { Project } from '../projects.ts'
 import {

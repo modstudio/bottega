@@ -11,7 +11,7 @@ import {
   NOT_EVIDENCE,
 } from './failure.ts'
 import { candidates, isRoutingEvidence, scoreboard } from './route.ts'
-import { WEIGHT, weigh } from './score.ts'
+import { WEIGHT, weigh } from './score/score.ts'
 
 describe('failure classification', () => {
   test('contract failures fail over as scoreable none evidence without cooldown or notification', () => {

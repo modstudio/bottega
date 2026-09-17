@@ -45,7 +45,7 @@ import {
   QUALITY,
   type Quality,
   weigh,
-} from './score.ts'
+} from './score/score.ts'
 
 type JudgementFlags = {
   has(name: string): boolean

@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test'
 import { workerReply } from '../test/fixtures/replies.ts'
-import type { ReviewReply, WorkerReply } from './contract.ts'
+import type { ReviewReply, WorkerReply } from './contract/contract.ts'
 import { CANON_EVALS, TRACKED_EVAL_PATH, UNTRACKED_EVAL_PATH } from './evals.ts'
 
 describe('metric canon headline and calendar halves', () => {})

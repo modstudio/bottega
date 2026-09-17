@@ -11,7 +11,14 @@ import type { Readable, Writable } from 'node:stream'
 import { gwetAc1, quadraticWeightedKappa } from './agreement.ts'
 import { db, nowIso, sessionId } from './db.ts'
 import { JOBS } from './jobs.ts'
-import { DELIVERY, type Delivery, FIDELITY, type Fidelity, QUALITY, type Quality } from './score.ts'
+import {
+  DELIVERY,
+  type Delivery,
+  FIDELITY,
+  type Fidelity,
+  QUALITY,
+  type Quality,
+} from './score/score.ts'
 
 type RecalibrationFlags = { has(name: string): boolean; flag(name: string): string | undefined }
 type RecalibrationPresentation = {

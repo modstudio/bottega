@@ -13,7 +13,7 @@ import {
   thompsonRank,
 } from './route.ts'
 import { chainTerminationAt } from './run-liveness.ts'
-import { weigh } from './score.ts'
+import { weigh } from './score/score.ts'
 import { median } from './statistics.ts'
 
 const ROUTING_BACKTEST_SEED = 287

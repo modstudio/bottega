@@ -17,7 +17,7 @@ import {
   type ReviewReply,
   realQuestions,
   type WorkerReply,
-} from './contract.ts'
+} from './contract/contract.ts'
 import { db, nowIso, writeTransaction } from './db.ts'
 import { JOBS } from './jobs.ts'
 import { parseReviewOutput, parseReviewReply } from './review.ts'
