@@ -4,6 +4,7 @@ import {
   configDocumentSchema,
   hookBranchName,
   recipeSchema,
+  stepPlaceholders,
 } from './recipe-schema.ts'
 
 const command: { command: string; args: string[]; cwd?: string } = { command: 'true', args: [] }
@@ -16,6 +17,38 @@ function messages(value: unknown): string[] {
 }
 
 describe('tracked recipe refusal rules', () => {
+  test('accepts refresh steps and refuses undo in a refresh step', () => {
+    expect(
+      recipeSchema.safeParse({
+        create: [],
+        refresh: [{ name: 'dependencies', run: command }],
+      }).success,
+    ).toBe(true)
+    expect(
+      messages({
+        create: [],
+        refresh: [{ name: 'dependencies', run: command, undo: command }],
+      }).join('\n'),
+    ).toContain('unknown-key rule')
+  })
+
+  test('names placeholders in text and structured step arguments', () => {
+    expect(
+      stepPlaceholders({
+        name: 'refresh',
+        run: {
+          command: 'run-{branch}',
+          args: ['{ports.web}', { value: '--key={key}', omitWhenEmpty: 'key' }, { expand: 'seed' }],
+        },
+      }),
+    ).toEqual([
+      { name: 'branch', allocation: false },
+      { name: 'ports.web', allocation: true },
+      { name: 'key', allocation: false },
+      { name: 'seed', allocation: false },
+    ])
+  })
+
   test('accepts the minimal recipe and all three execution contexts', () => {
     expect(
       recipeSchema.safeParse({

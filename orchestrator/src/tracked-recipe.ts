@@ -431,6 +431,18 @@ export function executeTrackedCreateSteps(
   return { failure: null, compensation: [] }
 }
 
+export function executeTrackedRefreshSteps(
+  recipe: TrackedRecipe,
+  context: StepContext,
+  runStep: StepRunner,
+): StepResult | null {
+  for (const step of recipe.refresh ?? []) {
+    const result = runStep(step, context)
+    if (result.status !== 'ok') return result
+  }
+  return null
+}
+
 export function executeTrackedPreSteps(
   recipe: TrackedRecipe,
   context: StepContext,
@@ -479,7 +491,7 @@ function liveDatabaseClaims(runId: number): number {
   ).count
 }
 
-function readSnapshot(runId: number): {
+export function readSnapshot(runId: number): {
   snapshot: RecipeSnapshot | null
   key: string | null
   seed: string | null

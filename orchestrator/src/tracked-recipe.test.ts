@@ -18,6 +18,7 @@ import {
   type AllocationAttempt,
   executeTrackedCreateSteps,
   executeTrackedPreSteps,
+  executeTrackedRefreshSteps,
   type RecipeSnapshot,
   recipeAllocationEnvironment,
   renderTrackedRecipeNotes,
@@ -60,6 +61,23 @@ function writeEnv(recipe: TrackedRecipe, tree: string, project: string, vars = {
 }
 
 describe('tracked recipe execution', () => {
+  test('runs the fixture recipe refresh list in order', () => {
+    const recipe: TrackedRecipe = {
+      create: [],
+      refresh: [
+        { name: 'dependencies', run: command },
+        { name: 'generated', run: command },
+      ],
+    }
+    const invoked: string[] = []
+    const failure = executeTrackedRefreshSteps(recipe, context, (item) => {
+      invoked.push(item.name)
+      return result(item.name, 'run', true)
+    })
+    expect(failure).toBeNull()
+    expect(invoked).toEqual(['dependencies', 'generated'])
+  })
+
   test('a pre failure releases only the claims inserted by this allocation attempt', () => {
     const attempt: AllocationAttempt = {
       allocations: { index: 2, ports: { web: 21001 }, databases: {}, strings: {} },

@@ -43,7 +43,6 @@ Two lock purposes, two files. Creation and resume attachment take `project-lock.
 - **A linked-worktree binary reads the main store and never writes it, whatever names the path.** `db.ts:linkedWorktreeReadOnly` refuses at the write handle; `ORCH_DB_WRITE` is the operator's explicit insistence. Tests refuse any store their preload did not mint under the temporary directory.
 - **A lock waiter is served in arrival order** (`project-lock.ts:withProjectLock`, monotonic ticket under mkdir-atomic discipline).
 - **Every wait, refusal and invalidation on a shared resource is recorded where it happens** (`contention`, same transaction). `orch health` prices the class. Never inferred later, never routing evidence.
-- **Every refusal names the invariant it protects and the command that clears it.**
 - **A reclaim removes exactly the acquisition it classified as stale, never a replacement** (`project-lock.ts:reclaimStaleProjectLock`, incarnation id after rename). Malformed or locale-dependent process output is unknown, never stale (`project-lock.ts:staleProjectLockHolder`, `project-lock.ts:processStartTime`).
 
 Detach claims a reserved id before routing; the asking session still owns the run. `orch result` exits `2` for not-finished and `1` for failed. `orch wait` is bounded. `orch retry` re-sends the prompt to the same agent; the original failure still counts; a writing run continues via `orch continue` in the same worktree. Retry needs the prompt on disk, bounded by `KEEP_RUN_FILES_DAYS`. **Keep both ends of a failure.** **Both claim paths must set every meaningful column**, including `parent_run_id` and `turn`.
@@ -69,6 +68,8 @@ Writing runs checkpoint on schedule and at limits or stop. Update `$ORCH_SCRATCH
 # A worktree belongs to the project
 
 A project declares its lifecycle in the register and orch shells out to it; a project that declares none gets the built-in git worktree.
+
+`orch tree refresh` fast-forwards a clean worktree to trunk and runs the recipe's repeatable `refresh` steps; it never rebases, and its refusal is a failure to report.
 
 A `readsRepo` job without `writesRepo` does not use `create`, its branch template, seed resolver, or seed list. orch cuts a plain detached worktree and removes it with plain git, even when the project declares a writing recipe. `--key` remains useful for attribution; `--seed` is refused because seeds belong to writing runs. `worktree.readonly_create` is declared, never inferred from `create`. It uses `{path}` and `{base}`, must create a detached worktree, must have no side effects on task state, and must provision nothing outside the tree. Default removal is plain git. `worktree.readonly_remove` receives `{path}` only; writing-run `remove` and `sweep` are never used for it. `worktree.readonly_notes` is declared, never inferred. Without `readonly_create`, a read-only worker in a project with a writing lifecycle has files only; record suites that cannot start in `could_not_verify`, not as findings.
 
@@ -103,10 +104,6 @@ The durable protocol is `status: blocked` in the return contract. The live chann
 **The child does not inherit this session's identity, or an Anthropic key.** Every `CLAUDE_*` and `ANTHROPIC_*` variable is stripped.
 
 **Every run is bounded and every child is reaped.** `timeoutMs` is held below `STALE_AFTER_MS`. `SIGINT`/`SIGTERM` take children with the parent; the terminal row is written from a `finally`. The pid is recorded immediately after spawn, not after the wait.
-
-# Parallel launches share one database
-
-Concurrent `orch do` processes write the same SQLite file. `PRAGMA busy_timeout` makes a blocked writer wait rather than fail.
 
 # A tool that cannot see its data refuses
 

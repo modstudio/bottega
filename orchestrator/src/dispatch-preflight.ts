@@ -168,7 +168,7 @@ export function preflight(
  * worktree (eleven rows for one tree in the live store), and the exemption
  * asks whether ONE chain owns the tree.
  */
-function recordedChainRootsForWorktree(path: string): number[] {
+export function recordedChainRootsForWorktree(path: string): number[] {
   const real = realpathOrSpelled(path)
   const rows =
     real === path

@@ -592,6 +592,181 @@
             "additionalProperties": false
           }
         },
+        "refresh": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "name": {
+                "type": "string",
+                "minLength": 1
+              },
+              "run": {
+                "type": "object",
+                "properties": {
+                  "command": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "args": {
+                    "type": "array",
+                    "items": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "object",
+                          "properties": {
+                            "value": {
+                              "type": "string"
+                            },
+                            "omitWhenEmpty": {
+                              "type": "string",
+                              "enum": [
+                                "branch",
+                                "name",
+                                "base",
+                                "seed",
+                                "key",
+                                "path",
+                                "main",
+                                "index"
+                              ]
+                            }
+                          },
+                          "required": ["value", "omitWhenEmpty"],
+                          "additionalProperties": false
+                        },
+                        {
+                          "type": "object",
+                          "properties": {
+                            "expand": {
+                              "type": "string",
+                              "const": "seed"
+                            }
+                          },
+                          "required": ["expand"],
+                          "additionalProperties": false
+                        }
+                      ]
+                    }
+                  },
+                  "cwd": {
+                    "type": "string"
+                  }
+                },
+                "required": ["command", "args"],
+                "additionalProperties": false
+              },
+              "verify": {
+                "type": "object",
+                "properties": {
+                  "command": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "args": {
+                    "type": "array",
+                    "items": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "object",
+                          "properties": {
+                            "value": {
+                              "type": "string"
+                            },
+                            "omitWhenEmpty": {
+                              "type": "string",
+                              "enum": [
+                                "branch",
+                                "name",
+                                "base",
+                                "seed",
+                                "key",
+                                "path",
+                                "main",
+                                "index"
+                              ]
+                            }
+                          },
+                          "required": ["value", "omitWhenEmpty"],
+                          "additionalProperties": false
+                        },
+                        {
+                          "type": "object",
+                          "properties": {
+                            "expand": {
+                              "type": "string",
+                              "const": "seed"
+                            }
+                          },
+                          "required": ["expand"],
+                          "additionalProperties": false
+                        }
+                      ]
+                    }
+                  },
+                  "cwd": {
+                    "type": "string"
+                  }
+                },
+                "required": ["command", "args"],
+                "additionalProperties": false
+              },
+              "exec": {
+                "oneOf": [
+                  {
+                    "type": "object",
+                    "properties": {
+                      "where": {
+                        "type": "string",
+                        "const": "host"
+                      }
+                    },
+                    "required": ["where"],
+                    "additionalProperties": false
+                  },
+                  {
+                    "type": "object",
+                    "properties": {
+                      "where": {
+                        "type": "string",
+                        "const": "container"
+                      },
+                      "service": {
+                        "type": "string",
+                        "minLength": 1
+                      }
+                    },
+                    "required": ["where", "service"],
+                    "additionalProperties": false
+                  },
+                  {
+                    "type": "object",
+                    "properties": {
+                      "where": {
+                        "type": "string",
+                        "const": "as-user"
+                      },
+                      "user": {
+                        "type": "string",
+                        "minLength": 1
+                      }
+                    },
+                    "required": ["where", "user"],
+                    "additionalProperties": false
+                  }
+                ]
+              }
+            },
+            "required": ["name", "run"],
+            "additionalProperties": false
+          }
+        },
         "serve": {
           "type": "object",
           "propertyNames": {
