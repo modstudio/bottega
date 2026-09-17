@@ -36,6 +36,7 @@ function workspaceFor(file: string) {
   if (file.startsWith('hub/web/')) return 'hub/web'
   if (file.startsWith('orchestrator/')) return 'orchestrator'
   if (file.startsWith('hub/')) return 'hub'
+  if (file.startsWith('retrieval/')) return 'retrieval'
   return '.'
 }
 

@@ -71,6 +71,13 @@ const legs: Leg[] = [
       { cwd: `${root}hub/web`, argv: ['bun', 'run', 'build'] },
     ],
   },
+  {
+    name: 'retrieval',
+    commands: [
+      { cwd: `${root}retrieval`, argv: ['bun', 'run', 'typecheck'] },
+      { cwd: `${root}retrieval`, argv: ['bun', 'run', 'test'] },
+    ],
+  },
 ]
 
 async function inherit(argv: string[], cwd = root) {

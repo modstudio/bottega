@@ -87,6 +87,20 @@ const uiLayers: { name: string; folders: string[] }[] = [
 const uiFolders = (folders: string[]) => `^hub/web/src/ui/(?:${folders.join('|')})/`
 
 export const modules: ArchitectureModule[] = [
+  module('retrieval/src/corpus/chunks.ts', ['node:fs/promises', 'node:path', 'bun']),
+  module('retrieval/src/services/endpoints.ts', []),
+  module('retrieval/src/benchmark/metrics.ts', ['../corpus/chunks.ts']),
+  module('retrieval/src/benchmark/queries.ts', []),
+  module('retrieval/src/benchmark/keyword.ts', ['../corpus/chunks.ts']),
+  module('retrieval/src/benchmark/benchmark.ts', [
+    'node:fs/promises',
+    'node:path',
+    '../corpus/chunks.ts',
+    '../services/endpoints.ts',
+    './keyword.ts',
+    './metrics.ts',
+    './queries.ts',
+  ]),
   module('orchestrator/src/artifact-paths.ts', ['node:path']),
   module('orchestrator/src/branch/branch-landing-record.ts', ['./branch-state.ts']),
   module('orchestrator/src/branch/branch-state.ts', ['./merged-pull-request.ts']),

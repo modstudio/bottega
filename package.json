@@ -5,7 +5,8 @@
   "workspaces": [
     "orchestrator",
     "hub",
-    "hub/web"
+    "hub/web",
+    "retrieval"
   ],
   "description": "One designer, many hands: delegate the building, keep the design.",
   "type": "module",

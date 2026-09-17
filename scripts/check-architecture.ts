@@ -73,6 +73,7 @@ try {
       'shared',
       'ops',
       'local-stack',
+      'retrieval',
       'scripts',
     ],
     {

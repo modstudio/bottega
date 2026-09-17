@@ -88,6 +88,10 @@
       "entry": ["src/cli.ts!", "src/hosted.ts!"],
       "project": ["src/**/*.ts!", "!src/**/*.test.ts", "!src/**/*.fixture*.ts", "!test/**/*.ts"]
     },
+    "retrieval": {
+      "entry": ["src/benchmark/benchmark.ts!"],
+      "project": ["src/**/*.ts!", "!src/**/*.test.ts"]
+    },
     "hub/web": {
       "entry": ["src/main.tsx!"],
       "project": ["src/**/*.{ts,tsx}!", "vite.config.ts!"],

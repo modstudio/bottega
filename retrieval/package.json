@@ -1,0 +1,16 @@
+{
+  "name": "@bottega/retrieval",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Measure retrieval quality over the estate's source corpus",
+  "type": "module",
+  "scripts": {
+    "benchmark": "bun src/benchmark/benchmark.ts",
+    "typecheck": "tsc --noEmit",
+    "test": "bun test src"
+  },
+  "devDependencies": {
+    "@types/bun": "latest",
+    "typescript": "^5"
+  }
+}
