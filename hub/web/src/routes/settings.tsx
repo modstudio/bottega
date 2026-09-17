@@ -2,7 +2,6 @@ import { useMutation, useQuery } from '@tanstack/react-query'
 import { createFileRoute, Link } from '@tanstack/react-router'
 import { useEffect, useState } from 'react'
 import { EmptyState, PageHeader, SectionTitle } from '@/components/design-system'
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/ui/table/table'
 import { useWindowState } from '@/lib/window'
 import { queryClient, type SettingsResponse, trpc } from '@/trpc/client'
 import { Badge } from '@/ui/badge/badge'
@@ -10,6 +9,7 @@ import { Button } from '@/ui/button/button'
 import { Checkbox } from '@/ui/checkbox/checkbox'
 import { Input } from '@/ui/field/input'
 import { FieldSection, Panel, SettingBlock } from '@/ui/form-layout/form-layout'
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/ui/table/table'
 
 type SettingsData = SettingsResponse['data']
 type Report = SettingsData['report']

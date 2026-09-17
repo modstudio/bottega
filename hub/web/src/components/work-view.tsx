@@ -17,7 +17,6 @@ import {
   useWindowFilters,
   WindowControl,
 } from '@/components/design-system'
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/ui/table/table'
 import { useNow } from '@/lib/clock'
 import { useDetailPanel } from '@/lib/detail-panel'
 import { compactTokens, duration, relativeTime, vendorFigures } from '@/lib/format'
@@ -29,6 +28,7 @@ import { Docked } from '@/ui/companion/companion'
 import { Input } from '@/ui/field/input'
 import { Identifier } from '@/ui/identifier/identifier'
 import { Segmented } from '@/ui/segmented/segmented'
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/ui/table/table'
 
 type WorkName = 'flight' | 'done'
 type TaskData = FlightResponse['data']

@@ -9,11 +9,11 @@ import {
   StatTile,
   WindowControl,
 } from '@/components/design-system'
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/ui/table/table'
 import { compactTokens, duration } from '@/lib/format'
 import { setWorkCounts, useWindowState } from '@/lib/window'
 import { trpc } from '@/trpc/client'
 import { Badge } from '@/ui/badge/badge'
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/ui/table/table'
 import type { AppRouter } from '../../../src/trpc/router.ts'
 
 type Outputs = inferRouterOutputs<AppRouter>['insight']
@@ -116,12 +116,12 @@ function RatioView({ data }: { data: RatioData }) {
                 key={day.day}
                 className="flex h-full min-w-10 flex-1 flex-col items-center justify-end"
               >
-                <span className="mb-1 whitespace-nowrap text-[10px] text-text-muted">{label}</span>
+                <span className="mb-1 whitespace-nowrap text-xs text-text-muted">{label}</span>
                 <div
                   className={`w-7 border border-foreground ${day.excluded === 'gap' ? 'bg-[repeating-linear-gradient(135deg,transparent,transparent_3px,var(--border)_3px,var(--border)_5px)]' : day.excluded === 'today' ? 'bg-surface-sunken' : 'bg-foreground'}`}
                   style={{ height }}
                 />
-                <span className="mt-1 text-[10px] text-text-muted">{day.day.slice(5)}</span>
+                <span className="mt-1 text-xs text-text-muted">{day.day.slice(5)}</span>
               </div>
             )
           })}

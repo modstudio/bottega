@@ -12,7 +12,6 @@ import {
   StatRow,
   StatTile,
 } from '@/components/design-system'
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/ui/table/table'
 import { Badge } from '@/ui/badge/badge'
 import { Button } from '@/ui/button/button'
 import { Dialog } from '@/ui/dialog/dialog'
@@ -21,6 +20,7 @@ import { Copyable, DisplayRow, FieldSection, SettingBlock } from '@/ui/form-layo
 import { Select } from '@/ui/listbox/select'
 import { Segmented } from '@/ui/segmented/segmented'
 import { Sheet } from '@/ui/sheet/sheet'
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/ui/table/table'
 import { Tabs } from '@/ui/tabs/tabs'
 
 export const Route = createFileRoute('/design')({ component: DesignPage })
