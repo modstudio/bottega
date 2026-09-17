@@ -37,18 +37,23 @@ export function TableBody(props: Omit<HTMLAttributes<HTMLTableSectionElement>, '
 export function TableRow({
   nested = false,
   interactive = false,
+  selected = false,
   ...props
 }: Omit<HTMLAttributes<HTMLTableRowElement>, 'className'> & {
   /** A row belonging to the record above it. */
   nested?: boolean
   /** The whole row opens its record. */
   interactive?: boolean
+  /** Its record is open beside the table. */
+  selected?: boolean
 }) {
   return (
     <tr
       {...props}
+      aria-current={selected || undefined}
       className={classes(
         'h-row border-border-subtle border-b',
+        selected && 'bg-surface-sunken shadow-[inset_2px_0_0_var(--accent-fill)]',
         nested && 'bg-surface-raised text-text-secondary',
         interactive &&
           'cursor-pointer outline-none hover:bg-control-hover focus-visible:bg-control-hover focus-visible:shadow-[inset_2px_0_0_var(--focus-color)]',

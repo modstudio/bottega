@@ -151,7 +151,9 @@ function HostedReviewsList() {
         columns={columns}
         rows={rows}
         getKey={(row) => row.id}
-        onOpen={(row) => void navigate({ to: '/reviews/$id', params: { id: row.id } })}
+        onOpen={(row) =>
+          void navigate({ to: '/reviews/$id', params: { id: row.id }, resetScroll: false })
+        }
         empty={{ title: query.isPending ? 'Loading reviews...' : 'No reviews in this space.' }}
       />
       {applied?.nextCursor ? (
@@ -178,7 +180,7 @@ export function HostedReviewDetail({ id }: { id: string }) {
   const detail = useQuery(trpc.record.review.queryOptions({ id }))
   const projects = useQuery(trpc.record.projects.queryOptions())
   const colors = hostedProjectColors(projects.data ?? [])
-  const close = () => void navigate({ to: '/reviews' })
+  const close = () => void navigate({ to: '/reviews', resetScroll: false })
   const review = detail.data
 
   if (detail.isPending) {

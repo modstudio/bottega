@@ -141,7 +141,7 @@ export function TableCard({
           )}
         >
           {/* Positioned, so absolutely placed content (screen-reader labels) is clipped with the rows. */}
-          <div className="relative min-w-0 overflow-auto">{children}</div>
+          <div className="@container/rows relative min-w-0 overflow-auto">{children}</div>
           {footer ? <div className="border-border-default border-t px-3 py-2">{footer}</div> : null}
         </div>
         {panel}

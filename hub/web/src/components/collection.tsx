@@ -24,7 +24,7 @@ export type CollectionColumn<Row> = {
 const columnLayout = <Row,>(column: CollectionColumn<Row>) =>
   [
     column.grow ? 'w-full max-w-0' : null,
-    column.priority === 'low' ? 'hidden @5xl/card:table-cell' : null,
+    column.priority === 'low' ? 'hidden @5xl/rows:table-cell' : null,
   ]
     .filter(Boolean)
     .join(' ')
@@ -43,6 +43,7 @@ export function Collection<Row>({
   actions,
   pageActions,
   panel,
+  selectedKey,
   columns,
   rows,
   getKey,
@@ -60,6 +61,8 @@ export function Collection<Row>({
   actions?: ReactNode
   pageActions?: ReactNode
   panel?: ReactNode
+  /** The row whose record is open in the panel. */
+  selectedKey?: string | number
   columns: CollectionColumn<Row>[]
   rows: Row[]
   getKey: (row: Row) => string | number
@@ -138,6 +141,7 @@ export function Collection<Row>({
               <TableRow
                 key={key}
                 interactive
+                selected={selectedKey !== undefined && String(selectedKey) === String(key)}
                 data-record-key={String(key)}
                 tabIndex={0}
                 onClick={() => onOpen(row)}

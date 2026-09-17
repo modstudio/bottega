@@ -82,7 +82,13 @@ function AgentsView({
     [data, search],
   )
   const selected = data?.find((row) => row.name === agent)
-  const close = () => void navigate({ to: '/agents', search: { agent: undefined }, replace: true })
+  const close = () =>
+    void navigate({
+      to: '/agents',
+      search: { agent: undefined },
+      replace: true,
+      resetScroll: false,
+    })
   return (
     <section>
       {header ?? <PageHeader title="Agents" subtitle="Code-declared runners and their limits" />}
@@ -118,9 +124,12 @@ function AgentsView({
             </Companion>
           ) : undefined
         }
+        selectedKey={agent}
         rows={rows}
         getKey={(row) => row.name}
-        onOpen={(row) => void navigate({ to: '/agents', search: { agent: row.name } })}
+        onOpen={(row) =>
+          void navigate({ to: '/agents', search: { agent: row.name }, resetScroll: false })
+        }
         empty={{ title: pending ? 'Loading agents...' : 'No agents match.' }}
       />
     </section>

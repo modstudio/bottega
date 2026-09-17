@@ -118,7 +118,7 @@ export function Companion({
           <X />
         </IconButton>
       </header>
-      <div className="min-h-0 flex-1 overflow-y-auto p-4">{children}</div>
+      <div className="@container/panel min-h-0 flex-1 overflow-y-auto p-4">{children}</div>
       {footer ? (
         <footer className="shrink-0 border-border-default border-t p-4">{footer}</footer>
       ) : null}

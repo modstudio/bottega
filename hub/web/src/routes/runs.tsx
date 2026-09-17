@@ -1,5 +1,5 @@
 import { useQuery } from '@tanstack/react-query'
-import { createFileRoute, useNavigate } from '@tanstack/react-router'
+import { createFileRoute, useNavigate, useParams } from '@tanstack/react-router'
 import { ChevronRight } from 'lucide-react'
 import { useState } from 'react'
 import { Collection, type CollectionColumn } from '@/components/collection'
@@ -96,6 +96,7 @@ function RunsPage() {
 function RunsList() {
   const navigate = useNavigate()
   const panel = useDetailPanel()
+  const openId = useParams({ strict: false }).id
   const windowState = useWindowState()
   const [openMenus, setOpenMenus] = useState(0)
   const [search, setSearch] = useState('')
@@ -193,11 +194,18 @@ function RunsList() {
       render: (row) => (row.running ? fmtMs(now - new Date(row.at).getTime()) : row.engaged),
     },
     { id: 'verdict', label: 'Verdict', render: (row) => <Verdict row={row} /> },
-    { id: 'tokens', label: 'Tokens', numeric: true, render: (row) => compact(row.tokens) },
+    {
+      id: 'tokens',
+      label: 'Tokens',
+      numeric: true,
+      priority: 'low',
+      render: (row) => compact(row.tokens),
+    },
     {
       id: 'cost',
       label: 'Cost',
       numeric: true,
+      priority: 'low',
       render: (row) => (row.costUsd == null ? '-' : `$${row.costUsd.toFixed(2)}`),
     },
     { id: 'started', label: 'Started', render: (row) => runEasternTime(row.at, true) },
@@ -248,7 +256,9 @@ function RunsList() {
             columns={liveColumns}
             rows={liveRows}
             getKey={(row) => row.id}
-            onOpen={(row) => void navigate({ to: '/runs/$id', params: { id: String(row.id) } })}
+            onOpen={(row) =>
+              void navigate({ to: '/runs/$id', params: { id: String(row.id) }, resetScroll: false })
+            }
             empty={{
               title: filtered
                 ? 'Nothing running matches these filters.'
@@ -266,10 +276,17 @@ function RunsList() {
               filters={filters.controls}
               filtersActive={filters.active}
               panel={panel}
+              selectedKey={openId}
               columns={runColumns}
               rows={runRows}
               getKey={(row) => row.id}
-              onOpen={(row) => void navigate({ to: '/runs/$id', params: { id: String(row.id) } })}
+              onOpen={(row) =>
+                void navigate({
+                  to: '/runs/$id',
+                  params: { id: String(row.id) },
+                  resetScroll: false,
+                })
+              }
               empty={{
                 title: 'No runs in this window.',
                 hint: 'Widen the window to see earlier runs.',

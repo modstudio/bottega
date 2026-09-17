@@ -44,10 +44,15 @@ export function Sheet({
   children: ReactNode
 }) {
   const ref = useRef<HTMLDialogElement>(null)
+  const close = useRef<HTMLButtonElement>(null)
   const titleId = useId()
   useLayoutEffect(() => {
     const node = ref.current
-    if (open && node && !node.open) node.showModal()
+    if (open && node && !node.open) {
+      node.showModal()
+      // The browser focuses the first control, which may be a destructive action.
+      close.current?.focus()
+    }
     if (!open && node?.open) node.close()
   }, [open])
   return (
@@ -72,7 +77,7 @@ export function Sheet({
             {subtitle ? <div className="text-sm text-text-secondary">{subtitle}</div> : null}
           </div>
           {actions ? <div className="flex shrink-0 items-center gap-2">{actions}</div> : null}
-          <IconButton label="Close" onClick={onClose}>
+          <IconButton ref={close} label="Close" onClick={onClose}>
             <X />
           </IconButton>
         </header>

@@ -14,7 +14,7 @@ export function HostedRunDetail({ id }: { id: string }) {
   const detail = useQuery(trpc.record.run.queryOptions({ id }))
   const projects = useQuery(trpc.record.projects.queryOptions())
   const colors = hostedProjectColors(projects.data ?? [])
-  const close = () => void navigate({ to: '/runs' })
+  const close = () => void navigate({ to: '/runs', resetScroll: false })
   const run = detail.data
   const score = run?.score
   const scoreText = score

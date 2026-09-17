@@ -1,5 +1,5 @@
 import { keepPreviousData, useQuery } from '@tanstack/react-query'
-import { Link, useNavigate } from '@tanstack/react-router'
+import { Link, useNavigate, useParams } from '@tanstack/react-router'
 import { ArrowDown, ArrowUp, ChevronRight } from 'lucide-react'
 import { type ReactNode, useEffect, useMemo, useState } from 'react'
 import { Collection, type CollectionChildRow, type CollectionColumn } from '@/components/collection'
@@ -144,7 +144,7 @@ type Sort = { col: (typeof columns)[number]['id']; dir: 1 | -1 }
 function runCells(run: Run, now: number): CollectionChildRow['cells'] {
   return {
     task: <span className="pl-4">{run.agent ?? '-'}</span>,
-    title: run.job || '',
+    title: <span className="block truncate">{run.job || ''}</span>,
     status: run.running ? (
       <Badge tone="progress" dot>
         Running
@@ -174,6 +174,7 @@ function TaskTable({
 }) {
   const navigate = useNavigate()
   const filters = useWindowFilters({ ...facets, onOpenChange: onDropdown })
+  const openKey = useParams({ strict: false }).key
   const now = useNow()
   const [sort, setSort] = useState<Sort>({ col: 'updated', dir: -1 })
   const [opened, setOpened] = useState<Set<string>>(() => new Set())
@@ -262,6 +263,7 @@ function TaskTable({
       filters={filters.controls}
       filtersActive={filters.active}
       panel={panel}
+      selectedKey={openKey}
       columns={collectionColumns}
       rows={sorted}
       getKey={(row) => row.key!}
@@ -269,6 +271,7 @@ function TaskTable({
         void navigate({
           to: from === 'flight' ? '/flight/tasks/$key' : '/done/tasks/$key',
           params: { key: row.key! },
+          resetScroll: false,
         })
       }
       rowActions={(row) => {
@@ -510,6 +513,7 @@ function BoardCardView({ card }: { card: BoardCard }) {
     <Link
       to="/board/tasks/$key"
       params={{ key: card.key }}
+      resetScroll={false}
       data-record-key={card.key}
       className="proj-card block cursor-pointer border border-border p-3 focus-visible:ring-2 focus-visible:ring-ring"
       style={projectVars(colors, card.project)}
@@ -728,7 +732,11 @@ export function BoardView() {
                   rows={rows}
                   getKey={(card) => card.key}
                   onOpen={(card) =>
-                    void navigate({ to: '/board/tasks/$key', params: { key: card.key } })
+                    void navigate({
+                      to: '/board/tasks/$key',
+                      params: { key: card.key },
+                      resetScroll: false,
+                    })
                   }
                   empty={{ title: group.empty }}
                 />

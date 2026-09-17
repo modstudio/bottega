@@ -158,7 +158,9 @@ function HostedRunsList() {
         columns={columns}
         rows={rows}
         getKey={(row) => row.id}
-        onOpen={(row) => void navigate({ to: '/runs/$id', params: { id: row.id } })}
+        onOpen={(row) =>
+          void navigate({ to: '/runs/$id', params: { id: row.id }, resetScroll: false })
+        }
         empty={{
           title: query.isPending ? 'Loading runs...' : 'No runs match these filters.',
         }}

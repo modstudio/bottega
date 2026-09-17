@@ -94,7 +94,7 @@ function RunDetailPage({ id }: { id: string }) {
     })
   }
 
-  const close = () => void navigate({ to: '/runs' })
+  const close = () => void navigate({ to: '/runs', resetScroll: false })
   if (detail.isPending)
     return (
       <Companion onClose={close} title={`Run ${id}`} subtitle="Loading run...">
@@ -207,7 +207,7 @@ function RunDetailPage({ id }: { id: string }) {
         </p>
       ) : null}
       {run.error ? <DetailBlock label="Error" value={run.error} /> : null}
-      <div className="grid gap-4 min-[1100px]:grid-cols-2">
+      <div className="grid gap-4 @2xl/panel:grid-cols-2">
         <DetailBlock label="Prompt" value={run.prompt || '(Prompt unavailable.)'} />
         <DetailBlock label="Reply" value={run.output || '(Nothing came back.)'} />
       </div>

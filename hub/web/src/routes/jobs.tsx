@@ -73,7 +73,8 @@ function JobsView({
     [data, search],
   )
   const selected = data?.find((row) => row.name === job)
-  const close = () => void navigate({ to: '/jobs', search: { job: undefined }, replace: true })
+  const close = () =>
+    void navigate({ to: '/jobs', search: { job: undefined }, replace: true, resetScroll: false })
   return (
     <section>
       {header ?? (
@@ -125,9 +126,12 @@ function JobsView({
             </Companion>
           ) : undefined
         }
+        selectedKey={job}
         rows={rows}
         getKey={(row) => row.name}
-        onOpen={(row) => void navigate({ to: '/jobs', search: { job: row.name } })}
+        onOpen={(row) =>
+          void navigate({ to: '/jobs', search: { job: row.name }, resetScroll: false })
+        }
         empty={{ title: pending ? 'Loading jobs...' : 'No jobs match.' }}
       />
     </section>
