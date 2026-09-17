@@ -7,7 +7,7 @@
 
     <key>ProgramArguments</key>
     <array>
-        <string>__REPO__/bin/projects-morning-refresh.sh</string>
+        <string>__CONCERN__/bin/projects-morning-refresh.sh</string>
     </array>
 
     <key>EnvironmentVariables</key>

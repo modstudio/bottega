@@ -4,9 +4,9 @@
 <dict>
   <key>Label</key><string>com.user.orch-record-sync</string>
   <key>ProgramArguments</key>
-  <array><string>__ROOT__/ops/bin/orch-record-sync.sh</string></array>
+  <array><string>__CHECKOUT__/ops/bin/orch-record-sync.sh</string></array>
   <key>StartInterval</key><integer>300</integer>
-  <key>WorkingDirectory</key><string>__ROOT__</string>
+  <key>WorkingDirectory</key><string>__CHECKOUT__</string>
   <key>EnvironmentVariables</key>
   <dict>
     <key>PATH</key><string>/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin:__HOME__/.local/bin</string>

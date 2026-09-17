@@ -4,16 +4,14 @@
 # user-independent: clone anywhere, run ./install.sh. Idempotent.
 set -euo pipefail
 
-REPO="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-# The checkout itself. `bin/` holds each concern's binary and sits above ops/,
-# so an agent that runs one needs the root rather than this directory.
-ROOT="$(cd "$REPO/.." && pwd)"
-STATE_HOME_ENV="$(bun "$ROOT/shared/state-directory.ts" environment)"
-STATE_HOME="$(bun "$ROOT/shared/state-directory.ts" root)"
-if [[ -f "$ROOT/.git" ]]; then
-  GIT_COMMON_DIR="$(git -C "$ROOT" rev-parse --path-format=absolute --git-common-dir)"
+CONCERN="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+CHECKOUT="$(cd "$CONCERN/.." && pwd)"
+STATE_HOME_ENV="$(bun "$CHECKOUT/shared/state-directory.ts" environment)"
+STATE_HOME="$(bun "$CHECKOUT/shared/state-directory.ts" root)"
+if [[ -f "$CHECKOUT/.git" ]]; then
+  GIT_COMMON_DIR="$(git -C "$CHECKOUT" rev-parse --path-format=absolute --git-common-dir)"
   MAIN_CHECKOUT="$(cd "$GIT_COMMON_DIR/.." && pwd)"
-  echo "refusing to install launchd agents from linked worktree $ROOT; run $MAIN_CHECKOUT/ops/install.sh from the main checkout $MAIN_CHECKOUT" >&2
+  echo "refusing to install launchd agents from linked worktree $CHECKOUT; run $MAIN_CHECKOUT/ops/install.sh from the main checkout $MAIN_CHECKOUT" >&2
   exit 1
 fi
 AGENTS_DIR="$HOME/Library/LaunchAgents"
@@ -48,7 +46,7 @@ mkdir -p "$AGENTS_DIR" "$HOME/Library/Logs/brew-upgrade" "$HOME/Library/Logs/pro
   "$HOME/Library/Logs/orch-monitor" "$HOME/Library/Logs/orch-fix-defect" \
   "$HOME/Library/Logs/orch-canon-eval"
 
-for tmpl in "$REPO"/launchd/*.plist.template; do
+for tmpl in "$CONCERN"/launchd/*.plist.template; do
   label="$(basename "$tmpl" .plist.template)"
 
   if [[ "$label" == "com.user.local-model-tunnel" && -z "${LOCAL_MODEL_HOST:-}" ]]; then
@@ -76,9 +74,10 @@ for tmpl in "$REPO"/launchd/*.plist.template; do
   rm -f "$target"
 
   # Render template -> real plist with absolute paths for this machine.
-  #   __REPO__ -> this checkout, __HOME__ -> this user's home,
+  #   __CHECKOUT__ -> the checkout root, __CONCERN__ -> the template owner's
+  #   directory, __HOME__ -> this user's home,
   #   __MODEL_HOST__ -> the configured SSH alias
-  sed -e "s#__REPO__#${REPO}#g" -e "s#__ROOT__#${ROOT}#g" \
+  sed -e "s#__CHECKOUT__#${CHECKOUT}#g" -e "s#__CONCERN__#${CONCERN}#g" \
       -e "s#__HOME__#${HOME}#g" \
       -e "s#__STATE_HOME_ENV__#${STATE_HOME_ENV}#g" \
       -e "s#__STATE_HOME__#${STATE_HOME}#g" \
