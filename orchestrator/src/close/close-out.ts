@@ -6,12 +6,10 @@
  */
 import { existsSync, rmSync } from 'node:fs'
 import { join, resolve } from 'node:path'
-import { db, nowIso, sessionId, writeTransaction } from '../db.ts'
-import { gitContext, repoRootOf, targetGitEnvironment } from '../git-environment.ts'
-import { HOOK_TREE_JOB, hookTreeHoldDecision } from '../hook-tree.ts'
+import { db, nowIso, sessionId, writeTransaction } from '../database/db.ts'
+import { gitContext, repoRootOf, targetGitEnvironment } from '../git/git-environment.ts'
+import { HOOK_TREE_JOB, hookTreeHoldDecision } from '../hook-tree/hook-tree.ts'
 import { isGroupKillablePgid, runHasLiveDescendants } from '../idle-kill.ts'
-import { type KeepTreeHoldDecision, keepTreeHold } from '../keep-tree-hold.ts'
-import { pidAlive } from '../process-liveness.ts'
 import {
   projectLockState,
   reclaimStaleProjectLock,
@@ -21,22 +19,24 @@ import {
 } from '../project/project-lock.ts'
 import { projectAt, projectByName } from '../project/projects.ts'
 import { proveWorktreeReconstructible } from '../reclaim/reclaim.ts'
+import { pidAlive } from '../resources/process-liveness.ts'
 import {
   type ResourceClaimState,
   recordRetainedRefClaim,
   sandboxDirectoryRelease,
   settleClaims,
   settledStateForCloseOut,
-} from '../resource-claims.ts'
+} from '../resources/resource-claims.ts'
 import {
   liveWorktreeSharers,
   otherConversationWorktreeSharers,
   worktreePathSpellings,
-} from '../resource-ownership.ts'
+} from '../resources/resource-ownership.ts'
 import { runAlive } from '../run/run-alive.ts'
 import { RUNS_DIR } from '../run/run-artifacts.ts'
 import { removeFreeRunLease, runLeaseState } from '../run/run-lease.ts'
 import { processTable, terminateRunProcesses } from '../run/run-process.ts'
+import { type KeepTreeHoldDecision, keepTreeHold } from '../worktree/keep-tree-hold.ts'
 import { worktreeExists } from '../worktree/worktree.ts'
 import { inspectTreeOwnership } from '../worktree/worktree-attribution.ts'
 import { branchTip, removeFor, restoreBranch } from '../worktree/worktree-remove.ts'

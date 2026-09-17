@@ -3,8 +3,8 @@ import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js'
 import { z } from 'zod'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
-import { db, enableSchemaReload, sessionId } from '../db.ts'
-import { registerStandardRuntime } from '../runtime-registration.ts'
+import { db, enableSchemaReload, sessionId } from '../database/db.ts'
+import { registerStandardRuntime } from '../runtime/runtime-registration.ts'
 
 registerStandardRuntime()
 

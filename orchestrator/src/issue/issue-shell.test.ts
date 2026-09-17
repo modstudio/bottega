@@ -1,6 +1,10 @@
 import { describe, expect, test } from 'bun:test'
 import { resolve } from 'node:path'
-import { expandHome, READONLY_LENS_DENY_PATHS, READONLY_LENS_DENY_SOCKETS } from '../sandbox.ts'
+import {
+  expandHome,
+  READONLY_LENS_DENY_PATHS,
+  READONLY_LENS_DENY_SOCKETS,
+} from '../sandbox/sandbox.ts'
 import {
   FILED_ISSUE_COMMAND_TIMEOUT_MS,
   filedIssueCommandPlan,

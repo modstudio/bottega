@@ -5,12 +5,12 @@ import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { FROZEN_STATE_NAMES } from '../../shared/brand.ts'
 import { CanonBudgetError, compilePack } from '../src/canon/canon.ts'
-import { DATABASE_RESOLUTION } from '../src/database-location.ts'
-import { JOBS } from '../src/jobs.ts'
-import { applyMigrations, migrationRefusal } from '../src/migrations.ts'
-import { DEFAULT_PACK_BYTES } from '../src/pack-budget.ts'
+import { DEFAULT_PACK_BYTES } from '../src/canon/pack-budget.ts'
+import { DATABASE_RESOLUTION } from '../src/database/database-location.ts'
+import { applyMigrations, migrationRefusal } from '../src/database/migrations.ts'
+import { JOBS } from '../src/jobs/jobs.ts'
 import { projects } from '../src/project/projects.ts'
-import { registerStandardHooks } from '../src/store-hooks.ts'
+import { registerStandardHooks } from '../src/runtime/store-hooks.ts'
 
 registerStandardHooks()
 

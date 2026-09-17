@@ -3,22 +3,22 @@
 import { existsSync, realpathSync, rmSync } from 'node:fs'
 import { basename, isAbsolute, join, relative, resolve, sep } from 'node:path'
 import { AGENTS } from '../agent/agent-registry.ts'
-import { db, nowIso, writableDb, writeTransaction } from '../db.ts'
-import { targetGitEnvironment } from '../git-environment.ts'
+import { db, nowIso, writableDb, writeTransaction } from '../database/db.ts'
+import { targetGitEnvironment } from '../git/git-environment.ts'
+import { runHasLiveDescendants } from '../idle-kill.ts'
+import { processStartTime, projectGitCommonDir } from '../project/project-lock.ts'
+import { projectByName, projects } from '../project/projects.ts'
+import { pidAlive } from '../resources/process-liveness.ts'
+import { runAlive } from '../run/run-alive.ts'
+import { RUNS_DIR } from '../run/run-artifacts.ts'
+import { runLeaseState } from '../run/run-lease.ts'
+import { processTable } from '../run/run-process.ts'
 import {
   grokTrustHeadings,
   grokTrustPathFromHeading,
   grokTrustStorePath,
   removeGrokTrustHeading,
-} from '../grok-trust.ts'
-import { runHasLiveDescendants } from '../idle-kill.ts'
-import { pidAlive } from '../process-liveness.ts'
-import { processStartTime, projectGitCommonDir } from '../project/project-lock.ts'
-import { projectByName, projects } from '../project/projects.ts'
-import { runAlive } from '../run/run-alive.ts'
-import { RUNS_DIR } from '../run/run-artifacts.ts'
-import { runLeaseState } from '../run/run-lease.ts'
-import { processTable } from '../run/run-process.ts'
+} from '../sandbox/grok-trust.ts'
 import {
   processReleaseDecision,
   type ReleaseDecision,

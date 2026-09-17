@@ -7,14 +7,7 @@
 import { existsSync, readFileSync } from 'node:fs'
 import { reclaimTerminalTree } from '../close/close-out.ts'
 import type { WorkerReply } from '../contract/contract.ts'
-import { db } from '../db.ts'
-import {
-  decideFailover,
-  failoverAttempts,
-  failoverRefusalReason,
-  failoverSuccessorAgent,
-  MAX_FAILOVER_ATTEMPTS,
-} from '../failover.ts'
+import { db } from '../database/db.ts'
 import {
   type classify,
   FAILS_OVER,
@@ -22,13 +15,20 @@ import {
   NEEDS_HUMAN_TITLE,
   notify,
 } from '../failure/failure.ts'
-import { type Job, reclaimsTreeByDefault } from '../jobs.ts'
-import type { KeepTreeExemption } from '../keep-tree-hold.ts'
+import { type Job, reclaimsTreeByDefault } from '../jobs/jobs.ts'
 import { mcpRequestFromStored } from '../mcp/mcp-preflight.ts'
 import { resolveBranchRef, stackAt } from '../project/projects.ts'
 import { CALIBRATION_SUFFIX_RESERVE_BYTES } from '../review/review-calibration.ts'
+import {
+  decideFailover,
+  failoverAttempts,
+  failoverRefusalReason,
+  failoverSuccessorAgent,
+  MAX_FAILOVER_ATTEMPTS,
+} from '../route/failover.ts'
 import { pick } from '../route/route.ts'
 import type { TransportName } from '../transport/transport.ts'
+import type { KeepTreeExemption } from '../worktree/keep-tree-hold.ts'
 import type { Changes } from '../worktree/worktree-remove.ts'
 import type { Worktree } from '../worktree/worktree-types.ts'
 import { terminateRunProcesses } from './run-process.ts'

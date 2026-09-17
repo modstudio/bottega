@@ -1,14 +1,17 @@
 /** Cleanup knows worktree ownership, leases and the cleanup lock, resource reclamation, and branch retention. It must not know transports, routing, reviews, contracts, the CLI, or durable execution. */
 import { existsSync, realpathSync } from 'node:fs'
 import { resolve } from 'node:path'
-import { db, sessionId, writeTransaction } from '../db.ts'
-import { leakedResourceLines, resourcesForRuns } from '../docker-resources.ts'
+import { db, sessionId, writeTransaction } from '../database/db.ts'
 import { chainScoreJoin, EVIDENCE_CLOSED_SQL } from '../evidence/evidence-query.ts'
-import { repoRootOf, targetGitEnvironment } from '../git-environment.ts'
+import { repoRootOf, targetGitEnvironment } from '../git/git-environment.ts'
 import { withCleanupLock as takeCleanupLock, withWorktreeLease } from '../project/project-lock.ts'
 import { projectAt, projectByName } from '../project/projects.ts'
-import { settleClaims } from '../resource-claims.ts'
-import { otherConversationWorktreeSharers, type WorktreeSharerRow } from '../resource-ownership.ts'
+import { leakedResourceLines, resourcesForRuns } from '../resources/docker-resources.ts'
+import { settleClaims } from '../resources/resource-claims.ts'
+import {
+  otherConversationWorktreeSharers,
+  type WorktreeSharerRow,
+} from '../resources/resource-ownership.ts'
 import {
   adoptRunMutation,
   auditRunMutation,

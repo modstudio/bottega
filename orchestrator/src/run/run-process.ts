@@ -5,10 +5,10 @@
  */
 import { createHash } from 'node:crypto'
 import type { AGENTS } from '../agent/agent-registry.ts'
-import { checkpointRun, latestCheckpoint } from '../checkpoint.ts'
-import { DB_PATH, db } from '../db.ts'
+import { DB_PATH, db } from '../database/db.ts'
 import { depth } from '../dispatch/dispatch-preflight.ts'
 import { terminateProcessGroup } from '../idle-kill.ts'
+import { checkpointRun, latestCheckpoint } from './checkpoint.ts'
 
 const ALLOW_ENV_EXACT = new Set([
   'PATH',

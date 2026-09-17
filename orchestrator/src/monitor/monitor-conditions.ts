@@ -3,21 +3,21 @@
 
 import { existsSync } from 'node:fs'
 import { join } from 'node:path'
-import { db, liveRuns } from '../db.ts'
+import { db, liveRuns } from '../database/db.ts'
 import { idleLabel, idleMsSince, idleWarnMs } from '../events.ts'
 import { UNSCORED_WHERE } from '../evidence/evidence-query.ts'
-import { targetGitEnvironment } from '../git-environment.ts'
-import { HOOK_TREE_JOB, hookTreeNotice } from '../hook-tree.ts'
+import { targetGitEnvironment } from '../git/git-environment.ts'
+import { HOOK_TREE_JOB, hookTreeNotice } from '../hook-tree/hook-tree.ts'
 import { runHasLiveDescendants } from '../idle-kill.ts'
-import { pidAlive, processStartTime } from '../process-liveness.ts'
 import { type PidRecordIdentity, pidRecordIdentity } from '../project/project-lock.ts'
 import { projects } from '../project/projects.ts'
-import type { ResourceClaimKind } from '../resource-claims.ts'
+import { pidAlive, processStartTime } from '../resources/process-liveness.ts'
+import type { ResourceClaimKind } from '../resources/resource-claims.ts'
 import {
   refGuardInventory,
   retainedRefInventory,
   worktreeDatabaseInventory,
-} from '../resource-inventory.ts'
+} from '../resources/resource-inventory.ts'
 import { runAlive } from '../run/run-alive.ts'
 import { runLeaseState } from '../run/run-lease.ts'
 import type { MonitorCondition } from './monitor-types.ts'

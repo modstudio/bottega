@@ -1,5 +1,5 @@
 import { expect, test } from 'bun:test'
-import { registerStandardTransports } from '../standard-transports.ts'
+import { registerStandardTransports } from '../runtime/standard-transports.ts'
 import {
   clearRegisteredTransportsForTest,
   TransportOperationTimeout,

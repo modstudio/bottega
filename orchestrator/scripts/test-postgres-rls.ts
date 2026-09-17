@@ -109,7 +109,7 @@ try {
   )
   if (rls !== 0) process.exitCode = rls
   else if (!falsify) {
-    const remigrate = await run(['bun', 'src/orch.ts', 'record', 'migrate'], {
+    const remigrate = await run(['bun', 'src/cli/orch.ts', 'record', 'migrate'], {
       ORCH_RECORD_MIGRATE_URL: ownerUrl,
     })
     if (remigrate !== 0) process.exitCode = remigrate

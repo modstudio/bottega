@@ -2,10 +2,9 @@
 /** Knows run rows, reviews and findings, score arithmetic, duel persistence, and judgeability. Must not know transports, worktrees, routing, the CLI, durable execution, dispatch, or cleanup. */
 import { existsSync, readFileSync } from 'node:fs'
 import { newRecordId } from '../../shared/record/schema.ts'
-import { db, nowIso, sessionId, writeTransaction } from './db.ts'
-import { pairPartners, parseRunIds, recordDuels, recordLosses, recordTies } from './duel.ts'
-import { JOBS, job } from './jobs.ts'
-import { machineId } from './machine-identity.ts'
+import { db, nowIso, sessionId, writeTransaction } from './database/db.ts'
+import { JOBS, job } from './jobs/jobs.ts'
+import { machineId } from './record/machine-identity.ts'
 import { recordApiClient } from './record/record-api-client.ts'
 import { cleanReviewEvidence, parseReviewOutput } from './review/review.ts'
 import { enqueueReview } from './review/review-outbox.ts'
@@ -36,6 +35,7 @@ import {
   runMutationActor,
 } from './run/run-authority.ts'
 import { enqueueRunRecord } from './run/run-outbox.ts'
+import { pairPartners, parseRunIds, recordDuels, recordLosses, recordTies } from './score/duel.ts'
 import {
   DELIVERY,
   type Delivery,

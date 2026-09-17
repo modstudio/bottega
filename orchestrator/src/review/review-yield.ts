@@ -1,7 +1,7 @@
 import type { Database } from 'bun:sqlite'
-import { db } from '../db.ts'
+import { db } from '../database/db.ts'
 import { attributedTaskKey } from '../epic/epic.ts'
-import { median } from '../statistics.ts'
+import { median } from '../state/statistics.ts'
 import { reviewRunEvidenceSql } from './review-evidence-sql.ts'
 import { reviewTriageBag } from './review-triage.ts'
 import {

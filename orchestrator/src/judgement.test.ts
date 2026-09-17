@@ -4,11 +4,11 @@ import { join } from 'node:path'
 import { reviewReply } from '../test/fixtures/replies.ts'
 import { addRun, dir, score as seedScore } from '../test/fixtures/store.ts'
 import { trackedTestResidue } from '../test/residue.ts'
-import { db } from './db.ts'
-import { pairPartners } from './duel.ts'
+import { db } from './database/db.ts'
 import { NOT_EVIDENCE } from './failure/failure.ts'
 import { judgeRun, scoreRun } from './judgement.ts'
 import { recordReview } from './review/review-triage.ts'
+import { pairPartners } from './score/duel.ts'
 
 const trackResidue = trackedTestResidue()
 

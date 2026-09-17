@@ -4,7 +4,7 @@
  * know transports, database write paths, contracts, or routing.
  */
 import { basename } from 'node:path'
-import { branchOf, gitContext, targetGitEnvironment } from '../git-environment.ts'
+import { branchOf, gitContext, targetGitEnvironment } from '../git/git-environment.ts'
 import { projectAt, resolveBranchRef } from '../project/projects.ts'
 import { resolveBase } from '../worktree/worktree-caller.ts'
 

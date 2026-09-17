@@ -5,7 +5,7 @@ import {
   parseWorkerMessageArgs,
   readMessageText,
   TELL_WORKING_FORMS,
-} from '../args.ts'
+} from '../cli/args.ts'
 import { formatPeek, peekRun } from '../events.ts'
 import { tellRun } from './mailbox.ts'
 

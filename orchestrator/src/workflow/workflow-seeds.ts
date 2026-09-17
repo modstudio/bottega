@@ -2,7 +2,7 @@
 /** Knows the built-in workflow definitions and advances them by seed revision.
  * Must not know workflow commands, adapters, execution, or project state. */
 import type { Database } from 'bun:sqlite'
-import { nowIso, writeTransaction } from '../db.ts'
+import { nowIso, writeTransaction } from '../database/db.ts'
 import {
   REVIEW_COVERAGE,
   REVIEW_LIMITS,
@@ -48,7 +48,7 @@ const seeds = [
           job: 'review-lens',
           autonomy: 'auto',
           gate: null,
-          body: 'Use `/absolute/path/to/main-checkout/bin/orch` from the main checkout, never a worktree\'s ./bin/orch, whose access to the shared per-user store is read-only. Dispatch each named lens against the branch. Always run correctness. Also run migration-safety when the change touches `orchestrator/src/db.ts` or `orchestrator/migrations/`. Also run craft when the change adds a new module.\n\n`/absolute/path/to/main-checkout/bin/orch do review-lens --review {{branch}} --key {{key}} --lens correctness "Review {{key}}: the change on {{branch}} against its task."`\n\nRepeat with the same prompt and --lens migration-safety or --lens craft when those apply.',
+          body: 'Use `/absolute/path/to/main-checkout/bin/orch` from the main checkout, never a worktree\'s ./bin/orch, whose access to the shared per-user store is read-only. Dispatch each named lens against the branch. Always run correctness. Also run migration-safety when the change touches `orchestrator/src/database/db.ts` or `orchestrator/migrations/`. Also run craft when the change adds a new module.\n\n`/absolute/path/to/main-checkout/bin/orch do review-lens --review {{branch}} --key {{key}} --lens correctness "Review {{key}}: the change on {{branch}} against its task."`\n\nRepeat with the same prompt and --lens migration-safety or --lens craft when those apply.',
         },
         {
           slug: 'score',

@@ -1,6 +1,6 @@
 import { Database } from 'bun:sqlite'
 import { expect, test } from 'bun:test'
-import { applyMigrations } from '../migrations.ts'
+import { applyMigrations } from '../database/migrations.ts'
 import { backfillReviewRecords } from './review-outbox.ts'
 
 test('review backfill mints parent rows before children, enqueues the graph, and is idempotent', () => {

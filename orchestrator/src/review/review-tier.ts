@@ -1,5 +1,5 @@
 import { categorizeFile } from '../../../shared/file-kind.ts'
-import { targetGitEnvironment } from '../git-environment.ts'
+import { targetGitEnvironment } from '../git/git-environment.ts'
 
 export type ReviewTier = {
   tier: 0 | 1 | 2 | 3
@@ -15,7 +15,7 @@ const REVIEW_HOT_PATHS: readonly {
   pattern: RegExp
   reason: string
 }[] = [
-  { tier: 3, pattern: /^orchestrator\/src\/db\.ts$/, reason: 'schema and DDL' },
+  { tier: 3, pattern: /^orchestrator\/src\/database\/db\.ts$/, reason: 'schema and DDL' },
   { tier: 3, pattern: /^orchestrator\/src\/landing\.ts$/, reason: 'landing safety' },
   { tier: 3, pattern: /^orchestrator\/src\/worktree\.ts$/, reason: 'worktree lifecycle' },
   { tier: 3, pattern: /^orchestrator\/src\/run\.ts$/, reason: 'run execution' },

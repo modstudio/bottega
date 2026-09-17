@@ -1,7 +1,7 @@
 // concern: review
 /** Owns lens registry command decisions. Must not know CLI grammar. */
 import { readFileSync } from 'node:fs'
-import { flagValue } from '../args.ts'
+import { flagValue } from '../cli/args.ts'
 import { listLenses, listProfiles, setLens, setProfile, showLens, showProfile } from './lenses.ts'
 
 export function lensCommand(argv: string[], presentation: { log(value: string): void }): void {

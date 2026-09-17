@@ -1,7 +1,7 @@
 import { expect, test } from 'bun:test'
 import { readFileSync, realpathSync } from 'node:fs'
 import { tmpdir } from 'node:os'
-import { DB_PATH, db } from '../src/db.ts'
+import { DB_PATH, db } from '../src/database/db.ts'
 
 test('the preload creates a store and never clears one', () => {
   const preload = readFileSync(new URL('./preload.ts', import.meta.url), 'utf8')

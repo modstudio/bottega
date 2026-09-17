@@ -1,8 +1,8 @@
 import { describe, expect, test } from 'bun:test'
 import { addRun, score } from '../../test/fixtures/store.ts'
 import { AGENTS } from '../agent/agent-registry.ts'
-import { guide } from '../guide.ts'
 import { weigh } from '../score/score.ts'
+import { guide } from '../state/guide.ts'
 import {
   candidates,
   EVIDENCE_WINDOW,

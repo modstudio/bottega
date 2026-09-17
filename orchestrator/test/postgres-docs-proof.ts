@@ -1,6 +1,6 @@
 import { expect } from 'bun:test'
 import { newRecordId } from '../../shared/record/schema.ts'
-import { db } from '../src/db.ts'
+import { db } from '../src/database/db.ts'
 import type { RecordApiClient } from '../src/record/record-api-client.ts'
 import { pullRecordCache } from '../src/record/record-cache.ts'
 import { createMemoryRecordApiClient, installRecordApiClient } from './fixtures/record-api.ts'

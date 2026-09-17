@@ -10,17 +10,16 @@ import { mkdirSync, writeFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { newRecordId } from '../../../shared/record/schema.ts'
 import type { Agent } from '../agent/agents.ts'
+import { resolveTaskBranch, type TaskBranchCandidate } from '../branch/task-branch.ts'
 import type { Pack } from '../canon/canon.ts'
-import { checkoutAliases, realpathOrSpelled } from '../checkout-identity.ts'
-import { readStrictCodexSchema } from '../codex-schema.ts'
+import { readStrictCodexSchema } from '../contract/codex-schema.ts'
 import { TEXT_REPLY_SCHEMA } from '../contract/contract.ts'
-import { db, nowIso, sessionId, writeTransaction } from '../db.ts'
+import { db, nowIso, sessionId, writeTransaction } from '../database/db.ts'
 import { namesRecordedRunTree } from '../dispatch/dispatch-preflight.ts'
+import { retargetRepositoryPromptForDispatch } from '../dispatch/prompt-retarget.ts'
 import { appendRunEvent } from '../events.ts'
-import { resolveSupersededTurn } from '../failover.ts'
-import { branchOf, git, gitContext, repoRootOf } from '../git-environment.ts'
-import { addedGrokTrustHeadings, grokTrustHeadings, grokTrustStorePath } from '../grok-trust.ts'
-import { type KeepTreeExemption, keepTreeHold } from '../keep-tree-hold.ts'
+import { checkoutAliases, realpathOrSpelled } from '../git/checkout-identity.ts'
+import { branchOf, git, gitContext, repoRootOf } from '../git/git-environment.ts'
 import {
   assertGrokTrustEligible,
   type McpConnection,
@@ -33,7 +32,6 @@ import {
 import { readMcpConfig, wrongProjectReason } from '../mcp/mcp-probe.ts'
 import { withWorktreeCreateLock, withWorktreeLease } from '../project/project-lock.ts'
 import { projectAt, stackAt } from '../project/projects.ts'
-import { retargetRepositoryPromptForDispatch } from '../prompt-retarget.ts'
 import {
   claimRecipePort,
   RECIPE_PORT_BAND,
@@ -41,16 +39,17 @@ import {
   recordDatabaseClaim,
   recordSandboxDirectoryClaim,
   recordTrustEntryClaims,
-} from '../resource-claims.ts'
-import { teardownTerminalRunResources } from '../resource-ownership.ts'
-import {
-  type ResumeCreationLifecycle,
-  type ResumeTreePlan,
-  resumeCreationOptions,
-} from '../resume-tree.ts'
+} from '../resources/resource-claims.ts'
+import { teardownTerminalRunResources } from '../resources/resource-ownership.ts'
 import { inferredReadOnlyKey } from '../review/review-target.ts'
-import { prepareProjectGrokMcpScope } from '../sandbox.ts'
-import { resolveTaskBranch, type TaskBranchCandidate } from '../task-branch.ts'
+import { resolveSupersededTurn } from '../route/failover.ts'
+import {
+  addedGrokTrustHeadings,
+  grokTrustHeadings,
+  grokTrustStorePath,
+} from '../sandbox/grok-trust.ts'
+import { prepareProjectGrokMcpScope } from '../sandbox/sandbox.ts'
+import { type KeepTreeExemption, keepTreeHold } from '../worktree/keep-tree-hold.ts'
 import { createWorkerWorktree, worktreeExists } from '../worktree/worktree.ts'
 import {
   assertCallerAncestry,
@@ -62,6 +61,11 @@ import { createIsolatedWorkerDirectory, prepareWorkerMcpConfig } from '../worktr
 import { toolFor } from '../worktree/worktree-preflight.ts'
 import { type Changes, removeFor } from '../worktree/worktree-remove.ts'
 import type { Worktree } from '../worktree/worktree-types.ts'
+import {
+  type ResumeCreationLifecycle,
+  type ResumeTreePlan,
+  resumeCreationOptions,
+} from './resume-tree.ts'
 import {
   noRepoIsolatePath,
   type runFilePaths,

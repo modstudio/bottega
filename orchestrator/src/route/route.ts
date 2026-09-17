@@ -1,12 +1,16 @@
 import { AGENTS } from '../agent/agent-registry.ts'
-import { calibrationFor } from '../calibration-port.ts'
+import {
+  fileContractProbeReason,
+  predatesFileContract,
+  unavailableReason,
+} from '../agent/local-host.ts'
 import { failingDefaultCanonEvals } from '../canon/canon-eval-status.ts'
-import { db } from '../db.ts'
+import { db } from '../database/db.ts'
 import { COOLS_DOWN, NOT_EVIDENCE } from '../failure/failure.ts'
-import { JOBS, job } from '../jobs.ts'
-import { fileContractProbeReason, predatesFileContract, unavailableReason } from '../local-host.ts'
+import { JOBS, job } from '../jobs/jobs.ts'
+import { calibrationFor } from '../runtime/calibration-port.ts'
 import { FIDELITY_PENALTY, WEIGHT, weigh } from '../score/score.ts'
-import { median } from '../statistics.ts'
+import { median } from '../state/statistics.ts'
 
 export type Candidate = {
   agent: string

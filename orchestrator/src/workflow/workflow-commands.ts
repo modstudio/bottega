@@ -3,7 +3,7 @@
 import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { gitToplevel, resolvedPathsEqual } from '../../../shared/git.ts'
-import { flagValue, flagValues } from '../args.ts'
+import { flagValue, flagValues } from '../cli/args.ts'
 import { projects } from '../project/projects.ts'
 import {
   forkStepCatalogue,
@@ -12,7 +12,7 @@ import {
   setStepCatalogue,
   showStepCatalogue,
   stepCatalogueVersions,
-} from '../step-catalogue.ts'
+} from './step-catalogue.ts'
 import { parseWorkflowTree, planWorkflowHydration } from './workflow-tree.ts'
 import { applyWorkflowTreePlan, collectWorkflowTree } from './workflow-tree-files.ts'
 import { importWorkflowTree, productionWorkflowTree } from './workflow-tree-store.ts'

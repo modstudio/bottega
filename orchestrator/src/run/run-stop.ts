@@ -9,8 +9,8 @@ import {
   verifyBranchOwnershipAfterCleanup,
   withCleanupLock,
 } from '../cleanup/cleanup.ts'
-import { db, nowIso, writeTransaction } from '../db.ts'
-import { teardownTerminalRunResources } from '../resource-ownership.ts'
+import { db, nowIso, writeTransaction } from '../database/db.ts'
+import { teardownTerminalRunResources } from '../resources/resource-ownership.ts'
 import { branchTip, removeBranch, unmergedBranch } from '../worktree/worktree-remove.ts'
 import type { Worktree } from '../worktree/worktree-types.ts'
 import { adoptRunMutation, auditRunMutation, authorizeRunMutation } from './run-authority.ts'

@@ -3,7 +3,7 @@ import { constants as osConstants } from 'node:os'
 import { execa } from 'execa'
 import { eventsFromVendorLine } from '../events.ts'
 import { DEFAULT_IDLE_GRACE_MS, terminateProcessGroup } from '../idle-kill.ts'
-import { sandboxLaunchArgv } from '../sandbox.ts'
+import { sandboxLaunchArgv } from '../sandbox/sandbox.ts'
 import {
   type AgentTransport,
   type ArgvOpts,

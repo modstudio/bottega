@@ -1,9 +1,9 @@
 /** Live vendor event log: append-only JSONL plus last_event_at, and orch peek. */
 import { appendFileSync, existsSync, mkdirSync, readFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
-import { resolveRunsDirectory } from './database-location.ts'
-import { db, nowIso, writableDb } from './db.ts'
-import { targetGitEnvironment } from './git-environment.ts'
+import { resolveRunsDirectory } from './database/database-location.ts'
+import { db, nowIso, writableDb } from './database/db.ts'
+import { targetGitEnvironment } from './git/git-environment.ts'
 
 /** The live-stream subset the JSONL log records. Wider transport events are ignored. */
 export type StreamEvent =

@@ -108,7 +108,7 @@ test('an unknown envelope kind reports its physical line number', () => {
 })
 
 test('only the orch client invokes bin/orch', () => {
-  const root = new URL('.', import.meta.url).pathname
+  const root = new URL('./', import.meta.url).pathname
   const files = readdirSync(root, { recursive: true, withFileTypes: true }).filter(
     (entry) =>
       entry.isFile() &&

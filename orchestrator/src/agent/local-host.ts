@@ -1,0 +1,263 @@
+// concern: local-host
+/** Owns local-agent wake, health, reachability, and availability. Must not know probes or CLI grammar. */
+import { mkdirSync, readFileSync, writeFileSync } from 'node:fs'
+import { join } from 'node:path'
+import { which } from 'bun'
+import { concernStateDirectory } from '../../../shared/state-directory.ts'
+import { AGENTS } from './agent-registry.ts'
+import type { Agent } from './agents.ts'
+/** Where a local OpenAI-compatible endpoint lives, e.g. http://127.0.0.1:8010/v1 */
+export const LOCAL_BASE_URL = process.env.ORCH_LOCAL_BASE_URL ?? ''
+export const LOCAL_MODEL = process.env.ORCH_LOCAL_MODEL ?? 'Qwen/Qwen3.6-35B-A3B'
+/**
+ * What the local endpoint is actually serving. Verified by `orch doctor`.
+ *
+ * Raised from 65,536 once the served window was measured rather than assumed.
+ * 65,536 had been badly conservative: at the same --gpu-memory-utilization the
+ * box reports a 233,376-token KV cache, which is 6.91 concurrent requests at
+ * the full 131,072 — so the ceiling that excluded the local model from 74% of
+ * all delegated work was costing nothing to hold.
+ */
+export const LOCAL_CONTEXT_TOKENS = Number(process.env.ORCH_LOCAL_CONTEXT ?? 131_072)
+
+/**
+ * What the last reachability probe found, or null if none has run yet.
+ *
+ * Process-local and deliberately not persisted. A cached verdict on disk would
+ * be a second source of truth about a thing that changes without warning — the
+ * box comes back and the file still says it is down — and `orch` processes are
+ * short-lived enough that one probe each is cheap: 2ms when the endpoint is
+ * healthy, and when it is not, it replaces a run that was going to fail anyway.
+ */
+let localHealth: { ok: boolean; detail: string; contextTokens?: number } | null = null
+
+/**
+ * MAC address to wake the local box at, or empty to never try.
+ *
+ * OPT-IN, and deliberately so. Powering on a remote host is an operator
+ * decision. Whoever sets this is saying "wake it when work needs it"; unset,
+ * nothing here ever sends a packet.
+ *
+ * It is configuration rather than a code dependency, which is what keeps the
+ * contract with local-stack the same shape it always was: an endpoint and some
+ * environment, never an import.
+ */
+const LOCAL_WOL_MAC = process.env.ORCH_LOCAL_WOL_MAC ?? ''
+
+/**
+ * How long to leave the box alone after sending a magic packet.
+ *
+ * A second packet during boot cannot make the model load faster; it can only
+ * turn one wake into a stream of packets. Leave enough time for the host and
+ * model server to start.
+ */
+const WAKE_COOLDOWN_MS = 10 * 60_000
+
+const wakeStampPath = () => join(concernStateDirectory('orchestrator', process.env), '.last-wake')
+
+export function lastWakeAttempt(): Date | null {
+  try {
+    const d = new Date(readFileSync(wakeStampPath(), 'utf8').trim())
+    return Number.isNaN(d.getTime()) ? null : d
+  } catch {
+    return null
+  }
+}
+
+/**
+ * Whether to send a magic packet, decided from facts alone.
+ *
+ * Pure, and separate from the sending, so the four cases are pinned by tests
+ * rather than by powering a machine off to see what happens — which is the only
+ * way the real thing can be exercised.
+ */
+function wakeDecision(o: { mac: string; haveBinary: boolean; last: Date | null; now: number }): {
+  send: boolean
+  detail: string
+} {
+  if (!o.mac) return { send: false, detail: 'ORCH_LOCAL_WOL_MAC not set — waking is opt-in' }
+  if (!o.haveBinary) {
+    return { send: false, detail: 'wakeonlan not installed (brew install wakeonlan)' }
+  }
+  if (o.last) {
+    const ago = o.now - o.last.getTime()
+    if (ago < WAKE_COOLDOWN_MS) {
+      return {
+        send: false,
+        detail: `woken ${Math.round(ago / 60_000)}m ago; a cold start takes ~6m, so waiting`,
+      }
+    }
+  }
+  return { send: true, detail: `magic packet to ${o.mac}` }
+}
+
+/**
+ * The decision, with today's facts gathered, and nothing sent.
+ *
+ * One gatherer for both callers. Written because the alternative — doctor
+ * assembling its own arguments to wakeDecision — immediately produced a wrong
+ * one, and a status line that reports something other than what will happen is
+ * the whole class of bug this codebase keeps finding.
+ */
+export function wakeStatus(now = Date.now()): { send: boolean; detail: string } {
+  return wakeDecision({
+    mac: LOCAL_WOL_MAC,
+    haveBinary: which('wakeonlan', { PATH: process.env.PATH }) !== null,
+    last: lastWakeAttempt(),
+    now,
+  })
+}
+
+/**
+ * Send one magic packet, if that is the right thing to do.
+ *
+ * Fire and forget. A cold start is 5m42s and no caller can wait that long, so
+ * this never blocks and never reports success at waking — only at asking. The
+ * job in hand still routes elsewhere; the next one, minutes later, finds the
+ * endpoint up on its own.
+ */
+export function tryWake(now = Date.now()): { sent: boolean; detail: string } {
+  const d = wakeStatus(now)
+  if (!d.send) return { sent: false, detail: d.detail }
+  // Stamped BEFORE the spawn. If the spawn throws, the attempt still counts —
+  // the alternative is a failure that retries on every single run.
+  try {
+    mkdirSync(concernStateDirectory('orchestrator', process.env), { recursive: true })
+    writeFileSync(wakeStampPath(), new Date(now).toISOString())
+  } catch {
+    /* best effort */
+  }
+  try {
+    Bun.spawn(['wakeonlan', LOCAL_WOL_MAC], {
+      stdout: 'ignore',
+      stderr: 'ignore',
+      stdin: 'ignore',
+    }).unref()
+  } catch {
+    return { sent: false, detail: 'wakeonlan could not be spawned' }
+  }
+  return { sent: true, detail: d.detail }
+}
+
+/**
+ * Commands that must know whether an agent can be reached before they answer.
+ *
+ * Anything that ROUTES (`do`) or REPORTS A ROUTE (`pick`, `guide`, `doctor`,
+ * `agents`). Exported rather than left in the command adapter so it can be asserted against:
+ * a command added to the switch that prints eligibility and is missing here
+ * reports a route that `orch do` would not take, which is exactly what
+ * happened to `pick` and `guide`.
+ *
+ * `stats` is deliberately absent — it reports recorded history, and history does
+ * not change when a machine is switched off.
+ */
+/**
+ * Probe the local endpoint once per process, and remember the answer.
+ *
+ * This is what makes reachability a ROUTING INPUT rather than a run outcome.
+ * `available()` reads the result, so anything that calls this before routing
+ * gets an honest answer, and anything that does not behaves exactly as it did
+ * before — which is why the reporting views can stay synchronous.
+ */
+export async function ensureLocalHealth(opts: { force?: boolean; baseUrl?: string } = {}) {
+  if (!localHealth || opts.force) {
+    localHealth = await localReachable(undefined, opts.baseUrl ?? LOCAL_BASE_URL)
+  }
+  return localHealth
+}
+
+/**
+ * Forget the probe, so the next caller takes a fresh one.
+ *
+ * The cache is right for `orch do`, which lives for one run. It is wrong for
+ * anything long-lived — `orch serve` runs for days, and a verdict taken when the
+ * box happened to be rebooting would outlive the reboot by the life of the
+ * process. Whoever holds a process open longer than a run is responsible for
+ * calling this.
+ */
+/**
+ * Why this agent cannot be used at all, or null if it can.
+ *
+ * The reason is returned rather than a bare boolean because it is the thing
+ * anyone actually needs. `--agent qwen-local` against a powered-down host used
+ * to be refused as "not installed", which sends you looking for a missing
+ * binary that is sitting right there on PATH.
+ */
+export function fileContractProbeReason(name: string): string {
+  return `registration probe predates the file contract; run orch agent probe ${name}`
+}
+
+export function predatesFileContract(agent: Agent): boolean {
+  return Boolean(agent.probedAt) && agent.caps.replyFile !== true && agent.probePassed !== false
+}
+
+export function unavailableReason(name: string): string | null {
+  const a = AGENTS[name]
+  if (!a) return 'unknown agent'
+  if (a.enabled === false) return `disabled — ${a.disabledReason}`
+  if (a.probePassed === null) return `registration probe incomplete; run orch agent probe ${name}`
+  if (a.probedAt && a.probePassed === false) return 'registration probe failed'
+  if (a.contextTokens === 0) return 'unprobed and has no declared context window'
+  if (which(a.bin, { PATH: process.env.PATH }) === null) return 'not installed'
+  if (a.billing === 'local') {
+    // A local agent is only real once an endpoint is configured...
+    if (!LOCAL_BASE_URL) return 'ORCH_LOCAL_BASE_URL not set'
+    // ...and only usable once it ANSWERS. Configuration is not reachability:
+    // the env var stayed correct for the whole eleven hours the box was off.
+    // Only a probe that has actually run can say no here, so a caller that
+    // never awaited ensureLocalHealth() is left exactly as it was.
+    if (localHealth && !localHealth.ok) return `endpoint unreachable — ${localHealth.detail}`
+  }
+  return null
+}
+
+export function available(name: string): boolean {
+  return unavailableReason(name) === null
+}
+
+/** Confirm the local endpoint actually answers. Reachability is not configuration. */
+export async function localReachable(
+  timeoutMs = 4000,
+  // Defaults to the configured endpoint. Taken as a parameter so this can be
+  // pointed at a URL that is known to be dead, or known to be the wrong
+  // service, without reconfiguring the machine — which is the only way to test
+  // the "answered 200 with HTML" case that Docker Desktop actually produced.
+  baseUrl = LOCAL_BASE_URL,
+): Promise<{ ok: boolean; detail: string; contextTokens?: number }> {
+  if (!baseUrl) return { ok: false, detail: 'ORCH_LOCAL_BASE_URL not set' }
+  try {
+    const res = await fetch(new URL('models', baseUrl.replace(/\/?$/, '/')), {
+      signal: AbortSignal.timeout(timeoutMs),
+    })
+    if (!res.ok) return { ok: false, detail: `HTTP ${res.status}` }
+    // A 200 is not proof it is the right service: another process holding the
+    // port answers 200 too. Require an OpenAI-shaped model list.
+    const type = res.headers.get('content-type') ?? ''
+    if (!type.includes('json')) {
+      return {
+        ok: false,
+        detail: `not an API — answered ${type.split(';')[0] || 'unknown'}; something else owns this port`,
+      }
+    }
+    const body = (await res.json()) as { data?: { id: string; max_model_len?: number }[] }
+    if (!Array.isArray(body.data))
+      return { ok: false, detail: 'JSON but no model list — not an OpenAI-compatible endpoint' }
+    const ids = body.data.map((m) => m.id)
+    // The window the server is actually serving, which is a routing input: a job
+    // whose working set will not fit is excluded outright. It is declared in
+    // AGENTS because routing is synchronous, so the declaration can fall out of
+    // step with a re-serve — reading it back here is what notices.
+    const served = body.data.find((m) => m.max_model_len)?.max_model_len
+    return {
+      ok: true,
+      detail: ids.length ? ids.join(', ') : 'reachable, no models listed',
+      contextTokens: served,
+    }
+  } catch (e) {
+    return { ok: false, detail: (e as Error).message }
+  }
+}
+
+export function installed(): string[] {
+  return Object.keys(AGENTS).filter(available)
+}

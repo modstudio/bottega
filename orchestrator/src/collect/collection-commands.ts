@@ -2,7 +2,7 @@
 /** Owns collection command behavior and exit mappings. Must not know CLI grammar. */
 import type { Database } from 'bun:sqlite'
 import { formatPeek, peekRun } from '../events.ts'
-import { job } from '../jobs.ts'
+import { job } from '../jobs/jobs.ts'
 import { reapStale } from '../run/run-liveness.ts'
 import { collectResult, collectWait, resolveFailover, thinOutputWarning } from './collect.ts'
 

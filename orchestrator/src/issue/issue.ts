@@ -9,18 +9,23 @@ import {
   type JsonSchema,
   validatesSchema,
 } from '../contract/contract.ts'
-import { DB_PATH, db } from '../db.ts'
-import { repoRootOf } from '../git-environment.ts'
-import { DEFAULT_KEEP_TREE_HOURS, keepTreeExemption } from '../keep-tree-hold.ts'
+import { DB_PATH, db } from '../database/db.ts'
+import { repoRootOf } from '../git/git-environment.ts'
 import { type Project, projectByName } from '../project/projects.ts'
-import { prepareSharedRefGuard } from '../ref-guard.ts'
+import { trackedRecipeEnvironment } from '../recipe/tracked-recipe.ts'
+import { prepareSharedRefGuard } from '../resources/ref-guard.ts'
 import { parseReviewOutput } from '../review/review.ts'
 import { run } from '../run/run.ts'
 import { terminateRunProcesses } from '../run/run-process.ts'
 import { abandonRun } from '../run/run-stop.ts'
 import type { RunResult } from '../run/run-types.ts'
-import { resetSandbox, resolveSecretPaths, sandboxLaunchArgv, srtInstalled } from '../sandbox.ts'
-import { trackedRecipeEnvironment } from '../tracked-recipe.ts'
+import {
+  resetSandbox,
+  resolveSecretPaths,
+  sandboxLaunchArgv,
+  srtInstalled,
+} from '../sandbox/sandbox.ts'
+import { DEFAULT_KEEP_TREE_HOURS, keepTreeExemption } from '../worktree/keep-tree-hold.ts'
 import { worktreeDirty } from '../worktree/worktree-attribution.ts'
 import type { Worktree } from '../worktree/worktree-types.ts'
 import { catchFixTreeDisposition } from './issue-catch.ts'

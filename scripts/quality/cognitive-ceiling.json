@@ -119,13 +119,13 @@
     "score": 29
   },
   {
-    "file": "orchestrator/src/args.ts",
+    "file": "orchestrator/src/cli/args.ts",
     "function": "invalidUtf8Offset",
     "line": 94,
     "score": 46
   },
   {
-    "file": "orchestrator/src/args.ts",
+    "file": "orchestrator/src/cli/args.ts",
     "function": "parseWorkerMessageArgs",
     "line": 185,
     "score": 23
@@ -174,7 +174,7 @@
     "score": 24
   },
   {
-    "file": "orchestrator/src/codex-schema.ts",
+    "file": "orchestrator/src/contract/codex-schema.ts",
     "function": "visit",
     "line": 190,
     "score": 25
@@ -199,7 +199,7 @@
     "key": "orchestrator/src/collect/collect.ts\u0000collectResult"
   },
   {
-    "file": "orchestrator/src/confinement.ts",
+    "file": "orchestrator/src/confinement/confinement.ts",
     "function": "classifyDivergence",
     "line": 262,
     "score": 24
@@ -217,17 +217,17 @@
     "score": 29
   },
   {
-    "file": "orchestrator/src/database-location.ts",
+    "file": "orchestrator/src/database/database-location.ts",
     "function": "repositoryRootFromDotGit",
     "line": 56,
     "score": 22
   },
   {
-    "file": "orchestrator/src/db.ts",
+    "file": "orchestrator/src/database/db.ts",
     "function": "db",
     "line": 179,
     "score": 24,
-    "key": "orchestrator/src/db.ts\u0000db"
+    "key": "orchestrator/src/database/db.ts\u0000db"
   },
   {
     "file": "orchestrator/src/dispatch/dispatch-commands.ts",
@@ -263,20 +263,20 @@
     "key": "orchestrator/src/doc/docs.ts\u0000importDocs"
   },
   {
-    "file": "orchestrator/src/docker-resources.ts",
+    "file": "orchestrator/src/resources/docker-resources.ts",
     "function": "teardownRunResources",
     "line": 132,
     "score": 17
   },
   {
-    "file": "orchestrator/src/doctor.ts",
+    "file": "orchestrator/src/health/doctor.ts",
     "function": "doctorCommand",
     "line": 28,
     "score": 120,
-    "key": "orchestrator/src/doctor.ts\u0000doctorCommand"
+    "key": "orchestrator/src/health/doctor.ts\u0000doctorCommand"
   },
   {
-    "file": "orchestrator/src/evals.ts",
+    "file": "orchestrator/src/canon/evals.ts",
     "function": "withHermeticGitEnv callback",
     "line": 383,
     "score": 17
@@ -324,19 +324,19 @@
     "score": 16
   },
   {
-    "file": "orchestrator/src/git-locks.ts",
+    "file": "orchestrator/src/resources/git-locks.ts",
     "function": "gitLocks",
     "line": 75,
     "score": 16
   },
   {
-    "file": "orchestrator/src/health-commands.ts",
+    "file": "orchestrator/src/health/health-commands.ts",
     "function": "healthCommand",
     "line": 88,
     "score": 21
   },
   {
-    "file": "orchestrator/src/health.ts",
+    "file": "orchestrator/src/health/health.ts",
     "function": "harnessHealth",
     "line": 39,
     "score": 20
@@ -411,13 +411,13 @@
     "score": 27
   },
   {
-    "file": "orchestrator/src/migrations.ts",
+    "file": "orchestrator/src/database/migrations.ts",
     "function": "stripSqlComments",
     "line": 179,
     "score": 25
   },
   {
-    "file": "orchestrator/src/migrations.ts",
+    "file": "orchestrator/src/database/migrations.ts",
     "function": "checkExpressions",
     "line": 230,
     "score": 19
@@ -485,13 +485,13 @@
     "score": 25
   },
   {
-    "file": "orchestrator/src/prompt-retarget.ts",
+    "file": "orchestrator/src/dispatch/prompt-retarget.ts",
     "function": "retargetRepositoryPrompt",
     "line": 127,
     "score": 19
   },
   {
-    "file": "orchestrator/src/recalibration.ts",
+    "file": "orchestrator/src/score/recalibration.ts",
     "function": "recalibrate",
     "line": 18,
     "score": 46
@@ -509,25 +509,25 @@
     "score": 26
   },
   {
-    "file": "orchestrator/src/ref-guard.ts",
+    "file": "orchestrator/src/resources/ref-guard.ts",
     "function": "cleanupRefGuardLitter",
     "line": 115,
     "score": 18
   },
   {
-    "file": "orchestrator/src/ref-guard.ts",
+    "file": "orchestrator/src/resources/ref-guard.ts",
     "function": "prepareSharedRefGuard",
     "line": 188,
     "score": 45
   },
   {
-    "file": "orchestrator/src/resource-inventory.ts",
+    "file": "orchestrator/src/resources/resource-inventory.ts",
     "function": "refGuardInventory",
     "line": 172,
     "score": 24
   },
   {
-    "file": "orchestrator/src/resource-ownership.ts",
+    "file": "orchestrator/src/resources/resource-ownership.ts",
     "function": "teardownTerminalRunResources",
     "line": 153,
     "score": 19
@@ -750,11 +750,11 @@
     "key": "orchestrator/src/run/run.ts\u0000run"
   },
   {
-    "file": "orchestrator/src/task-branch.ts",
+    "file": "orchestrator/src/branch/task-branch.ts",
     "function": "resolveTaskBranch",
     "line": 100,
     "score": 21,
-    "key": "orchestrator/src/task-branch.ts\u0000resolveTaskBranch"
+    "key": "orchestrator/src/branch/task-branch.ts\u0000resolveTaskBranch"
   },
   {
     "file": "orchestrator/src/transport/transport-acp.ts",

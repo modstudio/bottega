@@ -1,6 +1,6 @@
 // concern: contract
 
-import { job, jobBoundInstructionForContract } from '../jobs.ts'
+import { job, jobBoundInstructionForContract } from '../jobs/jobs.ts'
 import {
   NO_REPO_PREAMBLE,
   READONLY_PREAMBLE,

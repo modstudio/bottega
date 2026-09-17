@@ -1,6 +1,6 @@
 import { beforeEach, expect, test } from 'bun:test'
 import { addRun } from '../../test/fixtures/store.ts'
-import { db } from '../db.ts'
+import { db } from '../database/db.ts'
 import { candidates } from '../route/route.ts'
 import { abandonRun, stopRun } from './run-stop.ts'
 

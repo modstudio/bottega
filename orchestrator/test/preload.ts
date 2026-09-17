@@ -85,13 +85,13 @@ mkdirSync(process.env.ORCH_RUNS)
 const assertTestHubDatabase = createTestHubDatabaseGuard()
 assertTestHubDatabase()
 
-const { registerStandardRuntime } = await import('../src/runtime-registration.ts')
+const { registerStandardRuntime } = await import('../src/runtime/runtime-registration.ts')
 registerStandardRuntime()
-const { DB_PATH, closeDatabaseForFixture } = await import('../src/db.ts')
-const { applyMigrations } = await import('../src/migrations.ts')
+const { DB_PATH, closeDatabaseForFixture } = await import('../src/database/db.ts')
+const { applyMigrations } = await import('../src/database/migrations.ts')
 const { excludeSharedOutputRuns } = await import('../src/evidence/evidence-query.ts')
 const { seedWorkflows } = await import('../src/workflow/workflow-seeds.ts')
-const { registerStandardTransports } = await import('../src/standard-transports.ts')
+const { registerStandardTransports } = await import('../src/runtime/standard-transports.ts')
 
 /**
  * The store db.ts resolved must be the one minted above, inside a directory
@@ -161,7 +161,7 @@ const { createMemoryRecordApiClient, installRecordApiClient } = await import(
 )
 installRecordApiClient(createMemoryRecordApiClient())
 
-const { db } = await import('../src/db.ts')
+const { db } = await import('../src/database/db.ts')
 
 /**
  * Run ids keep climbing across tests, as they did when tables were cleared

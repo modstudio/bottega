@@ -19,8 +19,8 @@ import {
 import { platform } from 'node:os'
 import { join, resolve } from 'node:path'
 import { pidAlive, processStartTime } from '../../../shared/process-identity.ts'
-import { tryWriteContention } from '../db.ts'
-import { git } from '../git-environment.ts'
+import { tryWriteContention } from '../database/db.ts'
+import { git } from '../git/git-environment.ts'
 
 const WORKTREE_CREATE_LOCK_TIMEOUT_MS = 5 * 60_000
 const WORKTREE_CREATE_LOCK_POLL_MS = 100

@@ -9,7 +9,7 @@
 
 import { clock } from './clock.ts'
 import { idleMsSince } from './events.ts'
-import { pidAlive } from './process-liveness.ts'
+import { pidAlive } from './resources/process-liveness.ts'
 
 /**
  * Default 15 minutes. Measured 2026-09-08 against the live store's completed

@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test'
 import { setDoc } from '../../test/fixtures/docs.ts'
-import { db } from '../db.ts'
+import { db } from '../database/db.ts'
 import { getDoc, listDocRevisions, listDocs } from '../doc/docs.ts'
 import { projects, upsertProject } from '../project/projects.ts'
 import {

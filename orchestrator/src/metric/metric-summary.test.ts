@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test'
-import { db } from '../db.ts'
+import { db } from '../database/db.ts'
 import { summary } from './metric.ts'
 
 describe('metric canon headline and calendar halves', () => {

@@ -5,7 +5,7 @@ import {
   type IssueWorkerReply,
   parseWorkerReplyWithCount,
 } from '../contract/contract.ts'
-import { JOBS } from '../jobs.ts'
+import { JOBS } from '../jobs/jobs.ts'
 import type { Project } from '../project/projects.ts'
 import {
   boundedIssuePack,

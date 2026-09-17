@@ -1,7 +1,7 @@
 // concern: worktree-preflight
 import { accessSync, constants, existsSync, statSync } from 'node:fs'
 import { delimiter, join, resolve } from 'node:path'
-import { targetGitEnvironment } from '../git-environment.ts'
+import { targetGitEnvironment } from '../git/git-environment.ts'
 import { projectAt, resolvedWorktreeTool, type WorktreeTool } from '../project/projects.ts'
 import { seedArgv, type WorktreeCreate } from './worktree-template.ts'
 

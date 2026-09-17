@@ -12,7 +12,7 @@ import { copyFileSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSy
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
-import { db, enableSchemaReload, writeTransaction } from '../db.ts'
+import { db, enableSchemaReload, writeTransaction } from '../database/db.ts'
 import {
   applyMigrations,
   CONNECTION_SCHEMA_INVARIANT,
@@ -27,7 +27,7 @@ import {
   schemaVersionLabel,
   splitMigrationSource,
   stripSqlComments,
-} from '../migrations.ts'
+} from '../database/migrations.ts'
 
 const journalLength = () => migrationJournal().length
 

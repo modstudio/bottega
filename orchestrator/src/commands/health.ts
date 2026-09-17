@@ -1,10 +1,10 @@
 // concern: cli
 /** Registers health reporting adapters. Must not own their behavior. */
 import type { Command } from 'commander'
-import { doctorCommand } from '../doctor.ts'
 import { reclassifyFailuresCommand } from '../failure/failure-commands.ts'
-import { blockersCommand, healthCommand } from '../health-commands.ts'
-import { JOBS } from '../jobs.ts'
+import { doctorCommand } from '../health/doctor.ts'
+import { blockersCommand, healthCommand } from '../health/health-commands.ts'
+import { JOBS } from '../jobs/jobs.ts'
 import { candidates, pick } from '../route/route.ts'
 import { acpRuntimeGaps } from '../transport/transport.ts'
 import { log, optionFlags } from './support.ts'

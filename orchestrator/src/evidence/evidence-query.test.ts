@@ -1,10 +1,10 @@
 import { describe, expect, test } from 'bun:test'
 import { join } from 'node:path'
 import { addRun, dir, score } from '../../test/fixtures/store.ts'
-import { db } from '../db.ts'
+import { db } from '../database/db.ts'
 import { candidates } from '../route/route.ts'
 import { weigh } from '../score/score.ts'
-import { state } from '../serve.ts'
+import { state } from '../state/serve.ts'
 import {
   excludeSharedOutputRuns,
   pendingForSession,

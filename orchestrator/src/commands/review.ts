@@ -1,7 +1,7 @@
 // concern: cli
 /** Registers review and confinement adapters. Must not own their behavior. */
 import type { Command } from 'commander'
-import { clearConfinement } from '../confinement-ruling.ts'
+import { clearConfinement } from '../confinement/confinement-ruling.ts'
 import { reviewCommand } from '../review/review-commands.ts'
 import { log, optionFlags } from './support.ts'
 

@@ -7,8 +7,8 @@ import { clock } from '../clock.ts'
 import { FAILS_OVER } from '../failure/failure.ts'
 import { parseMcpProbe } from '../mcp/mcp-probe.ts'
 import { failureReason, outcomeOf } from '../outcome.ts'
-import { TRUNCATED_TRANSCRIPT_BYTES, visibleTranscriptText } from '../result-output.ts'
 import type { ObservedDeadRun } from '../run/run-liveness.ts'
+import { TRUNCATED_TRANSCRIPT_BYTES, visibleTranscriptText } from './result-output.ts'
 
 export const COLLECTION_COMMANDS = new Set(['result', 'wait'])
 

@@ -3,7 +3,7 @@
 
 import { existsSync, mkdirSync, readdirSync, unlinkSync } from 'node:fs'
 import { join } from 'node:path'
-import { resolveRunsDirectory } from '../database-location.ts'
+import { resolveRunsDirectory } from '../database/database-location.ts'
 import { acquireKernelLease, type KernelLease, tryKernelLease } from '../project/project-lock.ts'
 import type { RunLeaseState } from './run-alive.ts'
 

@@ -4,7 +4,7 @@
  * not know runs, routing, transports, reviews, the CLI, or worktrees by value.
  */
 import { existsSync } from 'node:fs'
-import { tryWriteContention, writeTransaction } from '../db.ts'
+import { tryWriteContention, writeTransaction } from '../database/db.ts'
 import { selectProjectProfile } from '../lens/lenses.ts'
 import { lifecycleForm } from '../worktree/worktree-lifecycle.ts'
 import { migrateCreate } from '../worktree/worktree-template.ts'

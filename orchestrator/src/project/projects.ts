@@ -32,10 +32,13 @@ import {
   type SequenceState,
 } from '../../../shared/git.ts'
 import type { TrackerSettings } from '../../../shared/trackers.ts'
-import { db, nowIso, writableDb, writeTransaction } from '../db.ts'
-import { type ReadonlyProvision, validateReadonlyProvision } from '../readonly-provision.ts'
+import { db, nowIso, writableDb, writeTransaction } from '../database/db.ts'
 import { loadTrackedRecipe, recipePointerErrors } from '../recipe/recipe-loader.ts'
 import { recordApiClient } from '../record/record-api-client.ts'
+import {
+  type ReadonlyProvision,
+  validateReadonlyProvision,
+} from '../worktree/readonly-provision.ts'
 import {
   DEFAULT_PROJECT_CONFIG_PATH,
   resolveWorktreeLifecycle,

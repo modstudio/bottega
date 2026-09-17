@@ -1,6 +1,6 @@
 import { Database } from 'bun:sqlite'
 import { existsSync, readFileSync } from 'node:fs'
-import { db, writableDb, writeTransaction } from '../db.ts'
+import { db, writableDb, writeTransaction } from '../database/db.ts'
 import { importDoc, listDocs, removeDoc } from '../doc/docs.ts'
 import type { Project } from '../project/projects.ts'
 import { addDoctrineRule, addPair, addSkip, setBaseline, setLedgerRef } from './porting.ts'

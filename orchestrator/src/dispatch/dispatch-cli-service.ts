@@ -5,13 +5,13 @@ import { mkdirSync, realpathSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { AGENTS } from '../agent/agent-registry.ts'
 import { resumePromptByteLimit } from '../agent/agents.ts'
-import { flagValue, flagValues, readMessageText } from '../args.ts'
-import { readStrictCodexSchema } from '../codex-schema.ts'
+import { ensureLocalHealth } from '../agent/local-host.ts'
+import { resolveTaskBranch } from '../branch/task-branch.ts'
+import { flagValue, flagValues, readMessageText } from '../cli/args.ts'
+import { readStrictCodexSchema } from '../contract/codex-schema.ts'
 import { contractConflicts } from '../contract/contract.ts'
-import { sessionId } from '../db.ts'
-import type { DetachSpec } from '../failover.ts'
-import { JOBS, job } from '../jobs.ts'
-import { ensureLocalHealth } from '../local-host.ts'
+import { sessionId } from '../database/db.ts'
+import { JOBS, job } from '../jobs/jobs.ts'
 import type { McpRequest } from '../mcp/mcp-preflight.ts'
 import { stackAt } from '../project/projects.ts'
 import { implicitReviewWarning } from '../review/review-target.ts'
@@ -21,12 +21,12 @@ import {
   REVIEW_OVERLAP,
   REVIEW_REPRODUCED,
 } from '../review/review-vocabulary.ts'
+import type { DetachSpec } from '../route/failover.ts'
 import { pick } from '../route/route.ts'
 import { pickCommand } from '../route/routing-commands.ts'
 import { RUNS_DIR } from '../run/run-artifacts.ts'
 import { follow as followRun } from '../run/run-control.ts'
 import { detach as dispatchDetached } from '../run/run-dispatch.ts'
-import { resolveTaskBranch } from '../task-branch.ts'
 import {
   assertAcpAllowed,
   assertAcpReady,
@@ -47,7 +47,7 @@ type Presentation = {
 }
 
 async function modelForDistinct(id: number): Promise<string> {
-  const { db } = await import('../db.ts')
+  const { db } = await import('../database/db.ts')
   const until = Date.now() + 5_000
   while (true) {
     const row = db().query('SELECT model, status FROM run WHERE id=?').get(id) as {

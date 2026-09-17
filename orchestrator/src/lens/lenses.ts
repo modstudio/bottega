@@ -1,5 +1,5 @@
 import type { Database } from 'bun:sqlite'
-import { db, nowIso, sessionId, writableDb, writeTransaction } from '../db.ts'
+import { db, nowIso, sessionId, writableDb, writeTransaction } from '../database/db.ts'
 import { projectByName } from '../project/projects.ts'
 
 const LENS_AXES = ['framework', 'architecture'] as const

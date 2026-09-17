@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'bun:test'
 import { workerReply } from '../../test/fixtures/replies.ts'
 import { detectBlockers } from '../failure/failure.ts'
-import { JOBS } from '../jobs.ts'
+import { JOBS } from '../jobs/jobs.ts'
 import { GENERIC_QUESTION_TOKENS } from '../outcome.ts'
 import {
   hasRealQuestions,

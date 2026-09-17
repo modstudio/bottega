@@ -1,6 +1,6 @@
 // concern: record-push-docs
 /** One-time upload of the local doc store and a verdict count report. Must not know HTTP internals. */
-import { db, writableDb } from '../db.ts'
+import { db, writableDb } from '../database/db.ts'
 import type { DocDelivery, DocRevisionOp } from '../doc/doc-write-allowed.ts'
 import type { RecordApiClient, RecordDocImportInput } from './record-api-client.ts'
 import { recordApiClient } from './record-api-client.ts'

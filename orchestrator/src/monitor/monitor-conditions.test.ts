@@ -1,7 +1,7 @@
 import { describe, expect, spyOn, test } from 'bun:test'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { addRun, score } from '../../test/fixtures/store.ts'
-import { db, nowIso } from '../db.ts'
+import { db, nowIso } from '../database/db.ts'
 import { upsertProject } from '../project/projects.ts'
 import { groupMonitorConditions, monitor, monitorHistory } from './monitor.ts'
 import {

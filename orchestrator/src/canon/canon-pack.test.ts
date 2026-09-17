@@ -2,9 +2,9 @@ import { describe, expect, test } from 'bun:test'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { setDoc } from '../../test/fixtures/docs.ts'
 import { dir } from '../../test/fixtures/store.ts'
-import { db } from '../db.ts'
+import { db } from '../database/db.ts'
 import { docsForRun, docsMarkdown } from '../doc/docs.ts'
-import { JOBS } from '../jobs.ts'
+import { JOBS } from '../jobs/jobs.ts'
 import { upsertProject } from '../project/projects.ts'
 import { CanonBudgetError, compilePack, storedPackDrift } from './canon.ts'
 
@@ -155,7 +155,9 @@ describe('worker pack canon', () => {
       }
       expect(message).toContain('always-on')
       expect(message).toContain('largest packed tier: always-on')
-      expect(message).toContain('never raise the pack budget (orchestrator/src/pack-budget.ts)')
+      expect(message).toContain(
+        'never raise the pack budget (orchestrator/src/canon/pack-budget.ts)',
+      )
       expect(message).not.toMatch(/increase the budget|larger number|raise DEFAULT_PACK_BYTES/)
     } finally {
       JOBS.understand!.packBytes = old

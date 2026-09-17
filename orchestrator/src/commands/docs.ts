@@ -51,7 +51,7 @@ export function register(program: Command): void {
     .action(async (args, options) => {
       const argv = ['canon', ...args]
       const flags = optionFlags(options)
-      await import('../jobs.ts')
+      await import('../jobs/jobs.ts')
       if (argv[1] === 'lint') {
         canonLintCommand(flags, {
           log,

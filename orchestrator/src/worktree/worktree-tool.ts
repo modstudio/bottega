@@ -1,6 +1,6 @@
 // concern: worktree-tool
 
-import { targetGitEnvironment } from '../git-environment.ts'
+import { targetGitEnvironment } from '../git/git-environment.ts'
 import { fillTool } from './worktree-template.ts'
 
 export function runShellTool(

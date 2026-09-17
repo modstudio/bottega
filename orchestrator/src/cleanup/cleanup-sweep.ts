@@ -2,18 +2,21 @@
 import { existsSync, lstatSync, readdirSync, realpathSync } from 'node:fs'
 import { join, resolve } from 'node:path'
 import { closeOutRun, releaseSandboxDirectoryForConversation } from '../close/close-out.ts'
-import { db, sessionId, writableDb, writeTransaction } from '../db.ts'
+import { db, sessionId, writableDb, writeTransaction } from '../database/db.ts'
+import { shouldSweepHookTree } from '../hook-tree/hook-tree.ts'
+import { projectAt, projectByName, projects } from '../project/projects.ts'
 import {
   classifiedDockerResources,
   type DockerResource,
   dockerRunResources,
   leakedResourceLines,
   orchRunId,
-} from '../docker-resources.ts'
-import { shouldSweepHookTree } from '../hook-tree.ts'
-import { pidAlive } from '../process-liveness.ts'
-import { projectAt, projectByName, projects } from '../project/projects.ts'
-import { liveWorktreeSharers, terminalDockerRetentionReasonForRun } from '../resource-ownership.ts'
+} from '../resources/docker-resources.ts'
+import { pidAlive } from '../resources/process-liveness.ts'
+import {
+  liveWorktreeSharers,
+  terminalDockerRetentionReasonForRun,
+} from '../resources/resource-ownership.ts'
 import { runAlive } from '../run/run-alive.ts'
 import { RUNS_DIR } from '../run/run-artifacts.ts'
 import { auditRunMutation } from '../run/run-authority.ts'

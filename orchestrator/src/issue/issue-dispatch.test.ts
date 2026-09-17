@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test'
 import { addRun, score } from '../../test/fixtures/store.ts'
-import { db } from '../db.ts'
+import { db } from '../database/db.ts'
 import { unscoredFiledIssueLoopRuns } from './issue-dispatch.ts'
 
 describe('unscored filed-issue loop runs', () => {

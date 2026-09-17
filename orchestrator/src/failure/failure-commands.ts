@@ -1,6 +1,6 @@
 // concern: failure-commands
 /** Knows failure evidence reclassification and its audit. Must not know runs, routing, transports, the CLI, or worktrees. */
-import { db, writableDb, writeTransaction } from '../db.ts'
+import { db, writableDb, writeTransaction } from '../database/db.ts'
 import { auditRunMutation, runMutationActor } from '../run/run-authority.ts'
 import { classify } from './failure.ts'
 

@@ -5,23 +5,23 @@ import { existsSync, lstatSync, readdirSync, realpathSync, statSync } from 'node
 import { join, resolve } from 'node:path'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { allInjectChecks, storedPackDrift } from '../canon/canon.ts'
-import { db, nowIso, writableDb, writeTransaction } from '../db.ts'
+import { db, nowIso, writableDb, writeTransaction } from '../database/db.ts'
+import { fileIssue } from '../mcp/mcp.ts'
+import { projectLockState } from '../project/project-lock.ts'
+import { projectAt, projects } from '../project/projects.ts'
+import { reclaimBranch, reclaimWorktree } from '../reclaim/reclaim.ts'
 import {
   classifiedDockerResources,
   dockerNetworkInventory,
   dockerRunResources,
-} from '../docker-resources.ts'
-import { gitLocks } from '../git-locks.ts'
-import { grokTrustHeadings } from '../grok-trust.ts'
-import { keepTreeHold } from '../keep-tree-hold.ts'
-import { fileIssue } from '../mcp/mcp.ts'
-import { pidAlive } from '../process-liveness.ts'
-import { projectLockState } from '../project/project-lock.ts'
-import { projectAt, projects } from '../project/projects.ts'
-import { reclaimBranch, reclaimWorktree } from '../reclaim/reclaim.ts'
-import { terminalDockerRetentionReasonForRun } from '../resource-ownership.ts'
+} from '../resources/docker-resources.ts'
+import { gitLocks } from '../resources/git-locks.ts'
+import { pidAlive } from '../resources/process-liveness.ts'
+import { terminalDockerRetentionReasonForRun } from '../resources/resource-ownership.ts'
 import type { MonitorSeverity } from '../review/review-vocabulary.ts'
 import { RUNS_DIR } from '../run/run-artifacts.ts'
+import { grokTrustHeadings } from '../sandbox/grok-trust.ts'
+import { keepTreeHold } from '../worktree/keep-tree-hold.ts'
 import { worktreeDirty } from '../worktree/worktree-attribution.ts'
 import {
   age,
