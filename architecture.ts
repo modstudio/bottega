@@ -1,4 +1,5 @@
 import { dirname, join, normalize } from 'node:path'
+import { importBoundaries } from './architecture-boundaries.ts'
 import { CONCERNS } from './shared/brand.ts'
 
 type ConcernManifest = {
@@ -135,20 +136,12 @@ export const modules: ArchitectureModule[] = [
   module('orchestrator/src/monitor-types.ts', ['./review-vocabulary.ts']),
   module('orchestrator/src/postgres-migrate.ts', []),
   module('shared/record/schema.ts', ['../brand.ts']),
-  module('shared/record/schema-auth.ts', ['./schema.ts']),
-  module('shared/record/schema-run.ts', ['./schema.ts']),
-  module('shared/record/schema-review.ts', ['./schema.ts']),
-  module('shared/record/schema-landing.ts', ['./schema.ts']),
-  module('shared/record/schema-docs.ts', ['./schema.ts']),
-  module('shared/record/schema-hub.ts', ['./schema.ts']),
-  module('shared/record/schema-snapshots.ts', ['./schema.ts']),
   module('shared/record-session.ts', ['./brand.ts']),
   module('orchestrator/src/record-command.ts', [
     './postgres-migrate.ts',
     './record-doctor.ts',
     './record-space.ts',
   ]),
-  module('orchestrator/src/record-snapshots.ts', ['bun', '../../shared/record/schema.ts']),
   module('orchestrator/src/record-doctor.ts', [
     './postgres-migrate.ts',
     '../../shared/record/schema.ts',
@@ -166,7 +159,6 @@ export const modules: ArchitectureModule[] = [
     './record-auth.ts',
     './record-session.ts',
   ]),
-  module('orchestrator/src/landing-outbox.ts', ['../../shared/record/schema.ts']),
   module('orchestrator/src/score-outbox.ts', ['../../shared/record/schema.ts']),
   module('orchestrator/src/project-lock.ts', [
     './db.ts',
@@ -229,7 +221,6 @@ export const modules: ArchitectureModule[] = [
     './review.ts',
     './review-outbox.ts',
   ]),
-  module('orchestrator/src/review-outbox.ts', ['./db.ts', '../../shared/record/schema.ts']),
   module('orchestrator/src/review-types.ts', ['./review-vocabulary.ts', './change-identity.ts']),
   module('orchestrator/src/run-alive.ts', []),
   module('orchestrator/src/run-claim.ts', [
@@ -448,6 +439,25 @@ const allowedCycles: ArchitectureCycle[] = [
 export const exactArchitecturePath = (path: string) =>
   `^${path.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`
 
+function architectureDependencyPath(target: string) {
+  if (target.startsWith('node:')) return exactArchitecturePath(target.slice('node:'.length))
+  if (target === 'bun') return '(^|/)node_modules/\\.bun/[^/]+/node_modules/@types/bun/'
+  if (target.includes(':')) return exactArchitecturePath(target)
+  if (CONCERNS.some((root) => target.startsWith(`${root}/`)) || target.startsWith('shared/')) {
+    return exactArchitecturePath(target)
+  }
+  const [first, second, ...remainder] = target.split('/')
+  const packageName = first?.startsWith('@') ? `${first}/${second}` : first!
+  const packagePath = first?.startsWith('@') ? remainder : [second, ...remainder].filter(Boolean)
+  const escapedPackage = packageName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+  const escapedPath = packagePath.map((part) => part!.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'))
+  const installed = `(^|/)node_modules/\\.bun/[^/]+/node_modules/${escapedPackage}/`
+  const unresolved = exactArchitecturePath(target)
+  return escapedPath.length
+    ? `${installed}${escapedPath.join('/')}(?:/|$)|${unresolved}`
+    : installed
+}
+
 type ArchitectureRule = {
   name: string
   severity: 'error'
@@ -459,6 +469,7 @@ type ArchitectureRule = {
     dependencyTypes?: string[]
     dependencyTypesNot?: string[]
     circular?: boolean
+    reachable?: boolean
   }
 }
 
@@ -508,6 +519,45 @@ export function architectureRules() {
         pathNot: entry.allowed.map(exactArchitecturePath),
       },
     })),
+    ...importBoundaries.map((entry) => ({
+      name: `import-${entry.name}`,
+      severity: 'error' as const,
+      comment: entry.reason,
+      from: { path: exactArchitecturePath(entry.file) },
+      to: {
+        pathNot: [...entry.allowed, ...entry.typeOnlyAllowed].map(architectureDependencyPath),
+      },
+    })),
+    ...importBoundaries.flatMap((entry) =>
+      entry.typeOnlyAllowed.map((target) => ({
+        name: `import-${entry.name}-${target.replace(/[^a-z0-9]+/gi, '-')}-is-type-only`,
+        severity: 'error' as const,
+        comment: entry.reason,
+        from: { path: exactArchitecturePath(entry.file) },
+        to: {
+          path: architectureDependencyPath(target),
+          dependencyTypesNot: ['type-only'],
+        },
+      })),
+    ),
+    {
+      name: 'import-cli-boundary',
+      severity: 'error',
+      comment:
+        'Keep the bought CLI grammar thin: program.ts and commands/ adapt argv to concern modules and never dispatch through the run nucleus.',
+      from: { path: '^orchestrator/src/(?:program\\.ts|commands/)' },
+      to: { path: exactArchitecturePath('orchestrator/src/run.ts') },
+    },
+    {
+      name: 'import-record-api-server-transitive-boundary',
+      severity: 'error',
+      comment: 'Enforce the record-api-server concern boundary.',
+      from: { path: exactArchitecturePath('orchestrator/src/record-api-server.ts') },
+      to: {
+        path: '^(?:orchestrator/src/(?:database-location|db)\\.ts|bun:sqlite)$',
+        reachable: true,
+      },
+    },
     ...inversions.map((entry) => ({
       name: `inversion-${entry.from.replace(/[^a-z0-9]+/gi, '-')}-${entry.to.replace(/[^a-z0-9]+/gi, '-')}`,
       severity: 'error' as const,
@@ -547,7 +597,7 @@ export function dependencyCruiserConfig() {
       tsConfig: { fileName: join(import.meta.dir, 'orchestrator/tsconfig.json') },
       tsPreCompilationDeps: true,
       doNotFollow: { path: 'node_modules' },
-      exclude: { path: '(^|/)node_modules/|^hub/web/src/routeTree\\.gen\\.ts$' },
+      exclude: { path: '^hub/web/src/routeTree\\.gen\\.ts$' },
     },
   }
 }

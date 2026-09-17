@@ -3,12 +3,32 @@ import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'no
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { Glob } from 'bun'
-import { dependencyCruiserConfig, modules } from '../architecture.ts'
+import { architectureRules, dependencyCruiserConfig, modules } from '../architecture.ts'
+import { CONCERNS } from '../shared/brand.ts'
+import { importSpecifiers } from './import-scanner.ts'
 
 const ROOT = new URL('..', import.meta.url).pathname.replace(/\/$/, '')
 const CONCERN = /^\/\/ concern: ([a-z0-9-]+)$/
 const manifestFiles = new Set(modules.map(({ file }) => file))
+const manifestRules = new Set(architectureRules().forbidden.map(({ name }) => name))
 const violations: string[] = []
+
+function isProductionTypeScript(path: string) {
+  return !/(^|\/)tests?\//.test(path) && !/\.(?:test|spec)\.[cm]?tsx?$/.test(path)
+}
+
+for (const root of [...CONCERNS, 'shared']) {
+  const directory = join(ROOT, root)
+  if (!existsSync(directory)) continue
+  for (const relative of new Glob('**/*.{ts,tsx}').scanSync({ cwd: directory })) {
+    const file = `${root}/${relative}`
+    if (!isProductionTypeScript(file)) continue
+    const imports = importSpecifiers(readFileSync(join(ROOT, file), 'utf8'))
+    for (const expression of imports.unresolvedRelative) {
+      violations.push(`${file}: unresolved relative import at ${expression}`)
+    }
+  }
+}
 
 for (const { file } of modules) {
   if (!existsSync(join(ROOT, file))) violations.push(`manifest module names missing file ${file}`)
@@ -21,7 +41,10 @@ for (const root of ['orchestrator/src', 'hub/src']) {
     const concern = firstLine.match(CONCERN)?.[1]
     if (!concern || manifestFiles.has(file)) continue
     const customBoundary = `scripts/check-${concern}-boundary.ts`
-    if (!existsSync(join(ROOT, customBoundary))) {
+    if (
+      !existsSync(join(ROOT, customBoundary)) &&
+      !manifestRules.has(`import-${concern}-boundary`)
+    ) {
       violations.push(
         `${file}: missing manifest module or ${customBoundary} (canon 10-code: A module is one concern)`,
       )
