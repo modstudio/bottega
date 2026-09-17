@@ -1,7 +1,8 @@
 import { describe, expect, test } from 'bun:test'
-import { reviewReply } from '../test/fixtures/replies.ts'
-import { addRun, score } from '../test/fixtures/store.ts'
-import { db } from './db.ts'
+import { reviewReply } from '../../test/fixtures/replies.ts'
+import { addRun, score } from '../../test/fixtures/store.ts'
+import { db } from '../db.ts'
+import { state } from '../serve.ts'
 import { calibrationLine, reviewCalibration, reviewCalibrationFleet } from './review-calibration.ts'
 import {
   completeReview,
@@ -10,7 +11,6 @@ import {
   recordReview,
   triageFinding,
 } from './review-triage.ts'
-import { state } from './serve.ts'
 
 describe('review discipline', () => {
   test('fleet calibration groups graded models and emits null-model empty record pairs', () => {

@@ -17,7 +17,7 @@ import {
   resolvedWorktreeTool,
   validateStoredProjectSettings,
 } from '../project/projects.ts'
-import { resolveReviewTarget } from '../review-target.ts'
+import { resolveReviewTarget } from '../review/review-target.ts'
 import { resolveBase } from '../worktree/worktree-caller.ts'
 import { createCommandExists, validateSeedWithTool } from '../worktree/worktree-preflight.ts'
 import { createHasPlaceholder } from '../worktree/worktree-template.ts'

@@ -1,6 +1,6 @@
 // concern: review-types
 
-import type { ChangeIdentityGitResult, ChangeIdentityGitRunner } from './change-identity.ts'
+import type { ChangeIdentityGitResult, ChangeIdentityGitRunner } from '../change-identity.ts'
 import type {
   ReviewCoverage,
   ReviewLimits,

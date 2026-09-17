@@ -163,7 +163,7 @@ export const modules: ArchitectureModule[] = [
     '../grok-trust.ts',
     '../idle-kill.ts',
     '../resource-ownership.ts',
-    '../review-vocabulary.ts',
+    '../review/review-vocabulary.ts',
     '../run/run-artifacts.ts',
     '../worktree/worktree-attribution.ts',
   ]),
@@ -189,9 +189,9 @@ export const modules: ArchitectureModule[] = [
     '../db.ts',
     './monitor-conditions.ts',
     './monitor-types.ts',
-    '../review-vocabulary.ts',
+    '../review/review-vocabulary.ts',
   ]),
-  module('orchestrator/src/monitor/monitor-types.ts', ['../review-vocabulary.ts']),
+  module('orchestrator/src/monitor/monitor-types.ts', ['../review/review-vocabulary.ts']),
   module('orchestrator/src/mail/password-reset-mailer.ts', [
     '@aws-sdk/client-sesv2',
     '../../../shared/brand.ts',
@@ -257,36 +257,39 @@ export const modules: ArchitectureModule[] = [
   ]),
   module('orchestrator/src/resource-claims.ts', ['./hook-tree.ts']),
   module('orchestrator/src/resume-tree.ts', []),
-  module('orchestrator/src/review-calibration.ts', [
-    './db.ts',
+  module('orchestrator/src/review/review-calibration.ts', [
+    '../db.ts',
     './review-vocabulary.ts',
-    './statistics.ts',
+    '../statistics.ts',
     './review-evidence-sql.ts',
     './review-triage.ts',
   ]),
-  module('orchestrator/src/review-coverage.ts', [
-    './db.ts',
-    './change-identity.ts',
+  module('orchestrator/src/review/review-coverage.ts', [
+    '../db.ts',
+    '../change-identity.ts',
     './review-evidence-sql.ts',
     './review-pins.ts',
     './review-types.ts',
   ]),
-  module('orchestrator/src/review-coverage-match.ts', []),
-  module('orchestrator/src/review-evidence-sql.ts', ['./evidence/evidence-query.ts']),
-  module('orchestrator/src/review-pins.ts', [
-    './db.ts',
-    './git-environment.ts',
-    './change-identity.ts',
+  module('orchestrator/src/review/review-coverage-match.ts', []),
+  module('orchestrator/src/review/review-evidence-sql.ts', ['../evidence/evidence-query.ts']),
+  module('orchestrator/src/review/review-pins.ts', [
+    '../db.ts',
+    '../git-environment.ts',
+    '../change-identity.ts',
     './review-types.ts',
   ]),
-  module('orchestrator/src/review-triage.ts', [
-    './db.ts',
+  module('orchestrator/src/review/review-triage.ts', [
+    '../db.ts',
     './review-vocabulary.ts',
-    './contract/contract.ts',
+    '../contract/contract.ts',
     './review.ts',
     './review-outbox.ts',
   ]),
-  module('orchestrator/src/review-types.ts', ['./review-vocabulary.ts', './change-identity.ts']),
+  module('orchestrator/src/review/review-types.ts', [
+    './review-vocabulary.ts',
+    '../change-identity.ts',
+  ]),
   module('orchestrator/src/run/run-alive.ts', []),
   module('orchestrator/src/run/run-claim.ts', [
     '../agent/agents.ts',
@@ -309,7 +312,7 @@ export const modules: ArchitectureModule[] = [
     '../../../shared/record/schema.ts',
     '../resource-claims.ts',
     '../resource-ownership.ts',
-    '../review-target.ts',
+    '../review/review-target.ts',
     './run-artifacts.ts',
     './run-process.ts',
     '../resume-tree.ts',
@@ -332,7 +335,7 @@ export const modules: ArchitectureModule[] = [
     '../keep-tree-hold.ts',
     '../mcp/mcp-preflight.ts',
     '../project/projects.ts',
-    '../review-calibration.ts',
+    '../review/review-calibration.ts',
     '../route/route.ts',
     './run-process.ts',
     './run-types.ts',
@@ -381,7 +384,7 @@ export const modules: ArchitectureModule[] = [
     '../outcome.ts',
     '../project/projects.ts',
     '../resource-ownership.ts',
-    '../review.ts',
+    '../review/review.ts',
     './run-artifacts.ts',
     './run-liveness.ts',
     './run-outbox.ts',
@@ -403,7 +406,7 @@ export const modules: ArchitectureModule[] = [
   module('orchestrator/src/sandbox.ts', ['./db.ts', './mcp/mcp-probe.ts', './project/projects.ts']),
   module('orchestrator/src/standard-calibration.ts', [
     './calibration-port.ts',
-    './review-calibration.ts',
+    './review/review-calibration.ts',
   ]),
   module('orchestrator/src/standard-transports.ts', [
     './transport/transport-acp.ts',
@@ -500,8 +503,8 @@ export const modules: ArchitectureModule[] = [
 
 export const inversions: ArchitectureInversion[] = [
   { from: 'orchestrator/src/jobs.ts', to: 'orchestrator/src/agent/agents.ts' },
-  { from: 'orchestrator/src/route/route.ts', to: 'orchestrator/src/review.ts' },
-  { from: 'orchestrator/src/review.ts', to: 'orchestrator/src/route/route.ts' },
+  { from: 'orchestrator/src/route/route.ts', to: 'orchestrator/src/review/review.ts' },
+  { from: 'orchestrator/src/review/review.ts', to: 'orchestrator/src/route/route.ts' },
   { from: 'orchestrator/src/transport/transport.ts', to: 'orchestrator/src/agent/agents.ts' },
   {
     from: 'orchestrator/src/transport/transport.ts',

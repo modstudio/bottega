@@ -2,7 +2,7 @@
 /** Registers review and confinement adapters. Must not own their behavior. */
 import type { Command } from 'commander'
 import { clearConfinement } from '../confinement-ruling.ts'
-import { reviewCommand } from '../review-commands.ts'
+import { reviewCommand } from '../review/review-commands.ts'
 import { log, optionFlags } from './support.ts'
 
 export function register(program: Command): void {

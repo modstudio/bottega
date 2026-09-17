@@ -1,6 +1,7 @@
 import type { Database } from 'bun:sqlite'
-import { db } from './db.ts'
-import { attributedTaskKey } from './epic/epic.ts'
+import { db } from '../db.ts'
+import { attributedTaskKey } from '../epic/epic.ts'
+import { median } from '../statistics.ts'
 import { reviewRunEvidenceSql } from './review-evidence-sql.ts'
 import { reviewTriageBag } from './review-triage.ts'
 import {
@@ -9,7 +10,6 @@ import {
   type ReviewOverlap,
   type ReviewSeverity,
 } from './review-vocabulary.ts'
-import { median } from './statistics.ts'
 
 export type ReviewYieldFilters = {
   project?: string

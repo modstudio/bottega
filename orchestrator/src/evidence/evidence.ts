@@ -8,8 +8,8 @@ import {
   UNEVIDENCED_DELIVERABLE_ERROR,
 } from '../contract/contract.ts'
 import { provenanceServer } from '../mcp/mcp-preflight.ts'
-import type { CleanReviewEvidence } from '../review.ts'
-import { recordReview } from '../review-triage.ts'
+import type { CleanReviewEvidence } from '../review/review.ts'
+import { recordReview } from '../review/review-triage.ts'
 
 export type EvidencePromptFacts = {
   findingsJob: boolean

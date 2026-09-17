@@ -7,15 +7,15 @@ import { pairPartners, parseRunIds, recordDuels, recordLosses, recordTies } from
 import { JOBS, job } from './jobs.ts'
 import { machineId } from './machine-identity.ts'
 import { recordApiClient } from './record/record-api-client.ts'
-import { cleanReviewEvidence, parseReviewOutput } from './review.ts'
-import { enqueueReview } from './review-outbox.ts'
+import { cleanReviewEvidence, parseReviewOutput } from './review/review.ts'
+import { enqueueReview } from './review/review-outbox.ts'
 import {
   completeReview,
   type Disposition,
   gradeReviewLens,
   type ReviewGrades,
   triageFinding,
-} from './review-triage.ts'
+} from './review/review-triage.ts'
 import {
   REVIEW_COVERAGE,
   REVIEW_LIMITS,
@@ -27,7 +27,7 @@ import {
   type ReviewOverlap,
   type ReviewReproduced,
   type ReviewSeverity,
-} from './review-vocabulary.ts'
+} from './review/review-vocabulary.ts'
 import {
   adoptRunMutation,
   auditRunMutation,

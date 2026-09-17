@@ -7,7 +7,7 @@ import { trackedTestResidue } from '../../test/residue.ts'
 import { ARGV_PROMPT_BYTES } from '../agent/agents.ts'
 import { packResumePrompt } from '../contract/contract.ts'
 import { db } from '../db.ts'
-import { recordReview } from '../review-triage.ts'
+import { recordReview } from '../review/review-triage.ts'
 import { packedResumePrompt } from './run.ts'
 import { type ChainTurn, continuationTurn, continueRun } from './run-control.ts'
 

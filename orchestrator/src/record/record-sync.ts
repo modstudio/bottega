@@ -34,7 +34,7 @@ import {
   REVIEW_LENS_RECORD_PAYLOAD_COLUMNS,
   REVIEW_RECORD_PAYLOAD_COLUMNS,
   type ReviewRecordBackfillResult,
-} from '../review-outbox.ts'
+} from '../review/review-outbox.ts'
 import {
   backfillRunRecords,
   RUN_RECORD_PAYLOAD_COLUMNS,

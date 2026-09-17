@@ -8,7 +8,7 @@ import { db } from './db.ts'
 import { pairPartners } from './duel.ts'
 import { NOT_EVIDENCE } from './failure/failure.ts'
 import { judgeRun, scoreRun } from './judgement.ts'
-import { recordReview } from './review-triage.ts'
+import { recordReview } from './review/review-triage.ts'
 
 const trackResidue = trackedTestResidue()
 

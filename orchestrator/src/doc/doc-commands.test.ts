@@ -16,7 +16,7 @@ import {
   type PortPair,
 } from '../porting/porting.ts'
 import { upsertProject } from '../project/projects.ts'
-import { reviewCommand } from '../review-commands.ts'
+import { reviewCommand } from '../review/review-commands.ts'
 import {
   removeDoc as deleteDoc,
   diffDocRevisions,

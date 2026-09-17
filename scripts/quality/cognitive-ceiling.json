@@ -533,55 +533,55 @@
     "score": 19
   },
   {
-    "file": "orchestrator/src/review-calibration.ts",
+    "file": "orchestrator/src/review/review-calibration.ts",
     "function": "calibrationCell",
     "line": 80,
     "score": 30
   },
   {
-    "file": "orchestrator/src/review-calibration.ts",
+    "file": "orchestrator/src/review/review-calibration.ts",
     "function": "reviewCalibrationFleet",
     "line": 217,
     "score": 18
   },
   {
-    "file": "orchestrator/src/review-commands.ts",
+    "file": "orchestrator/src/review/review-commands.ts",
     "function": "reviewCommand",
     "line": 22,
     "score": 177
   },
   {
-    "file": "orchestrator/src/review-coverage.ts",
+    "file": "orchestrator/src/review/review-coverage.ts",
     "function": "commitForTree",
     "line": 66,
     "score": 20
   },
   {
-    "file": "orchestrator/src/review-coverage.ts",
+    "file": "orchestrator/src/review/review-coverage.ts",
     "function": "reviewCoverageVerdict",
     "line": 115,
     "score": 17
   },
   {
-    "file": "orchestrator/src/review-coverage.ts",
+    "file": "orchestrator/src/review/review-coverage.ts",
     "function": "coverageAudit",
     "line": 374,
     "score": 29
   },
   {
-    "file": "orchestrator/src/review-pins.ts",
+    "file": "orchestrator/src/review/review-pins.ts",
     "function": "reviewPins",
     "line": 124,
     "score": 17
   },
   {
-    "file": "orchestrator/src/review-tier.ts",
+    "file": "orchestrator/src/review/review-tier.ts",
     "function": "classifyReviewTier",
     "line": 42,
     "score": 21
   },
   {
-    "file": "orchestrator/src/review.ts",
+    "file": "orchestrator/src/review/review.ts",
     "function": "cleanReviewEvidence",
     "line": 86,
     "score": 21
