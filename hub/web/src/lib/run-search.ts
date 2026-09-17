@@ -1,6 +1,3 @@
-import { compactTokens, duration } from './format'
-import { PROJECT_FALLBACK } from './project'
-
 export type SearchableRun = {
   id: number
   agent: string
@@ -50,32 +47,4 @@ export function runVerdictText(row: SearchableRun) {
   if (row.probe) return 'probe'
   if (row.evidence_excluded) return ''
   return 'Unscored'
-}
-
-export function runSearchText(row: SearchableRun | SearchableLiveRun) {
-  if ('task' in row) {
-    return [
-      row.project ?? PROJECT_FALLBACK,
-      row.task ?? '-',
-      row.agent,
-      `${row.job || '-'}${row.lens ? ` ${row.lens}` : ''}${row.probe ? ' probe' : ''}`,
-      row.engaged,
-      runVerdictText(row),
-      row.evidence_excluded ? `Not routing evidence: ${row.evidence_excluded}` : '',
-      compactTokens(row.tokens),
-      row.costUsd == null ? '-' : `$${row.costUsd.toFixed(2)}`,
-      runEasternTime(row.at, true),
-    ].join(' ')
-  }
-  return [
-    row.agent,
-    row.job,
-    row.repo ?? PROJECT_FALLBACK,
-    duration(row.elapsedMs),
-    row.prompt_head.slice(0, 90),
-  ].join(' ')
-}
-
-export function matchesRunSearch(row: SearchableRun | SearchableLiveRun, query: string) {
-  return runSearchText(row).toLowerCase().includes(query.trim().toLowerCase())
 }

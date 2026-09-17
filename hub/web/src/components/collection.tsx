@@ -6,6 +6,15 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { TableCard } from '@/ui/table-card/table-card'
 import { EmptyState } from './design-system'
 
+/** A list the server pages: rows arrive as one page and `total` counts every match. */
+export type ServerPaging = {
+  page: number
+  pageSize: number
+  total: number
+  onPageChange: (page: number) => void
+  onPageSizeChange: (size: number) => void
+}
+
 /** A row nested under a record, filling the same columns so its values line up. */
 export type CollectionChildRow = { key: string; cells: Partial<Record<string, ReactNode>> }
 
@@ -44,6 +53,7 @@ export function Collection<Row>({
   pageActions,
   panel,
   selectedKey,
+  paging,
   columns,
   rows,
   getKey,
@@ -63,6 +73,8 @@ export function Collection<Row>({
   panel?: ReactNode
   /** The row whose record is open in the panel. */
   selectedKey?: string | number
+  /** Set when the server pages the rows; otherwise the table pages them itself. */
+  paging?: ServerPaging
   columns: CollectionColumn<Row>[]
   rows: Row[]
   getKey: (row: Row) => string | number
@@ -73,7 +85,18 @@ export function Collection<Row>({
 }) {
   const [page, setPage] = useState(1)
   const [pageSize, setPageSize] = useState<number>(PAGE_SIZES[1])
-  const visible = pageSlice(rows, page, pageSize)
+  const local = pageSlice(rows, page, pageSize)
+  const visible = paging ? { ...local, rows, page: paging.page } : local
+  const pager: ServerPaging = paging ?? {
+    page: local.page,
+    pageSize,
+    total: rows.length,
+    onPageChange: setPage,
+    onPageSizeChange: (size) => {
+      setPageSize(size)
+      setPage(1)
+    },
+  }
   const openFromKeyboard = (event: React.KeyboardEvent, row: Row) => {
     if (event.key === 'Enter') {
       event.preventDefault()
@@ -108,16 +131,13 @@ export function Collection<Row>({
       pageActions={pageActions}
       panel={panel}
       footer={
-        rows.length > PAGE_SIZES[0] ? (
+        pager.total > PAGE_SIZES[0] ? (
           <Pagination
-            page={visible.page}
-            pageSize={pageSize}
-            total={rows.length}
-            onPageChange={setPage}
-            onPageSizeChange={(size) => {
-              setPageSize(size)
-              setPage(1)
-            }}
+            page={pager.page}
+            pageSize={pager.pageSize}
+            total={pager.total}
+            onPageChange={pager.onPageChange}
+            onPageSizeChange={pager.onPageSizeChange}
           />
         ) : undefined
       }

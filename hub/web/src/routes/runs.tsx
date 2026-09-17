@@ -1,4 +1,4 @@
-import { useQuery } from '@tanstack/react-query'
+import { keepPreviousData, useQuery } from '@tanstack/react-query'
 import { createFileRoute, useNavigate, useParams } from '@tanstack/react-router'
 import { ChevronRight } from 'lucide-react'
 import { useState } from 'react'
@@ -18,12 +18,12 @@ import { useDetailPanel } from '@/lib/detail-panel'
 import { collectedTime, compactTokens, duration, vendorFigures } from '@/lib/format'
 import { isHostedMode } from '@/lib/hub-mode'
 import {
-  matchesRunSearch,
   runEasternTime,
   runVerdictText,
   type SearchableLiveRun,
   type SearchableRun,
 } from '@/lib/run-search'
+import { useDebounced } from '@/lib/use-debounced'
 import { verdictTone } from '@/lib/verdict-tone'
 import { useWindowState } from '@/lib/window'
 import { trpc } from '@/trpc/client'
@@ -42,6 +42,8 @@ type RunsPayload = {
     unscored: number
     facets: { agents: string[]; projects: string[] }
     matched: number
+    offset: number
+    limit: number
     live: LiveRow[]
     rows: RunRow[]
   }
@@ -100,17 +102,31 @@ function RunsList() {
   const windowState = useWindowState()
   const [openMenus, setOpenMenus] = useState(0)
   const [search, setSearch] = useState('')
+  const [page, setPage] = useState(1)
+  const [pageSize, setPageSize] = useState(50)
+  const searchQuery = useDebounced(search.trim())
   const now = useNow()
-  const query = useQuery(
-    trpc.run.list.queryOptions(
+  // A new question starts at its first page.
+  const scope = `${windowState.hours}|${windowState.filters.agent}|${windowState.filters.project}|${searchQuery}`
+  const [pagedScope, setPagedScope] = useState(scope)
+  if (pagedScope !== scope) {
+    setPagedScope(scope)
+    setPage(1)
+  }
+  const query = useQuery({
+    ...trpc.run.list.queryOptions(
       {
         hours: windowState.hours,
         agent: windowState.filters.agent,
         project: windowState.filters.project,
+        offset: (page - 1) * pageSize,
+        limit: pageSize as 25 | 50 | 100,
+        search: searchQuery,
       },
       { refetchInterval: openMenus ? false : 30_000 },
     ),
-  )
+    placeholderData: keepPreviousData,
+  })
   const payload = query.data as unknown as RunsPayload | undefined
   const data = payload?.data
   const filtered = !!(windowState.filters.agent || windowState.filters.project)
@@ -132,9 +148,9 @@ function RunsList() {
         [vendorFigures(data.vendors), 'vendor tokens', 'per agent'],
       ]
     : []
-  const matches = (row: RunRow | LiveRow) => matchesRunSearch(row, search)
-  const liveRows = data?.live.filter(matches) ?? []
-  const runRows = data?.rows.filter(matches) ?? []
+  // The server applies search and paging; these are the rows to draw.
+  const liveRows = data?.live ?? []
+  const runRows = data?.rows ?? []
   const liveColumns: CollectionColumn<LiveRow>[] = [
     {
       id: 'agent',
@@ -273,7 +289,17 @@ function RunsList() {
           <div className="mt-7">
             <Collection
               title="Runs"
-              count={runRows.length}
+              count={data.matched}
+              paging={{
+                page: Math.floor(data.offset / data.limit) + 1,
+                pageSize: data.limit,
+                total: data.matched,
+                onPageChange: setPage,
+                onPageSizeChange: (size) => {
+                  setPageSize(size)
+                  setPage(1)
+                },
+              }}
               search={{ query: search, onQueryChange: setSearch, placeholder: 'Search runs' }}
               filters={filters.controls}
               filtersActive={filters.active}
