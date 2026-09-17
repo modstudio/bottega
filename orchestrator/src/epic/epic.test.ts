@@ -1,7 +1,7 @@
 import { describe, expect, spyOn, test } from 'bun:test'
 import { addRun } from '../../test/fixtures/store.ts'
 import { db } from '../db.ts'
-import { reapStale } from '../run-liveness.ts'
+import { reapStale } from '../run/run-liveness.ts'
 import { epicChildren, epicScoreboard } from './epic.ts'
 
 const intervalOrigin = Date.parse('2026-09-08T10:00:00.000Z')

@@ -14,10 +14,10 @@ import { shouldSweepHookTree } from '../hook-tree.ts'
 import { pidAlive } from '../process-liveness.ts'
 import { projectAt, projectByName, projects } from '../project/projects.ts'
 import { liveWorktreeSharers, terminalDockerRetentionReasonForRun } from '../resource-ownership.ts'
-import { runAlive } from '../run-alive.ts'
-import { RUNS_DIR } from '../run-artifacts.ts'
-import { auditRunMutation } from '../run-authority.ts'
-import { removeFreeRunLease, runLeaseIds, runLeaseState } from '../run-lease.ts'
+import { runAlive } from '../run/run-alive.ts'
+import { RUNS_DIR } from '../run/run-artifacts.ts'
+import { auditRunMutation } from '../run/run-authority.ts'
+import { removeFreeRunLease, runLeaseIds, runLeaseState } from '../run/run-lease.ts'
 import {
   inspectTreeOwnership,
   isOrchWorktree,

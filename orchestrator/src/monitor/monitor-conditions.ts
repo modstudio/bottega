@@ -18,8 +18,8 @@ import {
   retainedRefInventory,
   worktreeDatabaseInventory,
 } from '../resource-inventory.ts'
-import { runAlive } from '../run-alive.ts'
-import { runLeaseState } from '../run-lease.ts'
+import { runAlive } from '../run/run-alive.ts'
+import { runLeaseState } from '../run/run-lease.ts'
 import type { MonitorCondition } from './monitor-types.ts'
 
 const HUB = new URL('../../../bin/hub', import.meta.url).pathname

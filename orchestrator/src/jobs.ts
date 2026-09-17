@@ -4,7 +4,7 @@ import {
   DEFAULT_IDLE_KILL_MS,
   idleKillMs,
 } from './idle-kill.ts'
-import { STALE_AFTER_MS } from './run-liveness.ts'
+import { STALE_AFTER_MS } from './run/run-liveness.ts'
 
 export type Job = {
   name: string

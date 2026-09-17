@@ -1,10 +1,10 @@
 // concern: run-listing
 /** Knows run list and state rendering. Must not know run control, transports, routing, the CLI, or worktrees. */
 
-import { resolveFailover } from './collect/collect.ts'
-import { db } from './db.ts'
-import { UNSCORED_WHERE } from './evidence/evidence-query.ts'
-import { failureReason, type OutcomeRow, outcomeOf } from './outcome.ts'
+import { resolveFailover } from '../collect/collect.ts'
+import { db } from '../db.ts'
+import { UNSCORED_WHERE } from '../evidence/evidence-query.ts'
+import { failureReason, type OutcomeRow, outcomeOf } from '../outcome.ts'
 
 type RunListingFlags = {
   has(name: string): boolean
@@ -33,8 +33,8 @@ export async function runListingCommand(
 ): Promise<void> {
   const { has, flag, values } = flags
   const { log, dur, chainIsStranded, strandedRecovery, thinOutputWarning } = presentation
-  const { idleLabel, idleMsSince } = await import('./events.ts')
-  const { parseIdleReclaimedMs } = await import('./idle-kill.ts')
+  const { idleLabel, idleMsSince } = await import('../events.ts')
+  const { parseIdleReclaimedMs } = await import('../idle-kill.ts')
   const jsonV1 = options.jsonV1
   const json = has('json') || jsonV1
   const where: string[] = ['r.parent_run_id IS NULL']

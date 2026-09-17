@@ -4,17 +4,17 @@
  * turns. Must not know transports, worktrees, routing, reviews, or the CLI.
  */
 import { existsSync, readFileSync } from 'node:fs'
-import { AGENTS } from './agent/agent-registry.ts'
-import { ANSWER_WORKING_FORMS, parseAnswerTextSources } from './args.ts'
-import { clock } from './clock.ts'
-import { rulingPrompt } from './contract/contract.ts'
-import { db, writeTransaction } from './db.ts'
-import { chainTransport, retryModelForAgent } from './failover.ts'
-import { job } from './jobs.ts'
-import { keepTreeHold } from './keep-tree-hold.ts'
-import { mcpRequestFromStored } from './mcp/mcp-preflight.ts'
-import { failureReason } from './outcome.ts'
-import { pidAlive } from './process-liveness.ts'
+import { AGENTS } from '../agent/agent-registry.ts'
+import { ANSWER_WORKING_FORMS, parseAnswerTextSources } from '../args.ts'
+import { clock } from '../clock.ts'
+import { rulingPrompt } from '../contract/contract.ts'
+import { db, writeTransaction } from '../db.ts'
+import { chainTransport, retryModelForAgent } from '../failover.ts'
+import { job } from '../jobs.ts'
+import { keepTreeHold } from '../keep-tree-hold.ts'
+import { mcpRequestFromStored } from '../mcp/mcp-preflight.ts'
+import { failureReason } from '../outcome.ts'
+import { pidAlive } from '../process-liveness.ts'
 import { packedResumePrompt } from './run.ts'
 import { KEEP_RUN_FILES_DAYS, readDispatchState } from './run-artifacts.ts'
 import { adoptRunMutation, auditRunMutation, authorizeRunMutation } from './run-authority.ts'
@@ -543,7 +543,7 @@ export async function answerRun(
               branch: latest.branch ?? row.branch ?? '',
               base: latest.base_commit ?? row.base_commit ?? '',
               repoRoot:
-                (await import('./git-environment.ts')).repoRootOf(worktreePath) ?? process.cwd(),
+                (await import('../git-environment.ts')).repoRootOf(worktreePath) ?? process.cwd(),
               source: latest.worktree_source ?? row.worktree_source ?? undefined,
             }
           : null,

@@ -5,17 +5,17 @@
  * routing, reviews, or the CLI.
  */
 import { existsSync, readFileSync } from 'node:fs'
-import { CONTINUE_WORKING_FORMS } from './args.ts'
-import { clock } from './clock.ts'
-import { branchNote, failoverSummary, resolveFailover } from './collect/collect.ts'
-import { db, nowIso, writeTransaction } from './db.ts'
-import { appendRunEvent } from './events.ts'
-import { chainTransport } from './failover.ts'
-import { branchOf, gitContext } from './git-environment.ts'
-import { mcpRequestFromStored } from './mcp/mcp-preflight.ts'
-import { outcomeOf } from './outcome.ts'
-import { projectAt, resolvedWorktreeTool } from './project/projects.ts'
-import { continuationBranchPlan, type ResumeTreePlan, resumeTreePlan } from './resume-tree.ts'
+import { CONTINUE_WORKING_FORMS } from '../args.ts'
+import { clock } from '../clock.ts'
+import { branchNote, failoverSummary, resolveFailover } from '../collect/collect.ts'
+import { db, nowIso, writeTransaction } from '../db.ts'
+import { appendRunEvent } from '../events.ts'
+import { chainTransport } from '../failover.ts'
+import { branchOf, gitContext } from '../git-environment.ts'
+import { mcpRequestFromStored } from '../mcp/mcp-preflight.ts'
+import { outcomeOf } from '../outcome.ts'
+import { projectAt, resolvedWorktreeTool } from '../project/projects.ts'
+import { continuationBranchPlan, type ResumeTreePlan, resumeTreePlan } from '../resume-tree.ts'
 import { packedResumePrompt } from './run.ts'
 import { adoptRunMutation, auditRunMutation, authorizeRunMutation } from './run-authority.ts'
 import { detach } from './run-dispatch.ts'
@@ -427,7 +427,7 @@ export async function continueRun(
     plan: treePlan,
     branchSource,
   } = continuationTree(id, row, latest, launch)
-  const savedCheckpointContext = (await import('./checkpoint.ts')).checkpointResumeContext(
+  const savedCheckpointContext = (await import('../checkpoint.ts')).checkpointResumeContext(
     db(),
     id,
     latest.worktree,

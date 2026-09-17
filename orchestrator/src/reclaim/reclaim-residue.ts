@@ -15,10 +15,10 @@ import { runHasLiveDescendants } from '../idle-kill.ts'
 import { pidAlive } from '../process-liveness.ts'
 import { processStartTime, projectGitCommonDir } from '../project/project-lock.ts'
 import { projectByName, projects } from '../project/projects.ts'
-import { runAlive } from '../run-alive.ts'
-import { RUNS_DIR } from '../run-artifacts.ts'
-import { runLeaseState } from '../run-lease.ts'
-import { processTable } from '../run-process.ts'
+import { runAlive } from '../run/run-alive.ts'
+import { RUNS_DIR } from '../run/run-artifacts.ts'
+import { runLeaseState } from '../run/run-lease.ts'
+import { processTable } from '../run/run-process.ts'
 import {
   processReleaseDecision,
   type ReleaseDecision,

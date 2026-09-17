@@ -3,7 +3,7 @@
  * Knows root ownership, adoption, and mutation audit. Must not know routing, transports, CLI adapters, worktrees, or reviews.
  */
 import type { Database } from 'bun:sqlite'
-import { db, nowIso, sessionId, writableDb } from './db.ts'
+import { db, nowIso, sessionId, writableDb } from '../db.ts'
 
 const RUN_MUTATION_ACTIONS = [
   'adopt',

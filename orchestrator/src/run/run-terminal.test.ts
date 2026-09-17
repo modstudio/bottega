@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'bun:test'
-import { reviewReply } from '../test/fixtures/replies.ts'
-import { addRun } from '../test/fixtures/store.ts'
-import { db } from './db.ts'
+import { reviewReply } from '../../test/fixtures/replies.ts'
+import { addRun } from '../../test/fixtures/store.ts'
+import { db } from '../db.ts'
 import { recordTerminalReviewEvidence, shouldCheckpointAtTerminal } from './run-terminal.ts'
 
 describe('terminal checkpoint decision', () => {

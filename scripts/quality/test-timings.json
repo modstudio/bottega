@@ -541,70 +541,70 @@
       "spawns": 0
     },
     {
-      "path": "orchestrator/src/run-answer.test.ts",
+      "path": "orchestrator/src/run/run-answer.test.ts",
       "wallMs": 78,
       "tests": 30,
       "cliShaped": false,
       "spawns": 0
     },
     {
-      "path": "orchestrator/src/run-artifacts-no-repo.test.ts",
+      "path": "orchestrator/src/run/run-artifacts-no-repo.test.ts",
       "wallMs": 5,
       "tests": 1,
       "cliShaped": false,
       "spawns": 0
     },
     {
-      "path": "orchestrator/src/run-artifacts.test.ts",
+      "path": "orchestrator/src/run/run-artifacts.test.ts",
       "wallMs": 31,
       "tests": 8,
       "cliShaped": false,
       "spawns": 0
     },
     {
-      "path": "orchestrator/src/run-authority.test.ts",
+      "path": "orchestrator/src/run/run-authority.test.ts",
       "wallMs": 16,
       "tests": 5,
       "cliShaped": false,
       "spawns": 0
     },
     {
-      "path": "orchestrator/src/run-control.test.ts",
+      "path": "orchestrator/src/run/run-control.test.ts",
       "wallMs": 29,
       "tests": 4,
       "cliShaped": false,
       "spawns": 0
     },
     {
-      "path": "orchestrator/src/run-dispatch.test.ts",
+      "path": "orchestrator/src/run/run-dispatch.test.ts",
       "wallMs": 4,
       "tests": 1,
       "cliShaped": false,
       "spawns": 0
     },
     {
-      "path": "orchestrator/src/run-inbox.test.ts",
+      "path": "orchestrator/src/run/run-inbox.test.ts",
       "wallMs": 82,
       "tests": 12,
       "cliShaped": false,
       "spawns": 0
     },
     {
-      "path": "orchestrator/src/run-listing.test.ts",
+      "path": "orchestrator/src/run/run-listing.test.ts",
       "wallMs": 84,
       "tests": 17,
       "cliShaped": false,
       "spawns": 0
     },
     {
-      "path": "orchestrator/src/run-liveness.test.ts",
+      "path": "orchestrator/src/run/run-liveness.test.ts",
       "wallMs": 45,
       "tests": 7,
       "cliShaped": false,
       "spawns": 0
     },
     {
-      "path": "orchestrator/src/run-stop.test.ts",
+      "path": "orchestrator/src/run/run-stop.test.ts",
       "wallMs": 66,
       "tests": 12,
       "cliShaped": false,

@@ -8,19 +8,19 @@
 import { randomUUID } from 'node:crypto'
 import { mkdirSync, writeFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
-import { newRecordId } from '../../shared/record/schema.ts'
-import type { Agent } from './agent/agents.ts'
-import type { Pack } from './canon/canon.ts'
-import { checkoutAliases, realpathOrSpelled } from './checkout-identity.ts'
-import { readStrictCodexSchema } from './codex-schema.ts'
-import { TEXT_REPLY_SCHEMA } from './contract/contract.ts'
-import { db, nowIso, sessionId, writeTransaction } from './db.ts'
-import { namesRecordedRunTree } from './dispatch/dispatch-preflight.ts'
-import { appendRunEvent } from './events.ts'
-import { resolveSupersededTurn } from './failover.ts'
-import { branchOf, git, gitContext, repoRootOf } from './git-environment.ts'
-import { addedGrokTrustHeadings, grokTrustHeadings, grokTrustStorePath } from './grok-trust.ts'
-import { type KeepTreeExemption, keepTreeHold } from './keep-tree-hold.ts'
+import { newRecordId } from '../../../shared/record/schema.ts'
+import type { Agent } from '../agent/agents.ts'
+import type { Pack } from '../canon/canon.ts'
+import { checkoutAliases, realpathOrSpelled } from '../checkout-identity.ts'
+import { readStrictCodexSchema } from '../codex-schema.ts'
+import { TEXT_REPLY_SCHEMA } from '../contract/contract.ts'
+import { db, nowIso, sessionId, writeTransaction } from '../db.ts'
+import { namesRecordedRunTree } from '../dispatch/dispatch-preflight.ts'
+import { appendRunEvent } from '../events.ts'
+import { resolveSupersededTurn } from '../failover.ts'
+import { branchOf, git, gitContext, repoRootOf } from '../git-environment.ts'
+import { addedGrokTrustHeadings, grokTrustHeadings, grokTrustStorePath } from '../grok-trust.ts'
+import { type KeepTreeExemption, keepTreeHold } from '../keep-tree-hold.ts'
 import {
   assertGrokTrustEligible,
   type McpConnection,
@@ -29,11 +29,11 @@ import {
   mcpAttachRefusal,
   mcpConnectionFor,
   storedMcpRequest,
-} from './mcp/mcp-preflight.ts'
-import { readMcpConfig, wrongProjectReason } from './mcp/mcp-probe.ts'
-import { withWorktreeCreateLock, withWorktreeLease } from './project/project-lock.ts'
-import { projectAt, stackAt } from './project/projects.ts'
-import { retargetRepositoryPromptForDispatch } from './prompt-retarget.ts'
+} from '../mcp/mcp-preflight.ts'
+import { readMcpConfig, wrongProjectReason } from '../mcp/mcp-probe.ts'
+import { withWorktreeCreateLock, withWorktreeLease } from '../project/project-lock.ts'
+import { projectAt, stackAt } from '../project/projects.ts'
+import { retargetRepositoryPromptForDispatch } from '../prompt-retarget.ts'
 import {
   claimRecipePort,
   RECIPE_PORT_BAND,
@@ -41,14 +41,27 @@ import {
   recordDatabaseClaim,
   recordSandboxDirectoryClaim,
   recordTrustEntryClaims,
-} from './resource-claims.ts'
-import { teardownTerminalRunResources } from './resource-ownership.ts'
+} from '../resource-claims.ts'
+import { teardownTerminalRunResources } from '../resource-ownership.ts'
 import {
   type ResumeCreationLifecycle,
   type ResumeTreePlan,
   resumeCreationOptions,
-} from './resume-tree.ts'
-import { inferredReadOnlyKey } from './review-target.ts'
+} from '../resume-tree.ts'
+import { inferredReadOnlyKey } from '../review-target.ts'
+import { prepareProjectGrokMcpScope } from '../sandbox.ts'
+import { resolveTaskBranch, type TaskBranchCandidate } from '../task-branch.ts'
+import { createWorkerWorktree, worktreeExists } from '../worktree/worktree.ts'
+import {
+  assertCallerAncestry,
+  type CarriedWorkingState,
+  carryWorkingState,
+  resolveReadOnlyBase,
+} from '../worktree/worktree-caller.ts'
+import { createIsolatedWorkerDirectory, prepareWorkerMcpConfig } from '../worktree/worktree-mcp.ts'
+import { toolFor } from '../worktree/worktree-preflight.ts'
+import { type Changes, removeFor } from '../worktree/worktree-remove.ts'
+import type { Worktree } from '../worktree/worktree-types.ts'
 import {
   noRepoIsolatePath,
   type runFilePaths,
@@ -56,19 +69,6 @@ import {
   writeDispatchState,
 } from './run-artifacts.ts'
 import { errorTail, sha } from './run-process.ts'
-import { prepareProjectGrokMcpScope } from './sandbox.ts'
-import { resolveTaskBranch, type TaskBranchCandidate } from './task-branch.ts'
-import { createWorkerWorktree, worktreeExists } from './worktree/worktree.ts'
-import {
-  assertCallerAncestry,
-  type CarriedWorkingState,
-  carryWorkingState,
-  resolveReadOnlyBase,
-} from './worktree/worktree-caller.ts'
-import { createIsolatedWorkerDirectory, prepareWorkerMcpConfig } from './worktree/worktree-mcp.ts'
-import { toolFor } from './worktree/worktree-preflight.ts'
-import { type Changes, removeFor } from './worktree/worktree-remove.ts'
-import type { Worktree } from './worktree/worktree-types.ts'
 
 type RecreateResumeTreePlan = Extract<
   ResumeTreePlan,

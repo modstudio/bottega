@@ -18,8 +18,8 @@ import { chainScoreJoin, EVIDENCE_CLOSED_SQL } from './evidence/evidence-query.t
 import { repoRootOf } from './git-environment.ts'
 import { pidAlive } from './process-liveness.ts'
 import { withCleanupLock, withWorktreeLease } from './project/project-lock.ts'
-import { runAlive } from './run-alive.ts'
-import { runLeaseState } from './run-lease.ts'
+import { runAlive } from './run/run-alive.ts'
+import { runLeaseState } from './run/run-lease.ts'
 
 export type WorktreeSharerRow = { id: number; status: string; scored: number }
 

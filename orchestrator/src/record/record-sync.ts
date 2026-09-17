@@ -39,7 +39,7 @@ import {
   backfillRunRecords,
   RUN_RECORD_PAYLOAD_COLUMNS,
   type RunRecordBackfillResult,
-} from '../run-outbox.ts'
+} from '../run/run-outbox.ts'
 import { backfillScoreRecords, SCORE_RECORD_PAYLOAD_COLUMNS } from '../score/score-outbox.ts'
 import { pullRecordCache } from './record-cache.ts'
 import { currentRecordSession } from './record-session.ts'

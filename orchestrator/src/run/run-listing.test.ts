@@ -1,9 +1,9 @@
 import { describe, expect, test } from 'bun:test'
-import { runJson } from '../test/fixtures/replies.ts'
-import { addRun, score } from '../test/fixtures/store.ts'
-import { db } from './db.ts'
+import { runJson } from '../../test/fixtures/replies.ts'
+import { addRun, score } from '../../test/fixtures/store.ts'
+import { db } from '../db.ts'
+import { runDetail } from '../serve.ts'
 import { runListingCommand } from './run-listing.ts'
-import { runDetail } from './serve.ts'
 
 function command(args: Record<string, string[] | boolean> = {}) {
   const lines: string[] = []

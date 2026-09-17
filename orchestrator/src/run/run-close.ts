@@ -5,34 +5,34 @@
  * run control, dispatch surfaces, or the CLI.
  */
 import { existsSync, readFileSync } from 'node:fs'
-import { reclaimTerminalTree } from './close/close-out.ts'
-import type { WorkerReply } from './contract/contract.ts'
-import { db } from './db.ts'
+import { reclaimTerminalTree } from '../close/close-out.ts'
+import type { WorkerReply } from '../contract/contract.ts'
+import { db } from '../db.ts'
 import {
   decideFailover,
   failoverAttempts,
   failoverRefusalReason,
   failoverSuccessorAgent,
   MAX_FAILOVER_ATTEMPTS,
-} from './failover.ts'
+} from '../failover.ts'
 import {
   type classify,
   FAILS_OVER,
   NEEDS_HUMAN,
   NEEDS_HUMAN_TITLE,
   notify,
-} from './failure/failure.ts'
-import { type Job, reclaimsTreeByDefault } from './jobs.ts'
-import type { KeepTreeExemption } from './keep-tree-hold.ts'
-import { mcpRequestFromStored } from './mcp/mcp-preflight.ts'
-import { resolveBranchRef, stackAt } from './project/projects.ts'
-import { CALIBRATION_SUFFIX_RESERVE_BYTES } from './review-calibration.ts'
-import { pick } from './route/route.ts'
+} from '../failure/failure.ts'
+import { type Job, reclaimsTreeByDefault } from '../jobs.ts'
+import type { KeepTreeExemption } from '../keep-tree-hold.ts'
+import { mcpRequestFromStored } from '../mcp/mcp-preflight.ts'
+import { resolveBranchRef, stackAt } from '../project/projects.ts'
+import { CALIBRATION_SUFFIX_RESERVE_BYTES } from '../review-calibration.ts'
+import { pick } from '../route/route.ts'
+import type { TransportName } from '../transport/transport.ts'
+import type { Changes } from '../worktree/worktree-remove.ts'
+import type { Worktree } from '../worktree/worktree-types.ts'
 import { terminateRunProcesses } from './run-process.ts'
 import type { RunResult } from './run-types.ts'
-import type { TransportName } from './transport/transport.ts'
-import type { Changes } from './worktree/worktree-remove.ts'
-import type { Worktree } from './worktree/worktree-types.ts'
 
 type CloseOptions = {
   job: string

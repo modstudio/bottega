@@ -8,7 +8,7 @@ import { AGENTS } from '../agent/agent-registry.ts'
 import type { CanonSource } from '../contract/contract.ts'
 import { job } from '../jobs.ts'
 import { projectAt, validateStoredProjectSettings } from '../project/projects.ts'
-import { childEnv } from '../run-process.ts'
+import { childEnv } from '../run/run-process.ts'
 
 export type McpConnection = {
   server: string
