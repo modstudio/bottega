@@ -32,7 +32,7 @@ type StoredRevision = {
   at: string
 }
 
-const INJECT_KEY = Symbol.for('bottega.record-api-client')
+const INJECT_KEY = Symbol.for('orch.record-api-client')
 
 export function installRecordApiClient(client: RecordApiClient | null): void {
   const holder = globalThis as typeof globalThis & {

@@ -74,7 +74,7 @@ export type RecordApiClient = {
   counts(): Promise<{ docs: number; revisions: number; scores: number; voids: number }>
 }
 
-const INJECT_KEY = Symbol.for('bottega.record-api-client')
+const INJECT_KEY = Symbol.for('orch.record-api-client')
 type InjectSlot = { current: RecordApiClient | null }
 
 function injectSlot(): InjectSlot {
