@@ -54,6 +54,56 @@ type GrokSessionResponse = {
   _meta?: Record<string, unknown> | null
 }
 
+const ACP_HANDSHAKE_TIMEOUT_MS = 60_000
+type AcpHandshakeStage = 'initialize' | 'session/load' | 'session/new'
+
+/** Bound a startup request before callers have a transport handle or wall timer. */
+export async function awaitAcpHandshake<T>(opts: {
+  request: Promise<T>
+  stage: AcpHandshakeStage
+  harness: string
+  pid: number | null
+  terminate: () => Promise<unknown>
+  schedule?: (callback: () => void, delay: number) => ReturnType<typeof setTimeout>
+  unschedule?: (timer: ReturnType<typeof setTimeout>) => void
+}): Promise<T> {
+  const schedule = opts.schedule ?? setTimeout
+  const unschedule = opts.unschedule ?? clearTimeout
+  let timer: ReturnType<typeof setTimeout> | null = null
+  const timeout = new Promise<never>((_resolve, reject) => {
+    timer = schedule(() => {
+      void opts
+        .terminate()
+        .catch(() => {
+          /* the refusal still names the process that could not be reclaimed */
+        })
+        .finally(() => {
+          reject(
+            new Error(
+              `ACP handshake refusal: ${opts.stage} timed out after ${ACP_HANDSHAKE_TIMEOUT_MS}ms ` +
+                `for ${opts.harness} harness (pid ${opts.pid ?? 'unknown'}); inspect the harness ` +
+                `startup logs, fix the stalled stage, and rerun the command`,
+            ),
+          )
+        })
+    }, ACP_HANDSHAKE_TIMEOUT_MS)
+  })
+  try {
+    return await Promise.race([opts.request, timeout])
+  } finally {
+    if (timer !== null) unschedule(timer)
+  }
+}
+
+/** Persist the text observed so far without waiting for a terminal prompt response. */
+export function persistAcpUpdates(
+  outPath: string,
+  sessionId: string | null,
+  updates: unknown[],
+): void {
+  writeFileSync(outPath, normalizeAcpTurn({ sessionId, updates }).output)
+}
+
 /** Grok 1.0.13 accepts its ACP model as an extension on session/new. */
 export function grokSessionMeta(model: string | undefined): Record<string, unknown> | undefined {
   return model ? { modelId: model } : undefined
@@ -495,6 +545,7 @@ async function openAcp(opts: TransportStartOpts): Promise<TransportHandle> {
     .onNotification(acp.methods.client.session.update, (req) => {
       // orch records the update as a run event; the store never holds ACP.
       updates.push(req.params)
+      persistAcpUpdates(opts.outPath, sessionId, updates)
       const folded = normalizeAcpTurn({ sessionId, updates: [req.params] })
       for (const event of folded.events) {
         if (event.kind === 'session' || event.kind === 'stop') continue
@@ -507,16 +558,27 @@ async function openAcp(opts: TransportStartOpts): Promise<TransportHandle> {
   ctx = connection.agent
 
   try {
-    await ctx.request(acp.methods.agent.initialize, {
-      // ACP has no result object, so the reply file is the one advertised write.
-      // Gap: usage_update.used is session context, not CLI input+output.
-      protocolVersion: acp.PROTOCOL_VERSION,
-      clientCapabilities: {
-        fs: { readTextFile: true, writeTextFile: true },
-        elicitation: { form: {} },
-      },
-      clientInfo: { name: 'orch', version: '0.1.0' },
-    })
+    const handshake = <T>(request: Promise<T>, stage: AcpHandshakeStage) =>
+      awaitAcpHandshake({
+        request,
+        stage,
+        harness: opts.agent.harness ?? opts.agent.name,
+        pid: child.pid ?? null,
+        terminate: () => terminateProcessGroup(child.pid ?? 0, { direct: child }),
+      })
+    await handshake(
+      ctx.request(acp.methods.agent.initialize, {
+        // ACP has no result object, so the reply file is the one advertised write.
+        // Gap: usage_update.used is session context, not CLI input+output.
+        protocolVersion: acp.PROTOCOL_VERSION,
+        clientCapabilities: {
+          fs: { readTextFile: true, writeTextFile: true },
+          elicitation: { form: {} },
+        },
+        clientInfo: { name: 'orch', version: '0.1.0' },
+      }),
+      'initialize',
+    )
     // The ruling channel is transport infrastructure, not a project MCP opt-in.
     // codex-acp needs it on session/new. Grok loads the per-run config prepared
     // in GROK_HOME; passing the same stdio server here makes 1.0.13 reject
@@ -535,12 +597,15 @@ async function openAcp(opts: TransportStartOpts): Promise<TransportHandle> {
           ]
         : []
     if (opts.session) {
-      const loaded = await ctx.request(acp.methods.agent.session.load, {
-        // orch resumes the vendor conversation; the prompt is the ruling.
-        cwd: opts.cwd,
-        sessionId: opts.session,
-        mcpServers,
-      })
+      const loaded = await handshake(
+        ctx.request(acp.methods.agent.session.load, {
+          // orch resumes the vendor conversation; the prompt is the ruling.
+          cwd: opts.cwd,
+          sessionId: opts.session,
+          mcpServers,
+        }),
+        'session/load',
+      )
       sessionId = opts.session
       if (grok) {
         effectiveModel = grokEffectiveModel(
@@ -550,12 +615,15 @@ async function openAcp(opts: TransportStartOpts): Promise<TransportHandle> {
         )
       }
     } else {
-      const created = await ctx.request(acp.methods.agent.session.new, {
-        // orch opens a read-only session with its per-run ruling channel.
-        cwd: opts.cwd,
-        mcpServers,
-        ...(grok ? { _meta: grokSessionMeta(opts.model) } : {}),
-      })
+      const created = await handshake(
+        ctx.request(acp.methods.agent.session.new, {
+          // orch opens a read-only session with its per-run ruling channel.
+          cwd: opts.cwd,
+          mcpServers,
+          ...(grok ? { _meta: grokSessionMeta(opts.model) } : {}),
+        }),
+        'session/new',
+      )
       sessionId = created.sessionId
       if (grok) {
         effectiveModel = grokEffectiveModel(
@@ -568,8 +636,9 @@ async function openAcp(opts: TransportStartOpts): Promise<TransportHandle> {
     if (sessionId) pushEvent({ kind: 'session', sessionId })
   } catch (error) {
     closed = true
+    persistAcpUpdates(opts.outPath, sessionId, updates)
     try {
-      child.kill('SIGTERM')
+      await terminateProcessGroup(child.pid ?? 0, { direct: child })
     } catch {
       /* already gone */
     }
