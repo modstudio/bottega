@@ -431,15 +431,7 @@ export async function judgeRun(
     if (findingsJob && delivery !== 'none') {
       reviewId = gradeReviewLens(id, parsedOutput, gradeValues as ReviewGrades)
     }
-    recordScoreVerdict(
-      id,
-      delivery!,
-      quality ?? null,
-      scoredFidelity,
-      note,
-      scoredAt,
-      scorer,
-    )
+    recordScoreVerdict(id, delivery!, quality ?? null, scoredFidelity, note, scoredAt, scorer)
     if (reviewId) {
       if (delivery === 'none') {
         db().query('UPDATE review SET completed_at=? WHERE id=?').run(scoredAt, reviewId)
