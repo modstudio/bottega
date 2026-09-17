@@ -172,6 +172,7 @@ if (
     // not providing.
     'bun',
     'test',
+    './scripts/check-machine-state.test.ts',
     './scripts/check-runtime.test.ts',
     './scripts/check-comment-hygiene.test.ts',
     './scripts/check-test-placement.test.ts',
@@ -203,6 +204,7 @@ const results = await Promise.all(
 refuseFailed(results)
 
 for (const script of [
+  'check-machine-state.ts',
   'check-postgres-migrations.ts',
   'check-hosted-hub-server-boundary.ts',
   'check-architecture.ts',

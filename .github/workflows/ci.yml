@@ -8,12 +8,16 @@ on:
   pull_request:
     paths: ['**.ts', '**.tsx', '**/package.json', 'bun.lock',
             '**/bunfig.toml', '**/tsconfig.json', 'scripts/**',
-            'orchestrator/test/**', '.githooks/**', '.github/workflows/ci.yml']
+            'orchestrator/test/**', '.githooks/**', '.github/workflows/ci.yml',
+            'orchestrator/runs/**', '**/*.db*', 'hub/.serve/**',
+            'orchestrator/.last-wake', 'orchestrator/spawn-fallback.log']
   push:
     branches: [main]
     paths: ['**.ts', '**.tsx', '**/package.json', 'bun.lock',
             '**/bunfig.toml', '**/tsconfig.json', 'scripts/**',
-            'orchestrator/test/**', '.githooks/**', '.github/workflows/ci.yml']
+            'orchestrator/test/**', '.githooks/**', '.github/workflows/ci.yml',
+            'orchestrator/runs/**', '**/*.db*', 'hub/.serve/**',
+            'orchestrator/.last-wake', 'orchestrator/spawn-fallback.log']
   workflow_dispatch:
 
 jobs:
