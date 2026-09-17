@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, test } from 'bun:test'
 import {
   chmodSync,
+  existsSync,
   mkdirSync,
   mkdtempSync,
   readFileSync,
@@ -402,7 +403,7 @@ describe('tracked recipe execution', () => {
     expect(seen).toEqual([{ treeRoot: '/tree', treeExists: 'true' }])
   })
 
-  test('catches rendering tree_exists=true while missing-tree teardown runs in main', () => {
+  test('a missing-tree teardown uses a temporary cwd and keeps the recorded tree variables', () => {
     const seen: { treeRoot: string; treeExists: string | undefined }[] = []
     const snapshot: RecipeSnapshot = {
       source: { path: '.orch/worktree.jsonc', commit: 'abc' },
@@ -428,7 +429,11 @@ describe('tracked recipe execution', () => {
         return result('destroy', 'run', false)
       },
     )
-    expect(seen).toEqual([{ treeRoot: '/main', treeExists: 'false' }])
+    expect(seen).toHaveLength(1)
+    expect(seen[0]!.treeRoot).not.toBe('/main')
+    expect(seen[0]!.treeRoot).not.toBe('/tree')
+    expect(seen[0]!.treeExists).toBe('false')
+    expect(existsSync(seen[0]!.treeRoot)).toBeFalse()
   })
 
   test('runs serve undos before destroy undos and keeps the tree after a serve failure', () => {

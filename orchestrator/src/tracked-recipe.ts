@@ -7,13 +7,16 @@ import {
   closeSync,
   existsSync,
   mkdirSync,
+  mkdtempSync,
   openSync,
   readFileSync,
   renameSync,
+  rmSync,
   statSync,
   unlinkSync,
   writeFileSync,
 } from 'node:fs'
+import { tmpdir } from 'node:os'
 import { basename, dirname, join } from 'node:path'
 import { db, nowIso, writeTransaction } from './db.ts'
 import { orchRunLabel } from './docker-resources.ts'
@@ -713,11 +716,17 @@ export function teardownTrackedRecipe(
     treeExists,
     allocations: stored.snapshot.allocations,
   })
-  const context = { treeRoot: treeExists ? input.worktree.path : input.worktree.repoRoot, vars }
-  const results = serveUndoPlan(stored.snapshot.recipe).map((step) => runUndo(step, context))
-  for (const { step, phase } of destroyPlan(stored.snapshot.recipe))
-    results.push(phase === 'run' ? runStep(step, context) : runUndo(step, context))
-  for (const step of stored.snapshot.recipe.verifyDown ?? []) results.push(runStep(step, context))
+  const temporaryCwd = treeExists ? null : mkdtempSync(join(tmpdir(), 'orch-teardown-'))
+  const context = { treeRoot: temporaryCwd ?? input.worktree.path, vars }
+  let results: StepResult[]
+  try {
+    results = serveUndoPlan(stored.snapshot.recipe).map((step) => runUndo(step, context))
+    for (const { step, phase } of destroyPlan(stored.snapshot.recipe))
+      results.push(phase === 'run' ? runStep(step, context) : runUndo(step, context))
+    for (const step of stored.snapshot.recipe.verifyDown ?? []) results.push(runStep(step, context))
+  } finally {
+    if (temporaryCwd) rmSync(temporaryCwd, { recursive: true, force: true })
+  }
   const failed = lifecycleFailure(results)
   if (failed) {
     return {

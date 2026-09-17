@@ -1,10 +1,17 @@
 // concern: worktree-remove
-import { existsSync } from 'node:fs'
+import { existsSync, mkdtempSync, rmSync } from 'node:fs'
+import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { db, nowIso, writeTransaction } from './db.ts'
 import { git, gitOk, gitRaw, targetGitEnvironment } from './git-environment.ts'
 import { projectAt, resolvedWorktreeTool, type WorktreeTool } from './projects.ts'
-import { databaseDroppedByTeardown, dbNameFor, type Recipe, teardownRecipe } from './recipe.ts'
+import {
+  databaseDroppedByTeardown,
+  dbNameFor,
+  type Recipe,
+  type StepResult,
+  teardownRecipe,
+} from './recipe.ts'
 import { markedWorktreeRunId, removeSharedRefGuard } from './ref-guard.ts'
 import { recipePortClaimForRun, settleDatabaseClaim } from './resource-claims.ts'
 import { teardownTrackedRecipe } from './tracked-recipe.ts'
@@ -37,12 +44,19 @@ function teardownBuiltInRecipe(
   runId: number,
 ): { ok: true } | { ok: false; step: string; detail: string } {
   const dbName = dbNameFor(w.repoRoot.split('/').pop() ?? 'app', runId)
-  const cwd = existsSync(w.path) ? w.path : w.repoRoot
-  const claimedPort = recipe.serve ? recipePortClaimForRun(db(), runId) : null
-  // A recipe tree with no port claim predates ledger allocation. Only those
-  // legacy trees derive the teardown port from their run id.
-  const teardownPort = claimedPort ?? (recipe.serve ? portFor(runId) : null)
-  const teardown = teardownRecipe(recipe, cwd, dbName, String(teardownPort ?? ''))
+  const treeExists = existsSync(w.path)
+  const temporaryCwd = treeExists ? null : mkdtempSync(join(tmpdir(), 'orch-teardown-'))
+  const processCwd = temporaryCwd ?? w.path
+  let teardown: StepResult[]
+  try {
+    const claimedPort = recipe.serve ? recipePortClaimForRun(db(), runId) : null
+    // A recipe tree with no port claim predates ledger allocation. Only those
+    // legacy trees derive the teardown port from their run id.
+    const teardownPort = claimedPort ?? (recipe.serve ? portFor(runId) : null)
+    teardown = teardownRecipe(recipe, w.path, processCwd, dbName, String(teardownPort ?? ''))
+  } finally {
+    if (temporaryCwd) rmSync(temporaryCwd, { recursive: true, force: true })
+  }
   for (const step of teardown) {
     if (!step.ok) console.error(`orch: ${step.step} failed: ${step.detail.slice(-200)}`)
   }
@@ -195,7 +209,7 @@ function removeWithTool(
   // templates also recognise old trees for sweep, but are deliberately not
   // strong enough evidence for destructive fallback here.
   if (forceOrchTree && existsSync(join(w.path, ORCH_RUN_MARKER))) {
-    return removeWorktree(w)
+    return removeWorktree(w, keepBranch)
   }
 
   /**
