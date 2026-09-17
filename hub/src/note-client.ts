@@ -4,7 +4,7 @@ import type { HostedTask } from './hosted-tasks.ts'
 
 const TEST_REFUSAL = 'hub note client refuses a real hosted URL unless a stub is injected in tests'
 const REMEDY = 'Set HUB_HOSTED_URL and run `orch record doctor`.'
-export type NoteFetch = (input: string, init?: RequestInit) => Promise<Response>
+type NoteFetch = (input: string, init?: RequestInit) => Promise<Response>
 type Options = { baseUrl?: string; token?: string | null; fetch?: NoteFetch }
 async function request<T>(
   path: string,
@@ -39,8 +39,6 @@ async function request<T>(
 }
 export const hostedCreateNote = (body: unknown, options?: Options) =>
   request<HostedNote>('/v1/notes', 'POST', body, options)
-export const hostedPatchNote = (number: number, body: unknown, options?: Options) =>
-  request<HostedNote>(`/v1/notes/${number}`, 'PATCH', body, options)
 export const hostedAcknowledgeNote = (number: number, session: string, options?: Options) =>
   request<{
     note: HostedNote
