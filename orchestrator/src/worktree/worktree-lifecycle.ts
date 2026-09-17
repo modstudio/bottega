@@ -1,8 +1,8 @@
 // concern: worktree lifecycle measurement
 /** Knows declared lifecycle shapes and recipe-schema support. Must not know execution, the register, databases, or the CLI. */
 import { resolve } from 'node:path'
-import { PLATFORM_SLUG } from '../../shared/brand.ts'
-import { type LoadTrackedRecipeResult, loadTrackedRecipe } from './recipe/recipe-loader.ts'
+import { PLATFORM_SLUG } from '../../../shared/brand.ts'
+import { type LoadTrackedRecipeResult, loadTrackedRecipe } from '../recipe/recipe-loader.ts'
 
 export type LifecycleForm = 'command-templates' | 'inline-recipe' | 'tracked-recipe' | 'none'
 type TrackedRecipeSource = 'declared' | 'default'

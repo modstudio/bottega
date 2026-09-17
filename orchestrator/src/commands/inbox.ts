@@ -6,7 +6,7 @@ import { db } from '../db.ts'
 import { JOBS } from '../jobs.ts'
 import { runDiffCommand } from '../run-diff.ts'
 import { runInboxCommand } from '../run-inbox.ts'
-import { changesIn } from '../worktree-remove.ts'
+import { changesIn } from '../worktree/worktree-remove.ts'
 import { duration, log, optionFlags, write } from './support.ts'
 
 function chainHasPendingDelivery(rootId: number): boolean {

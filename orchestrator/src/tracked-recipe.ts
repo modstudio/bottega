@@ -55,8 +55,8 @@ import {
   releaseRecipeAllocationClaims,
   settleClaims,
 } from './resource-claims.ts'
-import { resolveBase } from './worktree-caller.ts'
-import type { Worktree } from './worktree-types.ts'
+import { resolveBase } from './worktree/worktree-caller.ts'
+import type { Worktree } from './worktree/worktree-types.ts'
 
 export type RecipeSnapshot = {
   source: { path: string; commit: string }

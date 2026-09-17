@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test'
-import { PLATFORM_SLUG } from '../../shared/brand.ts'
+import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import {
   DEFAULT_PROJECT_CONFIG_PATH,
   lifecycleForm,

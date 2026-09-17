@@ -31,8 +31,8 @@ import { pick } from './route/route.ts'
 import { terminateRunProcesses } from './run-process.ts'
 import type { RunResult } from './run-types.ts'
 import type { TransportName } from './transport/transport.ts'
-import type { Changes } from './worktree-remove.ts'
-import type { Worktree } from './worktree-types.ts'
+import type { Changes } from './worktree/worktree-remove.ts'
+import type { Worktree } from './worktree/worktree-types.ts'
 
 type CloseOptions = {
   job: string

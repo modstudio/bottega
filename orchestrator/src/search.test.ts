@@ -64,10 +64,10 @@ describe('record search', () => {
     const d = fixture()
     d.exec(`
       INSERT INTO run VALUES (1, NULL, 'DEV-1', '2026-09-01T00:00:00Z', NULL);
-      INSERT INTO score VALUES (1, 1, 'Checked resolveBase() in orchestrator/src/worktree.ts:44; it preserves HEAD.');
+      INSERT INTO score VALUES (1, 1, 'Checked resolveBase() in orchestrator/src/worktree/worktree.ts:44; it preserves HEAD.');
     `)
 
-    const file = searchRecords(d, 'orchestrator/src/worktree.ts')
+    const file = searchRecords(d, 'orchestrator/src/worktree/worktree.ts')
     const fn = searchRecords(d, 'resolveBase()')
     expect(file.results[0]?.match).toBe('literal text match (weak relevance)')
     expect(fn.results[0]?.snippet).toContain('resolveBase()')

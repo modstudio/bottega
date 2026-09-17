@@ -1,9 +1,9 @@
 // concern: worktree-readonly
 import { existsSync, mkdirSync } from 'node:fs'
 import { dirname, join } from 'node:path'
-import { git, gitOk, repoRootOf, targetGitEnvironment } from './git-environment.ts'
-import type { WorktreeTool } from './project/projects.ts'
-import { provisionReadOnlyTree, type ReadonlyProvision } from './readonly-provision.ts'
+import { git, gitOk, repoRootOf, targetGitEnvironment } from '../git-environment.ts'
+import type { WorktreeTool } from '../project/projects.ts'
+import { provisionReadOnlyTree, type ReadonlyProvision } from '../readonly-provision.ts'
 import {
   attributeWorktree,
   type RecordWorktree,

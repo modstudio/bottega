@@ -2,19 +2,19 @@
 import { existsSync, mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { db, nowIso, writeTransaction } from './db.ts'
-import { git, gitOk, gitRaw, targetGitEnvironment } from './git-environment.ts'
-import { projectAt, resolvedWorktreeTool, type WorktreeTool } from './project/projects.ts'
+import { db, nowIso, writeTransaction } from '../db.ts'
+import { git, gitOk, gitRaw, targetGitEnvironment } from '../git-environment.ts'
+import { projectAt, resolvedWorktreeTool, type WorktreeTool } from '../project/projects.ts'
 import {
   databaseDroppedByTeardown,
   dbNameFor,
   type Recipe,
   type StepResult,
   teardownRecipe,
-} from './recipe/recipe.ts'
-import { markedWorktreeRunId, removeSharedRefGuard } from './ref-guard.ts'
-import { recipePortClaimForRun, settleDatabaseClaim } from './resource-claims.ts'
-import { teardownTrackedRecipe } from './tracked-recipe.ts'
+} from '../recipe/recipe.ts'
+import { markedWorktreeRunId, removeSharedRefGuard } from '../ref-guard.ts'
+import { recipePortClaimForRun, settleDatabaseClaim } from '../resource-claims.ts'
+import { teardownTrackedRecipe } from '../tracked-recipe.ts'
 import { extractWorktree, ORCH_RUN_MARKER } from './worktree-attribution.ts'
 import { runShellTool } from './worktree-tool.ts'
 import type { Worktree } from './worktree-types.ts'

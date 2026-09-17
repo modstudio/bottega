@@ -57,7 +57,7 @@ import {
   transportFor,
   valueMatchesStrictSchema,
 } from './transport/transport.ts'
-import type { Worktree } from './worktree-types.ts'
+import type { Worktree } from './worktree/worktree-types.ts'
 
 function reviewChangedPaths(cwd: string, base: string, inputTree: string): string[] {
   const args = ['diff', '--name-only', `${base}..${inputTree}`]

@@ -13,8 +13,8 @@ import { db, nowIso, writeTransaction } from './db.ts'
 import { teardownTerminalRunResources } from './resource-ownership.ts'
 import { adoptRunMutation, auditRunMutation, authorizeRunMutation } from './run-authority.ts'
 import { resolveRootFromLastTurn } from './run-liveness.ts'
-import { branchTip, removeBranch, unmergedBranch } from './worktree-remove.ts'
-import type { Worktree } from './worktree-types.ts'
+import { branchTip, removeBranch, unmergedBranch } from './worktree/worktree-remove.ts'
+import type { Worktree } from './worktree/worktree-types.ts'
 
 export type RunStopOptions = CleanupOptions & { note?: string }
 export type RunStopHelpers = {

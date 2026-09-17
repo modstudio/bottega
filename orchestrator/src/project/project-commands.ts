@@ -6,8 +6,8 @@
 import { existsSync } from 'node:fs'
 import { tryWriteContention, writeTransaction } from '../db.ts'
 import { selectProjectProfile } from '../lens/lenses.ts'
-import { lifecycleForm } from '../worktree-lifecycle.ts'
-import { migrateCreate } from '../worktree-template.ts'
+import { lifecycleForm } from '../worktree/worktree-lifecycle.ts'
+import { migrateCreate } from '../worktree/worktree-template.ts'
 import {
   assertRegisterBranches,
   type Project,

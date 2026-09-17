@@ -21,8 +21,8 @@ import { abandonRun } from '../run-stop.ts'
 import type { RunResult } from '../run-types.ts'
 import { resetSandbox, resolveSecretPaths, sandboxLaunchArgv, srtInstalled } from '../sandbox.ts'
 import { trackedRecipeEnvironment } from '../tracked-recipe.ts'
-import { worktreeDirty } from '../worktree-attribution.ts'
-import type { Worktree } from '../worktree-types.ts'
+import { worktreeDirty } from '../worktree/worktree-attribution.ts'
+import type { Worktree } from '../worktree/worktree-types.ts'
 import { catchFixTreeDisposition } from './issue-catch.ts'
 import {
   filedIssueCommandPlan,

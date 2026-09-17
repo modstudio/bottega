@@ -789,57 +789,57 @@
     "key": "orchestrator/src/workflow/workflows.ts\u0000validateWorkflowDefinition"
   },
   {
-    "file": "orchestrator/src/worktree-attribution.ts",
+    "file": "orchestrator/src/worktree/worktree-attribution.ts",
     "function": "extractWorktree",
     "line": 1502,
     "score": 20
   },
   {
-    "file": "orchestrator/src/worktree-create.ts",
+    "file": "orchestrator/src/worktree/worktree-create.ts",
     "function": "createWithToolUnlocked",
     "line": 199,
     "score": 21,
-    "key": "orchestrator/src/worktree-create.ts\u0000createWithToolUnlocked"
+    "key": "orchestrator/src/worktree/worktree-create.ts\u0000createWithToolUnlocked"
   },
   {
-    "file": "orchestrator/src/worktree-readonly.ts",
+    "file": "orchestrator/src/worktree/worktree-readonly.ts",
     "function": "createReadOnlyWithTool",
     "line": 28,
     "score": 21
   },
   {
-    "file": "orchestrator/src/worktree-remove.ts",
+    "file": "orchestrator/src/worktree/worktree-remove.ts",
     "function": "removeWithTool",
     "line": 148,
     "score": 21,
-    "key": "orchestrator/src/worktree-remove.ts\u0000removeWithTool"
+    "key": "orchestrator/src/worktree/worktree-remove.ts\u0000removeWithTool"
   },
   {
-    "file": "orchestrator/src/worktree-remove.ts",
+    "file": "orchestrator/src/worktree/worktree-remove.ts",
     "function": "removeFor",
     "line": 222,
     "score": 16
   },
   {
-    "file": "orchestrator/src/worktree-template.ts",
+    "file": "orchestrator/src/worktree/worktree-template.ts",
     "function": "scanPipelineOperators",
     "line": 354,
     "score": 25
   },
   {
-    "file": "orchestrator/src/worktree-template.ts",
+    "file": "orchestrator/src/worktree/worktree-template.ts",
     "function": "validateCreate",
     "line": 640,
     "score": 33
   },
   {
-    "file": "orchestrator/src/worktree-template.ts",
+    "file": "orchestrator/src/worktree/worktree-template.ts",
     "function": "shellTokens",
     "line": 790,
     "score": 28
   },
   {
-    "file": "orchestrator/src/worktree-template.ts",
+    "file": "orchestrator/src/worktree/worktree-template.ts",
     "function": "shellWords",
     "line": 1683,
     "score": 27

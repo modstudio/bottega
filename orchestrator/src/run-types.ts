@@ -1,8 +1,8 @@
 // concern: run-types
 /** Shared run result types. Contains no runtime behavior or dependencies. */
 import type { WorkerReply } from './contract/contract.ts'
-import type { Changes } from './worktree-remove.ts'
-import type { Worktree } from './worktree-types.ts'
+import type { Changes } from './worktree/worktree-remove.ts'
+import type { Worktree } from './worktree/worktree-types.ts'
 
 export type RunResult = {
   id: number

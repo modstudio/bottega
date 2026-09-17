@@ -46,8 +46,8 @@ import { resolveRootFromLastTurn } from './run-liveness.ts'
 import { enqueueRunRecord } from './run-outbox.ts'
 import { errorTail, live, liveCheckpoints } from './run-process.ts'
 import { resetSandbox } from './sandbox.ts'
-import { type Changes, changesIn } from './worktree-remove.ts'
-import type { Worktree } from './worktree-types.ts'
+import { type Changes, changesIn } from './worktree/worktree-remove.ts'
+import type { Worktree } from './worktree/worktree-types.ts'
 
 type TerminalOptions = {
   job: string

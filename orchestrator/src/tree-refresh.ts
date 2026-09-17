@@ -13,7 +13,7 @@ import { loadTrackedRecipe } from './recipe/recipe-loader.ts'
 import { stepPlaceholders, type TrackedRecipe } from './recipe/recipe-schema.ts'
 import { runStep, type StepContext } from './recipe/recipe-step.ts'
 import { executeTrackedRefreshSteps, type RecipeSnapshot, readSnapshot } from './tracked-recipe.ts'
-import { resolveWorktreeLifecycle } from './worktree-lifecycle.ts'
+import { resolveWorktreeLifecycle } from './worktree/worktree-lifecycle.ts'
 
 export type TreeRefreshDecision =
   | { action: 'fast-forward' }

@@ -23,7 +23,7 @@
  * disposable worktree. No worker pushes.
  */
 import { existsSync } from 'node:fs'
-import type { WorktreeTool } from './project/projects.ts'
+import type { WorktreeTool } from '../project/projects.ts'
 import {
   type ClaimRecipePort,
   createWithTool,
