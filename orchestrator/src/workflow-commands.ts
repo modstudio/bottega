@@ -1,23 +1,28 @@
 // concern: workflows
-/** Owns workflow command decisions and presentation. Must not know CLI grammar. */
-import { readFileSync } from 'node:fs'
+/** Knows workflow command semantics and thin tree adapters. Must not know CLI grammar, runs, routing, or transports. */
+import { readFileSync, realpathSync } from 'node:fs'
+import { resolve } from 'node:path'
 import { flagValue, flagValues } from './args.ts'
+import { projectAt } from './projects.ts'
 import {
-  exportStepCatalogue,
   forkStepCatalogue,
-  importStepCatalogue,
   promoteStepCatalogue,
   retireStepCatalogue,
   setStepCatalogue,
   showStepCatalogue,
   stepCatalogueVersions,
 } from './step-catalogue.ts'
+import { parseWorkflowTree, planWorkflowHydration } from './workflow-tree.ts'
+import {
+  applyWorkflowTreePlan,
+  collectWorkflowTree,
+  workflowGitRoot,
+} from './workflow-tree-files.ts'
+import { importWorkflowTree, productionWorkflowTree } from './workflow-tree-store.ts'
 import {
   composeWorkflow,
-  exportWorkflows,
   forkWorkflow,
   getWorkflowStep,
-  importWorkflows,
   listWorkflows,
   promoteWorkflow,
   retireWorkflow,
@@ -63,11 +68,11 @@ export function workflowCommand(argv: string[], presentation: Presentation): voi
   else if (sub === 'versions') print(workflowVersions(argv[2]!))
   else if (sub === 'compose') composeCommand(argv, json, print, presentation)
   else if (sub === 'step') stepCommand(argv, print)
-  else if (sub === 'export') exportWorkflows(argv[2]!)
-  else if (sub === 'import') print(importWorkflows(argv[2]!, flag('reason'), flag('author')))
+  else if (sub === 'hydrate') hydrateCommand(argv, presentation)
+  else if (sub === 'import') importCommand(argv, print)
   else
     throw new Error(
-      'unknown: orch workflow. Try list | show | set | promote | retire | fork | versions | compose | step | export | import',
+      'unknown: orch workflow. Try list | show | set | promote | retire | fork | versions | compose | step | hydrate | import',
     )
 }
 
@@ -106,12 +111,58 @@ function catalogueCommand(argv: string[], print: (value: unknown, line?: string)
   else if (sub === 'fork')
     print(forkStepCatalogue(positive(flag('from'), '--from'), flag('reason'), flag('author')))
   else if (sub === 'versions') print(stepCatalogueVersions())
-  else if (sub === 'export') exportStepCatalogue(argv[2]!)
-  else if (sub === 'import') print(importStepCatalogue(argv[2]!, flag('reason'), flag('author')))
   else
     throw new Error(
-      'unknown: orch workflow catalogue. Try show | set | promote | retire | fork | versions | export | import',
+      'unknown: orch workflow catalogue. Try show | set | promote | retire | fork | versions',
     )
+}
+
+function workflowRoot(argv: string[]): string {
+  const cwd = flagValue(argv, 'cwd')
+  if (!cwd) throw new Error('--cwd is required')
+  return workflowGitRoot(resolve(cwd))
+}
+
+function hydrateCommand(argv: string[], presentation: Presentation): void {
+  const root = workflowRoot(argv)
+  const project = projectAt(root)
+  if (project && realpathSync(root) === realpathSync(project.path)) {
+    throw new Error(
+      `refusing to hydrate registered main checkout ${project.path}\n` +
+        'invariant: workflow hydration writes a disposable project tree, never the main checkout\n' +
+        'cleared by: pass --cwd for a worktree',
+    )
+  }
+  const plan = planWorkflowHydration({
+    store: productionWorkflowTree(),
+    tree: collectWorkflowTree(root),
+  })
+  for (const { path } of plan.writes) presentation.log(`write ${path}`)
+  for (const path of plan.deletes) presentation.log(`delete ${path}`)
+  const count = plan.writes.length + plan.deletes.length
+  if (argv.includes('--check')) {
+    if (count) presentation.setExitCode(1)
+    return
+  }
+  applyWorkflowTreePlan(root, plan)
+  presentation.log(`hydrated ${count} paths`)
+}
+
+function importCommand(argv: string[], print: (value: unknown, line?: string) => void): void {
+  const root = workflowRoot(argv)
+  const result = importWorkflowTree(
+    parseWorkflowTree(collectWorkflowTree(root)),
+    flagValue(argv, 'reason'),
+    flagValue(argv, 'author'),
+  )
+  print(
+    result,
+    [
+      ...result.steps.map((slug) => `drafted step ${slug}`),
+      ...result.workflows.map((slug) => `drafted workflow ${slug}`),
+      ...(result.steps.length || result.workflows.length ? [] : ['no changes']),
+    ].join('\n'),
+  )
 }
 
 function workflowArgs(argv: string[]): Record<string, string> {

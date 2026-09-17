@@ -1,8 +1,6 @@
 // concern: workflows
 /** Owns the shared, versioned workflow-step catalogue. */
 import type { Database } from 'bun:sqlite'
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
-import { dirname } from 'node:path'
 import { db, writableDb } from './db.ts'
 import { JOBS } from './jobs.ts'
 import { type InjectionSource, injectionSources } from './project-injection.ts'
@@ -15,7 +13,7 @@ const proofKinds = [
   'human-ruling',
 ] as const
 type ProofKind = (typeof proofKinds)[number]
-type CatalogueStep = {
+export type CatalogueStep = {
   slug: string
   title: string
   body: string
@@ -30,7 +28,7 @@ const SLUG = /^[a-z0-9][a-z0-9-]{0,63}$/
 const object = (value: unknown): value is Record<string, unknown> =>
   typeof value === 'object' && value !== null && !Array.isArray(value)
 
-function validateStepCatalogue(value: unknown): string[] {
+export function validateStepCatalogue(value: unknown): string[] {
   if (!object(value) || !Array.isArray(value.steps)) return ['steps must be an array']
   const errors: string[] = [],
     seen = new Set<string>()
@@ -166,23 +164,11 @@ export function promoteStepCatalogue(
   })
 }
 
-export function exportStepCatalogue(file: string, d: Database = db()): void {
-  mkdirSync(dirname(file), { recursive: true })
-  writeFileSync(file, `${JSON.stringify(productionStepCatalogue(d).definition, null, 2)}\n`)
-}
 export function importStepCatalogue(
-  file: string,
+  definition: unknown,
   reason: string | undefined,
   author?: string,
   d: Database = writableDb(),
 ) {
-  if (!existsSync(file)) throw new Error(`no such file: ${file}`)
-  return lifecycle.write(
-    CATALOGUE,
-    JSON.parse(readFileSync(file, 'utf8')),
-    reason,
-    author,
-    'import',
-    d,
-  )
+  return lifecycle.write(CATALOGUE, definition, reason, author, 'import', d)
 }
