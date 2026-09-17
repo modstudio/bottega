@@ -131,15 +131,12 @@ function NavList({
 }: {
   sections: readonly NavSection[]
   renderLink: RenderLink
-  /** `hover`: labels exist but show only while the rail is open. `full`: groups unfold in place. */
-  labelled: 'hover' | 'always' | 'full'
+  /** `icons`: labels only for assistive technology. `full`: groups unfold in place. */
+  labelled: 'icons' | 'always' | 'full'
   isActive: (to: string) => boolean
   onNavigate?: () => void
 }) {
-  const labelClass =
-    labelled === 'hover'
-      ? 'truncate opacity-0 transition-opacity duration-(--duration-fast) group-hover/rail:opacity-100 group-focus-within/rail:opacity-100'
-      : 'truncate'
+  const labelClass = labelled === 'icons' ? 'sr-only' : 'truncate'
   const link = (item: NavItem) => (
     <div key={item.to}>
       {renderLink(item, {
@@ -207,7 +204,10 @@ function MobileMenu({
       ref={ref}
       aria-label="Menu"
       onClose={onClose}
-      className="fixed inset-0 h-dvh max-h-none w-screen bg-surface-page text-text-primary"
+      onPointerDown={(event) => {
+        if (event.target === event.currentTarget) onClose()
+      }}
+      className="fixed inset-y-0 left-0 h-dvh max-h-none w-[min(17rem,82vw)] border-border-default border-r bg-surface-page text-text-primary shadow-overlay transition-[translate] duration-(--duration-base) backdrop:bg-scrim starting:-translate-x-full"
     >
       <div className="flex h-full flex-col">
         <div className="flex h-topbar shrink-0 items-center justify-between border-border-default border-b px-4">
@@ -232,10 +232,68 @@ function MobileMenu({
 }
 
 /**
- * The application frame. On a desk: an icon rail whose labels open on hover or
- * focus, or stay open when pinned, and collapse whenever a companion panel
- * needs the width. On a phone: a top bar whose menu button opens the full
- * navigation, closing again once a destination is chosen.
+ * The collapse toggle lives in the brand cell and stays quiet until reached
+ * for. Collapsed, the cell holds one mark: the logo, which the toggle replaces
+ * on hover or focus. A touch screen has no hover to discover that swap, so
+ * there the toggle simply shows.
+ */
+function BrandCell({
+  mark,
+  name,
+  collapsed,
+  canToggle,
+  onToggle,
+}: {
+  mark: ReactNode
+  name: string
+  collapsed: boolean
+  canToggle: boolean
+  onToggle: () => void
+}) {
+  const toggle = canToggle ? (
+    <IconButton
+      size="sm"
+      label={collapsed ? 'Expand navigation' : 'Collapse navigation'}
+      aria-expanded={!collapsed}
+      onClick={onToggle}
+      className={
+        collapsed
+          ? 'absolute inset-0 m-auto opacity-0 group-hover/brand:opacity-100 focus:opacity-100 [@media(hover:none)]:opacity-100'
+          : 'ml-auto opacity-0 group-hover/brand:opacity-100 focus:opacity-100 [@media(hover:none)]:opacity-100'
+      }
+    >
+      {collapsed ? <PanelLeftOpen /> : <PanelLeftClose />}
+    </IconButton>
+  ) : null
+  return (
+    <div
+      className={classes(
+        'group/brand relative flex h-topbar shrink-0 items-center gap-3 border-border-default border-b',
+        collapsed ? 'justify-center' : 'px-[1.625rem] pr-3',
+      )}
+    >
+      <span
+        className={classes(
+          'flex items-center gap-3 whitespace-nowrap font-semibold transition-opacity',
+          collapsed &&
+            canToggle &&
+            'group-focus-within/brand:opacity-0 group-hover/brand:opacity-0 [@media(hover:none)]:opacity-0',
+        )}
+      >
+        {mark}
+        {collapsed ? <span className="sr-only">{name}</span> : name}
+      </span>
+      {toggle}
+    </div>
+  )
+}
+
+/**
+ * The application frame. On a desk: a rail that is open with labels or
+ * collapsed to icons, toggled from its brand cell and remembered per browser,
+ * and collapsed whenever a companion panel needs the width. On a phone: a top
+ * bar whose menu button opens the navigation as a drawer, closing once a
+ * destination is chosen.
  */
 export function AppShell({
   name,
@@ -245,7 +303,7 @@ export function AppShell({
   isActive,
   topbar,
   railFooter,
-  collapsed = false,
+  collapsed: forced = false,
   storageKey,
   children,
 }: {
@@ -259,18 +317,18 @@ export function AppShell({
   isActive: (to: string) => boolean
   /** Controls on the right of the top bar. */
   topbar?: ReactNode
-  /** Controls at the foot of the rail and the mobile menu. */
+  /** The account, at the foot of the rail and the drawer. */
   railFooter?: ReactNode
   /** Force the rail to icons, as while a companion panel is docked. */
   collapsed?: boolean
-  /** Where the pinned preference is remembered. */
+  /** Where the open or collapsed preference is remembered. */
   storageKey: string
   children: ReactNode
 }) {
   const mobile = useMediaQuery(MOBILE_QUERY)
   const [menuOpen, setMenuOpen] = useState(false)
-  const [pin, setPin] = useStoredState(storageKey, 'icons', ['icons', 'pinned'] as const)
-  const pinned = pin === 'pinned' && !collapsed
+  const [rail, setRail] = useStoredState(storageKey, 'open', ['open', 'collapsed'] as const)
+  const collapsed = forced || rail === 'collapsed'
   const brand = (
     <span className="flex items-center gap-3 whitespace-nowrap font-semibold">
       {mark}
@@ -281,56 +339,33 @@ export function AppShell({
   return (
     <div className="flex min-h-dvh bg-surface-page text-text-primary">
       {mobile ? null : (
-        <div
+        <aside
+          aria-label="Navigation"
+          data-collapsed={collapsed || undefined}
           className={classes(
-            'sticky top-0 z-(--z-rail) h-dvh shrink-0 transition-[width] duration-(--duration-base)',
-            pinned ? 'w-rail-open' : 'w-rail',
+            'group/rail sticky top-0 z-(--z-rail) flex h-dvh shrink-0 flex-col overflow-hidden border-border-default border-r bg-surface-page transition-[width] duration-(--duration-base)',
+            collapsed ? 'w-rail' : 'w-rail-open',
           )}
         >
-          <aside
-            aria-label="Navigation"
-            className={classes(
-              'group/rail absolute inset-y-0 left-0 flex flex-col overflow-hidden border-border-default border-r bg-surface-page transition-[width,box-shadow] duration-(--duration-base)',
-              pinned
-                ? 'w-rail-open'
-                : 'w-rail hover:w-rail-open hover:shadow-overlay focus-within:w-rail-open focus-within:shadow-overlay',
-            )}
-          >
-            <div className="flex h-topbar shrink-0 items-center border-border-default border-b px-[1.625rem]">
-              <span className="flex items-center gap-3 whitespace-nowrap font-semibold">
-                {mark}
-                <span
-                  className={
-                    pinned
-                      ? undefined
-                      : 'opacity-0 transition-opacity group-focus-within/rail:opacity-100 group-hover/rail:opacity-100'
-                  }
-                >
-                  {name}
-                </span>
-              </span>
-            </div>
-            <div className="min-h-0 flex-1 overflow-y-auto overflow-x-hidden">
-              <NavList
-                sections={nav}
-                renderLink={renderLink}
-                labelled={pinned ? 'always' : 'hover'}
-                isActive={isActive}
-              />
-            </div>
-            <div className="flex flex-col gap-2 border-border-default border-t p-2">
-              {railFooter}
-              {collapsed ? null : (
-                <IconButton
-                  label={pinned ? 'Collapse navigation' : 'Keep navigation open'}
-                  onClick={() => setPin(pinned ? 'icons' : 'pinned')}
-                >
-                  {pinned ? <PanelLeftClose /> : <PanelLeftOpen />}
-                </IconButton>
-              )}
-            </div>
-          </aside>
-        </div>
+          <BrandCell
+            mark={mark}
+            name={name}
+            collapsed={collapsed}
+            canToggle={!forced}
+            onToggle={() => setRail(collapsed ? 'open' : 'collapsed')}
+          />
+          <div className="min-h-0 flex-1 overflow-y-auto overflow-x-hidden">
+            <NavList
+              sections={nav}
+              renderLink={renderLink}
+              labelled={collapsed ? 'icons' : 'always'}
+              isActive={isActive}
+            />
+          </div>
+          {railFooter ? (
+            <div className="border-border-default border-t py-3">{railFooter}</div>
+          ) : null}
+        </aside>
       )}
       <div className="flex min-w-0 flex-1 flex-col">
         <header className="sticky top-0 z-(--z-sticky) flex h-topbar shrink-0 items-center gap-3 border-border-default border-b bg-surface-page px-4 md:px-8">

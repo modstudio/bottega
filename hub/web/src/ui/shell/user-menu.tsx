@@ -52,9 +52,20 @@ export function UserMenu({
         <button
           type="button"
           aria-label={`Account: ${name}`}
-          className="ml-[0.9375rem] grid size-8 place-items-center border border-border-default bg-surface-sunken font-medium text-text-secondary text-xs hover:border-border-strong"
+          className="mx-2 flex w-[calc(100%-1rem)] items-center gap-3 px-[0.8125rem] py-1 text-left hover:bg-control-hover"
         >
-          {initials(name)}
+          <span
+            aria-hidden
+            className="grid size-7 shrink-0 place-items-center border border-border-default bg-surface-sunken font-medium text-text-secondary text-xs"
+          >
+            {initials(name)}
+          </span>
+          <span className="min-w-0 truncate group-data-collapsed/rail:sr-only">
+            <span className="block truncate font-medium text-sm">{name}</span>
+            {detail ? (
+              <span className="block truncate text-text-muted text-xs">{detail}</span>
+            ) : null}
+          </span>
         </button>
       }
     />

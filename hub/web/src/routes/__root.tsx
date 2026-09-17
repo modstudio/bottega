@@ -7,6 +7,7 @@ import {
   redirect,
   useRouterState,
 } from '@tanstack/react-router'
+import { AppMark } from '@/components/app-mark'
 import { signOutFromRecord } from '@/lib/hosted-auth'
 import { isHostedMode, isHostedPath, navForMode } from '@/lib/hub-mode'
 import { useWindowState } from '@/lib/window'
@@ -18,11 +19,7 @@ import { PLATFORM_NAME } from '../../../../shared/brand.ts'
 const THEME_KEY = 'hub:theme'
 const RAIL_KEY = 'hub:rail'
 
-const mark = (
-  <span aria-hidden className="font-mono font-semibold text-lg" data-tone="success">
-    <span className="text-status-text">$</span>
-  </span>
-)
+const mark = <AppMark className="size-5 shrink-0 text-text-primary" />
 
 const renderLink: RenderLink = (item, { className, onClick, children }) => (
   <Link to={item.to as LinkProps['to']} className={className} onClick={onClick}>
