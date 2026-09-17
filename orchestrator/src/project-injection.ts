@@ -108,6 +108,7 @@ export function unresolvedTrackerActionPlaceholder(
 
 type InjectionSettings = {
   tracker?: TrackerSettings
+  trunk?: string
   gate?: string
   worktree?: unknown
   release?: ReleaseSettings
@@ -120,11 +121,20 @@ type InjectableProject = {
   settings: InjectionSettings
 }
 
-export const injectionSources = ['tracker', 'gate', 'worktree', 'release', 'docs', 'stack'] as const
+export const injectionSources = [
+  'tracker',
+  'trunk',
+  'gate',
+  'worktree',
+  'release',
+  'docs',
+  'stack',
+] as const
 export type InjectionSource = (typeof injectionSources)[number]
 
 type InjectionValues<Project extends InjectableProject> = {
   tracker: ResolvedTracker
+  trunk: NonNullable<Project['settings']['trunk']>
   gate: NonNullable<Project['settings']['gate']>
   worktree: NonNullable<Project['settings']['worktree']>
   release: NonNullable<Project['settings']['release']>
@@ -139,6 +149,7 @@ type ResolvedInjection<
 
 const settingCommands: Record<Exclude<InjectionSource, 'stack'>, string> = {
   tracker: `--settings '{"tracker":{"protocol":"<protocol>"}}'`,
+  trunk: `--settings '{"trunk":"<branch>"}'`,
   gate: `--settings '{"gate":"<command>"}'`,
   worktree: `--settings '{"worktree":{}}'`,
   release: `--settings '{"release":{"rungs":[],"mergeMethod":"<merge-method>","requiredChecks":[]}}'`,

@@ -358,10 +358,11 @@ export function composeWorkflow(
     mode?.steps.map(
       (stepSlug) => catalogue.definition.steps.find((step) => step.slug === stepSlug)!,
     ) ?? []
-  const sources = [
-    ...new Set(['docs', 'stack', ...selected.flatMap((step) => step.needs)]),
-  ] as InjectionSource[]
-  const facts = resolveInjection(project, sources, args)
+  const sources = [...new Set(selected.flatMap((step) => step.needs))] as InjectionSource[]
+  const resolved = resolveInjection(project, ['docs', 'stack', ...sources], args)
+  const facts = Object.fromEntries(sources.map((source) => [source, resolved[source]])) as Partial<
+    typeof resolved
+  >
   return {
     workflow: { slug, title: definition.title, version: row.n },
     project: projectName,
@@ -382,9 +383,10 @@ export function composeWorkflow(
       }) ?? [],
     docs: {
       global: { scope: 'global' as const },
-      stack: { scope: 'stack' as const, subject: facts.stack },
-      project: facts.docs,
+      stack: { scope: 'stack' as const, subject: resolved.stack },
+      project: resolved.docs,
     },
+    facts,
     needs,
   }
 }
@@ -433,6 +435,7 @@ export function getWorkflowStep(
     version: row.n,
     catalogueVersion: catalogue.n,
     project: projectName,
+    facts,
     body,
   }
 }

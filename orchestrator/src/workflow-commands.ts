@@ -90,7 +90,7 @@ function stepCommand(argv: string[], print: (value: unknown, line?: string) => v
   const project = flagValue(argv, 'project')
   if (!project) throw new Error('--project is required')
   const step = getWorkflowStep(argv[2]!, project, argv[3]!, workflowArgs(argv))
-  print(step, step.body)
+  print(step, `facts: ${JSON.stringify(step.facts)}\n${step.body}`)
 }
 
 function catalogueCommand(argv: string[], print: (value: unknown, line?: string) => void): void {
@@ -198,6 +198,7 @@ function composeCommand(
           ...(result.needs.arguments
             ? [`missing required arguments: ${result.needs.arguments.join(', ')}`]
             : []),
+          `facts: ${JSON.stringify(result.facts)}`,
           ...result.steps.map(
             (step) =>
               `${step.n}. ${step.slug} — ${step.title} [job=${step.job ?? '-'} autonomy=${step.autonomy} floor=${step.floor.join('|')} needs=${step.needs.join('|') || '-'}]`,
