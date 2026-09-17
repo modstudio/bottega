@@ -47,7 +47,9 @@ describe('importWorkflowTree', () => {
     const lens = tree.find(({ path }) => path === 'workflows/steps/lens.md')!
     lens.body = lens.body.replace('\n---\n', '\n---\nEdited but valid.\n')
     const score = tree.find(({ path }) => path === 'workflows/steps/score.md')!
-    score.body = score.body.replace(/floor: \[[^\]]+\]/, 'floor: [not-a-proof]')
+    const validScore = score.body
+    score.body = score.body.replace(/floor:\n(?: {2}- [^\n]+\n)+/, 'floor:\n  - not-a-proof\n')
+    expect(score.body).not.toBe(validScore)
     const before = d.query('SELECT COUNT(*) count FROM step_catalogue_version').get() as {
       count: number
     }
