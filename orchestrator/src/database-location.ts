@@ -191,8 +191,28 @@ export function resolveDatabase(
   )
 }
 
+/** A test process never falls back to the live orchestrator store. */
+export function decideOrchestratorDatabasePath(
+  isTestProcess: boolean,
+  method: DatabaseResolutionMethod,
+  resolvedPath: string,
+): string {
+  if (isTestProcess && method !== 'ORCH_DB') {
+    throw new Error(
+      `test process refuses orchestrator database: ORCH_DB resolved <unset>; live store is ${resolvedPath}\n` +
+        'invariant: A test suite never falls back to the live orchestrator database.\n' +
+        'cleared by: set ORCH_DB to a scratch store before importing orchestrator/src/db.ts',
+    )
+  }
+  return resolvedPath
+}
+
 export const DATABASE_RESOLUTION = resolveDatabase()
-export const DB_PATH = DATABASE_RESOLUTION.path
+export const DB_PATH = decideOrchestratorDatabasePath(
+  process.env.NODE_ENV === 'test',
+  DATABASE_RESOLUTION.method,
+  DATABASE_RESOLUTION.path,
+)
 
 export function missingDatabaseMessage(path = DB_PATH): string {
   return `orchestrator database does not exist: ${path}\nrun orch init-db to create it`
