@@ -32,7 +32,7 @@ function namesProbeFile(value: string): boolean {
 
 /** True only for a completed read of the probe file whose result or final reply carries the sentinel. */
 export function registrationProbeReadsRepo(
-  events: import('./transport.ts').NormalizedEvent[],
+  events: import('./transport/transport.ts').NormalizedEvent[],
   output: string,
 ): boolean {
   const reads = events.filter(
@@ -111,7 +111,7 @@ export async function probeAgent(name: string): Promise<RegistrationProbeResult>
       properties: { status: { type: 'string', enum: ['ok'] } },
     }),
   )
-  const { transportFor, valueMatchesStrictSchema } = await import('./transport.ts')
+  const { transportFor, valueMatchesStrictSchema } = await import('./transport/transport.ts')
   const { mintStdioPingServer, mcpToolCallsObservable } = await import('./mcp-probe.ts')
   const { JOBS } = await import('./jobs.ts')
   mintStdioPingServer(join(scratch, 'repo'))
@@ -206,7 +206,7 @@ export async function probeAgent(name: string): Promise<RegistrationProbeResult>
         status: 'failed' as const,
         output: detail,
         parsed: null,
-        events: [] as import('./transport.ts').NormalizedEvent[],
+        events: [] as import('./transport/transport.ts').NormalizedEvent[],
       }
     }
   }
@@ -219,7 +219,7 @@ export async function probeAgent(name: string): Promise<RegistrationProbeResult>
     : {
         status: 'ok' as const,
         output: 'skipped: not required for declared jobs',
-        events: [] as import('./transport.ts').NormalizedEvent[],
+        events: [] as import('./transport/transport.ts').NormalizedEvent[],
       }
   const replyPath = join(scratch, 'reply.json')
   rmSync(replyPath, { force: true })
@@ -233,7 +233,7 @@ export async function probeAgent(name: string): Promise<RegistrationProbeResult>
         status: 'ok' as const,
         output: 'skipped: not required for declared jobs',
         parsed: { text: '{"status":"ok"}' },
-        events: [] as import('./transport.ts').NormalizedEvent[],
+        events: [] as import('./transport/transport.ts').NormalizedEvent[],
       }
   const mcpRun =
     needs.mcp || !declared
@@ -246,7 +246,7 @@ export async function probeAgent(name: string): Promise<RegistrationProbeResult>
       : {
           status: 'ok' as const,
           output: 'skipped: not required for declared jobs',
-          events: [] as import('./transport.ts').NormalizedEvent[],
+          events: [] as import('./transport/transport.ts').NormalizedEvent[],
         }
   const parsedSchema = (() => {
     try {

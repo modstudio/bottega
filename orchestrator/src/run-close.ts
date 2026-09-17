@@ -24,7 +24,7 @@ import { CALIBRATION_SUFFIX_RESERVE_BYTES } from './review-calibration.ts'
 import { pick } from './route.ts'
 import { terminateRunProcesses } from './run-process.ts'
 import type { RunResult } from './run-types.ts'
-import type { TransportName } from './transport.ts'
+import type { TransportName } from './transport/transport.ts'
 import type { Changes } from './worktree-remove.ts'
 import type { Worktree } from './worktree-types.ts'
 

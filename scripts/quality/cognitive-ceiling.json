@@ -767,26 +767,26 @@
     "key": "orchestrator/src/task-branch.ts\u0000resolveTaskBranch"
   },
   {
-    "file": "orchestrator/src/transport-acp.ts",
+    "file": "orchestrator/src/transport/transport-acp.ts",
     "function": "normalizeAcpTurn",
     "line": 117,
     "score": 81
   },
   {
-    "file": "orchestrator/src/transport-acp.ts",
+    "file": "orchestrator/src/transport/transport-acp.ts",
     "function": "openAcp",
     "line": 293,
     "score": 25,
-    "key": "orchestrator/src/transport-acp.ts\u0000openAcp"
+    "key": "orchestrator/src/transport/transport-acp.ts\u0000openAcp"
   },
   {
-    "file": "orchestrator/src/transport-acp.ts",
+    "file": "orchestrator/src/transport/transport-acp.ts",
     "function": "onRequest callback#2",
     "line": 372,
     "score": 18
   },
   {
-    "file": "orchestrator/src/transport-acp.ts",
+    "file": "orchestrator/src/transport/transport-acp.ts",
     "function": "IIFE",
     "line": 532,
     "score": 20

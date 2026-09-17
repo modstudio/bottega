@@ -21,7 +21,7 @@ import {
   type TransportName,
   type TransportResult,
   transportFor,
-} from '../src/transport.ts'
+} from '../src/transport/transport.ts'
 
 const SCHEMA = {
   type: 'object',

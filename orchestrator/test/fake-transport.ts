@@ -6,7 +6,7 @@ import {
   type TransportHandle,
   type TransportResult,
   type TransportStartOpts,
-} from '../src/transport.ts'
+} from '../src/transport/transport.ts'
 
 export type ScriptedTransportEvent =
   | { kind: 'started'; pid?: number | null; session?: string | null }

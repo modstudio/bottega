@@ -6,7 +6,7 @@ import { reclassifyFailuresCommand } from '../failure-commands.ts'
 import { blockersCommand, healthCommand } from '../health-commands.ts'
 import { JOBS } from '../jobs.ts'
 import { candidates, pick } from '../route.ts'
-import { acpRuntimeGaps } from '../transport.ts'
+import { acpRuntimeGaps } from '../transport/transport.ts'
 import { log, optionFlags } from './support.ts'
 
 export function register(program: Command): void {
