@@ -234,7 +234,7 @@ function RunsList() {
       ) : null}
       {payload && data ? (
         <>
-          <StatRow className="two-rows">
+          <StatRow>
             {cards.map(([figure, label, hint], index) => (
               <StatTile
                 key={label}

@@ -1,7 +1,6 @@
 import { useQuery } from '@tanstack/react-query'
 import { Database, GitCommit, RadioTower } from 'lucide-react'
-import type { CSSProperties, ReactNode } from 'react'
-import { cx } from '@/components/cx'
+import type { CSSProperties } from 'react'
 import { collectedTime, relativeTime } from '@/lib/format'
 import { PROJECT_FALLBACK } from '@/lib/project'
 import {
@@ -15,79 +14,20 @@ import {
 import { trpc } from '@/trpc/client'
 import { Button } from '@/ui/button/button'
 import { Select, type SelectOption } from '@/ui/listbox/select'
+import { ProjectName } from '@/ui/project-mark/project-mark'
 import { Segmented } from '@/ui/segmented/segmented'
 
-export function PageHeader({
-  title,
-  subtitle,
-  subtitleTitle,
-  actions,
-}: {
-  title: ReactNode
-  subtitle?: ReactNode
-  subtitleTitle?: string
-  actions?: ReactNode
-}) {
-  return (
-    <header className="page-header">
-      <div className="min-w-0">
-        <h1>{title}</h1>
-        {subtitle ? (
-          <div className="page-subtitle" title={subtitleTitle}>
-            {subtitle}
-          </div>
-        ) : null}
-      </div>
-      {actions ? <div className="page-actions">{actions}</div> : null}
-    </header>
-  )
-}
+export { EmptyState } from '@/ui/empty-state/empty-state'
+export { PageHeader, SectionTitle } from '@/ui/page-header/page-header'
+export { StatRow, StatTile } from '@/ui/stat/stat'
 
-export function SectionTitle({ children, detail }: { children: ReactNode; detail?: ReactNode }) {
-  return (
-    <div className="section-title">
-      <h2>{children}</h2>
-      {detail ? <span>{detail}</span> : null}
-    </div>
-  )
-}
-
-export function StatTile({
-  figure,
-  label,
-  hint,
-  live,
-}: {
-  figure: ReactNode
-  label: ReactNode
-  hint?: ReactNode
-  live?: boolean
-}) {
-  return (
-    <div className="stat-tile">
-      <div className={cx('stat-figure', live && 'text-live')}>{figure}</div>
-      <div>{label}</div>
-      {hint ? <div className="meta">{hint}</div> : null}
-    </div>
-  )
-}
-
-export function StatRow({ children, className }: { children: ReactNode; className?: string }) {
-  return <div className={cx('stat-row', className)}>{children}</div>
-}
-
-export function EmptyState({ title, hint }: { title: string; hint?: string }) {
-  return (
-    <div className="empty-state">
-      <div>{title}</div>
-      {hint ? <div className="meta mt-1">{hint}</div> : null}
-    </div>
-  )
-}
-
+/** A pulsing dot for work that is running right now. */
 export function LiveDot() {
   return (
-    <span className="live-dot">
+    <span
+      data-tone="success"
+      className="relative inline-block size-1.5 shrink-0 rounded-full bg-status-fill motion-safe:animate-pulse"
+    >
       <span className="sr-only">Running</span>
     </span>
   )
@@ -248,10 +188,9 @@ export function ProjectMark({
 }) {
   const queriedColors = useProjectColors(!suppliedColors)
   const colors = suppliedColors ?? queriedColors
+  const color = name ? colors[name] : undefined
   return (
-    <span className="proj" style={projectVars(colors, name)}>
-      {name || PROJECT_FALLBACK}
-    </span>
+    <ProjectName name={name || PROJECT_FALLBACK} color={color?.light} colorDark={color?.dark} />
   )
 }
 
