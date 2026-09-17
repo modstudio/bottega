@@ -1,9 +1,8 @@
 const compactNumber = new Intl.NumberFormat('en-US', { maximumFractionDigits: 1 })
 
 export const PROJECT_FALLBACK = 'elsewhere'
-export const DEFAULT_RUN_OFFSET = 0
-export const DEFAULT_RUN_LIMIT = 50
-export const RUN_PAGE_LIMITS = [25, 50, 100] as const
+const DEFAULT_RUN_LIMIT = 50
+const RUN_PAGE_LIMITS = [25, 50, 100] as const
 export type RunPageLimit = (typeof RUN_PAGE_LIMITS)[number]
 
 export type SearchableRun = {
@@ -50,7 +49,7 @@ export type LiveDisplay = {
   prompt: string
 }
 
-export function compactTokens(value: number | null | undefined) {
+function compactTokens(value: number | null | undefined) {
   if (value == null) return '-'
   if (value >= 1e9) return `${compactNumber.format(value / 1e9)}B`
   if (value >= 1e6) return `${compactNumber.format(value / 1e6)}M`
@@ -58,14 +57,14 @@ export function compactTokens(value: number | null | undefined) {
   return String(Math.round(value))
 }
 
-export function duration(ms: number) {
+function duration(ms: number) {
   const seconds = Math.round(ms / 1000)
   if (seconds >= 3600) return `${Math.floor(seconds / 3600)}h ${Math.floor((seconds % 3600) / 60)}m`
   if (seconds >= 60) return `${Math.floor(seconds / 60)}m ${seconds % 60}s`
   return `${seconds}s`
 }
 
-export function runEasternTime(value: string, includeDay = false) {
+function runEasternTime(value: string, includeDay = false) {
   const parts = new Intl.DateTimeFormat('en-US', {
     timeZone: 'America/New_York',
     ...(includeDay ? { month: 'short', day: 'numeric' } : {}),
@@ -79,7 +78,7 @@ export function runEasternTime(value: string, includeDay = false) {
   return includeDay ? `${part('month')} ${part('day')} ${time}` : time
 }
 
-export function runVerdictText(row: SearchableRun) {
+function runVerdictText(row: SearchableRun) {
   if (row.running) return 'running'
   if (row.delivery) return `${row.delivery}${row.quality ? ` / ${row.quality}` : ''}`
   if (row.status !== 'ok') return row.status

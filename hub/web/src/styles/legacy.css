@@ -1,7 +1,0 @@
-@theme inline {
-  --color-foreground: var(--text-primary);
-}
-
-:root {
-  --border: var(--border-default);
-}

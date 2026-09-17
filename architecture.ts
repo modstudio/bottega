@@ -47,7 +47,7 @@ const concerns: ConcernManifest = {
  * `primitives` are single controls; `overlays` open above the page; `patterns`
  * compose controls into one reusable piece; `layout` arranges a screen.
  */
-export const uiLayers: { name: string; folders: string[] }[] = [
+const uiLayers: { name: string; folders: string[] }[] = [
   { name: 'behavior', folders: ['state', 'dom', 'text'] },
   {
     name: 'primitives',

@@ -118,7 +118,7 @@ function RatioView({ data }: { data: RatioData }) {
               >
                 <span className="mb-1 whitespace-nowrap text-xs text-text-muted">{label}</span>
                 <div
-                  className={`w-7 border border-foreground ${day.excluded === 'gap' ? 'bg-[repeating-linear-gradient(135deg,transparent,transparent_3px,var(--border)_3px,var(--border)_5px)]' : day.excluded === 'today' ? 'bg-surface-sunken' : 'bg-foreground'}`}
+                  className={`w-7 border border-chart-1 ${day.excluded === 'gap' ? 'bg-[repeating-linear-gradient(135deg,transparent,transparent_3px,var(--border-default)_3px,var(--border-default)_5px)]' : day.excluded === 'today' ? 'bg-surface-sunken' : 'bg-chart-1'}`}
                   style={{ height }}
                 />
                 <span className="mt-1 text-xs text-text-muted">{day.day.slice(5)}</span>
@@ -219,7 +219,7 @@ function SpendView({ data }: { data: SpendData }) {
                 </div>
                 <div className="h-1 bg-surface-sunken">
                   <div
-                    className="h-full bg-foreground"
+                    className="h-full bg-chart-1"
                     style={{ width: `${Math.max(2, percentage)}%` }}
                   />
                 </div>
@@ -578,7 +578,7 @@ export function HealthView({ data }: { data: HealthData }) {
                       {row.sparkline.map((point) => (
                         <span
                           key={point.day}
-                          className="w-1.5 bg-foreground"
+                          className="w-1.5 bg-chart-1"
                           style={{
                             height: point.count
                               ? `${Math.max(3, Math.round((point.count / peak) * 24))}px`

@@ -22,8 +22,8 @@ const iconSizes = {
   lg: 'size-(--control-h-lg) [&_svg]:size-5',
 } as const
 
-export type ButtonVariant = keyof typeof variants
-export type ButtonSize = keyof typeof sizes
+type ButtonVariant = keyof typeof variants
+type ButtonSize = keyof typeof sizes
 
 const base =
   'inline-flex shrink-0 select-none items-center justify-center whitespace-nowrap font-medium transition-colors duration-(--duration-fast) disabled:pointer-events-none disabled:opacity-50 [&_svg]:shrink-0'

@@ -26,9 +26,9 @@ export type NavItem = {
 }
 
 /** Pages visited less often, behind one rail entry that opens them beside the rail. */
-export type NavGroup = { label: string; icon: Icon; items: readonly NavItem[] }
+type NavGroup = { label: string; icon: Icon; items: readonly NavItem[] }
 
-export type NavEntry = NavItem | NavGroup
+type NavEntry = NavItem | NavGroup
 
 /** Entries in one section sit together; a hairline separates sections. */
 export type NavSection = { id: string; entries: readonly NavEntry[] }
