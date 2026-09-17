@@ -51,12 +51,12 @@ describe('ACP parity exit verdict', () => {
       stopReason,
     })
     expect(caseSemanticallyMatches('tool-read', reply('path does not exist'))).toBe(false)
-    expect(caseSemanticallyMatches('tool-read', reply('@devbox/orchestrator'))).toBe(true)
+    expect(caseSemanticallyMatches('tool-read', reply('@bottega/orchestrator'))).toBe(true)
     expect(parityCaseVerdict('tool-read', 'ok', null, reply('path does not exist'))).toEqual({
       outcome: 'failed',
       failureKind: 'semantic',
     })
-    expect(parityCaseVerdict('tool-read', 'ok', null, reply('@devbox/orchestrator'))).toEqual({
+    expect(parityCaseVerdict('tool-read', 'ok', null, reply('@bottega/orchestrator'))).toEqual({
       outcome: 'ok',
       failureKind: '—',
     })

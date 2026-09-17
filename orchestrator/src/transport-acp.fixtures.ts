@@ -38,7 +38,7 @@ export const ACP_FIXTURE_TOOL_READ = {
       sessionId: 'sess_parity_read',
       update: {
         sessionUpdate: 'agent_message_chunk',
-        content: { type: 'text', text: '"@devbox/orchestrator"' },
+        content: { type: 'text', text: '"@bottega/orchestrator"' },
       },
     },
     {
@@ -173,7 +173,7 @@ export const ACP_FIXTURE_GROK = {
       sessionId: 'sess_grok_read',
       update: {
         sessionUpdate: 'agent_message_chunk',
-        content: { type: 'text', text: '@devbox/orchestrator' },
+        content: { type: 'text', text: '@bottega/orchestrator' },
       },
     },
   ],

@@ -1,5 +1,5 @@
 {
-  "name": "@devbox/orchestrator",
+  "name": "@bottega/orchestrator",
   "version": "0.1.0",
   "private": true,
   "description": "Personal delegation layer: route work to external agents, score them per job type",

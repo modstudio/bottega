@@ -64,7 +64,7 @@ const CASES: CaseSpec[] = [
   {
     id: 'tool-read',
     prompt: 'Read orchestrator/package.json and quote the JSON "name" field in one line.',
-    expected: (reply) => (reply.parsed?.text ?? reply.output).includes('@devbox/orchestrator'),
+    expected: (reply) => (reply.parsed?.text ?? reply.output).includes('@bottega/orchestrator'),
   },
   {
     id: 'schema',

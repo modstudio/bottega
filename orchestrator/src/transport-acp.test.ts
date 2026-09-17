@@ -173,7 +173,7 @@ describe('ACP event fixtures normalise to orch outcomes', () => {
   test('a tool-using read records the tool and the answer', () => {
     const result = normalizeAcpTurn(ACP_FIXTURE_TOOL_READ)
     expect(result.status).toBe('ok')
-    expect(result.output).toBe('"@devbox/orchestrator"')
+    expect(result.output).toBe('"@bottega/orchestrator"')
     expect(result.events.some((event) => event.kind === 'tool' && event.toolKind === 'read')).toBe(
       true,
     )
@@ -210,7 +210,7 @@ describe('ACP event fixtures normalise to orch outcomes', () => {
 
   test('grok updates use terminal input plus output usage, not session-context used', () => {
     const result = normalizeAcpTurn(ACP_FIXTURE_GROK)
-    expect(result.output).toBe('@devbox/orchestrator')
+    expect(result.output).toBe('@bottega/orchestrator')
     expect(result.tokens).toBe(101_505)
     expect(result.events.some((event) => event.kind === 'tool' && event.toolKind === 'read')).toBe(
       true,
