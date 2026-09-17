@@ -336,6 +336,99 @@ function trackerTaskKey(result: unknown): unknown {
   )
 }
 
+async function importTasks(file: string) {
+  const project = projectOf(new URL('../..', import.meta.url).pathname)
+  const registered = projects().find((candidate) => candidate.name === project)
+  const prefix = registered?.settings.keyPrefixes?.[0]
+  if (!project || !prefix) throw new Error('the local project must declare a key prefix')
+  const items = JSON.parse(readFileSync(file, 'utf8')) as {
+    title: string
+    opened: string
+    closed: string | null
+    shas: string[]
+  }[]
+  const log = Bun.spawnSync(
+    ['git', '-C', new URL('../..', import.meta.url).pathname, 'log', '--all', '--format=%H%x09%cI'],
+    { stdout: 'pipe', stderr: 'ignore' },
+  )
+  const stamps = new Map(
+    new TextDecoder()
+      .decode(log.stdout)
+      .split('\n')
+      .filter(Boolean)
+      .map((line) => line.split('\t') as [string, string]),
+  )
+  const imported: Array<{ key: string; shas: string[] }> = []
+  for (const item of items) {
+    const done = !!item.closed
+    const row = await createTask(
+      {
+        project,
+        title: item.title,
+        status: done ? 'done' : 'open',
+        openedAt: item.opened,
+        closedAt: item.closed,
+      },
+      { skipDuplicateCheck: true },
+    )
+    imported.push({ key: row.key, shas: item.shas })
+  }
+  writeTransaction((conn) => {
+    for (const item of imported) {
+      for (const sha of item.shas) {
+        const at = stamps.get(sha)
+        if (!at) continue
+        conn
+          .query(`INSERT OR IGNORE INTO commit_key (sha, repo, task_key, at) VALUES (?,?,?,?)`)
+          .run(sha, project, item.key, at)
+      }
+    }
+  })
+  console.log(`imported ${items.length} tasks`)
+}
+
+async function createTaskCommand(
+  required: (name: string) => string,
+  newBody: () => string | undefined,
+) {
+  const project = required('project')
+  const title = required('title')
+  const body = newBody()
+  const override = flag('allow-duplicate')
+  const delay = Number(process.env.HUB_TEST_DUPLICATE_DELAY_MS ?? 0)
+  const afterDuplicateSearch =
+    delay > 0
+      ? () => {
+          const marker = process.env.HUB_TEST_DUPLICATE_MARKER
+          if (marker) writeFileSync(marker, '')
+          Bun.sleepSync(delay)
+        }
+      : undefined
+  try {
+    const row = await createTask(
+      { project, title, status: flag('status'), parent: flag('parent'), body },
+      {
+        allowDuplicateReason: has('allow-duplicate') ? override : undefined,
+        afterDuplicateSearch,
+      },
+    )
+    console.log(row.key)
+  } catch (error) {
+    if (!(error instanceof DuplicateTaskError)) throw error
+    throw new Error(
+      [
+        'possible duplicate tasks:',
+        ...error.candidates.map(
+          (candidate) =>
+            `${candidate.key} [${candidate.status ?? 'unknown'}] score ${candidate.score.toFixed(3)}  ${candidate.title}`,
+        ),
+        '',
+        'Refusing to create a duplicate. Pass --allow-duplicate "reason" to override.',
+      ].join('\n'),
+    )
+  }
+}
+
 async function task() {
   const sub = argv[1]
   if (taskHelpRequested()) {
@@ -446,43 +539,7 @@ async function task() {
   }
 
   if (sub === 'new') {
-    const project = required('project')
-    const title = required('title')
-    const body = newBody()
-    const override = flag('allow-duplicate')
-    const delay = Number(process.env.HUB_TEST_DUPLICATE_DELAY_MS ?? 0)
-    const afterDuplicateSearch =
-      delay > 0
-        ? () => {
-            const marker = process.env.HUB_TEST_DUPLICATE_MARKER
-            if (marker) writeFileSync(marker, '')
-            Bun.sleepSync(delay)
-          }
-        : undefined
-    let row: Awaited<ReturnType<typeof createTask>>
-    try {
-      row = await createTask(
-        { project, title, status: flag('status'), parent: flag('parent'), body },
-        {
-          allowDuplicateReason: has('allow-duplicate') ? override : undefined,
-          afterDuplicateSearch,
-        },
-      )
-    } catch (error) {
-      if (!(error instanceof DuplicateTaskError)) throw error
-      throw new Error(
-        [
-          'possible duplicate tasks:',
-          ...error.candidates.map(
-            (candidate) =>
-              `${candidate.key} [${candidate.status ?? 'unknown'}] score ${candidate.score.toFixed(3)}  ${candidate.title}`,
-          ),
-          '',
-          'Refusing to create a duplicate. Pass --allow-duplicate "reason" to override.',
-        ].join('\n'),
-      )
-    }
-    console.log(row.key)
+    await createTaskCommand(required, newBody)
     return
   }
   if (sub === 'duplicates') {
@@ -577,73 +634,9 @@ async function task() {
     return
   }
   if (sub === 'import') {
-    const project = projectOf(new URL('../..', import.meta.url).pathname)
-    const registered = projects().find((candidate) => candidate.name === project)
-    const prefix = registered?.settings.keyPrefixes?.[0]
-    if (!project || !prefix) throw new Error('the local project must declare a key prefix')
     const file = argv[2]
     if (!file) throw new Error('hub task import <file.json>')
-    const items = JSON.parse(readFileSync(file, 'utf8')) as {
-      title: string
-      opened: string
-      closed: string | null
-      shas: string[]
-    }[]
-    // One pass over git for every commit's real instant, rather than a
-    // subprocess per sha.
-    const log = Bun.spawnSync(
-      [
-        'git',
-        '-C',
-        new URL('../..', import.meta.url).pathname,
-        'log',
-        '--all',
-        '--format=%H%x09%cI',
-      ],
-      { stdout: 'pipe', stderr: 'ignore' },
-    )
-    const stamps = new Map(
-      new TextDecoder()
-        .decode(log.stdout)
-        .split('\n')
-        .filter(Boolean)
-        .map((l) => l.split('\t') as [string, string]),
-    )
-
-    const imported: Array<{ key: string; shas: string[] }> = []
-    for (const t of items) {
-      const done = !!t.closed
-      const row = await createTask(
-        {
-          project,
-          title: t.title,
-          status: done ? 'done' : 'open',
-          openedAt: t.opened,
-          closedAt: t.closed,
-        },
-        { skipDuplicateCheck: true },
-      )
-      imported.push({ key: row.key, shas: t.shas })
-    }
-    writeTransaction((conn) => {
-      for (const t of imported) {
-        // Backfilled tasks carry their commits, so commit-window attribution
-        // can find them.
-        //
-        // With the REAL commit timestamp, not the task's date. Every other row
-        // in this table holds a full ISO instant, and "2026-08-31" sorts BEFORE
-        // "2026-08-31T14:00:00Z" — so a date-only row falls outside every window
-        // that contains its own day, and matches nothing, silently.
-        for (const sha of t.shas) {
-          const at = stamps.get(sha)
-          if (!at) continue
-          conn
-            .query(`INSERT OR IGNORE INTO commit_key (sha, repo, task_key, at) VALUES (?,?,?,?)`)
-            .run(sha, project, t.key, at)
-        }
-      }
-    })
-    console.log(`imported ${items.length} tasks`)
+    await importTasks(file)
     return
   }
   if (sub === 'push') {

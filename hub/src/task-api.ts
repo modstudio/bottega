@@ -47,6 +47,128 @@ const json = (value: unknown, status = 200) => Response.json(value, { status })
 const bodyOf = (request: Request) =>
   request.json().catch(() => null) as Promise<Record<string, unknown> | null>
 
+const call = <T>(stub: T | undefined, real: T): T => {
+  if (process.env.NODE_ENV === 'test' && !stub) throw new Error(TEST_REFUSAL)
+  return stub ?? real
+}
+
+type RouteContext = {
+  request: Request
+  url: URL
+  config: Config
+  dependencies: Dependencies
+  who: { userId: string; spaceId: string }
+  body: Record<string, unknown> | null
+  keyMatch: RegExpExecArray | null
+  commentMatch: RegExpExecArray | null
+  documentsMatch: RegExpExecArray | null
+  documentMatch: RegExpExecArray | null
+  closeMatch: RegExpExecArray | null
+}
+
+async function readRoute(ctx: RouteContext): Promise<Response | null> {
+  const { request, url, config, dependencies, who, keyMatch } = ctx
+  if (request.method === 'GET' && url.pathname === '/v1/tasks')
+    return json(
+      await call(dependencies.list, listHostedTasks)(config.recordDatabaseUrl, who, {
+        project: url.searchParams.get('project') ?? undefined,
+        status: url.searchParams.get('status') ?? undefined,
+        parent: url.searchParams.get('parent') ?? undefined,
+        updatedSince: url.searchParams.get('updatedSince') ?? undefined,
+        cursor: url.searchParams.get('cursor') ?? undefined,
+        includeDeleted: url.searchParams.get('includeDeleted') === 'true',
+      }),
+    )
+  if (request.method === 'GET' && url.pathname === '/v1/tasks/counts')
+    return json(await call(dependencies.counts, hostedTaskCounts)(config.recordDatabaseUrl, who))
+  if (request.method !== 'GET' || !keyMatch) return null
+  const value = await call(dependencies.get, getHostedTask)(
+    config.recordDatabaseUrl,
+    who,
+    decodeURIComponent(keyMatch[1]!),
+  )
+  return value ? json(value) : json({ error: 'task not found' }, 404)
+}
+
+async function taskWriteRoute(ctx: RouteContext): Promise<Response | null> {
+  const { request, url, config, dependencies, who, body, keyMatch, closeMatch } = ctx
+  if (request.method === 'POST' && url.pathname === '/v1/tasks')
+    return json(
+      await call(dependencies.create, createHostedTask)(
+        config.recordDatabaseUrl,
+        who,
+        body as Parameters<typeof createHostedTask>[2],
+      ),
+      201,
+    )
+  if (request.method === 'PATCH' && keyMatch) {
+    const value = await call(dependencies.patch, patchHostedTask)(
+      config.recordDatabaseUrl,
+      who,
+      decodeURIComponent(keyMatch[1]!),
+      body as Parameters<typeof patchHostedTask>[3],
+    )
+    return value ? json(value) : json({ error: 'task not found' }, 404)
+  }
+  if (request.method === 'POST' && closeMatch) {
+    const value = await call(dependencies.patch, patchHostedTask)(
+      config.recordDatabaseUrl,
+      who,
+      decodeURIComponent(closeMatch[1]!),
+      { status: 'done', status_category: 'done' },
+    )
+    return value ? json(value) : json({ error: 'task not found' }, 404)
+  }
+  if (request.method !== 'PUT' || url.pathname !== '/v1/tasks/mirror') return null
+  return json(
+    await call(dependencies.mirror, mirrorHostedTasks)(
+      config.recordDatabaseUrl,
+      who,
+      body as Parameters<typeof mirrorHostedTasks>[2],
+    ),
+  )
+}
+
+async function childWriteRoute(ctx: RouteContext): Promise<Response | null> {
+  const { request, config, dependencies, who, body, commentMatch, documentsMatch, documentMatch } =
+    ctx
+  if (request.method === 'POST' && commentMatch) {
+    const value = await call(dependencies.comment, addHostedComment)(
+      config.recordDatabaseUrl,
+      who,
+      decodeURIComponent(commentMatch[1]!),
+      String(body?.body ?? ''),
+    )
+    return value ? json(value, 201) : json({ error: 'task not found' }, 404)
+  }
+  if (request.method === 'POST' && documentsMatch) {
+    const value = await call(dependencies.createDocument, createHostedDocument)(
+      config.recordDatabaseUrl,
+      who,
+      decodeURIComponent(documentsMatch[1]!),
+      body as Parameters<typeof createHostedDocument>[3],
+    )
+    return value ? json(value, 201) : json({ error: 'task not found' }, 404)
+  }
+  if (request.method === 'PATCH' && documentMatch) {
+    const value = await call(dependencies.patchDocument, patchHostedDocument)(
+      config.recordDatabaseUrl,
+      who,
+      documentMatch[2]!,
+      body as Parameters<typeof patchHostedDocument>[3],
+    )
+    return value ? json(value) : json({ error: 'document not found' }, 404)
+  }
+  if (request.method !== 'DELETE' || !documentMatch) return null
+  return json(
+    await call(dependencies.deleteDocuments, softDeleteHostedDocuments)(
+      config.recordDatabaseUrl,
+      who,
+      [documentMatch[2]!],
+    ),
+  )
+}
+
 export async function taskApi(
   request: Request,
   config: Config,
@@ -67,102 +189,25 @@ export async function taskApi(
   const documentMatch = /^\/v1\/tasks\/([^/]+)\/documents\/([^/]+)$/.exec(url.pathname)
   const closeMatch = /^\/v1\/tasks\/([^/]+)\/close$/.exec(url.pathname)
   const body = request.method === 'GET' ? null : await bodyOf(request)
-  const call = <T>(stub: T | undefined, real: T): T => {
-    if (process.env.NODE_ENV === 'test' && !stub) throw new Error(TEST_REFUSAL)
-    return stub ?? real
-  }
   try {
-    if (request.method === 'GET' && url.pathname === '/v1/tasks')
-      return json(
-        await call(dependencies.list, listHostedTasks)(config.recordDatabaseUrl, who, {
-          project: url.searchParams.get('project') ?? undefined,
-          status: url.searchParams.get('status') ?? undefined,
-          parent: url.searchParams.get('parent') ?? undefined,
-          updatedSince: url.searchParams.get('updatedSince') ?? undefined,
-          cursor: url.searchParams.get('cursor') ?? undefined,
-          includeDeleted: url.searchParams.get('includeDeleted') === 'true',
-        }),
-      )
-    if (request.method === 'GET' && url.pathname === '/v1/tasks/counts')
-      return json(await call(dependencies.counts, hostedTaskCounts)(config.recordDatabaseUrl, who))
-    if (request.method === 'GET' && keyMatch) {
-      const value = await call(dependencies.get, getHostedTask)(
-        config.recordDatabaseUrl,
-        who,
-        decodeURIComponent(keyMatch[1]!),
-      )
-      return value ? json(value) : json({ error: 'task not found' }, 404)
+    const context: RouteContext = {
+      request,
+      url,
+      config,
+      dependencies,
+      who,
+      body,
+      keyMatch,
+      commentMatch,
+      documentsMatch,
+      documentMatch,
+      closeMatch,
     }
-    if (request.method === 'POST' && url.pathname === '/v1/tasks')
-      return json(
-        await call(dependencies.create, createHostedTask)(
-          config.recordDatabaseUrl,
-          who,
-          body as Parameters<typeof createHostedTask>[2],
-        ),
-        201,
-      )
-    if (request.method === 'PATCH' && keyMatch) {
-      const value = await call(dependencies.patch, patchHostedTask)(
-        config.recordDatabaseUrl,
-        who,
-        decodeURIComponent(keyMatch[1]!),
-        body as Parameters<typeof patchHostedTask>[3],
-      )
-      return value ? json(value) : json({ error: 'task not found' }, 404)
-    }
-    if (request.method === 'POST' && commentMatch) {
-      const value = await call(dependencies.comment, addHostedComment)(
-        config.recordDatabaseUrl,
-        who,
-        decodeURIComponent(commentMatch[1]!),
-        String(body?.body ?? ''),
-      )
-      return value ? json(value, 201) : json({ error: 'task not found' }, 404)
-    }
-    if (request.method === 'POST' && documentsMatch) {
-      const value = await call(dependencies.createDocument, createHostedDocument)(
-        config.recordDatabaseUrl,
-        who,
-        decodeURIComponent(documentsMatch[1]!),
-        body as Parameters<typeof createHostedDocument>[3],
-      )
-      return value ? json(value, 201) : json({ error: 'task not found' }, 404)
-    }
-    if (request.method === 'PATCH' && documentMatch) {
-      const value = await call(dependencies.patchDocument, patchHostedDocument)(
-        config.recordDatabaseUrl,
-        who,
-        documentMatch[2]!,
-        body as Parameters<typeof patchHostedDocument>[3],
-      )
-      return value ? json(value) : json({ error: 'document not found' }, 404)
-    }
-    if (request.method === 'DELETE' && documentMatch)
-      return json(
-        await call(dependencies.deleteDocuments, softDeleteHostedDocuments)(
-          config.recordDatabaseUrl,
-          who,
-          [documentMatch[2]!],
-        ),
-      )
-    if (request.method === 'POST' && closeMatch) {
-      const value = await call(dependencies.patch, patchHostedTask)(
-        config.recordDatabaseUrl,
-        who,
-        decodeURIComponent(closeMatch[1]!),
-        { status: 'done', status_category: 'done' },
-      )
-      return value ? json(value) : json({ error: 'task not found' }, 404)
-    }
-    if (request.method === 'PUT' && url.pathname === '/v1/tasks/mirror')
-      return json(
-        await call(dependencies.mirror, mirrorHostedTasks)(
-          config.recordDatabaseUrl,
-          who,
-          body as Parameters<typeof mirrorHostedTasks>[2],
-        ),
-      )
+    const response =
+      (await readRoute(context)) ??
+      (await taskWriteRoute(context)) ??
+      (await childWriteRoute(context))
+    if (response) return response
     return new Response('not found', { status: 404 })
   } catch (error) {
     return json({ error: (error as Error).message }, 409)

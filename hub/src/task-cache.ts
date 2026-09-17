@@ -35,9 +35,21 @@ function applyTask(conn: Database, row: HostedChanges['tasks'][number]) {
       closed_at=excluded.closed_at,updated_at=excluded.updated_at,source=excluded.source,
       first_seen=excluded.first_seen,last_seen=excluded.last_seen`)
     .run(
-      row.id, row.key, row.project, row.title, row.status, row.status_category, row.parent_key,
-      row.body, row.assignee, row.opened_at, row.closed_at, row.updated_at, row.source,
-      row.first_seen, row.last_seen,
+      row.id,
+      row.key,
+      row.project,
+      row.title,
+      row.status,
+      row.status_category,
+      row.parent_key,
+      row.body,
+      row.assignee,
+      row.opened_at,
+      row.closed_at,
+      row.updated_at,
+      row.source,
+      row.first_seen,
+      row.last_seen,
     )
 }
 
@@ -65,13 +77,32 @@ function applyDocument(conn: Database, row: HostedChanges['documents'][number]) 
       .query(
         `UPDATE task_document SET record_id=?,task_key=?,role=?,title=?,body=?,version=?,created_at=?,updated_at=? WHERE id=?`,
       )
-      .run(row.id, row.task_key, row.role, row.title, row.body, row.version, row.created_at, row.updated_at, id)
+      .run(
+        row.id,
+        row.task_key,
+        row.role,
+        row.title,
+        row.body,
+        row.version,
+        row.created_at,
+        row.updated_at,
+        id,
+      )
   } else {
     conn
       .query(
         `INSERT INTO task_document (record_id,task_key,role,title,body,version,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?)`,
       )
-      .run(row.id, row.task_key, row.role, row.title, row.body, row.version, row.created_at, row.updated_at)
+      .run(
+        row.id,
+        row.task_key,
+        row.role,
+        row.title,
+        row.body,
+        row.version,
+        row.created_at,
+        row.updated_at,
+      )
   }
 }
 
