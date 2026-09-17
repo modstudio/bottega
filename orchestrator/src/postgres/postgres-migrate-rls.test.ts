@@ -14,17 +14,17 @@ import {
   memoryRecordSession,
 } from '../../test/fixtures/record-session.ts'
 import { proveHostedDocs, proveScoreRecordSync } from '../../test/postgres-score-proof.ts'
-import { startRecordApiServer } from '../record-api-server.ts'
-import { bearerHeaders, recordAuth, setActiveRecordSpace } from '../record-auth.ts'
-import { signInCommand, signUpCommand, whoamiCommand } from '../record-auth-command.ts'
-import { diagnoseRecord, recordDoctorExitCode } from '../record-doctor.ts'
+import { startRecordApiServer } from '../record/record-api-server.ts'
+import { bearerHeaders, recordAuth, setActiveRecordSpace } from '../record/record-auth.ts'
+import { signInCommand, signUpCommand, whoamiCommand } from '../record/record-auth-command.ts'
+import { diagnoseRecord, recordDoctorExitCode } from '../record/record-doctor.ts'
 import {
   acceptRecordInvitation,
   inviteToActiveRecordSpace,
   pendingRecordInvitations,
   recordMemberships,
   switchRecordSpace,
-} from '../record-space.ts'
+} from '../record/record-space.ts'
 import {
   appliedRecordMigrationCount,
   migratePostgres,

@@ -5,7 +5,7 @@ import {
   appliedRecordMigrationCount,
   migratePostgres,
   recordMigrationCount,
-} from './postgres/postgres-migrate.ts'
+} from '../postgres/postgres-migrate.ts'
 import { diagnoseRecord, recordDoctorExitCode, redactRecordPasswords } from './record-doctor.ts'
 import {
   acceptRecordInvitation,

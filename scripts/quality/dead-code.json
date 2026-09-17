@@ -25,7 +25,7 @@
   },
   {
     "workspace": "orchestrator",
-    "file": "orchestrator/src/record-auth-command.ts",
+    "file": "orchestrator/src/record/record-auth-command.ts",
     "issueType": "unneededExports",
     "symbol": "recordPassword"
   }

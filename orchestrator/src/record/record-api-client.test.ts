@@ -1,5 +1,8 @@
 import { describe, expect, test } from 'bun:test'
-import { createMemoryRecordApiClient, installRecordApiClient } from '../test/fixtures/record-api.ts'
+import {
+  createMemoryRecordApiClient,
+  installRecordApiClient,
+} from '../../test/fixtures/record-api.ts'
 import { recordApiClient } from './record-api-client.ts'
 
 describe('record API client test safety', () => {

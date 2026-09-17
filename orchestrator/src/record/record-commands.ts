@@ -1,10 +1,10 @@
 // concern: evidence
 /** Owns fix-defect, note, state, and search command behavior. Must not know CLI grammar. */
-import { db } from './db.ts'
-import { dispatchFiledIssues, filedIssueQueueState } from './issue/issue-dispatch.ts'
-import { fileNote } from './mcp.ts'
-import { searchRecords } from './search.ts'
-import { state } from './serve.ts'
+import { db } from '../db.ts'
+import { dispatchFiledIssues, filedIssueQueueState } from '../issue/issue-dispatch.ts'
+import { fileNote } from '../mcp.ts'
+import { searchRecords } from '../search.ts'
+import { state } from '../serve.ts'
 
 type Presentation = { log(value: string): void; setExitCode(code: number): void }
 

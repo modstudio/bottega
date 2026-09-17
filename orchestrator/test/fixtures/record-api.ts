@@ -4,8 +4,8 @@ import type {
   RecordApiClient,
   RecordDocImportInput,
   RecordDocUpsertInput,
-} from '../../src/record-api-client.ts'
-import { refuseScoreVerdict } from '../../src/record-verdicts.ts'
+} from '../../src/record/record-api-client.ts'
+import { refuseScoreVerdict } from '../../src/record/record-verdicts.ts'
 
 type StoredDoc = {
   id: string

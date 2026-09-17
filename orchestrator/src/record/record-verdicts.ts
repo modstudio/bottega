@@ -8,7 +8,7 @@ import {
   type Fidelity,
   QUALITY,
   type Quality,
-} from './score/score.ts'
+} from '../score/score.ts'
 
 export class RecordVerdictError extends Error {
   status: 400 | 404 | 409

@@ -3,21 +3,21 @@
 import type { Database } from 'bun:sqlite'
 import { SQL } from 'bun'
 import { drizzle } from 'drizzle-orm/bun-sql'
-import { machine, RECORD_ACTOR_ROLE, RECORD_OWNER_ROLE } from '../../shared/record/schema.ts'
+import { machine, RECORD_ACTOR_ROLE, RECORD_OWNER_ROLE } from '../../../shared/record/schema.ts'
 import {
   contention as contentionRecord,
   landingOverride as landingOverrideRecord,
   landing as landingRecord,
   landingReviewCarry as landingReviewCarryRecord,
   testFlake as testFlakeRecord,
-} from '../../shared/record/schema-landing.ts'
+} from '../../../shared/record/schema-landing.ts'
 import {
   reviewFinding as reviewFindingRecord,
   reviewLens as reviewLensRecord,
   review as reviewRecord,
-} from '../../shared/record/schema-review.ts'
-import { run as runRecord, runScore as runScoreRecord } from '../../shared/record/schema-run.ts'
-import { db, nowIso } from './db.ts'
+} from '../../../shared/record/schema-review.ts'
+import { run as runRecord, runScore as runScoreRecord } from '../../../shared/record/schema-run.ts'
+import { db, nowIso } from '../db.ts'
 import {
   backfillLandingEvidenceRecords,
   CONTENTION_RECORD_PAYLOAD_COLUMNS,
@@ -26,23 +26,23 @@ import {
   LANDING_REVIEW_CARRY_RECORD_PAYLOAD_COLUMNS,
   type LandingEvidenceBackfillResult,
   TEST_FLAKE_RECORD_PAYLOAD_COLUMNS,
-} from './landing-outbox.ts'
-import { machineId, machineName } from './machine-identity.ts'
-import { pullRecordCache } from './record-cache.ts'
-import { currentRecordSession } from './record-session.ts'
+} from '../landing-outbox.ts'
+import { machineId, machineName } from '../machine-identity.ts'
 import {
   backfillReviewRecords,
   REVIEW_FINDING_RECORD_PAYLOAD_COLUMNS,
   REVIEW_LENS_RECORD_PAYLOAD_COLUMNS,
   REVIEW_RECORD_PAYLOAD_COLUMNS,
   type ReviewRecordBackfillResult,
-} from './review-outbox.ts'
+} from '../review-outbox.ts'
 import {
   backfillRunRecords,
   RUN_RECORD_PAYLOAD_COLUMNS,
   type RunRecordBackfillResult,
-} from './run-outbox.ts'
-import { backfillScoreRecords, SCORE_RECORD_PAYLOAD_COLUMNS } from './score/score-outbox.ts'
+} from '../run-outbox.ts'
+import { backfillScoreRecords, SCORE_RECORD_PAYLOAD_COLUMNS } from '../score/score-outbox.ts'
+import { pullRecordCache } from './record-cache.ts'
+import { currentRecordSession } from './record-session.ts'
 
 type OutboxRow = { id: number; kind: string; record_id: string; payload: string }
 type Payload = Record<string, unknown>

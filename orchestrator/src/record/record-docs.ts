@@ -1,13 +1,13 @@
 // concern: record-docs
 /** Owns tenant-bound hosted document reads and writes. Must not know local cache, CLI, or HTTP. */
 import { SQL } from 'bun'
-import { newRecordId } from '../../shared/record/schema.ts'
+import { newRecordId } from '../../../shared/record/schema.ts'
 import {
   consumeDocBody,
   type DocDelivery,
   type DocRevisionOp,
   refuseDocWrite,
-} from './doc/doc-write-allowed.ts'
+} from '../doc/doc-write-allowed.ts'
 
 export type RecordDoc = {
   id: string

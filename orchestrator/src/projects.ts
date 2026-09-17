@@ -40,7 +40,7 @@ import {
 } from './project-injection.ts'
 import { type ReadonlyProvision, validateReadonlyProvision } from './readonly-provision.ts'
 import { loadTrackedRecipe, recipePointerErrors } from './recipe/recipe-loader.ts'
-import { recordApiClient } from './record-api-client.ts'
+import { recordApiClient } from './record/record-api-client.ts'
 import { DEFAULT_PROJECT_CONFIG_PATH, resolveWorktreeLifecycle } from './worktree-lifecycle.ts'
 import {
   CREATE_VARS,

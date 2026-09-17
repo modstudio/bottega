@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'bun:test'
-import { newRecordId } from '../../shared/record/schema.ts'
-import { installRecordApiClient } from '../test/fixtures/record-api.ts'
-import { db, writableDb } from './db.ts'
+import { newRecordId } from '../../../shared/record/schema.ts'
+import { installRecordApiClient } from '../../test/fixtures/record-api.ts'
+import { db, writableDb } from '../db.ts'
 import type { RecordApiClient, RecordDocImportInput } from './record-api-client.ts'
 import { groupLocalDocsForImport, pushDocsCommand } from './record-push-docs.ts'
 

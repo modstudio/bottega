@@ -19,7 +19,7 @@ import { db, nowIso, sessionId, writableDb, writeTransaction } from '../db.ts'
 import { JOBS } from '../jobs.ts'
 import { DEFAULT_PACK_BYTES } from '../pack-budget.ts'
 import { projectAt, projectByName } from '../projects.ts'
-import { recordApiClient } from '../record-api-client.ts'
+import { recordApiClient } from '../record/record-api-client.ts'
 import {
   consumeDocBody,
   type DocRevisionOp,

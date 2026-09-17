@@ -28,7 +28,7 @@ import {
   searchCommand,
   serveCommand,
   stateCommand,
-} from '../record-commands.ts'
+} from '../record/record-commands.ts'
 import {
   REVIEW_COVERAGE,
   REVIEW_LIMITS,
