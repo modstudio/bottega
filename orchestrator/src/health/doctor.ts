@@ -8,10 +8,10 @@ import {
   ensureLocalHealth,
   fileContractProbeReason,
   LOCAL_BASE_URL,
-  LOCAL_CONTEXT_TOKENS,
-  LOCAL_MODEL,
   lastWakeAttempt,
   predatesFileContract,
+  registeredContextTokens,
+  registeredLocalAgent,
   tryWake,
   unavailableReason,
   wakeStatus,
@@ -43,6 +43,44 @@ type DoctorPresentation = {
   pick(job: string): { agent: string }
   jobs(): string[]
   acpRuntimeGaps(): string | null
+}
+
+function localRegistrationDiagnosis(baseUrl: string, configuredModel: string | undefined) {
+  const registration = registeredLocalAgent(agentRows(), baseUrl)
+  const contextTokens = registration ? registeredContextTokens(registration) : null
+  const lines = [
+    `\nlocal endpoint  ${baseUrl || '(ORCH_LOCAL_BASE_URL unset)'}`,
+    `local model     ${registration?.model || '(not registered)'}`,
+  ]
+  if (baseUrl && !registration) {
+    lines.push(
+      configuredModel
+        ? `register        orch agent add local-acp --harness goose --backend vllm --model ${configuredModel} --base-url ${baseUrl} --context-tokens <tokens>`
+        : 'register        ORCH_LOCAL_MODEL is required before registering local-acp',
+    )
+  }
+  if (registration && contextTokens === null) {
+    lines.push(
+      `context         not declared — run orch agent set ${registration.name} --context-tokens <tokens>`,
+    )
+  }
+  return { registration, contextTokens, lines }
+}
+
+function localContextDiagnosis(
+  servedContext: number | undefined,
+  registration: ReturnType<typeof localRegistrationDiagnosis>['registration'],
+  declaredContext: number | null,
+): string | null {
+  if (!servedContext || !registration || declaredContext === null) return null
+  if (servedContext === declaredContext) {
+    return `context         ${(servedContext / 1024).toFixed(0)}K served (matches what routing assumes)`
+  }
+  return (
+    `context         ${(servedContext / 1024).toFixed(0)}K served` +
+    `  MISMATCH — registry declares ${(declaredContext / 1024).toFixed(0)}K.` +
+    ` Run orch agent set ${registration.name} --context-tokens ${servedContext} or re-serve.`
+  )
 }
 
 export async function doctorCommand(
@@ -237,22 +275,9 @@ export async function doctorCommand(
   log(`sandbox agents ${srtAgents.join(', ') || '(none)'} (read-only repository jobs)`)
   const acpGap = acpRuntimeGaps()
   log(`acp            ${acpGap ?? 'ready'}`)
-  log(`\nlocal endpoint  ${LOCAL_BASE_URL || '(ORCH_LOCAL_BASE_URL unset)'}`)
-  log(`local model     ${LOCAL_MODEL}`)
+  const local = localRegistrationDiagnosis(LOCAL_BASE_URL, process.env.ORCH_LOCAL_MODEL)
+  for (const line of local.lines) log(line)
   log(`reachable       ${r.ok ? 'yes' : 'NO'} — ${r.detail}`)
-  const localRegistered =
-    LOCAL_BASE_URL &&
-    agentRows().some(
-      (row) => Boolean(row.enabled) && row.transport === 'acp' && row.base_url === LOCAL_BASE_URL,
-    )
-  if (LOCAL_BASE_URL && !localRegistered) {
-    const configuredModel = process.env.ORCH_LOCAL_MODEL
-    log(
-      configuredModel
-        ? `register        orch agent add local-acp --harness goose --backend vllm --model ${configuredModel} --base-url ${LOCAL_BASE_URL}`
-        : 'register        ORCH_LOCAL_MODEL is required before registering local-acp',
-    )
-  }
   if (!r.ok && LOCAL_BASE_URL) {
     // Reporting commands do not have side effects, so doctor only sends a
     // packet when asked in as many words. `orch do` wakes on its own; a
@@ -300,16 +325,12 @@ export async function doctorCommand(
   // a silent drift between what is declared and what is running would route
   // work at an agent that cannot hold it — which is how it came to be handed
   // four review-lenses and an `understand` it could never have finished.
-  if (r.contextTokens) {
-    const agree = r.contextTokens === LOCAL_CONTEXT_TOKENS
-    log(
-      `context         ${(r.contextTokens / 1024).toFixed(0)}K served` +
-        (agree
-          ? ' (matches what routing assumes)'
-          : `  MISMATCH — routing assumes ${(LOCAL_CONTEXT_TOKENS / 1024).toFixed(0)}K.` +
-            ` Set ORCH_LOCAL_CONTEXT=${r.contextTokens} or re-serve.`),
-    )
-  }
+  const contextDiagnosis = localContextDiagnosis(
+    r.contextTokens,
+    local.registration,
+    local.contextTokens,
+  )
+  if (contextDiagnosis) log(contextDiagnosis)
   const counts = runTotals()
   // runTotals().unscored, not runs - scored: that subtraction counts probes,
   // in-flight runs, failures and abandoned rows as debt, and reported 28

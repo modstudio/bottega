@@ -4,21 +4,23 @@ import { mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { which } from 'bun'
 import { concernStateDirectory } from '../../../shared/state-directory.ts'
-import { AGENTS } from './agent-registry.ts'
+import { AGENTS, type AgentRow } from './agent-registry.ts'
 import type { Agent } from './agents.ts'
 /** Where a local OpenAI-compatible endpoint lives, e.g. http://127.0.0.1:8010/v1 */
 export const LOCAL_BASE_URL = process.env.ORCH_LOCAL_BASE_URL ?? ''
-export const LOCAL_MODEL = process.env.ORCH_LOCAL_MODEL ?? 'Qwen/Qwen3.6-35B-A3B'
-/**
- * What the local endpoint is actually serving. Verified by `orch doctor`.
- *
- * Raised from 65,536 once the served window was measured rather than assumed.
- * 65,536 had been badly conservative: at the same --gpu-memory-utilization the
- * box reports a 233,376-token KV cache, which is 6.91 concurrent requests at
- * the full 131,072 — so the ceiling that excluded the local model from 74% of
- * all delegated work was costing nothing to hold.
- */
-export const LOCAL_CONTEXT_TOKENS = Number(process.env.ORCH_LOCAL_CONTEXT ?? 131_072)
+
+export function registeredLocalAgent(rows: AgentRow[], baseUrl: string): AgentRow | null {
+  const registered = rows.filter(
+    (row) => Boolean(row.enabled) && row.transport === 'acp' && row.billing === 'local',
+  )
+  if (baseUrl) return registered.find((row) => row.base_url === baseUrl) ?? null
+  return registered.length === 1 ? registered[0]! : null
+}
+
+export function registeredContextTokens(row: AgentRow): number | null {
+  const value = (JSON.parse(row.caps) as { contextTokens?: unknown }).contextTokens
+  return typeof value === 'number' && Number.isInteger(value) && value > 0 ? value : null
+}
 
 /**
  * What the last reachability probe found, or null if none has run yet.
@@ -197,7 +199,9 @@ export function unavailableReason(name: string): string | null {
   if (a.enabled === false) return `disabled — ${a.disabledReason}`
   if (a.probePassed === null) return `registration probe incomplete; run orch agent probe ${name}`
   if (a.probedAt && a.probePassed === false) return 'registration probe failed'
-  if (a.contextTokens === 0) return 'unprobed and has no declared context window'
+  if (a.contextTokens === 0) {
+    return `no declared context window; run orch agent set ${name} --context-tokens <tokens>`
+  }
   if (which(a.bin, { PATH: process.env.PATH }) === null) return 'not installed'
   if (a.billing === 'local') {
     // A local agent is only real once an endpoint is configured...
