@@ -283,10 +283,12 @@ async function collect() {
   // the ratio would then depend on which one you read.
   console.log(`days         ${rollUpDays()} rolled up`)
 
-  db()
-    .query(`INSERT INTO setting (key, value) VALUES ('collect.at', ?)
-              ON CONFLICT(key) DO UPDATE SET value = excluded.value`)
-    .run(JSON.stringify(nowIso()))
+  writeTransaction((conn) =>
+    conn
+      .query(`INSERT INTO setting (key, value) VALUES ('collect.at', ?)
+                ON CONFLICT(key) DO UPDATE SET value = excluded.value`)
+      .run(JSON.stringify(nowIso())),
+  )
   console.log(`\ncollected in ${human(Date.now() - t0)}`)
 }
 
@@ -573,7 +575,6 @@ async function task() {
     return
   }
   if (sub === 'import') {
-    const d = db()
     const at = nowIso()
     const project = projectOf(new URL('../..', import.meta.url).pathname)
     const registered = projects().find((candidate) => candidate.name === project)
@@ -608,14 +609,14 @@ async function task() {
         .map((l) => l.split('\t') as [string, string]),
     )
 
-    const ins = d.query(
-      `INSERT INTO task (key, project, title, status, status_category, opened_at,
+    writeTransaction((conn) => {
+      const ins = conn.query(
+        `INSERT INTO task (key, project, title, status, status_category, opened_at,
                          closed_at, updated_at, source, first_seen, last_seen)
        VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'local', ?, ?)`,
-    )
-    writeTransaction(() => {
+      )
       for (const t of items) {
-        const key = nextImportedTaskKey(prefix)
+        const key = nextImportedTaskKey(prefix, conn)
         const done = !!t.closed
         ins.run(
           key,
@@ -639,9 +640,9 @@ async function task() {
         for (const sha of t.shas) {
           const at = stamps.get(sha)
           if (!at) continue
-          d.query(
-            `INSERT OR IGNORE INTO commit_key (sha, repo, task_key, at) VALUES (?,?,?,?)`,
-          ).run(sha, project, key, at)
+          conn
+            .query(`INSERT OR IGNORE INTO commit_key (sha, repo, task_key, at) VALUES (?,?,?,?)`)
+            .run(sha, project, key, at)
         }
       }
     })

@@ -376,8 +376,8 @@ describe('hub migration journal', () => {
     other.exec(`PRAGMA user_version = ${migrationJournal().length + 1}`)
     other.close()
     expect(() =>
-      writeTransaction(() => {
-        db().query('UPDATE setting SET value = value WHERE 0').run()
+      writeTransaction((conn) => {
+        conn.query('UPDATE setting SET value = value WHERE 0').run()
       }),
     ).toThrow(`invariant: ${CONNECTION_SCHEMA_INVARIANT}`)
     closeDatabaseForFixture()
@@ -488,8 +488,8 @@ describe('hub migration journal', () => {
     const other = new Database(process.env.HUB_DB!)
     other.exec(`PRAGMA user_version = ${migrationJournal().length + 1}`)
     other.close()
-    writeTransaction(() => {
-      db().query("INSERT INTO setting (key, value) VALUES ('held-reload', '1')").run()
+    writeTransaction((conn) => {
+      conn.query("INSERT INTO setting (key, value) VALUES ('held-reload', '1')").run()
     }, held)
     expect(() => held.query('SELECT 1').get()).toThrow('closed')
     expect(db().query("SELECT value FROM setting WHERE key='held-reload'").get()).toEqual({
@@ -499,6 +499,30 @@ describe('hub migration journal', () => {
     const reset = new Database(process.env.HUB_DB!)
     applyMigrations(reset)
     reset.close()
+  })
+
+  test('the shared handle refuses a write outside writeTransaction', () => {
+    expect(() =>
+      db().query("INSERT INTO setting (key, value) VALUES ('unchecked-write', '1')").run(),
+    ).toThrow('attempt to write a readonly database')
+    expect(db().query("SELECT value FROM setting WHERE key = 'unchecked-write'").get()).toBeNull()
+  })
+
+  test('a nested writeTransaction leaves the outer connection writable', () => {
+    writeTransaction((outer) => {
+      outer.query("INSERT INTO setting (key, value) VALUES ('nested-outer-before', '1')").run()
+      writeTransaction((inner) => {
+        inner.query("INSERT INTO setting (key, value) VALUES ('nested-inner', '1')").run()
+      })
+      outer.query("INSERT INTO setting (key, value) VALUES ('nested-outer-after', '1')").run()
+    })
+    expect(
+      db()
+        .query<{ count: number }, []>(
+          "SELECT COUNT(*) count FROM setting WHERE key LIKE 'nested-%'",
+        )
+        .get(),
+    ).toEqual({ count: 3 })
   })
 })
 

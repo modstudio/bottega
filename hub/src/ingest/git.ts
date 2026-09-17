@@ -1,6 +1,6 @@
 import { categorizeFile, type FileKind } from '../../../shared/file-kind.ts'
 import { keyPattern, projectOfKey } from '../attribute.ts'
-import { db, nowIso, type Project, writeTransaction } from '../db.ts'
+import { nowIso, type Project, writeTransaction } from '../db.ts'
 import { projects } from '../projects.ts'
 
 /**
@@ -142,11 +142,10 @@ function scanGit(since: string) {
  */
 export function ingestGit(since: string): { days: number; tasks: number } {
   const { days, tasks, commits } = scanGit(since)
-  const d = db()
   const at = nowIso()
-
-  const dayStmt = d.query(
-    `INSERT INTO day (day, tasks, commits, files,
+  writeTransaction((conn) => {
+    const dayStmt = conn.query(
+      `INSERT INTO day (day, tasks, commits, files,
                       lines_product, lines_test, lines_docs, lines_config, lines_generated,
                       collected_at)
      VALUES (?,?,?,?,?,?,?,?,?,?)
@@ -158,25 +157,24 @@ export function ingestGit(since: string): { days: number; tasks: number } {
        lines_product=excluded.lines_product, lines_test=excluded.lines_test,
        lines_docs=excluded.lines_docs, lines_config=excluded.lines_config,
        lines_generated=excluded.lines_generated, collected_at=excluded.collected_at`,
-  )
+    )
 
-  // Never downgrade a tracker's row to a git-derived one. A task the MCP server
-  // told us about knows its own title and status; git knows neither, and
-  // letting the git leg overwrite it would blank the view every collect.
-  const taskStmt = d.query(
-    `INSERT INTO task (key, project, source, opened_at, updated_at, first_seen, last_seen)
+    // Never downgrade a tracker's row to a git-derived one. A task the MCP server
+    // told us about knows its own title and status; git knows neither, and
+    // letting the git leg overwrite it would blank the view every collect.
+    const taskStmt = conn.query(
+      `INSERT INTO task (key, project, source, opened_at, updated_at, first_seen, last_seen)
      VALUES (?,?,'git',?,?,?,?)
      ON CONFLICT(key) DO UPDATE SET
        last_seen  = excluded.last_seen,
        updated_at = MAX(COALESCE(task.updated_at,''), excluded.updated_at)`,
-  )
+    )
 
-  const commitStmt = d.query(
-    `INSERT INTO commit_key (sha, repo, task_key, at) VALUES (?,?,?,?)
+    const commitStmt = conn.query(
+      `INSERT INTO commit_key (sha, repo, task_key, at) VALUES (?,?,?,?)
      ON CONFLICT(sha) DO NOTHING`,
-  )
+    )
 
-  writeTransaction(() => {
     for (const c of commits) commitStmt.run(c.sha, c.repo, c.key, c.at)
     for (const [day, a] of days) {
       dayStmt.run(
@@ -195,9 +193,10 @@ export function ingestGit(since: string): { days: number; tasks: number } {
     for (const t of tasks.values()) {
       taskStmt.run(t.key, t.project, t.first, t.last, at, at)
     }
+    conn
+      .query(`INSERT INTO setting (key, value) VALUES ('collect.git.at', ?)
+                ON CONFLICT(key) DO UPDATE SET value = excluded.value`)
+      .run(JSON.stringify(at))
   })
-
-  d.query(`INSERT INTO setting (key, value) VALUES ('collect.git.at', ?)
-           ON CONFLICT(key) DO UPDATE SET value = excluded.value`).run(JSON.stringify(at))
   return { days: days.size, tasks: tasks.size }
 }

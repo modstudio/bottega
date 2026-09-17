@@ -3,7 +3,7 @@ import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { resetFixtureStore } from '../test/run-fixtures.ts'
-import { db } from './db.ts'
+import { writeTransaction } from './db.ts'
 import {
   acknowledgeNote,
   createNote,
@@ -111,8 +111,10 @@ describe('suggestion notes', () => {
     const promoted = make('Promoted curator observation')
     const dropped = make('Dropped curator observation')
     const anchor = JSON.stringify([{ ...open.anchors[0], session_id: session }])
-    for (const note of [open, promoted, dropped])
-      db().query('UPDATE note SET anchors=? WHERE id=?').run(anchor, note.id)
+    writeTransaction((conn) => {
+      const update = conn.query('UPDATE note SET anchors=? WHERE id=?')
+      for (const note of [open, promoted, dropped]) update.run(anchor, note.id)
+    })
     promoteNote(promoted.id)
     dropNote(dropped.id, 'resolved')
     expect(listActionableNotes({ session }).map((note) => note.id)).toEqual([open.id])
@@ -128,9 +130,11 @@ describe('suggestion notes', () => {
     }).note
     const anchor = { ...note.anchors[0]!, session_id: session }
     const otherAnchor = { ...anchor, session_id: otherSession }
-    db()
-      .query('UPDATE note SET anchors=?, sightings=2 WHERE id=?')
-      .run(JSON.stringify([anchor, otherAnchor]), note.id)
+    writeTransaction((conn) =>
+      conn
+        .query('UPDATE note SET anchors=?, sightings=2 WHERE id=?')
+        .run(JSON.stringify([anchor, otherAnchor]), note.id),
+    )
 
     expect(acknowledgeNote(note.id, session).alreadyAcknowledged).toBe(false)
     expect(acknowledgeNote(note.id, session).alreadyAcknowledged).toBe(true)
@@ -141,9 +145,11 @@ describe('suggestion notes', () => {
     )
     expect(listNotes({ session, kept: true }).map((row) => row.id)).toContain(note.id)
 
-    db()
-      .query('UPDATE note SET anchors=?, sightings=sightings+1, last_seen_at=? WHERE id=?')
-      .run(JSON.stringify([anchor, otherAnchor, anchor]), new Date().toISOString(), note.id)
+    writeTransaction((conn) =>
+      conn
+        .query('UPDATE note SET anchors=?, sightings=sightings+1, last_seen_at=? WHERE id=?')
+        .run(JSON.stringify([anchor, otherAnchor, anchor]), new Date().toISOString(), note.id),
+    )
     expect(listNotes({ session }).map((row) => row.id)).toContain(note.id)
     expect(listNotes({ session: otherSession }).map((row) => row.id)).toContain(note.id)
     expect(listNotes({ session, kept: true }).map((row) => row.id)).not.toContain(note.id)
@@ -167,18 +173,20 @@ describe('suggestion notes', () => {
       { ...base, branch: 'deleted-branch' },
       { ...base, commit: 'old-commit' },
     ]
-    const ids = anchors.map((anchor, index) =>
-      Number(
-        db()
-          .query(
-            `INSERT INTO note(project,text,anchors,sightings,created_at,last_seen_at) VALUES ('workshop',?,?,2,?,?)`,
-          )
-          .run(
-            `stale fixture ${index}`,
-            JSON.stringify([anchor]),
-            new Date().toISOString(),
-            new Date().toISOString(),
-          ).lastInsertRowid,
+    const ids = writeTransaction((conn) =>
+      anchors.map((anchor, index) =>
+        Number(
+          conn
+            .query(
+              `INSERT INTO note(project,text,anchors,sightings,created_at,last_seen_at) VALUES ('workshop',?,?,2,?,?)`,
+            )
+            .run(
+              `stale fixture ${index}`,
+              JSON.stringify([anchor]),
+              new Date().toISOString(),
+              new Date().toISOString(),
+            ).lastInsertRowid,
+        ),
       ),
     )
     const result = await staleNotes({
@@ -213,13 +221,15 @@ describe('suggestion notes', () => {
       },
     ])
     const add = (sightings: number, promoted: string | null, seen = old) =>
-      Number(
-        db()
-          .query(
-            `INSERT INTO note(project,text,anchors,sightings,created_at,last_seen_at,stale_at,stale_reason,promoted_task)
+      writeTransaction((conn) =>
+        Number(
+          conn
+            .query(
+              `INSERT INTO note(project,text,anchors,sightings,created_at,last_seen_at,stale_at,stale_reason,promoted_task)
        VALUES ('workshop',?,?,?, ?,?,'2026-07-02T00:00:00.000Z','gone',?)`,
-          )
-          .run(`reap ${Math.random()}`, anchor, sightings, old, seen, promoted).lastInsertRowid,
+            )
+            .run(`reap ${Math.random()}`, anchor, sightings, old, seen, promoted).lastInsertRowid,
+        ),
       )
     const doomed = add(1, null)
     const repeated = add(2, null)

@@ -158,13 +158,15 @@ export function acknowledgeNote(value: number | string, session: string): NoteAc
     )
     .get(note.id, sessionId)
   if (existing?.sightings === note.sightings) return { note, alreadyAcknowledged: true }
-  db()
-    .query(
-      `INSERT INTO note_acknowledgement (note_id,session_id,acknowledged_at,sightings) VALUES (?,?,?,?)
+  writeTransaction((conn) =>
+    conn
+      .query(
+        `INSERT INTO note_acknowledgement (note_id,session_id,acknowledged_at,sightings) VALUES (?,?,?,?)
      ON CONFLICT(note_id,session_id) DO UPDATE SET
        acknowledged_at=excluded.acknowledged_at, sightings=excluded.sightings`,
-    )
-    .run(note.id, sessionId, nowIso(), note.sightings)
+      )
+      .run(note.id, sessionId, nowIso(), note.sightings),
+  )
   return { note, alreadyAcknowledged: false }
 }
 
@@ -201,19 +203,20 @@ export function mergeNote(targetValue: number | string, sourceValue: number | st
   const targetId = noteId(targetValue)
   const sourceId = noteId(sourceValue)
   if (targetId === sourceId) throw new Error('a note cannot be merged with itself')
-  const d = db()
-  writeTransaction(() => {
+  writeTransaction((conn) => {
     const target = getNote(targetId)
     const source = getNote(sourceId)
     if (target.project !== source.project)
       throw new Error('notes from different projects cannot be merged')
-    d.query(`UPDATE note SET anchors=?, sightings=?, last_seen_at=? WHERE id=?`).run(
-      JSON.stringify([...target.anchors, ...source.anchors]),
-      target.sightings + source.sightings,
-      target.last_seen_at > source.last_seen_at ? target.last_seen_at : source.last_seen_at,
-      targetId,
-    )
-    d.query('DELETE FROM note WHERE id=?').run(sourceId)
+    conn
+      .query(`UPDATE note SET anchors=?, sightings=?, last_seen_at=? WHERE id=?`)
+      .run(
+        JSON.stringify([...target.anchors, ...source.anchors]),
+        target.sightings + source.sightings,
+        target.last_seen_at > source.last_seen_at ? target.last_seen_at : source.last_seen_at,
+        targetId,
+      )
+    conn.query('DELETE FROM note WHERE id=?').run(sourceId)
   })
   return getNote(targetId)
 }
@@ -235,21 +238,25 @@ export function createNote(input: {
     if (existing.project !== anchor.project)
       throw new Error('the matching note belongs to another project')
     const at = nowIso()
-    db()
-      .query(
-        `UPDATE note SET anchors=?, sightings=sightings+1, last_seen_at=?, stale_at=NULL, stale_reason=NULL WHERE id=?`,
-      )
-      .run(JSON.stringify([...existing.anchors, anchor]), at, existing.id)
+    writeTransaction((conn) =>
+      conn
+        .query(
+          `UPDATE note SET anchors=?, sightings=sightings+1, last_seen_at=?, stale_at=NULL, stale_reason=NULL WHERE id=?`,
+        )
+        .run(JSON.stringify([...existing.anchors, anchor]), at, existing.id),
+    )
     return { note: getNote(existing.id), candidates }
   }
   if (candidates.length && !input.forceNew) return { note: null as never, candidates }
   const at = nowIso()
-  const result = db()
-    .query(
-      `INSERT INTO note (project,text,area,anchors,sightings,created_at,last_seen_at)
+  const result = writeTransaction((conn) =>
+    conn
+      .query(
+        `INSERT INTO note (project,text,area,anchors,sightings,created_at,last_seen_at)
      VALUES (?,?,?,?,1,?,?)`,
-    )
-    .run(anchor.project, text, input.area?.trim() || null, JSON.stringify([anchor]), at, at)
+      )
+      .run(anchor.project, text, input.area?.trim() || null, JSON.stringify([anchor]), at, at),
+  )
   return { note: getNote(Number(result.lastInsertRowid)), candidates }
 }
 
@@ -268,18 +275,22 @@ export function promoteNote(value: number | string): NoteRow {
     title: note.text,
     body: `${note.text}\n\nSIGHTINGS (${note.sightings})\n${evidence}`,
   })
-  db()
-    .query('UPDATE note SET promoted_task=?, last_seen_at=? WHERE id=?')
-    .run(task.key, nowIso(), note.id)
+  writeTransaction((conn) =>
+    conn
+      .query('UPDATE note SET promoted_task=?, last_seen_at=? WHERE id=?')
+      .run(task.key, nowIso(), note.id),
+  )
   return getNote(note.id)
 }
 
 export function dropNote(value: number | string, reason: string): NoteRow {
   if (!reason.trim()) throw new Error('--reason is required')
   const id = noteId(value)
-  db()
-    .query('UPDATE note SET stale_at=?, stale_reason=?, last_seen_at=? WHERE id=?')
-    .run(nowIso(), `dropped: ${reason.trim()}`, nowIso(), id)
+  writeTransaction((conn) =>
+    conn
+      .query('UPDATE note SET stale_at=?, stale_reason=?, last_seen_at=? WHERE id=?')
+      .run(nowIso(), `dropped: ${reason.trim()}`, nowIso(), id),
+  )
   return getNote(id)
 }
 
@@ -354,17 +365,14 @@ export async function staleNotes(deps: Partial<StaleDeps> = {}): Promise<StaleRe
   })
   const at = clock.toISOString()
   const cutoff = new Date(clock.getTime() - 30 * 86_400_000).toISOString()
-  const d = db()
   let deleted = 0
-  writeTransaction(() => {
+  writeTransaction((conn) => {
     for (const item of reasons) {
-      d.query('UPDATE note SET stale_at=?, stale_reason=? WHERE id=? AND stale_at IS NULL').run(
-        at,
-        item.reason,
-        item.id,
-      )
+      conn
+        .query('UPDATE note SET stale_at=?, stale_reason=? WHERE id=? AND stale_at IS NULL')
+        .run(at, item.reason, item.id)
     }
-    const result = d
+    const result = conn
       .query(
         `DELETE FROM note
         WHERE stale_at IS NOT NULL AND sightings=1 AND last_seen_at <= ? AND promoted_task IS NULL`,
@@ -383,11 +391,13 @@ export function curatorEnabled(): boolean {
 }
 
 export function setCuratorEnabled(enabled: boolean): boolean {
-  db()
-    .query(
-      "INSERT INTO setting(key,value) VALUES ('note.curator.enabled',?) ON CONFLICT(key) DO UPDATE SET value=excluded.value",
-    )
-    .run(String(enabled))
+  writeTransaction((conn) =>
+    conn
+      .query(
+        "INSERT INTO setting(key,value) VALUES ('note.curator.enabled',?) ON CONFLICT(key) DO UPDATE SET value=excluded.value",
+      )
+      .run(String(enabled)),
+  )
   return enabled
 }
 

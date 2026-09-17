@@ -1,6 +1,6 @@
 import { beforeAll, describe, expect, test } from 'bun:test'
 import { resetFixtureStore } from '../test/run-fixtures.ts'
-import { db } from './db.ts'
+import { writeTransaction } from './db.ts'
 import { DUPLICATE_TITLE_FIXTURE } from './duplicate-matcher.fixture.ts'
 import { upsertTrackerTask } from './ingest/trackers.ts'
 import {
@@ -18,13 +18,15 @@ beforeAll(resetFixtureStore)
 describe('local task tracker', () => {
   const seed = (key: string, project: string, source: 'mcp' | 'local' = 'local') => {
     const stamp = new Date().toISOString()
-    db()
-      .query(
-        `INSERT INTO task
+    writeTransaction((conn) =>
+      conn
+        .query(
+          `INSERT INTO task
         (key, project, title, status, status_category, source, first_seen, last_seen)
        VALUES (?, ?, 'seed', 'open', 'open', ?, ?, ?)`,
-      )
-      .run(key, project, source, stamp, stamp)
+        )
+        .run(key, project, source, stamp, stamp),
+    )
   }
 
   test('issues above the highest existing number for the project prefix', () => {
@@ -61,7 +63,9 @@ describe('local task tracker', () => {
 
   test('a local task survives the tracker ingest write path', () => {
     const local = createTask({ project: 'gamma', title: 'Keep this local', body: 'Local body' })
-    db().query(`UPDATE task SET assignee = 'Local Owner' WHERE key = ?`).run(local.key)
+    writeTransaction((conn) =>
+      conn.query(`UPDATE task SET assignee = 'Local Owner' WHERE key = ?`).run(local.key),
+    )
     upsertTrackerTask({
       key: local.key,
       project: 'gamma',
@@ -146,20 +150,22 @@ describe('local task tracker', () => {
       body: '# Handoff',
       role: 'handoff',
     })
-    db()
-      .query(
-        `INSERT INTO interval
+    writeTransaction((conn) => {
+      conn
+        .query(
+          `INSERT INTO interval
         (task_key, project, source, agent, job, start_at, end_at, vendor_tokens, ref, open)
        VALUES (?, 'workshop', 'orch', 'codex', 'implement', ?, ?, 123, 'orch:1812', 0)`,
-      )
-      .run(task.key, '2026-09-05T10:00:00.000Z', '2026-09-05T10:01:00.000Z')
-    db()
-      .query(
-        `INSERT INTO interval
+        )
+        .run(task.key, '2026-09-05T10:00:00.000Z', '2026-09-05T10:01:00.000Z')
+      conn
+        .query(
+          `INSERT INTO interval
         (task_key, project, source, agent, job, start_at, end_at, vendor_tokens, ref, open)
        VALUES (?, 'workshop', 'orch', 'codex', 'implement', ?, ?, 45, 'orch:1812:turn:1813', 0)`,
-      )
-      .run(task.key, '2026-09-05T10:02:00.000Z', '2026-09-05T10:03:00.000Z')
+        )
+        .run(task.key, '2026-09-05T10:02:00.000Z', '2026-09-05T10:03:00.000Z')
+    })
 
     const result = taskRecord(task.key.toLowerCase())
     expect(result.task).toMatchObject({ key: task.key, title: 'Inspectable task' })

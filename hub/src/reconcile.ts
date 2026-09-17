@@ -103,8 +103,8 @@ export async function reconcileOpenIntervals(
   })
 
   if (!options.dryRun && closed.length) {
-    const close = d.query(`UPDATE interval SET open = 0 WHERE id = ? AND open = 1`)
-    writeTransaction(() => {
+    writeTransaction((conn) => {
+      const close = conn.query(`UPDATE interval SET open = 0 WHERE id = ? AND open = 1`)
       for (const interval of closed) close.run(interval.id)
     })
   }

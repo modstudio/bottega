@@ -36,6 +36,7 @@ export function decideHubDatabasePath(
 let handle: Database | null = null
 let openedUserVersion: number | null = null
 let schemaReload: ((from: number, to: number) => void) | null = null
+const writeDepth = new WeakMap<Database, number>()
 
 /** Refuse a query when there is no store to query; never manufacture an empty finding. */
 export function requireDatabase(): void {
@@ -91,6 +92,7 @@ export function db(): Database {
     PRAGMA synchronous = NORMAL;
     PRAGMA wal_autocheckpoint = 100;
     PRAGMA journal_size_limit = 1048576;
+    PRAGMA query_only = ON;
   `)
   handle = d
   openedUserVersion = readUserVersion(d)
@@ -98,9 +100,21 @@ export function db(): Database {
 }
 
 /** Open the only sanctioned multi-statement write transaction. */
-export function writeTransaction<T>(fn: () => T, database: Database = db()): T {
+export function writeTransaction<T>(fn: (conn: Database) => T, database: Database = db()): T {
   const conn = refuseOrReloadStaleSchema(database, true)
-  return conn.transaction(fn).immediate()
+  const depth = writeDepth.get(conn) ?? 0
+  if (depth === 0) conn.exec('PRAGMA query_only = OFF')
+  writeDepth.set(conn, depth + 1)
+  try {
+    return conn.transaction(() => fn(conn)).immediate()
+  } finally {
+    if (depth === 0) {
+      writeDepth.delete(conn)
+      conn.exec('PRAGMA query_only = ON')
+    } else {
+      writeDepth.set(conn, depth)
+    }
+  }
 }
 
 export const nowIso = () => new Date().toISOString()
@@ -119,8 +133,7 @@ export function migrateDatabase(): { path: string; versions: string[] } {
 }
 
 /** Used only inside the task-import transaction, which supplies the write lock. */
-export function nextImportedTaskKey(prefix: string): string {
-  const d = db()
+export function nextImportedTaskKey(prefix: string, d: Database): string {
   const pattern = new RegExp(`^${prefix.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}-(\\d+)$`, 'i')
   const highest = d
     .query<{ key: string }, []>(`SELECT key FROM task`)

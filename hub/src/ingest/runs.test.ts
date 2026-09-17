@@ -8,7 +8,7 @@ import {
   resetFixtureStore,
   runFixture,
 } from '../../test/run-fixtures.ts'
-import { db } from '../db.ts'
+import { db, writeTransaction } from '../db.ts'
 import { chainVendorTokens, executionSpans } from './runs.ts'
 
 beforeAll(resetFixtureStore)
@@ -238,10 +238,12 @@ describe('run ingest', () => {
 
   test('a bare probe object is a contract violation, not a skipped probe', async () => {
     const prior = '"2026-09-04T00:00:00.000Z"'
-    db()
-      .query(`INSERT INTO setting (key, value) VALUES ('collect.runs.at', ?)
+    writeTransaction((conn) =>
+      conn
+        .query(`INSERT INTO setting (key, value) VALUES ('collect.runs.at', ?)
                 ON CONFLICT(key) DO UPDATE SET value = excluded.value`)
-      .run(prior)
+        .run(prior),
+    )
     const beforeQuestions = (db().query(`SELECT COUNT(*) n FROM question`).get() as { n: number }).n
 
     await expect(ingestStdout('{"probe":1}\n')).rejects.toThrow('line 1 missing id')

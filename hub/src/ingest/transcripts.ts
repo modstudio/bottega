@@ -4,7 +4,7 @@ import { join } from 'node:path'
 import { createInterface } from 'node:readline'
 import { DEFAULT_IDLE_CAP_MS, spansFromTimestamps, union } from '../../../shared/interval.ts'
 import { attribute, isInjected, projectOf } from '../attribute.ts'
-import { db, nowIso, writeTransaction } from '../db.ts'
+import { nowIso, writeTransaction } from '../db.ts'
 
 const CLAUDE_ROOT = `${process.env.HOME}/.claude/projects`
 
@@ -157,12 +157,6 @@ export async function ingestTranscripts(
 ): Promise<{ files: number; rows: number }> {
   const sinceMs = new Date(since).getTime()
   const sinceDay = since.slice(0, 10)
-  const d = db()
-  const stmt = d.query(
-    `INSERT INTO interval (task_key, project, source, agent, start_at, end_at,
-                           claude_tokens, vendor_tokens, vendor_cost_usd, ref, via)
-     VALUES (?,?,'claude',NULL,?,?,?,0,NULL,?,?)`,
-  )
   // A session's spans are REPLACED, not upserted.
   //
   // Upserting on (source, ref, start_at) looks right and is not: a later
@@ -178,10 +172,6 @@ export async function ingestTranscripts(
   // on the session, processing the second file deleted the first file's rows,
   // and 387 of 1040 inserted intervals vanished in the same collect that wrote
   // them. It read as a gap in the early hours of a day rather than as a bug.
-  const clear = d.query(
-    `DELETE FROM interval WHERE source = 'claude' AND ref LIKE ? AND end_at >= ?`,
-  )
-
   let files = 0
   let rows = 0
 
@@ -203,7 +193,15 @@ export async function ingestTranscripts(
       .filter((l) => projectOf(l.cwd))
     if (!legs.length) continue
 
-    writeTransaction(() => {
+    writeTransaction((conn) => {
+      const stmt = conn.query(
+        `INSERT INTO interval (task_key, project, source, agent, start_at, end_at,
+                               claude_tokens, vendor_tokens, vendor_cost_usd, ref, via)
+         VALUES (?,?,'claude',NULL,?,?,?,0,NULL,?,?)`,
+      )
+      const clear = conn.query(
+        `DELETE FROM interval WHERE source = 'claude' AND ref LIKE ? AND end_at >= ?`,
+      )
       for (const ref of new Set(legs.map((l) => l.ref))) clear.run(`claude:${ref}:%`, since)
 
       // The leg ordinal is part of the ref. Without it two legs of one session
@@ -266,7 +264,11 @@ export async function ingestTranscripts(
     })
   }
 
-  d.query(`INSERT INTO setting (key, value) VALUES ('collect.transcripts.at', ?)
-           ON CONFLICT(key) DO UPDATE SET value = excluded.value`).run(JSON.stringify(nowIso()))
+  writeTransaction((conn) =>
+    conn
+      .query(`INSERT INTO setting (key, value) VALUES ('collect.transcripts.at', ?)
+                ON CONFLICT(key) DO UPDATE SET value = excluded.value`)
+      .run(JSON.stringify(nowIso())),
+  )
   return { files, rows }
 }
