@@ -396,7 +396,7 @@ export const importBoundaries: ImportBoundary[] = [
     'orchestrator/src/mcp-preflight.ts',
     ['./agent-registry.ts', './jobs.ts', './projects.ts', './run-process.ts'],
     'Keep MCP preflight independent of execution, transport, routing, and mutation.',
-    ['./contract.ts'],
+    ['./contract/contract.ts'],
   ),
   boundary(
     'metric-commands-boundary',
@@ -768,7 +768,7 @@ export const importBoundaries: ImportBoundary[] = [
       './agent-registry.ts',
       './args.ts',
       './clock.ts',
-      './contract.ts',
+      './contract/contract.ts',
       './db.ts',
       './failover.ts',
       './jobs.ts',

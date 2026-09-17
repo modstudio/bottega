@@ -23,7 +23,7 @@ import {
   TEXT_REPLY_SCHEMA,
   validatesSchema,
   type WorkerReply,
-} from './contract.ts'
+} from './contract/contract.ts'
 import { db, nowIso } from './db.ts'
 import { appendRunEvent, teeTransportEvents } from './events.ts'
 import { classify, FAILS_OVER, hasVendorTerminationMarker, isNonAnswer } from './failure.ts'

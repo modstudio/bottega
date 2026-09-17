@@ -1,11 +1,12 @@
 // concern: contract
+
+import { job, jobBoundInstructionForContract } from '../jobs.ts'
 import {
   NO_REPO_PREAMBLE,
   READONLY_PREAMBLE,
   REVIEW_SEVERITY_INSTRUCTION,
   WORKER_PREAMBLE,
 } from './contract.ts'
-import { job, jobBoundInstructionForContract } from './jobs.ts'
 
 /** The exact contract presented for a named job. */
 export function contractText(jobName: string): string {
