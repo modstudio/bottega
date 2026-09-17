@@ -1,8 +1,8 @@
 import { expect, test } from 'bun:test'
-import { addRun } from '../test/fixtures/store.ts'
-import { AGENTS } from './agent-registry.ts'
-import { db } from './db.ts'
-import { recordDuels } from './duel.ts'
+import { addRun } from '../../test/fixtures/store.ts'
+import { AGENTS } from '../agent-registry.ts'
+import { db } from '../db.ts'
+import { recordDuels } from '../duel.ts'
 import { MIN_SAMPLE } from './route.ts'
 import { pickCommand, statsCommand } from './routing-commands.ts'
 

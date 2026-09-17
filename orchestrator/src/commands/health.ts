@@ -5,7 +5,7 @@ import { doctorCommand } from '../doctor.ts'
 import { reclassifyFailuresCommand } from '../failure/failure-commands.ts'
 import { blockersCommand, healthCommand } from '../health-commands.ts'
 import { JOBS } from '../jobs.ts'
-import { candidates, pick } from '../route.ts'
+import { candidates, pick } from '../route/route.ts'
 import { acpRuntimeGaps } from '../transport/transport.ts'
 import { log, optionFlags } from './support.ts'
 

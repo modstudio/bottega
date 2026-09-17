@@ -71,7 +71,7 @@ import {
   reviewCalibration,
 } from './review-calibration.ts'
 import { implicitReviewCoverageBase, resolveReviewTarget } from './review-target.ts'
-import { pick } from './route.ts'
+import { pick } from './route/route.ts'
 import { pruneRuns, RUNS_DIR, readDispatchState, runFilePaths } from './run-artifacts.ts'
 import { claimRun } from './run-claim.ts'
 import { closeRun } from './run-close.ts'

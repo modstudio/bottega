@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'bun:test'
-import { addRun } from '../test/fixtures/store.ts'
-import { AGENTS } from './agent-registry.ts'
-import { db } from './db.ts'
+import { addRun } from '../../test/fixtures/store.ts'
+import { AGENTS } from '../agent-registry.ts'
+import { db } from '../db.ts'
 import { betaContribution, candidates, EVIDENCE_WINDOW, MIN_SAMPLE, pick } from './route.ts'
 import {
   ROUTING_BACKTEST_SEEDS,

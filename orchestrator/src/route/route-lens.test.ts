@@ -1,9 +1,9 @@
 import { describe, expect, test } from 'bun:test'
-import { reviewReply } from '../test/fixtures/replies.ts'
-import { addRun, score } from '../test/fixtures/store.ts'
-import { db } from './db.ts'
-import { guide } from './guide.ts'
-import { recordReview } from './review-triage.ts'
+import { reviewReply } from '../../test/fixtures/replies.ts'
+import { addRun, score } from '../../test/fixtures/store.ts'
+import { db } from '../db.ts'
+import { guide } from '../guide.ts'
+import { recordReview } from '../review-triage.ts'
 import { evidenceFor, MIN_SAMPLE, pick } from './route.ts'
 
 describe('findings routing narrows to a lens only when that buys a comparison', () => {

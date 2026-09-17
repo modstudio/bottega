@@ -21,8 +21,8 @@ import {
   REVIEW_OVERLAP,
   REVIEW_REPRODUCED,
 } from '../review-vocabulary.ts'
-import { pick } from '../route.ts'
-import { pickCommand } from '../routing-commands.ts'
+import { pick } from '../route/route.ts'
+import { pickCommand } from '../route/routing-commands.ts'
 import { RUNS_DIR } from '../run-artifacts.ts'
 import { follow as followRun } from '../run-control.ts'
 import { detach as dispatchDetached } from '../run-dispatch.ts'

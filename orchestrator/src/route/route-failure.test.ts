@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'bun:test'
-import { addRun, score } from '../test/fixtures/store.ts'
-import { resolveFailover } from './collect/collect.ts'
-import { db } from './db.ts'
+import { addRun, score } from '../../test/fixtures/store.ts'
+import { resolveFailover } from '../collect/collect.ts'
+import { db } from '../db.ts'
 import {
   COOLS_DOWN,
   classify,
@@ -9,9 +9,9 @@ import {
   NEEDS_HUMAN,
   NEEDS_HUMAN_TITLE,
   NOT_EVIDENCE,
-} from './failure/failure.ts'
+} from '../failure/failure.ts'
+import { WEIGHT, weigh } from '../score/score.ts'
 import { candidates, isRoutingEvidence, scoreboard } from './route.ts'
-import { WEIGHT, weigh } from './score/score.ts'
 
 describe('failure classification', () => {
   test('contract failures fail over as scoreable none evidence without cooldown or notification', () => {

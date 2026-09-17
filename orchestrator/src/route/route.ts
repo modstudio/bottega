@@ -1,12 +1,12 @@
-import { AGENTS } from './agent-registry.ts'
-import { calibrationFor } from './calibration-port.ts'
-import { failingDefaultCanonEvals } from './canon-eval-status.ts'
-import { db } from './db.ts'
-import { COOLS_DOWN, NOT_EVIDENCE } from './failure/failure.ts'
-import { JOBS, job } from './jobs.ts'
-import { fileContractProbeReason, predatesFileContract, unavailableReason } from './local-host.ts'
-import { FIDELITY_PENALTY, WEIGHT, weigh } from './score/score.ts'
-import { median } from './statistics.ts'
+import { AGENTS } from '../agent-registry.ts'
+import { calibrationFor } from '../calibration-port.ts'
+import { failingDefaultCanonEvals } from '../canon-eval-status.ts'
+import { db } from '../db.ts'
+import { COOLS_DOWN, NOT_EVIDENCE } from '../failure/failure.ts'
+import { JOBS, job } from '../jobs.ts'
+import { fileContractProbeReason, predatesFileContract, unavailableReason } from '../local-host.ts'
+import { FIDELITY_PENALTY, WEIGHT, weigh } from '../score/score.ts'
+import { median } from '../statistics.ts'
 
 export type Candidate = {
   agent: string

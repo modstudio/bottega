@@ -322,7 +322,7 @@ export const modules: ArchitectureModule[] = [
     './mcp-preflight.ts',
     './projects.ts',
     './review-calibration.ts',
-    './route.ts',
+    './route/route.ts',
     './run-process.ts',
     './run-types.ts',
     './transport/transport.ts',
@@ -486,8 +486,8 @@ export const modules: ArchitectureModule[] = [
 
 export const inversions: ArchitectureInversion[] = [
   { from: 'orchestrator/src/jobs.ts', to: 'orchestrator/src/agents.ts' },
-  { from: 'orchestrator/src/route.ts', to: 'orchestrator/src/review.ts' },
-  { from: 'orchestrator/src/review.ts', to: 'orchestrator/src/route.ts' },
+  { from: 'orchestrator/src/route/route.ts', to: 'orchestrator/src/review.ts' },
+  { from: 'orchestrator/src/review.ts', to: 'orchestrator/src/route/route.ts' },
   { from: 'orchestrator/src/transport/transport.ts', to: 'orchestrator/src/agents.ts' },
   {
     from: 'orchestrator/src/transport/transport.ts',
