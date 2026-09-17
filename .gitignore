@@ -25,7 +25,7 @@ ops/logs/
 .claude/skills/port-feature/*
 !.claude/skills/port-feature/SKILL.md
 
-# Bun installs workspace dependencies locally from the tracked root lockfile.
+# orchestrator: machine-local logs and database backups.
 orchestrator/spawn-fallback.log
 orchestrator/orch.db.backup-*
 
