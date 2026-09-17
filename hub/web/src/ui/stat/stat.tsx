@@ -1,7 +1,8 @@
 import { Children, type ReactNode, useState } from 'react'
 import { classes } from '../text/classes'
 
-const FIGURE = 'truncate font-medium text-2xl tabular-nums tracking-tight @lg/stats:text-3xl'
+const FIGURE =
+  'truncate font-medium font-mono text-2xl tabular-nums tracking-tight @lg/stats:text-3xl'
 
 type Breakdown = readonly { label: string; value: string }[]
 

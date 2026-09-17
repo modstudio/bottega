@@ -21,7 +21,7 @@ export function PageHeader({ title, subtitle, subtitleTitle, actions }: PageHead
     return createPortal(
       <div className="flex min-w-0 flex-1 items-center gap-4">
         <div className="flex min-w-0 items-baseline gap-3">
-          <h1 className="shrink-0 font-semibold text-lg">{title}</h1>
+          <h1 className="shrink-0 font-medium font-mono text-lg">{title}</h1>
           {subtitle ? (
             <span
               className="hidden truncate text-sm text-text-muted lg:inline"
@@ -39,7 +39,7 @@ export function PageHeader({ title, subtitle, subtitleTitle, actions }: PageHead
   return (
     <header className="flex min-w-0 flex-wrap items-end justify-between gap-x-6 gap-y-3 pt-6 pb-5">
       <div className="min-w-0">
-        <h1 className="font-semibold text-2xl tracking-tight">{title}</h1>
+        <h1 className="font-medium font-mono text-2xl tracking-tight">{title}</h1>
         {subtitle ? (
           <div className="mt-1 truncate text-sm text-text-muted" title={subtitleTitle}>
             {subtitle}
