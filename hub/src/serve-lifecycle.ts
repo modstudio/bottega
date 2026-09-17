@@ -8,6 +8,7 @@ import { existsSync, mkdirSync, readFileSync, renameSync, rmSync, writeFileSync 
 import { createConnection } from 'node:net'
 import { dirname, join } from 'node:path'
 import { pidAlive, processStartTime } from '../../shared/process-identity.ts'
+import { concernStateDirectory, type StateEnvironment } from '../../shared/state-directory.ts'
 
 export type ServeRecord = {
   pid: number
@@ -18,10 +19,11 @@ export type ServeRecord = {
 
 export type ServeStopDecision = 'none' | 'exited' | 'stop' | 'foreign'
 
-const SERVE_DIRECTORY = new URL('../.serve/', import.meta.url).pathname.replace(/\/$/, '')
-
-export function serveRecordPath(port: number): string {
-  return join(SERVE_DIRECTORY, `${port}.json`)
+export function serveRecordPath(
+  port: number,
+  env: StateEnvironment = process.env as StateEnvironment,
+): string {
+  return join(concernStateDirectory('hub', env), '.serve', `${port}.json`)
 }
 
 export function serveStopDecision(

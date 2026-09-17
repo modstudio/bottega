@@ -2,6 +2,7 @@ import { describe, expect, test } from 'bun:test'
 import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { STATE_HOME_ENV } from '../../shared/state-directory.ts'
 import {
   type ServeRecord,
   servePortIsFree,
@@ -26,18 +27,19 @@ describe('serve stop decisions', () => {
   })
 })
 
-test('the serve record belongs to the module checkout, not the working directory', () => {
+test('the serve record belongs to the explicit state root, not the working directory', () => {
   const original = process.cwd()
   const elsewhere = mkdtempSync(join(tmpdir(), 'hub-serve-path-'))
-  const before = serveRecordPath(7778)
+  const env = { [STATE_HOME_ENV]: join(elsewhere, 'state') }
+  const before = serveRecordPath(7778, env)
   try {
     process.chdir(elsewhere)
-    expect(serveRecordPath(7778)).toBe(before)
+    expect(serveRecordPath(7778, env)).toBe(before)
   } finally {
     process.chdir(original)
     rmSync(elsewhere, { recursive: true })
   }
-  expect(before).toEndWith('/hub/.serve/7778.json')
+  expect(before).toBe(join(elsewhere, 'state', 'hub', '.serve', '7778.json'))
 })
 
 test('the port check observes an in-process listener going down', async () => {

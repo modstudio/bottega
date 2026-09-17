@@ -1,7 +1,7 @@
 /**
  * Run the orchestrator in-process test leg (or a supplied file list) with the
  * gate-timings reporter, merge bun's junit per-test times, and write
- * orchestrator/runs/gate-timings/<stamp>.json plus a markdown summary.
+ * <state>/orchestrator/runs/gate-timings/<stamp>.json plus a markdown summary.
  *
  * Usage:
  *   bun test/record-gate-timings.ts
@@ -10,10 +10,11 @@
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { join, relative } from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { concernStateDirectory } from '../../shared/state-directory.ts'
 
 const orchRoot = join(import.meta.dir, '..')
 const stamp = new Date().toISOString().replace(/[:.]/g, '-')
-const outDir = join(orchRoot, 'runs', 'gate-timings')
+const outDir = join(concernStateDirectory('orchestrator'), 'runs', 'gate-timings')
 mkdirSync(outDir, { recursive: true })
 const jsonPath = join(outDir, `${stamp}.json`)
 const junitPath = join(outDir, `${stamp}.junit.xml`)

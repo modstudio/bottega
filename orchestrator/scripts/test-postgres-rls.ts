@@ -3,18 +3,17 @@ import { randomUUID } from 'node:crypto'
 import { copyFileSync, existsSync, mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { mainCheckoutOf } from '../../shared/git.ts'
+import { FROZEN_STATE_NAMES } from '../../shared/brand.ts'
 import {
   RECORD_ACTOR_ROLE,
   RECORD_OWNER_ROLE,
   RECORD_READER_ROLE,
 } from '../../shared/record/schema.ts'
+import { concernStateDirectory } from '../../shared/state-directory.ts'
 
 const falsify = process.argv.includes('--falsify')
 const container = `dev-445-postgres-${randomUUID().slice(0, 8)}`
 const sourceCopies = mkdtempSync(join(tmpdir(), 'dev-429-sources-'))
-const mainCheckout = mainCheckoutOf(new URL('..', import.meta.url).pathname)
-if (!mainCheckout) throw new Error('could not locate the main checkout for live database copies')
 const sourceOrchDb = join(sourceCopies, 'orch.db')
 const sourceHubDb = join(sourceCopies, 'hub.db')
 function copyDatabase(source: string, target: string): void {
@@ -23,8 +22,15 @@ function copyDatabase(source: string, target: string): void {
     if (existsSync(`${source}${suffix}`)) copyFileSync(`${source}${suffix}`, `${target}${suffix}`)
   }
 }
-copyDatabase(join(mainCheckout, 'orchestrator', 'orch.db'), sourceOrchDb)
-copyDatabase(join(mainCheckout, 'hub', 'hub.db'), sourceHubDb)
+copyDatabase(
+  process.env.ORCH_DB ??
+    join(concernStateDirectory('orchestrator'), FROZEN_STATE_NAMES.orchestratorDatabase),
+  sourceOrchDb,
+)
+copyDatabase(
+  process.env.HUB_DB ?? join(concernStateDirectory('hub'), FROZEN_STATE_NAMES.hubDatabase),
+  sourceHubDb,
+)
 
 async function run(argv: string[], env?: Record<string, string>): Promise<number> {
   const child = Bun.spawn(argv, {

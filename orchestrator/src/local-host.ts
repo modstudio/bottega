@@ -1,11 +1,11 @@
 // concern: local-host
 /** Owns local-agent wake, health, reachability, and availability. Must not know probes or CLI grammar. */
-import { readFileSync, writeFileSync } from 'node:fs'
+import { mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { which } from 'bun'
+import { concernStateDirectory } from '../../shared/state-directory.ts'
 import { AGENTS } from './agent-registry.ts'
 import type { Agent } from './agents.ts'
-import { ROOT } from './db.ts'
 /** Where a local OpenAI-compatible endpoint lives, e.g. http://127.0.0.1:8010/v1 */
 export const LOCAL_BASE_URL = process.env.ORCH_LOCAL_BASE_URL ?? ''
 export const LOCAL_MODEL = process.env.ORCH_LOCAL_MODEL ?? 'Qwen/Qwen3.6-35B-A3B'
@@ -53,7 +53,7 @@ const LOCAL_WOL_MAC = process.env.ORCH_LOCAL_WOL_MAC ?? ''
  */
 const WAKE_COOLDOWN_MS = 10 * 60_000
 
-const wakeStampPath = () => join(ROOT, '.last-wake')
+const wakeStampPath = () => join(concernStateDirectory('orchestrator'), '.last-wake')
 
 export function lastWakeAttempt(): Date | null {
   try {
@@ -122,6 +122,7 @@ export function tryWake(now = Date.now()): { sent: boolean; detail: string } {
   // Stamped BEFORE the spawn. If the spawn throws, the attempt still counts —
   // the alternative is a failure that retries on every single run.
   try {
+    mkdirSync(concernStateDirectory('orchestrator'), { recursive: true })
     writeFileSync(wakeStampPath(), new Date(now).toISOString())
   } catch {
     /* best effort */

@@ -53,17 +53,20 @@ Allowed through:
 DENIAL ONLY HAPPENS ON PreToolUse. SubagentStart cannot carry a permission
 decision and has no prompt to judge, so it is audit-only.
 """
-import json, os, re, sqlite3, sys, time
+import json, os, re, sqlite3, subprocess, sys, time
 
 ALLOW = {"claude-code-guide"}
 
-DB = os.environ.get("ORCH_DB") or os.path.join(
-    os.path.dirname(os.path.abspath(__file__)), "..", "orch.db"
-)
+ORCHESTRATOR_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
+STATE_DIR = subprocess.check_output(
+    ["bun", os.path.join(ORCHESTRATOR_ROOT, "..", "shared", "state-directory.ts"), "orchestrator"],
+    text=True,
+).strip()
+DB = os.environ.get("ORCH_DB") or os.path.join(STATE_DIR, "orch.db")
 # Where a decision goes when sqlite will not take it. A gate that cannot say
 # what it did is the thing this table exists to prevent, so a failed write has
 # to leave a mark somewhere rather than evaporate.
-FALLBACK_LOG = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "spawn-fallback.log")
+FALLBACK_LOG = os.path.join(STATE_DIR, "spawn-fallback.log")
 
 # A declaration, not a vocabulary match. The old fuzzy list ("online", "docs",
 # "benchmark", "pricing") is gone: it is what made rewording work.
@@ -130,6 +133,7 @@ def log(decision, why, inp, event, payload=None):
     except Exception as e:
         print(f"orch: spawn not logged ({e.__class__.__name__}: {e})", file=sys.stderr)
         try:
+            os.makedirs(os.path.dirname(FALLBACK_LOG), exist_ok=True)
             with open(FALLBACK_LOG, "a") as fh:
                 fh.write("\t".join("" if v is None else str(v) for v in row) + "\n")
         except Exception:
@@ -143,6 +147,7 @@ def main() -> int:
         print(f"orch: hook payload could not be parsed ({e.__class__.__name__}: {e})", file=sys.stderr)
         try:
             row = (time.strftime("%Y-%m-%dT%H:%M:%S"), "payload could not be parsed")
+            os.makedirs(os.path.dirname(FALLBACK_LOG), exist_ok=True)
             with open(FALLBACK_LOG, "a") as fh:
                 fh.write("\t".join(row) + "\n")
         except Exception:

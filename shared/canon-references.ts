@@ -18,11 +18,6 @@ export const CANON_REFERENCE_EXEMPTIONS: { path: string; reason: string }[] = [
       "a worker's scratch task pointer written under its run scratch directory, never tracked.",
   },
   {
-    path: 'orchestrator/orch.db',
-    reason:
-      'gitignored runtime store; canon must name it, and it is per-machine state rather than a repository artifact.',
-  },
-  {
     path: 'scripts/worktree',
     reason:
       "another project's CLI, referenced as an example of how those projects invoke their own worktree tooling.",

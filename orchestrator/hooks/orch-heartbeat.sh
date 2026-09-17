@@ -49,6 +49,10 @@ cd "$ROOT" 2>/dev/null || {
   exit 2
 }
 ORCH="$ROOT/../bin/orch"
+STATE_DIR=$(bun "$ROOT/../shared/state-directory.ts" orchestrator) || {
+  echo "DEGRADED: cannot resolve orchestrator state directory"
+  exit 2
+}
 
 SID="${1:?session id required (Claude session_id; orch records it on every run)}"
 INTERVAL="${2:-60}"
@@ -191,7 +195,7 @@ for event in events:
   # session. Read only the small session slice directly from the store; this is
   # part of health computation and therefore remains ahead of all supplemental
   # monitor-notice work (DEV-390).
-  landings_observed=$(SID="$SID" ORCH_DB_PATH="${ORCH_DB:-$ROOT/orch.db}" python3 -c '
+  landings_observed=$(SID="$SID" ORCH_DB_PATH="${ORCH_DB:-$STATE_DIR/orch.db}" python3 -c '
 import datetime, json, os, sqlite3, sys
 path = os.environ["ORCH_DB_PATH"]
 if not os.path.exists(path):

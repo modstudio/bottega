@@ -21,7 +21,11 @@ if (argv[0] === 'init-db') {
 }
 
 try {
-  const { DB_PATH, missingDatabaseMessage } = await import('./database-location.ts')
+  const { DB_PATH, legacyDatabaseRefusal, missingDatabaseMessage } = await import(
+    './database-location.ts'
+  )
+  const legacyRefusal = legacyDatabaseRefusal()
+  if (legacyRefusal) throw new Error(legacyRefusal)
   const { existsSync } = await import('node:fs')
   if (!existsSync(DB_PATH)) throw new Error(missingDatabaseMessage())
   const { registerStandardRuntime } = await import('./runtime-registration.ts')

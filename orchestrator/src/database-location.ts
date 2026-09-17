@@ -1,12 +1,14 @@
 import { existsSync, readFileSync, statSync } from 'node:fs'
 import { basename, dirname, join, resolve } from 'node:path'
+import { FROZEN_STATE_NAMES } from '../../shared/brand.ts'
 import { inspectionGitEnv } from '../../shared/git.ts'
+import {
+  concernStateDirectory,
+  legacyStoreRefusal,
+  type StateEnvironment,
+} from '../../shared/state-directory.ts'
 
-export type DatabaseResolutionMethod =
-  | 'ORCH_DB'
-  | 'git-common-dir'
-  | 'git-pointer'
-  | 'binary-relative'
+export type DatabaseResolutionMethod = 'ORCH_DB' | 'git-common-dir' | 'git-pointer' | 'state-root'
 
 export type DatabaseResolution = {
   path: string
@@ -58,8 +60,8 @@ function repositoryRootFromGit(cwd: string): RepositoryRoot | null {
 
 /**
  * Git may be unable to traverse a linked worktree's common directory even
- * though the worktree pointer and the database beside the main checkout remain
- * readable. The pointer has one safe shape: <main>/.git/worktrees/<name>.
+ * though the worktree pointer remains readable. The pointer has one safe
+ * shape: <main>/.git/worktrees/<name>.
  */
 function repositoryRootFromDotGit(cwd: string): RepositoryRoot | null {
   let current = resolve(cwd)
@@ -99,13 +101,14 @@ function repositoryRootFromDotGit(cwd: string): RepositoryRoot | null {
 
 export function resolveDatabase(
   cwd = process.cwd(),
-  env: Record<string, string | undefined> = process.env as Record<string, string | undefined>,
+  env: StateEnvironment = process.env as StateEnvironment,
   binaryRoot = ROOT,
 ): DatabaseResolution {
   const binaryRepository = repositoryRootFromGit(binaryRoot) ?? repositoryRootFromDotGit(binaryRoot)
-  const mainStorePath = binaryRepository
-    ? join(binaryRepository.root, 'orchestrator', 'orch.db')
-    : null
+  const mainStorePath = join(
+    concernStateDirectory('orchestrator', env),
+    FROZEN_STATE_NAMES.orchestratorDatabase,
+  )
   if (env.ORCH_DB) {
     return {
       path: resolve(env.ORCH_DB),
@@ -120,75 +123,20 @@ export function resolveDatabase(
       mainStorePath,
     }
   }
-
-  const binaryRelative = join(binaryRoot, 'orch.db')
-  const tried: string[] = []
   const repository = repositoryRootFromGit(cwd) ?? repositoryRootFromDotGit(cwd)
-  if (repository) {
-    const candidate = join(repository.root, 'orchestrator', 'orch.db')
-    tried.push(candidate)
-    const candidateExists = existsSync(candidate)
-    // Before the database can confirm the register, Git establishes identity:
-    // cwd and the binary source belong to the same common repository root.
-    const ownsSource =
-      binaryRepository && resolve(binaryRepository.root) === resolve(repository.root)
-    if (candidateExists || ownsSource) {
-      return {
-        path: candidate,
-        method: repository.method,
-        tried,
-        registeredPath: null,
-        repositoryRoot: repository.root,
-        repositoryCandidate: candidate,
-        repositoryCandidateExisted: candidateExists,
-        // A worktree-local binary may diagnose its main checkout, but only the
-        // main checkout's binary may initialize that checkout.
-        initializable: Boolean(binaryRepository && !binaryRepository.linked),
-        linkedWorktreeBinary: Boolean(binaryRepository?.linked),
-        mainStorePath,
-      }
-    }
+  return {
+    path: mainStorePath,
+    method: 'state-root',
+    tried: [mainStorePath],
+    registeredPath: null,
+    repositoryRoot: repository?.root ?? null,
+    repositoryCandidate: null,
+    repositoryCandidateExisted: false,
+    // Location is per-user, but binary identity still owns initialization.
+    initializable: Boolean(binaryRepository && !binaryRepository.linked),
+    linkedWorktreeBinary: Boolean(binaryRepository?.linked),
+    mainStorePath,
   }
-
-  if (binaryRepository?.linked) {
-    const mainCandidate = join(binaryRepository.root, 'orchestrator', 'orch.db')
-    if (!tried.includes(mainCandidate)) tried.push(mainCandidate)
-    if (existsSync(mainCandidate)) {
-      return {
-        path: mainCandidate,
-        method: binaryRepository.method,
-        tried,
-        registeredPath: null,
-        repositoryRoot: repository?.root ?? null,
-        repositoryCandidate: repository ? join(repository.root, 'orchestrator', 'orch.db') : null,
-        repositoryCandidateExisted: false,
-        initializable: false,
-        linkedWorktreeBinary: true,
-        mainStorePath,
-      }
-    }
-  }
-
-  tried.push(binaryRelative)
-  if (binaryRepository && !binaryRepository.linked) {
-    return {
-      path: binaryRelative,
-      method: 'binary-relative',
-      tried,
-      registeredPath: null,
-      repositoryRoot: repository?.root ?? null,
-      repositoryCandidate: repository ? join(repository.root, 'orchestrator', 'orch.db') : null,
-      repositoryCandidateExisted: false,
-      initializable: true,
-      linkedWorktreeBinary: false,
-      mainStorePath,
-    }
-  }
-
-  throw new Error(
-    `orchestrator database could not be resolved; tried:\n${tried.map((path) => `  ${path}`).join('\n')}\n` +
-      `run orch init-db from the main checkout to create it`,
-  )
 }
 
 /** A test process never falls back to the live orchestrator store. */
@@ -218,24 +166,31 @@ export function missingDatabaseMessage(path = DB_PATH): string {
   return `orchestrator database does not exist: ${path}\nrun orch init-db to create it`
 }
 
-export function registeredRepositoryMissingDatabase(
-  resolution: DatabaseResolution,
-  registeredRoot: string,
+export function legacyDatabaseRefusal(
+  resolution: DatabaseResolution = DATABASE_RESOLUTION,
+  env: StateEnvironment = process.env as StateEnvironment,
 ): string | null {
-  if (
-    resolution.repositoryRoot &&
-    resolution.repositoryCandidate &&
-    !resolution.repositoryCandidateExisted &&
-    resolution.path !== resolution.repositoryCandidate &&
-    resolve(registeredRoot) === resolve(resolution.repositoryRoot)
+  if (resolution.method === 'ORCH_DB' || !resolution.mainStorePath) return null
+  const binaryRepository = repositoryRootFromGit(ROOT) ?? repositoryRootFromDotGit(ROOT)
+  if (!binaryRepository) return null
+  const legacyStore = join(
+    binaryRepository.root,
+    'orchestrator',
+    FROZEN_STATE_NAMES.orchestratorDatabase,
   )
-    return resolution.repositoryCandidate
-  return null
+  return legacyStoreRefusal(existsSync(resolution.path), existsSync(legacyStore), {
+    legacyStore,
+    destinationStore: resolution.path,
+    legacyRuns: join(binaryRepository.root, 'orchestrator', FROZEN_STATE_NAMES.runsDirectory),
+    destinationRuns: resolveRunsDirectory(resolution, env),
+  })
 }
 
 export function resolveRunsDirectory(
   resolution: Pick<DatabaseResolution, 'path'> = DATABASE_RESOLUTION,
-  env: Record<string, string | undefined> = process.env as Record<string, string | undefined>,
+  env: StateEnvironment = process.env as StateEnvironment,
 ): string {
-  return env.ORCH_RUNS ? resolve(env.ORCH_RUNS) : join(dirname(resolution.path), 'runs')
+  return env.ORCH_RUNS
+    ? resolve(env.ORCH_RUNS)
+    : join(dirname(resolution.path), FROZEN_STATE_NAMES.runsDirectory)
 }

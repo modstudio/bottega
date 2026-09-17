@@ -1,17 +1,10 @@
 node_modules
 .DS_Store
 
-# orchestrator: local state, never shared
-orch.db
-orch.db-shm
-orch.db-wal
-orchestrator/runs/
-
 *.pyc
 __pycache__/
 .venv/
 
-ops/logs/
 *.log
 
 # per-directory Claude state, not shared.
@@ -25,24 +18,14 @@ ops/logs/
 .claude/skills/port-feature/*
 !.claude/skills/port-feature/SKILL.md
 
-# orchestrator: machine-local logs and database backups.
-orchestrator/spawn-fallback.log
-orchestrator/orch.db.backup-*
-
-# orchestrator: when a magic packet was last sent, so a restart cannot turn one
-# wake into a stream of them. Machine state, not shared.
-orchestrator/.last-wake
-
-# hub: local state, never shared. hub.db holds a per-task record of this
-# machine's own work, and the settings the dashboard writes.
-hub.db
-hub.db-shm
-hub.db-wal
-# Backups of it are the same private record, and the orchestrator's are already
-# ignored a few lines up - the pair had drifted.
-hub/hub.db.backup-*
-hub/.serve/
+# Bun installs workspace dependencies locally from the tracked root lockfile.
+orchestrator/node_modules
+orchestrator/bun.lock
+hub/node_modules
+hub/bun.lock
 hub/web/dist/
+hub/web/node_modules
+hub/web/bun.lock
 
 # Screenshots and page snapshots taken while checking the dashboard by eye.
 # Working material, not the deliverable.

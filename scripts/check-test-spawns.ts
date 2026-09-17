@@ -1,8 +1,10 @@
 #!/usr/bin/env bun
 import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs'
+import { join } from 'node:path'
+import { concernStateDirectory } from '../shared/state-directory.ts'
 
 const ROOT = new URL('..', import.meta.url).pathname.replace(/\/$/, '')
-const GATE_TIMING_DIR = `${ROOT}/orchestrator/runs/gate-timings`
+const GATE_TIMING_DIR = join(concernStateDirectory('orchestrator'), 'runs', 'gate-timings')
 const SPAWN_LIMIT = 20
 const STATIC_TEST_ROOTS = ['.githooks', 'hub', 'scripts', 'shared']
 

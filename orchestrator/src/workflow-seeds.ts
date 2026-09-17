@@ -48,7 +48,7 @@ const seeds = [
           job: 'review-lens',
           autonomy: 'auto',
           gate: null,
-          body: 'Use `/absolute/path/to/main-checkout/bin/orch` from the main checkout, never a worktree\'s ./bin/orch, which writes to an empty per-worktree orch.db. Dispatch each named lens against the branch. Always run correctness. Also run migration-safety when the change touches `orchestrator/src/db.ts` or `orchestrator/migrations/`. Also run craft when the change adds a new module.\n\n`/absolute/path/to/main-checkout/bin/orch do review-lens --review {{branch}} --key {{key}} --lens correctness "Review {{key}}: the change on {{branch}} against its task."`\n\nRepeat with the same prompt and --lens migration-safety or --lens craft when those apply.',
+          body: 'Use `/absolute/path/to/main-checkout/bin/orch` from the main checkout, never a worktree\'s ./bin/orch, whose access to the shared per-user store is read-only. Dispatch each named lens against the branch. Always run correctness. Also run migration-safety when the change touches `orchestrator/src/db.ts` or `orchestrator/migrations/`. Also run craft when the change adds a new module.\n\n`/absolute/path/to/main-checkout/bin/orch do review-lens --review {{branch}} --key {{key}} --lens correctness "Review {{key}}: the change on {{branch}} against its task."`\n\nRepeat with the same prompt and --lens migration-safety or --lens craft when those apply.',
         },
         {
           slug: 'score',
@@ -155,7 +155,7 @@ const seeds = [
           job: 'review-lens',
           autonomy: 'auto',
           gate: null,
-          body: 'Use `/absolute/path/to/main-checkout/bin/orch` from the main checkout, never a worktree\'s ./bin/orch, which writes to an empty per-worktree orch.db. Run `/absolute/path/to/main-checkout/bin/orch do review-lens --review <fix-branch> --key {{key}} --lens issue-blast-radius "Review the fix for {{key}} for its blast radius."`, where `<fix-branch>` is the branch `orch result` prints for the issue-worker run.',
+          body: 'Use `/absolute/path/to/main-checkout/bin/orch` from the main checkout, never a worktree\'s ./bin/orch, whose access to the shared per-user store is read-only. Run `/absolute/path/to/main-checkout/bin/orch do review-lens --review <fix-branch> --key {{key}} --lens issue-blast-radius "Review the fix for {{key}} for its blast radius."`, where `<fix-branch>` is the branch `orch result` prints for the issue-worker run.',
         },
         {
           slug: 'triage',

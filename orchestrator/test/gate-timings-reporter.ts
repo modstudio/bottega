@@ -1,6 +1,6 @@
 /**
  * Opt-in test instrumenter. Activated by ORCH_GATE_TIMINGS (a JSON path, or
- * any non-empty value to auto-place under orchestrator/runs/gate-timings/).
+ * any non-empty value to auto-place under the orchestrator state directory).
  *
  * Counts Bun.spawn / Bun.spawnSync and fixture-store bootstraps per test file
  * via wrappers. Per-test wall times come from bun's junit reporter, merged by
@@ -13,6 +13,7 @@ import { afterAll } from 'bun:test'
 import { mkdirSync, writeFileSync } from 'node:fs'
 import { dirname, join, relative } from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { concernStateDirectory } from '../../shared/state-directory.ts'
 
 const enabled = process.env.ORCH_GATE_TIMINGS
 if (enabled) {
@@ -21,7 +22,7 @@ if (enabled) {
   const outPath =
     enabled.includes('/') || enabled.endsWith('.json')
       ? enabled
-      : join(orchRoot, 'runs', 'gate-timings', `${stamp}.json`)
+      : join(concernStateDirectory('orchestrator'), 'runs', 'gate-timings', `${stamp}.json`)
   const sidecarPath = `${outPath}.spawn.json`
 
   type Kind = 'cli' | 'git' | 'other'

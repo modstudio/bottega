@@ -1,12 +1,14 @@
 import { mkdirSync, readFileSync, unlinkSync, writeFileSync } from 'node:fs'
+import { join } from 'node:path'
+import { concernStateDirectory } from '../../shared/state-directory.ts'
 import { withGateSlot } from '../src/gate-load.ts'
 import { publishTimingSummary } from './gate-timing-summary.ts'
 import { type GateTimings, mergeTimings } from './record-gate-timings.ts'
 
 const orchRoot = new URL('..', import.meta.url).pathname
 const timingStamp = new Date().toISOString().replace(/[:.]/g, '-')
-const timingDir = new URL('../runs/gate-timings/', import.meta.url).pathname
-const timingPath = `${timingDir}${timingStamp}.json`
+const timingDir = join(concernStateDirectory('orchestrator'), 'runs', 'gate-timings')
+const timingPath = join(timingDir, `${timingStamp}.json`)
 mkdirSync(timingDir, { recursive: true })
 
 async function pump(stream: ReadableStream<Uint8Array>, error: boolean): Promise<void> {
@@ -26,8 +28,8 @@ async function pump(stream: ReadableStream<Uint8Array>, error: boolean): Promise
 }
 
 async function runTests(): Promise<GateTimings> {
-  const junitPath = `${timingDir}${timingStamp}.unit.junit.xml`
-  const sidecarBase = `${timingDir}${timingStamp}.unit.json`
+  const junitPath = join(timingDir, `${timingStamp}.unit.junit.xml`)
+  const sidecarBase = join(timingDir, `${timingStamp}.unit.json`)
   const command = ['bun', 'test', 'src', '--reporter=junit', `--reporter-outfile=${junitPath}`]
   const started = Date.now()
   const child = Bun.spawn(command, {
