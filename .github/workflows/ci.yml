@@ -1,23 +1,16 @@
 # The remote gate. It runs the same `bun run check` the local gate runs, on
-# every pull request and every push to main that touches code, so a green
-# here is the same evidence as a green on the operator's machine. The local
-# gate proves a commit; this run admits it.
+# every pull request and every push to main, so a green here is the same
+# evidence as a green on the operator's machine. The local gate proves a
+# commit; this run admits it.
 name: ci
 
 on:
+  # Every change runs the gate. A path filter would admit whatever it failed to
+  # name — a shell installer, a launchd template, a deploy script — on the local
+  # gate alone, and running nothing proves nothing.
   pull_request:
-    paths: ['**.ts', '**.tsx', '**/package.json', 'bun.lock',
-            '**/bunfig.toml', '**/tsconfig.json', 'scripts/**',
-            'orchestrator/test/**', '.githooks/**', '.github/workflows/ci.yml',
-            'orchestrator/runs/**', '**/*.db*', 'hub/.serve', 'hub/.serve/**',
-            'orchestrator/.last-wake', 'orchestrator/spawn-fallback.log']
   push:
     branches: [main]
-    paths: ['**.ts', '**.tsx', '**/package.json', 'bun.lock',
-            '**/bunfig.toml', '**/tsconfig.json', 'scripts/**',
-            'orchestrator/test/**', '.githooks/**', '.github/workflows/ci.yml',
-            'orchestrator/runs/**', '**/*.db*', 'hub/.serve', 'hub/.serve/**',
-            'orchestrator/.last-wake', 'orchestrator/spawn-fallback.log']
   workflow_dispatch:
 
 jobs:
