@@ -12,7 +12,7 @@ import {
   promptSizeBucket,
   scoreboard,
 } from './route.ts'
-import { weigh } from './score.ts'
+import { weigh } from './score/score.ts'
 
 describe('one score, reported the same everywhere', () => {
   function judged(agent: string, rights: number, wrongs: number) {
