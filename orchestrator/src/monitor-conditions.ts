@@ -10,7 +10,7 @@ import { targetGitEnvironment } from './git-environment.ts'
 import { HOOK_TREE_JOB, hookTreeNotice } from './hook-tree.ts'
 import { runHasLiveDescendants } from './idle-kill.ts'
 import type { MonitorCondition } from './monitor-types.ts'
-import { pidAlive } from './process-liveness.ts'
+import { pidAlive, processStartTime } from './process-liveness.ts'
 import { pidRecordIdentity } from './project-lock.ts'
 import { projects } from './projects.ts'
 import type { ResourceClaimKind } from './resource-claims.ts'
@@ -152,36 +152,62 @@ export function idleRunConditions(clock = Date.now()): MonitorCondition[] {
 
 const TERMINAL_RUN_STATUSES = "('ok','failed','stale','stopped')"
 const TERMINAL_RUN_STATUS_SET = new Set(['ok', 'failed', 'stale', 'stopped'])
+const PID_BIRTH_TOLERANCE_MS = 2_000
+
+/** A pid born well after terminal completion belongs to a later process incarnation. */
+export function pidBornAfterRun(birth: string | null, finishedAt: number | null): boolean {
+  if (birth === null || finishedAt === null) return false
+  const bornAt = Date.parse(birth)
+  return Number.isFinite(bornAt) && bornAt > finishedAt + PID_BIRTH_TOLERANCE_MS
+}
+
+type TerminalProcessRun = {
+  id: number
+  started_at: string
+  latency_ms: number | null
+  pid: number | null
+  agent_pid: number | null
+  agent_pgid: number | null
+  agent_start_time: string | null
+}
+
+function terminalProcessState(run: TerminalProcessRun) {
+  const startedAt = Date.parse(run.started_at)
+  const finishedAt =
+    run.latency_ms !== null && Number.isFinite(startedAt) ? startedAt + run.latency_ms : null
+  const coordinatorReused = Boolean(
+    run.pid && pidBornAfterRun(processStartTime(run.pid), finishedAt),
+  )
+  const vendorReused = Boolean(
+    run.agent_pid && pidBornAfterRun(processStartTime(run.agent_pid), finishedAt),
+  )
+  const vendorIdentity = vendorReused
+    ? 'reused'
+    : pidRecordIdentity(run.agent_pid, run.agent_start_time)
+  const coordinatorLive = Boolean(run.pid && run.pid > 1 && !coordinatorReused && pidAlive(run.pid))
+  const roots = [
+    ...new Set(
+      [coordinatorReused ? null : run.pid, vendorReused ? null : run.agent_pid].filter(
+        (pid): pid is number => pid != null && pid > 1,
+      ),
+    ),
+  ]
+  return { coordinatorLive, vendorIdentity, roots }
+}
 
 /** Report recorded pids and descendants that outlived a terminal run. Observation only. */
 export function terminalProcessAliveConditions(clock = Date.now()): MonitorCondition[] {
   const terminal = db()
     .query(
-      `SELECT id, started_at, pid, agent_pid, agent_pgid, agent_start_time FROM run
+      `SELECT id, started_at, latency_ms, pid, agent_pid, agent_pgid, agent_start_time FROM run
       WHERE status IN ${TERMINAL_RUN_STATUSES}
         AND (pid IS NOT NULL OR agent_pid IS NOT NULL OR agent_pgid IS NOT NULL)`,
     )
-    .all() as {
-    id: number
-    started_at: string
-    pid: number | null
-    agent_pid: number | null
-    agent_pgid: number | null
-    agent_start_time: string | null
-  }[]
+    .all() as TerminalProcessRun[]
   return terminal.flatMap((run): MonitorCondition[] => {
-    const vendorIdentity = pidRecordIdentity(run.agent_pid, run.agent_start_time)
-    const coordinatorLive = Boolean(run.pid && run.pid > 1 && pidAlive(run.pid))
+    const { coordinatorLive, vendorIdentity, roots } = terminalProcessState(run)
     const vendorLive = vendorIdentity === 'live' || vendorIdentity === 'unknown'
-    const roots = [
-      ...new Set([run.pid, run.agent_pid].filter((pid): pid is number => pid != null && pid > 1)),
-    ]
-    const descendantsLive = runHasLiveDescendants(
-      vendorIdentity === 'reused' ? [run.pid] : roots,
-      [],
-      {},
-      run.agent_pgid,
-    )
+    const descendantsLive = runHasLiveDescendants(roots, [], {}, run.agent_pgid)
     if (!coordinatorLive && !vendorLive && !descendantsLive) return []
     const reported =
       (vendorLive && run.agent_pid) ||
