@@ -118,6 +118,40 @@ function closeOutKeepTreeDecision(
   return conversationKeepTreeHold(rootId, nowIso())
 }
 
+/** Drop the conversation root's keep-tree hold so terminal close-out can reclaim the tree. */
+export function clearConversationKeepTreeHold(runId: number): void {
+  const root = db()
+    .query('SELECT COALESCE(parent_run_id,id) root_id FROM run WHERE id=?')
+    .get(runId) as { root_id: number } | null
+  if (!root) throw new Error(`no run ${runId}`)
+  writeTransaction(() => {
+    db()
+      .query('UPDATE run SET keep_tree=0, keep_tree_until=NULL, keep_tree_reason=NULL WHERE id=?')
+      .run(root.root_id)
+  })
+}
+
+/** Release a run and every failover attempt it succeeded, oldest attempt first. */
+export function releaseRunFailoverAttempts(runId: number): CloseOutResult[] {
+  const attempts: number[] = []
+  const seen = new Set<number>()
+  let attemptId: number | null = runId
+  while (attemptId !== null) {
+    if (seen.has(attemptId)) throw new Error(`run ${runId} has a retry_of cycle at ${attemptId}`)
+    seen.add(attemptId)
+    attempts.push(attemptId)
+    const row = db().query('SELECT retry_of FROM run WHERE id=?').get(attemptId) as {
+      retry_of: number | null
+    } | null
+    if (!row) throw new Error(`no run ${attemptId}`)
+    attemptId = row.retry_of
+  }
+  return attempts.reverse().map((id) => {
+    clearConversationKeepTreeHold(id)
+    return closeOutRun(id, { intent: 'terminal' })
+  })
+}
+
 export type SandboxReleaseResult = {
   rootId: number
   path: string

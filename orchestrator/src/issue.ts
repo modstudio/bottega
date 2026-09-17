@@ -2,7 +2,7 @@ import { copyFileSync, existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync
 import { homedir, tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { PLATFORM_NAME, PLATFORM_SLUG } from '../../shared/brand.ts'
-import { closeOutRun } from './close-out.ts'
+import { releaseRunFailoverAttempts } from './close-out.ts'
 import {
   ISSUE_WORKER_SCHEMA,
   type IssueWorkerReply,
@@ -19,6 +19,7 @@ import {
   runFiledIssueCommand,
   workerGateEnvironment,
 } from './issue-shell.ts'
+import { DEFAULT_KEEP_TREE_HOURS, keepTreeExemption } from './keep-tree-hold.ts'
 import { type Project, projectByName } from './projects.ts'
 import { prepareSharedRefGuard } from './ref-guard.ts'
 import { parseReviewOutput } from './review.ts'
@@ -674,14 +675,24 @@ function outcomeDocument(
   ].join('\n\n')
 }
 
-async function release(result: RunResult | null): Promise<string | null> {
-  if (!result?.worktree) return null
-  const closed = closeOutRun(result.id, { intent: 'terminal' })
-  return ['released', 'absent', 'forgotten'].includes(closed.outcome) ? null : closed.detail
+async function release(result: Pick<RunResult, 'id'> | null): Promise<string | null> {
+  if (!result) return null
+  const failures = releaseRunFailoverAttempts(result.id).filter(
+    (closed) => !['released', 'absent', 'forgotten'].includes(closed.outcome),
+  )
+  return failures.length
+    ? failures.map((closed) => `run ${closed.runId}: ${closed.detail}`).join('\n')
+    : null
 }
 
 function runIdFromCause(cause: unknown): number {
   return Number(cause && typeof cause === 'object' && 'runId' in cause ? cause.runId : 0)
+}
+
+async function releaseFailedDiagnosis(runId: number, job: string | undefined, fallback: string) {
+  if (job !== 'diagnose') return fallback
+  const failure = await release({ id: runId })
+  return failure ? `Diagnosis worktree was not released: ${failure}.` : fallback
 }
 
 async function recordIssueFailure(
@@ -728,7 +739,7 @@ async function recordIssueFailure(
   const disposition = catchFix?.worktree
     ? catchFixTreeDisposition(catchFix.worktree, worktreeDirty(catchFix.worktree.path).dirty)
     : catchFixTreeDisposition(null, false)
-  let treeRecord = disposition.handoff
+  let treeRecord = await releaseFailedDiagnosis(runId, row?.job, disposition.handoff)
   if (disposition.action === 'release' && catchFix) {
     const failure = await release(catchFix)
     if (failure)
@@ -828,6 +839,10 @@ export async function workIssue(key: string): Promise<void> {
       mcp: true,
       key: issue.key,
       label: `issue ${issue.key} diagnosis`,
+      keepTree: keepTreeExemption(
+        DEFAULT_KEEP_TREE_HOURS,
+        'filed-issue coordinator verifies this tree',
+      ),
     })
     const diagnosis = parseIssueReply<Diagnosis>(diagnosisRun.output, ISSUE_DIAGNOSIS_SCHEMA)
     await comment(
@@ -992,6 +1007,10 @@ export async function workIssue(key: string): Promise<void> {
       seed: fixSeed ?? undefined,
       key: branchKey,
       label: `issue ${issue.key} fix`,
+      keepTree: keepTreeExemption(
+        DEFAULT_KEEP_TREE_HOURS,
+        'filed-issue coordinator verifies this tree',
+      ),
     })
     const fix = parseIssueReply<IssueWorkerReply>(fixRun.output, ISSUE_WORKER_SCHEMA)
     await verifyOrHandbackFix(
