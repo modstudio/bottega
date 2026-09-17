@@ -18,6 +18,6 @@ describe('orchestrator database path decision', () => {
   })
 
   test('non-test + fallback method: returns the path', () => {
-    expect(decideOrchestratorDatabasePath(false, 'binary-relative', livePath)).toBe(livePath)
+    expect(decideOrchestratorDatabasePath(false, 'state-root', livePath)).toBe(livePath)
   })
 })
