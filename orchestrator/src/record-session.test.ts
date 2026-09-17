@@ -21,13 +21,23 @@ describe('legacy record session migration', () => {
     const token = 'legacy-fixture-token'
     db().query('INSERT INTO schema_meta (key,value) VALUES (?,?)').run(RECORD_SESSION_KEY, token)
     const writes: string[] = []
+    let stored: string | null = null
     const runner = (argv: string[], stdin?: Uint8Array) => {
-      if (argv[1] === 'find-generic-password') return missingKeychain()
-      writes.push(new TextDecoder().decode(stdin).trim())
+      if (argv[1] === 'find-generic-password') {
+        return stored
+          ? {
+              exitCode: 0,
+              stdout: new TextEncoder().encode(`${stored}\n`),
+              stderr: new Uint8Array(),
+            }
+          : missingKeychain()
+      }
+      stored = token
+      writes.push(new TextDecoder().decode(stdin))
       return { exitCode: 0, stdout: new Uint8Array(), stderr: new Uint8Array() }
     }
     expect(storedRecordToken(db(), runner, true)).toBe(token)
-    expect(writes).toEqual([token])
+    expect(writes).toEqual([`${token}\n${token}\n`])
     expect(
       db().query('SELECT value FROM schema_meta WHERE key=?').get(RECORD_SESSION_KEY),
     ).toBeNull()

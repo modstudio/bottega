@@ -34,8 +34,11 @@ describe('record session keychain', () => {
     const token = 'fixture-secret-token'
     let observed: { argv: string[]; stdin?: Uint8Array } | null = null
     writeRecordSessionToken(token, (argv, stdin) => {
-      observed = { argv, stdin }
-      return result(0)
+      if (argv[1] === 'add-generic-password') {
+        observed = { argv, stdin }
+        return result(0)
+      }
+      return result(0, `${token}\n`)
     })
     expect(observed?.argv).toEqual([
       'security',
@@ -48,7 +51,27 @@ describe('record session keychain', () => {
       '-w',
     ])
     expect(observed?.argv).not.toContain(token)
-    expect(new TextDecoder().decode(observed?.stdin)).toBe(`${token}\n`)
+    expect(new TextDecoder().decode(observed?.stdin)).toBe(`${token}\n${token}\n`)
+  })
+
+  test('rejects a read-back mismatch without exposing the token', () => {
+    const token = 'fixture-secret-token'
+    let callCount = 0
+    let thrown: unknown
+    try {
+      writeRecordSessionToken(token, () => {
+        callCount += 1
+        return callCount === 1 ? result(0) : result(0, '')
+      })
+    } catch (error) {
+      thrown = error
+    }
+
+    expect(thrown).toBeInstanceOf(Error)
+    expect((thrown as Error).message).toBe(
+      'security add-generic-password verification failed: stored value did not match',
+    )
+    expect((thrown as Error).message).not.toContain(token)
   })
 
   test('returns null only for a missing item and redacts write failures', () => {

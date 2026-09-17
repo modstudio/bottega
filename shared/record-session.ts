@@ -47,9 +47,12 @@ export function writeRecordSessionToken(token: string, runner: SecurityRunner = 
   // Supplying that prompt over stdin keeps the bearer out of the process listing.
   const result = runner(
     ['security', 'add-generic-password', '-U', '-a', ACCOUNT, '-s', SERVICE, '-w'],
-    encoder.encode(`${token}\n`),
+    encoder.encode(`${token}\n${token}\n`),
   )
   if (result.exitCode !== 0) throw failure('add-generic-password', result, token)
+  if (readRecordSessionToken(runner) !== token) {
+    throw new Error('security add-generic-password verification failed: stored value did not match')
+  }
 }
 
 export function clearRecordSessionToken(runner: SecurityRunner = runSecurity): void {
