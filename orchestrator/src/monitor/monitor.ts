@@ -14,7 +14,7 @@ import {
 import { gitLocks } from '../git-locks.ts'
 import { grokTrustHeadings } from '../grok-trust.ts'
 import { keepTreeHold } from '../keep-tree-hold.ts'
-import { fileIssue } from '../mcp.ts'
+import { fileIssue } from '../mcp/mcp.ts'
 import { pidAlive } from '../process-liveness.ts'
 import { projectLockState } from '../project-lock.ts'
 import { projectAt, projects } from '../projects.ts'

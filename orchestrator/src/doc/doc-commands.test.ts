@@ -5,7 +5,7 @@ import { consumeDoc, removeDoc, setDoc } from '../../test/fixtures/docs.ts'
 import { AGENTS } from '../agent/agent-registry.ts'
 import { db } from '../db.ts'
 import { JOBS } from '../jobs.ts'
-import { createDocsMcpServer } from '../mcp.ts'
+import { createDocsMcpServer } from '../mcp/mcp.ts'
 import { portCommand } from '../porting/port-commands.ts'
 import {
   baselineForPair,

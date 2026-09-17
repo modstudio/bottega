@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'bun:test'
 import { Client } from '@modelcontextprotocol/sdk/client/index.js'
 import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js'
-import { PLATFORM_SLUG } from '../../shared/brand.ts'
+import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { createDocsMcpServer } from './mcp.ts'
 
 describe('scoped operator docs', () => {

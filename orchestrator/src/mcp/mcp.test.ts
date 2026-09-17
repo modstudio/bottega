@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'bun:test'
 import { Client } from '@modelcontextprotocol/sdk/client/index.js'
 import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js'
-import { missingIssueReportFields } from './issue/issue-report-fields.ts'
+import { missingIssueReportFields } from '../issue/issue-report-fields.ts'
 import { createDocsMcpServer } from './mcp.ts'
 
 describe('orch MCP', () => {

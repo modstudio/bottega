@@ -2,14 +2,14 @@ import { resolve } from 'node:path'
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js'
 import { z } from 'zod'
-import { PLATFORM_SLUG } from '../../shared/brand.ts'
-import { db, enableSchemaReload, sessionId } from './db.ts'
-import { registerStandardRuntime } from './runtime-registration.ts'
+import { PLATFORM_SLUG } from '../../../shared/brand.ts'
+import { db, enableSchemaReload, sessionId } from '../db.ts'
+import { registerStandardRuntime } from '../runtime-registration.ts'
 
 registerStandardRuntime()
 
-import { strictlyAuthenticatedWorkerRun } from './ask/ask.ts'
-import { checkDoc, repoRootForDoc } from './canon/canon.ts'
+import { strictlyAuthenticatedWorkerRun } from '../ask/ask.ts'
+import { checkDoc, repoRootForDoc } from '../canon/canon.ts'
 import {
   consumeDoc,
   docsMarkdown,
@@ -19,14 +19,13 @@ import {
   listDocRevisions,
   listDocs,
   setDoc,
-} from './doc/docs.ts'
-import { filedIssueDataLine } from './issue/issue.ts'
+} from '../doc/docs.ts'
+import { filedIssueDataLine } from '../issue/issue.ts'
 import {
   CONDITIONAL_ISSUE_REPORT_FIELD_REASONS,
   missingIssueReportFields,
-} from './issue/issue-report-fields.ts'
-import { resolveLens } from './lens/lenses.ts'
-import { decideMcpDocWrite } from './mcp-doc-write.ts'
+} from '../issue/issue-report-fields.ts'
+import { resolveLens } from '../lens/lenses.ts'
 import {
   addDoctrineRule,
   addPair,
@@ -42,10 +41,11 @@ import {
   retireDoctrineRule,
   setBaseline,
   setLedgerRef,
-} from './porting/porting.ts'
-import { projectAt, projectByName, projects } from './projects.ts'
-import { getReview, listReviews } from './review.ts'
-import { composeWorkflow, getWorkflowStep, listWorkflows } from './workflow/workflows.ts'
+} from '../porting/porting.ts'
+import { projectAt, projectByName, projects } from '../projects.ts'
+import { getReview, listReviews } from '../review.ts'
+import { composeWorkflow, getWorkflowStep, listWorkflows } from '../workflow/workflows.ts'
+import { decideMcpDocWrite } from './mcp-doc-write.ts'
 
 const text = (value: unknown) => ({
   content: [
@@ -53,7 +53,7 @@ const text = (value: unknown) => ({
   ],
 })
 
-const HUB = resolve(new URL('../../bin/hub', import.meta.url).pathname)
+const HUB = resolve(new URL('../../../bin/hub', import.meta.url).pathname)
 
 const requiredReportField = (field: string, belongs: string) =>
   z
