@@ -1,71 +1,19 @@
-import { DEFAULT_IDLE_CAP_MS, engagedMs, type Span } from '../../shared/interval.ts'
-import {
-  type Capabilities,
-  type TrackerRowSource,
-  trackerCapabilities,
-} from '../../shared/trackers.ts'
+import { engagedMs } from '../../shared/interval.ts'
+import type { Capabilities } from '../../shared/trackers.ts'
 import { db, writeTransaction } from './db.ts'
 import { projects } from './projects.ts'
+import {
+  type IntervalRow,
+  intervalEndMs,
+  projectBoardCards,
+  projectTasksInWindow,
+  type WindowIntervalRow,
+} from './task-projections.ts'
 
-type AgentSpend = { agent: string; tokens: number; costUsd: number | null; runs: number }
-
-export type TaskRow = {
-  key: string | null
-  project: string | null
-  title: string | null
-  status: string | null
-  statusCategory: string | null
-  source: string | null
-  sourceProtocol: string | null
-  capabilities: Capabilities | null
-  /** Union of every agent's working spans. Never a sum. */
-  engagedMs: number
-  claudeTokens: number
-  /** Per agent, deliberately not totalled — see below. */
-  vendors: AgentSpend[]
-  /** Distinct agents with a span still open at the window's end. */
-  activeAgents: string[]
-  /**
-   * Something is working on this NOW.
-   *
-   * An open delegated run, or a span that ended within the idle cap - which is
-   * the same threshold engaged time uses to decide a session is still engaged,
-   * so the two cannot disagree about what "working" means.
-   */
-  workingNow: boolean
-  updatedAt: string | null
-  closedAt: string | null
-  intervals: number
-  /** When work on this last stopped - or now, if it has not. */
-  lastAt: number
-}
-
-type IntervalRow = {
-  task_key: string | null
-  project: string | null
-  source: string
-  agent: string | null
-  job: string | null
-  start_at: string
-  end_at: string
-  claude_tokens: number
-  vendor_tokens: number
-  vendor_cost_usd: number | null
-  open: number
-}
-
-type WindowIntervalRow = IntervalRow & {
-  task_project: string | null
-  task_title: string | null
-  task_status: string | null
-  task_status_category: string | null
-  task_source: string | null
-  task_updated_at: string | null
-  task_closed_at: string | null
-}
+export type TaskRow = ReturnType<typeof projectTasksInWindow>[number]
 
 /** One indexed overlap scan, with task metadata only for keys in that window. */
-function intervalsInWindow(from: string, to: string): WindowIntervalRow[] {
+export function intervalsInWindow(from: string, to: string): WindowIntervalRow[] {
   return db()
     .query<WindowIntervalRow, [string, string]>(
       `SELECT i.task_key, i.project, i.source, i.agent, i.job, i.start_at, i.end_at, i.open,
@@ -90,29 +38,7 @@ function intervalsInWindow(from: string, to: string): WindowIntervalRow[] {
  * the engaged time it contributed stopped growing.
  */
 export const endMs = (r: { end_at: string; open: number }, now = Date.now()) =>
-  r.open ? Math.max(now, new Date(r.end_at).getTime()) : new Date(r.end_at).getTime()
-
-/**
- * Vendor tokens are reported per agent and never summed with each other or
- * with Claude's.
- *
- * They are not the same unit. Runs 378 and 379 did comparable work on the same
- * question and reported 452,860 (grok) and 91,996 (codex) — a 5x gap that is
- * about how each vendor counts, not about how much work happened. A single
- * merged "total tokens" column would read as a measurement and be an artefact.
- */
-function foldVendors(rows: IntervalRow[]): AgentSpend[] {
-  const by = new Map<string, AgentSpend>()
-  for (const r of rows) {
-    if (r.source !== 'orch' || !r.agent) continue
-    const cur = by.get(r.agent) ?? { agent: r.agent, tokens: 0, costUsd: null, runs: 0 }
-    cur.tokens += r.vendor_tokens
-    cur.runs += 1
-    if (r.vendor_cost_usd != null) cur.costUsd = (cur.costUsd ?? 0) + r.vendor_cost_usd
-    by.set(r.agent, cur)
-  }
-  return [...by.values()].sort((a, b) => b.tokens - a.tokens)
-}
+  intervalEndMs(r, now)
 
 /**
  * Every task with recorded work in `[from, to)`, plus one unattributed row per
@@ -124,83 +50,7 @@ function foldVendors(rows: IntervalRow[]): AgentSpend[] {
  * task-based denominator can see. Hiding it would flatter every number above it.
  */
 export function tasksInWindow(from: string, to: string): TaskRow[] {
-  return foldWindow(intervalsInWindow(from, to))
-}
-
-function foldWindow(rows: WindowIntervalRow[]): TaskRow[] {
-  const groups = new Map<string, WindowIntervalRow[]>()
-  for (const r of rows) {
-    // An unattributed row is grouped by project, so one project's untracked hours do
-    // not pool with another's into one meaningless bucket.
-    //
-    // The NUL prefix namespaces these away from real task keys, which can never
-    // contain one. It must stay the ESCAPE `\0` and never a literal NUL byte in
-    // the source: written literally it makes this file `data` rather than text,
-    // and grep then skips all 470 lines of it in silence - no match, no warning,
-    // on the file that holds every query the dashboard runs.
-    const id = r.task_key ?? `\0unattributed:${r.project ?? 'unknown'}`
-    const list = groups.get(id) ?? []
-    list.push(r)
-    groups.set(id, list)
-  }
-
-  const out: TaskRow[] = []
-
-  for (const [id, list] of groups) {
-    const unattributed = id.startsWith('\0')
-    const key = unattributed ? null : id
-    const first = list[0]!
-
-    const spans: Span[] = list.map((r) => ({
-      start: new Date(r.start_at).getTime(),
-      end: endMs(r),
-    }))
-
-    out.push({
-      key,
-      project: first.task_project ?? first.project,
-      title: first.task_title,
-      status: first.task_status,
-      statusCategory: first.task_status_category,
-      source: first.task_source ?? (key ? 'git' : null),
-      sourceProtocol:
-        first.task_source === 'mcp'
-          ? (projects().find((project) => project.name === first.task_project)?.settings.tracker
-              ?.protocol ?? null)
-          : null,
-      capabilities: key
-        ? trackerCapabilities({
-            source: (first.task_source ?? 'git') as TrackerRowSource,
-            project:
-              projects().find(
-                (project) => project.name === (first.task_project ?? first.project),
-              ) ?? null,
-          })
-        : null,
-      engagedMs: engagedMs(spans),
-      claudeTokens: list.reduce((s, r) => s + r.claude_tokens, 0),
-      vendors: foldVendors(list),
-      // "Currently working" means a span that has not closed yet, which is what
-      // an in-flight delegated run looks like from here.
-      // An agent is working now when its span is still OPEN — not when its
-      // stored end happens to fall after the window's edge.
-      activeAgents: [...new Set(list.filter((r) => r.agent && r.open).map((r) => r.agent!))],
-      workingNow: list.some((r) => r.open || endMs(r) >= Date.now() - DEFAULT_IDLE_CAP_MS),
-      updatedAt: first.task_updated_at,
-      closedAt: first.task_closed_at,
-      intervals: list.length,
-      lastAt: Math.max(...spans.map((x) => x.end)),
-    })
-  }
-
-  // MOST RECENTLY ACTIVE FIRST.
-  //
-  // Sorting by cumulative engaged time ranked a task worked for three hours
-  // yesterday above one an agent is running on right now, which buries the only
-  // row that changes while you watch - in a view whose whole premise is what is
-  // moving. Recency also puts live tasks on top for free: an open span runs to
-  // now, so it cannot be beaten.
-  return out.sort((a, b) => b.lastAt - a.lastAt)
+  return projectTasksInWindow(intervalsInWindow(from, to), projects(), Date.now())
 }
 
 /** Everything the global strip derives from intervals, from one overlap scan. */
@@ -208,7 +58,7 @@ export function stripWindow(from: string, to: string) {
   const rows = intervalsInWindow(from, to)
   const toMs = new Date(to).getTime()
   return {
-    tasks: foldWindow(rows),
+    tasks: projectTasksInWindow(rows, projects(), Date.now()),
     engagedMs: engagedMs(
       rows.map((row) => ({
         start: new Date(row.start_at).getTime(),
@@ -697,26 +547,7 @@ export function boardTasks(windowDays = 14, cap = 250): Board {
   )
 
   return {
-    cards: rows.map((r) => ({
-      key: r.key,
-      project: r.project,
-      title: r.title,
-      assignee: r.assignee,
-      status: r.status,
-      statusCategory: r.status_category,
-      source: r.source,
-      sourceProtocol:
-        r.source === 'mcp'
-          ? (projects().find((project) => project.name === r.project)?.settings.tracker?.protocol ??
-            null)
-          : null,
-      capabilities: trackerCapabilities({
-        source: r.source as TrackerRowSource,
-        project: projects().find((project) => project.name === r.project) ?? null,
-      }),
-      updatedAt: r.updated_at ?? r.last_seen,
-      workingNow: live.has(r.key),
-    })),
+    cards: projectBoardCards(rows, [...live], projects()),
     totals,
     cap,
   }

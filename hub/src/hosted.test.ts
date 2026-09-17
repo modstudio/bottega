@@ -28,9 +28,12 @@ describe('hostedRouter', () => {
     const procedures = Object.keys(hostedRouter._def.procedures).sort()
     expect(procedures).toEqual([
       'record.agents',
+      'record.board',
       'record.doc',
       'record.docRevisions',
       'record.docs',
+      'record.done',
+      'record.flight',
       'record.health',
       'record.jobs',
       'record.projects',
@@ -40,6 +43,7 @@ describe('hostedRouter', () => {
       'record.run',
       'record.runs',
       'record.snapshots',
+      'record.task',
       'record.whoami',
     ])
   })

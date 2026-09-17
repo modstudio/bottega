@@ -23,6 +23,7 @@ import {
 import { useNow } from '@/lib/clock'
 import { useDetailPanel } from '@/lib/detail-panel'
 import { compactTokens, duration, relativeTime, vendorFigures } from '@/lib/format'
+import { isHostedMode } from '@/lib/hub-mode'
 import { taskStatusLook } from '@/lib/task-status'
 import { setWorkCounts, useWindowState } from '@/lib/window'
 import { type BoardResponse, type FlightResponse, trpc } from '@/trpc/client'
@@ -475,20 +476,34 @@ function TaskContent({
   )
 }
 
+function useTaskViewQuery(
+  name: WorkName,
+  input: {
+    hours: 24 | 48 | 168 | 720
+    filters: { agent: string; project: string; source: string }
+  },
+  menus: number,
+) {
+  const common = {
+    placeholderData: keepPreviousData,
+    refetchInterval: (menus ? false : 10_000) as false | number,
+  }
+  if (isHostedMode()) {
+    return name === 'flight'
+      ? useQuery({ ...trpc.record.flight.queryOptions(input), ...common })
+      : useQuery({ ...trpc.record.done.queryOptions(input), ...common })
+  }
+  return name === 'flight'
+    ? useQuery({ ...trpc.work.flight.queryOptions(input), ...common })
+    : useQuery({ ...trpc.work.done.queryOptions(input), ...common })
+}
+
 export function TaskView({ name }: { name: WorkName }) {
   const window = useWindowState()
   const [menus, setMenus] = useState(0)
-  const options =
-    name === 'flight'
-      ? trpc.work.flight.queryOptions({ hours: window.hours, filters: window.filters })
-      : trpc.work.done.queryOptions({ hours: window.hours, filters: window.filters })
   // Keep the last result on screen while a new filter or window loads: a pending
   // state here unmounts the toolbar, which destroys the control being used.
-  const query = useQuery({
-    ...options,
-    placeholderData: keepPreviousData,
-    refetchInterval: menus ? false : 10_000,
-  })
+  const query = useTaskViewQuery(name, { hours: window.hours, filters: window.filters }, menus)
   const dropdown = (open: boolean) => setMenus((count) => Math.max(0, count + (open ? 1 : -1)))
   const panel = useDetailPanel()
   if (query.isPending) return <p className="text-text-muted">Loading {name}...</p>
@@ -498,17 +513,18 @@ export function TaskView({ name }: { name: WorkName }) {
         {query.error.message}
       </p>
     )
+  const response = query.data as FlightResponse
   return (
     <section>
       <WindowChrome
         title={name === 'flight' ? 'In flight' : 'Done'}
-        response={query.data}
-        facets={query.data.data.facets}
+        response={response}
+        facets={response.data.facets}
         onDropdown={dropdown}
       />
       <TaskContent
         name={name}
-        data={query.data.data}
+        data={response.data}
         fetchedAt={query.dataUpdatedAt}
         onDropdown={dropdown}
         panel={panel}
@@ -569,6 +585,22 @@ function BoardCardView({ card }: { card: BoardCard }) {
   )
 }
 
+function useBoardQuery(
+  input: {
+    hours: 24 | 48 | 168 | 720
+    filters: { agent: string; project: string; source: string }
+  },
+  menus: number,
+) {
+  const common = {
+    placeholderData: keepPreviousData,
+    refetchInterval: (menus ? false : 10_000) as false | number,
+  }
+  return isHostedMode()
+    ? useQuery({ ...trpc.record.board.queryOptions(input), ...common })
+    : useQuery({ ...trpc.work.board.queryOptions(input), ...common })
+}
+
 export function BoardView() {
   const navigate = useNavigate()
   const boardPanel = useDetailPanel()
@@ -577,11 +609,7 @@ export function BoardView() {
   const [settings, setSettings] = useState(readBoardSettings)
   const [search, setSearch] = useState('')
   const [why, setWhy] = useState(false)
-  const query = useQuery({
-    ...trpc.work.board.queryOptions({ hours: window.hours, filters: window.filters }),
-    placeholderData: keepPreviousData,
-    refetchInterval: menus ? false : 10_000,
-  })
+  const query = useBoardQuery({ hours: window.hours, filters: window.filters }, menus)
   const dropdown = (open: boolean) => setMenus((count) => Math.max(0, count + (open ? 1 : -1)))
   const remember = (next: Partial<typeof settings>) =>
     setSettings((current) => {
@@ -600,7 +628,7 @@ export function BoardView() {
         {query.error.message}
       </p>
     )
-  const response = query.data
+  const response = query.data as BoardResponse
   const all = response.data.cards
   const q = search.trim().toLowerCase()
   const cards = q

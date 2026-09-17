@@ -1,6 +1,7 @@
 import { useMutation, useQuery } from '@tanstack/react-query'
 import { useEffect, useState } from 'react'
 import { relativeTime } from '@/lib/format'
+import { isHostedMode } from '@/lib/hub-mode'
 import { taskStatusLook } from '@/lib/task-status'
 import { queryClient, type TaskRecordResponse, trpc } from '@/trpc/client'
 import { Badge } from '@/ui/badge/badge'
@@ -12,6 +13,7 @@ import { DisplayRow, FieldSection, SettingBlock } from '@/ui/form-layout/form-la
 import { Identifier } from '@/ui/identifier/identifier'
 import { Select } from '@/ui/listbox/select'
 import { ProjectMark, SourceMark } from './design-system'
+import { HostedTaskSheet } from './hosted-task-sheet'
 import { Markdown } from './markdown'
 
 function reasonRows(capabilities: TaskRecordResponse['capabilities']) {
@@ -78,6 +80,11 @@ function DocumentEditor({ document }: { document: TaskRecordResponse['documents'
 }
 
 export function TaskSheet({ taskKey, onClose }: { taskKey: string; onClose: () => void }) {
+  if (isHostedMode()) return <HostedTaskSheet taskKey={taskKey} onClose={onClose} />
+  return <LocalTaskSheet taskKey={taskKey} onClose={onClose} />
+}
+
+function LocalTaskSheet({ taskKey, onClose }: { taskKey: string; onClose: () => void }) {
   const record = useQuery(trpc.work.task.queryOptions({ key: taskKey }))
   const [title, setTitle] = useState('')
   const [comment, setComment] = useState('')
