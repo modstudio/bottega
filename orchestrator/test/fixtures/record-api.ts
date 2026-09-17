@@ -1,6 +1,10 @@
 import { newRecordId } from '../../../shared/record/schema.ts'
 import { consumeDocBody, refuseDocWrite } from '../../src/doc-write-allowed.ts'
-import type { RecordApiClient, RecordDocUpsertInput } from '../../src/record-api-client.ts'
+import type {
+  RecordApiClient,
+  RecordDocImportInput,
+  RecordDocUpsertInput,
+} from '../../src/record-api-client.ts'
 import { refuseScoreVerdict } from '../../src/record-verdicts.ts'
 
 type StoredDoc = {
@@ -134,6 +138,74 @@ export function createMemoryRecordApiClient(): RecordApiClient {
       })
       revisions.set(id, list)
       return { id, revisionId }
+    },
+    async importDoc(input: RecordDocImportInput) {
+      const atAddress = [...docs.values()].filter(
+        (doc) =>
+          doc.scope === input.doc.scope &&
+          doc.subject === input.doc.subject &&
+          doc.slug === input.doc.slug,
+      )
+      const liveDoc = atAddress.find((doc) => doc.deletedAt === null)
+      if (
+        liveDoc &&
+        liveDoc.body !== input.doc.body &&
+        liveDoc.updatedAt > input.doc.updatedAt
+      ) {
+        throw new Error(
+          `refusing import: hosted doc at ${input.doc.scope}/${input.doc.subject ?? ''}/${input.doc.slug} has a different body and newer updated_at`,
+        )
+      }
+      const existing =
+        liveDoc ??
+        [...atAddress].sort((left, right) => right.updatedAt.localeCompare(left.updatedAt))[0]
+      const id = existing?.id ?? newRecordId()
+      docs.set(id, {
+        id,
+        scope: input.doc.scope,
+        subject: input.doc.subject,
+        slug: input.doc.slug,
+        title: input.doc.title,
+        body: input.doc.body,
+        delivery: input.doc.delivery,
+        projectName: input.doc.projectName ?? null,
+        createdAt: input.doc.createdAt,
+        updatedAt: input.doc.updatedAt,
+        deletedAt: input.doc.deletedAt,
+      })
+      const list = revisions.get(id) ?? []
+      const revisionIds: string[] = []
+      for (const revision of input.revisions) {
+        const found = list.find(
+          (row) =>
+            row.at === revision.at &&
+            row.op === revision.op &&
+            row.author === revision.author &&
+            row.reason === revision.reason,
+        )
+        if (found) {
+          revisionIds.push(found.id)
+          continue
+        }
+        const revisionId = newRecordId()
+        list.push({
+          id: revisionId,
+          docId: id,
+          scope: revision.scope,
+          subject: revision.subject,
+          slug: revision.slug,
+          op: revision.op,
+          title: revision.title,
+          body: revision.body,
+          delivery: revision.delivery,
+          author: revision.author,
+          reason: revision.reason,
+          at: revision.at,
+        })
+        revisionIds.push(revisionId)
+      }
+      revisions.set(id, list)
+      return { id, revisionIds }
     },
     async deleteDoc(id, input) {
       const doc = docs.get(id)

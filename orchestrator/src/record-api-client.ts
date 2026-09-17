@@ -25,6 +25,34 @@ export type RecordDocUpsertInput = {
   revisionId?: string
 }
 
+export type RecordDocImportInput = {
+  doc: {
+    scope: string
+    subject: string | null
+    slug: string
+    title: string
+    body: string
+    delivery: DocDelivery
+    projectName?: string | null
+    createdAt: string
+    updatedAt: string
+    deletedAt: string | null
+  }
+  revisions: Array<{
+    scope: string
+    subject: string | null
+    slug: string
+    op: DocRevisionOp
+    title: string
+    body: string
+    delivery: DocDelivery
+    author: string
+    reason: string
+    sessionId?: string | null
+    at: string
+  }>
+}
+
 export type RecordApiClient = {
   listDocs(query: {
     scope?: string
@@ -37,6 +65,7 @@ export type RecordApiClient = {
   getDoc(id: string): Promise<Record<string, unknown>>
   listRevisions(id: string): Promise<Record<string, unknown>[]>
   upsertDoc(input: RecordDocUpsertInput): Promise<{ id: string; revisionId: string }>
+  importDoc(input: RecordDocImportInput): Promise<{ id: string; revisionIds: string[] }>
   deleteDoc(
     id: string,
     input: { reason: string; author: string },
@@ -134,6 +163,18 @@ function ids(body: unknown): { id: string; revisionId: string } {
   return { id: record.id, revisionId: record.revisionId }
 }
 
+function importIds(body: unknown): { id: string; revisionIds: string[] } {
+  const record = body && typeof body === 'object' ? (body as Record<string, unknown>) : {}
+  if (
+    typeof record.id !== 'string' ||
+    !Array.isArray(record.revisionIds) ||
+    record.revisionIds.some((value) => typeof value !== 'string')
+  ) {
+    throw recordApiUnreachable(new Error('record API returned an invalid body'))
+  }
+  return { id: record.id, revisionIds: record.revisionIds as string[] }
+}
+
 export function recordApiClient(): RecordApiClient {
   const injected = injectedClient()
   if (injected) return injected
@@ -157,6 +198,8 @@ export function recordApiClient(): RecordApiClient {
     },
     upsertDoc: (input) =>
       request('/v1/docs', { method: 'PUT', body: JSON.stringify(input) }).then(ids),
+    importDoc: (input) =>
+      request('/v1/docs/import', { method: 'POST', body: JSON.stringify(input) }).then(importIds),
     deleteDoc: (id, input) =>
       request(`/v1/docs/${id}`, { method: 'DELETE', body: JSON.stringify(input) }).then(ids),
     consumeDoc: async (id, input) => {

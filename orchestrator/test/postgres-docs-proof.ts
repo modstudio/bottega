@@ -42,6 +42,7 @@ function liveCacheClient(origin: string, token: string): RecordApiClient {
     getDoc: unused,
     listRevisions: unused,
     upsertDoc: unused,
+    importDoc: unused,
     deleteDoc: unused,
     consumeDoc: unused,
     restoreDoc: unused,
