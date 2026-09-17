@@ -7,9 +7,11 @@ import {
   deadRunningProcessConditions,
   orphanDockerNetworkConditions,
   orphanSandboxDirectoryConditions,
+  pidBornAfterRun,
   reconcileHub,
   rulingConditions,
   staleTrustEntryConditions,
+  terminalProcessPgid,
   unsettledClaimConditions,
 } from './monitor-conditions.ts'
 import { claimMonitorNotices, markMonitorNoticesDelivered } from './monitor-notices.ts'
@@ -85,6 +87,38 @@ function persistAddressedCondition(
 }
 
 describe('operational monitor conditions', () => {
+  describe('finished-run pid identity', () => {
+    const finishedAt = Date.parse('2026-09-17T08:00:00')
+
+    test('catches removal of the after-finish reuse verdict', () => {
+      expect(pidBornAfterRun('Wed Sep 17 08:00:03 2026', finishedAt)).toBe(true)
+    })
+
+    test('catches reversal of the birth and finish comparison', () => {
+      expect(pidBornAfterRun('Wed Sep 17 07:59:59 2026', finishedAt)).toBe(false)
+    })
+
+    test('catches removal of the pid birth tolerance', () => {
+      expect(pidBornAfterRun('Wed Sep 17 08:00:02 2026', finishedAt)).toBe(false)
+    })
+
+    test('catches treating an unknown birth as reused', () => {
+      expect(pidBornAfterRun(null, finishedAt)).toBe(false)
+    })
+
+    test('catches treating an unknown finish as reused', () => {
+      expect(pidBornAfterRun('Wed Sep 17 08:00:03 2026', null)).toBe(false)
+    })
+
+    test('catches treating a malformed lstart as reused', () => {
+      expect(pidBornAfterRun('not a process start time', finishedAt)).toBe(false)
+    })
+
+    test('catches passing a reused vendor pgid as descendant evidence', () => {
+      expect(terminalProcessPgid('reused', 66547)).toBe(null)
+    })
+  })
+
   test('identical conditions collapse without an anomaly', () => {
     const duplicate = condition()
     expect(groupMonitorConditions([duplicate, { ...duplicate }])).toEqual({
