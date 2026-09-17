@@ -1,7 +1,7 @@
 // concern: tracked worktree refresh
 /** Owns refresh policy and adapts git/register facts to the tracked recipe runner. */
 
-import { basename, resolve } from 'node:path'
+import { resolve } from 'node:path'
 import { PLATFORM_SLUG } from '../../shared/brand.ts'
 import {
   gitToplevel,
@@ -9,12 +9,15 @@ import {
   mainCheckoutOf,
   resolvedPathsEqual,
 } from '../../shared/git.ts'
+import { recordedChainRootsForWorktree } from './dispatch-preflight.ts'
+import { orchRunLabel } from './docker-resources.ts'
 import { git } from './git-environment.ts'
 import { projects, resolvedWorktreeTool } from './projects.ts'
+import { teardownVars } from './recipe-lifecycle.ts'
 import { loadTrackedRecipe } from './recipe-loader.ts'
-import { allocationEnvironmentVariable } from './recipe-schema.ts'
+import type { TrackedRecipe } from './recipe-schema.ts'
 import { runStep, type StepContext } from './recipe-step.ts'
-import { executeTrackedRefreshSteps } from './tracked-recipe.ts'
+import { executeTrackedRefreshSteps, type RecipeSnapshot, readSnapshot } from './tracked-recipe.ts'
 
 export type TreeRefreshDecision =
   | { action: 'fast-forward' }
@@ -41,38 +44,96 @@ function countCommits(range: string, cwd: string): number {
   return count
 }
 
-function stepContext(
+type RefreshOwner = {
+  snapshot: RecipeSnapshot | null
+  key: string | null
+  seed: string | null
+  rootRunId: number
+}
+
+const LIFECYCLE_PLACEHOLDER = /^(key|seed|index|label|ports\.[^{}.]+|db\.[^{}.]+|alloc\.[^{}.]+)$/
+
+function lifecyclePlaceholderIn(value: unknown): string | null {
+  if (typeof value === 'string') {
+    for (const match of value.matchAll(/\{([^{}]+)\}/g)) {
+      if (LIFECYCLE_PLACEHOLDER.test(match[1]!)) return match[1]!
+    }
+    return null
+  }
+  if (Array.isArray(value)) {
+    for (const entry of value) {
+      const placeholder = lifecyclePlaceholderIn(entry)
+      if (placeholder) return placeholder
+    }
+    return null
+  }
+  if (!value || typeof value !== 'object') return null
+  if ('omitWhenEmpty' in value && typeof value.omitWhenEmpty === 'string') {
+    if (LIFECYCLE_PLACEHOLDER.test(value.omitWhenEmpty)) return value.omitWhenEmpty
+  }
+  if ('expand' in value && value.expand === 'seed') return 'seed'
+  return lifecyclePlaceholderIn(Object.values(value))
+}
+
+export function snapshotlessRefreshPlaceholder(recipe: TrackedRecipe): {
+  step: string
+  placeholder: string
+} | null {
+  for (const step of recipe.refresh ?? []) {
+    const placeholder = lifecyclePlaceholderIn(step)
+    if (placeholder) return { step: step.name, placeholder }
+  }
+  return null
+}
+
+export function requireRefreshSnapshot(
+  recipe: TrackedRecipe,
+  hasSnapshot: boolean,
   treeRoot: string,
-  main: string,
-  branch: string,
-  base: string,
-  recipe: NonNullable<Extract<ReturnType<typeof loadTrackedRecipe>, { ok: true }>['recipe']>,
-): StepContext {
-  const vars: Record<string, string> = {
-    branch,
-    name: basename(treeRoot),
-    base,
-    key: '',
-    seed: '',
-    path: treeRoot,
-    main,
-    index: process.env.ORCH_INDEX ?? '',
-    label: process.env.ORCH_RUN_LABEL ?? '',
-    tree_exists: 'true',
+): void {
+  if (hasSnapshot) return
+  const unavailable = snapshotlessRefreshPlaceholder(recipe)
+  if (!unavailable) return
+  throw new Error(
+    `refresh step "${unavailable.step}" references lifecycle placeholder {${unavailable.placeholder}}, but worktree ${treeRoot} has no recorded recipe snapshot`,
+  )
+}
+
+export function refreshStepContext(input: {
+  treeRoot: string
+  main: string
+  branch: string
+  head: string
+  owner: RefreshOwner | null
+}): StepContext {
+  const { owner } = input
+  if (!owner?.snapshot) {
+    return {
+      treeRoot: input.treeRoot,
+      vars: {
+        path: input.treeRoot,
+        name: input.treeRoot.split('/').pop() ?? input.treeRoot,
+        branch: input.branch,
+        base: input.head,
+        main: input.main,
+        tree_exists: 'true',
+      },
+    }
   }
-  for (const name of recipe.allocate?.ports ?? []) {
-    const value = process.env[allocationEnvironmentVariable('ports', name)]
-    if (value !== undefined) vars[`ports.${name}`] = value
+  return {
+    treeRoot: input.treeRoot,
+    vars: teardownVars({
+      path: input.treeRoot,
+      branch: input.branch,
+      base: owner.snapshot.source.commit,
+      key: owner.key,
+      seed: owner.seed,
+      main: input.main,
+      label: orchRunLabel(owner.rootRunId),
+      treeExists: true,
+      allocations: owner.snapshot.allocations,
+    }),
   }
-  for (const name of Object.keys(recipe.allocate?.databases ?? {})) {
-    const value = process.env[allocationEnvironmentVariable('db', name)]
-    if (value !== undefined) vars[`db.${name}`] = value
-  }
-  for (const name of Object.keys(recipe.allocate?.strings ?? {})) {
-    const value = process.env[allocationEnvironmentVariable('alloc', name)]
-    if (value !== undefined) vars[`alloc.${name}`] = value
-  }
-  return { treeRoot, vars }
 }
 
 function refreshTree(path: string): string[] {
@@ -100,6 +161,22 @@ function refreshTree(path: string): string[] {
       `project ${project.name} has no tracked recipe; declare a tracked recipe in ${PLATFORM_SLUG}.jsonc`,
     )
   }
+
+  const loaded = loadTrackedRecipe(treeRoot, tool.recipePath)
+  if (!loaded.ok) throw new Error(loaded.errors.join('\n'))
+  if (!loaded.recipe) {
+    throw new Error(
+      `tracked recipe ${tool.recipePath} declares no worktree lifecycle; declare one in ${PLATFORM_SLUG}.jsonc`,
+    )
+  }
+  const roots = recordedChainRootsForWorktree(treeRoot)
+  if (roots.length > 1) {
+    throw new Error(
+      `worktree ${treeRoot} is recorded by multiple root runs: ${roots.join(', ')}; refusing to refresh`,
+    )
+  }
+  const owner = roots[0] === undefined ? null : readSnapshot(roots[0])
+  requireRefreshSnapshot(loaded.recipe, Boolean(owner?.snapshot), treeRoot)
 
   const checkout = inspectCheckout(treeRoot)
   if (checkout.cleanliness === 'indeterminate') {
@@ -136,26 +213,19 @@ function refreshTree(path: string): string[] {
     messages.push(`${branch} is current with ${remote}`)
   }
 
-  const loaded = loadTrackedRecipe(treeRoot, tool.recipePath)
-  if (!loaded.ok) throw new Error(loaded.errors.join('\n'))
-  if (!loaded.recipe) {
-    throw new Error(
-      `tracked recipe ${tool.recipePath} declares no worktree lifecycle; declare one in ${PLATFORM_SLUG}.jsonc`,
-    )
-  }
   if (!loaded.recipe.refresh?.length) {
     messages.push(`tracked recipe ${tool.recipePath} has no refresh steps; ran no steps`)
     return messages
   }
   const failure = executeTrackedRefreshSteps(
     loaded.recipe,
-    stepContext(
+    refreshStepContext({
       treeRoot,
-      project.path,
+      main: project.path,
       branch,
-      git(['rev-parse', 'HEAD'], treeRoot),
-      loaded.recipe,
-    ),
+      head: git(['rev-parse', 'HEAD'], treeRoot),
+      owner,
+    }),
     runStep,
   )
   if (failure) {

@@ -1,5 +1,12 @@
 import { describe, expect, test } from 'bun:test'
-import { decideTreeRefresh } from './tree-refresh.ts'
+import type { TrackedRecipe } from './recipe-schema.ts'
+import { executeTrackedRefreshSteps, type RecipeSnapshot } from './tracked-recipe.ts'
+import {
+  decideTreeRefresh,
+  refreshStepContext,
+  requireRefreshSnapshot,
+  snapshotlessRefreshPlaceholder,
+} from './tree-refresh.ts'
 
 describe('tree refresh decision', () => {
   test('a clean current tree stays current', () => {
@@ -26,5 +33,75 @@ describe('tree refresh decision', () => {
       action: 'refuse',
       reason: 'dirty',
     })
+  })
+})
+
+describe('tree refresh recipe context', () => {
+  const recipe = {
+    create: [],
+    refresh: [
+      {
+        name: 'observe lifecycle',
+        run: { command: 'observe', args: ['{key}', '{seed}', '{ports.web}'] },
+      },
+    ],
+  } satisfies TrackedRecipe
+
+  test('uses key, seed, label, base, and allocations from the recorded snapshot', () => {
+    const snapshot: RecipeSnapshot = {
+      source: { path: 'bottega.jsonc', commit: 'source-base' },
+      recipe,
+      allocations: { index: 4, ports: { web: 21404 }, databases: {}, strings: {} },
+    }
+    let vars!: ReturnType<typeof refreshStepContext>['vars']
+    const failure = executeTrackedRefreshSteps(
+      recipe,
+      refreshStepContext({
+        treeRoot: '/trees/orch-42',
+        main: '/projects/example',
+        branch: 'DEV-675-tree-refresh',
+        head: 'new-head',
+        owner: { snapshot, key: 'DEV-675', seed: 'small', rootRunId: 42 },
+      }),
+      (_step, received) => {
+        vars = received.vars
+        return {
+          name: 'observe lifecycle',
+          phase: 'run',
+          status: 'ok',
+          exitCode: 0,
+          argv: [],
+          detail: '',
+          durationMs: 0,
+        }
+      },
+    )
+
+    expect(failure).toBeNull()
+    expect(vars.key).toBe('DEV-675')
+    expect(vars.seed).toBe('small')
+    expect(vars.base).toBe('source-base')
+    expect(vars.label).toBe('orch.run=42')
+    expect(vars.index).toBe('4')
+    expect(vars['ports.web']).toBe('21404')
+  })
+
+  test('finds a lifecycle placeholder before snapshot-less refresh can call git or a step', () => {
+    let gitCalls = 0
+    let stepCalls = 0
+    expect(() => {
+      requireRefreshSnapshot(recipe, false, '/trees/orch-42')
+      gitCalls++
+      stepCalls++
+    }).toThrow(
+      'refresh step "observe lifecycle" references lifecycle placeholder {key}, but worktree /trees/orch-42 has no recorded recipe snapshot',
+    )
+
+    expect(snapshotlessRefreshPlaceholder(recipe)).toEqual({
+      step: 'observe lifecycle',
+      placeholder: 'key',
+    })
+    expect(gitCalls).toBe(0)
+    expect(stepCalls).toBe(0)
   })
 })

@@ -491,7 +491,7 @@ function liveDatabaseClaims(runId: number): number {
   ).count
 }
 
-function readSnapshot(runId: number): {
+export function readSnapshot(runId: number): {
   snapshot: RecipeSnapshot | null
   key: string | null
   seed: string | null
