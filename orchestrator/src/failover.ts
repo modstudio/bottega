@@ -5,7 +5,7 @@
  * database write helpers.
  */
 import type { Database } from 'bun:sqlite'
-import { AGENTS } from './agent-registry.ts'
+import { AGENTS } from './agent/agent-registry.ts'
 import { db } from './db.ts'
 import type { KeepTreeExemption } from './keep-tree-hold.ts'
 import type { McpRequest } from './mcp-preflight.ts'

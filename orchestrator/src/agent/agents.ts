@@ -1,8 +1,8 @@
 import { randomUUID } from 'node:crypto'
 import { readFileSync } from 'node:fs'
-import type { Caps } from './capabilities.ts'
-import { codexScopeArgs } from './codex-mcp-scope.ts'
-import type { ArgvOpts } from './transport/transport.ts'
+import type { Caps } from '../capabilities.ts'
+import { codexScopeArgs } from '../codex-mcp-scope.ts'
+import type { ArgvOpts } from '../transport/transport.ts'
 
 /**
  * What `exec` means to codex.

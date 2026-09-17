@@ -1,6 +1,6 @@
 // concern: record-publish
 /** Builds local orchestrator views and publishes each independently to the hosted record. */
-import { agentsPayload } from '../agent-commands.ts'
+import { agentsPayload } from '../agent/agent-commands.ts'
 import { blockersPayload, healthPayload } from '../health-commands.ts'
 import { jobsPayload } from '../job-commands.ts'
 import { machineId } from '../machine-identity.ts'

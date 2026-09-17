@@ -2,14 +2,14 @@
   "unitElapsedMs": 7420,
   "files": [
     {
-      "path": "orchestrator/src/agent-auth.test.ts",
+      "path": "orchestrator/src/agent/agent-auth.test.ts",
       "wallMs": 32,
       "tests": 5,
       "cliShaped": false,
       "spawns": 0
     },
     {
-      "path": "orchestrator/src/agents-cli-version.test.ts",
+      "path": "orchestrator/src/agent/agents-cli-version.test.ts",
       "wallMs": 5,
       "tests": 1,
       "cliShaped": false,

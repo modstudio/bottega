@@ -44,7 +44,9 @@ describe('ACP parity exit verdict', () => {
   test('resolves repository-read paths from the script instead of the process cwd', () => {
     expect(ACP_PARITY_REPOSITORY_ROOT).toBe(resolve(import.meta.dir, '../..'))
     expect(existsSync(join(ACP_PARITY_REPOSITORY_ROOT, 'orchestrator/package.json'))).toBe(true)
-    expect(existsSync(join(ACP_PARITY_REPOSITORY_ROOT, 'orchestrator/src/agents.ts'))).toBe(true)
+    expect(existsSync(join(ACP_PARITY_REPOSITORY_ROOT, 'orchestrator/src/agent/agents.ts'))).toBe(
+      true,
+    )
   })
 
   test('requires each successful transport turn to contain its declared semantic answer', () => {

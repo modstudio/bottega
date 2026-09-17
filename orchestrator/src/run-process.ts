@@ -4,7 +4,7 @@
  * run events. Must not know routing, contracts, reviews, or transports.
  */
 import { createHash } from 'node:crypto'
-import type { AGENTS } from './agent-registry.ts'
+import type { AGENTS } from './agent/agent-registry.ts'
 import { checkpointRun, latestCheckpoint } from './checkpoint.ts'
 import { DB_PATH, db } from './db.ts'
 import { depth } from './dispatch/dispatch-preflight.ts'

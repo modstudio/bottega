@@ -2,7 +2,7 @@
 /** Observes and releases one explicitly named piece of monitor residue. */
 import { existsSync, realpathSync, rmSync } from 'node:fs'
 import { basename, isAbsolute, join, relative, resolve, sep } from 'node:path'
-import { AGENTS } from '../agent-registry.ts'
+import { AGENTS } from '../agent/agent-registry.ts'
 import { db, nowIso, writableDb, writeTransaction } from '../db.ts'
 import { targetGitEnvironment } from '../git-environment.ts'
 import {

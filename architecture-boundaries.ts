@@ -31,8 +31,8 @@ const boundary = (
 export const importBoundaries: ImportBoundary[] = [
   boundary(
     'agent-commands-boundary',
-    'orchestrator/src/agent-commands.ts',
-    ['./agent-probe.ts', './agent-registry.ts', './args.ts', './db.ts', './local-host.ts'],
+    'orchestrator/src/agent/agent-commands.ts',
+    ['./agent-probe.ts', './agent-registry.ts', '../args.ts', '../db.ts', '../local-host.ts'],
     'Keep agent registry command adapters independent of the run nucleus and the CLI: they compose concern modules for one verb and own no lifecycle.',
   ),
   boundary(
@@ -259,9 +259,9 @@ export const importBoundaries: ImportBoundary[] = [
     'orchestrator/src/doctor.ts',
     [
       'node:fs',
-      './agent-auth.ts',
-      './agent-registry.ts',
-      './agents.ts',
+      './agent/agent-auth.ts',
+      './agent/agent-registry.ts',
+      './agent/agents.ts',
       './agreement.ts',
       './db.ts',
       './docker-resources.ts',
@@ -306,7 +306,7 @@ export const importBoundaries: ImportBoundary[] = [
     'failover-boundary',
     'orchestrator/src/failover.ts',
     [
-      './agent-registry.ts',
+      './agent/agent-registry.ts',
       './db.ts',
       'bun:sqlite',
       './keep-tree-hold.ts',
@@ -399,7 +399,7 @@ export const importBoundaries: ImportBoundary[] = [
   boundary(
     'mcp-preflight-boundary',
     'orchestrator/src/mcp-preflight.ts',
-    ['./agent-registry.ts', './jobs.ts', './projects.ts', './run-process.ts'],
+    ['./agent/agent-registry.ts', './jobs.ts', './projects.ts', './run-process.ts'],
     'Keep MCP preflight independent of execution, transport, routing, and mutation.',
     ['./contract/contract.ts'],
   ),
@@ -622,7 +622,7 @@ export const importBoundaries: ImportBoundary[] = [
     'record-publish-boundary',
     'orchestrator/src/record/record-publish.ts',
     [
-      '../agent-commands.ts',
+      '../agent/agent-commands.ts',
       '../health-commands.ts',
       '../job-commands.ts',
       '../machine-identity.ts',
@@ -770,7 +770,7 @@ export const importBoundaries: ImportBoundary[] = [
     'orchestrator/src/run-answer.ts',
     [
       'node:fs',
-      './agent-registry.ts',
+      './agent/agent-registry.ts',
       './args.ts',
       './clock.ts',
       './contract/contract.ts',
@@ -906,7 +906,7 @@ export const importBoundaries: ImportBoundary[] = [
       './db.ts',
       './dispatch/dispatch-preflight.ts',
       './idle-kill.ts',
-      './agent-registry.ts',
+      './agent/agent-registry.ts',
     ],
     'Keep run process control independent of routing, contracts, reviews, and transports.',
   ),

@@ -13,7 +13,7 @@ import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 import { PLATFORM_SLUG } from '../../shared/brand.ts'
-import { AGENTS } from '../src/agent-registry.ts'
+import { AGENTS } from '../src/agent/agent-registry.ts'
 import { db, ROOT } from '../src/db.ts'
 import { run } from '../src/run.ts'
 import {
@@ -70,7 +70,7 @@ const CASES: CaseSpec[] = [
   },
   {
     id: 'schema',
-    prompt: 'Is orchestrator/src/agents.ts a TypeScript file? Answer via the schema.',
+    prompt: 'Is orchestrator/src/agent/agents.ts a TypeScript file? Answer via the schema.',
     schema: true,
     expected: (reply) => {
       const value = parsedJson(reply)

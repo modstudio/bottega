@@ -1,7 +1,7 @@
 // concern: run-control
 /** Owns answer, retry, and continuation command behavior. Must not know CLI grammar. */
-import { AGENTS } from './agent-registry.ts'
-import { resumePromptByteLimit } from './agents.ts'
+import { AGENTS } from './agent/agent-registry.ts'
+import { resumePromptByteLimit } from './agent/agents.ts'
 import {
   assertWorkerText,
   CONTINUE_WORKING_FORMS,

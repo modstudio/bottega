@@ -132,8 +132,8 @@ mkdirSync(dirname(template), { recursive: true })
 }
 copyFileSync(template, store)
 {
-  const { recordAgentProbe } = await import('../src/agent-probe.ts')
-  const { refreshAgents } = await import('../src/agent-registry.ts')
+  const { recordAgentProbe } = await import('../src/agent/agent-probe.ts')
+  const { refreshAgents } = await import('../src/agent/agent-registry.ts')
   const fileProbe = (harness: string) => ({
     harness,
     ok: true,

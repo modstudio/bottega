@@ -3,7 +3,7 @@
 
 import { resolve } from 'node:path'
 import type { Command, OptionValues } from 'commander'
-import { agentCommand, agentsCommand } from '../agent-commands.ts'
+import { agentCommand, agentsCommand } from '../agent/agent-commands.ts'
 import { serveAsk } from '../ask/ask.ts'
 import { setupAskCommand } from '../ask/ask-commands.ts'
 import { closeOutCommand } from '../close/close-out-command.ts'

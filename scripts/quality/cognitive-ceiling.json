@@ -95,25 +95,25 @@
     "key": "hub/web/src/routes/runs.tsx\u0000RunsList"
   },
   {
-    "file": "orchestrator/src/agent-probe.ts",
+    "file": "orchestrator/src/agent/agent-probe.ts",
     "function": "probeAgent",
     "line": 1151,
     "score": 40
   },
   {
-    "file": "orchestrator/src/agent-registry.ts",
+    "file": "orchestrator/src/agent/agent-registry.ts",
     "function": "assertAgentMutation",
     "line": 952,
     "score": 22
   },
   {
-    "file": "orchestrator/src/agent-registry.ts",
+    "file": "orchestrator/src/agent/agent-registry.ts",
     "function": "setAgent",
     "line": 999,
     "score": 40
   },
   {
-    "file": "orchestrator/src/agents.ts",
+    "file": "orchestrator/src/agent/agents.ts",
     "function": "parseReply#3",
     "line": 744,
     "score": 29
