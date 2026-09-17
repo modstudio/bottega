@@ -29,6 +29,7 @@ export type AgentRow = {
 
 export function rowAgent(row: AgentRow): Agent {
   const stored = JSON.parse(row.caps) as Caps & { contextTokens?: number | null }
+  const probeResult = row.probe_result ? JSON.parse(row.probe_result) : null
   const harnessBuiltin = BUILTIN_AGENTS[row.harness]
   const legacy = !HARNESSES.includes(row.harness as Harness)
   const adapter = harnessBuiltin
@@ -71,11 +72,11 @@ export function rowAgent(row: AgentRow): Agent {
     enabled: Boolean(row.enabled),
     disabledReason: row.disabled_reason,
     probedAt: row.probed_at,
-    probeResult: row.probe_result ? JSON.parse(row.probe_result) : null,
-    probePassed: row.probe_result
-      ? JSON.parse(row.probe_result).ok === null
-        ? null
-        : JSON.parse(row.probe_result).ok !== false
+    probeResult,
+    probePassed: probeResult
+      ? typeof probeResult.ok === 'boolean'
+        ? probeResult.ok
+        : null
       : false,
     legacy,
     jobs: row.jobs ? JSON.parse(row.jobs) : null,
