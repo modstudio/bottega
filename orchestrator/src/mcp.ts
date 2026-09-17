@@ -9,7 +9,7 @@ import { registerStandardRuntime } from './runtime-registration.ts'
 registerStandardRuntime()
 
 import { strictlyAuthenticatedWorkerRun } from './ask/ask.ts'
-import { checkDoc, repoRootForDoc } from './canon.ts'
+import { checkDoc, repoRootForDoc } from './canon/canon.ts'
 import {
   consumeDoc,
   docsMarkdown,

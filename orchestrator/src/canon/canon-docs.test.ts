@@ -2,17 +2,17 @@ import { describe, expect, test } from 'bun:test'
 import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { importDocs, setDoc } from '../test/fixtures/docs.ts'
-import { dir } from '../test/fixtures/store.ts'
+import { importDocs, setDoc } from '../../test/fixtures/docs.ts'
+import { dir } from '../../test/fixtures/store.ts'
+import { db } from '../db.ts'
+import { docsForRun, exportDocs, getDoc, listDocMetadata } from '../doc/docs.ts'
+import { upsertProject } from '../projects.ts'
 import {
   compilePack,
   findingsForPack,
   allNumericLiterals as inspectNumericLiterals,
   numericLiteralReport,
 } from './canon.ts'
-import { db } from './db.ts'
-import { docsForRun, exportDocs, getDoc, listDocMetadata } from './doc/docs.ts'
-import { upsertProject } from './projects.ts'
 
 describe('scoped operator docs', () => {
   test('numeric literal report classifies per clause and excludes non-prose spans', () => {

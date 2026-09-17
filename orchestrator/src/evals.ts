@@ -8,8 +8,8 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { AGENTS } from './agent-registry.ts'
-import { checkDoc, compilePack } from './canon.ts'
-import { DEFAULT_EVAL_AGENT } from './canon-eval-status.ts'
+import { checkDoc, compilePack } from './canon/canon.ts'
+import { DEFAULT_EVAL_AGENT } from './canon/canon-eval-status.ts'
 import {
   hasRealQuestions,
   isAsking,

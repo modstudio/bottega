@@ -140,7 +140,7 @@ export const modules: ArchitectureModule[] = [
     'node:fs',
     'node:path',
     '../../../shared/brand.ts',
-    '../canon.ts',
+    '../canon/canon.ts',
     '../db.ts',
     '../docker-resources.ts',
     '../git-locks.ts',
@@ -280,7 +280,7 @@ export const modules: ArchitectureModule[] = [
   module('orchestrator/src/run-claim.ts', [
     './agents.ts',
     './codex-schema.ts',
-    './canon.ts',
+    './canon/canon.ts',
     './checkout-identity.ts',
     './contract/contract.ts',
     './db.ts',
@@ -502,9 +502,9 @@ export const inversions: ArchitectureInversion[] = [
 const allowedCycles: ArchitectureCycle[] = [
   {
     cycle: [
-      'orchestrator/src/canon.ts',
+      'orchestrator/src/canon/canon.ts',
       'orchestrator/src/doc/docs.ts',
-      'orchestrator/src/canon.ts',
+      'orchestrator/src/canon/canon.ts',
     ],
     reason: 'Pre-existing operator-doc/canon compilation cycle outside the specified inversions.',
   },

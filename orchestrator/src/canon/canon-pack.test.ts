@@ -1,12 +1,12 @@
 import { describe, expect, test } from 'bun:test'
-import { PLATFORM_SLUG } from '../../shared/brand.ts'
-import { setDoc } from '../test/fixtures/docs.ts'
-import { dir } from '../test/fixtures/store.ts'
+import { PLATFORM_SLUG } from '../../../shared/brand.ts'
+import { setDoc } from '../../test/fixtures/docs.ts'
+import { dir } from '../../test/fixtures/store.ts'
+import { db } from '../db.ts'
+import { docsForRun, docsMarkdown } from '../doc/docs.ts'
+import { JOBS } from '../jobs.ts'
+import { upsertProject } from '../projects.ts'
 import { CanonBudgetError, compilePack, storedPackDrift } from './canon.ts'
-import { db } from './db.ts'
-import { docsForRun, docsMarkdown } from './doc/docs.ts'
-import { JOBS } from './jobs.ts'
-import { upsertProject } from './projects.ts'
 
 const AT = '2026-09-15T00:00:00.000Z'
 
@@ -41,7 +41,7 @@ async function putOperator(body: string): Promise<void> {
 
 describe('worker pack canon', () => {
   test(`run 4177 canon-pack-drift review-lens/${PLATFORM_SLUG} resolves global and project rows once`, () => {
-    const root = new URL('../..', import.meta.url).pathname.replace(/\/$/, '')
+    const root = new URL('../../..', import.meta.url).pathname.replace(/\/$/, '')
     upsertProject({ name: PLATFORM_SLUG, path: root, settings: { trunk: 'main' } })
     const projectId = (
       db().query('SELECT id FROM project WHERE name=?').get(PLATFORM_SLUG) as { id: number }

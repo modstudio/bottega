@@ -4,7 +4,7 @@
 import { existsSync, lstatSync, readdirSync, realpathSync, statSync } from 'node:fs'
 import { join, resolve } from 'node:path'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
-import { allInjectChecks, storedPackDrift } from '../canon.ts'
+import { allInjectChecks, storedPackDrift } from '../canon/canon.ts'
 import { db, nowIso, writableDb, writeTransaction } from '../db.ts'
 import {
   classifiedDockerResources,

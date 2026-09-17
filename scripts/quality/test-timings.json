@@ -44,14 +44,14 @@
       "spawns": 0
     },
     {
-      "path": "orchestrator/src/canon-docs.test.ts",
+      "path": "orchestrator/src/canon/canon-docs.test.ts",
       "wallMs": 38,
       "tests": 6,
       "cliShaped": false,
       "spawns": 0
     },
     {
-      "path": "orchestrator/src/canon.test.ts",
+      "path": "orchestrator/src/canon/canon.test.ts",
       "wallMs": 264,
       "tests": 24,
       "cliShaped": false,

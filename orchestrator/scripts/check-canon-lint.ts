@@ -2,8 +2,8 @@
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { z } from 'zod'
-import { canonGitRoot, collectCanonLintInput } from '../src/canon-files.ts'
-import { introducedCanonFindings, lintCanon } from '../src/canon-lint.ts'
+import { canonGitRoot, collectCanonLintInput } from '../src/canon/canon-files.ts'
+import { introducedCanonFindings, lintCanon } from '../src/canon/canon-lint.ts'
 
 const findingSchema = z.object({
   file: z.string(),

@@ -4,7 +4,7 @@
  * database writes beyond docs, runs, routing, transports, or the CLI.
  */
 import { readFileSync } from 'node:fs'
-import { checkDoc, repoRootForDoc } from '../canon.ts'
+import { checkDoc, repoRootForDoc } from '../canon/canon.ts'
 import {
   consumeDoc,
   diffDocRevisions,
