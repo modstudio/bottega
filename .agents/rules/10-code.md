@@ -67,4 +67,6 @@ A checkout holds source only. Databases, run artifacts, backups, locks and logs 
 
 ## Group a concern's source by module
 
-A module's files, its tests among them, live together in a folder named for the module under the concern's `src/`. Add a module as a folder; never add a file beside an existing folder to share a filename prefix with it. Import each file directly by path, because a barrel hides the dependency the manifest exists to declare.
+A module's files, its tests among them, live together in a folder named for the module under the concern's `src/`. A folder earns its place by grouping, so a module whose implementation is a single source file stays flat, where its name already groups it and its test sits beside it. Module folders sit directly under `src/` rather than inside a further grouping, so finding a module is a scan of a single list rather than a guess about which group owns it.
+
+Never add a file beside an existing folder to share a filename prefix with it. Import each file directly by path, because a barrel hides the dependency the manifest exists to declare.
