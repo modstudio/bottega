@@ -284,7 +284,7 @@ export const modules: ArchitectureModule[] = [
     './checkout-identity.ts',
     './contract.ts',
     './db.ts',
-    './dispatch-preflight.ts',
+    './dispatch/dispatch-preflight.ts',
     './events.ts',
     './failover.ts',
     './git-environment.ts',

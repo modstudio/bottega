@@ -11,7 +11,7 @@ import { peekCommand, resultCommand, waitCommand } from '../collect/collection-c
 import { contractCommand } from '../contract-command.ts'
 import { migrateCommand, reconcileCommand } from '../database-commands.ts'
 import { db } from '../db.ts'
-import { doCommand, pickPreviewCommand } from '../dispatch-cli-service.ts'
+import { doCommand, pickPreviewCommand } from '../dispatch/dispatch-cli-service.ts'
 import { epicCommand } from '../epic/epic-commands.ts'
 import { jobsCommand } from '../job-commands.ts'
 import { JOBS } from '../jobs.ts'
