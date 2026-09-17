@@ -135,7 +135,6 @@ export function recordAuth(
   const trustedOrigins = recordAllowedOrigins(environment)
   const cookieDomain = environment.RECORD_AUTH_COOKIE_DOMAIN
   const hubUrl = environment.RECORD_HUB_URL
-  if (!hubUrl) throw new Error('RECORD_HUB_URL is required for password reset links; set it to the hosted hub origin')
   // Auth instances are short-lived at the CLI boundary; a one-connection pool keeps repeated
   // commands from reserving the database's entire connection budget before garbage collection.
   const client = new SQL(url, { max: 1 })
@@ -151,6 +150,10 @@ export function recordAuth(
       enabled: true,
       minPasswordLength: 12,
       sendResetPassword: async ({ user: resetUser, token }) => {
+        if (!hubUrl)
+          throw new Error(
+            'RECORD_HUB_URL is required for password reset links; set it to the hosted hub origin',
+          )
         const resetUrl = new URL('/reset-password', hubUrl)
         resetUrl.searchParams.set('token', token)
         await sendReset({ to: resetUser.email, resetUrl: resetUrl.href }, environment)
@@ -169,6 +172,7 @@ export function recordAuth(
       ...(cookieDomain
         ? { crossSubDomainCookies: { enabled: true, domain: cookieDomain }, useSecureCookies: true }
         : {}),
+      ipAddress: { ipAddressHeaders: ['fly-client-ip'] },
     },
     plugins: [
       organization({

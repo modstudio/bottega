@@ -192,6 +192,10 @@ export const modules: ArchitectureModule[] = [
     '../review-vocabulary.ts',
   ]),
   module('orchestrator/src/monitor/monitor-types.ts', ['../review-vocabulary.ts']),
+  module('orchestrator/src/mail/password-reset-mailer.ts', [
+    '@aws-sdk/client-sesv2',
+    '../../../shared/brand.ts',
+  ]),
   module('orchestrator/src/postgres/postgres-migrate.ts', []),
   module('shared/gate-timing-directory.ts', ['./brand.ts', './state-directory.ts']),
   module('shared/state-directory.ts', ['./brand.ts']),

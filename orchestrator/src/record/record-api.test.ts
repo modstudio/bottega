@@ -90,7 +90,10 @@ describe('record API', () => {
                 status: true,
                 message: 'If this email exists in our system, check your email for the reset link',
               })
-            : Response.json({ message: 'Too many requests. Please try again later.' }, { status: 429 })
+            : Response.json(
+                { message: 'Too many requests. Please try again later.' },
+                { status: 429 },
+              )
         },
       },
     })
