@@ -18,7 +18,7 @@ import { fileIssue } from '../mcp.ts'
 import { pidAlive } from '../process-liveness.ts'
 import { projectLockState } from '../project-lock.ts'
 import { projectAt, projects } from '../projects.ts'
-import { reclaimBranch, reclaimWorktree } from '../reclaim.ts'
+import { reclaimBranch, reclaimWorktree } from '../reclaim/reclaim.ts'
 import { terminalDockerRetentionReasonForRun } from '../resource-ownership.ts'
 import type { MonitorSeverity } from '../review-vocabulary.ts'
 import { RUNS_DIR } from '../run-artifacts.ts'
@@ -51,7 +51,6 @@ import type {
   MonitorHistoryRow,
   MonitorResult,
 } from './monitor-types.ts'
-
 const TERMINAL_STATUSES = new Set(['ok', 'failed', 'stale', 'stopped'])
 
 function directorySize(path: string): number {

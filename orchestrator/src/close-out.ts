@@ -21,7 +21,7 @@ import {
   worktreeLeaseName,
 } from './project-lock.ts'
 import { projectAt, projectByName } from './projects.ts'
-import { proveWorktreeReconstructible } from './reclaim.ts'
+import { proveWorktreeReconstructible } from './reclaim/reclaim.ts'
 import {
   type ResourceClaimState,
   recordRetainedRefClaim,
