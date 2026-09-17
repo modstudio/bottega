@@ -25,16 +25,11 @@ case "$changed" in
     ;;
 esac
 
-printf '%s\n' "$changed" | while IFS= read -r manifest; do
-  case "$manifest" in
-    package.json) directory=. ;;
-    */package.json) directory=${manifest%/package.json} ;;
-    *) continue ;;
-  esac
-  if ! (cd "$root/$directory" && bun install --silent); then
-    echo "post-merge: package install failed; run by hand: cd '$root/$directory' && bun install --silent" >&2
+if printf '%s\n' "$changed" | grep -Eq '(^|/)package\.json$'; then
+  if ! (cd "$root" && bun install --silent); then
+    echo "post-merge: package install failed; run by hand: cd '$root' && bun install --silent" >&2
   fi
-done
+fi
 
 # The merge is already complete. Diagnostics above describe recovery, but a
 # post-merge failure cannot undo it and must not make git report that it could.
