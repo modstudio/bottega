@@ -1,12 +1,37 @@
 import { useQuery } from '@tanstack/react-query'
-import { createRootRoute, Link, Outlet, redirect, useRouterState } from '@tanstack/react-router'
-import { LiveDot } from '@/components/design-system'
+import {
+  createRootRoute,
+  Link,
+  type LinkProps,
+  Outlet,
+  redirect,
+  useRouterState,
+} from '@tanstack/react-router'
+import { LogOut } from 'lucide-react'
 import { signOutFromRecord } from '@/lib/hosted-auth'
 import { isHostedMode, isHostedPath, navForMode } from '@/lib/hub-mode'
 import { useWindowState } from '@/lib/window'
 import { trpc } from '@/trpc/client'
-import { Button } from '@/ui/button/button'
+import { IconButton } from '@/ui/button/button'
+import { AppShell, type NavItem, type RenderLink } from '@/ui/shell/app-shell'
+import { ThemeToggle } from '@/ui/shell/theme-toggle'
+import { Tooltip } from '@/ui/tooltip/tooltip'
 import { PLATFORM_NAME } from '../../../../shared/brand.ts'
+
+const THEME_KEY = 'hub:theme'
+const RAIL_KEY = 'hub:rail'
+
+const mark = (
+  <span aria-hidden className="font-mono font-semibold text-lg" data-tone="success">
+    <span className="text-status-text">$</span>
+  </span>
+)
+
+const renderLink: RenderLink = (item, { className, onClick, children }) => (
+  <Link to={item.to as LinkProps['to']} className={className} onClick={onClick}>
+    {children}
+  </Link>
+)
 
 export const Route = createRootRoute({
   beforeLoad: ({ location }) => {
@@ -15,7 +40,6 @@ export const Route = createRootRoute({
   },
   component: function Shell() {
     const hosted = isHostedMode()
-    const nav = navForMode(hosted ? 'hosted' : 'local')
     const { counts } = useWindowState()
     const pathname = useRouterState({ select: (state) => state.location.pathname })
     const whoami = useQuery({
@@ -23,57 +47,47 @@ export const Route = createRootRoute({
       enabled: hosted && pathname !== '/sign-in',
       retry: false,
     })
+    const nav: NavItem[] = navForMode(hosted ? 'hosted' : 'local').map((item) => {
+      const counted = 'count' in item ? counts?.[item.count] : undefined
+      return {
+        to: item.to,
+        label: item.label,
+        icon: item.icon,
+        group: item.group,
+        count: counted || undefined,
+        live: item.to === '/flight' && Boolean(counts?.flight),
+      }
+    })
     const signOut = async () => {
       await signOutFromRecord()
       window.location.assign('/sign-in')
     }
+    const email =
+      whoami.data?.user && 'email' in whoami.data.user ? String(whoami.data.user.email) : null
     return (
-      <div className="flex min-h-screen bg-background text-foreground">
-        <aside className="w-52 shrink-0 border-r border-border">
-          <div className="flex h-14 items-center border-b border-border px-5 font-semibold">
-            <span className="mr-2 text-live">$</span>
-            {PLATFORM_NAME}
-          </div>
-          <nav className="space-y-px p-3">
-            {nav.map(({ to, label, icon: Icon, ...item }) => (
-              <Link
-                key={to}
-                to={to}
-                className="flex items-center gap-3 px-3 py-2 text-muted-foreground hover:bg-muted hover:text-foreground focus-visible:relative [&.active]:bg-muted [&.active]:font-semibold [&.active]:text-foreground"
-              >
-                <Icon size={16} strokeWidth={1.5} />
-                {label}
-                {to === '/flight' && 'count' in item && counts?.flight ? <LiveDot /> : null}
-                {'count' in item && counts?.[item.count] ? (
-                  <span className="ml-auto text-muted-foreground">{counts[item.count]}</span>
-                ) : null}
-              </Link>
-            ))}
-          </nav>
-          {hosted && pathname !== '/sign-in' ? (
-            <div className="space-y-2 p-3">
-              {whoami.data?.user && 'email' in whoami.data.user ? (
-                <p className="truncate px-3 text-muted-foreground">
-                  {String(whoami.data.user.email)}
-                </p>
-              ) : null}
-              <Button
-                variant="secondary"
-                size="sm"
-                className="w-full"
-                onClick={() => void signOut()}
-              >
-                Sign out
-              </Button>
-            </div>
-          ) : null}
-        </aside>
-        <main className="min-w-0 flex-1 px-8 pb-8">
-          <div className="max-w-[1160px]">
-            <Outlet />
-          </div>
-        </main>
-      </div>
+      <AppShell
+        name={PLATFORM_NAME}
+        mark={mark}
+        nav={nav}
+        renderLink={renderLink}
+        storageKey={RAIL_KEY}
+        topbar={
+          <>
+            <ThemeToggle storageKey={THEME_KEY} />
+            {hosted && pathname !== '/sign-in' ? (
+              <Tooltip label={email ? `Sign out ${email}` : 'Sign out'}>
+                <IconButton label="Sign out" onClick={() => void signOut()}>
+                  <LogOut />
+                </IconButton>
+              </Tooltip>
+            ) : null}
+          </>
+        }
+      >
+        <div className="mx-auto max-w-[90rem]">
+          <Outlet />
+        </div>
+      </AppShell>
     )
   },
 })
