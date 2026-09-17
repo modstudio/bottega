@@ -1,9 +1,9 @@
+import { type ChildProcess, spawn } from 'node:child_process'
 import { readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { Readable, Writable } from 'node:stream'
 import * as acp from '@agentclientprotocol/sdk'
-import { execa, type ResultPromise } from 'execa'
-import { DEFAULT_IDLE_GRACE_MS, terminateProcessGroup } from '../idle-kill.ts'
+import { terminateProcessGroup } from '../idle-kill.ts'
 import type { SandboxRuntimeConfig } from '../sandbox/sandbox.ts'
 import { sandboxLaunchArgv } from '../sandbox/sandbox.ts'
 import {
@@ -343,7 +343,7 @@ export function normalizeAcpTurn(input: AcpTurnInput): TransportResult {
 }
 
 function webStream(
-  child: ResultPromise,
+  child: ChildProcess,
   trace: AcpTrace | null,
 ): ReturnType<typeof acp.ndJsonStream> {
   if (!child.stdin || !child.stdout) throw new Error('ACP agent stdio is not a pipe')
@@ -454,18 +454,11 @@ async function openAcp(opts: TransportStartOpts): Promise<TransportHandle> {
   const agentArgv = acpHarnessArgv(opts.agent.harness ?? opts.agent.name, leaderSocket)
   const profile = opts.srt ? acpSandboxProfile(opts.srt.profile, leaderSocket) : null
   const launch = await acpLaunchArgv(opts, profile, bin, agentArgv)
-  const child = execa(launch[0]!, launch.slice(1), {
+  const child = spawn(launch[0]!, launch.slice(1), {
     cwd: opts.cwd,
     env: acpEnvironment(opts),
-    stdin: 'pipe',
-    stdout: 'pipe',
-    stderr: 'pipe',
+    stdio: ['pipe', 'pipe', 'pipe'],
     detached: true,
-    cleanup: true,
-    killSignal: 'SIGTERM',
-    extendEnv: false,
-    forceKillAfterDelay: DEFAULT_IDLE_GRACE_MS,
-    reject: false,
   })
   const trace = createAcpTrace(
     opts.env.ORCH_ACP_TRACE,
@@ -476,7 +469,7 @@ async function openAcp(opts: TransportStartOpts): Promise<TransportHandle> {
     opts.cwd,
     profile !== null,
   )
-  installAcpChildTrace(trace, child.nodeChildProcess)
+  installAcpChildTrace(trace, child)
 
   const stderrChunks: Buffer[] = []
   child.stderr?.on('data', (chunk: Buffer) => {
@@ -774,11 +767,7 @@ async function openAcp(opts: TransportStartOpts): Promise<TransportHandle> {
         // Both paid adapters are long-lived stdio servers. A completed prompt is
         // the end of this orch run, so do not leave the adapter (or Grok's
         // per-run leader) alive after its result has been collected.
-        try {
-          child.kill('SIGTERM')
-        } catch {
-          /* already exited */
-        }
+        void terminateProcessGroup(child.pid ?? 0, { direct: child })
         if (leaderSocket) rmSync(leaderSocket, { force: true })
         return result
       })()
