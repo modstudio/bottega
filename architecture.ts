@@ -134,6 +134,7 @@ export const modules: ArchitectureModule[] = [
   module('shared/record/schema-run.ts', ['./schema.ts']),
   module('shared/record/schema-review.ts', ['./schema.ts']),
   module('shared/record/schema-landing.ts', ['./schema.ts']),
+  module('shared/record/schema-docs.ts', ['./schema.ts']),
   module('shared/record-session.ts', ['./brand.ts']),
   module('orchestrator/src/record-command.ts', [
     './postgres-migrate.ts',

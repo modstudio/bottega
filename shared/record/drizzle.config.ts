@@ -8,6 +8,7 @@ export default defineConfig({
     './shared/record/schema-run.ts',
     './shared/record/schema-review.ts',
     './shared/record/schema-landing.ts',
+    './shared/record/schema-docs.ts',
   ],
   out: './shared/record/migrations',
 })

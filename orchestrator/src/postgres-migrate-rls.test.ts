@@ -42,6 +42,7 @@ const postgresSchema = [
   'schema-run.ts',
   'schema-review.ts',
   'schema-landing.ts',
+  'schema-docs.ts',
 ]
   .map((file) => readFileSync(join(recordFolder, file), 'utf8'))
   .join('\n')

@@ -21,9 +21,24 @@ function appWith(session: RecordIdentity | null, overrides: Record<string, unkno
     readReviews: async () => [],
     readReview: async () => null,
     readProjects: async () => [],
+    listDocs: async () => [],
+    readDoc: async () => null,
+    listDocRevisions: async () => [],
+    upsertDoc: async () => ({ id, revisionId: id }),
+    deleteDoc: async () => ({ id, revisionId: id }),
+    consumeDoc: async () => ({ id, revisionId: id, alreadyConsumed: false }),
+    restoreDoc: async () => ({ id, revisionId: id }),
+    renameDocSubject: async () => ({ docs: 0, revisions: 0 }),
+    countDocs: async () => ({ docs: 0, revisions: 0 }),
+    upsertScore: async () => undefined,
+    voidRun: async () => undefined,
+    listScores: async () => [],
+    countScores: async () => ({ scores: 0, voids: 0 }),
     ...overrides,
   })
 }
+
+const id = '01990000-0000-7000-8000-000000000001'
 
 describe('record API', () => {
   test('refuses unauthenticated v1 requests with a sign-in remedy', async () => {
@@ -58,7 +73,6 @@ describe('record API', () => {
 })
 
 describe('record API presentation routes', () => {
-  const id = '01990000-0000-7000-8000-000000000001'
 
   test('cursor encode/decode round trips and malformed cursors are rejected', async () => {
     const cursor = { at: '2026-01-02T03:04:05.000Z', id }

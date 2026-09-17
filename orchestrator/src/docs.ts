@@ -15,11 +15,18 @@ import { DOC_SCOPE_SUBJECT_KIND, DOC_SCOPES, type DocScope } from '../../shared/
 import { AGENTS } from './agent-registry.ts'
 import { collectCanonLintInput } from './canon-files.ts'
 import { type CanonRow, composeCanonRows } from './canon-hydrate.ts'
-import { decideCanonWrite } from './canon-write-gate.ts'
 import { db, nowIso, sessionId, writableDb, writeTransaction } from './db.ts'
+import {
+  consumeDocBody,
+  type DocRevisionOp,
+  refuseCanonWrite,
+  refuseOversizedInject,
+  refuseProjectOrGlobalInject,
+} from './doc-write-allowed.ts'
 import { JOBS } from './jobs.ts'
-import { DEFAULT_PACK_BYTES, MAX_INJECT_DOC_BYTES } from './pack-budget.ts'
+import { DEFAULT_PACK_BYTES } from './pack-budget.ts'
 import { projectAt, projectByName } from './projects.ts'
+import { recordApiClient } from './record-api-client.ts'
 
 export type Doc = {
   id: number
@@ -32,6 +39,7 @@ export type Doc = {
   delivery: 'inject' | 'demand'
   created_at: string
   updated_at: string
+  record_id: string | null
 }
 
 export type DocMetadata = Pick<
@@ -41,7 +49,6 @@ export type DocMetadata = Pick<
   bytes: number
 }
 
-type DocRevisionOp = 'create' | 'set' | 'consume' | 'delete' | 'restore' | 'import' | 'backfill'
 export type DocRevision = {
   id: number
   doc_id: number
@@ -57,6 +64,7 @@ export type DocRevision = {
   reason: string
   session_id: string | null
   at: string
+  record_id: string | null
 }
 export type DocRevisionMetadata = Omit<
   DocRevision,
@@ -83,19 +91,16 @@ function assertInjectSize(input: {
   forceInject?: string
 }): void {
   if (input.delivery !== 'inject') return
-  const bytes = Buffer.byteLength(input.body)
-  if (bytes > MAX_INJECT_DOC_BYTES && !input.forceInject?.trim()) {
-    const current = db().query('SELECT COALESCE(MAX(bytes), 0) AS bytes FROM canon_pack').get() as {
-      bytes: number
-    }
-    const headroom = DEFAULT_PACK_BYTES - current.bytes
-    throw new Error(
-      `inject document is ${bytes} bytes; threshold is ${MAX_INJECT_DOC_BYTES} bytes; ` +
-        `current pack is ${current.bytes} bytes with ${headroom} bytes headroom\n` +
-        'invariant: oversized narrative belongs on demand so an accepted write cannot break the canon pack gate\n' +
-        'cleared by: use --delivery demand, shorten the document, or pass --force-inject "<reason>"',
-    )
+  const current = db().query('SELECT COALESCE(MAX(bytes), 0) AS bytes FROM canon_pack').get() as {
+    bytes: number
   }
+  const oversized = refuseOversizedInject({
+    delivery: 'inject',
+    body: input.body,
+    forceInject: input.forceInject,
+    packBytes: current.bytes,
+  })
+  if (oversized) throw new Error(oversized)
 
   if (!['global', 'job', 'project'].includes(input.scope)) return
   const projectRows = db().query('SELECT name,path FROM project ORDER BY name').all() as {
@@ -126,6 +131,7 @@ function assertInjectSize(input: {
         delivery: 'inject',
         created_at: '',
         updated_at: '',
+        record_id: null,
       }
       const docs = [...selected, proposed]
       const packBytes = Buffer.byteLength(docsMarkdown(docs))
@@ -338,13 +344,19 @@ function writeIdentity(context: DocWriteContext): {
   return { author, reason, session }
 }
 
-function insertRevision(doc: Doc, op: DocRevisionOp, context: DocWriteContext, at: string): void {
+function insertRevision(
+  doc: Doc,
+  op: DocRevisionOp,
+  context: DocWriteContext,
+  at: string,
+  recordId: string,
+): void {
   const identity = writeIdentity(context)
   db()
     .query(
       `INSERT INTO doc_revision
-       (doc_id, scope, subject, project_id, slug, op, title, body, delivery, author, reason, session_id, at)
-     VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+       (doc_id, scope, subject, project_id, slug, op, title, body, delivery, author, reason, session_id, at, record_id)
+     VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
     )
     .run(
       doc.id,
@@ -360,6 +372,7 @@ function insertRevision(doc: Doc, op: DocRevisionOp, context: DocWriteContext, a
       identity.reason,
       identity.session,
       at,
+      recordId,
     )
 }
 
@@ -394,7 +407,7 @@ function assertCanonWriteAllowed(input: DocWriteInput): void {
         name: string
         path: string
       }[])
-  const findings = projectsToCheck.flatMap((target) => {
+  const refusals = projectsToCheck.map((target) => {
     const targetProjectRows = listDocs({ scope: 'canon', subject: target.name })
     const targetCurrent = composeCanonRows(global, targetProjectRows).map(({ slug, body }) => ({
       slug,
@@ -407,7 +420,7 @@ function assertCanonWriteAllowed(input: DocWriteInput): void {
           targetProjectRows,
         ).map(({ slug, body }) => ({ slug, body }))
     const collected = collectCanonLintInput(target.path)
-    return decideCanonWrite({
+    return refuseCanonWrite({
       current: targetCurrent,
       next: targetNext,
       trackedPaths: collected.trackedPaths,
@@ -416,57 +429,62 @@ function assertCanonWriteAllowed(input: DocWriteInput): void {
     })
   })
   if (!project && projectsToCheck.length === 0) {
-    findings.push(
-      ...decideCanonWrite({
+    refusals.push(
+      refuseCanonWrite({
         current: global.map(({ slug, body }) => ({ slug, body })),
         next,
-        trackedPaths: [],
-        packageScripts: [],
-        sourceTexts: [],
       }),
     )
   }
-  if (findings.length && !input.allowCanonBootstrap) {
-    throw new Error(
-      `refusing canon write; introduced ${findings.length} finding${findings.length === 1 ? '' : 's'}:\n` +
-        findings
-          .map((finding) => `${finding.file}:${finding.line} ${finding.rule} ${finding.message}`)
-          .join('\n'),
-    )
-  }
+  const refusal = refusals.find((value) => value)
+  if (refusal && !input.allowCanonBootstrap) throw new Error(refusal)
 }
 
 function assertDocWriteAllowed(input: DocWriteInput & { delivery: 'inject' | 'demand' }): void {
-  if ((input.scope === 'project' || input.scope === 'global') && input.delivery === 'inject') {
-    throw new Error(
-      `refusing inject ${input.scope} document: inject operator docs describe this estate; software-building instructions are canon\n` +
-        'cleared by: make the instruction canon, or write the operator document with delivery demand',
-    )
-  }
+  const inject = refuseProjectOrGlobalInject(input.scope, input.delivery)
+  if (inject) throw new Error(inject)
   assertInjectSize(input)
   assertCanonWriteAllowed(input)
 }
 
-function setDocWithOp(input: DocWriteInput, requestedOp?: 'import'): Doc {
+async function setDocWithOp(input: DocWriteInput, requestedOp?: 'import'): Promise<Doc> {
   writableDb()
   validate(input.scope, input.subject, input.slug)
-  writeIdentity(input)
+  const identity = writeIdentity(input)
   const prior = getDoc(input.scope, input.subject, input.slug)
   const delivery =
     input.scope === 'canon' ? 'demand' : (input.delivery ?? prior?.delivery ?? 'inject')
   assertDocWriteAllowed({ ...input, delivery })
+  const hosted = await recordApiClient().upsertDoc({
+    scope: input.scope,
+    subject: input.subject,
+    slug: input.slug,
+    title: input.title,
+    body: input.body,
+    delivery,
+    projectName:
+      input.scope === 'project' || (input.scope === 'canon' && input.subject)
+        ? input.subject
+        : null,
+    reason: identity.reason,
+    author: identity.author,
+    forceInject: input.forceInject,
+    op: requestedOp ?? (prior ? 'set' : 'create'),
+    id: prior?.record_id ?? undefined,
+  })
   return writeTransaction(() => {
     const existing = getDoc(input.scope, input.subject, input.slug)
     const at = nowIso()
     let doc: Doc
     if (existing) {
       db()
-        .query('UPDATE doc SET title=?, body=?, delivery=?, updated_at=? WHERE id=?')
+        .query('UPDATE doc SET title=?, body=?, delivery=?, updated_at=?, record_id=? WHERE id=?')
         .run(
           input.title,
           input.body,
           input.scope === 'canon' ? 'demand' : (input.delivery ?? existing.delivery),
           at,
+          hosted.id,
           existing.id,
         )
       doc = getDoc(input.scope, input.subject, input.slug)!
@@ -474,8 +492,8 @@ function setDocWithOp(input: DocWriteInput, requestedOp?: 'import'): Doc {
       const id = (
         db()
           .query(
-            `INSERT INTO doc (scope, subject, project_id, slug, title, body, delivery, created_at, updated_at)
-         VALUES (?,?,?,?,?,?,?,?,?) RETURNING id`,
+            `INSERT INTO doc (scope, subject, project_id, slug, title, body, delivery, created_at, updated_at, record_id)
+         VALUES (?,?,?,?,?,?,?,?,?,?) RETURNING id`,
           )
           .get(
             input.scope,
@@ -489,16 +507,17 @@ function setDocWithOp(input: DocWriteInput, requestedOp?: 'import'): Doc {
             input.scope === 'canon' ? 'demand' : (input.delivery ?? 'inject'),
             at,
             at,
+            hosted.id,
           ) as { id: number }
       ).id
       doc = db().query('SELECT * FROM doc WHERE id=?').get(id) as Doc
     }
-    insertRevision(doc, requestedOp ?? (existing ? 'set' : 'create'), input, at)
+    insertRevision(doc, requestedOp ?? (existing ? 'set' : 'create'), input, at, hosted.revisionId)
     return doc
   })
 }
 
-export function setDoc(
+export async function setDoc(
   input: {
     scope: string
     subject: string | null
@@ -507,7 +526,7 @@ export function setDoc(
     body: string
     delivery?: 'inject' | 'demand'
   } & DocWriteContext,
-): Doc {
+): Promise<Doc> {
   if (input.scope === 'resume') {
     const frontmatter = resumeFrontmatter(input.body)
     if (!frontmatter?.top.status) {
@@ -528,7 +547,7 @@ export function setDoc(
   return setDocWithOp(input)
 }
 
-export function importDoc(
+export async function importDoc(
   input: {
     scope: string
     subject: string | null
@@ -537,25 +556,44 @@ export function importDoc(
     body: string
     delivery?: 'inject' | 'demand'
   } & DocWriteContext,
-): Doc {
+): Promise<Doc> {
   return setDocWithOp(input, 'import')
 }
 
-export function removeDoc(
+export async function removeDoc(
   scope: string,
   subject: string | null,
   slug: string,
   context: DocWriteContext,
-): boolean {
+): Promise<boolean> {
   writableDb()
   validScope(scope)
-  writeIdentity(context)
+  const identity = writeIdentity(context)
+  const doc = getDoc(scope, subject, slug)
+  if (!doc) return false
+  let recordId = doc.record_id
+  if (!recordId) {
+    const hosted = await recordApiClient().upsertDoc({
+      scope: doc.scope,
+      subject: doc.subject,
+      slug: doc.slug,
+      title: doc.title,
+      body: doc.body,
+      delivery: doc.delivery,
+      reason: identity.reason,
+      author: identity.author,
+      id: undefined,
+    })
+    recordId = hosted.id
+  }
+  const hosted = await recordApiClient().deleteDoc(recordId, {
+    reason: identity.reason,
+    author: identity.author,
+  })
   return writeTransaction(() => {
-    const doc = getDoc(scope, subject, slug)
-    if (!doc) return false
     const at = nowIso()
     db().query('DELETE FROM doc WHERE id=?').run(doc.id)
-    insertRevision(doc, 'delete', context, at)
+    insertRevision(doc, 'delete', context, at, hosted.revisionId)
     return true
   })
 }
@@ -567,58 +605,52 @@ export type ConsumedDoc = Doc & { already_consumed: boolean }
  * recovery artifact. Patch only the three named fields instead of parsing and
  * serializing YAML, which would rewrite unrelated whitespace and ordering.
  */
-export function consumeDoc(
+export async function consumeDoc(
   scope: string,
   subject: string | null,
   slug: string,
   context: DocWriteContext,
-): ConsumedDoc {
+): Promise<ConsumedDoc> {
   writableDb()
   validateHistoricAddress(scope, slug)
-  writeIdentity(context)
+  const identity = writeIdentity(context)
   const doc = getDoc(scope, subject, slug)
   if (!doc) throw new Error(`no ${scope} doc "${slug}"`)
-
-  const frontmatter = doc.body.match(/^---(\r?\n)([\s\S]*?)(\r?\n)---(?=\r?\n|$)/)
-  if (!frontmatter) throw new Error(`${scope} doc "${slug}" has no YAML frontmatter`)
-  const newline = frontmatter[1]!
-  let yaml = frontmatter[2]!
-  const field = (name: string) =>
-    new RegExp(`(^|\\r?\\n)([ \\t]*${name}[ \\t]*:[ \\t]*)([^\\r\\n]*)(?=\\r?\\n|$)`, 'm')
-  const resolvedStatus = () => resolveStatus(yaml)
-  const status = resolvedStatus()
-  if (!status) throw new Error(`${scope} doc "${slug}" has no status field in its YAML frontmatter`)
-  if (status.value === 'consumed') return { ...doc, already_consumed: true }
-
-  yaml = yaml.slice(0, status.valueStart) + 'consumed' + yaml.slice(status.valueEnd)
   const consumedAt = nowIso()
-  const stamps = [
-    ['consumed', consumedAt],
-    ['consumed_by', sessionId() ?? 'unknown'],
-  ] as const
-  const missing: string[] = []
-  for (const [name, value] of stamps) {
-    const pattern = field(name)
-    if (pattern.test(yaml)) yaml = yaml.replace(pattern, `$1$2${value}`)
-    else missing.push(`${name}: ${value}`)
+  let patched: { body: string; alreadyConsumed: boolean }
+  try {
+    patched = consumeDocBody(doc.body, consumedAt, identity.session ?? identity.author)
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error)
+    throw new Error(`${scope} doc "${slug}" ${message.replace(/^document /, '')}`)
   }
-  if (missing.length) {
-    const consumedStatus = resolvedStatus()!
-    const consumedStatusEnd = consumedStatus.valueEnd
-    yaml =
-      yaml.slice(0, consumedStatusEnd) +
-      newline +
-      missing.join(newline) +
-      yaml.slice(consumedStatusEnd)
+  if (patched.alreadyConsumed) return { ...doc, already_consumed: true }
+  let recordId = doc.record_id
+  if (!recordId) {
+    recordId = (
+      await recordApiClient().upsertDoc({
+        scope: doc.scope,
+        subject: doc.subject,
+        slug: doc.slug,
+        title: doc.title,
+        body: doc.body,
+        delivery: doc.delivery,
+        reason: identity.reason,
+        author: identity.author,
+      })
+    ).id
   }
-
-  const contentStart = frontmatter.index! + 3 + newline.length
-  const body =
-    doc.body.slice(0, contentStart) + yaml + doc.body.slice(contentStart + frontmatter[2]!.length)
+  const hosted = await recordApiClient().consumeDoc(recordId, {
+    reason: identity.reason,
+    author: identity.author,
+  })
+  if (hosted.alreadyConsumed) return { ...doc, already_consumed: true }
   return writeTransaction(() => {
-    db().query('UPDATE doc SET body=?, updated_at=? WHERE id=?').run(body, consumedAt, doc.id)
+    db()
+      .query('UPDATE doc SET body=?, updated_at=?, record_id=? WHERE id=?')
+      .run(patched.body, consumedAt, recordId, doc.id)
     const result = getDoc(scope, subject, slug)!
-    insertRevision(result, 'consume', context, consumedAt)
+    insertRevision(result, 'consume', context, consumedAt, hosted.revisionId)
     return { ...result, already_consumed: false }
   })
 }
@@ -877,16 +909,16 @@ export function getDocRevision(id: number): DocRevision | null {
   return db().query('SELECT * FROM doc_revision WHERE id=?').get(id) as DocRevision | null
 }
 
-export function restoreDoc(
+export async function restoreDoc(
   scope: string,
   subject: string | null,
   slug: string,
   revisionId: number,
   context: DocWriteContext,
-): Doc {
+): Promise<Doc> {
   writableDb()
   validateHistoricAddress(scope, slug)
-  writeIdentity(context)
+  const identity = writeIdentity(context)
   const revision = getDocRevision(revisionId)
   if (
     !revision ||
@@ -905,20 +937,41 @@ export function restoreDoc(
     delivery: revision.delivery,
     ...context,
   })
+  let recordId = getDoc(scope, subject, slug)?.record_id ?? revision.record_id
+  if (!recordId) {
+    recordId = (
+      await recordApiClient().upsertDoc({
+        scope,
+        subject,
+        slug,
+        title: revision.title,
+        body: revision.body,
+        delivery: revision.delivery,
+        reason: identity.reason,
+        author: identity.author,
+        op: 'restore',
+      })
+    ).id
+  }
+  const hosted = await recordApiClient().restoreDoc(recordId, {
+    revisionId: revision.record_id ?? recordId,
+    reason: identity.reason,
+    author: identity.author,
+  })
   return writeTransaction(() => {
     const existing = getDoc(scope, subject, slug)
     const at = nowIso()
     let doc: Doc
     if (existing) {
       db()
-        .query('UPDATE doc SET title=?, body=?, delivery=?, updated_at=? WHERE id=?')
-        .run(revision.title, revision.body, revision.delivery, at, existing.id)
+        .query('UPDATE doc SET title=?, body=?, delivery=?, updated_at=?, record_id=? WHERE id=?')
+        .run(revision.title, revision.body, revision.delivery, at, hosted.id, existing.id)
       doc = getDoc(scope, subject, slug)!
     } else {
       db()
         .query(
-          `INSERT INTO doc (scope, subject, project_id, slug, title, body, delivery, created_at, updated_at)
-         VALUES (?,?,?,?,?,?,?,?,?)`,
+          `INSERT INTO doc (scope, subject, project_id, slug, title, body, delivery, created_at, updated_at, record_id)
+         VALUES (?,?,?,?,?,?,?,?,?,?)`,
         )
         .run(
           scope,
@@ -930,10 +983,11 @@ export function restoreDoc(
           revision.delivery,
           at,
           at,
+          hosted.id,
         )
       doc = getDoc(scope, subject, slug)!
     }
-    insertRevision(doc, 'restore', context, at)
+    insertRevision(doc, 'restore', context, at, hosted.revisionId)
     return doc
   })
 }

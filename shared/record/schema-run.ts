@@ -119,3 +119,15 @@ export const runScore = pgTable.withRLS(
     ...tenantPolicies('run_score', table.spaceId),
   ],
 )
+
+/** Survives a void issued before the run row exists so a later run upsert cannot drop it. */
+export const runExclusion = pgTable.withRLS(
+  'run_exclusion',
+  {
+    runId: uuid('run_id').primaryKey(),
+    spaceId: spaceIdentity(),
+    reason: text().notNull(),
+    excludedAt: timestamp('excluded_at', { withTimezone: true }).notNull(),
+  },
+  (table) => [...tenantPolicies('run_exclusion', table.spaceId)],
+)
