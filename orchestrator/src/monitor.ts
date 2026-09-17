@@ -340,8 +340,8 @@ export async function monitor(
       kind: 'asking-run',
       subject: `run:${run.id}`,
       since: run.started_at,
-      detail: `run ${run.id} is waiting on a ruling; session ${run.session_id ?? 'unknown'}`,
-      action: 'reported; abandoning or resuming is an intent decision',
+      detail: `run ${run.id} is marked asking but has no unanswered question (stranded)`,
+      action: `run orch abandon ${run.id} to close it, or orch continue ${run.id} to resume it; an intent decision`,
       ownerSession: run.session_id,
     })
 

@@ -612,7 +612,7 @@ describe('operational monitor conditions', () => {
     }
   })
 
-  test('one open question is one condition, escalated at the rulings threshold', async () => {
+  test('an open question is not also misclassified as a stranded asking run', async () => {
     const runId = addRun({
       agent: 'codex',
       job: 'implement',
@@ -665,11 +665,6 @@ describe('operational monitor conditions', () => {
       const result = await monitor('invoked', clock)
       expect(related(result)).toEqual([
         expect.objectContaining({
-          kind: 'asking-run',
-          subject: `run:${runId}`,
-          ownerSession: 'sess-1',
-        }),
-        expect.objectContaining({
           kind: 'task-waiting-on-ruling',
           subject: 'question:2000',
           severity: 'informational',
@@ -681,11 +676,6 @@ describe('operational monitor conditions', () => {
       ])
       const notices = claimMonitorNotices('sess-1')
       expect(notices).toEqual([
-        expect.objectContaining({
-          kind: 'asking-run',
-          subject: `run:${runId}`,
-          ownerSession: 'sess-1',
-        }),
         expect.objectContaining({
           kind: 'task-waiting-on-ruling',
           subject: 'question:2000',
@@ -708,11 +698,6 @@ describe('operational monitor conditions', () => {
       const result = await monitor('invoked', clock)
       expect(related(result)).toEqual([
         expect.objectContaining({
-          kind: 'asking-run',
-          subject: `run:${runId}`,
-          ownerSession: 'sess-1',
-        }),
-        expect.objectContaining({
           kind: 'task-waiting-on-ruling',
           subject: 'question:2000',
           severity: 'attention',
@@ -728,7 +713,7 @@ describe('operational monitor conditions', () => {
     }
   })
 
-  test('an asking run whose questions are all answered is not reported as asking-run', async () => {
+  test('answered questions leave an asking run visibly stranded', async () => {
     const id = addRun({
       agent: 'codex',
       job: 'implement',
@@ -755,7 +740,14 @@ describe('operational monitor conditions', () => {
     }) as unknown as typeof Bun.spawnSync)
     try {
       const result = await monitor('invoked')
-      expect(result.conditions.filter((c) => c.kind === 'asking-run')).toEqual([])
+      expect(result.conditions.filter((c) => c.kind === 'asking-run')).toEqual([
+        expect.objectContaining({
+          subject: `run:${id}`,
+          ownerSession: 'sess-recover',
+          detail: `run ${id} is marked asking but has no unanswered question (stranded)`,
+          action: `run orch abandon ${id} to close it, or orch continue ${id} to resume it; an intent decision`,
+        }),
+      ])
       expect(result.conditions.some((c) => c.kind === 'task-waiting-on-ruling')).toBe(false)
       expect(result.conditions.some((c) => c.kind === 'unanswered-question')).toBe(false)
     } finally {

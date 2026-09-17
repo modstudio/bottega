@@ -25,7 +25,7 @@ import { runLeaseState } from './run-lease.ts'
 const HUB = new URL('../../bin/hub', import.meta.url).pathname
 
 const ASKING_RUN_WHERE = `status='asking'
-   AND EXISTS (
+   AND NOT EXISTS (
      SELECT 1 FROM question q WHERE q.run_id = run.id AND q.answered_at IS NULL
    )`
 
