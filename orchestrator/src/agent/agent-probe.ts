@@ -19,6 +19,16 @@ import {
 const REGISTRATION_PROBE_FILE = 'probe.txt'
 const REGISTRATION_PROBE_SENTINEL = 'REGISTRATION_PROBE_FILE_OK'
 
+async function drainTransportEvents(events: AsyncIterable<unknown>): Promise<void> {
+  try {
+    for await (const _event of events) {
+      /* consuming the stream lets transports finish their event lifecycle */
+    }
+  } catch {
+    /* event observation never replaces the probe outcome */
+  }
+}
+
 function namesProbeFile(value: string): boolean {
   const normalized = value.replaceAll('\\', '/')
   return (
@@ -111,7 +121,9 @@ export async function probeAgent(name: string): Promise<RegistrationProbeResult>
       properties: { status: { type: 'string', enum: ['ok'] } },
     }),
   )
-  const { transportFor, valueMatchesStrictSchema } = await import('../transport/transport.ts')
+  const { transportFor, valueMatchesStrictSchema, withTransportDeadline } = await import(
+    '../transport/transport.ts'
+  )
   const { mintStdioPingServer, mcpToolCallsObservable } = await import('../mcp/mcp-probe.ts')
   const { JOBS } = await import('../jobs.ts')
   mintStdioPingServer(join(scratch, 'repo'))
@@ -174,9 +186,18 @@ export async function probeAgent(name: string): Promise<RegistrationProbeResult>
           ORCH_SCRATCH: scratch,
         },
       })
+      const draining = drainTransportEvents(handle.events())
       try {
-        await transport.prompt(handle, prompt)
-        const outcome = await handle.collect()
+        const outcome = await withTransportDeadline({
+          operation: (async () => {
+            await transport.prompt(handle, prompt)
+            return handle.collect()
+          })(),
+          operationName: `${agent.harness} agent probe prompt and collection; inspect harness logs and rerun orch agent probe ${name}`,
+          timeoutMs: agent.timeoutMs,
+          onTimeout: () => transport.cancel(handle),
+        })
+        await draining
         writableDb()
           .query(
             `UPDATE run SET status=?,latency_ms=?,exit_code=?,output_bytes=?,error=? WHERE id=?`,
@@ -196,6 +217,7 @@ export async function probeAgent(name: string): Promise<RegistrationProbeResult>
         } catch {
           /* exited */
         }
+        void draining
       }
     } catch (error) {
       const detail = String((error as Error).message ?? error)

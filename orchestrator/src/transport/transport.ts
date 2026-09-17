@@ -234,6 +234,46 @@ export type AgentTransport = {
 
 export type TransportFactory = () => AgentTransport
 
+export class TransportOperationTimeout extends Error {
+  readonly operation: string
+  readonly timeoutMs: number
+
+  constructor(operation: string, timeoutMs: number) {
+    super(`transport operation ${operation} timed out after ${timeoutMs}ms`)
+    this.name = 'TransportOperationTimeout'
+    this.operation = operation
+    this.timeoutMs = timeoutMs
+  }
+}
+
+/** Bound one transport operation without knowing which caller or run owns it. */
+export async function withTransportDeadline<T>(opts: {
+  operation: Promise<T>
+  operationName: string
+  timeoutMs: number
+  onTimeout: () => unknown | Promise<unknown>
+  schedule?: (callback: () => void, delay: number) => ReturnType<typeof setTimeout>
+  unschedule?: (timer: ReturnType<typeof setTimeout>) => void
+}): Promise<T> {
+  const schedule = opts.schedule ?? setTimeout
+  const unschedule = opts.unschedule ?? clearTimeout
+  let timer: ReturnType<typeof setTimeout> | null = null
+  const timeout = new Promise<never>((_resolve, reject) => {
+    timer = schedule(() => {
+      void Promise.resolve(opts.onTimeout())
+        .catch(() => {
+          /* the timeout remains the operation's terminal fact */
+        })
+        .finally(() => reject(new TransportOperationTimeout(opts.operationName, opts.timeoutMs)))
+    }, opts.timeoutMs)
+  })
+  try {
+    return await Promise.race([opts.operation, timeout])
+  } finally {
+    if (timer !== null) unschedule(timer)
+  }
+}
+
 const transports = new Map<TransportName, TransportFactory>()
 
 export function registerTransport(name: TransportName, factory: TransportFactory): void {

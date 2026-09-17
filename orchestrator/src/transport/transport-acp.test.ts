@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, test } from 'bun:test'
-import { mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
@@ -36,12 +36,73 @@ import {
   acpHarnessArgv,
   acpLeaderSocketPath,
   acpSandboxProfile,
+  awaitAcpHandshake,
   grokEffectiveModel,
   grokSessionMeta,
   normalizeAcpTurn,
+  persistAcpUpdates,
 } from './transport-acp.ts'
 
 const ORCHESTRATOR_PACKAGE_NAME = `@${PLATFORM_SLUG}/orchestrator`
+
+describe('ACP startup and partial-output bounds', () => {
+  const never = new Promise<never>(() => {})
+  const immediateTimer = (callback: () => void, delay: number) => {
+    expect(delay).toBe(60_000)
+    queueMicrotask(callback)
+    return 1 as unknown as ReturnType<typeof setTimeout>
+  }
+
+  test.each(['initialize', 'session/new'] as const)(
+    'a harness that never answers %s is terminated with a stage-named refusal',
+    async (stage) => {
+      let terminated = false
+      await expect(
+        awaitAcpHandshake({
+          request: never,
+          stage,
+          harness: 'goose',
+          pid: 4321,
+          terminate: async () => {
+            terminated = true
+          },
+          schedule: immediateTimer,
+          unschedule: () => {},
+        }),
+      ).rejects.toThrow(`ACP handshake refusal: ${stage}`)
+      expect(terminated).toBe(true)
+      await expect(
+        awaitAcpHandshake({
+          request: never,
+          stage,
+          harness: 'goose',
+          pid: 4321,
+          terminate: async () => {},
+          schedule: immediateTimer,
+          unschedule: () => {},
+        }),
+      ).rejects.toThrow('goose harness (pid 4321)')
+    },
+  )
+
+  test('an update is persisted before a pending prompt response can settle', () => {
+    const root = mkdtempSync(join(tmpdir(), 'orch-acp-partial-'))
+    const outPath = join(root, 'partial.out')
+    try {
+      persistAcpUpdates(outPath, 'session-partial', [
+        {
+          update: {
+            sessionUpdate: 'agent_message_chunk',
+            content: { type: 'text', text: 'partial output' },
+          },
+        },
+      ])
+      expect(readFileSync(outPath, 'utf8')).toBe('partial output')
+    } finally {
+      rmSync(root, { recursive: true, force: true })
+    }
+  })
+})
 
 describe('ACP transport selection', () => {
   test('model-agnostic harnesses expose their ACP stdio command', () => {
