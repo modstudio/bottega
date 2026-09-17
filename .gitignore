@@ -17,6 +17,9 @@ __pycache__/
 !.claude/skills/port-feature/
 .claude/skills/port-feature/*
 !.claude/skills/port-feature/SKILL.md
+# A pattern with a slash is anchored, so the rules above reach only the
+# repository root. Local settings appear under any concern's .claude/ too.
+**/.claude/settings.local.json
 
 # Bun installs workspace dependencies locally from the tracked root lockfile.
 orchestrator/node_modules
