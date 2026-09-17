@@ -5,6 +5,7 @@ import { productionStepCatalogue, showStepCatalogue } from './step-catalogue.ts'
 import { seedWorkflows } from './workflow-seeds.ts'
 import { parseWorkflowTree, planWorkflowHydration } from './workflow-tree.ts'
 import { importWorkflowTree, productionWorkflowTree } from './workflow-tree-store.ts'
+import { productionWorkflows, showWorkflow } from './workflows.ts'
 
 const database = () => {
   const d = new Database(':memory:')
@@ -58,5 +59,50 @@ describe('importWorkflowTree', () => {
       (d.query('SELECT COUNT(*) count FROM step_catalogue_version').get() as { count: number })
         .count,
     ).toBe(before.count)
+  })
+
+  test('a new flow may reference a new step from the same tree import', () => {
+    const d = database()
+    const productionCatalogue = productionStepCatalogue(d)
+    const productionFlows = productionWorkflows(d)
+    const tree = renderedTree(d)
+    tree.push({
+      path: 'workflows/steps/tree-step.md',
+      body: `---\n${Bun.YAML.stringify({
+        title: 'Tree step',
+        floor: ['command-exit'],
+        job: null,
+        autonomy: 'auto',
+        needs: [],
+      })}\n---\nA step added in the tree.\n`,
+    })
+    tree.push({
+      path: 'workflows/flows/tree-flow.md',
+      body: `---\n${Bun.YAML.stringify({
+        title: 'Tree flow',
+        arguments: [],
+        modes: [
+          {
+            slug: 'default',
+            title: 'Default',
+            default: true,
+            steps: ['tree-step'],
+          },
+        ],
+      })}\n---\nA flow added in the tree.\n`,
+    })
+
+    const result = importWorkflowTree(parseWorkflowTree(tree), 'add tree flow', 'worker', d)
+
+    expect(result).toEqual({ steps: ['tree-step'], workflows: ['tree-flow'] })
+    const draft = d
+      .query("SELECT n FROM step_catalogue_version WHERE status='draft' ORDER BY n DESC LIMIT 1")
+      .get() as { n: number }
+    expect(
+      showStepCatalogue(draft.n, d).definition.steps.some(({ slug }) => slug === 'tree-step'),
+    ).toBe(true)
+    expect(showWorkflow('tree-flow', undefined, d).status).toBe('draft')
+    expect(productionStepCatalogue(d).n).toBe(productionCatalogue.n)
+    expect(productionWorkflows(d)).toEqual(productionFlows)
   })
 })

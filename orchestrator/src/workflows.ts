@@ -27,7 +27,26 @@ const object = (value: unknown): value is Record<string, unknown> =>
   typeof value === 'object' && value !== null && !Array.isArray(value)
 const text = (value: unknown) => (typeof value === 'string' ? value : '')
 
-export function validateWorkflowDefinition(value: unknown, d?: Database): string[] {
+function workflowStepSlugs(
+  d: Database | undefined,
+  knownStepSlugs: ReadonlySet<string> | undefined,
+  errors: string[],
+): ReadonlySet<string> | null {
+  if (knownStepSlugs) return knownStepSlugs
+  if (!d) return null
+  try {
+    return new Set(productionStepCatalogue(d).definition.steps.map((step) => step.slug))
+  } catch (error) {
+    errors.push(error instanceof Error ? error.message : String(error))
+    return null
+  }
+}
+
+export function validateWorkflowDefinition(
+  value: unknown,
+  d?: Database,
+  knownStepSlugs?: ReadonlySet<string>,
+): string[] {
   const errors: string[] = []
   if (!object(value)) return ['definition must be an object']
   if (typeof value.title !== 'string') errors.push('title must be a string')
@@ -102,13 +121,7 @@ export function validateWorkflowDefinition(value: unknown, d?: Database): string
     }
   }
 
-  let stepNames: Set<string> | null = null
-  if (d)
-    try {
-      stepNames = new Set(productionStepCatalogue(d).definition.steps.map((step) => step.slug))
-    } catch (error) {
-      errors.push(error instanceof Error ? error.message : String(error))
-    }
+  const stepNames = workflowStepSlugs(d, knownStepSlugs, errors)
   for (const mode of modes) {
     if (!object(mode)) continue
     if (!Array.isArray(mode.steps) || mode.steps.length === 0) {
@@ -123,8 +136,12 @@ export function validateWorkflowDefinition(value: unknown, d?: Database): string
   return [...new Set(errors)]
 }
 
-function requireValid(value: unknown, d: Database): asserts value is WorkflowDefinition {
-  const errors = validateWorkflowDefinition(value, d)
+function requireValid(
+  value: unknown,
+  d: Database,
+  knownStepSlugs?: ReadonlySet<string>,
+): asserts value is WorkflowDefinition {
+  const errors = validateWorkflowDefinition(value, d, knownStepSlugs)
   if (errors.length)
     throw new Error(`invalid workflow definition:\n${errors.map((e) => `- ${e}`).join('\n')}`)
 }
@@ -219,16 +236,18 @@ export function showWorkflow(slug: string, n?: number, d: Database = db()) {
   return parseVersion(versionRow(slug, n, d))
 }
 
-const workflowLifecycle = versionedLifecycle<WorkflowDefinition>({
-  noun: 'workflow',
-  identityTable: 'workflow',
-  versionTable: 'workflow_version',
-  eventTable: 'workflow_event',
-  foreignKey: 'workflow_id',
-  validate(value, d) {
-    requireValid(value, d)
-  },
-})
+const workflowLifecycleFor = (knownStepSlugs?: ReadonlySet<string>) =>
+  versionedLifecycle<WorkflowDefinition>({
+    noun: 'workflow',
+    identityTable: 'workflow',
+    versionTable: 'workflow_version',
+    eventTable: 'workflow_event',
+    foreignKey: 'workflow_id',
+    validate(value, d) {
+      requireValid(value, d, knownStepSlugs)
+    },
+  })
+const workflowLifecycle = workflowLifecycleFor()
 function writeDraft(
   slug: string,
   definition: unknown,
@@ -236,10 +255,18 @@ function writeDraft(
   authorValue?: string,
   kind: Extract<VersionEvent, 'set' | 'fork' | 'import'> = 'set',
   d: Database = writableDb(),
+  knownStepSlugs?: ReadonlySet<string>,
 ) {
   requireSlug(slug)
   requireSlug(slug)
-  return workflowLifecycle.write(slug, definition, reasonValue, authorValue, kind, d)
+  return (knownStepSlugs ? workflowLifecycleFor(knownStepSlugs) : workflowLifecycle).write(
+    slug,
+    definition,
+    reasonValue,
+    authorValue,
+    kind,
+    d,
+  )
 }
 export const setWorkflow = (
   slug: string,
@@ -408,7 +435,8 @@ export function importWorkflow(
   reason: string | undefined,
   author?: string,
   d: Database = writableDb(),
+  knownStepSlugs?: ReadonlySet<string>,
 ) {
   required(reason, 'reason')
-  return writeDraft(slug, definition, reason, author, 'import', d)
+  return writeDraft(slug, definition, reason, author, 'import', d, knownStepSlugs)
 }

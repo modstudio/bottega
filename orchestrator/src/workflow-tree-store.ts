@@ -51,9 +51,10 @@ export function importWorkflowTree(
   const readDatabase = d ?? db()
   const production = productionWorkflowTree(readDatabase)
   const steps = orderedSteps(tree.steps, production.steps)
+  const stepSlugs = new Set(steps.map((step) => step.slug))
   const catalogueErrors = validateStepCatalogue({ steps })
   const workflowErrors = tree.workflows.flatMap(({ slug, definition }) =>
-    validateWorkflowDefinition(definition, readDatabase).map(
+    validateWorkflowDefinition(definition, readDatabase, stepSlugs).map(
       (error) => `workflow "${slug}": ${error}`,
     ),
   )
@@ -79,7 +80,7 @@ export function importWorkflowTree(
   return writeTransaction(() => {
     if (changedSteps.length) importStepCatalogue({ steps }, reason, author, writeDatabase)
     for (const { slug, definition } of changedWorkflows) {
-      importWorkflow(slug, definition, reason, author, writeDatabase)
+      importWorkflow(slug, definition, reason, author, writeDatabase, stepSlugs)
     }
     return { steps: changedSteps, workflows: changedWorkflows.map(({ slug }) => slug) }
   }, writeDatabase)
