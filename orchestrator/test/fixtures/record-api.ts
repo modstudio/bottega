@@ -38,7 +38,12 @@ export function installRecordApiClient(client: RecordApiClient | null): void {
   const holder = globalThis as typeof globalThis & {
     [INJECT_KEY]?: { current: RecordApiClient | null }
   }
-  ;(holder[INJECT_KEY] ??= { current: null }).current = client
+  const existing = holder[INJECT_KEY]
+  if (existing) {
+    existing.current = client
+    return
+  }
+  holder[INJECT_KEY] = { current: client }
 }
 
 export function createMemoryRecordApiClient(): RecordApiClient {

@@ -79,7 +79,11 @@ type InjectSlot = { current: RecordApiClient | null }
 
 function injectSlot(): InjectSlot {
   const holder = globalThis as typeof globalThis & { [INJECT_KEY]?: InjectSlot }
-  return (holder[INJECT_KEY] ??= { current: null })
+  const existing = holder[INJECT_KEY]
+  if (existing) return existing
+  const created = { current: null }
+  holder[INJECT_KEY] = created
+  return created
 }
 
 function injectedClient(): RecordApiClient | null {
