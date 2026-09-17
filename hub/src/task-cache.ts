@@ -127,10 +127,18 @@ function applyStatusEvent(conn: Database, row: HostedChanges['statusEvents'][num
 
 export function applyHostedTaskChanges(changes: HostedChanges) {
   writeTransaction((conn) => {
-    changes.tasks.forEach((row) => applyTask(conn, row))
-    changes.comments.forEach((row) => applyComment(conn, row))
-    changes.documents.forEach((row) => applyDocument(conn, row))
-    changes.statusEvents.forEach((row) => applyStatusEvent(conn, row))
+    changes.tasks.forEach((row) => {
+      applyTask(conn, row)
+    })
+    changes.comments.forEach((row) => {
+      applyComment(conn, row)
+    })
+    changes.documents.forEach((row) => {
+      applyDocument(conn, row)
+    })
+    changes.statusEvents.forEach((row) => {
+      applyStatusEvent(conn, row)
+    })
     conn
       .query(
         `INSERT INTO setting(key,value) VALUES (?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value`,
