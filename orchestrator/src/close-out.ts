@@ -305,7 +305,7 @@ function ownershipCloseOutResult(input: {
   decision: ReturnType<typeof adoptedTreeCloseOutDecision>
   dryRun?: boolean
 }): CloseOutResult | null {
-  if (input.decision === 'ordinary' || input.decision === 'release-adopted') return null
+  if (input.decision === 'ordinary') return null
   if (input.decision === 'held') {
     return {
       runId: input.runId,
@@ -313,14 +313,6 @@ function ownershipCloseOutResult(input: {
       outcome: 'held',
       detail: `ownership of ${input.treePath} could not be established; pointer and tree retained`,
     }
-  }
-  if (!input.dryRun) {
-    db()
-      .query(
-        `UPDATE run SET worktree=NULL
-         WHERE worktree=? AND (id=? OR parent_run_id=?)`,
-      )
-      .run(input.treePath, input.runId, input.runId)
   }
   return {
     runId: input.runId,
@@ -358,35 +350,6 @@ function lockedLiveOrForgottenHold(
     treePath,
     decision: 'forgotten',
     dryRun,
-  })
-}
-
-function adoptedTreeOwners(
-  decision: ReturnType<typeof adoptedTreeCloseOutDecision>,
-  runId: number,
-  treePath: string,
-) {
-  if (decision !== 'release-adopted') return []
-  return otherConversationWorktreeSharers(db(), { id: runId, worktree: treePath })
-}
-
-function settleAdoptedTreeClaims(
-  owners: ReturnType<typeof otherConversationWorktreeSharers>,
-  adoptingRunId: number,
-  detail: string,
-): void {
-  if (!owners.length) return
-  writeTransaction(() => {
-    const settledAt = nowIso()
-    for (const owner of owners) {
-      settleClaims(db(), {
-        rootRunId: owner.id,
-        kind: 'worktree',
-        state: 'released',
-        settledAt,
-        detail: `adopted tree released by run ${adoptingRunId}: ${detail}`,
-      })
-    }
   })
 }
 
@@ -548,15 +511,7 @@ function attemptCloseOutRun(
   const branchTemplate = (effective.repo ? projectByName(effective.repo) : projectAt(treePath))
     ?.settings.worktree?.branch
   const ownership = inspectTreeOwnership(treePath, repoRoot, conversationIds, branchTemplate)
-  const liveSharers = liveWorktreeSharers(db(), { id: row.root_id, worktree: treePath })
-  const liveConversation = aliveConversationTurns(row.root_id)
-  const ownerHeld = otherConversationKeepTreeHeld(row.root_id, treePath)
-  const adoptionDecision = adoptedTreeCloseOutDecision({
-    ownership,
-    ownerAlive: liveSharers.length > 0,
-    sharerAlive: liveConversation.length > 0,
-    ownerHeld,
-  })
+  const adoptionDecision = adoptedTreeCloseOutDecision(ownership)
   const ownershipResult = ownershipCloseOutResult({
     runId: row.root_id,
     treePath,
@@ -564,7 +519,6 @@ function attemptCloseOutRun(
     dryRun: options.dryRun,
   })
   if (ownershipResult) return ownershipResult
-  const adoptedOwners = adoptedTreeOwners(adoptionDecision, row.root_id, treePath)
 
   const liveRows = () => {
     const sharers = liveWorktreeSharers(db(), { id: row.root_id, worktree: treePath })
@@ -799,7 +753,6 @@ function attemptCloseOutRun(
                 outcome: 'failed' as const,
                 detail: result.detail,
               }
-            settleAdoptedTreeClaims(adoptedOwners, row.root_id, result.detail)
             const acquired = liveRows()
             if (acquired.length) {
               return {
@@ -868,6 +821,14 @@ export function closeOutRun(
           WHERE id=?`,
         )
         .run(result.outcome, result.detail, settledAt, result.runId)
+      if ((result.outcome === 'released' || result.outcome === 'forgotten') && result.worktree) {
+        db()
+          .query(
+            `UPDATE run SET worktree=NULL
+             WHERE worktree=? AND (id=? OR parent_run_id=?)`,
+          )
+          .run(result.worktree, result.runId, result.runId)
+      }
       if (settled && settled !== 'claimed') {
         settleClaims(db(), {
           rootRunId: result.runId,
