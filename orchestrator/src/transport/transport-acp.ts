@@ -3,9 +3,9 @@ import { dirname, join } from 'node:path'
 import { Readable, Writable } from 'node:stream'
 import * as acp from '@agentclientprotocol/sdk'
 import { execa, type ResultPromise } from 'execa'
-import { DEFAULT_IDLE_GRACE_MS, terminateProcessGroup } from './idle-kill.ts'
-import type { SandboxRuntimeConfig } from './sandbox.ts'
-import { sandboxLaunchArgv } from './sandbox.ts'
+import { DEFAULT_IDLE_GRACE_MS, terminateProcessGroup } from '../idle-kill.ts'
+import type { SandboxRuntimeConfig } from '../sandbox.ts'
+import { sandboxLaunchArgv } from '../sandbox.ts'
 import {
   ACP_PILOT_TASK,
   type AgentTransport,
@@ -445,8 +445,8 @@ async function openAcp(opts: TransportStartOpts): Promise<TransportHandle> {
         if (fields.length === 1 && stringFields.length === 1) {
           const runId = Number(opts.env.ORCH_RUN_ID ?? 0)
           if (runId) {
-            const { ask } = await import('./ask.ts')
-            const { db } = await import('./db.ts')
+            const { ask } = await import('../ask.ts')
+            const { db } = await import('../db.ts')
             db().query("UPDATE run SET status='asking' WHERE id=? AND status='running'").run(runId)
             const answer = await ask({
               runId,
@@ -527,7 +527,7 @@ async function openAcp(opts: TransportStartOpts): Promise<TransportHandle> {
             {
               name: 'orch-ask',
               command: process.execPath,
-              args: [join(dirname(import.meta.path), 'orch.ts'), 'ask-server'],
+              args: [join(dirname(import.meta.path), '..', 'orch.ts'), 'ask-server'],
               env: ['ORCH_ASK_URL', 'ORCH_RUN_ID', 'ORCH_RUN_TOKEN', 'ORCH_DB'].flatMap((name) =>
                 opts.env[name] ? [{ name, value: opts.env[name]! }] : [],
               ),

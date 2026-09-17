@@ -1,4 +1,4 @@
-import { PLATFORM_SLUG } from '../../shared/brand.ts'
+import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 
 const ORCHESTRATOR_PACKAGE_NAME = `@${PLATFORM_SLUG}/orchestrator`
 

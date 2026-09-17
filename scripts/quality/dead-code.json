@@ -19,7 +19,7 @@
   },
   {
     "workspace": "orchestrator",
-    "file": "orchestrator/src/transport.ts",
+    "file": "orchestrator/src/transport/transport.ts",
     "issueType": "exports",
     "symbol": "clearRegisteredTransportsForTest"
   },

@@ -33,7 +33,7 @@ import {
   assertAcpReady,
   resolveTransportName,
   selectAgentForTransport,
-} from './transport.ts'
+} from './transport/transport.ts'
 import { callerDrift, checkoutHasUncommittedWork, resolveBase } from './worktree-caller.ts'
 
 type Presentation = {

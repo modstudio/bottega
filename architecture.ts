@@ -119,7 +119,7 @@ export const modules: ArchitectureModule[] = [
     './jobs.ts',
     './local-host.ts',
     './mcp-probe.ts',
-    './transport.ts',
+    './transport/transport.ts',
   ]),
   module('orchestrator/src/agent-registry.ts', ['./agents.ts', './capabilities.ts', './db.ts']),
   module('orchestrator/src/calibration-port.ts', []),
@@ -325,7 +325,7 @@ export const modules: ArchitectureModule[] = [
     './route.ts',
     './run-process.ts',
     './run-types.ts',
-    './transport.ts',
+    './transport/transport.ts',
     './worktree-remove.ts',
     './worktree-types.ts',
   ]),
@@ -352,7 +352,7 @@ export const modules: ArchitectureModule[] = [
     './project-lock.ts',
     './run-process.ts',
     './sandbox.ts',
-    './transport.ts',
+    './transport/transport.ts',
     './worktree-types.ts',
   ]),
   module('orchestrator/src/run-terminal.ts', [
@@ -394,7 +394,10 @@ export const modules: ArchitectureModule[] = [
     './calibration-port.ts',
     './review-calibration.ts',
   ]),
-  module('orchestrator/src/standard-transports.ts', ['./transport-acp.ts', './transport-cli.ts']),
+  module('orchestrator/src/standard-transports.ts', [
+    './transport/transport-acp.ts',
+    './transport/transport-cli.ts',
+  ]),
   module('orchestrator/src/statistics.ts', []),
   module('orchestrator/src/tree-commands.ts', ['./tree.ts']),
   module('orchestrator/src/tree.ts', [
@@ -485,9 +488,15 @@ export const inversions: ArchitectureInversion[] = [
   { from: 'orchestrator/src/jobs.ts', to: 'orchestrator/src/agents.ts' },
   { from: 'orchestrator/src/route.ts', to: 'orchestrator/src/review.ts' },
   { from: 'orchestrator/src/review.ts', to: 'orchestrator/src/route.ts' },
-  { from: 'orchestrator/src/transport.ts', to: 'orchestrator/src/agents.ts' },
-  { from: 'orchestrator/src/transport.ts', to: 'orchestrator/src/transport-cli.ts' },
-  { from: 'orchestrator/src/transport.ts', to: 'orchestrator/src/transport-acp.ts' },
+  { from: 'orchestrator/src/transport/transport.ts', to: 'orchestrator/src/agents.ts' },
+  {
+    from: 'orchestrator/src/transport/transport.ts',
+    to: 'orchestrator/src/transport/transport-cli.ts',
+  },
+  {
+    from: 'orchestrator/src/transport/transport.ts',
+    to: 'orchestrator/src/transport/transport-acp.ts',
+  },
 ]
 
 const allowedCycles: ArchitectureCycle[] = [

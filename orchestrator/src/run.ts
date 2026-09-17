@@ -93,7 +93,7 @@ import {
   resolveTransportName,
   selectAgentForTransport,
   type TransportName,
-} from './transport.ts'
+} from './transport/transport.ts'
 import { resolveBase, resolveReadOnlyBase } from './worktree-caller.ts'
 import { toolFor } from './worktree-preflight.ts'
 import type { Worktree } from './worktree-types.ts'

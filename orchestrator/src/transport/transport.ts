@@ -2,9 +2,9 @@ import { existsSync, realpathSync } from 'node:fs'
 import { createRequire } from 'node:module'
 import { basename, dirname, isAbsolute, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import type { FailureKind } from './failure.ts'
-import { job } from './jobs.ts'
-import type { SandboxRuntimeConfig } from './sandbox.ts'
+import type { FailureKind } from '../failure.ts'
+import { job } from '../jobs.ts'
+import type { SandboxRuntimeConfig } from '../sandbox.ts'
 
 const requireTransport = createRequire(import.meta.url)
 
@@ -303,7 +303,7 @@ export function assertAcpAllowed(
 export function resolveCodexAcpBin(): string {
   return (
     process.env.ORCH_ACP_BIN ||
-    join(dirname(fileURLToPath(import.meta.url)), '..', 'node_modules', '.bin', 'codex-acp')
+    join(dirname(fileURLToPath(import.meta.url)), '..', '..', 'node_modules', '.bin', 'codex-acp')
   )
 }
 

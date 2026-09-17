@@ -56,7 +56,7 @@ import {
   type TransportStartOpts,
   transportFor,
   valueMatchesStrictSchema,
-} from './transport.ts'
+} from './transport/transport.ts'
 import type { Worktree } from './worktree-types.ts'
 
 function reviewChangedPaths(cwd: string, base: string, inputTree: string): string[] {

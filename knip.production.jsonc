@@ -78,9 +78,9 @@
         "!test/**/*.ts"
       ],
       "ignoreDependencies": [
-        // Invoked through node_modules/.bin/codex-acp in src/transport.ts.
+        // Invoked through node_modules/.bin/codex-acp in src/transport/transport.ts.
         "@agentclientprotocol/codex-acp",
-        // Loaded dynamically through requireTransport('ajv/dist/2020.js') in src/transport.ts.
+        // Loaded dynamically through requireTransport('ajv/dist/2020.js') in src/transport/transport.ts.
         "ajv"
       ]
     },
