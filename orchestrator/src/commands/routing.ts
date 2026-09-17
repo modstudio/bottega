@@ -2,7 +2,7 @@
 /** Registers routing report adapters. Must not own routing behavior. */
 import type { Command } from 'commander'
 import { ensureLocalHealth } from '../local-host.ts'
-import { guideCommand, routingBacktestCommand, statsCommand } from '../routing-commands.ts'
+import { guideCommand, routingBacktestCommand, statsCommand } from '../route/routing-commands.ts'
 import { duration, log, optionFlags } from './support.ts'
 
 export function register(program: Command): void {

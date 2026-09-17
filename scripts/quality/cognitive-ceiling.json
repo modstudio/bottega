@@ -587,67 +587,67 @@
     "score": 21
   },
   {
-    "file": "orchestrator/src/route-unscored.test.ts",
+    "file": "orchestrator/src/route/route-unscored.test.ts",
     "function": "splitTopLevel",
     "line": 55,
     "score": 20
   },
   {
-    "file": "orchestrator/src/route-unscored.test.ts",
+    "file": "orchestrator/src/route/route-unscored.test.ts",
     "function": "unwrapOneOuter",
     "line": 97,
     "score": 24
   },
   {
-    "file": "orchestrator/src/route.ts",
+    "file": "orchestrator/src/route/route.ts",
     "function": "candidates",
     "line": 392,
     "score": 17
   },
   {
-    "file": "orchestrator/src/route.ts",
+    "file": "orchestrator/src/route/route.ts",
     "function": "map callback#9",
     "line": 543,
     "score": 23
   },
   {
-    "file": "orchestrator/src/route.ts",
+    "file": "orchestrator/src/route/route.ts",
     "function": "evidenceFor",
     "line": 710,
     "score": 20
   },
   {
-    "file": "orchestrator/src/route.ts",
+    "file": "orchestrator/src/route/route.ts",
     "function": "currentPolicySelection",
     "line": 803,
     "score": 18
   },
   {
-    "file": "orchestrator/src/route.ts",
+    "file": "orchestrator/src/route/route.ts",
     "function": "pick",
     "line": 844,
     "score": 46
   },
   {
-    "file": "orchestrator/src/routing-backtest.ts",
+    "file": "orchestrator/src/route/routing-backtest.ts",
     "function": "replay",
     "line": 227,
     "score": 29
   },
   {
-    "file": "orchestrator/src/routing-commands.ts",
+    "file": "orchestrator/src/route/routing-commands.ts",
     "function": "guideCommand",
     "line": 151,
     "score": 58
   },
   {
-    "file": "orchestrator/src/routing-commands.ts",
+    "file": "orchestrator/src/route/routing-commands.ts",
     "function": "statsCommand",
     "line": 238,
     "score": 25
   },
   {
-    "file": "orchestrator/src/routing-commands.ts",
+    "file": "orchestrator/src/route/routing-commands.ts",
     "function": "pickCommand",
     "line": 298,
     "score": 25

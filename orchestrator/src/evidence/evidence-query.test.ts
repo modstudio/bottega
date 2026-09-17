@@ -2,7 +2,7 @@ import { describe, expect, test } from 'bun:test'
 import { join } from 'node:path'
 import { addRun, dir, score } from '../../test/fixtures/store.ts'
 import { db } from '../db.ts'
-import { candidates } from '../route.ts'
+import { candidates } from '../route/route.ts'
 import { weigh } from '../score/score.ts'
 import { state } from '../serve.ts'
 import {

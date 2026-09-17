@@ -14,7 +14,13 @@ const DEGRADED_COLLECTION_GRAPH = [
   'outcome.ts',
   'result-output.ts',
 ] as const
-const DEGRADED_HEAVY_MODULES = ['agents.ts', 'cli.ts', 'route.ts', 'run.ts', 'worktree.ts'] as const
+const DEGRADED_HEAVY_MODULES = [
+  'agents.ts',
+  'cli.ts',
+  'route/route.ts',
+  'run.ts',
+  'worktree.ts',
+] as const
 const SRC_DIR = dirname(new URL(import.meta.url).pathname)
 
 function staticRelativeSpecifiers(source: string): string[] {

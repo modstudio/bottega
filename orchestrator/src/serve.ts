@@ -19,7 +19,7 @@ import { messagesForRun, receiptMessagesForArchitect } from './mailbox/mailbox.t
 import { summary as metricSummary } from './metric/metric.ts'
 import { projectAt } from './projects.ts'
 import { reviewCalibration } from './review-calibration.ts'
-import { candidates, scoreboard } from './route.ts'
+import { candidates, scoreboard } from './route/route.ts'
 import { reapStale } from './run-liveness.ts'
 import { registerStandardRuntime } from './runtime-registration.ts'
 

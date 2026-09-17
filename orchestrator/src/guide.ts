@@ -9,7 +9,7 @@ import {
   pick,
   promptBucketsForJob,
   promptSizeBucket,
-} from './route.ts'
+} from './route/route.ts'
 import { median } from './statistics.ts'
 
 type AgentOnJob = {

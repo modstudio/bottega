@@ -1,7 +1,8 @@
 import { describe, expect, test } from 'bun:test'
-import { addRun, score } from '../test/fixtures/store.ts'
-import { AGENTS } from './agent-registry.ts'
-import { guide } from './guide.ts'
+import { addRun, score } from '../../test/fixtures/store.ts'
+import { AGENTS } from '../agent-registry.ts'
+import { guide } from '../guide.ts'
+import { weigh } from '../score/score.ts'
 import {
   candidates,
   EVIDENCE_WINDOW,
@@ -12,7 +13,6 @@ import {
   promptSizeBucket,
   scoreboard,
 } from './route.ts'
-import { weigh } from './score/score.ts'
 
 describe('one score, reported the same everywhere', () => {
   function judged(agent: string, rights: number, wrongs: number) {
