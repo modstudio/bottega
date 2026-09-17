@@ -1,5 +1,5 @@
 import { Database } from 'bun:sqlite'
-import { COLLECTION_COMMANDS, collect } from './collect.ts'
+import { COLLECTION_COMMANDS, collect } from './collect/collect.ts'
 
 const argv = process.argv.slice(2)
 

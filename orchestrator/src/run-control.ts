@@ -7,7 +7,7 @@
 import { existsSync, readFileSync } from 'node:fs'
 import { CONTINUE_WORKING_FORMS } from './args.ts'
 import { clock } from './clock.ts'
-import { branchNote, failoverSummary, resolveFailover } from './collect.ts'
+import { branchNote, failoverSummary, resolveFailover } from './collect/collect.ts'
 import { db, nowIso, writeTransaction } from './db.ts'
 import { appendRunEvent } from './events.ts'
 import { chainTransport } from './failover.ts'

@@ -1,7 +1,7 @@
 // concern: run-listing
 /** Knows run list and state rendering. Must not know run control, transports, routing, the CLI, or worktrees. */
 
-import { resolveFailover } from './collect.ts'
+import { resolveFailover } from './collect/collect.ts'
 import { db } from './db.ts'
 import { UNSCORED_WHERE } from './evidence-query.ts'
 import { failureReason, type OutcomeRow, outcomeOf } from './outcome.ts'

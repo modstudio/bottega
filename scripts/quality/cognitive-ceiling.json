@@ -190,23 +190,23 @@
     "score": 25
   },
   {
-    "file": "orchestrator/src/collect.ts",
+    "file": "orchestrator/src/collect/collect.ts",
     "function": "mcpNote",
     "line": 155,
     "score": 20
   },
   {
-    "file": "orchestrator/src/collect.ts",
+    "file": "orchestrator/src/collect/collect.ts",
     "function": "collectWait",
     "line": 317,
     "score": 46
   },
   {
-    "file": "orchestrator/src/collect.ts",
+    "file": "orchestrator/src/collect/collect.ts",
     "function": "collectResult",
     "line": 362,
     "score": 52,
-    "key": "orchestrator/src/collect.ts\u0000collectResult"
+    "key": "orchestrator/src/collect/collect.ts\u0000collectResult"
   },
   {
     "file": "orchestrator/src/confinement.ts",

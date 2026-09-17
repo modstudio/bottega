@@ -807,7 +807,7 @@ export const importBoundaries: ImportBoundary[] = [
       'node:fs',
       './args.ts',
       './clock.ts',
-      './collect.ts',
+      './collect/collect.ts',
       './db.ts',
       './events.ts',
       './failover.ts',
@@ -858,7 +858,7 @@ export const importBoundaries: ImportBoundary[] = [
     'run-listing-boundary',
     'orchestrator/src/run-listing.ts',
     [
-      './collect.ts',
+      './collect/collect.ts',
       './db.ts',
       './evidence-query.ts',
       './outcome.ts',
