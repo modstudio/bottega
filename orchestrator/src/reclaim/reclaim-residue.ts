@@ -2,19 +2,23 @@
 /** Observes and releases one explicitly named piece of monitor residue. */
 import { existsSync, realpathSync, rmSync } from 'node:fs'
 import { basename, isAbsolute, join, relative, resolve, sep } from 'node:path'
-import { AGENTS } from './agent-registry.ts'
-import { db, nowIso, writableDb, writeTransaction } from './db.ts'
-import { targetGitEnvironment } from './git-environment.ts'
+import { AGENTS } from '../agent-registry.ts'
+import { db, nowIso, writableDb, writeTransaction } from '../db.ts'
+import { targetGitEnvironment } from '../git-environment.ts'
 import {
   grokTrustHeadings,
   grokTrustPathFromHeading,
   grokTrustStorePath,
   removeGrokTrustHeading,
-} from './grok-trust.ts'
-import { runHasLiveDescendants } from './idle-kill.ts'
-import { pidAlive } from './process-liveness.ts'
-import { processStartTime, projectGitCommonDir } from './project-lock.ts'
-import { projectByName, projects } from './projects.ts'
+} from '../grok-trust.ts'
+import { runHasLiveDescendants } from '../idle-kill.ts'
+import { pidAlive } from '../process-liveness.ts'
+import { processStartTime, projectGitCommonDir } from '../project-lock.ts'
+import { projectByName, projects } from '../projects.ts'
+import { runAlive } from '../run-alive.ts'
+import { RUNS_DIR } from '../run-artifacts.ts'
+import { runLeaseState } from '../run-lease.ts'
+import { processTable } from '../run-process.ts'
 import {
   processReleaseDecision,
   type ReleaseDecision,
@@ -24,10 +28,6 @@ import {
   staleRunReleaseDecision,
   trustReleaseDecision,
 } from './reclaim-residue-policy.ts'
-import { runAlive } from './run-alive.ts'
-import { RUNS_DIR } from './run-artifacts.ts'
-import { runLeaseState } from './run-lease.ts'
-import { processTable } from './run-process.ts'
 
 export type ResidueKind =
   | 'ref-guard'

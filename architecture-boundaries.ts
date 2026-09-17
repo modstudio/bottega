@@ -161,7 +161,7 @@ export const importBoundaries: ImportBoundary[] = [
       './process-liveness.ts',
       './project-lock.ts',
       './projects.ts',
-      './reclaim.ts',
+      './reclaim/reclaim.ts',
       './resource-claims.ts',
       './resource-ownership.ts',
       './run-alive.ts',
