@@ -1,32 +1,35 @@
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test'
 import { existsSync, readdirSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
-import { PLATFORM_SLUG } from '../../shared/brand.ts'
+import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import {
   newRecordId,
   PLATFORM_SPACE_ID,
   RECORD_ACTOR_ROLE,
   RECORD_OWNER_ROLE,
   RECORD_READER_ROLE,
-} from '../../shared/record/schema.ts'
-import { installRecordSessionRunner, memoryRecordSession } from '../test/fixtures/record-session.ts'
-import { proveHostedDocs, proveScoreRecordSync } from '../test/postgres-score-proof.ts'
+} from '../../../shared/record/schema.ts'
 import {
-  appliedRecordMigrationCount,
-  migratePostgres,
-  recordMigrationCount,
-} from './postgres-migrate.ts'
-import { startRecordApiServer } from './record-api-server.ts'
-import { bearerHeaders, recordAuth, setActiveRecordSpace } from './record-auth.ts'
-import { signInCommand, signUpCommand, whoamiCommand } from './record-auth-command.ts'
-import { diagnoseRecord, recordDoctorExitCode } from './record-doctor.ts'
+  installRecordSessionRunner,
+  memoryRecordSession,
+} from '../../test/fixtures/record-session.ts'
+import { proveHostedDocs, proveScoreRecordSync } from '../../test/postgres-score-proof.ts'
+import { startRecordApiServer } from '../record-api-server.ts'
+import { bearerHeaders, recordAuth, setActiveRecordSpace } from '../record-auth.ts'
+import { signInCommand, signUpCommand, whoamiCommand } from '../record-auth-command.ts'
+import { diagnoseRecord, recordDoctorExitCode } from '../record-doctor.ts'
 import {
   acceptRecordInvitation,
   inviteToActiveRecordSpace,
   pendingRecordInvitations,
   recordMemberships,
   switchRecordSpace,
-} from './record-space.ts'
+} from '../record-space.ts'
+import {
+  appliedRecordMigrationCount,
+  migratePostgres,
+  recordMigrationCount,
+} from './postgres-migrate.ts'
 
 const OPERATOR_USER_ID = '01990000-0000-7000-8000-000000000002'
 const recordSession = memoryRecordSession()
@@ -34,7 +37,7 @@ const recordSession = memoryRecordSession()
 const container = process.env.ORCH_TEST_POSTGRES_CONTAINER
 const ownerUrl = process.env.ORCH_RECORD_MIGRATE_URL
 const actorUrl = process.env.ORCH_RECORD_URL
-const recordFolder = join(import.meta.dir, '..', '..', 'shared', 'record')
+const recordFolder = join(import.meta.dir, '..', '..', '..', 'shared', 'record')
 const migrationsFolder = join(recordFolder, 'migrations')
 const postgresSchema =
   [

@@ -558,7 +558,7 @@ export const importBoundaries: ImportBoundary[] = [
     'record-api-server-boundary',
     'orchestrator/src/record-api-server.ts',
     [
-      './postgres-migrate.ts',
+      './postgres/postgres-migrate.ts',
       './record-api.ts',
       './record-auth.ts',
       './record-docs.ts',

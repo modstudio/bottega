@@ -1,7 +1,7 @@
 import { Database } from 'bun:sqlite'
 import { SQL } from 'bun'
-import { newRecordId } from '../../shared/record/schema.ts'
-import type { ProjectSettings } from './projects.ts'
+import { newRecordId } from '../../../shared/record/schema.ts'
+import type { ProjectSettings } from '../projects.ts'
 
 type SourceProject = {
   id: number
