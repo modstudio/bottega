@@ -231,7 +231,8 @@ export async function ingestTrackers(
           // project reported as open but did not return is looked up by key to find
           // out what it became.
           const seen = new Set(tasks.map((t) => t.key))
-          const vanished = d
+          // Re-read the handle after the awaits above: a schema reload may have replaced it.
+          const vanished = db()
             .query<{ key: string }, [string]>(
               `SELECT key FROM task
           WHERE project = ? AND source = 'mcp'
