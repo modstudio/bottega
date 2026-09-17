@@ -60,3 +60,7 @@ A workspace package is named `@bottega/<concern>`; a nested package appends its 
 ## Declare every import boundary in the manifest
 
 An import restriction is a rule in `architecture.ts` or `architecture-boundaries.ts`. Do not write a script that scans the imports of a single file; a check script covers only what the manifest cannot express, such as call sites. `scripts/check-architecture.ts` enforces the manifest through dependency-cruiser.
+
+## Keep machine state out of the tree
+
+A checkout holds source only. Databases, run artifacts, backups, locks and logs live in the per-user state directory that `shared/state-directory.ts` resolves; code never builds a state path from the checkout root. This rule is enforced by review.
