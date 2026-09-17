@@ -10,7 +10,9 @@
     "shared/record/schema-auth.ts": ["exports", "types"],
     "shared/record/schema-run.ts": ["exports", "types"],
     "shared/record/schema-review.ts": ["exports", "types"],
-    "shared/record/schema-landing.ts": ["exports", "types"]
+    "shared/record/schema-landing.ts": ["exports", "types"],
+    // Cross-concern session API includes clear before its sign-out caller lands.
+    "shared/record-session.ts": ["exports"]
   },
   "workspaces": {
     ".": {

@@ -1,12 +1,7 @@
 // concern: record-auth-command
 /** Owns record sign-in presentation and local bearer storage. Must not know run phases. */
-import { db, writeTransaction } from './db.ts'
-import {
-  RECORD_SESSION_KEY,
-  RECORD_SIGN_IN_REMEDY,
-  recordAuth,
-  recordIdentity,
-} from './record-auth.ts'
+import { writeRecordSessionToken } from '../../shared/record-session.ts'
+import { RECORD_SIGN_IN_REMEDY, recordAuth, recordIdentity } from './record-auth.ts'
 import { currentRecordSession } from './record-session.ts'
 
 type Presentation = { log(value: string): void }
@@ -15,17 +10,6 @@ function recordUrl(): string {
   const url = process.env.ORCH_RECORD_URL
   if (!url) throw new Error('ORCH_RECORD_URL is required for record authentication')
   return url
-}
-
-function storeRecordToken(token: string): void {
-  writeTransaction(() => {
-    db()
-      .query(
-        `INSERT INTO schema_meta (key,value) VALUES (?,?)
-         ON CONFLICT(key) DO UPDATE SET value=excluded.value`,
-      )
-      .run(RECORD_SESSION_KEY, token)
-  })
 }
 
 export async function recordPassword(readPassword: () => Promise<string>): Promise<string> {
@@ -44,7 +28,7 @@ export async function signUpCommand(
     body: { email, name, password: await recordPassword(readPassword) },
   })
   if (!result.token) throw new Error(RECORD_SIGN_IN_REMEDY)
-  storeRecordToken(result.token)
+  writeRecordSessionToken(result.token)
   presentation.log(`signed up ${result.user.email}`)
 }
 
@@ -56,7 +40,7 @@ export async function signInCommand(
   const result = await recordAuth(recordUrl()).api.signInEmail({
     body: { email, password: await recordPassword(readPassword) },
   })
-  storeRecordToken(result.token)
+  writeRecordSessionToken(result.token)
   presentation.log(`signed in ${result.user.email}`)
 }
 
