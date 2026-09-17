@@ -34,7 +34,7 @@ import {
 } from './git-environment.ts'
 import { isReaderJob, type Job, job, jobBoundInstruction, resolveJobTimeoutMs } from './jobs.ts'
 import type { KeepTreeExemption } from './keep-tree-hold.ts'
-import { resolveLens } from './lenses.ts'
+import { resolveLens } from './lens/lenses.ts'
 import { ensureLocalHealth, LOCAL_BASE_URL, tryWake } from './local-host.ts'
 import {
   canonSourceFor,

@@ -25,7 +25,7 @@ import {
   CONDITIONAL_ISSUE_REPORT_FIELD_REASONS,
   missingIssueReportFields,
 } from './issue-report-fields.ts'
-import { resolveLens } from './lenses.ts'
+import { resolveLens } from './lens/lenses.ts'
 import { decideMcpDocWrite } from './mcp-doc-write.ts'
 import {
   addDoctrineRule,
