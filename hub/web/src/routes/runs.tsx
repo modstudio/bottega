@@ -52,13 +52,13 @@ const fmtMs = duration
 function Verdict({ row }: { row: RunRow }) {
   if (row.running)
     return (
-      <span className="inline-flex items-center gap-2 text-live">
+      <span data-tone="success" className="inline-flex items-center gap-2 text-status-text">
         <LiveDot />
         running
       </span>
     )
   const exclusion = row.evidence_excluded ? (
-    <p className="meta">Not routing evidence: {row.evidence_excluded}</p>
+    <p className="text-sm text-text-muted">Not routing evidence: {row.evidence_excluded}</p>
   ) : null
   if (row.delivery) {
     return (
@@ -78,7 +78,7 @@ function Verdict({ row }: { row: RunRow }) {
   if (row.probe)
     return (
       <span>
-        <span className="text-muted-foreground">probe</span>
+        <span className="text-text-muted">probe</span>
         {exclusion}
       </span>
     )
@@ -140,7 +140,7 @@ function RunsList() {
       id: 'agent',
       label: 'Agent',
       render: (row) => (
-        <span className="inline-flex items-center gap-2 text-live">
+        <span data-tone="success" className="inline-flex items-center gap-2 text-status-text">
           <LiveDot />
           {row.agent}
         </span>
@@ -149,7 +149,7 @@ function RunsList() {
     {
       id: 'job',
       label: 'Job',
-      render: (row) => <span className="text-muted-foreground">{row.job}</span>,
+      render: (row) => <span className="text-text-muted">{row.job}</span>,
     },
     { id: 'project', label: 'Project', render: (row) => <ProjectMark name={row.repo} /> },
     {
@@ -162,7 +162,7 @@ function RunsList() {
       id: 'prompt',
       label: 'Prompt',
       render: (row) => (
-        <span className="block max-w-lg truncate text-muted-foreground">
+        <span className="block max-w-lg truncate text-text-muted">
           {row.prompt_head.slice(0, 90)}
         </span>
       ),
@@ -180,7 +180,7 @@ function RunsList() {
       id: 'job',
       label: 'Job',
       render: (row) => (
-        <span className="text-muted-foreground">
+        <span className="text-text-muted">
           {row.job || '-'}
           {row.lens ? ` ${row.lens}` : ''}
           {row.probe ? ' probe' : ''}
@@ -212,7 +212,7 @@ function RunsList() {
     {
       id: 'open',
       label: '',
-      render: () => <ChevronRight size={14} className="text-muted-foreground" />,
+      render: () => <ChevronRight size={14} className="text-text-muted" />,
     },
   ]
 
@@ -228,9 +228,11 @@ function RunsList() {
         subtitleTitle={payload ? `Serving code since ${payload.servingSince}` : undefined}
         actions={<WindowControl />}
       />
-      {query.isPending ? <p className="text-muted-foreground">Loading runs...</p> : null}
+      {query.isPending ? <p className="text-text-muted">Loading runs...</p> : null}
       {query.error ? (
-        <p className="text-destructive">could not load: {query.error.message}</p>
+        <p data-tone="error" className="text-status-text">
+          could not load: {query.error.message}
+        </p>
       ) : null}
       {payload && data ? (
         <>
@@ -246,7 +248,7 @@ function RunsList() {
             ))}
           </StatRow>
           {filtered ? (
-            <p className="mb-4 text-muted-foreground">
+            <p className="mb-4 text-text-muted">
               the counters above count the whole window; the filter applies to the tables below.
             </p>
           ) : null}
@@ -293,8 +295,8 @@ function RunsList() {
               }}
             />
           </div>
-          <p className="mt-4 max-w-4xl text-muted-foreground">
-            <strong className="text-foreground">
+          <p className="mt-4 max-w-4xl text-text-muted">
+            <strong className="text-text-primary">
               Scoring is the only thing that measures whether delegation works.
             </strong>{' '}
             A run nobody judged and a run judged badly must stay distinguishable, which is why an

@@ -175,7 +175,7 @@ export function projectVars(
 ): CSSProperties | undefined {
   const c = name ? colors[name] : undefined
   if (!c?.light) return undefined
-  return { '--pc': c.light, '--pc-dark': c.dark ?? c.light } as CSSProperties
+  return { '--project-light': c.light, '--project-dark': c.dark ?? c.light } as CSSProperties
 }
 
 /** A project name with its colour bar; "elsewhere" when the row has none. */

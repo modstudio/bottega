@@ -92,7 +92,11 @@ function AgentsView({
   return (
     <section>
       {header ?? <PageHeader title="Agents" subtitle="Code-declared runners and their limits" />}
-      {error ? <p className="text-destructive">{error.message}</p> : null}
+      {error ? (
+        <p data-tone="error" className="text-status-text">
+          {error.message}
+        </p>
+      ) : null}
       <Collection
         title="Agents"
         count={rows.length}
@@ -119,7 +123,9 @@ function AgentsView({
                   <DisplayRow label="Timeout" value={`${selected.timeoutMs / 60_000} minutes`} />
                 </>
               ) : (
-                <p className="text-destructive">Unknown agent.</p>
+                <p data-tone="error" className="text-status-text">
+                  Unknown agent.
+                </p>
               )}
             </Companion>
           ) : undefined

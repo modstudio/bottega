@@ -34,19 +34,23 @@ function ProjectEditPage() {
   if (projects.isPending)
     return (
       <Sheet open onClose={() => void navigate({ to: '/projects' })} title={name}>
-        <p className="text-muted-foreground">Loading register...</p>
+        <p className="text-text-muted">Loading register...</p>
       </Sheet>
     )
   if (projects.error)
     return (
       <Sheet open onClose={() => void navigate({ to: '/projects' })} title={name}>
-        <p className="text-destructive">{projects.error.message}</p>
+        <p data-tone="error" className="text-status-text">
+          {projects.error.message}
+        </p>
       </Sheet>
     )
   if (!project)
     return (
       <Sheet open onClose={() => void navigate({ to: '/projects' })} title={name}>
-        <p className="text-destructive">No project &quot;{name}&quot;</p>
+        <p data-tone="error" className="text-status-text">
+          No project &quot;{name}&quot;
+        </p>
       </Sheet>
     )
   return <ProjectForm key={project.id} project={project} />
@@ -289,7 +293,9 @@ function ProjectForm({ project }: { project: ProjectRow }) {
           </div>
         </FieldSection>
         {error ? (
-          <p className="text-destructive">{error} Correct the field and try again.</p>
+          <p data-tone="error" className="text-status-text">
+            {error} Correct the field and try again.
+          </p>
         ) : null}
       </form>
     </Sheet>

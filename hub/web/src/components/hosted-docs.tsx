@@ -52,7 +52,11 @@ function HostedDocsList() {
   return (
     <section>
       <PageHeader title="Docs" />
-      {query.error ? <p className="text-destructive">{query.error.message}</p> : null}
+      {query.error ? (
+        <p data-tone="error" className="text-status-text">
+          {query.error.message}
+        </p>
+      ) : null}
       <Collection
         panel={panel}
         title="Documents"

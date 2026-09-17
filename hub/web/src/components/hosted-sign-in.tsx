@@ -52,7 +52,11 @@ export function HostedSignIn() {
             onChange={(event) => setPassword(event.target.value)}
           />
         </label>
-        {error ? <p className="text-destructive">{error}</p> : null}
+        {error ? (
+          <p data-tone="error" className="text-status-text">
+            {error}
+          </p>
+        ) : null}
         <Button variant="primary" type="submit" disabled={pending}>
           {pending ? 'Signing in...' : 'Sign in'}
         </Button>

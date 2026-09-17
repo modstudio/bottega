@@ -42,7 +42,7 @@ function field(record: Record<string, unknown>, camel: string, snake: string) {
 }
 
 export function HostedLensList({ lenses }: { lenses: HostedLens[] }) {
-  if (!lenses.length) return <p className="mt-4 text-muted-foreground">No review lenses.</p>
+  if (!lenses.length) return <p className="mt-4 text-text-muted">No review lenses.</p>
   return (
     <div className="mt-4 space-y-6">
       {lenses.map((lens, index) => {
@@ -59,17 +59,17 @@ export function HostedLensList({ lenses }: { lenses: HostedLens[] }) {
                 return (
                   <div
                     key={field(finding, 'id', 'id') || String(findingIndex)}
-                    className="border border-border p-3"
+                    className="border border-border-default p-3"
                   >
                     <div className="mb-2 flex items-center gap-2">
                       <Badge>{field(finding, 'severity', 'severity')}</Badge>
-                      <span className="text-muted-foreground">
+                      <span className="text-text-muted">
                         {field(finding, 'location', 'location')}
                       </span>
                     </div>
                     <p>{field(finding, 'evidence', 'evidence')}</p>
                     {field(finding, 'proposedCorrection', 'proposed_correction') ? (
-                      <p className="mt-2 text-muted-foreground">
+                      <p className="mt-2 text-text-muted">
                         {field(finding, 'proposedCorrection', 'proposed_correction')}
                       </p>
                     ) : null}
@@ -77,7 +77,7 @@ export function HostedLensList({ lenses }: { lenses: HostedLens[] }) {
                 )
               })
             ) : (
-              <p className="text-muted-foreground">No findings.</p>
+              <p className="text-text-muted">No findings.</p>
             )}
           </FieldSection>
         )
@@ -131,7 +131,7 @@ function HostedReviewsList() {
     {
       id: 'open',
       label: '',
-      render: () => <ChevronRight size={14} className="text-muted-foreground" />,
+      render: () => <ChevronRight size={14} className="text-text-muted" />,
     },
   ]
 
@@ -142,7 +142,9 @@ function HostedReviewsList() {
         subtitle={query.isPending && !rows.length ? 'Loading reviews...' : `${rows.length} loaded`}
       />
       {query.error ? (
-        <p className="text-destructive">could not load: {query.error.message}</p>
+        <p data-tone="error" className="text-status-text">
+          could not load: {query.error.message}
+        </p>
       ) : null}
       <Collection
         panel={panel}
@@ -186,14 +188,14 @@ export function HostedReviewDetail({ id }: { id: string }) {
   if (detail.isPending) {
     return (
       <Companion onClose={close} title={`Review ${id}`} subtitle="Loading review...">
-        <p className="text-muted-foreground">Loading...</p>
+        <p className="text-text-muted">Loading...</p>
       </Companion>
     )
   }
   if (detail.error || !review) {
     return (
       <Companion onClose={close} title={`Review ${id}`}>
-        <p className="text-destructive">
+        <p data-tone="error" className="text-status-text">
           Could not load this review. {detail.error?.message ?? 'Not found'}
         </p>
       </Companion>

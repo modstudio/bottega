@@ -17,7 +17,7 @@ import {
   useWindowFilters,
   WindowControl,
 } from '@/components/design-system'
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/table'
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/ui/table/table'
 import { useNow } from '@/lib/clock'
 import { useDetailPanel } from '@/lib/detail-panel'
 import { compactTokens, duration, relativeTime, vendorFigures } from '@/lib/format'
@@ -47,7 +47,7 @@ function Status({ row }: { row: Pick<TaskRow, 'key' | 'status' | 'statusCategory
   if (!row.statusCategory) {
     return (
       <span
-        className="text-muted-foreground"
+        className="text-text-muted"
         title={row.key ? 'no tracker reached this task' : undefined}
       >
         {row.key ? 'unknown' : 'no ticket'}
@@ -166,7 +166,7 @@ function TaskTitle({ row }: { row: TaskRow }) {
     )
   }
   return (
-    <span className="text-muted-foreground">
+    <span className="text-text-muted">
       {row.source === 'git' ? 'title not known, derived from commits' : 'no tracker record yet'}
     </span>
   )
@@ -174,7 +174,10 @@ function TaskTitle({ row }: { row: TaskRow }) {
 
 function TaskUpdated({ row }: { row: TaskRow }) {
   return (
-    <span className={row.workingNow ? 'text-live' : 'text-muted-foreground'}>
+    <span
+      data-tone={row.workingNow ? 'success' : undefined}
+      className={row.workingNow ? 'text-status-text' : 'text-text-muted'}
+    >
       {row.workingNow ? (
         <>
           <LiveDot /> now
@@ -326,15 +329,15 @@ function TaskTable({
 function LooseTable({ rows, fetchedAt }: { rows: TaskRow[]; fetchedAt: number }) {
   const now = useNow()
   return (
-    <div className="max-w-3xl overflow-x-auto border border-border">
-      <Table className="text-[12px]">
+    <div className="max-w-3xl overflow-x-auto border border-border-default">
+      <Table>
         <TableHeader>
           <TableRow>
             <TableHead>Project</TableHead>
-            <TableHead className="text-right">Updated</TableHead>
-            <TableHead className="text-right">Engaged</TableHead>
-            <TableHead className="text-right">Claude</TableHead>
-            <TableHead className="text-right">Vendor</TableHead>
+            <TableHead numeric>Updated</TableHead>
+            <TableHead numeric>Engaged</TableHead>
+            <TableHead numeric>Claude</TableHead>
+            <TableHead numeric>Vendor</TableHead>
           </TableRow>
         </TableHeader>
         <TableBody>
@@ -343,16 +346,20 @@ function LooseTable({ rows, fetchedAt }: { rows: TaskRow[]; fetchedAt: number })
               <TableCell>
                 <ProjectMark name={row.project} />
               </TableCell>
-              <TableCell className="text-right text-muted-foreground">
+              <TableCell numeric muted>
                 {row.workingNow ? 'now' : ago(row.lastAt)}
               </TableCell>
-              <TableCell className="text-right font-semibold">
-                {row.workingNow
-                  ? formatMs(row.engagedMs + Math.max(0, now - fetchedAt))
-                  : row.engaged}
+              <TableCell numeric>
+                <span className="font-semibold">
+                  {row.workingNow
+                    ? formatMs(row.engagedMs + Math.max(0, now - fetchedAt))
+                    : row.engaged}
+                </span>
               </TableCell>
-              <TableCell className="text-right">{compact(row.claudeTokens)}</TableCell>
-              <TableCell className="text-right text-muted-foreground">{vendors(row)}</TableCell>
+              <TableCell numeric>{compact(row.claudeTokens)}</TableCell>
+              <TableCell numeric muted>
+                {vendors(row)}
+              </TableCell>
             </TableRow>
           ))}
         </TableBody>
@@ -411,17 +418,15 @@ function TaskContent({
       {loose.length ? (
         <section className="mt-7">
           <div className="mb-3 flex items-baseline gap-3">
-            <h2 className="font-sans font-semibold">No ticket</h2>
-            <span className="text-muted-foreground">
-              work these projects cannot attribute to a task
-            </span>
+            <h2 className="font-semibold">No ticket</h2>
+            <span className="text-text-muted">work these projects cannot attribute to a task</span>
           </div>
           <LooseTable rows={loose} fetchedAt={fetchedAt} />
         </section>
       ) : null}
       {data.dropped.length ? (
-        <p className="mt-5 max-w-4xl text-muted-foreground">
-          <strong className="text-foreground">Not shown here:</strong>{' '}
+        <p className="mt-5 max-w-4xl text-text-muted">
+          <strong className="text-text-primary">Not shown here:</strong>{' '}
           {data.dropped
             .map(
               (item) =>
@@ -440,8 +445,8 @@ function TaskContent({
         </div>
       ) : null}
       {tasks.length && window.filters.agent ? (
-        <p className="mt-5 max-w-4xl text-muted-foreground">
-          <strong className="text-foreground">
+        <p className="mt-5 max-w-4xl text-text-muted">
+          <strong className="text-text-primary">
             Filtered to tasks {window.filters.agent} worked on.
           </strong>{' '}
           The rows are the whole task: engaged time is still the union of every agent and session on
@@ -449,8 +454,8 @@ function TaskContent({
         </p>
       ) : null}
       {hasRows ? (
-        <p className="mt-5 max-w-4xl text-muted-foreground">
-          <strong className="text-foreground">
+        <p className="mt-5 max-w-4xl text-text-muted">
+          <strong className="text-text-primary">
             Engaged time is the union of every agent's spans, never their sum.
           </strong>{' '}
           A session waiting on a delegated agent is not idle, and two agents at once did not take
@@ -478,8 +483,13 @@ export function TaskView({ name }: { name: WorkName }) {
   })
   const dropdown = (open: boolean) => setMenus((count) => Math.max(0, count + (open ? 1 : -1)))
   const panel = useDetailPanel()
-  if (query.isPending) return <p className="text-muted-foreground">Loading {name}...</p>
-  if (query.error) return <p className="text-destructive">{query.error.message}</p>
+  if (query.isPending) return <p className="text-text-muted">Loading {name}...</p>
+  if (query.error)
+    return (
+      <p data-tone="error" className="text-status-text">
+        {query.error.message}
+      </p>
+    )
   return (
     <section>
       <WindowChrome
@@ -527,20 +537,20 @@ function BoardCardView({ card }: { card: BoardCard }) {
       params={{ key: card.key }}
       resetScroll={false}
       data-record-key={card.key}
-      className="proj-card block cursor-pointer border border-border p-3 focus-visible:ring-2 focus-visible:ring-ring"
+      className="block cursor-pointer border border-border-default border-l-[3px] border-l-project p-3 [--project:var(--project-light,var(--border-strong))] dark:[--project:var(--project-dark,var(--border-strong))]"
       style={projectVars(colors, card.project)}
     >
       <Identifier className="block">{card.key}</Identifier>
-      <div className="mt-1 font-sans text-[12.5px]">
-        {card.title || <span className="text-muted-foreground">No title from its tracker</span>}
+      <div className="mt-1 text-sm">
+        {card.title || <span className="text-text-muted">No title from its tracker</span>}
       </div>
-      <div className="mt-3 flex flex-wrap items-center gap-2 text-[11px]">
+      <div className="mt-3 flex flex-wrap items-center gap-2 text-xs">
         <ProjectMark name={card.project} />
         <BoardOwner card={card} />
         <Status row={card} />
         {card.assignee ? <span>{card.assignee}</span> : null}
         {card.workingNow ? (
-          <span className="inline-flex items-center gap-2 text-live">
+          <span data-tone="success" className="inline-flex items-center gap-2 text-status-text">
             <LiveDot />
             working now
           </span>
@@ -574,8 +584,13 @@ export function BoardView() {
       }
       return value
     })
-  if (query.isPending) return <p className="text-muted-foreground">Loading board...</p>
-  if (query.error) return <p className="text-destructive">{query.error.message}</p>
+  if (query.isPending) return <p className="text-text-muted">Loading board...</p>
+  if (query.error)
+    return (
+      <p data-tone="error" className="text-status-text">
+        {query.error.message}
+      </p>
+    )
   const response = query.data
   const all = response.data.cards
   const q = search.trim().toLowerCase()
@@ -659,7 +674,7 @@ export function BoardView() {
               const total = totalFor(group.key)
               return (
                 <div key={group.key}>
-                  <h2 className="mb-2 flex justify-between font-sans font-semibold">
+                  <h2 className="mb-2 flex justify-between font-semibold">
                     <span>{group.label}</span>
                     <span>
                       {rows.length}
@@ -670,12 +685,12 @@ export function BoardView() {
                     {rows.length ? (
                       rows.map((card) => <BoardCardView key={card.key} card={card} />)
                     ) : (
-                      <div className="border border-border p-4 text-muted-foreground">
+                      <div className="border border-border-default p-4 text-text-muted">
                         {group.empty}
                       </div>
                     )}
                     {!response.data.scoped && total > rows.length ? (
-                      <div className="border border-border p-2 text-center text-muted-foreground">
+                      <div className="border border-border-default p-2 text-center text-text-muted">
                         {total - rows.length} more not drawn
                       </div>
                     ) : null}
@@ -701,11 +716,9 @@ export function BoardView() {
                       render: (card) => (
                         <>
                           <Identifier className="block">{card.key}</Identifier>
-                          <div className="font-sans text-sm">
+                          <div className="text-sm">
                             {card.title || (
-                              <span className="text-muted-foreground">
-                                no title from its tracker
-                              </span>
+                              <span className="text-text-muted">no title from its tracker</span>
                             )}
                           </div>
                         </>
@@ -728,7 +741,7 @@ export function BoardView() {
                       id: 'assignee',
                       label: 'Assignee',
                       render: (card) =>
-                        card.assignee || <span className="text-muted-foreground">unknown</span>,
+                        card.assignee || <span className="text-text-muted">unknown</span>,
                     },
                     {
                       id: 'live',
@@ -756,7 +769,7 @@ export function BoardView() {
             })}
           </div>
         )}
-        <p className="mt-5 text-muted-foreground">
+        <p className="mt-5 text-text-muted">
           Source glyphs distinguish hub, external trackers, and git-derived records without using
           state colour{response.data.scoped ? ' - counts are for this project' : ''}.{' '}
           <button type="button" className="underline" onClick={() => setWhy((open) => !open)}>
@@ -764,7 +777,7 @@ export function BoardView() {
           </button>
         </p>
         {why ? (
-          <p className="mt-2 max-w-4xl text-muted-foreground">
+          <p className="mt-2 max-w-4xl text-text-muted">
             A card is here because it is active, in review, was worked on in the last fortnight, or
             is ours and still open. Recency comes from recorded work, never from a tracker
             timestamp: those are bumped on every sync, so everything looks freshly touched. Full

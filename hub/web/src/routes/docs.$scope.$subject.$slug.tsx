@@ -130,8 +130,8 @@ function DocPage() {
   if (!scoped) {
     return (
       <Sheet open onClose={() => void navigate({ to: '/docs' })} title={slug}>
-        <p className="text-destructive">
-          unknown scope "{scope}"; valid: {DOC_SCOPES.join(', ')}
+        <p data-tone="error" className="text-status-text">
+          unknown scope"{scope}"; valid: {DOC_SCOPES.join(', ')}
         </p>
       </Sheet>
     )
@@ -204,15 +204,27 @@ function DocPage() {
         </div>
       }
     >
-      {doc.isPending ? <p className="text-muted-foreground">Loading doc...</p> : null}
-      {doc.error ? <p className="text-destructive">{doc.error.message}</p> : null}
-      {save.error ? <p className="text-destructive">{save.error.message}</p> : null}
-      {remove.error ? <p className="text-destructive">{remove.error.message}</p> : null}
+      {doc.isPending ? <p className="text-text-muted">Loading doc...</p> : null}
+      {doc.error ? (
+        <p data-tone="error" className="text-status-text">
+          {doc.error.message}
+        </p>
+      ) : null}
+      {save.error ? (
+        <p data-tone="error" className="text-status-text">
+          {save.error.message}
+        </p>
+      ) : null}
+      {remove.error ? (
+        <p data-tone="error" className="text-status-text">
+          {remove.error.message}
+        </p>
+      ) : null}
 
       {doc.data && editing ? (
         <div>
           <div className="mb-3 grid max-w-xs gap-1 text-sm">
-            <span className="text-muted-foreground">Delivery</span>
+            <span className="text-text-muted">Delivery</span>
             <Select
               label="Delivery"
               value={delivery}
@@ -223,7 +235,7 @@ function DocPage() {
               onChange={(next) => setDelivery(next as 'inject' | 'demand')}
             />
           </div>
-          <div className="grid grid-cols-2 divide-x divide-border border border-border">
+          <div className="grid grid-cols-2 divide-x divide-border border border-border-default">
             <Textarea
               value={body}
               onChange={(e) => setBody(e.target.value)}
@@ -239,25 +251,29 @@ function DocPage() {
       ) : null}
 
       {doc.data && !editing ? (
-        <div className="prose-copy">
+        <div className="max-w-[72ch]">
           <Markdown content={doc.data.body} />
         </div>
       ) : null}
       {doc.data && !editing ? (
-        <div className="mt-8 border-t border-border pt-4">
+        <div className="mt-8 border-t border-border-default pt-4">
           <h2 className="mb-3 text-sm font-semibold">History</h2>
-          {history.error ? <p className="text-destructive">{history.error.message}</p> : null}
+          {history.error ? (
+            <p data-tone="error" className="text-status-text">
+              {history.error.message}
+            </p>
+          ) : null}
           {history.data?.map((revision) => (
             <div
               key={revision.id}
-              className="grid grid-cols-[5rem_6rem_1fr_auto] gap-3 border-b border-border py-2 text-xs"
+              className="grid grid-cols-[5rem_6rem_1fr_auto] gap-3 border-b border-border-default py-2 text-xs"
             >
               <span>
                 #{revision.id} {revision.op}
               </span>
               <span>{revision.author}</span>
               <span>{revision.reason}</span>
-              <span className="text-muted-foreground">
+              <span className="text-text-muted">
                 {revision.at} · {revision.bytes} bytes
               </span>
             </div>

@@ -2,7 +2,7 @@ import { useMutation, useQuery } from '@tanstack/react-query'
 import { createFileRoute } from '@tanstack/react-router'
 import { useState } from 'react'
 import { EmptyState, PageHeader } from '@/components/design-system'
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/table'
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/ui/table/table'
 import { queryClient, trpc } from '@/trpc/client'
 import { Badge } from '@/ui/badge/badge'
 import { Button } from '@/ui/button/button'
@@ -29,10 +29,7 @@ function NotesPage() {
         title="Notes"
         subtitle="The suggestion box"
         actions={
-          <label
-            htmlFor="show-stale"
-            className="flex items-center gap-2 text-sm text-muted-foreground"
-          >
+          <label htmlFor="show-stale" className="flex items-center gap-2 text-sm text-text-muted">
             <Checkbox
               id="show-stale"
               checked={stale}
@@ -42,9 +39,13 @@ function NotesPage() {
           </label>
         }
       />
-      {notes.error ? <p className="text-destructive">{notes.error.message}</p> : null}
+      {notes.error ? (
+        <p data-tone="error" className="text-status-text">
+          {notes.error.message}
+        </p>
+      ) : null}
       {notes.data?.length ? (
-        <div className="border border-border">
+        <div className="border border-border-default">
           <Table>
             <TableHeader>
               <TableRow>
@@ -61,7 +62,7 @@ function NotesPage() {
                 <TableRow key={note.id}>
                   <TableCell>
                     <div className="max-w-xl whitespace-pre-wrap">{note.text}</div>
-                    <div className="mt-1 text-xs text-muted-foreground">
+                    <div className="mt-1 text-xs text-text-muted">
                       #{note.id} · {note.last_seen_at.slice(0, 16).replace('T', ' ')}
                     </div>
                   </TableCell>
@@ -95,7 +96,7 @@ function NotesPage() {
           </Table>
         </div>
       ) : notes.isPending ? (
-        <p className="text-muted-foreground">Loading notes...</p>
+        <p className="text-text-muted">Loading notes...</p>
       ) : (
         <EmptyState
           title={stale ? 'No stale notes.' : 'No open notes.'}

@@ -23,7 +23,9 @@ function TrackerState({ project }: { project: ProjectRow }) {
     return (
       <div>
         <Badge tone="error">unusable</Badge>
-        <div className="mt-1 max-w-xs text-[11px] text-destructive">{status.error}</div>
+        <div data-tone="error" className="mt-1 max-w-xs text-xs text-status-text">
+          {status.error}
+        </div>
       </div>
     )
   }
@@ -106,7 +108,7 @@ function ProjectsPage() {
       id: 'path',
       label: 'Path',
       render: (project) => (
-        <span className="block max-w-sm truncate text-muted-foreground">{project.path}</span>
+        <span className="block max-w-sm truncate text-text-muted">{project.path}</span>
       ),
     },
     {
@@ -119,7 +121,7 @@ function ProjectsPage() {
     {
       id: 'open',
       label: '',
-      render: () => <ChevronRight size={14} className="text-muted-foreground" />,
+      render: () => <ChevronRight size={14} className="text-text-muted" />,
     },
   ]
 
@@ -135,8 +137,12 @@ function ProjectsPage() {
           </Button>
         }
       />
-      {projects.isPending ? <p className="text-muted-foreground">Loading register...</p> : null}
-      {projects.error ? <p className="text-destructive">{projects.error.message}</p> : null}
+      {projects.isPending ? <p className="text-text-muted">Loading register...</p> : null}
+      {projects.error ? (
+        <p data-tone="error" className="text-status-text">
+          {projects.error.message}
+        </p>
+      ) : null}
       {projects.data ? (
         <Collection
           title="Register"

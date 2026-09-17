@@ -2,7 +2,7 @@ import { useMutation, useQuery } from '@tanstack/react-query'
 import { createFileRoute, Link } from '@tanstack/react-router'
 import { useEffect, useState } from 'react'
 import { EmptyState, PageHeader, SectionTitle } from '@/components/design-system'
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/table'
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/ui/table/table'
 import { useWindowState } from '@/lib/window'
 import { queryClient, type SettingsResponse, trpc } from '@/trpc/client'
 import { Badge } from '@/ui/badge/badge'
@@ -129,7 +129,9 @@ function SettingsPage() {
       />
 
       {query.error ? (
-        <p className="text-destructive">could not load: {query.error.message}</p>
+        <p data-tone="error" className="text-status-text">
+          could not load: {query.error.message}
+        </p>
       ) : null}
       {data && form ? (
         <>
@@ -149,7 +151,7 @@ function SettingsPage() {
                     onChange={(event) => change({ enabled: event.target.checked })}
                   />
                   Send daily report
-                  <span className="font-normal text-muted-foreground">
+                  <span className="font-normal text-text-muted">
                     Off records why a send did not happen.
                   </span>
                 </label>
@@ -222,9 +224,7 @@ function SettingsPage() {
                   />
                 </div>
                 <div>
-                  <div className="mb-2 text-[12.5px] text-muted-foreground">
-                    Projects in the email
-                  </div>
+                  <div className="mb-2 text-sm text-text-muted">Projects in the email</div>
                   <div className="flex flex-wrap gap-4">
                     {data.allProjects.map((project) => (
                       <label
@@ -247,7 +247,7 @@ function SettingsPage() {
                       </label>
                     ))}
                   </div>
-                  <p className="mt-2 text-xs text-muted-foreground">
+                  <p className="mt-2 text-xs text-text-muted">
                     The dashboard always includes every registered project; the email is a subset,
                     which is the whole reason this is a setting.
                   </p>
@@ -264,7 +264,7 @@ function SettingsPage() {
                   >
                     Send a test
                   </Button>
-                  <span className="text-sm text-muted-foreground">{said}</span>
+                  <span className="text-sm text-text-muted">{said}</span>
                 </div>
               </FieldSection>
             </div>
@@ -283,9 +283,9 @@ function SettingsPage() {
                 <Badge tone={data.secrets.smtpPassword.resolves ? 'success' : 'error'}>
                   {data.secrets.smtpPassword.resolves ? 'password resolves' : 'password missing'}
                 </Badge>{' '}
-                <span className="text-muted-foreground">from {data.secrets.smtpPassword.ref}</span>
+                <span className="text-text-muted">from {data.secrets.smtpPassword.ref}</span>
               </div>
-              <p className="mt-3 max-w-3xl text-sm text-muted-foreground">
+              <p className="mt-3 max-w-3xl text-sm text-text-muted">
                 No secret is stored in hub.db. This holds a reference; the password stays in the
                 login keychain, and the page is only ever told whether it resolves.
               </p>
@@ -295,13 +295,13 @@ function SettingsPage() {
           <div className="max-w-[640px]">
             <SectionTitle>Recent sends</SectionTitle>
           </div>
-          <div className="mb-6 max-w-[640px] border border-border">
-            <Table className="text-[12.5px]">
+          <div className="mb-6 max-w-[640px] border border-border-default">
+            <Table>
               <TableHeader>
                 <TableRow>
                   <TableHead>When</TableHead>
                   <TableHead>Result</TableHead>
-                  <TableHead className="text-right">Items</TableHead>
+                  <TableHead numeric>Items</TableHead>
                   <TableHead>Detail</TableHead>
                 </TableRow>
               </TableHeader>
@@ -309,16 +309,14 @@ function SettingsPage() {
                 {data.sends.length
                   ? data.sends.map((row) => (
                       <TableRow key={`${row.at}:${row.recipients}`}>
-                        <TableCell className="text-muted-foreground">
-                          {row.at.slice(0, 16).replace('T', ' ')}
-                        </TableCell>
+                        <TableCell muted>{row.at.slice(0, 16).replace('T', ' ')}</TableCell>
                         <TableCell>
                           <Badge tone={row.status === 'failed' ? 'error' : 'neutral'}>
                             {row.status}
                           </Badge>
                         </TableCell>
-                        <TableCell className="text-right">{row.items.toLocaleString()}</TableCell>
-                        <TableCell className="text-muted-foreground">
+                        <TableCell numeric>{row.items.toLocaleString()}</TableCell>
+                        <TableCell muted>
                           {row.test ? <Badge className="mr-2">test</Badge> : null}
                           {row.error || row.recipients}
                         </TableCell>
@@ -346,7 +344,7 @@ function SettingsPage() {
           </div>
           <Panel className="max-w-[640px]">
             <div className="flex items-center justify-between gap-4">
-              <p className="text-sm text-muted-foreground">
+              <p className="text-sm text-text-muted">
                 Read only. Hub cannot write the orchestrator register.
               </p>
               <Button size="sm" render={<Link to="/projects" />}>

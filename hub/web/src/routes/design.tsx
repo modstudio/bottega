@@ -12,7 +12,7 @@ import {
   StatRow,
   StatTile,
 } from '@/components/design-system'
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/table'
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/ui/table/table'
 import { Badge } from '@/ui/badge/badge'
 import { Button } from '@/ui/button/button'
 import { Dialog } from '@/ui/dialog/dialog'
@@ -143,13 +143,13 @@ function DesignPage() {
       />
 
       <SectionTitle>Table</SectionTitle>
-      <div className="border border-border">
+      <div className="border border-border-default">
         <Table>
           <TableHeader>
             <TableRow>
               <TableHead>Component</TableHead>
               <TableHead>State</TableHead>
-              <TableHead className="num">Value</TableHead>
+              <TableHead numeric>Value</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
@@ -158,14 +158,14 @@ function DesignPage() {
               <TableCell>
                 <Badge tone="success">ready</Badge>
               </TableCell>
-              <TableCell className="num">1,024</TableCell>
+              <TableCell numeric>1,024</TableCell>
             </TableRow>
             <TableRow>
               <TableCell>Quiet row</TableCell>
               <TableCell>
                 <Badge>resting</Badge>
               </TableCell>
-              <TableCell className="num">64</TableCell>
+              <TableCell numeric>64</TableCell>
             </TableRow>
           </TableBody>
         </Table>
@@ -252,7 +252,7 @@ function DesignPage() {
       </Sheet>
 
       <SectionTitle>Settings and detail grammar</SectionTitle>
-      <div className="max-w-2xl border border-border p-4">
+      <div className="max-w-2xl border border-border-default p-4">
         <FieldSection title="Sample settings" description="A titled group for related controls.">
           <SettingBlock
             label="Example setting"
@@ -273,8 +273,8 @@ function DesignPage() {
       </StatRow>
       <div className="grid gap-4 sm:grid-cols-2">
         <EmptyState title="Nothing here yet." hint="Empty states explain what belongs here." />
-        <div className="flex items-center gap-5 border border-border p-4">
-          <span className="inline-flex items-center gap-2 text-live">
+        <div className="flex items-center gap-5 border border-border-default p-4">
+          <span data-tone="success" className="inline-flex items-center gap-2 text-status-text">
             <LiveDot />
             LiveDot
           </span>

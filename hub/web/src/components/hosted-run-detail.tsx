@@ -24,14 +24,14 @@ export function HostedRunDetail({ id }: { id: string }) {
   if (detail.isPending) {
     return (
       <Companion onClose={close} title={`Run ${id}`} subtitle="Loading run...">
-        <p className="text-muted-foreground">Loading...</p>
+        <p className="text-text-muted">Loading...</p>
       </Companion>
     )
   }
   if (detail.error || !run) {
     return (
       <Companion onClose={close} title={`Run ${id}`}>
-        <p className="text-destructive">
+        <p data-tone="error" className="text-status-text">
           Could not load this run. {detail.error?.message ?? 'Not found'}
         </p>
       </Companion>
@@ -59,7 +59,7 @@ export function HostedRunDetail({ id }: { id: string }) {
       <DisplayRow label="Score" value={scoreText ?? 'Unscored'} />
       {score?.note ? <DisplayRow label="Score note" value={score.note} /> : null}
       {run.evidenceExcluded ? (
-        <p className="meta mb-3">Not routing evidence: {run.evidenceExcluded}</p>
+        <p className="text-sm text-text-muted mb-3">Not routing evidence: {run.evidenceExcluded}</p>
       ) : null}
       <DisplayRow label="Prompt" value={run.promptHead} />
       <HostedLensList lenses={lenses} />

@@ -104,7 +104,7 @@ function DocsList() {
     {
       id: 'subject',
       label: 'Subject',
-      render: (doc) => <span className="text-muted-foreground">{doc.subject ?? '-'}</span>,
+      render: (doc) => <span className="text-text-muted">{doc.subject ?? '-'}</span>,
     },
     { id: 'slug', label: 'Slug', render: (doc) => <strong>{doc.slug}</strong> },
     { id: 'title', label: 'Title', render: (doc) => doc.title },
@@ -118,14 +118,12 @@ function DocsList() {
     {
       id: 'updated',
       label: 'Updated',
-      render: (doc) => (
-        <span className="text-muted-foreground">{relativeTime(doc.updated_at)}</span>
-      ),
+      render: (doc) => <span className="text-text-muted">{relativeTime(doc.updated_at)}</span>,
     },
     {
       id: 'open',
       label: '',
-      render: () => <ChevronRight size={14} className="text-muted-foreground" />,
+      render: () => <ChevronRight size={14} className="text-text-muted" />,
     },
   ]
 
@@ -166,8 +164,12 @@ function DocsList() {
           </Button>
         }
       />
-      {docs.isPending ? <p className="text-muted-foreground">Loading docs...</p> : null}
-      {docs.error ? <p className="text-destructive">{docs.error.message}</p> : null}
+      {docs.isPending ? <p className="text-text-muted">Loading docs...</p> : null}
+      {docs.error ? (
+        <p data-tone="error" className="text-status-text">
+          {docs.error.message}
+        </p>
+      ) : null}
       {docs.data ? (
         <Collection
           title="Documents"
@@ -230,7 +232,7 @@ function DocsList() {
       >
         <div className="space-y-3">
           <div className="grid gap-1 text-sm">
-            <span className="text-muted-foreground">Scope</span>
+            <span className="text-text-muted">Scope</span>
             <Select
               label="Scope"
               value={scope}
@@ -242,7 +244,7 @@ function DocsList() {
           </div>
           {needsSubject(scope) ? (
             <div className="grid gap-1 text-sm">
-              <span className="text-muted-foreground">Subject</span>
+              <span className="text-text-muted">Subject</span>
               <Select
                 label="Subject"
                 value={subject}
@@ -252,15 +254,15 @@ function DocsList() {
             </div>
           ) : null}
           <label htmlFor="new-doc-slug" className="block text-sm">
-            <span className="text-muted-foreground">Slug</span>
+            <span className="text-text-muted">Slug</span>
             <Input id="new-doc-slug" value={slug} onChange={(e) => setSlug(e.target.value)} />
           </label>
           <label htmlFor="new-doc-title" className="block text-sm">
-            <span className="text-muted-foreground">Title</span>
+            <span className="text-text-muted">Title</span>
             <Input id="new-doc-title" value={title} onChange={(e) => setTitle(e.target.value)} />
           </label>
           <div className="grid gap-1 text-sm">
-            <span className="text-muted-foreground">Delivery</span>
+            <span className="text-text-muted">Delivery</span>
             <Select
               label="Delivery"
               value={delivery}

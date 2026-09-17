@@ -44,10 +44,10 @@ function DocumentEditor({ document }: { document: TaskRecordResponse['documents'
     },
   })
   return (
-    <article className="space-y-3 border border-border p-3">
+    <article className="space-y-3 border border-border-default p-3">
       <div className="flex items-center gap-2">
         {document.role ? <Badge tone="info">{document.role}</Badge> : null}
-        <span className="text-[11px] text-muted-foreground">version {document.version}</span>
+        <span className="text-xs text-text-muted">version {document.version}</span>
       </div>
       <Input
         aria-label={`Title for document ${document.id}`}
@@ -60,7 +60,11 @@ function DocumentEditor({ document }: { document: TaskRecordResponse['documents'
         value={body}
         onChange={(event) => setBody(event.target.value)}
       />
-      {save.error ? <p className="text-destructive">{save.error.message}</p> : null}
+      {save.error ? (
+        <p data-tone="error" className="text-status-text">
+          {save.error.message}
+        </p>
+      ) : null}
       <Button
         variant="primary"
         size="sm"
@@ -118,7 +122,7 @@ export function TaskSheet({ taskKey, onClose }: { taskKey: string; onClose: () =
         record.data ? (
           <>
             <div>{record.data.task.title}</div>
-            <div className="mt-1 inline-flex items-center gap-2 text-[11px]">
+            <div className="mt-1 inline-flex items-center gap-2 text-xs">
               <SourceMark
                 source={record.data.source}
                 project={record.data.task.project}
@@ -132,7 +136,11 @@ export function TaskSheet({ taskKey, onClose }: { taskKey: string; onClose: () =
         )
       }
     >
-      {record.error ? <p className="text-destructive">{record.error.message}</p> : null}
+      {record.error ? (
+        <p data-tone="error" className="text-status-text">
+          {record.error.message}
+        </p>
+      ) : null}
       {record.data ? (
         <>
           <DisplayRow
@@ -178,7 +186,9 @@ export function TaskSheet({ taskKey, onClose }: { taskKey: string; onClose: () =
                   }
                   hint={
                     saveTitle.error ? (
-                      <span className="text-destructive">{saveTitle.error.message}</span>
+                      <span data-tone="error" className="text-status-text">
+                        {saveTitle.error.message}
+                      </span>
                     ) : undefined
                   }
                 />
@@ -206,7 +216,9 @@ export function TaskSheet({ taskKey, onClose }: { taskKey: string; onClose: () =
                   }
                   hint={
                     saveStatus.error ? (
-                      <span className="text-destructive">{saveStatus.error.message}</span>
+                      <span data-tone="error" className="text-status-text">
+                        {saveStatus.error.message}
+                      </span>
                     ) : undefined
                   }
                 />
@@ -219,7 +231,7 @@ export function TaskSheet({ taskKey, onClose }: { taskKey: string; onClose: () =
                     <DocumentEditor key={document.id} document={document} />
                   ))
                 ) : (
-                  <p className="text-muted-foreground">No documents.</p>
+                  <p className="text-text-muted">No documents.</p>
                 )}
               </FieldSection>
             ) : null}
@@ -231,15 +243,15 @@ export function TaskSheet({ taskKey, onClose }: { taskKey: string; onClose: () =
             <FieldSection title="Comments">
               {record.data.comments.length ? (
                 record.data.comments.map((item) => (
-                  <article key={item.id} className="border-b border-border py-3">
+                  <article key={item.id} className="border-b border-border-default py-3">
                     <Markdown content={item.body} />
-                    <div className="mt-2 text-[11px] text-muted-foreground">
+                    <div className="mt-2 text-xs text-text-muted">
                       {relativeTime(item.created_at)}
                     </div>
                   </article>
                 ))
               ) : (
-                <p className="text-muted-foreground">No comments.</p>
+                <p className="text-text-muted">No comments.</p>
               )}
               {record.data.capabilities.comment.allowed ? (
                 <div className="space-y-2">
@@ -250,7 +262,9 @@ export function TaskSheet({ taskKey, onClose }: { taskKey: string; onClose: () =
                     placeholder="Add a comment"
                   />
                   {addComment.error ? (
-                    <p className="text-destructive">{addComment.error.message}</p>
+                    <p data-tone="error" className="text-status-text">
+                      {addComment.error.message}
+                    </p>
                   ) : null}
                   <Button
                     variant="primary"
@@ -268,19 +282,22 @@ export function TaskSheet({ taskKey, onClose }: { taskKey: string; onClose: () =
                 record.data.runs.map((run) => (
                   <div
                     key={`${run.id}:${run.agent}:${run.started_at}`}
-                    className="grid grid-cols-[4rem_1fr_auto] gap-3 border-b border-border py-2"
+                    className="grid grid-cols-[4rem_1fr_auto] gap-3 border-b border-border-default py-2"
                   >
                     <strong>#{run.id}</strong>
                     <span>
                       {run.agent ?? '-'} · {run.job ?? '-'}
                     </span>
-                    <span className={run.running ? 'text-live' : 'text-muted-foreground'}>
+                    <span
+                      data-tone={run.running ? 'success' : undefined}
+                      className={run.running ? 'text-status-text' : 'text-text-muted'}
+                    >
                       {run.running ? 'running' : relativeTime(run.ended_at)}
                     </span>
                   </div>
                 ))
               ) : (
-                <p className="text-muted-foreground">No delegated runs.</p>
+                <p className="text-text-muted">No delegated runs.</p>
               )}
             </FieldSection>
           </div>

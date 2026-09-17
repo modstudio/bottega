@@ -27,7 +27,7 @@ const surfaces = [
   ['surface-sunken', 'bg-surface-sunken'],
   ['control-hover', 'bg-control-hover'],
   ['control-selected', 'bg-control-selected'],
-  ['accent-fill', 'bg-accent-fill'],
+  ['accent-fill', 'bg-control-hover-fill'],
 ] as const
 
 const texts = [
@@ -287,7 +287,7 @@ export function DesignCatalog() {
           <Textarea
             aria-label="Code"
             code
-            defaultValue={'{\n  "kind": "adanim"\n}'}
+            defaultValue={'{\n"kind":"adanim"\n}'}
             className="max-w-md"
           />
         </Row>

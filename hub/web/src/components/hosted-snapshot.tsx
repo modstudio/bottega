@@ -29,7 +29,7 @@ export function SnapshotHeader({
       subtitle={`as of ${asOf(takenAt)}`}
       actions={
         machines.length > 1 ? (
-          <div className="flex items-center gap-2 text-sm text-muted-foreground">
+          <div className="flex items-center gap-2 text-sm text-text-muted">
             Machine
             <Select
               label="Machine"

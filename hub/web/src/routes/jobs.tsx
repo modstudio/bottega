@@ -18,7 +18,7 @@ export const Route = createFileRoute('/jobs')({
 
 const columns: CollectionColumn<JobRow>[] = [
   { id: 'name', label: 'Job', render: (row) => <strong>{row.name}</strong> },
-  { id: 'what', label: 'What', render: (row) => <span className="font-sans">{row.what}</span> },
+  { id: 'what', label: 'What', render: (row) => <span className="">{row.what}</span> },
   { id: 'needs', label: 'Needs', render: (row) => Object.keys(row.needs).join(', ') || '-' },
   { id: 'prefer', label: 'Prefers', render: (row) => row.prefer.join(', ') },
 ]
@@ -80,7 +80,11 @@ function JobsView({
       {header ?? (
         <PageHeader title="Jobs" subtitle="Code-declared work the orchestrator can route" />
       )}
-      {error ? <p className="text-destructive">{error.message}</p> : null}
+      {error ? (
+        <p data-tone="error" className="text-status-text">
+          {error.message}
+        </p>
+      ) : null}
       <Collection
         title="Job types"
         count={rows.length}
@@ -121,7 +125,9 @@ function JobsView({
                   <DisplayRow label="Findings" value={selected.findings ? 'yes' : 'no'} />
                 </>
               ) : (
-                <p className="text-destructive">Unknown job.</p>
+                <p data-tone="error" className="text-status-text">
+                  Unknown job.
+                </p>
               )}
             </Companion>
           ) : undefined

@@ -58,8 +58,12 @@ export function HostedProjects() {
   return (
     <section>
       <PageHeader title="Projects" subtitle={`${query.data?.length ?? 0} in this space`} />
-      {query.isPending ? <p className="text-muted-foreground">Loading projects...</p> : null}
-      {query.error ? <p className="text-destructive">{query.error.message}</p> : null}
+      {query.isPending ? <p className="text-text-muted">Loading projects...</p> : null}
+      {query.error ? (
+        <p data-tone="error" className="text-status-text">
+          {query.error.message}
+        </p>
+      ) : null}
       {query.data ? (
         <Collection
           title="Projects"

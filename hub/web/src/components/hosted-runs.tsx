@@ -90,7 +90,7 @@ function HostedRunsList() {
     {
       id: 'job',
       label: 'Job',
-      render: (row) => <span className="text-muted-foreground">{row.job}</span>,
+      render: (row) => <span className="text-text-muted">{row.job}</span>,
     },
     { id: 'status', label: 'Status', render: (row) => row.status },
     {
@@ -113,7 +113,7 @@ function HostedRunsList() {
     {
       id: 'open',
       label: '',
-      render: () => <ChevronRight size={14} className="text-muted-foreground" />,
+      render: () => <ChevronRight size={14} className="text-text-muted" />,
     },
   ]
 
@@ -149,7 +149,9 @@ function HostedRunsList() {
         }
       />
       {query.error ? (
-        <p className="text-destructive">could not load: {query.error.message}</p>
+        <p data-tone="error" className="text-status-text">
+          could not load: {query.error.message}
+        </p>
       ) : null}
       <Collection
         panel={panel}

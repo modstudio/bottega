@@ -98,13 +98,15 @@ function RunDetailPage({ id }: { id: string }) {
   if (detail.isPending)
     return (
       <Companion onClose={close} title={`Run ${id}`} subtitle="Loading run...">
-        <p className="text-muted-foreground">Loading...</p>
+        <p className="text-text-muted">Loading...</p>
       </Companion>
     )
   if (detail.error)
     return (
       <Companion onClose={close} title={`Run ${id}`}>
-        <p className="text-destructive">Could not load this run. {detail.error.message}</p>
+        <p data-tone="error" className="text-status-text">
+          Could not load this run. {detail.error.message}
+        </p>
       </Companion>
     )
   if (!run) return null
@@ -127,7 +129,7 @@ function RunDetailPage({ id }: { id: string }) {
         {run.fidelity ? ` \u00b7 ${run.fidelity}` : ''}, {relativeTime(run.scored_at!)}
       </strong>
       {run.note ? (
-        <span className="min-w-0 flex-1 truncate text-muted-foreground">- {run.note}</span>
+        <span className="min-w-0 flex-1 truncate text-text-muted">- {run.note}</span>
       ) : (
         <span className="flex-1" />
       )}
@@ -197,12 +199,16 @@ function RunDetailPage({ id }: { id: string }) {
       <DisplayRow label="Job" value={run.job} />
       <DisplayRow label="Project" value={run.project ?? '-'} />
       <DisplayRow label="Tokens" value={run.vendor_tokens?.toLocaleString() ?? '-'} />
-      {run.probe ? <p className="meta mb-3">Probe, not routing evidence.</p> : null}
+      {run.probe ? (
+        <p className="text-sm text-text-muted mb-3">Probe, not routing evidence.</p>
+      ) : null}
       {run.evidence_excluded ? (
-        <p className="meta mb-3">Not routing evidence: {run.evidence_excluded}</p>
+        <p className="text-sm text-text-muted mb-3">
+          Not routing evidence: {run.evidence_excluded}
+        </p>
       ) : null}
       {score.error ? (
-        <p className="mb-3 text-destructive">
+        <p data-tone="error" className="mb-3 text-status-text">
           Could not sign this run. {score.error.message} Check the selections and try again.
         </p>
       ) : null}
@@ -220,12 +226,12 @@ function DetailBlock({ label, value }: { label: string; value: string }) {
   return (
     <section>
       <div className="mb-2 flex items-center justify-between">
-        <h2 className="font-sans text-[15px] font-semibold">{label}</h2>
+        <h2 className="text-md font-semibold">{label}</h2>
         <IconButton size="sm" label={`Copy ${label.toLowerCase()}`} onClick={copy}>
           <Copy size={14} />
         </IconButton>
       </div>
-      <pre className="max-h-[70vh] overflow-auto whitespace-pre-wrap border border-border bg-muted p-3 text-[12.5px]">
+      <pre className="max-h-[70vh] overflow-auto whitespace-pre-wrap border border-border-default bg-surface-sunken p-3 text-sm">
         {value}
       </pre>
     </section>
