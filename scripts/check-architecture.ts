@@ -14,11 +14,7 @@ const manifestRules = new Set(architectureRules().forbidden.map(({ name }) => na
 const violations: string[] = []
 
 function isProductionTypeScript(path: string) {
-  return (
-    !/(^|\/)tests?\//.test(path) &&
-    !/\.(?:test|spec)\.[cm]?tsx?$/.test(path) &&
-    !/(^|\/)fixtures?\//.test(path)
-  )
+  return !/(^|\/)tests?\//.test(path) && !/\.(?:test|spec)\.[cm]?tsx?$/.test(path)
 }
 
 for (const root of [...CONCERNS, 'shared']) {

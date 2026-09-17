@@ -573,7 +573,9 @@ function architectureDependencyPath(target: string) {
   const escapedPath = packagePath.map((part) => part!.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'))
   const installed = `^node_modules/\\.bun/[^/]+/node_modules/${escapedPackage}/`
   const unresolved = exactArchitecturePath(target)
-  return escapedPath.length ? `${installed}${escapedPath.join('/')}(?:/|$)|${unresolved}` : installed
+  return escapedPath.length
+    ? `${installed}${escapedPath.join('/')}(?:/|$)|${unresolved}`
+    : installed
 }
 
 type ArchitectureRule = {
