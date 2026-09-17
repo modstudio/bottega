@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test'
-import { REVIEW_SCHEMA, VERIFY_CLAIM_SCHEMA } from './contract.ts'
+import { REVIEW_SCHEMA, VERIFY_CLAIM_SCHEMA } from './contract/contract.ts'
 import { preflight } from './dispatch/dispatch-preflight.ts'
 import { JOBS } from './jobs.ts'
 

@@ -19,7 +19,7 @@ import {
   resolveReplyDialect,
   type WorkerReply,
   workerPreamble,
-} from './contract.ts'
+} from './contract/contract.ts'
 import { db, enableSchemaReload, nowIso, sessionId, writableDb, writeTransaction } from './db.ts'
 import { preflight } from './dispatch/dispatch-preflight.ts'
 import { assessEvidencePrompt } from './evidence.ts'

@@ -4,7 +4,7 @@ import { readFileSync } from 'node:fs'
 import { importSpecifiers, repositoryRelativeImport } from './import-scanner.ts'
 
 const ROOT = new URL('..', import.meta.url).pathname.replace(/\/$/, '')
-const FILE = 'orchestrator/src/contract.ts'
+const FILE = 'orchestrator/src/contract/contract.ts'
 const source = readFileSync(`${ROOT}/${FILE}`, 'utf8')
 const violations: string[] = []
 const REVIEW_VOCABULARY_FILES = new Set([

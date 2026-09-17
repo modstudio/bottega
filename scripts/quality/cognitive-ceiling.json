@@ -205,13 +205,13 @@
     "score": 24
   },
   {
-    "file": "orchestrator/src/contract.ts",
+    "file": "orchestrator/src/contract/contract.ts",
     "function": "validatesSchema",
     "line": 714,
     "score": 24
   },
   {
-    "file": "orchestrator/src/contract.ts",
+    "file": "orchestrator/src/contract/contract.ts",
     "function": "parseWorkerReplyWithCount#3",
     "line": 756,
     "score": 29
