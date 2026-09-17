@@ -239,6 +239,7 @@ export function unscoredFiledIssueLoopRuns(): FiledIssueLoopRun[] {
       `SELECT r.id, r.job, r.label
        FROM run r LEFT JOIN score s ON s.run_id = r.id
        WHERE r.job IN ('diagnose','issue-worker','review-lens')
+         AND r.session_id IS NULL
          AND ${UNSCORED_WHERE}
        ORDER BY r.id`,
     )
