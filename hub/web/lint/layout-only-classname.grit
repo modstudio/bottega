@@ -8,7 +8,7 @@ or {
   JsxOpeningElement(name=$element, attributes=$attributes),
   JsxSelfClosingElement(name=$element, attributes=$attributes)
 } where {
-  $element <: r"(?:Badge|Identifier|Button|IconButton|Input|Textarea|Checkbox|Switch|Spinner|Kbd|Separator|Popover|Tooltip|Menu|Select|Dialog|Toaster|Pagination|AppShell|UserMenu|TableCard|ToolbarBand|Segmented|Companion|Docked|Sheet|PageHeader|SectionTitle|StatTile|StatRow|EmptyState|ProjectName|FieldSection|SettingBlock|DisplayRow|Copyable|Panel)",
+  $element <: r"(?:Badge|Identifier|Button|IconButton|Input|Textarea|Checkbox|Switch|Spinner|Kbd|Separator|Popover|Tooltip|Menu|Select|Dialog|Toaster|Pagination|AppShell|UserMenu|TableCard|ToolbarBand|Segmented|Companion|Docked|Sheet|PageHeader|SectionTitle|StatTile|StatRow|EmptyState|ProjectName|FieldSection|SettingBlock|DisplayRow|Copyable|Panel|Tabs)",
   $attributes <: some JsxAttribute(name=$name, initializer=$value) as $attribute where {
     $name <: `className`,
     $value <: r"[\s\S]*[^a-z0-9\[\]()./_-](?:bg|text|border|rounded|shadow|font|ring|outline|opacity|leading|tracking|p|px|py|pt|pr|pb|pl|ps|pe|fill|stroke|decoration|underline)(?:-|[^a-z-])[\s\S]*"

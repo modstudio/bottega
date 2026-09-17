@@ -5,7 +5,6 @@ import { useEffect, useMemo, useState } from 'react'
 import { Collection, type CollectionColumn } from '@/components/collection'
 import { PageHeader } from '@/components/design-system'
 import { HostedDocs } from '@/components/hosted-docs'
-import { Tabs, TabsList, TabsTrigger } from '@/components/tabs'
 import { compactBytes, relativeTime } from '@/lib/format'
 import { isHostedMode } from '@/lib/hub-mode'
 import { queryClient, trpc } from '@/trpc/client'
@@ -13,6 +12,7 @@ import { Button } from '@/ui/button/button'
 import { Dialog } from '@/ui/dialog/dialog'
 import { Input } from '@/ui/field/input'
 import { Select } from '@/ui/listbox/select'
+import { Segmented } from '@/ui/segmented/segmented'
 import { DOC_SCOPE_SUBJECT_KIND, DOC_SCOPES, type DocScope } from '../../../../shared/docs.ts'
 
 export { DOC_SCOPES, type DocScope }
@@ -178,16 +178,18 @@ function DocsList() {
             placeholder: 'Filter slug or title',
           }}
           filters={
-            <Tabs value={scopeFilter} onValueChange={setScopeFilter}>
-              <TabsList>
-                <TabsTrigger value="all">All</TabsTrigger>
-                {DOC_SCOPES.map((s) => (
-                  <TabsTrigger key={s} value={s}>
-                    {s.charAt(0).toUpperCase() + s.slice(1)}
-                  </TabsTrigger>
-                ))}
-              </TabsList>
-            </Tabs>
+            <Segmented
+              label="Scope"
+              value={scopeFilter}
+              onChange={setScopeFilter}
+              options={[
+                { value: 'all', label: 'All' },
+                ...DOC_SCOPES.map((s) => ({
+                  value: s,
+                  label: s.charAt(0).toUpperCase() + s.slice(1),
+                })),
+              ]}
+            />
           }
           columns={columns}
           rows={rows}

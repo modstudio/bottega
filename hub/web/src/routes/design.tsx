@@ -12,9 +12,7 @@ import {
   StatRow,
   StatTile,
 } from '@/components/design-system'
-import { Sheet } from '@/components/sheet'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/table'
-import { Tabs, TabsList, TabsTrigger } from '@/components/tabs'
 import { Badge } from '@/ui/badge/badge'
 import { Button } from '@/ui/button/button'
 import { Dialog } from '@/ui/dialog/dialog'
@@ -22,6 +20,8 @@ import { Input } from '@/ui/field/input'
 import { Copyable, DisplayRow, FieldSection, SettingBlock } from '@/ui/form-layout/form-layout'
 import { Select } from '@/ui/listbox/select'
 import { Segmented } from '@/ui/segmented/segmented'
+import { Sheet } from '@/ui/sheet/sheet'
+import { Tabs } from '@/ui/tabs/tabs'
 
 export const Route = createFileRoute('/design')({ component: DesignPage })
 
@@ -103,12 +103,15 @@ function DesignPage() {
 
       <SectionTitle>Selection</SectionTitle>
       <div className="flex flex-wrap items-center gap-4">
-        <Tabs value={tab} onValueChange={setTab}>
-          <TabsList>
-            <TabsTrigger value="one">First tab</TabsTrigger>
-            <TabsTrigger value="two">Second tab</TabsTrigger>
-          </TabsList>
-        </Tabs>
+        <Tabs
+          label="Sample sections"
+          value={tab}
+          onChange={setTab}
+          items={[
+            { value: 'one', label: 'Overview' },
+            { value: 'two', label: 'Runs', count: 12 },
+          ]}
+        />
         <Segmented
           label="Sample segmented control"
           value={segment}
