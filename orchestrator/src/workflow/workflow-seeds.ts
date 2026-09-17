@@ -2,13 +2,13 @@
 /** Knows the built-in workflow definitions and advances them by seed revision.
  * Must not know workflow commands, adapters, execution, or project state. */
 import type { Database } from 'bun:sqlite'
-import { nowIso, writeTransaction } from './db.ts'
+import { nowIso, writeTransaction } from '../db.ts'
 import {
   REVIEW_COVERAGE,
   REVIEW_LIMITS,
   REVIEW_OVERLAP,
   REVIEW_REPRODUCED,
-} from './review-vocabulary.ts'
+} from '../review-vocabulary.ts'
 
 const seedDefinition = (definition: unknown) => JSON.stringify(definition)
 

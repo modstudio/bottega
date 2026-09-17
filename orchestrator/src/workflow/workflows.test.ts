@@ -1,11 +1,11 @@
 import { Database } from 'bun:sqlite'
 import { describe, expect, test } from 'bun:test'
-import { applyMigrations } from './migrations.ts'
+import { applyMigrations } from '../migrations.ts'
 import {
   productionStepCatalogue,
   promoteStepCatalogue,
   setStepCatalogue,
-} from './step-catalogue.ts'
+} from '../step-catalogue.ts'
 import { seedWorkflows } from './workflow-seeds.ts'
 import {
   composeWorkflow,

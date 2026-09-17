@@ -39,7 +39,7 @@ import { answerCommand, continueCommand, retryCommand } from '../run-message-com
 import { spawnsCommand } from '../spawn-commands.ts'
 import { treeCreateCommand, treeRemoveCommand } from '../tree-commands.ts'
 import { treeRefreshCommand } from '../tree-refresh.ts'
-import { workflowCommand } from '../workflow-commands.ts'
+import { workflowCommand } from '../workflow/workflow-commands.ts'
 import { collect, log, productArgv, rawArgv, write, writeStdout } from './support.ts'
 
 const presentation = {

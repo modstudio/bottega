@@ -45,7 +45,7 @@ import {
 } from './porting/porting.ts'
 import { projectAt, projectByName, projects } from './projects.ts'
 import { getReview, listReviews } from './review.ts'
-import { composeWorkflow, getWorkflowStep, listWorkflows } from './workflows.ts'
+import { composeWorkflow, getWorkflowStep, listWorkflows } from './workflow/workflows.ts'
 
 const text = (value: unknown) => ({
   content: [

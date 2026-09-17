@@ -653,14 +653,14 @@
       "spawns": 0
     },
     {
-      "path": "orchestrator/src/workflow-seeds.test.ts",
+      "path": "orchestrator/src/workflow/workflow-seeds.test.ts",
       "wallMs": 97,
       "tests": 5,
       "cliShaped": false,
       "spawns": 0
     },
     {
-      "path": "orchestrator/src/workflows.test.ts",
+      "path": "orchestrator/src/workflow/workflows.test.ts",
       "wallMs": 88,
       "tests": 22,
       "cliShaped": false,
