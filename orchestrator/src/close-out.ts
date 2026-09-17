@@ -790,6 +790,33 @@ export function extractionRunId(row: { id: number }): number {
   return row.id
 }
 
+/** Every recorded spelling of each tree this conversation points at, keyed by each spelling. */
+function conversationWorktreeSpellings(rootId: number): Map<string, string[]> {
+  const rows = db()
+    .query(
+      `SELECT DISTINCT worktree FROM run
+        WHERE (id=? OR parent_run_id=?) AND worktree IS NOT NULL`,
+    )
+    .all(rootId, rootId) as { worktree: string }[]
+  const byPath = new Map<string, string[]>()
+  for (const { worktree } of rows) {
+    const spellings = [...new Set([worktree, ...worktreePathSpellings(db(), worktree)])]
+    for (const spelling of spellings) byPath.set(spelling, spellings)
+  }
+  return byPath
+}
+
+/**
+ * A pointer outlives its tree only while something may still use that tree. A
+ * failed close-out can fail after the removal itself, so a vanished directory
+ * clears the pointer too; otherwise a tree later created at the same path would
+ * be taken for this run's.
+ */
+function pointerMustClear(outcome: CloseOutResult['outcome'], worktree: string): boolean {
+  if (outcome === 'released' || outcome === 'forgotten') return true
+  return outcome === 'failed' && !existsSync(worktree)
+}
+
 /** Run one close-out attempt and retain its outcome for observation and retry. */
 export function closeOutRun(
   runId: number,
@@ -806,6 +833,9 @@ export function closeOutRun(
     .get(runId) as { root_id: number } | null
   if (!root) throw new Error(`no run ${runId}`)
   const keepTreeDecision = closeOutKeepTreeDecision(root.root_id, options.intent)
+  // Spellings are taken while the tree still exists, because a removed
+  // symlinked path no longer resolves to the identity its other rows share.
+  const spellingsBefore = conversationWorktreeSpellings(root.root_id)
   const result = attemptCloseOutRun(runId, { ...options, keepTreeDecision })
   if (!keepTreeDecision.held && 'expiredAt' in keepTreeDecision) {
     result.detail = `${result.detail}; keep-tree hold expired at ${keepTreeDecision.expiredAt}`
@@ -821,13 +851,15 @@ export function closeOutRun(
           WHERE id=?`,
         )
         .run(result.outcome, result.detail, settledAt, result.runId)
-      if ((result.outcome === 'released' || result.outcome === 'forgotten') && result.worktree) {
+      if (result.worktree && pointerMustClear(result.outcome, result.worktree)) {
+        const spellings = spellingsBefore.get(result.worktree) ?? [result.worktree]
         db()
           .query(
             `UPDATE run SET worktree=NULL
-             WHERE worktree=? AND (id=? OR parent_run_id=?)`,
+             WHERE (id=? OR parent_run_id=?)
+               AND worktree IN (${spellings.map(() => '?').join(',')})`,
           )
-          .run(result.worktree, result.runId, result.runId)
+          .run(result.runId, result.runId, ...spellings)
       }
       if (settled && settled !== 'claimed') {
         settleClaims(db(), {

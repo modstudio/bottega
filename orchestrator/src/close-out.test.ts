@@ -20,7 +20,7 @@ function spawnResult(stdout = '', exitCode = 0): ReturnType<typeof Bun.spawnSync
   } as ReturnType<typeof Bun.spawnSync>
 }
 
-function closeOutFixture(ownership: 'owned' | 'attached') {
+function closeOutFixture(ownership: 'owned' | 'attached', retainedRefDeleteFails = false) {
   const id = addRun({ agent: 'codex', job: 'implement', status: 'ok' })
   const project = `close-out-${id}`
   const repo = join(dir, project)
@@ -46,6 +46,9 @@ function closeOutFixture(ownership: 'owned' | 'attached') {
       rmSync(tree, { recursive: true, force: true })
       return spawnResult()
     }
+    if (retainedRefDeleteFails && args[0] === 'update-ref' && args[1] === '-d') {
+      return spawnResult('', 1)
+    }
     if (args.includes('--git-common-dir')) return spawnResult('.git')
     if (args.includes('--is-inside-work-tree')) return spawnResult('true')
     if (args[0] === 'worktree' && args[1] === 'list') {
@@ -53,7 +56,9 @@ function closeOutFixture(ownership: 'owned' | 'attached') {
     }
     if (args[0] === 'symbolic-ref') return spawnResult(branch)
     if (args[0] === 'status' || args[0] === 'diff') return spawnResult()
-    if (args[0] === 'rev-list' && args.includes('--count')) return spawnResult('0')
+    if (args[0] === 'rev-list' && args.includes('--count')) {
+      return spawnResult(retainedRefDeleteFails ? '1' : '0')
+    }
     if (args[0] === 'merge-base' || args[0] === 'rev-parse' || args[0] === 'show-ref') {
       return spawnResult(head)
     }
@@ -96,6 +101,38 @@ test('a recreated released tree path survives a second close-out', () => {
 
     expect(second.outcome).toBe('absent')
     expect(existsSync(join(fixture.tree, 'replacement'))).toBe(true)
+  } finally {
+    rmSync(fixture.repo, { recursive: true, force: true })
+  }
+})
+
+test('a released tree clears a child turn that spells the same path differently', () => {
+  const fixture = closeOutFixture('owned')
+  try {
+    const child = addRun({ agent: 'codex', job: 'implement', status: 'ok' })
+    db()
+      .query('UPDATE run SET parent_run_id=?, worktree=? WHERE id=?')
+      .run(fixture.id, `${fixture.tree}/`, child)
+
+    expect(closeOutRun(fixture.id, { intent: 'terminal' }).outcome).toBe('released')
+    expect(db().query('SELECT worktree FROM run WHERE id=?').get(child)).toEqual({
+      worktree: null,
+    })
+  } finally {
+    rmSync(fixture.repo, { recursive: true, force: true })
+  }
+})
+
+test('a close-out that fails after removing the tree still clears its pointer', () => {
+  const fixture = closeOutFixture('owned', true)
+  try {
+    const result = closeOutRun(fixture.id, { intent: 'terminal' })
+
+    expect(result.outcome).toBe('failed')
+    expect(existsSync(fixture.tree)).toBe(false)
+    expect(db().query('SELECT worktree FROM run WHERE id=?').get(fixture.id)).toEqual({
+      worktree: null,
+    })
   } finally {
     rmSync(fixture.repo, { recursive: true, force: true })
   }
