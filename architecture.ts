@@ -347,7 +347,7 @@ export const modules: ArchitectureModule[] = [
     './git-environment.ts',
     './idle-kill.ts',
     './jobs.ts',
-    './mailbox.ts',
+    './mailbox/mailbox.ts',
     './outcome.ts',
     './project-lock.ts',
     './run-process.ts',
