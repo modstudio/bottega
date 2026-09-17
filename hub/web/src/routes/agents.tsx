@@ -2,7 +2,7 @@ import { useQuery } from '@tanstack/react-query'
 import { createFileRoute, useNavigate } from '@tanstack/react-router'
 import { useMemo, useState } from 'react'
 import { Collection, type CollectionColumn } from '@/components/collection'
-import { SnapshotHeader } from '@/components/hosted-snapshot'
+import { SnapshotEmpty, SnapshotHeader } from '@/components/hosted-snapshot'
 import { isHostedMode } from '@/lib/hub-mode'
 import { type AgentRow, trpc } from '@/trpc/client'
 import { Companion } from '@/ui/companion/companion'
@@ -40,6 +40,7 @@ function AgentsPage() {
 function HostedAgentsPage() {
   const [machineId, setMachineId] = useState<string>()
   const query = useQuery(trpc.record.agents.queryOptions({ machineId }))
+  if (!query.isPending && !query.error && !query.data) return <SnapshotEmpty title="Agents" />
   return (
     <AgentsView
       data={query.data?.data}

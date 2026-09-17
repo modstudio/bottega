@@ -1,4 +1,6 @@
 import { describe, expect, spyOn, test } from 'bun:test'
+import { z } from 'zod'
+import { OrchAgentDefinitionSchema } from '../../../shared/orch-contract.ts'
 import { createMemoryRecordApiClient } from '../../test/fixtures/record-api.ts'
 import { agentsCommand } from '../agent/agent-commands.ts'
 import { blockersCommand, healthCommand } from '../health-commands.ts'
@@ -31,6 +33,13 @@ describe('record snapshot payloads', () => {
       expect(await buildSnapshotPayload(item.kind)).toEqual(JSON.parse(output.join('\n')))
     }
     clock.mockRestore()
+  })
+
+  test('the real agents payload satisfies the hosted client schema', async () => {
+    const result = z
+      .array(OrchAgentDefinitionSchema)
+      .safeParse(await buildSnapshotPayload('agents'))
+    expect(result.success).toBe(true)
   })
 
   test('one failed kind does not stop the remaining publishes and makes the command fail', async () => {

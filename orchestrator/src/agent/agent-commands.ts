@@ -169,12 +169,16 @@ export async function agentsCommand(json: boolean, presentation: Presentation): 
 
 export async function agentsPayload() {
   await ensureLocalHealth()
-  return Object.values(AGENTS).map((agent) => ({
-    name: agent.name,
-    caps: agent.caps,
-    model: agent.model,
-    contextTokens: Number.isFinite(agent.contextTokens) ? agent.contextTokens : null,
-    maxPromptBytes: Number.isFinite(agent.maxPromptBytes) ? agent.maxPromptBytes : null,
-    timeoutMs: agent.timeoutMs,
-  }))
+  return Object.values(AGENTS).map((agent) => {
+    const caps = { ...agent.caps } as Record<string, boolean | number | null>
+    delete caps.contextTokens
+    return {
+      name: agent.name,
+      caps,
+      model: agent.model,
+      contextTokens: Number.isFinite(agent.contextTokens) ? agent.contextTokens : null,
+      maxPromptBytes: Number.isFinite(agent.maxPromptBytes) ? agent.maxPromptBytes : null,
+      timeoutMs: agent.timeoutMs,
+    }
+  })
 }

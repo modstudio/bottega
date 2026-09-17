@@ -1,6 +1,6 @@
 import { useQuery } from '@tanstack/react-query'
 import { useState } from 'react'
-import { SnapshotHeader } from '@/components/hosted-snapshot'
+import { SnapshotEmpty, SnapshotHeader } from '@/components/hosted-snapshot'
 import { HealthView, RoutingView } from '@/components/insight-view'
 import { trpc } from '@/trpc/client'
 
@@ -14,6 +14,7 @@ export function HostedRouting() {
         could not load: {query.error.message}
       </p>
     )
+  if (!query.data) return <SnapshotEmpty title="Routing" />
   return (
     <section>
       <SnapshotHeader
@@ -38,6 +39,7 @@ export function HostedHealth() {
         could not load: {query.error.message}
       </p>
     )
+  if (!query.data) return <SnapshotEmpty title="Health" />
   return (
     <section>
       <SnapshotHeader

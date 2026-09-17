@@ -64,13 +64,21 @@ const workInput = z.object({
   }),
 })
 
-function requiredSnapshot<T extends { machineId: string; takenAt: string }>(
+function optionalSnapshot<T extends { machineId: string; takenAt: string }>(
   items: T[],
+  ignored: string[],
+  kind: string,
   machineId?: string,
 ) {
   const selection = selectSnapshot(items, machineId)
   if (selection) return selection
-  throw new TRPCError({ code: 'NOT_FOUND', message: 'No snapshot is available for this machine' })
+  const refusal = ignored.find((message) => message.startsWith(`${kind} snapshot ignored:`))
+  if (refusal)
+    throw new TRPCError({
+      code: 'INTERNAL_SERVER_ERROR',
+      message: `${refusal}\ncleared by: correct the named field and run orch record publish`,
+    })
+  return null
 }
 
 export const recordRouter = t.router({
@@ -210,7 +218,9 @@ export const recordRouter = t.router({
   routing: t.procedure.input(machineInput).query(async ({ ctx, input }) => {
     const snapshots = await recordClient(ctx).snapshots()
     const states = snapshots.items.filter((item) => item.kind === 'state')
-    const { selected, machines } = requiredSnapshot(states, input.machineId)
+    const selection = optionalSnapshot(states, snapshots.ignored, 'state', input.machineId)
+    if (!selection) return null
+    const { selected, machines } = selection
     const blockers = snapshots.items
       .filter((item) => item.kind === 'blockers')
       .find((item) => item.machineId === selected.machineId)
@@ -224,10 +234,14 @@ export const recordRouter = t.router({
   }),
   health: t.procedure.input(machineInput).query(async ({ ctx, input }) => {
     const snapshots = await recordClient(ctx).snapshots()
-    const { selected, machines } = requiredSnapshot(
+    const selection = optionalSnapshot(
       snapshots.items.filter((item) => item.kind === 'health'),
+      snapshots.ignored,
+      'health',
       input.machineId,
     )
+    if (!selection) return null
+    const { selected, machines } = selection
     return {
       machineId: selected.machineId,
       takenAt: selected.takenAt,
@@ -237,10 +251,14 @@ export const recordRouter = t.router({
   }),
   jobs: t.procedure.input(machineInput).query(async ({ ctx, input }) => {
     const snapshots = await recordClient(ctx).snapshots()
-    const { selected, machines } = requiredSnapshot(
+    const selection = optionalSnapshot(
       snapshots.items.filter((item) => item.kind === 'jobs'),
+      snapshots.ignored,
+      'jobs',
       input.machineId,
     )
+    if (!selection) return null
+    const { selected, machines } = selection
     return {
       machineId: selected.machineId,
       takenAt: selected.takenAt,
@@ -250,10 +268,14 @@ export const recordRouter = t.router({
   }),
   agents: t.procedure.input(machineInput).query(async ({ ctx, input }) => {
     const snapshots = await recordClient(ctx).snapshots()
-    const { selected, machines } = requiredSnapshot(
+    const selection = optionalSnapshot(
       snapshots.items.filter((item) => item.kind === 'agents'),
+      snapshots.ignored,
+      'agents',
       input.machineId,
     )
+    if (!selection) return null
+    const { selected, machines } = selection
     return {
       machineId: selected.machineId,
       takenAt: selected.takenAt,

@@ -2,6 +2,7 @@ import { TRPCError } from '@trpc/server'
 import { z } from 'zod'
 import {
   HarnessHealthSchema,
+  OrchAgentDefinitionSchema,
   OrchBlockersSchema,
   OrchStateSchema,
 } from '../../shared/orch-contract.ts'
@@ -123,15 +124,6 @@ const jobSchema = z.object({
   findings: z.boolean(),
 })
 
-const agentSchema = z.object({
-  name: z.string(),
-  caps: z.record(z.string(), z.boolean()),
-  model: z.string(),
-  contextTokens: z.number().nullable(),
-  maxPromptBytes: z.number().nullable(),
-  timeoutMs: z.number(),
-})
-
 const snapshotBase = {
   id: z.string().uuid(),
   machineId: z.string().uuid(),
@@ -143,10 +135,34 @@ const snapshotSchema = z.discriminatedUnion('kind', [
   z.object({ ...snapshotBase, kind: z.literal('blockers'), payload: OrchBlockersSchema }),
   z.object({ ...snapshotBase, kind: z.literal('health'), payload: HarnessHealthSchema }),
   z.object({ ...snapshotBase, kind: z.literal('jobs'), payload: z.array(jobSchema) }),
-  z.object({ ...snapshotBase, kind: z.literal('agents'), payload: z.array(agentSchema) }),
+  z.object({
+    ...snapshotBase,
+    kind: z.literal('agents'),
+    payload: z.array(OrchAgentDefinitionSchema),
+  }),
 ])
 
-const snapshotsSchema = z.object({ items: z.array(snapshotSchema) })
+function snapshotKind(value: unknown) {
+  if (!value || typeof value !== 'object') return 'unknown'
+  const kind = (value as Record<string, unknown>).kind
+  return typeof kind === 'string' ? kind : 'unknown'
+}
+
+function snapshotIssue(value: unknown, issue: z.core.$ZodIssue) {
+  const path = issue.path.map(String).join('.') || '(root)'
+  return `${snapshotKind(value)} snapshot ignored: ${path} ${issue.message}`
+}
+
+const snapshotsSchema = z.object({ items: z.array(z.unknown()) }).transform(({ items }) => {
+  const accepted: z.infer<typeof snapshotSchema>[] = []
+  const ignored: string[] = []
+  for (const item of items) {
+    const parsed = snapshotSchema.safeParse(item)
+    if (parsed.success) accepted.push(parsed.data)
+    else ignored.push(...parsed.error.issues.map((issue) => snapshotIssue(item, issue)))
+  }
+  return { items: accepted, ignored }
+})
 
 const docSchema = z.object({
   id: z.string().uuid(),
