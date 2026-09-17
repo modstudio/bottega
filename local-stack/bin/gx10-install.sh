@@ -13,25 +13,18 @@ set -uo pipefail
 GO=0; [[ "${1:-}" == "--go" ]] && GO=1
 MODEL="${MODEL:-Qwen/Qwen3.6-35B-A3B-FP8}"
 PORT="${PORT:-8000}"          # on the host; the client tunnels a local port here
-IMAGE="${IMAGE:-vllm/vllm-openai:cu130-nightly}"   # public, arm64, no NGC login needed
-# Where the weights actually are. This said /opt/models, which does not
-# exist on the box — the script would have failed at the bind mount.
+# Why this image: orch doc show local-model-host-hardware --scope machine
+IMAGE="${IMAGE:-vllm/vllm-openai:cu130-nightly}"
+# Models path on this host: orch doc show local-model-host-hardware --scope machine
 : "${MODELS_DIR:?set MODELS_DIR to the models directory on the host}"
-# NVIDIA's own playbook figure for this model on unified memory. The pool is
-# shared with the OS, so this is a carve-out from the same 128 GB, not a
-# separate budget — too high takes down the box, not just the server.
-GPU_UTIL="${GPU_UTIL:-0.50}"  # 35GB of FP8 weights need ~59GB to leave KV room
+# GPU_UTIL on this host: orch doc show local-model-host-hardware --scope machine
+GPU_UTIL="${GPU_UTIL:-0.50}"
 # The context window, and it is a ROUTING input: a job whose working set will not
 # fit excludes this agent outright, so the number here decides what the local
 # model is allowed to do. Keep it in step with LOCAL_CONTEXT_TOKENS in
 # src/agent/agents.ts — `orch doctor` reads the served value back and reports a
 # mismatch rather than letting the two drift.
-#
-# It was left unset, so this took vLLM's default and the running server had been
-# hand-started at 65,536 — which excluded the local model from review-lens and
-# understand, 74% of all delegated work. Measured at 131,072 and the same
-# GPU_UTIL: a 233,376-token KV cache, 6.91 concurrent full-length requests. The
-# old ceiling had a factor of three in hand.
+# Why 131072 on this host: orch doc show local-model-host-hardware --scope machine
 MAX_LEN="${MAX_LEN:-131072}"
 
 ok=1
