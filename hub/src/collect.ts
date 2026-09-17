@@ -4,6 +4,7 @@ import { ingestRuns } from './ingest/runs.ts'
 import { ingestTrackers, type TrackerResult, trackerProjects } from './ingest/trackers.ts'
 import { ingestTranscripts } from './ingest/transcripts.ts'
 import { rollUpDays } from './query.ts'
+import { syncEvidence } from './sync.ts'
 import { hoursAgo } from './time.ts'
 
 /**
@@ -221,6 +222,13 @@ export async function collectSlow(scheduled = false) {
   const results = due?.size === 0 ? [] : await ingestTrackers(due)
   if (scheduled) for (const result of results) trackerSchedule.record(result)
   stamp('collect.slow.at')
+  if (process.env.HUB_HOSTED_URL) {
+    try {
+      await syncEvidence()
+    } catch (error) {
+      console.error(`hub: evidence sync failed: ${(error as Error).message}`)
+    }
+  }
 }
 
 /**

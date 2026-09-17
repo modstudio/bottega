@@ -1,6 +1,7 @@
 import { existsSync } from 'node:fs'
 import { fetchRequestHandler } from '@trpc/server/adapters/fetch'
 import { resolveAppStatic } from './app-static.ts'
+import { evidenceApi } from './evidence-api.ts'
 import { createContext } from './trpc/context.ts'
 import { hostedRouter } from './trpc/hosted-router.ts'
 
@@ -9,11 +10,13 @@ type ServerEnvironment = Record<string, string | undefined>
 export function hostedServerConfig(environment: ServerEnvironment = process.env) {
   const recordApiUrl = environment.HUB_RECORD_API_URL
   if (!recordApiUrl) throw new Error('HUB_RECORD_API_URL is required')
+  const recordDatabaseUrl = environment.HUB_RECORD_DATABASE_URL
+  if (!recordDatabaseUrl) throw new Error('HUB_RECORD_DATABASE_URL is required')
   const port = Number(environment.PORT ?? '3000')
   if (!Number.isInteger(port) || port < 0 || port > 65_535) {
     throw new Error('PORT must be an integer from 0 through 65535')
   }
-  return { port, hostname: '0.0.0.0', recordApiUrl }
+  return { port, hostname: '0.0.0.0', recordApiUrl, recordDatabaseUrl }
 }
 
 function startHostedServer(environment: ServerEnvironment = process.env) {
@@ -25,6 +28,8 @@ function startHostedServer(environment: ServerEnvironment = process.env) {
     async fetch(req) {
       const url = new URL(req.url)
       if (url.pathname === '/health') return Response.json({ ok: true })
+      const evidence = await evidenceApi(req, config)
+      if (evidence) return evidence
       if (url.pathname.startsWith('/trpc')) {
         return fetchRequestHandler({
           endpoint: '/trpc',

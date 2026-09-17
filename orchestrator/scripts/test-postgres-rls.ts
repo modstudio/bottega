@@ -107,17 +107,29 @@ try {
   })
   if (rls !== 0) process.exitCode = rls
   else if (!falsify) {
-    process.exitCode = await run(
-      ['bun', 'test', '--timeout', '120000', 'src/postgres-import.test.ts'],
-      {
-        ORCH_TEST_POSTGRES_CONTAINER: container,
+    const remigrate = await run(['bun', 'src/orch.ts', 'record', 'migrate'], {
+      ORCH_RECORD_MIGRATE_URL: ownerUrl,
+    })
+    if (remigrate !== 0) process.exitCode = remigrate
+    else {
+      const evidence = await run(['bun', 'run', '--cwd', '../hub', 'test:postgres'], {
         ORCH_TEST_POSTGRES_URL: `postgres://postgres:postgres@127.0.0.1:${port}/postgres`,
-        ORCH_RECORD_MIGRATE_URL: ownerUrl,
         ORCH_RECORD_URL: actorUrl,
-        ORCH_TEST_SOURCE_ORCH_DB: sourceOrchDb,
-        ORCH_TEST_SOURCE_HUB_DB: sourceHubDb,
-      },
-    )
+      })
+      if (evidence !== 0) process.exitCode = evidence
+      else
+        process.exitCode = await run(
+          ['bun', 'test', '--timeout', '120000', 'src/postgres-import.test.ts'],
+          {
+            ORCH_TEST_POSTGRES_CONTAINER: container,
+            ORCH_TEST_POSTGRES_URL: `postgres://postgres:postgres@127.0.0.1:${port}/postgres`,
+            ORCH_RECORD_MIGRATE_URL: ownerUrl,
+            ORCH_RECORD_URL: actorUrl,
+            ORCH_TEST_SOURCE_ORCH_DB: sourceOrchDb,
+            ORCH_TEST_SOURCE_HUB_DB: sourceHubDb,
+          },
+        )
+    }
   }
 } finally {
   if (started) {

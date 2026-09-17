@@ -37,7 +37,14 @@ const actorUrl = process.env.ORCH_RECORD_URL
 const recordFolder = join(import.meta.dir, '..', '..', 'shared', 'record')
 const migrationsFolder = join(recordFolder, 'migrations')
 const postgresSchema =
-  ['schema.ts', 'schema-auth.ts', 'schema-run.ts', 'schema-review.ts', 'schema-landing.ts']
+  [
+    'schema.ts',
+    'schema-auth.ts',
+    'schema-run.ts',
+    'schema-review.ts',
+    'schema-landing.ts',
+    'schema-hub.ts',
+  ]
     .map((file) => readFileSync(join(recordFolder, file), 'utf8'))
     .join('\n') + readFileSync(join(recordFolder, 'schema-docs.ts'), 'utf8')
 const migration = readdirSync(migrationsFolder, { withFileTypes: true })
@@ -146,6 +153,8 @@ describe('Postgres substrate shape', () => {
       'test_flake',
       'seq',
       'invitation',
+      'hub_day',
+      'hub_interval',
     ]) {
       expect(migration).toContain(`ALTER TABLE "${table}" ENABLE ROW LEVEL SECURITY`)
       expect(migration).toContain(`ALTER TABLE "${table}" FORCE ROW LEVEL SECURITY`)
@@ -366,7 +375,7 @@ realPostgres('RLS proof against real Postgres', () => {
       'postgres',
       'postgres',
       `
-      DROP TABLE IF EXISTS invitation, verification, account, session, test_flake, contention, landing_review_carry, landing_override, landing, review_finding, review_lens, review, run_exclusion, run_score, run, doc_revision, doc, membership, machine, seq, project, "user", space CASCADE;
+      DROP TABLE IF EXISTS invitation, verification, account, session, test_flake, contention, landing_review_carry, landing_override, landing, review_finding, review_lens, review, run_exclusion, run_score, run, doc_revision, doc, hub_interval, hub_day, membership, machine, seq, project, "user", space CASCADE;
       DROP SCHEMA IF EXISTS drizzle CASCADE;
     `,
     )
