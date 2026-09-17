@@ -29,6 +29,10 @@
         <string>/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin:__HOME__/.local/bin</string>
         <key>HOME</key>
         <string>__HOME__</string>
+        <!-- Hosted hub for `hub sync` after slow passes; empty disables it.
+             Filled from HUB_HOSTED_URL when hub/bin/install-launchd.sh runs. -->
+        <key>HUB_HOSTED_URL</key>
+        <string>__HUB_HOSTED_URL__</string>
     </dict>
 
     <key>WorkingDirectory</key>

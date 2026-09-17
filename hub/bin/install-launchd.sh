@@ -34,7 +34,7 @@ for tmpl in "$REPO"/hub/launchd/*.plist.template; do
   LABEL="$(basename "$tmpl" .plist.template)"
   TARGET="$AGENTS_DIR/$LABEL.plist"
   unload "$LABEL"
-  sed -e "s#__REPO__#${REPO}#g" -e "s#__HOME__#${HOME}#g" "$tmpl" > "$TARGET"
+  sed -e "s#__REPO__#${REPO}#g" -e "s#__HOME__#${HOME}#g" -e "s#__HUB_HOSTED_URL__#${HUB_HOSTED_URL:-}#g" "$tmpl" > "$TARGET"
   # One job failing must not leave the others uninstalled, which is exactly what
   # happened the first time this ran.
   if launchctl bootstrap "gui/$UID_NUM" "$TARGET" 2>/dev/null; then
