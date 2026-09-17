@@ -2,7 +2,7 @@ import { existsSync } from 'node:fs'
 import { fetchRequestHandler } from '@trpc/server/adapters/fetch'
 import { engagedMs, human, human as humanMs } from '../../shared/interval.ts'
 import type { OrchBlockers } from '../../shared/orch-contract.ts'
-import { resolveAppStatic } from './app-static.ts'
+import { appStaticPath, resolveAppStatic } from './app-static.ts'
 import { attributeRun } from './attribute.ts'
 import { collectFast, collectSlow, leaseHolder, watch, withLease } from './collect.ts'
 import { db, enableSchemaReload, nowIso } from './db.ts'
@@ -687,9 +687,16 @@ export function serve(port: number) {
           headers: { 'content-type': 'text/plain; charset=utf-8' },
         })
       }
-      const file = Bun.file(dist + resolved.relativePath)
-      if (resolved.kind === 'file' && !(await file.exists())) {
-        return new Response('not found', { status: 404 })
+      const file = Bun.file(appStaticPath(dist, resolved))
+      if (!(await file.exists())) {
+        // The index is checked too: streaming a missing file sends 200 headers
+        // first and fails mid-body, which reads as a broken page, not an error.
+        return resolved.kind === 'file'
+          ? new Response('not found', { status: 404 })
+          : new Response('hub/web is not built: cd hub/web && bun run build', {
+              status: 503,
+              headers: { 'content-type': 'text/plain; charset=utf-8' },
+            })
       }
       return new Response(file)
     },
