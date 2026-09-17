@@ -140,6 +140,8 @@ export const modules: ArchitectureModule[] = [
   ]),
   module('orchestrator/src/monitor-types.ts', ['./review-vocabulary.ts']),
   module('orchestrator/src/postgres-migrate.ts', []),
+  module('shared/gate-timing-directory.ts', ['./brand.ts', './state-directory.ts']),
+  module('shared/state-directory.ts', ['./brand.ts']),
   module('shared/record/schema.ts', ['../brand.ts']),
   module('shared/record-session.ts', ['./brand.ts']),
   module('orchestrator/src/record-command.ts', [
