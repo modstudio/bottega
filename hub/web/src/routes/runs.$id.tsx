@@ -4,12 +4,12 @@ import { Copy } from 'lucide-react'
 import { useEffect, useState } from 'react'
 import { DisplayRow } from '@/components/fields'
 import { HostedRunDetail } from '@/components/hosted-run-detail'
-import { Sheet } from '@/components/sheet'
 import { duration, relativeTime } from '@/lib/format'
 import { isHostedMode } from '@/lib/hub-mode'
 import { queryClient, trpc } from '@/trpc/client'
 import { Badge } from '@/ui/badge/badge'
 import { Button, IconButton } from '@/ui/button/button'
+import { Companion } from '@/ui/companion/companion'
 import { Input } from '@/ui/field/input'
 import { Segmented } from '@/ui/segmented/segmented'
 
@@ -97,15 +97,15 @@ function RunDetailPage({ id }: { id: string }) {
   const close = () => void navigate({ to: '/runs' })
   if (detail.isPending)
     return (
-      <Sheet open onClose={close} title={`Run ${id}`} subtitle="Loading run...">
+      <Companion onClose={close} title={`Run ${id}`} subtitle="Loading run...">
         <p className="text-muted-foreground">Loading...</p>
-      </Sheet>
+      </Companion>
     )
   if (detail.error)
     return (
-      <Sheet open onClose={close} title={`Run ${id}`}>
+      <Companion onClose={close} title={`Run ${id}`}>
         <p className="text-destructive">Could not load this run. {detail.error.message}</p>
-      </Sheet>
+      </Companion>
     )
   if (!run) return null
 
@@ -179,8 +179,7 @@ function RunDetailPage({ id }: { id: string }) {
     </div>
   )
   return (
-    <Sheet
-      open
+    <Companion
       onClose={close}
       title={`Run ${id}`}
       subtitle={subtitle}
@@ -212,7 +211,7 @@ function RunDetailPage({ id }: { id: string }) {
         <DetailBlock label="Prompt" value={run.prompt || '(Prompt unavailable.)'} />
         <DetailBlock label="Reply" value={run.output || '(Nothing came back.)'} />
       </div>
-    </Sheet>
+    </Companion>
   )
 }
 

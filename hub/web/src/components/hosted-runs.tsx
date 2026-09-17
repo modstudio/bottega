@@ -1,10 +1,11 @@
 import { useQuery } from '@tanstack/react-query'
-import { Outlet, useNavigate } from '@tanstack/react-router'
+import { useNavigate } from '@tanstack/react-router'
 import { ChevronRight } from 'lucide-react'
 import { useState } from 'react'
 import { Collection, type CollectionColumn } from '@/components/collection'
 import { PageHeader, ProjectMark } from '@/components/design-system'
 import { hostedProjectColors } from '@/components/hosted-projects'
+import { useDetailPanel } from '@/lib/detail-panel'
 import { duration } from '@/lib/format'
 import { runEasternTime } from '@/lib/run-search'
 import { verdictTone } from '@/lib/verdict-tone'
@@ -36,15 +37,11 @@ function ScoreBadge({ score, status }: { score: HostedRun['score']; status: stri
 }
 
 export function HostedRuns() {
-  return (
-    <>
-      <HostedRunsList />
-      <Outlet />
-    </>
-  )
+  return <HostedRunsList />
 }
 
 function HostedRunsList() {
+  const panel = useDetailPanel()
   const navigate = useNavigate()
   const [draft, setDraft] = useState({ project: '', agent: '', status: '' })
   const [filters, setFilters] = useState(draft)
@@ -155,6 +152,7 @@ function HostedRunsList() {
         <p className="text-destructive">could not load: {query.error.message}</p>
       ) : null}
       <Collection
+        panel={panel}
         title="Runs"
         count={rows.length}
         columns={columns}

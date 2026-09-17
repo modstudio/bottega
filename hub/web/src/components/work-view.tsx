@@ -1,7 +1,7 @@
 import { keepPreviousData, useQuery } from '@tanstack/react-query'
 import { Link, useNavigate } from '@tanstack/react-router'
 import { ArrowDown, ArrowUp, ChevronRight } from 'lucide-react'
-import { useEffect, useMemo, useState } from 'react'
+import { type ReactNode, useEffect, useMemo, useState } from 'react'
 import { Collection, type CollectionChildRow, type CollectionColumn } from '@/components/collection'
 import {
   EmptyState,
@@ -19,11 +19,13 @@ import {
 } from '@/components/design-system'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/table'
 import { useNow } from '@/lib/clock'
+import { useDetailPanel } from '@/lib/detail-panel'
 import { compactTokens, duration, relativeTime, vendorFigures } from '@/lib/format'
 import { taskStatusLook } from '@/lib/task-status'
 import { setWorkCounts, useWindowState } from '@/lib/window'
 import { type BoardResponse, type FlightResponse, trpc } from '@/trpc/client'
 import { Badge } from '@/ui/badge/badge'
+import { Docked } from '@/ui/companion/companion'
 import { Input } from '@/ui/field/input'
 import { Identifier } from '@/ui/identifier/identifier'
 import { Segmented } from '@/ui/segmented/segmented'
@@ -161,12 +163,14 @@ function TaskTable({
   fetchedAt,
   facets,
   onDropdown,
+  panel,
 }: {
   rows: TaskRow[]
   from: WorkName
   fetchedAt: number
   facets: Facets
   onDropdown: (open: boolean) => void
+  panel?: ReactNode
 }) {
   const navigate = useNavigate()
   const filters = useWindowFilters({ ...facets, onOpenChange: onDropdown })
@@ -257,6 +261,7 @@ function TaskTable({
       count={sorted.length}
       filters={filters.controls}
       filtersActive={filters.active}
+      panel={panel}
       columns={collectionColumns}
       rows={sorted}
       getKey={(row) => row.key!}
@@ -346,11 +351,13 @@ function TaskContent({
   data,
   fetchedAt,
   onDropdown,
+  panel,
 }: {
   name: WorkName
   data: TaskData
   fetchedAt: number
   onDropdown: (open: boolean) => void
+  panel?: ReactNode
 }) {
   const window = useWindowState()
   const tasks = data.rows.filter((row) => row.key)
@@ -366,6 +373,7 @@ function TaskContent({
           fetchedAt={fetchedAt}
           facets={data.facets}
           onDropdown={onDropdown}
+          panel={panel}
         />
       ) : (
         <EmptyState
@@ -454,6 +462,7 @@ export function TaskView({ name }: { name: WorkName }) {
     refetchInterval: menus ? false : 10_000,
   })
   const dropdown = (open: boolean) => setMenus((count) => Math.max(0, count + (open ? 1 : -1)))
+  const panel = useDetailPanel()
   if (query.isPending) return <p className="text-muted-foreground">Loading {name}...</p>
   if (query.error) return <p className="text-destructive">{query.error.message}</p>
   return (
@@ -469,6 +478,7 @@ export function TaskView({ name }: { name: WorkName }) {
         data={query.data.data}
         fetchedAt={query.dataUpdatedAt}
         onDropdown={dropdown}
+        panel={panel}
       />
     </section>
   )
@@ -526,6 +536,7 @@ function BoardCardView({ card }: { card: BoardCard }) {
 
 export function BoardView() {
   const navigate = useNavigate()
+  const boardPanel = useDetailPanel()
   const window = useWindowState()
   const [menus, setMenus] = useState(0)
   const [settings, setSettings] = useState(readBoardSettings)
@@ -597,146 +608,150 @@ export function BoardView() {
         onDropdown={dropdown}
         headerFilters
       />
-      <div className="mb-4 flex flex-wrap items-center gap-3">
-        <Input
-          className="h-8 w-52"
-          type="search"
-          placeholder="Search key or title"
-          value={search}
-          onChange={(event) => setSearch(event.target.value)}
-        />
-        <Segmented
-          label="Board layout"
-          value={settings.layout}
-          options={[
-            { value: 'cards', label: 'Cards' },
-            { value: 'table', label: 'Table' },
-          ]}
-          onChange={(value) => remember({ layout: value as BoardLayout })}
-        />
-        <Segmented
-          label="Board grouping"
-          value={settings.group}
-          options={[
-            { value: 'status', label: 'By status' },
-            { value: 'project', label: 'By project' },
-          ]}
-          onChange={(value) => remember({ group: value as BoardGroup })}
-        />
-      </div>
-      {settings.layout === 'cards' ? (
-        <div className="grid gap-4 xl:grid-cols-4">
-          {groups.map((group) => {
-            const rows = rowsFor(group.key)
-            const total = totalFor(group.key)
-            return (
-              <div key={group.key}>
-                <h2 className="mb-2 flex justify-between font-sans font-semibold">
-                  <span>{group.label}</span>
-                  <span>
-                    {rows.length}
-                    {!response.data.scoped && total > rows.length ? ` of ${total}` : ''}
-                  </span>
-                </h2>
-                <div className="space-y-2">
-                  {rows.length ? (
-                    rows.map((card) => <BoardCardView key={card.key} card={card} />)
-                  ) : (
-                    <div className="border border-border p-4 text-muted-foreground">
-                      {group.empty}
-                    </div>
-                  )}
-                  {!response.data.scoped && total > rows.length ? (
-                    <div className="border border-border p-2 text-center text-muted-foreground">
-                      {total - rows.length} more not drawn
-                    </div>
-                  ) : null}
+      <Docked panel={boardPanel}>
+        <div className="mb-4 flex flex-wrap items-center gap-3">
+          <Input
+            className="h-8 w-52"
+            type="search"
+            placeholder="Search key or title"
+            value={search}
+            onChange={(event) => setSearch(event.target.value)}
+          />
+          <Segmented
+            label="Board layout"
+            value={settings.layout}
+            options={[
+              { value: 'cards', label: 'Cards' },
+              { value: 'table', label: 'Table' },
+            ]}
+            onChange={(value) => remember({ layout: value as BoardLayout })}
+          />
+          <Segmented
+            label="Board grouping"
+            value={settings.group}
+            options={[
+              { value: 'status', label: 'By status' },
+              { value: 'project', label: 'By project' },
+            ]}
+            onChange={(value) => remember({ group: value as BoardGroup })}
+          />
+        </div>
+        {settings.layout === 'cards' ? (
+          <div className="grid gap-4 xl:grid-cols-4">
+            {groups.map((group) => {
+              const rows = rowsFor(group.key)
+              const total = totalFor(group.key)
+              return (
+                <div key={group.key}>
+                  <h2 className="mb-2 flex justify-between font-sans font-semibold">
+                    <span>{group.label}</span>
+                    <span>
+                      {rows.length}
+                      {!response.data.scoped && total > rows.length ? ` of ${total}` : ''}
+                    </span>
+                  </h2>
+                  <div className="space-y-2">
+                    {rows.length ? (
+                      rows.map((card) => <BoardCardView key={card.key} card={card} />)
+                    ) : (
+                      <div className="border border-border p-4 text-muted-foreground">
+                        {group.empty}
+                      </div>
+                    )}
+                    {!response.data.scoped && total > rows.length ? (
+                      <div className="border border-border p-2 text-center text-muted-foreground">
+                        {total - rows.length} more not drawn
+                      </div>
+                    ) : null}
+                  </div>
                 </div>
-              </div>
-            )
-          })}
-        </div>
-      ) : (
-        <div className="space-y-5">
-          {groups.map((group) => {
-            const rows = rowsFor(group.key)
-            if (!rows.length) return null
-            return (
-              <Collection
-                key={group.key}
-                title={group.label}
-                count={rows.length}
-                columns={[
-                  {
-                    id: 'task',
-                    label: 'Task',
-                    render: (card) => (
-                      <>
-                        <Identifier className="block">{card.key}</Identifier>
-                        <div className="font-sans text-sm">
-                          {card.title || (
-                            <span className="text-muted-foreground">no title from its tracker</span>
-                          )}
-                        </div>
-                      </>
-                    ),
-                  },
-                  {
-                    id: 'group',
-                    label: settings.group === 'project' ? 'Status' : 'Project',
-                    render: (card) =>
-                      settings.group === 'project' ? (
-                        <Status row={card} />
-                      ) : (
-                        <span className="inline-flex items-center gap-2">
-                          <ProjectMark name={card.project} />
-                          <BoardOwner card={card} />
-                        </span>
+              )
+            })}
+          </div>
+        ) : (
+          <div className="space-y-5">
+            {groups.map((group) => {
+              const rows = rowsFor(group.key)
+              if (!rows.length) return null
+              return (
+                <Collection
+                  key={group.key}
+                  title={group.label}
+                  count={rows.length}
+                  columns={[
+                    {
+                      id: 'task',
+                      label: 'Task',
+                      render: (card) => (
+                        <>
+                          <Identifier className="block">{card.key}</Identifier>
+                          <div className="font-sans text-sm">
+                            {card.title || (
+                              <span className="text-muted-foreground">
+                                no title from its tracker
+                              </span>
+                            )}
+                          </div>
+                        </>
                       ),
-                  },
-                  {
-                    id: 'assignee',
-                    label: 'Assignee',
-                    render: (card) =>
-                      card.assignee || <span className="text-muted-foreground">unknown</span>,
-                  },
-                  {
-                    id: 'live',
-                    label: '',
-                    render: (card) =>
-                      card.workingNow ? (
-                        <Badge tone="progress" dot>
-                          Working now
-                        </Badge>
-                      ) : null,
-                  },
-                ]}
-                rows={rows}
-                getKey={(card) => card.key}
-                onOpen={(card) =>
-                  void navigate({ to: '/board/tasks/$key', params: { key: card.key } })
-                }
-                empty={{ title: group.empty }}
-              />
-            )
-          })}
-        </div>
-      )}
-      <p className="mt-5 text-muted-foreground">
-        Source glyphs distinguish hub, external trackers, and git-derived records without using
-        state colour{response.data.scoped ? ' - counts are for this project' : ''}.{' '}
-        <button type="button" className="underline" onClick={() => setWhy((open) => !open)}>
-          why these cards?
-        </button>
-      </p>
-      {why ? (
-        <p className="mt-2 max-w-4xl text-muted-foreground">
-          A card is here because it is active, in review, was worked on in the last fortnight, or is
-          ours and still open. Recency comes from recorded work, never from a tracker timestamp:
-          those are bumped on every sync, so everything looks freshly touched. Full backlogs live in
-          each project's own tracker.
+                    },
+                    {
+                      id: 'group',
+                      label: settings.group === 'project' ? 'Status' : 'Project',
+                      render: (card) =>
+                        settings.group === 'project' ? (
+                          <Status row={card} />
+                        ) : (
+                          <span className="inline-flex items-center gap-2">
+                            <ProjectMark name={card.project} />
+                            <BoardOwner card={card} />
+                          </span>
+                        ),
+                    },
+                    {
+                      id: 'assignee',
+                      label: 'Assignee',
+                      render: (card) =>
+                        card.assignee || <span className="text-muted-foreground">unknown</span>,
+                    },
+                    {
+                      id: 'live',
+                      label: '',
+                      render: (card) =>
+                        card.workingNow ? (
+                          <Badge tone="progress" dot>
+                            Working now
+                          </Badge>
+                        ) : null,
+                    },
+                  ]}
+                  rows={rows}
+                  getKey={(card) => card.key}
+                  onOpen={(card) =>
+                    void navigate({ to: '/board/tasks/$key', params: { key: card.key } })
+                  }
+                  empty={{ title: group.empty }}
+                />
+              )
+            })}
+          </div>
+        )}
+        <p className="mt-5 text-muted-foreground">
+          Source glyphs distinguish hub, external trackers, and git-derived records without using
+          state colour{response.data.scoped ? ' - counts are for this project' : ''}.{' '}
+          <button type="button" className="underline" onClick={() => setWhy((open) => !open)}>
+            why these cards?
+          </button>
         </p>
-      ) : null}
+        {why ? (
+          <p className="mt-2 max-w-4xl text-muted-foreground">
+            A card is here because it is active, in review, was worked on in the last fortnight, or
+            is ours and still open. Recency comes from recorded work, never from a tracker
+            timestamp: those are bumped on every sync, so everything looks freshly touched. Full
+            backlogs live in each project's own tracker.
+          </p>
+        ) : null}
+      </Docked>
     </section>
   )
 }

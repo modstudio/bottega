@@ -1,8 +1,8 @@
 import { useQuery } from '@tanstack/react-query'
 import { useNavigate } from '@tanstack/react-router'
 import { Markdown } from '@/components/markdown'
-import { Sheet } from '@/components/sheet'
 import { trpc } from '@/trpc/client'
+import { Sheet } from '@/ui/sheet/sheet'
 
 type HostedDoc = { body: string }
 type HostedRevision = { id: string; op: string; author: string; reason: string; at: string }

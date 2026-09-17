@@ -1,5 +1,5 @@
 import { useQuery } from '@tanstack/react-query'
-import { createFileRoute, Outlet, useNavigate } from '@tanstack/react-router'
+import { createFileRoute, useNavigate } from '@tanstack/react-router'
 import { ChevronRight } from 'lucide-react'
 import { useState } from 'react'
 import { Collection, type CollectionColumn } from '@/components/collection'
@@ -14,6 +14,7 @@ import {
 } from '@/components/design-system'
 import { HostedRuns } from '@/components/hosted-runs'
 import { useNow } from '@/lib/clock'
+import { useDetailPanel } from '@/lib/detail-panel'
 import { collectedTime, compactTokens, duration, vendorFigures } from '@/lib/format'
 import { isHostedMode } from '@/lib/hub-mode'
 import {
@@ -89,16 +90,12 @@ export const Route = createFileRoute('/runs')({ component: RunsPage })
 
 function RunsPage() {
   if (isHostedMode()) return <HostedRuns />
-  return (
-    <>
-      <RunsList />
-      <Outlet />
-    </>
-  )
+  return <RunsList />
 }
 
 function RunsList() {
   const navigate = useNavigate()
+  const panel = useDetailPanel()
   const windowState = useWindowState()
   const [openMenus, setOpenMenus] = useState(0)
   const [search, setSearch] = useState('')
@@ -268,6 +265,7 @@ function RunsList() {
               search={{ query: search, onQueryChange: setSearch, placeholder: 'Search runs' }}
               filters={filters.controls}
               filtersActive={filters.active}
+              panel={panel}
               columns={runColumns}
               rows={runRows}
               getKey={(row) => row.id}

@@ -1,8 +1,10 @@
 import { ChevronRight, Menu as MenuIcon, PanelLeftClose, PanelLeftOpen, X } from 'lucide-react'
 import {
   type ComponentType,
+  createContext,
   type ReactElement,
   type ReactNode,
+  useContext,
   useEffect,
   useRef,
   useState,
@@ -40,6 +42,21 @@ export type RenderLink = (
 ) => ReactElement
 
 const MOBILE_QUERY = '(max-width: 767px)'
+
+const DockedPanels = createContext<(delta: 1 | -1) => void>(() => undefined)
+
+/**
+ * Collapses the rail to icons while the calling panel is mounted, to give a
+ * docked companion the width. The reader's own open or collapsed choice is
+ * restored when the last panel closes.
+ */
+export function useDockedPanel() {
+  const change = useContext(DockedPanels)
+  useEffect(() => {
+    change(1)
+    return () => change(-1)
+  }, [change])
+}
 
 // The inline padding centres an 18px icon in the collapsed rail, so labels open
 // beside icons that never move.
@@ -330,7 +347,10 @@ export function AppShell({
   const mobile = useMediaQuery(MOBILE_QUERY)
   const [menuOpen, setMenuOpen] = useState(false)
   const [rail, setRail] = useStoredState(storageKey, 'open', ['open', 'collapsed'] as const)
-  const collapsed = forced || rail === 'collapsed'
+  const [docked, setDocked] = useState(0)
+  const [changeDocked] = useState(() => (delta: 1 | -1) => setDocked((count) => count + delta))
+  const pinnedByPanel = forced || docked > 0
+  const collapsed = pinnedByPanel || rail === 'collapsed'
   const brand = (
     <span className="flex items-center gap-3 whitespace-nowrap font-semibold">
       {mark}
@@ -339,61 +359,63 @@ export function AppShell({
   )
 
   return (
-    <div className="flex min-h-dvh bg-surface-page text-text-primary">
-      {mobile ? null : (
-        <aside
-          aria-label="Navigation"
-          data-collapsed={collapsed || undefined}
-          className={classes(
-            'group/rail sticky top-0 z-(--z-rail) flex h-dvh shrink-0 flex-col overflow-hidden border-border-default border-r bg-surface-page transition-[width] duration-(--duration-base)',
-            collapsed ? 'w-rail' : 'w-rail-open',
-          )}
-        >
-          <BrandCell
-            mark={mark}
-            name={name}
-            collapsed={collapsed}
-            canToggle={!forced}
-            onToggle={() => setRail(collapsed ? 'open' : 'collapsed')}
-          />
-          <div className="min-h-0 flex-1 overflow-y-auto overflow-x-hidden">
-            <NavList
-              sections={nav}
-              renderLink={renderLink}
-              labelled={collapsed ? 'icons' : 'always'}
-              isActive={isActive}
+    <DockedPanels.Provider value={changeDocked}>
+      <div className="flex min-h-dvh bg-surface-page text-text-primary">
+        {mobile ? null : (
+          <aside
+            aria-label="Navigation"
+            data-collapsed={collapsed || undefined}
+            className={classes(
+              'group/rail sticky top-0 z-(--z-rail) flex h-dvh shrink-0 flex-col overflow-hidden border-border-default border-r bg-surface-page transition-[width] duration-(--duration-base)',
+              collapsed ? 'w-rail' : 'w-rail-open',
+            )}
+          >
+            <BrandCell
+              mark={mark}
+              name={name}
+              collapsed={collapsed}
+              canToggle={!pinnedByPanel}
+              onToggle={() => setRail(collapsed ? 'open' : 'collapsed')}
             />
-          </div>
-          {railFooter ? (
-            <div className="border-border-default border-t py-3">{railFooter}</div>
-          ) : null}
-        </aside>
-      )}
-      <div className="flex min-w-0 flex-1 flex-col">
-        <header className="sticky top-0 z-(--z-rail) flex h-topbar shrink-0 items-center gap-3 border-border-default border-b bg-surface-page px-4 md:px-8">
-          {mobile ? (
-            <>
-              <IconButton label="Open menu" onClick={() => setMenuOpen(true)}>
-                <MenuIcon />
-              </IconButton>
-              {mark}
-            </>
-          ) : null}
-          <div className="ml-auto flex items-center gap-2">{topbar}</div>
-        </header>
-        <main className="min-w-0 flex-1 px-4 pb-8 md:px-8">{children}</main>
+            <div className="min-h-0 flex-1 overflow-y-auto overflow-x-hidden">
+              <NavList
+                sections={nav}
+                renderLink={renderLink}
+                labelled={collapsed ? 'icons' : 'always'}
+                isActive={isActive}
+              />
+            </div>
+            {railFooter ? (
+              <div className="border-border-default border-t py-3">{railFooter}</div>
+            ) : null}
+          </aside>
+        )}
+        <div className="flex min-w-0 flex-1 flex-col">
+          <header className="sticky top-0 z-(--z-rail) flex h-topbar shrink-0 items-center gap-3 border-border-default border-b bg-surface-page px-4 md:px-8">
+            {mobile ? (
+              <>
+                <IconButton label="Open menu" onClick={() => setMenuOpen(true)}>
+                  <MenuIcon />
+                </IconButton>
+                {mark}
+              </>
+            ) : null}
+            <div className="ml-auto flex items-center gap-2">{topbar}</div>
+          </header>
+          <main className="min-w-0 flex-1 px-4 pb-8 md:px-8">{children}</main>
+        </div>
+        {mobile ? (
+          <MobileMenu
+            open={menuOpen}
+            onClose={() => setMenuOpen(false)}
+            brand={brand}
+            sections={nav}
+            renderLink={renderLink}
+            isActive={isActive}
+            footer={railFooter}
+          />
+        ) : null}
       </div>
-      {mobile ? (
-        <MobileMenu
-          open={menuOpen}
-          onClose={() => setMenuOpen(false)}
-          brand={brand}
-          sections={nav}
-          renderLink={renderLink}
-          isActive={isActive}
-          footer={railFooter}
-        />
-      ) : null}
-    </div>
+    </DockedPanels.Provider>
   )
 }

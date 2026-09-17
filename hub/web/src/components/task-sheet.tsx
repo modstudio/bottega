@@ -5,6 +5,7 @@ import { taskStatusLook } from '@/lib/task-status'
 import { queryClient, type TaskRecordResponse, trpc } from '@/trpc/client'
 import { Badge } from '@/ui/badge/badge'
 import { Button } from '@/ui/button/button'
+import { Companion } from '@/ui/companion/companion'
 import { Input } from '@/ui/field/input'
 import { Textarea } from '@/ui/field/textarea'
 import { Identifier } from '@/ui/identifier/identifier'
@@ -12,7 +13,6 @@ import { Select } from '@/ui/listbox/select'
 import { ProjectMark, SourceMark } from './design-system'
 import { DisplayRow, FieldSection, SettingBlock } from './fields'
 import { Markdown } from './markdown'
-import { Sheet } from './sheet'
 
 function reasonRows(capabilities: TaskRecordResponse['capabilities']) {
   const entries = [
@@ -102,8 +102,7 @@ export function TaskSheet({ taskKey, onClose }: { taskKey: string; onClose: () =
         ? 'git'
         : `${project?.name ?? record.data?.task.project ?? 'external'} · ${protocol ?? 'tracker protocol unknown'}`
   return (
-    <Sheet
-      open
+    <Companion
       onClose={onClose}
       title={
         record.data ? (
@@ -287,6 +286,6 @@ export function TaskSheet({ taskKey, onClose }: { taskKey: string; onClose: () =
           </div>
         </>
       ) : null}
-    </Sheet>
+    </Companion>
   )
 }

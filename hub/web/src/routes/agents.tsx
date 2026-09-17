@@ -5,9 +5,9 @@ import { Collection, type CollectionColumn } from '@/components/collection'
 import { PageHeader } from '@/components/design-system'
 import { DisplayRow } from '@/components/fields'
 import { SnapshotHeader } from '@/components/hosted-snapshot'
-import { Sheet } from '@/components/sheet'
 import { isHostedMode } from '@/lib/hub-mode'
 import { type AgentRow, trpc } from '@/trpc/client'
+import { Companion } from '@/ui/companion/companion'
 
 export const Route = createFileRoute('/agents')({
   validateSearch: (search: Record<string, unknown>) => ({
@@ -92,34 +92,37 @@ function AgentsView({
         count={rows.length}
         search={{ query: search, onQueryChange: setSearch, placeholder: 'Search agents' }}
         columns={columns}
+        panel={
+          agent ? (
+            <Companion
+              onClose={close}
+              title={selected?.name ?? agent ?? 'Agent'}
+              subtitle="Code-declared; inspectable, not editable"
+            >
+              {selected ? (
+                <>
+                  <DisplayRow label="Model" value={selected.model} />
+                  <DisplayRow
+                    label="Capabilities"
+                    value={Object.entries(selected.caps)
+                      .map(([name, has]) => `${name}: ${has ? 'yes' : 'no'}`)
+                      .join(' · ')}
+                  />
+                  <DisplayRow label="Context tokens" value={finite(selected.contextTokens)} />
+                  <DisplayRow label="Max prompt bytes" value={finite(selected.maxPromptBytes)} />
+                  <DisplayRow label="Timeout" value={`${selected.timeoutMs / 60_000} minutes`} />
+                </>
+              ) : (
+                <p className="text-destructive">Unknown agent.</p>
+              )}
+            </Companion>
+          ) : undefined
+        }
         rows={rows}
         getKey={(row) => row.name}
         onOpen={(row) => void navigate({ to: '/agents', search: { agent: row.name } })}
         empty={{ title: pending ? 'Loading agents...' : 'No agents match.' }}
       />
-      <Sheet
-        open={Boolean(agent)}
-        onClose={close}
-        title={selected?.name ?? agent ?? 'Agent'}
-        subtitle="Code-declared; inspectable, not editable"
-      >
-        {selected ? (
-          <>
-            <DisplayRow label="Model" value={selected.model} />
-            <DisplayRow
-              label="Capabilities"
-              value={Object.entries(selected.caps)
-                .map(([name, has]) => `${name}: ${has ? 'yes' : 'no'}`)
-                .join(' · ')}
-            />
-            <DisplayRow label="Context tokens" value={finite(selected.contextTokens)} />
-            <DisplayRow label="Max prompt bytes" value={finite(selected.maxPromptBytes)} />
-            <DisplayRow label="Timeout" value={`${selected.timeoutMs / 60_000} minutes`} />
-          </>
-        ) : (
-          <p className="text-destructive">Unknown agent.</p>
-        )}
-      </Sheet>
     </section>
   )
 }

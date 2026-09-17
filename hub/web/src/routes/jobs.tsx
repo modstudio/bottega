@@ -5,9 +5,9 @@ import { Collection, type CollectionColumn } from '@/components/collection'
 import { PageHeader } from '@/components/design-system'
 import { DisplayRow } from '@/components/fields'
 import { SnapshotHeader } from '@/components/hosted-snapshot'
-import { Sheet } from '@/components/sheet'
 import { isHostedMode } from '@/lib/hub-mode'
 import { type JobRow, trpc } from '@/trpc/client'
+import { Companion } from '@/ui/companion/companion'
 
 export const Route = createFileRoute('/jobs')({
   validateSearch: (search: Record<string, unknown>) => ({
@@ -85,43 +85,51 @@ function JobsView({
         count={rows.length}
         search={{ query: search, onQueryChange: setSearch, placeholder: 'Search jobs' }}
         columns={columns}
+        panel={
+          job ? (
+            <Companion
+              onClose={close}
+              title={selected?.name ?? job ?? 'Job'}
+              subtitle="Code-declared; inspectable, not editable"
+            >
+              {selected ? (
+                <>
+                  <DisplayRow label="What" value={selected.what} />
+                  <DisplayRow
+                    label="Needs"
+                    value={
+                      Object.entries(selected.needs)
+                        .filter(([, needed]) => needed)
+                        .map(([name]) => name)
+                        .join(', ') || 'none'
+                    }
+                  />
+                  <DisplayRow
+                    label="Context tokens"
+                    value={selected.contextTokens.toLocaleString()}
+                  />
+                  <DisplayRow
+                    label="Timeout"
+                    value={
+                      selected.timeoutMs
+                        ? `${selected.timeoutMs / 60_000} minutes`
+                        : 'agent default'
+                    }
+                  />
+                  <DisplayRow label="Prefer" value={selected.prefer.join(' → ')} />
+                  <DisplayRow label="Findings" value={selected.findings ? 'yes' : 'no'} />
+                </>
+              ) : (
+                <p className="text-destructive">Unknown job.</p>
+              )}
+            </Companion>
+          ) : undefined
+        }
         rows={rows}
         getKey={(row) => row.name}
         onOpen={(row) => void navigate({ to: '/jobs', search: { job: row.name } })}
         empty={{ title: pending ? 'Loading jobs...' : 'No jobs match.' }}
       />
-      <Sheet
-        open={Boolean(job)}
-        onClose={close}
-        title={selected?.name ?? job ?? 'Job'}
-        subtitle="Code-declared; inspectable, not editable"
-      >
-        {selected ? (
-          <>
-            <DisplayRow label="What" value={selected.what} />
-            <DisplayRow
-              label="Needs"
-              value={
-                Object.entries(selected.needs)
-                  .filter(([, needed]) => needed)
-                  .map(([name]) => name)
-                  .join(', ') || 'none'
-              }
-            />
-            <DisplayRow label="Context tokens" value={selected.contextTokens.toLocaleString()} />
-            <DisplayRow
-              label="Timeout"
-              value={
-                selected.timeoutMs ? `${selected.timeoutMs / 60_000} minutes` : 'agent default'
-              }
-            />
-            <DisplayRow label="Prefer" value={selected.prefer.join(' → ')} />
-            <DisplayRow label="Findings" value={selected.findings ? 'yes' : 'no'} />
-          </>
-        ) : (
-          <p className="text-destructive">Unknown job.</p>
-        )}
-      </Sheet>
     </section>
   )
 }

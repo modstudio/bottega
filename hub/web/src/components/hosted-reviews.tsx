@@ -1,16 +1,17 @@
 import { useQuery } from '@tanstack/react-query'
-import { Outlet, useNavigate } from '@tanstack/react-router'
+import { useNavigate } from '@tanstack/react-router'
 import { ChevronRight } from 'lucide-react'
 import { useState } from 'react'
 import { Collection, type CollectionColumn } from '@/components/collection'
 import { PageHeader, ProjectMark } from '@/components/design-system'
 import { DisplayRow, FieldSection } from '@/components/fields'
 import { hostedProjectColors } from '@/components/hosted-projects'
-import { Sheet } from '@/components/sheet'
+import { useDetailPanel } from '@/lib/detail-panel'
 import { runEasternTime } from '@/lib/run-search'
 import { trpc } from '@/trpc/client'
 import { Badge } from '@/ui/badge/badge'
 import { Button } from '@/ui/button/button'
+import { Companion } from '@/ui/companion/companion'
 
 type HostedReview = {
   id: string
@@ -86,15 +87,11 @@ export function HostedLensList({ lenses }: { lenses: HostedLens[] }) {
 }
 
 export function HostedReviews() {
-  return (
-    <>
-      <HostedReviewsList />
-      <Outlet />
-    </>
-  )
+  return <HostedReviewsList />
 }
 
 function HostedReviewsList() {
+  const panel = useDetailPanel()
   const navigate = useNavigate()
   const [pages, setPages] = useState<HostedReview[][]>([])
   const [cursor, setCursor] = useState<string | undefined>(undefined)
@@ -148,6 +145,7 @@ function HostedReviewsList() {
         <p className="text-destructive">could not load: {query.error.message}</p>
       ) : null}
       <Collection
+        panel={panel}
         title="Reviews"
         count={rows.length}
         columns={columns}
@@ -185,26 +183,25 @@ export function HostedReviewDetail({ id }: { id: string }) {
 
   if (detail.isPending) {
     return (
-      <Sheet open onClose={close} title={`Review ${id}`} subtitle="Loading review...">
+      <Companion onClose={close} title={`Review ${id}`} subtitle="Loading review...">
         <p className="text-muted-foreground">Loading...</p>
-      </Sheet>
+      </Companion>
     )
   }
   if (detail.error || !review) {
     return (
-      <Sheet open onClose={close} title={`Review ${id}`}>
+      <Companion onClose={close} title={`Review ${id}`}>
         <p className="text-destructive">
           Could not load this review. {detail.error?.message ?? 'Not found'}
         </p>
-      </Sheet>
+      </Companion>
     )
   }
 
   const lenses = (review.lenses ?? []) as HostedLens[]
   const projectName = typeof review.projectName === 'string' ? review.projectName : null
   return (
-    <Sheet
-      open
+    <Companion
       onClose={close}
       title={`Review ${id}`}
       subtitle={projectName ?? undefined}
@@ -217,6 +214,6 @@ export function HostedReviewDetail({ id }: { id: string }) {
         value={review.completedAt == null ? '-' : String(review.completedAt)}
       />
       <HostedLensList lenses={lenses} />
-    </Sheet>
+    </Companion>
   )
 }

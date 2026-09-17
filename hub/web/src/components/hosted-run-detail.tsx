@@ -4,10 +4,10 @@ import { ProjectMark } from '@/components/design-system'
 import { DisplayRow } from '@/components/fields'
 import { hostedProjectColors } from '@/components/hosted-projects'
 import { type HostedLens, HostedLensList } from '@/components/hosted-reviews'
-import { Sheet } from '@/components/sheet'
 import { duration } from '@/lib/format'
 import { trpc } from '@/trpc/client'
 import { Badge } from '@/ui/badge/badge'
+import { Companion } from '@/ui/companion/companion'
 
 export function HostedRunDetail({ id }: { id: string }) {
   const navigate = useNavigate()
@@ -23,25 +23,24 @@ export function HostedRunDetail({ id }: { id: string }) {
 
   if (detail.isPending) {
     return (
-      <Sheet open onClose={close} title={`Run ${id}`} subtitle="Loading run...">
+      <Companion onClose={close} title={`Run ${id}`} subtitle="Loading run...">
         <p className="text-muted-foreground">Loading...</p>
-      </Sheet>
+      </Companion>
     )
   }
   if (detail.error || !run) {
     return (
-      <Sheet open onClose={close} title={`Run ${id}`}>
+      <Companion onClose={close} title={`Run ${id}`}>
         <p className="text-destructive">
           Could not load this run. {detail.error?.message ?? 'Not found'}
         </p>
-      </Sheet>
+      </Companion>
     )
   }
 
   const lenses = (run.reviews ?? []) as HostedLens[]
   return (
-    <Sheet
-      open
+    <Companion
       onClose={close}
       title={`Run ${id}`}
       subtitle={[run.agent, run.job, run.projectName].filter(Boolean).join(' · ')}
@@ -64,6 +63,6 @@ export function HostedRunDetail({ id }: { id: string }) {
       ) : null}
       <DisplayRow label="Prompt" value={run.promptHead} />
       <HostedLensList lenses={lenses} />
-    </Sheet>
+    </Companion>
   )
 }

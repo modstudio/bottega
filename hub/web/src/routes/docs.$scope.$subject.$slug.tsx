@@ -4,13 +4,13 @@ import { Pencil, Save, Trash2, X } from 'lucide-react'
 import { useEffect, useState } from 'react'
 import { HostedDocDetail } from '@/components/hosted-doc-detail'
 import { Markdown } from '@/components/markdown'
-import { Sheet } from '@/components/sheet'
 import { isHostedMode } from '@/lib/hub-mode'
 import { queryClient, trpc } from '@/trpc/client'
 import { Button } from '@/ui/button/button'
 import { Input } from '@/ui/field/input'
 import { Textarea } from '@/ui/field/textarea'
 import { Select } from '@/ui/listbox/select'
+import { Sheet } from '@/ui/sheet/sheet'
 import { DOC_SCOPES, type DocScope, isScope } from './docs'
 
 type DocSearch = { edit?: boolean; id?: string }
@@ -140,6 +140,7 @@ function DocPage() {
   return (
     <Sheet
       open
+      size="document"
       onClose={() => void navigate({ to: '/docs' })}
       title={
         editing ? (
