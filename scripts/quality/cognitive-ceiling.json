@@ -119,22 +119,17 @@
     "score": 29
   },
   {
-    "file": "orchestrator/src/cli/args.ts",
-    "function": "invalidUtf8Offset",
-    "line": 94,
-    "score": 46
-  },
-  {
-    "file": "orchestrator/src/cli/args.ts",
-    "function": "parseWorkerMessageArgs",
-    "line": 185,
-    "score": 23
-  },
-  {
     "file": "orchestrator/src/ask/ask.ts",
     "function": "serveAskChannel",
     "line": 139,
     "score": 41
+  },
+  {
+    "file": "orchestrator/src/branch/task-branch.ts",
+    "function": "resolveTaskBranch",
+    "line": 100,
+    "score": 21,
+    "key": "orchestrator/src/branch/task-branch.ts\u0000resolveTaskBranch"
   },
   {
     "file": "orchestrator/src/canon/canon-commands.ts",
@@ -147,6 +142,12 @@
     "function": "forEach callback#2",
     "line": 309,
     "score": 23
+  },
+  {
+    "file": "orchestrator/src/canon/evals.ts",
+    "function": "withHermeticGitEnv callback",
+    "line": 383,
+    "score": 17
   },
   {
     "file": "orchestrator/src/cleanup/cleanup-sweep.ts",
@@ -168,16 +169,22 @@
     "score": 35
   },
   {
+    "file": "orchestrator/src/cli/args.ts",
+    "function": "invalidUtf8Offset",
+    "line": 94,
+    "score": 46
+  },
+  {
+    "file": "orchestrator/src/cli/args.ts",
+    "function": "parseWorkerMessageArgs",
+    "line": 185,
+    "score": 23
+  },
+  {
     "file": "orchestrator/src/close/close-out.ts",
     "function": "withCleanupLock callback",
     "line": 168,
     "score": 24
-  },
-  {
-    "file": "orchestrator/src/contract/codex-schema.ts",
-    "function": "visit",
-    "line": 190,
-    "score": 25
   },
   {
     "file": "orchestrator/src/collect/collect.ts",
@@ -205,6 +212,12 @@
     "score": 24
   },
   {
+    "file": "orchestrator/src/contract/codex-schema.ts",
+    "function": "visit",
+    "line": 190,
+    "score": 25
+  },
+  {
     "file": "orchestrator/src/contract/contract.ts",
     "function": "validatesSchema",
     "line": 714,
@@ -230,6 +243,18 @@
     "key": "orchestrator/src/database/db.ts\u0000db"
   },
   {
+    "file": "orchestrator/src/database/migrations.ts",
+    "function": "stripSqlComments",
+    "line": 179,
+    "score": 25
+  },
+  {
+    "file": "orchestrator/src/database/migrations.ts",
+    "function": "checkExpressions",
+    "line": 230,
+    "score": 19
+  },
+  {
     "file": "orchestrator/src/dispatch/dispatch-commands.ts",
     "function": "dispatchCommand",
     "line": 72,
@@ -241,6 +266,12 @@
     "function": "preflight",
     "line": 42,
     "score": 46
+  },
+  {
+    "file": "orchestrator/src/dispatch/prompt-retarget.ts",
+    "function": "retargetRepositoryPrompt",
+    "line": 127,
+    "score": 19
   },
   {
     "file": "orchestrator/src/doc/doc-commands.ts",
@@ -261,25 +292,6 @@
     "line": 808,
     "score": 18,
     "key": "orchestrator/src/doc/docs.ts\u0000importDocs"
-  },
-  {
-    "file": "orchestrator/src/resources/docker-resources.ts",
-    "function": "teardownRunResources",
-    "line": 132,
-    "score": 17
-  },
-  {
-    "file": "orchestrator/src/health/doctor.ts",
-    "function": "doctorCommand",
-    "line": 28,
-    "score": 120,
-    "key": "orchestrator/src/health/doctor.ts\u0000doctorCommand"
-  },
-  {
-    "file": "orchestrator/src/canon/evals.ts",
-    "function": "withHermeticGitEnv callback",
-    "line": 383,
-    "score": 17
   },
   {
     "file": "orchestrator/src/events.ts",
@@ -324,10 +336,11 @@
     "score": 16
   },
   {
-    "file": "orchestrator/src/resources/git-locks.ts",
-    "function": "gitLocks",
-    "line": 75,
-    "score": 16
+    "file": "orchestrator/src/health/doctor.ts",
+    "function": "doctorCommand",
+    "line": 86,
+    "score": 114,
+    "key": "orchestrator/src/health/doctor.ts\u0000doctorCommand"
   },
   {
     "file": "orchestrator/src/health/health-commands.ts",
@@ -411,18 +424,6 @@
     "score": 27
   },
   {
-    "file": "orchestrator/src/database/migrations.ts",
-    "function": "stripSqlComments",
-    "line": 179,
-    "score": 25
-  },
-  {
-    "file": "orchestrator/src/database/migrations.ts",
-    "function": "checkExpressions",
-    "line": 230,
-    "score": 19
-  },
-  {
     "file": "orchestrator/src/monitor/monitor.ts",
     "function": "monitor",
     "line": 61,
@@ -485,18 +486,6 @@
     "score": 25
   },
   {
-    "file": "orchestrator/src/dispatch/prompt-retarget.ts",
-    "function": "retargetRepositoryPrompt",
-    "line": 127,
-    "score": 19
-  },
-  {
-    "file": "orchestrator/src/score/recalibration.ts",
-    "function": "recalibrate",
-    "line": 18,
-    "score": 46
-  },
-  {
     "file": "orchestrator/src/recipe/recipe.ts",
     "function": "replace callback#2",
     "line": 123,
@@ -507,6 +496,18 @@
     "function": "withCleanupLock callback#1",
     "line": 211,
     "score": 26
+  },
+  {
+    "file": "orchestrator/src/resources/docker-resources.ts",
+    "function": "teardownRunResources",
+    "line": 132,
+    "score": 17
+  },
+  {
+    "file": "orchestrator/src/resources/git-locks.ts",
+    "function": "gitLocks",
+    "line": 75,
+    "score": 16
   },
   {
     "file": "orchestrator/src/resources/ref-guard.ts",
@@ -750,11 +751,10 @@
     "key": "orchestrator/src/run/run.ts\u0000run"
   },
   {
-    "file": "orchestrator/src/branch/task-branch.ts",
-    "function": "resolveTaskBranch",
-    "line": 100,
-    "score": 21,
-    "key": "orchestrator/src/branch/task-branch.ts\u0000resolveTaskBranch"
+    "file": "orchestrator/src/score/recalibration.ts",
+    "function": "recalibrate",
+    "line": 18,
+    "score": 46
   },
   {
     "file": "orchestrator/src/transport/transport-acp.ts",
