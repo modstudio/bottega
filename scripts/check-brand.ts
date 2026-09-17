@@ -28,6 +28,9 @@ import { Glob } from 'bun'
 import { PLATFORM_NAME, PLATFORM_SLUG } from '../shared/brand.ts'
 
 const ROOT = new URL('..', import.meta.url).pathname.replace(/\/$/, '')
+const { workspaces } = JSON.parse(readFileSync(`${ROOT}/package.json`, 'utf8')) as {
+  workspaces: string[]
+}
 
 /** Where the name is allowed to be a literal, and why. */
 const ALLOWED = new Set([
@@ -35,8 +38,9 @@ const ALLOWED = new Set([
   'shared/brand.ts',
   // This file, which has to mention it in order to look for it.
   'scripts/check-brand.ts',
-  // Every package manifest, matched by basename: read by tooling that runs before any import exists.
+  // The root manifest and each declared workspace manifest: read by tooling before any import exists.
   'package.json',
+  ...workspaces.map((workspace) => `${workspace}/package.json`),
 ])
 
 const NAME = new RegExp(`\\b${PLATFORM_NAME}\\b|\\b${PLATFORM_SLUG}\\b`, 'i')
@@ -49,7 +53,7 @@ for (const rel of new Glob('**/*.{ts,tsx,js,mjs,json,py,sh}').scanSync({ cwd: RO
   // session context quotes the canon that opens with the name. Policing them
   // would keep this check red after every run and teach everyone to skip it.
   if (rel.startsWith('orchestrator/runs/')) continue
-  if (ALLOWED.has(rel) || ALLOWED.has(rel.split('/').at(-1) ?? rel)) continue
+  if (ALLOWED.has(rel)) continue
   // A lockfile records dependency names it did not choose.
   if (rel.endsWith('bun.lock') || rel.endsWith('package-lock.json')) continue
 
