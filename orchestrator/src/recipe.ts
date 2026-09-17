@@ -250,6 +250,7 @@ function teardownDb(db: DbProvider, dbName: string, cwd: string): StepResult[] {
 export function teardownRecipe(
   recipe: Recipe,
   worktreePath: string,
+  processCwd: string,
   dbName: string,
   port: string,
 ): StepResult[] {
@@ -261,13 +262,13 @@ export function teardownRecipe(
     name: worktreePath.split('/').pop() ?? '',
   }
   if (recipe.stop) {
-    const stopped = sh(fill(recipe.stop, vars), worktreePath, {
+    const stopped = sh(fill(recipe.stop, vars), processCwd, {
       WORKTREE_DB: dbName,
       WORKTREE_PORT: port,
     })
     results.push({ ...stopped, step: 'stop' })
   }
-  if (recipe.database) results.push(...teardownDb(recipe.database, dbName, worktreePath))
+  if (recipe.database) results.push(...teardownDb(recipe.database, dbName, processCwd))
   return results
 }
 
