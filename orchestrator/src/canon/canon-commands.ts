@@ -14,7 +14,7 @@ import { z } from 'zod'
 import type { Finding } from '../../../shared/ratchet.ts'
 import { listDocs, removeDoc, setDoc } from '../doc/docs.ts'
 import { canonEvalsReport, runCanonEvals } from '../evals.ts'
-import { projectAt, projectByName } from '../projects.ts'
+import { projectAt, projectByName } from '../project/projects.ts'
 import {
   allInjectChecks,
   allNumericLiterals,

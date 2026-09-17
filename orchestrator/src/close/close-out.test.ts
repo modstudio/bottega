@@ -3,7 +3,7 @@ import { existsSync, mkdirSync, rmSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { addRun, dir } from '../../test/fixtures/store.ts'
 import { db } from '../db.ts'
-import { upsertProject } from '../projects.ts'
+import { upsertProject } from '../project/projects.ts'
 import {
   clearConversationKeepTreeHold,
   closeOutRun,

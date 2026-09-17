@@ -9,7 +9,7 @@ import {
   type TrackerProtocol,
   type TrackerSettings,
   trackerSettingsShape,
-} from '../../shared/trackers.ts'
+} from '../../../shared/trackers.ts'
 
 const strictObject = <Shape extends z.core.$ZodLooseShape>(shape: Shape) => z.strictObject(shape)
 

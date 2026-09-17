@@ -4,7 +4,7 @@ import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { gitToplevel, resolvedPathsEqual } from '../../../shared/git.ts'
 import { flagValue, flagValues } from '../args.ts'
-import { projects } from '../projects.ts'
+import { projects } from '../project/projects.ts'
 import {
   forkStepCatalogue,
   promoteStepCatalogue,

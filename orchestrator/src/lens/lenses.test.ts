@@ -3,7 +3,7 @@ import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { addRun } from '../../test/fixtures/store.ts'
 import { db, sessionId } from '../db.ts'
 import { applyMigrations } from '../migrations.ts'
-import { upsertProject } from '../projects.ts'
+import { upsertProject } from '../project/projects.ts'
 import { listLenses, resolveLens, selectProjectProfile, setLens, setProfile } from './lenses.ts'
 
 describe('lens catalogue', () => {

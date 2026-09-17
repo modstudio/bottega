@@ -18,15 +18,15 @@ import {
 } from 'node:fs'
 import { platform } from 'node:os'
 import { join, resolve } from 'node:path'
-import { pidAlive, processStartTime } from '../../shared/process-identity.ts'
-import { tryWriteContention } from './db.ts'
-import { git } from './git-environment.ts'
+import { pidAlive, processStartTime } from '../../../shared/process-identity.ts'
+import { tryWriteContention } from '../db.ts'
+import { git } from '../git-environment.ts'
 
 const WORKTREE_CREATE_LOCK_TIMEOUT_MS = 5 * 60_000
 const WORKTREE_CREATE_LOCK_POLL_MS = 100
 const heldProjectLocks = new Set<string>()
 
-export { processStartTime } from '../../shared/process-identity.ts'
+export { processStartTime } from '../../../shared/process-identity.ts'
 
 export type ProjectLockIdentity = {
   session: string | null

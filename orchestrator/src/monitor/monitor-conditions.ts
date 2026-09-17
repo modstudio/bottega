@@ -10,8 +10,8 @@ import { targetGitEnvironment } from '../git-environment.ts'
 import { HOOK_TREE_JOB, hookTreeNotice } from '../hook-tree.ts'
 import { runHasLiveDescendants } from '../idle-kill.ts'
 import { pidAlive, processStartTime } from '../process-liveness.ts'
-import { type PidRecordIdentity, pidRecordIdentity } from '../project-lock.ts'
-import { projects } from '../projects.ts'
+import { type PidRecordIdentity, pidRecordIdentity } from '../project/project-lock.ts'
+import { projects } from '../project/projects.ts'
 import type { ResourceClaimKind } from '../resource-claims.ts'
 import {
   refGuardInventory,

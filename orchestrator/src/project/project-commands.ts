@@ -4,8 +4,10 @@
  * not know runs, routing, transports, reviews, the CLI, or worktrees by value.
  */
 import { existsSync } from 'node:fs'
-import { tryWriteContention, writeTransaction } from './db.ts'
-import { selectProjectProfile } from './lens/lenses.ts'
+import { tryWriteContention, writeTransaction } from '../db.ts'
+import { selectProjectProfile } from '../lens/lenses.ts'
+import { lifecycleForm } from '../worktree-lifecycle.ts'
+import { migrateCreate } from '../worktree-template.ts'
 import {
   assertRegisterBranches,
   type Project,
@@ -22,8 +24,6 @@ import {
   validateProjectSettings,
   worktreeWarnings,
 } from './projects.ts'
-import { lifecycleForm } from './worktree-lifecycle.ts'
-import { migrateCreate } from './worktree-template.ts'
 
 type ProjectFlags = { has(name: string): boolean; flag(name: string): string | undefined }
 type ProjectPresentation = { log(...values: unknown[]): void; cwd(): string }

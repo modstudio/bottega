@@ -22,7 +22,7 @@ import { db, nowIso, writeTransaction } from './db.ts'
 import { orchRunLabel } from './docker-resources.ts'
 import { managedBlockPlan, omitKeys } from './env-file.ts'
 import { git, gitOk } from './git-environment.ts'
-import type { WorktreeTool } from './projects.ts'
+import type { WorktreeTool } from './project/projects.ts'
 import {
   compensationPlan,
   destroyPlan,

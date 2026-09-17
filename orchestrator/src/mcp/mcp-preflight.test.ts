@@ -3,7 +3,7 @@ import { chmodSync, rmSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { dir } from '../../test/fixtures/store.ts'
 import { AGENTS } from '../agent/agent-registry.ts'
-import { upsertProject, type WorktreeTool } from '../projects.ts'
+import { upsertProject, type WorktreeTool } from '../project/projects.ts'
 import {
   assertGrokTrustEligible,
   canonSourceFor,

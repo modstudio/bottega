@@ -4,7 +4,7 @@ import { join } from 'node:path'
 import { createInterface } from 'node:readline'
 import { clock } from '../clock.ts'
 import { db, nowIso, writableDb } from '../db.ts'
-import { projectAt, projects } from '../projects.ts'
+import { projectAt, projects } from '../project/projects.ts'
 
 const targetGitEnvironment = (repo: string) =>
   (require('../git-environment.ts') as typeof import('../git-environment.ts')).targetGitEnvironment(

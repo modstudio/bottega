@@ -17,7 +17,7 @@ import {
 } from '@anthropic-ai/sandbox-runtime'
 import { ROOT } from './db.ts'
 import { disabledProjectMcpServers } from './mcp/mcp-probe.ts'
-import type { Project } from './projects.ts'
+import type { Project } from './project/projects.ts'
 
 export type SandboxRuntimeConfig = {
   network: {

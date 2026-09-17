@@ -13,7 +13,7 @@ import type { DetachSpec } from '../failover.ts'
 import { JOBS, job } from '../jobs.ts'
 import { ensureLocalHealth } from '../local-host.ts'
 import type { McpRequest } from '../mcp/mcp-preflight.ts'
-import { stackAt } from '../projects.ts'
+import { stackAt } from '../project/projects.ts'
 import { implicitReviewWarning } from '../review-target.ts'
 import {
   REVIEW_COVERAGE,

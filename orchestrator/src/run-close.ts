@@ -25,7 +25,7 @@ import {
 import { type Job, reclaimsTreeByDefault } from './jobs.ts'
 import type { KeepTreeExemption } from './keep-tree-hold.ts'
 import { mcpRequestFromStored } from './mcp/mcp-preflight.ts'
-import { resolveBranchRef, stackAt } from './projects.ts'
+import { resolveBranchRef, stackAt } from './project/projects.ts'
 import { CALIBRATION_SUFFIX_RESERVE_BYTES } from './review-calibration.ts'
 import { pick } from './route/route.ts'
 import { terminateRunProcesses } from './run-process.ts'

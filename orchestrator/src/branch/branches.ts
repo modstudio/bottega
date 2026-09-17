@@ -19,8 +19,8 @@ import {
   type OtherBranchLanding,
   taskKeyToken,
 } from '../other-branch-state.ts'
-import type { Project } from '../projects.ts'
-import { projectByName, projects } from '../projects.ts'
+import type { Project } from '../project/projects.ts'
+import { projectByName, projects } from '../project/projects.ts'
 import {
   isTaskBranchSuperseded,
   type TaskBranchRunRow,

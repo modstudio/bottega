@@ -2,7 +2,7 @@ import { describe, expect, test } from 'bun:test'
 import { setDoc } from '../../test/fixtures/docs.ts'
 import { db } from '../db.ts'
 import { getDoc, listDocRevisions, listDocs } from '../doc/docs.ts'
-import { projects, upsertProject } from '../projects.ts'
+import { projects, upsertProject } from '../project/projects.ts'
 import {
   baselineForPair,
   ledgerRef,

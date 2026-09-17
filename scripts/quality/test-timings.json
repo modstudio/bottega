@@ -415,7 +415,7 @@
       "spawns": 0
     },
     {
-      "path": "orchestrator/src/projects-resolution.test.ts",
+      "path": "orchestrator/src/project/projects-resolution.test.ts",
       "wallMs": 24,
       "tests": 4,
       "cliShaped": false,

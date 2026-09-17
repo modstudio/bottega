@@ -5,7 +5,7 @@
  */
 import { basename } from 'node:path'
 import { branchOf, gitContext, targetGitEnvironment } from './git-environment.ts'
-import { projectAt, resolveBranchRef } from './projects.ts'
+import { projectAt, resolveBranchRef } from './project/projects.ts'
 import { resolveBase } from './worktree-caller.ts'
 
 const EXPLICIT_REVIEW_JOBS = new Set(['review-lens', 'safety', 'craft'])

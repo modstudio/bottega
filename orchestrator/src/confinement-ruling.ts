@@ -8,7 +8,7 @@ import { existsSync } from 'node:fs'
 import { parseConfinement } from './confinement.ts'
 import { db, writeTransaction } from './db.ts'
 import { contentTree, targetGitEnvironment } from './git-environment.ts'
-import { projectByName } from './projects.ts'
+import { projectByName } from './project/projects.ts'
 import { adoptRunMutation, auditRunMutation, authorizeRunMutation } from './run-authority.ts'
 import { resolveRootFromLastTurn } from './run-liveness.ts'
 

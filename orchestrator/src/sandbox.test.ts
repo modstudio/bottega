@@ -4,7 +4,7 @@ import { homedir, tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { ROOT } from './db.ts'
 import { classify, NOT_EVIDENCE } from './failure/failure.ts'
-import type { Project } from './projects.ts'
+import type { Project } from './project/projects.ts'
 import {
   grokSandboxConfig,
   prepareGrokMcpHome,

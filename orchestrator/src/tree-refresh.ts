@@ -7,7 +7,7 @@ import { gitToplevel, inspectCheckout, resolvedPathsEqual } from '../../shared/g
 import { recordedChainRootsForWorktree } from './dispatch/dispatch-preflight.ts'
 import { orchRunLabel } from './docker-resources.ts'
 import { git, repoRootOf } from './git-environment.ts'
-import { projectAt, resolvedWorktreeTool } from './projects.ts'
+import { projectAt, resolvedWorktreeTool } from './project/projects.ts'
 import { teardownVars } from './recipe/recipe-lifecycle.ts'
 import { loadTrackedRecipe } from './recipe/recipe-loader.ts'
 import { stepPlaceholders, type TrackedRecipe } from './recipe/recipe-schema.ts'

@@ -11,7 +11,7 @@ import { preflight } from './dispatch/dispatch-preflight.ts'
 import type { DetachSpec } from './failover.ts'
 import { job } from './jobs.ts'
 import { effectiveMcpRequest, preflightMcp, storedMcpRequest } from './mcp/mcp-preflight.ts'
-import { projectByName } from './projects.ts'
+import { projectByName } from './project/projects.ts'
 import { repoOf } from './run.ts'
 import { RUNS_DIR, runFilePaths } from './run-artifacts.ts'
 

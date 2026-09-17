@@ -8,7 +8,7 @@ import { db, linkedWorktreeReadOnly, nowIso, writeTransaction } from '../db.ts'
 import { type Doc, docsForRun, docsMarkdown, listDocs } from '../doc/docs.ts'
 import { targetGitEnvironment } from '../git-environment.ts'
 import { DEFAULT_PACK_BYTES, job as getJob, JOBS } from '../jobs.ts'
-import { projectAt, projectByName, projects } from '../projects.ts'
+import { projectAt, projectByName, projects } from '../project/projects.ts'
 import { composeCanonRows } from './canon-hydrate.ts'
 import { canonFrontmatter, classifyCanonFile } from './canon-lint.ts'
 

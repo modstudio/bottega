@@ -18,8 +18,8 @@ import {
   withCleanupLock,
   withWorktreeLease,
   worktreeLeaseName,
-} from '../project-lock.ts'
-import { projectAt, projectByName } from '../projects.ts'
+} from '../project/project-lock.ts'
+import { projectAt, projectByName } from '../project/projects.ts'
 import { proveWorktreeReconstructible } from '../reclaim/reclaim.ts'
 import {
   type ResourceClaimState,

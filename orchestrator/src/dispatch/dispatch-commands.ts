@@ -12,7 +12,7 @@ import {
   retiredProjectAt,
   retiredProjectByName,
   retiredProjectRefusal,
-} from '../projects.ts'
+} from '../project/projects.ts'
 import { preflight } from './dispatch-preflight.ts'
 
 type TransportName = 'cli' | 'acp'

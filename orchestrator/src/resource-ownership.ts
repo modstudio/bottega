@@ -17,7 +17,7 @@ import {
 import { chainScoreJoin, EVIDENCE_CLOSED_SQL } from './evidence/evidence-query.ts'
 import { repoRootOf } from './git-environment.ts'
 import { pidAlive } from './process-liveness.ts'
-import { withCleanupLock, withWorktreeLease } from './project-lock.ts'
+import { withCleanupLock, withWorktreeLease } from './project/project-lock.ts'
 import { runAlive } from './run-alive.ts'
 import { runLeaseState } from './run-lease.ts'
 

@@ -18,7 +18,7 @@ import { type CanonRow, composeCanonRows } from '../canon/canon-hydrate.ts'
 import { db, nowIso, sessionId, writableDb, writeTransaction } from '../db.ts'
 import { JOBS } from '../jobs.ts'
 import { DEFAULT_PACK_BYTES } from '../pack-budget.ts'
-import { projectAt, projectByName } from '../projects.ts'
+import { projectAt, projectByName } from '../project/projects.ts'
 import { recordApiClient } from '../record/record-api-client.ts'
 import {
   consumeDocBody,

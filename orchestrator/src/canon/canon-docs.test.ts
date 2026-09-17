@@ -6,7 +6,7 @@ import { importDocs, setDoc } from '../../test/fixtures/docs.ts'
 import { dir } from '../../test/fixtures/store.ts'
 import { db } from '../db.ts'
 import { docsForRun, exportDocs, getDoc, listDocMetadata } from '../doc/docs.ts'
-import { upsertProject } from '../projects.ts'
+import { upsertProject } from '../project/projects.ts'
 import {
   compilePack,
   findingsForPack,

@@ -7,7 +7,7 @@ import { dir } from '../test/fixtures/store.ts'
 import { CanonBudgetError, compilePack } from './canon/canon.ts'
 import { JOBS } from './jobs.ts'
 import { DEFAULT_PACK_BYTES, MAX_INJECT_DOC_BYTES } from './pack-budget.ts'
-import { upsertProject } from './projects.ts'
+import { upsertProject } from './project/projects.ts'
 
 const ROOT = new URL('../..', import.meta.url).pathname.replace(/\/$/, '')
 

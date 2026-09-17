@@ -454,32 +454,32 @@
     "score": 33
   },
   {
-    "file": "orchestrator/src/project-commands.ts",
+    "file": "orchestrator/src/project/project-commands.ts",
     "function": "projectCommand",
     "line": 165,
     "score": 64,
-    "key": "orchestrator/src/project-commands.ts\u0000projectCommand"
+    "key": "orchestrator/src/project/project-commands.ts\u0000projectCommand"
   },
   {
-    "file": "orchestrator/src/project-lock.ts",
+    "file": "orchestrator/src/project/project-lock.ts",
     "function": "nextWaiterTicket",
     "line": 164,
     "score": 25
   },
   {
-    "file": "orchestrator/src/project-lock.ts",
+    "file": "orchestrator/src/project/project-lock.ts",
     "function": "withKernelProjectLock",
     "line": 238,
     "score": 20
   },
   {
-    "file": "orchestrator/src/project-lock.ts",
+    "file": "orchestrator/src/project/project-lock.ts",
     "function": "withProjectLock",
     "line": 348,
     "score": 32
   },
   {
-    "file": "orchestrator/src/projects.ts",
+    "file": "orchestrator/src/project/projects.ts",
     "function": "validateProjectSettings",
     "line": 392,
     "score": 25

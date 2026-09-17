@@ -9,7 +9,7 @@ import { DATABASE_RESOLUTION } from '../src/database-location.ts'
 import { JOBS } from '../src/jobs.ts'
 import { applyMigrations, migrationRefusal } from '../src/migrations.ts'
 import { DEFAULT_PACK_BYTES } from '../src/pack-budget.ts'
-import { projects } from '../src/projects.ts'
+import { projects } from '../src/project/projects.ts'
 import { registerStandardHooks } from '../src/store-hooks.ts'
 
 registerStandardHooks()

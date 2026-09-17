@@ -32,7 +32,7 @@ import { isReaderJob, type Job } from './jobs.ts'
 import { machineId } from './machine-identity.ts'
 import type { McpConnection, McpMode } from './mcp/mcp-preflight.ts'
 import { finalizeWorkerReply } from './outcome.ts'
-import { projectByName, projects } from './projects.ts'
+import { projectByName, projects } from './project/projects.ts'
 import { teardownTerminalRunResources } from './resource-ownership.ts'
 import { cleanReviewEvidence } from './review.ts'
 import {

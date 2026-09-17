@@ -3,7 +3,7 @@ import { consumeDoc, removeDoc, setDoc } from '../../test/fixtures/docs.ts'
 import { dir } from '../../test/fixtures/store.ts'
 import { compilePack } from '../canon/canon.ts'
 import { db } from '../db.ts'
-import { retireProject, upsertProject } from '../projects.ts'
+import { retireProject, upsertProject } from '../project/projects.ts'
 import {
   consumeDoc as consumeDocument,
   removeDoc as deleteDoc,
