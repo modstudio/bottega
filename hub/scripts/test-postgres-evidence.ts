@@ -159,23 +159,53 @@ try {
       throw new Error('another space observed hosted tasks')
 
     const noteStamp = '2026-09-17T12:20:00.000Z'
-    await mirrorHostedNotes(actorUrl, identity, { notes: [{
-      id: '01990000-0000-7000-8000-00000000066d', number: 800, project: PLATFORM_SLUG,
-      project_name: PLATFORM_SLUG, text: 'Existing note', area: null, anchors: '[]', sightings: 1,
-      created_at: noteStamp, last_seen_at: noteStamp, stale_at: null, stale_reason: null,
-      promoted_task: null, updated_at: noteStamp, deleted_at: null,
-    }], raiseProjects: [{ project: PLATFORM_SLUG, next: 2 }] })
-    const allocatedNote = await createHostedNote(actorUrl, identity, {
-      project: PLATFORM_SLUG, text: 'Allocated note', anchor: JSON.stringify({ cwd: '/tmp', branch: null,
-        commit: null, run_id: null, session_id: null, files: [], project: PLATFORM_SLUG }),
+    await mirrorHostedNotes(actorUrl, identity, {
+      notes: [
+        {
+          id: '01990000-0000-7000-8000-00000000066d',
+          number: 800,
+          project: PLATFORM_SLUG,
+          project_name: PLATFORM_SLUG,
+          text: 'Existing note',
+          area: null,
+          anchors: '[]',
+          sightings: 1,
+          created_at: noteStamp,
+          last_seen_at: noteStamp,
+          stale_at: null,
+          stale_reason: null,
+          promoted_task: null,
+          updated_at: noteStamp,
+          deleted_at: null,
+        },
+      ],
+      raiseProjects: [{ project: PLATFORM_SLUG, next: 2 }],
     })
-    if (allocatedNote.number !== 801) throw new Error(`note allocation returned ${allocatedNote.number}`)
+    const allocatedNote = await createHostedNote(actorUrl, identity, {
+      project: PLATFORM_SLUG,
+      text: 'Allocated note',
+      anchor: JSON.stringify({
+        cwd: '/tmp',
+        branch: null,
+        commit: null,
+        run_id: null,
+        session_id: null,
+        files: [],
+        project: PLATFORM_SLUG,
+      }),
+    })
+    if (allocatedNote.number !== 801)
+      throw new Error(`note allocation returned ${allocatedNote.number}`)
     await admin`CREATE OR REPLACE FUNCTION fail_hub_task_insert() RETURNS trigger LANGUAGE plpgsql AS
       'BEGIN RAISE EXCEPTION ''forced task insert failure''; END'`
     await admin`CREATE TRIGGER fail_hub_task_insert BEFORE INSERT ON hub_task
       FOR EACH ROW EXECUTE FUNCTION fail_hub_task_insert()`
     let promotionFailed = false
-    try { await promoteHostedNote(actorUrl, identity, allocatedNote.number) } catch { promotionFailed = true }
+    try {
+      await promoteHostedNote(actorUrl, identity, allocatedNote.number)
+    } catch {
+      promotionFailed = true
+    }
     await admin`DROP TRIGGER fail_hub_task_insert ON hub_task`
     await admin`DROP FUNCTION fail_hub_task_insert()`
     if (!promotionFailed) throw new Error('forced promotion task insert did not fail')

@@ -22,43 +22,102 @@ beforeAll(resetFixtureStore)
 afterAll(() => rmSync(scratch, { recursive: true, force: true }))
 
 const hosted = {
-  baseUrl: 'https://hub.example.test', token: 'test',
+  baseUrl: 'https://hub.example.test',
+  token: 'test',
   fetch: async (input: string, init?: RequestInit) => {
-    const url = new URL(input), body = init?.body ? JSON.parse(String(init.body)) : {}, at = new Date().toISOString()
+    const url = new URL(input),
+      body = init?.body ? JSON.parse(String(init.body)) : {},
+      at = new Date().toISOString()
     const number = Number(url.pathname.split('/')[3])
-    const shape = (note: ReturnType<typeof getNote>) => ({ id: crypto.randomUUID(), number: note.id,
-      project: note.project, project_name: note.project, text: note.text, area: note.area,
-      anchors: JSON.stringify(note.anchors), sightings: note.sightings, created_at: note.created_at,
-      last_seen_at: note.last_seen_at, stale_at: note.stale_at, stale_reason: note.stale_reason,
-      promoted_task: note.promoted_task, updated_at: at, deleted_at: null })
+    const shape = (note: ReturnType<typeof getNote>) => ({
+      id: crypto.randomUUID(),
+      number: note.id,
+      project: note.project,
+      project_name: note.project,
+      text: note.text,
+      area: note.area,
+      anchors: JSON.stringify(note.anchors),
+      sightings: note.sightings,
+      created_at: note.created_at,
+      last_seen_at: note.last_seen_at,
+      stale_at: note.stale_at,
+      stale_reason: note.stale_reason,
+      promoted_task: note.promoted_task,
+      updated_at: at,
+      deleted_at: null,
+    })
     if (url.pathname === '/v1/notes' && init?.method === 'POST') {
       if (body.sameAs) {
-        const old = getNote(body.sameAs); return Response.json({ ...shape(old),
-          anchors: JSON.stringify([...old.anchors, JSON.parse(body.anchor)]), sightings: old.sightings + 1,
-          last_seen_at: at, stale_at: null, stale_reason: null })
+        const old = getNote(body.sameAs)
+        return Response.json({
+          ...shape(old),
+          anchors: JSON.stringify([...old.anchors, JSON.parse(body.anchor)]),
+          sightings: old.sightings + 1,
+          last_seen_at: at,
+          stale_at: null,
+          stale_reason: null,
+        })
       }
-      const next = (db().query<{max: number|null}, []>('SELECT max(id) max FROM note').get()?.max ?? 0) + 1
-      return Response.json({ id: crypto.randomUUID(), number: next, project: body.project,
-        project_name: body.project, text: body.text, area: body.area ?? null, anchors: `[${body.anchor}]`,
-        sightings: 1, created_at: at, last_seen_at: at, stale_at: null, stale_reason: null,
-        promoted_task: null, updated_at: at, deleted_at: null })
+      const next =
+        (db().query<{ max: number | null }, []>('SELECT max(id) max FROM note').get()?.max ?? 0) + 1
+      return Response.json({
+        id: crypto.randomUUID(),
+        number: next,
+        project: body.project,
+        project_name: body.project,
+        text: body.text,
+        area: body.area ?? null,
+        anchors: `[${body.anchor}]`,
+        sightings: 1,
+        created_at: at,
+        last_seen_at: at,
+        stale_at: null,
+        stale_reason: null,
+        promoted_task: null,
+        updated_at: at,
+        deleted_at: null,
+      })
     }
     if (url.pathname === '/v1/notes/merge') {
-      const target = getNote(body.target), source = getNote(body.source)
-      return Response.json({ note: { ...shape(target), anchors: JSON.stringify([...target.anchors, ...source.anchors]),
-        sightings: target.sightings + source.sightings }, deleted: source.id })
+      const target = getNote(body.target),
+        source = getNote(body.source)
+      return Response.json({
+        note: {
+          ...shape(target),
+          anchors: JSON.stringify([...target.anchors, ...source.anchors]),
+          sightings: target.sightings + source.sightings,
+        },
+        deleted: source.id,
+      })
     }
-    if (url.pathname.endsWith('/drop')) return Response.json({ ...shape(getNote(number)), stale_at: at,
-      stale_reason: `dropped: ${body.reason}`, last_seen_at: at })
+    if (url.pathname.endsWith('/drop'))
+      return Response.json({
+        ...shape(getNote(number)),
+        stale_at: at,
+        stale_reason: `dropped: ${body.reason}`,
+        last_seen_at: at,
+      })
     if (url.pathname.endsWith('/acknowledgements')) {
       const note = getNote(number)
       const hostedNote = shape(note)
-      return Response.json({ note: hostedNote, alreadyAcknowledged: false, acknowledgement: {
-        id: crypto.randomUUID(), note_id: hostedNote.id,
-        project_name: note.project, session_id: body.session, acknowledged_at: at,
-        sightings: note.sightings, created_at: at, updated_at: at, deleted_at: null } })
+      return Response.json({
+        note: hostedNote,
+        alreadyAcknowledged: false,
+        acknowledgement: {
+          id: crypto.randomUUID(),
+          note_id: hostedNote.id,
+          project_name: note.project,
+          session_id: body.session,
+          acknowledged_at: at,
+          sightings: note.sightings,
+          created_at: at,
+          updated_at: at,
+          deleted_at: null,
+        },
+      })
     }
-    if (url.pathname === '/v1/notes/reap') return Response.json({ marked: body.stale.length, deleted: body.deleted.length })
+    if (url.pathname === '/v1/notes/reap')
+      return Response.json({ marked: body.stale.length, deleted: body.deleted.length })
     return Response.json({ error: 'unexpected route' }, { status: 500 })
   },
 }
@@ -87,11 +146,13 @@ describe('suggestion notes', () => {
 
   test('orch note without a duplicate choice returns candidates and files nothing', async () => {
     const unique = crypto.randomUUID()
-    const first = (await fileNote({
-      text: `Collector ${unique} loses active run intervals`,
-      cwd: '/fixtures/repos/workshop',
-      forceNew: true,
-    })).note
+    const first = (
+      await fileNote({
+        text: `Collector ${unique} loses active run intervals`,
+        cwd: '/fixtures/repos/workshop',
+        forceNew: true,
+      })
+    ).note
     const before = listNotes().length
     const offered = await fileNote({
       text: `Collector ${unique} loses the active run interval`,
@@ -118,11 +179,13 @@ describe('suggestion notes', () => {
   })
 
   test('a write offers duplicate notes until the caller chooses', async () => {
-    const first = (await fileNote({
-      text: 'The collector loses active run intervals',
-      cwd: '/fixtures/repos/workshop',
-      forceNew: true,
-    })).note
+    const first = (
+      await fileNote({
+        text: 'The collector loses active run intervals',
+        cwd: '/fixtures/repos/workshop',
+        forceNew: true,
+      })
+    ).note
     const offered = await fileNote({
       text: 'Collector loses the active run interval',
       cwd: '/fixtures/repos/workshop',
@@ -132,16 +195,20 @@ describe('suggestion notes', () => {
   })
 
   test('same preserves sightings and drop records why', async () => {
-    const one = (await fileNote({
-      text: 'First merge observation',
-      cwd: '/fixtures/repos/workshop',
-      forceNew: true,
-    })).note
-    const two = (await fileNote({
-      text: 'Second merge observation',
-      cwd: '/fixtures/repos/workshop',
-      forceNew: true,
-    })).note
+    const one = (
+      await fileNote({
+        text: 'First merge observation',
+        cwd: '/fixtures/repos/workshop',
+        forceNew: true,
+      })
+    ).note
+    const two = (
+      await fileNote({
+        text: 'Second merge observation',
+        cwd: '/fixtures/repos/workshop',
+        forceNew: true,
+      })
+    ).note
     expect((await merge(one.id, two.id)).sightings).toBe(2)
     expect(() => getNote(two.id)).toThrow(`no note ${two.id}`)
 
@@ -150,7 +217,8 @@ describe('suggestion notes', () => {
 
   test('actionable notes exclude promoted and dropped rows', async () => {
     const session = `actionable-${crypto.randomUUID()}`
-    const make = async (text: string) => (await fileNote({ text, cwd: '/fixtures/repos/workshop', forceNew: true })).note
+    const make = async (text: string) =>
+      (await fileNote({ text, cwd: '/fixtures/repos/workshop', forceNew: true })).note
     const open = await make('Open curator observation')
     const promoted = await make('Promoted curator observation')
     const dropped = await make('Dropped curator observation')
@@ -174,11 +242,13 @@ describe('suggestion notes', () => {
   test('keep acknowledges one session idempotently and a further sighting clears it', async () => {
     const session = `keep-${crypto.randomUUID()}`
     const otherSession = `other-${crypto.randomUUID()}`
-    const note = (await fileNote({
-      text: `Keep observation ${crypto.randomUUID()}`,
-      cwd: '/fixtures/repos/workshop',
-      forceNew: true,
-    })).note
+    const note = (
+      await fileNote({
+        text: `Keep observation ${crypto.randomUUID()}`,
+        cwd: '/fixtures/repos/workshop',
+        forceNew: true,
+      })
+    ).note
     const anchor = { ...note.anchors[0]!, session_id: session }
     const otherAnchor = { ...anchor, session_id: otherSession }
     writeTransaction((conn) =>

@@ -652,20 +652,8 @@ async function task() {
 
 async function note() {
   const sub = argv[1]
-  const verbs = new Set([
-    'list',
-    'same',
-    'keep',
-    'promote',
-    'drop',
-    'stale',
-    'curate',
-    'curator',
-    'push',
-  ])
-  if (sub && verbs.has(sub) && (has('new') || flag('same-as'))) {
-    throw new Error(`to file the text "${sub}", use: hub note new "${sub}" [--new|--same-as ID]`)
-  }
+  refuseAmbiguousNoteVerb(sub)
+  if (sub === 'push') return pushNoteCache()
   if (sub === 'list') {
     if (argv[2] && !argv[2]!.startsWith('--')) {
       throw new Error('to file the text "list", use: hub note new "list" [--new|--same-as ID]')
@@ -743,13 +731,6 @@ async function note() {
     console.log(`note curator ${setCuratorEnabled(has('enable')) ? 'enabled' : 'disabled'}`)
     return
   }
-  if (sub === 'push') {
-    const result = await pushNotes({ dryRun: has('dry-run') })
-    console.log(JSON.stringify(result, null, 2))
-    if (result.match === false) process.exitCode = 1
-    return
-  }
-
   if (sub !== 'new') {
     throw new Error(
       `hub note new <text> [--same-as ID|--new]; to file the text "${sub ?? ''}", put new before it`,
@@ -787,6 +768,29 @@ async function note() {
   console.log(
     `note ${result.note.id} filed; ${result.note.sightings} sighting${result.note.sightings === 1 ? '' : 's'}`,
   )
+}
+
+function refuseAmbiguousNoteVerb(sub: string | undefined): void {
+  const verbs = new Set([
+    'list',
+    'same',
+    'keep',
+    'promote',
+    'drop',
+    'stale',
+    'curate',
+    'curator',
+    'push',
+  ])
+  if (sub && verbs.has(sub) && (has('new') || flag('same-as'))) {
+    throw new Error(`to file the text "${sub}", use: hub note new "${sub}" [--new|--same-as ID]`)
+  }
+}
+
+async function pushNoteCache(): Promise<void> {
+  const result = await pushNotes({ dryRun: has('dry-run') })
+  console.log(JSON.stringify(result, null, 2))
+  if (result.match === false) process.exitCode = 1
 }
 
 async function sendReport() {

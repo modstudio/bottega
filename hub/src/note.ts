@@ -326,32 +326,45 @@ function vanishedReason(
   const registered = projects().find((project) => project.name === note.project)
   if (!registered) return `project ${note.project} is no longer registered`
   const trunk = typeof registered.settings.trunk === 'string' ? registered.settings.trunk : 'main'
-  const reasons = note.anchors.map((anchor): string | null => {
-    for (const file of anchor.files) {
-      if (!existsSync(file.path)) return `${file.path}:${file.line} no longer exists`
-      const content = readFileSync(file.path, 'utf8').split(/\r?\n/)[file.line - 1]
-      if (content !== file.content)
-        return `${file.path}:${file.line} no longer has its anchored content`
-    }
-    if (anchor.run_id && !existingRuns.has(anchor.run_id)) return `run ${anchor.run_id} aged out`
-    if (anchor.branch && anchor.branch !== trunk) {
-      if (!runGit(registered.path, 'show-ref', '--verify', `refs/heads/${anchor.branch}`)) {
-        return `branch ${anchor.branch} was deleted`
-      }
-      if (runGit(registered.path, 'merge-base', '--is-ancestor', anchor.branch, trunk) !== null) {
-        return `branch ${anchor.branch} landed on ${trunk}`
-      }
-    }
-    if (anchor.commit) {
-      const count = runGit(registered.path, 'rev-list', '--count', `${anchor.commit}..${trunk}`)
-      if (count !== null && Number(count) > 50)
-        return `trunk moved ${count} commits past the anchor`
-    }
-    return null
-  })
+  const reasons = note.anchors.map((anchor) =>
+    vanishedAnchorReason(anchor, registered.path, trunk, existingRuns, runGit),
+  )
   // A repeated sighting refreshes the note. Old anchors may disappear without
   // making a newer, still-grounded observation stale.
   return reasons.length && reasons.every(Boolean) ? (reasons[reasons.length - 1] ?? null) : null
+}
+
+function vanishedAnchorReason(
+  anchor: NoteAnchor,
+  projectPath: string,
+  trunk: string,
+  existingRuns: Set<number>,
+  runGit: StaleDeps['git'],
+): string | null {
+  const fileReason = vanishedFileReason(anchor)
+  if (fileReason) return fileReason
+  if (anchor.run_id && !existingRuns.has(anchor.run_id)) return `run ${anchor.run_id} aged out`
+  if (anchor.branch && anchor.branch !== trunk) {
+    if (!runGit(projectPath, 'show-ref', '--verify', `refs/heads/${anchor.branch}`))
+      return `branch ${anchor.branch} was deleted`
+    if (runGit(projectPath, 'merge-base', '--is-ancestor', anchor.branch, trunk) !== null)
+      return `branch ${anchor.branch} landed on ${trunk}`
+  }
+  if (!anchor.commit) return null
+  const count = runGit(projectPath, 'rev-list', '--count', `${anchor.commit}..${trunk}`)
+  return count !== null && Number(count) > 50
+    ? `trunk moved ${count} commits past the anchor`
+    : null
+}
+
+function vanishedFileReason(anchor: NoteAnchor): string | null {
+  for (const file of anchor.files) {
+    if (!existsSync(file.path)) return `${file.path}:${file.line} no longer exists`
+    const content = readFileSync(file.path, 'utf8').split(/\r?\n/)[file.line - 1]
+    if (content !== file.content)
+      return `${file.path}:${file.line} no longer has its anchored content`
+  }
+  return null
 }
 
 export async function staleNotes(deps: Partial<StaleDeps> = {}): Promise<StaleResult> {

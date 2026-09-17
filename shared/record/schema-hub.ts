@@ -146,6 +146,7 @@ export const hubNote = pgTable.withRLS(
   },
   (table) => [
     unique('hub_note_space_number_unique').on(table.spaceId, table.number),
+    check('hub_note_sightings_check', sql`${table.sightings} > 0`),
     ...tenantPolicies('hub_note', table.spaceId),
   ],
 )
@@ -166,6 +167,7 @@ export const hubNoteAcknowledgement = pgTable.withRLS(
   },
   (table) => [
     unique('hub_note_ack_space_session_unique').on(table.spaceId, table.noteId, table.sessionId),
+    check('hub_note_ack_sightings_check', sql`${table.sightings} > 0`),
     ...tenantPolicies('hub_note_acknowledgement', table.spaceId),
   ],
 )
