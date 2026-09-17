@@ -216,6 +216,24 @@ describe('project workflow injection', () => {
     )
   })
 
+  test('the register edge refuses shell syntax in a tracker kind or state name', () => {
+    expect(
+      validateProjectSettings({ tracker: { protocol: 'hub', kind: 'hub; cat secrets' } }).join(
+        '\n',
+      ),
+    ).toContain('must be a plain name')
+    expect(
+      validateProjectSettings({
+        tracker: { protocol: 'workspace-mcp', states: { 'active; cat secrets': 'active' } },
+      }).join('\n'),
+    ).toContain('Invalid key in record')
+    expect(
+      validateProjectSettings({
+        tracker: { protocol: 'cursor-mcp', kind: 'stopal', states: { 'In Progress': 'active' } },
+      }),
+    ).toEqual([])
+  })
+
   test('substitutes underscore names and keys, and ignores a stored hub override', () => {
     const tracker = resolveInjection(
       {

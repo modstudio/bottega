@@ -77,6 +77,12 @@ export function resolveTrackerAgentActions(
   }
 }
 
+// A tracker kind and its state names are written into workflow steps an agent
+// follows, so they are plain names with no shell syntax.
+const trackerNameSchema = z
+  .string()
+  .regex(/^[A-Za-z0-9][A-Za-z0-9 _.-]*$/, 'must be a plain name: letters, digits, space, _ . -')
+
 const trackerActionsShape = Object.fromEntries(
   TRACKER_ACTIONS.map((action) => [
     action,
@@ -90,12 +96,12 @@ const trackerActionsShape = Object.fromEntries(
 ) as { [Action in TrackerAction]: z.ZodOptional<z.ZodString> }
 
 export const trackerSettingsShape = {
-  kind: z.string().trim().min(1).optional(),
+  kind: trackerNameSchema.optional(),
   protocol: z.string().trim().min(1).optional(),
   assigneeLookup: z.enum(['person-lookup', 'task-detail']).optional(),
   envPrefix: z.string().trim().min(1).optional(),
   openStatuses: z.array(z.string()).optional(),
-  states: z.record(z.string(), z.enum(['backlog', ...TASK_STATUSES])).optional(),
+  states: z.record(trackerNameSchema, z.enum(['backlog', ...TASK_STATUSES])).optional(),
   actions: z.strictObject(trackerActionsShape).optional(),
 }
 
