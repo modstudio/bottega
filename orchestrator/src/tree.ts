@@ -4,7 +4,7 @@
 import { createHash } from 'node:crypto'
 import { existsSync, realpathSync } from 'node:fs'
 import { resolve } from 'node:path'
-import { closeOutRun } from './close-out.ts'
+import { closeOutRun } from './close/close-out.ts'
 import { db, nowIso, sessionId, writableDb, writeTransaction } from './db.ts'
 import { git } from './git-environment.ts'
 import { HOOK_TREE_AGENT, HOOK_TREE_JOB, hookTreeEvidenceDecision } from './hook-tree.ts'

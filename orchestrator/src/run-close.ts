@@ -5,7 +5,7 @@
  * run control, dispatch surfaces, or the CLI.
  */
 import { existsSync, readFileSync } from 'node:fs'
-import { reclaimTerminalTree } from './close-out.ts'
+import { reclaimTerminalTree } from './close/close-out.ts'
 import type { WorkerReply } from './contract.ts'
 import { db } from './db.ts'
 import {

@@ -1,15 +1,15 @@
 import { afterEach, describe, expect, mock, spyOn, test } from 'bun:test'
 import { existsSync, mkdirSync, rmSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
-import { addRun, dir } from '../test/fixtures/store.ts'
+import { addRun, dir } from '../../test/fixtures/store.ts'
+import { db } from '../db.ts'
+import { upsertProject } from '../projects.ts'
 import {
   clearConversationKeepTreeHold,
   closeOutRun,
   extractionRunId,
   releaseRunFailoverAttempts,
 } from './close-out.ts'
-import { db } from './db.ts'
-import { upsertProject } from './projects.ts'
 
 afterEach(() => {
   mock.restore()

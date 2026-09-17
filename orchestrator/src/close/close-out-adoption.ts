@@ -1,7 +1,7 @@
 // concern: adopted worktree close-out decision
 /** Decides whether a tree belongs to this run's automatic teardown. */
 
-import type { TreeOwnership } from './worktree-attribution.ts'
+import type { TreeOwnership } from '../worktree-attribution.ts'
 
 export type AdoptedTreeCloseOutDecision = 'ordinary' | 'forgotten' | 'held'
 

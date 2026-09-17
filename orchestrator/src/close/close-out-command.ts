@@ -1,8 +1,8 @@
 // concern: close-out
 /** Owns explicit close-out presentation and exit mapping. Must not know CLI grammar. */
 
+import { writableDb } from '../db.ts'
 import { closeOutRun } from './close-out.ts'
-import { writableDb } from './db.ts'
 
 export function closeOutCommand(
   id: number,

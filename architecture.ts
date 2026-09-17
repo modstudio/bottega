@@ -312,7 +312,7 @@ export const modules: ArchitectureModule[] = [
     './worktree-types.ts',
   ]),
   module('orchestrator/src/run-close.ts', [
-    './close-out.ts',
+    './close/close-out.ts',
     './contract.ts',
     './db.ts',
     './failover.ts',
@@ -404,7 +404,7 @@ export const modules: ArchitectureModule[] = [
     'node:crypto',
     'node:fs',
     'node:path',
-    './close-out.ts',
+    './close/close-out.ts',
     './db.ts',
     './git-environment.ts',
     './hook-tree.ts',

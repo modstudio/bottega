@@ -174,7 +174,7 @@
     "score": 35
   },
   {
-    "file": "orchestrator/src/close-out.ts",
+    "file": "orchestrator/src/close/close-out.ts",
     "function": "withCleanupLock callback",
     "line": 168,
     "score": 24

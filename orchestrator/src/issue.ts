@@ -2,7 +2,7 @@ import { copyFileSync, existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync
 import { homedir, tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { FROZEN_STATE_NAMES, PLATFORM_NAME, PLATFORM_SLUG } from '../../shared/brand.ts'
-import { releaseRunFailoverAttempts } from './close-out.ts'
+import { releaseRunFailoverAttempts } from './close/close-out.ts'
 import {
   ISSUE_WORKER_SCHEMA,
   type IssueWorkerReply,
