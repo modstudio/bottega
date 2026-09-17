@@ -86,6 +86,8 @@ export type Project = {
   settings: ProjectSettings
 }
 export type ProjectSettings = {
+  /** Record space slug that owns this project's hosted evidence. */
+  space?: string
   /**
    * Paths a read-only worker must not read. Absolute paths are used as-is,
    * `~` expands to the operator home, and relative paths resolve from this
@@ -541,6 +543,12 @@ export function validateProjectSettings(settings: ProjectSettings, projectPath?:
 
   if (invalidOptionalStringArray(settings.secretPaths)) {
     problems.push('secretPaths must be an array of non-empty path strings')
+  }
+  if (
+    settings.space !== undefined &&
+    (typeof settings.space !== 'string' || !settings.space.trim())
+  ) {
+    problems.push('space must be a non-empty record space slug')
   }
   if (invalidOptionalStringArray(settings.workerMcpServers))
     problems.push('workerMcpServers must be an array of non-empty strings')

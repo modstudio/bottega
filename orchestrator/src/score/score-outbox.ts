@@ -6,6 +6,7 @@ import { PLATFORM_SPACE_ID } from '../../../shared/record/schema.ts'
 export const SCORE_RECORD_PAYLOAD_COLUMNS = [
   'id',
   'spaceId',
+  'projectName',
   'machineId',
   'localId',
   'delivery',
@@ -20,6 +21,7 @@ export const SCORE_RECORD_PAYLOAD_COLUMNS = [
 type LocalScore = {
   record_id: string | null
   local_id: number
+  project_name: string | null
   delivery: string
   quality: string | null
   fidelity: string | null
@@ -35,6 +37,7 @@ export function buildScoreRecordPayload(
   return {
     id: row.record_id,
     spaceId: PLATFORM_SPACE_ID,
+    projectName: row.project_name,
     machineId,
     localId: row.local_id,
     delivery: row.delivery,
@@ -51,9 +54,11 @@ export function buildScoreRecordPayload(
 export function enqueueScoreRecord(database: Database, runId: number, machineId: string): boolean {
   const row = database
     .query<LocalScore, [number]>(
-      `SELECT r.record_id, r.id AS local_id, s.delivery, s.quality, s.fidelity,
+      `SELECT r.record_id, r.id AS local_id, project.name AS project_name,
+              s.delivery, s.quality, s.fidelity,
               s.note, s.scored_at, s.scored_by
          FROM score s JOIN run r ON r.id=s.run_id
+         LEFT JOIN project ON project.id=r.project_id
         WHERE s.run_id=?`,
     )
     .get(runId)

@@ -21,6 +21,7 @@ export const OrchProjectSchema = z
         colorDark: z.string().optional(),
         envPrefix: z.string().optional(),
         keyPrefixes: z.array(z.string()).optional(),
+        space: z.string().optional(),
         tracker: OrchTrackerSettingsSchema.optional(),
       })
       .passthrough(),

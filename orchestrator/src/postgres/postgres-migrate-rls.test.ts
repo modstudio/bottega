@@ -20,7 +20,11 @@ import {
   memoryRecordSession,
 } from '../../test/fixtures/record-session.ts'
 import { registerActiveSpaceProofs } from '../../test/postgres-remembered-space-proof.ts'
-import { proveHostedDocs, proveScoreRecordSync } from '../../test/postgres-score-proof.ts'
+import {
+  proveHostedDocs,
+  proveProjectSpaceRecordSync,
+  proveScoreRecordSync,
+} from '../../test/postgres-score-proof.ts'
 import { startRecordApiServer } from '../record/record-api-server.ts'
 import { bearerHeaders, recordAuth, setActiveRecordSpace } from '../record/record-auth.ts'
 import { signInCommand, signUpCommand, whoamiCommand } from '../record/record-auth-command.ts'
@@ -1022,6 +1026,18 @@ realPostgres('RLS proof against real Postgres', () => {
     expect(otherSpaceRead.stdout).toBe('')
     expect(rescoredRead.code, rescoredRead.stderr).toBe(0)
     expect(rescoredRead.stdout).toBe('partial|mixed|updated')
+  })
+
+  test('two projects sync into separate spaces and remain tenant-confined', async () => {
+    await proveProjectSpaceRecordSync({
+      actorUrl: actorUrl!,
+      actorRole: RECORD_ACTOR_ROLE,
+      machineId: MACHINE_A,
+      userId: OPERATOR_USER_ID,
+      firstSpaceId: SPACE_A,
+      secondSpaceId: SPACE_B,
+      asSpace,
+    })
   })
 
   test('cross-space write is refused', () => {

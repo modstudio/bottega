@@ -7,6 +7,7 @@ import {
   recordDoctorCommand,
   recordMigrateCommand,
   recordSpaceAcceptCommand,
+  recordSpaceCreateCommand,
   recordSpaceInvitationsCommand,
   recordSpaceInviteCommand,
   recordSpaceListCommand,
@@ -43,6 +44,13 @@ export function register(program: Command): void {
   record.command('migrate').action(() => recordMigrateCommand(presentation))
   const space = record.command('space')
   space.command('list').action(() => recordSpaceListCommand(presentation))
+  space
+    .command('create')
+    .requiredOption('--name <name>')
+    .requiredOption('--slug <slug>')
+    .action((options) =>
+      recordSpaceCreateCommand(String(options.name), String(options.slug), presentation),
+    )
   space
     .command('switch')
     .argument('<slug-or-id>')

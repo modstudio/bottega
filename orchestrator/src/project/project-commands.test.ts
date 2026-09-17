@@ -1,11 +1,15 @@
-import { describe, expect, test } from 'bun:test'
+import { afterAll, beforeAll, describe, expect, test } from 'bun:test'
 import { mkdtempSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { projectCommand } from './project-commands.ts'
 import { projectByName, projects, retireProject, upsertProject } from './projects.ts'
 
-async function runProject(args: string[], flags: Record<string, string | boolean> = {}) {
+async function runProject(
+  args: string[],
+  flags: Record<string, string | boolean> = {},
+  requireSpaceMembership: (url: string, space: string) => Promise<unknown> = async () => {},
+) {
   const present = new Set(Object.keys(flags))
   const out: string[] = []
   await projectCommand(
@@ -22,9 +26,20 @@ async function runProject(args: string[], flags: Record<string, string | boolean
       log: (...parts: unknown[]) => out.push(parts.join(' ')),
       cwd: () => process.cwd(),
     },
+    { requireSpaceMembership },
   )
   return out.join('\n')
 }
+
+let priorRecordUrl: string | undefined
+beforeAll(() => {
+  priorRecordUrl = process.env.ORCH_RECORD_URL
+  process.env.ORCH_RECORD_URL = 'postgres://record.test/database'
+})
+afterAll(() => {
+  if (priorRecordUrl === undefined) delete process.env.ORCH_RECORD_URL
+  else process.env.ORCH_RECORD_URL = priorRecordUrl
+})
 
 describe('orch project retire', () => {
   test('list omits retired rows unless --retired', async () => {
@@ -67,4 +82,20 @@ describe('orch project retire', () => {
     expect(out).toContain('un-retired readded')
     expect(projectByName('readded')?.path).toBe(path)
   })
+})
+
+test('declaring a space refuses a space outside the signed-in memberships', async () => {
+  upsertProject({ name: 'space-refusal', path: '/w/space-refusal' })
+  await expect(
+    runProject(
+      ['project', 'set', 'space-refusal'],
+      { settings: JSON.stringify({ space: 'unreachable' }) },
+      async (_url, space) => {
+        throw new Error(
+          `record space ${space} is not one of the signed-in user's memberships; join it first with an invitation, then retry`,
+        )
+      },
+    ),
+  ).rejects.toThrow('join it first with an invitation')
+  expect(projectByName('space-refusal')?.settings.space).toBeUndefined()
 })

@@ -98,6 +98,52 @@ export async function switchRecordSpace(url: string, value: string): Promise<Rec
   return selected
 }
 
+export async function requireRecordSpaceMembership(
+  url: string,
+  value: string,
+): Promise<RecordMembership> {
+  const listed = await recordMemberships(url)
+  try {
+    return resolveRecordSpace(value, listed.memberships)
+  } catch {
+    throw new Error(
+      `record space ${value} is not one of the signed-in user's memberships; join it first with an invitation, then retry`,
+    )
+  }
+}
+
+export function refuseDuplicateRecordSpaceSlug(
+  slug: string,
+  memberships: readonly RecordMembership[],
+): void {
+  const duplicate = memberships.find((membership) => membership.slug === slug)
+  if (duplicate) throw new Error(`record space slug ${slug} already exists: ${duplicate.spaceId}`)
+}
+
+export async function createRecordSpace(
+  url: string,
+  name: string,
+  slug: string,
+): Promise<{ id: string; slug: string }> {
+  if (!name.trim()) throw new Error('record space name must be non-empty')
+  if (!slug.trim()) throw new Error('record space slug must be non-empty')
+  const listed = await recordMemberships(url)
+  refuseDuplicateRecordSpaceSlug(slug, listed.memberships)
+  return withRecordSession(url, async (tx, current) => {
+    const id = newRecordId()
+    await tx`SELECT set_config('app.space_id', ${id}, true)`
+    await tx`
+      INSERT INTO space (id,name,slug,created_at)
+      VALUES (${id}::uuid,${name},${slug},now())
+    `
+    await tx`
+      INSERT INTO membership (id,space_id,user_id,role,permission,created_at)
+      VALUES (${newRecordId()}::uuid,${id}::uuid,${current.user.id}::uuid,'owner','write',now())
+    `
+    return { id, slug }
+  })
+}
+
 export async function inviteToActiveRecordSpace(
   url: string,
   email: string,

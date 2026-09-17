@@ -43,6 +43,7 @@ import {
 import { machineId, machineName } from './machine-identity.ts'
 import { pullRecordCache } from './record-cache.ts'
 import { currentRecordSession } from './record-session.ts'
+import { type RecordMembership, recordMemberships } from './record-space.ts'
 
 type OutboxRow = { id: number; kind: string; record_id: string; payload: string }
 type Payload = Record<string, unknown>
@@ -66,9 +67,52 @@ export type RecordSyncOptions = {
   now?: () => string
   identity?: { id: string; name: string }
   principal?: { userId: string; spaceId: string }
+  memberships?: RecordMembership[]
+  projectSpaces?: Record<string, string>
 }
 
 type RecordPrincipal = { userId: string; spaceId: string }
+
+function declaredProjectSpace(
+  local: Database,
+  projectName: string,
+  overrides?: Record<string, string>,
+): string | null {
+  if (overrides?.[projectName]) return overrides[projectName]!
+  const hasProjects = local
+    .query<{ present: number }, []>(
+      "SELECT count(*) AS present FROM sqlite_master WHERE type='table' AND name='project'",
+    )
+    .get()?.present
+  if (!hasProjects) return null
+  const row = local
+    .query<{ settings: string }, [string]>('SELECT settings FROM project WHERE name=?')
+    .get(projectName)
+  if (!row) return null
+  const settings = JSON.parse(row.settings) as { space?: unknown }
+  return typeof settings.space === 'string' && settings.space.trim() ? settings.space : null
+}
+
+function projectPrincipal(
+  projectName: string | null,
+  fallback: RecordPrincipal,
+  memberships: readonly RecordMembership[],
+  local: Database,
+  overrides?: Record<string, string>,
+): RecordPrincipal {
+  if (!projectName) return fallback
+  const declared = declaredProjectSpace(local, projectName, overrides)
+  if (!declared) return fallback
+  const membership = memberships.find(
+    (candidate) => candidate.slug === declared || candidate.spaceId === declared,
+  )
+  if (!membership) {
+    throw new Error(
+      `project ${projectName} declares record space ${declared}, but the signed-in user is not a member; join it first with an invitation, then retry`,
+    )
+  }
+  return { userId: fallback.userId, spaceId: membership.spaceId }
+}
 
 async function bindPrincipal(tx: SQL, principal: RecordPrincipal): Promise<void> {
   await tx`SELECT set_config('app.user_id', ${principal.userId}, true)`
@@ -80,12 +124,46 @@ function payload(source: string, kind: keyof typeof recordKinds): Payload {
   if (parsed === null || typeof parsed !== 'object' || Array.isArray(parsed)) {
     throw new Error('outbox payload must be a JSON object')
   }
+  const compatibleProjectKinds = new Set(['score', 'review_lens', 'review_finding'])
+  if (compatibleProjectKinds.has(kind) && !Object.hasOwn(parsed, 'projectName')) {
+    Object.assign(parsed, { projectName: null })
+  }
   const keys = Object.keys(parsed).sort()
   const expected = [...recordKinds[kind].columns].sort()
   if (keys.length !== expected.length || keys.some((key, index) => key !== expected[index])) {
     throw new Error(`${kind} outbox payload has an unexpected column set`)
   }
   return parsed as Payload
+}
+
+function outboxProjectName(kind: string, record: Payload, local: Database): string | null {
+  const direct = nullableString(record.projectName)
+  if (direct) return direct
+  const hasProjects = local
+    .query<{ present: number }, []>(
+      "SELECT count(*) AS present FROM sqlite_master WHERE type='table' AND name='project'",
+    )
+    .get()?.present
+  if (!hasProjects) return null
+  if (kind === 'score') {
+    return (
+      local
+        .query<{ name: string }, [string]>(
+          'SELECT project.name FROM run JOIN project ON project.id=run.project_id WHERE run.record_id=?',
+        )
+        .get(String(record.id))?.name ?? null
+    )
+  }
+  if (kind === 'review_lens' || kind === 'review_finding') {
+    return (
+      local
+        .query<{ name: string }, [string]>(
+          'SELECT project.name FROM review JOIN project ON project.id=review.project_id WHERE review.record_id=?',
+        )
+        .get(String(record.reviewId))?.name ?? null
+    )
+  }
+  return null
 }
 
 const date = (value: unknown) => new Date(String(value))
@@ -579,35 +657,76 @@ export async function syncRecord(options: RecordSyncOptions = {}): Promise<Recor
         userId: current.user.id,
         spaceId: current.activeSpaceId,
       })))
+    const memberships =
+      options.memberships ??
+      (options.principal ? [] : (await recordMemberships(recordUrl)).memberships)
     await upsertMachine(postgres, (options.now ?? nowIso)(), identity, principal)
     const rows = writableLocal
       .query<OutboxRow, []>(
         'SELECT id, kind, record_id, payload FROM outbox WHERE synced_at IS NULL ORDER BY id',
       )
       .all()
+    const groups = new Map<string | null, OutboxRow[]>()
     for (const row of rows) {
+      let projectName: string | null = null
       try {
         if (!(row.kind in recordKinds)) throw new Error(`unknown outbox kind: ${row.kind}`)
-        const kind = row.kind as keyof typeof recordKinds
-        const record = payload(row.payload, kind)
-        if (String(record.machineId) !== identity.id) {
-          throw new Error(
-            `${kind} outbox machine ${String(record.machineId)} does not match invoking machine ${identity.id}`,
-          )
-        }
-        await recordKinds[kind].push(postgres, record, principal)
-        writableLocal
-          .query('UPDATE outbox SET synced_at=?, last_error=NULL WHERE id=?')
-          .run((options.now ?? nowIso)(), row.id)
-        pushed++
+        const record = payload(row.payload, row.kind as keyof typeof recordKinds)
+        projectName = outboxProjectName(row.kind, record, writableLocal)
+      } catch {
+        // Preserve the existing row-level diagnostic path below.
+      }
+      const group = groups.get(projectName) ?? []
+      group.push(row)
+      groups.set(projectName, group)
+    }
+    let stopped = false
+    for (const [projectName, group] of groups) {
+      let groupPrincipal: RecordPrincipal
+      try {
+        groupPrincipal = projectPrincipal(
+          projectName,
+          principal,
+          memberships,
+          writableLocal,
+          options.projectSpaces,
+        )
       } catch (error) {
-        const detail = errorDetail(error)
         writableLocal
           .query('UPDATE outbox SET attempts=attempts+1, last_error=? WHERE id=?')
-          .run(detail, row.id)
+          .run(errorDetail(error), group[0]!.id)
         failed++
         break
       }
+      for (const row of group) {
+        try {
+          if (!(row.kind in recordKinds)) throw new Error(`unknown outbox kind: ${row.kind}`)
+          const kind = row.kind as keyof typeof recordKinds
+          const record: Payload = {
+            ...payload(row.payload, kind),
+            spaceId: groupPrincipal.spaceId,
+          }
+          if (String(record.machineId) !== identity.id) {
+            throw new Error(
+              `${kind} outbox machine ${String(record.machineId)} does not match invoking machine ${identity.id}`,
+            )
+          }
+          await recordKinds[kind].push(postgres, record, groupPrincipal)
+          writableLocal
+            .query('UPDATE outbox SET synced_at=?, last_error=NULL WHERE id=?')
+            .run((options.now ?? nowIso)(), row.id)
+          pushed++
+        } catch (error) {
+          const detail = errorDetail(error)
+          writableLocal
+            .query('UPDATE outbox SET attempts=attempts+1, last_error=? WHERE id=?')
+            .run(detail, row.id)
+          failed++
+          stopped = true
+          break
+        }
+      }
+      if (stopped) break
     }
     const pending = writableLocal
       .query<{ count: number }, []>('SELECT count(*) AS count FROM outbox WHERE synced_at IS NULL')

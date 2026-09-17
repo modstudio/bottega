@@ -9,6 +9,7 @@ import {
 import { diagnoseRecord, recordDoctorExitCode, redactRecordPasswords } from './record-doctor.ts'
 import {
   acceptRecordInvitation,
+  createRecordSpace,
   inviteToActiveRecordSpace,
   pendingRecordInvitations,
   recordMemberships,
@@ -49,6 +50,15 @@ export async function recordSpaceListCommand(presentation: Presentation): Promis
       `${membership.spaceId === result.activeSpaceId ? '* ' : '  '}${membership.slug}\t${membership.name}\t${membership.role}\t${membership.permission}`,
     )
   }
+}
+
+export async function recordSpaceCreateCommand(
+  name: string,
+  slug: string,
+  presentation: Presentation,
+): Promise<void> {
+  const created = await createRecordSpace(recordUrl(), name, slug)
+  presentation.log(`${created.id}\t${created.slug}`)
 }
 
 export async function recordSpaceSwitchCommand(

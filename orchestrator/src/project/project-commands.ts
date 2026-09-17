@@ -6,6 +6,7 @@
 import { existsSync } from 'node:fs'
 import { tryWriteContention, writeTransaction } from '../database/db.ts'
 import { selectProjectProfile } from '../lens/lenses.ts'
+import { requireRecordSpaceMembership } from '../record/record-space.ts'
 import { lifecycleForm } from '../worktree/worktree-lifecycle.ts'
 import { migrateCreate } from '../worktree/worktree-template.ts'
 import {
@@ -96,11 +97,30 @@ function listProjectsCommand(flags: ProjectFlags, presentation: ProjectPresentat
   printProjectRows(all, presentation)
 }
 
-function addProjectCommand(
+async function validateDeclaredSpace(
+  settingsPatch: unknown,
+  requireMembership: (url: string, space: string) => Promise<unknown>,
+): Promise<void> {
+  if (!settingsPatch || typeof settingsPatch !== 'object' || Array.isArray(settingsPatch)) return
+  if (!Object.hasOwn(settingsPatch, 'space')) return
+  const space = (settingsPatch as { space?: unknown }).space
+  if (space === null || space === undefined) return
+  if (typeof space !== 'string' || !space.trim()) return
+  const url = process.env.ORCH_RECORD_URL
+  if (!url) {
+    throw new Error(
+      `cannot validate record space ${space}: ORCH_RECORD_URL is not set; configure the record and sign in, then retry`,
+    )
+  }
+  await requireMembership(url, space)
+}
+
+async function addProjectCommand(
   argv: string[],
   flags: ProjectFlags,
   presentation: ProjectPresentation,
-): void {
+  requireMembership: (url: string, space: string) => Promise<unknown>,
+): Promise<void> {
   const { has, flag } = flags
   const path = (argv[2] ?? presentation.cwd()).replace(/\/$/, '')
   if (!existsSync(path)) throw new Error(`no such directory: ${path}`)
@@ -110,14 +130,17 @@ function addProjectCommand(
   // every routing decision is a guess nobody ever reviews.
   const stack = flag('stack') ?? sniffStack(path)
   let settings = {} as ProjectSettings
+  let settingsPatch: unknown
   if (flag('settings')) {
     try {
-      settings = JSON.parse(flag('settings')!) as typeof settings
+      settingsPatch = JSON.parse(flag('settings')!)
+      settings = settingsPatch as typeof settings
     } catch (e) {
       throw new Error(`--settings must be JSON: ${e}`)
     }
     const malformed = validateProjectSettings(settings, path)
     if (malformed.length) throw new Error(malformed.join('\n'))
+    await validateDeclaredSpace(settingsPatch, requireMembership)
   }
   const candidate = {
     id: 0,
@@ -174,6 +197,9 @@ export async function projectCommand(
   argv: string[],
   flags: ProjectFlags,
   presentation: ProjectPresentation,
+  dependencies: {
+    requireSpaceMembership(url: string, space: string): Promise<unknown>
+  } = { requireSpaceMembership: requireRecordSpaceMembership },
 ): Promise<void> {
   const { has, flag } = flags
 
@@ -183,7 +209,7 @@ export async function projectCommand(
   }
 
   if (sub === 'add') {
-    addProjectCommand(argv, flags, presentation)
+    await addProjectCommand(argv, flags, presentation, dependencies.requireSpaceMembership)
     return
   }
 
@@ -232,7 +258,9 @@ export async function projectCommand(
     let settings = p.settings
     if (flag('settings')) {
       try {
-        settings = deepMerge(settings, JSON.parse(flag('settings')!)) as typeof settings
+        const patch = JSON.parse(flag('settings')!)
+        settings = deepMerge(settings, patch) as typeof settings
+        await validateDeclaredSpace(patch, dependencies.requireSpaceMembership)
       } catch (e) {
         throw new Error(`--settings must be JSON: ${e}`)
       }

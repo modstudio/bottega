@@ -8,8 +8,10 @@ import {
   RECORD_READER_ROLE,
 } from '../../../shared/record/schema.ts'
 import { appliedRecordMigrationCount, recordMigrationCount } from '../postgres/postgres-migrate.ts'
+import { projects } from '../project/projects.ts'
 import { bearerHeaders, RECORD_SIGN_IN_REMEDY, recordAuth } from './record-auth.ts'
 import { storedRecordToken } from './record-session.ts'
+import { recordMemberships } from './record-space.ts'
 import { refuseOwnerConnection } from './record-sync.ts'
 
 type RecordDoctorStatus = 'pass' | 'fail' | 'skipped'
@@ -110,6 +112,29 @@ export async function diagnoseRecord(
           if (memberships.length !== 1)
             throw new Error('signed-in user is not a member of the active space')
         })
+      }
+      if (current) {
+        const memberships = await recordMemberships(recordUrl)
+        for (const project of projects()) {
+          const declared = project.settings.space
+          if (!declared) continue
+          const reachable = memberships.memberships.find(
+            (membership) => membership.slug === declared || membership.spaceId === declared,
+          )
+          checks.push(
+            reachable
+              ? {
+                  name: `project ${project.name} declared space`,
+                  status: 'pass',
+                  detail: `${reachable.slug} (${reachable.spaceId})`,
+                }
+              : {
+                  name: `project ${project.name} declared space`,
+                  status: 'fail',
+                  detail: `${declared} is not reachable by the signed-in user; join it with an invitation`,
+                },
+          )
+        }
       }
     } finally {
       await actor.close()
