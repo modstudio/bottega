@@ -356,7 +356,7 @@ export async function doctorCommand(
     projects: registeredProjects,
     undeclaredCommitHooks,
     registerBranchCheck,
-  } = await import('./projects.ts')
+  } = await import('./project/projects.ts')
   lifecycleReportLines(
     registeredProjects().map((project) => ({
       name: project.name,

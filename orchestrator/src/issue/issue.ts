@@ -12,7 +12,7 @@ import {
 import { DB_PATH, db } from '../db.ts'
 import { repoRootOf } from '../git-environment.ts'
 import { DEFAULT_KEEP_TREE_HOURS, keepTreeExemption } from '../keep-tree-hold.ts'
-import { type Project, projectByName } from '../projects.ts'
+import { type Project, projectByName } from '../project/projects.ts'
 import { prepareSharedRefGuard } from '../ref-guard.ts'
 import { parseReviewOutput } from '../review.ts'
 import { run } from '../run.ts'

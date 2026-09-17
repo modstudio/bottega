@@ -4,7 +4,7 @@ import {
   composeIndexSources,
   resolveDeclaredFacts,
   unresolvedTrackerActionPlaceholder,
-} from '../project-injection.ts'
+} from '../project/project-injection.ts'
 import { productionStepCatalogue } from '../step-catalogue.ts'
 import { type VersionEvent, versionedLifecycle } from '../versioned-lifecycle.ts'
 

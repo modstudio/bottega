@@ -30,25 +30,25 @@ import {
   resolvedPathsEqual,
   type SequenceKind,
   type SequenceState,
-} from '../../shared/git.ts'
-import type { TrackerSettings } from '../../shared/trackers.ts'
-import { db, nowIso, writableDb, writeTransaction } from './db.ts'
-import {
-  type DocsSettings,
-  type ReleaseSettings,
-  validateProjectInjectionSettings,
-} from './project-injection.ts'
-import { type ReadonlyProvision, validateReadonlyProvision } from './readonly-provision.ts'
-import { loadTrackedRecipe, recipePointerErrors } from './recipe/recipe-loader.ts'
-import { recordApiClient } from './record/record-api-client.ts'
-import { DEFAULT_PROJECT_CONFIG_PATH, resolveWorktreeLifecycle } from './worktree-lifecycle.ts'
+} from '../../../shared/git.ts'
+import type { TrackerSettings } from '../../../shared/trackers.ts'
+import { db, nowIso, writableDb, writeTransaction } from '../db.ts'
+import { type ReadonlyProvision, validateReadonlyProvision } from '../readonly-provision.ts'
+import { loadTrackedRecipe, recipePointerErrors } from '../recipe/recipe-loader.ts'
+import { recordApiClient } from '../record/record-api-client.ts'
+import { DEFAULT_PROJECT_CONFIG_PATH, resolveWorktreeLifecycle } from '../worktree-lifecycle.ts'
 import {
   CREATE_VARS,
   createHasPlaceholder,
   placeholders,
   validateCreate,
   type WorktreeCreate,
-} from './worktree-template.ts'
+} from '../worktree-template.ts'
+import {
+  type DocsSettings,
+  type ReleaseSettings,
+  validateProjectInjectionSettings,
+} from './project-injection.ts'
 
 export type Project = {
   id: number
@@ -201,7 +201,7 @@ export type WorktreeTool = {
    * serve/stop. Every step optional; an empty recipe is plain git, which is
    * correct where a checkout is just files.
    */
-  recipe?: import('./recipe/recipe.ts').Recipe
+  recipe?: import('../recipe/recipe.ts').Recipe
   /** Relative pointer to the project's tracked recipe; the file is not executable configuration. */
   recipePath?: string
   /** Tears one down, including whatever it provisioned. Optional beside `recipe`. */

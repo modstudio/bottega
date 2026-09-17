@@ -6,7 +6,7 @@
 import { realpathSync, statSync } from 'node:fs'
 import { dirname, sep } from 'node:path'
 import { targetGitEnvironment } from './git-environment.ts'
-import { projects } from './projects.ts'
+import { projects } from './project/projects.ts'
 
 /** Preserve the root separator while removing spelling-only trailing separators. */
 export function withoutTrailingSeparators(path: string): string {

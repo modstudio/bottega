@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { db, nowIso, writeTransaction } from './db.ts'
 import { git, gitOk, gitRaw, targetGitEnvironment } from './git-environment.ts'
-import { projectAt, resolvedWorktreeTool, type WorktreeTool } from './projects.ts'
+import { projectAt, resolvedWorktreeTool, type WorktreeTool } from './project/projects.ts'
 import {
   databaseDroppedByTeardown,
   dbNameFor,

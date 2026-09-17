@@ -44,7 +44,7 @@ import {
 import { type Job, jobIdleKillMs } from './jobs.ts'
 import { receiptWorkerMessages, unreadWorkerMessages } from './mailbox/mailbox.ts'
 import { decideOutcome } from './outcome.ts'
-import { processStartTime } from './project-lock.ts'
+import { processStartTime } from './project/project-lock.ts'
 import { childEnv, errorTail, live, liveCheckpoints } from './run-process.ts'
 import type { SandboxSelection } from './sandbox.ts'
 import {

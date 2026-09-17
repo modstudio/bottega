@@ -2,9 +2,9 @@ import { describe, expect, test } from 'bun:test'
 import { mkdtempSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { DEFAULT_PROJECT_CONFIG_PATH } from '../worktree-lifecycle.ts'
 import type { Project } from './projects.ts'
 import { worktreeWarnings } from './projects.ts'
-import { DEFAULT_PROJECT_CONFIG_PATH } from './worktree-lifecycle.ts'
 
 const project = (path: string, worktree: Record<string, unknown>): Project => ({
   id: 1,

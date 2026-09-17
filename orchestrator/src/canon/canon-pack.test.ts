@@ -5,7 +5,7 @@ import { dir } from '../../test/fixtures/store.ts'
 import { db } from '../db.ts'
 import { docsForRun, docsMarkdown } from '../doc/docs.ts'
 import { JOBS } from '../jobs.ts'
-import { upsertProject } from '../projects.ts'
+import { upsertProject } from '../project/projects.ts'
 import { CanonBudgetError, compilePack, storedPackDrift } from './canon.ts'
 
 const AT = '2026-09-15T00:00:00.000Z'

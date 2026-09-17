@@ -3,7 +3,7 @@
 import type { Database } from 'bun:sqlite'
 import { db, writableDb } from './db.ts'
 import { JOBS } from './jobs.ts'
-import { type InjectionSource, injectionSources } from './project-injection.ts'
+import { type InjectionSource, injectionSources } from './project/project-injection.ts'
 import { versionedLifecycle } from './versioned-lifecycle.ts'
 
 const proofKinds = [

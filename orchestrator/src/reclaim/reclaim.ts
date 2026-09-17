@@ -6,8 +6,12 @@ import { chainScoreJoin, EVIDENCE_CLOSED_SQL } from '../evidence/evidence-query.
 import { targetGitEnvironment } from '../git-environment.ts'
 import { keepTreeHold } from '../keep-tree-hold.ts'
 import { pidAlive } from '../process-liveness.ts'
-import { withCleanupLock, withWorktreeCreateLock, withWorktreeLease } from '../project-lock.ts'
-import { projectAt, projectByName } from '../projects.ts'
+import {
+  withCleanupLock,
+  withWorktreeCreateLock,
+  withWorktreeLease,
+} from '../project/project-lock.ts'
+import { projectAt, projectByName } from '../project/projects.ts'
 import { settleClaims } from '../resource-claims.ts'
 import { otherConversationWorktreeSharers } from '../resource-ownership.ts'
 import { runAlive } from '../run-alive.ts'

@@ -15,7 +15,7 @@ import {
   listSkips,
   type PortPair,
 } from '../porting/porting.ts'
-import { upsertProject } from '../projects.ts'
+import { upsertProject } from '../project/projects.ts'
 import { reviewCommand } from '../review-commands.ts'
 import {
   removeDoc as deleteDoc,

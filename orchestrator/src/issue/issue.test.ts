@@ -6,7 +6,7 @@ import {
   parseWorkerReplyWithCount,
 } from '../contract/contract.ts'
 import { JOBS } from '../jobs.ts'
-import type { Project } from '../projects.ts'
+import type { Project } from '../project/projects.ts'
 import {
   boundedIssuePack,
   ISSUE_DIAGNOSIS_SCHEMA,

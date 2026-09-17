@@ -1,5 +1,5 @@
 import { db, nowIso, writableDb, writeTransaction } from '../db.ts'
-import { type Project, projects } from '../projects.ts'
+import { type Project, projects } from '../project/projects.ts'
 
 export type PortPair = {
   id: number

@@ -2,7 +2,7 @@
 /** Lists merged pull requests and checks whether branch content landed through one. */
 
 import { targetGitEnvironment } from './git-environment.ts'
-import type { Project } from './projects.ts'
+import type { Project } from './project/projects.ts'
 
 export const GH_MERGED_PR_LIMIT = 1000
 

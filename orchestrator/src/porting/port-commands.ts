@@ -3,7 +3,7 @@
 import { readdirSync, readFileSync, statSync } from 'node:fs'
 import { join } from 'node:path'
 import { DB_PATH } from '../db.ts'
-import { projectByName, projects } from '../projects.ts'
+import { projectByName, projects } from '../project/projects.ts'
 import {
   addDoctrineRule,
   addPair,

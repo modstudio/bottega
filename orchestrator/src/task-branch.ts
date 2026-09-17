@@ -14,8 +14,8 @@ import {
   pullRequestCommitCheck,
   pullRequestNameCheck,
 } from './merged-pull-request.ts'
-import type { Project } from './projects.ts'
-import { projectAt, projects } from './projects.ts'
+import type { Project } from './project/projects.ts'
+import { projectAt, projects } from './project/projects.ts'
 import { reviewRunEvidenceSql } from './review-evidence-sql.ts'
 import type { Worktree } from './worktree-types.ts'
 

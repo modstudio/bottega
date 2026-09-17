@@ -3,7 +3,7 @@
 import { existsSync } from 'node:fs'
 import { db } from './db.ts'
 import { targetGitEnvironment } from './git-environment.ts'
-import { projectByName } from './projects.ts'
+import { projectByName } from './project/projects.ts'
 
 type RunDiffFlags = { has(name: string): boolean }
 type Changes = {
