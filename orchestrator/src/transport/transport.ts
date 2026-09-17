@@ -2,7 +2,7 @@ import { existsSync, realpathSync } from 'node:fs'
 import { createRequire } from 'node:module'
 import { basename, dirname, isAbsolute, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import type { FailureKind } from '../failure.ts'
+import type { FailureKind } from '../failure/failure.ts'
 import { job } from '../jobs.ts'
 import type { SandboxRuntimeConfig } from '../sandbox.ts'
 

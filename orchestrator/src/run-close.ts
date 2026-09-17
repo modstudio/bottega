@@ -15,7 +15,13 @@ import {
   failoverSuccessorAgent,
   MAX_FAILOVER_ATTEMPTS,
 } from './failover.ts'
-import { type classify, FAILS_OVER, NEEDS_HUMAN, NEEDS_HUMAN_TITLE, notify } from './failure.ts'
+import {
+  type classify,
+  FAILS_OVER,
+  NEEDS_HUMAN,
+  NEEDS_HUMAN_TITLE,
+  notify,
+} from './failure/failure.ts'
 import { type Job, reclaimsTreeByDefault } from './jobs.ts'
 import type { KeepTreeExemption } from './keep-tree-hold.ts'
 import { mcpRequestFromStored } from './mcp-preflight.ts'

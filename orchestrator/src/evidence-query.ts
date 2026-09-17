@@ -4,7 +4,7 @@
  */
 import type { Database } from 'bun:sqlite'
 import { db } from './db.ts'
-import { NOT_EVIDENCE } from './failure.ts'
+import { NOT_EVIDENCE } from './failure/failure.ts'
 import { nonHookTreeStatsSql } from './hook-tree.ts'
 
 /**

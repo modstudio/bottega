@@ -3,7 +3,7 @@ import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'nod
 import { homedir, tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { ROOT } from './db.ts'
-import { classify, NOT_EVIDENCE } from './failure.ts'
+import { classify, NOT_EVIDENCE } from './failure/failure.ts'
 import type { Project } from './projects.ts'
 import {
   grokSandboxConfig,

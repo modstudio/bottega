@@ -9,7 +9,7 @@ import {
 import { attributionCounts, parseConfinement } from './confinement.ts'
 import { summarizeContention } from './contention.ts'
 import { db } from './db.ts'
-import { clusterErrorText, FAILURE_KINDS, type FailureKind } from './failure.ts'
+import { clusterErrorText, FAILURE_KINDS, type FailureKind } from './failure/failure.ts'
 import { parseIdleReclaimedMs } from './idle-kill.ts'
 import { parseMcpProbe } from './mcp-probe.ts'
 

@@ -9,7 +9,7 @@ import {
   NEEDS_HUMAN,
   NEEDS_HUMAN_TITLE,
   NOT_EVIDENCE,
-} from './failure.ts'
+} from './failure/failure.ts'
 import { candidates, isRoutingEvidence, scoreboard } from './route.ts'
 import { WEIGHT, weigh } from './score/score.ts'
 
