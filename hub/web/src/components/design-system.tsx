@@ -1,7 +1,6 @@
 import { useQuery } from '@tanstack/react-query'
 import { Database, GitCommit, RadioTower } from 'lucide-react'
 import type { CSSProperties, ReactNode } from 'react'
-import { Button } from '@/components/button'
 import { cx } from '@/components/cx'
 import { Select, type SelectOption } from '@/components/select'
 import { collectedTime, relativeTime } from '@/lib/format'
@@ -15,6 +14,7 @@ import {
   type WindowHours,
 } from '@/lib/window'
 import { trpc } from '@/trpc/client'
+import { Button } from '@/ui/button/button'
 
 export function PageHeader({
   title,

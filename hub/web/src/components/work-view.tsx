@@ -17,7 +17,6 @@ import {
   useProjectColors,
   WindowBar,
 } from '@/components/design-system'
-import { Input } from '@/components/input'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/table'
 import { useNow } from '@/lib/clock'
 import { compactTokens, duration, relativeTime, vendorFigures } from '@/lib/format'
@@ -25,6 +24,7 @@ import { taskStatusLook } from '@/lib/task-status'
 import { setWorkCounts, useWindowState } from '@/lib/window'
 import { type BoardResponse, type FlightResponse, trpc } from '@/trpc/client'
 import { Badge } from '@/ui/badge/badge'
+import { Input } from '@/ui/field/input'
 import { Identifier } from '@/ui/identifier/identifier'
 
 type WorkName = 'flight' | 'done'

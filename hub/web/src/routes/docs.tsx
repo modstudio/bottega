@@ -2,7 +2,6 @@ import { useMutation, useQuery } from '@tanstack/react-query'
 import { createFileRoute, Outlet, useNavigate } from '@tanstack/react-router'
 import { ChevronRight, Plus } from 'lucide-react'
 import { useEffect, useMemo, useState } from 'react'
-import { Button } from '@/components/button'
 import { Collection, type CollectionColumn } from '@/components/collection'
 import { PageHeader } from '@/components/design-system'
 import {
@@ -14,11 +13,12 @@ import {
   DialogTitle,
 } from '@/components/dialog'
 import { HostedDocs } from '@/components/hosted-docs'
-import { Input } from '@/components/input'
 import { Tabs, TabsList, TabsTrigger } from '@/components/tabs'
 import { compactBytes, relativeTime } from '@/lib/format'
 import { isHostedMode } from '@/lib/hub-mode'
 import { queryClient, trpc } from '@/trpc/client'
+import { Button } from '@/ui/button/button'
+import { Input } from '@/ui/field/input'
 import { DOC_SCOPE_SUBJECT_KIND, DOC_SCOPES, type DocScope } from '../../../../shared/docs.ts'
 
 export { DOC_SCOPES, type DocScope }
@@ -154,6 +154,7 @@ function DocsList() {
         title="Docs"
         actions={
           <Button
+            variant="primary"
             size="sm"
             onClick={() => {
               setScope('global')
@@ -275,10 +276,11 @@ function DocsList() {
           </label>
           {create.error ? <p className="text-destructive">{create.error.message}</p> : null}
           <DialogFooter>
-            <Button variant="outline" onClick={() => setCreating(false)}>
+            <Button variant="secondary" onClick={() => setCreating(false)}>
               Cancel
             </Button>
             <Button
+              variant="primary"
               onClick={submitCreate}
               disabled={create.isPending || !slug || !title || (needsSubject(scope) && !subject)}
             >

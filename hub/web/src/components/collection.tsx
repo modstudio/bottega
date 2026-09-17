@@ -1,6 +1,6 @@
 import type { ReactNode } from 'react'
+import { Input } from '@/ui/field/input'
 import { EmptyState } from './design-system'
-import { Input } from './input'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from './table'
 
 export type CollectionColumn<Row> = {

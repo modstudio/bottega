@@ -1,13 +1,13 @@
 import { useMutation, useQuery } from '@tanstack/react-query'
 import { createFileRoute } from '@tanstack/react-router'
 import { useState } from 'react'
-import { Button } from '@/components/button'
-import { Checkbox } from '@/components/checkbox'
 import { EmptyState, PageHeader } from '@/components/design-system'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/table'
 import { toast } from '@/components/toaster'
 import { queryClient, trpc } from '@/trpc/client'
 import { Badge } from '@/ui/badge/badge'
+import { Button } from '@/ui/button/button'
+import { Checkbox } from '@/ui/checkbox/checkbox'
 
 export const Route = createFileRoute('/notes')({ component: NotesPage })
 
@@ -81,7 +81,7 @@ function NotesPage() {
                     {!note.promoted_task && !note.stale_at ? (
                       <Button
                         size="sm"
-                        variant="outline"
+                        variant="secondary"
                         disabled={promote.isPending}
                         onClick={() => promote.mutate({ id: note.id })}
                       >

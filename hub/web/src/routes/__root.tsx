@@ -1,11 +1,11 @@
 import { useQuery } from '@tanstack/react-query'
 import { createRootRoute, Link, Outlet, redirect, useRouterState } from '@tanstack/react-router'
-import { Button } from '@/components/button'
 import { LiveDot } from '@/components/design-system'
 import { signOutFromRecord } from '@/lib/hosted-auth'
 import { isHostedMode, isHostedPath, navForMode } from '@/lib/hub-mode'
 import { useWindowState } from '@/lib/window'
 import { trpc } from '@/trpc/client'
+import { Button } from '@/ui/button/button'
 import { PLATFORM_NAME } from '../../../../shared/brand.ts'
 
 export const Route = createRootRoute({
@@ -57,7 +57,12 @@ export const Route = createRootRoute({
                   {String(whoami.data.user.email)}
                 </p>
               ) : null}
-              <Button variant="outline" size="sm" className="w-full" onClick={() => void signOut()}>
+              <Button
+                variant="secondary"
+                size="sm"
+                className="w-full"
+                onClick={() => void signOut()}
+              >
                 Sign out
               </Button>
             </div>

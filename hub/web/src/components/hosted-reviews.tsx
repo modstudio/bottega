@@ -2,7 +2,6 @@ import { useQuery } from '@tanstack/react-query'
 import { Outlet, useNavigate } from '@tanstack/react-router'
 import { ChevronRight } from 'lucide-react'
 import { useState } from 'react'
-import { Button } from '@/components/button'
 import { Collection, type CollectionColumn } from '@/components/collection'
 import { PageHeader, ProjectMark } from '@/components/design-system'
 import { DisplayRow, FieldSection } from '@/components/fields'
@@ -11,6 +10,7 @@ import { Sheet } from '@/components/sheet'
 import { runEasternTime } from '@/lib/run-search'
 import { trpc } from '@/trpc/client'
 import { Badge } from '@/ui/badge/badge'
+import { Button } from '@/ui/button/button'
 
 type HostedReview = {
   id: string
@@ -159,7 +159,7 @@ function HostedReviewsList() {
       {applied?.nextCursor ? (
         <div className="mt-4">
           <Button
-            variant="outline"
+            variant="secondary"
             size="sm"
             disabled={query.isFetching}
             onClick={() => {

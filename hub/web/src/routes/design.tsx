@@ -1,8 +1,7 @@
 import { createFileRoute } from '@tanstack/react-router'
 import { useState } from 'react'
-import { Button } from '@/components/button'
-import { Checkbox } from '@/components/checkbox'
 import { Collection } from '@/components/collection'
+import { DesignCatalog } from '@/components/design-catalog'
 import {
   EmptyState,
   LiveDot,
@@ -22,23 +21,13 @@ import {
   DialogTitle,
 } from '@/components/dialog'
 import { Copyable, DisplayRow, FieldSection, SettingBlock } from '@/components/fields'
-import { Input } from '@/components/input'
 import { Select } from '@/components/select'
 import { Sheet } from '@/components/sheet'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/table'
 import { Tabs, TabsList, TabsTrigger } from '@/components/tabs'
-import { Textarea } from '@/components/textarea'
 import { Badge } from '@/ui/badge/badge'
-
-const semanticColors = [
-  { name: 'success', light: '#1a7f4b', dark: '#4cc98a' },
-  { name: 'warning', light: '#8a6317', dark: '#d9a441' },
-  { name: 'info', light: '#2b3552', dark: '#2b3552' },
-  { name: 'live', light: '#1a7f4b', dark: '#4cc98a' },
-  { name: 'danger', light: '#9a3412', dark: '#e88a63' },
-] as const
-
-const badgeTones = ['neutral', 'success', 'warning', 'error', 'info', 'progress'] as const
+import { Button } from '@/ui/button/button'
+import { Input } from '@/ui/field/input'
 
 export const Route = createFileRoute('/design')({ component: DesignPage })
 
@@ -101,81 +90,12 @@ function DesignPage() {
     <section>
       <PageHeader title="Design" subtitle="Hub's inspectable token and component surface" />
 
-      <SectionTitle detail="Hub-owned meanings derived from the token scales">
-        Semantic colour
+      <DesignCatalog />
+
+      <SectionTitle detail="Legacy components, shown until each is rebuilt in ui/">
+        Not yet rebuilt
       </SectionTitle>
-      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
-        {semanticColors.map((color) => (
-          <div key={color.name} className="border border-border">
-            <div className="grid h-16 grid-cols-2">
-              <div style={{ background: color.light }}>
-                <span className="sr-only">{color.name} light</span>
-              </div>
-              <div style={{ background: color.dark }}>
-                <span className="sr-only">{color.name} dark</span>
-              </div>
-            </div>
-            <div className="p-2">
-              <div className="font-semibold">--{color.name}</div>
-              <div className="meta">light {color.light}</div>
-              <div className="meta">dark {color.dark}</div>
-            </div>
-          </div>
-        ))}
-      </div>
-
-      <SectionTitle>Typography</SectionTitle>
-      <div className="grid gap-px border border-border bg-border sm:grid-cols-2">
-        {[
-          ['--font-ui', 'Interface text, figures 0123456789'],
-          ['--font-heading', 'Headings carry the same terminal voice'],
-          ['--font-prose', 'Long-form markdown remains comfortable to read.'],
-          ['--font-mono', 'code --flag=value 0123456789'],
-        ].map(([role, sample]) => (
-          <div key={role} className="bg-background p-4" style={{ fontFamily: `var(${role})` }}>
-            <div className="meta mb-2">{role}</div>
-            <div
-              className={role === '--font-heading' ? 'text-lg font-semibold tracking-tight' : ''}
-            >
-              {sample}
-            </div>
-          </div>
-        ))}
-      </div>
-
-      <SectionTitle>Button</SectionTitle>
-      <div className="flex flex-wrap gap-2">
-        <Button>Default</Button>
-        <Button variant="destructive">Destructive</Button>
-        <Button variant="outline">Outline</Button>
-        <Button variant="ghost">Ghost</Button>
-        <Button size="sm">Small</Button>
-        <Button size="icon" aria-label="Icon button">
-          +
-        </Button>
-        <Button disabled>Disabled</Button>
-      </div>
-
-      <SectionTitle>Badge</SectionTitle>
-      <div className="flex flex-wrap gap-2">
-        {badgeTones.map((tone) => (
-          <Badge key={tone} tone={tone}>
-            {tone}
-          </Badge>
-        ))}
-        {badgeTones.map((tone) => (
-          <Badge key={`${tone}-solid`} tone={tone} emphasis="solid">
-            {tone}
-          </Badge>
-        ))}
-        <Badge tone="progress" dot>
-          running
-        </Badge>
-      </div>
-
-      <SectionTitle>Fields</SectionTitle>
       <div className="grid max-w-2xl gap-3 sm:grid-cols-2">
-        <Input aria-label="Sample input" defaultValue="Input" />
         <Select
           label="Sample select"
           value={select}
@@ -185,10 +105,6 @@ function DesignPage() {
           ]}
           onChange={setSelect}
         />
-        <Textarea aria-label="Sample textarea" defaultValue="Textarea" />
-        <label htmlFor="sample-checkbox" className="flex items-center gap-2">
-          <Checkbox id="sample-checkbox" defaultChecked /> Checkbox
-        </label>
       </div>
 
       <SectionTitle>Selection</SectionTitle>
@@ -211,7 +127,7 @@ function DesignPage() {
       </div>
 
       <SectionTitle>Dialog</SectionTitle>
-      <Button variant="outline" onClick={() => setDialog(true)}>
+      <Button variant="secondary" onClick={() => setDialog(true)}>
         Open dialog
       </Button>
       <Dialog open={dialog} onOpenChange={setDialog}>
@@ -222,7 +138,9 @@ function DesignPage() {
               A native dialog rendered through Hub's existing primitive.
             </DialogDescription>
           </DialogHeader>
-          <Button onClick={() => setDialog(false)}>Close</Button>
+          <Button variant="primary" onClick={() => setDialog(false)}>
+            Close
+          </Button>
         </DialogContent>
       </Dialog>
 

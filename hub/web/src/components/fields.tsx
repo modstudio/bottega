@@ -1,6 +1,6 @@
 import { Copy } from 'lucide-react'
 import type { ReactNode } from 'react'
-import { Button } from './button'
+import { IconButton } from '@/ui/button/button'
 import { toast } from './toaster'
 
 export function FieldSection({
@@ -63,16 +63,9 @@ export function Copyable({ value, compact = false }: { value: string; compact?: 
       className={`flex min-w-0 items-center gap-2 ${compact ? 'text-[11px] text-muted-foreground' : ''}`}
     >
       <code className="min-w-0 flex-1 break-all">{value}</code>
-      <Button
-        type="button"
-        variant="ghost"
-        size="icon"
-        className="h-7 w-7 shrink-0"
-        onClick={copy}
-        aria-label="Copy value"
-      >
+      <IconButton size="sm" label="Copy value" onClick={copy}>
         <Copy size={13} />
-      </Button>
+      </IconButton>
     </div>
   )
 }

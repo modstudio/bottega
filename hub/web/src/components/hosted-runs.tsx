@@ -2,16 +2,16 @@ import { useQuery } from '@tanstack/react-query'
 import { Outlet, useNavigate } from '@tanstack/react-router'
 import { ChevronRight } from 'lucide-react'
 import { useState } from 'react'
-import { Button } from '@/components/button'
 import { Collection, type CollectionColumn } from '@/components/collection'
 import { PageHeader, ProjectMark } from '@/components/design-system'
 import { hostedProjectColors } from '@/components/hosted-projects'
-import { Input } from '@/components/input'
 import { duration } from '@/lib/format'
 import { runEasternTime } from '@/lib/run-search'
 import { verdictTone } from '@/lib/verdict-tone'
 import { trpc } from '@/trpc/client'
 import { Badge } from '@/ui/badge/badge'
+import { Button } from '@/ui/button/button'
+import { Input } from '@/ui/field/input'
 
 type HostedRun = {
   id: string
@@ -145,7 +145,7 @@ function HostedRunsList() {
               value={draft.status}
               onChange={(event) => setDraft({ ...draft, status: event.target.value })}
             />
-            <Button type="submit" size="sm" variant="outline">
+            <Button type="submit" size="sm" variant="secondary">
               Filter
             </Button>
           </form>
@@ -167,7 +167,7 @@ function HostedRunsList() {
       />
       {applied?.nextCursor ? (
         <div className="mt-4">
-          <Button variant="outline" size="sm" disabled={query.isFetching} onClick={loadMore}>
+          <Button variant="secondary" size="sm" disabled={query.isFetching} onClick={loadMore}>
             {query.isFetching ? 'Loading...' : 'Load more'}
           </Button>
         </div>

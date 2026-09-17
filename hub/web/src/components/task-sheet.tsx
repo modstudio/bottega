@@ -4,15 +4,15 @@ import { relativeTime } from '@/lib/format'
 import { taskStatusLook } from '@/lib/task-status'
 import { queryClient, type TaskRecordResponse, trpc } from '@/trpc/client'
 import { Badge } from '@/ui/badge/badge'
+import { Button } from '@/ui/button/button'
+import { Input } from '@/ui/field/input'
+import { Textarea } from '@/ui/field/textarea'
 import { Identifier } from '@/ui/identifier/identifier'
-import { Button } from './button'
 import { ProjectMark, SourceMark } from './design-system'
 import { DisplayRow, FieldSection, SettingBlock } from './fields'
-import { Input } from './input'
 import { Markdown } from './markdown'
 import { Select } from './select'
 import { Sheet } from './sheet'
-import { Textarea } from './textarea'
 
 function reasonRows(capabilities: TaskRecordResponse['capabilities']) {
   const entries = [
@@ -62,6 +62,7 @@ function DocumentEditor({ document }: { document: TaskRecordResponse['documents'
       />
       {save.error ? <p className="text-destructive">{save.error.message}</p> : null}
       <Button
+        variant="primary"
         size="sm"
         disabled={save.isPending || !title.trim()}
         onClick={() => save.mutate({ id: document.id, title, body, version: document.version })}
@@ -168,6 +169,7 @@ export function TaskSheet({ taskKey, onClose }: { taskKey: string; onClose: () =
                     <div className="flex gap-2">
                       <Input value={title} onChange={(event) => setTitle(event.target.value)} />
                       <Button
+                        variant="primary"
                         disabled={saveTitle.isPending || !title.trim()}
                         onClick={() => saveTitle.mutate({ key: taskKey, title })}
                       >
@@ -252,6 +254,7 @@ export function TaskSheet({ taskKey, onClose }: { taskKey: string; onClose: () =
                     <p className="text-destructive">{addComment.error.message}</p>
                   ) : null}
                   <Button
+                    variant="primary"
                     size="sm"
                     disabled={addComment.isPending || !comment.trim()}
                     onClick={() => addComment.mutate({ key: taskKey, body: comment })}

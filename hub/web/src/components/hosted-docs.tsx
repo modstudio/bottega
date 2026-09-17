@@ -3,11 +3,11 @@ import { Outlet, useNavigate } from '@tanstack/react-router'
 import type { inferRouterOutputs } from '@trpc/server'
 import { ChevronRight } from 'lucide-react'
 import { useMemo, useState } from 'react'
-import { Button } from '@/components/button'
 import { Collection, type CollectionColumn } from '@/components/collection'
 import { PageHeader } from '@/components/design-system'
 import { compactBytes, relativeTime } from '@/lib/format'
 import { trpc } from '@/trpc/client'
+import { Button } from '@/ui/button/button'
 import type { AppRouter } from '../../../src/trpc/router.ts'
 
 type Doc = inferRouterOutputs<AppRouter>['record']['docs']['items'][number]
@@ -76,7 +76,7 @@ function HostedDocsList() {
         <div className="mt-4">
           <Button
             size="sm"
-            variant="outline"
+            variant="secondary"
             disabled={query.isFetching}
             onClick={() => {
               setPages((current) => [...current, applied.items])

@@ -2,14 +2,14 @@ import { useMutation, useQuery } from '@tanstack/react-query'
 import { createFileRoute, useNavigate } from '@tanstack/react-router'
 import { Pencil, Save, Trash2, X } from 'lucide-react'
 import { useEffect, useState } from 'react'
-import { Button } from '@/components/button'
 import { HostedDocDetail } from '@/components/hosted-doc-detail'
-import { Input } from '@/components/input'
 import { Markdown } from '@/components/markdown'
 import { Sheet } from '@/components/sheet'
-import { Textarea } from '@/components/textarea'
 import { isHostedMode } from '@/lib/hub-mode'
 import { queryClient, trpc } from '@/trpc/client'
+import { Button } from '@/ui/button/button'
+import { Input } from '@/ui/field/input'
+import { Textarea } from '@/ui/field/textarea'
 import { DOC_SCOPES, type DocScope, isScope } from './docs'
 
 type DocSearch = { edit?: boolean; id?: string }
@@ -142,11 +142,7 @@ function DocPage() {
       onClose={() => void navigate({ to: '/docs' })}
       title={
         editing ? (
-          <Input
-            value={title}
-            onChange={(e) => setTitle(e.target.value)}
-            className="font-sans text-[20px] font-semibold"
-          />
+          <Input value={title} onChange={(e) => setTitle(e.target.value)} size="title" />
         ) : (
           (doc.data?.title ?? slug)
         )
@@ -166,6 +162,7 @@ function DocPage() {
           {editing ? (
             <>
               <Button
+                variant="primary"
                 size="sm"
                 onClick={() => save.mutate({ scope, subject, slug, title, body, delivery, reason })}
                 disabled={save.isPending || !title || !reason.trim()}
@@ -173,7 +170,7 @@ function DocPage() {
                 <Save size={14} />
                 Save
               </Button>
-              <Button size="sm" variant="outline" onClick={cancelEdit}>
+              <Button size="sm" variant="secondary" onClick={cancelEdit}>
                 <X size={14} />
                 Cancel
               </Button>
@@ -181,7 +178,7 @@ function DocPage() {
           ) : (
             <Button
               size="sm"
-              variant="outline"
+              variant="secondary"
               onClick={() => {
                 setConfirmingDelete(false)
                 setReason('')
@@ -195,7 +192,7 @@ function DocPage() {
           )}
           <Button
             size="sm"
-            variant="destructive"
+            variant="danger"
             onClick={onDelete}
             disabled={remove.isPending || !doc.data || (confirmingDelete && !reason.trim())}
           >
@@ -223,11 +220,13 @@ function DocPage() {
               <option value="demand">demand</option>
             </select>
           </label>
-          <div className="grid grid-cols-2 gap-0 border border-border">
+          <div className="grid grid-cols-2 divide-x divide-border border border-border">
             <Textarea
               value={body}
               onChange={(e) => setBody(e.target.value)}
-              className="min-h-[60vh] border-0 border-r font-mono text-[12.5px]"
+              code
+              bare
+              className="min-h-[60vh]"
             />
             <div className="min-h-[60vh] overflow-auto p-3">
               <Markdown content={body} />

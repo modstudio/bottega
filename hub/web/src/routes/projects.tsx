@@ -2,8 +2,6 @@ import { useMutation, useQuery } from '@tanstack/react-query'
 import { createFileRoute, Outlet, useNavigate } from '@tanstack/react-router'
 import { ChevronRight, FolderGit2, Plus } from 'lucide-react'
 import { useState } from 'react'
-import { Button } from '@/components/button'
-import { Checkbox } from '@/components/checkbox'
 import { Collection, type CollectionColumn } from '@/components/collection'
 import { PageHeader } from '@/components/design-system'
 import {
@@ -14,11 +12,13 @@ import {
   DialogTitle,
 } from '@/components/dialog'
 import { HostedProjects } from '@/components/hosted-projects'
-import { Input } from '@/components/input'
 import { toast } from '@/components/toaster'
 import { isHostedMode } from '@/lib/hub-mode'
 import { type ProjectRow, queryClient, trpc } from '@/trpc/client'
 import { Badge } from '@/ui/badge/badge'
+import { Button } from '@/ui/button/button'
+import { Checkbox } from '@/ui/checkbox/checkbox'
+import { Input } from '@/ui/field/input'
 
 function TrackerState({ project }: { project: ProjectRow }) {
   const status = project.trackerStatus
@@ -135,7 +135,7 @@ function ProjectsPage() {
         title="Projects"
         subtitle={`${projects.data?.length ?? 0} registered`}
         actions={
-          <Button size="sm" onClick={() => setAdding(true)}>
+          <Button variant="primary" size="sm" onClick={() => setAdding(true)}>
             <Plus size={14} />
             Add project
           </Button>
@@ -203,7 +203,7 @@ function ProjectsPage() {
               Canon
             </label>
             {error ? <p className="text-destructive">{error}</p> : null}
-            <Button type="submit" disabled={add.isPending}>
+            <Button variant="primary" type="submit" disabled={add.isPending}>
               <Plus size={14} />
               {add.isPending ? 'Adding...' : 'Add project'}
             </Button>

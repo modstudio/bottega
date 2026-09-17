@@ -1,16 +1,16 @@
 import { useMutation, useQuery } from '@tanstack/react-query'
 import { createFileRoute, Link } from '@tanstack/react-router'
 import { useEffect, useState } from 'react'
-import { Button } from '@/components/button'
 import { Card, CardContent } from '@/components/card'
-import { Checkbox } from '@/components/checkbox'
 import { EmptyState, PageHeader, SectionTitle } from '@/components/design-system'
 import { FieldSection, SettingBlock } from '@/components/fields'
-import { Input } from '@/components/input'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/table'
 import { useWindowState } from '@/lib/window'
 import { queryClient, type SettingsResponse, trpc } from '@/trpc/client'
 import { Badge } from '@/ui/badge/badge'
+import { Button } from '@/ui/button/button'
+import { Checkbox } from '@/ui/checkbox/checkbox'
+import { Input } from '@/ui/field/input'
 
 type SettingsData = SettingsResponse['data']
 type Report = SettingsData['report']
@@ -119,7 +119,7 @@ function SettingsPage() {
         }
         actions={
           <Button
-            variant="outline"
+            variant="secondary"
             size="sm"
             disabled={collect.isPending}
             onClick={() => collect.mutate()}
@@ -254,10 +254,15 @@ function SettingsPage() {
                   </p>
                 </div>
                 <div className="flex flex-wrap items-center gap-2">
-                  <Button size="sm" disabled={save.isPending} onClick={submit}>
+                  <Button variant="primary" size="sm" disabled={save.isPending} onClick={submit}>
                     Save changes
                   </Button>
-                  <Button variant="outline" size="sm" disabled={sendTest.isPending} onClick={test}>
+                  <Button
+                    variant="secondary"
+                    size="sm"
+                    disabled={sendTest.isPending}
+                    onClick={test}
+                  >
                     Send a test
                   </Button>
                   <span className="text-sm text-muted-foreground">{said}</span>
@@ -345,8 +350,8 @@ function SettingsPage() {
               <p className="text-sm text-muted-foreground">
                 Read only. Hub cannot write the orchestrator register.
               </p>
-              <Button asChild variant="outline" size="sm">
-                <Link to="/projects">view projects</Link>
+              <Button size="sm" render={<Link to="/projects" />}>
+                View projects
               </Button>
             </CardContent>
           </Card>

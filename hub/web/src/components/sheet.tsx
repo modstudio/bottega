@@ -1,6 +1,6 @@
 import { X } from 'lucide-react'
 import { type ReactNode, useEffect, useRef } from 'react'
-import { Button } from './button'
+import { IconButton } from '@/ui/button/button'
 
 export function Sheet({
   open,
@@ -56,9 +56,9 @@ export function Sheet({
           {subtitle ? <div className="mt-1 text-muted-foreground">{subtitle}</div> : null}
         </div>
         {actions ? <div className="flex shrink-0 items-center gap-2">{actions}</div> : null}
-        <Button variant="ghost" size="icon" onClick={onClose} aria-label="Close panel">
+        <IconButton label="Close panel" onClick={onClose}>
           <X size={16} />
-        </Button>
+        </IconButton>
       </header>
       <div className="min-h-0 flex-1 overflow-y-auto p-4">{children}</div>
       {footer ? (

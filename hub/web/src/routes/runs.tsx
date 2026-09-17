@@ -12,7 +12,6 @@ import {
   WindowBar,
 } from '@/components/design-system'
 import { HostedRuns } from '@/components/hosted-runs'
-import { Input } from '@/components/input'
 import { useNow } from '@/lib/clock'
 import { collectedTime, compactTokens, duration, vendorFigures } from '@/lib/format'
 import { isHostedMode } from '@/lib/hub-mode'
@@ -27,6 +26,7 @@ import { verdictTone } from '@/lib/verdict-tone'
 import { useWindowState } from '@/lib/window'
 import { trpc } from '@/trpc/client'
 import { Badge } from '@/ui/badge/badge'
+import { Input } from '@/ui/field/input'
 import { Identifier } from '@/ui/identifier/identifier'
 
 type RunRow = SearchableRun

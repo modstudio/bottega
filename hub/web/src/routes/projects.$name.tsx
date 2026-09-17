@@ -2,14 +2,14 @@ import { useMutation, useQuery } from '@tanstack/react-query'
 import { createFileRoute, useNavigate } from '@tanstack/react-router'
 import { Save, Trash2 } from 'lucide-react'
 import { useState } from 'react'
-import { Button } from '@/components/button'
-import { Checkbox } from '@/components/checkbox'
 import { FieldSection, SettingBlock } from '@/components/fields'
-import { Input } from '@/components/input'
 import { Sheet } from '@/components/sheet'
-import { Textarea } from '@/components/textarea'
 import { toast } from '@/components/toaster'
 import { type ProjectRow, queryClient, trpc } from '@/trpc/client'
+import { Button } from '@/ui/button/button'
+import { Checkbox } from '@/ui/checkbox/checkbox'
+import { Input } from '@/ui/field/input'
+import { Textarea } from '@/ui/field/textarea'
 
 export const Route = createFileRoute('/projects/$name')({ component: ProjectEditPage })
 
@@ -172,13 +172,18 @@ function ProjectForm({ project }: { project: ProjectRow }) {
       subtitle={project.path}
       actions={
         <>
-          <Button type="submit" form="project-form" disabled={!changed || save.isPending}>
+          <Button
+            variant="primary"
+            type="submit"
+            form="project-form"
+            disabled={!changed || save.isPending}
+          >
             <Save size={14} />
             {save.isPending ? 'Saving...' : 'Save'}
           </Button>
           <Button
             type="button"
-            variant="destructive"
+            variant="danger"
             disabled={remove.isPending}
             onClick={() => {
               if (!confirmRemove) {
@@ -263,7 +268,7 @@ function ProjectForm({ project }: { project: ProjectRow }) {
               control={
                 <Textarea
                   rows={12}
-                  className="font-mono text-[12.5px]"
+                  code
                   value={tracker}
                   onChange={(event) => setTracker(event.target.value)}
                 />
@@ -275,7 +280,7 @@ function ProjectForm({ project }: { project: ProjectRow }) {
               control={
                 <Textarea
                   rows={12}
-                  className="font-mono text-[12.5px]"
+                  code
                   value={worktree}
                   onChange={(event) => setWorktree(event.target.value)}
                 />
