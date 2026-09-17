@@ -187,9 +187,10 @@ function terminalProcessState(run: TerminalProcessRun) {
   const coordinatorLive = Boolean(run.pid && run.pid > 1 && !coordinatorReused && pidAlive(run.pid))
   const roots = [
     ...new Set(
-      [coordinatorReused ? null : run.pid, vendorReused ? null : run.agent_pid].filter(
-        (pid): pid is number => pid != null && pid > 1,
-      ),
+      [
+        coordinatorReused ? null : run.pid,
+        vendorIdentity === 'reused' ? null : run.agent_pid,
+      ].filter((pid): pid is number => pid != null && pid > 1),
     ),
   ]
   return { coordinatorLive, vendorIdentity, roots }
