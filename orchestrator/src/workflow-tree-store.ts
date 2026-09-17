@@ -41,6 +41,11 @@ export type WorkflowTreeImportResult = {
   workflows: string[]
 }
 
+function missingProductionFlows(tree: WorkflowTreeStore, production: WorkflowTreeStore): string[] {
+  const imported = new Set(tree.workflows.map(({ slug }) => slug))
+  return production.workflows.map(({ slug }) => slug).filter((slug) => !imported.has(slug)).sort()
+}
+
 export function importWorkflowTree(
   tree: WorkflowTreeStore,
   reason: string | undefined,
@@ -48,40 +53,47 @@ export function importWorkflowTree(
   d?: Database,
 ): WorkflowTreeImportResult {
   if (!reason?.trim()) throw new Error('reason is required')
-  const readDatabase = d ?? db()
-  const production = productionWorkflowTree(readDatabase)
-  const steps = orderedSteps(tree.steps, production.steps)
-  const stepSlugs = new Set(steps.map((step) => step.slug))
-  const catalogueErrors = validateStepCatalogue({ steps })
-  const workflowErrors = tree.workflows.flatMap(({ slug, definition }) =>
-    validateWorkflowDefinition(definition, readDatabase, stepSlugs).map(
-      (error) => `workflow "${slug}": ${error}`,
-    ),
-  )
-  const errors = [...catalogueErrors, ...workflowErrors]
-  if (errors.length) {
-    throw new Error(`invalid workflow tree:\n${errors.map((error) => `- ${error}`).join('\n')}`)
-  }
-
-  const productionSteps = new Map(production.steps.map((step) => [step.slug, step]))
-  const importedSteps = new Map(steps.map((step) => [step.slug, step]))
-  const changedSteps = [...new Set([...productionSteps.keys(), ...importedSteps.keys()])]
-    .filter((slug) => !same(productionSteps.get(slug), importedSteps.get(slug)))
-    .sort()
-  const productionFlows = new Map(
-    production.workflows.map(({ slug, definition }) => [slug, definition]),
-  )
-  const changedWorkflows = tree.workflows
-    .filter(({ slug, definition }) => !same(productionFlows.get(slug), definition))
-    .sort((a, b) => a.slug.localeCompare(b.slug))
-
-  const writeDatabase = d ?? writableDb()
-  if (!changedSteps.length && !changedWorkflows.length) return { steps: [], workflows: [] }
+  const database = d ?? writableDb()
   return writeTransaction(() => {
-    if (changedSteps.length) importStepCatalogue({ steps }, reason, author, writeDatabase)
+    const production = productionWorkflowTree(database)
+    const missingFlows = missingProductionFlows(tree, production)
+    if (missingFlows.length) {
+      throw new Error(
+        `refusing import: production flows missing from the tree:\n${missingFlows
+          .map((slug) => `- ${slug}: orch workflow retire ${slug}`)
+          .join('\n')}`,
+      )
+    }
+    const steps = orderedSteps(tree.steps, production.steps)
+    const stepSlugs = new Set(steps.map((step) => step.slug))
+    const catalogueErrors = validateStepCatalogue({ steps })
+    const workflowErrors = tree.workflows.flatMap(({ slug, definition }) =>
+      validateWorkflowDefinition(definition, database, stepSlugs).map(
+        (error) => `workflow "${slug}": ${error}`,
+      ),
+    )
+    const errors = [...catalogueErrors, ...workflowErrors]
+    if (errors.length) {
+      throw new Error(`invalid workflow tree:\n${errors.map((error) => `- ${error}`).join('\n')}`)
+    }
+
+    const productionSteps = new Map(production.steps.map((step) => [step.slug, step]))
+    const importedSteps = new Map(steps.map((step) => [step.slug, step]))
+    const changedSteps = [...new Set([...productionSteps.keys(), ...importedSteps.keys()])]
+      .filter((slug) => !same(productionSteps.get(slug), importedSteps.get(slug)))
+      .sort()
+    const productionFlows = new Map(
+      production.workflows.map(({ slug, definition }) => [slug, definition]),
+    )
+    const changedWorkflows = tree.workflows
+      .filter(({ slug, definition }) => !same(productionFlows.get(slug), definition))
+      .sort((a, b) => a.slug.localeCompare(b.slug))
+
+    if (!changedSteps.length && !changedWorkflows.length) return { steps: [], workflows: [] }
+    if (changedSteps.length) importStepCatalogue({ steps }, reason, author, database)
     for (const { slug, definition } of changedWorkflows) {
-      importWorkflow(slug, definition, reason, author, writeDatabase, stepSlugs)
+      importWorkflow(slug, definition, reason, author, database, stepSlugs)
     }
     return { steps: changedSteps, workflows: changedWorkflows.map(({ slug }) => slug) }
-  }, writeDatabase)
+  }, database)
 }

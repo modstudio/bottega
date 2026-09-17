@@ -2,8 +2,9 @@
 /** Knows workflow command semantics and thin tree adapters. Must not know CLI grammar, runs, routing, or transports. */
 import { readFileSync, realpathSync } from 'node:fs'
 import { resolve } from 'node:path'
+import { gitToplevel } from '../../shared/git.ts'
 import { flagValue, flagValues } from './args.ts'
-import { projectAt } from './projects.ts'
+import { projects } from './projects.ts'
 import {
   forkStepCatalogue,
   promoteStepCatalogue,
@@ -13,11 +14,7 @@ import {
   stepCatalogueVersions,
 } from './step-catalogue.ts'
 import { parseWorkflowTree, planWorkflowHydration } from './workflow-tree.ts'
-import {
-  applyWorkflowTreePlan,
-  collectWorkflowTree,
-  workflowGitRoot,
-} from './workflow-tree-files.ts'
+import { applyWorkflowTreePlan, collectWorkflowTree } from './workflow-tree-files.ts'
 import { importWorkflowTree, productionWorkflowTree } from './workflow-tree-store.ts'
 import {
   composeWorkflow,
@@ -120,15 +117,30 @@ function catalogueCommand(argv: string[], print: (value: unknown, line?: string)
 function workflowRoot(argv: string[]): string {
   const cwd = flagValue(argv, 'cwd')
   if (!cwd) throw new Error('--cwd is required')
-  return workflowGitRoot(resolve(cwd))
+  const resolved = resolve(cwd)
+  const root = gitToplevel(resolved)
+  if (!root) throw new Error(`refusing ${resolved}: not a git repository`)
+  return root
+}
+
+function registeredMainCheckout(root: string): string | null {
+  const rootReal = realpathSync(root)
+  for (const project of projects()) {
+    try {
+      if (realpathSync(project.path) === rootReal) return project.path
+    } catch {
+      continue
+    }
+  }
+  return null
 }
 
 function hydrateCommand(argv: string[], presentation: Presentation): void {
   const root = workflowRoot(argv)
-  const project = projectAt(root)
-  if (project && realpathSync(root) === realpathSync(project.path)) {
+  const main = registeredMainCheckout(root)
+  if (main) {
     throw new Error(
-      `refusing to hydrate registered main checkout ${project.path}\n` +
+      `refusing to hydrate registered main checkout ${main}\n` +
         'invariant: workflow hydration writes a disposable project tree, never the main checkout\n' +
         'cleared by: pass --cwd for a worktree',
     )

@@ -105,4 +105,27 @@ describe('importWorkflowTree', () => {
     expect(productionStepCatalogue(d).n).toBe(productionCatalogue.n)
     expect(productionWorkflows(d)).toEqual(productionFlows)
   })
+
+  test('a production flow missing from the tree refuses the import and writes nothing', () => {
+    const d = database()
+    const tree = renderedTree(d).filter(({ path }) => path !== 'workflows/flows/ship.md')
+    const before = {
+      catalogues: (d.query('SELECT COUNT(*) count FROM step_catalogue_version').get() as {
+        count: number
+      }).count,
+      workflows: (d.query('SELECT COUNT(*) count FROM workflow_version').get() as { count: number })
+        .count,
+    }
+
+    expect(() => importWorkflowTree(parseWorkflowTree(tree), 'drop ship', 'worker', d)).toThrow(
+      'orch workflow retire ship',
+    )
+    expect(
+      (d.query('SELECT COUNT(*) count FROM step_catalogue_version').get() as { count: number })
+        .count,
+    ).toBe(before.catalogues)
+    expect(
+      (d.query('SELECT COUNT(*) count FROM workflow_version').get() as { count: number }).count,
+    ).toBe(before.workflows)
+  })
 })

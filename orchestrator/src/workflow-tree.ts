@@ -13,8 +13,25 @@ export type WorkflowTreePlan = {
   deletes: string[]
 }
 
-const STEP_PATH = /^workflows\/steps\/([a-z0-9][a-z0-9-]{0,63})\.md$/
-const FLOW_PATH = /^workflows\/flows\/([a-z0-9][a-z0-9-]{0,63})\.md$/
+export const WORKFLOW_TREE_ROOT = 'workflows'
+export const WORKFLOW_TREE_FOLDERS = ['steps', 'flows'] as const
+export type WorkflowTreeFolder = (typeof WORKFLOW_TREE_FOLDERS)[number]
+
+const SLUG = '[a-z0-9][a-z0-9-]{0,63}'
+const WORKFLOW_TREE_PATH = new RegExp(
+  `^${WORKFLOW_TREE_ROOT}/(${WORKFLOW_TREE_FOLDERS.join('|')})/(${SLUG})\\.md$`,
+)
+
+export function matchWorkflowTreePath(
+  path: string,
+): { folder: WorkflowTreeFolder; slug: string } | null {
+  const match = path.match(WORKFLOW_TREE_PATH)
+  return match ? { folder: match[1] as WorkflowTreeFolder, slug: match[2]! } : null
+}
+
+function treePath(folder: WorkflowTreeFolder, slug: string): string {
+  return `${WORKFLOW_TREE_ROOT}/${folder}/${slug}.md`
+}
 
 function document(frontMatter: Record<string, unknown>, body: string): string {
   return `---\n${Bun.YAML.stringify(frontMatter)}\n---\n${body}\n`
@@ -22,7 +39,7 @@ function document(frontMatter: Record<string, unknown>, body: string): string {
 
 function renderedFiles(store: WorkflowTreeStore): WorkflowTreeFile[] {
   const steps = store.steps.map((step) => ({
-    path: `workflows/steps/${step.slug}.md`,
+    path: treePath('steps', step.slug),
     body: document(
       {
         title: step.title,
@@ -35,7 +52,7 @@ function renderedFiles(store: WorkflowTreeStore): WorkflowTreeFile[] {
     ),
   }))
   const workflows = store.workflows.map(({ slug, definition }) => ({
-    path: `workflows/flows/${slug}.md`,
+    path: treePath('flows', slug),
     body: document(
       {
         title: definition.title,
@@ -58,9 +75,7 @@ export function planWorkflowHydration(input: {
   return {
     writes: desired.filter((file) => current.get(file.path) !== file.body),
     deletes: input.tree
-      .filter(
-        (file) => (STEP_PATH.test(file.path) || FLOW_PATH.test(file.path)) && !paths.has(file.path),
-      )
+      .filter((file) => matchWorkflowTreePath(file.path) && !paths.has(file.path))
       .map((file) => file.path)
       .sort(),
   }
@@ -95,14 +110,13 @@ export function parseWorkflowTree(tree: WorkflowTreeFile[]): WorkflowTreeStore {
   const steps: CatalogueStep[] = []
   const workflows: WorkflowTreeStore['workflows'] = []
   for (const file of [...tree].sort((a, b) => a.path.localeCompare(b.path))) {
-    const stepMatch = file.path.match(STEP_PATH)
-    const flowMatch = file.path.match(FLOW_PATH)
-    if (!stepMatch && !flowMatch) continue
+    const match = matchWorkflowTreePath(file.path)
+    if (!match) continue
     const parsed = parseDocument(file)
     const frontMatter = record(parsed.frontMatter, file.path)
-    if (stepMatch) {
+    if (match.folder === 'steps') {
       steps.push({
-        slug: stepMatch[1]!,
+        slug: match.slug,
         title: frontMatter.title as string,
         floor: frontMatter.floor as CatalogueStep['floor'],
         job: frontMatter.job as string | null,
@@ -112,7 +126,7 @@ export function parseWorkflowTree(tree: WorkflowTreeFile[]): WorkflowTreeStore {
       })
     } else {
       workflows.push({
-        slug: flowMatch![1]!,
+        slug: match.slug,
         definition: {
           title: frontMatter.title as string,
           arguments: frontMatter.arguments as WorkflowDefinition['arguments'],

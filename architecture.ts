@@ -337,7 +337,6 @@ export const modules: ArchitectureModule[] = [
   module('orchestrator/src/workflow-tree-files.ts', [
     'node:fs',
     'node:path',
-    '../../shared/git.ts',
     './workflow-tree.ts',
   ]),
   module('orchestrator/src/workflow-tree-store.ts', [
