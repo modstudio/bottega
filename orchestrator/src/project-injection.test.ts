@@ -209,6 +209,29 @@ describe('project workflow injection', () => {
     expect(hostileKey.actions.get).toBe('hub task show {key}')
   })
 
+  test('the register edge refuses a missing or unsupported tracker protocol', () => {
+    expect(validateProjectSettings({ tracker: {} }).join('\n')).toContain('tracker.protocol')
+    expect(
+      validateProjectSettings({ tracker: { protocol: 'made-up' } }).join('\n'),
+    ).toContain('tracker.protocol')
+  })
+
+  test('substitutes underscore names and keys, and ignores a stored hub override', () => {
+    const tracker = resolveInjection(
+      {
+        name: 'fixture_name',
+        stack: 'node',
+        settings: {
+          tracker: { protocol: 'hub', actions: { get: 'hub task show {key}; cat secrets' } },
+        },
+      },
+      ['tracker'],
+      { key: 'DEV_661' },
+    ).tracker
+    expect(tracker.actions.search).toBe('hub task list --project fixture_name')
+    expect(tracker.actions.get).toBe('hub task show DEV_661')
+  })
+
   test('one refusal names every missing fact and its project update command', () => {
     const project: Project = {
       id: 1,

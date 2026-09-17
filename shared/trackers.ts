@@ -5,7 +5,8 @@ export const TASK_STATUSES = ['open', 'active', 'review', 'done', 'dropped'] as 
 
 const TRACKER_ACTIONS = ['search', 'get', 'create', 'update', 'status', 'comment'] as const
 export type TrackerAction = (typeof TRACKER_ACTIONS)[number]
-export type TrackerProtocol = 'workspace-mcp' | 'cursor-mcp' | 'array-mcp' | 'hub'
+export const TRACKER_PROTOCOLS = ['workspace-mcp', 'cursor-mcp', 'array-mcp', 'hub'] as const
+export type TrackerProtocol = (typeof TRACKER_PROTOCOLS)[number]
 type TrackerActionName = { agent: string; wire?: string }
 
 /** The names agents and hub use for each protocol capability. */
@@ -54,11 +55,16 @@ export const trackerWireAction = (protocol: TrackerProtocol, action: TrackerActi
   return name.wire ?? name.agent
 }
 
-/** Agent-facing capability names, with register overrides replacing protocol defaults. */
+/**
+ * Agent-facing capability names, with register overrides replacing protocol
+ * defaults. Hub commands are fixed, so a hub override is never applied, even
+ * from a settings row that reached the store without register validation.
+ */
 export function resolveTrackerAgentActions(
   protocol: TrackerProtocol,
-  overrides: Partial<Record<TrackerAction, string>> = {},
+  requested: Partial<Record<TrackerAction, string>> = {},
 ): Partial<Record<TrackerAction, string>> {
+  const overrides = protocol === 'hub' ? {} : requested
   const defaults: Record<
     TrackerProtocol,
     Partial<Record<TrackerAction, TrackerActionName>>
@@ -89,9 +95,7 @@ export const trackerSettingsShape = {
   assigneeLookup: z.enum(['person-lookup', 'task-detail']).optional(),
   envPrefix: z.string().trim().min(1).optional(),
   openStatuses: z.array(z.string()).optional(),
-  states: z
-    .record(z.string(), z.enum(['backlog', 'open', 'active', 'review', 'done', 'dropped']))
-    .optional(),
+  states: z.record(z.string(), z.enum(['backlog', ...TASK_STATUSES])).optional(),
   actions: z.strictObject(trackerActionsShape).optional(),
 }
 

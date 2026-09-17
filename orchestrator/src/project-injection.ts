@@ -4,6 +4,7 @@ import { z } from 'zod'
 import {
   refuseHubActionOverrides,
   resolveTrackerAgentActions,
+  TRACKER_PROTOCOLS,
   type TrackerAction,
   type TrackerProtocol,
   type TrackerSettings,
@@ -34,7 +35,12 @@ const docsSchema = z.discriminatedUnion('protocol', [
 ])
 
 const gateSchema = z.string().trim().min(1)
-const trackerSchema = strictObject(trackerSettingsShape).superRefine(refuseHubActionOverrides)
+// The shared shape keeps protocol open so hub can read any stored row; the
+// register edge accepts only protocols a workflow can act on.
+const trackerSchema = strictObject({
+  ...trackerSettingsShape,
+  protocol: z.enum(TRACKER_PROTOCOLS),
+}).superRefine(refuseHubActionOverrides)
 
 export type ReleaseSettings = z.infer<typeof releaseSchema>
 export type DocsSettings = z.infer<typeof docsSchema>
@@ -67,19 +73,16 @@ const docsAdapters: Record<DocsSettings['protocol'], { read: string[]; write: st
   'orch-docs': { read: ['list_docs', 'get_doc'], write: ['set_doc'] },
 }
 
-const trackerProtocols = new Set<TrackerProtocol>([
-  'workspace-mcp',
-  'cursor-mcp',
-  'array-mcp',
-  'hub',
-])
-const projectNamePattern = /^[A-Za-z0-9][A-Za-z0-9-]*$/
-const taskKeyPattern = /^[A-Za-z0-9-]+$/
+const trackerProtocols = new Set<string>(TRACKER_PROTOCOLS)
+// Substituted values reach a command an agent runs, so they carry no shell
+// syntax and cannot open with a dash that the command would read as a flag.
+const projectNamePattern = /^[A-Za-z0-9][A-Za-z0-9_.-]*$/
+const taskKeyPattern = /^[A-Za-z0-9][A-Za-z0-9_.-]*$/
 
 function trackerProtocol(value: string | undefined): TrackerProtocol {
-  if (!value || !trackerProtocols.has(value as TrackerProtocol)) {
+  if (!value || !trackerProtocols.has(value)) {
     throw new Error(
-      `tracker protocol ${value ?? '(missing)'} has no workflow injection support; set tracker.protocol to workspace-mcp, cursor-mcp, array-mcp, or hub`,
+      `tracker protocol ${value ?? '(missing)'} has no workflow injection support; set tracker.protocol to one of ${TRACKER_PROTOCOLS.join(', ')}`,
     )
   }
   return value as TrackerProtocol
