@@ -441,7 +441,7 @@ export const exactArchitecturePath = (path: string) =>
 
 function architectureDependencyPath(target: string) {
   if (target.startsWith('node:')) return exactArchitecturePath(target.slice('node:'.length))
-  if (target === 'bun') return '^node_modules/\\.bun/[^/]+/node_modules/@types/bun/'
+  if (target === 'bun') return '(^|/)node_modules/\\.bun/[^/]+/node_modules/@types/bun/'
   if (target.includes(':')) return exactArchitecturePath(target)
   if (CONCERNS.some((root) => target.startsWith(`${root}/`)) || target.startsWith('shared/')) {
     return exactArchitecturePath(target)
@@ -451,7 +451,7 @@ function architectureDependencyPath(target: string) {
   const packagePath = first?.startsWith('@') ? remainder : [second, ...remainder].filter(Boolean)
   const escapedPackage = packageName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
   const escapedPath = packagePath.map((part) => part!.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'))
-  const installed = `^node_modules/\\.bun/[^/]+/node_modules/${escapedPackage}/`
+  const installed = `(^|/)node_modules/\\.bun/[^/]+/node_modules/${escapedPackage}/`
   const unresolved = exactArchitecturePath(target)
   return escapedPath.length
     ? `${installed}${escapedPath.join('/')}(?:/|$)|${unresolved}`
