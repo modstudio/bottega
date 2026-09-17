@@ -2,9 +2,8 @@ import { useMutation, useQuery } from '@tanstack/react-query'
 import { createFileRoute, useNavigate } from '@tanstack/react-router'
 import { Copy } from 'lucide-react'
 import { useEffect, useState } from 'react'
-import { Badge } from '@/components/badge'
 import { Button } from '@/components/button'
-import { LiveDot, Segmented } from '@/components/design-system'
+import { Segmented } from '@/components/design-system'
 import { DisplayRow } from '@/components/fields'
 import { HostedRunDetail } from '@/components/hosted-run-detail'
 import { Input } from '@/components/input'
@@ -12,6 +11,7 @@ import { Sheet } from '@/components/sheet'
 import { duration, relativeTime } from '@/lib/format'
 import { isHostedMode } from '@/lib/hub-mode'
 import { queryClient, trpc } from '@/trpc/client'
+import { Badge } from '@/ui/badge/badge'
 
 const DELIVERIES = ['none', 'partial', 'full'] as const
 const QUALITIES = ['wrong', 'mixed', 'right'] as const
@@ -186,10 +186,9 @@ function RunDetailPage({ id }: { id: string }) {
       subtitle={subtitle}
       actions={
         <Badge
-          variant={run.status !== 'ok' && !running ? 'destructive' : 'outline'}
-          className="gap-2"
+          tone={running ? 'progress' : run.status !== 'ok' ? 'error' : 'neutral'}
+          dot={running}
         >
-          {running ? <LiveDot /> : null}
           {run.status}
         </Badge>
       }

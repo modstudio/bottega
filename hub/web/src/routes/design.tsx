@@ -1,6 +1,5 @@
 import { createFileRoute } from '@tanstack/react-router'
 import { useState } from 'react'
-import { Badge } from '@/components/badge'
 import { Button } from '@/components/button'
 import { Checkbox } from '@/components/checkbox'
 import { Collection } from '@/components/collection'
@@ -29,6 +28,7 @@ import { Sheet } from '@/components/sheet'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/table'
 import { Tabs, TabsList, TabsTrigger } from '@/components/tabs'
 import { Textarea } from '@/components/textarea'
+import { Badge } from '@/ui/badge/badge'
 
 const semanticColors = [
   { name: 'success', light: '#1a7f4b', dark: '#4cc98a' },
@@ -38,17 +38,7 @@ const semanticColors = [
   { name: 'danger', light: '#9a3412', dark: '#e88a63' },
 ] as const
 
-const badgeVariants = [
-  'default',
-  'secondary',
-  'destructive',
-  'outline',
-  'success',
-  'warning',
-  'info',
-  'live',
-  'danger',
-] as const
+const badgeTones = ['neutral', 'success', 'warning', 'error', 'info', 'progress'] as const
 
 export const Route = createFileRoute('/design')({ component: DesignPage })
 
@@ -168,11 +158,19 @@ function DesignPage() {
 
       <SectionTitle>Badge</SectionTitle>
       <div className="flex flex-wrap gap-2">
-        {badgeVariants.map((variant) => (
-          <Badge key={variant} variant={variant}>
-            {variant}
+        {badgeTones.map((tone) => (
+          <Badge key={tone} tone={tone}>
+            {tone}
           </Badge>
         ))}
+        {badgeTones.map((tone) => (
+          <Badge key={`${tone}-solid`} tone={tone} emphasis="solid">
+            {tone}
+          </Badge>
+        ))}
+        <Badge tone="progress" dot>
+          running
+        </Badge>
       </div>
 
       <SectionTitle>Fields</SectionTitle>
@@ -242,14 +240,14 @@ function DesignPage() {
             <TableRow>
               <TableCell>Table row</TableCell>
               <TableCell>
-                <Badge variant="success">ready</Badge>
+                <Badge tone="success">ready</Badge>
               </TableCell>
               <TableCell className="num">1,024</TableCell>
             </TableRow>
             <TableRow>
               <TableCell>Quiet row</TableCell>
               <TableCell>
-                <Badge variant="outline">resting</Badge>
+                <Badge>resting</Badge>
               </TableCell>
               <TableCell className="num">64</TableCell>
             </TableRow>

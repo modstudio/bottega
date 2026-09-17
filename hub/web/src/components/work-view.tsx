@@ -2,7 +2,6 @@ import { keepPreviousData, useQuery } from '@tanstack/react-query'
 import { Link, useNavigate } from '@tanstack/react-router'
 import { ChevronRight } from 'lucide-react'
 import { useEffect, useMemo, useState } from 'react'
-import { Badge } from '@/components/badge'
 import { Collection, type CollectionColumn } from '@/components/collection'
 import {
   EmptyState,
@@ -22,8 +21,11 @@ import { Input } from '@/components/input'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/table'
 import { useNow } from '@/lib/clock'
 import { compactTokens, duration, relativeTime, vendorFigures } from '@/lib/format'
+import { taskStatusLook } from '@/lib/task-status'
 import { setWorkCounts, useWindowState } from '@/lib/window'
 import { type BoardResponse, type FlightResponse, trpc } from '@/trpc/client'
+import { Badge } from '@/ui/badge/badge'
+import { Identifier } from '@/ui/identifier/identifier'
 
 type WorkName = 'flight' | 'done'
 type TaskData = FlightResponse['data']
@@ -38,7 +40,7 @@ const formatMs = duration
 const ago = relativeTime
 const vendors = (row: TaskRow) => vendorFigures(row.vendors)
 
-function Status({ row }: { row: Pick<TaskRow, 'key' | 'status' | 'statusCategory'> }) {
+function Status({ row }: { row: Pick<TaskRow, 'key' | 'status' | 'statusCategory' | 'source'> }) {
   if (!row.statusCategory) {
     return (
       <span
@@ -49,36 +51,11 @@ function Status({ row }: { row: Pick<TaskRow, 'key' | 'status' | 'statusCategory
       </span>
     )
   }
-  return <StatusBadge status={row.statusCategory} title={row.status ?? row.statusCategory} />
-}
-
-function RecordStatus({
-  row,
-}: {
-  row: Pick<TaskRow, 'key' | 'status' | 'statusCategory' | 'source'>
-}) {
-  if (row.source === 'local' || row.status === row.statusCategory) return <Status row={row} />
+  // One tag: the tracker's own word, coloured by the hub's category.
+  const label = row.source === 'local' ? row.statusCategory : (row.status ?? row.statusCategory)
   return (
-    <span className="inline-flex items-center gap-2">
-      {row.status ?? 'unknown'}
-      <span aria-hidden>→</span>
-      <Status row={row} />
-    </span>
-  )
-}
-
-function StatusBadge({ status, title }: { status: string; title?: string }) {
-  const variant =
-    status === 'active'
-      ? 'live'
-      : status === 'review'
-        ? 'info'
-        : status === 'dropped'
-          ? 'danger'
-          : 'outline'
-  return (
-    <Badge variant={variant} title={title}>
-      {status}
+    <Badge {...taskStatusLook(row.statusCategory)} title={`Hub status: ${row.statusCategory}`}>
+      {label}
     </Badge>
   )
 }
@@ -227,7 +204,9 @@ function TaskTable({
           <SourceMark source={row.source} project={row.project} protocol={row.sourceProtocol} />
         </span>
       ) : column.id === 'task' ? (
-        <strong className="whitespace-nowrap">{row.key}</strong>
+        row.key ? (
+          <Identifier>{row.key}</Identifier>
+        ) : null
       ) : column.id === 'title' ? (
         row.title || (
           <span className="text-muted-foreground">
@@ -237,7 +216,7 @@ function TaskTable({
           </span>
         )
       ) : column.id === 'status' ? (
-        <RecordStatus row={row} />
+        <Status row={row} />
       ) : column.id === 'updated' ? (
         <span className={row.workingNow ? 'text-live' : 'text-muted-foreground'}>
           {row.workingNow ? (
@@ -499,14 +478,14 @@ function BoardCardView({ card }: { card: BoardCard }) {
       className="proj-card block cursor-pointer border border-border p-3 focus-visible:ring-2 focus-visible:ring-ring"
       style={projectVars(colors, card.project)}
     >
-      <div className="whitespace-nowrap font-semibold">{card.key}</div>
+      <Identifier className="block">{card.key}</Identifier>
       <div className="mt-1 font-sans text-[12.5px]">
         {card.title || <span className="text-muted-foreground">No title from its tracker</span>}
       </div>
       <div className="mt-3 flex flex-wrap items-center gap-2 text-[11px]">
         <ProjectMark name={card.project} />
         <BoardOwner card={card} />
-        <RecordStatus row={card} />
+        <Status row={card} />
         {card.assignee ? <span>{card.assignee}</span> : null}
         {card.workingNow ? (
           <span className="inline-flex items-center gap-2 text-live">
@@ -666,7 +645,7 @@ export function BoardView() {
                     label: 'Task',
                     render: (card) => (
                       <>
-                        <div className="whitespace-nowrap font-semibold">{card.key}</div>
+                        <Identifier className="block">{card.key}</Identifier>
                         <div className="font-sans text-sm">
                           {card.title || (
                             <span className="text-muted-foreground">no title from its tracker</span>
@@ -680,7 +659,7 @@ export function BoardView() {
                     label: settings.group === 'project' ? 'Status' : 'Project',
                     render: (card) =>
                       settings.group === 'project' ? (
-                        <RecordStatus row={card} />
+                        <Status row={card} />
                       ) : (
                         <span className="inline-flex items-center gap-2">
                           <ProjectMark name={card.project} />

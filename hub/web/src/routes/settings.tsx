@@ -1,7 +1,6 @@
 import { useMutation, useQuery } from '@tanstack/react-query'
 import { createFileRoute, Link } from '@tanstack/react-router'
 import { useEffect, useState } from 'react'
-import { Badge } from '@/components/badge'
 import { Button } from '@/components/button'
 import { Card, CardContent } from '@/components/card'
 import { Checkbox } from '@/components/checkbox'
@@ -11,6 +10,7 @@ import { Input } from '@/components/input'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/table'
 import { useWindowState } from '@/lib/window'
 import { queryClient, type SettingsResponse, trpc } from '@/trpc/client'
+import { Badge } from '@/ui/badge/badge'
 
 type SettingsData = SettingsResponse['data']
 type Report = SettingsData['report']
@@ -276,7 +276,7 @@ function SettingsPage() {
           <Card className="mb-6 max-w-[640px] rounded-none">
             <CardContent className="p-4">
               <div className="text-sm">
-                <Badge variant={data.secrets.smtpPassword.resolves ? 'outline' : 'destructive'}>
+                <Badge tone={data.secrets.smtpPassword.resolves ? 'success' : 'error'}>
                   {data.secrets.smtpPassword.resolves ? 'password resolves' : 'password missing'}
                 </Badge>{' '}
                 <span className="text-muted-foreground">from {data.secrets.smtpPassword.ref}</span>
@@ -309,17 +309,13 @@ function SettingsPage() {
                           {row.at.slice(0, 16).replace('T', ' ')}
                         </TableCell>
                         <TableCell>
-                          <Badge variant={row.status === 'failed' ? 'destructive' : 'outline'}>
+                          <Badge tone={row.status === 'failed' ? 'error' : 'neutral'}>
                             {row.status}
                           </Badge>
                         </TableCell>
                         <TableCell className="text-right">{row.items.toLocaleString()}</TableCell>
                         <TableCell className="text-muted-foreground">
-                          {row.test ? (
-                            <Badge variant="outline" className="mr-2">
-                              test
-                            </Badge>
-                          ) : null}
+                          {row.test ? <Badge className="mr-2">test</Badge> : null}
                           {row.error || row.recipients}
                         </TableCell>
                       </TableRow>

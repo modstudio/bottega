@@ -1,9 +1,9 @@
 import { useQuery } from '@tanstack/react-query'
 import { FolderGit2 } from 'lucide-react'
-import { Badge } from '@/components/badge'
 import { Collection, type CollectionColumn } from '@/components/collection'
 import { PageHeader, type ProjectColors, ProjectMark } from '@/components/design-system'
 import { trpc } from '@/trpc/client'
+import { Badge } from '@/ui/badge/badge'
 
 type HostedProject = {
   name: string
@@ -51,7 +51,7 @@ export function HostedProjects() {
     {
       id: 'retired',
       label: '',
-      render: (project) => (project.retiredAt ? <Badge variant="outline">retired</Badge> : null),
+      render: (project) => (project.retiredAt ? <Badge>retired</Badge> : null),
     },
   ]
 

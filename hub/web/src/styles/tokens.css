@@ -202,12 +202,12 @@
 
 /*
  * Status triad, derived once for every role so a new role is one anchor.
- * `[data-status]` sets which anchor `--status` reads; the Tailwind names in
+ * `[data-tone]` sets which anchor `--status` reads; the Tailwind names in
  * theme.css read the derived values.
  */
 :root,
 .dark,
-[data-status] {
+[data-tone] {
   --status: var(--status-neutral);
   --status-on: var(--status-neutral-on);
   --status-fill: var(--status);
@@ -215,29 +215,33 @@
   --status-on-fill: var(--status-on);
   --status-text: oklch(from var(--status) calc(l + var(--status-text-shift)) c h);
   --status-surface: color-mix(
-    in oklch,
+    in srgb,
     var(--status) var(--status-surface-mix),
     var(--surface-page)
   );
-  --status-border: color-mix(in oklch, var(--status) var(--status-border-mix), var(--surface-page));
+  --status-border: color-mix(in srgb, var(--status) var(--status-border-mix), var(--surface-page));
 }
-[data-status="success"] {
+[data-tone="neutral"] {
+  --status: var(--status-neutral);
+  --status-on: var(--status-neutral-on);
+}
+[data-tone="success"] {
   --status: var(--status-success);
   --status-on: var(--status-success-on);
 }
-[data-status="warning"] {
+[data-tone="warning"] {
   --status: var(--status-warning);
   --status-on: var(--status-warning-on);
 }
-[data-status="error"] {
+[data-tone="error"] {
   --status: var(--status-error);
   --status-on: var(--status-error-on);
 }
-[data-status="info"] {
+[data-tone="info"] {
   --status: var(--status-info);
   --status-on: var(--status-info-on);
 }
-[data-status="progress"] {
+[data-tone="progress"] {
   --status: var(--status-progress);
   --status-on: var(--status-progress-on);
 }

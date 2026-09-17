@@ -2,7 +2,6 @@ import { useQuery } from '@tanstack/react-query'
 import { Outlet, useNavigate } from '@tanstack/react-router'
 import { ChevronRight } from 'lucide-react'
 import { useState } from 'react'
-import { Badge } from '@/components/badge'
 import { Button } from '@/components/button'
 import { Collection, type CollectionColumn } from '@/components/collection'
 import { PageHeader, ProjectMark } from '@/components/design-system'
@@ -10,7 +9,9 @@ import { hostedProjectColors } from '@/components/hosted-projects'
 import { Input } from '@/components/input'
 import { duration } from '@/lib/format'
 import { runEasternTime } from '@/lib/run-search'
+import { verdictTone } from '@/lib/verdict-tone'
 import { trpc } from '@/trpc/client'
+import { Badge } from '@/ui/badge/badge'
 
 type HostedRun = {
   id: string
@@ -29,17 +30,9 @@ type HostedRun = {
 }
 
 function ScoreBadge({ score, status }: { score: HostedRun['score']; status: string }) {
-  if (!score) return <Badge variant="outline">{status}</Badge>
-  const variant =
-    score.quality === 'wrong' || score.delivery === 'none'
-      ? 'danger'
-      : score.quality === 'mixed' || score.delivery === 'partial'
-        ? 'warning'
-        : score.quality === 'right' || score.delivery === 'full'
-          ? 'success'
-          : 'outline'
+  if (!score) return <Badge>{status}</Badge>
   const text = [score.delivery, score.quality, score.fidelity].filter(Boolean).join(' / ')
-  return <Badge variant={variant}>{text}</Badge>
+  return <Badge tone={verdictTone(score.delivery, score.quality)}>{text}</Badge>
 }
 
 export function HostedRuns() {

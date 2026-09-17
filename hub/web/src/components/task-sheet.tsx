@@ -1,8 +1,10 @@
 import { useMutation, useQuery } from '@tanstack/react-query'
 import { useEffect, useState } from 'react'
 import { relativeTime } from '@/lib/format'
+import { taskStatusLook } from '@/lib/task-status'
 import { queryClient, type TaskRecordResponse, trpc } from '@/trpc/client'
-import { Badge } from './badge'
+import { Badge } from '@/ui/badge/badge'
+import { Identifier } from '@/ui/identifier/identifier'
 import { Button } from './button'
 import { ProjectMark, SourceMark } from './design-system'
 import { DisplayRow, FieldSection, SettingBlock } from './fields'
@@ -44,7 +46,7 @@ function DocumentEditor({ document }: { document: TaskRecordResponse['documents'
   return (
     <article className="space-y-3 border border-border p-3">
       <div className="flex items-center gap-2">
-        {document.role ? <Badge variant="info">{document.role}</Badge> : null}
+        {document.role ? <Badge tone="info">{document.role}</Badge> : null}
         <span className="text-[11px] text-muted-foreground">version {document.version}</span>
       </div>
       <Input
@@ -105,7 +107,7 @@ export function TaskSheet({ taskKey, onClose }: { taskKey: string; onClose: () =
       title={
         record.data ? (
           <span className="inline-flex flex-wrap items-center gap-2">
-            <span>{record.data.task.key}</span>
+            <Identifier>{record.data.task.key}</Identifier>
             <ProjectMark name={record.data.task.project} />
           </span>
         ) : (
@@ -136,27 +138,17 @@ export function TaskSheet({ taskKey, onClose }: { taskKey: string; onClose: () =
           <DisplayRow
             label="Status"
             value={
-              record.data.source === 'local' ||
-              record.data.task.status === record.data.task.status_category ? (
-                (record.data.task.status ?? record.data.task.status_category ?? 'unknown')
+              record.data.task.status_category ? (
+                <Badge
+                  {...taskStatusLook(record.data.task.status_category)}
+                  title={`Hub status: ${record.data.task.status_category}`}
+                >
+                  {record.data.source === 'local'
+                    ? record.data.task.status_category
+                    : (record.data.task.status ?? record.data.task.status_category)}
+                </Badge>
               ) : (
-                <span className="inline-flex items-center gap-2">
-                  {record.data.task.status ?? 'unknown'}
-                  <span aria-hidden>→</span>
-                  <Badge
-                    variant={
-                      record.data.task.status_category === 'active'
-                        ? 'live'
-                        : record.data.task.status_category === 'review'
-                          ? 'info'
-                          : record.data.task.status_category === 'dropped'
-                            ? 'danger'
-                            : 'outline'
-                    }
-                  >
-                    {record.data.task.status_category ?? 'unmapped'}
-                  </Badge>
-                </span>
+                (record.data.task.status ?? 'unknown')
               )
             }
           />

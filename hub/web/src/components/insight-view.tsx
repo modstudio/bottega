@@ -1,7 +1,6 @@
 import { useQuery } from '@tanstack/react-query'
 import type { inferRouterOutputs } from '@trpc/server'
 import { useEffect, useState } from 'react'
-import { Badge } from '@/components/badge'
 import {
   PageHeader,
   responseSubtitle,
@@ -14,6 +13,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { compactTokens, duration } from '@/lib/format'
 import { setWorkCounts, useWindowState } from '@/lib/window'
 import { trpc } from '@/trpc/client'
+import { Badge } from '@/ui/badge/badge'
 import type { AppRouter } from '../../../src/trpc/router.ts'
 
 type Outputs = inferRouterOutputs<AppRouter>['insight']
@@ -176,11 +176,7 @@ function SpendView({ data }: { data: SpendData }) {
               <TableRow key={name}>
                 <TableCell className="font-semibold">
                   {name}
-                  {name === 'engaged hour' ? (
-                    <Badge variant="outline" className="ml-2">
-                      new
-                    </Badge>
-                  ) : null}
+                  {name === 'engaged hour' ? <Badge className="ml-2">new</Badge> : null}
                 </TableCell>
                 {data.numerators.map((item) => {
                   if (!denominator)
@@ -311,11 +307,7 @@ export function RoutingView({ data }: { data: RoutingData }) {
                 </TableCell>
                 <TableCell>
                   <GuideCell candidate={row.best} lead="score" />
-                  {row.provisional ? (
-                    <Badge variant="outline" className="ml-2">
-                      provisional
-                    </Badge>
-                  ) : null}
+                  {row.provisional ? <Badge className="ml-2">provisional</Badge> : null}
                 </TableCell>
                 <TableCell>
                   <GuideCell candidate={row.quickest} lead="time" />
@@ -397,11 +389,11 @@ export function RoutingView({ data }: { data: RoutingData }) {
                     <TableCell className="text-muted-foreground">{row.billing}</TableCell>
                     <TableCell>
                       {row.cooling ? (
-                        <Badge variant="outline">cooling {row.cooling}</Badge>
+                        <Badge>cooling {row.cooling}</Badge>
                       ) : row.lastStatus === 'ok' ? (
-                        <Badge variant="outline">ok</Badge>
+                        <Badge tone="success">OK</Badge>
                       ) : row.lastStatus ? (
-                        <Badge variant="destructive">{row.lastStatus}</Badge>
+                        <Badge tone="error">{row.lastStatus}</Badge>
                       ) : (
                         <span className="text-muted-foreground">no runs</span>
                       )}
@@ -450,9 +442,7 @@ export function RoutingView({ data }: { data: RoutingData }) {
                           {row.kind ?? example ?? '-'}
                         </TableCell>
                         <TableCell>
-                          <Badge variant="outline">
-                            {row.source === 'detected' ? 'detected' : 'declared'}
-                          </Badge>
+                          <Badge>{row.source === 'detected' ? 'detected' : 'declared'}</Badge>
                         </TableCell>
                         <TableCell className="text-right">{number.format(row.runs)}</TableCell>
                         <TableCell className="text-right">{number.format(row.projects)}</TableCell>
@@ -493,7 +483,7 @@ export function RoutingView({ data }: { data: RoutingData }) {
                     {data.spawns.map((row) => (
                       <TableRow key={`${row.decision}:${row.why}`}>
                         <TableCell>
-                          <Badge variant={row.decision === 'denied' ? 'destructive' : 'outline'}>
+                          <Badge tone={row.decision === 'denied' ? 'error' : 'neutral'}>
                             {row.decision}
                           </Badge>
                         </TableCell>

@@ -1,6 +1,5 @@
 import { useQuery } from '@tanstack/react-query'
 import { useNavigate } from '@tanstack/react-router'
-import { Badge } from '@/components/badge'
 import { ProjectMark } from '@/components/design-system'
 import { DisplayRow } from '@/components/fields'
 import { hostedProjectColors } from '@/components/hosted-projects'
@@ -8,6 +7,7 @@ import { type HostedLens, HostedLensList } from '@/components/hosted-reviews'
 import { Sheet } from '@/components/sheet'
 import { duration } from '@/lib/format'
 import { trpc } from '@/trpc/client'
+import { Badge } from '@/ui/badge/badge'
 
 export function HostedRunDetail({ id }: { id: string }) {
   const navigate = useNavigate()
@@ -45,7 +45,7 @@ export function HostedRunDetail({ id }: { id: string }) {
       onClose={close}
       title={`Run ${id}`}
       subtitle={[run.agent, run.job, run.projectName].filter(Boolean).join(' · ')}
-      actions={<Badge variant="outline">{run.status}</Badge>}
+      actions={<Badge>{run.status}</Badge>}
     >
       <DisplayRow label="Project" value={<ProjectMark name={run.projectName} colors={colors} />} />
       <DisplayRow label="Agent" value={run.agent} />

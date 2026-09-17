@@ -53,7 +53,7 @@
 
   --color-focus: var(--focus-color);
 
-  /* Status reads whichever role the nearest `data-status` selected. */
+  /* Status reads whichever role the nearest `data-tone` selected. */
   --color-status-fill: var(--status-fill);
   --color-status-fill-hover: var(--status-fill-hover);
   --color-status-on-fill: var(--status-on-fill);

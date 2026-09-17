@@ -45,3 +45,14 @@ export function collectedTime(value: string | null) {
   if (!value) return 'never collected'
   return `collected ${new Intl.DateTimeFormat('en-US', { hour: 'numeric', minute: '2-digit' }).format(new Date(value)).toLowerCase()}`
 }
+
+/**
+ * A tag label in Title Case: `in_progress` and `In progress` both read
+ * "In Progress". Existing capitals stay, so acronyms such as OK survive.
+ */
+export function statusLabel(raw: string): string {
+  return raw
+    .replace(/[_-]+/g, ' ')
+    .trim()
+    .replace(/\b\p{L}/gu, (letter) => letter.toUpperCase())
+}

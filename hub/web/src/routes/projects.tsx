@@ -2,7 +2,6 @@ import { useMutation, useQuery } from '@tanstack/react-query'
 import { createFileRoute, Outlet, useNavigate } from '@tanstack/react-router'
 import { ChevronRight, FolderGit2, Plus } from 'lucide-react'
 import { useState } from 'react'
-import { Badge } from '@/components/badge'
 import { Button } from '@/components/button'
 import { Checkbox } from '@/components/checkbox'
 import { Collection, type CollectionColumn } from '@/components/collection'
@@ -19,23 +18,24 @@ import { Input } from '@/components/input'
 import { toast } from '@/components/toaster'
 import { isHostedMode } from '@/lib/hub-mode'
 import { type ProjectRow, queryClient, trpc } from '@/trpc/client'
+import { Badge } from '@/ui/badge/badge'
 
 function TrackerState({ project }: { project: ProjectRow }) {
   const status = project.trackerStatus
   if (status.state === 'not-configured') {
-    return <Badge variant="outline">not configured</Badge>
+    return <Badge>not configured</Badge>
   }
   if (status.state === 'unusable') {
     return (
       <div>
-        <Badge variant="danger">unusable</Badge>
+        <Badge tone="error">unusable</Badge>
         <div className="mt-1 max-w-xs text-[11px] text-destructive">{status.error}</div>
       </div>
     )
   }
   return (
     <div>
-      <Badge variant="success">configured</Badge> <span>{status.label}</span>
+      <Badge tone="success">configured</Badge> <span>{status.label}</span>
     </div>
   )
 }
@@ -118,7 +118,7 @@ function ProjectsPage() {
     {
       id: 'canon',
       label: 'Canon',
-      render: (project) => (project.canon ? <Badge variant="outline">canon</Badge> : '-'),
+      render: (project) => (project.canon ? <Badge>canon</Badge> : '-'),
     },
     { id: 'tracker', label: 'Tracker', render: (project) => <TrackerState project={project} /> },
     { id: 'worktree', label: 'Worktree', render: (project) => worktreeMode(project.settings) },

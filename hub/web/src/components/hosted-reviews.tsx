@@ -2,7 +2,6 @@ import { useQuery } from '@tanstack/react-query'
 import { Outlet, useNavigate } from '@tanstack/react-router'
 import { ChevronRight } from 'lucide-react'
 import { useState } from 'react'
-import { Badge } from '@/components/badge'
 import { Button } from '@/components/button'
 import { Collection, type CollectionColumn } from '@/components/collection'
 import { PageHeader, ProjectMark } from '@/components/design-system'
@@ -11,6 +10,7 @@ import { hostedProjectColors } from '@/components/hosted-projects'
 import { Sheet } from '@/components/sheet'
 import { runEasternTime } from '@/lib/run-search'
 import { trpc } from '@/trpc/client'
+import { Badge } from '@/ui/badge/badge'
 
 type HostedReview = {
   id: string
@@ -61,7 +61,7 @@ export function HostedLensList({ lenses }: { lenses: HostedLens[] }) {
                     className="border border-border p-3"
                   >
                     <div className="mb-2 flex items-center gap-2">
-                      <Badge variant="outline">{field(finding, 'severity', 'severity')}</Badge>
+                      <Badge>{field(finding, 'severity', 'severity')}</Badge>
                       <span className="text-muted-foreground">
                         {field(finding, 'location', 'location')}
                       </span>
@@ -208,11 +208,7 @@ export function HostedReviewDetail({ id }: { id: string }) {
       onClose={close}
       title={`Review ${id}`}
       subtitle={projectName ?? undefined}
-      actions={
-        typeof review.tier === 'number' ? (
-          <Badge variant="outline">tier {review.tier}</Badge>
-        ) : undefined
-      }
+      actions={typeof review.tier === 'number' ? <Badge>tier {review.tier}</Badge> : undefined}
     >
       <DisplayRow label="Project" value={<ProjectMark name={projectName} colors={colors} />} />
       <DisplayRow label="Recorded" value={String(review.recordedAt)} />

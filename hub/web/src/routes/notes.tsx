@@ -1,13 +1,13 @@
 import { useMutation, useQuery } from '@tanstack/react-query'
 import { createFileRoute } from '@tanstack/react-router'
 import { useState } from 'react'
-import { Badge } from '@/components/badge'
 import { Button } from '@/components/button'
 import { Checkbox } from '@/components/checkbox'
 import { EmptyState, PageHeader } from '@/components/design-system'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/table'
 import { toast } from '@/components/toaster'
 import { queryClient, trpc } from '@/trpc/client'
+import { Badge } from '@/ui/badge/badge'
 
 export const Route = createFileRoute('/notes')({ component: NotesPage })
 
@@ -70,11 +70,11 @@ function NotesPage() {
                   <TableCell>{note.sightings}</TableCell>
                   <TableCell>
                     {note.promoted_task ? (
-                      <Badge variant="outline">{note.promoted_task}</Badge>
+                      <Badge identifier>{note.promoted_task}</Badge>
                     ) : note.stale_at ? (
-                      <Badge variant="danger">stale</Badge>
+                      <Badge tone="error">stale</Badge>
                     ) : (
-                      <Badge variant="outline">open</Badge>
+                      <Badge>open</Badge>
                     )}
                   </TableCell>
                   <TableCell>

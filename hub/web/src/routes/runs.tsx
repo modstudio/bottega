@@ -2,7 +2,6 @@ import { useQuery } from '@tanstack/react-query'
 import { createFileRoute, Outlet, useNavigate } from '@tanstack/react-router'
 import { ChevronRight } from 'lucide-react'
 import { useState } from 'react'
-import { Badge } from '@/components/badge'
 import { Collection, type CollectionColumn } from '@/components/collection'
 import {
   LiveDot,
@@ -24,8 +23,11 @@ import {
   type SearchableLiveRun,
   type SearchableRun,
 } from '@/lib/run-search'
+import { verdictTone } from '@/lib/verdict-tone'
 import { useWindowState } from '@/lib/window'
 import { trpc } from '@/trpc/client'
+import { Badge } from '@/ui/badge/badge'
+import { Identifier } from '@/ui/identifier/identifier'
 
 type RunRow = SearchableRun
 type LiveRow = SearchableLiveRun
@@ -58,17 +60,9 @@ function Verdict({ row }: { row: RunRow }) {
     <p className="meta">Not routing evidence: {row.evidence_excluded}</p>
   ) : null
   if (row.delivery) {
-    const variant =
-      row.quality === 'wrong' || row.delivery === 'none'
-        ? 'danger'
-        : row.quality === 'mixed' || row.delivery === 'partial'
-          ? 'warning'
-          : row.quality === 'right' || row.delivery === 'full'
-            ? 'success'
-            : 'outline'
     return (
       <span>
-        <Badge variant={variant}>{runVerdictText(row)}</Badge>
+        <Badge tone={verdictTone(row.delivery, row.quality)}>{runVerdictText(row)}</Badge>
         {exclusion}
       </span>
     )
@@ -76,7 +70,7 @@ function Verdict({ row }: { row: RunRow }) {
   if (row.status !== 'ok')
     return (
       <span>
-        <Badge variant="danger">{row.status}</Badge>
+        <Badge tone="error">{row.status}</Badge>
         {exclusion}
       </span>
     )
@@ -88,7 +82,7 @@ function Verdict({ row }: { row: RunRow }) {
       </span>
     )
   if (exclusion) return exclusion
-  return <Badge variant="outline">Unscored</Badge>
+  return <Badge>Unscored</Badge>
 }
 
 export const Route = createFileRoute('/runs')({ component: RunsPage })
@@ -173,7 +167,11 @@ function RunsList() {
   ]
   const runColumns: CollectionColumn<RunRow>[] = [
     { id: 'project', label: 'Project', render: (row) => <ProjectMark name={row.project} /> },
-    { id: 'task', label: 'Task', render: (row) => <strong>{row.task ?? '-'}</strong> },
+    {
+      id: 'task',
+      label: 'Task',
+      render: (row) => (row.task ? <Identifier>{row.task}</Identifier> : '-'),
+    },
     { id: 'agent', label: 'Agent', render: (row) => row.agent },
     {
       id: 'job',
