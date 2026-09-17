@@ -13,6 +13,7 @@
     "shared/record/schema-landing.ts": ["exports", "types"],
     "shared/record/schema-docs.ts": ["exports", "types"],
     "shared/record/schema-hub.ts": ["exports", "types"],
+    "shared/record/schema-snapshots.ts": ["exports", "types"],
     // Cross-concern session API includes clear before its sign-out caller lands.
     "shared/record-session.ts": ["exports"]
   },
@@ -27,6 +28,7 @@
         "shared/record/schema-landing.ts!",
         "shared/record/schema-docs.ts!",
         "shared/record/schema-hub.ts!",
+        "shared/record/schema-snapshots.ts!",
         ".githooks/*!",
         "bin/{hub,orch}!",
         "hub/bin/*.sh!",

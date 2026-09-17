@@ -136,12 +136,14 @@ export const modules: ArchitectureModule[] = [
   module('shared/record/schema-landing.ts', ['./schema.ts']),
   module('shared/record/schema-docs.ts', ['./schema.ts']),
   module('shared/record/schema-hub.ts', ['./schema.ts']),
+  module('shared/record/schema-snapshots.ts', ['./schema.ts']),
   module('shared/record-session.ts', ['./brand.ts']),
   module('orchestrator/src/record-command.ts', [
     './postgres-migrate.ts',
     './record-doctor.ts',
     './record-space.ts',
   ]),
+  module('orchestrator/src/record-snapshots.ts', ['bun', '../../shared/record/schema.ts']),
   module('orchestrator/src/record-doctor.ts', [
     './postgres-migrate.ts',
     '../../shared/record/schema.ts',

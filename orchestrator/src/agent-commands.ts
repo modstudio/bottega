@@ -155,20 +155,9 @@ function listCommand(json: boolean, presentation: Presentation): void {
 }
 
 export async function agentsCommand(json: boolean, presentation: Presentation): Promise<void> {
-  await ensureLocalHealth()
+  const payload = await agentsPayload()
   if (json) {
-    presentation.log(
-      JSON.stringify(
-        Object.values(AGENTS).map((agent) => ({
-          name: agent.name,
-          caps: agent.caps,
-          model: agent.model,
-          contextTokens: Number.isFinite(agent.contextTokens) ? agent.contextTokens : null,
-          maxPromptBytes: Number.isFinite(agent.maxPromptBytes) ? agent.maxPromptBytes : null,
-          timeoutMs: agent.timeoutMs,
-        })),
-      ),
-    )
+    presentation.log(JSON.stringify(payload))
     return
   }
   for (const agent of Object.values(AGENTS))
@@ -176,4 +165,16 @@ export async function agentsCommand(json: boolean, presentation: Presentation): 
       `${agent.name.padEnd(7)} ${available(agent.name) ? 'installed' : 'MISSING  '} ${agent.billing.padEnd(13)}${unavailableReason(agent.name) ? ` [${unavailableReason(agent.name)}]` : ''} repo=${agent.caps.readsRepo ? 'y' : 'n'} mcp=${agent.caps.mcp ? 'y' : 'n'} schema=${agent.caps.schema ? 'y' : 'n'}  ${agent.notes}`,
     )
   presentation.log(`\ninstalled: ${installed().join(', ') || 'none'}`)
+}
+
+export async function agentsPayload() {
+  await ensureLocalHealth()
+  return Object.values(AGENTS).map((agent) => ({
+    name: agent.name,
+    caps: agent.caps,
+    model: agent.model,
+    contextTokens: Number.isFinite(agent.contextTokens) ? agent.contextTokens : null,
+    maxPromptBytes: Number.isFinite(agent.maxPromptBytes) ? agent.maxPromptBytes : null,
+    timeoutMs: agent.timeoutMs,
+  }))
 }

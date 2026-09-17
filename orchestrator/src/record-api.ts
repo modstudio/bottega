@@ -10,8 +10,12 @@ import type { RecordDoc, RecordDocImportInput, RecordDocRevision } from './recor
 import { RecordDocError } from './record-docs.ts'
 import type { RecordProject } from './record-projects.ts'
 import type { RecordCursor, RecordRun, RecordRunDetail } from './record-runs.ts'
+import type { RecordSnapshot, SnapshotKind } from './record-snapshots.ts'
+import { SNAPSHOT_KINDS } from './record-snapshots.ts'
 import type { RecordScore } from './record-verdicts.ts'
 import { RecordVerdictError } from './record-verdicts.ts'
+
+export const SNAPSHOT_MAX_BYTES = 1024 * 1024
 
 type AuthHandler = { handler(request: Request): Response | Promise<Response> }
 type ApiEnvironment = { Variables: { identity: RecordIdentity } }
@@ -98,6 +102,10 @@ type Deps = {
     input: Tenant & { updatedSince?: string; limit: number; cursor: RecordCursor | null },
   ): Promise<RecordScore[]>
   countScores(input: Tenant): Promise<{ scores: number; voids: number }>
+  upsertSnapshot(
+    input: Tenant & { kind: SnapshotKind; machineId: string; payload: unknown },
+  ): Promise<{ takenAt: string }>
+  listSnapshots(input: Tenant): Promise<RecordSnapshot[]>
 }
 
 const limitSchema = z.coerce.number().int().min(1).max(100).default(20)
@@ -106,6 +114,7 @@ const idSchema = z.string().uuid()
 const isoSchema = z.string().datetime({ offset: true })
 const cursorSchema = z.object({ at: isoSchema, id: z.string().uuid() })
 const deliverySchema = z.enum(['inject', 'demand'])
+const snapshotKindSchema = z.enum(SNAPSHOT_KINDS)
 const revisionOpSchema = z.enum([
   'create',
   'set',
@@ -505,6 +514,26 @@ export function recordApi(deps: Deps): Hono<ApiEnvironment> {
     } catch (error) {
       return writeError(context, error)
     }
+  })
+  app.put('/v1/snapshots/:kind', async (context) => {
+    const tenant = scope(context)
+    if (!tenant) return noSpace(context)
+    const kind = snapshotKindSchema.safeParse(context.req.param('kind'))
+    if (!kind.success) return context.json({ error: 'invalid snapshot kind' }, 400)
+    const body = z
+      .object({ machineId: z.string().uuid(), payload: z.json() })
+      .safeParse(await context.req.json().catch(() => null))
+    if (!body.success) return context.json({ error: 'invalid snapshot' }, 400)
+    const bytes = new TextEncoder().encode(JSON.stringify(body.data.payload)).byteLength
+    if (bytes > SNAPSHOT_MAX_BYTES) {
+      return context.json({ error: `snapshot payload exceeds ${SNAPSHOT_MAX_BYTES} bytes` }, 413)
+    }
+    return context.json(await deps.upsertSnapshot({ ...tenant, kind: kind.data, ...body.data }))
+  })
+  app.get('/v1/snapshots', async (context) => {
+    const tenant = scope(context)
+    if (!tenant) return noSpace(context)
+    return context.json({ items: await deps.listSnapshots(tenant) })
   })
   return app
 }

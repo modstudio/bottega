@@ -10,6 +10,7 @@ export default defineConfig({
     './shared/record/schema-landing.ts',
     './shared/record/schema-docs.ts',
     './shared/record/schema-hub.ts',
+    './shared/record/schema-snapshots.ts',
   ],
   out: './shared/record/migrations',
 })

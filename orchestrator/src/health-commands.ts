@@ -7,23 +7,7 @@ import { harnessHealth, landingsWithPostStepError } from './health.ts'
 type CommandFlags = { has(name: string): boolean; flag(name: string): string | undefined }
 type CommandPresentation = { log(...values: unknown[]): void }
 
-/**
- * What is stopping agents doing their work, counted.
- *
- * The counterpart to `orch inbox`: that raises decisions only the architect
- * can make, this raises conditions only the ENVIRONMENT can fix. Both were
- * arriving already and neither was visible — a blocker turns up alongside a
- * run that otherwise succeeded, so nothing about the run looked wrong.
- *
- * Ordered by RECURRENCE rather than recency, because that is the number that
- * decides anything: one denied Docker socket is an anecdote and forty is a
- * machine to fix, and the whole reason these went unaddressed is that each
- * worker met the problem once, worked around it, and moved on.
- */
-export function blockersCommand(flags: CommandFlags, presentation: CommandPresentation): void {
-  const { has, flag } = flags
-  const { log } = presentation
-  const days = Number(flag('days') ?? 14)
+export function blockersPayload(days = 14) {
   const since = new Date(Date.now() - days * 86_400_000).toISOString()
   const rows = db()
     .query(
@@ -46,6 +30,40 @@ export function blockersCommand(flags: CommandFlags, presentation: CommandPresen
     example: string | null
     agents: string | null
   }[]
+  return {
+    days,
+    blockers: rows.map((r) => ({
+      kind: r.kind,
+      source: r.source,
+      runs: r.n,
+      projects: r.repos,
+      agents: r.agents ? r.agents.split(',') : [],
+      lastAt: r.last_at,
+      example: r.example,
+    })),
+  }
+}
+
+export const healthPayload = (days?: number) => harnessHealth(days)
+
+/**
+ * What is stopping agents doing their work, counted.
+ *
+ * The counterpart to `orch inbox`: that raises decisions only the architect
+ * can make, this raises conditions only the ENVIRONMENT can fix. Both were
+ * arriving already and neither was visible — a blocker turns up alongside a
+ * run that otherwise succeeded, so nothing about the run looked wrong.
+ *
+ * Ordered by RECURRENCE rather than recency, because that is the number that
+ * decides anything: one denied Docker socket is an anecdote and forty is a
+ * machine to fix, and the whole reason these went unaddressed is that each
+ * worker met the problem once, worked around it, and moved on.
+ */
+export function blockersCommand(flags: CommandFlags, presentation: CommandPresentation): void {
+  const { has, flag } = flags
+  const { log } = presentation
+  const days = Number(flag('days') ?? 14)
+  const payload = blockersPayload(days)
 
   /**
    * PUBLISHED, because hub cannot import this concern or open orch.db.
@@ -56,32 +74,19 @@ export function blockersCommand(flags: CommandFlags, presentation: CommandPresen
    * reader of the table see the same words.
    */
   if (has('json')) {
-    log(
-      JSON.stringify({
-        days,
-        blockers: rows.map((r) => ({
-          kind: r.kind,
-          source: r.source,
-          runs: r.n,
-          projects: r.repos,
-          agents: r.agents ? r.agents.split(',') : [],
-          lastAt: r.last_at,
-          example: r.example,
-        })),
-      }),
-    )
+    log(JSON.stringify(payload))
     return
   }
 
-  if (!rows.length) {
+  if (!payload.blockers.length) {
     log(`nothing reported in ${days} days`)
     return
   }
   log(`what stopped agents working, last ${days} days:\n`)
-  for (const r of rows) {
+  for (const r of payload.blockers) {
     log(
-      `${String(r.n).padStart(4)}x  ${r.kind}` +
-        `  (${r.source}, ${r.repos} project${r.repos === 1 ? '' : 's'}, ${r.agents ?? '—'})`,
+      `${String(r.runs).padStart(4)}x  ${r.kind}` +
+        `  (${r.source}, ${r.projects} project${r.projects === 1 ? '' : 's'}, ${r.agents.join(',') || '—'})`,
     )
     if (r.example) log(`        ${r.example.slice(0, 150)}`)
   }
@@ -95,7 +100,7 @@ export function blockersCommand(flags: CommandFlags, presentation: CommandPresen
 export function healthCommand(flags: CommandFlags, presentation: CommandPresentation): void {
   const { has, flag } = flags
   const { log } = presentation
-  const report = harnessHealth(flag('days') ? Number(flag('days')) : undefined)
+  const report = healthPayload(flag('days') ? Number(flag('days')) : undefined)
   if (has('json')) {
     log(JSON.stringify(report))
     return

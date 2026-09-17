@@ -18,6 +18,7 @@ import {
 import { listRecordProjects } from './record-projects.ts'
 import { getRecordReview, listRecordReviews } from './record-reviews.ts'
 import { getRecordRun, listRecordRuns } from './record-runs.ts'
+import { listRecordSnapshots, upsertRecordSnapshot } from './record-snapshots.ts'
 import {
   countRecordScores,
   listRecordScores,
@@ -97,6 +98,8 @@ export function startRecordApiServer(environment: ServerEnvironment = process.en
     voidRun: voidRecordRun,
     listScores: listRecordScores,
     countScores: countRecordScores,
+    upsertSnapshot: upsertRecordSnapshot,
+    listSnapshots: listRecordSnapshots,
   })
   return Bun.serve({
     hostname: '0.0.0.0',

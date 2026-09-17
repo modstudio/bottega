@@ -66,6 +66,12 @@ export function createMemoryRecordApiClient(): RecordApiClient {
     )
 
   return {
+    async putSnapshot() {
+      return { takenAt: new Date().toISOString() }
+    },
+    async listSnapshots() {
+      return { items: [] }
+    },
     async listDocs(query) {
       const items = [...docs.values()].filter((doc) => {
         if (query.scope && doc.scope !== query.scope) return false

@@ -44,7 +44,7 @@ bootstrap_with_retry() {
 
 mkdir -p "$AGENTS_DIR" "$HOME/Library/Logs/brew-upgrade" "$HOME/Library/Logs/projects-refresh" \
   "$HOME/Library/Logs/orch-monitor" "$HOME/Library/Logs/orch-fix-defect" \
-  "$HOME/Library/Logs/orch-canon-eval"
+  "$HOME/Library/Logs/orch-canon-eval" "$HOME/Library/Logs/orch-record-sync"
 
 for tmpl in "$REPO"/launchd/*.plist.template; do
   label="$(basename "$tmpl" .plist.template)"
@@ -62,6 +62,10 @@ for tmpl in "$REPO"/launchd/*.plist.template; do
   fi
   if [[ "$label" == "com.user.hub-tunnel" ]]; then
     mkdir -p "$HOME/Library/Logs/hub-tunnel"
+  fi
+  if [[ "$label" == "com.user.orch-record-sync" && ! -f "$HOME/.claude/.env" ]]; then
+    echo "skipped: $label ($HOME/.claude/.env is absent)"
+    continue
   fi
 
   target="$AGENTS_DIR/$label.plist"
@@ -93,7 +97,7 @@ done
 
 echo
 echo "Active agents:"
-launchctl list | grep -E 'brew-auto-upgrade|projects-morning-refresh|local-model-tunnel|orch-sweep|orch-monitor|orch-fix-defect|orch-canon-eval|hub-note-maintenance|hub-tunnel' \
+launchctl list | grep -E 'brew-auto-upgrade|projects-morning-refresh|local-model-tunnel|orch-sweep|orch-monitor|orch-fix-defect|orch-canon-eval|orch-record-sync|hub-note-maintenance|hub-tunnel' \
   || echo "  (none found)"
 
 if ((${#FAILED_LABELS[@]})); then
