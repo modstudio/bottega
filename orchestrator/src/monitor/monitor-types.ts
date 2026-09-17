@@ -1,7 +1,7 @@
 // concern: monitor-types
 /** Owns the plain data shapes shared by monitor composition, conditions, notices, and reporting. */
 
-import type { MonitorSeverity } from './review-vocabulary.ts'
+import type { MonitorSeverity } from '../review-vocabulary.ts'
 
 export type MonitorCondition = {
   kind: string

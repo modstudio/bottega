@@ -432,7 +432,7 @@
     "score": 19
   },
   {
-    "file": "orchestrator/src/monitor.ts",
+    "file": "orchestrator/src/monitor/monitor.ts",
     "function": "monitor",
     "line": 61,
     "score": 110

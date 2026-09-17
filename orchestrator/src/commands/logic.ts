@@ -19,7 +19,7 @@ import { lensCommand } from '../lens-commands.ts'
 import { tellCommand } from '../mailbox-commands.ts'
 import { mcpCommand } from '../mcp-commands.ts'
 import { metricCommand } from '../metric-commands.ts'
-import { monitorCommand } from '../monitor-commands.ts'
+import { monitorCommand } from '../monitor/monitor-commands.ts'
 import { pendingCommand } from '../pending-commands.ts'
 import { reclaimCommand } from '../reclaim-commands.ts'
 import {

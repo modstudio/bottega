@@ -3,18 +3,26 @@
 
 import { existsSync, lstatSync, readdirSync, realpathSync, statSync } from 'node:fs'
 import { join, resolve } from 'node:path'
-import { PLATFORM_SLUG } from '../../shared/brand.ts'
-import { allInjectChecks, storedPackDrift } from './canon.ts'
-import { db, nowIso, writableDb, writeTransaction } from './db.ts'
+import { PLATFORM_SLUG } from '../../../shared/brand.ts'
+import { allInjectChecks, storedPackDrift } from '../canon.ts'
+import { db, nowIso, writableDb, writeTransaction } from '../db.ts'
 import {
   classifiedDockerResources,
   dockerNetworkInventory,
   dockerRunResources,
-} from './docker-resources.ts'
-import { gitLocks } from './git-locks.ts'
-import { grokTrustHeadings } from './grok-trust.ts'
-import { keepTreeHold } from './keep-tree-hold.ts'
-import { fileIssue } from './mcp.ts'
+} from '../docker-resources.ts'
+import { gitLocks } from '../git-locks.ts'
+import { grokTrustHeadings } from '../grok-trust.ts'
+import { keepTreeHold } from '../keep-tree-hold.ts'
+import { fileIssue } from '../mcp.ts'
+import { pidAlive } from '../process-liveness.ts'
+import { projectLockState } from '../project-lock.ts'
+import { projectAt, projects } from '../projects.ts'
+import { reclaimBranch, reclaimWorktree } from '../reclaim.ts'
+import { terminalDockerRetentionReasonForRun } from '../resource-ownership.ts'
+import type { MonitorSeverity } from '../review-vocabulary.ts'
+import { RUNS_DIR } from '../run-artifacts.ts'
+import { worktreeDirty } from '../worktree-attribution.ts'
 import {
   age,
   askingRuns,
@@ -43,14 +51,6 @@ import type {
   MonitorHistoryRow,
   MonitorResult,
 } from './monitor-types.ts'
-import { pidAlive } from './process-liveness.ts'
-import { projectLockState } from './project-lock.ts'
-import { projectAt, projects } from './projects.ts'
-import { reclaimBranch, reclaimWorktree } from './reclaim.ts'
-import { terminalDockerRetentionReasonForRun } from './resource-ownership.ts'
-import type { MonitorSeverity } from './review-vocabulary.ts'
-import { RUNS_DIR } from './run-artifacts.ts'
-import { worktreeDirty } from './worktree-attribution.ts'
 
 const TERMINAL_STATUSES = new Set(['ok', 'failed', 'stale', 'stopped'])
 

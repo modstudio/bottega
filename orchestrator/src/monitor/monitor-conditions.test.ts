@@ -1,7 +1,8 @@
 import { describe, expect, spyOn, test } from 'bun:test'
-import { PLATFORM_SLUG } from '../../shared/brand.ts'
-import { addRun, score } from '../test/fixtures/store.ts'
-import { db, nowIso } from './db.ts'
+import { PLATFORM_SLUG } from '../../../shared/brand.ts'
+import { addRun, score } from '../../test/fixtures/store.ts'
+import { db, nowIso } from '../db.ts'
+import { upsertProject } from '../projects.ts'
 import { groupMonitorConditions, monitor, monitorHistory } from './monitor.ts'
 import {
   deadRunningProcessConditions,
@@ -15,7 +16,6 @@ import {
   unsettledClaimConditions,
 } from './monitor-conditions.ts'
 import { claimMonitorNotices, markMonitorNoticesDelivered } from './monitor-notices.ts'
-import { upsertProject } from './projects.ts'
 
 const condition = (overrides: Partial<import('./monitor-types.ts').MonitorCondition> = {}) => ({
   kind: 'sample',
@@ -28,7 +28,7 @@ const condition = (overrides: Partial<import('./monitor-types.ts').MonitorCondit
 })
 
 function insertRun4177PackRows(): void {
-  const root = new URL('../..', import.meta.url).pathname.replace(/\/$/, '')
+  const root = new URL('../../..', import.meta.url).pathname.replace(/\/$/, '')
   upsertProject({ name: PLATFORM_SLUG, path: root, settings: { trunk: 'main' } })
   const projectId = (
     db().query('SELECT id FROM project WHERE name=?').get(PLATFORM_SLUG) as { id: number }
