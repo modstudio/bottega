@@ -1,0 +1,62 @@
+import { Database } from 'bun:sqlite'
+import { describe, expect, test } from 'bun:test'
+import { applyMigrations } from './migrations.ts'
+import { productionStepCatalogue, showStepCatalogue } from './step-catalogue.ts'
+import { seedWorkflows } from './workflow-seeds.ts'
+import { parseWorkflowTree, planWorkflowHydration } from './workflow-tree.ts'
+import { importWorkflowTree, productionWorkflowTree } from './workflow-tree-store.ts'
+
+const database = () => {
+  const d = new Database(':memory:')
+  d.exec('PRAGMA foreign_keys=ON')
+  applyMigrations(d)
+  seedWorkflows(d)
+  return d
+}
+
+const renderedTree = (d: Database) =>
+  planWorkflowHydration({ store: productionWorkflowTree(d), tree: [] }).writes
+
+describe('importWorkflowTree', () => {
+  test('an edited step becomes a catalogue draft while production remains unchanged', () => {
+    const d = database()
+    const production = productionStepCatalogue(d)
+    const tree = renderedTree(d)
+    const target = tree.find(({ path }) => path === 'workflows/steps/lens.md')!
+    target.body = target.body.replace(/\n---\n[\s\S]*\n$/, '\n---\nAn edited lens body.\n')
+
+    const result = importWorkflowTree(parseWorkflowTree(tree), 'edit lens', 'worker', d)
+
+    expect(result.steps).toEqual(['lens'])
+    const draft = d
+      .query("SELECT n FROM step_catalogue_version WHERE status='draft' ORDER BY n DESC LIMIT 1")
+      .get() as { n: number }
+    expect(
+      showStepCatalogue(draft.n, d).definition.steps.find((step) => step.slug === 'lens')?.body,
+    ).toBe('An edited lens body.')
+    expect(productionStepCatalogue(d).n).toBe(production.n)
+    expect(
+      productionStepCatalogue(d).definition.steps.find((step) => step.slug === 'lens')?.body,
+    ).toBe(production.definition.steps.find((step) => step.slug === 'lens')?.body)
+  })
+
+  test('one invalid floor refuses the entire import without writing a draft', () => {
+    const d = database()
+    const tree = renderedTree(d)
+    const lens = tree.find(({ path }) => path === 'workflows/steps/lens.md')!
+    lens.body = lens.body.replace('\n---\n', '\n---\nEdited but valid.\n')
+    const score = tree.find(({ path }) => path === 'workflows/steps/score.md')!
+    score.body = score.body.replace(/floor: \[[^\]]+\]/, 'floor: [not-a-proof]')
+    const before = d.query('SELECT COUNT(*) count FROM step_catalogue_version').get() as {
+      count: number
+    }
+
+    expect(() =>
+      importWorkflowTree(parseWorkflowTree(tree), 'invalid import', 'worker', d),
+    ).toThrow('invalid proof kind "not-a-proof"')
+    expect(
+      (d.query('SELECT COUNT(*) count FROM step_catalogue_version').get() as { count: number })
+        .count,
+    ).toBe(before.count)
+  })
+})
