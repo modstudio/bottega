@@ -12,6 +12,7 @@ import {
 } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { basename, dirname, join, resolve } from 'node:path'
+import { FROZEN_STATE_NAMES } from '../../shared/brand.ts'
 import { createTestHubDatabaseGuard } from '../../shared/test-hub-database.ts'
 
 const discoveryEnv = Object.fromEntries(
@@ -32,7 +33,7 @@ if (commonDir.exitCode !== 0) throw new Error(commonDir.stderr.toString())
 export const REGISTERED_LIVE_STORE = resolve(
   dirname(resolve(import.meta.dir, commonDir.stdout.toString().trim())),
   'orchestrator',
-  'orch.db',
+  FROZEN_STATE_NAMES.orchestratorDatabase,
 )
 
 /**
@@ -54,8 +55,8 @@ const originalSandbox = process.env.ORCH_SANDBOX
 const store = join(dir, 'test.db')
 const template = join(dir, 'template.db')
 process.env.ORCH_DB = store
-process.env.HUB_DB = join(dir, 'hub.db')
-process.env.ORCH_RUNS = join(dir, 'runs')
+process.env.HUB_DB = join(dir, FROZEN_STATE_NAMES.hubDatabase)
+process.env.ORCH_RUNS = join(dir, FROZEN_STATE_NAMES.runsDirectory)
 // A fixture landing runs a gate of its own. It must count only fixture gates:
 // with the machine's pid directory inherited, a landing spawned inside a gate
 // saw the outer gates and held for host capacity until its test expired (four

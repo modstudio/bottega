@@ -3,6 +3,7 @@ import { copyFileSync, existsSync, mkdirSync, mkdtempSync, rmSync } from 'node:f
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { FROZEN_STATE_NAMES } from '../../shared/brand.ts'
 import { CanonBudgetError, compilePack } from '../src/canon.ts'
 import { DATABASE_RESOLUTION } from '../src/database-location.ts'
 import { JOBS } from '../src/jobs.ts'
@@ -71,7 +72,7 @@ function scratchDir(): string {
 }
 
 function copyStore(src: string, destDir: string): string {
-  const dest = join(destDir, 'orch.db')
+  const dest = join(destDir, FROZEN_STATE_NAMES.orchestratorDatabase)
   copyFileSync(src, dest)
   for (const side of ['-wal', '-shm'] as const) {
     if (existsSync(`${src}${side}`)) copyFileSync(`${src}${side}`, `${dest}${side}`)
@@ -90,7 +91,7 @@ function migrateCopy(path: string): void {
 }
 
 function mintFixtureStore(destDir: string): string {
-  const path = join(destDir, 'orch.db')
+  const path = join(destDir, FROZEN_STATE_NAMES.orchestratorDatabase)
   const d = new Database(path, { create: true })
   try {
     d.exec('PRAGMA foreign_keys = ON;')

@@ -7,7 +7,7 @@ import { type GateTimings, mergeTimings } from './record-gate-timings.ts'
 
 const orchRoot = new URL('..', import.meta.url).pathname
 const timingStamp = new Date().toISOString().replace(/[:.]/g, '-')
-const timingDir = resolveGateTimingDirectory(orchRoot, process.env)
+const timingDir = resolveGateTimingDirectory(join(orchRoot, '..'), process.env)
 const timingPath = join(timingDir, `${timingStamp}.json`)
 mkdirSync(timingDir, { recursive: true })
 

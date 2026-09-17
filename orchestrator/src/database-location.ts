@@ -6,6 +6,7 @@ import {
   legacyStoreRefusal,
   resolveOrchestratorDatabase,
   resolveRunsDirectory,
+  resolveStatePaths,
   type StateEnvironment,
 } from '../../shared/state-directory.ts'
 
@@ -19,7 +20,7 @@ export type DatabaseResolution = {
   repositoryRoot: string | null
   initializable: boolean
   linkedWorktreeBinary: boolean
-  /** The per-user store selected for this process, including an ORCH_DB override. */
+  /** The default per-user store, or the explicit store when no state root can be resolved. */
   mainStorePath: string
 }
 
@@ -104,12 +105,19 @@ export function resolveDatabase(
   binaryRoot = ROOT,
 ): DatabaseResolution {
   const binaryRepository = repositoryRootFromGit(binaryRoot) ?? repositoryRootFromDotGit(binaryRoot)
-  const mainStorePath = resolveOrchestratorDatabase(env)
+  const path = resolveOrchestratorDatabase(env)
   if (env.ORCH_DB) {
+    // ORCH_DB is independently sufficient. When HOME is available, retaining
+    // the default path lets linked-worktree binaries still recognise an
+    // override that points back at the shared store.
+    let mainStorePath = path
+    try {
+      mainStorePath = resolveStatePaths(env).orchestratorDatabase
+    } catch {}
     return {
-      path: resolve(env.ORCH_DB),
+      path,
       method: 'ORCH_DB',
-      tried: [resolve(env.ORCH_DB)],
+      tried: [path],
       registeredPath: null,
       repositoryRoot: null,
       initializable: true,
@@ -117,6 +125,7 @@ export function resolveDatabase(
       mainStorePath,
     }
   }
+  const mainStorePath = path
   const repository = repositoryRootFromGit(cwd) ?? repositoryRootFromDotGit(cwd)
   return {
     path: mainStorePath,

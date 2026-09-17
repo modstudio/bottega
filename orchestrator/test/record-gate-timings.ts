@@ -14,7 +14,7 @@ import { resolveGateTimingDirectory } from '../../shared/gate-timing-directory.t
 
 const orchRoot = join(import.meta.dir, '..')
 const stamp = new Date().toISOString().replace(/[:.]/g, '-')
-const outDir = resolveGateTimingDirectory(orchRoot, process.env)
+const outDir = resolveGateTimingDirectory(join(orchRoot, '..'), process.env)
 mkdirSync(outDir, { recursive: true })
 const jsonPath = join(outDir, `${stamp}.json`)
 const junitPath = join(outDir, `${stamp}.junit.xml`)

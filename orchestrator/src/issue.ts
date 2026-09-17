@@ -1,7 +1,7 @@
 import { copyFileSync, existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { homedir, tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { PLATFORM_NAME, PLATFORM_SLUG } from '../../shared/brand.ts'
+import { FROZEN_STATE_NAMES, PLATFORM_NAME, PLATFORM_SLUG } from '../../shared/brand.ts'
 import { releaseRunFailoverAttempts } from './close-out.ts'
 import {
   ISSUE_WORKER_SCHEMA,
@@ -891,7 +891,7 @@ export async function workIssue(key: string): Promise<void> {
         )
       }
       const currentMatches = JSON.stringify(actualCurrent) === JSON.stringify(statedCurrent)
-      const copy = join(scratch, 'orch.db')
+      const copy = join(scratch, FROZEN_STATE_NAMES.orchestratorDatabase)
       copyFileSync(DB_PATH, copy)
       const nested = change.setting
         .split('.')

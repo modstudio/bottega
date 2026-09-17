@@ -9,32 +9,21 @@ import {
   RECORD_OWNER_ROLE,
   RECORD_READER_ROLE,
 } from '../../shared/record/schema.ts'
-import { concernStateDirectory } from '../../shared/state-directory.ts'
+import { resolveHubDatabase, resolveOrchestratorDatabase } from '../../shared/state-directory.ts'
 
 const falsify = process.argv.includes('--falsify')
 const container = `dev-445-postgres-${randomUUID().slice(0, 8)}`
 const sourceCopies = mkdtempSync(join(tmpdir(), 'dev-429-sources-'))
-const sourceOrchDb = join(sourceCopies, 'orch.db')
-const sourceHubDb = join(sourceCopies, 'hub.db')
+const sourceOrchDb = join(sourceCopies, FROZEN_STATE_NAMES.orchestratorDatabase)
+const sourceHubDb = join(sourceCopies, FROZEN_STATE_NAMES.hubDatabase)
 function copyDatabase(source: string, target: string): void {
   copyFileSync(source, target)
   for (const suffix of ['-wal', '-shm']) {
     if (existsSync(`${source}${suffix}`)) copyFileSync(`${source}${suffix}`, `${target}${suffix}`)
   }
 }
-copyDatabase(
-  process.env.ORCH_DB ??
-    join(
-      concernStateDirectory('orchestrator', process.env),
-      FROZEN_STATE_NAMES.orchestratorDatabase,
-    ),
-  sourceOrchDb,
-)
-copyDatabase(
-  process.env.HUB_DB ??
-    join(concernStateDirectory('hub', process.env), FROZEN_STATE_NAMES.hubDatabase),
-  sourceHubDb,
-)
+copyDatabase(resolveOrchestratorDatabase(process.env), sourceOrchDb)
+copyDatabase(resolveHubDatabase(process.env), sourceHubDb)
 
 async function run(argv: string[], env?: Record<string, string>): Promise<number> {
   const child = Bun.spawn(argv, {

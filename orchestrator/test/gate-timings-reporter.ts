@@ -22,7 +22,10 @@ if (enabled) {
   const outPath =
     enabled.includes('/') || enabled.endsWith('.json')
       ? enabled
-      : join(resolveGateTimingDirectory(join(import.meta.dir, '..'), process.env), `${stamp}.json`)
+      : join(
+          resolveGateTimingDirectory(join(import.meta.dir, '../..'), process.env),
+          `${stamp}.json`,
+        )
   const sidecarPath = `${outPath}.spawn.json`
 
   type Kind = 'cli' | 'git' | 'other'
