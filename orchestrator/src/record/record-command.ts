@@ -6,6 +6,7 @@ import {
   migratePostgres,
   recordMigrationCount,
 } from '../postgres/postgres-migrate.ts'
+import { projectByName, setProjectRecordSpace } from '../project/projects.ts'
 import { diagnoseRecord, recordDoctorExitCode, redactRecordPasswords } from './record-doctor.ts'
 import {
   acceptRecordInvitation,
@@ -16,6 +17,7 @@ import {
   recordSpaceRole,
   switchRecordSpace,
 } from './record-space.ts'
+import { moveRecordProjectSpace } from './record-space-move.ts'
 
 type Presentation = { log(value: string): void; exitCode?(code: number): void }
 
@@ -92,6 +94,62 @@ export async function recordSpaceAcceptCommand(
 ): Promise<void> {
   const spaceId = await acceptRecordInvitation(recordUrl(), invitationId)
   presentation.log(`accepted record invitation ${invitationId}; active space ${spaceId}`)
+}
+
+export async function recordSpaceMoveProjectCommand(
+  projectName: string,
+  destination: string,
+  options: { dryRun: boolean; confirm?: number },
+  presentation: Presentation,
+  dependencies = {
+    recordUrl,
+    findProject: projectByName,
+    moveProject: moveRecordProjectSpace,
+    setProjectSpace: setProjectRecordSpace,
+  },
+): Promise<void> {
+  if (
+    options.confirm !== undefined &&
+    (!Number.isSafeInteger(options.confirm) || options.confirm < 0)
+  ) {
+    throw new Error('--confirm must be a non-negative integer')
+  }
+  if (options.dryRun && options.confirm !== undefined) {
+    throw new Error('--dry-run and --confirm cannot be used together')
+  }
+  const project = dependencies.findProject(projectName)
+  if (!project) throw new Error(`no project "${projectName}" in the local register`)
+  const result = await dependencies.moveProject({
+    url: dependencies.recordUrl(),
+    project: projectName,
+    source: project.settings.space,
+    destination,
+    ...(options.confirm === undefined ? {} : { confirm: options.confirm }),
+  })
+  for (const row of result.rows) {
+    presentation.log(
+      `${row.tableName}\t${row.rowCount}\t${row.moved ? 'moved' : 'not moved'}\t${row.reachedBy}`,
+    )
+  }
+  if (options.confirm === undefined) {
+    presentation.log(
+      `dry run: ${result.total} rows would move; rerun with --confirm ${result.total}`,
+    )
+    return
+  }
+  try {
+    dependencies.setProjectSpace(projectName, result.destinationSlug)
+  } catch (error) {
+    const detail = error instanceof Error ? error.message : String(error)
+    throw new Error(
+      `record rows moved to ${result.destinationSlug}, but the local register declaration did not: ${detail}\n` +
+        `the next sync would target the old space until it is set; run \`orch project set ${projectName} --settings '{"space":"${result.destinationSlug}"}'\``,
+    )
+  }
+  presentation.log(
+    `moved ${result.total} rows; project ${projectName} now declares record space ${result.destinationSlug}`,
+  )
+  presentation.log('local hosted-row caches were not rewritten; the next pull reconciles them')
 }
 
 export async function recordDoctorCommand(

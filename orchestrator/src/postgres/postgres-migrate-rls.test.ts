@@ -429,6 +429,7 @@ realPostgres('RLS proof against real Postgres', () => {
     token: () => tokenA,
     setToken: (token) => recordSession.setToken(token),
     asSpace,
+    admin: (statement) => succeeds('postgres', 'postgres', statement),
   })
 
   test('sign-in repairs a missing personal space before making it active', async () => {

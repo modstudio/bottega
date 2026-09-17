@@ -206,7 +206,9 @@ export const modules: ArchitectureModule[] = [
   module('shared/record-session.ts', ['./brand.ts']),
   module('orchestrator/src/record/record-command.ts', [
     '../postgres/postgres-migrate.ts',
+    '../project/projects.ts',
     './record-doctor.ts',
+    './record-space-move.ts',
     './record-space.ts',
   ]),
   module('orchestrator/src/record/record-doctor.ts', [
@@ -225,6 +227,12 @@ export const modules: ArchitectureModule[] = [
     '../../../shared/record/schema.ts',
     './record-auth.ts',
     './record-session.ts',
+  ]),
+  module('orchestrator/src/record/record-space-move.ts', [
+    'bun',
+    '../postgres/postgres-migrate.ts',
+    './record-session.ts',
+    './record-space.ts',
   ]),
   module('orchestrator/src/score/score-outbox.ts', ['../../../shared/record/schema.ts']),
   module('orchestrator/src/project/project-lock.ts', [

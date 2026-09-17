@@ -197,7 +197,7 @@ export const seq = pgTable.withRLS(
       columns: [table.spaceId, table.projectId],
       foreignColumns: [project.spaceId, project.id],
       name: 'seq_space_project_fk',
-    }),
+    }).onUpdate('cascade'),
     ...tenantPolicies('seq', table.spaceId),
   ],
 )

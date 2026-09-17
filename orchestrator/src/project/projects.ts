@@ -401,6 +401,17 @@ export function upsertProject(p: {
     )
 }
 
+/** Change only the hosted-record destination read by sync. */
+export function setProjectRecordSpace(name: string, space: string): void {
+  const project = projectByName(name)
+  if (!project) throw new Error(`no project "${name}"`)
+  const settings = { ...project.settings, space }
+  const malformed = validateStoredProjectSettings(settings, project.path)
+  if (malformed.length) throw new Error(malformed.join('\n'))
+  writableDb()
+  db().query('UPDATE project SET settings=? WHERE id=?').run(JSON.stringify(settings), project.id)
+}
+
 /** Rename the referent and refresh every deprecated one-release name mirror atomically. */
 export async function renameProject(currentName: string, nextName: string): Promise<void> {
   writableDb()
