@@ -7,11 +7,7 @@ import { newRecordId, PLATFORM_SPACE_ID } from '../../shared/record/schema.ts'
 import { backfillLandingEvidenceRecords } from './landing-outbox.ts'
 import { applyMigrations } from './migrations.ts'
 import { importProjects } from './postgres-import.ts'
-import {
-  appliedRecordMigrationCount,
-  migratePostgres,
-  recordMigrationCount,
-} from './postgres-migrate.ts'
+import { migratePostgres } from './postgres-migrate.ts'
 import { RECORD_SESSION_KEY, recordAuth, setActiveRecordSpace } from './record-auth.ts'
 import { syncRecord } from './record-sync.ts'
 import { backfillReviewRecords } from './review-outbox.ts'
@@ -64,8 +60,8 @@ realPostgres('project import against copied live SQLite data', () => {
 
   beforeAll(async () => {
     process.env.BETTER_AUTH_SECRET = 'postgres-import-secret-at-least-thirty-two-characters'
-    const applied = await appliedRecordMigrationCount(migrateUrl)
-    if (applied < recordMigrationCount()) await migratePostgres()
+    const already = await sql`SELECT to_regclass('public.doc')::text AS present`
+    if (!already[0]?.present) await migratePostgres()
     const signedUp = await recordAuth(actorUrl!).api.signUpEmail({
       body: {
         email: 'live-copy@example.test',
