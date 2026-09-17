@@ -209,6 +209,7 @@ for (const script of [
   'check-postgres-schema-review-boundary.ts',
   'check-postgres-schema-landing-boundary.ts',
   'check-postgres-schema-docs-boundary.ts',
+  'check-postgres-schema-hub-boundary.ts',
   'check-machine-identity-boundary.ts',
   'check-record-sync-boundary.ts',
   'check-record-auth-boundary.ts',

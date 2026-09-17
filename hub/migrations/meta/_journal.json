@@ -22,6 +22,13 @@
       "when": 1788854400000,
       "tag": "0002_note_acknowledgement",
       "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "7",
+      "when": 1788883200000,
+      "tag": "0003_record_ledger",
+      "breakpoints": true
     }
   ]
 }

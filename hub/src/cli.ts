@@ -43,6 +43,7 @@ import { listOpenRulings, rulingsPayload } from './rulings.ts'
 import { serve } from './serve.ts'
 import { ownServeRecord, servePortIsFree, stopRecordedServe } from './serve-lifecycle.ts'
 import { getReport } from './settings.ts'
+import { printSyncResult, syncEvidence } from './sync.ts'
 import {
   closeTask,
   commentTask,
@@ -216,6 +217,7 @@ const USAGE = `hub — every project's tasks in flight, what each cost, and the 
                               Safe beside a running dashboard: a lease in the
                               database means only one process collects.
   hub migrate                 apply pending checksummed schema migrations
+  hub sync [--dry-run]        push changed local evidence to the hosted hub
   hub doctor                  report the live structural schema hash and user_version
   hub tasks [--hours N]       what has been worked on, newest window first
   hub serve [--port 7778]     the dashboard
@@ -861,6 +863,7 @@ try {
 
   const usesDatabase =
     cmd === 'collect' ||
+    cmd === 'sync' ||
     cmd === 'tasks' ||
     cmd === 'serve' ||
     cmd === 'task' ||
@@ -908,6 +911,9 @@ try {
           process.exit(1)
         }
       }
+      break
+    case 'sync':
+      printSyncResult(await syncEvidence({ dryRun: has('dry-run') }))
       break
     case 'tasks':
       tasks()

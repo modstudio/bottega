@@ -131,7 +131,7 @@ describe('hub migration journal', () => {
     const d = fresh()
     expect(canonicalSchemaHash(d)).toBe(expectedSchemaHash())
     expect(expectedSchemaHash()).toBe(
-      '943613471e7150d03db0b3e6116c380fc73ad453f0f055d6de38f291807c5f42',
+      '2fdff230e043eb2493a32588cc1110957f91c062b670093e6924088d4aefd91f',
     )
     d.close()
   })
@@ -162,6 +162,7 @@ describe('hub migration journal', () => {
       '0000_hub_baseline',
       '0001_note',
       '0002_note_acknowledgement',
+      '0003_record_ledger',
     ])
     stripPostBaselineApplicationObjects(d)
     const after = applicationSchemaRows(d)
@@ -266,6 +267,7 @@ describe('hub migration journal', () => {
       '0000_hub_baseline',
       '0001_note',
       '0002_note_acknowledgement',
+      '0003_record_ledger',
     ])
     expect(canonicalSchemaHash(legacy)).toBe(expectedSchemaHash())
     legacy.close()
