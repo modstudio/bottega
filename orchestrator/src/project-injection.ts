@@ -35,6 +35,7 @@ const docsSchema = z.discriminatedUnion('protocol', [
 ])
 
 const gateSchema = z.string().trim().min(1)
+const trunkSchema = z.string().trim().min(1)
 // The shared shape keeps protocol open so hub can read any stored row; the
 // register edge accepts only protocols a workflow can act on.
 const trackerSchema = strictObject({
@@ -227,7 +228,7 @@ export function resolveInjection<
   return resolved as ResolvedInjection<Project, Needs>
 }
 
-type ValidatedInjectionSettings = Pick<InjectionSettings, 'tracker' | 'release' | 'docs' | 'gate'>
+type ValidatedInjectionSettings = Pick<InjectionSettings, 'tracker' | 'trunk' | 'release' | 'docs' | 'gate'>
 
 /** Validate the workflow-specific portion of a project settings blob at the register edge. */
 export function validateProjectInjectionSettings(settings: ValidatedInjectionSettings): string[] {
@@ -237,6 +238,7 @@ export function validateProjectInjectionSettings(settings: ValidatedInjectionSet
     ['release', releaseSchema],
     ['docs', docsSchema],
     ['gate', gateSchema],
+    ['trunk', trunkSchema],
   ] as const) {
     if (settings[name] === undefined) continue
     const result = schema.safeParse(settings[name])
