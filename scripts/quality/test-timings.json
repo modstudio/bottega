@@ -135,7 +135,7 @@
       "spawns": 0
     },
     {
-      "path": "orchestrator/src/doc-commands.test.ts",
+      "path": "orchestrator/src/doc/doc-commands.test.ts",
       "wallMs": 55,
       "tests": 10,
       "cliShaped": false,
@@ -149,14 +149,14 @@
       "spawns": 0
     },
     {
-      "path": "orchestrator/src/docs-core.test.ts",
+      "path": "orchestrator/src/doc/docs-core.test.ts",
       "wallMs": 60,
       "tests": 11,
       "cliShaped": false,
       "spawns": 0
     },
     {
-      "path": "orchestrator/src/docs-resume-brief.test.ts",
+      "path": "orchestrator/src/doc/docs-resume-brief.test.ts",
       "wallMs": 96,
       "tests": 17,
       "cliShaped": false,

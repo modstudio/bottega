@@ -1,9 +1,22 @@
 import { describe, expect, test } from 'bun:test'
 import { Client } from '@modelcontextprotocol/sdk/client/index.js'
 import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js'
-import { consumeDoc, removeDoc, setDoc } from '../test/fixtures/docs.ts'
-import { AGENTS } from './agent-registry.ts'
-import { db } from './db.ts'
+import { consumeDoc, removeDoc, setDoc } from '../../test/fixtures/docs.ts'
+import { AGENTS } from '../agent-registry.ts'
+import { db } from '../db.ts'
+import { JOBS } from '../jobs.ts'
+import { createDocsMcpServer } from '../mcp.ts'
+import { portCommand } from '../porting/port-commands.ts'
+import {
+  baselineForPair,
+  ledgerRef,
+  listDoctrineRules,
+  listLedgerRefs,
+  listSkips,
+  type PortPair,
+} from '../porting/porting.ts'
+import { upsertProject } from '../projects.ts'
+import { reviewCommand } from '../review-commands.ts'
 import {
   removeDoc as deleteDoc,
   diffDocRevisions,
@@ -14,19 +27,6 @@ import {
   restoreDoc,
   setDoc as writeDoc,
 } from './docs.ts'
-import { JOBS } from './jobs.ts'
-import { createDocsMcpServer } from './mcp.ts'
-import { portCommand } from './porting/port-commands.ts'
-import {
-  baselineForPair,
-  ledgerRef,
-  listDoctrineRules,
-  listLedgerRefs,
-  listSkips,
-  type PortPair,
-} from './porting/porting.ts'
-import { upsertProject } from './projects.ts'
-import { reviewCommand } from './review-commands.ts'
 
 const listPairs = () => db().query('SELECT * FROM port_pair ORDER BY id').all() as PortPair[]
 

@@ -4,7 +4,7 @@ import { setDoc } from '../test/fixtures/docs.ts'
 import { dir } from '../test/fixtures/store.ts'
 import { CanonBudgetError, compilePack, storedPackDrift } from './canon.ts'
 import { db } from './db.ts'
-import { docsForRun, docsMarkdown } from './docs.ts'
+import { docsForRun, docsMarkdown } from './doc/docs.ts'
 import { JOBS } from './jobs.ts'
 import { upsertProject } from './projects.ts'
 

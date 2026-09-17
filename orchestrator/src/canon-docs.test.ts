@@ -11,7 +11,7 @@ import {
   numericLiteralReport,
 } from './canon.ts'
 import { db } from './db.ts'
-import { docsForRun, exportDocs, getDoc, listDocMetadata } from './docs.ts'
+import { docsForRun, exportDocs, getDoc, listDocMetadata } from './doc/docs.ts'
 import { upsertProject } from './projects.ts'
 
 describe('scoped operator docs', () => {

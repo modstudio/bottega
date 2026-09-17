@@ -53,7 +53,7 @@ export const importBoundaries: ImportBoundary[] = [
       './canon-hydrate.ts',
       './canon-lint.ts',
       './canon-write-gate.ts',
-      './docs.ts',
+      './doc/docs.ts',
       './evals.ts',
       './projects.ts',
       '../../shared/ratchet.ts',
@@ -239,14 +239,14 @@ export const importBoundaries: ImportBoundary[] = [
   ),
   boundary(
     'doc-commands-boundary',
-    'orchestrator/src/doc-commands.ts',
-    ['node:fs', './canon.ts', './docs.ts'],
+    'orchestrator/src/doc/doc-commands.ts',
+    ['node:fs', '../canon.ts', './docs.ts'],
     'Keep doc commands independent of database writes beyond docs, runs, routing, transports, and the CLI.',
   ),
   boundary(
     'doc-write-allowed-boundary',
-    'orchestrator/src/doc-write-allowed.ts',
-    ['./canon-hydrate.ts', './canon-write-gate.ts', './pack-budget.ts', './canon-lint.ts'],
+    'orchestrator/src/doc/doc-write-allowed.ts',
+    ['../canon-hydrate.ts', '../canon-write-gate.ts', '../pack-budget.ts', '../canon-lint.ts'],
     'Keep document write decisions independent of stores, HTTP, filesystems, and CLI.',
   ),
   boundary(
@@ -269,7 +269,7 @@ export const importBoundaries: ImportBoundary[] = [
       './worktree-attribution.ts',
       './worktree-lifecycle.ts',
       './canon.ts',
-      './docs.ts',
+      './doc/docs.ts',
       './pack-budget.ts',
       './evals.ts',
       './sandbox.ts',
@@ -551,7 +551,12 @@ export const importBoundaries: ImportBoundary[] = [
   boundary(
     'record-api-client-boundary',
     'orchestrator/src/record-api-client.ts',
-    ['./doc-write-allowed.ts', './record-auth.ts', './record-session.ts', './record-snapshots.ts'],
+    [
+      './doc/doc-write-allowed.ts',
+      './record-auth.ts',
+      './record-session.ts',
+      './record-snapshots.ts',
+    ],
     'Enforce the record API client concern boundary.',
   ),
   boundary(
@@ -599,7 +604,7 @@ export const importBoundaries: ImportBoundary[] = [
   boundary(
     'record-docs-boundary',
     'orchestrator/src/record-docs.ts',
-    ['bun', '../../shared/record/schema.ts', './doc-write-allowed.ts'],
+    ['bun', '../../shared/record/schema.ts', './doc/doc-write-allowed.ts'],
     'Enforce the record-docs concern boundary.',
   ),
   boundary(
@@ -625,7 +630,7 @@ export const importBoundaries: ImportBoundary[] = [
   boundary(
     'record-push-docs-boundary',
     'orchestrator/src/record-push-docs.ts',
-    ['./db.ts', './record-api-client.ts', './doc-write-allowed.ts'],
+    ['./db.ts', './record-api-client.ts', './doc/doc-write-allowed.ts'],
     'Enforce the record-push-docs concern boundary.',
   ),
   boundary(

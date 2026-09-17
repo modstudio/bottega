@@ -1,5 +1,5 @@
 import { newRecordId } from '../../../shared/record/schema.ts'
-import { consumeDocBody, refuseDocWrite } from '../../src/doc-write-allowed.ts'
+import { consumeDocBody, refuseDocWrite } from '../../src/doc/doc-write-allowed.ts'
 import type {
   RecordApiClient,
   RecordDocImportInput,

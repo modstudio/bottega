@@ -2,7 +2,7 @@
 /** Registers documentation and register adapters. Must not own their behavior. */
 import type { Command } from 'commander'
 import { canonLintCommand, dispatchCanonCommand } from '../canon-commands.ts'
-import { docCommand } from '../doc-commands.ts'
+import { docCommand } from '../doc/doc-commands.ts'
 import { portCommand } from '../porting/port-commands.ts'
 import { projectCommand } from '../project-commands.ts'
 import { log, optionFlags, write, writeStdout } from './support.ts'

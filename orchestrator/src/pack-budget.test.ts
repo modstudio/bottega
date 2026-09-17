@@ -50,8 +50,8 @@ describe('canon pack budget', () => {
     expect(readFileSync(join(ROOT, 'orchestrator/src/jobs.ts'), 'utf8')).toContain(
       "from './pack-budget.ts'",
     )
-    expect(readFileSync(join(ROOT, 'orchestrator/src/docs.ts'), 'utf8')).toContain(
-      "from './pack-budget.ts'",
+    expect(readFileSync(join(ROOT, 'orchestrator/src/doc/docs.ts'), 'utf8')).toContain(
+      "from '../pack-budget.ts'",
     )
     expect(readFileSync(join(ROOT, 'orchestrator/scripts/check-pack-budget.ts'), 'utf8')).toContain(
       "from '../src/pack-budget.ts'",
