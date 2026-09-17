@@ -1,7 +1,13 @@
 import { describe, expect, test } from 'bun:test'
 import { join } from 'node:path'
 import { PLATFORM_SLUG } from './brand.ts'
-import { legacyStoreRefusal, resolveStateRoot, STATE_HOME_ENV } from './state-directory.ts'
+import {
+  legacyStoreRefusal,
+  resolveHubDatabase,
+  resolveOrchestratorDatabase,
+  resolveStateRoot,
+  STATE_HOME_ENV,
+} from './state-directory.ts'
 
 describe('state root resolution', () => {
   test('platform override wins over XDG and HOME', () => {
@@ -14,6 +20,17 @@ describe('state root resolution', () => {
     ).toBe('/override/state')
   })
 
+  test('a relative platform override is refused with its remedy', () => {
+    expect(() => resolveStateRoot({ [STATE_HOME_ENV]: 'relative/state' })).toThrow(
+      `${STATE_HOME_ENV} must be an absolute state root; set it to an absolute path`,
+    )
+  })
+
+  test('per-file overrides resolve without HOME', () => {
+    expect(resolveOrchestratorDatabase({ ORCH_DB: '/tmp/orch.db' })).toBe('/tmp/orch.db')
+    expect(resolveHubDatabase({ HUB_DB: '/tmp/hub.db' })).toBe('/tmp/hub.db')
+  })
+
   test('absolute XDG state home wins over HOME', () => {
     expect(resolveStateRoot({ XDG_STATE_HOME: '/xdg/state', HOME: '/home/person' })).toBe(
       join('/xdg/state', PLATFORM_SLUG),
@@ -23,6 +40,12 @@ describe('state root resolution', () => {
   test('HOME fallback also handles a relative XDG state home', () => {
     expect(resolveStateRoot({ XDG_STATE_HOME: 'relative', HOME: '/home/person' })).toBe(
       join('/home/person', '.local', 'state', PLATFORM_SLUG),
+    )
+  })
+
+  test('missing HOME names both remedies', () => {
+    expect(() => resolveStateRoot({})).toThrow(
+      `set HOME, or set ${STATE_HOME_ENV} to an absolute state root`,
     )
   })
 })

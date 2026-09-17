@@ -58,15 +58,14 @@ import json, os, re, sqlite3, subprocess, sys, time
 ALLOW = {"claude-code-guide"}
 
 ORCHESTRATOR_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
-STATE_DIR = subprocess.check_output(
-    ["bun", os.path.join(ORCHESTRATOR_ROOT, "..", "shared", "state-directory.ts"), "orchestrator"],
-    text=True,
+DB = os.environ.get("ORCH_DB") or subprocess.check_output(
+    ["bun", os.path.join(ORCHESTRATOR_ROOT, "..", "shared", "state-directory.ts"),
+     "orchestrator", "database"], text=True,
 ).strip()
-DB = os.environ.get("ORCH_DB") or os.path.join(STATE_DIR, "orch.db")
 # Where a decision goes when sqlite will not take it. A gate that cannot say
 # what it did is the thing this table exists to prevent, so a failed write has
 # to leave a mark somewhere rather than evaporate.
-FALLBACK_LOG = os.path.join(STATE_DIR, "spawn-fallback.log")
+FALLBACK_LOG = os.path.join(os.path.dirname(DB), "spawn-fallback.log")
 
 # A declaration, not a vocabulary match. The old fuzzy list ("online", "docs",
 # "benchmark", "pricing") is gone: it is what made rewording work.

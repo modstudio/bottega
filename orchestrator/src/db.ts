@@ -94,8 +94,7 @@ export const linkedWorktreeReadOnly =
   DATABASE_RESOLUTION.linkedWorktreeBinary &&
   process.env.ORCH_DB_WRITE !== '1' &&
   (DATABASE_RESOLUTION.method !== 'ORCH_DB' ||
-    (DATABASE_RESOLUTION.mainStorePath !== null &&
-      sameStore(DB_PATH, DATABASE_RESOLUTION.mainStorePath)))
+    sameStore(DB_PATH, DATABASE_RESOLUTION.mainStorePath))
 
 let registeredStoreWriteProtected = false
 

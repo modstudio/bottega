@@ -1,6 +1,7 @@
 import type { Database } from 'bun:sqlite'
 import { existsSync, readdirSync, readFileSync, statSync, unlinkSync } from 'node:fs'
 import { dirname, join } from 'node:path'
+import { resolveRunsDirectory } from '../../shared/state-directory.ts'
 import { persistedRunArtifactPath, rewriteFilesWrittenPaths } from './artifact-paths.ts'
 import { clock } from './clock.ts'
 import { FAILS_OVER } from './failure.ts'
@@ -346,13 +347,6 @@ function utf8Tail(text: string, bytes: number): string {
   return encoded.subarray(start).toString('utf8')
 }
 
-function collectionRunsDirectory(): string | null {
-  return (
-    process.env.ORCH_RUNS ??
-    (process.env.ORCH_DB ? join(dirname(process.env.ORCH_DB), 'runs') : null)
-  )
-}
-
 export type CollectResultPresentation = {
   log(...values: unknown[]): void
   error(...values: unknown[]): void
@@ -414,8 +408,8 @@ export function collectResult(
   if (!row) throw new Error(`no run ${id}`)
 
   if (argv.includes('--artifacts')) {
-    const runsRoot = collectionRunsDirectory()
-    const dir = runsRoot ? join(runsRoot, String(chain.finalId), 'artifacts') : ''
+    const runsRoot = resolveRunsDirectory(process.env)
+    const dir = join(runsRoot, String(chain.finalId), 'artifacts')
     const files: string[] = []
     if (existsSync(dir)) {
       for (const name of readdirSync(dir, { recursive: true })) {
@@ -468,13 +462,12 @@ export function collectResult(
       }
     }
   } else if (output !== null) {
-    const runsRoot = collectionRunsDirectory()
-    const rewritten = runsRoot
-      ? rewriteFilesWrittenPaths(output, (entry) =>
-          persistedRunArtifactPath(row.id, runsRoot, entry, row.cwd),
-        )
-      : null
-    presentation.log(rewritten ?? output)
+    const runsRoot = resolveRunsDirectory(process.env)
+    presentation.log(
+      rewriteFilesWrittenPaths(output, (entry) =>
+        persistedRunArtifactPath(row.id, runsRoot, entry, row.cwd),
+      ),
+    )
   }
   const chainNote = failoverSummary(chain.attempts)
   if (chainNote) presentation.error(`\n— ${chainNote}`)

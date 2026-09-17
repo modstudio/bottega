@@ -3,7 +3,7 @@ import { existsSync, mkdirSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { FROZEN_STATE_NAMES } from '../../shared/brand.ts'
 import { mainCheckoutOf } from '../../shared/git.ts'
-import { concernStateDirectory, legacyStoreRefusal } from '../../shared/state-directory.ts'
+import { legacyStoreRefusal, resolveHubDatabase } from '../../shared/state-directory.ts'
 import {
   applyMigrations,
   migrationRefusal,
@@ -15,9 +15,9 @@ export type { Project } from './projects.ts'
 
 const checkout = new URL('../..', import.meta.url).pathname
 const mainCheckout = mainCheckoutOf(checkout)
-const livePath = join(concernStateDirectory('hub'), FROZEN_STATE_NAMES.hubDatabase)
+const livePath = resolveHubDatabase(process.env)
 const legacyPath = mainCheckout ? join(mainCheckout, 'hub', FROZEN_STATE_NAMES.hubDatabase) : null
-export const DB_PATH = process.env.HUB_DB ?? livePath
+export const DB_PATH = livePath
 
 function legacyDatabaseRefusal(): string | null {
   if (process.env.HUB_DB !== undefined || !legacyPath) return null

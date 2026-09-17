@@ -33,6 +33,8 @@
         <string>/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin:__HOME__/.local/bin</string>
         <key>HOME</key>
         <string>__HOME__</string>
+        <key>__STATE_HOME_ENV__</key>
+        <string>__STATE_HOME__</string>
     </dict>
 
     <key>StandardOutPath</key>

@@ -1,10 +1,9 @@
 import { realpathSync } from 'node:fs'
-import { join, resolve } from 'node:path'
-import { FROZEN_STATE_NAMES } from './brand.ts'
-import { concernStateDirectory } from './state-directory.ts'
+import { resolve } from 'node:path'
+import { resolveStatePaths } from './state-directory.ts'
 
 function liveHubDatabase(): string {
-  return join(concernStateDirectory('hub'), FROZEN_STATE_NAMES.hubDatabase)
+  return resolveStatePaths(process.env).hubDatabase
 }
 
 function canonicalPath(path: string): string {
@@ -16,7 +15,7 @@ function canonicalPath(path: string): string {
 }
 
 /** Refuse any test process state in which hub would open the live task board. */
-export function createTestHubDatabaseGuard(_checkout: string, liveStorePath?: string): () => void {
+export function createTestHubDatabaseGuard(liveStorePath?: string): () => void {
   const liveStore = canonicalPath(liveStorePath ?? liveHubDatabase())
   return () => {
     const configured = process.env.HUB_DB

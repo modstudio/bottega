@@ -7,7 +7,7 @@ test('live HUB_DB mutation: resetFixtureStore refuses before deleting', () => {
   const previous = process.env.HUB_DB
   process.env.HUB_DB = fakeLive
   try {
-    expect(() => resetFixtureStore(createTestHubDatabaseGuard('/unused', fakeLive))).toThrow(
+    expect(() => resetFixtureStore(createTestHubDatabaseGuard(fakeLive))).toThrow(
       `test process refuses hub database: HUB_DB resolved ${fakeLive}; live store is ${fakeLive}\n` +
         'invariant: A test suite never falls back to the live hub database.\n' +
         'cleared by: set HUB_DB to a scratch store before importing hub/src/db.ts',

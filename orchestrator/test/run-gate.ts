@@ -1,13 +1,13 @@
 import { mkdirSync, readFileSync, unlinkSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
-import { concernStateDirectory } from '../../shared/state-directory.ts'
+import { resolveGateTimingDirectory } from '../../shared/gate-timing-directory.ts'
 import { withGateSlot } from '../src/gate-load.ts'
 import { publishTimingSummary } from './gate-timing-summary.ts'
 import { type GateTimings, mergeTimings } from './record-gate-timings.ts'
 
 const orchRoot = new URL('..', import.meta.url).pathname
 const timingStamp = new Date().toISOString().replace(/[:.]/g, '-')
-const timingDir = join(concernStateDirectory('orchestrator'), 'runs', 'gate-timings')
+const timingDir = resolveGateTimingDirectory(orchRoot, process.env)
 const timingPath = join(timingDir, `${timingStamp}.json`)
 mkdirSync(timingDir, { recursive: true })
 

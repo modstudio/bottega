@@ -3,12 +3,13 @@ import { basename, dirname, join, resolve } from 'node:path'
 import { FROZEN_STATE_NAMES } from '../../shared/brand.ts'
 import { inspectionGitEnv } from '../../shared/git.ts'
 import {
-  concernStateDirectory,
   legacyStoreRefusal,
+  resolveOrchestratorDatabase,
+  resolveRunsDirectory,
   type StateEnvironment,
 } from '../../shared/state-directory.ts'
 
-export type DatabaseResolutionMethod = 'ORCH_DB' | 'git-common-dir' | 'git-pointer' | 'state-root'
+export type DatabaseResolutionMethod = 'ORCH_DB' | 'state-root'
 
 export type DatabaseResolution = {
   path: string
@@ -16,12 +17,10 @@ export type DatabaseResolution = {
   tried: string[]
   registeredPath: string | null
   repositoryRoot: string | null
-  repositoryCandidate: string | null
-  repositoryCandidateExisted: boolean
   initializable: boolean
   linkedWorktreeBinary: boolean
-  /** The store beside the binary's main checkout, whatever ORCH_DB names. */
-  mainStorePath: string | null
+  /** The per-user store selected for this process, including an ORCH_DB override. */
+  mainStorePath: string
 }
 
 export const ROOT = new URL('..', import.meta.url).pathname.replace(/\/$/, '')
@@ -105,10 +104,7 @@ export function resolveDatabase(
   binaryRoot = ROOT,
 ): DatabaseResolution {
   const binaryRepository = repositoryRootFromGit(binaryRoot) ?? repositoryRootFromDotGit(binaryRoot)
-  const mainStorePath = join(
-    concernStateDirectory('orchestrator', env),
-    FROZEN_STATE_NAMES.orchestratorDatabase,
-  )
+  const mainStorePath = resolveOrchestratorDatabase(env)
   if (env.ORCH_DB) {
     return {
       path: resolve(env.ORCH_DB),
@@ -116,8 +112,6 @@ export function resolveDatabase(
       tried: [resolve(env.ORCH_DB)],
       registeredPath: null,
       repositoryRoot: null,
-      repositoryCandidate: null,
-      repositoryCandidateExisted: false,
       initializable: true,
       linkedWorktreeBinary: Boolean(binaryRepository?.linked),
       mainStorePath,
@@ -130,8 +124,6 @@ export function resolveDatabase(
     tried: [mainStorePath],
     registeredPath: null,
     repositoryRoot: repository?.root ?? null,
-    repositoryCandidate: null,
-    repositoryCandidateExisted: false,
     // Location is per-user, but binary identity still owns initialization.
     initializable: Boolean(binaryRepository && !binaryRepository.linked),
     linkedWorktreeBinary: Boolean(binaryRepository?.linked),
@@ -170,7 +162,7 @@ export function legacyDatabaseRefusal(
   resolution: DatabaseResolution = DATABASE_RESOLUTION,
   env: StateEnvironment = process.env as StateEnvironment,
 ): string | null {
-  if (resolution.method === 'ORCH_DB' || !resolution.mainStorePath) return null
+  if (resolution.method === 'ORCH_DB') return null
   const binaryRepository = repositoryRootFromGit(ROOT) ?? repositoryRootFromDotGit(ROOT)
   if (!binaryRepository) return null
   const legacyStore = join(
@@ -182,15 +174,8 @@ export function legacyDatabaseRefusal(
     legacyStore,
     destinationStore: resolution.path,
     legacyRuns: join(binaryRepository.root, 'orchestrator', FROZEN_STATE_NAMES.runsDirectory),
-    destinationRuns: resolveRunsDirectory(resolution, env),
+    destinationRuns: resolveRunsDirectory(env),
   })
 }
 
-export function resolveRunsDirectory(
-  resolution: Pick<DatabaseResolution, 'path'> = DATABASE_RESOLUTION,
-  env: StateEnvironment = process.env as StateEnvironment,
-): string {
-  return env.ORCH_RUNS
-    ? resolve(env.ORCH_RUNS)
-    : join(dirname(resolution.path), FROZEN_STATE_NAMES.runsDirectory)
-}
+export { resolveRunsDirectory } from '../../shared/state-directory.ts'

@@ -8,10 +8,8 @@ import { clearOrchCache } from '../src/serve.ts'
 
 export const at = (iso: string) => new Date(iso).getTime()
 
-const checkout = new URL('../..', import.meta.url).pathname
-
 export function resetFixtureStore(assertSafe?: () => void) {
-  const guard = assertSafe ?? createTestHubDatabaseGuard(checkout)
+  const guard = assertSafe ?? createTestHubDatabaseGuard()
   guard()
   const database = new Database(process.env.HUB_DB!)
   try {

@@ -10,11 +10,11 @@
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { join, relative } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { concernStateDirectory } from '../../shared/state-directory.ts'
+import { resolveGateTimingDirectory } from '../../shared/gate-timing-directory.ts'
 
 const orchRoot = join(import.meta.dir, '..')
 const stamp = new Date().toISOString().replace(/[:.]/g, '-')
-const outDir = join(concernStateDirectory('orchestrator'), 'runs', 'gate-timings')
+const outDir = resolveGateTimingDirectory(orchRoot, process.env)
 mkdirSync(outDir, { recursive: true })
 const jsonPath = join(outDir, `${stamp}.json`)
 const junitPath = join(outDir, `${stamp}.junit.xml`)

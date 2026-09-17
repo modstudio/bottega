@@ -13,7 +13,7 @@ import { afterAll } from 'bun:test'
 import { mkdirSync, writeFileSync } from 'node:fs'
 import { dirname, join, relative } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { concernStateDirectory } from '../../shared/state-directory.ts'
+import { resolveGateTimingDirectory } from '../../shared/gate-timing-directory.ts'
 
 const enabled = process.env.ORCH_GATE_TIMINGS
 if (enabled) {
@@ -22,7 +22,7 @@ if (enabled) {
   const outPath =
     enabled.includes('/') || enabled.endsWith('.json')
       ? enabled
-      : join(concernStateDirectory('orchestrator'), 'runs', 'gate-timings', `${stamp}.json`)
+      : join(resolveGateTimingDirectory(join(import.meta.dir, '..'), process.env), `${stamp}.json`)
   const sidecarPath = `${outPath}.spawn.json`
 
   type Kind = 'cli' | 'git' | 'other'

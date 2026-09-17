@@ -53,7 +53,7 @@ const LOCAL_WOL_MAC = process.env.ORCH_LOCAL_WOL_MAC ?? ''
  */
 const WAKE_COOLDOWN_MS = 10 * 60_000
 
-const wakeStampPath = () => join(concernStateDirectory('orchestrator'), '.last-wake')
+const wakeStampPath = () => join(concernStateDirectory('orchestrator', process.env), '.last-wake')
 
 export function lastWakeAttempt(): Date | null {
   try {
@@ -122,7 +122,7 @@ export function tryWake(now = Date.now()): { sent: boolean; detail: string } {
   // Stamped BEFORE the spawn. If the spawn throws, the attempt still counts —
   // the alternative is a failure that retries on every single run.
   try {
-    mkdirSync(concernStateDirectory('orchestrator'), { recursive: true })
+    mkdirSync(concernStateDirectory('orchestrator', process.env), { recursive: true })
     writeFileSync(wakeStampPath(), new Date(now).toISOString())
   } catch {
     /* best effort */

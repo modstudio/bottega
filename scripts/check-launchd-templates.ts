@@ -22,6 +22,8 @@ try {
       .replaceAll('__ROOT__', '/tmp/repo')
       .replaceAll('__REPO__', '/tmp/repo/ops')
       .replaceAll('__HOME__', '/tmp')
+      .replaceAll('__STATE_HOME_ENV__', 'BOTTEGA_STATE_HOME')
+      .replaceAll('__STATE_HOME__', '/tmp/bottega-state')
       .replaceAll('__MONITOR_BACKSTOP_SECONDS__', '14400')
       .replaceAll('__FIX_DEFECT_BACKSTOP_SECONDS__', '43200')
       .replaceAll('__MODEL_HOST__', 'example')

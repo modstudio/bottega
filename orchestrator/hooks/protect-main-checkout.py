@@ -11,6 +11,13 @@ import sqlite3
 import subprocess
 import sys
 
+
+ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "../.."))
+DB_PATH = os.environ.get("ORCH_DB") or subprocess.check_output(
+    ["bun", os.path.join(ROOT, "shared", "state-directory.ts"), "orchestrator", "database"],
+    text=True,
+).strip()
+
 EDITOR_TOOLS = {"Write", "Edit", "NotebookEdit"}
 INVARIANT = "A registered main checkout stays clean; work happens in a worktree"
 
@@ -170,10 +177,7 @@ def deny_commit(project):
 
 def pre_commit() -> int:
     cwd = os.getcwd()
-    db_path = os.environ.get("ORCH_DB") or os.path.join(
-        os.path.dirname(os.path.abspath(__file__)), "..", "orch.db"
-    )
-    projects, error = load_projects_result(db_path)
+    projects, error = load_projects_result(DB_PATH)
     if error:
         return fail_open(error)
     top = toplevel(cwd)
@@ -202,10 +206,7 @@ def main() -> int:
     if not path:
         return fail_open()
     path = real(path)
-    db_path = os.environ.get("ORCH_DB") or os.path.join(
-        os.path.dirname(os.path.abspath(__file__)), "..", "orch.db"
-    )
-    projects = load_projects(db_path)
+    projects = load_projects(DB_PATH)
     project, root = project_for(path, projects)
     if project is None or root is None:
         return fail_open()

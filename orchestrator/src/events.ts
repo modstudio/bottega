@@ -1,7 +1,7 @@
 /** Live vendor event log: append-only JSONL plus last_event_at, and orch peek. */
 import { appendFileSync, existsSync, mkdirSync, readFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
-import { DATABASE_RESOLUTION, resolveRunsDirectory } from './database-location.ts'
+import { resolveRunsDirectory } from './database-location.ts'
 import { db, nowIso, writableDb } from './db.ts'
 import { targetGitEnvironment } from './git-environment.ts'
 
@@ -61,10 +61,7 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return value !== null && typeof value === 'object' && !Array.isArray(value)
 }
 
-export function runEventsPath(
-  id: number,
-  runsDir = resolveRunsDirectory(DATABASE_RESOLUTION),
-): string {
+export function runEventsPath(id: number, runsDir = resolveRunsDirectory(process.env)): string {
   return join(runsDir, String(id), 'events.jsonl')
 }
 

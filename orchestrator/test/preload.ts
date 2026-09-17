@@ -81,7 +81,7 @@ export const PRELOAD_STORE = process.env.ORCH_DB
 export const PRELOAD_RUNS = process.env.ORCH_RUNS
 mkdirSync(process.env.ORCH_RUNS)
 
-const assertTestHubDatabase = createTestHubDatabaseGuard(new URL('../..', import.meta.url).pathname)
+const assertTestHubDatabase = createTestHubDatabaseGuard()
 assertTestHubDatabase()
 
 const { registerStandardRuntime } = await import('../src/runtime-registration.ts')

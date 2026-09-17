@@ -6,7 +6,7 @@ const tempPath = '/nonexistent-temp-orchestrator-store/orch.db'
 
 describe('orchestrator database path decision', () => {
   test('test process + non-ORCH_DB method: refuses the live fallback', () => {
-    expect(() => decideOrchestratorDatabasePath(true, 'git-common-dir', livePath)).toThrow(
+    expect(() => decideOrchestratorDatabasePath(true, 'state-root', livePath)).toThrow(
       `test process refuses orchestrator database: ORCH_DB resolved <unset>; live store is ${livePath}\n` +
         'invariant: A test suite never falls back to the live orchestrator database.\n' +
         'cleared by: set ORCH_DB to a scratch store before importing orchestrator/src/db.ts',

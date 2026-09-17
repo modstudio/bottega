@@ -24,11 +24,15 @@ function copyDatabase(source: string, target: string): void {
 }
 copyDatabase(
   process.env.ORCH_DB ??
-    join(concernStateDirectory('orchestrator'), FROZEN_STATE_NAMES.orchestratorDatabase),
+    join(
+      concernStateDirectory('orchestrator', process.env),
+      FROZEN_STATE_NAMES.orchestratorDatabase,
+    ),
   sourceOrchDb,
 )
 copyDatabase(
-  process.env.HUB_DB ?? join(concernStateDirectory('hub'), FROZEN_STATE_NAMES.hubDatabase),
+  process.env.HUB_DB ??
+    join(concernStateDirectory('hub', process.env), FROZEN_STATE_NAMES.hubDatabase),
   sourceHubDb,
 )
 
