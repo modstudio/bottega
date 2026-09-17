@@ -38,7 +38,7 @@ import { appRouter } from './trpc/router.ts'
 
 const ORCH_CACHE_TTL_MS = 30_000
 
-type CacheEntry<T> = { checkedAt: number; value?: T; pending?: Promise<T> }
+type CacheEntry<T> = { checkedAt: number; hasValue: boolean; value?: T; pending?: Promise<T> }
 
 /** One load per key and TTL, including when several clients arrive together. */
 export class TtlCache {
@@ -51,18 +51,24 @@ export class TtlCache {
     this.clock = clock
   }
 
+  /**
+   * The cached value while it is fresh. Once it expires the caller still gets
+   * the last value at once and one background load replaces it, so a poll that
+   * lands just after expiry never waits for a slow orch read. A key with no
+   * value waits for its load, and a failed load drops the key so the next call
+   * waits and sees the failure rather than a value that has stopped updating.
+   */
   get<T>(key: string, load: () => Promise<T> | T): Promise<T> {
     const now = this.clock()
     const cached = this.entries.get(key) as CacheEntry<T> | undefined
-    if (cached && now - cached.checkedAt < this.ttlMs) {
-      return cached.pending ?? Promise.resolve(cached.value as T)
-    }
+    const fresh = cached !== undefined && now - cached.checkedAt < this.ttlMs
+    if (cached?.hasValue && (fresh || cached.pending)) return Promise.resolve(cached.value as T)
     if (cached?.pending) return cached.pending
     const pending = Promise.resolve()
       .then(load)
       .then(
         (value) => {
-          this.entries.set(key, { checkedAt: this.clock(), value })
+          this.entries.set(key, { checkedAt: this.clock(), hasValue: true, value })
           return value
         },
         (cause) => {
@@ -70,7 +76,12 @@ export class TtlCache {
           throw cause
         },
       )
-    this.entries.set(key, { checkedAt: now, value: cached?.value, pending })
+    if (cached?.hasValue) {
+      this.entries.set(key, { ...cached, pending })
+      pending.catch(() => undefined)
+      return Promise.resolve(cached.value as T)
+    }
+    this.entries.set(key, { checkedAt: now, hasValue: false, pending })
     return pending
   }
 
@@ -721,6 +732,11 @@ export function serve(port: number) {
           req,
           router: appRouter,
           createContext,
+          // A write can change anything an orch read returned, so the next read starts fresh.
+          responseMeta({ type }) {
+            if (type === 'mutation') orchCache.clear()
+            return {}
+          },
         })
       }
 
