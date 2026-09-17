@@ -227,6 +227,15 @@ export const OrchBlockersSchema = z
   })
   .passthrough()
 
+export const OrchAgentDefinitionSchema = z.object({
+  name: z.string(),
+  caps: z.record(z.string(), z.boolean()),
+  model: z.string(),
+  contextTokens: z.number().nullable(),
+  maxPromptBytes: z.number().nullable(),
+  timeoutMs: z.number(),
+})
+
 export const HostLoadSchema = z.object({
   gates: z.number(),
   loadavg: z.number(),

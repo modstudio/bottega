@@ -75,7 +75,6 @@ describe('record client', () => {
     const fetch: RecordFetch = async () => jsonResponse({ items: [{ nope: true }] })
     const client = clientWith(fetch)
     for (const request of [
-      () => client.snapshots(),
       () => client.docs(),
       () => client.doc('01990000-0000-7000-8000-000000000001'),
       () => client.docRevisions('01990000-0000-7000-8000-000000000001'),
@@ -85,5 +84,72 @@ describe('record client', () => {
         message: 'record API returned an invalid body',
       })
     }
+  })
+
+  test('keeps valid snapshots and reports each malformed item', async () => {
+    const base = {
+      id: '01990000-0000-7000-8000-000000000001',
+      machineId: '01990000-0000-7000-8000-000000000002',
+      takenAt: '2026-09-17T12:00:00.000Z',
+    }
+    const fetch: RecordFetch = async () =>
+      jsonResponse({
+        items: [
+          {
+            ...base,
+            kind: 'state',
+            payload: {
+              live: [],
+              stale: 0,
+              matrix: [],
+              guide: [],
+              health: [],
+              totals: { runs: 0, failed: 0, stale_n: 0, toks: 0, scored: 0 },
+              unscored: 0,
+              spawns: [],
+              agents: [],
+              byRepo: [],
+            },
+          },
+          { ...base, kind: 'blockers', payload: { blockers: [] } },
+          {
+            ...base,
+            kind: 'health',
+            payload: {
+              header: 'Harness health only',
+              days: 14,
+              from: '2026-09-03T12:00:00.000Z',
+              classes: [],
+              falseVerdicts: [],
+              landingRefusals: 0,
+              mcpProbeFailures: 0,
+              mcpUnprobed: 0,
+              contention: { resources: [], sessions: [] },
+            },
+          },
+          { ...base, kind: 'jobs', payload: [] },
+          {
+            ...base,
+            kind: 'agents',
+            payload: [
+              {
+                name: 'agy',
+                caps: { readsRepo: false, contextTokens: null },
+                model: 'gemini-3.1-pro-high',
+                contextTokens: null,
+                maxPromptBytes: null,
+                timeoutMs: 60_000,
+              },
+            ],
+          },
+        ],
+      })
+
+    const result = await clientWith(fetch).snapshots()
+    expect(result.items.map((item) => item.kind)).toEqual(['state', 'blockers', 'health', 'jobs'])
+    expect(result.ignored).toHaveLength(1)
+    expect(result.ignored[0]).toContain('agents snapshot ignored:')
+    expect(result.ignored[0]).toContain('caps.contextTokens')
+    expect(result.ignored[0]).toContain('expected boolean, received null')
   })
 })

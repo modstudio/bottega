@@ -44,3 +44,12 @@ export function SnapshotHeader({
     />
   )
 }
+
+export function SnapshotEmpty({ title }: { title: string }) {
+  return (
+    <section>
+      <PageHeader title={title} />
+      <p className="text-text-muted">No {title.toLowerCase()} snapshot is available.</p>
+    </section>
+  )
+}
