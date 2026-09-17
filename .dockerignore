@@ -8,6 +8,7 @@
 !orchestrator/package.json
 !orchestrator/tsconfig.json
 !orchestrator/src/
+!orchestrator/deploy/backup/
 !hub/package.json
 !hub/tsconfig.json
 !hub/src/
