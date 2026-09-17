@@ -425,7 +425,7 @@ export const modules: ArchitectureModule[] = [
   ]),
   module('orchestrator/src/worktree-tool.ts', ['./worktree-template.ts', './git-environment.ts']),
   module('orchestrator/src/worktree-types.ts', []),
-  module('hub/src/fixture-question-reclaim.ts', ['./db.ts']),
+  module('hub/src/fixture-question-reclaim.ts', ['./db.ts', './orch.ts', './reconcile.ts']),
   module('hub/src/serve-lifecycle.ts', ['../../shared/process-identity.ts']),
 ]
 

@@ -34,9 +34,40 @@ export function runRef(ref: string): { root: number; turn: number | null } | nul
   return { root: Number(match[1]), turn: match[2] ? Number(match[2]) : null }
 }
 
-function statusFor(answer: RunAnswer | undefined, turnId: number | null): string | null {
+function requestedIdOf(answer: RunAnswer): number | null {
+  if ('unknown' in answer) return null
+  const value = (answer as { requested_id?: unknown }).requested_id
+  return typeof value === 'number' && Number.isInteger(value) ? value : null
+}
+
+function resolvedFromOf(answer: RunAnswer): string | null {
+  if ('unknown' in answer) return null
+  const value = (answer as { resolved_from?: unknown }).resolved_from
+  return typeof value === 'string' ? value : null
+}
+
+/** Index a run by its id, and also by requested_id when orch resolved a turn. */
+export function indexRunAnswers(answers: RunAnswer[]): Map<number, RunAnswer> {
+  const byId = new Map<number, RunAnswer>()
+  for (const answer of answers) {
+    if (resolvedFromOf(answer) !== 'turn') byId.set(answer.id, answer)
+    const requested = requestedIdOf(answer)
+    if (requested != null) byId.set(requested, answer)
+    else if (!byId.has(answer.id)) byId.set(answer.id, answer)
+  }
+  return byId
+}
+
+export function statusFor(answer: RunAnswer | undefined, turnId: number | null): string | null {
   if (!answer || 'unknown' in answer) return null
-  if (turnId == null) return answer.status
+  if (turnId == null) {
+    if (resolvedFromOf(answer) === 'turn') {
+      const requested = requestedIdOf(answer)
+      if (requested == null) return null
+      return answer.turns?.find((turn: OrchTurn) => turn.id === requested)?.status ?? null
+    }
+    return answer.status
+  }
   return answer.turns?.find((turn: OrchTurn) => turn.id === turnId)?.status ?? null
 }
 
@@ -54,7 +85,7 @@ export async function reconcileOpenIntervals(
   const refs = intervals.map((interval) => runRef(interval.ref))
   const rootIds = [...new Set(refs.flatMap((ref) => (ref ? [ref.root] : [])))]
   const answers = await readRunsById(rootIds)
-  const byId = new Map(answers.map((answer) => [answer.id, answer]))
+  const byId = indexRunAnswers(answers)
   const now = options.now ?? Date.now()
   const closed: ReconcileItem[] = []
   const leftOpen: ReconcileItem[] = []
