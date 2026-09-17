@@ -408,13 +408,13 @@
     "score": 34
   },
   {
-    "file": "orchestrator/src/metric.ts",
+    "file": "orchestrator/src/metric/metric.ts",
     "function": "claudeTokensByDay",
     "line": 101,
     "score": 26
   },
   {
-    "file": "orchestrator/src/metric.ts",
+    "file": "orchestrator/src/metric/metric.ts",
     "function": "activityByDay",
     "line": 208,
     "score": 27
