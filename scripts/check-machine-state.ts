@@ -31,7 +31,7 @@ const exactStatePaths = new Map([
   ['orchestrator/spawn-fallback.log', 'spawn fallback log'],
 ])
 const trackedDatabase = /(?:^|\/)[^/]+\.db(?:-wal|-shm)?$/
-const databaseBackup = /(?:^|\/)[^/]+\.db\.backup-.+$/
+const databaseBackup = /(?:^|\/)[^/]+\.db\.backup-.*$/
 
 function machineStateReason(path: string, tracked: boolean): string | undefined {
   if (path === runsPath || path.startsWith(`${runsPath}/`)) return 'orchestrator run artifact'
@@ -47,7 +47,13 @@ export function decideMachineState(paths: MachineStatePath[]): MachineStateFindi
   const findings = new Map<string, MachineStateFinding>()
   for (const candidate of paths) {
     const path = candidate.path.replace(/^\.\//, '').replaceAll('\\', '/')
-    if (!path || path.split('/').includes('node_modules') || findings.has(path)) continue
+    if (
+      !path ||
+      path.split('/').some((part) => part === 'node_modules' || part === '.claude') ||
+      findings.has(path)
+    ) {
+      continue
+    }
 
     const reason = machineStateReason(path, candidate.tracked)
     if (reason) findings.set(path, { path, reason })

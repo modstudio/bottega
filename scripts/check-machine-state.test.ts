@@ -25,6 +25,7 @@ describe('machine state decision', () => {
           orch,
           hub,
           'cache.db.backup-20260917',
+          'cache.db.backup-',
           'hub/.serve',
           'hub/.serve/7780.json',
           'orchestrator/.last-wake',
@@ -50,6 +51,7 @@ describe('machine state decision', () => {
       { path: orch, reason: 'legacy database state' },
       { path: hub, reason: 'legacy database state' },
       { path: 'cache.db.backup-20260917', reason: 'database backup state' },
+      { path: 'cache.db.backup-', reason: 'database backup state' },
       { path: 'hub/.serve', reason: 'serve lifecycle state' },
       { path: 'hub/.serve/7780.json', reason: 'serve lifecycle state' },
       { path: 'orchestrator/.last-wake', reason: 'wake state' },
@@ -61,7 +63,7 @@ describe('machine state decision', () => {
     ])
   })
 
-  test('allows untracked databases outside legacy locations and skips node_modules', () => {
+  test('allows untracked databases outside legacy locations and skips agent and dependency state', () => {
     expect(
       decideMachineState([
         ...paths(false, 'scratch/cache.db', 'scratch/cache.db-wal', 'scratch/cache.db-shm'),
@@ -69,6 +71,8 @@ describe('machine state decision', () => {
           true,
           'node_modules/package/cache.db',
           'hub/node_modules/package/cache.db.backup-now',
+          '.claude/worktrees/other/orchestrator/orch.db',
+          'nested/.claude/agent/cache.db.backup-',
         ),
         ...paths(true, 'shared/state-directory.ts'),
       ]),
