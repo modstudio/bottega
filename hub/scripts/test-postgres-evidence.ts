@@ -291,6 +291,8 @@ try {
       value: reportValue,
       version: 0,
     })
+    if (!reportSetting.value)
+      throw new Error(`report setting returned ${JSON.stringify(reportSetting)}`)
     if (reportSetting.version !== 1 || reportSetting.value.projects.join(',') !== PLATFORM_SLUG)
       throw new Error('report setting upsert did not filter projects or advance its version')
     let versionConflict = false
