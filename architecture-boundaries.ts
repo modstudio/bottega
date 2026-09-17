@@ -342,7 +342,7 @@ export const importBoundaries: ImportBoundary[] = [
   ),
   boundary(
     'issue-report-fields-boundary',
-    'orchestrator/src/issue-report-fields.ts',
+    'orchestrator/src/issue/issue-report-fields.ts',
     [],
     'Keep issue report field decisions pure and independent of adapters.',
   ),

@@ -254,7 +254,7 @@
       "spawns": 0
     },
     {
-      "path": "orchestrator/src/issue.test.ts",
+      "path": "orchestrator/src/issue/issue.test.ts",
       "wallMs": 40,
       "tests": 7,
       "cliShaped": false,

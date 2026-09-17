@@ -1,16 +1,28 @@
 import { copyFileSync, existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { homedir, tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { FROZEN_STATE_NAMES, PLATFORM_NAME, PLATFORM_SLUG } from '../../shared/brand.ts'
-import { releaseRunFailoverAttempts } from './close/close-out.ts'
+import { FROZEN_STATE_NAMES, PLATFORM_NAME, PLATFORM_SLUG } from '../../../shared/brand.ts'
+import { releaseRunFailoverAttempts } from '../close/close-out.ts'
 import {
   ISSUE_WORKER_SCHEMA,
   type IssueWorkerReply,
   type JsonSchema,
   validatesSchema,
-} from './contract.ts'
-import { DB_PATH, db } from './db.ts'
-import { repoRootOf } from './git-environment.ts'
+} from '../contract.ts'
+import { DB_PATH, db } from '../db.ts'
+import { repoRootOf } from '../git-environment.ts'
+import { DEFAULT_KEEP_TREE_HOURS, keepTreeExemption } from '../keep-tree-hold.ts'
+import { type Project, projectByName } from '../projects.ts'
+import { prepareSharedRefGuard } from '../ref-guard.ts'
+import { parseReviewOutput } from '../review.ts'
+import { run } from '../run.ts'
+import { terminateRunProcesses } from '../run-process.ts'
+import { abandonRun } from '../run-stop.ts'
+import type { RunResult } from '../run-types.ts'
+import { resetSandbox, resolveSecretPaths, sandboxLaunchArgv, srtInstalled } from '../sandbox.ts'
+import { trackedRecipeEnvironment } from '../tracked-recipe.ts'
+import { worktreeDirty } from '../worktree-attribution.ts'
+import type { Worktree } from '../worktree-types.ts'
 import { catchFixTreeDisposition } from './issue-catch.ts'
 import {
   filedIssueCommandPlan,
@@ -19,20 +31,8 @@ import {
   runFiledIssueCommand,
   workerGateEnvironment,
 } from './issue-shell.ts'
-import { DEFAULT_KEEP_TREE_HOURS, keepTreeExemption } from './keep-tree-hold.ts'
-import { type Project, projectByName } from './projects.ts'
-import { prepareSharedRefGuard } from './ref-guard.ts'
-import { parseReviewOutput } from './review.ts'
-import { run } from './run.ts'
-import { terminateRunProcesses } from './run-process.ts'
-import { abandonRun } from './run-stop.ts'
-import type { RunResult } from './run-types.ts'
-import { resetSandbox, resolveSecretPaths, sandboxLaunchArgv, srtInstalled } from './sandbox.ts'
-import { trackedRecipeEnvironment } from './tracked-recipe.ts'
-import { worktreeDirty } from './worktree-attribution.ts'
-import type { Worktree } from './worktree-types.ts'
 
-const HUB = new URL('../../bin/hub', import.meta.url).pathname
+const HUB = new URL('../../../bin/hub', import.meta.url).pathname
 
 export type FiledIssue = {
   key: string
@@ -906,7 +906,7 @@ export async function workIssue(key: string): Promise<void> {
           : { ok: false, text: 'no reproduction command', exitCode: -1 }
       const applied = argv(
         [
-          new URL('../../bin/orch', import.meta.url).pathname,
+          new URL('../../../bin/orch', import.meta.url).pathname,
           'project',
           'set',
           change.project,
