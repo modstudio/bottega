@@ -245,13 +245,19 @@ try {
         cutoff,
       })
     } catch (error) {
-      if (!String((error as Error).message).includes('local cache is behind the record')) throw error
+      if (!String((error as Error).message).includes('local cache is behind the record'))
+        throw error
       refusedResighted = true
     }
     if (!refusedResighted) throw new Error('reap of a re-sighted note was not refused')
     if (!(await getHostedNote(actorUrl, identity, 802)))
       throw new Error('re-sighted note was deleted')
-    await reapHostedNotes(actorUrl, identity, { stale: [], deleted: [800], confirmation: 1, cutoff })
+    await reapHostedNotes(actorUrl, identity, {
+      stale: [],
+      deleted: [800],
+      confirmation: 1,
+      cutoff,
+    })
     const visibleNotes = await listHostedNotes(actorUrl, identity, {})
     if (visibleNotes.notes.some((row) => Number(row.number) === 800))
       throw new Error('soft-deleted note was visible in the default list')
