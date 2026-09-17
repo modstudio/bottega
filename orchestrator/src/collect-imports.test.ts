@@ -3,6 +3,8 @@ import { readFileSync } from 'node:fs'
 import { dirname, relative, resolve } from 'node:path'
 
 const DEGRADED_COLLECTION_GRAPH = [
+  '../../shared/brand.ts',
+  '../../shared/state-directory.ts',
   'artifact-paths.ts',
   'clock.ts',
   'collect.ts',

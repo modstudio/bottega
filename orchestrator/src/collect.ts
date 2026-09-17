@@ -463,11 +463,11 @@ export function collectResult(
     }
   } else if (output !== null) {
     const runsRoot = resolveRunsDirectory(process.env)
-    presentation.log(
+    const rewritten =
       rewriteFilesWrittenPaths(output, (entry) =>
         persistedRunArtifactPath(row.id, runsRoot, entry, row.cwd),
-      ),
-    )
+      ) ?? output
+    presentation.log(rewritten)
   }
   const chainNote = failoverSummary(chain.attempts)
   if (chainNote) presentation.error(`\n— ${chainNote}`)
