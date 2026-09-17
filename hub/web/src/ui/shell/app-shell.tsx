@@ -251,19 +251,21 @@ function BrandCell({
   onToggle: () => void
 }) {
   const toggle = canToggle ? (
-    <IconButton
-      size="sm"
-      label={collapsed ? 'Expand navigation' : 'Collapse navigation'}
-      aria-expanded={!collapsed}
-      onClick={onToggle}
-      className={
-        collapsed
-          ? 'absolute inset-0 m-auto opacity-0 group-hover/brand:opacity-100 focus:opacity-100 [@media(hover:none)]:opacity-100'
-          : 'ml-auto opacity-0 group-hover/brand:opacity-100 focus:opacity-100 [@media(hover:none)]:opacity-100'
-      }
+    <span
+      className={classes(
+        'opacity-0 transition-opacity group-hover/brand:opacity-100 has-focus:opacity-100 [@media(hover:none)]:opacity-100',
+        collapsed ? 'absolute inset-0 grid place-items-center' : 'ml-auto',
+      )}
     >
-      {collapsed ? <PanelLeftOpen /> : <PanelLeftClose />}
-    </IconButton>
+      <IconButton
+        size="sm"
+        label={collapsed ? 'Expand navigation' : 'Collapse navigation'}
+        aria-expanded={!collapsed}
+        onClick={onToggle}
+      >
+        {collapsed ? <PanelLeftOpen /> : <PanelLeftClose />}
+      </IconButton>
+    </span>
   ) : null
   return (
     <div
