@@ -40,6 +40,13 @@ const stepSchema = strictObject({
   exec: execContextSchema.optional(),
 })
 
+const refreshStepSchema = strictObject({
+  name: z.string().min(1),
+  run: commandSchema,
+  verify: commandSchema.optional(),
+  exec: execContextSchema.optional(),
+})
+
 const databaseAllocationSchema = strictObject({
   engine: z.enum(['postgres', 'mysql', 'mariadb', 'sqlite', 'other']),
   name: z
@@ -125,6 +132,7 @@ const recipeShape = strictObject({
   shared: z.array(sharedSchema).optional(),
   pre: z.array(stepSchema).optional(),
   create: z.array(stepSchema),
+  refresh: z.array(refreshStepSchema).optional(),
   serve: z
     .record(z.string(), z.array(stepSchema))
     .describe(
@@ -160,6 +168,7 @@ function allSteps(recipe: RecipeInput): StepInput[] {
   return [
     ...(recipe.pre ?? []),
     ...recipe.create,
+    ...(recipe.refresh ?? []),
     ...Object.values(recipe.serve ?? {}).flat(),
     ...(recipe.destroy ?? []),
     ...(recipe.verifyDown ?? []),

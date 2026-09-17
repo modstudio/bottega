@@ -38,6 +38,7 @@ import {
 import { answerCommand, continueCommand, retryCommand } from '../run-message-commands.ts'
 import { spawnsCommand } from '../spawn-commands.ts'
 import { treeCreateCommand, treeRemoveCommand } from '../tree-commands.ts'
+import { treeRefreshCommand } from '../tree-refresh.ts'
 import { workflowCommand } from '../workflow-commands.ts'
 import { collect, log, productArgv, rawArgv, write, writeStdout } from './support.ts'
 
@@ -83,6 +84,10 @@ export function register(program: Command): void {
     .command('remove <path>')
     .allowExcessArguments(false)
     .action((path) => treeRemoveCommand(path))
+  tree
+    .command('refresh <path>')
+    .allowExcessArguments(false)
+    .action((path) => treeRefreshCommand(path, { log }))
   program
     .command('migrate')
     .option('--backfill-spec-sha')

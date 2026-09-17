@@ -5,6 +5,9 @@
     "create": [
       { "name": "root-deps", "run": { "command": "bun", "args": ["install", "--silent"] } }
     ],
+    "refresh": [
+      { "name": "refresh-root-deps", "run": { "command": "bun", "args": ["install", "--silent"] } }
+    ],
     "serve": {
       "default": [
         {
