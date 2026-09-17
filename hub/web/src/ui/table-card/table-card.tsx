@@ -9,6 +9,112 @@ import { ToolbarBand } from '../toolbar-band/toolbar-band'
 /** More filters than this always sit behind the Filters trigger, whatever the width. */
 const FILTERS_INLINE_MAX = 2
 
+type ToolbarProps = {
+  heading?: ReactNode
+  tabs?: ReactNode
+  search?: ReactNode
+  filters?: ReactNode
+  filtersActive: number
+  view?: ReactNode
+  actions?: ReactNode
+  meta?: ReactNode
+  pageActions?: ReactNode
+}
+
+function FiltersTrigger({ filters, active }: { filters: ReactNode; active: number }) {
+  return (
+    <Popover
+      label="Filters"
+      trigger={
+        <Button size="sm">
+          <SlidersHorizontal />
+          Filters
+          {active ? (
+            <span className="grid size-4 place-items-center rounded-full bg-accent-fill text-[10px] text-accent-on-fill tabular-nums">
+              {active > 9 ? '9+' : active}
+            </span>
+          ) : null}
+        </Button>
+      }
+    >
+      <div className="flex min-w-60 flex-col gap-2 [&_button[role=combobox]]:w-full">{filters}</div>
+    </Popover>
+  )
+}
+
+/** The desk row: one line, giving up room by kind as the card narrows. */
+function DeskToolbar({
+  heading,
+  tabs,
+  search,
+  filters,
+  filtersActive,
+  view,
+  actions,
+  meta,
+}: ToolbarProps) {
+  const filterCount = Children.toArray(filters).length
+  const trigger = filters ? <FiltersTrigger filters={filters} active={filtersActive} /> : null
+  const inline = filterCount > 0 && filterCount <= FILTERS_INLINE_MAX
+  return (
+    <div className="flex min-h-9 min-w-0 flex-nowrap items-center gap-2">
+      {heading ? (
+        <div className="mr-2 flex shrink-0 items-baseline gap-2 whitespace-nowrap">{heading}</div>
+      ) : null}
+      {tabs ? <div className="flex shrink-0 items-center">{tabs}</div> : null}
+      {search ? <div className="min-w-40 shrink basis-60">{search}</div> : null}
+      {inline ? (
+        <>
+          <div className="hidden shrink-0 items-center gap-2 @4xl/card:flex">{filters}</div>
+          <div className="shrink-0 @4xl/card:hidden">{trigger}</div>
+        </>
+      ) : (
+        <div className="shrink-0">{trigger}</div>
+      )}
+      {meta ? (
+        <div className="hidden shrink-0 text-sm text-text-muted @3xl/card:block">{meta}</div>
+      ) : null}
+      <div className="ml-auto flex shrink-0 items-center gap-2">
+        {view}
+        {actions}
+      </div>
+    </div>
+  )
+}
+
+/** The phone toolbar: the heading, then one band of cells; page actions join it. */
+function PhoneToolbar({
+  heading,
+  tabs,
+  search,
+  filters,
+  filtersActive,
+  view,
+  actions,
+  pageActions,
+}: ToolbarProps) {
+  const combined =
+    pageActions || actions ? (
+      <>
+        {pageActions}
+        {actions}
+      </>
+    ) : undefined
+  return (
+    <>
+      {heading ? <div className="flex items-baseline gap-2">{heading}</div> : null}
+      <ToolbarBand
+        search={search}
+        filters={filters}
+        filtersActive={filtersActive > 0}
+        view={view}
+        tabs={tabs}
+        actions={combined}
+      />
+    </>
+  )
+}
+
 /**
  * A collection and everything that acts on it. The toolbar sits on the page
  * above the card, with no box of its own; the card is the data. Every table
@@ -28,36 +134,14 @@ const FILTERS_INLINE_MAX = 2
  * page header's own buttons) move into it.
  */
 export function TableCard({
-  heading,
-  tabs,
-  search,
-  filters,
-  filtersActive = 0,
-  view,
-  actions,
-  meta,
-  pageActions,
   footer,
   panel,
   children,
-}: {
-  /** The collection's name and count. */
-  heading?: ReactNode
-  /** Which collection is shown, such as a status strip. */
-  tabs?: ReactNode
-  search?: ReactNode
-  /** Filter controls, one per child. */
-  filters?: ReactNode
+  filtersActive = 0,
+  ...toolbar
+}: Omit<ToolbarProps, 'filtersActive'> & {
   /** How many filters are applied, shown on the collapsed trigger. */
   filtersActive?: number
-  /** How the rows are drawn: window, density, layout. */
-  view?: ReactNode
-  /** One or two controls acting on the collection. */
-  actions?: ReactNode
-  /** Expendable context, such as a result count. Dropped first. */
-  meta?: ReactNode
-  /** The page header's buttons; on a phone they join the band. */
-  pageActions?: ReactNode
   /** Pinned under the rows: pagination or batch actions. */
   footer?: ReactNode
   /** A companion docked beside the rows. */
@@ -65,74 +149,10 @@ export function TableCard({
   children: ReactNode
 }) {
   const phone = useMediaQuery('(max-width: 767px)')
-  const filterCount = Children.toArray(filters).length
-  const filterTrigger = filters ? (
-    <Popover
-      label="Filters"
-      trigger={
-        <Button size="sm">
-          <SlidersHorizontal />
-          Filters
-          {filtersActive ? (
-            <span className="grid size-4 place-items-center rounded-full bg-accent-fill text-[10px] text-accent-on-fill tabular-nums">
-              {filtersActive > 9 ? '9+' : filtersActive}
-            </span>
-          ) : null}
-        </Button>
-      }
-    >
-      <div className="flex min-w-60 flex-col gap-2 [&_button[role=combobox]]:w-full">{filters}</div>
-    </Popover>
-  ) : null
-  const inlineFilters = filterCount > 0 && filterCount <= FILTERS_INLINE_MAX
-
+  const Toolbar = phone ? PhoneToolbar : DeskToolbar
   return (
     <section className="@container/card flex min-w-0 flex-col gap-3">
-      {phone ? (
-        <>
-          {heading ? <div className="flex items-baseline gap-2">{heading}</div> : null}
-          <ToolbarBand
-            search={search}
-            filters={filters}
-            filtersActive={filtersActive > 0}
-            view={view}
-            tabs={tabs}
-            actions={
-              pageActions || actions ? (
-                <>
-                  {pageActions}
-                  {actions}
-                </>
-              ) : undefined
-            }
-          />
-        </>
-      ) : (
-        <div className="flex min-h-9 min-w-0 flex-nowrap items-center gap-2">
-          {heading ? (
-            <div className="mr-2 flex shrink-0 items-baseline gap-2 whitespace-nowrap">
-              {heading}
-            </div>
-          ) : null}
-          {tabs ? <div className="flex shrink-0 items-center">{tabs}</div> : null}
-          {search ? <div className="min-w-40 shrink basis-60">{search}</div> : null}
-          {inlineFilters ? (
-            <>
-              <div className="hidden shrink-0 items-center gap-2 @4xl/card:flex">{filters}</div>
-              <div className="shrink-0 @4xl/card:hidden">{filterTrigger}</div>
-            </>
-          ) : (
-            <div className="shrink-0">{filterTrigger}</div>
-          )}
-          {meta ? (
-            <div className="hidden shrink-0 text-sm text-text-muted @3xl/card:block">{meta}</div>
-          ) : null}
-          <div className="ml-auto flex shrink-0 items-center gap-2">
-            {view}
-            {actions}
-          </div>
-        </div>
-      )}
+      <Toolbar {...toolbar} filtersActive={filtersActive} />
       <div className="flex min-h-0 min-w-0">
         <div
           className={classes(

@@ -157,6 +157,60 @@ function runCells(run: Run, now: number): CollectionChildRow['cells'] {
   }
 }
 
+function TaskTitle({ row }: { row: TaskRow }) {
+  if (row.title) {
+    return (
+      <span className="block truncate" title={row.title}>
+        {row.title}
+      </span>
+    )
+  }
+  return (
+    <span className="text-muted-foreground">
+      {row.source === 'git' ? 'title not known, derived from commits' : 'no tracker record yet'}
+    </span>
+  )
+}
+
+function TaskUpdated({ row }: { row: TaskRow }) {
+  return (
+    <span className={row.workingNow ? 'text-live' : 'text-muted-foreground'}>
+      {row.workingNow ? (
+        <>
+          <LiveDot /> now
+        </>
+      ) : (
+        ago(row.lastAt)
+      )}
+    </span>
+  )
+}
+
+/** One cell of the task table, by column. */
+function taskCell(column: Sort['col'], row: TaskRow, now: number, fetchedAt: number): ReactNode {
+  const cells: Record<Sort['col'], () => ReactNode> = {
+    project: () => (
+      <span className="inline-flex items-center gap-2">
+        <ProjectMark name={row.project} />
+        <SourceMark source={row.source} project={row.project} protocol={row.sourceProtocol} />
+      </span>
+    ),
+    task: () => (row.key ? <Identifier>{row.key}</Identifier> : null),
+    title: () => <TaskTitle row={row} />,
+    status: () => <Status row={row} />,
+    updated: () => <TaskUpdated row={row} />,
+    engaged: () => (
+      <strong>
+        {row.workingNow ? formatMs(row.engagedMs + Math.max(0, now - fetchedAt)) : row.engaged}
+      </strong>
+    ),
+    claude: () => compact(row.claudeTokens),
+    vendor: () => vendors(row),
+    runs: () => row.runs.length,
+  }
+  return cells[column]()
+}
+
 function TaskTable({
   rows,
   from,
@@ -212,49 +266,7 @@ function TaskTable({
     priority: column.id === 'claude' || column.id === 'vendor' ? ('low' as const) : undefined,
     numeric: column.numeric,
     grow: column.id === 'title',
-    render: (row) =>
-      column.id === 'project' ? (
-        <span className="inline-flex items-center gap-2">
-          <ProjectMark name={row.project} />
-          <SourceMark source={row.source} project={row.project} protocol={row.sourceProtocol} />
-        </span>
-      ) : column.id === 'task' ? (
-        row.key ? (
-          <Identifier>{row.key}</Identifier>
-        ) : null
-      ) : column.id === 'title' ? (
-        row.title ? (
-          <span className="block truncate" title={row.title}>
-            {row.title}
-          </span>
-        ) : (
-          <span className="text-muted-foreground">
-            {row.source === 'git'
-              ? 'title not known, derived from commits'
-              : 'no tracker record yet'}
-          </span>
-        )
-      ) : column.id === 'status' ? (
-        <Status row={row} />
-      ) : column.id === 'updated' ? (
-        <span className={row.workingNow ? 'text-live' : 'text-muted-foreground'}>
-          {row.workingNow ? (
-            <>
-              <LiveDot /> now
-            </>
-          ) : (
-            ago(row.lastAt)
-          )}
-        </span>
-      ) : column.id === 'engaged' ? (
-        <strong>
-          {row.workingNow ? formatMs(row.engagedMs + Math.max(0, now - fetchedAt)) : row.engaged}
-        </strong>
-      ) : column.id === 'claude' ? (
-        compact(row.claudeTokens)
-      ) : (
-        vendors(row)
-      ),
+    render: (row) => taskCell(column.id, row, now, fetchedAt),
   }))
   return (
     <Collection
