@@ -2,7 +2,7 @@
 /** Owns pending-evidence reporting and its nonzero result. Must not know CLI grammar. */
 import { sessionId } from './db.ts'
 import { unrecordedPairsForSession } from './duel.ts'
-import { pendingForSession } from './evidence-query.ts'
+import { pendingForSession } from './evidence/evidence-query.ts'
 
 export function pendingCommand(
   pairHint: (partner: { id: number; agent: string; reason?: string }) => string,

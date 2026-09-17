@@ -22,7 +22,7 @@ import {
 } from './contract/contract.ts'
 import { db, enableSchemaReload, nowIso, sessionId, writableDb, writeTransaction } from './db.ts'
 import { preflight } from './dispatch/dispatch-preflight.ts'
-import { assessEvidencePrompt } from './evidence.ts'
+import { assessEvidencePrompt } from './evidence/evidence.ts'
 import { chainTransport } from './failover.ts'
 import { type classify, notify } from './failure/failure.ts'
 import {

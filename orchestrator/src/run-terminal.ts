@@ -25,7 +25,7 @@ import {
   type WorkerReply,
 } from './contract/contract.ts'
 import { db, nowIso, tryWriteContention, writeTransaction } from './db.ts'
-import { assessEvidence, recordEvidence } from './evidence.ts'
+import { assessEvidence, recordEvidence } from './evidence/evidence.ts'
 import { type classify, detectBlockers } from './failure/failure.ts'
 import { terminateProcessGroup } from './idle-kill.ts'
 import { isReaderJob, type Job } from './jobs.ts'

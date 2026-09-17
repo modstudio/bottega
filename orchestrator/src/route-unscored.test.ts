@@ -8,7 +8,7 @@ import {
   UNSCORED_WHERE,
   unscoredCount,
   voidedSql,
-} from './evidence-query.ts'
+} from './evidence/evidence-query.ts'
 
 describe('what counts as unscored', () => {
   test('only a successful, non-probe, unjudged run is owed a judgement', () => {

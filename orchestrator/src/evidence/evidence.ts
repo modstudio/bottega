@@ -6,10 +6,10 @@ import {
   type ReviewReply,
   readerDeliverablesInstruction,
   UNEVIDENCED_DELIVERABLE_ERROR,
-} from './contract/contract.ts'
-import { provenanceServer } from './mcp-preflight.ts'
-import type { CleanReviewEvidence } from './review.ts'
-import { recordReview } from './review-triage.ts'
+} from '../contract/contract.ts'
+import { provenanceServer } from '../mcp-preflight.ts'
+import type { CleanReviewEvidence } from '../review.ts'
+import { recordReview } from '../review-triage.ts'
 
 export type EvidencePromptFacts = {
   findingsJob: boolean

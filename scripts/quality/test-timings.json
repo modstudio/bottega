@@ -191,14 +191,14 @@
       "spawns": 0
     },
     {
-      "path": "orchestrator/src/evidence-query.test.ts",
+      "path": "orchestrator/src/evidence/evidence-query.test.ts",
       "wallMs": 94,
       "tests": 22,
       "cliShaped": false,
       "spawns": 0
     },
     {
-      "path": "orchestrator/src/evidence.test.ts",
+      "path": "orchestrator/src/evidence/evidence.test.ts",
       "wallMs": 61,
       "tests": 13,
       "cliShaped": false,

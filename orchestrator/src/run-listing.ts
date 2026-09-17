@@ -3,7 +3,7 @@
 
 import { resolveFailover } from './collect/collect.ts'
 import { db } from './db.ts'
-import { UNSCORED_WHERE } from './evidence-query.ts'
+import { UNSCORED_WHERE } from './evidence/evidence-query.ts'
 import { failureReason, type OutcomeRow, outcomeOf } from './outcome.ts'
 
 type RunListingFlags = {

@@ -3,7 +3,12 @@
  * Knows comparison validation, atomic duel persistence, partners, and matrices. Must not know worktrees, runs, routing, transports, or CLI adapters.
  */
 import { db, writableDb, writeTransaction } from './db.ts'
-import { changeIdentityJoin, pairReasonSql, sameChangeSql, sameTaskSql } from './evidence-query.ts'
+import {
+  changeIdentityJoin,
+  pairReasonSql,
+  sameChangeSql,
+  sameTaskSql,
+} from './evidence/evidence-query.ts'
 import { judgeability } from './score/score.ts'
 
 export type DuelJobMatrix = {
