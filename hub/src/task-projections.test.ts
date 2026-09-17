@@ -57,22 +57,34 @@ test('day, ratio and spend projections give both adapters one rendered shape', (
     { source: 'claude', start_at: '2026-09-15T10:00:00.000Z', claude_tokens: 100 },
     { source: 'codex', start_at: '2026-09-15T11:00:00.000Z', claude_tokens: 200 },
   ]
-  expect(projectRollUpDays(sourceRows)).toEqual([
-    { day: '2026-09-15', claude: 300, msgs: 2 },
-  ])
+  expect(projectRollUpDays(sourceRows)).toEqual([{ day: '2026-09-15', claude: 300, msgs: 2 }])
   const days = [
     {
-      day: '2026-09-15', claude_tokens: 300, tasks: 2, commits: 1, files: 3,
-      lines_product: 10, lines_test: 4, lines_docs: 2, lines_config: 1, lines_generated: 0,
+      day: '2026-09-15',
+      claude_tokens: 300,
+      tasks: 2,
+      commits: 1,
+      files: 3,
+      lines_product: 10,
+      lines_test: 4,
+      lines_docs: 2,
+      lines_config: 1,
+      lines_generated: 0,
     },
   ]
-  const intervals = [{ start_at: '2026-09-15T10:00:00.000Z', end_at: '2026-09-15T11:00:00.000Z', open: 0 }]
+  const intervals = [
+    { start_at: '2026-09-15T10:00:00.000Z', end_at: '2026-09-15T11:00:00.000Z', open: 0 },
+  ]
   const local = projectRatioSummary(days, intervals, now)
-  const hosted = projectRatioSummary(days.map((day) => ({ ...day })), intervals.map((row) => ({ ...row })), now)
-  expect(hosted).toEqual(local)
-  expect(projectSpendGrid(hosted, [{ agent: 'codex', tokens: 50, cost: 0.2 }], now)).toEqual(
-    projectSpendGrid(local, [{ agent: 'codex', tokens: 50, cost: 0.2 }], now),
+  const hosted = projectRatioSummary(
+    days.map((day) => ({ ...day })),
+    intervals.map((row) => ({ ...row })),
+    now,
   )
+  expect(hosted).toEqual(local)
+  expect(
+    projectSpendGrid(hosted, [{ agent: 'codex', tokens: 50, cost: 0.2 }], intervals, now),
+  ).toEqual(projectSpendGrid(local, [{ agent: 'codex', tokens: 50, cost: 0.2 }], intervals, now))
 })
 
 test('board bucketing fields and live state are shaped outside either database adapter', () => {

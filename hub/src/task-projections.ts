@@ -68,7 +68,10 @@ export function projectRatioSummary(
   includeEngaged = true,
 ): RatioSummary {
   const today = new Date(now).toISOString().slice(0, 10)
-  const nonZero = rows.map((row) => row.claude_tokens).filter((value) => value > 0).sort((a, b) => a - b)
+  const nonZero = rows
+    .map((row) => row.claude_tokens)
+    .filter((value) => value > 0)
+    .sort((a, b) => a - b)
   const floor = (nonZero.length ? nonZero[Math.floor(nonZero.length / 2)]! : 0) * 0.05
   const days = rows.map((row): RatioDay => {
     const excluded: RatioDay['excluded'] =
@@ -80,10 +83,14 @@ export function projectRatioSummary(
       excluded,
       ratio: row.tasks > 0 ? Math.round(row.claude_tokens / row.tasks) : null,
       engagedMs: includeEngaged
-        ? engagedMs(intervals.filter((item) => item.end_at >= from && item.start_at < to).map((item) => ({
-            start: new Date(item.start_at).getTime(),
-            end: Math.min(intervalEndMs(item, now), new Date(to).getTime()),
-          })))
+        ? engagedMs(
+            intervals
+              .filter((item) => item.end_at >= from && item.start_at < to)
+              .map((item) => ({
+                start: new Date(item.start_at).getTime(),
+                end: Math.min(intervalEndMs(item, now), new Date(to).getTime()),
+              })),
+          )
         : 0,
     }
   })
@@ -97,18 +104,31 @@ export function projectRatioSummary(
     items.reduce((total, day) => total + day[key], 0)
   let direction: RatioSummary['direction'] = 'unknown'
   let changePct: number | null = null
-  if (half > 0 && sum(earlier, 'tasks') >= MIN_RATIO_TASKS && sum(recent, 'tasks') >= MIN_RATIO_TASKS) {
+  if (
+    half > 0 &&
+    sum(earlier, 'tasks') >= MIN_RATIO_TASKS &&
+    sum(recent, 'tasks') >= MIN_RATIO_TASKS
+  ) {
     const before = sum(earlier, 'claude_tokens') / sum(earlier, 'tasks')
     const after = sum(recent, 'claude_tokens') / sum(recent, 'tasks')
     changePct = ((after - before) / before) * 100
     direction = Math.abs(changePct) < 10 ? 'flat' : changePct < 0 ? 'improving' : 'worsening'
   }
-  return { perTask: tasks ? Math.round(tokens / tasks) : null, tokens, tasks, usableDays: usable.length, direction, changePct, days }
+  return {
+    perTask: tasks ? Math.round(tokens / tasks) : null,
+    tokens,
+    tasks,
+    usableDays: usable.length,
+    direction,
+    changePct,
+    days,
+  }
 }
 
 export function projectSpendGrid(
   summary: RatioSummary,
   vendors: VendorSpendRow[],
+  intervals: DayIntervalRow[],
   now: number,
 ) {
   const days = summary.days.filter((day) => !day.excluded)
@@ -118,15 +138,31 @@ export function projectSpendGrid(
     commit: days.reduce((sum, day) => sum + day.commits, 0),
     'product line': days.reduce((sum, day) => sum + day.lines_product, 0),
     'file touched': days.reduce((sum, day) => sum + day.files, 0),
-    'engaged hour': days.reduce((sum, day) => sum + day.engagedMs, 0) / 3_600_000,
+    'engaged hour':
+      engagedMs(
+        intervals
+          .filter((row) => row.end_at >= from && new Date(row.start_at).getTime() < now)
+          .map((row) => ({
+            start: new Date(row.start_at).getTime(),
+            end: Math.min(intervalEndMs(row, now), now),
+          })),
+      ) / 3_600_000,
   }
   const cost = vendors.reduce((sum, vendor) => sum + vendor.cost, 0)
   return {
     from: from.slice(0, 10),
     days: days.length,
     numerators: [
-      { name: 'claude', total: days.reduce((sum, day) => sum + day.claude_tokens, 0), kind: 'tokens' as const },
-      ...vendors.map((vendor) => ({ name: vendor.agent, total: vendor.tokens, kind: 'tokens' as const })),
+      {
+        name: 'claude',
+        total: days.reduce((sum, day) => sum + day.claude_tokens, 0),
+        kind: 'tokens' as const,
+      },
+      ...vendors.map((vendor) => ({
+        name: vendor.agent,
+        total: vendor.tokens,
+        kind: 'tokens' as const,
+      })),
       { name: 'cost', total: cost, kind: 'usd' as const },
     ],
     denominators,

@@ -678,10 +678,25 @@ function LocalRatioQuery() {
 
 function HostedRatioQuery() {
   const windowState = useWindowState()
-  const query = useQuery(trpc.record.ratio.queryOptions({ hours: windowState.hours, filters: { ...windowState.filters, source: '' } }, { refetchInterval: 10_000 }))
+  const query = useQuery(
+    trpc.record.ratio.queryOptions(
+      { hours: windowState.hours, filters: { ...windowState.filters, source: '' } },
+      { refetchInterval: 10_000 },
+    ),
+  )
   if (query.isPending) return <p className="text-text-muted">Loading ratio...</p>
-  if (query.error) return <p data-tone="error" className="text-status-text">could not load: {query.error.message}</p>
-  return <section><InsightChrome title="Ratio" response={query.data} /><RatioView data={query.data.data} /></section>
+  if (query.error)
+    return (
+      <p data-tone="error" className="text-status-text">
+        could not load: {query.error.message}
+      </p>
+    )
+  return (
+    <section>
+      <InsightChrome title="Ratio" response={query.data} />
+      <RatioView data={query.data.data} />
+    </section>
+  )
 }
 
 function SpendQuery() {
@@ -709,10 +724,25 @@ function LocalSpendQuery() {
 
 function HostedSpendQuery() {
   const windowState = useWindowState()
-  const query = useQuery(trpc.record.spend.queryOptions({ hours: windowState.hours, filters: { ...windowState.filters, source: '' } }, { refetchInterval: 10_000 }))
+  const query = useQuery(
+    trpc.record.spend.queryOptions(
+      { hours: windowState.hours, filters: { ...windowState.filters, source: '' } },
+      { refetchInterval: 10_000 },
+    ),
+  )
   if (query.isPending) return <p className="text-text-muted">Loading spend...</p>
-  if (query.error) return <p data-tone="error" className="text-status-text">could not load: {query.error.message}</p>
-  return <section><InsightChrome title="Spend" response={query.data} /><SpendView data={query.data.data} /></section>
+  if (query.error)
+    return (
+      <p data-tone="error" className="text-status-text">
+        could not load: {query.error.message}
+      </p>
+    )
+  return (
+    <section>
+      <InsightChrome title="Spend" response={query.data} />
+      <SpendView data={query.data.data} />
+    </section>
+  )
 }
 
 function RoutingQuery() {

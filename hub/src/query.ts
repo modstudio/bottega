@@ -3,14 +3,14 @@ import type { Capabilities } from '../../shared/trackers.ts'
 import { db, writeTransaction } from './db.ts'
 import { projects } from './projects.ts'
 import {
+  type DayIntervalRow,
+  type DayRow,
   intervalEndMs,
   projectBoard,
   projectRatioSummary,
   projectRollUpDays,
   projectSpendGrid,
   projectTasksInWindow,
-  type DayIntervalRow,
-  type DayRow,
   type RatioSummary,
   type WindowIntervalRow,
 } from './task-projections.ts'
@@ -175,9 +175,11 @@ export function reportEngagedMs(
 export function rollUpDays(): number {
   const d = db()
   const rows = projectRollUpDays(
-    d.query<{ source: string; start_at: string; claude_tokens: number }, []>(
-      `SELECT source,start_at,claude_tokens FROM interval WHERE source IN ('claude','codex')`,
-    ).all(),
+    d
+      .query<{ source: string; start_at: string; claude_tokens: number }, []>(
+        `SELECT source,start_at,claude_tokens FROM interval WHERE source IN ('claude','codex')`,
+      )
+      .all(),
   )
 
   writeTransaction((conn) => {
@@ -221,12 +223,18 @@ export type { RatioDay, RatioSummary } from './task-projections.ts'
 export function ratioSummary(windowDays = 14, includeEngaged = true): RatioSummary {
   const now = Date.now()
   const since = new Date(now - windowDays * 86400_000).toISOString().slice(0, 10)
-  const rows = db().query<DayRow, [string]>(
-    `SELECT day,claude_tokens,tasks,commits,files,lines_product,lines_test,lines_docs,lines_config,lines_generated
+  const rows = db()
+    .query<DayRow, [string]>(
+      `SELECT day,claude_tokens,tasks,commits,files,lines_product,lines_test,lines_docs,lines_config,lines_generated
      FROM day WHERE day >= ? ORDER BY day`,
-  ).all(since)
+    )
+    .all(since)
   const intervals = includeEngaged
-    ? db().query<DayIntervalRow, [string]>(`SELECT start_at,end_at,open FROM interval WHERE end_at >= ? ORDER BY start_at`).all(`${since}T00:00:00.000Z`)
+    ? db()
+        .query<DayIntervalRow, [string]>(
+          `SELECT start_at,end_at,open FROM interval WHERE end_at >= ? ORDER BY start_at`,
+        )
+        .all(`${since}T00:00:00.000Z`)
     : []
   return projectRatioSummary(rows, intervals, now, includeEngaged)
 }
@@ -257,7 +265,12 @@ export function spendGrid(windowDays = 14) {
     )
     .all(from, to)
 
-  return projectSpendGrid(summary, vendors, Date.now())
+  const intervals = d
+    .query<DayIntervalRow, [string, string]>(
+      `SELECT start_at,end_at,open FROM interval WHERE end_at >= ? AND start_at < ? ORDER BY start_at`,
+    )
+    .all(from, to)
+  return projectSpendGrid(summary, vendors, intervals, Date.now())
 }
 
 /** One card on the board. */

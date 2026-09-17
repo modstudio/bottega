@@ -1,6 +1,7 @@
 import { engagedMs, human } from '../../shared/interval.ts'
 import type { TrackerProject } from '../../shared/trackers.ts'
 import { type TaskIdentity, withHostedTenant } from './hosted-tasks.ts'
+import { reportDefaults } from './report-types.ts'
 import {
   type BoardSourceRow,
   type CompletedRow,
@@ -14,7 +15,6 @@ import {
   projectTasksInWindow,
   type WindowIntervalRow,
 } from './task-projections.ts'
-import { reportDefaults } from './settings.ts'
 
 type SqlTime = string | Date
 const iso = (value: SqlTime | null) => (value == null ? null : new Date(value).toISOString())
@@ -352,15 +352,26 @@ export async function hostedNotes(
     )
     return {
       notes: noteRows.map((row) => ({
-        id: number(row.number), project: row.project, text: row.text, area: row.area,
-        anchors: JSON.parse(row.anchors) as { cwd: string; files: { path: string; line: number }[] }[],
-        sightings: number(row.sightings), created_at: iso(row.created_at)!,
-        last_seen_at: iso(row.last_seen_at)!, stale_at: iso(row.stale_at),
-        stale_reason: row.stale_reason, promoted_task: row.promoted_task,
+        id: number(row.number),
+        project: row.project,
+        text: row.text,
+        area: row.area,
+        anchors: JSON.parse(row.anchors) as {
+          cwd: string
+          files: { path: string; line: number }[]
+        }[],
+        sightings: number(row.sightings),
+        created_at: iso(row.created_at)!,
+        last_seen_at: iso(row.last_seen_at)!,
+        stale_at: iso(row.stale_at),
+        stale_reason: row.stale_reason,
+        promoted_task: row.promoted_task,
       })),
       acknowledgements: acknowledgements.map((row) => ({
-        note_id: number(row.note_id), session_id: row.session_id,
-        acknowledged_at: iso(row.acknowledged_at)!, sightings: number(row.sightings),
+        note_id: number(row.note_id),
+        session_id: row.session_id,
+        acknowledged_at: iso(row.acknowledged_at)!,
+        sightings: number(row.sightings),
       })),
     }
   })
@@ -374,11 +385,25 @@ async function hostedCostFacts(databaseUrl: string, identity: TaskIdentity, wind
       await tx`SELECT day,claude_tokens,tasks,commits,files,lines_product,lines_test,lines_docs,
         lines_config,lines_generated FROM hub_day WHERE space_id=${identity.spaceId}::uuid
         AND day >= ${since} ORDER BY day`,
-    ).map((row) => Object.fromEntries(Object.entries(row).map(([key, value]) => [key, key === 'day' ? value : number(value as string | number)])) as DayRow)
+    ).map(
+      (row) =>
+        Object.fromEntries(
+          Object.entries(row).map(([key, value]) => [
+            key,
+            key === 'day' ? value : number(value as string | number),
+          ]),
+        ) as DayRow,
+    )
     const intervals = rows<{ start_at: SqlTime; end_at: SqlTime; open: string | number }>(
       await tx`SELECT start_at,end_at,open FROM hub_interval WHERE space_id=${identity.spaceId}::uuid
         AND end_at >= ${`${since}T00:00:00.000Z`}::timestamptz ORDER BY start_at`,
-    ).map((row): DayIntervalRow => ({ start_at: iso(row.start_at)!, end_at: iso(row.end_at)!, open: number(row.open) }))
+    ).map(
+      (row): DayIntervalRow => ({
+        start_at: iso(row.start_at)!,
+        end_at: iso(row.end_at)!,
+        open: number(row.open),
+      }),
+    )
     return { now, since, dayRows, intervals }
   })
 }
@@ -391,14 +416,17 @@ export async function hostedRatio(databaseUrl: string, identity: TaskIdentity, w
 export async function hostedSpend(databaseUrl: string, identity: TaskIdentity, windowDays = 14) {
   const facts = await hostedCostFacts(databaseUrl, identity, windowDays)
   const summary = projectRatioSummary(facts.dayRows, facts.intervals, facts.now)
-  const from = summary.days.find((day) => !day.excluded)?.day ?? new Date(facts.now).toISOString().slice(0, 10)
-  const vendors = await withHostedTenant(databaseUrl, identity, async (tx) => rows<{ agent: string; tokens: string | number; cost: string | number }>(
-    await tx`SELECT agent,SUM(vendor_tokens) tokens,SUM(COALESCE(vendor_cost_usd,0)) cost
+  const from =
+    summary.days.find((day) => !day.excluded)?.day ?? new Date(facts.now).toISOString().slice(0, 10)
+  const vendors = await withHostedTenant(databaseUrl, identity, async (tx) =>
+    rows<{ agent: string; tokens: string | number; cost: string | number }>(
+      await tx`SELECT agent,SUM(vendor_tokens) tokens,SUM(COALESCE(vendor_cost_usd,0)) cost
       FROM hub_interval WHERE space_id=${identity.spaceId}::uuid AND source='orch' AND agent IS NOT NULL
       AND start_at >= ${`${from}T00:00:00.000Z`}::timestamptz AND start_at < ${new Date(facts.now).toISOString()}::timestamptz
       GROUP BY agent HAVING SUM(vendor_tokens) > 0 ORDER BY SUM(vendor_tokens) DESC`,
-  ).map((row) => ({ agent: row.agent, tokens: number(row.tokens), cost: number(row.cost) })))
-  return projectSpendGrid(summary, vendors, facts.now)
+    ).map((row) => ({ agent: row.agent, tokens: number(row.tokens), cost: number(row.cost) })),
+  )
+  return projectSpendGrid(summary, vendors, facts.intervals, facts.now)
 }
 
 export async function hostedSettings(
@@ -407,20 +435,37 @@ export async function hostedSettings(
   projects: string[],
 ) {
   return withHostedTenant(databaseUrl, identity, async (tx) => {
-    const setting = rows<{ value: Record<string, unknown> }>(await tx`
-      SELECT value FROM hub_report_setting WHERE space_id=${identity.spaceId}::uuid`)[0]
+    const setting = rows<{ value: Record<string, unknown> }>(
+      await tx`
+      SELECT value FROM hub_report_setting WHERE space_id=${identity.spaceId}::uuid`,
+    )[0]
     const report = { ...reportDefaults(projects), ...(setting?.value ?? {}) }
     const sends = rows<{
-      at: SqlTime; window: string; recipients: string; projects: string; items: string | number
-      status: string; error: string | null; test: string | number
-    }>(await tx`
-      SELECT at,window,recipients,projects,items,status,error,test FROM hub_send
-      WHERE space_id=${identity.spaceId}::uuid ORDER BY at DESC LIMIT 8`)
+      at: SqlTime
+      window: string
+      recipients: string
+      projects: string
+      items: string | number
+      status: string
+      error: string | null
+      test: string | number
+    }>(
+      await tx`
+      SELECT at,"window",recipients,projects,items,status,error,test FROM hub_send
+      WHERE space_id=${identity.spaceId}::uuid ORDER BY at DESC LIMIT 8`,
+    )
     return {
-      report,
+      report: { ...report, smtpPasswordRef: null },
       allProjects: projects,
-      secrets: { smtpPassword: { ref: report.smtpPasswordRef, resolves: null as null } },
-      sends: sends.map((row) => ({ ...row, at: iso(row.at)!, items: number(row.items), test: Boolean(number(row.test)) })),
+      secrets: {
+        smtpPassword: { configured: Boolean(report.smtpPasswordRef), resolves: null as null },
+      },
+      sends: sends.map((row) => ({
+        ...row,
+        at: iso(row.at)!,
+        items: number(row.items),
+        test: Boolean(number(row.test)),
+      })),
     }
   })
 }

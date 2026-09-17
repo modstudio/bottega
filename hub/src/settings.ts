@@ -2,7 +2,7 @@ import { db, writeTransaction } from './db.ts'
 import { projectNames } from './projects.ts'
 import { cachedReportVersion, cacheHostedReportSetting } from './report-cache.ts'
 import { hostedPutReportSetting, type ReportClientOptions } from './report-client.ts'
-import type { Report } from './report-types.ts'
+import { type Report, reportDefaults } from './report-types.ts'
 
 export type { Brief, Report } from './report-types.ts'
 
@@ -15,27 +15,6 @@ export type { Brief, Report } from './report-types.ts'
  * anything holding the database is not a place for a credential — and hub.db is
  * read by the dashboard, which serves whatever it is given.
  */
-const DEFAULTS: Report = {
-  enabled: false,
-  to: [],
-  fromName: 'Daily Work Report',
-  fromAddress: '',
-  subjectPrefix: 'Daily Work Report',
-  smtpHost: 'smtp.gmail.com',
-  smtpPort: 587,
-  smtpUser: '',
-  smtpPasswordRef: 'keychain:work-report-smtp',
-  windowHours: 24,
-  minMinutes: 15,
-  // Filled from the register at use time. Importing the tRPC graph must not
-  // shell the orchestrator before any procedure has been called.
-  projects: [],
-  briefs: [],
-  testTo: '',
-}
-
-export const reportDefaults = (names: string[]): Report => ({ ...DEFAULTS, projects: names })
-
 export function getReport(): Report {
   const defaults = reportDefaults(projectNames())
   const row = db()

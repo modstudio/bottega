@@ -115,7 +115,11 @@ const HOSTED_NAV: NavSection[] = [
           { to: '/spend', label: 'Spend', icon: CircleDollarSign },
         ],
       },
-      { label: 'Settings', icon: Settings, items: [{ to: '/settings', label: 'Hub settings', icon: Settings }] },
+      {
+        label: 'Settings',
+        icon: Settings,
+        items: [{ to: '/settings', label: 'Hub settings', icon: Settings }],
+      },
     ],
   },
 ]
@@ -138,11 +142,11 @@ export function isHostedPath(pathname: string) {
     path === '/jobs' ||
     path === '/agents' ||
     path === '/routing' ||
-    path === '/health'
-    || path === '/notes'
-    || path === '/ratio'
-    || path === '/spend'
-    || path === '/settings'
+    path === '/health' ||
+    path === '/notes' ||
+    path === '/ratio' ||
+    path === '/spend' ||
+    path === '/settings'
   ) {
     return true
   }

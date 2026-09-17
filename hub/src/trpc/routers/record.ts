@@ -138,7 +138,12 @@ export const recordRouter = t.router({
     })
   }),
   notes: t.procedure
-    .input(z.object({ project: z.string().trim().min(1).max(64).optional(), stale: z.boolean().default(false) }))
+    .input(
+      z.object({
+        project: z.string().trim().min(1).max(64).optional(),
+        stale: z.boolean().default(false),
+      }),
+    )
     .query(async ({ ctx, input }) => {
       const { identity } = await hostedIdentity(ctx)
       return hostedNotes(recordDatabaseUrl(), identity, input)
@@ -146,26 +151,53 @@ export const recordRouter = t.router({
   ratio: t.procedure.input(workInput).query(async ({ ctx, input }) => {
     const { client, identity } = await hostedIdentity(ctx)
     const projects = await client.projects()
-    const chrome = await hostedFlightDone(recordDatabaseUrl(), identity, { ...input, name: 'flight', projects })
+    const chrome = await hostedFlightDone(recordDatabaseUrl(), identity, {
+      ...input,
+      name: 'flight',
+      projects,
+    })
     const summary = await hostedRatio(recordDatabaseUrl(), identity)
     return {
       ...chrome,
       view: 'ratio' as const,
-      data: { ...summary, days: summary.days.map((day) => ({ day: day.day, ratio: day.ratio, tokens: day.claude_tokens, tasks: day.tasks, excluded: day.excluded })) },
+      data: {
+        ...summary,
+        days: summary.days.map((day) => ({
+          day: day.day,
+          ratio: day.ratio,
+          tokens: day.claude_tokens,
+          tasks: day.tasks,
+          excluded: day.excluded,
+        })),
+      },
     }
   }),
   spend: t.procedure.input(workInput).query(async ({ ctx, input }) => {
     const { client, identity } = await hostedIdentity(ctx)
     const projects = await client.projects()
-    const chrome = await hostedFlightDone(recordDatabaseUrl(), identity, { ...input, name: 'flight', projects })
-    return { ...chrome, view: 'spend' as const, data: await hostedSpend(recordDatabaseUrl(), identity) }
+    const chrome = await hostedFlightDone(recordDatabaseUrl(), identity, {
+      ...input,
+      name: 'flight',
+      projects,
+    })
+    return {
+      ...chrome,
+      view: 'spend' as const,
+      data: await hostedSpend(recordDatabaseUrl(), identity),
+    }
   }),
   settings: t.procedure
-    .input(z.object({ hours: z.union([z.literal(24), z.literal(48), z.literal(168), z.literal(720)]) }))
+    .input(
+      z.object({ hours: z.union([z.literal(24), z.literal(48), z.literal(168), z.literal(720)]) }),
+    )
     .query(async ({ ctx }) => {
       const { client, identity } = await hostedIdentity(ctx)
       const projects = await client.projects()
-      return hostedSettings(recordDatabaseUrl(), identity, projects.map((project) => project.name))
+      return hostedSettings(
+        recordDatabaseUrl(),
+        identity,
+        projects.map((project) => project.name),
+      )
     }),
   task: t.procedure
     .input(z.object({ key: z.string().min(1).max(64) }))
