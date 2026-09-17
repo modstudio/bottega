@@ -2,7 +2,12 @@ import { afterEach, describe, expect, mock, spyOn, test } from 'bun:test'
 import { existsSync, mkdirSync, rmSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { addRun, dir } from '../test/fixtures/store.ts'
-import { clearConversationKeepTreeHold, closeOutRun, extractionRunId } from './close-out.ts'
+import {
+  clearConversationKeepTreeHold,
+  closeOutRun,
+  extractionRunId,
+  releaseRunFailoverAttempts,
+} from './close-out.ts'
 import { db } from './db.ts'
 import { upsertProject } from './projects.ts'
 
@@ -158,4 +163,37 @@ test('clearing a keep-tree hold lets terminal close-out proceed', () => {
   expect(closeOutRun(id, { intent: 'terminal' }).outcome).toBe('held')
   clearConversationKeepTreeHold(id)
   expect(closeOutRun(id, { intent: 'terminal' }).outcome).toBe('absent')
+})
+
+test('releasing a failover successor releases every held attempt oldest first', () => {
+  const predecessor = addRun({ agent: 'codex', job: 'diagnose', status: 'failed' })
+  const successor = addRun({ agent: 'claude', job: 'diagnose', status: 'ok' })
+  const holdUntil = '2099-01-01T00:00:00.000Z'
+  db()
+    .query(
+      `UPDATE run SET worktree=?, keep_tree=1, keep_tree_until=?, keep_tree_reason=?
+       WHERE id=?`,
+    )
+    .run('/no-such-failover-predecessor', holdUntil, 'filed-issue coordinator', predecessor)
+  db()
+    .query(
+      `UPDATE run SET retry_of=?, worktree=?, keep_tree=1, keep_tree_until=?, keep_tree_reason=?
+       WHERE id=?`,
+    )
+    .run(
+      predecessor,
+      '/no-such-failover-successor',
+      holdUntil,
+      'filed-issue coordinator',
+      successor,
+    )
+
+  expect(closeOutRun(predecessor, { intent: 'terminal' }).outcome).toBe('held')
+  expect(closeOutRun(successor, { intent: 'terminal' }).outcome).toBe('held')
+  expect(releaseRunFailoverAttempts(successor).map((result) => result.runId)).toEqual([
+    predecessor,
+    successor,
+  ])
+  expect(closeOutRun(predecessor, { intent: 'terminal' }).outcome).toBe('absent')
+  expect(closeOutRun(successor, { intent: 'terminal' }).outcome).toBe('absent')
 })

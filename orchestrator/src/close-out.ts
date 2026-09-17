@@ -131,6 +131,27 @@ export function clearConversationKeepTreeHold(runId: number): void {
   })
 }
 
+/** Release a run and every failover attempt it succeeded, oldest attempt first. */
+export function releaseRunFailoverAttempts(runId: number): CloseOutResult[] {
+  const attempts: number[] = []
+  const seen = new Set<number>()
+  let attemptId: number | null = runId
+  while (attemptId !== null) {
+    if (seen.has(attemptId)) throw new Error(`run ${runId} has a retry_of cycle at ${attemptId}`)
+    seen.add(attemptId)
+    attempts.push(attemptId)
+    const row = db().query('SELECT retry_of FROM run WHERE id=?').get(attemptId) as {
+      retry_of: number | null
+    } | null
+    if (!row) throw new Error(`no run ${attemptId}`)
+    attemptId = row.retry_of
+  }
+  return attempts.reverse().map((id) => {
+    clearConversationKeepTreeHold(id)
+    return closeOutRun(id, { intent: 'terminal' })
+  })
+}
+
 export type SandboxReleaseResult = {
   rootId: number
   path: string
