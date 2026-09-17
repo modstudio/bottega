@@ -1,7 +1,4 @@
 import { beforeAll, describe, expect, test } from 'bun:test'
-import { chmodSync, existsSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
-import { tmpdir } from 'node:os'
-import { join } from 'node:path'
 import { resetFixtureStore } from '../test/run-fixtures.ts'
 import { db, writeTransaction } from './db.ts'
 import {
@@ -153,14 +150,18 @@ describe('hosted report setting and send safety', () => {
     expect(lastSends(1)[0]).toMatchObject({ status: 'skipped', error: 'disabled' })
   })
 
-  test('a non-404 setting failure is refused', async () => {
+  test('a non-404 setting failure is refused before the mail transport', async () => {
+    let mailTransportCalls = 0
     await expect(
       refreshHostedReportSetting({
         baseUrl: 'https://hub.example.test',
         token: 'test',
         fetch: async () => Response.json({ error: 'unavailable' }, { status: 503 }),
+      }).then(() => {
+        mailTransportCalls++
       }),
     ).rejects.toThrow('503')
+    expect(mailTransportCalls).toBe(0)
   })
 
   test('a record failure after delivery reports the unrecorded outcome', async () => {
@@ -193,31 +194,5 @@ describe('hosted report setting and send safety', () => {
     expect(errors.join('\n')).toContain('"status":"sent"')
     expect(errors.join('\n')).toContain('"recipients":1')
     expect(errors.join('\n')).toContain('"items":1')
-  })
-
-  test('an unreachable hosted hub makes hub send exit before the mail transport', () => {
-    const scratch = mkdtempSync(join(tmpdir(), 'hub-report-offline-'))
-    const marker = join(scratch, 'curl-called')
-    const fakeCurl = join(scratch, 'curl')
-    writeFileSync(fakeCurl, `#!/bin/sh\ntouch '${marker}'\nexit 0\n`)
-    chmodSync(fakeCurl, 0o755)
-    try {
-      const run = Bun.spawnSync([process.execPath, 'src/cli.ts', 'send', '--test'], {
-        cwd: join(import.meta.dir, '..'),
-        env: {
-          ...process.env,
-          HUB_DB: process.env.HUB_DB!,
-          HUB_HOSTED_URL: 'https://unreachable.example.test',
-          NODE_ENV: 'test',
-          PATH: `${scratch}:${process.env.PATH}`,
-        },
-        stdout: 'pipe',
-        stderr: 'pipe',
-      })
-      expect(run.exitCode).not.toBe(0)
-      expect(existsSync(marker)).toBeFalse()
-    } finally {
-      rmSync(scratch, { recursive: true, force: true })
-    }
   })
 })

@@ -576,7 +576,7 @@ export async function recordSend(
   return hosted
 }
 
-export function unrecordedSendOutcome(
+function unrecordedSendOutcome(
   g: ReturnType<typeof gather>,
   status: 'sent' | 'failed',
   recipients: string[],

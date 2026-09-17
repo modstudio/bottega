@@ -4,7 +4,7 @@ import type { HostedReportSetting, HostedSend } from './hosted-reports.ts'
 const TEST_REFUSAL =
   'hub report client refuses a real hosted URL unless a stub is injected in tests'
 const REMEDY = 'Set HUB_HOSTED_URL and run `orch record doctor`.'
-export type ReportFetch = (input: string, init?: RequestInit) => Promise<Response>
+type ReportFetch = (input: string, init?: RequestInit) => Promise<Response>
 export type ReportClientOptions = {
   baseUrl?: string
   token?: string | null
