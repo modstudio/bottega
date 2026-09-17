@@ -4,7 +4,7 @@
 import { resolve } from 'node:path'
 import { PLATFORM_SLUG } from '../../shared/brand.ts'
 import { gitToplevel, inspectCheckout, resolvedPathsEqual } from '../../shared/git.ts'
-import { recordedChainRootsForWorktree } from './dispatch-preflight.ts'
+import { recordedChainRootsForWorktree } from './dispatch/dispatch-preflight.ts'
 import { orchRunLabel } from './docker-resources.ts'
 import { git, repoRootOf } from './git-environment.ts'
 import { projectAt, resolvedWorktreeTool } from './projects.ts'

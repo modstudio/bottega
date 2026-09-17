@@ -1,11 +1,10 @@
 // concern: dispatch-commands
 /** Knows dispatch command preflight and run dispatch. Must not know transports, routing by value, worktrees, the CLI, or reviews. */
 import { existsSync, realpathSync } from 'node:fs'
-import { preflight } from './dispatch-preflight.ts'
-import type { DetachSpec } from './failover.ts'
-import { isReaderJob, job, reclaimsTreeByDefault, resolveJobTimeoutMs } from './jobs.ts'
-import { keepTreeExemptionFromOption } from './keep-tree-hold.ts'
-import type { McpRequest } from './mcp-preflight.ts'
+import type { DetachSpec } from '../failover.ts'
+import { isReaderJob, job, reclaimsTreeByDefault, resolveJobTimeoutMs } from '../jobs.ts'
+import { keepTreeExemptionFromOption } from '../keep-tree-hold.ts'
+import type { McpRequest } from '../mcp-preflight.ts'
 import {
   projectAt,
   projectByName,
@@ -13,7 +12,8 @@ import {
   retiredProjectAt,
   retiredProjectByName,
   retiredProjectRefusal,
-} from './projects.ts'
+} from '../projects.ts'
+import { preflight } from './dispatch-preflight.ts'
 
 type TransportName = 'cli' | 'acp'
 

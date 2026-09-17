@@ -3,38 +3,38 @@
 import { createHash } from 'node:crypto'
 import { mkdirSync, realpathSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
-import { AGENTS } from './agent-registry.ts'
-import { resumePromptByteLimit } from './agents.ts'
-import { flagValue, flagValues, readMessageText } from './args.ts'
-import { readStrictCodexSchema } from './codex-schema.ts'
-import { contractConflicts } from './contract.ts'
-import { sessionId } from './db.ts'
-import { dispatchCommand } from './dispatch-commands.ts'
-import type { DetachSpec } from './failover.ts'
-import { JOBS, job } from './jobs.ts'
-import { ensureLocalHealth } from './local-host.ts'
-import type { McpRequest } from './mcp-preflight.ts'
-import { stackAt } from './projects.ts'
-import { implicitReviewWarning } from './review-target.ts'
+import { AGENTS } from '../agent-registry.ts'
+import { resumePromptByteLimit } from '../agents.ts'
+import { flagValue, flagValues, readMessageText } from '../args.ts'
+import { readStrictCodexSchema } from '../codex-schema.ts'
+import { contractConflicts } from '../contract.ts'
+import { sessionId } from '../db.ts'
+import type { DetachSpec } from '../failover.ts'
+import { JOBS, job } from '../jobs.ts'
+import { ensureLocalHealth } from '../local-host.ts'
+import type { McpRequest } from '../mcp-preflight.ts'
+import { stackAt } from '../projects.ts'
+import { implicitReviewWarning } from '../review-target.ts'
 import {
   REVIEW_COVERAGE,
   REVIEW_LIMITS,
   REVIEW_OVERLAP,
   REVIEW_REPRODUCED,
-} from './review-vocabulary.ts'
-import { pick } from './route.ts'
-import { pickCommand } from './routing-commands.ts'
-import { RUNS_DIR } from './run-artifacts.ts'
-import { follow as followRun } from './run-control.ts'
-import { detach as dispatchDetached } from './run-dispatch.ts'
-import { resolveTaskBranch } from './task-branch.ts'
+} from '../review-vocabulary.ts'
+import { pick } from '../route.ts'
+import { pickCommand } from '../routing-commands.ts'
+import { RUNS_DIR } from '../run-artifacts.ts'
+import { follow as followRun } from '../run-control.ts'
+import { detach as dispatchDetached } from '../run-dispatch.ts'
+import { resolveTaskBranch } from '../task-branch.ts'
 import {
   assertAcpAllowed,
   assertAcpReady,
   resolveTransportName,
   selectAgentForTransport,
-} from './transport/transport.ts'
-import { callerDrift, checkoutHasUncommittedWork, resolveBase } from './worktree-caller.ts'
+} from '../transport/transport.ts'
+import { callerDrift, checkoutHasUncommittedWork, resolveBase } from '../worktree-caller.ts'
+import { dispatchCommand } from './dispatch-commands.ts'
 
 type Presentation = {
   error(...values: unknown[]): void
@@ -43,7 +43,7 @@ type Presentation = {
 }
 
 async function modelForDistinct(id: number): Promise<string> {
-  const { db } = await import('./db.ts')
+  const { db } = await import('../db.ts')
   const until = Date.now() + 5_000
   while (true) {
     const row = db().query('SELECT model, status FROM run WHERE id=?').get(id) as {
