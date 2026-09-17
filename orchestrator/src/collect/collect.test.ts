@@ -2,7 +2,8 @@ import { describe, expect, spyOn, test } from 'bun:test'
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { addRun, dir } from '../test/fixtures/store.ts'
+import { addRun, dir } from '../../test/fixtures/store.ts'
+import { db } from '../db.ts'
 import {
   branchNote,
   collectResult,
@@ -11,7 +12,6 @@ import {
   noCommitNote,
   thinOutputWarning,
 } from './collect.ts'
-import { db } from './db.ts'
 
 const recordedResult = (id: number) => {
   const logs: string[] = []

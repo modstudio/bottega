@@ -7,7 +7,7 @@ const DEGRADED_COLLECTION_GRAPH = [
   '../../shared/state-directory.ts',
   'artifact-paths.ts',
   'clock.ts',
-  'collect.ts',
+  'collect/collect.ts',
   'failure.ts',
   'mcp-probe.ts',
   'orch.ts',
@@ -69,7 +69,7 @@ function assertDegradedCollectionGraph(files: Iterable<string>): void {
 
 describe('degraded collection import graph', () => {
   test('derived closure matches the declared set and includes failure.ts without a hand-written copy list', () => {
-    const files = staticRelativeImportClosure(resolve(SRC_DIR, 'orch.ts'))
+    const files = staticRelativeImportClosure(resolve(SRC_DIR, '../orch.ts'))
     expect(files).toContain('failure.ts')
     assertDegradedCollectionGraph(files)
   })

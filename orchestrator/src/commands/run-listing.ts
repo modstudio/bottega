@@ -1,7 +1,7 @@
 // concern: cli
 /** Registers run detail and listing adapters. Must not own run behavior. */
 import type { Command } from 'commander'
-import { thinOutputWarning } from '../collect.ts'
+import { thinOutputWarning } from '../collect/collect.ts'
 import { db } from '../db.ts'
 import { job } from '../jobs.ts'
 import { runListingCommand } from '../run-listing.ts'

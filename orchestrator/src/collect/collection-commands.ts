@@ -1,10 +1,10 @@
 // concern: run-control
 /** Owns collection command behavior and exit mappings. Must not know CLI grammar. */
 import type { Database } from 'bun:sqlite'
+import { formatPeek, peekRun } from '../events.ts'
+import { job } from '../jobs.ts'
+import { reapStale } from '../run-liveness.ts'
 import { collectResult, collectWait, resolveFailover, thinOutputWarning } from './collect.ts'
-import { formatPeek, peekRun } from './events.ts'
-import { job } from './jobs.ts'
-import { reapStale } from './run-liveness.ts'
 
 type Presentation = {
   log(...values: unknown[]): void
