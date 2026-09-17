@@ -20,6 +20,13 @@ function spawnResult(stdout = '', exitCode = 0): ReturnType<typeof Bun.spawnSync
   } as ReturnType<typeof Bun.spawnSync>
 }
 
+/** A unique branch is pinned by a retained ref, and deleting that ref fails. */
+function retainedRefFailure(args: string[]): ReturnType<typeof Bun.spawnSync> | null {
+  if (args[0] === 'update-ref' && args[1] === '-d') return spawnResult('', 1)
+  if (args[0] === 'rev-list' && args.includes('--count')) return spawnResult('1')
+  return null
+}
+
 function closeOutFixture(ownership: 'owned' | 'attached', retainedRefDeleteFails = false) {
   const id = addRun({ agent: 'codex', job: 'implement', status: 'ok' })
   const project = `close-out-${id}`
@@ -46,9 +53,8 @@ function closeOutFixture(ownership: 'owned' | 'attached', retainedRefDeleteFails
       rmSync(tree, { recursive: true, force: true })
       return spawnResult()
     }
-    if (retainedRefDeleteFails && args[0] === 'update-ref' && args[1] === '-d') {
-      return spawnResult('', 1)
-    }
+    const failure = retainedRefDeleteFails ? retainedRefFailure(args) : null
+    if (failure) return failure
     if (args.includes('--git-common-dir')) return spawnResult('.git')
     if (args.includes('--is-inside-work-tree')) return spawnResult('true')
     if (args[0] === 'worktree' && args[1] === 'list') {
@@ -56,9 +62,7 @@ function closeOutFixture(ownership: 'owned' | 'attached', retainedRefDeleteFails
     }
     if (args[0] === 'symbolic-ref') return spawnResult(branch)
     if (args[0] === 'status' || args[0] === 'diff') return spawnResult()
-    if (args[0] === 'rev-list' && args.includes('--count')) {
-      return spawnResult(retainedRefDeleteFails ? '1' : '0')
-    }
+    if (args[0] === 'rev-list' && args.includes('--count')) return spawnResult('0')
     if (args[0] === 'merge-base' || args[0] === 'rev-parse' || args[0] === 'show-ref') {
       return spawnResult(head)
     }
