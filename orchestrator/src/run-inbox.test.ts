@@ -124,10 +124,20 @@ test('inbox --all shows a foreign recoverable root without offering authority', 
   expect(shown).toContain(`run ${id}`)
   expect(shown).toContain('only the owning session may continue it')
 })
-test('inbox --all --json reports live or unknown without asserting death', async () => {
-  const id = addRun({ agent: 'codex', job: 'implement', status: 'asking', session: 'foreign' })
-  question(id, 'status?')
-  expect(JSON.parse(await inbox({ all: true, json: true }))[0]).toMatchObject({
+test('inbox --all --json reports liveness and active chain state', async () => {
+  const active = addRun({ agent: 'codex', job: 'implement', status: 'asking', session: 'foreign' })
+  const terminal = addRun({
+    agent: 'codex',
+    job: 'implement',
+    status: 'failed',
+    session: 'foreign',
+  })
+  question(active, 'active?')
+  question(terminal, 'terminal?')
+  const rows = JSON.parse(await inbox({ all: true, json: true }))
+  expect(rows).toContainEqual(expect.objectContaining({ run_id: active, active: true }))
+  expect(rows).toContainEqual(expect.objectContaining({ run_id: terminal, active: false }))
+  expect(rows[0]).toMatchObject({
     session_live: null,
     session_liveness: 'unknown',
   })

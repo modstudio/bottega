@@ -99,6 +99,7 @@ export async function runInboxCommand(
           // which a last-seen timestamp cannot establish.
           session_live: q.session_recent ? true : null,
           session_liveness: q.session_recent ? 'live' : 'unknown',
+          active: Boolean(q.root_active),
           can_answer: Boolean(q.root_active) && canAnswer(q.session_id),
           question: q.question,
           options: q.options ? (JSON.parse(q.options) as string[]) : [],
