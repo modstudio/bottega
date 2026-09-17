@@ -118,6 +118,19 @@ function closeOutKeepTreeDecision(
   return conversationKeepTreeHold(rootId, nowIso())
 }
 
+/** Drop the conversation root's keep-tree hold so terminal close-out can reclaim the tree. */
+export function clearConversationKeepTreeHold(runId: number): void {
+  const root = db()
+    .query('SELECT COALESCE(parent_run_id,id) root_id FROM run WHERE id=?')
+    .get(runId) as { root_id: number } | null
+  if (!root) throw new Error(`no run ${runId}`)
+  writeTransaction(() => {
+    db()
+      .query('UPDATE run SET keep_tree=0, keep_tree_until=NULL, keep_tree_reason=NULL WHERE id=?')
+      .run(root.root_id)
+  })
+}
+
 export type SandboxReleaseResult = {
   rootId: number
   path: string

@@ -2,7 +2,7 @@ import { afterEach, describe, expect, mock, spyOn, test } from 'bun:test'
 import { existsSync, mkdirSync, rmSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { addRun, dir } from '../test/fixtures/store.ts'
-import { closeOutRun, extractionRunId } from './close-out.ts'
+import { clearConversationKeepTreeHold, closeOutRun, extractionRunId } from './close-out.ts'
 import { db } from './db.ts'
 import { upsertProject } from './projects.ts'
 
@@ -140,4 +140,22 @@ test('a close-out that fails after removing the tree still clears its pointer', 
   } finally {
     rmSync(fixture.repo, { recursive: true, force: true })
   }
+})
+
+test('clearing a keep-tree hold lets terminal close-out proceed', () => {
+  const id = addRun({ agent: 'codex', job: 'diagnose', status: 'ok' })
+  db()
+    .query(
+      'UPDATE run SET worktree=?, keep_tree=1, keep_tree_until=?, keep_tree_reason=? WHERE id=?',
+    )
+    .run(
+      '/no-such-keep-tree-hold',
+      '2099-01-01T00:00:00.000Z',
+      'filed-issue coordinator verifies this tree',
+      id,
+    )
+
+  expect(closeOutRun(id, { intent: 'terminal' }).outcome).toBe('held')
+  clearConversationKeepTreeHold(id)
+  expect(closeOutRun(id, { intent: 'terminal' }).outcome).toBe('absent')
 })
