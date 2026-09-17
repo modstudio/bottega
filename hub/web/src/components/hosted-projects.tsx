@@ -1,9 +1,10 @@
 import { useQuery } from '@tanstack/react-query'
 import { FolderGit2 } from 'lucide-react'
 import { Collection, type CollectionColumn } from '@/components/collection'
-import { PageHeader, type ProjectColors, ProjectMark } from '@/components/design-system'
+import { type ProjectColors, ProjectMark } from '@/components/design-system'
 import { trpc } from '@/trpc/client'
 import { Badge } from '@/ui/badge/badge'
+import { PageHeader } from '@/ui/page-header/page-header'
 
 type HostedProject = {
   name: string

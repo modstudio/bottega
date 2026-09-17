@@ -258,8 +258,6 @@
   --sheet-w: min(34rem, 100vw);
   --sheet-w-wide: min(46rem, 100vw);
   --sheet-w-document: min(64rem, 100vw);
-  --companion-w: 24rem;
-  --companion-w-min: 18rem;
   --focus-width: 2px;
   --focus-offset: 2px;
 

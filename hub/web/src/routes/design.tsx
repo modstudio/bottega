@@ -2,25 +2,19 @@ import { createFileRoute } from '@tanstack/react-router'
 import { useState } from 'react'
 import { Collection } from '@/components/collection'
 import { DesignCatalog } from '@/components/design-catalog'
-import {
-  EmptyState,
-  LiveDot,
-  PageHeader,
-  ProjectMark,
-  SectionTitle,
-  SourceMark,
-  StatRow,
-  StatTile,
-} from '@/components/design-system'
+import { LiveDot, ProjectMark, SourceMark } from '@/components/design-system'
 import { Badge } from '@/ui/badge/badge'
 import { Button } from '@/ui/button/button'
 import { Companion } from '@/ui/companion/companion'
+import { EmptyState } from '@/ui/empty-state/empty-state'
 import { Input } from '@/ui/field/input'
 import { Copyable, DisplayRow, FieldSection, SettingBlock } from '@/ui/form-layout/form-layout'
 import { Identifier } from '@/ui/identifier/identifier'
 import { Select } from '@/ui/listbox/select'
+import { PageHeader, SectionTitle } from '@/ui/page-header/page-header'
 import { Segmented } from '@/ui/segmented/segmented'
 import { Sheet } from '@/ui/sheet/sheet'
+import { StatRow, StatTile } from '@/ui/stat/stat'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/ui/table/table'
 import { Tabs } from '@/ui/tabs/tabs'
 

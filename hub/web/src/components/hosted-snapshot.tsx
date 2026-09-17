@@ -1,5 +1,5 @@
-import { PageHeader } from '@/components/design-system'
 import { Select } from '@/ui/listbox/select'
+import { PageHeader } from '@/ui/page-header/page-header'
 
 type Machine = { id: string; takenAt: string }
 

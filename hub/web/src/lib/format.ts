@@ -45,3 +45,18 @@ export function collectedTime(value: string | null) {
   if (!value) return 'never collected'
   return `collected ${new Intl.DateTimeFormat('en-US', { hour: 'numeric', minute: '2-digit' }).format(new Date(value)).toLowerCase()}`
 }
+
+/** A run's time as the dashboard prints it, in the operator's zone. */
+export function runEasternTime(value: string, includeDay = false) {
+  const parts = new Intl.DateTimeFormat('en-US', {
+    timeZone: 'America/New_York',
+    ...(includeDay ? { month: 'short', day: 'numeric' } : {}),
+    hour: 'numeric',
+    minute: '2-digit',
+    hour12: true,
+  }).formatToParts(new Date(value))
+  const part = (type: Intl.DateTimeFormatPartTypes) =>
+    parts.find((item) => item.type === type)?.value ?? ''
+  const time = `${part('hour')}:${part('minute')} ${part('dayPeriod').toLowerCase()}`
+  return includeDay ? `${part('month')} ${part('day')} ${time}` : time
+}

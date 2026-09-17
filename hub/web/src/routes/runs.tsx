@@ -3,35 +3,55 @@ import { createFileRoute, useNavigate, useParams } from '@tanstack/react-router'
 import { ChevronRight } from 'lucide-react'
 import { useState } from 'react'
 import { Collection, type CollectionColumn } from '@/components/collection'
-import {
-  LiveDot,
-  PageHeader,
-  ProjectMark,
-  StatRow,
-  StatTile,
-  useWindowFilters,
-  WindowControl,
-} from '@/components/design-system'
+import { LiveDot, ProjectMark, useWindowFilters, WindowControl } from '@/components/design-system'
 import { HostedRuns } from '@/components/hosted-runs'
 import { useNow } from '@/lib/clock'
 import { useDetailPanel } from '@/lib/detail-panel'
-import { collectedTime, compactTokens, duration, vendorFigures } from '@/lib/format'
+import { collectedTime, compactTokens, duration } from '@/lib/format'
 import { isHostedMode } from '@/lib/hub-mode'
-import {
-  runEasternTime,
-  runVerdictText,
-  type SearchableLiveRun,
-  type SearchableRun,
-} from '@/lib/run-search'
 import { useDebounced } from '@/lib/use-debounced'
 import { verdictTone } from '@/lib/verdict-tone'
 import { useWindowState } from '@/lib/window'
 import { trpc } from '@/trpc/client'
 import { Badge } from '@/ui/badge/badge'
 import { Identifier } from '@/ui/identifier/identifier'
+import { PageHeader } from '@/ui/page-header/page-header'
+import { PAGE_SIZES, type PageSize } from '@/ui/pagination/pagination'
+import { StatRow, StatTile } from '@/ui/stat/stat'
 
-type RunRow = SearchableRun
-type LiveRow = SearchableLiveRun
+/** The strings the server prints for a run; search on the server matches exactly these. */
+type RunDisplay = {
+  project: string
+  took: string
+  verdict: string
+  exclusion: string
+  tokens: string
+  cost: string
+  started: string
+}
+type RunRow = {
+  id: number
+  agent: string
+  job: string | null
+  task: string | null
+  project: string | null
+  at: string
+  running: boolean
+  status: string
+  delivery: string | null
+  quality: string | null
+  probe: boolean
+  lens: string | null
+  display: RunDisplay
+}
+type LiveRow = {
+  id: number
+  agent: string
+  job: string
+  repo: string | null
+  elapsedMs: number
+  display: { project: string; elapsed: string; prompt: string }
+}
 type RunsPayload = {
   collectedAt: string | null
   servingSince: string
@@ -49,43 +69,32 @@ type RunsPayload = {
   }
 }
 
-const compact = compactTokens
 const fmtMs = duration
 function Verdict({ row }: { row: RunRow }) {
   if (row.running)
     return (
-      <span data-tone="success" className="inline-flex items-center gap-2 text-status-text">
-        <LiveDot />
-        running
-      </span>
+      <Badge tone="progress" dot>
+        Running
+      </Badge>
     )
-  const exclusion = row.evidence_excluded ? (
-    <p className="text-sm text-text-muted">Not routing evidence: {row.evidence_excluded}</p>
+  const exclusion = row.display.exclusion ? (
+    <p className="text-sm text-text-muted">{row.display.exclusion}</p>
   ) : null
-  if (row.delivery) {
-    return (
-      <span>
-        <Badge tone={verdictTone(row.delivery, row.quality)}>{runVerdictText(row)}</Badge>
-        {exclusion}
-      </span>
-    )
-  }
-  if (row.status !== 'ok')
-    return (
-      <span>
-        <Badge tone="error">{row.status}</Badge>
-        {exclusion}
-      </span>
-    )
-  if (row.probe)
-    return (
-      <span>
-        <span className="text-text-muted">probe</span>
-        {exclusion}
-      </span>
-    )
-  if (exclusion) return exclusion
-  return <Badge>Unscored</Badge>
+  const tone = row.delivery
+    ? verdictTone(row.delivery, row.quality)
+    : row.status !== 'ok'
+      ? ('error' as const)
+      : ('neutral' as const)
+  return (
+    <span>
+      {row.probe && !row.delivery && row.status === 'ok' ? (
+        <span className="text-text-muted">{row.display.verdict}</span>
+      ) : row.display.verdict ? (
+        <Badge tone={tone}>{row.display.verdict}</Badge>
+      ) : null}
+      {exclusion}
+    </span>
+  )
 }
 
 export const Route = createFileRoute('/runs')({ component: RunsPage })
@@ -98,7 +107,7 @@ function RunsPage() {
 /** Page and page size, back to the first page whenever the question changes. */
 function usePaging(question: string) {
   const [page, setPage] = useState(1)
-  const [pageSize, setPageSize] = useState(50)
+  const [pageSize, setPageSize] = useState<PageSize>(PAGE_SIZES[1])
   const [asked, setAsked] = useState(question)
   if (asked !== question) {
     setAsked(question)
@@ -126,7 +135,7 @@ function RunsList() {
         agent: windowState.filters.agent,
         project: windowState.filters.project,
         offset: (page - 1) * pageSize,
-        limit: pageSize as 25 | 50 | 100,
+        limit: pageSize,
         search: searchQuery,
       },
       { refetchInterval: openMenus ? false : 30_000 },
@@ -151,7 +160,12 @@ function RunsList() {
         [(data.totals.voided ?? 0).toLocaleString(), 'voided', 'not routing evidence'],
         [data.unscored.toLocaleString(), 'unscored', 'teaches the router nothing'],
         [data.totals.failed.toLocaleString(), 'failed', 'counts against the agent'],
-        [vendorFigures(data.vendors), 'vendor tokens', 'per agent'],
+        // One tile per vendor: their token counts are separate currencies.
+        ...data.vendors.map((vendor) => [
+          compactTokens(vendor.tokens),
+          `${vendor.agent} tokens`,
+          'as the vendor reports them',
+        ]),
       ]
     : []
   // The server applies search and paging; these are the rows to draw.
@@ -184,9 +198,7 @@ function RunsList() {
       id: 'prompt',
       label: 'Prompt',
       render: (row) => (
-        <span className="block max-w-lg truncate text-text-muted">
-          {row.prompt_head.slice(0, 90)}
-        </span>
+        <span className="block max-w-lg truncate text-text-muted">{row.display.prompt}</span>
       ),
     },
   ]
@@ -213,7 +225,7 @@ function RunsList() {
       id: 'took',
       label: 'Took',
       numeric: true,
-      render: (row) => (row.running ? fmtMs(now - new Date(row.at).getTime()) : row.engaged),
+      render: (row) => (row.running ? fmtMs(now - new Date(row.at).getTime()) : row.display.took),
     },
     { id: 'verdict', label: 'Verdict', render: (row) => <Verdict row={row} /> },
     {
@@ -221,16 +233,16 @@ function RunsList() {
       label: 'Tokens',
       numeric: true,
       priority: 'low',
-      render: (row) => compact(row.tokens),
+      render: (row) => row.display.tokens,
     },
     {
       id: 'cost',
       label: 'Cost',
       numeric: true,
       priority: 'low',
-      render: (row) => (row.costUsd == null ? '-' : `$${row.costUsd.toFixed(2)}`),
+      render: (row) => row.display.cost,
     },
-    { id: 'started', label: 'Started', render: (row) => runEasternTime(row.at, true) },
+    { id: 'started', label: 'Started', render: (row) => row.display.started },
     {
       id: 'open',
       label: '',

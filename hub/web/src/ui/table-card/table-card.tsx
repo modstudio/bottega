@@ -1,7 +1,7 @@
 import { SlidersHorizontal } from 'lucide-react'
 import { Children, type ReactNode } from 'react'
 import { Button } from '../button/button'
-import { useMediaQuery } from '../dom/use-media-query'
+import { PHONE_QUERY, useMediaQuery } from '../dom/use-media-query'
 import { Popover } from '../popover/popover'
 import { classes } from '../text/classes'
 import { ToolbarBand } from '../toolbar-band/toolbar-band'
@@ -148,7 +148,7 @@ export function TableCard({
   panel?: ReactNode
   children: ReactNode
 }) {
-  const phone = useMediaQuery('(max-width: 767px)')
+  const phone = useMediaQuery(PHONE_QUERY)
   const Toolbar = phone ? PhoneToolbar : DeskToolbar
   return (
     <section className="@container/card flex min-w-0 flex-col gap-3">

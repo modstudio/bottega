@@ -2,7 +2,7 @@ const compactNumber = new Intl.NumberFormat('en-US', { maximumFractionDigits: 1 
 
 export const PROJECT_FALLBACK = 'elsewhere'
 const DEFAULT_RUN_LIMIT = 50
-const RUN_PAGE_LIMITS = [25, 50, 100] as const
+export const RUN_PAGE_LIMITS = [25, 50, 100] as const
 export type RunPageLimit = (typeof RUN_PAGE_LIMITS)[number]
 
 export type SearchableRun = {
@@ -132,7 +132,7 @@ export function matchesRunSearch(row: SearchableRun | SearchableLiveRun, query: 
 }
 
 export function runPageLimit(limit: number | undefined): RunPageLimit {
-  return limit === 25 || limit === 50 || limit === 100 ? limit : DEFAULT_RUN_LIMIT
+  return RUN_PAGE_LIMITS.find((allowed) => allowed === limit) ?? DEFAULT_RUN_LIMIT
 }
 
 export function appliedRunOffset(offset: number, matched: number, limit: number): number {

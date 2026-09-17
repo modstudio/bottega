@@ -4,6 +4,7 @@ import { Select } from '../listbox/select'
 import { classes } from '../text/classes'
 
 export const PAGE_SIZES = [25, 50, 100] as const
+export type PageSize = (typeof PAGE_SIZES)[number]
 
 /**
  * Moves through a long list a page at a time. `total` is known for a
@@ -23,7 +24,7 @@ export function Pagination({
   total?: number
   hasNext?: boolean
   onPageChange: (page: number) => void
-  onPageSizeChange?: (size: number) => void
+  onPageSizeChange?: (size: PageSize) => void
   className?: string
 }) {
   const pageCount = total === undefined ? undefined : Math.max(1, Math.ceil(total / pageSize))
@@ -52,7 +53,7 @@ export function Pagination({
               className="min-w-0"
               value={String(pageSize)}
               options={PAGE_SIZES.map((size) => ({ value: String(size), label: `${size} rows` }))}
-              onChange={(value) => onPageSizeChange(Number(value))}
+              onChange={(value) => onPageSizeChange(Number(value) as PageSize)}
             />
           </span>
         ) : null}

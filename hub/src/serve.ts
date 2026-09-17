@@ -35,6 +35,7 @@ import {
   appliedRunOffset,
   liveRowDisplay,
   matchesRunSearch,
+  type RunPageLimit,
   runPageLimit,
   runRowDisplay,
   type SearchableLiveRun,
@@ -51,6 +52,8 @@ type CacheEntry<T> = { checkedAt: number; hasValue: boolean; value?: T; pending?
 /** One load per key and TTL, including when several clients arrive together. */
 export class TtlCache {
   private entries = new Map<string, CacheEntry<unknown>>()
+  /** Bumped by clear(), so a load that started before a write cannot store its result after it. */
+  private generation = 0
   private readonly ttlMs: number
   private readonly clock: () => number
 
@@ -72,15 +75,18 @@ export class TtlCache {
     const fresh = cached !== undefined && now - cached.checkedAt < this.ttlMs
     if (cached?.hasValue && (fresh || cached.pending)) return Promise.resolve(cached.value as T)
     if (cached?.pending) return cached.pending
+    const generation = this.generation
     const pending = Promise.resolve()
       .then(load)
       .then(
         (value) => {
-          this.entries.set(key, { checkedAt: this.clock(), hasValue: true, value })
+          if (generation === this.generation) {
+            this.entries.set(key, { checkedAt: this.clock(), hasValue: true, value })
+          }
           return value
         },
         (cause) => {
-          this.entries.delete(key)
+          if (generation === this.generation) this.entries.delete(key)
           throw cause
         },
       )
@@ -94,6 +100,7 @@ export class TtlCache {
   }
 
   clear(): void {
+    this.generation += 1
     this.entries.clear()
   }
 }
@@ -326,7 +333,7 @@ type RunFilters = {
   project: string
   source?: string
   offset?: number
-  limit?: 25 | 50 | 100
+  limit?: RunPageLimit
   search?: string
 }
 

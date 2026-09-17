@@ -72,7 +72,6 @@ const uiLayers: { name: string; folders: string[] }[] = [
     folders: [
       'tabs',
       'segmented',
-      'filter',
       'empty-state',
       'stat',
       'table',
@@ -82,7 +81,7 @@ const uiLayers: { name: string; folders: string[] }[] = [
       'form-layout',
     ],
   },
-  { name: 'layout', folders: ['shell', 'table-card', 'toolbar-band', 'companion', 'page'] },
+  { name: 'layout', folders: ['shell', 'table-card', 'toolbar-band', 'companion'] },
 ]
 
 const uiFolders = (folders: string[]) => `^hub/web/src/ui/(?:${folders.join('|')})/`

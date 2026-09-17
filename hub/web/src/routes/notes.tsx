@@ -1,11 +1,12 @@
 import { useMutation, useQuery } from '@tanstack/react-query'
 import { createFileRoute } from '@tanstack/react-router'
 import { useState } from 'react'
-import { EmptyState, PageHeader } from '@/components/design-system'
 import { queryClient, trpc } from '@/trpc/client'
 import { Badge } from '@/ui/badge/badge'
 import { Button } from '@/ui/button/button'
 import { Checkbox } from '@/ui/checkbox/checkbox'
+import { EmptyState } from '@/ui/empty-state/empty-state'
+import { PageHeader } from '@/ui/page-header/page-header'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/ui/table/table'
 import { toast } from '@/ui/toast/toast'
 

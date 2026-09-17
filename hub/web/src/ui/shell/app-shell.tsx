@@ -11,7 +11,7 @@ import {
 } from 'react'
 import { IconButton } from '../button/button'
 import { TopbarSlotProvider } from '../dom/topbar-slot'
-import { useMediaQuery } from '../dom/use-media-query'
+import { PHONE_QUERY, useMediaQuery } from '../dom/use-media-query'
 import { useStoredState } from '../dom/use-stored-state'
 import { Popover } from '../popover/popover'
 import { classes } from '../text/classes'
@@ -41,8 +41,6 @@ export type RenderLink = (
   item: NavItem,
   props: { className: string; onClick?: () => void; children: ReactNode },
 ) => ReactElement
-
-const MOBILE_QUERY = '(max-width: 767px)'
 
 const DockedPanels = createContext<(delta: 1 | -1) => void>(() => undefined)
 
@@ -345,7 +343,7 @@ export function AppShell({
   storageKey: string
   children: ReactNode
 }) {
-  const mobile = useMediaQuery(MOBILE_QUERY)
+  const mobile = useMediaQuery(PHONE_QUERY)
   const [menuOpen, setMenuOpen] = useState(false)
   const [rail, setRail] = useStoredState(storageKey, 'open', ['open', 'collapsed'] as const)
   const [docked, setDocked] = useState(0)

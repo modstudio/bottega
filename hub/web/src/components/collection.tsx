@@ -1,10 +1,10 @@
 import { type ReactNode, useState } from 'react'
+import { EmptyState } from '@/ui/empty-state/empty-state'
 import { Input } from '@/ui/field/input'
-import { PAGE_SIZES, Pagination } from '@/ui/pagination/pagination'
+import { PAGE_SIZES, type PageSize, Pagination } from '@/ui/pagination/pagination'
 import { pageSlice } from '@/ui/state/pagination'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/ui/table/table'
 import { TableCard } from '@/ui/table-card/table-card'
-import { EmptyState } from './design-system'
 
 /** A list the server pages: rows arrive as one page and `total` counts every match. */
 export type ServerPaging = {
@@ -12,7 +12,7 @@ export type ServerPaging = {
   pageSize: number
   total: number
   onPageChange: (page: number) => void
-  onPageSizeChange: (size: number) => void
+  onPageSizeChange: (size: PageSize) => void
 }
 
 /** A row nested under a record, filling the same columns so its values line up. */
@@ -84,7 +84,7 @@ export function Collection<Row>({
   childRows?: (row: Row) => CollectionChildRow[]
 }) {
   const [page, setPage] = useState(1)
-  const [pageSize, setPageSize] = useState<number>(PAGE_SIZES[1])
+  const [pageSize, setPageSize] = useState<PageSize>(PAGE_SIZES[1])
   const local = pageSlice(rows, page, pageSize)
   const visible = paging ? { ...local, rows, page: paging.page } : local
   const pager: ServerPaging = paging ?? {

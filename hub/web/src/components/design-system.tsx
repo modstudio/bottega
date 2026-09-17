@@ -17,10 +17,6 @@ import { Select, type SelectOption } from '@/ui/listbox/select'
 import { ProjectName } from '@/ui/project-mark/project-mark'
 import { Segmented } from '@/ui/segmented/segmented'
 
-export { EmptyState } from '@/ui/empty-state/empty-state'
-export { PageHeader, SectionTitle } from '@/ui/page-header/page-header'
-export { StatRow, StatTile } from '@/ui/stat/stat'
-
 /** A pulsing dot for work that is running right now. */
 export function LiveDot() {
   return (

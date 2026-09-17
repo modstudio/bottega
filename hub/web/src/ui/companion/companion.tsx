@@ -7,7 +7,7 @@ import {
   useRef,
 } from 'react'
 import { IconButton } from '../button/button'
-import { useMediaQuery } from '../dom/use-media-query'
+import { PHONE_QUERY, useMediaQuery } from '../dom/use-media-query'
 import { useStoredState } from '../dom/use-stored-state'
 import { useDockedPanel } from '../shell/app-shell'
 import { classes } from '../text/classes'
@@ -37,7 +37,7 @@ export function Companion({
   children: ReactNode
 }) {
   useDockedPanel()
-  const phone = useMediaQuery('(max-width: 767px)')
+  const phone = useMediaQuery(PHONE_QUERY)
   const [width, setWidth] = useStoredState<Width>('ui:companion-width', '420', WIDTHS)
   const panel = useRef<HTMLElement>(null)
   const titleId = useId()

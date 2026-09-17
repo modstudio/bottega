@@ -4,15 +4,11 @@ import { ArrowDown, ArrowUp, ChevronRight } from 'lucide-react'
 import { type ReactNode, useEffect, useMemo, useState } from 'react'
 import { Collection, type CollectionChildRow, type CollectionColumn } from '@/components/collection'
 import {
-  EmptyState,
   LiveDot,
-  PageHeader,
   ProjectMark,
   projectVars,
   responseSubtitle,
   SourceMark,
-  StatRow,
-  StatTile,
   useProjectColors,
   useWindowFilters,
   WindowControl,
@@ -25,9 +21,12 @@ import { setWorkCounts, useWindowState } from '@/lib/window'
 import { type BoardResponse, type FlightResponse, trpc } from '@/trpc/client'
 import { Badge } from '@/ui/badge/badge'
 import { Docked } from '@/ui/companion/companion'
+import { EmptyState } from '@/ui/empty-state/empty-state'
 import { Input } from '@/ui/field/input'
 import { Identifier } from '@/ui/identifier/identifier'
+import { PageHeader } from '@/ui/page-header/page-header'
 import { Segmented } from '@/ui/segmented/segmented'
+import { StatRow, StatTile } from '@/ui/stat/stat'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/ui/table/table'
 
 type WorkName = 'flight' | 'done'

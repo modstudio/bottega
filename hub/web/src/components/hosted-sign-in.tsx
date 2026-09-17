@@ -1,9 +1,9 @@
 import { useNavigate } from '@tanstack/react-router'
 import { useState } from 'react'
-import { PageHeader } from '@/components/design-system'
 import { signInWithEmail } from '@/lib/hosted-auth'
 import { Button } from '@/ui/button/button'
 import { Input } from '@/ui/field/input'
+import { PageHeader } from '@/ui/page-header/page-header'
 
 export function HostedSignIn() {
   const navigate = useNavigate()

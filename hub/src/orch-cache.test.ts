@@ -81,4 +81,18 @@ describe('orchestrator procedure cache', () => {
     await settle()
     await expect(cache.get('runs', failing)).rejects.toThrow('orch unreachable')
   })
+
+  test('a load that started before a clear never replaces what was loaded after it', async () => {
+    const cache = new TtlCache(30_000, () => 0)
+    let releaseOld = () => {}
+    const old = cache.get(
+      'runs',
+      () => new Promise<string>((resolve) => (releaseOld = () => resolve('before write'))),
+    )
+    cache.clear()
+    expect(await cache.get('runs', async () => 'after write')).toBe('after write')
+    releaseOld()
+    await old
+    expect(await cache.get('runs', async () => 'reloaded')).toBe('after write')
+  })
 })
