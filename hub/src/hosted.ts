@@ -3,6 +3,7 @@ import { fetchRequestHandler } from '@trpc/server/adapters/fetch'
 import { resolveAppStatic } from './app-static.ts'
 import { evidenceApi } from './evidence-api.ts'
 import { hostedHealthResponse } from './hosted-health.ts'
+import { taskApi } from './task-api.ts'
 import { createContext } from './trpc/context.ts'
 import { hostedRouter } from './trpc/hosted-router.ts'
 
@@ -32,6 +33,8 @@ function startHostedServer(environment: ServerEnvironment = process.env) {
       if (health) return health
       const evidence = await evidenceApi(req, config)
       if (evidence) return evidence
+      const tasks = await taskApi(req, config)
+      if (tasks) return tasks
       if (url.pathname.startsWith('/trpc')) {
         return fetchRequestHandler({
           endpoint: '/trpc',

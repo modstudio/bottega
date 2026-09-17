@@ -8,7 +8,6 @@ import {
   DB_PATH,
   db,
   migrateDatabase,
-  nextImportedTaskKey,
   nowIso,
   requireDatabase,
   writeTransaction,
@@ -60,6 +59,7 @@ import {
   updateTaskDocument,
 } from './task.ts'
 import { hoursAgo } from './time.ts'
+import { pushTasks } from './task-push.ts'
 
 const argv = process.argv.slice(2)
 const cmd = argv[0]
@@ -105,6 +105,7 @@ const taskCommandShapes = new Map<
   ['close', { positionalCount: 1, valueFlags: new Set() }],
   ['comment', { positionalCount: 2, valueFlags: new Set() }],
   ['import', { positionalCount: 1, valueFlags: new Set() }],
+  ['push', { positionalCount: 0, valueFlags: new Set() }],
   [
     'doc new',
     { positionalCount: 1, valueFlags: new Set(['--title', '--role', '--body', '--body-file']) },
@@ -207,7 +208,8 @@ const TASK_USAGE = `hub task new --project X --title "..." [--status Y] [--paren
   hub task doc set <ID> [--title "..."] [--role handoff|--no-role]
                [--body "..."|--body-file PATH] [--version TOKEN]
   hub task doc rm <ID>
-  hub task import <file.json> backfill from a clustered commit history`
+  hub task import <file.json> backfill from a clustered commit history
+  hub task push [--dry-run]   migrate and verify the local task cache`
 
 const USAGE = `hub — every project's tasks in flight, what each cost, and the daily report
 
@@ -260,7 +262,7 @@ async function collect() {
   const t0 = Date.now()
 
   if (run('git')) {
-    const g = ingestGit(since.slice(0, 10))
+    const g = await ingestGit(since.slice(0, 10))
     console.log(`git          ${g.days} days, ${g.tasks} task keys`)
   }
   if (run('runs')) {
@@ -359,7 +361,7 @@ async function task() {
   }
 
   async function closeAndPruneTask(key: string) {
-    const closed = closeTask(key)
+    const closed = await closeTask(key)
     printRow(closed)
     if (has('keep-branches')) return
     try {
@@ -390,7 +392,7 @@ async function task() {
     const action = argv[2]
     const ref = argv[3] ?? ''
     if (action === 'new') {
-      const document = createTaskDocument({
+      const document = await createTaskDocument({
         task: ref,
         title: required('title'),
         body: newBody(),
@@ -437,12 +439,12 @@ async function task() {
       }
       if (!Object.keys(changes).length)
         throw new Error('hub task doc set requires a field to change')
-      const document = updateTaskDocument(ref, changes)
+      const document = await updateTaskDocument(ref, changes)
       console.log(`${document.id} updated; version ${document.version}`)
       return
     }
     if (action === 'rm') {
-      const document = deleteTaskDocument(ref)
+      const document = await deleteTaskDocument(ref)
       console.log(`${document.id} removed from ${document.task_key}`)
       return
     }
@@ -463,9 +465,9 @@ async function task() {
             Bun.sleepSync(delay)
           }
         : undefined
-    let row: ReturnType<typeof createTask>
+    let row: Awaited<ReturnType<typeof createTask>>
     try {
-      row = createTask(
+      row = await createTask(
         { project, title, status: flag('status'), parent: flag('parent'), body },
         {
           allowDuplicateReason: has('allow-duplicate') ? override : undefined,
@@ -565,7 +567,7 @@ async function task() {
       ...(has('body') ? { body: required('body') } : {}),
     }
     if (!Object.keys(changes).length) throw new Error('hub task set requires a field to change')
-    printRow(setTask(argv[2] ?? '', changes, { force: has('force') }))
+    printRow(await setTask(argv[2] ?? '', changes, { force: has('force') }))
     return
   }
   if (sub === 'close') {
@@ -575,12 +577,11 @@ async function task() {
   if (sub === 'comment') {
     const body = argv[3]
     if (!body) throw new Error('hub task comment <KEY> "..."')
-    const comment = commentTask(argv[2] ?? '', body)
+    const comment = await commentTask(argv[2] ?? '', body)
     console.log(`${comment.task_key} commented ${comment.created_at}`)
     return
   }
   if (sub === 'import') {
-    const at = nowIso()
     const project = projectOf(new URL('../..', import.meta.url).pathname)
     const registered = projects().find((candidate) => candidate.name === project)
     const prefix = registered?.settings.keyPrefixes?.[0]
@@ -614,27 +615,14 @@ async function task() {
         .map((l) => l.split('\t') as [string, string]),
     )
 
+    const imported: Array<{ key: string; shas: string[] }> = []
+    for (const t of items) {
+      const done = !!t.closed
+      const row = await createTask({ project, title: t.title, status: done ? 'done' : 'open', openedAt: t.opened, closedAt: t.closed })
+      imported.push({ key: row.key, shas: t.shas })
+    }
     writeTransaction((conn) => {
-      const ins = conn.query(
-        `INSERT INTO task (key, project, title, status, status_category, opened_at,
-                         closed_at, updated_at, source, first_seen, last_seen)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'local', ?, ?)`,
-      )
-      for (const t of items) {
-        const key = nextImportedTaskKey(prefix, conn)
-        const done = !!t.closed
-        ins.run(
-          key,
-          project,
-          t.title,
-          done ? 'Done' : 'Open',
-          done ? 'done' : 'open',
-          t.opened,
-          t.closed,
-          t.closed ?? t.opened,
-          at,
-          at,
-        )
+      for (const t of imported) {
         // Backfilled tasks carry their commits, so commit-window attribution
         // can find them.
         //
@@ -647,14 +635,20 @@ async function task() {
           if (!at) continue
           conn
             .query(`INSERT OR IGNORE INTO commit_key (sha, repo, task_key, at) VALUES (?,?,?,?)`)
-            .run(sha, project, key, at)
+            .run(sha, project, t.key, at)
         }
       }
     })
     console.log(`imported ${items.length} tasks`)
     return
   }
-  throw new Error('hub task <new|list|show|set|close|comment|import>')
+  if (sub === 'push') {
+    const result = await pushTasks({ dryRun: has('dry-run') })
+    console.log(JSON.stringify(result, null, 2))
+    if (result.match === false) process.exitCode = 1
+    return
+  }
+  throw new Error('hub task <new|list|show|set|close|comment|import|push>')
 }
 
 async function note() {
@@ -706,7 +700,7 @@ async function note() {
     return
   }
   if (sub === 'promote') {
-    const row = promoteNote(argv[2] ?? '')
+    const row = await promoteNote(argv[2] ?? '')
     console.log(`${row.promoted_task}`)
     return
   }

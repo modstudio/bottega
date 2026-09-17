@@ -1,7 +1,9 @@
 import { categorizeFile, type FileKind } from '../../../shared/file-kind.ts'
+import { newRecordId } from '../../../shared/record/schema.ts'
 import { keyPattern, projectOfKey } from '../attribute.ts'
 import { nowIso, type Project, writeTransaction } from '../db.ts'
 import { projects } from '../projects.ts'
+import { hostedMirrorTasks } from '../task-client.ts'
 
 /**
  * Generated files, which are not work.
@@ -140,9 +142,22 @@ function scanGit(since: string) {
  * project that has no local credentials at all — should not make its work
  * vanish from the view entirely.
  */
-export function ingestGit(since: string): { days: number; tasks: number } {
+export async function ingestGit(since: string): Promise<{ days: number; tasks: number }> {
   const { days, tasks, commits } = scanGit(since)
   const at = nowIso()
+  try {
+    const mirrored = [...tasks.values()].map((t) => ({
+      id: newRecordId(), key: t.key, project: t.project, project_name: t.project,
+      title: null, status: null, status_category: null, parent_key: null, body: null,
+      assignee: null, opened_at: t.first, closed_at: null, source: 'git' as const,
+      first_seen: at, last_seen: at, created_at: at, updated_at: t.last, deleted_at: null,
+    }))
+    for (let index = 0; index < mirrored.length; index += 500)
+      await hostedMirrorTasks({ tasks: mirrored.slice(index, index + 500) })
+  } catch (error) {
+    console.error(`hub: git task mirror skipped: ${(error as Error).message}`)
+    return { days: 0, tasks: 0 }
+  }
   writeTransaction((conn) => {
     const dayStmt = conn.query(
       `INSERT INTO day (day, tasks, commits, files,
