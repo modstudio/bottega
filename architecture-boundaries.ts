@@ -510,26 +510,26 @@ export const importBoundaries: ImportBoundary[] = [
   ),
   boundary(
     'recipe-lifecycle-boundary',
-    'orchestrator/src/recipe-lifecycle.ts',
+    'orchestrator/src/recipe/recipe-lifecycle.ts',
     ['./recipe-schema.ts', './recipe-step.ts'],
     'Keep lifecycle planning pure and independent of execution, persistence, filesystem, and the register.',
   ),
   boundary(
     'recipe-loader-boundary',
-    'orchestrator/src/recipe-loader.ts',
+    'orchestrator/src/recipe/recipe-loader.ts',
     ['node:fs', 'node:path', './recipe-schema.ts'],
     'Keep tracked recipe loading independent of execution, persistence, and CLI concerns.',
   ),
   boundary(
     'recipe-schema-boundary',
-    'orchestrator/src/recipe-schema.ts',
+    'orchestrator/src/recipe/recipe-schema.ts',
     ['zod'],
     'Keep the recipe schema pure and independent of file, register, and execution concerns.',
   ),
   boundary(
     'recipe-step-boundary',
-    'orchestrator/src/recipe-step.ts',
-    ['node:path', './worktree-template.ts', './recipe-schema.ts'],
+    'orchestrator/src/recipe/recipe-step.ts',
+    ['node:path', '../worktree-template.ts', './recipe-schema.ts'],
     'Keep recipe step execution independent of lifecycle, persistence, claims, and register concerns.',
   ),
   boundary(

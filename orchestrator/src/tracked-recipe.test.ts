@@ -12,8 +12,8 @@ import {
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { db, nowIso } from './db.ts'
-import type { TrackedRecipe } from './recipe-schema.ts'
-import type { Step, StepResult } from './recipe-step.ts'
+import type { TrackedRecipe } from './recipe/recipe-schema.ts'
+import type { Step, StepResult } from './recipe/recipe-step.ts'
 import {
   type AllocationAttempt,
   executeTrackedCreateSteps,

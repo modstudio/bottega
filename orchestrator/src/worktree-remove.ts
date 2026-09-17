@@ -11,7 +11,7 @@ import {
   type Recipe,
   type StepResult,
   teardownRecipe,
-} from './recipe.ts'
+} from './recipe/recipe.ts'
 import { markedWorktreeRunId, removeSharedRefGuard } from './ref-guard.ts'
 import { recipePortClaimForRun, settleDatabaseClaim } from './resource-claims.ts'
 import { teardownTrackedRecipe } from './tracked-recipe.ts'
