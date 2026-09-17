@@ -1,8 +1,8 @@
 import type { Database } from 'bun:sqlite'
 import { db, writableDb } from './db.ts'
 import {
-  type InjectionSource,
-  resolveInjection,
+  composeIndexSources,
+  resolveDeclaredFacts,
   unresolvedTrackerActionPlaceholder,
 } from './project-injection.ts'
 import { productionStepCatalogue } from './step-catalogue.ts'
@@ -358,10 +358,12 @@ export function composeWorkflow(
     mode?.steps.map(
       (stepSlug) => catalogue.definition.steps.find((step) => step.slug === stepSlug)!,
     ) ?? []
-  const sources = [
-    ...new Set(['docs', 'stack', ...selected.flatMap((step) => step.needs)]),
-  ] as InjectionSource[]
-  const facts = resolveInjection(project, sources, args)
+  const { resolved, facts } = resolveDeclaredFacts(
+    project,
+    selected.flatMap((step) => step.needs),
+    args,
+    composeIndexSources,
+  )
   return {
     workflow: { slug, title: definition.title, version: row.n },
     project: projectName,
@@ -382,9 +384,10 @@ export function composeWorkflow(
       }) ?? [],
     docs: {
       global: { scope: 'global' as const },
-      stack: { scope: 'stack' as const, subject: facts.stack },
-      project: facts.docs,
+      stack: { scope: 'stack' as const, subject: resolved.stack },
+      project: resolved.docs,
     },
+    facts,
     needs,
   }
 }
@@ -414,7 +417,7 @@ export function getWorkflowStep(
     stack: projectRow.stack,
     settings: JSON.parse(projectRow.settings ?? '{}'),
   }
-  const facts = resolveInjection(project, step.needs, args)
+  const { facts } = resolveDeclaredFacts(project, step.needs, args)
   const values: Record<string, unknown> = { ...args, ...facts }
   const body = step.body.replace(/\{\{([^{}]+)\}\}/g, (_all, path: string) => {
     let value: unknown = values
@@ -433,6 +436,7 @@ export function getWorkflowStep(
     version: row.n,
     catalogueVersion: catalogue.n,
     project: projectName,
+    facts,
     body,
   }
 }

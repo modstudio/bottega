@@ -210,6 +210,16 @@ describe('project workflow injection', () => {
     expect(hostileKey.actions.get).toBe('hub task show {key}')
   })
 
+  test('the register edge refuses a blank or non-string trunk', () => {
+    for (const trunk of ['', '   ', 42]) {
+      expect(
+        validateProjectSettings({ trunk } as Parameters<typeof validateProjectSettings>[0]).join(
+          '\n',
+        ),
+      ).toContain('trunk')
+    }
+  })
+
   test('the register edge refuses a missing or unsupported tracker protocol', () => {
     expect(validateProjectSettings({ tracker: {} }).join('\n')).toContain('tracker.protocol')
     expect(validateProjectSettings({ tracker: { protocol: 'made-up' } }).join('\n')).toContain(

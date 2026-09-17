@@ -35,6 +35,7 @@ const docsSchema = z.discriminatedUnion('protocol', [
 ])
 
 const gateSchema = z.string().trim().min(1)
+const trunkSchema = z.string().trim().min(1)
 // The shared shape keeps protocol open so hub can read any stored row; the
 // register edge accepts only protocols a workflow can act on.
 const trackerSchema = strictObject({
@@ -108,6 +109,7 @@ export function unresolvedTrackerActionPlaceholder(
 
 type InjectionSettings = {
   tracker?: TrackerSettings
+  trunk?: string
   gate?: string
   worktree?: unknown
   release?: ReleaseSettings
@@ -120,11 +122,20 @@ type InjectableProject = {
   settings: InjectionSettings
 }
 
-export const injectionSources = ['tracker', 'gate', 'worktree', 'release', 'docs', 'stack'] as const
+export const injectionSources = [
+  'tracker',
+  'trunk',
+  'gate',
+  'worktree',
+  'release',
+  'docs',
+  'stack',
+] as const
 export type InjectionSource = (typeof injectionSources)[number]
 
 type InjectionValues<Project extends InjectableProject> = {
   tracker: ResolvedTracker
+  trunk: NonNullable<Project['settings']['trunk']>
   gate: NonNullable<Project['settings']['gate']>
   worktree: NonNullable<Project['settings']['worktree']>
   release: NonNullable<Project['settings']['release']>
@@ -139,6 +150,7 @@ type ResolvedInjection<
 
 const settingCommands: Record<Exclude<InjectionSource, 'stack'>, string> = {
   tracker: `--settings '{"tracker":{"protocol":"<protocol>"}}'`,
+  trunk: `--settings '{"trunk":"<branch>"}'`,
   gate: `--settings '{"gate":"<command>"}'`,
   worktree: `--settings '{"worktree":{}}'`,
   release: `--settings '{"release":{"rungs":[],"mergeMethod":"<merge-method>","requiredChecks":[]}}'`,
@@ -216,7 +228,28 @@ export function resolveInjection<
   return resolved as ResolvedInjection<Project, Needs>
 }
 
-type ValidatedInjectionSettings = Pick<InjectionSettings, 'tracker' | 'release' | 'docs' | 'gate'>
+/** Sources the workflow compose index resolves beside the steps' declared needs. */
+export const composeIndexSources = ['docs', 'stack'] as const satisfies readonly InjectionSource[]
+
+/** Resolve declared needs plus extras together; `facts` carries only the declared needs. */
+export function resolveDeclaredFacts<Project extends InjectableProject>(
+  project: Project,
+  needs: readonly InjectionSource[],
+  args: Record<string, string> = {},
+  extras: readonly InjectionSource[] = [],
+) {
+  const declared = [...new Set(needs)]
+  const resolved = resolveInjection(project, [...extras, ...declared], args)
+  const facts = Object.fromEntries(declared.map((source) => [source, resolved[source]])) as Partial<
+    InjectionValues<Project>
+  >
+  return { resolved, facts }
+}
+
+type ValidatedInjectionSettings = Pick<
+  InjectionSettings,
+  'tracker' | 'trunk' | 'release' | 'docs' | 'gate'
+>
 
 /** Validate the workflow-specific portion of a project settings blob at the register edge. */
 export function validateProjectInjectionSettings(settings: ValidatedInjectionSettings): string[] {
@@ -226,6 +259,7 @@ export function validateProjectInjectionSettings(settings: ValidatedInjectionSet
     ['release', releaseSchema],
     ['docs', docsSchema],
     ['gate', gateSchema],
+    ['trunk', trunkSchema],
   ] as const) {
     if (settings[name] === undefined) continue
     const result = schema.safeParse(settings[name])

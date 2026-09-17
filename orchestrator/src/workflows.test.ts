@@ -24,6 +24,13 @@ const valid = (): WorkflowDefinition => ({
   arguments: [{ name: 'key', required: true, description: 'Task key' }],
   modes: [{ slug: 'default', title: 'Default', default: true, steps: ['lens'] }],
 })
+const release = {
+  rungs: [{ name: 'production', branch: 'production', deploy: 'bun run deploy' }],
+  mergeMethod: 'squash' as const,
+  deployCommand: 'bun run deploy',
+  requiredChecks: ['gate'],
+  observationWindowHours: 24,
+}
 const database = () => {
   const d = new Database(':memory:')
   d.exec('PRAGMA foreign_keys=ON')
@@ -131,6 +138,108 @@ describe('workflow versions and project composition', () => {
     expect(composed.catalogue.version).toBe(1)
     expect(composed.steps.every((step) => step.floor.length > 0)).toBe(true)
     expect(getWorkflowStep('ship', 'fixture', 'rebase', args, d).body).toContain('bun run check')
+  })
+  test('renders the project trunk and refuses a missing trunk with its remedy', () => {
+    const d = database()
+    d.query('UPDATE project SET settings=? WHERE name=?').run(
+      JSON.stringify({ trunk: 'develop', docs: { protocol: 'orch-docs' } }),
+      'fixture',
+    )
+    const current = productionStepCatalogue(d).definition
+    const catalogue = setStepCatalogue(
+      {
+        steps: [
+          ...current.steps,
+          {
+            slug: 'land',
+            title: 'Land',
+            body: 'Land on {{trunk}}.',
+            floor: ['human-ruling'],
+            job: null,
+            autonomy: 'ask',
+            needs: ['trunk'],
+          },
+        ],
+      },
+      'trunk fixture',
+      'test',
+      d,
+    )
+    promoteStepCatalogue(catalogue.n, 'publish', 'test', d)
+    const workflow = setWorkflow(
+      'land',
+      {
+        title: 'Land',
+        description: 'Land.',
+        arguments: [],
+        modes: [{ slug: 'default', title: 'Default', default: true, steps: ['land'] }],
+      },
+      'trunk fixture',
+      'test',
+      d,
+    )
+    promoteWorkflow('land', workflow.n, 'publish', 'test', d)
+
+    expect(getWorkflowStep('land', 'fixture', 'land', {}, d).body).toBe('Land on develop.')
+    d.query('UPDATE project SET settings=? WHERE name=?').run(
+      JSON.stringify({ docs: { protocol: 'orch-docs' } }),
+      'fixture',
+    )
+    expect(() => getWorkflowStep('land', 'fixture', 'land', {}, d)).toThrow(
+      `- trunk; set with: orch project set fixture --settings '{"trunk":"<branch>"}'`,
+    )
+  })
+  test('returns only the resolved facts needed by composed steps', () => {
+    const d = database()
+    d.query('UPDATE project SET settings=? WHERE name=?').run(
+      JSON.stringify({ release, docs: { protocol: 'orch-docs' } }),
+      'fixture',
+    )
+    const current = productionStepCatalogue(d).definition
+    const catalogue = setStepCatalogue(
+      {
+        steps: [
+          ...current.steps,
+          {
+            slug: 'release-facts',
+            title: 'Release facts',
+            body: 'Read the release facts.',
+            floor: ['human-ruling'],
+            job: null,
+            autonomy: 'ask',
+            needs: ['release'],
+          },
+        ],
+      },
+      'release facts fixture',
+      'test',
+      d,
+    )
+    promoteStepCatalogue(catalogue.n, 'publish', 'test', d)
+    const workflow = setWorkflow(
+      'release-facts',
+      {
+        title: 'Release facts',
+        description: 'Release.',
+        arguments: [],
+        modes: [
+          {
+            slug: 'default',
+            title: 'Default',
+            default: true,
+            steps: ['release-facts'],
+          },
+        ],
+      },
+      'release facts fixture',
+      'test',
+      d,
+    )
+    promoteWorkflow('release-facts', workflow.n, 'publish', 'test', d)
+
+    const facts = composeWorkflow('release-facts', 'fixture', undefined, {}, d).facts
+    expect(facts.release!.rungs).toEqual(release.rungs)
+    expect(facts).toEqual({ release })
   })
   test('composes dedupe with the workspace tracker search tool', () => {
     const d = database()
