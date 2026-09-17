@@ -17,8 +17,10 @@ import {
   resolveCodexAcpBin,
   stopErrorMessage,
   type TransportHandle,
+  TransportOperationTimeout,
   type TransportResult,
   type TransportStartOpts,
+  withTransportDeadline,
 } from './transport.ts'
 
 type AcpUpdate = {
@@ -67,31 +69,22 @@ export async function awaitAcpHandshake<T>(opts: {
   schedule?: (callback: () => void, delay: number) => ReturnType<typeof setTimeout>
   unschedule?: (timer: ReturnType<typeof setTimeout>) => void
 }): Promise<T> {
-  const schedule = opts.schedule ?? setTimeout
-  const unschedule = opts.unschedule ?? clearTimeout
-  let timer: ReturnType<typeof setTimeout> | null = null
-  const timeout = new Promise<never>((_resolve, reject) => {
-    timer = schedule(() => {
-      void opts
-        .terminate()
-        .catch(() => {
-          /* the refusal still names the process that could not be reclaimed */
-        })
-        .finally(() => {
-          reject(
-            new Error(
-              `ACP handshake refusal: ${opts.stage} timed out after ${ACP_HANDSHAKE_TIMEOUT_MS}ms ` +
-                `for ${opts.harness} harness (pid ${opts.pid ?? 'unknown'}); inspect the harness ` +
-                `startup logs, fix the stalled stage, and rerun the command`,
-            ),
-          )
-        })
-    }, ACP_HANDSHAKE_TIMEOUT_MS)
-  })
   try {
-    return await Promise.race([opts.request, timeout])
-  } finally {
-    if (timer !== null) unschedule(timer)
+    return await withTransportDeadline({
+      operation: opts.request,
+      operationName: `ACP handshake ${opts.stage}`,
+      timeoutMs: ACP_HANDSHAKE_TIMEOUT_MS,
+      onTimeout: opts.terminate,
+      schedule: opts.schedule,
+      unschedule: opts.unschedule,
+    })
+  } catch (error) {
+    if (!(error instanceof TransportOperationTimeout)) throw error
+    throw new Error(
+      `ACP handshake refusal: ${opts.stage} timed out after ${ACP_HANDSHAKE_TIMEOUT_MS}ms ` +
+        `for ${opts.harness} harness (pid ${opts.pid ?? 'unknown'}); inspect the harness ` +
+        `startup logs, fix the stalled stage, and rerun the command`,
+    )
   }
 }
 
@@ -383,6 +376,64 @@ export function acpLeaderSocketPath(outPath: string, runtimeDir?: string): strin
   return runtimeDir ? join(runtimeDir, 'grok-leader.sock') : `${outPath}.leader.sock`
 }
 
+function acpEnvironment(opts: TransportStartOpts): Record<string, string> {
+  const env: Record<string, string> = {
+    ...opts.env,
+    NO_BROWSER: '1',
+    INITIAL_AGENT_MODE: 'read-only',
+  }
+  if (opts.model) env.CODEX_CONFIG = JSON.stringify({ model: opts.model })
+  if (opts.agent.harness === 'opencode' && opts.agent.baseUrl && opts.model) {
+    env.OPENCODE_CONFIG_CONTENT = JSON.stringify({
+      model: `orch-local/${opts.model}`,
+      provider: {
+        'orch-local': {
+          npm: '@ai-sdk/openai-compatible',
+          name: 'orch local backend',
+          options: { baseURL: opts.agent.baseUrl, apiKey: 'local' },
+          models: { [opts.model]: { name: opts.model } },
+        },
+      },
+    })
+  }
+  if (opts.agent.harness === 'goose') {
+    const stateDir = opts.srt?.runtimeDir ?? dirname(opts.outPath)
+    env.XDG_STATE_HOME = stateDir
+    env.XDG_DATA_HOME = stateDir
+    env.XDG_CONFIG_HOME = stateDir
+  }
+  return env
+}
+
+function acpLaunchArgv(
+  opts: TransportStartOpts,
+  profile: SandboxRuntimeConfig | null,
+  bin: string,
+  agentArgv: string[],
+): Promise<string[]> | string[] {
+  if (!profile || !opts.srt) return [bin, ...agentArgv]
+  return sandboxLaunchArgv(profile, bin, agentArgv)
+}
+
+function acpUsage(response: { _meta?: unknown; usage?: unknown }): AcpTurnInput['usage'] {
+  const meta = isRecord(response._meta) ? response._meta : null
+  const nested = meta && isRecord(meta.usage) ? meta.usage : null
+  const direct = isRecord(response.usage) ? response.usage : null
+  const usage = (nested ?? direct) as Record<string, unknown> | null
+  const inputTokens = usage && typeof usage.inputTokens === 'number' ? usage.inputTokens : undefined
+  const outputTokens =
+    usage && typeof usage.outputTokens === 'number' ? usage.outputTokens : undefined
+  const totalTokens = usage && typeof usage.totalTokens === 'number' ? usage.totalTokens : undefined
+  const costTicks = usage && typeof usage.costUsdTicks === 'number' ? usage.costUsdTicks : undefined
+  const costUsd = costTicks === undefined ? undefined : costTicks / 1_000_000_000
+  return inputTokens !== undefined ||
+    outputTokens !== undefined ||
+    totalTokens !== undefined ||
+    costUsd !== undefined
+    ? { inputTokens, outputTokens, totalTokens, costUsd }
+    : null
+}
+
 async function openAcp(opts: TransportStartOpts): Promise<TransportHandle> {
   const grok = opts.agent.name === 'grok'
   const genericHarness = opts.agent.harness === 'opencode' || opts.agent.harness === 'goose'
@@ -390,38 +441,10 @@ async function openAcp(opts: TransportStartOpts): Promise<TransportHandle> {
   const leaderSocket = grok ? acpLeaderSocketPath(opts.outPath, opts.srt?.runtimeDir) : null
   const agentArgv = acpHarnessArgv(opts.agent.harness ?? opts.agent.name, leaderSocket)
   const profile = opts.srt ? acpSandboxProfile(opts.srt.profile, leaderSocket) : null
-  const launch =
-    profile && opts.srt ? await sandboxLaunchArgv(profile, bin, agentArgv) : [bin, ...agentArgv]
+  const launch = await acpLaunchArgv(opts, profile, bin, agentArgv)
   const child = execa(launch[0]!, launch.slice(1), {
     cwd: opts.cwd,
-    env: {
-      ...opts.env,
-      NO_BROWSER: '1',
-      INITIAL_AGENT_MODE: 'read-only',
-      ...(opts.model ? { CODEX_CONFIG: JSON.stringify({ model: opts.model }) } : {}),
-      ...(opts.agent.harness === 'opencode' && opts.agent.baseUrl && opts.model
-        ? {
-            OPENCODE_CONFIG_CONTENT: JSON.stringify({
-              model: `orch-local/${opts.model}`,
-              provider: {
-                'orch-local': {
-                  npm: '@ai-sdk/openai-compatible',
-                  name: 'orch local backend',
-                  options: { baseURL: opts.agent.baseUrl, apiKey: 'local' },
-                  models: { [opts.model]: { name: opts.model } },
-                },
-              },
-            }),
-          }
-        : {}),
-      ...(opts.agent.harness === 'goose'
-        ? {
-            XDG_STATE_HOME: opts.srt?.runtimeDir ?? dirname(opts.outPath),
-            XDG_DATA_HOME: opts.srt?.runtimeDir ?? dirname(opts.outPath),
-            XDG_CONFIG_HOME: opts.srt?.runtimeDir ?? dirname(opts.outPath),
-          }
-        : {}),
-    },
+    env: acpEnvironment(opts),
     stdin: 'pipe',
     stdout: 'pipe',
     stderr: 'pipe',
@@ -689,26 +712,7 @@ async function openAcp(opts: TransportStartOpts): Promise<TransportHandle> {
         try {
           const response = await promptWork
           stopReason = response.stopReason
-          const meta = isRecord(response._meta) ? response._meta : null
-          const nested = meta && isRecord(meta.usage) ? meta.usage : null
-          const direct = isRecord(response.usage) ? response.usage : null
-          const usage = (nested ?? direct) as Record<string, unknown> | null
-          const inputTokens =
-            usage && typeof usage.inputTokens === 'number' ? usage.inputTokens : undefined
-          const outputTokens =
-            usage && typeof usage.outputTokens === 'number' ? usage.outputTokens : undefined
-          const totalTokens =
-            usage && typeof usage.totalTokens === 'number' ? usage.totalTokens : undefined
-          const costTicks =
-            usage && typeof usage.costUsdTicks === 'number' ? usage.costUsdTicks : undefined
-          const costUsd = costTicks === undefined ? undefined : costTicks / 1_000_000_000
-          terminalUsage =
-            inputTokens !== undefined ||
-            outputTokens !== undefined ||
-            totalTokens !== undefined ||
-            costUsd !== undefined
-              ? { inputTokens, outputTokens, totalTokens, costUsd }
-              : null
+          terminalUsage = acpUsage(response)
         } catch (cause) {
           error = String((cause as Error)?.message ?? cause)
         }

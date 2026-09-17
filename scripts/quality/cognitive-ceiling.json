@@ -764,22 +764,16 @@
   },
   {
     "file": "orchestrator/src/transport/transport-acp.ts",
-    "function": "openAcp",
-    "line": 293,
-    "score": 25,
-    "key": "orchestrator/src/transport/transport-acp.ts\u0000openAcp"
-  },
-  {
-    "file": "orchestrator/src/transport/transport-acp.ts",
     "function": "onRequest callback#2",
     "line": 372,
     "score": 18
   },
   {
     "file": "orchestrator/src/transport/transport-acp.ts",
-    "function": "IIFE",
-    "line": 532,
-    "score": 20
+    "function": "openAcp",
+    "line": 418,
+    "score": 19,
+    "key": "orchestrator/src/transport/transport-acp.ts\u0000openAcp"
   },
   {
     "file": "orchestrator/src/workflow/workflows.ts",
