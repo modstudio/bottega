@@ -98,12 +98,15 @@ try {
   const ownerUrl = `postgres://${RECORD_OWNER_ROLE}:owner-password@127.0.0.1:${port}/postgres`
   const actorUrl = `postgres://${RECORD_ACTOR_ROLE}:actor-password@127.0.0.1:${port}/postgres`
 
-  const rls = await run(['bun', 'test', '--timeout', '30000', 'src/postgres-migrate-rls.test.ts'], {
-    ORCH_TEST_POSTGRES_CONTAINER: container,
-    ORCH_RECORD_MIGRATE_URL: ownerUrl,
-    ORCH_RECORD_URL: actorUrl,
-    ORCH_TEST_POSTGRES_FALSIFY: falsify ? 'revoke-project-select' : '',
-  })
+  const rls = await run(
+    ['bun', 'test', '--timeout', '30000', 'src/postgres/postgres-migrate-rls.test.ts'],
+    {
+      ORCH_TEST_POSTGRES_CONTAINER: container,
+      ORCH_RECORD_MIGRATE_URL: ownerUrl,
+      ORCH_RECORD_URL: actorUrl,
+      ORCH_TEST_POSTGRES_FALSIFY: falsify ? 'revoke-project-select' : '',
+    },
+  )
   if (rls !== 0) process.exitCode = rls
   else if (!falsify) {
     const remigrate = await run(['bun', 'src/orch.ts', 'record', 'migrate'], {
@@ -118,7 +121,7 @@ try {
       if (evidence !== 0) process.exitCode = evidence
       else
         process.exitCode = await run(
-          ['bun', 'test', '--timeout', '120000', 'src/postgres-import.test.ts'],
+          ['bun', 'test', '--timeout', '120000', 'src/postgres/postgres-import.test.ts'],
           {
             ORCH_TEST_POSTGRES_CONTAINER: container,
             ORCH_TEST_POSTGRES_URL: `postgres://postgres:postgres@127.0.0.1:${port}/postgres`,

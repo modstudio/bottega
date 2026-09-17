@@ -10,6 +10,7 @@ const POSTGRES_MIGRATIONS_FOLDER = join(
   import.meta.dir,
   '..',
   '..',
+  '..',
   'shared',
   'record',
   'migrations',

@@ -1,5 +1,5 @@
 #!/usr/bin/env bun
-import { importProjects } from '../src/postgres-import.ts'
+import { importProjects } from '../src/postgres/postgres-import.ts'
 
 function required(name: string): string {
   const index = process.argv.indexOf(name)

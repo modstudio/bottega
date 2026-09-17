@@ -2,18 +2,21 @@ import { Database } from 'bun:sqlite'
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test'
 import { copyFileSync, existsSync, rmSync } from 'node:fs'
 import { SQL } from 'bun'
-import { PLATFORM_SLUG } from '../../shared/brand.ts'
-import { newRecordId, PLATFORM_SPACE_ID } from '../../shared/record/schema.ts'
-import { installRecordSessionRunner, memoryRecordSession } from '../test/fixtures/record-session.ts'
-import { backfillLandingEvidenceRecords } from './landing-outbox.ts'
-import { applyMigrations } from './migrations.ts'
+import { PLATFORM_SLUG } from '../../../shared/brand.ts'
+import { newRecordId, PLATFORM_SPACE_ID } from '../../../shared/record/schema.ts'
+import {
+  installRecordSessionRunner,
+  memoryRecordSession,
+} from '../../test/fixtures/record-session.ts'
+import { backfillLandingEvidenceRecords } from '../landing-outbox.ts'
+import { applyMigrations } from '../migrations.ts'
+import { RECORD_SESSION_KEY, recordAuth, setActiveRecordSpace } from '../record-auth.ts'
+import { syncRecord } from '../record-sync.ts'
+import { backfillReviewRecords } from '../review-outbox.ts'
+import { backfillRunRecords } from '../run-outbox.ts'
+import { backfillScoreRecords } from '../score-outbox.ts'
 import { importProjects } from './postgres-import.ts'
 import { migratePostgres } from './postgres-migrate.ts'
-import { RECORD_SESSION_KEY, recordAuth, setActiveRecordSpace } from './record-auth.ts'
-import { syncRecord } from './record-sync.ts'
-import { backfillReviewRecords } from './review-outbox.ts'
-import { backfillRunRecords } from './run-outbox.ts'
-import { backfillScoreRecords } from './score-outbox.ts'
 
 const container = process.env.ORCH_TEST_POSTGRES_CONTAINER
 const databaseUrl = process.env.ORCH_TEST_POSTGRES_URL
