@@ -160,12 +160,6 @@ function RunsList() {
         [(data.totals.voided ?? 0).toLocaleString(), 'voided', 'not routing evidence'],
         [data.unscored.toLocaleString(), 'unscored', 'teaches the router nothing'],
         [data.totals.failed.toLocaleString(), 'failed', 'counts against the agent'],
-        // One tile per vendor: their token counts are separate currencies.
-        ...data.vendors.map((vendor) => [
-          compactTokens(vendor.tokens),
-          `${vendor.agent} tokens`,
-          'as the vendor reports them',
-        ]),
       ]
     : []
   // The server applies search and paging; these are the rows to draw.
@@ -280,6 +274,14 @@ function RunsList() {
                 live={index === 1 && data.live.length > 0}
               />
             ))}
+            <StatTile
+              label="vendor tokens"
+              hint="separate currencies, never summed"
+              breakdown={data.vendors.map((vendor) => ({
+                label: vendor.agent,
+                value: compactTokens(vendor.tokens),
+              }))}
+            />
           </StatRow>
           {filtered ? (
             <p className="mb-4 text-text-muted">
