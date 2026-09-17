@@ -60,8 +60,7 @@ realPostgres('project import against copied live SQLite data', () => {
 
   beforeAll(async () => {
     process.env.BETTER_AUTH_SECRET = 'postgres-import-secret-at-least-thirty-two-characters'
-    const already = await sql`SELECT to_regclass('public.doc')::text AS present`
-    if (!already[0]?.present) await migratePostgres()
+    await migratePostgres()
     const signedUp = await recordAuth(actorUrl!).api.signUpEmail({
       body: {
         email: 'live-copy@example.test',
@@ -81,7 +80,7 @@ realPostgres('project import against copied live SQLite data', () => {
   afterAll(async () => {
     delete process.env.BETTER_AUTH_SECRET
     await sql.unsafe(
-      'DROP TABLE IF EXISTS run_score, membership, machine, seq, project, "user", space CASCADE',
+      'DROP TABLE IF EXISTS run_exclusion, run_score, doc_revision, doc, membership, machine, seq, project, "user", space CASCADE',
     )
     await sql.unsafe('DROP SCHEMA IF EXISTS drizzle CASCADE')
     await sql.close()
