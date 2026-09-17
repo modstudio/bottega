@@ -7,6 +7,14 @@ import { DEFAULT_IDLE_GRACE_MS, terminateProcessGroup } from '../idle-kill.ts'
 import type { SandboxRuntimeConfig } from '../sandbox/sandbox.ts'
 import { sandboxLaunchArgv } from '../sandbox/sandbox.ts'
 import {
+  type AcpTrace,
+  createAcpTrace,
+  installAcpChildTrace,
+  installAcpConnectionTrace,
+  installAcpStreamTrace,
+  traceAcpHandshake,
+} from './acp-trace.ts'
+import {
   ACP_PILOT_TASK,
   type AgentTransport,
   confineFsPath,
@@ -334,8 +342,12 @@ export function normalizeAcpTurn(input: AcpTurnInput): TransportResult {
   }
 }
 
-function webStream(child: ResultPromise): ReturnType<typeof acp.ndJsonStream> {
+function webStream(
+  child: ResultPromise,
+  trace: AcpTrace | null,
+): ReturnType<typeof acp.ndJsonStream> {
   if (!child.stdin || !child.stdout) throw new Error('ACP agent stdio is not a pipe')
+  if (trace) installAcpStreamTrace(trace, child.stdin, child.stdout)
   const input = Writable.toWeb(child.stdin)
   const output = Readable.toWeb(child.stdout) as unknown as ReadableStream<Uint8Array>
   return acp.ndJsonStream(input, output)
@@ -455,6 +467,16 @@ async function openAcp(opts: TransportStartOpts): Promise<TransportHandle> {
     forceKillAfterDelay: DEFAULT_IDLE_GRACE_MS,
     reject: false,
   })
+  const trace = createAcpTrace(
+    opts.env.ORCH_ACP_TRACE,
+    opts.env.ORCH_RUN_ID ?? 'unknown-run',
+    child.pid ?? 0,
+    bin,
+    agentArgv,
+    opts.cwd,
+    profile !== null,
+  )
+  installAcpChildTrace(trace, child.nodeChildProcess)
 
   const stderrChunks: Buffer[] = []
   child.stderr?.on('data', (chunk: Buffer) => {
@@ -576,19 +598,22 @@ async function openAcp(opts: TransportStartOpts): Promise<TransportHandle> {
       }
     })
 
-  const stream = webStream(child)
+  const stream = webStream(child, trace)
   connection = app.connect(stream)
+  installAcpConnectionTrace(trace, connection.closed)
   ctx = connection.agent
 
   try {
     const handshake = <T>(request: Promise<T>, stage: AcpHandshakeStage) =>
-      awaitAcpHandshake({
-        request,
-        stage,
-        harness: opts.agent.harness ?? opts.agent.name,
-        pid: child.pid ?? null,
-        terminate: () => terminateProcessGroup(child.pid ?? 0, { direct: child }),
-      })
+      traceAcpHandshake(trace, stage, () =>
+        awaitAcpHandshake({
+          request,
+          stage,
+          harness: opts.agent.harness ?? opts.agent.name,
+          pid: child.pid ?? null,
+          terminate: () => terminateProcessGroup(child.pid ?? 0, { direct: child }),
+        }),
+      )
     await handshake(
       ctx.request(acp.methods.agent.initialize, {
         // ACP has no result object, so the reply file is the one advertised write.

@@ -406,6 +406,12 @@ export const modules: ArchitectureModule[] = [
     './store-hooks.ts',
     './standard-transports.ts',
   ]),
+  module('orchestrator/src/transport/acp-trace.ts', [
+    'node:child_process',
+    'node:fs',
+    'node:path',
+    'node:stream',
+  ]),
   module('orchestrator/src/sandbox/sandbox.ts', [
     '../database/db.ts',
     '../mcp/mcp-probe.ts',
