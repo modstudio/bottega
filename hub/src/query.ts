@@ -3,7 +3,6 @@ import type { Capabilities } from '../../shared/trackers.ts'
 import { db, writeTransaction } from './db.ts'
 import { projects } from './projects.ts'
 import {
-  type IntervalRow,
   intervalEndMs,
   projectBoard,
   projectTasksInWindow,
@@ -82,28 +81,6 @@ export function completedInWindow(from: string, to: string) {
       ORDER BY e.at DESC`,
     )
     .all(from, to)
-}
-
-/** The raw spans behind one task, so a surprising number can be traced. */
-export function intervalsOf(key: string | null, project: string | null, from: string, to: string) {
-  const d = db()
-  return key
-    ? d
-        .query<IntervalRow, [string, string, string]>(
-          `SELECT task_key, project, source, agent, job, start_at, end_at, open,
-                claude_tokens, vendor_tokens, vendor_cost_usd
-           FROM interval WHERE task_key = ? AND end_at >= ? AND start_at < ?
-          ORDER BY start_at`,
-        )
-        .all(key, from, to)
-    : d
-        .query<IntervalRow, [string | null, string, string]>(
-          `SELECT task_key, project, source, agent, job, start_at, end_at, open,
-                claude_tokens, vendor_tokens, vendor_cost_usd
-           FROM interval WHERE task_key IS NULL AND project IS ? AND end_at >= ? AND start_at < ?
-          ORDER BY start_at`,
-        )
-        .all(project, from, to)
 }
 
 /**

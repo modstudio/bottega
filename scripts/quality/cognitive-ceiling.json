@@ -57,6 +57,13 @@
     "score": 37
   },
   {
+    "file": "hub/web/src/components/task-sheet.tsx",
+    "function": "TaskSheet",
+    "line": 87,
+    "score": 40,
+    "key": "hub/web/src/components/task-sheet.tsx\u0000TaskSheet"
+  },
+  {
     "file": "hub/web/src/components/work-view.tsx",
     "function": "TaskContent",
     "line": 149,

@@ -79,12 +79,12 @@ function DocumentEditor({ document }: { document: TaskRecordResponse['documents'
   )
 }
 
-export function TaskSheet({ taskKey, onClose }: { taskKey: string; onClose: () => void }) {
+function HostedAwareTaskSheet({ taskKey, onClose }: { taskKey: string; onClose: () => void }) {
   if (isHostedMode()) return <HostedTaskSheet taskKey={taskKey} onClose={onClose} />
-  return <LocalTaskSheet taskKey={taskKey} onClose={onClose} />
+  return <TaskSheet taskKey={taskKey} onClose={onClose} />
 }
 
-function LocalTaskSheet({ taskKey, onClose }: { taskKey: string; onClose: () => void }) {
+function TaskSheet({ taskKey, onClose }: { taskKey: string; onClose: () => void }) {
   const record = useQuery(trpc.work.task.queryOptions({ key: taskKey }))
   const [title, setTitle] = useState('')
   const [comment, setComment] = useState('')
@@ -313,3 +313,5 @@ function LocalTaskSheet({ taskKey, onClose }: { taskKey: string; onClose: () => 
     </Companion>
   )
 }
+
+export { HostedAwareTaskSheet as TaskSheet }
