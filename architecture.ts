@@ -131,6 +131,7 @@ export const modules: ArchitectureModule[] = [
   module('shared/record/schema-run.ts', ['./schema.ts']),
   module('shared/record/schema-review.ts', ['./schema.ts']),
   module('shared/record/schema-landing.ts', ['./schema.ts']),
+  module('shared/record-session.ts', ['./brand.ts']),
   module('orchestrator/src/record-command.ts', [
     './postgres-migrate.ts',
     './record-doctor.ts',
@@ -143,7 +144,11 @@ export const modules: ArchitectureModule[] = [
     './record-session.ts',
     './record-sync.ts',
   ]),
-  module('orchestrator/src/record-session.ts', ['./db.ts', './record-auth.ts']),
+  module('orchestrator/src/record-session.ts', [
+    '../../shared/record-session.ts',
+    './db.ts',
+    './record-auth.ts',
+  ]),
   module('orchestrator/src/record-space.ts', [
     '../../shared/record/schema.ts',
     './record-auth.ts',

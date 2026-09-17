@@ -5,7 +5,13 @@ import { importSpecifiers } from './import-scanner.ts'
 
 const ROOT = new URL('..', import.meta.url).pathname.replace(/\/$/, '')
 const FILE = 'orchestrator/src/record-auth-command.ts'
-const ALLOWED = new Set(['bun', './db.ts', './record-auth.ts', './record-session.ts'])
+const ALLOWED = new Set([
+  'bun',
+  '../../shared/record-session.ts',
+  './db.ts',
+  './record-auth.ts',
+  './record-session.ts',
+])
 const imports = importSpecifiers(readFileSync(`${ROOT}/${FILE}`, 'utf8'))
 const violations = [...imports.specifiers, ...imports.typeOnlySpecifiers]
   .filter((specifier) => !ALLOWED.has(specifier))
