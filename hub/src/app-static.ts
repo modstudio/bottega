@@ -1,3 +1,5 @@
+import { join } from 'node:path'
+
 export type AppStaticResolution =
   | { kind: 'file'; relativePath: string }
   | { kind: 'index'; relativePath: 'index.html' }
@@ -11,4 +13,18 @@ export function resolveAppStatic(pathname: string, built: boolean): AppStaticRes
     return { kind: 'index', relativePath: 'index.html' }
   }
   return { kind: 'file', relativePath }
+}
+
+/**
+ * The absolute path of a resolved asset.
+ *
+ * Both servers used to concatenate the dist directory and the relative path,
+ * which produced `distindex.html` and served a 500 whose headers had already
+ * gone out as 200. Joining here leaves the callers nothing to get wrong.
+ */
+export function appStaticPath(
+  dist: string,
+  resolution: Extract<AppStaticResolution, { relativePath: string }>,
+): string {
+  return join(dist, resolution.relativePath)
 }
