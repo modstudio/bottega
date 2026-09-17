@@ -1,13 +1,13 @@
 ---
 description: Docs, canon store, resume briefs, the project register, the subagent gate, and published scores.
 paths:
-  - orchestrator/src/docs.ts
-  - orchestrator/src/doc-commands.ts
-  - orchestrator/src/canon*.ts
-  - orchestrator/src/projects.ts
-  - orchestrator/src/project-commands.ts
-  - orchestrator/src/serve.ts
-  - orchestrator/src/metric*.ts
+  - orchestrator/src/**/docs.ts
+  - orchestrator/src/**/doc-commands.ts
+  - orchestrator/src/**/canon*.ts
+  - orchestrator/src/**/projects.ts
+  - orchestrator/src/**/project-commands.ts
+  - orchestrator/src/**/serve.ts
+  - orchestrator/src/**/metric*.ts
   - orchestrator/hooks/block-agent.py
   - orchestrator/hooks/session-brief.py
 ---

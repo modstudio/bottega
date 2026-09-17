@@ -1,11 +1,11 @@
 ---
 description: Review lenses, calibration, tiers, the drain loop, filing, and what to delegate.
 paths:
-  - orchestrator/src/review*.ts
-  - orchestrator/src/lens*.ts
-  - orchestrator/src/issue.ts
-  - orchestrator/src/issue-report-fields.ts
-  - orchestrator/src/contract.ts
+  - orchestrator/src/**/review*.ts
+  - orchestrator/src/**/lens*.ts
+  - orchestrator/src/**/issue.ts
+  - orchestrator/src/**/issue-report-fields.ts
+  - orchestrator/src/**/contract.ts
 ---
 
 # Review lenses and reviewer calibration

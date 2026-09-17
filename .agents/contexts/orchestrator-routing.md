@@ -1,25 +1,25 @@
 ---
 description: Why delegation exists, scoring, routing, fidelity, failures, capabilities, and local-model serving.
 paths:
-  - orchestrator/src/route*.ts
-  - orchestrator/src/routing*.ts
-  - orchestrator/src/score.ts
-  - orchestrator/src/judgement.ts
-  - orchestrator/src/evidence*.ts
-  - orchestrator/src/agents.ts
-  - orchestrator/src/agent-*.ts
-  - orchestrator/src/capabilities.ts
-  - orchestrator/src/local-host.ts
-  - orchestrator/src/failover.ts
-  - orchestrator/src/failure*.ts
-  - orchestrator/src/recalibration.ts
-  - orchestrator/src/guide.ts
-  - orchestrator/src/doctor.ts
-  - orchestrator/src/duel.ts
-  - orchestrator/src/outcome.ts
-  - orchestrator/src/jobs.ts
-  - orchestrator/src/pack-budget.ts
-  - orchestrator/src/standard-*.ts
+  - orchestrator/src/**/route*.ts
+  - orchestrator/src/**/routing*.ts
+  - orchestrator/src/**/score.ts
+  - orchestrator/src/**/judgement.ts
+  - orchestrator/src/**/evidence*.ts
+  - orchestrator/src/**/agents.ts
+  - orchestrator/src/**/agent-*.ts
+  - orchestrator/src/**/capabilities.ts
+  - orchestrator/src/**/local-host.ts
+  - orchestrator/src/**/failover.ts
+  - orchestrator/src/**/failure*.ts
+  - orchestrator/src/**/recalibration.ts
+  - orchestrator/src/**/guide.ts
+  - orchestrator/src/**/doctor.ts
+  - orchestrator/src/**/duel.ts
+  - orchestrator/src/**/outcome.ts
+  - orchestrator/src/**/jobs.ts
+  - orchestrator/src/**/pack-budget.ts
+  - orchestrator/src/**/standard-*.ts
 ---
 
 # What it is for
