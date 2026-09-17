@@ -7,6 +7,8 @@ import {
   check,
   doublePrecision,
   integer,
+  jsonb,
+  pgPolicy,
   pgTable,
   text,
   timestamp,
@@ -169,6 +171,52 @@ export const hubNoteAcknowledgement = pgTable.withRLS(
     unique('hub_note_ack_space_session_unique').on(table.spaceId, table.noteId, table.sessionId),
     check('hub_note_ack_sightings_check', sql`${table.sightings} > 0`),
     ...tenantPolicies('hub_note_acknowledgement', table.spaceId),
+  ],
+)
+
+export const hubReportSetting = pgTable.withRLS(
+  'hub_report_setting',
+  {
+    spaceId: spaceIdentity().primaryKey(),
+    value: jsonb().notNull(),
+    version: integer().notNull(),
+    updatedAt: updatedAt(),
+  },
+  (table) => [
+    check('hub_report_setting_version_check', sql`${table.version} > 0`),
+    ...tenantPolicies('hub_report_setting', table.spaceId),
+  ],
+)
+
+export const hubSend = pgTable.withRLS(
+  'hub_send',
+  {
+    id: identity(),
+    legacyLocalId: bigint('legacy_local_id', { mode: 'bigint' }),
+    spaceId: spaceIdentity(),
+    at: timestamp({ withTimezone: true }).notNull(),
+    window: text().notNull(),
+    recipients: text().notNull(),
+    projects: text().notNull(),
+    items: integer().notNull(),
+    status: text().notNull(),
+    error: text(),
+    test: integer().notNull().default(0),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull(),
+    machine: text().notNull(),
+  },
+  (table) => [
+    unique('hub_send_space_legacy_unique').on(table.spaceId, table.legacyLocalId),
+    check('hub_send_status_check', sql`${table.status} IN ('sent','skipped','failed')`),
+    check('hub_send_test_check', sql`${table.test} IN (0,1)`),
+    pgPolicy('hub_send_space_select', {
+      for: 'select',
+      using: sql`${table.spaceId} = nullif(current_setting('app.space_id', true), '')::uuid`,
+    }),
+    pgPolicy('hub_send_space_insert', {
+      for: 'insert',
+      withCheck: sql`${table.spaceId} = nullif(current_setting('app.space_id', true), '')::uuid`,
+    }),
   ],
 )
 

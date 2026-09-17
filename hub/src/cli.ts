@@ -31,11 +31,20 @@ import { startDashboardCapability } from './orch.ts'
 import { projects } from './projects.ts'
 import { estateEngagedMs, rollUpDays, tasksInWindow } from './query.ts'
 import { printReconcile, reconcileOpenIntervals } from './reconcile.ts'
-import { gather, recordSend, renderHtml, renderText, send, summarise } from './report.ts'
+import {
+  gather,
+  recordOutcomeAfterEmail,
+  recordSend,
+  renderHtml,
+  renderText,
+  send,
+  summarise,
+} from './report.ts'
+import { refreshHostedReportSetting } from './report-cache.ts'
+import { pushReports } from './report-push.ts'
 import { listOpenRulings, rulingsPayload } from './rulings.ts'
 import { serve } from './serve.ts'
 import { ownServeRecord, servePortIsFree, stopRecordedServe } from './serve-lifecycle.ts'
-import { getReport } from './settings.ts'
 import { printSyncResult, syncEvidence } from './sync.ts'
 import {
   commentTask,
@@ -242,6 +251,8 @@ const USAGE = `hub — every project's tasks in flight, what each cost, and the 
   hub note curate [--scheduled]
   hub note curator [--enable|--disable]
   hub note push [--dry-run]   migrate and verify the local note cache
+
+  hub report push [--dry-run] migrate and verify report settings and send history
 
   hub send [--dry-run]        the daily report; --dry-run prints it instead
       --test                  send the real thing, but only to the test address,
@@ -794,7 +805,7 @@ async function pushNoteCache(): Promise<void> {
 }
 
 async function sendReport() {
-  const r = getReport()
+  const r = await refreshHostedReportSetting()
   const hours = Number(flag('hours') ?? r.windowHours)
   const g = gather(r, hours)
   const dry = has('dry-run')
@@ -810,7 +821,7 @@ async function sendReport() {
 
   if (!g.items.length) {
     console.log('nothing to report in that window')
-    if (!dry) recordSend(g, r, 'skipped', 'no items', { test, to })
+    if (!dry) await recordSend(g, r, 'skipped', 'no items', { test, to })
     return
   }
   // The guard counts ENGAGED time, not conversation time. work-report's counted
@@ -821,7 +832,7 @@ async function sendReport() {
   const minutes = Math.round(g.engagedMs / 60_000)
   if (!dry && !test && minutes < r.minMinutes) {
     console.log(`only ${minutes}m engaged, under the ${r.minMinutes}m floor; not sending`)
-    recordSend(g, r, 'skipped', `${minutes}m engaged`, { test, to })
+    await recordSend(g, r, 'skipped', `${minutes}m engaged`, { test, to })
     return
   }
 
@@ -843,7 +854,7 @@ async function sendReport() {
   // not also take away the way to check it before turning it back on.
   if (!r.enabled && !test) {
     console.log('report is disabled in settings')
-    recordSend(g, r, 'skipped', 'disabled', { test, to })
+    await recordSend(g, r, 'skipped', 'disabled', { test, to })
     return
   }
 
@@ -853,7 +864,7 @@ async function sendReport() {
     text,
     renderHtml(g, sentences),
   )
-  recordSend(g, r, res.ok ? 'sent' : 'failed', res.error, { test, to })
+  await recordOutcomeAfterEmail(g, r, res, to, { test })
   console.log(res.ok ? `${test ? 'test ' : ''}sent to ${to.join(', ')}` : `FAILED: ${res.error}`)
   if (!res.ok) process.exit(1)
 }
@@ -881,6 +892,7 @@ try {
     cmd === 'serve' ||
     cmd === 'task' ||
     cmd === 'send' ||
+    cmd === 'report' ||
     cmd === 'reconcile' ||
     cmd === 'rulings' ||
     cmd === 'doctor' ||
@@ -1004,6 +1016,13 @@ try {
     case 'send':
       await sendReport()
       break
+    case 'report': {
+      if (argv[1] !== 'push') throw new Error('usage: hub report push [--dry-run]')
+      const result = await pushReports({ dryRun: has('dry-run') })
+      console.log(JSON.stringify(result, null, 2))
+      if (result.match === false) process.exitCode = 1
+      break
+    }
     case undefined:
     case 'help':
     case '--help':

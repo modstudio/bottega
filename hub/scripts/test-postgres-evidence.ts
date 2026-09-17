@@ -16,6 +16,12 @@ import {
   reapHostedNotes,
 } from '../src/hosted-notes.ts'
 import {
+  appendHostedSend,
+  getHostedReportSetting,
+  listHostedSends,
+  putHostedReportSetting,
+} from '../src/hosted-reports.ts'
+import {
   createHostedDocument,
   createHostedTask,
   listHostedTasks,
@@ -264,6 +270,55 @@ try {
     const otherNotes = await listHostedNotes(actorUrl, { userId: USER, spaceId: SPACE_B }, {})
     if (otherNotes.notes.length || otherNotes.acknowledgements.length)
       throw new Error('another space observed hosted notes')
+
+    const reportValue = {
+      enabled: true,
+      to: ['recipient@example.test'],
+      fromName: 'Daily Report',
+      fromAddress: 'sender@example.test',
+      subjectPrefix: 'Daily',
+      smtpHost: 'smtp.example.test',
+      smtpPort: 587,
+      smtpUser: 'sender',
+      smtpPasswordRef: 'env:SMTP_PASSWORD',
+      windowHours: 24,
+      minMinutes: 15,
+      projects: [PLATFORM_SLUG, 'not-in-this-space'],
+      briefs: [],
+      testTo: 'test@example.test',
+    }
+    const reportSetting = await putHostedReportSetting(actorUrl, identity, {
+      value: reportValue,
+      version: 0,
+    })
+    if (reportSetting.version !== 1 || reportSetting.value.projects.join(',') !== PLATFORM_SLUG)
+      throw new Error('report setting upsert did not filter projects or advance its version')
+    let versionConflict = false
+    try {
+      await putHostedReportSetting(actorUrl, identity, { value: reportValue, version: 0 })
+    } catch (error) {
+      versionConflict = String((error as Error).message).includes('stale report setting version')
+    }
+    if (!versionConflict) throw new Error('stale report setting version was not refused')
+    await appendHostedSend(actorUrl, identity, {
+      at: '2026-09-17T15:30:00.000Z',
+      window: '24h',
+      recipients: 'recipient@example.test',
+      projects: PLATFORM_SLUG,
+      items: 3,
+      status: 'sent',
+      error: null,
+      test: 0,
+      machine: 'fixture-machine',
+    })
+    const visibleSends = await listHostedSends(actorUrl, identity, {})
+    if (visibleSends.sends.length !== 1 || visibleSends.sends[0]?.items !== 3)
+      throw new Error('appended send was not visible in the list')
+    const otherIdentity = { userId: USER, spaceId: SPACE_B }
+    if (await getHostedReportSetting(actorUrl, otherIdentity))
+      throw new Error('another space observed the report setting')
+    if ((await listHostedSends(actorUrl, otherIdentity, {})).sends.length)
+      throw new Error('another space observed send history')
   } finally {
     await client.close()
   }
@@ -273,6 +328,8 @@ try {
   await admin`DROP FUNCTION IF EXISTS fail_hub_task_insert()`
   await admin`DELETE FROM hub_note_acknowledgement WHERE space_id IN (${SPACE_A}::uuid, ${SPACE_B}::uuid)`
   await admin`DELETE FROM hub_note WHERE space_id IN (${SPACE_A}::uuid, ${SPACE_B}::uuid)`
+  await admin`DELETE FROM hub_send WHERE space_id IN (${SPACE_A}::uuid, ${SPACE_B}::uuid)`
+  await admin`DELETE FROM hub_report_setting WHERE space_id IN (${SPACE_A}::uuid, ${SPACE_B}::uuid)`
   await admin`DELETE FROM hub_task_status_event WHERE space_id IN (${SPACE_A}::uuid, ${SPACE_B}::uuid)`
   await admin`DELETE FROM hub_task_document WHERE space_id IN (${SPACE_A}::uuid, ${SPACE_B}::uuid)`
   await admin`DELETE FROM hub_task_comment WHERE space_id IN (${SPACE_A}::uuid, ${SPACE_B}::uuid)`
