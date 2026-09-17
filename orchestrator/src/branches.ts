@@ -17,6 +17,14 @@ import {
 } from './branch-state.ts'
 import { db, nowIso, sessionId, writableDb, writeTransaction } from './db.ts'
 import { targetGitEnvironment } from './git-environment.ts'
+import {
+  decideOtherBranchState,
+  decideOtherPruneEligibility,
+  isHeldBranch,
+  type OtherBranchLanding,
+  type PullRequestNameCheck,
+  taskKeyToken,
+} from './other-branch-state.ts'
 import type { Project } from './projects.ts'
 import { projectByName, projects } from './projects.ts'
 import {
@@ -46,6 +54,15 @@ type BranchReportRow = BranchStateDecision & {
   runIds: number[]
 }
 
+type OtherBranchReportRow = OtherBranchLanding & {
+  branch: string
+  tip: string
+  commitsNotOnTrunk: number
+  checkedOut: boolean
+  lastCommitAt: string
+  remoteExists: boolean
+}
+
 type BranchReportProject = {
   project: string
   trunk: string
@@ -53,13 +70,15 @@ type BranchReportProject = {
   truncated: boolean
   protected: { branch: string; runIds: number[] }[]
   keys: { key: string; branches: BranchReportRow[] }[]
+  other?: OtherBranchReportRow[]
 }
 
 export type BranchesReport = { projects: BranchReportProject[] }
 
 type BranchPruneReport = {
   project: string
-  key: string
+  key: string | null
+  allLocal: boolean
   dryRun: boolean
   deleted: string[]
   wouldDelete: string[]
@@ -219,6 +238,37 @@ function pullRequestCommitCheck(
   return failure ? { error: failure } : null
 }
 
+function pullRequestNameCheck(
+  project: Project,
+  pullRequests: readonly MergedPullRequest[],
+  branch: string,
+  branchTip: string,
+  fetched: Map<number, string | null>,
+): PullRequestNameCheck {
+  let failure: string | null = null
+  let mismatch: MergedPullRequest | null = null
+  for (const pullRequest of pullRequests.filter((candidate) => candidate.headRefName === branch)) {
+    let fetchFailure = fetched.get(pullRequest.number)
+    if (fetchFailure === undefined) {
+      fetchFailure = fetchPullRequest(project, pullRequest)
+      fetched.set(pullRequest.number, fetchFailure)
+    }
+    if (fetchFailure) {
+      failure ??= fetchFailure
+      continue
+    }
+    try {
+      const mergeBase = git(project.path, 'merge-base', branchTip, pullRequest.headRefOid)
+      if (mergeBase === branchTip) return { pullRequest, containsTip: true }
+      mismatch = pullRequest
+    } catch (error) {
+      failure ??= `PR #${pullRequest.number} head containment check failed: ${String(error)}`
+    }
+  }
+  if (failure) return { error: failure }
+  return mismatch ? { pullRequest: mismatch, containsTip: false } : null
+}
+
 function projectRuns(project: Project): RunRow[] {
   return db()
     .query(
@@ -231,18 +281,39 @@ function projectRuns(project: Project): RunRow[] {
 }
 
 function localBranches(project: Project): Map<string, string> {
+  return new Map(
+    [...localBranchDetails(project)].map(([branch, detail]) => [branch, detail.tip] as const),
+  )
+}
+
+type LocalBranchDetail = { tip: string; lastCommitAt: string }
+
+function localBranchDetails(project: Project): Map<string, LocalBranchDetail> {
   const rows = git(
     project.path,
     'for-each-ref',
-    '--format=%(refname:short)%09%(objectname)',
+    '--format=%(refname:short)%09%(objectname)%09%(committerdate:iso-strict)',
     'refs/heads',
   )
-  const branches = new Map<string, string>()
+  const branches = new Map<string, LocalBranchDetail>()
   for (const line of rows.split('\n')) {
     if (!line) continue
-    const tab = line.indexOf('\t')
-    if (tab < 1) throw new Error(`git for-each-ref returned an unexpected row: ${line}`)
-    branches.set(line.slice(0, tab), line.slice(tab + 1))
+    const [branch, tip, lastCommitAt, ...extra] = line.split('\t')
+    if (!branch || !tip || !lastCommitAt || extra.length) {
+      throw new Error(`git for-each-ref returned an unexpected row: ${line}`)
+    }
+    branches.set(branch, { tip, lastCommitAt })
+  }
+  return branches
+}
+
+function remoteBranches(project: Project): Set<string> {
+  const branches = new Set<string>()
+  for (const line of git(project.path, 'ls-remote', '--heads', 'origin').split('\n')) {
+    if (!line) continue
+    const match = line.match(/^[0-9a-f]+\trefs\/heads\/(.+)$/)
+    if (!match?.[1]) throw new Error(`git ls-remote returned an unexpected row: ${line}`)
+    branches.add(match[1])
   }
   return branches
 }
@@ -256,7 +327,10 @@ function checkedOutBranches(project: Project): Set<string> {
   return checkedOut
 }
 
-function branchReportFor(project: Project, keyFilter?: string): BranchReportProject {
+function branchReportFor(
+  project: Project,
+  options: { key?: string; allLocal?: boolean },
+): BranchReportProject {
   const trunk = project.settings.trunk?.trim() ?? ''
   if (!trunk) throw new Error(`project ${project.name} has no trunk configured`)
   const productionBranch = project.settings.productionBranch?.trim() ?? ''
@@ -267,7 +341,10 @@ function branchReportFor(project: Project, keyFilter?: string): BranchReportProj
   )
   const fetchedPullRequests = new Map<number, string | null>()
   const runs = projectRuns(project)
-  const branches = localBranches(project)
+  const branchDetails = localBranchDetails(project)
+  const branches = new Map(
+    [...branchDetails].map(([branch, detail]) => [branch, detail.tip] as const),
+  )
   const checkedOut = checkedOutBranches(project)
   const recordedLandings = recordedBranchLandings()
   const trunkTip = git(
@@ -282,7 +359,7 @@ function branchReportFor(project: Project, keyFilter?: string): BranchReportProj
   for (const run of runs) {
     if (!run.minted_branch || !branches.has(run.minted_branch)) continue
     const key = run.launch_key ?? 'unkeyed'
-    if (keyFilter !== undefined && key !== keyFilter) continue
+    if (options.key !== undefined && key !== options.key) continue
     if (decideProtectedBranch({ branch: run.minted_branch, trunk, productionBranch }) !== null) {
       protectedRuns.set(run.minted_branch, [...(protectedRuns.get(run.minted_branch) ?? []), run])
       continue
@@ -394,7 +471,115 @@ function branchReportFor(project: Project, keyFilter?: string): BranchReportProj
   const protectedBranches = [...protectedRuns]
     .sort(([left], [right]) => left.localeCompare(right))
     .map(([branch, branchRuns]) => ({ branch, runIds: branchRuns.map((run) => run.id) }))
-  return { project: project.name, trunk, truncated, protected: protectedBranches, keys }
+  const report: BranchReportProject = {
+    project: project.name,
+    trunk,
+    truncated,
+    protected: protectedBranches,
+    keys,
+  }
+  if (options.allLocal) {
+    const mintedNames = new Set(
+      runs.flatMap((run) => (run.minted_branch ? [run.minted_branch] : [])),
+    )
+    const remotes = remoteBranches(project)
+    report.other = [...branchDetails]
+      .filter(
+        ([branch]) =>
+          !mintedNames.has(branch) &&
+          decideProtectedBranch({ branch, trunk, productionBranch }) === null,
+      )
+      .sort(([left], [right]) => left.localeCompare(right))
+      .map(([branch, detail]) =>
+        otherBranchReportRow({
+          project,
+          branch,
+          detail,
+          trunkTip,
+          pullRequests,
+          truncated,
+          checkedOut,
+          remotes,
+          fetchedPullRequests,
+        }),
+      )
+  }
+  return report
+}
+
+function otherBranchReportRow(input: {
+  project: Project
+  branch: string
+  detail: LocalBranchDetail
+  trunkTip: string
+  pullRequests: readonly MergedPullRequest[]
+  truncated: boolean
+  checkedOut: ReadonlySet<string>
+  remotes: ReadonlySet<string>
+  fetchedPullRequests: Map<number, string | null>
+}): OtherBranchReportRow {
+  const { project, branch, detail } = input
+  let commitsNotOnTrunk = 0
+  let patchEquivalent: PatchEquivalentForm | null = null
+  let commitCheck: PullRequestCommitCheck = null
+  let nameCheck: PullRequestNameCheck = null
+  let checkError: string | undefined
+  try {
+    commitsNotOnTrunk = Number(
+      git(project.path, 'rev-list', '--count', detail.tip, '--not', input.trunkTip),
+    )
+    if (!Number.isSafeInteger(commitsNotOnTrunk) || commitsNotOnTrunk < 0) {
+      throw new Error(`git rev-list returned an invalid commit count for ${branch}`)
+    }
+    nameCheck = pullRequestNameCheck(
+      project,
+      input.pullRequests,
+      branch,
+      detail.tip,
+      input.fetchedPullRequests,
+    )
+    const landedByName = nameCheck && 'pullRequest' in nameCheck && nameCheck.containsTip
+    const nameCheckFailed = nameCheck && 'error' in nameCheck
+    if (!landedByName && !nameCheckFailed && commitsNotOnTrunk > 0) {
+      const mergeBase = git(project.path, 'merge-base', input.trunkTip, detail.tip)
+      patchEquivalent = taskBranchPatchEquivalent({
+        cwd: project.path,
+        trunkTip: input.trunkTip,
+        branchTip: detail.tip,
+        mergeBase,
+        commitMessage: `orch branch report ${branch}`,
+      })
+      const key = taskKeyToken(branch, project.settings.keyPrefixes ?? [])
+      if (!patchEquivalent && key) {
+        commitCheck = pullRequestCommitCheck(
+          project,
+          input.pullRequests.filter((pullRequest) => pullRequestCarriesKey(pullRequest, key)),
+          detail.tip,
+          input.fetchedPullRequests,
+        )
+      }
+    }
+  } catch (error) {
+    checkError = error instanceof Error ? error.message : String(error)
+  }
+  return {
+    branch,
+    tip: detail.tip,
+    commitsNotOnTrunk,
+    checkedOut: input.checkedOut.has(branch),
+    lastCommitAt: detail.lastCommitAt,
+    remoteExists: input.remotes.has(branch),
+    ...decideOtherBranchState({
+      branch,
+      mergedPullRequests: input.pullRequests,
+      mergedPullRequestsTruncated: input.truncated,
+      pullRequestNameCheck: nameCheck,
+      commitsNotOnTrunk,
+      patchEquivalent,
+      pullRequestCommitCheck: commitCheck,
+      checkError,
+    }),
+  }
 }
 
 function observationError(project: Project, error: unknown): BranchReportProject {
@@ -414,14 +599,18 @@ function observationError(project: Project, error: unknown): BranchReportProject
   }
 }
 
-export function branchesReport(options: { project?: string; key?: string }): BranchesReport {
+export function branchesReport(options: {
+  project?: string
+  key?: string
+  allLocal?: boolean
+}): BranchesReport {
   const selected = options.project === undefined ? null : projectByName(options.project)
   if (options.project !== undefined && !selected)
     throw new Error(`unknown project ${options.project}`)
   return {
     projects: (selected ? [selected] : projects()).map((project) => {
       try {
-        return branchReportFor(project, options.key)
+        return branchReportFor(project, options)
       } catch (error) {
         return observationError(project, error)
       }
@@ -638,6 +827,7 @@ export function pruneBranches(options: {
   const report: BranchPruneReport = {
     project: options.project,
     key: options.key,
+    allLocal: false,
     dryRun: options.dryRun ?? false,
     deleted: [],
     wouldDelete: [],
@@ -657,7 +847,108 @@ export function pruneBranches(options: {
   return report
 }
 
-function landedByText(row: BranchReportRow): string {
+function listOtherOperator(row: OtherBranchReportRow, report: BranchPruneReport): void {
+  if (row.state === 'unlanded' || row.state === 'unknown') {
+    report.operator.push({
+      branch: row.branch,
+      state: row.state,
+      commitsNotOnTrunk: row.commitsNotOnTrunk,
+      command: `git branch -D ${row.branch}`,
+    })
+    if (row.state === 'unknown' && row.error) report.errors.push(`${row.branch}: ${row.error}`)
+  }
+}
+
+function otherTipStillEligible(
+  project: Project,
+  row: OtherBranchReportRow,
+  report: BranchPruneReport,
+): boolean {
+  let currentTip: string | undefined
+  try {
+    currentTip = localBranches(project).get(row.branch)
+  } catch (error) {
+    report.kept.push({ branch: row.branch, reason: 'tip could not be rechecked' })
+    report.errors.push(`${row.branch}: ${error instanceof Error ? error.message : String(error)}`)
+    return false
+  }
+  const protectedKind = decideProtectedBranch({
+    branch: row.branch,
+    trunk: project.settings.trunk?.trim() ?? '',
+    productionBranch: project.settings.productionBranch?.trim() ?? '',
+  })
+  const eligibility = decideOtherPruneEligibility({
+    state: row.state,
+    held: isHeldBranch(row.branch),
+    checkedOut: row.checkedOut,
+    protectedKind,
+    tipMoved: currentTip !== row.tip,
+  })
+  if (eligibility.eligible) return true
+  report.kept.push({
+    branch: row.branch,
+    reason: protectedKind ? `registered ${protectedKind}` : eligibility.reason,
+  })
+  if (protectedKind) {
+    report.errors.push(`${row.branch}: refusing to delete registered ${protectedKind} branch`)
+  }
+  listOtherOperator(row, report)
+  return false
+}
+
+function deleteOtherBranch(
+  project: Project,
+  row: OtherBranchReportRow,
+  report: BranchPruneReport,
+): void {
+  try {
+    command(
+      project.path,
+      ['git', 'update-ref', '-d', `refs/heads/${row.branch}`, row.tip],
+      `delete branch ${row.branch}`,
+    )
+    if (localBranches(project).has(row.branch)) {
+      throw new Error('branch still exists after compare-at-tip deletion')
+    }
+    report.deleted.push(row.branch)
+  } catch (error) {
+    report.kept.push({ branch: row.branch, reason: 'deletion failed' })
+    report.errors.push(`${row.branch}: ${error instanceof Error ? error.message : String(error)}`)
+  }
+}
+
+/** Observe once, then compare-at-tip delete eligible non-run local branches. */
+export function pruneOtherBranches(options: {
+  project: string
+  dryRun?: boolean
+}): BranchPruneReport {
+  const observed = branchesReport({ project: options.project, allLocal: true })
+  const projectReport = observed.projects[0]!
+  if (projectReport.error) throw new Error(projectReport.error)
+  const project = projectByName(options.project)!
+  const report: BranchPruneReport = {
+    project: options.project,
+    key: null,
+    allLocal: true,
+    dryRun: options.dryRun ?? false,
+    deleted: [],
+    wouldDelete: [],
+    kept: [],
+    operator: [],
+    errors: [],
+  }
+  for (const row of projectReport.other ?? []) {
+    if (!otherTipStillEligible(project, row, report)) continue
+    if (report.dryRun) {
+      report.wouldDelete.push(row.branch)
+      continue
+    }
+    deleteOtherBranch(project, row, report)
+  }
+  return report
+}
+
+function landedByText(row: BranchStateDecision | OtherBranchLanding): string {
   if (row.state !== 'landed') return row.state
   if (row.landedBy.type === 'patch-equivalent') {
     return `landed (patch-equivalent ${row.landedBy.form})`
@@ -678,7 +969,7 @@ export function renderBranchPruneReport(report: BranchPruneReport): string {
   const action = report.dryRun ? 'would delete' : 'deleted'
   const acted = report.dryRun ? report.wouldDelete : report.deleted
   const lines = [
-    `${report.project} ${report.key}: ${action} ${acted.length}; kept ${report.kept.length}`,
+    `${report.project} ${report.allLocal ? 'other' : report.key}: ${action} ${acted.length}; kept ${report.kept.length}`,
   ]
   for (const branch of acted) lines.push(`  ${action}: ${branch}`)
   for (const row of report.kept) lines.push(`  kept: ${row.branch} (${row.reason})`)
@@ -706,6 +997,11 @@ function renderProject(project: BranchReportProject): string[] {
     lines.push(`  ${key.key}`)
     lines.push(...key.branches.map(renderBranch))
   }
+  if (project.other) {
+    lines.push('  other')
+    if (project.other.length === 0) lines.push('    no other local branches')
+    else lines.push(...project.other.map(renderOtherBranch))
+  }
   return lines
 }
 
@@ -714,4 +1010,10 @@ function renderBranch(branch: BranchReportRow): string {
     branch.state === 'unknown' && branch.error ? `unknown (${branch.error})` : landedByText(branch)
   const note = branch.note ? `  ${branch.note}` : ''
   return `    ${branch.branch}  ${state}${note}  tip ${branch.tip}  commits-not-on-trunk ${branch.commitsNotOnTrunk}  checked-out ${branch.checkedOut ? 'yes' : 'no'}  live-run ${branch.liveRun ? 'yes' : 'no'}  runs ${branch.runIds.join(',')}`
+}
+
+function renderOtherBranch(branch: OtherBranchReportRow): string {
+  const state =
+    branch.state === 'unknown' && branch.error ? `unknown (${branch.error})` : landedByText(branch)
+  return `    ${branch.branch}  ${state}  tip ${branch.tip}  commits-not-on-trunk ${branch.commitsNotOnTrunk}  checked-out ${branch.checkedOut ? 'yes' : 'no'}  last-commit-at ${branch.lastCommitAt}  origin ${branch.remoteExists ? 'yes' : 'no'}`
 }

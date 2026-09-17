@@ -5,6 +5,7 @@ import type { Command } from 'commander'
 import {
   branchesReport,
   pruneBranches,
+  pruneOtherBranches,
   recordBranchLanding,
   renderBranchesReport,
   renderBranchPruneReport,
@@ -16,6 +17,7 @@ export function register(program: Command): void {
     .command('branches')
     .option('--project <name>')
     .option('--key <KEY>')
+    .option('--all-local')
     .option('--json')
     .passThroughOptions()
     .allowExcessArguments(false)
@@ -23,6 +25,7 @@ export function register(program: Command): void {
       const report = branchesReport({
         project: options.project,
         key: options.key,
+        allLocal: options.allLocal,
       })
       log(options.json ? JSON.stringify(report) : renderBranchesReport(report))
       if (report.projects.some((project) => project.error)) process.exitCode = 1
@@ -46,16 +49,18 @@ export function register(program: Command): void {
   branches
     .command('prune')
     .requiredOption('--project <name>')
-    .requiredOption('--key <KEY>')
+    .option('--key <KEY>')
+    .option('--all-local')
     .option('--dry-run')
     .option('--json')
     .allowExcessArguments(false)
     .action((options) => {
-      const report = pruneBranches({
-        project: options.project,
-        key: options.key,
-        dryRun: options.dryRun,
-      })
+      if (Boolean(options.key) === Boolean(options.allLocal)) {
+        throw new Error('orch branches prune requires exactly one of --key <KEY> or --all-local')
+      }
+      const report = options.allLocal
+        ? pruneOtherBranches({ project: options.project, dryRun: options.dryRun })
+        : pruneBranches({ project: options.project, key: options.key, dryRun: options.dryRun })
       log(options.json ? JSON.stringify(report) : renderBranchPruneReport(report))
       if (report.errors.length) process.exitCode = 1
     })
