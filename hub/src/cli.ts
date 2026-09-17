@@ -26,6 +26,7 @@ import {
   setCuratorEnabled,
   staleNotes,
 } from './note.ts'
+import { pushNotes } from './note-push.ts'
 import { startDashboardCapability } from './orch.ts'
 import { projects } from './projects.ts'
 import { estateEngagedMs, rollUpDays, tasksInWindow } from './query.ts'
@@ -240,6 +241,7 @@ const USAGE = `hub — every project's tasks in flight, what each cost, and the 
   hub note stale              mark vanished anchors and reap eligible notes
   hub note curate [--scheduled]
   hub note curator [--enable|--disable]
+  hub note push [--dry-run]   migrate and verify the local note cache
 
   hub send [--dry-run]        the daily report; --dry-run prints it instead
       --test                  send the real thing, but only to the test address,
@@ -650,7 +652,17 @@ async function task() {
 
 async function note() {
   const sub = argv[1]
-  const verbs = new Set(['list', 'same', 'keep', 'promote', 'drop', 'stale', 'curate', 'curator'])
+  const verbs = new Set([
+    'list',
+    'same',
+    'keep',
+    'promote',
+    'drop',
+    'stale',
+    'curate',
+    'curator',
+    'push',
+  ])
   if (sub && verbs.has(sub) && (has('new') || flag('same-as'))) {
     throw new Error(`to file the text "${sub}", use: hub note new "${sub}" [--new|--same-as ID]`)
   }
@@ -684,7 +696,7 @@ async function note() {
     const session = noteSessionId()
     if (!session) throw new Error('hub note keep requires a session environment')
     for (const id of ids) {
-      const result = acknowledgeNote(id, session)
+      const result = await acknowledgeNote(id, session)
       console.log(
         `note ${result.note.id} ${result.alreadyAcknowledged ? 'already kept' : 'kept'} for this session`,
       )
@@ -692,7 +704,7 @@ async function note() {
     return
   }
   if (sub === 'same') {
-    const row = mergeNote(argv[2] ?? '', argv[3] ?? '')
+    const row = await mergeNote(argv[2] ?? '', argv[3] ?? '')
     console.log(`note ${row.id} now has ${row.sightings} sightings`)
     return
   }
@@ -704,7 +716,7 @@ async function note() {
   if (sub === 'drop') {
     const reason = flag('reason')
     if (!reason) throw new Error('hub note drop <id> --reason "..."')
-    const row = dropNote(argv[2] ?? '', reason)
+    const row = await dropNote(argv[2] ?? '', reason)
     console.log(`note ${row.id} dropped: ${row.stale_reason}`)
     return
   }
@@ -731,6 +743,12 @@ async function note() {
     console.log(`note curator ${setCuratorEnabled(has('enable')) ? 'enabled' : 'disabled'}`)
     return
   }
+  if (sub === 'push') {
+    const result = await pushNotes({ dryRun: has('dry-run') })
+    console.log(JSON.stringify(result, null, 2))
+    if (result.match === false) process.exitCode = 1
+    return
+  }
 
   if (sub !== 'new') {
     throw new Error(
@@ -739,7 +757,7 @@ async function note() {
   }
   const text = argv[2] ?? ''
   const same = flag('same-as')
-  let result = createNote({
+  let result = await createNote({
     text,
     area: flag('area'),
     sameAs: same ? Number(same) : undefined,
@@ -757,9 +775,9 @@ async function note() {
     console.log(`possible duplicate notes:\n${lines.join('\n')}`)
     const answer = prompt("Enter a note id for the same finding, or 'new':")?.trim() ?? ''
     result = /^\d+$/.test(answer)
-      ? createNote({ text, area: flag('area'), sameAs: Number(answer) })
+      ? await createNote({ text, area: flag('area'), sameAs: Number(answer) })
       : answer === 'new'
-        ? createNote({ text, area: flag('area'), forceNew: true })
+        ? await createNote({ text, area: flag('area'), forceNew: true })
         : result
     if (!result.note) throw new Error('note not filed')
   }

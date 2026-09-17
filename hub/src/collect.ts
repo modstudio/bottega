@@ -3,6 +3,7 @@ import { ingestGit } from './ingest/git.ts'
 import { ingestRuns } from './ingest/runs.ts'
 import { ingestTrackers, type TrackerResult, trackerProjects } from './ingest/trackers.ts'
 import { ingestTranscripts } from './ingest/transcripts.ts'
+import { pullHostedNotes } from './note-cache.ts'
 import { rollUpDays } from './query.ts'
 import { syncEvidence } from './sync.ts'
 import { pullHostedTasks } from './task-cache.ts'
@@ -233,6 +234,11 @@ export async function collectSlow(scheduled = false) {
       await pullHostedTasks()
     } catch (error) {
       console.error(`hub: hosted task pull skipped: ${(error as Error).message}`)
+    }
+    try {
+      await pullHostedNotes()
+    } catch (error) {
+      console.error(`hub: hosted note pull skipped: ${(error as Error).message}`)
     }
   }
 }

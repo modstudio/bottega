@@ -1,10 +1,21 @@
 import { existsSync, readFileSync } from 'node:fs'
 import { isAbsolute, resolve } from 'node:path'
 import { projectOf } from './attribute.ts'
-import { db, nowIso, writeTransaction } from './db.ts'
+import { db, writeTransaction } from './db.ts'
+import { applyHostedAcknowledgement, applyHostedNote } from './note-cache.ts'
+import {
+  hostedAcknowledgeNote,
+  hostedCreateNote,
+  hostedDropNote,
+  hostedMergeNotes,
+  hostedPromoteNote,
+  hostedReapNotes,
+  type NoteClientOptions,
+} from './note-client.ts'
 import { dispatchNoteCurator, readRunsById } from './orch.ts'
 import { projects } from './projects.ts'
-import { createTask, duplicateCandidates, type TaskRow } from './task.ts'
+import { duplicateCandidates, type TaskRow } from './task.ts'
+import { applyHostedTask } from './task-cache.ts'
 
 export type NoteAnchor = {
   cwd: string
@@ -148,7 +159,11 @@ export function getNote(value: number | string): NoteRow {
   return decode(row)
 }
 
-export function acknowledgeNote(value: number | string, session: string): NoteAcknowledgement {
+export async function acknowledgeNote(
+  value: number | string,
+  session: string,
+  options: { hosted?: NoteClientOptions } = {},
+): Promise<NoteAcknowledgement> {
   const sessionId = session.trim()
   if (!sessionId) throw new Error('cannot keep note: no session identity')
   const note = getNote(value)
@@ -158,16 +173,12 @@ export function acknowledgeNote(value: number | string, session: string): NoteAc
     )
     .get(note.id, sessionId)
   if (existing?.sightings === note.sightings) return { note, alreadyAcknowledged: true }
-  writeTransaction((conn) =>
-    conn
-      .query(
-        `INSERT INTO note_acknowledgement (note_id,session_id,acknowledged_at,sightings) VALUES (?,?,?,?)
-     ON CONFLICT(note_id,session_id) DO UPDATE SET
-       acknowledged_at=excluded.acknowledged_at, sightings=excluded.sightings`,
-      )
-      .run(note.id, sessionId, nowIso(), note.sightings),
-  )
-  return { note, alreadyAcknowledged: false }
+  const hosted = await hostedAcknowledgeNote(note.id, sessionId, options.hosted)
+  writeTransaction((conn) => {
+    applyHostedNote(conn, hosted.note)
+    applyHostedAcknowledgement(conn, hosted.acknowledgement)
+  })
+  return { note: getNote(note.id), alreadyAcknowledged: hosted.alreadyAcknowledged }
 }
 
 function noteCandidates(text: string, project?: string): NoteCandidate[] {
@@ -200,35 +211,32 @@ function noteCandidates(text: string, project?: string): NoteCandidate[] {
   })
 }
 
-export function mergeNote(targetValue: number | string, sourceValue: number | string): NoteRow {
+export async function mergeNote(
+  targetValue: number | string,
+  sourceValue: number | string,
+  options: { hosted?: NoteClientOptions } = {},
+): Promise<NoteRow> {
   const targetId = noteId(targetValue)
   const sourceId = noteId(sourceValue)
   if (targetId === sourceId) throw new Error('a note cannot be merged with itself')
+  const result = await hostedMergeNotes(targetId, sourceId, options.hosted)
   writeTransaction((conn) => {
-    const target = getNote(targetId)
-    const source = getNote(sourceId)
-    if (target.project !== source.project)
-      throw new Error('notes from different projects cannot be merged')
-    conn
-      .query(`UPDATE note SET anchors=?, sightings=?, last_seen_at=? WHERE id=?`)
-      .run(
-        JSON.stringify([...target.anchors, ...source.anchors]),
-        target.sightings + source.sightings,
-        target.last_seen_at > source.last_seen_at ? target.last_seen_at : source.last_seen_at,
-        targetId,
-      )
-    conn.query('DELETE FROM note WHERE id=?').run(sourceId)
+    applyHostedNote(conn, result.note)
+    conn.query('DELETE FROM note WHERE id=?').run(result.deleted)
   })
   return getNote(targetId)
 }
 
-export function createNote(input: {
-  text: string
-  cwd?: string
-  area?: string
-  sameAs?: number
-  forceNew?: boolean
-}): { note: NoteRow; candidates: NoteCandidate[] } {
+export async function createNote(
+  input: {
+    text: string
+    cwd?: string
+    area?: string
+    sameAs?: number
+    forceNew?: boolean
+  },
+  options: { hosted?: NoteClientOptions } = {},
+): Promise<{ note: NoteRow; candidates: NoteCandidate[] }> {
   const text = input.text.trim()
   if (!text) throw new Error('note text is required')
   if (input.sameAs && input.forceNew) throw new Error('--same-as and --new are mutually exclusive')
@@ -238,60 +246,57 @@ export function createNote(input: {
     const existing = getNote(input.sameAs)
     if (existing.project !== anchor.project)
       throw new Error('the matching note belongs to another project')
-    const at = nowIso()
-    writeTransaction((conn) =>
-      conn
-        .query(
-          `UPDATE note SET anchors=?, sightings=sightings+1, last_seen_at=?, stale_at=NULL, stale_reason=NULL WHERE id=?`,
-        )
-        .run(JSON.stringify([...existing.anchors, anchor]), at, existing.id),
+    const hosted = await hostedCreateNote(
+      {
+        project: anchor.project,
+        text,
+        area: input.area?.trim() || null,
+        anchor: JSON.stringify(anchor),
+        sameAs: existing.id,
+      },
+      options.hosted,
     )
+    writeTransaction((conn) => applyHostedNote(conn, hosted))
     return { note: getNote(existing.id), candidates }
   }
   if (candidates.length && !input.forceNew) return { note: null as never, candidates }
-  const at = nowIso()
-  const result = writeTransaction((conn) =>
-    conn
-      .query(
-        `INSERT INTO note (project,text,area,anchors,sightings,created_at,last_seen_at)
-     VALUES (?,?,?,?,1,?,?)`,
-      )
-      .run(anchor.project, text, input.area?.trim() || null, JSON.stringify([anchor]), at, at),
+  const hosted = await hostedCreateNote(
+    {
+      project: anchor.project,
+      text,
+      area: input.area?.trim() || null,
+      anchor: JSON.stringify(anchor),
+    },
+    options.hosted,
   )
-  return { note: getNote(Number(result.lastInsertRowid)), candidates }
+  writeTransaction((conn) => applyHostedNote(conn, hosted))
+  return { note: getNote(hosted.number), candidates }
 }
 
-export async function promoteNote(value: number | string): Promise<NoteRow> {
+export async function promoteNote(
+  value: number | string,
+  options: { hosted?: NoteClientOptions } = {},
+): Promise<NoteRow> {
   const note = getNote(value)
   if (note.promoted_task)
     throw new Error(`note ${note.id} is already promoted to ${note.promoted_task}`)
-  const evidence = note.anchors
-    .map(
-      (anchor, index) =>
-        `Sighting ${index + 1}: cwd=${anchor.cwd}; branch=${anchor.branch ?? '-'}; commit=${anchor.commit ?? '-'}; run=${anchor.run_id ?? '-'}; session=${anchor.session_id ?? '-'}`,
-    )
-    .join('\n')
-  const task = await createTask({
-    project: note.project,
-    title: note.text,
-    body: `${note.text}\n\nSIGHTINGS (${note.sightings})\n${evidence}`,
+  const hosted = await hostedPromoteNote(note.id, options.hosted)
+  writeTransaction((conn) => {
+    applyHostedTask(conn, hosted.task)
+    applyHostedNote(conn, hosted.note)
   })
-  writeTransaction((conn) =>
-    conn
-      .query('UPDATE note SET promoted_task=?, last_seen_at=? WHERE id=?')
-      .run(task.key, nowIso(), note.id),
-  )
   return getNote(note.id)
 }
 
-export function dropNote(value: number | string, reason: string): NoteRow {
+export async function dropNote(
+  value: number | string,
+  reason: string,
+  options: { hosted?: NoteClientOptions } = {},
+): Promise<NoteRow> {
   if (!reason.trim()) throw new Error('--reason is required')
   const id = noteId(value)
-  writeTransaction((conn) =>
-    conn
-      .query('UPDATE note SET stale_at=?, stale_reason=?, last_seen_at=? WHERE id=?')
-      .run(nowIso(), `dropped: ${reason.trim()}`, nowIso(), id),
-  )
+  const hosted = await hostedDropNote(id, reason.trim(), options.hosted)
+  writeTransaction((conn) => applyHostedNote(conn, hosted))
   return getNote(id)
 }
 
@@ -305,6 +310,7 @@ type StaleDeps = {
   runExists(ids: number[]): Promise<Set<number>>
   git(cwd: string, ...args: string[]): string | null
   now(): Date
+  hosted: NoteClientOptions
 }
 
 async function defaultRunExists(ids: number[]): Promise<Set<number>> {
@@ -366,22 +372,31 @@ export async function staleNotes(deps: Partial<StaleDeps> = {}): Promise<StaleRe
   })
   const at = clock.toISOString()
   const cutoff = new Date(clock.getTime() - 30 * 86_400_000).toISOString()
-  let deleted = 0
+  const markedIds = new Set(reasons.map((row) => row.id))
+  const deletedIds = db()
+    .query<{ id: number; stale_at: string | null }, [string]>(
+      `SELECT id,stale_at FROM note WHERE sightings=1 AND last_seen_at <= ? AND promoted_task IS NULL`,
+    )
+    .all(cutoff)
+    .filter((row) => row.stale_at !== null || markedIds.has(row.id))
+    .map((row) => row.id)
+  const result = await hostedReapNotes(
+    {
+      stale: reasons.map((row) => ({ number: row.id, reason: row.reason, at })),
+      deleted: deletedIds,
+      confirmation: deletedIds.length,
+    },
+    deps.hosted,
+  )
   writeTransaction((conn) => {
     for (const item of reasons) {
       conn
         .query('UPDATE note SET stale_at=?, stale_reason=? WHERE id=? AND stale_at IS NULL')
         .run(at, item.reason, item.id)
     }
-    const result = conn
-      .query(
-        `DELETE FROM note
-        WHERE stale_at IS NOT NULL AND sightings=1 AND last_seen_at <= ? AND promoted_task IS NULL`,
-      )
-      .run(cutoff)
-    deleted = result.changes
+    for (const id of deletedIds) conn.query('DELETE FROM note WHERE id=?').run(id)
   })
-  return { marked: reasons.length, deleted, reasons }
+  return { marked: result.marked, deleted: result.deleted, reasons }
 }
 
 export function curatorEnabled(): boolean {

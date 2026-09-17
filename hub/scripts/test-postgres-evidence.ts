@@ -8,6 +8,14 @@ import {
   upsertIntervals,
 } from '../src/hosted-evidence.ts'
 import {
+  createHostedNote,
+  getHostedNote,
+  listHostedNotes,
+  mirrorHostedNotes,
+  promoteHostedNote,
+  reapHostedNotes,
+} from '../src/hosted-notes.ts'
+import {
   createHostedDocument,
   createHostedTask,
   listHostedTasks,
@@ -149,11 +157,49 @@ try {
       other.statusEvents.length
     )
       throw new Error('another space observed hosted tasks')
+
+    const noteStamp = '2026-09-17T12:20:00.000Z'
+    await mirrorHostedNotes(actorUrl, identity, { notes: [{
+      id: '01990000-0000-7000-8000-00000000066d', number: 800, project: PLATFORM_SLUG,
+      project_name: PLATFORM_SLUG, text: 'Existing note', area: null, anchors: '[]', sightings: 1,
+      created_at: noteStamp, last_seen_at: noteStamp, stale_at: null, stale_reason: null,
+      promoted_task: null, updated_at: noteStamp, deleted_at: null,
+    }], raiseProjects: [{ project: PLATFORM_SLUG, next: 2 }] })
+    const allocatedNote = await createHostedNote(actorUrl, identity, {
+      project: PLATFORM_SLUG, text: 'Allocated note', anchor: JSON.stringify({ cwd: '/tmp', branch: null,
+        commit: null, run_id: null, session_id: null, files: [], project: PLATFORM_SLUG }),
+    })
+    if (allocatedNote.number !== 801) throw new Error(`note allocation returned ${allocatedNote.number}`)
+    await admin`CREATE OR REPLACE FUNCTION fail_hub_task_insert() RETURNS trigger LANGUAGE plpgsql AS
+      'BEGIN RAISE EXCEPTION ''forced task insert failure''; END'`
+    await admin`CREATE TRIGGER fail_hub_task_insert BEFORE INSERT ON hub_task
+      FOR EACH ROW EXECUTE FUNCTION fail_hub_task_insert()`
+    let promotionFailed = false
+    try { await promoteHostedNote(actorUrl, identity, allocatedNote.number) } catch { promotionFailed = true }
+    await admin`DROP TRIGGER fail_hub_task_insert ON hub_task`
+    await admin`DROP FUNCTION fail_hub_task_insert()`
+    if (!promotionFailed) throw new Error('forced promotion task insert did not fail')
+    if ((await getHostedNote(actorUrl, identity, allocatedNote.number))?.promoted_task)
+      throw new Error('failed promotion marked its note')
+    const promoted = await promoteHostedNote(actorUrl, identity, allocatedNote.number)
+    if (!promoted?.task.key || promoted.note.promoted_task !== promoted.task.key)
+      throw new Error('promotion did not create a task and mark its note')
+    await reapHostedNotes(actorUrl, identity, { stale: [], deleted: [800], confirmation: 1 })
+    const visibleNotes = await listHostedNotes(actorUrl, identity, {})
+    if (visibleNotes.notes.some((row) => Number(row.number) === 800))
+      throw new Error('soft-deleted note was visible in the default list')
+    const otherNotes = await listHostedNotes(actorUrl, { userId: USER, spaceId: SPACE_B }, {})
+    if (otherNotes.notes.length || otherNotes.acknowledgements.length)
+      throw new Error('another space observed hosted notes')
   } finally {
     await client.close()
   }
   console.log('hub postgres evidence and task proof: ok')
 } finally {
+  await admin`DROP TRIGGER IF EXISTS fail_hub_task_insert ON hub_task`
+  await admin`DROP FUNCTION IF EXISTS fail_hub_task_insert()`
+  await admin`DELETE FROM hub_note_acknowledgement WHERE space_id IN (${SPACE_A}::uuid, ${SPACE_B}::uuid)`
+  await admin`DELETE FROM hub_note WHERE space_id IN (${SPACE_A}::uuid, ${SPACE_B}::uuid)`
   await admin`DELETE FROM hub_task_status_event WHERE space_id IN (${SPACE_A}::uuid, ${SPACE_B}::uuid)`
   await admin`DELETE FROM hub_task_document WHERE space_id IN (${SPACE_A}::uuid, ${SPACE_B}::uuid)`
   await admin`DELETE FROM hub_task_comment WHERE space_id IN (${SPACE_A}::uuid, ${SPACE_B}::uuid)`

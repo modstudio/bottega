@@ -17,9 +17,9 @@ function createNoteRouter(deps = { listNotes, promoteNote }) {
       .query(({ input }) => deps.listNotes(input)),
     promote: t.procedure
       .input(z.object({ id: z.number().int().positive() }))
-      .mutation(({ input }) => {
+      .mutation(async ({ input }) => {
         try {
-          return deps.promoteNote(input.id)
+          return await deps.promoteNote(input.id)
         } catch (cause) {
           throw new TRPCError({
             code: 'BAD_REQUEST',

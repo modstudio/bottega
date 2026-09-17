@@ -171,45 +171,45 @@ export async function createHostedTaskInTransaction(
   identity: TaskIdentity,
   input: Parameters<typeof createHostedTask>[2],
 ) {
-    const project = rows<{ id: string; key_prefixes: string[] }>(
-      await tx`
+  const project = rows<{ id: string; key_prefixes: string[] }>(
+    await tx`
       SELECT id,key_prefixes FROM project WHERE space_id=${identity.spaceId}::uuid
         AND name=${input.project}`,
-    )[0]
-    const prefix = project?.key_prefixes[0]
-    if (!project || !prefix) throw new Error(`project '${input.project}' has no key prefix`)
-    const pattern = `^${prefix.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}-([0-9]+)$`
-    const highest = rows<{ highest: string | null }>(
-      await tx`
+  )[0]
+  const prefix = project?.key_prefixes[0]
+  if (!project || !prefix) throw new Error(`project '${input.project}' has no key prefix`)
+  const pattern = `^${prefix.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}-([0-9]+)$`
+  const highest = rows<{ highest: string | null }>(
+    await tx`
       SELECT MAX(((regexp_match(key, ${pattern}, 'i'))[1])::bigint)::text highest
       FROM hub_task WHERE space_id=${identity.spaceId}::uuid`,
-    )[0]?.highest
-    await tx`INSERT INTO seq(space_id,project_id,name,next)
+  )[0]?.highest
+  await tx`INSERT INTO seq(space_id,project_id,name,next)
       VALUES (${identity.spaceId}::uuid,${project.id}::uuid,${`task:${prefix}`},${BigInt(highest ?? 0) + 1n})
       ON CONFLICT(space_id,project_id,name) DO UPDATE SET next=GREATEST(seq.next,excluded.next)`
-    const sequence = rows<{ next: string }>(
-      await tx`
+  const sequence = rows<{ next: string }>(
+    await tx`
       SELECT next::text FROM seq WHERE space_id=${identity.spaceId}::uuid
         AND project_id=${project.id}::uuid AND name=${`task:${prefix}`} FOR UPDATE`,
-    )[0]
-    const number = BigInt(sequence!.next)
-    const key = `${prefix.toUpperCase()}-${number}`
-    const id = newRecordId()
-    const category = input.status ?? 'open'
-    const openedAt = input.opened_at ?? new Date().toISOString()
-    const updatedAt = input.updated_at ?? input.closed_at ?? openedAt
-    const closedAt = input.closed_at ?? (category === 'done' ? updatedAt : null)
-    await tx`UPDATE seq SET next=${number + 1n} WHERE space_id=${identity.spaceId}::uuid
+  )[0]
+  const number = BigInt(sequence!.next)
+  const key = `${prefix.toUpperCase()}-${number}`
+  const id = newRecordId()
+  const category = input.status ?? 'open'
+  const openedAt = input.opened_at ?? new Date().toISOString()
+  const updatedAt = input.updated_at ?? input.closed_at ?? openedAt
+  const closedAt = input.closed_at ?? (category === 'done' ? updatedAt : null)
+  await tx`UPDATE seq SET next=${number + 1n} WHERE space_id=${identity.spaceId}::uuid
       AND project_id=${project.id}::uuid AND name=${`task:${prefix}`}`
-    const inserted = rows<HostedTask>(
-      await tx`
+  const inserted = rows<HostedTask>(
+    await tx`
       INSERT INTO hub_task
         (id,space_id,project_name,key,project,title,status,status_category,parent_key,body,
          opened_at,closed_at,source,first_seen,last_seen,created_at,updated_at)
       VALUES (${id}::uuid,${identity.spaceId}::uuid,${input.project},${key},${input.project},
         ${input.title},${category},${category},${input.parent ?? null},${input.body ?? null},${openedAt}::timestamptz,
         ${closedAt}::timestamptz,'local',${openedAt}::timestamptz,${updatedAt}::timestamptz,now(),${updatedAt}::timestamptz) RETURNING *`,
-    )
+  )
   return inserted[0]!
 }
 
