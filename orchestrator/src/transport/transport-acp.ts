@@ -445,7 +445,7 @@ async function openAcp(opts: TransportStartOpts): Promise<TransportHandle> {
         if (fields.length === 1 && stringFields.length === 1) {
           const runId = Number(opts.env.ORCH_RUN_ID ?? 0)
           if (runId) {
-            const { ask } = await import('../ask.ts')
+            const { ask } = await import('../ask/ask.ts')
             const { db } = await import('../db.ts')
             db().query("UPDATE run SET status='asking' WHERE id=? AND status='running'").run(runId)
             const answer = await ask({

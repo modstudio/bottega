@@ -69,7 +69,7 @@ describe('readonly-lens sandbox profile', () => {
     expect(rewritten).toContain(`command = ${JSON.stringify(Bun.which('bun') ?? process.execPath)}`)
     expect(rewritten).toContain('"ask-server"')
     expect(rewritten).not.toContain('/main/orchestrator/src/cli.ts')
-    expect(rewritten).toContain('/orchestrator/src/ask-proxy.ts')
+    expect(rewritten).toContain('/orchestrator/src/ask/ask-proxy.ts')
   })
   test('builds allow and deny lists from the register fixture', () => {
     const project = fixtureProject({

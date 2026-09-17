@@ -8,7 +8,7 @@ import { registerStandardRuntime } from './runtime-registration.ts'
 
 registerStandardRuntime()
 
-import { strictlyAuthenticatedWorkerRun } from './ask.ts'
+import { strictlyAuthenticatedWorkerRun } from './ask/ask.ts'
 import { checkDoc, repoRootForDoc } from './canon.ts'
 import {
   consumeDoc,

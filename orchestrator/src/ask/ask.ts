@@ -30,9 +30,9 @@
  */
 
 import { createConnection, createServer, type Socket } from 'node:net'
-import { db, nowIso, writableDb } from './db.ts'
-import { appendRunEvent } from './events.ts'
-import { checkMessages, messageArchitect } from './mailbox/mailbox.ts'
+import { db, nowIso, writableDb } from '../db.ts'
+import { appendRunEvent } from '../events.ts'
+import { checkMessages, messageArchitect } from '../mailbox/mailbox.ts'
 
 /**
  * How long a worker waits for a ruling before falling back.

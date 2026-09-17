@@ -6,7 +6,7 @@
  */
 import type { Database } from 'bun:sqlite'
 import { writeFileSync } from 'node:fs'
-import type { AskLoopback } from './ask.ts'
+import type { AskLoopback } from './ask/ask.ts'
 import { checkpointRun, latestCheckpoint } from './checkpoint.ts'
 import {
   type CheckoutToWatch,

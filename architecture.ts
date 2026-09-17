@@ -336,7 +336,7 @@ export const modules: ArchitectureModule[] = [
   ]),
   module('orchestrator/src/run-live.ts', [
     './agents.ts',
-    './ask.ts',
+    './ask/ask.ts',
     './checkpoint.ts',
     './codex-mcp-scope.ts',
     './confinement.ts',
@@ -356,7 +356,7 @@ export const modules: ArchitectureModule[] = [
     './worktree-types.ts',
   ]),
   module('orchestrator/src/run-terminal.ts', [
-    './ask.ts',
+    './ask/ask.ts',
     './checkpoint.ts',
     './confinement.ts',
     './contract.ts',
