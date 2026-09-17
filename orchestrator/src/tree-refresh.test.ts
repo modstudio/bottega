@@ -86,14 +86,8 @@ describe('tree refresh recipe context', () => {
     expect(vars['ports.web']).toBe('21404')
   })
 
-  test('finds a lifecycle placeholder before snapshot-less refresh can call git or a step', () => {
-    let gitCalls = 0
-    let stepCalls = 0
-    expect(() => {
-      requireRefreshSnapshot(recipe, false, '/trees/orch-42')
-      gitCalls++
-      stepCalls++
-    }).toThrow(
+  test('refuses a snapshot-less refresh naming the step and lifecycle placeholder', () => {
+    expect(() => requireRefreshSnapshot(recipe, false, '/trees/orch-42')).toThrow(
       'refresh step "observe lifecycle" references lifecycle placeholder {key}, but worktree /trees/orch-42 has no recorded recipe snapshot',
     )
 
@@ -101,7 +95,5 @@ describe('tree refresh recipe context', () => {
       step: 'observe lifecycle',
       placeholder: 'key',
     })
-    expect(gitCalls).toBe(0)
-    expect(stepCalls).toBe(0)
   })
 })

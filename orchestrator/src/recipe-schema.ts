@@ -28,7 +28,7 @@ const execContextSchema = z.discriminatedUnion('where', [
   strictObject({ where: z.literal('as-user'), user: z.string().min(1) }),
 ])
 
-const stepSchema = strictObject({
+const stepFields = {
   name: z.string().min(1),
   run: commandSchema,
   undo: commandSchema
@@ -38,14 +38,10 @@ const stepSchema = strictObject({
     .optional(),
   verify: commandSchema.optional(),
   exec: execContextSchema.optional(),
-})
+}
 
-const refreshStepSchema = strictObject({
-  name: z.string().min(1),
-  run: commandSchema,
-  verify: commandSchema.optional(),
-  exec: execContextSchema.optional(),
-})
+const stepSchema = strictObject(stepFields)
+const refreshStepSchema = stepSchema.omit({ undo: true })
 
 const databaseAllocationSchema = strictObject({
   engine: z.enum(['postgres', 'mysql', 'mariadb', 'sqlite', 'other']),
@@ -180,6 +176,32 @@ function stringsIn(value: unknown): string[] {
   if (Array.isArray(value)) return value.flatMap(stringsIn)
   if (value && typeof value === 'object') return Object.values(value).flatMap(stringsIn)
   return []
+}
+
+/** Name every recipe placeholder referenced by a step, including structured arguments. */
+export function stepPlaceholders(step: unknown): { name: string; allocation: boolean }[] {
+  const names = new Map<string, boolean>()
+  for (const text of stringsIn(step)) {
+    for (const match of text.matchAll(/\{([^{}]+)\}/g)) {
+      const name = match[1]!
+      const allocation = ALLOCATION_PLACEHOLDER.test(name)
+      if (STATIC_PLACEHOLDERS.has(name) || allocation) names.set(name, allocation)
+    }
+  }
+  const visitStructuredArguments = (value: unknown): void => {
+    if (Array.isArray(value)) {
+      for (const entry of value) visitStructuredArguments(entry)
+      return
+    }
+    if (!value || typeof value !== 'object') return
+    if ('omitWhenEmpty' in value && typeof value.omitWhenEmpty === 'string') {
+      names.set(value.omitWhenEmpty, false)
+    }
+    if ('expand' in value && value.expand === 'seed') names.set('seed', false)
+    for (const entry of Object.values(value)) visitStructuredArguments(entry)
+  }
+  visitStructuredArguments(step)
+  return [...names].map(([name, allocation]) => ({ name, allocation }))
 }
 
 function placeholderProblem(name: string, recipe: RecipeInput): string | null {

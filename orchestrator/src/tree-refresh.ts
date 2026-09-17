@@ -3,21 +3,17 @@
 
 import { resolve } from 'node:path'
 import { PLATFORM_SLUG } from '../../shared/brand.ts'
-import {
-  gitToplevel,
-  inspectCheckout,
-  mainCheckoutOf,
-  resolvedPathsEqual,
-} from '../../shared/git.ts'
+import { gitToplevel, inspectCheckout } from '../../shared/git.ts'
 import { recordedChainRootsForWorktree } from './dispatch-preflight.ts'
 import { orchRunLabel } from './docker-resources.ts'
-import { git } from './git-environment.ts'
-import { projects, resolvedWorktreeTool } from './projects.ts'
+import { git, repoRootOf } from './git-environment.ts'
+import { projectAt, resolvedWorktreeTool } from './projects.ts'
 import { teardownVars } from './recipe-lifecycle.ts'
 import { loadTrackedRecipe } from './recipe-loader.ts'
-import type { TrackedRecipe } from './recipe-schema.ts'
+import { stepPlaceholders, type TrackedRecipe } from './recipe-schema.ts'
 import { runStep, type StepContext } from './recipe-step.ts'
 import { executeTrackedRefreshSteps, type RecipeSnapshot, readSnapshot } from './tracked-recipe.ts'
+import { resolveWorktreeLifecycle } from './worktree-lifecycle.ts'
 
 export type TreeRefreshDecision =
   | { action: 'fast-forward' }
@@ -51,37 +47,17 @@ type RefreshOwner = {
   rootRunId: number
 }
 
-const LIFECYCLE_PLACEHOLDER = /^(key|seed|index|label|ports\.[^{}.]+|db\.[^{}.]+|alloc\.[^{}.]+)$/
-
-function lifecyclePlaceholderIn(value: unknown): string | null {
-  if (typeof value === 'string') {
-    for (const match of value.matchAll(/\{([^{}]+)\}/g)) {
-      if (LIFECYCLE_PLACEHOLDER.test(match[1]!)) return match[1]!
-    }
-    return null
-  }
-  if (Array.isArray(value)) {
-    for (const entry of value) {
-      const placeholder = lifecyclePlaceholderIn(entry)
-      if (placeholder) return placeholder
-    }
-    return null
-  }
-  if (!value || typeof value !== 'object') return null
-  if ('omitWhenEmpty' in value && typeof value.omitWhenEmpty === 'string') {
-    if (LIFECYCLE_PLACEHOLDER.test(value.omitWhenEmpty)) return value.omitWhenEmpty
-  }
-  if ('expand' in value && value.expand === 'seed') return 'seed'
-  return lifecyclePlaceholderIn(Object.values(value))
-}
+const SNAPSHOT_STATIC_PLACEHOLDERS = new Set(['key', 'seed', 'index', 'label'])
 
 export function snapshotlessRefreshPlaceholder(recipe: TrackedRecipe): {
   step: string
   placeholder: string
 } | null {
   for (const step of recipe.refresh ?? []) {
-    const placeholder = lifecyclePlaceholderIn(step)
-    if (placeholder) return { step: step.name, placeholder }
+    const placeholder = stepPlaceholders(step).find(
+      ({ name, allocation }) => allocation || SNAPSHOT_STATIC_PLACEHOLDERS.has(name),
+    )
+    if (placeholder) return { step: step.name, placeholder: placeholder.name }
   }
   return null
 }
@@ -110,14 +86,16 @@ export function refreshStepContext(input: {
   if (!owner?.snapshot) {
     return {
       treeRoot: input.treeRoot,
-      vars: {
+      vars: teardownVars({
         path: input.treeRoot,
-        name: input.treeRoot.split('/').pop() ?? input.treeRoot,
         branch: input.branch,
         base: input.head,
+        key: null,
+        seed: null,
         main: input.main,
-        tree_exists: 'true',
-      },
+        label: '',
+        treeExists: true,
+      }),
     }
   }
   return {
@@ -138,16 +116,16 @@ export function refreshStepContext(input: {
 
 function refreshTree(path: string): string[] {
   const requested = resolve(path)
+  const project = projectAt(requested)
   const treeRoot = gitToplevel(requested)
-  if (!treeRoot) throw new Error(`path ${requested} is not a git worktree of a registered project`)
-  const main = mainCheckoutOf(treeRoot)
-  const project = main
-    ? projects().find((candidate) => resolvedPathsEqual(candidate.path, main))
-    : null
-  if (!main || !project) {
+  if (!project || !treeRoot) {
+    throw new Error(`path ${requested} is not a git worktree of a registered project`)
+  }
+  const main = repoRootOf(treeRoot)
+  if (!main || main !== project.path) {
     throw new Error(`path ${treeRoot} is not a git worktree of a registered project`)
   }
-  if (resolvedPathsEqual(treeRoot, project.path)) {
+  if (treeRoot === main) {
     throw new Error(
       `path ${treeRoot} is the main checkout for project ${project.name}, not a worktree`,
     )
@@ -156,17 +134,19 @@ function refreshTree(path: string): string[] {
   const trunk = project.settings.trunk?.trim()
   if (!trunk) throw new Error(`project ${project.name} has no landing branch (register trunk)`)
   const tool = resolvedWorktreeTool(project)
-  if (!tool?.recipePath) {
+  const lifecycle = resolveWorktreeLifecycle(tool)
+  if (!tool || lifecycle.form !== 'tracked-recipe') {
     throw new Error(
       `project ${project.name} has no tracked recipe; declare a tracked recipe in ${PLATFORM_SLUG}.jsonc`,
     )
   }
+  const recipePath = lifecycle.recipePath
 
-  const loaded = loadTrackedRecipe(treeRoot, tool.recipePath)
+  const loaded = loadTrackedRecipe(treeRoot, recipePath)
   if (!loaded.ok) throw new Error(loaded.errors.join('\n'))
   if (!loaded.recipe) {
     throw new Error(
-      `tracked recipe ${tool.recipePath} declares no worktree lifecycle; declare one in ${PLATFORM_SLUG}.jsonc`,
+      `tracked recipe ${recipePath} declares no worktree lifecycle; declare one in ${PLATFORM_SLUG}.jsonc`,
     )
   }
   const roots = recordedChainRootsForWorktree(treeRoot)
@@ -214,7 +194,7 @@ function refreshTree(path: string): string[] {
   }
 
   if (!loaded.recipe.refresh?.length) {
-    messages.push(`tracked recipe ${tool.recipePath} has no refresh steps; ran no steps`)
+    messages.push(`tracked recipe ${recipePath} has no refresh steps; ran no steps`)
     return messages
   }
   const failure = executeTrackedRefreshSteps(
