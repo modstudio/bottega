@@ -1,12 +1,17 @@
 #!/usr/bin/env bun
 /** Enforce the hosted hub server concern boundary. */
 import { existsSync, readFileSync } from 'node:fs'
-import { dirname, relative, resolve } from 'node:path'
-import { importSpecifiers } from './import-scanner.ts'
+import { resolve } from 'node:path'
+import { importSpecifiers, repositoryRelativeImport } from './import-scanner.ts'
 
 const ROOT = new URL('..', import.meta.url).pathname.replace(/\/$/, '')
 const FILE = 'hub/src/hosted.ts'
-const FORBIDDEN_FILES = new Set(['hub/src/db.ts', 'hub/src/orch.ts'])
+const FORBIDDEN_FILES = new Set([
+  'hub/src/db.ts',
+  'hub/src/db/db.ts',
+  'hub/src/orch.ts',
+  'hub/src/orch/orch.ts',
+])
 const SPAWN_PATTERN =
   /\bbun:sqlite\b|\bBun\.spawn(?:Sync)?\s*\(|\b(?:from|require\s*\()\s*['"](?:node:)?child_process['"]/
 
@@ -35,8 +40,8 @@ while (pending.length) {
       continue
     }
     if (!specifier.startsWith('.')) continue
-    const absolute = resolve(ROOT, dirname(current.file), specifier)
-    const importedFile = relative(ROOT, absolute)
+    const importedFile = repositoryRelativeImport(current.file, specifier)
+    const absolute = resolve(ROOT, importedFile)
     const chain = [...current.chain, importedFile]
     if (!existsSync(absolute)) {
       violations.push(`unresolved relative import chain: ${chain.join(' -> ')}`)
