@@ -22,6 +22,7 @@ modes:
       - review-lenses
       - triage-findings
       - apply-findings
+      - acceptance
       - run-gate
       - open-pr
       - merge-pr
@@ -34,6 +35,7 @@ modes:
       - review-lenses
       - triage-findings
       - apply-findings
+      - acceptance
       - run-gate
       - open-pr
       - merge-pr
