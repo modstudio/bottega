@@ -1,6 +1,10 @@
 import type { Database } from 'bun:sqlite'
 import { db, writableDb } from './db.ts'
-import { type InjectionSource, resolveInjection } from './project-injection.ts'
+import {
+  type InjectionSource,
+  resolveInjection,
+  unresolvedTrackerActionPlaceholder,
+} from './project-injection.ts'
 import { productionStepCatalogue } from './step-catalogue.ts'
 import { type VersionEvent, versionedLifecycle } from './versioned-lifecycle.ts'
 
@@ -417,6 +421,10 @@ export function getWorkflowStep(
     for (const part of path.split('.')) value = object(value) ? value[part] : undefined
     if (value === undefined || value === null || typeof value === 'object')
       throw new Error(`unresolved workflow placeholder "${path}"`)
+    if (path.startsWith('tracker.actions.') && typeof value === 'string') {
+      const reason = unresolvedTrackerActionPlaceholder(value, project.name, args.key)
+      if (reason) throw new Error(`unresolved workflow placeholder "${path}": ${reason}`)
+    }
     return String(value)
   })
   return {

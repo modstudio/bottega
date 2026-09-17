@@ -2,11 +2,12 @@
 /** Knows the project facts shared workflows may request, their stored grammar, and refusal remedies. */
 import { z } from 'zod'
 import {
-  TRACKER_ACTIONS,
+  refuseHubActionOverrides,
+  resolveTrackerAgentActions,
   type TrackerAction,
   type TrackerProtocol,
   type TrackerSettings,
-  trackerProtocolActions,
+  trackerSettingsShape,
 } from '../../shared/trackers.ts'
 
 const strictObject = <Shape extends z.core.$ZodLooseShape>(shape: Shape) => z.strictObject(shape)
@@ -33,24 +34,7 @@ const docsSchema = z.discriminatedUnion('protocol', [
 ])
 
 const gateSchema = z.string().trim().min(1)
-const trackerActionsSchema = strictObject(
-  Object.fromEntries(
-    TRACKER_ACTIONS.map((action) => [action, z.string().trim().min(1).optional()]),
-  ) as {
-    [Action in TrackerAction]: z.ZodOptional<z.ZodString>
-  },
-)
-const trackerSchema = strictObject({
-  kind: z.string().trim().min(1).optional(),
-  protocol: z.enum(['workspace-mcp', 'cursor-mcp', 'array-mcp', 'hub']),
-  assigneeLookup: z.enum(['person-lookup', 'task-detail']).optional(),
-  envPrefix: z.string().trim().min(1).optional(),
-  openStatuses: z.array(z.string()).optional(),
-  states: z
-    .record(z.string(), z.enum(['backlog', 'open', 'active', 'review', 'done', 'dropped']))
-    .optional(),
-  actions: trackerActionsSchema.optional(),
-})
+const trackerSchema = strictObject(trackerSettingsShape).superRefine(refuseHubActionOverrides)
 
 export type ReleaseSettings = z.infer<typeof releaseSchema>
 export type DocsSettings = z.infer<typeof docsSchema>
@@ -81,6 +65,42 @@ const docsAdapters: Record<DocsSettings['protocol'], { read: string[]; write: st
     write: ['doc_create', 'doc_update'],
   },
   'orch-docs': { read: ['list_docs', 'get_doc'], write: ['set_doc'] },
+}
+
+const trackerProtocols = new Set<TrackerProtocol>([
+  'workspace-mcp',
+  'cursor-mcp',
+  'array-mcp',
+  'hub',
+])
+const projectNamePattern = /^[A-Za-z0-9][A-Za-z0-9-]*$/
+const taskKeyPattern = /^[A-Za-z0-9-]+$/
+
+function trackerProtocol(value: string | undefined): TrackerProtocol {
+  if (!value || !trackerProtocols.has(value as TrackerProtocol)) {
+    throw new Error(
+      `tracker protocol ${value ?? '(missing)'} has no workflow injection support; set tracker.protocol to workspace-mcp, cursor-mcp, array-mcp, or hub`,
+    )
+  }
+  return value as TrackerProtocol
+}
+
+function substituteAction(template: string, project: string, key: string | undefined): string {
+  return template
+    .replaceAll('{project}', projectNamePattern.test(project) ? project : '{project}')
+    .replaceAll('{key}', key && taskKeyPattern.test(key) ? key : '{key}')
+}
+
+export function unresolvedTrackerActionPlaceholder(
+  action: string,
+  project: string,
+  key: string | undefined,
+): string | null {
+  if (action.includes('{project}'))
+    return `project value "${project}" does not match project-name grammar`
+  if (action.includes('{key}'))
+    return `task-key value "${key ?? '(missing)'}" does not match task-key grammar`
+  return null
 }
 
 type InjectionSettings = {
@@ -153,16 +173,13 @@ export function resolveInjection<
   for (const source of needs) {
     const value = source === 'stack' ? project.stack : project.settings[source]
     if (source === 'tracker') {
-      const tracker = value as TrackerSettings & { protocol: TrackerProtocol }
-      const defaults = trackerProtocolActions[tracker.protocol]
-      const actionNames = Object.fromEntries(
-        Object.entries(defaults).map(([action, name]) => [action, name.agent]),
-      ) as Partial<Record<TrackerAction, string>>
-      Object.assign(actionNames, tracker.actions)
+      const tracker = value as TrackerSettings
+      const protocol = trackerProtocol(tracker.protocol)
+      const actionNames = resolveTrackerAgentActions(protocol, tracker.actions)
       const actions = Object.fromEntries(
         Object.entries(actionNames).map(([action, name]) => [
           action,
-          name.replaceAll('{project}', project.name).replaceAll('{key}', args.key || '{key}'),
+          substituteAction(name, project.name, args.key),
         ]),
       ) as Partial<Record<TrackerAction, string>>
       const states = Object.fromEntries(
@@ -170,14 +187,14 @@ export function resolveInjection<
           const raw = Object.entries(tracker.states ?? {}).find(
             ([, mapped]) => mapped === category,
           )?.[0]
-          return [[category, raw ?? category]]
+          return raw ? [[category, raw]] : protocol === 'hub' ? [[category, category]] : []
         }),
       ) as ResolvedTracker['states']
       Object.assign(resolved, {
         tracker: {
-          kind: tracker.kind ?? tracker.protocol,
-          protocol: tracker.protocol,
-          ...(tracker.protocol === 'hub' ? {} : { server: project.name }),
+          kind: tracker.kind ?? protocol,
+          protocol,
+          ...(protocol === 'hub' ? {} : { server: project.name }),
           actions,
           states,
         },

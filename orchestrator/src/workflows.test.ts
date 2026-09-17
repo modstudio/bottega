@@ -37,6 +37,58 @@ const database = () => {
   )
   return d
 }
+const promotePlanTask = (d: Database) => {
+  const current = productionStepCatalogue(d).definition
+  const catalogue = setStepCatalogue(
+    {
+      steps: [
+        ...current.steps,
+        {
+          slug: 'injection-search',
+          title: 'Search',
+          body: 'Search with {{tracker.actions.search}}.',
+          floor: ['human-ruling'],
+          job: null,
+          autonomy: 'ask',
+          needs: ['tracker'],
+        },
+        {
+          slug: 'injection-start',
+          title: 'Start',
+          body: 'Move to {{tracker.states.active}} with {{tracker.actions.status}} after {{tracker.actions.get}}.',
+          floor: ['tracker-transition'],
+          job: null,
+          autonomy: 'auto',
+          needs: ['tracker'],
+        },
+      ],
+    },
+    'workflow injection fixture',
+    'test',
+    d,
+  )
+  promoteStepCatalogue(catalogue.n, 'publish', 'test', d)
+  const draft = setWorkflow(
+    'plan-task',
+    {
+      title: 'Plan a task',
+      description: 'Plan.',
+      arguments: [{ name: 'key', required: false, description: 'Existing task key.' }],
+      modes: [
+        {
+          slug: 'default',
+          title: 'Plan',
+          default: true,
+          steps: ['injection-search', 'injection-start'],
+        },
+      ],
+    },
+    'workflow injection fixture',
+    'test',
+    d,
+  )
+  promoteWorkflow('plan-task', draft.n, 'publish', 'test', d)
+}
 
 describe('workflow definition validation', () => {
   test('accepts catalogue references and rejects inline or missing steps', () => {
@@ -127,6 +179,51 @@ describe('workflow versions and project composition', () => {
     expect(getWorkflowStep('plan-task', 'fixture', 'dedupe', {}, d).body).toBe(
       'Search with list-tasks-tool.',
     )
+  })
+  test('uses hub state defaults but refuses an absent remote state', () => {
+    const d = database()
+    promotePlanTask(d)
+    d.query('UPDATE project SET settings=? WHERE name=?').run(
+      JSON.stringify({
+        tracker: { protocol: 'hub' },
+        worktree: { branch: '{key}-orch-{id}' },
+      }),
+      'fixture',
+    )
+    expect(
+      getWorkflowStep('plan-task', 'fixture', 'injection-start', { key: 'DEV-661' }, d).body,
+    ).toContain('Move to active')
+
+    d.query('UPDATE project SET settings=? WHERE name=?').run(
+      JSON.stringify({
+        tracker: { protocol: 'workspace-mcp', states: { completed: 'done' } },
+        worktree: { branch: '{key}-orch-{id}' },
+      }),
+      'fixture',
+    )
+    expect(() =>
+      getWorkflowStep('plan-task', 'fixture', 'injection-start', { key: 'DEV-661' }, d),
+    ).toThrow('unresolved workflow placeholder "tracker.states.active"')
+  })
+  test('refuses hostile hub placeholder values and names them', () => {
+    const d = database()
+    promotePlanTask(d)
+    d.query('UPDATE project SET settings=? WHERE name=?').run(
+      JSON.stringify({
+        docs: { protocol: 'orch-docs' },
+        tracker: { protocol: 'hub' },
+        worktree: { branch: '{key}-orch-{id}' },
+      }),
+      'fixture',
+    )
+    expect(() =>
+      getWorkflowStep('plan-task', 'fixture', 'injection-start', { key: 'DEV-1; cat secrets' }, d),
+    ).toThrow('task-key value "DEV-1; cat secrets" does not match task-key grammar')
+
+    d.query('UPDATE project SET name=? WHERE name=?').run('fixture; touch owned', 'fixture')
+    expect(() =>
+      getWorkflowStep('plan-task', 'fixture; touch owned', 'injection-search', {}, d),
+    ).toThrow('project value "fixture; touch owned" does not match project-name grammar')
   })
   test('refuses missing project facts and unresolved placeholders', () => {
     const d = database(),

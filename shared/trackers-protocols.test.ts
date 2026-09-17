@@ -4,6 +4,7 @@ import {
   createTrackerTask,
   documentsRefusal,
   GIT_WRITE_REFUSAL,
+  resolveTrackerAgentActions,
   TASK_STATUSES,
   type ToolCaller,
   TRACKER_COMMENT_WRITE_REFUSAL,
@@ -12,9 +13,36 @@ import {
   type TrackerProject,
   trackerCapabilities,
   trackerSourceFor,
+  trackerWireAction,
   UNKNOWN_TRACKER_REFUSAL,
   WORKSPACE_CREATE_REFUSAL,
 } from './trackers.ts'
+
+describe('tracker action names', () => {
+  test('uses the agent name as the wire-name fallback', () => {
+    expect(trackerWireAction('workspace-mcp', 'search')).toBe('list-tasks-tool')
+  })
+
+  test('keeps cursor agent and wire names distinct', () => {
+    expect(resolveTrackerAgentActions('cursor-mcp').get).toBe('task_getByKey')
+    expect(trackerWireAction('cursor-mcp', 'get')).toBe('task.getByKey')
+  })
+
+  test('refuses an action unsupported by the protocol', () => {
+    expect(() => trackerWireAction('array-mcp', 'comment')).toThrow(
+      'tracker protocol array-mcp has no comment action',
+    )
+  })
+
+  test('agent action overrides replace defaults and add declared capabilities', () => {
+    expect(
+      resolveTrackerAgentActions('array-mcp', {
+        update: 'custom_update',
+        status: 'custom_status',
+      }),
+    ).toMatchObject({ update: 'custom_update', status: 'custom_status' })
+  })
+})
 
 const task = { title: 'Move the adapter', body: 'Protocol-neutral body', status: 'todo' }
 

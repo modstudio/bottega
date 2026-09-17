@@ -1,13 +1,15 @@
+import { z } from 'zod'
+
 export type StatusCategory = 'open' | 'active' | 'review' | 'done' | 'dropped'
 export const TASK_STATUSES = ['open', 'active', 'review', 'done', 'dropped'] as const
 
-export const TRACKER_ACTIONS = ['search', 'get', 'create', 'update', 'status', 'comment'] as const
+const TRACKER_ACTIONS = ['search', 'get', 'create', 'update', 'status', 'comment'] as const
 export type TrackerAction = (typeof TRACKER_ACTIONS)[number]
 export type TrackerProtocol = 'workspace-mcp' | 'cursor-mcp' | 'array-mcp' | 'hub'
-export type TrackerActionName = { agent: string; wire?: string }
+type TrackerActionName = { agent: string; wire?: string }
 
 /** The names agents and hub use for each protocol capability. */
-export const trackerProtocolActions = {
+const trackerProtocolActions = {
   'workspace-mcp': {
     search: { agent: 'list-tasks-tool' },
     get: { agent: 'get-task-tool' },
@@ -42,7 +44,7 @@ export const trackerProtocolActions = {
   },
 } satisfies Record<TrackerProtocol, Partial<Record<TrackerAction, TrackerActionName>>>
 
-const trackerWireAction = (protocol: TrackerProtocol, action: TrackerAction): string => {
+export const trackerWireAction = (protocol: TrackerProtocol, action: TrackerAction): string => {
   const actions: Record<
     TrackerProtocol,
     Partial<Record<TrackerAction, TrackerActionName>>
@@ -52,14 +54,61 @@ const trackerWireAction = (protocol: TrackerProtocol, action: TrackerAction): st
   return name.wire ?? name.agent
 }
 
-export type TrackerSettings = {
-  kind?: string
-  protocol?: TrackerProtocol | string
-  assigneeLookup?: 'person-lookup' | 'task-detail'
-  envPrefix?: string
-  openStatuses?: string[]
-  states?: Record<string, 'backlog' | StatusCategory>
-  actions?: Partial<Record<TrackerAction, string>>
+/** Agent-facing capability names, with register overrides replacing protocol defaults. */
+export function resolveTrackerAgentActions(
+  protocol: TrackerProtocol,
+  overrides: Partial<Record<TrackerAction, string>> = {},
+): Partial<Record<TrackerAction, string>> {
+  const defaults: Record<
+    TrackerProtocol,
+    Partial<Record<TrackerAction, TrackerActionName>>
+  > = trackerProtocolActions
+  return {
+    ...Object.fromEntries(
+      Object.entries(defaults[protocol]).map(([action, name]) => [action, name.agent]),
+    ),
+    ...overrides,
+  }
+}
+
+const trackerActionsShape = Object.fromEntries(
+  TRACKER_ACTIONS.map((action) => [
+    action,
+    z
+      .string()
+      .trim()
+      .min(1)
+      .regex(/^[A-Za-z0-9_.-]+$/, 'must be a plain MCP tool name')
+      .optional(),
+  ]),
+) as { [Action in TrackerAction]: z.ZodOptional<z.ZodString> }
+
+export const trackerSettingsShape = {
+  kind: z.string().trim().min(1).optional(),
+  protocol: z.string().trim().min(1).optional(),
+  assigneeLookup: z.enum(['person-lookup', 'task-detail']).optional(),
+  envPrefix: z.string().trim().min(1).optional(),
+  openStatuses: z.array(z.string()).optional(),
+  states: z
+    .record(z.string(), z.enum(['backlog', 'open', 'active', 'review', 'done', 'dropped']))
+    .optional(),
+  actions: z.strictObject(trackerActionsShape).optional(),
+}
+
+export type TrackerSettings = z.infer<z.ZodObject<typeof trackerSettingsShape>>
+
+/** Hub commands are fixed; only MCP tool names may be overridden. */
+export function refuseHubActionOverrides(
+  tracker: TrackerSettings,
+  context: z.core.$RefinementCtx<TrackerSettings>,
+): void {
+  if (tracker.protocol === 'hub' && tracker.actions !== undefined) {
+    context.addIssue({
+      code: 'custom',
+      path: ['actions'],
+      message: 'hub protocol accepts no action overrides; remove tracker.actions',
+    })
+  }
 }
 
 export type TrackerProject = {

@@ -1,30 +1,12 @@
 import { z } from 'zod'
+import { refuseHubActionOverrides, trackerSettingsShape } from './trackers.ts'
 
 const nullableString = z.string().nullable()
 const nullableNumber = z.number().finite().nullable()
 
 const OrchTrackerSettingsSchema = z
-  .object({
-    kind: z.string().optional(),
-    protocol: z.string().optional(),
-    assigneeLookup: z.enum(['person-lookup', 'task-detail']).optional(),
-    envPrefix: z.string().optional(),
-    openStatuses: z.array(z.string()).optional(),
-    states: z
-      .record(z.string(), z.enum(['backlog', 'open', 'active', 'review', 'done', 'dropped']))
-      .optional(),
-    actions: z
-      .object({
-        search: z.string().optional(),
-        get: z.string().optional(),
-        create: z.string().optional(),
-        update: z.string().optional(),
-        status: z.string().optional(),
-        comment: z.string().optional(),
-      })
-      .optional(),
-  })
-  .passthrough()
+  .looseObject(trackerSettingsShape)
+  .superRefine(refuseHubActionOverrides)
 
 export const OrchProjectSchema = z
   .object({
