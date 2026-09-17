@@ -43,7 +43,7 @@ export function projectRollUpDays(rows: RollupIntervalRow[]) {
   return [...grouped.values()].sort((left, right) => left.day.localeCompare(right.day))
 }
 
-export type RatioDay = DayRow & {
+type RatioDay = DayRow & {
   ratio: number | null
   excluded: 'today' | 'gap' | null
   engagedMs: number

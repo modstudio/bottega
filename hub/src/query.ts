@@ -203,7 +203,7 @@ export function rollUpDays(): number {
   return rows.length
 }
 
-export type { RatioDay, RatioSummary } from './task-projections.ts'
+export type { RatioSummary } from './task-projections.ts'
 
 /**
  * Claude tokens per shipped task, per day, with the days that cannot be read
