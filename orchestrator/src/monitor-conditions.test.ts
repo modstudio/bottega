@@ -303,7 +303,7 @@ describe('operational monitor conditions', () => {
           since: null,
           ageMs: null,
           detail: 'sandbox directory for terminal conversation 52 uses 8192 bytes',
-          action: 'reported; no established removal verb',
+          action: 'run orch reclaim sandbox 52 --dry-run, then orch reclaim sandbox 52',
         },
       ],
       errors: [],
@@ -341,7 +341,7 @@ describe('operational monitor conditions', () => {
           ageMs: null,
           detail:
             'run 63 recorded Grok trust heading [folders."/trees/63"] after its worktree disappeared',
-          action: 'reported; prune by hand in the vendor trust store',
+          action: 'run orch reclaim trust 63 --dry-run, then orch reclaim trust 63',
         },
       ],
       errors: [],
@@ -665,6 +665,11 @@ describe('operational monitor conditions', () => {
       const result = await monitor('invoked', clock)
       expect(related(result)).toEqual([
         expect.objectContaining({
+          kind: 'asking-run',
+          subject: `run:${runId}`,
+          ownerSession: 'sess-1',
+        }),
+        expect.objectContaining({
           kind: 'task-waiting-on-ruling',
           subject: 'question:2000',
           severity: 'informational',
@@ -676,6 +681,11 @@ describe('operational monitor conditions', () => {
       ])
       const notices = claimMonitorNotices('sess-1')
       expect(notices).toEqual([
+        expect.objectContaining({
+          kind: 'asking-run',
+          subject: `run:${runId}`,
+          ownerSession: 'sess-1',
+        }),
         expect.objectContaining({
           kind: 'task-waiting-on-ruling',
           subject: 'question:2000',
@@ -698,6 +708,11 @@ describe('operational monitor conditions', () => {
       const result = await monitor('invoked', clock)
       expect(related(result)).toEqual([
         expect.objectContaining({
+          kind: 'asking-run',
+          subject: `run:${runId}`,
+          ownerSession: 'sess-1',
+        }),
+        expect.objectContaining({
           kind: 'task-waiting-on-ruling',
           subject: 'question:2000',
           severity: 'attention',
@@ -713,13 +728,19 @@ describe('operational monitor conditions', () => {
     }
   })
 
-  test('an asking run with no open question is still asking-run', async () => {
+  test('an asking run whose questions are all answered is not reported as asking-run', async () => {
     const id = addRun({
       agent: 'codex',
       job: 'implement',
       status: 'asking',
       session: 'sess-recover',
     })
+    db()
+      .query(
+        `INSERT INTO question (run_id,asked_at,question,why,answer,answered_at)
+         VALUES (?,?,?,?,?,?)`,
+      )
+      .run(id, nowIso(), 'fixture question', 'catches stale asking status', 'answered', nowIso())
     const spawn = spyOn(Bun, 'spawnSync').mockImplementation(((cmd: string[]) => {
       const argv = cmd.map(String)
       if (argv.includes('rulings')) {
@@ -734,9 +755,7 @@ describe('operational monitor conditions', () => {
     }) as unknown as typeof Bun.spawnSync)
     try {
       const result = await monitor('invoked')
-      expect(result.conditions.filter((c) => c.kind === 'asking-run')).toEqual([
-        expect.objectContaining({ subject: `run:${id}`, ownerSession: 'sess-recover' }),
-      ])
+      expect(result.conditions.filter((c) => c.kind === 'asking-run')).toEqual([])
       expect(result.conditions.some((c) => c.kind === 'task-waiting-on-ruling')).toBe(false)
       expect(result.conditions.some((c) => c.kind === 'unanswered-question')).toBe(false)
     } finally {

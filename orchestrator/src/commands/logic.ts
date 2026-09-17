@@ -350,7 +350,7 @@ export function register(program: Command): void {
       ),
     )
   program
-    .command('reclaim <kind> <subject>')
+    .command('reclaim <kind> [subject]')
     .option('--dry-run')
     .allowExcessArguments(false)
     .action((kind, subject, options) =>

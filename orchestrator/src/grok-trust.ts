@@ -1,4 +1,4 @@
-import { existsSync, readFileSync } from 'node:fs'
+import { existsSync, readFileSync, renameSync, writeFileSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { join } from 'node:path'
 
@@ -44,4 +44,27 @@ export function grokTrustPathFromHeading(heading: string): string | null {
   const quote = heading[first]!
   const last = heading.lastIndexOf(quote)
   return last > first ? heading.slice(first + 1, last) : null
+}
+
+/** Remove one exact TOML table while preserving every byte outside that table. */
+export function withoutGrokTrustHeading(content: string, heading: string): string | null {
+  const escaped = heading.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+  const match = new RegExp(`(^|\\n)${escaped}(?:\\r?\\n|$)`, 'm').exec(content)
+  if (!match) return null
+  const start = match.index + match[1]!.length
+  const afterHeading = start + match[0].length - match[1]!.length
+  const next = /^(?=\[)/m.exec(content.slice(afterHeading))
+  const end = next ? afterHeading + next.index : content.length
+  return content.slice(0, start) + content.slice(end)
+}
+
+/** Atomically replace the vendor file only when the exact recorded table exists. */
+export function removeGrokTrustHeading(path: string, heading: string): boolean {
+  const content = readFileSync(path, 'utf8')
+  const edited = withoutGrokTrustHeading(content, heading)
+  if (edited === null) return false
+  const temporary = `${path}.${process.pid}.tmp`
+  writeFileSync(temporary, edited, { mode: 0o600 })
+  renameSync(temporary, path)
+  return true
 }

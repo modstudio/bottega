@@ -39,6 +39,7 @@ import { estateEngagedMs, rollUpDays, tasksInWindow } from './query.ts'
 import { printReconcile, reconcileOpenIntervals } from './reconcile.ts'
 import { gather, recordSend, renderHtml, renderText, send, summarise } from './report.ts'
 import { listOpenRulings, rulingsPayload } from './rulings.ts'
+import { reclaimFixtureQuestions } from './fixture-question-reclaim.ts'
 import { serve } from './serve.ts'
 import { ownServeRecord, servePortIsFree, stopRecordedServe } from './serve-lifecycle.ts'
 import { getReport } from './settings.ts'
@@ -225,6 +226,8 @@ const USAGE = `hub — every project's tasks in flight, what each cost, and the 
                               using exact run ids, never an age or time window
   hub rulings [--json]        open questions ingested from orch, with age
       --json                  one JSON document: {stale_after, questions}
+  hub reclaim-fixture-questions [--dry-run] [--json]
+                              remove orphan rows from the documented gate fixtures
 
   ${TASK_USAGE}
 
@@ -943,6 +946,12 @@ try {
     case 'reconcile':
       printReconcile(await reconcileOpenIntervals({ dryRun: has('dry-run') }))
       break
+    case 'reclaim-fixture-questions': {
+      const rows = reclaimFixtureQuestions(has('dry-run'))
+      if (has('json')) console.log(JSON.stringify({ rows }))
+      else for (const row of rows) console.log(`${has('dry-run') ? 'would remove' : 'removed'} question ${row.question_id} ${row.session_id} ${row.run_ref}`)
+      break
+    }
     case 'rulings': {
       if (has('json')) {
         console.log(JSON.stringify(rulingsPayload()))
