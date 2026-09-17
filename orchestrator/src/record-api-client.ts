@@ -109,7 +109,7 @@ async function request<T>(
   const token = storedRecordToken()
   if (!token) throw recordApiUnreachable(new Error(RECORD_SIGN_IN_REMEDY))
   const headers = new Headers(init.headers)
-  bearerHeaders(token).forEach((value, name) => headers.set(name, value))
+  for (const [name, value] of bearerHeaders(token)) headers.set(name, value)
   if (init.body && !headers.has('content-type')) headers.set('content-type', 'application/json')
   let response: Response
   try {
