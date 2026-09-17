@@ -400,7 +400,7 @@ export const importBoundaries: ImportBoundary[] = [
   ),
   boundary(
     'metric-commands-boundary',
-    'orchestrator/src/metric-commands.ts',
+    'orchestrator/src/metric/metric-commands.ts',
     ['./metric.ts'],
     'Keep metric command adapters independent of the run nucleus and the CLI: they compose concern modules for one verb and own no lifecycle.',
   ),
