@@ -28,6 +28,7 @@ export function register(program: Command): void {
   program
     .command('inbox')
     .option('--all')
+    .option('--active')
     .option('--json')
     .allowExcessArguments(false)
     .action(async (options) => {
