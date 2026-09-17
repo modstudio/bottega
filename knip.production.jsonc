@@ -61,7 +61,7 @@
         "src/orch.ts!",
         "src/record-api-server.ts!",
         // Launched by path from src/sandbox.ts for Grok's MCP configuration.
-        "src/ask-proxy.ts!",
+        "src/ask/ask-proxy.ts!",
         "scripts/acp-parity.ts!",
         "scripts/check-canon-lint.ts!",
         "scripts/check-pack-budget.ts!",

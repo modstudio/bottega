@@ -37,7 +37,7 @@
       "spawns": 0
     },
     {
-      "path": "orchestrator/src/ask.test.ts",
+      "path": "orchestrator/src/ask/ask.test.ts",
       "wallMs": 1023,
       "tests": 3,
       "cliShaped": false,

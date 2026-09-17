@@ -359,7 +359,7 @@ export function grokSandboxConfig(config: string): string {
       )
       .replace(
         /(\bargs\s*=\s*\[\s*)"[^"]+"/,
-        `$1${JSON.stringify(join(ROOT, 'src', 'ask-proxy.ts'))}`,
+        `$1${JSON.stringify(join(ROOT, 'src', 'ask', 'ask-proxy.ts'))}`,
       ),
   )
 }
