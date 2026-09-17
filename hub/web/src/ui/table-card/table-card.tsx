@@ -7,7 +7,16 @@ import { classes } from '../text/classes'
 import { ToolbarBand } from '../toolbar-band/toolbar-band'
 
 /** More filters than this always sit behind the Filters trigger, whatever the width. */
-const FILTERS_INLINE_MAX = 2
+/**
+ * The card width from which filters sit inline instead of behind the Filters
+ * trigger, by how many there are. Each filter needs about a select's width; past
+ * the last band they always group. Classes are written out so Tailwind sees them.
+ */
+const FILTER_BANDS = [
+  { max: 2, show: 'hidden @3xl/card:flex', hide: '@3xl/card:hidden' },
+  { max: 4, show: 'hidden @5xl/card:flex', hide: '@5xl/card:hidden' },
+  { max: 6, show: 'hidden @7xl/card:flex', hide: '@7xl/card:hidden' },
+] as const
 
 type ToolbarProps = {
   heading?: ReactNode
@@ -55,7 +64,7 @@ function DeskToolbar({
 }: ToolbarProps) {
   const filterCount = Children.toArray(filters).length
   const trigger = filters ? <FiltersTrigger filters={filters} active={filtersActive} /> : null
-  const inline = filterCount > 0 && filterCount <= FILTERS_INLINE_MAX
+  const band = filterCount > 0 ? FILTER_BANDS.find((b) => filterCount <= b.max) : undefined
   return (
     <div className="flex min-h-9 min-w-0 flex-nowrap items-center gap-2">
       {heading ? (
@@ -63,10 +72,10 @@ function DeskToolbar({
       ) : null}
       {tabs ? <div className="flex shrink-0 items-center">{tabs}</div> : null}
       {search ? <div className="min-w-40 shrink basis-60">{search}</div> : null}
-      {inline ? (
+      {band ? (
         <>
-          <div className="hidden shrink-0 items-center gap-2 @4xl/card:flex">{filters}</div>
-          <div className="shrink-0 @4xl/card:hidden">{trigger}</div>
+          <div className={classes('shrink-0 items-center gap-2', band.show)}>{filters}</div>
+          <div className={classes('shrink-0', band.hide)}>{trigger}</div>
         </>
       ) : (
         <div className="shrink-0">{trigger}</div>

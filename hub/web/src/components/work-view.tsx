@@ -1,6 +1,14 @@
 import { keepPreviousData, useQuery } from '@tanstack/react-query'
 import { Link, useNavigate, useParams } from '@tanstack/react-router'
-import { ArrowDown, ArrowUp, ChevronRight } from 'lucide-react'
+import {
+  ArrowDown,
+  ArrowUp,
+  ChevronRight,
+  CircleDot,
+  FolderGit2,
+  LayoutGrid,
+  Rows3,
+} from 'lucide-react'
 import { type ReactNode, useEffect, useMemo, useState } from 'react'
 import { Collection, type CollectionChildRow, type CollectionColumn } from '@/components/collection'
 import {
@@ -639,20 +647,23 @@ export function BoardView() {
         headerFilters
       />
       <Docked panel={boardPanel}>
-        <div className="mb-4 flex flex-wrap items-center gap-3">
-          <Input
-            className="h-8 w-52"
-            type="search"
-            placeholder="Search key or title"
-            value={search}
-            onChange={(event) => setSearch(event.target.value)}
-          />
+        <div className="mb-4 flex flex-wrap items-center gap-2">
+          <div className="w-56 shrink-0">
+            <Input
+              size="sm"
+              type="search"
+              aria-label="Search key or title"
+              placeholder="Search key or title"
+              value={search}
+              onChange={(event) => setSearch(event.target.value)}
+            />
+          </div>
           <Segmented
             label="Board layout"
             value={settings.layout}
             options={[
-              { value: 'cards', label: 'Cards' },
-              { value: 'table', label: 'Table' },
+              { value: 'cards', label: 'Cards', icon: LayoutGrid },
+              { value: 'table', label: 'Table', icon: Rows3 },
             ]}
             onChange={(value) => remember({ layout: value as BoardLayout })}
           />
@@ -660,8 +671,8 @@ export function BoardView() {
             label="Board grouping"
             value={settings.group}
             options={[
-              { value: 'status', label: 'By status' },
-              { value: 'project', label: 'By project' },
+              { value: 'status', label: 'By status', icon: CircleDot },
+              { value: 'project', label: 'By project', icon: FolderGit2 },
             ]}
             onChange={(value) => remember({ group: value as BoardGroup })}
           />
