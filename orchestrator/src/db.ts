@@ -103,6 +103,23 @@ export function databaseOpenMode(): 'read-write' | 'read-only linked worktree' {
   return linkedWorktreeReadOnly ? 'read-only linked worktree' : 'read-write'
 }
 
+/** A test process never falls back to the live orchestrator store. */
+export function decideOrchestratorDatabasePath(
+  isTestProcess: boolean,
+  orchDb: string | undefined,
+  resolvedStore: string,
+): string {
+  if (orchDb) return resolvedStore
+  if (isTestProcess) {
+    throw new Error(
+      `test process refuses orchestrator database: ORCH_DB resolved <unset>; live store is ${resolvedStore}\n` +
+        'invariant: A test suite never falls back to the live orchestrator database.\n' +
+        'cleared by: set ORCH_DB to a scratch store before importing orchestrator/src/db.ts',
+    )
+  }
+  return resolvedStore
+}
+
 /** Request the process connection for a mutation. */
 export function writableDb(): Database {
   return db(true)
@@ -182,6 +199,7 @@ export function db(writable = false): Database {
     if (writable && registeredStoreWriteProtected) throw new Error(LINKED_WORKTREE_WRITE_REFUSAL)
     return refuseOrReloadStaleSchema(handle, writable)
   }
+  decideOrchestratorDatabasePath(process.env.NODE_ENV === 'test', process.env.ORCH_DB, DB_PATH)
   if (!existsSync(DB_PATH)) throw new Error(missingDatabaseMessage())
   requireOpenHooksForWritableMode()
   const sidecarsExist = existsSync(`${DB_PATH}-wal`) || existsSync(`${DB_PATH}-shm`)
