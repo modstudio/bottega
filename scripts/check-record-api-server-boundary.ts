@@ -14,6 +14,7 @@ const ALLOWED = new Set([
   './record-reviews.ts',
   './record-projects.ts',
   './record-docs.ts',
+  './record-snapshots.ts',
   './record-verdicts.ts',
 ])
 const FORBIDDEN_FILES = new Set(['orchestrator/src/database-location.ts', 'orchestrator/src/db.ts'])

@@ -2,22 +2,22 @@
 /** Owns job catalogue presentation. Must not know CLI grammar. */
 import { JOBS } from './jobs.ts'
 
+export function jobsPayload() {
+  return Object.values(JOBS).map((entry) => ({
+    name: entry.name,
+    what: entry.what,
+    needs: entry.needs,
+    prefer: entry.prefer,
+    contextTokens: entry.contextTokens,
+    timeoutMs: entry.timeoutMs ?? null,
+    timeoutCeilingMs: entry.timeoutCeilingMs ?? null,
+    findings: Boolean(entry.findings),
+  }))
+}
+
 export function jobsCommand(json: boolean, presentation: { log(value: string): void }): void {
   if (json) {
-    presentation.log(
-      JSON.stringify(
-        Object.values(JOBS).map((entry) => ({
-          name: entry.name,
-          what: entry.what,
-          needs: entry.needs,
-          prefer: entry.prefer,
-          contextTokens: entry.contextTokens,
-          timeoutMs: entry.timeoutMs ?? null,
-          timeoutCeilingMs: entry.timeoutCeilingMs ?? null,
-          findings: Boolean(entry.findings),
-        })),
-      ),
-    )
+    presentation.log(JSON.stringify(jobsPayload()))
     return
   }
   for (const entry of Object.values(JOBS)) {

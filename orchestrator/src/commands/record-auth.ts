@@ -12,6 +12,7 @@ import {
   recordSpaceListCommand,
   recordSpaceSwitchCommand,
 } from '../record-command.ts'
+import { publishSnapshotsCommand } from '../record-publish.ts'
 import { pushDocsCommand } from '../record-push-docs.ts'
 import { log } from './support.ts'
 
@@ -62,6 +63,14 @@ export function register(program: Command): void {
     .command('push-docs')
     .option('--dry-run')
     .action((options) => pushDocsCommand({ dryRun: Boolean(options.dryRun) }, { log }))
+  record.command('publish').action(() =>
+    publishSnapshotsCommand({
+      log,
+      setExitCode: (code) => {
+        process.exitCode = code
+      },
+    }),
+  )
   record.command('doctor').action(() =>
     recordDoctorCommand({
       log,

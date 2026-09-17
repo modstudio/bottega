@@ -20,6 +20,8 @@ function liveCacheClient(origin: string, token: string): RecordApiClient {
     }>
   }
   return {
+    putSnapshot: unused,
+    listSnapshots: unused,
     listDocs: async (query) => {
       const search = new URLSearchParams()
       if (query.scope) search.set('scope', query.scope)

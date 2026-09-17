@@ -5,6 +5,7 @@ import type { DocDelivery, DocRevisionOp } from './doc-write-allowed.ts'
 import { RECORD_WRITE_REMEDY } from './doc-write-allowed.ts'
 import { bearerHeaders, RECORD_SIGN_IN_REMEDY } from './record-auth.ts'
 import { storedRecordToken } from './record-session.ts'
+import type { SnapshotKind } from './record-snapshots.ts'
 
 const TEST_REFUSAL = 'record API client refuses a real base URL unless a stub is injected in tests'
 
@@ -54,6 +55,19 @@ export type RecordDocImportInput = {
 }
 
 export type RecordApiClient = {
+  putSnapshot(
+    kind: SnapshotKind,
+    input: { machineId: string; payload: unknown },
+  ): Promise<{ takenAt: string }>
+  listSnapshots(): Promise<{
+    items: Array<{
+      id: string
+      kind: SnapshotKind
+      machineId: string
+      payload: unknown
+      takenAt: string
+    }>
+  }>
   listDocs(query: {
     scope?: string
     subject?: string | null
@@ -180,6 +194,9 @@ export function recordApiClient(): RecordApiClient {
   if (injected) return injected
   if (process.env.NODE_ENV === 'test') throw new Error(TEST_REFUSAL)
   return {
+    putSnapshot: (kind, input) =>
+      request(`/v1/snapshots/${kind}`, { method: 'PUT', body: JSON.stringify(input) }),
+    listSnapshots: () => request('/v1/snapshots'),
     listDocs: (query) => {
       const search = new URLSearchParams()
       if (query.scope) search.set('scope', query.scope)

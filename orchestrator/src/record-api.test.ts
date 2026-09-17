@@ -1,5 +1,10 @@
 import { describe, expect, test } from 'bun:test'
-import { decodeRecordCursor, encodeRecordCursor, recordApi } from './record-api.ts'
+import {
+  decodeRecordCursor,
+  encodeRecordCursor,
+  recordApi,
+  SNAPSHOT_MAX_BYTES,
+} from './record-api.ts'
 import type { RecordIdentity } from './record-auth.ts'
 
 const identity: RecordIdentity = {
@@ -35,6 +40,8 @@ function appWith(session: RecordIdentity | null, overrides: Record<string, unkno
     voidRun: async () => undefined,
     listScores: async () => [],
     countScores: async () => ({ scores: 0, voids: 0 }),
+    upsertSnapshot: async () => ({ takenAt: '2026-09-17T12:00:00.000Z' }),
+    listSnapshots: async () => [],
     ...overrides,
   })
 }
@@ -74,6 +81,26 @@ describe('record API', () => {
 })
 
 describe('record API presentation routes', () => {
+  test('validates snapshot kinds and refuses payloads over the byte cap', async () => {
+    const invalid = await appWith(identity).request('/v1/snapshots/nope', {
+      method: 'PUT',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ machineId: id, payload: {} }),
+    })
+    expect(invalid.status).toBe(400)
+    expect(await invalid.json()).toEqual({ error: 'invalid snapshot kind' })
+
+    const oversized = await appWith(identity).request('/v1/snapshots/state', {
+      method: 'PUT',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ machineId: id, payload: 'x'.repeat(SNAPSHOT_MAX_BYTES) }),
+    })
+    expect(oversized.status).toBe(413)
+    expect(await oversized.json()).toEqual({
+      error: `snapshot payload exceeds ${SNAPSHOT_MAX_BYTES} bytes`,
+    })
+  })
+
   test('cursor encode/decode round trips and malformed cursors are rejected', async () => {
     const cursor = { at: '2026-01-02T03:04:05.000Z', id }
     expect(decodeRecordCursor(encodeRecordCursor(cursor))).toEqual(cursor)

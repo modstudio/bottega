@@ -44,6 +44,7 @@ const postgresSchema =
     'schema-review.ts',
     'schema-landing.ts',
     'schema-hub.ts',
+    'schema-snapshots.ts',
   ]
     .map((file) => readFileSync(join(recordFolder, file), 'utf8'))
     .join('\n') + readFileSync(join(recordFolder, 'schema-docs.ts'), 'utf8')
@@ -155,6 +156,7 @@ describe('Postgres substrate shape', () => {
       'invitation',
       'hub_day',
       'hub_interval',
+      'orch_snapshot',
     ]) {
       expect(migration).toContain(`ALTER TABLE "${table}" ENABLE ROW LEVEL SECURITY`)
       expect(migration).toContain(`ALTER TABLE "${table}" FORCE ROW LEVEL SECURITY`)
@@ -375,7 +377,7 @@ realPostgres('RLS proof against real Postgres', () => {
       'postgres',
       'postgres',
       `
-      DROP TABLE IF EXISTS invitation, verification, account, session, test_flake, contention, landing_review_carry, landing_override, landing, review_finding, review_lens, review, run_exclusion, run_score, run, doc_revision, doc, hub_interval, hub_day, membership, machine, seq, project, "user", space CASCADE;
+      DROP TABLE IF EXISTS invitation, verification, account, session, test_flake, contention, landing_review_carry, landing_override, landing, review_finding, review_lens, review, run_exclusion, run_score, run, doc_revision, doc, orch_snapshot, hub_interval, hub_day, membership, machine, seq, project, "user", space CASCADE;
       DROP SCHEMA IF EXISTS drizzle CASCADE;
     `,
     )
@@ -728,6 +730,41 @@ realPostgres('RLS proof against real Postgres', () => {
           (run) => run.id === httpRun,
         ),
       ).toBe(false)
+
+      const snapshotHeaders = {
+        Authorization: `Bearer ${created.token}`,
+        'content-type': 'application/json',
+      }
+      for (const [machineId, payload] of [
+        [MACHINE_A, { version: 1 }],
+        [MACHINE_A, { version: 2 }],
+        ['01990000-0000-7000-8000-000000000029', { version: 3 }],
+      ] as const) {
+        const response = await fetch(`${origin}/v1/snapshots/state`, {
+          method: 'PUT',
+          headers: snapshotHeaders,
+          body: JSON.stringify({ machineId, payload }),
+        })
+        expect(response.status).toBe(200)
+      }
+      const otherSnapshot = await fetch(`${origin}/v1/snapshots/state`, {
+        method: 'PUT',
+        headers: { Authorization: `Bearer ${tokenB}`, 'content-type': 'application/json' },
+        body: JSON.stringify({ machineId: MACHINE_A, payload: { hidden: true } }),
+      })
+      expect(otherSnapshot.status).toBe(200)
+      const snapshots = await fetch(`${origin}/v1/snapshots`, {
+        headers: { Authorization: `Bearer ${created.token}` },
+      })
+      expect(snapshots.status).toBe(200)
+      const snapshotItems = (await snapshots.json()) as {
+        items: Array<{ machineId: string; payload: Record<string, unknown> }>
+      }
+      expect(snapshotItems.items).toHaveLength(2)
+      expect(snapshotItems.items.find((item) => item.machineId === MACHINE_A)?.payload).toEqual({
+        version: 2,
+      })
+      expect(snapshotItems.items.some((item) => item.payload.hidden === true)).toBe(false)
       await proveHostedDocs({ origin, token: created.token, otherToken: tokenB })
     } finally {
       server.stop(true)
