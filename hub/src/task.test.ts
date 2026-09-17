@@ -1,6 +1,6 @@
 import { beforeAll, describe, expect, test } from 'bun:test'
 import { resetFixtureStore } from '../test/run-fixtures.ts'
-import { writeTransaction } from './db.ts'
+import { db, writeTransaction } from './db.ts'
 import { DUPLICATE_TITLE_FIXTURE } from './duplicate-matcher.fixture.ts'
 import { upsertTrackerTask } from './ingest/trackers.ts'
 import {
@@ -14,6 +14,81 @@ import {
 } from './task.ts'
 
 beforeAll(resetFixtureStore)
+
+const hosted = {
+  baseUrl: 'https://hub.example.test',
+  token: 'test',
+  fetch: async (input: string, init?: RequestInit) => {
+    const url = new URL(input)
+    const body = init?.body ? JSON.parse(String(init.body)) : {}
+    const at = new Date().toISOString()
+    const key = decodeURIComponent(url.pathname.split('/')[3] ?? '')
+    if (url.pathname === '/v1/tasks') {
+      const project = body.project as string
+      const prefixes: Record<string, string> = {
+        alpha: 'ALP',
+        beta: 'BET',
+        gamma: 'GAM',
+        workshop: 'DEV',
+      }
+      const prefix = prefixes[project]!
+      const highest = db()
+        .query<{ key: string }, []>(`SELECT key FROM task`)
+        .all()
+        .reduce((max, row) => {
+          const match = new RegExp(`^${prefix}-(\\d+)$`).exec(row.key)
+          return match ? Math.max(max, Number(match[1])) : max
+        }, 0)
+      const taskKey = `${prefix}-${highest + 1}`
+      return Response.json({
+        id: Bun.randomUUIDv7(),
+        key: taskKey,
+        project,
+        project_name: project,
+        title: body.title,
+        status: body.status,
+        status_category: body.status,
+        parent_key: body.parent ?? null,
+        body: body.body ?? null,
+        assignee: null,
+        opened_at: at,
+        closed_at: null,
+        source: 'local',
+        first_seen: at,
+        last_seen: at,
+        created_at: at,
+        updated_at: at,
+        deleted_at: null,
+      })
+    }
+    if (url.pathname.endsWith('/comments'))
+      return Response.json({
+        id: Bun.randomUUIDv7(),
+        legacy_local_id: null,
+        task_key: key,
+        project_name: 'workshop',
+        body: body.body,
+        created_at: at,
+        updated_at: at,
+        deleted_at: null,
+      })
+    if (url.pathname.endsWith('/documents'))
+      return Response.json({
+        id: Bun.randomUUIDv7(),
+        legacy_local_id: null,
+        task_key: key,
+        project_name: 'workshop',
+        role: body.role ?? null,
+        title: body.title,
+        body: body.body,
+        version: body.version,
+        created_at: at,
+        updated_at: at,
+        deleted_at: null,
+      })
+    return Response.json({ error: 'unexpected test route' }, { status: 500 })
+  },
+}
 
 describe('local task tracker', () => {
   const seed = (key: string, project: string, source: 'mcp' | 'local' = 'local') => {
@@ -29,40 +104,50 @@ describe('local task tracker', () => {
     )
   }
 
-  test('issues above the highest existing number for the project prefix', () => {
+  test('issues above the highest existing number for the project prefix', async () => {
     seed('BET-700', 'beta')
-    expect(createTask({ project: 'beta', title: 'Next beta task' }).key).toBe('BET-701')
+    expect((await createTask({ project: 'beta', title: 'Next beta task' }, { hosted })).key).toBe(
+      'BET-701',
+    )
   })
 
-  test('an mcp-sourced key participates in issuance and cannot collide', () => {
+  test('an mcp-sourced key participates in issuance and cannot collide', async () => {
     seed('ALP-900', 'alpha', 'mcp')
-    const task = createTask({ project: 'alpha', title: 'After tracker task' })
+    const task = await createTask({ project: 'alpha', title: 'After tracker task' }, { hosted })
     expect(task.key).toBe('ALP-901')
     expect(showTask('ALP-900').task.source).toBe('mcp')
   })
 
-  test('refuses issuance when the registered project has no prefix', () => {
-    expect(() => createTask({ project: 'nested', title: 'Cannot number this' })).toThrow(
-      `orch project set nested --settings '{"keyPrefixes":["ABC"]}'`,
-    )
+  test('refuses issuance when the registered project has no prefix', async () => {
+    expect(
+      createTask({ project: 'nested', title: 'Cannot number this' }, { hosted }),
+    ).rejects.toThrow(`orch project set nested --settings '{"keyPrefixes":["ABC"]}'`)
   })
 
-  test('refuses an unusable title at the shared creation boundary', () => {
-    expect(() => createTask({ project: 'workshop', title: '' })).toThrow('task title is required')
-    expect(() => createTask({ project: 'workshop', title: ' \n ' })).toThrow(
+  test('refuses an unusable title at the shared creation boundary', async () => {
+    expect(createTask({ project: 'workshop', title: '' }, { hosted })).rejects.toThrow(
+      'task title is required',
+    )
+    expect(createTask({ project: 'workshop', title: ' \n ' }, { hosted })).rejects.toThrow(
       'task title is required',
     )
   })
 
-  test('stores a parent and exposes the child through the same task row', () => {
-    const parent = createTask({ project: 'workshop', title: 'Parent' })
-    const child = createTask({ project: 'workshop', title: 'Child', parent: parent.key })
+  test('stores a parent and exposes the child through the same task row', async () => {
+    const parent = await createTask({ project: 'workshop', title: 'Parent' }, { hosted })
+    const child = await createTask(
+      { project: 'workshop', title: 'Child', parent: parent.key },
+      { hosted },
+    )
     expect(child.parent_key).toBe(parent.key)
     expect(showTask(child.key).task.parent_key).toBe(parent.key)
   })
 
-  test('a local task survives the tracker ingest write path', () => {
-    const local = createTask({ project: 'gamma', title: 'Keep this local', body: 'Local body' })
+  test('a local task survives the tracker ingest write path', async () => {
+    const local = await createTask(
+      { project: 'gamma', title: 'Keep this local', body: 'Local body' },
+      { hosted },
+    )
     writeTransaction((conn) =>
       conn.query(`UPDATE task SET assignee = 'Local Owner' WHERE key = ?`).run(local.key),
     )
@@ -91,6 +176,7 @@ describe('local task tracker', () => {
       ['DEV-1', 'open', 'alpha beta gamma delta theta'],
       ['DEV-5', 'open', 'unrelated words only'],
     ].map(([key, status, title]) => ({
+      record_id: null,
       key: key!,
       project: 'workshop',
       status: status!,
@@ -141,15 +227,24 @@ describe('local task tracker', () => {
   })
 
   test('work.task returns the local record with comments, documents, runs and project', async () => {
-    const task = createTask({ project: 'workshop', title: 'Inspectable task', body: 'Task body' })
-    const comment = commentTask(task.key, 'A useful comment')
-    const ordinary = createTaskDocument({ task: task.key, title: 'Notes', body: '# Notes' })
-    const handoff = createTaskDocument({
-      task: task.key,
-      title: 'Handoff',
-      body: '# Handoff',
-      role: 'handoff',
-    })
+    const task = await createTask(
+      { project: 'workshop', title: 'Inspectable task', body: 'Task body' },
+      { hosted },
+    )
+    const comment = await commentTask(task.key, 'A useful comment', { hosted })
+    const ordinary = await createTaskDocument(
+      { task: task.key, title: 'Notes', body: '# Notes' },
+      { hosted },
+    )
+    const handoff = await createTaskDocument(
+      {
+        task: task.key,
+        title: 'Handoff',
+        body: '# Handoff',
+        role: 'handoff',
+      },
+      { hosted },
+    )
     writeTransaction((conn) => {
       conn
         .query(

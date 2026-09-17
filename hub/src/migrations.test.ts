@@ -60,9 +60,10 @@ const applicationObjects = (d: Database): ApplicationObject[] =>
     )
     .all(MIGRATIONS_TABLE, SCHEMA_LOCK_TABLE)
 
+type SchemaRow = { type: string; name: string; sql: string }
 const applicationSchemaRows = (d: Database) =>
   d
-    .query(
+    .query<SchemaRow, [string, string]>(
       `SELECT type,name,sql FROM sqlite_master
     WHERE sql IS NOT NULL AND name NOT LIKE 'sqlite_%' AND name NOT IN (?, ?)
     ORDER BY type,name`,
@@ -131,7 +132,7 @@ describe('hub migration journal', () => {
     const d = fresh()
     expect(canonicalSchemaHash(d)).toBe(expectedSchemaHash())
     expect(expectedSchemaHash()).toBe(
-      '2fdff230e043eb2493a32588cc1110957f91c062b670093e6924088d4aefd91f',
+      '07523e2df51820711e6fbf741491c6df502e12b27a17685c9594c91851382fb2',
     )
     d.close()
   })
@@ -163,10 +164,16 @@ describe('hub migration journal', () => {
       '0001_note',
       '0002_note_acknowledgement',
       '0003_record_ledger',
+      '0004_task_record_ids',
     ])
     stripPostBaselineApplicationObjects(d)
     const after = applicationSchemaRows(d)
-    expect(after).toEqual(before)
+    expect(
+      after.map((row) => ({
+        ...row,
+        sql: row.sql?.replace(/, record_id TEXT\)/g, ')'),
+      })),
+    ).toEqual(before)
     d.close()
   })
 
@@ -268,6 +275,7 @@ describe('hub migration journal', () => {
       '0001_note',
       '0002_note_acknowledgement',
       '0003_record_ledger',
+      '0004_task_record_ids',
     ])
     expect(canonicalSchemaHash(legacy)).toBe(expectedSchemaHash())
     legacy.close()

@@ -1,7 +1,10 @@
 // concern: postgres-schema-hub
 /** Hosted record shapes for evidence created by hub's local collectors. */
+
+import { sql } from 'drizzle-orm'
 import {
   bigint,
+  check,
   doublePrecision,
   integer,
   pgTable,
@@ -40,6 +43,11 @@ export const hubTask = pgTable.withRLS(
   },
   (table) => [
     unique('hub_task_space_key_unique').on(table.spaceId, table.key),
+    check(
+      'hub_task_status_category_check',
+      sql`${table.statusCategory} IS NULL OR ${table.statusCategory} IN ('open','active','review','done','dropped')`,
+    ),
+    check('hub_task_source_check', sql`${table.source} IN ('mcp','git','local')`),
     ...tenantPolicies('hub_task', table.spaceId),
   ],
 )
@@ -83,6 +91,7 @@ export const hubTaskDocument = pgTable.withRLS(
   (table) => [
     unique('hub_task_document_space_id_unique').on(table.spaceId, table.id),
     unique('hub_task_document_legacy_unique').on(table.spaceId, table.legacyLocalId),
+    check('hub_task_document_role_check', sql`${table.role} IS NULL OR ${table.role} = 'handoff'`),
     ...tenantPolicies('hub_task_document', table.spaceId),
   ],
 )

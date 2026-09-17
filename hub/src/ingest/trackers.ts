@@ -270,29 +270,65 @@ export async function ingestTrackers(
           )
 
           let changed = 0
-          const mirroredTasks = [...unique.values()].filter((t) => !local.has(t.key)).map((t) => ({
-            id: newRecordId(), key: t.key, project: t.project, project_name: t.project,
-            title: t.title, status: t.status, status_category: t.category, parent_key: null,
-            body: null, assignee: t.assignee, opened_at: t.updatedAt ?? at,
-            closed_at: t.category === 'done' ? at : null, source: 'mcp' as const,
-            first_seen: at, last_seen: at, created_at: at, updated_at: t.updatedAt ?? at,
-            deleted_at: null,
-          }))
+          const mirroredTasks = [...unique.values()]
+            .filter((t) => !local.has(t.key))
+            .map((t) => ({
+              id: newRecordId(),
+              key: t.key,
+              project: t.project,
+              project_name: t.project,
+              title: t.title,
+              status: t.status,
+              status_category: t.category,
+              parent_key: null,
+              body: null,
+              assignee: t.assignee,
+              opened_at: t.updatedAt ?? at,
+              closed_at: t.category === 'done' ? at : null,
+              source: 'mcp' as const,
+              first_seen: at,
+              last_seen: at,
+              created_at: at,
+              updated_at: t.updatedAt ?? at,
+              deleted_at: null,
+            }))
           const mirroredEvents = [...unique.values()].flatMap((t) => {
             const was = before.get(t.key)
-            return !local.has(t.key) && was !== undefined && was !== t.category ? [{
-              id: newRecordId(), legacy_local_id: null, task_key: t.key,
-              project_name: t.project, at, from_status: was, to_status: t.category,
-              created_at: at, updated_at: at, deleted_at: null,
-            }] : []
+            return !local.has(t.key) && was !== undefined && was !== t.category
+              ? [
+                  {
+                    id: newRecordId(),
+                    legacy_local_id: null,
+                    task_key: t.key,
+                    project_name: t.project,
+                    at,
+                    from_status: was,
+                    to_status: t.category,
+                    created_at: at,
+                    updated_at: at,
+                    deleted_at: null,
+                  },
+                ]
+              : []
           })
           try {
-            for (let index=0; index<mirroredTasks.length; index+=500)
-              await hostedMirrorTasks({ tasks: mirroredTasks.slice(index,index+500) })
-            for (let index=0; index<mirroredEvents.length; index+=500)
-              await hostedMirrorTasks({ tasks: [], statusEvents: mirroredEvents.slice(index,index+500) })
+            for (let index = 0; index < mirroredTasks.length; index += 500)
+              await hostedMirrorTasks({ tasks: mirroredTasks.slice(index, index + 500) })
+            for (let index = 0; index < mirroredEvents.length; index += 500)
+              await hostedMirrorTasks({
+                tasks: [],
+                statusEvents: mirroredEvents.slice(index, index + 500),
+              })
           } catch (error) {
-            return { result: { project: s.project, tasks: 0, changed: 0, error: `hosted mirror skipped: ${(error as Error).message}` }, filled: 0 }
+            return {
+              result: {
+                project: s.project,
+                tasks: 0,
+                changed: 0,
+                error: `hosted mirror skipped: ${(error as Error).message}`,
+              },
+              filled: 0,
+            }
           }
           writeTransaction((conn) => {
             const event = conn.query(
@@ -321,13 +357,30 @@ export async function ingestTrackers(
               try {
                 const t = await s.lookup(m, task_key)
                 if (!t) continue
-                await hostedMirrorTasks({ tasks: [{
-                  id: newRecordId(), key: t.key, project: t.project, project_name: t.project,
-                  title: t.title, status: t.status, status_category: t.category, parent_key: null,
-                  body: null, assignee: t.assignee, opened_at: t.updatedAt ?? at,
-                  closed_at: t.category === 'done' ? at : null, source: 'mcp', first_seen: at,
-                  last_seen: at, created_at: at, updated_at: t.updatedAt ?? at, deleted_at: null,
-                }] })
+                await hostedMirrorTasks({
+                  tasks: [
+                    {
+                      id: newRecordId(),
+                      key: t.key,
+                      project: t.project,
+                      project_name: t.project,
+                      title: t.title,
+                      status: t.status,
+                      status_category: t.category,
+                      parent_key: null,
+                      body: null,
+                      assignee: t.assignee,
+                      opened_at: t.updatedAt ?? at,
+                      closed_at: t.category === 'done' ? at : null,
+                      source: 'mcp',
+                      first_seen: at,
+                      last_seen: at,
+                      created_at: at,
+                      updated_at: t.updatedAt ?? at,
+                      deleted_at: null,
+                    },
+                  ],
+                })
                 upsertTrackerTask(t, at)
                 filled++
                 if (!local.has(t.key) && differs(t, existing.get(t.key))) activity = true

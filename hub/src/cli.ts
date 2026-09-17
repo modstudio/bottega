@@ -4,14 +4,7 @@ import { human } from '../../shared/interval.ts'
 import { createTrackerTask } from '../../shared/trackers.ts'
 import { projectOf } from './attribute.ts'
 import { watch, withLease } from './collect.ts'
-import {
-  DB_PATH,
-  db,
-  migrateDatabase,
-  nowIso,
-  requireDatabase,
-  writeTransaction,
-} from './db.ts'
+import { DB_PATH, db, migrateDatabase, nowIso, requireDatabase, writeTransaction } from './db.ts'
 import { reclaimFixtureQuestions } from './fixture-question-reclaim.ts'
 import { ingestGit } from './ingest/git.ts'
 import { ingestRuns } from './ingest/runs.ts'
@@ -33,7 +26,7 @@ import {
   setCuratorEnabled,
   staleNotes,
 } from './note.ts'
-import { pruneTaskBranches, startDashboardCapability } from './orch.ts'
+import { startDashboardCapability } from './orch.ts'
 import { projects } from './projects.ts'
 import { estateEngagedMs, rollUpDays, tasksInWindow } from './query.ts'
 import { printReconcile, reconcileOpenIntervals } from './reconcile.ts'
@@ -44,7 +37,6 @@ import { ownServeRecord, servePortIsFree, stopRecordedServe } from './serve-life
 import { getReport } from './settings.ts'
 import { printSyncResult, syncEvidence } from './sync.ts'
 import {
-  closeTask,
   commentTask,
   createTask,
   createTaskDocument,
@@ -58,8 +50,9 @@ import {
   showTask,
   updateTaskDocument,
 } from './task.ts'
-import { hoursAgo } from './time.ts'
+import { closeThenPrune } from './task-close.ts'
 import { pushTasks } from './task-push.ts'
+import { hoursAgo } from './time.ts'
 
 const argv = process.argv.slice(2)
 const cmd = argv[0]
@@ -100,7 +93,10 @@ const taskCommandShapes = new Map<
   ['show', { positionalCount: 1, valueFlags: new Set() }],
   [
     'set',
-    { positionalCount: 1, valueFlags: new Set(['--title', '--status', '--parent', '--body']) },
+    {
+      positionalCount: 1,
+      valueFlags: new Set(['--title', '--status', '--parent', '--body', '--assignee']),
+    },
   ],
   ['close', { positionalCount: 1, valueFlags: new Set() }],
   ['comment', { positionalCount: 2, valueFlags: new Set() }],
@@ -197,7 +193,7 @@ const TASK_USAGE = `hub task new --project X --title "..." [--status Y] [--paren
   hub task list [--project X] [--status Y] [--parent KEY] [--json]
   hub task show <KEY> [--json]
   hub task set <KEY> [--title "..."] [--status Y] [--parent KEY|--no-parent]
-               [--body "..."] [--force]
+               [--body "..."] [--assignee NAME] [--force]
   hub task close <KEY> [--keep-branches]
   hub task comment <KEY> "..."
   hub task tracker-new --project X --title "..." --body "..."
@@ -361,22 +357,20 @@ async function task() {
   }
 
   async function closeAndPruneTask(key: string) {
-    const closed = await closeTask(key)
+    const { closed, pruned, pruneError } = await closeThenPrune(key, has('keep-branches'))
     printRow(closed)
-    if (has('keep-branches')) return
-    try {
-      const pruned = await pruneTaskBranches(closed.project, closed.key)
-      console.log(`branches: deleted ${pruned.deleted.length}; kept ${pruned.kept.length}`)
-      for (const branch of pruned.operator) {
-        console.log(
-          `${branch.state}: ${branch.branch} (${branch.commitsNotOnTrunk} commits not on trunk); ${branch.command}`,
-        )
-      }
-    } catch (error) {
-      const detail = error instanceof Error ? error.message : String(error)
-      console.error(`branch prune failed: ${detail}`)
+    if (pruneError) {
+      console.error(`branch prune failed: ${pruneError.message}`)
       console.error(`retry: orch branches prune --project ${closed.project} --key ${closed.key}`)
       process.exitCode = 1
+      return
+    }
+    if (!pruned) return
+    console.log(`branches: deleted ${pruned.deleted.length}; kept ${pruned.kept.length}`)
+    for (const branch of pruned.operator) {
+      console.log(
+        `${branch.state}: ${branch.branch} (${branch.commitsNotOnTrunk} commits not on trunk); ${branch.command}`,
+      )
     }
   }
   const newBody = () => {
@@ -565,6 +559,7 @@ async function task() {
           ? { parent: null }
           : {}),
       ...(has('body') ? { body: required('body') } : {}),
+      ...(has('assignee') ? { assignee: required('assignee') } : {}),
     }
     if (!Object.keys(changes).length) throw new Error('hub task set requires a field to change')
     printRow(await setTask(argv[2] ?? '', changes, { force: has('force') }))
@@ -618,7 +613,16 @@ async function task() {
     const imported: Array<{ key: string; shas: string[] }> = []
     for (const t of items) {
       const done = !!t.closed
-      const row = await createTask({ project, title: t.title, status: done ? 'done' : 'open', openedAt: t.opened, closedAt: t.closed })
+      const row = await createTask(
+        {
+          project,
+          title: t.title,
+          status: done ? 'done' : 'open',
+          openedAt: t.opened,
+          closedAt: t.closed,
+        },
+        { skipDuplicateCheck: true },
+      )
       imported.push({ key: row.key, shas: t.shas })
     }
     writeTransaction((conn) => {

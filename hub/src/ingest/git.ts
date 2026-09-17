@@ -145,18 +145,33 @@ function scanGit(since: string) {
 export async function ingestGit(since: string): Promise<{ days: number; tasks: number }> {
   const { days, tasks, commits } = scanGit(since)
   const at = nowIso()
+  let taskMirrorSucceeded = true
   try {
     const mirrored = [...tasks.values()].map((t) => ({
-      id: newRecordId(), key: t.key, project: t.project, project_name: t.project,
-      title: null, status: null, status_category: null, parent_key: null, body: null,
-      assignee: null, opened_at: t.first, closed_at: null, source: 'git' as const,
-      first_seen: at, last_seen: at, created_at: at, updated_at: t.last, deleted_at: null,
+      id: newRecordId(),
+      key: t.key,
+      project: t.project,
+      project_name: t.project,
+      title: null,
+      status: null,
+      status_category: null,
+      parent_key: null,
+      body: null,
+      assignee: null,
+      opened_at: t.first,
+      closed_at: null,
+      source: 'git' as const,
+      first_seen: at,
+      last_seen: at,
+      created_at: at,
+      updated_at: t.last,
+      deleted_at: null,
     }))
     for (let index = 0; index < mirrored.length; index += 500)
       await hostedMirrorTasks({ tasks: mirrored.slice(index, index + 500) })
   } catch (error) {
     console.error(`hub: git task mirror skipped: ${(error as Error).message}`)
-    return { days: 0, tasks: 0 }
+    taskMirrorSucceeded = false
   }
   writeTransaction((conn) => {
     const dayStmt = conn.query(
@@ -205,13 +220,12 @@ export async function ingestGit(since: string): Promise<{ days: number; tasks: n
         at,
       )
     }
-    for (const t of tasks.values()) {
-      taskStmt.run(t.key, t.project, t.first, t.last, at, at)
-    }
+    if (taskMirrorSucceeded)
+      for (const t of tasks.values()) taskStmt.run(t.key, t.project, t.first, t.last, at, at)
     conn
       .query(`INSERT INTO setting (key, value) VALUES ('collect.git.at', ?)
                 ON CONFLICT(key) DO UPDATE SET value = excluded.value`)
       .run(JSON.stringify(at))
   })
-  return { days: days.size, tasks: tasks.size }
+  return { days: days.size, tasks: taskMirrorSucceeded ? tasks.size : 0 }
 }

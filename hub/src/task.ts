@@ -1,7 +1,11 @@
 import { randomBytes } from 'node:crypto'
 import { TASK_STATUSES, trackerCapabilities } from '../../shared/trackers.ts'
 import { db, writeTransaction } from './db.ts'
+import type { HostedTask } from './hosted-tasks.ts'
+import { projects, type StatusCategory } from './projects.ts'
+import { runRef } from './reconcile.ts'
 import {
+  assertHostedTaskWriteConfigured,
   hostedCloseTask,
   hostedCommentTask,
   hostedCreateDocument,
@@ -11,9 +15,6 @@ import {
   hostedPatchTask,
   type TaskFetch,
 } from './task-client.ts'
-import type { HostedTask } from './hosted-tasks.ts'
-import { projects, type StatusCategory } from './projects.ts'
-import { runRef } from './reconcile.ts'
 
 export type TaskRow = {
   record_id: string | null
@@ -156,7 +157,8 @@ function assertParent(key: string | null | undefined) {
 type HostedOptions = { baseUrl?: string; token?: string | null; fetch?: TaskFetch }
 
 function cacheTask(conn: import('bun:sqlite').Database, row: HostedTask) {
-  conn.query(`INSERT INTO task
+  conn
+    .query(`INSERT INTO task
     (record_id,key,project,title,status,status_category,parent_key,body,assignee,opened_at,closed_at,
      updated_at,source,first_seen,last_seen)
     VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
@@ -165,8 +167,34 @@ function cacheTask(conn: import('bun:sqlite').Database, row: HostedTask) {
       parent_key=excluded.parent_key,body=excluded.body,assignee=excluded.assignee,
       opened_at=excluded.opened_at,closed_at=excluded.closed_at,updated_at=excluded.updated_at,
       source=excluded.source,first_seen=excluded.first_seen,last_seen=excluded.last_seen`)
-    .run(row.id,row.key,row.project,row.title,row.status,row.status_category,row.parent_key,row.body,
-      row.assignee,row.opened_at,row.closed_at,row.updated_at,row.source,row.first_seen,row.last_seen)
+    .run(
+      row.id,
+      row.key,
+      row.project,
+      row.title,
+      row.status,
+      row.status_category,
+      row.parent_key,
+      row.body,
+      row.assignee,
+      row.opened_at,
+      row.closed_at,
+      row.updated_at,
+      row.source,
+      row.first_seen,
+      row.last_seen,
+    )
+}
+
+function cacheStatusEvent(
+  conn: import('bun:sqlite').Database,
+  row: import('./hosted-tasks.ts').HostedStatusEvent | undefined,
+) {
+  if (!row) return
+  conn
+    .query(`INSERT OR IGNORE INTO task_status_event(record_id,task_key,at,from_status,to_status)
+    VALUES (?,?,?,?,?)`)
+    .run(row.id, row.task_key, row.at, row.from_status, row.to_status)
 }
 
 export async function createTask(
@@ -183,9 +211,11 @@ export async function createTask(
     allowDuplicateReason?: string
     afterDuplicateSearch?: () => void
     hosted?: HostedOptions
+    skipDuplicateCheck?: boolean
   } = {},
 ): Promise<TaskRow> {
   if (!input.title.trim()) throw new Error('task title is required')
+  assertHostedTaskWriteConfigured(options.hosted)
   const project = registeredProject(input.project)
   const prefix = project.settings.keyPrefixes?.[0]
   if (!prefix) {
@@ -202,11 +232,23 @@ export async function createTask(
   options.afterDuplicateSearch?.()
   if (options.allowDuplicateReason !== undefined && !options.allowDuplicateReason.trim())
     throw new Error('--allow-duplicate requires a non-empty reason')
-  if (candidates.length && options.allowDuplicateReason === undefined)
+  if (
+    candidates.length &&
+    options.allowDuplicateReason === undefined &&
+    !options.skipDuplicateCheck
+  )
     throw new DuplicateTaskError(candidates)
   const hosted = await hostedCreateTask(
-    { project: input.project, title: input.title, status: category, parent, body: input.body,
-      opened_at: input.openedAt, closed_at: input.closedAt, updated_at: input.closedAt ?? input.openedAt },
+    {
+      project: input.project,
+      title: input.title,
+      status: category,
+      parent,
+      body: input.body,
+      opened_at: input.openedAt,
+      closed_at: input.closedAt,
+      updated_at: input.closedAt ?? input.openedAt,
+    },
     options.hosted,
   )
   const comment = options.allowDuplicateReason
@@ -214,8 +256,11 @@ export async function createTask(
     : null
   writeTransaction((conn) => {
     cacheTask(conn, hosted)
-    if (comment) conn.query(`INSERT INTO task_comment (record_id,task_key,body,created_at)
-      VALUES (?,?,?,?)`).run(comment.id,comment.task_key,comment.body,comment.created_at)
+    if (comment)
+      conn
+        .query(`INSERT INTO task_comment (record_id,task_key,body,created_at)
+      VALUES (?,?,?,?)`)
+        .run(comment.id, comment.task_key, comment.body, comment.created_at)
   })
   return showTask(hosted.key).task
 }
@@ -340,56 +385,82 @@ export async function setTask(
     status?: string
     parent?: string | null
     body?: string
+    assignee?: string | null
   },
   options: { force?: boolean; hosted?: HostedOptions } = {},
 ): Promise<TaskRow> {
+  assertHostedTaskWriteConfigured(options.hosted)
   const upper = key.toUpperCase()
   const current = showTask(upper).task
-    if (current.source !== 'local') throw new Error(`task ${upper} is not local`)
-    if (
-      changes.body !== undefined &&
-      current.body !== null &&
-      current.body !== '' &&
-      !options.force
-    ) {
-      throw new Error(
-        `task ${upper} already has a body:\n\n${current.body}\n\n` +
-          'Pass --force to overwrite it.',
-      )
-    }
-    const category = changes.status === undefined ? current.status_category : status(changes.status)
-    const parent =
-      changes.parent === undefined ? current.parent_key : (changes.parent?.toUpperCase() ?? null)
-    assertParent(parent)
-  const hosted = await hostedPatchTask(upper, {
-    ...(changes.title !== undefined ? { title: changes.title } : {}),
-    ...(changes.status !== undefined ? { status: category, status_category: category } : {}),
-    ...(changes.parent !== undefined ? { parent_key: parent } : {}),
-    ...(changes.body !== undefined ? { body: changes.body } : {}),
-  }, options.hosted)
-  writeTransaction((conn) => cacheTask(conn, hosted))
+  if (current.source !== 'local') throw new Error(`task ${upper} is not local`)
+  if (
+    changes.body !== undefined &&
+    current.body !== null &&
+    current.body !== '' &&
+    !options.force
+  ) {
+    throw new Error(
+      `task ${upper} already has a body:\n\n${current.body}\n\n` + 'Pass --force to overwrite it.',
+    )
+  }
+  const category = changes.status === undefined ? current.status_category : status(changes.status)
+  const parent =
+    changes.parent === undefined ? current.parent_key : (changes.parent?.toUpperCase() ?? null)
+  assertParent(parent)
+  const hosted = await hostedPatchTask(
+    upper,
+    {
+      ...(changes.title !== undefined ? { title: changes.title } : {}),
+      ...(changes.status !== undefined ? { status: category, status_category: category } : {}),
+      ...(changes.parent !== undefined ? { parent_key: parent } : {}),
+      ...(changes.body !== undefined ? { body: changes.body } : {}),
+      ...(changes.assignee !== undefined ? { assignee: changes.assignee } : {}),
+    },
+    options.hosted,
+  )
+  writeTransaction((conn) => {
+    cacheTask(conn, hosted)
+    cacheStatusEvent(conn, hosted.status_event)
+  })
   return showTask(upper).task
 }
 
 export async function closeTask(key: string, options: { hosted?: HostedOptions } = {}) {
+  assertHostedTaskWriteConfigured(options.hosted)
   const hosted = await hostedCloseTask(key.toUpperCase(), options.hosted)
-  writeTransaction((conn) => cacheTask(conn, hosted))
+  writeTransaction((conn) => {
+    cacheTask(conn, hosted)
+    cacheStatusEvent(conn, hosted.status_event)
+  })
   return showTask(key).task
 }
 
-export async function commentTask(key: string, body: string, options: { hosted?: HostedOptions } = {}): Promise<TaskComment> {
+export async function commentTask(
+  key: string,
+  body: string,
+  options: { hosted?: HostedOptions } = {},
+): Promise<TaskComment> {
+  assertHostedTaskWriteConfigured(options.hosted)
   const upper = key.toUpperCase()
   const current = showTask(upper).task
   if (current.source !== 'local') throw new Error(`task ${upper} is not local`)
   const comment = await hostedCommentTask(upper, body, options.hosted)
   const result = writeTransaction((conn) => {
     const inserted = conn
-      .query(`INSERT INTO task_comment (record_id,task_key,body,created_at) VALUES (?,?,?,?)`) 
+      .query(`INSERT INTO task_comment (record_id,task_key,body,created_at) VALUES (?,?,?,?)`)
       .run(comment.id, upper, body, comment.created_at)
-    conn.query(`UPDATE task SET updated_at = ?, last_seen = ? WHERE key = ?`).run(comment.updated_at, comment.updated_at, upper)
+    conn
+      .query(`UPDATE task SET updated_at = ?, last_seen = ? WHERE key = ?`)
+      .run(comment.updated_at, comment.updated_at, upper)
     return inserted
   })
-  return { id: Number(result.lastInsertRowid), record_id: comment.id, task_key: upper, body, created_at: comment.created_at }
+  return {
+    id: Number(result.lastInsertRowid),
+    record_id: comment.id,
+    task_key: upper,
+    body,
+    created_at: comment.created_at,
+  }
 }
 
 export function listTaskDocuments(key: string): TaskDocumentSummary[] {
@@ -418,17 +489,25 @@ export function getTaskDocument(idValue: number | string): TaskDocument {
   return document
 }
 
-export async function createTaskDocument(input: {
-  task: string
-  title: string
-  body?: string
-  role?: string
-}, options: { hosted?: HostedOptions } = {}): Promise<TaskDocument> {
+export async function createTaskDocument(
+  input: {
+    task: string
+    title: string
+    body?: string
+    role?: string
+  },
+  options: { hosted?: HostedOptions } = {},
+): Promise<TaskDocument> {
+  assertHostedTaskWriteConfigured(options.hosted)
   const upper = input.task.toUpperCase()
   const task = showTask(upper).task
   if (task.source !== 'local') throw new Error(`task ${upper} is not local`)
   const version = documentVersion()
-  const hosted = await hostedCreateDocument(upper, { title: input.title, body: input.body ?? '', role: documentRole(input.role), version }, options.hosted)
+  const hosted = await hostedCreateDocument(
+    upper,
+    { title: input.title, body: input.body ?? '', role: documentRole(input.role), version },
+    options.hosted,
+  )
   const result = writeTransaction((conn) =>
     conn
       .query(
@@ -436,11 +515,14 @@ export async function createTaskDocument(input: {
      VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
       )
       .run(
-        hosted.id, upper,
+        hosted.id,
+        upper,
         documentRole(input.role),
         input.title,
         input.body ?? '',
-        hosted.version, hosted.created_at, hosted.updated_at,
+        hosted.version,
+        hosted.created_at,
+        hosted.updated_at,
       ),
   )
   return getTaskDocument(Number(result.lastInsertRowid))
@@ -456,30 +538,51 @@ export async function updateTaskDocument(
   },
   options: { hosted?: HostedOptions } = {},
 ): Promise<TaskDocument> {
+  assertHostedTaskWriteConfigured(options.hosted)
   const id = documentId(idValue)
   const current = getTaskDocument(id)
-    const task = showTask(current.task_key).task
-    if (task.source !== 'local') throw new Error(`task ${current.task_key} is not local`)
-    const role = changes.role === undefined ? current.role : documentRole(changes.role)
+  const task = showTask(current.task_key).task
+  if (task.source !== 'local') throw new Error(`task ${current.task_key} is not local`)
+  const role = changes.role === undefined ? current.role : documentRole(changes.role)
   if (changes.body !== undefined && !changes.expectedVersion)
     throw new Error('a body update requires --version from `hub task doc show`')
-  if (!current.record_id) throw new Error(`task document ${id} has not been synchronized; run the hosted push and collector`)
-  const hosted = await hostedPatchDocument(current.task_key,current.record_id,{
-    ...changes, role, version: documentVersion(),
-  },options.hosted)
-  writeTransaction((conn) => conn.query(`UPDATE task_document SET role=?,title=?,body=?,version=?,updated_at=? WHERE id=?`)
-    .run(hosted.role,hosted.title,hosted.body,hosted.version,hosted.updated_at,id))
+  if (!current.record_id)
+    throw new Error(
+      `task document ${id} has not been synchronized; run the hosted push and collector`,
+    )
+  const hosted = await hostedPatchDocument(
+    current.task_key,
+    current.record_id,
+    {
+      ...changes,
+      role,
+      version: documentVersion(),
+    },
+    options.hosted,
+  )
+  writeTransaction((conn) =>
+    conn
+      .query(`UPDATE task_document SET role=?,title=?,body=?,version=?,updated_at=? WHERE id=?`)
+      .run(hosted.role, hosted.title, hosted.body, hosted.version, hosted.updated_at, id),
+  )
   return getTaskDocument(id)
 }
 
-export async function deleteTaskDocument(idValue: number | string, options: { hosted?: HostedOptions } = {}): Promise<TaskDocument> {
+export async function deleteTaskDocument(
+  idValue: number | string,
+  options: { hosted?: HostedOptions } = {},
+): Promise<TaskDocument> {
+  assertHostedTaskWriteConfigured(options.hosted)
   const id = documentId(idValue)
   let removed: TaskDocument | null = null
   removed = getTaskDocument(id)
-    const task = showTask(removed.task_key).task
-    if (task.source !== 'local') throw new Error(`task ${removed.task_key} is not local`)
-  if (!removed.record_id) throw new Error(`task document ${id} has not been synchronized; run the hosted push and collector`)
-  await hostedDeleteDocument(removed.task_key,removed.record_id,options.hosted)
+  const task = showTask(removed.task_key).task
+  if (task.source !== 'local') throw new Error(`task ${removed.task_key} is not local`)
+  if (!removed.record_id)
+    throw new Error(
+      `task document ${id} has not been synchronized; run the hosted push and collector`,
+    )
+  await hostedDeleteDocument(removed.task_key, removed.record_id, options.hosted)
   writeTransaction((conn) => conn.query(`DELETE FROM task_document WHERE id = ?`).run(id))
   return removed!
 }
