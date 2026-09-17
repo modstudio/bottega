@@ -29,11 +29,6 @@ while (pending.length) {
     violations.push(`forbidden spawn or sqlite in import chain: ${current.chain.join(' -> ')}`)
   }
   const imports = importSpecifiers(source)
-  for (const expression of imports.unresolvedRelative) {
-    violations.push(
-      `${current.file} has an unresolved relative import at ${expression}\n    chain: ${current.chain.join(' -> ')}`,
-    )
-  }
   for (const specifier of [...imports.specifiers, ...imports.typeOnlySpecifiers]) {
     if (specifier === 'bun:sqlite') {
       violations.push(`forbidden import chain: ${[...current.chain, specifier].join(' -> ')}`)

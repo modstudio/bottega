@@ -196,6 +196,12 @@ export const importBoundaries: ImportBoundary[] = [
     'Keep confinement rulings independent of transports, routing, reviews, contracts, the CLI, and durable execution.',
   ),
   boundary(
+    'contract-boundary',
+    'orchestrator/src/contract/contract.ts',
+    ['../jobs/jobs.ts', '../outcome.ts', '../review/review-vocabulary.ts', '../run/checkpoint.ts'],
+    'Keep reply dialect resolution independent of lifecycle and impure transport concerns.',
+  ),
+  boundary(
     'database-boundary',
     'orchestrator/src/database/db.ts',
     [
@@ -303,6 +309,13 @@ export const importBoundaries: ImportBoundary[] = [
     'Keep epic command adapters independent of the run nucleus and the CLI: they compose concern modules for one verb and own no lifecycle.',
   ),
   boundary(
+    'evidence-boundary',
+    'orchestrator/src/evidence/evidence.ts',
+    ['../contract/contract.ts', '../mcp/mcp-preflight.ts', '../review/review-triage.ts'],
+    'Keep evidence assessment independent of execution and transaction ownership.',
+    ['bun:sqlite', '../review/review.ts'],
+  ),
+  boundary(
     'evidence-query-boundary',
     'orchestrator/src/evidence/evidence-query.ts',
     ['../database/db.ts', '../failure/failure.ts', '../hook-tree/hook-tree.ts', 'bun:sqlite'],
@@ -338,6 +351,23 @@ export const importBoundaries: ImportBoundary[] = [
     'orchestrator/src/health/health-commands.ts',
     ['../../../shared/orch-contract.ts', '../database/db.ts', './health.ts'],
     'Keep health command adapters independent of runs, routing, transports, the CLI, and worktrees.',
+  ),
+  boundary(
+    'hosted-hub-server-boundary',
+    'hub/src/hosted.ts',
+    [
+      'node:fs',
+      '@trpc/server/adapters/fetch',
+      './app-static.ts',
+      './evidence-api.ts',
+      './hosted-health.ts',
+      './note-api.ts',
+      './report-api.ts',
+      './task-api.ts',
+      './trpc/context.ts',
+      './trpc/hosted-router.ts',
+    ],
+    'Enforce the hosted hub server concern boundary.',
   ),
   boundary(
     'isolation-boundary',
@@ -436,6 +466,12 @@ export const importBoundaries: ImportBoundary[] = [
       './monitor-types.ts',
     ],
     'Keep monitor command adapters independent of the run nucleus and the CLI: they compose concern modules for one verb and own no lifecycle.',
+  ),
+  boundary(
+    'outcome-boundary',
+    'orchestrator/src/outcome.ts',
+    [],
+    'Keep outcome decisions and interpretation independent of lifecycle concerns.',
   ),
   boundary(
     'port-commands-boundary',
@@ -728,6 +764,23 @@ export const importBoundaries: ImportBoundary[] = [
       'bun:sqlite',
     ],
     'Enforce the resource-ownership concern boundary.',
+  ),
+  boundary(
+    'review-boundary',
+    'orchestrator/src/review/review.ts',
+    [
+      '../../../shared/record/schema.ts',
+      '../database/db.ts',
+      './review-outbox.ts',
+      '../contract/contract.ts',
+      '../jobs/jobs.ts',
+      './review-coverage.ts',
+      './review-coverage-match.ts',
+      './review-pins.ts',
+      './review-tier.ts',
+    ],
+    'Keep review verdicts independent of landing policy and run-chain ownership.',
+    ['bun:sqlite', './review-types.ts'],
   ),
   boundary(
     'review-commands-boundary',
