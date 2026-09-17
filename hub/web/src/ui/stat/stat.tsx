@@ -15,12 +15,13 @@ export function StatTile({
   live?: boolean
 }) {
   return (
-    <div className="flex min-w-0 flex-col gap-1 bg-surface-page p-5">
+    <div className="-mr-px -mb-px flex min-w-0 flex-col gap-1 border-border-default border-r border-b p-4 @lg/stats:p-5">
       <div className="text-sm text-text-secondary">{label}</div>
       <div
         data-tone={live ? 'success' : undefined}
+        title={typeof figure === 'string' ? figure : undefined}
         className={classes(
-          'truncate font-medium text-3xl tabular-nums tracking-tight',
+          'truncate font-medium text-2xl tabular-nums tracking-tight @lg/stats:text-3xl',
           live && 'text-status-text',
         )}
       >
@@ -41,8 +42,7 @@ export function StatRow({ children }: { children: ReactNode }) {
     <div className="@container/stats mb-6">
       <div
         className={classes(
-          'grid gap-px border border-border-default bg-border-default',
-          '@lg/stats:grid-cols-2',
+          'grid grid-cols-2 overflow-hidden border border-border-default',
           count >= 3 && '@3xl/stats:grid-cols-3',
           count >= 4 && '@5xl/stats:grid-cols-4',
         )}

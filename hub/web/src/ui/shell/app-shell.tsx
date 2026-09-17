@@ -10,6 +10,7 @@ import {
   useState,
 } from 'react'
 import { IconButton } from '../button/button'
+import { TopbarSlotProvider } from '../dom/topbar-slot'
 import { useMediaQuery } from '../dom/use-media-query'
 import { useStoredState } from '../dom/use-stored-state'
 import { Popover } from '../popover/popover'
@@ -270,7 +271,7 @@ function BrandCell({
   const toggle = canToggle ? (
     <span
       className={classes(
-        'opacity-0 transition-opacity group-hover/brand:opacity-100 has-focus:opacity-100 [@media(hover:none)]:opacity-100',
+        'opacity-0 transition-opacity group-hover/brand:opacity-100 has-focus-visible:opacity-100 [@media(hover:none)]:opacity-100',
         collapsed ? 'absolute inset-0 grid place-items-center' : 'ml-auto',
       )}
     >
@@ -296,7 +297,7 @@ function BrandCell({
           'flex items-center gap-3 whitespace-nowrap font-semibold transition-opacity',
           collapsed &&
             canToggle &&
-            'group-focus-within/brand:opacity-0 group-hover/brand:opacity-0 [@media(hover:none)]:opacity-0',
+            'group-has-focus-visible/brand:opacity-0 group-hover/brand:opacity-0 [@media(hover:none)]:opacity-0',
         )}
       >
         {mark}
@@ -348,6 +349,7 @@ export function AppShell({
   const [menuOpen, setMenuOpen] = useState(false)
   const [rail, setRail] = useStoredState(storageKey, 'open', ['open', 'collapsed'] as const)
   const [docked, setDocked] = useState(0)
+  const [topbarSlot, setTopbarSlot] = useState<HTMLDivElement | null>(null)
   const [changeDocked] = useState(() => (delta: 1 | -1) => setDocked((count) => count + delta))
   const pinnedByPanel = forced || docked > 0
   const collapsed = pinnedByPanel || rail === 'collapsed'
@@ -400,9 +402,12 @@ export function AppShell({
                 {mark}
               </>
             ) : null}
-            <div className="ml-auto flex items-center gap-2">{topbar}</div>
+            <div ref={setTopbarSlot} className="flex min-w-0 flex-1 items-center" />
+            {topbar ? <div className="flex shrink-0 items-center gap-2">{topbar}</div> : null}
           </header>
-          <main className="min-w-0 flex-1 px-4 pb-8 md:px-8">{children}</main>
+          <main className="min-w-0 flex-1 px-4 pb-8 md:px-8 md:pt-6">
+            <TopbarSlotProvider value={mobile ? null : topbarSlot}>{children}</TopbarSlotProvider>
+          </main>
         </div>
         {mobile ? (
           <MobileMenu

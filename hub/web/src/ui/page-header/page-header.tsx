@@ -1,18 +1,41 @@
 import type { ReactNode } from 'react'
+import { createPortal } from 'react-dom'
+import { useTopbarSlot } from '../dom/topbar-slot'
 
-/** The page's name, a line of standing context, and the page's own controls. */
-export function PageHeader({
-  title,
-  subtitle,
-  subtitleTitle,
-  actions,
-}: {
+type PageHeaderProps = {
   title: ReactNode
   subtitle?: ReactNode
   /** The full context behind a shortened subtitle, on hover. */
   subtitleTitle?: string
   actions?: ReactNode
-}) {
+}
+
+/**
+ * The page's name, a line of standing context, and the page's own controls.
+ * On a desk they sit in the app's top bar, so the page opens on its content; on
+ * a phone, where the bar holds the menu, they open the page.
+ */
+export function PageHeader({ title, subtitle, subtitleTitle, actions }: PageHeaderProps) {
+  const slot = useTopbarSlot()
+  if (slot) {
+    return createPortal(
+      <div className="flex min-w-0 flex-1 items-center gap-4">
+        <div className="flex min-w-0 items-baseline gap-3">
+          <h1 className="shrink-0 font-semibold text-lg">{title}</h1>
+          {subtitle ? (
+            <span
+              className="hidden truncate text-sm text-text-muted lg:inline"
+              title={subtitleTitle}
+            >
+              {subtitle}
+            </span>
+          ) : null}
+        </div>
+        {actions ? <div className="ml-auto flex shrink-0 items-center gap-2">{actions}</div> : null}
+      </div>,
+      slot,
+    )
+  }
   return (
     <header className="flex min-w-0 flex-wrap items-end justify-between gap-x-6 gap-y-3 pt-6 pb-5">
       <div className="min-w-0">
