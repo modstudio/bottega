@@ -8,10 +8,8 @@ import {
   RECORD_READER_ROLE,
 } from '../../../shared/record/schema.ts'
 import { appliedRecordMigrationCount, recordMigrationCount } from '../postgres/postgres-migrate.ts'
-import { projects } from '../project/projects.ts'
 import { bearerHeaders, RECORD_SIGN_IN_REMEDY, recordAuth } from './record-auth.ts'
 import { storedRecordToken } from './record-session.ts'
-import { recordMemberships } from './record-space.ts'
 import { refuseOwnerConnection } from './record-sync.ts'
 
 type RecordDoctorStatus = 'pass' | 'fail' | 'skipped'
@@ -42,8 +40,49 @@ function failureDetail(error: unknown, urls: readonly string[]): string {
   return redactRecordPasswords(error instanceof Error ? error.message : String(error), urls)
 }
 
+async function declaredProjectSpaceChecks(
+  actor: SQL,
+  current: { user: { id: string } } | undefined,
+  activeSpaceId: string | null | undefined,
+  projects: Array<{ name: string; space: string | null }>,
+): Promise<RecordDoctorCheck[]> {
+  if (!current) return []
+  const memberships = await actor.begin(async (tx) => {
+    await tx`SELECT set_config('app.user_id', ${current.user.id}, true)`
+    await tx`SELECT set_config('app.space_id', ${activeSpaceId ?? ''}, true)`
+    return tx`
+      SELECT m.space_id, s.slug FROM membership m JOIN space s ON s.id=m.space_id
+      WHERE m.user_id=${current.user.id}::uuid
+    `
+  })
+  return projects.flatMap((project) => {
+    if (!project.space) return []
+    const reachable = memberships.find(
+      (membership: Record<string, unknown>) =>
+        String(membership.slug) === project.space || String(membership.space_id) === project.space,
+    )
+    return [
+      reachable
+        ? {
+            name: `project ${project.name} declared space`,
+            status: 'pass' as const,
+            detail: `${String(reachable.slug)} (${String(reachable.space_id)})`,
+          }
+        : {
+            name: `project ${project.name} declared space`,
+            status: 'fail' as const,
+            detail: `${project.space} is not reachable by the signed-in user; join it with an invitation`,
+          },
+    ]
+  })
+}
+
 export async function diagnoseRecord(
-  input: { recordUrl?: string; migrateUrl?: string } = {},
+  input: {
+    recordUrl?: string
+    migrateUrl?: string
+    projects?: Array<{ name: string; space: string | null }>
+  } = {},
 ): Promise<RecordDoctorCheck[]> {
   const recordUrl = input.recordUrl ?? process.env.ORCH_RECORD_URL
   const migrateUrl = input.migrateUrl ?? process.env.ORCH_RECORD_MIGRATE_URL
@@ -113,29 +152,9 @@ export async function diagnoseRecord(
             throw new Error('signed-in user is not a member of the active space')
         })
       }
-      if (current) {
-        const memberships = await recordMemberships(recordUrl)
-        for (const project of projects()) {
-          const declared = project.settings.space
-          if (!declared) continue
-          const reachable = memberships.memberships.find(
-            (membership) => membership.slug === declared || membership.spaceId === declared,
-          )
-          checks.push(
-            reachable
-              ? {
-                  name: `project ${project.name} declared space`,
-                  status: 'pass',
-                  detail: `${reachable.slug} (${reachable.spaceId})`,
-                }
-              : {
-                  name: `project ${project.name} declared space`,
-                  status: 'fail',
-                  detail: `${declared} is not reachable by the signed-in user; join it with an invitation`,
-                },
-          )
-        }
-      }
+      checks.push(
+        ...(await declaredProjectSpaceChecks(actor, current, activeSpaceId, input.projects ?? [])),
+      )
     } finally {
       await actor.close()
     }

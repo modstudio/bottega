@@ -94,8 +94,11 @@ export async function recordSpaceAcceptCommand(
   presentation.log(`accepted record invitation ${invitationId}; active space ${spaceId}`)
 }
 
-export async function recordDoctorCommand(presentation: Presentation): Promise<void> {
-  const checks = await diagnoseRecord()
+export async function recordDoctorCommand(
+  presentation: Presentation,
+  projects: Array<{ name: string; space: string | null }> = [],
+): Promise<void> {
+  const checks = await diagnoseRecord({ projects })
   for (const check of checks) {
     presentation.log(`${check.name}: ${check.status}${check.detail ? ` — ${check.detail}` : ''}`)
   }

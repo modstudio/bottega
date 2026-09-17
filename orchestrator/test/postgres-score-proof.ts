@@ -17,7 +17,7 @@ export async function proveProjectSpaceRecordSync(input: {
   firstSpaceId: string
   secondSpaceId: string
   asSpace: (user: string, password: string, spaceId: string, statement: string) => PsqlResult
-}): Promise<void> {
+}): Promise<string[]> {
   const local = new Database(':memory:')
   local.exec(`CREATE TABLE outbox (
     id INTEGER PRIMARY KEY, kind TEXT NOT NULL, record_id TEXT NOT NULL, payload TEXT NOT NULL,
@@ -91,6 +91,7 @@ export async function proveProjectSpaceRecordSync(input: {
   expect(first.stdout).toBe(ids[0]!)
   expect(second.stdout).toBe(ids[1]!)
   local.close()
+  return ids
 }
 
 export async function proveScoreRecordSync(input: {

@@ -528,6 +528,12 @@ export function unretireProject(name: string): boolean {
  * Refuse malformed lifecycle declarations while the operator is registering
  * them, before a worker is waiting on a vendor clone to discover the mistake.
  */
+function projectSpaceProblems(space: unknown): string[] {
+  return space !== undefined && (typeof space !== 'string' || !space.trim())
+    ? ['space must be a non-empty record space slug']
+    : []
+}
+
 export function validateProjectSettings(settings: ProjectSettings, projectPath?: string): string[] {
   const problems = [
     ...validateProjectInjectionSettings(settings),
@@ -539,16 +545,11 @@ export function validateProjectSettings(settings: ProjectSettings, projectPath?:
     ),
     ...validateReadonlyProvision(settings.worktree?.readonly_provision),
     ...trackedRecipeProblems(settings.worktree, projectPath),
+    ...projectSpaceProblems(settings.space),
   ]
 
   if (invalidOptionalStringArray(settings.secretPaths)) {
     problems.push('secretPaths must be an array of non-empty path strings')
-  }
-  if (
-    settings.space !== undefined &&
-    (typeof settings.space !== 'string' || !settings.space.trim())
-  ) {
-    problems.push('space must be a non-empty record space slug')
   }
   if (invalidOptionalStringArray(settings.workerMcpServers))
     problems.push('workerMcpServers must be an array of non-empty strings')

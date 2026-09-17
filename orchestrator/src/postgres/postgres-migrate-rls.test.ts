@@ -19,12 +19,9 @@ import {
   installRecordSessionRunner,
   memoryRecordSession,
 } from '../../test/fixtures/record-session.ts'
+import { registerProjectSpaceProofs } from '../../test/postgres-project-space-proof.ts'
 import { registerActiveSpaceProofs } from '../../test/postgres-remembered-space-proof.ts'
-import {
-  proveHostedDocs,
-  proveProjectSpaceRecordSync,
-  proveScoreRecordSync,
-} from '../../test/postgres-score-proof.ts'
+import { proveHostedDocs, proveScoreRecordSync } from '../../test/postgres-score-proof.ts'
 import { startRecordApiServer } from '../record/record-api-server.ts'
 import { bearerHeaders, recordAuth, setActiveRecordSpace } from '../record/record-auth.ts'
 import { signInCommand, signUpCommand, whoamiCommand } from '../record/record-auth-command.ts'
@@ -401,6 +398,18 @@ realPostgres('RLS proof against real Postgres', () => {
   })
 
   registerInvitationAuthProofs(psql, actorUrl!, succeeds, SIGN_UP_AUTH.password)
+  registerProjectSpaceProofs({
+    actorUrl: actorUrl!,
+    actorRole: RECORD_ACTOR_ROLE,
+    machineId: MACHINE_A,
+    userId: OPERATOR_USER_ID,
+    firstSpaceId: SPACE_A,
+    secondSpaceId: SPACE_B,
+    otherRunId: RUN_B,
+    token: () => tokenA,
+    setToken: (token) => recordSession.setToken(token),
+    asSpace,
+  })
 
   test('CLI sign-up creates one owner membership and bearer identity is not interchangeable', async () => {
     expect(cliOutput).toEqual(SIGN_UP_CLI_OUTPUT)
@@ -996,17 +1005,6 @@ realPostgres('RLS proof against real Postgres', () => {
     }
   })
 
-  test('cross-space run SELECT returns nothing', () => {
-    const result = asSpace(
-      RECORD_ACTOR_ROLE,
-      'actor-password',
-      SPACE_A,
-      `SELECT id FROM run WHERE id = '${RUN_B}';`,
-    )
-    expect(result.code, result.stderr).toBe(0)
-    expect(result.stdout.split('\n').at(-1)).toBe('')
-  })
-
   test('sync round trip writes and updates a tenant-confined score', async () => {
     const { actorRead, otherSpaceRead, rescoredRead } = await proveScoreRecordSync({
       actorUrl: actorUrl!,
@@ -1026,32 +1024,6 @@ realPostgres('RLS proof against real Postgres', () => {
     expect(otherSpaceRead.stdout).toBe('')
     expect(rescoredRead.code, rescoredRead.stderr).toBe(0)
     expect(rescoredRead.stdout).toBe('partial|mixed|updated')
-  })
-
-  test('two projects sync into separate spaces and remain tenant-confined', async () => {
-    await proveProjectSpaceRecordSync({
-      actorUrl: actorUrl!,
-      actorRole: RECORD_ACTOR_ROLE,
-      machineId: MACHINE_A,
-      userId: OPERATOR_USER_ID,
-      firstSpaceId: SPACE_A,
-      secondSpaceId: SPACE_B,
-      asSpace,
-    })
-  })
-
-  test('cross-space write is refused', () => {
-    const result = asSpace(
-      RECORD_ACTOR_ROLE,
-      'actor-password',
-      SPACE_A,
-      `
-      INSERT INTO project (id, space_id, name, created_at)
-      VALUES ('01990000-0000-7000-8000-00000000002b', '${SPACE_B}', 'intruder', now());
-    `,
-    )
-    expect(result.code).not.toBe(0)
-    expect(result.stderr).toContain('violates row-level security policy')
   })
 
   test('the table owner is still confined by FORCE ROW LEVEL SECURITY', () => {

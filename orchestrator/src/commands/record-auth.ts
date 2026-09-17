@@ -2,6 +2,7 @@
 /** Registers record authentication grammar. Must not own authentication behavior. */
 import { createInterface } from 'node:readline/promises'
 import type { Command } from 'commander'
+import { projects } from '../project/projects.ts'
 import { signInCommand, signUpCommand, whoamiCommand } from '../record/record-auth-command.ts'
 import {
   recordDoctorCommand,
@@ -80,11 +81,14 @@ export function register(program: Command): void {
     }),
   )
   record.command('doctor').action(() =>
-    recordDoctorCommand({
-      log,
-      exitCode: (code) => {
-        process.exitCode = code
+    recordDoctorCommand(
+      {
+        log,
+        exitCode: (code) => {
+          process.exitCode = code
+        },
       },
-    }),
+      projects().map((project) => ({ name: project.name, space: project.settings.space ?? null })),
+    ),
   )
 }

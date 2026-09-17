@@ -43,7 +43,6 @@ import {
 import { machineId, machineName } from './machine-identity.ts'
 import { pullRecordCache } from './record-cache.ts'
 import { currentRecordSession } from './record-session.ts'
-import { type RecordMembership, recordMemberships } from './record-space.ts'
 
 type OutboxRow = { id: number; kind: string; record_id: string; payload: string }
 type Payload = Record<string, unknown>
@@ -72,6 +71,30 @@ export type RecordSyncOptions = {
 }
 
 type RecordPrincipal = { userId: string; spaceId: string }
+type RecordMembership = {
+  spaceId: string
+  slug: string
+  name?: string
+  role?: string
+  permission?: string
+}
+
+async function syncMemberships(
+  postgres: SQL,
+  principal: RecordPrincipal,
+): Promise<RecordMembership[]> {
+  return postgres.begin(async (tx) => {
+    await bindPrincipal(tx, principal)
+    const rows = await tx`
+      SELECT m.space_id, s.slug FROM membership m JOIN space s ON s.id=m.space_id
+      WHERE m.user_id=${principal.userId}::uuid
+    `
+    return rows.map((row: Record<string, unknown>) => ({
+      spaceId: String(row.space_id),
+      slug: String(row.slug),
+    }))
+  })
+}
 
 function declaredProjectSpace(
   local: Database,
@@ -112,6 +135,18 @@ function projectPrincipal(
     )
   }
   return { userId: fallback.userId, spaceId: membership.spaceId }
+}
+
+function cachedProjectPrincipal(
+  principals: Map<string | null, RecordPrincipal>,
+  projectName: string | null,
+  resolve: () => RecordPrincipal,
+): RecordPrincipal {
+  const existing = principals.get(projectName)
+  if (existing) return existing
+  const resolved = resolve()
+  principals.set(projectName, resolved)
+  return resolved
 }
 
 async function bindPrincipal(tx: SQL, principal: RecordPrincipal): Promise<void> {
@@ -658,75 +693,48 @@ export async function syncRecord(options: RecordSyncOptions = {}): Promise<Recor
         spaceId: current.activeSpaceId,
       })))
     const memberships =
-      options.memberships ??
-      (options.principal ? [] : (await recordMemberships(recordUrl)).memberships)
+      options.memberships ?? (options.principal ? [] : await syncMemberships(postgres, principal))
     await upsertMachine(postgres, (options.now ?? nowIso)(), identity, principal)
     const rows = writableLocal
       .query<OutboxRow, []>(
         'SELECT id, kind, record_id, payload FROM outbox WHERE synced_at IS NULL ORDER BY id',
       )
       .all()
-    const groups = new Map<string | null, OutboxRow[]>()
+    const principals = new Map<string | null, RecordPrincipal>()
     for (const row of rows) {
-      let projectName: string | null = null
       try {
         if (!(row.kind in recordKinds)) throw new Error(`unknown outbox kind: ${row.kind}`)
-        const record = payload(row.payload, row.kind as keyof typeof recordKinds)
-        projectName = outboxProjectName(row.kind, record, writableLocal)
-      } catch {
-        // Preserve the existing row-level diagnostic path below.
-      }
-      const group = groups.get(projectName) ?? []
-      group.push(row)
-      groups.set(projectName, group)
-    }
-    let stopped = false
-    for (const [projectName, group] of groups) {
-      let groupPrincipal: RecordPrincipal
-      try {
-        groupPrincipal = projectPrincipal(
-          projectName,
-          principal,
-          memberships,
-          writableLocal,
-          options.projectSpaces,
+        const kind = row.kind as keyof typeof recordKinds
+        const parsed = payload(row.payload, kind)
+        const projectName = outboxProjectName(row.kind, parsed, writableLocal)
+        const rowPrincipal = cachedProjectPrincipal(principals, projectName, () =>
+          projectPrincipal(
+            projectName,
+            principal,
+            memberships,
+            writableLocal,
+            options.projectSpaces,
+          ),
         )
+        const record: Payload = { ...parsed, spaceId: rowPrincipal.spaceId }
+        if (String(record.machineId) !== identity.id) {
+          throw new Error(
+            `${kind} outbox machine ${String(record.machineId)} does not match invoking machine ${identity.id}`,
+          )
+        }
+        await recordKinds[kind].push(postgres, record, rowPrincipal)
+        writableLocal
+          .query('UPDATE outbox SET synced_at=?, last_error=NULL WHERE id=?')
+          .run((options.now ?? nowIso)(), row.id)
+        pushed++
       } catch (error) {
+        const detail = errorDetail(error)
         writableLocal
           .query('UPDATE outbox SET attempts=attempts+1, last_error=? WHERE id=?')
-          .run(errorDetail(error), group[0]!.id)
+          .run(detail, row.id)
         failed++
         break
       }
-      for (const row of group) {
-        try {
-          if (!(row.kind in recordKinds)) throw new Error(`unknown outbox kind: ${row.kind}`)
-          const kind = row.kind as keyof typeof recordKinds
-          const record: Payload = {
-            ...payload(row.payload, kind),
-            spaceId: groupPrincipal.spaceId,
-          }
-          if (String(record.machineId) !== identity.id) {
-            throw new Error(
-              `${kind} outbox machine ${String(record.machineId)} does not match invoking machine ${identity.id}`,
-            )
-          }
-          await recordKinds[kind].push(postgres, record, groupPrincipal)
-          writableLocal
-            .query('UPDATE outbox SET synced_at=?, last_error=NULL WHERE id=?')
-            .run((options.now ?? nowIso)(), row.id)
-          pushed++
-        } catch (error) {
-          const detail = errorDetail(error)
-          writableLocal
-            .query('UPDATE outbox SET attempts=attempts+1, last_error=? WHERE id=?')
-            .run(detail, row.id)
-          failed++
-          stopped = true
-          break
-        }
-      }
-      if (stopped) break
     }
     const pending = writableLocal
       .query<{ count: number }, []>('SELECT count(*) AS count FROM outbox WHERE synced_at IS NULL')

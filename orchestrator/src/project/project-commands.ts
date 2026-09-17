@@ -6,7 +6,6 @@
 import { existsSync } from 'node:fs'
 import { tryWriteContention, writeTransaction } from '../database/db.ts'
 import { selectProjectProfile } from '../lens/lenses.ts'
-import { requireRecordSpaceMembership } from '../record/record-space.ts'
 import { lifecycleForm } from '../worktree/worktree-lifecycle.ts'
 import { migrateCreate } from '../worktree/worktree-template.ts'
 import {
@@ -199,7 +198,7 @@ export async function projectCommand(
   presentation: ProjectPresentation,
   dependencies: {
     requireSpaceMembership(url: string, space: string): Promise<unknown>
-  } = { requireSpaceMembership: requireRecordSpaceMembership },
+  },
 ): Promise<void> {
   const { has, flag } = flags
 
