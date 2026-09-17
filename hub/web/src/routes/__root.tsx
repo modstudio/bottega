@@ -27,6 +27,48 @@ const renderLink: RenderLink = (item, { className, onClick, children }) => (
   </Link>
 )
 
+export function HostedSignInFrame({ children }: { children: React.ReactNode }) {
+  return (
+    <main className="grid min-h-dvh place-items-center bg-surface-page px-4 py-8 text-text-primary">
+      <div className="w-full max-w-md space-y-6">
+        <div className="flex items-center justify-center gap-3 font-semibold">
+          {mark}
+          <span>{PLATFORM_NAME}</span>
+        </div>
+        <div className="border border-border-default bg-surface-raised p-6 shadow-sm sm:p-8">
+          {children}
+        </div>
+      </div>
+    </main>
+  )
+}
+
+function identityForMode(hosted: boolean, email: string | null) {
+  if (!hosted) return { name: 'Local', detail: 'This machine', canSignOut: false }
+  if (!email) return { name: 'Signed out', detail: 'Hosted hub', canSignOut: false }
+  return { name: email, detail: 'Hosted hub', canSignOut: true }
+}
+
+export function RailFooterIdentity({
+  hosted,
+  email,
+  onSignOut,
+}: {
+  hosted: boolean
+  email: string | null
+  onSignOut: () => void
+}) {
+  const identity = identityForMode(hosted, email)
+  return (
+    <UserMenu
+      name={identity.name}
+      detail={identity.detail}
+      themeKey={THEME_KEY}
+      onSignOut={identity.canSignOut ? onSignOut : undefined}
+    />
+  )
+}
+
 export const Route = createRootRoute({
   beforeLoad: ({ location }) => {
     if (!isHostedMode()) return
@@ -34,59 +76,65 @@ export const Route = createRootRoute({
   },
   component: function Shell() {
     const hosted = isHostedMode()
-    const { counts } = useWindowState()
     const pathname = useRouterState({ select: (state) => state.location.pathname })
-    const whoami = useQuery({
-      ...trpc.record.whoami.queryOptions(),
-      enabled: hosted && pathname !== '/sign-in',
-      retry: false,
-    })
-    const withCounts = (item: {
-      to: string
-      label: string
-      icon: NavItem['icon']
-      count?: 'flight' | 'done' | 'runs'
-    }): NavItem => ({
-      to: item.to,
-      label: item.label,
-      icon: item.icon,
-      count: (item.count && counts?.[item.count]) || undefined,
-      live: item.to === '/flight' && Boolean(counts?.flight),
-    })
-    const nav: NavSection[] = navForMode(hosted ? 'hosted' : 'local').map((section) => ({
-      id: section.id,
-      entries: section.entries.map((entry) =>
-        'items' in entry ? { ...entry, items: entry.items.map(withCounts) } : withCounts(entry),
-      ),
-    }))
-    const isActive = (to: string) => pathname === to || pathname.startsWith(`${to}/`)
-    const signOut = async () => {
-      await signOutFromRecord()
-      window.location.assign('/sign-in')
-    }
-    const email =
-      whoami.data?.user && 'email' in whoami.data.user ? String(whoami.data.user.email) : null
-    return (
-      <AppShell
-        name={PLATFORM_NAME}
-        mark={mark}
-        nav={nav}
-        renderLink={renderLink}
-        isActive={isActive}
-        storageKey={RAIL_KEY}
-        railFooter={
-          <UserMenu
-            name={hosted ? (email ?? 'Signed in') : 'Local'}
-            detail={hosted ? 'Hosted hub' : 'This machine'}
-            themeKey={THEME_KEY}
-            onSignOut={hosted && pathname !== '/sign-in' ? () => void signOut() : undefined}
-          />
-        }
-      >
-        <div className="mx-auto max-w-[90rem]">
+    if (hosted && pathname === '/sign-in') {
+      return (
+        <HostedSignInFrame>
           <Outlet />
-        </div>
-      </AppShell>
-    )
+        </HostedSignInFrame>
+      )
+    }
+    return <AppLayout hosted={hosted} pathname={pathname} />
   },
 })
+
+function AppLayout({ hosted, pathname }: { hosted: boolean; pathname: string }) {
+  const { counts } = useWindowState()
+  const whoami = useQuery({
+    ...trpc.record.whoami.queryOptions(),
+    enabled: hosted,
+    retry: false,
+  })
+  const withCounts = (item: {
+    to: string
+    label: string
+    icon: NavItem['icon']
+    count?: 'flight' | 'done' | 'runs'
+  }): NavItem => ({
+    to: item.to,
+    label: item.label,
+    icon: item.icon,
+    count: (item.count && counts?.[item.count]) || undefined,
+    live: item.to === '/flight' && Boolean(counts?.flight),
+  })
+  const nav: NavSection[] = navForMode(hosted ? 'hosted' : 'local').map((section) => ({
+    id: section.id,
+    entries: section.entries.map((entry) =>
+      'items' in entry ? { ...entry, items: entry.items.map(withCounts) } : withCounts(entry),
+    ),
+  }))
+  const isActive = (to: string) => pathname === to || pathname.startsWith(`${to}/`)
+  const signOut = async () => {
+    await signOutFromRecord()
+    window.location.assign('/sign-in')
+  }
+  const email =
+    whoami.data?.user && 'email' in whoami.data.user ? String(whoami.data.user.email) : null
+  return (
+    <AppShell
+      name={PLATFORM_NAME}
+      mark={mark}
+      nav={nav}
+      renderLink={renderLink}
+      isActive={isActive}
+      storageKey={RAIL_KEY}
+      railFooter={
+        <RailFooterIdentity hosted={hosted} email={email} onSignOut={() => void signOut()} />
+      }
+    >
+      <div className="mx-auto max-w-[90rem]">
+        <Outlet />
+      </div>
+    </AppShell>
+  )
+}
