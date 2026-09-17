@@ -23,7 +23,7 @@
           },
           "undo": {
             "command": "bun",
-            "args": ["hub/src/cli.ts", "serve-stop", "--port", "{ports.hub}"]
+            "args": ["{main}/hub/src/cli.ts", "serve-stop", "--port", "{ports.hub}"]
           }
         }
       ]
@@ -33,7 +33,7 @@
         "name": "hub-down",
         "run": {
           "command": "bun",
-          "args": ["hub/src/cli.ts", "serve-check", "--port", "{ports.hub}", "--down"]
+          "args": ["{main}/hub/src/cli.ts", "serve-check", "--port", "{ports.hub}", "--down"]
         }
       }
     ]

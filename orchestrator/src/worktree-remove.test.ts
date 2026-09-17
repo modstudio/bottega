@@ -78,7 +78,7 @@ describe('worktree removal safety', () => {
   })
 
   test('missing inline-recipe teardown fills the recorded path and never runs in main', () => {
-    const repoRoot = mkdtempSync(join(tmpdir(), 'orch-teardown-main-'))
+    const repoRoot = mkdtempSync(join(tmpdir(), 'orch-remove-root-'))
     const path = join(repoRoot, 'missing-tree')
     directories.push(repoRoot)
     const git = fakeGit()
@@ -88,7 +88,9 @@ describe('worktree removal safety', () => {
       settings: {
         worktree: {
           recipe: {
-            stop: `test "{path}" = '${path}' && test "$(pwd -P)" != '${realpathSync(repoRoot)}'`,
+            stop:
+              `test "{path}" = '${path}' && test "{name}" = 'missing-tree' && ` +
+              `case "$(pwd -P)" in '${realpathSync(tmpdir())}'/orch-teardown-*) ;; *) exit 1 ;; esac`,
           },
         },
       },
