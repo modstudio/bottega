@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'bun:test'
 import { workerReply as fixtureWorkerReply } from '../test/fixtures/replies.ts'
 import type { WorkerReply } from './contract/contract.ts'
-import { FAILS_OVER } from './failure.ts'
+import { FAILS_OVER } from './failure/failure.ts'
 import { finalizeWorkerReply } from './outcome.ts'
 
 const classify = (reply: WorkerReply, measuredFiles: string[] | null = ['changed']) =>

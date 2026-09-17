@@ -294,7 +294,7 @@ export const importBoundaries: ImportBoundary[] = [
   boundary(
     'evidence-query-boundary',
     'orchestrator/src/evidence-query.ts',
-    ['./db.ts', './failure.ts', './hook-tree.ts', 'bun:sqlite'],
+    ['./db.ts', './failure/failure.ts', './hook-tree.ts', 'bun:sqlite'],
     'Enforce the evidence-query concern boundary.',
   ),
   boundary(
@@ -312,8 +312,8 @@ export const importBoundaries: ImportBoundary[] = [
   ),
   boundary(
     'failure-commands-boundary',
-    'orchestrator/src/failure-commands.ts',
-    ['./db.ts', './failure.ts', './run-authority.ts'],
+    'orchestrator/src/failure/failure-commands.ts',
+    ['../db.ts', './failure.ts', '../run-authority.ts'],
     'Keep failure command adapters independent of runs, routing, transports, the CLI, and worktrees.',
   ),
   boundary(

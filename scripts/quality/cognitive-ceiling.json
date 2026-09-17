@@ -318,7 +318,7 @@
     "score": 22
   },
   {
-    "file": "orchestrator/src/failure.ts",
+    "file": "orchestrator/src/failure/failure.ts",
     "function": "detectBlockers",
     "line": 396,
     "score": 16
