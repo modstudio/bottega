@@ -1,6 +1,32 @@
 /** Cleanup sweep knows worktree ownership, leases and the cleanup lock, resource reclamation, and branch retention. It must not know transports, routing, reviews, contracts, the CLI, or durable execution. */
 import { existsSync, lstatSync, readdirSync, realpathSync } from 'node:fs'
 import { join, resolve } from 'node:path'
+import { closeOutRun, releaseSandboxDirectoryForConversation } from '../close-out.ts'
+import { db, sessionId, writableDb, writeTransaction } from '../db.ts'
+import {
+  classifiedDockerResources,
+  type DockerResource,
+  dockerRunResources,
+  leakedResourceLines,
+  orchRunId,
+} from '../docker-resources.ts'
+import { shouldSweepHookTree } from '../hook-tree.ts'
+import { pidAlive } from '../process-liveness.ts'
+import { projectAt, projectByName, projects } from '../projects.ts'
+import { liveWorktreeSharers, terminalDockerRetentionReasonForRun } from '../resource-ownership.ts'
+import { runAlive } from '../run-alive.ts'
+import { RUNS_DIR } from '../run-artifacts.ts'
+import { auditRunMutation } from '../run-authority.ts'
+import { removeFreeRunLease, runLeaseIds, runLeaseState } from '../run-lease.ts'
+import {
+  inspectTreeOwnership,
+  isOrchWorktree,
+  markedWorktreeSource,
+  orphanSafety,
+  worktreeNameRunId,
+} from '../worktree-attribution.ts'
+import { branchTip } from '../worktree-remove.ts'
+import type { Worktree } from '../worktree-types.ts'
 import {
   type CleanupPresentation,
   evidenceOwningBranchOwners,
@@ -8,32 +34,6 @@ import {
   verifyBranchOwnershipAfterCleanup,
   withCleanupLock,
 } from './cleanup.ts'
-import { closeOutRun, releaseSandboxDirectoryForConversation } from './close-out.ts'
-import { db, sessionId, writableDb, writeTransaction } from './db.ts'
-import {
-  classifiedDockerResources,
-  type DockerResource,
-  dockerRunResources,
-  leakedResourceLines,
-  orchRunId,
-} from './docker-resources.ts'
-import { shouldSweepHookTree } from './hook-tree.ts'
-import { pidAlive } from './process-liveness.ts'
-import { projectAt, projectByName, projects } from './projects.ts'
-import { liveWorktreeSharers, terminalDockerRetentionReasonForRun } from './resource-ownership.ts'
-import { runAlive } from './run-alive.ts'
-import { RUNS_DIR } from './run-artifacts.ts'
-import { auditRunMutation } from './run-authority.ts'
-import { removeFreeRunLease, runLeaseIds, runLeaseState } from './run-lease.ts'
-import {
-  inspectTreeOwnership,
-  isOrchWorktree,
-  markedWorktreeSource,
-  orphanSafety,
-  worktreeNameRunId,
-} from './worktree-attribution.ts'
-import { branchTip } from './worktree-remove.ts'
-import type { Worktree } from './worktree-types.ts'
 
 export type SweepOptions = {
   dryRun: boolean
@@ -308,7 +308,7 @@ export async function sweepRuns(options: SweepOptions, helpers: SweepHelpers): P
     .filter(shouldSweepHookTree)
     .filter((row) => !selectedProject || projectAt(row.worktree)?.name === selectedProject.name)
 
-  const { removeFor, sweepWithTool } = await import('./worktree-remove.ts')
+  const { removeFor, sweepWithTool } = await import('../worktree-remove.ts')
 
   const closedCounts: ClosedSweepCounts = { released: 0, absent: 0, forgotten: 0 }
   let cleanupFailed = false

@@ -8,7 +8,7 @@ import {
   evidenceOwningBranchOwners,
   verifyBranchOwnershipAfterCleanup,
   withCleanupLock,
-} from './cleanup.ts'
+} from './cleanup/cleanup.ts'
 import { db, nowIso, writeTransaction } from './db.ts'
 import { teardownTerminalRunResources } from './resource-ownership.ts'
 import { adoptRunMutation, auditRunMutation, authorizeRunMutation } from './run-authority.ts'

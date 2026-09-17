@@ -1,29 +1,29 @@
 /** Cleanup knows worktree ownership, leases and the cleanup lock, resource reclamation, and branch retention. It must not know transports, routing, reviews, contracts, the CLI, or durable execution. */
 import { existsSync, realpathSync } from 'node:fs'
 import { resolve } from 'node:path'
-import { db, sessionId, writeTransaction } from './db.ts'
-import { leakedResourceLines, resourcesForRuns } from './docker-resources.ts'
-import { chainScoreJoin, EVIDENCE_CLOSED_SQL } from './evidence-query.ts'
-import { repoRootOf, targetGitEnvironment } from './git-environment.ts'
-import { withCleanupLock as takeCleanupLock, withWorktreeLease } from './project-lock.ts'
-import { projectAt, projectByName } from './projects.ts'
-import { settleClaims } from './resource-claims.ts'
-import { otherConversationWorktreeSharers, type WorktreeSharerRow } from './resource-ownership.ts'
+import { db, sessionId, writeTransaction } from '../db.ts'
+import { leakedResourceLines, resourcesForRuns } from '../docker-resources.ts'
+import { chainScoreJoin, EVIDENCE_CLOSED_SQL } from '../evidence-query.ts'
+import { repoRootOf, targetGitEnvironment } from '../git-environment.ts'
+import { withCleanupLock as takeCleanupLock, withWorktreeLease } from '../project-lock.ts'
+import { projectAt, projectByName } from '../projects.ts'
+import { settleClaims } from '../resource-claims.ts'
+import { otherConversationWorktreeSharers, type WorktreeSharerRow } from '../resource-ownership.ts'
 import {
   adoptRunMutation,
   auditRunMutation,
   authorizeRunMutation,
   type RootAuthority,
-} from './run-authority.ts'
-import { inspectTreeOwnership } from './worktree-attribution.ts'
+} from '../run-authority.ts'
+import { inspectTreeOwnership } from '../worktree-attribution.ts'
 import {
   branchTip,
   removeBranch,
   removeFor,
   restoreBranch,
   unmergedBranch,
-} from './worktree-remove.ts'
-import type { Worktree } from './worktree-types.ts'
+} from '../worktree-remove.ts'
+import type { Worktree } from '../worktree-types.ts'
 
 export type CleanupPresentation = {
   log: (...values: unknown[]) => void

@@ -10,7 +10,7 @@ import {
   DASHBOARD_CAPABILITY_TOKEN_ENV,
   type DashboardCapability,
 } from '../../../shared/dashboard-capability.ts'
-import { type CleanupPresentation, type CleanupRow, discardWorktree } from '../cleanup.ts'
+import { type CleanupPresentation, type CleanupRow, discardWorktree } from '../cleanup/cleanup.ts'
 import { writableDb } from '../db.ts'
 import { NOT_EVIDENCE } from '../failure.ts'
 import { judgeRun, scoreRun } from '../judgement.ts'
