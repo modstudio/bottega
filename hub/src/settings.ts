@@ -1,5 +1,7 @@
 import { db, type Project, writeTransaction } from './db.ts'
 import { projectNames } from './projects.ts'
+import { cachedReportVersion, cacheHostedReportSetting } from './report-cache.ts'
+import { hostedPutReportSetting, type ReportClientOptions } from './report-client.ts'
 
 /**
  * What the settings view writes, and `hub send` reads.
@@ -97,7 +99,10 @@ export function getReport(): Report {
   }
 }
 
-export function setReport(patch: Partial<Report>): Report {
+export async function setReport(
+  patch: Partial<Report>,
+  options: ReportClientOptions = {},
+): Promise<Report> {
   const next = { ...getReport(), ...patch }
   // Never let a secret in, whatever the caller sends. The field holds a
   // reference by design, and accepting one that is not one would put a
@@ -107,17 +112,14 @@ export function setReport(patch: Partial<Report>): Report {
       'smtpPasswordRef must be "keychain:<service>" or "env:<NAME>", never a password',
     )
   }
-  const registered = new Set(projectNames())
-  next.projects = next.projects.filter((project) => registered.has(project))
   next.to = next.to.map((s) => s.trim()).filter(Boolean)
-  next.briefs = (next.briefs ?? []).filter((b) => b && b.name && b.match?.length)
-  writeTransaction((conn) =>
-    conn
-      .query(`INSERT INTO setting (key, value) VALUES ('report', ?)
-                ON CONFLICT(key) DO UPDATE SET value = excluded.value`)
-      .run(JSON.stringify(next)),
+  next.briefs = (next.briefs ?? []).filter((b) => b?.name && b.match?.length)
+  const hosted = await hostedPutReportSetting(
+    { value: next, version: cachedReportVersion() },
+    options,
   )
-  return next
+  writeTransaction((conn) => cacheHostedReportSetting(conn, hosted))
+  return hosted.value
 }
 
 /** Resolve the SMTP password at USE time, never at import and never into a log. */

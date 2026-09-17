@@ -1,8 +1,11 @@
+import { hostname } from 'node:os'
 import { human } from '../../shared/interval.ts'
 import { db, nowIso, type Project, writeTransaction } from './db.ts'
 import { summarize } from './orch.ts'
 import { projectColor } from './projects.ts'
 import { completedInWindow, reportEngagedMs, tasksInWindow } from './query.ts'
+import { cacheHostedSend } from './report-cache.ts'
+import { hostedAppendSend, type ReportClientOptions } from './report-client.ts'
 import { type Brief, type Report, smtpPassword } from './settings.ts'
 
 export type Item = {
@@ -550,30 +553,56 @@ export async function send(
   return code === 0 ? { ok: true } : { ok: false, error: err.trim() || `curl exited ${code}` }
 }
 
-export function recordSend(
+export async function recordSend(
   g: ReturnType<typeof gather>,
   r: Report,
   status: 'sent' | 'skipped' | 'failed',
   error?: string,
-  opts: { test?: boolean; to?: string[] } = {},
+  opts: { test?: boolean; to?: string[]; client?: ReportClientOptions } = {},
 ) {
-  writeTransaction((conn) =>
-    conn
-      .query(
-        `INSERT INTO send (at, window, recipients, projects, items, status, error, test)
-     VALUES (?,?,?,?,?,?,?,?)`,
-      )
-      .run(
-        nowIso(),
-        `${g.hours}h`,
-        (opts.to ?? r.to).join(', '),
-        r.projects.join(', '),
-        g.items.length,
-        status,
-        error ?? null,
-        opts.test ? 1 : 0,
-      ),
-  )
+  const outcome = {
+    at: nowIso(),
+    window: `${g.hours}h`,
+    recipients: (opts.to ?? r.to).join(', '),
+    projects: r.projects.join(', '),
+    items: g.items.length,
+    status,
+    error: error ?? null,
+    test: opts.test ? 1 : 0,
+    machine: hostname(),
+  }
+  const hosted = await hostedAppendSend(outcome, opts.client)
+  writeTransaction((conn) => cacheHostedSend(conn, hosted))
+  return hosted
+}
+
+export function unrecordedSendOutcome(
+  g: ReturnType<typeof gather>,
+  status: 'sent' | 'failed',
+  recipients: string[],
+) {
+  return JSON.stringify({
+    time: nowIso(),
+    status,
+    recipients: recipients.length,
+    items: g.items.length,
+  })
+}
+
+export async function recordOutcomeAfterEmail(
+  g: ReturnType<typeof gather>,
+  r: Report,
+  result: { ok: boolean; error?: string },
+  to: string[],
+  opts: { test?: boolean; client?: ReportClientOptions } = {},
+) {
+  const status = result.ok ? 'sent' : 'failed'
+  try {
+    return await recordSend(g, r, status, result.error, { ...opts, to })
+  } catch (error) {
+    console.error(`email outcome was not recorded: ${unrecordedSendOutcome(g, status, to)}`)
+    throw error
+  }
 }
 
 export const lastSends = (n = 10) =>

@@ -38,9 +38,9 @@ export const settingsRouter = t.router({
       view: 'settings' as const,
       data: (await view('settings', input.hours)) as SettingsData,
     })),
-  save: t.procedure.input(reportPatch).mutation(({ input }) => {
+  save: t.procedure.input(reportPatch).mutation(async ({ input }) => {
     try {
-      return { ok: true as const, report: setReport(input) }
+      return { ok: true as const, report: await setReport(input) }
     } catch (cause) {
       return badRequest(cause)
     }

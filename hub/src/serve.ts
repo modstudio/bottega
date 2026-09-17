@@ -24,12 +24,13 @@ import {
 import {
   gather,
   lastSends,
-  recordSend,
+  recordOutcomeAfterEmail,
   renderHtml,
   renderText,
   send as sendMail,
   summarise,
 } from './report.ts'
+import { refreshHostedReportSetting } from './report-cache.ts'
 import { getReport, secretStatus } from './settings.ts'
 import { hoursAgo } from './time.ts'
 import { createContext } from './trpc/context.ts'
@@ -658,7 +659,7 @@ export async function view(
 const STARTED_AT = nowIso()
 
 export async function sendTest() {
-  const r = getReport()
+  const r = await refreshHostedReportSetting()
   const to = [r.testTo || r.fromAddress].filter(Boolean)
   if (!to.length) throw new Error('set a test address first')
   const g = gather(r)
@@ -673,7 +674,7 @@ export async function sendTest() {
     renderText(g, sentences),
     renderHtml(g, sentences),
   )
-  recordSend(g, r, res.ok ? 'sent' : 'failed', res.error, { test: true, to })
+  await recordOutcomeAfterEmail(g, r, res, to, { test: true })
   if (!res.ok) throw new Error(res.error ?? 'send failed')
   return { ok: true as const, to, items: g.items.length }
 }
