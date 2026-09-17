@@ -22,7 +22,8 @@ function BreakdownFigure({ items }: { items: Breakdown }) {
         <span className="truncate text-sm text-text-secondary">{current.label}</span>
       </div>
       {items.length > 1 ? (
-        <div className="flex items-center gap-1.5" role="group" aria-label="Choose a figure">
+        <fieldset className="m-0 flex items-center gap-1.5 border-0 p-0">
+          <legend className="sr-only">Choose a figure</legend>
           {items.map((item, i) => (
             <button
               key={item.label}
@@ -33,7 +34,7 @@ function BreakdownFigure({ items }: { items: Breakdown }) {
               className="size-2 rounded-full bg-border-strong hover:bg-text-muted aria-pressed:bg-accent-fill"
             />
           ))}
-        </div>
+        </fieldset>
       ) : null}
     </>
   )
