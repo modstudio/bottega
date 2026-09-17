@@ -9,7 +9,7 @@ import {
   recordBranchLanding,
   renderBranchesReport,
   renderBranchPruneReport,
-} from '../branches.ts'
+} from '../branch/branches.ts'
 import { log } from './support.ts'
 
 export function register(program: Command): void {

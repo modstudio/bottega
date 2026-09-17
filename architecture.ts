@@ -42,28 +42,28 @@ const concerns: ConcernManifest = {
 
 export const modules: ArchitectureModule[] = [
   module('orchestrator/src/artifact-paths.ts', ['node:path']),
-  module('orchestrator/src/branch-landing-record.ts', ['./branch-state.ts']),
-  module('orchestrator/src/branch-state.ts', ['./merged-pull-request.ts']),
+  module('orchestrator/src/branch/branch-landing-record.ts', ['./branch-state.ts']),
+  module('orchestrator/src/branch/branch-state.ts', ['../merged-pull-request.ts']),
   module('orchestrator/src/merged-pull-request.ts', ['./git-environment.ts', './projects.ts']),
   module('orchestrator/src/other-branch-state.ts', [
-    './branch-state.ts',
+    './branch/branch-state.ts',
     './merged-pull-request.ts',
   ]),
-  module('orchestrator/src/branch-settlement.ts', [
-    './db.ts',
-    './evidence-query.ts',
-    './resource-claims.ts',
+  module('orchestrator/src/branch/branch-settlement.ts', [
+    '../db.ts',
+    '../evidence-query.ts',
+    '../resource-claims.ts',
   ]),
-  module('orchestrator/src/branches.ts', [
+  module('orchestrator/src/branch/branches.ts', [
     './branch-landing-record.ts',
     './branch-state.ts',
     './branch-settlement.ts',
-    './db.ts',
-    './git-environment.ts',
-    './merged-pull-request.ts',
-    './other-branch-state.ts',
-    './projects.ts',
-    './task-branch.ts',
+    '../db.ts',
+    '../git-environment.ts',
+    '../merged-pull-request.ts',
+    '../other-branch-state.ts',
+    '../projects.ts',
+    '../task-branch.ts',
   ]),
   module('orchestrator/src/agent-probe.ts', [
     './agent-registry.ts',
