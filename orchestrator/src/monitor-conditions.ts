@@ -11,7 +11,7 @@ import { HOOK_TREE_JOB, hookTreeNotice } from './hook-tree.ts'
 import { runHasLiveDescendants } from './idle-kill.ts'
 import type { MonitorCondition } from './monitor-types.ts'
 import { pidAlive, processStartTime } from './process-liveness.ts'
-import { pidRecordIdentity } from './project-lock.ts'
+import { type PidRecordIdentity, pidRecordIdentity } from './project-lock.ts'
 import { projects } from './projects.ts'
 import type { ResourceClaimKind } from './resource-claims.ts'
 import {
@@ -161,6 +161,14 @@ export function pidBornAfterRun(birth: string | null, finishedAt: number | null)
   return Number.isFinite(bornAt) && bornAt > finishedAt + PID_BIRTH_TOLERANCE_MS
 }
 
+/** A reused vendor pid means its recorded process group is no longer ours either. */
+export function terminalProcessPgid(
+  vendorIdentity: PidRecordIdentity,
+  agentPgid: number | null,
+): number | null {
+  return vendorIdentity === 'reused' ? null : agentPgid
+}
+
 type TerminalProcessRun = {
   id: number
   started_at: string
@@ -193,7 +201,8 @@ function terminalProcessState(run: TerminalProcessRun) {
       ].filter((pid): pid is number => pid != null && pid > 1),
     ),
   ]
-  return { coordinatorLive, vendorIdentity, roots }
+  const pgid = terminalProcessPgid(vendorIdentity, run.agent_pgid)
+  return { coordinatorLive, vendorIdentity, roots, pgid }
 }
 
 /** Report recorded pids and descendants that outlived a terminal run. Observation only. */
@@ -206,9 +215,9 @@ export function terminalProcessAliveConditions(clock = Date.now()): MonitorCondi
     )
     .all() as TerminalProcessRun[]
   return terminal.flatMap((run): MonitorCondition[] => {
-    const { coordinatorLive, vendorIdentity, roots } = terminalProcessState(run)
+    const { coordinatorLive, vendorIdentity, roots, pgid } = terminalProcessState(run)
     const vendorLive = vendorIdentity === 'live' || vendorIdentity === 'unknown'
-    const descendantsLive = runHasLiveDescendants(roots, [], {}, run.agent_pgid)
+    const descendantsLive = runHasLiveDescendants(roots, [], {}, pgid)
     if (!coordinatorLive && !vendorLive && !descendantsLive) return []
     const reported =
       (vendorLive && run.agent_pid) ||

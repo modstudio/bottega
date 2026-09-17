@@ -11,6 +11,7 @@ import {
   reconcileHub,
   rulingConditions,
   staleTrustEntryConditions,
+  terminalProcessPgid,
   unsettledClaimConditions,
 } from './monitor-conditions.ts'
 import { claimMonitorNotices, markMonitorNoticesDelivered } from './monitor-notices.ts'
@@ -111,6 +112,10 @@ describe('operational monitor conditions', () => {
 
     test('catches treating a malformed lstart as reused', () => {
       expect(pidBornAfterRun('not a process start time', finishedAt)).toBe(false)
+    })
+
+    test('catches passing a reused vendor pgid as descendant evidence', () => {
+      expect(terminalProcessPgid('reused', 66547)).toBe(null)
     })
   })
 
