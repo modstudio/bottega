@@ -17,10 +17,6 @@ const stateHomeExemptions = new Map<string, string>([
     'runs Homebrew only; never opens a platform store',
   ],
   [
-    'ops/launchd/com.user.hub-tunnel.plist.template',
-    'runs cloudflared only; never opens a platform store',
-  ],
-  [
     'ops/launchd/com.user.local-model-tunnel.plist.template',
     'runs ssh only; never opens a platform store',
   ],
