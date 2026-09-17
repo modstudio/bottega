@@ -15,7 +15,12 @@ import {
 } from '../../test/fixtures/record-session.ts'
 import { proveHostedDocs, proveScoreRecordSync } from '../../test/postgres-score-proof.ts'
 import { startRecordApiServer } from '../record/record-api-server.ts'
-import { bearerHeaders, recordAuth, setActiveRecordSpace } from '../record/record-auth.ts'
+import {
+  bearerHeaders,
+  RECORD_SIGN_UP_INVITATION_REQUIRED,
+  recordAuth,
+  setActiveRecordSpace,
+} from '../record/record-auth.ts'
 import { signInCommand, signUpCommand, whoamiCommand } from '../record/record-auth-command.ts'
 import { diagnoseRecord, recordDoctorExitCode } from '../record/record-doctor.ts'
 import {
@@ -65,6 +70,11 @@ const AUTH_EMAIL_A = 'auth-a@example.test'
 const AUTH_EMAIL_B = 'auth-b@example.test'
 const AUTH_EMAIL_REPAIR = 'auth-repair@example.test'
 const AUTH_EMAIL_HTTP = 'auth-http@example.test'
+const AUTH_EMAIL_CASE = 'auth-case@example.test'
+const AUTH_EMAIL_SHORT_PASSWORD = 'auth-short-password@example.test'
+const AUTH_EMAIL_NO_INVITATION = 'auth-no-invitation@example.test'
+const AUTH_EMAIL_EXPIRED = 'auth-expired@example.test'
+const AUTH_EMAIL_ACCEPTED = 'auth-accepted@example.test'
 const AUTH_PASSWORD = 'correct-horse-battery-staple'
 const PROJECT_A = '01990000-0000-7000-8000-00000000001a'
 const PROJECT_A2 = '01990000-0000-7000-8000-00000000002a'
@@ -78,6 +88,13 @@ const REVIEW_B = '01990000-0000-7000-8000-00000000004b'
 const WRONG_EMAIL_INVITATION = '01990000-0000-7000-8000-00000000012a'
 const EXPIRED_INVITATION = '01990000-0000-7000-8000-00000000012b'
 const ACCEPTED_INVITATION = '01990000-0000-7000-8000-00000000012c'
+const SIGN_UP_INVITATION_A = '01990000-0000-7000-8000-00000000014a'
+const SIGN_UP_INVITATION_B = '01990000-0000-7000-8000-00000000014b'
+const SIGN_UP_INVITATION_REPAIR = '01990000-0000-7000-8000-00000000014c'
+const SIGN_UP_INVITATION_CASE = '01990000-0000-7000-8000-00000000014d'
+const SIGN_UP_INVITATION_SHORT = '01990000-0000-7000-8000-00000000014e'
+const SIGN_UP_INVITATION_EXPIRED = '01990000-0000-7000-8000-00000000014f'
+const SIGN_UP_INVITATION_ACCEPTED = '01990000-0000-7000-8000-000000000150'
 
 type PsqlResult = { code: number; stdout: string; stderr: string }
 
@@ -231,6 +248,16 @@ realPostgres('RLS proof against real Postgres', () => {
         VALUES ('${USER_A}', 'owner@example.test', 'Owner', now());
       INSERT INTO membership (id, space_id, user_id, role, permission, created_at)
         VALUES ('01990000-0000-7000-8000-000000000011', '${SPACE_A}', '${USER_A}', 'member', 'write', now());
+      INSERT INTO invitation
+        (id,space_id,email,inviter_id,role,status,expires_at,created_at)
+      VALUES
+        ('${SIGN_UP_INVITATION_A}','${SPACE_A}','${AUTH_EMAIL_A}','${USER_A}','member','pending',now() + interval '1 day',now()),
+        ('${SIGN_UP_INVITATION_B}','${SPACE_A}','${AUTH_EMAIL_B}','${USER_A}','member','pending',now() + interval '1 day',now()),
+        ('${SIGN_UP_INVITATION_REPAIR}','${SPACE_A}','${AUTH_EMAIL_REPAIR}','${USER_A}','member','pending',now() + interval '1 day',now()),
+        ('${SIGN_UP_INVITATION_CASE}','${SPACE_A}',' AUTH-CASE@EXAMPLE.TEST ','${USER_A}','member','pending',now() + interval '1 day',now()),
+        ('${SIGN_UP_INVITATION_SHORT}','${SPACE_A}','${AUTH_EMAIL_SHORT_PASSWORD}','${USER_A}','member','pending',now() + interval '1 day',now()),
+        ('${SIGN_UP_INVITATION_EXPIRED}','${SPACE_A}','${AUTH_EMAIL_EXPIRED}','${USER_A}','member','pending',now() - interval '1 day',now()),
+        ('${SIGN_UP_INVITATION_ACCEPTED}','${SPACE_A}','${AUTH_EMAIL_ACCEPTED}','${USER_A}','member','accepted',now() + interval '1 day',now());
       INSERT INTO project (id, space_id, name, key_prefixes, created_at) VALUES
         ('${PROJECT_A}', '${SPACE_A}', 'alpha', ARRAY['DEV'], now()),
         ('${PROJECT_A2}', '${SPACE_A}', 'alpha-two', ARRAY['DEV'], now()),
@@ -345,7 +372,9 @@ realPostgres('RLS proof against real Postgres', () => {
     succeeds(
       'postgres',
       'postgres',
-      `INSERT INTO project (id,space_id,name,key_prefixes,created_at) VALUES
+      `DELETE FROM invitation WHERE id IN
+        ('${SIGN_UP_INVITATION_A}','${SIGN_UP_INVITATION_B}','${SIGN_UP_INVITATION_REPAIR}');
+       INSERT INTO project (id,space_id,name,key_prefixes,created_at) VALUES
         ('${authProjectA}','${authSpaceA}','auth-a-project',ARRAY['AA'],now()),
         ('${authProjectB}','${authSpaceB}','auth-b-project',ARRAY['BB'],now());
        INSERT INTO run (
@@ -380,10 +409,76 @@ realPostgres('RLS proof against real Postgres', () => {
       'postgres',
       'postgres',
       `
+      DROP FUNCTION IF EXISTS invitation_open_for(text);
       DROP TABLE IF EXISTS invitation, verification, account, session, test_flake, contention, landing_review_carry, landing_override, landing, review_finding, review_lens, review, run_exclusion, run_score, run, doc_revision, doc, orch_snapshot, hub_send, hub_report_setting, hub_note_acknowledgement, hub_note, hub_task_status_event, hub_task_document, hub_task_comment, hub_task, hub_interval, hub_day, membership, machine, seq, project, "user", space CASCADE;
       DROP SCHEMA IF EXISTS drizzle CASCADE;
     `,
     )
+  })
+
+  test('the invitation predicate reveals only eligibility to the actor', () => {
+    const eligibility = psql(
+      RECORD_ACTOR_ROLE,
+      'actor-password',
+      `SELECT public.invitation_open_for('${AUTH_EMAIL_CASE}');
+       SELECT public.invitation_open_for('${AUTH_EMAIL_EXPIRED}');
+       SELECT public.invitation_open_for('${AUTH_EMAIL_ACCEPTED}');
+       SELECT count(*) FROM invitation;`,
+    )
+    expect(eligibility.code, eligibility.stderr).toBe(0)
+    expect(eligibility.stdout.split('\n')).toEqual(['t', 'f', 'f', '0'])
+  })
+
+  test('sign-up requires the same pending invitation state without leaking its status', async () => {
+    const rejectedMessage = async (email: string, password = AUTH_PASSWORD): Promise<string> => {
+      try {
+        await recordAuth(actorUrl!).api.signUpEmail({
+          body: { email, name: 'Rejected sign-up', password },
+        })
+        return 'sign-up unexpectedly succeeded'
+      } catch (error) {
+        return error instanceof Error ? error.message : String(error)
+      }
+    }
+
+    const messages = await Promise.all([
+      rejectedMessage(AUTH_EMAIL_NO_INVITATION),
+      rejectedMessage(AUTH_EMAIL_EXPIRED),
+      rejectedMessage(AUTH_EMAIL_ACCEPTED),
+    ])
+    expect(messages).toEqual([
+      RECORD_SIGN_UP_INVITATION_REQUIRED,
+      RECORD_SIGN_UP_INVITATION_REQUIRED,
+      RECORD_SIGN_UP_INVITATION_REQUIRED,
+    ])
+    expect(
+      succeeds(
+        'postgres',
+        'postgres',
+        `SELECT (SELECT count(*) FROM "user" WHERE email='${AUTH_EMAIL_NO_INVITATION}') || '|' ||
+          (SELECT count(*) FROM account a JOIN "user" u ON u.id=a.user_id
+           WHERE u.email='${AUTH_EMAIL_NO_INVITATION}');`,
+      ),
+    ).toBe('0|0')
+
+    await expect(
+      recordAuth(actorUrl!).api.signUpEmail({
+        body: { email: AUTH_EMAIL_CASE, name: 'Case Match', password: AUTH_PASSWORD },
+      }),
+    ).resolves.toMatchObject({ user: { email: AUTH_EMAIL_CASE } })
+
+    expect(await rejectedMessage(AUTH_EMAIL_SHORT_PASSWORD, 'elevenchars')).toBe(
+      'Password too short',
+    )
+    expect(
+      succeeds(
+        'postgres',
+        'postgres',
+        `SELECT (SELECT count(*) FROM "user" WHERE email='${AUTH_EMAIL_SHORT_PASSWORD}') || '|' ||
+          (SELECT count(*) FROM account a JOIN "user" u ON u.id=a.user_id
+           WHERE u.email='${AUTH_EMAIL_SHORT_PASSWORD}');`,
+      ),
+    ).toBe('0|0')
   })
 
   test('CLI sign-up creates one owner membership and bearer identity is not interchangeable', async () => {
@@ -620,6 +715,14 @@ realPostgres('RLS proof against real Postgres', () => {
   })
 
   test('HTTP bearer round trip signs up, identifies, lists, and isolates runs', async () => {
+    succeeds(
+      'postgres',
+      'postgres',
+      `INSERT INTO invitation
+        (id,space_id,email,inviter_id,role,status,expires_at,created_at)
+       VALUES ('${newRecordId()}','${authSpaceA}','${AUTH_EMAIL_HTTP}','${authUserA}',
+         'member','pending',now() + interval '1 day',now());`,
+    )
     const server = startRecordApiServer({
       ...process.env,
       PORT: '0',

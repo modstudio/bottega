@@ -2,7 +2,7 @@
 /** Owns record identity, bearer sessions, and personal-space repair. Must not know run phases. */
 
 import { drizzleAdapter } from '@better-auth/drizzle-adapter/relations-v2'
-import { betterAuth } from 'better-auth'
+import { APIError, betterAuth } from 'better-auth'
 import { bearer, organization } from 'better-auth/plugins'
 import { SQL } from 'bun'
 import { drizzle } from 'drizzle-orm/bun-sql'
@@ -13,6 +13,8 @@ import { sendPasswordResetEmail } from '../mail/password-reset-mailer.ts'
 export const RECORD_SESSION_KEY = 'record_session'
 export const RECORD_SIGN_IN_REMEDY =
   'record session is missing or expired; run `orch record sign-in --email <email>`'
+export const RECORD_SIGN_UP_INVITATION_REQUIRED =
+  'Record sign-up is by invitation only; ask a record space owner to run `orch record space invite --email <email>`.'
 
 type RecordAuthEnvironment = Record<string, string | undefined>
 
@@ -139,6 +141,24 @@ export function recordAuth(
   // commands from reserving the database's entire connection budget before garbage collection.
   const client = new SQL(url, { max: 1 })
   const personalSpaces = personalSpacePort(client)
+  const invitationOnlySignUp = Object.assign(
+    async (input: unknown) => {
+      const context = input as { path?: string; body?: Record<string, unknown> }
+      if (context.path !== '/sign-up/email') return
+      const candidateEmail =
+        typeof context.body?.email === 'string' ? context.body.email.trim().toLowerCase() : ''
+      const rows = await client`
+        SELECT public.invitation_open_for(${candidateEmail}) AS invited
+      `
+      if (rows[0]?.invited !== true) {
+        throw APIError.from('FORBIDDEN', {
+          code: 'SIGN_UP_REQUIRES_INVITATION',
+          message: RECORD_SIGN_UP_INVITATION_REQUIRED,
+        })
+      }
+    },
+    { options: {} },
+  )
   return betterAuth({
     secret,
     ...(trustedOrigins.length ? { trustedOrigins } : {}),
@@ -161,8 +181,11 @@ export function recordAuth(
     },
     rateLimit: {
       enabled: true,
+      window: 10,
+      max: 100,
       customRules: { '/request-password-reset': { window: 60 * 60, max: 5 } },
     },
+    hooks: { before: invitationOnlySignUp },
     user: { modelName: 'user' },
     session: { modelName: 'session' },
     account: { modelName: 'account' },
