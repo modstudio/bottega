@@ -227,4 +227,136 @@ export async function proveHostedDocs(input: {
   })
   expect(voided.status).toBe(200)
   await proveCachePull(input.origin, input.token, headers)
+  await proveDocImport(input.origin, headers)
+}
+
+function importBody(input: {
+  slug: string
+  body: string
+  updatedAt: string
+  deletedAt: string | null
+  revisions: Array<{ body: string; op: string; at: string; reason: string }>
+}) {
+  const createdAt = input.revisions[0]?.at ?? input.updatedAt
+  return {
+    doc: {
+      scope: 'machine',
+      subject: null,
+      slug: input.slug,
+      title: 'Import',
+      body: input.body,
+      delivery: 'inject' as const,
+      projectName: null,
+      createdAt,
+      updatedAt: input.updatedAt,
+      deletedAt: input.deletedAt,
+    },
+    revisions: input.revisions.map((revision) => ({
+      scope: 'machine',
+      subject: null,
+      slug: input.slug,
+      op: revision.op,
+      title: 'Import',
+      body: revision.body,
+      delivery: 'inject' as const,
+      author: 'proof',
+      reason: revision.reason,
+      sessionId: null,
+      at: revision.at,
+    })),
+  }
+}
+
+async function proveDocImport(origin: string, headers: Record<string, string>): Promise<void> {
+  const older = '2026-01-01T00:00:00.000Z'
+  const middle = '2026-01-01T12:00:00.000Z'
+  const newer = '2026-01-02T00:00:00.000Z'
+  const post = (body: unknown) =>
+    fetch(`${origin}/v1/docs/import`, {
+      method: 'POST',
+      headers,
+      body: JSON.stringify(body),
+    })
+  const current = importBody({
+    slug: 'import-current',
+    body: 'current-body',
+    updatedAt: newer,
+    deletedAt: null,
+    revisions: [
+      { body: 'historical', op: 'create', at: older, reason: 'create it' },
+      { body: 'historical', op: 'set', at: middle, reason: 'old revision' },
+    ],
+  })
+  const created = await post(current)
+  expect(created.status).toBe(200)
+  const createdIds = (await created.json()) as { id: string; revisionIds: string[] }
+  const hosted = await fetch(`${origin}/v1/docs/${createdIds.id}`, { headers })
+  expect(hosted.status).toBe(200)
+  expect(((await hosted.json()) as { body: string }).body).toBe('current-body')
+
+  const deletedPayload = importBody({
+    slug: 'import-deleted',
+    body: 'gone',
+    updatedAt: newer,
+    deletedAt: newer,
+    revisions: [
+      { body: 'gone', op: 'create', at: older, reason: 'create gone' },
+      { body: 'gone', op: 'delete', at: newer, reason: 'remove gone' },
+    ],
+  })
+  const deleted = await post(deletedPayload)
+  expect(deleted.status).toBe(200)
+  const deletedIds = (await deleted.json()) as { id: string }
+  const deletedDoc = await fetch(`${origin}/v1/docs/${deletedIds.id}`, { headers })
+  expect(((await deletedDoc.json()) as { deletedAt: string | null }).deletedAt).toBeString()
+  const listed = await fetch(`${origin}/v1/docs?scope=machine`, { headers })
+  expect(
+    ((await listed.json()) as { items: { id: string }[] }).items.some(
+      (doc) => doc.id === deletedIds.id,
+    ),
+  ).toBe(false)
+
+  const beforeDoc = await (await fetch(`${origin}/v1/docs/${createdIds.id}`, { headers })).json()
+  const beforeRevisions = await (
+    await fetch(`${origin}/v1/docs/${createdIds.id}/revisions`, { headers })
+  ).json()
+  const again = await post(current)
+  expect(again.status).toBe(200)
+  expect(((await again.json()) as { id: string }).id).toBe(createdIds.id)
+  const afterDoc = await (await fetch(`${origin}/v1/docs/${createdIds.id}`, { headers })).json()
+  const afterRevisions = await (
+    await fetch(`${origin}/v1/docs/${createdIds.id}/revisions`, { headers })
+  ).json()
+  expect(afterDoc).toEqual(beforeDoc)
+  expect(afterRevisions).toEqual(beforeRevisions)
+
+  const conflictSlug = 'import-conflict'
+  const put = await fetch(`${origin}/v1/docs`, {
+    method: 'PUT',
+    headers,
+    body: JSON.stringify({
+      scope: 'machine',
+      subject: null,
+      slug: conflictSlug,
+      title: 'Conflict',
+      body: 'hosted-new',
+      delivery: 'inject',
+      reason: 'seed newer hosted',
+      author: 'proof',
+    }),
+  })
+  expect(put.status).toBe(200)
+  const conflict = await post(
+    importBody({
+      slug: conflictSlug,
+      body: 'local-old',
+      updatedAt: older,
+      deletedAt: null,
+      revisions: [{ body: 'local-old', op: 'create', at: older, reason: 'stale local' }],
+    }),
+  )
+  expect(conflict.status).toBe(409)
+  expect(await conflict.json()).toMatchObject({
+    error: expect.stringContaining('newer updated_at'),
+  })
 }

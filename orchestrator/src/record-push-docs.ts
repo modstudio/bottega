@@ -1,6 +1,6 @@
 // concern: record-push-docs
 /** One-time upload of the local doc store and a verdict count report. Must not know HTTP internals. */
-import { db } from './db.ts'
+import { db, writableDb } from './db.ts'
 import type { DocDelivery, DocRevisionOp } from './doc-write-allowed.ts'
 import type { RecordApiClient, RecordDocImportInput } from './record-api-client.ts'
 import { recordApiClient } from './record-api-client.ts'
@@ -55,7 +55,9 @@ function address(scope: string, subject: string | null, slug: string): string {
 
 function projectNames(local: ReturnType<typeof db>): Map<number, string> {
   const names = new Map<number, string>()
-  for (const row of local.query<{ id: number; name: string }, []>('SELECT id, name FROM project').all()) {
+  for (const row of local
+    .query<{ id: number; name: string }, []>('SELECT id, name FROM project')
+    .all()) {
     names.set(row.id, row.name)
   }
   return names
@@ -238,6 +240,7 @@ export async function pushDocsCommand(
     `local docs ${docs}, revisions ${revisions}, scores ${localScores}, voids ${localVoids}, deleted ${deleted}`,
   )
   if (options.dryRun) return
+  writableDb()
   const client = recordApiClient()
   for (const group of groups) {
     const hosted = await client.importDoc(group.payload)

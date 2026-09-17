@@ -147,11 +147,7 @@ export function createMemoryRecordApiClient(): RecordApiClient {
           doc.slug === input.doc.slug,
       )
       const liveDoc = atAddress.find((doc) => doc.deletedAt === null)
-      if (
-        liveDoc &&
-        liveDoc.body !== input.doc.body &&
-        liveDoc.updatedAt > input.doc.updatedAt
-      ) {
+      if (liveDoc && liveDoc.body !== input.doc.body && liveDoc.updatedAt > input.doc.updatedAt) {
         throw new Error(
           `refusing import: hosted doc at ${input.doc.scope}/${input.doc.subject ?? ''}/${input.doc.slug} has a different body and newer updated_at`,
         )
