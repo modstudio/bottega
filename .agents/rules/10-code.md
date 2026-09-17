@@ -64,3 +64,7 @@ An import restriction is a rule in `architecture.ts` or `architecture-boundaries
 ## Keep machine state out of the tree
 
 A checkout holds source only. Databases, run artifacts, backups, locks and logs live in the per-user state directory that `shared/state-directory.ts` resolves; code never builds a state path from the checkout root. This rule is enforced by review.
+
+## Group a concern's source by module
+
+A module's files, its tests among them, live together in a folder named for the module under the concern's `src/`. Add a module as a folder; never add a file beside an existing folder to share a filename prefix with it. Import each file directly by path, because a barrel hides the dependency the manifest exists to declare.
