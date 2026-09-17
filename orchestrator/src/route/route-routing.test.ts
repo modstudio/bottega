@@ -1,6 +1,7 @@
 import { describe, expect, test } from 'bun:test'
 import { addRun, score } from '../../test/fixtures/store.ts'
-import { AGENTS } from '../agent/agent-registry.ts'
+import { AGENTS, refreshAgents } from '../agent/agent-registry.ts'
+import { db } from '../database/db.ts'
 import { weigh } from '../score/score.ts'
 import { guide } from '../state/guide.ts'
 import {
@@ -13,6 +14,27 @@ import {
   promptSizeBucket,
   scoreboard,
 } from './route.ts'
+
+test('a seeded unprobed agent is withheld from repository jobs', () => {
+  const original = db()
+    .query("SELECT probed_at, probe_result FROM agent WHERE name = 'codex'")
+    .get() as { probed_at: string | null; probe_result: string | null }
+  db().query("UPDATE agent SET probed_at = NULL, probe_result = NULL WHERE name = 'codex'").run()
+  refreshAgents()
+  try {
+    expect(
+      candidates('review-lens').find((candidate) => candidate.agent === 'codex'),
+    ).toMatchObject({
+      eligible: false,
+      why: 'unprobed agent is ineligible for repository jobs; run orch agent probe codex',
+    })
+  } finally {
+    db()
+      .query("UPDATE agent SET probed_at = ?, probe_result = ? WHERE name = 'codex'")
+      .run(original.probed_at, original.probe_result)
+    refreshAgents()
+  }
+})
 
 describe('one score, reported the same everywhere', () => {
   function judged(agent: string, rights: number, wrongs: number) {
