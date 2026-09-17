@@ -4,6 +4,7 @@ import { copyFileSync, existsSync, rmSync } from 'node:fs'
 import { SQL } from 'bun'
 import { PLATFORM_SLUG } from '../../shared/brand.ts'
 import { newRecordId, PLATFORM_SPACE_ID } from '../../shared/record/schema.ts'
+import { installRecordSessionRunner, memoryRecordSession } from '../test/fixtures/record-session.ts'
 import { backfillLandingEvidenceRecords } from './landing-outbox.ts'
 import { applyMigrations } from './migrations.ts'
 import { importProjects } from './postgres-import.ts'
@@ -56,9 +57,11 @@ realPostgres('project import against copied live SQLite data', () => {
   const retiredOrchDb = `${sourceOrchDb!}-retired.db`
   const retiredHubDb = `${sourceHubDb!}-retired.db`
   const sql = new SQL(databaseUrl!)
+  const recordSession = memoryRecordSession()
   let recordToken = ''
 
   beforeAll(async () => {
+    installRecordSessionRunner(recordSession.runner)
     process.env.BETTER_AUTH_SECRET = 'postgres-import-secret-at-least-thirty-two-characters'
     await migratePostgres()
     const signedUp = await recordAuth(actorUrl!).api.signUpEmail({
@@ -70,6 +73,7 @@ realPostgres('project import against copied live SQLite data', () => {
     })
     if (!signedUp.token) throw new Error('live-copy signup returned no bearer token')
     recordToken = signedUp.token
+    recordSession.setToken(recordToken)
     await sql`
       INSERT INTO membership (id,space_id,user_id,role,permission,created_at)
       VALUES (${newRecordId()}::uuid, ${PLATFORM_SPACE_ID}::uuid, ${signedUp.user.id}::uuid, 'owner', 'write', now())
@@ -78,6 +82,7 @@ realPostgres('project import against copied live SQLite data', () => {
   })
 
   afterAll(async () => {
+    installRecordSessionRunner(null)
     delete process.env.BETTER_AUTH_SECRET
     await sql.unsafe(
       'DROP TABLE IF EXISTS run_exclusion, run_score, doc_revision, doc, membership, machine, seq, project, "user", space CASCADE',
@@ -130,13 +135,15 @@ realPostgres('project import against copied live SQLite data', () => {
     expect(first.sequences).toBe(
       sourceSequences.filter((row) => row.name.startsWith('task:')).length,
     )
-    expect(first.skippedSequences).toEqual([
-      {
-        name: 'dev',
-        next: 21,
-        reason: 'sequence name has no task: namespace and therefore no determinate project owner',
-      },
-    ])
+    expect(first.skippedSequences).toEqual(
+      sourceSequences
+        .filter((row) => !row.name.startsWith('task:'))
+        .map((row) => ({
+          name: row.name,
+          next: row.next,
+          reason: 'sequence name has no task: namespace and therefore no determinate project owner',
+        })),
+    )
 
     const imported = (await sql`SELECT * FROM project ORDER BY name`) as ImportedProject[]
     expect(imported).toHaveLength(sourceProjects.length)
