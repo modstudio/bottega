@@ -1,7 +1,7 @@
 // concern: cli
 /** Registers inbox and diff adapters. Must not own their behavior. */
 import type { Command } from 'commander'
-import { cleanupRepoRoot } from '../cleanup.ts'
+import { cleanupRepoRoot } from '../cleanup/cleanup.ts'
 import { db } from '../db.ts'
 import { JOBS } from '../jobs.ts'
 import { runDiffCommand } from '../run-diff.ts'

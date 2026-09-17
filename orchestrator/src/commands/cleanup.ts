@@ -3,8 +3,8 @@
 
 import { existsSync, writeFileSync } from 'node:fs'
 import type { Command } from 'commander'
-import { type CleanupPresentation, discardRun } from '../cleanup.ts'
-import { sweepRuns } from '../cleanup-sweep.ts'
+import { type CleanupPresentation, discardRun } from '../cleanup/cleanup.ts'
+import { sweepRuns } from '../cleanup/cleanup-sweep.ts'
 import { grokTrustHeadings, grokTrustPathFromHeading } from '../grok-trust.ts'
 import { terminateRunProcesses } from '../run-process.ts'
 import { abandonRun, stopRun } from '../run-stop.ts'
