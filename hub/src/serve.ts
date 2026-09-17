@@ -31,6 +31,15 @@ import {
   summarise,
 } from './report.ts'
 import { refreshHostedReportSetting } from './report-cache.ts'
+import {
+  appliedRunOffset,
+  liveRowDisplay,
+  matchesRunSearch,
+  type RunPageLimit,
+  runPageLimit,
+  runRowDisplay,
+  type SearchableLiveRun,
+} from './run-display.ts'
 import { getReport, secretStatus } from './settings.ts'
 import { hoursAgo } from './time.ts'
 import { createContext } from './trpc/context.ts'
@@ -38,11 +47,13 @@ import { appRouter } from './trpc/router.ts'
 
 const ORCH_CACHE_TTL_MS = 30_000
 
-type CacheEntry<T> = { checkedAt: number; value?: T; pending?: Promise<T> }
+type CacheEntry<T> = { checkedAt: number; hasValue: boolean; value?: T; pending?: Promise<T> }
 
 /** One load per key and TTL, including when several clients arrive together. */
 export class TtlCache {
   private entries = new Map<string, CacheEntry<unknown>>()
+  /** Bumped by clear(), so a load that started before a write cannot store its result after it. */
+  private generation = 0
   private readonly ttlMs: number
   private readonly clock: () => number
 
@@ -51,30 +62,45 @@ export class TtlCache {
     this.clock = clock
   }
 
+  /**
+   * The cached value while it is fresh. Once it expires the caller still gets
+   * the last value at once and one background load replaces it, so a poll that
+   * lands just after expiry never waits for a slow orch read. A key with no
+   * value waits for its load, and a failed load drops the key so the next call
+   * waits and sees the failure rather than a value that has stopped updating.
+   */
   get<T>(key: string, load: () => Promise<T> | T): Promise<T> {
     const now = this.clock()
     const cached = this.entries.get(key) as CacheEntry<T> | undefined
-    if (cached && now - cached.checkedAt < this.ttlMs) {
-      return cached.pending ?? Promise.resolve(cached.value as T)
-    }
+    const fresh = cached !== undefined && now - cached.checkedAt < this.ttlMs
+    if (cached?.hasValue && (fresh || cached.pending)) return Promise.resolve(cached.value as T)
     if (cached?.pending) return cached.pending
+    const generation = this.generation
     const pending = Promise.resolve()
       .then(load)
       .then(
         (value) => {
-          this.entries.set(key, { checkedAt: this.clock(), value })
+          if (generation === this.generation) {
+            this.entries.set(key, { checkedAt: this.clock(), hasValue: true, value })
+          }
           return value
         },
         (cause) => {
-          this.entries.delete(key)
+          if (generation === this.generation) this.entries.delete(key)
           throw cause
         },
       )
-    this.entries.set(key, { checkedAt: now, value: cached?.value, pending })
+    if (cached?.hasValue) {
+      this.entries.set(key, { ...cached, pending })
+      pending.catch(() => undefined)
+      return Promise.resolve(cached.value as T)
+    }
+    this.entries.set(key, { checkedAt: now, hasValue: false, pending })
     return pending
   }
 
   clear(): void {
+    this.generation += 1
     this.entries.clear()
   }
 }
@@ -302,7 +328,14 @@ function runsFor(key: string | null, project: string | null, from: string, to: s
   return { runs }
 }
 
-type RunFilters = { agent: string; project: string; source?: string }
+type RunFilters = {
+  agent: string
+  project: string
+  source?: string
+  offset?: number
+  limit?: RunPageLimit
+  search?: string
+}
 
 /** The UI calls local ownership "hub"; external source values are project names. */
 function matchesSource(row: { source: string | null; project: string | null }, source?: string) {
@@ -535,103 +568,162 @@ export async function view(
   }
 
   if (name === 'runs') {
-    // Read through `orch runs --json`, not from hub's interval mirror: only the
-    // orchestrator knows a run's VERDICT, and a runs list you cannot score from
-    // is a list of chores you have to go elsewhere to do.
-    // Windowed by the BAND, like every other view. This read a fixed 30 days
-    // while the counters above it read the band, so the two disagreed the
-    // moment any history fell outside it: at 24h the band said 256 runs over a
-    // table listing 328. That is precisely what the note below forbids, and it
-    // was invisible only because every run in this database is a day old.
-    const raw = await orchCache.get(`runs-data:${hours}`, () => readRuns(hoursAgo(hours)))
+    const search = f.search ?? ''
+    const limit = runPageLimit(f.limit)
+    const requestedOffset = f.offset ?? 0
     const now = Date.now()
-    // The counters and the live table come from the orchestrator's own state,
-    // over the SAME window as the run list beneath them - a band that counts a
-    // different period than the table under it is worse than no band.
-    const stateDays = Math.max(1, Math.round(hours / 24))
-    const st = await orchCache.get(`state:${stateDays}`, () => orchState(stateDays))
-    // Shaped BEFORE it is filtered, because `project` is not a column. It is
-    // derived by attribute() from the run's cwd and prompt, so filtering the
-    // raw row would be filtering on r.repo alone - and would then disagree
-    // with the project this very table prints in the row beside it.
-    const shaped = raw.map((r) => {
-      const a = attributeRun(r)
+    // Orch read + attribution + shaping stay cached per hours/agent/project.
+    // Search, display strings, and the page slice are per request and are not
+    // part of that key.
+    const built = await orchCache.get(`runs:${hours}:${f.agent}:${f.project}`, async () => {
+      // Read through `orch runs --json`, not from hub's interval mirror: only the
+      // orchestrator knows a run's VERDICT, and a runs list you cannot score from
+      // is a list of chores you have to go elsewhere to do.
+      // Windowed by the BAND, like every other view. This read a fixed 30 days
+      // while the counters above it read the band, so the two disagreed the
+      // moment any history fell outside it: at 24h the band said 256 runs over a
+      // table listing 328. That is precisely what the note below forbids, and it
+      // was invisible only because every run in this database is a day old.
+      const raw = await orchCache.get(`runs-data:${hours}`, () => readRuns(hoursAgo(hours)))
+      const shapedAt = Date.now()
+      // The counters and the live table come from the orchestrator's own state,
+      // over the SAME window as the run list beneath them - a band that counts a
+      // different period than the table under it is worse than no band.
+      const stateDays = Math.max(1, Math.round(hours / 24))
+      const st = await orchCache.get(`state:${stateDays}`, () => orchState(stateDays))
+      // Shaped BEFORE it is filtered, because `project` is not a column. It is
+      // derived by attribute() from the run's cwd and prompt, so filtering the
+      // raw row would be filtering on r.repo alone - and would then disagree
+      // with the project this very table prints in the row beside it.
+      const shaped = raw.map((r) => {
+        const a = attributeRun(r)
+        return {
+          id: r.id,
+          agent: r.agent,
+          job: r.job,
+          task: a.key,
+          project: a.project ?? r.repo,
+          at: r.started_at,
+          engaged: human(engagedMs(executionSpans(r, shapedAt))),
+          running: r.status === 'running',
+          status: r.status,
+          delivery: r.delivery ?? null,
+          quality: r.quality ?? null,
+          tokens: chainVendorTokens(r),
+          costUsd: r.vendor_cost_usd,
+          probe: !!r.probe,
+          head: r.prompt_head,
+          lens: promptLens(r.prompt_path),
+          evidence_excluded: r.evidence_excluded ?? null,
+        }
+      })
+
+      // The dropdowns offer what EXISTS, taken from the whole unfiltered window
+      // rather than from the result. A filter that removes its own options from
+      // the list is one you cannot climb back out of without a reload.
+      const uniq = (xs: (string | null)[]) =>
+        [...new Set(xs.filter((x): x is string => !!x))].sort()
+      const facets = {
+        agents: uniq(shaped.map((r) => r.agent)),
+        projects: uniq(shaped.map((r) => r.project)),
+      }
+
+      // Filtered BEFORE the 120 cap, never after. Capped first, picking one project
+      // would mean "that project's runs among the newest 120 runs" rather than "the
+      // newest 120 runs for that project" - a filter that quietly searches a window
+      // instead of the history, and reports a project as idle because a busier
+      // one crowded it out.
+      const keep = shaped.filter(
+        (r) => (!f.agent || r.agent === f.agent) && (!f.project || r.project === f.project),
+      )
+
+      // Tokens stay per agent: vendors count them differently, so they are never summed.
+      // Runs are one currency and are counted beside them.
+      const vendorTotals = new Map<string, number>()
+      const agentRuns = new Map<string, number>()
+      for (const run of shaped) {
+        agentRuns.set(run.agent, (agentRuns.get(run.agent) ?? 0) + 1)
+        if (run.tokens == null) continue
+        vendorTotals.set(run.agent, (vendorTotals.get(run.agent) ?? 0) + run.tokens)
+      }
+      const vendors = [...vendorTotals]
+        .map(([agent, tokens]) => ({ agent, tokens, runs: agentRuns.get(agent) ?? 0 }))
+        .sort((a, b) => b.tokens - a.tokens || a.agent.localeCompare(b.agent))
+
       return {
-        id: r.id,
-        agent: r.agent,
-        job: r.job,
-        task: a.key,
-        project: a.project ?? r.repo,
-        at: r.started_at,
-        engaged: human(engagedMs(executionSpans(r, now))),
-        running: r.status === 'running',
-        status: r.status,
-        delivery: r.delivery ?? null,
-        quality: r.quality ?? null,
-        tokens: chainVendorTokens(r),
-        costUsd: r.vendor_cost_usd,
-        probe: !!r.probe,
-        head: r.prompt_head,
-        lens: promptLens(r.prompt_path),
-        evidence_excluded: r.evidence_excluded ?? null,
+        totals: {
+          runs: st.totals.runs,
+          scored: st.totals.scored,
+          voided: st.totals.voided ?? 0,
+          failed: st.totals.failed,
+          stale_n: st.totals.stale_n,
+        },
+        vendors,
+        unscored: st.unscored,
+        stale: st.stale,
+        filters: { agent: f.agent, project: f.project },
+        facets,
+        keep,
+        live: st.live.filter(
+          (l) => (!f.agent || l.agent === f.agent) && (!f.project || (l.repo ?? '') === f.project),
+        ),
       }
     })
 
-    // The dropdowns offer what EXISTS, taken from the whole unfiltered window
-    // rather than from the result. A filter that removes its own options from
-    // the list is one you cannot climb back out of without a reload.
-    const uniq = (xs: (string | null)[]) => [...new Set(xs.filter((x): x is string => !!x))].sort()
-    const facets = {
-      agents: uniq(shaped.map((r) => r.agent)),
-      projects: uniq(shaped.map((r) => r.project)),
-    }
-
-    // Filtered BEFORE the 120 cap, never after. Capped first, picking one project
-    // would mean "that project's runs among the newest 120 runs" rather than "the
-    // newest 120 runs for that project" - a filter that quietly searches a window
-    // instead of the history, and reports a project as idle because a busier
-    // one crowded it out.
-    const keep = shaped.filter(
-      (r) => (!f.agent || r.agent === f.agent) && (!f.project || r.project === f.project),
-    )
-
-    const vendorTotals = new Map<string, number>()
-    for (const run of shaped) {
-      if (run.tokens == null) continue
-      vendorTotals.set(run.agent, (vendorTotals.get(run.agent) ?? 0) + run.tokens)
-    }
-    const vendors = [...vendorTotals]
-      .map(([agent, tokens]) => ({ agent, tokens }))
-      .sort((a, b) => b.tokens - a.tokens || a.agent.localeCompare(b.agent))
+    const rows = built.keep.map((row) => ({
+      ...row,
+      display: runRowDisplay(row, now),
+    }))
+    const matchedRows = rows.filter((row) => matchesRunSearch(row, search, now))
+    const offset = appliedRunOffset(requestedOffset, matchedRows.length, limit)
+    const live = built.live
+      .map((l) => {
+        const row: SearchableLiveRun = {
+          id: l.id,
+          agent: l.agent,
+          job: l.job,
+          repo: l.repo,
+          elapsedMs: now - new Date(l.started_at).getTime(),
+          prompt_head: l.prompt_head,
+        }
+        return { ...l, elapsedMs: row.elapsedMs, display: liveRowDisplay(row) }
+      })
+      .filter((mapped) =>
+        matchesRunSearch(
+          {
+            id: mapped.id,
+            agent: mapped.agent,
+            job: mapped.job,
+            repo: mapped.repo,
+            elapsedMs: mapped.elapsedMs,
+            prompt_head: mapped.prompt_head,
+          },
+          search,
+          now,
+        ),
+      )
 
     return {
-      totals: {
-        runs: st.totals.runs,
-        scored: st.totals.scored,
-        voided: st.totals.voided ?? 0,
-        failed: st.totals.failed,
-        stale_n: st.totals.stale_n,
-      },
-      vendors,
-      unscored: st.unscored,
-      stale: st.stale,
-      filters: f,
-      facets,
-      matched: keep.length,
+      totals: built.totals,
+      vendors: built.vendors,
+      unscored: built.unscored,
+      stale: built.stale,
+      filters: built.filters,
+      facets: built.facets,
+      matched: matchedRows.length,
+      offset,
+      limit,
       // Filtered on the same two axes, so the panel above the table cannot
       // contradict it. A live run carries only its `repo` - it has not been
       // through attribute() - which agrees with `project` for every repo this
       // machine has, and is the honest best available for a run still going.
-      live: st.live
-        .filter(
-          (l) => (!f.agent || l.agent === f.agent) && (!f.project || (l.repo ?? '') === f.project),
-        )
-        .map((l) => ({ ...l, elapsedMs: now - new Date(l.started_at).getTime() })),
+      // Search applies here too; the live panel is not paged.
+      live,
       // Uncapped, like a task's run list. The 120 was reaching back three and a
       // half hours on a table claiming 328 matches - a limit that decides how
       // far you can see, while the band is the control that is supposed to.
       // The band bounds this now, so a second hidden bound only fights it.
-      rows: keep,
+      rows: matchedRows.slice(offset, offset + limit),
     }
   }
 
@@ -721,6 +813,11 @@ export function serve(port: number) {
           req,
           router: appRouter,
           createContext,
+          // A write can change anything an orch read returned, so the next read starts fresh.
+          responseMeta({ type }) {
+            if (type === 'mutation') orchCache.clear()
+            return {}
+          },
         })
       }
 

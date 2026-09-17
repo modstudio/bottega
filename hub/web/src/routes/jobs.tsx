@@ -2,12 +2,12 @@ import { useQuery } from '@tanstack/react-query'
 import { createFileRoute, useNavigate } from '@tanstack/react-router'
 import { useMemo, useState } from 'react'
 import { Collection, type CollectionColumn } from '@/components/collection'
-import { PageHeader } from '@/components/design-system'
-import { DisplayRow } from '@/components/fields'
 import { SnapshotHeader } from '@/components/hosted-snapshot'
-import { Sheet } from '@/components/sheet'
 import { isHostedMode } from '@/lib/hub-mode'
 import { type JobRow, trpc } from '@/trpc/client'
+import { Companion } from '@/ui/companion/companion'
+import { DisplayRow } from '@/ui/form-layout/form-layout'
+import { PageHeader } from '@/ui/page-header/page-header'
 
 export const Route = createFileRoute('/jobs')({
   validateSearch: (search: Record<string, unknown>) => ({
@@ -18,7 +18,7 @@ export const Route = createFileRoute('/jobs')({
 
 const columns: CollectionColumn<JobRow>[] = [
   { id: 'name', label: 'Job', render: (row) => <strong>{row.name}</strong> },
-  { id: 'what', label: 'What', render: (row) => <span className="font-sans">{row.what}</span> },
+  { id: 'what', label: 'What', render: (row) => <span className="">{row.what}</span> },
   { id: 'needs', label: 'Needs', render: (row) => Object.keys(row.needs).join(', ') || '-' },
   { id: 'prefer', label: 'Prefers', render: (row) => row.prefer.join(', ') },
 ]
@@ -73,55 +73,73 @@ function JobsView({
     [data, search],
   )
   const selected = data?.find((row) => row.name === job)
-  const close = () => void navigate({ to: '/jobs', search: { job: undefined }, replace: true })
+  const close = () =>
+    void navigate({ to: '/jobs', search: { job: undefined }, replace: true, resetScroll: false })
   return (
     <section>
       {header ?? (
         <PageHeader title="Jobs" subtitle="Code-declared work the orchestrator can route" />
       )}
-      {error ? <p className="text-destructive">{error.message}</p> : null}
+      {error ? (
+        <p data-tone="error" className="text-status-text">
+          {error.message}
+        </p>
+      ) : null}
       <Collection
         title="Job types"
         count={rows.length}
         search={{ query: search, onQueryChange: setSearch, placeholder: 'Search jobs' }}
         columns={columns}
+        panel={
+          job ? (
+            <Companion
+              onClose={close}
+              title={selected?.name ?? job ?? 'Job'}
+              subtitle="Code-declared; inspectable, not editable"
+            >
+              {selected ? (
+                <>
+                  <DisplayRow label="What" value={selected.what} />
+                  <DisplayRow
+                    label="Needs"
+                    value={
+                      Object.entries(selected.needs)
+                        .filter(([, needed]) => needed)
+                        .map(([name]) => name)
+                        .join(', ') || 'none'
+                    }
+                  />
+                  <DisplayRow
+                    label="Context tokens"
+                    value={selected.contextTokens.toLocaleString()}
+                  />
+                  <DisplayRow
+                    label="Timeout"
+                    value={
+                      selected.timeoutMs
+                        ? `${selected.timeoutMs / 60_000} minutes`
+                        : 'agent default'
+                    }
+                  />
+                  <DisplayRow label="Prefer" value={selected.prefer.join(' → ')} />
+                  <DisplayRow label="Findings" value={selected.findings ? 'yes' : 'no'} />
+                </>
+              ) : (
+                <p data-tone="error" className="text-status-text">
+                  Unknown job.
+                </p>
+              )}
+            </Companion>
+          ) : undefined
+        }
+        selectedKey={job}
         rows={rows}
         getKey={(row) => row.name}
-        onOpen={(row) => void navigate({ to: '/jobs', search: { job: row.name } })}
+        onOpen={(row) =>
+          void navigate({ to: '/jobs', search: { job: row.name }, resetScroll: false })
+        }
         empty={{ title: pending ? 'Loading jobs...' : 'No jobs match.' }}
       />
-      <Sheet
-        open={Boolean(job)}
-        onClose={close}
-        title={selected?.name ?? job ?? 'Job'}
-        subtitle="Code-declared; inspectable, not editable"
-      >
-        {selected ? (
-          <>
-            <DisplayRow label="What" value={selected.what} />
-            <DisplayRow
-              label="Needs"
-              value={
-                Object.entries(selected.needs)
-                  .filter(([, needed]) => needed)
-                  .map(([name]) => name)
-                  .join(', ') || 'none'
-              }
-            />
-            <DisplayRow label="Context tokens" value={selected.contextTokens.toLocaleString()} />
-            <DisplayRow
-              label="Timeout"
-              value={
-                selected.timeoutMs ? `${selected.timeoutMs / 60_000} minutes` : 'agent default'
-              }
-            />
-            <DisplayRow label="Prefer" value={selected.prefer.join(' → ')} />
-            <DisplayRow label="Findings" value={selected.findings ? 'yes' : 'no'} />
-          </>
-        ) : (
-          <p className="text-destructive">Unknown job.</p>
-        )}
-      </Sheet>
     </section>
   )
 }

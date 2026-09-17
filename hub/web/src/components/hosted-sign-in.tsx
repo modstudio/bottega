@@ -1,9 +1,9 @@
 import { useNavigate } from '@tanstack/react-router'
 import { useState } from 'react'
-import { Button } from '@/components/button'
-import { PageHeader } from '@/components/design-system'
-import { Input } from '@/components/input'
 import { signInWithEmail } from '@/lib/hosted-auth'
+import { Button } from '@/ui/button/button'
+import { Input } from '@/ui/field/input'
+import { PageHeader } from '@/ui/page-header/page-header'
 
 export function HostedSignIn() {
   const navigate = useNavigate()
@@ -52,8 +52,12 @@ export function HostedSignIn() {
             onChange={(event) => setPassword(event.target.value)}
           />
         </label>
-        {error ? <p className="text-destructive">{error}</p> : null}
-        <Button type="submit" disabled={pending}>
+        {error ? (
+          <p data-tone="error" className="text-status-text">
+            {error}
+          </p>
+        ) : null}
+        <Button variant="primary" type="submit" disabled={pending}>
           {pending ? 'Signing in...' : 'Sign in'}
         </Button>
       </form>

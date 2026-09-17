@@ -1,20 +1,20 @@
 import { useQuery } from '@tanstack/react-query'
 import { useNavigate } from '@tanstack/react-router'
-import { Badge } from '@/components/badge'
 import { ProjectMark } from '@/components/design-system'
-import { DisplayRow } from '@/components/fields'
 import { hostedProjectColors } from '@/components/hosted-projects'
 import { type HostedLens, HostedLensList } from '@/components/hosted-reviews'
-import { Sheet } from '@/components/sheet'
 import { duration } from '@/lib/format'
 import { trpc } from '@/trpc/client'
+import { Badge } from '@/ui/badge/badge'
+import { Companion } from '@/ui/companion/companion'
+import { DisplayRow } from '@/ui/form-layout/form-layout'
 
 export function HostedRunDetail({ id }: { id: string }) {
   const navigate = useNavigate()
   const detail = useQuery(trpc.record.run.queryOptions({ id }))
   const projects = useQuery(trpc.record.projects.queryOptions())
   const colors = hostedProjectColors(projects.data ?? [])
-  const close = () => void navigate({ to: '/runs' })
+  const close = () => void navigate({ to: '/runs', resetScroll: false })
   const run = detail.data
   const score = run?.score
   const scoreText = score
@@ -23,29 +23,28 @@ export function HostedRunDetail({ id }: { id: string }) {
 
   if (detail.isPending) {
     return (
-      <Sheet open onClose={close} title={`Run ${id}`} subtitle="Loading run...">
-        <p className="text-muted-foreground">Loading...</p>
-      </Sheet>
+      <Companion onClose={close} title={`Run ${id}`} subtitle="Loading run...">
+        <p className="text-text-muted">Loading...</p>
+      </Companion>
     )
   }
   if (detail.error || !run) {
     return (
-      <Sheet open onClose={close} title={`Run ${id}`}>
-        <p className="text-destructive">
+      <Companion onClose={close} title={`Run ${id}`}>
+        <p data-tone="error" className="text-status-text">
           Could not load this run. {detail.error?.message ?? 'Not found'}
         </p>
-      </Sheet>
+      </Companion>
     )
   }
 
   const lenses = (run.reviews ?? []) as HostedLens[]
   return (
-    <Sheet
-      open
+    <Companion
       onClose={close}
       title={`Run ${id}`}
       subtitle={[run.agent, run.job, run.projectName].filter(Boolean).join(' · ')}
-      actions={<Badge variant="outline">{run.status}</Badge>}
+      actions={<Badge>{run.status}</Badge>}
     >
       <DisplayRow label="Project" value={<ProjectMark name={run.projectName} colors={colors} />} />
       <DisplayRow label="Agent" value={run.agent} />
@@ -60,10 +59,10 @@ export function HostedRunDetail({ id }: { id: string }) {
       <DisplayRow label="Score" value={scoreText ?? 'Unscored'} />
       {score?.note ? <DisplayRow label="Score note" value={score.note} /> : null}
       {run.evidenceExcluded ? (
-        <p className="meta mb-3">Not routing evidence: {run.evidenceExcluded}</p>
+        <p className="text-sm text-text-muted mb-3">Not routing evidence: {run.evidenceExcluded}</p>
       ) : null}
       <DisplayRow label="Prompt" value={run.promptHead} />
       <HostedLensList lenses={lenses} />
-    </Sheet>
+    </Companion>
   )
 }

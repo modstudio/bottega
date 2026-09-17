@@ -2,12 +2,12 @@ import { useQuery } from '@tanstack/react-query'
 import { createFileRoute, useNavigate } from '@tanstack/react-router'
 import { useMemo, useState } from 'react'
 import { Collection, type CollectionColumn } from '@/components/collection'
-import { PageHeader } from '@/components/design-system'
-import { DisplayRow } from '@/components/fields'
 import { SnapshotHeader } from '@/components/hosted-snapshot'
-import { Sheet } from '@/components/sheet'
 import { isHostedMode } from '@/lib/hub-mode'
 import { type AgentRow, trpc } from '@/trpc/client'
+import { Companion } from '@/ui/companion/companion'
+import { DisplayRow } from '@/ui/form-layout/form-layout'
+import { PageHeader } from '@/ui/page-header/page-header'
 
 export const Route = createFileRoute('/agents')({
   validateSearch: (search: Record<string, unknown>) => ({
@@ -82,44 +82,62 @@ function AgentsView({
     [data, search],
   )
   const selected = data?.find((row) => row.name === agent)
-  const close = () => void navigate({ to: '/agents', search: { agent: undefined }, replace: true })
+  const close = () =>
+    void navigate({
+      to: '/agents',
+      search: { agent: undefined },
+      replace: true,
+      resetScroll: false,
+    })
   return (
     <section>
       {header ?? <PageHeader title="Agents" subtitle="Code-declared runners and their limits" />}
-      {error ? <p className="text-destructive">{error.message}</p> : null}
+      {error ? (
+        <p data-tone="error" className="text-status-text">
+          {error.message}
+        </p>
+      ) : null}
       <Collection
         title="Agents"
         count={rows.length}
         search={{ query: search, onQueryChange: setSearch, placeholder: 'Search agents' }}
         columns={columns}
+        panel={
+          agent ? (
+            <Companion
+              onClose={close}
+              title={selected?.name ?? agent ?? 'Agent'}
+              subtitle="Code-declared; inspectable, not editable"
+            >
+              {selected ? (
+                <>
+                  <DisplayRow label="Model" value={selected.model} />
+                  <DisplayRow
+                    label="Capabilities"
+                    value={Object.entries(selected.caps)
+                      .map(([name, has]) => `${name}: ${has ? 'yes' : 'no'}`)
+                      .join(' · ')}
+                  />
+                  <DisplayRow label="Context tokens" value={finite(selected.contextTokens)} />
+                  <DisplayRow label="Max prompt bytes" value={finite(selected.maxPromptBytes)} />
+                  <DisplayRow label="Timeout" value={`${selected.timeoutMs / 60_000} minutes`} />
+                </>
+              ) : (
+                <p data-tone="error" className="text-status-text">
+                  Unknown agent.
+                </p>
+              )}
+            </Companion>
+          ) : undefined
+        }
+        selectedKey={agent}
         rows={rows}
         getKey={(row) => row.name}
-        onOpen={(row) => void navigate({ to: '/agents', search: { agent: row.name } })}
+        onOpen={(row) =>
+          void navigate({ to: '/agents', search: { agent: row.name }, resetScroll: false })
+        }
         empty={{ title: pending ? 'Loading agents...' : 'No agents match.' }}
       />
-      <Sheet
-        open={Boolean(agent)}
-        onClose={close}
-        title={selected?.name ?? agent ?? 'Agent'}
-        subtitle="Code-declared; inspectable, not editable"
-      >
-        {selected ? (
-          <>
-            <DisplayRow label="Model" value={selected.model} />
-            <DisplayRow
-              label="Capabilities"
-              value={Object.entries(selected.caps)
-                .map(([name, has]) => `${name}: ${has ? 'yes' : 'no'}`)
-                .join(' · ')}
-            />
-            <DisplayRow label="Context tokens" value={finite(selected.contextTokens)} />
-            <DisplayRow label="Max prompt bytes" value={finite(selected.maxPromptBytes)} />
-            <DisplayRow label="Timeout" value={`${selected.timeoutMs / 60_000} minutes`} />
-          </>
-        ) : (
-          <p className="text-destructive">Unknown agent.</p>
-        )}
-      </Sheet>
     </section>
   )
 }

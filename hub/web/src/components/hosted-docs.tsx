@@ -1,27 +1,24 @@
 import { useQuery } from '@tanstack/react-query'
-import { Outlet, useNavigate } from '@tanstack/react-router'
+import { useNavigate } from '@tanstack/react-router'
 import type { inferRouterOutputs } from '@trpc/server'
 import { ChevronRight } from 'lucide-react'
 import { useMemo, useState } from 'react'
-import { Button } from '@/components/button'
 import { Collection, type CollectionColumn } from '@/components/collection'
-import { PageHeader } from '@/components/design-system'
+import { useDetailPanel } from '@/lib/detail-panel'
 import { compactBytes, relativeTime } from '@/lib/format'
 import { trpc } from '@/trpc/client'
+import { Button } from '@/ui/button/button'
+import { PageHeader } from '@/ui/page-header/page-header'
 import type { AppRouter } from '../../../src/trpc/router.ts'
 
 type Doc = inferRouterOutputs<AppRouter>['record']['docs']['items'][number]
 
 export function HostedDocs() {
-  return (
-    <>
-      <HostedDocsList />
-      <Outlet />
-    </>
-  )
+  return <HostedDocsList />
 }
 
 function HostedDocsList() {
+  const panel = useDetailPanel()
   const navigate = useNavigate()
   const [pages, setPages] = useState<Doc[][]>([])
   const [cursor, setCursor] = useState<string>()
@@ -46,7 +43,7 @@ function HostedDocsList() {
     {
       id: 'size',
       label: 'Size',
-      className: 'num',
+      numeric: true,
       render: (doc) => compactBytes(new TextEncoder().encode(doc.body).length),
     },
     { id: 'updated', label: 'Updated', render: (doc) => relativeTime(doc.updatedAt) },
@@ -55,8 +52,13 @@ function HostedDocsList() {
   return (
     <section>
       <PageHeader title="Docs" />
-      {query.error ? <p className="text-destructive">{query.error.message}</p> : null}
+      {query.error ? (
+        <p data-tone="error" className="text-status-text">
+          {query.error.message}
+        </p>
+      ) : null}
       <Collection
+        panel={panel}
         title="Documents"
         count={rows.length}
         search={{ query: search, onQueryChange: setSearch, placeholder: 'Filter slug or title' }}
@@ -76,7 +78,7 @@ function HostedDocsList() {
         <div className="mt-4">
           <Button
             size="sm"
-            variant="outline"
+            variant="secondary"
             disabled={query.isFetching}
             onClick={() => {
               setPages((current) => [...current, applied.items])

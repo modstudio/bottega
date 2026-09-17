@@ -1,62 +1,28 @@
 import { createFileRoute } from '@tanstack/react-router'
 import { useState } from 'react'
-import { Badge } from '@/components/badge'
-import { Button } from '@/components/button'
-import { Checkbox } from '@/components/checkbox'
 import { Collection } from '@/components/collection'
-import {
-  EmptyState,
-  LiveDot,
-  PageHeader,
-  ProjectMark,
-  SectionTitle,
-  Segmented,
-  SourceMark,
-  StatRow,
-  StatTile,
-} from '@/components/design-system'
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogHeader,
-  DialogTitle,
-} from '@/components/dialog'
-import { Copyable, DisplayRow, FieldSection, SettingBlock } from '@/components/fields'
-import { Input } from '@/components/input'
-import { Select } from '@/components/select'
-import { Sheet } from '@/components/sheet'
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/table'
-import { Tabs, TabsList, TabsTrigger } from '@/components/tabs'
-import { Textarea } from '@/components/textarea'
-
-const semanticColors = [
-  { name: 'success', light: '#1a7f4b', dark: '#4cc98a' },
-  { name: 'warning', light: '#8a6317', dark: '#d9a441' },
-  { name: 'info', light: '#2b3552', dark: '#2b3552' },
-  { name: 'live', light: '#1a7f4b', dark: '#4cc98a' },
-  { name: 'danger', light: '#9a3412', dark: '#e88a63' },
-] as const
-
-const badgeVariants = [
-  'default',
-  'secondary',
-  'destructive',
-  'outline',
-  'success',
-  'warning',
-  'info',
-  'live',
-  'danger',
-] as const
+import { DesignCatalog } from '@/components/design-catalog'
+import { LiveDot, ProjectMark, SourceMark } from '@/components/design-system'
+import { Badge } from '@/ui/badge/badge'
+import { Button } from '@/ui/button/button'
+import { Companion } from '@/ui/companion/companion'
+import { EmptyState } from '@/ui/empty-state/empty-state'
+import { Input } from '@/ui/field/input'
+import { Copyable, DisplayRow, FieldSection, SettingBlock } from '@/ui/form-layout/form-layout'
+import { Identifier } from '@/ui/identifier/identifier'
+import { Select } from '@/ui/listbox/select'
+import { PageHeader, SectionTitle } from '@/ui/page-header/page-header'
+import { Segmented } from '@/ui/segmented/segmented'
+import { Sheet } from '@/ui/sheet/sheet'
+import { StatRow, StatTile } from '@/ui/stat/stat'
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/ui/table/table'
+import { Tabs } from '@/ui/tabs/tabs'
 
 export const Route = createFileRoute('/design')({ component: DesignPage })
 
 function DesignPage() {
-  const [select, setSelect] = useState('one')
   const [segment, setSegment] = useState('one')
   const [tab, setTab] = useState('one')
-  const [dialog, setDialog] = useState(false)
   const [sheet, setSheet] = useState<'hub' | 'mcp' | 'git' | null>(null)
   const [collectionSearch, setCollectionSearch] = useState('')
   const samples = [
@@ -111,96 +77,21 @@ function DesignPage() {
     <section>
       <PageHeader title="Design" subtitle="Hub's inspectable token and component surface" />
 
-      <SectionTitle detail="Hub-owned meanings derived from the token scales">
-        Semantic colour
+      <DesignCatalog />
+
+      <SectionTitle detail="Tabs switch panels of one record; a segmented control filters a list">
+        Tabs and segmented
       </SectionTitle>
-      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
-        {semanticColors.map((color) => (
-          <div key={color.name} className="border border-border">
-            <div className="grid h-16 grid-cols-2">
-              <div style={{ background: color.light }}>
-                <span className="sr-only">{color.name} light</span>
-              </div>
-              <div style={{ background: color.dark }}>
-                <span className="sr-only">{color.name} dark</span>
-              </div>
-            </div>
-            <div className="p-2">
-              <div className="font-semibold">--{color.name}</div>
-              <div className="meta">light {color.light}</div>
-              <div className="meta">dark {color.dark}</div>
-            </div>
-          </div>
-        ))}
-      </div>
-
-      <SectionTitle>Typography</SectionTitle>
-      <div className="grid gap-px border border-border bg-border sm:grid-cols-2">
-        {[
-          ['--font-ui', 'Interface text, figures 0123456789'],
-          ['--font-heading', 'Headings carry the same terminal voice'],
-          ['--font-prose', 'Long-form markdown remains comfortable to read.'],
-          ['--font-mono', 'code --flag=value 0123456789'],
-        ].map(([role, sample]) => (
-          <div key={role} className="bg-background p-4" style={{ fontFamily: `var(${role})` }}>
-            <div className="meta mb-2">{role}</div>
-            <div
-              className={role === '--font-heading' ? 'text-lg font-semibold tracking-tight' : ''}
-            >
-              {sample}
-            </div>
-          </div>
-        ))}
-      </div>
-
-      <SectionTitle>Button</SectionTitle>
-      <div className="flex flex-wrap gap-2">
-        <Button>Default</Button>
-        <Button variant="destructive">Destructive</Button>
-        <Button variant="outline">Outline</Button>
-        <Button variant="ghost">Ghost</Button>
-        <Button size="sm">Small</Button>
-        <Button size="icon" aria-label="Icon button">
-          +
-        </Button>
-        <Button disabled>Disabled</Button>
-      </div>
-
-      <SectionTitle>Badge</SectionTitle>
-      <div className="flex flex-wrap gap-2">
-        {badgeVariants.map((variant) => (
-          <Badge key={variant} variant={variant}>
-            {variant}
-          </Badge>
-        ))}
-      </div>
-
-      <SectionTitle>Fields</SectionTitle>
-      <div className="grid max-w-2xl gap-3 sm:grid-cols-2">
-        <Input aria-label="Sample input" defaultValue="Input" />
-        <Select
-          label="Sample select"
-          value={select}
-          options={[
-            { value: 'one', label: 'First option' },
-            { value: 'two', label: 'Second option', note: 'noted' },
-          ]}
-          onChange={setSelect}
-        />
-        <Textarea aria-label="Sample textarea" defaultValue="Textarea" />
-        <label htmlFor="sample-checkbox" className="flex items-center gap-2">
-          <Checkbox id="sample-checkbox" defaultChecked /> Checkbox
-        </label>
-      </div>
-
-      <SectionTitle>Selection</SectionTitle>
       <div className="flex flex-wrap items-center gap-4">
-        <Tabs value={tab} onValueChange={setTab}>
-          <TabsList>
-            <TabsTrigger value="one">First tab</TabsTrigger>
-            <TabsTrigger value="two">Second tab</TabsTrigger>
-          </TabsList>
-        </Tabs>
+        <Tabs
+          label="Sample sections"
+          value={tab}
+          onChange={setTab}
+          items={[
+            { value: 'one', label: 'Overview' },
+            { value: 'two', label: 'Runs', count: 12 },
+          ]}
+        />
         <Segmented
           label="Sample segmented control"
           value={segment}
@@ -212,58 +103,44 @@ function DesignPage() {
         />
       </div>
 
-      <SectionTitle>Dialog</SectionTitle>
-      <Button variant="outline" onClick={() => setDialog(true)}>
-        Open dialog
-      </Button>
-      <Dialog open={dialog} onOpenChange={setDialog}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>Dialog title</DialogTitle>
-            <DialogDescription>
-              A native dialog rendered through Hub's existing primitive.
-            </DialogDescription>
-          </DialogHeader>
-          <Button onClick={() => setDialog(false)}>Close</Button>
-        </DialogContent>
-      </Dialog>
-
       <SectionTitle>Table</SectionTitle>
-      <div className="border border-border">
+      <div className="border border-border-default">
         <Table>
           <TableHeader>
             <TableRow>
               <TableHead>Component</TableHead>
               <TableHead>State</TableHead>
-              <TableHead className="num">Value</TableHead>
+              <TableHead numeric>Value</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
             <TableRow>
               <TableCell>Table row</TableCell>
               <TableCell>
-                <Badge variant="success">ready</Badge>
+                <Badge tone="success">ready</Badge>
               </TableCell>
-              <TableCell className="num">1,024</TableCell>
+              <TableCell numeric>1,024</TableCell>
             </TableRow>
             <TableRow>
               <TableCell>Quiet row</TableCell>
               <TableCell>
-                <Badge variant="outline">resting</Badge>
+                <Badge>resting</Badge>
               </TableCell>
-              <TableCell className="num">64</TableCell>
+              <TableCell numeric>64</TableCell>
             </TableRow>
           </TableBody>
         </Table>
       </div>
 
-      <SectionTitle>Heterogeneous records</SectionTitle>
+      <SectionTitle detail="Hub records open settings in a Sheet; tracker and git records open read-only in a Companion">
+        Records: table card, Companion and Sheet
+      </SectionTitle>
       <Collection
         title="Sample records"
         count={samples.length}
         search={{ query: collectionSearch, onQueryChange: setCollectionSearch }}
         columns={[
-          { id: 'key', label: 'Key', render: (row) => <strong>{row.key}</strong> },
+          { id: 'key', label: 'Key', render: (row) => <Identifier>{row.key}</Identifier> },
           { id: 'name', label: 'Record', render: (row) => row.name },
           {
             id: 'source',
@@ -277,11 +154,34 @@ function DesignPage() {
         rows={samples}
         getKey={(row) => row.id}
         onOpen={(row) => setSheet(row.id)}
+        selectedKey={selectedSample?.id}
+        panel={
+          selectedSample && selectedSample.id !== 'hub' ? (
+            <Companion
+              title={<Identifier>{selectedSample.key}</Identifier>}
+              subtitle={selectedSample.name}
+              onClose={() => setSheet(null)}
+            >
+              <DisplayRow label="Status" value={selectedSample.status} />
+              {selectedSample.refusals.map(([label, reason]) => (
+                <DisplayRow key={label} label={label} value={reason} />
+              ))}
+            </Companion>
+          ) : undefined
+        }
         empty={{ title: 'No sample records match.' }}
       />
       <Sheet
-        open={!!selectedSample}
+        open={selectedSample?.id === 'hub'}
         onClose={() => setSheet(null)}
+        footer={
+          <>
+            <Button onClick={() => setSheet(null)}>Cancel</Button>
+            <Button variant="primary" onClick={() => setSheet(null)}>
+              Save
+            </Button>
+          </>
+        }
         title={selectedSample?.key ?? 'Sample record'}
         subtitle={selectedSample?.name}
       >
@@ -338,7 +238,7 @@ function DesignPage() {
       </Sheet>
 
       <SectionTitle>Settings and detail grammar</SectionTitle>
-      <div className="max-w-2xl border border-border p-4">
+      <div className="max-w-2xl border border-border-default p-4">
         <FieldSection title="Sample settings" description="A titled group for related controls.">
           <SettingBlock
             label="Example setting"
@@ -359,8 +259,8 @@ function DesignPage() {
       </StatRow>
       <div className="grid gap-4 sm:grid-cols-2">
         <EmptyState title="Nothing here yet." hint="Empty states explain what belongs here." />
-        <div className="flex items-center gap-5 border border-border p-4">
-          <span className="inline-flex items-center gap-2 text-live">
+        <div className="flex items-center gap-5 border border-border-default p-4">
+          <span data-tone="success" className="inline-flex items-center gap-2 text-status-text">
             <LiveDot />
             LiveDot
           </span>

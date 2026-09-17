@@ -1,16 +1,18 @@
 import { useQuery } from '@tanstack/react-query'
-import { Outlet, useNavigate } from '@tanstack/react-router'
+import { useNavigate } from '@tanstack/react-router'
 import { ChevronRight } from 'lucide-react'
 import { useState } from 'react'
-import { Badge } from '@/components/badge'
-import { Button } from '@/components/button'
 import { Collection, type CollectionColumn } from '@/components/collection'
-import { PageHeader, ProjectMark } from '@/components/design-system'
+import { ProjectMark } from '@/components/design-system'
 import { hostedProjectColors } from '@/components/hosted-projects'
-import { Input } from '@/components/input'
-import { duration } from '@/lib/format'
-import { runEasternTime } from '@/lib/run-search'
+import { useDetailPanel } from '@/lib/detail-panel'
+import { duration, runEasternTime } from '@/lib/format'
+import { verdictTone } from '@/lib/verdict-tone'
 import { trpc } from '@/trpc/client'
+import { Badge } from '@/ui/badge/badge'
+import { Button } from '@/ui/button/button'
+import { Input } from '@/ui/field/input'
+import { PageHeader } from '@/ui/page-header/page-header'
 
 type HostedRun = {
   id: string
@@ -29,29 +31,17 @@ type HostedRun = {
 }
 
 function ScoreBadge({ score, status }: { score: HostedRun['score']; status: string }) {
-  if (!score) return <Badge variant="outline">{status}</Badge>
-  const variant =
-    score.quality === 'wrong' || score.delivery === 'none'
-      ? 'danger'
-      : score.quality === 'mixed' || score.delivery === 'partial'
-        ? 'warning'
-        : score.quality === 'right' || score.delivery === 'full'
-          ? 'success'
-          : 'outline'
+  if (!score) return <Badge>{status}</Badge>
   const text = [score.delivery, score.quality, score.fidelity].filter(Boolean).join(' / ')
-  return <Badge variant={variant}>{text}</Badge>
+  return <Badge tone={verdictTone(score.delivery, score.quality)}>{text}</Badge>
 }
 
 export function HostedRuns() {
-  return (
-    <>
-      <HostedRunsList />
-      <Outlet />
-    </>
-  )
+  return <HostedRunsList />
 }
 
 function HostedRunsList() {
+  const panel = useDetailPanel()
   const navigate = useNavigate()
   const [draft, setDraft] = useState({ project: '', agent: '', status: '' })
   const [filters, setFilters] = useState(draft)
@@ -100,19 +90,19 @@ function HostedRunsList() {
     {
       id: 'job',
       label: 'Job',
-      render: (row) => <span className="text-muted-foreground">{row.job}</span>,
+      render: (row) => <span className="text-text-muted">{row.job}</span>,
     },
     { id: 'status', label: 'Status', render: (row) => row.status },
     {
       id: 'latency',
       label: 'Latency',
-      className: 'num',
+      numeric: true,
       render: (row) => (row.latencyMs == null ? '-' : duration(row.latencyMs)),
     },
     {
       id: 'cost',
       label: 'Cost',
-      className: 'num',
+      numeric: true,
       render: (row) => (row.vendorCostUsd == null ? '-' : `$${row.vendorCostUsd.toFixed(2)}`),
     },
     {
@@ -123,7 +113,7 @@ function HostedRunsList() {
     {
       id: 'open',
       label: '',
-      render: () => <ChevronRight size={14} className="text-muted-foreground" />,
+      render: () => <ChevronRight size={14} className="text-text-muted" />,
     },
   ]
 
@@ -152,29 +142,34 @@ function HostedRunsList() {
               value={draft.status}
               onChange={(event) => setDraft({ ...draft, status: event.target.value })}
             />
-            <Button type="submit" size="sm" variant="outline">
+            <Button type="submit" size="sm" variant="secondary">
               Filter
             </Button>
           </form>
         }
       />
       {query.error ? (
-        <p className="text-destructive">could not load: {query.error.message}</p>
+        <p data-tone="error" className="text-status-text">
+          could not load: {query.error.message}
+        </p>
       ) : null}
       <Collection
+        panel={panel}
         title="Runs"
         count={rows.length}
         columns={columns}
         rows={rows}
         getKey={(row) => row.id}
-        onOpen={(row) => void navigate({ to: '/runs/$id', params: { id: row.id } })}
+        onOpen={(row) =>
+          void navigate({ to: '/runs/$id', params: { id: row.id }, resetScroll: false })
+        }
         empty={{
           title: query.isPending ? 'Loading runs...' : 'No runs match these filters.',
         }}
       />
       {applied?.nextCursor ? (
         <div className="mt-4">
-          <Button variant="outline" size="sm" disabled={query.isFetching} onClick={loadMore}>
+          <Button variant="secondary" size="sm" disabled={query.isFetching} onClick={loadMore}>
             {query.isFetching ? 'Loading...' : 'Load more'}
           </Button>
         </div>

@@ -1,0 +1,76 @@
+/* Prose-like markdown: mono for code, tight headings, no extra colours. */
+.markdown h1,
+.markdown h2,
+.markdown h3,
+.markdown h4,
+.markdown h5,
+.markdown h6 {
+  margin: 0.6em 0 0.3em;
+  font-weight: 600;
+  line-height: 1.25;
+}
+.markdown h1 {
+  font-size: 1.2rem;
+}
+.markdown h2 {
+  font-size: 1.05rem;
+}
+.markdown h3 {
+  font-size: 1rem;
+}
+.markdown p,
+.markdown ul,
+.markdown ol,
+.markdown pre,
+.markdown blockquote,
+.markdown table {
+  margin: 0.45em 0;
+}
+.markdown ul,
+.markdown ol {
+  padding-left: 1.4em;
+}
+.markdown code,
+.markdown pre {
+  font-family: var(--family-mono);
+}
+.markdown code {
+  padding: 0.1em 0.28em;
+  background: var(--surface-sunken);
+  font-size: 0.9em;
+}
+.markdown pre {
+  overflow: auto;
+  padding: 0.7em 0.8em;
+  background: var(--surface-sunken);
+}
+.markdown pre code {
+  padding: 0;
+  background: none;
+}
+.markdown a {
+  color: inherit;
+  text-decoration: underline;
+}
+.markdown blockquote {
+  padding-left: 0.75em;
+  border-left: 2px solid var(--border-default);
+}
+.markdown hr {
+  margin: 0.8em 0;
+  border: 0;
+  border-top: 1px solid var(--border-default);
+}
+.markdown table {
+  width: 100%;
+  border-collapse: collapse;
+}
+.markdown th,
+.markdown td {
+  padding: 0.2em 0.5em;
+  border: 1px solid var(--border-default);
+  text-align: left;
+}
+.markdown th {
+  font-weight: 600;
+}

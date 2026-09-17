@@ -1,13 +1,14 @@
 import { useMutation, useQuery } from '@tanstack/react-query'
 import { createFileRoute } from '@tanstack/react-router'
 import { useState } from 'react'
-import { Badge } from '@/components/badge'
-import { Button } from '@/components/button'
-import { Checkbox } from '@/components/checkbox'
-import { EmptyState, PageHeader } from '@/components/design-system'
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/table'
-import { toast } from '@/components/toaster'
 import { queryClient, trpc } from '@/trpc/client'
+import { Badge } from '@/ui/badge/badge'
+import { Button } from '@/ui/button/button'
+import { Checkbox } from '@/ui/checkbox/checkbox'
+import { EmptyState } from '@/ui/empty-state/empty-state'
+import { PageHeader } from '@/ui/page-header/page-header'
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/ui/table/table'
+import { toast } from '@/ui/toast/toast'
 
 export const Route = createFileRoute('/notes')({ component: NotesPage })
 
@@ -29,10 +30,7 @@ function NotesPage() {
         title="Notes"
         subtitle="The suggestion box"
         actions={
-          <label
-            htmlFor="show-stale"
-            className="flex items-center gap-2 text-sm text-muted-foreground"
-          >
+          <label htmlFor="show-stale" className="flex items-center gap-2 text-sm text-text-muted">
             <Checkbox
               id="show-stale"
               checked={stale}
@@ -42,9 +40,13 @@ function NotesPage() {
           </label>
         }
       />
-      {notes.error ? <p className="text-destructive">{notes.error.message}</p> : null}
+      {notes.error ? (
+        <p data-tone="error" className="text-status-text">
+          {notes.error.message}
+        </p>
+      ) : null}
       {notes.data?.length ? (
-        <div className="border border-border">
+        <div className="border border-border-default">
           <Table>
             <TableHeader>
               <TableRow>
@@ -61,7 +63,7 @@ function NotesPage() {
                 <TableRow key={note.id}>
                   <TableCell>
                     <div className="max-w-xl whitespace-pre-wrap">{note.text}</div>
-                    <div className="mt-1 text-xs text-muted-foreground">
+                    <div className="mt-1 text-xs text-text-muted">
                       #{note.id} · {note.last_seen_at.slice(0, 16).replace('T', ' ')}
                     </div>
                   </TableCell>
@@ -70,18 +72,18 @@ function NotesPage() {
                   <TableCell>{note.sightings}</TableCell>
                   <TableCell>
                     {note.promoted_task ? (
-                      <Badge variant="outline">{note.promoted_task}</Badge>
+                      <Badge identifier>{note.promoted_task}</Badge>
                     ) : note.stale_at ? (
-                      <Badge variant="danger">stale</Badge>
+                      <Badge tone="error">stale</Badge>
                     ) : (
-                      <Badge variant="outline">open</Badge>
+                      <Badge>open</Badge>
                     )}
                   </TableCell>
                   <TableCell>
                     {!note.promoted_task && !note.stale_at ? (
                       <Button
                         size="sm"
-                        variant="outline"
+                        variant="secondary"
                         disabled={promote.isPending}
                         onClick={() => promote.mutate({ id: note.id })}
                       >
@@ -95,7 +97,7 @@ function NotesPage() {
           </Table>
         </div>
       ) : notes.isPending ? (
-        <p className="text-muted-foreground">Loading notes...</p>
+        <p className="text-text-muted">Loading notes...</p>
       ) : (
         <EmptyState
           title={stale ? 'No stale notes.' : 'No open notes.'}

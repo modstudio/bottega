@@ -2,14 +2,15 @@ import { useMutation, useQuery } from '@tanstack/react-query'
 import { createFileRoute, useNavigate } from '@tanstack/react-router'
 import { Pencil, Save, Trash2, X } from 'lucide-react'
 import { useEffect, useState } from 'react'
-import { Button } from '@/components/button'
 import { HostedDocDetail } from '@/components/hosted-doc-detail'
-import { Input } from '@/components/input'
 import { Markdown } from '@/components/markdown'
-import { Sheet } from '@/components/sheet'
-import { Textarea } from '@/components/textarea'
 import { isHostedMode } from '@/lib/hub-mode'
 import { queryClient, trpc } from '@/trpc/client'
+import { Button } from '@/ui/button/button'
+import { Input } from '@/ui/field/input'
+import { Textarea } from '@/ui/field/textarea'
+import { Select } from '@/ui/listbox/select'
+import { Sheet } from '@/ui/sheet/sheet'
 import { DOC_SCOPES, type DocScope, isScope } from './docs'
 
 type DocSearch = { edit?: boolean; id?: string }
@@ -129,8 +130,8 @@ function DocPage() {
   if (!scoped) {
     return (
       <Sheet open onClose={() => void navigate({ to: '/docs' })} title={slug}>
-        <p className="text-destructive">
-          unknown scope "{scope}"; valid: {DOC_SCOPES.join(', ')}
+        <p data-tone="error" className="text-status-text">
+          unknown scope"{scope}"; valid: {DOC_SCOPES.join(', ')}
         </p>
       </Sheet>
     )
@@ -139,14 +140,11 @@ function DocPage() {
   return (
     <Sheet
       open
+      size="document"
       onClose={() => void navigate({ to: '/docs' })}
       title={
         editing ? (
-          <Input
-            value={title}
-            onChange={(e) => setTitle(e.target.value)}
-            className="font-sans text-[20px] font-semibold"
-          />
+          <Input value={title} onChange={(e) => setTitle(e.target.value)} size="title" />
         ) : (
           (doc.data?.title ?? slug)
         )
@@ -166,6 +164,7 @@ function DocPage() {
           {editing ? (
             <>
               <Button
+                variant="primary"
                 size="sm"
                 onClick={() => save.mutate({ scope, subject, slug, title, body, delivery, reason })}
                 disabled={save.isPending || !title || !reason.trim()}
@@ -173,7 +172,7 @@ function DocPage() {
                 <Save size={14} />
                 Save
               </Button>
-              <Button size="sm" variant="outline" onClick={cancelEdit}>
+              <Button size="sm" variant="secondary" onClick={cancelEdit}>
                 <X size={14} />
                 Cancel
               </Button>
@@ -181,7 +180,7 @@ function DocPage() {
           ) : (
             <Button
               size="sm"
-              variant="outline"
+              variant="secondary"
               onClick={() => {
                 setConfirmingDelete(false)
                 setReason('')
@@ -195,7 +194,7 @@ function DocPage() {
           )}
           <Button
             size="sm"
-            variant="destructive"
+            variant="danger"
             onClick={onDelete}
             disabled={remove.isPending || !doc.data || (confirmingDelete && !reason.trim())}
           >
@@ -205,29 +204,44 @@ function DocPage() {
         </div>
       }
     >
-      {doc.isPending ? <p className="text-muted-foreground">Loading doc...</p> : null}
-      {doc.error ? <p className="text-destructive">{doc.error.message}</p> : null}
-      {save.error ? <p className="text-destructive">{save.error.message}</p> : null}
-      {remove.error ? <p className="text-destructive">{remove.error.message}</p> : null}
+      {doc.isPending ? <p className="text-text-muted">Loading doc...</p> : null}
+      {doc.error ? (
+        <p data-tone="error" className="text-status-text">
+          {doc.error.message}
+        </p>
+      ) : null}
+      {save.error ? (
+        <p data-tone="error" className="text-status-text">
+          {save.error.message}
+        </p>
+      ) : null}
+      {remove.error ? (
+        <p data-tone="error" className="text-status-text">
+          {remove.error.message}
+        </p>
+      ) : null}
 
       {doc.data && editing ? (
         <div>
-          <label className="mb-3 block max-w-xs text-sm">
-            <span className="text-muted-foreground">Delivery</span>
-            <select
-              className="flex h-10 w-full border border-input bg-background px-3 py-2 text-sm focus-visible:ring-2 focus-visible:ring-ring"
+          <div className="mb-3 grid max-w-xs gap-1 text-sm">
+            <span className="text-text-muted">Delivery</span>
+            <Select
+              label="Delivery"
               value={delivery}
-              onChange={(e) => setDelivery(e.target.value as 'inject' | 'demand')}
-            >
-              <option value="inject">inject</option>
-              <option value="demand">demand</option>
-            </select>
-          </label>
-          <div className="grid grid-cols-2 gap-0 border border-border">
+              options={[
+                { value: 'inject', label: 'Inject' },
+                { value: 'demand', label: 'Demand' },
+              ]}
+              onChange={(next) => setDelivery(next as 'inject' | 'demand')}
+            />
+          </div>
+          <div className="grid grid-cols-2 divide-x divide-border border border-border-default">
             <Textarea
               value={body}
               onChange={(e) => setBody(e.target.value)}
-              className="min-h-[60vh] border-0 border-r font-mono text-[12.5px]"
+              code
+              bare
+              className="min-h-[60vh]"
             />
             <div className="min-h-[60vh] overflow-auto p-3">
               <Markdown content={body} />
@@ -237,25 +251,29 @@ function DocPage() {
       ) : null}
 
       {doc.data && !editing ? (
-        <div className="prose-copy">
+        <div className="max-w-[72ch]">
           <Markdown content={doc.data.body} />
         </div>
       ) : null}
       {doc.data && !editing ? (
-        <div className="mt-8 border-t border-border pt-4">
+        <div className="mt-8 border-t border-border-default pt-4">
           <h2 className="mb-3 text-sm font-semibold">History</h2>
-          {history.error ? <p className="text-destructive">{history.error.message}</p> : null}
+          {history.error ? (
+            <p data-tone="error" className="text-status-text">
+              {history.error.message}
+            </p>
+          ) : null}
           {history.data?.map((revision) => (
             <div
               key={revision.id}
-              className="grid grid-cols-[5rem_6rem_1fr_auto] gap-3 border-b border-border py-2 text-xs"
+              className="grid grid-cols-[5rem_6rem_1fr_auto] gap-3 border-b border-border-default py-2 text-xs"
             >
               <span>
                 #{revision.id} {revision.op}
               </span>
               <span>{revision.author}</span>
               <span>{revision.reason}</span>
-              <span className="text-muted-foreground">
+              <span className="text-text-muted">
                 {revision.at} · {revision.bytes} bytes
               </span>
             </div>

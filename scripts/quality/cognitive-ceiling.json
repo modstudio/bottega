@@ -59,20 +59,15 @@
   {
     "file": "hub/src/serve.ts",
     "function": "view",
-    "line": 290,
-    "score": 25
+    "line": 355,
+    "score": 20
   },
   {
     "file": "hub/web/src/components/task-sheet.tsx",
     "function": "TaskSheet",
-    "line": 49,
-    "score": 49
-  },
-  {
-    "file": "hub/web/src/components/work-view.tsx",
-    "function": "render#1",
-    "line": 111,
-    "score": 51
+    "line": 76,
+    "score": 40,
+    "key": "hub/web/src/components/task-sheet.tsx\u0000TaskSheet"
   },
   {
     "file": "hub/web/src/components/work-view.tsx",
@@ -101,8 +96,9 @@
   {
     "file": "hub/web/src/routes/runs.tsx",
     "function": "RunsList",
-    "line": 58,
-    "score": 17
+    "line": 96,
+    "score": 16,
+    "key": "hub/web/src/routes/runs.tsx\u0000RunsList"
   },
   {
     "file": "orchestrator/src/agent-probe.ts",

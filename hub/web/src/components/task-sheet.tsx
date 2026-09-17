@@ -1,16 +1,18 @@
 import { useMutation, useQuery } from '@tanstack/react-query'
 import { useEffect, useState } from 'react'
 import { relativeTime } from '@/lib/format'
+import { taskStatusLook } from '@/lib/task-status'
 import { queryClient, type TaskRecordResponse, trpc } from '@/trpc/client'
-import { Badge } from './badge'
-import { Button } from './button'
+import { Badge } from '@/ui/badge/badge'
+import { Button } from '@/ui/button/button'
+import { Companion } from '@/ui/companion/companion'
+import { Input } from '@/ui/field/input'
+import { Textarea } from '@/ui/field/textarea'
+import { DisplayRow, FieldSection, SettingBlock } from '@/ui/form-layout/form-layout'
+import { Identifier } from '@/ui/identifier/identifier'
+import { Select } from '@/ui/listbox/select'
 import { ProjectMark, SourceMark } from './design-system'
-import { DisplayRow, FieldSection, SettingBlock } from './fields'
-import { Input } from './input'
 import { Markdown } from './markdown'
-import { Select } from './select'
-import { Sheet } from './sheet'
-import { Textarea } from './textarea'
 
 function reasonRows(capabilities: TaskRecordResponse['capabilities']) {
   const entries = [
@@ -42,10 +44,10 @@ function DocumentEditor({ document }: { document: TaskRecordResponse['documents'
     },
   })
   return (
-    <article className="space-y-3 border border-border p-3">
+    <article className="space-y-3 border border-border-default p-3">
       <div className="flex items-center gap-2">
-        {document.role ? <Badge variant="info">{document.role}</Badge> : null}
-        <span className="text-[11px] text-muted-foreground">version {document.version}</span>
+        {document.role ? <Badge tone="info">{document.role}</Badge> : null}
+        <span className="text-xs text-text-muted">version {document.version}</span>
       </div>
       <Input
         aria-label={`Title for document ${document.id}`}
@@ -58,8 +60,13 @@ function DocumentEditor({ document }: { document: TaskRecordResponse['documents'
         value={body}
         onChange={(event) => setBody(event.target.value)}
       />
-      {save.error ? <p className="text-destructive">{save.error.message}</p> : null}
+      {save.error ? (
+        <p data-tone="error" className="text-status-text">
+          {save.error.message}
+        </p>
+      ) : null}
       <Button
+        variant="primary"
         size="sm"
         disabled={save.isPending || !title.trim()}
         onClick={() => save.mutate({ id: document.id, title, body, version: document.version })}
@@ -99,13 +106,12 @@ export function TaskSheet({ taskKey, onClose }: { taskKey: string; onClose: () =
         ? 'git'
         : `${project?.name ?? record.data?.task.project ?? 'external'} · ${protocol ?? 'tracker protocol unknown'}`
   return (
-    <Sheet
-      open
+    <Companion
       onClose={onClose}
       title={
         record.data ? (
           <span className="inline-flex flex-wrap items-center gap-2">
-            <span>{record.data.task.key}</span>
+            <Identifier>{record.data.task.key}</Identifier>
             <ProjectMark name={record.data.task.project} />
           </span>
         ) : (
@@ -116,7 +122,7 @@ export function TaskSheet({ taskKey, onClose }: { taskKey: string; onClose: () =
         record.data ? (
           <>
             <div>{record.data.task.title}</div>
-            <div className="mt-1 inline-flex items-center gap-2 text-[11px]">
+            <div className="mt-1 inline-flex items-center gap-2 text-xs">
               <SourceMark
                 source={record.data.source}
                 project={record.data.task.project}
@@ -130,33 +136,27 @@ export function TaskSheet({ taskKey, onClose }: { taskKey: string; onClose: () =
         )
       }
     >
-      {record.error ? <p className="text-destructive">{record.error.message}</p> : null}
+      {record.error ? (
+        <p data-tone="error" className="text-status-text">
+          {record.error.message}
+        </p>
+      ) : null}
       {record.data ? (
         <>
           <DisplayRow
             label="Status"
             value={
-              record.data.source === 'local' ||
-              record.data.task.status === record.data.task.status_category ? (
-                (record.data.task.status ?? record.data.task.status_category ?? 'unknown')
+              record.data.task.status_category ? (
+                <Badge
+                  {...taskStatusLook(record.data.task.status_category)}
+                  title={`Hub status: ${record.data.task.status_category}`}
+                >
+                  {record.data.source === 'local'
+                    ? record.data.task.status_category
+                    : (record.data.task.status ?? record.data.task.status_category)}
+                </Badge>
               ) : (
-                <span className="inline-flex items-center gap-2">
-                  {record.data.task.status ?? 'unknown'}
-                  <span aria-hidden>→</span>
-                  <Badge
-                    variant={
-                      record.data.task.status_category === 'active'
-                        ? 'live'
-                        : record.data.task.status_category === 'review'
-                          ? 'info'
-                          : record.data.task.status_category === 'dropped'
-                            ? 'danger'
-                            : 'outline'
-                    }
-                  >
-                    {record.data.task.status_category ?? 'unmapped'}
-                  </Badge>
-                </span>
+                (record.data.task.status ?? 'unknown')
               )
             }
           />
@@ -176,6 +176,7 @@ export function TaskSheet({ taskKey, onClose }: { taskKey: string; onClose: () =
                     <div className="flex gap-2">
                       <Input value={title} onChange={(event) => setTitle(event.target.value)} />
                       <Button
+                        variant="primary"
                         disabled={saveTitle.isPending || !title.trim()}
                         onClick={() => saveTitle.mutate({ key: taskKey, title })}
                       >
@@ -185,7 +186,9 @@ export function TaskSheet({ taskKey, onClose }: { taskKey: string; onClose: () =
                   }
                   hint={
                     saveTitle.error ? (
-                      <span className="text-destructive">{saveTitle.error.message}</span>
+                      <span data-tone="error" className="text-status-text">
+                        {saveTitle.error.message}
+                      </span>
                     ) : undefined
                   }
                 />
@@ -213,7 +216,9 @@ export function TaskSheet({ taskKey, onClose }: { taskKey: string; onClose: () =
                   }
                   hint={
                     saveStatus.error ? (
-                      <span className="text-destructive">{saveStatus.error.message}</span>
+                      <span data-tone="error" className="text-status-text">
+                        {saveStatus.error.message}
+                      </span>
                     ) : undefined
                   }
                 />
@@ -226,7 +231,7 @@ export function TaskSheet({ taskKey, onClose }: { taskKey: string; onClose: () =
                     <DocumentEditor key={document.id} document={document} />
                   ))
                 ) : (
-                  <p className="text-muted-foreground">No documents.</p>
+                  <p className="text-text-muted">No documents.</p>
                 )}
               </FieldSection>
             ) : null}
@@ -238,15 +243,15 @@ export function TaskSheet({ taskKey, onClose }: { taskKey: string; onClose: () =
             <FieldSection title="Comments">
               {record.data.comments.length ? (
                 record.data.comments.map((item) => (
-                  <article key={item.id} className="border-b border-border py-3">
+                  <article key={item.id} className="border-b border-border-default py-3">
                     <Markdown content={item.body} />
-                    <div className="mt-2 text-[11px] text-muted-foreground">
+                    <div className="mt-2 text-xs text-text-muted">
                       {relativeTime(item.created_at)}
                     </div>
                   </article>
                 ))
               ) : (
-                <p className="text-muted-foreground">No comments.</p>
+                <p className="text-text-muted">No comments.</p>
               )}
               {record.data.capabilities.comment.allowed ? (
                 <div className="space-y-2">
@@ -257,9 +262,12 @@ export function TaskSheet({ taskKey, onClose }: { taskKey: string; onClose: () =
                     placeholder="Add a comment"
                   />
                   {addComment.error ? (
-                    <p className="text-destructive">{addComment.error.message}</p>
+                    <p data-tone="error" className="text-status-text">
+                      {addComment.error.message}
+                    </p>
                   ) : null}
                   <Button
+                    variant="primary"
                     size="sm"
                     disabled={addComment.isPending || !comment.trim()}
                     onClick={() => addComment.mutate({ key: taskKey, body: comment })}
@@ -274,24 +282,27 @@ export function TaskSheet({ taskKey, onClose }: { taskKey: string; onClose: () =
                 record.data.runs.map((run) => (
                   <div
                     key={`${run.id}:${run.agent}:${run.started_at}`}
-                    className="grid grid-cols-[4rem_1fr_auto] gap-3 border-b border-border py-2"
+                    className="grid grid-cols-[4rem_1fr_auto] gap-3 border-b border-border-default py-2"
                   >
                     <strong>#{run.id}</strong>
                     <span>
                       {run.agent ?? '-'} · {run.job ?? '-'}
                     </span>
-                    <span className={run.running ? 'text-live' : 'text-muted-foreground'}>
+                    <span
+                      data-tone={run.running ? 'success' : undefined}
+                      className={run.running ? 'text-status-text' : 'text-text-muted'}
+                    >
                       {run.running ? 'running' : relativeTime(run.ended_at)}
                     </span>
                   </div>
                 ))
               ) : (
-                <p className="text-muted-foreground">No delegated runs.</p>
+                <p className="text-text-muted">No delegated runs.</p>
               )}
             </FieldSection>
           </div>
         </>
       ) : null}
-    </Sheet>
+    </Companion>
   )
 }

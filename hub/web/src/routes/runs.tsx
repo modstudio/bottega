@@ -1,129 +1,157 @@
-import { useQuery } from '@tanstack/react-query'
-import { createFileRoute, Outlet, useNavigate } from '@tanstack/react-router'
+import { keepPreviousData, useQuery } from '@tanstack/react-query'
+import { createFileRoute, useNavigate, useParams } from '@tanstack/react-router'
 import { ChevronRight } from 'lucide-react'
 import { useState } from 'react'
-import { Badge } from '@/components/badge'
 import { Collection, type CollectionColumn } from '@/components/collection'
-import {
-  LiveDot,
-  PageHeader,
-  ProjectMark,
-  StatRow,
-  StatTile,
-  WindowBar,
-} from '@/components/design-system'
+import { LiveDot, ProjectMark, useWindowFilters, WindowControl } from '@/components/design-system'
 import { HostedRuns } from '@/components/hosted-runs'
-import { Input } from '@/components/input'
 import { useNow } from '@/lib/clock'
-import { collectedTime, compactTokens, duration, vendorFigures } from '@/lib/format'
+import { useDetailPanel } from '@/lib/detail-panel'
+import { collectedTime, compactTokens, duration } from '@/lib/format'
 import { isHostedMode } from '@/lib/hub-mode'
-import {
-  matchesRunSearch,
-  runEasternTime,
-  runVerdictText,
-  type SearchableLiveRun,
-  type SearchableRun,
-} from '@/lib/run-search'
+import { useDebounced } from '@/lib/use-debounced'
+import { verdictTone } from '@/lib/verdict-tone'
 import { useWindowState } from '@/lib/window'
 import { trpc } from '@/trpc/client'
+import { Badge } from '@/ui/badge/badge'
+import { Identifier } from '@/ui/identifier/identifier'
+import { PageHeader } from '@/ui/page-header/page-header'
+import { PAGE_SIZES, type PageSize } from '@/ui/pagination/pagination'
+import { StatRow, StatTile } from '@/ui/stat/stat'
 
-type RunRow = SearchableRun
-type LiveRow = SearchableLiveRun
+/** The strings the server prints for a run; search on the server matches exactly these. */
+type RunDisplay = {
+  project: string
+  took: string
+  verdict: string
+  exclusion: string
+  tokens: string
+  cost: string
+  started: string
+}
+type RunRow = {
+  id: number
+  agent: string
+  job: string | null
+  task: string | null
+  project: string | null
+  at: string
+  running: boolean
+  status: string
+  delivery: string | null
+  quality: string | null
+  probe: boolean
+  lens: string | null
+  display: RunDisplay
+}
+type LiveRow = {
+  id: number
+  agent: string
+  job: string
+  repo: string | null
+  elapsedMs: number
+  display: { project: string; elapsed: string; prompt: string }
+}
 type RunsPayload = {
   collectedAt: string | null
   servingSince: string
   activeAgents: string[]
   data: {
     totals: { runs: number; scored: number; voided?: number; failed: number; stale_n: number }
-    vendors: { agent: string; tokens: number }[]
+    vendors: { agent: string; tokens: number; runs: number }[]
     unscored: number
     facets: { agents: string[]; projects: string[] }
     matched: number
+    offset: number
+    limit: number
     live: LiveRow[]
     rows: RunRow[]
   }
 }
 
-const compact = compactTokens
 const fmtMs = duration
 function Verdict({ row }: { row: RunRow }) {
   if (row.running)
     return (
-      <span className="inline-flex items-center gap-2 text-live">
-        <LiveDot />
-        running
-      </span>
+      <Badge tone="progress" dot>
+        Running
+      </Badge>
     )
-  const exclusion = row.evidence_excluded ? (
-    <p className="meta">Not routing evidence: {row.evidence_excluded}</p>
+  const exclusion = row.display.exclusion ? (
+    <p className="text-sm text-text-muted">{row.display.exclusion}</p>
   ) : null
-  if (row.delivery) {
-    const variant =
-      row.quality === 'wrong' || row.delivery === 'none'
-        ? 'danger'
-        : row.quality === 'mixed' || row.delivery === 'partial'
-          ? 'warning'
-          : row.quality === 'right' || row.delivery === 'full'
-            ? 'success'
-            : 'outline'
-    return (
-      <span>
-        <Badge variant={variant}>{runVerdictText(row)}</Badge>
-        {exclusion}
-      </span>
-    )
-  }
-  if (row.status !== 'ok')
-    return (
-      <span>
-        <Badge variant="danger">{row.status}</Badge>
-        {exclusion}
-      </span>
-    )
-  if (row.probe)
-    return (
-      <span>
-        <span className="text-muted-foreground">probe</span>
-        {exclusion}
-      </span>
-    )
-  if (exclusion) return exclusion
-  return <Badge variant="outline">Unscored</Badge>
+  const tone = row.delivery
+    ? verdictTone(row.delivery, row.quality)
+    : row.status !== 'ok'
+      ? ('error' as const)
+      : ('neutral' as const)
+  return (
+    <span>
+      {row.probe && !row.delivery && row.status === 'ok' ? (
+        <span className="text-text-muted">{row.display.verdict}</span>
+      ) : row.display.verdict ? (
+        <Badge tone={tone}>{row.display.verdict}</Badge>
+      ) : null}
+      {exclusion}
+    </span>
+  )
 }
 
 export const Route = createFileRoute('/runs')({ component: RunsPage })
 
 function RunsPage() {
   if (isHostedMode()) return <HostedRuns />
-  return (
-    <>
-      <RunsList />
-      <Outlet />
-    </>
-  )
+  return <RunsList />
+}
+
+/** Page and page size, back to the first page whenever the question changes. */
+function usePaging(question: string) {
+  const [page, setPage] = useState(1)
+  const [pageSize, setPageSize] = useState<PageSize>(PAGE_SIZES[1])
+  const [asked, setAsked] = useState(question)
+  if (asked !== question) {
+    setAsked(question)
+    setPage(1)
+  }
+  return { page, pageSize, setPage, setPageSize }
 }
 
 function RunsList() {
   const navigate = useNavigate()
+  const panel = useDetailPanel()
+  const openId = useParams({ strict: false }).id
   const windowState = useWindowState()
   const [openMenus, setOpenMenus] = useState(0)
   const [search, setSearch] = useState('')
+  const searchQuery = useDebounced(search.trim())
+  const { page, pageSize, setPage, setPageSize } = usePaging(
+    `${windowState.hours}|${windowState.filters.agent}|${windowState.filters.project}|${searchQuery}`,
+  )
   const now = useNow()
-  const query = useQuery(
-    trpc.run.list.queryOptions(
+  const query = useQuery({
+    ...trpc.run.list.queryOptions(
       {
         hours: windowState.hours,
         agent: windowState.filters.agent,
         project: windowState.filters.project,
+        offset: (page - 1) * pageSize,
+        limit: pageSize,
+        search: searchQuery,
       },
       { refetchInterval: openMenus ? false : 30_000 },
     ),
-  )
+    placeholderData: keepPreviousData,
+  })
   const payload = query.data as unknown as RunsPayload | undefined
   const data = payload?.data
   const filtered = !!(windowState.filters.agent || windowState.filters.project)
   const menuChanged = (open: boolean) =>
     setOpenMenus((count) => Math.max(0, count + (open ? 1 : -1)))
+  const filters = useWindowFilters({
+    projects: data?.facets.projects,
+    agents: data?.facets.agents,
+    onOpenChange: menuChanged,
+  })
   const cards = data
     ? [
         [data.totals.runs.toLocaleString(), 'runs', 'in this window'],
@@ -132,18 +160,17 @@ function RunsList() {
         [(data.totals.voided ?? 0).toLocaleString(), 'voided', 'not routing evidence'],
         [data.unscored.toLocaleString(), 'unscored', 'teaches the router nothing'],
         [data.totals.failed.toLocaleString(), 'failed', 'counts against the agent'],
-        [vendorFigures(data.vendors), 'vendor tokens', 'per agent'],
       ]
     : []
-  const matches = (row: RunRow | LiveRow) => matchesRunSearch(row, search)
-  const liveRows = data?.live.filter(matches) ?? []
-  const runRows = data?.rows.filter(matches) ?? []
+  // The server applies search and paging; these are the rows to draw.
+  const liveRows = data?.live ?? []
+  const runRows = data?.rows ?? []
   const liveColumns: CollectionColumn<LiveRow>[] = [
     {
       id: 'agent',
       label: 'Agent',
       render: (row) => (
-        <span className="inline-flex items-center gap-2 text-live">
+        <span data-tone="success" className="inline-flex items-center gap-2 text-status-text">
           <LiveDot />
           {row.agent}
         </span>
@@ -152,34 +179,36 @@ function RunsList() {
     {
       id: 'job',
       label: 'Job',
-      render: (row) => <span className="text-muted-foreground">{row.job}</span>,
+      render: (row) => <span className="text-text-muted">{row.job}</span>,
     },
     { id: 'project', label: 'Project', render: (row) => <ProjectMark name={row.repo} /> },
     {
       id: 'elapsed',
       label: 'Elapsed',
-      className: 'num',
+      numeric: true,
       render: (row) => fmtMs(row.elapsedMs + Math.max(0, now - query.dataUpdatedAt)),
     },
     {
       id: 'prompt',
       label: 'Prompt',
       render: (row) => (
-        <span className="block max-w-lg truncate text-muted-foreground">
-          {row.prompt_head.slice(0, 90)}
-        </span>
+        <span className="block max-w-lg truncate text-text-muted">{row.display.prompt}</span>
       ),
     },
   ]
   const runColumns: CollectionColumn<RunRow>[] = [
     { id: 'project', label: 'Project', render: (row) => <ProjectMark name={row.project} /> },
-    { id: 'task', label: 'Task', render: (row) => <strong>{row.task ?? '-'}</strong> },
+    {
+      id: 'task',
+      label: 'Task',
+      render: (row) => (row.task ? <Identifier>{row.task}</Identifier> : '-'),
+    },
     { id: 'agent', label: 'Agent', render: (row) => row.agent },
     {
       id: 'job',
       label: 'Job',
       render: (row) => (
-        <span className="text-muted-foreground">
+        <span className="text-text-muted">
           {row.job || '-'}
           {row.lens ? ` ${row.lens}` : ''}
           {row.probe ? ' probe' : ''}
@@ -189,22 +218,29 @@ function RunsList() {
     {
       id: 'took',
       label: 'Took',
-      className: 'num',
-      render: (row) => (row.running ? fmtMs(now - new Date(row.at).getTime()) : row.engaged),
+      numeric: true,
+      render: (row) => (row.running ? fmtMs(now - new Date(row.at).getTime()) : row.display.took),
     },
     { id: 'verdict', label: 'Verdict', render: (row) => <Verdict row={row} /> },
-    { id: 'tokens', label: 'Tokens', className: 'num', render: (row) => compact(row.tokens) },
+    {
+      id: 'tokens',
+      label: 'Tokens',
+      numeric: true,
+      priority: 'low',
+      render: (row) => row.display.tokens,
+    },
     {
       id: 'cost',
       label: 'Cost',
-      className: 'num',
-      render: (row) => (row.costUsd == null ? '-' : `$${row.costUsd.toFixed(2)}`),
+      numeric: true,
+      priority: 'low',
+      render: (row) => row.display.cost,
     },
-    { id: 'started', label: 'Started', render: (row) => runEasternTime(row.at, true) },
+    { id: 'started', label: 'Started', render: (row) => row.display.started },
     {
       id: 'open',
       label: '',
-      render: () => <ChevronRight size={14} className="text-muted-foreground" />,
+      render: () => <ChevronRight size={14} className="text-text-muted" />,
     },
   ]
 
@@ -218,32 +254,17 @@ function RunsList() {
             : 'Loading runs...'
         }
         subtitleTitle={payload ? `Serving code since ${payload.servingSince}` : undefined}
-        actions={
-          data ? (
-            <>
-              <Input
-                type="search"
-                className="h-8 w-56"
-                value={search}
-                onChange={(event) => setSearch(event.target.value)}
-                placeholder="Search visible runs"
-              />
-              <WindowBar
-                projects={data.facets.projects}
-                agents={data.facets.agents}
-                onOpenChange={menuChanged}
-              />
-            </>
-          ) : null
-        }
+        actions={<WindowControl />}
       />
-      {query.isPending ? <p className="text-muted-foreground">Loading runs...</p> : null}
+      {query.isPending ? <p className="text-text-muted">Loading runs...</p> : null}
       {query.error ? (
-        <p className="text-destructive">could not load: {query.error.message}</p>
+        <p data-tone="error" className="text-status-text">
+          could not load: {query.error.message}
+        </p>
       ) : null}
       {payload && data ? (
         <>
-          <StatRow className="two-rows">
+          <StatRow>
             {cards.map(([figure, label, hint], index) => (
               <StatTile
                 key={label}
@@ -253,9 +274,25 @@ function RunsList() {
                 live={index === 1 && data.live.length > 0}
               />
             ))}
+            <StatTile
+              label="agents"
+              hint="tokens are per agent, never summed"
+              breakdown={[
+                {
+                  label: 'runs, all agents',
+                  value: data.vendors
+                    .reduce((sum, vendor) => sum + vendor.runs, 0)
+                    .toLocaleString(),
+                },
+                ...data.vendors.map((vendor) => ({
+                  label: `${vendor.agent} tokens · ${vendor.runs.toLocaleString()} runs`,
+                  value: compactTokens(vendor.tokens),
+                })),
+              ]}
+            />
           </StatRow>
           {filtered ? (
-            <p className="mb-4 text-muted-foreground">
+            <p className="mb-4 text-text-muted">
               the counters above count the whole window; the filter applies to the tables below.
             </p>
           ) : null}
@@ -265,7 +302,9 @@ function RunsList() {
             columns={liveColumns}
             rows={liveRows}
             getKey={(row) => row.id}
-            onOpen={(row) => void navigate({ to: '/runs/$id', params: { id: String(row.id) } })}
+            onOpen={(row) =>
+              void navigate({ to: '/runs/$id', params: { id: String(row.id) }, resetScroll: false })
+            }
             empty={{
               title: filtered
                 ? 'Nothing running matches these filters.'
@@ -278,19 +317,40 @@ function RunsList() {
           <div className="mt-7">
             <Collection
               title="Runs"
-              count={runRows.length}
+              count={data.matched}
+              paging={{
+                page: Math.floor(data.offset / data.limit) + 1,
+                pageSize: data.limit,
+                total: data.matched,
+                onPageChange: setPage,
+                onPageSizeChange: (size) => {
+                  setPageSize(size)
+                  setPage(1)
+                },
+              }}
+              search={{ query: search, onQueryChange: setSearch, placeholder: 'Search runs' }}
+              filters={filters.controls}
+              filtersActive={filters.active}
+              panel={panel}
+              selectedKey={openId}
               columns={runColumns}
               rows={runRows}
               getKey={(row) => row.id}
-              onOpen={(row) => void navigate({ to: '/runs/$id', params: { id: String(row.id) } })}
+              onOpen={(row) =>
+                void navigate({
+                  to: '/runs/$id',
+                  params: { id: String(row.id) },
+                  resetScroll: false,
+                })
+              }
               empty={{
                 title: 'No runs in this window.',
                 hint: 'Widen the window to see earlier runs.',
               }}
             />
           </div>
-          <p className="mt-4 max-w-4xl text-muted-foreground">
-            <strong className="text-foreground">
+          <p className="mt-4 max-w-4xl text-text-muted">
+            <strong className="text-text-primary">
               Scoring is the only thing that measures whether delegation works.
             </strong>{' '}
             A run nobody judged and a run judged badly must stay distinguishable, which is why an

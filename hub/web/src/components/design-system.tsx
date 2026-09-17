@@ -1,9 +1,6 @@
 import { useQuery } from '@tanstack/react-query'
 import { Database, GitCommit, RadioTower } from 'lucide-react'
-import type { CSSProperties, ReactNode } from 'react'
-import { Button } from '@/components/button'
-import { cx } from '@/components/cx'
-import { Select, type SelectOption } from '@/components/select'
+import type { CSSProperties } from 'react'
 import { collectedTime, relativeTime } from '@/lib/format'
 import { PROJECT_FALLBACK } from '@/lib/project'
 import {
@@ -15,78 +12,18 @@ import {
   type WindowHours,
 } from '@/lib/window'
 import { trpc } from '@/trpc/client'
+import { Button } from '@/ui/button/button'
+import { Select, type SelectOption } from '@/ui/listbox/select'
+import { ProjectName } from '@/ui/project-mark/project-mark'
+import { Segmented } from '@/ui/segmented/segmented'
 
-export function PageHeader({
-  title,
-  subtitle,
-  subtitleTitle,
-  actions,
-}: {
-  title: ReactNode
-  subtitle?: ReactNode
-  subtitleTitle?: string
-  actions?: ReactNode
-}) {
-  return (
-    <header className="page-header">
-      <div className="min-w-0">
-        <h1>{title}</h1>
-        {subtitle ? (
-          <div className="page-subtitle" title={subtitleTitle}>
-            {subtitle}
-          </div>
-        ) : null}
-      </div>
-      {actions ? <div className="page-actions">{actions}</div> : null}
-    </header>
-  )
-}
-
-export function SectionTitle({ children, detail }: { children: ReactNode; detail?: ReactNode }) {
-  return (
-    <div className="section-title">
-      <h2>{children}</h2>
-      {detail ? <span>{detail}</span> : null}
-    </div>
-  )
-}
-
-export function StatTile({
-  figure,
-  label,
-  hint,
-  live,
-}: {
-  figure: ReactNode
-  label: ReactNode
-  hint?: ReactNode
-  live?: boolean
-}) {
-  return (
-    <div className="stat-tile">
-      <div className={cx('stat-figure', live && 'text-live')}>{figure}</div>
-      <div>{label}</div>
-      {hint ? <div className="meta">{hint}</div> : null}
-    </div>
-  )
-}
-
-export function StatRow({ children, className }: { children: ReactNode; className?: string }) {
-  return <div className={cx('stat-row', className)}>{children}</div>
-}
-
-export function EmptyState({ title, hint }: { title: string; hint?: string }) {
-  return (
-    <div className="empty-state">
-      <div>{title}</div>
-      {hint ? <div className="meta mt-1">{hint}</div> : null}
-    </div>
-  )
-}
-
+/** A pulsing dot for work that is running right now. */
 export function LiveDot() {
   return (
-    <span className="live-dot">
+    <span
+      data-tone="success"
+      className="relative inline-block size-1.5 shrink-0 rounded-full bg-status-fill motion-safe:animate-pulse"
+    >
       <span className="sr-only">Running</span>
     </span>
   )
@@ -114,6 +51,7 @@ function Filter({
   ]
   return (
     <Select
+      size="sm"
       label={label}
       value={value}
       options={choices}
@@ -123,85 +61,76 @@ function Filter({
   )
 }
 
-export function Segmented({
-  value,
-  options,
-  onChange,
-  label,
-}: {
-  value: string
-  options: readonly { value: string; label: string }[]
-  onChange: (value: string) => void
-  label: string
-}) {
+/** The time window every figure on the page reads; it belongs in the page header. */
+export function WindowControl() {
+  const state = useWindowState()
   return (
-    <fieldset className="segmented min-w-0 p-0">
-      <legend className="sr-only">{label}</legend>
-      {options.map((option) => (
-        <button
-          key={option.value}
-          type="button"
-          aria-pressed={value === option.value}
-          onClick={() => onChange(option.value)}
-        >
-          {option.label}
-        </button>
-      ))}
-    </fieldset>
+    <Segmented
+      label="Time window"
+      value={String(state.hours)}
+      options={WINDOWS.map((hours) => ({
+        value: String(hours),
+        label: hours === 168 ? '7d' : hours === 720 ? '30d' : `${hours}h`,
+      }))}
+      onChange={(value) => setHours(Number(value) as WindowHours)}
+    />
   )
 }
 
-export function WindowBar({
+/**
+ * The project, agent and source filters, which narrow a table rather than the
+ * page, for a TableCard's filter slot. `active` counts the applied ones.
+ */
+export function useWindowFilters({
   projects = [],
   agents = [],
   sources,
-  filters = true,
   onOpenChange,
 }: {
   projects?: string[]
   agents?: string[]
   sources?: string[]
-  filters?: boolean
   onOpenChange?: (open: boolean) => void
 }) {
-  const state = useWindowState()
-  return (
-    <div className="window-bar">
-      {filters ? (
-        <>
+  const { filters } = useWindowState()
+  const active = [filters.project, filters.agent, sources ? filters.source : ''].filter(
+    Boolean,
+  ).length
+  const controls = [
+    <Filter
+      key="project"
+      kind="project"
+      label="All projects"
+      options={projects}
+      onOpenChange={onOpenChange}
+    />,
+    <Filter
+      key="agent"
+      kind="agent"
+      label="All agents"
+      options={agents}
+      onOpenChange={onOpenChange}
+    />,
+    ...(sources
+      ? [
           <Filter
-            kind="project"
-            label="All projects"
-            options={projects}
+            key="source"
+            kind="source"
+            label="All sources"
+            options={sources}
             onOpenChange={onOpenChange}
-          />
-          <Filter kind="agent" label="All agents" options={agents} onOpenChange={onOpenChange} />
-          {sources ? (
-            <Filter
-              kind="source"
-              label="All sources"
-              options={sources}
-              onOpenChange={onOpenChange}
-            />
-          ) : null}
-          {state.filters.project || state.filters.agent || (sources && state.filters.source) ? (
-            <Button variant="ghost" size="sm" onClick={clearFilters}>
-              Clear filters
-            </Button>
-          ) : null}
-        </>
-      ) : null}
-      <Segmented
-        label="Time window"
-        value={String(state.hours)}
-        options={WINDOWS.map((hours) => ({
-          value: String(hours),
-          label: hours === 168 ? '7d' : hours === 720 ? '30d' : `${hours}h`,
-        }))}
-        onChange={(value) => setHours(Number(value) as WindowHours)}
-      />
-    </div>
-  )
+          />,
+        ]
+      : []),
+    ...(active
+      ? [
+          <Button key="clear" variant="ghost" size="sm" onClick={clearFilters}>
+            Clear filters
+          </Button>,
+        ]
+      : []),
+  ]
+  return { controls, active }
 }
 
 export function responseSubtitle(response: {
@@ -243,7 +172,7 @@ export function projectVars(
 ): CSSProperties | undefined {
   const c = name ? colors[name] : undefined
   if (!c?.light) return undefined
-  return { '--pc': c.light, '--pc-dark': c.dark ?? c.light } as CSSProperties
+  return { '--project-light': c.light, '--project-dark': c.dark ?? c.light } as CSSProperties
 }
 
 /** A project name with its colour bar; "elsewhere" when the row has none. */
@@ -256,10 +185,9 @@ export function ProjectMark({
 }) {
   const queriedColors = useProjectColors(!suppliedColors)
   const colors = suppliedColors ?? queriedColors
+  const color = name ? colors[name] : undefined
   return (
-    <span className="proj" style={projectVars(colors, name)}>
-      {name || PROJECT_FALLBACK}
-    </span>
+    <ProjectName name={name || PROJECT_FALLBACK} color={color?.light} colorDark={color?.dark} />
   )
 }
 

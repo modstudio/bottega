@@ -1,9 +1,10 @@
 import { useQuery } from '@tanstack/react-query'
 import { FolderGit2 } from 'lucide-react'
-import { Badge } from '@/components/badge'
 import { Collection, type CollectionColumn } from '@/components/collection'
-import { PageHeader, type ProjectColors, ProjectMark } from '@/components/design-system'
+import { type ProjectColors, ProjectMark } from '@/components/design-system'
 import { trpc } from '@/trpc/client'
+import { Badge } from '@/ui/badge/badge'
+import { PageHeader } from '@/ui/page-header/page-header'
 
 type HostedProject = {
   name: string
@@ -51,15 +52,19 @@ export function HostedProjects() {
     {
       id: 'retired',
       label: '',
-      render: (project) => (project.retiredAt ? <Badge variant="outline">retired</Badge> : null),
+      render: (project) => (project.retiredAt ? <Badge>retired</Badge> : null),
     },
   ]
 
   return (
     <section>
       <PageHeader title="Projects" subtitle={`${query.data?.length ?? 0} in this space`} />
-      {query.isPending ? <p className="text-muted-foreground">Loading projects...</p> : null}
-      {query.error ? <p className="text-destructive">{query.error.message}</p> : null}
+      {query.isPending ? <p className="text-text-muted">Loading projects...</p> : null}
+      {query.error ? (
+        <p data-tone="error" className="text-status-text">
+          {query.error.message}
+        </p>
+      ) : null}
       {query.data ? (
         <Collection
           title="Projects"

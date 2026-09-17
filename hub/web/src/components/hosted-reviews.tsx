@@ -1,16 +1,18 @@
 import { useQuery } from '@tanstack/react-query'
-import { Outlet, useNavigate } from '@tanstack/react-router'
+import { useNavigate } from '@tanstack/react-router'
 import { ChevronRight } from 'lucide-react'
 import { useState } from 'react'
-import { Badge } from '@/components/badge'
-import { Button } from '@/components/button'
 import { Collection, type CollectionColumn } from '@/components/collection'
-import { PageHeader, ProjectMark } from '@/components/design-system'
-import { DisplayRow, FieldSection } from '@/components/fields'
+import { ProjectMark } from '@/components/design-system'
 import { hostedProjectColors } from '@/components/hosted-projects'
-import { Sheet } from '@/components/sheet'
-import { runEasternTime } from '@/lib/run-search'
+import { useDetailPanel } from '@/lib/detail-panel'
+import { runEasternTime } from '@/lib/format'
 import { trpc } from '@/trpc/client'
+import { Badge } from '@/ui/badge/badge'
+import { Button } from '@/ui/button/button'
+import { Companion } from '@/ui/companion/companion'
+import { DisplayRow, FieldSection } from '@/ui/form-layout/form-layout'
+import { PageHeader } from '@/ui/page-header/page-header'
 
 type HostedReview = {
   id: string
@@ -41,7 +43,7 @@ function field(record: Record<string, unknown>, camel: string, snake: string) {
 }
 
 export function HostedLensList({ lenses }: { lenses: HostedLens[] }) {
-  if (!lenses.length) return <p className="mt-4 text-muted-foreground">No review lenses.</p>
+  if (!lenses.length) return <p className="mt-4 text-text-muted">No review lenses.</p>
   return (
     <div className="mt-4 space-y-6">
       {lenses.map((lens, index) => {
@@ -58,17 +60,17 @@ export function HostedLensList({ lenses }: { lenses: HostedLens[] }) {
                 return (
                   <div
                     key={field(finding, 'id', 'id') || String(findingIndex)}
-                    className="border border-border p-3"
+                    className="border border-border-default p-3"
                   >
                     <div className="mb-2 flex items-center gap-2">
-                      <Badge variant="outline">{field(finding, 'severity', 'severity')}</Badge>
-                      <span className="text-muted-foreground">
+                      <Badge>{field(finding, 'severity', 'severity')}</Badge>
+                      <span className="text-text-muted">
                         {field(finding, 'location', 'location')}
                       </span>
                     </div>
                     <p>{field(finding, 'evidence', 'evidence')}</p>
                     {field(finding, 'proposedCorrection', 'proposed_correction') ? (
-                      <p className="mt-2 text-muted-foreground">
+                      <p className="mt-2 text-text-muted">
                         {field(finding, 'proposedCorrection', 'proposed_correction')}
                       </p>
                     ) : null}
@@ -76,7 +78,7 @@ export function HostedLensList({ lenses }: { lenses: HostedLens[] }) {
                 )
               })
             ) : (
-              <p className="text-muted-foreground">No findings.</p>
+              <p className="text-text-muted">No findings.</p>
             )}
           </FieldSection>
         )
@@ -86,15 +88,11 @@ export function HostedLensList({ lenses }: { lenses: HostedLens[] }) {
 }
 
 export function HostedReviews() {
-  return (
-    <>
-      <HostedReviewsList />
-      <Outlet />
-    </>
-  )
+  return <HostedReviewsList />
 }
 
 function HostedReviewsList() {
+  const panel = useDetailPanel()
   const navigate = useNavigate()
   const [pages, setPages] = useState<HostedReview[][]>([])
   const [cursor, setCursor] = useState<string | undefined>(undefined)
@@ -124,17 +122,17 @@ function HostedReviewsList() {
       label: 'Tier',
       render: (row) => (row.tier == null ? '-' : String(row.tier)),
     },
-    { id: 'lenses', label: 'Lenses', className: 'num', render: (row) => row.lensCount ?? '-' },
+    { id: 'lenses', label: 'Lenses', numeric: true, render: (row) => row.lensCount ?? '-' },
     {
       id: 'findings',
       label: 'Findings',
-      className: 'num',
+      numeric: true,
       render: (row) => row.findingCount ?? '-',
     },
     {
       id: 'open',
       label: '',
-      render: () => <ChevronRight size={14} className="text-muted-foreground" />,
+      render: () => <ChevronRight size={14} className="text-text-muted" />,
     },
   ]
 
@@ -145,21 +143,26 @@ function HostedReviewsList() {
         subtitle={query.isPending && !rows.length ? 'Loading reviews...' : `${rows.length} loaded`}
       />
       {query.error ? (
-        <p className="text-destructive">could not load: {query.error.message}</p>
+        <p data-tone="error" className="text-status-text">
+          could not load: {query.error.message}
+        </p>
       ) : null}
       <Collection
+        panel={panel}
         title="Reviews"
         count={rows.length}
         columns={columns}
         rows={rows}
         getKey={(row) => row.id}
-        onOpen={(row) => void navigate({ to: '/reviews/$id', params: { id: row.id } })}
+        onOpen={(row) =>
+          void navigate({ to: '/reviews/$id', params: { id: row.id }, resetScroll: false })
+        }
         empty={{ title: query.isPending ? 'Loading reviews...' : 'No reviews in this space.' }}
       />
       {applied?.nextCursor ? (
         <div className="mt-4">
           <Button
-            variant="outline"
+            variant="secondary"
             size="sm"
             disabled={query.isFetching}
             onClick={() => {
@@ -180,39 +183,34 @@ export function HostedReviewDetail({ id }: { id: string }) {
   const detail = useQuery(trpc.record.review.queryOptions({ id }))
   const projects = useQuery(trpc.record.projects.queryOptions())
   const colors = hostedProjectColors(projects.data ?? [])
-  const close = () => void navigate({ to: '/reviews' })
+  const close = () => void navigate({ to: '/reviews', resetScroll: false })
   const review = detail.data
 
   if (detail.isPending) {
     return (
-      <Sheet open onClose={close} title={`Review ${id}`} subtitle="Loading review...">
-        <p className="text-muted-foreground">Loading...</p>
-      </Sheet>
+      <Companion onClose={close} title={`Review ${id}`} subtitle="Loading review...">
+        <p className="text-text-muted">Loading...</p>
+      </Companion>
     )
   }
   if (detail.error || !review) {
     return (
-      <Sheet open onClose={close} title={`Review ${id}`}>
-        <p className="text-destructive">
+      <Companion onClose={close} title={`Review ${id}`}>
+        <p data-tone="error" className="text-status-text">
           Could not load this review. {detail.error?.message ?? 'Not found'}
         </p>
-      </Sheet>
+      </Companion>
     )
   }
 
   const lenses = (review.lenses ?? []) as HostedLens[]
   const projectName = typeof review.projectName === 'string' ? review.projectName : null
   return (
-    <Sheet
-      open
+    <Companion
       onClose={close}
       title={`Review ${id}`}
       subtitle={projectName ?? undefined}
-      actions={
-        typeof review.tier === 'number' ? (
-          <Badge variant="outline">tier {review.tier}</Badge>
-        ) : undefined
-      }
+      actions={typeof review.tier === 'number' ? <Badge>tier {review.tier}</Badge> : undefined}
     >
       <DisplayRow label="Project" value={<ProjectMark name={projectName} colors={colors} />} />
       <DisplayRow label="Recorded" value={String(review.recordedAt)} />
@@ -221,6 +219,6 @@ export function HostedReviewDetail({ id }: { id: string }) {
         value={review.completedAt == null ? '-' : String(review.completedAt)}
       />
       <HostedLensList lenses={lenses} />
-    </Sheet>
+    </Companion>
   )
 }

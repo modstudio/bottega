@@ -6,5 +6,7 @@ export const Route = createFileRoute('/board/tasks/$key')({ component: BoardTask
 function BoardTask() {
   const { key } = Route.useParams()
   const navigate = useNavigate()
-  return <TaskSheet taskKey={key} onClose={() => void navigate({ to: '/board' })} />
+  return (
+    <TaskSheet taskKey={key} onClose={() => void navigate({ to: '/board', resetScroll: false })} />
+  )
 }

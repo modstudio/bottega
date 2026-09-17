@@ -2,16 +2,16 @@ import { useMutation, useQuery } from '@tanstack/react-query'
 import { createFileRoute, useNavigate } from '@tanstack/react-router'
 import { Copy } from 'lucide-react'
 import { useEffect, useState } from 'react'
-import { Badge } from '@/components/badge'
-import { Button } from '@/components/button'
-import { LiveDot, Segmented } from '@/components/design-system'
-import { DisplayRow } from '@/components/fields'
 import { HostedRunDetail } from '@/components/hosted-run-detail'
-import { Input } from '@/components/input'
-import { Sheet } from '@/components/sheet'
 import { duration, relativeTime } from '@/lib/format'
 import { isHostedMode } from '@/lib/hub-mode'
 import { queryClient, trpc } from '@/trpc/client'
+import { Badge } from '@/ui/badge/badge'
+import { Button, IconButton } from '@/ui/button/button'
+import { Companion } from '@/ui/companion/companion'
+import { Input } from '@/ui/field/input'
+import { DisplayRow } from '@/ui/form-layout/form-layout'
+import { Segmented } from '@/ui/segmented/segmented'
 
 const DELIVERIES = ['none', 'partial', 'full'] as const
 const QUALITIES = ['wrong', 'mixed', 'right'] as const
@@ -94,18 +94,20 @@ function RunDetailPage({ id }: { id: string }) {
     })
   }
 
-  const close = () => void navigate({ to: '/runs' })
+  const close = () => void navigate({ to: '/runs', resetScroll: false })
   if (detail.isPending)
     return (
-      <Sheet open onClose={close} title={`Run ${id}`} subtitle="Loading run...">
-        <p className="text-muted-foreground">Loading...</p>
-      </Sheet>
+      <Companion onClose={close} title={`Run ${id}`} subtitle="Loading run...">
+        <p className="text-text-muted">Loading...</p>
+      </Companion>
     )
   if (detail.error)
     return (
-      <Sheet open onClose={close} title={`Run ${id}`}>
-        <p className="text-destructive">Could not load this run. {detail.error.message}</p>
-      </Sheet>
+      <Companion onClose={close} title={`Run ${id}`}>
+        <p data-tone="error" className="text-status-text">
+          Could not load this run. {detail.error.message}
+        </p>
+      </Companion>
     )
   if (!run) return null
 
@@ -127,11 +129,11 @@ function RunDetailPage({ id }: { id: string }) {
         {run.fidelity ? ` \u00b7 ${run.fidelity}` : ''}, {relativeTime(run.scored_at!)}
       </strong>
       {run.note ? (
-        <span className="min-w-0 flex-1 truncate text-muted-foreground">- {run.note}</span>
+        <span className="min-w-0 flex-1 truncate text-text-muted">- {run.note}</span>
       ) : (
         <span className="flex-1" />
       )}
-      <Button variant="outline" size="sm" onClick={() => setAmending(true)}>
+      <Button variant="secondary" size="sm" onClick={() => setAmending(true)}>
         Amend
       </Button>
     </div>
@@ -173,23 +175,21 @@ function RunDetailPage({ id }: { id: string }) {
         value={note}
         onChange={(event) => setNote(event.target.value)}
       />
-      <Button disabled={!canSign || score.isPending} onClick={sign}>
+      <Button variant="primary" disabled={!canSign || score.isPending} onClick={sign}>
         {score.isPending ? 'Signing...' : 'Sign'}
       </Button>
     </div>
   )
   return (
-    <Sheet
-      open
+    <Companion
       onClose={close}
       title={`Run ${id}`}
       subtitle={subtitle}
       actions={
         <Badge
-          variant={run.status !== 'ok' && !running ? 'destructive' : 'outline'}
-          className="gap-2"
+          tone={running ? 'progress' : run.status !== 'ok' ? 'error' : 'neutral'}
+          dot={running}
         >
-          {running ? <LiveDot /> : null}
           {run.status}
         </Badge>
       }
@@ -199,21 +199,25 @@ function RunDetailPage({ id }: { id: string }) {
       <DisplayRow label="Job" value={run.job} />
       <DisplayRow label="Project" value={run.project ?? '-'} />
       <DisplayRow label="Tokens" value={run.vendor_tokens?.toLocaleString() ?? '-'} />
-      {run.probe ? <p className="meta mb-3">Probe, not routing evidence.</p> : null}
+      {run.probe ? (
+        <p className="text-sm text-text-muted mb-3">Probe, not routing evidence.</p>
+      ) : null}
       {run.evidence_excluded ? (
-        <p className="meta mb-3">Not routing evidence: {run.evidence_excluded}</p>
+        <p className="text-sm text-text-muted mb-3">
+          Not routing evidence: {run.evidence_excluded}
+        </p>
       ) : null}
       {score.error ? (
-        <p className="mb-3 text-destructive">
+        <p data-tone="error" className="mb-3 text-status-text">
           Could not sign this run. {score.error.message} Check the selections and try again.
         </p>
       ) : null}
       {run.error ? <DetailBlock label="Error" value={run.error} /> : null}
-      <div className="grid gap-4 min-[1100px]:grid-cols-2">
+      <div className="grid gap-4 @2xl/panel:grid-cols-2">
         <DetailBlock label="Prompt" value={run.prompt || '(Prompt unavailable.)'} />
         <DetailBlock label="Reply" value={run.output || '(Nothing came back.)'} />
       </div>
-    </Sheet>
+    </Companion>
   )
 }
 
@@ -222,18 +226,12 @@ function DetailBlock({ label, value }: { label: string; value: string }) {
   return (
     <section>
       <div className="mb-2 flex items-center justify-between">
-        <h2 className="font-sans text-[15px] font-semibold">{label}</h2>
-        <Button
-          variant="ghost"
-          size="icon"
-          className="h-8 w-8"
-          onClick={copy}
-          aria-label={`Copy ${label.toLowerCase()}`}
-        >
+        <h2 className="text-md font-semibold">{label}</h2>
+        <IconButton size="sm" label={`Copy ${label.toLowerCase()}`} onClick={copy}>
           <Copy size={14} />
-        </Button>
+        </IconButton>
       </div>
-      <pre className="max-h-[70vh] overflow-auto whitespace-pre-wrap border border-border bg-muted p-3 text-[12.5px]">
+      <pre className="max-h-[70vh] overflow-auto whitespace-pre-wrap border border-border-default bg-surface-sunken p-3 text-sm">
         {value}
       </pre>
     </section>

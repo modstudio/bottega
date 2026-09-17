@@ -2,23 +2,17 @@ import { useMutation, useQuery } from '@tanstack/react-query'
 import { createFileRoute, Outlet, useNavigate } from '@tanstack/react-router'
 import { ChevronRight, Plus } from 'lucide-react'
 import { useEffect, useMemo, useState } from 'react'
-import { Button } from '@/components/button'
 import { Collection, type CollectionColumn } from '@/components/collection'
-import { PageHeader } from '@/components/design-system'
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from '@/components/dialog'
 import { HostedDocs } from '@/components/hosted-docs'
-import { Input } from '@/components/input'
-import { Tabs, TabsList, TabsTrigger } from '@/components/tabs'
 import { compactBytes, relativeTime } from '@/lib/format'
 import { isHostedMode } from '@/lib/hub-mode'
 import { queryClient, trpc } from '@/trpc/client'
+import { Button } from '@/ui/button/button'
+import { Dialog } from '@/ui/dialog/dialog'
+import { Input } from '@/ui/field/input'
+import { Select } from '@/ui/listbox/select'
+import { PageHeader } from '@/ui/page-header/page-header'
+import { Segmented } from '@/ui/segmented/segmented'
 import { DOC_SCOPE_SUBJECT_KIND, DOC_SCOPES, type DocScope } from '../../../../shared/docs.ts'
 
 export { DOC_SCOPES, type DocScope }
@@ -35,9 +29,10 @@ function bodyBytes(body: string) {
   return new TextEncoder().encode(body).length
 }
 
-const selectClass =
-  'flex h-10 w-full border border-input bg-background px-3 py-2 text-sm ' +
-  'focus-visible:ring-2 focus-visible:ring-ring'
+const deliveryOptions = [
+  { value: 'inject', label: 'Inject' },
+  { value: 'demand', label: 'Demand' },
+]
 
 export const Route = createFileRoute('/docs')({
   component: () => (isHostedMode() ? <HostedDocs /> : <DocsPage />),
@@ -109,7 +104,7 @@ function DocsList() {
     {
       id: 'subject',
       label: 'Subject',
-      render: (doc) => <span className="text-muted-foreground">{doc.subject ?? '-'}</span>,
+      render: (doc) => <span className="text-text-muted">{doc.subject ?? '-'}</span>,
     },
     { id: 'slug', label: 'Slug', render: (doc) => <strong>{doc.slug}</strong> },
     { id: 'title', label: 'Title', render: (doc) => doc.title },
@@ -117,20 +112,18 @@ function DocsList() {
     {
       id: 'size',
       label: 'Size',
-      className: 'num',
+      numeric: true,
       render: (doc) => compactBytes(bodyBytes(doc.body)),
     },
     {
       id: 'updated',
       label: 'Updated',
-      render: (doc) => (
-        <span className="text-muted-foreground">{relativeTime(doc.updated_at)}</span>
-      ),
+      render: (doc) => <span className="text-text-muted">{relativeTime(doc.updated_at)}</span>,
     },
     {
       id: 'open',
       label: '',
-      render: () => <ChevronRight size={14} className="text-muted-foreground" />,
+      render: () => <ChevronRight size={14} className="text-text-muted" />,
     },
   ]
 
@@ -154,6 +147,7 @@ function DocsList() {
         title="Docs"
         actions={
           <Button
+            variant="primary"
             size="sm"
             onClick={() => {
               setScope('global')
@@ -170,8 +164,12 @@ function DocsList() {
           </Button>
         }
       />
-      {docs.isPending ? <p className="text-muted-foreground">Loading docs...</p> : null}
-      {docs.error ? <p className="text-destructive">{docs.error.message}</p> : null}
+      {docs.isPending ? <p className="text-text-muted">Loading docs...</p> : null}
+      {docs.error ? (
+        <p data-tone="error" className="text-status-text">
+          {docs.error.message}
+        </p>
+      ) : null}
       {docs.data ? (
         <Collection
           title="Documents"
@@ -182,16 +180,18 @@ function DocsList() {
             placeholder: 'Filter slug or title',
           }}
           filters={
-            <Tabs value={scopeFilter} onValueChange={setScopeFilter}>
-              <TabsList>
-                <TabsTrigger value="all">All</TabsTrigger>
-                {DOC_SCOPES.map((s) => (
-                  <TabsTrigger key={s} value={s}>
-                    {s.charAt(0).toUpperCase() + s.slice(1)}
-                  </TabsTrigger>
-                ))}
-              </TabsList>
-            </Tabs>
+            <Segmented
+              label="Scope"
+              value={scopeFilter}
+              onChange={setScopeFilter}
+              options={[
+                { value: 'all', label: 'All' },
+                ...DOC_SCOPES.map((s) => ({
+                  value: s,
+                  label: s.charAt(0).toUpperCase() + s.slice(1),
+                })),
+              ]}
+            />
           }
           columns={columns}
           rows={rows}
@@ -215,77 +215,67 @@ function DocsList() {
         onOpenChange={(open) => {
           if (!open) setCreating(false)
         }}
-      >
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>New doc</DialogTitle>
-            <DialogDescription>Creates an empty body and opens it for editing.</DialogDescription>
-          </DialogHeader>
-          <label className="block text-sm">
-            <span className="text-muted-foreground">Scope</span>
-            <select
-              className={selectClass}
-              value={scope}
-              onChange={(e) => {
-                const next = e.target.value
-                if (isScope(next)) setScope(next)
-              }}
-            >
-              {DOC_SCOPES.map((s) => (
-                <option key={s} value={s}>
-                  {s}
-                </option>
-              ))}
-            </select>
-          </label>
-          {needsSubject(scope) ? (
-            <label className="block text-sm">
-              <span className="text-muted-foreground">Subject</span>
-              <select
-                className={selectClass}
-                value={subject}
-                onChange={(e) => setSubject(e.target.value)}
-              >
-                {subjectOptions.map((name) => (
-                  <option key={name} value={name}>
-                    {name}
-                  </option>
-                ))}
-              </select>
-            </label>
-          ) : null}
-          <label htmlFor="new-doc-slug" className="block text-sm">
-            <span className="text-muted-foreground">Slug</span>
-            <Input id="new-doc-slug" value={slug} onChange={(e) => setSlug(e.target.value)} />
-          </label>
-          <label htmlFor="new-doc-title" className="block text-sm">
-            <span className="text-muted-foreground">Title</span>
-            <Input id="new-doc-title" value={title} onChange={(e) => setTitle(e.target.value)} />
-          </label>
-          <label className="block text-sm">
-            <span className="text-muted-foreground">Delivery</span>
-            <select
-              className={selectClass}
-              value={delivery}
-              onChange={(e) => setDelivery(e.target.value as 'inject' | 'demand')}
-            >
-              <option value="inject">inject</option>
-              <option value="demand">demand</option>
-            </select>
-          </label>
-          {create.error ? <p className="text-destructive">{create.error.message}</p> : null}
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setCreating(false)}>
-              Cancel
-            </Button>
+        title="New doc"
+        description="Creates an empty body and opens it for editing."
+        footer={
+          <>
+            <Button onClick={() => setCreating(false)}>Cancel</Button>
             <Button
+              variant="primary"
               onClick={submitCreate}
               disabled={create.isPending || !slug || !title || (needsSubject(scope) && !subject)}
             >
               Create
             </Button>
-          </DialogFooter>
-        </DialogContent>
+          </>
+        }
+      >
+        <div className="space-y-3">
+          <div className="grid gap-1 text-sm">
+            <span className="text-text-muted">Scope</span>
+            <Select
+              label="Scope"
+              value={scope}
+              options={DOC_SCOPES.map((value) => ({ value, label: value }))}
+              onChange={(next) => {
+                if (isScope(next)) setScope(next)
+              }}
+            />
+          </div>
+          {needsSubject(scope) ? (
+            <div className="grid gap-1 text-sm">
+              <span className="text-text-muted">Subject</span>
+              <Select
+                label="Subject"
+                value={subject}
+                options={subjectOptions.map((name) => ({ value: name, label: name }))}
+                onChange={setSubject}
+              />
+            </div>
+          ) : null}
+          <label htmlFor="new-doc-slug" className="block text-sm">
+            <span className="text-text-muted">Slug</span>
+            <Input id="new-doc-slug" value={slug} onChange={(e) => setSlug(e.target.value)} />
+          </label>
+          <label htmlFor="new-doc-title" className="block text-sm">
+            <span className="text-text-muted">Title</span>
+            <Input id="new-doc-title" value={title} onChange={(e) => setTitle(e.target.value)} />
+          </label>
+          <div className="grid gap-1 text-sm">
+            <span className="text-text-muted">Delivery</span>
+            <Select
+              label="Delivery"
+              value={delivery}
+              options={deliveryOptions}
+              onChange={(next) => setDelivery(next as 'inject' | 'demand')}
+            />
+          </div>
+          {create.error ? (
+            <p data-tone="error" className="text-status-text">
+              {create.error.message}
+            </p>
+          ) : null}
+        </div>
       </Dialog>
     </section>
   )

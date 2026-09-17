@@ -1,7 +1,8 @@
 import { initTRPC, TRPCError } from '@trpc/server'
 import { z } from 'zod'
 import { runDetail as orchRun, score as orchScore } from '../../orch.ts'
-import { cachedOrchResponse, cachedStrip, view } from '../../serve.ts'
+import { RUN_PAGE_LIMITS } from '../../run-display.ts'
+import { cachedStrip, view } from '../../serve.ts'
 import type { Context } from '../context.ts'
 
 const t = initTRPC.context<Context>().create()
@@ -18,18 +19,22 @@ export const runRouter = t.router({
         hours,
         agent: z.string().max(64).default(''),
         project: z.string().max(64).default(''),
+        offset: z.number().int().min(0).default(0),
+        limit: z.union(RUN_PAGE_LIMITS.map((size) => z.literal(size))).default(50),
+        search: z.string().max(200).default(''),
       }),
     )
-    .query(async ({ input }) =>
-      cachedOrchResponse(`runs:${input.hours}:${input.agent}:${input.project}`, async () => ({
-        ...(await cachedStrip(input.hours)),
-        view: 'runs' as const,
-        data: await view('runs', input.hours, {
-          agent: input.agent,
-          project: input.project,
-        }),
-      })),
-    ),
+    .query(async ({ input }) => ({
+      ...(await cachedStrip(input.hours)),
+      view: 'runs' as const,
+      data: await view('runs', input.hours, {
+        agent: input.agent,
+        project: input.project,
+        offset: input.offset,
+        limit: input.limit,
+        search: input.search,
+      }),
+    })),
   get: t.procedure.input(z.object({ id: z.number().int().positive() })).query(async ({ input }) => {
     try {
       return await orchRun(input.id)

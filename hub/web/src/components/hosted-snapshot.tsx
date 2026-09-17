@@ -1,4 +1,5 @@
-import { PageHeader } from '@/components/design-system'
+import { Select } from '@/ui/listbox/select'
+import { PageHeader } from '@/ui/page-header/page-header'
 
 type Machine = { id: string; takenAt: string }
 
@@ -28,21 +29,16 @@ export function SnapshotHeader({
       subtitle={`as of ${asOf(takenAt)}`}
       actions={
         machines.length > 1 ? (
-          <label className="flex items-center gap-2 text-sm text-muted-foreground">
+          <div className="flex items-center gap-2 text-sm text-text-muted">
             Machine
-            <select
-              aria-label="Machine"
-              className="h-8 border border-input bg-background px-2 text-foreground"
+            <Select
+              label="Machine"
+              size="sm"
               value={machineId}
-              onChange={(event) => onMachineChange(event.target.value)}
-            >
-              {machines.map((machine) => (
-                <option key={machine.id} value={machine.id}>
-                  {machine.id}
-                </option>
-              ))}
-            </select>
-          </label>
+              options={machines.map((machine) => ({ value: machine.id, label: machine.id }))}
+              onChange={onMachineChange}
+            />
+          </div>
         ) : null
       }
     />

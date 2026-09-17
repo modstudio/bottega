@@ -1,0 +1,178 @@
+/*
+ * The Tailwind bridge. Only meanings and shared measurements become utilities;
+ * every default namespace that carries a look is removed, so a raw palette
+ * class does not compile. Values are `var()` references only: with `inline`
+ * the utility reads the meaning where it is used, which is what lets `.dark`
+ * and `data-density` re-theme a subtree.
+ */
+@custom-variant dark (&:where(.dark, .dark *));
+@custom-variant compact (&:where([data-density="compact"], [data-density="compact"] *));
+
+@theme inline {
+  --color-*: initial;
+  --shadow-*: initial;
+  --radius-*: initial;
+  --font-*: initial;
+
+  --color-transparent: transparent;
+  --color-current: currentColor;
+
+  --color-surface-page: var(--surface-page);
+  --color-surface-raised: var(--surface-raised);
+  --color-surface-sunken: var(--surface-sunken);
+  --color-surface-overlay: var(--surface-overlay);
+  --color-scrim: var(--scrim);
+  --color-selection: var(--selection);
+
+  --color-text-primary: var(--text-primary);
+  --color-text-secondary: var(--text-secondary);
+  --color-text-muted: var(--text-muted);
+  --color-text-inverse: var(--text-inverse);
+  --color-text-disabled: var(--text-disabled);
+  --color-icon-primary: var(--icon-primary);
+  --color-icon-muted: var(--icon-muted);
+  --color-link: var(--link);
+  --color-link-hover: var(--link-hover);
+
+  --color-border-subtle: var(--border-subtle);
+  --color-border-default: var(--border-default);
+  --color-border-strong: var(--border-strong);
+
+  --color-control-rest: var(--control-rest);
+  --color-control-hover: var(--control-hover);
+  --color-control-pressed: var(--control-pressed);
+  --color-control-selected: var(--control-selected);
+  --color-control-disabled: var(--control-disabled);
+
+  --color-accent-fill: var(--accent-fill);
+  --color-accent-fill-hover: var(--accent-fill-hover);
+  --color-accent-on-fill: var(--accent-on-fill);
+  --color-accent-surface: var(--accent-surface);
+  --color-accent-border: var(--accent-border);
+  --color-accent-text: var(--accent-text);
+
+  --color-focus: var(--focus-color);
+
+  /* Status reads whichever role the nearest `data-tone` selected. */
+  --color-status-fill: var(--status-fill);
+  --color-status-fill-hover: var(--status-fill-hover);
+  --color-status-on-fill: var(--status-on-fill);
+  --color-status-text: var(--status-text);
+  --color-status-surface: var(--status-surface);
+  --color-status-border: var(--status-border);
+
+  --color-chart-1: var(--chart-1);
+  --color-chart-2: var(--chart-2);
+  --color-chart-3: var(--chart-3);
+  --color-chart-4: var(--chart-4);
+  --color-chart-grid: var(--chart-grid);
+  --color-chart-axis: var(--chart-axis);
+
+  --color-project: var(--project, var(--border-strong));
+
+  --shadow-raised: var(--elevation-raised);
+  --shadow-overlay: var(--elevation-overlay);
+
+  --font-sans: var(--family-sans);
+  --font-mono: var(--family-mono);
+
+  --ease-standard: var(--motion-ease-standard);
+  --ease-exit: var(--motion-ease-exit);
+
+  --height-control-sm: var(--control-h-sm);
+  --height-control-md: var(--control-h-md);
+  --height-control-lg: var(--control-h-lg);
+  --height-row: var(--row-h);
+  --height-topbar: var(--topbar-h);
+  --width-rail: var(--rail-w);
+  --width-rail-open: var(--rail-w-open);
+}
+
+/* Literal scale, emitted to :root so base styles can read it. */
+@theme {
+  --text-*: initial;
+  --text-xs: 0.6875rem;
+  --text-xs--line-height: 1rem;
+  --text-sm: 0.75rem;
+  --text-sm--line-height: 1rem;
+  --text-base: 0.8125rem;
+  --text-base--line-height: 1.25rem;
+  --text-md: 0.875rem;
+  --text-md--line-height: 1.25rem;
+  --text-lg: 1rem;
+  --text-lg--line-height: 1.5rem;
+  --text-xl: 1.25rem;
+  --text-xl--line-height: 1.75rem;
+  --text-2xl: 1.5rem;
+  --text-2xl--line-height: 2rem;
+  --text-3xl: 2rem;
+  --text-3xl--line-height: 2.5rem;
+}
+
+@layer base {
+  *,
+  ::before,
+  ::after {
+    border-color: var(--border-default);
+  }
+  html,
+  body,
+  #root {
+    min-height: 100%;
+  }
+  body {
+    margin: 0;
+    background: var(--surface-page);
+    color: var(--text-primary);
+    font-family: var(--family-sans);
+    font-size: var(--text-base);
+    line-height: var(--text-base--line-height);
+    font-feature-settings: "cv11", "ss01";
+    -webkit-font-smoothing: antialiased;
+  }
+  ::selection {
+    background: var(--selection);
+  }
+  /* Nothing keeps the browser's own look: every control is ours. */
+  button,
+  input,
+  textarea,
+  select {
+    appearance: none;
+    border-radius: 0;
+    font: inherit;
+    color: inherit;
+  }
+  :focus-visible {
+    outline: var(--focus-width) solid var(--focus-color);
+    outline-offset: var(--focus-offset);
+  }
+  dialog,
+  [popover] {
+    margin: 0;
+    padding: 0;
+    border: 0;
+    color: inherit;
+    background: transparent;
+    max-width: none;
+    max-height: none;
+  }
+  /* The page behind a modal dialog does not scroll. */
+  html:has(dialog:modal) {
+    overflow: hidden;
+  }
+  dialog::backdrop {
+    background: transparent;
+  }
+  code,
+  kbd,
+  samp,
+  pre {
+    font-family: var(--family-mono);
+  }
+  @media (forced-colors: active) {
+    :focus-visible {
+      outline-color: Highlight;
+    }
+  }
+}
