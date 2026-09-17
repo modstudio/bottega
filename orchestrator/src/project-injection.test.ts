@@ -95,6 +95,7 @@ describe('project workflow injection', () => {
           get: 'task_list',
           create: 'task_create',
           update: 'fixture_task_update',
+          status: 'task_update',
         },
         states: {},
       },

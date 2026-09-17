@@ -34,6 +34,8 @@ const trackerProtocolActions = {
     get: { agent: 'task_list' },
     create: { agent: 'task_create' },
     update: { agent: 'task_update' },
+    // task_update takes status as a plain field; task_move also needs a board rank.
+    status: { agent: 'task_update' },
   },
   hub: {
     search: { agent: 'hub task list --project {project}' },
