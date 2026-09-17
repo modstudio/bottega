@@ -23,7 +23,7 @@ import { canonGitRoot, collectCanonLintInput, collectCanonTree } from './canon-f
 import { composeCanonRows, planHydration } from './canon-hydrate.ts'
 import { classifyCanonFile, introducedCanonFindings, lintCanon } from './canon-lint.ts'
 import { decideCanonWrite } from './canon-write-gate.ts'
-import { listDocs, removeDoc, setDoc } from './docs.ts'
+import { listDocs, removeDoc, setDoc } from './doc/docs.ts'
 import { canonEvalsReport, runCanonEvals } from './evals.ts'
 import { projectAt, projectByName } from './projects.ts'
 

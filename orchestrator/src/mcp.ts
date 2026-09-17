@@ -19,7 +19,7 @@ import {
   listDocRevisions,
   listDocs,
   setDoc,
-} from './docs.ts'
+} from './doc/docs.ts'
 import { filedIssueDataLine } from './issue.ts'
 import {
   CONDITIONAL_ISSUE_REPORT_FIELD_REASONS,

@@ -56,7 +56,7 @@ export async function doctorCommand(
   // each other.
   const r = await ensureLocalHealth()
   const { CanonBudgetError, compilePack, findingsForPack } = await import('./canon.ts')
-  const { listDocs } = await import('./docs.ts')
+  const { listDocs } = await import('./doc/docs.ts')
   const { DEFAULT_PACK_BYTES, MAX_INJECT_DOC_BYTES } = await import('./pack-budget.ts')
   let doctorPack: ReturnType<typeof compilePack>
   try {

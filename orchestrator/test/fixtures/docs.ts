@@ -3,7 +3,7 @@ import {
   removeDoc as deleteDoc,
   importDocs as readDocs,
   setDoc as writeDoc,
-} from '../../src/docs.ts'
+} from '../../src/doc/docs.ts'
 
 export type TestDocInput = Parameters<typeof writeDoc>[0]
 export const setDoc = (input: Omit<TestDocInput, 'reason'> & { reason?: string }) =>

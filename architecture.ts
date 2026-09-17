@@ -442,7 +442,11 @@ export const inversions: ArchitectureInversion[] = [
 
 const allowedCycles: ArchitectureCycle[] = [
   {
-    cycle: ['orchestrator/src/canon.ts', 'orchestrator/src/docs.ts', 'orchestrator/src/canon.ts'],
+    cycle: [
+      'orchestrator/src/canon.ts',
+      'orchestrator/src/doc/docs.ts',
+      'orchestrator/src/canon.ts',
+    ],
     reason: 'Pre-existing operator-doc/canon compilation cycle outside the specified inversions.',
   },
 ]

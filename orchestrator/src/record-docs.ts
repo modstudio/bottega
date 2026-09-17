@@ -7,7 +7,7 @@ import {
   type DocDelivery,
   type DocRevisionOp,
   refuseDocWrite,
-} from './doc-write-allowed.ts'
+} from './doc/doc-write-allowed.ts'
 
 export type RecordDoc = {
   id: string

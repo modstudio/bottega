@@ -253,11 +253,11 @@
     "score": 46
   },
   {
-    "file": "orchestrator/src/doc-commands.ts",
+    "file": "orchestrator/src/doc/doc-commands.ts",
     "function": "docCommand",
     "line": 33,
     "score": 110,
-    "key": "orchestrator/src/doc-commands.ts\u0000docCommand"
+    "key": "orchestrator/src/doc/doc-commands.ts\u0000docCommand"
   },
   {
     "file": "orchestrator/src/docker-resources.ts",
@@ -266,17 +266,17 @@
     "score": 17
   },
   {
-    "file": "orchestrator/src/docs.ts",
+    "file": "orchestrator/src/doc/docs.ts",
     "function": "listDocMetadata",
     "line": 191,
     "score": 20
   },
   {
-    "file": "orchestrator/src/docs.ts",
+    "file": "orchestrator/src/doc/docs.ts",
     "function": "importDocs",
     "line": 808,
     "score": 18,
-    "key": "orchestrator/src/docs.ts\u0000importDocs"
+    "key": "orchestrator/src/doc/docs.ts\u0000importDocs"
   },
   {
     "file": "orchestrator/src/doctor.ts",

@@ -196,7 +196,7 @@ describe('record API doc write refusals', () => {
         delivery: 'inject' | 'demand'
         forceInject?: string
       }) => {
-        const { refuseDocWrite } = await import('./doc-write-allowed.ts')
+        const { refuseDocWrite } = await import('./doc/doc-write-allowed.ts')
         const { RecordDocError } = await import('./record-docs.ts')
         const refusal = refuseDocWrite({
           scope: input.scope,

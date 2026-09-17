@@ -11,11 +11,15 @@
  */
 import { mkdirSync, readdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
-import { DOC_SCOPE_SUBJECT_KIND, DOC_SCOPES, type DocScope } from '../../shared/docs.ts'
-import { AGENTS } from './agent-registry.ts'
-import { collectCanonLintInput } from './canon-files.ts'
-import { type CanonRow, composeCanonRows } from './canon-hydrate.ts'
-import { db, nowIso, sessionId, writableDb, writeTransaction } from './db.ts'
+import { DOC_SCOPE_SUBJECT_KIND, DOC_SCOPES, type DocScope } from '../../../shared/docs.ts'
+import { AGENTS } from '../agent-registry.ts'
+import { collectCanonLintInput } from '../canon-files.ts'
+import { type CanonRow, composeCanonRows } from '../canon-hydrate.ts'
+import { db, nowIso, sessionId, writableDb, writeTransaction } from '../db.ts'
+import { JOBS } from '../jobs.ts'
+import { DEFAULT_PACK_BYTES } from '../pack-budget.ts'
+import { projectAt, projectByName } from '../projects.ts'
+import { recordApiClient } from '../record-api-client.ts'
 import {
   consumeDocBody,
   type DocRevisionOp,
@@ -23,10 +27,6 @@ import {
   refuseOversizedInject,
   refuseProjectOrGlobalInject,
 } from './doc-write-allowed.ts'
-import { JOBS } from './jobs.ts'
-import { DEFAULT_PACK_BYTES } from './pack-budget.ts'
-import { projectAt, projectByName } from './projects.ts'
-import { recordApiClient } from './record-api-client.ts'
 
 export type Doc = {
   id: number

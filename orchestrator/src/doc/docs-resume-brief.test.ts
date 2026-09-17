@@ -1,8 +1,8 @@
 import { describe, expect, test } from 'bun:test'
-import { consumeDoc, setDoc } from '../test/fixtures/docs.ts'
-import { db } from './db.ts'
+import { consumeDoc, setDoc } from '../../test/fixtures/docs.ts'
+import { db } from '../db.ts'
+import { upsertProject } from '../projects.ts'
 import { listOpenResumes, parseResumeFrontmatter, resumeAge } from './docs.ts'
-import { upsertProject } from './projects.ts'
 
 describe('scoped operator docs', () => {
   test('consumeDoc consults and patches a top-level open status after nested consumed status', async () => {
