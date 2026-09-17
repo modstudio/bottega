@@ -1,7 +1,15 @@
 // concern: project-injection
 /** Knows the project facts shared workflows may request, their stored grammar, and refusal remedies. */
 import { z } from 'zod'
-import type { TrackerSettings } from '../../shared/trackers.ts'
+import {
+  refuseHubActionOverrides,
+  resolveTrackerAgentActions,
+  TRACKER_PROTOCOLS,
+  type TrackerAction,
+  type TrackerProtocol,
+  type TrackerSettings,
+  trackerSettingsShape,
+} from '../../shared/trackers.ts'
 
 const strictObject = <Shape extends z.core.$ZodLooseShape>(shape: Shape) => z.strictObject(shape)
 
@@ -27,6 +35,12 @@ const docsSchema = z.discriminatedUnion('protocol', [
 ])
 
 const gateSchema = z.string().trim().min(1)
+// The shared shape keeps protocol open so hub can read any stored row; the
+// register edge accepts only protocols a workflow can act on.
+const trackerSchema = strictObject({
+  ...trackerSettingsShape,
+  protocol: z.enum(TRACKER_PROTOCOLS),
+}).superRefine(refuseHubActionOverrides)
 
 export type ReleaseSettings = z.infer<typeof releaseSchema>
 export type DocsSettings = z.infer<typeof docsSchema>
@@ -34,6 +48,13 @@ type ResolvedDocs = DocsSettings & {
   server?: string
   read: string[]
   write: string[]
+}
+type ResolvedTracker = {
+  kind: string
+  protocol: TrackerProtocol
+  server?: string
+  actions: Partial<Record<TrackerAction, string>>
+  states: Partial<Record<'active' | 'review' | 'done', string>>
 }
 
 const docsAdapters: Record<DocsSettings['protocol'], { read: string[]; write: string[] }> = {
@@ -50,6 +71,39 @@ const docsAdapters: Record<DocsSettings['protocol'], { read: string[]; write: st
     write: ['doc_create', 'doc_update'],
   },
   'orch-docs': { read: ['list_docs', 'get_doc'], write: ['set_doc'] },
+}
+
+const trackerProtocols = new Set<string>(TRACKER_PROTOCOLS)
+// Substituted values reach a command an agent runs, so they carry no shell
+// syntax and cannot open with a dash that the command would read as a flag.
+const projectNamePattern = /^[A-Za-z0-9][A-Za-z0-9_.-]*$/
+const taskKeyPattern = /^[A-Za-z0-9][A-Za-z0-9_.-]*$/
+
+function trackerProtocol(value: string | undefined): TrackerProtocol {
+  if (!value || !trackerProtocols.has(value)) {
+    throw new Error(
+      `tracker protocol ${value ?? '(missing)'} has no workflow injection support; set tracker.protocol to one of ${TRACKER_PROTOCOLS.join(', ')}`,
+    )
+  }
+  return value as TrackerProtocol
+}
+
+function substituteAction(template: string, project: string, key: string | undefined): string {
+  return template
+    .replaceAll('{project}', projectNamePattern.test(project) ? project : '{project}')
+    .replaceAll('{key}', key && taskKeyPattern.test(key) ? key : '{key}')
+}
+
+export function unresolvedTrackerActionPlaceholder(
+  action: string,
+  project: string,
+  key: string | undefined,
+): string | null {
+  if (action.includes('{project}'))
+    return `project value "${project}" does not match project-name grammar`
+  if (action.includes('{key}'))
+    return `task-key value "${key ?? '(missing)'}" does not match task-key grammar`
+  return null
 }
 
 type InjectionSettings = {
@@ -70,7 +124,7 @@ export const injectionSources = ['tracker', 'gate', 'worktree', 'release', 'docs
 export type InjectionSource = (typeof injectionSources)[number]
 
 type InjectionValues<Project extends InjectableProject> = {
-  tracker: NonNullable<Project['settings']['tracker']>
+  tracker: ResolvedTracker
   gate: NonNullable<Project['settings']['gate']>
   worktree: NonNullable<Project['settings']['worktree']>
   release: NonNullable<Project['settings']['release']>
@@ -101,7 +155,11 @@ function commandFor(project: InjectableProject, source: InjectionSource): string
 export function resolveInjection<
   Project extends InjectableProject,
   const Needs extends readonly InjectionSource[],
->(project: Project, needs: Needs): ResolvedInjection<Project, Needs> {
+>(
+  project: Project,
+  needs: Needs,
+  args: Record<string, string> = {},
+): ResolvedInjection<Project, Needs> {
   const missing = [...new Set(needs)].filter((source) => {
     const value = source === 'stack' ? project.stack : project.settings[source]
     return value === undefined || value === null
@@ -117,7 +175,34 @@ export function resolveInjection<
   const resolved: Partial<InjectionValues<Project>> = {}
   for (const source of needs) {
     const value = source === 'stack' ? project.stack : project.settings[source]
-    if (source === 'docs') {
+    if (source === 'tracker') {
+      const tracker = value as TrackerSettings
+      const protocol = trackerProtocol(tracker.protocol)
+      const actionNames = resolveTrackerAgentActions(protocol, tracker.actions)
+      const actions = Object.fromEntries(
+        Object.entries(actionNames).map(([action, name]) => [
+          action,
+          substituteAction(name, project.name, args.key),
+        ]),
+      ) as Partial<Record<TrackerAction, string>>
+      const states = Object.fromEntries(
+        (['active', 'review', 'done'] as const).flatMap((category) => {
+          const raw = Object.entries(tracker.states ?? {}).find(
+            ([, mapped]) => mapped === category,
+          )?.[0]
+          return raw ? [[category, raw]] : protocol === 'hub' ? [[category, category]] : []
+        }),
+      ) as ResolvedTracker['states']
+      Object.assign(resolved, {
+        tracker: {
+          kind: tracker.kind ?? protocol,
+          protocol,
+          ...(protocol === 'hub' ? {} : { server: project.name }),
+          actions,
+          states,
+        },
+      })
+    } else if (source === 'docs') {
       const docs = value as DocsSettings
       Object.assign(resolved, {
         docs: {
@@ -131,12 +216,13 @@ export function resolveInjection<
   return resolved as ResolvedInjection<Project, Needs>
 }
 
-type ValidatedInjectionSettings = Pick<InjectionSettings, 'release' | 'docs' | 'gate'>
+type ValidatedInjectionSettings = Pick<InjectionSettings, 'tracker' | 'release' | 'docs' | 'gate'>
 
 /** Validate the workflow-specific portion of a project settings blob at the register edge. */
 export function validateProjectInjectionSettings(settings: ValidatedInjectionSettings): string[] {
   const problems: string[] = []
   for (const [name, schema] of [
+    ['tracker', trackerSchema],
     ['release', releaseSchema],
     ['docs', docsSchema],
     ['gate', gateSchema],

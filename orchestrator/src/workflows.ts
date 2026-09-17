@@ -1,6 +1,10 @@
 import type { Database } from 'bun:sqlite'
 import { db, writableDb } from './db.ts'
-import { type InjectionSource, resolveInjection } from './project-injection.ts'
+import {
+  type InjectionSource,
+  resolveInjection,
+  unresolvedTrackerActionPlaceholder,
+} from './project-injection.ts'
 import { productionStepCatalogue } from './step-catalogue.ts'
 import { type VersionEvent, versionedLifecycle } from './versioned-lifecycle.ts'
 
@@ -357,7 +361,7 @@ export function composeWorkflow(
   const sources = [
     ...new Set(['docs', 'stack', ...selected.flatMap((step) => step.needs)]),
   ] as InjectionSource[]
-  const facts = resolveInjection(project, sources)
+  const facts = resolveInjection(project, sources, args)
   return {
     workflow: { slug, title: definition.title, version: row.n },
     project: projectName,
@@ -410,13 +414,17 @@ export function getWorkflowStep(
     stack: projectRow.stack,
     settings: JSON.parse(projectRow.settings ?? '{}'),
   }
-  const facts = resolveInjection(project, step.needs)
+  const facts = resolveInjection(project, step.needs, args)
   const values: Record<string, unknown> = { ...args, ...facts }
   const body = step.body.replace(/\{\{([^{}]+)\}\}/g, (_all, path: string) => {
     let value: unknown = values
     for (const part of path.split('.')) value = object(value) ? value[part] : undefined
     if (value === undefined || value === null || typeof value === 'object')
       throw new Error(`unresolved workflow placeholder "${path}"`)
+    if (path.startsWith('tracker.actions.') && typeof value === 'string') {
+      const reason = unresolvedTrackerActionPlaceholder(value, project.name, args.key)
+      if (reason) throw new Error(`unresolved workflow placeholder "${path}": ${reason}`)
+    }
     return String(value)
   })
   return {
