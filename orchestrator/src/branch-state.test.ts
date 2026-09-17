@@ -5,9 +5,9 @@ import {
   decideProtectedBranch,
   decidePruneEligibility,
   findRecordedBranchLanding,
-  type MergedPullRequest,
   pullRequestCarriesKey,
 } from './branch-state.ts'
+import type { MergedPullRequest } from './merged-pull-request.ts'
 
 describe('protected project branch decision', () => {
   test('trunk protection mutation: refuses the registered trunk', () => {

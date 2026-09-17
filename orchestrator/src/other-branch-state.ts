@@ -1,13 +1,12 @@
 // concern: branch-state
 /** Pure policy for local branches that were not minted by an orchestrator run. */
 
+import type { PatchEquivalentForm, ProtectedBranchKind } from './branch-state.ts'
 import type {
   MergedPullRequest,
-  PatchEquivalentForm,
-  ProtectedBranchKind,
   PullRequestCommitCheck,
-} from './branch-state.ts'
-import type { PullRequestNameCheck } from './merged-pull-request.ts'
+  PullRequestNameCheck,
+} from './merged-pull-request.ts'
 
 export type OtherBranchLanding =
   | {

@@ -100,16 +100,43 @@ export function mergedPullRequests(project: Project): {
 
 function fetchPullRequest(project: Project, pullRequest: MergedPullRequest): string | null {
   try {
-    git(project.path, 'fetch', '--no-tags', 'origin', pullRequest.headRefOid)
+    git(
+      project.path,
+      'fetch',
+      '--no-tags',
+      '--no-write-fetch-head',
+      'origin',
+      pullRequest.headRefOid,
+    )
     return null
   } catch (shaError) {
     try {
-      git(project.path, 'fetch', '--no-tags', 'origin', `refs/pull/${pullRequest.number}/head`)
+      git(
+        project.path,
+        'fetch',
+        '--no-tags',
+        '--no-write-fetch-head',
+        'origin',
+        `refs/pull/${pullRequest.number}/head`,
+      )
       return null
     } catch (refError) {
       return `PR #${pullRequest.number} fetch failed by SHA (${String(shaError)}) and pull ref (${String(refError)})`
     }
   }
+}
+
+function fetchPullRequestCached(
+  project: Project,
+  pullRequest: MergedPullRequest,
+  fetched: Map<number, string | null>,
+): string | null {
+  let failure = fetched.get(pullRequest.number)
+  if (failure === undefined) {
+    failure = fetchPullRequest(project, pullRequest)
+    fetched.set(pullRequest.number, failure)
+  }
+  return failure
 }
 
 export function pullRequestCommitCheck(
@@ -120,11 +147,7 @@ export function pullRequestCommitCheck(
 ): PullRequestCommitCheck {
   let failure: string | null = null
   for (const pullRequest of pullRequests) {
-    let fetchFailure = fetched.get(pullRequest.number)
-    if (fetchFailure === undefined) {
-      fetchFailure = fetchPullRequest(project, pullRequest)
-      fetched.set(pullRequest.number, fetchFailure)
-    }
+    const fetchFailure = fetchPullRequestCached(project, pullRequest, fetched)
     if (fetchFailure) {
       failure ??= fetchFailure
       continue
@@ -151,11 +174,7 @@ export function pullRequestNameCheck(
   let failure: string | null = null
   let mismatch: MergedPullRequest | null = null
   for (const pullRequest of pullRequests.filter((candidate) => candidate.headRefName === branch)) {
-    let fetchFailure = fetched.get(pullRequest.number)
-    if (fetchFailure === undefined) {
-      fetchFailure = fetchPullRequest(project, pullRequest)
-      fetched.set(pullRequest.number, fetchFailure)
-    }
+    const fetchFailure = fetchPullRequestCached(project, pullRequest, fetched)
     if (fetchFailure) {
       failure ??= fetchFailure
       continue

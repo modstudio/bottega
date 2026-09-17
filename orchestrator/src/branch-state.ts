@@ -3,8 +3,6 @@
 
 import type { MergedPullRequest, PullRequestCommitCheck } from './merged-pull-request.ts'
 
-export type { MergedPullRequest, PullRequestCommitCheck } from './merged-pull-request.ts'
-
 export function pullRequestCarriesKey(
   pullRequest: Pick<MergedPullRequest, 'headRefName' | 'title'>,
   key: string,
