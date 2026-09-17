@@ -34,7 +34,10 @@ function treePath(folder: WorkflowTreeFolder, slug: string): string {
 }
 
 function document(frontMatter: Record<string, unknown>, body: string): string {
-  return `---\n${Bun.YAML.stringify(frontMatter)}\n---\n${body}\n`
+  // An indent selects block style; without one Bun writes a single flow line.
+  // Bun leaves a trailing space after a key whose value is a nested block.
+  const yaml = Bun.YAML.stringify(frontMatter, null, 2).replace(/ +$/gm, '')
+  return `---\n${yaml}\n---\n${body}\n`
 }
 
 function renderedFiles(store: WorkflowTreeStore): WorkflowTreeFile[] {
