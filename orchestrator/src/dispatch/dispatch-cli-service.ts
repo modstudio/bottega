@@ -14,13 +14,13 @@ import { JOBS, job } from '../jobs.ts'
 import { ensureLocalHealth } from '../local-host.ts'
 import type { McpRequest } from '../mcp/mcp-preflight.ts'
 import { stackAt } from '../project/projects.ts'
-import { implicitReviewWarning } from '../review-target.ts'
+import { implicitReviewWarning } from '../review/review-target.ts'
 import {
   REVIEW_COVERAGE,
   REVIEW_LIMITS,
   REVIEW_OVERLAP,
   REVIEW_REPRODUCED,
-} from '../review-vocabulary.ts'
+} from '../review/review-vocabulary.ts'
 import { pick } from '../route/route.ts'
 import { pickCommand } from '../route/routing-commands.ts'
 import { RUNS_DIR } from '../run/run-artifacts.ts'

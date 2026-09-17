@@ -2,7 +2,7 @@
 /** Owns monitor notice currentness, claiming, formatting, and delivery acknowledgement. */
 
 import { db, nowIso, writableDb, writeTransaction } from '../db.ts'
-import type { MonitorSeverity } from '../review-vocabulary.ts'
+import type { MonitorSeverity } from '../review/review-vocabulary.ts'
 import {
   askingRuns,
   deadRunningProcessConditions,

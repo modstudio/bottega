@@ -43,7 +43,7 @@ import {
   setLedgerRef,
 } from '../porting/porting.ts'
 import { projectAt, projectByName, projects } from '../project/projects.ts'
-import { getReview, listReviews } from '../review.ts'
+import { getReview, listReviews } from '../review/review.ts'
 import { composeWorkflow, getWorkflowStep, listWorkflows } from '../workflow/workflows.ts'
 import { decideMcpDocWrite } from './mcp-doc-write.ts'
 

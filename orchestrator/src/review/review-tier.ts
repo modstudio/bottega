@@ -1,5 +1,5 @@
-import { categorizeFile } from '../../shared/file-kind.ts'
-import { targetGitEnvironment } from './git-environment.ts'
+import { categorizeFile } from '../../../shared/file-kind.ts'
+import { targetGitEnvironment } from '../git-environment.ts'
 
 export type ReviewTier = {
   tier: 0 | 1 | 2 | 3

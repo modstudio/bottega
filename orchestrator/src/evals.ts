@@ -20,7 +20,7 @@ import {
 } from './contract/contract.ts'
 import { db, nowIso, writeTransaction } from './db.ts'
 import { JOBS } from './jobs.ts'
-import { parseReviewOutput, parseReviewReply } from './review.ts'
+import { parseReviewOutput, parseReviewReply } from './review/review.ts'
 import { run } from './run/run.ts'
 import { auditRunMutation, runMutationActor } from './run/run-authority.ts'
 

@@ -69,8 +69,8 @@ import {
   CALIBRATION_SUFFIX_RESERVE_BYTES,
   calibrationLine,
   reviewCalibration,
-} from '../review-calibration.ts'
-import { implicitReviewCoverageBase, resolveReviewTarget } from '../review-target.ts'
+} from '../review/review-calibration.ts'
+import { implicitReviewCoverageBase, resolveReviewTarget } from '../review/review-target.ts'
 import { pick } from '../route/route.ts'
 import {
   prepareSandboxHome,

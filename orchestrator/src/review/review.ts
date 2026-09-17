@@ -1,13 +1,13 @@
 // concern: review
 import type { Database, SQLQueryBindings } from 'bun:sqlite'
-import { newRecordId } from '../../shared/record/schema.ts'
-import type { ReviewReply } from './contract/contract.ts'
-import { db, nowIso, writableDb, writeTransaction } from './db.ts'
+import { newRecordId } from '../../../shared/record/schema.ts'
+import type { ReviewReply } from '../contract/contract.ts'
+import { db, nowIso, writableDb, writeTransaction } from '../db.ts'
 import { enqueueReview } from './review-outbox.ts'
 
-export { parseReviewOutput, parseReviewReply } from './contract/contract.ts'
+export { parseReviewOutput, parseReviewReply } from '../contract/contract.ts'
 
-import { job } from './jobs.ts'
+import { job } from '../jobs.ts'
 import { currentCoverage, projectRecord } from './review-coverage.ts'
 import { filesCoveredIntersectChanged } from './review-coverage-match.ts'
 import {

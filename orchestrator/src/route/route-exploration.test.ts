@@ -7,7 +7,7 @@ import {
   MIN_REVIEW_TRIAGED,
   recordReview,
   triageFinding,
-} from '../review-triage.ts'
+} from '../review/review-triage.ts'
 import {
   BETA_SCALE,
   candidates,

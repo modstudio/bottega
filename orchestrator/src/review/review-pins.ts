@@ -1,11 +1,11 @@
 // concern: review-pins
 import type { Database } from 'bun:sqlite'
-import { changeIdentity } from './change-identity.ts'
-import { db, writableDb } from './db.ts'
+import { changeIdentity } from '../change-identity.ts'
+import { db, writableDb } from '../db.ts'
 import type { CoverageGitRunner, ReviewChangeRange, RunRow } from './review-types.ts'
 
 export const targetGitEnvironment = (repo: string) =>
-  (require('./git-environment.ts') as typeof import('./git-environment.ts')).targetGitEnvironment(
+  (require('../git-environment.ts') as typeof import('../git-environment.ts')).targetGitEnvironment(
     repo,
   )
 

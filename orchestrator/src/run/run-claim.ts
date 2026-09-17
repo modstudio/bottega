@@ -48,7 +48,7 @@ import {
   type ResumeTreePlan,
   resumeCreationOptions,
 } from '../resume-tree.ts'
-import { inferredReadOnlyKey } from '../review-target.ts'
+import { inferredReadOnlyKey } from '../review/review-target.ts'
 import { prepareProjectGrokMcpScope } from '../sandbox.ts'
 import { resolveTaskBranch, type TaskBranchCandidate } from '../task-branch.ts'
 import { createWorkerWorktree, worktreeExists } from '../worktree/worktree.ts'

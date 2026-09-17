@@ -20,7 +20,7 @@ import { projectLockState } from '../project/project-lock.ts'
 import { projectAt, projects } from '../project/projects.ts'
 import { reclaimBranch, reclaimWorktree } from '../reclaim/reclaim.ts'
 import { terminalDockerRetentionReasonForRun } from '../resource-ownership.ts'
-import type { MonitorSeverity } from '../review-vocabulary.ts'
+import type { MonitorSeverity } from '../review/review-vocabulary.ts'
 import { RUNS_DIR } from '../run/run-artifacts.ts'
 import { worktreeDirty } from '../worktree/worktree-attribution.ts'
 import {

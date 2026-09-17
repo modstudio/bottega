@@ -450,35 +450,35 @@
       "spawns": 0
     },
     {
-      "path": "orchestrator/src/review-calibration.test.ts",
+      "path": "orchestrator/src/review/review-calibration.test.ts",
       "wallMs": 88,
       "tests": 10,
       "cliShaped": false,
       "spawns": 0
     },
     {
-      "path": "orchestrator/src/review-recording-lens.test.ts",
+      "path": "orchestrator/src/review/review-recording-lens.test.ts",
       "wallMs": 19,
       "tests": 4,
       "cliShaped": false,
       "spawns": 0
     },
     {
-      "path": "orchestrator/src/review-tier.test.ts",
+      "path": "orchestrator/src/review/review-tier.test.ts",
       "wallMs": 36,
       "tests": 8,
       "cliShaped": false,
       "spawns": 0
     },
     {
-      "path": "orchestrator/src/review-yield.test.ts",
+      "path": "orchestrator/src/review/review-yield.test.ts",
       "wallMs": 39,
       "tests": 5,
       "cliShaped": false,
       "spawns": 0
     },
     {
-      "path": "orchestrator/src/review.test.ts",
+      "path": "orchestrator/src/review/review.test.ts",
       "wallMs": 47,
       "tests": 10,
       "cliShaped": false,

@@ -16,7 +16,7 @@ import {
 } from './merged-pull-request.ts'
 import type { Project } from './project/projects.ts'
 import { projectAt, projects } from './project/projects.ts'
-import { reviewRunEvidenceSql } from './review-evidence-sql.ts'
+import { reviewRunEvidenceSql } from './review/review-evidence-sql.ts'
 import type { Worktree } from './worktree/worktree-types.ts'
 
 export type TaskBranchCandidate = {

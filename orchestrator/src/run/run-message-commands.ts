@@ -16,7 +16,7 @@ import {
   REVIEW_LIMITS,
   REVIEW_OVERLAP,
   REVIEW_REPRODUCED,
-} from '../review-vocabulary.ts'
+} from '../review/review-vocabulary.ts'
 import { answerRun, retryRun } from './run-answer.ts'
 import { continueRun, type RunControlPresentation, reportContinuedRun } from './run-control.ts'
 

@@ -8,7 +8,7 @@ import {
   REVIEW_LIMITS,
   REVIEW_OVERLAP,
   REVIEW_REPRODUCED,
-} from '../review-vocabulary.ts'
+} from '../review/review-vocabulary.ts'
 
 const seedDefinition = (definition: unknown) => JSON.stringify(definition)
 

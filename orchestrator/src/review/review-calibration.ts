@@ -1,6 +1,7 @@
 // concern: review-calibration
 import type { Database } from 'bun:sqlite'
-import { db } from './db.ts'
+import { db } from '../db.ts'
+import { median } from '../statistics.ts'
 import { completedReviewEvidenceSql, REVIEW_WINDOW } from './review-evidence-sql.ts'
 import { MIN_REVIEW_TRIAGED } from './review-triage.ts'
 import {
@@ -15,7 +16,6 @@ import {
   type ReviewReproduced,
   type ReviewSeverity,
 } from './review-vocabulary.ts'
-import { median } from './statistics.ts'
 
 export type ReviewCalibration = {
   lens: string
