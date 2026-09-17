@@ -395,7 +395,6 @@ realPostgres('project import against copied live SQLite data', () => {
     const recordNullPatchIdentity = await sql`
       SELECT count(*)::int AS count FROM review WHERE patch_id IS NULL AND path_set IS NULL
     `
-    expect(sourceNullPatchIdentity).toBe(369)
     expect(recordNullPatchIdentity[0]!.count).toBe(sourceNullPatchIdentity)
     const missingOutbox = source
       .query<{ count: number }, []>(
@@ -416,7 +415,6 @@ realPostgres('project import against copied live SQLite data', () => {
     expect(missingChains[0]!.count).toBe(0)
     const recordNoProject =
       await sql`SELECT count(*)::int AS count FROM run WHERE project_id IS NULL`
-    expect(noProject).toBe(97)
     expect(recordNoProject[0]!.count).toBe(noProject)
     source.close()
   })

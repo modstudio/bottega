@@ -4,6 +4,7 @@
  * terminal row writes, and artifact persistence. Must not know run claiming,
  * live worker execution, run control, dispatch surfaces, or the CLI.
  */
+import type { Database } from 'bun:sqlite'
 import { writeFileSync } from 'node:fs'
 import type { AskLoopback } from './ask.ts'
 import { checkpointRun, latestCheckpoint } from './checkpoint.ts'
@@ -122,6 +123,29 @@ export function shouldCheckpointAtTerminal(input: {
   launchKey: string | null
 }): boolean {
   return input.writesJob && input.hasWorktree && Boolean(input.launchKey)
+}
+
+/**
+ * Record a parsed findings reply as review evidence in the terminal
+ * transaction. Probe runs are calibration, not product evidence.
+ */
+export function recordTerminalReviewEvidence(
+  database: Database,
+  input: {
+    runId: number
+    parsedReview: ReviewReply | null
+    status: string
+    failureKind: ReturnType<typeof classify> | null
+  },
+): number | null {
+  if (!input.parsedReview || (input.status !== 'ok' && input.failureKind !== 'escaped')) {
+    return null
+  }
+  const row = database.query('SELECT probe FROM run WHERE id=?').get(input.runId) as {
+    probe: number | null
+  } | null
+  if (row?.probe) return null
+  return recordEvidence(database, input.runId, input.parsedReview)
 }
 
 function boundedConfinementError(message: string): string {
@@ -629,11 +653,15 @@ export async function finishRun(input: TerminalInput): Promise<TerminalResult> {
 
       // A parsed findings reply is the review event. Capture it in the same
       // terminal transaction so a successful lens cannot exist in the gap
-      // between "ran" and "recorded". Manual `orch review record` remains the
-      // recovery path for historical or otherwise uncaptured outputs.
-      if (parsedReview && (status === 'ok' || failureKind === 'escaped')) {
-        recordEvidence(db(), opts.resume?.parent ?? claim.id, parsedReview)
-      }
+      // between "ran" and "recorded". Probe traffic is calibration and is not
+      // recorded. Manual `orch review record` remains the recovery path for
+      // historical or otherwise uncaptured outputs.
+      recordTerminalReviewEvidence(db(), {
+        runId: opts.resume?.parent ?? claim.id,
+        parsedReview,
+        status,
+        failureKind,
+      })
       enqueueRunRecord(db(), claim.id, localMachineId, finishedAt)
     })
   try {
