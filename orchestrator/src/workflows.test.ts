@@ -80,6 +80,54 @@ describe('workflow versions and project composition', () => {
     expect(composed.steps.every((step) => step.floor.length > 0)).toBe(true)
     expect(getWorkflowStep('ship', 'fixture', 'rebase', args, d).body).toContain('bun run check')
   })
+  test('composes dedupe with the workspace tracker search tool', () => {
+    const d = database()
+    d.query('UPDATE project SET settings=? WHERE name=?').run(
+      JSON.stringify({
+        docs: { protocol: 'orch-docs' },
+        tracker: { kind: 'workspace', protocol: 'workspace-mcp' },
+      }),
+      'fixture',
+    )
+    const current = productionStepCatalogue(d).definition
+    const catalogue = setStepCatalogue(
+      {
+        steps: [
+          ...current.steps,
+          {
+            slug: 'dedupe',
+            title: 'Dedupe',
+            body: 'Search with {{tracker.actions.search}}.',
+            floor: ['human-ruling'],
+            job: null,
+            autonomy: 'ask',
+            needs: ['tracker'],
+          },
+        ],
+      },
+      'dedupe fixture',
+      'test',
+      d,
+    )
+    promoteStepCatalogue(catalogue.n, 'publish', 'test', d)
+    const workflow = setWorkflow(
+      'plan-task',
+      {
+        title: 'Plan task',
+        description: 'Plan.',
+        arguments: [],
+        modes: [{ slug: 'default', title: 'Default', default: true, steps: ['dedupe'] }],
+      },
+      'dedupe fixture',
+      'test',
+      d,
+    )
+    promoteWorkflow('plan-task', workflow.n, 'publish', 'test', d)
+
+    expect(getWorkflowStep('plan-task', 'fixture', 'dedupe', {}, d).body).toBe(
+      'Search with list-tasks-tool.',
+    )
+  })
   test('refuses missing project facts and unresolved placeholders', () => {
     const d = database(),
       args = { key: 'x', branch: 'b', worktree: '/w' }

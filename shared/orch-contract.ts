@@ -13,6 +13,16 @@ const OrchTrackerSettingsSchema = z
     states: z
       .record(z.string(), z.enum(['backlog', 'open', 'active', 'review', 'done', 'dropped']))
       .optional(),
+    actions: z
+      .object({
+        search: z.string().optional(),
+        get: z.string().optional(),
+        create: z.string().optional(),
+        update: z.string().optional(),
+        status: z.string().optional(),
+        comment: z.string().optional(),
+      })
+      .optional(),
   })
   .passthrough()
 

@@ -25,6 +25,18 @@ describe('project workflow injection', () => {
     ).toEqual([expect.stringContaining('release: Unrecognized key')])
   })
 
+  test('refuses an unknown tracker action override at the register edge', () => {
+    expect(
+      validateProjectSettings({
+        tracker: {
+          kind: 'fixture',
+          protocol: 'workspace-mcp',
+          actions: { archive: 'archive-task-tool' },
+        } as Project['settings']['tracker'],
+      }),
+    ).toEqual([expect.stringContaining('tracker.actions: Unrecognized key')])
+  })
+
   test('resolves every requested fact with its stored type', () => {
     const project: Project = {
       id: 1,
@@ -34,7 +46,11 @@ describe('project workflow injection', () => {
       canon: true,
       retiredAt: null,
       settings: {
-        tracker: { kind: 'fixture', protocol: 'array-mcp' },
+        tracker: {
+          kind: 'fixture',
+          protocol: 'array-mcp',
+          actions: { update: 'fixture_task_update' },
+        },
         gate: 'bun run check',
         worktree: { branch: '{key}-orch-{id}' },
         release,
@@ -54,7 +70,17 @@ describe('project workflow injection', () => {
     const typedDocs = resolved.docs
 
     expect({ ...resolved, release: typedRelease, docs: typedDocs }).toEqual({
-      tracker: { kind: 'fixture', protocol: 'array-mcp' },
+      tracker: {
+        kind: 'fixture',
+        protocol: 'array-mcp',
+        server: 'fixture',
+        actions: {
+          search: 'task_list',
+          create: 'task_create',
+          update: 'fixture_task_update',
+        },
+        states: { active: 'active', review: 'review', done: 'done' },
+      },
       gate: 'bun run check',
       worktree: { branch: '{key}-orch-{id}' },
       release,
@@ -66,6 +92,90 @@ describe('project workflow injection', () => {
       },
       stack: 'node',
     })
+  })
+
+  test('resolves protocol defaults and replaces only an overridden action', () => {
+    const expected = {
+      'workspace-mcp': {
+        search: 'list-tasks-tool',
+        get: 'get-task-tool',
+        create: 'create-task-tool',
+        update: 'update-task-tool',
+        status: 'update-task-tool',
+        comment: 'create-task-comment-tool',
+      },
+      'cursor-mcp': {
+        search: 'task_list',
+        get: 'task_getByKey',
+        create: 'task_create',
+        update: 'task_update',
+        status: 'task_update',
+        comment: 'comment_add',
+      },
+      'array-mcp': { search: 'task_list', create: 'task_create', update: 'task_update' },
+      hub: {
+        search: 'hub task list --project fixture',
+        get: 'hub task show {key}',
+        create: 'hub task new --project fixture',
+        update: 'hub task set {key}',
+        status: 'hub task set {key} --status',
+        comment: 'hub task comment {key}',
+      },
+    } as const
+    for (const protocol of Object.keys(expected) as (keyof typeof expected)[]) {
+      const tracker = resolveInjection(
+        {
+          name: 'fixture',
+          stack: 'node',
+          settings: {
+            tracker: {
+              kind: protocol === 'hub' ? 'hub' : 'fixture',
+              protocol,
+              actions: { status: 'custom-status' },
+            },
+          },
+        },
+        ['tracker'],
+      ).tracker
+      expect(tracker.actions).toEqual({ ...expected[protocol], status: 'custom-status' })
+      expect(tracker.server).toBe(protocol === 'hub' ? undefined : 'fixture')
+    }
+  })
+
+  test('derives the first raw state in each category and gives hub vocabulary defaults', () => {
+    expect(validateProjectSettings({ tracker: { kind: 'hub', protocol: 'hub' } })).toEqual([])
+    const mapped = resolveInjection(
+      {
+        name: 'fixture',
+        stack: 'node',
+        settings: {
+          tracker: {
+            kind: 'workspace',
+            protocol: 'workspace-mcp',
+            states: {
+              started: 'active',
+              working: 'active',
+              checking: 'review',
+              completed: 'done',
+            },
+          },
+        },
+      },
+      ['tracker'],
+    ).tracker
+    expect(mapped.states).toEqual({ active: 'started', review: 'checking', done: 'completed' })
+
+    const hub = resolveInjection(
+      {
+        name: 'fixture',
+        stack: 'node',
+        settings: { tracker: { kind: 'hub', protocol: 'hub' } },
+      },
+      ['tracker'],
+      { key: 'DEV-661' },
+    ).tracker
+    expect(hub.states).toEqual({ active: 'active', review: 'review', done: 'done' })
+    expect(hub.actions.get).toBe('hub task show DEV-661')
   })
 
   test('one refusal names every missing fact and its project update command', () => {

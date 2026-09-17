@@ -1,13 +1,62 @@
 export type StatusCategory = 'open' | 'active' | 'review' | 'done' | 'dropped'
 export const TASK_STATUSES = ['open', 'active', 'review', 'done', 'dropped'] as const
 
+export const TRACKER_ACTIONS = ['search', 'get', 'create', 'update', 'status', 'comment'] as const
+export type TrackerAction = (typeof TRACKER_ACTIONS)[number]
+export type TrackerProtocol = 'workspace-mcp' | 'cursor-mcp' | 'array-mcp' | 'hub'
+export type TrackerActionName = { agent: string; wire?: string }
+
+/** The names agents and hub use for each protocol capability. */
+export const trackerProtocolActions = {
+  'workspace-mcp': {
+    search: { agent: 'list-tasks-tool' },
+    get: { agent: 'get-task-tool' },
+    create: { agent: 'create-task-tool' },
+    update: { agent: 'update-task-tool' },
+    status: { agent: 'update-task-tool' },
+    comment: { agent: 'create-task-comment-tool' },
+  },
+  'cursor-mcp': {
+    search: { agent: 'task_list', wire: 'task.list' },
+    get: { agent: 'task_getByKey', wire: 'task.getByKey' },
+    create: { agent: 'task_create', wire: 'task.create' },
+    update: { agent: 'task_update', wire: 'task.update' },
+    status: { agent: 'task_update', wire: 'task.update' },
+    comment: { agent: 'comment_add', wire: 'comment.add' },
+  },
+  'array-mcp': {
+    search: { agent: 'task_list' },
+    create: { agent: 'task_create' },
+    update: { agent: 'task_update' },
+  },
+  hub: {
+    search: { agent: 'hub task list --project {project}' },
+    get: { agent: 'hub task show {key}' },
+    create: { agent: 'hub task new --project {project}' },
+    update: { agent: 'hub task set {key}' },
+    status: { agent: 'hub task set {key} --status' },
+    comment: { agent: 'hub task comment {key}' },
+  },
+} satisfies Record<TrackerProtocol, Partial<Record<TrackerAction, TrackerActionName>>>
+
+const trackerWireAction = (protocol: TrackerProtocol, action: TrackerAction): string => {
+  const actions: Record<
+    TrackerProtocol,
+    Partial<Record<TrackerAction, TrackerActionName>>
+  > = trackerProtocolActions
+  const name = actions[protocol][action]
+  if (!name) throw new Error(`tracker protocol ${protocol} has no ${action} action`)
+  return name.wire ?? name.agent
+}
+
 export type TrackerSettings = {
   kind?: string
-  protocol?: 'workspace-mcp' | 'cursor-mcp' | 'array-mcp' | string
+  protocol?: TrackerProtocol | string
   assigneeLookup?: 'person-lookup' | 'task-detail'
   envPrefix?: string
   openStatuses?: string[]
   states?: Record<string, 'backlog' | StatusCategory>
+  actions?: Partial<Record<TrackerAction, string>>
 }
 
 export type TrackerProject = {
@@ -240,7 +289,9 @@ function workspaceSource(
   const assignees = (m: ToolCaller, refs: AssigneeRef[]) =>
     resolveAssignees(project, refs, async (id, taskKey) => {
       if (lookup === 'task-detail' && taskKey) {
-        const detail = (await m.callTool('get-task-tool', { id: taskKey })) as {
+        const detail = (await m.callTool(trackerWireAction('workspace-mcp', 'get'), {
+          id: taskKey,
+        })) as {
           assignee?: string | null
           assignee_id?: string | number | null
         }
@@ -257,7 +308,11 @@ function workspaceSource(
       const refs: AssigneeRef[] = []
       for (const status of openStatuses) {
         for (let page = 1; page <= MAX_PAGES; page++) {
-          const r = (await m.callTool('list-tasks-tool', { status, page, per_page: 100 })) as {
+          const r = (await m.callTool(trackerWireAction('workspace-mcp', 'search'), {
+            status,
+            page,
+            per_page: 100,
+          })) as {
             tasks?: {
               short_id?: string
               summary?: string
@@ -290,7 +345,10 @@ function workspaceSource(
       return out
     },
     async lookup(m, key) {
-      const r = (await m.callTool('list-tasks-tool', { search: key, per_page: 5 })) as {
+      const r = (await m.callTool(trackerWireAction('workspace-mcp', 'search'), {
+        search: key,
+        per_page: 5,
+      })) as {
         tasks?: {
           short_id?: string
           summary?: string
@@ -334,7 +392,7 @@ function cursorMcpSource(
       for (const status of openStatuses) {
         let cursor: string | undefined
         for (let page = 0; page < MAX_PAGES; page++) {
-          const r = (await m.callTool('task.list', {
+          const r = (await m.callTool(trackerWireAction('cursor-mcp', 'search'), {
             status,
             limit: 100,
             ...(cursor ? { cursor } : {}),
@@ -369,7 +427,7 @@ function cursorMcpSource(
       return out
     },
     async lookup(m, key) {
-      const r = (await m.callTool('task.getByKey', { taskKey: key })) as {
+      const r = (await m.callTool(trackerWireAction('cursor-mcp', 'get'), { taskKey: key })) as {
         data?: {
           humanKey?: string
           title?: string
@@ -410,7 +468,7 @@ function arrayMcpSource(
     async fetch(m) {
       const out: TrackerTask[] = []
       for (const status of openStatuses) {
-        const r = (await m.callTool('task_list', { status })) as {
+        const r = (await m.callTool(trackerWireAction('array-mcp', 'search'), { status })) as {
           key?: string
           title?: string
           status?: string
@@ -432,7 +490,7 @@ function arrayMcpSource(
       return out
     },
     async lookup(m, key) {
-      const r = (await m.callTool('task_list', { search: key })) as {
+      const r = (await m.callTool(trackerWireAction('array-mcp', 'search'), { search: key })) as {
         key?: string
         title?: string
         status?: string
@@ -460,6 +518,7 @@ export function trackerSourceFor(
 ): TrackerSource | null {
   const tracker = project.settings.tracker
   if (!tracker) return null
+  if (tracker.protocol === 'hub') return null
   const protocols = ['workspace-mcp', 'cursor-mcp', 'array-mcp']
   if (!tracker.protocol || !protocols.includes(tracker.protocol)) {
     throw new Error(
@@ -529,7 +588,7 @@ export async function createTrackerTask(
   if (tracker.protocol === 'array-mcp') {
     // The reflected task.create schema establishes these names; the MCP bridge
     // exposes its dotted procedure name on the wire with an underscore.
-    return m.callTool('task_create', {
+    return m.callTool(trackerWireAction('array-mcp', 'create'), {
       title: task.title,
       description: task.body,
       status: task.status,

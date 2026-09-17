@@ -357,7 +357,7 @@ export function composeWorkflow(
   const sources = [
     ...new Set(['docs', 'stack', ...selected.flatMap((step) => step.needs)]),
   ] as InjectionSource[]
-  const facts = resolveInjection(project, sources)
+  const facts = resolveInjection(project, sources, args)
   return {
     workflow: { slug, title: definition.title, version: row.n },
     project: projectName,
@@ -410,7 +410,7 @@ export function getWorkflowStep(
     stack: projectRow.stack,
     settings: JSON.parse(projectRow.settings ?? '{}'),
   }
-  const facts = resolveInjection(project, step.needs)
+  const facts = resolveInjection(project, step.needs, args)
   const values: Record<string, unknown> = { ...args, ...facts }
   const body = step.body.replace(/\{\{([^{}]+)\}\}/g, (_all, path: string) => {
     let value: unknown = values

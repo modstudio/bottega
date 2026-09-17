@@ -77,7 +77,15 @@ export type TrackerResult = {
 
 export const trackerProjects = () =>
   projects()
-    .filter((project) => project.settings.tracker)
+    .filter((project) => {
+      if (!project.settings.tracker) return false
+      try {
+        return trackerSourceFor(project) !== null
+      } catch {
+        // Keep malformed remote declarations scheduled so collection reports their refusal.
+        return true
+      }
+    })
     .map((project) => project.name)
 
 type ExistingTask = {
