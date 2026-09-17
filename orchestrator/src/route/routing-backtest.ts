@@ -2,7 +2,7 @@ import { AGENTS } from '../agent/agent-registry.ts'
 import { db } from '../db.ts'
 import { COOLS_DOWN } from '../failure/failure.ts'
 import { JOBS } from '../jobs.ts'
-import { chainTerminationAt } from '../run-liveness.ts'
+import { chainTerminationAt } from '../run/run-liveness.ts'
 import { weigh } from '../score/score.ts'
 import { median } from '../statistics.ts'
 import {

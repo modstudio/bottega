@@ -33,10 +33,10 @@ import {
   otherConversationWorktreeSharers,
   worktreePathSpellings,
 } from '../resource-ownership.ts'
-import { runAlive } from '../run-alive.ts'
-import { RUNS_DIR } from '../run-artifacts.ts'
-import { removeFreeRunLease, runLeaseState } from '../run-lease.ts'
-import { processTable, terminateRunProcesses } from '../run-process.ts'
+import { runAlive } from '../run/run-alive.ts'
+import { RUNS_DIR } from '../run/run-artifacts.ts'
+import { removeFreeRunLease, runLeaseState } from '../run/run-lease.ts'
+import { processTable, terminateRunProcesses } from '../run/run-process.ts'
 import { worktreeExists } from '../worktree/worktree.ts'
 import { inspectTreeOwnership } from '../worktree/worktree-attribution.ts'
 import { branchTip, removeFor, restoreBranch } from '../worktree/worktree-remove.ts'

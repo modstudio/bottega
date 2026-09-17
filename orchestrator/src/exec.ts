@@ -66,7 +66,7 @@ try {
   const { readFileSync } = await import('node:fs')
   const { registerStandardRuntime } = await import('./runtime-registration.ts')
   registerStandardRuntime()
-  const { run } = await import('./run.ts')
+  const { run } = await import('./run/run.ts')
   const { detachedRunOptions } = await import('./failover.ts')
   const spec = JSON.parse(specJson ?? '{}') as import('./failover.ts').DetachSpec
   await run(detachedRunOptions(jobName, readFileSync(promptPath, 'utf8'), id, spec))

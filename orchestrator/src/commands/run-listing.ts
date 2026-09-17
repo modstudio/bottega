@@ -4,7 +4,7 @@ import type { Command } from 'commander'
 import { thinOutputWarning } from '../collect/collect.ts'
 import { db } from '../db.ts'
 import { job } from '../jobs.ts'
-import { runListingCommand } from '../run-listing.ts'
+import { runListingCommand } from '../run/run-listing.ts'
 import { collect, duration, log, optionFlags } from './support.ts'
 
 function chainHasPendingDelivery(rootId: number): boolean {

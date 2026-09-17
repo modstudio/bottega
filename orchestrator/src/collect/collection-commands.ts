@@ -3,7 +3,7 @@
 import type { Database } from 'bun:sqlite'
 import { formatPeek, peekRun } from '../events.ts'
 import { job } from '../jobs.ts'
-import { reapStale } from '../run-liveness.ts'
+import { reapStale } from '../run/run-liveness.ts'
 import { collectResult, collectWait, resolveFailover, thinOutputWarning } from './collect.ts'
 
 type Presentation = {

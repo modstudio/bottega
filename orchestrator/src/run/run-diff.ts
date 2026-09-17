@@ -1,9 +1,9 @@
 // concern: run-diff
 /** Knows run diff rendering. Must not know run control, transports, routing, the CLI, or worktrees by value. */
 import { existsSync } from 'node:fs'
-import { db } from './db.ts'
-import { targetGitEnvironment } from './git-environment.ts'
-import { projectByName } from './project/projects.ts'
+import { db } from '../db.ts'
+import { targetGitEnvironment } from '../git-environment.ts'
+import { projectByName } from '../project/projects.ts'
 
 type RunDiffFlags = { has(name: string): boolean }
 type Changes = {

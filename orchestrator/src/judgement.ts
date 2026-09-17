@@ -34,8 +34,8 @@ import {
   authorizeRunMutation,
   type RootAuthority,
   runMutationActor,
-} from './run-authority.ts'
-import { enqueueRunRecord } from './run-outbox.ts'
+} from './run/run-authority.ts'
+import { enqueueRunRecord } from './run/run-outbox.ts'
 import {
   DELIVERY,
   type Delivery,

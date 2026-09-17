@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test'
-import { addRun } from '../test/fixtures/store.ts'
-import { db, sessionId } from './db.ts'
+import { addRun } from '../../test/fixtures/store.ts'
+import { db, sessionId } from '../db.ts'
 import { adoptRunMutation, authorizeRunMutation } from './run-authority.ts'
 
 describe('session identity is the primary id only', () => {

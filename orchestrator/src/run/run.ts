@@ -1,13 +1,13 @@
 import { randomUUID } from 'node:crypto'
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { basename } from 'node:path'
-import { requireAgent } from './agent/agent-registry.ts'
-import { minimumCliVersionRefusal } from './agent/agents.ts'
-import type { AskLoopback } from './ask/ask.ts'
-import { compilePack, recordPack } from './canon/canon.ts'
-import { checkoutWatchSet } from './checkout-identity.ts'
-import { codexMcpSetupHeader, codexProjectServersForRun } from './codex-mcp-scope.ts'
-import { type ConfinementEvent, type FreezeFailure, freezeCheckouts } from './confinement.ts'
+import { requireAgent } from '../agent/agent-registry.ts'
+import { minimumCliVersionRefusal } from '../agent/agents.ts'
+import type { AskLoopback } from '../ask/ask.ts'
+import { compilePack, recordPack } from '../canon/canon.ts'
+import { checkoutWatchSet } from '../checkout-identity.ts'
+import { codexMcpSetupHeader, codexProjectServersForRun } from '../codex-mcp-scope.ts'
+import { type ConfinementEvent, type FreezeFailure, freezeCheckouts } from '../confinement.ts'
 import {
   type CanonSource,
   NO_REPO_PREAMBLE,
@@ -19,23 +19,23 @@ import {
   resolveReplyDialect,
   type WorkerReply,
   workerPreamble,
-} from './contract/contract.ts'
-import { db, enableSchemaReload, nowIso, sessionId, writableDb, writeTransaction } from './db.ts'
-import { preflight } from './dispatch/dispatch-preflight.ts'
-import { assessEvidencePrompt } from './evidence/evidence.ts'
-import { chainTransport } from './failover.ts'
-import { type classify, notify } from './failure/failure.ts'
+} from '../contract/contract.ts'
+import { db, enableSchemaReload, nowIso, sessionId, writableDb, writeTransaction } from '../db.ts'
+import { preflight } from '../dispatch/dispatch-preflight.ts'
+import { assessEvidencePrompt } from '../evidence/evidence.ts'
+import { chainTransport } from '../failover.ts'
+import { type classify, notify } from '../failure/failure.ts'
 import {
   gitContext,
   prepareWorktreeObjects,
   repoRootOf,
   type WorktreeObjectEnvironment,
   worktreeGitDir,
-} from './git-environment.ts'
-import { isReaderJob, type Job, job, jobBoundInstruction, resolveJobTimeoutMs } from './jobs.ts'
-import type { KeepTreeExemption } from './keep-tree-hold.ts'
-import { resolveLens } from './lens/lenses.ts'
-import { ensureLocalHealth, LOCAL_BASE_URL, tryWake } from './local-host.ts'
+} from '../git-environment.ts'
+import { isReaderJob, type Job, job, jobBoundInstruction, resolveJobTimeoutMs } from '../jobs.ts'
+import type { KeepTreeExemption } from '../keep-tree-hold.ts'
+import { resolveLens } from '../lens/lenses.ts'
+import { ensureLocalHealth, LOCAL_BASE_URL, tryWake } from '../local-host.ts'
 import {
   canonSourceFor,
   canonSourceInstruction,
@@ -45,7 +45,7 @@ import {
   probeRequestedMcp,
   requestedMcpMode,
   storedMcpRequest,
-} from './mcp/mcp-preflight.ts'
+} from '../mcp/mcp-preflight.ts'
 import {
   mcpCallEvidence,
   mcpConfigAllowlist,
@@ -54,24 +54,41 @@ import {
   readMcpConfig,
   storedMcpProbe,
   wrongProjectReason,
-} from './mcp/mcp-probe.ts'
-import { projectAt, projectByName, stackAt, type WorktreeTool } from './project/projects.ts'
-import { recipeNotes } from './recipe/recipe.ts'
+} from '../mcp/mcp-probe.ts'
+import { projectAt, projectByName, stackAt, type WorktreeTool } from '../project/projects.ts'
+import { recipeNotes } from '../recipe/recipe.ts'
 import {
   assertSharedRefGuardOutsideWritableRoots,
   prepareSharedRefGuard,
   workerSharedGitRoots,
-} from './ref-guard.ts'
-import { recordSandboxDirectoryClaim } from './resource-claims.ts'
-import { teardownTerminalRunResources } from './resource-ownership.ts'
-import type { ResumeTreePlan } from './resume-tree.ts'
+} from '../ref-guard.ts'
+import { recordSandboxDirectoryClaim } from '../resource-claims.ts'
+import { teardownTerminalRunResources } from '../resource-ownership.ts'
+import type { ResumeTreePlan } from '../resume-tree.ts'
 import {
   CALIBRATION_SUFFIX_RESERVE_BYTES,
   calibrationLine,
   reviewCalibration,
-} from './review-calibration.ts'
-import { implicitReviewCoverageBase, resolveReviewTarget } from './review-target.ts'
-import { pick } from './route/route.ts'
+} from '../review-calibration.ts'
+import { implicitReviewCoverageBase, resolveReviewTarget } from '../review-target.ts'
+import { pick } from '../route/route.ts'
+import {
+  prepareSandboxHome,
+  resetSandbox,
+  sandboxLaunchArgv,
+  selectReadonlySandbox,
+} from '../sandbox.ts'
+import { trackedRecipeEnvironment, trackedRecipeNotes } from '../tracked-recipe.ts'
+import {
+  assertAcpAllowed,
+  assertAcpReady,
+  resolveTransportName,
+  selectAgentForTransport,
+  type TransportName,
+} from '../transport/transport.ts'
+import { resolveBase, resolveReadOnlyBase } from '../worktree/worktree-caller.ts'
+import { toolFor } from '../worktree/worktree-preflight.ts'
+import type { Worktree } from '../worktree/worktree-types.ts'
 import { pruneRuns, RUNS_DIR, readDispatchState, runFilePaths } from './run-artifacts.ts'
 import { claimRun } from './run-claim.ts'
 import { closeRun } from './run-close.ts'
@@ -80,23 +97,6 @@ import { runLive } from './run-live.ts'
 import { bindSignals, childEnv, sha } from './run-process.ts'
 import { finishRun } from './run-terminal.ts'
 import type { RunResult } from './run-types.ts'
-import {
-  prepareSandboxHome,
-  resetSandbox,
-  sandboxLaunchArgv,
-  selectReadonlySandbox,
-} from './sandbox.ts'
-import { trackedRecipeEnvironment, trackedRecipeNotes } from './tracked-recipe.ts'
-import {
-  assertAcpAllowed,
-  assertAcpReady,
-  resolveTransportName,
-  selectAgentForTransport,
-  type TransportName,
-} from './transport/transport.ts'
-import { resolveBase, resolveReadOnlyBase } from './worktree/worktree-caller.ts'
-import { toolFor } from './worktree/worktree-preflight.ts'
-import type { Worktree } from './worktree/worktree-types.ts'
 
 function requiredRunLease(
   runId: number,
@@ -896,7 +896,7 @@ export async function run(opts: {
       const namesSeen = namesSeenAt(cwd)
       const mismatched = wrongProjectReason(mcpServerName, namesSeen)
       if (mismatched) {
-        const recorded: import('./mcp/mcp-probe.ts').McpProbeResult = {
+        const recorded: import('../mcp/mcp-probe.ts').McpProbeResult = {
           server: mcpServerName,
           tool: 'tools/list',
           ok: false,
@@ -973,7 +973,7 @@ export async function run(opts: {
   let vendorTerminatedStream: string | null = null
   let confinementFailures: FreezeFailure[] = []
   let confinementEvent: ConfinementEvent | null = null
-  let frozenBefore: import('./confinement.ts').FrozenCheckout[] = []
+  let frozenBefore: import('../confinement.ts').FrozenCheckout[] = []
   let askLoopback: AskLoopback | null = null
   let runLease: ReturnType<typeof acquireRunLease> | null = null
   // Start after orch's own worktree and hook setup, immediately before the

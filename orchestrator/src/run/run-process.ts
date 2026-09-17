@@ -4,11 +4,11 @@
  * run events. Must not know routing, contracts, reviews, or transports.
  */
 import { createHash } from 'node:crypto'
-import type { AGENTS } from './agent/agent-registry.ts'
-import { checkpointRun, latestCheckpoint } from './checkpoint.ts'
-import { DB_PATH, db } from './db.ts'
-import { depth } from './dispatch/dispatch-preflight.ts'
-import { terminateProcessGroup } from './idle-kill.ts'
+import type { AGENTS } from '../agent/agent-registry.ts'
+import { checkpointRun, latestCheckpoint } from '../checkpoint.ts'
+import { DB_PATH, db } from '../db.ts'
+import { depth } from '../dispatch/dispatch-preflight.ts'
+import { terminateProcessGroup } from '../idle-kill.ts'
 
 const ALLOW_ENV_EXACT = new Set([
   'PATH',

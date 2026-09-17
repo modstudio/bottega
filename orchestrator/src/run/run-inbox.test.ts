@@ -1,9 +1,9 @@
 import { beforeEach, expect, test } from 'bun:test'
 import { readFileSync } from 'node:fs'
-import { addRun } from '../test/fixtures/store.ts'
-import { db } from './db.ts'
-import { activeSql, VOIDED_SQL, voidedSql } from './evidence/evidence-query.ts'
-import { upsertProject } from './project/projects.ts'
+import { addRun } from '../../test/fixtures/store.ts'
+import { db } from '../db.ts'
+import { activeSql, VOIDED_SQL, voidedSql } from '../evidence/evidence-query.ts'
+import { upsertProject } from '../project/projects.ts'
 import { runInboxCommand } from './run-inbox.ts'
 
 const normalize = (sql: string) => sql.replace(/\s+/g, ' ').trim()

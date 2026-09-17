@@ -2,7 +2,7 @@
 
 import { clock } from '../clock.ts'
 import { db, linkedWorktreeReadOnly, writableDb, writeTransaction } from '../db.ts'
-import { adoptRunMutation, auditRunMutation, authorizeRunMutation } from '../run-authority.ts'
+import { adoptRunMutation, auditRunMutation, authorizeRunMutation } from '../run/run-authority.ts'
 
 const nowIso = (): string => new Date(clock().now()).toISOString()
 

@@ -653,101 +653,101 @@
     "score": 25
   },
   {
-    "file": "orchestrator/src/run-answer.ts",
+    "file": "orchestrator/src/run/run-answer.ts",
     "function": "answerRun",
     "line": 128,
     "score": 69
   },
   {
-    "file": "orchestrator/src/run-artifacts.ts",
+    "file": "orchestrator/src/run/run-artifacts.ts",
     "function": "persistRunArtifacts",
     "line": 222,
     "score": 18
   },
   {
-    "file": "orchestrator/src/run-claim.ts",
+    "file": "orchestrator/src/run/run-claim.ts",
     "function": "claimRun",
     "line": 253,
     "score": 120,
-    "key": "orchestrator/src/run-claim.ts\u0000claimRun"
+    "key": "orchestrator/src/run/run-claim.ts\u0000claimRun"
   },
   {
-    "file": "orchestrator/src/run-close.ts",
+    "file": "orchestrator/src/run/run-close.ts",
     "function": "closeRun",
     "line": 102,
     "score": 36
   },
   {
-    "file": "orchestrator/src/run-control.ts",
+    "file": "orchestrator/src/run/run-control.ts",
     "function": "follow",
     "line": 31,
     "score": 47
   },
   {
-    "file": "orchestrator/src/run-control.ts",
+    "file": "orchestrator/src/run/run-control.ts",
     "function": "continueRun",
     "line": 318,
     "score": 23,
-    "key": "orchestrator/src/run-control.ts\u0000continueRun"
+    "key": "orchestrator/src/run/run-control.ts\u0000continueRun"
   },
   {
-    "file": "orchestrator/src/run-diff.ts",
+    "file": "orchestrator/src/run/run-diff.ts",
     "function": "runDiffCommand",
     "line": 19,
     "score": 45
   },
   {
-    "file": "orchestrator/src/run-inbox.ts",
+    "file": "orchestrator/src/run/run-inbox.ts",
     "function": "runInboxCommand",
     "line": 15,
     "score": 85
   },
   {
-    "file": "orchestrator/src/run-listing.ts",
+    "file": "orchestrator/src/run/run-listing.ts",
     "function": "runListingCommand",
     "line": 17,
     "score": 46
   },
   {
-    "file": "orchestrator/src/run-live.ts",
+    "file": "orchestrator/src/run/run-live.ts",
     "function": "runLive",
     "line": 179,
     "score": 107,
-    "key": "orchestrator/src/run-live.ts\u0000runLive"
+    "key": "orchestrator/src/run/run-live.ts\u0000runLive"
   },
   {
-    "file": "orchestrator/src/run-liveness.ts",
+    "file": "orchestrator/src/run/run-liveness.ts",
     "function": "reapStale",
     "line": 187,
     "score": 25,
-    "key": "orchestrator/src/run-liveness.ts\u0000reapStale"
+    "key": "orchestrator/src/run/run-liveness.ts\u0000reapStale"
   },
   {
-    "file": "orchestrator/src/run-stop.ts",
+    "file": "orchestrator/src/run/run-stop.ts",
     "function": "stopRun",
     "line": 12,
     "score": 26
   },
   {
-    "file": "orchestrator/src/run-terminal.ts",
+    "file": "orchestrator/src/run/run-terminal.ts",
     "function": "finishRun",
     "line": 151,
     "score": 97,
-    "key": "orchestrator/src/run-terminal.ts\u0000finishRun"
+    "key": "orchestrator/src/run/run-terminal.ts\u0000finishRun"
   },
   {
-    "file": "orchestrator/src/run-terminal.ts",
+    "file": "orchestrator/src/run/run-terminal.ts",
     "function": "writeTransaction callback",
     "line": 558,
     "score": 18,
-    "key": "orchestrator/src/run-terminal.ts\u0000writeTransaction callback"
+    "key": "orchestrator/src/run/run-terminal.ts\u0000writeTransaction callback"
   },
   {
-    "file": "orchestrator/src/run.ts",
+    "file": "orchestrator/src/run/run.ts",
     "function": "run",
     "line": 203,
     "score": 157,
-    "key": "orchestrator/src/run.ts\u0000run"
+    "key": "orchestrator/src/run/run.ts\u0000run"
   },
   {
     "file": "orchestrator/src/task-branch.ts",

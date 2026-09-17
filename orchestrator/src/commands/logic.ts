@@ -35,7 +35,7 @@ import {
   REVIEW_OVERLAP,
   REVIEW_REPRODUCED,
 } from '../review-vocabulary.ts'
-import { answerCommand, continueCommand, retryCommand } from '../run-message-commands.ts'
+import { answerCommand, continueCommand, retryCommand } from '../run/run-message-commands.ts'
 import { spawnsCommand } from '../spawn-commands.ts'
 import { treeCreateCommand, treeRemoveCommand } from '../tree-commands.ts'
 import { treeRefreshCommand } from '../tree-refresh.ts'

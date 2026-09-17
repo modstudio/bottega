@@ -14,8 +14,8 @@ import {
 import { projectAt, projectByName } from '../project/projects.ts'
 import { settleClaims } from '../resource-claims.ts'
 import { otherConversationWorktreeSharers } from '../resource-ownership.ts'
-import { runAlive } from '../run-alive.ts'
-import { runLeaseState } from '../run-lease.ts'
+import { runAlive } from '../run/run-alive.ts'
+import { runLeaseState } from '../run/run-lease.ts'
 import {
   markedWorktreeSource,
   orphanSafety,

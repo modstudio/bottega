@@ -21,8 +21,8 @@ import {
 import { db, nowIso, writeTransaction } from './db.ts'
 import { JOBS } from './jobs.ts'
 import { parseReviewOutput, parseReviewReply } from './review.ts'
-import { run } from './run.ts'
-import { auditRunMutation, runMutationActor } from './run-authority.ts'
+import { run } from './run/run.ts'
+import { auditRunMutation, runMutationActor } from './run/run-authority.ts'
 
 const CANON_EVAL_LENS = 'canon-eval'
 export const TRACKED_EVAL_PATH = 'scripts/tracked.ts'

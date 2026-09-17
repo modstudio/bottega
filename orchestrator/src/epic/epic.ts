@@ -2,7 +2,7 @@ import type { Database } from 'bun:sqlite'
 import { engagedMs } from '../../../shared/interval.ts'
 import { db } from '../db.ts'
 import { targetGitEnvironment } from '../git-environment.ts'
-import { STALE_AFTER_MS } from '../run-liveness.ts'
+import { STALE_AFTER_MS } from '../run/run-liveness.ts'
 
 const HUB = new URL('../../../bin/hub', import.meta.url).pathname
 

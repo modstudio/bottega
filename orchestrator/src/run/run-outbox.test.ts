@@ -1,7 +1,7 @@
 import { Database } from 'bun:sqlite'
 import { expect, test } from 'bun:test'
-import { HOOK_TREE_JOB } from './hook-tree.ts'
-import { applyMigrations } from './migrations.ts'
+import { HOOK_TREE_JOB } from '../hook-tree.ts'
+import { applyMigrations } from '../migrations.ts'
 import {
   backfillRunRecords,
   buildRunRecordPayload,

@@ -14,7 +14,7 @@ import {
   auditRunMutation,
   authorizeRunMutation,
   type RootAuthority,
-} from '../run-authority.ts'
+} from '../run/run-authority.ts'
 import { inspectTreeOwnership } from '../worktree/worktree-attribution.ts'
 import {
   branchTip,

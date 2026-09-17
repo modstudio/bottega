@@ -2,7 +2,7 @@
 /** Knows which database lifecycle hooks provide evidence hygiene, run liveness, and workflow seeds. Must not know CLI commands, run execution, transports, routing, or worktrees. */
 import { registerOpenHooks } from './db.ts'
 import { excludeSharedOutputRuns } from './evidence/evidence-query.ts'
-import { reapStale } from './run-liveness.ts'
+import { reapStale } from './run/run-liveness.ts'
 import { seedWorkflows } from './workflow/workflow-seeds.ts'
 
 let registered = false

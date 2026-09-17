@@ -15,7 +15,7 @@ import { join, resolve } from 'node:path'
 import { PLATFORM_SLUG } from '../../shared/brand.ts'
 import { AGENTS } from '../src/agent/agent-registry.ts'
 import { db, ROOT } from '../src/db.ts'
-import { run } from '../src/run.ts'
+import { run } from '../src/run/run.ts'
 import {
   outcomeFromTransport,
   type TransportName,

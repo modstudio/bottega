@@ -1,7 +1,7 @@
 // concern: database
 /** Owns database maintenance command behavior. Must not know CLI grammar. */
 import { backfillSpecSha, migrateDatabase } from './db.ts'
-import { reconcileRun } from './run-artifacts.ts'
+import { reconcileRun } from './run/run-artifacts.ts'
 
 export type DatabaseCommandPresentation = { log(value: string): void }
 

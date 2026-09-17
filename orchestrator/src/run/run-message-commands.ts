@@ -1,22 +1,22 @@
 // concern: run-control
 /** Owns answer, retry, and continuation command behavior. Must not know CLI grammar. */
-import { AGENTS } from './agent/agent-registry.ts'
-import { resumePromptByteLimit } from './agent/agents.ts'
+import { AGENTS } from '../agent/agent-registry.ts'
+import { resumePromptByteLimit } from '../agent/agents.ts'
 import {
   assertWorkerText,
   CONTINUE_WORKING_FORMS,
   parseWorkerMessageArgs,
   readMessageText,
   readWorkerFile,
-} from './args.ts'
-import { db } from './db.ts'
-import { JOBS } from './jobs.ts'
+} from '../args.ts'
+import { db } from '../db.ts'
+import { JOBS } from '../jobs.ts'
 import {
   REVIEW_COVERAGE,
   REVIEW_LIMITS,
   REVIEW_OVERLAP,
   REVIEW_REPRODUCED,
-} from './review-vocabulary.ts'
+} from '../review-vocabulary.ts'
 import { answerRun, retryRun } from './run-answer.ts'
 import { continueRun, type RunControlPresentation, reportContinuedRun } from './run-control.ts'
 

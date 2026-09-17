@@ -23,9 +23,9 @@ import {
 } from '../review-vocabulary.ts'
 import { pick } from '../route/route.ts'
 import { pickCommand } from '../route/routing-commands.ts'
-import { RUNS_DIR } from '../run-artifacts.ts'
-import { follow as followRun } from '../run-control.ts'
-import { detach as dispatchDetached } from '../run-dispatch.ts'
+import { RUNS_DIR } from '../run/run-artifacts.ts'
+import { follow as followRun } from '../run/run-control.ts'
+import { detach as dispatchDetached } from '../run/run-dispatch.ts'
 import { resolveTaskBranch } from '../task-branch.ts'
 import {
   assertAcpAllowed,
