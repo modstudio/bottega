@@ -51,6 +51,7 @@ import type {
   MonitorHistoryRow,
   MonitorResult,
 } from './monitor-types.ts'
+
 const TERMINAL_STATUSES = new Set(['ok', 'failed', 'stale', 'stopped'])
 
 function directorySize(path: string): number {
