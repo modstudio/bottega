@@ -26,10 +26,9 @@ export const spaceIdentity = () =>
     .references(() => space.id)
 export const tenantPolicies = (table: string, owner: AnyPgColumn) => {
   const ownsRow = sql`${owner} = nullif(current_setting('app.space_id', true), '')::uuid`
-  const readsRow = sql`${owner} = ANY(COALESCE(
-    string_to_array(nullif(current_setting('app.space_ids', true), ''), ',')::uuid[],
-    ARRAY[nullif(current_setting('app.space_id', true), '')::uuid]
-  ))`
+  const readsRow = sql`${ownsRow} OR ${owner} = ANY(
+    string_to_array(nullif(current_setting('app.space_ids', true), ''), ',')::uuid[]
+  )`
   return [
     pgPolicy(`${table}_space_select`, { for: 'select', using: readsRow }),
     pgPolicy(`${table}_space_insert`, { for: 'insert', withCheck: ownsRow }),

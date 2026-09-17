@@ -1,6 +1,4 @@
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test'
-import { existsSync, readdirSync, readFileSync } from 'node:fs'
-import { join } from 'node:path'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import {
   newRecordId,
@@ -22,6 +20,14 @@ import {
 import { registerProjectSpaceProofs } from '../../test/postgres-project-space-proof.ts'
 import { registerActiveSpaceProofs } from '../../test/postgres-remembered-space-proof.ts'
 import { proveHostedDocs, proveScoreRecordSync } from '../../test/postgres-score-proof.ts'
+import {
+  asSpace,
+  asSpaces,
+  migration,
+  postgresSchema,
+  psql,
+  succeeds,
+} from '../../test/fixtures/postgres-rls.ts'
 import { startRecordApiServer } from '../record/record-api-server.ts'
 import { bearerHeaders, recordAuth, setActiveRecordSpace } from '../record/record-auth.ts'
 import { signInCommand, signUpCommand, whoamiCommand } from '../record/record-auth-command.ts'
@@ -45,27 +51,6 @@ const recordSession = memoryRecordSession()
 const container = process.env.ORCH_TEST_POSTGRES_CONTAINER
 const ownerUrl = process.env.ORCH_RECORD_MIGRATE_URL
 const actorUrl = process.env.ORCH_RECORD_URL
-const recordFolder = join(import.meta.dir, '..', '..', '..', 'shared', 'record')
-const migrationsFolder = join(recordFolder, 'migrations')
-const postgresSchema =
-  [
-    'schema.ts',
-    'schema-auth.ts',
-    'schema-run.ts',
-    'schema-review.ts',
-    'schema-landing.ts',
-    'schema-hub.ts',
-    'schema-snapshots.ts',
-  ]
-    .map((file) => readFileSync(join(recordFolder, file), 'utf8'))
-    .join('\n') + readFileSync(join(recordFolder, 'schema-docs.ts'), 'utf8')
-const migration = readdirSync(migrationsFolder, { withFileTypes: true })
-  .filter((entry) => entry.isDirectory())
-  .map((entry) => entry.name)
-  .filter((folder) => existsSync(join(migrationsFolder, folder, 'migration.sql')))
-  .sort()
-  .map((folder) => readFileSync(join(migrationsFolder, folder, 'migration.sql'), 'utf8'))
-  .join('\n')
 const SPACE_A = '01990000-0000-7000-8000-00000000000a'
 const SPACE_B = '01990000-0000-7000-8000-00000000000b'
 const USER_A = '01990000-0000-7000-8000-000000000010'
@@ -82,65 +67,6 @@ const REVIEW_B = '01990000-0000-7000-8000-00000000004b'
 const WRONG_EMAIL_INVITATION = '01990000-0000-7000-8000-00000000012a'
 const EXPIRED_INVITATION = '01990000-0000-7000-8000-00000000012b'
 const ACCEPTED_INVITATION = '01990000-0000-7000-8000-00000000012c'
-
-type PsqlResult = { code: number; stdout: string; stderr: string }
-
-function psql(user: string, password: string, source: string): PsqlResult {
-  if (!container) throw new Error('ORCH_TEST_POSTGRES_CONTAINER is required')
-  const result = Bun.spawnSync(
-    [
-      'docker',
-      'exec',
-      '-i',
-      '-e',
-      `PGPASSWORD=${password}`,
-      container,
-      'psql',
-      '-h',
-      '127.0.0.1',
-      '-U',
-      user,
-      '-d',
-      'postgres',
-      '-X',
-      '-A',
-      '-t',
-      '-q',
-      '-v',
-      'ON_ERROR_STOP=1',
-    ],
-    { stdin: new Blob([source]), stdout: 'pipe', stderr: 'pipe' },
-  )
-  return {
-    code: result.exitCode,
-    stdout: result.stdout.toString().trim(),
-    stderr: result.stderr.toString().trim(),
-  }
-}
-
-function succeeds(user: string, password: string, source: string): string {
-  const result = psql(user, password, source)
-  if (result.code !== 0) throw new Error(result.stderr)
-  return result.stdout
-}
-
-function asSpace(user: string, password: string, spaceId: string, statement: string): PsqlResult {
-  return psql(user, password, `SET app.space_id = '${spaceId}';\n${statement}`)
-}
-
-function asSpaces(
-  user: string,
-  password: string,
-  activeSpaceId: string,
-  spaceIds: string[],
-  statement: string,
-): PsqlResult {
-  return psql(
-    user,
-    password,
-    `SET app.space_id = '${activeSpaceId}';\nSET app.space_ids = '${spaceIds.join(',')}';\n${statement}`,
-  )
-}
 
 describe('Postgres substrate shape', () => {
   test('uses application-minted UUIDv7 ids and declares no id default', () => {

@@ -226,8 +226,8 @@ export const recordRouter = t.router({
       const detail = await hostedTaskDetail(
         recordDatabaseUrl(),
         identity,
-        input.spaceId ?? identity.spaceId,
         input.key,
+        input.spaceId ?? identity.spaceId,
       )
       if (!detail) throw new TRPCError({ code: 'NOT_FOUND', message: `no task ${input.key}` })
       return detail

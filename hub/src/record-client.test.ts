@@ -4,6 +4,7 @@ import { createRecordClient, type RecordFetch } from './record-client.ts'
 const whoamiBody = {
   user: { id: 'user-a', email: 'a@example.test' },
   activeSpaceId: 'space-a',
+  personalSpaceId: 'space-a',
   memberships: [],
 }
 

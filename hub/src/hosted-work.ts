@@ -280,8 +280,8 @@ export async function hostedBoard(
 export async function hostedTaskDetail(
   databaseUrl: string,
   identity: TaskIdentity,
-  spaceId: string,
   key: string,
+  spaceId = identity.spaceId,
 ) {
   return withHostedTenant(databaseUrl, identity, async (tx) => {
     const task = rows<Record<string, unknown>>(
