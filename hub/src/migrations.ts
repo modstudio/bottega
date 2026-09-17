@@ -3,7 +3,7 @@ import { createHash } from 'node:crypto'
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
 
-// Twin of orchestrator/src/migrations.ts. It remains local because the journal
+// Twin of orchestrator/src/database/migrations.ts. It remains local because the journal
 // table, migration directory, refusal text and lifecycle command belong to the
 // concern; moving those parameters into shared/ would make shared know both.
 export const MIGRATIONS_FOLDER = join(import.meta.dir, '..', 'migrations')

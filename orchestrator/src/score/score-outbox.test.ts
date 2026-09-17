@@ -1,6 +1,6 @@
 import { Database } from 'bun:sqlite'
 import { expect, test } from 'bun:test'
-import { applyMigrations } from '../migrations.ts'
+import { applyMigrations } from '../database/migrations.ts'
 import {
   backfillScoreRecords,
   buildScoreRecordPayload,

@@ -5,10 +5,10 @@
  */
 import { cpSync, existsSync, mkdirSync, readFileSync, realpathSync, writeFileSync } from 'node:fs'
 import { basename, dirname, join, resolve } from 'node:path'
-import { realpathOrSpelled } from '../checkout-identity.ts'
-import { resolveRunsDirectory } from '../database-location.ts'
-import { db } from '../db.ts'
-import { gitOk, gitResult } from '../git-environment.ts'
+import { resolveRunsDirectory } from '../database/database-location.ts'
+import { db } from '../database/db.ts'
+import { realpathOrSpelled } from '../git/checkout-identity.ts'
+import { gitOk, gitResult } from '../git/git-environment.ts'
 import type { Worktree } from './worktree-types.ts'
 
 export type OrphanSafety = {

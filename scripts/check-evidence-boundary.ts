@@ -8,7 +8,7 @@ const FILE = 'orchestrator/src/evidence/evidence.ts'
 const source = readFileSync(`${ROOT}/${FILE}`, 'utf8')
 const violations: string[] = []
 const FORBIDDEN: [RegExp, string][] = [
-  [/^orchestrator\/src\/db(?:\/db)?(?:\.ts)?$/, 'database access'],
+  [/^orchestrator\/src\/database\/db\.ts$/, 'database access'],
   [/^orchestrator\/src\/run(?:[./-]|$)/, 'the run state machine'],
   [/^orchestrator\/src\/landing(?:[./-]|$)/, 'landing'],
   [/^orchestrator\/src\/worktree(?:[./-]|$)/, 'worktrees'],

@@ -17,17 +17,7 @@ import {
   review as reviewRecord,
 } from '../../../shared/record/schema-review.ts'
 import { run as runRecord, runScore as runScoreRecord } from '../../../shared/record/schema-run.ts'
-import { db, nowIso } from '../db.ts'
-import {
-  backfillLandingEvidenceRecords,
-  CONTENTION_RECORD_PAYLOAD_COLUMNS,
-  LANDING_OVERRIDE_RECORD_PAYLOAD_COLUMNS,
-  LANDING_RECORD_PAYLOAD_COLUMNS,
-  LANDING_REVIEW_CARRY_RECORD_PAYLOAD_COLUMNS,
-  type LandingEvidenceBackfillResult,
-  TEST_FLAKE_RECORD_PAYLOAD_COLUMNS,
-} from '../landing-outbox.ts'
-import { machineId, machineName } from '../machine-identity.ts'
+import { db, nowIso } from '../database/db.ts'
 import {
   backfillReviewRecords,
   REVIEW_FINDING_RECORD_PAYLOAD_COLUMNS,
@@ -41,6 +31,16 @@ import {
   type RunRecordBackfillResult,
 } from '../run/run-outbox.ts'
 import { backfillScoreRecords, SCORE_RECORD_PAYLOAD_COLUMNS } from '../score/score-outbox.ts'
+import {
+  backfillLandingEvidenceRecords,
+  CONTENTION_RECORD_PAYLOAD_COLUMNS,
+  LANDING_OVERRIDE_RECORD_PAYLOAD_COLUMNS,
+  LANDING_RECORD_PAYLOAD_COLUMNS,
+  LANDING_REVIEW_CARRY_RECORD_PAYLOAD_COLUMNS,
+  type LandingEvidenceBackfillResult,
+  TEST_FLAKE_RECORD_PAYLOAD_COLUMNS,
+} from './landing-outbox.ts'
+import { machineId, machineName } from './machine-identity.ts'
 import { pullRecordCache } from './record-cache.ts'
 import { currentRecordSession } from './record-session.ts'
 

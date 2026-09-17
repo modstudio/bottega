@@ -1,7 +1,7 @@
 /** Durable, non-authoritative messages attached to a run conversation. */
 
 import { clock } from '../clock.ts'
-import { db, linkedWorktreeReadOnly, writableDb, writeTransaction } from '../db.ts'
+import { db, linkedWorktreeReadOnly, writableDb, writeTransaction } from '../database/db.ts'
 import { adoptRunMutation, auditRunMutation, authorizeRunMutation } from '../run/run-authority.ts'
 
 const nowIso = (): string => new Date(clock().now()).toISOString()

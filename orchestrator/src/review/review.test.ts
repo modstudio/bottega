@@ -2,7 +2,7 @@ import { describe, expect, test } from 'bun:test'
 import { readFileSync } from 'node:fs'
 import { reviewReply } from '../../test/fixtures/replies.ts'
 import { addRun } from '../../test/fixtures/store.ts'
-import { db } from '../db.ts'
+import { db } from '../database/db.ts'
 import { filesCoveredIntersectChanged } from './review-coverage-match.ts'
 import { recordReview, triageFinding } from './review-triage.ts'
 

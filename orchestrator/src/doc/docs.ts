@@ -15,9 +15,9 @@ import { DOC_SCOPE_SUBJECT_KIND, DOC_SCOPES, type DocScope } from '../../../shar
 import { AGENTS } from '../agent/agent-registry.ts'
 import { collectCanonLintInput } from '../canon/canon-files.ts'
 import { type CanonRow, composeCanonRows } from '../canon/canon-hydrate.ts'
-import { db, nowIso, sessionId, writableDb, writeTransaction } from '../db.ts'
-import { JOBS } from '../jobs.ts'
-import { DEFAULT_PACK_BYTES } from '../pack-budget.ts'
+import { DEFAULT_PACK_BYTES } from '../canon/pack-budget.ts'
+import { db, nowIso, sessionId, writableDb, writeTransaction } from '../database/db.ts'
+import { JOBS } from '../jobs/jobs.ts'
 import { projectAt, projectByName } from '../project/projects.ts'
 import { recordApiClient } from '../record/record-api-client.ts'
 import {

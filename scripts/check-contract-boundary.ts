@@ -12,6 +12,7 @@ const REVIEW_VOCABULARY_FILES = new Set([
   'orchestrator/src/review-vocabulary/review-vocabulary.ts',
   'orchestrator/src/review/review-vocabulary.ts',
 ])
+const CHECKPOINT_FILE = 'orchestrator/src/run/checkpoint.ts'
 const FORBIDDEN: [RegExp, string][] = [
   [/^orchestrator\/src\/run(?:[./-]|$)/, 'the run state machine'],
   [/^orchestrator\/src\/landing(?:[./-]|$)/, 'landing'],
@@ -24,7 +25,7 @@ const FORBIDDEN: [RegExp, string][] = [
 const imports = importSpecifiers(source)
 for (const specifier of imports.specifiers) {
   const resolved = repositoryRelativeImport(FILE, specifier)
-  if (REVIEW_VOCABULARY_FILES.has(resolved)) continue
+  if (resolved === CHECKPOINT_FILE || REVIEW_VOCABULARY_FILES.has(resolved)) continue
   const concern = FORBIDDEN.find(([pattern]) => pattern.test(resolved))?.[1]
   if (concern) violations.push(`${FILE} imports "${specifier}" (${concern})`)
 }

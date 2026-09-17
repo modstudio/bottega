@@ -8,7 +8,7 @@ const FILE = 'orchestrator/src/review/review.ts'
 const source = readFileSync(`${ROOT}/${FILE}`, 'utf8')
 const violations: string[] = []
 const LANDING_OUTBOX_FILES = new Set([
-  'orchestrator/src/landing-outbox.ts',
+  'orchestrator/src/record/landing-outbox.ts',
   'orchestrator/src/landing/landing-outbox.ts',
 ])
 

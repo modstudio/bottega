@@ -17,9 +17,9 @@ import {
   MONITOR_CAPABILITY_TOKEN_ENV,
   type MonitorCapability,
 } from '../../../shared/monitor-capability.ts'
-import { sessionId } from '../db.ts'
-import { failingCanonEvalSlugs } from '../evals.ts'
-import { pidAlive } from '../process-liveness.ts'
+import { failingCanonEvalSlugs } from '../canon/evals.ts'
+import { sessionId } from '../database/db.ts'
+import { pidAlive } from '../resources/process-liveness.ts'
 import { displayConditions, formatMonitorPass, monitor, monitorHistory } from './monitor.ts'
 import { claimMonitorNotices, markMonitorNoticesDelivered } from './monitor-notices.ts'
 import type { MonitorNotice } from './monitor-types.ts'

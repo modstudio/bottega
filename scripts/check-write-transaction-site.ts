@@ -57,7 +57,7 @@ if (violations.length) {
     console.error(
       violation.startsWith('hub/')
         ? `${violation}: only hub/src/db.ts:writeTransaction may open a production transaction`
-        : `${violation}: only orchestrator/src/db.ts:writeTransaction may open a production transaction`,
+        : `${violation}: only orchestrator/src/database/db.ts:writeTransaction may open a production transaction`,
     )
   process.exit(1)
 }

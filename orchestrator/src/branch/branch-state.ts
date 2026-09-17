@@ -1,7 +1,7 @@
 // concern: branch-state
 /** Decides a run-minted branch's reported state from already-observed facts. */
 
-import type { MergedPullRequest, PullRequestCommitCheck } from '../merged-pull-request.ts'
+import type { MergedPullRequest, PullRequestCommitCheck } from './merged-pull-request.ts'
 
 export function pullRequestCarriesKey(
   pullRequest: Pick<MergedPullRequest, 'headRefName' | 'title'>,

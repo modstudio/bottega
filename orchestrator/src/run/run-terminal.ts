@@ -7,7 +7,6 @@
 import type { Database } from 'bun:sqlite'
 import { writeFileSync } from 'node:fs'
 import type { AskLoopback } from '../ask/ask.ts'
-import { checkpointRun, latestCheckpoint } from '../checkpoint.ts'
 import {
   type CheckoutToWatch,
   type ConfinementEvent,
@@ -16,7 +15,7 @@ import {
   type FrozenCheckout,
   freezeCheckouts,
   overlappingError,
-} from '../confinement.ts'
+} from '../confinement/confinement.ts'
 import {
   parseReaderOutput,
   type ReplyDialect,
@@ -24,20 +23,21 @@ import {
   type realQuestions,
   type WorkerReply,
 } from '../contract/contract.ts'
-import { db, nowIso, tryWriteContention, writeTransaction } from '../db.ts'
+import { db, nowIso, tryWriteContention, writeTransaction } from '../database/db.ts'
 import { assessEvidence, recordEvidence } from '../evidence/evidence.ts'
 import { type classify, detectBlockers } from '../failure/failure.ts'
 import { terminateProcessGroup } from '../idle-kill.ts'
-import { isReaderJob, type Job } from '../jobs.ts'
-import { machineId } from '../machine-identity.ts'
+import { isReaderJob, type Job } from '../jobs/jobs.ts'
 import type { McpConnection, McpMode } from '../mcp/mcp-preflight.ts'
 import { finalizeWorkerReply } from '../outcome.ts'
 import { projectByName, projects } from '../project/projects.ts'
-import { teardownTerminalRunResources } from '../resource-ownership.ts'
+import { machineId } from '../record/machine-identity.ts'
+import { teardownTerminalRunResources } from '../resources/resource-ownership.ts'
 import { cleanReviewEvidence } from '../review/review.ts'
-import { resetSandbox } from '../sandbox.ts'
+import { resetSandbox } from '../sandbox/sandbox.ts'
 import { type Changes, changesIn } from '../worktree/worktree-remove.ts'
 import type { Worktree } from '../worktree/worktree-types.ts'
+import { checkpointRun, latestCheckpoint } from './checkpoint.ts'
 import {
   persistRunArtifacts,
   persistTerminalSnapshot,
@@ -255,7 +255,7 @@ export async function finishRun(input: TerminalInput): Promise<TerminalResult> {
       console.error(`orch: run ${claim.id} final checkpoint failed: ${checkpoint.error}`)
   }
 
-  let frozenAfter: import('../confinement.ts').FrozenCheckout[] = []
+  let frozenAfter: import('../confinement/confinement.ts').FrozenCheckout[] = []
   try {
     const afterFreeze = freezeCheckouts(watchedCheckouts)
     confinementFailures.push(

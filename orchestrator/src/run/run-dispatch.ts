@@ -6,12 +6,12 @@
 import { type ChildProcess, spawn } from 'node:child_process'
 import { createHash } from 'node:crypto'
 import { existsSync, mkdirSync, writeFileSync } from 'node:fs'
-import { db, nowIso, sessionId, writableDb, writeTransaction } from '../db.ts'
+import { db, nowIso, sessionId, writableDb, writeTransaction } from '../database/db.ts'
 import { preflight } from '../dispatch/dispatch-preflight.ts'
-import type { DetachSpec } from '../failover.ts'
-import { job } from '../jobs.ts'
+import { job } from '../jobs/jobs.ts'
 import { effectiveMcpRequest, preflightMcp, storedMcpRequest } from '../mcp/mcp-preflight.ts'
 import { projectByName } from '../project/projects.ts'
+import type { DetachSpec } from '../route/failover.ts'
 import { repoOf } from './run.ts'
 import { RUNS_DIR, runFilePaths } from './run-artifacts.ts'
 
@@ -207,7 +207,7 @@ export async function detach(
      * that. `exec.ts` imports almost nothing and pulls the rest in inside a
      * catch, turning a broken sibling into a recorded failure with a reason.
      */
-    new URL('../exec.ts', import.meta.url).pathname,
+    new URL('./exec.ts', import.meta.url).pathname,
     String(id),
     promptPath,
     jobName,

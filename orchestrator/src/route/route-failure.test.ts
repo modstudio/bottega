@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'bun:test'
 import { addRun, score } from '../../test/fixtures/store.ts'
 import { resolveFailover } from '../collect/collect.ts'
-import { db } from '../db.ts'
+import { db } from '../database/db.ts'
 import {
   COOLS_DOWN,
   classify,

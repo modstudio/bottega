@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test'
 import { addRun } from '../../test/fixtures/store.ts'
-import { db, nowIso } from '../db.ts'
+import { db, nowIso } from '../database/db.ts'
 import { NOT_EVIDENCE } from '../failure/failure.ts'
 import { candidates } from '../route/route.ts'
 import { PENDING_BOOTSTRAP_MS, reapStale, STALE_AFTER_MS } from './run-liveness.ts'

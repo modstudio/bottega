@@ -13,7 +13,6 @@ import { dirname, resolve } from 'node:path'
 import { z } from 'zod'
 import type { Finding } from '../../../shared/ratchet.ts'
 import { listDocs, removeDoc, setDoc } from '../doc/docs.ts'
-import { canonEvalsReport, runCanonEvals } from '../evals.ts'
 import { projectAt, projectByName } from '../project/projects.ts'
 import {
   allInjectChecks,
@@ -26,6 +25,7 @@ import { canonGitRoot, collectCanonLintInput, collectCanonTree } from './canon-f
 import { composeCanonRows, planHydration } from './canon-hydrate.ts'
 import { classifyCanonFile, introducedCanonFindings, lintCanon } from './canon-lint.ts'
 import { decideCanonWrite } from './canon-write-gate.ts'
+import { canonEvalsReport, runCanonEvals } from './evals.ts'
 
 type CanonFlags = { has(name: string): boolean; flag(name: string): string | undefined }
 type CanonPresentation = {

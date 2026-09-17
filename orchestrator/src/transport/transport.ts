@@ -3,8 +3,8 @@ import { createRequire } from 'node:module'
 import { basename, dirname, isAbsolute, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import type { FailureKind } from '../failure/failure.ts'
-import { job } from '../jobs.ts'
-import type { SandboxRuntimeConfig } from '../sandbox.ts'
+import { job } from '../jobs/jobs.ts'
+import type { SandboxRuntimeConfig } from '../sandbox/sandbox.ts'
 
 const requireTransport = createRequire(import.meta.url)
 

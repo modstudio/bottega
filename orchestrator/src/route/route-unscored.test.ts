@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'bun:test'
 import { readFileSync } from 'node:fs'
 import { addRun, score } from '../../test/fixtures/store.ts'
-import { db } from '../db.ts'
+import { db } from '../database/db.ts'
 import {
   activeSql,
   pendingForSession,

@@ -7,14 +7,7 @@ import { existsSync, readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import type { Agent } from '../agent/agents.ts'
 import { type AskLoopback, startAskLoopback } from '../ask/ask.ts'
-import {
-  checkpointRun,
-  DEFAULT_CHECKPOINT_MINUTES,
-  latestCheckpoint,
-  recordFailedIdlePreservation,
-} from '../checkpoint.ts'
-import type { CodexMcpServer } from '../codex-mcp-scope.ts'
-import type { ConfinementEvent, FreezeFailure } from '../confinement.ts'
+import type { ConfinementEvent, FreezeFailure } from '../confinement/confinement.ts'
 import {
   isAsking,
   REPLY_FILE_NAME,
@@ -24,7 +17,7 @@ import {
   validatesSchema,
   type WorkerReply,
 } from '../contract/contract.ts'
-import { db, nowIso } from '../db.ts'
+import { db, nowIso } from '../database/db.ts'
 import { appendRunEvent, teeTransportEvents } from '../events.ts'
 import {
   classify,
@@ -37,7 +30,7 @@ import {
   gitContext,
   targetGitEnvironment,
   type WorktreeObjectEnvironment,
-} from '../git-environment.ts'
+} from '../git/git-environment.ts'
 import {
   formatIdleKillError,
   idleKillMayProceed,
@@ -46,11 +39,12 @@ import {
   shouldIdleKill,
   terminateProcessGroup,
 } from '../idle-kill.ts'
-import { type Job, jobIdleKillMs } from '../jobs.ts'
+import { type Job, jobIdleKillMs } from '../jobs/jobs.ts'
 import { receiptWorkerMessages, unreadWorkerMessages } from '../mailbox/mailbox.ts'
 import { decideOutcome } from '../outcome.ts'
 import { processStartTime } from '../project/project-lock.ts'
-import type { SandboxSelection } from '../sandbox.ts'
+import type { CodexMcpServer } from '../sandbox/codex-mcp-scope.ts'
+import type { SandboxSelection } from '../sandbox/sandbox.ts'
 import {
   failureKindFromStop,
   schemaMismatchError,
@@ -62,6 +56,12 @@ import {
   valueMatchesStrictSchema,
 } from '../transport/transport.ts'
 import type { Worktree } from '../worktree/worktree-types.ts'
+import {
+  checkpointRun,
+  DEFAULT_CHECKPOINT_MINUTES,
+  latestCheckpoint,
+  recordFailedIdlePreservation,
+} from './checkpoint.ts'
 import { childEnv, errorTail, live, liveCheckpoints } from './run-process.ts'
 
 function reviewChangedPaths(cwd: string, base: string, inputTree: string): string[] {
@@ -177,7 +177,7 @@ export type LiveResult = {
   vendorTerminatedStream: string | null
   confinementFailures: FreezeFailure[]
   confinementEvent: ConfinementEvent | null
-  frozenBefore: import('../confinement.ts').FrozenCheckout[]
+  frozenBefore: import('../confinement/confinement.ts').FrozenCheckout[]
   askLoopback: AskLoopback | null
   mcpSetupHeader: string | null
 }
@@ -252,7 +252,7 @@ export async function runLive(input: LiveInput): Promise<LiveResult> {
   let vendorTerminatedStream: string | null = null
   const confinementFailures: FreezeFailure[] = []
   const confinementEvent: ConfinementEvent | null = null
-  const frozenBefore: import('../confinement.ts').FrozenCheckout[] = []
+  const frozenBefore: import('../confinement/confinement.ts').FrozenCheckout[] = []
   let askLoopback: AskLoopback | null = null
 
   try {

@@ -1,7 +1,7 @@
 import { describe, expect, spyOn, test } from 'bun:test'
 import { reviewReply } from '../../test/fixtures/replies.ts'
 import { addRun } from '../../test/fixtures/store.ts'
-import { db } from '../db.ts'
+import { db } from '../database/db.ts'
 import { recordReviews } from './review.ts'
 import { completeReview, gradeReviewLens, recordReview, triageFinding } from './review-triage.ts'
 

@@ -1,12 +1,12 @@
 import type { Database } from 'bun:sqlite'
-import { db, writableDb } from '../db.ts'
+import { db, writableDb } from '../database/db.ts'
 import {
   composeIndexSources,
   resolveDeclaredFacts,
   unresolvedTrackerActionPlaceholder,
 } from '../project/project-injection.ts'
-import { productionStepCatalogue } from '../step-catalogue.ts'
-import { type VersionEvent, versionedLifecycle } from '../versioned-lifecycle.ts'
+import { productionStepCatalogue } from './step-catalogue.ts'
+import { type VersionEvent, versionedLifecycle } from './versioned-lifecycle.ts'
 
 type WorkflowArgument = { name: string; required: boolean; description: string }
 type WorkflowMode = {

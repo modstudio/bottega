@@ -1,4 +1,4 @@
-import { db } from '../db.ts'
+import { db } from '../database/db.ts'
 
 export const DEFAULT_EVAL_AGENT = 'codex'
 

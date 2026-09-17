@@ -2,7 +2,7 @@
 /** Knows how local reviews become ordered hosted-record mutations. Must not know Postgres. */
 import type { Database } from 'bun:sqlite'
 import { newRecordId, PLATFORM_SPACE_ID } from '../../../shared/record/schema.ts'
-import { nowIso } from '../db.ts'
+import { nowIso } from '../database/db.ts'
 
 export const REVIEW_RECORD_PAYLOAD_COLUMNS = [
   'id',

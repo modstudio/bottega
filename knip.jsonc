@@ -51,7 +51,7 @@
     "orchestrator": {
       "entry": [
         "hooks/*!",
-        "src/orch.ts!",
+        "src/cli/orch.ts!",
         "src/record/record-api-server.ts!",
         "src/**/*.test.ts",
         "scripts/acp-parity.ts!",

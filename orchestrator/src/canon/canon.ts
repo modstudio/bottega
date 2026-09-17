@@ -3,11 +3,11 @@ import { existsSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { CONCERNS } from '../../../shared/brand.ts'
 import { CANON_REFERENCE_EXEMPTIONS, canonReferencePath } from '../../../shared/canon-references.ts'
-import { isCliCommand } from '../args.ts'
-import { db, linkedWorktreeReadOnly, nowIso, writeTransaction } from '../db.ts'
+import { isCliCommand } from '../cli/args.ts'
+import { db, linkedWorktreeReadOnly, nowIso, writeTransaction } from '../database/db.ts'
 import { type Doc, docsForRun, docsMarkdown, listDocs } from '../doc/docs.ts'
-import { targetGitEnvironment } from '../git-environment.ts'
-import { DEFAULT_PACK_BYTES, job as getJob, JOBS } from '../jobs.ts'
+import { targetGitEnvironment } from '../git/git-environment.ts'
+import { DEFAULT_PACK_BYTES, job as getJob, JOBS } from '../jobs/jobs.ts'
 import { projectAt, projectByName, projects } from '../project/projects.ts'
 import { composeCanonRows } from './canon-hydrate.ts'
 import { canonFrontmatter, classifyCanonFile } from './canon-lint.ts'
@@ -288,7 +288,7 @@ export class CanonBudgetError extends Error {
         `canon pack is ${pack.bytes} bytes; budget is ${pack.budgetBytes} bytes`,
         ...rows.map((row) => `  ${row.bytes}  ${row.label}`),
         ...(largest ? [`largest packed tier: ${largest}`] : []),
-        'remedy: demote the named largest tier; never raise the pack budget (orchestrator/src/pack-budget.ts)',
+        'remedy: demote the named largest tier; never raise the pack budget (orchestrator/src/canon/pack-budget.ts)',
       ].join('\n'),
     )
     this.pack = pack

@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test'
 import { consumeDoc, setDoc } from '../../test/fixtures/docs.ts'
-import { db } from '../db.ts'
+import { db } from '../database/db.ts'
 import { upsertProject } from '../project/projects.ts'
 import { listOpenResumes, parseResumeFrontmatter, resumeAge } from './docs.ts'
 

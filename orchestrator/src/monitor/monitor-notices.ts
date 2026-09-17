@@ -1,7 +1,7 @@
 // concern: monitor-notices
 /** Owns monitor notice currentness, claiming, formatting, and delivery acknowledgement. */
 
-import { db, nowIso, writableDb, writeTransaction } from '../db.ts'
+import { db, nowIso, writableDb, writeTransaction } from '../database/db.ts'
 import type { MonitorSeverity } from '../review/review-vocabulary.ts'
 import {
   askingRuns,

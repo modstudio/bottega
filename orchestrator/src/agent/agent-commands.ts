@@ -1,9 +1,8 @@
 // concern: agent-commands
 /** Owns agent registry mutations and catalogue presentation. Must not know CLI grammar. */
 
-import { flagValue } from '../args.ts'
-import { db } from '../db.ts'
-import { available, ensureLocalHealth, installed, unavailableReason } from '../local-host.ts'
+import { flagValue } from '../cli/args.ts'
+import { db } from '../database/db.ts'
 import { probeAgent } from './agent-probe.ts'
 import {
   AGENTS,
@@ -15,6 +14,7 @@ import {
   removeAgent,
   setAgent,
 } from './agent-registry.ts'
+import { available, ensureLocalHealth, installed, unavailableReason } from './local-host.ts'
 
 type Presentation = { log(value: string): void; setExitCode(code: number): void }
 const parseJobs = (value: string | undefined) =>

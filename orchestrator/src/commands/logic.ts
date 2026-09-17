@@ -9,18 +9,21 @@ import { setupAskCommand } from '../ask/ask-commands.ts'
 import { closeOutCommand } from '../close/close-out-command.ts'
 import { peekCommand, resultCommand, waitCommand } from '../collect/collection-commands.ts'
 import { contractCommand } from '../contract/contract-command.ts'
-import { migrateCommand, reconcileCommand } from '../database-commands.ts'
-import { db } from '../db.ts'
+import { migrateCommand, reconcileCommand } from '../database/database-commands.ts'
+import { db } from '../database/db.ts'
 import { doCommand, pickPreviewCommand } from '../dispatch/dispatch-cli-service.ts'
 import { epicCommand } from '../epic/epic-commands.ts'
-import { jobsCommand } from '../job-commands.ts'
-import { JOBS } from '../jobs.ts'
+import { pendingCommand } from '../evidence/pending-commands.ts'
+import { spawnsCommand } from '../health/spawn-commands.ts'
+import { treeCreateCommand, treeRemoveCommand } from '../hook-tree/tree-commands.ts'
+import { jobsCommand } from '../jobs/job-commands.ts'
+import { JOBS } from '../jobs/jobs.ts'
 import { lensCommand } from '../lens/lens-commands.ts'
 import { tellCommand } from '../mailbox/mailbox-commands.ts'
 import { mcpCommand } from '../mcp/mcp-commands.ts'
 import { metricCommand } from '../metric/metric-commands.ts'
 import { monitorCommand } from '../monitor/monitor-commands.ts'
-import { pendingCommand } from '../pending-commands.ts'
+import { treeRefreshCommand } from '../recipe/tree-refresh.ts'
 import { reclaimCommand } from '../reclaim/reclaim-commands.ts'
 import {
   fixDefectCommand,
@@ -36,9 +39,6 @@ import {
   REVIEW_REPRODUCED,
 } from '../review/review-vocabulary.ts'
 import { answerCommand, continueCommand, retryCommand } from '../run/run-message-commands.ts'
-import { spawnsCommand } from '../spawn-commands.ts'
-import { treeCreateCommand, treeRemoveCommand } from '../tree-commands.ts'
-import { treeRefreshCommand } from '../tree-refresh.ts'
 import { workflowCommand } from '../workflow/workflow-commands.ts'
 import { collect, log, productArgv, rawArgv, write, writeStdout } from './support.ts'
 
@@ -328,7 +328,7 @@ export function register(program: Command): void {
     .allowExcessArguments(false)
     .action(() =>
       setupAskCommand(
-        [process.execPath, new URL('../orch.ts', import.meta.url).pathname, 'ask-server'],
+        [process.execPath, new URL('../cli/orch.ts', import.meta.url).pathname, 'ask-server'],
         presentation,
       ),
     )

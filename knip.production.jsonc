@@ -58,9 +58,9 @@
     "orchestrator": {
       "entry": [
         "hooks/*!",
-        "src/orch.ts!",
+        "src/cli/orch.ts!",
         "src/record/record-api-server.ts!",
-        // Launched by path from src/sandbox.ts for Grok's MCP configuration.
+        // Launched by path from src/sandbox/sandbox.ts for Grok's MCP configuration.
         "src/ask/ask-proxy.ts!",
         "scripts/acp-parity.ts!",
         "scripts/check-canon-lint.ts!",

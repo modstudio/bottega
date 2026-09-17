@@ -3,16 +3,16 @@ import { readFileSync } from 'node:fs'
 import { dirname, relative, resolve } from 'node:path'
 
 const DEGRADED_COLLECTION_GRAPH = [
-  '../../shared/brand.ts',
-  '../../shared/state-directory.ts',
-  'artifact-paths.ts',
-  'clock.ts',
-  'collect/collect.ts',
-  'failure/failure.ts',
-  'mcp/mcp-probe.ts',
+  '../../../shared/brand.ts',
+  '../../../shared/state-directory.ts',
+  '../artifact-paths.ts',
+  '../clock.ts',
+  '../collect/collect.ts',
+  '../failure/failure.ts',
+  '../mcp/mcp-probe.ts',
   'orch.ts',
-  'outcome.ts',
-  'result-output.ts',
+  '../outcome.ts',
+  '../collect/result-output.ts',
 ] as const
 const DEGRADED_HEAVY_MODULES = [
   'agents.ts',
@@ -75,8 +75,8 @@ function assertDegradedCollectionGraph(files: Iterable<string>): void {
 
 describe('degraded collection import graph', () => {
   test('derived closure matches the declared set and includes failure.ts without a hand-written copy list', () => {
-    const files = staticRelativeImportClosure(resolve(SRC_DIR, '../orch.ts'))
-    expect(files).toContain('failure/failure.ts')
+    const files = staticRelativeImportClosure(resolve(SRC_DIR, '../cli/orch.ts'))
+    expect(files).toContain('../failure/failure.ts')
     assertDegradedCollectionGraph(files)
   })
   test('heavy-module assertion fails by name if cli.ts, run.ts or agents.ts enter the graph', () => {

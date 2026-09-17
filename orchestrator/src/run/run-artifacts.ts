@@ -22,10 +22,10 @@ import {
   persistedRunArtifactPath,
   runScratchDir as scratchDirectory,
 } from '../artifact-paths.ts'
-import { resolveRunsDirectory } from '../database-location.ts'
-import { db, writableDb, writeTransaction } from '../db.ts'
-import { CONNECTION_SCHEMA_INVARIANT } from '../migrations.ts'
-import { teardownTerminalRunResources } from '../resource-ownership.ts'
+import { resolveRunsDirectory } from '../database/database-location.ts'
+import { db, writableDb, writeTransaction } from '../database/db.ts'
+import { CONNECTION_SCHEMA_INVARIANT } from '../database/migrations.ts'
+import { teardownTerminalRunResources } from '../resources/resource-ownership.ts'
 
 /**
  * How long a run's prompt and reply are kept on disk.

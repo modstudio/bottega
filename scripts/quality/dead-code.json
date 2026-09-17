@@ -13,7 +13,7 @@
   },
   {
     "workspace": "orchestrator",
-    "file": "orchestrator/src/db.ts",
+    "file": "orchestrator/src/database/db.ts",
     "issueType": "exports",
     "symbol": "closeDatabaseForFixture"
   },

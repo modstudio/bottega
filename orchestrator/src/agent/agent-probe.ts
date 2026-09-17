@@ -4,9 +4,7 @@ import { createHash } from 'node:crypto'
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { which } from 'bun'
-import type { Caps } from '../capabilities.ts'
-import { nowIso, writableDb } from '../db.ts'
-import { localReachable } from '../local-host.ts'
+import { nowIso, writableDb } from '../database/db.ts'
 import {
   agentRows,
   HARNESSES,
@@ -15,6 +13,8 @@ import {
   refreshAgents,
   rowAgent,
 } from './agent-registry.ts'
+import type { Caps } from './capabilities.ts'
+import { localReachable } from './local-host.ts'
 
 const REGISTRATION_PROBE_FILE = 'probe.txt'
 const REGISTRATION_PROBE_SENTINEL = 'REGISTRATION_PROBE_FILE_OK'
@@ -125,7 +125,7 @@ export async function probeAgent(name: string): Promise<RegistrationProbeResult>
     '../transport/transport.ts'
   )
   const { mintStdioPingServer, mcpToolCallsObservable } = await import('../mcp/mcp-probe.ts')
-  const { JOBS } = await import('../jobs.ts')
+  const { JOBS } = await import('../jobs/jobs.ts')
   mintStdioPingServer(join(scratch, 'repo'))
   const declared = row.jobs ? (JSON.parse(row.jobs) as string[]) : null
   const declaredJobs = declared ?? Object.keys(JOBS)

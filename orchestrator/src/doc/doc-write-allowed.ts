@@ -3,7 +3,7 @@
 import { composeCanonRows } from '../canon/canon-hydrate.ts'
 import type { CanonSourceText } from '../canon/canon-lint.ts'
 import { decideCanonWrite } from '../canon/canon-write-gate.ts'
-import { DEFAULT_PACK_BYTES, MAX_INJECT_DOC_BYTES } from '../pack-budget.ts'
+import { DEFAULT_PACK_BYTES, MAX_INJECT_DOC_BYTES } from '../canon/pack-budget.ts'
 
 export const RECORD_WRITE_REMEDY = 'cleared by: orch record doctor'
 

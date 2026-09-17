@@ -9,7 +9,7 @@ import {
   READONLY_LENS_DENY_PATHS,
   READONLY_LENS_DENY_SOCKETS,
   type SandboxRuntimeConfig,
-} from '../sandbox.ts'
+} from '../sandbox/sandbox.ts'
 
 export const FILED_ISSUE_COMMAND_TIMEOUT_MS = 20 * 60_000
 const FILED_ISSUE_COMMAND_KILL_SIGNAL = 'SIGKILL'

@@ -1,6 +1,6 @@
 // concern: workflow-tree
 /** Knows the pure markdown mirror for production workflows. Must not know filesystems, stores, commands, projects, or transports. */
-import type { CatalogueStep } from '../step-catalogue.ts'
+import type { CatalogueStep } from './step-catalogue.ts'
 import type { WorkflowDefinition } from './workflows.ts'
 
 export type WorkflowTreeStore = {

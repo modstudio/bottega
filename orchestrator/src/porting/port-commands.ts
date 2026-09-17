@@ -2,7 +2,7 @@
 /** Knows port ledger command semantics and presentation. Must not know runs, routing, transports, the CLI, or worktrees. */
 import { readdirSync, readFileSync, statSync } from 'node:fs'
 import { join } from 'node:path'
-import { DB_PATH } from '../db.ts'
+import { DB_PATH } from '../database/db.ts'
 import { projectByName, projects } from '../project/projects.ts'
 import {
   addDoctrineRule,

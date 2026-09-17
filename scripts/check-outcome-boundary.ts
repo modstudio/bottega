@@ -17,7 +17,7 @@ const FORBIDDEN: [RegExp, string][] = [
   [/^orchestrator\/src\/canon(?:[./-]|$)/, 'canon'],
   [/^orchestrator\/src\/landing(?:[./-]|$)/, 'landing'],
   [/^orchestrator\/src\/worktree(?:[./-]|$)/, 'worktrees'],
-  [/^orchestrator\/src\/db(?:[./-]|$)/, 'database'],
+  [/^orchestrator\/src\/database\/db\.ts$/, 'database'],
   [/^orchestrator\/src\/run(?:[./-]|$)/, 'the run state machine'],
 ]
 

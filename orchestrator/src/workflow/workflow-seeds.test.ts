@@ -1,6 +1,6 @@
 import { Database } from 'bun:sqlite'
 import { describe, expect, test } from 'bun:test'
-import { applyMigrations, migrationJournal } from '../migrations.ts'
+import { applyMigrations, migrationJournal } from '../database/migrations.ts'
 import { seedWorkflows } from './workflow-seeds.ts'
 import {
   listWorkflows,

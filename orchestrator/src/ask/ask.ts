@@ -30,7 +30,7 @@
  */
 
 import { createConnection, createServer, type Socket } from 'node:net'
-import { db, nowIso, writableDb } from '../db.ts'
+import { db, nowIso, writableDb } from '../database/db.ts'
 import { appendRunEvent } from '../events.ts'
 import { checkMessages, messageArchitect } from '../mailbox/mailbox.ts'
 

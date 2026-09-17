@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test'
-import { db } from '../db.ts'
+import { db } from '../database/db.ts'
 import { RECORD_SESSION_KEY, RECORD_SIGN_IN_REMEDY } from './record-auth.ts'
 import { currentRecordSession, storedRecordToken } from './record-session.ts'
 

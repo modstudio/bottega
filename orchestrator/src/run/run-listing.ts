@@ -2,7 +2,7 @@
 /** Knows run list and state rendering. Must not know run control, transports, routing, the CLI, or worktrees. */
 
 import { resolveFailover } from '../collect/collect.ts'
-import { db } from '../db.ts'
+import { db } from '../database/db.ts'
 import { UNSCORED_WHERE } from '../evidence/evidence-query.ts'
 import { failureReason, type OutcomeRow, outcomeOf } from '../outcome.ts'
 

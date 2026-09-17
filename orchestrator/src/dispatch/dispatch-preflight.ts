@@ -3,11 +3,11 @@
  * Knows the job catalogue, project register, worktree recipe, and recorded
  * worktree paths. Must not know transports, routing, or contracts.
  */
-import { seedGuidance } from '../args.ts'
-import { realpathOrSpelled } from '../checkout-identity.ts'
-import { db } from '../db.ts'
-import { repoRootOf } from '../git-environment.ts'
-import { job } from '../jobs.ts'
+import { seedGuidance } from '../cli/args.ts'
+import { db } from '../database/db.ts'
+import { realpathOrSpelled } from '../git/checkout-identity.ts'
+import { repoRootOf } from '../git/git-environment.ts'
+import { job } from '../jobs/jobs.ts'
 import { resolveLens } from '../lens/lenses.ts'
 import {
   assertMainCheckoutClean,

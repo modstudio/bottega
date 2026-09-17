@@ -25,7 +25,7 @@ export function hostedServerConfig(environment: ServerEnvironment = process.env)
 
 function startHostedServer(environment: ServerEnvironment = process.env) {
   const config = hostedServerConfig(environment)
-  const dist = new URL('../web/dist/', import.meta.url).pathname
+  const dist = new URL('../web/dist', import.meta.url).pathname
   const server = Bun.serve({
     hostname: config.hostname,
     port: config.port,

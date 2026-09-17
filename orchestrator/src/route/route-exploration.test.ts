@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'bun:test'
 import { reviewReply } from '../../test/fixtures/replies.ts'
 import { addRun, score } from '../../test/fixtures/store.ts'
-import { db, nowIso } from '../db.ts'
+import { db, nowIso } from '../database/db.ts'
 import {
   completeReview,
   MIN_REVIEW_TRIAGED,

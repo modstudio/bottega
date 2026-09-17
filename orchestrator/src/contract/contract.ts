@@ -1,9 +1,9 @@
 // concern: contract
 
-import { progressFileInstruction } from '../checkpoint.ts'
-import { isReaderJob, type Job } from '../jobs.ts'
+import { isReaderJob, type Job } from '../jobs/jobs.ts'
 import { GENERIC_QUESTION_TOKENS } from '../outcome.ts'
 import { REVIEW_SEVERITY } from '../review/review-vocabulary.ts'
+import { progressFileInstruction } from '../run/checkpoint.ts'
 
 export {
   hasRealQuestions,

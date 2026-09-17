@@ -3,7 +3,7 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { addRun, dir } from '../../test/fixtures/store.ts'
-import { db } from '../db.ts'
+import { db } from '../database/db.ts'
 import {
   branchNote,
   collectResult,

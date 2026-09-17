@@ -1,6 +1,6 @@
 // concern: run-inbox
 /** Knows asking-run and ruling inbox. Must not know run control, transports, routing, the CLI, or worktrees. */
-import { db, SESSION_LIVE_MS, sessionId } from '../db.ts'
+import { db, SESSION_LIVE_MS, sessionId } from '../database/db.ts'
 import { activeSql, voidedSql } from '../evidence/evidence-query.ts'
 import { projectAt } from '../project/projects.ts'
 

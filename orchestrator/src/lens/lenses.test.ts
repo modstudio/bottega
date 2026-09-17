@@ -1,8 +1,8 @@
 import { describe, expect, test } from 'bun:test'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { addRun } from '../../test/fixtures/store.ts'
-import { db, sessionId } from '../db.ts'
-import { applyMigrations } from '../migrations.ts'
+import { db, sessionId } from '../database/db.ts'
+import { applyMigrations } from '../database/migrations.ts'
 import { upsertProject } from '../project/projects.ts'
 import { listLenses, resolveLens, selectProjectProfile, setLens, setProfile } from './lenses.ts'
 

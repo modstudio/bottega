@@ -1,21 +1,21 @@
 import { existsSync, realpathSync } from 'node:fs'
 import { isAbsolute, relative, resolve, sep } from 'node:path'
 import { branchRows, type ReclaimRun, settleDeletedBranch } from '../branch/branch-settlement.ts'
-import { db, sessionId, writableDb, writeTransaction } from '../db.ts'
+import { db, sessionId, writableDb, writeTransaction } from '../database/db.ts'
 import { chainScoreJoin, EVIDENCE_CLOSED_SQL } from '../evidence/evidence-query.ts'
-import { targetGitEnvironment } from '../git-environment.ts'
-import { keepTreeHold } from '../keep-tree-hold.ts'
-import { pidAlive } from '../process-liveness.ts'
+import { targetGitEnvironment } from '../git/git-environment.ts'
 import {
   withCleanupLock,
   withWorktreeCreateLock,
   withWorktreeLease,
 } from '../project/project-lock.ts'
 import { projectAt, projectByName } from '../project/projects.ts'
-import { settleClaims } from '../resource-claims.ts'
-import { otherConversationWorktreeSharers } from '../resource-ownership.ts'
+import { pidAlive } from '../resources/process-liveness.ts'
+import { settleClaims } from '../resources/resource-claims.ts'
+import { otherConversationWorktreeSharers } from '../resources/resource-ownership.ts'
 import { runAlive } from '../run/run-alive.ts'
 import { runLeaseState } from '../run/run-lease.ts'
+import { keepTreeHold } from '../worktree/keep-tree-hold.ts'
 import {
   markedWorktreeSource,
   orphanSafety,

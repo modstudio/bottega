@@ -8,9 +8,9 @@ import {
   parseWorkerMessageArgs,
   readMessageText,
   readWorkerFile,
-} from '../args.ts'
-import { db } from '../db.ts'
-import { JOBS } from '../jobs.ts'
+} from '../cli/args.ts'
+import { db } from '../database/db.ts'
+import { JOBS } from '../jobs/jobs.ts'
 import {
   REVIEW_COVERAGE,
   REVIEW_LIMITS,

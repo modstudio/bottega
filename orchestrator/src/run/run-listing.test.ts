@@ -1,8 +1,8 @@
 import { describe, expect, test } from 'bun:test'
 import { runJson } from '../../test/fixtures/replies.ts'
 import { addRun, score } from '../../test/fixtures/store.ts'
-import { db } from '../db.ts'
-import { runDetail } from '../serve.ts'
+import { db } from '../database/db.ts'
+import { runDetail } from '../state/serve.ts'
 import { runListingCommand } from './run-listing.ts'
 
 function command(args: Record<string, string[] | boolean> = {}) {

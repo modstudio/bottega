@@ -1,6 +1,6 @@
 import { newRecordId } from '../../../shared/record/schema.ts'
 import { AGENTS } from '../../src/agent/agent-registry.ts'
-import { db } from '../../src/db.ts'
+import { db } from '../../src/database/db.ts'
 import { dir as preloadDir } from '../preload.ts'
 
 export const dir = preloadDir
