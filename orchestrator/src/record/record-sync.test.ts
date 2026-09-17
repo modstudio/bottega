@@ -60,13 +60,19 @@ function fakePostgres(
   sql: SQL
   statements: string[]
   parameters: unknown[][]
+  transactionSpaceIds: string[]
 } {
   const statements: string[] = []
   const parameters: unknown[][] = []
   let failed = false
-  const tx = (async (parts: TemplateStringsArray) => {
+  let transaction = -1
+  const transactionSpaceIds: string[] = []
+  const tx = (async (parts: TemplateStringsArray, ...values: unknown[]) => {
     const source = parts.join('?')
     statements.push(source)
+    if (source.includes("set_config('app.space_id'")) {
+      transactionSpaceIds[transaction] = String(values[0])
+    }
     return source.includes('SELECT id FROM project') ? [{ id: PROJECT_ID }] : []
   }) as unknown as SQL
   tx.options = {} as SQL['options']
@@ -85,11 +91,14 @@ function fakePostgres(
       return [{ principal }]
     },
     {
-      begin: async (operation: (client: SQL) => unknown) => operation(tx),
+      begin: async (operation: (client: SQL) => unknown) => {
+        transaction++
+        return operation(tx)
+      },
       close: async () => {},
     },
   ) as unknown as SQL
-  return { sql, statements, parameters }
+  return { sql, statements, parameters, transactionSpaceIds }
 }
 
 const options = (local: Database, remote: ReturnType<typeof fakePostgres>) => ({
@@ -212,5 +221,53 @@ test('every populated JSONB run value is bound as one JSON string', async () => 
   })
   const bound = remote.parameters.flat()
   for (const value of Object.values(jsonValues)) expect(bound).toContain(JSON.stringify(value))
+  local.close()
+})
+
+test('declared project spaces override the active space while an unset project falls back', async () => {
+  const local = localOutbox(2, 'declared')
+  const second = JSON.parse(
+    local.query<{ payload: string }, []>('SELECT payload FROM outbox WHERE id=2').get()!.payload,
+  ) as Record<string, unknown>
+  second.projectName = 'fallback'
+  local.query('UPDATE outbox SET payload=? WHERE id=2').run(JSON.stringify(second))
+  const remote = fakePostgres()
+  const declaredSpace = '01990000-0000-7000-8000-000000000003'
+  expect(
+    await syncRecord({
+      ...options(local, remote),
+      memberships: [
+        { spaceId: declaredSpace, slug: 'team', name: 'Team', role: 'owner', permission: 'write' },
+      ],
+      projectSpaces: { declared: 'team' },
+    }),
+  ).toEqual({ pushed: 2, failed: 0, pending: 0, configured: true })
+  expect(remote.transactionSpaceIds).toContain(declaredSpace)
+  expect(remote.transactionSpaceIds).toContain(options(local, remote).principal.spaceId)
+  local.close()
+})
+
+test('two declared projects bind their own spaces in separate transactions', async () => {
+  const local = localOutbox(2, 'alpha')
+  const second = JSON.parse(
+    local.query<{ payload: string }, []>('SELECT payload FROM outbox WHERE id=2').get()!.payload,
+  ) as Record<string, unknown>
+  second.projectName = 'beta'
+  local.query('UPDATE outbox SET payload=? WHERE id=2').run(JSON.stringify(second))
+  const remote = fakePostgres()
+  const alpha = '01990000-0000-7000-8000-000000000003'
+  const beta = '01990000-0000-7000-8000-000000000004'
+  expect(
+    await syncRecord({
+      ...options(local, remote),
+      memberships: [
+        { spaceId: alpha, slug: 'alpha', name: 'Alpha', role: 'owner', permission: 'write' },
+        { spaceId: beta, slug: 'beta', name: 'Beta', role: 'owner', permission: 'write' },
+      ],
+      projectSpaces: { alpha: 'alpha', beta: 'beta' },
+    }),
+  ).toMatchObject({ pushed: 2, failed: 0 })
+  expect(remote.transactionSpaceIds.filter((id) => id === alpha)).toHaveLength(1)
+  expect(remote.transactionSpaceIds.filter((id) => id === beta)).toHaveLength(1)
   local.close()
 })

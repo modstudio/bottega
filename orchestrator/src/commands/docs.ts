@@ -5,6 +5,7 @@ import { canonLintCommand, dispatchCanonCommand } from '../canon/canon-commands.
 import { docCommand } from '../doc/doc-commands.ts'
 import { portCommand } from '../porting/port-commands.ts'
 import { projectCommand } from '../project/project-commands.ts'
+import { requireRecordSpaceMembership } from '../record/record-space.ts'
 import { log, optionFlags, write, writeStdout } from './support.ts'
 
 export function register(program: Command): void {
@@ -114,6 +115,12 @@ export function register(program: Command): void {
     .option('--undo')
     .action(async (args, options) => {
       const argv = ['project', ...args]
-      await projectCommand(argv[1] ?? 'list', argv, optionFlags(options), { log, cwd: process.cwd })
+      await projectCommand(
+        argv[1] ?? 'list',
+        argv,
+        optionFlags(options),
+        { log, cwd: process.cwd },
+        { requireSpaceMembership: requireRecordSpaceMembership },
+      )
     })
 }

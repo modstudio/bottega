@@ -28,6 +28,7 @@ export const REVIEW_RECORD_PAYLOAD_COLUMNS = [
 export const REVIEW_LENS_RECORD_PAYLOAD_COLUMNS = [
   'id',
   'spaceId',
+  'projectName',
   'reviewId',
   'runId',
   'machineId',
@@ -54,6 +55,7 @@ export const REVIEW_LENS_RECORD_PAYLOAD_COLUMNS = [
 export const REVIEW_FINDING_RECORD_PAYLOAD_COLUMNS = [
   'id',
   'spaceId',
+  'projectName',
   'reviewId',
   'reviewLensId',
   'machineId',
@@ -150,9 +152,11 @@ export function enqueueReviewLens(
 ): void {
   const row = database
     .query<Record<string, unknown>, [number]>(
-      `SELECT lens.*, review.record_id AS review_record_id, run.record_id AS run_record_id
+      `SELECT lens.*, review.record_id AS review_record_id, run.record_id AS run_record_id,
+              project.name AS project_name
        FROM review_lens lens JOIN review ON review.id=lens.review_id
-       JOIN run ON run.id=lens.run_id WHERE lens.id=?`,
+       JOIN run ON run.id=lens.run_id
+       LEFT JOIN project ON project.id=review.project_id WHERE lens.id=?`,
     )
     .get(lensId)
   if (!row) throw new Error(`review lens ${lensId} does not exist and cannot be enqueued`)
@@ -167,6 +171,7 @@ export function enqueueReviewLens(
     {
       id: row.record_id,
       spaceId: PLATFORM_SPACE_ID,
+      projectName: row.project_name,
       reviewId: row.review_record_id,
       runId: row.run_record_id,
       machineId: machine,
@@ -203,9 +208,11 @@ export function enqueueReviewFinding(
   const row = database
     .query<Record<string, unknown>, [number]>(
       `SELECT finding.*, review.record_id AS review_record_id,
+            project.name AS project_name,
             lens.record_id AS review_lens_record_id
        FROM review_finding finding JOIN review ON review.id=finding.review_id
-       JOIN review_lens lens ON lens.id=finding.review_lens_id WHERE finding.id=?`,
+       JOIN review_lens lens ON lens.id=finding.review_lens_id
+       LEFT JOIN project ON project.id=review.project_id WHERE finding.id=?`,
     )
     .get(findingId)
   if (!row) throw new Error(`review finding ${findingId} does not exist and cannot be enqueued`)
@@ -221,6 +228,7 @@ export function enqueueReviewFinding(
     {
       id: row.record_id,
       spaceId: PLATFORM_SPACE_ID,
+      projectName: row.project_name,
       reviewId: row.review_record_id,
       reviewLensId: row.review_lens_record_id,
       machineId: machine,

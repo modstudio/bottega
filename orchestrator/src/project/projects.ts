@@ -86,6 +86,8 @@ export type Project = {
   settings: ProjectSettings
 }
 export type ProjectSettings = {
+  /** Record space slug that owns this project's hosted evidence. */
+  space?: string
   /**
    * Paths a read-only worker must not read. Absolute paths are used as-is,
    * `~` expands to the operator home, and relative paths resolve from this
@@ -526,6 +528,12 @@ export function unretireProject(name: string): boolean {
  * Refuse malformed lifecycle declarations while the operator is registering
  * them, before a worker is waiting on a vendor clone to discover the mistake.
  */
+function projectSpaceProblems(space: unknown): string[] {
+  return space !== undefined && (typeof space !== 'string' || !space.trim())
+    ? ['space must be a non-empty record space slug']
+    : []
+}
+
 export function validateProjectSettings(settings: ProjectSettings, projectPath?: string): string[] {
   const problems = [
     ...validateProjectInjectionSettings(settings),
@@ -537,6 +545,7 @@ export function validateProjectSettings(settings: ProjectSettings, projectPath?:
     ),
     ...validateReadonlyProvision(settings.worktree?.readonly_provision),
     ...trackedRecipeProblems(settings.worktree, projectPath),
+    ...projectSpaceProblems(settings.space),
   ]
 
   if (invalidOptionalStringArray(settings.secretPaths)) {
