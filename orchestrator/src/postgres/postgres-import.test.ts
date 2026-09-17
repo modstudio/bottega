@@ -67,6 +67,13 @@ realPostgres('project import against copied live SQLite data', () => {
     installRecordSessionRunner(recordSession.runner)
     process.env.BETTER_AUTH_SECRET = 'postgres-import-secret-at-least-thirty-two-characters'
     await migratePostgres()
+    await sql`
+      INSERT INTO invitation
+        (id,space_id,email,inviter_id,role,status,expires_at,created_at)
+      SELECT ${newRecordId()}::uuid, ${PLATFORM_SPACE_ID}::uuid, 'live-copy@example.test', id,
+        'member', 'pending', now() + interval '1 day', now()
+      FROM "user" ORDER BY created_at LIMIT 1
+    `
     const signedUp = await recordAuth(actorUrl!).api.signUpEmail({
       body: {
         email: 'live-copy@example.test',

@@ -22,10 +22,17 @@ afterAll(() => {
 })
 
 test('auth instance builds without connecting to a database', () => {
-  const api = recordAuth('postgres://record.invalid/database').api
+  const auth = recordAuth('postgres://record.invalid/database')
+  const api = auth.api
   expect(api.signInEmail).toBeFunction()
   expect(api.requestPasswordReset).toBeFunction()
   expect(api.resetPassword).toBeFunction()
+  expect(auth.options.emailAndPassword?.minPasswordLength).toBe(12)
+  expect(auth.options.rateLimit).toMatchObject({ enabled: true, window: 10, max: 100 })
+  expect(auth.options.rateLimit?.customRules?.['/request-password-reset']).toEqual({
+    window: 60 * 60,
+    max: 5,
+  })
 })
 
 test('password reset links use the configured hosted hub and the injected sender', async () => {

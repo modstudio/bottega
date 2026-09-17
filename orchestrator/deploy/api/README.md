@@ -30,6 +30,13 @@ selects the SES region, `SES_FROM_ADDRESS` supplies the verified From header, an
 access-key settings authenticate the SES v2 client. The secret values belong in Fly secrets,
 not this file.
 
+Record sign-up is invitation-only. A record space owner creates the required pending invitation
+before the invitee signs up:
+
+```sh
+orch record space invite --email <email>
+```
+
 At the DNS provider, create an `A` record for `api.bottega.run` with the shared IPv4 address printed by `fly ips allocate-v4`, and an `AAAA` record with the IPv6 address printed by `fly ips allocate-v6`. Check certificate and DNS validation with `fly certs check api.bottega.run -a bottega-api`.
 
 Verify the public surface after the certificate is ready:
