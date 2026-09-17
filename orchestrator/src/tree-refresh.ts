@@ -114,7 +114,8 @@ export function refreshStepContext(input: {
   }
 }
 
-function refreshTree(path: string): string[] {
+/** Bind a path to its registered project, landing branch and tracked recipe, or refuse. */
+function refreshTarget(path: string) {
   const requested = resolve(path)
   const project = projectAt(requested)
   const treeRoot = gitToplevel(requested)
@@ -140,8 +141,11 @@ function refreshTree(path: string): string[] {
       `project ${project.name} has no tracked recipe; declare a tracked recipe in ${PLATFORM_SLUG}.jsonc`,
     )
   }
-  const recipePath = lifecycle.recipePath
+  return { project, treeRoot, trunk, recipePath: lifecycle.recipePath }
+}
 
+function refreshTree(path: string): string[] {
+  const { project, treeRoot, trunk, recipePath } = refreshTarget(path)
   const loaded = loadTrackedRecipe(treeRoot, recipePath)
   if (!loaded.ok) throw new Error(loaded.errors.join('\n'))
   if (!loaded.recipe) {
