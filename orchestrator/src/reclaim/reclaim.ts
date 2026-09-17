@@ -16,8 +16,12 @@ import { settleClaims } from '../resource-claims.ts'
 import { otherConversationWorktreeSharers } from '../resource-ownership.ts'
 import { runAlive } from '../run-alive.ts'
 import { runLeaseState } from '../run-lease.ts'
-import { markedWorktreeSource, orphanSafety, worktreeDirty } from '../worktree-attribution.ts'
-import { branchTip, removeFor, restoreBranch } from '../worktree-remove.ts'
+import {
+  markedWorktreeSource,
+  orphanSafety,
+  worktreeDirty,
+} from '../worktree/worktree-attribution.ts'
+import { branchTip, removeFor, restoreBranch } from '../worktree/worktree-remove.ts'
 import { reclaimDirtyTreeRefusal } from './reclaim-worktree-dirty.ts'
 
 export type ReclaimResult = { ok: boolean; action: string }

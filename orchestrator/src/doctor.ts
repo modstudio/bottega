@@ -28,8 +28,8 @@ import {
 import { claimCounts, RECIPE_PORT_BAND, RESOURCE_CLAIM_MIGRATION } from './resource-claims.ts'
 import { terminalDockerRetentionReasonForRun } from './resource-ownership.ts'
 import { DELIVERY, FIDELITY, QUALITY } from './score/score.ts'
-import { worktreeDirty } from './worktree-attribution.ts'
-import { lifecycleReportLines } from './worktree-lifecycle.ts'
+import { worktreeDirty } from './worktree/worktree-attribution.ts'
+import { lifecycleReportLines } from './worktree/worktree-lifecycle.ts'
 
 type DoctorFlags = { has(name: string): boolean }
 type DoctorPresentation = {

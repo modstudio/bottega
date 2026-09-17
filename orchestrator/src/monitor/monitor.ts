@@ -22,7 +22,7 @@ import { reclaimBranch, reclaimWorktree } from '../reclaim/reclaim.ts'
 import { terminalDockerRetentionReasonForRun } from '../resource-ownership.ts'
 import type { MonitorSeverity } from '../review-vocabulary.ts'
 import { RUNS_DIR } from '../run-artifacts.ts'
-import { worktreeDirty } from '../worktree-attribution.ts'
+import { worktreeDirty } from '../worktree/worktree-attribution.ts'
 import {
   age,
   askingRuns,

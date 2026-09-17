@@ -10,7 +10,7 @@ import {
 } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { upsertProject } from './project/projects.ts'
+import { upsertProject } from '../project/projects.ts'
 import { removeFor } from './worktree-remove.ts'
 
 const directories: string[] = []

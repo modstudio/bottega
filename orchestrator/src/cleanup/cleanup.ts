@@ -15,15 +15,15 @@ import {
   authorizeRunMutation,
   type RootAuthority,
 } from '../run-authority.ts'
-import { inspectTreeOwnership } from '../worktree-attribution.ts'
+import { inspectTreeOwnership } from '../worktree/worktree-attribution.ts'
 import {
   branchTip,
   removeBranch,
   removeFor,
   restoreBranch,
   unmergedBranch,
-} from '../worktree-remove.ts'
-import type { Worktree } from '../worktree-types.ts'
+} from '../worktree/worktree-remove.ts'
+import type { Worktree } from '../worktree/worktree-types.ts'
 
 export type CleanupPresentation = {
   log: (...values: unknown[]) => void

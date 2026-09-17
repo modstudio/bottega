@@ -58,17 +58,17 @@ import {
 import { errorTail, sha } from './run-process.ts'
 import { prepareProjectGrokMcpScope } from './sandbox.ts'
 import { resolveTaskBranch, type TaskBranchCandidate } from './task-branch.ts'
-import { createWorkerWorktree, worktreeExists } from './worktree.ts'
+import { createWorkerWorktree, worktreeExists } from './worktree/worktree.ts'
 import {
   assertCallerAncestry,
   type CarriedWorkingState,
   carryWorkingState,
   resolveReadOnlyBase,
-} from './worktree-caller.ts'
-import { createIsolatedWorkerDirectory, prepareWorkerMcpConfig } from './worktree-mcp.ts'
-import { toolFor } from './worktree-preflight.ts'
-import { type Changes, removeFor } from './worktree-remove.ts'
-import type { Worktree } from './worktree-types.ts'
+} from './worktree/worktree-caller.ts'
+import { createIsolatedWorkerDirectory, prepareWorkerMcpConfig } from './worktree/worktree-mcp.ts'
+import { toolFor } from './worktree/worktree-preflight.ts'
+import { type Changes, removeFor } from './worktree/worktree-remove.ts'
+import type { Worktree } from './worktree/worktree-types.ts'
 
 type RecreateResumeTreePlan = Extract<
   ResumeTreePlan,

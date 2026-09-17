@@ -8,7 +8,7 @@ import { db } from '../db.ts'
 import { UNSCORED_WHERE } from '../evidence/evidence-query.ts'
 import { type KernelLease, projectGitCommonDir, tryKernelLease } from '../project/project-lock.ts'
 import { projectByName } from '../project/projects.ts'
-import { worktreeDirty } from '../worktree-attribution.ts'
+import { worktreeDirty } from '../worktree/worktree-attribution.ts'
 import { parseFiledIssue, workIssue } from './issue.ts'
 import {
   eligibleFiledIssueTasks,

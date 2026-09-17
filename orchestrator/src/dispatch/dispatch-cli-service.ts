@@ -33,7 +33,11 @@ import {
   resolveTransportName,
   selectAgentForTransport,
 } from '../transport/transport.ts'
-import { callerDrift, checkoutHasUncommittedWork, resolveBase } from '../worktree-caller.ts'
+import {
+  callerDrift,
+  checkoutHasUncommittedWork,
+  resolveBase,
+} from '../worktree/worktree-caller.ts'
 import { dispatchCommand } from './dispatch-commands.ts'
 
 type Presentation = {

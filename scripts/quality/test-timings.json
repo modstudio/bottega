@@ -667,7 +667,7 @@
       "spawns": 0
     },
     {
-      "path": "orchestrator/src/worktree-mcp.test.ts",
+      "path": "orchestrator/src/worktree/worktree-mcp.test.ts",
       "wallMs": 38,
       "tests": 6,
       "cliShaped": false,

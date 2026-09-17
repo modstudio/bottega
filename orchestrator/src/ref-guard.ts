@@ -22,7 +22,7 @@ import { dirname, isAbsolute, join, relative, resolve, sep } from 'node:path'
 import { db, ROOT } from './db.ts'
 import { commonGitDir, gitConfigOk, linkedWorktreePaths } from './git-environment.ts'
 import { pidAlive } from './process-liveness.ts'
-import { ORCH_RUN_MARKER } from './worktree-attribution.ts'
+import { ORCH_RUN_MARKER } from './worktree/worktree-attribution.ts'
 
 export type SharedRefGuardEnvironment = {
   GIT_CONFIG_COUNT: string

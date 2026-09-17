@@ -2,7 +2,7 @@ import { describe, expect, test } from 'bun:test'
 import { mkdtempSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { DEFAULT_PROJECT_CONFIG_PATH } from '../worktree-lifecycle.ts'
+import { DEFAULT_PROJECT_CONFIG_PATH } from '../worktree/worktree-lifecycle.ts'
 import type { Project } from './projects.ts'
 import { worktreeWarnings } from './projects.ts'
 

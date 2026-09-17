@@ -94,9 +94,9 @@ import {
   selectAgentForTransport,
   type TransportName,
 } from './transport/transport.ts'
-import { resolveBase, resolveReadOnlyBase } from './worktree-caller.ts'
-import { toolFor } from './worktree-preflight.ts'
-import type { Worktree } from './worktree-types.ts'
+import { resolveBase, resolveReadOnlyBase } from './worktree/worktree-caller.ts'
+import { toolFor } from './worktree/worktree-preflight.ts'
+import type { Worktree } from './worktree/worktree-types.ts'
 
 function requiredRunLease(
   runId: number,

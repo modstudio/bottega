@@ -18,9 +18,9 @@ import {
   validateStoredProjectSettings,
 } from '../project/projects.ts'
 import { resolveReviewTarget } from '../review-target.ts'
-import { resolveBase } from '../worktree-caller.ts'
-import { createCommandExists, validateSeedWithTool } from '../worktree-preflight.ts'
-import { createHasPlaceholder } from '../worktree-template.ts'
+import { resolveBase } from '../worktree/worktree-caller.ts'
+import { createCommandExists, validateSeedWithTool } from '../worktree/worktree-preflight.ts'
+import { createHasPlaceholder } from '../worktree/worktree-template.ts'
 
 const MAX_DEPTH = 1
 export const depth = () => Number(process.env.ORCH_DEPTH ?? 0)

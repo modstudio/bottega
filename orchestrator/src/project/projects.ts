@@ -36,14 +36,17 @@ import { db, nowIso, writableDb, writeTransaction } from '../db.ts'
 import { type ReadonlyProvision, validateReadonlyProvision } from '../readonly-provision.ts'
 import { loadTrackedRecipe, recipePointerErrors } from '../recipe/recipe-loader.ts'
 import { recordApiClient } from '../record/record-api-client.ts'
-import { DEFAULT_PROJECT_CONFIG_PATH, resolveWorktreeLifecycle } from '../worktree-lifecycle.ts'
+import {
+  DEFAULT_PROJECT_CONFIG_PATH,
+  resolveWorktreeLifecycle,
+} from '../worktree/worktree-lifecycle.ts'
 import {
   CREATE_VARS,
   createHasPlaceholder,
   placeholders,
   validateCreate,
   type WorktreeCreate,
-} from '../worktree-template.ts'
+} from '../worktree/worktree-template.ts'
 import {
   type DocsSettings,
   type ReleaseSettings,

@@ -12,9 +12,9 @@ import { projectAt, resolvedWorktreeTool, stackAt } from './project/projects.ts'
 import { recordCreatedWorktreeClaims } from './resource-claims.ts'
 import { acquireRunLease } from './run-lease.ts'
 import { trackedHookBranch } from './tracked-recipe.ts'
-import { createWithTool } from './worktree-create.ts'
-import { resolveWorktreeLifecycle } from './worktree-lifecycle.ts'
-import type { Worktree } from './worktree-types.ts'
+import { createWithTool } from './worktree/worktree-create.ts'
+import { resolveWorktreeLifecycle } from './worktree/worktree-lifecycle.ts'
+import type { Worktree } from './worktree/worktree-types.ts'
 
 function canonicalPath(path: string): string {
   try {

@@ -24,9 +24,9 @@ import {
   markedWorktreeSource,
   orphanSafety,
   worktreeNameRunId,
-} from '../worktree-attribution.ts'
-import { branchTip } from '../worktree-remove.ts'
-import type { Worktree } from '../worktree-types.ts'
+} from '../worktree/worktree-attribution.ts'
+import { branchTip } from '../worktree/worktree-remove.ts'
+import type { Worktree } from '../worktree/worktree-types.ts'
 import {
   type CleanupPresentation,
   evidenceOwningBranchOwners,
@@ -308,7 +308,7 @@ export async function sweepRuns(options: SweepOptions, helpers: SweepHelpers): P
     .filter(shouldSweepHookTree)
     .filter((row) => !selectedProject || projectAt(row.worktree)?.name === selectedProject.name)
 
-  const { removeFor, sweepWithTool } = await import('../worktree-remove.ts')
+  const { removeFor, sweepWithTool } = await import('../worktree/worktree-remove.ts')
 
   const closedCounts: ClosedSweepCounts = { released: 0, absent: 0, forgotten: 0 }
   let cleanupFailed = false
