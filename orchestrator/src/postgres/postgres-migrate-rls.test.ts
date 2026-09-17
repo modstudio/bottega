@@ -626,6 +626,7 @@ realPostgres('RLS proof against real Postgres', () => {
       ORCH_RECORD_URL: actorUrl!,
       BETTER_AUTH_SECRET: process.env.BETTER_AUTH_SECRET,
       BETTER_AUTH_URL: process.env.BETTER_AUTH_URL,
+      RECORD_HUB_URL: 'http://127.0.0.1',
     })
     const origin = `http://127.0.0.1:${server.port}`
     try {

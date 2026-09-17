@@ -30,6 +30,26 @@ export async function signInWithEmail(email: string, password: string) {
   }
 }
 
+export async function requestPasswordReset(email: string) {
+  const response = await fetch(authUrl('/api/auth/request-password-reset'), {
+    method: 'POST',
+    credentials: 'include',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ email }),
+  })
+  if (!response.ok) throw new Error('Could not request a password reset')
+}
+
+export async function resetPassword(token: string, newPassword: string) {
+  const response = await fetch(authUrl('/api/auth/reset-password'), {
+    method: 'POST',
+    credentials: 'include',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ token, newPassword }),
+  })
+  if (!response.ok) throw new Error('This password reset link is invalid or has expired')
+}
+
 export async function signOutFromRecord() {
   const response = await fetch(authUrl('/api/auth/sign-out'), {
     method: 'POST',

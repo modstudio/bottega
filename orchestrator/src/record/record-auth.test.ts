@@ -7,17 +7,45 @@ import {
 } from './record-auth.ts'
 
 let priorSecret: string | undefined
+let priorHubUrl: string | undefined
 beforeAll(() => {
   priorSecret = process.env.BETTER_AUTH_SECRET
+  priorHubUrl = process.env.RECORD_HUB_URL
   process.env.BETTER_AUTH_SECRET = 'test-secret-at-least-thirty-two-characters'
+  process.env.RECORD_HUB_URL = 'https://hub.example.test'
 })
 afterAll(() => {
   if (priorSecret === undefined) delete process.env.BETTER_AUTH_SECRET
   else process.env.BETTER_AUTH_SECRET = priorSecret
+  if (priorHubUrl === undefined) delete process.env.RECORD_HUB_URL
+  else process.env.RECORD_HUB_URL = priorHubUrl
 })
 
 test('auth instance builds without connecting to a database', () => {
-  expect(recordAuth('postgres://record.invalid/database').api.signInEmail).toBeFunction()
+  const api = recordAuth('postgres://record.invalid/database').api
+  expect(api.signInEmail).toBeFunction()
+  expect(api.requestPasswordReset).toBeFunction()
+  expect(api.resetPassword).toBeFunction()
+})
+
+test('password reset links use the configured hosted hub and the injected sender', async () => {
+  let sent: { to: string; resetUrl: string } | undefined
+  const auth = recordAuth(
+    'postgres://record.invalid/database',
+    {
+      BETTER_AUTH_SECRET: 'test-secret-at-least-thirty-two-characters',
+      RECORD_HUB_URL: 'https://hub.example.test',
+    },
+    async (input) => {
+      sent = input
+    },
+  )
+  const hook = auth.options.emailAndPassword?.sendResetPassword
+  await hook?.({ user: { email: 'reader@example.test' } as never, token: 'token-one', url: '' })
+  expect(sent).toEqual({
+    to: 'reader@example.test',
+    resetUrl: 'https://hub.example.test/reset-password?token=token-one',
+  })
 })
 
 test('browser origins are exact and optional', () => {

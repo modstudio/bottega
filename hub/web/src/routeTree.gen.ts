@@ -16,11 +16,13 @@ import { Route as DesignRouteImport } from './routes/design'
 import { Route as DocsRouteImport } from './routes/docs'
 import { Route as DoneRouteImport } from './routes/done'
 import { Route as FlightRouteImport } from './routes/flight'
+import { Route as ForgotPasswordRouteImport } from './routes/forgot-password'
 import { Route as HealthRouteImport } from './routes/health'
 import { Route as JobsRouteImport } from './routes/jobs'
 import { Route as NotesRouteImport } from './routes/notes'
 import { Route as ProjectsRouteImport } from './routes/projects'
 import { Route as RatioRouteImport } from './routes/ratio'
+import { Route as ResetPasswordRouteImport } from './routes/reset-password'
 import { Route as ReviewsRouteImport } from './routes/reviews'
 import { Route as RoutingRouteImport } from './routes/routing'
 import { Route as RunsRouteImport } from './routes/runs'
@@ -70,6 +72,11 @@ const FlightRoute = FlightRouteImport.update({
   path: '/flight',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ForgotPasswordRoute = ForgotPasswordRouteImport.update({
+  id: '/forgot-password',
+  path: '/forgot-password',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const HealthRoute = HealthRouteImport.update({
   id: '/health',
   path: '/health',
@@ -93,6 +100,11 @@ const ProjectsRoute = ProjectsRouteImport.update({
 const RatioRoute = RatioRouteImport.update({
   id: '/ratio',
   path: '/ratio',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ResetPasswordRoute = ResetPasswordRouteImport.update({
+  id: '/reset-password',
+  path: '/reset-password',
   getParentRoute: () => rootRouteImport,
 } as any)
 const ReviewsRoute = ReviewsRouteImport.update({
@@ -169,11 +181,13 @@ export interface FileRoutesByFullPath {
   '/docs': typeof DocsRouteWithChildren
   '/done': typeof DoneRouteWithChildren
   '/flight': typeof FlightRouteWithChildren
+  '/forgot-password': typeof ForgotPasswordRoute
   '/health': typeof HealthRoute
   '/jobs': typeof JobsRoute
   '/notes': typeof NotesRoute
   '/projects': typeof ProjectsRouteWithChildren
   '/ratio': typeof RatioRoute
+  '/reset-password': typeof ResetPasswordRoute
   '/reviews': typeof ReviewsRouteWithChildren
   '/routing': typeof RoutingRoute
   '/runs': typeof RunsRouteWithChildren
@@ -196,11 +210,13 @@ export interface FileRoutesByTo {
   '/docs': typeof DocsRouteWithChildren
   '/done': typeof DoneRouteWithChildren
   '/flight': typeof FlightRouteWithChildren
+  '/forgot-password': typeof ForgotPasswordRoute
   '/health': typeof HealthRoute
   '/jobs': typeof JobsRoute
   '/notes': typeof NotesRoute
   '/projects': typeof ProjectsRouteWithChildren
   '/ratio': typeof RatioRoute
+  '/reset-password': typeof ResetPasswordRoute
   '/reviews': typeof ReviewsRouteWithChildren
   '/routing': typeof RoutingRoute
   '/runs': typeof RunsRouteWithChildren
@@ -224,11 +240,13 @@ export interface FileRoutesById {
   '/docs': typeof DocsRouteWithChildren
   '/done': typeof DoneRouteWithChildren
   '/flight': typeof FlightRouteWithChildren
+  '/forgot-password': typeof ForgotPasswordRoute
   '/health': typeof HealthRoute
   '/jobs': typeof JobsRoute
   '/notes': typeof NotesRoute
   '/projects': typeof ProjectsRouteWithChildren
   '/ratio': typeof RatioRoute
+  '/reset-password': typeof ResetPasswordRoute
   '/reviews': typeof ReviewsRouteWithChildren
   '/routing': typeof RoutingRoute
   '/runs': typeof RunsRouteWithChildren
@@ -253,11 +271,13 @@ export interface FileRouteTypes {
     | '/docs'
     | '/done'
     | '/flight'
+    | '/forgot-password'
     | '/health'
     | '/jobs'
     | '/notes'
     | '/projects'
     | '/ratio'
+    | '/reset-password'
     | '/reviews'
     | '/routing'
     | '/runs'
@@ -280,11 +300,13 @@ export interface FileRouteTypes {
     | '/docs'
     | '/done'
     | '/flight'
+    | '/forgot-password'
     | '/health'
     | '/jobs'
     | '/notes'
     | '/projects'
     | '/ratio'
+    | '/reset-password'
     | '/reviews'
     | '/routing'
     | '/runs'
@@ -307,11 +329,13 @@ export interface FileRouteTypes {
     | '/docs'
     | '/done'
     | '/flight'
+    | '/forgot-password'
     | '/health'
     | '/jobs'
     | '/notes'
     | '/projects'
     | '/ratio'
+    | '/reset-password'
     | '/reviews'
     | '/routing'
     | '/runs'
@@ -335,11 +359,13 @@ export interface RootRouteChildren {
   DocsRoute: typeof DocsRouteWithChildren
   DoneRoute: typeof DoneRouteWithChildren
   FlightRoute: typeof FlightRouteWithChildren
+  ForgotPasswordRoute: typeof ForgotPasswordRoute
   HealthRoute: typeof HealthRoute
   JobsRoute: typeof JobsRoute
   NotesRoute: typeof NotesRoute
   ProjectsRoute: typeof ProjectsRouteWithChildren
   RatioRoute: typeof RatioRoute
+  ResetPasswordRoute: typeof ResetPasswordRoute
   ReviewsRoute: typeof ReviewsRouteWithChildren
   RoutingRoute: typeof RoutingRoute
   RunsRoute: typeof RunsRouteWithChildren
@@ -399,6 +425,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof FlightRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/forgot-password': {
+      id: '/forgot-password'
+      path: '/forgot-password'
+      fullPath: '/forgot-password'
+      preLoaderRoute: typeof ForgotPasswordRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/health': {
       id: '/health'
       path: '/health'
@@ -432,6 +465,13 @@ declare module '@tanstack/react-router' {
       path: '/ratio'
       fullPath: '/ratio'
       preLoaderRoute: typeof RatioRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/reset-password': {
+      id: '/reset-password'
+      path: '/reset-password'
+      fullPath: '/reset-password'
+      preLoaderRoute: typeof ResetPasswordRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/reviews': {
@@ -610,11 +650,13 @@ const rootRouteChildren: RootRouteChildren = {
   DocsRoute: DocsRouteWithChildren,
   DoneRoute: DoneRouteWithChildren,
   FlightRoute: FlightRouteWithChildren,
+  ForgotPasswordRoute: ForgotPasswordRoute,
   HealthRoute: HealthRoute,
   JobsRoute: JobsRoute,
   NotesRoute: NotesRoute,
   ProjectsRoute: ProjectsRouteWithChildren,
   RatioRoute: RatioRoute,
+  ResetPasswordRoute: ResetPasswordRoute,
   ReviewsRoute: ReviewsRouteWithChildren,
   RoutingRoute: RoutingRoute,
   RunsRoute: RunsRouteWithChildren,

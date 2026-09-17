@@ -1,11 +1,11 @@
-import { useNavigate } from '@tanstack/react-router'
+import { Link, useNavigate } from '@tanstack/react-router'
 import { useState } from 'react'
 import { signInWithEmail } from '@/lib/hosted-auth'
 import { Button } from '@/ui/button/button'
 import { Input } from '@/ui/field/input'
 import { PageHeader } from '@/ui/page-header/page-header'
 
-export function HostedSignIn() {
+export function HostedSignIn({ passwordChanged = false }: { passwordChanged?: boolean }) {
   const navigate = useNavigate()
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
@@ -29,6 +29,9 @@ export function HostedSignIn() {
   return (
     <section>
       <PageHeader title="Sign in" subtitle="Record session" />
+      {passwordChanged ? (
+        <p className="mb-4">Your password has been changed. Sign in with your new password.</p>
+      ) : null}
       <form className="max-w-sm space-y-4" onSubmit={(event) => void submit(event)}>
         <label htmlFor="hosted-email" className="block space-y-1">
           <span>Email</span>
@@ -60,6 +63,11 @@ export function HostedSignIn() {
         <Button variant="primary" type="submit" disabled={pending}>
           {pending ? 'Signing in...' : 'Sign in'}
         </Button>
+        <p>
+          <Link to="/forgot-password" className="text-link hover:underline">
+            Forgot password?
+          </Link>
+        </p>
       </form>
     </section>
   )

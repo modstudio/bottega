@@ -598,6 +598,7 @@ export const importBoundaries: ImportBoundary[] = [
       'drizzle-orm/bun-sql',
       '../../../shared/record/schema.ts',
       '../../../shared/record/schema-auth.ts',
+      '../mail/password-reset-mailer.ts',
     ],
     'Enforce the record-auth concern boundary.',
   ),

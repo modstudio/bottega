@@ -34,6 +34,8 @@ test('hosted mode exposes only read-only hosted routes', () => {
   expect(isHostedPath('/runs/01990000-0000-7000-8000-000000000001')).toBe(true)
   expect(isHostedPath('/reviews')).toBe(true)
   expect(isHostedPath('/sign-in')).toBe(true)
+  expect(isHostedPath('/forgot-password')).toBe(true)
+  expect(isHostedPath('/reset-password')).toBe(true)
   expect(isHostedPath('/projects')).toBe(true)
   expect(isHostedPath('/docs')).toBe(true)
   expect(isHostedPath('/docs/project/alpha/plan')).toBe(true)

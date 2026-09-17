@@ -77,7 +77,10 @@ export const Route = createRootRoute({
   component: function Shell() {
     const hosted = isHostedMode()
     const pathname = useRouterState({ select: (state) => state.location.pathname })
-    if (hosted && pathname === '/sign-in') {
+    if (
+      hosted &&
+      (pathname === '/sign-in' || pathname === '/forgot-password' || pathname === '/reset-password')
+    ) {
       return (
         <HostedSignInFrame>
           <Outlet />

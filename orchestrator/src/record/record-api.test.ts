@@ -78,6 +78,30 @@ describe('record API', () => {
     expect(await (await app.request('/api/auth/session')).json()).toEqual({ handled: true })
     expect(await (await app.request('/health')).json()).toEqual({ ok: true, migrations: 14 })
   })
+
+  test('an over-limit reset request returns the same status and body as the first request', async () => {
+    let requests = 0
+    const app = appWith(identity, {
+      auth: {
+        handler: () => {
+          requests++
+          return requests === 1
+            ? Response.json({
+                status: true,
+                message: 'If this email exists in our system, check your email for the reset link',
+              })
+            : Response.json(
+                { message: 'Too many requests. Please try again later.' },
+                { status: 429 },
+              )
+        },
+      },
+    })
+    const first = await app.request('/api/auth/request-password-reset', { method: 'POST' })
+    const limited = await app.request('/api/auth/request-password-reset', { method: 'POST' })
+    expect(limited.status).toBe(first.status)
+    expect(await limited.json()).toEqual(await first.json())
+  })
 })
 
 describe('record API presentation routes', () => {

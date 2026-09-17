@@ -132,6 +132,8 @@ export function isHostedPath(pathname: string) {
   const path = pathname.length > 1 && pathname.endsWith('/') ? pathname.slice(0, -1) : pathname
   if (
     path === '/sign-in' ||
+    path === '/forgot-password' ||
+    path === '/reset-password' ||
     path === '/flight' ||
     path === '/board' ||
     path === '/done' ||
