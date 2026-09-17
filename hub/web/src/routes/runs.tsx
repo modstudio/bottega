@@ -95,6 +95,18 @@ function RunsPage() {
   return <RunsList />
 }
 
+/** Page and page size, back to the first page whenever the question changes. */
+function usePaging(question: string) {
+  const [page, setPage] = useState(1)
+  const [pageSize, setPageSize] = useState(50)
+  const [asked, setAsked] = useState(question)
+  if (asked !== question) {
+    setAsked(question)
+    setPage(1)
+  }
+  return { page, pageSize, setPage, setPageSize }
+}
+
 function RunsList() {
   const navigate = useNavigate()
   const panel = useDetailPanel()
@@ -102,17 +114,11 @@ function RunsList() {
   const windowState = useWindowState()
   const [openMenus, setOpenMenus] = useState(0)
   const [search, setSearch] = useState('')
-  const [page, setPage] = useState(1)
-  const [pageSize, setPageSize] = useState(50)
   const searchQuery = useDebounced(search.trim())
+  const { page, pageSize, setPage, setPageSize } = usePaging(
+    `${windowState.hours}|${windowState.filters.agent}|${windowState.filters.project}|${searchQuery}`,
+  )
   const now = useNow()
-  // A new question starts at its first page.
-  const scope = `${windowState.hours}|${windowState.filters.agent}|${windowState.filters.project}|${searchQuery}`
-  const [pagedScope, setPagedScope] = useState(scope)
-  if (pagedScope !== scope) {
-    setPagedScope(scope)
-    setPage(1)
-  }
   const query = useQuery({
     ...trpc.run.list.queryOptions(
       {
