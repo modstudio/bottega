@@ -14,7 +14,7 @@ import {
   resourcesForRuns,
   teardownRunResources,
 } from './docker-resources.ts'
-import { chainScoreJoin, EVIDENCE_CLOSED_SQL } from './evidence-query.ts'
+import { chainScoreJoin, EVIDENCE_CLOSED_SQL } from './evidence/evidence-query.ts'
 import { repoRootOf } from './git-environment.ts'
 import { pidAlive } from './process-liveness.ts'
 import { withCleanupLock, withWorktreeLease } from './project-lock.ts'

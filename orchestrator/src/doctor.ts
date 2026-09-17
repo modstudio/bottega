@@ -11,7 +11,7 @@ import {
   dockerRemovalCommand,
   dockerRunResources,
 } from './docker-resources.ts'
-import { runTotals } from './evidence-query.ts'
+import { runTotals } from './evidence/evidence-query.ts'
 import { keepTreeHold } from './keep-tree-hold.ts'
 import {
   ensureLocalHealth,

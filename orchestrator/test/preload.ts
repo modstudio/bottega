@@ -89,7 +89,7 @@ const { registerStandardRuntime } = await import('../src/runtime-registration.ts
 registerStandardRuntime()
 const { DB_PATH, closeDatabaseForFixture } = await import('../src/db.ts')
 const { applyMigrations } = await import('../src/migrations.ts')
-const { excludeSharedOutputRuns } = await import('../src/evidence-query.ts')
+const { excludeSharedOutputRuns } = await import('../src/evidence/evidence-query.ts')
 const { seedWorkflows } = await import('../src/workflow/workflow-seeds.ts')
 const { registerStandardTransports } = await import('../src/standard-transports.ts')
 

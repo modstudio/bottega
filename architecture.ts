@@ -97,7 +97,7 @@ export const modules: ArchitectureModule[] = [
   ]),
   module('orchestrator/src/branch/branch-settlement.ts', [
     '../db.ts',
-    '../evidence-query.ts',
+    '../evidence/evidence-query.ts',
     '../resource-claims.ts',
   ]),
   module('orchestrator/src/branch/branches.ts', [
@@ -165,7 +165,7 @@ export const modules: ArchitectureModule[] = [
     'node:path',
     '../db.ts',
     '../events.ts',
-    '../evidence-query.ts',
+    '../evidence/evidence-query.ts',
     '../git-environment.ts',
     '../hook-tree.ts',
     '../idle-kill.ts',
@@ -261,7 +261,7 @@ export const modules: ArchitectureModule[] = [
     './review-types.ts',
   ]),
   module('orchestrator/src/review-coverage-match.ts', []),
-  module('orchestrator/src/review-evidence-sql.ts', ['./evidence-query.ts']),
+  module('orchestrator/src/review-evidence-sql.ts', ['./evidence/evidence-query.ts']),
   module('orchestrator/src/review-pins.ts', [
     './db.ts',
     './git-environment.ts',
@@ -361,7 +361,7 @@ export const modules: ArchitectureModule[] = [
     './confinement.ts',
     './contract/contract.ts',
     './db.ts',
-    './evidence.ts',
+    './evidence/evidence.ts',
     './failure/failure.ts',
     './idle-kill.ts',
     './jobs.ts',

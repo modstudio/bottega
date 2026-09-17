@@ -103,7 +103,7 @@ export const importBoundaries: ImportBoundary[] = [
       'node:path',
       '../db.ts',
       '../docker-resources.ts',
-      '../evidence-query.ts',
+      '../evidence/evidence-query.ts',
       '../git-environment.ts',
       '../project-lock.ts',
       '../projects.ts',
@@ -260,7 +260,7 @@ export const importBoundaries: ImportBoundary[] = [
       './agreement.ts',
       './db.ts',
       './docker-resources.ts',
-      './evidence-query.ts',
+      './evidence/evidence-query.ts',
       './keep-tree-hold.ts',
       './local-host.ts',
       './resource-claims.ts',
@@ -282,7 +282,7 @@ export const importBoundaries: ImportBoundary[] = [
   boundary(
     'duel-boundary',
     'orchestrator/src/duel.ts',
-    ['./db.ts', './evidence-query.ts', './score/score.ts'],
+    ['./db.ts', './evidence/evidence-query.ts', './score/score.ts'],
     'Enforce the duel concern boundary.',
   ),
   boundary(
@@ -293,8 +293,8 @@ export const importBoundaries: ImportBoundary[] = [
   ),
   boundary(
     'evidence-query-boundary',
-    'orchestrator/src/evidence-query.ts',
-    ['./db.ts', './failure/failure.ts', './hook-tree.ts', 'bun:sqlite'],
+    'orchestrator/src/evidence/evidence-query.ts',
+    ['../db.ts', '../failure/failure.ts', '../hook-tree.ts', 'bun:sqlite'],
     'Enforce the evidence-query concern boundary.',
   ),
   boundary(
@@ -695,7 +695,7 @@ export const importBoundaries: ImportBoundary[] = [
       './database-location.ts',
       './db.ts',
       './docker-resources.ts',
-      './evidence-query.ts',
+      './evidence/evidence-query.ts',
       './git-environment.ts',
       './process-liveness.ts',
       './project-lock.ts',
@@ -856,7 +856,7 @@ export const importBoundaries: ImportBoundary[] = [
   boundary(
     'run-inbox-boundary',
     'orchestrator/src/run-inbox.ts',
-    ['./db.ts', './evidence-query.ts', './projects.ts'],
+    ['./db.ts', './evidence/evidence-query.ts', './projects.ts'],
     'Keep run inbox independent of run control, transports, routing, the CLI, and worktrees.',
   ),
   boundary(
@@ -865,7 +865,7 @@ export const importBoundaries: ImportBoundary[] = [
     [
       './collect/collect.ts',
       './db.ts',
-      './evidence-query.ts',
+      './evidence/evidence-query.ts',
       './outcome.ts',
       './events.ts',
       './idle-kill.ts',
@@ -928,7 +928,12 @@ export const importBoundaries: ImportBoundary[] = [
   boundary(
     'store-hooks-boundary',
     'orchestrator/src/store-hooks.ts',
-    ['./db.ts', './evidence-query.ts', './run-liveness.ts', './workflow/workflow-seeds.ts'],
+    [
+      './db.ts',
+      './evidence/evidence-query.ts',
+      './run-liveness.ts',
+      './workflow/workflow-seeds.ts',
+    ],
     'Enforce the store-hooks concern boundary.',
   ),
   boundary(

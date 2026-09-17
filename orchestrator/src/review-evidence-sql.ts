@@ -1,5 +1,5 @@
 // concern: review-evidence-sql
-import { voidedSql } from './evidence-query.ts'
+import { voidedSql } from './evidence/evidence-query.ts'
 
 export const REVIEW_WINDOW = 50
 

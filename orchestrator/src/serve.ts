@@ -11,7 +11,7 @@
 import { existsSync, readFileSync } from 'node:fs'
 import { AGENTS, refreshAgents } from './agent-registry.ts'
 import { db } from './db.ts'
-import { runTotals } from './evidence-query.ts'
+import { runTotals } from './evidence/evidence-query.ts'
 import { guide } from './guide.ts'
 import { nonHookTreeStatsSql } from './hook-tree.ts'
 import { JOBS } from './jobs.ts'
