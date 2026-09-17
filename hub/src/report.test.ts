@@ -1,7 +1,7 @@
 import { beforeAll, describe, expect, test } from 'bun:test'
 import { engagedMs } from '../../shared/interval.ts'
 import { resetFixtureStore } from '../test/run-fixtures.ts'
-import { db } from './db.ts'
+import { db, writeTransaction } from './db.ts'
 import { upsertTrackerTask } from './ingest/trackers.ts'
 import { boardTasks, endMs, stripWindow } from './query.ts'
 import { gather, renderHtml, renderText } from './report.ts'
@@ -12,28 +12,31 @@ beforeAll(resetFixtureStore)
 
 describe('daily report untasked bucket', () => {
   test('shows untasked work separately and unions it into ENGAGED once', () => {
-    const d = db()
     const now = Date.now()
     const iso = (minutesAgo: number) => new Date(now - minutesAgo * 60_000).toISOString()
-    d.query(`INSERT INTO task
+    writeTransaction((conn) => {
+      conn
+        .query(`INSERT INTO task
       (key, project, title, status, status_category, source, first_seen, last_seen)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?)`).run(
-      'LOC-638',
-      'workshop',
-      'Ticketed report work',
-      'In Progress',
-      'active',
-      'local',
-      iso(40),
-      iso(5),
-    )
-    const insert = d.query(`INSERT INTO interval
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?)`)
+        .run(
+          'LOC-638',
+          'workshop',
+          'Ticketed report work',
+          'In Progress',
+          'active',
+          'local',
+          iso(40),
+          iso(5),
+        )
+      const insert = conn.query(`INSERT INTO interval
       (task_key, project, source, start_at, end_at, ref)
       VALUES (?, ?, 'claude', ?, ?, ?)`)
-    insert.run('LOC-638', 'workshop', iso(30), iso(10), 'report-ticketed')
-    // Overlaps the ticketed span for ten minutes. ENGAGED must be the union:
-    // 25 minutes from -30 through -5, not 20 + 15 = 35 minutes.
-    insert.run(null, 'workshop', iso(20), iso(5), 'report-untasked')
+      insert.run('LOC-638', 'workshop', iso(30), iso(10), 'report-ticketed')
+      // Overlaps the ticketed span for ten minutes. ENGAGED must be the union:
+      // 25 minutes from -30 through -5, not 20 + 15 = 35 minutes.
+      insert.run(null, 'workshop', iso(20), iso(5), 'report-untasked')
+    })
 
     const report = {
       enabled: true,
@@ -88,24 +91,26 @@ describe('Eastern timestamps', () => {
 describe('heterogeneous work rows', () => {
   test('the windowed strip returns the same rows as the unfiltered task join', () => {
     const task = createTask({ project: 'workshop', title: 'Strip window fixture' })
-    db()
-      .query(
-        `INSERT INTO interval
+    writeTransaction((conn) =>
+      conn
+        .query(
+          `INSERT INTO interval
         (task_key, project, source, start_at, end_at, ref, open, claude_tokens)
        VALUES (?, 'workshop', 'claude', ?, ?, 'strip:task', 0, 11),
               (NULL, 'alpha', 'orch', ?, ?, 'strip:untracked', 0, 0),
               (?, 'workshop', 'claude', ?, ?, 'strip:outside', 0, 99)`,
-      )
-      .run(
-        task.key,
-        '2031-01-02T10:00:00.000Z',
-        '2031-01-02T11:00:00.000Z',
-        '2031-01-02T10:30:00.000Z',
-        '2031-01-02T11:30:00.000Z',
-        task.key,
-        '2030-01-01T00:00:00.000Z',
-        '2030-01-01T01:00:00.000Z',
-      )
+        )
+        .run(
+          task.key,
+          '2031-01-02T10:00:00.000Z',
+          '2031-01-02T11:00:00.000Z',
+          '2031-01-02T10:30:00.000Z',
+          '2031-01-02T11:30:00.000Z',
+          task.key,
+          '2030-01-01T00:00:00.000Z',
+          '2030-01-01T01:00:00.000Z',
+        ),
+    )
     const from = '2031-01-02T09:00:00.000Z'
     const to = '2031-01-02T12:00:00.000Z'
     type LegacyInterval = {
@@ -195,18 +200,18 @@ describe('heterogeneous work rows', () => {
       assignee: null,
     })
     const now = new Date(Date.now() - 1000).toISOString()
-    for (const [key, project] of [
-      [local.key, 'workshop'],
-      ['ALP-999', 'alpha'],
-    ] as const) {
-      db()
-        .query(
-          `INSERT INTO interval
+    writeTransaction((conn) => {
+      const insert = conn.query(
+        `INSERT INTO interval
           (task_key, project, source, start_at, end_at, ref, open)
          VALUES (?, ?, 'claude', ?, ?, ?, 1)`,
-        )
-        .run(key, project, now, now, `filter:${key}`)
-    }
+      )
+      for (const [key, project] of [
+        [local.key, 'workshop'],
+        ['ALP-999', 'alpha'],
+      ] as const)
+        insert.run(key, project, now, now, `filter:${key}`)
+    })
 
     const hub = (await view('flight', 24, { agent: '', project: '', source: 'hub' })) as {
       rows: { key: string; capabilities: { setTitle: { allowed: boolean } } }[]
@@ -242,20 +247,24 @@ describe('heterogeneous work rows', () => {
         updatedAt: null,
         assignee: null,
       })
-      db().query('UPDATE task SET status_category = NULL WHERE key = ?').run(key)
+      writeTransaction((conn) =>
+        conn.query('UPDATE task SET status_category = NULL WHERE key = ?').run(key),
+      )
     }
     const now = new Date().toISOString()
     const started = new Date(Date.now() - 1_000).toISOString()
     const oldStart = new Date(Date.now() - 3_601_000).toISOString()
     const oldEnd = new Date(Date.now() - 3_600_000).toISOString()
-    db()
-      .query(
-        `INSERT INTO interval
+    writeTransaction((conn) =>
+      conn
+        .query(
+          `INSERT INTO interval
         (task_key, project, source, start_at, end_at, ref, open)
        VALUES ('ALP-997', 'alpha', 'claude', ?, ?, 'unmapped:excluded', 0),
               ('ALP-998', 'alpha', 'claude', ?, ?, 'unmapped:shown', 1)`,
-      )
-      .run(oldStart, oldEnd, started, now)
+        )
+        .run(oldStart, oldEnd, started, now),
+    )
 
     const result = (await view('flight', 24, { agent: '', project: '', source: 'alpha' })) as {
       rows: { key: string }[]

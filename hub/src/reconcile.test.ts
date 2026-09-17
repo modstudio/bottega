@@ -1,19 +1,21 @@
 import { beforeAll, describe, expect, spyOn, test } from 'bun:test'
 import { resetFixtureStore } from '../test/run-fixtures.ts'
 
-const { db } = await import('./db.ts')
+const { db, writeTransaction } = await import('./db.ts')
 const { reconcileOpenIntervals } = await import('./reconcile.ts')
 
 beforeAll(resetFixtureStore)
 
 function add(id: number, ref: string, endAt: string) {
-  db()
-    .query(
-      `INSERT INTO interval
+  writeTransaction((conn) =>
+    conn
+      .query(
+        `INSERT INTO interval
        (id, source, start_at, end_at, ref, open, claude_tokens, vendor_tokens)
      VALUES (?, 'orch', '2026-09-03T00:00:00.000Z', ?, ?, 1, 0, 0)`,
-    )
-    .run(id, endAt, ref)
+      )
+      .run(id, endAt, ref),
+  )
 }
 
 function orchAnswers(rows: object[]) {

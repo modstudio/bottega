@@ -7,7 +7,7 @@ import {
 } from '../test/run-fixtures.ts'
 import { runsSince } from './collect.ts'
 import * as dbMod from './db.ts'
-import { db } from './db.ts'
+import { db, writeTransaction } from './db.ts'
 import { ingestRuns } from './ingest/runs.ts'
 import { listOpenRulings } from './rulings.ts'
 import { clearOrchCache } from './serve.ts'
@@ -17,10 +17,12 @@ afterEach(clearOrchCache)
 
 describe('run ingest', () => {
   test('runsSince keeps the two-hour window when collection is current', () => {
-    db()
-      .query(`INSERT INTO setting (key, value) VALUES ('collect.runs.at', ?)
+    writeTransaction((conn) =>
+      conn
+        .query(`INSERT INTO setting (key, value) VALUES ('collect.runs.at', ?)
                 ON CONFLICT(key) DO UPDATE SET value = excluded.value`)
-      .run(JSON.stringify('2026-09-04T11:00:00.000Z'))
+        .run(JSON.stringify('2026-09-04T11:00:00.000Z')),
+    )
     expect(runsSince(Date.parse('2026-09-04T12:00:00.000Z'))).toBe('2026-09-04T10:00:00.000Z')
   })
 
@@ -34,10 +36,12 @@ describe('run ingest', () => {
         ],
       }),
     )
-    db()
-      .query(`INSERT INTO setting (key, value) VALUES ('collect.runs.at', ?)
+    writeTransaction((conn) =>
+      conn
+        .query(`INSERT INTO setting (key, value) VALUES ('collect.runs.at', ?)
                 ON CONFLICT(key) DO UPDATE SET value = excluded.value`)
-      .run(JSON.stringify('2026-09-04T07:00:00.000Z'))
+        .run(JSON.stringify('2026-09-04T07:00:00.000Z')),
+    )
 
     const clock = Date.parse('2026-09-04T12:00:00.000Z')
     expect(runsSince(clock)).toBe('2026-09-04T07:00:00.000Z')

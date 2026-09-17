@@ -500,6 +500,30 @@ describe('hub migration journal', () => {
     applyMigrations(reset)
     reset.close()
   })
+
+  test('the shared handle refuses a write outside writeTransaction', () => {
+    expect(() =>
+      db().query("INSERT INTO setting (key, value) VALUES ('unchecked-write', '1')").run(),
+    ).toThrow('attempt to write a readonly database')
+    expect(db().query("SELECT value FROM setting WHERE key = 'unchecked-write'").get()).toBeNull()
+  })
+
+  test('a nested writeTransaction leaves the outer connection writable', () => {
+    writeTransaction((outer) => {
+      outer.query("INSERT INTO setting (key, value) VALUES ('nested-outer-before', '1')").run()
+      writeTransaction((inner) => {
+        inner.query("INSERT INTO setting (key, value) VALUES ('nested-inner', '1')").run()
+      })
+      outer.query("INSERT INTO setting (key, value) VALUES ('nested-outer-after', '1')").run()
+    })
+    expect(
+      db()
+        .query<{ count: number }, []>(
+          "SELECT COUNT(*) count FROM setting WHERE key LIKE 'nested-%'",
+        )
+        .get(),
+    ).toEqual({ count: 3 })
+  })
 })
 
 describe('stripSqlComments keeps quoted comment markers', () => {
