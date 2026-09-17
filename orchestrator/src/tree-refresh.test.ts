@@ -49,7 +49,7 @@ describe('tree refresh recipe context', () => {
 
   test('uses key, seed, label, base, and allocations from the recorded snapshot', () => {
     const snapshot: RecipeSnapshot = {
-      source: { path: 'bottega.jsonc', commit: 'source-base' },
+      source: { path: 'project.jsonc', commit: 'source-base' },
       recipe,
       allocations: { index: 4, ports: { web: 21404 }, databases: {}, strings: {} },
     }
