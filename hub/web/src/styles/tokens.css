@@ -246,6 +246,18 @@
   --status-on: var(--status-progress-on);
 }
 
+/*
+ * A project's colour is data rather than a token: the register supplies the
+ * pair on the element as `--project-light` and `--project-dark`. Which of the
+ * two applies is decided here, so no screen carries a dark colour decision.
+ */
+[data-project] {
+  --project: var(--project-light, var(--border-strong));
+}
+.dark [data-project] {
+  --project: var(--project-dark, var(--border-strong));
+}
+
 /* Layer 3: shared measurements. Density redefines row and control heights. */
 :root {
   --control-h-sm: 1.75rem;

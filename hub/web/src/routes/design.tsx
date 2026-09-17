@@ -2,8 +2,9 @@ import { createFileRoute } from '@tanstack/react-router'
 import { useState } from 'react'
 import { Collection } from '@/components/collection'
 import { DesignCatalog } from '@/components/design-catalog'
-import { LiveDot, ProjectMark, SourceMark } from '@/components/design-system'
+import { ProjectMark, SourceMark } from '@/components/design-system'
 import { Badge } from '@/ui/badge/badge'
+import { LiveDot } from '@/ui/badge/live-dot'
 import { Button } from '@/ui/button/button'
 import { Companion } from '@/ui/companion/companion'
 import { EmptyState } from '@/ui/empty-state/empty-state'
@@ -17,6 +18,13 @@ import { Sheet } from '@/ui/sheet/sheet'
 import { StatRow, StatTile } from '@/ui/stat/stat'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/ui/table/table'
 import { Tabs } from '@/ui/tabs/tabs'
+
+/**
+ * A project's colour comes from its register settings, so the catalogue needs a
+ * stand-in pair. These are sample data, not tokens; no screen carries a literal
+ * colour of its own.
+ */
+const SAMPLE_PROJECT_COLORS = { sample: { light: '#6b2145', dark: '#ff8fb8' } }
 
 export const Route = createFileRoute('/design')({ component: DesignPage })
 
@@ -264,7 +272,7 @@ function DesignPage() {
             <LiveDot />
             LiveDot
           </span>
-          <ProjectMark name="sample" colors={{ sample: { light: '#6b2145', dark: '#ff8fb8' } }} />
+          <ProjectMark name="sample" colors={SAMPLE_PROJECT_COLORS} />
         </div>
       </div>
     </section>

@@ -39,7 +39,7 @@ function FiltersTrigger({ filters, active }: { filters: ReactNode; active: numbe
           <SlidersHorizontal />
           Filters
           {active ? (
-            <span className="grid size-4 place-items-center rounded-full bg-accent-fill text-[10px] text-accent-on-fill tabular-nums">
+            <span className="grid size-4 place-items-center rounded-full bg-accent-fill text-xs text-accent-on-fill tabular-nums">
               {active > 9 ? '9+' : active}
             </span>
           ) : null}

@@ -85,3 +85,29 @@ export function IconButton({
     />,
   )
 }
+
+/**
+ * A button that sits inside a sentence: it inherits the surrounding size and
+ * colour and is marked by its underline, because a control with its own height
+ * and padding would break the line it belongs to.
+ */
+export function TextButton({
+  className,
+  type = 'button',
+  ...props
+}: Omit<ButtonHTMLAttributes<HTMLButtonElement>, 'className'> & {
+  ref?: Ref<HTMLButtonElement>
+  /** Layout only: margin and placement. */
+  className?: string
+}) {
+  return (
+    <button
+      {...props}
+      type={type}
+      className={classes(
+        'cursor-pointer underline decoration-border-strong underline-offset-2 hover:decoration-current disabled:pointer-events-none disabled:opacity-50',
+        className,
+      )}
+    />
+  )
+}
