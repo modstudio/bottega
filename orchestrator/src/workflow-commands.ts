@@ -1,8 +1,8 @@
 // concern: workflows
 /** Knows workflow command semantics and thin tree adapters. Must not know CLI grammar, runs, routing, or transports. */
-import { readFileSync, realpathSync } from 'node:fs'
+import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
-import { gitToplevel } from '../../shared/git.ts'
+import { gitToplevel, resolvedPathsEqual } from '../../shared/git.ts'
 import { flagValue, flagValues } from './args.ts'
 import { projects } from './projects.ts'
 import {
@@ -124,15 +124,7 @@ function workflowRoot(argv: string[]): string {
 }
 
 function registeredMainCheckout(root: string): string | null {
-  const rootReal = realpathSync(root)
-  for (const project of projects()) {
-    try {
-      if (realpathSync(project.path) === rootReal) return project.path
-    } catch {
-      continue
-    }
-  }
-  return null
+  return projects().find((project) => resolvedPathsEqual(root, project.path))?.path ?? null
 }
 
 function hydrateCommand(argv: string[], presentation: Presentation): void {

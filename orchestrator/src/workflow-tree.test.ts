@@ -2,9 +2,9 @@ import { describe, expect, test } from 'bun:test'
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { collectWorkflowTree } from './workflow-tree-files.ts'
 import type { WorkflowTreeStore } from './workflow-tree.ts'
 import { parseWorkflowTree, planWorkflowHydration } from './workflow-tree.ts'
+import { collectWorkflowTree } from './workflow-tree-files.ts'
 
 const store: WorkflowTreeStore = {
   steps: [

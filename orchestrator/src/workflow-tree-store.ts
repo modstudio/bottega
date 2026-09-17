@@ -43,7 +43,10 @@ export type WorkflowTreeImportResult = {
 
 function missingProductionFlows(tree: WorkflowTreeStore, production: WorkflowTreeStore): string[] {
   const imported = new Set(tree.workflows.map(({ slug }) => slug))
-  return production.workflows.map(({ slug }) => slug).filter((slug) => !imported.has(slug)).sort()
+  return production.workflows
+    .map(({ slug }) => slug)
+    .filter((slug) => !imported.has(slug))
+    .sort()
 }
 
 export function importWorkflowTree(

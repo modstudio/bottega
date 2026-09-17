@@ -110,9 +110,11 @@ describe('importWorkflowTree', () => {
     const d = database()
     const tree = renderedTree(d).filter(({ path }) => path !== 'workflows/flows/ship.md')
     const before = {
-      catalogues: (d.query('SELECT COUNT(*) count FROM step_catalogue_version').get() as {
-        count: number
-      }).count,
+      catalogues: (
+        d.query('SELECT COUNT(*) count FROM step_catalogue_version').get() as {
+          count: number
+        }
+      ).count,
       workflows: (d.query('SELECT COUNT(*) count FROM workflow_version').get() as { count: number })
         .count,
     }

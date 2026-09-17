@@ -334,11 +334,7 @@ export const modules: ArchitectureModule[] = [
     './worktree-types.ts',
   ]),
   module('orchestrator/src/workflow-tree.ts', ['./step-catalogue.ts', './workflows.ts']),
-  module('orchestrator/src/workflow-tree-files.ts', [
-    'node:fs',
-    'node:path',
-    './workflow-tree.ts',
-  ]),
+  module('orchestrator/src/workflow-tree-files.ts', ['node:fs', 'node:path', './workflow-tree.ts']),
   module('orchestrator/src/workflow-tree-store.ts', [
     'bun:sqlite',
     'node:util',
