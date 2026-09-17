@@ -1,0 +1,265 @@
+import { newRecordId } from '../../../shared/record/schema.ts'
+import { consumeDocBody, refuseDocWrite } from '../../src/doc-write-allowed.ts'
+import type { RecordApiClient, RecordDocUpsertInput } from '../../src/record-api-client.ts'
+import { refuseScoreVerdict } from '../../src/record-verdicts.ts'
+
+type StoredDoc = {
+  id: string
+  scope: string
+  subject: string | null
+  slug: string
+  title: string
+  body: string
+  delivery: 'inject' | 'demand'
+  projectName: string | null
+  createdAt: string
+  updatedAt: string
+  deletedAt: string | null
+}
+
+type StoredRevision = {
+  id: string
+  docId: string
+  scope: string
+  subject: string | null
+  slug: string
+  op: string
+  title: string
+  body: string
+  delivery: string
+  author: string
+  reason: string
+  at: string
+}
+
+export function createMemoryRecordApiClient(): RecordApiClient {
+  const docs = new Map<string, StoredDoc>()
+  const revisions = new Map<string, StoredRevision[]>()
+  const scores = new Map<string, Record<string, unknown>>()
+  const voids = new Map<string, string>()
+
+  const live = (scope: string, subject: string | null, slug: string) =>
+    [...docs.values()].find(
+      (doc) =>
+        doc.scope === scope &&
+        doc.subject === subject &&
+        doc.slug === slug &&
+        doc.deletedAt === null,
+    )
+
+  return {
+    async listDocs(query) {
+      const items = [...docs.values()].filter((doc) => {
+        if (query.scope && doc.scope !== query.scope) return false
+        if (query.subject !== undefined && doc.subject !== query.subject) return false
+        if (!query.includeDeleted && doc.deletedAt) return false
+        if (query.updatedSince && doc.updatedAt <= query.updatedSince) return false
+        return true
+      })
+      return { items, nextCursor: null }
+    },
+    async getDoc(id) {
+      const doc = docs.get(id)
+      if (!doc) throw new Error('doc not found')
+      return doc
+    },
+    async listRevisions(id) {
+      return revisions.get(id) ?? []
+    },
+    async upsertDoc(input: RecordDocUpsertInput) {
+      const refusal = refuseDocWrite({
+        scope: input.scope,
+        subject: input.subject,
+        slug: input.slug,
+        body: input.body,
+        delivery: input.delivery,
+        forceInject: input.forceInject,
+        packBytes: 0,
+        globalCanonSlugs: [...docs.values()]
+          .filter((doc) => doc.scope === 'canon' && doc.subject === null && !doc.deletedAt)
+          .map((doc) => doc.slug),
+        projectCanonSlugs: [...docs.values()]
+          .filter((doc) => doc.scope === 'canon' && doc.subject === input.subject && !doc.deletedAt)
+          .map((doc) => doc.slug),
+        currentCanon: [],
+        nextCanon: [{ slug: input.slug, body: input.body }],
+        allowCanonBootstrap: true,
+      })
+      if (refusal) throw new Error(refusal)
+      const now = input.at ?? new Date().toISOString()
+      const existing = live(input.scope, input.subject, input.slug)
+      const id = existing?.id ?? input.id ?? newRecordId()
+      const revisionId = input.revisionId ?? newRecordId()
+      docs.set(id, {
+        id,
+        scope: input.scope,
+        subject: input.subject,
+        slug: input.slug,
+        title: input.title,
+        body: input.body,
+        delivery: input.delivery,
+        projectName: input.projectName ?? null,
+        createdAt: existing?.createdAt ?? now,
+        updatedAt: now,
+        deletedAt: null,
+      })
+      const list = revisions.get(id) ?? []
+      list.push({
+        id: revisionId,
+        docId: id,
+        scope: input.scope,
+        subject: input.subject,
+        slug: input.slug,
+        op: input.op ?? (existing ? 'set' : 'create'),
+        title: input.title,
+        body: input.body,
+        delivery: input.delivery,
+        author: input.author,
+        reason: input.reason,
+        at: now,
+      })
+      revisions.set(id, list)
+      return { id, revisionId }
+    },
+    async deleteDoc(id, input) {
+      const doc = docs.get(id)
+      if (!doc) throw new Error('doc not found')
+      const now = new Date().toISOString()
+      const revisionId = newRecordId()
+      docs.set(id, { ...doc, deletedAt: now, updatedAt: now })
+      const list = revisions.get(id) ?? []
+      list.push({
+        id: revisionId,
+        docId: id,
+        scope: doc.scope,
+        subject: doc.subject,
+        slug: doc.slug,
+        op: 'delete',
+        title: doc.title,
+        body: doc.body,
+        delivery: doc.delivery,
+        author: input.author,
+        reason: input.reason,
+        at: now,
+      })
+      revisions.set(id, list)
+      return { id, revisionId }
+    },
+    async consumeDoc(id, input) {
+      const doc = docs.get(id)
+      if (!doc || doc.deletedAt) throw new Error('doc not found')
+      const now = new Date().toISOString()
+      const consumed = consumeDocBody(doc.body, now, input.author)
+      if (consumed.alreadyConsumed) return { id, revisionId: '', alreadyConsumed: true }
+      const revisionId = newRecordId()
+      docs.set(id, { ...doc, body: consumed.body, updatedAt: now })
+      const list = revisions.get(id) ?? []
+      list.push({
+        id: revisionId,
+        docId: id,
+        scope: doc.scope,
+        subject: doc.subject,
+        slug: doc.slug,
+        op: 'consume',
+        title: doc.title,
+        body: consumed.body,
+        delivery: doc.delivery,
+        author: input.author,
+        reason: input.reason,
+        at: now,
+      })
+      revisions.set(id, list)
+      return { id, revisionId, alreadyConsumed: false }
+    },
+    async restoreDoc(id, input) {
+      const doc = docs.get(id)
+      const list = revisions.get(id) ?? []
+      const revision = list.find((row) => row.id === input.revisionId) ?? list.at(-1)
+      if (!doc && !revision) throw new Error('revision not found')
+      const source = revision ?? {
+        title: doc!.title,
+        body: doc!.body,
+        delivery: doc!.delivery,
+        scope: doc!.scope,
+        subject: doc!.subject,
+        slug: doc!.slug,
+      }
+      const now = new Date().toISOString()
+      const revisionId = newRecordId()
+      const restored: StoredDoc = {
+        id,
+        scope: source.scope,
+        subject: source.subject,
+        slug: source.slug,
+        title: source.title,
+        body: source.body,
+        delivery: source.delivery as 'inject' | 'demand',
+        projectName: doc?.projectName ?? null,
+        createdAt: doc?.createdAt ?? now,
+        updatedAt: now,
+        deletedAt: null,
+      }
+      docs.set(id, restored)
+      list.push({
+        id: revisionId,
+        docId: id,
+        scope: restored.scope,
+        subject: restored.subject,
+        slug: restored.slug,
+        op: 'restore',
+        title: restored.title,
+        body: restored.body,
+        delivery: restored.delivery,
+        author: input.author,
+        reason: input.reason,
+        at: now,
+      })
+      revisions.set(id, list)
+      return { id, revisionId }
+    },
+    async renameSubject(input) {
+      const matchingDocs = [...docs.values()].filter((doc) => doc.subject === input.from)
+      const matchingRevisions = [...revisions.values()]
+        .flat()
+        .filter((row) => row.subject === input.from)
+      if (matchingDocs.length + matchingRevisions.length !== input.count) {
+        throw new Error(
+          `refusing subject rename: hosted count ${matchingDocs.length + matchingRevisions.length} does not match stated ${input.count}`,
+        )
+      }
+      for (const doc of matchingDocs) {
+        docs.set(doc.id, { ...doc, subject: input.to, updatedAt: new Date().toISOString() })
+      }
+      for (const [docId, list] of revisions) {
+        revisions.set(
+          docId,
+          list.map((row) => (row.subject === input.from ? { ...row, subject: input.to } : row)),
+        )
+      }
+      return { docs: matchingDocs.length, revisions: matchingRevisions.length }
+    },
+    async putScore(runId, input) {
+      const refusal = refuseScoreVerdict(input)
+      if (refusal) throw new Error(refusal)
+      scores.set(runId, input)
+    },
+    async voidRun(runId, input) {
+      voids.set(runId, input.reason)
+    },
+    async listScores() {
+      const items = [
+        ...[...scores.entries()].map(([runId, score]) => ({ runId, ...score })),
+        ...[...voids.entries()].map(([runId, evidenceExcluded]) => ({ runId, evidenceExcluded })),
+      ]
+      return { items, nextCursor: null }
+    },
+    async counts() {
+      return {
+        docs: docs.size,
+        revisions: [...revisions.values()].reduce((sum, list) => sum + list.length, 0),
+        scores: scores.size,
+        voids: voids.size,
+      }
+    },
+  }
+}
