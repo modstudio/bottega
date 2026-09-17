@@ -10,6 +10,13 @@ async function proveRememberedSpace(input: {
   executeAsOwner: (sql: string) => string
 }) {
   const email = 'auth-remembered@example.test'
+  // Sign-up is invitation only, so the proof invites itself before it signs up.
+  input.executeAsOwner(
+    `INSERT INTO invitation (id,space_id,email,inviter_id,role,status,expires_at,created_at)
+     VALUES ('${newRecordId()}','${input.rememberedSpaceId}','${email}',
+       (SELECT id FROM "user" ORDER BY created_at LIMIT 1),'member','pending',
+       now() + interval '1 day',now());`,
+  )
   const auth = recordAuth(input.actorUrl)
   const signup = await auth.api.signUpEmail({
     body: { email, name: 'Auth Remembered', password: input.password },
