@@ -1,0 +1,2 @@
+ALTER TABLE "hub_note" FORCE ROW LEVEL SECURITY;
+ALTER TABLE "hub_note_acknowledgement" FORCE ROW LEVEL SECURITY;

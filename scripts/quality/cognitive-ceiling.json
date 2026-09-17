@@ -8,15 +8,16 @@
   },
   {
     "file": "hub/src/cli.ts",
-    "function": "note",
-    "line": 475,
-    "score": 72
-  },
-  {
-    "file": "hub/src/cli.ts",
     "function": "sendReport",
     "line": 574,
     "score": 19
+  },
+  {
+    "file": "hub/src/cli.ts",
+    "function": "note",
+    "line": 653,
+    "score": 71,
+    "key": "hub/src/cli.ts\u0000note"
   },
   {
     "file": "hub/src/ingest/git.ts",
@@ -47,12 +48,6 @@
     "function": "stripSqlComments",
     "line": 318,
     "score": 25
-  },
-  {
-    "file": "hub/src/note.ts",
-    "function": "map callback#7",
-    "line": 239,
-    "score": 17
   },
   {
     "file": "hub/src/orch.ts",

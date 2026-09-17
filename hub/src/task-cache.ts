@@ -19,7 +19,7 @@ function localId(conn: Database, table: string, recordId: string, legacy: number
   return null
 }
 
-function applyTask(conn: Database, row: HostedChanges['tasks'][number]) {
+export function applyHostedTask(conn: Database, row: HostedChanges['tasks'][number]) {
   if (row.deleted_at) {
     conn.query(`DELETE FROM task WHERE key=?`).run(row.key)
     return
@@ -128,7 +128,7 @@ function applyStatusEvent(conn: Database, row: HostedChanges['statusEvents'][num
 export function applyHostedTaskChanges(changes: HostedChanges) {
   writeTransaction((conn) => {
     changes.tasks.forEach((row) => {
-      applyTask(conn, row)
+      applyHostedTask(conn, row)
     })
     changes.comments.forEach((row) => {
       applyComment(conn, row)
