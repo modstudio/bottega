@@ -211,9 +211,9 @@ describe('project workflow injection', () => {
 
   test('the register edge refuses a missing or unsupported tracker protocol', () => {
     expect(validateProjectSettings({ tracker: {} }).join('\n')).toContain('tracker.protocol')
-    expect(
-      validateProjectSettings({ tracker: { protocol: 'made-up' } }).join('\n'),
-    ).toContain('tracker.protocol')
+    expect(validateProjectSettings({ tracker: { protocol: 'made-up' } }).join('\n')).toContain(
+      'tracker.protocol',
+    )
   })
 
   test('substitutes underscore names and keys, and ignores a stored hub override', () => {
