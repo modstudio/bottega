@@ -97,14 +97,15 @@ function hostedRunId(id: number): string {
     .query<{ record_id: string | null }, [number]>('SELECT record_id FROM run WHERE id=?')
     .get(id)
   if (!row) throw new Error(`no run ${id}`)
-  if (row.record_id) return row.record_id
-  const minted = newRecordId()
-  db().query('UPDATE run SET record_id=? WHERE id=?').run(minted, id)
-  return minted
+  return row.record_id ?? newRecordId()
+}
+
+function persistHostedRunId(id: number, recordId: string): void {
+  db().query('UPDATE run SET record_id=? WHERE id=?').run(recordId, id)
 }
 
 async function pushHostedScore(
-  id: number,
+  recordId: string,
   delivery: Delivery,
   quality: Quality | null,
   fidelity: Fidelity | null,
@@ -112,7 +113,7 @@ async function pushHostedScore(
   scoredAt: string,
   scorer: string,
 ): Promise<void> {
-  await recordApiClient().putScore(hostedRunId(id), {
+  await recordApiClient().putScore(recordId, {
     delivery,
     quality,
     fidelity,
@@ -122,45 +123,32 @@ async function pushHostedScore(
   })
 }
 
-function enqueueVoidedRunRecord(id: number): void {
-  const row = db()
-    .query<{ record_id: string | null; finished_at: string }, [number]>(
-      `SELECT record_id, COALESCE(last_event_at, started_at) AS finished_at FROM run
-        WHERE id=? AND status IN ('ok','failed','stale','stopped')`,
-    )
-    .get(id)
-  if (row?.record_id) enqueueRunRecord(db(), id, machineId(), row.finished_at)
+async function pushHostedVoid(recordId: string, reason: string): Promise<void> {
+  await recordApiClient().voidRun(recordId, { reason })
 }
-export async function judgeRun(
+
+type JudgeableRun = {
+  id: number
+  agent: string
+  job: string
+  status: string
+  session_id: string | null
+  failure_kind: string | null
+  output_path: string | null
+  repo: string | null
+  cwd: string | null
+  worktree: string | null
+  branch: string | null
+  base_commit: string | null
+  worktree_source: string | null
+}
+
+function requireJudgeableRun(
   requestedId: number,
+  row: JudgeableRun | null,
   flags: JudgementFlags,
   options: JudgeOptions,
-  presentation: JudgementPresentation,
-) {
-  const row = db()
-    .query(
-      `SELECT root.id, root.agent, root.job, root.status, root.session_id, root.failure_kind,
-          root.output_path, root.repo, root.cwd, root.worktree, root.branch, root.base_commit,
-          root.worktree_source
-     FROM run requested
-     JOIN run root ON root.id = COALESCE(requested.parent_run_id, requested.id)
-    WHERE requested.id=?`,
-    )
-    .get(requestedId) as {
-    id: number
-    agent: string
-    job: string
-    status: string
-    session_id: string | null
-    failure_kind: string | null
-    output_path: string | null
-    repo: string | null
-    cwd: string | null
-    worktree: string | null
-    branch: string | null
-    base_commit: string | null
-    worktree_source: string | null
-  } | null
+): JudgeableRun {
   if (!row) throw new Error(`no run ${requestedId}`)
   const id = row.id
   if (['running', 'asking'].includes(row.status)) {
@@ -188,6 +176,91 @@ export async function judgeRun(
   if (!flags.has('force') && owner.verdict === 'unattributed' && !sessionId()) {
     throw new Error(`run ${id} is unowned; CLAUDE_CODE_SESSION_ID is not set`)
   }
+  return row
+}
+
+function refuseForeignScore(
+  id: number,
+  owner: ReturnType<typeof judgeability>,
+  flags: JudgementFlags,
+  dashboardAuthorized: boolean,
+): void {
+  if (dashboardAuthorized || flags.has('force')) return
+  if (!sessionId() && owner.verdict === 'unattributed') {
+    throw new Error(`run ${id} is unowned; CLAUDE_CODE_SESSION_ID is not set`)
+  }
+  if (owner.verdict === 'foreign' || owner.verdict === 'anonymous') {
+    throw new Error(
+      `run ${id} was made by another session — ownership is not established.\n` +
+        `  its session:   ${owner.owner}\n` +
+        `  your session:  ${sessionId() ?? 'no session identity is present'}\n\n` +
+        `Scoring it teaches the router something you cannot know. Ask the session\n` +
+        `that ran it to score it — on this machine that is a SendMessage away.\n` +
+        `If you are certain (correcting a score you know to be wrong), --force.`,
+    )
+  }
+}
+
+function voidCannotRecord(
+  failureKind: string | null,
+  notEvidence: readonly string[],
+): string | null {
+  if (failureKind === 'unevidenced') return `${failureKind} review`
+  if (failureKind && notEvidence.includes(failureKind)) {
+    return `failure kind '${failureKind}' is not evidence`
+  }
+  return null
+}
+
+function scoredVoidFidelity(
+  jobName: string,
+  delivery: Delivery,
+  quality: Quality | undefined,
+  fidelity: Fidelity | undefined,
+): Fidelity | undefined {
+  if (!DELIVERY.includes(delivery)) {
+    throw new Error(`delivery must be one of: ${DELIVERY.join(' | ')}`)
+  }
+  if (delivery === 'none' && quality) {
+    throw new Error("delivery 'none' takes no quality: there was nothing to judge")
+  }
+  if (delivery !== 'none' && (!quality || !QUALITY.includes(quality))) {
+    throw new Error(`delivery '${delivery}' needs a quality: ${QUALITY.join(' | ')}`)
+  }
+  const needsFidelity = Boolean(JOBS[jobName]?.needs.writesRepo) && delivery !== 'none'
+  if (needsFidelity && (!fidelity || !FIDELITY.includes(fidelity))) {
+    throw new Error(`${jobName} writes code, so verdicts require a fidelity axis`)
+  }
+  return needsFidelity ? fidelity : undefined
+}
+
+function enqueueVoidedRunRecord(id: number): void {
+  const row = db()
+    .query<{ record_id: string | null; finished_at: string }, [number]>(
+      `SELECT record_id, COALESCE(last_event_at, started_at) AS finished_at FROM run
+        WHERE id=? AND status IN ('ok','failed','stale','stopped')`,
+    )
+    .get(id)
+  if (row?.record_id) enqueueRunRecord(db(), id, machineId(), row.finished_at)
+}
+export async function judgeRun(
+  requestedId: number,
+  flags: JudgementFlags,
+  options: JudgeOptions,
+  presentation: JudgementPresentation,
+) {
+  const loaded = db()
+    .query(
+      `SELECT root.id, root.agent, root.job, root.status, root.session_id, root.failure_kind,
+          root.output_path, root.repo, root.cwd, root.worktree, root.branch, root.base_commit,
+          root.worktree_source
+     FROM run requested
+     JOIN run root ON root.id = COALESCE(requested.parent_run_id, requested.id)
+    WHERE requested.id=?`,
+    )
+    .get(requestedId) as JudgeableRun | null
+  const row = requireJudgeableRun(requestedId, loaded, flags, options)
+  const id = row.id
   const words = options.words
   const delivery = words[0] as Delivery | undefined
   const quality = words[1] as Quality | undefined
@@ -341,16 +414,19 @@ export async function judgeRun(
   const scoredAt = nowIso()
   const wasScored = Boolean(db().query('SELECT 1 FROM score WHERE run_id=?').get(id))
   const scorer = process.env.ORCH_SCORER ?? 'claude'
+  const scoredFidelity = writes && delivery !== 'none' ? (fidelity ?? null) : null
+  const recordId = hostedRunId(id)
   await pushHostedScore(
-    id,
+    recordId,
     delivery!,
     quality ?? null,
-    writes && delivery !== 'none' ? (fidelity ?? null) : null,
+    scoredFidelity,
     note,
     scoredAt,
     scorer,
   )
   writeTransaction(() => {
+    persistHostedRunId(id, recordId)
     if (!(flags.has('force') && !authority.actor)) authority = adoptRunMutation(authority, 'score')
     if (findingsJob && delivery !== 'none') {
       reviewId = gradeReviewLens(id, parsedOutput, gradeValues as ReviewGrades)
@@ -359,7 +435,7 @@ export async function judgeRun(
       id,
       delivery!,
       quality ?? null,
-      writes && delivery !== 'none' ? (fidelity ?? null) : null,
+      scoredFidelity,
       note,
       scoredAt,
       scorer,
@@ -434,71 +510,37 @@ export async function scoreRun(
   let voidAuthority: RootAuthority | null = null
   if (flags.has('void')) {
     voidAuthority = authorizeRunMutation(id, 'void')
-  } else if (
-    !dashboardAuthorized &&
-    !flags.has('force') &&
-    !sessionId() &&
-    owner.verdict === 'unattributed'
-  ) {
-    throw new Error(`run ${id} is unowned; CLAUDE_CODE_SESSION_ID is not set`)
-  } else if (
-    (owner.verdict === 'foreign' || owner.verdict === 'anonymous') &&
-    !flags.has('force') &&
-    !dashboardAuthorized
-  ) {
-    throw new Error(
-      `run ${id} was made by another session — ownership is not established.\n` +
-        `  its session:   ${owner.owner}\n` +
-        `  your session:  ${sessionId() ?? 'no session identity is present'}\n\n` +
-        `Scoring it teaches the router something you cannot know. Ask the session\n` +
-        `that ran it to score it — on this machine that is a SendMessage away.\n` +
-        `If you are certain (correcting a score you know to be wrong), --force.`,
-    )
+  } else {
+    refuseForeignScore(id, owner, flags, dashboardAuthorized)
   }
   const words = options.words
   const delivery = words[0] as Delivery | undefined
   const quality = words[1] as Quality | undefined
   const fidelity = words[2] as Fidelity | undefined
   if (flags.has('void')) {
-    const cannotRecord =
-      row.failure_kind === 'unevidenced'
-        ? `${row.failure_kind} review`
-        : row.failure_kind && options.notEvidence.includes(row.failure_kind)
-          ? `failure kind '${row.failure_kind}' is not evidence`
-          : null
-    let scoredFidelity: Fidelity | undefined
-    if (!cannotRecord && delivery) {
-      if (!DELIVERY.includes(delivery)) {
-        throw new Error(`delivery must be one of: ${DELIVERY.join(' | ')}`)
-      }
-      if (delivery === 'none' && quality) {
-        throw new Error("delivery 'none' takes no quality: there was nothing to judge")
-      }
-      if (delivery !== 'none' && (!quality || !QUALITY.includes(quality))) {
-        throw new Error(`delivery '${delivery}' needs a quality: ${QUALITY.join(' | ')}`)
-      }
-      const needsFidelity = Boolean(JOBS[row.job]?.needs.writesRepo) && delivery !== 'none'
-      if (needsFidelity && (!fidelity || !FIDELITY.includes(fidelity))) {
-        throw new Error(`${row.job} writes code, so verdicts require a fidelity axis`)
-      }
-      scoredFidelity = needsFidelity ? fidelity : undefined
-    }
+    const cannotRecord = voidCannotRecord(row.failure_kind, options.notEvidence)
+    const scoredFidelity =
+      !cannotRecord && delivery
+        ? scoredVoidFidelity(row.job, delivery, quality, fidelity)
+        : undefined
     const scoredAt = nowIso()
     const voidReason = 'voided with orch score --void'
-    const hostedId = hostedRunId(id)
-    await recordApiClient().voidRun(hostedId, { reason: voidReason })
+    const recordId = hostedRunId(id)
+    const recordedBy = scorer ?? process.env.ORCH_SCORER ?? 'claude'
+    await pushHostedVoid(recordId, voidReason)
     if (!cannotRecord && delivery) {
       await pushHostedScore(
-        id,
+        recordId,
         delivery,
         quality ?? null,
         scoredFidelity ?? null,
         note,
         scoredAt,
-        scorer ?? process.env.ORCH_SCORER ?? 'claude',
+        recordedBy,
       )
     }
     writeTransaction(() => {
+      persistHostedRunId(id, recordId)
       voidAuthority = adoptRunMutation(voidAuthority!, 'void')
       db().query('UPDATE run SET evidence_excluded=? WHERE id=?').run(voidReason, id)
       if (!cannotRecord && delivery) {
@@ -509,7 +551,7 @@ export async function scoreRun(
           scoredFidelity ?? null,
           note,
           scoredAt,
-          scorer ?? process.env.ORCH_SCORER ?? 'claude',
+          recordedBy,
         )
       }
       enqueueVoidedRunRecord(id)
@@ -690,8 +732,9 @@ export async function scoreRun(
   const wasScored = Boolean(db().query('SELECT 1 FROM score WHERE run_id=?').get(id))
   const scoredAt = nowIso()
   const recordedBy = scorer ?? process.env.ORCH_SCORER ?? 'claude'
+  const recordId = hostedRunId(id)
   await pushHostedScore(
-    id,
+    recordId,
     delivery,
     quality ?? null,
     scoredFidelity ?? null,
@@ -700,6 +743,7 @@ export async function scoreRun(
     recordedBy,
   )
   writeTransaction(() => {
+    persistHostedRunId(id, recordId)
     if (!dashboardAuthorized && !(flags.has('force') && !scoreAuthority.actor)) {
       scoreAuthority = adoptRunMutation(scoreAuthority, 'score')
     }
