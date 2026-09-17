@@ -56,3 +56,7 @@ Code unused by production is dead and must be deleted with any test that exists 
 ## Name workspace packages by platform scope
 
 A workspace package is named `@bottega/<concern>`; a nested package appends its part, as in `@bottega/hub-web`. This rule is enforced by review.
+
+## Declare every import boundary in the manifest
+
+An import restriction is a rule in `architecture.ts` or `architecture-boundaries.ts`. Do not write a script that scans the imports of a single file; a check script covers only what the manifest cannot express, such as call sites. `scripts/check-architecture.ts` enforces the manifest through dependency-cruiser.
