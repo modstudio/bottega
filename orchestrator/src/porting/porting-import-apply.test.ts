@@ -1,7 +1,8 @@
 import { describe, expect, test } from 'bun:test'
-import { setDoc } from '../test/fixtures/docs.ts'
-import { db } from './db.ts'
-import { getDoc, listDocRevisions, listDocs } from './docs.ts'
+import { setDoc } from '../../test/fixtures/docs.ts'
+import { db } from '../db.ts'
+import { getDoc, listDocRevisions, listDocs } from '../docs.ts'
+import { projects, upsertProject } from '../projects.ts'
 import {
   baselineForPair,
   ledgerRef,
@@ -10,7 +11,6 @@ import {
   type PortPair,
 } from './porting.ts'
 import { applyImport, ImportRefusalError, planImport, sourceCoverage } from './porting-import.ts'
-import { projects, upsertProject } from './projects.ts'
 
 const listPairs = () => db().query('SELECT * FROM port_pair ORDER BY id').all() as PortPair[]
 

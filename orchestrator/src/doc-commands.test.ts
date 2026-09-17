@@ -16,7 +16,7 @@ import {
 } from './docs.ts'
 import { JOBS } from './jobs.ts'
 import { createDocsMcpServer } from './mcp.ts'
-import { portCommand } from './port-commands.ts'
+import { portCommand } from './porting/port-commands.ts'
 import {
   baselineForPair,
   ledgerRef,
@@ -24,7 +24,7 @@ import {
   listLedgerRefs,
   listSkips,
   type PortPair,
-} from './porting.ts'
+} from './porting/porting.ts'
 import { upsertProject } from './projects.ts'
 import { reviewCommand } from './review-commands.ts'
 

@@ -1,9 +1,9 @@
 import { Database } from 'bun:sqlite'
 import { existsSync, readFileSync } from 'node:fs'
-import { db, writableDb, writeTransaction } from './db.ts'
-import { importDoc, listDocs, removeDoc } from './docs.ts'
+import { db, writableDb, writeTransaction } from '../db.ts'
+import { importDoc, listDocs, removeDoc } from '../docs.ts'
+import type { Project } from '../projects.ts'
 import { addDoctrineRule, addPair, addSkip, setBaseline, setLedgerRef } from './porting.ts'
-import type { Project } from './projects.ts'
 
 type ImportIssue = {
   kind: 'refusal' | 'exclusion'
