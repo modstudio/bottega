@@ -9,6 +9,7 @@ import { db, enableSchemaReload, nowIso } from './db.ts'
 import { promptLens } from './excerpt.ts'
 import { chainVendorTokens, executionSpans } from './ingest/runs.ts'
 import { state as orchState, blockers as readBlockers, readRuns } from './orch.ts'
+import { routingViewData } from './orch-transforms.ts'
 import { projectNames, projects, type RegisteredProject, trackerPresentation } from './projects.ts'
 import {
   boardTasks,
@@ -529,21 +530,7 @@ export async function view(
       orchCache.get('state:all', () => orchState(null)),
       orchBlockers(days),
     ])
-    return {
-      guide: s.guide,
-      matrix: s.matrix,
-      health: s.health,
-      blockerDays: days,
-      blockers: blockers?.blockers ?? null,
-      agents: s.agents,
-      spawns: s.spawns,
-      byRepo: (
-        s as unknown as { byRepo: { repo: string; agent: string; runs: number; toks: number }[] }
-      ).byRepo,
-      totals: s.totals,
-      unscored: s.unscored,
-      stale: s.stale,
-    }
+    return routingViewData(s, blockers, days)
   }
 
   if (name === 'runs') {

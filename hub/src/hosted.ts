@@ -2,6 +2,7 @@ import { existsSync } from 'node:fs'
 import { fetchRequestHandler } from '@trpc/server/adapters/fetch'
 import { resolveAppStatic } from './app-static.ts'
 import { evidenceApi } from './evidence-api.ts'
+import { hostedHealthResponse } from './hosted-health.ts'
 import { createContext } from './trpc/context.ts'
 import { hostedRouter } from './trpc/hosted-router.ts'
 
@@ -27,7 +28,8 @@ function startHostedServer(environment: ServerEnvironment = process.env) {
     port: config.port,
     async fetch(req) {
       const url = new URL(req.url)
-      if (url.pathname === '/health') return Response.json({ ok: true })
+      const health = hostedHealthResponse(req)
+      if (health) return health
       const evidence = await evidenceApi(req, config)
       if (evidence) return evidence
       if (url.pathname.startsWith('/trpc')) {

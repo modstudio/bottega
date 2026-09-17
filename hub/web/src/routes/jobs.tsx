@@ -4,14 +4,16 @@ import { useMemo, useState } from 'react'
 import { Collection, type CollectionColumn } from '@/components/collection'
 import { PageHeader } from '@/components/design-system'
 import { DisplayRow } from '@/components/fields'
+import { SnapshotHeader } from '@/components/hosted-snapshot'
 import { Sheet } from '@/components/sheet'
+import { isHostedMode } from '@/lib/hub-mode'
 import { type JobRow, trpc } from '@/trpc/client'
 
 export const Route = createFileRoute('/jobs')({
   validateSearch: (search: Record<string, unknown>) => ({
     job: typeof search.job === 'string' ? search.job : undefined,
   }),
-  component: JobsPage,
+  component: () => (isHostedMode() ? <HostedJobsPage /> : <JobsPage />),
 })
 
 const columns: CollectionColumn<JobRow>[] = [
@@ -23,22 +25,61 @@ const columns: CollectionColumn<JobRow>[] = [
 
 function JobsPage() {
   const query = useQuery(trpc.catalog.jobs.queryOptions())
+  return <JobsView data={query.data} pending={query.isPending} error={query.error} />
+}
+
+function HostedJobsPage() {
+  const [machineId, setMachineId] = useState<string>()
+  const query = useQuery(trpc.record.jobs.queryOptions({ machineId }))
+  return (
+    <JobsView
+      data={query.data?.data}
+      pending={query.isPending}
+      error={query.error}
+      header={
+        query.data ? (
+          <SnapshotHeader
+            title="Jobs"
+            takenAt={query.data.takenAt}
+            machineId={query.data.machineId}
+            machines={query.data.machines}
+            onMachineChange={setMachineId}
+          />
+        ) : undefined
+      }
+    />
+  )
+}
+
+function JobsView({
+  data,
+  pending,
+  error,
+  header,
+}: {
+  data: JobRow[] | undefined
+  pending: boolean
+  error: { message: string } | null
+  header?: React.ReactNode
+}) {
   const navigate = useNavigate()
   const { job } = Route.useSearch()
   const [search, setSearch] = useState('')
   const rows = useMemo(
     () =>
-      (query.data ?? []).filter((row) =>
+      (data ?? []).filter((row) =>
         `${row.name} ${row.what}`.toLowerCase().includes(search.trim().toLowerCase()),
       ),
-    [query.data, search],
+    [data, search],
   )
-  const selected = query.data?.find((row) => row.name === job)
+  const selected = data?.find((row) => row.name === job)
   const close = () => void navigate({ to: '/jobs', search: { job: undefined }, replace: true })
   return (
     <section>
-      <PageHeader title="Jobs" subtitle="Code-declared work the orchestrator can route" />
-      {query.error ? <p className="text-destructive">{query.error.message}</p> : null}
+      {header ?? (
+        <PageHeader title="Jobs" subtitle="Code-declared work the orchestrator can route" />
+      )}
+      {error ? <p className="text-destructive">{error.message}</p> : null}
       <Collection
         title="Job types"
         count={rows.length}
@@ -47,7 +88,7 @@ function JobsPage() {
         rows={rows}
         getKey={(row) => row.name}
         onOpen={(row) => void navigate({ to: '/jobs', search: { job: row.name } })}
-        empty={{ title: query.isPending ? 'Loading jobs...' : 'No jobs match.' }}
+        empty={{ title: pending ? 'Loading jobs...' : 'No jobs match.' }}
       />
       <Sheet
         open={Boolean(job)}

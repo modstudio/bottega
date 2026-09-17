@@ -1,5 +1,10 @@
 import { TRPCError } from '@trpc/server'
 import { z } from 'zod'
+import {
+  HarnessHealthSchema,
+  OrchBlockersSchema,
+  OrchStateSchema,
+} from '../../shared/orch-contract.ts'
 
 type RecordAuthHeaders = {
   cookie?: string
@@ -108,6 +113,82 @@ type RecordReviewListInput = {
   cursor?: string
 }
 
+const jobSchema = z.object({
+  name: z.string(),
+  what: z.string(),
+  needs: z.record(z.string(), z.boolean()),
+  prefer: z.array(z.string()),
+  contextTokens: z.number(),
+  timeoutMs: z.number().nullable(),
+  findings: z.boolean(),
+})
+
+const agentSchema = z.object({
+  name: z.string(),
+  caps: z.record(z.string(), z.boolean()),
+  model: z.string(),
+  contextTokens: z.number().nullable(),
+  maxPromptBytes: z.number().nullable(),
+  timeoutMs: z.number(),
+})
+
+const snapshotBase = {
+  id: z.string().uuid(),
+  machineId: z.string().uuid(),
+  takenAt: z.string().datetime({ offset: true }),
+}
+
+const snapshotSchema = z.discriminatedUnion('kind', [
+  z.object({ ...snapshotBase, kind: z.literal('state'), payload: OrchStateSchema }),
+  z.object({ ...snapshotBase, kind: z.literal('blockers'), payload: OrchBlockersSchema }),
+  z.object({ ...snapshotBase, kind: z.literal('health'), payload: HarnessHealthSchema }),
+  z.object({ ...snapshotBase, kind: z.literal('jobs'), payload: z.array(jobSchema) }),
+  z.object({ ...snapshotBase, kind: z.literal('agents'), payload: z.array(agentSchema) }),
+])
+
+const snapshotsSchema = z.object({ items: z.array(snapshotSchema) })
+
+const docSchema = z.object({
+  id: z.string().uuid(),
+  scope: z.string(),
+  subject: z.string().nullable(),
+  slug: z.string(),
+  title: z.string(),
+  body: z.string(),
+  delivery: z.enum(['inject', 'demand']),
+  projectName: z.string().nullable(),
+  createdAt: z.string().datetime({ offset: true }),
+  updatedAt: z.string().datetime({ offset: true }),
+  deletedAt: z.string().datetime({ offset: true }).nullable(),
+})
+
+const docsSchema = z.object({ items: z.array(docSchema), nextCursor: z.string().nullable() })
+
+const docRevisionSchema = z.object({
+  id: z.string().uuid(),
+  docId: z.string().uuid(),
+  scope: z.string(),
+  subject: z.string().nullable(),
+  slug: z.string(),
+  op: z.enum(['create', 'set', 'consume', 'delete', 'restore', 'import', 'backfill']),
+  title: z.string(),
+  body: z.string(),
+  delivery: z.enum(['inject', 'demand']),
+  author: z.string(),
+  reason: z.string(),
+  sessionId: z.string().nullable(),
+  at: z.string().datetime({ offset: true }),
+})
+
+const docRevisionsSchema = z.object({ items: z.array(docRevisionSchema) })
+
+type RecordDocListInput = {
+  scope?: string
+  subject?: string
+  limit?: number
+  cursor?: string
+}
+
 function mappedError(status: number, body: unknown): TRPCError {
   const record = body && typeof body === 'object' ? (body as Record<string, unknown>) : {}
   const error = typeof record.error === 'string' ? record.error : `record API ${status}`
@@ -176,5 +257,20 @@ export function createRecordClient(options: RecordClientOptions) {
       ),
     review: (id: string) => request(options, `/v1/reviews/${id}`, reviewDetailSchema),
     projects: () => request(options, '/v1/projects', z.array(projectSchema)),
+    snapshots: () => request(options, '/v1/snapshots', snapshotsSchema),
+    docs: (input: RecordDocListInput = {}) =>
+      request(
+        options,
+        query('/v1/docs', {
+          scope: input.scope,
+          subject: input.subject,
+          limit: input.limit,
+          cursor: input.cursor,
+        }),
+        docsSchema,
+      ),
+    doc: (id: string) => request(options, `/v1/docs/${encodeURIComponent(id)}`, docSchema),
+    docRevisions: (id: string) =>
+      request(options, `/v1/docs/${encodeURIComponent(id)}/revisions`, docRevisionsSchema),
   }
 }

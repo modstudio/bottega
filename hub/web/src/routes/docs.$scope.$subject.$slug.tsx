@@ -3,21 +3,30 @@ import { createFileRoute, useNavigate } from '@tanstack/react-router'
 import { Pencil, Save, Trash2, X } from 'lucide-react'
 import { useEffect, useState } from 'react'
 import { Button } from '@/components/button'
+import { HostedDocDetail } from '@/components/hosted-doc-detail'
 import { Input } from '@/components/input'
 import { Markdown } from '@/components/markdown'
 import { Sheet } from '@/components/sheet'
 import { Textarea } from '@/components/textarea'
+import { isHostedMode } from '@/lib/hub-mode'
 import { queryClient, trpc } from '@/trpc/client'
 import { DOC_SCOPES, type DocScope, isScope } from './docs'
 
-type DocSearch = { edit?: boolean }
+type DocSearch = { edit?: boolean; id?: string }
 
 export const Route = createFileRoute('/docs/$scope/$subject/$slug')({
   validateSearch: (search: Record<string, unknown>): DocSearch => ({
     edit: search.edit === true || search.edit === '1' || search.edit === 'true' ? true : undefined,
+    id: typeof search.id === 'string' ? search.id : undefined,
   }),
-  component: DocPage,
+  component: DocRoute,
 })
+
+function DocRoute() {
+  const { slug } = Route.useParams()
+  const { id } = Route.useSearch()
+  return isHostedMode() ? <HostedDocDetail id={id} slug={slug} /> : <DocPage />
+}
 
 function subjectFromParam(param: string): string | null {
   return param === '_' ? null : param

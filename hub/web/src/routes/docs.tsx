@@ -13,9 +13,11 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/dialog'
+import { HostedDocs } from '@/components/hosted-docs'
 import { Input } from '@/components/input'
 import { Tabs, TabsList, TabsTrigger } from '@/components/tabs'
 import { compactBytes, relativeTime } from '@/lib/format'
+import { isHostedMode } from '@/lib/hub-mode'
 import { queryClient, trpc } from '@/trpc/client'
 import { DOC_SCOPE_SUBJECT_KIND, DOC_SCOPES, type DocScope } from '../../../../shared/docs.ts'
 
@@ -37,7 +39,9 @@ const selectClass =
   'flex h-10 w-full border border-input bg-background px-3 py-2 text-sm ' +
   'focus-visible:ring-2 focus-visible:ring-ring'
 
-export const Route = createFileRoute('/docs')({ component: DocsPage })
+export const Route = createFileRoute('/docs')({
+  component: () => (isHostedMode() ? <HostedDocs /> : <DocsPage />),
+})
 
 function DocsPage() {
   return (

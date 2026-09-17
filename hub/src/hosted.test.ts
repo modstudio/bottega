@@ -27,11 +27,19 @@ describe('hostedRouter', () => {
   test('exposes only the record namespace', () => {
     const procedures = Object.keys(hostedRouter._def.procedures).sort()
     expect(procedures).toEqual([
+      'record.agents',
+      'record.doc',
+      'record.docRevisions',
+      'record.docs',
+      'record.health',
+      'record.jobs',
       'record.projects',
       'record.review',
       'record.reviews',
+      'record.routing',
       'record.run',
       'record.runs',
+      'record.snapshots',
       'record.whoami',
     ])
   })

@@ -3,7 +3,16 @@ import { isHostedPath, navForMode } from './hub-mode.ts'
 
 test('hosted mode hides local routes', () => {
   const hosted = navForMode('hosted')
-  expect(hosted.map((item) => item.to)).toEqual(['/runs', '/reviews', '/projects'])
+  expect(hosted.map((item) => item.to)).toEqual([
+    '/runs',
+    '/reviews',
+    '/projects',
+    '/docs',
+    '/jobs',
+    '/agents',
+    '/routing',
+    '/health',
+  ])
   expect(hosted.map((item) => item.label)).not.toContain('Flight')
   expect(hosted.map((item) => item.label)).not.toContain('Settings')
   expect(navForMode('local').map((item) => item.to)).toContain('/flight')
@@ -12,6 +21,12 @@ test('hosted mode hides local routes', () => {
   expect(isHostedPath('/reviews')).toBe(true)
   expect(isHostedPath('/sign-in')).toBe(true)
   expect(isHostedPath('/projects')).toBe(true)
+  expect(isHostedPath('/docs')).toBe(true)
+  expect(isHostedPath('/docs/project/alpha/plan')).toBe(true)
+  expect(isHostedPath('/jobs')).toBe(true)
+  expect(isHostedPath('/agents')).toBe(true)
+  expect(isHostedPath('/routing')).toBe(true)
+  expect(isHostedPath('/health')).toBe(true)
   expect(isHostedPath('/flight')).toBe(false)
   expect(isHostedPath('/settings')).toBe(false)
   expect(isHostedPath('/projects/alpha')).toBe(false)
