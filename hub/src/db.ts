@@ -131,25 +131,3 @@ export function migrateDatabase(): { path: string; versions: string[] } {
     d.close()
   }
 }
-
-/** Used only inside the task-import transaction, which supplies the write lock. */
-export function nextImportedTaskKey(prefix: string, d: Database): string {
-  const pattern = new RegExp(`^${prefix.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}-(\\d+)$`, 'i')
-  const highest = d
-    .query<{ key: string }, []>(`SELECT key FROM task`)
-    .all()
-    .reduce((max, row) => {
-      const match = pattern.exec(row.key)
-      return match ? Math.max(max, Number(match[1])) : max
-    }, 0)
-  const name = `task:${prefix}`
-  const sequence = d
-    .query<{ next: number }, [string]>(`SELECT next FROM seq WHERE name = ?`)
-    .get(name)
-  const number = Math.max(highest + 1, sequence?.next ?? 1)
-  d.query(
-    `INSERT INTO seq (name, next) VALUES (?, ?)
-     ON CONFLICT(name) DO UPDATE SET next = excluded.next`,
-  ).run(name, number + 1)
-  return `${prefix.toUpperCase()}-${number}`
-}
