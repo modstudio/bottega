@@ -9,7 +9,8 @@ import {
   ProjectMark,
   StatRow,
   StatTile,
-  WindowBar,
+  useWindowFilters,
+  WindowControl,
 } from '@/components/design-system'
 import { HostedRuns } from '@/components/hosted-runs'
 import { useNow } from '@/lib/clock'
@@ -26,7 +27,6 @@ import { verdictTone } from '@/lib/verdict-tone'
 import { useWindowState } from '@/lib/window'
 import { trpc } from '@/trpc/client'
 import { Badge } from '@/ui/badge/badge'
-import { Input } from '@/ui/field/input'
 import { Identifier } from '@/ui/identifier/identifier'
 
 type RunRow = SearchableRun
@@ -118,6 +118,11 @@ function RunsList() {
   const filtered = !!(windowState.filters.agent || windowState.filters.project)
   const menuChanged = (open: boolean) =>
     setOpenMenus((count) => Math.max(0, count + (open ? 1 : -1)))
+  const filters = useWindowFilters({
+    projects: data?.facets.projects,
+    agents: data?.facets.agents,
+    onOpenChange: menuChanged,
+  })
   const cards = data
     ? [
         [data.totals.runs.toLocaleString(), 'runs', 'in this window'],
@@ -152,7 +157,7 @@ function RunsList() {
     {
       id: 'elapsed',
       label: 'Elapsed',
-      className: 'num',
+      numeric: true,
       render: (row) => fmtMs(row.elapsedMs + Math.max(0, now - query.dataUpdatedAt)),
     },
     {
@@ -187,15 +192,15 @@ function RunsList() {
     {
       id: 'took',
       label: 'Took',
-      className: 'num',
+      numeric: true,
       render: (row) => (row.running ? fmtMs(now - new Date(row.at).getTime()) : row.engaged),
     },
     { id: 'verdict', label: 'Verdict', render: (row) => <Verdict row={row} /> },
-    { id: 'tokens', label: 'Tokens', className: 'num', render: (row) => compact(row.tokens) },
+    { id: 'tokens', label: 'Tokens', numeric: true, render: (row) => compact(row.tokens) },
     {
       id: 'cost',
       label: 'Cost',
-      className: 'num',
+      numeric: true,
       render: (row) => (row.costUsd == null ? '-' : `$${row.costUsd.toFixed(2)}`),
     },
     { id: 'started', label: 'Started', render: (row) => runEasternTime(row.at, true) },
@@ -216,24 +221,7 @@ function RunsList() {
             : 'Loading runs...'
         }
         subtitleTitle={payload ? `Serving code since ${payload.servingSince}` : undefined}
-        actions={
-          data ? (
-            <>
-              <Input
-                type="search"
-                className="h-8 w-56"
-                value={search}
-                onChange={(event) => setSearch(event.target.value)}
-                placeholder="Search runs"
-              />
-              <WindowBar
-                projects={data.facets.projects}
-                agents={data.facets.agents}
-                onOpenChange={menuChanged}
-              />
-            </>
-          ) : null
-        }
+        actions={<WindowControl />}
       />
       {query.isPending ? <p className="text-muted-foreground">Loading runs...</p> : null}
       {query.error ? (
@@ -277,6 +265,9 @@ function RunsList() {
             <Collection
               title="Runs"
               count={runRows.length}
+              search={{ query: search, onQueryChange: setSearch, placeholder: 'Search runs' }}
+              filters={filters.controls}
+              filtersActive={filters.active}
               columns={runColumns}
               rows={runRows}
               getKey={(row) => row.id}

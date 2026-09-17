@@ -46,7 +46,7 @@ function HostedDocsList() {
     {
       id: 'size',
       label: 'Size',
-      className: 'num',
+      numeric: true,
       render: (doc) => compactBytes(new TextEncoder().encode(doc.body).length),
     },
     { id: 'updated', label: 'Updated', render: (doc) => relativeTime(doc.updatedAt) },

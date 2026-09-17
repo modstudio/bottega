@@ -99,13 +99,13 @@ function HostedRunsList() {
     {
       id: 'latency',
       label: 'Latency',
-      className: 'num',
+      numeric: true,
       render: (row) => (row.latencyMs == null ? '-' : duration(row.latencyMs)),
     },
     {
       id: 'cost',
       label: 'Cost',
-      className: 'num',
+      numeric: true,
       render: (row) => (row.vendorCostUsd == null ? '-' : `$${row.vendorCostUsd.toFixed(2)}`),
     },
     {

@@ -15,6 +15,7 @@ import {
 import { trpc } from '@/trpc/client'
 import { Button } from '@/ui/button/button'
 import { Select, type SelectOption } from '@/ui/listbox/select'
+import { Segmented } from '@/ui/segmented/segmented'
 
 export function PageHeader({
   title,
@@ -123,85 +124,76 @@ function Filter({
   )
 }
 
-export function Segmented({
-  value,
-  options,
-  onChange,
-  label,
-}: {
-  value: string
-  options: readonly { value: string; label: string }[]
-  onChange: (value: string) => void
-  label: string
-}) {
+/** The time window every figure on the page reads; it belongs in the page header. */
+export function WindowControl() {
+  const state = useWindowState()
   return (
-    <fieldset className="segmented min-w-0 p-0">
-      <legend className="sr-only">{label}</legend>
-      {options.map((option) => (
-        <button
-          key={option.value}
-          type="button"
-          aria-pressed={value === option.value}
-          onClick={() => onChange(option.value)}
-        >
-          {option.label}
-        </button>
-      ))}
-    </fieldset>
+    <Segmented
+      label="Time window"
+      value={String(state.hours)}
+      options={WINDOWS.map((hours) => ({
+        value: String(hours),
+        label: hours === 168 ? '7d' : hours === 720 ? '30d' : `${hours}h`,
+      }))}
+      onChange={(value) => setHours(Number(value) as WindowHours)}
+    />
   )
 }
 
-export function WindowBar({
+/**
+ * The project, agent and source filters, which narrow a table rather than the
+ * page, for a TableCard's filter slot. `active` counts the applied ones.
+ */
+export function useWindowFilters({
   projects = [],
   agents = [],
   sources,
-  filters = true,
   onOpenChange,
 }: {
   projects?: string[]
   agents?: string[]
   sources?: string[]
-  filters?: boolean
   onOpenChange?: (open: boolean) => void
 }) {
-  const state = useWindowState()
-  return (
-    <div className="window-bar">
-      {filters ? (
-        <>
+  const { filters } = useWindowState()
+  const active = [filters.project, filters.agent, sources ? filters.source : ''].filter(
+    Boolean,
+  ).length
+  const controls = [
+    <Filter
+      key="project"
+      kind="project"
+      label="All projects"
+      options={projects}
+      onOpenChange={onOpenChange}
+    />,
+    <Filter
+      key="agent"
+      kind="agent"
+      label="All agents"
+      options={agents}
+      onOpenChange={onOpenChange}
+    />,
+    ...(sources
+      ? [
           <Filter
-            kind="project"
-            label="All projects"
-            options={projects}
+            key="source"
+            kind="source"
+            label="All sources"
+            options={sources}
             onOpenChange={onOpenChange}
-          />
-          <Filter kind="agent" label="All agents" options={agents} onOpenChange={onOpenChange} />
-          {sources ? (
-            <Filter
-              kind="source"
-              label="All sources"
-              options={sources}
-              onOpenChange={onOpenChange}
-            />
-          ) : null}
-          {state.filters.project || state.filters.agent || (sources && state.filters.source) ? (
-            <Button variant="ghost" size="sm" onClick={clearFilters}>
-              Clear filters
-            </Button>
-          ) : null}
-        </>
-      ) : null}
-      <Segmented
-        label="Time window"
-        value={String(state.hours)}
-        options={WINDOWS.map((hours) => ({
-          value: String(hours),
-          label: hours === 168 ? '7d' : hours === 720 ? '30d' : `${hours}h`,
-        }))}
-        onChange={(value) => setHours(Number(value) as WindowHours)}
-      />
-    </div>
-  )
+          />,
+        ]
+      : []),
+    ...(active
+      ? [
+          <Button key="clear" variant="ghost" size="sm" onClick={clearFilters}>
+            Clear filters
+          </Button>,
+        ]
+      : []),
+  ]
+  return { controls, active }
 }
 
 export function responseSubtitle(response: {

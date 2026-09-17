@@ -2,7 +2,6 @@ import { useMutation, useQuery } from '@tanstack/react-query'
 import { createFileRoute, useNavigate } from '@tanstack/react-router'
 import { Copy } from 'lucide-react'
 import { useEffect, useState } from 'react'
-import { Segmented } from '@/components/design-system'
 import { DisplayRow } from '@/components/fields'
 import { HostedRunDetail } from '@/components/hosted-run-detail'
 import { Sheet } from '@/components/sheet'
@@ -12,6 +11,7 @@ import { queryClient, trpc } from '@/trpc/client'
 import { Badge } from '@/ui/badge/badge'
 import { Button, IconButton } from '@/ui/button/button'
 import { Input } from '@/ui/field/input'
+import { Segmented } from '@/ui/segmented/segmented'
 
 const DELIVERIES = ['none', 'partial', 'full'] as const
 const QUALITIES = ['wrong', 'mixed', 'right'] as const

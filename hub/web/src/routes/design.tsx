@@ -8,7 +8,6 @@ import {
   PageHeader,
   ProjectMark,
   SectionTitle,
-  Segmented,
   SourceMark,
   StatRow,
   StatTile,
@@ -22,6 +21,7 @@ import { Button } from '@/ui/button/button'
 import { Dialog } from '@/ui/dialog/dialog'
 import { Input } from '@/ui/field/input'
 import { Select } from '@/ui/listbox/select'
+import { Segmented } from '@/ui/segmented/segmented'
 
 export const Route = createFileRoute('/design')({ component: DesignPage })
 

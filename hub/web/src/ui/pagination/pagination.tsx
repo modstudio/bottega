@@ -45,14 +45,16 @@ export function Pagination({
       </span>
       <div className="flex items-center gap-2">
         {onPageSizeChange ? (
-          <Select
-            label="Rows per page"
-            size="sm"
-            className="min-w-0"
-            value={String(pageSize)}
-            options={PAGE_SIZES.map((size) => ({ value: String(size), label: `${size} rows` }))}
-            onChange={(value) => onPageSizeChange(Number(value))}
-          />
+          <span className="max-sm:hidden">
+            <Select
+              label="Rows per page"
+              size="sm"
+              className="min-w-0"
+              value={String(pageSize)}
+              options={PAGE_SIZES.map((size) => ({ value: String(size), label: `${size} rows` }))}
+              onChange={(value) => onPageSizeChange(Number(value))}
+            />
+          </span>
         ) : null}
         <IconButton
           size="sm"
@@ -64,7 +66,7 @@ export function Pagination({
           <ChevronLeft />
         </IconButton>
         {pageCount !== undefined ? (
-          <span className="min-w-16 text-center tabular-nums">
+          <span className="min-w-16 text-center tabular-nums max-sm:hidden">
             {page} / {pageCount}
           </span>
         ) : null}

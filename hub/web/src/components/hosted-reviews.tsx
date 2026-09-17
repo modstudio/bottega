@@ -124,11 +124,11 @@ function HostedReviewsList() {
       label: 'Tier',
       render: (row) => (row.tier == null ? '-' : String(row.tier)),
     },
-    { id: 'lenses', label: 'Lenses', className: 'num', render: (row) => row.lensCount ?? '-' },
+    { id: 'lenses', label: 'Lenses', numeric: true, render: (row) => row.lensCount ?? '-' },
     {
       id: 'findings',
       label: 'Findings',
-      className: 'num',
+      numeric: true,
       render: (row) => row.findingCount ?? '-',
     },
     {

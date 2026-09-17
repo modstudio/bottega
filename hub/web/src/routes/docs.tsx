@@ -112,7 +112,7 @@ function DocsList() {
     {
       id: 'size',
       label: 'Size',
-      className: 'num',
+      numeric: true,
       render: (doc) => compactBytes(bodyBytes(doc.body)),
     },
     {

@@ -1,13 +1,13 @@
 import { useQuery } from '@tanstack/react-query'
 import type { inferRouterOutputs } from '@trpc/server'
-import { useEffect, useState } from 'react'
+import { useEffect } from 'react'
 import {
   PageHeader,
   responseSubtitle,
   SectionTitle,
   StatRow,
   StatTile,
-  WindowBar,
+  WindowControl,
 } from '@/components/design-system'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/table'
 import { compactTokens, duration } from '@/lib/format'
@@ -37,15 +37,7 @@ function SectionHead({ title, detail }: { title: string; detail?: string }) {
   return <SectionTitle detail={detail}>{title}</SectionTitle>
 }
 
-function InsightChrome({
-  title,
-  response,
-  onDropdown,
-}: {
-  title: string
-  response: Strip
-  onDropdown: (open: boolean) => void
-}) {
+function InsightChrome({ title, response }: { title: string; response: Strip }) {
   useEffect(() => setWorkCounts(response.counts), [response.counts])
   const subtitle = responseSubtitle(response)
   return (
@@ -54,7 +46,7 @@ function InsightChrome({
         title={title}
         subtitle={subtitle.text}
         subtitleTitle={subtitle.title}
-        actions={<WindowBar filters={false} onOpenChange={onDropdown} />}
+        actions={<WindowControl />}
       />
       <StatRow>
         <StatTile
@@ -665,17 +657,13 @@ export function HealthView({ data }: { data: HealthData }) {
 
 function RatioQuery() {
   const windowState = useWindowState()
-  const [menus, setMenus] = useState(0)
   const input = { hours: windowState.hours, filters: windowState.filters }
-  const query = useQuery(
-    trpc.insight.ratio.queryOptions(input, { refetchInterval: menus ? false : 10_000 }),
-  )
-  const dropdown = (open: boolean) => setMenus((count) => Math.max(0, count + (open ? 1 : -1)))
+  const query = useQuery(trpc.insight.ratio.queryOptions(input, { refetchInterval: 10_000 }))
   if (query.isPending) return <p className="text-muted-foreground">Loading ratio...</p>
   if (query.error) return <p className="text-destructive">could not load: {query.error.message}</p>
   return (
     <section>
-      <InsightChrome title="Ratio" response={query.data} onDropdown={dropdown} />
+      <InsightChrome title="Ratio" response={query.data} />
       <RatioView data={query.data.data} />
     </section>
   )
@@ -683,17 +671,13 @@ function RatioQuery() {
 
 function SpendQuery() {
   const windowState = useWindowState()
-  const [menus, setMenus] = useState(0)
   const input = { hours: windowState.hours, filters: windowState.filters }
-  const query = useQuery(
-    trpc.insight.spend.queryOptions(input, { refetchInterval: menus ? false : 10_000 }),
-  )
-  const dropdown = (open: boolean) => setMenus((count) => Math.max(0, count + (open ? 1 : -1)))
+  const query = useQuery(trpc.insight.spend.queryOptions(input, { refetchInterval: 10_000 }))
   if (query.isPending) return <p className="text-muted-foreground">Loading spend...</p>
   if (query.error) return <p className="text-destructive">could not load: {query.error.message}</p>
   return (
     <section>
-      <InsightChrome title="Spend" response={query.data} onDropdown={dropdown} />
+      <InsightChrome title="Spend" response={query.data} />
       <SpendView data={query.data.data} />
     </section>
   )
@@ -701,17 +685,13 @@ function SpendQuery() {
 
 function RoutingQuery() {
   const windowState = useWindowState()
-  const [menus, setMenus] = useState(0)
   const input = { hours: windowState.hours, filters: windowState.filters }
-  const query = useQuery(
-    trpc.insight.routing.queryOptions(input, { refetchInterval: menus ? false : 30_000 }),
-  )
-  const dropdown = (open: boolean) => setMenus((count) => Math.max(0, count + (open ? 1 : -1)))
+  const query = useQuery(trpc.insight.routing.queryOptions(input, { refetchInterval: 30_000 }))
   if (query.isPending) return <p className="text-muted-foreground">Loading routing...</p>
   if (query.error) return <p className="text-destructive">could not load: {query.error.message}</p>
   return (
     <section>
-      <InsightChrome title="Routing" response={query.data} onDropdown={dropdown} />
+      <InsightChrome title="Routing" response={query.data} />
       <RoutingView data={query.data.data} />
     </section>
   )
@@ -725,7 +705,7 @@ function HealthQuery() {
   if (query.error) return <p className="text-destructive">could not load: {query.error.message}</p>
   return (
     <section>
-      <InsightChrome title="Health" response={query.data} onDropdown={() => {}} />
+      <InsightChrome title="Health" response={query.data} />
       <HealthView data={query.data.data} />
     </section>
   )

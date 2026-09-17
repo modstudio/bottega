@@ -370,7 +370,7 @@ export function AppShell({
         </aside>
       )}
       <div className="flex min-w-0 flex-1 flex-col">
-        <header className="sticky top-0 z-(--z-sticky) flex h-topbar shrink-0 items-center gap-3 border-border-default border-b bg-surface-page px-4 md:px-8">
+        <header className="sticky top-0 z-(--z-rail) flex h-topbar shrink-0 items-center gap-3 border-border-default border-b bg-surface-page px-4 md:px-8">
           {mobile ? (
             <>
               <IconButton label="Open menu" onClick={() => setMenuOpen(true)}>

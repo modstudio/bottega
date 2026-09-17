@@ -10,12 +10,12 @@ import {
   ProjectMark,
   projectVars,
   responseSubtitle,
-  Segmented,
   SourceMark,
   StatRow,
   StatTile,
   useProjectColors,
-  WindowBar,
+  useWindowFilters,
+  WindowControl,
 } from '@/components/design-system'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/table'
 import { useNow } from '@/lib/clock'
@@ -26,6 +26,7 @@ import { type BoardResponse, type FlightResponse, trpc } from '@/trpc/client'
 import { Badge } from '@/ui/badge/badge'
 import { Input } from '@/ui/field/input'
 import { Identifier } from '@/ui/identifier/identifier'
+import { Segmented } from '@/ui/segmented/segmented'
 
 type WorkName = 'flight' | 'done'
 type TaskData = FlightResponse['data']
@@ -65,6 +66,7 @@ function WindowChrome({
   response,
   facets,
   onDropdown,
+  headerFilters = false,
 }: {
   title: string
   response: Pick<
@@ -73,8 +75,11 @@ function WindowChrome({
   >
   facets: Facets
   onDropdown: (open: boolean) => void
+  /** A page without a TableCard shows its filters beside the window instead. */
+  headerFilters?: boolean
 }) {
   useEffect(() => setWorkCounts(response.counts), [response.counts])
+  const filters = useWindowFilters({ ...facets, onOpenChange: onDropdown })
   const subtitle = responseSubtitle(response)
   return (
     <>
@@ -83,12 +88,10 @@ function WindowChrome({
         subtitle={subtitle.text}
         subtitleTitle={subtitle.title}
         actions={
-          <WindowBar
-            projects={facets.projects}
-            agents={facets.agents}
-            sources={facets.sources}
-            onOpenChange={onDropdown}
-          />
+          <>
+            {headerFilters ? filters.controls : null}
+            <WindowControl />
+          </>
         }
       />
       <StatRow>
@@ -156,12 +159,17 @@ function TaskTable({
   rows,
   from,
   fetchedAt,
+  facets,
+  onDropdown,
 }: {
   rows: TaskRow[]
   from: WorkName
   fetchedAt: number
+  facets: Facets
+  onDropdown: (open: boolean) => void
 }) {
   const navigate = useNavigate()
+  const filters = useWindowFilters({ ...facets, onOpenChange: onDropdown })
   const now = useNow()
   const [sort, setSort] = useState<Sort>({ col: 'updated', dir: -1 })
   const [opened, setOpened] = useState<Set<string>>(() => new Set())
@@ -197,13 +205,8 @@ function TaskTable({
       </button>
     ),
     priority: column.id === 'claude' || column.id === 'vendor' ? ('low' as const) : undefined,
-    className: `px-3 py-2 ${
-      column.numeric
-        ? 'whitespace-nowrap text-right tabular-nums'
-        : column.id === 'title'
-          ? 'w-full max-w-0'
-          : 'whitespace-nowrap'
-    }`,
+    numeric: column.numeric,
+    grow: column.id === 'title',
     render: (row) =>
       column.id === 'project' ? (
         <span className="inline-flex items-center gap-2">
@@ -252,6 +255,8 @@ function TaskTable({
     <Collection
       title="Tasks"
       count={sorted.length}
+      filters={filters.controls}
+      filtersActive={filters.active}
       columns={collectionColumns}
       rows={sorted}
       getKey={(row) => row.key!}
@@ -340,10 +345,12 @@ function TaskContent({
   name,
   data,
   fetchedAt,
+  onDropdown,
 }: {
   name: WorkName
   data: TaskData
   fetchedAt: number
+  onDropdown: (open: boolean) => void
 }) {
   const window = useWindowState()
   const tasks = data.rows.filter((row) => row.key)
@@ -353,7 +360,13 @@ function TaskContent({
   return (
     <>
       {tasks.length ? (
-        <TaskTable rows={tasks} from={name} fetchedAt={fetchedAt} />
+        <TaskTable
+          rows={tasks}
+          from={name}
+          fetchedAt={fetchedAt}
+          facets={data.facets}
+          onDropdown={onDropdown}
+        />
       ) : (
         <EmptyState
           title={
@@ -451,7 +464,12 @@ export function TaskView({ name }: { name: WorkName }) {
         facets={query.data.data.facets}
         onDropdown={dropdown}
       />
-      <TaskContent name={name} data={query.data.data} fetchedAt={query.dataUpdatedAt} />
+      <TaskContent
+        name={name}
+        data={query.data.data}
+        fetchedAt={query.dataUpdatedAt}
+        onDropdown={dropdown}
+      />
     </section>
   )
 }
@@ -577,6 +595,7 @@ export function BoardView() {
         response={response}
         facets={response.data.facets}
         onDropdown={dropdown}
+        headerFilters
       />
       <div className="mb-4 flex flex-wrap items-center gap-3">
         <Input
@@ -684,8 +703,12 @@ export function BoardView() {
                   {
                     id: 'live',
                     label: '',
-                    className: 'text-right text-live',
-                    render: (card) => (card.workingNow ? 'working now' : ''),
+                    render: (card) =>
+                      card.workingNow ? (
+                        <Badge tone="progress" dot>
+                          Working now
+                        </Badge>
+                      ) : null,
                   },
                 ]}
                 rows={rows}
