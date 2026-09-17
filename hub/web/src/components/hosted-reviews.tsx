@@ -4,7 +4,6 @@ import { ChevronRight } from 'lucide-react'
 import { useState } from 'react'
 import { Collection, type CollectionColumn } from '@/components/collection'
 import { PageHeader, ProjectMark } from '@/components/design-system'
-import { DisplayRow, FieldSection } from '@/components/fields'
 import { hostedProjectColors } from '@/components/hosted-projects'
 import { useDetailPanel } from '@/lib/detail-panel'
 import { runEasternTime } from '@/lib/run-search'
@@ -12,6 +11,7 @@ import { trpc } from '@/trpc/client'
 import { Badge } from '@/ui/badge/badge'
 import { Button } from '@/ui/button/button'
 import { Companion } from '@/ui/companion/companion'
+import { DisplayRow, FieldSection } from '@/ui/form-layout/form-layout'
 
 type HostedReview = {
   id: string

@@ -1,13 +1,13 @@
 import { useQuery } from '@tanstack/react-query'
 import { useNavigate } from '@tanstack/react-router'
 import { ProjectMark } from '@/components/design-system'
-import { DisplayRow } from '@/components/fields'
 import { hostedProjectColors } from '@/components/hosted-projects'
 import { type HostedLens, HostedLensList } from '@/components/hosted-reviews'
 import { duration } from '@/lib/format'
 import { trpc } from '@/trpc/client'
 import { Badge } from '@/ui/badge/badge'
 import { Companion } from '@/ui/companion/companion'
+import { DisplayRow } from '@/ui/form-layout/form-layout'
 
 export function HostedRunDetail({ id }: { id: string }) {
   const navigate = useNavigate()

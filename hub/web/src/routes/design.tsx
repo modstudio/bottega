@@ -12,7 +12,6 @@ import {
   StatRow,
   StatTile,
 } from '@/components/design-system'
-import { Copyable, DisplayRow, FieldSection, SettingBlock } from '@/components/fields'
 import { Sheet } from '@/components/sheet'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/table'
 import { Tabs, TabsList, TabsTrigger } from '@/components/tabs'
@@ -20,6 +19,7 @@ import { Badge } from '@/ui/badge/badge'
 import { Button } from '@/ui/button/button'
 import { Dialog } from '@/ui/dialog/dialog'
 import { Input } from '@/ui/field/input'
+import { Copyable, DisplayRow, FieldSection, SettingBlock } from '@/ui/form-layout/form-layout'
 import { Select } from '@/ui/listbox/select'
 import { Segmented } from '@/ui/segmented/segmented'
 

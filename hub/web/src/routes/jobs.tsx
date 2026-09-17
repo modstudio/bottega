@@ -3,11 +3,11 @@ import { createFileRoute, useNavigate } from '@tanstack/react-router'
 import { useMemo, useState } from 'react'
 import { Collection, type CollectionColumn } from '@/components/collection'
 import { PageHeader } from '@/components/design-system'
-import { DisplayRow } from '@/components/fields'
 import { SnapshotHeader } from '@/components/hosted-snapshot'
 import { isHostedMode } from '@/lib/hub-mode'
 import { type JobRow, trpc } from '@/trpc/client'
 import { Companion } from '@/ui/companion/companion'
+import { DisplayRow } from '@/ui/form-layout/form-layout'
 
 export const Route = createFileRoute('/jobs')({
   validateSearch: (search: Record<string, unknown>) => ({

@@ -79,6 +79,7 @@ export const uiLayers: { name: string; folders: string[] }[] = [
       'page-header',
       'project-mark',
       'pagination',
+      'form-layout',
     ],
   },
   { name: 'layout', folders: ['shell', 'table-card', 'toolbar-band', 'companion', 'page'] },

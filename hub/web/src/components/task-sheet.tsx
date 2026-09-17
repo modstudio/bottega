@@ -8,10 +8,10 @@ import { Button } from '@/ui/button/button'
 import { Companion } from '@/ui/companion/companion'
 import { Input } from '@/ui/field/input'
 import { Textarea } from '@/ui/field/textarea'
+import { DisplayRow, FieldSection, SettingBlock } from '@/ui/form-layout/form-layout'
 import { Identifier } from '@/ui/identifier/identifier'
 import { Select } from '@/ui/listbox/select'
 import { ProjectMark, SourceMark } from './design-system'
-import { DisplayRow, FieldSection, SettingBlock } from './fields'
 import { Markdown } from './markdown'
 
 function reasonRows(capabilities: TaskRecordResponse['capabilities']) {

@@ -1,9 +1,7 @@
 import { useMutation, useQuery } from '@tanstack/react-query'
 import { createFileRoute, Link } from '@tanstack/react-router'
 import { useEffect, useState } from 'react'
-import { Card, CardContent } from '@/components/card'
 import { EmptyState, PageHeader, SectionTitle } from '@/components/design-system'
-import { FieldSection, SettingBlock } from '@/components/fields'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/table'
 import { useWindowState } from '@/lib/window'
 import { queryClient, type SettingsResponse, trpc } from '@/trpc/client'
@@ -11,6 +9,7 @@ import { Badge } from '@/ui/badge/badge'
 import { Button } from '@/ui/button/button'
 import { Checkbox } from '@/ui/checkbox/checkbox'
 import { Input } from '@/ui/field/input'
+import { FieldSection, Panel, SettingBlock } from '@/ui/form-layout/form-layout'
 
 type SettingsData = SettingsResponse['data']
 type Report = SettingsData['report']
@@ -134,8 +133,8 @@ function SettingsPage() {
       ) : null}
       {data && form ? (
         <>
-          <Card className="mb-6 max-w-[640px] rounded-none">
-            <CardContent className="space-y-4 p-4">
+          <Panel className="mb-6 max-w-[640px]">
+            <div className="space-y-4">
               <FieldSection
                 title="Schedule and delivery"
                 description="What the daily report sends, and where it goes."
@@ -268,8 +267,8 @@ function SettingsPage() {
                   <span className="text-sm text-muted-foreground">{said}</span>
                 </div>
               </FieldSection>
-            </CardContent>
-          </Card>
+            </div>
+          </Panel>
 
           <div className="max-w-[640px]">
             <SectionTitle
@@ -278,8 +277,8 @@ function SettingsPage() {
               Delivery
             </SectionTitle>
           </div>
-          <Card className="mb-6 max-w-[640px] rounded-none">
-            <CardContent className="p-4">
+          <Panel className="mb-6 max-w-[640px]">
+            <div>
               <div className="text-sm">
                 <Badge tone={data.secrets.smtpPassword.resolves ? 'success' : 'error'}>
                   {data.secrets.smtpPassword.resolves ? 'password resolves' : 'password missing'}
@@ -290,8 +289,8 @@ function SettingsPage() {
                 No secret is stored in hub.db. This holds a reference; the password stays in the
                 login keychain, and the page is only ever told whether it resolves.
               </p>
-            </CardContent>
-          </Card>
+            </div>
+          </Panel>
 
           <div className="max-w-[640px]">
             <SectionTitle>Recent sends</SectionTitle>
@@ -345,16 +344,16 @@ function SettingsPage() {
               Projects
             </SectionTitle>
           </div>
-          <Card className="max-w-[640px] rounded-none">
-            <CardContent className="flex items-center justify-between gap-4 p-4">
+          <Panel className="max-w-[640px]">
+            <div className="flex items-center justify-between gap-4">
               <p className="text-sm text-muted-foreground">
                 Read only. Hub cannot write the orchestrator register.
               </p>
               <Button size="sm" render={<Link to="/projects" />}>
                 View projects
               </Button>
-            </CardContent>
-          </Card>
+            </div>
+          </Panel>
         </>
       ) : null}
     </section>
