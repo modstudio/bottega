@@ -398,18 +398,6 @@ realPostgres('RLS proof against real Postgres', () => {
   })
 
   registerInvitationAuthProofs(psql, actorUrl!, succeeds, SIGN_UP_AUTH.password)
-  registerProjectSpaceProofs({
-    actorUrl: actorUrl!,
-    actorRole: RECORD_ACTOR_ROLE,
-    machineId: MACHINE_A,
-    userId: OPERATOR_USER_ID,
-    firstSpaceId: SPACE_A,
-    secondSpaceId: SPACE_B,
-    otherRunId: RUN_B,
-    token: () => tokenA,
-    setToken: (token) => recordSession.setToken(token),
-    asSpace,
-  })
 
   test('CLI sign-up creates one owner membership and bearer identity is not interchangeable', async () => {
     expect(cliOutput).toEqual(SIGN_UP_CLI_OUTPUT)
@@ -428,6 +416,19 @@ realPostgres('RLS proof against real Postgres', () => {
     const auth = recordAuth(actorUrl!)
     expect((await auth.api.getSession({ headers: bearerHeaders(tokenA) }))?.user.id).toBe(authUserA)
     expect((await auth.api.getSession({ headers: bearerHeaders(tokenB) }))?.user.id).toBe(authUserB)
+  })
+
+  registerProjectSpaceProofs({
+    actorUrl: actorUrl!,
+    actorRole: RECORD_ACTOR_ROLE,
+    machineId: MACHINE_A,
+    userId: OPERATOR_USER_ID,
+    firstSpaceId: SPACE_A,
+    secondSpaceId: SPACE_B,
+    otherRunId: RUN_B,
+    token: () => tokenA,
+    setToken: (token) => recordSession.setToken(token),
+    asSpace,
   })
 
   test('sign-in repairs a missing personal space before making it active', async () => {
