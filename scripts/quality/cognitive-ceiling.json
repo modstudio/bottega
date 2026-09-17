@@ -59,8 +59,8 @@
   {
     "file": "hub/src/serve.ts",
     "function": "view",
-    "line": 290,
-    "score": 25
+    "line": 355,
+    "score": 20
   },
   {
     "file": "hub/web/src/components/task-sheet.tsx",
