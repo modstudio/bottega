@@ -124,6 +124,42 @@ export const hubTaskStatusEvent = pgTable.withRLS(
   ],
 )
 
+export const hubNote = pgTable.withRLS(
+  'hub_note',
+  {
+    id: identity(), spaceId: spaceIdentity(), projectName: text('project_name').notNull(),
+    number: bigint({ mode: 'number' }).notNull(), project: text().notNull(), text: text().notNull(),
+    area: text(), anchors: text().notNull(), sightings: integer().notNull().default(1),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull(),
+    lastSeenAt: timestamp('last_seen_at', { withTimezone: true }).notNull(),
+    staleAt: timestamp('stale_at', { withTimezone: true }), staleReason: text('stale_reason'),
+    promotedTask: text('promoted_task'), updatedAt: updatedAt(),
+    deletedAt: timestamp('deleted_at', { withTimezone: true }),
+  },
+  (table) => [
+    unique('hub_note_space_number_unique').on(table.spaceId, table.number),
+    check('hub_note_sightings_check', sql`${table.sightings} > 0`),
+    ...tenantPolicies('hub_note', table.spaceId),
+  ],
+)
+
+export const hubNoteAcknowledgement = pgTable.withRLS(
+  'hub_note_acknowledgement',
+  {
+    id: identity(), spaceId: spaceIdentity(), projectName: text('project_name').notNull(),
+    noteId: uuid('note_id').notNull(), noteNumber: bigint('note_number', { mode: 'number' }).notNull(),
+    sessionId: text('session_id').notNull(),
+    acknowledgedAt: timestamp('acknowledged_at', { withTimezone: true }).notNull(),
+    sightings: integer().notNull(), createdAt: timestamp('created_at', { withTimezone: true }).notNull(),
+    updatedAt: updatedAt(), deletedAt: timestamp('deleted_at', { withTimezone: true }),
+  },
+  (table) => [
+    unique('hub_note_ack_space_session_unique').on(table.spaceId, table.noteId, table.sessionId),
+    check('hub_note_ack_sightings_check', sql`${table.sightings} > 0`),
+    ...tenantPolicies('hub_note_acknowledgement', table.spaceId),
+  ],
+)
+
 export const hubInterval = pgTable.withRLS(
   'hub_interval',
   {

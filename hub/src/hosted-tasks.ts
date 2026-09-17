@@ -163,7 +163,14 @@ export async function createHostedTask(
     updated_at?: string
   },
 ) {
-  return tenant(url, identity, async (tx) => {
+  return tenant(url, identity, (tx) => createHostedTaskInTransaction(tx, identity, input))
+}
+
+export async function createHostedTaskInTransaction(
+  tx: SQL,
+  identity: TaskIdentity,
+  input: Parameters<typeof createHostedTask>[2],
+) {
     const project = rows<{ id: string; key_prefixes: string[] }>(
       await tx`
       SELECT id,key_prefixes FROM project WHERE space_id=${identity.spaceId}::uuid
@@ -203,8 +210,7 @@ export async function createHostedTask(
         ${input.title},${category},${category},${input.parent ?? null},${input.body ?? null},${openedAt}::timestamptz,
         ${closedAt}::timestamptz,'local',${openedAt}::timestamptz,${updatedAt}::timestamptz,now(),${updatedAt}::timestamptz) RETURNING *`,
     )
-    return inserted[0]!
-  })
+  return inserted[0]!
 }
 
 export async function patchHostedTask(
