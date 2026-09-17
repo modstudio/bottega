@@ -32,13 +32,19 @@ test('fixture question selection removes only documented sessions whose run is a
   ).toEqual([row(1, 'sess-a'), row(2, 'sess-b'), row(3, 'sess-old'), row(4, 'sess-probe')])
 })
 
-test('listed fixture interval with unknown run is selected (mutation: skip the unknown-run check)', () => {
+test('listed fixture interval with explicit unknown answer is selected (mutation: skip the unknown-run check)', () => {
   expect(
     fixtureIntervalsWithoutRuns(
       [{ id: 1, source: 'orch', ref: 'orch:9103' }],
       new Map([[9103, { id: 9103, status: 'unknown', unknown: true }]]),
     ),
   ).toEqual([{ id: 1, source: 'orch', ref: 'orch:9103' }])
+})
+
+test('listed fixture interval with no answer is kept (mutation: treat a missing answer as unknown)', () => {
+  expect(
+    fixtureIntervalsWithoutRuns([{ id: 1, source: 'orch', ref: 'orch:9103' }], new Map()),
+  ).toEqual([])
 })
 
 test('listed fixture interval with known run is kept (mutation: select every listed ref)', () => {

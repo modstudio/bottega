@@ -53,7 +53,7 @@ export function fixtureIntervalsWithoutRuns(
     const parsed = runRef(interval.ref)
     if (!parsed) return false
     const answer = answersById.get(parsed.turn ?? parsed.root)
-    return answer == null || (typeof answer === 'object' && answer !== null && 'unknown' in answer)
+    return typeof answer === 'object' && answer !== null && 'unknown' in answer
   })
 }
 
@@ -71,7 +71,6 @@ export async function reclaimFixtureQuestions(
       (row) => row.ref,
     ),
   )
-  const selected = fixtureQuestionsWithoutRuns(questions, refs)
   const intervals = database
     .query('SELECT id, source, ref FROM interval ORDER BY id')
     .all() as FixtureInterval[]
@@ -87,7 +86,16 @@ export async function reclaimFixtureQuestions(
     ),
   ]
   const answers = await readRunsById(runIds)
-  const selectedIntervals = fixtureIntervalsWithoutRuns(listed, indexRunAnswers(answers))
+  const answersById = indexRunAnswers(answers)
+  const missingRunIds = runIds.filter((id) => !answersById.has(id))
+  if (missingRunIds.length) {
+    throw new Error(
+      `orch's answer was incomplete; missing run ids: ${missingRunIds.join(', ')}; nothing was removed`,
+    )
+  }
+  const selectedIntervals = fixtureIntervalsWithoutRuns(listed, answersById)
+  for (const interval of selectedIntervals) refs.delete(interval.ref)
+  const selected = fixtureQuestionsWithoutRuns(questions, refs)
   if (!dryRun && (selected.length || selectedIntervals.length)) {
     writeTransaction((connection) => {
       const removeQuestion = connection.query('DELETE FROM question WHERE question_id=?')
