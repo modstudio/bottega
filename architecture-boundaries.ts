@@ -1,16 +1,26 @@
 import { dirname, normalize } from 'node:path'
 
-type ImportBoundary = { name: string; file: string; allowed: string[]; reason: string }
+type ImportBoundary = {
+  name: string
+  file: string
+  allowed: string[]
+  typeOnlyAllowed: string[]
+  reason: string
+}
 
 const boundary = (
   name: string,
   file: string,
   allowed: string[],
   reason: string,
+  typeOnlyAllowed: string[] = [],
 ): ImportBoundary => ({
   name,
   file,
   allowed: allowed.map((target) =>
+    target.startsWith('.') ? normalize(`${dirname(file)}/${target}`) : target,
+  ),
+  typeOnlyAllowed: typeOnlyAllowed.map((target) =>
     target.startsWith('.') ? normalize(`${dirname(file)}/${target}`) : target,
   ),
   reason,
@@ -384,8 +394,9 @@ export const importBoundaries: ImportBoundary[] = [
   boundary(
     'mcp-preflight-boundary',
     'orchestrator/src/mcp-preflight.ts',
-    ['./agent-registry.ts', './jobs.ts', './projects.ts', './run-process.ts', './contract.ts'],
+    ['./agent-registry.ts', './jobs.ts', './projects.ts', './run-process.ts'],
     'Keep MCP preflight independent of execution, transport, routing, and mutation.',
+    ['./contract.ts'],
   ),
   boundary(
     'metric-commands-boundary',
@@ -451,6 +462,12 @@ export const importBoundaries: ImportBoundary[] = [
     'shared/record/schema-run.ts',
     ['drizzle-orm', 'drizzle-orm/pg-core', './schema.ts'],
     'Enforce the hosted run schema concern boundary.',
+  ),
+  boundary(
+    'postgres-schema-snapshots-boundary',
+    'shared/record/schema-snapshots.ts',
+    ['drizzle-orm', 'drizzle-orm/pg-core', './schema.ts'],
+    'Enforce the hosted orchestrator snapshot schema concern boundary.',
   ),
   boundary(
     'process-liveness-boundary',
@@ -534,12 +551,7 @@ export const importBoundaries: ImportBoundary[] = [
   boundary(
     'record-api-client-boundary',
     'orchestrator/src/record-api-client.ts',
-    [
-      './doc-write-allowed.ts',
-      './record-auth.ts',
-      './record-session.ts',
-      './record-snapshots.ts',
-    ],
+    ['./doc-write-allowed.ts', './record-auth.ts', './record-session.ts', './record-snapshots.ts'],
     'Enforce the record API client concern boundary.',
   ),
   boundary(
@@ -597,6 +609,20 @@ export const importBoundaries: ImportBoundary[] = [
     'Keep hosted project record access isolated from other production modules.',
   ),
   boundary(
+    'record-publish-boundary',
+    'orchestrator/src/record-publish.ts',
+    [
+      './agent-commands.ts',
+      './health-commands.ts',
+      './job-commands.ts',
+      './machine-identity.ts',
+      './record-api-client.ts',
+      './record-snapshots.ts',
+      './serve.ts',
+    ],
+    'Enforce that snapshot publishing composes only the existing view services and record client.',
+  ),
+  boundary(
     'record-push-docs-boundary',
     'orchestrator/src/record-push-docs.ts',
     ['./db.ts', './record-api-client.ts', './doc-write-allowed.ts'],
@@ -613,6 +639,12 @@ export const importBoundaries: ImportBoundary[] = [
     'orchestrator/src/record-runs.ts',
     ['bun'],
     'Enforce the record-runs concern boundary.',
+  ),
+  boundary(
+    'record-snapshots-boundary',
+    'orchestrator/src/record-snapshots.ts',
+    ['bun', '../../shared/record/schema.ts'],
+    'Enforce the hosted snapshot service concern boundary.',
   ),
   boundary(
     'record-sync-boundary',
@@ -901,6 +933,7 @@ export const importBoundaries: ImportBoundary[] = [
       './checkout-identity.ts',
       './db.ts',
       './git-environment.ts',
+      './merged-pull-request.ts',
       './projects.ts',
       './review-evidence-sql.ts',
       './branch-state.ts',
@@ -927,6 +960,7 @@ export const importBoundaries: ImportBoundary[] = [
       './worktree-types.ts',
     ],
     'Keep attribution and extraction independent of lifecycle policy and transports.',
+    ['./worktree.ts'],
   ),
   boundary(
     'worktree-mcp-boundary',

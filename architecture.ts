@@ -43,8 +43,12 @@ const concerns: ConcernManifest = {
 export const modules: ArchitectureModule[] = [
   module('orchestrator/src/artifact-paths.ts', ['node:path']),
   module('orchestrator/src/branch-landing-record.ts', ['./branch-state.ts']),
-  module('orchestrator/src/branch-state.ts', []),
-  module('orchestrator/src/other-branch-state.ts', ['./branch-state.ts']),
+  module('orchestrator/src/branch-state.ts', ['./merged-pull-request.ts']),
+  module('orchestrator/src/merged-pull-request.ts', ['./git-environment.ts', './projects.ts']),
+  module('orchestrator/src/other-branch-state.ts', [
+    './branch-state.ts',
+    './merged-pull-request.ts',
+  ]),
   module('orchestrator/src/branch-settlement.ts', [
     './db.ts',
     './evidence-query.ts',
@@ -56,6 +60,7 @@ export const modules: ArchitectureModule[] = [
     './branch-settlement.ts',
     './db.ts',
     './git-environment.ts',
+    './merged-pull-request.ts',
     './other-branch-state.ts',
     './projects.ts',
     './task-branch.ts',
@@ -131,12 +136,6 @@ export const modules: ArchitectureModule[] = [
   module('orchestrator/src/monitor-types.ts', ['./review-vocabulary.ts']),
   module('orchestrator/src/postgres-migrate.ts', []),
   module('shared/record/schema.ts', ['../brand.ts']),
-  module('shared/record/schema-auth.ts', ['./schema.ts']),
-  module('shared/record/schema-run.ts', ['./schema.ts']),
-  module('shared/record/schema-review.ts', ['./schema.ts']),
-  module('shared/record/schema-landing.ts', ['./schema.ts']),
-  module('shared/record/schema-docs.ts', ['./schema.ts']),
-  module('shared/record/schema-hub.ts', ['./schema.ts']),
   module('shared/record-session.ts', ['./brand.ts']),
   module('orchestrator/src/record-command.ts', [
     './postgres-migrate.ts',
@@ -160,7 +159,6 @@ export const modules: ArchitectureModule[] = [
     './record-auth.ts',
     './record-session.ts',
   ]),
-  module('orchestrator/src/landing-outbox.ts', ['../../shared/record/schema.ts']),
   module('orchestrator/src/score-outbox.ts', ['../../shared/record/schema.ts']),
   module('orchestrator/src/project-lock.ts', [
     './db.ts',
@@ -223,7 +221,6 @@ export const modules: ArchitectureModule[] = [
     './review.ts',
     './review-outbox.ts',
   ]),
-  module('orchestrator/src/review-outbox.ts', ['./db.ts', '../../shared/record/schema.ts']),
   module('orchestrator/src/review-types.ts', ['./review-vocabulary.ts', './change-identity.ts']),
   module('orchestrator/src/run-alive.ts', []),
   module('orchestrator/src/run-claim.ts', [
@@ -419,7 +416,7 @@ export const modules: ArchitectureModule[] = [
   ]),
   module('orchestrator/src/worktree-tool.ts', ['./worktree-template.ts', './git-environment.ts']),
   module('orchestrator/src/worktree-types.ts', []),
-  module('hub/src/fixture-question-reclaim.ts', ['./db.ts']),
+  module('hub/src/fixture-question-reclaim.ts', ['./db.ts', './orch.ts', './reconcile.ts']),
   module('hub/src/serve-lifecycle.ts', ['../../shared/process-identity.ts']),
 ]
 
@@ -527,8 +524,22 @@ export function architectureRules() {
       severity: 'error' as const,
       comment: entry.reason,
       from: { path: exactArchitecturePath(entry.file) },
-      to: { pathNot: entry.allowed.map(architectureDependencyPath) },
+      to: {
+        pathNot: [...entry.allowed, ...entry.typeOnlyAllowed].map(architectureDependencyPath),
+      },
     })),
+    ...importBoundaries.flatMap((entry) =>
+      entry.typeOnlyAllowed.map((target) => ({
+        name: `import-${entry.name}-${target.replace(/[^a-z0-9]+/gi, '-')}-is-type-only`,
+        severity: 'error' as const,
+        comment: entry.reason,
+        from: { path: exactArchitecturePath(entry.file) },
+        to: {
+          path: architectureDependencyPath(target),
+          dependencyTypesNot: ['type-only'],
+        },
+      })),
+    ),
     {
       name: 'import-cli-boundary',
       severity: 'error',
@@ -586,7 +597,7 @@ export function dependencyCruiserConfig() {
       tsConfig: { fileName: join(import.meta.dir, 'orchestrator/tsconfig.json') },
       tsPreCompilationDeps: true,
       doNotFollow: { path: 'node_modules' },
-      exclude: { path: '(^|/)node_modules/|^hub/web/src/routeTree\\.gen\\.ts$' },
+      exclude: { path: '^hub/web/src/routeTree\\.gen\\.ts$' },
     },
   }
 }
