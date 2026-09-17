@@ -4,11 +4,11 @@
  * Must not know run state, transports, routing, or database mutation.
  */
 
-import { AGENTS } from './agent/agent-registry.ts'
-import type { CanonSource } from './contract/contract.ts'
-import { job } from './jobs.ts'
-import { projectAt, validateStoredProjectSettings } from './projects.ts'
-import { childEnv } from './run-process.ts'
+import { AGENTS } from '../agent/agent-registry.ts'
+import type { CanonSource } from '../contract/contract.ts'
+import { job } from '../jobs.ts'
+import { projectAt, validateStoredProjectSettings } from '../projects.ts'
+import { childEnv } from '../run-process.ts'
 
 export type McpConnection = {
   server: string

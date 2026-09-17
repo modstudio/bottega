@@ -12,7 +12,7 @@ import { sessionId } from '../db.ts'
 import type { DetachSpec } from '../failover.ts'
 import { JOBS, job } from '../jobs.ts'
 import { ensureLocalHealth } from '../local-host.ts'
-import type { McpRequest } from '../mcp-preflight.ts'
+import type { McpRequest } from '../mcp/mcp-preflight.ts'
 import { stackAt } from '../projects.ts'
 import { implicitReviewWarning } from '../review-target.ts'
 import {

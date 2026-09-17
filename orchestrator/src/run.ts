@@ -45,7 +45,7 @@ import {
   probeRequestedMcp,
   requestedMcpMode,
   storedMcpRequest,
-} from './mcp-preflight.ts'
+} from './mcp/mcp-preflight.ts'
 import {
   mcpCallEvidence,
   mcpConfigAllowlist,
@@ -54,7 +54,7 @@ import {
   readMcpConfig,
   storedMcpProbe,
   wrongProjectReason,
-} from './mcp-probe.ts'
+} from './mcp/mcp-probe.ts'
 import { projectAt, projectByName, stackAt, type WorktreeTool } from './projects.ts'
 import { recipeNotes } from './recipe/recipe.ts'
 import {
@@ -896,7 +896,7 @@ export async function run(opts: {
       const namesSeen = namesSeenAt(cwd)
       const mismatched = wrongProjectReason(mcpServerName, namesSeen)
       if (mismatched) {
-        const recorded: import('./mcp-probe.ts').McpProbeResult = {
+        const recorded: import('./mcp/mcp-probe.ts').McpProbeResult = {
           server: mcpServerName,
           tool: 'tools/list',
           ok: false,

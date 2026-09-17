@@ -381,19 +381,19 @@
     "score": 16
   },
   {
-    "file": "orchestrator/src/mcp-probe.ts",
+    "file": "orchestrator/src/mcp/mcp-probe.ts",
     "function": "parseMcpConfig",
     "line": 71,
     "score": 19
   },
   {
-    "file": "orchestrator/src/mcp-probe.ts",
+    "file": "orchestrator/src/mcp/mcp-probe.ts",
     "function": "probeMcpServer",
     "line": 266,
     "score": 22
   },
   {
-    "file": "orchestrator/src/mcp.ts",
+    "file": "orchestrator/src/mcp/mcp.ts",
     "function": "fileIssue",
     "line": 162,
     "score": 34

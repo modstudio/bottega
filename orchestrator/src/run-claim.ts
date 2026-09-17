@@ -29,8 +29,8 @@ import {
   mcpAttachRefusal,
   mcpConnectionFor,
   storedMcpRequest,
-} from './mcp-preflight.ts'
-import { readMcpConfig, wrongProjectReason } from './mcp-probe.ts'
+} from './mcp/mcp-preflight.ts'
+import { readMcpConfig, wrongProjectReason } from './mcp/mcp-probe.ts'
 import { withWorktreeCreateLock, withWorktreeLease } from './project-lock.ts'
 import { projectAt, stackAt } from './projects.ts'
 import { retargetRepositoryPromptForDispatch } from './prompt-retarget.ts'

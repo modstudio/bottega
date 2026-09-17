@@ -1,8 +1,9 @@
 import { afterEach, describe, expect, test } from 'bun:test'
 import { chmodSync, rmSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
-import { dir } from '../test/fixtures/store.ts'
-import { AGENTS } from './agent/agent-registry.ts'
+import { dir } from '../../test/fixtures/store.ts'
+import { AGENTS } from '../agent/agent-registry.ts'
+import { upsertProject, type WorktreeTool } from '../projects.ts'
 import {
   assertGrokTrustEligible,
   canonSourceFor,
@@ -12,7 +13,6 @@ import {
   mcpRequestFromStored,
   preflightMcp,
 } from './mcp-preflight.ts'
-import { upsertProject, type WorktreeTool } from './projects.ts'
 
 const fixtureFiles: string[] = []
 const fixtureFile = (name: string) => {

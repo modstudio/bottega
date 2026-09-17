@@ -4,7 +4,7 @@ import { existsSync, realpathSync } from 'node:fs'
 import type { DetachSpec } from '../failover.ts'
 import { isReaderJob, job, reclaimsTreeByDefault, resolveJobTimeoutMs } from '../jobs.ts'
 import { keepTreeExemptionFromOption } from '../keep-tree-hold.ts'
-import type { McpRequest } from '../mcp-preflight.ts'
+import type { McpRequest } from '../mcp/mcp-preflight.ts'
 import {
   projectAt,
   projectByName,

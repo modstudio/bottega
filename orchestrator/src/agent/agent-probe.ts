@@ -112,7 +112,7 @@ export async function probeAgent(name: string): Promise<RegistrationProbeResult>
     }),
   )
   const { transportFor, valueMatchesStrictSchema } = await import('../transport/transport.ts')
-  const { mintStdioPingServer, mcpToolCallsObservable } = await import('../mcp-probe.ts')
+  const { mintStdioPingServer, mcpToolCallsObservable } = await import('../mcp/mcp-probe.ts')
   const { JOBS } = await import('../jobs.ts')
   mintStdioPingServer(join(scratch, 'repo'))
   const declared = row.jobs ? (JSON.parse(row.jobs) as string[]) : null

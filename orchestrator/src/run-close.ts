@@ -24,7 +24,7 @@ import {
 } from './failure/failure.ts'
 import { type Job, reclaimsTreeByDefault } from './jobs.ts'
 import type { KeepTreeExemption } from './keep-tree-hold.ts'
-import { mcpRequestFromStored } from './mcp-preflight.ts'
+import { mcpRequestFromStored } from './mcp/mcp-preflight.ts'
 import { resolveBranchRef, stackAt } from './projects.ts'
 import { CALIBRATION_SUFFIX_RESERVE_BYTES } from './review-calibration.ts'
 import { pick } from './route/route.ts'

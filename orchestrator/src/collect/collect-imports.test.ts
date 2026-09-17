@@ -9,7 +9,7 @@ const DEGRADED_COLLECTION_GRAPH = [
   'clock.ts',
   'collect/collect.ts',
   'failure/failure.ts',
-  'mcp-probe.ts',
+  'mcp/mcp-probe.ts',
   'orch.ts',
   'outcome.ts',
   'result-output.ts',

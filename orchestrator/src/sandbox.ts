@@ -16,7 +16,7 @@ import {
   SandboxManager,
 } from '@anthropic-ai/sandbox-runtime'
 import { ROOT } from './db.ts'
-import { disabledProjectMcpServers } from './mcp-probe.ts'
+import { disabledProjectMcpServers } from './mcp/mcp-probe.ts'
 import type { Project } from './projects.ts'
 
 export type SandboxRuntimeConfig = {
