@@ -423,8 +423,8 @@ export const importBoundaries: ImportBoundary[] = [
   ),
   boundary(
     'port-commands-boundary',
-    'orchestrator/src/port-commands.ts',
-    ['node:fs', 'node:path', './db.ts', './porting.ts', './porting-import.ts', './projects.ts'],
+    'orchestrator/src/porting/port-commands.ts',
+    ['node:fs', 'node:path', '../db.ts', './porting.ts', './porting-import.ts', '../projects.ts'],
     'Keep port commands independent of runs, routing, transports, the CLI, and worktrees.',
   ),
   boundary(

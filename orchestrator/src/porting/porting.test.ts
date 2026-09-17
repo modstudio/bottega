@@ -1,5 +1,6 @@
 import { describe, expect, test } from 'bun:test'
-import { db } from './db.ts'
+import { db } from '../db.ts'
+import { projects, upsertProject } from '../projects.ts'
 import {
   addDoctrineRule,
   addPair,
@@ -15,7 +16,6 @@ import {
   setBaseline,
   setLedgerRef,
 } from './porting.ts'
-import { projects, upsertProject } from './projects.ts'
 
 const listPairs = () => db().query('SELECT * FROM port_pair ORDER BY id').all() as PortPair[]
 

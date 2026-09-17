@@ -42,7 +42,7 @@ import {
   retireDoctrineRule,
   setBaseline,
   setLedgerRef,
-} from './porting.ts'
+} from './porting/porting.ts'
 import { projectAt, projectByName, projects } from './projects.ts'
 import { getReview, listReviews } from './review.ts'
 import { composeWorkflow, getWorkflowStep, listWorkflows } from './workflows.ts'
