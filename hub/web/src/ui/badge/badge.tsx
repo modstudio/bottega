@@ -7,7 +7,7 @@ import {
   TriangleAlert,
 } from 'lucide-react'
 import type { HTMLAttributes, ReactNode, Ref } from 'react'
-import { statusLabel } from '@/lib/format'
+import { titleCase } from '../text/title-case'
 
 export type Tone = 'neutral' | 'success' | 'warning' | 'error' | 'info' | 'progress'
 
@@ -57,7 +57,7 @@ export function Badge({
   ...props
 }: BadgeProps) {
   const Icon = icon === false ? null : (icon ?? toneIcons[tone])
-  const label = typeof children === 'string' && !identifier ? statusLabel(children) : children
+  const label = typeof children === 'string' && !identifier ? titleCase(children) : children
   return (
     <span
       {...props}

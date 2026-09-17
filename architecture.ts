@@ -40,6 +40,51 @@ const concerns: ConcernManifest = {
   ],
 }
 
+/**
+ * The hub dashboard's component layers, lowest first. A folder under
+ * `hub/web/src/ui/` belongs to exactly one layer and may import only its own
+ * layer or a lower one. `behavior` holds hooks and pure helpers with no markup;
+ * `primitives` are single controls; `overlays` open above the page; `patterns`
+ * compose controls into one reusable piece; `layout` arranges a screen.
+ */
+export const uiLayers: { name: string; folders: string[] }[] = [
+  { name: 'behavior', folders: ['state', 'dom', 'text'] },
+  {
+    name: 'primitives',
+    folders: [
+      'badge',
+      'identifier',
+      'button',
+      'field',
+      'checkbox',
+      'switch',
+      'spinner',
+      'kbd',
+      'separator',
+    ],
+  },
+  {
+    name: 'overlays',
+    folders: ['popover', 'tooltip', 'menu', 'listbox', 'dialog', 'sheet', 'toast'],
+  },
+  {
+    name: 'patterns',
+    folders: [
+      'tabs',
+      'segmented',
+      'filter',
+      'empty-state',
+      'stat',
+      'table',
+      'page-header',
+      'project-mark',
+    ],
+  },
+  { name: 'layout', folders: ['shell', 'table-card', 'toolbar-band', 'companion', 'page'] },
+]
+
+const uiFolders = (folders: string[]) => `^hub/web/src/ui/(?:${folders.join('|')})/`
+
 export const modules: ArchitectureModule[] = [
   module('orchestrator/src/artifact-paths.ts', ['node:path']),
   module('orchestrator/src/branch/branch-landing-record.ts', ['./branch-state.ts']),
@@ -555,6 +600,31 @@ export function architectureRules() {
         },
       })),
     ),
+    {
+      name: 'hub-web-ui-is-a-leaf',
+      severity: 'error',
+      comment:
+        'The component library knows nothing of the app: ui/ imports only ui/, React and icons, through relative paths.',
+      from: { path: '^hub/web/src/ui/' },
+      to: { path: '^(?:hub/web/src/(?!ui/)|@/)' },
+    },
+    {
+      name: 'hub-web-ui-folder-has-a-layer',
+      severity: 'error',
+      comment: 'Every ui/ folder is declared in uiLayers in architecture.ts.',
+      from: {
+        path: '^hub/web/src/ui/',
+        pathNot: uiFolders(uiLayers.flatMap((layer) => layer.folders)),
+      },
+      to: {},
+    },
+    ...uiLayers.slice(0, -1).map((layer, index) => ({
+      name: `hub-web-ui-${layer.name}-imports-no-higher-layer`,
+      severity: 'error' as const,
+      comment: `A ${layer.name} folder may import only its own or a lower ui layer.`,
+      from: { path: uiFolders(layer.folders) },
+      to: { path: uiFolders(uiLayers.slice(index + 1).flatMap((higher) => higher.folders)) },
+    })),
     {
       name: 'import-cli-boundary',
       severity: 'error',
