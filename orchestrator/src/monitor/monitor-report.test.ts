@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test'
-import { db } from './db.ts'
+import { db } from '../db.ts'
 import { displayConditions, monitorHistory } from './monitor.ts'
 
 describe('operational monitor reports', () => {

@@ -16,13 +16,13 @@ import {
   MONITOR_CAPABILITY_PATH_ENV,
   MONITOR_CAPABILITY_TOKEN_ENV,
   type MonitorCapability,
-} from '../../shared/monitor-capability.ts'
-import { sessionId } from './db.ts'
-import { failingCanonEvalSlugs } from './evals.ts'
+} from '../../../shared/monitor-capability.ts'
+import { sessionId } from '../db.ts'
+import { failingCanonEvalSlugs } from '../evals.ts'
+import { pidAlive } from '../process-liveness.ts'
 import { displayConditions, formatMonitorPass, monitor, monitorHistory } from './monitor.ts'
 import { claimMonitorNotices, markMonitorNoticesDelivered } from './monitor-notices.ts'
 import type { MonitorNotice } from './monitor-types.ts'
-import { pidAlive } from './process-liveness.ts'
 
 type Options = {
   ackNotices?: string
@@ -84,8 +84,8 @@ function deliveryAuthorized(): boolean {
       executable = words[1]
     if (!executable) return false
     const hooks = new Set([
-      realpathSync(new URL('../hooks/orch-heartbeat.sh', import.meta.url).pathname),
-      realpathSync(new URL('../hooks/session-brief.py', import.meta.url).pathname),
+      realpathSync(new URL('../../hooks/orch-heartbeat.sh', import.meta.url).pathname),
+      realpathSync(new URL('../../hooks/session-brief.py', import.meta.url).pathname),
     ])
     try {
       return hooks.has(realpathSync(executable))

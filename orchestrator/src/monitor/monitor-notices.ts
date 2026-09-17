@@ -1,7 +1,8 @@
 // concern: monitor-notices
 /** Owns monitor notice currentness, claiming, formatting, and delivery acknowledgement. */
 
-import { db, nowIso, writableDb, writeTransaction } from './db.ts'
+import { db, nowIso, writableDb, writeTransaction } from '../db.ts'
+import type { MonitorSeverity } from '../review-vocabulary.ts'
 import {
   askingRuns,
   deadRunningProcessConditions,
@@ -11,7 +12,6 @@ import {
   unscoredRuns,
 } from './monitor-conditions.ts'
 import type { MonitorNotice } from './monitor-types.ts'
-import type { MonitorSeverity } from './review-vocabulary.ts'
 
 const APPEND_ONLY_DELIVERY_KINDS = new Set([
   'ghost-open-interval',
