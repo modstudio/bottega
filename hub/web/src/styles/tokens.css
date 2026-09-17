@@ -1,0 +1,281 @@
+/*
+ * Hub design tokens.
+ *
+ * Three layers. Components and pages use only layer 2 (meanings) and layer 3
+ * (measurements), through the Tailwind names declared in theme.css. Layer 1
+ * holds raw values and is never referenced outside this file.
+ *
+ * Neutrals follow Midday's warm near-greys. Status anchors are Stopal's root
+ * status hues, converted to OKLCH. Dark mode overrides layer 2 only.
+ */
+
+/* Layer 1: raw values. */
+:root {
+  /* Neutral ramp, step jobs per Radix: 1-2 page, 3-5 control rest/hover/pressed,
+     6-8 borders (8 = focus), 9-10 solid, 11-12 text. */
+  --n-light-1: oklch(1 0 90);
+  --n-light-2: oklch(0.972 0.004 91);
+  --n-light-3: oklch(0.956 0.003 85);
+  --n-light-4: oklch(0.935 0.004 85);
+  --n-light-5: oklch(0.919 0.006 85);
+  --n-light-6: oklch(0.905 0.004 91);
+  --n-light-7: oklch(0.887 0.004 91);
+  --n-light-8: oklch(0.8 0.004 91);
+  --n-light-9: oklch(0.182 0 90);
+  --n-light-10: oklch(0.3 0 90);
+  --n-light-11: oklch(0.492 0 90);
+  --n-light-12: oklch(0.182 0 90);
+
+  --n-dark-1: oklch(0.158 0 90);
+  --n-dark-2: oklch(0.182 0 90);
+  --n-dark-3: oklch(0.205 0 90);
+  --n-dark-4: oklch(0.227 0 90);
+  --n-dark-5: oklch(0.25 0 90);
+  --n-dark-6: oklch(0.227 0 90);
+  --n-dark-7: oklch(0.29 0 90);
+  --n-dark-8: oklch(0.42 0 90);
+  --n-dark-9: oklch(0.985 0 90);
+  --n-dark-10: oklch(0.9 0 90);
+  --n-dark-11: oklch(0.62 0 90);
+  --n-dark-12: oklch(0.985 0 90);
+
+  /* Status anchors (Stopal), light then dark. */
+  --success-light: oklch(0.599 0.158 149.7);
+  --success-dark: oklch(0.779 0.209 149.4);
+  --warning-light: oklch(0.669 0.159 58);
+  --warning-dark: oklch(0.779 0.155 64.7);
+  --error-light: oklch(0.521 0.208 24.3);
+  --error-dark: oklch(0.646 0.223 18.4);
+  --info-light: oklch(0.5 0.267 273.8);
+  /* Lighter than Stopal's dark info: neither ink nor white passed AA on it. */
+  --info-dark: oklch(0.66 0.19 280.5);
+  --progress-light: oklch(0.573 0.23 316.1);
+  --progress-dark: oklch(0.674 0.177 317.1);
+
+  /* Type: Inter for the interface, IBM Plex Mono for ids, hashes, costs, code. */
+  --family-sans: "Inter Variable", "Inter", system-ui, sans-serif;
+  --family-mono: "IBM Plex Mono", ui-monospace, monospace;
+
+  /* Motion. */
+  --duration-fast: 120ms;
+  --duration-base: 180ms;
+  --duration-slow: 260ms;
+  --motion-ease-standard: cubic-bezier(0.2, 0, 0, 1);
+  --motion-ease-exit: cubic-bezier(0.3, 0, 1, 1);
+}
+
+/* Layer 2: meanings, light. */
+:root {
+  color-scheme: light;
+
+  --surface-page: var(--n-light-1);
+  --surface-raised: var(--n-light-2);
+  --surface-sunken: var(--n-light-3);
+  --surface-overlay: var(--n-light-1);
+  --scrim: oklch(0 0 0 / 0.32);
+  --selection: oklch(0.182 0 90 / 0.1);
+
+  --text-primary: var(--n-light-12);
+  --text-secondary: oklch(0.38 0 90);
+  --text-muted: var(--n-light-11);
+  --text-inverse: var(--n-light-1);
+  --text-disabled: var(--n-light-8);
+  --icon-primary: var(--text-primary);
+  --icon-muted: var(--text-muted);
+  --link: var(--text-primary);
+  --link-hover: var(--text-secondary);
+
+  --border-subtle: var(--n-light-6);
+  --border-default: var(--n-light-7);
+  --border-strong: var(--n-light-8);
+
+  --control-rest: transparent;
+  --control-hover: var(--n-light-3);
+  --control-pressed: var(--n-light-4);
+  --control-selected: var(--n-light-5);
+  --control-disabled: var(--n-light-3);
+
+  /* Accent is ink, as in Midday: the primary action is black in light mode. */
+  --accent-fill: var(--n-light-9);
+  --accent-fill-hover: var(--n-light-10);
+  --accent-on-fill: var(--n-light-1);
+  --accent-surface: var(--n-light-3);
+  --accent-border: var(--n-light-8);
+  --accent-text: var(--n-light-12);
+
+  --focus-color: var(--n-light-9);
+
+  --status-neutral: var(--n-light-11);
+  --status-success: var(--success-light);
+  --status-warning: var(--warning-light);
+  --status-error: var(--error-light);
+  --status-info: var(--info-light);
+  --status-progress: var(--progress-light);
+  /* Derived roles. `mix` sets how far the tint surface sits from the page. */
+  --status-surface-mix: 10%;
+  --status-border-mix: 35%;
+  --status-text-shift: -0.12;
+  /* Text on a solid fill, per role, chosen by measured contrast. */
+  --on-fill-light: oklch(0.99 0.01 90);
+  --on-fill-ink: oklch(0.182 0 90);
+  --status-neutral-on: var(--on-fill-light);
+  --status-success-on: var(--on-fill-ink);
+  --status-warning-on: var(--on-fill-ink);
+  --status-error-on: var(--on-fill-light);
+  --status-info-on: var(--on-fill-light);
+  --status-progress-on: var(--on-fill-light);
+
+  /* Charts: Midday's ink-and-grey series, then the grid and axis. */
+  --chart-1: var(--n-light-9);
+  --chart-2: oklch(0.45 0 90);
+  --chart-3: oklch(0.65 0 90);
+  --chart-4: oklch(0.8 0 90);
+  --chart-grid: var(--n-light-6);
+  --chart-axis: var(--n-light-11);
+
+  --elevation-raised: 0 1px 2px oklch(0 0 0 / 0.06);
+  --elevation-overlay: 0 8px 24px oklch(0 0 0 / 0.12);
+}
+
+/* Layer 2: meanings, dark. Applied by the `.dark` class the head script sets. */
+.dark {
+  color-scheme: dark;
+
+  --surface-page: var(--n-dark-1);
+  --surface-raised: var(--n-dark-2);
+  --surface-sunken: var(--n-dark-3);
+  --surface-overlay: var(--n-dark-2);
+  --scrim: oklch(0 0 0 / 0.56);
+  --selection: oklch(0.985 0 90 / 0.12);
+
+  --text-primary: var(--n-dark-12);
+  --text-secondary: oklch(0.8 0 90);
+  --text-muted: var(--n-dark-11);
+  --text-inverse: var(--n-dark-1);
+  --text-disabled: var(--n-dark-8);
+  --link-hover: var(--text-secondary);
+
+  --border-subtle: var(--n-dark-6);
+  --border-default: var(--n-dark-7);
+  --border-strong: var(--n-dark-8);
+
+  --control-hover: var(--n-dark-3);
+  --control-pressed: var(--n-dark-4);
+  --control-selected: var(--n-dark-5);
+  --control-disabled: var(--n-dark-3);
+
+  --accent-fill: var(--n-dark-9);
+  --accent-fill-hover: var(--n-dark-10);
+  --accent-on-fill: var(--n-dark-1);
+  --accent-surface: var(--n-dark-3);
+  --accent-border: var(--n-dark-8);
+  --accent-text: var(--n-dark-12);
+
+  --focus-color: var(--n-dark-9);
+
+  --status-neutral: var(--n-dark-11);
+  --status-success: var(--success-dark);
+  --status-warning: var(--warning-dark);
+  --status-error: var(--error-dark);
+  --status-info: var(--info-dark);
+  --status-progress: var(--progress-dark);
+  --status-surface-mix: 12%;
+  --status-border-mix: 45%;
+  --status-text-shift: 0.12;
+  --status-neutral-on: var(--on-fill-ink);
+  --status-success-on: var(--on-fill-ink);
+  --status-warning-on: var(--on-fill-ink);
+  --status-error-on: var(--on-fill-ink);
+  --status-info-on: var(--on-fill-ink);
+  --status-progress-on: var(--on-fill-ink);
+
+  --chart-1: var(--n-dark-9);
+  --chart-2: oklch(0.7 0 90);
+  --chart-3: oklch(0.5 0 90);
+  --chart-4: oklch(0.36 0 90);
+  --chart-grid: var(--n-dark-6);
+  --chart-axis: var(--n-dark-11);
+
+  --elevation-raised: 0 1px 2px oklch(0 0 0 / 0.4);
+  --elevation-overlay: 0 8px 24px oklch(0 0 0 / 0.5);
+}
+
+/*
+ * Status triad, derived once for every role so a new role is one anchor.
+ * `[data-status]` sets which anchor `--status` reads; the Tailwind names in
+ * theme.css read the derived values.
+ */
+:root,
+.dark,
+[data-status] {
+  --status: var(--status-neutral);
+  --status-on: var(--status-neutral-on);
+  --status-fill: var(--status);
+  --status-fill-hover: oklch(from var(--status) calc(l - 0.05) c h);
+  --status-on-fill: var(--status-on);
+  --status-text: oklch(from var(--status) calc(l + var(--status-text-shift)) c h);
+  --status-surface: color-mix(
+    in oklch,
+    var(--status) var(--status-surface-mix),
+    var(--surface-page)
+  );
+  --status-border: color-mix(in oklch, var(--status) var(--status-border-mix), var(--surface-page));
+}
+[data-status="success"] {
+  --status: var(--status-success);
+  --status-on: var(--status-success-on);
+}
+[data-status="warning"] {
+  --status: var(--status-warning);
+  --status-on: var(--status-warning-on);
+}
+[data-status="error"] {
+  --status: var(--status-error);
+  --status-on: var(--status-error-on);
+}
+[data-status="info"] {
+  --status: var(--status-info);
+  --status-on: var(--status-info-on);
+}
+[data-status="progress"] {
+  --status: var(--status-progress);
+  --status-on: var(--status-progress-on);
+}
+
+/* Layer 3: shared measurements. Density redefines row and control heights. */
+:root {
+  --control-h-sm: 1.75rem;
+  --control-h-md: 2.25rem;
+  --control-h-lg: 2.75rem;
+  --row-h: 2.75rem;
+  --rail-w: 4.5rem;
+  --rail-w-open: 14rem;
+  --topbar-h: 3.5rem;
+  --sheet-w: min(34rem, 100vw);
+  --sheet-w-wide: min(46rem, 100vw);
+  --sheet-w-document: min(64rem, 100vw);
+  --companion-w: 24rem;
+  --companion-w-min: 18rem;
+  --focus-width: 2px;
+  --focus-offset: 2px;
+
+  --z-sticky: 10;
+  --z-rail: 20;
+  --z-companion: 30;
+  --z-popover: 40;
+  --z-sheet: 50;
+  --z-dialog: 60;
+  --z-toast: 70;
+}
+[data-density="compact"] {
+  --control-h-md: 2rem;
+  --row-h: 2.25rem;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  :root {
+    --duration-fast: 0ms;
+    --duration-base: 0ms;
+    --duration-slow: 0ms;
+  }
+}
