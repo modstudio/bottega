@@ -4,12 +4,12 @@ import { Save, Trash2 } from 'lucide-react'
 import { useState } from 'react'
 import { FieldSection, SettingBlock } from '@/components/fields'
 import { Sheet } from '@/components/sheet'
-import { toast } from '@/components/toaster'
 import { type ProjectRow, queryClient, trpc } from '@/trpc/client'
 import { Button } from '@/ui/button/button'
 import { Checkbox } from '@/ui/checkbox/checkbox'
 import { Input } from '@/ui/field/input'
 import { Textarea } from '@/ui/field/textarea'
+import { toast } from '@/ui/toast/toast'
 
 export const Route = createFileRoute('/projects/$name')({ component: ProjectEditPage })
 

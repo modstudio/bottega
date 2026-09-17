@@ -13,21 +13,15 @@ import {
   StatRow,
   StatTile,
 } from '@/components/design-system'
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogHeader,
-  DialogTitle,
-} from '@/components/dialog'
 import { Copyable, DisplayRow, FieldSection, SettingBlock } from '@/components/fields'
-import { Select } from '@/components/select'
 import { Sheet } from '@/components/sheet'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/table'
 import { Tabs, TabsList, TabsTrigger } from '@/components/tabs'
 import { Badge } from '@/ui/badge/badge'
 import { Button } from '@/ui/button/button'
+import { Dialog } from '@/ui/dialog/dialog'
 import { Input } from '@/ui/field/input'
+import { Select } from '@/ui/listbox/select'
 
 export const Route = createFileRoute('/design')({ component: DesignPage })
 
@@ -130,19 +124,20 @@ function DesignPage() {
       <Button variant="secondary" onClick={() => setDialog(true)}>
         Open dialog
       </Button>
-      <Dialog open={dialog} onOpenChange={setDialog}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>Dialog title</DialogTitle>
-            <DialogDescription>
-              A native dialog rendered through Hub's existing primitive.
-            </DialogDescription>
-          </DialogHeader>
-          <Button variant="primary" onClick={() => setDialog(false)}>
-            Close
-          </Button>
-        </DialogContent>
-      </Dialog>
+      <Dialog
+        open={dialog}
+        onOpenChange={setDialog}
+        title="Archive this doc?"
+        description="Archived docs leave every pack until restored."
+        footer={
+          <>
+            <Button onClick={() => setDialog(false)}>Cancel</Button>
+            <Button variant="primary" onClick={() => setDialog(false)}>
+              Archive
+            </Button>
+          </>
+        }
+      />
 
       <SectionTitle>Table</SectionTitle>
       <div className="border border-border">

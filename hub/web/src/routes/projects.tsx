@@ -4,21 +4,15 @@ import { ChevronRight, FolderGit2, Plus } from 'lucide-react'
 import { useState } from 'react'
 import { Collection, type CollectionColumn } from '@/components/collection'
 import { PageHeader } from '@/components/design-system'
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogHeader,
-  DialogTitle,
-} from '@/components/dialog'
 import { HostedProjects } from '@/components/hosted-projects'
-import { toast } from '@/components/toaster'
 import { isHostedMode } from '@/lib/hub-mode'
 import { type ProjectRow, queryClient, trpc } from '@/trpc/client'
 import { Badge } from '@/ui/badge/badge'
 import { Button } from '@/ui/button/button'
 import { Checkbox } from '@/ui/checkbox/checkbox'
+import { Dialog } from '@/ui/dialog/dialog'
 import { Input } from '@/ui/field/input'
+import { toast } from '@/ui/toast/toast'
 
 function TrackerState({ project }: { project: ProjectRow }) {
   const status = project.trackerStatus
@@ -162,53 +156,53 @@ function ProjectsPage() {
           setAdding(open)
           if (!open) setError(null)
         }}
+        title="Add project"
+        description="Register a checkout through orch."
       >
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>Add project</DialogTitle>
-            <DialogDescription>Register a checkout through orch.</DialogDescription>
-          </DialogHeader>
-          <form className="space-y-4" onSubmit={submit}>
-            <label htmlFor="new-project-path" className="block space-y-1">
-              <span>Path</span>
-              <Input
-                id="new-project-path"
-                required
-                value={path}
-                onChange={(event) => setPath(event.target.value)}
-              />
-            </label>
-            <label htmlFor="new-project-name" className="block space-y-1">
-              <span>Name</span>
-              <Input
-                id="new-project-name"
-                value={name}
-                onChange={(event) => setName(event.target.value)}
-              />
-            </label>
-            <label htmlFor="new-project-stack" className="block space-y-1">
-              <span>Stack</span>
-              <Input
-                id="new-project-stack"
-                value={stack}
-                onChange={(event) => setStack(event.target.value)}
-              />
-            </label>
-            <label htmlFor="new-project-canon" className="flex items-center gap-2">
-              <Checkbox
-                id="new-project-canon"
-                checked={canon}
-                onChange={(event) => setCanon(event.target.checked)}
-              />
-              Canon
-            </label>
-            {error ? <p className="text-destructive">{error}</p> : null}
-            <Button variant="primary" type="submit" disabled={add.isPending}>
-              <Plus size={14} />
-              {add.isPending ? 'Adding...' : 'Add project'}
-            </Button>
-          </form>
-        </DialogContent>
+        <form className="space-y-4" onSubmit={submit}>
+          <label htmlFor="new-project-path" className="block space-y-1">
+            <span>Path</span>
+            <Input
+              id="new-project-path"
+              required
+              value={path}
+              onChange={(event) => setPath(event.target.value)}
+            />
+          </label>
+          <label htmlFor="new-project-name" className="block space-y-1">
+            <span>Name</span>
+            <Input
+              id="new-project-name"
+              value={name}
+              onChange={(event) => setName(event.target.value)}
+            />
+          </label>
+          <label htmlFor="new-project-stack" className="block space-y-1">
+            <span>Stack</span>
+            <Input
+              id="new-project-stack"
+              value={stack}
+              onChange={(event) => setStack(event.target.value)}
+            />
+          </label>
+          <label htmlFor="new-project-canon" className="flex items-center gap-2">
+            <Checkbox
+              id="new-project-canon"
+              checked={canon}
+              onChange={(event) => setCanon(event.target.checked)}
+            />
+            Canon
+          </label>
+          {error ? (
+            <p data-tone="error" className="text-status-text">
+              {error}
+            </p>
+          ) : null}
+          <Button variant="primary" type="submit" disabled={add.isPending}>
+            <Plus size={14} />
+            {add.isPending ? 'Adding...' : 'Add project'}
+          </Button>
+        </form>
       </Dialog>
     </section>
   )

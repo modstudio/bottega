@@ -4,21 +4,15 @@ import { ChevronRight, Plus } from 'lucide-react'
 import { useEffect, useMemo, useState } from 'react'
 import { Collection, type CollectionColumn } from '@/components/collection'
 import { PageHeader } from '@/components/design-system'
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from '@/components/dialog'
 import { HostedDocs } from '@/components/hosted-docs'
 import { Tabs, TabsList, TabsTrigger } from '@/components/tabs'
 import { compactBytes, relativeTime } from '@/lib/format'
 import { isHostedMode } from '@/lib/hub-mode'
 import { queryClient, trpc } from '@/trpc/client'
 import { Button } from '@/ui/button/button'
+import { Dialog } from '@/ui/dialog/dialog'
 import { Input } from '@/ui/field/input'
+import { Select } from '@/ui/listbox/select'
 import { DOC_SCOPE_SUBJECT_KIND, DOC_SCOPES, type DocScope } from '../../../../shared/docs.ts'
 
 export { DOC_SCOPES, type DocScope }
@@ -35,9 +29,10 @@ function bodyBytes(body: string) {
   return new TextEncoder().encode(body).length
 }
 
-const selectClass =
-  'flex h-10 w-full border border-input bg-background px-3 py-2 text-sm ' +
-  'focus-visible:ring-2 focus-visible:ring-ring'
+const deliveryOptions = [
+  { value: 'inject', label: 'Inject' },
+  { value: 'demand', label: 'Demand' },
+]
 
 export const Route = createFileRoute('/docs')({
   component: () => (isHostedMode() ? <HostedDocs /> : <DocsPage />),
@@ -216,44 +211,43 @@ function DocsList() {
         onOpenChange={(open) => {
           if (!open) setCreating(false)
         }}
+        title="New doc"
+        description="Creates an empty body and opens it for editing."
+        footer={
+          <>
+            <Button onClick={() => setCreating(false)}>Cancel</Button>
+            <Button
+              variant="primary"
+              onClick={submitCreate}
+              disabled={create.isPending || !slug || !title || (needsSubject(scope) && !subject)}
+            >
+              Create
+            </Button>
+          </>
+        }
       >
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>New doc</DialogTitle>
-            <DialogDescription>Creates an empty body and opens it for editing.</DialogDescription>
-          </DialogHeader>
-          <label className="block text-sm">
+        <div className="space-y-3">
+          <div className="grid gap-1 text-sm">
             <span className="text-muted-foreground">Scope</span>
-            <select
-              className={selectClass}
+            <Select
+              label="Scope"
               value={scope}
-              onChange={(e) => {
-                const next = e.target.value
+              options={DOC_SCOPES.map((value) => ({ value, label: value }))}
+              onChange={(next) => {
                 if (isScope(next)) setScope(next)
               }}
-            >
-              {DOC_SCOPES.map((s) => (
-                <option key={s} value={s}>
-                  {s}
-                </option>
-              ))}
-            </select>
-          </label>
+            />
+          </div>
           {needsSubject(scope) ? (
-            <label className="block text-sm">
+            <div className="grid gap-1 text-sm">
               <span className="text-muted-foreground">Subject</span>
-              <select
-                className={selectClass}
+              <Select
+                label="Subject"
                 value={subject}
-                onChange={(e) => setSubject(e.target.value)}
-              >
-                {subjectOptions.map((name) => (
-                  <option key={name} value={name}>
-                    {name}
-                  </option>
-                ))}
-              </select>
-            </label>
+                options={subjectOptions.map((name) => ({ value: name, label: name }))}
+                onChange={setSubject}
+              />
+            </div>
           ) : null}
           <label htmlFor="new-doc-slug" className="block text-sm">
             <span className="text-muted-foreground">Slug</span>
@@ -263,31 +257,21 @@ function DocsList() {
             <span className="text-muted-foreground">Title</span>
             <Input id="new-doc-title" value={title} onChange={(e) => setTitle(e.target.value)} />
           </label>
-          <label className="block text-sm">
+          <div className="grid gap-1 text-sm">
             <span className="text-muted-foreground">Delivery</span>
-            <select
-              className={selectClass}
+            <Select
+              label="Delivery"
               value={delivery}
-              onChange={(e) => setDelivery(e.target.value as 'inject' | 'demand')}
-            >
-              <option value="inject">inject</option>
-              <option value="demand">demand</option>
-            </select>
-          </label>
-          {create.error ? <p className="text-destructive">{create.error.message}</p> : null}
-          <DialogFooter>
-            <Button variant="secondary" onClick={() => setCreating(false)}>
-              Cancel
-            </Button>
-            <Button
-              variant="primary"
-              onClick={submitCreate}
-              disabled={create.isPending || !slug || !title || (needsSubject(scope) && !subject)}
-            >
-              Create
-            </Button>
-          </DialogFooter>
-        </DialogContent>
+              options={deliveryOptions}
+              onChange={(next) => setDelivery(next as 'inject' | 'demand')}
+            />
+          </div>
+          {create.error ? (
+            <p data-tone="error" className="text-status-text">
+              {create.error.message}
+            </p>
+          ) : null}
+        </div>
       </Dialog>
     </section>
   )

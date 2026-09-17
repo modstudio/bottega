@@ -25,7 +25,7 @@ export function Textarea({
       rows={rows}
       className={classes(
         controlClasses,
-        'field-sizing-content min-h-20 resize-none px-3 py-2',
+        'field-sizing-content min-h-20 w-full resize-none px-3 py-2',
         code && 'font-mono text-sm',
         bare && 'border-transparent hover:border-transparent focus-visible:border-transparent',
         className,

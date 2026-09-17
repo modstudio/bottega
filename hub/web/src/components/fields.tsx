@@ -1,7 +1,7 @@
 import { Copy } from 'lucide-react'
 import type { ReactNode } from 'react'
 import { IconButton } from '@/ui/button/button'
-import { toast } from './toaster'
+import { toast } from '@/ui/toast/toast'
 
 export function FieldSection({
   title,

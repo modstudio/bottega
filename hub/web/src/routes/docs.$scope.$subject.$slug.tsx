@@ -10,6 +10,7 @@ import { queryClient, trpc } from '@/trpc/client'
 import { Button } from '@/ui/button/button'
 import { Input } from '@/ui/field/input'
 import { Textarea } from '@/ui/field/textarea'
+import { Select } from '@/ui/listbox/select'
 import { DOC_SCOPES, type DocScope, isScope } from './docs'
 
 type DocSearch = { edit?: boolean; id?: string }
@@ -209,17 +210,18 @@ function DocPage() {
 
       {doc.data && editing ? (
         <div>
-          <label className="mb-3 block max-w-xs text-sm">
+          <div className="mb-3 grid max-w-xs gap-1 text-sm">
             <span className="text-muted-foreground">Delivery</span>
-            <select
-              className="flex h-10 w-full border border-input bg-background px-3 py-2 text-sm focus-visible:ring-2 focus-visible:ring-ring"
+            <Select
+              label="Delivery"
               value={delivery}
-              onChange={(e) => setDelivery(e.target.value as 'inject' | 'demand')}
-            >
-              <option value="inject">inject</option>
-              <option value="demand">demand</option>
-            </select>
-          </label>
+              options={[
+                { value: 'inject', label: 'Inject' },
+                { value: 'demand', label: 'Demand' },
+              ]}
+              onChange={(next) => setDelivery(next as 'inject' | 'demand')}
+            />
+          </div>
           <div className="grid grid-cols-2 divide-x divide-border border border-border">
             <Textarea
               value={body}

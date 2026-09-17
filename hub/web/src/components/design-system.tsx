@@ -2,7 +2,6 @@ import { useQuery } from '@tanstack/react-query'
 import { Database, GitCommit, RadioTower } from 'lucide-react'
 import type { CSSProperties, ReactNode } from 'react'
 import { cx } from '@/components/cx'
-import { Select, type SelectOption } from '@/components/select'
 import { collectedTime, relativeTime } from '@/lib/format'
 import { PROJECT_FALLBACK } from '@/lib/project'
 import {
@@ -15,6 +14,7 @@ import {
 } from '@/lib/window'
 import { trpc } from '@/trpc/client'
 import { Button } from '@/ui/button/button'
+import { Select, type SelectOption } from '@/ui/listbox/select'
 
 export function PageHeader({
   title,

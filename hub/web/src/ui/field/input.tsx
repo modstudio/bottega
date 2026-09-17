@@ -18,6 +18,10 @@ type InputProps = Omit<InputHTMLAttributes<HTMLInputElement>, 'className' | 'siz
 
 export function Input({ size = 'md', className, type = 'text', ...props }: InputProps) {
   return (
-    <input {...props} type={type} className={classes(controlClasses, sizes[size], className)} />
+    <input
+      {...props}
+      type={type}
+      className={classes(controlClasses, 'w-full', sizes[size], className)}
+    />
   )
 }

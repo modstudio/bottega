@@ -3,11 +3,11 @@ import { createFileRoute } from '@tanstack/react-router'
 import { useState } from 'react'
 import { EmptyState, PageHeader } from '@/components/design-system'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/table'
-import { toast } from '@/components/toaster'
 import { queryClient, trpc } from '@/trpc/client'
 import { Badge } from '@/ui/badge/badge'
 import { Button } from '@/ui/button/button'
 import { Checkbox } from '@/ui/checkbox/checkbox'
+import { toast } from '@/ui/toast/toast'
 
 export const Route = createFileRoute('/notes')({ component: NotesPage })
 

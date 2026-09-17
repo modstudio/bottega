@@ -157,6 +157,10 @@
     max-width: none;
     max-height: none;
   }
+  /* The page behind a modal dialog does not scroll. */
+  html:has(dialog:modal) {
+    overflow: hidden;
+  }
   dialog::backdrop {
     background: transparent;
   }

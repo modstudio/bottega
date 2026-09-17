@@ -1,17 +1,23 @@
 import { Link } from '@tanstack/react-router'
-import { ArrowUpRight, Copy, Plus, Trash2 } from 'lucide-react'
-import type { ReactNode } from 'react'
+import { ArrowUpRight, ChevronDown, Copy, Pencil, Plus, Trash2 } from 'lucide-react'
+import { type ReactNode, useState } from 'react'
 import { SectionTitle } from '@/components/design-system'
 import { Badge, type Tone } from '@/ui/badge/badge'
 import { Button, IconButton } from '@/ui/button/button'
 import { Checkbox } from '@/ui/checkbox/checkbox'
+import { Dialog } from '@/ui/dialog/dialog'
 import { Input } from '@/ui/field/input'
 import { Textarea } from '@/ui/field/textarea'
 import { Identifier } from '@/ui/identifier/identifier'
 import { Kbd } from '@/ui/kbd/kbd'
+import { Select } from '@/ui/listbox/select'
+import { Menu } from '@/ui/menu/menu'
+import { Popover } from '@/ui/popover/popover'
 import { Separator } from '@/ui/separator/separator'
 import { Spinner } from '@/ui/spinner/spinner'
 import { Switch } from '@/ui/switch/switch'
+import { toast } from '@/ui/toast/toast'
+import { Tooltip } from '@/ui/tooltip/tooltip'
 
 const tones: Tone[] = ['neutral', 'success', 'warning', 'error', 'info', 'progress']
 
@@ -47,6 +53,90 @@ function Row({ label, children }: { label: string; children: ReactNode }) {
     <div className="grid items-center gap-3 border-border-subtle border-b py-3 last:border-b-0 sm:grid-cols-[10rem_1fr]">
       <div className="text-sm text-text-muted">{label}</div>
       <div className="flex min-w-0 flex-wrap items-center gap-2">{children}</div>
+    </div>
+  )
+}
+
+const agents = [
+  { value: 'codex', label: 'Codex' },
+  { value: 'grok', label: 'Grok' },
+  { value: 'local-acp', label: 'Local ACP', note: 'local' },
+  { value: 'qwen-local', label: 'Qwen local', note: 'retired', disabled: true },
+]
+
+function OverlayCatalog() {
+  const [agent, setAgent] = useState('codex')
+  const [dialog, setDialog] = useState(false)
+  return (
+    <div className="border border-border-default px-4">
+      <Row label="Select">
+        <Select label="Agent" value={agent} options={agents} onChange={setAgent} />
+        <Select
+          label="Agent (small)"
+          size="sm"
+          value={agent}
+          options={agents}
+          onChange={setAgent}
+        />
+      </Row>
+      <Row label="Menu">
+        <Menu
+          trigger={
+            <Button>
+              Actions
+              <ChevronDown />
+            </Button>
+          }
+          items={[
+            { label: 'Rename', icon: Pencil, onSelect: () => toast.info('Rename chosen') },
+            { label: 'Duplicate', icon: Copy, onSelect: () => toast.info('Duplicate chosen') },
+            { label: 'Archive', disabled: true, onSelect: () => undefined },
+            {
+              label: 'Delete',
+              icon: Trash2,
+              danger: true,
+              onSelect: () => toast.error('Delete chosen'),
+            },
+          ]}
+        />
+      </Row>
+      <Row label="Popover, Tooltip">
+        <Popover label="Run detail" trigger={<Button>Open popover</Button>}>
+          <p className="m-0 text-text-secondary">
+            Anchored to its trigger; closes on outside click or Escape.
+          </p>
+        </Popover>
+        <Tooltip label="Copies the run id">
+          <IconButton variant="secondary" label="Copy run id">
+            <Copy />
+          </IconButton>
+        </Tooltip>
+      </Row>
+      <Row label="Dialog, Toast">
+        <Button onClick={() => setDialog(true)}>Open dialog</Button>
+        <Button onClick={() => toast.success('Task DEV-674 saved')}>Success toast</Button>
+        <Button onClick={() => toast.error('Could not reach the tracker')}>Error toast</Button>
+        <Dialog
+          open={dialog}
+          onOpenChange={setDialog}
+          title="Archive this doc?"
+          description="Archived docs leave every pack until restored."
+          footer={
+            <>
+              <Button onClick={() => setDialog(false)}>Cancel</Button>
+              <Button
+                variant="primary"
+                onClick={() => {
+                  setDialog(false)
+                  toast.success('Doc archived')
+                }}
+              >
+                Archive
+              </Button>
+            </>
+          }
+        />
+      </Row>
     </div>
   )
 }
@@ -202,6 +292,11 @@ export function DesignCatalog() {
           />
         </Row>
       </div>
+
+      <SectionTitle detail="Browser top layer and anchor positioning; keyboard per WAI-ARIA">
+        Overlays
+      </SectionTitle>
+      <OverlayCatalog />
 
       <SectionTitle>Selection and state</SectionTitle>
       <div className="border border-border-default px-4">
