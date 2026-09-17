@@ -165,6 +165,16 @@ export function registerProjectSpaceProofs(input: {
     )
     expect(destinationFacts.code, destinationFacts.stderr).toBe(0)
     expect(destinationFacts.stdout.split('\n')).toEqual(['1', '1', '1', '1'])
+
+    // The move turns FORCE RLS off per table to rewrite space_id, and this move
+    // COMMITTED, so nothing would put it back. A table left unforced lets its
+    // owner read every space, which is the protection the whole record rests on.
+    const unforced = input.admin(
+      `SELECT count(*) FROM pg_class c JOIN pg_namespace n ON n.oid=c.relnamespace
+       WHERE n.nspname='public' AND c.relkind='r' AND c.relrowsecurity
+         AND NOT c.relforcerowsecurity;`,
+    )
+    expect(unforced.trim()).toBe('0')
   })
 
   test('a task collision is named and a mid-move failure rolls the whole move back', async () => {
