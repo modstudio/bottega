@@ -1008,7 +1008,12 @@ export function pick(
   const notExplored = failingEvals.map(
     (row) => `${row.agent} not explored: failing canon eval ${row.slug}`,
   )
-  const withConstraint = (reason: string) => [reason, ...notExplored].join('; ')
+  // A prefer name with no registry row is skipped, not fatal; name it so the skip is visible.
+  const unresolvedPrefer = j.prefer
+    .filter((name) => !AGENTS[name])
+    .map((name) => `prefer ${name}: no registered agent`)
+  const withConstraint = (reason: string) =>
+    [reason, ...unresolvedPrefer, ...notExplored].join('; ')
   const declaredPreferences = eligible
     .filter((candidate) => candidate.preferred)
     .map((candidate) => candidate.agent)

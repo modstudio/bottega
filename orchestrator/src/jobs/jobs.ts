@@ -380,14 +380,10 @@ export const JOBS: Record<string, Job> = {
 }
 
 /**
- * Every name in a `prefer` list must be a real agent.
+ * Every name in a `prefer` list must appear in MIGRATED_AGENT_NAMES.
  *
- * `pick()` skips a name it cannot find, so a stale entry degrades routing in
- * silence: when the local agent was renamed codex-local -> qwen-local, four
- * jobs kept preferring a name that no longer existed and quietly fell through
- * to their second choice. The local model became unreachable by preference and
- * nothing said so. Checked at import, because a dangling name is a typo and
- * should fail like one.
+ * Enforced at import as a typo check against that known-names constant, not
+ * against the live registry.
  */
 for (const [jobName, j] of Object.entries(JOBS)) {
   j.packBytes ??= DEFAULT_PACK_BYTES

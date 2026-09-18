@@ -2,6 +2,7 @@ import { describe, expect, test } from 'bun:test'
 import { addRun, score } from '../../test/fixtures/store.ts'
 import { AGENTS, refreshAgents } from '../agent/agent-registry.ts'
 import { db } from '../database/db.ts'
+import { JOBS } from '../jobs/jobs.ts'
 import { weigh } from '../score/score.ts'
 import { guide } from '../state/guide.ts'
 import {
@@ -352,5 +353,20 @@ describe('routing narrows to a stack only when that buys a comparison', () => {
     expect(
       evidenceFor('craft', 0, undefined).cands.find((c) => c.agent === 'codex')!.evidence,
     ).toBe(6)
+  })
+})
+
+describe('a dangling prefer name is skipped in the open', () => {
+  test('an unregistered prefer still routes to the next choice and is named on the decision', () => {
+    const job = JOBS['mcp-query']!
+    const original = job.prefer
+    job.prefer = ['not-an-agent', 'codex', 'grok']
+    try {
+      const routed = pick('mcp-query', undefined, 0, false)
+      expect(routed.agent).toBe('codex')
+      expect(routed.reason).toContain('prefer not-an-agent: no registered agent')
+    } finally {
+      job.prefer = original
+    }
   })
 })
