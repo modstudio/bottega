@@ -10,7 +10,6 @@ import { DB_PATH, db } from '../database/db.ts'
 import { depth } from '../dispatch/dispatch-preflight.ts'
 import { terminateProcessGroup } from '../idle-kill.ts'
 import { checkpointRun, latestCheckpoint } from './checkpoint.ts'
-import { commandNamesRun, type TerminateRunProcessesResult } from './run-termination.ts'
 
 const ALLOW_ENV_EXACT = new Set([
   'PATH',
@@ -87,6 +86,19 @@ type ProcessRow = { pid: number; ppid: number; pgid: number; command: string }
 type ProcessInventory =
   | { ascertainable: true; rows: ProcessRow[] }
   | { ascertainable: false; reason: string }
+
+type TerminateRunProcessesResult =
+  | { outcome: 'signalled'; signalled: number[]; acceptableIds: number[] }
+  | { outcome: 'identity-mismatch'; acceptableIds: number[] }
+  | { outcome: 'unascertainable'; acceptableIds: number[]; reason: string }
+  | { outcome: 'no-pid'; acceptableIds: number[] }
+  | { outcome: 'gone'; acceptableIds: number[] }
+
+export function commandNamesRun(command: string, acceptableIds: readonly number[]): boolean {
+  return acceptableIds.some((id) =>
+    new RegExp(`(?:^|[/\\s])exec\\.ts\\s+${id}(?:\\s|$)`).test(command),
+  )
+}
 
 export function processTable(): ProcessInventory {
   let p: ReturnType<typeof Bun.spawnSync>
