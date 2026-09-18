@@ -84,6 +84,7 @@ import {
 import { implicitReviewCoverageBase, resolveReviewTarget } from '../review/review-target.ts'
 import { chainTransport } from '../route/failover.ts'
 import { pick } from '../route/route.ts'
+import { preflightCodexMcpCatalogues } from '../sandbox/codex-mcp-preflight.ts'
 import { codexMcpSetupHeader, codexProjectServersForRun } from '../sandbox/codex-mcp-scope.ts'
 import {
   prepareSandboxHome,
@@ -780,7 +781,6 @@ export async function run(opts: {
     projectAt(callerCwd),
     cwd,
   )
-  mcpSetupHeader = codexMcpSetupHeader(mcpSetupHeader, codexMcpScope)
   const mcpServerName =
     mcpConnection?.server ??
     projectAt(callerCwd)?.settings.mcpServer ??
@@ -815,6 +815,15 @@ export async function run(opts: {
     throw Object.assign(new Error(`run ${claim.id} could not start: ${why}`), { runId: claim.id })
   }
   const sandboxEnvironment = sandboxSelection.profile ? prepareSandboxHome(name, sandboxRunDir) : {}
+  const mcpEnvironment = childEnv(
+    a,
+    claim.id,
+    runToken,
+    { ...(gitConfigEnvironment ?? {}), ...sandboxEnvironment, ...grokMcpEnvironment },
+    repoJob,
+  )
+  const codexMcpCatalogues = await preflightCodexMcpCatalogues(codexMcpScope, mcpEnvironment)
+  mcpSetupHeader = codexMcpSetupHeader(mcpSetupHeader, codexMcpScope, codexMcpCatalogues)
   const sandboxRouteReason = sandboxSelection.reason
     ? `${reason}; sandbox host: ${sandboxSelection.reason}`
     : reason
@@ -860,17 +869,7 @@ export async function run(opts: {
           server: mcpServerName,
           config: probeConfig,
           cwd,
-          env: childEnv(
-            a,
-            claim.id,
-            runToken,
-            {
-              ...(gitConfigEnvironment ?? {}),
-              ...sandboxEnvironment,
-              ...grokMcpEnvironment,
-            },
-            repoJob,
-          ),
+          env: mcpEnvironment,
           probeTool,
           wrap,
         })

@@ -145,9 +145,19 @@ export const modules: ArchitectureModule[] = [
   ]),
   module('orchestrator/src/runtime/calibration-port.ts', []),
   module('orchestrator/src/agent/capabilities.ts', []),
+  module('orchestrator/src/mcp/mcp-tool-list.ts', [
+    '@modelcontextprotocol/sdk/client/index.js',
+    '@modelcontextprotocol/sdk/client/stdio.js',
+    '@modelcontextprotocol/sdk/client/streamableHttp.js',
+  ]),
+  module('orchestrator/src/sandbox/codex-mcp-preflight.ts', [
+    '../mcp/mcp-tool-list.ts',
+    './codex-mcp-scope.ts',
+  ]),
   module('orchestrator/src/sandbox/codex-mcp-scope.ts', [
     '../database/database-location.ts',
     '../mcp/mcp-probe.ts',
+    '../mcp/mcp-tool-list.ts',
   ]),
   module('orchestrator/src/contract/codex-schema.ts', []),
   module('orchestrator/src/recipe/env-file.ts', []),
