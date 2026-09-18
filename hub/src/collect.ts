@@ -211,7 +211,7 @@ export function runsSince(now = Date.now()): string {
  * further back, to collect.runs.at, so an answer older than two hours is
  * not skipped.
  */
-export async function collectFast() {
+async function collectFast() {
   await ingestRuns(runsSince())
   await ingestTranscripts(hoursAgo(2))
   rollUpDays()
@@ -219,7 +219,7 @@ export async function collectFast() {
 }
 
 /** The remote and commit-shaped legs. */
-export async function collectSlow(scheduled = false) {
+async function collectSlow(scheduled = false) {
   await ingestGit(hoursAgo(24 * 7).slice(0, 10))
   const due = scheduled ? trackerSchedule.due(trackerProjects()) : null
   const results = due?.size === 0 ? [] : await ingestTrackers(due)
