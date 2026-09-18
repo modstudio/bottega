@@ -42,7 +42,10 @@ function bodyOf(body: string): string {
 }
 
 /** Queue architect context against the conversation's currently running turn. */
-export function tellRun(id: number, body: string): RunMessage & { transport: TransportName | null } {
+export function tellRun(
+  id: number,
+  body: string,
+): RunMessage & { transport: TransportName | null } {
   writableDb()
   let authority = authorizeRunMutation(id, 'tell')
   const requested = identity(id)
