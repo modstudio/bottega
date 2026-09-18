@@ -172,7 +172,7 @@ function localWindow(period: DeliveryPeriod, zone: string) {
   return `${formatter.format(new Date(period.from))} to ${formatter.format(new Date(period.to))} (${zone})`
 }
 
-export function hasRecordedWork(measures: Measures) {
+function hasRecordedWork(measures: Measures) {
   return (
     measures.hoursRunning.sample.intervalCount > 0 ||
     ('shipped' in measures && measures.shipped.sample.eventCount > 0)
