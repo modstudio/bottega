@@ -211,6 +211,40 @@ describe('session time', () => {
     expect(measures.sessionTime.uncountedSilenceMs).toBe(0)
   })
 
+  test('one silence gets one allowance however the waiting cuts it', () => {
+    // A one-minute agent run in the middle of a 25-minute silence must not split
+    // it into two allowances: crediting each piece would make more agent activity
+    // read as more attention.
+    const rows = {
+      intervals: [
+        interval({
+          source: 'claude',
+          startAt: '2026-09-17T12:00:00.000Z',
+          endAt: '2026-09-17T12:05:00.000Z',
+          userId: MAYA,
+        }),
+        interval({
+          source: 'orch',
+          startAt: '2026-09-17T12:17:00.000Z',
+          endAt: '2026-09-17T12:18:00.000Z',
+          userId: MAYA,
+        }),
+        interval({
+          source: 'claude',
+          startAt: '2026-09-17T12:30:00.000Z',
+          endAt: '2026-09-17T12:35:00.000Z',
+          userId: MAYA,
+        }),
+      ],
+      events: [],
+    }
+    const measures = computeMeasures(rows, WINDOW, { kind: 'space' })
+    // Ten minutes in session, plus one ten-minute allowance for the 24 minutes of
+    // leftover silence, with the remaining fourteen reported as uncounted.
+    expect(measures.sessionTime.unionThenSumMs).toBe(20 * 60_000)
+    expect(measures.sessionTime.uncountedSilenceMs).toBe(14 * 60_000)
+  })
+
   test("intervals with no user land in the unknown total and never in a person's", () => {
     const rows = {
       intervals: [

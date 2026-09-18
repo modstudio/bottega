@@ -150,19 +150,18 @@ export function leftoverSilence(gap: Span, waiting: Span[]): Span[] {
   return leftover
 }
 
+/**
+ * The allowance applies once to a gap, not to each piece the waiting cut it into.
+ *
+ * Per-piece credit would make a one-minute agent run in the middle of a long
+ * silence split it in two and credit the allowance twice, so more agent activity
+ * would read as more attention. One silence gets one allowance however it is cut.
+ */
 function creditSilence(pieces: Span[]): { creditedMs: number; uncountedMs: number } {
-  let creditedMs = 0
-  let uncountedMs = 0
-  for (const piece of pieces) {
-    const ms = duration(piece)
-    if (ms <= 0) continue
-    if (ms <= SILENCE_ALLOWANCE_MS) creditedMs += ms
-    else {
-      creditedMs += SILENCE_ALLOWANCE_MS
-      uncountedMs += ms - SILENCE_ALLOWANCE_MS
-    }
-  }
-  return { creditedMs, uncountedMs }
+  const total = pieces.reduce((sum, piece) => sum + duration(piece), 0)
+  if (total <= 0) return { creditedMs: 0, uncountedMs: 0 }
+  const creditedMs = Math.min(total, SILENCE_ALLOWANCE_MS)
+  return { creditedMs, uncountedMs: total - creditedMs }
 }
 
 function sessionForSpans(
