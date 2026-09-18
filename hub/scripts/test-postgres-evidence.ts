@@ -24,6 +24,8 @@ import {
   listHostedReportSubscriptions,
   listHostedSends,
   putHostedReportSetting,
+  unsubscribeHostedReportSubscription,
+  updateHostedReportSubscription,
 } from '../src/hosted-reports.ts'
 import {
   createHostedDocument,
@@ -365,6 +367,27 @@ try {
       subscription.hour !== 8
     )
       throw new Error('subscription cadence did not round-trip with its zone')
+    await admin`UPDATE hub_send SET subscription_id=${subscription.id}::uuid,
+      period_start=${'2026-09-10T15:30:00.000Z'}::timestamptz,
+      period_end=${'2026-09-17T15:30:00.000Z'}::timestamptz
+      WHERE space_id=${SPACE_A}::uuid AND at=${'2026-09-17T15:30:00.000Z'}::timestamptz`
+    const updatedSubscription = await updateHostedReportSubscription(
+      actorUrl,
+      identity,
+      subscription.id,
+      {
+        cadence: 'daily',
+        hour: 18,
+        zone: 'America/New_York',
+        enabled: true,
+      },
+    )
+    if (updatedSubscription.hour !== 18 || updatedSubscription.cadence !== 'daily')
+      throw new Error('subscription update did not change its cadence and hour')
+    const preservedSend = await admin`SELECT subscription_id,period_end FROM hub_send
+      WHERE subscription_id=${subscription.id}::uuid`
+    if (preservedSend.length !== 1)
+      throw new Error('subscription update did not preserve the record of what was sent')
     const visibleSubscriptions = await listHostedReportSubscriptions(actorUrl, identity)
     if (
       visibleSubscriptions.subscriptions.length !== 1 ||
@@ -372,7 +395,25 @@ try {
     )
       throw new Error('created subscription was not visible in the list')
     if ((await listHostedReportSubscriptions(actorUrl, otherIdentity)).subscriptions.length)
-      throw new Error('another space observed a report subscription')
+      throw new Error('another space observed an updated report subscription')
+    for (const operation of [
+      () =>
+        updateHostedReportSubscription(actorUrl, otherIdentity, subscription.id, {
+          cadence: 'daily',
+          hour: 7,
+          zone: 'America/New_York',
+          enabled: true,
+        }),
+      () => unsubscribeHostedReportSubscription(actorUrl, otherIdentity, subscription.id),
+    ]) {
+      let refused = false
+      try {
+        await operation()
+      } catch (error) {
+        refused = String((error as Error).message).includes('report subscription not found')
+      }
+      if (!refused) throw new Error('another space changed a report subscription')
+    }
     const unboundSubscriptions = await client`SELECT id FROM hub_report_subscription`
     if (unboundSubscriptions.length !== 0)
       throw new Error('record_actor directly observed subscriptions without a tenant binding')
@@ -411,6 +452,14 @@ try {
       emptySettings.subscriptions.length
     )
       throw new Error('another space observed a hosted page adapter row')
+
+    await unsubscribeHostedReportSubscription(actorUrl, identity, subscription.id)
+    if ((await listHostedReportSubscriptions(actorUrl, identity)).subscriptions.length)
+      throw new Error('removed subscription remained visible in its space')
+    const candidatesAfterRemove = (await client`SELECT subscription_id
+      FROM hub_report_delivery_candidates()`) as { subscription_id: string }[]
+    if (candidatesAfterRemove.some((row) => row.subscription_id === subscription.id))
+      throw new Error('removed subscription remained due for delivery')
 
     const measureWindow = { from: '2026-09-17T12:00:00.000Z', to: '2026-09-17T14:00:00.000Z' }
     const measureIntervals: IntervalEvidence[] = [

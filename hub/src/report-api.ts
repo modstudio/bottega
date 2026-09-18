@@ -8,6 +8,7 @@ import {
   mirrorHostedReports,
   putHostedReportSetting,
   unsubscribeHostedReportSubscription,
+  updateHostedReportSubscription,
 } from './hosted-reports.ts'
 
 const TEST_REFUSAL =
@@ -115,6 +116,15 @@ async function subscriptionRoute(
       201,
     )
   const unsubscribe = /^\/v1\/report-subscriptions\/([^/]+)$/.exec(url.pathname)
+  if (request.method === 'PUT' && unsubscribe)
+    return json(
+      await call(dependencies.updateSubscription, updateHostedReportSubscription)(
+        config.recordDatabaseUrl,
+        who,
+        unsubscribe[1]!,
+        body as never,
+      ),
+    )
   if (request.method === 'DELETE' && unsubscribe)
     return json(
       await call(dependencies.unsubscribe, unsubscribeHostedReportSubscription)(

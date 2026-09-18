@@ -139,6 +139,19 @@ describe('hosted page inputs', () => {
     await expect(caller.record.settings({ hours: 1 } as never)).rejects.toMatchObject({
       code: 'BAD_REQUEST',
     })
+    const update = {
+      id: '01990000-0000-7000-8000-000000000768',
+      cadence: 'daily',
+      hour: 9,
+      zone: 'America/New_York',
+      enabled: true,
+    }
+    await expect(
+      caller.record.updateReportSubscription({ ...update, scope: { kind: 'space' } } as never),
+    ).rejects.toMatchObject({ code: 'BAD_REQUEST' })
+    await expect(
+      caller.record.updateReportSubscription({ ...update, recipientUserId: 'someone' } as never),
+    ).rejects.toMatchObject({ code: 'BAD_REQUEST' })
   })
 })
 

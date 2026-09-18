@@ -29,6 +29,7 @@ describe('hostedRouter', () => {
     expect(procedures).toEqual([
       'record.agents',
       'record.board',
+      'record.createReportSubscription',
       'record.doc',
       'record.docRevisions',
       'record.docs',
@@ -41,6 +42,7 @@ describe('hostedRouter', () => {
       'record.notes',
       'record.projects',
       'record.ratio',
+      'record.removeReportSubscription',
       'record.review',
       'record.reviews',
       'record.routing',
@@ -51,6 +53,7 @@ describe('hostedRouter', () => {
       'record.snapshots',
       'record.spend',
       'record.task',
+      'record.updateReportSubscription',
       'record.whoami',
     ])
   })

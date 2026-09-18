@@ -1,5 +1,9 @@
 import { describe, expect, test } from 'bun:test'
-import { assertReportSubscriptionFound, planReportSubscription } from './hosted-reports.ts'
+import {
+  assertReportSubscriptionFound,
+  planReportSubscription,
+  planReportSubscriptionUpdate,
+} from './hosted-reports.ts'
 
 const caller = {
   userId: '01990000-0000-7000-8000-000000000701',
@@ -84,5 +88,29 @@ describe('report subscriptions', () => {
   test('unsubscribing a row that does not exist refuses', () => {
     expect(() => assertReportSubscriptionFound(undefined)).toThrow('report subscription not found')
     expect(() => assertReportSubscriptionFound(null)).toThrow('report subscription not found')
+  })
+
+  test('an update accepts delivery fields and refuses scope or recipient changes', () => {
+    expect(
+      planReportSubscriptionUpdate({
+        cadence: 'weekly',
+        hour: 18,
+        weekday: 'friday',
+        zone: 'Europe/London',
+        enabled: false,
+      }),
+    ).toEqual({
+      cadence: 'weekly',
+      hour: 18,
+      weekday: 'friday',
+      zone: 'Europe/London',
+      enabled: false,
+    })
+    expect(() =>
+      planReportSubscriptionUpdate({ ...daily, enabled: true, scope: { kind: 'space' } } as never),
+    ).toThrow('scope and recipient cannot be changed')
+    expect(() =>
+      planReportSubscriptionUpdate({ ...daily, enabled: true, recipientUserId: member } as never),
+    ).toThrow('scope and recipient cannot be changed')
   })
 })

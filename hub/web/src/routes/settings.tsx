@@ -1,20 +1,36 @@
 import { useMutation, useQuery } from '@tanstack/react-query'
 import { createFileRoute, Link } from '@tanstack/react-router'
-import { useEffect, useState } from 'react'
+import { useEffect, useId, useState } from 'react'
 import { isHostedMode } from '@/lib/hub-mode'
+import {
+  DEFAULT_ZONE,
+  nextReportArrival,
+  TIME_ZONES,
+  WEEKDAYS,
+  type Weekday,
+} from '@/lib/report-arrival'
 import { useWindowState } from '@/lib/window'
-import { queryClient, type SettingsResponse, trpc } from '@/trpc/client'
+import {
+  queryClient,
+  type RecordSettingsResponse,
+  type SettingsResponse,
+  trpc,
+} from '@/trpc/client'
 import { Badge } from '@/ui/badge/badge'
 import { Button } from '@/ui/button/button'
 import { Checkbox } from '@/ui/checkbox/checkbox'
+import { Dialog } from '@/ui/dialog/dialog'
 import { EmptyState } from '@/ui/empty-state/empty-state'
 import { Input } from '@/ui/field/input'
 import { FieldSection, Panel, SettingBlock } from '@/ui/form-layout/form-layout'
+import { Select } from '@/ui/listbox/select'
 import { PageHeader, SectionTitle } from '@/ui/page-header/page-header'
+import { Switch } from '@/ui/switch/switch'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/ui/table/table'
 
 type SettingsData = SettingsResponse['data']
 type Report = SettingsData['report']
+type Subscription = RecordSettingsResponse['subscriptions'][number]
 type FormState = {
   enabled: boolean
   to: string
@@ -364,10 +380,191 @@ function LocalSettingsPage() {
   )
 }
 
+type SubscriptionDraft = {
+  scope: string
+  cadence: Subscription['cadence']
+  hour: number
+  weekday: Weekday
+  zone: string
+  enabled: boolean
+}
+
+function subscriptionDraft(row?: Subscription): SubscriptionDraft {
+  return {
+    scope: row
+      ? row.scope_kind === 'project'
+        ? `project:${row.project_name}`
+        : row.scope_kind
+      : 'space',
+    cadence: row?.cadence ?? 'daily',
+    hour: row?.hour ?? 9,
+    weekday: row?.weekday ?? 'monday',
+    zone: row?.zone ?? DEFAULT_ZONE,
+    enabled: row?.enabled ?? true,
+  }
+}
+
+function SubscriptionEditor({
+  open,
+  row,
+  projects,
+  pending,
+  onOpenChange,
+  onSave,
+}: {
+  open: boolean
+  row?: Subscription
+  projects: string[]
+  pending: boolean
+  onOpenChange: (open: boolean) => void
+  onSave: (draft: SubscriptionDraft) => void
+}) {
+  const [draft, setDraft] = useState(() => subscriptionDraft(row))
+  const enabledId = useId()
+  useEffect(() => {
+    if (open) setDraft(subscriptionDraft(row))
+  }, [open, row])
+  const change = (patch: Partial<SubscriptionDraft>) =>
+    setDraft((current) => ({ ...current, ...patch }))
+  const scopeOptions = [
+    { value: 'space', label: 'This space' },
+    { value: 'person', label: 'My work in this space' },
+    ...projects.map((project) => ({ value: `project:${project}`, label: `Project ${project}` })),
+  ]
+  return (
+    <Dialog
+      open={open}
+      onOpenChange={onOpenChange}
+      title={row ? 'Edit subscription' : 'Create subscription'}
+      description={
+        row
+          ? `${row.recipient_email} · scope and recipient stay fixed`
+          : 'Reports are sent to you in the current space.'
+      }
+      footer={
+        <>
+          <Button variant="secondary" onClick={() => onOpenChange(false)}>
+            Cancel
+          </Button>
+          <Button variant="primary" disabled={pending} onClick={() => onSave(draft)}>
+            {row ? 'Save changes' : 'Create subscription'}
+          </Button>
+        </>
+      }
+    >
+      <div className="grid gap-4">
+        {!row ? (
+          <div className="grid gap-1 text-sm">
+            <span className="text-text-muted">Scope</span>
+            <Select
+              label="Subscription scope"
+              value={draft.scope}
+              options={scopeOptions}
+              onChange={(scope) => change({ scope })}
+            />
+          </div>
+        ) : null}
+        <div className="grid gap-1 text-sm">
+          <span className="text-text-muted">Cadence</span>
+          <Select
+            label="Report cadence"
+            value={draft.cadence}
+            options={[
+              { value: 'daily', label: 'Daily' },
+              { value: 'weekly', label: 'Weekly' },
+            ]}
+            onChange={(cadence) => change({ cadence: cadence as Subscription['cadence'] })}
+          />
+        </div>
+        {draft.cadence === 'weekly' ? (
+          <div className="grid gap-1 text-sm">
+            <span className="text-text-muted">Weekday</span>
+            <Select
+              label="Report weekday"
+              value={draft.weekday}
+              options={WEEKDAYS.map((weekday) => ({
+                value: weekday,
+                label: weekday[0]!.toUpperCase() + weekday.slice(1),
+              }))}
+              onChange={(weekday) => change({ weekday: weekday as Weekday })}
+            />
+          </div>
+        ) : null}
+        <div className="grid gap-1 text-sm">
+          <span className="text-text-muted">Hour</span>
+          <Select
+            label="Report hour"
+            value={String(draft.hour)}
+            options={Array.from({ length: 24 }, (_, hour) => ({
+              value: String(hour),
+              label: `${String(hour).padStart(2, '0')}:00`,
+            }))}
+            onChange={(hour) => change({ hour: Number(hour) })}
+          />
+        </div>
+        <div className="grid gap-1 text-sm">
+          <span className="text-text-muted">Time zone</span>
+          <Select
+            label="Report time zone"
+            value={draft.zone}
+            options={TIME_ZONES.map((zone) => ({ value: zone, label: zone }))}
+            onChange={(zone) => change({ zone })}
+          />
+        </div>
+        <p className="text-sm text-text-secondary">
+          {nextReportArrival({
+            cadence: draft.cadence,
+            hour: draft.hour,
+            weekday: draft.cadence === 'weekly' ? draft.weekday : null,
+            zone: draft.zone,
+          })}
+        </p>
+        <label htmlFor={enabledId} className="flex items-center gap-3 text-sm">
+          <Switch
+            id={enabledId}
+            checked={draft.enabled}
+            onChange={(event) => change({ enabled: event.currentTarget.checked })}
+          />
+          Enabled
+        </label>
+      </div>
+    </Dialog>
+  )
+}
+
 export function HostedSettingsPage() {
   const { hours } = useWindowState()
   const query = useQuery(trpc.record.settings.queryOptions({ hours }, { refetchInterval: 10_000 }))
   const data = query.data
+  const [creating, setCreating] = useState(false)
+  const [editing, setEditing] = useState<Subscription | undefined>()
+  const [said, setSaid] = useState('')
+  const create = useMutation({
+    ...trpc.record.createReportSubscription.mutationOptions(),
+    onSuccess: async () => {
+      setCreating(false)
+      setSaid('Subscription created.')
+      await queryClient.invalidateQueries({ queryKey: trpc.record.settings.queryKey() })
+    },
+    onError: (error) => setSaid(`Could not create subscription: ${error.message}`),
+  })
+  const update = useMutation({
+    ...trpc.record.updateReportSubscription.mutationOptions(),
+    onSuccess: async () => {
+      setEditing(undefined)
+      setSaid('Subscription updated.')
+      await queryClient.invalidateQueries({ queryKey: trpc.record.settings.queryKey() })
+    },
+    onError: (error) => setSaid(`Could not update subscription: ${error.message}`),
+  })
+  const remove = useMutation({
+    ...trpc.record.removeReportSubscription.mutationOptions(),
+    onSuccess: async () => {
+      setSaid('Subscription removed.')
+      await queryClient.invalidateQueries({ queryKey: trpc.record.settings.queryKey() })
+    },
+    onError: (error) => setSaid(`Could not remove subscription: ${error.message}`),
+  })
   const display = (value: unknown) =>
     Array.isArray(value)
       ? value.join(', ') || '-'
@@ -376,7 +573,7 @@ export function HostedSettingsPage() {
         : String(value ?? '-')
   return (
     <section>
-      <PageHeader title="Daily report" subtitle="Hosted report settings · read only" />
+      <PageHeader title="Daily report" subtitle="Hosted report settings" />
       {query.error ? (
         <p data-tone="error" className="text-status-text">
           could not load: {query.error.message}
@@ -403,9 +600,13 @@ export function HostedSettingsPage() {
               ))}
             </dl>
           </Panel>
-          <div className="max-w-[640px]">
+          <div className="flex max-w-[640px] items-center justify-between gap-4">
             <SectionTitle>Subscriptions</SectionTitle>
+            <Button size="sm" variant="primary" onClick={() => setCreating(true)}>
+              Create subscription
+            </Button>
           </div>
+          {said ? <p className="mb-3 max-w-[640px] text-sm text-text-secondary">{said}</p> : null}
           <div className="mb-6 max-w-[640px] border border-border-default">
             <Table>
               <TableHeader>
@@ -414,6 +615,7 @@ export function HostedSettingsPage() {
                   <TableHead>Cadence</TableHead>
                   <TableHead>Recipient</TableHead>
                   <TableHead>Enabled</TableHead>
+                  <TableHead>Actions</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -427,15 +629,33 @@ export function HostedSettingsPage() {
                           : 'space'}
                     </TableCell>
                     <TableCell muted>
-                      {row.cadence === 'weekly'
-                        ? `weekly ${row.weekday} ${row.hour}:00 ${row.zone}`
-                        : `daily ${row.hour}:00 ${row.zone}`}
+                      <span>
+                        {row.cadence === 'weekly'
+                          ? `weekly ${row.weekday} ${row.hour}:00 ${row.zone}`
+                          : `daily ${row.hour}:00 ${row.zone}`}
+                      </span>
+                      <span className="mt-1 block text-xs">{nextReportArrival(row)}</span>
                     </TableCell>
                     <TableCell>{row.recipient_email}</TableCell>
                     <TableCell>
                       <Badge tone={row.enabled ? 'success' : 'neutral'}>
                         {row.enabled ? 'enabled' : 'disabled'}
                       </Badge>
+                    </TableCell>
+                    <TableCell>
+                      <div className="flex gap-2">
+                        <Button size="sm" variant="secondary" onClick={() => setEditing(row)}>
+                          Edit
+                        </Button>
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          disabled={remove.isPending}
+                          onClick={() => remove.mutate({ id: row.id })}
+                        >
+                          Remove
+                        </Button>
+                      </div>
                     </TableCell>
                   </TableRow>
                 ))}
@@ -448,6 +668,46 @@ export function HostedSettingsPage() {
               />
             ) : null}
           </div>
+          <SubscriptionEditor
+            open={creating}
+            projects={data.allProjects}
+            pending={create.isPending}
+            onOpenChange={setCreating}
+            onSave={(draft) => {
+              const scope = draft.scope.startsWith('project:')
+                ? ({ kind: 'project', project: draft.scope.slice('project:'.length) } as const)
+                : draft.scope === 'person'
+                  ? ({ kind: 'person' } as const)
+                  : ({ kind: 'space' } as const)
+              create.mutate({
+                scope,
+                cadence: draft.cadence,
+                hour: draft.hour,
+                weekday: draft.cadence === 'weekly' ? draft.weekday : null,
+                zone: draft.zone,
+                enabled: draft.enabled,
+              })
+            }}
+          />
+          {editing ? (
+            <SubscriptionEditor
+              open
+              row={editing}
+              projects={data.allProjects}
+              pending={update.isPending}
+              onOpenChange={(open) => !open && setEditing(undefined)}
+              onSave={(draft) =>
+                update.mutate({
+                  id: editing.id,
+                  cadence: draft.cadence,
+                  hour: draft.hour,
+                  weekday: draft.cadence === 'weekly' ? draft.weekday : null,
+                  zone: draft.zone,
+                  enabled: draft.enabled,
+                })
+              }
+            />
+          ) : null}
           <div className="max-w-[640px]">
             <SectionTitle>Recent sends</SectionTitle>
           </div>
