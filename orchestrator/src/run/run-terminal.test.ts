@@ -3,10 +3,28 @@ import { reviewReply } from '../../test/fixtures/replies.ts'
 import { addRun } from '../../test/fixtures/store.ts'
 import { db } from '../database/db.ts'
 import {
+  artifactPersistenceOutcome,
   questionsToInsert,
   recordTerminalReviewEvidence,
   shouldCheckpointAtTerminal,
 } from './run-terminal.ts'
+
+test('artifact persistence failure retains a completed worker outcome', () => {
+  expect(
+    artifactPersistenceOutcome({
+      status: 'ok',
+      error: 'reply.json missing; used final-message fallback',
+      failureKind: null,
+      persistenceError: 'artifact persistence failed: named file is not a file',
+    }),
+  ).toEqual({
+    status: 'ok',
+    error:
+      'reply.json missing; used final-message fallback\n' +
+      'artifact persistence failed: named file is not a file',
+    failureKind: null,
+  })
+})
 
 describe('terminal question deduplication decision', () => {
   test('omits a question already recorded for the run', () => {

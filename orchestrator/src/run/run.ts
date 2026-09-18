@@ -18,7 +18,7 @@ import {
   READONLY_PREAMBLE,
   REVIEW_SEVERITY_INSTRUCTION,
   type realQuestions,
-  replyFileInstruction,
+  replyFileBytes,
   resolveReplyDialect,
   type WorkerReply,
   workerPreamble,
@@ -107,7 +107,13 @@ import { resolveBase, resolveReadOnlyBase } from '../worktree/worktree-caller.ts
 import { toolFor } from '../worktree/worktree-preflight.ts'
 import type { Worktree } from '../worktree/worktree-types.ts'
 import type { ResumeTreePlan } from './resume-tree.ts'
-import { pruneRuns, RUNS_DIR, readDispatchState, runFilePaths } from './run-artifacts.ts'
+import {
+  pruneRuns,
+  RUNS_DIR,
+  readDispatchState,
+  runFilePaths,
+  runScratchDir,
+} from './run-artifacts.ts'
 import { claimRun } from './run-claim.ts'
 import { closeRun } from './run-close.ts'
 import { acquireRunLease } from './run-lease.ts'
@@ -544,14 +550,9 @@ export async function run(opts: {
   if (evidencePrompt.readerInstruction && (!opts.resume || opts.resume.fresh)) {
     prompt = `${evidencePrompt.readerInstruction}\n\n${prompt}`
   }
-  prompt = `${replyFileInstruction(replySchemaName)}\n\n${prompt}`
-
   const requiresCanonSource = evidencePrompt.requiresCanonSource
 
-  // A resumed turn is NOT routed. The conversation lives inside one vendor's
-  // session, so "which agent is best at this job" is not a question that can be
-  // asked any more — re-routing would resume a session the new agent has never
-  // seen. Recorded with a reason that says so, rather than an empty one.
+  // A resumed turn stays with the vendor session that owns the conversation.
   const { agent: name, reason } = opts.resume
     ? {
         agent: opts.resume.agent,
@@ -559,13 +560,12 @@ export async function run(opts: {
           `resumed run ${opts.resume.parent} (turn ${opts.resume.turn}); ` +
           'repository path retargeting not applied because the turn is already bound to its worktree',
       }
-    : // The STACK steers the route: an agent strong on PHP and weak on a Vue
-      // component is two different agents to a router, and only this tells them
-      // apart. Backs off to job-wide evidence until a stack cell has earned it.
+    : // Stack-specific evidence steers routing once that cell has earned a comparison.
       pick(
         opts.job,
         selectAgentForTransport(requestedTransport, opts.agent),
         Buffer.byteLength(prompt) +
+          replyFileBytes(replySchemaName, runScratchDir(Number.MAX_SAFE_INTEGER)) +
           (requestedJob.findings ? CALIBRATION_SUFFIX_RESERVE_BYTES : 0) +
           (requiresCanonSource ? CANON_SOURCE_PROMPT_RESERVE_BYTES : 0),
         true,
@@ -668,9 +668,8 @@ export async function run(opts: {
   const vendorSession: string | null =
     opts.resume && !opts.resume.fresh ? (opts.resume.session ?? null) : (a.mintSession?.() ?? null)
 
-  const runsDir = RUNS_DIR
-  mkdirSync(runsDir, { recursive: true })
-  pruneRuns(runsDir)
+  mkdirSync(RUNS_DIR, { recursive: true })
+  pruneRuns(RUNS_DIR)
   /**
    * A RUN FILE IS NAMED BY ITS RUN, never by the clock alone.
    *
@@ -689,8 +688,8 @@ export async function run(opts: {
    * suffix covers it without reintroducing a clock race.
    */
   const unique = opts.reserveId ?? `x${randomUUID().slice(0, 8)}`
-  const paths = runFilePaths(runsDir, Date.now(), unique, name, opts.job)
-  const stamp = paths.output.slice(runsDir.length + 1, -4)
+  const paths = runFilePaths(RUNS_DIR, Date.now(), unique, name, opts.job)
+  const stamp = paths.output.slice(RUNS_DIR.length + 1, -4)
   const outPath = paths.output
   let {
     promptPath,
@@ -719,7 +718,7 @@ export async function run(opts: {
     usingMcp: claimedUsingMcp,
   } = await claimRun({
     opts,
-    runsDir,
+    runsDir: RUNS_DIR,
     paths,
     stamp,
     name,
@@ -749,6 +748,7 @@ export async function run(opts: {
     deferredCwdMcpPreflight,
     usingMcp,
     startedByUserId,
+    replySchemaName,
   })
   prompt = claimedBoundPrompt
   mcpConnection = claimedMcpConnection
