@@ -29,6 +29,7 @@ import { registerHostedConfigProofs } from '../../test/postgres-config-proof.ts'
 import { registerProjectSpaceProofs } from '../../test/postgres-project-space-proof.ts'
 import { registerActiveSpaceProofs } from '../../test/postgres-remembered-space-proof.ts'
 import { proveHostedDocs, proveScoreRecordSync } from '../../test/postgres-score-proof.ts'
+import { registerStaleMembershipProof } from '../../test/postgres-stale-membership-proof.ts'
 import { startRecordApiServer } from '../record/record-api-server.ts'
 import { bearerHeaders, recordAuth, setActiveRecordSpace } from '../record/record-auth.ts'
 import { signInCommand, signUpCommand, whoamiCommand } from '../record/record-auth-command.ts'
@@ -758,6 +759,14 @@ realPostgres('RLS proof against real Postgres', () => {
     } finally {
       server.stop(true)
     }
+  })
+
+  registerStaleMembershipProof({
+    actorUrl: actorUrl!,
+    password: SIGN_UP_AUTH.password,
+    inviterId: () => authUserA,
+    spaceId: () => authSpaceA,
+    admin: (statement) => succeeds('postgres', 'postgres', statement),
   })
 
   test('user-scoped table grants stay narrow', () => {
