@@ -9,6 +9,8 @@ import { decideCeiling } from './quality/ceiling-decision'
 
 type FrozenFunction = { file: string; function: string; line: number; score: number }
 type MeasuredFunction = FrozenFunction & { key: string }
+type LintViolation = { file: string; line: number; ruleId: string | null; message: string }
+type Measurement = MeasuredFunction | LintViolation
 
 const ROOT = fileURLToPath(new URL('..', import.meta.url)).replace(/\/$/, '')
 const STATE_FILE = `${ROOT}/scripts/quality/cognitive-ceiling.json`
@@ -17,7 +19,7 @@ const CEILING = 15
 
 type Reporter = Pick<Console, 'error' | 'log'>
 type CognitiveCeilingOptions = {
-  measure?: () => Promise<MeasuredFunction[]>
+  measure?: () => Promise<Measurement[]>
   reporter?: Reporter
   stateFile?: string
 }
@@ -86,17 +88,20 @@ function writeState(stateFile: string, entries: FrozenFunction[]) {
   writeFileSync(stateFile, `${JSON.stringify(entries, null, 2)}\n`)
 }
 
-async function measureCognitiveComplexity(): Promise<MeasuredFunction[]> {
+async function measureCognitiveComplexity(): Promise<Measurement[]> {
   const results = await new ESLint({ cwd: ROOT }).lintFiles(
     measuredSourceFiles().map(({ absolute }) => absolute),
   )
   return results.flatMap((result) =>
     result.messages.flatMap((message) => {
+      const file = relative(ROOT, result.filePath)
+      if (message.severity === 2 && message.ruleId !== 'sonarjs/cognitive-complexity') {
+        return [{ file, line: message.line, ruleId: message.ruleId, message: message.message }]
+      }
       if (message.ruleId !== 'sonarjs/cognitive-complexity' || !message.line || !message.column)
         return []
       const score = Number(message.message.match(/from (\d+) to/)?.[1])
       if (!Number.isFinite(score)) throw new Error(`could not read complexity: ${message.message}`)
-      const file = relative(ROOT, result.filePath)
       const functionName = functionAt(result.filePath, message.line, message.column)
       const entry = { file, function: functionName, line: message.line, score }
       return [{ ...entry, key: keyOf(entry) }]
@@ -147,12 +152,16 @@ export async function checkCognitiveCeiling(options: CognitiveCeilingOptions = {
   const reporter = options.reporter ?? console
   const frozen = readState(stateFile)
   const frozenByKey = new Map(frozen.map((entry) => [keyOf(entry), entry]))
-  const measured = await (options.measure ?? measureCognitiveComplexity)()
+  const measurement = await (options.measure ?? measureCognitiveComplexity)()
+  const measured = measurement.filter((entry): entry is MeasuredFunction => 'key' in entry)
+  const lintViolations = measurement.filter((entry): entry is LintViolation => 'ruleId' in entry)
   const measuredKeys = new Set(measured.map(({ key }) => key))
   const next = frozen
     .filter((entry) => measuredKeys.has(keyOf(entry)))
     .map((entry) => ({ ...entry }))
-  const violations: string[] = []
+  const violations = lintViolations.map(
+    ({ file, line, ruleId, message }) => `${file}:${line} ${ruleId ?? '<unknown>'} ${message}`,
+  )
   const tightenings: string[] = []
   for (const current of measured) {
     const prior = frozenByKey.get(current.key)
