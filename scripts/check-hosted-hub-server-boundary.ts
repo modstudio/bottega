@@ -1,53 +1,53 @@
 #!/usr/bin/env bun
 /** Enforce the hosted hub server concern boundary. */
 import { existsSync, readFileSync } from 'node:fs'
-import { resolve } from 'node:path'
+import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { importSpecifiers, repositoryRelativeImport } from './import-scanner.ts'
+import { runArchitectureCruise } from './architecture-cruise.ts'
 
 const ROOT = fileURLToPath(new URL('..', import.meta.url)).replace(/\/$/, '')
 const FILE = 'hub/src/hosted.ts'
-const FORBIDDEN_FILES = new Set([
-  'hub/src/db.ts',
-  'hub/src/db/db.ts',
-  'hub/src/orch.ts',
-  'hub/src/orch/orch.ts',
-])
-const SPAWN_PATTERN =
-  /\bbun:sqlite\b|\bBun\.spawn(?:Sync)?\s*\(|\b(?:from|require\s*\()\s*['"](?:node:)?child_process['"]/
+const SPAWN_PATTERN = /\bBun\.spawn(?:Sync)?\s*\(/
 
-type PendingModule = { file: string; chain: string[] }
-const pending: PendingModule[] = [{ file: FILE, chain: [FILE] }]
-const visited = new Set<string>()
-const violations: string[] = []
+type CruiseModule = {
+  source: string
+  coreModule?: boolean
+  matchesDoNotFollow?: boolean
+}
 
-while (pending.length) {
-  const current = pending.pop()!
-  if (visited.has(current.file)) continue
-  visited.add(current.file)
-  const source = readFileSync(`${ROOT}/${current.file}`, 'utf8')
-  if (SPAWN_PATTERN.test(source)) {
-    violations.push(`forbidden spawn or sqlite in import chain: ${current.chain.join(' -> ')}`)
+function cruiseModules(stdout: string): CruiseModule[] {
+  const result: unknown = JSON.parse(stdout)
+  if (
+    typeof result !== 'object' ||
+    result === null ||
+    !('modules' in result) ||
+    !Array.isArray(result.modules)
+  ) {
+    throw new Error('dependency-cruiser JSON has no modules array')
   }
-  const imports = importSpecifiers(source)
-  for (const specifier of [...imports.specifiers, ...imports.typeOnlySpecifiers]) {
-    if (specifier === 'bun:sqlite') {
-      violations.push(`forbidden import chain: ${[...current.chain, specifier].join(' -> ')}`)
-      continue
-    }
-    if (!specifier.startsWith('.')) continue
-    const importedFile = repositoryRelativeImport(current.file, specifier)
-    const absolute = resolve(ROOT, importedFile)
-    const chain = [...current.chain, importedFile]
-    if (!existsSync(absolute)) {
-      violations.push(`unresolved relative import chain: ${chain.join(' -> ')}`)
-      continue
-    }
-    if (FORBIDDEN_FILES.has(importedFile)) {
-      violations.push(`forbidden import chain: ${chain.join(' -> ')}`)
-      continue
-    }
-    pending.push({ file: importedFile, chain })
+  return result.modules.filter(
+    (module): module is CruiseModule =>
+      typeof module === 'object' &&
+      module !== null &&
+      'source' in module &&
+      typeof module.source === 'string',
+  )
+}
+
+const { exitCode, stdout } = await runArchitectureCruise({
+  entries: [FILE],
+  extraArgs: ['--output-type', 'json'],
+  stdout: 'pipe',
+})
+if (exitCode !== 0) process.exit(exitCode)
+
+const violations: string[] = []
+for (const module of cruiseModules(stdout)) {
+  if (module.coreModule || module.matchesDoNotFollow) continue
+  const absolute = join(ROOT, module.source)
+  if (!existsSync(absolute)) continue
+  if (SPAWN_PATTERN.test(readFileSync(absolute, 'utf8'))) {
+    violations.push(`${module.source} calls Bun.spawn`)
   }
 }
 
