@@ -6,7 +6,6 @@
  */
 import { existsSync, readFileSync } from 'node:fs'
 import { CONTINUE_WORKING_FORMS } from '../cli/args.ts'
-import { clock } from '../clock.ts'
 import { branchNote, failoverSummary, resolveFailover } from '../collect/collect.ts'
 import { db, nowIso, writeTransaction } from '../database/db.ts'
 import { appendRunEvent } from '../events.ts'
@@ -47,7 +46,7 @@ export async function follow(
   exitOnFailure = true,
   presentation: RunControlPresentation,
 ): Promise<string> {
-  const deadline = clock().now() + FOLLOW_TIMEOUT_MS
+  const deadline = Date.now() + FOLLOW_TIMEOUT_MS
   const q = db().query(
     `SELECT id, status, agent, job, parent_run_id, latency_ms, vendor_tokens,
             output_path, error, route_reason, evidence_excluded
@@ -127,7 +126,7 @@ export async function follow(
       )
       return row.status
     }
-    if (clock().now() >= deadline) {
+    if (Date.now() >= deadline) {
       // Deliberately NOT a kill. The worker is detached and may still be
       // working; saying where to look for it is more use than destroying it.
       console.error(
@@ -144,7 +143,7 @@ export async function follow(
       if (exitOnFailure) process.exitCode = 1
       return row?.status ?? 'running'
     }
-    await new Promise<void>((resolve) => clock().setTimeout(() => resolve(), 1000))
+    await new Promise<void>((resolve) => globalThis.setTimeout(() => resolve(), 1000))
   }
 }
 

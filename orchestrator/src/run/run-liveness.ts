@@ -4,8 +4,8 @@
  */
 
 import type { Database } from 'bun:sqlite'
+import { pidAlive } from '../../../shared/process-identity.ts'
 import { db, linkedWorktreeReadOnly, writeTransaction } from '../database/db.ts'
-import { pidAlive } from '../resources/process-liveness.ts'
 import { teardownTerminalRunResources } from '../resources/resource-ownership.ts'
 import { runAlive } from './run-alive.ts'
 import { auditRunMutation, runMutationAuthority } from './run-authority.ts'

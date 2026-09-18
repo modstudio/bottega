@@ -1,9 +1,5 @@
 import { type Caps, MIGRATED_AGENT_NAMES } from '../agent/capabilities.ts'
-import {
-  DEFAULT_EXTERNAL_WAIT_IDLE_KILL_MS,
-  DEFAULT_IDLE_KILL_MS,
-  idleKillMs,
-} from '../idle-kill.ts'
+import { DEFAULT_EXTERNAL_WAIT_IDLE_KILL_MS, idleKillMs } from '../idle-kill.ts'
 import { STALE_AFTER_MS } from '../run/run-liveness.ts'
 
 export type Job = {
@@ -65,13 +61,9 @@ export type Job = {
  * The CPU sample cannot observe waits outside the vendor tree at all — Docker,
  * an MCP server, local-stack, a lock, a remote API the vendor CLI is blocked
  * on. Silence-plus-CPU therefore does not protect an external wait, so the
- * default idle bound must be the longer one for every job. The short measured
- * bound is only for jobs known to be entirely CPU-local. None currently are:
- * every job can wait on a tool, a subprocess, or a service the sample cannot
- * see. Invert, do not enumerate the hole.
+ * default idle bound must be the longer one for every job. Every job can wait
+ * on a tool, a subprocess, or a service the sample cannot see.
  */
-export const CPU_LOCAL_JOBS = [] as const
-
 /** Idle must sit below the wall so the two timers cannot race. */
 export const IDLE_BELOW_WALL_MS = 60_000
 
@@ -96,9 +88,7 @@ export function jobIdleKillMs(
   const raw =
     env.ORCH_IDLE_KILL_MS !== undefined && env.ORCH_IDLE_KILL_MS !== ''
       ? idleKillMs(env)
-      : (CPU_LOCAL_JOBS as readonly string[]).includes(name)
-        ? DEFAULT_IDLE_KILL_MS
-        : DEFAULT_EXTERNAL_WAIT_IDLE_KILL_MS
+      : DEFAULT_EXTERNAL_WAIT_IDLE_KILL_MS
   const wall = wallMs ?? jobDeclaredWallMs(name)
   return wall != null ? clampIdleKillMs(raw, wall) : raw
 }

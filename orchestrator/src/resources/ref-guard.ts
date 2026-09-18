@@ -19,10 +19,10 @@ import {
   writeFileSync,
 } from 'node:fs'
 import { dirname, isAbsolute, join, relative, resolve, sep } from 'node:path'
+import { pidAlive } from '../../../shared/process-identity.ts'
 import { db, ROOT } from '../database/db.ts'
 import { commonGitDir, gitConfigOk, linkedWorktreePaths } from '../git/git-environment.ts'
 import { ORCH_RUN_MARKER } from '../worktree/worktree-attribution.ts'
-import { pidAlive } from './process-liveness.ts'
 
 export type SharedRefGuardEnvironment = {
   GIT_CONFIG_COUNT: string

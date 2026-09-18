@@ -6,6 +6,7 @@
  */
 import { existsSync, rmSync } from 'node:fs'
 import { join, resolve } from 'node:path'
+import { pidAlive } from '../../../shared/process-identity.ts'
 import { db, nowIso, sessionId, writeTransaction } from '../database/db.ts'
 import { gitContext, repoRootOf, targetGitEnvironment } from '../git/git-environment.ts'
 import { HOOK_TREE_JOB, hookTreeHoldDecision } from '../hook-tree/hook-tree.ts'
@@ -19,7 +20,6 @@ import {
 } from '../project/project-lock.ts'
 import { projectAt, projectByName } from '../project/projects.ts'
 import { proveWorktreeReconstructible } from '../reclaim/reclaim.ts'
-import { pidAlive } from '../resources/process-liveness.ts'
 import {
   type ResourceClaimState,
   recordRetainedRefClaim,

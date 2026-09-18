@@ -2,7 +2,6 @@ import type { Dirent } from 'node:fs'
 import { createReadStream, readdirSync, statSync } from 'node:fs'
 import { join } from 'node:path'
 import { createInterface } from 'node:readline'
-import { clock } from '../clock.ts'
 import { db, nowIso, writableDb } from '../database/db.ts'
 import { projectAt, projects } from '../project/projects.ts'
 
@@ -309,7 +308,7 @@ function activityByDay(since: string) {
 
 export async function collect(windowDays = 30) {
   writableDb()
-  const start = metricDayStart(windowDays, clock().now())
+  const start = metricDayStart(windowDays, Date.now())
   const since = metricCalendarDay(start)
   const [tok, act] = [await claudeTokensByDay(since), activityByDay(start.toISOString())]
   const d = db()
@@ -412,7 +411,7 @@ const LENSES = [
 
 /** Rolling ratio: a single day is too noisy — tasks land in bursts. */
 export function summary(windowDays = 14) {
-  const now = clock().now()
+  const now = Date.now()
   const since = metricDaysAgo(windowDays, now)
   const rows = db()
     .query(
