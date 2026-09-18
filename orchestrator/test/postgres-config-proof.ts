@@ -22,19 +22,12 @@ const USER_B = '01990000-0000-7000-8000-000000000020'
 const DEK_A = '01990000-0000-7000-8000-0000000000da'
 const DEK_B = '01990000-0000-7000-8000-0000000000db'
 
-type ConfigProofInput = {
-  actorUrl: string
-  spaceA: string
-  spaceB: string
-  userA: string
-}
-
-export function registerHostedConfigProofs({
-  actorUrl,
-  spaceA,
-  spaceB,
-  userA,
-}: ConfigProofInput): void {
+export function registerHostedConfigProofs(
+  actorUrl: string,
+  spaceA: string,
+  spaceB: string,
+  userA: string,
+): void {
   const serviceTenant = {
     url: actorUrl,
     spaceId: spaceA,
