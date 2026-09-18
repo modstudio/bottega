@@ -593,10 +593,10 @@ export function candidates(
     } else if (a.billing === 'metered') {
       eligible = false
       why = 'metered billing'
-    } else if (j.needs.readsRepo && !a.probedAt) {
+    } else if (!a.probedAt) {
       eligible = false
-      why = 'unprobed agent is ineligible for repository jobs; run orch agent probe ' + name
-    } else if (j.needs.readsRepo && predatesFileContract(a)) {
+      why = `unprobed agent is ineligible for all jobs; run orch agent probe ${name}`
+    } else if (predatesFileContract(a)) {
       eligible = false
       why = fileContractProbeReason(name)
     } else if (promptBytes > a.maxPromptBytes) {
