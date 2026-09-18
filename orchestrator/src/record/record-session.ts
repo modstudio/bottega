@@ -2,12 +2,12 @@
 /** Owns access to the locally stored record session. Must not know run phases. */
 import type { Database } from 'bun:sqlite'
 import { SQL } from 'bun'
+import { RECORD_ACTIVE_SPACE_REMEDY } from '../../../shared/record-remedies.ts'
 import {
   readRecordSessionToken,
   type SecurityRunner,
   writeRecordSessionToken,
 } from '../../../shared/record-session.ts'
-import { RECORD_ACTIVE_SPACE_REMEDY } from '../../../shared/record-remedies.ts'
 import { DATABASE_RESOLUTION, db, writeTransaction } from '../database/db.ts'
 import {
   activeMembershipSpace,

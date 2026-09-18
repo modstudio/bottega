@@ -2,7 +2,8 @@ import { expect, test } from 'bun:test'
 import { mkdtempSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { generateMachineKeyPair, machineKeyId } from './secret-envelope.ts'
+import { machineKeyId } from './machine-key-id.ts'
+import { generateMachineKeyPair } from './secret-envelope.ts'
 import { pinTrustedMachine, readTrustList, trustListPath } from './trust-list.ts'
 
 test('trust list validates that every key id matches its public key', async () => {

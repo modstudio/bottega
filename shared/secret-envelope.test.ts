@@ -1,8 +1,8 @@
 import { describe, expect, test } from 'bun:test'
+import { machineKeyId } from './machine-key-id.ts'
 import {
   generateDataKey,
   generateMachineKeyPair,
-  machineKeyId,
   openValue,
   SecretEnvelopeError,
   sealValue,

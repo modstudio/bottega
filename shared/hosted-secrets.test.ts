@@ -1,10 +1,10 @@
 import { expect, test } from 'bun:test'
 import type { ConfigClient } from './config-client.ts'
 import { HostedSecretError, readHostedSecrets } from './hosted-secrets.ts'
+import { machineKeyId } from './machine-key-id.ts'
 import {
   generateDataKey,
   generateMachineKeyPair,
-  machineKeyId,
   sealValue,
   wrapDataKey,
 } from './secret-envelope.ts'

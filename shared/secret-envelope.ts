@@ -5,8 +5,6 @@ import { xchacha20poly1305 } from '@noble/ciphers/chacha.js'
 import { PLATFORM_SLUG } from './brand.ts'
 import { machineKeyId } from './machine-key-id.ts'
 
-export { machineKeyId } from './machine-key-id.ts'
-
 const FORMAT_VERSION = 1
 const ALGORITHM_ID = 1
 const KEY_SIZE = 32
