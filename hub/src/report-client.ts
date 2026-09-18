@@ -3,7 +3,6 @@ import type {
   HostedReportSetting,
   HostedReportSubscription,
   HostedSend,
-  ReportSubscriptionUpdateInput,
   ReportSubscriptionWriteInput,
 } from './hosted-reports.ts'
 
@@ -99,11 +98,6 @@ export const hostedCreateReportSubscription = (
   body: ReportSubscriptionWriteInput,
   options?: ReportClientOptions,
 ) => request<HostedReportSubscription>('/v1/report-subscriptions', 'POST', body, options)
-export const hostedUpdateReportSubscription = (
-  id: string,
-  body: ReportSubscriptionUpdateInput,
-  options?: ReportClientOptions,
-) => request<HostedReportSubscription>(`/v1/report-subscriptions/${id}`, 'PUT', body, options)
 export const hostedUnsubscribeReportSubscription = (id: string, options?: ReportClientOptions) =>
   request<{ id: string; deleted: boolean }>(
     `/v1/report-subscriptions/${id}`,
