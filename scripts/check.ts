@@ -2,7 +2,9 @@ import { fileURLToPath } from 'node:url'
 import {
   attributeCommandCpu,
   type CommandCpuSample,
+  decideGateOutcome,
   decideRuntimeBudget,
+  type GateStepResult,
   HUNG_SUITE_TIMEOUT_MS,
   SUITE_CPU_BUDGET_MS,
   SUITE_RUNTIME_BUDGET_MS,
@@ -209,14 +211,13 @@ async function runLeg(leg: Leg): Promise<LegResult> {
   return { name: leg.name, exitCode: 0, tail }
 }
 
-function refuseFailed(results: LegResult[]) {
+function printFailedLegTails(results: LegResult[]) {
   const failed = results.filter((result) => result.exitCode !== 0)
   if (!failed.length) return
   for (const result of failed) {
     console.error(`\n[${result.name}] failing leg tail (exit ${result.exitCode})`)
     for (const line of result.tail) console.error(line)
   }
-  process.exit(1)
 }
 
 if ((await inherit(['bun', 'install', '--silent'])) !== 0) process.exit(1)
@@ -262,7 +263,11 @@ const results = await Promise.all(
     }),
   ),
 )
-refuseFailed(results)
+printFailedLegTails(results)
+const gateSteps: GateStepResult[] = results.map((result) => ({
+  name: result.name,
+  exitCode: result.exitCode,
+}))
 
 for (const script of [
   'check-machine-state.ts',
@@ -302,11 +307,13 @@ for (const script of [
     }),
     describeCommand(argv),
   )
-  if ((await child.exited) !== 0) process.exit(1)
+  gateSteps.push({ name: script, exitCode: await child.exited })
 }
 
-if ((await inherit(['bun', `${root}orchestrator/scripts/check-canon-lint.ts`])) !== 0)
-  process.exit(1)
+gateSteps.push({
+  name: 'check-canon-lint.ts',
+  exitCode: await inherit(['bun', `${root}orchestrator/scripts/check-canon-lint.ts`]),
+})
 
 let qualityMode: string
 try {
@@ -315,9 +322,10 @@ try {
   console.error(error instanceof Error ? error.message : String(error))
   process.exit(1)
 }
-if ((await inherit(['bun', `${root}scripts/quality/check-no-expect.ts`, qualityMode])) !== 0) {
-  process.exit(1)
-}
+gateSteps.push({
+  name: 'quality/check-no-expect.ts',
+  exitCode: await inherit(['bun', `${root}scripts/quality/check-no-expect.ts`, qualityMode]),
+})
 
 clearTimeout(runtimeDeadline)
 const summary = printSummary()
@@ -347,5 +355,10 @@ if (cpuBudgetVerdict === 'over-fatal') {
   console.error(
     `suite CPU budget exceeded by ${((cpuMs - SUITE_CPU_BUDGET_MS) / 1000).toFixed(2)}s`,
   )
-  process.exit(1)
 }
+const gate = decideGateOutcome(gateSteps)
+if (gate.failures.length > 0) {
+  console.error('gate failures:')
+  for (const name of gate.failures) console.error(name)
+}
+if (cpuBudgetVerdict === 'over-fatal' || gate.exitCode !== 0) process.exit(1)
