@@ -7,7 +7,7 @@ import { type ChildProcess, spawn } from 'node:child_process'
 import { createHash } from 'node:crypto'
 import { existsSync, mkdirSync, writeFileSync } from 'node:fs'
 import { db, nowIso, sessionId, writableDb, writeTransaction } from '../database/db.ts'
-import { preflight } from '../dispatch/dispatch-preflight.ts'
+import { callerCheckoutFacts, preflight } from '../dispatch/dispatch-preflight.ts'
 import { job } from '../jobs/jobs.ts'
 import { effectiveMcpRequest, preflightMcp, storedMcpRequest } from '../mcp/mcp-preflight.ts'
 import { projectByName } from '../project/projects.ts'
@@ -215,8 +215,15 @@ export async function detach(
     jobName,
     JSON.stringify({ ...spec, seed }),
   ]
+  const spawnFacts = callerCheckoutFacts(cwd)
   const spawnOpts = {
-    cwd: spawnCwd(cwd, process.cwd(), existsSync),
+    cwd: spawnCwd(
+      cwd,
+      spawnFacts.registeredProjectPath,
+      spawnFacts.linkedWorktree,
+      existsSync(cwd),
+      process.cwd(),
+    ),
     // The child must not inherit this process's session id: the run row
     // already records the session that ASKED for the work, and run() would
     // otherwise re-stamp it from the child's environment.
@@ -279,9 +286,13 @@ export async function detach(
  * in the spec, so only the process's starting directory falls back.
  */
 export function spawnCwd(
-  recorded: string,
+  callerCheckout: string,
+  registeredProjectPath: string | null,
+  callerCheckoutIsLinkedWorktree: boolean,
+  callerCheckoutExists: boolean,
   fallback: string,
-  exists: (path: string) => boolean,
 ): string {
-  return exists(recorded) ? recorded : fallback
+  if (registeredProjectPath) return registeredProjectPath
+  if (!callerCheckoutIsLinkedWorktree && callerCheckoutExists) return callerCheckout
+  return fallback
 }

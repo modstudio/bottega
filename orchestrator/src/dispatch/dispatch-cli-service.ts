@@ -43,11 +43,53 @@ import {
   resolveBase,
 } from '../worktree/worktree-caller.ts'
 import { dispatchCommand } from './dispatch-commands.ts'
+import { callerCheckoutFacts } from './dispatch-preflight.ts'
 
 type Presentation = {
   error(...values: unknown[]): void
   printRunId(id: number): void
   cwd(): string
+}
+
+type CallerCheckoutDecision = {
+  callerCwd: string
+  launchCwd: string
+  notice: string | null
+}
+
+export function callerCheckoutDecision(input: {
+  launchCwd: string
+  explicitCwd: string | null
+  repoRoot: string | null
+  registeredProjectPath: string | null
+  linkedWorktree: boolean
+}): CallerCheckoutDecision {
+  const callerCwd = input.explicitCwd ?? input.launchCwd
+  if (
+    input.explicitCwd !== null ||
+    input.repoRoot === null ||
+    input.registeredProjectPath === null ||
+    !input.linkedWorktree
+  ) {
+    return { callerCwd, launchCwd: input.launchCwd, notice: null }
+  }
+  return {
+    callerCwd: input.registeredProjectPath,
+    launchCwd: input.launchCwd,
+    notice:
+      `! dispatched from linked worktree ${input.launchCwd}; caller checkout is ` +
+      `${input.registeredProjectPath} (pass --cwd to choose a tree)`,
+  }
+}
+
+function resolveCallerCheckout(launchCwd: string, explicitCwd?: string): CallerCheckoutDecision {
+  const selected = explicitCwd ? realpathSync(explicitCwd) : launchCwd
+  const facts = callerCheckoutFacts(selected)
+  return callerCheckoutDecision({
+    launchCwd,
+    explicitCwd: explicitCwd ? selected : null,
+    ...facts,
+  })
 }
 
 async function modelForDistinct(id: number): Promise<string> {
@@ -273,6 +315,7 @@ export async function doCommand(argv: string[], presentation: Presentation): Pro
       checkoutHasUncommittedWork,
       resolveBase,
       implicitReviewWarning,
+      resolveCallerCheckout: (cwd) => resolveCallerCheckout(presentation.cwd(), cwd),
       resolveDispatchOptions: resolveOptions,
       detach,
       follow: (id, quiet) =>

@@ -1,6 +1,6 @@
 // concern: dispatch-commands
 /** Knows dispatch command preflight and run dispatch. Must not know transports, routing by value, worktrees, the CLI, or reviews. */
-import { existsSync, realpathSync } from 'node:fs'
+import { existsSync } from 'node:fs'
 import { isReaderJob, job, reclaimsTreeByDefault, resolveJobTimeoutMs } from '../jobs/jobs.ts'
 import type { McpRequest } from '../mcp/mcp-preflight.ts'
 import {
@@ -44,6 +44,11 @@ type DispatchPresentation = {
   checkoutHasUncommittedWork(cwd: string): boolean
   resolveBase(cwd: string, base: string): unknown
   implicitReviewWarning(cwd: string): string
+  resolveCallerCheckout(cwd?: string): {
+    callerCwd: string
+    launchCwd: string
+    notice: string | null
+  }
   resolveDispatchOptions(jobName: string): Promise<DispatchOptions>
   detach(jobName: string, prompt: string, spec: DetachSpec): Promise<number>
   follow(id: number, quiet: boolean): Promise<unknown>
@@ -61,6 +66,14 @@ const projectNames = () =>
   projects()
     .map((p) => p.name)
     .join(', ') || '(none)'
+
+function reportCallerCheckoutNotice(
+  notice: string | null,
+  porcelain: boolean,
+  error: (...values: unknown[]) => void,
+): void {
+  if (!porcelain && notice) error(notice)
+}
 
 function assertDispatchableProject(
   explicitRepo: string | undefined,
@@ -98,6 +111,7 @@ export async function dispatchCommand(
     checkoutHasUncommittedWork,
     resolveBase,
     implicitReviewWarning,
+    resolveCallerCheckout,
     resolveDispatchOptions,
     detach,
     follow,
@@ -118,7 +132,9 @@ export async function dispatchCommand(
   const requestedCwd = flag('cwd')
   if (requestedCwd && !existsSync(requestedCwd))
     throw new Error(`--cwd does not exist: ${requestedCwd}`)
-  const callerCwd = requestedCwd ? realpathSync(requestedCwd) : process.cwd()
+  const caller = resolveCallerCheckout(requestedCwd)
+  const callerCwd = caller.callerCwd
+  reportCallerCheckoutNotice(caller.notice, porcelain, error)
   const explicitRepo = flag('repo')
   assertDispatchableProject(explicitRepo, callerCwd, Boolean(requestedCwd))
   // Project-required inputs are knowable before the prompt is read. Checking
@@ -240,6 +256,7 @@ export async function dispatchCommand(
       carry: has('carry'),
       review: reviewRef,
       cwd: callerCwd,
+      launchCwd: caller.launchCwd,
       deliverables,
       timeoutMinutes,
       keepTree,
@@ -297,6 +314,7 @@ export async function dispatchCommand(
     carry: has('carry'),
     review: reviewRef,
     cwd: callerCwd,
+    launchCwd: caller.launchCwd,
     deliverables,
     timeoutMinutes,
     keepTree,
