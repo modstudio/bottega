@@ -180,7 +180,7 @@ const PATTERNS: [FailureKind, RegExp][] = [
    * mean lets an unplugged machine slowly teach the router that the local model
    * is bad at the one job it is measurably best at, which is what happened:
    * two runs during eleven hours of a powered-down local host were recorded as
-   * verdicts against `qwen-local` on `file-question`.
+   * verdicts against `qwen36-goose` on `file-question`.
    *
    * Deliberately narrower than it could be. `connection reset` stays under
    * `timeout` where it has always been: a peer that resets did answer first, and

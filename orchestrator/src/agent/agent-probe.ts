@@ -85,10 +85,10 @@ export function recordAgentProbe(name: string, result: RegistrationProbeResult):
   writableDb()
     .query('UPDATE agent SET caps=?,probed_at=?,probe_result=? WHERE name=?')
     .run(JSON.stringify(caps), nowIso(), JSON.stringify(result), name)
-  if (name === 'local-acp' && result.ok) {
+  if (name === 'qwen36-goose' && result.ok) {
     writableDb()
-      .query(`UPDATE agent SET enabled=0,disabled_reason=? WHERE name='qwen-local'`)
-      .run('retired bespoke driver; local-acp passed registration probe')
+      .query(`UPDATE agent SET enabled=0,disabled_reason=? WHERE name='qwen36-qwencli'`)
+      .run('retired bespoke driver; qwen36-goose passed registration probe')
   }
   refreshAgents()
 }

@@ -46,4 +46,10 @@ export type Caps = {
 }
 
 /** Names seeded by the registry migration and therefore valid in job preferences. */
-export const MIGRATED_AGENT_NAMES = ['agy', 'codex', 'grok', 'qwen-local', 'local-acp'] as const
+export const MIGRATED_AGENT_NAMES = [
+  'agy',
+  'codex',
+  'grok',
+  'qwen36-qwencli',
+  'qwen36-goose',
+] as const

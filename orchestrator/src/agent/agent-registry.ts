@@ -125,7 +125,7 @@ const FALLBACK_AGENTS: Record<string, Agent> = {
         caps: '{"readsRepo":false,"mcp":false,"discoversMcpFromCwd":false,"schema":true,"writesRepo":false,"resumable":false,"contextTokens":null}',
       },
       {
-        name: 'qwen-local',
+        name: 'qwen36-qwencli',
         harness: 'qwen',
         backend: 'vllm',
         model: 'Qwen/Qwen3.6-35B-A3B',
@@ -134,7 +134,7 @@ const FALLBACK_AGENTS: Record<string, Agent> = {
         billing: 'none',
         operated_by: 'self',
         enabled: 0,
-        disabled_reason: 'retired bespoke driver; replacement is local-acp',
+        disabled_reason: 'retired bespoke driver; replacement is qwen36-goose',
         probed_at: '2026-09-07T00:00:00.000Z',
         probe_result: '{"source":"migrated verified capabilities","legacy":true}',
         caps: '{"readsRepo":true,"mcp":true,"discoversMcpFromCwd":false,"schema":false,"writesRepo":false,"resumable":false,"contextTokens":131072}',

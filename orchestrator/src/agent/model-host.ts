@@ -213,7 +213,7 @@ export async function ensureLocalHealth(opts: { force?: boolean; baseUrl?: strin
  * Why this agent cannot be used at all, or null if it can.
  *
  * The reason is returned rather than a bare boolean because it is the thing
- * anyone actually needs. `--agent qwen-local` against a powered-down host used
+ * anyone actually needs. `--agent qwen36-goose` against a powered-down host used
  * to be refused as "not installed", which sends you looking for a missing
  * binary that is sitting right there on PATH.
  */

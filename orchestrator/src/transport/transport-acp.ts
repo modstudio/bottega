@@ -214,7 +214,7 @@ export function normalizeAcpTurn(input: AcpTurnInput): TransportResult {
   // updates with nothing but the status, so an event built per update never
   // carries both "completed" and the target, and the registration probe's
   // readsRepo gate could not be satisfied by a harness that had read the file
-  // (2026-09-07, local-acp: three events, statuses unknown, unknown, completed,
+  // (2026-09-07, qwen36-goose: three events, statuses unknown, unknown, completed,
   // the sentinel in the final reply). Updates fold into the call they name.
   const toolCalls = new Map<string, Extract<NormalizedEvent, { kind: 'tool' }>>()
   for (const raw of input.updates) {

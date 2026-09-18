@@ -140,7 +140,7 @@ export function readonlyLensProfile(input: {
   const vendorDomains =
     input.agent === 'grok'
       ? ['cli-chat-proxy.grok.com', 'auth.x.ai', 'api.x.ai']
-      : input.agent === 'qwen-local'
+      : input.agent === 'qwen36-qwencli'
         ? localHost(input.localBaseUrl ?? '')
         : []
   const worktree = resolve(input.worktree)
@@ -427,7 +427,7 @@ export function prepareSandboxHome(agent: string, runDir: string): Record<string
     }
     return { GROK_HOME: runDir, GROK_DISABLE_AUTOUPDATER: '1' }
   }
-  if (agent === 'qwen-local') {
+  if (agent === 'qwen36-qwencli') {
     const qwenDir = join(runDir, '.qwen')
     mkdirSync(qwenDir, { recursive: true })
     for (const name of ['settings.json', 'output-language.md']) {
