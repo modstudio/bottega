@@ -4,6 +4,7 @@ import {
   type ConfigSecret,
   configClient,
 } from './config-client.ts'
+import type { HostedConfigIdentity } from './hosted-config-space.ts'
 import {
   HOSTED_CONFIG_ENVIRONMENT,
   HostedOpenError,
@@ -37,7 +38,7 @@ type Dependencies = {
   client: ConfigClient
   machine: Awaited<ReturnType<typeof machineKeyInfo>>
   trust: TrustList
-  pinnedSpace?: string
+  pinnedIdentity?: HostedConfigIdentity
 }
 
 async function defaults(): Promise<Dependencies> {
@@ -78,7 +79,7 @@ async function one(name: string, deps: Dependencies): Promise<string | undefined
       machine: deps.machine,
       trust: deps.trust,
       expected: { key: name, scope: requestedScope, environment: HOSTED_CONFIG_ENVIRONMENT },
-      pinnedSpace: deps.pinnedSpace,
+      pinnedIdentity: deps.pinnedIdentity,
     })
     return new TextDecoder('utf-8', { fatal: true }).decode(plaintext)
   } catch (error) {

@@ -293,6 +293,7 @@ export const modules: ArchitectureModule[] = [
   ]),
   module('shared/hosted-secrets.ts', [
     './config-client.ts',
+    './hosted-config-space.ts',
     './hosted-secret-opening.ts',
     './machine-key-store.ts',
     './trust-list.ts',

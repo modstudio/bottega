@@ -1,6 +1,10 @@
 import type { ConfigClient, ConfigSecret, DataKey } from './config-client.ts'
-import { readHostedConfigSpace } from './hosted-config-space.ts'
-import { pinnedSpaceMismatchRemedy, RECORD_ACTIVE_SPACE_REMEDY } from './record-remedies.ts'
+import { type HostedConfigIdentity, readHostedConfigIdentity } from './hosted-config-space.ts'
+import {
+  pinnedSpaceMismatchRemedy,
+  pinnedUserMismatchRemedy,
+  RECORD_ACTIVE_SPACE_REMEDY,
+} from './record-remedies.ts'
 import type { MachineKeyPair } from './secret-envelope.ts'
 import { openValue, SecretEnvelopeError, unwrapDataKey } from './secret-envelope.ts'
 import type { TrustList } from './trust-list.ts'
@@ -23,14 +27,16 @@ const bytes = (value: string) => new Uint8Array(Buffer.from(value, 'base64url'))
 
 export async function hostedIdentity(
   client: ConfigClient,
-  pinnedSpace = readHostedConfigSpace(),
+  pinned = readHostedConfigIdentity(),
 ): Promise<{ spaceId: string; userId: string }> {
-  if (!pinnedSpace)
+  if (!pinned)
     throw new Error('hosted config machine is not initialized; run `orch config machine init`')
   const current = await client.whoami()
   if (!current.activeSpaceId) throw new Error(RECORD_ACTIVE_SPACE_REMEDY)
-  if (current.activeSpaceId !== pinnedSpace) throw new Error(pinnedSpaceMismatchRemedy(pinnedSpace))
-  return { spaceId: pinnedSpace, userId: current.user.id }
+  if (current.activeSpaceId !== pinned.spaceId)
+    throw new Error(pinnedSpaceMismatchRemedy(pinned.spaceId))
+  if (current.user.id !== pinned.userId) throw new Error(pinnedUserMismatchRemedy(pinned.userId))
+  return pinned
 }
 
 /** The only operation that chooses a wrap and opens a hosted secret row. */
@@ -41,7 +47,7 @@ export async function openHostedSecret(input: {
   machine: MachineKeyPair & { keyId: string }
   trust: TrustList
   expected: { key: string; scope: ConfigSecret['scope']; environment: string }
-  pinnedSpace?: string | null
+  pinnedIdentity?: HostedConfigIdentity | null
 }): Promise<Uint8Array> {
   const { row, expected } = input
   if (
@@ -60,7 +66,7 @@ export async function openHostedSecret(input: {
   if (!sender)
     throw new HostedOpenError('untrusted-sender', 'hosted secret data-key sender is not trusted')
   try {
-    const identity = await hostedIdentity(input.client, input.pinnedSpace)
+    const identity = await hostedIdentity(input.client, input.pinnedIdentity)
     const dek = await unwrapDataKey({
       enc: bytes(wrap.enc),
       ciphertext: bytes(wrap.ciphertext),

@@ -64,7 +64,7 @@ async function fixture() {
   } as unknown as ConfigClient
   return {
     machine: { ...machine, keyId },
-    pinnedSpace: spaceId,
+    pinnedIdentity: { spaceId, userId },
     dek,
     client,
     trust: {
@@ -132,4 +132,17 @@ test('refuses when the signed-in active space differs from the initialized space
     reason: 'hosted-failure',
   })
   await expect(readHostedSecrets(['TOKEN'], deps)).rejects.toThrow('switch back')
+})
+
+test('refuses when the signed-in user differs from the initialized user', async () => {
+  const deps = await fixture()
+  deps.client.whoami = async () => ({
+    user: { id: '01990000-0000-7000-8000-000000000099' },
+    activeSpaceId: spaceId,
+  })
+  await expect(readHostedSecrets(['TOKEN'], deps)).rejects.toMatchObject({
+    secretName: 'TOKEN',
+    reason: 'hosted-failure',
+  })
+  await expect(readHostedSecrets(['TOKEN'], deps)).rejects.toThrow('sign back in')
 })

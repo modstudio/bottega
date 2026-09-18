@@ -3,7 +3,7 @@ import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import type { ConfigClient } from '../../../shared/config-client.ts'
-import { readHostedConfigSpace } from '../../../shared/hosted-config-space.ts'
+import { readHostedConfigIdentity } from '../../../shared/hosted-config-space.ts'
 import { readMachineKey } from '../../../shared/machine-key-store.ts'
 import { readTrustList } from '../../../shared/trust-list.ts'
 import { machineInit, planRotation } from './config-service.ts'
@@ -65,8 +65,10 @@ test('machine init converges with an existing key, pin, space, and registration'
   const env = { BOTTEGA_CONFIG_HOME: root, BOTTEGA_KEYSTORE: 'file' }
   const registrations: string[] = []
   const spaceId = '01990000-0000-7000-8000-000000000001'
+  const userId = '01990000-0000-7000-8000-000000000002'
+  let identity = { user: { id: userId }, activeSpaceId: spaceId }
   const client = {
-    whoami: async () => ({ user: { id: 'user' }, activeSpaceId: spaceId }),
+    whoami: async () => identity,
     registerMachineKey: async (keyId: string) => {
       registrations.push(keyId)
       return {}
@@ -78,6 +80,19 @@ test('machine init converges with an existing key, pin, space, and registration'
   await expect(machineInit('fixture', client, env)).resolves.toBe(first)
   expect(readMachineKey(env)?.privateKey).toEqual(privateKey)
   expect(Object.keys(await readTrustList(env))).toEqual([first])
-  expect(readHostedConfigSpace(env)).toBe(spaceId)
+  expect(readHostedConfigIdentity(env)).toEqual({ spaceId, userId })
+  expect(registrations).toEqual([first, first])
+
+  identity = { ...identity, activeSpaceId: '01990000-0000-7000-8000-000000000003' }
+  await expect(machineInit('fixture', client, env)).rejects.toThrow('switch back')
+  expect(readHostedConfigIdentity(env)).toEqual({ spaceId, userId })
+  expect(registrations).toEqual([first, first])
+
+  identity = {
+    user: { id: '01990000-0000-7000-8000-000000000004' },
+    activeSpaceId: spaceId,
+  }
+  await expect(machineInit('fixture', client, env)).rejects.toThrow('sign back in')
+  expect(readHostedConfigIdentity(env)).toEqual({ spaceId, userId })
   expect(registrations).toEqual([first, first])
 })

@@ -1,4 +1,4 @@
-import { mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs'
+import { linkSync, mkdirSync, readFileSync, statSync, unlinkSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { type ConfigEnvironment, resolveConfigRoot } from './config-directory.ts'
 
@@ -8,12 +8,18 @@ function hostedConfigSpacePath(env: ConfigEnvironment = process.env): string {
   return join(resolveConfigRoot(env), 'hosted-config-space')
 }
 
-export function readHostedConfigSpace(env: ConfigEnvironment = process.env): string | null {
+export type HostedConfigIdentity = { spaceId: string; userId: string }
+
+export function readHostedConfigIdentity(
+  env: ConfigEnvironment = process.env,
+): HostedConfigIdentity | null {
   const path = hostedConfigSpacePath(env)
   try {
-    const value = readFileSync(path, 'utf8').trim()
-    if (!UUID.test(value)) throw new Error('stored space id is malformed')
-    return value.toLowerCase()
+    if ((statSync(path).mode & 0o077) !== 0) throw new Error('permissions are wider than 0600')
+    const value = JSON.parse(readFileSync(path, 'utf8')) as Partial<HostedConfigIdentity>
+    if (!UUID.test(value.spaceId ?? '')) throw new Error('stored space id is malformed')
+    if (!UUID.test(value.userId ?? '')) throw new Error('stored user id is malformed')
+    return { spaceId: value.spaceId!.toLowerCase(), userId: value.userId!.toLowerCase() }
   } catch (error) {
     if ((error as NodeJS.ErrnoException).code === 'ENOENT') return null
     throw new Error(
@@ -22,15 +28,27 @@ export function readHostedConfigSpace(env: ConfigEnvironment = process.env): str
   }
 }
 
-export function writeHostedConfigSpace(
-  spaceId: string,
+export function writeHostedConfigIdentity(
+  identity: HostedConfigIdentity,
   env: ConfigEnvironment = process.env,
 ): void {
-  if (!UUID.test(spaceId)) throw new Error('cannot pin malformed hosted config space id')
+  if (!UUID.test(identity.spaceId)) throw new Error('cannot pin malformed hosted config space id')
+  if (!UUID.test(identity.userId)) throw new Error('cannot pin malformed hosted config user id')
   const root = resolveConfigRoot(env)
   mkdirSync(root, { recursive: true, mode: 0o700 })
   const path = hostedConfigSpacePath(env)
   const temporary = `${path}.tmp-${process.pid}`
-  writeFileSync(temporary, `${spaceId.toLowerCase()}\n`, { mode: 0o600 })
-  renameSync(temporary, path)
+  writeFileSync(
+    temporary,
+    `${JSON.stringify({
+      spaceId: identity.spaceId.toLowerCase(),
+      userId: identity.userId.toLowerCase(),
+    })}\n`,
+    { mode: 0o600, flag: 'wx' },
+  )
+  try {
+    linkSync(temporary, path)
+  } finally {
+    unlinkSync(temporary)
+  }
 }

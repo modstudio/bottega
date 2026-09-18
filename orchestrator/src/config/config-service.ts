@@ -10,7 +10,10 @@ import {
   type DataKey,
 } from '../../../shared/config-client.ts'
 import type { ConfigEnvironment } from '../../../shared/config-directory.ts'
-import { writeHostedConfigSpace } from '../../../shared/hosted-config-space.ts'
+import {
+  readHostedConfigIdentity,
+  writeHostedConfigIdentity,
+} from '../../../shared/hosted-config-space.ts'
 import {
   HOSTED_CONFIG_ENVIRONMENT,
   hostedIdentity,
@@ -22,7 +25,11 @@ import {
   readMachineKey,
   writeMachineKey,
 } from '../../../shared/machine-key-store.ts'
-import { RECORD_ACTIVE_SPACE_REMEDY } from '../../../shared/record-remedies.ts'
+import {
+  pinnedSpaceMismatchRemedy,
+  pinnedUserMismatchRemedy,
+  RECORD_ACTIVE_SPACE_REMEDY,
+} from '../../../shared/record-remedies.ts'
 import {
   generateDataKey,
   generateMachineKeyPair,
@@ -153,14 +160,21 @@ export async function machineInit(
   client = configClient(),
   env: ConfigEnvironment = process.env,
 ): Promise<string> {
+  const pinned = readHostedConfigIdentity(env)
+  const current = await client.whoami()
+  if (!current.activeSpaceId) throw new Error(RECORD_ACTIVE_SPACE_REMEDY)
+  if (pinned) {
+    if (current.activeSpaceId !== pinned.spaceId)
+      throw new Error(pinnedSpaceMismatchRemedy(pinned.spaceId))
+    if (current.user.id !== pinned.userId) throw new Error(pinnedUserMismatchRemedy(pinned.userId))
+  }
   const existing = readMachineKey(env)
   const pair = existing ?? (await generateMachineKeyPair())
   const keyId = await machineKeyId(pair.publicKey)
   if (!existing) writeMachineKey(pair, env)
-  const current = await client.whoami()
-  if (!current.activeSpaceId) throw new Error(RECORD_ACTIVE_SPACE_REMEDY)
   await pinTrustedMachine(keyId, pair.publicKey, label, env)
-  writeHostedConfigSpace(current.activeSpaceId, env)
+  if (!pinned)
+    writeHostedConfigIdentity({ spaceId: current.activeSpaceId, userId: current.user.id }, env)
   await client.registerMachineKey(keyId, encoded(pair.publicKey), label)
   return keyId
 }
