@@ -123,10 +123,10 @@ done
 
 echo
 echo "--- orch metric (Claude tokens per shipped task) ---"
-if command -v orch >/dev/null 2>&1; then
-  orch metric collect --days 30 2>&1 | sed 's/^/  /'
+if [[ -x "$ORCH" ]]; then
+  "$ORCH" metric collect --days 30 2>&1 | sed 's/^/  /'
 else
-  echo "  SKIP: orch not on PATH"
+  echo "  SKIP: orch is not executable at $ORCH"
 fi
 
 echo

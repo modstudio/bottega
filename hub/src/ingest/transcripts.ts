@@ -7,7 +7,28 @@ import { attribute, isInjected, projectOf } from '../attribute.ts'
 import { nowIso, writeTransaction } from '../db.ts'
 import { signedInRecordUserId } from '../sync.ts'
 
-const CLAUDE_ROOT = `${process.env.HOME}/.claude/projects`
+type TranscriptRoot = { source: 'read'; path: string } | { source: 'disabled' }
+
+/** Decide which transcript root to use from facts gathered by the environment adapter. */
+export function resolveTranscriptRoot(
+  override: string | undefined,
+  home: string | undefined,
+): TranscriptRoot {
+  if (override === '') return { source: 'disabled' }
+
+  const path = override ?? (home ? join(home, '.claude/projects') : null)
+  if (!path) {
+    throw new Error(
+      'Cannot resolve the default transcript root at .claude/projects under HOME because HOME is unset or empty; set HUB_TRANSCRIPT_ROOT to a readable path or set HUB_TRANSCRIPT_ROOT="" to disable transcript ingest',
+    )
+  }
+  return { source: 'read', path }
+}
+
+/** Build the refusal for a resolved transcript root that cannot be read. */
+export function unreadableTranscriptRootMessage(path: string): string {
+  return `Cannot read transcript root ${path}; set HUB_TRANSCRIPT_ROOT to a readable path or set HUB_TRANSCRIPT_ROOT="" to disable transcript ingest`
+}
 
 /** Every .jsonl transcript under a root. */
 function transcripts(dir: string, out: string[] = []): string[] {
@@ -157,7 +178,16 @@ export async function ingestTranscripts(
   since: string,
   idleCapMs = DEFAULT_IDLE_CAP_MS,
   attributedUserId?: string | null,
-): Promise<{ files: number; rows: number }> {
+): Promise<{ files: number; rows: number; source: 'read' | 'disabled' }> {
+  const root = resolveTranscriptRoot(process.env.HUB_TRANSCRIPT_ROOT, process.env.HOME)
+  if (root.source === 'disabled') return { files: 0, rows: 0, source: 'disabled' }
+
+  try {
+    readdirSync(root.path)
+  } catch {
+    throw new Error(unreadableTranscriptRootMessage(root.path))
+  }
+
   const userId = attributedUserId === undefined ? await signedInRecordUserId() : attributedUserId
   const sinceMs = new Date(since).getTime()
   const sinceDay = since.slice(0, 10)
@@ -179,7 +209,7 @@ export async function ingestTranscripts(
   let files = 0
   let rows = 0
 
-  for (const file of transcripts(CLAUDE_ROOT)) {
+  for (const file of transcripts(root.path)) {
     // The cheap 90%: a file untouched since the window opened cannot contain a
     // message inside it.
     try {
@@ -189,11 +219,10 @@ export async function ingestTranscripts(
     }
     files++
 
-    const ref = file.startsWith(CLAUDE_ROOT + '/') ? file.slice(CLAUDE_ROOT.length + 1) : file
+    const ref = file.startsWith(root.path + '/') ? file.slice(root.path.length + 1) : file
     const legs = (await legsOf(file, ref, sinceMs))
-      // Work outside the five checkouts is somebody else's directory, not this
-      // estate's. It is left out rather than charged to a project it never
-      // touched.
+      // Work outside registered projects is left out rather than charged to a
+      // project it never touched.
       .filter((l) => projectOf(l.cwd))
     if (!legs.length) continue
 
@@ -276,5 +305,5 @@ export async function ingestTranscripts(
                 ON CONFLICT(key) DO UPDATE SET value = excluded.value`)
       .run(JSON.stringify(nowIso())),
   )
-  return { files, rows }
+  return { files, rows, source: 'read' }
 }

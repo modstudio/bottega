@@ -20,9 +20,9 @@ export type Report = {
    */
   minMinutes: number
   /**
-   * Which projects the EMAIL covers. The dashboard is always all five; the
-   * report is a subset, and that difference is the reason this is a setting
-   * rather than a constant.
+   * Which projects the EMAIL covers. The dashboard covers every registered
+   * project; the report is a subset, and that difference is the reason this is
+   * a setting rather than a constant.
    */
   projects: string[]
   /**

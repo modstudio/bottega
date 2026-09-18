@@ -280,7 +280,11 @@ async function collect() {
   }
   if (run('transcripts')) {
     const t = await ingestTranscripts(since)
-    console.log(`transcripts  ${t.rows} intervals from ${t.files} files`)
+    console.log(
+      t.source === 'disabled'
+        ? 'transcripts  disabled'
+        : `transcripts  ${t.rows} intervals from ${t.files} files`,
+    )
   }
 
   if (run('tasks')) {
