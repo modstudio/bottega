@@ -29,7 +29,13 @@ import { DEFAULT_KEEP_TREE_HOURS, keepTreeExemption } from '../worktree/keep-tre
 import { worktreeDirty } from '../worktree/worktree-attribution.ts'
 import type { Worktree } from '../worktree/worktree-types.ts'
 import { catchFixTreeDisposition } from './issue-catch.ts'
-import { boundedIssuePack, type FiledIssue, parseFiledIssue, seedFromReport } from './issue-file.ts'
+import {
+  boundedIssuePack,
+  type FiledIssue,
+  parseFiledIssue,
+  seedAnswer,
+  seedFromReport,
+} from './issue-file.ts'
 import {
   filedIssueCommandPlan,
   issueFixReady,
@@ -238,12 +244,13 @@ async function handoff(key: string, title: string, body: string) {
   }
 }
 
-function requestText(
+export function requestText(
   issue: FiledIssue,
   question: string,
   options: string[],
   recommendation: string,
   why: string,
+  rejectedSeed: string | null = null,
 ) {
   return [
     'ISSUE REQUEST',
@@ -253,9 +260,42 @@ function requestText(
     `Recommendation: ${recommendation}`,
     `What it blocks: ${why}`,
     'What was established: the filed report was read; reproduction has not started.',
+    ...(rejectedSeed
+      ? [`Rejected seed: ${rejectedSeed}; registered options: ${options.join(' | ')}`]
+      : []),
+    `Answer with: hub task comment ${issue.key} "Seed: <one of the options>"`,
     `Resume with: orch fix-defect ${issue.key}`,
     `What is not established: ${issue.notEstablished}`,
   ].join('\n')
+}
+
+function taskCommentBodies(shown: { comments?: { body?: unknown }[] }): string[] {
+  return (shown.comments ?? []).flatMap((item) =>
+    typeof item.body === 'string' ? [item.body] : [],
+  )
+}
+
+function rejectedSeedAnswer(seeds: string[], comments: string[]): string | null {
+  for (let index = comments.length - 1; index >= 0; index--) {
+    const value = comments[index]!.match(/^Seed: (.+)$/)?.[1]
+    if (value && !seeds.includes(value)) return value
+  }
+  return null
+}
+
+function resolvedSeed(
+  project: Project,
+  environment: string | null,
+  comments: string[],
+): string | null {
+  const seeds = project.settings.worktree?.seeds ?? []
+  return seedAnswer(seeds, comments) ?? seedFromReport(project, environment)
+}
+
+function fixSeedRejection(target: Project, reporting: Project, comments: string[]): string | null {
+  return target.name === reporting.name
+    ? rejectedSeedAnswer(target.settings.worktree?.seeds ?? [], comments)
+    : null
 }
 
 function diagnosisPrompt(issue: FiledIssue, priorRecord: string): string {
@@ -271,9 +311,7 @@ async function priorIssueRecord(shown: {
   comments?: { body?: unknown }[]
   documents?: { id?: unknown; role?: unknown }[]
 }): Promise<string> {
-  const comments = (shown.comments ?? []).flatMap((item) =>
-    typeof item.body === 'string' ? [item.body] : [],
-  )
+  const comments = taskCommentBodies(shown)
   const documents: string[] = []
   for (const document of shown.documents ?? []) {
     if (document.role !== 'handoff' || typeof document.id !== 'number') continue
@@ -632,7 +670,8 @@ export async function workIssue(key: string): Promise<void> {
     return
   }
   const seeds = reporting.settings.worktree?.seeds ?? []
-  const seed = seedFromReport(reporting, issue.environment)
+  const comments = taskCommentBodies(shown)
+  const seed = resolvedSeed(reporting, issue.environment, comments)
   if (seeds.length && !seed) {
     const body = requestText(
       issue,
@@ -642,6 +681,7 @@ export async function workIssue(key: string): Promise<void> {
         ? 'none, unless the reported behavior depends on application data'
         : seeds[0]!,
       'No isolated reporting-project worktree can be created without this choice.',
+      rejectedSeedAnswer(seeds, comments),
     )
     await comment(issue.key, body)
     console.log(body)
@@ -826,6 +866,7 @@ export async function workIssue(key: string): Promise<void> {
           ? 'none, if the established measurement remains observable'
           : targetSeeds[0]!,
         `The writing worktree for ${target.name} cannot be created.`,
+        fixSeedRejection(target, reporting, comments),
       )
       await comment(issue.key, body)
       completed = true
