@@ -1,5 +1,10 @@
 import { readRecordSessionToken } from '../../shared/record-session.ts'
-import type { HostedReportSetting, HostedSend } from './hosted-reports.ts'
+import type {
+  HostedReportSetting,
+  HostedReportSubscription,
+  HostedSend,
+  ReportSubscriptionWriteInput,
+} from './hosted-reports.ts'
 
 const TEST_REFUSAL =
   'hub report client refuses a real hosted URL unless a stub is injected in tests'
@@ -82,3 +87,21 @@ export const hostedMirrorReports = (body: unknown, options?: ReportClientOptions
   request<{ upserted: number }>('/v1/sends/mirror', 'PUT', body, options)
 export const hostedReportCounts = (options?: ReportClientOptions) =>
   request<{ setting: number; sends: number }>('/v1/sends/counts', 'GET', undefined, options)
+export const hostedListReportSubscriptions = (options?: ReportClientOptions) =>
+  request<{ subscriptions: HostedReportSubscription[] }>(
+    '/v1/report-subscriptions',
+    'GET',
+    undefined,
+    options,
+  )
+export const hostedCreateReportSubscription = (
+  body: ReportSubscriptionWriteInput,
+  options?: ReportClientOptions,
+) => request<HostedReportSubscription>('/v1/report-subscriptions', 'POST', body, options)
+export const hostedUnsubscribeReportSubscription = (id: string, options?: ReportClientOptions) =>
+  request<{ id: string; deleted: boolean }>(
+    `/v1/report-subscriptions/${id}`,
+    'DELETE',
+    undefined,
+    options,
+  )

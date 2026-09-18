@@ -188,6 +188,50 @@ export const hubReportSetting = pgTable.withRLS(
   ],
 )
 
+export const hubReportSubscription = pgTable.withRLS(
+  'hub_report_subscription',
+  {
+    id: identity(),
+    spaceId: spaceIdentity(),
+    scopeKind: text('scope_kind').notNull(),
+    projectName: text('project_name'),
+    personUserId: uuid('person_user_id').references(() => user.id),
+    cadence: text().notNull(),
+    hour: integer().notNull(),
+    weekday: text(),
+    zone: text().notNull(),
+    recipientUserId: uuid('recipient_user_id')
+      .notNull()
+      .references(() => user.id),
+    enabled: integer().notNull().default(1),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull(),
+    updatedAt: updatedAt(),
+    deletedAt: timestamp('deleted_at', { withTimezone: true }),
+  },
+  (table) => [
+    check(
+      'hub_report_subscription_scope_kind_check',
+      sql`${table.scopeKind} IN ('space','project','person')`,
+    ),
+    check(
+      'hub_report_subscription_scope_check',
+      sql`(${table.scopeKind} = 'space' AND ${table.projectName} IS NULL AND ${table.personUserId} IS NULL)
+        OR (${table.scopeKind} = 'project' AND ${table.projectName} IS NOT NULL AND ${table.personUserId} IS NULL)
+        OR (${table.scopeKind} = 'person' AND ${table.personUserId} IS NOT NULL AND ${table.projectName} IS NULL)`,
+    ),
+    check('hub_report_subscription_cadence_check', sql`${table.cadence} IN ('daily','weekly')`),
+    check('hub_report_subscription_hour_check', sql`${table.hour} >= 0 AND ${table.hour} <= 23`),
+    check(
+      'hub_report_subscription_weekday_check',
+      sql`(${table.cadence} = 'daily' AND ${table.weekday} IS NULL)
+        OR (${table.cadence} = 'weekly' AND ${table.weekday} IN ('monday','tuesday','wednesday','thursday','friday','saturday','sunday'))`,
+    ),
+    check('hub_report_subscription_zone_check', sql`char_length(${table.zone}) > 0`),
+    check('hub_report_subscription_enabled_check', sql`${table.enabled} IN (0,1)`),
+    ...tenantPolicies('hub_report_subscription', table.spaceId),
+  ],
+)
+
 export const hubSend = pgTable.withRLS(
   'hub_send',
   {

@@ -41,7 +41,7 @@ import {
   summarise,
 } from './report.ts'
 import { refreshHostedReportSetting } from './report-cache.ts'
-import { pushReports } from './report-push.ts'
+import { runReportCommand } from './report-cli.ts'
 import { listOpenRulings, rulingsPayload } from './rulings.ts'
 import { serve } from './serve.ts'
 import { ownServeRecord, servePortIsFree, stopRecordedServe } from './serve-lifecycle.ts'
@@ -252,6 +252,10 @@ const USAGE = `hub — every project's tasks in flight, what each cost, and the 
   hub note curator [--enable|--disable]
   hub note push [--dry-run]   migrate and verify the local note cache
 
+  hub report subscribe --scope space|project|person [--project NAME] --cadence daily|weekly
+                              --hour N [--day monday] --zone AREA/CITY [--recipient USER_ID]
+  hub report subscriptions [--json]
+  hub report unsubscribe <ID>
   hub report push [--dry-run] migrate and verify report settings and send history
 
   hub send [--dry-run]        the daily report; --dry-run prints it instead
@@ -1020,13 +1024,9 @@ try {
     case 'send':
       await sendReport()
       break
-    case 'report': {
-      if (argv[1] !== 'push') throw new Error('usage: hub report push [--dry-run]')
-      const result = await pushReports({ dryRun: has('dry-run') })
-      console.log(JSON.stringify(result, null, 2))
-      if (result.match === false) process.exitCode = 1
+    case 'report':
+      await runReportCommand(argv)
       break
-    }
     case undefined:
     case 'help':
     case '--help':
