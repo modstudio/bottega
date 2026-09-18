@@ -256,6 +256,18 @@ export function mergeSeededSteps<T extends { slug: string }>(
   ]
 }
 
+export function seedMayPromote({
+  seedRevision,
+  storedSeedRevision,
+  operatorPromoted,
+}: {
+  seedRevision: number
+  storedSeedRevision: number
+  operatorPromoted: boolean
+}): boolean {
+  return seedRevision > storedSeedRevision && !operatorPromoted
+}
+
 function workflowDefinition(seed: LegacySeed) {
   const { steps: _steps, ...definition } = seed.definition
   return {
@@ -287,7 +299,14 @@ function seedCatalogue(d: Database, now: string): void {
     ).run(catalogue.id, reason, now)
     return
   }
-  if (revision <= storedCatalogueSeedRevision(d, catalogue.id)) return
+  if (
+    !seedMayPromote({
+      seedRevision: revision,
+      storedSeedRevision: storedCatalogueSeedRevision(d, catalogue.id),
+      operatorPromoted: operatorPromotedCatalogue(d, catalogue.id),
+    })
+  )
+    return
   const prior = d
     .query(
       "SELECT n,definition FROM step_catalogue_version WHERE catalogue_id=? AND status='production'",
@@ -335,6 +354,16 @@ function storedCatalogueSeedRevision(d: Database, catalogueId: number): number {
   }, 0)
 }
 
+function operatorPromotedCatalogue(d: Database, catalogueId: number): boolean {
+  return (
+    d
+      .query(
+        "SELECT 1 FROM step_catalogue_event WHERE catalogue_id=? AND event='promote' AND author!='seed' LIMIT 1",
+      )
+      .get(catalogueId) != null
+  )
+}
+
 function storedSeedRevision(d: Database, workflowId: number): number {
   const events = d
     .query("SELECT reason FROM workflow_event WHERE workflow_id=? AND author='seed'")
@@ -344,6 +373,16 @@ function storedSeedRevision(d: Database, workflowId: number): number {
     const revision = reason.match(/^seed r(\d+)$/)?.[1]
     return revision ? Math.max(highest, Number(revision)) : highest
   }, 0)
+}
+
+function operatorPromotedWorkflow(d: Database, workflowId: number): boolean {
+  return (
+    d
+      .query(
+        "SELECT 1 FROM workflow_event WHERE workflow_id=? AND event='promote' AND author!='seed' LIMIT 1",
+      )
+      .get(workflowId) != null
+  )
 }
 
 export function seedWorkflows(d: Database): void {
@@ -373,7 +412,14 @@ export function seedWorkflows(d: Database): void {
           VALUES (?,1,'set','seed',?,NULL,?)`).run(workflow.id, reason, now)
         continue
       }
-      if (seed.revision <= storedSeedRevision(d, workflow.id)) continue
+      if (
+        !seedMayPromote({
+          seedRevision: seed.revision,
+          storedSeedRevision: storedSeedRevision(d, workflow.id),
+          operatorPromoted: operatorPromotedWorkflow(d, workflow.id),
+        })
+      )
+        continue
       // A workflow may have no production version (a draft never promoted); then there is nothing to retire.
       const prior = d
         .query("SELECT n FROM workflow_version WHERE workflow_id=? AND status='production'")
