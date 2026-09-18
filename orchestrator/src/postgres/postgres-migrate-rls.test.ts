@@ -755,6 +755,25 @@ realPostgres('RLS proof against real Postgres', () => {
       })
       expect(snapshotItems.items.some((item) => item.payload.hidden === true)).toBe(false)
       await proveHostedDocs({ origin, token: created.token, otherToken: tokenB })
+
+      succeeds(
+        'postgres',
+        'postgres',
+        `DELETE FROM membership
+         WHERE user_id='${created.user.id}'::uuid
+           AND space_id='${identity.activeSpaceId}'::uuid;`,
+      )
+      const staleWhoami = await fetch(`${origin}/v1/whoami`, {
+        headers: { Authorization: `Bearer ${created.token}` },
+      })
+      expect(staleWhoami.status).toBe(200)
+      expect((await staleWhoami.json()) as { activeSpaceId: string | null }).toMatchObject({
+        activeSpaceId: null,
+      })
+      const staleScopedRequest = await fetch(`${origin}/v1/runs`, {
+        headers: { Authorization: `Bearer ${created.token}` },
+      })
+      expect(staleScopedRequest.status).toBe(409)
     } finally {
       server.stop(true)
     }

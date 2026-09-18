@@ -201,8 +201,7 @@ export function recordApi(deps: Deps): Hono<ApiEnvironment> {
     await next()
   })
   app.get('/v1/whoami', (context) => {
-    const identity = context.get('identity')
-    return identity.activeSpaceId ? context.json(identity) : noSpace(context)
+    return context.json(context.get('identity'))
   })
   app.put('/v1/active-space', async (context) => {
     const input = z

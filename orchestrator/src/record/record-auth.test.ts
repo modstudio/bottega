@@ -1,5 +1,6 @@
 import { afterAll, beforeAll, expect, test } from 'bun:test'
 import {
+  activeMembershipSpace,
   ensurePersonalSpace,
   type PersonalSpace,
   recordAllowedOrigins,
@@ -110,4 +111,9 @@ test('session ignores a departed remembered space and falls back through members
       membershipSpaceIds: ['personal'],
     }),
   ).toBe('personal')
+})
+
+test('active space is kept only while it is a current membership', () => {
+  expect(activeMembershipSpace('current', ['personal', 'current'])).toBe('current')
+  expect(activeMembershipSpace('departed', ['personal', 'current'])).toBeNull()
 })

@@ -60,10 +60,14 @@ describe('record API', () => {
     })
   })
 
-  test('refuses a session without an active space', async () => {
+  test('reports a session without an active space while scoped routes refuse it', async () => {
     const response = await appWith({ ...identity, activeSpaceId: null }).request('/v1/whoami')
-    expect(response.status).toBe(409)
-    expect(await response.json()).toEqual({
+    expect(response.status).toBe(200)
+    expect(await response.json()).toEqual({ ...identity, activeSpaceId: null })
+
+    const scoped = await appWith({ ...identity, activeSpaceId: null }).request('/v1/projects')
+    expect(scoped.status).toBe(409)
+    expect(await scoped.json()).toEqual({
       error: 'record session has no active space',
       remedy: 'run `orch record space switch <slug>` to select an active space',
     })
