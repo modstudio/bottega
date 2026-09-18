@@ -1,6 +1,6 @@
 import { initTRPC, TRPCError } from '@trpc/server'
 import { z } from 'zod'
-import { hostedMeasures } from '../../hosted-measures.ts'
+import { hostedMeasurePeople, hostedMeasures } from '../../hosted-measures.ts'
 import {
   hostedBoard,
   hostedFlightDone,
@@ -201,7 +201,11 @@ export const recordRouter = t.router({
         scope: z.discriminatedUnion('kind', [
           z.object({ kind: z.literal('space') }),
           z.object({ kind: z.literal('project'), project: z.string().min(1).max(64) }),
-          z.object({ kind: z.literal('person'), userId: uuid }),
+          z.object({
+            kind: z.literal('person'),
+            userId: uuid,
+            project: z.string().min(1).max(64).optional(),
+          }),
         ]),
       }),
     )
@@ -212,6 +216,23 @@ export const recordRouter = t.router({
         identity,
         { from: input.from, to: input.to },
         input.scope,
+      )
+    }),
+  measurePeople: t.procedure
+    .input(
+      z.object({
+        from: z.iso.datetime(),
+        to: z.iso.datetime(),
+        project: z.string().min(1).max(64).optional(),
+      }),
+    )
+    .query(async ({ ctx, input }) => {
+      const { identity } = await hostedIdentity(ctx)
+      return hostedMeasurePeople(
+        recordDatabaseUrl(),
+        identity,
+        { from: input.from, to: input.to },
+        input.project,
       )
     }),
   spend: t.procedure.input(workInput).query(async ({ ctx, input }) => {

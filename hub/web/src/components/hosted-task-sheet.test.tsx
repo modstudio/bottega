@@ -54,6 +54,44 @@ test('hosted task detail renders all history without mutation controls', () => {
         open: 0,
       },
     ],
+    measures: {
+      scope: 'space',
+      hoursRunning: {
+        notAdditive: true,
+        unionMs: 3_600_000,
+        sample: { intervalCount: 1 },
+        from: { startedIntervals: 1, sessionIntervals: 0 },
+      },
+      agentHours: {
+        from: 'started',
+        sumMs: 3_600_000,
+        sample: { intervalCount: 1 },
+        unknownShare: { intervalCount: 1, sumMs: 3_600_000 },
+      },
+      sessionTime: {
+        from: 'session',
+        unionThenSumMs: 0,
+        uncountedSilenceMs: 0,
+        sample: { intervalCount: 0, userCount: 0 },
+        silenceAllowanceMs: 600_000,
+        silenceAllowanceSentence: 'Silences longer than ten minutes are not counted.',
+        unknownUser: { unionThenSumMs: 0, uncountedSilenceMs: 0, sample: { intervalCount: 0 } },
+      },
+      cost: {
+        from: 'started',
+        vendorCostUsd: 0,
+        vendorTokens: 100,
+        sample: { intervalCount: 1 },
+        unknownShare: { vendorCostUsd: 0, vendorTokens: 100, intervalCount: 1 },
+      },
+      shipped: { count: 1, sample: { taskCount: 1, eventCount: 1 } },
+      cycleTime: { medianMs: 3_600_000, p90Ms: 3_600_000, n: 1 },
+    },
+    measureCoverage: {
+      hasRecordedTime: false,
+      from: '2026-09-17T10:00:00.000Z',
+      to: '2026-09-17T12:00:00.001Z',
+    },
   })
   const html = renderToStaticMarkup(
     <QueryClientProvider client={queryClient}>
@@ -63,6 +101,7 @@ test('hosted task detail renders all history without mutation controls', () => {
   expect(html).toContain('A comment')
   expect(html).toContain('Status history')
   expect(html).toContain('Intervals')
+  expect(html).toContain('No time was recorded for this task')
   expect(html).not.toContain('Save document')
   expect(html).not.toContain('Add comment')
   expect(html).not.toContain('Task status')

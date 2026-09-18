@@ -72,6 +72,35 @@ describe('hours running and agent-hours', () => {
     expect(measures.agentHours.from).toBe('started')
     expect(measures.agentHours.sumMs).toBe(HOUR * 2)
   })
+
+  test('a person within a project excludes their evidence from other projects', () => {
+    const rows = {
+      intervals: [
+        interval({
+          source: 'orch',
+          startAt: '2026-09-17T12:00:00.000Z',
+          endAt: '2026-09-17T13:00:00.000Z',
+          userId: MAYA,
+          project: PLATFORM_SLUG,
+        }),
+        interval({
+          source: 'orch',
+          startAt: '2026-09-17T12:00:00.000Z',
+          endAt: '2026-09-17T14:00:00.000Z',
+          userId: MAYA,
+          project: 'other',
+        }),
+      ],
+      events: [],
+    }
+    expect(
+      computeMeasures(rows, WINDOW, {
+        kind: 'person',
+        userId: MAYA,
+        project: PLATFORM_SLUG,
+      }).agentHours.sumMs,
+    ).toBe(HOUR)
+  })
 })
 
 describe('session time', () => {

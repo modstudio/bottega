@@ -8,7 +8,7 @@ export type MeasureWindow = { from: string; to: string }
 export type MeasureScope =
   | { kind: 'space' }
   | { kind: 'project'; project: string }
-  | { kind: 'person'; userId: string }
+  | { kind: 'person'; userId: string; project?: string }
 
 export type MeasureInterval = {
   source: string
@@ -100,7 +100,10 @@ const at = (iso: string) => new Date(iso).getTime()
 
 function inScope(interval: MeasureInterval, scope: MeasureScope): boolean {
   if (scope.kind === 'project') return interval.project === scope.project
-  if (scope.kind === 'person') return interval.userId === scope.userId
+  if (scope.kind === 'person')
+    return (
+      interval.userId === scope.userId && (!scope.project || interval.project === scope.project)
+    )
   return true
 }
 
