@@ -1,7 +1,7 @@
 // concern: filed-issue queue policy
 /** Selects and bounds filed issues without knowing their storage or dispatch adapters. */
 
-import { parseFiledIssue } from './issue.ts'
+import { parseFiledIssue } from './issue-file.ts'
 
 export const MAX_ISSUES_PER_PASS = 5
 export const MAX_HELD_ISSUE_TREES = 3

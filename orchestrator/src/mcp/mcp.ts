@@ -20,7 +20,7 @@ import {
   listDocs,
   setDoc,
 } from '../doc/docs.ts'
-import { filedIssueDataLine } from '../issue/issue.ts'
+import { filedIssueDataLine } from '../issue/issue-file.ts'
 import {
   CONDITIONAL_ISSUE_REPORT_FIELD_REASONS,
   missingIssueReportFields,
