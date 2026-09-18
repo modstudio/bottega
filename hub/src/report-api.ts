@@ -26,7 +26,7 @@ const sendFilters = (url: URL) => ({
   cursor: url.searchParams.get('cursor') ?? undefined,
 })
 
-async function dispatchReportRequest(
+async function settingRoute(
   request: Request,
   url: URL,
   config: Config,
@@ -49,6 +49,17 @@ async function dispatchReportRequest(
         body as never,
       ),
     )
+  return null
+}
+
+async function sendRoute(
+  request: Request,
+  url: URL,
+  config: Config,
+  dependencies: Dependencies,
+  who: { userId: string; spaceId: string },
+  body: Record<string, unknown> | null,
+) {
   if (request.method === 'GET' && url.pathname === '/v1/sends/counts')
     return json(await call(dependencies.counts, hostedReportCounts)(config.recordDatabaseUrl, who))
   if (request.method === 'GET' && url.pathname === '/v1/sends')
@@ -76,6 +87,17 @@ async function dispatchReportRequest(
         body as never,
       ),
     )
+  return null
+}
+
+async function subscriptionRoute(
+  request: Request,
+  url: URL,
+  config: Config,
+  dependencies: Dependencies,
+  who: { userId: string; spaceId: string },
+  body: Record<string, unknown> | null,
+) {
   if (request.method === 'GET' && url.pathname === '/v1/report-subscriptions')
     return json(
       await call(dependencies.listSubscriptions, listHostedReportSubscriptions)(
@@ -101,7 +123,23 @@ async function dispatchReportRequest(
         unsubscribe[1]!,
       ),
     )
-  return new Response('not found', { status: 404 })
+  return null
+}
+
+async function dispatchReportRequest(
+  request: Request,
+  url: URL,
+  config: Config,
+  dependencies: Dependencies,
+  who: { userId: string; spaceId: string },
+  body: Record<string, unknown> | null,
+) {
+  return (
+    (await settingRoute(request, url, config, dependencies, who, body)) ??
+    (await sendRoute(request, url, config, dependencies, who, body)) ??
+    (await subscriptionRoute(request, url, config, dependencies, who, body)) ??
+    new Response('not found', { status: 404 })
+  )
 }
 
 export async function reportApi(

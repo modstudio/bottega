@@ -65,7 +65,7 @@ export type HostedReportSubscription = {
   updated_at: string
 }
 
-export type ReportSubscriptionScopeInput =
+type ReportSubscriptionScopeInput =
   | { kind: 'space' }
   | { kind: 'project'; project: string }
   | { kind: 'person'; userId?: string }
@@ -80,7 +80,7 @@ export type ReportSubscriptionWriteInput = {
   enabled?: boolean
 }
 
-export type PlannedReportSubscription = {
+type PlannedReportSubscription = {
   scope_kind: HostedReportSubscription['scope_kind']
   project_name: string | null
   person_user_id: string | null
@@ -133,53 +133,66 @@ export function assertReportSubscriptionFound<T>(row: T | null | undefined): T {
   return row
 }
 
-export function planReportSubscription(
-  caller: { userId: string; spaceId: string },
-  input: ReportSubscriptionWriteInput,
-  facts: { projectNames: readonly string[]; memberUserIds: readonly string[] },
-): PlannedReportSubscription {
-  const scope = input.scope
+function planSubscriptionScope(
+  caller: { userId: string },
+  scope: ReportSubscriptionScopeInput | undefined,
+  projectNames: readonly string[],
+): Pick<PlannedReportSubscription, 'scope_kind' | 'project_name' | 'person_user_id'> {
   if (!scope || (scope.kind !== 'space' && scope.kind !== 'project' && scope.kind !== 'person'))
     throw new Error('scope must be space, a project in this space, or yourself')
-  let projectName: string | null = null
-  let personUserId: string | null = null
   if (scope.kind === 'project') {
     const project = scope.project.trim()
     if (!project) throw new Error('project scope requires a project')
-    if (!facts.projectNames.includes(project))
-      throw new Error(`project ${project} is not in this space`)
-    projectName = project
-  } else if (scope.kind === 'person') {
+    if (!projectNames.includes(project)) throw new Error(`project ${project} is not in this space`)
+    return { scope_kind: 'project', project_name: project, person_user_id: null }
+  }
+  if (scope.kind === 'person') {
     const person = scope.userId ?? caller.userId
     if (person !== caller.userId) throw new Error('person scope must be the calling member')
-    personUserId = person
+    return { scope_kind: 'person', project_name: null, person_user_id: person }
   }
+  return { scope_kind: 'space', project_name: null, person_user_id: null }
+}
+
+function planSubscriptionCadence(
+  input: ReportSubscriptionWriteInput,
+): Pick<PlannedReportSubscription, 'cadence' | 'hour' | 'weekday' | 'zone'> {
   if (input.cadence !== 'daily' && input.cadence !== 'weekly')
     throw new Error('cadence must be daily or weekly')
   if (!Number.isInteger(input.hour) || input.hour < 0 || input.hour > 23)
     throw new Error('hour must be an integer from 0 through 23')
   const weekdayRaw = input.weekday?.trim().toLowerCase() ?? ''
-  let weekday: Weekday | null = null
   if (input.cadence === 'daily') {
     if (weekdayRaw) throw new Error('daily cadence does not take a day')
-  } else {
-    if (!WEEKDAYS.includes(weekdayRaw as Weekday))
-      throw new Error('weekly cadence requires a day from monday through sunday')
-    weekday = weekdayRaw as Weekday
+    return cadenceFields('daily', input.hour, null, input.zone)
   }
-  const zone = input.zone.trim()
+  if (!WEEKDAYS.includes(weekdayRaw as Weekday))
+    throw new Error('weekly cadence requires a day from monday through sunday')
+  return cadenceFields('weekly', input.hour, weekdayRaw as Weekday, input.zone)
+}
+
+function cadenceFields(
+  cadence: PlannedReportSubscription['cadence'],
+  hour: number,
+  weekday: Weekday | null,
+  zoneRaw: string,
+) {
+  const zone = zoneRaw.trim()
   if (!TIME_ZONES.has(zone)) throw new Error('zone must be an IANA time zone')
+  return { cadence, hour, weekday, zone }
+}
+
+export function planReportSubscription(
+  caller: { userId: string; spaceId: string },
+  input: ReportSubscriptionWriteInput,
+  facts: { projectNames: readonly string[]; memberUserIds: readonly string[] },
+): PlannedReportSubscription {
   const recipientUserId = input.recipientUserId ?? caller.userId
   if (!facts.memberUserIds.includes(recipientUserId))
     throw new Error('recipient is not a member of this space')
   return {
-    scope_kind: scope.kind,
-    project_name: projectName,
-    person_user_id: personUserId,
-    cadence: input.cadence,
-    hour: input.hour,
-    weekday,
-    zone,
+    ...planSubscriptionScope(caller, input.scope, facts.projectNames),
+    ...planSubscriptionCadence(input),
     recipient_user_id: recipientUserId,
     enabled: input.enabled !== false,
   }
