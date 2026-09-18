@@ -19,7 +19,7 @@ import { recordSessionSeen } from '../database/db.ts'
 
 export const program = new Command()
   .name('orch')
-  .version('0.1.0')
+  .option('--version', 'identify this release or development checkout')
   .enablePositionalOptions()
   .exitOverride()
   .configureOutput({

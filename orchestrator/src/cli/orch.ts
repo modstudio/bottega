@@ -1,7 +1,18 @@
 import { Database } from 'bun:sqlite'
+import { installationVersionText } from '../../../shared/install-root.ts'
 import { COLLECTION_COMMANDS, collect } from '../collect/collect.ts'
 
 const argv = process.argv.slice(2)
+
+if (argv.length === 1 && argv[0] === '--version') {
+  try {
+    console.log(installationVersionText(import.meta.dir, process.env))
+    process.exit(0)
+  } catch (error) {
+    console.error(error instanceof Error ? error.message : String(error))
+    process.exit(1)
+  }
+}
 
 if (argv[0] === 'init-db') {
   if (argv.length !== 1) {

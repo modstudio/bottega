@@ -1,5 +1,6 @@
 import { describe, expect, test } from 'bun:test'
-import { decideHubDatabasePath } from './db.ts'
+import { PLATFORM_NAME } from '../../shared/brand.ts'
+import { decideHubDatabasePath, unauthorizedHubMigrationMessage } from './db.ts'
 
 const livePath = '/nonexistent-live-hub-store/hub.db'
 const tempPath = '/nonexistent-temp-hub-store/hub.db'
@@ -30,4 +31,12 @@ describe('hub database path decision', () => {
   test('non-test empty HUB_DB mutation: falls back to the live store', () => {
     expect(decideHubDatabasePath(false, '', livePath)).toBe(livePath)
   })
+})
+
+test('the unauthorised default-store migration refusal names the condition and remedy', () => {
+  expect(unauthorizedHubMigrationMessage('/state/hub.db')).toBe(
+    `refusing to migrate the default store: cannot establish an authorised ${PLATFORM_NAME} installation: /state/hub.db\n` +
+      'invariant: A default store is created or migrated only by a checkout or an installed distribution.\n' +
+      `cleared by: run hub migrate from a checkout or reinstall ${PLATFORM_NAME}`,
+  )
 })

@@ -1,5 +1,9 @@
 import { describe, expect, test } from 'bun:test'
-import { decideOrchestratorDatabasePath } from './database-location.ts'
+import { PLATFORM_NAME } from '../../../shared/brand.ts'
+import {
+  decideOrchestratorDatabasePath,
+  unauthorizedDatabaseInitializationMessage,
+} from './database-location.ts'
 
 const livePath = '/nonexistent-live-orchestrator-store/orch.db'
 const tempPath = '/nonexistent-temp-orchestrator-store/orch.db'
@@ -20,4 +24,12 @@ describe('orchestrator database path decision', () => {
   test('non-test + fallback method: returns the path', () => {
     expect(decideOrchestratorDatabasePath(false, 'state-root', livePath)).toBe(livePath)
   })
+})
+
+test('the unauthorised default-store refusal names the condition and remedy', () => {
+  expect(unauthorizedDatabaseInitializationMessage('/state/orch.db')).toBe(
+    `refusing to initialize the default store: cannot establish an authorised ${PLATFORM_NAME} installation: /state/orch.db\n` +
+      'invariant: A default store is initialized only by a checkout or an installed distribution.\n' +
+      `cleared by: run orch init-db from a checkout or reinstall ${PLATFORM_NAME}`,
+  )
 })
