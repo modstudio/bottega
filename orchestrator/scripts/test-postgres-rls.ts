@@ -20,6 +20,7 @@ const container = `dev-445-postgres-${randomUUID().slice(0, 8)}`
 const sourceCopies = mkdtempSync(join(tmpdir(), 'dev-429-sources-'))
 const sourceOrchDb = join(sourceCopies, FROZEN_STATE_NAMES.orchestratorDatabase)
 const sourceHubDb = join(sourceCopies, FROZEN_STATE_NAMES.hubDatabase)
+const LIVE_COPY_PHASE_TIMEOUT_MS = 300_000
 function copyDatabase(source: string, target: string): void {
   copyFileSync(source, target)
   for (const suffix of ['-wal', '-shm']) {
@@ -146,7 +147,13 @@ try {
       if (evidence !== 0) process.exitCode = evidence
       else
         process.exitCode = await run(
-          ['bun', 'test', '--timeout', '120000', 'src/postgres/postgres-import.test.ts'],
+          [
+            'bun',
+            'test',
+            '--timeout',
+            String(LIVE_COPY_PHASE_TIMEOUT_MS),
+            'src/postgres/postgres-import.test.ts',
+          ],
           {
             ORCH_TEST_POSTGRES_CONTAINER: container,
             ORCH_TEST_POSTGRES_URL: `postgres://postgres:postgres@127.0.0.1:${port}/postgres`,

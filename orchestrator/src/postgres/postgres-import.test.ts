@@ -366,6 +366,20 @@ realPostgres('project import against copied live SQLite data', () => {
     console.log(
       `live-copy sync: pushed ${synced.pushed}, failed ${synced.failed}, pending ${synced.pending}`,
     )
+    if (synced.failed > 0) {
+      const failedRows = source
+        .query<{ id: number; kind: string; last_error: string }, []>(
+          `SELECT id, kind, last_error FROM outbox
+           WHERE synced_at IS NULL AND last_error IS NOT NULL
+           ORDER BY id LIMIT 5`,
+        )
+        .all()
+      throw new Error(
+        `live-copy sync failures:\n${failedRows
+          .map((row) => `${row.id} ${row.kind}: ${row.last_error}`)
+          .join('\n')}`,
+      )
+    }
     expect(synced.failed).toBe(0)
     expect(synced.pending).toBe(0)
     const recordCount = await sql`SELECT count(*)::int AS count FROM run`
