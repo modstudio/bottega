@@ -244,6 +244,18 @@ function catalogueDefinition() {
   return { steps }
 }
 
+export function mergeSeededSteps<T extends { slug: string }>(
+  current: readonly T[],
+  seeded: readonly T[],
+): T[] {
+  const seededBySlug = new Map(seeded.map((step) => [step.slug, step])),
+    currentSlugs = new Set(current.map((step) => step.slug))
+  return [
+    ...current.map((step) => seededBySlug.get(step.slug) ?? step),
+    ...seeded.filter((step) => !currentSlugs.has(step.slug)),
+  ]
+}
+
 function workflowDefinition(seed: LegacySeed) {
   const { steps: _steps, ...definition } = seed.definition
   return {
@@ -256,7 +268,8 @@ function workflowDefinition(seed: LegacySeed) {
 }
 
 function seedCatalogue(d: Database, now: string): void {
-  const definition = JSON.stringify(catalogueDefinition()),
+  const seeded = catalogueDefinition(),
+    seededDefinition = JSON.stringify(seeded),
     revision = 2,
     reason = `seed r${revision}`
   let catalogue = d.query("SELECT id FROM step_catalogue WHERE slug='shared'").get() as {
@@ -268,7 +281,7 @@ function seedCatalogue(d: Database, now: string): void {
       .get(now) as { id: number }
     d.query(
       `INSERT INTO step_catalogue_version (catalogue_id,n,status,definition,author,reason,created_at,promoted_at) VALUES (?,1,'production',?,'seed',?,?,?)`,
-    ).run(catalogue.id, definition, reason, now, now)
+    ).run(catalogue.id, seededDefinition, reason, now, now)
     d.query(
       `INSERT INTO step_catalogue_event (catalogue_id,version_n,event,author,reason,session_id,at) VALUES (?,1,'set','seed',?,NULL,?)`,
     ).run(catalogue.id, reason, now)
@@ -276,8 +289,19 @@ function seedCatalogue(d: Database, now: string): void {
   }
   if (revision <= storedCatalogueSeedRevision(d, catalogue.id)) return
   const prior = d
-    .query("SELECT n FROM step_catalogue_version WHERE catalogue_id=? AND status='production'")
-    .get(catalogue.id) as { n: number } | null
+    .query(
+      "SELECT n,definition FROM step_catalogue_version WHERE catalogue_id=? AND status='production'",
+    )
+    .get(catalogue.id) as { n: number; definition: string } | null
+  const definition = prior
+    ? JSON.stringify({
+        steps: mergeSeededSteps(
+          (JSON.parse(prior.definition) as { steps: SeedCatalogueStep[] }).steps,
+          seeded.steps,
+        ),
+      })
+    : seededDefinition
+  if (prior?.definition === definition) return
   const { n: maxN } = d
     .query('SELECT COALESCE(MAX(n),0) AS n FROM step_catalogue_version WHERE catalogue_id=?')
     .get(catalogue.id) as { n: number }
