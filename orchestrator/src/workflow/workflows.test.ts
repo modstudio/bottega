@@ -27,7 +27,6 @@ const valid = (): WorkflowDefinition => ({
 const release = {
   rungs: [{ name: 'production', branch: 'production', deploy: 'bun run deploy' }],
   mergeMethod: 'squash' as const,
-  deployCommand: 'bun run deploy',
   requiredChecks: ['gate'],
   observationWindowHours: 24,
 }

@@ -22,7 +22,6 @@ const releaseSchema = strictObject({
     }),
   ),
   mergeMethod: z.enum(['squash', 'merge', 'rebase']),
-  deployCommand: z.string().optional(),
   requiredChecks: z.array(z.string()),
   observationWindowHours: z.number().int().positive().optional(),
 })
@@ -262,7 +261,21 @@ export function validateProjectInjectionSettings(settings: ValidatedInjectionSet
     ['trunk', trunkSchema],
   ] as const) {
     if (settings[name] === undefined) continue
-    const result = schema.safeParse(settings[name])
+    let value: unknown = settings[name]
+    if (
+      name === 'release' &&
+      value !== null &&
+      typeof value === 'object' &&
+      !Array.isArray(value) &&
+      Object.hasOwn(value, 'deployCommand')
+    ) {
+      problems.push(
+        'release.deployCommand: retired; move the command onto a rung: release.rungs[].deploy',
+      )
+      const { deployCommand: _retired, ...withoutRetiredKey } = value as Record<string, unknown>
+      value = withoutRetiredKey
+    }
+    const result = schema.safeParse(value)
     if (!result.success) {
       problems.push(
         ...result.error.issues.map(

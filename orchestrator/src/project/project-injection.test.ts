@@ -5,7 +5,6 @@ import { type Project, validateProjectSettings } from './projects.ts'
 const release: ReleaseSettings = {
   rungs: [{ name: 'production', branch: 'production', deploy: 'bun run deploy' }],
   mergeMethod: 'squash',
-  deployCommand: 'bun run deploy',
   requiredChecks: ['gate'],
   observationWindowHours: 24,
 }
@@ -23,6 +22,29 @@ describe('project workflow injection', () => {
         release: { ...release, unexpected: true },
       } as Parameters<typeof validateProjectSettings>[0]),
     ).toEqual([expect.stringContaining('release: Unrecognized key')])
+  })
+
+  test('refuses the retired release.deployCommand instead of silently accepting it', () => {
+    expect(
+      validateProjectSettings({
+        release: { ...release, deployCommand: 'bun run deploy' },
+      } as Parameters<typeof validateProjectSettings>[0]),
+    ).toEqual([
+      'release.deployCommand: retired; move the command onto a rung: release.rungs[].deploy',
+    ])
+  })
+
+  test('accepts a sole landing-branch rung carrying deploy (mutation: remove rungs[].deploy)', () => {
+    expect(
+      validateProjectSettings({
+        trunk: 'main',
+        release: {
+          rungs: [{ name: 'production', branch: 'main', deploy: 'bun run deploy' }],
+          mergeMethod: 'squash',
+          requiredChecks: ['gate'],
+        },
+      }),
+    ).toEqual([])
   })
 
   test('refuses an unknown tracker action override at the register edge', () => {
