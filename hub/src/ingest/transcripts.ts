@@ -13,22 +13,21 @@ type TranscriptRoot = { source: 'read'; path: string } | { source: 'disabled' }
 export function resolveTranscriptRoot(
   override: string | undefined,
   home: string | undefined,
-  readable = true,
 ): TranscriptRoot {
   if (override === '') return { source: 'disabled' }
 
   const path = override ?? (home ? join(home, '.claude/projects') : null)
   if (!path) {
     throw new Error(
-      'Cannot resolve transcript root ${HOME}/.claude/projects because HOME is unset or empty; set HUB_TRANSCRIPT_ROOT to a readable path or set HUB_TRANSCRIPT_ROOT="" to disable transcript ingest',
-    )
-  }
-  if (!readable) {
-    throw new Error(
-      `Cannot read transcript root ${path}; set HUB_TRANSCRIPT_ROOT to a readable path or set HUB_TRANSCRIPT_ROOT="" to disable transcript ingest`,
+      'Cannot resolve the default transcript root at .claude/projects under HOME because HOME is unset or empty; set HUB_TRANSCRIPT_ROOT to a readable path or set HUB_TRANSCRIPT_ROOT="" to disable transcript ingest',
     )
   }
   return { source: 'read', path }
+}
+
+/** Build the refusal for a resolved transcript root that cannot be read. */
+export function unreadableTranscriptRootMessage(path: string): string {
+  return `Cannot read transcript root ${path}; set HUB_TRANSCRIPT_ROOT to a readable path or set HUB_TRANSCRIPT_ROOT="" to disable transcript ingest`
 }
 
 /** Every .jsonl transcript under a root. */
@@ -186,7 +185,7 @@ export async function ingestTranscripts(
   try {
     readdirSync(root.path)
   } catch {
-    resolveTranscriptRoot(process.env.HUB_TRANSCRIPT_ROOT, process.env.HOME, false)
+    throw new Error(unreadableTranscriptRootMessage(root.path))
   }
 
   const userId = attributedUserId === undefined ? await signedInRecordUserId() : attributedUserId

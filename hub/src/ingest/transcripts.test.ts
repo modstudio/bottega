@@ -1,7 +1,11 @@
 import { beforeAll, describe, expect, test } from 'bun:test'
 import { DEFAULT_IDLE_CAP_MS, engagedMs } from '../../../shared/interval.ts'
 import { at, resetFixtureStore } from '../../test/run-fixtures.ts'
-import { resolveTranscriptRoot, spendingSpans } from './transcripts.ts'
+import {
+  resolveTranscriptRoot,
+  spendingSpans,
+  unreadableTranscriptRootMessage,
+} from './transcripts.ts'
 
 beforeAll(resetFixtureStore)
 
@@ -21,13 +25,13 @@ describe('transcript root', () => {
     })
     for (const home of [undefined, '']) {
       expect(() => resolveTranscriptRoot(undefined, home)).toThrow(
-        'Cannot resolve transcript root ${HOME}/.claude/projects',
+        'Cannot resolve the default transcript root at .claude/projects under HOME because HOME is unset or empty',
       )
     }
   })
 
   test('an absent resolved root refuses with the remedy', () => {
-    expect(() => resolveTranscriptRoot('/missing', '/home', false)).toThrow(
+    expect(unreadableTranscriptRootMessage('/missing')).toContain(
       'Cannot read transcript root /missing; set HUB_TRANSCRIPT_ROOT',
     )
   })
