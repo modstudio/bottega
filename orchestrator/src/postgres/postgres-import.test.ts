@@ -162,7 +162,12 @@ realPostgres('project import against copied live SQLite data', () => {
       worktree: 'worktree',
       workerMcpServers: 'worker_mcp_servers',
     }
-    expect([...sourceKeySet].filter((key) => !(key in columnForSetting))).toEqual([])
+    // `space` names the record space a project's evidence syncs to. The imported
+    // row expresses that as its own space_id, so it has no column of its own.
+    const notImported = new Set(['space'])
+    expect(
+      [...sourceKeySet].filter((key) => !(key in columnForSetting) && !notImported.has(key)),
+    ).toEqual([])
     for (const source of sourceProjects) {
       const settings = JSON.parse(source.settings) as Record<string, unknown>
       const target = imported.find((row) => row.name === source.name)!
@@ -170,6 +175,7 @@ realPostgres('project import against copied live SQLite data', () => {
         source.retired_at === null ? null : new Date(source.retired_at),
       )
       for (const key of Object.keys(settings)) {
+        if (notImported.has(key)) continue
         expect(columnForSetting[key], `source setting ${key} has a target column`).toBeDefined()
         const expected =
           key === 'mcp' ? (settings.mcp as { probe_tool: string }).probe_tool : settings[key]
@@ -333,6 +339,14 @@ realPostgres('project import against copied live SQLite data', () => {
         name: 'live-copy-proof',
       },
       now: () => '2026-09-16T00:00:00.000Z',
+      // The copy is replayed into this one harness space, so a project whose live
+      // register names a space this user cannot reach maps here instead.
+      projectSpaces: Object.fromEntries(
+        source
+          .query<{ name: string }, []>('SELECT name FROM project')
+          .all()
+          .map((project) => [project.name, PLATFORM_SPACE_ID]),
+      ),
     })
     console.log(
       `live-copy sync: pushed ${synced.pushed}, failed ${synced.failed}, pending ${synced.pending}`,
