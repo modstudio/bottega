@@ -116,12 +116,51 @@ function elapsedDetail(elapsedMs: number | null): string {
   return `elapsed ${(elapsedMs / 3_600_000).toFixed(1)}h`
 }
 
+type IdleRunFacts = {
+  id: number
+  started_at: string
+  last_event_at: string | null
+  agent: string
+  job: string
+  session_id: string | null
+  pidAlive: boolean | null
+}
+
+/** Classify one running row from already-observed process and elapsed-time facts. */
+export function idleRunCondition(
+  run: IdleRunFacts,
+  clock = Date.now(),
+  threshold = idleWarnMs(),
+): MonitorCondition | null {
+  if (run.pidAlive === false) {
+    return {
+      kind: 'stale-run',
+      subject: `run:${run.id}`,
+      since: run.started_at,
+      ageMs: age(run.started_at, clock),
+      detail: `run ${run.id} is running but its recorded pid is gone; no terminal state was recorded`,
+      action: `run orch stop ${run.id}`,
+      ownerSession: run.session_id,
+    }
+  }
+  const label = idleLabel(run.last_event_at, run.started_at, clock, threshold)
+  if (!label) return null
+  return {
+    kind: 'idle',
+    subject: `run:${run.id}`,
+    since: run.last_event_at ?? run.started_at,
+    ageMs: idleMsSince(run.last_event_at, run.started_at, clock),
+    detail: `run ${run.id} ${run.agent}/${run.job} ${label}`,
+    action: 'reported; the run coordinator checkpoints and terminates past the idle-kill threshold',
+    ownerSession: run.session_id,
+  }
+}
+
 /** Report live runs whose vendor stream has gone quiet. The coordinator, not the monitor, checkpoints and terminates past the idle-kill threshold. */
 export function idleRunConditions(clock = Date.now()): MonitorCondition[] {
-  const threshold = idleWarnMs()
   const running = db()
     .query(
-      `SELECT id, started_at, last_event_at, agent, job, session_id FROM run WHERE status='running'`,
+      `SELECT id, started_at, last_event_at, agent, job, session_id, pid FROM run WHERE status='running'`,
     )
     .all() as {
     id: number
@@ -130,23 +169,17 @@ export function idleRunConditions(clock = Date.now()): MonitorCondition[] {
     agent: string
     job: string
     session_id: string | null
+    pid: number | null
   }[]
   return running.flatMap((run): MonitorCondition[] => {
-    const label = idleLabel(run.last_event_at, run.started_at, clock, threshold)
-    if (!label) return []
-    const ageMs = idleMsSince(run.last_event_at, run.started_at, clock)
-    return [
+    const condition = idleRunCondition(
       {
-        kind: 'idle',
-        subject: `run:${run.id}`,
-        since: run.last_event_at ?? run.started_at,
-        ageMs,
-        detail: `run ${run.id} ${run.agent}/${run.job} ${label}`,
-        action:
-          'reported; the run coordinator checkpoints and terminates past the idle-kill threshold',
-        ownerSession: run.session_id,
+        ...run,
+        pidAlive: run.pid === null ? null : pidAlive(run.pid),
       },
-    ]
+      clock,
+    )
+    return condition ? [condition] : []
   })
 }
 

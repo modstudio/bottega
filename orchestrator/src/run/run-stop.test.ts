@@ -128,6 +128,7 @@ test('abandon loses cleanly to a concurrent continuation claim', async () => {
     },
   })
   expect(result.err).toContain(`${turn} turn 2 running`)
+  expect(result.err).toContain(`run orch stop ${root}`)
   expect(db().query('SELECT status FROM run WHERE id=?').get(root)).toEqual({ status: 'asking' })
 })
 

@@ -6,6 +6,7 @@ import { upsertProject } from '../project/projects.ts'
 import { groupMonitorConditions, monitor, monitorHistory } from './monitor.ts'
 import {
   deadRunningProcessConditions,
+  idleRunCondition,
   orphanDockerNetworkConditions,
   orphanSandboxDirectoryConditions,
   pidBornAfterRun,
@@ -25,6 +26,42 @@ const condition = (overrides: Partial<import('./monitor-types.ts').MonitorCondit
   detail: 'detail',
   action: 'reported',
   ...overrides,
+})
+
+describe('idle run classification', () => {
+  const row = {
+    id: 73,
+    started_at: '2026-09-17T12:00:00.000Z',
+    last_event_at: '2026-09-17T12:01:00.000Z',
+    agent: 'codex',
+    job: 'implement',
+    session_id: 'session-73',
+  }
+  const clock = Date.parse('2026-09-17T12:07:00.000Z')
+
+  test('a live quiet running row is idle', () => {
+    expect(idleRunCondition({ ...row, pidAlive: true }, clock, 5 * 60_000)).toMatchObject({
+      kind: 'idle',
+      subject: 'run:73',
+      ageMs: 6 * 60_000,
+    })
+  })
+
+  test('a running row whose recorded pid is dead is stale, not idle', () => {
+    expect(idleRunCondition({ ...row, pidAlive: false }, clock, 5 * 60_000)).toMatchObject({
+      kind: 'stale-run',
+      subject: 'run:73',
+      action: 'run orch stop 73',
+    })
+  })
+
+  test('a quiet running row without a recorded pid retains idle behavior', () => {
+    expect(idleRunCondition({ ...row, pidAlive: null }, clock, 5 * 60_000)).toMatchObject({
+      kind: 'idle',
+      subject: 'run:73',
+      ageMs: 6 * 60_000,
+    })
+  })
 })
 
 function insertRun4177PackRows(): void {

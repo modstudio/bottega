@@ -184,8 +184,14 @@ export async function abandonRun(
     const chain = readChain()
     const row = chain[0]
     if (row?.status !== 'asking') {
+      const remedy =
+        row?.status === 'running'
+          ? `; run orch stop ${id} to stop its running turn`
+          : row
+            ? `; the latest turn is already terminal (${row.status}), so no lifecycle verb applies`
+            : '; no lifecycle verb applies to an empty chain'
       throw new Error(
-        `run ${id}'s chain has no asking turn — nothing to abandon: ${describe(chain)}`,
+        `run ${id}'s chain has no asking turn — nothing to abandon${remedy}: ${describe(chain)}`,
       )
     }
     const root = chain.find((turn) => turn.id === authority.rootId)!

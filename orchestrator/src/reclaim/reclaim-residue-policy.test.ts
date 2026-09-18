@@ -157,16 +157,61 @@ describe('residue release decisions', () => {
 
   test('stale-run requires an unexcluded stale row', () => {
     expect(
-      staleRunReleaseDecision({ runExists: true, status: 'stale', alreadyExcluded: false }).allowed,
+      staleRunReleaseDecision({
+        runId: 7,
+        runExists: true,
+        status: 'stale',
+        alreadyExcluded: false,
+      }).allowed,
     ).toBe(true)
     expect(
-      staleRunReleaseDecision({ runExists: false, status: null, alreadyExcluded: false }).allowed,
+      staleRunReleaseDecision({ runId: 7, runExists: false, status: null, alreadyExcluded: false })
+        .allowed,
     ).toBe(false)
     expect(
-      staleRunReleaseDecision({ runExists: true, status: 'ok', alreadyExcluded: false }).allowed,
+      staleRunReleaseDecision({ runId: 7, runExists: true, status: 'ok', alreadyExcluded: false })
+        .allowed,
     ).toBe(false)
     expect(
-      staleRunReleaseDecision({ runExists: true, status: 'stale', alreadyExcluded: true }).allowed,
+      staleRunReleaseDecision({ runId: 7, runExists: true, status: 'stale', alreadyExcluded: true })
+        .allowed,
     ).toBe(false)
+  })
+
+  test('stale-run refusal names the lifecycle verb for each live status', () => {
+    expect(
+      staleRunReleaseDecision({
+        runId: 41,
+        runExists: true,
+        status: 'running',
+        alreadyExcluded: false,
+      }),
+    ).toEqual({
+      allowed: false,
+      refusal: 'refused; invariant: the run status is stale; fix: run orch stop 41',
+    })
+    expect(
+      staleRunReleaseDecision({
+        runId: 42,
+        runExists: true,
+        status: 'asking',
+        alreadyExcluded: false,
+      }),
+    ).toEqual({
+      allowed: false,
+      refusal: 'refused; invariant: the run status is stale; fix: run orch abandon 42',
+    })
+    expect(
+      staleRunReleaseDecision({
+        runId: 43,
+        runExists: true,
+        status: 'failed',
+        alreadyExcluded: false,
+      }),
+    ).toEqual({
+      allowed: false,
+      refusal:
+        'refused; invariant: the run status is stale; fix: the run is already terminal (failed); no lifecycle verb applies',
+    })
   })
 })
