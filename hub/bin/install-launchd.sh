@@ -55,9 +55,6 @@ for tmpl in "$CONCERN"/launchd/*.plist.template; do
   fi
 done
 
-unload com.user.hub-send
-rm -f "$AGENTS_DIR/com.user.hub-send.plist"
-
 # The obsolete report job has been failing with EX_CONFIG on every run
 # since the move, pointing at a directory that holds nothing but a logs folder,
 # and hub now does its work.
