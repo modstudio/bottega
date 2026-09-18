@@ -33,9 +33,10 @@ export function callerCheckoutFacts(cwd: string): {
   linkedWorktree: boolean
 } {
   const checkoutRoot = gitContext(cwd, 'rev-parse', '--show-toplevel')
+  const repoRoot = repoRootOf(cwd)
   return {
-    repoRoot: repoRootOf(cwd),
-    registeredProjectPath: projectAt(cwd)?.path ?? null,
+    repoRoot,
+    registeredProjectPath: projectAt(repoRoot ?? cwd)?.path ?? null,
     linkedWorktree: checkoutRoot !== null && linkedWorktreePaths(checkoutRoot) !== null,
   }
 }
