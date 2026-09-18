@@ -119,6 +119,27 @@ describe('workflow definition validation', () => {
 })
 
 describe('workflow versions and project composition', () => {
+  test('compose refuses a selected mode with a missing catalogue step instead of crashing', () => {
+    const d = database()
+    const row = d
+      .query(
+        `SELECT v.id,v.definition FROM workflow w JOIN workflow_version v ON v.workflow_id=w.id
+         WHERE w.slug='ship' AND v.status='production'`,
+      )
+      .get() as { id: number; definition: string }
+    const definition = JSON.parse(row.definition) as WorkflowDefinition
+    definition.modes[0]!.steps = ['missing-compose-step']
+    d.query('UPDATE workflow_version SET definition=? WHERE id=?').run(
+      JSON.stringify(definition),
+      row.id,
+    )
+
+    expect(() => composeWorkflow('ship', 'fixture', undefined, {}, d)).toThrow(
+      'workflow "ship" names steps absent from the production catalogue:\n' +
+        '- mode "default": "missing-compose-step"\n' +
+        'fix: promote a catalogue step with that slug, or set the workflow to a mode that does not use it',
+    )
+  })
   test('keeps immutable workflow history', () => {
     const d = database(),
       first = setWorkflow('test-flow', valid(), 'first', 'author', d)
@@ -406,7 +427,9 @@ describe('workflow versions and project composition', () => {
     const withoutTemp = setStepCatalogue({ steps: current.steps }, 'drop temp', 'a', d)
     promoteStepCatalogue(withoutTemp.n, 'publish', 'a', d)
     expect(() => promoteWorkflow('stale-flow', draft.n, 'publish', 'a', d)).toThrow(
-      'references missing step "temp"',
+      'workflow "stale-flow" names steps absent from the production catalogue:\n' +
+        '- mode "default": "temp"\n' +
+        'fix: promote a catalogue step with that slug, or set the workflow to a mode that does not use it',
     )
   })
 })

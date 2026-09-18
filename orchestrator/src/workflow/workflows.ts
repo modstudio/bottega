@@ -142,12 +142,35 @@ export function validateWorkflowDefinition(
 
 function requireValid(
   value: unknown,
-  d: Database,
+  d?: Database,
   knownStepSlugs?: ReadonlySet<string>,
 ): asserts value is WorkflowDefinition {
   const errors = validateWorkflowDefinition(value, d, knownStepSlugs)
   if (errors.length)
     throw new Error(`invalid workflow definition:\n${errors.map((e) => `- ${e}`).join('\n')}`)
+}
+
+function catalogueReferenceRefusal(
+  workflowSlug: string,
+  definition: WorkflowDefinition,
+  catalogueSlugs: ReadonlySet<string>,
+  selectedMode?: string,
+): string | null {
+  const missing = definition.modes
+    .filter((mode) => selectedMode === undefined || mode.slug === selectedMode)
+    .map((mode) => ({
+      slug: mode.slug,
+      steps: [...new Set(mode.steps.filter((step) => !catalogueSlugs.has(step)))],
+    }))
+    .filter((mode) => mode.steps.length > 0)
+  if (!missing.length) return null
+  return [
+    `workflow "${workflowSlug}" names steps absent from the production catalogue:`,
+    ...missing.map(
+      (mode) => `- mode "${mode.slug}": ${mode.steps.map((step) => `"${step}"`).join(', ')}`,
+    ),
+    'fix: promote a catalogue step with that slug, or set the workflow to a mode that does not use it',
+  ].join('\n')
 }
 function requireSlug(slug: string): void {
   if (!SLUG.test(slug))
@@ -289,9 +312,14 @@ export function promoteWorkflow(
 ) {
   // A draft is validated against the catalogue it was written for; the
   // production catalogue may have dropped one of its steps since.
-  return workflowLifecycle.promote(slug, n, reasonValue, authorValue, d, (definition, database) =>
-    requireValid(definition, database),
-  )
+  return workflowLifecycle.promote(slug, n, reasonValue, authorValue, d, (definition, database) => {
+    requireValid(definition)
+    const catalogueSlugs = new Set(
+        productionStepCatalogue(database).definition.steps.map((step) => step.slug),
+      ),
+      refusal = catalogueReferenceRefusal(slug, definition, catalogueSlugs)
+    if (refusal) throw new Error(refusal)
+  })
 }
 export function retireWorkflow(
   slug: string,
@@ -341,6 +369,15 @@ export function composeWorkflow(
   if (modeSlug && !mode) throw new Error(`workflow "${slug}" has no mode "${modeSlug}"`)
   if (!mode)
     needs.mode = definition.modes.map(({ slug, title, entry }) => ({ slug, title, entry: entry! }))
+  const refusal = mode
+    ? catalogueReferenceRefusal(
+        slug,
+        definition,
+        new Set(catalogue.definition.steps.map((step) => step.slug)),
+        mode.slug,
+      )
+    : null
+  if (refusal) throw new Error(refusal)
   const missing = definition.arguments
     .filter((arg) => arg.required && !args[arg.name])
     .map((arg) => arg.name)
