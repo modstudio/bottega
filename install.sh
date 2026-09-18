@@ -1,5 +1,11 @@
 #!/bin/sh
 # Install a verified release without requiring a source checkout.
+#
+#   curl -fsSL bottega.sh | sh              install the latest release
+#   curl -fsSL bottega.sh | sh -s -- 0.1.0  install a named version
+#
+# Served from bottega.sh; the payload itself comes from the private GitHub
+# release and is checked against the digest published with it.
 set -eu
 
 REPOSITORY='modstudio/bottega'
