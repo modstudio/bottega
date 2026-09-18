@@ -226,7 +226,7 @@ describe('hosted report delivery', () => {
     const period = duePeriod(value, now)!
     const rendered = renderReport(value, period, subscription())
     expect(rendered.text).toContain(
-      'Window: Sep 17, 2026 at 9:00 AM to Sep 18, 2026 at 9:00 AM (America/New_York)',
+      'Window: Sep 17, 2026 9:00 AM to Sep 18, 2026 9:00 AM (America/New_York)',
     )
     expect(rendered.text).toContain('Agents ran for 77 agent-hours.')
     expect(rendered.text).toContain('Silences longer than ten minutes are not counted.')

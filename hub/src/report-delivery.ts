@@ -163,13 +163,31 @@ const htmlEscape = (value: string) =>
       ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[character]!,
   )
 
+/**
+ * The window, worded the same wherever the sender runs.
+ *
+ * dateStyle and timeStyle delegate the separator to the host's locale data, and
+ * it changed between CLDR versions, so the same subscription would say "at" on
+ * one machine and "," on another. The parts are assembled here instead.
+ */
 function localWindow(period: DeliveryPeriod, zone: string) {
   const formatter = new Intl.DateTimeFormat('en-US', {
     timeZone: zone,
-    dateStyle: 'medium',
-    timeStyle: 'short',
+    year: 'numeric',
+    month: 'short',
+    day: 'numeric',
+    hour: 'numeric',
+    minute: '2-digit',
+    hour12: true,
   })
-  return `${formatter.format(new Date(period.from))} to ${formatter.format(new Date(period.to))} (${zone})`
+  const stamp = (iso: string) => {
+    const parts = new Map(
+      formatter.formatToParts(new Date(iso)).map((part) => [part.type, part.value]),
+    )
+    const at = (type: Intl.DateTimeFormatPartTypes) => parts.get(type) ?? ''
+    return `${at('month')} ${at('day')}, ${at('year')} ${at('hour')}:${at('minute')} ${at('dayPeriod')}`
+  }
+  return `${stamp(period.from)} to ${stamp(period.to)} (${zone})`
 }
 
 function hasRecordedWork(measures: Measures) {
