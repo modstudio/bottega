@@ -175,7 +175,7 @@ export function filedIssueCommandPlan(input: {
   sandboxHome: string
   path: string
   lang: string
-  operatorEnvPath: string
+  operatorEnvPaths: readonly string[]
   secretPaths: readonly string[]
   workerEnvironment?: Readonly<Record<string, string>>
 }): FiledIssueCommandPlan {
@@ -185,7 +185,7 @@ export function filedIssueCommandPlan(input: {
     ...READONLY_LENS_DENY_PATHS.map(expandHome).map((path) => resolve(path)),
     ...READONLY_LENS_DENY_SOCKETS,
     ...input.secretPaths,
-    input.operatorEnvPath,
+    ...input.operatorEnvPaths,
   ].map((path) => resolve(path))
   return {
     argv: ['sh', '-lc', input.command],

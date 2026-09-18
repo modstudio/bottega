@@ -8,6 +8,15 @@ CONCERN="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 CHECKOUT="$(cd "$CONCERN/.." && pwd)"
 STATE_HOME_ENV="$(bun "$CHECKOUT/shared/state-directory.ts" environment)"
 STATE_HOME="$(bun "$CHECKOUT/shared/state-directory.ts" root)"
+if ! ENV_FILES_OUTPUT="$(bun "$CHECKOUT/shared/config-directory.ts" env-paths)"; then
+  exit 1
+fi
+ENV_FILES=()
+if [[ -n "$ENV_FILES_OUTPUT" ]]; then
+  while IFS= read -r env_file; do
+    ENV_FILES+=("$env_file")
+  done <<< "$ENV_FILES_OUTPUT"
+fi
 if [[ -f "$CHECKOUT/.git" ]]; then
   GIT_COMMON_DIR="$(git -C "$CHECKOUT" rev-parse --path-format=absolute --git-common-dir)"
   MAIN_CHECKOUT="$(cd "$GIT_COMMON_DIR/.." && pwd)"
@@ -56,9 +65,15 @@ for tmpl in "$CONCERN"/launchd/*.plist.template; do
   if [[ "$label" == "com.user.local-model-tunnel" ]]; then
     mkdir -p "$HOME/Library/Logs/local-model-tunnel"
   fi
-  if [[ "$label" == "com.user.orch-record-sync" && ! -f "$HOME/.claude/.env" ]]; then
-    echo "skipped: $label ($HOME/.claude/.env is absent)"
-    continue
+  if [[ "$label" == "com.user.orch-record-sync" ]]; then
+    has_env_file=false
+    for env_file in ${ENV_FILES[@]+"${ENV_FILES[@]}"}; do
+      [[ -f "$env_file" ]] && has_env_file=true
+    done
+    if [[ "$has_env_file" == false ]]; then
+      echo "skipped: $label (env files are absent: ${ENV_FILES[*]-})"
+      continue
+    fi
   fi
   if [[ "$label" == "com.user.orch-record-sync" ]]; then
     mkdir -p "$HOME/Library/Logs/orch-record-sync"

@@ -3,11 +3,11 @@
 set -u
 
 ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
-ENV_FILE="$HOME/.claude/.env"
+ENV_RUNNER=(bun --no-env-file "$ROOT/shared/env-source.ts" run --)
 
-bun --env-file "$ENV_FILE" "$ROOT/orchestrator/src/cli/orch.ts" sync
+"${ENV_RUNNER[@]}" bun --no-env-file "$ROOT/orchestrator/src/cli/orch.ts" sync
 sync_status=$?
-bun --env-file "$ENV_FILE" "$ROOT/orchestrator/src/cli/orch.ts" record publish
+"${ENV_RUNNER[@]}" bun --no-env-file "$ROOT/orchestrator/src/cli/orch.ts" record publish
 publish_status=$?
 
 if (( sync_status != 0 || publish_status != 0 )); then

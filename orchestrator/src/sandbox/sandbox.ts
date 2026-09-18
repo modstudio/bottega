@@ -15,6 +15,7 @@ import {
   type SandboxRuntimeConfig as LibrarySandboxRuntimeConfig,
   SandboxManager,
 } from '@anthropic-ai/sandbox-runtime'
+import { type ConfigEnvironment, resolveEnvFilePaths } from '../../../shared/config-directory.ts'
 import { ROOT } from '../database/db.ts'
 import { disabledProjectMcpServers } from '../mcp/mcp-probe.ts'
 import type { Project } from '../project/projects.ts'
@@ -132,6 +133,7 @@ export function readonlyLensProfile(input: {
   localBaseUrl?: string
   nodeModuleLinks?: string[]
   mcpAllowlist?: string[]
+  environment?: ConfigEnvironment
 }): SandboxRuntimeConfig {
   const toolchain = (input.path ?? process.env.PATH ?? '')
     .split(delimiter)
@@ -147,8 +149,11 @@ export function readonlyLensProfile(input: {
   const runsDir = resolve(input.runsDir)
   const scratchDir = input.scratchDir ? resolve(input.scratchDir) : null
   const protectedDenies = [
-    ...READONLY_LENS_DENY_PATHS.map(expandHome).map((path) => resolve(path)),
-    ...resolveSecretPaths(input.project),
+    ...new Set([
+      ...READONLY_LENS_DENY_PATHS.map(expandHome).map((path) => resolve(path)),
+      ...resolveEnvFilePaths(input.environment ?? process.env).map((path) => resolve(path)),
+      ...resolveSecretPaths(input.project),
+    ]),
   ]
   const isAtOrBelow = (path: string, parent: string) => {
     const fromParent = relative(parent, path)

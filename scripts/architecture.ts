@@ -235,6 +235,8 @@ export const modules: ArchitectureModule[] = [
   ]),
   module('orchestrator/src/postgres/postgres-migrate.ts', []),
   module('shared/gate-timing-directory.ts', ['./brand.ts', './state-directory.ts']),
+  module('shared/config-directory.ts', ['node:path', './brand.ts']),
+  module('shared/env-source.ts', ['node:fs', 'node:util', './config-directory.ts']),
   module('shared/state-directory.ts', ['./brand.ts']),
   module('shared/record/schema.ts', ['../brand.ts']),
   module('shared/record-session.ts', ['./brand.ts']),
@@ -462,6 +464,7 @@ export const modules: ArchitectureModule[] = [
     'node:stream',
   ]),
   module('orchestrator/src/sandbox/sandbox.ts', [
+    '../../../shared/config-directory.ts',
     '../database/db.ts',
     '../mcp/mcp-probe.ts',
     '../project/projects.ts',

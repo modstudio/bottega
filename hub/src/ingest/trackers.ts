@@ -378,7 +378,7 @@ export async function ingestTrackers(
               project: s.project,
               tasks: 0,
               changed: 0,
-              skipped: `no ${s.env}_MCP_URL / _TOKEN in ~/.claude/.env`,
+              skipped: `no ${s.env}_MCP_URL / _TOKEN in the environment or either env file`,
             },
             filled: 0,
           }
