@@ -2,7 +2,48 @@ import { describe, expect, test } from 'bun:test'
 import { reviewReply } from '../../test/fixtures/replies.ts'
 import { addRun } from '../../test/fixtures/store.ts'
 import { db } from '../database/db.ts'
-import { recordTerminalReviewEvidence, shouldCheckpointAtTerminal } from './run-terminal.ts'
+import {
+  questionsToInsert,
+  recordTerminalReviewEvidence,
+  shouldCheckpointAtTerminal,
+} from './run-terminal.ts'
+
+describe('terminal question deduplication decision', () => {
+  test('omits a question already recorded for the run', () => {
+    const accepted = [{ question: 'Which table?', why: 'The migration depends on it.' }]
+
+    expect(questionsToInsert(['Which table?'], accepted)).toEqual([])
+  })
+
+  test('treats surrounding whitespace, internal whitespace runs, and case as equivalent', () => {
+    const accepted = [
+      { question: '  Which table?  ', why: 'first' },
+      { question: 'Which   table?', why: 'second' },
+      { question: 'WHICH TABLE?', why: 'third' },
+    ]
+
+    expect(questionsToInsert([], accepted)).toEqual(accepted.slice(0, 1))
+  })
+
+  test('returns genuinely different questions in their accepted order', () => {
+    const accepted = [
+      { question: 'Which table?', why: 'first' },
+      { question: 'Which column?', why: 'second' },
+      { question: 'Which index?', why: 'third' },
+    ]
+
+    expect(questionsToInsert([], accepted)).toEqual(accepted)
+  })
+
+  test('collapses duplicates within the accepted questions', () => {
+    const accepted = [
+      { question: 'Which table?', why: 'first' },
+      { question: 'which table?', why: 'repeated in the final reply' },
+    ]
+
+    expect(questionsToInsert([], accepted)).toEqual(accepted.slice(0, 1))
+  })
+})
 
 describe('terminal checkpoint decision', () => {
   test('rejects omitting an ok writing turn from terminal checkpointing', () => {
