@@ -156,6 +156,16 @@ export function seedFromReport(project: Project, environment: string | null): st
   return named.length === 1 ? named[0]! : null
 }
 
+/** The latest exact, registered seed answer wins; invalid answers do not erase valid ones. */
+export function seedAnswer(seeds: string[], comments: string[]): string | null {
+  let answer: string | null = null
+  for (const comment of comments) {
+    const value = comment.match(/^Seed: (.+)$/)?.[1]
+    if (value && seeds.includes(value)) answer = value
+  }
+  return answer
+}
+
 export function boundedIssuePack(issue: FiledIssue): string {
   return JSON.stringify(
     {

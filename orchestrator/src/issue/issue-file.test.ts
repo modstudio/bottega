@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test'
 import type { Project } from '../project/projects.ts'
-import { boundedIssuePack, parseFiledIssue, seedFromReport } from './issue-file.ts'
+import { boundedIssuePack, parseFiledIssue, seedAnswer, seedFromReport } from './issue-file.ts'
 
 describe('filed issue inputs', () => {
   const shown = {
@@ -107,5 +107,18 @@ the legacy uncertainty`
     const project = { settings: { worktree: { seeds: ['none', 'full'] } } } as unknown as Project
     expect(seedFromReport(project, 'ordinary shell')).toBeNull()
     expect(seedFromReport(project, 'compare none with full')).toBeNull()
+  })
+
+  test('latest valid seed comment wins over an earlier one', () => {
+    expect(seedAnswer(['none', 'full'], ['Seed: none', 'unrelated', 'Seed: full'])).toBe('full')
+  })
+
+  test('an unregistered seed is ignored and an earlier valid answer remains', () => {
+    expect(seedAnswer(['none', 'full'], ['Seed: full', 'Seed: production'])).toBe('full')
+  })
+
+  test('no seed comment returns null', () => {
+    expect(seedAnswer(['none', 'full'], [])).toBeNull()
+    expect(seedAnswer(['none', 'full'], ['seed: full', 'Seed: ', 'Seed: full\nextra'])).toBeNull()
   })
 })

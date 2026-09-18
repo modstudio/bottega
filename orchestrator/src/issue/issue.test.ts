@@ -7,9 +7,35 @@ import {
 } from '../contract/contract.ts'
 import { JOBS } from '../jobs/jobs.ts'
 import type { Project } from '../project/projects.ts'
-import { ISSUE_DIAGNOSIS_SCHEMA, parseIssueReply, validatedTrackerTaskKey } from './issue.ts'
+import {
+  ISSUE_DIAGNOSIS_SCHEMA,
+  parseIssueReply,
+  requestText,
+  validatedTrackerTaskKey,
+} from './issue.ts'
+import type { FiledIssue } from './issue-file.ts'
 
 describe('filed issue coordinator inputs', () => {
+  test('seed request names the task-comment command that records the answer', () => {
+    const issue = {
+      key: 'DEV-9',
+      notEstablished: 'the cause',
+    } as FiledIssue
+    expect(requestText(issue, 'Which seed?', ['none', 'full'], 'none', 'worktree')).toContain(
+      'Answer with: hub task comment DEV-9 "Seed: <one of the options>"',
+    )
+  })
+
+  test('seed request reports an unregistered answer with the registered options', () => {
+    const issue = {
+      key: 'DEV-9',
+      notEstablished: 'the cause',
+    } as FiledIssue
+    expect(
+      requestText(issue, 'Which seed?', ['none', 'full'], 'none', 'worktree', 'production'),
+    ).toContain('Rejected seed: production; registered options: none | full')
+  })
+
   test('the issue path consumes its chosen seed only for the writing fix run', () => {
     const source = readFileSync(new URL('./issue.ts', import.meta.url), 'utf8')
     const diagnosis = source.slice(

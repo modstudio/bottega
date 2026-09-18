@@ -1,7 +1,15 @@
 import { describe, expect, test } from 'bun:test'
 import { addRun, score } from '../../test/fixtures/store.ts'
 import { db } from '../database/db.ts'
-import { unscoredFiledIssueLoopRuns } from './issue-dispatch.ts'
+import { answeredReviewClaimable, unscoredFiledIssueLoopRuns } from './issue-dispatch.ts'
+
+describe('filed-issue claiming', () => {
+  test('explicit-key mode accepts review with a valid seed answer but queue mode does not', () => {
+    expect(answeredReviewClaimable('review', false, 'full')).toBeTrue()
+    expect(answeredReviewClaimable('review', true, 'full')).toBeFalse()
+    expect(answeredReviewClaimable('review', false, null)).toBeFalse()
+  })
+})
 
 describe('unscored filed-issue loop runs', () => {
   test('lists terminal loop-started runs that have no verdict', () => {
