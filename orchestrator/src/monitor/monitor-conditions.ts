@@ -24,9 +24,17 @@ import type { MonitorCondition } from './monitor-types.ts'
 
 const HUB = new URL('../../../bin/hub', import.meta.url).pathname
 
-const ASKING_RUN_WHERE = `status='asking'
+const ASKING_RUN_WHERE = `parent_run_id IS NULL
+   AND (
+     SELECT member.status FROM run member
+      WHERE member.id = run.id OR member.parent_run_id = run.id
+      ORDER BY member.turn DESC, member.id DESC
+      LIMIT 1
+   ) = 'asking'
    AND NOT EXISTS (
-     SELECT 1 FROM question q WHERE q.run_id = run.id AND q.answered_at IS NULL
+     SELECT 1 FROM question q JOIN run owner ON owner.id = q.run_id
+      WHERE (owner.id = run.id OR owner.parent_run_id = run.id)
+        AND q.answered_at IS NULL
    )`
 
 type AddressedRun = { id: number; started_at: string; session_id: string | null }
