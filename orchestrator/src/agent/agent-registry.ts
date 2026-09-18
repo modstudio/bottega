@@ -1,5 +1,5 @@
 // concern: agent-registry
-/** Owns persisted agent rows, hydration, cache, and mutations. Must not know probes or local-host state. */
+/** Owns persisted agent rows, hydration, cache, and mutations. Must not know probes or model-host state. */
 import { Database } from 'bun:sqlite'
 import { existsSync } from 'node:fs'
 import { DB_PATH, db as dbForAgents, ROOT, writableDb } from '../database/db.ts'
@@ -86,7 +86,7 @@ export function rowAgent(row: AgentRow): Agent {
       ? {
           env: () => ({
             ...(base.env?.() ?? {}),
-            ORCH_LOCAL_BASE_URL: row.base_url!,
+            ORCH_MODEL_HOST_URL: row.base_url!,
             OPENAI_BASE_URL: row.base_url!,
             OPENAI_API_KEY: 'local',
             ...(row.harness === 'goose'

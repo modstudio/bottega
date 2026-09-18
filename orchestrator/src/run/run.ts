@@ -3,7 +3,7 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { basename } from 'node:path'
 import { requireAgent } from '../agent/agent-registry.ts'
 import { minimumCliVersionRefusal } from '../agent/agents.ts'
-import { ensureLocalHealth, LOCAL_BASE_URL, tryWake } from '../agent/local-host.ts'
+import { ensureLocalHealth, MODEL_HOST_URL, tryWake } from '../agent/model-host.ts'
 import type { AskLoopback } from '../ask/ask.ts'
 import { compilePack, recordPack } from '../canon/canon.ts'
 import {
@@ -393,7 +393,7 @@ export async function run(opts: {
   // one minutes later finds the endpoint up. Nothing is slower than it was; the
   // difference is that the outage now ends by itself.
   //
-  // Opt-in via ORCH_LOCAL_WOL_MAC, because the box is shared and powering on
+  // Opt-in via ORCH_MODEL_HOST_WOL_MAC, because the box is shared and powering on
   // somebody else's machine is not a default worth assuming.
   if (!health.ok) {
     const woken = tryWake()
@@ -806,7 +806,7 @@ export async function run(opts: {
       readonlyNotes: toolFor(callerCwd)?.readonly_notes,
       override: process.env.ORCH_SANDBOX,
       path: process.env.PATH,
-      localBaseUrl: LOCAL_BASE_URL,
+      localBaseUrl: MODEL_HOST_URL,
       mcp: Boolean(mcpMode),
       mcpAllowlist: mcpMode ? mcpAllowlist : [],
     })

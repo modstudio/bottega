@@ -1,7 +1,7 @@
 // concern: cli
 /** Registers routing report adapters. Must not own routing behavior. */
 import type { Command } from 'commander'
-import { ensureLocalHealth } from '../agent/local-host.ts'
+import { ensureLocalHealth } from '../agent/model-host.ts'
 import { guideCommand, routingBacktestCommand, statsCommand } from '../route/routing-commands.ts'
 import { duration, log, optionFlags } from './support.ts'
 

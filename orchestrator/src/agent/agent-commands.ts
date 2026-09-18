@@ -14,7 +14,13 @@ import {
   removeAgent,
   setAgent,
 } from './agent-registry.ts'
-import { available, ensureLocalHealth, installed, unavailableReason } from './local-host.ts'
+import {
+  available,
+  ensureLocalHealth,
+  installed,
+  modelHostModel,
+  unavailableReason,
+} from './model-host.ts'
 
 type Presentation = { log(value: string): void; setExitCode(code: number): void }
 const parseJobs = (value: string | undefined) =>
@@ -68,10 +74,10 @@ export async function agentCommand(argv: string[], presentation: Presentation): 
 function addCommand(name: string, argv: string[], presentation: Presentation): void {
   const input = mutation(argv)
   if (!input.model) {
-    const configured = process.env.ORCH_LOCAL_MODEL?.trim()
+    const configured = modelHostModel().trim()
     if (!configured)
       throw new Error(
-        'agent add requires --model or ORCH_LOCAL_MODEL\ncleared by: pass --model or set ORCH_LOCAL_MODEL',
+        'agent add requires --model or ORCH_MODEL_HOST_MODEL\ncleared by: pass --model or set ORCH_MODEL_HOST_MODEL',
       )
     input.model = configured
   }

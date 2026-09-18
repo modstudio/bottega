@@ -1,8 +1,17 @@
 #!/usr/bin/env bash
-# Verify a local endpoint in the order that matters: each step gates the next.
+# Verify the model-host endpoint in the order that matters: each step gates the next.
 #   ./smoke-test.sh [base_url]        default http://127.0.0.1:8010/v1
 set -uo pipefail
-BASE="${1:-${ORCH_LOCAL_BASE_URL:-http://127.0.0.1:8010/v1}}"
+if [[ -n "${1:-}" ]]; then
+  BASE="$1"
+elif [[ ${ORCH_MODEL_HOST_URL+x} ]]; then
+  BASE="$ORCH_MODEL_HOST_URL"
+elif [[ ${ORCH_LOCAL_BASE_URL+x} ]]; then
+  printf '%s\n' 'ORCH_LOCAL_BASE_URL is deprecated; use ORCH_MODEL_HOST_URL' >&2
+  BASE="$ORCH_LOCAL_BASE_URL"
+else
+  BASE='http://127.0.0.1:8010/v1'
+fi
 ok=0; fail=0
 step() { printf '%-34s ' "$1"; }
 pass() { echo "ok${1:+  $1}"; ok=$((ok+1)); }

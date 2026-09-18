@@ -14,7 +14,7 @@ import {
   rowAgent,
 } from './agent-registry.ts'
 import type { Caps } from './capabilities.ts'
-import { localReachable } from './local-host.ts'
+import { localReachable } from './model-host.ts'
 
 const REGISTRATION_PROBE_FILE = 'probe.txt'
 const REGISTRATION_PROBE_SENTINEL = 'REGISTRATION_PROBE_FILE_OK'
