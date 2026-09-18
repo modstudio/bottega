@@ -221,3 +221,53 @@ test('a two-tree chain held at close-out stays in terminalCloseOutRuns until the
     rmSync(fixture.repo, { recursive: true, force: true })
   }
 })
+
+test('a root held at close-out with the tree only on a child is no longer returned by terminalCloseOutRuns after discard', () => {
+  const id = addRun({ agent: 'codex', job: 'implement', status: 'ok' })
+  const child = addRun({
+    agent: 'codex',
+    job: 'implement',
+    status: 'ok',
+    parent: id,
+    turn: 2,
+  })
+  const fixture = heldCleanup(id)
+  try {
+    db()
+      .query(
+        `UPDATE run
+         SET repo=?, cwd=?, worktree=?, worktree_source='git'
+         WHERE id=?`,
+      )
+      .run(fixture.project, fixture.tree, fixture.tree, child)
+    db().query('UPDATE run SET worktree=NULL WHERE id=?').run(id)
+    expect(closeOutIds()).toContain(id)
+    expect(db().query('SELECT worktree FROM run WHERE id=?').get(id)).toEqual({
+      worktree: null,
+    })
+    expect(db().query('SELECT worktree FROM run WHERE id=?').get(child)).toEqual({
+      worktree: fixture.tree,
+    })
+
+    discard(fixture.row)
+
+    expect(closeOutIds()).not.toContain(id)
+    expect(
+      db()
+        .query(
+          'SELECT worktree, close_out_outcome, close_out_detail, close_out_attempted_at FROM run WHERE id=?',
+        )
+        .get(id),
+    ).toEqual({
+      worktree: null,
+      close_out_outcome: null,
+      close_out_detail: null,
+      close_out_attempted_at: null,
+    })
+    expect(db().query('SELECT worktree FROM run WHERE id=?').get(child)).toEqual({
+      worktree: null,
+    })
+  } finally {
+    rmSync(fixture.repo, { recursive: true, force: true })
+  }
+})
