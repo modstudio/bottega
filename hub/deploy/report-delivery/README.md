@@ -35,7 +35,7 @@ fly machine run . \
 ```
 
 Before enabling, run a dry pass from a one-off Machine and inspect its output. Dry-run renders
-the recipient, subject, exact local window, and text body, but writes no send row and uses no
+the recipients, subject, exact local window, and text body, but writes no send row and uses no
 SES client:
 
 ```sh

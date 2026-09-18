@@ -2,7 +2,7 @@
   "name": "@bottega/hub",
   "version": "0.1.0",
   "private": true,
-  "description": "One aggregator: tasks in flight across every project, what each cost, and the daily report",
+  "description": "One aggregator: tasks in flight across every project, what each cost, and scheduled reports",
   "type": "module",
   "scripts": {
     "hub": "bun --no-env-file src/cli.ts",

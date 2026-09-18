@@ -2,7 +2,9 @@ import { initTRPC, TRPCError } from '@trpc/server'
 import { z } from 'zod'
 import { hostedMeasurePeople, hostedMeasures } from '../../hosted-measures.ts'
 import {
+  addHostedReportSubscriptionRecipient,
   createHostedReportSubscription,
+  removeHostedReportSubscriptionRecipient,
   unsubscribeHostedReportSubscription,
   updateHostedReportSubscription,
 } from '../../hosted-reports.ts'
@@ -285,7 +287,12 @@ export const recordRouter = t.router({
       )
     }),
   createReportSubscription: t.procedure
-    .input(subscriptionCadenceInput.extend({ scope: subscriptionScope }))
+    .input(
+      subscriptionCadenceInput.extend({
+        scope: subscriptionScope,
+        recipientUserIds: z.array(uuid).min(1),
+      }),
+    )
     .mutation(async ({ ctx, input }) => {
       const { identity } = await hostedIdentity(ctx)
       return createHostedReportSubscription(recordDatabaseUrl(), identity, input)
@@ -302,6 +309,28 @@ export const recordRouter = t.router({
     .mutation(async ({ ctx, input }) => {
       const { identity } = await hostedIdentity(ctx)
       return unsubscribeHostedReportSubscription(recordDatabaseUrl(), identity, input.id)
+    }),
+  addReportSubscriptionRecipient: t.procedure
+    .input(z.object({ id: uuid, userId: uuid }).strict())
+    .mutation(async ({ ctx, input }) => {
+      const { identity } = await hostedIdentity(ctx)
+      return addHostedReportSubscriptionRecipient(
+        recordDatabaseUrl(),
+        identity,
+        input.id,
+        input.userId,
+      )
+    }),
+  removeReportSubscriptionRecipient: t.procedure
+    .input(z.object({ id: uuid, userId: uuid }).strict())
+    .mutation(async ({ ctx, input }) => {
+      const { identity } = await hostedIdentity(ctx)
+      return removeHostedReportSubscriptionRecipient(
+        recordDatabaseUrl(),
+        identity,
+        input.id,
+        input.userId,
+      )
     }),
   task: t.procedure
     .input(z.object({ key: z.string().min(1).max(64), spaceId: uuid.optional() }))

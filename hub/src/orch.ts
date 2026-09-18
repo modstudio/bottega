@@ -508,20 +508,3 @@ export const docHistory = (scope: string, subject: string | null, slug: string) 
   jsonDocument<DocRevisionMetadata[]>(docArgv('history', { scope, subject, slug }))
 
 export const docSubjects = () => jsonDocument<DocSubjects>(docArgv('subjects'))
-
-export async function summarize(prompt: string): Promise<string> {
-  return orchProcess(
-    [
-      'do',
-      'summarize',
-      '--agent',
-      'codex',
-      '--quiet',
-      '--follow',
-      '--label',
-      'daily report sentences',
-    ],
-    0,
-    { stdin: prompt },
-  )
-}

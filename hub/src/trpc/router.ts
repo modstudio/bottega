@@ -7,7 +7,6 @@ import { noteRouter } from './routers/note.ts'
 import { projectRouter } from './routers/project.ts'
 import { recordRouter } from './routers/record.ts'
 import { runRouter } from './routers/run.ts'
-import { settingsRouter } from './routers/settings.ts'
 import { workRouter } from './routers/work.ts'
 
 const t = initTRPC.context<Context>().create()
@@ -18,7 +17,6 @@ export const appRouter = t.router({
   run: runRouter,
   work: workRouter,
   insight: insightRouter,
-  settings: settingsRouter,
   catalog: catalogRouter,
   note: noteRouter,
   record: recordRouter,

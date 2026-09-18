@@ -42,8 +42,7 @@ export function intervalsInWindow(from: string, to: string): WindowIntervalRow[]
  * "agents working" count sat at zero through a seven-way review fan-out, and
  * the engaged time it contributed stopped growing.
  */
-export const endMs = (r: { end_at: string; open: number }, now = Date.now()) =>
-  intervalEndMs(r, now)
+const endMs = (r: { end_at: string; open: number }, now = Date.now()) => intervalEndMs(r, now)
 
 /**
  * Every task with recorded work in `[from, to)`, plus one unattributed row per
@@ -107,49 +106,6 @@ export function estateEngagedMs(from: string, to: string): number {
     rows.map((r) => ({
       start: new Date(r.start_at).getTime(),
       // Clamped to the window: an open span runs to now, which may be past `to`.
-      end: Math.min(endMs(r), toMs),
-    })),
-  )
-}
-
-/**
- * Wall clock represented by a report's visible work.
- *
- * Select both visible populations here and take one union, so overlapping
- * untasked and ticketed spans are counted only once.
- */
-export function reportEngagedMs(
-  keys: string[],
-  projects: string[],
-  from: string,
-  to: string,
-): number {
-  const taskKeys = [...new Set(keys)]
-  const untaskedProjects = [...new Set(projects)]
-  if (!taskKeys.length && !untaskedProjects.length) return 0
-
-  const clauses: string[] = []
-  const params: string[] = []
-  if (taskKeys.length) {
-    clauses.push(`task_key IN (${taskKeys.map(() => '?').join(',')})`)
-    params.push(...taskKeys)
-  }
-  if (untaskedProjects.length) {
-    clauses.push(`(task_key IS NULL AND project IN (${untaskedProjects.map(() => '?').join(',')}))`)
-    params.push(...untaskedProjects)
-  }
-
-  const rows = db()
-    .query<{ start_at: string; end_at: string; open: number }, string[]>(
-      `SELECT start_at, end_at, open FROM interval
-      WHERE (${clauses.join(' OR ')})
-        AND end_at >= ? AND start_at < ?`,
-    )
-    .all(...params, from, to)
-  const toMs = new Date(to).getTime()
-  return engagedMs(
-    rows.map((r) => ({
-      start: new Date(r.start_at).getTime(),
       end: Math.min(endMs(r), toMs),
     })),
   )

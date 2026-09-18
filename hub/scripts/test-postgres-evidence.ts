@@ -18,12 +18,12 @@ import {
   reapHostedNotes,
 } from '../src/hosted-notes.ts'
 import {
+  addHostedReportSubscriptionRecipient,
   appendHostedSend,
   createHostedReportSubscription,
-  getHostedReportSetting,
   listHostedReportSubscriptions,
   listHostedSends,
-  putHostedReportSetting,
+  removeHostedReportSubscriptionRecipient,
   unsubscribeHostedReportSubscription,
   updateHostedReportSubscription,
 } from '../src/hosted-reports.ts'
@@ -50,6 +50,7 @@ const actorUrl = process.env.ORCH_RECORD_URL
 if (!adminUrl || !actorUrl) throw new Error('Postgres evidence proof requires test and actor URLs')
 
 const USER = '01990000-0000-7000-8000-000000000650'
+const SECOND_USER = '01990000-0000-7000-8000-000000000651'
 const SPACE_A = '01990000-0000-7000-8000-00000000065a'
 const SPACE_B = '01990000-0000-7000-8000-00000000065b'
 const PROJECT_A = '01990000-0000-7000-8000-00000000065c'
@@ -74,14 +75,16 @@ const interval: IntervalEvidence = {
 const admin = new SQL(adminUrl)
 try {
   await admin`INSERT INTO "user" (id,email,name,email_verified,created_at,updated_at)
-    VALUES (${USER}::uuid,'hub-evidence@example.test','Hub Evidence',true,now(),now())`
+    VALUES (${USER}::uuid,'hub-evidence@example.test','Hub Evidence',true,now(),now()),
+      (${SECOND_USER}::uuid,'hub-second@example.test','Hub Second',true,now(),now())`
   await admin`INSERT INTO space (id,name,slug,created_at) VALUES
     (${SPACE_A}::uuid,'Evidence A','evidence-a',now()),
     (${SPACE_B}::uuid,'Evidence B','evidence-b',now())`
   await admin`INSERT INTO project(id,space_id,name,key_prefixes,created_at)
     VALUES (${PROJECT_A}::uuid,${SPACE_A}::uuid,${PLATFORM_SLUG},ARRAY['DEV'],now())`
   await admin`INSERT INTO membership(id,space_id,user_id,role,permission,created_at)
-    VALUES (${newRecordId()}::uuid,${SPACE_A}::uuid,${USER}::uuid,'member','write',now())`
+    VALUES (${newRecordId()}::uuid,${SPACE_A}::uuid,${USER}::uuid,'member','write',now()),
+      (${newRecordId()}::uuid,${SPACE_A}::uuid,${SECOND_USER}::uuid,'member','write',now())`
 
   await upsertIntervals(actorUrl, { userId: USER, spaceId: SPACE_A }, [interval])
   await upsertIntervals(actorUrl, { userId: USER, spaceId: SPACE_A }, [interval])
@@ -305,35 +308,6 @@ try {
     if (otherNotes.notes.length || otherNotes.acknowledgements.length)
       throw new Error('another space observed hosted notes')
 
-    const reportValue = {
-      enabled: true,
-      to: ['recipient@example.test'],
-      fromName: 'Daily Report',
-      fromAddress: 'sender@example.test',
-      subjectPrefix: 'Daily',
-      smtpHost: 'smtp.example.test',
-      smtpPort: 587,
-      smtpUser: 'sender',
-      smtpPasswordRef: 'env:SMTP_PASSWORD',
-      windowHours: 24,
-      minMinutes: 15,
-      projects: [PLATFORM_SLUG, 'not-in-this-space'],
-      briefs: [],
-      testTo: 'test@example.test',
-    }
-    const reportSetting = await putHostedReportSetting(actorUrl, identity, {
-      value: reportValue,
-      version: 0,
-    })
-    if (reportSetting.version !== 1 || reportSetting.value.projects.join(',') !== PLATFORM_SLUG)
-      throw new Error('report setting upsert did not filter projects or advance its version')
-    let versionConflict = false
-    try {
-      await putHostedReportSetting(actorUrl, identity, { value: reportValue, version: 0 })
-    } catch (error) {
-      versionConflict = String((error as Error).message).includes('stale report setting version')
-    }
-    if (!versionConflict) throw new Error('stale report setting version was not refused')
     await appendHostedSend(actorUrl, identity, {
       at: '2026-09-17T15:30:00.000Z',
       window: '24h',
@@ -349,16 +323,28 @@ try {
     if (visibleSends.sends.length !== 1 || visibleSends.sends[0]?.items !== 3)
       throw new Error('appended send was not visible in the list')
     const otherIdentity = { userId: USER, spaceId: SPACE_B }
-    if (await getHostedReportSetting(actorUrl, otherIdentity))
-      throw new Error('another space observed the report setting')
     if ((await listHostedSends(actorUrl, otherIdentity, {})).sends.length)
       throw new Error('another space observed send history')
+    let nonMemberRefused = false
+    try {
+      await createHostedReportSubscription(actorUrl, identity, {
+        scope: { kind: 'space' },
+        cadence: 'daily',
+        hour: 8,
+        zone: 'America/New_York',
+        recipientUserIds: ['01990000-0000-7000-8000-000000000699'],
+      })
+    } catch (error) {
+      nonMemberRefused = String((error as Error).message).includes('must be a member')
+    }
+    if (!nonMemberRefused) throw new Error('a non-member report recipient was accepted')
     const subscription = await createHostedReportSubscription(actorUrl, identity, {
       scope: { kind: 'project', project: PLATFORM_SLUG },
       cadence: 'weekly',
       hour: 8,
       weekday: 'monday',
       zone: 'America/New_York',
+      recipientUserIds: [USER, SECOND_USER],
     })
     if (
       subscription.zone !== 'America/New_York' ||
@@ -367,10 +353,30 @@ try {
       subscription.hour !== 8
     )
       throw new Error('subscription cadence did not round-trip with its zone')
+    if (subscription.recipients.length !== 2)
+      throw new Error('subscription did not list every selected member')
     await admin`UPDATE hub_send SET subscription_id=${subscription.id}::uuid,
       period_start=${'2026-09-10T15:30:00.000Z'}::timestamptz,
       period_end=${'2026-09-17T15:30:00.000Z'}::timestamptz
       WHERE space_id=${SPACE_A}::uuid AND at=${'2026-09-17T15:30:00.000Z'}::timestamptz`
+    const historicalSend = await admin`SELECT id FROM hub_send
+      WHERE subscription_id=${subscription.id}::uuid`
+    await admin`INSERT INTO hub_send_recipient
+      (id,space_id,send_id,user_id,name,email,created_at) VALUES
+      (${newRecordId()}::uuid,${SPACE_A}::uuid,${historicalSend[0]!.id}::uuid,
+       ${SECOND_USER}::uuid,'Hub Second','hub-second@example.test',now())`
+    await removeHostedReportSubscriptionRecipient(actorUrl, identity, subscription.id, SECOND_USER)
+    const afterOneRemoval = await listHostedReportSubscriptions(actorUrl, identity)
+    if (
+      afterOneRemoval.subscriptions[0]?.recipients.length !== 1 ||
+      afterOneRemoval.subscriptions[0]?.recipients[0]?.user_id !== USER
+    )
+      throw new Error('subscription recipients were not removed independently')
+    const preservedRecipient = await admin`SELECT user_id FROM hub_send_recipient
+      WHERE send_id=${historicalSend[0]!.id}::uuid`
+    if (preservedRecipient[0]?.user_id !== SECOND_USER)
+      throw new Error('removing a recipient rewrote an existing send row')
+    await addHostedReportSubscriptionRecipient(actorUrl, identity, subscription.id, SECOND_USER)
     const updatedSubscription = await updateHostedReportSubscription(
       actorUrl,
       identity,
@@ -437,11 +443,11 @@ try {
       throw new Error('hosted spend adapter did not return the seeded interval')
     const pageSettings = await hostedSettings(actorUrl, identity, [PLATFORM_SLUG])
     if (
-      !pageSettings.report.enabled ||
       pageSettings.sends.length !== 1 ||
+      pageSettings.members.length !== 2 ||
       pageSettings.subscriptions.length !== 1
     )
-      throw new Error('hosted settings adapter did not return the setting, send and subscription')
+      throw new Error('hosted settings adapter did not return members, sends and subscriptions')
     const emptyNotes = await hostedNotes(actorUrl, otherIdentity, { stale: false })
     const emptyRatio = await hostedRatio(actorUrl, otherIdentity, 14)
     const emptySettings = await hostedSettings(actorUrl, otherIdentity, [])
@@ -453,6 +459,15 @@ try {
     )
       throw new Error('another space observed a hosted page adapter row')
 
+    await removeHostedReportSubscriptionRecipient(actorUrl, identity, subscription.id, USER)
+    await removeHostedReportSubscriptionRecipient(actorUrl, identity, subscription.id, SECOND_USER)
+    const recipientless = await listHostedReportSubscriptions(actorUrl, identity)
+    if (recipientless.subscriptions[0]?.recipients.length !== 0)
+      throw new Error('the last subscription recipient was not removed')
+    const candidatesWithoutRecipients = (await client`SELECT subscription_id
+      FROM hub_report_delivery_candidates()`) as { subscription_id: string }[]
+    if (candidatesWithoutRecipients.some((row) => row.subscription_id === subscription.id))
+      throw new Error('a subscription without recipients remained due for delivery')
     await unsubscribeHostedReportSubscription(actorUrl, identity, subscription.id)
     if ((await listHostedReportSubscriptions(actorUrl, identity)).subscriptions.length)
       throw new Error('removed subscription remained visible in its space')
@@ -599,8 +614,9 @@ try {
   await admin`DROP FUNCTION IF EXISTS fail_hub_task_insert()`
   await admin`DELETE FROM hub_note_acknowledgement WHERE space_id IN (${SPACE_A}::uuid, ${SPACE_B}::uuid)`
   await admin`DELETE FROM hub_note WHERE space_id IN (${SPACE_A}::uuid, ${SPACE_B}::uuid)`
+  await admin`DELETE FROM hub_send_recipient WHERE space_id IN (${SPACE_A}::uuid, ${SPACE_B}::uuid)`
   await admin`DELETE FROM hub_send WHERE space_id IN (${SPACE_A}::uuid, ${SPACE_B}::uuid)`
-  await admin`DELETE FROM hub_report_setting WHERE space_id IN (${SPACE_A}::uuid, ${SPACE_B}::uuid)`
+  await admin`DELETE FROM hub_report_subscription_recipient WHERE space_id IN (${SPACE_A}::uuid, ${SPACE_B}::uuid)`
   await admin`DELETE FROM hub_report_subscription WHERE space_id IN (${SPACE_A}::uuid, ${SPACE_B}::uuid)`
   await admin`DELETE FROM membership WHERE space_id IN (${SPACE_A}::uuid, ${SPACE_B}::uuid)`
   await admin`DELETE FROM hub_task_status_event WHERE space_id IN (${SPACE_A}::uuid, ${SPACE_B}::uuid)`
@@ -612,6 +628,6 @@ try {
   await admin`DELETE FROM seq WHERE space_id IN (${SPACE_A}::uuid, ${SPACE_B}::uuid)`
   await admin`DELETE FROM project WHERE space_id IN (${SPACE_A}::uuid, ${SPACE_B}::uuid)`
   await admin`DELETE FROM space WHERE id IN (${SPACE_A}::uuid, ${SPACE_B}::uuid)`
-  await admin`DELETE FROM "user" WHERE id = ${USER}::uuid`
+  await admin`DELETE FROM "user" WHERE id IN (${USER}::uuid, ${SECOND_USER}::uuid)`
   await admin.close()
 }

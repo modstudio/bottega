@@ -14,13 +14,6 @@
     "key": "hub/src/cli.ts\u0000note"
   },
   {
-    "file": "hub/src/cli.ts",
-    "function": "sendReport",
-    "line": 807,
-    "score": 18,
-    "key": "hub/src/cli.ts\u0000sendReport"
-  },
-  {
     "file": "hub/src/ingest/git.ts",
     "function": "scanGit",
     "line": 58,

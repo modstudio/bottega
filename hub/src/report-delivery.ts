@@ -17,11 +17,15 @@ export type DeliveryCandidate = {
 
 export type DeliveryPeriod = MeasureWindow & { key: string }
 
+type DeliveryRecipient = {
+  userId: string
+  name: string
+  email: string
+  isMember: boolean
+}
+
 export type DeliverySubscription = {
-  recipientUserId: string
-  recipientName: string
-  recipientEmail: string
-  recipientIsMember: boolean
+  recipients: DeliveryRecipient[]
   scope: MeasureScope
   scopeName: string
   measures: Measures
@@ -34,16 +38,16 @@ export type DeliveryStatus = 'skipped' | 'failed'
 export type DeliveryRepository = {
   discover(): Promise<DeliveryCandidate[]>
   load(candidate: DeliveryCandidate, period: DeliveryPeriod): Promise<DeliverySubscription>
-  recipientIsMember(candidate: DeliveryCandidate, recipientUserId: string): Promise<boolean>
+  recipientsAreMembers(candidate: DeliveryCandidate, recipientUserIds: string[]): Promise<boolean>
   recordFinal(
     candidate: DeliveryCandidate,
     period: DeliveryPeriod,
-    input: { status: DeliveryStatus; reason: string; recipient?: string; items?: number },
+    input: { status: DeliveryStatus; reason: string; recipients?: string; items?: number },
   ): Promise<void>
   recordIntent(
     candidate: DeliveryCandidate,
     period: DeliveryPeriod,
-    input: { recipient: string; items: number },
+    input: { recipients: DeliveryRecipient[]; items: number },
   ): Promise<string | null>
   recordOutcome(
     candidate: DeliveryCandidate,
@@ -54,7 +58,7 @@ export type DeliveryRepository = {
 }
 
 export type ReportMailClient = {
-  send(input: RenderedReport & { to: string }): Promise<void>
+  send(input: RenderedReport & { to: string[] }): Promise<void>
 }
 
 const WEEKDAY = new Map([
@@ -232,7 +236,9 @@ async function loadSubscription(
 }
 
 function skipReason(subscription: DeliverySubscription) {
-  if (!subscription.recipientIsMember) return 'recipient is no longer a member of this space'
+  if (!subscription.recipients.length) return 'subscription has no recipients'
+  if (subscription.recipients.some((recipient) => !recipient.isMember))
+    return 'a recipient is no longer a member of this space'
   if (!hasRecordedWork(subscription.measures)) return 'scope had no recorded work in this period'
   return null
 }
@@ -249,7 +255,7 @@ async function recordSkip(
   await repository.recordFinal(candidate, period, {
     status: 'skipped',
     reason,
-    recipient: subscription.recipientEmail,
+    recipients: subscription.recipients.map((recipient) => recipient.email).join(', '),
     items: subscription.report.items.length,
   })
 }
@@ -283,29 +289,35 @@ async function dispatchReport(
 ): Promise<DeliveryResult> {
   if (input.dryRun) {
     input.print?.(
-      `To: ${subscription.recipientEmail}\nSubject: ${rendered.subject}\n\n${rendered.text}`,
+      `To: ${subscription.recipients.map((recipient) => recipient.email).join(', ')}\nSubject: ${rendered.subject}\n\n${rendered.text}`,
     )
     return 'dry-run'
   }
-  const member = await input.repository.recipientIsMember(candidate, subscription.recipientUserId)
-  if (!member) {
+  const members = await input.repository.recipientsAreMembers(
+    candidate,
+    subscription.recipients.map((recipient) => recipient.userId),
+  )
+  if (!members) {
     await recordSkip(
       input.repository,
       candidate,
       period,
       subscription,
-      'recipient is no longer a member of this space',
+      'a recipient is no longer a member of this space',
       false,
     )
     return 'skipped'
   }
   const intentId = await input.repository.recordIntent(candidate, period, {
-    recipient: subscription.recipientEmail,
+    recipients: subscription.recipients,
     items: subscription.report.items.length,
   })
   if (!intentId) return 'duplicate'
   try {
-    await input.mail.send({ ...rendered, to: subscription.recipientEmail })
+    await input.mail.send({
+      ...rendered,
+      to: subscription.recipients.map((recipient) => recipient.email),
+    })
     await input.repository.recordOutcome(candidate, intentId, 'sent')
     return 'sent'
   } catch (cause) {

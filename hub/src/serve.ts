@@ -1,17 +1,17 @@
 import { existsSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import { fetchRequestHandler } from '@trpc/server/adapters/fetch'
-import { engagedMs, human, human as humanMs } from '../../shared/interval.ts'
+import { engagedMs, human } from '../../shared/interval.ts'
 import type { OrchBlockers } from '../../shared/orch-contract.ts'
 import { appStaticPath, resolveAppStatic } from './app-static.ts'
 import { attributeRun } from './attribute.ts'
-import { collectFast, collectSlow, leaseHolder, watch, withLease } from './collect.ts'
+import { leaseHolder, watch } from './collect.ts'
 import { db, enableSchemaReload, nowIso } from './db.ts'
 import { promptLens } from './excerpt.ts'
 import { chainVendorTokens, executionSpans } from './ingest/runs.ts'
 import { state as orchState, blockers as readBlockers, readRuns } from './orch.ts'
 import { routingViewData } from './orch-transforms.ts'
-import { projectNames, projects, type RegisteredProject, trackerPresentation } from './projects.ts'
+import { projectNames, projects } from './projects.ts'
 import {
   boardTasks,
   completedInWindow,
@@ -22,16 +22,6 @@ import {
   tasksInWindow,
 } from './query.ts'
 import {
-  gather,
-  lastSends,
-  recordOutcomeAfterEmail,
-  renderHtml,
-  renderText,
-  send as sendMail,
-  summarise,
-} from './report.ts'
-import { refreshHostedReportSetting } from './report-cache.ts'
-import {
   appliedRunOffset,
   liveRowDisplay,
   matchesRunSearch,
@@ -40,7 +30,6 @@ import {
   runRowDisplay,
   type SearchableLiveRun,
 } from './run-display.ts'
-import { getReport, secretStatus } from './settings.ts'
 import { projectFlightDone } from './task-projections.ts'
 import { hoursAgo } from './time.ts'
 import { createContext } from './trpc/context.ts'
@@ -168,62 +157,6 @@ const VIEWS = ['flight', 'board', 'done', 'ratio', 'spend', 'routing', 'runs', '
 export type View = (typeof VIEWS)[number]
 
 /** Single-quote a value so the command can be pasted into a shell as-is. */
-function shSingle(value: string): string {
-  return "'" + value.replace(/'/g, "'\\''") + "'"
-}
-
-function settingsCmd(name: string, patch: Record<string, unknown>): string {
-  return `orch project set ${shSingle(name)} --settings ${shSingle(JSON.stringify(patch))}`
-}
-
-function asRecord(value: unknown): Record<string, unknown> | null {
-  if (!value || typeof value !== 'object' || Array.isArray(value)) return null
-  return value as Record<string, unknown>
-}
-
-/** The register, shaped for the settings screen. */
-function presentRegister(rows: RegisteredProject[]) {
-  return rows.map((p) => {
-    const wt = asRecord(p.settings.worktree)
-    const create = typeof wt?.create === 'string' && wt.create ? wt.create : null
-    const recipe = asRecord(wt?.recipe)
-    const worktree = create ? 'create' : recipe ? 'recipe' : 'neither'
-    const notes = typeof wt?.notes === 'string' && wt.notes.trim() ? wt.notes : null
-    const tracker = p.settings.tracker
-    const trackerStatus = trackerPresentation(p)
-    return {
-      name: p.name,
-      path: p.path,
-      stack: p.stack,
-      canon: p.canon,
-      prefixes: p.settings.keyPrefixes ?? [],
-      color: p.settings.color ?? null,
-      colorDark: p.settings.colorDark ?? null,
-      tracker:
-        trackerStatus.state === 'unusable'
-          ? `${trackerStatus.label} — unusable: ${trackerStatus.error}`
-          : trackerStatus.label,
-      trackerState: trackerStatus.state,
-      trackerError: trackerStatus.error,
-      worktree,
-      notes,
-      commands: {
-        path: `orch project set ${shSingle(p.name)} --path ${shSingle(p.path)}`,
-        stack: `orch project set ${shSingle(p.name)} --stack ${shSingle(p.stack ?? '')}`,
-        canon: `orch project set ${shSingle(p.name)} ${p.canon ? '--canon' : '--no-canon'}`,
-        prefixes: settingsCmd(p.name, { keyPrefixes: p.settings.keyPrefixes ?? [] }),
-        color: settingsCmd(p.name, { color: p.settings.color ?? '' }),
-        colorDark: settingsCmd(p.name, { colorDark: p.settings.colorDark ?? '' }),
-        tracker: settingsCmd(p.name, { tracker: tracker ?? {} }),
-        worktree: settingsCmd(p.name, {
-          worktree: create ? { create } : recipe ? { recipe } : { recipe: {} },
-        }),
-        notes: notes == null ? null : settingsCmd(p.name, { worktree: { notes } }),
-      },
-    }
-  })
-}
-
 function setting(key: string): string | null {
   const row = db()
     .query<{ value: string }, [string]>(`SELECT value FROM setting WHERE key = ?`)
@@ -581,21 +514,6 @@ export async function view(
     }
   }
 
-  if (name === 'settings') {
-    const r = getReport()
-    const g = gather(r)
-    return {
-      report: r,
-      allProjects: projectNames(),
-      // Cached per process; not a shell-out on the two-second poll.
-      register: presentRegister(projects()),
-      // Only whether each secret RESOLVES, never its value.
-      secrets: secretStatus(r),
-      preview: { items: g.items.length, engaged: human(g.engagedMs), projects: g.projects },
-      sends: lastSends(8),
-    }
-  }
-
   // A view whose data source is not connected yet says exactly what is missing
   // and what would fill it. A blank panel reads as breakage.
   return { pending: { needs: 'not built yet' } }
@@ -603,38 +521,6 @@ export async function view(
 
 /** When this process loaded its code. Restarting is the only thing that moves it. */
 const STARTED_AT = nowIso()
-
-export async function sendTest() {
-  const r = await refreshHostedReportSetting()
-  const to = [r.testTo || r.fromAddress].filter(Boolean)
-  if (!to.length) throw new Error('set a test address first')
-  const g = gather(r)
-  if (!g.items.length) throw new Error('nothing to report in this window')
-  const sentences = await summarise(g.items, r.briefs)
-  const shippedN = g.items.filter((i) => i.closed).length
-  const subject =
-    `[test] ${r.subjectPrefix}: ${shippedN} shipped, ` + `${humanMs(g.engagedMs)} engaged`
-  const res = await sendMail(
-    { ...r, to },
-    subject,
-    renderText(g, sentences),
-    renderHtml(g, sentences),
-  )
-  await recordOutcomeAfterEmail(g, r, res, to, { test: true })
-  if (!res.ok) throw new Error(res.error ?? 'send failed')
-  return { ok: true as const, to, items: g.items.length }
-}
-
-export async function collectNow() {
-  return withLease(
-    `refresh:${process.pid}`,
-    async () => {
-      await collectSlow()
-      await collectFast()
-    },
-    15_000,
-  )
-}
 
 export function serve(port: number) {
   // Not started for an ephemeral port: server tests spin one up and down, and
@@ -648,9 +534,7 @@ export function serve(port: number) {
   })
 
   const server = Bun.serve({
-    // A test send blocks on the summariser for a minute or so; Bun's default
-    // 10s idle timeout dropped the response mid-send and the button showed an
-    // error for an email that then arrived. 255s is Bun's ceiling.
+    // Long queries can outlast Bun's default idle timeout. 255s is Bun's ceiling.
     idleTimeout: 255,
     port,
     // Loopback only. This page carries a per-task record of everything this

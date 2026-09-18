@@ -32,16 +32,6 @@ import { startDashboardCapability } from './orch.ts'
 import { projects } from './projects.ts'
 import { estateEngagedMs, rollUpDays, tasksInWindow } from './query.ts'
 import { printReconcile, reconcileOpenIntervals } from './reconcile.ts'
-import {
-  gather,
-  recordOutcomeAfterEmail,
-  recordSend,
-  renderHtml,
-  renderText,
-  send,
-  summarise,
-} from './report.ts'
-import { refreshHostedReportSetting } from './report-cache.ts'
 import { runReportCommand } from './report-cli.ts'
 import { listOpenRulings, rulingsPayload } from './rulings.ts'
 import { serve } from './serve.ts'
@@ -219,7 +209,7 @@ const TASK_USAGE = `hub task new --project X --title "..." [--status Y] [--paren
   hub task import <file.json> backfill from a clustered commit history
   hub task push [--dry-run]   migrate and verify the local task cache`
 
-const USAGE = `hub — every project's tasks in flight, what each cost, and the daily report
+const USAGE = `hub — every project's tasks in flight, what each cost, and scheduled reports
 
   hub collect [--since ISO] [--only runs|transcripts|git|tasks]
                               ingest every source into hub.db
@@ -259,12 +249,7 @@ const USAGE = `hub — every project's tasks in flight, what each cost, and the 
   hub report subscriptions [--json]
   hub report unsubscribe <ID>
   hub report send [--dry-run]  render and send every subscription whose period is due
-  hub report push [--dry-run] migrate and verify report settings and send history
-
-  hub send [--dry-run]        the daily report; --dry-run prints it instead
-      --test                  send the real thing, but only to the test address,
-                              leaving the recipient list untouched
-      --hours N               override the configured window
+  hub report push [--dry-run] migrate and verify send history
 
 Engaged time is the UNION of every agent's working spans: a session waiting on a
 delegated agent is not idle, and two agents running at once did not take twice
@@ -822,71 +807,6 @@ async function pushNoteCache(): Promise<void> {
   if (result.match === false) process.exitCode = 1
 }
 
-async function sendReport() {
-  const r = await refreshHostedReportSetting()
-  const hours = Number(flag('hours') ?? r.windowHours)
-  const g = gather(r, hours)
-  const dry = has('dry-run')
-
-  // A test is the REAL email to a different address. The recipient list is not
-  // edited down and put back, because that is how a colleague quietly stops
-  // receiving a report nobody notices has stopped.
-  const test = has('test')
-  const to = test ? [r.testTo || r.fromAddress].filter(Boolean) : r.to
-  if (test && !to.length) {
-    throw new Error('no test address: set testTo, or a from address, in settings')
-  }
-
-  if (!g.items.length) {
-    console.log('nothing to report in that window')
-    if (!dry) await recordSend(g, r, 'skipped', 'no items', { test, to })
-    return
-  }
-  // The guard counts ENGAGED time, not conversation time. work-report's counted
-  // only Claude's own message gaps, so a day of heavy delegation - or of tracker
-  // and commit work - could fall under the bar and skip silently.
-  // The floor guards the DAILY report from going out on a quiet day. A test is
-  // asked for deliberately, so it is not held back by it.
-  const minutes = Math.round(g.engagedMs / 60_000)
-  if (!dry && !test && minutes < r.minMinutes) {
-    console.log(`only ${minutes}m engaged, under the ${r.minMinutes}m floor; not sending`)
-    await recordSend(g, r, 'skipped', `${minutes}m engaged`, { test, to })
-    return
-  }
-
-  const sentences = await summarise(g.items, r.briefs)
-  const text = renderText(g, sentences)
-  const shipped = g.items.filter((i) => i.closed).length
-  const subject = `${r.subjectPrefix}: ${shipped} shipped, ${human(g.engagedMs)} engaged`
-
-  if (dry) {
-    console.log(`to:      ${to.join(', ') || '(nobody configured)'}${test ? '   [test]' : ''}`)
-    console.log(`subject: ${subject}`)
-    console.log(`projects: ${r.projects.join(', ')}`)
-    console.log(`summarised: ${sentences.size} of ${g.items.length}`)
-    console.log('')
-    console.log(text)
-    return
-  }
-  // Disabled stops the DAILY send, not a test: turning the report off should
-  // not also take away the way to check it before turning it back on.
-  if (!r.enabled && !test) {
-    console.log('report is disabled in settings')
-    await recordSend(g, r, 'skipped', 'disabled', { test, to })
-    return
-  }
-
-  const res = await send(
-    { ...r, to },
-    test ? `[test] ${subject}` : subject,
-    text,
-    renderHtml(g, sentences),
-  )
-  await recordOutcomeAfterEmail(g, r, res, to, { test })
-  console.log(res.ok ? `${test ? 'test ' : ''}sent to ${to.join(', ')}` : `FAILED: ${res.error}`)
-  if (!res.ok) process.exit(1)
-}
-
 /**
  * Every command's errors are the caller's message, not a stack trace.
  *
@@ -1030,9 +950,6 @@ try {
       break
     case 'note':
       await note()
-      break
-    case 'send':
-      await sendReport()
       break
     case 'report':
       await runReportCommand(argv)

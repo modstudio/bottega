@@ -53,14 +53,14 @@ export function hostedDeliveryRepository(databaseUrl: string): DeliveryRepositor
   async function insertFinal(
     value: DeliveryCandidate,
     period: DeliveryPeriod,
-    input: { status: DeliveryStatus; reason: string; recipient?: string; items?: number },
+    input: { status: DeliveryStatus; reason: string; recipients?: string; items?: number },
   ) {
     await withHostedTenant(databaseUrl, identity(value), async (tx) => {
       await tx`INSERT INTO hub_send
         (id,space_id,at,"window",recipients,projects,items,status,error,test,created_at,machine,
          subscription_id,period_start,period_end)
         VALUES (${newRecordId()}::uuid,${value.spaceId}::uuid,now(),
-        ${`${period.from}/${period.to}`},${input.recipient ?? 'recipient unavailable'},'subscription',
+        ${`${period.from}/${period.to}`},${input.recipients ?? 'recipient unavailable'},'subscription',
         ${input.items ?? 0},${input.status},${input.reason},0,now(),${hostname()},
         ${value.subscriptionId}::uuid,${period.from}::timestamptz,${period.to}::timestamptz)
         ON CONFLICT(subscription_id,period_end) DO NOTHING`
@@ -81,29 +81,38 @@ export function hostedDeliveryRepository(databaseUrl: string): DeliveryRepositor
     async load(value, period) {
       const loaded = await withHostedTenant(databaseUrl, identity(value), async (tx) => {
         return rows<{
-          recipient_user_id: string
-          recipient_name: string
-          recipient_email: string
-          recipient_is_member: number
           scope_kind: 'space' | 'project' | 'person'
           project_name: string | null
           person_user_id: string | null
           person_name: string | null
           space_name: string
         }>(
-          await tx`SELECT s.recipient_user_id,u.name AS recipient_name,u.email AS recipient_email,
-            CASE WHEN m.user_id IS NULL THEN 0 ELSE 1 END AS recipient_is_member,
-            s.scope_kind,s.project_name,s.person_user_id,p.name AS person_name,sp.name AS space_name
+          await tx`SELECT s.scope_kind,s.project_name,s.person_user_id,p.name AS person_name,
+            sp.name AS space_name
           FROM hub_report_subscription s
-          JOIN "user" u ON u.id=s.recipient_user_id
           JOIN space sp ON sp.id=s.space_id
-          LEFT JOIN membership m ON m.space_id=s.space_id AND m.user_id=s.recipient_user_id
           LEFT JOIN "user" p ON p.id=s.person_user_id
           WHERE s.id=${value.subscriptionId}::uuid AND s.space_id=${value.spaceId}::uuid
             AND s.enabled=1 AND s.deleted_at IS NULL`,
         )[0]
       })
       if (!loaded) throw new Error('report subscription is no longer enabled')
+      const recipients = await withHostedTenant(databaseUrl, identity(value), async (tx) =>
+        rows<{ user_id: string; name: string; email: string; is_member: number }>(
+          await tx`SELECT r.user_id,u.name,u.email,
+            CASE WHEN m.user_id IS NULL THEN 0 ELSE 1 END AS is_member
+          FROM hub_report_subscription_recipient r
+          JOIN "user" u ON u.id=r.user_id
+          LEFT JOIN membership m ON m.space_id=r.space_id AND m.user_id=r.user_id
+          WHERE r.subscription_id=${value.subscriptionId}::uuid
+            AND r.space_id=${value.spaceId}::uuid ORDER BY r.created_at,r.id`,
+        ).map((row) => ({
+          userId: row.user_id,
+          name: row.name || row.email,
+          email: row.email,
+          isMember: Boolean(Number(row.is_member)),
+        })),
+      )
       const scope =
         loaded.scope_kind === 'project'
           ? ({ kind: 'project', project: loaded.project_name! } as const)
@@ -114,31 +123,29 @@ export function hostedDeliveryRepository(databaseUrl: string): DeliveryRepositor
         loaded.scope_kind === 'project'
           ? loaded.project_name!
           : loaded.scope_kind === 'person'
-            ? loaded.person_name || loaded.recipient_name || loaded.recipient_email
+            ? loaded.person_name || 'Person'
             : loaded.space_name
-      const recipientIdentity = identity(value, loaded.recipient_user_id)
+      const recipientIdentity = identity(value, recipients[0]?.userId)
       const [measures, report] = await Promise.all([
         hostedMeasures(databaseUrl, recipientIdentity, period, scope),
         hostedGatherReport(databaseUrl, recipientIdentity, period, scope),
       ])
       return {
-        recipientUserId: loaded.recipient_user_id,
-        recipientName: loaded.recipient_name || loaded.recipient_email,
-        recipientEmail: loaded.recipient_email,
-        recipientIsMember: Boolean(Number(loaded.recipient_is_member)),
+        recipients,
         scope,
         scopeName,
         measures,
         report,
       }
     },
-    async recipientIsMember(value, recipientUserId) {
-      return withHostedTenant(databaseUrl, identity(value, recipientUserId), async (tx) => {
-        const member = rows<{ present: number }>(
-          await tx`SELECT 1 AS present FROM membership
-          WHERE space_id=${value.spaceId}::uuid AND user_id=${recipientUserId}::uuid`,
-        )[0]
-        return Boolean(member)
+    async recipientsAreMembers(value, recipientUserIds) {
+      if (!recipientUserIds.length) return false
+      return withHostedTenant(databaseUrl, identity(value, recipientUserIds[0]), async (tx) => {
+        const member = rows<{ count: number }>(
+          await tx`SELECT count(*)::int AS count FROM membership
+          WHERE space_id=${value.spaceId}::uuid AND user_id = ANY(${recipientUserIds}::uuid[])`,
+        )[0]!
+        return Number(member.count) === recipientUserIds.length
       })
     },
     recordFinal: insertFinal,
@@ -150,11 +157,17 @@ export function hostedDeliveryRepository(databaseUrl: string): DeliveryRepositor
           (id,space_id,at,"window",recipients,projects,items,status,error,test,created_at,machine,
            subscription_id,period_start,period_end)
           VALUES (${id}::uuid,${value.spaceId}::uuid,now(),${`${period.from}/${period.to}`},
-          ${input.recipient},'subscription',${input.items},'pending',NULL,0,now(),${hostname()},
+          ${input.recipients.map((recipient) => recipient.email).join(', ')},'subscription',${input.items},'pending',NULL,0,now(),${hostname()},
           ${value.subscriptionId}::uuid,${period.from}::timestamptz,${period.to}::timestamptz)
           ON CONFLICT(subscription_id,period_end) DO NOTHING RETURNING id`,
         )[0]
-        return inserted?.id ?? null
+        if (!inserted) return null
+        for (const recipient of input.recipients)
+          await tx`INSERT INTO hub_send_recipient
+            (id,space_id,send_id,user_id,name,email,created_at)
+            VALUES (${newRecordId()}::uuid,${value.spaceId}::uuid,${inserted.id}::uuid,
+            ${recipient.userId}::uuid,${recipient.name},${recipient.email},now())`
+        return inserted.id
       })
     },
     async recordOutcome(value, intentId, status, reason) {
@@ -194,7 +207,7 @@ export function sesReportMailClient(
       await client.send(
         new SendEmailCommand({
           FromEmailAddress: from,
-          Destination: { ToAddresses: [input.to] },
+          Destination: { ToAddresses: input.to },
           Content: {
             Simple: {
               Subject: { Data: input.subject, Charset: 'UTF-8' },

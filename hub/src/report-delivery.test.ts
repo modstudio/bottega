@@ -134,10 +134,14 @@ const gatheredReport = (): GatheredReport => {
 }
 
 const subscription = (patch: Partial<DeliverySubscription> = {}): DeliverySubscription => ({
-  recipientUserId: '01990000-0000-7000-8000-000000000701',
-  recipientName: 'Maya',
-  recipientEmail: 'maya@example.test',
-  recipientIsMember: true,
+  recipients: [
+    {
+      userId: '01990000-0000-7000-8000-000000000701',
+      name: 'Maya',
+      email: 'maya@example.test',
+      isMember: true,
+    },
+  ],
   scope: { kind: 'space' },
   scopeName: 'Workshop',
   measures: measures(),
@@ -156,8 +160,11 @@ function fakeRepository(
       return candidates
     },
     load,
-    async recipientIsMember(value, userId) {
-      return (await load(value)).recipientIsMember && Boolean(userId)
+    async recipientsAreMembers(value, userIds) {
+      return (
+        (await load(value)).recipients.every((recipient) => recipient.isMember) &&
+        Boolean(userIds.length)
+      )
     },
     async recordFinal(value, period, input) {
       const key = `${value.subscriptionId}:${period.key}`
@@ -187,17 +194,29 @@ function fakeRepository(
 describe('hosted report delivery', () => {
   test('a due subscription renders and sends once; the second pass sends nothing', async () => {
     const value = candidate('1')
-    const fake = fakeRepository([value], async () => subscription())
-    const sent: { to: string; text: string; html: string }[] = []
+    const fake = fakeRepository([value], async () =>
+      subscription({
+        recipients: [
+          ...subscription().recipients,
+          {
+            userId: '01990000-0000-7000-8000-000000000702',
+            name: 'Noah',
+            email: 'noah@example.test',
+            isMember: true,
+          },
+        ],
+      }),
+    )
+    const sent: { to: string[]; text: string; html: string }[] = []
     const mail = {
-      async send(input: { to: string; text: string; html: string }) {
+      async send(input: { to: string[]; text: string; html: string }) {
         sent.push(input)
       },
     }
     await runReportDeliveryPass({ repository: fake.repository, mail, now })
     await runReportDeliveryPass({ repository: fake.repository, mail, now })
     expect(sent).toHaveLength(1)
-    expect(sent[0]!.to).toBe('maya@example.test')
+    expect(sent[0]!.to).toEqual(['maya@example.test', 'noah@example.test'])
     expect(sent[0]!.html).toContain('<!doctype html>')
     expect(sent[0]!.text).not.toBe(sent[0]!.html)
     expect(fake.rows).toEqual([{ subscription: '1', status: 'sent', reason: undefined }])
@@ -234,7 +253,7 @@ describe('hosted report delivery', () => {
       repository: fake.repository,
       mail: {
         async send(input) {
-          sent.push(input.to)
+          sent.push(...input.to)
         },
       },
       now,
@@ -249,7 +268,7 @@ describe('hosted report delivery', () => {
   test('a departed recipient is skipped and rechecked immediately before sending', async () => {
     let checks = 0
     const fake = fakeRepository([candidate('5')], async () => subscription())
-    fake.repository.recipientIsMember = async () => ++checks < 1
+    fake.repository.recipientsAreMembers = async () => ++checks < 1
     let sent = 0
     await runReportDeliveryPass({
       repository: fake.repository,
@@ -263,7 +282,7 @@ describe('hosted report delivery', () => {
     expect(sent).toBe(0)
     expect(fake.rows[0]).toMatchObject({
       status: 'skipped',
-      reason: 'recipient is no longer a member of this space',
+      reason: 'a recipient is no longer a member of this space',
     })
   })
 
@@ -348,7 +367,7 @@ describe('hosted report delivery', () => {
       async send(command) {
         commands.push(command)
       },
-    }).send({ to: 'maya@example.test', subject: 'Report', text: 'text', html: '<p>text</p>' })
+    }).send({ to: ['maya@example.test'], subject: 'Report', text: 'text', html: '<p>text</p>' })
     expect(commands).toHaveLength(1)
     expect(
       (commands[0] as { input: { Destination: { ToAddresses: string[] } } }).input.Destination
@@ -356,7 +375,7 @@ describe('hosted report delivery', () => {
     ).toEqual(['maya@example.test'])
     await expect(
       sesReportMailClient(environment).send({
-        to: 'maya@example.test',
+        to: ['maya@example.test'],
         subject: 'Report',
         text: 'text',
         html: '<p>text</p>',

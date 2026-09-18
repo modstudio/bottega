@@ -85,6 +85,9 @@ export function registerProjectSpaceProofs(input: {
     const otherProject = newRecordId()
     const run = newRecordId()
     const otherRun = newRecordId()
+    const subscription = newRecordId()
+    const send = newRecordId()
+    const sendRecipient = newRecordId()
     const task = `MOVE-${newRecordId().slice(-6)}`
     const inserted = input.asSpace(
       input.actorRole,
@@ -106,7 +109,19 @@ export function registerProjectSpaceProofs(input: {
          VALUES ('${newRecordId()}','${source}','move-proof','${task}','move-proof','local',now(),now(),now(),now());
        INSERT INTO hub_day
          (id,space_id,day,collected_at,updated_at)
-         VALUES ('${newRecordId()}','${source}','2099-07-47',now(),now());`,
+         VALUES ('${newRecordId()}','${source}','2099-07-47',now(),now());
+       INSERT INTO hub_report_subscription
+         (id,space_id,scope_kind,project_name,cadence,hour,zone,enabled,created_at,updated_at)
+         VALUES ('${subscription}','${source}','project','move-proof','daily',9,'UTC',1,now(),now());
+       INSERT INTO hub_send
+         (id,space_id,at,"window",recipients,projects,items,status,test,created_at,machine,
+          subscription_id,period_start,period_end)
+         VALUES ('${send}','${source}',now(),'day','operator@example.test','move-proof',1,'sent',0,
+          now(),'proof','${subscription}',now() - interval '1 day',now());
+       INSERT INTO hub_send_recipient
+         (id,space_id,send_id,user_id,name,email,created_at)
+         VALUES ('${sendRecipient}','${source}','${send}','${input.userId}',
+          'Operator','operator@example.test',now());`,
     )
     expect(inserted.code, inserted.stderr).toBe(0)
 
@@ -123,6 +138,16 @@ export function registerProjectSpaceProofs(input: {
       rowCount: 0,
       moved: false,
       reachedBy: 'space-and-day aggregate; no project attribution',
+    })
+    expect(dry.rows.find((row) => row.tableName === 'hub_send')).toMatchObject({
+      rowCount: 0,
+      moved: false,
+      reachedBy: 'space send; projects may name several projects',
+    })
+    expect(dry.rows.find((row) => row.tableName === 'hub_send_recipient')).toMatchObject({
+      rowCount: 0,
+      moved: false,
+      reachedBy: 'space send recipient; parent send is not project-attributable',
     })
     expect(
       input.asSpace(
@@ -150,10 +175,12 @@ export function registerProjectSpaceProofs(input: {
        SELECT count(*) FROM hub_task WHERE key='${task}';
        SELECT count(*) FROM project WHERE id='${otherProject}';
        SELECT count(*) FROM run WHERE id='${otherRun}';
-       SELECT count(*) FROM hub_day WHERE day='2099-07-47';`,
+       SELECT count(*) FROM hub_day WHERE day='2099-07-47';
+       SELECT count(*) FROM hub_send WHERE id='${send}';
+       SELECT count(*) FROM hub_send_recipient WHERE id='${sendRecipient}';`,
     )
     expect(sourceFacts.code, sourceFacts.stderr).toBe(0)
-    expect(sourceFacts.stdout.split('\n')).toEqual(['0', '0', '0', '1', '1', '1'])
+    expect(sourceFacts.stdout.split('\n')).toEqual(['0', '0', '0', '1', '1', '1', '1', '1'])
     const destinationFacts = input.asSpace(
       input.actorRole,
       'actor-password',
