@@ -2,7 +2,6 @@ import { engagedMs, human } from '../../shared/interval.ts'
 import { selectHostedReportSubscriptions } from './hosted-reports.ts'
 import { type TaskIdentity, withHostedTenant } from './hosted-tasks.ts'
 import { computeMeasures, type MeasureInterval, type MeasureStatusEvent } from './measures.ts'
-import { reportDefaults } from './report-types.ts'
 import {
   type BoardSourceRow,
   type CompletedRow,
@@ -498,11 +497,6 @@ export async function hostedSettings(
   projects: string[],
 ) {
   return withHostedTenant(databaseUrl, identity, async (tx) => {
-    const setting = rows<{ value: Record<string, unknown> }>(
-      await tx`
-      SELECT value FROM hub_report_setting WHERE space_id=${identity.spaceId}::uuid`,
-    )[0]
-    const report = { ...reportDefaults(projects), ...(setting?.value ?? {}) }
     const sends = rows<{
       at: SqlTime
       window: string
@@ -512,17 +506,23 @@ export async function hostedSettings(
       status: string
       error: string | null
       test: string | number
+      recipient_details: unknown
     }>(
       await tx`
-      SELECT at,"window",recipients,projects,items,status,error,test FROM hub_send
+      SELECT at,"window",recipients,projects,items,status,error,test,
+      COALESCE((SELECT json_agg(json_build_object('user_id',r.user_id,'name',r.name,'email',r.email)
+        ORDER BY r.created_at,r.id) FROM hub_send_recipient r WHERE r.send_id=hub_send.id),'[]')
+        AS recipient_details
+      FROM hub_send
       WHERE space_id=${identity.spaceId}::uuid ORDER BY at DESC LIMIT 8`,
     )
+    const members = rows<{ user_id: string; name: string; email: string }>(
+      await tx`SELECT m.user_id,u.name,u.email FROM membership m JOIN "user" u ON u.id=m.user_id
+      WHERE m.space_id=${identity.spaceId}::uuid ORDER BY lower(u.name),lower(u.email),u.id`,
+    )
     return {
-      report: { ...report, smtpPasswordRef: null },
       allProjects: projects,
-      secrets: {
-        smtpPassword: { configured: Boolean(report.smtpPasswordRef), resolves: null as null },
-      },
+      members,
       sends: sends.map((row) => ({
         ...row,
         at: iso(row.at)!,

@@ -174,20 +174,6 @@ export const hubNoteAcknowledgement = pgTable.withRLS(
   ],
 )
 
-export const hubReportSetting = pgTable.withRLS(
-  'hub_report_setting',
-  {
-    spaceId: spaceIdentity().primaryKey(),
-    value: jsonb().notNull(),
-    version: integer().notNull(),
-    updatedAt: updatedAt(),
-  },
-  (table) => [
-    check('hub_report_setting_version_check', sql`${table.version} > 0`),
-    ...tenantPolicies('hub_report_setting', table.spaceId),
-  ],
-)
-
 export const hubReportSubscription = pgTable.withRLS(
   'hub_report_subscription',
   {
@@ -200,9 +186,6 @@ export const hubReportSubscription = pgTable.withRLS(
     hour: integer().notNull(),
     weekday: text(),
     zone: text().notNull(),
-    recipientUserId: uuid('recipient_user_id')
-      .notNull()
-      .references(() => user.id),
     enabled: integer().notNull().default(1),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull(),
     updatedAt: updatedAt(),
@@ -229,6 +212,25 @@ export const hubReportSubscription = pgTable.withRLS(
     check('hub_report_subscription_zone_check', sql`char_length(${table.zone}) > 0`),
     check('hub_report_subscription_enabled_check', sql`${table.enabled} IN (0,1)`),
     ...tenantPolicies('hub_report_subscription', table.spaceId),
+  ],
+)
+
+export const hubReportSubscriptionRecipient = pgTable.withRLS(
+  'hub_report_subscription_recipient',
+  {
+    id: identity(),
+    spaceId: spaceIdentity(),
+    subscriptionId: uuid('subscription_id')
+      .notNull()
+      .references(() => hubReportSubscription.id),
+    userId: uuid('user_id')
+      .notNull()
+      .references(() => user.id),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull(),
+  },
+  (table) => [
+    unique('hub_report_subscription_recipient_unique').on(table.subscriptionId, table.userId),
+    ...tenantPolicies('hub_report_subscription_recipient', table.spaceId),
   ],
 )
 
@@ -278,6 +280,27 @@ export const hubSend = pgTable.withRLS(
       using: sql`${table.spaceId} = nullif(current_setting('app.space_id', true), '')::uuid`,
       withCheck: sql`${table.spaceId} = nullif(current_setting('app.space_id', true), '')::uuid`,
     }),
+  ],
+)
+
+export const hubSendRecipient = pgTable.withRLS(
+  'hub_send_recipient',
+  {
+    id: identity(),
+    spaceId: spaceIdentity(),
+    sendId: uuid('send_id')
+      .notNull()
+      .references(() => hubSend.id),
+    userId: uuid('user_id')
+      .notNull()
+      .references(() => user.id),
+    name: text().notNull(),
+    email: text().notNull(),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull(),
+  },
+  (table) => [
+    unique('hub_send_recipient_unique').on(table.sendId, table.userId),
+    ...tenantPolicies('hub_send_recipient', table.spaceId),
   ],
 )
 

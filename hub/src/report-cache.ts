@@ -1,37 +1,9 @@
 import type { Database } from 'bun:sqlite'
 import { db, writeTransaction } from './db.ts'
-import type { HostedReportSetting, HostedSend } from './hosted-reports.ts'
-import {
-  hostedGetReportSetting,
-  hostedSendChanges,
-  type ReportClientOptions,
-} from './report-client.ts'
-import { getReport } from './settings.ts'
+import type { HostedSend } from './hosted-reports.ts'
+import { hostedSendChanges, type ReportClientOptions } from './report-client.ts'
 
-const SETTING_VERSION_KEY = 'collect.hosted-report.version'
 const SEND_CURSOR_KEY = 'collect.hosted-sends.cursor'
-
-export function cacheHostedReportSetting(conn: Database, setting: HostedReportSetting) {
-  conn
-    .query(`INSERT INTO setting(key,value) VALUES ('report',?)
-      ON CONFLICT(key) DO UPDATE SET value=excluded.value`)
-    .run(JSON.stringify(setting.value))
-  conn
-    .query(`INSERT INTO setting(key,value) VALUES (?,?)
-      ON CONFLICT(key) DO UPDATE SET value=excluded.value`)
-    .run(SETTING_VERSION_KEY, String(setting.version))
-}
-
-function clearHostedReportSetting(conn: Database) {
-  conn.query("DELETE FROM setting WHERE key IN ('report', ?)").run(SETTING_VERSION_KEY)
-}
-
-export function cachedReportVersion() {
-  const value = db()
-    .query<{ value: string }, [string]>('SELECT value FROM setting WHERE key=?')
-    .get(SETTING_VERSION_KEY)?.value
-  return value && Number.isInteger(Number(value)) ? Number(value) : 0
-}
 
 export function cacheHostedSend(conn: Database, row: HostedSend) {
   const existing = conn
@@ -79,27 +51,13 @@ export function cacheHostedSend(conn: Database, row: HostedSend) {
     )
 }
 
-export async function refreshHostedReportSetting(options: ReportClientOptions = {}) {
-  const setting = await hostedGetReportSetting(options)
-  writeTransaction((conn) => {
-    if (setting) cacheHostedReportSetting(conn, setting)
-    else clearHostedReportSetting(conn)
-  })
-  return getReport()
-}
-
 export async function pullHostedReports(options: ReportClientOptions = {}) {
   const cursor =
     db()
       .query<{ value: string }, [string]>('SELECT value FROM setting WHERE key=?')
       .get(SEND_CURSOR_KEY)?.value ?? null
-  const [setting, changes] = await Promise.all([
-    hostedGetReportSetting(options),
-    hostedSendChanges(cursor, options),
-  ])
+  const changes = await hostedSendChanges(cursor, options)
   writeTransaction((conn) => {
-    if (setting) cacheHostedReportSetting(conn, setting)
-    else clearHostedReportSetting(conn)
     changes.sends.forEach((row) => {
       cacheHostedSend(conn, row)
     })
@@ -108,5 +66,5 @@ export async function pullHostedReports(options: ReportClientOptions = {}) {
       ON CONFLICT(key) DO UPDATE SET value=excluded.value`)
       .run(SEND_CURSOR_KEY, changes.cursor)
   })
-  return { setting: setting ? 1 : 0, sends: changes.sends.length, cursor: changes.cursor }
+  return { sends: changes.sends.length, cursor: changes.cursor }
 }

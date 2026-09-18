@@ -55,6 +55,9 @@ for tmpl in "$CONCERN"/launchd/*.plist.template; do
   fi
 done
 
+unload com.user.hub-send
+rm -f "$AGENTS_DIR/com.user.hub-send.plist"
+
 # The obsolete report job has been failing with EX_CONFIG on every run
 # since the move, pointing at a directory that holds nothing but a logs folder,
 # and hub now does its work.
@@ -65,7 +68,7 @@ if launchctl print "gui/$UID_NUM/com.user.work-report" >/dev/null 2>&1; then
 fi
 
 echo "  logs: $HOME/Library/Logs/hub/"
-for LABEL in com.user.hub-collect com.user.hub-send com.user.hub-serve; do
+for LABEL in com.user.hub-collect com.user.hub-serve; do
   launchctl print "gui/$UID_NUM/$LABEL" 2>/dev/null \
     | grep -E "^\sstate = " | sed "s#^#  $LABEL #" || echo "  $LABEL NOT LOADED"
 done

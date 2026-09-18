@@ -1,7 +1,7 @@
 import { existsSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import { fetchRequestHandler } from '@trpc/server/adapters/fetch'
-import { engagedMs, human, human as humanMs } from '../../shared/interval.ts'
+import { engagedMs, human } from '../../shared/interval.ts'
 import type { OrchBlockers } from '../../shared/orch-contract.ts'
 import { appStaticPath, resolveAppStatic } from './app-static.ts'
 import { attributeRun } from './attribute.ts'
@@ -22,16 +22,6 @@ import {
   tasksInWindow,
 } from './query.ts'
 import {
-  gather,
-  lastSends,
-  recordOutcomeAfterEmail,
-  renderHtml,
-  renderText,
-  send as sendMail,
-  summarise,
-} from './report.ts'
-import { refreshHostedReportSetting } from './report-cache.ts'
-import {
   appliedRunOffset,
   liveRowDisplay,
   matchesRunSearch,
@@ -40,7 +30,6 @@ import {
   runRowDisplay,
   type SearchableLiveRun,
 } from './run-display.ts'
-import { getReport, secretStatus } from './settings.ts'
 import { projectFlightDone } from './task-projections.ts'
 import { hoursAgo } from './time.ts'
 import { createContext } from './trpc/context.ts'
@@ -581,21 +570,6 @@ export async function view(
     }
   }
 
-  if (name === 'settings') {
-    const r = getReport()
-    const g = gather(r)
-    return {
-      report: r,
-      allProjects: projectNames(),
-      // Cached per process; not a shell-out on the two-second poll.
-      register: presentRegister(projects()),
-      // Only whether each secret RESOLVES, never its value.
-      secrets: secretStatus(r),
-      preview: { items: g.items.length, engaged: human(g.engagedMs), projects: g.projects },
-      sends: lastSends(8),
-    }
-  }
-
   // A view whose data source is not connected yet says exactly what is missing
   // and what would fill it. A blank panel reads as breakage.
   return { pending: { needs: 'not built yet' } }
@@ -603,27 +577,6 @@ export async function view(
 
 /** When this process loaded its code. Restarting is the only thing that moves it. */
 const STARTED_AT = nowIso()
-
-export async function sendTest() {
-  const r = await refreshHostedReportSetting()
-  const to = [r.testTo || r.fromAddress].filter(Boolean)
-  if (!to.length) throw new Error('set a test address first')
-  const g = gather(r)
-  if (!g.items.length) throw new Error('nothing to report in this window')
-  const sentences = await summarise(g.items, r.briefs)
-  const shippedN = g.items.filter((i) => i.closed).length
-  const subject =
-    `[test] ${r.subjectPrefix}: ${shippedN} shipped, ` + `${humanMs(g.engagedMs)} engaged`
-  const res = await sendMail(
-    { ...r, to },
-    subject,
-    renderText(g, sentences),
-    renderHtml(g, sentences),
-  )
-  await recordOutcomeAfterEmail(g, r, res, to, { test: true })
-  if (!res.ok) throw new Error(res.error ?? 'send failed')
-  return { ok: true as const, to, items: g.items.length }
-}
 
 export async function collectNow() {
   return withLease(
@@ -648,9 +601,7 @@ export function serve(port: number) {
   })
 
   const server = Bun.serve({
-    // A test send blocks on the summariser for a minute or so; Bun's default
-    // 10s idle timeout dropped the response mid-send and the button showed an
-    // error for an email that then arrived. 255s is Bun's ceiling.
+    // Long queries can outlast Bun's default idle timeout. 255s is Bun's ceiling.
     idleTimeout: 255,
     port,
     // Loopback only. This page carries a per-task record of everything this

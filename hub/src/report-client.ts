@@ -1,6 +1,5 @@
 import { readRecordSessionToken } from '../../shared/record-session.ts'
 import type {
-  HostedReportSetting,
   HostedReportSubscription,
   HostedSend,
   ReportSubscriptionWriteInput,
@@ -63,12 +62,6 @@ async function request<T>(
   return value as T
 }
 
-export const hostedGetReportSetting = (options?: ReportClientOptions) =>
-  request<HostedReportSetting>('/v1/report-setting', 'GET', undefined, options, true)
-export const hostedPutReportSetting = (
-  body: { value: HostedReportSetting['value']; version: number },
-  options?: ReportClientOptions,
-) => request<HostedReportSetting>('/v1/report-setting', 'PUT', body, options)
 export const hostedAppendSend = (
   body: Omit<HostedSend, 'id' | 'legacy_local_id' | 'created_at'>,
   options?: ReportClientOptions,
@@ -86,7 +79,7 @@ export async function hostedSendChanges(cursor: string | null, options?: ReportC
 export const hostedMirrorReports = (body: unknown, options?: ReportClientOptions) =>
   request<{ upserted: number }>('/v1/sends/mirror', 'PUT', body, options)
 export const hostedReportCounts = (options?: ReportClientOptions) =>
-  request<{ setting: number; sends: number }>('/v1/sends/counts', 'GET', undefined, options)
+  request<{ sends: number }>('/v1/sends/counts', 'GET', undefined, options)
 export const hostedListReportSubscriptions = (options?: ReportClientOptions) =>
   request<{ subscriptions: HostedReportSubscription[] }>(
     '/v1/report-subscriptions',
@@ -101,6 +94,28 @@ export const hostedCreateReportSubscription = (
 export const hostedUnsubscribeReportSubscription = (id: string, options?: ReportClientOptions) =>
   request<{ id: string; deleted: boolean }>(
     `/v1/report-subscriptions/${id}`,
+    'DELETE',
+    undefined,
+    options,
+  )
+export const hostedAddReportSubscriptionRecipient = (
+  id: string,
+  userId: string,
+  options?: ReportClientOptions,
+) =>
+  request<HostedReportSubscription>(
+    `/v1/report-subscriptions/${id}/recipients/${userId}`,
+    'POST',
+    undefined,
+    options,
+  )
+export const hostedRemoveReportSubscriptionRecipient = (
+  id: string,
+  userId: string,
+  options?: ReportClientOptions,
+) =>
+  request<HostedReportSubscription>(
+    `/v1/report-subscriptions/${id}/recipients/${userId}`,
     'DELETE',
     undefined,
     options,

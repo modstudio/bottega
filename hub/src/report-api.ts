@@ -1,12 +1,12 @@
 import {
+  addHostedReportSubscriptionRecipient,
   appendHostedSend,
   createHostedReportSubscription,
-  getHostedReportSetting,
   hostedReportCounts,
   listHostedReportSubscriptions,
   listHostedSends,
   mirrorHostedReports,
-  putHostedReportSetting,
+  removeHostedReportSubscriptionRecipient,
   unsubscribeHostedReportSubscription,
   updateHostedReportSubscription,
 } from './hosted-reports.ts'
@@ -26,32 +26,6 @@ const sendFilters = (url: URL) => ({
   updatedSince: url.searchParams.get('updatedSince') ?? undefined,
   cursor: url.searchParams.get('cursor') ?? undefined,
 })
-
-async function settingRoute(
-  request: Request,
-  url: URL,
-  config: Config,
-  dependencies: Dependencies,
-  who: { userId: string; spaceId: string },
-  body: Record<string, unknown> | null,
-) {
-  if (request.method === 'GET' && url.pathname === '/v1/report-setting') {
-    const value = await call(dependencies.getSetting, getHostedReportSetting)(
-      config.recordDatabaseUrl,
-      who,
-    )
-    return value ? json(value) : json({ error: 'report setting is not configured' }, 404)
-  }
-  if (request.method === 'PUT' && url.pathname === '/v1/report-setting')
-    return json(
-      await call(dependencies.putSetting, putHostedReportSetting)(
-        config.recordDatabaseUrl,
-        who,
-        body as never,
-      ),
-    )
-  return null
-}
 
 async function sendRoute(
   request: Request,
@@ -115,6 +89,28 @@ async function subscriptionRoute(
       ),
       201,
     )
+  const recipient = /^\/v1\/report-subscriptions\/([^/]+)\/recipients\/([^/]+)$/.exec(
+    url.pathname,
+  )
+  if (request.method === 'POST' && recipient)
+    return json(
+      await call(dependencies.addRecipient, addHostedReportSubscriptionRecipient)(
+        config.recordDatabaseUrl,
+        who,
+        recipient[1]!,
+        recipient[2]!,
+      ),
+      201,
+    )
+  if (request.method === 'DELETE' && recipient)
+    return json(
+      await call(dependencies.removeRecipient, removeHostedReportSubscriptionRecipient)(
+        config.recordDatabaseUrl,
+        who,
+        recipient[1]!,
+        recipient[2]!,
+      ),
+    )
   const unsubscribe = /^\/v1\/report-subscriptions\/([^/]+)$/.exec(url.pathname)
   if (request.method === 'PUT' && unsubscribe)
     return json(
@@ -145,7 +141,6 @@ async function dispatchReportRequest(
   body: Record<string, unknown> | null,
 ) {
   return (
-    (await settingRoute(request, url, config, dependencies, who, body)) ??
     (await sendRoute(request, url, config, dependencies, who, body)) ??
     (await subscriptionRoute(request, url, config, dependencies, who, body)) ??
     new Response('not found', { status: 404 })
@@ -159,7 +154,6 @@ export async function reportApi(
 ): Promise<Response | null> {
   const url = new URL(request.url)
   if (
-    !url.pathname.startsWith('/v1/report-setting') &&
     !url.pathname.startsWith('/v1/report-subscriptions') &&
     !url.pathname.startsWith('/v1/sends')
   )

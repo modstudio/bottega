@@ -39,7 +39,7 @@ async function reportList(json: boolean) {
         ? `weekly ${row.weekday} ${row.hour}:00 ${row.zone}`
         : `daily ${row.hour}:00 ${row.zone}`
     console.log(
-      `${row.id}  ${scope}  ${when}  ${row.recipient_email}  ${row.enabled ? 'enabled' : 'disabled'}`,
+      `${row.id}  ${scope}  ${when}  ${row.recipients.map((recipient) => recipient.email).join(', ') || 'no recipients'}  ${row.enabled ? 'enabled' : 'disabled'}`,
     )
   }
 }
@@ -63,7 +63,7 @@ async function reportSubscribe(argv: string[]) {
     hour: Number.isFinite(hour) ? hour : Number.NaN,
     weekday: flagOf(argv, 'day'),
     zone: flagOf(argv, 'zone') ?? '',
-    recipientUserId: flagOf(argv, 'recipient'),
+    recipientUserIds: flagOf(argv, 'recipient') ? [flagOf(argv, 'recipient')!] : undefined,
   })
   console.log(row.id)
 }

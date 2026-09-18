@@ -24,7 +24,7 @@ describe('report subscriptions', () => {
     expect(created.scope_kind).toBe('project')
     expect(created.project_name).toBe('workshop')
     expect(created.person_user_id).toBeNull()
-    expect(created.recipient_user_id).toBe(caller.userId)
+    expect(created.recipient_user_ids).toEqual([caller.userId])
     expect(() =>
       planReportSubscription(
         caller,
@@ -38,10 +38,10 @@ describe('report subscriptions', () => {
     expect(() =>
       planReportSubscription(
         caller,
-        { scope: { kind: 'space' }, ...daily, recipientUserId: outsider },
+        { scope: { kind: 'space' }, ...daily, recipientUserIds: [outsider] },
         facts,
       ),
-    ).toThrow('recipient is not a member of this space')
+    ).toThrow('every recipient must be a member of this space')
   })
 
   test('a person-scope subscription names a user, and a space-scope one does not', () => {
@@ -71,7 +71,7 @@ describe('report subscriptions', () => {
         hour: 7,
         weekday: 'Monday',
         zone: 'Europe/London',
-        recipientUserId: member,
+        recipientUserIds: [caller.userId, member],
       },
       facts,
     )
@@ -80,7 +80,7 @@ describe('report subscriptions', () => {
       hour: 7,
       weekday: 'monday',
       zone: 'Europe/London',
-      recipient_user_id: member,
+      recipient_user_ids: [caller.userId, member],
       enabled: true,
     })
   })
@@ -108,9 +108,9 @@ describe('report subscriptions', () => {
     })
     expect(() =>
       planReportSubscriptionUpdate({ ...daily, enabled: true, scope: { kind: 'space' } } as never),
-    ).toThrow('scope and recipient cannot be changed')
+    ).toThrow('scope cannot be changed')
     expect(() =>
-      planReportSubscriptionUpdate({ ...daily, enabled: true, recipientUserId: member } as never),
-    ).toThrow('scope and recipient cannot be changed')
+      planReportSubscriptionUpdate({ ...daily, enabled: true, recipientUserIds: [member] } as never),
+    ).toThrow('scope cannot be changed')
   })
 })

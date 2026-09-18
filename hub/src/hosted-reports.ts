@@ -1,13 +1,6 @@
 import { SQL } from 'bun'
 import { newRecordId } from '../../shared/record/schema.ts'
 import type { TaskIdentity } from './hosted-tasks.ts'
-import type { Report } from './report-types.ts'
-
-export type HostedReportSetting = {
-  value: Report
-  version: number
-  updated_at: string
-}
 
 export type HostedSend = {
   id: string
@@ -25,17 +18,14 @@ export type HostedSend = {
   subscription_id?: string | null
   period_start?: string | null
   period_end?: string | null
+  recipient_details?: HostedSendRecipient[]
 }
 
-type RawHostedReportSetting = Omit<HostedReportSetting, 'value'> & { value_json: string }
-const reportSetting = (row: RawHostedReportSetting | undefined): HostedReportSetting | null =>
-  row
-    ? {
-        value: JSON.parse(row.value_json) as Report,
-        version: row.version,
-        updated_at: row.updated_at,
-      }
-    : null
+export type HostedSendRecipient = {
+  user_id: string
+  name: string
+  email: string
+}
 
 const rows = <T>(value: unknown) => value as T[]
 const iso = (value: string | Date) => new Date(value).toISOString()
@@ -60,12 +50,17 @@ export type HostedReportSubscription = {
   hour: number
   weekday: Weekday | null
   zone: string
-  recipient_user_id: string
-  recipient_name: string
-  recipient_email: string
+  recipients: HostedReportRecipient[]
   enabled: boolean
   created_at: string
   updated_at: string
+}
+
+export type HostedReportRecipient = {
+  id: string
+  user_id: string
+  name: string
+  email: string
 }
 
 type ReportSubscriptionScopeInput =
@@ -79,7 +74,7 @@ export type ReportSubscriptionWriteInput = {
   hour: number
   weekday?: string | null
   zone: string
-  recipientUserId?: string
+  recipientUserIds?: string[]
   enabled?: boolean
 }
 
@@ -90,7 +85,6 @@ export type ReportSubscriptionUpdateInput = {
   zone: string
   enabled: boolean
   scope?: never
-  recipientUserId?: never
 }
 
 type PlannedReportSubscription = {
@@ -101,7 +95,7 @@ type PlannedReportSubscription = {
   hour: number
   weekday: Weekday | null
   zone: string
-  recipient_user_id: string
+  recipient_user_ids: string[]
   enabled: boolean
 }
 
@@ -114,9 +108,6 @@ type RawSubscription = {
   hour: string | number
   weekday: Weekday | null
   zone: string
-  recipient_user_id: string
-  recipient_name: string
-  recipient_email: string
   enabled: string | number
   created_at: string | Date
   updated_at: string | Date
@@ -132,9 +123,7 @@ function asSubscription(row: RawSubscription): HostedReportSubscription {
     hour: Number(row.hour),
     weekday: row.weekday,
     zone: row.zone,
-    recipient_user_id: row.recipient_user_id,
-    recipient_name: row.recipient_name,
-    recipient_email: row.recipient_email,
+    recipients: [],
     enabled: Boolean(Number(row.enabled)),
     created_at: iso(row.created_at),
     updated_at: iso(row.updated_at),
@@ -187,8 +176,8 @@ function planSubscriptionCadence(
 export function planReportSubscriptionUpdate(
   input: ReportSubscriptionUpdateInput & Record<string, unknown>,
 ): Pick<PlannedReportSubscription, 'cadence' | 'hour' | 'weekday' | 'zone' | 'enabled'> {
-  if ('scope' in input || 'recipientUserId' in input)
-    throw new Error('scope and recipient cannot be changed; create a different subscription')
+  if ('scope' in input || 'recipientUserIds' in input)
+    throw new Error('scope cannot be changed; edit recipients separately')
   const editable = new Set(['cadence', 'hour', 'weekday', 'zone', 'enabled'])
   if (Object.keys(input).some((field) => !editable.has(field)))
     throw new Error('only cadence, hour, weekday, zone and enabled can be changed')
@@ -212,13 +201,13 @@ export function planReportSubscription(
   input: ReportSubscriptionWriteInput,
   facts: { projectNames: readonly string[]; memberUserIds: readonly string[] },
 ): PlannedReportSubscription {
-  const recipientUserId = input.recipientUserId ?? caller.userId
-  if (!facts.memberUserIds.includes(recipientUserId))
-    throw new Error('recipient is not a member of this space')
+  const recipientUserIds = [...new Set(input.recipientUserIds ?? [caller.userId])]
+  if (recipientUserIds.some((userId) => !facts.memberUserIds.includes(userId)))
+    throw new Error('every recipient must be a member of this space')
   return {
     ...planSubscriptionScope(caller, input.scope, facts.projectNames),
     ...planSubscriptionCadence(input),
-    recipient_user_id: recipientUserId,
+    recipient_user_ids: recipientUserIds,
     enabled: input.enabled !== false,
   }
 }
@@ -236,64 +225,6 @@ async function tenant<T>(url: string, identity: TaskIdentity, work: (tx: SQL) =>
   }
 }
 
-export function assertReportPasswordReference(report: Pick<Report, 'smtpPasswordRef'>) {
-  if (report.smtpPasswordRef && !/^(keychain|env):/.test(report.smtpPasswordRef))
-    throw new Error(
-      'smtpPasswordRef must be "keychain:<service>" or "env:<NAME>", never a password',
-    )
-}
-
-export function assertReportVersion(current: number | null, supplied: number) {
-  const expected = current ?? 0
-  if (supplied !== expected)
-    throw new Error(`stale report setting version: expected ${expected}, received ${supplied}`)
-  return expected + 1
-}
-
-export async function getHostedReportSetting(url: string, identity: TaskIdentity) {
-  return tenant(url, identity, async (tx) =>
-    reportSetting(
-      rows<RawHostedReportSetting>(
-        await tx`SELECT value::text value_json,version,updated_at FROM hub_report_setting
-        WHERE space_id=${identity.spaceId}::uuid`,
-      )[0],
-    ),
-  )
-}
-
-export async function putHostedReportSetting(
-  url: string,
-  identity: TaskIdentity,
-  input: { value: Report; version: number },
-) {
-  assertReportPasswordReference(input.value)
-  return tenant(url, identity, async (tx) => {
-    const current = rows<{ version: number }>(
-      await tx`SELECT version FROM hub_report_setting
-      WHERE space_id=${identity.spaceId}::uuid FOR UPDATE`,
-    )[0]
-    const version = assertReportVersion(current?.version ?? null, input.version)
-    const projects = rows<{ name: string }>(
-      await tx`SELECT name FROM project WHERE space_id=${identity.spaceId}::uuid`,
-    )
-    const registered = new Set(projects.map((row) => row.name))
-    const value = {
-      ...input.value,
-      projects: input.value.projects.filter((project) => registered.has(project)),
-      to: input.value.to.map((recipient) => recipient.trim()).filter(Boolean),
-      briefs: input.value.briefs.filter((brief) => brief?.name && brief.match?.length),
-    }
-    return reportSetting(
-      rows<RawHostedReportSetting>(
-        await tx`INSERT INTO hub_report_setting(space_id,value,version,updated_at)
-      VALUES (${identity.spaceId}::uuid,${JSON.stringify(value)}::text::jsonb,${version},now())
-      ON CONFLICT(space_id) DO UPDATE SET value=excluded.value,version=excluded.version,
-      updated_at=excluded.updated_at RETURNING value::text value_json,version,updated_at`,
-      )[0],
-    )!
-  })
-}
-
 export async function listHostedSends(
   url: string,
   identity: TaskIdentity,
@@ -302,9 +233,12 @@ export async function listHostedSends(
   return tenant(url, identity, async (tx) => {
     const since = filters.updatedSince ?? filters.cursor ?? '1970-01-01T00:00:00.000Z'
     const limit = Math.max(1, Math.min(filters.limit ?? 500, 1000))
-    const sends = rows<HostedSend>(
+    const sends = rows<HostedSend & { recipient_details_json: string }>(
       await tx`SELECT id,legacy_local_id,at,"window",recipients,projects,items,status,error,test,
-      created_at,machine,subscription_id,period_start,period_end
+      created_at,machine,subscription_id,period_start,period_end,
+      COALESCE((SELECT json_agg(json_build_object('user_id',r.user_id,'name',r.name,'email',r.email)
+        ORDER BY r.created_at,r.id) FROM hub_send_recipient r WHERE r.send_id=hub_send.id),'[]')::text
+        AS recipient_details_json
       FROM hub_send WHERE space_id=${identity.spaceId}::uuid
       AND created_at > ${since}::timestamptz ORDER BY created_at,id LIMIT ${limit}`,
     )
@@ -312,7 +246,13 @@ export async function listHostedSends(
       (latest, row) => (new Date(row.created_at).toISOString() > latest ? row.created_at : latest),
       since,
     )
-    return { sends, cursor }
+    return {
+      sends: sends.map(({ recipient_details_json, ...send }) => ({
+        ...send,
+        recipient_details: JSON.parse(recipient_details_json) as HostedSendRecipient[],
+      })),
+      cursor,
+    }
   })
 }
 
@@ -337,24 +277,9 @@ export async function appendHostedSend(
 export async function mirrorHostedReports(
   url: string,
   identity: TaskIdentity,
-  input: { setting?: { value: Report; version: number }; sends?: HostedSend[] },
+  input: { sends?: HostedSend[] },
 ) {
-  if (input.setting) assertReportPasswordReference(input.setting.value)
   return tenant(url, identity, async (tx) => {
-    if (input.setting) {
-      const projects = rows<{ name: string }>(
-        await tx`SELECT name FROM project WHERE space_id=${identity.spaceId}::uuid`,
-      )
-      const registered = new Set(projects.map((row) => row.name))
-      const value = {
-        ...input.setting.value,
-        projects: input.setting.value.projects.filter((project) => registered.has(project)),
-      }
-      await tx`INSERT INTO hub_report_setting(space_id,value,version,updated_at)
-      VALUES (${identity.spaceId}::uuid,${JSON.stringify(value)}::text::jsonb,${input.setting.version},now())
-      ON CONFLICT(space_id) DO UPDATE SET value=excluded.value,version=GREATEST(hub_report_setting.version,excluded.version),
-      updated_at=CASE WHEN excluded.version >= hub_report_setting.version THEN excluded.updated_at ELSE hub_report_setting.updated_at END`
-    }
     for (const row of input.sends ?? [])
       await tx`INSERT INTO hub_send
       (id,legacy_local_id,space_id,at,"window",recipients,projects,items,status,error,test,created_at,machine)
@@ -362,15 +287,14 @@ export async function mirrorHostedReports(
       ${row.window},${row.recipients},${row.projects},${row.items},${row.status},${row.error},
       ${row.test},${row.created_at}::timestamptz,${row.machine})
       ON CONFLICT(space_id,legacy_local_id) DO NOTHING`
-    return { upserted: (input.setting ? 1 : 0) + (input.sends?.length ?? 0) }
+    return { upserted: input.sends?.length ?? 0 }
   })
 }
 
 export async function hostedReportCounts(url: string, identity: TaskIdentity) {
   return tenant(url, identity, async (tx) => {
-    const result = rows<{ setting: number; sends: number }>(
+    const result = rows<{ sends: number }>(
       await tx`SELECT
-      (SELECT count(*)::int FROM hub_report_setting WHERE space_id=${identity.spaceId}::uuid) setting,
       (SELECT count(*)::int FROM hub_send WHERE space_id=${identity.spaceId}::uuid) sends`,
     )[0]!
     return result
@@ -379,16 +303,37 @@ export async function hostedReportCounts(url: string, identity: TaskIdentity) {
 
 const subscriptionSelect = (tx: SQL, spaceId: string, id?: string) => tx`
   SELECT s.id,s.scope_kind,s.project_name,s.person_user_id,s.cadence,s.hour,s.weekday,s.zone,
-    s.recipient_user_id,u.name AS recipient_name,u.email AS recipient_email,s.enabled,
-    s.created_at,s.updated_at
+    s.enabled,s.created_at,s.updated_at
   FROM hub_report_subscription s
-  JOIN "user" u ON u.id=s.recipient_user_id
   WHERE s.space_id=${spaceId}::uuid AND s.deleted_at IS NULL
     AND (${id ?? null}::uuid IS NULL OR s.id=${id ?? null}::uuid)
   ORDER BY s.created_at,s.id`
 
 export async function selectHostedReportSubscriptions(tx: SQL, spaceId: string) {
-  return rows<RawSubscription>(await subscriptionSelect(tx, spaceId)).map(asSubscription)
+  const subscriptions = rows<RawSubscription>(await subscriptionSelect(tx, spaceId)).map(
+    asSubscription,
+  )
+  const recipients = rows<HostedReportRecipient & { subscription_id: string }>(
+    await tx`SELECT r.id,r.subscription_id,r.user_id,u.name,u.email
+    FROM hub_report_subscription_recipient r JOIN "user" u ON u.id=r.user_id
+    WHERE r.space_id=${spaceId}::uuid ORDER BY r.created_at,r.id`,
+  )
+  const bySubscription = new Map<string, HostedReportRecipient[]>()
+  for (const { subscription_id, ...recipient } of recipients) {
+    const current = bySubscription.get(subscription_id) ?? []
+    current.push(recipient)
+    bySubscription.set(subscription_id, current)
+  }
+  return subscriptions.map((subscription) => ({
+    ...subscription,
+    recipients: bySubscription.get(subscription.id) ?? [],
+  }))
+}
+
+async function selectHostedReportSubscription(tx: SQL, spaceId: string, id: string) {
+  return assertReportSubscriptionFound(
+    (await selectHostedReportSubscriptions(tx, spaceId)).find((row) => row.id === id),
+  )
 }
 
 export async function listHostedReportSubscriptions(url: string, identity: TaskIdentity) {
@@ -416,13 +361,15 @@ export async function createHostedReportSubscription(
     const id = newRecordId()
     await tx`INSERT INTO hub_report_subscription
       (id,space_id,scope_kind,project_name,person_user_id,cadence,hour,weekday,zone,
-       recipient_user_id,enabled,created_at,updated_at)
+       enabled,created_at,updated_at)
       VALUES (${id}::uuid,${identity.spaceId}::uuid,${planned.scope_kind},${planned.project_name},
       ${planned.person_user_id}::uuid,${planned.cadence},${planned.hour},${planned.weekday},
-      ${planned.zone},${planned.recipient_user_id}::uuid,${planned.enabled ? 1 : 0},now(),now())`
-    return asSubscription(
-      rows<RawSubscription>(await subscriptionSelect(tx, identity.spaceId, id))[0]!,
-    )
+      ${planned.zone},${planned.enabled ? 1 : 0},now(),now())`
+    for (const userId of planned.recipient_user_ids)
+      await tx`INSERT INTO hub_report_subscription_recipient
+        (id,space_id,subscription_id,user_id,created_at)
+        VALUES (${newRecordId()}::uuid,${identity.spaceId}::uuid,${id}::uuid,${userId}::uuid,now())`
+    return selectHostedReportSubscription(tx, identity.spaceId, id)
   })
 }
 
@@ -443,9 +390,46 @@ export async function updateHostedReportSubscription(
         RETURNING id`,
       )[0],
     )
-    return asSubscription(
-      rows<RawSubscription>(await subscriptionSelect(tx, identity.spaceId, id))[0]!,
-    )
+    return selectHostedReportSubscription(tx, identity.spaceId, id)
+  })
+}
+
+export async function addHostedReportSubscriptionRecipient(
+  url: string,
+  identity: TaskIdentity,
+  id: string,
+  userId: string,
+) {
+  return tenant(url, identity, async (tx) => {
+    await selectHostedReportSubscription(tx, identity.spaceId, id)
+    const member = rows<{ present: number }>(
+      await tx`SELECT 1 AS present FROM membership
+      WHERE space_id=${identity.spaceId}::uuid AND user_id=${userId}::uuid`,
+    )[0]
+    if (!member) throw new Error('recipient is not a member of this space')
+    await tx`INSERT INTO hub_report_subscription_recipient
+      (id,space_id,subscription_id,user_id,created_at)
+      VALUES (${newRecordId()}::uuid,${identity.spaceId}::uuid,${id}::uuid,${userId}::uuid,now())
+      ON CONFLICT(subscription_id,user_id) DO NOTHING`
+    return selectHostedReportSubscription(tx, identity.spaceId, id)
+  })
+}
+
+export async function removeHostedReportSubscriptionRecipient(
+  url: string,
+  identity: TaskIdentity,
+  id: string,
+  userId: string,
+) {
+  return tenant(url, identity, async (tx) => {
+    await selectHostedReportSubscription(tx, identity.spaceId, id)
+    const removed = rows<{ id: string }>(
+      await tx`DELETE FROM hub_report_subscription_recipient
+      WHERE space_id=${identity.spaceId}::uuid AND subscription_id=${id}::uuid
+        AND user_id=${userId}::uuid RETURNING id`,
+    )[0]
+    if (!removed) throw new Error('report subscription recipient not found')
+    return selectHostedReportSubscription(tx, identity.spaceId, id)
   })
 }
 
