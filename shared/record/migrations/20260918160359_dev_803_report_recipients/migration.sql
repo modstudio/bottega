@@ -20,6 +20,12 @@ CREATE TABLE "hub_send_recipient" (
 );
 --> statement-breakpoint
 ALTER TABLE "hub_send_recipient" ENABLE ROW LEVEL SECURITY;--> statement-breakpoint
+ALTER TABLE "hub_report_subscription_recipient" ADD CONSTRAINT "hub_report_subscription_recipient_space_id_space_id_fkey" FOREIGN KEY ("space_id") REFERENCES "space"("id");--> statement-breakpoint
+ALTER TABLE "hub_report_subscription_recipient" ADD CONSTRAINT "hub_report_subscription_recipient_1J8jPMmb6EUn_fkey" FOREIGN KEY ("subscription_id") REFERENCES "hub_report_subscription"("id");--> statement-breakpoint
+ALTER TABLE "hub_report_subscription_recipient" ADD CONSTRAINT "hub_report_subscription_recipient_user_id_user_id_fkey" FOREIGN KEY ("user_id") REFERENCES "user"("id");--> statement-breakpoint
+ALTER TABLE "hub_send_recipient" ADD CONSTRAINT "hub_send_recipient_space_id_space_id_fkey" FOREIGN KEY ("space_id") REFERENCES "space"("id");--> statement-breakpoint
+ALTER TABLE "hub_send_recipient" ADD CONSTRAINT "hub_send_recipient_send_id_hub_send_id_fkey" FOREIGN KEY ("send_id") REFERENCES "hub_send"("id");--> statement-breakpoint
+ALTER TABLE "hub_send_recipient" ADD CONSTRAINT "hub_send_recipient_user_id_user_id_fkey" FOREIGN KEY ("user_id") REFERENCES "user"("id");--> statement-breakpoint
 WITH existing_subscription_recipient AS (
 	SELECT "id","space_id","recipient_user_id","created_at" FROM "hub_report_subscription"
 ), migrated_subscription_recipient AS (
@@ -48,12 +54,6 @@ ALTER TABLE "hub_report_subscription" DROP CONSTRAINT "hub_report_subscription_r
 -- Hosted subscriptions and SES delivery own every former report-setting field.
 DROP TABLE "hub_report_setting";--> statement-breakpoint
 ALTER TABLE "hub_report_subscription" DROP COLUMN "recipient_user_id";--> statement-breakpoint
-ALTER TABLE "hub_report_subscription_recipient" ADD CONSTRAINT "hub_report_subscription_recipient_space_id_space_id_fkey" FOREIGN KEY ("space_id") REFERENCES "space"("id");--> statement-breakpoint
-ALTER TABLE "hub_report_subscription_recipient" ADD CONSTRAINT "hub_report_subscription_recipient_1J8jPMmb6EUn_fkey" FOREIGN KEY ("subscription_id") REFERENCES "hub_report_subscription"("id");--> statement-breakpoint
-ALTER TABLE "hub_report_subscription_recipient" ADD CONSTRAINT "hub_report_subscription_recipient_user_id_user_id_fkey" FOREIGN KEY ("user_id") REFERENCES "user"("id");--> statement-breakpoint
-ALTER TABLE "hub_send_recipient" ADD CONSTRAINT "hub_send_recipient_space_id_space_id_fkey" FOREIGN KEY ("space_id") REFERENCES "space"("id");--> statement-breakpoint
-ALTER TABLE "hub_send_recipient" ADD CONSTRAINT "hub_send_recipient_send_id_hub_send_id_fkey" FOREIGN KEY ("send_id") REFERENCES "hub_send"("id");--> statement-breakpoint
-ALTER TABLE "hub_send_recipient" ADD CONSTRAINT "hub_send_recipient_user_id_user_id_fkey" FOREIGN KEY ("user_id") REFERENCES "user"("id");--> statement-breakpoint
 CREATE POLICY "hub_report_subscription_recipient_space_select" ON "hub_report_subscription_recipient" AS PERMISSIVE FOR SELECT TO public USING ("hub_report_subscription_recipient"."space_id" = nullif(current_setting('app.space_id', true), '')::uuid OR "hub_report_subscription_recipient"."space_id" = ANY(
     string_to_array(nullif(current_setting('app.space_ids', true), ''), ',')::uuid[]
   ));--> statement-breakpoint
