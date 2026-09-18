@@ -1,0 +1,9 @@
+app = "bottega-hub-report-delivery"
+primary_region = "ewr"
+
+[build]
+  dockerfile = "Dockerfile"
+
+[[vm]]
+  size = "shared-cpu-1x"
+  memory = "256mb"
