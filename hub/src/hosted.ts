@@ -1,4 +1,5 @@
 import { existsSync } from 'node:fs'
+import { fileURLToPath } from 'node:url'
 import { fetchRequestHandler } from '@trpc/server/adapters/fetch'
 import { appStaticPath, resolveAppStatic } from './app-static.ts'
 import { evidenceApi } from './evidence-api.ts'
@@ -25,7 +26,7 @@ export function hostedServerConfig(environment: ServerEnvironment = process.env)
 
 function startHostedServer(environment: ServerEnvironment = process.env) {
   const config = hostedServerConfig(environment)
-  const dist = new URL('../web/dist', import.meta.url).pathname
+  const dist = fileURLToPath(new URL('../web/dist', import.meta.url))
   const server = Bun.serve({
     hostname: config.hostname,
     port: config.port,

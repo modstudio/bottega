@@ -1,5 +1,6 @@
 #!/usr/bin/env bun
 import { readFileSync, writeFileSync } from 'node:fs'
+import { fileURLToPath } from 'node:url'
 import { human } from '../../shared/interval.ts'
 import { readMachineValue } from '../../shared/machine-config.ts'
 import { projectOf } from './attribute.ts'
@@ -360,7 +361,7 @@ function trackerTaskKey(result: unknown): unknown {
 }
 
 async function importTasks(file: string) {
-  const project = projectOf(new URL('../..', import.meta.url).pathname)
+  const project = projectOf(fileURLToPath(new URL('../..', import.meta.url)))
   const registered = projects().find((candidate) => candidate.name === project)
   const prefix = registered?.settings.keyPrefixes?.[0]
   if (!project || !prefix) throw new Error('the local project must declare a key prefix')
@@ -371,7 +372,14 @@ async function importTasks(file: string) {
     shas: string[]
   }[]
   const log = Bun.spawnSync(
-    ['git', '-C', new URL('../..', import.meta.url).pathname, 'log', '--all', '--format=%H%x09%cI'],
+    [
+      'git',
+      '-C',
+      fileURLToPath(new URL('../..', import.meta.url)),
+      'log',
+      '--all',
+      '--format=%H%x09%cI',
+    ],
     { stdout: 'pipe', stderr: 'ignore' },
   )
   const stamps = new Map(

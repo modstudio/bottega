@@ -1,3 +1,4 @@
+import { fileURLToPath } from 'node:url'
 // concern: monitor-commands
 /** Owns monitor invocation, notice delivery authority, reporting, and exit mapping. Must not know CLI grammar. */
 
@@ -84,8 +85,8 @@ function deliveryAuthorized(): boolean {
       executable = words[1]
     if (!executable) return false
     const hooks = new Set([
-      realpathSync(new URL('../../hooks/orch-heartbeat.sh', import.meta.url).pathname),
-      realpathSync(new URL('../../hooks/session-brief.py', import.meta.url).pathname),
+      realpathSync(fileURLToPath(new URL('../../hooks/orch-heartbeat.sh', import.meta.url))),
+      realpathSync(fileURLToPath(new URL('../../hooks/session-brief.py', import.meta.url))),
     ])
     try {
       return hooks.has(realpathSync(executable))

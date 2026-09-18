@@ -1,6 +1,7 @@
 import { createHash } from 'node:crypto'
 import { existsSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
+import { fileURLToPath } from 'node:url'
 import { CONCERNS } from '../../../shared/brand.ts'
 import { CANON_REFERENCE_EXEMPTIONS, canonReferencePath } from '../../../shared/canon-references.ts'
 import { isCliCommand } from '../cli/args.ts'
@@ -12,7 +13,7 @@ import { projectAt, projectByName, projects } from '../project/projects.ts'
 import { composeCanonRows } from './canon-hydrate.ts'
 import { canonFrontmatter, classifyCanonFile } from './canon-lint.ts'
 
-const ROOT = new URL('../../..', import.meta.url).pathname.replace(/\/$/, '')
+const ROOT = fileURLToPath(new URL('../../..', import.meta.url)).replace(/\/$/, '')
 const PREFIXES = [
   'orchestrator/',
   'ops/',

@@ -1,6 +1,7 @@
 import { describe, expect, test } from 'bun:test'
 import { readFileSync } from 'node:fs'
 import { dirname, relative, resolve } from 'node:path'
+import { fileURLToPath } from 'node:url'
 
 const DEGRADED_COLLECTION_GRAPH = [
   '../../../shared/brand.ts',
@@ -20,7 +21,7 @@ const DEGRADED_HEAVY_MODULES = [
   'run.ts',
   'worktree.ts',
 ] as const
-const SRC_DIR = dirname(new URL(import.meta.url).pathname)
+const SRC_DIR = dirname(fileURLToPath(new URL(import.meta.url)))
 
 function staticRelativeSpecifiers(source: string): string[] {
   const specifiers: string[] = []

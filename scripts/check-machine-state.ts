@@ -2,6 +2,7 @@
 /** Machine state belongs in the per-user state root, never inside the checkout. */
 import { existsSync } from 'node:fs'
 import { join, resolve } from 'node:path'
+import { fileURLToPath } from 'node:url'
 import { FROZEN_STATE_NAMES } from '../shared/brand.ts'
 import { resolveStatePaths, type StateEnvironment } from '../shared/state-directory.ts'
 
@@ -118,7 +119,7 @@ function destination(path: string, env: StateEnvironment): string {
 }
 
 if (import.meta.main) {
-  const root = resolve(new URL('..', import.meta.url).pathname)
+  const root = resolve(fileURLToPath(new URL('..', import.meta.url)))
   const findings = decideMachineState(checkoutPaths(root))
   if (findings.length) {
     console.error('machine state check failed: state belongs outside the checkout')

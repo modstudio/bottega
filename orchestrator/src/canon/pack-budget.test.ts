@@ -1,6 +1,7 @@
 import { describe, expect, test } from 'bun:test'
 import { readdirSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
+import { fileURLToPath } from 'node:url'
 import { checkPackBudget } from '../../scripts/check-pack-budget.ts'
 import { setDoc } from '../../test/fixtures/docs.ts'
 import { dir } from '../../test/fixtures/store.ts'
@@ -9,7 +10,7 @@ import { upsertProject } from '../project/projects.ts'
 import { CanonBudgetError, compilePack } from './canon.ts'
 import { DEFAULT_PACK_BYTES, MAX_INJECT_DOC_BYTES } from './pack-budget.ts'
 
-const ROOT = new URL('../../..', import.meta.url).pathname.replace(/\/$/, '')
+const ROOT = fileURLToPath(new URL('../../..', import.meta.url)).replace(/\/$/, '')
 
 /**
  * Walk THIS tree's sources, not every copy of them on disk.

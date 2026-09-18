@@ -1,9 +1,10 @@
 #!/usr/bin/env bun
 import { existsSync, readdirSync, readFileSync, statSync, writeFileSync } from 'node:fs'
 import { relative, resolve } from 'node:path'
+import { fileURLToPath } from 'node:url'
 import { decideCeiling } from './quality/ceiling-decision'
 
-const ROOT = new URL('..', import.meta.url).pathname.replace(/\/$/, '')
+const ROOT = fileURLToPath(new URL('..', import.meta.url)).replace(/\/$/, '')
 const STATE_FILE = `${ROOT}/scripts/quality/file-ceiling.json`
 const STATE_LABEL = 'scripts/quality/file-ceiling.json'
 const CEILING = 1000

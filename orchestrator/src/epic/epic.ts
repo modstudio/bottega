@@ -1,10 +1,11 @@
 import type { Database } from 'bun:sqlite'
+import { fileURLToPath } from 'node:url'
 import { engagedMs } from '../../../shared/interval.ts'
 import { db } from '../database/db.ts'
 import { targetGitEnvironment } from '../git/git-environment.ts'
 import { STALE_AFTER_MS } from '../run/run-liveness.ts'
 
-const HUB = new URL('../../../bin/hub', import.meta.url).pathname
+const HUB = fileURLToPath(new URL('../../../bin/hub', import.meta.url))
 
 export type EpicChild = { key: string; title?: string; status?: string | null }
 type NotRecorded = { metric: string; needed: string }

@@ -2,10 +2,11 @@
 import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { resolve } from 'node:path'
+import { fileURLToPath } from 'node:url'
 import { resolveGateTimingDirectory } from '../shared/gate-timing-directory.ts'
 import { mainCheckoutOf } from '../shared/git.ts'
 
-const ROOT = new URL('..', import.meta.url).pathname.replace(/\/$/, '')
+const ROOT = fileURLToPath(new URL('..', import.meta.url)).replace(/\/$/, '')
 const checkout = resolve(ROOT)
 const GATE_TIMING_DIR = resolveGateTimingDirectory(
   checkout,

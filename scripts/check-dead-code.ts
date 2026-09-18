@@ -1,5 +1,6 @@
 #!/usr/bin/env bun
 import { existsSync, readFileSync, writeFileSync } from 'node:fs'
+import { fileURLToPath } from 'node:url'
 import {
   compareDeadCodeFindings,
   type DeadCodeFinding,
@@ -9,7 +10,7 @@ import {
   unneededExportFindings,
 } from './quality/dead-code'
 
-const ROOT = new URL('..', import.meta.url).pathname.replace(/\/$/, '')
+const ROOT = fileURLToPath(new URL('..', import.meta.url)).replace(/\/$/, '')
 const KNIP = `${ROOT}/node_modules/.bin/knip`
 const BASELINE = `${ROOT}/scripts/quality/dead-code.json`
 const BASELINE_LABEL = 'scripts/quality/dead-code.json'

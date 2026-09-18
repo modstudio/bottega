@@ -1,6 +1,7 @@
 #!/usr/bin/env bun
 import { readlinkSync } from 'node:fs'
 import { resolve } from 'node:path'
+import { fileURLToPath } from 'node:url'
 
 export type HarnessMirrorEntry = { path: string; isSymlink: boolean; target?: string }
 
@@ -38,7 +39,7 @@ function trackedClaudeEntries(root: string): HarnessMirrorEntry[] {
 }
 
 if (import.meta.main) {
-  const root = resolve(new URL('..', import.meta.url).pathname)
+  const root = resolve(fileURLToPath(new URL('..', import.meta.url)))
   const findings = decideHarnessMirror(trackedClaudeEntries(root))
   if (findings.length) {
     console.error(

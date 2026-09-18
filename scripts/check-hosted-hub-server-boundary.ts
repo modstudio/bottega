@@ -2,9 +2,10 @@
 /** Enforce the hosted hub server concern boundary. */
 import { existsSync, readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
+import { fileURLToPath } from 'node:url'
 import { importSpecifiers, repositoryRelativeImport } from './import-scanner.ts'
 
-const ROOT = new URL('..', import.meta.url).pathname.replace(/\/$/, '')
+const ROOT = fileURLToPath(new URL('..', import.meta.url)).replace(/\/$/, '')
 const FILE = 'hub/src/hosted.ts'
 const FORBIDDEN_FILES = new Set([
   'hub/src/db.ts',

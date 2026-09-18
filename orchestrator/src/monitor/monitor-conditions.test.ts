@@ -1,4 +1,5 @@
 import { describe, expect, spyOn, test } from 'bun:test'
+import { fileURLToPath } from 'node:url'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { addRun, score } from '../../test/fixtures/store.ts'
 import { db, nowIso } from '../database/db.ts'
@@ -66,7 +67,7 @@ describe('idle run classification', () => {
 })
 
 function insertRun4177PackRows(): void {
-  const root = new URL('../../..', import.meta.url).pathname.replace(/\/$/, '')
+  const root = fileURLToPath(new URL('../../..', import.meta.url)).replace(/\/$/, '')
   upsertProject({ name: PLATFORM_SLUG, path: root, settings: { trunk: 'main' } })
   const projectId = (
     db().query('SELECT id FROM project WHERE name=?').get(PLATFORM_SLUG) as { id: number }

@@ -3,6 +3,7 @@ import { randomUUID } from 'node:crypto'
 import { copyFileSync, existsSync, mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { fileURLToPath } from 'node:url'
 import { FROZEN_STATE_NAMES } from '../../shared/brand.ts'
 import {
   RECORD_ACTOR_ROLE,
@@ -30,7 +31,7 @@ copyDatabase(resolveHubDatabase(process.env), sourceHubDb)
 
 async function run(argv: string[], env?: Record<string, string>): Promise<number> {
   const child = Bun.spawn(argv, {
-    cwd: new URL('..', import.meta.url).pathname,
+    cwd: fileURLToPath(new URL('..', import.meta.url)),
     env: { ...process.env, ...env },
     stdin: 'inherit',
     stdout: 'inherit',

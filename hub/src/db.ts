@@ -1,6 +1,7 @@
 import { Database } from 'bun:sqlite'
 import { existsSync, mkdirSync } from 'node:fs'
 import { dirname, join } from 'node:path'
+import { fileURLToPath } from 'node:url'
 import { FROZEN_STATE_NAMES } from '../../shared/brand.ts'
 import { mainCheckoutOf } from '../../shared/git.ts'
 import { legacyStoreRefusal, resolveHubDatabase } from '../../shared/state-directory.ts'
@@ -13,7 +14,7 @@ import {
 
 export type { Project } from './projects.ts'
 
-const checkout = new URL('../..', import.meta.url).pathname
+const checkout = fileURLToPath(new URL('../..', import.meta.url))
 const mainCheckout = mainCheckoutOf(checkout)
 const livePath = resolveHubDatabase(process.env)
 const legacyPath = mainCheckout ? join(mainCheckout, 'hub', FROZEN_STATE_NAMES.hubDatabase) : null

@@ -1,21 +1,21 @@
 #!/usr/bin/env bun
 /** Generate the editor-facing project config schema from its one Zod definition. */
 import { existsSync, readFileSync, writeFileSync } from 'node:fs'
+import { fileURLToPath } from 'node:url'
 import { recipeJsonSchema } from '../orchestrator/src/recipe/recipe-schema.ts'
 
-const outputPath = new URL('../orchestrator/schemas/project-config.schema.json', import.meta.url)
+const outputPath = fileURLToPath(
+  new URL('../orchestrator/schemas/project-config.schema.json', import.meta.url),
+)
 
 function generatedRecipeSchema(): string {
   const schema = recipeJsonSchema()
   const unformatted = `${JSON.stringify(schema, null, 2)}\n`
-  const formatted = Bun.spawnSync(
-    ['bunx', 'biome', 'format', `--stdin-file-path=${outputPath.pathname}`],
-    {
-      stdin: Buffer.from(unformatted),
-      stdout: 'pipe',
-      stderr: 'pipe',
-    },
-  )
+  const formatted = Bun.spawnSync(['bunx', 'biome', 'format', `--stdin-file-path=${outputPath}`], {
+    stdin: Buffer.from(unformatted),
+    stdout: 'pipe',
+    stderr: 'pipe',
+  })
   if (formatted.exitCode !== 0) {
     throw new Error(`could not format generated recipe schema: ${formatted.stderr.toString()}`)
   }
@@ -32,5 +32,5 @@ if (process.argv.includes('--check')) {
   console.log('check-recipe-schema: ok')
 } else {
   writeFileSync(outputPath, generated)
-  console.log(`wrote ${outputPath.pathname}`)
+  console.log(`wrote ${outputPath}`)
 }

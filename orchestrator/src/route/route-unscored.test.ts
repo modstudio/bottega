@@ -1,5 +1,6 @@
 import { describe, expect, test } from 'bun:test'
 import { readFileSync } from 'node:fs'
+import { fileURLToPath } from 'node:url'
 import { addRun, score } from '../../test/fixtures/store.ts'
 import { db } from '../database/db.ts'
 import {
@@ -169,12 +170,15 @@ describe('the Stop hook and orch agree on what is unscored', () => {
 
   const liveHookWhere = () =>
     hookOwedWhere(
-      readFileSync(new URL('../../hooks/score-reminder.py', import.meta.url).pathname, 'utf8'),
+      readFileSync(
+        fileURLToPath(new URL('../../hooks/score-reminder.py', import.meta.url)),
+        'utf8',
+      ),
     )
 
   test('Stop cleanup has one global budget and uses non-blocking close-out', () => {
     const hook = readFileSync(
-      new URL('../../hooks/score-reminder.py', import.meta.url).pathname,
+      fileURLToPath(new URL('../../hooks/score-reminder.py', import.meta.url)),
       'utf8',
     )
     expect(hook).toContain('GLOBAL_BUDGET_SECONDS = 20')
@@ -224,7 +228,7 @@ describe('the Stop hook and orch agree on what is unscored', () => {
      * review reminder are hook-only; everything else must be the same set.
      */
     const hook = readFileSync(
-      new URL('../../hooks/score-reminder.py', import.meta.url).pathname,
+      fileURLToPath(new URL('../../hooks/score-reminder.py', import.meta.url)),
       'utf8',
     )
     expect(predicateDrift(UNSCORED_WHERE, hookOwedWhere(hook))).toEqual({

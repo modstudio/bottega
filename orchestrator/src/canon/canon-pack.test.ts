@@ -1,4 +1,5 @@
 import { describe, expect, test } from 'bun:test'
+import { fileURLToPath } from 'node:url'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { setDoc } from '../../test/fixtures/docs.ts'
 import { dir } from '../../test/fixtures/store.ts'
@@ -41,7 +42,7 @@ async function putOperator(body: string): Promise<void> {
 
 describe('worker pack canon', () => {
   test(`run 4177 canon-pack-drift review-lens/${PLATFORM_SLUG} resolves global and project rows once`, () => {
-    const root = new URL('../../..', import.meta.url).pathname.replace(/\/$/, '')
+    const root = fileURLToPath(new URL('../../..', import.meta.url)).replace(/\/$/, '')
     upsertProject({ name: PLATFORM_SLUG, path: root, settings: { trunk: 'main' } })
     const projectId = (
       db().query('SELECT id FROM project WHERE name=?').get(PLATFORM_SLUG) as { id: number }

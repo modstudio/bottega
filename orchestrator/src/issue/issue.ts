@@ -1,6 +1,7 @@
 import { copyFileSync, existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { fileURLToPath } from 'node:url'
 import { FROZEN_STATE_NAMES, PLATFORM_NAME, PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { resolveEnvFilePaths } from '../../../shared/config-directory.ts'
 import { releaseRunFailoverAttempts } from '../close/close-out.ts'
@@ -45,7 +46,7 @@ import {
   workerGateEnvironment,
 } from './issue-shell.ts'
 
-const HUB = new URL('../../../bin/hub', import.meta.url).pathname
+const HUB = fileURLToPath(new URL('../../../bin/hub', import.meta.url))
 
 export type Diagnosis = {
   status: 'done' | 'asking' | 'refused'
@@ -778,7 +779,7 @@ export async function workIssue(key: string): Promise<void> {
           : { ok: false, text: 'no reproduction command', exitCode: -1 }
       const applied = argv(
         [
-          new URL('../../../bin/orch', import.meta.url).pathname,
+          fileURLToPath(new URL('../../../bin/orch', import.meta.url)),
           'project',
           'set',
           change.project,

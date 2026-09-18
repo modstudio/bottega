@@ -1,3 +1,4 @@
+import { fileURLToPath } from 'node:url'
 // concern: monitor-conditions
 /** Owns monitor condition detection and the row queries and helpers those detectors share with composition and notice revalidation. */
 
@@ -22,7 +23,7 @@ import { runAlive } from '../run/run-alive.ts'
 import { runLeaseState } from '../run/run-lease.ts'
 import type { MonitorCondition } from './monitor-types.ts'
 
-const HUB = new URL('../../../bin/hub', import.meta.url).pathname
+const HUB = fileURLToPath(new URL('../../../bin/hub', import.meta.url))
 
 const ASKING_RUN_WHERE = `parent_run_id IS NULL
    AND (

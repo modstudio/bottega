@@ -1,6 +1,7 @@
 #!/usr/bin/env bun
 /** Tests live beside a same-named module or a module named by a hyphen prefix. */
 import { resolve } from 'node:path'
+import { fileURLToPath } from 'node:url'
 
 const ROOTS = ['orchestrator', 'hub', 'retrieval', 'shared', 'scripts']
 const TEST_FILE = /\.test\.tsx?$/
@@ -57,7 +58,7 @@ function checkTrackedTestPlacement(root: string): TestPlacementFinding[] {
 }
 
 if (import.meta.main) {
-  const root = resolve(new URL('..', import.meta.url).pathname)
+  const root = resolve(fileURLToPath(new URL('..', import.meta.url)))
   const findings = checkTrackedTestPlacement(root)
   if (findings.length) {
     console.error('test placement check failed')

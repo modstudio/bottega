@@ -1,6 +1,7 @@
 #!/usr/bin/env bun
 import { existsSync, readFileSync, writeFileSync } from 'node:fs'
 import { relative } from 'node:path'
+import { fileURLToPath } from 'node:url'
 import { ESLint } from 'eslint'
 import ts from 'typescript'
 import { measuredSourceFiles } from './check-file-ceiling'
@@ -9,7 +10,7 @@ import { decideCeiling } from './quality/ceiling-decision'
 type FrozenFunction = { file: string; function: string; line: number; score: number }
 type MeasuredFunction = FrozenFunction & { key: string }
 
-const ROOT = new URL('..', import.meta.url).pathname.replace(/\/$/, '')
+const ROOT = fileURLToPath(new URL('..', import.meta.url)).replace(/\/$/, '')
 const STATE_FILE = `${ROOT}/scripts/quality/cognitive-ceiling.json`
 const STATE_LABEL = 'scripts/quality/cognitive-ceiling.json'
 const CEILING = 15
