@@ -40,9 +40,21 @@ async function run(argv: string[], env?: Record<string, string>): Promise<number
   return child.exited
 }
 
-function postgres(source: string): void {
+function postgres(source: string, database = 'postgres'): void {
   const result = Bun.spawnSync(
-    ['docker', 'exec', '-i', container, 'psql', '-U', 'postgres', '-v', 'ON_ERROR_STOP=1'],
+    [
+      'docker',
+      'exec',
+      '-i',
+      container,
+      'psql',
+      '-U',
+      'postgres',
+      '-d',
+      database,
+      '-v',
+      'ON_ERROR_STOP=1',
+    ],
     { stdin: new Blob([source]), stdout: 'inherit', stderr: 'inherit' },
   )
   if (result.exitCode !== 0) throw new Error(`Postgres fixture command exited ${result.exitCode}`)
@@ -97,10 +109,19 @@ try {
     CREATE ROLE public_probe LOGIN PASSWORD 'public-password' NOSUPERUSER NOBYPASSRLS;
     GRANT CREATE ON DATABASE postgres TO ${RECORD_OWNER_ROLE};
     ALTER SCHEMA public OWNER TO ${RECORD_OWNER_ROLE};
+    CREATE DATABASE recipient_migration OWNER ${RECORD_OWNER_ROLE};
   `)
+  postgres(`ALTER SCHEMA public OWNER TO ${RECORD_OWNER_ROLE};`, 'recipient_migration')
 
   const ownerUrl = `postgres://${RECORD_OWNER_ROLE}:owner-password@127.0.0.1:${port}/postgres`
   const actorUrl = `postgres://${RECORD_ACTOR_ROLE}:actor-password@127.0.0.1:${port}/postgres`
+  const recipientMigrationUrl = `postgres://${RECORD_OWNER_ROLE}:owner-password@127.0.0.1:${port}/recipient_migration`
+
+  const recipientMigration = await run(
+    ['bun', 'test', '--timeout', '30000', 'src/postgres/postgres-recipient-migration.test.ts'],
+    { ORCH_TEST_RECIPIENT_MIGRATION_URL: recipientMigrationUrl },
+  )
+  if (recipientMigration !== 0) process.exit(recipientMigration)
 
   const rls = await run(
     ['bun', 'test', '--timeout', '30000', 'src/postgres/postgres-migrate-rls.test.ts'],
@@ -141,6 +162,7 @@ try {
   if (started) {
     try {
       postgres(`
+        DROP DATABASE IF EXISTS recipient_migration WITH (FORCE);
         REASSIGN OWNED BY ${RECORD_OWNER_ROLE} TO postgres;
         DROP OWNED BY ${RECORD_OWNER_ROLE};
         DROP OWNED BY ${RECORD_ACTOR_ROLE};
