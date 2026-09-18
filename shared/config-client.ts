@@ -1,3 +1,4 @@
+import { RECORD_SIGN_IN_REMEDY } from './record-remedies.ts'
 import { readRecordSessionToken } from './record-session.ts'
 
 export type ConfigClientErrorReason = 'not-configured' | 'unreachable' | 'response'
@@ -9,7 +10,7 @@ export class ConfigClientError extends Error {
   constructor(reason: ConfigClientErrorReason, route: string, status?: number) {
     super(
       reason === 'not-configured'
-        ? 'hosted config is not configured'
+        ? `hosted config is not configured; ${RECORD_SIGN_IN_REMEDY}`
         : reason === 'unreachable'
           ? `hosted config route ${route} is unreachable`
           : `hosted config route ${route} returned HTTP ${status}`,
@@ -142,6 +143,7 @@ function createConfigClient(baseUrl: string, token: string, transport: Transport
       }),
     currentDataKey: (recipientKeyId: string) =>
       request<DataKey>(`/v1/config/data-keys/current${query({ recipientKeyId })}`),
+    listDataKeys: () => request<{ items: DataKey[] }>('/v1/config/data-keys').then((x) => x.items),
     getDataKey: (dekId: string, recipientKeyId: string) =>
       request<DataKey>(
         `/v1/config/data-keys/${encodeURIComponent(dekId)}${query({ recipientKeyId })}`,

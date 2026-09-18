@@ -8,11 +8,12 @@ import { SQL } from 'bun'
 import { drizzle } from 'drizzle-orm/bun-sql'
 import { membership, newRecordId, space, user } from '../../../shared/record/schema.ts'
 import { account, invitation, session, verification } from '../../../shared/record/schema-auth.ts'
+import { RECORD_SIGN_IN_REMEDY } from '../../../shared/record-remedies.ts'
 import { sendPasswordResetEmail } from '../mail/password-reset-mailer.ts'
 
+export { RECORD_SIGN_IN_REMEDY } from '../../../shared/record-remedies.ts'
+
 export const RECORD_SESSION_KEY = 'record_session'
-export const RECORD_SIGN_IN_REMEDY =
-  'record session is missing or expired; run `orch record sign-in --email <email>`'
 export const RECORD_SIGN_UP_INVITATION_REQUIRED =
   'Record sign-up is by invitation only; ask a record space owner to run `orch record space invite --email <email>`.'
 

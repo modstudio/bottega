@@ -607,6 +607,7 @@ export const importBoundaries: ImportBoundary[] = [
       'bun',
       'drizzle-orm/bun-sql',
       '../../../shared/record/schema.ts',
+      '../../../shared/record-remedies.ts',
       '../../../shared/record/schema-auth.ts',
       '../mail/password-reset-mailer.ts',
     ],

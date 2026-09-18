@@ -7,6 +7,7 @@ import {
   type SecurityRunner,
   writeRecordSessionToken,
 } from '../../../shared/record-session.ts'
+import { RECORD_ACTIVE_SPACE_REMEDY } from '../../../shared/record-remedies.ts'
 import { DATABASE_RESOLUTION, db, writeTransaction } from '../database/db.ts'
 import {
   activeMembershipSpace,
@@ -15,9 +16,6 @@ import {
   RECORD_SIGN_IN_REMEDY,
   recordAuth,
 } from './record-auth.ts'
-
-const RECORD_ACTIVE_SPACE_REMEDY =
-  'record session has no active space; run `orch record space switch <slug>`'
 
 export function recordUserSessionFromMemberships<
   User,

@@ -64,6 +64,7 @@ async function fixture() {
   } as unknown as ConfigClient
   return {
     machine: { ...machine, keyId },
+    pinnedSpace: spaceId,
     dek,
     client,
     trust: {
@@ -118,4 +119,17 @@ test('refuses a valid row returned for a different requested secret', async () =
     secretName: 'TOKEN',
     reason: 'authentication-failed',
   })
+})
+
+test('refuses when the signed-in active space differs from the initialized space', async () => {
+  const deps = await fixture()
+  deps.client.whoami = async () => ({
+    user: { id: userId },
+    activeSpaceId: '01990000-0000-7000-8000-000000000099',
+  })
+  await expect(readHostedSecrets(['TOKEN'], deps)).rejects.toMatchObject({
+    secretName: 'TOKEN',
+    reason: 'hosted-failure',
+  })
+  await expect(readHostedSecrets(['TOKEN'], deps)).rejects.toThrow('switch back')
 })

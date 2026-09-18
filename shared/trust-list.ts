@@ -2,7 +2,7 @@ import { mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { z } from 'zod'
 import { type ConfigEnvironment, resolveConfigRoot } from './config-directory.ts'
-import { machineKeyId } from './secret-envelope.ts'
+import { machineKeyId } from './machine-key-id.ts'
 
 const entrySchema = z
   .object({

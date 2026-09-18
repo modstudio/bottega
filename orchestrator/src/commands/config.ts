@@ -2,13 +2,18 @@
 /** Owns only the `orch config` grammar and presentation. */
 import { createInterface } from 'node:readline/promises'
 import type { Command } from 'commander'
-import { type ConfigScope, configClient } from '../../../shared/config-client.ts'
+import type { ConfigScope } from '../../../shared/config-client.ts'
 import {
+  deleteEntry,
   deleteSecret,
+  getEntry,
+  listEntries,
+  listSecrets,
   machineInit,
   machineRevoke,
   machineShow,
   machineTrust,
+  setEntry,
   setSecret,
 } from '../config/config-service.ts'
 import { log } from './support.ts'
@@ -56,44 +61,23 @@ export function register(program: Command): void {
     .command('get <key>')
     .option('--space')
     .action(async (key, options) => {
-      const row = await configClient().getEntry(key, scope(options), 'default')
+      const row = await getEntry(key, scope(options))
       log(row.value)
     })
   config
     .command('set <key> <value>')
     .option('--space')
     .action(async (key, value, options) => {
-      const client = configClient()
-      const target = scope(options)
-      let version: number | null = null
-      try {
-        version = (await client.getEntry(key, target, 'default')).rowVersion
-      } catch (error) {
-        if (!(error instanceof Error && 'status' in error && error.status === 404)) throw error
-      }
-      await client.putEntry(key, {
-        scope: target,
-        environment: 'default',
-        value,
-        expectedRowVersion: version,
-      })
+      await setEntry(key, value, scope(options))
     })
   config.command('list').action(async () => {
-    for (const row of await configClient().listEntries('default'))
-      log(`${row.scope}\t${row.key}\t${row.value}`)
+    for (const row of await listEntries()) log(`${row.scope}\t${row.key}\t${row.value}`)
   })
   config
     .command('delete <key>')
     .option('--space')
     .action(async (key, options) => {
-      const client = configClient()
-      const target = scope(options)
-      const row = await client.getEntry(key, target, 'default')
-      await client.deleteEntry(key, {
-        scope: target,
-        environment: 'default',
-        expectedRowVersion: row.rowVersion,
-      })
+      await deleteEntry(key, scope(options))
     })
 
   const secret = config.command('secret')
@@ -106,8 +90,7 @@ export function register(program: Command): void {
       await setSecret(key, value.replace(/\r?\n$/, ''), scope(options))
     })
   secret.command('list').action(async () => {
-    for (const row of await configClient().listSecrets('default'))
-      log(`${row.scope}\t${row.key}\t${row.updatedAt}`)
+    for (const row of await listSecrets()) log(`${row.scope}\t${row.key}\t${row.updatedAt}`)
   })
   secret
     .command('delete <key>')

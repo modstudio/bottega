@@ -57,6 +57,7 @@ function appWith(session: RecordIdentity | null, overrides: Record<string, unkno
     },
     deleteConfigSecret: async () => undefined,
     currentDataKey: async () => null,
+    listDataKeys: async () => [],
     getDataKey: async () => null,
     createDataKey: async () => ({ id, version: 1 }),
     addDataKeyWraps: async () => undefined,

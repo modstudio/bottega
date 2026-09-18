@@ -175,6 +175,7 @@ type Deps = {
     },
   ): Promise<void>
   currentDataKey(input: Tenant & { recipientKeyId: string }): Promise<DataKey | null>
+  listDataKeys(input: Tenant): Promise<DataKey[]>
   getDataKey(input: Tenant & { dekId: string; recipientKeyId: string }): Promise<DataKey | null>
   createDataKey(
     input: Tenant & { dekId: string; version: number; wraps: ConfigWrapInput[] },
@@ -577,6 +578,11 @@ export function recordApi(deps: Deps): Hono<ApiEnvironment> {
     return item
       ? context.json({ ...item, wraps: item.wraps.map(jsonWrap) })
       : context.json({ error: 'data key not found' }, 404)
+  })
+  app.get('/v1/config/data-keys', async (context) => {
+    const active = scope(context)
+    if (!active) return noSpace(context)
+    return context.json({ items: await deps.listDataKeys(active) })
   })
   app.get('/v1/config/data-keys/:dekId', async (context) => {
     const active = scope(context)

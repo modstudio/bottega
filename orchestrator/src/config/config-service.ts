@@ -9,16 +9,23 @@ import {
   configClient,
   type DataKey,
 } from '../../../shared/config-client.ts'
+import type { ConfigEnvironment } from '../../../shared/config-directory.ts'
+import { writeHostedConfigSpace } from '../../../shared/hosted-config-space.ts'
+import {
+  HOSTED_CONFIG_ENVIRONMENT,
+  hostedIdentity,
+  openHostedSecret,
+} from '../../../shared/hosted-secret-opening.ts'
+import { machineKeyId } from '../../../shared/machine-key-id.ts'
 import {
   machineKeyInfo,
   readMachineKey,
   writeMachineKey,
 } from '../../../shared/machine-key-store.ts'
+import { RECORD_ACTIVE_SPACE_REMEDY } from '../../../shared/record-remedies.ts'
 import {
   generateDataKey,
   generateMachineKeyPair,
-  machineKeyId,
-  openValue,
   sealValue,
   unwrapDataKey,
   wrapDataKey,
@@ -30,15 +37,25 @@ import {
   unpinTrustedMachine,
 } from '../../../shared/trust-list.ts'
 
-const ENVIRONMENT = 'default'
 const bytes = (value: string) => new Uint8Array(Buffer.from(value, 'base64url'))
 const encoded = (value: Uint8Array) => Buffer.from(value).toString('base64url')
+const isNotFound = (error: unknown) => error instanceof ConfigClientError && error.status === 404
 
 export type RotationPlan = { reseal: ConfigSecret[]; retireDekIds: string[] }
 
-export function planRotation(rows: ConfigSecret[], currentDekId: string): RotationPlan {
-  const reseal = rows.filter((row) => row.dekId !== currentDekId)
-  return { reseal, retireDekIds: [...new Set(reseal.map((row) => row.dekId))].sort() }
+export function planRotation(
+  rows: ConfigSecret[],
+  current: DataKey,
+  keys: DataKey[],
+): RotationPlan {
+  const reseal = rows.filter((row) => row.dekId !== current.id)
+  return {
+    reseal,
+    retireDekIds: keys
+      .filter((key) => key.version < current.version && !key.retiredAt)
+      .map((key) => key.id)
+      .sort(),
+  }
 }
 
 async function localMachine() {
@@ -48,9 +65,13 @@ async function localMachine() {
 }
 
 async function identity(client: ConfigClient) {
-  const current = await client.whoami()
-  if (!current.activeSpaceId) throw new Error('record session has no active space')
-  return { spaceId: current.activeSpaceId, userId: current.user.id }
+  return hostedIdentity(client)
+}
+
+async function unpinServerRevoked(client: ConfigClient) {
+  const remote = await client.listMachineKeys()
+  for (const key of remote) if (key.revokedAt) await unpinTrustedMachine(key.keyId)
+  return remote
 }
 
 async function unwrap(
@@ -112,7 +133,8 @@ async function currentOrCreate(client: ConfigClient) {
     const key = await client.currentDataKey(machine.keyId)
     return { key, dek: await unwrap(client, key, machine) }
   } catch (error) {
-    if (!(error instanceof ConfigClientError) || error.status !== 404) throw error
+    if (!isNotFound(error)) throw error
+    await unpinServerRevoked(client)
     const trust = await readTrustList()
     const dek = generateDataKey()
     const dekId = crypto.randomUUID()
@@ -126,12 +148,19 @@ async function currentOrCreate(client: ConfigClient) {
   }
 }
 
-export async function machineInit(label = hostname(), client = configClient()): Promise<string> {
-  if (readMachineKey()) throw new Error('machine key already exists; refusing to overwrite it')
-  const pair = await generateMachineKeyPair()
+export async function machineInit(
+  label = hostname(),
+  client = configClient(),
+  env: ConfigEnvironment = process.env,
+): Promise<string> {
+  const existing = readMachineKey(env)
+  const pair = existing ?? (await generateMachineKeyPair())
   const keyId = await machineKeyId(pair.publicKey)
-  writeMachineKey(pair)
-  await pinTrustedMachine(keyId, pair.publicKey, label)
+  if (!existing) writeMachineKey(pair, env)
+  const current = await client.whoami()
+  if (!current.activeSpaceId) throw new Error(RECORD_ACTIVE_SPACE_REMEDY)
+  await pinTrustedMachine(keyId, pair.publicKey, label, env)
+  writeHostedConfigSpace(current.activeSpaceId, env)
   await client.registerMachineKey(keyId, encoded(pair.publicKey), label)
   return keyId
 }
@@ -150,6 +179,10 @@ export async function machineTrust(
   const publicBytes = bytes(publicKey)
   if ((await machineKeyId(publicBytes)) !== keyId)
     throw new Error('machine key id does not match public key')
+  const remote = await unpinServerRevoked(client)
+  const registered = remote.find((item) => item.keyId === keyId)
+  if (!registered || registered.revokedAt)
+    throw new Error(`machine key ${keyId} is not registered and active in this space`)
   await pinTrustedMachine(keyId, publicBytes, label)
   const machine = await localMachine()
   const trust = await readTrustList()
@@ -176,7 +209,7 @@ export async function machineTrust(
       },
     ])
   } catch (error) {
-    if (!(error instanceof ConfigClientError) || error.status !== 404) throw error
+    if (!isNotFound(error)) throw error
   }
 }
 
@@ -187,22 +220,14 @@ async function rowPlaintext(
 ): Promise<Uint8Array> {
   const local = machine ?? (await localMachine())
   const key = await client.getDataKey(row.dekId, local.keyId)
-  const dek = await unwrap(client, key, local)
-  const who = await identity(client)
   const full = await client.getSecret(row.key, row.scope, row.environment)
-  if (full.key !== row.key || full.environment !== row.environment || full.scope !== row.scope)
-    throw new Error(`secret ${row.key} response identity does not match the requested row`)
-  return openValue({
-    envelope: bytes(full.envelope),
-    dek,
-    valueContext: {
-      spaceId: who.spaceId,
-      userId: row.scope === 'user' ? who.userId : null,
-      keyName: row.key,
-      environment: row.environment,
-      dekId: row.dekId,
-      rowVersion: row.rowVersion,
-    },
+  return openHostedSecret({
+    client,
+    row: full,
+    key,
+    machine: local,
+    trust: await readTrustList(),
+    expected: { key: row.key, scope: row.scope, environment: row.environment },
   })
 }
 
@@ -212,9 +237,11 @@ async function revokeIfNeeded(
   machine: Awaited<ReturnType<typeof localMachine>>,
   client: ConfigClient,
 ): Promise<string | null | undefined> {
-  if (revokedAt) return revokedAt
+  if (revokedAt) {
+    await unpinTrustedMachine(keyId)
+    return revokedAt
+  }
   const trustBefore = await readTrustList()
-  if (!trustBefore[keyId]) throw new Error(`machine key ${keyId} is not trusted locally`)
   const currentBefore = await client.currentDataKey(machine.keyId)
   const oldDek = await unwrap(client, currentBefore, machine, trustBefore)
   if (!currentBefore.wraps.some((wrap) => wrap.senderKeyId === machine.keyId)) {
@@ -241,8 +268,8 @@ async function revokeIfNeeded(
       },
     ])
   }
-  await unpinTrustedMachine(keyId)
   await client.revokeMachineKey(keyId)
+  await unpinTrustedMachine(keyId)
   return (await client.listMachineKeys()).find((item) => item.keyId === keyId)?.revokedAt
 }
 
@@ -250,12 +277,12 @@ export async function machineRevoke(keyId: string, client = configClient()): Pro
   const machine = await localMachine()
   if (keyId === machine.keyId)
     throw new Error('cannot revoke this machine own key; revoke it from another trusted machine')
-  const remote = await client.listMachineKeys()
+  const remote = await unpinServerRevoked(client)
   let revokedAt = remote.find((item) => item.keyId === keyId)?.revokedAt
   revokedAt = await revokeIfNeeded(keyId, revokedAt, machine, client)
   const trust = await readTrustList()
   let current = await client.currentDataKey(machine.keyId)
-  const rows = await client.listSecrets(ENVIRONMENT)
+  const rows = await client.listSecrets(HOSTED_CONFIG_ENVIRONMENT)
   const alreadyRotating = Boolean(revokedAt && new Date(current.createdAt) >= new Date(revokedAt))
   let dek: Uint8Array
   if (alreadyRotating) dek = await unwrap(client, current, machine, trust)
@@ -270,7 +297,7 @@ export async function machineRevoke(keyId: string, client = configClient()): Pro
     })
     current = await client.getDataKey(dekId, machine.keyId)
   }
-  const plan = planRotation(rows, current.id)
+  const plan = planRotation(rows, current, await client.listDataKeys())
   const completed: string[] = []
   try {
     const who = await identity(client)
@@ -315,9 +342,9 @@ export async function setSecret(
   const { key: dataKey, dek } = await currentOrCreate(client)
   let existing: ConfigSecret | null = null
   try {
-    existing = await client.getSecret(key, scope, ENVIRONMENT)
+    existing = await client.getSecret(key, scope, HOSTED_CONFIG_ENVIRONMENT)
   } catch (error) {
-    if (!(error instanceof ConfigClientError) || error.status !== 404) throw error
+    if (!isNotFound(error)) throw error
   }
   const who = await identity(client)
   const rowVersion = (existing?.rowVersion ?? 0) + 1
@@ -328,14 +355,14 @@ export async function setSecret(
       spaceId: who.spaceId,
       userId: scope === 'user' ? who.userId : null,
       keyName: key,
-      environment: ENVIRONMENT,
+      environment: HOSTED_CONFIG_ENVIRONMENT,
       dekId: dataKey.id,
       rowVersion,
     },
   })
   return client.putSecret(key, {
     scope,
-    environment: ENVIRONMENT,
+    environment: HOSTED_CONFIG_ENVIRONMENT,
     dekId: dataKey.id,
     envelope: encoded(envelope),
     expectedRowVersion: existing?.rowVersion ?? null,
@@ -343,10 +370,51 @@ export async function setSecret(
 }
 
 export async function deleteSecret(key: string, scope: ConfigScope, client = configClient()) {
-  const row = await client.getSecret(key, scope, ENVIRONMENT)
+  const row = await client.getSecret(key, scope, HOSTED_CONFIG_ENVIRONMENT)
   return client.deleteSecret(key, {
     scope,
-    environment: ENVIRONMENT,
+    environment: HOSTED_CONFIG_ENVIRONMENT,
     expectedRowVersion: row.rowVersion,
   })
+}
+
+export async function getEntry(key: string, scope: ConfigScope, client = configClient()) {
+  return client.getEntry(key, scope, HOSTED_CONFIG_ENVIRONMENT)
+}
+
+export async function setEntry(
+  key: string,
+  value: string,
+  scope: ConfigScope,
+  client = configClient(),
+) {
+  let version: number | null = null
+  try {
+    version = (await getEntry(key, scope, client)).rowVersion
+  } catch (error) {
+    if (!isNotFound(error)) throw error
+  }
+  return client.putEntry(key, {
+    scope,
+    environment: HOSTED_CONFIG_ENVIRONMENT,
+    value,
+    expectedRowVersion: version,
+  })
+}
+
+export async function listEntries(client = configClient()) {
+  return client.listEntries(HOSTED_CONFIG_ENVIRONMENT)
+}
+
+export async function deleteEntry(key: string, scope: ConfigScope, client = configClient()) {
+  const row = await getEntry(key, scope, client)
+  return client.deleteEntry(key, {
+    scope,
+    environment: HOSTED_CONFIG_ENVIRONMENT,
+    expectedRowVersion: row.rowVersion,
+  })
+}
+
+export async function listSecrets(client = configClient()) {
+  return client.listSecrets(HOSTED_CONFIG_ENVIRONMENT)
 }

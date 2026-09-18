@@ -3,26 +3,14 @@ import { chmodSync, mkdirSync, readFileSync, type Stats, statSync, writeFileSync
 import { join } from 'node:path'
 import { PLATFORM_NAME, PLATFORM_SLUG } from './brand.ts'
 import { type ConfigEnvironment, resolveConfigRoot } from './config-directory.ts'
-import type { SecurityRunner } from './record-session.ts'
-import { type MachineKeyPair, machineKeyId } from './secret-envelope.ts'
+import { readKeychainItem, type SecurityRunner, writeKeychainItem } from './keychain.ts'
+import { machineKeyId } from './machine-key-id.ts'
+import type { MachineKeyPair } from './secret-envelope.ts'
 
 const SERVICE = `${PLATFORM_NAME}-machine-key`
 const ACCOUNT = 'machine'
-const MISSING_ITEM_EXIT_CODE = 44
 const KEYSTORE_ENV = `${PLATFORM_SLUG.toUpperCase()}_KEYSTORE`
 const PKCS8_PREFIX = Buffer.from('302e020100300506032b656e04220420', 'hex')
-
-const decoder = new TextDecoder()
-const encoder = new TextEncoder()
-
-function security(argv: string[], stdin?: Uint8Array) {
-  const result = Bun.spawnSync(argv, {
-    ...(stdin ? { stdin } : {}),
-    stdout: 'pipe',
-    stderr: 'pipe',
-  })
-  return { exitCode: result.exitCode, stdout: result.stdout, stderr: result.stderr }
-}
 
 function filePath(env: ConfigEnvironment): string {
   return join(resolveConfigRoot(env), 'machine-key')
@@ -61,7 +49,7 @@ function useFile(env: ConfigEnvironment): boolean {
 
 export function readMachineKey(
   env: ConfigEnvironment = process.env,
-  runner: SecurityRunner = security,
+  runner?: SecurityRunner,
 ): MachineKeyPair | null {
   let privateKey: Uint8Array
   if (useFile(env)) {
@@ -78,12 +66,9 @@ export function readMachineKey(
     }
     privateKey = decode(readFileSync(path, 'utf8'))
   } else {
-    const result = runner(['security', 'find-generic-password', '-a', ACCOUNT, '-s', SERVICE, '-w'])
-    if (result.exitCode === MISSING_ITEM_EXIT_CODE) return null
-    if (result.exitCode !== 0) {
-      throw new Error(`security find-generic-password failed with exit code ${result.exitCode}`)
-    }
-    privateKey = decode(decoder.decode(result.stdout))
+    const value = readKeychainItem(SERVICE, ACCOUNT, runner)
+    if (!value) return null
+    privateKey = decode(value)
   }
   return { privateKey, publicKey: publicFromPrivate(privateKey) }
 }
@@ -91,7 +76,7 @@ export function readMachineKey(
 export function writeMachineKey(
   pair: MachineKeyPair,
   env: ConfigEnvironment = process.env,
-  runner: SecurityRunner = security,
+  runner?: SecurityRunner,
 ): void {
   if (readMachineKey(env, runner))
     throw new Error('machine key already exists; refusing to overwrite it')
@@ -104,12 +89,7 @@ export function writeMachineKey(
     chmodSync(path, 0o600)
     return
   }
-  const result = runner(
-    ['security', 'add-generic-password', '-U', '-a', ACCOUNT, '-s', SERVICE, '-w'],
-    encoder.encode(`${encoded}\n${encoded}\n`),
-  )
-  if (result.exitCode !== 0)
-    throw new Error(`security add-generic-password failed with exit code ${result.exitCode}`)
+  writeKeychainItem(SERVICE, ACCOUNT, encoded, runner)
   const stored = readMachineKey(env, runner)
   if (!stored || !Buffer.from(stored.privateKey).equals(Buffer.from(pair.privateKey))) {
     throw new Error('security add-generic-password verification failed: stored key did not match')

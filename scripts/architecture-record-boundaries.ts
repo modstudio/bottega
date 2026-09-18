@@ -20,7 +20,12 @@ export const recordReadBoundariesBeforePublish: ImportBoundary[] = [
   boundary(
     'record-config-boundary',
     'orchestrator/src/record/record-config.ts',
-    ['bun', '../../../shared/record/schema.ts', '../../../shared/record/tenant.ts'],
+    [
+      'bun',
+      '../../../shared/machine-key-id.ts',
+      '../../../shared/record/schema.ts',
+      '../../../shared/record/tenant.ts',
+    ],
     'Enforce the hosted config service concern boundary.',
   ),
   boundary(

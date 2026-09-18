@@ -1,6 +1,6 @@
 import type { SecurityRunner } from '../../../shared/record-session.ts'
 
-const RUNNER_KEY = Symbol.for('orch.record-session-runner')
+const RUNNER_KEY = Symbol.for('orch.security-runner')
 const bytes = (value = '') => new TextEncoder().encode(value)
 const result = (exitCode: number, stdout = '', stderr = '') => ({
   exitCode,

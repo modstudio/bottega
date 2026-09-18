@@ -1,15 +1,16 @@
 import { beforeAll, expect, test } from 'bun:test'
+import { machineKeyId } from '../../shared/machine-key-id.ts'
 import {
   RECORD_ACTOR_ROLE,
   RECORD_OWNER_ROLE,
   RECORD_READER_ROLE,
 } from '../../shared/record/schema.ts'
 import {
+  addDataKeyWraps,
   createDataKey,
   deleteConfigEntry,
   deleteConfigSecret,
   listConfigSecrets,
-  machineKeyId,
   putConfigEntry,
   putConfigSecret,
   registerMachineKey,
@@ -423,6 +424,35 @@ export function registerHostedConfigProofs(
     await expect(attempt(DEK_A, 'retired-dek')).rejects.toMatchObject({
       status: 422,
     })
+  })
+
+  test('data-key writes refuse unregistered and revoked wrap recipients in PostgreSQL', async () => {
+    const material = Uint8Array.from({ length: 32 }, (_, index) => index + 32)
+    const revokedKeyId = await machineKeyId(material)
+    await registerMachineKey({
+      ...serviceTenant,
+      keyId: revokedKeyId,
+      publicKey: material,
+      label: 'revoked recipient proof',
+    })
+    await revokeMachineKey({ ...serviceTenant, keyId: revokedKeyId })
+    const candidate = {
+      recipientKeyId: revokedKeyId,
+      senderKeyId: 'CCCCCCCCCCCCCCCCCCCCCC',
+      enc: Uint8Array.of(1),
+      ciphertext: Uint8Array.of(2),
+    }
+    await expect(
+      addDataKeyWraps({ ...serviceTenant, dekId: DEK_A, wraps: [candidate] }),
+    ).rejects.toMatchObject({ status: 422 })
+    await expect(
+      createDataKey({
+        ...serviceTenant,
+        dekId: '01990000-0000-7000-8000-0000000000dc',
+        version: 2,
+        wraps: [{ ...candidate, recipientKeyId: 'ZZZZZZZZZZZZZZZZZZZZZZ' }],
+      }),
+    ).rejects.toMatchObject({ status: 422 })
   })
 
   test('config service refuses a non-consecutive data-key version', async () => {

@@ -3,6 +3,9 @@ import { CipherSuite, HkdfSha256 } from '@hpke/core'
 import { DhkemX25519HkdfSha256 } from '@hpke/dhkem-x25519'
 import { xchacha20poly1305 } from '@noble/ciphers/chacha.js'
 import { PLATFORM_SLUG } from './brand.ts'
+import { machineKeyId } from './machine-key-id.ts'
+
+export { machineKeyId } from './machine-key-id.ts'
 
 const FORMAT_VERSION = 1
 const ALGORITHM_ID = 1
@@ -136,13 +139,6 @@ export async function generateMachineKeyPair(): Promise<MachineKeyPair> {
  * Returns the persisted machine key id: the first 128 bits of SHA-256 over the raw public key,
  * encoded as 22 characters of unpadded base64url. The same value is used for human comparison.
  */
-export async function machineKeyId(publicKey: Uint8Array): Promise<string> {
-  requireLength(publicKey, KEY_SIZE)
-  const digest = new Uint8Array(await crypto.subtle.digest('SHA-256', Uint8Array.from(publicKey)))
-  const binary = String.fromCharCode(...digest.subarray(0, 16))
-  return btoa(binary).replaceAll('+', '-').replaceAll('/', '_').replace(/=+$/, '')
-}
-
 export function generateDataKey(): Uint8Array {
   return crypto.getRandomValues(new Uint8Array(KEY_SIZE))
 }
