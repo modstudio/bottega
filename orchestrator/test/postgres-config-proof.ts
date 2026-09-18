@@ -426,15 +426,26 @@ export function registerHostedConfigProofs(
   })
 
   test('config service refuses a non-consecutive data-key version', async () => {
-    await expect(createDataKey({ ...serviceTenant, dekId: '01990000-0000-7000-8000-0000000000dc', version: 7, wraps: [] })).rejects.toMatchObject({
+    await expect(
+      createDataKey({
+        ...serviceTenant,
+        dekId: '01990000-0000-7000-8000-0000000000dc',
+        version: 7,
+        wraps: [],
+      }),
+    ).rejects.toMatchObject({
       status: 409,
     })
   })
 
   test('client-supplied data-key ids persist and are globally refused on reuse', async () => {
     const dekId = '01990000-0000-7000-8000-0000000000dd'
-    await expect(createDataKey({ ...serviceTenant, dekId, version: 2, wraps: [] })).resolves.toEqual({ id: dekId, version: 2 })
-    await expect(createDataKey({ ...serviceTenant, spaceId: spaceB, dekId, version: 2, wraps: [] })).rejects.toMatchObject({ status: 409 })
+    await expect(
+      createDataKey({ ...serviceTenant, dekId, version: 2, wraps: [] }),
+    ).resolves.toEqual({ id: dekId, version: 2 })
+    await expect(
+      createDataKey({ ...serviceTenant, spaceId: spaceB, dekId, version: 2, wraps: [] }),
+    ).rejects.toMatchObject({ status: 409 })
   })
 
   test('machine registration verifies key ids and revocation atomically removes wraps', async () => {

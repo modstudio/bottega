@@ -295,6 +295,20 @@ export const modules: ArchitectureModule[] = [
   module('shared/state-directory.ts', ['./brand.ts']),
   module('shared/record/schema.ts', ['../brand.ts']),
   module('shared/record-session.ts', ['./brand.ts']),
+  module('orchestrator/src/config/config-service.ts', [
+    'node:os',
+    '../../../shared/config-client.ts',
+    '../../../shared/secret-envelope.ts',
+    '../../../shared/machine-key-store.ts',
+    '../../../shared/trust-list.ts',
+  ]),
+  module('orchestrator/src/commands/config.ts', [
+    'node:readline/promises',
+    'commander',
+    '../../../shared/config-client.ts',
+    '../config/config-service.ts',
+    './support.ts',
+  ]),
   module('orchestrator/src/record/record-command.ts', [
     '../postgres/postgres-migrate.ts',
     '../project/projects.ts',

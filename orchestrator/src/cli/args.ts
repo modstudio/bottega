@@ -279,6 +279,7 @@ export const CLI_COMMANDS = new Set([
   'branches',
   'canon',
   'close-out',
+  'config',
   'confinement',
   'continue',
   'contract',

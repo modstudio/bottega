@@ -1,11 +1,19 @@
-import { beforeAll, describe, expect, test } from 'bun:test'
+import { afterAll, beforeAll, describe, expect, test } from 'bun:test'
 import { resolveAssigneeIds } from '../../../shared/trackers.ts'
 import { resetFixtureStore } from '../../test/run-fixtures.ts'
 import { trackerPresentation } from '../projects.ts'
 import { showTask } from '../task.ts'
 import { ingestTrackers, trackerRegistrations, upsertTrackerTask } from './trackers.ts'
 
-beforeAll(resetFixtureStore)
+const recordApiUrl = process.env.ORCH_RECORD_API_URL
+beforeAll(() => {
+  delete process.env.ORCH_RECORD_API_URL
+  resetFixtureStore()
+})
+afterAll(() => {
+  if (recordApiUrl === undefined) delete process.env.ORCH_RECORD_API_URL
+  else process.env.ORCH_RECORD_API_URL = recordApiUrl
+})
 
 describe('tracker register', () => {
   test('only projects that declare a usable tracker are polled', async () => {

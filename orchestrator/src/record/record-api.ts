@@ -175,9 +175,7 @@ type Deps = {
     },
   ): Promise<void>
   currentDataKey(input: Tenant & { recipientKeyId: string }): Promise<DataKey | null>
-  getDataKey(
-    input: Tenant & { dekId: string; recipientKeyId: string },
-  ): Promise<DataKey | null>
+  getDataKey(input: Tenant & { dekId: string; recipientKeyId: string }): Promise<DataKey | null>
   createDataKey(
     input: Tenant & { dekId: string; version: number; wraps: ConfigWrapInput[] },
   ): Promise<{ id: string; version: number }>

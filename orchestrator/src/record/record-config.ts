@@ -148,8 +148,13 @@ function applyOccupancy(kind: 'entry' | 'secret', occupancy: Occupancy): void {
 
 function isUniqueViolation(error: unknown, constraint: string): boolean {
   if (!error || typeof error !== 'object') return false
-  const postgres = error as { code?: unknown; constraint?: unknown }
-  return postgres.code === '23505' && postgres.constraint === constraint
+  const postgres = error as { code?: unknown; constraint?: unknown; constraint_name?: unknown }
+  const message = error instanceof Error ? error.message : ''
+  const named =
+    postgres.constraint === constraint ||
+    postgres.constraint_name === constraint ||
+    message.includes(`"${constraint}"`)
+  return named && (postgres.code === '23505' || message.includes('duplicate key value'))
 }
 
 class ConcurrentConfigCreate extends Error {}
@@ -544,7 +549,11 @@ export async function createDataKey(
       return { id: input.dekId, version: input.version }
     })
   } catch (error) {
-    if (!(error instanceof ConcurrentDataKeyCreate)) throw error
+    if (isUniqueViolation(error, 'secret_dek_pkey')) {
+      throw new ConfigServiceError('data key id is already used', 409)
+    }
+    const concurrentVersion = isUniqueViolation(error, 'secret_dek_space_version_unique')
+    if (!(error instanceof ConcurrentDataKeyCreate) && !concurrentVersion) throw error
     const next = await tenant(input, async (tx) => {
       const rows = await tx`
         SELECT version FROM secret_dek WHERE space_id=${input.spaceId}::uuid

@@ -1,7 +1,7 @@
 import { readFileSync } from 'node:fs'
 import { parseEnv } from 'node:util'
-import { type ConfigEnvironment, resolveEnvFilePaths } from './config-directory.ts'
 import { ConfigClientError } from './config-client.ts'
+import { type ConfigEnvironment, resolveEnvFilePaths } from './config-directory.ts'
 import { readHostedSecrets } from './hosted-secrets.ts'
 
 function resolveEnvValues(
