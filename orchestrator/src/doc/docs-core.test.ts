@@ -1,5 +1,8 @@
 import { describe, expect, test } from 'bun:test'
-import { consumeDoc, removeDoc, setDoc } from '../../test/fixtures/docs.ts'
+import { mkdtempSync, rmSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
+import { consumeDoc, importDocs, removeDoc, setDoc } from '../../test/fixtures/docs.ts'
 import { dir } from '../../test/fixtures/store.ts'
 import { compilePack } from '../canon/canon.ts'
 import { db } from '../database/db.ts'
@@ -9,8 +12,10 @@ import {
   removeDoc as deleteDoc,
   diffDocRevisions,
   docsForRun,
+  exportDocs,
   getDoc,
   getDocRevision,
+  listDocMetadata,
   listDocRevisions,
   listDocs,
   importDocs as readDocs,
@@ -502,5 +507,95 @@ describe('scoped operator docs', () => {
       delivery: 'demand',
     })
     expect(demand.delivery).toBe('demand')
+  })
+
+  test('docsForRun refuses a document whose provenance was bypassed', () => {
+    db()
+      .query(
+        `INSERT INTO doc (scope, subject, slug, title, body, created_at, updated_at)
+       VALUES ('global', NULL, 'untracked', 'Untracked', 'body', ?, ?)`,
+      )
+      .run('2026-09-05T00:00:00.000Z', '2026-09-05T00:00:00.000Z')
+    expect(() => docsForRun({ job: 'file-question', cwd: '/elsewhere' })).toThrow(
+      'doc global/_/untracked has no revision; refusing run',
+    )
+  })
+
+  test('metadata listing omits bodies and supports discovery filters without widening exact matches', async () => {
+    upsertProject({ name: 'known', path: '/w/known', stack: null, canon: true, settings: {} })
+    await setDoc({
+      scope: 'project',
+      subject: 'known',
+      slug: 'mcp-scope',
+      title: 'MCP Scope',
+      body: 'first',
+    })
+    await setDoc({
+      scope: 'agent',
+      subject: 'codex',
+      slug: 'capabilities',
+      title: 'Capabilities',
+      body: 'MCP scoping details',
+    })
+    await setDoc({ scope: 'global', subject: null, slug: 'other', title: 'Other', body: 'é' })
+    db().query('UPDATE doc SET updated_at=? WHERE slug=?').run('2026-09-01T00:00:00.000Z', 'other')
+    db()
+      .query('UPDATE doc SET updated_at=? WHERE slug=?')
+      .run('2026-09-03T00:00:00.000Z', 'mcp-scope')
+    db()
+      .query('UPDATE doc SET updated_at=? WHERE slug=?')
+      .run('2026-09-02T00:00:00.000Z', 'capabilities')
+
+    expect(listDocMetadata({ scope: 'project' }).map((d) => d.slug)).toEqual(['mcp-scope'])
+    expect(listDocMetadata({ subject: 'known' }).map((d) => d.slug)).toEqual(['mcp-scope'])
+    expect(listDocMetadata({ match: 'mCp ScOpE' }).map((d) => d.slug)).toEqual(['mcp-scope'])
+    expect(listDocMetadata({ bodyMatch: 'mCp ScOpInG' }).map((d) => d.slug)).toEqual([
+      'capabilities',
+    ])
+    expect(listDocMetadata({ scopes: ['agent', 'project'] }).map((d) => d.scope)).toEqual([
+      'agent',
+      'project',
+    ])
+    expect(listDocMetadata({ updatedAtOrder: 'asc' }).map((d) => d.slug)).toEqual([
+      'other',
+      'capabilities',
+      'mcp-scope',
+    ])
+    expect(listDocMetadata().find((d) => d.slug === 'other')).toMatchObject({ bytes: 2 })
+    expect(listDocMetadata()).not.toContainKeys(['body', 'created_at'])
+    expect(() => listDocMetadata({ scope: 'global', scopes: ['global'] })).toThrow(
+      'scope or scopes',
+    )
+  })
+
+  test('export and import preserve title and markdown body', async () => {
+    upsertProject({ name: 'known', path: '/w/known', stack: null, canon: true, settings: {} })
+    await setDoc({
+      scope: 'global',
+      subject: null,
+      slug: 'quoted',
+      title: 'A "title"',
+      body: '# Body\n\nText\n',
+    })
+    await setDoc({
+      scope: 'project',
+      subject: 'known',
+      slug: 'project',
+      title: 'Project',
+      body: 'Estate',
+    })
+    const target = mkdtempSync(join(tmpdir(), 'orch-doc-export-'))
+    try {
+      expect(exportDocs(target)).toBe(2)
+      db().exec('DELETE FROM doc')
+      expect(await importDocs(target)).toBe(2)
+      expect(getDoc('global', null, 'quoted')).toMatchObject({
+        title: 'A "title"',
+        body: '# Body\n\nText\n',
+      })
+      expect(getDoc('project', 'known', 'project')?.body).toBe('Estate')
+    } finally {
+      rmSync(target, { recursive: true, force: true })
+    }
   })
 })
