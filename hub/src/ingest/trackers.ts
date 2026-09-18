@@ -77,6 +77,21 @@ export type TrackerResult = {
   error?: string
 }
 
+export async function trackerCredentials(
+  project: Project,
+  env: string,
+  read: typeof credentials = credentials,
+): Promise<
+  | { project: Project; credentials: { url: string; token: string } | null }
+  | { project: Project; error: string }
+> {
+  try {
+    return { project, credentials: await read(env) }
+  } catch (cause) {
+    return { project, error: cause instanceof Error ? cause.message : String(cause) }
+  }
+}
+
 export const trackerProjects = () =>
   projects()
     .filter((project) => {
@@ -371,7 +386,14 @@ export async function ingestTrackers(
           }
         }
         const s = tracker.source
-        const creds = await credentials(s.env)
+        const resolved = await trackerCredentials(s.project, s.env)
+        if ('error' in resolved) {
+          return {
+            result: { project: s.project, tasks: 0, changed: 0, error: resolved.error },
+            filled: 0,
+          }
+        }
+        const creds = resolved.credentials
         if (!creds) {
           return {
             result: {

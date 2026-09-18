@@ -39,19 +39,30 @@ async function defaults(): Promise<Dependencies> {
   return { client, machine: await machineKeyInfo(pair), trust: await readTrustList() }
 }
 
-async function one(name: string, deps: Dependencies): Promise<string | undefined> {
+async function requestedRow(name: string, deps: Dependencies) {
   let row: ConfigSecret & { envelope: string }
+  let requestedScope: ConfigSecret['scope'] = 'user'
   try {
     row = await deps.client.getSecret(name, 'user', 'default')
   } catch (error) {
     if (!(error instanceof ConfigClientError) || error.status !== 404) throw error
     try {
+      requestedScope = 'space'
       row = await deps.client.getSecret(name, 'space', 'default')
     } catch (spaceError) {
       if (spaceError instanceof ConfigClientError && spaceError.status === 404) return undefined
       throw spaceError
     }
   }
+  if (row.key !== name || row.environment !== 'default' || row.scope !== requestedScope)
+    throw new HostedSecretError(name, 'authentication-failed')
+  return { row, requestedScope }
+}
+
+async function one(name: string, deps: Dependencies): Promise<string | undefined> {
+  const requested = await requestedRow(name, deps)
+  if (!requested) return undefined
+  const { row, requestedScope } = requested
   const key = await deps.client.getDataKey(row.dekId, deps.machine.keyId)
   const wrap = key.wraps.find((candidate) => deps.trust[candidate.senderKeyId]) ?? key.wraps[0]
   if (!wrap) throw new HostedSecretError(name, 'missing-wrap')
@@ -73,9 +84,9 @@ async function one(name: string, deps: Dependencies): Promise<string | undefined
       dek,
       valueContext: {
         spaceId: identity.activeSpaceId,
-        userId: row.scope === 'user' ? identity.user.id : null,
-        keyName: row.key,
-        environment: row.environment,
+        userId: requestedScope === 'user' ? identity.user.id : null,
+        keyName: name,
+        environment: 'default',
         dekId: row.dekId,
         rowVersion: row.rowVersion,
       },

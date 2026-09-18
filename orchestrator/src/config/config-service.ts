@@ -190,6 +190,8 @@ async function rowPlaintext(
   const dek = await unwrap(client, key, local)
   const who = await identity(client)
   const full = await client.getSecret(row.key, row.scope, row.environment)
+  if (full.key !== row.key || full.environment !== row.environment || full.scope !== row.scope)
+    throw new Error(`secret ${row.key} response identity does not match the requested row`)
   return openValue({
     envelope: bytes(full.envelope),
     dek,
@@ -204,46 +206,53 @@ async function rowPlaintext(
   })
 }
 
+async function revokeIfNeeded(
+  keyId: string,
+  revokedAt: string | null | undefined,
+  machine: Awaited<ReturnType<typeof localMachine>>,
+  client: ConfigClient,
+): Promise<string | null | undefined> {
+  if (revokedAt) return revokedAt
+  const trustBefore = await readTrustList()
+  if (!trustBefore[keyId]) throw new Error(`machine key ${keyId} is not trusted locally`)
+  const currentBefore = await client.currentDataKey(machine.keyId)
+  const oldDek = await unwrap(client, currentBefore, machine, trustBefore)
+  if (!currentBefore.wraps.some((wrap) => wrap.senderKeyId === machine.keyId)) {
+    const self = trustBefore[machine.keyId]
+    if (!self) throw new Error('this machine is absent from the trust list')
+    const who = await identity(client)
+    const wrapped = await wrapDataKey({
+      dek: oldDek,
+      wrapContext: {
+        spaceId: who.spaceId,
+        dekId: currentBefore.id,
+        dekVersion: currentBefore.version,
+      },
+      senderPrivateKey: machine.privateKey,
+      senderPublicKey: bytes(self.public_key),
+      recipientPublicKey: bytes(self.public_key),
+    })
+    await client.addWraps(currentBefore.id, [
+      {
+        recipientKeyId: machine.keyId,
+        senderKeyId: machine.keyId,
+        enc: encoded(wrapped.enc),
+        ciphertext: encoded(wrapped.ciphertext),
+      },
+    ])
+  }
+  await unpinTrustedMachine(keyId)
+  await client.revokeMachineKey(keyId)
+  return (await client.listMachineKeys()).find((item) => item.keyId === keyId)?.revokedAt
+}
+
 export async function machineRevoke(keyId: string, client = configClient()): Promise<string[]> {
   const machine = await localMachine()
   if (keyId === machine.keyId)
     throw new Error('cannot revoke this machine own key; revoke it from another trusted machine')
-  let remote = await client.listMachineKeys()
+  const remote = await client.listMachineKeys()
   let revokedAt = remote.find((item) => item.keyId === keyId)?.revokedAt
-  if (!revokedAt) {
-    const trustBefore = await readTrustList()
-    if (!trustBefore[keyId]) throw new Error(`machine key ${keyId} is not trusted locally`)
-    const currentBefore = await client.currentDataKey(machine.keyId)
-    const oldDek = await unwrap(client, currentBefore, machine, trustBefore)
-    if (!currentBefore.wraps.some((wrap) => wrap.senderKeyId === machine.keyId)) {
-      const self = trustBefore[machine.keyId]
-      if (!self) throw new Error('this machine is absent from the trust list')
-      const who = await identity(client)
-      const wrapped = await wrapDataKey({
-        dek: oldDek,
-        wrapContext: {
-          spaceId: who.spaceId,
-          dekId: currentBefore.id,
-          dekVersion: currentBefore.version,
-        },
-        senderPrivateKey: machine.privateKey,
-        senderPublicKey: bytes(self.public_key),
-        recipientPublicKey: bytes(self.public_key),
-      })
-      await client.addWraps(currentBefore.id, [
-        {
-          recipientKeyId: machine.keyId,
-          senderKeyId: machine.keyId,
-          enc: encoded(wrapped.enc),
-          ciphertext: encoded(wrapped.ciphertext),
-        },
-      ])
-    }
-    await unpinTrustedMachine(keyId)
-    await client.revokeMachineKey(keyId)
-    remote = await client.listMachineKeys()
-    revokedAt = remote.find((item) => item.keyId === keyId)?.revokedAt
-  }
+  revokedAt = await revokeIfNeeded(keyId, revokedAt, machine, client)
   const trust = await readTrustList()
   let current = await client.currentDataKey(machine.keyId)
   const rows = await client.listSecrets(ENVIRONMENT)

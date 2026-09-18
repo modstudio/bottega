@@ -22,7 +22,7 @@ export class ConfigClientError extends Error {
 }
 
 export type ConfigScope = 'user' | 'space'
-export type ConfigEntry = {
+type ConfigEntry = {
   key: string
   environment: string
   scope: ConfigScope
@@ -39,7 +39,7 @@ export type ConfigSecret = {
   updatedAt: string
   envelope?: string
 }
-export type DataKeyWrap = {
+type DataKeyWrap = {
   recipientKeyId: string
   senderKeyId: string
   enc: string
@@ -52,14 +52,14 @@ export type DataKey = {
   retiredAt: string | null
   wraps: DataKeyWrap[]
 }
-export type MachineKey = {
+type MachineKey = {
   keyId: string
   publicKey: string
   label: string
   createdAt: string
   revokedAt: string | null
 }
-export type ConfigIdentity = { user: { id: string }; activeSpaceId: string | null }
+type ConfigIdentity = { user: { id: string }; activeSpaceId: string | null }
 
 export type ConfigClient = ReturnType<typeof createConfigClient>
 type Transport = typeof fetch
@@ -182,12 +182,4 @@ export function configClient(
   const resolvedToken = token === undefined ? readRecordSessionToken() : token
   if (!resolvedToken) throw new ConfigClientError('not-configured', '/v1/config')
   return createConfigClient(url.replace(/\/$/, ''), resolvedToken, transport)
-}
-
-export function configClientForTest(
-  baseUrl: string,
-  transport: Transport,
-  token = 'test',
-): ConfigClient {
-  return createConfigClient(baseUrl.replace(/\/$/, ''), token, transport)
 }

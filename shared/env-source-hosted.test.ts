@@ -2,14 +2,16 @@ import { expect, test } from 'bun:test'
 import { mkdtempSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { PLATFORM_SLUG } from './brand.ts'
 import { ConfigClientError } from './config-client.ts'
 import { readEnvValuesWithHosted } from './env-source.ts'
 
 test('local precedence wins and hosted receives only unresolved names', async () => {
   const root = mkdtempSync(join(tmpdir(), 'env-hosted-'))
   const harness = join(root, 'harness.env')
+  const platformValue = `from-${PLATFORM_SLUG}`
   writeFileSync(harness, 'HARNESS=from-harness\n')
-  writeFileSync(join(root, 'bottega.env'), 'FILE=from-bottega\n')
+  writeFileSync(join(root, `${PLATFORM_SLUG}.env`), `FILE=${platformValue}\n`)
   let requested: readonly string[] = []
   const values = await readEnvValuesWithHosted(
     ['PROCESS', 'FILE', 'HARNESS', 'HOSTED'],
@@ -22,7 +24,7 @@ test('local precedence wins and hosted receives only unresolved names', async ()
   expect(requested).toEqual(['HOSTED'])
   expect(values).toEqual({
     PROCESS: 'from-process',
-    FILE: 'from-bottega',
+    FILE: platformValue,
     HARNESS: 'from-harness',
     HOSTED: 'from-hosted',
   })

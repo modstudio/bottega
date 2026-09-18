@@ -64,6 +64,7 @@ async function fixture() {
   } as unknown as ConfigClient
   return {
     machine: { ...machine, keyId },
+    dek,
     client,
     trust: {
       [keyId]: {
@@ -90,4 +91,31 @@ test('untrusted sender refusal carries the requested secret name', async () => {
   }
   expect(error).toBeInstanceOf(HostedSecretError)
   expect(error).toMatchObject({ secretName: 'TOKEN', reason: 'untrusted-sender' })
+})
+
+test('refuses a valid row returned for a different requested secret', async () => {
+  const deps = await fixture()
+  const original = deps.client.getSecret.bind(deps.client)
+  const otherEnvelope = sealValue({
+    dek: deps.dek,
+    plaintext: new TextEncoder().encode('other-hosted-value'),
+    valueContext: {
+      spaceId,
+      userId,
+      keyName: 'OTHER_TOKEN',
+      environment: 'default',
+      dekId,
+      rowVersion: 1,
+    },
+  })
+  deps.client.getSecret = async (...args) => ({
+    ...(await original(...args)),
+    key: 'OTHER_TOKEN',
+    envelope: Buffer.from(otherEnvelope).toString('base64url'),
+  })
+
+  await expect(readHostedSecrets(['TOKEN'], deps)).rejects.toMatchObject({
+    secretName: 'TOKEN',
+    reason: 'authentication-failed',
+  })
 })

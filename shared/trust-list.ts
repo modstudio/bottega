@@ -16,7 +16,7 @@ const entrySchema = z
   .strict()
 const listSchema = z.record(z.string(), entrySchema)
 
-export type TrustedMachine = z.infer<typeof entrySchema>
+type TrustedMachine = z.infer<typeof entrySchema>
 export type TrustList = Record<string, TrustedMachine>
 
 export function trustListPath(env: ConfigEnvironment = process.env): string {
@@ -54,7 +54,7 @@ function toml(list: TrustList): string {
     .join('\n')}\n`
 }
 
-export function writeTrustList(list: TrustList, env: ConfigEnvironment = process.env): void {
+function writeTrustList(list: TrustList, env: ConfigEnvironment = process.env): void {
   const root = resolveConfigRoot(env)
   mkdirSync(root, { recursive: true, mode: 0o700 })
   const path = trustListPath(env)

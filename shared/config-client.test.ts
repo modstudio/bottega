@@ -1,5 +1,5 @@
 import { expect, test } from 'bun:test'
-import { ConfigClientError, configClient, configClientForTest } from './config-client.ts'
+import { ConfigClientError, configClient } from './config-client.ts'
 
 test('missing URL or session is a typed not-configured error', () => {
   expect(() => configClient({}, fetch, null)).toThrow(ConfigClientError)
@@ -9,16 +9,21 @@ test('missing URL or session is a typed not-configured error', () => {
 })
 
 test('config client names an unreachable route and response status without exposing bodies', async () => {
-  const unreachable = configClientForTest('https://record.test', async () => {
-    throw new Error('secret body')
-  })
+  const unreachable = configClient(
+    { ORCH_RECORD_API_URL: 'https://record.test' },
+    async () => {
+      throw new Error('secret body')
+    },
+    'test',
+  )
   await expect(unreachable.listSecrets()).rejects.toMatchObject({
     reason: 'unreachable',
     route: '/v1/config/secrets?environment=default',
   })
-  const refused = configClientForTest(
-    'https://record.test',
+  const refused = configClient(
+    { ORCH_RECORD_API_URL: 'https://record.test' },
     async () => new Response('secret body', { status: 403 }),
+    'test',
   )
   let error: unknown
   try {
