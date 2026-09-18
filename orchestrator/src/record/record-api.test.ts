@@ -44,6 +44,28 @@ function appWith(session: RecordIdentity | null, overrides: Record<string, unkno
     countScores: async () => ({ scores: 0, voids: 0 }),
     upsertSnapshot: async () => ({ takenAt: '2026-09-17T12:00:00.000Z' }),
     listSnapshots: async () => [],
+    listConfigEntries: async () => [],
+    getConfigEntry: async () => null,
+    putConfigEntry: async () => {
+      throw new Error('not implemented')
+    },
+    deleteConfigEntry: async () => undefined,
+    listConfigSecrets: async () => [],
+    getConfigSecret: async () => null,
+    putConfigSecret: async () => {
+      throw new Error('not implemented')
+    },
+    deleteConfigSecret: async () => undefined,
+    currentDataKey: async () => null,
+    createDataKey: async () => ({ id, version: 1 }),
+    addDataKeyWraps: async () => undefined,
+    retireDataKey: async () => undefined,
+    deleteDataKeyWraps: async () => undefined,
+    listMachineKeys: async () => [],
+    registerMachineKey: async () => {
+      throw new Error('not implemented')
+    },
+    revokeMachineKey: async () => undefined,
     ...overrides,
   })
 }
@@ -166,6 +188,54 @@ describe('record API', () => {
     const limited = await app.request('/api/auth/request-password-reset', { method: 'POST' })
     expect(limited.status).toBe(first.status)
     expect(await limited.json()).toEqual(await first.json())
+  })
+})
+
+describe('record config API', () => {
+  test('secret listing is metadata-only and secret reads encode opaque envelopes', async () => {
+    const metadata = {
+      key: 'token',
+      environment: 'default',
+      scope: 'user' as const,
+      dekId: id,
+      rowVersion: 1,
+      updatedAt: '2026-09-18T12:00:00.000Z',
+    }
+    const app = appWith(identity, {
+      listConfigSecrets: async () => [metadata],
+      getConfigSecret: async () => ({ ...metadata, envelope: Uint8Array.of(251, 255) }),
+    })
+    const listed = await (await app.request('/v1/config/secrets?environment=default')).json()
+    expect(listed).toEqual({ items: [metadata] })
+    expect(JSON.stringify(listed)).not.toContain('-_8')
+
+    const read = await (
+      await app.request('/v1/config/secrets/token?environment=default&scope=user')
+    ).json()
+    expect(read).toEqual({ ...metadata, envelope: '-_8' })
+  })
+
+  test('config bodies use 422 and never echo rejected ciphertext', async () => {
+    const envelope = 'sensitive-envelope='
+    const response = await appWith(identity).request('/v1/config/secrets/token', {
+      method: 'PUT',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        environment: 'default',
+        scope: 'user',
+        dekId: id,
+        envelope,
+        expectedRowVersion: null,
+      }),
+    })
+    expect(response.status).toBe(422)
+    expect(JSON.stringify(await response.json())).not.toContain(envelope)
+  })
+
+  test('current data key requires the documented recipientKeyId query parameter', async () => {
+    const response = await appWith(identity).request('/v1/config/data-keys/current')
+    expect(response.status).toBe(422)
+    expect(await response.json()).toEqual({ error: 'invalid recipient key id' })
   })
 })
 

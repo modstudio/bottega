@@ -4,19 +4,36 @@ import {
   RECORD_OWNER_ROLE,
   RECORD_READER_ROLE,
 } from '../../shared/record/schema.ts'
+import {
+  createDataKey,
+  deleteConfigEntry,
+  deleteConfigSecret,
+  listConfigSecrets,
+  machineKeyId,
+  putConfigEntry,
+  putConfigSecret,
+  registerMachineKey,
+  retireDataKey,
+  revokeMachineKey,
+} from '../src/record/record-config.ts'
 import { asSpace, asSpaces, succeeds } from './fixtures/postgres-rls.ts'
 
 const USER_B = '01990000-0000-7000-8000-000000000020'
 const DEK_A = '01990000-0000-7000-8000-0000000000da'
 const DEK_B = '01990000-0000-7000-8000-0000000000db'
 
-type ConfigProofInput = {
-  spaceA: string
-  spaceB: string
-  userA: string
-}
-
-export function registerHostedConfigProofs({ spaceA, spaceB, userA }: ConfigProofInput): void {
+export function registerHostedConfigProofs(
+  actorUrl: string,
+  spaceA: string,
+  spaceB: string,
+  userA: string,
+): void {
+  const serviceTenant = {
+    url: actorUrl,
+    spaceId: spaceA,
+    spaceIds: [spaceA, spaceB],
+    userId: userA,
+  }
   beforeAll(() => {
     succeeds(
       'postgres',
@@ -319,5 +336,134 @@ export function registerHostedConfigProofs({ spaceA, spaceB, userA }: ConfigProo
       expect(result.stderr).toContain('42501')
       expect(result.stderr).toContain('row-level security policy')
     }
+  })
+
+  test('config service lists secret metadata without envelope bytes', async () => {
+    const items = await listConfigSecrets(serviceTenant)
+    expect(items.length).toBeGreaterThan(0)
+    expect(items.every((item) => !('envelope' in item))).toBe(true)
+    expect(items.map((item) => item.key)).not.toContain('wide-b')
+  })
+
+  test('config service enforces row versions on entry and secret put and delete', async () => {
+    const entry = await putConfigEntry({
+      ...serviceTenant,
+      key: 'service-entry',
+      environment: 'test',
+      scope: 'user',
+      value: 'one',
+      expectedRowVersion: null,
+    })
+    await expect(
+      putConfigEntry({
+        ...serviceTenant,
+        key: entry.key,
+        environment: entry.environment,
+        scope: entry.scope,
+        value: 'two',
+        expectedRowVersion: 9,
+      }),
+    ).rejects.toMatchObject({ status: 409 })
+    await expect(
+      deleteConfigEntry({
+        ...serviceTenant,
+        key: entry.key,
+        environment: entry.environment,
+        scope: entry.scope,
+        expectedRowVersion: 9,
+      }),
+    ).rejects.toMatchObject({ status: 409 })
+
+    const secret = await putConfigSecret({
+      ...serviceTenant,
+      key: 'service-secret',
+      environment: 'test',
+      scope: 'space',
+      dekId: DEK_A,
+      envelope: Uint8Array.of(10, 11),
+      expectedRowVersion: null,
+    })
+    await expect(
+      putConfigSecret({
+        ...serviceTenant,
+        key: secret.key,
+        environment: secret.environment,
+        scope: secret.scope,
+        dekId: DEK_A,
+        envelope: Uint8Array.of(12),
+        expectedRowVersion: 9,
+      }),
+    ).rejects.toMatchObject({ status: 409 })
+    await expect(
+      deleteConfigSecret({
+        ...serviceTenant,
+        key: secret.key,
+        environment: secret.environment,
+        scope: secret.scope,
+        expectedRowVersion: 9,
+      }),
+    ).rejects.toMatchObject({ status: 409 })
+  })
+
+  test('config service refuses foreign and retired data keys for secret writes', async () => {
+    const attempt = (dekId: string, key: string) =>
+      putConfigSecret({
+        ...serviceTenant,
+        key,
+        environment: 'test',
+        scope: 'space',
+        dekId,
+        envelope: Uint8Array.of(1),
+        expectedRowVersion: null,
+      })
+    await expect(attempt(DEK_B, 'foreign-dek')).rejects.toMatchObject({
+      status: 422,
+    })
+    await retireDataKey({ ...serviceTenant, dekId: DEK_A })
+    await expect(attempt(DEK_A, 'retired-dek')).rejects.toMatchObject({
+      status: 422,
+    })
+  })
+
+  test('config service refuses a non-consecutive data-key version', async () => {
+    await expect(createDataKey({ ...serviceTenant, version: 7, wraps: [] })).rejects.toMatchObject({
+      status: 409,
+    })
+  })
+
+  test('machine registration verifies key ids and revocation atomically removes wraps', async () => {
+    const publicKey = Uint8Array.from({ length: 32 }, (_, index) => index)
+    const keyId = await machineKeyId(publicKey)
+    await expect(
+      registerMachineKey({
+        ...serviceTenant,
+        keyId: 'ZZZZZZZZZZZZZZZZZZZZZZ',
+        publicKey,
+        label: 'bad',
+      }),
+    ).rejects.toMatchObject({ status: 422 })
+    await registerMachineKey({
+      ...serviceTenant,
+      keyId,
+      publicKey,
+      label: 'service machine',
+    })
+    succeeds(
+      'postgres',
+      'postgres',
+      `INSERT INTO secret_dek_wrap
+        (space_id, dek_id, recipient_key_id, sender_key_id, enc, ciphertext, created_at)
+       VALUES ('${spaceA}', '${DEK_A}', '${keyId}', 'CCCCCCCCCCCCCCCCCCCCCC',
+         decode('10', 'hex'), decode('11', 'hex'), now());`,
+    )
+    await revokeMachineKey({ ...serviceTenant, keyId })
+    const facts = succeeds(
+      'postgres',
+      'postgres',
+      `SELECT revoked_at IS NOT NULL,
+         (SELECT count(*) FROM secret_dek_wrap WHERE space_id='${spaceA}' AND recipient_key_id='${keyId}')
+       FROM machine_public_key WHERE space_id='${spaceA}' AND key_id='${keyId}';`,
+    )
+    expect(facts).toBe('t|0')
   })
 }

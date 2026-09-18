@@ -350,7 +350,7 @@ realPostgres('RLS proof against real Postgres', () => {
   })
 
   registerInvitationAuthProofs(psql, actorUrl!, succeeds, SIGN_UP_AUTH.password)
-  registerHostedConfigProofs({ spaceA: SPACE_A, spaceB: SPACE_B, userA: USER_A })
+  registerHostedConfigProofs(actorUrl!, SPACE_A, SPACE_B, USER_A)
 
   test('CLI sign-up creates one owner membership and bearer identity is not interchangeable', async () => {
     expect(cliOutput).toEqual(SIGN_UP_CLI_OUTPUT)
