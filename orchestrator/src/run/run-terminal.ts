@@ -140,6 +140,20 @@ export function shouldCheckpointAtTerminal(input: {
   return input.writesJob && input.hasWorktree && Boolean(input.launchKey)
 }
 
+/** Artifact copy faults retain the worker outcome while remaining visible on the run. */
+export function artifactPersistenceOutcome<FailureKind extends string>(input: {
+  status: string
+  error: string | null
+  failureKind: FailureKind | null
+  persistenceError: string
+}): { status: string; error: string; failureKind: FailureKind | null } {
+  return {
+    status: input.status,
+    error: input.error ? `${input.error}\n${input.persistenceError}` : input.persistenceError,
+    failureKind: input.failureKind,
+  }
+}
+
 /**
  * Record a parsed findings reply as review evidence in the terminal
  * transaction. Probe runs are calibration, not product evidence.
@@ -738,15 +752,17 @@ export async function finishRun(input: TerminalInput): Promise<TerminalResult> {
     )
   } catch (e) {
     artifactsPersisted = false
-    status = 'failed'
-    failureKind = 'harness'
-    error = `artifact persistence failed for ${runArtifactsDir(claim.id)}: ${String((e as Error)?.message ?? e)}`
+    const persistenceError = `artifact persistence failed for ${runArtifactsDir(claim.id)}: ${String((e as Error)?.message ?? e)}`
+    ;({ status, error, failureKind } = artifactPersistenceOutcome({
+      status,
+      error,
+      failureKind,
+      persistenceError,
+    }))
     db()
       .query(
         `UPDATE run SET
-           status=CASE WHEN status='stopped' THEN status ELSE 'failed' END,
-           error=CASE WHEN status='stopped' THEN error ELSE ? END,
-           failure_kind=CASE WHEN status='stopped' THEN failure_kind ELSE 'harness' END
+           error=CASE WHEN status='stopped' THEN error ELSE ? END
          WHERE id=?`,
       )
       .run(error, claim.id)

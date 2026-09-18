@@ -23,11 +23,11 @@ export const PROGRESS_FILE_NAME = 'progress.json'
 export const PRESERVATION_FAILED_FILE = 'preservation-failed.json'
 export const DEFAULT_CHECKPOINT_MINUTES = 10
 
-export function progressFileInstruction(): string {
+export function progressFileInstruction(scratchDir: string): string {
   return (
     `CHECKPOINT PROGRESS\n\nThe harness checkpoints tracked changes for you. ` +
     `After completing an item, write {"task_pointer":"<last completed item>"} as valid JSON to ` +
-    `$ORCH_SCRATCH/${PROGRESS_FILE_NAME}; the latest value is injected when a preserved run continues. ` +
+    `${join(scratchDir, PROGRESS_FILE_NAME)}; the latest value is injected when a preserved run continues. ` +
     `You may rely on the harness to preserve staged and modified tracked work at limits and on stop.`
   )
 }

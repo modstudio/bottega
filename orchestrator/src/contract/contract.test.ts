@@ -14,11 +14,20 @@ import {
   REVIEW_SCHEMA,
   readerDeliverablesInstruction,
   realQuestions,
+  replyFileInstruction,
   resolveReplyDialect,
   TEXT_REPLY_SCHEMA,
   VERIFY_CLAIM_SCHEMA,
   WORKER_SCHEMA,
 } from './contract.ts'
+
+test('reply contract names absolute scratch files without a shell variable', () => {
+  const scratch = '/var/tmp/orch/runs/42/scratch'
+  const instruction = replyFileInstruction('WORKER_SCHEMA', scratch)
+  expect(instruction).toContain(`${scratch}/reply.json`)
+  expect(instruction).toContain(`${scratch}/progress.json`)
+  expect(instruction).not.toContain('$ORCH_SCRATCH')
+})
 
 const baseWorkerReply = {
   status: 'done',

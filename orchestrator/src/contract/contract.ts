@@ -69,16 +69,21 @@ const TEXT_REPLY_SCHEMA_NAME = 'text-reply'
 export const REPLY_FILE_NAME = 'reply.json'
 
 /** The file contract is identical across harnesses; schema flags are an extra guarantee. */
-export function replyFileInstruction(schemaName: string): string {
+export function replyFileInstruction(schemaName: string, scratchDir: string): string {
   return (
     `REPLY CONTRACT\n\n` +
     `Your reply schema is ${schemaName}. Before your final message, write the structured reply ` +
-    `as valid JSON to $ORCH_SCRATCH/${REPLY_FILE_NAME}. Orch reads that file first and falls back ` +
+    `as valid JSON to ${scratchDir}/${REPLY_FILE_NAME}. Orch reads that file first and falls back ` +
     `to the final message only when the file is missing. The final message must follow the same schema.` +
     (schemaName === 'WORKER_SCHEMA' || schemaName === 'ISSUE_WORKER_SCHEMA'
-      ? `\n\n${progressFileInstruction()}`
+      ? `\n\n${progressFileInstruction(scratchDir)}`
       : '')
   )
+}
+
+/** Contract and separator bytes reserved before a run has its concrete scratch path. */
+export function replyFileBytes(schemaName: string, scratchDir: string): number {
+  return Buffer.byteLength(replyFileInstruction(schemaName, scratchDir)) + 2
 }
 
 export const WORKER_SCHEMA = {

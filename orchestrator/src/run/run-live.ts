@@ -93,6 +93,17 @@ function presentReplyFileMatches(opts: {
   return opts.dialect.parse(opts.text).reply !== null
 }
 
+/** A missing named reply is observable even when its final-message fallback is valid. */
+export function replyFileFallbackError(
+  replyFile: string,
+  present: boolean,
+  error: string | null,
+): string | null {
+  if (present) return error
+  const notice = `${REPLY_FILE_NAME} missing at ${replyFile}; used final-message fallback`
+  return error ? `${error}\n${notice}` : notice
+}
+
 type LiveOptions = {
   resume?: { parent: number; fresh?: boolean; session?: string }
   model?: string
@@ -675,7 +686,7 @@ export async function runLive(input: LiveInput): Promise<LiveResult> {
       boundMs,
       agentName: name,
     })
-    error = derived.error
+    error = replyFileFallbackError(replyFile, replyFilePresent, derived.error)
 
     if (idleKilled && derived.inputs.completedReply) {
       console.error(

@@ -13,7 +13,7 @@ import type { Agent } from '../agent/agents.ts'
 import { resolveTaskBranch, type TaskBranchCandidate } from '../branch/task-branch.ts'
 import type { Pack } from '../canon/canon.ts'
 import { readStrictCodexSchema } from '../contract/codex-schema.ts'
-import { TEXT_REPLY_SCHEMA } from '../contract/contract.ts'
+import { replyFileInstruction, TEXT_REPLY_SCHEMA } from '../contract/contract.ts'
 import { db, nowIso, sessionId, writeTransaction } from '../database/db.ts'
 import { namesRecordedRunTree } from '../dispatch/dispatch-preflight.ts'
 import { retargetRepositoryPromptForDispatch } from '../dispatch/prompt-retarget.ts'
@@ -221,6 +221,7 @@ export type ClaimInput = {
   deferredCwdMcpPreflight: boolean
   usingMcp: boolean
   startedByUserId: string | null
+  replySchemaName: string
 }
 
 export type ClaimResult = {
@@ -283,6 +284,7 @@ export async function claimRun(input: ClaimInput): Promise<ClaimResult> {
     deferredCwdMcpPreflight,
     usingMcp,
     startedByUserId,
+    replySchemaName,
   } = input
   const claimedPrompt = opts.reserveId
     ? (
@@ -295,7 +297,6 @@ export async function claimRun(input: ClaimInput): Promise<ClaimResult> {
   writeFileSync(promptPath, originalPrompt)
   // Beside the prompt it wraps, whatever that file is called: a detached run's
   // prompt path was named by detach() before this stamp existed.
-  writeFileSync(promptPath.replace(/\.prompt\.txt$/, '.bound.txt'), prompt)
 
   /**
    * The return contract, written to disk because that is how both agents take
@@ -539,6 +540,11 @@ export async function claimRun(input: ClaimInput): Promise<ClaimResult> {
     )
   const scratchDir = runScratchDir(claim.id)
   mkdirSync(scratchDir, { recursive: true })
+  prompt = `${replyFileInstruction(replySchemaName, scratchDir)}\n\n${prompt}`
+  writeFileSync(promptPath.replace(/\.prompt\.txt$/, '.bound.txt'), prompt)
+  db()
+    .query('UPDATE run SET prompt_sha=?, prompt_bytes=? WHERE id=?')
+    .run(sha(prompt), Buffer.byteLength(prompt), claim.id)
   writeDispatchState(claim.id, {
     deliverables: declaredDeliverables,
     timeoutMinutes: timeoutMinutes ?? null,
