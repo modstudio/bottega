@@ -90,7 +90,10 @@ function setWorkflowCommand(argv: string[], print: (value: unknown, line?: strin
 function stepCommand(argv: string[], print: (value: unknown, line?: string) => void): void {
   const project = flagValue(argv, 'project')
   if (!project) throw new Error('--project is required')
-  const step = getWorkflowStep(argv[2]!, project, argv[3]!, workflowArgs(argv))
+  const step = getWorkflowStep(argv[2]!, project, argv[3]!, workflowArgs(argv), undefined, {
+    version: positive(flagValue(argv, 'version'), '--version'),
+    catalogueVersion: positive(flagValue(argv, 'catalogue-version'), '--catalogue-version'),
+  })
   print(step, `facts: ${JSON.stringify(step.facts)}\n${step.body}`)
 }
 
@@ -188,7 +191,17 @@ function composeCommand(
 ): void {
   const project = flagValue(argv, 'project')
   if (!project) throw new Error('--project is required')
-  const result = composeWorkflow(argv[2]!, project, flagValue(argv, 'mode'), workflowArgs(argv))
+  const result = composeWorkflow(
+    argv[2]!,
+    project,
+    flagValue(argv, 'mode'),
+    workflowArgs(argv),
+    undefined,
+    {
+      version: positive(flagValue(argv, 'version'), '--version'),
+      catalogueVersion: positive(flagValue(argv, 'catalogue-version'), '--catalogue-version'),
+    },
+  )
   print(result, json ? undefined : renderWorkflowComposition(result))
   if (Object.keys(result.needs).length) presentation.setExitCode(2)
 }

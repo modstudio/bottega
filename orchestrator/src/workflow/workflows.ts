@@ -5,7 +5,7 @@ import {
   resolveDeclaredFacts,
   unresolvedTrackerActionPlaceholder,
 } from '../project/project-injection.ts'
-import { productionStepCatalogue } from './step-catalogue.ts'
+import { productionStepCatalogue, showStepCatalogue } from './step-catalogue.ts'
 import { type VersionEvent, versionedLifecycle } from './versioned-lifecycle.ts'
 
 type WorkflowArgument = { name: string; required: boolean; description: string }
@@ -352,16 +352,24 @@ type WorkflowNeeds = {
   mode?: { slug: string; title: string; entry: string }[]
   arguments?: string[]
 }
+type WorkflowSelection = { version?: number; catalogueVersion?: number }
+const selectedWorkflow = (slug: string, version: number | undefined, d: Database) =>
+  version === undefined
+    ? parseVersion(productionVersionRow(slug, d))
+    : showWorkflow(slug, version, d)
+const selectedCatalogue = (version: number | undefined, d: Database) =>
+  version === undefined ? productionStepCatalogue(d) : showStepCatalogue(version, d)
 export function composeWorkflow(
   slug: string,
   projectName: string,
   modeSlug?: string,
   args: Record<string, string> = {},
   d: Database = db(),
+  selection: WorkflowSelection = {},
 ) {
-  const row = parseVersion(productionVersionRow(slug, d)),
+  const row = selectedWorkflow(slug, selection.version, d),
     definition = row.definition,
-    catalogue = productionStepCatalogue(d)
+    catalogue = selectedCatalogue(selection.catalogueVersion, d)
   const mode = modeSlug
     ? definition.modes.find((m) => m.slug === modeSlug)
     : definition.modes.find((m) => m.default)
@@ -434,10 +442,11 @@ export function getWorkflowStep(
   stepSlug: string,
   args: Record<string, string> = {},
   d: Database = db(),
+  selection: WorkflowSelection = {},
 ) {
-  const row = parseVersion(productionVersionRow(slug, d)),
+  const row = selectedWorkflow(slug, selection.version, d),
     definition = row.definition,
-    catalogue = productionStepCatalogue(d),
+    catalogue = selectedCatalogue(selection.catalogueVersion, d),
     referenced = definition.modes.some((mode) => mode.steps.includes(stepSlug)),
     step = catalogue.definition.steps.find((item) => item.slug === stepSlug)
   if (!referenced || !step) throw new Error(`workflow "${slug}" has no step "${stepSlug}"`)
