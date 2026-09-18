@@ -2,6 +2,7 @@ import type { Dirent } from 'node:fs'
 import { createReadStream, readdirSync, statSync } from 'node:fs'
 import { join } from 'node:path'
 import { createInterface } from 'node:readline'
+import { readMachineValue } from '../../../shared/machine-config.ts'
 import { db, nowIso, writableDb } from '../database/db.ts'
 import { projectAt, projects } from '../project/projects.ts'
 
@@ -22,7 +23,6 @@ const PROJECTS = `${process.env.HOME}/.claude/projects`
  * Everything else about a project now comes from the register. This is a
  * fallback for paths that resolve to no project, not a source of truth.
  */
-const CLONE_ROOT = process.env.ORCH_CLONE_ROOT ?? `${process.env.HOME}/Projects`
 /**
  * Which repos count toward the canon denominator — ASKED, not listed.
  *
@@ -94,7 +94,7 @@ function transcripts(dir: string, out: string[] = []): string[] {
  * about what it touched, and one session moved between two projects inside a
  * single file.
  */
-function repoOfCwd(cwd: string | undefined): string | null {
+function repoOfCwd(cwd: string | undefined, cloneRoot: string): string | null {
   if (!cwd) return null
   // The register first: it knows where each project actually is, including
   // ones that live nowhere near a common root.
@@ -106,15 +106,16 @@ function repoOfCwd(cwd: string | undefined): string | null {
   // and is the same repository. Missing this counted 26B tokens of canon work
   // as untracked — 65% of the window — because most of the estate's
   // transcripts come from numbered checkouts.
-  if (!cwd.startsWith(CLONE_ROOT + '/')) return null
+  if (!cwd.startsWith(cloneRoot + '/')) return null
   const seg = cwd
-    .slice(CLONE_ROOT.length + 1)
+    .slice(cloneRoot.length + 1)
     .split('/')[0]!
     .replace(/-\d+$/, '')
   return canonRepos().includes(seg) ? seg : null
 }
 
 async function claudeTokensByDay(since: string) {
+  const cloneRoot = readMachineValue('projects.clone_root')
   const days = new Map<
     string,
     {
@@ -166,7 +167,7 @@ async function claudeTokensByDay(since: string) {
       // numerator inflates the ratio against a denominator it never touched.
       // This project is the case in point: a day building the orchestrator
       // spends heavily and commits nothing the denominator can see.
-      if (repoOfCwd(d.cwd)) row.canon += spend
+      if (repoOfCwd(d.cwd, cloneRoot)) row.canon += spend
       else row.other += spend
       row.messages += 1
       days.set(day, row)

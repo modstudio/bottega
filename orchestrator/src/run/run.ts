@@ -3,7 +3,7 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { basename } from 'node:path'
 import { requireAgent } from '../agent/agent-registry.ts'
 import { minimumCliVersionRefusal } from '../agent/agents.ts'
-import { ensureLocalHealth, MODEL_HOST_URL, tryWake } from '../agent/model-host.ts'
+import { ensureLocalHealth, modelHostUrl, tryWake } from '../agent/model-host.ts'
 import type { AskLoopback } from '../ask/ask.ts'
 import { compilePack, recordPack } from '../canon/canon.ts'
 import {
@@ -802,7 +802,7 @@ export async function run(opts: {
       readonlyNotes: toolFor(callerCwd)?.readonly_notes,
       override: process.env.ORCH_SANDBOX,
       path: process.env.PATH,
-      localBaseUrl: MODEL_HOST_URL,
+      localBaseUrl: modelHostUrl(),
       mcp: Boolean(mcpMode),
       mcpAllowlist: mcpMode ? mcpAllowlist : [],
     })

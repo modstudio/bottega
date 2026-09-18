@@ -298,7 +298,7 @@ const text=await res.text(); process.stdout.write(text); process.exit(res.ok?0:1
     ) {
       continue
     }
-    const raw = [process.execPath, '-e', script, url, JSON.stringify(message)]
+    const raw = [process.execPath, '--no-env-file', '-e', script, url, JSON.stringify(message)]
     const argv = wrap ? await wrap(raw[0]!, raw.slice(1)) : raw
     const proc = Bun.spawn(argv, { cwd, env, stdin: 'pipe', stdout: 'pipe', stderr: 'pipe' })
     proc.stdin.write(JSON.stringify(headers ?? {}))

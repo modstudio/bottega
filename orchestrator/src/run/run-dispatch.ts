@@ -196,6 +196,7 @@ export async function detach(
    */
   const execPath = process.env.ORCH_EXEC_PATH ?? process.execPath
   const spawnArgs = [
+    '--no-env-file',
     /**
      * `exec.ts`, not the `orch.ts` process entry point, and that is the whole point of it.
      *

@@ -3,8 +3,9 @@ import tailwindcss from '@tailwindcss/vite'
 import { tanstackRouter } from '@tanstack/router-plugin/vite'
 import react from '@vitejs/plugin-react'
 import { defineConfig } from 'vite'
+import { readMachineValue } from '../../shared/machine-config.ts'
 
-const hubPort = process.env.HUB_PORT ?? '7778'
+const hubPort = readMachineValue('hub.port')
 
 export default defineConfig({
   base: '/',

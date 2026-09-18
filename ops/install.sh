@@ -6,9 +6,12 @@ set -euo pipefail
 
 CONCERN="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 CHECKOUT="$(cd "$CONCERN/.." && pwd)"
-STATE_HOME_ENV="$(bun "$CHECKOUT/shared/state-directory.ts" environment)"
-STATE_HOME="$(bun "$CHECKOUT/shared/state-directory.ts" root)"
-if ! ENV_FILES_OUTPUT="$(bun "$CHECKOUT/shared/config-directory.ts" env-paths)"; then
+STATE_HOME_ENV="$(bun --no-env-file "$CHECKOUT/shared/state-directory.ts" environment)"
+STATE_HOME="$(bun --no-env-file "$CHECKOUT/shared/state-directory.ts" root)"
+MODEL_HOST="$(bun --no-env-file "$CHECKOUT/shared/machine-config.ts" get model_host.ssh_alias)"
+TUNNEL_LOCAL_PORT="$(bun --no-env-file "$CHECKOUT/shared/machine-config.ts" get model_host.tunnel_local_port)"
+TUNNEL_REMOTE_PORT="$(bun --no-env-file "$CHECKOUT/shared/machine-config.ts" get model_host.tunnel_remote_port)"
+if ! ENV_FILES_OUTPUT="$(bun --no-env-file "$CHECKOUT/shared/config-directory.ts" env-paths)"; then
   exit 1
 fi
 ENV_FILES=()
@@ -58,8 +61,8 @@ mkdir -p "$AGENTS_DIR" "$HOME/Library/Logs/brew-upgrade" "$HOME/Library/Logs/pro
 for tmpl in "$CONCERN"/launchd/*.plist.template; do
   label="$(basename "$tmpl" .plist.template)"
 
-  if [[ "$label" == "com.user.local-model-tunnel" && -z "${LOCAL_MODEL_HOST:-}" ]]; then
-    echo "skipped: $label (LOCAL_MODEL_HOST is unset)"
+  if [[ "$label" == "com.user.local-model-tunnel" && -z "$MODEL_HOST" ]]; then
+    echo "skipped: $label (model_host.ssh_alias is unset)"
     continue
   fi
   if [[ "$label" == "com.user.local-model-tunnel" ]]; then
@@ -91,14 +94,16 @@ for tmpl in "$CONCERN"/launchd/*.plist.template; do
   # Render template -> real plist with absolute paths for this machine.
   #   __CHECKOUT__ -> the checkout root, __CONCERN__ -> the template owner's
   #   directory, __HOME__ -> this user's home,
-  #   __MODEL_HOST__ -> the configured SSH alias
+  #   __MODEL_HOST__ -> the configured SSH alias, and tunnel port placeholders
   sed -e "s#__CHECKOUT__#${CHECKOUT}#g" -e "s#__CONCERN__#${CONCERN}#g" \
       -e "s#__HOME__#${HOME}#g" \
       -e "s#__STATE_HOME_ENV__#${STATE_HOME_ENV}#g" \
       -e "s#__STATE_HOME__#${STATE_HOME}#g" \
       -e "s#__MONITOR_BACKSTOP_SECONDS__#${PROVISIONAL_MONITOR_BACKSTOP_SECONDS}#g" \
       -e "s#__FIX_DEFECT_BACKSTOP_SECONDS__#${FIX_DEFECT_BACKSTOP_SECONDS}#g" \
-      -e "s#__MODEL_HOST__#${LOCAL_MODEL_HOST:-}#g" "$tmpl" > "$target"
+      -e "s#__MODEL_HOST__#${MODEL_HOST}#g" \
+      -e "s#__TUNNEL_LOCAL_PORT__#${TUNNEL_LOCAL_PORT}#g" \
+      -e "s#__TUNNEL_REMOTE_PORT__#${TUNNEL_REMOTE_PORT}#g" "$tmpl" > "$target"
 
   # Load it. A label that still will not load is reported and the rest continue.
   if bootstrap_with_retry "$target"; then

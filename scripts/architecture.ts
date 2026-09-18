@@ -164,6 +164,7 @@ export const modules: ArchitectureModule[] = [
   module('orchestrator/src/hook-tree/hook-tree.ts', []),
   module('orchestrator/src/worktree/keep-tree-hold.ts', []),
   module('orchestrator/src/agent/model-host.ts', [
+    '../../../shared/machine-config.ts',
     '../../../shared/state-directory.ts',
     './agent-registry.ts',
     './agents.ts',
@@ -237,6 +238,7 @@ export const modules: ArchitectureModule[] = [
   module('shared/gate-timing-directory.ts', ['./brand.ts', './state-directory.ts']),
   module('shared/config-directory.ts', ['node:path', './brand.ts']),
   module('shared/env-source.ts', ['node:fs', 'node:util', './config-directory.ts']),
+  module('shared/machine-config.ts', ['node:fs', 'node:path', 'zod', './config-directory.ts']),
   module('shared/state-directory.ts', ['./brand.ts']),
   module('shared/record/schema.ts', ['../brand.ts']),
   module('shared/record-session.ts', ['./brand.ts']),

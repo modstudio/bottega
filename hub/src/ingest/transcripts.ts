@@ -3,6 +3,7 @@ import { createReadStream, readdirSync, statSync } from 'node:fs'
 import { join } from 'node:path'
 import { createInterface } from 'node:readline'
 import { DEFAULT_IDLE_CAP_MS, spansFromTimestamps, union } from '../../../shared/interval.ts'
+import { readMachineValue } from '../../../shared/machine-config.ts'
 import { attribute, isInjected, projectOf } from '../attribute.ts'
 import { nowIso, writeTransaction } from '../db.ts'
 import { signedInRecordUserId } from '../sync.ts'
@@ -19,7 +20,7 @@ export function resolveTranscriptRoot(
   const path = override ?? (home ? join(home, '.claude/projects') : null)
   if (!path) {
     throw new Error(
-      'Cannot resolve the default transcript root at .claude/projects under HOME because HOME is unset or empty; set HUB_TRANSCRIPT_ROOT to a readable path or set HUB_TRANSCRIPT_ROOT="" to disable transcript ingest',
+      'Cannot resolve hub.transcript_root at .claude/projects under HOME because HOME is unset or empty; set HUB_TRANSCRIPT_ROOT to a readable path or set HUB_TRANSCRIPT_ROOT="" to disable transcript ingest',
     )
   }
   return { source: 'read', path }
@@ -27,7 +28,7 @@ export function resolveTranscriptRoot(
 
 /** Build the refusal for a resolved transcript root that cannot be read. */
 export function unreadableTranscriptRootMessage(path: string): string {
-  return `Cannot read transcript root ${path}; set HUB_TRANSCRIPT_ROOT to a readable path or set HUB_TRANSCRIPT_ROOT="" to disable transcript ingest`
+  return `Cannot read hub.transcript_root ${path}; set HUB_TRANSCRIPT_ROOT to a readable path or set HUB_TRANSCRIPT_ROOT="" to disable transcript ingest`
 }
 
 /** Every .jsonl transcript under a root. */
@@ -179,7 +180,7 @@ export async function ingestTranscripts(
   idleCapMs = DEFAULT_IDLE_CAP_MS,
   attributedUserId?: string | null,
 ): Promise<{ files: number; rows: number; source: 'read' | 'disabled' }> {
-  const root = resolveTranscriptRoot(process.env.HUB_TRANSCRIPT_ROOT, process.env.HOME)
+  const root = resolveTranscriptRoot(readMachineValue('hub.transcript_root'), process.env.HOME)
   if (root.source === 'disabled') return { files: 0, rows: 0, source: 'disabled' }
 
   try {
