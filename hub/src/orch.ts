@@ -48,6 +48,7 @@ import {
 import { refreshProjects } from './projects.ts'
 
 let dashboardCapability: { dir: string; path: string; token: string } | null = null
+const RUNS_DEADLINE_MS = 60_000
 
 /** Resolve the executable for every call made by a long-lived hub process. */
 export function resolveOrchExecutable(): string {
@@ -111,13 +112,24 @@ async function orchProcess(
     stderr: 'pipe',
     stdin: opts.stdin !== undefined ? Buffer.from(opts.stdin) : 'ignore',
   })
-  const timer = timeoutMs > 0 ? setTimeout(() => proc.kill(), timeoutMs) : null
+  let killedAtDeadline = false
+  const timer =
+    timeoutMs > 0
+      ? setTimeout(() => {
+          killedAtDeadline = true
+          proc.kill()
+        }, timeoutMs)
+      : null
   try {
     const [out, err, code] = await Promise.all([
       new Response(proc.stdout).text(),
       new Response(proc.stderr).text(),
       proc.exited,
     ])
+    if (killedAtDeadline)
+      throw new Error(
+        `hub killed orch ${args.join(' ')} after its ${timeoutMs / 1_000} second deadline`,
+      )
     if (code !== 0) throw new Error(err.trim() || out.trim() || `orch ${args[0]} exited ${code}`)
     return out.trim()
   } finally {
@@ -195,14 +207,19 @@ export function decodeRunsJson(text: string): OrchRunLineData[] {
 }
 
 export async function readRuns(since: string): Promise<OrchRun[]> {
-  const rows = decodeRunsJson(await orchProcess(['runs', '--json', '--since', since]))
+  const rows = decodeRunsJson(
+    await orchProcess(['runs', '--json', '--since', since], RUNS_DEADLINE_MS),
+  )
   return rows.filter((row): row is OrchRun => !('unknown' in row))
 }
 
 export async function readRunsById(ids: number[]): Promise<OrchRunLineData[]> {
   if (!ids.length) return []
   return decodeRunsJson(
-    await orchProcess(['runs', '--json', ...ids.flatMap((id) => ['--id', String(id)])]),
+    await orchProcess(
+      ['runs', '--json', ...ids.flatMap((id) => ['--id', String(id)])],
+      RUNS_DEADLINE_MS,
+    ),
   )
 }
 
