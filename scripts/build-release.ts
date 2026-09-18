@@ -16,6 +16,16 @@ export const DECLARED_PAYLOAD_PATHS = [
   'hub/migrations',
   'orchestrator/hooks',
   'hub/web/dist',
+  'ops/install.sh',
+  'ops/bin',
+  'ops/launchd',
+  'hub/bin',
+  'hub/launchd',
+  'shared/install-root.ts',
+  'shared/state-directory.ts',
+  'shared/config-directory.ts',
+  'shared/machine-config.ts',
+  'shared/env-source.ts',
   DIST_MANIFEST,
   'bin/orch',
   'bin/hub',
@@ -54,9 +64,22 @@ function copyDirectory(source: string, destination: string): void {
   cpSync(source, destination, { recursive: true, preserveTimestamps: true })
 }
 
+function copyFile(source: string, destination: string): void {
+  mkdirSync(join(destination, '..'), { recursive: true })
+  cpSync(source, destination, { preserveTimestamps: true })
+}
+
 function shim(entrypoint: string): string {
   return `#!/bin/sh
-root=$(CDPATH= cd "$(dirname "$0")/.." && pwd)
+script=$0
+while [ -L "$script" ]; do
+  link=$(readlink "$script")
+  case "$link" in
+    /*) script=$link ;;
+    *) script=$(dirname "$script")/$link ;;
+  esac
+done
+root=$(CDPATH= cd "$(dirname "$script")/.." && pwd)
 exec bun --no-env-file "$root/${entrypoint}" "$@"
 `
 }
@@ -81,6 +104,21 @@ export async function buildRelease(tag: string): Promise<string> {
   copyDirectory('hub/migrations', join(payloadRoot, 'hub/migrations'))
   copyDirectory('orchestrator/hooks', join(payloadRoot, 'orchestrator/hooks'))
   copyDirectory('hub/web/dist', join(payloadRoot, 'hub/web/dist'))
+  copyDirectory('ops/bin', join(payloadRoot, 'ops/bin'))
+  copyDirectory('ops/launchd', join(payloadRoot, 'ops/launchd'))
+  copyFile('ops/install.sh', join(payloadRoot, 'ops/install.sh'))
+  copyDirectory('hub/bin', join(payloadRoot, 'hub/bin'))
+  copyDirectory('hub/launchd', join(payloadRoot, 'hub/launchd'))
+
+  for (const source of [
+    'shared/install-root.ts',
+    'shared/state-directory.ts',
+    'shared/config-directory.ts',
+    'shared/machine-config.ts',
+    'shared/env-source.ts',
+  ]) {
+    await bundle(source, join(payloadRoot, source))
+  }
 
   const commit = await run(['git', 'rev-parse', 'HEAD'])
   const built = await run(['git', 'show', '-s', '--format=%cI', 'HEAD'])

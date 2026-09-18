@@ -7,7 +7,7 @@
 
     <key>ProgramArguments</key>
     <array>
-        <string>__CHECKOUT__/bin/orch</string>
+        <string>__INSTALL_ROOT__/bin/orch</string>
         <string>fix-defect</string>
     </array>
 
@@ -15,7 +15,7 @@
     <integer>__FIX_DEFECT_BACKSTOP_SECONDS__</integer>
 
     <key>WorkingDirectory</key>
-    <string>__CHECKOUT__</string>
+    <string>__INSTALL_ROOT__</string>
     <key>EnvironmentVariables</key>
     <dict>
         <key>PATH</key>

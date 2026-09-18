@@ -11,6 +11,7 @@ import {
   installRoot,
   isAuthorizedPlatformInstallation,
   readDistributionManifest,
+  resolveInstallationPaths,
   resolveInstallRoot,
 } from './install-root.ts'
 
@@ -55,6 +56,28 @@ describe('install root resolution', () => {
     mkdirSync(nested)
     writeFileSync(join(root, 'package.json'), JSON.stringify({ name: PLATFORM_SLUG }))
     expect(resolveInstallRoot(nested, {})).toBe(root)
+  })
+
+  test('service paths use the resolved checkout or distribution root', () => {
+    const root = scratch()
+    writeFileSync(join(root, DIST_MANIFEST), '{}')
+    expect(resolveInstallationPaths(join(root, 'ops'), {})).toEqual({
+      root,
+      orch: join(root, 'bin', 'orch'),
+      hub: join(root, 'bin', 'hub'),
+      ops: join(root, 'ops'),
+      hubAssets: join(root, 'hub'),
+    })
+
+    expect(
+      resolveInstallationPaths('/ignored', { [INSTALL_HOME_ENV]: '/installed/current' }),
+    ).toEqual({
+      root: '/installed/current',
+      orch: '/installed/current/bin/orch',
+      hub: '/installed/current/bin/hub',
+      ops: '/installed/current/ops',
+      hubAssets: '/installed/current/hub',
+    })
   })
 
   test('the refusal names the remedy', () => {

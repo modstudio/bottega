@@ -42,6 +42,8 @@ const ALLOWED = new Set([
   // The root manifest and each declared workspace manifest: read by tooling before any import exists.
   'package.json',
   ...workspaces.map((workspace) => `${workspace}/package.json`),
+  // The checkout-free installer must name the private repository before it can load brand code.
+  'install.sh',
   // This policy test intentionally uses a project whose name happens to match the platform slug.
   'orchestrator/src/run/run-mcp-attachment.test.ts',
 ])

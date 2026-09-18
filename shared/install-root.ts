@@ -16,6 +16,14 @@ export type DistributionManifest = {
   commit: string
 }
 
+export type InstallationPaths = {
+  root: string
+  orch: string
+  hub: string
+  ops: string
+  hubAssets: string
+}
+
 type InstallationIdentity =
   | { kind: 'distribution'; root: string; manifest: DistributionManifest }
   | { kind: 'checkout'; root: string; version: string }
@@ -51,6 +59,21 @@ export function resolveInstallRoot(fromDirectory: string, env: InstallEnvironmen
       )
     }
     directory = parent
+  }
+}
+
+/** Resolve every path rendered into a service definition from the same installation root. */
+export function resolveInstallationPaths(
+  fromDirectory: string,
+  env: InstallEnvironment,
+): InstallationPaths {
+  const root = resolveInstallRoot(fromDirectory, env)
+  return {
+    root,
+    orch: join(root, 'bin', 'orch'),
+    hub: join(root, 'bin', 'hub'),
+    ops: join(root, 'ops'),
+    hubAssets: join(root, 'hub'),
   }
 }
 
@@ -151,4 +174,12 @@ export function installRoot(): string {
 /** Join segments against the running distribution or checkout root. */
 export function assetPath(...segments: string[]): string {
   return join(installRoot(), ...segments)
+}
+
+if (import.meta.main) {
+  const [command, fromDirectory] = process.argv.slice(2)
+  if (command !== 'root' || !fromDirectory) {
+    throw new Error('working form: bun shared/install-root.ts root <from-directory>')
+  }
+  console.log(resolveInstallationPaths(fromDirectory, process.env).root)
 }

@@ -10,7 +10,7 @@
          be up whether or not anyone started it by hand. -->
     <key>ProgramArguments</key>
     <array>
-        <string>__CHECKOUT__/bin/hub</string>
+        <string>__INSTALL_ROOT__/bin/hub</string>
         <string>serve</string>
         <string>--port</string>
         <string>__HUB_PORT__</string>
@@ -40,7 +40,7 @@
     </dict>
 
     <key>WorkingDirectory</key>
-    <string>__CHECKOUT__</string>
+    <string>__INSTALL_ROOT__</string>
 
     <key>StandardOutPath</key>
     <string>__HOME__/Library/Logs/hub/serve.log</string>
