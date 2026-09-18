@@ -397,11 +397,20 @@ describe('operational monitor conditions', () => {
     })
   })
 
-  test('reports trust headings only after their recorded worktree disappears', () => {
+  test('reports an absent unregistered trust heading after its recorded worktree disappears', () => {
     expect(
       staleTrustEntryConditions({
         ascertainable: true,
-        entries: [{ runId: 63, heading: '[folders."/trees/63"]', worktreeExists: false }],
+        entries: [
+          {
+            runId: 63,
+            heading: '[folders."/trees/63"]',
+            path: '/trees/63',
+            pathExists: false,
+            registeredProjectPath: false,
+            worktreeExists: false,
+          },
+        ],
       }),
     ).toEqual({
       conditions: [
@@ -417,12 +426,84 @@ describe('operational monitor conditions', () => {
       ],
       errors: [],
     })
+  })
+
+  test('does not report a registered project trust heading when the run worktree is gone', () => {
     expect(
       staleTrustEntryConditions({
         ascertainable: true,
-        entries: [{ runId: 63, heading: '[folders."/trees/63"]', worktreeExists: true }],
+        entries: [
+          {
+            runId: 63,
+            heading: '[folders."/projects/main-checkout"]',
+            path: '/projects/main-checkout',
+            pathExists: false,
+            registeredProjectPath: true,
+            worktreeExists: false,
+          },
+        ],
       }),
     ).toEqual({ conditions: [], errors: [] })
+  })
+
+  test('does not report an existing unregistered trust heading', () => {
+    expect(
+      staleTrustEntryConditions({
+        ascertainable: true,
+        entries: [
+          {
+            runId: 63,
+            heading: '[folders."/other/checkout"]',
+            path: '/other/checkout',
+            pathExists: true,
+            registeredProjectPath: false,
+            worktreeExists: false,
+          },
+        ],
+      }),
+    ).toEqual({ conditions: [], errors: [] })
+  })
+
+  test('does not report a trust heading while its recorded worktree exists', () => {
+    expect(
+      staleTrustEntryConditions({
+        ascertainable: true,
+        entries: [
+          {
+            runId: 63,
+            heading: '[folders."/trees/63"]',
+            path: '/trees/63',
+            pathExists: false,
+            registeredProjectPath: false,
+            worktreeExists: true,
+          },
+        ],
+      }),
+    ).toEqual({ conditions: [], errors: [] })
+  })
+
+  test('does not report a trust heading without a quoted path and records an error', () => {
+    expect(
+      staleTrustEntryConditions({
+        ascertainable: true,
+        entries: [
+          {
+            runId: 63,
+            heading: '[folders.invalid]',
+            path: null,
+            pathExists: false,
+            registeredProjectPath: false,
+            worktreeExists: false,
+          },
+        ],
+      }),
+    ).toEqual({
+      conditions: [],
+      errors: ['run 63 recorded Grok trust heading without a quoted path: [folders.invalid]'],
+    })
+  })
+
+  test('reports an unavailable trust inventory as an error', () => {
     expect(
       staleTrustEntryConditions({
         ascertainable: false,

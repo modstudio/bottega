@@ -679,9 +679,30 @@ export function orphanSandboxDirectoryConditions(inventory: SandboxDirectoryInve
 export type TrustEntryInventory =
   | {
       ascertainable: true
-      entries: { runId: number; heading: string; worktreeExists: boolean; mainCheckout?: boolean }[]
+      entries: {
+        runId: number
+        heading: string
+        path: string | null
+        pathExists: boolean
+        registeredProjectPath: boolean
+        worktreeExists: boolean
+      }[]
     }
   | { ascertainable: false; reason: string }
+
+function trustHeadingStale(facts: {
+  path: string | null
+  pathExists: boolean
+  registeredProjectPath: boolean
+  worktreeExists: boolean
+}): boolean {
+  return (
+    facts.path !== null &&
+    !facts.pathExists &&
+    !facts.registeredProjectPath &&
+    !facts.worktreeExists
+  )
+}
 
 /** Report recorded vendor trust headings after the run's worktree is gone. */
 export function staleTrustEntryConditions(inventory: TrustEntryInventory): {
@@ -690,7 +711,7 @@ export function staleTrustEntryConditions(inventory: TrustEntryInventory): {
 } {
   if (!inventory.ascertainable) return { conditions: [], errors: [inventory.reason] }
   const conditions = inventory.entries.flatMap((entry): MonitorCondition[] => {
-    if (entry.worktreeExists || entry.mainCheckout) return []
+    if (!trustHeadingStale(entry)) return []
     return [
       {
         kind: 'stale-trust-entry',
@@ -702,7 +723,12 @@ export function staleTrustEntryConditions(inventory: TrustEntryInventory): {
       },
     ]
   })
-  return { conditions, errors: [] }
+  const errors = inventory.entries.flatMap((entry) =>
+    entry.path === null
+      ? [`run ${entry.runId} recorded Grok trust heading without a quoted path: ${entry.heading}`]
+      : [],
+  )
+  return { conditions, errors }
 }
 
 export type UnsettledClaimInventory =
