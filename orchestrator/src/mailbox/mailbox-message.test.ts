@@ -109,6 +109,26 @@ describe('run mailbox', () => {
     expect(read[0]!.read_by).toBe('worker-session')
     expect(checkMessages(root)).toEqual([])
   })
+  test('queues inbound context before the running turn records its transport', () => {
+    const root = addRun({
+      agent: 'codex',
+      job: 'implement',
+      status: 'running',
+      session: 'orch-test-session',
+    })
+    db().query('UPDATE run SET transport=NULL WHERE id=?').run(root)
+
+    const told = mailboxOrch('tell', String(root), 'context for the detached turn')
+    const message = messagesForRun(root)[0]!
+
+    expect(told.code).toBe(0)
+    expect(message).toMatchObject({
+      root_run_id: root,
+      run_id: root,
+      body: 'context for the detached turn',
+      read_at: null,
+    })
+  })
   test('tell authorizes against the root and records the permitted sender', () => {
     const root = addRun({ agent: 'codex', job: 'implement', status: 'running' })
     const child = addRun({

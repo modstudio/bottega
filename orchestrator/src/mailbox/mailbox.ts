@@ -42,7 +42,7 @@ function bodyOf(body: string): string {
 }
 
 /** Queue architect context against the conversation's currently running turn. */
-export function tellRun(id: number, body: string): RunMessage & { transport: TransportName } {
+export function tellRun(id: number, body: string): RunMessage & { transport: TransportName | null } {
   writableDb()
   let authority = authorizeRunMutation(id, 'tell')
   const requested = identity(id)
@@ -58,9 +58,6 @@ export function tellRun(id: number, body: string): RunMessage & { transport: Tra
   if (!active) {
     throw new Error(`run ${requested.root_id} has no running turn — no message was queued`)
   }
-  if (!active.transport) {
-    throw new Error(`run ${active.id} has no recorded transport — no message was queued`)
-  }
   const messageBody = bodyOf(body)
   return writeTransaction(() => {
     authority = adoptRunMutation(authority, 'tell')
@@ -72,7 +69,7 @@ export function tellRun(id: number, body: string): RunMessage & { transport: Tra
       )
       .get(active.root_id, active.id, authority.actor, messageBody, nowIso()) as RunMessage
     auditRunMutation(authority, 'tell')
-    return { ...message, transport: active.transport! }
+    return { ...message, transport: active.transport }
   })
 }
 

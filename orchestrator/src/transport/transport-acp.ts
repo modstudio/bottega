@@ -810,7 +810,7 @@ async function openAcp(opts: TransportStartOpts): Promise<TransportHandle> {
 
 const acpTransport: AgentTransport = {
   name: 'acp',
-  canInjectMidTurn: true,
+  canInjectMidTurn: false,
   start(opts) {
     return openAcp(opts)
   },

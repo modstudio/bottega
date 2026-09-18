@@ -33,7 +33,7 @@ export async function tellCommand(
   )
   const notice = deferredWorkerMessageNotice(
     message.root_run_id,
-    transportFor(message.transport).canInjectMidTurn,
+    message.transport !== null && transportFor(message.transport).canInjectMidTurn,
   )
   if (notice) presentation.log(notice)
   if (ping) presentation.log(formatPeek(peekRun(message.run_id)))
