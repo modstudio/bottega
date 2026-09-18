@@ -177,6 +177,22 @@ describe('run ingest', () => {
     expect(human(1_032_690)).toBe('17m 13s')
   })
 
+  test('copies started_by_user_id onto the orch interval and leaves a missing starter null', async () => {
+    const starter = '01990000-0000-7000-8000-000000000123'
+    await ingestRunFixtures(runFixture({ id: 9210, started_by_user_id: starter }))
+    await ingestRunFixtures(runFixture({ id: 9211 }))
+    expect(
+      db()
+        .query(`SELECT user_id FROM interval WHERE source = 'orch' AND ref = 'orch:9210'`)
+        .get() as { user_id: string | null },
+    ).toEqual({ user_id: starter })
+    expect(
+      db()
+        .query(`SELECT user_id FROM interval WHERE source = 'orch' AND ref = 'orch:9211'`)
+        .get() as { user_id: string | null },
+    ).toEqual({ user_id: null })
+  })
+
   test('stores session_id and every question on the interval and question table', async () => {
     const result = await ingestRunFixtures(
       runFixture({

@@ -215,6 +215,15 @@ describe('run listing', () => {
     ).toEqual([id])
   })
 
+  test('runs --json publishes started_by_user_id', async () => {
+    const id = insert('ok')
+    const starter = '01990000-0000-7000-8000-000000000123'
+    db().query('UPDATE run SET started_by_user_id=? WHERE id=?').run(starter, id)
+    expect(runJson((await command({ json: true, id: [String(id)] }))[0]!).started_by_user_id).toBe(
+      starter,
+    )
+  })
+
   test('runs --json publishes the root launch_key', async () => {
     const id = insert('ok')
     db().query('UPDATE run SET launch_key=? WHERE id=?').run('DEV-7777', id)

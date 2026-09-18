@@ -60,6 +60,7 @@ export const OrchRunSchema = z
     repo: nullableString,
     cwd: nullableString,
     session_id: nullableString,
+    started_by_user_id: nullableString.optional(),
     latency_ms: nullableNumber,
     vendor_tokens: nullableNumber,
     vendor_cost_usd: nullableNumber,

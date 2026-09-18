@@ -6,6 +6,7 @@ type RunJson = Record<string, unknown> & {
   questions: { answered_at: string | null }[]
   launch_key: string | null
   evidence_excluded: string | null
+  started_by_user_id: string | null
 }
 
 export const runJson = (line: string) =>
