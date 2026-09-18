@@ -139,8 +139,8 @@ export function resolveMachineValue<
   parsed: unknown,
   key: Key,
   path: string,
-  warn: (message: string) => void = (message) => process.stderr.write(`${message}\n`),
-  warned: Set<string> = warnedLegacyVariables,
+  warn: (message: string) => void,
+  warned: Set<string>,
 ): Table[Key]['type'] extends 'integer' ? number : string {
   validateFile(table, parsed, path)
   const entry = table[key]
@@ -148,12 +148,15 @@ export function resolveMachineValue<
 
   let value: unknown
   let environmentValue = false
+  let environmentSource: string | undefined
   if (entry.environment && env[entry.environment] !== undefined) {
     value = env[entry.environment]
     environmentValue = true
+    environmentSource = entry.environment
   } else if (entry.legacyEnvironment && env[entry.legacyEnvironment] !== undefined) {
     value = env[entry.legacyEnvironment]
     environmentValue = true
+    environmentSource = entry.legacyEnvironment
     if (!warned.has(entry.legacyEnvironment)) {
       warned.add(entry.legacyEnvironment)
       warn(`${entry.legacyEnvironment} is deprecated; use ${entry.environment}`)
@@ -164,9 +167,13 @@ export function resolveMachineValue<
 
   const result = valueSchema(entry, environmentValue).safeParse(value)
   if (!result.success) {
-    throw new Error(
-      `refusing machine config ${path}: key ${key} must be ${entry.type === 'integer' ? 'an integer' : 'a string'}`,
-    )
+    const expected = entry.type === 'integer' ? 'an integer' : 'a string'
+    if (environmentSource) {
+      throw new Error(
+        `refusing machine config key ${key}: ${environmentSource} must be ${expected}; set ${environmentSource} to ${expected} or unset it`,
+      )
+    }
+    throw new Error(`refusing machine config ${path}: key ${key} must be ${expected}`)
   }
   return result.data as Table[Key]['type'] extends 'integer' ? number : string
 }
@@ -198,7 +205,15 @@ export function readMachineValue<Key extends MachineConfigKey>(
   env: ConfigEnvironment = process.env,
 ): MachineConfigValue<Key> {
   const path = machineConfigPath(env)
-  return resolveMachineValue(MACHINE_CONFIG, env, readMachineFile(path), key, path)
+  return resolveMachineValue(
+    MACHINE_CONFIG,
+    env,
+    readMachineFile(path),
+    key,
+    path,
+    (message) => process.stderr.write(`${message}\n`),
+    warnedLegacyVariables,
+  )
 }
 
 if (import.meta.main) {

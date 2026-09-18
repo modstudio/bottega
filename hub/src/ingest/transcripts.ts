@@ -11,19 +11,8 @@ import { signedInRecordUserId } from '../sync.ts'
 type TranscriptRoot = { source: 'read'; path: string } | { source: 'disabled' }
 
 /** Decide which transcript root to use from facts gathered by the environment adapter. */
-export function resolveTranscriptRoot(
-  override: string | undefined,
-  home: string | undefined,
-): TranscriptRoot {
-  if (override === '') return { source: 'disabled' }
-
-  const path = override ?? (home ? join(home, '.claude/projects') : null)
-  if (!path) {
-    throw new Error(
-      'Cannot resolve hub.transcript_root at .claude/projects under HOME because HOME is unset or empty; set HUB_TRANSCRIPT_ROOT to a readable path or set HUB_TRANSCRIPT_ROOT="" to disable transcript ingest',
-    )
-  }
-  return { source: 'read', path }
+export function resolveTranscriptRoot(resolved: string): TranscriptRoot {
+  return resolved === '' ? { source: 'disabled' } : { source: 'read', path: resolved }
 }
 
 /** Build the refusal for a resolved transcript root that cannot be read. */
@@ -180,7 +169,7 @@ export async function ingestTranscripts(
   idleCapMs = DEFAULT_IDLE_CAP_MS,
   attributedUserId?: string | null,
 ): Promise<{ files: number; rows: number; source: 'read' | 'disabled' }> {
-  const root = resolveTranscriptRoot(readMachineValue('hub.transcript_root'), process.env.HOME)
+  const root = resolveTranscriptRoot(readMachineValue('hub.transcript_root'))
   if (root.source === 'disabled') return { files: 0, rows: 0, source: 'disabled' }
 
   try {

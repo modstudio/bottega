@@ -5,7 +5,7 @@
   "description": "One aggregator: tasks in flight across every project, what each cost, and the daily report",
   "type": "module",
   "scripts": {
-    "hub": "bun src/cli.ts",
+    "hub": "bun --no-env-file src/cli.ts",
     "report-deliver": "bun src/report-delivery-cli.ts",
     "typecheck": "tsc --noEmit",
     "test": "bun test",

@@ -10,24 +10,12 @@ import {
 beforeAll(resetFixtureStore)
 
 describe('transcript root', () => {
-  test('an override selects its path and an empty override disables ingest', () => {
-    expect(resolveTranscriptRoot('/transcripts', undefined)).toEqual({
+  test('a resolved path enables ingest and an empty value disables it', () => {
+    expect(resolveTranscriptRoot('/transcripts')).toEqual({
       source: 'read',
       path: '/transcripts',
     })
-    expect(resolveTranscriptRoot('', undefined)).toEqual({ source: 'disabled' })
-  })
-
-  test('HOME supplies the default only when no override is set', () => {
-    expect(resolveTranscriptRoot(undefined, '/home')).toEqual({
-      source: 'read',
-      path: '/home/.claude/projects',
-    })
-    for (const home of [undefined, '']) {
-      expect(() => resolveTranscriptRoot(undefined, home)).toThrow(
-        'Cannot resolve hub.transcript_root at .claude/projects under HOME because HOME is unset or empty',
-      )
-    }
+    expect(resolveTranscriptRoot('')).toEqual({ source: 'disabled' })
   })
 
   test('an absent resolved root refuses with the remedy', () => {

@@ -21,7 +21,7 @@ import tempfile
 
 ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "../.."))
 DB = os.environ.get("ORCH_DB") or subprocess.check_output(
-    ["bun", os.path.join(ROOT, "shared", "state-directory.ts"), "orchestrator", "database"],
+    ["bun", "--no-env-file", os.path.join(ROOT, "shared", "state-directory.ts"), "orchestrator", "database"],
     text=True,
 ).strip()
 

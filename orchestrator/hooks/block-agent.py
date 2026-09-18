@@ -59,7 +59,7 @@ ALLOW = {"claude-code-guide"}
 
 ORCHESTRATOR_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
 DB = os.environ.get("ORCH_DB") or subprocess.check_output(
-    ["bun", os.path.join(ORCHESTRATOR_ROOT, "..", "shared", "state-directory.ts"),
+    ["bun", "--no-env-file", os.path.join(ORCHESTRATOR_ROOT, "..", "shared", "state-directory.ts"),
      "orchestrator", "database"], text=True,
 ).strip()
 # Where a decision goes when sqlite will not take it. A gate that cannot say

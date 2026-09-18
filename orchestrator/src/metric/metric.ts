@@ -11,7 +11,6 @@ const targetGitEnvironment = (repo: string) =>
     require('../git/git-environment.ts') as typeof import('../git/git-environment.ts')
   ).targetGitEnvironment(repo)
 
-const PROJECTS = `${process.env.HOME}/.claude/projects`
 /**
  * Where numbered clones live, for the ONE thing the register cannot answer.
  *
@@ -65,7 +64,7 @@ function metricDayStart(days: number, now: number): Date {
 const metricDaysAgo = (days: number, now: number): string =>
   metricCalendarDay(metricDayStart(days, now))
 
-/** Every .jsonl transcript under ~/.claude/projects. */
+/** Every .jsonl transcript under the configured transcript root. */
 function transcripts(dir: string, out: string[] = []): string[] {
   let entries: Dirent[]
   try {
@@ -79,6 +78,10 @@ function transcripts(dir: string, out: string[] = []): string[] {
     else if (e.name.endsWith('.jsonl')) out.push(p)
   }
   return out
+}
+
+function configuredTranscripts(root: string): string[] {
+  return root === '' ? [] : transcripts(root)
 }
 
 /**
@@ -116,6 +119,7 @@ function repoOfCwd(cwd: string | undefined, cloneRoot: string): string | null {
 
 async function claudeTokensByDay(since: string) {
   const cloneRoot = readMachineValue('projects.clone_root')
+  const transcriptRoot = readMachineValue('hub.transcript_root')
   const days = new Map<
     string,
     {
@@ -126,7 +130,7 @@ async function claudeTokensByDay(since: string) {
       other: number
     }
   >()
-  for (const file of transcripts(PROJECTS)) {
+  for (const file of configuredTranscripts(transcriptRoot)) {
     // Skip files untouched since the window opened — the cheap 90% of the work.
     try {
       if (metricCalendarDay(statSync(file).mtime) < since) continue
