@@ -15,14 +15,21 @@ export type WorkflowTreePlan =
 export const WORKFLOW_TREE_ROOT = 'workflows'
 export const WORKFLOW_TREE_FOLDERS = ['steps', 'flows'] as const
 export type WorkflowTreeFolder = (typeof WORKFLOW_TREE_FOLDERS)[number]
-export const WORKFLOW_STUB_DIRECTORIES = ['.agents/workflows', '.claude/commands'] as const
-export type WorkflowStubDirectory = (typeof WORKFLOW_STUB_DIRECTORIES)[number]
+export const WORKFLOW_STUB_DIRECTORIES = ['.claude/commands'] as const
+export const WORKFLOW_STUB_PRUNE_DIRECTORIES = ['.agents/workflows'] as const
+export type WorkflowStubDirectory =
+  | (typeof WORKFLOW_STUB_DIRECTORIES)[number]
+  | (typeof WORKFLOW_STUB_PRUNE_DIRECTORIES)[number]
 
 const SLUG = '[a-z0-9][a-z0-9-]{0,63}'
 const MIRROR_PATH = new RegExp(
   `^${WORKFLOW_TREE_ROOT}/(${WORKFLOW_TREE_FOLDERS.join('|')})/(${SLUG})\\.md$`,
 )
-const STUB_PATH = new RegExp(`^(\\.agents/workflows|\\.claude/commands)/(${SLUG})\\.md$`)
+const STUB_PATH = new RegExp(
+  `^(${[...WORKFLOW_STUB_DIRECTORIES, ...WORKFLOW_STUB_PRUNE_DIRECTORIES]
+    .map((directory) => directory.replace('.', '\\.'))
+    .join('|')})/(${SLUG})\\.md$`,
+)
 
 export function matchWorkflowTreePath(
   path: string,
@@ -128,13 +135,19 @@ export function planWorkflowHydration(input: {
   const current = new Map(input.tree.map((file) => [file.path, file.body]))
   const paths = new Set(desired.map((file) => file.path))
   const unowned = input.tree.find(
-    (file) => matchWorkflowTreePath(file.path)?.kind === 'stub' && !isOwnedStub(file),
+    (file) =>
+      matchWorkflowTreePath(file.path)?.kind === 'stub' &&
+      WORKFLOW_STUB_DIRECTORIES.some((directory) => file.path.startsWith(`${directory}/`)) &&
+      !isOwnedStub(file),
   )
   if (unowned) return { writes: [], deletes: [], refusal: unowned.path }
   return {
     writes: desired.filter((file) => current.get(file.path) !== file.body),
     deletes: input.tree
-      .filter((file) => matchWorkflowTreePath(file.path) && !paths.has(file.path))
+      .filter((file) => {
+        const match = matchWorkflowTreePath(file.path)
+        return match && !paths.has(file.path) && (match.kind === 'mirror' || isOwnedStub(file))
+      })
       .map((file) => file.path)
       .sort(),
   }

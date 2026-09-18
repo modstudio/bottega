@@ -38,7 +38,6 @@ describe('planWorkflowHydration', () => {
   test('writes every production row into an empty tree and the resulting tree is stable', () => {
     const first = planWorkflowHydration({ store, tree: [] })
     expect(first.writes.map(({ path }) => path)).toEqual([
-      '.agents/workflows/ship.md',
       '.claude/commands/ship.md',
       'workflows/flows/ship.md',
       'workflows/steps/verify.md',
@@ -51,17 +50,10 @@ describe('planWorkflowHydration', () => {
 
   test('renders the ownership marker, ordered argument hint, and slug-specific compose instruction', () => {
     const plan = planWorkflowHydration({ store, tree: [] })
-    const stub = plan.writes.find(({ path }) => path === '.agents/workflows/ship.md')
+    const stub = plan.writes.find(({ path }) => path === '.claude/commands/ship.md')
     expect(stub?.body).toContain('argument-hint: "<key> [branch]"')
     expect(stub?.body).toContain('generated-by: orch workflow hydrate')
     expect(stub?.body).toContain('`compose_workflow` with `workflow: "ship"`')
-  })
-
-  test('renders identical bodies at both stub paths so harness copies cannot drift', () => {
-    const plan = planWorkflowHydration({ store, tree: [] })
-    const agents = plan.writes.find(({ path }) => path === '.agents/workflows/ship.md')
-    const claude = plan.writes.find(({ path }) => path === '.claude/commands/ship.md')
-    expect(agents?.body).toBe(claude?.body)
   })
 
   test('refuses an unmarked stub without writes so hydration cannot clobber it', () => {
@@ -73,21 +65,17 @@ describe('planWorkflowHydration', () => {
     ).toEqual({ writes: [], deletes: [], refusal: '.claude/commands/ship.md' })
   })
 
-  test('deletes only marked stubs left by workflows no longer in production', () => {
-    const marked =
-      '---\nname: retired\ngenerated-by: orch workflow hydrate\n---\nRetired workflow.\n'
+  test('deletes marked stubs from the prune-only directory and ignores unmarked stubs there', () => {
+    const marked = '---\nname: ship\ngenerated-by: orch workflow hydrate\n---\nShip workflow.\n'
     expect(
       planWorkflowHydration({
         store,
-        tree: [{ path: '.agents/workflows/retired.md', body: marked }],
-      }).deletes,
-    ).toEqual(['.agents/workflows/retired.md'])
-    expect(
-      planWorkflowHydration({
-        store,
-        tree: [{ path: '.agents/workflows/retired.md', body: 'hand written\n' }],
+        tree: [
+          { path: '.agents/workflows/ship.md', body: marked },
+          { path: '.agents/workflows/hand-written.md', body: 'hand written\n' },
+        ],
       }),
-    ).toEqual({ writes: [], deletes: [], refusal: '.agents/workflows/retired.md' })
+    ).toMatchObject({ deletes: ['.agents/workflows/ship.md'] })
   })
 
   test('deletes a tree file whose slug is absent from production', () => {
