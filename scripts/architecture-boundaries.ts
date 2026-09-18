@@ -1,5 +1,9 @@
 import { dirname, normalize } from 'node:path'
-import { recordReadBoundaries, recordSchemaBoundaries } from './architecture-record-boundaries.ts'
+import {
+  recordReadBoundariesAfterPublish,
+  recordReadBoundariesBeforePublish,
+  recordSchemaBoundaries,
+} from './architecture-record-boundaries.ts'
 
 export type ImportBoundary = {
   name: string
@@ -555,7 +559,7 @@ export const importBoundaries: ImportBoundary[] = [
       'hono',
       'hono/cors',
       'zod',
-      './config-service.ts',
+      './record-config.ts',
       './record-auth.ts',
       './record-docs.ts',
       './record-snapshots.ts',
@@ -581,7 +585,7 @@ export const importBoundaries: ImportBoundary[] = [
     'orchestrator/src/record/record-api-server.ts',
     [
       '../postgres/postgres-migrate.ts',
-      './config-service.ts',
+      './record-config.ts',
       './record-api.ts',
       './record-auth.ts',
       './record-docs.ts',
@@ -620,7 +624,7 @@ export const importBoundaries: ImportBoundary[] = [
     ['../database/db.ts', './record-api-client.ts', 'bun:sqlite'],
     'Enforce the record-cache concern boundary.',
   ),
-  ...recordReadBoundaries.slice(0, 2),
+  ...recordReadBoundariesBeforePublish,
   boundary(
     'record-publish-boundary',
     'orchestrator/src/record/record-publish.ts',
@@ -641,7 +645,7 @@ export const importBoundaries: ImportBoundary[] = [
     ['../database/db.ts', './record-api-client.ts', '../doc/doc-write-allowed.ts'],
     'Enforce the record-push-docs concern boundary.',
   ),
-  ...recordReadBoundaries.slice(2),
+  ...recordReadBoundariesAfterPublish,
   boundary(
     'record-sync-boundary',
     'orchestrator/src/record/record-sync.ts',

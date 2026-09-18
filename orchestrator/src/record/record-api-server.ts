@@ -1,6 +1,13 @@
 // concern: record-api-server
 /** Composes and serves the record API. Must not own record queries or authentication policy. */
 import { probeRecord, recordMigrationCount } from '../postgres/postgres-migrate.ts'
+import { recordApi } from './record-api.ts'
+import {
+  recordAllowedOrigins,
+  recordAuth,
+  recordIdentity,
+  setActiveRecordSpaceForSession,
+} from './record-auth.ts'
 import {
   addDataKeyWraps,
   createDataKey,
@@ -18,14 +25,7 @@ import {
   registerMachineKey,
   retireDataKey,
   revokeMachineKey,
-} from './config-service.ts'
-import { recordApi } from './record-api.ts'
-import {
-  recordAllowedOrigins,
-  recordAuth,
-  recordIdentity,
-  setActiveRecordSpaceForSession,
-} from './record-auth.ts'
+} from './record-config.ts'
 import {
   consumeRecordDoc,
   countRecordDocs,

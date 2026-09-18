@@ -16,10 +16,10 @@ const boundary = (
   reason,
 })
 
-export const recordReadBoundaries: ImportBoundary[] = [
+export const recordReadBoundariesBeforePublish: ImportBoundary[] = [
   boundary(
     'record-config-boundary',
-    'orchestrator/src/record/config-service.ts',
+    'orchestrator/src/record/record-config.ts',
     ['bun', '../../../shared/record/schema.ts', '../../../shared/record/tenant.ts'],
     'Enforce the hosted config service concern boundary.',
   ),
@@ -34,6 +34,9 @@ export const recordReadBoundaries: ImportBoundary[] = [
     ],
     'Enforce the record-docs concern boundary.',
   ),
+]
+
+export const recordReadBoundariesAfterPublish: ImportBoundary[] = [
   boundary(
     'record-projects-boundary',
     'orchestrator/src/record/record-projects.ts',

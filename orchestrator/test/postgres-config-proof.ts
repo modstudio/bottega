@@ -15,7 +15,7 @@ import {
   registerMachineKey,
   retireDataKey,
   revokeMachineKey,
-} from '../src/record/config-service.ts'
+} from '../src/record/record-config.ts'
 import { asSpace, asSpaces, succeeds } from './fixtures/postgres-rls.ts'
 
 const USER_B = '01990000-0000-7000-8000-000000000020'
@@ -423,9 +423,13 @@ export function registerHostedConfigProofs({
         envelope: Uint8Array.of(1),
         expectedRowVersion: null,
       })
-    await expect(attempt(DEK_B, 'foreign-dek')).rejects.toMatchObject({ status: 422 })
+    await expect(attempt(DEK_B, 'foreign-dek')).rejects.toMatchObject({
+      status: 422,
+    })
     await retireDataKey({ ...serviceTenant, dekId: DEK_A })
-    await expect(attempt(DEK_A, 'retired-dek')).rejects.toMatchObject({ status: 422 })
+    await expect(attempt(DEK_A, 'retired-dek')).rejects.toMatchObject({
+      status: 422,
+    })
   })
 
   test('config service refuses a non-consecutive data-key version', async () => {
@@ -445,7 +449,12 @@ export function registerHostedConfigProofs({
         label: 'bad',
       }),
     ).rejects.toMatchObject({ status: 422 })
-    await registerMachineKey({ ...serviceTenant, keyId, publicKey, label: 'service machine' })
+    await registerMachineKey({
+      ...serviceTenant,
+      keyId,
+      publicKey,
+      label: 'service machine',
+    })
     succeeds(
       'postgres',
       'postgres',

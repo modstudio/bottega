@@ -5,6 +5,7 @@ import type { Context } from 'hono'
 import { Hono } from 'hono'
 import { cors } from 'hono/cors'
 import { z } from 'zod'
+import { RECORD_SIGN_IN_REMEDY, type RecordIdentity } from './record-auth.ts'
 import type {
   ConfigEntry,
   ConfigScope,
@@ -13,9 +14,8 @@ import type {
   ConfigWrapInput,
   DataKey,
   MachineKey,
-} from './config-service.ts'
-import { ConfigServiceError } from './config-service.ts'
-import { RECORD_SIGN_IN_REMEDY, type RecordIdentity } from './record-auth.ts'
+} from './record-config.ts'
+import { CONFIG_SCOPES, ConfigServiceError, MACHINE_KEY_ID_PATTERN } from './record-config.ts'
 import type { RecordDoc, RecordDocImportInput, RecordDocRevision } from './record-docs.ts'
 import { RecordDocError } from './record-docs.ts'
 import type { RecordProject } from './record-projects.ts'
@@ -29,7 +29,12 @@ export const SNAPSHOT_MAX_BYTES = 1024 * 1024
 
 type AuthHandler = { handler(request: Request): Response | Promise<Response> }
 type ApiEnvironment = { Variables: { identity: RecordIdentity } }
-type Tenant = { url: string; userId: string; spaceId: string; spaceIds: string[] }
+type Tenant = {
+  url: string
+  userId: string
+  spaceId: string
+  spaceIds: string[]
+}
 type Deps = {
   recordUrl: string
   allowedOrigins?: string[]
@@ -91,7 +96,12 @@ type Deps = {
     input: Tenant & { id: string; reason: string; author: string },
   ): Promise<{ id: string; revisionId: string; alreadyConsumed: boolean }>
   restoreDoc(
-    input: Tenant & { id: string; revisionId: string; reason: string; author: string },
+    input: Tenant & {
+      id: string
+      revisionId: string
+      reason: string
+      author: string
+    },
   ): Promise<{ id: string; revisionId: string }>
   renameDocSubject(
     input: Tenant & { from: string; to: string; count: number },
@@ -110,7 +120,11 @@ type Deps = {
   ): Promise<void>
   voidRun(input: Tenant & { id: string; reason: string }): Promise<void>
   listScores(
-    input: Tenant & { updatedSince?: string; limit: number; cursor: RecordCursor | null },
+    input: Tenant & {
+      updatedSince?: string
+      limit: number
+      cursor: RecordCursor | null
+    },
   ): Promise<RecordScore[]>
   countScores(input: Tenant): Promise<{ scores: number; voids: number }>
   upsertSnapshot(
@@ -190,14 +204,14 @@ const revisionOpSchema = z.enum([
   'import',
   'backfill',
 ])
-const configScopeSchema = z.enum(['user', 'space'])
+const configScopeSchema = z.enum(CONFIG_SCOPES)
 const expectedVersionSchema = z.number().int().positive()
 const base64urlSchema = z
   .string()
   .min(1)
   .regex(/^[A-Za-z0-9_-]+$/)
   .refine((value) => Buffer.from(value, 'base64url').toString('base64url') === value)
-const keyIdSchema = z.string().regex(/^[A-Za-z0-9_-]{22}$/)
+const keyIdSchema = z.string().regex(MACHINE_KEY_ID_PATTERN)
 const wrapSchema = z.object({
   recipientKeyId: keyIdSchema,
   senderKeyId: keyIdSchema,
@@ -273,7 +287,10 @@ export function recordApi(deps: Deps): Hono<ApiEnvironment> {
     const identity = await deps.readSession(context.req.raw.headers)
     if (!identity)
       return context.json(
-        { error: 'record authentication required', remedy: RECORD_SIGN_IN_REMEDY },
+        {
+          error: 'record authentication required',
+          remedy: RECORD_SIGN_IN_REMEDY,
+        },
         401,
       )
     context.set('identity', identity)
@@ -360,7 +377,11 @@ export function recordApi(deps: Deps): Hono<ApiEnvironment> {
     } catch {
       return context.json({ error: 'invalid before cursor' }, 400)
     }
-    const items = await deps.readReviews({ ...tenant, limit: query.data.limit, before })
+    const items = await deps.readReviews({
+      ...tenant,
+      limit: query.data.limit,
+      before,
+    })
     const hasMore = items.length > query.data.limit
     if (hasMore) items.pop()
     const last = items.at(-1)
@@ -368,7 +389,10 @@ export function recordApi(deps: Deps): Hono<ApiEnvironment> {
       items,
       nextCursor:
         hasMore && last
-          ? encodeRecordCursor({ at: String(last.recordedAt), id: String(last.id) })
+          ? encodeRecordCursor({
+              at: String(last.recordedAt),
+              id: String(last.id),
+            })
           : null,
     })
   })
@@ -422,7 +446,9 @@ export function recordApi(deps: Deps): Hono<ApiEnvironment> {
     if (!active) return noSpace(context)
     const query = configList.safeParse(context.req.query())
     if (!query.success) return context.json({ error: 'invalid config entry list query' }, 422)
-    return context.json({ items: await deps.listConfigEntries({ ...active, ...query.data }) })
+    return context.json({
+      items: await deps.listConfigEntries({ ...active, ...query.data }),
+    })
   })
   app.get('/v1/config/entries/:key', async (context) => {
     const active = scope(context)
@@ -445,7 +471,11 @@ export function recordApi(deps: Deps): Hono<ApiEnvironment> {
     if (!body.success) return context.json({ error: 'invalid config entry body' }, 422)
     try {
       return context.json(
-        await deps.putConfigEntry({ ...active, key: context.req.param('key'), ...body.data }),
+        await deps.putConfigEntry({
+          ...active,
+          key: context.req.param('key'),
+          ...body.data,
+        }),
       )
     } catch (error) {
       return writeError(context, error)
@@ -460,7 +490,11 @@ export function recordApi(deps: Deps): Hono<ApiEnvironment> {
       .safeParse(await context.req.json().catch(() => null))
     if (!body.success) return context.json({ error: 'invalid config entry delete body' }, 422)
     try {
-      await deps.deleteConfigEntry({ ...active, key: context.req.param('key'), ...body.data })
+      await deps.deleteConfigEntry({
+        ...active,
+        key: context.req.param('key'),
+        ...body.data,
+      })
       return context.json({ deleted: true })
     } catch (error) {
       return writeError(context, error)
@@ -471,7 +505,9 @@ export function recordApi(deps: Deps): Hono<ApiEnvironment> {
     if (!active) return noSpace(context)
     const query = configList.safeParse(context.req.query())
     if (!query.success) return context.json({ error: 'invalid config secret list query' }, 422)
-    return context.json({ items: await deps.listConfigSecrets({ ...active, ...query.data }) })
+    return context.json({
+      items: await deps.listConfigSecrets({ ...active, ...query.data }),
+    })
   })
   app.get('/v1/config/secrets/:key', async (context) => {
     const active = scope(context)
@@ -520,7 +556,11 @@ export function recordApi(deps: Deps): Hono<ApiEnvironment> {
       .safeParse(await context.req.json().catch(() => null))
     if (!body.success) return context.json({ error: 'invalid config secret delete body' }, 422)
     try {
-      await deps.deleteConfigSecret({ ...active, key: context.req.param('key'), ...body.data })
+      await deps.deleteConfigSecret({
+        ...active,
+        key: context.req.param('key'),
+        ...body.data,
+      })
       return context.json({ deleted: true })
     } catch (error) {
       return writeError(context, error)
@@ -541,7 +581,10 @@ export function recordApi(deps: Deps): Hono<ApiEnvironment> {
     const active = scope(context)
     if (!active) return noSpace(context)
     const body = z
-      .object({ version: z.number().int().positive(), wraps: z.array(wrapSchema) })
+      .object({
+        version: z.number().int().positive(),
+        wraps: z.array(wrapSchema),
+      })
       .safeParse(await context.req.json().catch(() => null))
     if (!body.success) return context.json({ error: 'invalid data key body' }, 422)
     try {
@@ -593,7 +636,10 @@ export function recordApi(deps: Deps): Hono<ApiEnvironment> {
     if (!active) return noSpace(context)
     const recipientKeyId = keyIdSchema.safeParse(context.req.param('recipientKeyId'))
     if (!recipientKeyId.success) return context.json({ error: 'invalid recipient key id' }, 422)
-    await deps.deleteDataKeyWraps({ ...active, recipientKeyId: recipientKeyId.data })
+    await deps.deleteDataKeyWraps({
+      ...active,
+      recipientKeyId: recipientKeyId.data,
+    })
     return context.json({ deleted: true })
   })
   app.get('/v1/config/machine-keys', async (context) => {
@@ -601,7 +647,10 @@ export function recordApi(deps: Deps): Hono<ApiEnvironment> {
     if (!active) return noSpace(context)
     const items = await deps.listMachineKeys(active)
     return context.json({
-      items: items.map((item) => ({ ...item, publicKey: encoded(item.publicKey) })),
+      items: items.map((item) => ({
+        ...item,
+        publicKey: encoded(item.publicKey),
+      })),
     })
   })
   app.put('/v1/config/machine-keys/:keyId', async (context) => {
@@ -644,7 +693,10 @@ export function recordApi(deps: Deps): Hono<ApiEnvironment> {
     const hasMore = items.length > limit
     if (hasMore) items.pop()
     const last = items.at(-1)
-    return { items, nextCursor: hasMore && last ? encodeRecordCursor(cursorOf(last)) : null }
+    return {
+      items,
+      nextCursor: hasMore && last ? encodeRecordCursor(cursorOf(last)) : null,
+    }
   }
   app.get('/v1/docs', async (context) => {
     const tenant = scope(context)
@@ -679,7 +731,10 @@ export function recordApi(deps: Deps): Hono<ApiEnvironment> {
       includeDeleted: Boolean(query.data.includeDeleted),
     })
     return context.json(
-      page(items, query.data.limit, (item) => ({ at: item.updatedAt, id: item.id })),
+      page(items, query.data.limit, (item) => ({
+        at: item.updatedAt,
+        id: item.id,
+      })),
     )
   })
   app.get('/v1/docs/counts', async (context) => {
@@ -750,7 +805,10 @@ export function recordApi(deps: Deps): Hono<ApiEnvironment> {
     const id = idSchema.safeParse(context.req.param('id'))
     if (!id.success) return context.json({ error: 'doc id must be a uuid' }, 400)
     const body = z
-      .object({ reason: z.string().trim().min(1), author: z.string().trim().min(1) })
+      .object({
+        reason: z.string().trim().min(1),
+        author: z.string().trim().min(1),
+      })
       .safeParse(await context.req.json().catch(() => null))
     if (!body.success) return context.json({ error: 'invalid doc delete' }, 400)
     try {
@@ -765,7 +823,10 @@ export function recordApi(deps: Deps): Hono<ApiEnvironment> {
     const id = idSchema.safeParse(context.req.param('id'))
     if (!id.success) return context.json({ error: 'doc id must be a uuid' }, 400)
     const body = z
-      .object({ reason: z.string().trim().min(1), author: z.string().trim().min(1) })
+      .object({
+        reason: z.string().trim().min(1),
+        author: z.string().trim().min(1),
+      })
       .safeParse(await context.req.json().catch(() => null))
     if (!body.success) return context.json({ error: 'invalid doc consume' }, 400)
     try {
@@ -834,7 +895,10 @@ export function recordApi(deps: Deps): Hono<ApiEnvironment> {
       cursor,
     })
     return context.json(
-      page(items, query.data.limit, (item) => ({ at: item.updatedAt, id: item.runId })),
+      page(items, query.data.limit, (item) => ({
+        at: item.updatedAt,
+        id: item.runId,
+      })),
     )
   })
   app.put('/v1/runs/:id/score', async (context) => {
@@ -866,7 +930,9 @@ export function recordApi(deps: Deps): Hono<ApiEnvironment> {
     const id = idSchema.safeParse(context.req.param('id'))
     if (!id.success) return context.json({ error: 'run id must be a uuid' }, 400)
     const body = z
-      .object({ reason: z.string().min(1).default('voided with orch score --void') })
+      .object({
+        reason: z.string().min(1).default('voided with orch score --void'),
+      })
       .safeParse(await context.req.json().catch(() => ({})))
     if (!body.success) return context.json({ error: 'invalid void' }, 400)
     try {
