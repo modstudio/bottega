@@ -1,6 +1,24 @@
 // concern: record-api-server
 /** Composes and serves the record API. Must not own record queries or authentication policy. */
 import { probeRecord, recordMigrationCount } from '../postgres/postgres-migrate.ts'
+import {
+  addDataKeyWraps,
+  createDataKey,
+  currentDataKey,
+  deleteConfigEntry,
+  deleteConfigSecret,
+  deleteDataKeyWraps,
+  getConfigEntry,
+  getConfigSecret,
+  listConfigEntries,
+  listConfigSecrets,
+  listMachineKeys,
+  putConfigEntry,
+  putConfigSecret,
+  registerMachineKey,
+  retireDataKey,
+  revokeMachineKey,
+} from './config-service.ts'
 import { recordApi } from './record-api.ts'
 import {
   recordAllowedOrigins,
@@ -108,6 +126,22 @@ export function startRecordApiServer(environment: ServerEnvironment = process.en
     countScores: countRecordScores,
     upsertSnapshot: upsertRecordSnapshot,
     listSnapshots: listRecordSnapshots,
+    listConfigEntries,
+    getConfigEntry,
+    putConfigEntry,
+    deleteConfigEntry,
+    listConfigSecrets,
+    getConfigSecret,
+    putConfigSecret,
+    deleteConfigSecret,
+    currentDataKey,
+    createDataKey,
+    addDataKeyWraps,
+    retireDataKey,
+    deleteDataKeyWraps,
+    listMachineKeys,
+    registerMachineKey,
+    revokeMachineKey,
   })
   return Bun.serve({
     hostname: '0.0.0.0',
