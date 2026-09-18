@@ -53,7 +53,7 @@ for tmpl in "$CONCERN"/launchd/*.plist.template; do
   fi
 done
 
-# The pre-devbox report job. It has been failing with EX_CONFIG on every run
+# The obsolete report job has been failing with EX_CONFIG on every run
 # since the move, pointing at a directory that holds nothing but a logs folder,
 # and hub now does its work.
 if launchctl print "gui/$UID_NUM/com.user.work-report" >/dev/null 2>&1; then
