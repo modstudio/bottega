@@ -154,3 +154,70 @@ test('releasing a shared worktree pointer drops this run from terminalCloseOutRu
     rmSync(fixture.repo, { recursive: true, force: true })
   }
 })
+
+test('a two-tree chain held at close-out stays in terminalCloseOutRuns until the last pointer is released', () => {
+  const id = addRun({ agent: 'codex', job: 'implement', status: 'ok' })
+  const child = addRun({
+    agent: 'codex',
+    job: 'implement',
+    status: 'ok',
+    parent: id,
+    turn: 2,
+  })
+  const fixture = heldCleanup(id)
+  const secondTree = join(fixture.repo, '.claude', 'worktrees', `orch-${child}`)
+  try {
+    db()
+      .query(
+        `UPDATE run
+         SET repo=?, cwd=?, worktree=?, worktree_source='git'
+         WHERE id=?`,
+      )
+      .run(fixture.project, secondTree, secondTree, child)
+    expect(closeOutIds()).toContain(id)
+
+    discard(fixture.row)
+
+    expect(closeOutIds()).toContain(id)
+    expect(
+      db()
+        .query(
+          'SELECT worktree, close_out_outcome, close_out_detail, close_out_attempted_at FROM run WHERE id=?',
+        )
+        .get(id),
+    ).toEqual({
+      worktree: null,
+      close_out_outcome: 'held',
+      close_out_detail: 'close-out held the tree',
+      close_out_attempted_at: '2026-09-18T00:00:00.000Z',
+    })
+    expect(db().query('SELECT worktree FROM run WHERE id=?').get(child)).toEqual({
+      worktree: secondTree,
+    })
+
+    discard({
+      ...fixture.row,
+      cwd: secondTree,
+      worktree: secondTree,
+    })
+
+    expect(closeOutIds()).not.toContain(id)
+    expect(
+      db()
+        .query(
+          'SELECT worktree, close_out_outcome, close_out_detail, close_out_attempted_at FROM run WHERE id=?',
+        )
+        .get(id),
+    ).toEqual({
+      worktree: null,
+      close_out_outcome: null,
+      close_out_detail: null,
+      close_out_attempted_at: null,
+    })
+    expect(db().query('SELECT worktree FROM run WHERE id=?').get(child)).toEqual({
+      worktree: null,
+    })
+  } finally {
+    rmSync(fixture.repo, { recursive: true, force: true })
+  }
+})
