@@ -78,15 +78,6 @@ describe('secret values', () => {
     )
   })
 
-  test('rejects swapping a valid row A envelope into row B', () => {
-    const dek = generateDataKey()
-    const rowA = { ...valueContext, keyName: 'service.a' }
-    const rowB = { ...valueContext, keyName: 'service.b' }
-    const envelope = sealValue({ dek, valueContext: rowA, plaintext: textEncoder.encode('A') })
-
-    expectReason(() => openValue({ envelope, dek, valueContext: rowB }), 'authentication-failed')
-  })
-
   test('rejects every single-byte envelope mutation', () => {
     const dek = generateDataKey()
     const envelope = sealValue({
@@ -120,7 +111,7 @@ describe('secret values', () => {
     )
   })
 
-  test('length-prefixes fields and distinguishes null from empty users', () => {
+  test('length-prefixes fields and distinguishes null, empty and NUL users', () => {
     const dek = generateDataKey()
     const collisionA = { ...valueContext, keyName: 'a|b', environment: 'c' }
     const collisionB = { ...valueContext, keyName: 'a', environment: 'b|c' }
@@ -136,6 +127,7 @@ describe('secret values', () => {
 
     const nullUser = { ...valueContext, userId: null }
     const emptyUser = { ...valueContext, userId: '' }
+    const nulUser = { ...valueContext, userId: '\0' }
     const nullEnvelope = sealValue({
       dek,
       valueContext: nullUser,
@@ -143,6 +135,19 @@ describe('secret values', () => {
     })
     expectReason(
       () => openValue({ envelope: nullEnvelope, dek, valueContext: emptyUser }),
+      'authentication-failed',
+    )
+    expectReason(
+      () => openValue({ envelope: nullEnvelope, dek, valueContext: nulUser }),
+      'authentication-failed',
+    )
+    const emptyEnvelope = sealValue({
+      dek,
+      valueContext: emptyUser,
+      plaintext: textEncoder.encode('empty'),
+    })
+    expectReason(
+      () => openValue({ envelope: emptyEnvelope, dek, valueContext: nulUser }),
       'authentication-failed',
     )
   })

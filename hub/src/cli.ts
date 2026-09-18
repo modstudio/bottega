@@ -571,7 +571,7 @@ async function task() {
     const env = tracker?.envPrefix ?? project.settings.envPrefix
     if (!tracker || !env)
       throw new Error(`project ${project.name} has no usable tracker configured`)
-    const auth = credentials(env)
+    const auth = await credentials(env)
     if (!auth) throw new Error(`credentials for ${project.name} tracker do not resolve`)
     const status = tracker.openStatuses?.[0]
     if (!status) throw new Error(`project ${project.name} has no open tracker status configured`)

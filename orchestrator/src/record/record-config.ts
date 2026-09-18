@@ -463,6 +463,34 @@ export async function currentDataKey(
   })
 }
 
+/** Returns one DEK and only wraps addressed to the requesting machine. */
+export async function getDataKey(
+  input: ConfigTenant & { dekId: string; recipientKeyId: string },
+): Promise<DataKey | null> {
+  return tenant(input, async (tx) => {
+    const rows = await tx`
+      SELECT * FROM secret_dek
+      WHERE space_id=${input.spaceId}::uuid AND id=${input.dekId}::uuid
+    `
+    if (!rows[0]) return null
+    const row = rows[0] as Record<string, unknown>
+    const wraps = await tx`
+      SELECT recipient_key_id, sender_key_id, enc, ciphertext
+      FROM secret_dek_wrap
+      WHERE space_id=${input.spaceId}::uuid AND dek_id=${input.dekId}::uuid
+        AND recipient_key_id=${input.recipientKeyId}
+      ORDER BY sender_key_id
+    `
+    return {
+      id: String(row.id),
+      version: Number(row.version),
+      createdAt: iso(row.created_at),
+      retiredAt: nullableIso(row.retired_at),
+      wraps: wraps.map((item: Record<string, unknown>) => wrapRow(item)),
+    }
+  })
+}
+
 async function insertWraps(
   tx: SQL,
   input: { spaceId: string; dekId: string; wraps: ConfigWrapInput[] },
@@ -479,7 +507,7 @@ async function insertWraps(
 }
 
 export async function createDataKey(
-  input: ConfigTenant & { version: number; wraps: ConfigWrapInput[] },
+  input: ConfigTenant & { dekId: string; version: number; wraps: ConfigWrapInput[] },
 ): Promise<{ id: string; version: number }> {
   try {
     return await tenant(input, async (tx) => {
@@ -494,13 +522,15 @@ export async function createDataKey(
           409,
         )
       }
-      const id = newRecordId()
       try {
         await tx`
         INSERT INTO secret_dek (id, space_id, version, created_at)
-        VALUES (${id}::uuid, ${input.spaceId}::uuid, ${input.version}, now())
+        VALUES (${input.dekId}::uuid, ${input.spaceId}::uuid, ${input.version}, now())
       `
       } catch (error) {
+        if (isUniqueViolation(error, 'secret_dek_pkey')) {
+          throw new ConfigServiceError('data key id is already used', 409)
+        }
         if (isUniqueViolation(error, 'secret_dek_space_version_unique')) {
           throw new ConcurrentDataKeyCreate()
         }
@@ -508,10 +538,10 @@ export async function createDataKey(
       }
       await insertWraps(tx, {
         spaceId: input.spaceId,
-        dekId: id,
+        dekId: input.dekId,
         wraps: input.wraps,
       })
-      return { id, version: input.version }
+      return { id: input.dekId, version: input.version }
     })
   } catch (error) {
     if (!(error instanceof ConcurrentDataKeyCreate)) throw error

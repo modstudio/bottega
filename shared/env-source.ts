@@ -1,6 +1,8 @@
 import { readFileSync } from 'node:fs'
 import { parseEnv } from 'node:util'
 import { type ConfigEnvironment, resolveEnvFilePaths } from './config-directory.ts'
+import { ConfigClientError } from './config-client.ts'
+import { readHostedSecrets } from './hosted-secrets.ts'
 
 function resolveEnvValues(
   names: readonly string[],
@@ -42,6 +44,23 @@ export function readEnvValues(
   if (names.every((name) => values[name] !== undefined)) return values
   const texts = resolveEnvFilePaths(env).map(readEnvFile)
   return resolveEnvValues(names, env, texts)
+}
+
+/** Precedence: process environment, bottega.env, harness env file, then hosted secrets. */
+export async function readEnvValuesWithHosted(
+  names: readonly string[],
+  env: ConfigEnvironment = process.env,
+  hosted: typeof readHostedSecrets = readHostedSecrets,
+): Promise<Record<string, string | undefined>> {
+  const local = readEnvValues(names, env)
+  const unresolved = names.filter((name) => local[name] === undefined)
+  if (unresolved.length === 0) return local
+  try {
+    return { ...local, ...(await hosted(unresolved)) }
+  } catch (error) {
+    if (error instanceof ConfigClientError && error.reason === 'not-configured') return local
+    throw error
+  }
 }
 
 function readEnvironment(env: ConfigEnvironment): ConfigEnvironment {

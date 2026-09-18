@@ -371,14 +371,14 @@ export async function ingestTrackers(
           }
         }
         const s = tracker.source
-        const creds = credentials(s.env)
+        const creds = await credentials(s.env)
         if (!creds) {
           return {
             result: {
               project: s.project,
               tasks: 0,
               changed: 0,
-              skipped: `no ${s.env}_MCP_URL / _TOKEN in the environment or either env file`,
+              skipped: `no ${s.env}_MCP_URL / _TOKEN in the environment, either env file, or hosted secrets`,
             },
             filled: 0,
           }

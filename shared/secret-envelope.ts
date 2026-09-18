@@ -10,7 +10,6 @@ const KEY_SIZE = 32
 const NONCE_SIZE = 24
 const TAG_SIZE = 16
 const HEADER_SIZE = 2
-const NULL_USER_SENTINEL = '\0'
 const VALUE_LABEL = `${PLATFORM_SLUG}.secret-envelope.value`
 const WRAP_LABEL = `${PLATFORM_SLUG}.secret-envelope.wrap`
 
@@ -104,7 +103,8 @@ function encodeValueContext(context: ValueContext): Uint8Array {
     unsignedDecimal(FORMAT_VERSION),
     unsignedDecimal(ALGORITHM_ID),
     context.spaceId.toLowerCase(),
-    context.userId === null ? NULL_USER_SENTINEL : context.userId.toLowerCase(),
+    context.userId === null ? '0' : '1',
+    context.userId?.toLowerCase() ?? '',
     context.keyName.normalize('NFC'),
     context.environment.normalize('NFC'),
     context.dekId.toLowerCase(),
@@ -138,7 +138,7 @@ export async function generateMachineKeyPair(): Promise<MachineKeyPair> {
  */
 export async function machineKeyId(publicKey: Uint8Array): Promise<string> {
   requireLength(publicKey, KEY_SIZE)
-  const digest = new Uint8Array(await crypto.subtle.digest('SHA-256', publicKey))
+  const digest = new Uint8Array(await crypto.subtle.digest('SHA-256', Uint8Array.from(publicKey)))
   const binary = String.fromCharCode(...digest.subarray(0, 16))
   return btoa(binary).replaceAll('+', '-').replaceAll('/', '_').replace(/=+$/, '')
 }

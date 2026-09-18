@@ -57,6 +57,7 @@ function appWith(session: RecordIdentity | null, overrides: Record<string, unkno
     },
     deleteConfigSecret: async () => undefined,
     currentDataKey: async () => null,
+    getDataKey: async () => null,
     createDataKey: async () => ({ id, version: 1 }),
     addDataKeyWraps: async () => undefined,
     retireDataKey: async () => undefined,
@@ -236,6 +237,34 @@ describe('record config API', () => {
     const response = await appWith(identity).request('/v1/config/data-keys/current')
     expect(response.status).toBe(422)
     expect(await response.json()).toEqual({ error: 'invalid recipient key id' })
+  })
+
+  test('data key creation accepts a validated client id and passes it through', async () => {
+    let received: Record<string, unknown> | undefined
+    const response = await appWith(identity, {
+      createDataKey: async (input: Record<string, unknown>) => {
+        received = input
+        return { id, version: 1 }
+      },
+    }).request('/v1/config/data-keys', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ dekId: id, version: 1, wraps: [] }),
+    })
+    expect(response.status).toBe(200)
+    expect(received).toMatchObject({ dekId: id, version: 1, spaceId: 'space-a' })
+  })
+
+  test('data key by id filters wraps through the named recipient', async () => {
+    let received: Record<string, unknown> | undefined
+    const response = await appWith(identity, {
+      getDataKey: async (input: Record<string, unknown>) => {
+        received = input
+        return { id, version: 1, createdAt: '2026-09-18T12:00:00.000Z', retiredAt: null, wraps: [] }
+      },
+    }).request(`/v1/config/data-keys/${id}?recipientKeyId=AAAAAAAAAAAAAAAAAAAAAA`)
+    expect(response.status).toBe(200)
+    expect(received).toMatchObject({ dekId: id, recipientKeyId: 'AAAAAAAAAAAAAAAAAAAAAA' })
   })
 })
 

@@ -3,6 +3,7 @@
 import { Command, CommanderError } from 'commander'
 import { register as registerBranches } from '../commands/branches.ts'
 import { register as registerCleanup } from '../commands/cleanup.ts'
+import { register as registerConfig } from '../commands/config.ts'
 import { register as registerDocs } from '../commands/docs.ts'
 import { register as registerHealth } from '../commands/health.ts'
 import { register as registerInbox } from '../commands/inbox.ts'
@@ -37,6 +38,7 @@ registerRunListing(program)
 registerHealth(program)
 registerInbox(program)
 registerCleanup(program)
+registerConfig(program)
 registerJudgement(program)
 registerRouting(program)
 registerLogic(program)
