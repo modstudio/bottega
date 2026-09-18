@@ -85,13 +85,15 @@ async function wrapsFor(
 ) {
   const machine = await localMachine()
   const who = await identity(client)
+  const sender = trust[machine.keyId]
+  if (!sender) throw new Error('this machine is absent from the trust list')
   return Promise.all(
     Object.entries(trust).map(async ([recipientKeyId, recipient]) => {
       const wrapped = await wrapDataKey({
         dek,
         wrapContext: { spaceId: who.spaceId, dekId, dekVersion: version },
         senderPrivateKey: machine.privateKey,
-        senderPublicKey: machine.publicKey,
+        senderPublicKey: bytes(sender.public_key),
         recipientPublicKey: bytes(recipient.public_key),
       })
       return {
@@ -150,6 +152,10 @@ export async function machineTrust(
     throw new Error('machine key id does not match public key')
   await pinTrustedMachine(keyId, publicBytes, label)
   const machine = await localMachine()
+  const trust = await readTrustList()
+  const sender = trust[machine.keyId]
+  const recipient = trust[keyId]
+  if (!sender || !recipient) throw new Error('machine is absent from the trust list after pinning')
   try {
     const current = await client.currentDataKey(machine.keyId)
     const dek = await unwrap(client, current, machine)
@@ -158,8 +164,8 @@ export async function machineTrust(
       dek,
       wrapContext: { spaceId: who.spaceId, dekId: current.id, dekVersion: current.version },
       senderPrivateKey: machine.privateKey,
-      senderPublicKey: machine.publicKey,
-      recipientPublicKey: publicBytes,
+      senderPublicKey: bytes(sender.public_key),
+      recipientPublicKey: bytes(recipient.public_key),
     })
     await client.addWraps(current.id, [
       {
@@ -221,8 +227,8 @@ export async function machineRevoke(keyId: string, client = configClient()): Pro
           dekVersion: currentBefore.version,
         },
         senderPrivateKey: machine.privateKey,
-        senderPublicKey: machine.publicKey,
-        recipientPublicKey: machine.publicKey,
+        senderPublicKey: bytes(self.public_key),
+        recipientPublicKey: bytes(self.public_key),
       })
       await client.addWraps(currentBefore.id, [
         {

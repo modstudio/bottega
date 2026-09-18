@@ -110,6 +110,10 @@ export function writeMachineKey(
   )
   if (result.exitCode !== 0)
     throw new Error(`security add-generic-password failed with exit code ${result.exitCode}`)
+  const stored = readMachineKey(env, runner)
+  if (!stored || !Buffer.from(stored.privateKey).equals(Buffer.from(pair.privateKey))) {
+    throw new Error('security add-generic-password verification failed: stored key did not match')
+  }
 }
 
 export async function machineKeyInfo(pair: MachineKeyPair) {
