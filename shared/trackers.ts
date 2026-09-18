@@ -3,7 +3,15 @@ import { z } from 'zod'
 export type StatusCategory = 'open' | 'active' | 'review' | 'done' | 'dropped'
 export const TASK_STATUSES = ['open', 'active', 'review', 'done', 'dropped'] as const
 
-const TRACKER_ACTIONS = ['search', 'get', 'create', 'update', 'status', 'comment'] as const
+const TRACKER_ACTIONS = [
+  'search',
+  'get',
+  'create',
+  'update',
+  'status',
+  'comment',
+  'document',
+] as const
 export type TrackerAction = (typeof TRACKER_ACTIONS)[number]
 export const TRACKER_PROTOCOLS = ['workspace-mcp', 'cursor-mcp', 'array-mcp', 'hub'] as const
 export type TrackerProtocol = (typeof TRACKER_PROTOCOLS)[number]
@@ -18,6 +26,7 @@ const trackerProtocolActions = {
     update: { agent: 'update-task-tool' },
     status: { agent: 'update-task-tool' },
     comment: { agent: 'create-task-comment-tool' },
+    document: { agent: 'create-task-document-tool' },
   },
   'cursor-mcp': {
     search: { agent: 'task_list', wire: 'task.list' },
@@ -36,6 +45,7 @@ const trackerProtocolActions = {
     update: { agent: 'task_update' },
     // task_update takes status as a plain field; task_move also needs a board rank.
     status: { agent: 'task_update' },
+    document: { agent: 'task_addDocument' },
   },
   hub: {
     search: { agent: 'hub task list --project {project}' },
@@ -44,6 +54,7 @@ const trackerProtocolActions = {
     update: { agent: 'hub task set {key}' },
     status: { agent: 'hub task set {key} --status' },
     comment: { agent: 'hub task comment {key}' },
+    document: { agent: 'hub task doc new {key}' },
   },
 } satisfies Record<TrackerProtocol, Partial<Record<TrackerAction, TrackerActionName>>>
 
