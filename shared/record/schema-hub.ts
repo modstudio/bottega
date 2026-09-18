@@ -7,7 +7,6 @@ import {
   check,
   doublePrecision,
   integer,
-  jsonb,
   pgPolicy,
   pgTable,
   text,
@@ -300,7 +299,17 @@ export const hubSendRecipient = pgTable.withRLS(
   },
   (table) => [
     unique('hub_send_recipient_unique').on(table.sendId, table.userId),
-    ...tenantPolicies('hub_send_recipient', table.spaceId),
+    pgPolicy('hub_send_recipient_space_select', {
+      for: 'select',
+      using: sql`${table.spaceId} = nullif(current_setting('app.space_id', true), '')::uuid
+        OR ${table.spaceId} = ANY(
+          string_to_array(nullif(current_setting('app.space_ids', true), ''), ',')::uuid[]
+        )`,
+    }),
+    pgPolicy('hub_send_recipient_space_insert', {
+      for: 'insert',
+      withCheck: sql`${table.spaceId} = nullif(current_setting('app.space_id', true), '')::uuid`,
+    }),
   ],
 )
 

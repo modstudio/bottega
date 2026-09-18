@@ -150,7 +150,7 @@ describe('hosted page inputs', () => {
       caller.record.updateReportSubscription({ ...update, scope: { kind: 'space' } } as never),
     ).rejects.toMatchObject({ code: 'BAD_REQUEST' })
     await expect(
-      caller.record.updateReportSubscription({ ...update, recipientUserId: 'someone' } as never),
+      caller.record.updateReportSubscription({ ...update, recipientUserIds: ['someone'] } as never),
     ).rejects.toMatchObject({ code: 'BAD_REQUEST' })
   })
 })

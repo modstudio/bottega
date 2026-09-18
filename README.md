@@ -45,7 +45,7 @@ A database shared between two concerns is how two concerns quietly become one.
 | concern | what it is |
 |---|---|
 | `orchestrator/` | Route work to external agents, score them per job, route the next job by the evidence. Its own canon. |
-| `hub/` | Every project's work in one view: what is in flight, what it cost, the daily report. Its own canon. |
+| `hub/` | Every project's work in one view: what is in flight, what it cost, and scheduled report subscriptions. Its own canon. |
 | `ops/` | The machine itself: refresh, launchd, brew upkeep. |
 | `local-stack/` | Serving models locally, and the local model host. |
 | `shared/` | The only code any two concerns may both import. |

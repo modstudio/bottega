@@ -209,7 +209,7 @@ const TASK_USAGE = `hub task new --project X --title "..." [--status Y] [--paren
   hub task import <file.json> backfill from a clustered commit history
   hub task push [--dry-run]   migrate and verify the local task cache`
 
-const USAGE = `hub — every project's tasks in flight, what each cost, and the daily report
+const USAGE = `hub — every project's tasks in flight, what each cost, and scheduled reports
 
   hub collect [--since ISO] [--only runs|transcripts|git|tasks]
                               ingest every source into hub.db

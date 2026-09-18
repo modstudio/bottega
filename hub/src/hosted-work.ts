@@ -506,7 +506,7 @@ export async function hostedSettings(
       status: string
       error: string | null
       test: string | number
-      recipient_details: unknown
+      recipient_details: { user_id: string; name: string; email: string }[]
     }>(
       await tx`
       SELECT at,"window",recipients,projects,items,status,error,test,

@@ -91,10 +91,14 @@ function SubscriptionDialog({
       description={row ? 'Change its schedule.' : 'Choose a schedule and space members.'}
       footer={
         <>
-          <Button variant="secondary" onClick={onClose}>Cancel</Button>
+          <Button variant="secondary" onClick={onClose}>
+            Cancel
+          </Button>
           <Button
             variant="primary"
-            disabled={create.isPending || update.isPending || (!row && !draft.recipientUserIds.length)}
+            disabled={
+              create.isPending || update.isPending || (!row && !draft.recipientUserIds.length)
+            }
             onClick={save}
           >
             {row ? 'Save changes' : 'Create subscription'}
@@ -118,8 +122,13 @@ function SubscriptionDialog({
             <div className="grid gap-2">
               <span className="text-sm text-text-muted">Recipients</span>
               {members.map((member) => (
-                <label key={member.user_id} className="flex items-center gap-2 text-sm">
+                <label
+                  key={member.user_id}
+                  htmlFor={`recipient-${member.user_id}`}
+                  className="flex items-center gap-2 text-sm"
+                >
                   <Checkbox
+                    id={`recipient-${member.user_id}`}
                     checked={draft.recipientUserIds.includes(member.user_id)}
                     onChange={(event) =>
                       change({
@@ -138,7 +147,10 @@ function SubscriptionDialog({
         <Select
           label="Report cadence"
           value={draft.cadence}
-          options={[{ value: 'daily', label: 'Daily' }, { value: 'weekly', label: 'Weekly' }]}
+          options={[
+            { value: 'daily', label: 'Daily' },
+            { value: 'weekly', label: 'Weekly' },
+          ]}
           onChange={(cadence) => change({ cadence: cadence as Draft['cadence'] })}
         />
         {draft.cadence === 'weekly' ? (
@@ -164,8 +176,9 @@ function SubscriptionDialog({
           options={TIME_ZONES.map((zone) => ({ value: zone, label: zone }))}
           onChange={(zone) => change({ zone })}
         />
-        <label className="flex items-center gap-2 text-sm">
+        <label htmlFor="subscription-enabled" className="flex items-center gap-2 text-sm">
           <Checkbox
+            id="subscription-enabled"
             checked={draft.enabled}
             onChange={(event) => change({ enabled: event.target.checked })}
           />
@@ -196,7 +209,9 @@ function Recipients({ row, members }: { row: Subscription; members: Member[] }) 
     <div className="grid gap-2">
       {row.recipients.map((recipient) => (
         <div key={recipient.user_id} className="flex items-center justify-between gap-2">
-          <span>{recipient.name} ({recipient.email})</span>
+          <span>
+            {recipient.name} ({recipient.email})
+          </span>
           <Button
             size="sm"
             variant="ghost"
@@ -235,8 +250,10 @@ function Recipients({ row, members }: { row: Subscription; members: Member[] }) 
   )
 }
 
-function SettingsPage() {
-  const query = useQuery(trpc.record.settings.queryOptions({ hours: 48 }, { refetchInterval: 10_000 }))
+export function SettingsPage() {
+  const query = useQuery(
+    trpc.record.settings.queryOptions({ hours: 48 }, { refetchInterval: 10_000 }),
+  )
   const data = query.data
   const [creating, setCreating] = useState(false)
   const [editing, setEditing] = useState<Subscription>()
@@ -247,7 +264,9 @@ function SettingsPage() {
   return (
     <section>
       <PageHeader title="Report subscriptions" subtitle="Schedules and delivery history" />
-      {query.error ? <p className="text-status-text">could not load: {query.error.message}</p> : null}
+      {query.error ? (
+        <p className="text-status-text">could not load: {query.error.message}</p>
+      ) : null}
       {data ? (
         <>
           <div className="flex max-w-[800px] items-center justify-between">
@@ -270,7 +289,9 @@ function SettingsPage() {
                 {data.subscriptions.map((row) => (
                   <TableRow key={row.id}>
                     <TableCell>
-                      {row.scope_kind === 'project' ? `project ${row.project_name}` : row.scope_kind}
+                      {row.scope_kind === 'project'
+                        ? `project ${row.project_name}`
+                        : row.scope_kind}
                     </TableCell>
                     <TableCell muted>
                       {row.cadence === 'weekly'
@@ -280,10 +301,14 @@ function SettingsPage() {
                         {row.enabled ? 'enabled' : 'disabled'}
                       </Badge>
                     </TableCell>
-                    <TableCell><Recipients row={row} members={data.members} /></TableCell>
+                    <TableCell>
+                      <Recipients row={row} members={data.members} />
+                    </TableCell>
                     <TableCell>
                       <div className="flex gap-2">
-                        <Button size="sm" variant="secondary" onClick={() => setEditing(row)}>Edit</Button>
+                        <Button size="sm" variant="secondary" onClick={() => setEditing(row)}>
+                          Edit
+                        </Button>
                         <Button
                           size="sm"
                           variant="ghost"
@@ -302,7 +327,7 @@ function SettingsPage() {
               <EmptyState title="No report subscriptions." hint="Create one for this space." />
             ) : null}
           </div>
-          {(creating || editing) ? (
+          {creating || editing ? (
             <SubscriptionDialog
               row={editing}
               projects={data.allProjects}
@@ -313,7 +338,9 @@ function SettingsPage() {
               }}
             />
           ) : null}
-          <div className="max-w-[800px]"><SectionTitle>Send history</SectionTitle></div>
+          <div className="max-w-[800px]">
+            <SectionTitle>Send history</SectionTitle>
+          </div>
           <div className="max-w-[800px] border border-border-default">
             <Table>
               <TableHeader>
@@ -328,7 +355,9 @@ function SettingsPage() {
                 {data.sends.map((row) => (
                   <TableRow key={`${row.at}:${row.recipients}`}>
                     <TableCell muted>{row.at.slice(0, 16).replace('T', ' ')}</TableCell>
-                    <TableCell><Badge>{String(row.status)}</Badge></TableCell>
+                    <TableCell>
+                      <Badge>{String(row.status)}</Badge>
+                    </TableCell>
                     <TableCell numeric>{row.items.toLocaleString()}</TableCell>
                     <TableCell muted>
                       {row.error
@@ -342,11 +371,16 @@ function SettingsPage() {
               </TableBody>
             </Table>
             {!data.sends.length ? (
-              <EmptyState title="No reports have been sent." hint="No send records exist for this space." />
+              <EmptyState
+                title="No reports have been sent."
+                hint="No send records exist for this space."
+              />
             ) : null}
           </div>
         </>
-      ) : query.isPending ? <p className="text-text-muted">Loading settings...</p> : null}
+      ) : query.isPending ? (
+        <p className="text-text-muted">Loading settings...</p>
+      ) : null}
     </section>
   )
 }

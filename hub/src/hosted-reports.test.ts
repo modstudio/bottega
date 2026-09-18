@@ -42,6 +42,13 @@ describe('report subscriptions', () => {
         facts,
       ),
     ).toThrow('every recipient must be a member of this space')
+    expect(() =>
+      planReportSubscription(
+        caller,
+        { scope: { kind: 'space' }, ...daily, recipientUserIds: [] },
+        facts,
+      ),
+    ).toThrow('a subscription requires at least one recipient')
   })
 
   test('a person-scope subscription names a user, and a space-scope one does not', () => {
@@ -110,7 +117,11 @@ describe('report subscriptions', () => {
       planReportSubscriptionUpdate({ ...daily, enabled: true, scope: { kind: 'space' } } as never),
     ).toThrow('scope cannot be changed')
     expect(() =>
-      planReportSubscriptionUpdate({ ...daily, enabled: true, recipientUserIds: [member] } as never),
+      planReportSubscriptionUpdate({
+        ...daily,
+        enabled: true,
+        recipientUserIds: [member],
+      } as never),
     ).toThrow('scope cannot be changed')
   })
 })

@@ -11,7 +11,7 @@ import { promptLens } from './excerpt.ts'
 import { chainVendorTokens, executionSpans } from './ingest/runs.ts'
 import { state as orchState, blockers as readBlockers, readRuns } from './orch.ts'
 import { routingViewData } from './orch-transforms.ts'
-import { projectNames, projects, type RegisteredProject, trackerPresentation } from './projects.ts'
+import { projectNames, projects } from './projects.ts'
 import {
   boardTasks,
   completedInWindow,
@@ -157,62 +157,6 @@ const VIEWS = ['flight', 'board', 'done', 'ratio', 'spend', 'routing', 'runs', '
 export type View = (typeof VIEWS)[number]
 
 /** Single-quote a value so the command can be pasted into a shell as-is. */
-function shSingle(value: string): string {
-  return "'" + value.replace(/'/g, "'\\''") + "'"
-}
-
-function settingsCmd(name: string, patch: Record<string, unknown>): string {
-  return `orch project set ${shSingle(name)} --settings ${shSingle(JSON.stringify(patch))}`
-}
-
-function asRecord(value: unknown): Record<string, unknown> | null {
-  if (!value || typeof value !== 'object' || Array.isArray(value)) return null
-  return value as Record<string, unknown>
-}
-
-/** The register, shaped for the settings screen. */
-function presentRegister(rows: RegisteredProject[]) {
-  return rows.map((p) => {
-    const wt = asRecord(p.settings.worktree)
-    const create = typeof wt?.create === 'string' && wt.create ? wt.create : null
-    const recipe = asRecord(wt?.recipe)
-    const worktree = create ? 'create' : recipe ? 'recipe' : 'neither'
-    const notes = typeof wt?.notes === 'string' && wt.notes.trim() ? wt.notes : null
-    const tracker = p.settings.tracker
-    const trackerStatus = trackerPresentation(p)
-    return {
-      name: p.name,
-      path: p.path,
-      stack: p.stack,
-      canon: p.canon,
-      prefixes: p.settings.keyPrefixes ?? [],
-      color: p.settings.color ?? null,
-      colorDark: p.settings.colorDark ?? null,
-      tracker:
-        trackerStatus.state === 'unusable'
-          ? `${trackerStatus.label} — unusable: ${trackerStatus.error}`
-          : trackerStatus.label,
-      trackerState: trackerStatus.state,
-      trackerError: trackerStatus.error,
-      worktree,
-      notes,
-      commands: {
-        path: `orch project set ${shSingle(p.name)} --path ${shSingle(p.path)}`,
-        stack: `orch project set ${shSingle(p.name)} --stack ${shSingle(p.stack ?? '')}`,
-        canon: `orch project set ${shSingle(p.name)} ${p.canon ? '--canon' : '--no-canon'}`,
-        prefixes: settingsCmd(p.name, { keyPrefixes: p.settings.keyPrefixes ?? [] }),
-        color: settingsCmd(p.name, { color: p.settings.color ?? '' }),
-        colorDark: settingsCmd(p.name, { colorDark: p.settings.colorDark ?? '' }),
-        tracker: settingsCmd(p.name, { tracker: tracker ?? {} }),
-        worktree: settingsCmd(p.name, {
-          worktree: create ? { create } : recipe ? { recipe } : { recipe: {} },
-        }),
-        notes: notes == null ? null : settingsCmd(p.name, { worktree: { notes } }),
-      },
-    }
-  })
-}
-
 function setting(key: string): string | null {
   const row = db()
     .query<{ value: string }, [string]>(`SELECT value FROM setting WHERE key = ?`)

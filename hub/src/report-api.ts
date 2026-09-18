@@ -89,9 +89,7 @@ async function subscriptionRoute(
       ),
       201,
     )
-  const recipient = /^\/v1\/report-subscriptions\/([^/]+)\/recipients\/([^/]+)$/.exec(
-    url.pathname,
-  )
+  const recipient = /^\/v1\/report-subscriptions\/([^/]+)\/recipients\/([^/]+)$/.exec(url.pathname)
   if (request.method === 'POST' && recipient)
     return json(
       await call(dependencies.addRecipient, addHostedReportSubscriptionRecipient)(
@@ -153,10 +151,7 @@ export async function reportApi(
   dependencies: Dependencies = {},
 ): Promise<Response | null> {
   const url = new URL(request.url)
-  if (
-    !url.pathname.startsWith('/v1/report-subscriptions') &&
-    !url.pathname.startsWith('/v1/sends')
-  )
+  if (!url.pathname.startsWith('/v1/report-subscriptions') && !url.pathname.startsWith('/v1/sends'))
     return null
   if (process.env.NODE_ENV === 'test' && !dependencies.fetch) throw new Error(TEST_REFUSAL)
   const authorization = request.headers.get('authorization')

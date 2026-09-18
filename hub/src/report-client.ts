@@ -15,26 +15,12 @@ export type ReportClientOptions = {
   fetch?: ReportFetch
 }
 
-function request<T>(
-  path: string,
-  method: string,
-  body?: unknown,
-  options?: ReportClientOptions,
-): Promise<T>
-function request<T>(
-  path: string,
-  method: string,
-  body: unknown,
-  options: ReportClientOptions | undefined,
-  notFoundAsNull: true,
-): Promise<T | null>
 async function request<T>(
   path: string,
   method: string,
   body?: unknown,
   options: ReportClientOptions = {},
-  notFoundAsNull = false,
-): Promise<T | null> {
+): Promise<T> {
   const baseUrl = options.baseUrl ?? process.env.HUB_HOSTED_URL
   if (!baseUrl) throw new Error(`hosted hub is not configured. ${REMEDY}`)
   if (process.env.NODE_ENV === 'test' && !options.fetch) throw new Error(TEST_REFUSAL)
@@ -54,7 +40,6 @@ async function request<T>(
     throw new Error(`hosted hub is unreachable: ${(error as Error).message}. ${REMEDY}`)
   }
   const value = (await response.json().catch(() => null)) as Record<string, unknown> | null
-  if (notFoundAsNull && response.status === 404) return null
   if (!response.ok)
     throw new Error(
       `hosted hub refused the request (${response.status}): ${String(value?.error ?? 'unknown error')}. ${REMEDY}`,
