@@ -17,7 +17,7 @@ export type DeliveryCandidate = {
 
 export type DeliveryPeriod = MeasureWindow & { key: string }
 
-export type DeliveryRecipient = {
+type DeliveryRecipient = {
   userId: string
   name: string
   email: string

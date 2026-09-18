@@ -1,16 +1,13 @@
 import { beforeAll, describe, expect, test } from 'bun:test'
 import { resetFixtureStore } from '../test/run-fixtures.ts'
 import { projectOf, projectOfKey } from './attribute.ts'
-import { projectColor, projectNames } from './projects.ts'
+import { projectNames } from './projects.ts'
 
 beforeAll(resetFixtureStore)
 
 describe('project attribution', () => {
-  test('the process uses the fixture register and its theme colors', () => {
+  test('the process uses the fixture register', () => {
     expect(projectNames()).toContain('alpha')
-    expect(projectColor('alpha')).toBe('#112233')
-    expect(projectColor('alpha', true)).toBe('#aabbcc')
-    expect(projectColor('beta')).toBeNull()
   })
 
   test('a checkout names its project', () => {

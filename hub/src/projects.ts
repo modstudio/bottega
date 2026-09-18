@@ -65,8 +65,3 @@ export function projectRoot(): string | null {
   }
   return parent
 }
-
-export function projectColor(project: Project, dark = false): string | null {
-  const settings = projects().find((candidate) => candidate.name === project)?.settings
-  return (dark ? settings?.colorDark : settings?.color) ?? null
-}

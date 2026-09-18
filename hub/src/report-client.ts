@@ -47,10 +47,6 @@ async function request<T>(
   return value as T
 }
 
-export const hostedAppendSend = (
-  body: Omit<HostedSend, 'id' | 'legacy_local_id' | 'created_at'>,
-  options?: ReportClientOptions,
-) => request<HostedSend>('/v1/sends', 'POST', body, options)
 export async function hostedSendChanges(cursor: string | null, options?: ReportClientOptions) {
   const query = new URLSearchParams({ limit: '1000' })
   if (cursor) query.set('cursor', cursor)
@@ -79,28 +75,6 @@ export const hostedCreateReportSubscription = (
 export const hostedUnsubscribeReportSubscription = (id: string, options?: ReportClientOptions) =>
   request<{ id: string; deleted: boolean }>(
     `/v1/report-subscriptions/${id}`,
-    'DELETE',
-    undefined,
-    options,
-  )
-export const hostedAddReportSubscriptionRecipient = (
-  id: string,
-  userId: string,
-  options?: ReportClientOptions,
-) =>
-  request<HostedReportSubscription>(
-    `/v1/report-subscriptions/${id}/recipients/${userId}`,
-    'POST',
-    undefined,
-    options,
-  )
-export const hostedRemoveReportSubscriptionRecipient = (
-  id: string,
-  userId: string,
-  options?: ReportClientOptions,
-) =>
-  request<HostedReportSubscription>(
-    `/v1/report-subscriptions/${id}/recipients/${userId}`,
     'DELETE',
     undefined,
     options,

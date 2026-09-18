@@ -5,7 +5,7 @@ import { engagedMs, human } from '../../shared/interval.ts'
 import type { OrchBlockers } from '../../shared/orch-contract.ts'
 import { appStaticPath, resolveAppStatic } from './app-static.ts'
 import { attributeRun } from './attribute.ts'
-import { collectFast, collectSlow, leaseHolder, watch, withLease } from './collect.ts'
+import { leaseHolder, watch } from './collect.ts'
 import { db, enableSchemaReload, nowIso } from './db.ts'
 import { promptLens } from './excerpt.ts'
 import { chainVendorTokens, executionSpans } from './ingest/runs.ts'
@@ -521,17 +521,6 @@ export async function view(
 
 /** When this process loaded its code. Restarting is the only thing that moves it. */
 const STARTED_AT = nowIso()
-
-export async function collectNow() {
-  return withLease(
-    `refresh:${process.pid}`,
-    async () => {
-      await collectSlow()
-      await collectFast()
-    },
-    15_000,
-  )
-}
 
 export function serve(port: number) {
   // Not started for an ephemeral port: server tests spin one up and down, and

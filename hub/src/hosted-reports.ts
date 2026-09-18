@@ -21,7 +21,7 @@ export type HostedSend = {
   recipient_details?: HostedSendRecipient[]
 }
 
-export type HostedSendRecipient = {
+type HostedSendRecipient = {
   user_id: string
   name: string
   email: string
@@ -202,7 +202,8 @@ export function planReportSubscription(
   facts: { projectNames: readonly string[]; memberUserIds: readonly string[] },
 ): PlannedReportSubscription {
   const recipientUserIds = [...new Set(input.recipientUserIds ?? [caller.userId])]
-  if (recipientUserIds.length === 0) throw new Error('a subscription requires at least one recipient')
+  if (recipientUserIds.length === 0)
+    throw new Error('a subscription requires at least one recipient')
   if (recipientUserIds.some((userId) => !facts.memberUserIds.includes(userId)))
     throw new Error('every recipient must be a member of this space')
   return {

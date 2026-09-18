@@ -79,12 +79,3 @@ export function Copyable({ value, compact = false }: { value: string; compact?: 
     </div>
   )
 }
-
-/** A bordered group on a page, for content that is not a table. */
-export function Panel({ children, className }: { children: ReactNode; className?: string }) {
-  return (
-    <div className={classes('border border-border-default bg-surface-page p-5', className)}>
-      {children}
-    </div>
-  )
-}

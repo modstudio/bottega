@@ -5,7 +5,7 @@ import { hostedSendChanges, type ReportClientOptions } from './report-client.ts'
 
 const SEND_CURSOR_KEY = 'collect.hosted-sends.cursor'
 
-export function cacheHostedSend(conn: Database, row: HostedSend) {
+function cacheHostedSend(conn: Database, row: HostedSend) {
   const existing = conn
     .query<{ id: number }, [string]>('SELECT id FROM send WHERE record_id=?')
     .get(row.id)
