@@ -41,9 +41,9 @@ landing branch, never an optional production branch.
 
 ## Secrets
 
-No concern stores a secret. What is stored is a reference to where the secret
-lives, written as `keychain:<service>` or `env:<NAME>` and never the secret
-itself; `hub/src/settings.ts` refuses a password in that field. Read a
+No concern stores a secret. A secret lives with its owner: the login keychain,
+`~/.claude/.env`, or the deployed app's own secret store. Where a concern needs
+to name one, it stores a reference to where it lives and never the value. Read a
 credential from its owner at use time, never at import, and never write it to a
 log or to a database the dashboard serves. Only whether a reference resolves
 may be reported. Gitleaks gates the repository, and its allowlist is limited to
