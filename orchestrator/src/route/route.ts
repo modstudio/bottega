@@ -426,7 +426,7 @@ export function candidates(
               -- CONTENT_REFUSAL is excluded for the parallel reason that it
               -- records vendor policy for a prompt class, not competence.
               -- Eleven hours of a powered-down local host put two failures
-              -- against qwen-local on file-question, the one job it is
+              -- against qwen36-goose on file-question, the one job it is
               -- measurably best at.
               --
               -- The same list gates EXPLICIT scores. Seven codex harness

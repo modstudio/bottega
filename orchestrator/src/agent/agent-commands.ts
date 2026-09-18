@@ -144,7 +144,7 @@ function listedRow(row: ReturnType<typeof agentRows>[number]) {
     probeResult: probe,
     legacy: !['codex', 'grok', 'opencode', 'goose', 'claude-code'].includes(row.harness),
     limitation:
-      row.name === 'local-acp' && Number(caps.contextTokens ?? 0) < 147_456
+      row.name === 'qwen36-goose' && Number(caps.contextTokens ?? 0) < 147_456
         ? 'understand requires the endpoint served at 147456 tokens or more'
         : null,
     eligibility,

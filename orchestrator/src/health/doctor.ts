@@ -56,8 +56,8 @@ function localRegistrationDiagnosis(baseUrl: string, configuredModel: string | u
   if (baseUrl && !registration) {
     lines.push(
       configuredModel
-        ? `register        orch agent add local-acp --harness goose --backend vllm --model ${configuredModel} --base-url ${baseUrl} --context-tokens <tokens>`
-        : 'register        ORCH_MODEL_HOST_MODEL is required before registering local-acp',
+        ? `register        orch agent add qwen36-goose --harness goose --backend vllm --model ${configuredModel} --base-url ${baseUrl} --context-tokens <tokens>`
+        : 'register        ORCH_MODEL_HOST_MODEL is required before registering qwen36-goose',
     )
   }
   if (registration && contextTokens === null) {
@@ -92,7 +92,7 @@ export async function doctorCommand(
   const { has } = flags
   const { log, exitCode, candidates, pick, jobs, acpRuntimeGaps } = presentation
   // Probed BEFORE the agent list is printed, not after it. Doctor used to
-  // report `qwen-local ready` and `reachable NO` four lines apart and mean
+  // report `qwen36-goose ready` and `reachable NO` four lines apart and mean
   // both: the roster asked whether it was configured and the probe asked
   // whether it answered. Now the roster is told the answer first, so the
   // status column and the routing table below it cannot contradict

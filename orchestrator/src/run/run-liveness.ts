@@ -245,7 +245,7 @@ export function reapStale(d: Database = db()): number | ObservedDeadRun[] {
     //
     // Run 521 is the worked example. A delegation in this very session was killed
     // by the calling harness's command timeout and landed here - a fact about the
-    // caller, charged until now to qwen-local.
+    // caller, charged until now to qwen36-goose.
     const update = d.query(
       `UPDATE run SET status='stale', failure_kind='interrupted', error=?
         WHERE id=? AND status='running'`,
