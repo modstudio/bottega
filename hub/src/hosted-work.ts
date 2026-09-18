@@ -1,4 +1,5 @@
 import { engagedMs, human } from '../../shared/interval.ts'
+import { selectHostedReportSubscriptions } from './hosted-reports.ts'
 import { type TaskIdentity, withHostedTenant } from './hosted-tasks.ts'
 import { computeMeasures, type MeasureInterval, type MeasureStatusEvent } from './measures.ts'
 import { reportDefaults } from './report-types.ts'
@@ -528,6 +529,7 @@ export async function hostedSettings(
         items: number(row.items),
         test: Boolean(number(row.test)),
       })),
+      subscriptions: await selectHostedReportSubscriptions(tx, identity.spaceId),
     }
   })
 }

@@ -41,6 +41,11 @@ import {
   summarise,
 } from './report.ts'
 import { refreshHostedReportSetting } from './report-cache.ts'
+import {
+  hostedCreateReportSubscription,
+  hostedListReportSubscriptions,
+  hostedUnsubscribeReportSubscription,
+} from './report-client.ts'
 import { pushReports } from './report-push.ts'
 import { listOpenRulings, rulingsPayload } from './rulings.ts'
 import { serve } from './serve.ts'
@@ -252,6 +257,10 @@ const USAGE = `hub — every project's tasks in flight, what each cost, and the 
   hub note curator [--enable|--disable]
   hub note push [--dry-run]   migrate and verify the local note cache
 
+  hub report subscribe --scope space|project|person [--project NAME] --cadence daily|weekly
+                              --hour N [--day monday] --zone AREA/CITY [--recipient USER_ID]
+  hub report subscriptions [--json]
+  hub report unsubscribe <ID>
   hub report push [--dry-run] migrate and verify report settings and send history
 
   hub send [--dry-run]        the daily report; --dry-run prints it instead
@@ -808,6 +817,77 @@ async function pushNoteCache(): Promise<void> {
   if (result.match === false) process.exitCode = 1
 }
 
+async function report() {
+  const sub = argv[1]
+  if (sub === 'push') {
+    const result = await pushReports({ dryRun: has('dry-run') })
+    console.log(JSON.stringify(result, null, 2))
+    if (result.match === false) process.exitCode = 1
+    return
+  }
+  if (sub === 'subscriptions') {
+    const { subscriptions } = await hostedListReportSubscriptions()
+    if (has('json')) {
+      console.log(JSON.stringify(subscriptions))
+      return
+    }
+    if (!subscriptions.length) {
+      console.log('no report subscriptions')
+      return
+    }
+    for (const row of subscriptions) {
+      const scope =
+        row.scope_kind === 'project'
+          ? `project ${row.project_name}`
+          : row.scope_kind === 'person'
+            ? `person ${row.person_user_id}`
+            : 'space'
+      const when =
+        row.cadence === 'weekly'
+          ? `weekly ${row.weekday} ${row.hour}:00 ${row.zone}`
+          : `daily ${row.hour}:00 ${row.zone}`
+      console.log(
+        `${row.id}  ${scope}  ${when}  ${row.recipient_email}  ${row.enabled ? 'enabled' : 'disabled'}`,
+      )
+    }
+    return
+  }
+  if (sub === 'subscribe') {
+    const kind = flag('scope')
+    const scope =
+      kind === 'space'
+        ? { kind: 'space' as const }
+        : kind === 'project'
+          ? { kind: 'project' as const, project: flag('project') ?? '' }
+          : kind === 'person'
+            ? { kind: 'person' as const }
+            : null
+    if (!scope)
+      throw new Error(
+        'usage: hub report subscribe --scope space|project|person [--project NAME] --cadence daily|weekly --hour N [--day monday] --zone AREA/CITY [--recipient USER_ID]',
+      )
+    const hour = Number(flag('hour'))
+    const row = await hostedCreateReportSubscription({
+      scope,
+      cadence: flag('cadence') ?? '',
+      hour: Number.isFinite(hour) ? hour : Number.NaN,
+      weekday: flag('day'),
+      zone: flag('zone') ?? '',
+      recipientUserId: flag('recipient'),
+    })
+    console.log(row.id)
+    return
+  }
+  if (sub === 'unsubscribe') {
+    const id = argv[2]
+    if (!id || id.startsWith('--')) throw new Error('usage: hub report unsubscribe <ID>')
+    const row = await hostedUnsubscribeReportSubscription(id)
+    console.log(`unsubscribed ${row.id}`)
+    return
+  }
+  throw new Error('usage: hub report subscribe|subscriptions|unsubscribe|push')
+}
+
 async function sendReport() {
   const r = await refreshHostedReportSetting()
   const hours = Number(flag('hours') ?? r.windowHours)
@@ -1020,13 +1100,9 @@ try {
     case 'send':
       await sendReport()
       break
-    case 'report': {
-      if (argv[1] !== 'push') throw new Error('usage: hub report push [--dry-run]')
-      const result = await pushReports({ dryRun: has('dry-run') })
-      console.log(JSON.stringify(result, null, 2))
-      if (result.match === false) process.exitCode = 1
+    case 'report':
+      await report()
       break
-    }
     case undefined:
     case 'help':
     case '--help':

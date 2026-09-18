@@ -404,6 +404,51 @@ export function HostedSettingsPage() {
             </dl>
           </Panel>
           <div className="max-w-[640px]">
+            <SectionTitle>Subscriptions</SectionTitle>
+          </div>
+          <div className="mb-6 max-w-[640px] border border-border-default">
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Scope</TableHead>
+                  <TableHead>Cadence</TableHead>
+                  <TableHead>Recipient</TableHead>
+                  <TableHead>Enabled</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {data.subscriptions.map((row) => (
+                  <TableRow key={row.id}>
+                    <TableCell>
+                      {row.scope_kind === 'project'
+                        ? `project ${row.project_name}`
+                        : row.scope_kind === 'person'
+                          ? `person ${row.person_user_id}`
+                          : 'space'}
+                    </TableCell>
+                    <TableCell muted>
+                      {row.cadence === 'weekly'
+                        ? `weekly ${row.weekday} ${row.hour}:00 ${row.zone}`
+                        : `daily ${row.hour}:00 ${row.zone}`}
+                    </TableCell>
+                    <TableCell>{row.recipient_email}</TableCell>
+                    <TableCell>
+                      <Badge tone={row.enabled ? 'success' : 'neutral'}>
+                        {row.enabled ? 'enabled' : 'disabled'}
+                      </Badge>
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+            {!data.subscriptions.length ? (
+              <EmptyState
+                title="No report subscriptions."
+                hint="No subscriptions exist for this space."
+              />
+            ) : null}
+          </div>
+          <div className="max-w-[640px]">
             <SectionTitle>Recent sends</SectionTitle>
           </div>
           <div className="mb-6 max-w-[640px] border border-border-default">

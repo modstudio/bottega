@@ -184,6 +184,7 @@ export function planReportSubscription(
     enabled: input.enabled !== false,
   }
 }
+
 async function tenant<T>(url: string, identity: TaskIdentity, work: (tx: SQL) => Promise<T>) {
   const client = new SQL(url)
   try {
@@ -333,5 +334,71 @@ export async function hostedReportCounts(url: string, identity: TaskIdentity) {
       (SELECT count(*)::int FROM hub_send WHERE space_id=${identity.spaceId}::uuid) sends`,
     )[0]!
     return result
+  })
+}
+
+const subscriptionSelect = (tx: SQL, spaceId: string, id?: string) => tx`
+  SELECT s.id,s.scope_kind,s.project_name,s.person_user_id,s.cadence,s.hour,s.weekday,s.zone,
+    s.recipient_user_id,u.name AS recipient_name,u.email AS recipient_email,s.enabled,
+    s.created_at,s.updated_at
+  FROM hub_report_subscription s
+  JOIN "user" u ON u.id=s.recipient_user_id
+  WHERE s.space_id=${spaceId}::uuid AND s.deleted_at IS NULL
+    AND (${id ?? null}::uuid IS NULL OR s.id=${id ?? null}::uuid)
+  ORDER BY s.created_at,s.id`
+
+export async function selectHostedReportSubscriptions(tx: SQL, spaceId: string) {
+  return rows<RawSubscription>(await subscriptionSelect(tx, spaceId)).map(asSubscription)
+}
+
+export async function listHostedReportSubscriptions(url: string, identity: TaskIdentity) {
+  return tenant(url, identity, async (tx) => ({
+    subscriptions: await selectHostedReportSubscriptions(tx, identity.spaceId),
+  }))
+}
+
+export async function createHostedReportSubscription(
+  url: string,
+  identity: TaskIdentity,
+  input: ReportSubscriptionWriteInput,
+) {
+  return tenant(url, identity, async (tx) => {
+    const projects = rows<{ name: string }>(
+      await tx`SELECT name FROM project WHERE space_id=${identity.spaceId}::uuid`,
+    )
+    const members = rows<{ user_id: string }>(
+      await tx`SELECT user_id FROM membership WHERE space_id=${identity.spaceId}::uuid`,
+    )
+    const planned = planReportSubscription(identity, input, {
+      projectNames: projects.map((row) => row.name),
+      memberUserIds: members.map((row) => row.user_id),
+    })
+    const id = newRecordId()
+    await tx`INSERT INTO hub_report_subscription
+      (id,space_id,scope_kind,project_name,person_user_id,cadence,hour,weekday,zone,
+       recipient_user_id,enabled,created_at,updated_at)
+      VALUES (${id}::uuid,${identity.spaceId}::uuid,${planned.scope_kind},${planned.project_name},
+      ${planned.person_user_id}::uuid,${planned.cadence},${planned.hour},${planned.weekday},
+      ${planned.zone},${planned.recipient_user_id}::uuid,${planned.enabled ? 1 : 0},now(),now())`
+    return asSubscription(
+      rows<RawSubscription>(await subscriptionSelect(tx, identity.spaceId, id))[0]!,
+    )
+  })
+}
+
+export async function unsubscribeHostedReportSubscription(
+  url: string,
+  identity: TaskIdentity,
+  id: string,
+) {
+  return tenant(url, identity, async (tx) => {
+    const updated = assertReportSubscriptionFound(
+      rows<{ id: string }>(
+        await tx`UPDATE hub_report_subscription SET deleted_at=now(),updated_at=now()
+      WHERE space_id=${identity.spaceId}::uuid AND id=${id}::uuid AND deleted_at IS NULL
+      RETURNING id`,
+      )[0],
+    )
+    return { id: updated.id, deleted: true }
   })
 }

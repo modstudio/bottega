@@ -19,7 +19,9 @@ import {
 } from '../src/hosted-notes.ts'
 import {
   appendHostedSend,
+  createHostedReportSubscription,
   getHostedReportSetting,
+  listHostedReportSubscriptions,
   listHostedSends,
   putHostedReportSetting,
 } from '../src/hosted-reports.ts'
@@ -76,6 +78,8 @@ try {
     (${SPACE_B}::uuid,'Evidence B','evidence-b',now())`
   await admin`INSERT INTO project(id,space_id,name,key_prefixes,created_at)
     VALUES (${PROJECT_A}::uuid,${SPACE_A}::uuid,${PLATFORM_SLUG},ARRAY['DEV'],now())`
+  await admin`INSERT INTO membership(id,space_id,user_id,role,permission,created_at)
+    VALUES (${newRecordId()}::uuid,${SPACE_A}::uuid,${USER}::uuid,'member','write',now())`
 
   await upsertIntervals(actorUrl, { userId: USER, spaceId: SPACE_A }, [interval])
   await upsertIntervals(actorUrl, { userId: USER, spaceId: SPACE_A }, [interval])
@@ -347,6 +351,28 @@ try {
       throw new Error('another space observed the report setting')
     if ((await listHostedSends(actorUrl, otherIdentity, {})).sends.length)
       throw new Error('another space observed send history')
+    const subscription = await createHostedReportSubscription(actorUrl, identity, {
+      scope: { kind: 'project', project: PLATFORM_SLUG },
+      cadence: 'weekly',
+      hour: 8,
+      weekday: 'monday',
+      zone: 'America/New_York',
+    })
+    if (
+      subscription.zone !== 'America/New_York' ||
+      subscription.cadence !== 'weekly' ||
+      subscription.weekday !== 'monday' ||
+      subscription.hour !== 8
+    )
+      throw new Error('subscription cadence did not round-trip with its zone')
+    const visibleSubscriptions = await listHostedReportSubscriptions(actorUrl, identity)
+    if (
+      visibleSubscriptions.subscriptions.length !== 1 ||
+      visibleSubscriptions.subscriptions[0]?.id !== subscription.id
+    )
+      throw new Error('created subscription was not visible in the list')
+    if ((await listHostedReportSubscriptions(actorUrl, otherIdentity)).subscriptions.length)
+      throw new Error('another space observed a report subscription')
 
     const pageNotes = await hostedNotes(actorUrl, identity, { stale: false })
     if (!pageNotes.notes.some((row) => row.id === allocatedNote.number))
@@ -358,12 +384,21 @@ try {
     if (!pageSpend.numerators.some((row) => row.name === 'codex'))
       throw new Error('hosted spend adapter did not return the seeded interval')
     const pageSettings = await hostedSettings(actorUrl, identity, [PLATFORM_SLUG])
-    if (!pageSettings.report.enabled || pageSettings.sends.length !== 1)
-      throw new Error('hosted settings adapter did not return the setting and send')
+    if (
+      !pageSettings.report.enabled ||
+      pageSettings.sends.length !== 1 ||
+      pageSettings.subscriptions.length !== 1
+    )
+      throw new Error('hosted settings adapter did not return the setting, send and subscription')
     const emptyNotes = await hostedNotes(actorUrl, otherIdentity, { stale: false })
     const emptyRatio = await hostedRatio(actorUrl, otherIdentity, 14)
     const emptySettings = await hostedSettings(actorUrl, otherIdentity, [])
-    if (emptyNotes.notes.length || emptyRatio.days.length || emptySettings.sends.length)
+    if (
+      emptyNotes.notes.length ||
+      emptyRatio.days.length ||
+      emptySettings.sends.length ||
+      emptySettings.subscriptions.length
+    )
       throw new Error('another space observed a hosted page adapter row')
 
     const measureWindow = { from: '2026-09-17T12:00:00.000Z', to: '2026-09-17T14:00:00.000Z' }
@@ -506,6 +541,8 @@ try {
   await admin`DELETE FROM hub_note WHERE space_id IN (${SPACE_A}::uuid, ${SPACE_B}::uuid)`
   await admin`DELETE FROM hub_send WHERE space_id IN (${SPACE_A}::uuid, ${SPACE_B}::uuid)`
   await admin`DELETE FROM hub_report_setting WHERE space_id IN (${SPACE_A}::uuid, ${SPACE_B}::uuid)`
+  await admin`DELETE FROM hub_report_subscription WHERE space_id IN (${SPACE_A}::uuid, ${SPACE_B}::uuid)`
+  await admin`DELETE FROM membership WHERE space_id IN (${SPACE_A}::uuid, ${SPACE_B}::uuid)`
   await admin`DELETE FROM hub_task_status_event WHERE space_id IN (${SPACE_A}::uuid, ${SPACE_B}::uuid)`
   await admin`DELETE FROM hub_task_document WHERE space_id IN (${SPACE_A}::uuid, ${SPACE_B}::uuid)`
   await admin`DELETE FROM hub_task_comment WHERE space_id IN (${SPACE_A}::uuid, ${SPACE_B}::uuid)`

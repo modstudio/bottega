@@ -219,14 +219,8 @@ export const hubReportSubscription = pgTable.withRLS(
         OR (${table.scopeKind} = 'project' AND ${table.projectName} IS NOT NULL AND ${table.personUserId} IS NULL)
         OR (${table.scopeKind} = 'person' AND ${table.personUserId} IS NOT NULL AND ${table.projectName} IS NULL)`,
     ),
-    check(
-      'hub_report_subscription_cadence_check',
-      sql`${table.cadence} IN ('daily','weekly')`,
-    ),
-    check(
-      'hub_report_subscription_hour_check',
-      sql`${table.hour} >= 0 AND ${table.hour} <= 23`,
-    ),
+    check('hub_report_subscription_cadence_check', sql`${table.cadence} IN ('daily','weekly')`),
+    check('hub_report_subscription_hour_check', sql`${table.hour} >= 0 AND ${table.hour} <= 23`),
     check(
       'hub_report_subscription_weekday_check',
       sql`(${table.cadence} = 'daily' AND ${table.weekday} IS NULL)

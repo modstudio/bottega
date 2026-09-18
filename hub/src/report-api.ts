@@ -1,10 +1,13 @@
 import {
   appendHostedSend,
+  createHostedReportSubscription,
   getHostedReportSetting,
   hostedReportCounts,
+  listHostedReportSubscriptions,
   listHostedSends,
   mirrorHostedReports,
   putHostedReportSetting,
+  unsubscribeHostedReportSubscription,
 } from './hosted-reports.ts'
 
 const TEST_REFUSAL =
@@ -73,6 +76,31 @@ async function dispatchReportRequest(
         body as never,
       ),
     )
+  if (request.method === 'GET' && url.pathname === '/v1/report-subscriptions')
+    return json(
+      await call(dependencies.listSubscriptions, listHostedReportSubscriptions)(
+        config.recordDatabaseUrl,
+        who,
+      ),
+    )
+  if (request.method === 'POST' && url.pathname === '/v1/report-subscriptions')
+    return json(
+      await call(dependencies.createSubscription, createHostedReportSubscription)(
+        config.recordDatabaseUrl,
+        who,
+        body as never,
+      ),
+      201,
+    )
+  const unsubscribe = /^\/v1\/report-subscriptions\/([^/]+)$/.exec(url.pathname)
+  if (request.method === 'DELETE' && unsubscribe)
+    return json(
+      await call(dependencies.unsubscribe, unsubscribeHostedReportSubscription)(
+        config.recordDatabaseUrl,
+        who,
+        unsubscribe[1]!,
+      ),
+    )
   return new Response('not found', { status: 404 })
 }
 
@@ -82,7 +110,11 @@ export async function reportApi(
   dependencies: Dependencies = {},
 ): Promise<Response | null> {
   const url = new URL(request.url)
-  if (!url.pathname.startsWith('/v1/report-setting') && !url.pathname.startsWith('/v1/sends'))
+  if (
+    !url.pathname.startsWith('/v1/report-setting') &&
+    !url.pathname.startsWith('/v1/report-subscriptions') &&
+    !url.pathname.startsWith('/v1/sends')
+  )
     return null
   if (process.env.NODE_ENV === 'test' && !dependencies.fetch) throw new Error(TEST_REFUSAL)
   const authorization = request.headers.get('authorization')
