@@ -53,3 +53,48 @@ export const recordReadBoundaries: ImportBoundary[] = [
     'Enforce the hosted snapshot service concern boundary.',
   ),
 ]
+
+export const recordSchemaBoundaries: ImportBoundary[] = [
+  boundary(
+    'postgres-schema-auth-boundary',
+    'shared/record/schema-auth.ts',
+    ['drizzle-orm/pg-core', './schema.ts'],
+    'Enforce the Better Auth schema concern boundary.',
+  ),
+  boundary(
+    'postgres-schema-docs-boundary',
+    'shared/record/schema-docs.ts',
+    ['drizzle-orm', 'drizzle-orm/pg-core', './schema.ts'],
+    'Enforce the hosted doc schema concern boundary.',
+  ),
+  boundary(
+    'postgres-schema-hub-boundary',
+    'shared/record/schema-hub.ts',
+    ['drizzle-orm', 'drizzle-orm/pg-core', './schema.ts'],
+    'Enforce the hosted hub evidence schema concern boundary.',
+  ),
+  boundary(
+    'postgres-schema-landing-boundary',
+    'shared/record/schema-landing.ts',
+    ['drizzle-orm/pg-core', './schema.ts'],
+    'Enforce the hosted landing schema concern boundary.',
+  ),
+  boundary(
+    'postgres-schema-review-boundary',
+    'shared/record/schema-review.ts',
+    ['drizzle-orm/pg-core', './schema.ts'],
+    'Enforce the hosted review schema concern boundary.',
+  ),
+  boundary(
+    'postgres-schema-run-boundary',
+    'shared/record/schema-run.ts',
+    ['drizzle-orm', 'drizzle-orm/pg-core', './schema.ts'],
+    'Enforce the hosted run schema concern boundary.',
+  ),
+  boundary(
+    'postgres-schema-snapshots-boundary',
+    'shared/record/schema-snapshots.ts',
+    ['drizzle-orm', 'drizzle-orm/pg-core', './schema.ts'],
+    'Enforce the hosted orchestrator snapshot schema concern boundary.',
+  ),
+]
