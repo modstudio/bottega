@@ -17,11 +17,14 @@ export type HostedSend = {
   recipients: string
   projects: string
   items: number
-  status: 'sent' | 'skipped' | 'failed'
+  status: 'pending' | 'sent' | 'skipped' | 'failed'
   error: string | null
   test: number
   created_at: string
   machine: string
+  subscription_id?: string | null
+  period_start?: string | null
+  period_end?: string | null
 }
 
 type RawHostedReportSetting = Omit<HostedReportSetting, 'value'> & { value_json: string }
@@ -279,7 +282,8 @@ export async function listHostedSends(
     const limit = Math.max(1, Math.min(filters.limit ?? 500, 1000))
     const sends = rows<HostedSend>(
       await tx`SELECT id,legacy_local_id,at,"window",recipients,projects,items,status,error,test,
-      created_at,machine FROM hub_send WHERE space_id=${identity.spaceId}::uuid
+      created_at,machine,subscription_id,period_start,period_end
+      FROM hub_send WHERE space_id=${identity.spaceId}::uuid
       AND created_at > ${since}::timestamptz ORDER BY created_at,id LIMIT ${limit}`,
     )
     const cursor = sends.reduce(
@@ -302,7 +306,8 @@ export async function appendHostedSend(
       VALUES (${newRecordId()}::uuid,${identity.spaceId}::uuid,${input.at}::timestamptz,
       ${input.window},${input.recipients},${input.projects},${input.items},${input.status},
       ${input.error},${input.test},now(),${input.machine})
-      RETURNING id,legacy_local_id,at,"window",recipients,projects,items,status,error,test,created_at,machine`,
+      RETURNING id,legacy_local_id,at,"window",recipients,projects,items,status,error,test,created_at,machine,
+      subscription_id,period_start,period_end`,
     )[0]!
   })
 }

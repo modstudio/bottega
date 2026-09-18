@@ -248,10 +248,19 @@ export const hubSend = pgTable.withRLS(
     test: integer().notNull().default(0),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull(),
     machine: text().notNull(),
+    subscriptionId: uuid('subscription_id').references(() => hubReportSubscription.id),
+    periodStart: timestamp('period_start', { withTimezone: true }),
+    periodEnd: timestamp('period_end', { withTimezone: true }),
   },
   (table) => [
     unique('hub_send_space_legacy_unique').on(table.spaceId, table.legacyLocalId),
-    check('hub_send_status_check', sql`${table.status} IN ('sent','skipped','failed')`),
+    unique('hub_send_subscription_period_unique').on(table.subscriptionId, table.periodEnd),
+    check('hub_send_status_check', sql`${table.status} IN ('pending','sent','skipped','failed')`),
+    check(
+      'hub_send_subscription_period_check',
+      sql`(${table.subscriptionId} IS NULL AND ${table.periodStart} IS NULL AND ${table.periodEnd} IS NULL)
+        OR (${table.subscriptionId} IS NOT NULL AND ${table.periodStart} IS NOT NULL AND ${table.periodEnd} IS NOT NULL AND ${table.periodStart} < ${table.periodEnd})`,
+    ),
     check('hub_send_test_check', sql`${table.test} IN (0,1)`),
     pgPolicy('hub_send_space_select', {
       for: 'select',
@@ -262,6 +271,11 @@ export const hubSend = pgTable.withRLS(
     }),
     pgPolicy('hub_send_space_insert', {
       for: 'insert',
+      withCheck: sql`${table.spaceId} = nullif(current_setting('app.space_id', true), '')::uuid`,
+    }),
+    pgPolicy('hub_send_space_update', {
+      for: 'update',
+      using: sql`${table.spaceId} = nullif(current_setting('app.space_id', true), '')::uuid`,
       withCheck: sql`${table.spaceId} = nullif(current_setting('app.space_id', true), '')::uuid`,
     }),
   ],
