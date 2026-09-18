@@ -56,6 +56,7 @@ import {
   type CarriedWorkingState,
   carryWorkingState,
   resolveReadOnlyBase,
+  shouldAssertCallerAncestry,
 } from '../worktree/worktree-caller.ts'
 import { createIsolatedWorkerDirectory, prepareWorkerMcpConfig } from '../worktree/worktree-mcp.ts'
 import { toolFor } from '../worktree/worktree-preflight.ts'
@@ -745,8 +746,6 @@ export async function claimRun(input: ClaimInput): Promise<ClaimResult> {
             // corrupts the evidence the whole system runs on. The case the
             // function exists for is still there: pass --carry.
             //
-            // The ancestry guard is orthogonal: a behind-or-diverged caller is
-            // refused whether or not carrying was requested.
             // An explicit review from trunk deliberately selects a branch that
             // need not descend from the caller. An overlay still comes only
             // from that branch's own checkout, where the ancestry guard remains
@@ -755,7 +754,7 @@ export async function claimRun(input: ClaimInput): Promise<ClaimResult> {
             // caller checkout need not contain; the ancestry guard protects new
             // dispatches only, and nothing is carried into a rebuilt resume.
             if (
-              !resumePlan &&
+              shouldAssertCallerAncestry(Boolean(opts.carry), Boolean(resumePlan)) &&
               !resolvedTaskBranch &&
               (!reviewTarget || opts.carry) &&
               !namesRecordedRunTree({
