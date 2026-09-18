@@ -15,28 +15,12 @@ import { branchTip, removeBranch, unmergedBranch } from '../worktree/worktree-re
 import type { Worktree } from '../worktree/worktree-types.ts'
 import { adoptRunMutation, auditRunMutation, authorizeRunMutation } from './run-authority.ts'
 import { resolveRootFromLastTurn } from './run-liveness.ts'
-import type { TerminateRunProcessesResult } from './run-process.ts'
+import { stoppedRunLine, type TerminateRunProcessesResult } from './run-termination.ts'
 
 export type RunStopOptions = CleanupOptions & { note?: string }
 export type RunStopHelpers = {
   lifecycleCheckpoint: (name: string) => void
   terminateRunProcesses: (runId: number, exceptPids?: number[]) => TerminateRunProcessesResult
-}
-
-export function stoppedRunLine(
-  id: number,
-  pid: number | null,
-  termination: TerminateRunProcessesResult,
-): string {
-  if (pid && termination.outcome === 'identity-mismatch') {
-    const commands = termination.acceptableIds.map((runId) => `exec.ts ${runId}`).join(', ')
-    return `stopped run ${id}; pid ${pid} is present but does not name this run (expected ${commands}); inspect it with ps -p ${pid} -o command and signal it only if the command shows one of those ids`
-  }
-  if (pid && termination.outcome === 'unascertainable') {
-    const commands = termination.acceptableIds.map((runId) => `exec.ts ${runId}`).join(', ')
-    return `stopped run ${id}; no process could be signalled because ${termination.reason}; inspect pid ${pid} with ps -p ${pid} -o command and signal it only if the command shows one of these ids: ${commands}`
-  }
-  return `stopped run ${id}`
 }
 
 export async function stopRun(

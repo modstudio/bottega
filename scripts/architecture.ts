@@ -444,6 +444,7 @@ export const modules: ArchitectureModule[] = [
     '../transport/transport.ts',
     '../worktree/worktree-types.ts',
   ]),
+  module('orchestrator/src/run/run-termination.ts', []),
   module('orchestrator/src/live-outcome.ts', [
     './failure/failure.ts',
     './outcome.ts',

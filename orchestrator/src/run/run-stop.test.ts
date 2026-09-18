@@ -2,7 +2,7 @@ import { beforeEach, expect, test } from 'bun:test'
 import { addRun } from '../../test/fixtures/store.ts'
 import { db } from '../database/db.ts'
 import { candidates } from '../route/route.ts'
-import { abandonRun, stoppedRunLine, stopRun } from './run-stop.ts'
+import { abandonRun, stopRun } from './run-stop.ts'
 
 const presentation = () => {
   const lines: string[] = []
@@ -79,36 +79,6 @@ test('stop refuses a run that is not running without changing it', async () => {
   const result = await invoke('stop', id)
   expect(result.err).toContain(`${id} turn 1 ok`)
   expect(db().query('SELECT status FROM run WHERE id=?').get(id)).toEqual({ status: 'ok' })
-})
-
-test('stop reports an identity mismatch without recommending an unverified signal', () => {
-  expect(stoppedRunLine(42, 9001, { outcome: 'identity-mismatch', acceptableIds: [41, 42] })).toBe(
-    'stopped run 42; pid 9001 is present but does not name this run (expected exec.ts 41, exec.ts 42); inspect it with ps -p 9001 -o command and signal it only if the command shows one of those ids',
-  )
-})
-
-test('stop reports an unreadable process table and an inspect-then-decide remedy', () => {
-  expect(
-    stoppedRunLine(42, 9001, {
-      outcome: 'unascertainable',
-      acceptableIds: [41, 42],
-      reason: 'process inventory failed with exit 1',
-    }),
-  ).toBe(
-    'stopped run 42; no process could be signalled because process inventory failed with exit 1; inspect pid 9001 with ps -p 9001 -o command and signal it only if the command shows one of these ids: exec.ts 41, exec.ts 42',
-  )
-})
-
-test('stop uses the plain success line for signalled, no-pid and gone outcomes', () => {
-  expect(
-    stoppedRunLine(42, 9001, {
-      outcome: 'signalled',
-      signalled: [9001],
-      acceptableIds: [42],
-    }),
-  ).toBe('stopped run 42')
-  expect(stoppedRunLine(42, null, { outcome: 'no-pid', acceptableIds: [] })).toBe('stopped run 42')
-  expect(stoppedRunLine(42, 9001, { outcome: 'gone', acceptableIds: [42] })).toBe('stopped run 42')
 })
 
 test('stopping a running turn records the conversation root as stopped', async () => {

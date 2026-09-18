@@ -4,13 +4,13 @@
  * run events. Must not know routing, contracts, reviews, or transports.
  */
 
-import type { Database } from 'bun:sqlite'
 import { createHash } from 'node:crypto'
 import type { AGENTS } from '../agent/agent-registry.ts'
 import { DB_PATH, db } from '../database/db.ts'
 import { depth } from '../dispatch/dispatch-preflight.ts'
 import { terminateProcessGroup } from '../idle-kill.ts'
 import { checkpointRun, latestCheckpoint } from './checkpoint.ts'
+import { commandNamesRun, type TerminateRunProcessesResult } from './run-termination.ts'
 
 const ALLOW_ENV_EXACT = new Set([
   'PATH',
@@ -88,13 +88,6 @@ type ProcessInventory =
   | { ascertainable: true; rows: ProcessRow[] }
   | { ascertainable: false; reason: string }
 
-export type TerminateRunProcessesResult =
-  | { outcome: 'signalled'; signalled: number[]; acceptableIds: number[] }
-  | { outcome: 'identity-mismatch'; acceptableIds: number[] }
-  | { outcome: 'unascertainable'; acceptableIds: number[]; reason: string }
-  | { outcome: 'no-pid'; acceptableIds: number[] }
-  | { outcome: 'gone'; acceptableIds: number[] }
-
 export function processTable(): ProcessInventory {
   let p: ReturnType<typeof Bun.spawnSync>
   try {
@@ -148,17 +141,11 @@ export function processTable(): ProcessInventory {
   }
 }
 
-export function commandNamesRun(command: string, acceptableIds: readonly number[]): boolean {
-  return acceptableIds.some((id) =>
-    new RegExp(`(?:^|[/\\s])exec\\.ts\\s+${id}(?:\\s|$)`).test(command),
-  )
-}
-
 const MAX_FAILOVER_CONVERSATIONS = 100
 
 /** Run ids whose conversations can share the stopped run's coordinator process. */
-export function acceptableRunProcessIds(database: Database, id: number): number[] {
-  const member = database.query('SELECT id, parent_run_id FROM run WHERE id=?').get(id) as {
+export function acceptableRunProcessIds(id: number): number[] {
+  const member = db().query('SELECT id, parent_run_id FROM run WHERE id=?').get(id) as {
     id: number
     parent_run_id: number | null
   } | null
@@ -174,11 +161,11 @@ export function acceptableRunProcessIds(database: Database, id: number): number[
     const rootId = pending.shift()!
     if (roots.has(rootId)) throw new Error(`run ${id} has an automatic failover cycle at ${rootId}`)
     roots.add(rootId)
-    const conversation = database
+    const conversation = db()
       .query('SELECT id FROM run WHERE id=? OR parent_run_id=? ORDER BY id')
       .all(rootId, rootId) as { id: number }[]
     for (const row of conversation) acceptable.add(row.id)
-    const predecessors = database
+    const predecessors = db()
       .query(
         `SELECT prior.id, prior.parent_run_id FROM run successor
          JOIN run prior ON prior.id=successor.retry_of
@@ -234,7 +221,7 @@ export function terminateRunProcesses(
   } | null
   if (!row) throw new Error(`no run ${id}`)
   if (!row.pid) return { outcome: 'no-pid', acceptableIds: [] }
-  const acceptableIds = acceptableRunProcessIds(db(), id)
+  const acceptableIds = acceptableRunProcessIds(id)
   const inventory = processTable()
   if (!inventory.ascertainable) {
     console.error(`orch: ${inventory.reason}; nothing signalled`)
