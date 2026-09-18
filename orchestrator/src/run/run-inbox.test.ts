@@ -156,7 +156,7 @@ test('inbox treats an empty-string exclusion as voided, matching VOIDED_SQL', as
     expect.objectContaining({ run_id: id, status: 'voided', can_answer: false }),
   )
 })
-test('bare inbox scopes visibility by checkout while ownership stays session-scoped', async () => {
+test('bare project inbox includes its questions and this session questions from other projects', async () => {
   upsertProject({ name: 'here', path: process.cwd() })
   const here = addRun({
     agent: 'codex',
@@ -165,18 +165,49 @@ test('bare inbox scopes visibility by checkout while ownership stays session-sco
     session: 'foreign',
     repo: 'here',
   })
-  const elsewhere = addRun({
+  const foreignElsewhere = addRun({
     agent: 'codex',
     job: 'implement',
     status: 'asking',
     session: 'foreign',
     repo: 'elsewhere',
   })
+  const ownElsewhere = addRun({
+    agent: 'codex',
+    job: 'implement',
+    status: 'asking',
+    session: 'orch-test-session',
+    repo: 'elsewhere',
+  })
   question(here, 'here?')
-  question(elsewhere, 'elsewhere?')
+  question(foreignElsewhere, 'foreign elsewhere?')
+  question(ownElsewhere, 'own elsewhere?')
   const shown = await inbox()
   expect(shown).toContain('here?')
-  expect(shown).not.toContain('elsewhere?')
+  expect(shown).not.toContain('foreign elsewhere?')
+  expect(shown).toContain('own elsewhere?')
+  expect(shown).toContain(`run ${ownElsewhere} · codex/implement · elsewhere`)
+})
+test('bare project inbox includes recoverable roots owned by this session in other projects', async () => {
+  upsertProject({ name: 'here', path: process.cwd() })
+  const ownElsewhere = addRun({
+    agent: 'codex',
+    job: 'implement',
+    status: 'asking',
+    session: 'orch-test-session',
+    repo: 'elsewhere',
+  })
+  const foreignElsewhere = addRun({
+    agent: 'codex',
+    job: 'implement',
+    status: 'asking',
+    session: 'foreign',
+    repo: 'elsewhere',
+  })
+  const shown = await inbox()
+  expect(shown).toContain(`run ${ownElsewhere} · codex/implement · elsewhere`)
+  expect(shown).toContain(`recoverable: orch continue ${ownElsewhere}`)
+  expect(shown).not.toContain(`run ${foreignElsewhere}`)
 })
 test('inbox marks an answered-but-undelivered chain stranded', async () => {
   const id = addRun({

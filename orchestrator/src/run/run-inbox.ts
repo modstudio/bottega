@@ -70,13 +70,12 @@ export async function runInboxCommand(
     root_id: number
     session_recent: number
   }[]
-  // The default is a VIEW of the project containing cwd. Ownership remains
-  // the session that dispatched the run; choosing what is visible must never
-  // silently make it answerable. Outside a registered project, retain the
-  // old session-scoped fallback rather than guessing a project from the path.
+  // Inside a registered project, the default view is the union of questions in
+  // that project and questions owned by this session. Visibility does not make
+  // a question owned by another session answerable.
   const rows = mine
     ? project
-      ? allRows.filter((q) => q.repo === project.name)
+      ? allRows.filter((q) => q.repo === project.name || (sid !== null && q.session_id === sid))
       : allRows.filter((q) => sid !== null && q.session_id === sid)
     : allRows
   const canAnswer = (owner: string | null) => owner === null || (sid !== null && owner === sid)
@@ -123,7 +122,7 @@ export async function runInboxCommand(
              AND pending.answered_at IS NOT NULL
              AND pending.delivery_pending_at IS NOT NULL
         ))
-        ${mine ? (project ? 'AND root.repo = ?' : 'AND root.session_id = ?') : ''}
+        ${mine ? (project ? 'AND (root.repo = ? OR root.session_id = ?)' : 'AND root.session_id = ?') : ''}
         AND NOT EXISTS (
           SELECT 1 FROM question q JOIN run owner ON owner.id = q.run_id
            WHERE (owner.id = root.id OR owner.parent_run_id = root.id)
@@ -135,7 +134,7 @@ export async function runInboxCommand(
         )
       ORDER BY root.id`,
     )
-    .all(...(mine ? (project ? [project.name] : [sid]) : [])) as {
+    .all(...(mine ? (project ? [project.name, sid] : [sid]) : [])) as {
     id: number
     agent: string
     job: string
