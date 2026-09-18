@@ -55,19 +55,15 @@ import {
   canonSourceInstruction,
   effectiveMcpRequest,
   type McpRequest,
-  mcpAttachRefusal,
   probeRequestedMcp,
-  requestedMcpMode,
   storedMcpRequest,
 } from '../mcp/mcp-preflight.ts'
 import {
-  mcpCallEvidence,
   mcpConfigAllowlist,
   namesSeenAt,
   probeMcpServer,
   readMcpConfig,
   storedMcpProbe,
-  wrongProjectReason,
 } from '../mcp/mcp-probe.ts'
 import { projectAt, projectByName, stackAt, type WorktreeTool } from '../project/projects.ts'
 import { recipeNotes } from '../recipe/recipe.ts'
@@ -118,6 +114,7 @@ import { claimRun } from './run-claim.ts'
 import { closeRun } from './run-close.ts'
 import { acquireRunLease } from './run-lease.ts'
 import { runLive } from './run-live.ts'
+import * as mcpAttachment from './run-mcp-attachment.ts'
 import { bindSignals, childEnv, sha } from './run-process.ts'
 import { finishRun } from './run-terminal.ts'
 import type { RunResult } from './run-types.ts'
@@ -631,35 +628,32 @@ export async function run(opts: {
     prompt += `\n\n${suffix}`
   }
 
-  /**
-   * Probe after routing: a red grok doctor is evidence about grok, not about
-   * Codex. Agents that discover MCP from cwd must be probed later, against the
-   * worker tree they will actually inspect; all others retain the pre-row path.
-   *
-   * A reserved placeholder was claimed by detach() after the same check; if
-   * routing here disagrees and grok cannot attach, delete that placeholder
-   * rather than converting a non-event into a failed row.
-   */
-  const mcpMode = requestedMcpMode(mcpRequest)
-  const deferredCwdMcpPreflight = Boolean(
-    mcpMode && projectAt(callerCwd) && (forbidsRepo || (repoJob && a.caps.discoversMcpFromCwd)),
-  )
+  const callerCwdHasProject = Boolean(projectAt(callerCwd))
+  const deferredCwdMcpPreflight = mcpAttachment.shouldDeferCwdMcpPreflight({
+    mcpRequest,
+    callerCwdHasProject,
+    forbidsRepo,
+    repoJob,
+    discoversMcpFromCwd: a.caps.discoversMcpFromCwd,
+  })
   let mcpConnection = deferredCwdMcpPreflight
     ? null
     : probeRequestedMcp(mcpRequest, name, callerCwd)
-  const mcpWhy = mcpConnection ? mcpAttachRefusal(mcpConnection) : null
-  if (mcpWhy && mcpMode === 'require') {
+  const attachmentRuling = mcpAttachment.decideMcpAttachment({
+    connection: mcpConnection,
+    mcpRequest,
+    writesJob,
+    agentHasMcp: a.caps.mcp,
+  })
+  if (attachmentRuling.refusalReason) {
+    // A routing mismatch must not convert the reserved placeholder into a failed row.
     if (opts.reserveId) db().query('DELETE FROM run WHERE id=?').run(opts.reserveId)
-    throw new Error(mcpWhy)
+    throw new Error(attachmentRuling.refusalReason)
   }
 
-  /** Whether the requested product is a diff, rather than review findings. */
-  let usingMcp = (Boolean(mcpMode) || writesJob) && a.caps.mcp && mcpConnection?.connected !== false
-  /**
-   * Every repository job gets writable scratch space. `writesJob` still means
-   * its requested product is a diff; `repoJob` means it needs an isolated tree
-   * in which it may test a hypothesis.
-   */
+  const mcpMode = attachmentRuling.mcpMode
+  let usingMcp = attachmentRuling.usingMcp
+  // Every repository job gets writable scratch; only `writesJob` requests a diff.
   const writes = repoJob
 
   // Minted before the spawn when the agent lets us choose, so the resume handle
@@ -882,18 +876,23 @@ export async function run(opts: {
         })
         // The probe runs only when the required server is in .mcp.json, so the
         // wrong-project question is already answered; the doctor path asks it.
-        const recorded = probe
-        const callEvidence = mcpCallEvidence(recorded)
+        const probeRuling = mcpAttachment.decideMcpToolProbe(
+          probe,
+          mcpServerName,
+          mcpMode,
+          name,
+          projectAt(callerCwd)?.name ?? null,
+        )
         db()
           .query('UPDATE run SET mcp_probe=?, mcp_connected=?, mcp_error=? WHERE id=?')
-          .run(storedMcpProbe(recorded), callEvidence.connected, callEvidence.error, claim.id)
-        if (callEvidence.connected !== 1 && mcpMode === 'require') {
-          const why =
-            callEvidence.connected === 0
-              ? `MCP tool call failed on ${mcpServerName}: ${callEvidence.error}`
-              : `mcp unverifiable on ${name}: ${callEvidence.error}` +
-                `\ninvariant: --mcp means a proven tool call, never a handshake` +
-                `\ncleared by: orch project set ${projectAt(callerCwd)?.name ?? '<project>'} --settings '{"mcp":{"probe_tool":"<a cheap read tool on ${mcpServerName}>"}}'`
+          .run(
+            storedMcpProbe(probe),
+            probeRuling.callEvidence.connected,
+            probeRuling.callEvidence.error,
+            claim.id,
+          )
+        if (probeRuling.refusalReason) {
+          const why = probeRuling.refusalReason
           db()
             .query(
               `UPDATE run SET status='failed', error=?, failure_kind='mcp_unverified', latency_ms=? WHERE id=?`,
@@ -905,16 +904,11 @@ export async function run(opts: {
             runId: claim.id,
           })
         }
-        if (!recorded.ok) {
-          mcpConnection = {
-            server: mcpServerName,
-            connected: false,
-            error: recorded.error,
-            namesSeen: recorded.namesSeen,
-          }
+        if (probeRuling.failedConnection) {
+          mcpConnection = probeRuling.failedConnection
           db()
             .query(`UPDATE run SET mcp_connected=0, mcp_error=? WHERE id=?`)
-            .run(recorded.error, claim.id)
+            .run(mcpConnection.error, claim.id)
           usingMcp = false
         }
       } catch (error) {
@@ -933,28 +927,14 @@ export async function run(opts: {
       }
     } else {
       const namesSeen = namesSeenAt(cwd)
-      const mismatched = wrongProjectReason(mcpServerName, namesSeen)
-      if (mismatched) {
-        const recorded: import('../mcp/mcp-probe.ts').McpProbeResult = {
-          server: mcpServerName,
-          tool: 'tools/list',
-          ok: false,
-          error: mismatched,
-          durationMs: 0,
-          detail: null,
-          namesSeen,
-        }
-        mcpConnection = {
-          server: mcpServerName,
-          connected: false,
-          error: mismatched,
-          namesSeen,
-        }
+      const mismatch = mcpAttachment.decideMcpMirrorMismatch(mcpServerName, namesSeen, mcpMode)
+      if (mismatch) {
+        mcpConnection = mismatch.connection
         db()
           .query('UPDATE run SET mcp_connected=0, mcp_error=?, mcp_probe=? WHERE id=?')
-          .run(mismatched, storedMcpProbe(recorded), claim.id)
-        if (mcpMode === 'require') {
-          const why = mcpAttachRefusal(mcpConnection)!
+          .run(mismatch.connection.error, storedMcpProbe(mismatch.recorded), claim.id)
+        if (mismatch.refusalReason) {
+          const why = mismatch.refusalReason
           db()
             .query(
               `UPDATE run SET status='failed', error=?, failure_kind='harness', latency_ms=? WHERE id=?`,
@@ -965,7 +945,7 @@ export async function run(opts: {
             runId: claim.id,
           })
         }
-        mcpConnection = { ...mcpConnection, error: `mirror: ${mismatched}` }
+        mcpConnection = mismatch.continuedConnection
         usingMcp = false
         db().query('UPDATE run SET mcp_error=? WHERE id=?').run(mcpConnection.error, claim.id)
       }
