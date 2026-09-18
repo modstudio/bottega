@@ -1,16 +1,9 @@
-import { posix } from 'node:path'
 import ts from 'typescript'
 
 export type ImportScan = {
   specifiers: string[]
   typeOnlySpecifiers: string[]
   unresolvedRelative: string[]
-}
-
-/** Resolve a relative module specifier from its importing repository-relative file. */
-export function repositoryRelativeImport(importer: string, specifier: string): string {
-  if (!specifier.startsWith('.')) return specifier
-  return posix.normalize(posix.join(posix.dirname(importer), specifier))
 }
 
 function staticString(

@@ -872,6 +872,25 @@ export function architectureRules() {
         reachable: true,
       },
     },
+    {
+      name: 'import-hosted-hub-server-transitive-boundary',
+      severity: 'error',
+      comment: 'Enforce the hosted hub server concern boundary.',
+      from: { path: exactArchitecturePath('hub/src/hosted.ts') },
+      to: {
+        path: [
+          'hub/src/db.ts',
+          'hub/src/db/db.ts',
+          'hub/src/orch.ts',
+          'hub/src/orch/orch.ts',
+          'bun:sqlite',
+          'node:child_process',
+        ]
+          .map(architectureDependencyPath)
+          .join('|'),
+        reachable: true,
+      },
+    },
     ...inversions.map((entry) => ({
       name: `inversion-${entry.from.replace(/[^a-z0-9]+/gi, '-')}-${entry.to.replace(/[^a-z0-9]+/gi, '-')}`,
       severity: 'error' as const,

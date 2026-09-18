@@ -1,11 +1,11 @@
 #!/usr/bin/env bun
-import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
-import { tmpdir } from 'node:os'
+import { existsSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { Glob } from 'bun'
 import { CONCERNS } from '../shared/brand.ts'
-import { architectureRules, dependencyCruiserConfig, modules } from './architecture.ts'
+import { architectureRules, modules } from './architecture.ts'
+import { ARCHITECTURE_CRUISE_ROOTS, runArchitectureCruise } from './architecture-cruise.ts'
 import { importSpecifiers } from './import-scanner.ts'
 
 const ROOT = fileURLToPath(new URL('..', import.meta.url)).replace(/\/$/, '')
@@ -58,37 +58,9 @@ if (violations.length) {
   process.exit(1)
 }
 
-const generatedDirectory = mkdtempSync(join(tmpdir(), 'architecture-'))
-const generatedConfig = join(generatedDirectory, 'dependency-cruiser.json')
-writeFileSync(generatedConfig, JSON.stringify(dependencyCruiserConfig()))
-
 const startedAt = performance.now()
-try {
-  const child = Bun.spawn(
-    [
-      join(ROOT, 'node_modules/.bin/depcruise'),
-      '--validate',
-      join(ROOT, '.dependency-cruiser.cjs'),
-      'orchestrator',
-      'hub',
-      'shared',
-      'ops',
-      'local-stack',
-      'retrieval',
-      'scripts',
-    ],
-    {
-      cwd: ROOT,
-      env: { ...process.env, ARCHITECTURE_CONFIG: generatedConfig },
-      stdout: 'inherit',
-      stderr: 'inherit',
-    },
-  )
-  const exitCode = await child.exited
-  if (exitCode !== 0) process.exit(exitCode)
-} finally {
-  rmSync(generatedDirectory, { recursive: true, force: true })
-}
+const { exitCode } = await runArchitectureCruise({ entries: ARCHITECTURE_CRUISE_ROOTS })
+if (exitCode !== 0) process.exit(exitCode)
 
 console.log(
   `check-architecture: ok (${modules.length} manifest modules, depcruise ${((performance.now() - startedAt) / 1000).toFixed(2)}s)`,

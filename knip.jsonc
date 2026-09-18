@@ -45,7 +45,7 @@
       ],
       "project": ["scripts/**/*.ts!", "shared/**/*.ts!", "scripts/architecture.ts!"],
       "drizzle": { "config": ["shared/record/drizzle.config.ts"] },
-      // Invoked through node_modules/.bin/depcruise in scripts/check-architecture.ts.
+      // Invoked through node_modules/.bin/depcruise in scripts/architecture-cruise.ts.
       "ignoreDependencies": ["dependency-cruiser"]
     },
     "orchestrator": {

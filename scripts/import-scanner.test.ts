@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test'
-import { importSpecifiers, repositoryRelativeImport } from './import-scanner.ts'
+import { importSpecifiers } from './import-scanner.ts'
 
 const cases = [
   ['static import', `import value from './static.ts'`, './static.ts'],
@@ -23,16 +23,6 @@ const cases = [
 ] as const
 
 describe('import scanner', () => {
-  test('resolves relative imports from the importing file', () => {
-    expect(
-      repositoryRelativeImport('orchestrator/src/outcome/outcome.ts', '../score/score.ts'),
-    ).toBe('orchestrator/src/score/score.ts')
-    expect(repositoryRelativeImport('orchestrator/src/outcome.ts', './score.ts')).toBe(
-      'orchestrator/src/score.ts',
-    )
-    expect(repositoryRelativeImport('orchestrator/src/outcome.ts', 'node:fs')).toBe('node:fs')
-  })
-
   for (const [name, source, expected] of cases) {
     test(name, () => {
       expect(importSpecifiers(source)).toEqual({
