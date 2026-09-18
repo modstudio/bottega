@@ -29,6 +29,7 @@ import { registerHostedConfigProofs } from '../../test/postgres-config-proof.ts'
 import { registerProjectSpaceProofs } from '../../test/postgres-project-space-proof.ts'
 import { registerActiveSpaceProofs } from '../../test/postgres-remembered-space-proof.ts'
 import { proveHostedDocs, proveScoreRecordSync } from '../../test/postgres-score-proof.ts'
+import { registerStaleMembershipProof } from '../../test/postgres-stale-membership-proof.ts'
 import { startRecordApiServer } from '../record/record-api-server.ts'
 import { bearerHeaders, recordAuth, setActiveRecordSpace } from '../record/record-auth.ts'
 import { signInCommand, signUpCommand, whoamiCommand } from '../record/record-auth-command.ts'
@@ -755,28 +756,17 @@ realPostgres('RLS proof against real Postgres', () => {
       })
       expect(snapshotItems.items.some((item) => item.payload.hidden === true)).toBe(false)
       await proveHostedDocs({ origin, token: created.token, otherToken: tokenB })
-
-      succeeds(
-        'postgres',
-        'postgres',
-        `DELETE FROM membership
-         WHERE user_id='${created.user.id}'::uuid
-           AND space_id='${identity.activeSpaceId}'::uuid;`,
-      )
-      const staleWhoami = await fetch(`${origin}/v1/whoami`, {
-        headers: { Authorization: `Bearer ${created.token}` },
-      })
-      expect(staleWhoami.status).toBe(200)
-      expect((await staleWhoami.json()) as { activeSpaceId: string | null }).toMatchObject({
-        activeSpaceId: null,
-      })
-      const staleScopedRequest = await fetch(`${origin}/v1/runs`, {
-        headers: { Authorization: `Bearer ${created.token}` },
-      })
-      expect(staleScopedRequest.status).toBe(409)
     } finally {
       server.stop(true)
     }
+  })
+
+  registerStaleMembershipProof({
+    actorUrl: actorUrl!,
+    password: SIGN_UP_AUTH.password,
+    inviterId: () => authUserA,
+    spaceId: () => authSpaceA,
+    admin: (statement) => succeeds('postgres', 'postgres', statement),
   })
 
   test('user-scoped table grants stay narrow', () => {
