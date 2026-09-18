@@ -2,11 +2,13 @@ import { Database } from 'bun:sqlite'
 import { describe, expect, test } from 'bun:test'
 import { applyMigrations, migrationJournal } from '../database/migrations.ts'
 import {
+  forkStepCatalogue,
   productionStepCatalogue,
+  promoteStepCatalogue,
   showStepCatalogue,
   stepCatalogueVersions,
 } from './step-catalogue.ts'
-import { mergeSeededSteps, seedWorkflows } from './workflow-seeds.ts'
+import { mergeSeededSteps, seedMayPromote, seedWorkflows } from './workflow-seeds.ts'
 import {
   listWorkflows,
   showWorkflow,
@@ -21,6 +23,29 @@ const database = () => {
   seedWorkflows(d)
   return d
 }
+
+describe('seedMayPromote', () => {
+  test('higher revision, no operator promotion → may promote (catches breaking bootstrap upgrades)', () => {
+    expect(
+      seedMayPromote({ seedRevision: 5, storedSeedRevision: 4, operatorPromoted: false }),
+    ).toBe(true)
+  })
+
+  test('higher revision, operator promotion exists → may not (catches the override)', () => {
+    expect(seedMayPromote({ seedRevision: 5, storedSeedRevision: 4, operatorPromoted: true })).toBe(
+      false,
+    )
+  })
+
+  test('equal or lower revision → may not (catches re-promoting the same seed)', () => {
+    expect(
+      seedMayPromote({ seedRevision: 4, storedSeedRevision: 4, operatorPromoted: false }),
+    ).toBe(false)
+    expect(
+      seedMayPromote({ seedRevision: 3, storedSeedRevision: 4, operatorPromoted: false }),
+    ).toBe(false)
+  })
+})
 
 describe('seeded step merge', () => {
   test('a store-promoted step absent from the seed survives the merge (catches reverting to replacement)', () => {
@@ -184,6 +209,53 @@ describe('workflow projection and seeds', () => {
       expect(step.needs).toContain('trunk')
       expect(step.body).toContain('{{trunk}}')
     }
+  })
+  test('an operator-promoted catalogue records nothing on a seed bump (catches the DEV-778 class returning by the other door)', () => {
+    const d = database(),
+      catalogue = productionStepCatalogue(d),
+      legacy = {
+        steps: catalogue.definition.steps.map((step) => {
+          if (step.slug === 'rebase')
+            return {
+              ...step,
+              body: step.body.replace('origin/{{trunk}}', 'origin/main'),
+              needs: step.needs.filter((need) => need !== 'trunk'),
+            }
+          if (step.slug === 'pr')
+            return {
+              ...step,
+              body: step.body.replace('--base {{trunk}}', '--base main'),
+              needs: step.needs.filter((need) => need !== 'trunk'),
+            }
+          return step
+        }),
+      }
+    d.query('UPDATE step_catalogue_version SET definition=? WHERE catalogue_id=? AND n=1').run(
+      JSON.stringify(legacy),
+      catalogue.owner_id,
+    )
+    const draft = forkStepCatalogue(1, 'operator edit', 'architect', d)
+    promoteStepCatalogue(draft.n, 'operator promote', 'architect', d)
+    d.query(
+      "UPDATE step_catalogue_event SET reason='seed r1' WHERE catalogue_id=? AND author='seed'",
+    ).run(catalogue.owner_id)
+    const beforeVersions = stepCatalogueVersions(d).length,
+      beforeEvents = (
+        d
+          .query('SELECT COUNT(*) AS count FROM step_catalogue_event WHERE catalogue_id=?')
+          .get(catalogue.owner_id) as { count: number }
+      ).count
+
+    seedWorkflows(d)
+
+    expect(stepCatalogueVersions(d)).toHaveLength(beforeVersions)
+    expect(
+      d
+        .query('SELECT COUNT(*) AS count FROM step_catalogue_event WHERE catalogue_id=?')
+        .get(catalogue.owner_id),
+    ).toEqual({ count: beforeEvents })
+    expect(productionStepCatalogue(d).n).toBe(draft.n)
+    expect(productionStepCatalogue(d).author).toBe('architect')
   })
   test('an unchanged merge records no new version or event (catches promoting a duplicate on every initialize)', () => {
     const d = database(),
