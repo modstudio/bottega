@@ -1,9 +1,37 @@
 import { beforeAll, describe, expect, test } from 'bun:test'
 import { DEFAULT_IDLE_CAP_MS, engagedMs } from '../../../shared/interval.ts'
 import { at, resetFixtureStore } from '../../test/run-fixtures.ts'
-import { spendingSpans } from './transcripts.ts'
+import { resolveTranscriptRoot, spendingSpans } from './transcripts.ts'
 
 beforeAll(resetFixtureStore)
+
+describe('transcript root', () => {
+  test('an override selects its path and an empty override disables ingest', () => {
+    expect(resolveTranscriptRoot('/transcripts', undefined)).toEqual({
+      source: 'read',
+      path: '/transcripts',
+    })
+    expect(resolveTranscriptRoot('', undefined)).toEqual({ source: 'disabled' })
+  })
+
+  test('HOME supplies the default only when no override is set', () => {
+    expect(resolveTranscriptRoot(undefined, '/home')).toEqual({
+      source: 'read',
+      path: '/home/.claude/projects',
+    })
+    for (const home of [undefined, '']) {
+      expect(() => resolveTranscriptRoot(undefined, home)).toThrow(
+        'Cannot resolve transcript root ${HOME}/.claude/projects',
+      )
+    }
+  })
+
+  test('an absent resolved root refuses with the remedy', () => {
+    expect(() => resolveTranscriptRoot('/missing', '/home', false)).toThrow(
+      'Cannot read transcript root /missing; set HUB_TRANSCRIPT_ROOT',
+    )
+  })
+})
 
 describe('spend conservation', () => {
   // The property that makes reconciliation against the day grain meaningful:
