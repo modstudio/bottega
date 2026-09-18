@@ -119,12 +119,6 @@
     "score": 29
   },
   {
-    "file": "orchestrator/src/ask/ask.ts",
-    "function": "serveAskChannel",
-    "line": 139,
-    "score": 41
-  },
-  {
     "file": "orchestrator/src/branch/task-branch.ts",
     "function": "resolveTaskBranch",
     "line": 100,
