@@ -1,6 +1,11 @@
 import { describe, expect, test } from 'bun:test'
 import type { McpConnection } from '../mcp/mcp-preflight.ts'
-import { decideMcpAttachment, shouldDeferCwdMcpPreflight } from './run-mcp-attachment.ts'
+import {
+  decideMcpAttachment,
+  decideMcpMirrorMismatch,
+  decideMcpToolProbe,
+  shouldDeferCwdMcpPreflight,
+} from './run-mcp-attachment.ts'
 
 const connected: McpConnection = { server: 'bottega', connected: true, error: null }
 const disconnected: McpConnection = {
@@ -14,7 +19,7 @@ describe('cwd MCP preflight deferral', () => {
     {
       name: 'a project exists and the job forbids a repository',
       facts: {
-        mcpMode: 'require' as const,
+        mcpRequest: 'require' as const,
         callerCwdHasProject: true,
         forbidsRepo: true,
         repoJob: false,
@@ -25,7 +30,7 @@ describe('cwd MCP preflight deferral', () => {
     {
       name: 'a repository job uses an agent that discovers MCP from cwd',
       facts: {
-        mcpMode: 'prefer' as const,
+        mcpRequest: 'prefer' as const,
         callerCwdHasProject: true,
         forbidsRepo: false,
         repoJob: true,
@@ -36,7 +41,7 @@ describe('cwd MCP preflight deferral', () => {
     {
       name: 'no MCP was requested',
       facts: {
-        mcpMode: null,
+        mcpRequest: undefined,
         callerCwdHasProject: true,
         forbidsRepo: true,
         repoJob: true,
@@ -47,7 +52,7 @@ describe('cwd MCP preflight deferral', () => {
     {
       name: 'the caller cwd has no project',
       facts: {
-        mcpMode: 'require' as const,
+        mcpRequest: 'require' as const,
         callerCwdHasProject: false,
         forbidsRepo: true,
         repoJob: true,
@@ -58,7 +63,7 @@ describe('cwd MCP preflight deferral', () => {
     {
       name: 'the repository agent does not discover MCP from cwd',
       facts: {
-        mcpMode: 'require' as const,
+        mcpRequest: 'require' as const,
         callerCwdHasProject: true,
         forbidsRepo: false,
         repoJob: true,
@@ -76,11 +81,12 @@ describe('MCP attachment ruling', () => {
     expect(
       decideMcpAttachment({
         connection: disconnected,
-        mcpMode: 'require',
+        mcpRequest: 'require',
         writesJob: false,
         agentHasMcp: true,
       }),
     ).toEqual({
+      mcpMode: 'require',
       refusalReason:
         "MCP was requested, but server 'bottega' could not be attached: connection refused The agent was not started.",
       usingMcp: false,
@@ -91,22 +97,22 @@ describe('MCP attachment ruling', () => {
     expect(
       decideMcpAttachment({
         connection: disconnected,
-        mcpMode: 'prefer',
+        mcpRequest: 'prefer',
         writesJob: false,
         agentHasMcp: true,
       }),
-    ).toEqual({ refusalReason: null, usingMcp: false })
+    ).toEqual({ mcpMode: 'prefer', refusalReason: null, usingMcp: false })
   })
 
   test.each([
-    { name: 'no-request', mcpMode: null },
-    { name: 'require', mcpMode: 'require' as const },
-    { name: 'prefer', mcpMode: 'prefer' as const },
-  ])('an agent without MCP cannot use it in $name mode', ({ mcpMode }) => {
+    { name: 'no-request', mcpRequest: undefined },
+    { name: 'require', mcpRequest: 'require' as const },
+    { name: 'prefer', mcpRequest: 'prefer' as const },
+  ])('an agent without MCP cannot use it in $name mode', ({ mcpRequest }) => {
     expect(
       decideMcpAttachment({
         connection: connected,
-        mcpMode,
+        mcpRequest,
         writesJob: true,
         agentHasMcp: false,
       }).usingMcp,
@@ -117,21 +123,91 @@ describe('MCP attachment ruling', () => {
     expect(
       decideMcpAttachment({
         connection: null,
-        mcpMode: null,
+        mcpRequest: undefined,
         writesJob: true,
         agentHasMcp: true,
       }),
-    ).toEqual({ refusalReason: null, usingMcp: true })
+    ).toEqual({ mcpMode: null, refusalReason: null, usingMcp: true })
   })
 
   test('a non-writing job without an explicit request does not use MCP', () => {
     expect(
       decideMcpAttachment({
         connection: null,
-        mcpMode: null,
+        mcpRequest: undefined,
         writesJob: false,
         agentHasMcp: true,
       }),
-    ).toEqual({ refusalReason: null, usingMcp: false })
+    ).toEqual({ mcpMode: null, refusalReason: null, usingMcp: false })
+  })
+})
+
+describe('MCP mirror attachment ruling', () => {
+  test('a required wrong-project mirror produces the existing refusal', () => {
+    const mismatch = decideMcpMirrorMismatch('bottega', ['other'], 'require')
+    expect(mismatch?.connection.error).toBe('wrong project: saw other and not bottega')
+    expect(mismatch?.refusalReason).toBe(
+      "MCP was requested, but server 'bottega' could not be attached: wrong project: saw other and not bottega The agent was not started.",
+    )
+  })
+
+  test('a preferred wrong-project mirror continues with its mirror diagnostic', () => {
+    const mismatch = decideMcpMirrorMismatch('bottega', ['other'], 'prefer')
+    expect(mismatch?.refusalReason).toBeNull()
+    expect(mismatch?.continuedConnection.error).toBe(
+      'mirror: wrong project: saw other and not bottega',
+    )
+  })
+
+  test('the required server is not a mismatch', () => {
+    expect(decideMcpMirrorMismatch('bottega', ['bottega'], 'require')).toBeNull()
+  })
+})
+
+describe('MCP tool-probe attachment ruling', () => {
+  test('an unobservable required probe is refused with the existing guidance', () => {
+    const ruling = decideMcpToolProbe(
+      {
+        server: 'bottega',
+        tool: 'tools/list',
+        ok: true,
+        error: 'no probe tool configured',
+        durationMs: 1,
+        detail: null,
+        namesSeen: ['bottega'],
+      },
+      'bottega',
+      'require',
+      'codex',
+      'bottega',
+    )
+    expect(ruling.refusalReason).toContain('mcp unverifiable on codex')
+    expect(ruling.refusalReason).toContain('orch project set bottega')
+    expect(ruling.failedConnection).toBeNull()
+  })
+
+  test('a failed preferred probe continues without attachment', () => {
+    const ruling = decideMcpToolProbe(
+      {
+        server: 'bottega',
+        tool: 'ping',
+        ok: false,
+        error: 'call failed',
+        durationMs: 1,
+        detail: null,
+        namesSeen: ['bottega'],
+      },
+      'bottega',
+      'prefer',
+      'codex',
+      'bottega',
+    )
+    expect(ruling.refusalReason).toBeNull()
+    expect(ruling.failedConnection).toEqual({
+      server: 'bottega',
+      connected: false,
+      error: 'call failed',
+      namesSeen: ['bottega'],
+    })
   })
 })
