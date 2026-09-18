@@ -47,4 +47,20 @@ describe('comment hygiene', () => {
   test('does not reject the purpose sense of used to', () => {
     expect(checkCommentBody('subject.ts', '// the flag used to gate imports')).toEqual([])
   })
+
+  test('rejects a retired name in a TypeScript comment', () => {
+    expect(checkCommentBody('subject.ts', ['/', '/', ' devbox'].join(''))).toEqual([
+      { file: 'subject.ts', line: 1, phrase: 'devbox' },
+    ])
+  })
+
+  test('rejects a retired name in a shell comment', () => {
+    expect(checkCommentBody('subject.sh', '# devbox')).toEqual([
+      { file: 'subject.sh', line: 1, phrase: 'devbox' },
+    ])
+  })
+
+  test('does not treat shell code as a comment', () => {
+    expect(checkCommentBody('subject.sh', "value='devbox'")).toEqual([])
+  })
 })

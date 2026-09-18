@@ -6,10 +6,9 @@
  * the rename it existed to make cheap is a hunt through twenty files. So
  * `check-brand` enforces that the name appears nowhere else in the tree.
  *
- * ## Why the name changed
+ * ## Why this name
  *
- * `devbox` described a scratch directory for one machine's odds and ends, which
- * is what this was. It is now a system with a specific shape: one designer
+ * This is a system with a specific shape: one designer
  * holding the whole picture, several hands building to that design, and nothing
  * shipping that the designer has not reviewed and signed.
  *
