@@ -218,6 +218,7 @@ export const importBoundaries: ImportBoundary[] = [
     [
       'node:fs',
       './dispatch-preflight.ts',
+      './review-lens-prompt.ts',
       '../jobs/jobs.ts',
       '../worktree/keep-tree-hold.ts',
       '../project/projects.ts',
@@ -243,6 +244,12 @@ export const importBoundaries: ImportBoundary[] = [
       '../worktree/worktree-template.ts',
     ],
     'Keep dispatch admission independent of transports, routing, and contracts.',
+  ),
+  boundary(
+    'review-lens-prompt-boundary',
+    'orchestrator/src/dispatch/review-lens-prompt.ts',
+    [],
+    'Keep review-lens prompt composition a pure decision over lens text and supplied prompt.',
   ),
   boundary(
     'doc-commands-boundary',

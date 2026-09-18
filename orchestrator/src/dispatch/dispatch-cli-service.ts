@@ -248,8 +248,9 @@ export async function doCommand(argv: string[], presentation: Presentation): Pro
   const prompt = async () =>
     (await readMessageText({
       missing: 'no prompt: pass it as an argument, via --file, or on stdin',
+      optional: Boolean(JOBS[argv[1] ?? '']?.findings && flag('lens')),
       sources: { commandFile: flag('file'), positionals: positional },
-    }))!
+    })) ?? ''
   const resolveOptions = async (jobName: string) => {
     const selected = flag('agent') ? AGENTS[flag('agent')!] : undefined,
       transportFlag = flag('transport'),
