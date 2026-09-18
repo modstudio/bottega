@@ -15,11 +15,14 @@ describe('command CPU attribution', () => {
         { name: 'largest', userMs: 45, systemMs: 15 },
         { name: 'smallest', userMs: 5, systemMs: 5 },
       ]),
-    ).toEqual([
-      { name: 'largest', cpuMs: 60, share: 0.6 },
-      { name: 'middle', cpuMs: 30, share: 0.3 },
-      { name: 'smallest', cpuMs: 10, share: 0.1 },
-    ])
+    ).toEqual({
+      totalMs: 100,
+      commands: [
+        { name: 'largest', cpuMs: 60, share: 0.6 },
+        { name: 'middle', cpuMs: 30, share: 0.3 },
+        { name: 'smallest', cpuMs: 10, share: 0.1 },
+      ],
+    })
   })
 })
 

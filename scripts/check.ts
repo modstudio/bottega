@@ -1,5 +1,6 @@
 import {
   attributeCommandCpu,
+  type CommandCpuSample,
   decideRuntimeBudget,
   HUNG_SUITE_TIMEOUT_MS,
   SUITE_CPU_BUDGET_MS,
@@ -12,9 +13,12 @@ type LegResult = { name: string; exitCode: number; tail: string[] }
 
 const root = new URL('..', import.meta.url).pathname
 const checkStartedAt = performance.now()
+const KILLED_CHILD_EXIT_TIMEOUT_MS = 5_000
 
 const activeChildren = new Set<Bun.Subprocess>()
-const commandCpu: Array<{ name: string; userMs: number; systemMs: number }> = []
+const trackedExits = new Map<Bun.Subprocess, Promise<void>>()
+const collectedChildren = new WeakSet<Bun.Subprocess>()
+const commandCpu: CommandCpuSample[] = []
 let excludedGateWaitMs = 0
 let runtimeDeadline: ReturnType<typeof setTimeout>
 let summaryPrinted = false
@@ -37,27 +41,33 @@ function collectCpu(
   })
 }
 
-function printSummary() {
-  if (summaryPrinted) return
+function collectChildCpu(child: Bun.Subprocess, name: string) {
+  if (collectedChildren.has(child)) return
+  collectedChildren.add(child)
+  collectCpu(name, child.resourceUsage()?.cpuTime)
+  activeChildren.delete(child)
+}
+
+function printSummary(): { elapsedMs: number; cpuMs: number } | undefined {
+  if (summaryPrinted) return undefined
   summaryPrinted = true
   const elapsedMs = performance.now() - checkStartedAt - excludedGateWaitMs
   const attributed = attributeCommandCpu(commandCpu)
-  const cpuMs = attributed.reduce((total, command) => total + command.cpuMs, 0)
   console.log(
     `suite runtime: ${(elapsedMs / 1000).toFixed(2)}s / ${(SUITE_RUNTIME_BUDGET_MS / 1000).toFixed(0)}s budget`,
   )
   console.log(
-    `suite cpu: ${(cpuMs / 1000).toFixed(2)}s / ${(SUITE_CPU_BUDGET_MS / 1000).toFixed(0)}s budget`,
+    `suite cpu: ${(attributed.totalMs / 1000).toFixed(2)}s / ${(SUITE_CPU_BUDGET_MS / 1000).toFixed(0)}s budget`,
   )
   console.log('suite cpu by command:')
-  for (const command of attributed) {
+  for (const command of attributed.commands) {
     console.log(
       `  ${command.cpuMs.toFixed(2)}ms ${(command.share * 100).toFixed(2)}% ${command.name}`,
     )
   }
   if (excludedGateWaitMs)
     console.log(`gate admission wait excluded: ${(excludedGateWaitMs / 1000).toFixed(2)}s`)
-  return { elapsedMs, cpuMs }
+  return { elapsedMs, cpuMs: attributed.totalMs }
 }
 
 process.on('exit', printSummary)
@@ -68,7 +78,12 @@ async function expireRuntimeBudget() {
   )
   for (const child of activeChildren) child.kill('SIGTERM')
   await Bun.sleep(1_000)
-  for (const child of activeChildren) child.kill('SIGKILL')
+  const killedChildren = [...activeChildren]
+  for (const child of killedChildren) child.kill('SIGKILL')
+  await Promise.race([
+    Promise.allSettled(killedChildren.map((child) => trackedExits.get(child)!)),
+    Bun.sleep(KILLED_CHILD_EXIT_TIMEOUT_MS),
+  ])
   process.exit(1)
 }
 
@@ -82,10 +97,11 @@ armRuntimeDeadline()
 
 function track(child: Bun.Subprocess, name: string) {
   activeChildren.add(child)
-  void child.exited.finally(() => {
-    collectCpu(name, child.resourceUsage()?.cpuTime)
-    activeChildren.delete(child)
-  })
+  const trackedExit = child.exited.then(
+    () => collectChildCpu(child, name),
+    () => collectChildCpu(child, name),
+  )
+  trackedExits.set(child, trackedExit)
   return child
 }
 
@@ -315,7 +331,9 @@ if ((await inherit(['bun', `${root}scripts/quality/check-no-expect.ts`, qualityM
 }
 
 clearTimeout(runtimeDeadline)
-const { elapsedMs, cpuMs } = printSummary()!
+const summary = printSummary()
+if (!summary) throw new Error('suite summary printed before budget checks')
+const { elapsedMs, cpuMs } = summary
 const runtimeBudgetVerdict = decideRuntimeBudget({
   elapsedMs,
   budgetMs: SUITE_RUNTIME_BUDGET_MS,
