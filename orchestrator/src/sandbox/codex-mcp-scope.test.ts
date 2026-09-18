@@ -6,9 +6,43 @@ import { ROOT } from '../database/database-location.ts'
 import {
   CODEX_ASK_ENV_VARS,
   CODEX_REASONING_EFFORT,
+  codexMcpSetupHeader,
   codexProjectServers,
   codexScopeArgs,
+  codexWithheldTools,
 } from './codex-mcp-scope.ts'
+
+const page = (...names: string[]) => ({ tools: names.map((name) => ({ name })) })
+
+test('two pages report page two as withheld (catches reporting the wrong page)', () => {
+  const pages = [page('first', 'second'), page('get-rule-tool', 'last')]
+  expect(codexWithheldTools(pages)).toEqual({
+    seen: 2,
+    total: 4,
+    withheld: ['get-rule-tool', 'last'],
+  })
+  expect(
+    codexMcpSetupHeader(null, { servers: {}, withheld: [] }, [{ server: 'starship', pages }]),
+  ).toBe(
+    'MCP scope: codex sees only the first 2 of 4 starship tools; withheld: get-rule-tool, last',
+  )
+})
+
+test('one page emits no line (catches noise on servers that do not page)', () => {
+  expect(
+    codexMcpSetupHeader(null, { servers: {}, withheld: [] }, [
+      { server: 'starship', pages: [page('only')] },
+    ]),
+  ).toBeNull()
+})
+
+test('failed listing reports catalogue unknown (catches silence on failure)', () => {
+  expect(
+    codexMcpSetupHeader(null, { servers: {}, withheld: [] }, [
+      { server: 'starship', error: 'connection refused' },
+    ]),
+  ).toBe('MCP scope: starship tools/list failed (connection refused); codex catalogue unknown')
+})
 
 function serverEntries(argv: string[]): string[] {
   return argv.filter((arg) => arg.startsWith('mcp_servers.'))
