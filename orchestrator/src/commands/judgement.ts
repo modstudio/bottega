@@ -10,11 +10,11 @@ import {
   DASHBOARD_CAPABILITY_TOKEN_ENV,
   type DashboardCapability,
 } from '../../../shared/dashboard-capability.ts'
+import { pidAlive } from '../../../shared/process-identity.ts'
 import { type CleanupPresentation, type CleanupRow, discardWorktree } from '../cleanup/cleanup.ts'
 import { writableDb } from '../database/db.ts'
 import { NOT_EVIDENCE } from '../failure/failure.ts'
 import { judgeRun, scoreRun } from '../judgement.ts'
-import { pidAlive } from '../resources/process-liveness.ts'
 import { authorizeRunMutation } from '../run/run-authority.ts'
 import { recalibrate } from '../score/recalibration.ts'
 import { collect, log, optionFlags, write } from './support.ts'

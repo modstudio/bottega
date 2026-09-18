@@ -4,6 +4,7 @@
 import { existsSync, lstatSync, readdirSync, realpathSync, statSync } from 'node:fs'
 import { join, resolve } from 'node:path'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
+import { pidAlive } from '../../../shared/process-identity.ts'
 import { allInjectChecks, storedPackDrift } from '../canon/canon.ts'
 import { db, nowIso, writableDb, writeTransaction } from '../database/db.ts'
 import { fileIssue } from '../mcp/mcp.ts'
@@ -16,7 +17,6 @@ import {
   dockerRunResources,
 } from '../resources/docker-resources.ts'
 import { gitLocks } from '../resources/git-locks.ts'
-import { pidAlive } from '../resources/process-liveness.ts'
 import { terminalDockerRetentionReasonForRun } from '../resources/resource-ownership.ts'
 import type { MonitorSeverity } from '../review/review-vocabulary.ts'
 import { RUNS_DIR } from '../run/run-artifacts.ts'

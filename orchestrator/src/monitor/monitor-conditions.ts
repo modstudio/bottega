@@ -3,6 +3,7 @@
 
 import { existsSync } from 'node:fs'
 import { join } from 'node:path'
+import { pidAlive, processStartTime } from '../../../shared/process-identity.ts'
 import { db, liveRuns } from '../database/db.ts'
 import { idleLabel, idleMsSince, idleWarnMs } from '../events.ts'
 import { UNSCORED_WHERE } from '../evidence/evidence-query.ts'
@@ -11,7 +12,6 @@ import { HOOK_TREE_JOB, hookTreeNotice } from '../hook-tree/hook-tree.ts'
 import { runHasLiveDescendants } from '../idle-kill.ts'
 import { type PidRecordIdentity, pidRecordIdentity } from '../project/project-lock.ts'
 import { projects } from '../project/projects.ts'
-import { pidAlive, processStartTime } from '../resources/process-liveness.ts'
 import type { ResourceClaimKind } from '../resources/resource-claims.ts'
 import {
   refGuardInventory,

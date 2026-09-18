@@ -1,5 +1,6 @@
 import { existsSync, realpathSync } from 'node:fs'
 import { isAbsolute, relative, resolve, sep } from 'node:path'
+import { pidAlive } from '../../../shared/process-identity.ts'
 import { branchRows, type ReclaimRun, settleDeletedBranch } from '../branch/branch-settlement.ts'
 import { db, sessionId, writableDb, writeTransaction } from '../database/db.ts'
 import { chainScoreJoin, EVIDENCE_CLOSED_SQL } from '../evidence/evidence-query.ts'
@@ -10,7 +11,6 @@ import {
   withWorktreeLease,
 } from '../project/project-lock.ts'
 import { projectAt, projectByName } from '../project/projects.ts'
-import { pidAlive } from '../resources/process-liveness.ts'
 import { settleClaims } from '../resources/resource-claims.ts'
 import { otherConversationWorktreeSharers } from '../resources/resource-ownership.ts'
 import { runAlive } from '../run/run-alive.ts'

@@ -4,15 +4,14 @@
  * turns. Must not know transports, worktrees, routing, reviews, or the CLI.
  */
 import { existsSync, readFileSync } from 'node:fs'
+import { pidAlive } from '../../../shared/process-identity.ts'
 import { AGENTS } from '../agent/agent-registry.ts'
 import { ANSWER_WORKING_FORMS, parseAnswerTextSources } from '../cli/args.ts'
-import { clock } from '../clock.ts'
 import { rulingPrompt } from '../contract/contract.ts'
 import { db, writeTransaction } from '../database/db.ts'
 import { job } from '../jobs/jobs.ts'
 import { mcpRequestFromStored } from '../mcp/mcp-preflight.ts'
 import { failureReason } from '../outcome.ts'
-import { pidAlive } from '../resources/process-liveness.ts'
 import { chainTransport, retryModelForAgent } from '../route/failover.ts'
 import { keepTreeHold } from '../worktree/keep-tree-hold.ts'
 import { packedResumePrompt } from './run.ts'
@@ -478,7 +477,7 @@ export async function answerRun(
     }
   }
 
-  const now = new Date(clock().now()).toISOString()
+  const now = new Date(Date.now()).toISOString()
   const upd = db().query(
     `UPDATE question
       SET answer=?, answered_at=?, answered_by=?, delivery_pending_at=?

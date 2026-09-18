@@ -7,9 +7,8 @@
  * test (silence AND no CPU) and a failure kind that is not routing evidence.
  */
 
-import { clock } from './clock.ts'
+import { pidAlive } from '../../shared/process-identity.ts'
 import { idleMsSince } from './events.ts'
-import { pidAlive } from './resources/process-liveness.ts'
 
 /**
  * Default 15 minutes. Measured 2026-09-08 against the live store's completed
@@ -189,7 +188,7 @@ const defaultDeps: TerminateDeps = {
     const mine = sampleProcesses().find((row) => row.pid === process.pid)
     return mine?.pgid ?? null
   },
-  wait: (ms) => new Promise((resolve) => clock().setTimeout(resolve, ms)),
+  wait: (ms) => new Promise((resolve) => globalThis.setTimeout(resolve, ms)),
 }
 
 function signalTree(
@@ -274,10 +273,10 @@ async function waitUntilDead(
   deps: TerminateDeps,
   pgid: number | null,
 ): Promise<boolean> {
-  const started = clock().now()
-  while (clock().now() - started < budgetMs) {
+  const started = Date.now()
+  while (Date.now() - started < budgetMs) {
     if (liveTreePids(root, tracked, deps, pgid).length === 0) return true
-    const remaining = budgetMs - (clock().now() - started)
+    const remaining = budgetMs - (Date.now() - started)
     if (remaining <= 0) break
     await deps.wait(Math.min(50, remaining))
   }

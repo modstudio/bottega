@@ -1,6 +1,7 @@
 /** Cleanup sweep knows worktree ownership, leases and the cleanup lock, resource reclamation, and branch retention. It must not know transports, routing, reviews, contracts, the CLI, or durable execution. */
 import { existsSync, lstatSync, readdirSync, realpathSync } from 'node:fs'
 import { join, resolve } from 'node:path'
+import { pidAlive } from '../../../shared/process-identity.ts'
 import { closeOutRun, releaseSandboxDirectoryForConversation } from '../close/close-out.ts'
 import { db, sessionId, writableDb, writeTransaction } from '../database/db.ts'
 import { shouldSweepHookTree } from '../hook-tree/hook-tree.ts'
@@ -12,7 +13,6 @@ import {
   leakedResourceLines,
   orchRunId,
 } from '../resources/docker-resources.ts'
-import { pidAlive } from '../resources/process-liveness.ts'
 import {
   liveWorktreeSharers,
   terminalDockerRetentionReasonForRun,

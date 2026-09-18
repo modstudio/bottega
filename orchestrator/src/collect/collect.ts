@@ -3,7 +3,6 @@ import { existsSync, readdirSync, readFileSync, statSync, unlinkSync } from 'nod
 import { dirname, join } from 'node:path'
 import { resolveRunsDirectory } from '../../../shared/state-directory.ts'
 import { persistedRunArtifactPath, rewriteFilesWrittenPaths } from '../artifact-paths.ts'
-import { clock } from '../clock.ts'
 import { FAILS_OVER } from '../failure/failure.ts'
 import { parseMcpProbe } from '../mcp/mcp-probe.ts'
 import { failureReason, outcomeOf } from '../outcome.ts'
@@ -540,7 +539,7 @@ export async function collectWait(
   if (!ids.length) throw new Error('orch wait <run-id>...')
   const timeoutAt = argv.indexOf('--timeout')
   const timeoutMs = Number(timeoutAt >= 0 ? argv[timeoutAt + 1] : 1800) * 1000
-  const deadline = clock().now() + timeoutMs
+  const deadline = Date.now() + timeoutMs
   const observedTerminal = new Set<number>()
   for (;;) {
     const observation = beforePoll()
@@ -599,7 +598,7 @@ export async function collectWait(
       if (observedTerminal.size || outcomes.some(({ outcome }) => !outcome.ok)) process.exit(1)
       return
     }
-    if (clock().now() >= deadline) {
+    if (Date.now() >= deadline) {
       console.error(
         `still running after ${Math.round(timeoutMs / 1000)}s: ` +
           running.map(({ row }) => row.id).join(', '),
@@ -607,7 +606,7 @@ export async function collectWait(
       process.exit(2)
     }
     await new Promise<void>((resolve) => {
-      clock().setTimeout(resolve, 2000)
+      globalThis.setTimeout(resolve, 2000)
     })
   }
 }
