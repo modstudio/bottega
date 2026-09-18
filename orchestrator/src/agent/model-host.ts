@@ -3,38 +3,18 @@
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { which } from 'bun'
+import { readMachineValue } from '../../../shared/machine-config.ts'
 import { concernStateDirectory } from '../../../shared/state-directory.ts'
 import { AGENTS, type AgentRow } from './agent-registry.ts'
 import type { Agent } from './agents.ts'
 
-const deprecationWarnings = new Set<string>()
-
-export function readModelHostEnvironment(
-  env: NodeJS.ProcessEnv,
-  name: string,
-  legacyName: string,
-  warn: (message: string) => void = (message) => process.stderr.write(`${message}\n`),
-  warned: Set<string> = deprecationWarnings,
-): string {
-  if (env[name] !== undefined) return env[name]
-  const legacyValue = env[legacyName]
-  if (legacyValue === undefined) return ''
-  if (!warned.has(legacyName)) {
-    warned.add(legacyName)
-    warn(`${legacyName} is deprecated; use ${name}`)
-  }
-  return legacyValue
+/** Where the model host's OpenAI-compatible endpoint lives. */
+export function modelHostUrl(): string {
+  return readMachineValue('model_host.url')
 }
 
-/** Where the model host's OpenAI-compatible endpoint lives. */
-export const MODEL_HOST_URL = readModelHostEnvironment(
-  process.env,
-  'ORCH_MODEL_HOST_URL',
-  'ORCH_LOCAL_BASE_URL',
-)
-
 export function modelHostModel(): string {
-  return readModelHostEnvironment(process.env, 'ORCH_MODEL_HOST_MODEL', 'ORCH_LOCAL_MODEL')
+  return readMachineValue('model_host.model')
 }
 
 export function registeredLocalAgent(rows: AgentRow[], baseUrl: string): AgentRow | null {
@@ -72,11 +52,7 @@ let modelHostHealth: { ok: boolean; detail: string; contextTokens?: number } | n
  * contract with local-stack the same shape it always was: an endpoint and some
  * environment, never an import.
  */
-const MODEL_HOST_WOL_MAC = readModelHostEnvironment(
-  process.env,
-  'ORCH_MODEL_HOST_WOL_MAC',
-  'ORCH_LOCAL_WOL_MAC',
-)
+const modelHostWolMac = (): string => readMachineValue('model_host.wol_mac')
 
 /**
  * How long to leave the box alone after sending a magic packet.
@@ -135,7 +111,7 @@ function wakeDecision(o: { mac: string; haveBinary: boolean; last: Date | null; 
  */
 export function wakeStatus(now = Date.now()): { send: boolean; detail: string } {
   return wakeDecision({
-    mac: MODEL_HOST_WOL_MAC,
+    mac: modelHostWolMac(),
     haveBinary: which('wakeonlan', { PATH: process.env.PATH }) !== null,
     last: lastWakeAttempt(),
     now,
@@ -162,7 +138,7 @@ export function tryWake(now = Date.now()): { sent: boolean; detail: string } {
     /* best effort */
   }
   try {
-    Bun.spawn(['wakeonlan', MODEL_HOST_WOL_MAC], {
+    Bun.spawn(['wakeonlan', modelHostWolMac()], {
       stdout: 'ignore',
       stderr: 'ignore',
       stdin: 'ignore',
@@ -195,7 +171,7 @@ export function tryWake(now = Date.now()): { sent: boolean; detail: string } {
  */
 export async function ensureLocalHealth(opts: { force?: boolean; baseUrl?: string } = {}) {
   if (!modelHostHealth || opts.force) {
-    modelHostHealth = await localReachable(undefined, opts.baseUrl ?? MODEL_HOST_URL)
+    modelHostHealth = await localReachable(undefined, opts.baseUrl ?? modelHostUrl())
   }
   return modelHostHealth
 }
@@ -237,7 +213,7 @@ export function unavailableReason(name: string): string | null {
   if (which(a.bin, { PATH: process.env.PATH }) === null) return 'not installed'
   if (a.operatedBy === 'self') {
     // A local agent is only real once an endpoint is configured...
-    if (!MODEL_HOST_URL) return 'ORCH_MODEL_HOST_URL not set'
+    if (!modelHostUrl()) return 'ORCH_MODEL_HOST_URL not set'
     // ...and only usable once it ANSWERS. Configuration is not reachability:
     // the env var stayed correct for the whole eleven hours the box was off.
     // Only a probe that has actually run can say no here, so a caller that
@@ -259,7 +235,7 @@ export async function localReachable(
   // pointed at a URL that is known to be dead, or known to be the wrong
   // service, without reconfiguring the machine — which is the only way to test
   // the "answered 200 with HTML" case that Docker Desktop actually produced.
-  baseUrl = MODEL_HOST_URL,
+  baseUrl = modelHostUrl(),
 ): Promise<{ ok: boolean; detail: string; contextTokens?: number }> {
   if (!baseUrl) return { ok: false, detail: 'ORCH_MODEL_HOST_URL not set' }
   try {

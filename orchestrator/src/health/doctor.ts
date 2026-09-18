@@ -8,8 +8,8 @@ import {
   ensureLocalHealth,
   fileContractProbeReason,
   lastWakeAttempt,
-  MODEL_HOST_URL,
   modelHostModel,
+  modelHostUrl,
   predatesFileContract,
   registeredContextTokens,
   registeredLocalAgent,
@@ -276,10 +276,11 @@ export async function doctorCommand(
   log(`sandbox agents ${srtAgents.join(', ') || '(none)'} (read-only repository jobs)`)
   const acpGap = acpRuntimeGaps()
   log(`acp            ${acpGap ?? 'ready'}`)
-  const local = localRegistrationDiagnosis(MODEL_HOST_URL, modelHostModel())
+  const configuredUrl = modelHostUrl()
+  const local = localRegistrationDiagnosis(configuredUrl, modelHostModel())
   for (const line of local.lines) log(line)
   log(`reachable       ${r.ok ? 'yes' : 'NO'} — ${r.detail}`)
-  if (!r.ok && MODEL_HOST_URL) {
+  if (!r.ok && configuredUrl) {
     // Reporting commands do not have side effects, so doctor only sends a
     // packet when asked in as many words. `orch do` wakes on its own; a
     // status check that silently powered on a shared machine would be a
@@ -296,7 +297,7 @@ export async function doctorCommand(
       )
     }
   }
-  if (!r.ok && MODEL_HOST_URL) {
+  if (!r.ok && configuredUrl) {
     // The endpoint is a tunnel to another machine, so "not reachable" has a
     // short list of causes and they are checked in a fixed order. Printed
     // here because this is where somebody looks when the local model goes

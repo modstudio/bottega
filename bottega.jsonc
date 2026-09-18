@@ -14,11 +14,17 @@
           "name": "hub",
           "run": {
             "command": "bun",
-            "args": ["hub/src/cli.ts", "serve", "--port", "{ports.hub}"]
+            "args": ["--no-env-file", "hub/src/cli.ts", "serve", "--port", "{ports.hub}"]
           },
           "undo": {
             "command": "bun",
-            "args": ["{main}/hub/src/cli.ts", "serve-stop", "--port", "{ports.hub}"]
+            "args": [
+              "--no-env-file",
+              "{main}/hub/src/cli.ts",
+              "serve-stop",
+              "--port",
+              "{ports.hub}"
+            ]
           }
         }
       ]
@@ -28,7 +34,14 @@
         "name": "hub-down",
         "run": {
           "command": "bun",
-          "args": ["{main}/hub/src/cli.ts", "serve-check", "--port", "{ports.hub}", "--down"]
+          "args": [
+            "--no-env-file",
+            "{main}/hub/src/cli.ts",
+            "serve-check",
+            "--port",
+            "{ports.hub}",
+            "--down"
+          ]
         }
       }
     ]

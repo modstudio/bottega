@@ -1,6 +1,7 @@
 #!/usr/bin/env bun
 import { readFileSync, writeFileSync } from 'node:fs'
 import { human } from '../../shared/interval.ts'
+import { readMachineValue } from '../../shared/machine-config.ts'
 import { projectOf } from './attribute.ts'
 import { watch, withLease } from './collect.ts'
 import { DB_PATH, db, migrateDatabase, nowIso, requireDatabase, writeTransaction } from './db.ts'
@@ -954,7 +955,7 @@ try {
       break
     case 'serve': {
       startDashboardCapability()
-      const dashboard = serve(Number(flag('port') ?? 7778))
+      const dashboard = serve(Number(flag('port') ?? readMachineValue('hub.port')))
       if (dashboard.port === undefined) throw new Error('hub: dashboard did not bind a TCP port')
       ownServeRecord(dashboard.port)
       break

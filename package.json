@@ -14,8 +14,8 @@
     "check": "bun scripts/check.ts",
     "format": "biome format --write .",
     "lint": "biome check .",
-    "orch": "bun orchestrator/src/cli/orch.ts",
-    "hub": "bun hub/src/cli.ts"
+    "orch": "bun --no-env-file orchestrator/src/cli/orch.ts",
+    "hub": "bun --no-env-file hub/src/cli.ts"
   },
   "devDependencies": {
     "@biomejs/biome": "2.5.13",

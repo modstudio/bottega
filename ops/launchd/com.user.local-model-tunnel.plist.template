@@ -7,7 +7,7 @@
   <array>
     <string>/usr/bin/ssh</string>
     <string>-N</string>
-    <string>-L</string><string>8010:127.0.0.1:8000</string>
+    <string>-L</string><string>__TUNNEL_LOCAL_PORT__:127.0.0.1:__TUNNEL_REMOTE_PORT__</string>
     <!-- Reconnect a dead link rather than sitting on a half-open socket, and
          fail fast instead of hanging when the host is unreachable. -->
     <string>-o</string><string>ServerAliveInterval=30</string>

@@ -134,7 +134,7 @@ test('orch-ask CLI definition matches the ACP command and args', () => {
   )!
   expect(entry).toContain(`command=${JSON.stringify(process.execPath)}`)
   expect(entry).toContain(
-    `args=${JSON.stringify([join(dirname(import.meta.path), '..', 'cli', 'orch.ts'), 'ask-server'])}`,
+    `args=${JSON.stringify(['--no-env-file', join(dirname(import.meta.path), '..', 'cli', 'orch.ts'), 'ask-server'])}`,
   )
   expect(entry).toContain(`env_vars=${JSON.stringify(CODEX_ASK_ENV_VARS)}`)
   expect(serverEntries(codexScopeArgs({ mcp: true, mcpServer: 'orch' }))).toContain(

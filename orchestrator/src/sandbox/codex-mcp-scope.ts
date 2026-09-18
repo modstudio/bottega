@@ -149,7 +149,7 @@ export function codexScopeArgs(opts: CodexScopeOpts): string[] {
 
   const askServer = {
     command: process.execPath,
-    args: [join(dirname(import.meta.path), '..', 'cli', 'orch.ts'), 'ask-server'],
+    args: ['--no-env-file', join(dirname(import.meta.path), '..', 'cli', 'orch.ts'), 'ask-server'],
     env_vars: CODEX_ASK_ENV_VARS,
   }
   const orchServer = { command: join(ROOT, '..', 'bin', 'orch'), args: ['mcp'] }

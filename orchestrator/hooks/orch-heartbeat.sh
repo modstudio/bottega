@@ -56,7 +56,7 @@ if [ -n "${ORCH_DB:-}" ]; then
     *) DB_PATH="$CALLER_DIRECTORY/$ORCH_DB" ;;
   esac
 else
-  DB_PATH=$(bun "$ROOT/../shared/state-directory.ts" orchestrator database) || {
+  DB_PATH=$(bun --no-env-file "$ROOT/../shared/state-directory.ts" orchestrator database) || {
     echo "DEGRADED: cannot resolve orchestrator database"
     exit 2
   }

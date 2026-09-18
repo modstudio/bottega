@@ -328,7 +328,12 @@ export function register(program: Command): void {
     .allowExcessArguments(false)
     .action(() =>
       setupAskCommand(
-        [process.execPath, new URL('../cli/orch.ts', import.meta.url).pathname, 'ask-server'],
+        [
+          process.execPath,
+          '--no-env-file',
+          new URL('../cli/orch.ts', import.meta.url).pathname,
+          'ask-server',
+        ],
         presentation,
       ),
     )

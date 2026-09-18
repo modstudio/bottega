@@ -12,8 +12,9 @@ set -euo pipefail
 
 CHECKOUT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 CONCERN="$CHECKOUT/hub"
-STATE_HOME_ENV="$(bun "$CHECKOUT/shared/state-directory.ts" environment)"
-STATE_HOME="$(bun "$CHECKOUT/shared/state-directory.ts" root)"
+STATE_HOME_ENV="$(bun --no-env-file "$CHECKOUT/shared/state-directory.ts" environment)"
+STATE_HOME="$(bun --no-env-file "$CHECKOUT/shared/state-directory.ts" root)"
+HUB_PORT="$(bun --no-env-file "$CHECKOUT/shared/machine-config.ts" get hub.port)"
 AGENTS_DIR="$HOME/Library/LaunchAgents"
 UID_NUM="$(id -u)"
 
@@ -42,6 +43,7 @@ for tmpl in "$CONCERN"/launchd/*.plist.template; do
       -e "s#__HOME__#${HOME}#g" \
       -e "s#__STATE_HOME_ENV__#${STATE_HOME_ENV}#g" \
       -e "s#__STATE_HOME__#${STATE_HOME}#g" \
+      -e "s#__HUB_PORT__#${HUB_PORT}#g" \
       -e "s#__HUB_HOSTED_URL__#${HUB_HOSTED_URL:-}#g" "$tmpl" > "$TARGET"
   # One job failing must not leave the others uninstalled, which is exactly what
   # happened the first time this ran.

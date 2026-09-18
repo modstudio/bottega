@@ -13,7 +13,7 @@
         <string>__CHECKOUT__/bin/hub</string>
         <string>serve</string>
         <string>--port</string>
-        <string>7778</string>
+        <string>__HUB_PORT__</string>
     </array>
 
     <key>RunAtLoad</key>
