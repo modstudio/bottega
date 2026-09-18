@@ -41,13 +41,13 @@ landing branch, never an optional production branch.
 
 ## Secrets
 
-No concern stores a secret. MCP tokens live in `~/.claude/.env`, the SMTP
-password lives in the login keychain, and hub settings hold only its keychain
-reference. Read credentials from their external owner at use time, never at
-import, and never write them to logs or databases served by the dashboard.
-Only whether a keychain reference resolves may be reported. Gitleaks gates the
-repository, and its allowlist is limited to named fake fixture credentials in
-`.gitleaks.toml`.
+No concern stores a secret. What is stored is a reference to where the secret
+lives, written as `keychain:<service>` or `env:<NAME>` and never the secret
+itself; `hub/src/settings.ts` refuses a password in that field. Read a
+credential from its owner at use time, never at import, and never write it to a
+log or to a database the dashboard serves. Only whether a reference resolves
+may be reported. Gitleaks gates the repository, and its allowlist is limited to
+named fake fixture credentials in `.gitleaks.toml`.
 
 Summaries go through `orch`; do not add a metered provider key for them.
 
