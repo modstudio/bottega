@@ -347,10 +347,26 @@ export function assertAcpAllowed(
   )
 }
 
-export function resolveCodexAcpBin(): string {
-  return (
-    process.env.ORCH_ACP_BIN ||
+/**
+ * Resolve the Codex ACP helper. This is an external executable, not a Bottega
+ * install asset, so it is not routed through assetPath.
+ */
+export function resolveCodexAcpBin(opts?: {
+  env?: Record<string, string | undefined>
+  checkoutBin?: string
+  exists?: (path: string) => boolean
+  which?: (name: string) => string | null
+}): string {
+  const override = (opts?.env ?? process.env).ORCH_ACP_BIN
+  if (override) return override
+  const checkoutBin =
+    opts?.checkoutBin ??
     join(dirname(fileURLToPath(import.meta.url)), '..', '..', 'node_modules', '.bin', 'codex-acp')
+  if ((opts?.exists ?? existsSync)(checkoutBin)) return checkoutBin
+  const found = (opts?.which ?? ((name: string) => Bun.which(name)))('codex-acp')
+  if (found) return found
+  throw new Error(
+    `cannot find a codex-acp executable: none at ${checkoutBin} and PATH lookup found nothing; set ORCH_ACP_BIN to its path, or install it so it is on PATH`,
   )
 }
 
