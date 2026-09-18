@@ -54,6 +54,9 @@ const actorUrl = process.env.ORCH_RECORD_URL
 const SPACE_A = '01990000-0000-7000-8000-00000000000a'
 const SPACE_B = '01990000-0000-7000-8000-00000000000b'
 const USER_A = '01990000-0000-7000-8000-000000000010'
+const USER_B = '01990000-0000-7000-8000-000000000020'
+const DEK_A = '01990000-0000-7000-8000-0000000000da'
+const DEK_B = '01990000-0000-7000-8000-0000000000db'
 const AUTH_EMAIL_HTTP = 'auth-http@example.test'
 const PROJECT_A = '01990000-0000-7000-8000-00000000001a'
 const PROJECT_A2 = '01990000-0000-7000-8000-00000000002a'
@@ -171,8 +174,9 @@ realPostgres('RLS proof against real Postgres', () => {
       `
       INSERT INTO space (id, name, slug, created_at) VALUES
         ('${SPACE_A}', 'space-a', 'space-a', now()), ('${SPACE_B}', 'space-b', 'space-b', now());
-      INSERT INTO "user" (id, email, name, created_at)
-        VALUES ('${USER_A}', 'owner@example.test', 'Owner', now());
+      INSERT INTO "user" (id, email, name, created_at) VALUES
+        ('${USER_A}', 'owner@example.test', 'Owner', now()),
+        ('${USER_B}', 'other@example.test', 'Other', now());
       INSERT INTO membership (id, space_id, user_id, role, permission, created_at)
         VALUES
         ('01990000-0000-7000-8000-000000000011', '${SPACE_A}', '${USER_A}', 'member', 'write', now()),
@@ -248,6 +252,33 @@ realPostgres('RLS proof against real Postgres', () => {
       VALUES
         ('01990000-0000-7000-8000-00000000011a', '${SPACE_A}', '${PROJECT_A}', '${MACHINE_A}', 1, 'a', 'a.ts', '{}', now(), now(), now()),
         ('01990000-0000-7000-8000-00000000011b', '${SPACE_B}', '${PROJECT_B}', '${MACHINE_A}', 2, 'b', 'b.ts', '{}', now(), now(), now());
+      INSERT INTO secret_dek (id, space_id, version, created_at) VALUES
+        ('${DEK_A}', '${SPACE_A}', 1, now()),
+        ('${DEK_B}', '${SPACE_B}', 1, now());
+      INSERT INTO config_entry
+        (id, space_id, user_id, key, environment, value, row_version, updated_at)
+      VALUES
+        ('01990000-0000-7000-8000-000000000201', '${SPACE_A}', NULL, 'wide', 'default', 'wide-a', 1, now()),
+        ('01990000-0000-7000-8000-000000000202', '${SPACE_A}', '${USER_A}', 'user-x', 'default', 'x-a', 1, now()),
+        ('01990000-0000-7000-8000-000000000203', '${SPACE_A}', '${USER_B}', 'user-y', 'default', 'y-a', 1, now()),
+        ('01990000-0000-7000-8000-000000000204', '${SPACE_B}', NULL, 'wide', 'default', 'wide-b', 1, now());
+      INSERT INTO config_secret
+        (id, space_id, user_id, key, environment, dek_id, row_version, envelope, updated_at)
+      VALUES
+        ('01990000-0000-7000-8000-000000000211', '${SPACE_A}', NULL, 'wide', 'default', '${DEK_A}', 1, decode('01', 'hex'), now()),
+        ('01990000-0000-7000-8000-000000000212', '${SPACE_A}', '${USER_A}', 'user-x', 'default', '${DEK_A}', 1, decode('02', 'hex'), now()),
+        ('01990000-0000-7000-8000-000000000213', '${SPACE_A}', '${USER_B}', 'user-y', 'default', '${DEK_A}', 1, decode('03', 'hex'), now()),
+        ('01990000-0000-7000-8000-000000000214', '${SPACE_B}', NULL, 'wide', 'default', '${DEK_B}', 1, decode('04', 'hex'), now());
+      INSERT INTO secret_dek_wrap
+        (space_id, dek_id, recipient_key_id, sender_key_id, enc, ciphertext, created_at)
+      VALUES
+        ('${SPACE_A}', '${DEK_A}', 'AAAAAAAAAAAAAAAAAAAAAA', 'CCCCCCCCCCCCCCCCCCCCCC', decode('01', 'hex'), decode('02', 'hex'), now()),
+        ('${SPACE_B}', '${DEK_B}', 'BBBBBBBBBBBBBBBBBBBBBB', 'DDDDDDDDDDDDDDDDDDDDDD', decode('03', 'hex'), decode('04', 'hex'), now());
+      INSERT INTO machine_public_key
+        (space_id, key_id, public_key, label, created_at)
+      VALUES
+        ('${SPACE_A}', 'AAAAAAAAAAAAAAAAAAAAAA', decode(repeat('00', 32), 'hex'), 'machine-a', now()),
+        ('${SPACE_B}', 'BBBBBBBBBBBBBBBBBBBBBB', decode(repeat('11', 32), 'hex'), 'machine-b', now());
     `,
     )
 
@@ -333,7 +364,7 @@ realPostgres('RLS proof against real Postgres', () => {
       'postgres',
       `
       DROP FUNCTION IF EXISTS invitation_open_for(text);
-      DROP TABLE IF EXISTS invitation, verification, account, session, test_flake, contention, landing_review_carry, landing_override, landing, review_finding, review_lens, review, run_exclusion, run_score, run, doc_revision, doc, orch_snapshot, hub_send, hub_report_subscription, hub_report_setting, hub_note_acknowledgement, hub_note, hub_task_status_event, hub_task_document, hub_task_comment, hub_task, hub_interval, hub_day, membership, machine, seq, project, "user", space CASCADE;
+      DROP TABLE IF EXISTS config_secret, config_entry, secret_dek_wrap, machine_public_key, secret_dek, invitation, verification, account, session, test_flake, contention, landing_review_carry, landing_override, landing, review_finding, review_lens, review, run_exclusion, run_score, run, doc_revision, doc, orch_snapshot, hub_send, hub_report_subscription, hub_report_setting, hub_note_acknowledgement, hub_note, hub_task_status_event, hub_task_document, hub_task_comment, hub_task, hub_interval, hub_day, membership, machine, seq, project, "user", space CASCADE;
       DROP SCHEMA IF EXISTS drizzle CASCADE;
     `,
     )
@@ -788,6 +819,24 @@ realPostgres('RLS proof against real Postgres', () => {
     expect(facts).toBe('t|t|t|f|t|t|t|f|t|t')
   })
 
+  test('hosted secret table grants stay narrow', () => {
+    const facts = succeeds(
+      'postgres',
+      'postgres',
+      `SELECT
+        has_table_privilege('${RECORD_ACTOR_ROLE}', 'config_secret', 'SELECT'),
+        has_table_privilege('${RECORD_ACTOR_ROLE}', 'config_secret', 'DELETE'),
+        has_table_privilege('${RECORD_ACTOR_ROLE}', 'secret_dek', 'SELECT'),
+        has_table_privilege('${RECORD_ACTOR_ROLE}', 'secret_dek', 'UPDATE'),
+        has_table_privilege('${RECORD_ACTOR_ROLE}', 'secret_dek', 'DELETE'),
+        has_table_privilege('${RECORD_ACTOR_ROLE}', 'secret_dek_wrap', 'DELETE'),
+        has_table_privilege('${RECORD_READER_ROLE}', 'config_secret', 'SELECT'),
+        has_table_privilege('${RECORD_READER_ROLE}', 'secret_dek', 'SELECT'),
+        has_table_privilege('${RECORD_READER_ROLE}', 'secret_dek_wrap', 'SELECT');`,
+    )
+    expect(facts).toBe('t|t|t|t|f|t|f|f|f')
+  })
+
   test('the seq primary key columns are not nullable', () => {
     const columns = succeeds(
       'postgres',
@@ -866,6 +915,88 @@ realPostgres('RLS proof against real Postgres', () => {
     )
     expect(write.code).not.toBe(0)
     expect(write.stderr).toContain('permission denied for table project')
+  })
+
+  test('record reader gets insufficient privilege for every secret-bearing table', () => {
+    for (const table of ['config_secret', 'secret_dek', 'secret_dek_wrap']) {
+      const result = asSpace(
+        RECORD_READER_ROLE,
+        'reader-password',
+        SPACE_A,
+        `\\set VERBOSITY verbose
+         SELECT * FROM ${table};`,
+      )
+      expect(result.code).not.toBe(0)
+      expect(result.stderr).toContain('42501')
+      expect(result.stderr).toContain(`permission denied for table ${table}`)
+    }
+  })
+
+  test('record reader can read space-wide config in its own space', () => {
+    const result = asSpace(
+      RECORD_READER_ROLE,
+      'reader-password',
+      SPACE_A,
+      'SELECT key, value FROM config_entry ORDER BY key;',
+    )
+    expect(result.code, result.stderr).toBe(0)
+    expect(result.stdout).toBe('wide|wide-a')
+  })
+
+  test('record actor cannot see config records from another space', () => {
+    for (const table of [
+      'config_entry',
+      'config_secret',
+      'secret_dek',
+      'secret_dek_wrap',
+      'machine_public_key',
+    ]) {
+      const result = asSpace(
+        RECORD_ACTOR_ROLE,
+        'actor-password',
+        SPACE_B,
+        `SET app.user_id = '${USER_A}';
+         SELECT count(*) FROM ${table} WHERE space_id = '${SPACE_A}';`,
+      )
+      expect(result.code, result.stderr).toBe(0)
+      expect(result.stdout).toBe('0')
+    }
+  })
+
+  test('record actor sees and updates only its user and space-wide config rows', () => {
+    for (const table of ['config_entry', 'config_secret']) {
+      const visible = asSpace(
+        RECORD_ACTOR_ROLE,
+        'actor-password',
+        SPACE_A,
+        `SET app.user_id = '${USER_A}';
+         SELECT key FROM ${table} ORDER BY key;`,
+      )
+      expect(visible.code, visible.stderr).toBe(0)
+      expect(visible.stdout.split('\n')).toEqual(['user-x', 'wide'])
+
+      const otherUserUpdate = asSpace(
+        RECORD_ACTOR_ROLE,
+        'actor-password',
+        SPACE_A,
+        `SET app.user_id = '${USER_A}';
+         UPDATE ${table} SET row_version = row_version + 1
+         WHERE key = 'user-y' RETURNING key;`,
+      )
+      expect(otherUserUpdate.code, otherUserUpdate.stderr).toBe(0)
+      expect(otherUserUpdate.stdout).toBe('')
+
+      const spaceWideUpdate = asSpace(
+        RECORD_ACTOR_ROLE,
+        'actor-password',
+        SPACE_A,
+        `SET app.user_id = '${USER_A}';
+         UPDATE ${table} SET row_version = row_version + 1
+         WHERE key = 'wide' RETURNING key;`,
+      )
+      expect(spaceWideUpdate.code, spaceWideUpdate.stderr).toBe(0)
+      expect(spaceWideUpdate.stdout).toBe('wide')
+    }
   })
 
   test('tables created later inherit actor and reader grants', () => {
