@@ -137,6 +137,18 @@ test('sync upserts once and a second pass has no run mutation', async () => {
   local.close()
 })
 
+test('a pre-attribution run payload stays null instead of borrowing the pushing user', async () => {
+  const local = localOutbox(1)
+  const row = local.query<{ payload: string }, []>('SELECT payload FROM outbox').get()!
+  const payload = JSON.parse(row.payload) as Record<string, unknown>
+  delete payload.startedByUserId
+  local.query('UPDATE outbox SET payload=?').run(JSON.stringify(payload))
+  const remote = fakePostgres()
+  expect(await syncRecord(options(local, remote))).toMatchObject({ pushed: 1, failed: 0 })
+  expect(remote.parameters.flat()).toContain(null)
+  local.close()
+})
+
 test('sync refuses the migration owner before any record write', async () => {
   const local = localOutbox(1)
   const remote = fakePostgres(false, RECORD_OWNER_ROLE)

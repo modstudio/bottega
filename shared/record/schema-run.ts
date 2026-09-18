@@ -15,7 +15,7 @@ import {
   unique,
   uuid,
 } from 'drizzle-orm/pg-core'
-import { machine, project, spaceIdentity, tenantPolicies } from './schema.ts'
+import { machine, project, spaceIdentity, tenantPolicies, user } from './schema.ts'
 
 export const run = pgTable.withRLS(
   'run',
@@ -27,6 +27,7 @@ export const run = pgTable.withRLS(
       .notNull()
       .references(() => machine.id),
     localId: bigint('local_id', { mode: 'bigint' }).notNull(),
+    startedByUserId: uuid('started_by_user_id').references(() => user.id),
     startedAt: timestamp('started_at', { withTimezone: true }).notNull(),
     finishedAt: timestamp('finished_at', { withTimezone: true }),
     agent: text().notNull(),

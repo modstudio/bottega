@@ -52,7 +52,7 @@ function localIntervals() {
   const rows = db()
     .query<IntervalEvidence, []>(
       `SELECT task_key, project AS project_name, source, agent, job, start_at, end_at,
-              claude_tokens, vendor_tokens, vendor_cost_usd, ref, via, open, session_id
+              claude_tokens, vendor_tokens, vendor_cost_usd, ref, via, open, session_id, user_id
          FROM interval ORDER BY source, ref, start_at`,
     )
     .all()

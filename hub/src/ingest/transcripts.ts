@@ -5,6 +5,7 @@ import { createInterface } from 'node:readline'
 import { DEFAULT_IDLE_CAP_MS, spansFromTimestamps, union } from '../../../shared/interval.ts'
 import { attribute, isInjected, projectOf } from '../attribute.ts'
 import { nowIso, writeTransaction } from '../db.ts'
+import { signedInRecordUserId } from '../record-identity.ts'
 
 const CLAUDE_ROOT = `${process.env.HOME}/.claude/projects`
 
@@ -39,6 +40,7 @@ type Leg = {
   prompts: string[]
   /** Spend kept with the instant it happened, never as a leg-level total. */
   spend: { at: number; tokens: number }[]
+  sessionId?: string | null
 }
 
 function usageSpend(u: Record<string, number | undefined>): number {
@@ -91,8 +93,9 @@ async function legsOf(file: string, ref: string, sinceMs: number): Promise<Leg[]
 
     if (!cur || cur.cwd !== cwd) {
       if (cur && cur.stamps.length) legs.push(cur)
-      cur = { cwd, ref, stamps: [], prompts: [], spend: [] }
+      cur = { cwd, ref, stamps: [], prompts: [], spend: [], sessionId: d.sessionId ?? null }
     }
+    if (!cur.sessionId && d.sessionId) cur.sessionId = d.sessionId
     cur.stamps.push(ts)
 
     const usage = (d.message as { usage?: Record<string, number> } | undefined)?.usage
@@ -154,7 +157,9 @@ export function spendingSpans(leg: Leg, idleCapMs: number) {
 export async function ingestTranscripts(
   since: string,
   idleCapMs = DEFAULT_IDLE_CAP_MS,
+  attributedUserId?: string | null,
 ): Promise<{ files: number; rows: number }> {
+  const userId = attributedUserId === undefined ? await signedInRecordUserId() : attributedUserId
   const sinceMs = new Date(since).getTime()
   const sinceDay = since.slice(0, 10)
   // A session's spans are REPLACED, not upserted.
@@ -196,8 +201,8 @@ export async function ingestTranscripts(
     writeTransaction((conn) => {
       const stmt = conn.query(
         `INSERT INTO interval (task_key, project, source, agent, start_at, end_at,
-                               claude_tokens, vendor_tokens, vendor_cost_usd, ref, via)
-         VALUES (?,?,'claude',NULL,?,?,?,0,NULL,?,?)`,
+                               claude_tokens, vendor_tokens, vendor_cost_usd, ref, via, session_id, user_id)
+         VALUES (?,?,'claude',NULL,?,?,?,0,NULL,?,?,?,?)`,
       )
       const clear = conn.query(
         `DELETE FROM interval WHERE source = 'claude' AND ref LIKE ? AND end_at >= ?`,
@@ -257,6 +262,8 @@ export async function ingestTranscripts(
             s.tokens,
             `claude:${leg.ref}:${i}`,
             a.via,
+            leg.sessionId ?? null,
+            userId,
           )
           rows++
         }

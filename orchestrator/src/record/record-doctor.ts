@@ -23,6 +23,11 @@ export function recordDoctorExitCode(checks: readonly RecordDoctorCheck[]): 0 | 
   return checks.some((check) => check.status === 'fail') ? 1 : 0
 }
 
+export function unattributedShare(missing: number, total: number): string {
+  const percent = total === 0 ? 0 : (missing / total) * 100
+  return `${missing}/${total} (${percent.toFixed(1)}%) unattributed`
+}
+
 export function redactRecordPasswords(value: string, urls: readonly string[]): string {
   let redacted = value.replace(/(postgres(?:ql)?:\/\/[^:\s/@]+:)[^@\s/]+@/gi, '$1***@')
   for (const valueUrl of urls) {
@@ -110,6 +115,8 @@ export async function diagnoseRecord(
       'stored session exists and is valid',
       'active space exists',
       'active space membership exists',
+      'runs with no started_by',
+      'session intervals with no session identity',
     ])
       skip(name, 'ORCH_RECORD_URL not set')
   } else {
@@ -136,9 +143,11 @@ export async function diagnoseRecord(
           status: 'fail',
           detail: 'record session has no active space',
         })
-      if (!current || !activeSpaceId)
+      if (!current || !activeSpaceId) {
         skip('active space membership exists', 'active space unavailable')
-      else {
+        skip('runs with no started_by', 'active space unavailable')
+        skip('session intervals with no session identity', 'active space unavailable')
+      } else {
         await run('active space membership exists', async () => {
           const memberships = await actor.begin(async (tx) => {
             await tx`SELECT set_config('app.user_id', ${current.user.id}, true)`
@@ -150,6 +159,37 @@ export async function diagnoseRecord(
           })
           if (memberships.length !== 1)
             throw new Error('signed-in user is not a member of the active space')
+        })
+        const attribution = await actor.begin(async (tx) => {
+          await tx`SELECT set_config('app.user_id', ${current.user.id}, true)`
+          await tx`SELECT set_config('app.space_id', ${activeSpaceId}, true)`
+          const runs = await tx`
+            SELECT count(*)::int AS total,
+                   count(*) FILTER (WHERE started_by_user_id IS NULL)::int AS missing
+            FROM run WHERE space_id=${activeSpaceId}::uuid
+          `
+          const intervals = await tx`
+            SELECT count(*)::int AS total,
+                   count(*) FILTER (WHERE session_id IS NULL)::int AS missing
+            FROM hub_interval WHERE space_id=${activeSpaceId}::uuid AND source='claude'
+          `
+          return { runs: runs[0]!, intervals: intervals[0]! }
+        })
+        checks.push({
+          name: 'runs with no started_by',
+          status: 'pass',
+          detail: unattributedShare(
+            Number(attribution.runs.missing),
+            Number(attribution.runs.total),
+          ),
+        })
+        checks.push({
+          name: 'session intervals with no session identity',
+          status: 'pass',
+          detail: unattributedShare(
+            Number(attribution.intervals.missing),
+            Number(attribution.intervals.total),
+          ),
         })
       }
       checks.push(

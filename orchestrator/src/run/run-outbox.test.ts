@@ -21,6 +21,7 @@ test('terminal payload maps every hosted run column and no execution-state colum
       doc_revisions: '["revision"]',
       outside_worktree_writes: null,
       review_provenance: '{"commands_run":[]}',
+      started_by_user_id: '01990000-0000-7000-8000-000000000123',
     },
     '01990000-0000-7000-8000-000000000099',
     '2026-09-15T01:01:00.000Z',
@@ -34,6 +35,7 @@ test('terminal payload maps every hosted run column and no execution-state colum
     changedPaths: ['a.ts'],
     docRevisions: ['revision'],
     reviewProvenance: { commands_run: [] },
+    startedByUserId: '01990000-0000-7000-8000-000000000123',
   })
   expect(payload).not.toHaveProperty('cwd')
   expect(payload).not.toHaveProperty('outputPath')

@@ -220,6 +220,7 @@ export type ClaimInput = {
   readOnlyBase: string | null
   deferredCwdMcpPreflight: boolean
   usingMcp: boolean
+  startedByUserId: string | null
 }
 
 export type ClaimResult = {
@@ -281,6 +282,7 @@ export async function claimRun(input: ClaimInput): Promise<ClaimResult> {
     readOnlyBase,
     deferredCwdMcpPreflight,
     usingMcp,
+    startedByUserId,
   } = input
   const claimedPrompt = opts.reserveId
     ? (
@@ -419,8 +421,8 @@ export async function claimRun(input: ClaimInput): Promise<ClaimResult> {
         .query(
           `INSERT INTO run (record_id, started_at, agent, job, repo, project_id, cwd, prompt_sha, spec_sha, prompt_bytes, prompt_head, label, status, session_id, probe, retry_of, route_reason, branch, parent_run_id, turn, vendor_session, docs_injected, doc_revisions, canon_sha,
                             launch_cwd, launch_seed, launch_key, launch_base, no_failover,
-                            automatic_failover, review_ref, pid, mcp, transport)
-           VALUES (?,?,?,?,?,?,?,?,?,?,?,?,'running',?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?) RETURNING id`,
+                            automatic_failover, review_ref, pid, mcp, transport, started_by_user_id)
+           VALUES (?,?,?,?,?,?,?,?,?,?,?,?,'running',?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?) RETURNING id`,
         )
         .get(
           recordId,
@@ -461,6 +463,7 @@ export async function claimRun(input: ClaimInput): Promise<ClaimResult> {
           process.pid,
           storedMcpRequest(mcpRequest),
           transportName,
+          startedByUserId,
         ) as { id: number })
 
   /**
