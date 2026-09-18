@@ -642,9 +642,9 @@ export function candidates(
       latencyMs: median(latByAgent.get(name) ?? []),
       tokens: h?.tokens ?? 0,
       costUsd: h?.cost ?? 0,
-      // A local or free agent spends no metered quota, so on a genuine tie it
+      // A free or no-cost agent spends no metered quota, so on a genuine tie it
       // keeps the paid subscriptions in reserve for work that needs them.
-      free: a.billing === 'local' || a.billing === 'free',
+      free: a.billing === 'none' || a.billing === 'free',
       eligible,
       why,
       cooling,

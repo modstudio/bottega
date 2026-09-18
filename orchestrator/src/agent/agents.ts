@@ -36,8 +36,10 @@ export type Agent = {
   bin: string
   /** Oldest CLI release this harness has been verified against. */
   minimumCliVersion: string
-  /** Where its usage is billed. Metered is refused; local costs nothing at all. */
-  billing: 'subscription' | 'free' | 'local' | 'metered' | 'unknown'
+  /** What its usage costs. Metered is refused; free and none spend no quota. */
+  billing: 'subscription' | 'free' | 'metered' | 'none'
+  /** Who operates the agent endpoint. */
+  operatedBy: 'vendor' | 'self'
   /**
    * The model this agent runs, PASSED EXPLICITLY on every call.
    *
@@ -380,6 +382,7 @@ export const BUILTIN_AGENTS: Record<string, Agent> = {
     minimumCliVersion: '0.153.4',
     model: process.env.ORCH_CODEX_MODEL ?? 'gpt-5.6-sol',
     billing: 'subscription',
+    operatedBy: 'vendor',
     // writesRepo VERIFIED: `-s workspace-write` in a scratch git repo created
     // the requested file and exited 0. resumable VERIFIED: `--json` emits
     // `thread.started` on the first line and `exec resume <thread_id>` recalled
@@ -489,6 +492,7 @@ export const BUILTIN_AGENTS: Record<string, Agent> = {
     minimumCliVersion: '1.0.13',
     model: process.env.ORCH_GROK_MODEL ?? 'grok-4.6',
     billing: 'subscription',
+    operatedBy: 'vendor',
     // Project servers come from the worker tree's `.mcp.json`; the run-scoped
     // GROK_HOME disables entries the project's workerMcpServers does not own.
     // Dispatch preflights that clamped view and stores folder trust there too.

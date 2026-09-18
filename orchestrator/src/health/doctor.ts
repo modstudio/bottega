@@ -247,7 +247,7 @@ export async function doctorCommand(
     }
   }
   for (const row of agentRows()) {
-    if (row.billing !== 'local' || !row.enabled) continue
+    if (row.operated_by !== 'self' || !row.enabled) continue
     const probedAt = row.probed_at ? Date.parse(row.probed_at) : NaN
     const ageDays = Number.isFinite(probedAt) ? (Date.now() - probedAt) / 86_400_000 : null
     const probe = row.probe_result ? (JSON.parse(row.probe_result) as { ok?: boolean }) : null

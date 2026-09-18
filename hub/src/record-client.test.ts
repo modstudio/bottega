@@ -148,6 +148,7 @@ describe('record client', () => {
                 name: 'agy',
                 caps: { readsRepo: false, contextTokens: null },
                 model: 'gemini-3.1-pro-high',
+                operatedBy: 'vendor',
                 contextTokens: null,
                 maxPromptBytes: null,
                 timeoutMs: 60_000,

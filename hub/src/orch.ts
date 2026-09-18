@@ -321,6 +321,7 @@ export type OrchAgentDefinition = {
   name: string
   caps: Record<string, boolean>
   model: string
+  operatedBy: 'vendor' | 'self'
   contextTokens: number | null
   maxPromptBytes: number | null
   timeoutMs: number
