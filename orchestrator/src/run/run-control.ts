@@ -209,8 +209,7 @@ export function continuationTurn(
   }
 }
 
-type ContinuationLaunch = {
-  launch_cwd: string | null
+type StoredResumeLaunch = {
   launch_seed: string | null
   launch_key: string | null
   launch_base: string | null
@@ -220,13 +219,46 @@ type ContinuationLaunch = {
   lens: string | null
 }
 
+type ResumeLaunchOptions = {
+  seed: string | undefined
+  key: string | undefined
+  base: string | undefined
+  noFailover: boolean
+  mcp: ReturnType<typeof mcpRequestFromStored>
+  lens: string | undefined
+}
+
+/** Map a stored launch row to the detach options a resumed turn inherits. */
+export function resumeLaunchFromStored(row: StoredResumeLaunch): ResumeLaunchOptions {
+  return {
+    seed: row.launch_seed ?? undefined,
+    key: row.launch_key ?? undefined,
+    base: row.launch_base ?? undefined,
+    noFailover: !!row.no_failover,
+    mcp: mcpRequestFromStored(row.mcp, row.mcp_error),
+    lens: row.lens ?? undefined,
+  }
+}
+
+/** Read the root's launch row and return the detach options a resumed turn inherits. */
+export function resumeLaunchForRoot(rootId: number): ResumeLaunchOptions {
+  const row = db()
+    .query(
+      `SELECT launch_seed, launch_key, launch_base, no_failover, mcp, mcp_error, lens
+       FROM run WHERE id=?`,
+    )
+    .get(rootId) as StoredResumeLaunch | null
+  if (!row) throw new Error(`no run ${rootId}`)
+  return resumeLaunchFromStored(row)
+}
+
 function continuationTree(
   id: number,
   row: { branch_kept: string | null; branch_kept_tip: string | null },
   latest: ChainTurn,
-  launch: ContinuationLaunch,
+  launchCwd: string | null,
 ) {
-  const latestProject = projectAt(latest.cwd ?? launch.launch_cwd ?? '')
+  const latestProject = projectAt(latest.cwd ?? launchCwd ?? '')
   const latestBranchTip =
     latest.branch && latestProject
       ? gitContext(
@@ -242,7 +274,7 @@ function continuationTree(
     rootBranch: row.branch_kept,
   })
   const recordedBranch = branchPlan.branch
-  const project = recordedBranch ? projectAt(latest.cwd ?? launch.launch_cwd ?? '') : null
+  const project = recordedBranch ? projectAt(latest.cwd ?? launchCwd ?? '') : null
   if (recordedBranch && !project)
     throw new Error(
       `run ${id} cannot be continued: no registered project contains its recorded checkout`,
@@ -414,18 +446,16 @@ export async function continueRun(
       )
       .all(id, id) as ChainTurn[],
   )
-  const launch = db()
-    .query(
-      `SELECT launch_cwd, launch_seed, launch_key, launch_base, no_failover, mcp, mcp_error, lens
-       FROM run WHERE id=?`,
-    )
-    .get(id) as ContinuationLaunch
+  const launch = db().query('SELECT launch_cwd FROM run WHERE id=?').get(id) as {
+    launch_cwd: string | null
+  }
+  const inheritedLaunch = resumeLaunchForRoot(id)
   const {
     project,
     recordedTreeMatches,
     plan: treePlan,
     branchSource,
-  } = continuationTree(id, row, latest, launch)
+  } = continuationTree(id, row, latest, launch.launch_cwd)
   const savedCheckpointContext = (await import('./checkpoint.ts')).checkpointResumeContext(
     db(),
     id,
@@ -496,12 +526,7 @@ export async function continueRun(
   })
   const childId = await detach(row.job, prompt, {
     cwd: continuationCwd(treePlan, recordedTreeMatches, latest.cwd, project?.path ?? null),
-    seed: launch.launch_seed ?? undefined,
-    key: launch.launch_key ?? undefined,
-    base: launch.launch_base ?? undefined,
-    noFailover: !!launch.no_failover,
-    mcp: mcpRequestFromStored(launch.mcp, launch.mcp_error),
-    lens: launch.lens ?? undefined,
+    ...inheritedLaunch,
     transport: chainTransport(id) ?? undefined,
     resume: {
       parent: id,

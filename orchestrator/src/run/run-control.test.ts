@@ -9,7 +9,12 @@ import { packResumePrompt } from '../contract/contract.ts'
 import { db } from '../database/db.ts'
 import { recordReview } from '../review/review-triage.ts'
 import { packedResumePrompt } from './run.ts'
-import { type ChainTurn, continuationTurn, continueRun } from './run-control.ts'
+import {
+  type ChainTurn,
+  continuationTurn,
+  continueRun,
+  resumeLaunchFromStored,
+} from './run-control.ts'
 
 const trackResidue = trackedTestResidue()
 
@@ -42,6 +47,46 @@ afterEach(() => {
   else process.env.ORCH_DEPTH = priorEnv.ORCH_DEPTH
   if (priorEnv.ORCH_EXEC_PATH === undefined) delete process.env.ORCH_EXEC_PATH
   else process.env.ORCH_EXEC_PATH = priorEnv.ORCH_EXEC_PATH
+})
+
+describe('inherited resume launch', () => {
+  const stored = {
+    launch_seed: null as string | null,
+    launch_key: null as string | null,
+    launch_base: null as string | null,
+    no_failover: 0,
+    mcp: null as number | null,
+    mcp_error: null as string | null,
+    lens: null as string | null,
+  }
+
+  test.each([
+    [1, 'verified', 'require'],
+    [1, 'mirror: attach failed', 'prefer'],
+    [2, null, 'prefer'],
+    [0, null, undefined],
+    [null, null, undefined],
+  ] as const)('maps stored mcp %s with error %s to %s', (mcp, mcp_error, expected) => {
+    expect(resumeLaunchFromStored({ ...stored, mcp, mcp_error })).toEqual({
+      seed: undefined,
+      key: undefined,
+      base: undefined,
+      noFailover: false,
+      mcp: expected,
+      lens: undefined,
+    })
+  })
+
+  test('maps null key, seed, base and lens to undefined', () => {
+    expect(resumeLaunchFromStored(stored)).toEqual({
+      seed: undefined,
+      key: undefined,
+      base: undefined,
+      noFailover: false,
+      mcp: undefined,
+      lens: undefined,
+    })
+  })
 })
 
 describe('run continuation', () => {
