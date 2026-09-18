@@ -3,6 +3,8 @@
  * Knows child environment shaping, process inventory, signals, idle-kill, and
  * run events. Must not know routing, contracts, reviews, or transports.
  */
+
+import type { Database } from 'bun:sqlite'
 import { createHash } from 'node:crypto'
 import type { AGENTS } from '../agent/agent-registry.ts'
 import { DB_PATH, db } from '../database/db.ts'
@@ -86,10 +88,12 @@ type ProcessInventory =
   | { ascertainable: true; rows: ProcessRow[] }
   | { ascertainable: false; reason: string }
 
-export type TerminateRunProcessesResult = {
-  signalled: number[]
-  recordedPidPresent: boolean
-}
+export type TerminateRunProcessesResult =
+  | { outcome: 'signalled'; signalled: number[]; acceptableIds: number[] }
+  | { outcome: 'identity-mismatch'; acceptableIds: number[] }
+  | { outcome: 'unascertainable'; acceptableIds: number[]; reason: string }
+  | { outcome: 'no-pid'; acceptableIds: number[] }
+  | { outcome: 'gone'; acceptableIds: number[] }
 
 export function processTable(): ProcessInventory {
   let p: ReturnType<typeof Bun.spawnSync>
@@ -150,14 +154,58 @@ export function commandNamesRun(command: string, acceptableIds: readonly number[
   )
 }
 
+const MAX_FAILOVER_CONVERSATIONS = 100
+
+/** Run ids whose conversations can share the stopped run's coordinator process. */
+export function acceptableRunProcessIds(database: Database, id: number): number[] {
+  const member = database.query('SELECT id, parent_run_id FROM run WHERE id=?').get(id) as {
+    id: number
+    parent_run_id: number | null
+  } | null
+  if (!member) throw new Error(`no run ${id}`)
+
+  const pending = [member.parent_run_id ?? member.id]
+  const roots = new Set<number>()
+  const acceptable = new Set<number>()
+  while (pending.length) {
+    if (roots.size >= MAX_FAILOVER_CONVERSATIONS) {
+      throw new Error(`run ${id} automatic failover chain exceeds ${MAX_FAILOVER_CONVERSATIONS}`)
+    }
+    const rootId = pending.shift()!
+    if (roots.has(rootId)) throw new Error(`run ${id} has an automatic failover cycle at ${rootId}`)
+    roots.add(rootId)
+    const conversation = database
+      .query('SELECT id FROM run WHERE id=? OR parent_run_id=? ORDER BY id')
+      .all(rootId, rootId) as { id: number }[]
+    for (const row of conversation) acceptable.add(row.id)
+    const predecessors = database
+      .query(
+        `SELECT prior.id, prior.parent_run_id FROM run successor
+         JOIN run prior ON prior.id=successor.retry_of
+         WHERE successor.automatic_failover=1
+           AND (successor.id=? OR successor.parent_run_id=?)
+         ORDER BY prior.id`,
+      )
+      .all(rootId, rootId) as { id: number; parent_run_id: number | null }[]
+    for (const predecessor of predecessors) {
+      const predecessorRoot = predecessor.parent_run_id ?? predecessor.id
+      if (roots.has(predecessorRoot) || pending.includes(predecessorRoot)) {
+        throw new Error(`run ${id} has an automatic failover cycle at ${predecessorRoot}`)
+      }
+      pending.push(predecessorRoot)
+    }
+  }
+  return [...acceptable].sort((a, b) => a - b)
+}
+
 function verifiedProcessTree(
   table: ProcessRow[],
   acceptableIds: readonly number[],
   rootPid: number,
   exclude: number[] = [],
-): number[] {
+): number[] | null {
   const root = table.find((candidate) => candidate.pid === rootPid)
-  if (!root || !commandNamesRun(root.command, acceptableIds)) return []
+  if (!root || !commandNamesRun(root.command, acceptableIds)) return null
   const skipped = new Set(exclude)
   const depth = new Map<number, number>([[root.pid, 0]])
   let changed = true
@@ -180,25 +228,21 @@ export function terminateRunProcesses(
   id: number,
   exclude: number[] = [],
 ): TerminateRunProcessesResult {
-  const row = db().query('SELECT pid, agent_pid, parent_run_id FROM run WHERE id=?').get(id) as {
+  const row = db().query('SELECT pid, agent_pid FROM run WHERE id=?').get(id) as {
     pid: number | null
     agent_pid: number | null
-    parent_run_id: number | null
   } | null
   if (!row) throw new Error(`no run ${id}`)
-  if (!row.pid) return { signalled: [], recordedPidPresent: false }
+  if (!row.pid) return { outcome: 'no-pid', acceptableIds: [] }
+  const acceptableIds = acceptableRunProcessIds(db(), id)
   const inventory = processTable()
   if (!inventory.ascertainable) {
     console.error(`orch: ${inventory.reason}; nothing signalled`)
-    return { signalled: [], recordedPidPresent: false }
+    return { outcome: 'unascertainable', acceptableIds, reason: inventory.reason }
   }
-  const recordedPidPresent = inventory.rows.some((candidate) => candidate.pid === row.pid)
-  const rootId = row.parent_run_id ?? id
-  const acceptableIds = (
-    db().query('SELECT id FROM run WHERE id=? OR parent_run_id=?').all(rootId, rootId) as {
-      id: number
-    }[]
-  ).map((candidate) => candidate.id)
+  if (!inventory.rows.some((candidate) => candidate.pid === row.pid)) {
+    return { outcome: 'gone', acceptableIds }
+  }
   // A stop command is itself a descendant of the coordinator it is stopping.
   // If the reaper signals itself, it can exit before reaching a sibling vendor
   // process and leave the caller waiting on that vendor forever.
@@ -206,13 +250,11 @@ export function terminateRunProcesses(
     ...exclude,
     process.pid,
   ])
-  if (!pids.length) {
-    if (recordedPidPresent) {
-      console.error(
-        `orch: run ${id} pid ${row.pid} identity could not be confirmed; nothing signalled`,
-      )
-    }
-    return { signalled: [], recordedPidPresent }
+  if (pids === null) {
+    console.error(
+      `orch: run ${id} pid ${row.pid} identity could not be confirmed; nothing signalled`,
+    )
+    return { outcome: 'identity-mismatch', acceptableIds }
   }
   const signalled: number[] = []
   for (const pid of pids) {
@@ -223,7 +265,9 @@ export function terminateRunProcesses(
       if ((e as NodeJS.ErrnoException).code !== 'ESRCH') throw e
     }
   }
-  return { signalled, recordedPidPresent }
+  return signalled.length
+    ? { outcome: 'signalled', signalled, acceptableIds }
+    : { outcome: 'gone', acceptableIds }
 }
 
 let signalsBound = false

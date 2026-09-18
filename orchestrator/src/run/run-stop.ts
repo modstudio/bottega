@@ -28,8 +28,13 @@ export function stoppedRunLine(
   pid: number | null,
   termination: TerminateRunProcessesResult,
 ): string {
-  if (pid && !termination.signalled.length && termination.recordedPidPresent) {
-    return `stopped run ${id}, but process pid ${pid} could not be confirmed or signalled; after checking ps -p ${pid} -o command, run kill -TERM ${pid}`
+  if (pid && termination.outcome === 'identity-mismatch') {
+    const commands = termination.acceptableIds.map((runId) => `exec.ts ${runId}`).join(', ')
+    return `stopped run ${id}; pid ${pid} is present but does not name this run (expected ${commands}); inspect it with ps -p ${pid} -o command and signal it only if the command shows one of those ids`
+  }
+  if (pid && termination.outcome === 'unascertainable') {
+    const commands = termination.acceptableIds.map((runId) => `exec.ts ${runId}`).join(', ')
+    return `stopped run ${id}; no process could be signalled because ${termination.reason}; inspect pid ${pid} with ps -p ${pid} -o command and signal it only if the command shows one of these ids: ${commands}`
   }
   return `stopped run ${id}`
 }
