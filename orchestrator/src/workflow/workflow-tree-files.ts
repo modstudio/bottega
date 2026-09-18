@@ -5,6 +5,7 @@ import { dirname, resolve } from 'node:path'
 import {
   matchWorkflowTreePath,
   WORKFLOW_STUB_DIRECTORIES,
+  WORKFLOW_STUB_PRUNE_DIRECTORIES,
   WORKFLOW_TREE_FOLDERS,
   WORKFLOW_TREE_ROOT,
   type WorkflowTreeFile,
@@ -36,7 +37,7 @@ function assertWorkflowTreeDirectories(root: string): void {
   const workflows = resolve(root, WORKFLOW_TREE_ROOT)
   assertRealDirectory(workflows)
   for (const folder of WORKFLOW_TREE_FOLDERS) assertRealDirectory(resolve(workflows, folder))
-  for (const directory of WORKFLOW_STUB_DIRECTORIES) {
+  for (const directory of [...WORKFLOW_STUB_DIRECTORIES, ...WORKFLOW_STUB_PRUNE_DIRECTORIES]) {
     assertRealDirectory(resolve(root, dirname(directory)))
     assertRealDirectory(resolve(root, directory))
   }
@@ -61,6 +62,7 @@ export function collectWorkflowTree(root: string): WorkflowTreeFile[] {
   const directories = [
     ...WORKFLOW_TREE_FOLDERS.map((folder) => `${WORKFLOW_TREE_ROOT}/${folder}`),
     ...WORKFLOW_STUB_DIRECTORIES,
+    ...WORKFLOW_STUB_PRUNE_DIRECTORIES,
   ]
   for (const relative of directories) {
     const directory = resolve(root, relative)

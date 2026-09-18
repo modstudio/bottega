@@ -1,5 +1,13 @@
 import { afterEach, expect, test } from 'bun:test'
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
+import {
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+  symlinkSync,
+  writeFileSync,
+} from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { applyWorkflowTreePlan, collectWorkflowTree } from './workflow-tree-files.ts'
@@ -14,6 +22,17 @@ const fixture = () => {
 }
 afterEach(() => {
   for (const root of roots.splice(0)) rmSync(root, { recursive: true, force: true })
+})
+
+test('writing a stub creates only the command directory', () => {
+  const { tree } = fixture()
+  applyWorkflowTreePlan(tree, {
+    writes: [{ path: '.claude/commands/ship.md', body: 'stub\n' }],
+    deletes: [],
+  })
+
+  expect(readFileSync(join(tree, '.claude', 'commands', 'ship.md'), 'utf8')).toBe('stub\n')
+  expect(existsSync(join(tree, '.agents', 'workflows'))).toBe(false)
 })
 
 test('a symlinked steps directory is refused and the file outside the tree is unchanged', () => {
