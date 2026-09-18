@@ -15,7 +15,6 @@ import {
   trackerSourceFor,
   trackerWireAction,
   UNKNOWN_TRACKER_REFUSAL,
-  WORKSPACE_CREATE_REFUSAL,
 } from './trackers.ts'
 
 describe('tracker action names', () => {
@@ -52,6 +51,7 @@ const project = (name: string, protocol?: string): TrackerProject => ({
     ? {
         tracker: {
           protocol,
+          ...(protocol === 'workspace-mcp' ? { team: 'Platform' } : {}),
           envPrefix: 'FIXTURE',
           openStatuses: ['todo'],
           states: { todo: 'open', done: 'done' },
@@ -90,12 +90,72 @@ describe('tracker create protocols', () => {
     ])
   })
 
-  test('workspace-mcp refuses its incompatible evidenced status fields', async () => {
+  test('workspace-mcp status schema sends status and team (mutation: send task_status_id to starship)', async () => {
     const fixture = fixtureCaller()
 
+    expect(
+      await createTrackerTask(fixture.caller, project('starship', 'workspace-mcp'), task, {
+        properties: { summary: {}, description: {}, team: {}, status: {} },
+      }),
+    ).toEqual({ key: 'ADN-1' })
+    expect(fixture.calls).toEqual([
+      {
+        name: 'create-task-tool',
+        args: {
+          summary: 'Move the adapter',
+          description: 'Protocol-neutral body',
+          team: 'Platform',
+          status: 'todo',
+        },
+      },
+    ])
+  })
+
+  test('workspace-mcp task_status_id schema sends task_status_id and team_id (mutation: send status to alephbeis)', async () => {
+    const fixture = fixtureCaller()
+
+    await createTrackerTask(fixture.caller, project('alephbeis', 'workspace-mcp'), task, {
+      properties: { summary: {}, description: {}, team_id: {}, task_status_id: {} },
+    })
+    expect(fixture.calls).toEqual([
+      {
+        name: 'create-task-tool',
+        args: {
+          summary: 'Move the adapter',
+          description: 'Protocol-neutral body',
+          team_id: 'Platform',
+          task_status_id: 'todo',
+        },
+      },
+    ])
+  })
+
+  for (const [label, properties] of [
+    ['both status fields', { team: {}, status: {}, task_status_id: {} }],
+    ['neither status field', { summary: {}, description: {}, team: {} }],
+  ] as const) {
+    test(`workspace-mcp refuses ${label} and names the fields seen (mutation: guess a status field)`, async () => {
+      const fixture = fixtureCaller()
+
+      await expect(
+        createTrackerTask(fixture.caller, project('starship', 'workspace-mcp'), task, {
+          properties,
+        }),
+      ).rejects.toThrow(`fields seen: ${Object.keys(properties).sort().join(', ')}`)
+      expect(fixture.calls).toEqual([])
+    })
+  }
+
+  test('workspace-mcp refuses a missing team with the register remedy (mutation: default team to OPS)', async () => {
+    const fixture = fixtureCaller()
+    const missingTeam = project('starship', 'workspace-mcp')
+    delete missingTeam.settings.tracker!.team
+
     await expect(
-      createTrackerTask(fixture.caller, project('starship', 'workspace-mcp'), task),
-    ).rejects.toThrow('workspace-mcp create refused: the status field differs')
+      createTrackerTask(fixture.caller, missingTeam, task, {
+        properties: { summary: {}, description: {}, team: {}, status: {} },
+      }),
+    ).rejects.toThrow(`orch project set starship --settings '{"tracker":{"team":"…"}}'`)
     expect(fixture.calls).toEqual([])
   })
 
@@ -179,13 +239,9 @@ describe('tracker capabilities', () => {
       })
       expect(capabilities).toEqual({
         create:
-          protocol === 'array-mcp'
+          protocol === 'array-mcp' || protocol === 'workspace-mcp'
             ? { allowed: true }
-            : {
-                allowed: false,
-                reason:
-                  protocol === 'workspace-mcp' ? WORKSPACE_CREATE_REFUSAL : CURSOR_CREATE_REFUSAL,
-              },
+            : { allowed: false, reason: CURSOR_CREATE_REFUSAL },
         setStatus: { allowed: false, reason: TRACKER_STATUS_WRITE_REFUSAL },
         setTitle: { allowed: false, reason: TRACKER_TITLE_WRITE_REFUSAL },
         comment: { allowed: false, reason: TRACKER_COMMENT_WRITE_REFUSAL },

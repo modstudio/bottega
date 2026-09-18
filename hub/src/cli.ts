@@ -1,7 +1,6 @@
 #!/usr/bin/env bun
 import { readFileSync, writeFileSync } from 'node:fs'
 import { human } from '../../shared/interval.ts'
-import { createTrackerTask } from '../../shared/trackers.ts'
 import { projectOf } from './attribute.ts'
 import { watch, withLease } from './collect.ts'
 import { DB_PATH, db, migrateDatabase, nowIso, requireDatabase, writeTransaction } from './db.ts'
@@ -63,6 +62,7 @@ import {
 import { closeThenPrune } from './task-close.ts'
 import { pushTasks } from './task-push.ts'
 import { hoursAgo } from './time.ts'
+import { createAdvertisedTrackerTask } from './tracker-new.ts'
 
 const argv = process.argv.slice(2)
 const cmd = argv[0]
@@ -583,7 +583,7 @@ async function task() {
     if (!status) throw new Error(`project ${project.name} has no open tracker status configured`)
     const client = new Mcp(auth.url, auth.token)
     await client.initialize()
-    const result = await createTrackerTask(client, project, {
+    const result = await createAdvertisedTrackerTask(client, project, {
       title: required('title'),
       body: required('body'),
       status,
