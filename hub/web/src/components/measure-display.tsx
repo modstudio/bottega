@@ -1,4 +1,5 @@
 import type { ReactNode } from 'react'
+import { compactTokens } from '@/lib/format'
 import type { MeasuresResponse } from '@/trpc/client'
 import { StatRow, StatTile } from '@/ui/stat/stat'
 
@@ -51,7 +52,7 @@ export function CostUnknown({ measure }: { measure: MeasuresResponse['cost'] }) 
   return (
     <Unknown mostly={mostly}>
       {money(measure.unknownShare.vendorCostUsd)} and{' '}
-      {measure.unknownShare.vendorTokens.toLocaleString()} tokens have an unknown person
+      {compactTokens(measure.unknownShare.vendorTokens)} agent tokens have an unknown person
     </Unknown>
   )
 }

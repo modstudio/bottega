@@ -2,6 +2,7 @@
 /** Plans, renders, and delivers one idempotent pass of hosted report subscriptions. */
 
 import type { MeasureScope, Measures, MeasureWindow } from './measures.ts'
+import { type GatheredReport, renderHtml, renderText } from './report.ts'
 
 export type DeliveryCandidate = {
   subscriptionId: string
@@ -24,6 +25,7 @@ export type DeliverySubscription = {
   scope: MeasureScope
   scopeName: string
   measures: Measures
+  report: GatheredReport
 }
 
 export type RenderedReport = { subject: string; text: string; html: string }
@@ -151,18 +153,6 @@ export function duePeriod(candidate: DeliveryCandidate, now: Date): DeliveryPeri
   }
 }
 
-const hours = (ms: number) => {
-  const value = ms / 3_600_000
-  return `${Number.isInteger(value) ? value : value.toFixed(1)} ${value === 1 ? 'hour' : 'hours'}`
-}
-const money = (value: number) => `$${value.toFixed(2)}`
-const htmlEscape = (value: string) =>
-  value.replace(
-    /[&<>"']/g,
-    (character) =>
-      ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[character]!,
-  )
-
 /**
  * The window, worded the same wherever the sender runs.
  *
@@ -202,55 +192,16 @@ export function renderReport(
   period: DeliveryPeriod,
   subscription: DeliverySubscription,
 ): RenderedReport {
-  const { measures } = subscription
-  const lines = [
-    `Report for ${subscription.scopeName}`,
-    `Window: ${localWindow(period, candidate.zone)}`,
-    '',
-  ]
-  if (measures.scope === 'person') {
-    lines.push(
-      `Recorded work for ${subscription.scopeName} was running for ${hours(measures.hoursRunning.unionMs)}.`,
-    )
-    lines.push(
-      `${subscription.scopeName} started ${hours(measures.agentHours.sumMs).replace(' hour', ' agent-hour')}.`,
-    )
-    lines.push(
-      `${subscription.scopeName} was in session for ${hours(measures.sessionTime.unionThenSumMs)}.`,
-    )
-  } else {
-    lines.push(
-      `Work was running for ${hours(measures.hoursRunning.unionMs)}. This measure is not additive.`,
-    )
-    lines.push(
-      `Agents ran for ${hours(measures.agentHours.sumMs).replace(' hour', ' agent-hour')}.`,
-    )
-    lines.push(`People were in session for ${hours(measures.sessionTime.unionThenSumMs)}.`)
+  const presentation = {
+    scopeName: subscription.scopeName,
+    windowLine: `Window: ${localWindow(period, candidate.zone)}`,
+    measures: subscription.measures,
   }
-  lines.push(measures.sessionTime.silenceAllowanceSentence)
-  lines.push(`${hours(measures.sessionTime.uncountedSilenceMs)} of silence was uncounted.`)
-  if (measures.agentHours.unknownShare)
-    lines.push(
-      `${hours(measures.agentHours.unknownShare.sumMs).replace(' hour', ' agent-hour')} had unknown attribution.`,
-    )
-  if (measures.sessionTime.unknownUser)
-    lines.push(
-      `${hours(measures.sessionTime.unknownUser.unionThenSumMs)} of session time had unknown attribution.`,
-    )
-  lines.push(`Agent runs cost ${money(measures.cost.vendorCostUsd)}.`)
-  if ('shipped' in measures) {
-    lines.push(
-      `${measures.shipped.count} ${measures.shipped.count === 1 ? 'item landed' : 'items landed'}.`,
-    )
-    lines.push(
-      measures.cycleTime
-        ? `Median cycle time was ${hours(measures.cycleTime.medianMs)} across ${measures.cycleTime.n} ${measures.cycleTime.n === 1 ? 'item' : 'items'}.`
-        : 'No landed item had enough recorded activity to calculate cycle time.',
-    )
+  return {
+    subject: `Report: ${subscription.scopeName}`,
+    text: renderText(subscription.report, new Map(), presentation),
+    html: renderHtml(subscription.report, new Map(), presentation),
   }
-  const text = lines.join('\n')
-  const html = `<div>${lines.map((line) => (line ? `<p>${htmlEscape(line)}</p>` : '')).join('')}</div>`
-  return { subject: `Report: ${subscription.scopeName}`, text, html }
 }
 
 type DeliveryResult = 'sent' | 'skipped' | 'failed' | 'dry-run' | 'duplicate'
@@ -299,7 +250,7 @@ async function recordSkip(
     status: 'skipped',
     reason,
     recipient: subscription.recipientEmail,
-    items: subscription.measures.hoursRunning.sample.intervalCount,
+    items: subscription.report.items.length,
   })
 }
 
@@ -350,7 +301,7 @@ async function dispatchReport(
   }
   const intentId = await input.repository.recordIntent(candidate, period, {
     recipient: subscription.recipientEmail,
-    items: subscription.measures.hoursRunning.sample.intervalCount,
+    items: subscription.report.items.length,
   })
   if (!intentId) return 'duplicate'
   try {
