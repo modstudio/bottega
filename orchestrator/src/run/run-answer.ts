@@ -23,6 +23,7 @@ import {
   type RunControlPresentation,
   refuseEscapedChain,
   reportContinuedRun,
+  resumeLaunchForRoot,
 } from './run-control.ts'
 import { detach } from './run-dispatch.ts'
 
@@ -529,6 +530,7 @@ export async function answerRun(
   try {
     childId = await detach(row.job, rulingPrompt(answers), {
       cwd: latest.cwd ?? row.cwd ?? process.cwd(),
+      ...resumeLaunchForRoot(id),
       transport: chainTransport(id) ?? undefined,
       resume: {
         parent: id,

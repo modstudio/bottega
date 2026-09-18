@@ -83,4 +83,24 @@ describe('live outcome derivation', () => {
       error: '[API Error: empty response]',
     })
   })
+
+  test('a non-zero exit with no stdout records the stderr tail ahead of the reply notice', () => {
+    const stderr = 'Session not found locally for session abc\nRequest failed with status 404'
+    const replyNotice = 'reply did not match the worker contract:\n'
+    expect(
+      outcome({
+        exitCode: 1,
+        stdout: '',
+        output: '',
+        stderr,
+        replyFileError: replyNotice,
+        replyFilePresent: false,
+        contractStatus: null,
+      }),
+    ).toEqual({
+      status: 'failed',
+      failureKind: 'other',
+      error: `${stderr}\n${replyNotice.trimEnd()}`,
+    })
+  })
 })

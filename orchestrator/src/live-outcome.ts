@@ -122,6 +122,15 @@ function calculateOutcome(facts: LiveOutcomeFacts): CalculatedOutcome {
   }
 }
 
+function withVendorStderrTail(facts: LiveOutcomeFacts, error: string | null): string | null {
+  if (facts.exitCode === 0 || facts.stdout.trim()) return error
+  const prefix = facts.stderr.trim() ? errorTail(facts.stderr) : ''
+  if (!prefix) return error
+  if (!error) return prefix
+  if (error === prefix || error.startsWith(`${prefix}\n`) || error.startsWith(prefix)) return error
+  return `${prefix}\n${error}`
+}
+
 function deriveError(facts: LiveOutcomeFacts, calculated: CalculatedOutcome): string | null {
   const { inputs } = calculated
   const rules: Array<[boolean, () => string | null]> = [
@@ -166,11 +175,12 @@ function deriveError(facts: LiveOutcomeFacts, calculated: CalculatedOutcome): st
     ],
   ]
   const matched = rules.find(([applies]) => applies)
-  return matched
+  const error = matched
     ? matched[1]()
     : facts.exitCode === 0 && facts.output
       ? null
       : calculated.defaultError
+  return withVendorStderrTail(facts, error)
 }
 
 /** Derive the live process outcome inputs without applying the decision or any effects. */
