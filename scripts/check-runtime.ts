@@ -7,6 +7,22 @@ export const HUNG_SUITE_TIMEOUT_MS = 900_000
 export type RuntimeBudgetVerdict = 'within' | 'over-informational' | 'over-fatal'
 export type RuntimeMeasure = 'wall' | 'cpu'
 
+export function attributeCommandCpu(
+  commands: Array<{ name: string; userMs: number; systemMs: number }>,
+) {
+  const totalMs = commands.reduce((total, command) => total + command.userMs + command.systemMs, 0)
+  return commands
+    .map((command) => {
+      const cpuMs = command.userMs + command.systemMs
+      return {
+        name: command.name,
+        cpuMs,
+        share: totalMs === 0 ? 0 : cpuMs / totalMs,
+      }
+    })
+    .sort((left, right) => right.cpuMs - left.cpuMs || left.name.localeCompare(right.name))
+}
+
 export function decideRuntimeBudget({
   elapsedMs,
   budgetMs,

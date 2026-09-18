@@ -1,4 +1,5 @@
 import {
+  attributeCommandCpu,
   decideRuntimeBudget,
   HUNG_SUITE_TIMEOUT_MS,
   SUITE_CPU_BUDGET_MS,
@@ -13,9 +14,53 @@ const root = new URL('..', import.meta.url).pathname
 const checkStartedAt = performance.now()
 
 const activeChildren = new Set<Bun.Subprocess>()
-let suiteCpuMicroseconds = 0n
+const commandCpu: Array<{ name: string; userMs: number; systemMs: number }> = []
 let excludedGateWaitMs = 0
 let runtimeDeadline: ReturnType<typeof setTimeout>
+let summaryPrinted = false
+
+function describeCommand(argv: string[], cwd = root) {
+  const location = cwd.startsWith(root) ? cwd.slice(root.length).replace(/\/$/, '') || '.' : cwd
+  const command = argv.map((argument) => argument.replace(root, '')).join(' ')
+  return `${location}: ${command}`
+}
+
+function collectCpu(
+  name: string,
+  cpuTime: { user: number | bigint; system: number | bigint } | undefined,
+) {
+  if (!cpuTime) return
+  commandCpu.push({
+    name,
+    userMs: Number(cpuTime.user) / 1_000,
+    systemMs: Number(cpuTime.system) / 1_000,
+  })
+}
+
+function printSummary() {
+  if (summaryPrinted) return
+  summaryPrinted = true
+  const elapsedMs = performance.now() - checkStartedAt - excludedGateWaitMs
+  const attributed = attributeCommandCpu(commandCpu)
+  const cpuMs = attributed.reduce((total, command) => total + command.cpuMs, 0)
+  console.log(
+    `suite runtime: ${(elapsedMs / 1000).toFixed(2)}s / ${(SUITE_RUNTIME_BUDGET_MS / 1000).toFixed(0)}s budget`,
+  )
+  console.log(
+    `suite cpu: ${(cpuMs / 1000).toFixed(2)}s / ${(SUITE_CPU_BUDGET_MS / 1000).toFixed(0)}s budget`,
+  )
+  console.log('suite cpu by command:')
+  for (const command of attributed) {
+    console.log(
+      `  ${command.cpuMs.toFixed(2)}ms ${(command.share * 100).toFixed(2)}% ${command.name}`,
+    )
+  }
+  if (excludedGateWaitMs)
+    console.log(`gate admission wait excluded: ${(excludedGateWaitMs / 1000).toFixed(2)}s`)
+  return { elapsedMs, cpuMs }
+}
+
+process.on('exit', printSummary)
 
 async function expireRuntimeBudget() {
   console.error(
@@ -35,13 +80,10 @@ function armRuntimeDeadline() {
 
 armRuntimeDeadline()
 
-function track(child: Bun.Subprocess) {
+function track(child: Bun.Subprocess, name: string) {
   activeChildren.add(child)
   void child.exited.finally(() => {
-    const cpuTime = child.resourceUsage()?.cpuTime
-    if (cpuTime) {
-      suiteCpuMicroseconds += BigInt(cpuTime.user) + BigInt(cpuTime.system)
-    }
+    collectCpu(name, child.resourceUsage()?.cpuTime)
     activeChildren.delete(child)
   })
   return child
@@ -81,7 +123,10 @@ const legs: Leg[] = [
 ]
 
 async function inherit(argv: string[], cwd = root) {
-  const child = track(Bun.spawn(argv, { cwd, stdout: 'inherit', stderr: 'inherit' }))
+  const child = track(
+    Bun.spawn(argv, { cwd, stdout: 'inherit', stderr: 'inherit' }),
+    describeCommand(argv, cwd),
+  )
   return child.exited
 }
 
@@ -93,8 +138,10 @@ function qualityBaseArgument() {
     stdout: 'pipe',
     stderr: 'pipe',
   })
-  suiteCpuMicroseconds +=
-    BigInt(result.resourceUsage.cpuTime.user) + BigInt(result.resourceUsage.cpuTime.system)
+  collectCpu(
+    describeCommand(['git', 'merge-base', `origin/${landingBranch}`, 'HEAD']),
+    result.resourceUsage.cpuTime,
+  )
   if (result.exitCode !== 0) {
     const detail = result.stderr.toString().trim()
     throw new Error(
@@ -145,6 +192,7 @@ async function runLeg(leg: Leg): Promise<LegResult> {
   for (const command of leg.commands) {
     const child = track(
       Bun.spawn(command.argv, { cwd: command.cwd, stdout: 'pipe', stderr: 'pipe' }),
+      describeCommand(command.argv, command.cwd),
     )
     const readers = [
       pump(child.stdout, leg.name, tail, false),
@@ -236,19 +284,18 @@ for (const script of [
   'generate-recipe-schema.ts',
   '../orchestrator/scripts/check-pack-budget.ts',
 ]) {
+  const argv = [
+    'bun',
+    `${root}scripts/${script}`,
+    ...(script === 'generate-recipe-schema.ts' ? ['--check'] : []),
+  ]
   const child = track(
-    Bun.spawn(
-      [
-        'bun',
-        `${root}scripts/${script}`,
-        ...(script === 'generate-recipe-schema.ts' ? ['--check'] : []),
-      ],
-      {
-        cwd: root,
-        stdout: 'inherit',
-        stderr: 'inherit',
-      },
-    ),
+    Bun.spawn(argv, {
+      cwd: root,
+      stdout: 'inherit',
+      stderr: 'inherit',
+    }),
+    describeCommand(argv),
   )
   if ((await child.exited) !== 0) process.exit(1)
 }
@@ -267,17 +314,8 @@ if ((await inherit(['bun', `${root}scripts/quality/check-no-expect.ts`, qualityM
   process.exit(1)
 }
 
-const elapsedMs = performance.now() - checkStartedAt - excludedGateWaitMs
-const cpuMs = Number(suiteCpuMicroseconds) / 1_000
 clearTimeout(runtimeDeadline)
-console.log(
-  `suite runtime: ${(elapsedMs / 1000).toFixed(2)}s / ${(SUITE_RUNTIME_BUDGET_MS / 1000).toFixed(0)}s budget`,
-)
-console.log(
-  `suite cpu: ${(cpuMs / 1000).toFixed(2)}s / ${(SUITE_CPU_BUDGET_MS / 1000).toFixed(0)}s budget`,
-)
-if (excludedGateWaitMs)
-  console.log(`gate admission wait excluded: ${(excludedGateWaitMs / 1000).toFixed(2)}s`)
+const { elapsedMs, cpuMs } = printSummary()!
 const runtimeBudgetVerdict = decideRuntimeBudget({
   elapsedMs,
   budgetMs: SUITE_RUNTIME_BUDGET_MS,
