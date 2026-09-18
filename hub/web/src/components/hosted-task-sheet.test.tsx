@@ -102,6 +102,7 @@ test('hosted task detail renders all history without mutation controls', () => {
   expect(html).toContain('Status history')
   expect(html).toContain('Intervals')
   expect(html).toContain('No time was recorded for this task')
+  expect(html).toContain('100 agent tokens')
   expect(html).not.toContain('Save document')
   expect(html).not.toContain('Add comment')
   expect(html).not.toContain('Task status')

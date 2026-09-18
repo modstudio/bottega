@@ -6,6 +6,7 @@ import { SESv2Client, SendEmailCommand } from '@aws-sdk/client-sesv2'
 import { SQL } from 'bun'
 import { newRecordId } from '../../shared/record/schema.ts'
 import { hostedMeasures } from './hosted-measures.ts'
+import { hostedGatherReport } from './hosted-report-gather.ts'
 import { withHostedTenant } from './hosted-tasks.ts'
 import type {
   DeliveryCandidate,
@@ -115,12 +116,11 @@ export function hostedDeliveryRepository(databaseUrl: string): DeliveryRepositor
           : loaded.scope_kind === 'person'
             ? loaded.person_name || loaded.recipient_name || loaded.recipient_email
             : loaded.space_name
-      const measures = await hostedMeasures(
-        databaseUrl,
-        identity(value, loaded.recipient_user_id),
-        period,
-        scope,
-      )
+      const recipientIdentity = identity(value, loaded.recipient_user_id)
+      const [measures, report] = await Promise.all([
+        hostedMeasures(databaseUrl, recipientIdentity, period, scope),
+        hostedGatherReport(databaseUrl, recipientIdentity, period, scope),
+      ])
       return {
         recipientUserId: loaded.recipient_user_id,
         recipientName: loaded.recipient_name || loaded.recipient_email,
@@ -129,6 +129,7 @@ export function hostedDeliveryRepository(databaseUrl: string): DeliveryRepositor
         scope,
         scopeName,
         measures,
+        report,
       }
     },
     async recipientIsMember(value, recipientUserId) {

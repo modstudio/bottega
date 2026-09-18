@@ -1,5 +1,6 @@
 import { describe, expect, test } from 'bun:test'
 import type { Measures } from './measures.ts'
+import type { GatheredReport } from './report.ts'
 import {
   type DeliveryCandidate,
   type DeliveryRepository,
@@ -91,6 +92,46 @@ const emptyMeasures: Measures = {
 
 const measures = (work = true) => (work ? workMeasures : emptyMeasures)
 
+const gatheredReport = (): GatheredReport => {
+  const items = [
+    { key: 'DEV-785', title: 'Restore the formatted report', closed: true, agentTokens: 1_200 },
+    {
+      key: 'DEV-786',
+      title: 'Keep number spelling consistent',
+      closed: false,
+      agentTokens: 3_400_000,
+    },
+    { key: 'DEV-787', title: 'Exercise large totals', closed: false, agentTokens: 1_100_000_000 },
+    { key: 'DEV-788', title: 'Keep small totals plain', closed: false, agentTokens: 999 },
+  ].map((item) => ({
+    ...item,
+    project: 'workshop',
+    status: item.closed ? 'done' : 'active',
+    engaged: '1h 0m',
+    engagedMs: 3_600_000,
+  }))
+  return {
+    from: '2026-09-17T13:00:00.000Z',
+    to: '2026-09-18T13:00:00.000Z',
+    hours: 24,
+    items,
+    taskMs: 4 * 3_600_000,
+    engagedMs: 3_600_000,
+    projects: [
+      {
+        project: 'workshop',
+        taskMs: 4 * 3_600_000,
+        engagedMs: 3_600_000,
+        shipped: 1,
+        moving: 3,
+        agentTokens: items.reduce((sum, item) => sum + item.agentTokens, 0),
+        items,
+        untasked: null,
+      },
+    ],
+  }
+}
+
 const subscription = (patch: Partial<DeliverySubscription> = {}): DeliverySubscription => ({
   recipientUserId: '01990000-0000-7000-8000-000000000701',
   recipientName: 'Maya',
@@ -99,6 +140,7 @@ const subscription = (patch: Partial<DeliverySubscription> = {}): DeliverySubscr
   scope: { kind: 'space' },
   scopeName: 'Workshop',
   measures: measures(),
+  report: gatheredReport(),
   ...patch,
 })
 
@@ -145,15 +187,18 @@ describe('hosted report delivery', () => {
   test('a due subscription renders and sends once; the second pass sends nothing', async () => {
     const value = candidate('1')
     const fake = fakeRepository([value], async () => subscription())
-    const sent: string[] = []
+    const sent: { to: string; text: string; html: string }[] = []
     const mail = {
-      async send(input: { to: string }) {
-        sent.push(input.to)
+      async send(input: { to: string; text: string; html: string }) {
+        sent.push(input)
       },
     }
     await runReportDeliveryPass({ repository: fake.repository, mail, now })
     await runReportDeliveryPass({ repository: fake.repository, mail, now })
-    expect(sent).toEqual(['maya@example.test'])
+    expect(sent).toHaveLength(1)
+    expect(sent[0]!.to).toBe('maya@example.test')
+    expect(sent[0]!.html).toContain('<!doctype html>')
+    expect(sent[0]!.text).not.toBe(sent[0]!.html)
     expect(fake.rows).toEqual([{ subscription: '1', status: 'sent', reason: undefined }])
   })
 
@@ -233,6 +278,16 @@ describe('hosted report delivery', () => {
     expect(rendered.text).toContain('0.8 hours of silence was uncounted.')
     expect(rendered.text).toContain('2 agent-hours had unknown attribution.')
     expect(rendered.text).toContain('Median cycle time was 5 hours across 2 items.')
+    expect(rendered.text).toContain('BY PROJECT')
+    expect(rendered.text).toContain('DEV-785 · 1h 0m engaged · 1.2K agent tokens')
+    expect(rendered.text).toContain('Restore the formatted report')
+    expect(rendered.text).toContain('3.4M agent tokens')
+    expect(rendered.text).toContain('1.1B agent tokens')
+    expect(rendered.text).toContain('999 agent tokens')
+    expect(rendered.text).not.toContain('agent sentence')
+    expect(rendered.html).toContain('Restore the formatted report')
+    expect(rendered.html).toContain('This measure is not additive.')
+    expect(rendered.html).toContain('Silences longer than ten minutes are not counted.')
     expect(rendered.text.toLowerCase()).not.toMatch(/ranking|composite|lines per|spent|worked/)
   })
 

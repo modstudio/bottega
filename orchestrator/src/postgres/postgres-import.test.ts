@@ -331,6 +331,21 @@ realPostgres('project import against copied live SQLite data', () => {
           WHERE r.record_id IS NOT NULL`,
       )
       .get()!.count
+    // The copy carries real started_by ids, whose users exist in the live record
+    // and not in this fresh database, so the run foreign key would refuse them.
+    // Stand-ins with those ids make the copy's attribution replayable here.
+    for (const row of source
+      .query<{ id: string }, []>(
+        'SELECT DISTINCT started_by_user_id AS id FROM run WHERE started_by_user_id IS NOT NULL',
+      )
+      .all()) {
+      await sql`
+        INSERT INTO "user" (id,name,email,email_verified,created_at,updated_at)
+        VALUES (${row.id}::uuid, 'Live copy stand-in', ${`stand-in-${row.id}@example.test`},
+          false, now(), now())
+        ON CONFLICT (id) DO NOTHING
+      `
+    }
     const synced = await syncRecord({
       recordUrl: actorUrl!,
       local: source,

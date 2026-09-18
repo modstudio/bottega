@@ -1,6 +1,8 @@
 import { hostname } from 'node:os'
+import { compactTokens } from '../../shared/compact-number.ts'
 import { human } from '../../shared/interval.ts'
 import { db, nowIso, type Project, writeTransaction } from './db.ts'
+import type { Measures } from './measures.ts'
 import { summarize } from './orch.ts'
 import { projectColor } from './projects.ts'
 import { completedInWindow, reportEngagedMs, tasksInWindow } from './query.ts'
@@ -16,9 +18,34 @@ export type Item = {
   closed: boolean
   engaged: string
   engagedMs: number
-  claudeTokens: number
+  agentTokens: number
   /** One business-readable sentence, written by the summariser. */
   sentence?: string
+}
+
+export type GatheredReport = {
+  from: string
+  to: string
+  hours: number
+  items: Item[]
+  taskMs: number
+  engagedMs: number
+  projects: {
+    project: string
+    taskMs: number
+    engagedMs: number
+    shipped: number
+    moving: number
+    agentTokens: number
+    items: Item[]
+    untasked: Item | null
+  }[]
+}
+
+export type ReportPresentation = {
+  scopeName: string
+  windowLine: string
+  measures: Measures
 }
 
 /**
@@ -36,7 +63,7 @@ function briefFor(briefs: Brief[], key: string | null, title: string | null): Br
   return briefs.find((b) => b.match.some((m) => hay.includes(m.toLowerCase()))) ?? null
 }
 
-export function gather(r: Report, hours = r.windowHours) {
+export function gather(r: Report, hours = r.windowHours): GatheredReport {
   const from = new Date(Date.now() - hours * 3600_000).toISOString()
   const to = nowIso()
   const closed = new Set(completedInWindow(from, to).map((c) => c.key))
@@ -67,7 +94,7 @@ export function gather(r: Report, hours = r.windowHours) {
       ),
       engaged: human(t.engagedMs),
       engagedMs: t.engagedMs,
-      claudeTokens: t.claudeTokens,
+      agentTokens: t.vendors.reduce((sum, vendor) => sum + vendor.tokens, 0),
     }))
     .sort((a, b) => b.engagedMs - a.engagedMs)
 
@@ -93,7 +120,7 @@ export function gather(r: Report, hours = r.windowHours) {
         ),
         shipped: tasks.filter((i) => i.closed).length,
         moving: tasks.filter((i) => !i.closed).length,
-        claudeTokens: mine.reduce((s, i) => s + i.claudeTokens, 0),
+        agentTokens: mine.reduce((s, i) => s + i.agentTokens, 0),
         items: tasks,
         untasked,
       }
@@ -248,7 +275,11 @@ const SANS = "-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-s
 
 const hours1 = (ms: number) => (ms / 3600_000).toFixed(1)
 
-export function renderHtml(g: ReturnType<typeof gather>, sentences: Map<string, string>) {
+export function renderHtml(
+  g: GatheredReport,
+  sentences: Map<string, string>,
+  presentation?: ReportPresentation,
+) {
   const day = new Date(g.to).toLocaleDateString('en-US', {
     weekday: 'long',
     month: 'long',
@@ -258,6 +289,7 @@ export function renderHtml(g: ReturnType<typeof gather>, sentences: Map<string, 
   const tasks = g.items.filter((i) => i.key)
   const shipped = tasks.filter((i) => i.closed).length
   const moving = tasks.length - shipped
+  const measureLines = presentation ? reportMeasureLines(presentation) : []
 
   const kpi = (value: string, label: string) => `
     <td class="kpi" style="padding:0 16px 0 0;vertical-align:top">
@@ -330,6 +362,7 @@ export function renderHtml(g: ReturnType<typeof gather>, sentences: Map<string, 
       ${s ? `<div style="font-family:${SANS};font-weight:400;font-size:14px;line-height:1.6;color:${MUTED};padding-top:5px">${esc(s)}</div>` : ''}
       <div style="font-family:${SANS};font-weight:400;font-size:12px;line-height:1.4;color:${FAINT};padding-top:5px">
         ${esc(i.key ?? '')} &middot; ${esc(i.engaged)} engaged
+        &middot; ${esc(compactTokens(i.agentTokens))} agent tokens
         ${i.closed ? `&middot; <span style="color:#15703C">shipped</span>` : ''}</div>
     </td></tr>`
   }
@@ -408,12 +441,15 @@ export function renderHtml(g: ReturnType<typeof gather>, sentences: Map<string, 
     <tr><td style="font-family:${SANS};font-weight:400;font-size:13px;line-height:1.5;color:${FAINT};padding-top:3px">
       the last ${g.hours} hours across ${g.projects.length}
       project${g.projects.length === 1 ? '' : 's'}</td></tr>
+    ${presentation ? `<tr><td style="font-family:${SANS};font-weight:400;font-size:12px;line-height:1.5;color:${MUTED};padding-top:5px">${esc(presentation.windowLine)}</td></tr>` : ''}
 
     <tr><td style="padding:20px 0 4px">
       <table role="presentation" cellpadding="0" cellspacing="0" border="0">
         <tr>${kpi(hours1(g.taskMs) + 'h', 'task hours')}${kpi(hours1(g.engagedMs) + 'h', 'engaged')}${kpi(String(shipped), 'shipped')}${kpi(String(moving), 'open')}</tr>
       </table>
     </td></tr>
+
+    ${measureLines.length ? `<tr><td style="padding:18px 0 0"><div style="font-family:${SANS};font-weight:600;font-size:10px;line-height:1.4;letter-spacing:.1em;text-transform:uppercase;color:${FAINT};padding-bottom:4px">measures</div>${measureLines.map((line) => `<div style="font-family:${SANS};font-weight:400;font-size:13px;line-height:1.6;color:${MUTED}">${esc(line)}</div>`).join('')}</td></tr>` : ''}
 
     <tr><td style="padding:18px 0 0">
       <div style="font-family:${SANS};font-weight:600;font-size:10px;line-height:1.4;letter-spacing:.1em;text-transform:uppercase;
@@ -439,14 +475,65 @@ export function renderHtml(g: ReturnType<typeof gather>, sentences: Map<string, 
   </td></tr></table></div></body></html>`
 }
 
-export function renderText(g: ReturnType<typeof gather>, sentences: Map<string, string>) {
+const measureHours = (ms: number) => {
+  const value = ms / 3_600_000
+  return `${Number.isInteger(value) ? value : value.toFixed(1)} ${value === 1 ? 'hour' : 'hours'}`
+}
+
+const measureMoney = (value: number) => `$${value.toFixed(2)}`
+
+function reportMeasureLines(presentation: ReportPresentation) {
+  const { measures, scopeName } = presentation
+  const lines: string[] = []
+  if (measures.scope === 'person') {
+    lines.push(
+      `Recorded work for ${scopeName} was running for ${measureHours(measures.hoursRunning.unionMs)}.`,
+      `${scopeName} started ${measureHours(measures.agentHours.sumMs).replace(' hour', ' agent-hour')}.`,
+      `${scopeName} was in session for ${measureHours(measures.sessionTime.unionThenSumMs)}.`,
+    )
+  } else {
+    lines.push(
+      `Work was running for ${measureHours(measures.hoursRunning.unionMs)}. This measure is not additive.`,
+      `Agents ran for ${measureHours(measures.agentHours.sumMs).replace(' hour', ' agent-hour')}.`,
+      `People were in session for ${measureHours(measures.sessionTime.unionThenSumMs)}.`,
+    )
+  }
+  lines.push(
+    measures.sessionTime.silenceAllowanceSentence,
+    `${measureHours(measures.sessionTime.uncountedSilenceMs)} of silence was uncounted.`,
+  )
+  if (measures.agentHours.unknownShare)
+    lines.push(
+      `${measureHours(measures.agentHours.unknownShare.sumMs).replace(' hour', ' agent-hour')} had unknown attribution.`,
+    )
+  if (measures.sessionTime.unknownUser)
+    lines.push(
+      `${measureHours(measures.sessionTime.unknownUser.unionThenSumMs)} of session time had unknown attribution.`,
+    )
+  lines.push(`Agent runs cost ${measureMoney(measures.cost.vendorCostUsd)}.`)
+  if ('shipped' in measures) {
+    lines.push(
+      `${measures.shipped.count} ${measures.shipped.count === 1 ? 'item landed' : 'items landed'}.`,
+      measures.cycleTime
+        ? `Median cycle time was ${measureHours(measures.cycleTime.medianMs)} across ${measures.cycleTime.n} ${measures.cycleTime.n === 1 ? 'item' : 'items'}.`
+        : 'No landed item had enough recorded activity to calculate cycle time.',
+    )
+  }
+  return lines
+}
+
+export function renderText(
+  g: GatheredReport,
+  sentences: Map<string, string>,
+  presentation?: ReportPresentation,
+) {
   // The plain part mirrors the HTML's shape, because a reader who gets this one
   // should not get a different report.
   const line = (i: Item) =>
     [
       `  ${i.closed ? '+' : ' '} ${i.title || i.key}`,
       ...(sentences.get(i.key!) ? [`      ${sentences.get(i.key!)}`] : []),
-      `      ${i.key} · ${i.engaged} engaged`,
+      `      ${i.key} · ${i.engaged} engaged · ${compactTokens(i.agentTokens)} agent tokens`,
     ].join('\n')
   const tasks = g.items.filter((i) => i.key)
   const shipped = tasks.filter((i) => i.closed).length
@@ -454,6 +541,7 @@ export function renderText(g: ReturnType<typeof gather>, sentences: Map<string, 
     `${hours1(g.taskMs)}h of task work in ${hours1(g.engagedMs)}h engaged · ` +
       `${shipped} shipped · ${tasks.length - shipped} in progress`,
     `the last ${g.hours} hours across ${g.projects.length} projects`,
+    ...(presentation ? [presentation.windowLine, '', ...reportMeasureLines(presentation)] : []),
     '',
     'BY PROJECT   (task hours add up; engaged includes work carrying no ticket)',
     `  ${'PROJECT'.padEnd(11)} ${'TASK'.padStart(6)} ${'ENGAGED'.padStart(8)}`,
