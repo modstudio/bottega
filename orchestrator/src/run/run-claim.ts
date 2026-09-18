@@ -62,6 +62,7 @@ import { createIsolatedWorkerDirectory, prepareWorkerMcpConfig } from '../worktr
 import { toolFor } from '../worktree/worktree-preflight.ts'
 import { type Changes, removeFor } from '../worktree/worktree-remove.ts'
 import type { Worktree } from '../worktree/worktree-types.ts'
+import { assertBranchHasNoAliveOwner } from './branch-owner-guard.ts'
 import {
   type ResumeCreationLifecycle,
   type ResumeTreePlan,
@@ -358,6 +359,34 @@ export async function claimRun(input: ClaimInput): Promise<ClaimResult> {
   const launchKey = inheritedLaunch?.launch_key ?? attributedKey
   const launchBase = inheritedLaunch?.launch_base ?? opts.base ?? null
   const noFailover = inheritedLaunch ? !!inheritedLaunch.no_failover : !!opts.noFailover
+  const worktreeTool = repoJob ? toolFor(callerCwd) : null
+  const resumePlan = opts.resume?.treePlan
+  let resolvedTaskBranch: TaskBranchCandidate | null = null
+  const attachableTaskKey = taskBranchKey(launchKey, resumePlan)
+  if (
+    shouldResolveTaskBranch({
+      repoJob,
+      writesJob,
+      hasWorktree: Boolean(opts.resume?.worktree),
+      taskKey: attachableTaskKey,
+      isResume: Boolean(opts.resume),
+      hasExplicitBase: opts.base !== undefined,
+    })
+  ) {
+    resolvedTaskBranch = resolveTaskBranch(callerCwd, attachableTaskKey!)
+    if (resolvedTaskBranch && !resolvedTaskBranch.worktree && worktreeTool?.create) {
+      // A command-backed declaration cannot attach an existing ref; it retains
+      // the prior new-branch behaviour instead.
+      resolvedTaskBranch = null
+    }
+  }
+  const existingBranch = resumePlan?.branch ?? resolvedTaskBranch?.branch
+  assertBranchHasNoAliveOwner({
+    branch: existingBranch,
+    conversationRootId: resumePlan?.rootId ?? null,
+    projectId: runProjectId,
+    projectName: runProjectName,
+  })
   // A repository row has no artifact address until creation returns one.
   const claimedCwd = repoJob ? null : callerCwd
   const claimedBranch = repoJob ? null : branchOf(callerCwd)
@@ -590,31 +619,9 @@ export async function claimRun(input: ClaimInput): Promise<ClaimResult> {
    */
   let cwd = callerCwd
   try {
-    const worktreeTool = repoJob ? toolFor(callerCwd) : null
-    const resumePlan = opts.resume?.treePlan
-    let resolvedTaskBranch: TaskBranchCandidate | null = null
-    const attachableTaskKey = taskBranchKey(launchKey, resumePlan)
-    if (
-      shouldResolveTaskBranch({
-        repoJob,
-        writesJob,
-        hasWorktree: Boolean(worktree),
-        taskKey: attachableTaskKey,
-        isResume: Boolean(opts.resume),
-        hasExplicitBase: opts.base !== undefined,
-      })
-    ) {
-      resolvedTaskBranch = resolveTaskBranch(callerCwd, attachableTaskKey!)
-      if (resolvedTaskBranch?.worktree) {
-        worktree = resolvedTaskBranch.worktree
-        taskBranchAttachment = true
-      } else if (resolvedTaskBranch && worktreeTool?.create) {
-        // A command-backed declaration owns Git creation and provisioning as
-        // one operation. Until the register has a declared attach operation,
-        // it cannot be handed an existing ref as though it created new branches
-        // that way. Preserve the former new-branch behavior for these projects.
-        resolvedTaskBranch = null
-      }
+    if (resolvedTaskBranch?.worktree) {
+      worktree = resolvedTaskBranch.worktree
+      taskBranchAttachment = true
     }
     const creating = repoJob && !worktree
     if (forbidsRepo) {
@@ -634,7 +641,6 @@ export async function claimRun(input: ClaimInput): Promise<ClaimResult> {
       if (creating) {
         const repoRoot = repoRootOf(callerCwd)
         if (!repoRoot) throw new Error(`not a git repository: ${callerCwd}`)
-        prepareResumeBranchIfNeeded(repoRoot, resumePlan)
         const resumeCreation = resumeCreationOptions(resumePlan, resumeCreationLifecycle(tool))
         const creationTool = resumeCreationTool(resumeCreation.useCreateTool, tool)
         const recordWorktree = (created: Worktree) => {
@@ -695,6 +701,13 @@ export async function claimRun(input: ClaimInput): Promise<ClaimResult> {
             }),
           )
         worktree = withWorktreeCreateLock(repoRoot, () => {
+          assertBranchHasNoAliveOwner({
+            branch: existingBranch,
+            conversationRootId: resumePlan?.rootId ?? claim.id,
+            projectId: runProjectId,
+            projectName: runProjectName,
+          })
+          prepareResumeBranchIfNeeded(repoRoot, resumePlan)
           // The PROJECT owns its worktrees. A bare `git worktree add` here would
           // produce a directory with no .env, no vendor and no database, in which
           // every test the worker runs is meaningless and green. The isolation
@@ -847,27 +860,12 @@ export async function claimRun(input: ClaimInput): Promise<ClaimResult> {
             { session: sessionId(), what: `attach task branch for run ${claim.id}` },
             () =>
               withWorktreeCreateLock(inheritedWorktree.repoRoot, () => {
-                const owner = db()
-                  .query(
-                    `SELECT id FROM run
-                    WHERE branch=? AND id<>? AND status IN ('running','asking')
-                      AND (project_id=? OR (project_id IS NULL AND repo=?))
-                    LIMIT 1`,
-                  )
-                  .get(
-                    inheritedWorktree.branch,
-                    claim.id,
-                    resolvedTaskBranch!.projectId,
-                    resolvedTaskBranch!.projectName,
-                  ) as { id: number } | null
-                if (owner) {
-                  throw new Error(
-                    `refusing to attach run ${claim.id} to ${inheritedWorktree.path}: ` +
-                      `run ${owner.id} is still using the task branch\n` +
-                      `invariant: Two concurrent runs never share one task branch.\n` +
-                      `cleared by: wait for run ${owner.id} to finish, then repeat this dispatch`,
-                  )
-                }
+                assertBranchHasNoAliveOwner({
+                  branch: inheritedWorktree.branch,
+                  conversationRootId: claim.id,
+                  projectId: resolvedTaskBranch!.projectId,
+                  projectName: resolvedTaskBranch!.projectName,
+                })
                 if (!worktreeExists(inheritedWorktree.path)) {
                   throw new Error(
                     `refusing to attach run ${claim.id}: retained worktree ` +

@@ -364,6 +364,11 @@ export const modules: ArchitectureModule[] = [
     './change-identity.ts',
   ]),
   module('orchestrator/src/run/run-alive.ts', []),
+  module('orchestrator/src/run/branch-conversation-owner.ts', []),
+  module('orchestrator/src/run/branch-owner-guard.ts', [
+    '../database/db.ts',
+    './branch-conversation-owner.ts',
+  ]),
   module('orchestrator/src/run/run-claim.ts', [
     '../agent/agents.ts',
     '../contract/codex-schema.ts',
@@ -387,6 +392,7 @@ export const modules: ArchitectureModule[] = [
     '../resources/resource-ownership.ts',
     '../review/review-target.ts',
     './run-artifacts.ts',
+    './branch-owner-guard.ts',
     './run-process.ts',
     './resume-tree.ts',
     '../sandbox/sandbox.ts',
