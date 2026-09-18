@@ -118,6 +118,7 @@ import { claimRun } from './run-claim.ts'
 import { closeRun } from './run-close.ts'
 import { acquireRunLease } from './run-lease.ts'
 import { runLive } from './run-live.ts'
+import { decideMcpAttachment, shouldDeferCwdMcpPreflight } from './run-mcp-attachment.ts'
 import { bindSignals, childEnv, sha } from './run-process.ts'
 import { finishRun } from './run-terminal.ts'
 import type { RunResult } from './run-types.ts'
@@ -631,35 +632,32 @@ export async function run(opts: {
     prompt += `\n\n${suffix}`
   }
 
-  /**
-   * Probe after routing: a red grok doctor is evidence about grok, not about
-   * Codex. Agents that discover MCP from cwd must be probed later, against the
-   * worker tree they will actually inspect; all others retain the pre-row path.
-   *
-   * A reserved placeholder was claimed by detach() after the same check; if
-   * routing here disagrees and grok cannot attach, delete that placeholder
-   * rather than converting a non-event into a failed row.
-   */
   const mcpMode = requestedMcpMode(mcpRequest)
-  const deferredCwdMcpPreflight = Boolean(
-    mcpMode && projectAt(callerCwd) && (forbidsRepo || (repoJob && a.caps.discoversMcpFromCwd)),
-  )
+  const callerCwdHasProject = Boolean(projectAt(callerCwd))
+  const deferredCwdMcpPreflight = shouldDeferCwdMcpPreflight({
+    mcpMode,
+    callerCwdHasProject,
+    forbidsRepo,
+    repoJob,
+    discoversMcpFromCwd: a.caps.discoversMcpFromCwd,
+  })
   let mcpConnection = deferredCwdMcpPreflight
     ? null
     : probeRequestedMcp(mcpRequest, name, callerCwd)
-  const mcpWhy = mcpConnection ? mcpAttachRefusal(mcpConnection) : null
-  if (mcpWhy && mcpMode === 'require') {
+  const mcpAttachment = decideMcpAttachment({
+    connection: mcpConnection,
+    mcpMode,
+    writesJob,
+    agentHasMcp: a.caps.mcp,
+  })
+  if (mcpAttachment.refusalReason) {
+    // A routing mismatch must not convert the reserved placeholder into a failed row.
     if (opts.reserveId) db().query('DELETE FROM run WHERE id=?').run(opts.reserveId)
-    throw new Error(mcpWhy)
+    throw new Error(mcpAttachment.refusalReason)
   }
 
-  /** Whether the requested product is a diff, rather than review findings. */
-  let usingMcp = (Boolean(mcpMode) || writesJob) && a.caps.mcp && mcpConnection?.connected !== false
-  /**
-   * Every repository job gets writable scratch space. `writesJob` still means
-   * its requested product is a diff; `repoJob` means it needs an isolated tree
-   * in which it may test a hypothesis.
-   */
+  let usingMcp = mcpAttachment.usingMcp
+  // Every repository job gets writable scratch; only `writesJob` requests a diff.
   const writes = repoJob
 
   // Minted before the spawn when the agent lets us choose, so the resume handle
