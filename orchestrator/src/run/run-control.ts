@@ -209,8 +209,7 @@ export function continuationTurn(
   }
 }
 
-/** Stored launch columns a resumed turn inherits from its root. */
-export type StoredResumeLaunch = {
+type StoredResumeLaunch = {
   launch_seed: string | null
   launch_key: string | null
   launch_base: string | null
@@ -220,8 +219,7 @@ export type StoredResumeLaunch = {
   lens: string | null
 }
 
-/** Detach options a resumed turn copies from the root's launch row. */
-export type ResumeLaunchOptions = {
+type ResumeLaunchOptions = {
   seed: string | undefined
   key: string | undefined
   base: string | undefined
@@ -448,9 +446,9 @@ export async function continueRun(
       )
       .all(id, id) as ChainTurn[],
   )
-  const launch = db()
-    .query('SELECT launch_cwd FROM run WHERE id=?')
-    .get(id) as { launch_cwd: string | null }
+  const launch = db().query('SELECT launch_cwd FROM run WHERE id=?').get(id) as {
+    launch_cwd: string | null
+  }
   const inheritedLaunch = resumeLaunchForRoot(id)
   const {
     project,
