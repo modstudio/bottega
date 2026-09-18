@@ -37,6 +37,7 @@ import {
 import { type Job, jobIdleKillMs } from '../jobs/jobs.ts'
 import { deriveLiveOutcome } from '../live-outcome.ts'
 import { receiptWorkerMessages, unreadWorkerMessages } from '../mailbox/mailbox.ts'
+import { deferredWorkerMessageNotice } from '../mailbox/mailbox-notice.ts'
 import { decideOutcome } from '../outcome.ts'
 import { processStartTime } from '../project/project-lock.ts'
 import type { CodexMcpServer } from '../sandbox/codex-mcp-scope.ts'
@@ -649,7 +650,13 @@ export async function runLive(input: LiveInput): Promise<LiveResult> {
      */
     const undelivered = unreadWorkerMessages(claim.id)
     if (undelivered.length) {
-      const header = `undelivered worker messages: ${undelivered.map((message) => message.id).join(', ')}`
+      const remedy = deferredWorkerMessageNotice(undelivered[0]!.root_run_id, t.canInjectMidTurn)
+      const header = [
+        `undelivered worker messages: ${undelivered.map((message) => message.id).join(', ')}`,
+        remedy,
+      ]
+        .filter(Boolean)
+        .join('\n')
       mcpSetupHeader = mcpSetupHeader ? `${mcpSetupHeader}\n${header}` : header
     }
     if (writesJob && output) {

@@ -7,7 +7,9 @@ import {
   TELL_WORKING_FORMS,
 } from '../cli/args.ts'
 import { formatPeek, peekRun } from '../events.ts'
+import { transportFor } from '../transport/transport.ts'
 import { tellRun } from './mailbox.ts'
+import { deferredWorkerMessageNotice } from './mailbox-notice.ts'
 
 export async function tellCommand(
   id: number,
@@ -29,5 +31,10 @@ export async function tellCommand(
   presentation.log(
     `queued message ${message.id} for run ${message.root_run_id} (turn ${message.run_id}); it has not been read`,
   )
+  const notice = deferredWorkerMessageNotice(
+    message.root_run_id,
+    transportFor(message.transport).canInjectMidTurn,
+  )
+  if (notice) presentation.log(notice)
   if (ping) presentation.log(formatPeek(peekRun(message.run_id)))
 }

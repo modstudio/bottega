@@ -21,6 +21,7 @@ export function addRun(o: {
   repo?: string
   inputTree?: string
   headCommit?: string
+  transport?: 'cli' | 'acp'
   promptBytes?: number
   promptSha?: string
   specSha?: string
@@ -30,8 +31,8 @@ export function addRun(o: {
       .query(
         `INSERT INTO run (record_id, started_at, agent, job, prompt_sha, spec_sha, prompt_bytes, prompt_head,
                       status, latency_ms, probe, failure_kind, parent_run_id, turn, session_id, stack,
-                      model, lens, repo, input_tree, head_commit)
-     VALUES (?,?,?,?,?,?,?,'head',?,?,?,?,?,?,?,?,?,?,?,?,?) RETURNING id`,
+                      model, lens, repo, input_tree, head_commit, transport)
+     VALUES (?,?,?,?,?,?,?,'head',?,?,?,?,?,?,?,?,?,?,?,?,?,?) RETURNING id`,
       )
       .get(
         newRecordId(),
@@ -54,6 +55,7 @@ export function addRun(o: {
         o.repo ?? null,
         o.inputTree ?? null,
         o.headCommit ?? null,
+        o.transport ?? AGENTS[o.agent]?.defaultTransport ?? 'cli',
       ) as { id: number }
   ).id
 }
