@@ -170,6 +170,12 @@ export const modules: ArchitectureModule[] = [
     '../database/db.ts',
   ]),
   module('orchestrator/src/mcp/mcp-doc-write.ts', []),
+  module('orchestrator/src/mcp/mcp-prompts.ts', [
+    '@modelcontextprotocol/sdk/server/mcp.js',
+    'zod',
+    '../project/projects.ts',
+    '../workflow/workflows.ts',
+  ]),
   module('orchestrator/src/monitor/monitor.ts', [
     'node:fs',
     'node:path',
