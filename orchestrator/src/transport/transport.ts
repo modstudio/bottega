@@ -258,17 +258,22 @@ export async function withTransportDeadline<T>(opts: {
   const schedule = opts.schedule ?? setTimeout
   const unschedule = opts.unschedule ?? clearTimeout
   let timer: ReturnType<typeof setTimeout> | null = null
+  let deadline: TransportOperationTimeout | null = null
   const timeout = new Promise<never>((_resolve, reject) => {
     timer = schedule(() => {
+      deadline = new TransportOperationTimeout(opts.operationName, opts.timeoutMs)
       void Promise.resolve(opts.onTimeout())
         .catch(() => {
           /* the timeout remains the operation's terminal fact */
         })
-        .finally(() => reject(new TransportOperationTimeout(opts.operationName, opts.timeoutMs)))
+        .finally(() => reject(deadline))
     }, opts.timeoutMs)
   })
   try {
     return await Promise.race([opts.operation, timeout])
+  } catch (error) {
+    if (deadline) throw deadline
+    throw error
   } finally {
     if (timer !== null) unschedule(timer)
   }

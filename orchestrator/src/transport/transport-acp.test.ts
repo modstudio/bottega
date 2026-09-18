@@ -85,6 +85,27 @@ describe('ACP startup and partial-output bounds', () => {
     },
   )
 
+  test('termination cannot mask the stage-named refusal with its induced connection error', async () => {
+    let rejectRequest: (error: Error) => void = () => {}
+    const request = new Promise<never>((_resolve, reject) => {
+      rejectRequest = reject
+    })
+
+    await expect(
+      awaitAcpHandshake({
+        request,
+        stage: 'initialize',
+        harness: 'goose',
+        pid: 4321,
+        terminate: async () => rejectRequest(new Error('ACP connection closed')),
+        schedule: immediateTimer,
+        unschedule: () => {},
+      }),
+    ).rejects.toThrow(
+      'ACP handshake refusal: initialize timed out after 60000ms for goose harness (pid 4321)',
+    )
+  })
+
   test('an update is persisted before a pending prompt response can settle', () => {
     const root = mkdtempSync(join(tmpdir(), 'orch-acp-partial-'))
     const outPath = join(root, 'partial.out')
