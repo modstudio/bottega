@@ -21,6 +21,41 @@ export type RecordRecipeResource = (resource: {
 }) => void
 export type ClaimRecipePort = () => number
 
+export function worktreeCreateVariables(
+  branchTemplate: string | undefined,
+  existingBranch: string | undefined,
+  runId: number,
+  key: string | undefined,
+  seed: string | undefined,
+  base: string,
+) {
+  const branch =
+    existingBranch ??
+    (branchTemplate ?? 'orch/{id}').replace(/\{id\}/g, String(runId)).replace(/\{key\}/g, key ?? '')
+  return {
+    branch,
+    name: `orch-${runId}`,
+    base,
+    seed: seed ?? '',
+    key: key ?? '',
+    path: '',
+  }
+}
+
+export function leftoverRemedy(
+  removeTemplate: string | undefined,
+  vars: Record<string, string>,
+  path: string,
+): string {
+  const remove = removeTemplate
+    ? fillTool(removeTemplate, { ...vars, path })
+    : '(project declares no remove command)'
+  return (
+    `\nThe project created branch ${vars.branch} and may have provisioned resources.\n` +
+    `Remove them when you have inspected the tree:\n  ${remove}`
+  )
+}
+
 function runRecordedRecipe(
   worktree: Worktree,
   recipe: Recipe,
@@ -243,15 +278,12 @@ function createWithToolUnlocked(
     )
   }
 
-  const branch =
-    existingBranch ??
-    (tool.branch ?? 'orch/{id}').replace(/\{id\}/g, String(runId)).replace(/\{key\}/g, key ?? '')
-  const name = `orch-${runId}`
   // A base is a commit, not a recipe argument. {base} is passed when the
   // template has a slot; without one the branch is still cut at that commit
   // after the tool returns.
   const base = baseRef ? resolveBase(repoRoot, baseRef) : git(['rev-parse', 'HEAD'], repoRoot)
-  const vars = { branch, name, base, seed: seed ?? '', key: key ?? '', path: '' }
+  const vars = worktreeCreateVariables(tool.branch, existingBranch, runId, key, seed, base)
+  const { branch, name } = vars
   const r = runCreateTool(tool.create, vars, repoRoot, targetGitEnvironment(repoRoot))
   if (!r.ok) throw new Error(`the project's worktree tool failed:\n${r.out.slice(-1500)}`)
 
@@ -262,15 +294,7 @@ function createWithToolUnlocked(
    * teardown has lost work. Every such error therefore carries the branch and
    * the project's ready-to-paste remove command.
    */
-  const leftover = (path: string) => {
-    const remove = tool.remove
-      ? fillTool(tool.remove, { ...vars, path })
-      : '(project declares no remove command)'
-    return (
-      `\nThe project created branch ${branch} and may have provisioned resources.\n` +
-      `Remove them when you have inspected the tree:\n  ${remove}`
-    )
-  }
+  const leftover = (path: string) => leftoverRemedy(tool.remove, vars, path)
 
   /**
    * WHERE IT PUT THE WORKTREE is read from the tool's LAST LINE, not hunted for.
