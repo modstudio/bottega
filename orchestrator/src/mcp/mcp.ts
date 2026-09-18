@@ -46,6 +46,7 @@ import { projectAt, projectByName, projects } from '../project/projects.ts'
 import { getReview, listReviews } from '../review/review.ts'
 import { composeWorkflow, getWorkflowStep, listWorkflows } from '../workflow/workflows.ts'
 import { decideMcpDocWrite } from './mcp-doc-write.ts'
+import { registerWorkflowPrompts } from './mcp-prompts.ts'
 
 const text = (value: unknown) => ({
   content: [
@@ -395,6 +396,8 @@ export function createDocsMcpServer(): McpServer {
       db()
       return handler(...args)
     })) as typeof server.registerTool
+
+  registerWorkflowPrompts(server)
 
   server.registerTool(
     'list_workflows',

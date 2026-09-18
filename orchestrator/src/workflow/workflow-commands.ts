@@ -13,6 +13,7 @@ import {
   showStepCatalogue,
   stepCatalogueVersions,
 } from './step-catalogue.ts'
+import { renderWorkflowComposition } from './workflow-render.ts'
 import { parseWorkflowTree, planWorkflowHydration } from './workflow-tree.ts'
 import { applyWorkflowTreePlan, collectWorkflowTree } from './workflow-tree-files.ts'
 import { importWorkflowTree, productionWorkflowTree } from './workflow-tree-store.ts'
@@ -188,22 +189,6 @@ function composeCommand(
   const project = flagValue(argv, 'project')
   if (!project) throw new Error('--project is required')
   const result = composeWorkflow(argv[2]!, project, flagValue(argv, 'mode'), workflowArgs(argv))
-  print(
-    result,
-    json
-      ? undefined
-      : [
-          `${result.workflow.title} — ${result.mode?.title ?? 'choose a mode'}`,
-          ...(result.needs.mode ?? []).map((mode) => `${mode.slug}: ${mode.entry}`),
-          ...(result.needs.arguments
-            ? [`missing required arguments: ${result.needs.arguments.join(', ')}`]
-            : []),
-          `facts: ${JSON.stringify(result.facts)}`,
-          ...result.steps.map(
-            (step) =>
-              `${step.n}. ${step.slug} — ${step.title} [job=${step.job ?? '-'} autonomy=${step.autonomy} floor=${step.floor.join('|')} needs=${step.needs.join('|') || '-'}]`,
-          ),
-        ].join('\n'),
-  )
+  print(result, json ? undefined : renderWorkflowComposition(result))
   if (Object.keys(result.needs).length) presentation.setExitCode(2)
 }
