@@ -62,15 +62,20 @@ After cloning, configure the tracked hooks with `git config core.hooksPath
 counterpart is `orchestrator/hooks/no-attribution.py`.
 
 Landing goes through the private `origin` by pull request. Push the branch,
-open the pull request, run its checks and merge on GitHub. Trunk moves remotely;
-the local checkout follows it. Never fast-forward local trunk and call that
-landed, and do not invent a local admission queue.
+open the pull request and merge on GitHub. Trunk moves remotely; the local
+checkout follows it. Never fast-forward local trunk and call that landed, and do
+not invent a local admission queue.
+
+Remote checks are off while the account has no runner minutes, so the local gate
+is the only proof a commit has. Run it on the rebased branch you are about to
+merge, not on an earlier state, and say in the pull request that you did. Do not
+merge on a gate you ran before the last rebase.
 
 The pull-request rule is procedural rather than mechanically protected. Follow
 it regardless, and buy enforcement only after an observed violation.
 
 Run the local gate before opening the pull request. The local gate proves the
-commit; the remote process admits it. A check that skips what it cannot
+commit; the pull request admits it. A check that skips what it cannot
 provision is informational, not a gate, because running nothing proves
 nothing. Attribute each failure before aggregating it; an unattributed count
 is not a rate.
