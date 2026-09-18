@@ -555,6 +555,7 @@ export const importBoundaries: ImportBoundary[] = [
       'hono',
       'hono/cors',
       'zod',
+      './config-service.ts',
       './record-auth.ts',
       './record-docs.ts',
       './record-snapshots.ts',
@@ -580,6 +581,7 @@ export const importBoundaries: ImportBoundary[] = [
     'orchestrator/src/record/record-api-server.ts',
     [
       '../postgres/postgres-migrate.ts',
+      './config-service.ts',
       './record-api.ts',
       './record-auth.ts',
       './record-docs.ts',
