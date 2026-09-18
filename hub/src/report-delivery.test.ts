@@ -1,6 +1,5 @@
 import { describe, expect, test } from 'bun:test'
 import type { Measures } from './measures.ts'
-import type { GatheredReport } from './report.ts'
 import {
   type DeliveryCandidate,
   type DeliveryRepository,
@@ -10,6 +9,7 @@ import {
   runReportDeliveryPass,
 } from './report-delivery.ts'
 import { sesReportMailClient } from './report-delivery-hosted.ts'
+import type { GatheredReport } from './report-renderer.ts'
 
 const now = new Date('2026-09-18T13:30:00.000Z') // 09:30 America/New_York
 const candidate = (id: string): DeliveryCandidate => ({
@@ -120,6 +120,7 @@ const gatheredReport = (): GatheredReport => {
     projects: [
       {
         project: 'workshop',
+        color: '#654321',
         taskMs: 4 * 3_600_000,
         engagedMs: 3_600_000,
         shipped: 1,

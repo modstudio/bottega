@@ -232,7 +232,8 @@ export const modules: ArchitectureModule[] = [
     '@aws-sdk/client-sesv2',
     '../../../shared/brand.ts',
   ]),
-  module('hub/src/report-delivery.ts', ['./measures.ts', './report.ts']),
+  module('hub/src/report-renderer.ts', ['../../shared/compact-number.ts', './measures.ts']),
+  module('hub/src/report-delivery.ts', ['./measures.ts', './report-renderer.ts']),
   module('hub/src/report-delivery-hosted.ts', [
     'node:os',
     '@aws-sdk/client-sesv2',
@@ -247,7 +248,7 @@ export const modules: ArchitectureModule[] = [
     '../../shared/interval.ts',
     './measures.ts',
     './report-delivery.ts',
-    './report.ts',
+    './report-renderer.ts',
     './hosted-tasks.ts',
   ]),
   module('orchestrator/src/postgres/postgres-migrate.ts', []),
@@ -771,6 +772,26 @@ export function architectureRules() {
       from: { path: exactArchitecturePath('orchestrator/src/record/record-api-server.ts') },
       to: {
         path: '^(?:orchestrator/src/(?:database-location|db)\\.ts|bun:sqlite)$',
+        reachable: true,
+      },
+    },
+    {
+      name: 'import-hosted-report-delivery-no-local-store-transitive-boundary',
+      severity: 'error',
+      comment: 'Hosted report delivery must render and send without the local SQLite store or git.',
+      from: {
+        path: [
+          'hub/src/report-delivery.ts',
+          'hub/src/report-delivery-hosted.ts',
+          'hub/src/report-delivery-cli.ts',
+        ]
+          .map(exactArchitecturePath)
+          .join('|'),
+      },
+      to: {
+        path: ['hub/src/db.ts', 'shared/git.ts', 'bun:sqlite']
+          .map(architectureDependencyPath)
+          .join('|'),
         reachable: true,
       },
     },

@@ -17,6 +17,7 @@ const row = (patch: Partial<HostedReportRow> = {}): HostedReportRow => ({
   task_project: 'workshop',
   task_title: 'Restore the formatted report',
   task_status: 'done',
+  project_color: '#654321',
   ...patch,
 })
 
@@ -47,6 +48,7 @@ test('hosted report rows project task facts, unions and vendor tokens', () => {
     agentTokens: 1_200,
   })
   expect(gathered.projects[0]).toMatchObject({
+    color: '#654321',
     taskMs: 3_600_000,
     engagedMs: 5_400_000,
     shipped: 1,
