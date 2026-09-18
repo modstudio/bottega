@@ -256,6 +256,7 @@ const USAGE = `hub — every project's tasks in flight, what each cost, and the 
                               --hour N [--day monday] --zone AREA/CITY [--recipient USER_ID]
   hub report subscriptions [--json]
   hub report unsubscribe <ID>
+  hub report send [--dry-run]  render and send every subscription whose period is due
   hub report push [--dry-run] migrate and verify report settings and send history
 
   hub send [--dry-run]        the daily report; --dry-run prints it instead

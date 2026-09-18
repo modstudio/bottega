@@ -466,14 +466,22 @@ export function HostedSettingsPage() {
                   <TableRow key={`${row.at}:${row.recipients}`}>
                     <TableCell muted>{row.at.slice(0, 16).replace('T', ' ')}</TableCell>
                     <TableCell>
-                      <Badge tone={row.status === 'failed' ? 'error' : 'neutral'}>
+                      <Badge
+                        tone={
+                          row.status === 'failed'
+                            ? 'error'
+                            : row.status === 'sent'
+                              ? 'success'
+                              : 'neutral'
+                        }
+                      >
                         {String(row.status)}
                       </Badge>
                     </TableCell>
                     <TableCell numeric>{row.items.toLocaleString()}</TableCell>
                     <TableCell muted>
                       {row.test ? <Badge className="mr-2">test</Badge> : null}
-                      {String(row.error || row.recipients)}
+                      {row.error ? `Reason: ${row.error}` : String(row.recipients)}
                     </TableCell>
                   </TableRow>
                 ))}

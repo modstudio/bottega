@@ -3,6 +3,7 @@ import {
   hostedListReportSubscriptions,
   hostedUnsubscribeReportSubscription,
 } from './report-client.ts'
+import { runReportDeliveryCommand } from './report-delivery-cli.ts'
 import { pushReports } from './report-push.ts'
 
 function flagOf(argv: string[], name: string) {
@@ -79,5 +80,6 @@ export async function runReportCommand(argv: string[]) {
   if (sub === 'subscriptions') return reportList(argv.includes('--json'))
   if (sub === 'subscribe') return reportSubscribe(argv)
   if (sub === 'unsubscribe') return reportUnsubscribe(argv[2])
-  throw new Error('usage: hub report subscribe|subscriptions|unsubscribe|push')
+  if (sub === 'send') return runReportDeliveryCommand(argv)
+  throw new Error('usage: hub report subscribe|subscriptions|unsubscribe|push|send')
 }

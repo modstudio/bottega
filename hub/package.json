@@ -6,11 +6,13 @@
   "type": "module",
   "scripts": {
     "hub": "bun src/cli.ts",
+    "report-deliver": "bun src/report-delivery-cli.ts",
     "typecheck": "tsc --noEmit",
     "test": "bun test",
     "test:postgres": "bun scripts/test-postgres-evidence.ts"
   },
   "dependencies": {
+    "@aws-sdk/client-sesv2": "^3.1135.0",
     "@trpc/server": "^11.17.0",
     "zod": "^4.5.4"
   },

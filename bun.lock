@@ -24,6 +24,7 @@
       "name": "@bottega/hub",
       "version": "0.1.0",
       "dependencies": {
+        "@aws-sdk/client-sesv2": "^3.1135.0",
         "@trpc/server": "^11.17.0",
         "zod": "^4.5.4",
       },
