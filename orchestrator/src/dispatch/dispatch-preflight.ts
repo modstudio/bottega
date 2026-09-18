@@ -6,7 +6,7 @@
 import { seedGuidance } from '../cli/args.ts'
 import { db } from '../database/db.ts'
 import { realpathOrSpelled } from '../git/checkout-identity.ts'
-import { repoRootOf } from '../git/git-environment.ts'
+import { gitContext, linkedWorktreePaths, repoRootOf } from '../git/git-environment.ts'
 import { job } from '../jobs/jobs.ts'
 import { resolveLens } from '../lens/lenses.ts'
 import {
@@ -26,6 +26,20 @@ const MAX_DEPTH = 1
 export const depth = () => Number(process.env.ORCH_DEPTH ?? 0)
 
 const warnedMainCheckouts = new Set<string>()
+
+export function callerCheckoutFacts(cwd: string): {
+  repoRoot: string | null
+  registeredProjectPath: string | null
+  linkedWorktree: boolean
+} {
+  const checkoutRoot = gitContext(cwd, 'rev-parse', '--show-toplevel')
+  const repoRoot = repoRootOf(cwd)
+  return {
+    repoRoot,
+    registeredProjectPath: projectAt(repoRoot ?? cwd)?.path ?? null,
+    linkedWorktree: checkoutRoot !== null && linkedWorktreePaths(checkoutRoot) !== null,
+  }
+}
 
 function warnMainCheckoutUntracked(path: string, warning: string): void {
   if (warnedMainCheckouts.has(path)) return

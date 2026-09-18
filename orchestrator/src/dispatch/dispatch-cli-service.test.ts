@@ -1,5 +1,52 @@
 import { describe, expect, test } from 'bun:test'
-import { taskBranchLandingBypassWarning } from './dispatch-cli-service.ts'
+import { callerCheckoutDecision, taskBranchLandingBypassWarning } from './dispatch-cli-service.ts'
+
+describe('caller checkout resolution', () => {
+  test('shell-cwd mutation: implicit linked worktree resolves to the registered project and warns', () => {
+    expect(
+      callerCheckoutDecision({
+        launchCwd: '/project/.claude/worktrees/DEV-780',
+        explicitCwd: null,
+        repoRoot: '/project',
+        registeredProjectPath: '/project',
+        linkedWorktree: true,
+      }),
+    ).toEqual({
+      callerCwd: '/project',
+      launchCwd: '/project/.claude/worktrees/DEV-780',
+      notice:
+        '! dispatched from linked worktree /project/.claude/worktrees/DEV-780; caller checkout is /project (pass --cwd to choose a tree)',
+    })
+  })
+
+  test('explicit-cwd mutation: an explicitly selected linked worktree remains selected', () => {
+    expect(
+      callerCheckoutDecision({
+        launchCwd: '/elsewhere',
+        explicitCwd: '/project/.claude/worktrees/DEV-780',
+        repoRoot: '/project',
+        registeredProjectPath: '/project',
+        linkedWorktree: true,
+      }),
+    ).toEqual({
+      callerCwd: '/project/.claude/worktrees/DEV-780',
+      launchCwd: '/elsewhere',
+      notice: null,
+    })
+  })
+
+  test('registration mutation: an implicit cwd in an unregistered repository is unchanged', () => {
+    expect(
+      callerCheckoutDecision({
+        launchCwd: '/unregistered',
+        explicitCwd: null,
+        repoRoot: '/unregistered',
+        registeredProjectPath: null,
+        linkedWorktree: false,
+      }),
+    ).toEqual({ callerCwd: '/unregistered', launchCwd: '/unregistered', notice: null })
+  })
+})
 
 describe('task branch landing bypass warning', () => {
   test('refusal-text mutation: explicit base success does not print a refusal', () => {

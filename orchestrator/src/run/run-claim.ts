@@ -178,6 +178,7 @@ type ClaimOptions = {
   noFailover?: boolean
   key?: string
   cwd?: string
+  launchCwd?: string
   base?: string
   carry?: boolean
   resume?: {
@@ -345,7 +346,7 @@ export async function claimRun(input: ClaimInput): Promise<ClaimResult> {
         no_failover: number
       })
     : null
-  const launchCwd = inheritedLaunch?.launch_cwd ?? callerCwd
+  const launchCwd = inheritedLaunch?.launch_cwd ?? opts.launchCwd ?? callerCwd
   const launchSeed = inheritedLaunch?.launch_seed ?? seed ?? null
   // A read-only run's key is an address on its record, not an input to the
   // worktree lifecycle. Writing runs retain the explicit-key-only behaviour

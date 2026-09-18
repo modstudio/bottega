@@ -38,6 +38,7 @@ export type DetachSpec = {
   distinctModels?: string[]
   retryOf?: number
   cwd?: string
+  launchCwd?: string
   noFailover?: boolean
   noWaitCapacity?: boolean
   carry?: boolean
@@ -105,6 +106,7 @@ export function detachedRunOptions(
     distinctModels,
     retryOf,
     cwd,
+    launchCwd,
     noFailover,
     noWaitCapacity,
     carry,
@@ -133,6 +135,7 @@ export function detachedRunOptions(
     distinctModels,
     retryOf,
     cwd,
+    launchCwd,
     noFailover,
     noWaitCapacity,
     carry,
@@ -164,6 +167,7 @@ export function detachedRunOptions(
     distinctModels,
     retryOf,
     cwd,
+    launchCwd,
     noFailover,
     noWaitCapacity,
     carry,

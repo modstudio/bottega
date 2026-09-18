@@ -256,6 +256,8 @@ export async function run(opts: {
   /** Pilot opt-in. Default `cli`. */
   transport?: TransportName
   cwd?: string
+  /** Shell directory that launched the root run, before implicit caller resolution. */
+  launchCwd?: string
   /** Explicit routing attribution when the caller is outside the registered project. */
   repo?: string
   /** The run this one re-attempts, for `orch retry`. */
