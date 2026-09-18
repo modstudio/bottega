@@ -653,6 +653,13 @@ export async function importRecordDoc(
 ): Promise<{ id: string; revisionIds: string[] }> {
   return tenant(input, async (tx) => {
     const existing = await existingDocAtAddress(tx, input.spaceId, input.doc)
+    if (existing && input.doc.deletedAt !== null && existing.deleted_at == null) {
+      const subject = existing.subject == null ? '' : String(existing.subject)
+      throw new RecordDocError(
+        `refusing import at ${String(existing.scope)}/${subject}/${String(existing.slug)}: a deleted import never targets a live row; delete the live doc through the doc service first if deletion is intended`,
+        409,
+      )
+    }
     refuseNewerHosted(existing, input.doc)
     const resolvedProject = await projectId(tx, input.spaceId, input.doc.projectName)
     const id = existing ? String(existing.id) : newRecordId()
