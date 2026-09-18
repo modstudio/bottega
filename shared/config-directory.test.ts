@@ -45,4 +45,11 @@ describe('config root resolution', () => {
       }),
     ).toEqual([join('/home/person', '.config', PLATFORM_SLUG, `${PLATFORM_SLUG}.env`)])
   })
+
+  test('env file paths are ordered from the default harness source to the platform source', () => {
+    expect(resolveEnvFilePaths({ HOME: '/home/person' })).toEqual([
+      join('/home/person', '.claude', '.env'),
+      join('/home/person', '.config', PLATFORM_SLUG, `${PLATFORM_SLUG}.env`),
+    ])
+  })
 })

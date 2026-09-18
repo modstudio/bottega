@@ -1,30 +1,26 @@
 import { readFileSync } from 'node:fs'
 import { parseEnv } from 'node:util'
-import {
-  type ConfigEnvironment,
-  resolveHarnessEnvFile,
-  resolvePlatformEnvFile,
-} from './config-directory.ts'
+import { type ConfigEnvironment, resolveEnvFilePaths } from './config-directory.ts'
 
-export type EnvironmentFileTexts = {
-  platform?: string
-  harness?: string
-}
-
-/**
- * Resolve env values with one precedence: process environment, then the platform
- * env file, then the harness env file.
- */
 export function resolveEnvValues(
   names: readonly string[],
   env: ConfigEnvironment,
-  texts: EnvironmentFileTexts,
+  texts: readonly (string | undefined)[],
 ): Record<string, string | undefined> {
-  const platform = texts.platform === undefined ? {} : parseEnv(texts.platform)
-  const harness = texts.harness === undefined ? {} : parseEnv(texts.harness)
-  return Object.fromEntries(
-    names.map((name) => [name, env[name] ?? platform[name] ?? harness[name]]),
+  const values = buildEnvironment(env, texts)
+  return Object.fromEntries(names.map((name) => [name, values[name]]))
+}
+
+export function buildEnvironment(
+  env: ConfigEnvironment,
+  texts: readonly (string | undefined)[],
+): ConfigEnvironment {
+  const files: Record<string, string> = {}
+  for (const text of texts) if (text !== undefined) Object.assign(files, parseEnv(text))
+  const processValues = Object.fromEntries(
+    Object.entries(env).filter((entry): entry is [string, string] => entry[1] !== undefined),
   )
+  return { ...files, ...processValues }
 }
 
 function readEnvFile(path: string): string | undefined {
@@ -42,10 +38,26 @@ export function readEnvValues(
   names: readonly string[],
   env: ConfigEnvironment = process.env,
 ): Record<string, string | undefined> {
-  const platformPath = resolvePlatformEnvFile(env)
-  const harnessPath = resolveHarnessEnvFile(env)
-  return resolveEnvValues(names, env, {
-    platform: readEnvFile(platformPath),
-    harness: harnessPath ? readEnvFile(harnessPath) : undefined,
+  const values = Object.fromEntries(names.map((name) => [name, env[name]]))
+  if (names.every((name) => values[name] !== undefined)) return values
+  const texts = resolveEnvFilePaths(env).map(readEnvFile)
+  return resolveEnvValues(names, env, texts)
+}
+
+function readEnvironment(env: ConfigEnvironment): ConfigEnvironment {
+  return buildEnvironment(env, resolveEnvFilePaths(env).map(readEnvFile))
+}
+
+if (import.meta.main) {
+  const [command, separator, ...argv] = process.argv.slice(2)
+  if (command !== 'run' || separator !== '--' || argv.length === 0) {
+    throw new Error('working form: bun shared/env-source.ts run -- <argv...>')
+  }
+  const child = Bun.spawn(argv, {
+    env: readEnvironment(process.env),
+    stdin: 'inherit',
+    stdout: 'inherit',
+    stderr: 'inherit',
   })
+  process.exit(await child.exited)
 }
