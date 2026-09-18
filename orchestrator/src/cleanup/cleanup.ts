@@ -180,7 +180,7 @@ export function withCleanupLock<T>(
   )
 }
 
-/** One removed tree clears every pointer held by the same conversation. */
+/** Null this conversation's pointer for one tree. Clear close-out only when no tree pointer remains. */
 function clearConversationWorktree(
   runId: number,
   worktree: string,
@@ -197,6 +197,26 @@ function clearConversationWorktree(
             (SELECT COALESCE(parent_run_id, id) FROM run WHERE id=?)`,
     )
     .run(runId, keptBranch, runId, worktree, runId)
+  const remaining = db()
+    .query(
+      `SELECT 1 AS present FROM run
+        WHERE worktree IS NOT NULL
+          AND COALESCE(parent_run_id, id) =
+              (SELECT COALESCE(parent_run_id, id) FROM run WHERE id=?)
+        LIMIT 1`,
+    )
+    .get(runId)
+  if (remaining) return
+  db()
+    .query(
+      `UPDATE run
+        SET close_out_outcome=NULL,
+            close_out_detail=NULL,
+            close_out_attempted_at=NULL
+      WHERE COALESCE(parent_run_id, id) =
+            (SELECT COALESCE(parent_run_id, id) FROM run WHERE id=?)`,
+    )
+    .run(runId)
 }
 
 export function resourcesForConversation(runId: number) {
