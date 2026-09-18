@@ -17,22 +17,22 @@ const fixture = () => {
   const root = mkdtempSync(join(tmpdir(), 'orch-workflow-tree-files-'))
   roots.push(root)
   const tree = join(root, 'tree')
-  mkdirSync(join(tree, 'workflows'), { recursive: true })
+  mkdirSync(join(tree, '.agents'), { recursive: true })
   return { root, tree, outside: join(root, 'outside.md') }
 }
 afterEach(() => {
   for (const root of roots.splice(0)) rmSync(root, { recursive: true, force: true })
 })
 
-test('writing a stub creates only the command directory', () => {
+test('writing a workflow creates its mirror directory', () => {
   const { tree } = fixture()
   applyWorkflowTreePlan(tree, {
-    writes: [{ path: '.claude/commands/ship.md', body: 'stub\n' }],
+    writes: [{ path: '.agents/workflows/ship.md', body: 'workflow\n' }],
     deletes: [],
   })
 
-  expect(readFileSync(join(tree, '.claude', 'commands', 'ship.md'), 'utf8')).toBe('stub\n')
-  expect(existsSync(join(tree, '.agents', 'workflows'))).toBe(false)
+  expect(readFileSync(join(tree, '.agents', 'workflows', 'ship.md'), 'utf8')).toBe('workflow\n')
+  expect(existsSync(join(tree, '.claude', 'commands'))).toBe(false)
 })
 
 test('a symlinked steps directory is refused and the file outside the tree is unchanged', () => {
@@ -41,17 +41,17 @@ test('a symlinked steps directory is refused and the file outside the tree is un
   const steps = join(tree, '..', 'outside-steps')
   mkdirSync(steps)
   writeFileSync(join(steps, 'verify.md'), 'KEEP\n')
-  symlinkSync(steps, join(tree, 'workflows', 'steps'))
+  symlinkSync(steps, join(tree, '.agents', 'workflow-steps'))
 
   expect(() => collectWorkflowTree(tree)).toThrow(
-    `refusing ${join(tree, 'workflows', 'steps')}: not a real directory`,
+    `refusing ${join(tree, '.agents', 'workflow-steps')}: not a real directory`,
   )
   expect(() =>
     applyWorkflowTreePlan(tree, {
-      writes: [{ path: 'workflows/steps/verify.md', body: 'ATTACK\n' }],
+      writes: [{ path: '.agents/workflow-steps/verify.md', body: 'ATTACK\n' }],
       deletes: [],
     }),
-  ).toThrow(`refusing ${join(tree, 'workflows', 'steps')}: not a real directory`)
+  ).toThrow(`refusing ${join(tree, '.agents', 'workflow-steps')}: not a real directory`)
   expect(readFileSync(join(steps, 'verify.md'), 'utf8')).toBe('KEEP\n')
   expect(readFileSync(outside, 'utf8')).toBe('KEEP\n')
 })
@@ -59,28 +59,34 @@ test('a symlinked steps directory is refused and the file outside the tree is un
 test('a symlinked step file is refused and the file outside the tree is unchanged', () => {
   const { tree, outside } = fixture()
   writeFileSync(outside, 'KEEP\n')
-  mkdirSync(join(tree, 'workflows', 'steps'))
-  writeFileSync(join(tree, 'workflows', 'steps', 'keep.md'), 'ORIGINAL\n')
-  symlinkSync(outside, join(tree, 'workflows', 'steps', 'verify.md'))
+  mkdirSync(join(tree, '.agents', 'workflow-steps'))
+  writeFileSync(join(tree, '.agents', 'workflow-steps', 'keep.md'), 'ORIGINAL\n')
+  symlinkSync(outside, join(tree, '.agents', 'workflow-steps', 'verify.md'))
 
   expect(() => collectWorkflowTree(tree)).toThrow(
-    `refusing ${join(tree, 'workflows', 'steps', 'verify.md')}: not a regular file`,
+    `refusing ${join(tree, '.agents', 'workflow-steps', 'verify.md')}: not a regular file`,
   )
   expect(() =>
     applyWorkflowTreePlan(tree, {
       writes: [
-        { path: 'workflows/steps/keep.md', body: 'CHANGED\n' },
-        { path: 'workflows/steps/verify.md', body: 'ATTACK\n' },
+        { path: '.agents/workflow-steps/keep.md', body: 'CHANGED\n' },
+        { path: '.agents/workflow-steps/verify.md', body: 'ATTACK\n' },
       ],
       deletes: [],
     }),
-  ).toThrow(`refusing ${join(tree, 'workflows', 'steps', 'verify.md')}: existing path is a symlink`)
+  ).toThrow(
+    `refusing ${join(tree, '.agents', 'workflow-steps', 'verify.md')}: existing path is a symlink`,
+  )
   expect(() =>
     applyWorkflowTreePlan(tree, {
       writes: [],
-      deletes: ['workflows/steps/keep.md', 'workflows/steps/verify.md'],
+      deletes: ['.agents/workflow-steps/keep.md', '.agents/workflow-steps/verify.md'],
     }),
-  ).toThrow(`refusing ${join(tree, 'workflows', 'steps', 'verify.md')}: existing path is a symlink`)
+  ).toThrow(
+    `refusing ${join(tree, '.agents', 'workflow-steps', 'verify.md')}: existing path is a symlink`,
+  )
   expect(readFileSync(outside, 'utf8')).toBe('KEEP\n')
-  expect(readFileSync(join(tree, 'workflows', 'steps', 'keep.md'), 'utf8')).toBe('ORIGINAL\n')
+  expect(readFileSync(join(tree, '.agents', 'workflow-steps', 'keep.md'), 'utf8')).toBe(
+    'ORIGINAL\n',
+  )
 })

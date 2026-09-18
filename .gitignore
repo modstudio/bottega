@@ -10,16 +10,12 @@ __pycache__/
 # Operator-specific MCP servers are configured per checkout.
 .mcp.json
 
-# per-directory Claude state, not shared.
-# settings.json and the port-feature skill shim are project config and must
-# be tracked; everything else under .claude/ (worktrees, local settings) is not.
+# Per-directory Claude state is not shared. Project agent content lives under
+# .agents; settings and its two symlink mirrors are the only tracked entries.
 .claude/*
 !.claude/settings.json
-!.claude/skills/
-.claude/skills/*
-!.claude/skills/port-feature/
-.claude/skills/port-feature/*
-!.claude/skills/port-feature/SKILL.md
+!.claude/rules
+!.claude/skills
 # A pattern with a slash is anchored, so the rules above reach only the
 # repository root. Local settings appear under any concern's .claude/ too.
 **/.claude/settings.local.json

@@ -4,8 +4,6 @@ import { lstatSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync 
 import { dirname, resolve } from 'node:path'
 import {
   matchWorkflowTreePath,
-  WORKFLOW_STUB_DIRECTORIES,
-  WORKFLOW_STUB_PRUNE_DIRECTORIES,
   WORKFLOW_TREE_FOLDERS,
   WORKFLOW_TREE_ROOT,
   type WorkflowTreeFile,
@@ -37,10 +35,6 @@ function assertWorkflowTreeDirectories(root: string): void {
   const workflows = resolve(root, WORKFLOW_TREE_ROOT)
   assertRealDirectory(workflows)
   for (const folder of WORKFLOW_TREE_FOLDERS) assertRealDirectory(resolve(workflows, folder))
-  for (const directory of [...WORKFLOW_STUB_DIRECTORIES, ...WORKFLOW_STUB_PRUNE_DIRECTORIES]) {
-    assertRealDirectory(resolve(root, dirname(directory)))
-    assertRealDirectory(resolve(root, directory))
-  }
 }
 
 function collectEntry(root: string, directory: string, name: string): WorkflowTreeFile {
@@ -59,11 +53,7 @@ function collectEntry(root: string, directory: string, name: string): WorkflowTr
 export function collectWorkflowTree(root: string): WorkflowTreeFile[] {
   assertWorkflowTreeDirectories(root)
   const files: WorkflowTreeFile[] = []
-  const directories = [
-    ...WORKFLOW_TREE_FOLDERS.map((folder) => `${WORKFLOW_TREE_ROOT}/${folder}`),
-    ...WORKFLOW_STUB_DIRECTORIES,
-    ...WORKFLOW_STUB_PRUNE_DIRECTORIES,
-  ]
+  const directories = [...WORKFLOW_TREE_FOLDERS.map((folder) => `${WORKFLOW_TREE_ROOT}/${folder}`)]
   for (const relative of directories) {
     const directory = resolve(root, relative)
     if (!lstatIfPresent(directory)) continue
@@ -81,11 +71,6 @@ function assertPlanTargets(root: string, plan: WorkflowTreePlan): void {
 }
 
 export function applyWorkflowTreePlan(root: string, plan: WorkflowTreePlan): void {
-  if ('refusal' in plan) {
-    throw new Error(
-      `refusing ${resolve(root, plan.refusal)}: workflow stub is not owned by orch workflow hydrate; rename or move that file`,
-    )
-  }
   assertWorkflowTreeDirectories(root)
   assertPlanTargets(root, plan)
   for (const path of plan.deletes) rmSync(resolve(root, path))

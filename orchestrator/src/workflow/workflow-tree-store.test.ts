@@ -23,7 +23,7 @@ describe('importWorkflowTree', () => {
     const d = database()
     const production = productionStepCatalogue(d)
     const tree = renderedTree(d)
-    const target = tree.find(({ path }) => path === 'workflows/steps/lens.md')!
+    const target = tree.find(({ path }) => path === '.agents/workflow-steps/lens.md')!
     target.body = target.body.replace(/\n---\n[\s\S]*\n$/, '\n---\nAn edited lens body.\n')
 
     const result = importWorkflowTree(parseWorkflowTree(tree), 'edit lens', 'worker', d)
@@ -44,9 +44,9 @@ describe('importWorkflowTree', () => {
   test('one invalid floor refuses the entire import without writing a draft', () => {
     const d = database()
     const tree = renderedTree(d)
-    const lens = tree.find(({ path }) => path === 'workflows/steps/lens.md')!
+    const lens = tree.find(({ path }) => path === '.agents/workflow-steps/lens.md')!
     lens.body = lens.body.replace('\n---\n', '\n---\nEdited but valid.\n')
-    const score = tree.find(({ path }) => path === 'workflows/steps/score.md')!
+    const score = tree.find(({ path }) => path === '.agents/workflow-steps/score.md')!
     const validScore = score.body
     score.body = score.body.replace(/floor:\n(?: {2}- [^\n]+\n)+/, 'floor:\n  - not-a-proof\n')
     expect(score.body).not.toBe(validScore)
@@ -69,7 +69,7 @@ describe('importWorkflowTree', () => {
     const productionFlows = productionWorkflows(d)
     const tree = renderedTree(d)
     tree.push({
-      path: 'workflows/steps/tree-step.md',
+      path: '.agents/workflow-steps/tree-step.md',
       body: `---\n${Bun.YAML.stringify({
         title: 'Tree step',
         floor: ['command-exit'],
@@ -79,7 +79,7 @@ describe('importWorkflowTree', () => {
       })}\n---\nA step added in the tree.\n`,
     })
     tree.push({
-      path: 'workflows/flows/tree-flow.md',
+      path: '.agents/workflows/tree-flow.md',
       body: `---\n${Bun.YAML.stringify({
         title: 'Tree flow',
         arguments: [],
@@ -110,7 +110,7 @@ describe('importWorkflowTree', () => {
 
   test('a production flow missing from the tree refuses the import and writes nothing', () => {
     const d = database()
-    const tree = renderedTree(d).filter(({ path }) => path !== 'workflows/flows/ship.md')
+    const tree = renderedTree(d).filter(({ path }) => path !== '.agents/workflows/ship.md')
     const before = {
       catalogues: (
         d.query('SELECT COUNT(*) count FROM step_catalogue_version').get() as {

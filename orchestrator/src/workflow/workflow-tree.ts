@@ -1,5 +1,5 @@
 // concern: workflow-tree
-/** Knows the pure markdown mirror and command stubs for production workflows. Must not know filesystems, stores, commands, projects, or transports. */
+/** Knows the pure markdown mirror for production workflows. Must not know filesystems, stores, commands, projects, or transports. */
 import type { CatalogueStep } from './step-catalogue.ts'
 import type { WorkflowDefinition } from './workflows.ts'
 
@@ -8,39 +8,22 @@ export type WorkflowTreeStore = {
   workflows: { slug: string; definition: WorkflowDefinition }[]
 }
 export type WorkflowTreeFile = { path: string; body: string }
-export type WorkflowTreePlan =
-  | { writes: WorkflowTreeFile[]; deletes: string[] }
-  | { writes: WorkflowTreeFile[]; deletes: string[]; refusal: string }
+export type WorkflowTreePlan = { writes: WorkflowTreeFile[]; deletes: string[] }
 
-export const WORKFLOW_TREE_ROOT = 'workflows'
-export const WORKFLOW_TREE_FOLDERS = ['steps', 'flows'] as const
+export const WORKFLOW_TREE_ROOT = '.agents'
+export const WORKFLOW_TREE_FOLDERS = ['workflow-steps', 'workflows'] as const
 export type WorkflowTreeFolder = (typeof WORKFLOW_TREE_FOLDERS)[number]
-export const WORKFLOW_STUB_DIRECTORIES = ['.claude/commands'] as const
-export const WORKFLOW_STUB_PRUNE_DIRECTORIES = ['.agents/workflows'] as const
-export type WorkflowStubDirectory =
-  | (typeof WORKFLOW_STUB_DIRECTORIES)[number]
-  | (typeof WORKFLOW_STUB_PRUNE_DIRECTORIES)[number]
 
 const SLUG = '[a-z0-9][a-z0-9-]{0,63}'
 const MIRROR_PATH = new RegExp(
   `^${WORKFLOW_TREE_ROOT}/(${WORKFLOW_TREE_FOLDERS.join('|')})/(${SLUG})\\.md$`,
 )
-const STUB_PATH = new RegExp(
-  `^(${[...WORKFLOW_STUB_DIRECTORIES, ...WORKFLOW_STUB_PRUNE_DIRECTORIES]
-    .map((directory) => directory.replace('.', '\\.'))
-    .join('|')})/(${SLUG})\\.md$`,
-)
 
 export function matchWorkflowTreePath(
   path: string,
-):
-  | { kind: 'mirror'; folder: WorkflowTreeFolder; slug: string }
-  | { kind: 'stub'; directory: WorkflowStubDirectory; slug: string }
-  | null {
+): { folder: WorkflowTreeFolder; slug: string } | null {
   const mirror = path.match(MIRROR_PATH)
-  if (mirror) return { kind: 'mirror', folder: mirror[1] as WorkflowTreeFolder, slug: mirror[2]! }
-  const stub = path.match(STUB_PATH)
-  return stub ? { kind: 'stub', directory: stub[1] as WorkflowStubDirectory, slug: stub[2]! } : null
+  return mirror ? { folder: mirror[1] as WorkflowTreeFolder, slug: mirror[2]! } : null
 }
 
 function treePath(folder: WorkflowTreeFolder, slug: string): string {
@@ -54,28 +37,9 @@ function document(frontMatter: Record<string, unknown>, body: string): string {
   return `---\n${yaml}\n---\n${body}\n`
 }
 
-function renderStub(slug: string, definition: WorkflowDefinition): string {
-  const argumentHint = definition.arguments
-    .map((argument) => (argument.required ? `<${argument.name}>` : `[${argument.name}]`))
-    .join(' ')
-  const modes = definition.modes
-    .map((mode) => `| \`${mode.slug}\` | ${mode.title} | ${mode.default === true ? 'yes' : 'no'} |`)
-    .join('\n')
-  const args = definition.arguments.map((argument) => ` --arg ${argument.name}=<value>`).join('')
-  return document(
-    {
-      name: slug,
-      description: definition.title,
-      'argument-hint': argumentHint,
-      'generated-by': 'orch workflow hydrate',
-    },
-    `${definition.description}\n\n| Mode | Title | Default |\n| --- | --- | --- |\n${modes}\n\nCall the orch MCP tool \`compose_workflow\` with \`workflow: "${slug}"\`, the chosen mode, and the arguments taken from \`$ARGUMENTS\` in declared order (equivalently \`orch workflow compose ${slug} --mode <mode>${args}\`), then follow the composed prompt exactly and do not reproduce the workflow from memory.`,
-  )
-}
-
 function renderedFiles(store: WorkflowTreeStore): WorkflowTreeFile[] {
   const steps = store.steps.map((step) => ({
-    path: treePath('steps', step.slug),
+    path: treePath('workflow-steps', step.slug),
     body: document(
       {
         title: step.title,
@@ -88,7 +52,7 @@ function renderedFiles(store: WorkflowTreeStore): WorkflowTreeFile[] {
     ),
   }))
   const workflows = store.workflows.map(({ slug, definition }) => ({
-    path: treePath('flows', slug),
+    path: treePath('workflows', slug),
     body: document(
       {
         title: definition.title,
@@ -98,33 +62,7 @@ function renderedFiles(store: WorkflowTreeStore): WorkflowTreeFile[] {
       definition.description,
     ),
   }))
-  const stubs = store.workflows.flatMap(({ slug, definition }) => {
-    const body = renderStub(slug, definition)
-    return WORKFLOW_STUB_DIRECTORIES.map((directory) => ({
-      path: `${directory}/${slug}.md`,
-      body,
-    }))
-  })
-  return [...steps, ...workflows, ...stubs].sort((a, b) => a.path.localeCompare(b.path))
-}
-
-function isOwnedStub(file: WorkflowTreeFile): boolean {
-  if (matchWorkflowTreePath(file.path)?.kind !== 'stub' || !file.body.startsWith('---\n')) {
-    return false
-  }
-  const end = file.body.indexOf('\n---\n', 4)
-  if (end < 0) return false
-  try {
-    const frontMatter = Bun.YAML.parse(file.body.slice(4, end))
-    return (
-      typeof frontMatter === 'object' &&
-      frontMatter !== null &&
-      !Array.isArray(frontMatter) &&
-      (frontMatter as Record<string, unknown>)['generated-by'] === 'orch workflow hydrate'
-    )
-  } catch {
-    return false
-  }
+  return [...steps, ...workflows].sort((a, b) => a.path.localeCompare(b.path))
 }
 
 export function planWorkflowHydration(input: {
@@ -134,19 +72,11 @@ export function planWorkflowHydration(input: {
   const desired = renderedFiles(input.store)
   const current = new Map(input.tree.map((file) => [file.path, file.body]))
   const paths = new Set(desired.map((file) => file.path))
-  const unowned = input.tree.find(
-    (file) =>
-      matchWorkflowTreePath(file.path)?.kind === 'stub' &&
-      WORKFLOW_STUB_DIRECTORIES.some((directory) => file.path.startsWith(`${directory}/`)) &&
-      !isOwnedStub(file),
-  )
-  if (unowned) return { writes: [], deletes: [], refusal: unowned.path }
   return {
     writes: desired.filter((file) => current.get(file.path) !== file.body),
     deletes: input.tree
       .filter((file) => {
-        const match = matchWorkflowTreePath(file.path)
-        return match && !paths.has(file.path) && (match.kind === 'mirror' || isOwnedStub(file))
+        return matchWorkflowTreePath(file.path) && !paths.has(file.path)
       })
       .map((file) => file.path)
       .sort(),
@@ -184,10 +114,9 @@ export function parseWorkflowTree(tree: WorkflowTreeFile[]): WorkflowTreeStore {
   for (const file of [...tree].sort((a, b) => a.path.localeCompare(b.path))) {
     const match = matchWorkflowTreePath(file.path)
     if (!match) continue
-    if (match.kind === 'stub') continue
     const parsed = parseDocument(file)
     const frontMatter = record(parsed.frontMatter, file.path)
-    if (match.folder === 'steps') {
+    if (match.folder === 'workflow-steps') {
       steps.push({
         slug: match.slug,
         title: frontMatter.title as string,

@@ -141,11 +141,6 @@ function hydrateCommand(argv: string[], presentation: Presentation): void {
     store: productionWorkflowTree(),
     tree: collectWorkflowTree(root),
   })
-  if ('refusal' in plan) {
-    throw new Error(
-      `refusing ${resolve(root, plan.refusal)}: workflow stub is not owned by orch workflow hydrate; rename or move that file`,
-    )
-  }
   for (const { path } of plan.writes) presentation.log(`write ${path}`)
   for (const path of plan.deletes) presentation.log(`delete ${path}`)
   const count = plan.writes.length + plan.deletes.length

@@ -18,7 +18,7 @@ function git(cwd: string, args: string[]): string {
   return result.stdout.toString()
 }
 
-function isCanonPath(path: string): boolean {
+export function isCanonPath(path: string): boolean {
   return (
     posix.basename(path) === 'AGENTS.md' ||
     posix.basename(path) === 'CLAUDE.md' ||

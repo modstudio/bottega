@@ -185,6 +185,7 @@ if (
     './scripts/check-test-placement.test.ts',
     './scripts/check-file-ceiling.test.ts',
     './scripts/check-cognitive-ceiling.test.ts',
+    './scripts/check-harness-mirror.test.ts',
     './scripts/quality/dead-code.test.ts',
     './scripts/architecture.test.ts',
     './scripts/import-scanner.test.ts',
@@ -231,6 +232,7 @@ for (const script of [
   'check-comment-hygiene.ts',
   'check-dead-code.ts',
   'check-brand.ts',
+  'check-harness-mirror.ts',
   'generate-recipe-schema.ts',
   '../orchestrator/scripts/check-pack-budget.ts',
 ]) {
