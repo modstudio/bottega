@@ -37,6 +37,15 @@ describe('project workflow injection', () => {
     ).toEqual([expect.stringContaining('tracker.actions: Unrecognized key')])
   })
 
+  test('validates tracker team as a non-empty register string', () => {
+    expect(
+      validateProjectSettings({ tracker: { protocol: 'workspace-mcp', team: 'Platform' } }),
+    ).toEqual([])
+    expect(validateProjectSettings({ tracker: { protocol: 'workspace-mcp', team: ' ' } })).toEqual([
+      expect.stringContaining('tracker.team: Too small'),
+    ])
+  })
+
   test('accepts only MCP tool names and refuses every hub action override with a remedy', () => {
     expect(
       validateProjectSettings({

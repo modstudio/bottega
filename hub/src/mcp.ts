@@ -15,6 +15,14 @@ import { readFileSync } from 'node:fs'
  */
 class McpError extends Error {}
 
+export type McpTool = {
+  name: string
+  inputSchema: {
+    properties?: Record<string, unknown>
+    [key: string]: unknown
+  }
+}
+
 export class Mcp {
   private sessionId: string | null = null
   private nextId = 1
@@ -82,6 +90,17 @@ export class Mcp {
     })) as { error?: unknown }
     if (r.error) throw new McpError(`initialize: ${JSON.stringify(r.error)}`)
     await this.post({ jsonrpc: '2.0', method: 'notifications/initialized' }, false)
+  }
+
+  async listTools(): Promise<McpTool[]> {
+    const r = (await this.post({
+      jsonrpc: '2.0',
+      id: this.nextId++,
+      method: 'tools/list',
+      params: {},
+    })) as { error?: unknown; result?: { tools?: McpTool[] } }
+    if (r.error) throw new McpError(`tools/list: ${JSON.stringify(r.error)}`)
+    return r.result?.tools ?? []
   }
 
   async callTool(name: string, args: Record<string, unknown>): Promise<unknown> {

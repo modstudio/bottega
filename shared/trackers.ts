@@ -100,6 +100,7 @@ const trackerActionsShape = Object.fromEntries(
 export const trackerSettingsShape = {
   kind: trackerNameSchema.optional(),
   protocol: z.string().trim().min(1).optional(),
+  team: z.string().trim().min(1).optional(),
   assigneeLookup: z.enum(['person-lookup', 'task-detail']).optional(),
   envPrefix: z.string().trim().min(1).optional(),
   openStatuses: z.array(z.string()).optional(),
@@ -144,8 +145,6 @@ export type Capabilities = {
   keyFormat: string | null
 }
 
-export const WORKSPACE_CREATE_REFUSAL =
-  'workspace-mcp create refused: the status field differs between evidenced tool schemas'
 export const CURSOR_CREATE_REFUSAL =
   'cursor-mcp create refused: required projectId has no value in the tracker register'
 export const TRACKER_STATUS_WRITE_REFUSAL =
@@ -162,6 +161,9 @@ const allow: Capability = { allowed: true }
 const refuse = (reason: string): Capability => ({ allowed: false, reason })
 export const documentsRefusal = (protocol: string): string =>
   `Documents are hub-native; this record lives in ${protocol} and carries none.`
+const workspaceTeamRefusal = (project: TrackerProject): string =>
+  `workspace-mcp create refused: project ${project.name} tracker is missing team; ` +
+  `set it with: orch project set ${project.name} --settings '{"tracker":{"team":"…"}}'`
 
 const keyFormat = (project: TrackerProject | null): string | null => {
   const prefixes = project?.settings.keyPrefixes
@@ -225,9 +227,12 @@ export function trackerCapabilities({
   }
   return {
     create:
-      protocol === 'array-mcp'
+      protocol === 'array-mcp' ||
+      (protocol === 'workspace-mcp' && Boolean(project.settings.tracker?.team))
         ? allow
-        : refuse(protocol === 'workspace-mcp' ? WORKSPACE_CREATE_REFUSAL : CURSOR_CREATE_REFUSAL),
+        : refuse(
+            protocol === 'workspace-mcp' ? workspaceTeamRefusal(project) : CURSOR_CREATE_REFUSAL,
+          ),
     setStatus: refuse(TRACKER_STATUS_WRITE_REFUSAL),
     setTitle: refuse(TRACKER_TITLE_WRITE_REFUSAL),
     comment: refuse(TRACKER_COMMENT_WRITE_REFUSAL),
@@ -278,6 +283,10 @@ export type CreateTrackerTask = {
   title: string
   body: string
   status: string
+}
+
+export type ToolInputSchema = {
+  properties?: Record<string, unknown>
 }
 
 /**
@@ -628,21 +637,52 @@ function assertKnownStatus(project: TrackerProject, status: string): void {
   }
 }
 
+function workspaceCreatePayload(
+  task: CreateTrackerTask,
+  team: string,
+  properties: string[],
+): Record<string, unknown> {
+  const fieldsSeen = () => (properties.length ? [...properties].sort().join(', ') : '(none)')
+  const statusFields = properties.filter((field) => ['status', 'task_status_id'].includes(field))
+  if (statusFields.length !== 1) {
+    throw new Error(
+      'workspace-mcp create refused: expected exactly one of status or task_status_id; ' +
+        `fields seen: ${fieldsSeen()}`,
+    )
+  }
+  const teamFields = properties.filter((field) => ['team', 'team_id'].includes(field))
+  if (teamFields.length !== 1) {
+    throw new Error(
+      'workspace-mcp create refused: expected exactly one of team or team_id; ' +
+        `fields seen: ${fieldsSeen()}`,
+    )
+  }
+  return {
+    summary: task.title,
+    description: task.body,
+    [teamFields[0]!]: team,
+    [statusFields[0]!]: task.status,
+  }
+}
+
 /** Create through a caller whose connection and lifetime remain owned by the caller. */
 export async function createTrackerTask(
   m: ToolCaller,
   project: TrackerProject,
   task: CreateTrackerTask,
+  inputSchema?: ToolInputSchema,
 ): Promise<unknown> {
   const tracker = project.settings.tracker
   if (!tracker) throw new Error(`project ${project.name} has no tracker configured`)
   assertKnownStatus(project, task.status)
 
   if (tracker.protocol === 'workspace-mcp') {
-    // The two readable workspace-mcp schemas disagree: one accepts `status`,
-    // while the other accepts `task_status_id`. Sending either for the protocol
-    // as a whole would guess which server is behind the connection.
-    throw new Error(WORKSPACE_CREATE_REFUSAL)
+    if (!tracker.team) {
+      throw new Error(workspaceTeamRefusal(project))
+    }
+    return m.callTool(tracker.actions?.create ?? trackerWireAction('workspace-mcp', 'create'), {
+      ...workspaceCreatePayload(task, tracker.team, Object.keys(inputSchema?.properties ?? {})),
+    })
   }
   if (tracker.protocol === 'cursor-mcp') {
     // Its tool schema requires projectId; the register carries no tracker field
