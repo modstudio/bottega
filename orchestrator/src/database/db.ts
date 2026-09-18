@@ -30,7 +30,6 @@ type OpenHook = (database: Database) => void
 export type OpenHooks = {
   afterWritableOpen?: OpenHook[]
   afterInitialize?: OpenHook[]
-  afterSchemaApply?: OpenHook[]
 }
 let openHooks: OpenHooks | null = null
 export function registerOpenHooks(hooks: OpenHooks): () => void {

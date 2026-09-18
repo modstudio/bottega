@@ -12,7 +12,6 @@ export function registerStandardHooks(): void {
   registerOpenHooks({
     afterWritableOpen: [excludeSharedOutputRuns, reapStale],
     afterInitialize: [excludeSharedOutputRuns, seedWorkflows],
-    afterSchemaApply: [seedWorkflows],
   })
   registered = true
 }
