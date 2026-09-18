@@ -3,7 +3,7 @@
 
 import type { DocDelivery, DocRevisionOp } from '../doc/doc-write-allowed.ts'
 import { RECORD_WRITE_REMEDY } from '../doc/doc-write-allowed.ts'
-import { bearerHeaders, RECORD_SIGN_IN_REMEDY } from './record-auth.ts'
+import { bearerHeaders, RECORD_SIGN_IN_REMEDY, type RecordIdentity } from './record-auth.ts'
 import { storedRecordToken } from './record-session.ts'
 import type { SnapshotKind } from './record-snapshots.ts'
 
@@ -55,6 +55,7 @@ export type RecordDocImportInput = {
 }
 
 export type RecordApiClient = {
+  whoami(): Promise<RecordIdentity>
   putSnapshot(
     kind: SnapshotKind,
     input: { machineId: string; payload: unknown },
@@ -194,6 +195,7 @@ export function recordApiClient(): RecordApiClient {
   if (injected) return injected
   if (process.env.NODE_ENV === 'test') throw new Error(TEST_REFUSAL)
   return {
+    whoami: () => request('/v1/whoami'),
     putSnapshot: (kind, input) =>
       request(`/v1/snapshots/${kind}`, { method: 'PUT', body: JSON.stringify(input) }),
     listSnapshots: () => request('/v1/snapshots'),

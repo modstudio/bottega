@@ -11,8 +11,9 @@ import { callerCheckoutFacts, preflight } from '../dispatch/dispatch-preflight.t
 import { job } from '../jobs/jobs.ts'
 import { effectiveMcpRequest, preflightMcp, storedMcpRequest } from '../mcp/mcp-preflight.ts'
 import { projectByName } from '../project/projects.ts'
+import { signedInRecordUserId } from '../record/record-attribution.ts'
 import type { DetachSpec } from '../route/failover.ts'
-import { repoOf, signedInRecordUserId } from './run.ts'
+import { repoOf } from './run.ts'
 import { RUNS_DIR, runFilePaths } from './run-artifacts.ts'
 
 /**

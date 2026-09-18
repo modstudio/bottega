@@ -135,6 +135,7 @@ function capturingClient(overrides: Partial<RecordApiClient> = {}): {
       voids: 0,
     }),
     ...overrides,
+    whoami: overrides.whoami ?? unused,
   }
   return { client, imports }
 }

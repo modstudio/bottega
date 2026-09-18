@@ -9,6 +9,12 @@ describe('record cache pull', () => {
   test('applies an update and a soft delete', async () => {
     const docId = newRecordId()
     const client: RecordApiClient = {
+      whoami: async () => ({
+        user: { id: newRecordId() },
+        activeSpaceId: null,
+        personalSpaceId: null,
+        memberships: [],
+      }),
       putSnapshot: async () => ({ takenAt: new Date().toISOString() }),
       listSnapshots: async () => ({ items: [] }),
       listDocs: async () => ({
