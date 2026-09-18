@@ -434,6 +434,7 @@ export const modules: ArchitectureModule[] = [
     '../git/git-environment.ts',
     '../idle-kill.ts',
     '../jobs/jobs.ts',
+    '../mailbox/mailbox-notice.ts',
     '../mailbox/mailbox.ts',
     '../live-outcome.ts',
     '../outcome.ts',

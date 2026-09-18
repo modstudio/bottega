@@ -220,6 +220,7 @@ async function spawnCli(opts: TransportStartOpts): Promise<TransportHandle> {
 
 const cliTransport: AgentTransport = {
   name: 'cli',
+  canInjectMidTurn: false,
   start(opts) {
     return spawnCli(opts)
   },

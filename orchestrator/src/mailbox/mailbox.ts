@@ -2,6 +2,7 @@
 
 import { db, linkedWorktreeReadOnly, writableDb, writeTransaction } from '../database/db.ts'
 import { adoptRunMutation, auditRunMutation, authorizeRunMutation } from '../run/run-authority.ts'
+import type { TransportName } from '../transport/transport.ts'
 
 const nowIso = (): string => new Date(Date.now()).toISOString()
 
@@ -23,12 +24,13 @@ type RunIdentity = {
   root_id: number
   status: string
   vendor_session: string | null
+  transport: TransportName | null
 }
 
 function identity(id: number): RunIdentity | null {
   return db()
     .query(
-      `SELECT id, COALESCE(parent_run_id, id) AS root_id, status, vendor_session
+      `SELECT id, COALESCE(parent_run_id, id) AS root_id, status, vendor_session, transport
        FROM run WHERE id = ?`,
     )
     .get(id) as RunIdentity | null
@@ -40,14 +42,17 @@ function bodyOf(body: string): string {
 }
 
 /** Queue architect context against the conversation's currently running turn. */
-export function tellRun(id: number, body: string): RunMessage {
+export function tellRun(
+  id: number,
+  body: string,
+): RunMessage & { transport: TransportName | null } {
   writableDb()
   let authority = authorizeRunMutation(id, 'tell')
   const requested = identity(id)
   if (!requested) throw new Error(`no run ${id}`)
   const active = db()
     .query(
-      `SELECT id, COALESCE(parent_run_id, id) AS root_id, status, vendor_session
+      `SELECT id, COALESCE(parent_run_id, id) AS root_id, status, vendor_session, transport
        FROM run
       WHERE (id = ? OR parent_run_id = ?) AND status = 'running'
       ORDER BY turn DESC, id DESC LIMIT 1`,
@@ -67,7 +72,7 @@ export function tellRun(id: number, body: string): RunMessage {
       )
       .get(active.root_id, active.id, authority.actor, messageBody, nowIso()) as RunMessage
     auditRunMutation(authority, 'tell')
-    return message
+    return { ...message, transport: active.transport }
   })
 }
 

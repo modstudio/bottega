@@ -225,6 +225,8 @@ export type TransportHandle = {
  */
 export type AgentTransport = {
   readonly name: TransportName
+  /** Whether prompt() can add context while a turn is already running. */
+  readonly canInjectMidTurn: boolean
   start(opts: TransportStartOpts): Promise<TransportHandle>
   prompt(handle: TransportHandle, text: string): Promise<void>
   events(handle: TransportHandle): AsyncIterable<NormalizedEvent>

@@ -58,6 +58,7 @@ export function scriptedTransportSequence(
   }
   const transport: AgentTransport = {
     name: 'cli',
+    canInjectMidTurn: false,
     async start(opts) {
       options.push(opts)
       inspectStart?.(opts)
@@ -282,6 +283,7 @@ export function scriptedTransport(script: ScriptedTransportEvent[]): ScriptedTra
 
   const transport: AgentTransport = {
     name: 'cli',
+    canInjectMidTurn: false,
     async start(opts) {
       prompts.push(opts.prompt)
       return handleFor(opts)
