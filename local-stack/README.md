@@ -4,7 +4,7 @@ Local model serving, and the contract the orchestrator consumes.
 
 The orchestrator does not import from here. The contract is an OpenAI-compatible
 Responses endpoint exposed on a local port and selected with
-`ORCH_LOCAL_BASE_URL`.
+`ORCH_MODEL_HOST_URL`.
 
 ## Declaring a host
 
@@ -14,9 +14,11 @@ port and an unused local forwarding port, and install the launchd tunnel from
 
 Set `LOCAL_MODEL_HOST` to the SSH alias when running `ops/install.sh`. The
 template uses that alias and the current home directory; edit its `-L` argument
-if the chosen ports differ from the template. Set `ORCH_LOCAL_BASE_URL` to the
-forwarded local `/v1` URL and set `ORCH_LOCAL_MODEL` to the served model name.
-These variables must be visible to non-interactive shells that run `orch`.
+if the chosen ports differ from the template. Set `ORCH_MODEL_HOST_URL` to the
+forwarded local `/v1` URL and set `ORCH_MODEL_HOST_MODEL` to the served model
+name. These variables must be visible to non-interactive shells that run `orch`.
+The legacy names `ORCH_LOCAL_BASE_URL` and `ORCH_LOCAL_MODEL` remain accepted
+temporarily and emit deprecation warnings on stderr.
 
 The inference server binds localhost on the model host. The SSH tunnel is the
 only route to it, because inference servers commonly have no authentication and

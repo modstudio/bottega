@@ -53,7 +53,7 @@ key restriction or network belong in machine docs:
 orch doc list --scope machine
 ```
 
-`ORCH_LOCAL_BASE_URL` and `ORCH_LOCAL_MODEL` must be available to
+`ORCH_MODEL_HOST_URL` and `ORCH_MODEL_HOST_MODEL` must be available to
 non-interactive shells, because that is how `orch` runs.
 
 ## Docker preflight

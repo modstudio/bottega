@@ -3,7 +3,7 @@ import {
   fileContractProbeReason,
   predatesFileContract,
   unavailableReason,
-} from '../agent/local-host.ts'
+} from '../agent/model-host.ts'
 import { failingDefaultCanonEvals } from '../canon/canon-eval-status.ts'
 import { db } from '../database/db.ts'
 import { COOLS_DOWN, NOT_EVIDENCE } from '../failure/failure.ts'

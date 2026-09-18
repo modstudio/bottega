@@ -7,15 +7,16 @@ import { cliVersion, versionBelow } from '../agent/agents.ts'
 import {
   ensureLocalHealth,
   fileContractProbeReason,
-  LOCAL_BASE_URL,
   lastWakeAttempt,
+  MODEL_HOST_URL,
+  modelHostModel,
   predatesFileContract,
   registeredContextTokens,
   registeredLocalAgent,
   tryWake,
   unavailableReason,
   wakeStatus,
-} from '../agent/local-host.ts'
+} from '../agent/model-host.ts'
 import { DATABASE_RESOLUTION, DB_PATH, databaseOpenMode, db } from '../database/db.ts'
 import { runTotals } from '../evidence/evidence-query.ts'
 import {
@@ -49,14 +50,14 @@ function localRegistrationDiagnosis(baseUrl: string, configuredModel: string | u
   const registration = registeredLocalAgent(agentRows(), baseUrl)
   const contextTokens = registration ? registeredContextTokens(registration) : null
   const lines = [
-    `\nlocal endpoint  ${baseUrl || '(ORCH_LOCAL_BASE_URL unset)'}`,
+    `\nlocal endpoint  ${baseUrl || '(ORCH_MODEL_HOST_URL unset)'}`,
     `local model     ${registration?.model || '(not registered)'}`,
   ]
   if (baseUrl && !registration) {
     lines.push(
       configuredModel
         ? `register        orch agent add local-acp --harness goose --backend vllm --model ${configuredModel} --base-url ${baseUrl} --context-tokens <tokens>`
-        : 'register        ORCH_LOCAL_MODEL is required before registering local-acp',
+        : 'register        ORCH_MODEL_HOST_MODEL is required before registering local-acp',
     )
   }
   if (registration && contextTokens === null) {
@@ -275,10 +276,10 @@ export async function doctorCommand(
   log(`sandbox agents ${srtAgents.join(', ') || '(none)'} (read-only repository jobs)`)
   const acpGap = acpRuntimeGaps()
   log(`acp            ${acpGap ?? 'ready'}`)
-  const local = localRegistrationDiagnosis(LOCAL_BASE_URL, process.env.ORCH_LOCAL_MODEL)
+  const local = localRegistrationDiagnosis(MODEL_HOST_URL, modelHostModel())
   for (const line of local.lines) log(line)
   log(`reachable       ${r.ok ? 'yes' : 'NO'} — ${r.detail}`)
-  if (!r.ok && LOCAL_BASE_URL) {
+  if (!r.ok && MODEL_HOST_URL) {
     // Reporting commands do not have side effects, so doctor only sends a
     // packet when asked in as many words. `orch do` wakes on its own; a
     // status check that silently powered on a shared machine would be a
@@ -295,7 +296,7 @@ export async function doctorCommand(
       )
     }
   }
-  if (!r.ok && LOCAL_BASE_URL) {
+  if (!r.ok && MODEL_HOST_URL) {
     // The endpoint is a tunnel to another machine, so "not reachable" has a
     // short list of causes and they are checked in a fixed order. Printed
     // here because this is where somebody looks when the local model goes

@@ -1,13 +1,41 @@
-// concern: local-host
-/** Owns local-agent wake, health, reachability, and availability. Must not know probes or CLI grammar. */
+// concern: model-host
+/** Owns model-host wake, health, reachability, and availability. Must not know probes or CLI grammar. */
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { which } from 'bun'
 import { concernStateDirectory } from '../../../shared/state-directory.ts'
 import { AGENTS, type AgentRow } from './agent-registry.ts'
 import type { Agent } from './agents.ts'
-/** Where a local OpenAI-compatible endpoint lives, e.g. http://127.0.0.1:8010/v1 */
-export const LOCAL_BASE_URL = process.env.ORCH_LOCAL_BASE_URL ?? ''
+
+const deprecationWarnings = new Set<string>()
+
+export function readModelHostEnvironment(
+  env: NodeJS.ProcessEnv,
+  name: string,
+  legacyName: string,
+  warn: (message: string) => void = (message) => process.stderr.write(`${message}\n`),
+  warned: Set<string> = deprecationWarnings,
+): string {
+  if (env[name] !== undefined) return env[name]
+  const legacyValue = env[legacyName]
+  if (legacyValue === undefined) return ''
+  if (!warned.has(legacyName)) {
+    warned.add(legacyName)
+    warn(`${legacyName} is deprecated; use ${name}`)
+  }
+  return legacyValue
+}
+
+/** Where the model host's OpenAI-compatible endpoint lives. */
+export const MODEL_HOST_URL = readModelHostEnvironment(
+  process.env,
+  'ORCH_MODEL_HOST_URL',
+  'ORCH_LOCAL_BASE_URL',
+)
+
+export function modelHostModel(): string {
+  return readModelHostEnvironment(process.env, 'ORCH_MODEL_HOST_MODEL', 'ORCH_LOCAL_MODEL')
+}
 
 export function registeredLocalAgent(rows: AgentRow[], baseUrl: string): AgentRow | null {
   const registered = rows.filter(
@@ -31,10 +59,10 @@ export function registeredContextTokens(row: AgentRow): number | null {
  * short-lived enough that one probe each is cheap: 2ms when the endpoint is
  * healthy, and when it is not, it replaces a run that was going to fail anyway.
  */
-let localHealth: { ok: boolean; detail: string; contextTokens?: number } | null = null
+let modelHostHealth: { ok: boolean; detail: string; contextTokens?: number } | null = null
 
 /**
- * MAC address to wake the local box at, or empty to never try.
+ * MAC address to wake the model host at, or empty to never try.
  *
  * OPT-IN, and deliberately so. Powering on a remote host is an operator
  * decision. Whoever sets this is saying "wake it when work needs it"; unset,
@@ -44,7 +72,11 @@ let localHealth: { ok: boolean; detail: string; contextTokens?: number } | null 
  * contract with local-stack the same shape it always was: an endpoint and some
  * environment, never an import.
  */
-const LOCAL_WOL_MAC = process.env.ORCH_LOCAL_WOL_MAC ?? ''
+const MODEL_HOST_WOL_MAC = readModelHostEnvironment(
+  process.env,
+  'ORCH_MODEL_HOST_WOL_MAC',
+  'ORCH_LOCAL_WOL_MAC',
+)
 
 /**
  * How long to leave the box alone after sending a magic packet.
@@ -77,7 +109,7 @@ function wakeDecision(o: { mac: string; haveBinary: boolean; last: Date | null; 
   send: boolean
   detail: string
 } {
-  if (!o.mac) return { send: false, detail: 'ORCH_LOCAL_WOL_MAC not set — waking is opt-in' }
+  if (!o.mac) return { send: false, detail: 'ORCH_MODEL_HOST_WOL_MAC not set — waking is opt-in' }
   if (!o.haveBinary) {
     return { send: false, detail: 'wakeonlan not installed (brew install wakeonlan)' }
   }
@@ -103,7 +135,7 @@ function wakeDecision(o: { mac: string; haveBinary: boolean; last: Date | null; 
  */
 export function wakeStatus(now = Date.now()): { send: boolean; detail: string } {
   return wakeDecision({
-    mac: LOCAL_WOL_MAC,
+    mac: MODEL_HOST_WOL_MAC,
     haveBinary: which('wakeonlan', { PATH: process.env.PATH }) !== null,
     last: lastWakeAttempt(),
     now,
@@ -130,7 +162,7 @@ export function tryWake(now = Date.now()): { sent: boolean; detail: string } {
     /* best effort */
   }
   try {
-    Bun.spawn(['wakeonlan', LOCAL_WOL_MAC], {
+    Bun.spawn(['wakeonlan', MODEL_HOST_WOL_MAC], {
       stdout: 'ignore',
       stderr: 'ignore',
       stdin: 'ignore',
@@ -162,10 +194,10 @@ export function tryWake(now = Date.now()): { sent: boolean; detail: string } {
  * before — which is why the reporting views can stay synchronous.
  */
 export async function ensureLocalHealth(opts: { force?: boolean; baseUrl?: string } = {}) {
-  if (!localHealth || opts.force) {
-    localHealth = await localReachable(undefined, opts.baseUrl ?? LOCAL_BASE_URL)
+  if (!modelHostHealth || opts.force) {
+    modelHostHealth = await localReachable(undefined, opts.baseUrl ?? MODEL_HOST_URL)
   }
-  return localHealth
+  return modelHostHealth
 }
 
 /**
@@ -205,12 +237,13 @@ export function unavailableReason(name: string): string | null {
   if (which(a.bin, { PATH: process.env.PATH }) === null) return 'not installed'
   if (a.billing === 'local') {
     // A local agent is only real once an endpoint is configured...
-    if (!LOCAL_BASE_URL) return 'ORCH_LOCAL_BASE_URL not set'
+    if (!MODEL_HOST_URL) return 'ORCH_MODEL_HOST_URL not set'
     // ...and only usable once it ANSWERS. Configuration is not reachability:
     // the env var stayed correct for the whole eleven hours the box was off.
     // Only a probe that has actually run can say no here, so a caller that
     // never awaited ensureLocalHealth() is left exactly as it was.
-    if (localHealth && !localHealth.ok) return `endpoint unreachable — ${localHealth.detail}`
+    if (modelHostHealth && !modelHostHealth.ok)
+      return `endpoint unreachable — ${modelHostHealth.detail}`
   }
   return null
 }
@@ -226,9 +259,9 @@ export async function localReachable(
   // pointed at a URL that is known to be dead, or known to be the wrong
   // service, without reconfiguring the machine — which is the only way to test
   // the "answered 200 with HTML" case that Docker Desktop actually produced.
-  baseUrl = LOCAL_BASE_URL,
+  baseUrl = MODEL_HOST_URL,
 ): Promise<{ ok: boolean; detail: string; contextTokens?: number }> {
-  if (!baseUrl) return { ok: false, detail: 'ORCH_LOCAL_BASE_URL not set' }
+  if (!baseUrl) return { ok: false, detail: 'ORCH_MODEL_HOST_URL not set' }
   try {
     const res = await fetch(new URL('models', baseUrl.replace(/\/?$/, '/')), {
       signal: AbortSignal.timeout(timeoutMs),

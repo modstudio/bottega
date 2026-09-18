@@ -120,7 +120,7 @@ export const modules: ArchitectureModule[] = [
     './capabilities.ts',
     '../database/db.ts',
     '../jobs/jobs.ts',
-    './local-host.ts',
+    './model-host.ts',
     '../mcp/mcp-probe.ts',
     '../transport/transport.ts',
   ]),
@@ -139,7 +139,7 @@ export const modules: ArchitectureModule[] = [
   module('orchestrator/src/recipe/env-file.ts', []),
   module('orchestrator/src/hook-tree/hook-tree.ts', []),
   module('orchestrator/src/worktree/keep-tree-hold.ts', []),
-  module('orchestrator/src/agent/local-host.ts', [
+  module('orchestrator/src/agent/model-host.ts', [
     '../../../shared/state-directory.ts',
     './agent-registry.ts',
     './agents.ts',
