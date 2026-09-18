@@ -7,7 +7,7 @@
 
     <key>ProgramArguments</key>
     <array>
-        <string>__REPO__/bin/brew-auto-upgrade.sh</string>
+        <string>__CONCERN__/bin/brew-auto-upgrade.sh</string>
     </array>
 
     <key>StartCalendarInterval</key>

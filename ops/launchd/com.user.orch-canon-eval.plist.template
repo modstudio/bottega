@@ -12,7 +12,7 @@
          still matches the last pass for that agent unless invoked with --force. -->
     <key>ProgramArguments</key>
     <array>
-        <string>__ROOT__/bin/orch</string>
+        <string>__CHECKOUT__/bin/orch</string>
         <string>canon</string>
         <string>eval</string>
     </array>
@@ -26,7 +26,7 @@
     </dict>
 
     <key>WorkingDirectory</key>
-    <string>__ROOT__</string>
+    <string>__CHECKOUT__</string>
     <key>EnvironmentVariables</key>
     <dict>
         <key>PATH</key>

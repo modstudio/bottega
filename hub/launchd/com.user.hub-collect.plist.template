@@ -11,7 +11,7 @@
          slower clock. The loop keeps both cadences in one process. -->
     <key>ProgramArguments</key>
     <array>
-        <string>__REPO__/bin/hub</string>
+        <string>__CHECKOUT__/bin/hub</string>
         <string>collect</string>
         <string>--watch</string>
     </array>
@@ -38,7 +38,7 @@
     </dict>
 
     <key>WorkingDirectory</key>
-    <string>__REPO__</string>
+    <string>__CHECKOUT__</string>
 
     <key>StandardOutPath</key>
     <string>__HOME__/Library/Logs/hub/collect.log</string>
