@@ -2,7 +2,7 @@
 /** Tests live beside a same-named module or a module named by a hyphen prefix. */
 import { resolve } from 'node:path'
 
-const ROOTS = ['orchestrator', 'hub', 'shared', 'scripts']
+const ROOTS = ['orchestrator', 'hub', 'retrieval', 'shared', 'scripts']
 const TEST_FILE = /\.test\.tsx?$/
 
 export type TestPlacementFinding = {

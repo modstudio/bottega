@@ -58,4 +58,4 @@ export const FROZEN_STATE_NAMES = {
  * three independent copies of this list is how a fifth concern comes to be
  * policed by none of them.
  */
-export const CONCERNS = ['orchestrator', 'hub', 'ops', 'local-stack'] as const
+export const CONCERNS = ['orchestrator', 'hub', 'ops', 'local-stack', 'retrieval'] as const
