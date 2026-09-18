@@ -1,5 +1,10 @@
 import { describe, expect, test } from 'bun:test'
-import { type DocsSettings, type ReleaseSettings, resolveInjection } from './project-injection.ts'
+import {
+  type DocsSettings,
+  type ReleaseSettings,
+  resolveDeclaredFacts,
+  resolveInjection,
+} from './project-injection.ts'
 import { type Project, validateProjectSettings } from './projects.ts'
 
 const release: ReleaseSettings = {
@@ -127,6 +132,7 @@ describe('project workflow injection', () => {
           create: 'task_create',
           update: 'fixture_task_update',
           status: 'task_update',
+          document: 'task_addDocument',
         },
         states: {},
       },
@@ -167,6 +173,48 @@ describe('project workflow injection', () => {
     ).tracker
     expect(hub.actions.search).toBe('hub task list --project fixture')
     expect(hub.actions.get).toBe('hub task show DEV-661')
+  })
+
+  test('workspace facts include the document action (mutation: drop the action)', () => {
+    const { facts } = resolveDeclaredFacts(
+      {
+        name: 'starship',
+        stack: 'php-laravel-vue',
+        settings: { tracker: { protocol: 'workspace-mcp' } },
+      },
+      ['tracker'],
+    )
+
+    expect(facts.tracker?.actions.document).toBe('create-task-document-tool')
+  })
+
+  test('facts omit an unsupported document action (mutation: invent a cursor action)', () => {
+    const { facts } = resolveDeclaredFacts(
+      {
+        name: 'stopal',
+        stack: 'node-drizzle',
+        settings: { tracker: { protocol: 'cursor-mcp' } },
+      },
+      ['tracker'],
+    )
+
+    expect(facts.tracker?.actions).not.toHaveProperty('document')
+  })
+
+  test('register document override replaces the default (mutation: ignore the override)', () => {
+    const tracker = { protocol: 'workspace-mcp' as const, actions: { document: 'custom_document' } }
+    expect(validateProjectSettings({ tracker })).toEqual([])
+
+    const { facts } = resolveDeclaredFacts(
+      {
+        name: 'starship',
+        stack: 'php-laravel-vue',
+        settings: { tracker },
+      },
+      ['tracker'],
+    )
+
+    expect(facts.tracker?.actions.document).toBe('custom_document')
   })
 
   test('derives only declared remote states and gives hub vocabulary defaults', () => {
