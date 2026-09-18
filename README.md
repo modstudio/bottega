@@ -94,7 +94,12 @@ The plan, its evidence and its open rulings:
 ## Getting started
 
     git config core.hooksPath .githooks   # once per clone
+    cp .mcp.json.example .mcp.json        # then configure this checkout's MCP servers
     bun run check                          # tests, typecheck, boundaries, brand, canon
+
+Keep checkout-rooted permission rules in `.claude/settings.local.json`. Absolute
+checkout paths are machine-specific, while `.claude/settings.json` is shared by
+every contributor.
 
 Work is tracked in hub, and every task carries a `DEV-` key:
 

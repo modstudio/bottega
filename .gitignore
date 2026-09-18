@@ -7,6 +7,9 @@ __pycache__/
 
 *.log
 
+# Operator-specific MCP servers are configured per checkout.
+.mcp.json
+
 # per-directory Claude state, not shared.
 # settings.json and the port-feature skill shim are project config and must
 # be tracked; everything else under .claude/ (worktrees, local settings) is not.
