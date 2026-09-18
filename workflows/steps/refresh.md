@@ -4,7 +4,8 @@ floor:
   - command-exit
 job: null
 autonomy: auto
-needs: []
+needs:
+  []
 ---
 Before reading code, run `orch tree refresh .` from the root of the run's worktree. A refusal is this step's failure to report; do not work around it, substitute project-specific commands, or refresh another checkout. If the code moves, discard conclusions based on the old revision and inspect it again.
 

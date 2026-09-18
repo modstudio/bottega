@@ -4,7 +4,8 @@ floor:
   - recorded-artifact
 job: review-lens
 autonomy: auto
-needs: []
+needs:
+  []
 ---
 From the main checkout's `orch`, run `orch review tier {{branch}}`. Read the stack and project documents named by the composition, then choose independent lenses for that tier. Always include correctness. Choose the remaining lenses from those documents, dispatch exactly the tier's number of independent lenses, and at tier zero still dispatch one correctness lens.
 

@@ -1,5 +1,5 @@
 ---
-title: Check the task's acceptance criteria
+title: "Check the task's acceptance criteria"
 floor:
   - recorded-artifact
 job: null

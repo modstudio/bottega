@@ -4,7 +4,8 @@ floor:
   - human-ruling
 job: null
 autonomy: ask
-needs: []
+needs:
+  []
 ---
 Give every finding an independent refutation pass before accepting it: re-read the cited line in context, run the claimed probe, or break the code and confirm that the relevant test fails. A finding that resists checking is unverified: record it as skipped with the reason, never as accepted.
 

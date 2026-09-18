@@ -5,7 +5,8 @@ floor:
   - recorded-artifact
 job: implement
 autonomy: ask
-needs: []
+needs:
+  []
 ---
 Run this step only when triage accepted or modified at least one finding. Continue the implementing run with the accepted findings by running `orch continue <implementing-run-id> <accepted-findings>`. Re-run lenses only when the review-tier canon requires it: for tier three, when a tier-three path was touched, re-run only the touched lenses.
 
