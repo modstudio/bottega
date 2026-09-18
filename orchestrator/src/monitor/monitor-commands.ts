@@ -1,4 +1,3 @@
-import { fileURLToPath } from 'node:url'
 // concern: monitor-commands
 /** Owns monitor invocation, notice delivery authority, reporting, and exit mapping. Must not know CLI grammar. */
 
@@ -13,6 +12,7 @@ import {
   realpathSync,
 } from 'node:fs'
 import { basename, dirname } from 'node:path'
+import { assetPath } from '../../../shared/install-root.ts'
 import {
   MONITOR_CAPABILITY_PATH_ENV,
   MONITOR_CAPABILITY_TOKEN_ENV,
@@ -85,8 +85,8 @@ function deliveryAuthorized(): boolean {
       executable = words[1]
     if (!executable) return false
     const hooks = new Set([
-      realpathSync(fileURLToPath(new URL('../../hooks/orch-heartbeat.sh', import.meta.url))),
-      realpathSync(fileURLToPath(new URL('../../hooks/session-brief.py', import.meta.url))),
+      realpathSync(assetPath('orchestrator', 'hooks', 'orch-heartbeat.sh')),
+      realpathSync(assetPath('orchestrator', 'hooks', 'session-brief.py')),
     ])
     try {
       return hooks.has(realpathSync(executable))

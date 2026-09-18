@@ -1,9 +1,8 @@
-import { fileURLToPath } from 'node:url'
 // concern: cli
 /** Registers extracted logic-verb adapters. Must not own application decisions. */
 
-import { resolve } from 'node:path'
 import type { Command, OptionValues } from 'commander'
+import { assetPath } from '../../../shared/install-root.ts'
 import { agentCommand, agentsCommand } from '../agent/agent-commands.ts'
 import { serveAsk } from '../ask/ask.ts'
 import { setupAskCommand } from '../ask/ask-commands.ts'
@@ -107,11 +106,7 @@ export function register(program: Command): void {
     .option('--config')
     .allowExcessArguments(false)
     .action((options) =>
-      mcpCommand(
-        Boolean(options.config),
-        resolve(fileURLToPath(new URL('../../../bin/orch', import.meta.url))),
-        presentation,
-      ),
+      mcpCommand(Boolean(options.config), assetPath('bin', 'orch'), presentation),
     )
   program
     .command('workflow [args...]')
@@ -332,7 +327,7 @@ export function register(program: Command): void {
         [
           process.execPath,
           '--no-env-file',
-          fileURLToPath(new URL('../cli/orch.ts', import.meta.url)),
+          assetPath('orchestrator', 'src', 'cli', 'orch.ts'),
           'ask-server',
         ],
         presentation,

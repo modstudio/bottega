@@ -60,6 +60,8 @@
         "hooks/*!",
         "src/cli/orch.ts!",
         "src/record/record-api-server.ts!",
+        // Spawned by path from src/run/run-dispatch.ts as the detached worker entry.
+        "src/run/exec.ts!",
         // Launched by path from src/sandbox/sandbox.ts for Grok's MCP configuration.
         "src/ask/ask-proxy.ts!",
         "scripts/acp-parity.ts!",

@@ -2,8 +2,9 @@ import { Database } from 'bun:sqlite'
 import { createHash } from 'node:crypto'
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
+import { assetPath } from '../../../shared/install-root.ts'
 
-export const MIGRATIONS_FOLDER = join(import.meta.dir, '..', '..', 'migrations')
+export const MIGRATIONS_FOLDER = assetPath('orchestrator', 'migrations')
 const MIGRATIONS_TABLE = 'orch_migrations'
 export const SCHEMA_LOCK_TABLE = 'orch_schema_lock'
 const SCHEMA_INVARIANT = "Only the main checkout's binary migrates the store."

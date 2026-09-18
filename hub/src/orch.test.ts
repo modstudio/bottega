@@ -5,7 +5,6 @@ import {
   mkdtempSync,
   readdirSync,
   readFileSync,
-  realpathSync,
   rmSync,
   statSync,
   writeFileSync,
@@ -13,6 +12,7 @@ import {
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { INSTALL_HOME_ENV } from '../../shared/install-root.ts'
 import { OrchBlockersSchema } from '../../shared/orch-contract.ts'
 import {
   decodeRunsJson,
@@ -153,7 +153,9 @@ test('orch resolution accepts only executable files from override, checkout, and
   mkdirSync(override)
   const priorOrch = process.env.HUB_ORCH
   const priorPath = process.env.PATH
+  const priorHome = process.env[INSTALL_HOME_ENV]
   try {
+    process.env[INSTALL_HOME_ENV] = bundledRoot
     process.env.HUB_ORCH = override
     process.env.PATH = `${first}:${second}`
     const bundled = await import(`${built.outputs[0]!.path}?test=${Date.now()}`)
@@ -161,7 +163,7 @@ test('orch resolution accepts only executable files from override, checkout, and
 
     process.env.PATH = first
     expect(() => bundled.resolveOrchExecutable()).toThrow(
-      `HUB_ORCH override ${override}; checkout executable ${realpathSync(checkoutCandidate)}; PATH lookup found nothing`,
+      `HUB_ORCH override ${override}; checkout executable ${checkoutCandidate}; PATH lookup found nothing`,
     )
     delete process.env.HUB_ORCH
     expect(() => bundled.resolveOrchExecutable()).toThrow('HUB_ORCH override unset')
@@ -171,6 +173,8 @@ test('orch resolution accepts only executable files from override, checkout, and
     else process.env.HUB_ORCH = priorOrch
     if (priorPath === undefined) delete process.env.PATH
     else process.env.PATH = priorPath
+    if (priorHome === undefined) delete process.env[INSTALL_HOME_ENV]
+    else process.env[INSTALL_HOME_ENV] = priorHome
     rmSync(root, { recursive: true, force: true })
   }
 })

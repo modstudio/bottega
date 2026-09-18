@@ -6,7 +6,7 @@
 import { type ChildProcess, spawn } from 'node:child_process'
 import { createHash } from 'node:crypto'
 import { existsSync, mkdirSync, writeFileSync } from 'node:fs'
-import { fileURLToPath } from 'node:url'
+import { assetPath } from '../../../shared/install-root.ts'
 import { db, nowIso, sessionId, writableDb, writeTransaction } from '../database/db.ts'
 import { callerCheckoutFacts, preflight } from '../dispatch/dispatch-preflight.ts'
 import { job } from '../jobs/jobs.ts'
@@ -212,7 +212,7 @@ export async function detach(
      * that. `exec.ts` imports almost nothing and pulls the rest in inside a
      * catch, turning a broken sibling into a recorded failure with a reason.
      */
-    fileURLToPath(new URL('./exec.ts', import.meta.url)),
+    assetPath('orchestrator', 'src', 'run', 'exec.ts'),
     String(id),
     promptPath,
     jobName,

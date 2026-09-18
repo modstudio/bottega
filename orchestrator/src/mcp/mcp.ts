@@ -1,9 +1,8 @@
-import { resolve } from 'node:path'
-import { fileURLToPath } from 'node:url'
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js'
 import { z } from 'zod'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
+import { assetPath } from '../../../shared/install-root.ts'
 import { db, enableSchemaReload, sessionId } from '../database/db.ts'
 import { registerStandardRuntime } from '../runtime/runtime-registration.ts'
 
@@ -55,7 +54,7 @@ const text = (value: unknown) => ({
   ],
 })
 
-const HUB = resolve(fileURLToPath(new URL('../../../bin/hub', import.meta.url)))
+const HUB = assetPath('bin', 'hub')
 
 const requiredReportField = (field: string, belongs: string) =>
   z
