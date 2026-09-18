@@ -107,13 +107,23 @@ export function processReleaseDecision(facts: {
 }
 
 export function staleRunReleaseDecision(facts: {
+  runId: number
   runExists: boolean
   status: string | null
   alreadyExcluded: boolean
 }): ReleaseDecision {
   if (!facts.runExists) return refuse('the stale run exists', 'check the run id')
-  if (facts.status !== 'stale')
-    return refuse('the run status is stale', 'use the lifecycle verb appropriate to its status')
+  if (facts.status !== 'stale') {
+    const fix =
+      facts.status === 'running'
+        ? `run orch stop ${facts.runId}`
+        : facts.status === 'asking'
+          ? `run orch abandon ${facts.runId}`
+          : facts.status === 'ok' || facts.status === 'failed' || facts.status === 'stopped'
+            ? `the run is already terminal (${facts.status}); no lifecycle verb applies`
+            : `no lifecycle verb exists for status ${facts.status ?? '(missing)'}`
+    return refuse('the run status is stale', fix)
+  }
   if (facts.alreadyExcluded)
     return refuse('the stale run is not already evidence-excluded', 'run orch monitor again')
   return allow('mark the stale run evidence-excluded and settled')

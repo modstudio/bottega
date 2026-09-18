@@ -300,6 +300,7 @@ function reclaimStaleRun(subject: string, options: Options) {
     evidence_excluded: string | null
   } | null
   const decision = staleRunReleaseDecision({
+    runId,
     runExists: row !== null,
     status: row?.status ?? null,
     alreadyExcluded: Boolean(row?.evidence_excluded),
