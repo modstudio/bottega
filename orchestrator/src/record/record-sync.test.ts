@@ -4,7 +4,7 @@ import type { SQL } from 'bun'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { RECORD_ACTOR_ROLE, RECORD_OWNER_ROLE } from '../../../shared/record/schema.ts'
 import { RUN_RECORD_PAYLOAD_COLUMNS } from '../run/run-outbox.ts'
-import { syncRecord } from './record-sync.ts'
+import { syncRecord, unreachableSpaceProject } from './record-sync.ts'
 
 const RECORD_ID = '01990000-0000-7000-8000-000000000042'
 const MACHINE_ID = '01990000-0000-7000-8000-000000000099'
@@ -282,4 +282,16 @@ test('two declared projects bind their own spaces in separate transactions', asy
   expect(remote.transactionSpaceIds.filter((id) => id === alpha)).toHaveLength(1)
   expect(remote.transactionSpaceIds.filter((id) => id === beta)).toHaveLength(1)
   local.close()
+})
+
+test('a declared-space refusal names its project, so sync blocks only that project', () => {
+  const detail =
+    'project stopal declares record space stopal, but the signed-in user is not a member; join it first with an invitation, then retry'
+  expect(unreachableSpaceProject(detail)).toBe('stopal')
+})
+
+test('any other failure names no project, so sync still stops at it', () => {
+  expect(unreachableSpaceProject('run outbox machine a does not match invoking machine b')).toBe(
+    null,
+  )
 })

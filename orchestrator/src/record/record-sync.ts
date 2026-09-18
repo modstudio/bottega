@@ -149,6 +149,17 @@ function cachedProjectPrincipal(
   return resolved
 }
 
+/**
+ * The project named by a declared-space refusal, if that is what failed.
+ *
+ * `projectPrincipal` refuses when a project declares a space the signed-in user
+ * is not a member of. That is one project's problem, so sync skips its rows and
+ * carries on rather than stopping at the first of them.
+ */
+export function unreachableSpaceProject(detail: string): string | null {
+  return /project (.+?) declares record space /.exec(detail)?.[1] ?? null
+}
+
 async function bindPrincipal(tx: SQL, principal: RecordPrincipal): Promise<void> {
   await tx`SELECT set_config('app.user_id', ${principal.userId}, true)`
   await tx`SELECT set_config('app.space_id', ${principal.spaceId}, true)`
@@ -663,6 +674,69 @@ const recordKinds = {
   },
 } as const
 
+type OutboxAttempt = {
+  row: OutboxRow
+  postgres: SQL
+  local: Database
+  identity: { id: string; name: string }
+  principal: RecordPrincipal
+  memberships: readonly RecordMembership[]
+  principals: Map<string | null, RecordPrincipal>
+  blockedProjects: Set<string>
+  projectSpaces?: Record<string, string>
+  now: () => string
+}
+
+/**
+ * One outbox row's push.
+ *
+ * `skipped` is a row belonging to a project already known to be blocked,
+ * `stop` is a failure that ends the pass, and `failed` is a failure that blocks
+ * only its own project, so one project's unreachable space cannot keep every
+ * other project's evidence out of the record.
+ */
+async function pushOutboxRow(
+  attempt: OutboxAttempt,
+): Promise<'pushed' | 'skipped' | 'failed' | 'stop'> {
+  const { row, local, identity } = attempt
+  try {
+    if (!(row.kind in recordKinds)) throw new Error(`unknown outbox kind: ${row.kind}`)
+    const kind = row.kind as keyof typeof recordKinds
+    const parsed = payload(row.payload, kind)
+    const projectName = outboxProjectName(row.kind, parsed, local)
+    if (projectName && attempt.blockedProjects.has(projectName)) return 'skipped'
+    const rowPrincipal = cachedProjectPrincipal(attempt.principals, projectName, () =>
+      projectPrincipal(
+        projectName,
+        attempt.principal,
+        attempt.memberships,
+        local,
+        attempt.projectSpaces,
+      ),
+    )
+    const record: Payload = { ...parsed, spaceId: rowPrincipal.spaceId }
+    if (String(record.machineId) !== identity.id) {
+      throw new Error(
+        `${kind} outbox machine ${String(record.machineId)} does not match invoking machine ${identity.id}`,
+      )
+    }
+    await recordKinds[kind].push(attempt.postgres, record, rowPrincipal)
+    local
+      .query('UPDATE outbox SET synced_at=?, last_error=NULL WHERE id=?')
+      .run(attempt.now(), row.id)
+    return 'pushed'
+  } catch (error) {
+    const detail = errorDetail(error)
+    local
+      .query('UPDATE outbox SET attempts=attempts+1, last_error=? WHERE id=?')
+      .run(detail, row.id)
+    const blocked = unreachableSpaceProject(detail)
+    if (!blocked) return 'stop'
+    attempt.blockedProjects.add(blocked)
+    return 'failed'
+  }
+}
+
 export async function syncRecord(options: RecordSyncOptions = {}): Promise<RecordSyncResult> {
   const recordUrl = options.recordUrl ?? process.env.ORCH_RECORD_URL
   const identity = options.identity ?? { id: machineId(), name: machineName() }
@@ -705,40 +779,26 @@ export async function syncRecord(options: RecordSyncOptions = {}): Promise<Recor
       )
       .all()
     const principals = new Map<string | null, RecordPrincipal>()
+    // A project whose declared space this user cannot reach blocks only its own
+    // rows. Halting the whole outbox would let one project's misconfiguration
+    // stop every other project's evidence from ever reaching the record.
+    const blockedProjects = new Set<string>()
     for (const row of rows) {
-      try {
-        if (!(row.kind in recordKinds)) throw new Error(`unknown outbox kind: ${row.kind}`)
-        const kind = row.kind as keyof typeof recordKinds
-        const parsed = payload(row.payload, kind)
-        const projectName = outboxProjectName(row.kind, parsed, writableLocal)
-        const rowPrincipal = cachedProjectPrincipal(principals, projectName, () =>
-          projectPrincipal(
-            projectName,
-            principal,
-            memberships,
-            writableLocal,
-            options.projectSpaces,
-          ),
-        )
-        const record: Payload = { ...parsed, spaceId: rowPrincipal.spaceId }
-        if (String(record.machineId) !== identity.id) {
-          throw new Error(
-            `${kind} outbox machine ${String(record.machineId)} does not match invoking machine ${identity.id}`,
-          )
-        }
-        await recordKinds[kind].push(postgres, record, rowPrincipal)
-        writableLocal
-          .query('UPDATE outbox SET synced_at=?, last_error=NULL WHERE id=?')
-          .run((options.now ?? nowIso)(), row.id)
-        pushed++
-      } catch (error) {
-        const detail = errorDetail(error)
-        writableLocal
-          .query('UPDATE outbox SET attempts=attempts+1, last_error=? WHERE id=?')
-          .run(detail, row.id)
-        failed++
-        break
-      }
+      const outcome = await pushOutboxRow({
+        row,
+        postgres,
+        local: writableLocal,
+        identity,
+        principal,
+        memberships,
+        principals,
+        blockedProjects,
+        projectSpaces: options.projectSpaces,
+        now: options.now ?? nowIso,
+      })
+      if (outcome === 'pushed') pushed++
+      if (outcome === 'failed' || outcome === 'stop') failed++
+      if (outcome === 'stop') break
     }
     const pending = writableLocal
       .query<{ count: number }, []>('SELECT count(*) AS count FROM outbox WHERE synced_at IS NULL')
