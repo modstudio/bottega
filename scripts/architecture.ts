@@ -174,8 +174,10 @@ export const modules: ArchitectureModule[] = [
     '@modelcontextprotocol/sdk/server/mcp.js',
     'zod',
     '../project/projects.ts',
+    '../workflow/workflow-render.ts',
     '../workflow/workflows.ts',
   ]),
+  module('orchestrator/src/workflow/workflow-render.ts', ['./workflows.ts']),
   module('orchestrator/src/monitor/monitor.ts', [
     'node:fs',
     'node:path',
