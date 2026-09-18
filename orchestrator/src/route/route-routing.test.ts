@@ -15,23 +15,52 @@ import {
   scoreboard,
 } from './route.ts'
 
-test('a seeded unprobed agent is withheld from repository jobs', () => {
+test('the registration probe gates inline and repository jobs', () => {
   const original = db()
-    .query("SELECT probed_at, probe_result FROM agent WHERE name = 'codex'")
-    .get() as { probed_at: string | null; probe_result: string | null }
-  db().query("UPDATE agent SET probed_at = NULL, probe_result = NULL WHERE name = 'codex'").run()
-  refreshAgents()
+    .query("SELECT caps, probed_at, probe_result FROM agent WHERE name = 'codex'")
+    .get() as { caps: string; probed_at: string | null; probe_result: string | null }
+  const caps = JSON.parse(original.caps) as Record<string, unknown>
+  const setProbe = (probedAt: string | null, replyFile: boolean | undefined) => {
+    const nextCaps = { ...caps }
+    if (replyFile === undefined) delete nextCaps.replyFile
+    else nextCaps.replyFile = replyFile
+    db()
+      .query("UPDATE agent SET caps = ?, probed_at = ?, probe_result = ? WHERE name = 'codex'")
+      .run(JSON.stringify(nextCaps), probedAt, probedAt ? JSON.stringify({ ok: true }) : null)
+    refreshAgents()
+  }
   try {
-    expect(
-      candidates('review-lens').find((candidate) => candidate.agent === 'codex'),
-    ).toMatchObject({
+    setProbe(null, true)
+    const unprobedInline = candidates('summarize').find((candidate) => candidate.agent === 'codex')
+    const unprobedRepository = candidates('implement').find(
+      (candidate) => candidate.agent === 'codex',
+    )
+    expect(unprobedInline).toMatchObject({
       eligible: false,
-      why: 'unprobed agent is ineligible for repository jobs; run orch agent probe codex',
+      why: 'unprobed agent is ineligible for all jobs; run orch agent probe codex',
     })
+    expect(unprobedRepository).toMatchObject({
+      eligible: false,
+      why: 'unprobed agent is ineligible for all jobs; run orch agent probe codex',
+    })
+
+    setProbe('2026-01-01T00:00:00Z', undefined)
+    expect(candidates('summarize').find((candidate) => candidate.agent === 'codex')).toMatchObject({
+      eligible: false,
+      why: 'registration probe predates the file contract; run orch agent probe codex',
+    })
+
+    setProbe('2026-01-01T00:00:00Z', true)
+    expect(candidates('summarize').find((candidate) => candidate.agent === 'codex')?.eligible).toBe(
+      true,
+    )
+    expect(candidates('implement').find((candidate) => candidate.agent === 'codex')?.eligible).toBe(
+      true,
+    )
   } finally {
     db()
-      .query("UPDATE agent SET probed_at = ?, probe_result = ? WHERE name = 'codex'")
-      .run(original.probed_at, original.probe_result)
+      .query("UPDATE agent SET caps = ?, probed_at = ?, probe_result = ? WHERE name = 'codex'")
+      .run(original.caps, original.probed_at, original.probe_result)
     refreshAgents()
   }
 })
