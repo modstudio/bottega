@@ -5,6 +5,7 @@ import { targetGitEnvironment } from '../git/git-environment.ts'
 import type { Project } from '../project/projects.ts'
 
 export const GH_MERGED_PR_LIMIT = 1000
+export const GH_TARGETED_MERGED_PR_LIMIT = 100
 
 export type MergedPullRequest = {
   number: number
@@ -65,10 +66,24 @@ function isMergedPullRequest(value: unknown): value is MergedPullRequest {
   )
 }
 
-export function mergedPullRequests(project: Project): {
+export type MergedPullRequestListing = {
   pullRequests: MergedPullRequest[]
   truncated: boolean
-} {
+}
+
+/** Validate and classify one GitHub listing at its caller-selected limit. */
+export function mergedPullRequestListing(value: unknown, limit: number): MergedPullRequestListing {
+  if (!Array.isArray(value) || !value.every(isMergedPullRequest)) {
+    throw new Error('merged pull-request listing returned an unexpected JSON shape')
+  }
+  return { pullRequests: value, truncated: value.length === limit }
+}
+
+function listMergedPullRequests(
+  project: Project,
+  filters: readonly string[],
+  limit: number,
+): MergedPullRequestListing {
   const output = command(
     project.path,
     [
@@ -77,8 +92,9 @@ export function mergedPullRequests(project: Project): {
       'list',
       '--state',
       'merged',
+      ...filters,
       '--limit',
-      String(GH_MERGED_PR_LIMIT),
+      String(limit),
       '--json',
       'number,headRefName,headRefOid,title,mergeCommit,mergedAt',
     ],
@@ -92,10 +108,19 @@ export function mergedPullRequests(project: Project): {
       `merged pull-request listing returned invalid JSON: ${error instanceof Error ? error.message : String(error)}`,
     )
   }
-  if (!Array.isArray(value) || !value.every(isMergedPullRequest)) {
-    throw new Error('merged pull-request listing returned an unexpected JSON shape')
-  }
-  return { pullRequests: value, truncated: value.length === GH_MERGED_PR_LIMIT }
+  return mergedPullRequestListing(value, limit)
+}
+
+export function mergedPullRequests(project: Project): MergedPullRequestListing {
+  return listMergedPullRequests(project, [], GH_MERGED_PR_LIMIT)
+}
+
+export function targetedMergedPullRequests(
+  project: Project,
+  filter: { head: string } | { search: string },
+): MergedPullRequestListing {
+  const filters = 'head' in filter ? ['--head', filter.head] : ['--search', filter.search]
+  return listMergedPullRequests(project, filters, GH_TARGETED_MERGED_PR_LIMIT)
 }
 
 function fetchPullRequest(project: Project, pullRequest: MergedPullRequest): string | null {

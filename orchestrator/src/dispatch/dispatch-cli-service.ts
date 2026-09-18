@@ -6,7 +6,11 @@ import { join } from 'node:path'
 import { AGENTS } from '../agent/agent-registry.ts'
 import { resumePromptByteLimit } from '../agent/agents.ts'
 import { ensureLocalHealth } from '../agent/model-host.ts'
-import { resolveTaskBranch } from '../branch/task-branch.ts'
+import {
+  resolveTaskBranch,
+  type TaskBranchLandingRefusal,
+  TaskBranchLandingRefusalError,
+} from '../branch/task-branch.ts'
 import { flagValue, flagValues, readMessageText } from '../cli/args.ts'
 import { readStrictCodexSchema } from '../contract/codex-schema.ts'
 import { contractConflicts } from '../contract/contract.ts'
@@ -113,9 +117,21 @@ function warnCallerDrift(
   )
 }
 
+export function taskBranchLandingBypassWarning(
+  key: string,
+  base: string,
+  refusal: TaskBranchLandingRefusal,
+): string {
+  return (
+    `! task-branch landing check for ${key} did not complete (${refusal.reason}); ` +
+    `explicit --base ${base} is used as given`
+  )
+}
+
 function warnTaskBranchBypass(
   cwd: string,
   key: string | null,
+  base: string,
   error: (...values: unknown[]) => void,
 ): void {
   if (!key) return
@@ -125,6 +141,10 @@ function warnTaskBranchBypass(
   try {
     candidate = resolveTaskBranch(cwd, key)
   } catch (cause) {
+    if (cause instanceof TaskBranchLandingRefusalError) {
+      error(taskBranchLandingBypassWarning(key, base, cause.refusal))
+      return
+    }
     const reason = String((cause as Error)?.message ?? cause).split('\n', 1)[0]
     error(`! explicit --base bypasses task-branch reuse for ${key}; ${reason}`)
     return
@@ -236,7 +256,8 @@ export async function doCommand(argv: string[], presentation: Presentation): Pro
       readPrompt: prompt,
       validateSchema: readStrictCodexSchema,
       warnCallerDrift: (cwd, base) => warnCallerDrift(cwd, base, presentation.error),
-      warnTaskBranchBypass: (cwd, key) => warnTaskBranchBypass(cwd, key, presentation.error),
+      warnTaskBranchBypass: (cwd, key) =>
+        warnTaskBranchBypass(cwd, key, flag('base')!, presentation.error),
       contractConflicts,
       warnImplementContractConflicts: (conflicts, id) => {
         if (!conflicts.length) return

@@ -1,8 +1,15 @@
 import { describe, expect, test } from 'bun:test'
 import {
+  GH_TARGETED_MERGED_PR_LIMIT,
+  type MergedPullRequest,
+  mergedPullRequestListing,
+} from './merged-pull-request.ts'
+import {
   decideTaskBranchLanding,
+  decideTaskBranchPullRequestCheck,
   isTaskBranchSuperseded,
   type TaskBranchRunRow,
+  taskBranchLandingRefusalMessage,
 } from './task-branch.ts'
 
 const row = (
@@ -58,7 +65,6 @@ describe('task branch supersession', () => {
 const landingInput = {
   branch: 'DEV-650-orch-4390',
   tip: '6347bc9a',
-  trunk: 'develop',
   localCheck: null,
   pullRequestCheck: { state: 'unmatched' } as const,
 }
@@ -97,15 +103,59 @@ describe('task branch landing decision', () => {
   })
 
   test('unknown-state mutation: an incomplete PR check refuses with the explicit-base remedy', () => {
+    const refusal = decideTaskBranchLanding({
+      ...landingInput,
+      pullRequestCheck: { state: 'unknown', reason: 'merged PR listing was truncated' },
+    })
+    expect(refusal).toEqual({
+      action: 'refuse',
+      reason: 'merged PR listing was truncated',
+      branch: 'DEV-650-orch-4390',
+      tip: '6347bc9a',
+    })
+    if (refusal.action !== 'refuse') throw new Error('expected refusal')
+    const message = taskBranchLandingRefusalMessage(refusal, 'develop')
+    expect(message).toContain('--base DEV-650-orch-4390')
+    expect(message).toContain('--base develop')
+  })
+})
+
+const pullRequest = (number: number): MergedPullRequest => ({
+  number,
+  headRefName: `feature-${number}`,
+  headRefOid: `oid-${number}`,
+  title: `PR ${number}`,
+  mergeCommit: null,
+  mergedAt: '2026-09-18T00:00:00Z',
+})
+
+const listing = (count: number) =>
+  mergedPullRequestListing(
+    Array.from({ length: count }, (_, index) => pullRequest(index)),
+    GH_TARGETED_MERGED_PR_LIMIT,
+  )
+
+describe('targeted task branch pull-request decision', () => {
+  test('truncation-guard mutation: exactly the targeted limit remains unknown', () => {
     expect(
-      decideTaskBranchLanding({
-        ...landingInput,
-        pullRequestCheck: { state: 'unknown', reason: 'merged PR listing was truncated' },
+      decideTaskBranchPullRequestCheck({
+        listings: [listing(GH_TARGETED_MERGED_PR_LIMIT), listing(0)],
+        nameCheck: null,
+        commitCheck: null,
       }),
     ).toEqual({
-      action: 'refuse',
-      message:
-        'refusing task branch DEV-650-orch-4390 tip 6347bc9a: GitHub landing check could not complete: merged PR listing was truncated; rerun with --base develop',
+      state: 'unknown',
+      reason: 'targeted merged pull-request listing reached 100 entries and may be truncated',
     })
+  })
+
+  test('overconservative-truncation mutation: fewer than the targeted limit is decided', () => {
+    expect(
+      decideTaskBranchPullRequestCheck({
+        listings: [listing(GH_TARGETED_MERGED_PR_LIMIT - 1), listing(0)],
+        nameCheck: null,
+        commitCheck: null,
+      }),
+    ).toEqual({ state: 'unmatched' })
   })
 })
