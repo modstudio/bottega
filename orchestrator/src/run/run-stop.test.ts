@@ -2,7 +2,7 @@ import { beforeEach, expect, test } from 'bun:test'
 import { addRun } from '../../test/fixtures/store.ts'
 import { db } from '../database/db.ts'
 import { candidates } from '../route/route.ts'
-import { abandonRun, stopRun } from './run-stop.ts'
+import { abandonRun, stoppedRunLine, stopRun } from './run-stop.ts'
 
 const presentation = () => {
   const lines: string[] = []
@@ -26,7 +26,7 @@ async function invoke(
     const options = { force: false, auditReason: null, note: opts.note, presentation: shown.value }
     const helpers = {
       lifecycleCheckpoint: opts.checkpoint ?? (() => {}),
-      terminateRunProcesses: () => {},
+      terminateRunProcesses: () => ({ outcome: 'no-pid' as const, acceptableIds: [] }),
     }
     if (action === 'stop') await stopRun(id, options, helpers)
     else await abandonRun(id, options, helpers)
@@ -40,6 +40,36 @@ const insert = (status: string, job = 'implement') =>
 
 beforeEach(() => {
   process.env.CLAUDE_CODE_SESSION_ID = 'orch-test-session'
+})
+
+test('stop reports an identity mismatch with an inspect-then-signal remedy', () => {
+  expect(stoppedRunLine(42, 9001, { outcome: 'identity-mismatch', acceptableIds: [41, 42] })).toBe(
+    'stopped run 42; pid 9001 is present but does not name this run (expected exec.ts 41, exec.ts 42); after checking ps -p 9001 -o command, run kill -TERM 9001 only if the command shows one of those ids',
+  )
+})
+
+test('stop reports an unreadable process table and an inspect-then-signal remedy', () => {
+  expect(
+    stoppedRunLine(42, 9001, {
+      outcome: 'unascertainable',
+      acceptableIds: [41, 42],
+      reason: 'process inventory failed with exit 1',
+    }),
+  ).toBe(
+    'stopped run 42; no process could be signalled because process inventory failed with exit 1; after checking ps -p 9001 -o command, run kill -TERM 9001 only if the command shows one of these ids: exec.ts 41, exec.ts 42',
+  )
+})
+
+test('stop uses the plain success line for signalled, no-pid and gone outcomes', () => {
+  expect(
+    stoppedRunLine(42, 9001, {
+      outcome: 'signalled',
+      signalled: [9001],
+      acceptableIds: [42],
+    }),
+  ).toBe('stopped run 42')
+  expect(stoppedRunLine(42, null, { outcome: 'no-pid', acceptableIds: [] })).toBe('stopped run 42')
+  expect(stoppedRunLine(42, 9001, { outcome: 'gone', acceptableIds: [42] })).toBe('stopped run 42')
 })
 
 test('abandon retires an asking run from the live inbox and keeps it in all as terminal', async () => {
