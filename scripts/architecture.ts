@@ -256,6 +256,13 @@ export const modules: ArchitectureModule[] = [
   module('shared/config-directory.ts', ['node:path', './brand.ts']),
   module('shared/env-source.ts', ['node:fs', 'node:util', './config-directory.ts']),
   module('shared/machine-config.ts', ['node:fs', 'node:path', 'zod', './config-directory.ts']),
+  module('shared/secret-envelope.ts', [
+    '@hpke/chacha20poly1305',
+    '@hpke/core',
+    '@hpke/dhkem-x25519',
+    '@noble/ciphers/chacha.js',
+    './brand.ts',
+  ]),
   module('shared/state-directory.ts', ['./brand.ts']),
   module('shared/record/schema.ts', ['../brand.ts']),
   module('shared/record-session.ts', ['./brand.ts']),
