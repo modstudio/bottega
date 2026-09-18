@@ -7,6 +7,7 @@ import {
   SUITE_CPU_BUDGET_MS,
   SUITE_RUNTIME_BUDGET_MS,
 } from './check-runtime'
+import { resolveLandingBase } from './landing-base'
 
 type Command = { cwd: string; argv: string[] }
 type Leg = { name: string; commands: Command[] }
@@ -149,23 +150,9 @@ async function inherit(argv: string[], cwd = root) {
 
 function qualityBaseArgument() {
   if (!process.env.CI) return '--staged'
-  const landingBranch = process.env.GITHUB_BASE_REF || 'main'
-  const result = Bun.spawnSync(['git', 'merge-base', `origin/${landingBranch}`, 'HEAD'], {
-    cwd: root,
-    stdout: 'pipe',
-    stderr: 'pipe',
-  })
-  collectCpu(
-    describeCommand(['git', 'merge-base', `origin/${landingBranch}`, 'HEAD']),
-    result.resourceUsage.cpuTime,
-  )
-  if (result.exitCode !== 0) {
-    const detail = result.stderr.toString().trim()
-    throw new Error(
-      `quality ratchet could not resolve CI merge base with origin/${landingBranch}${detail ? `: ${detail}` : ''}`,
-    )
-  }
-  return `--base=${result.stdout.toString().trim()}`
+  const base = resolveLandingBase(root, 'quality ratchet')
+  collectCpu(describeCommand(base.command), base.cpuTime)
+  return `--base=${base.commit}`
 }
 
 async function pump(
