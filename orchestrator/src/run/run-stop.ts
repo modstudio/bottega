@@ -15,11 +15,23 @@ import { branchTip, removeBranch, unmergedBranch } from '../worktree/worktree-re
 import type { Worktree } from '../worktree/worktree-types.ts'
 import { adoptRunMutation, auditRunMutation, authorizeRunMutation } from './run-authority.ts'
 import { resolveRootFromLastTurn } from './run-liveness.ts'
+import type { TerminateRunProcessesResult } from './run-process.ts'
 
 export type RunStopOptions = CleanupOptions & { note?: string }
 export type RunStopHelpers = {
   lifecycleCheckpoint: (name: string) => void
-  terminateRunProcesses: (runId: number, exceptPids?: number[]) => void
+  terminateRunProcesses: (runId: number, exceptPids?: number[]) => TerminateRunProcessesResult
+}
+
+export function stoppedRunLine(
+  id: number,
+  pid: number | null,
+  termination: TerminateRunProcessesResult,
+): string {
+  if (pid && !termination.signalled.length && termination.recordedPidPresent) {
+    return `stopped run ${id}, but process pid ${pid} could not be confirmed or signalled; after checking ps -p ${pid} -o command, run kill -TERM ${pid}`
+  }
+  return `stopped run ${id}`
 }
 
 export async function stopRun(
@@ -116,9 +128,9 @@ export async function stopRun(
   // attributed or reclaimed. Stop the vendor, but let the coordinator see
   // the stopped row and finish recording. The tree remains the continuation
   // substrate; only its recreatable containers are reclaimed at stop.
-  helpers.terminateRunProcesses(row.id, row.pid ? [row.pid] : [])
+  const termination = helpers.terminateRunProcesses(row.id, row.pid ? [row.pid] : [])
   const dockerTeardown = teardownTerminalRunResources(db(), row.id)
-  options.presentation.log(`stopped run ${row.id}`)
+  options.presentation.log(stoppedRunLine(row.id, row.pid, termination))
   if (cleanupRow.worktree) {
     const dockerMessage = !dockerTeardown.complete
       ? dockerTeardown.removed

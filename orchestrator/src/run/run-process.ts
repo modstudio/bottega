@@ -86,6 +86,11 @@ type ProcessInventory =
   | { ascertainable: true; rows: ProcessRow[] }
   | { ascertainable: false; reason: string }
 
+export type TerminateRunProcessesResult = {
+  signalled: number[]
+  recordedPidPresent: boolean
+}
+
 export function processTable(): ProcessInventory {
   let p: ReturnType<typeof Bun.spawnSync>
   try {
@@ -139,15 +144,20 @@ export function processTable(): ProcessInventory {
   }
 }
 
+export function commandNamesRun(command: string, acceptableIds: readonly number[]): boolean {
+  return acceptableIds.some((id) =>
+    new RegExp(`(?:^|[/\\s])exec\\.ts\\s+${id}(?:\\s|$)`).test(command),
+  )
+}
+
 function verifiedProcessTree(
   table: ProcessRow[],
-  id: number,
+  acceptableIds: readonly number[],
   rootPid: number,
   exclude: number[] = [],
 ): number[] {
   const root = table.find((candidate) => candidate.pid === rootPid)
-  const identity = new RegExp(`(?:^|[/\\s])exec\\.ts\\s+${id}(?:\\s|$)`)
-  if (!root || !identity.test(root.command)) return []
+  if (!root || !commandNamesRun(root.command, acceptableIds)) return []
   const skipped = new Set(exclude)
   const depth = new Map<number, number>([[root.pid, 0]])
   let changed = true
@@ -166,38 +176,54 @@ function verifiedProcessTree(
     .map(([pid]) => pid)
 }
 
-export function terminateRunProcesses(id: number, exclude: number[] = []): number[] {
-  const row = db().query('SELECT pid, agent_pid FROM run WHERE id=?').get(id) as {
+export function terminateRunProcesses(
+  id: number,
+  exclude: number[] = [],
+): TerminateRunProcessesResult {
+  const row = db().query('SELECT pid, agent_pid, parent_run_id FROM run WHERE id=?').get(id) as {
     pid: number | null
     agent_pid: number | null
+    parent_run_id: number | null
   } | null
   if (!row) throw new Error(`no run ${id}`)
-  if (!row.pid) return []
+  if (!row.pid) return { signalled: [], recordedPidPresent: false }
   const inventory = processTable()
   if (!inventory.ascertainable) {
     console.error(`orch: ${inventory.reason}; nothing signalled`)
-    return []
+    return { signalled: [], recordedPidPresent: false }
   }
+  const recordedPidPresent = inventory.rows.some((candidate) => candidate.pid === row.pid)
+  const rootId = row.parent_run_id ?? id
+  const acceptableIds = (
+    db().query('SELECT id FROM run WHERE id=? OR parent_run_id=?').all(rootId, rootId) as {
+      id: number
+    }[]
+  ).map((candidate) => candidate.id)
   // A stop command is itself a descendant of the coordinator it is stopping.
   // If the reaper signals itself, it can exit before reaching a sibling vendor
   // process and leave the caller waiting on that vendor forever.
-  const pids = verifiedProcessTree(inventory.rows, id, row.pid, [...exclude, process.pid])
+  const pids = verifiedProcessTree(inventory.rows, acceptableIds, row.pid, [
+    ...exclude,
+    process.pid,
+  ])
   if (!pids.length) {
-    if (inventory.rows.some((candidate) => candidate.pid === row.pid)) {
+    if (recordedPidPresent) {
       console.error(
         `orch: run ${id} pid ${row.pid} identity could not be confirmed; nothing signalled`,
       )
     }
-    return []
+    return { signalled: [], recordedPidPresent }
   }
+  const signalled: number[] = []
   for (const pid of pids) {
     try {
       process.kill(pid, 'SIGTERM')
+      signalled.push(pid)
     } catch (e) {
       if ((e as NodeJS.ErrnoException).code !== 'ESRCH') throw e
     }
   }
-  return pids
+  return { signalled, recordedPidPresent }
 }
 
 let signalsBound = false

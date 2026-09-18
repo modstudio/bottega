@@ -2,7 +2,7 @@ import { beforeEach, expect, test } from 'bun:test'
 import { addRun } from '../../test/fixtures/store.ts'
 import { db } from '../database/db.ts'
 import { candidates } from '../route/route.ts'
-import { abandonRun, stopRun } from './run-stop.ts'
+import { abandonRun, stoppedRunLine, stopRun } from './run-stop.ts'
 
 const presentation = () => {
   const lines: string[] = []
@@ -26,7 +26,7 @@ async function invoke(
     const options = { force: false, auditReason: null, note: opts.note, presentation: shown.value }
     const helpers = {
       lifecycleCheckpoint: opts.checkpoint ?? (() => {}),
-      terminateRunProcesses: () => {},
+      terminateRunProcesses: () => ({ signalled: [], recordedPidPresent: false }),
     }
     if (action === 'stop') await stopRun(id, options, helpers)
     else await abandonRun(id, options, helpers)
@@ -79,6 +79,12 @@ test('stop refuses a run that is not running without changing it', async () => {
   const result = await invoke('stop', id)
   expect(result.err).toContain(`${id} turn 1 ok`)
   expect(db().query('SELECT status FROM run WHERE id=?').get(id)).toEqual({ status: 'ok' })
+})
+
+test('stop reports the manual remedy when a recorded process remains unsignalled', () => {
+  expect(stoppedRunLine(42, 9001, { signalled: [], recordedPidPresent: true })).toBe(
+    'stopped run 42, but process pid 9001 could not be confirmed or signalled; after checking ps -p 9001 -o command, run kill -TERM 9001',
+  )
 })
 
 test('stopping a running turn records the conversation root as stopped', async () => {
