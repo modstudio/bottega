@@ -116,6 +116,21 @@ export type TerminalResult = {
   artifactsPersisted: boolean
 }
 
+/** Which accepted questions have not already been recorded, preserving reply order. */
+export function questionsToInsert(
+  existingQuestionTexts: string[],
+  acceptedQuestions: ReturnType<typeof realQuestions>,
+): ReturnType<typeof realQuestions> {
+  const norm = (text: string) => text.trim().replace(/\s+/g, ' ').toLowerCase()
+  const already = new Set(existingQuestionTexts.map(norm))
+  return acceptedQuestions.filter((item) => {
+    const question = norm(item.question)
+    if (already.has(question)) return false
+    already.add(question)
+    return true
+  })
+}
+
 /** Every writing turn gets one last chance to preserve tracked work. */
 export function shouldCheckpointAtTerminal(input: {
   writesJob: boolean
@@ -407,20 +422,16 @@ export async function finishRun(input: TerminalInput): Promise<TerminalResult> {
      * Matched on the question text, normalised, which is what the worker is
      * repeating verbatim from its own tool call.
      */
-    const norm = (t: string) => t.trim().replace(/\s+/g, ' ').toLowerCase()
-    const already = new Set(
-      (
-        db().query('SELECT question FROM question WHERE run_id = ?').all(claim.id) as {
-          question: string
-        }[]
-      ).map((r) => norm(r.question)),
-    )
+    const existingQuestionTexts = (
+      db().query('SELECT question FROM question WHERE run_id = ?').all(claim.id) as {
+        question: string
+      }[]
+    ).map((row) => row.question)
     const q = db().query(
       `INSERT INTO question (run_id, asked_at, question, options, recommendation, why)
          VALUES (?,?,?,?,?,?)`,
     )
-    for (const item of acceptedQuestions) {
-      if (already.has(norm(item.question))) continue
+    for (const item of questionsToInsert(existingQuestionTexts, acceptedQuestions)) {
       q.run(
         claim.id,
         nowIso(),
@@ -429,7 +440,6 @@ export async function finishRun(input: TerminalInput): Promise<TerminalResult> {
         item.recommendation ?? null,
         item.why ?? null,
       )
-      already.add(norm(item.question))
     }
   }
 
