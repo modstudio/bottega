@@ -83,6 +83,16 @@ export type ReportSubscriptionWriteInput = {
   enabled?: boolean
 }
 
+export type ReportSubscriptionUpdateInput = {
+  cadence: string
+  hour: number
+  weekday?: string | null
+  zone: string
+  enabled: boolean
+  scope?: never
+  recipientUserId?: never
+}
+
 type PlannedReportSubscription = {
   scope_kind: HostedReportSubscription['scope_kind']
   project_name: string | null
@@ -158,7 +168,7 @@ function planSubscriptionScope(
 }
 
 function planSubscriptionCadence(
-  input: ReportSubscriptionWriteInput,
+  input: Pick<ReportSubscriptionWriteInput, 'cadence' | 'hour' | 'weekday' | 'zone'>,
 ): Pick<PlannedReportSubscription, 'cadence' | 'hour' | 'weekday' | 'zone'> {
   if (input.cadence !== 'daily' && input.cadence !== 'weekly')
     throw new Error('cadence must be daily or weekly')
@@ -172,6 +182,18 @@ function planSubscriptionCadence(
   if (!WEEKDAYS.includes(weekdayRaw as Weekday))
     throw new Error('weekly cadence requires a day from monday through sunday')
   return cadenceFields('weekly', input.hour, weekdayRaw as Weekday, input.zone)
+}
+
+export function planReportSubscriptionUpdate(
+  input: ReportSubscriptionUpdateInput & Record<string, unknown>,
+): Pick<PlannedReportSubscription, 'cadence' | 'hour' | 'weekday' | 'zone' | 'enabled'> {
+  if ('scope' in input || 'recipientUserId' in input)
+    throw new Error('scope and recipient cannot be changed; create a different subscription')
+  const editable = new Set(['cadence', 'hour', 'weekday', 'zone', 'enabled'])
+  if (Object.keys(input).some((field) => !editable.has(field)))
+    throw new Error('only cadence, hour, weekday, zone and enabled can be changed')
+  if (typeof input.enabled !== 'boolean') throw new Error('enabled must be true or false')
+  return { ...planSubscriptionCadence(input), enabled: input.enabled }
 }
 
 function cadenceFields(
@@ -398,6 +420,29 @@ export async function createHostedReportSubscription(
       VALUES (${id}::uuid,${identity.spaceId}::uuid,${planned.scope_kind},${planned.project_name},
       ${planned.person_user_id}::uuid,${planned.cadence},${planned.hour},${planned.weekday},
       ${planned.zone},${planned.recipient_user_id}::uuid,${planned.enabled ? 1 : 0},now(),now())`
+    return asSubscription(
+      rows<RawSubscription>(await subscriptionSelect(tx, identity.spaceId, id))[0]!,
+    )
+  })
+}
+
+export async function updateHostedReportSubscription(
+  url: string,
+  identity: TaskIdentity,
+  id: string,
+  input: ReportSubscriptionUpdateInput & Record<string, unknown>,
+) {
+  const planned = planReportSubscriptionUpdate(input)
+  return tenant(url, identity, async (tx) => {
+    assertReportSubscriptionFound(
+      rows<{ id: string }>(
+        await tx`UPDATE hub_report_subscription SET cadence=${planned.cadence},hour=${planned.hour},
+        weekday=${planned.weekday},zone=${planned.zone},enabled=${planned.enabled ? 1 : 0},
+        updated_at=now()
+        WHERE space_id=${identity.spaceId}::uuid AND id=${id}::uuid AND deleted_at IS NULL
+        RETURNING id`,
+      )[0],
+    )
     return asSubscription(
       rows<RawSubscription>(await subscriptionSelect(tx, identity.spaceId, id))[0]!,
     )

@@ -6,7 +6,7 @@ const destinations = (mode: 'hosted' | 'local') =>
     section.entries.flatMap((entry) => ('items' in entry ? entry.items : [entry])),
   )
 
-test('hosted mode exposes only read-only hosted routes', () => {
+test('hosted mode exposes its hosted routes', () => {
   const hosted = destinations('hosted')
   expect(hosted.map((item) => item.to).sort()).toEqual(
     [

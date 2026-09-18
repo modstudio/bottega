@@ -2,6 +2,11 @@ import { initTRPC, TRPCError } from '@trpc/server'
 import { z } from 'zod'
 import { hostedMeasurePeople, hostedMeasures } from '../../hosted-measures.ts'
 import {
+  createHostedReportSubscription,
+  unsubscribeHostedReportSubscription,
+  updateHostedReportSubscription,
+} from '../../hosted-reports.ts'
+import {
   hostedBoard,
   hostedFlightDone,
   hostedNotes,
@@ -73,6 +78,23 @@ const workInput = z.object({
     source: z.string().max(64),
   }),
 })
+const subscriptionCadenceInput = z
+  .object({
+    cadence: z.enum(['daily', 'weekly']),
+    hour: z.number().int().min(0).max(23),
+    weekday: z
+      .enum(['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday'])
+      .nullable()
+      .optional(),
+    zone: z.string().min(1),
+    enabled: z.boolean(),
+  })
+  .strict()
+const subscriptionScope = z.discriminatedUnion('kind', [
+  z.object({ kind: z.literal('space') }).strict(),
+  z.object({ kind: z.literal('project'), project: z.string().min(1).max(64) }).strict(),
+  z.object({ kind: z.literal('person') }).strict(),
+])
 
 function optionalSnapshot<T extends { machineId: string; takenAt: string }>(
   items: T[],
@@ -261,6 +283,25 @@ export const recordRouter = t.router({
         identity,
         projects.map((project) => project.name),
       )
+    }),
+  createReportSubscription: t.procedure
+    .input(subscriptionCadenceInput.extend({ scope: subscriptionScope }))
+    .mutation(async ({ ctx, input }) => {
+      const { identity } = await hostedIdentity(ctx)
+      return createHostedReportSubscription(recordDatabaseUrl(), identity, input)
+    }),
+  updateReportSubscription: t.procedure
+    .input(subscriptionCadenceInput.extend({ id: uuid }))
+    .mutation(async ({ ctx, input }) => {
+      const { identity } = await hostedIdentity(ctx)
+      const { id, ...update } = input
+      return updateHostedReportSubscription(recordDatabaseUrl(), identity, id, update)
+    }),
+  removeReportSubscription: t.procedure
+    .input(z.object({ id: uuid }).strict())
+    .mutation(async ({ ctx, input }) => {
+      const { identity } = await hostedIdentity(ctx)
+      return unsubscribeHostedReportSubscription(recordDatabaseUrl(), identity, input.id)
     }),
   task: t.procedure
     .input(z.object({ key: z.string().min(1).max(64), spaceId: uuid.optional() }))

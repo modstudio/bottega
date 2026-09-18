@@ -1,10 +1,11 @@
 import { expect, test } from 'bun:test'
 import { QueryClientProvider } from '@tanstack/react-query'
 import { renderToStaticMarkup } from 'react-dom/server'
-import { HostedSettingsPage } from '@/routes/settings'
+import { nextReportArrival } from '@/lib/report-arrival'
+import { HostedSettingsPage, Route } from '@/routes/settings'
 import { queryClient, trpc } from '@/trpc/client'
 
-test('hosted settings report the reference without the secret or any control', () => {
+test('hosted settings keep stored report values read only', () => {
   queryClient.setQueryData(trpc.record.settings.queryOptions({ hours: 48 }).queryKey, {
     report: {
       enabled: true,
@@ -67,7 +68,7 @@ test('hosted settings report the reference without the secret or any control', (
   expect(settings).not.toContain('Refresh data')
 })
 
-test('hosted settings render subscriptions and offer no control to change them', () => {
+test('hosted settings render subscription controls and the next arrival', () => {
   queryClient.setQueryData(trpc.record.settings.queryOptions({ hours: 48 }).queryKey, {
     report: {
       enabled: true,
@@ -117,10 +118,39 @@ test('hosted settings render subscriptions and offer no control to change them',
   expect(settings).toContain('weekly monday 8:00 America/New_York')
   expect(settings).toContain('reader@example.test')
   expect(settings).toContain('enabled')
-  expect(settings).not.toContain('Subscribe')
-  expect(settings).not.toContain('Unsubscribe')
-  expect(settings).not.toContain('<button')
-  expect(settings).not.toContain('<input')
+  expect(settings).toContain('Create subscription')
+  expect(settings).toContain('Edit')
+  expect(settings).toContain('Remove')
+  expect(settings).toContain('Next arrival:')
+  expect(settings).toContain('(America/New_York).')
+  expect(settings).toContain('<button')
+  expect(settings).toContain('<input')
   expect(settings).not.toContain('<select')
-  expect(settings).not.toContain('<form')
+})
+
+test('next arrival follows the chosen hour and zone', () => {
+  const next = nextReportArrival(
+    {
+      cadence: 'weekly',
+      hour: 18,
+      weekday: 'monday',
+      zone: 'America/New_York',
+    },
+    new Date('2026-09-18T12:00:00.000Z'),
+  )
+  expect(next).toBe('Next arrival: Monday, September 21 at 6:00 PM EDT (America/New_York).')
+})
+
+test('local mode still renders the local settings page', () => {
+  const SettingsComponent = Route.options.component
+  expect(SettingsComponent).toBeDefined()
+  if (!SettingsComponent) throw new Error('settings route component is absent')
+  const settings = renderToStaticMarkup(
+    <QueryClientProvider client={queryClient}>
+      <SettingsComponent />
+    </QueryClientProvider>,
+  )
+  expect(settings).toContain('Daily report')
+  expect(settings).toContain('Loading settings')
+  expect(settings).not.toContain('Create subscription')
 })

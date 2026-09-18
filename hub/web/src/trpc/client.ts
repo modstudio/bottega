@@ -58,6 +58,7 @@ export type ProjectRow = inferRouterOutputs<AppRouter>['project']['list'][number
 export type FlightResponse = inferRouterOutputs<AppRouter>['work']['flight']
 export type BoardResponse = inferRouterOutputs<AppRouter>['work']['board']
 export type SettingsResponse = inferRouterOutputs<AppRouter>['settings']['get']
+export type RecordSettingsResponse = inferRouterOutputs<AppRouter>['record']['settings']
 export type TaskRecordResponse = inferRouterOutputs<AppRouter>['work']['task']
 export type JobRow = inferRouterOutputs<AppRouter>['catalog']['jobs'][number]
 export type AgentRow = inferRouterOutputs<AppRouter>['catalog']['agents'][number]
