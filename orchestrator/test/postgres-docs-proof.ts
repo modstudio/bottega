@@ -297,6 +297,27 @@ async function proveDocImport(origin: string, headers: Record<string, string>): 
   expect(hosted.status).toBe(200)
   expect(((await hosted.json()) as { body: string }).body).toBe('current-body')
 
+  const refusedDeletion = await post(
+    importBody({
+      slug: 'import-current',
+      body: 'current-body',
+      updatedAt: newer,
+      deletedAt: newer,
+      revisions: [{ body: 'current-body', op: 'delete', at: newer, reason: 'remove current' }],
+    }),
+  )
+  expect(refusedDeletion.status).toBe(409)
+  expect(await refusedDeletion.json()).toEqual({
+    error:
+      'refusing import at machine//import-current: a deleted import never targets a live row; delete the live doc through the doc service first if deletion is intended',
+  })
+  const stillLive = await fetch(`${origin}/v1/docs/${createdIds.id}`, { headers })
+  expect(stillLive.status).toBe(200)
+  expect((await stillLive.json()) as { body: string; deletedAt: string | null }).toMatchObject({
+    body: 'current-body',
+    deletedAt: null,
+  })
+
   const deletedPayload = importBody({
     slug: 'import-deleted',
     body: 'gone',
