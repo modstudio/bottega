@@ -23,3 +23,18 @@ test('every inversion pair emits a forbidden rule', () => {
     ).toBe(true)
   }
 })
+
+test('hosted report delivery transitively rejects the local store and git', () => {
+  const rule = architectureRules().forbidden.find(
+    (candidate) =>
+      candidate.name === 'import-hosted-report-delivery-no-local-store-transitive-boundary',
+  )
+  expect(rule).toBeDefined()
+  expect(rule?.from.path).toContain(exactArchitecturePath('hub/src/report-delivery.ts'))
+  expect(rule?.from.path).toContain(exactArchitecturePath('hub/src/report-delivery-hosted.ts'))
+  expect(rule?.from.path).toContain(exactArchitecturePath('hub/src/report-delivery-cli.ts'))
+  expect(rule?.to.path).toContain(exactArchitecturePath('hub/src/db.ts'))
+  expect(rule?.to.path).toContain(exactArchitecturePath('shared/git.ts'))
+  expect(rule?.to.path).toContain(exactArchitecturePath('bun:sqlite'))
+  expect(rule?.to.reachable).toBe(true)
+})

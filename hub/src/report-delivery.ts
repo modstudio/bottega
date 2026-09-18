@@ -2,7 +2,7 @@
 /** Plans, renders, and delivers one idempotent pass of hosted report subscriptions. */
 
 import type { MeasureScope, Measures, MeasureWindow } from './measures.ts'
-import { type GatheredReport, renderHtml, renderText } from './report.ts'
+import { type GatheredReport, renderHtml, renderText } from './report-renderer.ts'
 
 export type DeliveryCandidate = {
   subscriptionId: string

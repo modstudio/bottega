@@ -4,8 +4,8 @@
 import { engagedMs, human } from '../../shared/interval.ts'
 import { type TaskIdentity, withHostedTenant } from './hosted-tasks.ts'
 import type { MeasureScope } from './measures.ts'
-import type { GatheredReport, Item } from './report.ts'
 import type { DeliveryPeriod } from './report-delivery.ts'
+import type { GatheredReport, Item } from './report-renderer.ts'
 
 type SqlTime = string | Date
 const iso = (value: SqlTime) => new Date(value).toISOString()
@@ -22,6 +22,7 @@ export type HostedReportRow = {
   task_project: string | null
   task_title: string | null
   task_status: string | null
+  project_color: string | null
 }
 
 type RawReportRow = Omit<HostedReportRow, 'start_at' | 'end_at' | 'open' | 'vendor_tokens'> & {
@@ -80,6 +81,7 @@ export function gatherHostedReport(
       const untasked = mine.map(({ item }) => item).find((item) => !item.key) ?? null
       return {
         project,
+        color: mine.find(({ rows }) => rows[0]?.project_color)?.rows[0]?.project_color ?? null,
         taskMs: tasks.reduce((sum, item) => sum + item.engagedMs, 0),
         engagedMs: engagedMs(
           mine.flatMap(({ rows: grouped }) => grouped.map((row) => span(row, period))),
@@ -121,9 +123,11 @@ export async function hostedGatherReport(
     const reportRows = rows<RawReportRow>(
       await tx`
       SELECT i.task_key,i.project_name,i.start_at,i.end_at,i.open,i.vendor_tokens,
-        t.project AS task_project,t.title AS task_title,t.status AS task_status
+        t.project AS task_project,t.title AS task_title,t.status AS task_status,p.color AS project_color
       FROM hub_interval i
       LEFT JOIN hub_task t ON t.space_id=i.space_id AND t.key=i.task_key AND t.deleted_at IS NULL
+      LEFT JOIN project p ON p.space_id=i.space_id
+        AND p.name=COALESCE(t.project,i.project_name) AND p.retired_at IS NULL
       WHERE i.start_at < ${period.to}::timestamptz AND i.end_at >= ${period.from}::timestamptz
         AND (${project}::text IS NULL OR COALESCE(t.project,i.project_name)=${project})
         AND (${person}::uuid IS NULL OR i.user_id=${person}::uuid)
