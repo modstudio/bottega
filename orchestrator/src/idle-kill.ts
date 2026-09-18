@@ -23,7 +23,7 @@ import { idleMsSince } from './events.ts'
  * too close to flake a run like 2874. The warn label stays at 5m — it is not
  * this kill.
  */
-export const DEFAULT_IDLE_KILL_MS = 15 * 60_000
+const DEFAULT_IDLE_KILL_MS = 15 * 60_000
 /**
  * Default idle bound for every job that is not known to be entirely CPU-local.
  * 30m is twice the measured 15m gap bound. The CPU sample cannot see waits
