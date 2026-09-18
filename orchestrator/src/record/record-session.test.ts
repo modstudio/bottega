@@ -1,7 +1,11 @@
 import { describe, expect, test } from 'bun:test'
 import { db } from '../database/db.ts'
 import { RECORD_SESSION_KEY, RECORD_SIGN_IN_REMEDY } from './record-auth.ts'
-import { currentRecordSession, storedRecordToken } from './record-session.ts'
+import {
+  currentRecordSession,
+  recordUserSessionFromMemberships,
+  storedRecordToken,
+} from './record-session.ts'
 
 const missingKeychain = () => ({
   exitCode: 44,
@@ -14,6 +18,17 @@ test('record session refuses with the sign-in remedy when no bearer is stored', 
   await expect(
     currentRecordSession('postgres://record.invalid/database', db(), missingKeychain),
   ).rejects.toThrow(RECORD_SIGN_IN_REMEDY)
+})
+
+test('record user session maps current memberships before exposing the active space', () => {
+  const current = {
+    user: { id: 'user-one' },
+    session: { activeOrganizationId: 'current' },
+  }
+  expect(
+    recordUserSessionFromMemberships('token', current, ['personal', 'current']).activeSpaceId,
+  ).toBe('current')
+  expect(recordUserSessionFromMemberships('token', current, ['personal']).activeSpaceId).toBeNull()
 })
 
 describe('legacy record session migration', () => {

@@ -286,6 +286,23 @@ export function activeMembershipSpace(
   return activeSpaceId && membershipSpaceIds.includes(activeSpaceId) ? activeSpaceId : null
 }
 
+export function recordIdentityFromRows(
+  user: Record<string, unknown> & { id: string },
+  activeSpaceId: string | null,
+  personalSpaceId: string | null,
+  memberships: Record<string, unknown>[],
+): RecordIdentity {
+  return {
+    user,
+    activeSpaceId: activeMembershipSpace(
+      activeSpaceId,
+      memberships.map((row) => String(row.space_id)),
+    ),
+    personalSpaceId,
+    memberships,
+  }
+}
+
 export async function recordIdentity(
   url: string,
   user: Record<string, unknown> & { id: string },
@@ -305,15 +322,7 @@ export async function recordIdentity(
         FROM membership m JOIN space s ON s.id=m.space_id
         WHERE m.user_id=${user.id}::uuid ORDER BY s.slug
       `
-      return {
-        user,
-        activeSpaceId: activeMembershipSpace(
-          activeSpaceId,
-          memberships.map((row: Record<string, unknown>) => String(row.space_id)),
-        ),
-        personalSpaceId,
-        memberships: [...memberships],
-      }
+      return recordIdentityFromRows(user, activeSpaceId, personalSpaceId, [...memberships])
     })
   } finally {
     await sql.close()

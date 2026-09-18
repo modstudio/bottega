@@ -5,6 +5,7 @@ import {
   type PersonalSpace,
   recordAllowedOrigins,
   recordAuth,
+  recordIdentityFromRows,
   sessionSpace,
 } from './record-auth.ts'
 
@@ -116,4 +117,13 @@ test('session ignores a departed remembered space and falls back through members
 test('active space is kept only while it is a current membership', () => {
   expect(activeMembershipSpace('current', ['personal', 'current'])).toBe('current')
   expect(activeMembershipSpace('departed', ['personal', 'current'])).toBeNull()
+})
+
+test('record identity maps membership rows before exposing the active space', () => {
+  const user = { id: 'user-one' }
+  const memberships = [{ space_id: 'personal' }, { space_id: 'current' }]
+  expect(recordIdentityFromRows(user, 'current', 'personal', memberships).activeSpaceId).toBe(
+    'current',
+  )
+  expect(recordIdentityFromRows(user, 'departed', 'personal', memberships).activeSpaceId).toBeNull()
 })
