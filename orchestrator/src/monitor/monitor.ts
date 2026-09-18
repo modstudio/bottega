@@ -20,7 +20,7 @@ import { gitLocks } from '../resources/git-locks.ts'
 import { terminalDockerRetentionReasonForRun } from '../resources/resource-ownership.ts'
 import type { MonitorSeverity } from '../review/review-vocabulary.ts'
 import { RUNS_DIR } from '../run/run-artifacts.ts'
-import { grokTrustHeadings } from '../sandbox/grok-trust.ts'
+import { grokTrustHeadings, grokTrustPathFromHeading } from '../sandbox/grok-trust.ts'
 import { keepTreeHold } from '../worktree/keep-tree-hold.ts'
 import { worktreeDirty } from '../worktree/worktree-attribution.ts'
 import {
@@ -104,6 +104,7 @@ function trustEntryInventory(database: ReturnType<typeof db>) {
       )
       .all() as { id: number; worktree: string; mcp_trust_path: string }[]
     const present = new Set(grokTrustHeadings())
+    const registeredProjectPaths = projects().map((project) => project.path)
     const entries = rows.flatMap((row) => {
       const headings = JSON.parse(row.mcp_trust_path) as unknown
       if (!Array.isArray(headings) || headings.some((heading) => typeof heading !== 'string')) {
@@ -111,18 +112,25 @@ function trustEntryInventory(database: ReturnType<typeof db>) {
       }
       return (headings as string[])
         .filter((heading) => present.has(heading))
-        .map((heading) => ({
-          runId: row.id,
-          heading: heading as string,
-          worktreeExists: existsSync(row.worktree),
-          mainCheckout: projects().some((project) => {
-            try {
-              return realpathSync(project.path) === realpathSync(row.worktree)
-            } catch {
-              return resolve(project.path) === resolve(row.worktree)
-            }
-          }),
-        }))
+        .map((heading) => {
+          const path = grokTrustPathFromHeading(heading)
+          return {
+            runId: row.id,
+            heading,
+            path,
+            pathExists: path !== null && existsSync(path),
+            registeredProjectPath:
+              path !== null &&
+              registeredProjectPaths.some((projectPath) => {
+                try {
+                  return realpathSync(projectPath) === realpathSync(path)
+                } catch {
+                  return resolve(projectPath) === resolve(path)
+                }
+              }),
+            worktreeExists: existsSync(row.worktree),
+          }
+        })
     })
     return { ascertainable: true as const, entries }
   } catch (error) {
