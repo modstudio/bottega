@@ -37,7 +37,7 @@ export type Agent = {
   /** Oldest CLI release this harness has been verified against. */
   minimumCliVersion: string
   /** What its usage costs. Metered is refused; free and none spend no quota. */
-  billing: 'subscription' | 'free' | 'metered' | 'none'
+  billing: 'subscription' | 'free' | 'metered' | 'none' | 'unknown'
   /** Who operates the agent endpoint. */
   operatedBy: 'vendor' | 'self'
   /**

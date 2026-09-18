@@ -36,10 +36,14 @@ describe('record snapshot payloads', () => {
   })
 
   test('the real agents payload satisfies the hosted client schema', async () => {
-    const result = z.array(OrchAgentDefinitionSchema).safeParse(await buildSnapshotPayload('agents'))
+    const result = z
+      .array(OrchAgentDefinitionSchema)
+      .safeParse(await buildSnapshotPayload('agents'))
     expect(result.success).toBe(true)
     if (!result.success) return
-    expect(result.data.every((agent) => agent.operatedBy === 'vendor' || agent.operatedBy === 'self')).toBe(true)
+    expect(
+      result.data.every((agent) => agent.operatedBy === 'vendor' || agent.operatedBy === 'self'),
+    ).toBe(true)
   })
 
   test('one failed kind does not stop the remaining publishes and makes the command fail', async () => {

@@ -228,7 +228,7 @@ function assertAgentMutation(input: AgentMutation, adding: boolean): void {
     throw new Error(`unknown transport "${input.transport}"`)
   if (
     input.billing &&
-    !['subscription', 'free', 'metered', 'none'].includes(input.billing)
+    !['subscription', 'free', 'metered', 'none', 'unknown'].includes(input.billing)
   ) {
     throw new Error(`unknown billing "${input.billing}"`)
   }

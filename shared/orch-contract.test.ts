@@ -72,7 +72,7 @@ test('orch state accepts a constructed cooling string and caps.contextTokens num
     agents: [
       {
         name: 'local-acp',
-        billing: 'local',
+        billing: 'none',
         caps: {
           readsRepo: true,
           mcp: true,
