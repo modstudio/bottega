@@ -1,10 +1,9 @@
 import { fileURLToPath } from 'node:url'
+import { decideGateOutcome, type GateStepResult } from './check-outcome'
 import {
   attributeCommandCpu,
   type CommandCpuSample,
-  decideGateOutcome,
   decideRuntimeBudget,
-  type GateStepResult,
   HUNG_SUITE_TIMEOUT_MS,
   SUITE_CPU_BUDGET_MS,
   SUITE_RUNTIME_BUDGET_MS,
@@ -13,7 +12,8 @@ import { resolveLandingBase } from './landing-base'
 
 type Command = { cwd: string; argv: string[] }
 type Leg = { name: string; commands: Command[] }
-type LegResult = { name: string; exitCode: number; tail: string[] }
+type LegResult = GateStepResult & { tail: string[] }
+type StaticCheck = { name: string; argv: string[] }
 
 const root = fileURLToPath(new URL('..', import.meta.url))
 const checkStartedAt = performance.now()
@@ -150,6 +150,14 @@ async function inherit(argv: string[], cwd = root) {
   return child.exited
 }
 
+function staticCheck(name: string, extra: string[] = []): StaticCheck {
+  return { name, argv: ['bun', `${root}${name}`, ...extra] }
+}
+
+async function recordGateStep(check: StaticCheck): Promise<GateStepResult> {
+  return { name: check.name, exitCode: await inherit(check.argv) }
+}
+
 function qualityBaseArgument() {
   if (!process.env.CI) return '--staged'
   const base = resolveLandingBase(root, 'quality ratchet')
@@ -234,6 +242,7 @@ if (
     'test',
     './scripts/check-machine-state.test.ts',
     './scripts/check-runtime.test.ts',
+    './scripts/check-outcome.test.ts',
     './scripts/check-comment-hygiene.test.ts',
     './scripts/check-test-placement.test.ts',
     './scripts/check-file-ceiling.test.ts',
@@ -264,56 +273,34 @@ const results = await Promise.all(
   ),
 )
 printFailedLegTails(results)
-const gateSteps: GateStepResult[] = results.map((result) => ({
-  name: result.name,
-  exitCode: result.exitCode,
-}))
-
-for (const script of [
-  'check-machine-state.ts',
-  'check-postgres-migrations.ts',
-  'check-hosted-hub-server-boundary.ts',
-  'check-architecture.ts',
-  'check-review-boundary.ts',
-  'check-outcome-boundary.ts',
-  'check-contract-boundary.ts',
-  'check-evidence-boundary.ts',
-  'check-git-environment-spawn.ts',
-  'check-launchd-templates.ts',
-  'check-gitleaks.ts',
-  'check-write-transaction-site.ts',
-  'check-file-ceiling.ts',
-  'check-cognitive-ceiling.ts',
-  'check-test-fixtures.ts',
-  'check-test-placement.ts',
-  'check-test-spawns.ts',
-  'check-comment-hygiene.ts',
-  'check-dead-code.ts',
-  'check-brand.ts',
-  'check-harness-mirror.ts',
-  'generate-recipe-schema.ts',
-  '../orchestrator/scripts/check-pack-budget.ts',
-]) {
-  const argv = [
-    'bun',
-    `${root}scripts/${script}`,
-    ...(script === 'generate-recipe-schema.ts' ? ['--check'] : []),
-  ]
-  const child = track(
-    Bun.spawn(argv, {
-      cwd: root,
-      stdout: 'inherit',
-      stderr: 'inherit',
-    }),
-    describeCommand(argv),
-  )
-  gateSteps.push({ name: script, exitCode: await child.exited })
-}
-
-gateSteps.push({
-  name: 'check-canon-lint.ts',
-  exitCode: await inherit(['bun', `${root}orchestrator/scripts/check-canon-lint.ts`]),
-})
+const gateSteps: GateStepResult[] = [...results]
+const staticChecks: StaticCheck[] = [
+  staticCheck('scripts/check-machine-state.ts'),
+  staticCheck('scripts/check-postgres-migrations.ts'),
+  staticCheck('scripts/check-hosted-hub-server-boundary.ts'),
+  staticCheck('scripts/check-architecture.ts'),
+  staticCheck('scripts/check-review-boundary.ts'),
+  staticCheck('scripts/check-outcome-boundary.ts'),
+  staticCheck('scripts/check-contract-boundary.ts'),
+  staticCheck('scripts/check-evidence-boundary.ts'),
+  staticCheck('scripts/check-git-environment-spawn.ts'),
+  staticCheck('scripts/check-launchd-templates.ts'),
+  staticCheck('scripts/check-gitleaks.ts'),
+  staticCheck('scripts/check-write-transaction-site.ts'),
+  staticCheck('scripts/check-file-ceiling.ts'),
+  staticCheck('scripts/check-cognitive-ceiling.ts'),
+  staticCheck('scripts/check-test-fixtures.ts'),
+  staticCheck('scripts/check-test-placement.ts'),
+  staticCheck('scripts/check-test-spawns.ts'),
+  staticCheck('scripts/check-comment-hygiene.ts'),
+  staticCheck('scripts/check-dead-code.ts'),
+  staticCheck('scripts/check-brand.ts'),
+  staticCheck('scripts/check-harness-mirror.ts'),
+  staticCheck('scripts/generate-recipe-schema.ts', ['--check']),
+  staticCheck('orchestrator/scripts/check-pack-budget.ts'),
+  staticCheck('orchestrator/scripts/check-canon-lint.ts'),
+]
+for (const check of staticChecks) gateSteps.push(await recordGateStep(check))
 
 let qualityMode: string
 try {
@@ -322,10 +309,9 @@ try {
   console.error(error instanceof Error ? error.message : String(error))
   process.exit(1)
 }
-gateSteps.push({
-  name: 'quality/check-no-expect.ts',
-  exitCode: await inherit(['bun', `${root}scripts/quality/check-no-expect.ts`, qualityMode]),
-})
+gateSteps.push(
+  await recordGateStep(staticCheck('scripts/quality/check-no-expect.ts', [qualityMode])),
+)
 
 clearTimeout(runtimeDeadline)
 const summary = printSummary()
