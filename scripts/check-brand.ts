@@ -1,5 +1,6 @@
 #!/usr/bin/env bun
 import { readFileSync } from 'node:fs'
+import { fileURLToPath } from 'node:url'
 /**
  * The brand name is written in ONE place, and this is what makes that true.
  *
@@ -27,7 +28,7 @@ import { readFileSync } from 'node:fs'
 import { Glob } from 'bun'
 import { PLATFORM_NAME, PLATFORM_SLUG } from '../shared/brand.ts'
 
-const ROOT = new URL('..', import.meta.url).pathname.replace(/\/$/, '')
+const ROOT = fileURLToPath(new URL('..', import.meta.url)).replace(/\/$/, '')
 const { workspaces } = JSON.parse(readFileSync(`${ROOT}/package.json`, 'utf8')) as {
   workspaces: string[]
 }

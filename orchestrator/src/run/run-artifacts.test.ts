@@ -10,6 +10,7 @@ import {
 } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { fileURLToPath } from 'node:url'
 import { addRun, dir } from '../../test/fixtures/store.ts'
 import { db } from '../database/db.ts'
 import {
@@ -39,7 +40,7 @@ describe('run files are named by their run, not by the clock', () => {
     // Asserted against the SOURCE, the way the stale-`blocked` guard is, because
     // reproducing a millisecond collision on demand is a race the test would
     // lose more often than the bug did.
-    const dir = new URL('./', import.meta.url).pathname
+    const dir = fileURLToPath(new URL('./', import.meta.url))
     for (const file of ['run-artifacts.ts']) {
       // Comments quote the OLD pattern on purpose, to record what went wrong.
       const code = readFileSync(join(dir, file), 'utf8')

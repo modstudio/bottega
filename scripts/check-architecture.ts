@@ -2,12 +2,13 @@
 import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { fileURLToPath } from 'node:url'
 import { Glob } from 'bun'
 import { CONCERNS } from '../shared/brand.ts'
 import { architectureRules, dependencyCruiserConfig, modules } from './architecture.ts'
 import { importSpecifiers } from './import-scanner.ts'
 
-const ROOT = new URL('..', import.meta.url).pathname.replace(/\/$/, '')
+const ROOT = fileURLToPath(new URL('..', import.meta.url)).replace(/\/$/, '')
 const CONCERN = /^\/\/ concern: ([a-z0-9-]+)$/
 const manifestFiles = new Set(modules.map(({ file }) => file))
 const manifestRules = new Set(architectureRules().forbidden.map(({ name }) => name))

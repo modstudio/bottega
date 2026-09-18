@@ -12,6 +12,7 @@ import {
 } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
+import { fileURLToPath } from 'node:url'
 import { OrchBlockersSchema } from '../../shared/orch-contract.ts'
 import {
   decodeRunsJson,
@@ -108,7 +109,7 @@ test('an unknown envelope kind reports its physical line number', () => {
 })
 
 test('only the orch client invokes bin/orch', () => {
-  const root = new URL('./', import.meta.url).pathname
+  const root = fileURLToPath(new URL('./', import.meta.url))
   const files = readdirSync(root, { recursive: true, withFileTypes: true }).filter(
     (entry) =>
       entry.isFile() &&
@@ -133,7 +134,7 @@ test('orch resolution accepts only executable files from override, checkout, and
   const outputDir = join(bundledRoot, 'hub', 'src')
   mkdirSync(outputDir, { recursive: true })
   const built = await Bun.build({
-    entrypoints: [new URL('orch.ts', import.meta.url).pathname],
+    entrypoints: [fileURLToPath(new URL('orch.ts', import.meta.url))],
     outdir: outputDir,
     target: 'bun',
     format: 'esm',

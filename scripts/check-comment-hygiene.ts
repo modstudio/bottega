@@ -2,6 +2,7 @@
 /** Comments state the current rule and its reason; git holds their history. */
 import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
+import { fileURLToPath } from 'node:url'
 
 const ROOTS = ['orchestrator', 'hub', 'shared', 'scripts', 'ops', 'local-stack']
 const GENERATED = /^(?:hub\/web\/src\/routeTree\.gen\.ts|.*(?:^|\/)migrations\/meta(?:\/|$))/
@@ -73,7 +74,7 @@ function checkTrackedComments(root: string): CommentHygieneFinding[] {
 }
 
 if (import.meta.main) {
-  const root = resolve(new URL('..', import.meta.url).pathname)
+  const root = resolve(fileURLToPath(new URL('..', import.meta.url)))
   const findings = checkTrackedComments(root)
   if (findings.length) {
     console.error('comment hygiene check failed')

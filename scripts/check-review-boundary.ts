@@ -1,8 +1,9 @@
 #!/usr/bin/env bun
 /** Keep review verdicts independent of landing policy and run-chain ownership. */
 import { readFileSync } from 'node:fs'
+import { fileURLToPath } from 'node:url'
 
-const ROOT = new URL('..', import.meta.url).pathname.replace(/\/$/, '')
+const ROOT = fileURLToPath(new URL('..', import.meta.url)).replace(/\/$/, '')
 const FILE = 'orchestrator/src/review/review.ts'
 const source = readFileSync(`${ROOT}/${FILE}`, 'utf8')
 const violations: string[] = []

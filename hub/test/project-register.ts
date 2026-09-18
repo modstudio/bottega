@@ -1,8 +1,9 @@
 #!/usr/bin/env bun
+import { fileURLToPath } from 'node:url'
 
 const args = process.argv.slice(2)
 if (args.join('\0') !== ['project', 'list', '--json'].join('\0')) {
-  const orch = new URL('../../bin/orch', import.meta.url).pathname
+  const orch = fileURLToPath(new URL('../../bin/orch', import.meta.url))
   const result = Bun.spawnSync([orch, ...args], {
     env: process.env,
     stdin: await Bun.stdin.bytes(),

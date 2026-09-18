@@ -1,8 +1,9 @@
 #!/usr/bin/env bun
 /** Keep evidence assessment independent of execution and transaction ownership. */
 import { readFileSync } from 'node:fs'
+import { fileURLToPath } from 'node:url'
 
-const ROOT = new URL('..', import.meta.url).pathname.replace(/\/$/, '')
+const ROOT = fileURLToPath(new URL('..', import.meta.url)).replace(/\/$/, '')
 const FILE = 'orchestrator/src/evidence/evidence.ts'
 const source = readFileSync(`${ROOT}/${FILE}`, 'utf8')
 const violations: string[] = []

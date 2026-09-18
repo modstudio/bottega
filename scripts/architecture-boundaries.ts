@@ -359,6 +359,7 @@ export const importBoundaries: ImportBoundary[] = [
     'hub/src/hosted.ts',
     [
       'node:fs',
+      'node:url',
       '@trpc/server/adapters/fetch',
       './app-static.ts',
       './evidence-api.ts',
@@ -459,6 +460,7 @@ export const importBoundaries: ImportBoundary[] = [
       'node:crypto',
       'node:fs',
       'node:path',
+      'node:url',
       '../../../shared/monitor-capability.ts',
       '../../../shared/process-identity.ts',
       '../database/db.ts',
@@ -850,6 +852,7 @@ export const importBoundaries: ImportBoundary[] = [
       'node:child_process',
       'node:crypto',
       'node:fs',
+      'node:url',
       '../database/db.ts',
       '../dispatch/dispatch-preflight.ts',
       '../jobs/jobs.ts',

@@ -1,4 +1,5 @@
 import { existsSync } from 'node:fs'
+import { fileURLToPath } from 'node:url'
 import { fetchRequestHandler } from '@trpc/server/adapters/fetch'
 import { engagedMs, human, human as humanMs } from '../../shared/interval.ts'
 import type { OrchBlockers } from '../../shared/orch-contract.ts'
@@ -679,7 +680,7 @@ export function serve(port: number) {
         return Response.redirect(new URL(target + url.search, url), 301)
       }
 
-      const dist = new URL('../web/dist', import.meta.url).pathname
+      const dist = fileURLToPath(new URL('../web/dist', import.meta.url))
       const resolved = resolveAppStatic(url.pathname, existsSync(dist))
       if (resolved.kind === '503') {
         return new Response('hub/web is not built: cd hub/web && bun run build', {

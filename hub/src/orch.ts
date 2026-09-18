@@ -1,3 +1,4 @@
+import { fileURLToPath } from 'node:url'
 /**
  * The orchestrator, read through its CLI.
  *
@@ -51,7 +52,7 @@ let dashboardCapability: { dir: string; path: string; token: string } | null = n
 /** Resolve the executable for every call made by a long-lived hub process. */
 export function resolveOrchExecutable(): string {
   const override = process.env.HUB_ORCH?.trim() || null
-  const checkout = resolve(new URL('../..', import.meta.url).pathname, 'bin/orch')
+  const checkout = resolve(fileURLToPath(new URL('../..', import.meta.url)), 'bin/orch')
   if (override && usableExecutable(override)) return override
   if (usableExecutable(checkout)) return checkout
   const found = Bun.which('orch', { PATH: process.env.PATH })

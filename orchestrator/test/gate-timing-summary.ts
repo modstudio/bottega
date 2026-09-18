@@ -3,13 +3,14 @@
  * committed surface. It knows timing rows, not how the gate runs tests.
  */
 import { writeFileSync } from 'node:fs'
+import { fileURLToPath } from 'node:url'
 import {
   baselineDisposition,
   decideTestTiming,
 } from '../../scripts/quality/test-timing-decision.ts'
 import type { FileRow } from './record-gate-timings.ts'
 
-const root = new URL('../..', import.meta.url).pathname.replace(/\/$/, '')
+const root = fileURLToPath(new URL('../..', import.meta.url)).replace(/\/$/, '')
 const TIMING_SUMMARY_LABEL = 'scripts/quality/test-timings.json'
 const TIMING_SUMMARY_PATH = `${root}/${TIMING_SUMMARY_LABEL}`
 const GROWTH_LIMIT = 0.05

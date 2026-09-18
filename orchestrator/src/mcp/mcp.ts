@@ -1,4 +1,5 @@
 import { resolve } from 'node:path'
+import { fileURLToPath } from 'node:url'
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js'
 import { z } from 'zod'
@@ -54,7 +55,7 @@ const text = (value: unknown) => ({
   ],
 })
 
-const HUB = resolve(new URL('../../../bin/hub', import.meta.url).pathname)
+const HUB = resolve(fileURLToPath(new URL('../../../bin/hub', import.meta.url)))
 
 const requiredReportField = (field: string, belongs: string) =>
   z

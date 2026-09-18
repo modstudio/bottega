@@ -1,3 +1,4 @@
+import { fileURLToPath } from 'node:url'
 // concern: isolation
 /** Owns explicit reclamation command behavior. Must not know CLI grammar. */
 import { reclaimBranch, reclaimWorktree } from './reclaim.ts'
@@ -18,7 +19,7 @@ function reclaimFixtureQuestionsCommand(
   presentation: { log(value: string): void },
 ): void {
   if (subject) throw new Error('orch reclaim fixture-questions takes no subject')
-  const hub = new URL('../../bin/hub', import.meta.url).pathname
+  const hub = fileURLToPath(new URL('../../bin/hub', import.meta.url))
   const result = Bun.spawnSync(
     [hub, 'reclaim-fixture-questions', ...(dryRun ? ['--dry-run'] : []), '--json'],
     { stdout: 'pipe', stderr: 'pipe' },

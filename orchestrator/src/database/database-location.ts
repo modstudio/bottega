@@ -1,5 +1,6 @@
 import { existsSync, readFileSync, statSync } from 'node:fs'
 import { basename, dirname, join, resolve } from 'node:path'
+import { fileURLToPath } from 'node:url'
 import { FROZEN_STATE_NAMES } from '../../../shared/brand.ts'
 import { inspectionGitEnv } from '../../../shared/git.ts'
 import {
@@ -24,7 +25,7 @@ export type DatabaseResolution = {
   mainStorePath: string
 }
 
-export const ROOT = new URL('../..', import.meta.url).pathname.replace(/\/$/, '')
+export const ROOT = fileURLToPath(new URL('../..', import.meta.url)).replace(/\/$/, '')
 
 type RepositoryRoot = {
   root: string

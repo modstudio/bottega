@@ -24,6 +24,14 @@ export default [
     },
     plugins: { sonarjs },
     rules: {
+      'no-restricted-syntax': [
+        'error',
+        {
+          selector:
+            "MemberExpression[property.name='pathname'][object.type='NewExpression'][object.callee.name='URL'][object.arguments.1.type='MemberExpression'][object.arguments.1.object.type='MetaProperty'][object.arguments.1.object.meta.name='import'][object.arguments.1.object.property.name='meta'][object.arguments.1.property.name='url']",
+          message: 'Use fileURLToPath(new URL(..., import.meta.url)) for filesystem paths.',
+        },
+      ],
       'sonarjs/cognitive-complexity': ['error', 15],
     },
   },

@@ -1,10 +1,11 @@
 import { readdirSync, readFileSync, statSync } from 'node:fs'
 import { dirname, relative, resolve, sep } from 'node:path'
+import { fileURLToPath } from 'node:url'
 import ts from 'typescript'
 
 const rootArgument = process.argv.find((argument) => argument.startsWith('--root='))
 const root = resolve(
-  rootArgument?.slice('--root='.length) ?? new URL('..', import.meta.url).pathname,
+  rootArgument?.slice('--root='.length) ?? fileURLToPath(new URL('..', import.meta.url)),
 )
 const orchestrator = resolve(root, 'orchestrator')
 const failures: string[] = []

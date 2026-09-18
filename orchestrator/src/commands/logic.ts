@@ -1,3 +1,4 @@
+import { fileURLToPath } from 'node:url'
 // concern: cli
 /** Registers extracted logic-verb adapters. Must not own application decisions. */
 
@@ -108,7 +109,7 @@ export function register(program: Command): void {
     .action((options) =>
       mcpCommand(
         Boolean(options.config),
-        resolve(new URL('../../../bin/orch', import.meta.url).pathname),
+        resolve(fileURLToPath(new URL('../../../bin/orch', import.meta.url))),
         presentation,
       ),
     )
@@ -331,7 +332,7 @@ export function register(program: Command): void {
         [
           process.execPath,
           '--no-env-file',
-          new URL('../cli/orch.ts', import.meta.url).pathname,
+          fileURLToPath(new URL('../cli/orch.ts', import.meta.url)),
           'ask-server',
         ],
         presentation,

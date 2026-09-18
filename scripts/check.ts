@@ -1,3 +1,4 @@
+import { fileURLToPath } from 'node:url'
 import {
   attributeCommandCpu,
   type CommandCpuSample,
@@ -11,7 +12,7 @@ type Command = { cwd: string; argv: string[] }
 type Leg = { name: string; commands: Command[] }
 type LegResult = { name: string; exitCode: number; tail: string[] }
 
-const root = new URL('..', import.meta.url).pathname
+const root = fileURLToPath(new URL('..', import.meta.url))
 const checkStartedAt = performance.now()
 const KILLED_CHILD_EXIT_TIMEOUT_MS = 5_000
 

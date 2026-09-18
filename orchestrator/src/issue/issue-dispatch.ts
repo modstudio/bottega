@@ -1,3 +1,4 @@
+import { fileURLToPath } from 'node:url'
 // concern: filed-issue dispatch
 /** Claims and bounds filed-issue coordinator passes. Does not diagnose or fix issues. */
 
@@ -22,7 +23,7 @@ import {
 } from './issue-queue.ts'
 import { filedIssueQueueFailureAction } from './issue-queue-failure.ts'
 
-const HUB = new URL('../../../bin/hub', import.meta.url).pathname
+const HUB = fileURLToPath(new URL('../../../bin/hub', import.meta.url))
 
 type HeldIssueTree = { runId: number; path: string; why: string }
 
