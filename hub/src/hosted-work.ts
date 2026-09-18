@@ -1,5 +1,6 @@
 import { engagedMs, human } from '../../shared/interval.ts'
 import { type TaskIdentity, withHostedTenant } from './hosted-tasks.ts'
+import { computeMeasures, type MeasureInterval, type MeasureStatusEvent } from './measures.ts'
 import { reportDefaults } from './report-types.ts'
 import {
   type BoardSourceRow,
@@ -308,10 +309,10 @@ export async function hostedTaskDetail(
       WHERE space_id=${spaceId}::uuid AND task_key=${key} AND deleted_at IS NULL
       ORDER BY at DESC,id`,
     )
-    const intervals = rows<RawInterval>(
+    const intervals = rows<RawInterval & { user_id: string | null }>(
       await tx`
       SELECT task_key,project_name AS project,source,agent,job,start_at,end_at,claude_tokens,
-        vendor_tokens,vendor_cost_usd,open FROM hub_interval
+        vendor_tokens,vendor_cost_usd,open,user_id FROM hub_interval
       WHERE space_id=${spaceId}::uuid AND task_key=${key} ORDER BY start_at DESC`,
     )
     const timeFields = (row: Record<string, unknown>) =>
@@ -321,12 +322,47 @@ export async function hostedTaskDetail(
           name.endsWith('_at') && value ? iso(value as SqlTime) : value,
         ]),
       )
+    const shapedTask = timeFields(task)
+    const shapedIntervals = intervals.map(interval)
+    const firstRecorded = intervals.reduce<string | null>((first, row) => {
+      const value = iso(row.start_at)!
+      return first === null || value < first ? value : first
+    }, null)
+    const from = firstRecorded ?? String(shapedTask.first_seen)
+    const closedAt = shapedTask.closed_at ? new Date(String(shapedTask.closed_at)).getTime() : null
+    const to = new Date(closedAt === null ? Date.now() : closedAt + 1).toISOString()
+    const measureIntervals: MeasureInterval[] = intervals.map((row) => ({
+      source: row.source,
+      startAt: iso(row.start_at)!,
+      endAt: iso(row.end_at)!,
+      open: number(row.open),
+      userId: row.user_id,
+      taskKey: key,
+      project: String(shapedTask.project),
+      vendorTokens: number(row.vendor_tokens),
+      vendorCostUsd: row.vendor_cost_usd == null ? null : Number(row.vendor_cost_usd),
+    }))
+    const measureEvents: MeasureStatusEvent[] =
+      closedAt === null
+        ? []
+        : statusHistory.map((row) => ({
+            taskKey: key,
+            project: String(shapedTask.project),
+            at: iso(row.at as SqlTime)!,
+            toStatus: String(row.to_status),
+          }))
     return {
-      task: timeFields(task),
+      task: shapedTask,
       comments: comments.map(timeFields),
       documents: documents.map(timeFields),
       statusHistory: statusHistory.map(timeFields),
-      intervals: intervals.map(interval),
+      intervals: shapedIntervals,
+      measures: computeMeasures(
+        { intervals: measureIntervals, events: measureEvents },
+        { from, to },
+        { kind: 'space' },
+      ),
+      measureCoverage: { hasRecordedTime: intervals.length > 0, from, to },
     }
   })
 }

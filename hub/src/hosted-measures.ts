@@ -99,3 +99,28 @@ export async function hostedMeasures(
 ): Promise<Measures> {
   return computeMeasures(await loadHostedMeasureRows(databaseUrl, identity, window), window, scope)
 }
+
+export type HostedMeasurePerson = { userId: string; name: string; email: string }
+
+/** Members with attributed evidence in this window; this is not a user directory. */
+export async function hostedMeasurePeople(
+  databaseUrl: string,
+  identity: TaskIdentity,
+  window: MeasureWindow,
+  project?: string,
+): Promise<HostedMeasurePerson[]> {
+  return withHostedTenant(databaseUrl, identity, async (tx) =>
+    rows<{ user_id: string; name: string; email: string }>(
+      await tx`
+      SELECT DISTINCT u.id AS user_id,u.name,u.email
+      FROM hub_interval i
+      JOIN membership m ON m.space_id=i.space_id AND m.user_id=i.user_id
+      JOIN "user" u ON u.id=m.user_id
+      WHERE i.space_id=${identity.spaceId}::uuid
+        AND i.user_id IS NOT NULL
+        AND i.start_at < ${window.to}::timestamptz AND i.end_at >= ${window.from}::timestamptz
+        AND (${project ?? null}::text IS NULL OR i.project_name=${project ?? null})
+      ORDER BY COALESCE(NULLIF(u.name,''),u.email),u.email,u.id`,
+    ).map((row) => ({ userId: row.user_id, name: row.name || row.email, email: row.email })),
+  )
+}

@@ -22,6 +22,7 @@ import { Route as JobsRouteImport } from './routes/jobs'
 import { Route as NotesRouteImport } from './routes/notes'
 import { Route as ProjectsRouteImport } from './routes/projects'
 import { Route as RatioRouteImport } from './routes/ratio'
+import { Route as ReportsRouteImport } from './routes/reports'
 import { Route as ResetPasswordRouteImport } from './routes/reset-password'
 import { Route as ReviewsRouteImport } from './routes/reviews'
 import { Route as RoutingRouteImport } from './routes/routing'
@@ -100,6 +101,11 @@ const ProjectsRoute = ProjectsRouteImport.update({
 const RatioRoute = RatioRouteImport.update({
   id: '/ratio',
   path: '/ratio',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ReportsRoute = ReportsRouteImport.update({
+  id: '/reports',
+  path: '/reports',
   getParentRoute: () => rootRouteImport,
 } as any)
 const ResetPasswordRoute = ResetPasswordRouteImport.update({
@@ -187,6 +193,7 @@ export interface FileRoutesByFullPath {
   '/notes': typeof NotesRoute
   '/projects': typeof ProjectsRouteWithChildren
   '/ratio': typeof RatioRoute
+  '/reports': typeof ReportsRoute
   '/reset-password': typeof ResetPasswordRoute
   '/reviews': typeof ReviewsRouteWithChildren
   '/routing': typeof RoutingRoute
@@ -216,6 +223,7 @@ export interface FileRoutesByTo {
   '/notes': typeof NotesRoute
   '/projects': typeof ProjectsRouteWithChildren
   '/ratio': typeof RatioRoute
+  '/reports': typeof ReportsRoute
   '/reset-password': typeof ResetPasswordRoute
   '/reviews': typeof ReviewsRouteWithChildren
   '/routing': typeof RoutingRoute
@@ -246,6 +254,7 @@ export interface FileRoutesById {
   '/notes': typeof NotesRoute
   '/projects': typeof ProjectsRouteWithChildren
   '/ratio': typeof RatioRoute
+  '/reports': typeof ReportsRoute
   '/reset-password': typeof ResetPasswordRoute
   '/reviews': typeof ReviewsRouteWithChildren
   '/routing': typeof RoutingRoute
@@ -277,6 +286,7 @@ export interface FileRouteTypes {
     | '/notes'
     | '/projects'
     | '/ratio'
+    | '/reports'
     | '/reset-password'
     | '/reviews'
     | '/routing'
@@ -306,6 +316,7 @@ export interface FileRouteTypes {
     | '/notes'
     | '/projects'
     | '/ratio'
+    | '/reports'
     | '/reset-password'
     | '/reviews'
     | '/routing'
@@ -335,6 +346,7 @@ export interface FileRouteTypes {
     | '/notes'
     | '/projects'
     | '/ratio'
+    | '/reports'
     | '/reset-password'
     | '/reviews'
     | '/routing'
@@ -365,6 +377,7 @@ export interface RootRouteChildren {
   NotesRoute: typeof NotesRoute
   ProjectsRoute: typeof ProjectsRouteWithChildren
   RatioRoute: typeof RatioRoute
+  ReportsRoute: typeof ReportsRoute
   ResetPasswordRoute: typeof ResetPasswordRoute
   ReviewsRoute: typeof ReviewsRouteWithChildren
   RoutingRoute: typeof RoutingRoute
@@ -465,6 +478,13 @@ declare module '@tanstack/react-router' {
       path: '/ratio'
       fullPath: '/ratio'
       preLoaderRoute: typeof RatioRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/reports': {
+      id: '/reports'
+      path: '/reports'
+      fullPath: '/reports'
+      preLoaderRoute: typeof ReportsRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/reset-password': {
@@ -656,6 +676,7 @@ const rootRouteChildren: RootRouteChildren = {
   NotesRoute: NotesRoute,
   ProjectsRoute: ProjectsRouteWithChildren,
   RatioRoute: RatioRoute,
+  ReportsRoute: ReportsRoute,
   ResetPasswordRoute: ResetPasswordRoute,
   ReviewsRoute: ReviewsRouteWithChildren,
   RoutingRoute: RoutingRoute,

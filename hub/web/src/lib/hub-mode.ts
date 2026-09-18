@@ -1,5 +1,6 @@
 import {
   Activity,
+  BarChart3,
   BookOpen,
   Bot,
   BriefcaseBusiness,
@@ -89,6 +90,7 @@ const HOSTED_NAV: NavSection[] = [
       { to: '/done', label: 'Done', icon: CheckCircle2 },
       { to: '/runs', label: 'Runs', icon: Play },
       { to: '/reviews', label: 'Reviews', icon: ScanSearch },
+      { to: '/reports', label: 'Reports', icon: BarChart3 },
       { to: '/projects', label: 'Projects', icon: FolderGit2 },
       { to: '/docs', label: 'Docs', icon: BookOpen },
     ],
@@ -139,6 +141,7 @@ export function isHostedPath(pathname: string) {
     path === '/done' ||
     path === '/runs' ||
     path === '/reviews' ||
+    path === '/reports' ||
     path === '/projects' ||
     path === '/docs' ||
     path === '/jobs' ||

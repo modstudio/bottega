@@ -1,6 +1,7 @@
 import { useQuery } from '@tanstack/react-query'
 import { relativeTime } from '@/lib/format'
 import { taskStatusLook } from '@/lib/task-status'
+import type { MeasuresResponse } from '@/trpc/client'
 import { trpc } from '@/trpc/client'
 import { Badge } from '@/ui/badge/badge'
 import { Companion } from '@/ui/companion/companion'
@@ -8,6 +9,7 @@ import { DisplayRow, FieldSection } from '@/ui/form-layout/form-layout'
 import { Identifier } from '@/ui/identifier/identifier'
 import { ProjectMark, SourceMark } from './design-system'
 import { Markdown } from './markdown'
+import { MeasuresSummary } from './measure-display'
 
 type HostedDetail = {
   task: {
@@ -46,6 +48,8 @@ type HostedDetail = {
     end_at: string
     open: number
   }[]
+  measures: MeasuresResponse
+  measureCoverage: { hasRecordedTime: boolean; from: string; to: string }
 }
 
 function Documents({ rows }: { rows: HostedDetail['documents'] }) {
@@ -152,6 +156,14 @@ export function HostedTaskSheet({ taskKey, onClose }: { taskKey: string; onClose
             }
           />
           <div className="mt-6 space-y-6">
+            <FieldSection title="Measures">
+              {!detail.measureCoverage.hasRecordedTime ? (
+                <p className="mb-3 text-text-muted">
+                  No time was recorded for this task; the zero measures reflect missing coverage.
+                </p>
+              ) : null}
+              <MeasuresSummary measures={detail.measures} showShipped={false} />
+            </FieldSection>
             {detail.task.body ? (
               <FieldSection title="Description">
                 <Markdown content={detail.task.body} />

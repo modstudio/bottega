@@ -51,6 +51,7 @@ export function StatTile({
   label,
   hint,
   live = false,
+  wrapHint = false,
 }: {
   figure?: ReactNode
   breakdown?: Breakdown
@@ -58,6 +59,8 @@ export function StatTile({
   hint?: ReactNode
   /** The figure is still moving, as while agents are working. */
   live?: boolean
+  /** Honesty text that must remain visible rather than collapsing to one line. */
+  wrapHint?: boolean
 }) {
   return (
     <div className="-mr-px -mb-px flex min-w-0 flex-col gap-1 border-border-default border-r border-b p-4 @lg/stats:p-5">
@@ -73,7 +76,9 @@ export function StatTile({
           {figure}
         </div>
       )}
-      {hint ? <div className="truncate text-sm text-text-muted">{hint}</div> : null}
+      {hint ? (
+        <div className={classes(!wrapHint && 'truncate', 'text-sm text-text-muted')}>{hint}</div>
+      ) : null}
     </div>
   )
 }

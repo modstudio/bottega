@@ -36,6 +36,7 @@ describe('hostedRouter', () => {
       'record.flight',
       'record.health',
       'record.jobs',
+      'record.measurePeople',
       'record.measures',
       'record.notes',
       'record.projects',
