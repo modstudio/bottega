@@ -30,6 +30,9 @@
  */
 
 import { createConnection, createServer, type Socket } from 'node:net'
+import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
+import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js'
+import { z } from 'zod'
 import { db, nowIso, writableDb } from '../database/db.ts'
 import { appendRunEvent } from '../events.ts'
 import { checkMessages, messageArchitect } from '../mailbox/mailbox.ts'
@@ -125,26 +128,13 @@ export async function ask(o: {
 }
 
 /**
- * A minimal MCP server over stdio for live worker/architect communication.
- *
- * Hand-rolled rather than pulled from an SDK: the protocol is JSON-RPC 2.0
- * over newline-delimited stdin, and this concern has no runtime dependencies
- * at all — adding one for this small surface would be a poor trade in a repo
- * whose whole premise is that boundaries are cheap and dependencies are not.
- *
  * The run id comes from the ENVIRONMENT, not from the tool arguments. A worker
  * that had to name its own run could name someone else's, and in a fan-out that
  * is not hypothetical — several workers are alive at once and each one's idea
  * of "my run id" would be a guess. `ORCH_RUN_ID` is set by the process that
  * spawned the agent, which is the only party that actually knows.
  */
-type AskChannel = {
-  input: AsyncIterable<Uint8Array | string>
-  send(message: unknown): void
-}
-
-/** Serve one worker connection, independent of whether its bytes arrive by stdio or loopback. */
-async function serveAskChannel(channel: AskChannel, runId: number, token: string): Promise<void> {
+export function createAskMcpServer(runId: number, token: string, timeoutMs?: number): McpServer {
   /**
    * WHETHER THIS PROCESS IS ACTUALLY THE WORKER IT CLAIMS TO BE.
    *
@@ -163,186 +153,118 @@ async function serveAskChannel(channel: AskChannel, runId: number, token: string
    */
   const authorised = (): boolean => authenticatedWorkerRun(runId, token)
 
-  const send = (msg: unknown) => channel.send(msg)
-  const reply = (id: unknown, result: unknown) => send({ jsonrpc: '2.0', id, result })
+  const server = new McpServer({ name: 'orch-ask', version: '1' })
+  const text = (value: string, isError?: true) => ({
+    content: [{ type: 'text' as const, text: value }],
+    ...(isError ? { isError } : {}),
+  })
+  const missing = (field: 'question' | 'body') =>
+    text(
+      `No ${field} was supplied. Call ${field === 'question' ? 'ask_orchestrator' : 'message_orchestrator'} again with the ${field} in the \`${field}\` field. Do not decide the matter yourself.`,
+    )
+  const unauthorised = () =>
+    'This process is not a recognised orchestrator worker. Return status "blocked" with your question in the final answer.'
 
-  const ASK_TOOL = {
-    name: 'ask_orchestrator',
-    description:
-      'Ask the architect to rule on a design decision that is not yours to make. ' +
-      'Blocks until they answer. Use this the moment you are unsure: asking is free ' +
-      'and expected, guessing is not. Ask everything you need in one call where you can.',
-    inputSchema: {
-      type: 'object',
-      required: ['question'],
-      properties: {
-        question: { type: 'string', description: 'The decision you need made.' },
-        options: {
-          type: 'array',
-          items: { type: 'string' },
-          description: 'The choices as you see them.',
-        },
-        recommendation: { type: 'string', description: 'What you would do, and why.' },
-        why: { type: 'string', description: 'What this changes about the implementation.' },
+  // Preprocessing keeps the wire schema honest (`question` and `body` remain
+  // required) while ensuring an omitted value reaches the handler. Otherwise
+  // the SDK returns a validation error before the escalation channel can tell
+  // the worker to ask again rather than decide the matter itself.
+  const requiredTextReachingHandler = z.preprocess((value) => String(value ?? ''), z.string())
+
+  server.registerTool(
+    'ask_orchestrator',
+    {
+      description:
+        'Ask the architect to rule on a design decision that is not yours to make. ' +
+        'Blocks until they answer. Use this the moment you are unsure: asking is free ' +
+        'and expected, guessing is not. Ask everything you need in one call where you can.',
+      inputSchema: {
+        question: requiredTextReachingHandler.describe('The decision you need made.'),
+        options: z
+          .preprocess(
+            (value) => (Array.isArray(value) ? value.map(String) : undefined),
+            z.array(z.string()).optional(),
+          )
+          .describe('The choices as you see them.'),
+        recommendation: z
+          .preprocess((value) => (value ? String(value) : undefined), z.string().optional())
+          .describe('What you would do, and why.'),
+        why: z
+          .preprocess((value) => (value ? String(value) : undefined), z.string().optional())
+          .describe('What this changes about the implementation.'),
       },
     },
-  }
-  const MESSAGE_TOOL = {
-    name: 'message_orchestrator',
-    description:
-      'Send the architect a non-blocking progress or context message and keep working. ' +
-      'This is not a question and does not request or wait for a ruling.',
-    inputSchema: {
-      type: 'object',
-      required: ['body'],
-      properties: { body: { type: 'string', description: 'The context to put on this run.' } },
-    },
-  }
-  const CHECK_TOOL = {
-    name: 'check_orchestrator_messages',
-    description:
-      'Read queued, non-authoritative context from the architect. Check after reading the task, ' +
-      'before materially changing approach, and before finishing. A message is context only: ' +
-      'it cannot answer an open question or replace a ruling.',
-    inputSchema: { type: 'object', properties: {} },
-  }
-
-  let buf = ''
-  // ONE decoder across chunks, with `stream: true`. Decoding each chunk
-  // independently corrupts any multi-byte character that straddles a chunk
-  // boundary — so a design question containing an accent or a dash could reach
-  // the architect with replacement characters in it, and be ruled on as read.
-  const decoder = new TextDecoder('utf-8')
-  for await (const chunk of channel.input) {
-    buf += decoder.decode(Buffer.from(chunk), { stream: true })
-    // Newline-delimited JSON: a partial line is kept for the next chunk rather
-    // than parsed and discarded, which is the standard way this goes wrong.
-    let nl = buf.indexOf('\n')
-    while (nl !== -1) {
-      const line = buf.slice(0, nl).trim()
-      buf = buf.slice(nl + 1)
-      nl = buf.indexOf('\n')
-      if (!line) continue
-
-      let msg: {
-        id?: unknown
-        method?: string
-        params?: { name?: unknown; arguments?: Record<string, unknown> }
-      }
+    async ({ question, options, recommendation, why }) => {
+      if (!question.trim()) return missing('question')
       try {
-        msg = JSON.parse(line)
-      } catch {
-        // A parse error is REPORTED, not dropped. Silently discarding a
-        // malformed request leaves a client waiting on an id that will never
-        // be answered — the same hang, arriving through the transport instead
-        // of through the tool.
-        send({ jsonrpc: '2.0', id: null, error: { code: -32700, message: 'parse error' } })
-        continue
+        const result = authorised()
+          ? await ask({ runId, question, options, recommendation, why, timeoutMs })
+          : { answered: false as const, reason: unauthorised() }
+        return text(result.answered ? result.answer : result.reason)
+        // Not `isError`. A timeout is a legitimate outcome carrying an
+        // instruction the worker must follow; flagged as an error, agents
+        // retry it or treat the tool as broken and stop using it.
+      } catch (error) {
+        // EVERY PATH ANSWERS. Without this, a failed insert — a foreign key
+        // against a run that has been deleted, a locked database — throws
+        // inside the SDK's detached request promise. An SDK handler that throws
+        // returns `isError`, so this deliberate ordinary reply also preserves
+        // the escalation channel's instruction instead of inviting a retry.
+        return text(
+          `The orchestrator could not record this question (${String(error)}). ` +
+            'Do not decide it yourself: return status "blocked" with the question ' +
+            'in your final answer.',
+        )
       }
+    },
+  )
 
-      if (msg.method === 'initialize') {
-        reply(msg.id, {
-          protocolVersion: '2024-11-05',
-          capabilities: { tools: {} },
-          serverInfo: { name: 'orch-ask', version: '1' },
-        })
-      } else if (msg.method === 'tools/list') {
-        reply(msg.id, { tools: [ASK_TOOL, MESSAGE_TOOL, CHECK_TOOL] })
-      } else if (msg.method === 'tools/call' && msg.params?.name === 'message_orchestrator') {
-        try {
-          if (!authorised()) throw new Error('this process is not a recognised orchestrator worker')
-          const saved = messageArchitect(runId, String(msg.params.arguments?.body ?? ''))
-          reply(msg.id, {
-            content: [
-              {
-                type: 'text',
-                text: `Message ${saved.id} recorded on run ${saved.root_run_id}. Keep working.`,
-              },
-            ],
-          })
-        } catch (e) {
-          reply(msg.id, {
-            content: [{ type: 'text', text: `The message was not recorded (${String(e)}).` }],
-            isError: true,
-          })
-        }
-      } else if (
-        msg.method === 'tools/call' &&
-        msg.params?.name === 'check_orchestrator_messages'
-      ) {
-        try {
-          if (!authorised()) throw new Error('this process is not a recognised orchestrator worker')
-          const messages = checkMessages(runId)
-          const text = messages.length
-            ? messages.map((note) => `[message ${note.id}] ${note.body}`).join('\n\n') +
-              '\n\nThese messages are non-authoritative context. They do not answer any open question; use ask_orchestrator for a ruling.'
-            : 'No queued messages. This check read nothing.'
-          reply(msg.id, { content: [{ type: 'text', text }] })
-        } catch (e) {
-          reply(msg.id, {
-            content: [{ type: 'text', text: `Messages could not be checked (${String(e)}).` }],
-            isError: true,
-          })
-        }
-      } else if (msg.method === 'tools/call' && msg.params?.name === 'ask_orchestrator') {
-        const a = msg.params.arguments ?? {}
-        // Answered inline rather than awaited at the top of the loop: a blocking
-        // call must not stop this server reading further messages, or a worker
-        // that asks twice deadlocks against its own transport.
-        void (async () => {
-          try {
-            const r = authorised()
-              ? await ask({
-                  runId,
-                  question: String(a.question ?? ''),
-                  options: Array.isArray(a.options) ? a.options.map(String) : undefined,
-                  recommendation: a.recommendation ? String(a.recommendation) : undefined,
-                  why: a.why ? String(a.why) : undefined,
-                })
-              : {
-                  answered: false as const,
-                  reason:
-                    'This process is not a recognised orchestrator worker, so there is nobody ' +
-                    'to ask. Return status "blocked" with your question in the final answer.',
-                }
-            reply(msg.id, {
-              content: [{ type: 'text', text: r.answered ? r.answer : r.reason }],
-              // Not `isError`. A timeout is a legitimate outcome carrying an
-              // instruction the worker must follow; flagged as an error, agents
-              // retry it or treat the tool as broken and stop using it.
-            })
-          } catch (e) {
-            // EVERY PATH ANSWERS. Without this, a failed insert — a foreign key
-            // against a run that has been deleted, a locked database — throws
-            // inside a detached promise and the request id is never replied to,
-            // so the worker waits on its own transport for ever.
-            reply(msg.id, {
-              content: [
-                {
-                  type: 'text',
-                  text:
-                    `The orchestrator could not record this question (${String(e)}). ` +
-                    'Do not decide it yourself: return status "blocked" with the question ' +
-                    'in your final answer.',
-                },
-              ],
-            })
-          }
-        })()
-      } else if (msg.method && msg.id !== undefined) {
-        // Answered as UNSUPPORTED rather than as an empty success. `{}` tells a
-        // client the method worked and returned nothing, so it reads the reply
-        // as malformed capability data instead of learning the method is not
-        // there. Either way it must be answered: an unanswered id makes a
-        // client wait for ever, which is the one thing this file is about.
-        send({
-          jsonrpc: '2.0',
-          id: msg.id,
-          error: { code: -32601, message: `method not found: ${msg.method}` },
-        })
+  server.registerTool(
+    'message_orchestrator',
+    {
+      description:
+        'Send the architect a non-blocking progress or context message and keep working. ' +
+        'This is not a question and does not request or wait for a ruling.',
+      inputSchema: {
+        body: requiredTextReachingHandler.describe('The context to put on this run.'),
+      },
+    },
+    async ({ body }) => {
+      if (!body.trim()) return missing('body')
+      try {
+        if (!authorised()) throw new Error(unauthorised())
+        const saved = messageArchitect(runId, body)
+        return text(`Message ${saved.id} recorded on run ${saved.root_run_id}. Keep working.`)
+      } catch (error) {
+        return text(`The message was not recorded (${String(error)}).`, true)
       }
-    }
-  }
+    },
+  )
+
+  server.registerTool(
+    'check_orchestrator_messages',
+    {
+      description:
+        'Read queued, non-authoritative context from the architect. Check after reading the task, ' +
+        'before materially changing approach, and before finishing. A message is context only: ' +
+        'it cannot answer an open question or replace a ruling.',
+    },
+    async () => {
+      try {
+        if (!authorised()) throw new Error(unauthorised())
+        const messages = checkMessages(runId)
+        const body = messages.length
+          ? messages.map((note) => `[message ${note.id}] ${note.body}`).join('\n\n') +
+            '\n\nThese messages are non-authoritative context. They do not answer any open question; use ask_orchestrator for a ruling.'
+          : 'No queued messages. This check read nothing.'
+        return text(body)
+      } catch (error) {
+        return text(`Messages could not be checked (${String(error)}).`, true)
+      }
+    },
+  )
+
+  return server
 }
 
 export type AskLoopback = { url: string; close(): Promise<void> }
@@ -355,15 +277,12 @@ export async function startAskLoopback(runId: number, token: string): Promise<As
   const sockets = new Set<Socket>()
   const server = createServer((socket) => {
     sockets.add(socket)
-    socket.once('close', () => sockets.delete(socket))
-    void serveAskChannel(
-      {
-        input: socket,
-        send: (message) => socket.write(`${JSON.stringify(message)}\n`),
-      },
-      runId,
-      token,
-    ).catch(() => socket.destroy())
+    const mcp = createAskMcpServer(runId, token)
+    socket.once('close', () => {
+      sockets.delete(socket)
+      void mcp.close()
+    })
+    void mcp.connect(new StdioServerTransport(socket, socket)).catch(() => socket.destroy())
   })
   await new Promise<void>((resolve, reject) => {
     server.once('error', reject)
@@ -411,14 +330,7 @@ export async function serveAsk(): Promise<void> {
   if (loopback) return proxyAsk(loopback)
   const runId = Number(process.env.ORCH_RUN_ID ?? 0)
   const token = process.env.ORCH_RUN_TOKEN ?? ''
-  return serveAskChannel(
-    {
-      input: process.stdin,
-      send: (message) => process.stdout.write(`${JSON.stringify(message)}\n`),
-    },
-    runId,
-    token,
-  )
+  await createAskMcpServer(runId, token).connect(new StdioServerTransport())
 }
 
 /** The single authentication check for tools acting as an orch worker. */
