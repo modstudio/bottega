@@ -10,6 +10,7 @@ import { seedWorkflows } from './workflow-seeds.ts'
 import {
   composeWorkflow,
   getWorkflowStep,
+  importWorkflow,
   promoteWorkflow,
   setWorkflow,
   showWorkflow,
@@ -118,6 +119,84 @@ describe('workflow definition validation', () => {
 })
 
 describe('workflow versions and project composition', () => {
+  test('compose uses a requested draft workflow version instead of production', () => {
+    const d = database(),
+      draft = setWorkflow(
+        'ship',
+        {
+          ...valid(),
+          modes: [{ slug: 'cohort', title: 'Cohort', default: true, steps: ['lens'] }],
+        },
+        'draft mode fixture',
+        'test',
+        d,
+      )
+
+    const composed = composeWorkflow('ship', 'fixture', 'cohort', {}, d, { version: draft.n })
+
+    expect(composed.workflow.version).toBe(draft.n)
+    expect(composed.mode?.slug).toBe('cohort')
+    expect(
+      getWorkflowStep(
+        'ship',
+        'fixture',
+        'lens',
+        { key: 'DEV-794', branch: 'DEV-794-test', worktree: '/tmp/test' },
+        d,
+        { version: draft.n },
+      ).version,
+    ).toBe(draft.n)
+  })
+  test('compose without a workflow version still uses production', () => {
+    const d = database(),
+      production = showWorkflow('ship', undefined, d),
+      draft = setWorkflow('ship', valid(), 'ignored draft fixture', 'test', d)
+
+    const composed = composeWorkflow('ship', 'fixture', undefined, {}, d)
+
+    expect(draft.n).not.toBe(production.n)
+    expect(composed.workflow.version).toBe(production.n)
+  })
+  test('compose uses a requested draft catalogue version instead of production', () => {
+    const d = database(),
+      current = productionStepCatalogue(d).definition,
+      lens = current.steps.find((step) => step.slug === 'lens')!,
+      catalogue = setStepCatalogue(
+        { steps: [...current.steps, { ...lens, slug: 'draft-step', title: 'Draft step' }] },
+        'draft catalogue fixture',
+        'test',
+        d,
+      ),
+      workflow = importWorkflow(
+        'draft-flow',
+        {
+          ...valid(),
+          modes: [{ slug: 'default', title: 'Default', default: true, steps: ['draft-step'] }],
+        },
+        'draft workflow fixture',
+        'test',
+        d,
+        new Set(catalogue.definition.steps.map((step) => step.slug)),
+      )
+
+    const composed = composeWorkflow('draft-flow', 'fixture', undefined, {}, d, {
+      version: workflow.n,
+      catalogueVersion: catalogue.n,
+    })
+
+    expect(composed.catalogue.version).toBe(catalogue.n)
+    expect(composed.steps.map((step) => step.slug)).toEqual(['draft-step'])
+    expect(
+      getWorkflowStep(
+        'draft-flow',
+        'fixture',
+        'draft-step',
+        { key: 'DEV-794', branch: 'DEV-794-test', worktree: '/tmp/test' },
+        d,
+        { version: workflow.n, catalogueVersion: catalogue.n },
+      ).catalogueVersion,
+    ).toBe(catalogue.n)
+  })
   test('compose refuses a selected mode with a missing catalogue step instead of crashing', () => {
     const d = database()
     const row = d

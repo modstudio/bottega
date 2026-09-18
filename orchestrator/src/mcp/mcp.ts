@@ -416,9 +416,17 @@ export function createDocsMcpServer(): McpServer {
         project: z.string().trim().min(1),
         mode: z.string().trim().min(1).optional(),
         args: z.record(z.string(), z.string()).optional(),
+        version: z.number().int().positive().optional(),
+        catalogue_version: z.number().int().positive().optional(),
       },
     },
-    async ({ slug, project, mode, args }) => text(composeWorkflow(slug, project, mode, args ?? {})),
+    async ({ slug, project, mode, args, version, catalogue_version }) =>
+      text(
+        composeWorkflow(slug, project, mode, args ?? {}, undefined, {
+          version,
+          catalogueVersion: catalogue_version,
+        }),
+      ),
   )
 
   server.registerTool(
