@@ -373,6 +373,17 @@ try {
       throw new Error('created subscription was not visible in the list')
     if ((await listHostedReportSubscriptions(actorUrl, otherIdentity)).subscriptions.length)
       throw new Error('another space observed a report subscription')
+    const unboundSubscriptions = await client`SELECT id FROM hub_report_subscription`
+    if (unboundSubscriptions.length !== 0)
+      throw new Error('record_actor directly observed subscriptions without a tenant binding')
+    const deliveryCandidates = (await client`SELECT subscription_id,space_id
+      FROM hub_report_delivery_candidates()`) as { subscription_id: string; space_id: string }[]
+    if (
+      !deliveryCandidates.some(
+        (row) => row.subscription_id === subscription.id && row.space_id === SPACE_A,
+      )
+    )
+      throw new Error('delivery discovery function did not return the enabled subscription')
 
     const pageNotes = await hostedNotes(actorUrl, identity, { stale: false })
     if (!pageNotes.notes.some((row) => row.id === allocatedNote.number))
