@@ -1,11 +1,24 @@
-import { beforeAll, describe, expect, test } from 'bun:test'
+import { afterAll, beforeAll, describe, expect, test } from 'bun:test'
 import { resolveAssigneeIds } from '../../../shared/trackers.ts'
 import { resetFixtureStore } from '../../test/run-fixtures.ts'
 import { trackerPresentation } from '../projects.ts'
 import { showTask } from '../task.ts'
-import { ingestTrackers, trackerRegistrations, upsertTrackerTask } from './trackers.ts'
+import {
+  ingestTrackers,
+  trackerCredentials,
+  trackerRegistrations,
+  upsertTrackerTask,
+} from './trackers.ts'
 
-beforeAll(resetFixtureStore)
+const recordApiUrl = process.env.ORCH_RECORD_API_URL
+beforeAll(() => {
+  delete process.env.ORCH_RECORD_API_URL
+  resetFixtureStore()
+})
+afterAll(() => {
+  if (recordApiUrl === undefined) delete process.env.ORCH_RECORD_API_URL
+  else process.env.ORCH_RECORD_API_URL = recordApiUrl
+})
 
 describe('tracker register', () => {
   test('only projects that declare a usable tracker are polled', async () => {
@@ -41,6 +54,28 @@ describe('tracker register', () => {
       project: 'broken',
       error: 'project broken tracker has unrecognised protocol future-mcp',
     })
+  })
+
+  test('a hosted credential refusal stays with its tracker while another resolves', async () => {
+    const read = async (env: string) => {
+      if (env === 'BROKEN') throw new Error('hosted secret BROKEN_MCP_TOKEN refused: missing-wrap')
+      return { url: 'https://tracker.example/mcp', token: 'token' }
+    }
+    const results = await Promise.all([
+      trackerCredentials('broken', 'BROKEN', read),
+      trackerCredentials('working', 'WORKING', read),
+    ])
+
+    expect(results).toEqual([
+      {
+        project: 'broken',
+        error: 'hosted secret BROKEN_MCP_TOKEN refused: missing-wrap',
+      },
+      {
+        project: 'working',
+        credentials: { url: 'https://tracker.example/mcp', token: 'token' },
+      },
+    ])
   })
 
   test('presentation distinguishes configured, unusable, and absent trackers', () => {

@@ -2,6 +2,7 @@
 /** Owns access to the locally stored record session. Must not know run phases. */
 import type { Database } from 'bun:sqlite'
 import { SQL } from 'bun'
+import { RECORD_ACTIVE_SPACE_REMEDY } from '../../../shared/record-remedies.ts'
 import {
   readRecordSessionToken,
   type SecurityRunner,
@@ -15,9 +16,6 @@ import {
   RECORD_SIGN_IN_REMEDY,
   recordAuth,
 } from './record-auth.ts'
-
-const RECORD_ACTIVE_SPACE_REMEDY =
-  'record session has no active space; run `orch record space switch <slug>`'
 
 export function recordUserSessionFromMemberships<
   User,

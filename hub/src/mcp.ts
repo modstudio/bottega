@@ -1,4 +1,4 @@
-import { readEnvValues } from '../../shared/env-source.ts'
+import { readEnvValuesWithHosted } from '../../shared/env-source.ts'
 
 /**
  * Just enough Streamable HTTP MCP to call one tool.
@@ -134,10 +134,10 @@ export class Mcp {
  * Never cached at import and never written to hub.db: the settings UI shows
  * whether a token resolves, never the token.
  */
-export function credentials(name: string): { url: string; token: string } | null {
+export async function credentials(name: string): Promise<{ url: string; token: string } | null> {
   const urlName = `${name}_MCP_URL`
   const tokenName = `${name}_MCP_TOKEN`
-  const values = readEnvValues([urlName, tokenName])
+  const values = await readEnvValuesWithHosted([urlName, tokenName])
   const url = values[urlName]
   const token = values[tokenName]
   return url && token ? { url, token } : null

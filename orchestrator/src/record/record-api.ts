@@ -175,8 +175,10 @@ type Deps = {
     },
   ): Promise<void>
   currentDataKey(input: Tenant & { recipientKeyId: string }): Promise<DataKey | null>
+  listDataKeys(input: Tenant): Promise<DataKey[]>
+  getDataKey(input: Tenant & { dekId: string; recipientKeyId: string }): Promise<DataKey | null>
   createDataKey(
-    input: Tenant & { version: number; wraps: ConfigWrapInput[] },
+    input: Tenant & { dekId: string; version: number; wraps: ConfigWrapInput[] },
   ): Promise<{ id: string; version: number }>
   addDataKeyWraps(input: Tenant & { dekId: string; wraps: ConfigWrapInput[] }): Promise<void>
   retireDataKey(input: Tenant & { dekId: string }): Promise<void>
@@ -577,11 +579,29 @@ export function recordApi(deps: Deps): Hono<ApiEnvironment> {
       ? context.json({ ...item, wraps: item.wraps.map(jsonWrap) })
       : context.json({ error: 'data key not found' }, 404)
   })
+  app.get('/v1/config/data-keys', async (context) => {
+    const active = scope(context)
+    if (!active) return noSpace(context)
+    return context.json({ items: await deps.listDataKeys(active) })
+  })
+  app.get('/v1/config/data-keys/:dekId', async (context) => {
+    const active = scope(context)
+    if (!active) return noSpace(context)
+    const dekId = idSchema.safeParse(context.req.param('dekId'))
+    const query = z.object({ recipientKeyId: keyIdSchema }).safeParse(context.req.query())
+    if (!dekId.success || !query.success)
+      return context.json({ error: 'invalid data key address' }, 422)
+    const item = await deps.getDataKey({ ...active, dekId: dekId.data, ...query.data })
+    return item
+      ? context.json({ ...item, wraps: item.wraps.map(jsonWrap) })
+      : context.json({ error: 'data key not found' }, 404)
+  })
   app.post('/v1/config/data-keys', async (context) => {
     const active = scope(context)
     if (!active) return noSpace(context)
     const body = z
       .object({
+        dekId: idSchema,
         version: z.number().int().positive(),
         wraps: z.array(wrapSchema),
       })
@@ -591,6 +611,7 @@ export function recordApi(deps: Deps): Hono<ApiEnvironment> {
       return context.json(
         await deps.createDataKey({
           ...active,
+          dekId: body.data.dekId,
           version: body.data.version,
           wraps: body.data.wraps.map(inputWrap),
         }),

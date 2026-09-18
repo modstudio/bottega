@@ -18,9 +18,30 @@ const boundary = (
 
 export const recordReadBoundariesBeforePublish: ImportBoundary[] = [
   boundary(
+    'record-auth-boundary',
+    'orchestrator/src/record/record-auth.ts',
+    [
+      '@better-auth/drizzle-adapter/relations-v2',
+      'better-auth',
+      'better-auth/plugins',
+      'bun',
+      'drizzle-orm/bun-sql',
+      '../../../shared/record/schema.ts',
+      '../../../shared/record-remedies.ts',
+      '../../../shared/record/schema-auth.ts',
+      '../mail/password-reset-mailer.ts',
+    ],
+    'Enforce the record-auth concern boundary.',
+  ),
+  boundary(
     'record-config-boundary',
     'orchestrator/src/record/record-config.ts',
-    ['bun', '../../../shared/record/schema.ts', '../../../shared/record/tenant.ts'],
+    [
+      'bun',
+      '../../../shared/machine-key-id.ts',
+      '../../../shared/record/schema.ts',
+      '../../../shared/record/tenant.ts',
+    ],
     'Enforce the hosted config service concern boundary.',
   ),
   boundary(

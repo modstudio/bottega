@@ -1,6 +1,7 @@
 // concern: record-config
 /** Owns tenant-bound hosted config, ciphertext, DEK, wrap, and machine-key operations. */
 import { SQL } from 'bun'
+import { machineKeyId } from '../../../shared/machine-key-id.ts'
 import { newRecordId } from '../../../shared/record/schema.ts'
 import { bindTenant, type TenantPrincipal } from '../../../shared/record/tenant.ts'
 
@@ -148,8 +149,13 @@ function applyOccupancy(kind: 'entry' | 'secret', occupancy: Occupancy): void {
 
 function isUniqueViolation(error: unknown, constraint: string): boolean {
   if (!error || typeof error !== 'object') return false
-  const postgres = error as { code?: unknown; constraint?: unknown }
-  return postgres.code === '23505' && postgres.constraint === constraint
+  const postgres = error as { code?: unknown; constraint?: unknown; constraint_name?: unknown }
+  const message = error instanceof Error ? error.message : ''
+  const named =
+    postgres.constraint === constraint ||
+    postgres.constraint_name === constraint ||
+    message.includes(`"${constraint}"`)
+  return named && (postgres.code === '23505' || message.includes('duplicate key value'))
 }
 
 class ConcurrentConfigCreate extends Error {}
@@ -463,6 +469,79 @@ export async function currentDataKey(
   })
 }
 
+/** Returns one DEK and only wraps addressed to the requesting machine. */
+export async function getDataKey(
+  input: ConfigTenant & { dekId: string; recipientKeyId: string },
+): Promise<DataKey | null> {
+  return tenant(input, async (tx) => {
+    const rows = await tx`
+      SELECT * FROM secret_dek
+      WHERE space_id=${input.spaceId}::uuid AND id=${input.dekId}::uuid
+    `
+    if (!rows[0]) return null
+    const row = rows[0] as Record<string, unknown>
+    const wraps = await tx`
+      SELECT recipient_key_id, sender_key_id, enc, ciphertext
+      FROM secret_dek_wrap
+      WHERE space_id=${input.spaceId}::uuid AND dek_id=${input.dekId}::uuid
+        AND recipient_key_id=${input.recipientKeyId}
+      ORDER BY sender_key_id
+    `
+    return {
+      id: String(row.id),
+      version: Number(row.version),
+      createdAt: iso(row.created_at),
+      retiredAt: nullableIso(row.retired_at),
+      wraps: wraps.map((item: Record<string, unknown>) => wrapRow(item)),
+    }
+  })
+}
+
+export async function listDataKeys(input: ConfigTenant): Promise<DataKey[]> {
+  return tenant(input, async (tx) => {
+    const rows = await tx`
+      SELECT * FROM secret_dek
+      WHERE space_id=${input.spaceId}::uuid
+      ORDER BY version
+    `
+    return rows.map((row: Record<string, unknown>) => ({
+      id: String(row.id),
+      version: Number(row.version),
+      createdAt: iso(row.created_at),
+      retiredAt: nullableIso(row.retired_at),
+      wraps: [],
+    }))
+  })
+}
+
+async function validateWrapRecipients(
+  tx: SQL,
+  input: { spaceId: string; wraps: ConfigWrapInput[] },
+): Promise<void> {
+  const active = new Set<string>()
+  for (const keyId of new Set(input.wraps.map((wrap) => wrap.recipientKeyId))) {
+    const rows = await tx`
+      SELECT key_id FROM machine_public_key
+      WHERE space_id=${input.spaceId}::uuid AND key_id=${keyId} AND revoked_at IS NULL
+      FOR UPDATE
+    `
+    if (rows[0]) active.add(keyId)
+  }
+  assertActiveWrapRecipients(input.wraps, active)
+}
+
+export function assertActiveWrapRecipients(
+  wraps: ConfigWrapInput[],
+  activeKeyIds: ReadonlySet<string>,
+): void {
+  const invalid = wraps.find((wrap) => !activeKeyIds.has(wrap.recipientKeyId))
+  if (invalid)
+    throw new ConfigServiceError(
+      `wrap recipient ${invalid.recipientKeyId} is not a registered non-revoked machine in this space; list machine keys and retry with an active recipient`,
+      422,
+    )
+}
+
 async function insertWraps(
   tx: SQL,
   input: { spaceId: string; dekId: string; wraps: ConfigWrapInput[] },
@@ -479,7 +558,7 @@ async function insertWraps(
 }
 
 export async function createDataKey(
-  input: ConfigTenant & { version: number; wraps: ConfigWrapInput[] },
+  input: ConfigTenant & { dekId: string; version: number; wraps: ConfigWrapInput[] },
 ): Promise<{ id: string; version: number }> {
   try {
     return await tenant(input, async (tx) => {
@@ -494,13 +573,16 @@ export async function createDataKey(
           409,
         )
       }
-      const id = newRecordId()
+      await validateWrapRecipients(tx, input)
       try {
         await tx`
         INSERT INTO secret_dek (id, space_id, version, created_at)
-        VALUES (${id}::uuid, ${input.spaceId}::uuid, ${input.version}, now())
+        VALUES (${input.dekId}::uuid, ${input.spaceId}::uuid, ${input.version}, now())
       `
       } catch (error) {
+        if (isUniqueViolation(error, 'secret_dek_pkey')) {
+          throw new ConfigServiceError('data key id is already used', 409)
+        }
         if (isUniqueViolation(error, 'secret_dek_space_version_unique')) {
           throw new ConcurrentDataKeyCreate()
         }
@@ -508,13 +590,17 @@ export async function createDataKey(
       }
       await insertWraps(tx, {
         spaceId: input.spaceId,
-        dekId: id,
+        dekId: input.dekId,
         wraps: input.wraps,
       })
-      return { id, version: input.version }
+      return { id: input.dekId, version: input.version }
     })
   } catch (error) {
-    if (!(error instanceof ConcurrentDataKeyCreate)) throw error
+    if (isUniqueViolation(error, 'secret_dek_pkey')) {
+      throw new ConfigServiceError('data key id is already used', 409)
+    }
+    const concurrentVersion = isUniqueViolation(error, 'secret_dek_space_version_unique')
+    if (!(error instanceof ConcurrentDataKeyCreate) && !concurrentVersion) throw error
     const next = await tenant(input, async (tx) => {
       const rows = await tx`
         SELECT version FROM secret_dek WHERE space_id=${input.spaceId}::uuid
@@ -542,6 +628,7 @@ export async function addDataKeyWraps(
         404,
       )
     }
+    await validateWrapRecipients(tx, input)
     await insertWraps(tx, input)
   })
 }
@@ -590,11 +677,6 @@ export async function listMachineKeys(input: ConfigTenant): Promise<MachineKey[]
   })
 }
 
-export async function machineKeyId(publicKey: Uint8Array): Promise<string> {
-  const digest = new Uint8Array(await crypto.subtle.digest('SHA-256', Uint8Array.from(publicKey)))
-  return Buffer.from(digest.subarray(0, 16)).toString('base64url')
-}
-
 export async function registerMachineKey(
   input: ConfigTenant & { keyId: string; publicKey: Uint8Array; label: string },
 ): Promise<MachineKey> {
@@ -609,9 +691,22 @@ export async function registerMachineKey(
     const rows = await tx`
       INSERT INTO machine_public_key (space_id, key_id, public_key, label, created_at)
       VALUES (${input.spaceId}::uuid, ${input.keyId}, ${input.publicKey}, ${input.label}, now())
+      ON CONFLICT (space_id, key_id) DO NOTHING
       RETURNING key_id, public_key, label, created_at, revoked_at
     `
-    const row = rows[0] as Record<string, unknown>
+    const existing = rows[0]
+      ? rows
+      : await tx`
+          SELECT key_id, public_key, label, created_at, revoked_at
+          FROM machine_public_key
+          WHERE space_id=${input.spaceId}::uuid AND key_id=${input.keyId}
+        `
+    const row = existing[0] as Record<string, unknown>
+    if (!Buffer.from(bytes(row.public_key)).equals(Buffer.from(input.publicKey)))
+      throw new ConfigServiceError(
+        'machine key id is already registered with a different public key',
+        409,
+      )
     return {
       keyId: String(row.key_id),
       publicKey: bytes(row.public_key),

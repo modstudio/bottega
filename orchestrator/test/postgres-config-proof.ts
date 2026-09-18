@@ -1,15 +1,16 @@
 import { beforeAll, expect, test } from 'bun:test'
+import { machineKeyId } from '../../shared/machine-key-id.ts'
 import {
   RECORD_ACTOR_ROLE,
   RECORD_OWNER_ROLE,
   RECORD_READER_ROLE,
 } from '../../shared/record/schema.ts'
 import {
+  addDataKeyWraps,
   createDataKey,
   deleteConfigEntry,
   deleteConfigSecret,
   listConfigSecrets,
-  machineKeyId,
   putConfigEntry,
   putConfigSecret,
   registerMachineKey,
@@ -425,10 +426,56 @@ export function registerHostedConfigProofs(
     })
   })
 
+  test('data-key writes refuse unregistered and revoked wrap recipients in PostgreSQL', async () => {
+    const material = Uint8Array.from({ length: 32 }, (_, index) => index + 32)
+    const revokedKeyId = await machineKeyId(material)
+    await registerMachineKey({
+      ...serviceTenant,
+      keyId: revokedKeyId,
+      publicKey: material,
+      label: 'revoked recipient proof',
+    })
+    await revokeMachineKey({ ...serviceTenant, keyId: revokedKeyId })
+    const candidate = {
+      recipientKeyId: revokedKeyId,
+      senderKeyId: 'CCCCCCCCCCCCCCCCCCCCCC',
+      enc: Uint8Array.of(1),
+      ciphertext: Uint8Array.of(2),
+    }
+    await expect(
+      addDataKeyWraps({ ...serviceTenant, dekId: DEK_A, wraps: [candidate] }),
+    ).rejects.toMatchObject({ status: 422 })
+    await expect(
+      createDataKey({
+        ...serviceTenant,
+        dekId: '01990000-0000-7000-8000-0000000000dc',
+        version: 2,
+        wraps: [{ ...candidate, recipientKeyId: 'ZZZZZZZZZZZZZZZZZZZZZZ' }],
+      }),
+    ).rejects.toMatchObject({ status: 422 })
+  })
+
   test('config service refuses a non-consecutive data-key version', async () => {
-    await expect(createDataKey({ ...serviceTenant, version: 7, wraps: [] })).rejects.toMatchObject({
+    await expect(
+      createDataKey({
+        ...serviceTenant,
+        dekId: '01990000-0000-7000-8000-0000000000dc',
+        version: 7,
+        wraps: [],
+      }),
+    ).rejects.toMatchObject({
       status: 409,
     })
+  })
+
+  test('client-supplied data-key ids persist and are globally refused on reuse', async () => {
+    const dekId = '01990000-0000-7000-8000-0000000000dd'
+    await expect(
+      createDataKey({ ...serviceTenant, dekId, version: 2, wraps: [] }),
+    ).resolves.toEqual({ id: dekId, version: 2 })
+    await expect(
+      createDataKey({ ...serviceTenant, spaceId: spaceB, dekId, version: 2, wraps: [] }),
+    ).rejects.toMatchObject({ status: 409 })
   })
 
   test('machine registration verifies key ids and revocation atomically removes wraps', async () => {
