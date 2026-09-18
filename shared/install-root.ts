@@ -16,11 +16,11 @@ export type DistributionManifest = {
   commit: string
 }
 
-export type InstallationIdentity =
+type InstallationIdentity =
   | { kind: 'distribution'; root: string; manifest: DistributionManifest }
   | { kind: 'checkout'; root: string; version: string }
 
-export class InstallRootNotFoundError extends Error {}
+class InstallRootNotFoundError extends Error {}
 
 function isDistributionRoot(directory: string): boolean {
   return existsSync(join(directory, DIST_MANIFEST))
@@ -99,7 +99,7 @@ export function readDistributionManifest(root: string): DistributionManifest | n
 }
 
 /** Read the identity of the running distribution or checkout. */
-export function installationIdentity(
+function installationIdentity(
   fromDirectory: string,
   env: InstallEnvironment,
 ): InstallationIdentity {
