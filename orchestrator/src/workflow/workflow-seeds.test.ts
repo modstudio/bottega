@@ -6,7 +6,7 @@ import {
   showStepCatalogue,
   stepCatalogueVersions,
 } from './step-catalogue.ts'
-import { seedWorkflows } from './workflow-seeds.ts'
+import { mergeSeededSteps, seedWorkflows } from './workflow-seeds.ts'
 import {
   listWorkflows,
   showWorkflow,
@@ -21,6 +21,54 @@ const database = () => {
   seedWorkflows(d)
   return d
 }
+
+describe('seeded step merge', () => {
+  test('a store-promoted step absent from the seed survives the merge (catches reverting to replacement)', () => {
+    expect(
+      mergeSeededSteps(
+        [
+          { slug: 'seeded', body: 'old' },
+          { slug: 'operator-step', body: 'operator' },
+        ],
+        [{ slug: 'seeded', body: 'new' }],
+      ),
+    ).toContainEqual({ slug: 'operator-step', body: 'operator' })
+  })
+
+  test("a seeded slug present in production is replaced by the seed's body (catches skipping updates)", () => {
+    expect(
+      mergeSeededSteps([{ slug: 'seeded', body: 'old' }], [{ slug: 'seeded', body: 'new' }]),
+    ).toEqual([{ slug: 'seeded', body: 'new' }])
+  })
+
+  test('a seeded slug absent from production is appended (catches dropping new seed steps)', () => {
+    expect(
+      mergeSeededSteps(
+        [{ slug: 'existing', body: 'existing' }],
+        [
+          { slug: 'existing', body: 'updated' },
+          { slug: 'new-seed', body: 'new' },
+        ],
+      ),
+    ).toEqual([
+      { slug: 'existing', body: 'updated' },
+      { slug: 'new-seed', body: 'new' },
+    ])
+  })
+
+  test('order of existing steps is preserved (catches reordering the tree mirror)', () => {
+    expect(
+      mergeSeededSteps(
+        [
+          { slug: 'operator-first', body: 'operator' },
+          { slug: 'seeded-second', body: 'old' },
+          { slug: 'operator-third', body: 'operator' },
+        ],
+        [{ slug: 'seeded-second', body: 'new' }],
+      ).map((step) => step.slug),
+    ).toEqual(['operator-first', 'seeded-second', 'operator-third'])
+  })
+})
 
 describe('workflow projection and seeds', () => {
   const workflowId = (d: Database, slug: string) =>
@@ -136,6 +184,28 @@ describe('workflow projection and seeds', () => {
       expect(step.needs).toContain('trunk')
       expect(step.body).toContain('{{trunk}}')
     }
+  })
+  test('an unchanged merge records no new version or event (catches promoting a duplicate on every initialize)', () => {
+    const d = database(),
+      catalogue = productionStepCatalogue(d),
+      beforeVersions = stepCatalogueVersions(d).length,
+      beforeEvents = (
+        d
+          .query('SELECT COUNT(*) AS count FROM step_catalogue_event WHERE catalogue_id=?')
+          .get(catalogue.owner_id) as { count: number }
+      ).count
+    d.query(
+      "UPDATE step_catalogue_event SET reason='seed r1' WHERE catalogue_id=? AND author='seed'",
+    ).run(catalogue.owner_id)
+
+    seedWorkflows(d)
+
+    expect(stepCatalogueVersions(d)).toHaveLength(beforeVersions)
+    expect(
+      d
+        .query('SELECT COUNT(*) AS count FROM step_catalogue_event WHERE catalogue_id=?')
+        .get(catalogue.owner_id),
+    ).toEqual({ count: beforeEvents })
   })
   test('legacy seed revisions upgrade both live shapes', () => {
     const d = database()
