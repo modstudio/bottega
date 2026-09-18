@@ -15,7 +15,7 @@ import {
   unique,
   uuid,
 } from 'drizzle-orm/pg-core'
-import { spaceIdentity, tenantPolicies } from './schema.ts'
+import { spaceIdentity, tenantPolicies, user } from './schema.ts'
 
 const identity = () => uuid('id').primaryKey()
 const updatedAt = () => timestamp('updated_at', { withTimezone: true }).notNull()
@@ -242,6 +242,7 @@ export const hubInterval = pgTable.withRLS(
     via: text(),
     open: integer().notNull().default(0),
     sessionId: text('session_id'),
+    userId: uuid('user_id').references(() => user.id),
     updatedAt: updatedAt(),
   },
   (table) => [

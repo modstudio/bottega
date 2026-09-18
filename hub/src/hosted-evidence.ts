@@ -17,6 +17,7 @@ export type IntervalEvidence = {
   via: string | null
   open: number
   session_id: string | null
+  user_id: string | null
 }
 export type DayEvidence = {
   day: string
@@ -60,17 +61,19 @@ export async function upsertIntervals(
       await tx`
         INSERT INTO hub_interval
           (id, space_id, task_key, project_name, source, agent, job, start_at, end_at,
-           claude_tokens, vendor_tokens, vendor_cost_usd, ref, via, open, session_id, updated_at)
+           claude_tokens, vendor_tokens, vendor_cost_usd, ref, via, open, session_id, user_id, updated_at)
         VALUES
           (${newRecordId()}::uuid, ${identity.spaceId}::uuid, ${row.task_key}, ${row.project_name},
            ${row.source}, ${row.agent}, ${row.job}, ${row.start_at}::timestamptz,
            ${row.end_at}::timestamptz, ${row.claude_tokens}, ${row.vendor_tokens},
-           ${row.vendor_cost_usd}, ${row.ref}, ${row.via}, ${row.open}, ${row.session_id}, now())
+           ${row.vendor_cost_usd}, ${row.ref}, ${row.via}, ${row.open}, ${row.session_id},
+           ${row.user_id}::uuid, now())
         ON CONFLICT (space_id, source, ref, start_at) DO UPDATE SET
           task_key=excluded.task_key, project_name=excluded.project_name, agent=excluded.agent,
           job=excluded.job, end_at=excluded.end_at, claude_tokens=excluded.claude_tokens,
           vendor_tokens=excluded.vendor_tokens, vendor_cost_usd=excluded.vendor_cost_usd,
-          via=excluded.via, open=excluded.open, session_id=excluded.session_id, updated_at=now()
+          via=excluded.via, open=excluded.open, session_id=excluded.session_id,
+          user_id=excluded.user_id, updated_at=now()
       `
     }
     return { upserted: rows.length }

@@ -8,6 +8,22 @@ const TEST_REFUSAL =
 type SyncFetch = (input: string, init?: RequestInit) => Promise<Response>
 type LedgerRow = { local_key: string; content_hash: string }
 
+/** Resolve attribution now; callers persist the result and never infer it during push. */
+export async function signedInRecordUserId(
+  options: { baseUrl?: string; token?: string | null; fetch?: SyncFetch } = {},
+): Promise<string | null> {
+  const baseUrl = options.baseUrl ?? process.env.HUB_HOSTED_URL
+  const token = Object.hasOwn(options, 'token') ? options.token : readRecordSessionToken()
+  if (!baseUrl || !token) return null
+  const response = await (options.fetch ?? fetch)(`${baseUrl.replace(/\/$/, '')}/v1/whoami`, {
+    headers: { authorization: `Bearer ${token}` },
+  })
+  if (response.status === 401) return null
+  if (!response.ok) throw new Error(`record identity ${response.status}`)
+  const body = (await response.json()) as { user?: { id?: unknown } }
+  return typeof body.user?.id === 'string' ? body.user.id : null
+}
+
 export type SyncTablePlan<T> = {
   changed: Array<{ key: string; hash: string; row: T }>
   deleted: string[]
@@ -52,7 +68,7 @@ function localIntervals() {
   const rows = db()
     .query<IntervalEvidence, []>(
       `SELECT task_key, project AS project_name, source, agent, job, start_at, end_at,
-              claude_tokens, vendor_tokens, vendor_cost_usd, ref, via, open, session_id
+              claude_tokens, vendor_tokens, vendor_cost_usd, ref, via, open, session_id, user_id
          FROM interval ORDER BY source, ref, start_at`,
     )
     .all()

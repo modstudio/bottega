@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test'
-import { recordDoctorExitCode, redactRecordPasswords } from './record-doctor.ts'
+import { recordDoctorExitCode, redactRecordPasswords, unattributedShare } from './record-doctor.ts'
 
 describe('record doctor decisions', () => {
   test('fails its exit code exactly when a named check fails', () => {
@@ -17,5 +17,10 @@ describe('record doctor decisions', () => {
     expect(redactRecordPasswords(`could not connect to ${url}: secret-value`, [url])).toBe(
       'could not connect to postgres://record_actor:***@record.example/db: ***',
     )
+  })
+
+  test('reports unattributed rows rather than presenting a clean estate', () => {
+    expect(unattributedShare(3, 4)).toBe('3/4 (75.0%) unattributed')
+    expect(unattributedShare(0, 0)).toBe('0/0 (0.0%) unattributed')
   })
 })

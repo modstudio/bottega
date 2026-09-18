@@ -1,8 +1,21 @@
 import { describe, expect, test } from 'bun:test'
 import { evidenceApi } from './evidence-api.ts'
-import { batches, contentHash, diffRows, syncEvidence } from './sync.ts'
+import { batches, contentHash, diffRows, signedInRecordUserId, syncEvidence } from './sync.ts'
 
 describe('evidence sync planning', () => {
+  test('captures the signed-in record user and keeps an absent session null', async () => {
+    expect(
+      await signedInRecordUserId({
+        baseUrl: 'https://record.example.test',
+        token: 'session',
+        fetch: async () => Response.json({ user: { id: 'user-42' } }),
+      }),
+    ).toBe('user-42')
+    expect(
+      await signedInRecordUserId({ baseUrl: 'https://record.example.test', token: null }),
+    ).toBeNull()
+  })
+
   test('hashes stable content deterministically', () => {
     const row = { source: 'orch', ref: 'orch:1', start_at: '2026-09-17T00:00:00.000Z' }
     expect(contentHash(row)).toBe(contentHash({ ...row }))

@@ -163,6 +163,9 @@ function payload(source: string, kind: keyof typeof recordKinds): Payload {
   if (compatibleProjectKinds.has(kind) && !Object.hasOwn(parsed, 'projectName')) {
     Object.assign(parsed, { projectName: null })
   }
+  if (kind === 'run' && !Object.hasOwn(parsed, 'startedByUserId')) {
+    Object.assign(parsed, { startedByUserId: null })
+  }
   const keys = Object.keys(parsed).sort()
   const expected = [...recordKinds[kind].columns].sort()
   if (keys.length !== expected.length || keys.some((key, index) => key !== expected[index])) {
@@ -231,6 +234,7 @@ function runValues(row: Payload, projectId: string | null) {
     projectId,
     machineId: String(row.machineId),
     localId: bigint(row.localId),
+    startedByUserId: nullableString(row.startedByUserId),
     startedAt: date(row.startedAt),
     finishedAt: nullableDate(row.finishedAt),
     agent: String(row.agent),

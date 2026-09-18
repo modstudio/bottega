@@ -12,7 +12,7 @@ import { job } from '../jobs/jobs.ts'
 import { effectiveMcpRequest, preflightMcp, storedMcpRequest } from '../mcp/mcp-preflight.ts'
 import { projectByName } from '../project/projects.ts'
 import type { DetachSpec } from '../route/failover.ts'
-import { repoOf } from './run.ts'
+import { repoOf, signedInRecordUserId } from './run.ts'
 import { RUNS_DIR, runFilePaths } from './run-artifacts.ts'
 
 /**
@@ -79,6 +79,7 @@ export async function detach(
     preflightMcp({ mcp: mcpRequest, cwd, job: jobName, selectedAgent })
   }
   const runsDir = RUNS_DIR
+  const startedByUserId = await signedInRecordUserId()
   mkdirSync(runsDir, { recursive: true })
   // Named by the clock alone, this collided: concurrent `orch do` calls for the
   // same job inside one millisecond wrote the SAME prompt file, and every one of
@@ -100,8 +101,8 @@ export async function detach(
       .query(
         `INSERT INTO run (started_at, agent, job, repo, project_id, cwd, prompt_sha, spec_sha, prompt_bytes,
                       prompt_head, label, status, session_id, probe, parent_run_id, turn, mcp,
-                      vendor_session)
-       SELECT ?, '(pending)', ?, ?, ?, ?, ?, ?, ?, ?, ?, 'running', ?, ?, ?, ?, ?, ?
+                      vendor_session, started_by_user_id)
+       SELECT ?, '(pending)', ?, ?, ?, ?, ?, ?, ?, ?, ?, 'running', ?, ?, ?, ?, ?, ?, ?
         WHERE ? IS NULL OR (
           EXISTS (SELECT 1 FROM run root WHERE root.id = ? AND root.status <> 'stale')
           AND NOT EXISTS (
@@ -128,6 +129,7 @@ export async function detach(
         spec.resume?.turn ?? 1,
         storedMcpRequest(mcpRequest),
         spec.resume?.session ?? null,
+        startedByUserId,
         spec.resume?.parent ?? null,
         spec.resume?.parent ?? null,
         spec.resume?.parent ?? null,
