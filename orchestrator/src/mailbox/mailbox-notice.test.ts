@@ -5,7 +5,7 @@ describe('worker message delivery wording', () => {
   test('warns and gives the continuation remedy when the transport cannot inject', () => {
     expect(deferredWorkerMessageNotice(4935, false)).toBe(
       'It will NOT reach the running turn unless the worker polls check_orchestrator_messages. ' +
-        'It WILL be included in the next turn\'s prompt; after this turn ends, run "orch continue 4935" to deliver it now-ish.',
+        'It WILL be included in the next turn\'s prompt; once this turn ends, run "orch continue 4935" to deliver it.',
     )
   })
 
