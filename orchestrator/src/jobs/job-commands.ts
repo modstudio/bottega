@@ -21,12 +21,14 @@ export function jobsCommand(json: boolean, presentation: { log(value: string): v
     return
   }
   for (const entry of Object.values(JOBS)) {
-    const needs = Object.keys(entry.needs).length
-      ? ` [needs ${Object.keys(entry.needs).join(',')}]`
-      : ''
+    const truthyNeeds = Object.entries(entry.needs)
+      .filter(([, needed]) => needed)
+      .map(([need]) => need)
+    const needs = truthyNeeds.length ? ` [needs ${truthyNeeds.join(',')}]` : ''
+    const inline = entry.needs.readsRepo === false ? ' [inline]' : ''
     const axes = entry.needs.writesRepo
       ? ' [axes delivery,quality,fidelity]'
       : ' [axes delivery,quality]'
-    presentation.log(`${entry.name.padEnd(15)} ${entry.what}${needs}${axes}`)
+    presentation.log(`${entry.name.padEnd(15)} ${entry.what}${needs}${inline}${axes}`)
   }
 }
