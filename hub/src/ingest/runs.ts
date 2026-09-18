@@ -51,8 +51,8 @@ export async function ingestRuns(since: string): Promise<{ rows: number; skipped
   writeTransaction((conn) => {
     const stmt = conn.query(
       `INSERT INTO interval (task_key, project, source, agent, job, start_at, end_at,
-                           claude_tokens, vendor_tokens, vendor_cost_usd, ref, via, open, session_id)
-     VALUES (?,?,'orch',?,?,?,?,0,?,?,?,?,?,?)
+                           claude_tokens, vendor_tokens, vendor_cost_usd, ref, via, open, session_id, user_id)
+     VALUES (?,?,'orch',?,?,?,?,0,?,?,?,?,?,?,?)
      ON CONFLICT(source, ref, start_at) DO UPDATE SET
        end_at          = excluded.end_at,
        vendor_tokens   = excluded.vendor_tokens,
@@ -62,7 +62,8 @@ export async function ingestRuns(since: string): Promise<{ rows: number; skipped
        job             = excluded.job,
        via             = excluded.via,
        open            = excluded.open,
-       session_id      = excluded.session_id`,
+       session_id      = excluded.session_id,
+       user_id         = excluded.user_id`,
     )
     const upsertQuestion = conn.query(
       `INSERT INTO question (question_id, run_ref, root_ref, task_key, session_id, asked_at, answered_at)
@@ -154,6 +155,7 @@ export async function ingestRuns(since: string): Promise<{ rows: number; skipped
           a.via,
           turn.latency_ms == null ? 1 : 0,
           r.session_id,
+          r.started_by_user_id ?? null,
         )
         if (!r.turns) removeOtherStarts.run(ref, new Date(start).toISOString())
         rows++

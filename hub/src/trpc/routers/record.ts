@@ -1,5 +1,6 @@
 import { initTRPC, TRPCError } from '@trpc/server'
 import { z } from 'zod'
+import { hostedMeasures } from '../../hosted-measures.ts'
 import {
   hostedBoard,
   hostedFlightDone,
@@ -192,6 +193,27 @@ export const recordRouter = t.router({
       },
     }
   }),
+  measures: t.procedure
+    .input(
+      z.object({
+        from: z.iso.datetime(),
+        to: z.iso.datetime(),
+        scope: z.discriminatedUnion('kind', [
+          z.object({ kind: z.literal('space') }),
+          z.object({ kind: z.literal('project'), project: z.string().min(1).max(64) }),
+          z.object({ kind: z.literal('person'), userId: uuid }),
+        ]),
+      }),
+    )
+    .query(async ({ ctx, input }) => {
+      const { identity } = await hostedIdentity(ctx)
+      return hostedMeasures(
+        recordDatabaseUrl(),
+        identity,
+        { from: input.from, to: input.to },
+        input.scope,
+      )
+    }),
   spend: t.procedure.input(workInput).query(async ({ ctx, input }) => {
     const { client, identity } = await hostedIdentity(ctx)
     const projects = await client.projects()

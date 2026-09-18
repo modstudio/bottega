@@ -1,12 +1,14 @@
 #!/usr/bin/env bun
 import { SQL } from 'bun'
 import { PLATFORM_SLUG } from '../../shared/brand.ts'
+import { newRecordId } from '../../shared/record/schema.ts'
 import {
   deleteIntervals,
   type IntervalEvidence,
   upsertDays,
   upsertIntervals,
 } from '../src/hosted-evidence.ts'
+import { hostedMeasures, loadHostedMeasureRows } from '../src/hosted-measures.ts'
 import {
   createHostedNote,
   getHostedNote,
@@ -37,6 +39,7 @@ import {
   hostedSpend,
   hostedTaskDetail,
 } from '../src/hosted-work.ts'
+import { computeMeasures } from '../src/measures.ts'
 
 const adminUrl = process.env.ORCH_TEST_POSTGRES_URL
 const actorUrl = process.env.ORCH_RECORD_URL
@@ -61,6 +64,7 @@ const interval: IntervalEvidence = {
   via: 'prompt',
   open: 0,
   session_id: 'fixture',
+  user_id: null,
 }
 
 const admin = new SQL(adminUrl)
@@ -361,6 +365,136 @@ try {
     const emptySettings = await hostedSettings(actorUrl, otherIdentity, [])
     if (emptyNotes.notes.length || emptyRatio.days.length || emptySettings.sends.length)
       throw new Error('another space observed a hosted page adapter row')
+
+    const measureWindow = { from: '2026-09-17T12:00:00.000Z', to: '2026-09-17T14:00:00.000Z' }
+    const measureIntervals: IntervalEvidence[] = [
+      {
+        task_key: 'DEV-758',
+        project_name: PLATFORM_SLUG,
+        source: 'orch',
+        agent: 'grok',
+        job: 'implement',
+        start_at: '2026-09-17T12:00:00.000Z',
+        end_at: '2026-09-17T13:00:00.000Z',
+        claude_tokens: 0,
+        vendor_tokens: 10,
+        vendor_cost_usd: 0.2,
+        ref: 'orch:measures-a',
+        via: 'prompt',
+        open: 0,
+        session_id: 'maya',
+        user_id: USER,
+      },
+      {
+        task_key: 'DEV-758',
+        project_name: PLATFORM_SLUG,
+        source: 'orch',
+        agent: 'codex',
+        job: 'implement',
+        start_at: '2026-09-17T12:30:00.000Z',
+        end_at: '2026-09-17T13:30:00.000Z',
+        claude_tokens: 0,
+        vendor_tokens: 5,
+        vendor_cost_usd: 0.1,
+        ref: 'orch:measures-b',
+        via: 'prompt',
+        open: 0,
+        session_id: 'maya',
+        user_id: USER,
+      },
+      {
+        task_key: 'DEV-758',
+        project_name: PLATFORM_SLUG,
+        source: 'claude',
+        agent: null,
+        job: null,
+        start_at: '2026-09-17T12:00:00.000Z',
+        end_at: '2026-09-17T13:00:00.000Z',
+        claude_tokens: 20,
+        vendor_tokens: 0,
+        vendor_cost_usd: null,
+        ref: 'claude:measures-maya',
+        via: 'prompt',
+        open: 0,
+        session_id: 'maya',
+        user_id: USER,
+      },
+      {
+        task_key: null,
+        project_name: PLATFORM_SLUG,
+        source: 'claude',
+        agent: null,
+        job: null,
+        start_at: '2026-09-17T12:00:00.000Z',
+        end_at: '2026-09-17T13:00:00.000Z',
+        claude_tokens: 20,
+        vendor_tokens: 0,
+        vendor_cost_usd: null,
+        ref: 'claude:measures-unknown',
+        via: 'prompt',
+        open: 0,
+        session_id: 'anon',
+        user_id: null,
+      },
+    ]
+    await upsertIntervals(actorUrl, identity, measureIntervals)
+    await mirrorHostedTasks(actorUrl, identity, {
+      tasks: [
+        {
+          id: '01990000-0000-7000-8000-000000000758',
+          key: 'DEV-758',
+          project: PLATFORM_SLUG,
+          project_name: PLATFORM_SLUG,
+          title: 'Measures',
+          status: 'done',
+          status_category: 'done',
+          parent_key: null,
+          body: null,
+          assignee: null,
+          opened_at: '2026-09-17T10:00:00.000Z',
+          closed_at: '2026-09-17T12:50:00.000Z',
+          source: 'mcp',
+          first_seen: '2026-09-17T10:00:00.000Z',
+          last_seen: '2026-09-17T12:50:00.000Z',
+          created_at: '2026-09-17T10:00:00.000Z',
+          updated_at: '2026-09-17T12:50:00.000Z',
+          deleted_at: null,
+        },
+      ],
+    })
+    const doneAt = '2026-09-17T12:10:00.000Z'
+    await admin`INSERT INTO hub_task_status_event
+      (id,space_id,project_name,task_key,at,from_status,to_status,created_at,updated_at)
+      VALUES
+        (${newRecordId()}::uuid,${SPACE_A}::uuid,${PLATFORM_SLUG},'DEV-758',
+          ${doneAt}::timestamptz,'open','done',${doneAt}::timestamptz,${doneAt}::timestamptz),
+        (${newRecordId()}::uuid,${SPACE_A}::uuid,${PLATFORM_SLUG},'DEV-758',
+          ${'2026-09-17T12:50:00.000Z'}::timestamptz,'open','done',
+          ${'2026-09-17T12:50:00.000Z'}::timestamptz,${'2026-09-17T12:50:00.000Z'}::timestamptz)`
+    const loaded = await loadHostedMeasureRows(actorUrl, identity, measureWindow)
+    const pure = computeMeasures(loaded, measureWindow, { kind: 'space' })
+    const hosted = await hostedMeasures(actorUrl, identity, measureWindow, { kind: 'space' })
+    if (JSON.stringify(pure) !== JSON.stringify(hosted))
+      throw new Error('hosted measures differed from the pure function on the same rows')
+    if (hosted.hoursRunning.unionMs !== 90 * 60_000)
+      throw new Error(
+        `hosted hours running merged overlapping orch as ${hosted.hoursRunning.unionMs}`,
+      )
+    if (hosted.agentHours.sumMs <= hosted.hoursRunning.unionMs)
+      throw new Error('hosted agent-hours did not keep overlapping orch spans')
+    if (hosted.scope === 'person' || hosted.shipped.count !== 1)
+      throw new Error('shipped counted a task more than once after two done entries')
+    const otherMeasures = await hostedMeasures(actorUrl, otherIdentity, measureWindow, {
+      kind: 'space',
+    })
+    if (
+      otherMeasures.hoursRunning.unionMs !== 0 ||
+      otherMeasures.agentHours.sumMs !== 0 ||
+      otherMeasures.sessionTime.unionThenSumMs !== 0 ||
+      otherMeasures.scope === 'person' ||
+      otherMeasures.shipped.count !== 0
+    )
+      throw new Error('another space observed hosted measures')
   } finally {
     await client.close()
   }
