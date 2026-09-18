@@ -272,7 +272,7 @@ export type AssigneeResolver = (
 
 export type TrackerSource = {
   project: string
-  /** The name in ~/.claude/.env, e.g. STARSHIP_MCP_URL. */
+  /** The env-source name prefix, e.g. STARSHIP for STARSHIP_MCP_URL. */
   env: string
   fetch: (m: ToolCaller) => Promise<TrackerTask[]>
   /** One closed task by key, for work the window touched but the sync skipped. */

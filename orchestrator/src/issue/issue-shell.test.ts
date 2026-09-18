@@ -21,7 +21,7 @@ describe('filed issue command confinement', () => {
       sandboxHome: '/tmp/issue-home',
       path: '/usr/bin:/bin',
       lang: 'en_US.UTF-8',
-      operatorEnvPath: '/Users/operator/.claude/.env',
+      operatorEnvPaths: ['/Users/operator/.claude/.env', '/Users/operator/config/platform.env'],
       secretPaths: ['/project/.env', '/keys/token'],
       workerEnvironment: { ORCH_RUN_ID: '41' },
     })
@@ -36,6 +36,7 @@ describe('filed issue command confinement', () => {
       '/project/.env',
       '/keys/token',
       '/Users/operator/.claude/.env',
+      '/Users/operator/config/platform.env',
     ])
     expect(plan.env).toEqual({
       ORCH_RUN_ID: '41',

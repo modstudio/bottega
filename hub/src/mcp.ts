@@ -1,4 +1,4 @@
-import { readFileSync } from 'node:fs'
+import { readEnvValues } from '../../shared/env-source.ts'
 
 /**
  * Just enough Streamable HTTP MCP to call one tool.
@@ -129,23 +129,16 @@ export class Mcp {
 }
 
 /**
- * Credentials, read at use time from `~/.claude/.env`.
+ * Credentials, resolved from the configured environment sources at use time.
  *
  * Never cached at import and never written to hub.db: the settings UI shows
  * whether a token resolves, never the token.
  */
 export function credentials(name: string): { url: string; token: string } | null {
-  let text: string
-  try {
-    text = readFileSync(`${process.env.HOME}/.claude/.env`, 'utf8')
-  } catch {
-    return null
-  }
-  const get = (key: string) => {
-    const m = text.match(new RegExp(`^${key}=(.*)$`, 'm'))
-    return m?.[1]?.trim().replace(/^["']|["']$/g, '') || null
-  }
-  const url = get(`${name}_MCP_URL`)
-  const token = get(`${name}_MCP_TOKEN`)
+  const urlName = `${name}_MCP_URL`
+  const tokenName = `${name}_MCP_TOKEN`
+  const values = readEnvValues([urlName, tokenName])
+  const url = values[urlName]
+  const token = values[tokenName]
   return url && token ? { url, token } : null
 }

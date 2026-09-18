@@ -10,7 +10,7 @@ export type { Brief, Report } from './report-types.ts'
  * What the settings view writes, and `hub send` reads.
  *
  * **No secret is ever stored here.** The SMTP password lives in the login
- * keychain and the MCP tokens in `~/.claude/.env`; this holds a REFERENCE and
+ * keychain and the MCP tokens in configured env sources; this holds a REFERENCE and
  * the UI reports only whether it resolves. A settings table that can be read by
  * anything holding the database is not a place for a credential — and hub.db is
  * read by the dashboard, which serves whatever it is given.

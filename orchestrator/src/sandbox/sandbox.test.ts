@@ -2,6 +2,8 @@ import { afterEach, describe, expect, test } from 'bun:test'
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { homedir, tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { PLATFORM_SLUG } from '../../../shared/brand.ts'
+import { CONFIG_HOME_ENV, HARNESS_ENV_FILE_ENV } from '../../../shared/config-directory.ts'
 import { ROOT } from '../database/db.ts'
 import { classify, NOT_EVIDENCE } from '../failure/failure.ts'
 import type { Project } from '../project/projects.ts'
@@ -82,10 +84,16 @@ describe('readonly-lens sandbox profile', () => {
       agent: 'grok',
       path: '/opt/toolchain/bin:/usr/bin',
       nodeModuleLinks: ['/projects/fixture/node_modules'],
+      environment: {
+        HOME: '/Users/operator',
+        [CONFIG_HOME_ENV]: '/Users/operator/.config/platform',
+        [HARNESS_ENV_FILE_ENV]: '',
+      },
     })
 
     expect(profile.filesystem.denyRead).toEqual([
       ...READONLY_LENS_DENY_PATHS.map((path) => path.replace(/^~/, homedir())),
+      join('/Users/operator/.config/platform', `${PLATFORM_SLUG}.env`),
       '/shared/absolute.secret',
       join(homedir(), '.tokens/private'),
       '/projects/fixture/config/operator.secret',

@@ -1,7 +1,8 @@
 import { copyFileSync, existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
-import { homedir, tmpdir } from 'node:os'
+import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { FROZEN_STATE_NAMES, PLATFORM_NAME, PLATFORM_SLUG } from '../../../shared/brand.ts'
+import { resolveEnvFilePaths } from '../../../shared/config-directory.ts'
 import { releaseRunFailoverAttempts } from '../close/close-out.ts'
 import {
   ISSUE_WORKER_SCHEMA,
@@ -356,7 +357,7 @@ async function shell(
     sandboxHome: input.sandboxHome,
     path: process.env.PATH ?? '/usr/bin:/bin',
     lang: process.env.LANG ?? 'C.UTF-8',
-    operatorEnvPath: join(homedir(), '.claude', '.env'),
+    operatorEnvPaths: resolveEnvFilePaths(process.env),
     secretPaths: resolveSecretPaths(input.project),
     workerEnvironment: input.workerEnvironment,
   })
