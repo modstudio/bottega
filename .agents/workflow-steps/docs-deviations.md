@@ -4,7 +4,8 @@ floor:
   - human-ruling
 job: null
 autonomy: ask
-needs: []
+needs:
+  []
 ---
 Compare the gathered implementation with the task text, linked documents, canon, decision records, and knowledge-base entries. List every place where the written record is missing, stale, contradicted, superseded, or describes work that was not built. Include documents outside the optional scope when the gathered evidence shows that the scoped change made them inaccurate.
 

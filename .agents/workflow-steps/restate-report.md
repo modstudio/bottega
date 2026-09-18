@@ -4,7 +4,8 @@ floor:
   - recorded-artifact
 job: null
 autonomy: auto
-needs: []
+needs:
+  []
 ---
 Read `{{report}}` and gather the report in the reporter's words. Establish what it touches by inspecting the relevant product surface, implementation, configuration, records, or other available evidence. Redact secrets and identifying information as it is gathered. Do not invent or silently resolve a fact that cannot be checked.
 

@@ -15,7 +15,7 @@ arguments:
     description: The production signal source or query from which a cohort is drawn; required in cohort mode.
   - name: window
     required: false
-    description: An observation window that overrides the project's registered release window.
+    description: "An observation window that overrides the project's registered release window."
 modes:
   - slug: single
     title: Fix one reported defect
