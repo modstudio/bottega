@@ -1,4 +1,5 @@
 import { describe, expect, test } from 'bun:test'
+import { PLATFORM_NAME } from '../../../shared/brand.ts'
 import type { McpConnection } from '../mcp/mcp-preflight.ts'
 import {
   decideMcpAttachment,
@@ -7,9 +8,11 @@ import {
   shouldDeferCwdMcpPreflight,
 } from './run-mcp-attachment.ts'
 
-const connected: McpConnection = { server: 'bottega', connected: true, error: null }
+const mcpServerName = PLATFORM_NAME.toLowerCase()
+const projectName = 'bottega'
+const connected: McpConnection = { server: mcpServerName, connected: true, error: null }
 const disconnected: McpConnection = {
-  server: 'bottega',
+  server: mcpServerName,
   connected: false,
   error: 'connection refused',
 }
@@ -87,8 +90,7 @@ describe('MCP attachment ruling', () => {
       }),
     ).toEqual({
       mcpMode: 'require',
-      refusalReason:
-        "MCP was requested, but server 'bottega' could not be attached: connection refused The agent was not started.",
+      refusalReason: `MCP was requested, but server '${mcpServerName}' could not be attached: connection refused The agent was not started.`,
       usingMcp: false,
     })
   })
@@ -144,23 +146,23 @@ describe('MCP attachment ruling', () => {
 
 describe('MCP mirror attachment ruling', () => {
   test('a required wrong-project mirror produces the existing refusal', () => {
-    const mismatch = decideMcpMirrorMismatch('bottega', ['other'], 'require')
-    expect(mismatch?.connection.error).toBe('wrong project: saw other and not bottega')
+    const mismatch = decideMcpMirrorMismatch(mcpServerName, ['other'], 'require')
+    expect(mismatch?.connection.error).toBe(`wrong project: saw other and not ${mcpServerName}`)
     expect(mismatch?.refusalReason).toBe(
-      "MCP was requested, but server 'bottega' could not be attached: wrong project: saw other and not bottega The agent was not started.",
+      `MCP was requested, but server '${mcpServerName}' could not be attached: wrong project: saw other and not ${mcpServerName} The agent was not started.`,
     )
   })
 
   test('a preferred wrong-project mirror continues with its mirror diagnostic', () => {
-    const mismatch = decideMcpMirrorMismatch('bottega', ['other'], 'prefer')
+    const mismatch = decideMcpMirrorMismatch(mcpServerName, ['other'], 'prefer')
     expect(mismatch?.refusalReason).toBeNull()
     expect(mismatch?.continuedConnection.error).toBe(
-      'mirror: wrong project: saw other and not bottega',
+      `mirror: wrong project: saw other and not ${mcpServerName}`,
     )
   })
 
   test('the required server is not a mismatch', () => {
-    expect(decideMcpMirrorMismatch('bottega', ['bottega'], 'require')).toBeNull()
+    expect(decideMcpMirrorMismatch(mcpServerName, [mcpServerName], 'require')).toBeNull()
   })
 })
 
@@ -168,46 +170,46 @@ describe('MCP tool-probe attachment ruling', () => {
   test('an unobservable required probe is refused with the existing guidance', () => {
     const ruling = decideMcpToolProbe(
       {
-        server: 'bottega',
+        server: mcpServerName,
         tool: 'tools/list',
         ok: true,
         error: 'no probe tool configured',
         durationMs: 1,
         detail: null,
-        namesSeen: ['bottega'],
+        namesSeen: [mcpServerName],
       },
-      'bottega',
+      mcpServerName,
       'require',
       'codex',
-      'bottega',
+      projectName,
     )
     expect(ruling.refusalReason).toContain('mcp unverifiable on codex')
-    expect(ruling.refusalReason).toContain('orch project set bottega')
+    expect(ruling.refusalReason).toContain(`orch project set ${projectName}`)
     expect(ruling.failedConnection).toBeNull()
   })
 
   test('a failed preferred probe continues without attachment', () => {
     const ruling = decideMcpToolProbe(
       {
-        server: 'bottega',
+        server: mcpServerName,
         tool: 'ping',
         ok: false,
         error: 'call failed',
         durationMs: 1,
         detail: null,
-        namesSeen: ['bottega'],
+        namesSeen: [mcpServerName],
       },
-      'bottega',
+      mcpServerName,
       'prefer',
       'codex',
-      'bottega',
+      projectName,
     )
     expect(ruling.refusalReason).toBeNull()
     expect(ruling.failedConnection).toEqual({
-      server: 'bottega',
+      server: mcpServerName,
       connected: false,
       error: 'call failed',
-      namesSeen: ['bottega'],
+      namesSeen: [mcpServerName],
     })
   })
 })
