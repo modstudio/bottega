@@ -98,6 +98,36 @@ describe('record client', () => {
     }
   })
 
+  test('agent snapshots retain who operates the endpoint', async () => {
+    const fetch: RecordFetch = async () =>
+      jsonResponse({
+        items: [
+          {
+            id: '01990000-0000-7000-8000-000000000001',
+            machineId: '01990000-0000-7000-8000-000000000002',
+            takenAt: '2026-09-17T12:00:00.000Z',
+            kind: 'agents',
+            payload: [
+              {
+                name: 'local-acp',
+                caps: { readsRepo: true },
+                model: 'operator/model',
+                operatedBy: 'self',
+                contextTokens: 131_072,
+                maxPromptBytes: null,
+                timeoutMs: 60_000,
+              },
+            ],
+          },
+        ],
+      })
+    const result = await clientWith(fetch).snapshots()
+    const snapshot = result.items[0]
+    expect(snapshot?.kind).toBe('agents')
+    if (snapshot?.kind !== 'agents') return
+    expect(snapshot.payload[0]?.operatedBy).toBe('self')
+  })
+
   test('keeps valid snapshots and reports each malformed item', async () => {
     const base = {
       id: '01990000-0000-7000-8000-000000000001',
@@ -148,6 +178,7 @@ describe('record client', () => {
                 name: 'agy',
                 caps: { readsRepo: false, contextTokens: null },
                 model: 'gemini-3.1-pro-high',
+                operatedBy: 'vendor',
                 contextTokens: null,
                 maxPromptBytes: null,
                 timeoutMs: 60_000,

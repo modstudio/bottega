@@ -233,6 +233,7 @@ export const OrchAgentDefinitionSchema = z.object({
   name: z.string(),
   caps: z.record(z.string(), z.boolean()),
   model: z.string(),
+  operatedBy: z.enum(['vendor', 'self']),
   contextTokens: z.number().nullable(),
   maxPromptBytes: z.number().nullable(),
   timeoutMs: z.number(),

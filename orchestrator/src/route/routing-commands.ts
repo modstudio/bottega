@@ -31,7 +31,7 @@ type PickPresentation = {
   agents: Record<
     string,
     | {
-        billing: string
+        operatedBy: string
         probeResult?: unknown
       }
     | undefined
@@ -392,7 +392,7 @@ export function pickCommand(
   )
   const listed = [...ev.cands].sort((a, b) => {
     const rank = (candidate: typeof a) =>
-      agents[candidate.agent]?.billing === 'local' && candidate.preferred ? 0 : 1
+      agents[candidate.agent]?.operatedBy === 'self' && candidate.preferred ? 0 : 1
     return rank(a) - rank(b)
   })
   for (const c of listed) {

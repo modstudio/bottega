@@ -18,6 +18,7 @@ export type AgentRow = {
   transport: 'cli' | 'acp'
   caps: string
   billing: Agent['billing']
+  operated_by: Agent['operatedBy']
   enabled: number
   disabled_reason: string | null
   probed_at: string | null
@@ -40,6 +41,7 @@ export function rowAgent(row: AgentRow): Agent {
         bin: row.harness,
         minimumCliVersion: '0.0.0',
         billing: row.billing,
+        operatedBy: row.operated_by,
         model: row.model,
         caps: stored,
         defaultTransport: row.transport,
@@ -62,6 +64,7 @@ export function rowAgent(row: AgentRow): Agent {
     baseUrl: row.base_url,
     model: row.model,
     billing: row.billing,
+    operatedBy: row.operated_by,
     caps: stored,
     defaultTransport: row.transport,
     contextTokens: Object.hasOwn(stored, 'contextTokens')
@@ -114,6 +117,7 @@ const FALLBACK_AGENTS: Record<string, Agent> = {
         base_url: null,
         transport: 'cli',
         billing: 'free',
+        operated_by: 'vendor',
         enabled: 0,
         disabled_reason: 'no readsRepo; only two inline jobs and negligible evidence',
         probed_at: '2026-09-07T00:00:00.000Z',
@@ -127,7 +131,8 @@ const FALLBACK_AGENTS: Record<string, Agent> = {
         model: 'Qwen/Qwen3.6-35B-A3B',
         base_url: null,
         transport: 'cli',
-        billing: 'local',
+        billing: 'none',
+        operated_by: 'self',
         enabled: 0,
         disabled_reason: 'retired bespoke driver; replacement is local-acp',
         probed_at: '2026-09-07T00:00:00.000Z',
@@ -223,7 +228,7 @@ function assertAgentMutation(input: AgentMutation, adding: boolean): void {
     throw new Error(`unknown transport "${input.transport}"`)
   if (
     input.billing &&
-    !['subscription', 'free', 'local', 'metered', 'unknown'].includes(input.billing)
+    !['subscription', 'free', 'metered', 'none', 'unknown'].includes(input.billing)
   ) {
     throw new Error(`unknown billing "${input.billing}"`)
   }
@@ -277,8 +282,8 @@ export function addAgent(name: string, input: AgentMutation): AgentRow {
   }
   writableDb()
     .query(
-      `INSERT INTO agent (name,harness,backend,model,base_url,transport,caps,billing,enabled,disabled_reason)
-     VALUES (?,?,?,?,?,?,?,?,?,?)`,
+      `INSERT INTO agent (name,harness,backend,model,base_url,transport,caps,billing,operated_by,enabled,disabled_reason)
+     VALUES (?,?,?,?,?,?,?,?,?,?,?)`,
     )
     .run(
       name,
@@ -288,7 +293,8 @@ export function addAgent(name: string, input: AgentMutation): AgentRow {
       input.baseUrl ?? null,
       input.transport ?? 'acp',
       JSON.stringify(caps),
-      input.billing ?? (input.backend === 'vendor' ? 'subscription' : 'local'),
+      input.billing ?? (input.backend === 'vendor' ? 'subscription' : 'none'),
+      input.backend === 'vendor' ? 'vendor' : 'self',
       input.enabled === false ? 0 : 1,
       input.enabled === false ? input.reason!.trim() : null,
     )

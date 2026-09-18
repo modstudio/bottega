@@ -39,7 +39,7 @@ export function modelHostModel(): string {
 
 export function registeredLocalAgent(rows: AgentRow[], baseUrl: string): AgentRow | null {
   const registered = rows.filter(
-    (row) => Boolean(row.enabled) && row.transport === 'acp' && row.billing === 'local',
+    (row) => Boolean(row.enabled) && row.transport === 'acp' && row.operated_by === 'self',
   )
   if (baseUrl) return registered.find((row) => row.base_url === baseUrl) ?? null
   return registered.length === 1 ? registered[0]! : null
@@ -235,7 +235,7 @@ export function unavailableReason(name: string): string | null {
     return `no declared context window; run orch agent set ${name} --context-tokens <tokens>`
   }
   if (which(a.bin, { PATH: process.env.PATH }) === null) return 'not installed'
-  if (a.billing === 'local') {
+  if (a.operatedBy === 'self') {
     // A local agent is only real once an endpoint is configured...
     if (!MODEL_HOST_URL) return 'ORCH_MODEL_HOST_URL not set'
     // ...and only usable once it ANSWERS. Configuration is not reachability:

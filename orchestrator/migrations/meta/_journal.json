@@ -274,6 +274,13 @@
       "when": 1788900000032,
       "tag": "0038_run_started_by",
       "breakpoints": true
+    },
+    {
+      "idx": 39,
+      "version": "6",
+      "when": 1788900000033,
+      "tag": "0039_agent_operator",
+      "breakpoints": true
     }
   ]
 }

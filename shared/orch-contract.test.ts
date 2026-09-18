@@ -1,5 +1,18 @@
 import { expect, test } from 'bun:test'
-import { HarnessHealthSchema, OrchStateSchema } from './orch-contract.ts'
+import { HarnessHealthSchema, OrchAgentDefinitionSchema, OrchStateSchema } from './orch-contract.ts'
+
+test('agent snapshot parsing preserves who operates the endpoint', () => {
+  const parsed = OrchAgentDefinitionSchema.parse({
+    name: 'local-acp',
+    caps: { readsRepo: true },
+    model: 'operator/model',
+    operatedBy: 'self',
+    contextTokens: 131_072,
+    maxPromptBytes: null,
+    timeoutMs: 60_000,
+  })
+  expect(parsed.operatedBy).toBe('self')
+})
 
 test('harness health has one validated cross-concern payload contract', () => {
   const payload = {
@@ -59,7 +72,7 @@ test('orch state accepts a constructed cooling string and caps.contextTokens num
     agents: [
       {
         name: 'local-acp',
-        billing: 'local',
+        billing: 'none',
         caps: {
           readsRepo: true,
           mcp: true,

@@ -199,7 +199,7 @@ function cellsFor(
             ? evidence.reduce((sum, e) => sum + e.weight, 0) / evidence.length
             : null,
           shrunk: null as number | null,
-          free: ['free', 'local'].includes(AGENTS[agent]!.billing),
+          free: ['free', 'none'].includes(AGENTS[agent]!.billing),
           latencyMs: priorLatency(agent, event, latencyHistory, stack),
         } satisfies Cell
       })
