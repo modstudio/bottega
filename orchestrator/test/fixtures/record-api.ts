@@ -66,6 +66,18 @@ export function createMemoryRecordApiClient(): RecordApiClient {
     )
 
   return {
+    async whoami() {
+      return {
+        user: {
+          id: '01990000-0000-7000-8000-000000000001',
+          name: 'Fixture',
+          email: 'fixture@example.test',
+        },
+        activeSpaceId: '01990000-0000-7000-8000-000000000002',
+        personalSpaceId: '01990000-0000-7000-8000-000000000002',
+        memberships: [],
+      }
+    },
     async putSnapshot() {
       return { takenAt: new Date().toISOString() }
     },

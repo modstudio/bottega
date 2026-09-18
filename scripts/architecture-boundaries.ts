@@ -848,6 +848,7 @@ export const importBoundaries: ImportBoundary[] = [
       '../jobs/jobs.ts',
       '../mcp/mcp-preflight.ts',
       '../project/projects.ts',
+      '../record/record-attribution.ts',
       './run.ts',
       './run-artifacts.ts',
       '../route/failover.ts',

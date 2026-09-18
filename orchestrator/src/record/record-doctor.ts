@@ -8,6 +8,7 @@ import {
   RECORD_READER_ROLE,
 } from '../../../shared/record/schema.ts'
 import { appliedRecordMigrationCount, recordMigrationCount } from '../postgres/postgres-migrate.ts'
+import { recordAttributionFailure } from './record-attribution.ts'
 import { bearerHeaders, RECORD_SIGN_IN_REMEDY, recordAuth } from './record-auth.ts'
 import { storedRecordToken } from './record-session.ts'
 import { refuseOwnerConnection } from './record-sync.ts'
@@ -43,6 +44,16 @@ export function redactRecordPasswords(value: string, urls: readonly string[]): s
 
 function failureDetail(error: unknown, urls: readonly string[]): string {
   return redactRecordPasswords(error instanceof Error ? error.message : String(error), urls)
+}
+
+function attributionResolutionCheck(failure: string | null): RecordDoctorCheck {
+  return failure
+    ? { name: 'last run attribution resolution', status: 'fail', detail: failure }
+    : {
+        name: 'last run attribution resolution',
+        status: 'skipped',
+        detail: 'no resolution failure recorded',
+      }
 }
 
 async function declaredProjectSpaceChecks(
@@ -103,6 +114,8 @@ export async function diagnoseRecord(
     }
   }
   const skip = (name: string, detail: string) => checks.push({ name, status: 'skipped', detail })
+
+  checks.push(attributionResolutionCheck(recordAttributionFailure()))
 
   if (recordUrl) checks.push({ name: 'ORCH_RECORD_URL set', status: 'pass' })
   else

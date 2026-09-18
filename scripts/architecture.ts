@@ -255,9 +255,16 @@ export const modules: ArchitectureModule[] = [
     './record-space-move.ts',
     './record-space.ts',
   ]),
+  module('orchestrator/src/record/record-attribution.ts', [
+    'bun:sqlite',
+    '../database/db.ts',
+    './record-api-client.ts',
+    './record-session.ts',
+  ]),
   module('orchestrator/src/record/record-doctor.ts', [
     '../postgres/postgres-migrate.ts',
     '../../../shared/record/schema.ts',
+    './record-attribution.ts',
     './record-auth.ts',
     './record-session.ts',
     './record-sync.ts',
