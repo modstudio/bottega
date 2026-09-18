@@ -118,7 +118,7 @@ try {
   const recipientMigrationUrl = `postgres://${RECORD_OWNER_ROLE}:owner-password@127.0.0.1:${port}/recipient_migration`
 
   const recipientMigration = await run(
-    ['bun', 'test', '--timeout', '30000', 'src/postgres/postgres-recipient-migration.test.ts'],
+    ['bun', 'test', '--timeout', '30000', 'src/postgres/postgres-migrate-recipients.test.ts'],
     { ORCH_TEST_RECIPIENT_MIGRATION_URL: recipientMigrationUrl },
   )
   if (recipientMigration !== 0) process.exit(recipientMigration)
