@@ -884,7 +884,6 @@ export function architectureRules() {
           'hub/src/orch.ts',
           'hub/src/orch/orch.ts',
           'bun:sqlite',
-          'child_process',
           'node:child_process',
         ]
           .map(architectureDependencyPath)
