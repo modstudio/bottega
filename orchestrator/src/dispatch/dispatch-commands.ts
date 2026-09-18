@@ -13,7 +13,8 @@ import {
 } from '../project/projects.ts'
 import type { DetachSpec } from '../route/failover.ts'
 import { keepTreeExemptionFromOption } from '../worktree/keep-tree-hold.ts'
-import { preflight } from './dispatch-preflight.ts'
+import { preflight, resolvedFindingsLens } from './dispatch-preflight.ts'
+import { reviewLensPrompt } from './review-lens-prompt.ts'
 
 type TransportName = 'cli' | 'acp'
 
@@ -200,8 +201,14 @@ export async function dispatchCommand(
         '  pass --carry to send it with the run.',
     )
   }
-  const prompt = await readPrompt()
-  if (!prompt.trim()) throw new Error('empty prompt')
+  const prompt = reviewLensPrompt({
+    lens: resolvedFindingsLens(
+      requested.findings,
+      flag('lens'),
+      explicitRepo ?? projectAt(callerCwd)?.name ?? null,
+    ),
+    supplied: await readPrompt(),
+  })
   const keepTree = keepTreeExemptionFromOption(
     has('keep-tree'),
     flag('keep-tree'),

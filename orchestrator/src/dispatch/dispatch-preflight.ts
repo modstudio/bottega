@@ -25,6 +25,17 @@ import { createHasPlaceholder } from '../worktree/worktree-template.ts'
 const MAX_DEPTH = 1
 export const depth = () => Number(process.env.ORCH_DEPTH ?? 0)
 
+/** Stable lens question and exclusions for a findings dispatch that named --lens. */
+export function resolvedFindingsLens(
+  findings: boolean | undefined,
+  lensId: string | undefined,
+  projectName: string | null,
+): { question: string; excludes: string } | null {
+  if (!findings || !lensId) return null
+  const resolved = resolveLens(lensId, projectName)
+  return resolved ? { question: resolved.question, excludes: resolved.excludes } : null
+}
+
 const warnedMainCheckouts = new Set<string>()
 
 export function callerCheckoutFacts(cwd: string): {
