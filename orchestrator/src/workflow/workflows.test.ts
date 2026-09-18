@@ -40,7 +40,7 @@ const database = () => {
     'fixture',
     '/fixture',
     'bun',
-    JSON.stringify({ gate: 'bun run check', docs: { protocol: 'orch-docs' } }),
+    JSON.stringify({ gate: 'bun run check', trunk: 'develop', docs: { protocol: 'orch-docs' } }),
   )
   return d
 }
@@ -130,14 +130,33 @@ describe('workflow versions and project composition', () => {
     expect(showWorkflow('test-flow', first.n, d).status).toBe('retired')
     expect(workflowVersions('test-flow', d)).toHaveLength(2)
   })
-  test('composes ship with floors and substitutes the project gate', () => {
+  test('composes ship with the project gate and trunk while preserving main-checkout wording', () => {
     const d = database(),
       args = { key: 'DEV-626', branch: 'DEV-626-x', worktree: '/tmp/x' }
     const composed = composeWorkflow('ship', 'fixture', undefined, args, d)
     expect(composed.project).toBe('fixture')
     expect(composed.catalogue.version).toBe(1)
     expect(composed.steps.every((step) => step.floor.length > 0)).toBe(true)
-    expect(getWorkflowStep('ship', 'fixture', 'rebase', args, d).body).toContain('bun run check')
+    expect(composed.steps.find((step) => step.slug === 'rebase')!.needs).toEqual(['gate', 'trunk'])
+    expect(composed.steps.find((step) => step.slug === 'pr')!.needs).toEqual(['trunk'])
+    const rebase = getWorkflowStep('ship', 'fixture', 'rebase', args, d).body,
+      pr = getWorkflowStep('ship', 'fixture', 'pr', args, d).body
+    expect(rebase).toContain('git rebase origin/develop')
+    expect(rebase).toContain('bun run check')
+    expect(rebase).not.toContain('origin/main')
+    expect(pr).toContain('gh pr create --base develop --head DEV-626-x')
+    expect(pr).not.toContain('--base main')
+    expect(getWorkflowStep('ship', 'fixture', 'lens', args, d).body).toBe(
+      'Use `/absolute/path/to/main-checkout/bin/orch` from the main checkout, never a worktree\'s ./bin/orch, whose access to the shared per-user store is read-only. Dispatch each named lens against the branch. Always run correctness. Also run migration-safety when the change touches `orchestrator/src/database/db.ts` or `orchestrator/migrations/`. Also run craft when the change adds a new module.\n\n`/absolute/path/to/main-checkout/bin/orch do review-lens --review DEV-626-x --key DEV-626 --lens correctness "Review DEV-626: the change on DEV-626-x against its task."`\n\nRepeat with the same prompt and --lens migration-safety or --lens craft when those apply.',
+    )
+    expect(getWorkflowStep('ship', 'fixture', 'merge', args, d).body).toBe(
+      'Merge on GitHub with `gh pr merge <number> --squash --delete-branch`. Then, in the main checkout, run `git pull --ff-only`, and run `orch migrate` and `hub migrate` when the change carries a migration.',
+    )
+    expect(
+      getWorkflowStep('fix-defect', 'fixture', 'blast-radius', { key: 'DEV-626' }, d).body,
+    ).toBe(
+      'Use `/absolute/path/to/main-checkout/bin/orch` from the main checkout, never a worktree\'s ./bin/orch, whose access to the shared per-user store is read-only. Run `/absolute/path/to/main-checkout/bin/orch do review-lens --review <fix-branch> --key DEV-626 --lens issue-blast-radius "Review the fix for DEV-626 for its blast radius."`, where `<fix-branch>` is the branch `orch result` prints for the issue-worker run.',
+    )
   })
   test('renders the project trunk and refuses a missing trunk with its remedy', () => {
     const d = database()

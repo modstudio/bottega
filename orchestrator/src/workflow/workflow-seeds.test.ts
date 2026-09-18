@@ -1,6 +1,11 @@
 import { Database } from 'bun:sqlite'
 import { describe, expect, test } from 'bun:test'
 import { applyMigrations, migrationJournal } from '../database/migrations.ts'
+import {
+  productionStepCatalogue,
+  showStepCatalogue,
+  stepCatalogueVersions,
+} from './step-catalogue.ts'
 import { seedWorkflows } from './workflow-seeds.ts'
 import {
   listWorkflows,
@@ -63,6 +68,7 @@ describe('workflow projection and seeds', () => {
   }
   test('fresh stores seed current revisions as production version 1', () => {
     const d = database()
+    expect(productionStepCatalogue(d).reason).toBe('seed r2')
     expect(listWorkflows(d).filter((w) => ['ship', 'fix-defect'].includes(w.slug)).length).toBe(2)
     for (const [slug, revision] of [
       ['ship', 3],
@@ -90,6 +96,45 @@ describe('workflow projection and seeds', () => {
         },
       ])
       expect(validateWorkflowDefinition(version.definition)).toEqual([])
+    }
+  })
+  test('catalogue seed revision advances an existing store to the trunk-aware steps', () => {
+    const d = database(),
+      catalogue = productionStepCatalogue(d),
+      legacy = {
+        steps: catalogue.definition.steps.map((step) => {
+          if (step.slug === 'rebase')
+            return {
+              ...step,
+              body: step.body.replace('origin/{{trunk}}', 'origin/main'),
+              needs: step.needs.filter((need) => need !== 'trunk'),
+            }
+          if (step.slug === 'pr')
+            return {
+              ...step,
+              body: step.body.replace('--base {{trunk}}', '--base main'),
+              needs: step.needs.filter((need) => need !== 'trunk'),
+            }
+          return step
+        }),
+      }
+    d.query(
+      "UPDATE step_catalogue_version SET definition=?,reason='seed r1' WHERE catalogue_id=? AND n=1",
+    ).run(JSON.stringify(legacy), catalogue.owner_id)
+    d.query(
+      "UPDATE step_catalogue_event SET reason='seed r1' WHERE catalogue_id=? AND author='seed'",
+    ).run(catalogue.owner_id)
+
+    seedWorkflows(d)
+
+    expect(showStepCatalogue(1, d).status).toBe('retired')
+    const advanced = showStepCatalogue(2, d)
+    expect(advanced.status).toBe('production')
+    expect(advanced.reason).toBe('seed r2')
+    for (const slug of ['rebase', 'pr']) {
+      const step = advanced.definition.steps.find((item) => item.slug === slug)!
+      expect(step.needs).toContain('trunk')
+      expect(step.body).toContain('{{trunk}}')
     }
   })
   test('legacy seed revisions upgrade both live shapes', () => {
@@ -172,6 +217,7 @@ describe('workflow projection and seeds', () => {
     seedWorkflows(d)
     seedWorkflows(d)
     expect(workflowVersions('ship', d).map((version) => version.n)).toEqual([1, 2])
+    expect(stepCatalogueVersions(d).map((version) => version.n)).toEqual([1])
   })
   test('seed revision replaces but retains an operator production version', () => {
     const d = database()

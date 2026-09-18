@@ -213,22 +213,31 @@ type SeedCatalogueStep = {
   autonomy: 'auto' | 'ask' | 'manual'
   needs: string[]
 }
+const usesTrunk = (workflow: string, step: string) =>
+  workflow === 'ship' && (step === 'rebase' || step === 'pr')
+function catalogueBody(workflow: string, step: string, legacyBody: string): string {
+  if (workflow === 'fix-defect' && step === 'verify')
+    return 'Reproduce the original condition before and after the fix, then run `{{gate}}`.'
+  if (!usesTrunk(workflow, step)) return legacyBody.replaceAll('bun run check', '{{gate}}')
+  return legacyBody
+    .replaceAll('bun run check', '{{gate}}')
+    .replace('origin/main', 'origin/{{trunk}}')
+    .replace('--base main', '--base {{trunk}}')
+}
 function catalogueDefinition() {
   const steps: SeedCatalogueStep[] = []
   for (const seed of seeds) {
     for (const legacy of seed.definition.steps) {
       const runsGate = legacy.gate !== null
-      let body = legacy.body.replaceAll('bun run check', '{{gate}}')
-      if (seed.slug === 'fix-defect' && legacy.slug === 'verify')
-        body = 'Reproduce the original condition before and after the fix, then run `{{gate}}`.'
+      const runsOnTrunk = usesTrunk(seed.slug, legacy.slug)
       steps.push({
         slug: catalogueSlug(seed.slug, legacy.slug),
         title: legacy.title,
-        body,
+        body: catalogueBody(seed.slug, legacy.slug, legacy.body),
         floor: floors[seed.slug]![legacy.slug]!,
         job: legacy.job,
         autonomy: legacy.autonomy as SeedCatalogueStep['autonomy'],
-        needs: runsGate ? ['gate'] : [],
+        needs: [...(runsGate ? ['gate'] : []), ...(runsOnTrunk ? ['trunk'] : [])],
       })
     }
   }
@@ -248,7 +257,8 @@ function workflowDefinition(seed: LegacySeed) {
 
 function seedCatalogue(d: Database, now: string): void {
   const definition = JSON.stringify(catalogueDefinition()),
-    reason = 'seed r1'
+    revision = 2,
+    reason = `seed r${revision}`
   let catalogue = d.query("SELECT id FROM step_catalogue WHERE slug='shared'").get() as {
     id: number
   } | null
@@ -262,7 +272,43 @@ function seedCatalogue(d: Database, now: string): void {
     d.query(
       `INSERT INTO step_catalogue_event (catalogue_id,version_n,event,author,reason,session_id,at) VALUES (?,1,'set','seed',?,NULL,?)`,
     ).run(catalogue.id, reason, now)
+    return
   }
+  if (revision <= storedCatalogueSeedRevision(d, catalogue.id)) return
+  const prior = d
+    .query("SELECT n FROM step_catalogue_version WHERE catalogue_id=? AND status='production'")
+    .get(catalogue.id) as { n: number } | null
+  const { n: maxN } = d
+    .query('SELECT COALESCE(MAX(n),0) AS n FROM step_catalogue_version WHERE catalogue_id=?')
+    .get(catalogue.id) as { n: number }
+  const n = maxN + 1
+  if (prior) {
+    d.query(
+      "UPDATE step_catalogue_version SET status='retired',retired_at=? WHERE catalogue_id=? AND status='production'",
+    ).run(now, catalogue.id)
+    d.query(
+      `INSERT INTO step_catalogue_event (catalogue_id,version_n,event,author,reason,session_id,at) VALUES (?,?,'retire','seed',?,NULL,?)`,
+    ).run(catalogue.id, prior.n, reason, now)
+  }
+  d.query(
+    `INSERT INTO step_catalogue_version (catalogue_id,n,status,definition,author,reason,created_at,promoted_at) VALUES (?,?,'production',?,'seed',?,?,?)`,
+  ).run(catalogue.id, n, definition, reason, now, now)
+  d.query(
+    `INSERT INTO step_catalogue_event (catalogue_id,version_n,event,author,reason,session_id,at) VALUES (?,?,'set','seed',?,NULL,?)`,
+  ).run(catalogue.id, n, reason, now)
+  d.query(
+    `INSERT INTO step_catalogue_event (catalogue_id,version_n,event,author,reason,session_id,at) VALUES (?,?,'promote','seed',?,NULL,?)`,
+  ).run(catalogue.id, n, reason, now)
+}
+
+function storedCatalogueSeedRevision(d: Database, catalogueId: number): number {
+  const events = d
+    .query("SELECT reason FROM step_catalogue_event WHERE catalogue_id=? AND author='seed'")
+    .all(catalogueId) as { reason: string }[]
+  return events.reduce((highest, { reason }) => {
+    const revision = reason.match(/^seed r(\d+)$/)?.[1]
+    return revision ? Math.max(highest, Number(revision)) : highest
+  }, 0)
 }
 
 function storedSeedRevision(d: Database, workflowId: number): number {
