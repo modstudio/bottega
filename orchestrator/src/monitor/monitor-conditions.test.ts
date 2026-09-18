@@ -5,6 +5,7 @@ import { db, nowIso } from '../database/db.ts'
 import { upsertProject } from '../project/projects.ts'
 import { groupMonitorConditions, monitor, monitorHistory } from './monitor.ts'
 import {
+  askingRuns,
   deadRunningProcessConditions,
   idleRunCondition,
   orphanDockerNetworkConditions,
@@ -96,6 +97,15 @@ function insertRun4177PackRows(): void {
     docs,
     '2026-09-16T00:00:00.000Z',
   )
+}
+
+function insertAnsweredQuestion(runId: number): void {
+  db()
+    .query(
+      `INSERT INTO question (run_id,asked_at,question,why,answer,answered_at)
+       VALUES (?,?,?,?,?,?)`,
+    )
+    .run(runId, nowIso(), 'which way?', 'needed', 'go left', nowIso())
 }
 
 function persistAddressedCondition(
@@ -905,6 +915,36 @@ describe('operational monitor conditions', () => {
     } finally {
       spawn.mockRestore()
     }
+  })
+
+  test('answered asking root with a running later turn is not reported', () => {
+    const root = addRun({ agent: 'codex', job: 'implement', status: 'asking' })
+    insertAnsweredQuestion(root)
+    addRun({ agent: 'codex', job: 'implement', status: 'running', parent: root, turn: 2 })
+    expect(askingRuns().map((run) => run.id)).toEqual([])
+  })
+
+  test('answered asking root whose latest turn is also asking with no open question is reported once under the root id', () => {
+    const root = addRun({ agent: 'codex', job: 'implement', status: 'asking' })
+    insertAnsweredQuestion(root)
+    addRun({ agent: 'codex', job: 'implement', status: 'asking', parent: root, turn: 2 })
+    expect(askingRuns().map((run) => run.id)).toEqual([root])
+  })
+
+  test('an open question on a later turn suppresses the report', () => {
+    const root = addRun({ agent: 'codex', job: 'implement', status: 'asking' })
+    insertAnsweredQuestion(root)
+    const child = addRun({
+      agent: 'codex',
+      job: 'implement',
+      status: 'asking',
+      parent: root,
+      turn: 2,
+    })
+    db()
+      .query('INSERT INTO question (run_id, asked_at, question) VALUES (?,?,?)')
+      .run(child, nowIso(), 'and now what?')
+    expect(askingRuns().map((run) => run.id)).toEqual([])
   })
 
   test('addresses stale and unscored runs to the session that owns their judgement', async () => {
