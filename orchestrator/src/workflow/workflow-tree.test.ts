@@ -38,9 +38,8 @@ describe('planWorkflowHydration', () => {
   test('writes every production row into an empty tree and the resulting tree is stable', () => {
     const first = planWorkflowHydration({ store, tree: [] })
     expect(first.writes.map(({ path }) => path)).toEqual([
-      '.claude/commands/ship.md',
-      'workflows/flows/ship.md',
-      'workflows/steps/verify.md',
+      '.agents/workflow-steps/verify.md',
+      '.agents/workflows/ship.md',
     ])
     expect(planWorkflowHydration({ store, tree: first.writes })).toEqual({
       writes: [],
@@ -48,55 +47,25 @@ describe('planWorkflowHydration', () => {
     })
   })
 
-  test('renders the ownership marker, ordered argument hint, and slug-specific compose instruction', () => {
-    const plan = planWorkflowHydration({ store, tree: [] })
-    const stub = plan.writes.find(({ path }) => path === '.claude/commands/ship.md')
-    expect(stub?.body).toContain('argument-hint: "<key> [branch]"')
-    expect(stub?.body).toContain('generated-by: orch workflow hydrate')
-    expect(stub?.body).toContain('`compose_workflow` with `workflow: "ship"`')
-  })
-
-  test('refuses an unmarked stub without writes so hydration cannot clobber it', () => {
-    expect(
-      planWorkflowHydration({
-        store,
-        tree: [{ path: '.claude/commands/ship.md', body: 'hand written\n' }],
-      }),
-    ).toEqual({ writes: [], deletes: [], refusal: '.claude/commands/ship.md' })
-  })
-
-  test('deletes marked stubs from the prune-only directory and ignores unmarked stubs there', () => {
-    const marked = '---\nname: ship\ngenerated-by: orch workflow hydrate\n---\nShip workflow.\n'
-    expect(
-      planWorkflowHydration({
-        store,
-        tree: [
-          { path: '.agents/workflows/ship.md', body: marked },
-          { path: '.agents/workflows/hand-written.md', body: 'hand written\n' },
-        ],
-      }),
-    ).toMatchObject({ deletes: ['.agents/workflows/ship.md'] })
-  })
-
   test('deletes a tree file whose slug is absent from production', () => {
     expect(
       planWorkflowHydration({
         store,
-        tree: [{ path: 'workflows/steps/obsolete.md', body: 'old' }],
+        tree: [{ path: '.agents/workflow-steps/obsolete.md', body: 'old' }],
       }).deletes,
-    ).toEqual(['workflows/steps/obsolete.md'])
+    ).toEqual(['.agents/workflow-steps/obsolete.md'])
   })
 
   test('README.md in steps is neither parsed nor deleted and is refused at collection', () => {
-    const tree = [{ path: 'workflows/steps/README.md', body: 'notes\n' }]
+    const tree = [{ path: '.agents/workflow-steps/README.md', body: 'notes\n' }]
     expect(parseWorkflowTree(tree)).toEqual({ steps: [], workflows: [] })
     expect(planWorkflowHydration({ store, tree }).deletes).toEqual([])
     const root = mkdtempSync(join(tmpdir(), 'orch-workflow-tree-readme-'))
     try {
-      mkdirSync(join(root, 'workflows', 'steps'), { recursive: true })
-      writeFileSync(join(root, 'workflows', 'steps', 'README.md'), 'notes\n')
+      mkdirSync(join(root, '.agents', 'workflow-steps'), { recursive: true })
+      writeFileSync(join(root, '.agents', 'workflow-steps', 'README.md'), 'notes\n')
       expect(() => collectWorkflowTree(root)).toThrow(
-        `refusing ${join(root, 'workflows', 'steps', 'README.md')}: not a workflow tree file`,
+        `refusing ${join(root, '.agents', 'workflow-steps', 'README.md')}: not a workflow tree file`,
       )
     } finally {
       rmSync(root, { recursive: true, force: true })
