@@ -5,7 +5,7 @@ import { createInterface } from 'node:readline'
 import { DEFAULT_IDLE_CAP_MS, spansFromTimestamps, union } from '../../../shared/interval.ts'
 import { attribute, isInjected, projectOf } from '../attribute.ts'
 import { nowIso, writeTransaction } from '../db.ts'
-import { signedInRecordUserId } from '../record-identity.ts'
+import { signedInRecordUserId } from '../sync.ts'
 
 const CLAUDE_ROOT = `${process.env.HOME}/.claude/projects`
 
@@ -95,7 +95,6 @@ async function legsOf(file: string, ref: string, sinceMs: number): Promise<Leg[]
       if (cur && cur.stamps.length) legs.push(cur)
       cur = { cwd, ref, stamps: [], prompts: [], spend: [], sessionId: d.sessionId ?? null }
     }
-    if (!cur.sessionId && d.sessionId) cur.sessionId = d.sessionId
     cur.stamps.push(ts)
 
     const usage = (d.message as { usage?: Record<string, number> } | undefined)?.usage

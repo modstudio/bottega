@@ -72,7 +72,7 @@ import {
 import { projectAt, projectByName, stackAt, type WorktreeTool } from '../project/projects.ts'
 import { recipeNotes } from '../recipe/recipe.ts'
 import { trackedRecipeEnvironment, trackedRecipeNotes } from '../recipe/tracked-recipe.ts'
-import { signedInRecordUserId } from '../record/record-attribution.ts'
+import { currentRecordUserSession, storedRecordToken } from '../record/record-session.ts'
 import {
   assertSharedRefGuardOutsideWritableRoots,
   prepareSharedRefGuard,
@@ -115,6 +115,24 @@ import { runLive } from './run-live.ts'
 import { bindSignals, childEnv, sha } from './run-process.ts'
 import { finishRun } from './run-terminal.ts'
 import type { RunResult } from './run-types.ts'
+
+/** Resolve attribution when a run is created; absence stays unknown rather than blocking work. */
+export async function signedInRecordUserId(): Promise<string | null> {
+  const url = process.env.ORCH_RECORD_URL
+  if (!url || !storedRecordToken(db())) return null
+  try {
+    return String((await currentRecordUserSession(url)).user.id)
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error)
+    if (message.includes('record session is missing or expired')) return null
+    throw error
+  }
+}
+
+async function startedByForRun(reserveId: number | undefined): Promise<string | null> {
+  if (reserveId !== undefined) return null
+  return signedInRecordUserId()
+}
 
 function requiredRunLease(
   runId: number,
@@ -312,7 +330,7 @@ export async function run(opts: {
 }): Promise<RunResult> {
   writableDb()
   enableSchemaReload(() => {})
-  const startedByUserId = opts.reserveId ? null : await signedInRecordUserId()
+  const startedByUserId = await startedByForRun(opts.reserveId)
 
   const requestedJob = job(opts.job),
     mcpRequest = effectiveMcpRequest(opts.mcp, requestedJob)
