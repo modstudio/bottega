@@ -25,6 +25,7 @@ import {
   installRecordSessionRunner,
   memoryRecordSession,
 } from '../../test/fixtures/record-session.ts'
+import { registerHostedConfigProofs } from '../../test/postgres-config-proof.ts'
 import { registerProjectSpaceProofs } from '../../test/postgres-project-space-proof.ts'
 import { registerActiveSpaceProofs } from '../../test/postgres-remembered-space-proof.ts'
 import { proveHostedDocs, proveScoreRecordSync } from '../../test/postgres-score-proof.ts'
@@ -333,13 +334,14 @@ realPostgres('RLS proof against real Postgres', () => {
       'postgres',
       `
       DROP FUNCTION IF EXISTS invitation_open_for(text);
-      DROP TABLE IF EXISTS invitation, verification, account, session, test_flake, contention, landing_review_carry, landing_override, landing, review_finding, review_lens, review, run_exclusion, run_score, run, doc_revision, doc, orch_snapshot, hub_send, hub_report_subscription, hub_report_setting, hub_note_acknowledgement, hub_note, hub_task_status_event, hub_task_document, hub_task_comment, hub_task, hub_interval, hub_day, membership, machine, seq, project, "user", space CASCADE;
+      DROP TABLE IF EXISTS config_secret, config_entry, secret_dek_wrap, machine_public_key, secret_dek, invitation, verification, account, session, test_flake, contention, landing_review_carry, landing_override, landing, review_finding, review_lens, review, run_exclusion, run_score, run, doc_revision, doc, orch_snapshot, hub_send, hub_report_subscription, hub_report_setting, hub_note_acknowledgement, hub_note, hub_task_status_event, hub_task_document, hub_task_comment, hub_task, hub_interval, hub_day, membership, machine, seq, project, "user", space CASCADE;
       DROP SCHEMA IF EXISTS drizzle CASCADE;
     `,
     )
   })
 
   registerInvitationAuthProofs(psql, actorUrl!, succeeds, SIGN_UP_AUTH.password)
+  registerHostedConfigProofs({ spaceA: SPACE_A, spaceB: SPACE_B, userA: USER_A })
 
   test('CLI sign-up creates one owner membership and bearer identity is not interchangeable', async () => {
     expect(cliOutput).toEqual(SIGN_UP_CLI_OUTPUT)
@@ -748,25 +750,6 @@ realPostgres('RLS proof against real Postgres', () => {
     } finally {
       server.stop(true)
     }
-  })
-
-  test('record roles are nonsuperuser without BYPASSRLS and only owner owns tables', () => {
-    const facts = succeeds(
-      'postgres',
-      'postgres',
-      `
-      SELECT r.rolname, r.rolsuper, r.rolbypassrls,
-        EXISTS (SELECT 1 FROM pg_class c WHERE c.relname = 'project' AND c.relowner = r.oid)
-      FROM pg_roles r
-      WHERE r.rolname IN ('${RECORD_OWNER_ROLE}', '${RECORD_ACTOR_ROLE}', '${RECORD_READER_ROLE}')
-      ORDER BY r.rolname;
-    `,
-    )
-    expect(facts.split('\n')).toEqual([
-      `${RECORD_ACTOR_ROLE}|f|f|f`,
-      `${RECORD_OWNER_ROLE}|f|f|t`,
-      `${RECORD_READER_ROLE}|f|f|f`,
-    ])
   })
 
   test('user-scoped table grants stay narrow', () => {

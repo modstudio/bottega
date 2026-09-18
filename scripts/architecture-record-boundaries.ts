@@ -56,6 +56,12 @@ export const recordReadBoundaries: ImportBoundary[] = [
 
 export const recordSchemaBoundaries: ImportBoundary[] = [
   boundary(
+    'postgres-schema-config-boundary',
+    'shared/record/schema-config.ts',
+    ['drizzle-orm', 'drizzle-orm/pg-core', './schema.ts'],
+    'Enforce the hosted config schema concern boundary.',
+  ),
+  boundary(
     'postgres-schema-auth-boundary',
     'shared/record/schema-auth.ts',
     ['drizzle-orm/pg-core', './schema.ts'],

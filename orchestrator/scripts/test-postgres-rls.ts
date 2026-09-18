@@ -12,6 +12,9 @@ import {
 import { resolveHubDatabase, resolveOrchestratorDatabase } from '../../shared/state-directory.ts'
 
 const falsify = process.argv.includes('--falsify')
+const falsifyMode = falsify
+  ? 'revoke-project-select'
+  : (process.env.ORCH_TEST_POSTGRES_FALSIFY ?? '')
 const container = `dev-445-postgres-${randomUUID().slice(0, 8)}`
 const sourceCopies = mkdtempSync(join(tmpdir(), 'dev-429-sources-'))
 const sourceOrchDb = join(sourceCopies, FROZEN_STATE_NAMES.orchestratorDatabase)
@@ -104,11 +107,11 @@ try {
       ORCH_TEST_POSTGRES_CONTAINER: container,
       ORCH_RECORD_MIGRATE_URL: ownerUrl,
       ORCH_RECORD_URL: actorUrl,
-      ORCH_TEST_POSTGRES_FALSIFY: falsify ? 'revoke-project-select' : '',
+      ORCH_TEST_POSTGRES_FALSIFY: falsifyMode,
     },
   )
   if (rls !== 0) process.exitCode = rls
-  else if (!falsify) {
+  else if (!falsifyMode) {
     const remigrate = await run(['bun', 'src/cli/orch.ts', 'record', 'migrate'], {
       ORCH_RECORD_MIGRATE_URL: ownerUrl,
     })
