@@ -4,7 +4,7 @@ import {
   RECORD_OWNER_ROLE,
   RECORD_READER_ROLE,
 } from '../../shared/record/schema.ts'
-import { asSpace, succeeds } from './fixtures/postgres-rls.ts'
+import { asSpace, asSpaces, succeeds } from './fixtures/postgres-rls.ts'
 
 const USER_B = '01990000-0000-7000-8000-000000000020'
 const DEK_A = '01990000-0000-7000-8000-0000000000da'
@@ -51,6 +51,9 @@ export function registerHostedConfigProofs({ spaceA, spaceB, userA }: ConfigProo
          ('${spaceA}', 'AAAAAAAAAAAAAAAAAAAAAA', decode(repeat('00', 32), 'hex'), 'machine-a', now()),
          ('${spaceB}', 'BBBBBBBBBBBBBBBBBBBBBB', decode(repeat('11', 32), 'hex'), 'machine-b', now());`,
     )
+    if (process.env.ORCH_TEST_POSTGRES_FALSIFY === 'grant-config-secret-reader-select') {
+      succeeds('postgres', 'postgres', `GRANT SELECT ON config_secret TO ${RECORD_READER_ROLE};`)
+    }
   })
 
   test('record roles are nonsuperuser without BYPASSRLS and only owner owns tables', () => {
@@ -85,7 +88,36 @@ export function registerHostedConfigProofs({ spaceA, spaceB, userA }: ConfigProo
         has_table_privilege('${RECORD_READER_ROLE}', 'secret_dek', 'SELECT'),
         has_table_privilege('${RECORD_READER_ROLE}', 'secret_dek_wrap', 'SELECT');`,
     )
-    expect(facts).toBe('t|t|t|t|f|t|f|f|f')
+    const falsifiesReaderGrant =
+      process.env.ORCH_TEST_POSTGRES_FALSIFY === 'grant-config-secret-reader-select'
+    expect(facts).toBe(`t|t|t|t|f|t|${falsifiesReaderGrant ? 't' : 'f'}|f|f`)
+  })
+
+  test('secret actor policies are role-scoped and reader backstops are restrictive', () => {
+    const facts = succeeds(
+      'postgres',
+      'postgres',
+      `SELECT tablename,
+         count(*) FILTER (WHERE policyname LIKE '%_actor_%'),
+         bool_and(roles = ARRAY['${RECORD_ACTOR_ROLE}']::name[])
+           FILTER (WHERE policyname LIKE '%_actor_%'),
+         count(*) FILTER (
+           WHERE policyname LIKE '%_reader_backstop'
+             AND permissive = 'RESTRICTIVE'
+             AND roles = ARRAY['${RECORD_READER_ROLE}']::name[]
+             AND qual = 'false'
+         )
+       FROM pg_policies
+       WHERE schemaname = 'public'
+         AND tablename IN ('config_secret', 'secret_dek', 'secret_dek_wrap')
+       GROUP BY tablename
+       ORDER BY tablename;`,
+    )
+    expect(facts.split('\n')).toEqual([
+      'config_secret|4|t|1',
+      'secret_dek|4|t|1',
+      'secret_dek_wrap|4|t|1',
+    ])
   })
 
   test('record reader gets insufficient privilege for every secret-bearing table', () => {
@@ -97,9 +129,17 @@ export function registerHostedConfigProofs({ spaceA, spaceB, userA }: ConfigProo
         `\\set VERBOSITY verbose
          SELECT * FROM ${table};`,
       )
-      expect(result.code).not.toBe(0)
-      expect(result.stderr).toContain('42501')
-      expect(result.stderr).toContain(`permission denied for table ${table}`)
+      if (
+        table === 'config_secret' &&
+        process.env.ORCH_TEST_POSTGRES_FALSIFY === 'grant-config-secret-reader-select'
+      ) {
+        expect(result.code, result.stderr).toBe(0)
+        expect(result.stdout).toBe('')
+      } else {
+        expect(result.code).not.toBe(0)
+        expect(result.stderr).toContain('42501')
+        expect(result.stderr).toContain(`permission denied for table ${table}`)
+      }
     }
   })
 
@@ -134,6 +174,79 @@ export function registerHostedConfigProofs({ spaceA, spaceB, userA }: ConfigProo
     }
   })
 
+  test('secret reads use only the active space even with several memberships', () => {
+    for (const table of ['config_secret', 'secret_dek', 'secret_dek_wrap']) {
+      const result = asSpaces(
+        RECORD_ACTOR_ROLE,
+        'actor-password',
+        spaceA,
+        [spaceA, spaceB],
+        `SET app.user_id = '${userA}';
+         SELECT count(*) FROM ${table} WHERE space_id = '${spaceB}';`,
+      )
+      expect(result.code, result.stderr).toBe(0)
+      expect(result.stdout).toBe('0')
+    }
+  })
+
+  test('DEK references cannot cross spaces', () => {
+    const statements = [
+      `INSERT INTO config_secret
+         (id, space_id, user_id, key, environment, dek_id, row_version, envelope, updated_at)
+       VALUES
+         ('01990000-0000-7000-8000-000000000221', '${spaceA}', NULL, 'cross-space',
+          'default', '${DEK_B}', 1, decode('05', 'hex'), now());`,
+      `INSERT INTO secret_dek_wrap
+         (space_id, dek_id, recipient_key_id, sender_key_id, enc, ciphertext, created_at)
+       VALUES
+         ('${spaceA}', '${DEK_B}', 'EEEEEEEEEEEEEEEEEEEEEE', 'FFFFFFFFFFFFFFFFFFFFFF',
+          decode('05', 'hex'), decode('06', 'hex'), now());`,
+    ]
+    for (const statement of statements) {
+      const result = asSpace(
+        RECORD_ACTOR_ROLE,
+        'actor-password',
+        spaceA,
+        `\\set VERBOSITY verbose
+         SET app.user_id = '${userA}';
+         ${statement}`,
+      )
+      expect(result.code).not.toBe(0)
+      expect(result.stderr).toContain('23503')
+    }
+  })
+
+  test('wrap identity permits two senders but rejects an exact duplicate', () => {
+    const secondSender = asSpace(
+      RECORD_ACTOR_ROLE,
+      'actor-password',
+      spaceA,
+      `INSERT INTO secret_dek_wrap
+         (space_id, dek_id, recipient_key_id, sender_key_id, enc, ciphertext, created_at)
+       VALUES
+         ('${spaceA}', '${DEK_A}', 'AAAAAAAAAAAAAAAAAAAAAA', 'EEEEEEEEEEEEEEEEEEEEEE',
+          decode('05', 'hex'), decode('06', 'hex'), now());
+       SELECT count(*) FROM secret_dek_wrap
+       WHERE dek_id = '${DEK_A}' AND recipient_key_id = 'AAAAAAAAAAAAAAAAAAAAAA';`,
+    )
+    expect(secondSender.code, secondSender.stderr).toBe(0)
+    expect(secondSender.stdout).toBe('2')
+
+    const duplicate = asSpace(
+      RECORD_ACTOR_ROLE,
+      'actor-password',
+      spaceA,
+      `\\set VERBOSITY verbose
+       INSERT INTO secret_dek_wrap
+         (space_id, dek_id, recipient_key_id, sender_key_id, enc, ciphertext, created_at)
+       VALUES
+         ('${spaceA}', '${DEK_A}', 'AAAAAAAAAAAAAAAAAAAAAA', 'EEEEEEEEEEEEEEEEEEEEEE',
+          decode('07', 'hex'), decode('08', 'hex'), now());`,
+    )
+    expect(duplicate.code).not.toBe(0)
+    expect(duplicate.stderr).toContain('23505')
+  })
+
   test('record actor sees and updates only its user and space-wide config rows', () => {
     for (const table of ['config_entry', 'config_secret']) {
       const visible = asSpace(
@@ -157,6 +270,16 @@ export function registerHostedConfigProofs({ spaceA, spaceB, userA }: ConfigProo
       expect(otherUserUpdate.code, otherUserUpdate.stderr).toBe(0)
       expect(otherUserUpdate.stdout).toBe('')
 
+      const otherUserDelete = asSpace(
+        RECORD_ACTOR_ROLE,
+        'actor-password',
+        spaceA,
+        `SET app.user_id = '${userA}';
+         DELETE FROM ${table} WHERE key = 'user-y' RETURNING key;`,
+      )
+      expect(otherUserDelete.code, otherUserDelete.stderr).toBe(0)
+      expect(otherUserDelete.stdout).toBe('')
+
       const spaceWideUpdate = asSpace(
         RECORD_ACTOR_ROLE,
         'actor-password',
@@ -167,6 +290,34 @@ export function registerHostedConfigProofs({ spaceA, spaceB, userA }: ConfigProo
       )
       expect(spaceWideUpdate.code, spaceWideUpdate.stderr).toBe(0)
       expect(spaceWideUpdate.stdout).toBe('wide')
+    }
+  })
+
+  test('record actor cannot insert another user config row', () => {
+    const statements = [
+      `INSERT INTO config_entry
+         (id, space_id, user_id, key, environment, value, row_version, updated_at)
+       VALUES
+         ('01990000-0000-7000-8000-000000000231', '${spaceA}', '${USER_B}',
+          'forged-user', 'default', 'forged', 1, now());`,
+      `INSERT INTO config_secret
+         (id, space_id, user_id, key, environment, dek_id, row_version, envelope, updated_at)
+       VALUES
+         ('01990000-0000-7000-8000-000000000232', '${spaceA}', '${USER_B}',
+          'forged-user', 'default', '${DEK_A}', 1, decode('09', 'hex'), now());`,
+    ]
+    for (const statement of statements) {
+      const result = asSpace(
+        RECORD_ACTOR_ROLE,
+        'actor-password',
+        spaceA,
+        `\\set VERBOSITY verbose
+         SET app.user_id = '${userA}';
+         ${statement}`,
+      )
+      expect(result.code).not.toBe(0)
+      expect(result.stderr).toContain('42501')
+      expect(result.stderr).toContain('row-level security policy')
     }
   })
 }

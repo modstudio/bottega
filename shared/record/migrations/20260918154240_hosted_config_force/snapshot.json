@@ -1,6 +1,6 @@
 {
-  "id": "a8f763a4-9580-424c-a3b8-26aaa75d6a34",
-  "prevIds": ["dc0b2c30-2b21-48a4-85a7-83beb811af75"],
+  "id": "a6f78f8d-19e1-4459-b42e-c7df261550cc",
+  "prevIds": ["7fa9f1ec-a72a-4d31-8eba-44d8e43e5e5b"],
   "version": "8",
   "dialect": "postgres",
   "ddl": [
@@ -8054,14 +8054,14 @@
       "table": "config_secret"
     },
     {
-      "nameExplicit": false,
-      "columns": ["dek_id"],
+      "nameExplicit": true,
+      "columns": ["space_id", "dek_id"],
       "schemaTo": "public",
       "tableTo": "secret_dek",
-      "columnsTo": ["id"],
+      "columnsTo": ["space_id", "id"],
       "onUpdate": "NO ACTION",
       "onDelete": "NO ACTION",
-      "name": "config_secret_dek_id_secret_dek_id_fkey",
+      "name": "config_secret_space_dek_fk",
       "entityType": "fks",
       "schema": "public",
       "table": "config_secret"
@@ -8106,14 +8106,14 @@
       "table": "secret_dek_wrap"
     },
     {
-      "nameExplicit": false,
-      "columns": ["dek_id"],
+      "nameExplicit": true,
+      "columns": ["space_id", "dek_id"],
       "schemaTo": "public",
       "tableTo": "secret_dek",
-      "columnsTo": ["id"],
+      "columnsTo": ["space_id", "id"],
       "onUpdate": "NO ACTION",
       "onDelete": "NO ACTION",
-      "name": "secret_dek_wrap_dek_id_secret_dek_id_fkey",
+      "name": "secret_dek_wrap_space_dek_fk",
       "entityType": "fks",
       "schema": "public",
       "table": "secret_dek_wrap"
@@ -8127,7 +8127,7 @@
       "table": "seq"
     },
     {
-      "columns": ["dek_id", "recipient_key_id"],
+      "columns": ["space_id", "dek_id", "recipient_key_id", "sender_key_id"],
       "nameExplicit": false,
       "name": "secret_dek_wrap_pkey",
       "entityType": "pks",
@@ -8705,6 +8705,15 @@
       "columns": ["space_id", "version"],
       "nullsNotDistinct": false,
       "name": "secret_dek_space_version_unique",
+      "entityType": "uniques",
+      "schema": "public",
+      "table": "secret_dek"
+    },
+    {
+      "nameExplicit": true,
+      "columns": ["space_id", "id"],
+      "nullsNotDistinct": false,
+      "name": "secret_dek_space_id_unique",
       "entityType": "uniques",
       "schema": "public",
       "table": "secret_dek"
@@ -10387,7 +10396,7 @@
       "as": "PERMISSIVE",
       "for": "SELECT",
       "roles": ["record_actor"],
-      "using": "(\"config_secret\".\"space_id\" = nullif(current_setting('app.space_id', true), '')::uuid OR \"config_secret\".\"space_id\" = ANY(\n    string_to_array(nullif(current_setting('app.space_ids', true), ''), ',')::uuid[]\n  )) AND (\"config_secret\".\"user_id\" IS NULL OR \"config_secret\".\"user_id\" = nullif(current_setting('app.user_id', true), '')::uuid)",
+      "using": "(\"config_secret\".\"space_id\" = nullif(current_setting('app.space_id', true), '')::uuid) AND (\"config_secret\".\"user_id\" IS NULL OR \"config_secret\".\"user_id\" = nullif(current_setting('app.user_id', true), '')::uuid)",
       "withCheck": null,
       "name": "config_secret_actor_select",
       "entityType": "policies",
@@ -10486,7 +10495,7 @@
       "as": "PERMISSIVE",
       "for": "SELECT",
       "roles": ["record_actor"],
-      "using": "(\"secret_dek\".\"space_id\" = nullif(current_setting('app.space_id', true), '')::uuid OR \"secret_dek\".\"space_id\" = ANY(\n    string_to_array(nullif(current_setting('app.space_ids', true), ''), ',')::uuid[]\n  )) AND (true)",
+      "using": "(\"secret_dek\".\"space_id\" = nullif(current_setting('app.space_id', true), '')::uuid) AND (true)",
       "withCheck": null,
       "name": "secret_dek_actor_select",
       "entityType": "policies",
@@ -10541,7 +10550,7 @@
       "as": "PERMISSIVE",
       "for": "SELECT",
       "roles": ["record_actor"],
-      "using": "(\"secret_dek_wrap\".\"space_id\" = nullif(current_setting('app.space_id', true), '')::uuid OR \"secret_dek_wrap\".\"space_id\" = ANY(\n    string_to_array(nullif(current_setting('app.space_ids', true), ''), ',')::uuid[]\n  )) AND (true)",
+      "using": "(\"secret_dek_wrap\".\"space_id\" = nullif(current_setting('app.space_id', true), '')::uuid) AND (true)",
       "withCheck": null,
       "name": "secret_dek_wrap_actor_select",
       "entityType": "policies",

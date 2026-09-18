@@ -6,6 +6,7 @@ import {
   type AnyPgColumn,
   bytea,
   check,
+  foreignKey,
   integer,
   pgPolicy,
   pgTable,
@@ -33,11 +34,8 @@ const keyIdCheck = (column: AnyPgColumn) =>
 
 function actorPolicies(table: string, spaceId: AnyPgColumn, userId?: AnyPgColumn) {
   const ownsSpace = sql`${spaceId} = ${currentSpace}`
-  const readsSpace = sql`${ownsSpace} OR ${spaceId} = ANY(
-    string_to_array(nullif(current_setting('app.space_ids', true), ''), ',')::uuid[]
-  )`
   const ownsUser = userId ? sql`${userId} IS NULL OR ${userId} = ${currentUser}` : sql`true`
-  const readsRow = sql`(${readsSpace}) AND (${ownsUser})`
+  const readsRow = sql`(${ownsSpace}) AND (${ownsUser})`
   const writesRow = sql`(${ownsSpace}) AND (${ownsUser})`
 
   return [
@@ -108,6 +106,7 @@ export const secretDek = pgTable.withRLS(
   },
   (table) => [
     unique('secret_dek_space_version_unique').on(table.spaceId, table.version),
+    unique('secret_dek_space_id_unique').on(table.spaceId, table.id),
     ...actorPolicies('secret_dek', table.spaceId),
   ],
 )
@@ -120,9 +119,7 @@ export const configSecret = pgTable.withRLS(
     userId: uuid('user_id').references(() => user.id),
     key: text().notNull(),
     environment: text().notNull().default('default'),
-    dekId: uuid('dek_id')
-      .notNull()
-      .references(() => secretDek.id),
+    dekId: uuid('dek_id').notNull(),
     rowVersion: integer('row_version').notNull(),
     envelope: bytea().notNull(),
     updatedAt: updatedAt(),
@@ -131,6 +128,11 @@ export const configSecret = pgTable.withRLS(
     unique('config_secret_scope_unique')
       .on(table.spaceId, table.userId, table.key, table.environment)
       .nullsNotDistinct(),
+    foreignKey({
+      columns: [table.spaceId, table.dekId],
+      foreignColumns: [secretDek.spaceId, secretDek.id],
+      name: 'config_secret_space_dek_fk',
+    }),
     ...actorPolicies('config_secret', table.spaceId, table.userId),
   ],
 )
@@ -139,9 +141,7 @@ export const secretDekWrap = pgTable.withRLS(
   'secret_dek_wrap',
   {
     spaceId: spaceIdentity(),
-    dekId: uuid('dek_id')
-      .notNull()
-      .references(() => secretDek.id),
+    dekId: uuid('dek_id').notNull(),
     recipientKeyId: text('recipient_key_id').notNull(),
     senderKeyId: text('sender_key_id').notNull(),
     enc: bytea().notNull(),
@@ -149,7 +149,14 @@ export const secretDekWrap = pgTable.withRLS(
     createdAt: createdAt(),
   },
   (table) => [
-    primaryKey({ columns: [table.dekId, table.recipientKeyId] }),
+    primaryKey({
+      columns: [table.spaceId, table.dekId, table.recipientKeyId, table.senderKeyId],
+    }),
+    foreignKey({
+      columns: [table.spaceId, table.dekId],
+      foreignColumns: [secretDek.spaceId, secretDek.id],
+      name: 'secret_dek_wrap_space_dek_fk',
+    }),
     check('secret_dek_wrap_recipient_key_id_check', keyIdCheck(table.recipientKeyId)),
     check('secret_dek_wrap_sender_key_id_check', keyIdCheck(table.senderKeyId)),
     ...actorPolicies('secret_dek_wrap', table.spaceId),
