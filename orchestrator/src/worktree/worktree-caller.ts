@@ -25,12 +25,15 @@ export type CarriedWorkingState = {
   untracked: string[]
 }
 
+export function shouldAssertCallerAncestry(carry: boolean, resume: boolean): boolean {
+  return carry && !resume
+}
+
 /**
- * Refuse a caller whose HEAD does not descend from the tree's base.
+ * Refuse carried caller state whose HEAD does not descend from the tree's base.
  *
- * Orthogonal to whether carrying was requested. A behind-or-diverged caller
- * applying a patch would revert the tree; opting in does not license that, and
- * opting out does not skip the check.
+ * The assertion applies when caller state is carried into a new run because a
+ * patch from a behind-or-diverged caller would revert the tree.
  */
 export function assertCallerAncestry(cwd: string, worktree: Worktree): void {
   const callerHead = git(['rev-parse', 'HEAD'], cwd)
@@ -39,7 +42,7 @@ export function assertCallerAncestry(cwd: string, worktree: Worktree): void {
       `caller HEAD ${callerHead} is behind or diverged from the tree's base ${worktree.base}; ` +
         `update the caller checkout so its HEAD descends from the tree's base, then retry\n` +
         `invariant: A resume is always possible on a stale checkout.\n` +
-        `cleared by: git merge --ff-only ${worktree.base}`,
+        `cleared by: update the caller checkout to descend from ${worktree.base}, or re-dispatch without --carry`,
     )
   }
 }
