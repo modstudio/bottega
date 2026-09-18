@@ -1,8 +1,9 @@
 import { existsSync, readFileSync, statSync } from 'node:fs'
 import { basename, dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { FROZEN_STATE_NAMES } from '../../../shared/brand.ts'
+import { FROZEN_STATE_NAMES, PLATFORM_NAME } from '../../../shared/brand.ts'
 import { inspectionGitEnv } from '../../../shared/git.ts'
+import { isAuthorizedPlatformInstallation } from '../../../shared/install-root.ts'
 import {
   legacyStoreRefusal,
   resolveOrchestratorDatabase,
@@ -135,7 +136,11 @@ export function resolveDatabase(
     registeredPath: null,
     repositoryRoot: repository?.root ?? null,
     // Location is per-user, but binary identity still owns initialization.
-    initializable: Boolean(binaryRepository && !binaryRepository.linked),
+    initializable: isAuthorizedPlatformInstallation(
+      binaryRoot,
+      env,
+      Boolean(binaryRepository && !binaryRepository.linked),
+    ),
     linkedWorktreeBinary: Boolean(binaryRepository?.linked),
     mainStorePath,
   }
@@ -166,6 +171,14 @@ export const DB_PATH = decideOrchestratorDatabasePath(
 
 export function missingDatabaseMessage(path = DB_PATH): string {
   return `orchestrator database does not exist: ${path}\nrun orch init-db to create it`
+}
+
+export function unauthorizedDatabaseInitializationMessage(path = DB_PATH): string {
+  return (
+    `refusing to initialize the default store: cannot establish an authorised ${PLATFORM_NAME} installation: ${path}\n` +
+    'invariant: A default store is initialized only by a checkout or an installed distribution.\n' +
+    `cleared by: run orch init-db from a checkout or reinstall ${PLATFORM_NAME}`
+  )
 }
 
 export function legacyDatabaseRefusal(

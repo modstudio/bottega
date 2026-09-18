@@ -10,11 +10,12 @@
 # nothing loaded to remove.
 set -euo pipefail
 
-CHECKOUT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
-CONCERN="$CHECKOUT/hub"
-STATE_HOME_ENV="$(bun --no-env-file "$CHECKOUT/shared/state-directory.ts" environment)"
-STATE_HOME="$(bun --no-env-file "$CHECKOUT/shared/state-directory.ts" root)"
-HUB_PORT="$(bun --no-env-file "$CHECKOUT/shared/machine-config.ts" get hub.port)"
+SCRIPT_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
+INSTALL_ROOT="$(bun --no-env-file "$SCRIPT_ROOT/shared/install-root.ts" root "$SCRIPT_ROOT/hub")"
+CONCERN="$INSTALL_ROOT/hub"
+STATE_HOME_ENV="$(bun --no-env-file "$INSTALL_ROOT/shared/state-directory.ts" environment)"
+STATE_HOME="$(bun --no-env-file "$INSTALL_ROOT/shared/state-directory.ts" root)"
+HUB_PORT="$(bun --no-env-file "$INSTALL_ROOT/shared/machine-config.ts" get hub.port)"
 AGENTS_DIR="$HOME/Library/LaunchAgents"
 UID_NUM="$(id -u)"
 
@@ -38,8 +39,8 @@ for tmpl in "$CONCERN"/launchd/*.plist.template; do
   LABEL="$(basename "$tmpl" .plist.template)"
   TARGET="$AGENTS_DIR/$LABEL.plist"
   unload "$LABEL"
-  # __CHECKOUT__ is the checkout root; __CONCERN__ is this template owner's directory.
-  sed -e "s#__CHECKOUT__#${CHECKOUT}#g" -e "s#__CONCERN__#${CONCERN}#g" \
+  # Render the resolved checkout or distribution root and its hub assets.
+  sed -e "s#__INSTALL_ROOT__#${INSTALL_ROOT}#g" -e "s#__CONCERN__#${CONCERN}#g" \
       -e "s#__HOME__#${HOME}#g" \
       -e "s#__STATE_HOME_ENV__#${STATE_HOME_ENV}#g" \
       -e "s#__STATE_HOME__#${STATE_HOME}#g" \

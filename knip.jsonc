@@ -53,6 +53,8 @@
         "hooks/*!",
         "src/cli/orch.ts!",
         "src/record/record-api-server.ts!",
+        // Spawned by path from src/run/run-dispatch.ts as the detached worker entry.
+        "src/run/exec.ts!",
         "src/**/*.test.ts",
         "scripts/acp-parity.ts!",
         "scripts/**/*.test.ts",

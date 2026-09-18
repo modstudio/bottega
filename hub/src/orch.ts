@@ -1,4 +1,3 @@
-import { fileURLToPath } from 'node:url'
 /**
  * The orchestrator, read through its CLI.
  *
@@ -18,8 +17,9 @@ import {
   writeFileSync,
 } from 'node:fs'
 import { tmpdir } from 'node:os'
-import { join, resolve } from 'node:path'
+import { join } from 'node:path'
 import type { DocScope } from '../../shared/docs.ts'
+import { assetPath } from '../../shared/install-root.ts'
 import {
   type HarnessHealth,
   HarnessHealthSchema,
@@ -53,7 +53,7 @@ const RUNS_DEADLINE_MS = 60_000
 /** Resolve the executable for every call made by a long-lived hub process. */
 export function resolveOrchExecutable(): string {
   const override = process.env.HUB_ORCH?.trim() || null
-  const checkout = resolve(fileURLToPath(new URL('../..', import.meta.url)), 'bin/orch')
+  const checkout = assetPath('bin', 'orch')
   if (override && usableExecutable(override)) return override
   if (usableExecutable(checkout)) return checkout
   const found = Bun.which('orch', { PATH: process.env.PATH })

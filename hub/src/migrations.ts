@@ -2,11 +2,12 @@ import { Database } from 'bun:sqlite'
 import { createHash } from 'node:crypto'
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
+import { assetPath } from '../../shared/install-root.ts'
 
 // Twin of orchestrator/src/database/migrations.ts. It remains local because the journal
 // table, migration directory, refusal text and lifecycle command belong to the
 // concern; moving those parameters into shared/ would make shared know both.
-export const MIGRATIONS_FOLDER = join(import.meta.dir, '..', 'migrations')
+export const MIGRATIONS_FOLDER = assetPath('hub', 'migrations')
 export const MIGRATIONS_TABLE = 'hub_migrations'
 export const SCHEMA_LOCK_TABLE = 'hub_schema_lock'
 const SCHEMA_INVARIANT = 'Only hub migrate changes the store schema.'

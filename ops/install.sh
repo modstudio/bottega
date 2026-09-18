@@ -1,17 +1,18 @@
 #!/bin/bash
-# Install/refresh the launchd agents by rendering this project's plist templates
-# with the current repo + home paths and (re)bootstrapping them. Location- and
-# user-independent: clone anywhere, run ./install.sh. Idempotent.
+# Install/refresh the launchd agents by rendering this installation's plist
+# templates with absolute paths and (re)bootstrapping them. Idempotent.
 set -euo pipefail
 
-CONCERN="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-CHECKOUT="$(cd "$CONCERN/.." && pwd)"
-STATE_HOME_ENV="$(bun --no-env-file "$CHECKOUT/shared/state-directory.ts" environment)"
-STATE_HOME="$(bun --no-env-file "$CHECKOUT/shared/state-directory.ts" root)"
-MODEL_HOST="$(bun --no-env-file "$CHECKOUT/shared/machine-config.ts" get model_host.ssh_alias)"
-TUNNEL_LOCAL_PORT="$(bun --no-env-file "$CHECKOUT/shared/machine-config.ts" get model_host.tunnel_local_port)"
-TUNNEL_REMOTE_PORT="$(bun --no-env-file "$CHECKOUT/shared/machine-config.ts" get model_host.tunnel_remote_port)"
-if ! ENV_FILES_OUTPUT="$(bun --no-env-file "$CHECKOUT/shared/config-directory.ts" env-paths)"; then
+SCRIPT_CONCERN="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+SCRIPT_ROOT="$(cd "$SCRIPT_CONCERN/.." && pwd)"
+INSTALL_ROOT="$(bun --no-env-file "$SCRIPT_ROOT/shared/install-root.ts" root "$SCRIPT_CONCERN")"
+CONCERN="$INSTALL_ROOT/ops"
+STATE_HOME_ENV="$(bun --no-env-file "$INSTALL_ROOT/shared/state-directory.ts" environment)"
+STATE_HOME="$(bun --no-env-file "$INSTALL_ROOT/shared/state-directory.ts" root)"
+MODEL_HOST="$(bun --no-env-file "$INSTALL_ROOT/shared/machine-config.ts" get model_host.ssh_alias)"
+TUNNEL_LOCAL_PORT="$(bun --no-env-file "$INSTALL_ROOT/shared/machine-config.ts" get model_host.tunnel_local_port)"
+TUNNEL_REMOTE_PORT="$(bun --no-env-file "$INSTALL_ROOT/shared/machine-config.ts" get model_host.tunnel_remote_port)"
+if ! ENV_FILES_OUTPUT="$(bun --no-env-file "$INSTALL_ROOT/shared/config-directory.ts" env-paths)"; then
   exit 1
 fi
 ENV_FILES=()
@@ -20,10 +21,10 @@ if [[ -n "$ENV_FILES_OUTPUT" ]]; then
     ENV_FILES+=("$env_file")
   done <<< "$ENV_FILES_OUTPUT"
 fi
-if [[ -f "$CHECKOUT/.git" ]]; then
-  GIT_COMMON_DIR="$(git -C "$CHECKOUT" rev-parse --path-format=absolute --git-common-dir)"
+if [[ -f "$INSTALL_ROOT/.git" ]]; then
+  GIT_COMMON_DIR="$(git -C "$INSTALL_ROOT" rev-parse --path-format=absolute --git-common-dir)"
   MAIN_CHECKOUT="$(cd "$GIT_COMMON_DIR/.." && pwd)"
-  echo "refusing to install launchd agents from linked worktree $CHECKOUT; run $MAIN_CHECKOUT/ops/install.sh from the main checkout $MAIN_CHECKOUT" >&2
+  echo "refusing to install launchd agents from linked worktree $INSTALL_ROOT; run $MAIN_CHECKOUT/ops/install.sh from the main checkout $MAIN_CHECKOUT" >&2
   exit 1
 fi
 AGENTS_DIR="$HOME/Library/LaunchAgents"
@@ -92,10 +93,11 @@ for tmpl in "$CONCERN"/launchd/*.plist.template; do
   rm -f "$target"
 
   # Render template -> real plist with absolute paths for this machine.
-  #   __CHECKOUT__ -> the checkout root, __CONCERN__ -> the template owner's
-  #   directory, __HOME__ -> this user's home,
+  #   __INSTALL_ROOT__ -> the resolved checkout or distribution root,
+  #   __CONCERN__ -> the installed template owner's directory,
+  #   __HOME__ -> this user's home,
   #   __MODEL_HOST__ -> the configured SSH alias, and tunnel port placeholders
-  sed -e "s#__CHECKOUT__#${CHECKOUT}#g" -e "s#__CONCERN__#${CONCERN}#g" \
+  sed -e "s#__INSTALL_ROOT__#${INSTALL_ROOT}#g" -e "s#__CONCERN__#${CONCERN}#g" \
       -e "s#__HOME__#${HOME}#g" \
       -e "s#__STATE_HOME_ENV__#${STATE_HOME_ENV}#g" \
       -e "s#__STATE_HOME__#${STATE_HOME}#g" \

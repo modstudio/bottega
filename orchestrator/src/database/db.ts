@@ -12,6 +12,7 @@ import {
   DB_PATH,
   legacyDatabaseRefusal,
   missingDatabaseMessage,
+  unauthorizedDatabaseInitializationMessage,
 } from './database-location.ts'
 import {
   applyMigrations,
@@ -302,9 +303,7 @@ export function initializeDatabase(): string {
   const legacyRefusal = legacyDatabaseRefusal()
   if (legacyRefusal) throw new Error(legacyRefusal)
   if (!DATABASE_RESOLUTION.initializable) {
-    throw new Error(
-      `refusing to initialize from a worktree binary: ${DB_PATH}\nrun orch init-db from the main checkout`,
-    )
+    throw new Error(unauthorizedDatabaseInitializationMessage())
   }
   registeredOpenHooks()
   mkdirSync(dirname(DB_PATH), { recursive: true })

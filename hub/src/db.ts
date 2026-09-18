@@ -1,9 +1,10 @@
 import { Database } from 'bun:sqlite'
 import { existsSync, mkdirSync } from 'node:fs'
-import { dirname, join } from 'node:path'
+import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { FROZEN_STATE_NAMES } from '../../shared/brand.ts'
+import { FROZEN_STATE_NAMES, PLATFORM_NAME } from '../../shared/brand.ts'
 import { mainCheckoutOf } from '../../shared/git.ts'
+import { isAuthorizedPlatformInstallation } from '../../shared/install-root.ts'
 import { legacyStoreRefusal, resolveHubDatabase } from '../../shared/state-directory.ts'
 import {
   applyMigrations,
@@ -140,10 +141,28 @@ export function writeTransaction<T>(fn: (conn: Database) => T, database: Databas
 
 export const nowIso = () => new Date().toISOString()
 
+export function unauthorizedHubMigrationMessage(path = DB_PATH): string {
+  return (
+    `refusing to migrate the default store: cannot establish an authorised ${PLATFORM_NAME} installation: ${path}\n` +
+    'invariant: A default store is created or migrated only by a checkout or an installed distribution.\n' +
+    `cleared by: run hub migrate from a checkout or reinstall ${PLATFORM_NAME}`
+  )
+}
+
 /** The only production path that creates or changes the hub schema. */
 export function migrateDatabase(): { path: string; versions: string[] } {
   const refusal = legacyDatabaseRefusal()
   if (refusal) throw new Error(refusal)
+  if (
+    !process.env.HUB_DB &&
+    !isAuthorizedPlatformInstallation(
+      checkout,
+      process.env,
+      Boolean(mainCheckout && resolve(mainCheckout) === resolve(checkout)),
+    )
+  ) {
+    throw new Error(unauthorizedHubMigrationMessage())
+  }
   mkdirSync(dirname(DB_PATH), { recursive: true })
   const d = new Database(DB_PATH, { create: true })
   try {

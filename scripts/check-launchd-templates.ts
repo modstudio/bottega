@@ -43,7 +43,7 @@ try {
       console.error(`${name}: launchd template is missing the state-home environment entry`)
     }
     const rendered = template
-      .replaceAll('__CHECKOUT__', repositoryRoot)
+      .replaceAll('__INSTALL_ROOT__', repositoryRoot)
       .replaceAll('__CONCERN__', concern)
       .replaceAll('__HOME__', '/tmp')
       .replaceAll('__STATE_HOME_ENV__', `${PLATFORM_SLUG.toUpperCase()}_STATE_HOME`)

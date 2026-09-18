@@ -13,6 +13,7 @@ import {
   failureKindFromStop,
   isAcpPilotJob,
   outcomeFromTransport,
+  resolveCodexAcpBin,
   resolveTransportName,
   selectAgentForTransport,
   stopErrorMessage,
@@ -395,6 +396,52 @@ describe('ACP defaults Codex and preflight names the missing piece', () => {
     })
     expect(gap).toContain(ACP_PILOT_TASK)
     expect(gap).toContain('ajv')
+  })
+})
+
+describe('codex-acp executable resolution', () => {
+  test('ORCH_ACP_BIN wins when set', () => {
+    expect(
+      resolveCodexAcpBin({
+        env: { ORCH_ACP_BIN: '/override/codex-acp' },
+        checkoutBin: '/checkout/node_modules/.bin/codex-acp',
+        exists: () => true,
+        which: () => '/usr/bin/codex-acp',
+      }),
+    ).toBe('/override/codex-acp')
+  })
+
+  test('the checkout-local binary wins over PATH when it exists', () => {
+    expect(
+      resolveCodexAcpBin({
+        env: {},
+        checkoutBin: '/checkout/node_modules/.bin/codex-acp',
+        exists: (path) => path === '/checkout/node_modules/.bin/codex-acp',
+        which: () => '/usr/bin/codex-acp',
+      }),
+    ).toBe('/checkout/node_modules/.bin/codex-acp')
+  })
+
+  test('PATH is used when the checkout-local binary is absent', () => {
+    expect(
+      resolveCodexAcpBin({
+        env: {},
+        checkoutBin: '/checkout/node_modules/.bin/codex-acp',
+        exists: () => false,
+        which: () => '/usr/bin/codex-acp',
+      }),
+    ).toBe('/usr/bin/codex-acp')
+  })
+
+  test('the refusal names both remedies', () => {
+    expect(() =>
+      resolveCodexAcpBin({
+        env: {},
+        checkoutBin: '/checkout/node_modules/.bin/codex-acp',
+        exists: () => false,
+        which: () => null,
+      }),
+    ).toThrow('set ORCH_ACP_BIN to its path, or install it so it is on PATH')
   })
 })
 
