@@ -238,6 +238,7 @@ if (
     './scripts/check-file-ceiling.test.ts',
     './scripts/check-cognitive-ceiling.test.ts',
     './scripts/check-harness-mirror.test.ts',
+    './scripts/build-release.test.ts',
     './scripts/quality/dead-code.test.ts',
     './scripts/architecture.test.ts',
     './scripts/import-scanner.test.ts',

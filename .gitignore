@@ -7,6 +7,10 @@ __pycache__/
 
 *.log
 
+# Release payloads are machine state. The builder normally puts this directory
+# under the per-user state root, but keep an accidentally local copy untracked.
+/build/
+
 # Operator-specific MCP servers are configured per checkout.
 .mcp.json
 
