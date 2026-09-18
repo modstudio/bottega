@@ -2,7 +2,7 @@ import { readFileSync } from 'node:fs'
 import { parseEnv } from 'node:util'
 import { type ConfigEnvironment, resolveEnvFilePaths } from './config-directory.ts'
 
-export function resolveEnvValues(
+function resolveEnvValues(
   names: readonly string[],
   env: ConfigEnvironment,
   texts: readonly (string | undefined)[],
@@ -11,7 +11,7 @@ export function resolveEnvValues(
   return Object.fromEntries(names.map((name) => [name, values[name]]))
 }
 
-export function buildEnvironment(
+function buildEnvironment(
   env: ConfigEnvironment,
   texts: readonly (string | undefined)[],
 ): ConfigEnvironment {
