@@ -1,257 +1,452 @@
-import { describe, expect, test } from 'bun:test'
+import { describe, expect, test } from "bun:test";
 import {
-  decideFilesystemOrphanSweep,
-  decideRecordedRunSweep,
-  type FilesystemOrphanSweepFacts,
-  type RecordedRunSweepFacts,
-} from './cleanup-sweep-decisions.ts'
+  decideFilesystemOrphanAfterInventory,
+  decideFilesystemOrphanAfterRemoval,
+  decideFilesystemOrphanEligibility,
+  decideFilesystemOrphanUnderLock,
+  decideRecordedRunCloseOut,
+  decideRecordedRunPointer,
+  decideRecordedRunPostInventory,
+  decideRecordedRunPreInventory,
+  type FilesystemOrphanAfterInventoryFacts,
+  type FilesystemOrphanAfterRemovalFacts,
+  type FilesystemOrphanEligibilityFacts,
+  type FilesystemOrphanUnderLockFacts,
+  type RecordedRunCloseOutFacts,
+  type RecordedRunPointerFacts,
+  type RecordedRunPostInventoryFacts,
+  type RecordedRunPreInventoryFacts,
+} from "./cleanup-sweep-decisions.ts";
 
-const recordedBase: RecordedRunSweepFacts = {
-  dry: false,
-  pointerUnchanged: true,
-  preInventory: 'ok',
-  closeOutcome: 'held',
-  closeDetail: 'held for review',
-  postInventory: null,
-}
-
-describe('recorded run sweep ruling', () => {
+describe("recorded run pointer ruling", () => {
   const cases: Array<{
-    name: string
-    facts: Partial<RecordedRunSweepFacts>
-    expected: ReturnType<typeof decideRecordedRunSweep>
+    name: string;
+    facts: RecordedRunPointerFacts;
+    action: ReturnType<typeof decideRecordedRunPointer>["action"];
   }> = [
     {
-      name: 'a changed pointer skips before an unavailable inventory matters',
-      facts: { pointerUnchanged: false, preInventory: 'unavailable' },
-      expected: { action: 'skip', cleanupFailed: false },
+      name: "an unchanged pointer proceeds",
+      facts: { pointerUnchanged: true },
+      action: "proceed",
     },
     {
-      name: 'an unavailable pre-inventory is kept and fails cleanup',
-      facts: { preInventory: 'unavailable' },
+      name: "a changed pointer skips before inventory",
+      facts: { pointerUnchanged: false },
+      action: "skip",
+    },
+  ];
+
+  for (const row of cases) {
+    test(row.name, () =>
+      expect(decideRecordedRunPointer(row.facts).action).toBe(row.action),
+    );
+  }
+});
+
+describe("recorded run pre-inventory ruling", () => {
+  const cases: Array<{
+    name: string;
+    facts: RecordedRunPreInventoryFacts;
+    expected: ReturnType<typeof decideRecordedRunPreInventory>;
+  }> = [
+    {
+      name: "an unavailable pre-inventory is kept and fails cleanup",
+      facts: { inventory: "unavailable" },
       expected: {
-        action: 'keep',
-        keepReason: 'inventory unavailable',
-        presentationError: 'inventory unavailable',
+        action: "keep",
+        keepReason: "inventory unavailable",
+        presentationError: "inventory unavailable",
         cleanupFailed: true,
       },
     },
     {
-      name: 'dry released close-out is reported immediately',
-      facts: { dry: true, preInventory: 'not-needed', closeOutcome: 'released' },
-      expected: { action: 'released', cleanupFailed: false },
+      name: "an available pre-inventory proceeds",
+      facts: { inventory: "ok" },
+      expected: { action: "proceed", cleanupFailed: false },
     },
     {
-      name: 'dry absent close-out is reported immediately',
-      facts: { dry: true, preInventory: 'not-needed', closeOutcome: 'absent' },
-      expected: { action: 'absent', cleanupFailed: false },
+      name: "an unnecessary pre-inventory proceeds",
+      facts: { inventory: "not-needed" },
+      expected: { action: "proceed", cleanupFailed: false },
+    },
+  ];
+
+  for (const row of cases) {
+    test(row.name, () =>
+      expect(decideRecordedRunPreInventory(row.facts)).toEqual(row.expected),
+    );
+  }
+});
+
+describe("recorded run close-out ruling", () => {
+  const cases: Array<{
+    name: string;
+    facts: RecordedRunCloseOutFacts;
+    expected: ReturnType<typeof decideRecordedRunCloseOut>;
+  }> = [
+    {
+      name: "dry released close-out is reported immediately",
+      facts: { dry: true, outcome: "released", detail: "would release" },
+      expected: { action: "report", cleanupFailed: false },
     },
     {
-      name: 'a forgotten close-out is reported immediately',
-      facts: { closeOutcome: 'forgotten' },
-      expected: { action: 'released', cleanupFailed: false },
+      name: "dry absent close-out is reported immediately",
+      facts: { dry: true, outcome: "absent", detail: "already absent" },
+      expected: { action: "report", cleanupFailed: false },
     },
     {
-      name: 'an empty post-inventory releases the row',
-      facts: { closeOutcome: 'released', postInventory: 'empty' },
-      expected: { action: 'released', cleanupFailed: false },
+      name: "a forgotten close-out is reported immediately",
+      facts: { dry: false, outcome: "forgotten", detail: "forgotten" },
+      expected: { action: "report", cleanupFailed: false },
     },
     {
-      name: 'an empty post-inventory reports an absent row',
-      facts: { closeOutcome: 'absent', postInventory: 'empty' },
-      expected: { action: 'absent', cleanupFailed: false },
+      name: "a released close-out proceeds to post-inventory",
+      facts: { dry: false, outcome: "released", detail: "released" },
+      expected: { action: "proceed", cleanupFailed: false },
     },
     {
-      name: 'an unavailable post-inventory is kept and fails cleanup',
-      facts: { closeOutcome: 'released', postInventory: 'unavailable' },
+      name: "an absent close-out proceeds to post-inventory",
+      facts: { dry: false, outcome: "absent", detail: "absent" },
+      expected: { action: "proceed", cleanupFailed: false },
+    },
+    {
+      name: "a failed close-out fails cleanup",
+      facts: { dry: false, outcome: "failed", detail: "remove failed" },
       expected: {
-        action: 'keep',
-        keepReason: 'inventory unavailable',
-        presentationError: 'inventory unavailable',
+        action: "fail",
+        keepReason: "remove failed",
+        presentationError: "remove failed",
         cleanupFailed: true,
       },
     },
     {
-      name: 'a released close-out with leaked post-inventory is a leak',
-      facts: { closeOutcome: 'released', postInventory: 'leaked' },
-      expected: {
-        action: 'leak',
-        keepReason: 'leaked Docker resources',
-        presentationError: 'remove tool leaked Docker resources',
-        cleanupFailed: true,
-      },
-    },
-    {
-      name: 'a failed close-out fails cleanup',
-      facts: { closeOutcome: 'failed', closeDetail: 'remove failed' },
-      expected: {
-        action: 'fail',
-        keepReason: 'remove failed',
-        presentationError: 'remove failed',
-        cleanupFailed: true,
-      },
-    },
-    {
-      name: 'an explicit keep-tree hold retains its clearing instruction',
+      name: "an explicit keep-tree hold retains its clearing instruction",
       facts: {
-        closeOutcome: 'held',
-        closeDetail: 'held by explicit --keep-tree until cleared',
+        dry: false,
+        outcome: "held",
+        detail: "held by explicit --keep-tree until cleared",
       },
       expected: {
-        action: 'keep',
-        keepReason: 'held by explicit --keep-tree; clear with orch discard <run-id>',
+        action: "keep",
+        keepReason:
+          "held by explicit --keep-tree; clear with orch discard <run-id>",
         cleanupFailed: false,
       },
     },
-  ]
+  ];
 
   for (const row of cases) {
-    test(row.name, () => {
-      expect(decideRecordedRunSweep({ ...recordedBase, ...row.facts })).toEqual(row.expected)
-    })
+    test(row.name, () =>
+      expect(decideRecordedRunCloseOut(row.facts)).toEqual(row.expected),
+    );
   }
-})
+});
 
-const orphanBase: FilesystemOrphanSweepFacts = {
-  orchOwned: true,
-  alive: false,
-  safe: { removable: true, detail: 'safe to remove', branch: 'orch-1' },
-  dry: false,
-  phase: 'before',
-  sharers: 0,
-  lockedAlive: false,
-  removed: false,
-  ownershipRefusal: null,
-  ownershipWarning: null,
-  inventory: 'skipped',
-}
-
-describe('filesystem orphan sweep ruling', () => {
+describe("recorded run post-inventory ruling", () => {
   const cases: Array<{
-    name: string
-    facts: Partial<FilesystemOrphanSweepFacts>
-    action: ReturnType<typeof decideFilesystemOrphanSweep>['action']
-    keep?: [string, string]
-    failed?: boolean
+    name: string;
+    facts: RecordedRunPostInventoryFacts;
+    expected: ReturnType<typeof decideRecordedRunPostInventory>;
   }> = [
     {
-      name: 'a tree not created by orch is kept',
-      facts: { orchOwned: false },
-      action: 'not-owned',
-      keep: ['kept: not created by orch', 'not created by orch'],
+      name: "an empty post-inventory releases the row",
+      facts: { closeOutcome: "released", inventory: "empty" },
+      expected: { action: "released", cleanupFailed: false },
     },
     {
-      name: 'a live orphan is never removed even when safe',
-      facts: { alive: true },
-      action: 'live',
-      keep: ['live — kept', 'live — kept'],
+      name: "an empty post-inventory reports an absent row",
+      facts: { closeOutcome: "absent", inventory: "empty" },
+      expected: { action: "absent", cleanupFailed: false },
     },
     {
-      name: 'an orphan that becomes live under the lock is kept',
-      facts: { lockedAlive: true },
-      action: 'live',
-      keep: ['live — kept', 'live — kept'],
-    },
-    {
-      name: 'an unsafe orphan keeps the safety detail',
-      facts: { safe: { removable: false, detail: 'has local changes', branch: 'orch-1' } },
-      action: 'unsafe',
-      keep: ['has local changes', 'has local changes'],
-    },
-    {
-      name: 'unreachable commits use the concise keep reason',
-      facts: {
-        safe: {
-          removable: false,
-          detail: 'has commits not reachable from main',
-          branch: 'orch-1',
-        },
+      name: "an unavailable post-inventory is kept and fails cleanup",
+      facts: { closeOutcome: "released", inventory: "unavailable" },
+      expected: {
+        action: "inventory-unavailable",
+        keepReason: "inventory unavailable",
+        presentationError: "inventory unavailable",
+        cleanupFailed: true,
       },
-      action: 'unsafe',
-      keep: ['has commits not reachable from main', 'holds commits not on trunk'],
     },
     {
-      name: 'a dry run reports would-reclaim before removal facts',
-      facts: { dry: true, sharers: 2, lockedAlive: false, removed: true },
-      action: 'would-reclaim',
+      name: "a released close-out with leaked post-inventory is a leak",
+      facts: { closeOutcome: "released", inventory: "leaked" },
+      expected: {
+        action: "leak",
+        keepReason: "leaked Docker resources",
+        presentationError: "remove tool leaked Docker resources",
+        cleanupFailed: true,
+      },
     },
-    { name: 'a safe orphan proceeds to removal', facts: {}, action: 'remove' },
-    {
-      name: 'sharers before removal refuse',
-      facts: { sharers: 1 },
-      action: 'shared-before',
-      keep: ['acquired by run(s)', 'shared with live run(s)'],
-      failed: true,
-    },
-    {
-      name: 'ownership refusal after removal is final',
-      facts: { phase: 'after', removed: true, ownershipRefusal: 'branch owner changed' },
-      action: 'removal-refused',
-      keep: ['removal refused', 'removal refused'],
-      failed: true,
-    },
-    {
-      name: 'sharers after removal report acquired-during-cleanup',
-      facts: { phase: 'after', sharers: 1, removed: true },
-      action: 'shared-after',
-      keep: ['acquired during cleanup by run(s)', 'shared with live run(s)'],
-      failed: true,
-    },
-    {
-      name: 'a refused remove result is kept',
-      facts: { phase: 'after', removed: false },
-      action: 'removal-refused',
-      keep: ['removal refused', 'removal refused'],
-      failed: true,
-    },
-    {
-      name: 'unavailable inventory is kept',
-      facts: { phase: 'after', removed: true, inventory: 'unavailable' },
-      action: 'inventory-unavailable',
-      keep: ['inventory unavailable', 'inventory unavailable'],
-      failed: true,
-    },
-    {
-      name: 'leaked inventory is kept',
-      facts: { phase: 'after', removed: true, inventory: 'leaked' },
-      action: 'leaked',
-      keep: ['leaked Docker resources', 'leaked Docker resources'],
-      failed: true,
-    },
-    {
-      name: 'empty inventory reports reclaimed',
-      facts: { phase: 'after', removed: true, inventory: 'empty' },
-      action: 'reclaimed',
-    },
-    {
-      name: 'a null run id maps to skipped inventory and the tree counts reclaimed',
-      facts: { phase: 'after', removed: true, inventory: 'skipped' },
-      action: 'reclaimed',
-    },
-  ]
+  ];
 
   for (const row of cases) {
-    test(row.name, () => {
-      const ruling = decideFilesystemOrphanSweep({ ...orphanBase, ...row.facts })
-      expect(ruling.action).toBe(row.action)
-      expect(ruling.cleanupFailed).toBe(row.failed ?? false)
-      expect([ruling.keepLine, ruling.keepReason]).toEqual(row.keep ?? [undefined, undefined])
-    })
+    test(row.name, () =>
+      expect(decideRecordedRunPostInventory(row.facts)).toEqual(row.expected),
+    );
   }
+});
 
-  test('an ownership warning is carried to presentation without changing reclamation', () => {
-    expect(
-      decideFilesystemOrphanSweep({
-        ...orphanBase,
-        phase: 'after',
+describe("filesystem orphan eligibility ruling", () => {
+  const safe = { removable: true, detail: "safe to remove", branch: "orch-1" };
+  const cases: Array<{
+    name: string;
+    facts: FilesystemOrphanEligibilityFacts;
+    expected: ReturnType<typeof decideFilesystemOrphanEligibility>;
+  }> = [
+    {
+      name: "a tree not created by orch is kept",
+      facts: { orchOwned: false, alive: false, safe, dry: false },
+      expected: {
+        action: "keep",
+        keepLine: "kept: not created by orch",
+        keepReason: "not created by orch",
+      },
+    },
+    {
+      name: "a live orphan is never removed even when safe",
+      facts: { orchOwned: true, alive: true, safe, dry: false },
+      expected: {
+        action: "keep",
+        keepLine: "live — kept",
+        keepReason: "live — kept",
+      },
+    },
+    {
+      name: "an unsafe orphan keeps the safety detail",
+      facts: {
+        orchOwned: true,
+        alive: false,
+        safe: {
+          removable: false,
+          detail: "has local changes",
+          branch: "orch-1",
+        },
+        dry: false,
+      },
+      expected: {
+        action: "keep",
+        keepLine: "has local changes",
+        keepReason: "has local changes",
+      },
+    },
+    {
+      name: "unreachable commits use the concise keep reason",
+      facts: {
+        orchOwned: true,
+        alive: false,
+        safe: {
+          removable: false,
+          detail: "has commits not reachable from main",
+          branch: "orch-1",
+        },
+        dry: false,
+      },
+      expected: {
+        action: "keep",
+        keepLine: "has commits not reachable from main",
+        keepReason: "holds commits not on trunk",
+      },
+    },
+    {
+      name: "a dry run reports would-reclaim without removal facts",
+      facts: { orchOwned: true, alive: false, safe, dry: true },
+      expected: { action: "dry-would-reclaim" },
+    },
+    {
+      name: "a safe orphan proceeds to the lock",
+      facts: { orchOwned: true, alive: false, safe, dry: false },
+      expected: { action: "proceed" },
+    },
+  ];
+
+  for (const row of cases) {
+    test(row.name, () =>
+      expect(decideFilesystemOrphanEligibility(row.facts)).toEqual(
+        row.expected,
+      ),
+    );
+  }
+});
+
+describe("filesystem orphan under-lock ruling", () => {
+  const cases: Array<{
+    name: string;
+    facts: FilesystemOrphanUnderLockFacts;
+    expected: ReturnType<typeof decideFilesystemOrphanUnderLock>;
+  }> = [
+    {
+      name: "sharers before removal refuse",
+      facts: { sharers: 1, lockedAlive: false },
+      expected: {
+        action: "shared-before",
+        keepLine: "acquired by run(s)",
+        keepReason: "shared with live run(s)",
+        cleanupFailed: true,
+      },
+    },
+    {
+      name: "sharers take precedence when the tree is also live",
+      facts: { sharers: 1, lockedAlive: true },
+      expected: {
+        action: "shared-before",
+        keepLine: "acquired by run(s)",
+        keepReason: "shared with live run(s)",
+        cleanupFailed: true,
+      },
+    },
+    {
+      name: "an orphan that becomes live under the lock is kept",
+      facts: { sharers: 0, lockedAlive: true },
+      expected: {
+        action: "live",
+        keepLine: "live — kept",
+        keepReason: "live — kept",
+        cleanupFailed: false,
+      },
+    },
+    {
+      name: "an unshared non-live orphan proceeds to removal",
+      facts: { sharers: 0, lockedAlive: false },
+      expected: { action: "remove", cleanupFailed: false },
+    },
+  ];
+
+  for (const row of cases) {
+    test(row.name, () =>
+      expect(decideFilesystemOrphanUnderLock(row.facts)).toEqual(row.expected),
+    );
+  }
+});
+
+describe("filesystem orphan after-removal ruling", () => {
+  const cases: Array<{
+    name: string;
+    facts: FilesystemOrphanAfterRemovalFacts;
+    expected: ReturnType<typeof decideFilesystemOrphanAfterRemoval>;
+  }> = [
+    {
+      name: "ownership refusal after removal is final",
+      facts: {
         removed: true,
-        inventory: 'empty',
-        ownershipWarning: 'branch already absent',
-      }),
-    ).toEqual({
-      action: 'reclaimed',
-      ownershipWarning: 'branch already absent',
-      cleanupFailed: false,
-    })
-  })
-})
+        removeDetail: "removed",
+        sharers: 0,
+        ownershipRefusal: "branch owner changed",
+        ownershipWarning: null,
+      },
+      expected: {
+        action: "removal-refused",
+        error: "branch owner changed",
+        keepLine: "removal refused",
+        keepReason: "removal refused",
+        ownershipWarning: null,
+        cleanupFailed: true,
+      },
+    },
+    {
+      name: "sharers after removal report acquired-during-cleanup",
+      facts: {
+        removed: true,
+        removeDetail: "removed",
+        sharers: 1,
+        ownershipRefusal: null,
+        ownershipWarning: null,
+      },
+      expected: {
+        action: "shared-after",
+        keepLine: "acquired during cleanup by run(s)",
+        keepReason: "shared with live run(s)",
+        ownershipWarning: null,
+        cleanupFailed: true,
+      },
+    },
+    {
+      name: "a refused remove result carries its error text",
+      facts: {
+        removed: false,
+        removeDetail: "tool declined removal",
+        sharers: 0,
+        ownershipRefusal: null,
+        ownershipWarning: null,
+      },
+      expected: {
+        action: "removal-refused",
+        error: "tool declined removal",
+        keepLine: "removal refused",
+        keepReason: "removal refused",
+        ownershipWarning: null,
+        cleanupFailed: true,
+      },
+    },
+    {
+      name: "an ownership warning is carried while proceeding",
+      facts: {
+        removed: true,
+        removeDetail: "removed",
+        sharers: 0,
+        ownershipRefusal: null,
+        ownershipWarning: "branch already absent",
+      },
+      expected: {
+        action: "proceed",
+        ownershipWarning: "branch already absent",
+        cleanupFailed: false,
+      },
+    },
+  ];
+
+  for (const row of cases) {
+    test(row.name, () =>
+      expect(decideFilesystemOrphanAfterRemoval(row.facts)).toEqual(
+        row.expected,
+      ),
+    );
+  }
+});
+
+describe("filesystem orphan after-inventory ruling", () => {
+  const cases: Array<{
+    name: string;
+    facts: FilesystemOrphanAfterInventoryFacts;
+    expected: ReturnType<typeof decideFilesystemOrphanAfterInventory>;
+  }> = [
+    {
+      name: "unavailable inventory is kept",
+      facts: { runIdPresent: true, inventory: "unavailable" },
+      expected: {
+        action: "inventory-unavailable",
+        keepLine: "inventory unavailable",
+        keepReason: "inventory unavailable",
+        cleanupFailed: true,
+      },
+    },
+    {
+      name: "leaked inventory is kept",
+      facts: { runIdPresent: true, inventory: "leaked" },
+      expected: {
+        action: "leaked",
+        keepLine: "leaked Docker resources",
+        keepReason: "leaked Docker resources",
+        cleanupFailed: true,
+      },
+    },
+    {
+      name: "empty inventory reports reclaimed",
+      facts: { runIdPresent: true, inventory: "empty" },
+      expected: { action: "reclaimed", cleanupFailed: false },
+    },
+    {
+      name: "a null run id means inventory is skipped and the tree counts reclaimed",
+      facts: { runIdPresent: false, inventory: "empty" },
+      expected: { action: "reclaimed", cleanupFailed: false },
+    },
+  ];
+
+  for (const row of cases) {
+    test(row.name, () =>
+      expect(decideFilesystemOrphanAfterInventory(row.facts)).toEqual(
+        row.expected,
+      ),
+    );
+  }
+});

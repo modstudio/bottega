@@ -1,86 +1,98 @@
 /** Cleanup sweep knows worktree ownership, leases and the cleanup lock, resource reclamation, and branch retention. It must not know transports, routing, reviews, contracts, the CLI, or durable execution. */
-import { existsSync, lstatSync, readdirSync, realpathSync } from 'node:fs'
-import { join, resolve } from 'node:path'
-import { pidAlive } from '../../../shared/process-identity.ts'
-import { closeOutRun, releaseSandboxDirectoryForConversation } from '../close/close-out.ts'
-import { db, sessionId, writableDb, writeTransaction } from '../database/db.ts'
-import { shouldSweepHookTree } from '../hook-tree/hook-tree.ts'
-import { projectAt, projectByName, projects } from '../project/projects.ts'
+import { existsSync, lstatSync, readdirSync, realpathSync } from "node:fs";
+import { join, resolve } from "node:path";
+import { pidAlive } from "../../../shared/process-identity.ts";
+import {
+  closeOutRun,
+  releaseSandboxDirectoryForConversation,
+} from "../close/close-out.ts";
+import { db, sessionId, writableDb, writeTransaction } from "../database/db.ts";
+import { shouldSweepHookTree } from "../hook-tree/hook-tree.ts";
+import { projectAt, projectByName, projects } from "../project/projects.ts";
 import {
   classifiedDockerResources,
   type DockerResource,
   dockerRunResources,
   leakedResourceLines,
   orchRunId,
-} from '../resources/docker-resources.ts'
+} from "../resources/docker-resources.ts";
 import {
   liveWorktreeSharers,
   terminalDockerRetentionReasonForRun,
-} from '../resources/resource-ownership.ts'
-import { runAlive } from '../run/run-alive.ts'
-import { RUNS_DIR } from '../run/run-artifacts.ts'
-import { auditRunMutation } from '../run/run-authority.ts'
-import { removeFreeRunLease, runLeaseIds, runLeaseState } from '../run/run-lease.ts'
+} from "../resources/resource-ownership.ts";
+import { runAlive } from "../run/run-alive.ts";
+import { RUNS_DIR } from "../run/run-artifacts.ts";
+import { auditRunMutation } from "../run/run-authority.ts";
+import {
+  removeFreeRunLease,
+  runLeaseIds,
+  runLeaseState,
+} from "../run/run-lease.ts";
 import {
   inspectTreeOwnership,
   isOrchWorktree,
   markedWorktreeSource,
   orphanSafety,
   worktreeNameRunId,
-} from '../worktree/worktree-attribution.ts'
-import { branchTip } from '../worktree/worktree-remove.ts'
-import type { Worktree } from '../worktree/worktree-types.ts'
+} from "../worktree/worktree-attribution.ts";
+import { branchTip } from "../worktree/worktree-remove.ts";
+import type { Worktree } from "../worktree/worktree-types.ts";
 import {
   type CleanupPresentation,
   evidenceOwningBranchOwners,
   resourcesForConversation,
   verifyBranchOwnershipAfterCleanup,
   withCleanupLock,
-} from './cleanup.ts'
+} from "./cleanup.ts";
 import {
-  decideFilesystemOrphanSweep,
-  decideRecordedRunSweep,
-  type FilesystemOrphanSweepFacts,
-  type RecordedRunSweepFacts,
-} from './cleanup-sweep-decisions.ts'
+  decideFilesystemOrphanAfterInventory,
+  decideFilesystemOrphanAfterRemoval,
+  decideFilesystemOrphanEligibility,
+  decideFilesystemOrphanUnderLock,
+  decideRecordedRunCloseOut,
+  decideRecordedRunPointer,
+  decideRecordedRunPostInventory,
+  decideRecordedRunPreInventory,
+  type RecordedRunPostInventoryFacts,
+} from "./cleanup-sweep-decisions.ts";
 
 export type SweepOptions = {
-  dryRun: boolean
-  project?: string
-  force: boolean
-  presentation: CleanupPresentation
-}
+  dryRun: boolean;
+  project?: string;
+  force: boolean;
+  presentation: CleanupPresentation;
+};
 export type SweepHelpers = {
-  grokTrustHeadings: () => string[]
-  grokTrustPathFromHeading: (heading: string) => string | null
-}
+  grokTrustHeadings: () => string[];
+  grokTrustPathFromHeading: (heading: string) => string | null;
+};
 
-const KEPT_ROW_LIMIT = 10
+const KEPT_ROW_LIMIT = 10;
 
-type NamedRun = { id: number; status: string; alive: boolean }
-type ClosedSweepOutcome = 'released' | 'absent' | 'forgotten'
+type NamedRun = { id: number; status: string; alive: boolean };
+type ClosedSweepOutcome = "released" | "absent" | "forgotten";
 type SweepCandidate = {
-  id: number
-  root_id: number
-  repo: string | null
-  worktree: string
-  branch: string | null
-  base_commit: string | null
-  status: string
-  worktree_source: Worktree['source'] | null
-  job: string
-  pid: number | null
-  agent_pid: number | null
-  session_id: string | null
-  session_last_seen: string | null
-}
-type ClosedSweepCounts = Record<ClosedSweepOutcome, number>
+  id: number;
+  root_id: number;
+  repo: string | null;
+  worktree: string;
+  branch: string | null;
+  base_commit: string | null;
+  status: string;
+  worktree_source: Worktree["source"] | null;
+  job: string;
+  pid: number | null;
+  agent_pid: number | null;
+  session_id: string | null;
+  session_last_seen: string | null;
+};
+type ClosedSweepCounts = Record<ClosedSweepOutcome, number>;
 
 function pathIsUnder(path: string | null, root: string): boolean {
-  if (!path) return false
-  const candidate = resolve(path)
-  const project = resolve(root)
-  return candidate === project || candidate.startsWith(`${project}/`)
+  if (!path) return false;
+  const candidate = resolve(path);
+  const project = resolve(root);
+  return candidate === project || candidate.startsWith(`${project}/`);
 }
 
 function namedRun(
@@ -88,32 +100,33 @@ function namedRun(
   branchTemplate: string | undefined,
   project: { name: string; path: string },
 ): NamedRun | null {
-  const runId = worktreeNameRunId(name, branchTemplate)
-  if (runId === null) return null
+  const runId = worktreeNameRunId(name, branchTemplate);
+  if (runId === null) return null;
   const member = db()
-    .query('SELECT id, parent_run_id, repo, cwd, worktree FROM run WHERE id=?')
+    .query("SELECT id, parent_run_id, repo, cwd, worktree FROM run WHERE id=?")
     .get(runId) as {
-    id: number
-    parent_run_id: number | null
-    repo: string | null
-    cwd: string | null
-    worktree: string | null
-  } | null
-  if (!member) return null
+    id: number;
+    parent_run_id: number | null;
+    repo: string | null;
+    cwd: string | null;
+    worktree: string | null;
+  } | null;
+  if (!member) return null;
   const belongs =
     member.repo === project.name ||
     (member.repo === null &&
-      (pathIsUnder(member.cwd, project.path) || pathIsUnder(member.worktree, project.path)))
-  if (!belongs) return null
+      (pathIsUnder(member.cwd, project.path) ||
+        pathIsUnder(member.worktree, project.path)));
+  if (!belongs) return null;
 
-  const rootId = member.parent_run_id ?? member.id
+  const rootId = member.parent_run_id ?? member.id;
   const latest = db()
     .query(
       `SELECT id,status,pid FROM run
       WHERE id=? OR parent_run_id=?
       ORDER BY turn DESC, id DESC LIMIT 1`,
     )
-    .get(rootId, rootId) as { id: number; status: string; pid: number | null }
+    .get(rootId, rootId) as { id: number; status: string; pid: number | null };
   return {
     id: member.id,
     status: latest.status,
@@ -122,7 +135,7 @@ function namedRun(
       lease: runLeaseState(latest.id),
       pidAlive: Boolean(latest.pid && pidAlive(latest.pid)),
     }),
-  }
+  };
 }
 
 function printSweepKept(
@@ -136,67 +149,79 @@ function printSweepKept(
   sandbox: { released: number; kept: number },
 ): void {
   presentation.log(
-    `\n${dry ? 'would reclaim' : 'reclaimed'} ${released}, already absent ${absent}, forgotten ${forgotten}, kept ${kept.length}; ` +
-      `${dry ? 'would release' : 'released'} sandbox ${sandbox.released}, kept sandbox ${sandbox.kept}`,
-  )
-  const listAll = dry
-  const fits = kept.length <= KEPT_ROW_LIMIT
-  const showSummary = listAll || !fits
-  const showRows = listAll || fits
+    `\n${dry ? "would reclaim" : "reclaimed"} ${released}, already absent ${absent}, forgotten ${forgotten}, kept ${kept.length}; ` +
+      `${dry ? "would release" : "released"} sandbox ${sandbox.released}, kept sandbox ${sandbox.kept}`,
+  );
+  const listAll = dry;
+  const fits = kept.length <= KEPT_ROW_LIMIT;
+  const showSummary = listAll || !fits;
+  const showRows = listAll || fits;
   if (showSummary && kept.length > 0) {
-    const counts = new Map<string, number>()
-    for (const row of kept) counts.set(row.reason, (counts.get(row.reason) ?? 0) + 1)
-    const grouped = [...counts.entries()].sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))
-    const width = String(grouped[0]![1]).length
+    const counts = new Map<string, number>();
+    for (const row of kept)
+      counts.set(row.reason, (counts.get(row.reason) ?? 0) + 1);
+    const grouped = [...counts.entries()].sort(
+      (a, b) => b[1] - a[1] || a[0].localeCompare(b[0]),
+    );
+    const width = String(grouped[0]![1]).length;
     for (const [reason, n] of grouped) {
-      presentation.log(`  ${String(n).padStart(width)}  ${reason}`)
+      presentation.log(`  ${String(n).padStart(width)}  ${reason}`);
     }
   }
   if (showRows) {
-    for (const row of kept) presentation.log(`  ${row.line}`)
+    for (const row of kept) presentation.log(`  ${row.line}`);
   } else {
-    const parts = ['orch sweep --dry-run']
-    if (force) parts.push('--force')
-    presentation.log(`  ${parts.join(' ')} lists every kept row`)
+    const parts = ["orch sweep --dry-run"];
+    if (force) parts.push("--force");
+    presentation.log(`  ${parts.join(" ")} lists every kept row`);
   }
 }
 
 function directorySize(path: string): number {
-  const entry = lstatSync(path)
-  if (!entry.isDirectory()) return entry.size
-  return readdirSync(path).reduce((total, name) => total + directorySize(join(path, name)), 0)
+  const entry = lstatSync(path);
+  if (!entry.isDirectory()) return entry.size;
+  return readdirSync(path).reduce(
+    (total, name) => total + directorySize(join(path, name)),
+    0,
+  );
 }
 
 function sweepSandboxDirectories(
   dry: boolean,
   presentation: CleanupPresentation,
 ): { released: number; kept: number } {
-  const counts = { released: 0, kept: 0 }
-  if (!existsSync(RUNS_DIR)) return counts
+  const counts = { released: 0, kept: 0 };
+  if (!existsSync(RUNS_DIR)) return counts;
   for (const entry of readdirSync(RUNS_DIR, { withFileTypes: true })) {
-    const match = entry.isDirectory() ? /^sandbox-([1-9]\d*)$/.exec(entry.name) : null
-    if (!match) continue
-    const rootId = Number(match[1])
-    const path = join(RUNS_DIR, entry.name)
-    let bytes: number
-    let result: ReturnType<typeof releaseSandboxDirectoryForConversation>
+    const match = entry.isDirectory()
+      ? /^sandbox-([1-9]\d*)$/.exec(entry.name)
+      : null;
+    if (!match) continue;
+    const rootId = Number(match[1]);
+    const path = join(RUNS_DIR, entry.name);
+    let bytes: number;
+    let result: ReturnType<typeof releaseSandboxDirectoryForConversation>;
     try {
-      bytes = directorySize(path)
-      result = releaseSandboxDirectoryForConversation(rootId, { dryRun: dry })
+      bytes = directorySize(path);
+      result = releaseSandboxDirectoryForConversation(rootId, { dryRun: dry });
     } catch (error) {
-      counts.kept++
-      presentation.log(`kept sandbox ${rootId}: ${String((error as Error).message ?? error)}`)
-      continue
+      counts.kept++;
+      presentation.log(
+        `kept sandbox ${rootId}: ${String((error as Error).message ?? error)}`,
+      );
+      continue;
     }
-    if (result.outcome === 'released') {
-      counts.released++
-      presentation.log(`${dry ? 'would release' : 'released'} sandbox ${rootId} ${bytes}`)
+    if (result.outcome === "released") {
+      counts.released++;
+      presentation.log(
+        `${dry ? "would release" : "released"} sandbox ${rootId} ${bytes}`,
+      );
     } else {
-      counts.kept++
-      presentation.log(`kept sandbox ${rootId}: ${result.detail}`)
+      counts.kept++;
+      presentation.log(`kept sandbox ${rootId}: ${result.detail}`);
     }
   }
-  return counts
+  return counts;
 }
 
 function reportClosedSweepRow(
@@ -205,108 +230,121 @@ function reportClosedSweepRow(
   dry: boolean,
   presentation: CleanupPresentation,
 ): ClosedSweepOutcome {
-  if (outcome === 'released' && !dry) {
+  if (outcome === "released" && !dry) {
     writeTransaction(() => {
       auditRunMutation(
         { runId: row.id, rootId: row.root_id, owner: null, actor: sessionId() },
-        'sweep',
-      )
-    })
+        "sweep",
+      );
+    });
   }
   const action =
-    outcome === 'absent'
-      ? 'already absent'
-      : outcome === 'forgotten'
+    outcome === "absent"
+      ? "already absent"
+      : outcome === "forgotten"
         ? dry
-          ? 'would forget'
-          : 'forgotten'
+          ? "would forget"
+          : "forgotten"
         : dry
-          ? 'would reclaim'
-          : 'reclaimed'
-  presentation.log(`${action} ${row.id}  ${row.worktree}`)
-  return outcome
+          ? "would reclaim"
+          : "reclaimed";
+  presentation.log(`${action} ${row.id}  ${row.worktree}`);
+  return outcome;
 }
 
 function sweepTreeIsOwned(row: SweepCandidate): boolean {
-  const project = row.repo ? projectByName(row.repo) : projectAt(row.worktree)
-  if (!project) return false
+  const project = row.repo ? projectByName(row.repo) : projectAt(row.worktree);
+  if (!project) return false;
   const conversationIds = (
     db()
-      .query('SELECT id FROM run WHERE id=? OR parent_run_id=? ORDER BY id')
+      .query("SELECT id FROM run WHERE id=? OR parent_run_id=? ORDER BY id")
       .all(row.root_id, row.root_id) as { id: number }[]
-  ).map((turn) => turn.id)
+  ).map((turn) => turn.id);
   return (
     inspectTreeOwnership(
       row.worktree,
       project.path,
       conversationIds,
       project.settings.worktree?.branch,
-    ) === 'owned'
-  )
+    ) === "owned"
+  );
 }
 
-function shouldInventoryBeforeSweep(row: SweepCandidate, dry: boolean): boolean {
-  return !dry && sweepTreeIsOwned(row)
+function shouldInventoryBeforeSweep(
+  row: SweepCandidate,
+  dry: boolean,
+): boolean {
+  return !dry && sweepTreeIsOwned(row);
 }
 
 function sweepTerminalRunLeases(dry: boolean): void {
-  if (dry) return
+  if (dry) return;
   for (const runId of runLeaseIds()) {
-    const row = db().query('SELECT status FROM run WHERE id=?').get(runId) as {
-      status: string
-    } | null
-    if (row && ['ok', 'failed', 'stale', 'stopped'].includes(row.status)) {
-      removeFreeRunLease(runId)
+    const row = db().query("SELECT status FROM run WHERE id=?").get(runId) as {
+      status: string;
+    } | null;
+    if (row && ["ok", "failed", "stale", "stopped"].includes(row.status)) {
+      removeFreeRunLease(runId);
     }
   }
 }
 
 type RecordedSweepState = {
-  cleanupFailed: boolean
-  inventoryErrors: Set<string>
-  leaked: Map<string, { resource: DockerResource; project: string; runId: number }>
-  kept: { line: string; reason: string }[]
-  counts: ClosedSweepCounts
-}
+  cleanupFailed: boolean;
+  inventoryErrors: Set<string>;
+  leaked: Map<
+    string,
+    { resource: DockerResource; project: string; runId: number }
+  >;
+  kept: { line: string; reason: string }[];
+  counts: ClosedSweepCounts;
+};
 
 function applyRecordedPostInventory(
   r: SweepCandidate,
-  facts: RecordedRunSweepFacts,
+  closeOutcome: RecordedRunPostInventoryFacts["closeOutcome"],
   inventory: ReturnType<typeof resourcesForConversation>,
   state: RecordedSweepState,
   presentation: CleanupPresentation,
 ): void {
-  const project = r.repo ?? projectAt(r.worktree)?.name ?? 'unknown'
-  const postInventory: RecordedRunSweepFacts['postInventory'] = !inventory.ascertainable
-    ? 'unavailable'
-    : inventory.resources.length
-      ? 'leaked'
-      : 'empty'
-  const ruling = decideRecordedRunSweep({ ...facts, postInventory })
-  state.cleanupFailed ||= ruling.cleanupFailed
+  const project = r.repo ?? projectAt(r.worktree)?.name ?? "unknown";
+  const inventoryFact: RecordedRunPostInventoryFacts["inventory"] =
+    !inventory.ascertainable
+      ? "unavailable"
+      : inventory.resources.length
+        ? "leaked"
+        : "empty";
+  const ruling = decideRecordedRunPostInventory({
+    closeOutcome,
+    inventory: inventoryFact,
+  });
+  state.cleanupFailed ||= ruling.cleanupFailed;
   if (!inventory.ascertainable) {
-    state.inventoryErrors.add(inventory.reason)
-    state.kept.push({ line: `${r.id}  inventory unavailable`, reason: ruling.keepReason! })
-    presentation.error(`could not verify reclaim ${r.id}: ${ruling.presentationError}`)
+    state.inventoryErrors.add(inventory.reason);
+    state.kept.push({
+      line: `${r.id}  inventory unavailable`,
+      reason: ruling.keepReason!,
+    });
+    presentation.error(
+      `could not verify reclaim ${r.id}: ${ruling.presentationError}`,
+    );
   } else if (inventory.resources.length) {
     for (const resource of inventory.resources)
       state.leaked.set(`${resource.kind}:${resource.name}`, {
         resource,
         project,
         runId: r.id,
-      })
-    state.kept.push({ line: `${r.id}  leaked Docker resources`, reason: ruling.keepReason! })
+      });
+    state.kept.push({
+      line: `${r.id}  leaked Docker resources`,
+      reason: ruling.keepReason!,
+    });
     presentation.error(
       `could not fully reclaim ${r.id}: project ${project}'s ${ruling.presentationError}`,
-    )
+    );
   } else {
-    const outcome = reportClosedSweepRow(
-      facts.closeOutcome as ClosedSweepOutcome,
-      r,
-      false,
-      presentation,
-    )
-    state.counts[outcome]++
+    const outcome = reportClosedSweepRow(closeOutcome, r, false, presentation);
+    state.counts[outcome]++;
   }
 }
 
@@ -316,59 +354,64 @@ function sweepRecordedRow(
   state: RecordedSweepState,
   presentation: CleanupPresentation,
 ): void {
-  const keep = (line: string, reason: string) => state.kept.push({ line, reason })
-  const current = db().query('SELECT worktree FROM run WHERE id=?').get(r.id) as {
-    worktree: string | null
-  } | null
-  const baseFacts: RecordedRunSweepFacts = {
-    dry,
+  const keep = (line: string, reason: string) =>
+    state.kept.push({ line, reason });
+  const current = db()
+    .query("SELECT worktree FROM run WHERE id=?")
+    .get(r.id) as {
+    worktree: string | null;
+  } | null;
+  const pointerRuling = decideRecordedRunPointer({
     pointerUnchanged: current?.worktree === r.worktree,
-    preInventory: 'not-needed',
-    closeOutcome: 'held',
-    closeDetail: '',
-    postInventory: null,
-  }
-  if (decideRecordedRunSweep(baseFacts).action === 'skip') return
-  let preInventory: RecordedRunSweepFacts['preInventory'] = 'not-needed'
+  });
+  if (pointerRuling.action === "skip") return;
+  let preInventory: "unavailable" | "ok" | "not-needed" = "not-needed";
   if (shouldInventoryBeforeSweep(r, dry)) {
-    const before = resourcesForConversation(r.id)
-    preInventory = before.ascertainable ? 'ok' : 'unavailable'
+    const before = resourcesForConversation(r.id);
+    preInventory = before.ascertainable ? "ok" : "unavailable";
     if (!before.ascertainable) {
-      const ruling = decideRecordedRunSweep({ ...baseFacts, preInventory })
-      state.inventoryErrors.add(before.reason)
-      state.cleanupFailed = ruling.cleanupFailed
-      keep(`${r.id}  inventory unavailable`, ruling.keepReason!)
-      presentation.error(`could not verify reclaim ${r.id}: ${ruling.presentationError}`)
-      return
+      const ruling = decideRecordedRunPreInventory({ inventory: preInventory });
+      state.inventoryErrors.add(before.reason);
+      state.cleanupFailed = ruling.cleanupFailed;
+      keep(`${r.id}  inventory unavailable`, ruling.keepReason!);
+      presentation.error(
+        `could not verify reclaim ${r.id}: ${ruling.presentationError}`,
+      );
+      return;
     }
   }
-  const closed = closeOutRun(r.id, { intent: 'sweep', dryRun: dry })
-  const closeFacts = {
-    ...baseFacts,
-    preInventory,
-    closeOutcome: closed.outcome,
-    closeDetail: closed.detail,
+  decideRecordedRunPreInventory({ inventory: preInventory });
+  const closed = closeOutRun(r.id, { intent: "sweep", dryRun: dry });
+  const closeRuling = decideRecordedRunCloseOut({
+    dry,
+    outcome: closed.outcome,
+    detail: closed.detail,
+  });
+  if (closeRuling.action === "report") {
+    const outcome = reportClosedSweepRow(
+      closed.outcome as ClosedSweepOutcome,
+      r,
+      dry,
+      presentation,
+    );
+    state.counts[outcome]++;
+    return;
   }
-  const immediate = decideRecordedRunSweep(closeFacts)
-  if (
-    (dry || closed.outcome === 'forgotten') &&
-    (immediate.action === 'released' || immediate.action === 'absent')
-  ) {
-    const outcome = reportClosedSweepRow(closed.outcome as ClosedSweepOutcome, r, dry, presentation)
-    state.counts[outcome]++
-    return
-  }
-  if (closed.outcome !== 'released' && closed.outcome !== 'absent') {
-    const ruling = decideRecordedRunSweep(closeFacts)
-    state.cleanupFailed ||= ruling.cleanupFailed
-    keep(`${r.id}  ${closed.outcome}: ${closed.detail}`, ruling.keepReason!)
-    if (ruling.presentationError)
-      presentation.error(`could not reclaim ${r.id}: ${ruling.presentationError}`)
-    return
+  if (closeRuling.action === "keep" || closeRuling.action === "fail") {
+    state.cleanupFailed ||= closeRuling.cleanupFailed;
+    keep(
+      `${r.id}  ${closed.outcome}: ${closed.detail}`,
+      closeRuling.keepReason,
+    );
+    if (closeRuling.action === "fail")
+      presentation.error(
+        `could not reclaim ${r.id}: ${closeRuling.presentationError}`,
+      );
+    return;
   }
 
-  const inventory = resourcesForConversation(r.id)
-  applyRecordedPostInventory(r, closeFacts, inventory, state, presentation)
+  const inventory = resourcesForConversation(r.id);
+  applyRecordedPostInventory(r, closed.outcome, inventory, state, presentation);
 }
 
 /**
@@ -385,14 +428,18 @@ function sweepRecordedRow(
  * is extracted before removal rather than used as a reason to keep the tree.
  */
 
-export async function sweepRuns(options: SweepOptions, helpers: SweepHelpers): Promise<void> {
-  const dry = options.dryRun
-  const projectName = options.project
-  const selectedProject = projectName === undefined ? null : projectByName(projectName)
+export async function sweepRuns(
+  options: SweepOptions,
+  helpers: SweepHelpers,
+): Promise<void> {
+  const dry = options.dryRun;
+  const projectName = options.project;
+  const selectedProject =
+    projectName === undefined ? null : projectByName(projectName);
   if (projectName !== undefined && !selectedProject)
-    throw new Error(`unknown project ${projectName}`)
-  const sweepProjects = selectedProject ? [selectedProject] : projects()
-  if (!dry) writableDb()
+    throw new Error(`unknown project ${projectName}`);
+  const sweepProjects = selectedProject ? [selectedProject] : projects();
+  if (!dry) writableDb();
   const rows = (
     db()
       .query(
@@ -407,28 +454,41 @@ export async function sweepRuns(options: SweepOptions, helpers: SweepHelpers): P
       .all() as SweepCandidate[]
   )
     .filter(shouldSweepHookTree)
-    .filter((row) => !selectedProject || projectAt(row.worktree)?.name === selectedProject.name)
+    .filter(
+      (row) =>
+        !selectedProject ||
+        projectAt(row.worktree)?.name === selectedProject.name,
+    );
 
-  const { removeFor, sweepWithTool } = await import('../worktree/worktree-remove.ts')
+  const { removeFor, sweepWithTool } =
+    await import("../worktree/worktree-remove.ts");
 
-  const closedCounts: ClosedSweepCounts = { released: 0, absent: 0, forgotten: 0 }
-  let cleanupFailed = false
-  const inventoryErrors = new Set<string>()
-  const leaked = new Map<string, { resource: DockerResource; project: string; runId: number }>()
-  const kept: { line: string; reason: string }[] = []
+  const closedCounts: ClosedSweepCounts = {
+    released: 0,
+    absent: 0,
+    forgotten: 0,
+  };
+  let cleanupFailed = false;
+  const inventoryErrors = new Set<string>();
+  const leaked = new Map<
+    string,
+    { resource: DockerResource; project: string; runId: number }
+  >();
+  const kept: { line: string; reason: string }[] = [];
   const keep = (line: string, reason: string) => {
-    kept.push({ line, reason })
-  }
+    kept.push({ line, reason });
+  };
   const recordedState: RecordedSweepState = {
     cleanupFailed,
     inventoryErrors,
     leaked,
     kept,
     counts: closedCounts,
-  }
-  sweepTerminalRunLeases(dry)
-  for (const r of rows) sweepRecordedRow(r, dry, recordedState, options.presentation)
-  cleanupFailed = recordedState.cleanupFailed
+  };
+  sweepTerminalRunLeases(dry);
+  for (const r of rows)
+    sweepRecordedRow(r, dry, recordedState, options.presentation);
+  cleanupFailed = recordedState.cleanupFailed;
 
   /**
    * DATABASE ROWS ARE NOT AN INVENTORY OF WHAT IS ON DISK.
@@ -441,102 +501,115 @@ export async function sweepRuns(options: SweepOptions, helpers: SweepHelpers): P
    */
   const remembered = new Set(
     (
-      db().query('SELECT worktree FROM run WHERE worktree IS NOT NULL').all() as {
-        worktree: string
+      db()
+        .query("SELECT worktree FROM run WHERE worktree IS NOT NULL")
+        .all() as {
+        worktree: string;
       }[]
-    ).map((r) => (existsSync(r.worktree) ? realpathSync(r.worktree) : r.worktree)),
-  )
+    ).map((r) =>
+      existsSync(r.worktree) ? realpathSync(r.worktree) : r.worktree,
+    ),
+  );
   for (const p of sweepProjects) {
-    const root = join(p.path, '.claude', 'worktrees')
-    if (!existsSync(root)) continue
+    const root = join(p.path, ".claude", "worktrees");
+    if (!existsSync(root)) continue;
     for (const entry of readdirSync(root, { withFileTypes: true })) {
-      if (!entry.isDirectory()) continue
-      const path = join(root, entry.name)
-      if (remembered.has(realpathSync(path))) continue
+      if (!entry.isDirectory()) continue;
+      const path = join(root, entry.name);
+      if (remembered.has(realpathSync(path))) continue;
 
-      const label = `orphan  ${path}`
-      const placeholderSafety = { removable: true, detail: '', branch: null }
-      const initialFacts: FilesystemOrphanSweepFacts = {
-        orchOwned: isOrchWorktree(path, p.settings.worktree?.branch),
-        alive: false,
-        safe: placeholderSafety,
-        dry: false,
-        phase: 'before',
-        sharers: 0,
-        lockedAlive: false,
-        removed: false,
-        ownershipRefusal: null,
-        ownershipWarning: null,
-        inventory: 'skipped',
-      }
-      const initialRuling = decideFilesystemOrphanSweep(initialFacts)
-      if (initialRuling.action === 'not-owned') {
-        keep(`${label}  ${initialRuling.keepLine}`, initialRuling.keepReason!)
-        continue
-      }
-      const named = namedRun(entry.name, p.settings.worktree?.branch, p)
-      const livenessRuling = decideFilesystemOrphanSweep({
-        ...initialFacts,
-        alive: Boolean(named?.alive),
-      })
-      if (livenessRuling.action === 'live') {
-        keep(`${label}  ${livenessRuling.keepLine}`, livenessRuling.keepReason!)
-        continue
-      }
+      const label = `orphan  ${path}`;
+      const named = namedRun(entry.name, p.settings.worktree?.branch, p);
       const trunk =
-        typeof p.settings.trunk === 'string' && p.settings.trunk.trim() ? p.settings.trunk : 'HEAD'
-      const safe = orphanSafety(path, p.path, trunk)
-      const beforeRuling = decideFilesystemOrphanSweep({ ...initialFacts, safe, dry })
-      if (beforeRuling.action === 'unsafe') {
-        keep(`${label}  ${beforeRuling.keepLine}`, beforeRuling.keepReason!)
-        continue
+        typeof p.settings.trunk === "string" && p.settings.trunk.trim()
+          ? p.settings.trunk
+          : "HEAD";
+      const safe = orphanSafety(path, p.path, trunk);
+      const eligibilityRuling = decideFilesystemOrphanEligibility({
+        orchOwned: isOrchWorktree(path, p.settings.worktree?.branch),
+        alive: Boolean(named?.alive),
+        safe,
+        dry,
+      });
+      if (eligibilityRuling.action === "keep") {
+        keep(
+          `${label}  ${eligibilityRuling.keepLine}`,
+          eligibilityRuling.keepReason,
+        );
+        continue;
       }
-      if (beforeRuling.action === 'would-reclaim') {
-        options.presentation.log(`would reclaim ${label}; ${safe.detail}`)
-        closedCounts.released++
-        continue
+      if (eligibilityRuling.action === "dry-would-reclaim") {
+        options.presentation.log(`would reclaim ${label}; ${safe.detail}`);
+        closedCounts.released++;
+        continue;
       }
 
-      const source = markedWorktreeSource(path)
+      const source = markedWorktreeSource(path);
       const w = {
         path,
         branch: safe.branch,
-        base: '',
+        base: "",
         repoRoot: p.path,
         source,
         mintedBranch: safe.branch,
-      }
-      const runId = orchRunId(entry.name)
+      };
+      const runId = orchRunId(entry.name);
       try {
         withCleanupLock(p.path, `sweep ${label}`, path, () => {
-          const ownerRow = { id: runId ?? -1, repo: p.name, branch: safe.branch }
-          const worktreeRow = { id: runId ?? -1, worktree: path }
-          const sharersBefore = liveWorktreeSharers(db(), worktreeRow)
-          const lockedRun = namedRun(entry.name, p.settings.worktree?.branch, p)
-          const lockedRuling = decideFilesystemOrphanSweep({
-            ...initialFacts,
-            safe,
+          const ownerRow = {
+            id: runId ?? -1,
+            repo: p.name,
+            branch: safe.branch,
+          };
+          const worktreeRow = { id: runId ?? -1, worktree: path };
+          const sharersBefore = liveWorktreeSharers(db(), worktreeRow);
+          const lockedRun = namedRun(
+            entry.name,
+            p.settings.worktree?.branch,
+            p,
+          );
+          const lockedRuling = decideFilesystemOrphanUnderLock({
             sharers: sharersBefore.length,
             lockedAlive: Boolean(lockedRun?.alive),
-          })
-          if (lockedRuling.action === 'shared-before') {
-            const owners = sharersBefore.map((owner) => `${owner.id} (${owner.status})`).join(', ')
-            cleanupFailed ||= lockedRuling.cleanupFailed
-            keep(`${label}  ${lockedRuling.keepLine}: ${owners}`, lockedRuling.keepReason!)
-            options.presentation.error(`could not reclaim ${label}: acquired by run(s) ${owners}`)
-            return
+          });
+          if (lockedRuling.action === "shared-before") {
+            const owners = sharersBefore
+              .map((owner) => `${owner.id} (${owner.status})`)
+              .join(", ");
+            cleanupFailed ||= lockedRuling.cleanupFailed;
+            keep(
+              `${label}  ${lockedRuling.keepLine}: ${owners}`,
+              lockedRuling.keepReason!,
+            );
+            options.presentation.error(
+              `could not reclaim ${label}: acquired by run(s) ${owners}`,
+            );
+            return;
           }
-          if (lockedRuling.action === 'live') {
-            keep(`${label}  ${lockedRuling.keepLine}`, lockedRuling.keepReason!)
-            return
+          if (lockedRuling.action === "live") {
+            keep(
+              `${label}  ${lockedRuling.keepLine}`,
+              lockedRuling.keepReason!,
+            );
+            return;
           }
-          const ownersBefore = evidenceOwningBranchOwners(ownerRow, p.path)
-          const snapshot = safe.branch ? branchTip(p.path, safe.branch) : null
-          const res = removeFor(w, p.path, false, ownersBefore.length > 0, runId ?? undefined)
-          const sharersAfter = liveWorktreeSharers(db(), worktreeRow)
-          const ownersAfter = evidenceOwningBranchOwners(ownerRow, p.path, snapshot)
-          let ownershipRefusal: string | null = null
-          let ownershipWarning: string | null = null
+          const ownersBefore = evidenceOwningBranchOwners(ownerRow, p.path);
+          const snapshot = safe.branch ? branchTip(p.path, safe.branch) : null;
+          const res = removeFor(
+            w,
+            p.path,
+            false,
+            ownersBefore.length > 0,
+            runId ?? undefined,
+          );
+          const sharersAfter = liveWorktreeSharers(db(), worktreeRow);
+          const ownersAfter = evidenceOwningBranchOwners(
+            ownerRow,
+            p.path,
+            snapshot,
+          );
+          let ownershipRefusal: string | null = null;
+          let ownershipWarning: string | null = null;
           if (safe.branch) {
             const outcome = verifyBranchOwnershipAfterCleanup(
               runId ?? -1,
@@ -545,88 +618,92 @@ export async function sweepRuns(options: SweepOptions, helpers: SweepHelpers): P
               snapshot,
               ownersBefore,
               ownersAfter,
-            )
-            ownershipRefusal = outcome.refusal
-            ownershipWarning = outcome.warning
+            );
+            ownershipRefusal = outcome.refusal;
+            ownershipWarning = outcome.warning;
           }
-          const afterFacts: FilesystemOrphanSweepFacts = {
-            ...initialFacts,
-            safe,
-            phase: 'after',
+          const afterRemoval = decideFilesystemOrphanAfterRemoval({
             sharers: sharersAfter.length,
             removed: res.removed,
+            removeDetail: res.detail,
             ownershipRefusal,
             ownershipWarning,
-          }
-          const afterRemoval = decideFilesystemOrphanSweep(afterFacts)
+          });
           if (afterRemoval.ownershipWarning)
-            options.presentation.error(`${label}: ${afterRemoval.ownershipWarning}`)
-          if (afterRemoval.action === 'removal-refused') {
-            cleanupFailed ||= afterRemoval.cleanupFailed
-            keep(`${label}  ${afterRemoval.keepLine}`, afterRemoval.keepReason!)
             options.presentation.error(
-              `could not reclaim ${label}: ${ownershipRefusal ?? res.detail}`,
-            )
-            return
+              `${label}: ${afterRemoval.ownershipWarning}`,
+            );
+          if (afterRemoval.action === "removal-refused") {
+            cleanupFailed ||= afterRemoval.cleanupFailed;
+            keep(
+              `${label}  ${afterRemoval.keepLine}`,
+              afterRemoval.keepReason!,
+            );
+            options.presentation.error(
+              `could not reclaim ${label}: ${afterRemoval.error}`,
+            );
+            return;
           }
-          if (afterRemoval.action === 'shared-after') {
-            const owners = sharersAfter.map((owner) => `${owner.id} (${owner.status})`).join(', ')
-            cleanupFailed ||= afterRemoval.cleanupFailed
-            keep(`${label}  ${afterRemoval.keepLine}: ${owners}`, afterRemoval.keepReason!)
+          if (afterRemoval.action === "shared-after") {
+            const owners = sharersAfter
+              .map((owner) => `${owner.id} (${owner.status})`)
+              .join(", ");
+            cleanupFailed ||= afterRemoval.cleanupFailed;
+            keep(
+              `${label}  ${afterRemoval.keepLine}: ${owners}`,
+              afterRemoval.keepReason!,
+            );
             options.presentation.error(
               `could not reclaim ${label}: acquired during cleanup by run(s) ${owners}`,
-            )
-            return
+            );
+            return;
           }
           const inventory =
             runId === null
               ? { ascertainable: true as const, resources: [] }
-              : resourcesForConversation(runId)
-          const inventoryFact: FilesystemOrphanSweepFacts['inventory'] =
-            runId === null
-              ? 'skipped'
-              : !inventory.ascertainable
-                ? 'unavailable'
-                : inventory.resources.length
-                  ? 'leaked'
-                  : 'empty'
-          const finalRuling = decideFilesystemOrphanSweep({
-            ...afterFacts,
+              : resourcesForConversation(runId);
+          const inventoryFact = !inventory.ascertainable
+            ? ("unavailable" as const)
+            : inventory.resources.length
+              ? ("leaked" as const)
+              : ("empty" as const);
+          const finalRuling = decideFilesystemOrphanAfterInventory({
+            runIdPresent: runId !== null,
             inventory: inventoryFact,
-          })
-          cleanupFailed ||= finalRuling.cleanupFailed
+          });
+          cleanupFailed ||= finalRuling.cleanupFailed;
           if (!inventory.ascertainable) {
-            inventoryErrors.add(inventory.reason)
-            keep(`${label}  ${finalRuling.keepLine}`, finalRuling.keepReason!)
-            return
+            inventoryErrors.add(inventory.reason);
+            keep(`${label}  ${finalRuling.keepLine}`, finalRuling.keepReason!);
+            return;
           }
-          const left = inventory.resources
-          if (finalRuling.action === 'leaked') {
+          const left = inventory.resources;
+          if (finalRuling.action === "leaked") {
             for (const resource of left)
               leaked.set(`${resource.kind}:${resource.name}`, {
                 resource,
                 project: p.name,
                 runId: resource.runId,
-              })
-            keep(`${label}  ${finalRuling.keepLine}`, finalRuling.keepReason!)
+              });
+            keep(`${label}  ${finalRuling.keepLine}`, finalRuling.keepReason!);
           } else {
-            options.presentation.log(`reclaimed ${label}  ${res.detail}`)
-            if (res.output) options.presentation.log(res.output)
-            const owner = ownersAfter[0] ?? ownersBefore[0] ?? null
+            options.presentation.log(`reclaimed ${label}  ${res.detail}`);
+            if (res.output) options.presentation.log(res.output);
+            const owner = ownersAfter[0] ?? ownersBefore[0] ?? null;
             if (owner && safe.branch) {
               options.presentation.log(
                 `branch ${safe.branch} left because run ${owner.id} records it`,
-              )
+              );
             }
-            closedCounts.released++
+            closedCounts.released++;
           }
-        })
+        });
       } catch (error) {
-        cleanupFailed = true
-        keep(`${label}  removal refused`, 'removal refused')
+        cleanupFailed = true;
+        keep(`${label}  removal refused`, "removal refused");
         options.presentation.error(
           `could not reclaim ${label}: ${error instanceof Error ? error.message : String(error)}`,
-        )
+        );
       }
     }
   }
@@ -642,49 +719,58 @@ export async function sweepRuns(options: SweepOptions, helpers: SweepHelpers): P
    */
   if (!dry) {
     for (const p of sweepProjects) {
-      const tool = p.settings.worktree
-      if (!tool?.sweep) continue
-      let result: ReturnType<typeof sweepWithTool>
+      const tool = p.settings.worktree;
+      if (!tool?.sweep) continue;
+      let result: ReturnType<typeof sweepWithTool>;
       try {
-        result = withCleanupLock(p.path, `project sweep for ${p.name}`, null, () =>
-          sweepWithTool(tool, p.path),
-        )
+        result = withCleanupLock(
+          p.path,
+          `project sweep for ${p.name}`,
+          null,
+          () => sweepWithTool(tool, p.path),
+        );
       } catch (error) {
-        cleanupFailed = true
+        cleanupFailed = true;
         options.presentation.error(
           `project ${p.name} sweep failed: ${error instanceof Error ? error.message : String(error)}`,
-        )
-        continue
+        );
+        continue;
       }
-      if (!result) continue
+      if (!result) continue;
       if (result.out.trim()) {
-        const lines = result.out.trim().split('\n')
-        const omitted = Math.max(0, lines.length - 8)
-        options.presentation.log(`\n${p.name} sweep:\n${lines.slice(-8).join('\n')}`)
+        const lines = result.out.trim().split("\n");
+        const omitted = Math.max(0, lines.length - 8);
+        options.presentation.log(
+          `\n${p.name} sweep:\n${lines.slice(-8).join("\n")}`,
+        );
         if (omitted) {
-          options.presentation.log(`  (${omitted} earlier line${omitted === 1 ? '' : 's'} omitted)`)
+          options.presentation.log(
+            `  (${omitted} earlier line${omitted === 1 ? "" : "s"} omitted)`,
+          );
         }
       }
       if (!result.ok) {
-        cleanupFailed = true
+        cleanupFailed = true;
         options.presentation.error(
-          `project ${p.name} sweep failed with exit status ${result.exitCode ?? 'unknown'}`,
-        )
+          `project ${p.name} sweep failed with exit status ${result.exitCode ?? "unknown"}`,
+        );
       }
     }
   }
 
   const trustRuns = db()
-    .query('SELECT id, mcp_trust_path FROM run WHERE mcp_trust_path IS NOT NULL ORDER BY id')
-    .all() as { id: number; mcp_trust_path: string }[]
-  const trustOwners = new Map<string, number>()
+    .query(
+      "SELECT id, mcp_trust_path FROM run WHERE mcp_trust_path IS NOT NULL ORDER BY id",
+    )
+    .all() as { id: number; mcp_trust_path: string }[];
+  const trustOwners = new Map<string, number>();
   for (const run of trustRuns) {
     try {
-      const headings = JSON.parse(run.mcp_trust_path) as unknown
-      if (!Array.isArray(headings)) continue
+      const headings = JSON.parse(run.mcp_trust_path) as unknown;
+      if (!Array.isArray(headings)) continue;
       for (const heading of headings) {
-        if (typeof heading === 'string' && !trustOwners.has(heading)) {
-          trustOwners.set(heading, run.id)
+        if (typeof heading === "string" && !trustOwners.has(heading)) {
+          trustOwners.set(heading, run.id);
         }
       }
     } catch {
@@ -692,81 +778,87 @@ export async function sweepRuns(options: SweepOptions, helpers: SweepHelpers): P
     }
   }
   for (const heading of helpers.grokTrustHeadings()) {
-    const path = helpers.grokTrustPathFromHeading(heading)
-    if (!path || existsSync(path)) continue
+    const path = helpers.grokTrustPathFromHeading(heading);
+    if (!path || existsSync(path)) continue;
     if (
       selectedProject &&
       path !== selectedProject.path &&
       !path.startsWith(`${selectedProject.path}/`)
     )
-      continue
-    const runId = trustOwners.get(heading)
+      continue;
+    const runId = trustOwners.get(heading);
     options.presentation.log(
-      `grok trust entry for absent path ${path}${runId ? ` (run ${runId})` : ''}; prune by hand`,
-    )
+      `grok trust entry for absent path ${path}${runId ? ` (run ${runId})` : ""}; prune by hand`,
+    );
   }
 
   // Inventory is a read, so dry-run performs it too. A preview that omits
   // already-leaked infrastructure is materially cleaner than the real run.
-  const inventory = dockerRunResources()
+  const inventory = dockerRunResources();
   if (!inventory.ascertainable) {
-    inventoryErrors.add(inventory.reason)
-    cleanupFailed = true
+    inventoryErrors.add(inventory.reason);
+    cleanupFailed = true;
   }
-  const inventoryResources = inventory.ascertainable ? inventory.resources : []
-  const inventoryOwnerIds = new Set(inventoryResources.map(({ runId }) => runId))
+  const inventoryResources = inventory.ascertainable ? inventory.resources : [];
+  const inventoryOwnerIds = new Set(
+    inventoryResources.map(({ runId }) => runId),
+  );
   const owners = (
-    db().query('SELECT id, repo, worktree, status FROM run').all() as {
-      id: number
-      repo: string | null
-      worktree: string | null
-      status: string
+    db().query("SELECT id, repo, worktree, status FROM run").all() as {
+      id: number;
+      repo: string | null;
+      worktree: string | null;
+      status: string;
     }[]
   ).map((owner) => ({
     ...owner,
     retentionReason: inventoryOwnerIds.has(owner.id)
       ? terminalDockerRetentionReasonForRun(db(), owner.id)
       : null,
-  }))
-  const classified = classifiedDockerResources(inventoryResources, owners).filter(
-    (item) => !selectedProject || item.project === selectedProject.name,
-  )
+  }));
+  const classified = classifiedDockerResources(
+    inventoryResources,
+    owners,
+  ).filter((item) => !selectedProject || item.project === selectedProject.name);
   for (const { resource, project, condition } of classified) {
-    if (condition === 'retained-worktree-resources') continue
-    const key = `${resource.kind}:${resource.name}`
-    if (!leaked.has(key)) leaked.set(key, { resource, project, runId: resource.runId })
+    if (condition === "retained-worktree-resources") continue;
+    const key = `${resource.kind}:${resource.name}`;
+    if (!leaked.has(key))
+      leaked.set(key, { resource, project, runId: resource.runId });
   }
-  const retained = classified.filter(({ condition }) => condition === 'retained-worktree-resources')
+  const retained = classified.filter(
+    ({ condition }) => condition === "retained-worktree-resources",
+  );
   if (retained.length) {
     options.presentation.error(
-      `\n${dry ? 'would report ' : ''}retained worktree Docker resources: ${retained.length}`,
-    )
+      `\n${dry ? "would report " : ""}retained worktree Docker resources: ${retained.length}`,
+    );
     for (const { resource, project, reason } of retained) {
       options.presentation.error(
-        `  ${resource.kind} ${resource.name} re-served or retained by project ${project} (run ${resource.runId}); ${reason ? `removal could not be ascertained: ${reason}; ` : ''}no removal suggested`,
-      )
+        `  ${resource.kind} ${resource.name} re-served or retained by project ${project} (run ${resource.runId}); ${reason ? `removal could not be ascertained: ${reason}; ` : ""}no removal suggested`,
+      );
     }
   }
   if (leaked.size) {
-    cleanupFailed = true
+    cleanupFailed = true;
     options.presentation.error(
-      `\n${dry ? 'would report ' : ''}leaked Docker resources: ${leaked.size}`,
-    )
+      `\n${dry ? "would report " : ""}leaked Docker resources: ${leaked.size}`,
+    );
     for (const { resource, project } of leaked.values()) {
       options.presentation.error(
-        `  ${dry ? 'would report ' : ''}${leakedResourceLines([resource], project)[0]}`,
-      )
+        `  ${dry ? "would report " : ""}${leakedResourceLines([resource], project)[0]}`,
+      );
     }
   }
   if (inventoryErrors.size) {
     options.presentation.error(
-      `\n${dry ? 'would report ' : ''}inventory unavailable: ${inventoryErrors.size}`,
-    )
+      `\n${dry ? "would report " : ""}inventory unavailable: ${inventoryErrors.size}`,
+    );
     for (const error of inventoryErrors)
-      options.presentation.error(`  ${dry ? 'would report ' : ''}${error}`)
+      options.presentation.error(`  ${dry ? "would report " : ""}${error}`);
   }
 
-  const sandboxCounts = sweepSandboxDirectories(dry, options.presentation)
+  const sandboxCounts = sweepSandboxDirectories(dry, options.presentation);
 
   printSweepKept(
     closedCounts.released,
@@ -777,7 +869,7 @@ export async function sweepRuns(options: SweepOptions, helpers: SweepHelpers): P
     options.force,
     options.presentation,
     sandboxCounts,
-  )
-  if (cleanupFailed) options.presentation.setExitCode(1)
-  return
+  );
+  if (cleanupFailed) options.presentation.setExitCode(1);
+  return;
 }
