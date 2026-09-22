@@ -7,19 +7,24 @@ import type { Project } from '../project/projects.ts'
 export const GH_MERGED_PR_LIMIT = 1000
 export const GH_TARGETED_MERGED_PR_LIMIT = 100
 
-export type MergedPullRequest = {
+export type GitHubPullRequest = {
   number: number
+  state: 'OPEN' | 'CLOSED' | 'MERGED'
   headRefName: string
   headRefOid: string
   title: string
   mergeCommit: { oid: string } | null
-  mergedAt: string
+  mergedAt: string | null
 }
+
+export type MergedPullRequest = GitHubPullRequest & { state: 'MERGED'; mergedAt: string }
 
 export type PullRequestCommitCheck = { number: number } | { error: string } | null
 
-export type PullRequestNameCheck =
-  | { pullRequest: MergedPullRequest; containsTip: boolean }
+type PullRequestHead = Pick<GitHubPullRequest, 'number' | 'headRefName' | 'headRefOid'>
+
+export type PullRequestNameCheck<T extends PullRequestHead = MergedPullRequest> =
+  | { pullRequest: T; containsTip: boolean }
   | { error: string }
   | null
 
@@ -49,16 +54,13 @@ function git(cwd: string, ...args: string[]): string {
   return command(cwd, ['git', ...args], `git ${args.join(' ')}`)
 }
 
-function isMergedPullRequest(value: unknown): value is MergedPullRequest {
-  if (!value || typeof value !== 'object') return false
-  const row = value as Record<string, unknown>
+function hasPullRequestFields(row: Record<string, unknown>): boolean {
   const mergeCommit = row.mergeCommit
   return (
     Number.isInteger(row.number) &&
     typeof row.headRefName === 'string' &&
     typeof row.headRefOid === 'string' &&
     typeof row.title === 'string' &&
-    typeof row.mergedAt === 'string' &&
     (mergeCommit === null ||
       (typeof mergeCommit === 'object' &&
         mergeCommit !== null &&
@@ -66,64 +68,110 @@ function isMergedPullRequest(value: unknown): value is MergedPullRequest {
   )
 }
 
-export type MergedPullRequestListing = {
-  pullRequests: MergedPullRequest[]
+function isGitHubPullRequest(value: unknown): value is GitHubPullRequest {
+  if (!value || typeof value !== 'object') return false
+  const row = value as Record<string, unknown>
+  return (
+    hasPullRequestFields(row) &&
+    (row.state === 'OPEN' || row.state === 'CLOSED' || row.state === 'MERGED') &&
+    (typeof row.mergedAt === 'string' || row.mergedAt === null)
+  )
+}
+
+export type PullRequestListing<T extends GitHubPullRequest = GitHubPullRequest> = {
+  pullRequests: T[]
   truncated: boolean
 }
 
 /** Validate and classify one GitHub listing at its caller-selected limit. */
-export function mergedPullRequestListing(value: unknown, limit: number): MergedPullRequestListing {
-  if (!Array.isArray(value) || !value.every(isMergedPullRequest)) {
-    throw new Error('merged pull-request listing returned an unexpected JSON shape')
+export function pullRequestListing(value: unknown, limit: number): PullRequestListing {
+  if (!Array.isArray(value) || !value.every(isGitHubPullRequest)) {
+    throw new Error('pull-request listing returned an unexpected JSON shape')
   }
   return { pullRequests: value, truncated: value.length === limit }
 }
 
-function listMergedPullRequests(
+function listPullRequests(
   project: Project,
   filters: readonly string[],
   limit: number,
-): MergedPullRequestListing {
+  state: 'merged',
+  json: string,
+): PullRequestListing<MergedPullRequest>
+function listPullRequests(
+  project: Project,
+  filters: readonly string[],
+  limit: number,
+  state: 'all',
+  json: string,
+): PullRequestListing
+function listPullRequests(
+  project: Project,
+  filters: readonly string[],
+  limit: number,
+  state: 'all' | 'merged',
+  json: string,
+): PullRequestListing {
   const output = command(
     project.path,
-    [
-      'gh',
-      'pr',
-      'list',
-      '--state',
-      'merged',
-      ...filters,
-      '--limit',
-      String(limit),
-      '--json',
-      'number,headRefName,headRefOid,title,mergeCommit,mergedAt',
-    ],
-    'merged pull-request listing',
+    ['gh', 'pr', 'list', '--state', state, ...filters, '--limit', String(limit), '--json', json],
+    'pull-request listing',
   )
   let value: unknown
   try {
     value = JSON.parse(output || '[]')
   } catch (error) {
     throw new Error(
-      `merged pull-request listing returned invalid JSON: ${error instanceof Error ? error.message : String(error)}`,
+      `pull-request listing returned invalid JSON: ${error instanceof Error ? error.message : String(error)}`,
     )
   }
-  return mergedPullRequestListing(value, limit)
+  const listing = pullRequestListing(value, limit)
+  if (
+    state === 'merged' &&
+    listing.pullRequests.some(
+      (pullRequest) => pullRequest.state !== 'MERGED' || pullRequest.mergedAt === null,
+    )
+  ) {
+    throw new Error('pull-request listing returned a non-merged row for --state merged')
+  }
+  return listing as PullRequestListing<MergedPullRequest>
 }
 
-export function mergedPullRequests(project: Project): MergedPullRequestListing {
-  return listMergedPullRequests(project, [], GH_MERGED_PR_LIMIT)
+const PULL_REQUEST_JSON = 'number,state,headRefName,headRefOid,title,mergeCommit,mergedAt'
+
+export function mergedPullRequests(project: Project): PullRequestListing<MergedPullRequest> {
+  return listPullRequests(project, [], GH_MERGED_PR_LIMIT, 'merged', PULL_REQUEST_JSON)
 }
 
 export function targetedMergedPullRequests(
   project: Project,
   filter: { head: string } | { search: string },
-): MergedPullRequestListing {
+): PullRequestListing<MergedPullRequest> {
   const filters = 'head' in filter ? ['--head', filter.head] : ['--search', filter.search]
-  return listMergedPullRequests(project, filters, GH_TARGETED_MERGED_PR_LIMIT)
+  return listPullRequests(
+    project,
+    filters,
+    GH_TARGETED_MERGED_PR_LIMIT,
+    'merged',
+    PULL_REQUEST_JSON,
+  )
 }
 
-function fetchPullRequest(project: Project, pullRequest: MergedPullRequest): string | null {
+/** List every pull-request state for one exact head branch. */
+export function targetedTaskBranchPullRequests(
+  project: Project,
+  branch: string,
+): PullRequestListing {
+  return listPullRequests(
+    project,
+    ['--head', branch],
+    GH_TARGETED_MERGED_PR_LIMIT,
+    'all',
+    PULL_REQUEST_JSON,
+  )
+}
+
+function fetchPullRequest(project: Project, pullRequest: PullRequestHead): string | null {
   try {
     git(
       project.path,
@@ -153,7 +201,7 @@ function fetchPullRequest(project: Project, pullRequest: MergedPullRequest): str
 
 function fetchPullRequestCached(
   project: Project,
-  pullRequest: MergedPullRequest,
+  pullRequest: PullRequestHead,
   fetched: Map<number, string | null>,
 ): string | null {
   let failure = fetched.get(pullRequest.number)
@@ -189,15 +237,15 @@ export function pullRequestCommitCheck(
   return failure ? { error: failure } : null
 }
 
-export function pullRequestNameCheck(
+export function pullRequestNameCheck<T extends PullRequestHead>(
   project: Project,
-  pullRequests: readonly MergedPullRequest[],
+  pullRequests: readonly T[],
   branch: string,
   branchTip: string,
   fetched: Map<number, string | null>,
-): PullRequestNameCheck {
+): PullRequestNameCheck<T> {
   let failure: string | null = null
-  let mismatch: MergedPullRequest | null = null
+  let mismatch: T | null = null
   for (const pullRequest of pullRequests.filter((candidate) => candidate.headRefName === branch)) {
     const fetchFailure = fetchPullRequestCached(project, pullRequest, fetched)
     if (fetchFailure) {

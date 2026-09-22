@@ -9,6 +9,7 @@ import {
 
 const pullRequest: MergedPullRequest = {
   number: 42,
+  state: 'MERGED',
   headRefName: 'feature/DEV-616-report',
   headRefOid: 'def456',
   title: 'DEV-616: report branches',

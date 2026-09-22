@@ -1,8 +1,8 @@
 import { describe, expect, test } from 'bun:test'
 import {
   GH_TARGETED_MERGED_PR_LIMIT,
-  type MergedPullRequest,
-  mergedPullRequestListing,
+  type GitHubPullRequest,
+  pullRequestListing,
 } from './merged-pull-request.ts'
 import {
   decideTaskBranchLanding,
@@ -10,6 +10,7 @@ import {
   isTaskBranchSuperseded,
   type TaskBranchRunRow,
   taskBranchLandingRefusalMessage,
+  taskBranchReuseNotice,
 } from './task-branch.ts'
 
 const row = (
@@ -109,6 +110,7 @@ describe('task branch landing decision', () => {
     })
     expect(refusal).toEqual({
       action: 'refuse',
+      cause: 'unknown',
       reason: 'merged PR listing was truncated',
       branch: 'DEV-650-orch-4390',
       tip: '6347bc9a',
@@ -118,10 +120,29 @@ describe('task branch landing decision', () => {
     expect(message).toContain('--base DEV-650-orch-4390')
     expect(message).toContain('--base develop')
   })
+
+  test('closed-unmerged state refuses and names the pull request and both remedies', () => {
+    const refusal = decideTaskBranchLanding({
+      ...landingInput,
+      pullRequestCheck: { state: 'closed-unmerged', number: 413 },
+    })
+    expect(refusal).toEqual({
+      action: 'refuse',
+      cause: 'closed-unmerged',
+      pullRequest: 413,
+      branch: 'DEV-650-orch-4390',
+      tip: '6347bc9a',
+    })
+    if (refusal.action !== 'refuse') throw new Error('expected refusal')
+    expect(taskBranchLandingRefusalMessage(refusal, 'develop')).toBe(
+      'refusing task branch DEV-650-orch-4390 tip 6347bc9a: pull request #413 was closed without merge; rerun with --base DEV-650-orch-4390 to continue from its content, or --base develop to start over',
+    )
+  })
 })
 
-const pullRequest = (number: number): MergedPullRequest => ({
+const pullRequest = (number: number): GitHubPullRequest => ({
   number,
+  state: 'MERGED',
   headRefName: `feature-${number}`,
   headRefOid: `oid-${number}`,
   title: `PR ${number}`,
@@ -130,16 +151,23 @@ const pullRequest = (number: number): MergedPullRequest => ({
 })
 
 const listing = (count: number) =>
-  mergedPullRequestListing(
+  pullRequestListing(
     Array.from({ length: count }, (_, index) => pullRequest(index)),
     GH_TARGETED_MERGED_PR_LIMIT,
   )
+
+const taskPullRequest = (number: number, state: GitHubPullRequest['state']): GitHubPullRequest => ({
+  ...pullRequest(number),
+  state,
+  mergedAt: state === 'MERGED' ? '2026-09-18T00:00:00Z' : null,
+})
 
 describe('targeted task branch pull-request decision', () => {
   test('truncation-guard mutation: exactly the targeted limit remains unknown', () => {
     expect(
       decideTaskBranchPullRequestCheck({
-        listings: [listing(GH_TARGETED_MERGED_PR_LIMIT), listing(0)],
+        nameListing: listing(GH_TARGETED_MERGED_PR_LIMIT),
+        commitListing: listing(0),
         nameCheck: null,
         commitCheck: null,
       }),
@@ -152,10 +180,69 @@ describe('targeted task branch pull-request decision', () => {
   test('overconservative-truncation mutation: fewer than the targeted limit is decided', () => {
     expect(
       decideTaskBranchPullRequestCheck({
-        listings: [listing(GH_TARGETED_MERGED_PR_LIMIT - 1), listing(0)],
+        nameListing: listing(GH_TARGETED_MERGED_PR_LIMIT - 1),
+        commitListing: listing(0),
         nameCheck: null,
         commitCheck: null,
       }),
     ).toEqual({ state: 'unmatched' })
   })
+
+  test('closed-only head is withdrawn', () => {
+    expect(
+      decideTaskBranchPullRequestCheck({
+        nameListing: { pullRequests: [taskPullRequest(413, 'CLOSED')], truncated: false },
+        commitListing: listing(0),
+        nameCheck: null,
+        commitCheck: null,
+      }),
+    ).toEqual({ state: 'closed-unmerged', number: 413 })
+  })
+
+  test('an open pull request keeps a head even when another pull request was closed', () => {
+    expect(
+      decideTaskBranchPullRequestCheck({
+        nameListing: {
+          pullRequests: [taskPullRequest(413, 'CLOSED'), taskPullRequest(414, 'OPEN')],
+          truncated: false,
+        },
+        commitListing: listing(0),
+        nameCheck: null,
+        commitCheck: null,
+      }),
+    ).toEqual({ state: 'unmatched' })
+  })
+
+  test('a merged containing pull request takes precedence over open and closed pull requests', () => {
+    const merged = taskPullRequest(415, 'MERGED')
+    expect(
+      decideTaskBranchPullRequestCheck({
+        nameListing: {
+          pullRequests: [taskPullRequest(413, 'CLOSED'), taskPullRequest(414, 'OPEN'), merged],
+          truncated: false,
+        },
+        commitListing: listing(0),
+        nameCheck: { pullRequest: merged, containsTip: true },
+        commitCheck: null,
+      }),
+    ).toEqual({ state: 'landed', landedBy: 'name', number: 415 })
+  })
+})
+
+test('task branch reuse notice names branch, tip, contributing runs, and start-over base', () => {
+  expect(
+    taskBranchReuseNotice({
+      branch: 'DEV-832-orch-5186',
+      tip: 'abc123',
+      commitCount: 2,
+      mergeBase: 'def456',
+      projectId: 1,
+      projectName: 'project',
+      runIds: [5186, 5190],
+      trunk: 'main',
+      worktree: null,
+    }),
+  ).toBe(
+    '! continuing task branch DEV-832-orch-5186 at tip abc123 (runs 5186, 5190); use --base main to start over',
+  )
 })

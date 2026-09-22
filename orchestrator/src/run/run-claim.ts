@@ -84,6 +84,14 @@ type RecreateResumeTreePlan = Extract<
   { action: 'recreate-on-branch' | 'recreate-then-restore' }
 >
 
+function taskBranchResolution(
+  supplied: TaskBranchCandidate | null | undefined,
+  callerCwd: string,
+  key: string,
+): TaskBranchCandidate | null {
+  return supplied !== undefined ? supplied : resolveTaskBranch(callerCwd, key)
+}
+
 function prepareResumeBranchIfNeeded(
   repoRoot: string,
   plan: RecreateResumeTreePlan | undefined,
@@ -148,6 +156,7 @@ type ClaimOptions = {
   cwd?: string
   launchCwd?: string
   base?: string
+  resolvedTaskBranch?: TaskBranchCandidate | null
   carry?: boolean
   resume?: {
     parent: number
@@ -339,7 +348,11 @@ export async function claimRun(input: ClaimInput): Promise<ClaimResult> {
       hasExplicitBase: opts.base !== undefined,
     })
   ) {
-    resolvedTaskBranch = resolveTaskBranch(callerCwd, attachableTaskKey!)
+    resolvedTaskBranch = taskBranchResolution(
+      opts.resolvedTaskBranch,
+      callerCwd,
+      attachableTaskKey!,
+    )
     if (resolvedTaskBranch && !resolvedTaskBranch.worktree && worktreeTool?.create) {
       // A command-backed declaration cannot attach an existing ref; it retains
       // the prior new-branch behaviour instead.

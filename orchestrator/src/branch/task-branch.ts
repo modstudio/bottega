@@ -14,12 +14,15 @@ import type { Worktree } from '../worktree/worktree-types.ts'
 import { type PatchEquivalentForm, pullRequestCarriesKey } from './branch-state.ts'
 import {
   GH_TARGETED_MERGED_PR_LIMIT,
-  type MergedPullRequestListing,
+  type GitHubPullRequest,
+  type MergedPullRequest,
   type PullRequestCommitCheck,
+  type PullRequestListing,
   type PullRequestNameCheck,
   pullRequestCommitCheck,
   pullRequestNameCheck,
   targetedMergedPullRequests,
+  targetedTaskBranchPullRequests,
 } from './merged-pull-request.ts'
 
 export type TaskBranchCandidate = {
@@ -30,6 +33,7 @@ export type TaskBranchCandidate = {
   projectId: number
   projectName: string
   runIds: number[]
+  trunk: string
   worktree: Worktree | null
 }
 
@@ -42,13 +46,21 @@ export type TaskBranchRunRow = {
 
 export type TaskBranchPullRequestCheck =
   | { state: 'landed'; landedBy: 'name' | 'pr-commits'; number: number }
+  | { state: 'closed-unmerged'; number: number }
   | { state: 'unmatched' }
   | { state: 'unknown'; reason: string }
 
 export type TaskBranchLandingDecision =
   | { action: 'skip'; number?: number }
   | { action: 'keep' }
-  | { action: 'refuse'; reason: string; branch: string; tip: string }
+  | { action: 'refuse'; cause: 'unknown'; reason: string; branch: string; tip: string }
+  | {
+      action: 'refuse'
+      cause: 'closed-unmerged'
+      pullRequest: number
+      branch: string
+      tip: string
+    }
 
 export type TaskBranchLandingRefusal = Extract<TaskBranchLandingDecision, { action: 'refuse' }>
 
@@ -66,9 +78,13 @@ export function taskBranchLandingRefusalMessage(
   refusal: TaskBranchLandingRefusal,
   trunk: string,
 ): string {
+  const reason =
+    refusal.cause === 'closed-unmerged'
+      ? `pull request #${refusal.pullRequest} was closed without merge`
+      : `GitHub landing check could not complete: ${refusal.reason}`
   return (
     `refusing task branch ${refusal.branch} tip ${refusal.tip}: ` +
-    `GitHub landing check could not complete: ${refusal.reason}; ` +
+    `${reason}; ` +
     `rerun with --base ${refusal.branch} to continue from its content, ` +
     `or --base ${trunk} to start over`
   )
@@ -88,7 +104,17 @@ export function decideTaskBranchLanding(input: {
   if (input.pullRequestCheck.state === 'unknown') {
     return {
       action: 'refuse',
+      cause: 'unknown',
       reason: input.pullRequestCheck.reason,
+      branch: input.branch,
+      tip: input.tip,
+    }
+  }
+  if (input.pullRequestCheck.state === 'closed-unmerged') {
+    return {
+      action: 'refuse',
+      cause: 'closed-unmerged',
+      pullRequest: input.pullRequestCheck.number,
       branch: input.branch,
       tip: input.tip,
     }
@@ -98,8 +124,9 @@ export function decideTaskBranchLanding(input: {
 
 /** Decide the targeted GitHub evidence without performing either listing or Git check. */
 export function decideTaskBranchPullRequestCheck(input: {
-  listings: readonly MergedPullRequestListing[]
-  nameCheck: PullRequestNameCheck
+  nameListing: PullRequestListing
+  commitListing: PullRequestListing
+  nameCheck: PullRequestNameCheck<GitHubPullRequest>
   commitCheck: PullRequestCommitCheck
 }): TaskBranchPullRequestCheck {
   if (input.nameCheck && 'error' in input.nameCheck) {
@@ -114,13 +141,25 @@ export function decideTaskBranchPullRequestCheck(input: {
   if (input.commitCheck && 'number' in input.commitCheck) {
     return { state: 'landed', landedBy: 'pr-commits', number: input.commitCheck.number }
   }
-  if (input.listings.some((listing) => listing.truncated)) {
+  if (input.nameListing.truncated || input.commitListing.truncated) {
     return {
       state: 'unknown',
       reason:
         `targeted merged pull-request listing reached ${GH_TARGETED_MERGED_PR_LIMIT} entries ` +
         'and may be truncated',
     }
+  }
+  if (input.nameListing.pullRequests.some((pullRequest) => pullRequest.state === 'OPEN')) {
+    return { state: 'unmatched' }
+  }
+  const closed = input.nameListing.pullRequests.find(
+    (pullRequest) => pullRequest.state === 'CLOSED',
+  )
+  if (
+    closed &&
+    input.nameListing.pullRequests.every((pullRequest) => pullRequest.state === 'CLOSED')
+  ) {
+    return { state: 'closed-unmerged', number: closed.number }
   }
   return { state: 'unmatched' }
 }
@@ -132,31 +171,30 @@ function taskBranchPullRequestCheck(input: {
   branch: string
   tip: string
 }): TaskBranchPullRequestCheck {
-  let nameListing: MergedPullRequestListing
-  let commitListing: MergedPullRequestListing
+  let nameListing: ReturnType<typeof targetedTaskBranchPullRequests>
+  let commitListing: PullRequestListing<MergedPullRequest>
   try {
-    nameListing = targetedMergedPullRequests(input.project, { head: input.branch })
+    nameListing = targetedTaskBranchPullRequests(input.project, input.branch)
     commitListing = targetedMergedPullRequests(input.project, { search: input.launchKey })
   } catch (error) {
     return { state: 'unknown', reason: error instanceof Error ? error.message : String(error) }
   }
-  const namePullRequests = nameListing.pullRequests.sort((left, right) =>
-    right.mergedAt.localeCompare(left.mergedAt),
-  )
+  const namePullRequests = nameListing.pullRequests
   const commitPullRequests = commitListing.pullRequests.sort((left, right) =>
-    right.mergedAt.localeCompare(left.mergedAt),
+    (right.mergedAt ?? '').localeCompare(left.mergedAt ?? ''),
   )
   const fetched = new Map<number, string | null>()
   const nameCheck = pullRequestNameCheck(
     input.project,
-    namePullRequests,
+    namePullRequests.filter((pullRequest) => pullRequest.state === 'MERGED'),
     input.branch,
     input.tip,
     fetched,
   )
   if ((nameCheck && 'error' in nameCheck) || nameCheck?.containsTip) {
     return decideTaskBranchPullRequestCheck({
-      listings: [nameListing, commitListing],
+      nameListing,
+      commitListing,
       nameCheck,
       commitCheck: null,
     })
@@ -168,7 +206,8 @@ function taskBranchPullRequestCheck(input: {
     fetched,
   )
   return decideTaskBranchPullRequestCheck({
-    listings: [nameListing, commitListing],
+    nameListing,
+    commitListing,
     nameCheck,
     commitCheck,
   })
@@ -366,6 +405,7 @@ export function resolveTaskBranch(cwd: string, launchKey: string): TaskBranchCan
       projectId: project.id,
       projectName: project.name,
       runIds: branchRows.map((row) => row.id),
+      trunk,
       worktree: path
         ? {
             path,
@@ -408,5 +448,13 @@ export function resolveTaskBranch(cwd: string, launchKey: string): TaskBranchCan
       `${detail}\n` +
       `invariant: A task owns one branch.\n` +
       `Clear the ambiguity by choosing one branch and voiding the candidate runs behind the others:\n${commands}`,
+  )
+}
+
+/** Compose the dispatch notice for deliberate reuse of an unlanded task branch. */
+export function taskBranchReuseNotice(candidate: TaskBranchCandidate): string {
+  return (
+    `! continuing task branch ${candidate.branch} at tip ${candidate.tip} ` +
+    `(runs ${candidate.runIds.join(', ')}); use --base ${candidate.trunk} to start over`
   )
 }

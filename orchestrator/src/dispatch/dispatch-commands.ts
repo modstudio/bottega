@@ -40,6 +40,11 @@ type DispatchPresentation = {
   validateSchema(path: string): unknown
   warnCallerDrift(cwd: string, baseRef?: string): void
   warnTaskBranchBypass(cwd: string, key: string | null): void
+  resolveTaskBranchForDispatch(
+    cwd: string,
+    key: string,
+    reportReuse: boolean,
+  ): NonNullable<DetachSpec['resolvedTaskBranch']> | null
   contractConflicts(prompt: string): { line: number; text: string }[]
   warnImplementContractConflicts(conflicts: { line: number; text: string }[], runId: number): void
   checkoutHasUncommittedWork(cwd: string): boolean
@@ -61,6 +66,30 @@ function taskBranchBypassWarningKey(
   key: string | undefined,
 ): string | null {
   return base && writesRepo ? (key ?? null) : null
+}
+
+function taskBranchReuseKey(
+  base: string | undefined,
+  writesRepo: boolean,
+  key: string | undefined,
+): string | null {
+  return !base && writesRepo ? (key ?? null) : null
+}
+
+function resolveTaskBranchReuse(
+  input: {
+    porcelain: boolean
+    base: string | undefined
+    writesRepo: boolean
+    key: string | undefined
+  },
+  resolve: (
+    key: string,
+    reportReuse: boolean,
+  ) => NonNullable<DetachSpec['resolvedTaskBranch']> | null,
+): DetachSpec['resolvedTaskBranch'] | undefined {
+  const key = taskBranchReuseKey(input.base, input.writesRepo, input.key)
+  return key ? resolve(key, !input.porcelain) : undefined
 }
 
 const projectNames = () =>
@@ -107,6 +136,7 @@ export async function dispatchCommand(
     validateSchema,
     warnCallerDrift,
     warnTaskBranchBypass,
+    resolveTaskBranchForDispatch,
     contractConflicts,
     warnImplementContractConflicts,
     checkoutHasUncommittedWork,
@@ -165,6 +195,15 @@ export async function dispatchCommand(
   warnTaskBranchBypass(
     callerCwd,
     taskBranchBypassWarningKey(base, Boolean(requested.needs.writesRepo), flag('key')),
+  )
+  const resolvedTaskBranch = resolveTaskBranchReuse(
+    {
+      porcelain,
+      base,
+      writesRepo: Boolean(requested.needs.writesRepo),
+      key: flag('key'),
+    },
+    (key, reportReuse) => resolveTaskBranchForDispatch(callerCwd, key, reportReuse),
   )
   if (requested.findings && requested.needs.readsRepo && !reviewRef) {
     error(`! ${implicitReviewWarning(callerCwd)}`)
@@ -267,6 +306,7 @@ export async function dispatchCommand(
       deliverables,
       timeoutMinutes,
       keepTree,
+      resolvedTaskBranch,
     })
     if (!porcelain) warnImplementContractConflicts(conflicts, id)
     printRunId(id)
@@ -325,6 +365,7 @@ export async function dispatchCommand(
     deliverables,
     timeoutMinutes,
     keepTree,
+    resolvedTaskBranch,
   })
   warnImplementContractConflicts(conflicts, id)
 

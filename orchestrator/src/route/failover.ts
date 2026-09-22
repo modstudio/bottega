@@ -21,6 +21,18 @@ type RetryWorktree = {
   mintedBranch?: string | null
 }
 
+export type ResolvedTaskBranch = {
+  branch: string
+  tip: string
+  commitCount: number
+  mergeBase: string
+  projectId: number
+  projectName: string
+  runIds: number[]
+  trunk: string
+  worktree: RetryWorktree | null
+}
+
 export type DetachSpec = {
   agent?: string
   schema?: string
@@ -47,6 +59,7 @@ export type DetachSpec = {
   deliverables?: string[]
   timeoutMinutes?: number
   keepTree?: KeepTreeExemption
+  resolvedTaskBranch?: ResolvedTaskBranch | null
   resume?: {
     parent: number
     agent: string
@@ -116,6 +129,7 @@ export function detachedRunOptions(
     deliverables,
     timeoutMinutes,
     keepTree,
+    resolvedTaskBranch,
   } = spec
   // Adding a field to DetachSpec must fail typechecking until it is handled here.
   const consumed: Required<Record<keyof DetachSpec, unknown>> = {
@@ -145,6 +159,7 @@ export function detachedRunOptions(
     deliverables,
     timeoutMinutes,
     keepTree,
+    resolvedTaskBranch,
   }
   void consumed
   return {
@@ -177,6 +192,7 @@ export function detachedRunOptions(
     deliverables,
     timeoutMinutes,
     keepTree,
+    resolvedTaskBranch,
   }
 }
 

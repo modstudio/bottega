@@ -73,6 +73,7 @@ describe('task branch landing bypass warning', () => {
   test('refusal-text mutation: explicit base success does not print a refusal', () => {
     const warning = taskBranchLandingBypassWarning('DEV-750', 'feature/DEV-750', {
       action: 'refuse',
+      cause: 'unknown',
       reason: 'targeted listing was truncated',
       branch: 'feature/old-DEV-750',
       tip: 'abc123',
@@ -80,5 +81,18 @@ describe('task branch landing bypass warning', () => {
 
     expect(warning).not.toContain('refusing')
     expect(warning).toContain('used as given')
+  })
+
+  test('closed-unmerged mutation: an explicit remedy names the withdrawn pull request', () => {
+    const warning = taskBranchLandingBypassWarning('DEV-839', 'main', {
+      action: 'refuse',
+      cause: 'closed-unmerged',
+      pullRequest: 413,
+      branch: 'DEV-839-old',
+      tip: 'abc123',
+    })
+
+    expect(warning).toContain('closed-unmerged pull request #413')
+    expect(warning).toContain('explicit --base main is used as given')
   })
 })

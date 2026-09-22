@@ -10,6 +10,7 @@ import {
   resolveTaskBranch,
   type TaskBranchLandingRefusal,
   TaskBranchLandingRefusalError,
+  taskBranchReuseNotice,
 } from '../branch/task-branch.ts'
 import { flagValue, flagValues, readMessageText } from '../cli/args.ts'
 import { readStrictCodexSchema } from '../contract/codex-schema.ts'
@@ -165,6 +166,12 @@ export function taskBranchLandingBypassWarning(
   base: string,
   refusal: TaskBranchLandingRefusal,
 ): string {
+  if (refusal.cause === 'closed-unmerged') {
+    return (
+      `! task branch for ${key} has closed-unmerged pull request ` +
+      `#${refusal.pullRequest}; explicit --base ${base} is used as given`
+    )
+  }
   return (
     `! task-branch landing check for ${key} did not complete (${refusal.reason}); ` +
     `explicit --base ${base} is used as given`
@@ -198,6 +205,17 @@ function warnTaskBranchBypass(
       `(${candidate.commitCount} ${candidate.commitCount === 1 ? 'commit' : 'commits'}); ` +
       `once this run is recorded it supersedes that branch for ${key}.`,
   )
+}
+
+function resolveTaskBranchForDispatch(
+  cwd: string,
+  key: string,
+  reportReuse: boolean,
+  error: (...values: unknown[]) => void,
+): ReturnType<typeof resolveTaskBranch> {
+  const candidate = resolveTaskBranch(cwd, key)
+  if (candidate && reportReuse) error(taskBranchReuseNotice(candidate))
+  return candidate
 }
 
 const scoreSuffix = (jobName: string) =>
@@ -302,6 +320,8 @@ export async function doCommand(argv: string[], presentation: Presentation): Pro
       warnCallerDrift: (cwd, base) => warnCallerDrift(cwd, base, presentation.error),
       warnTaskBranchBypass: (cwd, key) =>
         warnTaskBranchBypass(cwd, key, flag('base')!, presentation.error),
+      resolveTaskBranchForDispatch: (cwd, key, reportReuse) =>
+        resolveTaskBranchForDispatch(cwd, key, reportReuse, presentation.error),
       contractConflicts,
       warnImplementContractConflicts: (conflicts, id) => {
         if (!conflicts.length) return
