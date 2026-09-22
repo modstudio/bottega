@@ -3,6 +3,7 @@ import { readFileSync, writeFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import { human } from '../../shared/interval.ts'
 import { readMachineValue } from '../../shared/machine-config.ts'
+import { type TrackerProtocol, trackerCreatedTaskKey } from '../../shared/trackers.ts'
 import { projectOf } from './attribute.ts'
 import { watch, withLease } from './collect.ts'
 import { DB_PATH, db, migrateDatabase, nowIso, requireDatabase, writeTransaction } from './db.ts'
@@ -335,17 +336,6 @@ function tasks() {
   )
 }
 
-function trackerTaskKey(result: unknown): unknown {
-  const record = result && typeof result === 'object' ? (result as Record<string, unknown>) : {}
-  const data = record.data && typeof record.data === 'object' ? record.data : {}
-  const task = record.task && typeof record.task === 'object' ? record.task : {}
-  return (
-    record.key ??
-    ('humanKey' in data ? data.humanKey : undefined) ??
-    ('key' in task ? task.key : undefined)
-  )
-}
-
 async function importTasks(file: string) {
   const project = projectOf(fileURLToPath(new URL('../..', import.meta.url)))
   const registered = projects().find((candidate) => candidate.name === project)
@@ -583,11 +573,11 @@ async function task() {
       body: required('body'),
       status,
     })
-    const key = trackerTaskKey(result)
-    if (typeof key !== 'string' || !key.trim()) {
+    const key = trackerCreatedTaskKey(tracker.protocol as TrackerProtocol, result)
+    if (!key) {
       throw new Error(`tracker created a task but returned no task key: ${JSON.stringify(result)}`)
     }
-    console.log(key.toUpperCase())
+    console.log(key)
     return
   }
   if (sub === 'list') {
