@@ -73,6 +73,20 @@ describe('workflow rendering', () => {
     )
   })
 
+  test('an argument value with a space is quoted in the generated command', () => {
+    const rendered = renderWorkflowComposition(
+      composeWorkflow(
+        'ship',
+        'fixture',
+        'default',
+        { ...args, worktree: "/tmp/my work's" },
+        database(),
+      ),
+    )
+    expect(rendered).toContain(`--arg 'worktree=/tmp/my work'\\''s'`)
+    expect(rendered).toContain('--arg key=DEV-821 ')
+  })
+
   test('a composition missing required arguments names them instead of the contract', () => {
     const rendered = renderWorkflowComposition(
       composeWorkflow('ship', 'fixture', 'default', {}, database()),
