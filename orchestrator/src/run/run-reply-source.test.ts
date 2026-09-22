@@ -1,40 +1,14 @@
 import { describe, expect, test } from 'bun:test'
-import { type ReplyDialect, TEXT_REPLY_SCHEMA, validatesSchema } from '../contract/contract.ts'
 import {
   decideReplySource,
   type ReplySourceFacts,
   type ReplySourceRuling,
 } from './run-reply-source.ts'
 
-const dialect: ReplyDialect = {
-  schema: TEXT_REPLY_SCHEMA,
-  schemaName: 'text-reply',
-  parse(text) {
-    try {
-      const value = JSON.parse(text)
-      return validatesSchema(value, TEXT_REPLY_SCHEMA)
-        ? { reply: value, contractObjects: 1 }
-        : { reply: null, contractObjects: 0 }
-    } catch {
-      return { reply: null, contractObjects: 0 }
-    }
-  },
-}
-
-const customSchema = {
-  type: 'object',
-  additionalProperties: false,
-  required: ['count'],
-  properties: { count: { type: 'number' } },
-} as const
-
 const baseFacts: ReplySourceFacts = {
-  transportOutput: 'transport result',
   replyFile: { present: false },
-  validationSchema: null,
-  customSchema: false,
-  textContract: false,
-  dialect,
+  contract: 'none',
+  fallback: { text: 'transport result', matches: false },
 }
 
 describe('reply source ruling', () => {
@@ -47,9 +21,12 @@ describe('reply source ruling', () => {
       name: 'file-presence mutation: a matching text reply file unwraps its answer',
       facts: {
         ...baseFacts,
-        replyFile: { present: true, text: '{"answer":"file answer"}' },
-        validationSchema: TEXT_REPLY_SCHEMA,
-        textContract: true,
+        replyFile: {
+          present: true,
+          text: '{"answer":"file answer"}',
+          matches: true,
+        },
+        contract: 'text',
       },
       expected: {
         output: 'file answer',
@@ -62,9 +39,8 @@ describe('reply source ruling', () => {
       name: 'contract-match mutation: a nonmatching reply file reports its original text',
       facts: {
         ...baseFacts,
-        replyFile: { present: true, text: '{"wrong":"shape"}' },
-        validationSchema: TEXT_REPLY_SCHEMA,
-        textContract: true,
+        replyFile: { present: true, text: '{"wrong":"shape"}', matches: false },
+        contract: 'text',
       },
       expected: {
         output: '{"wrong":"shape"}',
@@ -74,12 +50,11 @@ describe('reply source ruling', () => {
       },
     },
     {
-      name: 'a matching custom-schema reply file remains the public output',
+      name: 'a matching custom reply file keeps its text',
       facts: {
         ...baseFacts,
-        replyFile: { present: true, text: '{"count":2}' },
-        validationSchema: customSchema,
-        customSchema: true,
+        replyFile: { present: true, text: '{"count":2}', matches: true },
+        contract: 'custom',
       },
       expected: {
         output: '{"count":2}',
@@ -89,11 +64,11 @@ describe('reply source ruling', () => {
       },
     },
     {
-      name: 'a conforming text fallback unwraps its answer',
+      name: 'a matching text fallback unwraps and rewrites',
       facts: {
         ...baseFacts,
-        transportOutput: '{"answer":"fallback answer"}',
-        textContract: true,
+        contract: 'text',
+        fallback: { text: '{"answer":"fallback answer"}', matches: true },
       },
       expected: {
         output: 'fallback answer',
@@ -103,8 +78,8 @@ describe('reply source ruling', () => {
       },
     },
     {
-      name: 'legacy prose under a text contract remains readable',
-      facts: { ...baseFacts, textContract: true },
+      name: 'a nonmatching text fallback keeps prose and rewrites',
+      facts: { ...baseFacts, contract: 'text' },
       expected: {
         output: 'transport result',
         replyFileError: null,
@@ -113,12 +88,11 @@ describe('reply source ruling', () => {
       },
     },
     {
-      name: 'a custom-schema fallback mismatch reports the transport output',
+      name: 'a nonmatching custom fallback reports the schema mismatch without rewriting',
       facts: {
         ...baseFacts,
-        transportOutput: '{"count":"two"}',
-        validationSchema: customSchema,
-        customSchema: true,
+        contract: 'custom',
+        fallback: { text: '{"count":"two"}', matches: false },
       },
       expected: {
         output: '{"count":"two"}',
@@ -128,12 +102,11 @@ describe('reply source ruling', () => {
       },
     },
     {
-      name: 'a matching custom-schema fallback is accepted',
+      name: 'a matching custom fallback is accepted without rewriting',
       facts: {
         ...baseFacts,
-        transportOutput: '{"count":2}',
-        validationSchema: customSchema,
-        customSchema: true,
+        contract: 'custom',
+        fallback: { text: '{"count":2}', matches: true },
       },
       expected: {
         output: '{"count":2}',
@@ -143,7 +116,7 @@ describe('reply source ruling', () => {
       },
     },
     {
-      name: 'a fallback without a contract remains untouched and is not rewritten',
+      name: 'no contract leaves the fallback untouched and does not rewrite',
       facts: baseFacts,
       expected: {
         output: 'transport result',

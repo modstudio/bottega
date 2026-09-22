@@ -13,6 +13,8 @@ import {
   REPLY_FILE_NAME,
   type ReplyDialect,
   realQuestions,
+  TEXT_REPLY_SCHEMA,
+  validatesSchema,
   type WorkerReply,
 } from '../contract/contract.ts'
 import { db, nowIso } from '../database/db.ts'
@@ -45,6 +47,7 @@ import {
   type TransportResult,
   type TransportStartOpts,
   transportFor,
+  valueMatchesStrictSchema,
 } from '../transport/transport.ts'
 import type { Worktree } from '../worktree/worktree-types.ts'
 import {
@@ -54,7 +57,43 @@ import {
   recordFailedIdlePreservation,
 } from './checkpoint.ts'
 import { childEnv, errorTail, live, liveCheckpoints } from './run-process.ts'
-import { decideReplySource } from './run-reply-source.ts'
+import { decideReplySource, type ReplyContract } from './run-reply-source.ts'
+
+function readReplyFile(path: string): string | null {
+  return existsSync(path) ? readFileSync(path, 'utf8') : null
+}
+
+function replyContract(schemaPath: string | undefined, textContract: boolean): ReplyContract {
+  if (schemaPath) return 'custom'
+  return textContract ? 'text' : 'none'
+}
+
+function replyFileMatches(
+  contract: ReplyContract,
+  text: string | null,
+  dialect: ReplyDialect,
+  schema: unknown,
+): boolean {
+  if (text === null) return false
+  if (contract !== 'custom') return dialect.parse(text).reply !== null
+  try {
+    return validatesSchema(JSON.parse(text), schema)
+  } catch {
+    return false
+  }
+}
+
+function fallbackMatches(contract: ReplyContract, text: string, schema: unknown): boolean {
+  let value: unknown
+  try {
+    value = JSON.parse(text)
+  } catch {
+    return false
+  }
+  if (contract === 'text') return valueMatchesStrictSchema(TEXT_REPLY_SCHEMA, value)
+  if (contract === 'custom') return valueMatchesStrictSchema(schema, value)
+  return false
+}
 
 function reviewChangedPaths(cwd: string, base: string, inputTree: string): string[] {
   const args = ['diff', '--name-only', `${base}..${inputTree}`]
@@ -319,7 +358,11 @@ export async function runLive(input: LiveInput): Promise<LiveResult> {
     }
     const handle =
       opts.resume?.session && !opts.resume.fresh
-        ? await t.resume({ ...startOpts, session: opts.resume.session, resume: true })
+        ? await t.resume({
+            ...startOpts,
+            session: opts.resume.session,
+            resume: true,
+          })
         : await t.start(startOpts)
     proc = handle
     live.add(handle)
@@ -473,7 +516,9 @@ export async function runLive(input: LiveInput): Promise<LiveResult> {
         db().query('UPDATE run SET work_preserved=1 WHERE id=?').run(claim.id)
       }
       void t.cancel(handle)
-      const terminated = await terminateProcessGroup(handle.pid ?? 0, { direct: handle })
+      const terminated = await terminateProcessGroup(handle.pid ?? 0, {
+        direct: handle,
+      })
       idleTreePids = terminated.pids
       idleTreePgid = terminated.pgid
       idleUnkillable = terminated.unkillable
@@ -550,20 +595,31 @@ export async function runLive(input: LiveInput): Promise<LiveResult> {
     resolvedSession = collected.sessionId ?? vendorSession
     output = collected.output
     const replyFile = join(scratchDir, REPLY_FILE_NAME)
-    const replyFileExists = existsSync(replyFile)
-    const customSchema = Boolean(opts.schemaPath)
+    const replyFileText = readReplyFile(replyFile)
+    const replyContractKind = replyContract(opts.schemaPath, textReplyContract)
+    const validationSchema =
+      replyFileText !== null || replyContractKind === 'custom'
+        ? JSON.parse(readFileSync(originalSchemaPath!, 'utf8'))
+        : null
     const ruling = decideReplySource({
-      transportOutput: output,
-      replyFile: replyFileExists
-        ? { present: true, text: readFileSync(replyFile, 'utf8') }
-        : { present: false },
-      validationSchema:
-        replyFileExists || customSchema
-          ? JSON.parse(readFileSync(originalSchemaPath!, 'utf8'))
-          : null,
-      customSchema,
-      textContract: textReplyContract,
-      dialect: resolvedDialect,
+      replyFile:
+        replyFileText !== null
+          ? {
+              present: true,
+              text: replyFileText,
+              matches: replyFileMatches(
+                replyContractKind,
+                replyFileText,
+                resolvedDialect,
+                validationSchema,
+              ),
+            }
+          : { present: false },
+      contract: replyContractKind,
+      fallback: {
+        text: output,
+        matches: fallbackMatches(replyContractKind, output, validationSchema),
+      },
     })
     output = ruling.output
     replyFileError = ruling.replyFileError
