@@ -61,9 +61,9 @@ export function renderWorkflowComposition(result: WorkflowComposition): string {
 export function renderWorkflowStep(step: WorkflowStep): string {
   const pointer =
     step.next === undefined
-      ? "Next: when this step's floor is met, return to the workflow's step list and fetch the step after this one."
+      ? "Next: when this step's floor is met, close it with `next_workflow_step` (MCP) or `orch workflow next`, giving a one-line note of how the floor was met; that serves the following step from the workflow's step list."
       : step.next
-        ? `Next: when this step's floor is met, fetch step ${step.next.n} ${step.next.slug} — ${step.next.title}.`
+        ? `Next: when this step's floor is met, close it with \`next_workflow_step\` (MCP) or \`orch workflow next\`, giving a one-line note of how the floor was met; that serves step ${step.next.n} ${step.next.slug} — ${step.next.title}.`
         : step.mode
           ? `This is the last step of ${step.workflow} (${step.mode}). The workflow is finished when this step's floor is met.`
           : `This is the last step of ${step.workflow} in every mode that contains it. The workflow is finished when this step's floor is met.`

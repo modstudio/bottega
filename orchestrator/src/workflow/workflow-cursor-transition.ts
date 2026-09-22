@@ -44,14 +44,6 @@ export function decideCursorTransition(
         move: false,
         resume: request.ordinal === cursor.ordinal,
       }
-    if (request.ordinal === cursor.ordinal + 1)
-      return {
-        action: 'serve',
-        ordinal: request.ordinal,
-        slug: request.slug,
-        move: true,
-        resume: false,
-      }
     return { action: 'refuse', reason: 'ahead' }
   }
 

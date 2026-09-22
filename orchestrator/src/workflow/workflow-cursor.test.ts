@@ -144,7 +144,7 @@ describe('workflow cursor adapter', () => {
     ).toThrow(/at step 1 rebase.*workflow next ship/)
 
     expect(nextWorkflowStep('ship', 'fixture', 'default', args, 'rebased', context, d)).toContain(
-      'fetch step 3 score',
+      'serves step 3 score',
     )
     expect(d.query('SELECT ordinal,step_slug,closed FROM workflow_cursor').get()).toMatchObject({
       ordinal: 1,
@@ -306,7 +306,7 @@ describe('workflow cursor adapter', () => {
     expect(recomposed.steps.map((step) => step.slug).slice(0, 2)).toEqual(['rebase', 'lens'])
     expect(d.query('SELECT count(*) count FROM workflow_cursor').get()).toEqual({ count: 1 })
     expect(nextWorkflowStep('ship', 'fixture', 'default', args, 'lensed', context, d)).toContain(
-      'fetch step 4',
+      'serves step 4',
     )
   })
 

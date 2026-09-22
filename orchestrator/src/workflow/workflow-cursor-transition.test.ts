@@ -20,7 +20,7 @@ describe('workflow cursor transition', () => {
     expect(decideCursorStart('abandoned')).toBe('retire')
   })
 
-  test('serves the current, next, and earlier steps without allowing a skip', () => {
+  test('serves the current and earlier steps without allowing a skip', () => {
     expect(
       decideCursorTransition(cursor(2, 'two'), {
         kind: 'serve',
@@ -30,15 +30,6 @@ describe('workflow cursor transition', () => {
         expectedSlug: 'two',
       }),
     ).toMatchObject({ action: 'serve', move: false })
-    expect(
-      decideCursorTransition(cursor(2, 'two'), {
-        kind: 'serve',
-        ordinal: 3,
-        slug: 'three',
-        expectedOrdinal: 2,
-        expectedSlug: 'two',
-      }),
-    ).toMatchObject({ action: 'serve', move: true, ordinal: 3 })
     expect(
       decideCursorTransition(cursor(2, 'two'), {
         kind: 'serve',
@@ -53,6 +44,18 @@ describe('workflow cursor transition', () => {
         kind: 'serve',
         ordinal: 4,
         slug: 'four',
+        expectedOrdinal: 2,
+        expectedSlug: 'two',
+      }),
+    ).toEqual({ action: 'refuse', reason: 'ahead' })
+  })
+
+  test('refuses the step immediately ahead of the cursor', () => {
+    expect(
+      decideCursorTransition(cursor(2, 'two'), {
+        kind: 'serve',
+        ordinal: 3,
+        slug: 'three',
         expectedOrdinal: 2,
         expectedSlug: 'two',
       }),
