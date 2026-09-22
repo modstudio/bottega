@@ -518,9 +518,14 @@ export const modules: ArchitectureModule[] = [
     '../outcome.ts',
     '../project/project-lock.ts',
     './run-process.ts',
+    './run-reply-source.ts',
     '../sandbox/sandbox.ts',
     '../transport/transport.ts',
     '../worktree/worktree-types.ts',
+  ]),
+  module('orchestrator/src/run/run-reply-source.ts', [
+    '../contract/contract.ts',
+    '../transport/transport.ts',
   ]),
   module('orchestrator/src/run/run-launch.ts', ['../transport/transport.ts']),
   module('orchestrator/src/live-outcome.ts', [
