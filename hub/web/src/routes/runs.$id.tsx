@@ -42,6 +42,12 @@ type RunDetail = {
   scoreAxes: readonly ('delivery' | 'quality' | 'fidelity')[]
   reviews: ReviewLens[]
 }
+type Verdict = {
+  delivery: Delivery
+  quality: Quality | null
+  fidelity: Fidelity | null
+  note: string | null
+}
 
 export const Route = createFileRoute('/runs/$id')({ component: RunDetailRoute })
 
@@ -50,10 +56,7 @@ function RunDetailRoute() {
   return <RunDetailPage id={id} />
 }
 
-function RunDetailPage({ id }: { id: string }) {
-  const navigate = useNavigate()
-  const hosted = isHostedMode()
-  const numericId = Number(id)
+function useRunDetail(id: string, numericId: number, hosted: boolean) {
   const hostedDetail = useQuery({
     ...trpc.record.run.queryOptions({ id }),
     enabled: hosted,
@@ -62,7 +65,52 @@ function RunDetailPage({ id }: { id: string }) {
     ...trpc.run.get.queryOptions({ id: numericId }),
     enabled: !hosted,
   })
-  const detail = hosted ? hostedDetail : localDetail
+  return hosted ? hostedDetail : localDetail
+}
+
+function useRunScore(id: string, numericId: number, hosted: boolean, onSigned: () => void) {
+  const onSuccess = async () => {
+    const detailKey = hosted
+      ? trpc.record.run.queryKey({ id })
+      : trpc.run.get.queryKey({ id: numericId })
+    const listKey = hosted ? trpc.record.runsView.queryKey() : trpc.run.list.queryKey()
+    await Promise.all([
+      queryClient.invalidateQueries({ queryKey: detailKey }),
+      queryClient.invalidateQueries({ queryKey: listKey }),
+    ])
+    onSigned()
+  }
+  const hostedScore = useMutation(trpc.record.score.mutationOptions({ onSuccess }))
+  const localScore = useMutation(trpc.run.score.mutationOptions({ onSuccess }))
+  return {
+    score: hosted ? hostedScore : localScore,
+    sign: (verdict: Verdict) => {
+      if (hosted) hostedScore.mutate({ id, ...verdict })
+      else localScore.mutate({ id: numericId, ...verdict })
+    },
+  }
+}
+
+function RunTranscript({ run, hosted }: { run: RunDetail; hosted: boolean }) {
+  const promptLabel = hosted
+    ? `Prompt excerpt (${run.promptBytes?.toLocaleString() ?? 'unknown'} bytes in the original prompt)`
+    : 'Prompt'
+  const reply = hosted
+    ? '(Hosted records do not keep replies.)'
+    : run.output || '(Nothing came back.)'
+  return (
+    <div className="grid gap-4 @2xl/panel:grid-cols-2">
+      <DetailBlock label={promptLabel} value={run.prompt || '(Prompt unavailable.)'} />
+      <DetailBlock label="Reply" value={reply} />
+    </div>
+  )
+}
+
+function RunDetailPage({ id }: { id: string }) {
+  const navigate = useNavigate()
+  const hosted = isHostedMode()
+  const numericId = Number(id)
+  const detail = useRunDetail(id, numericId, hosted)
   const run = detail.data as unknown as RunDetail | undefined
   const [delivery, setDelivery] = useState<Delivery | null>(null)
   const [quality, setQuality] = useState<Quality | null>(null)
@@ -78,35 +126,7 @@ function RunDetailPage({ id }: { id: string }) {
     setNote(run.note ?? '')
   }, [run])
 
-  const onScoreSuccess = async () => {
-    if (hosted) {
-      await Promise.all([
-        queryClient.invalidateQueries({ queryKey: trpc.record.run.queryKey({ id }) }),
-        queryClient.invalidateQueries({ queryKey: trpc.record.runsView.queryKey() }),
-      ])
-    } else {
-      await Promise.all([
-        queryClient.invalidateQueries({ queryKey: trpc.run.get.queryKey({ id: numericId }) }),
-        queryClient.invalidateQueries({ queryKey: trpc.run.list.queryKey() }),
-      ])
-    }
-    setAmending(false)
-  }
-  const hostedScore = useMutation(
-    trpc.record.score.mutationOptions({
-      onSuccess: async () => {
-        await onScoreSuccess()
-      },
-    }),
-  )
-  const localScore = useMutation(
-    trpc.run.score.mutationOptions({
-      onSuccess: async () => {
-        await onScoreSuccess()
-      },
-    }),
-  )
-  const score = hosted ? hostedScore : localScore
+  const { score, sign: signVerdict } = useRunScore(id, numericId, hosted, () => setAmending(false))
 
   const needsFidelity = Boolean(run?.scoreAxes.includes('fidelity') && delivery !== 'none')
   const canSign =
@@ -119,8 +139,7 @@ function RunDetailPage({ id }: { id: string }) {
       fidelity: needsFidelity ? fidelity : null,
       note: note || null,
     }
-    if (hosted) hostedScore.mutate({ id, ...verdict })
-    else localScore.mutate({ id: numericId, ...verdict })
+    signVerdict(verdict)
   }
 
   const close = () => void navigate({ to: '/runs', resetScroll: false })
@@ -242,22 +261,7 @@ function RunDetailPage({ id }: { id: string }) {
         </p>
       ) : null}
       {run.error ? <DetailBlock label="Error" value={run.error} /> : null}
-      <div className="grid gap-4 @2xl/panel:grid-cols-2">
-        <DetailBlock
-          label={
-            hosted
-              ? `Prompt excerpt (${run.promptBytes?.toLocaleString() ?? 'unknown'} bytes in the original prompt)`
-              : 'Prompt'
-          }
-          value={run.prompt || '(Prompt unavailable.)'}
-        />
-        <DetailBlock
-          label="Reply"
-          value={
-            hosted ? '(Hosted records do not keep replies.)' : run.output || '(Nothing came back.)'
-          }
-        />
-      </div>
+      <RunTranscript run={run} hosted={hosted} />
       <ReviewLensList lenses={run.reviews} />
     </Companion>
   )
