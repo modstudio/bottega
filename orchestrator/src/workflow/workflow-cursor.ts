@@ -91,13 +91,12 @@ function findCursor(
        WHERE project=? AND workflow_slug=? AND mode_slug=? AND workflow_key=? AND instance_id=?`,
     )
     .get(project, workflow, mode, key, instanceOf(key, context)) as CursorRow | null
-  if (key && row?.session_id && context.session && row.session_id !== context.session) {
-    throw new Error(
-      `workflow ${workflow} for ${key} is already driven by session ${row.session_id}; current session ${context.session} cannot advance it`,
-    )
-  }
   return row
 }
+
+/** The session that drove this cursor before the current one took it over, or null. */
+const takenOverFrom = (row: CursorRow | null, context: WorkflowCursorContext): string | null =>
+  row?.session_id && context.session && row.session_id !== context.session ? row.session_id : null
 
 function insertCursor(
   composition: ReturnType<typeof composeWorkflow>,
@@ -114,7 +113,7 @@ function insertCursor(
        total_steps,created_at,updated_at)
      VALUES (?,?,?,?,?,?,?,?,?,0,?,'running','[]',NULL,?,?,?)
      ON CONFLICT(project,workflow_slug,mode_slug,workflow_key,instance_id) DO UPDATE SET
-       session_id=COALESCE(workflow_cursor.session_id,excluded.session_id),
+       session_id=COALESCE(excluded.session_id,workflow_cursor.session_id),
        updated_at=excluded.updated_at`,
   ).run(
     composition.project,
@@ -141,7 +140,12 @@ function insertCursor(
   )!
 }
 
-export type CursorSummary = { n: number; slug: string; state: CursorState }
+export type CursorSummary = {
+  n: number
+  slug: string
+  state: CursorState
+  previousSession?: string | null
+}
 
 export function composeWorkflowWithCursor(
   slug: string,
@@ -155,6 +159,17 @@ export function composeWorkflowWithCursor(
   const composition = composeWorkflow(slug, project, mode, args, d, selection)
   if (!composition.mode || composition.needs.arguments) return { ...composition, cursor: null }
   return writeTransaction(() => {
+    const previousSession = takenOverFrom(
+      findCursor(
+        composition.project,
+        composition.workflow.slug,
+        composition.mode!.slug,
+        composition.arguments,
+        context,
+        d,
+      ),
+      context,
+    )
     const row = insertCursor(composition, context, d)
     return {
       ...composition,
@@ -162,6 +177,7 @@ export function composeWorkflowWithCursor(
         n: row.ordinal === 0 ? 0 : row.ordinal + 1,
         slug: row.step_slug,
         state: row.state,
+        previousSession,
       } satisfies CursorSummary,
     }
   }, d)
@@ -227,7 +243,7 @@ function getWorkflowStepWithCursorImpl(
   if (decision.move || decision.resume) {
     d.query(
       `UPDATE workflow_cursor SET ordinal=?,step_slug=?,state='running',question=NULL,
-       session_id=COALESCE(session_id,?),updated_at=? WHERE id=?`,
+       session_id=COALESCE(?,session_id),updated_at=? WHERE id=?`,
     ).run(decision.ordinal, decision.slug, context.session ?? null, nowIso(), row.id)
   }
   return getWorkflowStep(slug, project, stepSlug, effectiveArgs, d, selection)
@@ -287,13 +303,13 @@ function nextWorkflowStepImpl(
   if (decision.action === 'finish') {
     d.query(
       `UPDATE workflow_cursor SET state='done',closed=?,question=NULL,
-       session_id=COALESCE(session_id,?),updated_at=? WHERE id=?`,
+       session_id=COALESCE(?,session_id),updated_at=? WHERE id=?`,
     ).run(JSON.stringify(closed), context.session ?? null, at, row.id)
     return `Workflow ${slug} for ${row.workflow_key} is finished: ${closed.length} steps closed.`
   }
   d.query(
     `UPDATE workflow_cursor SET ordinal=?,step_slug=?,state='running',closed=?,question=NULL,
-     session_id=COALESCE(session_id,?),updated_at=? WHERE id=?`,
+     session_id=COALESCE(?,session_id),updated_at=? WHERE id=?`,
   ).run(
     decision.ordinal,
     decision.slug,
@@ -344,7 +360,7 @@ function awaitWorkflowRulingImpl(
   if (row.state === 'done') throw new Error(`workflow ${slug} for ${row.workflow_key} is done`)
   d.query(
     `UPDATE workflow_cursor SET state='awaiting-ruling',question=?,
-     session_id=COALESCE(session_id,?),updated_at=? WHERE id=?`,
+     session_id=COALESCE(?,session_id),updated_at=? WHERE id=?`,
   ).run(question.trim(), context.session ?? null, nowIso(), row.id)
   return { n: row.ordinal + 1, slug: row.step_slug, state: 'awaiting-ruling' }
 }
@@ -375,22 +391,18 @@ export function listWorkflowCursors(
   options: CursorListOptions = {},
   d: Database = db(),
 ): Array<CursorRow & { next_slug: string }> {
-  const currentSession = sessionId()
-  const project =
-    options.project ??
-    (!currentSession && !options.session
-      ? projectAt(options.cwd ?? process.cwd())?.name
-      : undefined)
+  const project = options.all
+    ? undefined
+    : (options.project ?? projectAt(options.cwd ?? process.cwd())?.name)
   const clauses = [`state <> 'done'`]
   const values: string[] = []
   if (project) {
     clauses.push('project=?')
     values.push(project)
   }
-  const selectedSession = options.session ?? (!options.all ? currentSession : null)
-  if (selectedSession) {
+  if (options.session) {
     clauses.push('session_id=?')
-    values.push(selectedSession)
+    values.push(options.session)
   }
   const rows = d
     .query(`SELECT * FROM workflow_cursor WHERE ${clauses.join(' AND ')} ORDER BY updated_at,id`)

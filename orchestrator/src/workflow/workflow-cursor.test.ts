@@ -76,7 +76,7 @@ describe('workflow cursor adapter', () => {
       context,
       d,
     )
-    expect(listWorkflowCursors({ session: 'session-one' }, d)).toHaveLength(1)
+    expect(listWorkflowCursors({ project: 'fixture', session: 'session-one' }, d)).toHaveLength(1)
     let output = ''
     for (const step of composition.steps) {
       output = nextWorkflowStep(
@@ -92,7 +92,7 @@ describe('workflow cursor adapter', () => {
     expect(output).toBe(
       `Workflow ship for DEV-822 is finished: ${composition.steps.length} steps closed.`,
     )
-    expect(listWorkflowCursors({ session: 'session-one' }, d)).toEqual([])
+    expect(listWorkflowCursors({ project: 'fixture', session: 'session-one' }, d)).toEqual([])
     expect(d.query('SELECT state FROM workflow_cursor').get()).toEqual({ state: 'done' })
   })
 
@@ -112,11 +112,26 @@ describe('workflow cursor adapter', () => {
     })
   })
 
-  test('a second session cannot silently take over a keyed cursor', () => {
+  test('a second session takes a keyed cursor over and is told so', () => {
     const d = database()
     composeWorkflowWithCursor('ship', 'fixture', 'default', args, context, d)
-    expect(() =>
-      composeWorkflowWithCursor('ship', 'fixture', 'default', args, { session: 'session-two' }, d),
-    ).toThrow(/already driven by session session-one/)
+    getWorkflowStepWithCursor('ship', 'fixture', 'rebase', args, 'default', context, d)
+    nextWorkflowStep('ship', 'fixture', 'default', args, 'rebased', context, d)
+    const recomposed = composeWorkflowWithCursor(
+      'ship',
+      'fixture',
+      'default',
+      args,
+      { session: 'session-two' },
+      d,
+    )
+    expect(renderWorkflowComposition(recomposed)).toContain(
+      'Cursor: at step 2 lens (running); continue with next. This cursor was driven by session session-one and is now yours.',
+    )
+    expect(d.query('SELECT session_id FROM workflow_cursor').get()).toEqual({
+      session_id: 'session-two',
+    })
+    expect(listWorkflowCursors({ project: 'fixture' }, d)).toHaveLength(1)
+    expect(listWorkflowCursors({ project: 'fixture', session: 'session-one' }, d)).toEqual([])
   })
 })
