@@ -49,7 +49,7 @@ describe('hostedRouter', () => {
       'record.reviews',
       'record.routing',
       'record.run',
-      'record.runs',
+      'record.runsView',
       'record.setActiveSpace',
       'record.settings',
       'record.snapshots',

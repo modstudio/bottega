@@ -6,7 +6,7 @@ export const RUN_PAGE_LIMITS = [25, 50, 100] as const
 export type RunPageLimit = (typeof RUN_PAGE_LIMITS)[number]
 
 export type SearchableRun = {
-  id: number
+  id: number | string
   agent: string
   job: string | null
   task: string | null
@@ -25,7 +25,7 @@ export type SearchableRun = {
 }
 
 export type SearchableLiveRun = {
-  id: number
+  id: number | string
   agent: string
   job: string
   repo: string | null
@@ -57,7 +57,7 @@ function compactTokens(value: number | null | undefined) {
   return String(Math.round(value))
 }
 
-function duration(ms: number) {
+export function duration(ms: number) {
   const seconds = Math.round(ms / 1000)
   if (seconds >= 3600) return `${Math.floor(seconds / 3600)}h ${Math.floor((seconds % 3600) / 60)}m`
   if (seconds >= 60) return `${Math.floor(seconds / 60)}m ${seconds % 60}s`

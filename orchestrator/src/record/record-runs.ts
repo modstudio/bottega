@@ -2,6 +2,8 @@
 /** Owns tenant-bound record run reads. Must not know local run phases or CLI presentation. */
 import { SQL } from 'bun'
 import { bindTenant, type TenantPrincipal } from '../../../shared/record/tenant.ts'
+import { NOT_EVIDENCE } from '../failure/failure.ts'
+import { HOOK_TREE_JOB } from '../hook-tree/hook-tree.ts'
 
 export type RecordCursor = { at: string; id: string }
 type RecordScore = {
@@ -26,6 +28,7 @@ export type RecordRun = {
   status: string
   latencyMs: number | null
   promptHead: string
+  taskKey: string | null
   failureKind: string | null
   vendorTokens: number | null
   vendorCostUsd: number | null
@@ -34,6 +37,7 @@ export type RecordRun = {
   parentRunId: string | null
   turn: number
   evidenceExcluded: string | null
+  probe: boolean
   score: RecordScore | null
 }
 export type RecordRunDetail = RecordRun & Record<string, unknown> & { reviews: unknown[] }
@@ -46,6 +50,29 @@ type RunListInput = TenantPrincipal & {
   agent?: string
   job?: string
   status?: string
+}
+
+export type RecordRunsWindowInput = TenantPrincipal & {
+  url: string
+  hours: 24 | 48 | 168 | 720
+  agent: string
+  project: string
+  search: string
+  offset: number
+  limit: 25 | 50 | 100
+  now?: Date
+}
+
+export type RecordRunsWindow = {
+  items: RecordRun[]
+  matched: number
+  offset: number
+  limit: number
+  facets: { agents: string[]; projects: string[] }
+  totals: { runs: number; scored: number; voided: number; failed: number }
+  vendors: { agent: string; tokens: number; runs: number }[]
+  unscored: number
+  live: RecordRun[]
 }
 
 const iso = (value: unknown) => (value == null ? null : new Date(String(value)).toISOString())
@@ -76,6 +103,7 @@ function runRow(row: Record<string, unknown>): RecordRun {
     status: String(row.status),
     latencyMs: numeric(row.latency_ms),
     promptHead: String(row.prompt_head),
+    taskKey: row.task_key == null ? null : String(row.task_key),
     failureKind: row.failure_kind == null ? null : String(row.failure_kind),
     vendorTokens: numeric(row.vendor_tokens),
     vendorCostUsd: numeric(row.vendor_cost_usd),
@@ -84,6 +112,7 @@ function runRow(row: Record<string, unknown>): RecordRun {
     parentRunId: row.parent_run_id == null ? null : String(row.parent_run_id),
     turn: Number(row.turn),
     evidenceExcluded: row.evidence_excluded == null ? null : String(row.evidence_excluded),
+    probe: Boolean(row.probe),
     score:
       row.delivery == null
         ? null
@@ -113,9 +142,9 @@ export async function listRecordRuns(input: RunListInput): Promise<RecordRun[]> 
     const rows = await tx`
       SELECT r.id, r.space_id, sp.name AS space_name, p.name AS project_name,
         r.started_at, r.finished_at, r.agent, r.job,
-        r.status, r.latency_ms, r.prompt_head, r.failure_kind, r.vendor_tokens,
+        r.status, r.latency_ms, r.prompt_head, r.task_key, r.failure_kind, r.vendor_tokens,
         r.vendor_cost_usd, r.label, r.lens, r.parent_run_id, r.turn, r.evidence_excluded,
-        s.delivery, s.quality, s.fidelity, s.scored_at
+        r.probe, s.delivery, s.quality, s.fidelity, s.scored_at
       FROM run r JOIN space sp ON sp.id=r.space_id
       LEFT JOIN project p ON p.id=r.project_id LEFT JOIN run_score s ON s.run_id=r.id
       WHERE (${input.before?.at ?? null}::timestamptz IS NULL OR (r.started_at, r.id) < (${input.before?.at ?? null}::timestamptz, ${input.before?.id ?? null}::uuid))
@@ -127,6 +156,110 @@ export async function listRecordRuns(input: RunListInput): Promise<RecordRun[]> 
     `
     return rows.map(runRow)
   })
+}
+
+function unique(values: (string | null)[]): string[] {
+  return [...new Set(values.filter((value): value is string => Boolean(value)))].sort()
+}
+
+function matchesWindowSearch(run: RecordRun, search: string): boolean {
+  const query = search.trim().toLocaleLowerCase()
+  if (!query) return true
+  return [run.agent, run.job, run.projectName, run.taskKey, run.lens, run.promptHead, run.status]
+    .filter((value): value is string => value !== null)
+    .some((value) => value.toLocaleLowerCase().includes(query))
+}
+
+export function recordRunsWindow(
+  windowRuns: RecordRun[],
+  input: Pick<RecordRunsWindowInput, 'agent' | 'project' | 'search' | 'offset' | 'limit'>,
+): RecordRunsWindow {
+  const eligible = windowRuns.filter((run) => run.job !== HOOK_TREE_JOB)
+  const facets = {
+    agents: unique(eligible.map((run) => run.agent)),
+    projects: unique(eligible.map((run) => run.projectName)),
+  }
+  const filtered = eligible.filter(
+    (run) =>
+      (!input.agent || run.agent === input.agent) &&
+      (!input.project || run.projectName === input.project),
+  )
+  const searched = filtered.filter((run) => matchesWindowSearch(run, input.search))
+  const scoreByRoot = new Map(
+    eligible.filter((run) => run.score).map((run) => [run.id, run.score!] as const),
+  )
+  const newestTurnByRoot = new Map<string, string>()
+  for (const run of eligible) {
+    if (!run.parentRunId) continue
+    const current = newestTurnByRoot.get(run.parentRunId)
+    if (!current || current < run.startedAt) newestTurnByRoot.set(run.parentRunId, run.startedAt)
+  }
+  const totals = {
+    runs: filtered.length,
+    scored: filtered.filter(
+      (run) =>
+        run.score !== null &&
+        run.evidenceExcluded === null &&
+        !NOT_EVIDENCE.includes(run.failureKind as (typeof NOT_EVIDENCE)[number]),
+    ).length,
+    voided: filtered.filter((run) => run.evidenceExcluded !== null).length,
+    failed: filtered.filter((run) => run.status === 'failed').length,
+  }
+  const unscored = filtered.filter((run) => {
+    if (
+      run.status !== 'ok' ||
+      run.evidenceExcluded !== null ||
+      run.probe ||
+      run.parentRunId !== null
+    )
+      return false
+    const score = scoreByRoot.get(run.id)
+    const newestTurn = newestTurnByRoot.get(run.id)
+    return !score || (newestTurn !== undefined && score.scoredAt < newestTurn)
+  }).length
+  const agentRuns = new Map<string, number>()
+  const agentTokens = new Map<string, number>()
+  for (const run of eligible) {
+    agentRuns.set(run.agent, (agentRuns.get(run.agent) ?? 0) + 1)
+    if (run.vendorTokens !== null)
+      agentTokens.set(run.agent, (agentTokens.get(run.agent) ?? 0) + run.vendorTokens)
+  }
+  const vendors = [...agentTokens].map(([agent, tokens]) => ({
+    agent,
+    tokens,
+    runs: agentRuns.get(agent) ?? 0,
+  }))
+  vendors.sort((left, right) => right.tokens - left.tokens || left.agent.localeCompare(right.agent))
+  return {
+    items: searched.slice(input.offset, input.offset + input.limit),
+    matched: searched.length,
+    offset: input.offset,
+    limit: input.limit,
+    facets,
+    totals,
+    vendors,
+    unscored,
+    live: searched.filter((run) => run.status === 'running'),
+  }
+}
+
+export async function viewRecordRuns(input: RecordRunsWindowInput): Promise<RecordRunsWindow> {
+  const since = new Date((input.now ?? new Date()).getTime() - input.hours * 60 * 60 * 1000)
+  const windowRuns = await tenant(input, async (tx) => {
+    const rows = await tx`
+      SELECT r.id, r.space_id, sp.name AS space_name, p.name AS project_name,
+        r.started_at, r.finished_at, r.agent, r.job, r.status, r.latency_ms,
+        r.prompt_head, r.task_key, r.failure_kind, r.vendor_tokens, r.vendor_cost_usd,
+        r.label, r.lens, r.parent_run_id, r.turn, r.evidence_excluded, r.probe,
+        s.delivery, s.quality, s.fidelity, s.scored_at
+      FROM run r JOIN space sp ON sp.id=r.space_id
+      LEFT JOIN project p ON p.id=r.project_id LEFT JOIN run_score s ON s.run_id=r.id
+      WHERE r.started_at >= ${since}
+      ORDER BY r.started_at DESC, r.id DESC
+    `
+    return rows.map(runRow)
+  })
+  return recordRunsWindow(windowRuns, input)
 }
 
 export async function getRecordRun(input: {

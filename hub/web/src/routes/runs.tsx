@@ -4,7 +4,6 @@ import { ChevronRight } from 'lucide-react'
 import { useState } from 'react'
 import { Collection, type CollectionColumn } from '@/components/collection'
 import { ProjectMark, useWindowFilters, WindowControl } from '@/components/design-system'
-import { HostedRuns } from '@/components/hosted-runs'
 import { useNow } from '@/lib/clock'
 import { useDetailPanel } from '@/lib/detail-panel'
 import { collectedTime, compactTokens, duration } from '@/lib/format'
@@ -31,7 +30,8 @@ type RunDisplay = {
   started: string
 }
 type RunRow = {
-  id: number
+  id: number | string
+  space?: string
   agent: string
   job: string | null
   task: string | null
@@ -46,7 +46,8 @@ type RunRow = {
   display: RunDisplay
 }
 type LiveRow = {
-  id: number
+  id: number | string
+  space?: string
   agent: string
   job: string
   repo: string | null
@@ -101,7 +102,6 @@ function Verdict({ row }: { row: RunRow }) {
 export const Route = createFileRoute('/runs')({ component: RunsPage })
 
 function RunsPage() {
-  if (isHostedMode()) return <HostedRuns />
   return <RunsList />
 }
 
@@ -129,18 +129,20 @@ function RunsList() {
     `${windowState.hours}|${windowState.filters.agent}|${windowState.filters.project}|${searchQuery}`,
   )
   const now = useNow()
+  const input = {
+    hours: windowState.hours,
+    agent: windowState.filters.agent,
+    project: windowState.filters.project,
+    offset: (page - 1) * pageSize,
+    limit: pageSize,
+    search: searchQuery,
+  }
   const query = useQuery({
-    ...trpc.run.list.queryOptions(
-      {
-        hours: windowState.hours,
-        agent: windowState.filters.agent,
-        project: windowState.filters.project,
-        offset: (page - 1) * pageSize,
-        limit: pageSize,
-        search: searchQuery,
-      },
-      { refetchInterval: openMenus ? false : 30_000 },
-    ),
+    ...(isHostedMode()
+      ? trpc.record.runsView.queryOptions(input, {
+          refetchInterval: openMenus ? false : 30_000,
+        })
+      : trpc.run.list.queryOptions(input, { refetchInterval: openMenus ? false : 30_000 })),
     placeholderData: keepPreviousData,
   })
   const payload = query.data as unknown as RunsPayload | undefined
@@ -166,6 +168,8 @@ function RunsList() {
   // The server applies search and paging; these are the rows to draw.
   const liveRows = data?.live ?? []
   const runRows = data?.rows ?? []
+  const spaces = new Set([...liveRows, ...runRows].map((row) => row.space).filter(Boolean))
+  const showSpace = spaces.size > 1
   const liveColumns: CollectionColumn<LiveRow>[] = [
     {
       id: 'agent',
@@ -177,6 +181,9 @@ function RunsList() {
         </span>
       ),
     },
+    ...(showSpace
+      ? [{ id: 'space', label: 'Space', render: (row: LiveRow) => row.space ?? '-' }]
+      : []),
     {
       id: 'job',
       label: 'Job',
@@ -198,6 +205,9 @@ function RunsList() {
     },
   ]
   const runColumns: CollectionColumn<RunRow>[] = [
+    ...(showSpace
+      ? [{ id: 'space', label: 'Space', render: (row: RunRow) => row.space ?? '-' }]
+      : []),
     { id: 'project', label: 'Project', render: (row) => <ProjectMark name={row.project} /> },
     {
       id: 'task',

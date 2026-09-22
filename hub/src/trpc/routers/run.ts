@@ -7,34 +7,32 @@ import type { Context } from '../context.ts'
 
 const t = initTRPC.context<Context>().create()
 
-const hours = z.union([z.literal(24), z.literal(48), z.literal(168), z.literal(720)])
+export const hours = z.union([z.literal(24), z.literal(48), z.literal(168), z.literal(720)])
 const delivery = z.enum(['none', 'partial', 'full'])
 const quality = z.enum(['wrong', 'mixed', 'right'])
 const fidelity = z.enum(['drifted', 'partial', 'faithful'])
 
+export const runListInput = z.object({
+  hours,
+  agent: z.string().max(64).default(''),
+  project: z.string().max(64).default(''),
+  offset: z.number().int().min(0).default(0),
+  limit: z.union(RUN_PAGE_LIMITS.map((size) => z.literal(size))).default(50),
+  search: z.string().max(200).default(''),
+})
+
 export const runRouter = t.router({
-  list: t.procedure
-    .input(
-      z.object({
-        hours,
-        agent: z.string().max(64).default(''),
-        project: z.string().max(64).default(''),
-        offset: z.number().int().min(0).default(0),
-        limit: z.union(RUN_PAGE_LIMITS.map((size) => z.literal(size))).default(50),
-        search: z.string().max(200).default(''),
-      }),
-    )
-    .query(async ({ input }) => ({
-      ...(await cachedStrip(input.hours)),
-      view: 'runs' as const,
-      data: await view('runs', input.hours, {
-        agent: input.agent,
-        project: input.project,
-        offset: input.offset,
-        limit: input.limit,
-        search: input.search,
-      }),
-    })),
+  list: t.procedure.input(runListInput).query(async ({ input }) => ({
+    ...(await cachedStrip(input.hours)),
+    view: 'runs' as const,
+    data: await view('runs', input.hours, {
+      agent: input.agent,
+      project: input.project,
+      offset: input.offset,
+      limit: input.limit,
+      search: input.search,
+    }),
+  })),
   get: t.procedure.input(z.object({ id: z.number().int().positive() })).query(async ({ input }) => {
     try {
       return await orchRun(input.id)

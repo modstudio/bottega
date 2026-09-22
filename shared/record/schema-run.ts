@@ -8,6 +8,7 @@ import {
   check,
   doublePrecision,
   integer,
+  index,
   jsonb,
   pgTable,
   text,
@@ -36,6 +37,7 @@ export const run = pgTable.withRLS(
     specSha: text('spec_sha'),
     promptBytes: bigint('prompt_bytes', { mode: 'bigint' }).notNull(),
     promptHead: text('prompt_head').notNull(),
+    taskKey: text('task_key'),
     label: text(),
     lens: text(),
     latencyMs: bigint('latency_ms', { mode: 'bigint' }),
@@ -86,6 +88,7 @@ export const run = pgTable.withRLS(
   },
   (table) => [
     unique('run_machine_local_unique').on(table.machineId, table.localId),
+    index('run_space_started_id_idx').on(table.spaceId, table.startedAt.desc(), table.id.desc()),
     ...tenantPolicies('run', table.spaceId),
   ],
 )

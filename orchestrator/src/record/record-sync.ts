@@ -254,6 +254,7 @@ function runValues(row: Payload, projectId: string | null) {
     specSha: nullableString(row.specSha),
     promptBytes: bigint(row.promptBytes),
     promptHead: String(row.promptHead),
+    taskKey: nullableString(row.taskKey),
     label: nullableString(row.label),
     lens: nullableString(row.lens),
     latencyMs: nullableBigint(row.latencyMs),

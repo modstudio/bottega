@@ -19,7 +19,13 @@ import { CONFIG_SCOPES, ConfigServiceError, MACHINE_KEY_ID_PATTERN } from './rec
 import type { RecordDoc, RecordDocImportInput, RecordDocRevision } from './record-docs.ts'
 import { RecordDocError } from './record-docs.ts'
 import type { RecordProject } from './record-projects.ts'
-import type { RecordCursor, RecordRun, RecordRunDetail } from './record-runs.ts'
+import type {
+  RecordCursor,
+  RecordRun,
+  RecordRunDetail,
+  RecordRunsWindow,
+  RecordRunsWindowInput,
+} from './record-runs.ts'
 import type { RecordSnapshot, SnapshotKind } from './record-snapshots.ts'
 import { SNAPSHOT_KINDS } from './record-snapshots.ts'
 import type { RecordScore } from './record-verdicts.ts'
@@ -52,6 +58,9 @@ type Deps = {
       status?: string
     },
   ): Promise<RecordRun[]>
+  readRunsWindow(
+    input: Tenant & Omit<RecordRunsWindowInput, keyof Tenant>,
+  ): Promise<RecordRunsWindow>
   readRun(input: Tenant & { id: string }): Promise<RecordRunDetail | null>
   readReviews(
     input: Tenant & { limit: number; before: RecordCursor | null },
@@ -191,6 +200,12 @@ type Deps = {
 }
 
 const limitSchema = z.coerce.number().int().min(1).max(100).default(20)
+const windowHoursSchema = z.coerce
+  .number()
+  .pipe(z.union([z.literal(24), z.literal(48), z.literal(168), z.literal(720)]))
+const windowLimitSchema = z.coerce
+  .number()
+  .pipe(z.union([z.literal(25), z.literal(50), z.literal(100)]))
 const filterSchema = z.string().min(1).optional()
 const idSchema = z.string().uuid()
 const isoSchema = z.string().datetime({ offset: true })
@@ -357,6 +372,22 @@ export function recordApi(deps: Deps): Hono<ApiEnvironment> {
       items,
       nextCursor: hasMore && last ? encodeRecordCursor({ at: last.startedAt, id: last.id }) : null,
     })
+  })
+  app.get('/v1/runs/window', async (context) => {
+    const tenant = scope(context)
+    if (!tenant) return noSpace(context)
+    const query = z
+      .object({
+        hours: windowHoursSchema,
+        agent: z.string().max(64).default(''),
+        project: z.string().max(64).default(''),
+        search: z.string().max(200).default(''),
+        offset: z.coerce.number().int().min(0).default(0),
+        limit: windowLimitSchema.default(50),
+      })
+      .safeParse(context.req.query())
+    if (!query.success) return context.json({ error: 'invalid run window query' }, 400)
+    return context.json(await deps.readRunsWindow({ ...tenant, ...query.data }))
   })
   app.get('/v1/runs/:id', async (context) => {
     const tenant = scope(context)

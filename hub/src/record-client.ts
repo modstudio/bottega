@@ -45,6 +45,7 @@ const runSchema = z.object({
   status: z.string(),
   latencyMs: z.number().nullable(),
   promptHead: z.string(),
+  taskKey: z.string().nullable(),
   failureKind: z.string().nullable(),
   vendorTokens: z.number().nullable(),
   vendorCostUsd: z.number().nullable(),
@@ -53,12 +54,25 @@ const runSchema = z.object({
   parentRunId: z.string().nullable(),
   turn: z.number(),
   evidenceExcluded: z.string().nullable(),
+  probe: z.boolean(),
   score: scoreSchema,
 })
 
-const runListSchema = z.object({
+const runWindowSchema = z.object({
   items: z.array(runSchema),
-  nextCursor: z.string().nullable(),
+  matched: z.number(),
+  offset: z.number(),
+  limit: z.union([z.literal(25), z.literal(50), z.literal(100)]),
+  facets: z.object({ agents: z.array(z.string()), projects: z.array(z.string()) }),
+  totals: z.object({
+    runs: z.number(),
+    scored: z.number(),
+    voided: z.number(),
+    failed: z.number(),
+  }),
+  vendors: z.array(z.object({ agent: z.string(), tokens: z.number(), runs: z.number() })),
+  unscored: z.number(),
+  live: z.array(runSchema),
 })
 
 const runDetailSchema = runSchema.passthrough().extend({
@@ -107,13 +121,13 @@ const reviewDetailSchema = reviewListItemSchema.extend({
   lenses: z.array(z.unknown()),
 })
 
-type RecordRunListInput = {
-  limit?: number
-  cursor?: string
-  project?: string
-  agent?: string
-  job?: string
-  status?: string
+type RecordRunWindowInput = {
+  hours: 24 | 48 | 168 | 720
+  agent: string
+  project: string
+  offset: number
+  limit: 25 | 50 | 100
+  search: string
 }
 
 type RecordReviewListInput = {
@@ -267,18 +281,18 @@ export function createRecordClient(options: RecordClientOptions) {
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify({ spaceId }),
       }),
-    runs: (input: RecordRunListInput = {}) =>
+    runsView: (input: RecordRunWindowInput) =>
       request(
         options,
-        query('/v1/runs', {
+        query('/v1/runs/window', {
+          hours: input.hours,
           limit: input.limit,
-          before: input.cursor,
+          offset: input.offset,
           project: input.project,
           agent: input.agent,
-          job: input.job,
-          status: input.status,
+          search: input.search,
         }),
-        runListSchema,
+        runWindowSchema,
       ),
     run: (id: string) => request(options, `/v1/runs/${id}`, runDetailSchema),
     reviews: (input: RecordReviewListInput = {}) =>
