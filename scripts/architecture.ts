@@ -546,10 +546,12 @@ export const modules: ArchitectureModule[] = [
     './run-liveness.ts',
     './run-outbox.ts',
     './run-process.ts',
+    './run-terminal-precedence.ts',
     '../sandbox/sandbox.ts',
     '../worktree/worktree-remove.ts',
     '../worktree/worktree-types.ts',
   ]),
+  module('orchestrator/src/run/run-terminal-precedence.ts', ['../failure/failure.ts']),
   module('orchestrator/src/run/run-types.ts', [
     '../contract/contract.ts',
     '../worktree/worktree-remove.ts',
