@@ -46,7 +46,7 @@ import {
   type Quality,
   weigh,
 } from './score/score.ts'
-import { refuseVerdict } from './verdict/verdict-rules.ts'
+import { refuseVerdict, type VerdictRefusal } from './verdict/verdict-rules.ts'
 
 type JudgementFlags = {
   has(name: string): boolean
@@ -464,6 +464,100 @@ export async function judgeRun(
   )
   return { id, row, reviewId, comparison }
 }
+const REVIEW_GRADE_FLAGS = ['reproduced', 'coverage', 'limits', 'overlap'] as const
+
+/** Review grades belong to a findings lens that produced output to grade. */
+function refuseReviewGradeFlags(
+  flags: JudgementFlags,
+  findingsJob: boolean,
+  delivery: string | undefined,
+  jobName: string,
+): string | null {
+  if (!REVIEW_GRADE_FLAGS.some((name) => flags.flag(name) !== undefined)) return null
+  if (!findingsJob) {
+    return `${jobName} is not a findings-producing lens; review grade flags are not valid for this job`
+  }
+  if (delivery === 'none') {
+    return "delivery 'none' takes no review grades: there was no lens output to judge"
+  }
+  return null
+}
+
+/**
+ * The axes are judged before the review evidence is gathered, so a mistyped
+ * word fails before any work is done.
+ */
+function refuseAxesEarly(
+  presentation: JudgementPresentation,
+  input: {
+    delivery: string | undefined
+    quality: string | undefined
+    fidelity: string | undefined
+    writesRepo: boolean
+    failureKind: string | null
+    jobName: string
+    unusedFidelity: boolean
+  },
+): VerdictRefusal | null {
+  if (input.unusedFidelity) {
+    presentation.error(
+      `${input.jobName} has no spec to be faithful to, so it is judged on two axes only`,
+    )
+  }
+  return refuseVerdict({
+    delivery: input.delivery ?? '',
+    quality: input.quality ?? null,
+    fidelity: input.fidelity ?? null,
+    job: {
+      writesRepo: input.writesRepo,
+      producesFindings: false,
+      hasRequiredReviewGrades: true,
+    },
+    failureKind: input.failureKind,
+  })
+}
+
+/**
+ * The CLI teaches the axes where a refusal is the architect reaching for the
+ * wrong words; every other refusal already says what to do.
+ */
+function scoringHelp(
+  refusal: VerdictRefusal,
+  id: number,
+  delivery: string | undefined,
+  quality: string | undefined,
+  jobName: string,
+): string {
+  if (refusal.code === 'delivery') {
+    return (
+      `first word is delivery — did an answer arrive?\n` +
+      `  none      nothing usable came back (a vendor error, an empty reply, a denial)\n` +
+      `  partial   an answer, but cut off or missing part of the ask\n` +
+      `  full      a complete answer\n\n` +
+      `then, unless delivery is 'none', quality — was it right?\n` +
+      `  wrong     confidently incorrect, or answered a different question\n` +
+      `  mixed     some of it right, some not\n` +
+      `  right     correct and usable as it stands\n\n` +
+      `  orch score ${id} full right --note "..."\n` +
+      `  orch score ${id} none --note "..."`
+    )
+  }
+  if (refusal.code === 'fidelity-missing') {
+    return (
+      `${jobName} writes code, so it needs a third word — fidelity: did it build what\n` +
+      `you asked for, or something it decided on instead?\n` +
+      `  drifted   solved a different problem, or redesigned as it went\n` +
+      `  partial   mostly the spec, with decisions taken that were not its to take\n` +
+      `  faithful  built the spec, and ASKED wherever the spec ran out\n\n` +
+      `Asking is faithful. A worker that stopped, asked, and built what it was told\n` +
+      `did exactly the right thing and must not be marked down for it — read\n` +
+      `'orch diff ${id}' against the spec rather than the summary it wrote itself.\n\n` +
+      `  orch score ${id} ${delivery} ${quality} faithful --note "..."`
+    )
+  }
+  return refusal.message
+}
+
 export async function scoreRun(
   requestedId: number,
   flags: JudgementFlags,
@@ -595,29 +689,20 @@ export async function scoreRun(
    */
   const writesRepo = Boolean(JOBS[row.job]?.needs.writesRepo)
   const findingsJob = Boolean(job(row.job).findings)
-  const initialRefusal = refuseVerdict({
-    delivery: delivery ?? '',
-    quality: quality ?? null,
-    fidelity: fidelity ?? null,
-    writesRepo,
-    producesFindings: false,
-    hasRequiredReviewGrades: true,
-    failureKind: row.failure_kind,
-    probe: Boolean(row.probe),
-  })
-  if (initialRefusal) throw new Error(initialRefusal)
-  const scoredDelivery = delivery as Delivery
   const needsFidelity = writesRepo && delivery !== 'none'
-  const reviewGradeFlags = ['reproduced', 'coverage', 'limits', 'overlap'] as const
-  const suppliedReviewGradeFlags = reviewGradeFlags.filter((name) => flags.flag(name) !== undefined)
-  if (suppliedReviewGradeFlags.length && !findingsJob) {
-    throw new Error(
-      `${row.job} is not a findings-producing lens; review grade flags are not valid for this job`,
-    )
-  }
-  if (suppliedReviewGradeFlags.length && delivery === 'none') {
-    throw new Error("delivery 'none' takes no review grades: there was no lens output to judge")
-  }
+  const initialRefusal = refuseAxesEarly(presentation, {
+    delivery,
+    quality,
+    fidelity: needsFidelity ? fidelity : undefined,
+    writesRepo,
+    failureKind: row.failure_kind,
+    jobName: row.job,
+    unusedFidelity: !needsFidelity && Boolean(fidelity),
+  })
+  if (initialRefusal) throw new Error(scoringHelp(initialRefusal, id, delivery, quality, row.job))
+  const scoredDelivery = delivery as Delivery
+  const gradeFlagRefusal = refuseReviewGradeFlags(flags, findingsJob, delivery, row.job)
+  if (gradeFlagRefusal) throw new Error(gradeFlagRefusal)
   const scoredFidelity = needsFidelity ? fidelity : undefined
   let reviewGrade: { output: ReturnType<typeof parseReviewOutput>; grades: ReviewGrades } | null =
     null
@@ -676,16 +761,17 @@ export async function scoreRun(
     reviewGrade = { output, grades: raw as ReviewGrades }
   }
   const refusal = refuseVerdict({
-    delivery: delivery!,
+    delivery: scoredDelivery,
     quality: quality ?? null,
     fidelity: scoredFidelity ?? null,
-    writesRepo,
-    producesFindings: findingsJob,
-    hasRequiredReviewGrades: !findingsJob || delivery === 'none' || reviewGrade !== null,
+    job: {
+      writesRepo,
+      producesFindings: findingsJob,
+      hasRequiredReviewGrades: !findingsJob || delivery === 'none' || reviewGrade !== null,
+    },
     failureKind: row.failure_kind,
-    probe: Boolean(row.probe),
   })
-  if (refusal) throw new Error(refusal)
+  if (refusal) throw new Error(scoringHelp(refusal, id, scoredDelivery, quality, row.job))
   const comparisonFlags = ['better-than', 'worse-than', 'same-as'] as const
   const suppliedComparisons = comparisonFlags.filter((name) => flags.flag(name) !== undefined)
   if (suppliedComparisons.length > 1) {

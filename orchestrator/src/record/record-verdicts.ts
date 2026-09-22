@@ -55,7 +55,7 @@ export async function upsertRecordScore(
 ): Promise<void> {
   return tenant(input, async (tx) => {
     const runs = await tx`
-      SELECT job, failure_kind, probe, machine_id FROM run
+      SELECT job, failure_kind, machine_id FROM run
       WHERE id=${input.id}::uuid AND space_id=${input.spaceId}::uuid
     `
     const run = runs[0] as Record<string, unknown> | undefined
@@ -71,14 +71,11 @@ export async function upsertRecordScore(
     const declaredJob = jobSnapshots[0]?.item as
       | { needs?: { writesRepo?: boolean }; findings?: boolean }
       | undefined
-    if (!declaredJob) {
-      throw new RecordVerdictError(
-        `job capabilities for '${String(run.job)}' are unavailable; run orch record publish and retry`,
-        409,
-      )
-    }
+    // A job this machine has not published, or has since renamed, leaves the
+    // declaration unreadable. The axes are still judged; refusing here would
+    // fail the local score that pushes this verdict before recording its own.
     let hasRequiredReviewGrades = false
-    if (declaredJob.findings && input.delivery !== 'none') {
+    if (declaredJob?.findings && input.delivery !== 'none') {
       const grades = await tx`
         SELECT 1 FROM review_lens
         WHERE run_id=${input.id}::uuid
@@ -92,13 +89,16 @@ export async function upsertRecordScore(
       delivery: input.delivery,
       quality: input.quality,
       fidelity: input.fidelity,
-      writesRepo: Boolean(declaredJob.needs?.writesRepo),
-      producesFindings: Boolean(declaredJob.findings),
-      hasRequiredReviewGrades,
+      job: declaredJob
+        ? {
+            writesRepo: Boolean(declaredJob.needs?.writesRepo),
+            producesFindings: Boolean(declaredJob.findings),
+            hasRequiredReviewGrades,
+          }
+        : null,
       failureKind: run.failure_kind == null ? null : String(run.failure_kind),
-      probe: Boolean(run.probe),
     })
-    if (refusal) throw new RecordVerdictError(refusal)
+    if (refusal) throw new RecordVerdictError(refusal.message)
     await tx`
       INSERT INTO run_score (
         run_id, space_id, delivery, quality, fidelity, note, scored_at, scored_by, updated_at
