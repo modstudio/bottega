@@ -373,7 +373,10 @@ export function resolveTaskBranch(cwd: string, launchKey: string): TaskBranchCan
             base: tip,
             repoRoot,
             source:
-              source === 'recipe' || source === 'git' || source === 'readonly_recipe'
+              source === 'recipe' ||
+              source === 'git' ||
+              source === 'clone' ||
+              source === 'readonly_recipe'
                 ? source
                 : undefined,
             // Null records that this run attached; it did not mint the task branch.

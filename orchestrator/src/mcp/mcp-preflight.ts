@@ -202,7 +202,7 @@ export function assertGrokTrustEligible(
 ): void {
   const orchCut =
     recorded?.worktree === cwd &&
-    ['recipe', 'git', 'readonly_recipe'].includes(recorded.worktree_source ?? '')
+    ['recipe', 'git', 'clone', 'readonly_recipe'].includes(recorded.worktree_source ?? '')
   const orchIsolate =
     recorded?.worktree === null &&
     recorded.id !== undefined &&

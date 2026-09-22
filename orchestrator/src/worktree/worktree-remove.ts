@@ -1,9 +1,15 @@
 // concern: worktree-remove
-import { existsSync, mkdtempSync, rmSync } from 'node:fs'
+import { existsSync, mkdtempSync, realpathSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
-import { join } from 'node:path'
+import { isAbsolute, join, relative } from 'node:path'
 import { db, nowIso, writeTransaction } from '../database/db.ts'
-import { git, gitOk, gitRaw, targetGitEnvironment } from '../git/git-environment.ts'
+import {
+  borrowedCheckoutOf,
+  git,
+  gitOk,
+  gitRaw,
+  targetGitEnvironment,
+} from '../git/git-environment.ts'
 import { projectAt, resolvedWorktreeTool, type WorktreeTool } from '../project/projects.ts'
 import {
   databaseDroppedByTeardown,
@@ -276,9 +282,9 @@ function removeWithoutCommand(
 export function removeReadOnlyTree(
   tool: WorktreeTool,
   w: Worktree,
-  keepBranch = false,
+  _keepBranch = false,
 ): { removed: boolean; detail: string; output?: string } {
-  if (!tool.readonly_remove) return removeWorktree(w, keepBranch)
+  if (!tool.readonly_remove) return removeReadOnlyDirectory(w)
   const result = runShellTool(tool.readonly_remove, { path: w.path }, w.repoRoot)
   if (!result.ok) {
     return {
@@ -288,8 +294,79 @@ export function removeReadOnlyTree(
         `${result.out.slice(-600) || `exit code from ${tool.readonly_remove}`}`,
     }
   }
-  const reconciled = removeWorktree(w, keepBranch)
+  const reconciled = removeReadOnlyDirectory(w)
   return result.out ? { ...reconciled, output: result.out } : reconciled
+}
+
+export type ReadOnlyRemovalSafetyInput = {
+  path: string
+  repoRoot: string
+  gitEntryExists: boolean
+  borrowedSource: string | null
+}
+
+/** Decide whether a resolved path can be deleted as this project's disposable reader clone. */
+export function readOnlyRemovalRefusal(input: ReadOnlyRemovalSafetyInput): string | null {
+  const pathToRepo = relative(input.path, input.repoRoot)
+  if (pathToRepo === '' || (!pathToRepo.startsWith('..') && !isAbsolute(pathToRepo))) {
+    return (
+      `refusing to remove ${input.path}: it is the main checkout or an ancestor of ` +
+      `${input.repoRoot}; correct the run's worktree path, then retry cleanup`
+    )
+  }
+  if (input.gitEntryExists && input.borrowedSource !== input.repoRoot) {
+    return (
+      `refusing to remove ${input.path}: its .git does not identify a reader clone borrowing ` +
+      `from ${input.repoRoot}; inspect the checkout and correct the run's worktree path, then retry cleanup`
+    )
+  }
+  const readersRoot = join(input.repoRoot, '.claude', 'worktrees')
+  const fromReadersRoot = relative(readersRoot, input.path)
+  if (
+    !input.gitEntryExists &&
+    (fromReadersRoot === '' || fromReadersRoot.startsWith('..') || isAbsolute(fromReadersRoot))
+  ) {
+    return (
+      `refusing to remove ${input.path}: it has no .git and is outside ${readersRoot}; ` +
+      `move or correct the partial reader path under that directory, then retry cleanup`
+    )
+  }
+  return null
+}
+
+/** A reader is an independent clone, never a main-repository worktree record. */
+export function removeReadOnlyDirectory(w: Worktree): { removed: boolean; detail: string } {
+  if (!existsSync(w.path)) return { removed: true, detail: `${w.path} was already gone` }
+  let path: string
+  let repoRoot: string
+  let gitEntryExists: boolean
+  let borrowedSource: string | null = null
+  try {
+    path = realpathSync(w.path)
+    repoRoot = realpathSync(w.repoRoot)
+    gitEntryExists = existsSync(join(path, '.git'))
+    if (gitEntryExists) {
+      const borrowed = borrowedCheckoutOf(path)
+      borrowedSource = borrowed ? realpathSync(borrowed) : null
+    }
+  } catch (error) {
+    return {
+      removed: false,
+      detail:
+        `could not establish that ${w.path} is a reader clone of ${w.repoRoot}: ${String(error)}; ` +
+        `inspect both paths and correct the run row, then retry cleanup`,
+    }
+  }
+  const refusal = readOnlyRemovalRefusal({ path, repoRoot, gitEntryExists, borrowedSource })
+  if (refusal) return { removed: false, detail: refusal }
+  try {
+    rmSync(w.path, { recursive: true, force: true })
+  } catch (error) {
+    return { removed: false, detail: `could not remove ${w.path}: ${String(error)}` }
+  }
+  return existsSync(w.path)
+    ? { removed: false, detail: `could not remove ${w.path}; it is still on disk` }
+    : { removed: true, detail: w.path }
 }
 
 function mintedBranchOwnedBy(w: Worktree, runId?: number): string | null {
@@ -332,7 +409,7 @@ export function removeFor(
   const retainBranch =
     keepBranch || !minted || (!forceUnmerged && unmergedBranch(repoRoot, minted, null) !== null)
   let result: { removed: boolean; detail: string; output?: string }
-  if (w.source === 'readonly_recipe') {
+  if (w.source === 'readonly_recipe' || w.source === 'clone') {
     const removed = removeReadOnlyTree(tool ?? {}, owned, retainBranch)
     result = removed.output
       ? { ...removed, output: `${project!.name} readonly remove:\n${removed.output}` }

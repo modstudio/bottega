@@ -189,10 +189,11 @@ export type WorktreeTool = {
    */
   create?: WorktreeCreate
   /**
-   * Optionally provisions a read-only checkout at a detached HEAD.
+   * Optionally provisions a detached shared clone that borrows the main
+   * checkout's object store.
    *
    * It receives exactly `{path}` and `{base}`. It must not change task state.
-   * When absent, read-only runs use a plain detached git worktree and no
+   * When absent, read-only runs use a plain detached shared clone and no
    * project infrastructure.
    */
   readonly_create?: WorktreeCreate

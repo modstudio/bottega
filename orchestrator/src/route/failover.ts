@@ -17,7 +17,7 @@ type RetryWorktree = {
   branch: string
   base: string
   repoRoot: string
-  source?: 'recipe' | 'git' | 'readonly_recipe'
+  source?: 'recipe' | 'git' | 'clone' | 'readonly_recipe'
   mintedBranch?: string | null
 }
 

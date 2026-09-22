@@ -52,7 +52,7 @@ export type CleanupRow = {
   worktree: string
   branch: string | null
   base_commit: string | null
-  worktree_source?: 'recipe' | 'git' | 'readonly_recipe' | null
+  worktree_source?: 'recipe' | 'git' | 'clone' | 'readonly_recipe' | null
   minted_branch?: string | null
 }
 

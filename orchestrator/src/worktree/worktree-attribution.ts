@@ -8,7 +8,7 @@ import { basename, dirname, join, resolve } from 'node:path'
 import { resolveRunsDirectory } from '../database/database-location.ts'
 import { db } from '../database/db.ts'
 import { realpathOrSpelled } from '../git/checkout-identity.ts'
-import { gitOk, gitResult } from '../git/git-environment.ts'
+import { borrowedCheckoutOf, gitOk, gitResult } from '../git/git-environment.ts'
 import type { Worktree } from './worktree-types.ts'
 
 export type OrphanSafety = {
@@ -124,7 +124,10 @@ export function markedWorktreeSource(path: string): Worktree['source'] | undefin
       .split('\n')
       .find((entry) => entry.startsWith('source: '))
     const source = line?.slice('source: '.length)
-    return source === 'recipe' || source === 'git' || source === 'readonly_recipe'
+    return source === 'recipe' ||
+      source === 'git' ||
+      source === 'clone' ||
+      source === 'readonly_recipe'
       ? source
       : undefined
   } catch {
@@ -154,12 +157,55 @@ export function orphanSafety(path: string, repoRoot: string, _trunk: string): Or
     .filter((line) => line.startsWith('worktree '))
     .map((line) => line.slice('worktree '.length))
     .some((candidate) => existsSync(candidate) && realpathSync(candidate) === actual)
-  if (!registered) {
-    return { removable: false, branch: '', detail: 'not a registered git worktree' }
+  let markedBorrowedCheckout = false
+  if (!registered && existsSync(join(path, ORCH_RUN_MARKER))) {
+    try {
+      const markerRoot = readFileSync(join(path, ORCH_RUN_MARKER), 'utf8').split('\n')[1]?.trim()
+      const borrowed = borrowedCheckoutOf(path)
+      markedBorrowedCheckout =
+        Boolean(markerRoot && borrowed) &&
+        realpathSync(markerRoot!) === realpathSync(repoRoot) &&
+        realpathSync(borrowed!) === realpathSync(repoRoot)
+    } catch {
+      markedBorrowedCheckout = false
+    }
+  }
+  let unmarkedBorrowedReader = false
+  if (!registered && !existsSync(join(path, ORCH_RUN_MARKER))) {
+    try {
+      const borrowed = borrowedCheckoutOf(path)
+      unmarkedBorrowedReader = isUnmarkedBorrowedReaderClone({
+        path: realpathSync(path),
+        repoRoot: realpathSync(repoRoot),
+        borrowedSource: borrowed ? realpathSync(borrowed) : null,
+      })
+    } catch {
+      unmarkedBorrowedReader = false
+    }
+  }
+  if (!registered && !markedBorrowedCheckout && !unmarkedBorrowedReader) {
+    return {
+      removable: false,
+      branch: '',
+      detail: 'not a registered git worktree or marked borrowed checkout',
+    }
   }
 
   const branch = gitOk(['symbolic-ref', '--quiet', '--short', 'HEAD'], path) ?? ''
   return { removable: true, branch, detail: 'committed work is retained by its branch' }
+}
+
+/** Recognise only the conventional unmarked reader clone location left by an interrupted create. */
+export function isUnmarkedBorrowedReaderClone(input: {
+  path: string
+  repoRoot: string
+  borrowedSource: string | null
+}): boolean {
+  return (
+    /^orch-\d+$/.test(basename(input.path)) &&
+    dirname(input.path) === join(input.repoRoot, '.claude', 'worktrees') &&
+    input.borrowedSource === input.repoRoot
+  )
 }
 
 /** Classify git-status exit, stdout and stderr without running git. */

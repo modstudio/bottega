@@ -35,19 +35,8 @@ import { preflight } from '../dispatch/dispatch-preflight.ts'
 import { assessEvidencePrompt } from '../evidence/evidence.ts'
 import { type classify, notify } from '../failure/failure.ts'
 import { checkoutWatchSet } from '../git/checkout-identity.ts'
-import {
-  gitContext,
-  prepareWorktreeObjects,
-  type WorktreeObjectEnvironment,
-  worktreeGitDir,
-} from '../git/git-environment.ts'
-import {
-  isReaderJob,
-  type Job,
-  job,
-  jobBoundInstruction,
-  resolveJobTimeoutMs,
-} from '../jobs/jobs.ts'
+import { gitContext, worktreeGitDir } from '../git/git-environment.ts'
+import { isReaderJob, job, jobBoundInstruction, resolveJobTimeoutMs } from '../jobs/jobs.ts'
 import { resolveLens } from '../lens/lenses.ts'
 import {
   canonSourceFor,
@@ -69,7 +58,6 @@ import { trackedRecipeEnvironment } from '../recipe/tracked-recipe.ts'
 import { signedInRecordUserId } from '../record/record-attribution.ts'
 import {
   assertSharedRefGuardOutsideWritableRoots,
-  prepareSharedRefGuard,
   workerSharedGitRoots,
 } from '../resources/ref-guard.ts'
 import { recordSandboxDirectoryClaim } from '../resources/resource-claims.ts'
@@ -112,6 +100,7 @@ import {
 import { claimRun } from './run-claim.ts'
 import { closeRun } from './run-close.ts'
 import { codexAcpReadonlyDockerRefusal, decideCodexSandbox } from './run-codex-sandbox.ts'
+import { workerGitConfigEnvironment } from './run-git-guard.ts'
 import { decideRunLaunch } from './run-launch.ts'
 import { acquireRunLease } from './run-lease.ts'
 import { runLive } from './run-live.ts'
@@ -146,25 +135,15 @@ function throwPreclaimRefusal(refusal: string | null, reserveId: number | undefi
 
 /** From the run's recorded recipe, never a second register read that can differ from the one that built the tree. */
 function trackedWorkerEnvironment(
+  repoJob: boolean,
   writesJob: boolean,
   worktree: Worktree | null,
   runId: number,
 ): Record<string, string> {
-  return writesJob && worktree ? trackedRecipeEnvironment(runId) : {}
-}
-
-/** Read-only repository jobs isolate scratch objects; writing jobs need durable commits. */
-function gitObjectEnvironmentFor(
-  agent: string,
-  requestedJob: Job,
-  worktree: Worktree | null,
-): WorktreeObjectEnvironment | undefined {
-  return agent === 'codex' &&
-    requestedJob.needs.readsRepo &&
-    worktree &&
-    !requestedJob.needs.writesRepo
-    ? prepareWorktreeObjects(worktree.path)
-    : undefined
+  return {
+    ...(writesJob && worktree ? trackedRecipeEnvironment(runId) : {}),
+    ...(repoJob && worktree ? { ORCH_MAIN_CHECKOUT: worktree.repoRoot } : {}),
+  }
 }
 
 function resolveRunTransport(opts: {
@@ -739,26 +718,17 @@ export async function run(opts: {
   mcpConnection = claimedMcpConnection
   usingMcp = claimedUsingMcp
 
-  // Read-only Codex jobs keep scratch objects in this worktree's metadata and
-  // read existing objects through a common-store alternate. Writing jobs use
-  // the common store so commits survive removal of the disposable tree.
-  const gitObjectEnvironment = gitObjectEnvironmentFor(name, requestedJob, worktree)
+  // A reader clone keeps all writable Git metadata inside its own tree. Its
+  // hooks live outside that root so the worker cannot disable the push guard.
+  // Writers remain linked worktrees and retain their existing shared roots.
   const writableRoots = [
     scratchDir,
-    ...(repoJob && worktree
-      ? [
-          worktreeGitDir(worktree.path),
-          ...(writesJob ? workerSharedGitRoots(worktree.path, worktree.branch) : []),
-        ]
+    ...(repoJob && worktree && writesJob
+      ? [worktreeGitDir(worktree.path), ...workerSharedGitRoots(worktree.path, worktree.branch)]
       : []),
   ]
-  const gitConfigEnvironment = worktree
-    ? prepareSharedRefGuard(
-        worktree.path,
-        writesJob && requestedJob.name !== 'land' ? `refs/heads/${worktree.branch}` : undefined,
-      )
-    : undefined
-  const recipeEnvironment = trackedWorkerEnvironment(writesJob, worktree, claim.id)
+  const gitConfigEnvironment = workerGitConfigEnvironment(worktree, writesJob, requestedJob.name)
+  const recipeEnvironment = trackedWorkerEnvironment(repoJob, writesJob, worktree, claim.id)
   if (gitConfigEnvironment) {
     assertSharedRefGuardOutsideWritableRoots(gitConfigEnvironment.GIT_CONFIG_VALUE_0, writableRoots)
   }
@@ -1081,7 +1051,6 @@ export async function run(opts: {
       codexMcpScope,
       mcpTrustGranted,
       writableRoots,
-      gitObjectEnvironment,
       gitConfigEnvironment,
       sandboxRunDir,
       grokMcpEnvironment,

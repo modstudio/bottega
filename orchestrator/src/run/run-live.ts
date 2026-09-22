@@ -20,12 +20,7 @@ import {
 import { db, nowIso } from '../database/db.ts'
 import { appendRunEvent, teeTransportEvents } from '../events.ts'
 import { type classify, hasVendorTerminationMarker } from '../failure/failure.ts'
-import {
-  contentTree,
-  gitContext,
-  targetGitEnvironment,
-  type WorktreeObjectEnvironment,
-} from '../git/git-environment.ts'
+import { contentTree, gitContext, targetGitEnvironment } from '../git/git-environment.ts'
 import {
   formatIdleKillError,
   idleKillMayProceed,
@@ -154,7 +149,6 @@ export type LiveInput = {
   codexMcpScope: { servers: Record<string, CodexMcpServer> } | null
   mcpTrustGranted: boolean
   writableRoots: string[]
-  gitObjectEnvironment: WorktreeObjectEnvironment | undefined
   gitConfigEnvironment: Record<string, string> | undefined
   sandboxRunDir: string
   grokMcpEnvironment: Record<string, string>
@@ -235,7 +229,6 @@ export async function runLive(input: LiveInput): Promise<LiveResult> {
     codexMcpScope,
     mcpTrustGranted,
     writableRoots,
-    gitObjectEnvironment,
     gitConfigEnvironment,
     sandboxRunDir,
     grokMcpEnvironment,
@@ -334,7 +327,6 @@ export async function runLive(input: LiveInput): Promise<LiveResult> {
       projectServers: codexMcpScope?.servers,
       trustCwd: mcpTrustGranted ? cwd : undefined,
       writableRoots,
-      gitObjectEnvironment,
       gitConfigEnvironment,
       recipeEnvironment,
       srt: sandboxSelection.profile

@@ -2,7 +2,7 @@ import { existsSync, readFileSync, statSync } from 'node:fs'
 import { basename, dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { FROZEN_STATE_NAMES, PLATFORM_NAME } from '../../../shared/brand.ts'
-import { inspectionGitEnv } from '../../../shared/git.ts'
+import { borrowedCheckoutOf, inspectionGitEnv } from '../../../shared/git.ts'
 import { isAuthorizedPlatformInstallation } from '../../../shared/install-root.ts'
 import {
   legacyStoreRefusal,
@@ -50,10 +50,11 @@ function repositoryRootFromGit(cwd: string): RepositoryRoot | null {
     if (!gitDirOutput || !commonOutput || (bare !== 'true' && bare !== 'false')) return null
     const gitDir = resolve(cwd, gitDirOutput)
     const common = resolve(cwd, commonOutput)
+    const borrowed = bare === 'false' ? borrowedCheckoutOf(cwd) : null
     return {
-      root: bare === 'true' ? common : dirname(common),
+      root: borrowed ?? (bare === 'true' ? common : dirname(common)),
       method: 'git-common-dir',
-      linked: gitDir !== common,
+      linked: gitDir !== common || borrowed !== null,
     }
   } catch {
     return null
@@ -72,7 +73,12 @@ function repositoryRootFromDotGit(cwd: string): RepositoryRoot | null {
     if (existsSync(dotGit)) {
       try {
         if (statSync(dotGit).isDirectory()) {
-          return { root: current, method: 'git-pointer', linked: false }
+          const borrowed = borrowedCheckoutOf(current)
+          return {
+            root: borrowed ?? current,
+            method: 'git-pointer',
+            linked: borrowed !== null,
+          }
         }
         const match = readFileSync(dotGit, 'utf8')
           .trim()

@@ -35,6 +35,7 @@ export type SharedRefGuardEnvironment = {
 const shellQuote = (value: string) => `'${value.replaceAll("'", "'\\''")}'`
 
 const REF_GUARD_WRAPPER_MARKER = '# orch shared-ref guard wrapper\n'
+const READONLY_PRE_PUSH = '#!/bin/sh\necho "read-only runs never push" >&2\nexit 1\n'
 
 function sharedRefGuardWrapper(hookDir: string, guard: string, original: string): string {
   const guardMarker = Buffer.from(guard).toString('base64')
@@ -222,19 +223,68 @@ function verifiedSharedRefGuardEnvironment(
   hookDir: string,
   guard: string,
   allowedRef?: string,
+  readonly = false,
 ): SharedRefGuardEnvironment {
   const installed = join(hookDir, 'reference-transaction')
   const verified = installedRefGuard(installed, guard)
   if (!verified?.executable) {
     throw new Error(`refusing to expose unverified shared ref guard hooks path: ${hookDir}`)
   }
+  if (readonly) installReadOnlyPrePush(hookDir)
   return sharedRefGuardEnvironment(paths, hookDir, allowedRef)
 }
 
+function verifiedReadOnlyPrePush(installed: string): boolean {
+  if (!pathEntryExists(installed)) return false
+  try {
+    accessSync(installed, constants.X_OK)
+    return readFileSync(installed, 'utf8') === READONLY_PRE_PUSH
+  } catch {
+    return false
+  }
+}
+
+function installReadOnlyPrePush(hookDir: string): void {
+  const installed = join(hookDir, 'pre-push')
+  if (pathEntryExists(installed)) {
+    if (verifiedReadOnlyPrePush(installed)) return
+    throw new Error(`refusing to replace unrecognized read-only pre-push hook ${installed}`)
+  }
+  let fd: number | null = null
+  try {
+    fd = openSync(installed, 'wx', 0o600)
+    writeFileSync(fd, READONLY_PRE_PUSH)
+    fchmodSync(fd, 0o755)
+    fsyncSync(fd)
+    closeSync(fd)
+    fd = null
+  } catch (error) {
+    if (fd !== null) closeSync(fd)
+    if (verifiedReadOnlyPrePush(installed)) return
+    throw error
+  }
+}
+
+function refGuardPaths(cwd: string, readonlyRepoRoot?: string): { commonDir: string } {
+  const linkedPaths = linkedWorktreePaths(cwd)
+  if (linkedPaths) return linkedPaths
+  const readonlyCommonDir = readonlyRepoRoot ? commonGitDir(readonlyRepoRoot) : null
+  if (readonlyCommonDir) return { commonDir: readonlyCommonDir }
+  throw new Error(
+    readonlyRepoRoot
+      ? `cannot guard read-only pushes: ${readonlyRepoRoot} has no common git directory`
+      : `cannot guard shared refs: ${cwd} is not a linked worktree`,
+  )
+}
+
 /** Install the ref-update boundary without changing the shared repository config. */
-export function prepareSharedRefGuard(cwd: string, allowedRef?: string): SharedRefGuardEnvironment {
-  const paths = linkedWorktreePaths(cwd)
-  if (!paths) throw new Error(`cannot guard shared refs: ${cwd} is not a linked worktree`)
+export function prepareSharedRefGuard(
+  cwd: string,
+  allowedRef?: string,
+  readonlyRepoRoot?: string,
+): SharedRefGuardEnvironment {
+  const paths = refGuardPaths(cwd, readonlyRepoRoot)
+  const readonly = readonlyRepoRoot !== undefined
   const hookDir = join(paths.commonDir, 'orch-guards', refGuardOwner(cwd))
   if (pathEntryExists(hookDir) && realpathSync(hookDir) !== resolve(hookDir)) {
     throw new Error(`refusing shared ref guard hook directory symlink: ${hookDir}`)
@@ -284,7 +334,7 @@ export function prepareSharedRefGuard(cwd: string, allowedRef?: string): SharedR
     wrapper = sharedRefGuardWrapper(hookDir, guard, original)
     if (installedGuard?.kind === 'wrapper' && installedGuard.original === original) {
       if (installedGuard.executable) {
-        return verifiedSharedRefGuardEnvironment(paths, hookDir, guard, allowedRef)
+        return verifiedSharedRefGuardEnvironment(paths, hookDir, guard, allowedRef, readonly)
       }
     }
     if (pathEntryExists(installed)) {
@@ -302,7 +352,7 @@ export function prepareSharedRefGuard(cwd: string, allowedRef?: string): SharedR
     }
   } else if (installedGuard !== null) {
     if (installedGuard.executable) {
-      return verifiedSharedRefGuardEnvironment(paths, hookDir, guard, allowedRef)
+      return verifiedSharedRefGuardEnvironment(paths, hookDir, guard, allowedRef, readonly)
     }
     throw new Error(`shared ref guard is not executable: ${realpathSync(installed)}`)
   } else if (pathEntryExists(installed)) {
@@ -336,7 +386,7 @@ export function prepareSharedRefGuard(cwd: string, allowedRef?: string): SharedR
     }
   }
 
-  return verifiedSharedRefGuardEnvironment(paths, hookDir, guard, allowedRef)
+  return verifiedSharedRefGuardEnvironment(paths, hookDir, guard, allowedRef, readonly)
 }
 
 /** Remove the guard owned by one run. A missing repository or directory is already clean. */

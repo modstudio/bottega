@@ -1,5 +1,5 @@
-import { existsSync, realpathSync } from 'node:fs'
-import { dirname } from 'node:path'
+import { existsSync, readFileSync, realpathSync, statSync } from 'node:fs'
+import { basename, dirname, join, resolve } from 'node:path'
 
 /**
  * Hermetic git against a chosen tree.
@@ -101,12 +101,61 @@ function gitAt(path: string, args: string[]): GitResult {
   }
 }
 
+/**
+ * Resolve the one source checkout named by a shared clone's alternates file.
+ *
+ * Git resolves relative alternates against the borrowing repository's objects
+ * directory. Comments and blank lines carry no object source. The accepted
+ * shape deliberately names a non-bare checkout's `.git/objects`, never an
+ * arbitrary object database.
+ */
+export function borrowedCheckoutFromAlternates(
+  contents: string | null,
+  objectsDirectory: string,
+): string | null {
+  if (contents === null) return null
+  const lines = contents
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter((line) => line && !line.startsWith('#'))
+  if (lines.length !== 1) return null
+  const objects = resolve(objectsDirectory, lines[0]!)
+  if (basename(objects) !== 'objects' || basename(dirname(objects)) !== '.git') return null
+  return dirname(dirname(objects))
+}
+
+/** Read and validate the shared-clone identity exposed by a checkout. */
+export function borrowedCheckoutOf(cwd: string): string | null {
+  const gitDir = gitAt(cwd, ['rev-parse', '--path-format=absolute', '--git-dir'])
+  if (gitDir.code !== 0 || !gitDir.stdout.trim()) return null
+  const objectsDirectory = join(gitDir.stdout.trim(), 'objects')
+  let contents: string
+  try {
+    contents = readFileSync(join(objectsDirectory, 'info', 'alternates'), 'utf8')
+  } catch {
+    return null
+  }
+  const source = borrowedCheckoutFromAlternates(contents, objectsDirectory)
+  if (!source) return null
+  try {
+    if (!statSync(join(source, '.git')).isDirectory()) return null
+    const bare = gitAt(source, ['rev-parse', '--is-bare-repository'])
+    const top = gitAt(source, ['rev-parse', '--path-format=absolute', '--show-toplevel'])
+    if (bare.code !== 0 || bare.stdout.trim() !== 'false' || top.code !== 0) return null
+    return realpathSync(top.stdout.trim()) === realpathSync(source) ? realpathSync(source) : null
+  } catch {
+    return null
+  }
+}
+
 /** Resolve the main checkout belonging to a checkout or linked worktree. */
 export function mainCheckoutOf(
   cwd: string,
   env?: Record<string, string | undefined>,
 ): string | null {
   if (!existsSync(cwd)) return null
+  const borrowed = borrowedCheckoutOf(cwd)
+  if (borrowed) return borrowed
   const result = Bun.spawnSync(['git', 'rev-parse', '--path-format=absolute', '--git-common-dir'], {
     cwd,
     env: env ?? inspectionGitEnv(),

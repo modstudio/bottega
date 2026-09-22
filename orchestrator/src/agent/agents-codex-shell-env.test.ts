@@ -30,8 +30,39 @@ describe('codex worker shell environment', () => {
     ])
   })
 
+  test('the registered main checkout is pinned in the tool shell', () => {
+    const argv = BUILTIN_AGENTS.codex!.argv({
+      prompt: 'p',
+      out: '/tmp/out',
+      recipeEnvironment: { ORCH_MAIN_CHECKOUT: '/projects/app' },
+    })
+    expect(shellSets(argv)).toEqual([
+      'shell_environment_policy.set.ORCH_MAIN_CHECKOUT="/projects/app"',
+    ])
+  })
+
   test('a run with no recipe allocations sets nothing', () => {
     const argv = BUILTIN_AGENTS.codex!.argv({ prompt: 'p', out: '/tmp/out' })
     expect(shellSets(argv)).toEqual([])
+  })
+
+  test('a read-only repository run does not override Git object storage', () => {
+    const argv = BUILTIN_AGENTS.codex!.argv({
+      prompt: 'p',
+      out: '/tmp/out',
+      sandbox: 'workspace-write',
+      write: true,
+      writableRoots: ['/repo/.git/objects'],
+      ...{
+        gitObjectEnvironment: {
+          GIT_OBJECT_DIRECTORY: '/repo/.git/worktrees/reader/objects',
+          GIT_ALTERNATE_OBJECT_DIRECTORIES: '/repo/.git/objects',
+        },
+      },
+    })
+    expect(shellSets(argv)).not.toContainEqual(expect.stringContaining('GIT_OBJECT_DIRECTORY'))
+    expect(shellSets(argv)).not.toContainEqual(
+      expect.stringContaining('GIT_ALTERNATE_OBJECT_DIRECTORIES'),
+    )
   })
 })

@@ -506,8 +506,9 @@
   {
     "file": "orchestrator/src/resources/ref-guard.ts",
     "function": "prepareSharedRefGuard",
-    "line": 188,
-    "score": 45
+    "line": 281,
+    "score": 44,
+    "key": "orchestrator/src/resources/ref-guard.ts\u0000prepareSharedRefGuard"
   },
   {
     "file": "orchestrator/src/resources/resource-inventory.ts",
@@ -735,8 +736,8 @@
   {
     "file": "orchestrator/src/run/run.ts",
     "function": "run",
-    "line": 231,
-    "score": 142,
+    "line": 223,
+    "score": 136,
     "key": "orchestrator/src/run/run.ts\u0000run"
   },
   {
