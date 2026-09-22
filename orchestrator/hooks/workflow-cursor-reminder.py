@@ -213,14 +213,14 @@ def main():
             file=sys.stderr,
         )
         return 0
+    event = payload.get("hook_event_name")
     try:
-        event = payload.get("hook_event_name")
         if event == "SessionStart":
             handle_session_start(payload)
         elif event == "Stop":
             handle_stop(payload)
-    except Exception:
-        pass
+    except Exception as error:
+        emit_unknown(event, f"hook failed ({error.__class__.__name__}: {error})")
     return 0
 
 
