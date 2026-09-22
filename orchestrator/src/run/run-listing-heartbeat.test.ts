@@ -1,6 +1,7 @@
 import { expect, test } from 'bun:test'
 import { chmodSync, mkdirSync, rmSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
+import { fileURLToPath } from 'node:url'
 import { addRun } from '../../test/fixtures/store.ts'
 import { dir } from '../../test/preload.ts'
 import { db } from '../database/db.ts'
@@ -44,12 +45,13 @@ fi
 
   try {
     const result = Bun.spawnSync(['bash', 'hooks/orch-heartbeat.sh', session, '0', '1'], {
-      cwd: new URL('../../', import.meta.url).pathname,
+      cwd: fileURLToPath(new URL('../../', import.meta.url)),
       env: {
         ...process.env,
         PATH: `${fakeBin}:${process.env.PATH ?? ''}`,
         ORCH_IDLE_STALL_MS: '0',
         KEEPALIVE_TICKS: '100',
+        NOTICE_TIMEOUT_SECONDS: '0',
       },
       stdout: 'pipe',
       stderr: 'pipe',

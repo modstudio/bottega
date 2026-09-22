@@ -832,20 +832,6 @@ export const importBoundaries: ImportBoundary[] = [
     'Keep run listing independent of run control, transports, routing, the CLI, and worktrees.',
   ),
   boundary(
-    'live-run-member-boundary',
-    'orchestrator/src/run/live-run-member.ts',
-    [
-      'bun:sqlite',
-      '../../../shared/process-identity.ts',
-      '../database/db.ts',
-      '../events.ts',
-      '../idle-kill.ts',
-      '../jobs/jobs.ts',
-      '../stalled-run.ts',
-    ],
-    'Keep the canonical live member and its stall observation independent of adapters.',
-  ),
-  boundary(
     'run-liveness-boundary',
     'orchestrator/src/run/run-liveness.ts',
     [
