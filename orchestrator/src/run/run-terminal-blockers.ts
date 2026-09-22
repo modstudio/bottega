@@ -20,6 +20,13 @@ export type BlockerRow = {
 }
 
 /**
+ * Blockers come from every job, not only the ones with a contract. The runs
+ * that first reported them were review lenses, which carry no contract, so a
+ * structured field alone would have caught none; they said it in prose and
+ * carried on. Declared and detected rows are stored side by side and kept
+ * distinguishable, as measured and claimed facts are: one is the worker's own
+ * account, the other is our reading of its prose.
+ *
  * A declared blocker gets the first kind the detector recognises in the
  * worker's what and why. An unrecognised blocker is still recorded with a
  * null kind rather than discarded.
