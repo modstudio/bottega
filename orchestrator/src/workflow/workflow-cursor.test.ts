@@ -10,6 +10,7 @@ import {
 } from './workflow-cursor.ts'
 import { renderWorkflowComposition } from './workflow-render.ts'
 import { seedWorkflows } from './workflow-seeds.ts'
+import { promoteWorkflow, setWorkflow, showWorkflow } from './workflows.ts'
 
 const database = () => {
   const d = new Database(':memory:')
@@ -110,6 +111,43 @@ describe('workflow cursor adapter', () => {
       state: 'running',
       question: null,
     })
+  })
+
+  test('an advanced cursor keeps its pinned versions and args when production moves on', () => {
+    const d = database()
+    composeWorkflowWithCursor('ship', 'fixture', 'default', args, context, d)
+    getWorkflowStepWithCursor('ship', 'fixture', 'rebase', args, 'default', context, d)
+    nextWorkflowStep('ship', 'fixture', 'default', args, 'rebased', context, d)
+    const current = showWorkflow('ship', undefined, d).definition
+    const draft = setWorkflow(
+      'ship',
+      {
+        ...current,
+        title: 'Ship a task (later)',
+        arguments: current.arguments.filter((argument) => argument.name !== 'key'),
+        modes: [{ ...current.modes[0]!, steps: ['close', 'rebase'] }],
+      },
+      'test fixture',
+      'test',
+      d,
+    )
+    promoteWorkflow('ship', draft.n, 'publish', 'test', d)
+
+    const recomposed = composeWorkflowWithCursor(
+      'ship',
+      'fixture',
+      'default',
+      { ...args, worktree: '/tmp/other' },
+      context,
+      d,
+    )
+    expect(recomposed.workflow.title).toBe('Ship a task')
+    expect(recomposed.arguments.worktree).toBe('/tmp/work')
+    expect(recomposed.steps.map((step) => step.slug).slice(0, 2)).toEqual(['rebase', 'lens'])
+    expect(d.query('SELECT count(*) count FROM workflow_cursor').get()).toEqual({ count: 1 })
+    expect(nextWorkflowStep('ship', 'fixture', 'default', args, 'lensed', context, d)).toContain(
+      'fetch step 4',
+    )
   })
 
   test('a second session takes a keyed cursor over and is told so', () => {

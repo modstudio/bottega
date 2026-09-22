@@ -45,20 +45,8 @@ export const mcpWorkflowCursorContext = (): WorkflowCursorContext => ({
 })
 export const cliWorkflowCursorContext = (): WorkflowCursorContext => ({ session: sessionId() })
 
-const keyOf = (workflow: string, args: Record<string, string>, d: Database): string => {
-  const row = d
-    .query(
-      `SELECT v.definition FROM workflow_version v
-       JOIN workflow w ON w.id=v.workflow_id
-       WHERE w.slug=? AND v.status='production'`,
-    )
-    .get(workflow) as { definition: string } | null
-  if (!row) return ''
-  const definition = JSON.parse(row.definition) as { arguments?: { name?: string }[] }
-  return definition.arguments?.some((argument) => argument.name === 'key')
-    ? (args.key?.trim() ?? '')
-    : ''
-}
+/** A cursor is keyed by the task key the caller passed; production's argument list never decides identity. */
+const keyOf = (args: Record<string, string>): string => args.key?.trim() ?? ''
 const instanceOf = (key: string, context: WorkflowCursorContext): string => {
   if (key) return ''
   const instance = context.session ?? context.instance
@@ -84,7 +72,7 @@ function findCursor(
   context: WorkflowCursorContext,
   d: Database,
 ): CursorRow | null {
-  const key = keyOf(workflow, args, d)
+  const key = keyOf(args)
   const row = d
     .query(
       `SELECT * FROM workflow_cursor
@@ -103,7 +91,7 @@ function insertCursor(
   context: WorkflowCursorContext,
   d: Database,
 ): CursorRow {
-  const key = keyOf(composition.workflow.slug, composition.arguments, d)
+  const key = keyOf(composition.arguments)
   const instance = instanceOf(key, context)
   const at = nowIso()
   d.query(
@@ -172,7 +160,7 @@ export function composeWorkflowWithCursor(
     )
     const row = insertCursor(composition, context, d)
     return {
-      ...composition,
+      ...cursorComposition(row, d),
       cursor: {
         n: row.ordinal === 0 ? 0 : row.ordinal + 1,
         slug: row.step_slug,
@@ -234,7 +222,7 @@ function getWorkflowStepWithCursorImpl(
   if (decision.action === 'refuse') {
     if (decision.reason === 'compose-first')
       throw new Error(
-        `workflow ${slug} for ${keyOf(slug, args, d)} has no cursor; compose the workflow first`,
+        `workflow ${slug} for ${keyOf(args)} has no cursor; compose the workflow first`,
       )
     throw new Error(remedy(row!, composition))
   }
@@ -275,9 +263,7 @@ function nextWorkflowStepImpl(
 ): string {
   const row = findCursor(project, slug, mode, args, context, d)
   if (!row)
-    throw new Error(
-      `workflow ${slug} for ${keyOf(slug, args, d)} has no cursor; compose the workflow first`,
-    )
+    throw new Error(`workflow ${slug} for ${keyOf(args)} has no cursor; compose the workflow first`)
   if (row.state === 'done') throw new Error(`workflow ${slug} for ${row.workflow_key} is done`)
   if (!note?.trim()) {
     const composition = cursorComposition(row, d)
@@ -354,9 +340,7 @@ function awaitWorkflowRulingImpl(
   if (!question?.trim()) throw new Error('--question is required')
   const row = findCursor(project, slug, mode, args, context, d)
   if (!row)
-    throw new Error(
-      `workflow ${slug} for ${keyOf(slug, args, d)} has no cursor; compose the workflow first`,
-    )
+    throw new Error(`workflow ${slug} for ${keyOf(args)} has no cursor; compose the workflow first`)
   if (row.state === 'done') throw new Error(`workflow ${slug} for ${row.workflow_key} is done`)
   d.query(
     `UPDATE workflow_cursor SET state='awaiting-ruling',question=?,
