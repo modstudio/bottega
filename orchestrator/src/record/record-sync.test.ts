@@ -3,7 +3,9 @@ import { expect, test } from 'bun:test'
 import type { SQL } from 'bun'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { RECORD_ACTOR_ROLE, RECORD_OWNER_ROLE } from '../../../shared/record/schema.ts'
+import { applyMigrations } from '../database/migrations.ts'
 import { RUN_RECORD_PAYLOAD_COLUMNS } from '../run/run-outbox.ts'
+import { enqueueScoreRecord } from '../score/score-outbox.ts'
 import { syncRecord, unreachableSpaceProject } from './record-sync.ts'
 
 const RECORD_ID = '01990000-0000-7000-8000-000000000042'
@@ -56,6 +58,12 @@ function localOutbox(
 function fakePostgres(
   failFirstRun = false,
   principal: string = RECORD_ACTOR_ROLE,
+  score?: {
+    job: string
+    writesRepo: boolean
+    findings: boolean
+    onWrite?: () => void
+  },
 ): {
   sql: SQL
   statements: string[]
@@ -66,12 +74,29 @@ function fakePostgres(
   const parameters: unknown[][] = []
   let failed = false
   let transaction = -1
+  let scoreWritten = false
   const transactionSpaceIds: string[] = []
   const tx = (async (parts: TemplateStringsArray, ...values: unknown[]) => {
     const source = parts.join('?')
     statements.push(source)
     if (source.includes("set_config('app.space_id'")) {
       transactionSpaceIds[transaction] = String(values[0])
+    }
+    if (source.includes('SELECT job, failure_kind, machine_id FROM run')) {
+      return [{ job: score?.job ?? 'file-question', failure_kind: null, machine_id: MACHINE_ID }]
+    }
+    if (source.includes("snapshot.kind='jobs'")) {
+      return score
+        ? [
+            {
+              item: {
+                name: score.job,
+                needs: { writesRepo: score.writesRepo },
+                findings: score.findings,
+              },
+            },
+          ]
+        : []
     }
     return source.includes('SELECT id FROM project') ? [{ id: PROJECT_ID }] : []
   }) as unknown as SQL
@@ -82,6 +107,10 @@ function fakePostgres(
     if (failFirstRun && !failed && source.toLowerCase().includes('insert into "run"')) {
       failed = true
       throw Object.assign(new Error('remote run refusal'), { code: '23503' })
+    }
+    if (!scoreWritten && source.toLowerCase().includes('insert into "run_score"')) {
+      scoreWritten = true
+      score?.onWrite?.()
     }
     return []
   }) as SQL['unsafe']
@@ -99,6 +128,27 @@ function fakePostgres(
     },
   ) as unknown as SQL
   return { sql, statements, parameters, transactionSpaceIds }
+}
+
+function localScoreOutbox(): Database {
+  const local = new Database(':memory:')
+  applyMigrations(local)
+  local
+    .query(
+      `INSERT INTO run
+       (id,record_id,started_at,agent,job,prompt_sha,prompt_bytes,prompt_head,status)
+       VALUES (42,?,'2026-09-16T00:00:00.000Z','codex','file-question','sha',3,'ask','ok')`,
+    )
+    .run(RECORD_ID)
+  local
+    .query(
+      `INSERT INTO score
+       (run_id,delivery,quality,fidelity,note,scored_at,scored_by)
+       VALUES (42,'full','right',NULL,'old',?,'architect')`,
+    )
+    .run(STAMP)
+  enqueueScoreRecord(local, 42, MACHINE_ID)
+  return local
 }
 
 const options = (local: Database, remote: ReturnType<typeof fakePostgres>) => ({
@@ -134,6 +184,95 @@ test('sync upserts once and a second pass has no run mutation', async () => {
   expect(
     remote.statements.filter((sql) => sql.toLowerCase().includes('insert into "run"')),
   ).toHaveLength(firstRunWrites)
+  local.close()
+})
+
+test('a re-score while the old payload is in flight remains pending and is delivered next', async () => {
+  const local = localScoreOutbox()
+  const newerStamp = '2026-09-15T01:02:00.000Z'
+  const remote = fakePostgres(false, RECORD_ACTOR_ROLE, {
+    job: 'file-question',
+    writesRepo: false,
+    findings: false,
+    onWrite: () => {
+      local.query("UPDATE score SET note='new', scored_at=? WHERE run_id=42").run(newerStamp)
+      enqueueScoreRecord(local, 42, MACHINE_ID)
+    },
+  })
+
+  expect(await syncRecord(options(local, remote))).toEqual({
+    pushed: 1,
+    failed: 0,
+    pending: 1,
+    configured: true,
+  })
+  expect(
+    local.query<{ synced_at: string | null }, []>('SELECT synced_at FROM outbox').get()!.synced_at,
+  ).toBeNull()
+  expect(
+    JSON.parse(local.query<{ payload: string }, []>('SELECT payload FROM outbox').get()!.payload),
+  ).toMatchObject({ note: 'new', scoredAt: newerStamp })
+
+  expect(await syncRecord(options(local, remote))).toEqual({
+    pushed: 1,
+    failed: 0,
+    pending: 0,
+    configured: true,
+  })
+  const scoreWrites = remote.statements.filter((sql) =>
+    sql.toLowerCase().includes('insert into "run_score"'),
+  )
+  expect(scoreWrites).toHaveLength(2)
+  expect(remote.parameters.flat()).toContain('new')
+  local.close()
+})
+
+test.each([
+  {
+    name: 'missing findings grades',
+    job: { job: 'review-lens', writesRepo: false, findings: true },
+    mutate: (_payload: Record<string, unknown>) => {},
+    message: 'findings-producing jobs require reproduced, coverage, limits, and overlap',
+  },
+  {
+    name: 'findings flags on a non-findings job',
+    job: { job: 'file-question', writesRepo: false, findings: false },
+    mutate: (payload: Record<string, unknown>) => {
+      Object.assign(payload, {
+        reproduced: 'all',
+        coverage: 'adequate',
+        limits: 'named',
+        overlap: 'alone',
+      })
+    },
+    message: 'this job does not produce findings',
+  },
+  {
+    name: 'missing fidelity on a writing job',
+    job: { job: 'implement', writesRepo: true, findings: false },
+    mutate: (_payload: Record<string, unknown>) => {},
+    message: 'repository-writing jobs require a fidelity verdict',
+  },
+])('score sync refuses $name', async ({ job, mutate, message }) => {
+  const local = localScoreOutbox()
+  const row = local.query<{ payload: string }, []>('SELECT payload FROM outbox').get()!
+  const payload = JSON.parse(row.payload) as Record<string, unknown>
+  mutate(payload)
+  local.query('UPDATE outbox SET payload=?').run(JSON.stringify(payload))
+  const remote = fakePostgres(false, RECORD_ACTOR_ROLE, job)
+
+  expect(await syncRecord(options(local, remote))).toEqual({
+    pushed: 0,
+    failed: 1,
+    pending: 1,
+    configured: true,
+  })
+  expect(
+    local.query<{ last_error: string }, []>('SELECT last_error FROM outbox').get()!.last_error,
+  ).toContain(message)
+  expect(
+    remote.statements.some((sql) => sql.toLowerCase().includes('insert into "run_score"')),
+  ).toBe(false)
   local.close()
 })
 

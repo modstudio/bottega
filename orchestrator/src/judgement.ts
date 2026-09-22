@@ -5,7 +5,6 @@ import { newRecordId } from '../../shared/record/schema.ts'
 import { db, nowIso, sessionId, writeTransaction } from './database/db.ts'
 import { JOBS, job } from './jobs/jobs.ts'
 import { machineId } from './record/machine-identity.ts'
-import { recordApiClient } from './record/record-api-client.ts'
 import { cleanReviewEvidence, parseReviewOutput } from './review/review.ts'
 import { enqueueReview } from './review/review-outbox.ts'
 import {
@@ -46,6 +45,7 @@ import {
   type Quality,
   weigh,
 } from './score/score.ts'
+import { enqueueScoreRecord } from './score/score-outbox.ts'
 import { refuseVerdict, type VerdictRefusal } from './verdict/verdict-rules.ts'
 
 type JudgementFlags = {
@@ -103,29 +103,6 @@ function hostedRunId(id: number): string {
 
 function persistHostedRunId(id: number, recordId: string): void {
   db().query('UPDATE run SET record_id=? WHERE id=?').run(recordId, id)
-}
-
-async function pushHostedScore(
-  recordId: string,
-  delivery: Delivery,
-  quality: Quality | null,
-  fidelity: Fidelity | null,
-  note: string | null,
-  scoredAt: string,
-  scorer: string,
-): Promise<void> {
-  await recordApiClient().putScore(recordId, {
-    delivery,
-    quality,
-    fidelity,
-    note,
-    scoredAt,
-    scoredBy: scorer,
-  })
-}
-
-async function pushHostedVoid(recordId: string, reason: string): Promise<void> {
-  await recordApiClient().voidRun(recordId, { reason })
 }
 
 type JudgeableRun = {
@@ -417,15 +394,6 @@ export async function judgeRun(
   const scorer = process.env.ORCH_SCORER ?? 'claude'
   const scoredFidelity = writes && delivery !== 'none' ? (fidelity ?? null) : null
   const recordId = hostedRunId(id)
-  await pushHostedScore(
-    recordId,
-    delivery!,
-    quality ?? null,
-    scoredFidelity,
-    note,
-    scoredAt,
-    scorer,
-  )
   writeTransaction(() => {
     persistHostedRunId(id, recordId)
     if (!(flags.has('force') && !authority.actor)) authority = adoptRunMutation(authority, 'score')
@@ -457,6 +425,7 @@ export async function judgeRun(
     if (comparison === 'same-as')
       recordTies(id, comparisonIds, sessionId(), scoredAt, flags.has('force'))
     auditRunMutation(authority, wasScored ? 'rescore' : 'score', options.auditReason)
+    enqueueScoreRecord(db(), id, machineId())
   })
   presentation.log(
     `judged run ${id}: score${reviewId ? `, completed review ${reviewId}` : ''}` +
@@ -511,6 +480,7 @@ function refuseAxesEarly(
     job: {
       writesRepo: input.writesRepo,
       producesFindings: false,
+      hasAnyReviewGrades: false,
       hasRequiredReviewGrades: true,
     },
     failureKind: input.failureKind,
@@ -615,18 +585,6 @@ export async function scoreRun(
     const voidReason = 'voided with orch score --void'
     const recordId = hostedRunId(id)
     const recordedBy = scorer ?? process.env.ORCH_SCORER ?? 'claude'
-    await pushHostedVoid(recordId, voidReason)
-    if (!cannotRecord && delivery) {
-      await pushHostedScore(
-        recordId,
-        delivery,
-        quality ?? null,
-        scoredFidelity ?? null,
-        note,
-        scoredAt,
-        recordedBy,
-      )
-    }
     writeTransaction(() => {
       persistHostedRunId(id, recordId)
       voidAuthority = adoptRunMutation(voidAuthority!, 'void')
@@ -641,6 +599,7 @@ export async function scoreRun(
           scoredAt,
           recordedBy,
         )
+        enqueueScoreRecord(db(), id, machineId())
       }
       enqueueVoidedRunRecord(id)
       auditRunMutation(voidAuthority!, 'void', options.auditReason)
@@ -767,6 +726,7 @@ export async function scoreRun(
     job: {
       writesRepo,
       producesFindings: findingsJob,
+      hasAnyReviewGrades: reviewGrade !== null,
       hasRequiredReviewGrades: !findingsJob || delivery === 'none' || reviewGrade !== null,
     },
     failureKind: row.failure_kind,
@@ -793,15 +753,6 @@ export async function scoreRun(
   const scoredAt = nowIso()
   const recordedBy = scorer ?? process.env.ORCH_SCORER ?? 'claude'
   const recordId = hostedRunId(id)
-  await pushHostedScore(
-    recordId,
-    scoredDelivery,
-    quality ?? null,
-    scoredFidelity ?? null,
-    note,
-    scoredAt,
-    recordedBy,
-  )
   writeTransaction(() => {
     persistHostedRunId(id, recordId)
     if (!dashboardAuthorized && !(flags.has('force') && !scoreAuthority.actor)) {
@@ -818,6 +769,7 @@ export async function scoreRun(
       recordedBy,
     )
     auditRunMutation(scoreAuthority, wasScored ? 'rescore' : 'score', options.auditReason)
+    enqueueScoreRecord(db(), id, machineId())
   })
   const w = weigh(scoredDelivery, quality ?? null, scoredFidelity ?? null)
   const axes = [delivery, quality, scoredFidelity].filter(Boolean).join(' ')

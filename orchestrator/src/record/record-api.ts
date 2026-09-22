@@ -5,6 +5,7 @@ import type { Context } from 'hono'
 import { Hono } from 'hono'
 import { cors } from 'hono/cors'
 import { z } from 'zod'
+import { VERDICT_INPUT_SCHEMA, type VerdictInput } from '../verdict/verdict-payload.ts'
 import { RECORD_SIGN_IN_REMEDY, type RecordIdentity } from './record-auth.ts'
 import type {
   ConfigEntry,
@@ -118,15 +119,11 @@ type Deps = {
   ): Promise<{ docs: number; revisions: number }>
   countDocs(input: Tenant): Promise<{ docs: number; revisions: number }>
   upsertScore(
-    input: Tenant & {
-      id: string
-      delivery: string
-      quality: string | null
-      fidelity: string | null
-      note: string | null
-      scoredAt: string
-      scoredBy: string
-    },
+    input: Tenant &
+      Omit<VerdictInput, 'scoredBy'> & {
+        id: string
+        scoredBy: string
+      },
   ): Promise<void>
   voidRun(input: Tenant & { id: string; reason: string }): Promise<void>
   listScores(
@@ -944,15 +941,8 @@ export function recordApi(deps: Deps): Hono<ApiEnvironment> {
     if (!tenant) return noSpace(context)
     const id = idSchema.safeParse(context.req.param('id'))
     if (!id.success) return context.json({ error: 'run id must be a uuid' }, 400)
-    const body = z
-      .object({
-        delivery: z.string(),
-        quality: z.string().nullable(),
-        fidelity: z.string().nullable(),
-        note: z.string().nullable(),
-        scoredAt: z.string().datetime({ offset: true }),
-        scoredBy: z.string().min(1).optional(),
-      })
+    const body = VERDICT_INPUT_SCHEMA.omit({ scoredBy: true })
+      .extend({ scoredBy: z.string().min(1).optional() })
       .safeParse(await context.req.json().catch(() => null))
     if (!body.success) return context.json({ error: 'invalid score upsert' }, 400)
     try {

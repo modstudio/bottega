@@ -3,6 +3,7 @@
 
 import type { DocDelivery, DocRevisionOp } from '../doc/doc-write-allowed.ts'
 import { RECORD_WRITE_REMEDY } from '../doc/doc-write-allowed.ts'
+import type { VerdictInput } from '../verdict/verdict-payload.ts'
 import { bearerHeaders, RECORD_SIGN_IN_REMEDY, type RecordIdentity } from './record-auth.ts'
 import { storedRecordToken } from './record-session.ts'
 import type { SnapshotKind } from './record-snapshots.ts'
@@ -98,17 +99,7 @@ export type RecordApiClient = {
     to: string
     count: number
   }): Promise<{ docs: number; revisions: number }>
-  putScore(
-    runId: string,
-    input: {
-      delivery: string
-      quality: string | null
-      fidelity: string | null
-      note: string | null
-      scoredAt: string
-      scoredBy: string
-    },
-  ): Promise<void>
+  putScore(runId: string, input: VerdictInput): Promise<void>
   voidRun(runId: string, input: { reason: string }): Promise<void>
   listScores(query: {
     updatedSince?: string

@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, test } from 'bun:test'
 import { readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
+import { createMemoryRecordApiClient, installRecordApiClient } from '../test/fixtures/record-api.ts'
 import { reviewReply } from '../test/fixtures/replies.ts'
 import { addRun, dir, score as seedScore } from '../test/fixtures/store.ts'
 import { trackedTestResidue } from '../test/residue.ts'
@@ -268,7 +269,7 @@ describe('score ruling', () => {
     })
   })
 
-  test('score and re-score store the merged note locally without enqueueing the score outbox', async () => {
+  test('score and re-score store the merged note locally and keep one current score outbox row', async () => {
     const id = insert()
     await score(id, ['full', 'right'], {}, { note: 'first' })
     await score(id, ['partial', 'mixed'], {}, { note: 'second' })
@@ -280,9 +281,18 @@ describe('score ruling', () => {
     expect(stored).toMatchObject({ delivery: 'partial', quality: 'mixed' })
     expect(stored!.note).toContain('first')
     expect(stored!.note).toContain('second')
-    expect(
-      db().query<{ n: number }, []>("SELECT count(*) AS n FROM outbox WHERE kind='score'").get()!.n,
-    ).toBe(0)
+    expect(db().query<{ n: number }, []>('SELECT count(*) AS n FROM score').get()!.n).toBe(1)
+    const outbox = db()
+      .query<{ n: number; payload: string }, []>(
+        "SELECT count(*) AS n, payload FROM outbox WHERE kind='score'",
+      )
+      .get()!
+    expect(outbox.n).toBe(1)
+    expect(JSON.parse(outbox.payload)).toMatchObject({
+      delivery: 'partial',
+      quality: 'mixed',
+      note: expect.stringContaining('second'),
+    })
   })
 
   test('no pair offer across different spec_sha', async () => {
@@ -427,6 +437,62 @@ describe('judge ruling', () => {
     ).toEqual({ completed_at: expect.any(String) })
   })
 
+  test('judge records a findings verdict locally and enqueues it while the record is unreachable', async () => {
+    const id = insert('ok', 'review-lens')
+    db().query("UPDATE run SET lens='correctness',model='m' WHERE id=?").run(id)
+    const reviewId = recordReview(id, reviewReply(2, 'high'), db())
+    const unavailable = createMemoryRecordApiClient()
+    installRecordApiClient({
+      ...unavailable,
+      putScore: async () => {
+        throw new Error('fixture record unreachable')
+      },
+    })
+
+    await judge(id, ['full', 'right'], {
+      reproduced: 'all',
+      coverage: 'adequate',
+      limits: 'absent',
+      overlap: 'alone',
+      finding: ['1=accepted:high', '2=modified:medium'],
+    })
+
+    expect(db().query('SELECT delivery,quality FROM score WHERE run_id=?').get(id)).toEqual({
+      delivery: 'full',
+      quality: 'right',
+    })
+    expect(
+      db()
+        .query('SELECT reproduced,coverage,limits,overlap FROM review_lens WHERE run_id=?')
+        .get(id),
+    ).toEqual({ reproduced: 'all', coverage: 'adequate', limits: 'absent', overlap: 'alone' })
+    expect(
+      db()
+        .query(
+          'SELECT ordinal,disposition,triaged_severity FROM review_finding WHERE review_id=? ORDER BY ordinal',
+        )
+        .all(reviewId),
+    ).toEqual([
+      { ordinal: 1, disposition: 'accepted', triaged_severity: 'high' },
+      { ordinal: 2, disposition: 'modified', triaged_severity: 'medium' },
+    ])
+    expect(db().query('SELECT completed_at FROM review WHERE id=?').get(reviewId)).toEqual({
+      completed_at: expect.any(String),
+    })
+    expect(db().query("SELECT count(*) count FROM outbox WHERE kind='score'").get()).toEqual({
+      count: 1,
+    })
+    const payload = db()
+      .query<{ payload: string }, []>("SELECT payload FROM outbox WHERE kind='score'")
+      .get()!
+    expect(JSON.parse(payload.payload)).toMatchObject({
+      reproduced: 'all',
+      coverage: 'adequate',
+      limits: 'absent',
+      overlap: 'alone',
+    })
+  })
+
   test('judge rolls every close-out write back when a finding flag fails during the transaction', async () => {
     const id = insert('ok', 'review-lens')
     db().query("UPDATE run SET lens='correctness',model='m' WHERE id=?").run(id)
@@ -537,8 +603,8 @@ describe('voided output evidence', () => {
           WHERE record_id=(SELECT record_id FROM run WHERE id=?) ORDER BY id`,
       )
       .all(id)
-    expect(outbox.map((row) => row.kind)).toEqual(['run'])
-    expect(JSON.parse(outbox[0]!.payload)).toMatchObject({
+    expect(outbox.map((row) => row.kind)).toEqual(['score', 'run'])
+    expect(JSON.parse(outbox[1]!.payload)).toMatchObject({
       evidenceExcluded: 'voided with orch score --void',
     })
     expect(

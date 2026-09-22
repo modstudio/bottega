@@ -13,6 +13,7 @@ import { DELIVERY, FIDELITY, QUALITY } from '../score/score.ts'
 export type JobFacts = {
   writesRepo: boolean
   producesFindings: boolean
+  hasAnyReviewGrades: boolean
   hasRequiredReviewGrades: boolean
 }
 
@@ -87,6 +88,18 @@ function refuseJobRules(input: VerdictFacts, job: JobFacts): VerdictRefusal | nu
     return {
       code: 'fidelity',
       message: 'this verdict does not take a fidelity axis; remove the fidelity value',
+    }
+  }
+  if (!job.producesFindings && job.hasAnyReviewGrades) {
+    return {
+      code: 'review-grades',
+      message: 'this job does not produce findings; remove the review grade fields',
+    }
+  }
+  if (input.delivery === 'none' && job.hasAnyReviewGrades) {
+    return {
+      code: 'review-grades',
+      message: "delivery 'none' takes no review grades; remove the review grade fields",
     }
   }
   if (job.producesFindings && input.delivery !== 'none' && !job.hasRequiredReviewGrades) {

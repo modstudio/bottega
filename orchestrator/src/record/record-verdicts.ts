@@ -2,6 +2,7 @@
 /** Owns tenant-bound hosted run verdicts and evidence exclusion. Must not know local cache, CLI, or HTTP. */
 import { SQL } from 'bun'
 import type { Delivery, Fidelity, Quality } from '../score/score.ts'
+import type { VerdictInput } from '../verdict/verdict-payload.ts'
 import { refuseVerdict } from '../verdict/verdict-rules.ts'
 
 export class RecordVerdictError extends Error {
@@ -42,25 +43,21 @@ async function tenant<T>(input: Tenant, read: (tx: SQL) => Promise<T>): Promise<
   }
 }
 
-export async function upsertRecordScore(
-  input: Tenant & {
-    id: string
-    delivery: Delivery
-    quality: Quality | null
-    fidelity: Fidelity | null
-    note: string | null
-    scoredAt: string
-    scoredBy: string
-  },
-): Promise<void> {
-  return tenant(input, async (tx) => {
-    const runs = await tx`
+type HostedVerdict = Pick<Tenant, 'spaceId'> & VerdictInput & { id: string }
+
+export async function validateRecordVerdict(tx: SQL, input: HostedVerdict): Promise<void> {
+  const runs = await tx`
       SELECT job, failure_kind, machine_id FROM run
       WHERE id=${input.id}::uuid AND space_id=${input.spaceId}::uuid
     `
-    const run = runs[0] as Record<string, unknown> | undefined
-    if (!run) throw new RecordVerdictError('run not found; refresh the run list', 404)
-    const jobSnapshots = await tx`
+  const run = runs[0] as Record<string, unknown> | undefined
+  if (!run) {
+    throw new RecordVerdictError(
+      'hosted run is absent; run `orch sync` to upload the run before retrying the verdict',
+      404,
+    )
+  }
+  const jobSnapshots = await tx`
       SELECT item
       FROM orch_snapshot snapshot
       CROSS JOIN LATERAL jsonb_array_elements(snapshot.payload) item
@@ -68,37 +65,36 @@ export async function upsertRecordScore(
         AND item->>'name'=${String(run.job)}
       ORDER BY snapshot.taken_at DESC LIMIT 1
     `
-    const declaredJob = jobSnapshots[0]?.item as
-      | { needs?: { writesRepo?: boolean }; findings?: boolean }
-      | undefined
-    // A job this machine has not published, or has since renamed, leaves the
-    // declaration unreadable. The axes are still judged; refusing here would
-    // fail the local score that pushes this verdict before recording its own.
-    let hasRequiredReviewGrades = false
-    if (declaredJob?.findings && input.delivery !== 'none') {
-      const grades = await tx`
-        SELECT 1 FROM review_lens
-        WHERE run_id=${input.id}::uuid
-          AND reproduced IS NOT NULL AND coverage IS NOT NULL
-          AND limits IS NOT NULL AND overlap IS NOT NULL
-        LIMIT 1
-      `
-      hasRequiredReviewGrades = grades.length > 0
-    }
-    const refusal = refuseVerdict({
-      delivery: input.delivery,
-      quality: input.quality,
-      fidelity: input.fidelity,
-      job: declaredJob
-        ? {
-            writesRepo: Boolean(declaredJob.needs?.writesRepo),
-            producesFindings: Boolean(declaredJob.findings),
-            hasRequiredReviewGrades,
-          }
-        : null,
-      failureKind: run.failure_kind == null ? null : String(run.failure_kind),
-    })
-    if (refusal) throw new RecordVerdictError(refusal.message)
+  const declaredJob = jobSnapshots[0]?.item as
+    | { needs?: { writesRepo?: boolean }; findings?: boolean }
+    | undefined
+  // A job this machine has not published, or has since renamed, leaves the
+  // declaration unreadable. The axes are still judged; declaration-specific
+  // rules cannot be reconstructed reliably when accepting a hosted payload.
+  const grades = [input.reproduced, input.coverage, input.limits, input.overlap]
+  const hasRequiredReviewGrades = grades.every((grade) => grade !== null)
+  const refusal = refuseVerdict({
+    delivery: input.delivery,
+    quality: input.quality,
+    fidelity: input.fidelity,
+    job: declaredJob
+      ? {
+          writesRepo: Boolean(declaredJob.needs?.writesRepo),
+          producesFindings: Boolean(declaredJob.findings),
+          hasAnyReviewGrades: grades.some((grade) => grade !== null),
+          hasRequiredReviewGrades,
+        }
+      : null,
+    failureKind: run.failure_kind == null ? null : String(run.failure_kind),
+  })
+  if (refusal) throw new RecordVerdictError(refusal.message)
+}
+
+export async function upsertRecordScore(
+  input: Tenant & VerdictInput & { id: string },
+): Promise<void> {
+  return tenant(input, async (tx) => {
+    await validateRecordVerdict(tx, input)
     await tx`
       INSERT INTO run_score (
         run_id, space_id, delivery, quality, fidelity, note, scored_at, scored_by, updated_at
