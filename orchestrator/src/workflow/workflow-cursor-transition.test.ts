@@ -1,5 +1,9 @@
 import { describe, expect, test } from 'bun:test'
-import { type CursorValue, decideCursorTransition } from './workflow-cursor-transition.ts'
+import {
+  type CursorValue,
+  decideCursorStart,
+  decideCursorTransition,
+} from './workflow-cursor-transition.ts'
 
 const cursor = (ordinal: number, stepSlug: string, state: CursorValue['state'] = 'running') => ({
   ordinal,
@@ -8,6 +12,14 @@ const cursor = (ordinal: number, stepSlug: string, state: CursorValue['state'] =
 })
 
 describe('workflow cursor transition', () => {
+  test('retires terminal cursors before starting and reuses active cursors', () => {
+    expect(decideCursorStart(null)).toBe('insert')
+    expect(decideCursorStart('running')).toBe('reuse')
+    expect(decideCursorStart('awaiting-ruling')).toBe('reuse')
+    expect(decideCursorStart('done')).toBe('retire')
+    expect(decideCursorStart('abandoned')).toBe('retire')
+  })
+
   test('serves the current, next, and earlier steps without allowing a skip', () => {
     expect(
       decideCursorTransition(cursor(2, 'two'), {
@@ -68,7 +80,7 @@ describe('workflow cursor transition', () => {
     ).toEqual({ action: 'refuse', reason: 'compose-first' })
   })
 
-  test('finishes the last step, refuses done, and advances from awaiting-ruling', () => {
+  test('finishes the last step, refuses terminal cursors, and advances from awaiting-ruling', () => {
     expect(
       decideCursorTransition(cursor(2, 'three'), { kind: 'next', total: 3, nextSlug: null }),
     ).toEqual({ action: 'finish' })
@@ -77,6 +89,22 @@ describe('workflow cursor transition', () => {
         kind: 'next',
         total: 3,
         nextSlug: null,
+      }),
+    ).toEqual({ action: 'refuse', reason: 'state' })
+    expect(
+      decideCursorTransition(cursor(1, 'two', 'abandoned'), {
+        kind: 'serve',
+        ordinal: 1,
+        slug: 'two',
+        expectedOrdinal: 1,
+        expectedSlug: 'two',
+      }),
+    ).toEqual({ action: 'refuse', reason: 'state' })
+    expect(
+      decideCursorTransition(cursor(1, 'two', 'abandoned'), {
+        kind: 'next',
+        total: 3,
+        nextSlug: 'three',
       }),
     ).toEqual({ action: 'refuse', reason: 'state' })
     expect(

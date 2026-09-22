@@ -1,4 +1,4 @@
-export type CursorState = 'running' | 'awaiting-ruling' | 'done'
+export type CursorState = 'running' | 'awaiting-ruling' | 'done' | 'abandoned'
 
 export type CursorValue = {
   ordinal: number
@@ -15,11 +15,21 @@ export type CursorTransition =
   | { action: 'finish' }
   | { action: 'refuse'; reason: 'compose-first' | 'ahead' | 'state' | 'not-started' }
 
+export type CursorStartDecision = 'insert' | 'reuse' | 'retire'
+
+/** Decide whether starting a cursor needs a new identity slot. */
+export function decideCursorStart(state: CursorState | null): CursorStartDecision {
+  if (state === 'done' || state === 'abandoned') return 'retire'
+  return state ? 'reuse' : 'insert'
+}
+
 /** The cursor state machine. Persistence and wording belong to its adapters. */
 export function decideCursorTransition(
   cursor: CursorValue | null,
   request: CursorTransitionRequest,
 ): CursorTransition {
+  if (cursor?.state === 'done' || cursor?.state === 'abandoned')
+    return { action: 'refuse', reason: 'state' }
   if (request.kind === 'serve') {
     if (!cursor) {
       return request.ordinal === 0
@@ -32,7 +42,7 @@ export function decideCursorTransition(
         ordinal: cursor.ordinal,
         slug: cursor.stepSlug,
         move: false,
-        resume: request.ordinal === cursor.ordinal && cursor.state !== 'done',
+        resume: request.ordinal === cursor.ordinal,
       }
     if (request.ordinal === cursor.ordinal + 1)
       return {
@@ -46,7 +56,6 @@ export function decideCursorTransition(
   }
 
   if (!cursor) return { action: 'refuse', reason: 'compose-first' }
-  if (cursor.state === 'done') return { action: 'refuse', reason: 'state' }
   if (cursor.ordinal === request.total - 1) return { action: 'finish' }
   return {
     action: 'serve',

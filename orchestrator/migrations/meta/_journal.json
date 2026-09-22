@@ -295,6 +295,13 @@
       "when": 1788900000035,
       "tag": "0041_readonly_clone_source",
       "breakpoints": true
+    },
+    {
+      "idx": 42,
+      "version": "6",
+      "when": 1788900000036,
+      "tag": "0042_workflow_cursor_abandoned",
+      "breakpoints": true
     }
   ]
 }

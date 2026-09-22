@@ -14,6 +14,7 @@ import {
   stepCatalogueVersions,
 } from './step-catalogue.ts'
 import {
+  abandonWorkflowCursor,
   awaitWorkflowRuling,
   cliWorkflowCursorContext,
   composeWorkflowWithCursor,
@@ -80,7 +81,7 @@ export function workflowCommand(argv: string[], presentation: Presentation): voi
   else if (sub === 'import') importCommand(argv, print)
   else
     throw new Error(
-      'unknown: orch workflow. Try list | show | set | promote | retire | fork | versions | compose | step | next | await | cursors | hydrate | import',
+      'unknown: orch workflow. Try list | show | set | promote | retire | fork | versions | compose | step | next | await | abandon | cursors | hydrate | import',
     )
 }
 
@@ -91,9 +92,26 @@ function cursorCommand(
 ): boolean {
   if (sub === 'next') nextCommand(argv, print)
   else if (sub === 'await') awaitCommand(argv, print)
+  else if (sub === 'abandon') abandonCommand(argv, print)
   else if (sub === 'cursors') cursorsCommand(argv, print)
   else return false
   return true
+}
+
+function abandonCommand(argv: string[], print: (value: unknown, line?: string) => void): void {
+  const project = flagValue(argv, 'project')
+  const mode = flagValue(argv, 'mode')
+  if (!project) throw new Error('--project is required')
+  if (!mode) throw new Error('--mode is required')
+  const result = abandonWorkflowCursor(
+    argv[2]!,
+    project,
+    mode,
+    workflowArgs(argv),
+    flagValue(argv, 'reason'),
+    cliWorkflowCursorContext(),
+  )
+  print(result, result)
 }
 
 function setWorkflowCommand(argv: string[], print: (value: unknown, line?: string) => void): void {
