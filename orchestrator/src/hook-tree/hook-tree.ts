@@ -1,7 +1,9 @@
 // concern: hook-tree
 /** Owns hook-tree identity and pure lifecycle decisions. Must not know databases, worktree execution, or the CLI. */
 
-export const HOOK_TREE_JOB = 'hook-tree'
+import { HOOK_TREE_JOB } from '../run/synthetic-lifecycle-job.ts'
+
+export { HOOK_TREE_JOB }
 export const HOOK_TREE_AGENT = '(hook)'
 const HOOK_TREE_EVIDENCE_EXCLUSION = 'hook tree lifecycle row; not agent execution'
 export const HOOK_TREE_NOTICE_AFTER_MS = 7 * 24 * 60 * 60 * 1000
@@ -69,9 +71,4 @@ export function hookTreeEvidenceDecision(): {
   evidenceExcluded: string
 } {
   return { evidenceExcluded: HOOK_TREE_EVIDENCE_EXCLUSION }
-}
-
-export function nonHookTreeStatsSql(alias: string): string {
-  if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(alias)) throw new Error('run alias must be a SQL identifier')
-  return `${alias}.job <> '${HOOK_TREE_JOB}'`
 }

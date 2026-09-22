@@ -11,10 +11,11 @@ import { projectAt, resolvedWorktreeTool, stackAt } from '../project/projects.ts
 import { trackedHookBranch } from '../recipe/tracked-recipe.ts'
 import { recordCreatedWorktreeClaims } from '../resources/resource-claims.ts'
 import { acquireRunLease } from '../run/run-lease.ts'
+import { HOOK_TREE_JOB, isSyntheticLifecycleJob } from '../run/synthetic-lifecycle-job.ts'
 import { createWithTool } from '../worktree/worktree-create.ts'
 import { resolveWorktreeLifecycle } from '../worktree/worktree-lifecycle.ts'
 import type { Worktree } from '../worktree/worktree-types.ts'
-import { HOOK_TREE_AGENT, HOOK_TREE_JOB, hookTreeEvidenceDecision } from './hook-tree.ts'
+import { HOOK_TREE_AGENT, hookTreeEvidenceDecision } from './hook-tree.ts'
 
 function canonicalPath(path: string): string {
   try {
@@ -168,18 +169,19 @@ export function removeHookTree(requestedPath: string): void {
       worktree: string
     }[]
   ).filter((row) => canonicalPath(row.worktree) === wanted)
-  if (!owners.length || owners.every((row) => row.job !== HOOK_TREE_JOB)) {
-    throw new Error(`${requestedPath} is not a hook tree`)
+  if (!owners.length || owners.every((row) => !isSyntheticLifecycleJob(row.job))) {
+    throw new Error(`${requestedPath} is not an architect-owned tree`)
   }
   if (owners.length > 1) {
     throw new Error(
-      `${requestedPath} is claimed by more than one hook run: ${owners.map((row) => row.id).join(', ')}`,
+      `${requestedPath} is claimed by more than one lifecycle run: ${owners.map((row) => row.id).join(', ')}`,
     )
   }
-  if (owners[0]!.job !== HOOK_TREE_JOB) throw new Error(`${requestedPath} is not a hook tree`)
+  if (!isSyntheticLifecycleJob(owners[0]!.job))
+    throw new Error(`${requestedPath} is not an architect-owned tree`)
   writableDb()
   const result = closeOutRun(owners[0]!.id, { intent: 'tree-remove' })
   if (!['released', 'absent'].includes(result.outcome)) {
-    throw new Error(`hook tree teardown ${result.outcome}: ${result.detail}`)
+    throw new Error(`tree teardown ${result.outcome}: ${result.detail}`)
   }
 }

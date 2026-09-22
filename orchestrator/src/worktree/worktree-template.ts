@@ -492,7 +492,8 @@ export function createHasPlaceholder(
   // still refuses this shape; this substring inference exists only on the
   // compatibility ramp and disappears with its last stored string.
   if (typeof create === 'string') return create.includes(`{${variable}}`)
-  if (!create || !('command' in create)) return false
+  if (!create) return false
+  if ('pipeline' in create) return placeholders(create.pipeline).includes(variable)
   return (
     create.args.some((arg) => {
       if (typeof arg === 'string') return placeholders(arg).includes(variable)

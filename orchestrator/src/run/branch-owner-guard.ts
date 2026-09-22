@@ -29,6 +29,7 @@ export function assertBranchHasNoAliveOwner(input: {
   conversationRootId: number | null
   projectId: number | null
   projectName: string | null
+  retryCommand?: string
 }): void {
   const branch = input.branch
   if (!branch) return
@@ -38,7 +39,9 @@ export function assertBranchHasNoAliveOwner(input: {
     `refusing to create a worktree on branch ${input.branch}: ` +
       `run ${owner.id} (${owner.status}) in another conversation is alive\n` +
       `invariant: Two live writer conversations never share one task branch.\n` +
-      `cleared by: wait for or stop run ${owner.id}, or dispatch with an explicit --base ` +
-      `to cut a separate branch`,
+      (input.retryCommand
+        ? `cleared by: wait for or stop run ${owner.id}, then retry ${input.retryCommand}`
+        : `cleared by: wait for or stop run ${owner.id}, or dispatch with an explicit --base ` +
+          `to cut a separate branch`),
   )
 }

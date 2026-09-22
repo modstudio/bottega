@@ -1,11 +1,11 @@
 import { describe, expect, test } from 'bun:test'
+import { agentExecutionStatsSql } from '../run/synthetic-lifecycle-job.ts'
 import {
   HOOK_TREE_JOB,
   HOOK_TREE_NOTICE_AFTER_MS,
   hookTreeEvidenceDecision,
   hookTreeHoldDecision,
   hookTreeNotice,
-  nonHookTreeStatsSql,
   shouldSweepHookTree,
 } from './hook-tree.ts'
 
@@ -65,6 +65,6 @@ describe('hook-tree lifecycle decisions', () => {
     expect(hookTreeEvidenceDecision()).toEqual({
       evidenceExcluded: 'hook tree lifecycle row; not agent execution',
     })
-    expect(nonHookTreeStatsSql('r')).toBe("r.job <> 'hook-tree'")
+    expect(agentExecutionStatsSql('r')).toBe("r.job NOT IN ('hook-tree','landing-tree')")
   })
 })

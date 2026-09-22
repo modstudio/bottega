@@ -4,7 +4,7 @@
  * Must not know resource creation, Git operations, close-out policy, or the CLI.
  */
 import type { Database } from 'bun:sqlite'
-import { HOOK_TREE_JOB } from '../hook-tree/hook-tree.ts'
+import { HOOK_TREE_JOB, LANDING_TREE_JOB } from '../run/synthetic-lifecycle-job.ts'
 
 export const RESOURCE_CLAIM_MIGRATION = '0020_resource_claim'
 export const RECIPE_PORT_BAND: PortBand = { start: 21000, end: 25000 }
@@ -646,10 +646,10 @@ function claimedClaimsOnTerminalConversations(
       `SELECT resource_claim.kind, COUNT(*) count
        FROM resource_claim JOIN run ON run.id=resource_claim.root_run_id
        WHERE resource_claim.state='claimed' AND run.status IN ('ok','failed','stale','stopped')
-         AND run.job<>?
+         AND run.job NOT IN (?,?)
        GROUP BY resource_claim.kind ORDER BY resource_claim.kind`,
     )
-    .all(HOOK_TREE_JOB) as { kind: ResourceClaimKind; count: number }[]
+    .all(HOOK_TREE_JOB, LANDING_TREE_JOB) as { kind: ResourceClaimKind; count: number }[]
 }
 
 export function claimCounts(database: Database): {

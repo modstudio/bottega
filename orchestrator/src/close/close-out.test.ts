@@ -32,7 +32,34 @@ function retainedRefFailure(args: string[]): ReturnType<typeof Bun.spawnSync> | 
   return null
 }
 
-function closeOutFixture(ownership: 'owned' | 'attached', retainedRefDeleteFails = false) {
+function landingObservationResult(
+  command: string[],
+  observation: 'becomes-dirty' | 'missing-branch' | undefined,
+  branch: string,
+  state: { statusCalls: number },
+): { args: string[]; result: ReturnType<typeof Bun.spawnSync> | null } {
+  const rawArgs = command[0] === 'git' ? command.slice(1) : command
+  const args = rawArgs[0] === '-C' ? rawArgs.slice(2) : rawArgs
+  if (args[0] === 'status') {
+    state.statusCalls++
+    const dirty = observation === 'becomes-dirty' && state.statusCalls > 1
+    return { args, result: spawnResult(dirty ? ' M changed.ts\n' : '') }
+  }
+  if (
+    observation === 'missing-branch' &&
+    args[0] === 'rev-parse' &&
+    args.includes(`refs/heads/${branch}^{commit}`)
+  ) {
+    return { args, result: spawnResult('', 1) }
+  }
+  return { args, result: null }
+}
+
+function closeOutFixture(
+  ownership: 'owned' | 'attached',
+  retainedRefDeleteFails = false,
+  landingObservation?: 'becomes-dirty' | 'missing-branch',
+) {
   const id = addRun({ agent: 'codex', job: 'implement', status: 'ok' })
   const project = `close-out-${id}`
   const repo = join(dir, project)
@@ -52,8 +79,16 @@ function closeOutFixture(ownership: 'owned' | 'attached', retainedRefDeleteFails
        base_commit=?, worktree_source='git', head_commit=? WHERE id=?`,
     )
     .run(project, tree, tree, branch, branch, head, head, id)
+  if (landingObservation) {
+    db()
+      .query("UPDATE run SET job='landing-tree', minted_branch=NULL, session_id='owner' WHERE id=?")
+      .run(id)
+  }
+  const landingState = { statusCalls: 0 }
   spyOn(Bun, 'spawnSync').mockImplementation(((command: string[]) => {
-    const args = command[0] === 'git' ? command.slice(1) : command
+    const observed = landingObservationResult(command, landingObservation, branch, landingState)
+    const { args } = observed
+    if (observed.result) return observed.result
     if (args[0] === 'worktree' && args[1] === 'remove') {
       rmSync(tree, { recursive: true, force: true })
       return spawnResult()
@@ -66,7 +101,7 @@ function closeOutFixture(ownership: 'owned' | 'attached', retainedRefDeleteFails
       return spawnResult(`worktree ${tree}\nbranch refs/heads/${branch}\n`)
     }
     if (args[0] === 'symbolic-ref') return spawnResult(branch)
-    if (args[0] === 'status' || args[0] === 'diff') return spawnResult()
+    if (args[0] === 'diff') return spawnResult()
     if (args[0] === 'rev-list' && args.includes('--count')) return spawnResult('0')
     if (args[0] === 'merge-base' || args[0] === 'rev-parse' || args[0] === 'show-ref') {
       return spawnResult(head)
@@ -142,6 +177,35 @@ test('a close-out that fails after removing the tree still clears its pointer', 
     expect(db().query('SELECT worktree FROM run WHERE id=?').get(fixture.id)).toEqual({
       worktree: null,
     })
+  } finally {
+    rmSync(fixture.repo, { recursive: true, force: true })
+  }
+})
+
+test('landing-tree sweep rechecks cleanliness under the close-out lock', () => {
+  const fixture = closeOutFixture('owned', false, 'becomes-dirty')
+  try {
+    const result = closeOutRun(fixture.id, { intent: 'sweep' })
+
+    expect(result).toMatchObject({
+      outcome: 'held',
+      detail: 'landing tree held by session owner: tree is dirty',
+    })
+    expect(existsSync(fixture.tree)).toBe(true)
+  } finally {
+    rmSync(fixture.repo, { recursive: true, force: true })
+  }
+})
+
+test('landing-tree sweep does not substitute tree HEAD for a missing branch ref', () => {
+  const fixture = closeOutFixture('owned', false, 'missing-branch')
+  try {
+    const result = closeOutRun(fixture.id, { intent: 'sweep' })
+
+    expect(result).toMatchObject({ outcome: 'held' })
+    expect(result.detail).toContain('landing status could not be established')
+    expect(result.detail).toContain('refs/heads/DEV-647-orch-')
+    expect(existsSync(fixture.tree)).toBe(true)
   } finally {
     rmSync(fixture.repo, { recursive: true, force: true })
   }

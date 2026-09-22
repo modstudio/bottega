@@ -99,6 +99,17 @@ function git(args: string[], cwd: string): string {
   return p.stdout.toString().trim()
 }
 
+/** Return the path currently checking out a local branch, if any. */
+export function checkedOutWorktree(repoRoot: string, branch: string): string | null {
+  let path: string | null = null
+  for (const line of git(['worktree', 'list', '--porcelain'], repoRoot).split('\n')) {
+    if (line.startsWith('worktree ')) path = line.slice('worktree '.length)
+    else if (line === `branch refs/heads/${branch}`) return path
+    else if (!line) path = null
+  }
+  return null
+}
+
 /** Same, but a failure is an answer rather than an error. */
 function gitOk(args: string[], cwd: string): string | null {
   if (cwdMissing(cwd)) return null

@@ -54,6 +54,7 @@ export type CreateWorkerWorktreeOptions = {
   existingBranchTip?: string
   recordRecipeResource?: RecordRecipeResource
   claimRecipePort?: ClaimRecipePort
+  templateBaseRef?: string
 }
 
 /** Create the worker tree through the project lifecycle or Git fallback. */
@@ -88,6 +89,8 @@ export function createWorkerWorktree(options: CreateWorkerWorktreeOptions): Work
       options.existingBranch,
       options.recordRecipeResource,
       options.claimRecipePort,
+      undefined,
+      options.templateBaseRef,
     )
   }
   return options.existingBranch

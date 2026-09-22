@@ -9,7 +9,7 @@ import { db, liveRuns } from '../database/db.ts'
 import { idleLabel, idleMsSince, idleWarnMs } from '../events.ts'
 import { UNSCORED_WHERE } from '../evidence/evidence-query.ts'
 import { targetGitEnvironment } from '../git/git-environment.ts'
-import { HOOK_TREE_JOB, hookTreeNotice } from '../hook-tree/hook-tree.ts'
+import { hookTreeNotice } from '../hook-tree/hook-tree.ts'
 import { runHasLiveDescendants } from '../idle-kill.ts'
 import { type PidRecordIdentity, pidRecordIdentity } from '../project/project-lock.ts'
 import { projects } from '../project/projects.ts'
@@ -21,6 +21,11 @@ import {
 } from '../resources/resource-inventory.ts'
 import { runAlive } from '../run/run-alive.ts'
 import { runLeaseState } from '../run/run-lease.ts'
+import {
+  HOOK_TREE_JOB,
+  isSyntheticLifecycleJob,
+  SYNTHETIC_LIFECYCLE_JOBS,
+} from '../run/synthetic-lifecycle-job.ts'
 import type { MonitorCondition } from './monitor-types.ts'
 
 const HUB = fileURLToPath(new URL('../../../bin/hub', import.meta.url))
@@ -58,10 +63,10 @@ export function terminalCloseOutRuns(database = db()): TerminalCloseOutRun[] {
       `SELECT id, started_at, close_out_outcome, close_out_detail, close_out_attempted_at, session_id
        FROM run
       WHERE status IN ('ok','failed','stale','stopped')
-        AND job<>?
+        AND job NOT IN (${SYNTHETIC_LIFECYCLE_JOBS.map(() => '?').join(',')})
         AND close_out_outcome IN ('held','failed')`,
     )
-    .all(HOOK_TREE_JOB) as TerminalCloseOutRun[]
+    .all(...SYNTHETIC_LIFECYCLE_JOBS) as TerminalCloseOutRun[]
 }
 
 export function unscoredRuns(database = db()): AddressedRun[] {
@@ -792,7 +797,7 @@ export function unsettledClaimInventory(database = db()): UnsettledClaimInventor
       }
     >()
     for (const claim of claims) {
-      if (byRoot.get(claim.root_run_id)?.some((turn) => turn.job === HOOK_TREE_JOB)) continue
+      if (byRoot.get(claim.root_run_id)?.some((turn) => isSyntheticLifecycleJob(turn.job))) continue
       const key = `${claim.kind}:${claim.root_run_id}`
       const conversation = byRoot.get(claim.root_run_id) ?? []
       const terminal =

@@ -15,7 +15,11 @@ import { doCommand, pickPreviewCommand } from '../dispatch/dispatch-cli-service.
 import { epicCommand } from '../epic/epic-commands.ts'
 import { pendingCommand } from '../evidence/pending-commands.ts'
 import { spawnsCommand } from '../health/spawn-commands.ts'
-import { treeCreateCommand, treeRemoveCommand } from '../hook-tree/tree-commands.ts'
+import {
+  treeCreateCommand,
+  treeOpenCommand,
+  treeRemoveCommand,
+} from '../hook-tree/tree-commands.ts'
 import { jobsCommand } from '../jobs/job-commands.ts'
 import { JOBS } from '../jobs/jobs.ts'
 import { lensCommand } from '../lens/lens-commands.ts'
@@ -80,6 +84,11 @@ export function register(program: Command): void {
         { writePath: (path) => write(`${path}\n`) },
       ),
     )
+  tree
+    .command('open <run>')
+    .option('--seed <value>')
+    .allowExcessArguments(false)
+    .action((run, options) => treeOpenCommand(Number(run), options.seed, { log }))
   tree
     .command('remove <path>')
     .allowExcessArguments(false)
