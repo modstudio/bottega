@@ -8,7 +8,7 @@ import { trackedTestResidue } from '../test/residue.ts'
 import { db } from './database/db.ts'
 import { NOT_EVIDENCE } from './failure/failure.ts'
 import { judgeRun, scoreRun } from './judgement.ts'
-import { recordReview } from './review/review-triage.ts'
+import { completeReview, recordReview } from './review/review-triage.ts'
 import { pairPartners } from './score/duel.ts'
 
 const trackResidue = trackedTestResidue()
@@ -490,6 +490,42 @@ describe('judge ruling', () => {
       coverage: 'adequate',
       limits: 'absent',
       overlap: 'alone',
+    })
+  })
+
+  test('wiped stored findings refuse judging, scoring, and completion', async () => {
+    const id = insert('ok', 'review-lens')
+    const output = trackResidue(join(dir, `wiped-findings-${id}.json`))
+    writeFileSync(output, JSON.stringify(reviewReply(2, 'high')))
+    db()
+      .query('UPDATE run SET lens=?,model=?,output_path=? WHERE id=?')
+      .run('correctness', 'm', output, id)
+    const reviewId = recordReview(id, reviewReply(2, 'high'), db())
+    db().query('DELETE FROM review_finding WHERE review_id=?').run(reviewId)
+
+    const integrity =
+      `review finding integrity error for run ${id}: persisted reply has 2 findings ` +
+      'but stored rows have 0; restore the missing review_finding rows'
+    await expect(
+      judge(id, ['full', 'right'], {
+        reproduced: 'all',
+        coverage: 'adequate',
+        limits: 'absent',
+        overlap: 'alone',
+      }),
+    ).rejects.toThrow(integrity)
+    await expect(
+      score(id, ['full', 'right'], {
+        reproduced: 'all',
+        coverage: 'adequate',
+        limits: 'absent',
+        overlap: 'alone',
+      }),
+    ).rejects.toThrow(integrity)
+    expect(() => completeReview(reviewId, db())).toThrow(integrity)
+    expect(db().query('SELECT id FROM score WHERE run_id=?').get(id)).toBeNull()
+    expect(db().query('SELECT completed_at FROM review WHERE id=?').get(reviewId)).toEqual({
+      completed_at: null,
     })
   })
 

@@ -8,6 +8,7 @@ import { machineId } from './record/machine-identity.ts'
 import { cleanReviewEvidence, parseReviewOutput } from './review/review.ts'
 import { enqueueReview } from './review/review-outbox.ts'
 import {
+  assertRunReviewFindingIntegrity,
   completeReview,
   type Disposition,
   gradeReviewLens,
@@ -292,6 +293,7 @@ export async function judgeRun(
       | ({ review_id: number } & Record<(typeof gradeNames)[number], string | null>)
       | null
     reviewId = lens?.review_id ?? null
+    assertRunReviewFindingIntegrity(id)
     if (delivery !== 'none' && !reviewId) {
       if (row.output_path && existsSync(row.output_path)) {
         parsedOutput = parseReviewOutput(readFileSync(row.output_path, 'utf8'))
@@ -648,6 +650,7 @@ export async function scoreRun(
    */
   const writesRepo = Boolean(JOBS[row.job]?.needs.writesRepo)
   const findingsJob = Boolean(job(row.job).findings)
+  assertRunReviewFindingIntegrity(id)
   const needsFidelity = writesRepo && delivery !== 'none'
   const initialRefusal = refuseAxesEarly(presentation, {
     delivery,

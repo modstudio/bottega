@@ -27,6 +27,7 @@
     "eslint": "^10.10.0",
     "eslint-plugin-sonarjs": "4.2.0",
     "knip": "6.36.0",
+    "sql-parser-cst": "0.42.1",
     "typescript": "^5"
   },
   "dependencies": {
