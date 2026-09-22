@@ -7,6 +7,17 @@ const shellSets = (argv: string[]) =>
   )
 
 describe('codex worker shell environment', () => {
+  test('a flagged read-only run opens workspace-write network access for Docker', () => {
+    const argv = BUILTIN_AGENTS.codex!.argv({
+      prompt: 'p',
+      out: '/tmp/out',
+      sandbox: 'workspace-write',
+      sandboxWorkspaceWriteNetworkAccess: true,
+    })
+    expect(argv).toContain('sandbox_workspace_write.network_access=true')
+    expect(argv).toContain('workspace-write')
+  })
+
   test('recipe allocation values are set in the tool shell, not only the process environment', () => {
     const argv = BUILTIN_AGENTS.codex!.argv({
       prompt: 'p',

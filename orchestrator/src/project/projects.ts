@@ -199,6 +199,12 @@ export type WorktreeTool = {
   readonly_provision?: ReadonlyProvision
   /** What a read-only worker is told this project's detached tree can and cannot run. */
   readonly_notes?: string
+  /**
+   * Read-only trees of this project may reach the Docker socket because the
+   * project's checks run inside its containers; the worker is told to run the
+   * project's gate and no other Docker verb.
+   */
+  readonly_docker?: boolean
   /** Optional teardown for readonly_create trees. Receives `{path}` only. */
   readonly_remove?: string
   /**
@@ -545,6 +551,12 @@ function projectSpaceProblems(space: unknown): string[] {
     : []
 }
 
+function readonlyDockerProblems(value: unknown): string[] {
+  return value !== undefined && typeof value !== 'boolean'
+    ? ['worktree.readonly_docker must be a boolean']
+    : []
+}
+
 export function validateProjectSettings(settings: ProjectSettings, projectPath?: string): string[] {
   const problems = [
     ...validateProjectInjectionSettings(settings),
@@ -555,6 +567,7 @@ export function validateProjectSettings(settings: ProjectSettings, projectPath?:
       new Set(['path', 'base']),
     ),
     ...validateReadonlyProvision(settings.worktree?.readonly_provision),
+    ...readonlyDockerProblems(settings.worktree?.readonly_docker),
     ...trackedRecipeProblems(settings.worktree, projectPath),
     ...projectSpaceProblems(settings.space),
   ]

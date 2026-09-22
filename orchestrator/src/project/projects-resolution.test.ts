@@ -40,6 +40,15 @@ afterEach(() => {
 })
 
 describe('projects are data, not code', () => {
+  test('readonly_docker must be boolean when present', () => {
+    expect(
+      validateProjectSettings({
+        worktree: { readonly_docker: 'yes' } as unknown as { readonly_docker: boolean },
+      }),
+    ).toContain('worktree.readonly_docker must be a boolean')
+    expect(validateProjectSettings({ worktree: { readonly_docker: true } })).toEqual([])
+  })
+
   test('a directory belongs to the project that contains it', () => {
     upsertProject({ name: 'alpha', path: '/w/alpha', stack: 'php-laravel' })
     expect(projectAt('/w/alpha')?.name).toBe('alpha')

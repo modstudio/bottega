@@ -38,7 +38,6 @@ import { checkoutWatchSet } from '../git/checkout-identity.ts'
 import {
   gitContext,
   prepareWorktreeObjects,
-  repoRootOf,
   type WorktreeObjectEnvironment,
   worktreeGitDir,
 } from '../git/git-environment.ts'
@@ -65,9 +64,8 @@ import {
   readMcpConfig,
   storedMcpProbe,
 } from '../mcp/mcp-probe.ts'
-import { projectAt, projectByName, stackAt, type WorktreeTool } from '../project/projects.ts'
-import { recipeNotes } from '../recipe/recipe.ts'
-import { trackedRecipeEnvironment, trackedRecipeNotes } from '../recipe/tracked-recipe.ts'
+import { projectAt, projectByName, stackAt } from '../project/projects.ts'
+import { trackedRecipeEnvironment } from '../recipe/tracked-recipe.ts'
 import { signedInRecordUserId } from '../record/record-attribution.ts'
 import {
   assertSharedRefGuardOutsideWritableRoots,
@@ -113,10 +111,12 @@ import {
 } from './run-artifacts.ts'
 import { claimRun } from './run-claim.ts'
 import { closeRun } from './run-close.ts'
+import { codexAcpReadonlyDockerRefusal, decideCodexSandbox } from './run-codex-sandbox.ts'
 import { acquireRunLease } from './run-lease.ts'
 import { runLive } from './run-live.ts'
 import * as mcpAttachment from './run-mcp-attachment.ts'
 import { bindSignals, childEnv, sha } from './run-process.ts'
+import { runInfrastructurePrompt } from './run-readonly-infrastructure.ts'
 import { finishRun } from './run-terminal.ts'
 import type { RunResult } from './run-types.ts'
 
@@ -137,10 +137,10 @@ function requiredRunLease(
   }
 }
 
-function generatedWorktreeNotes(tool: WorktreeTool, callerCwd: string): string {
-  if (tool.recipe) return recipeNotes(tool.recipe, "<this worktree's database>", '')
-  if (tool.recipePath) return trackedRecipeNotes(tool, repoRootOf(callerCwd) ?? callerCwd)
-  return ''
+function throwPreclaimRefusal(refusal: string | null, reserveId: number | undefined): void {
+  if (!refusal) return
+  if (reserveId) db().query('DELETE FROM run WHERE id=?').run(reserveId)
+  throw new Error(refusal)
 }
 
 /** From the run's recorded recipe, never a second register read that can differ from the one that built the tree. */
@@ -335,6 +335,7 @@ export async function run(opts: {
   const forbidsRepo = requestedJob.needs.readsRepo === false
   const requestedTransport = resolveRunTransport(opts)
   const callerCwd = opts.cwd ?? process.cwd()
+  const registeredWorktreeTool = toolFor(callerCwd)
   const seed = preflight(
     opts.job,
     callerCwd,
@@ -431,24 +432,13 @@ export async function run(opts: {
    * worker never to verify against somebody else's server, so the facts bottega
    * does know are stated on its behalf.
    */
-  const infra = (() => {
-    if (!repoJob) return ''
-    const tool = toolFor(opts.cwd ?? process.cwd())
-    if (!tool) return ''
-    if (!writesJob && (!tool.readonly_create || tool.readonly_notes !== undefined)) {
-      const tree =
-        tool.readonly_notes !== undefined
-          ? `This read-only run has the project's files at ${readOnlyBase}. ${tool.readonly_notes}`
-          : `This read-only run has the project's files at ${readOnlyBase} with NO provisioned ` +
-            `infrastructure (no databases, no generated env, no vendor tree).`
-      return (
-        `${tree} Do not treat a test suite that cannot start as a finding; ` +
-        `record what you could not run in could_not_verify.`
-      )
-    }
-    const generated = generatedWorktreeNotes(tool, callerCwd)
-    return [tool.notes ?? '', generated].filter(Boolean).join('\n\n')
-  })()
+  const infra = runInfrastructurePrompt({
+    tool: registeredWorktreeTool,
+    callerCwd,
+    readsRepo: repoJob,
+    writesRepo: writesJob,
+    readOnlyBase,
+  })
   const originalPrompt = opts.prompt
   const resolvedDialect = resolveReplyDialect(requestedJob)
   const generatedSchema = resolvedDialect.schema
@@ -567,6 +557,13 @@ export async function run(opts: {
         opts.lens,
       )
   const a = requireAgent(name)
+  const codexSandboxFacts = {
+    agentIsCodex: name === 'codex',
+    readsRepo: repoJob,
+    writesRepo: writesJob,
+    readonlyDocker: registeredWorktreeTool?.readonly_docker === true,
+  }
+  const codexSandbox = decideCodexSandbox(codexSandboxFacts)
   let boundMs: number
   try {
     // A durable historical row can name an agent that is no longer registered.
@@ -591,6 +588,12 @@ export async function run(opts: {
     opts.resume || opts.transport !== undefined || process.env.ORCH_TRANSPORT
       ? requestedTransport
       : a.defaultTransport
+  const transportRefusal = codexAcpReadonlyDockerRefusal({
+    ...codexSandboxFacts,
+    transport: transportName,
+    projectName: runProjectName ?? 'unknown',
+  })
+  throwPreclaimRefusal(transportRefusal, opts.reserveId)
   if (transportName === 'acp') {
     try {
       assertAcpAllowed(opts.job, name, a)
@@ -786,7 +789,7 @@ export async function run(opts: {
       runsDir: sandboxRunDir,
       scratchDir,
       project: projectAt(callerCwd),
-      readonlyNotes: toolFor(callerCwd)?.readonly_notes,
+      readonlyDocker: registeredWorktreeTool?.readonly_docker === true,
       override: process.env.ORCH_SANDBOX,
       path: process.env.PATH,
       localBaseUrl: modelHostUrl(),
@@ -1087,6 +1090,7 @@ export async function run(opts: {
       recipeEnvironment,
       scratchDir,
       writesJob,
+      codexSandbox,
       launchKey,
       requestedJob,
       boundMs,

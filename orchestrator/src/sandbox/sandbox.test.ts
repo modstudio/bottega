@@ -11,8 +11,8 @@ import {
   grokSandboxConfig,
   prepareGrokMcpHome,
   READONLY_LENS_DENY_PATHS,
+  READONLY_LENS_DENY_SOCKETS,
   readonlyLensProfile,
-  readonlyNeedsDocker,
   resetSandbox,
   sandboxRuntimeConfig,
   selectReadonlySandbox,
@@ -198,28 +198,81 @@ describe('readonly-lens sandbox profile', () => {
     })
   })
 
-  test('falls back to host when readonly notes need Docker', () => {
-    expect(
-      selectReadonlySandbox({
-        agent: 'grok',
-        readsRepo: true,
-        writesRepo: false,
-        worktree: '/runs/tree',
-        runsDir: '/runs/evidence',
-        project: fixtureProject(),
-        readonlyNotes: 'Run the checks with docker compose exec app bun test.',
-      }),
-    ).toEqual({
-      sandbox: 'host',
-      profile: null,
-      reason: 'project worktree.readonly_notes says read-only checks need Docker',
+  test('readonly_docker=true removes only socket denies (mutation: invert allowDockerSocket branch)', () => {
+    const selected = selectReadonlySandbox({
+      agent: 'grok',
+      readsRepo: true,
+      writesRepo: false,
+      worktree: '/runs/tree',
+      runsDir: '/runs/evidence',
+      project: fixtureProject(),
+      readonlyDocker: true,
+      path: '/usr/bin',
+      environment: {
+        HOME: homedir(),
+        [CONFIG_HOME_ENV]: '/Users/operator/.config/platform',
+        [HARNESS_ENV_FILE_ENV]: '',
+        DOCKER_HOST: '',
+      },
     })
+
+    expect(selected.sandbox).toBe('srt')
+    expect(selected.reason).toBe(
+      'project worktree.readonly_docker allows the Docker socket; every other read-only confinement holds',
+    )
+    expect(selected.profile?.filesystem.denyRead).toEqual(
+      expect.arrayContaining(READONLY_LENS_DENY_PATHS.map((path) => path.replace(/^~/, homedir()))),
+    )
+    for (const socket of READONLY_LENS_DENY_SOCKETS) {
+      expect(selected.profile?.filesystem.denyRead).not.toContain(socket)
+    }
+    expect(selected.profile?.network.allowUnixSockets).toEqual([
+      ...READONLY_LENS_DENY_SOCKETS,
+      join(homedir(), '.docker/run/docker.sock'),
+    ])
   })
 
-  test('a note merely saying Docker is unavailable does not disable confinement', () => {
-    expect(
-      readonlyNeedsDocker('Docker is unavailable in read-only worktrees; use bun tests.'),
-    ).toBe(false)
+  test('readonly_docker=false keeps both socket denies (mutation: invert allowDockerSocket branch)', () => {
+    const selected = selectReadonlySandbox({
+      agent: 'grok',
+      readsRepo: true,
+      writesRepo: false,
+      worktree: '/runs/tree',
+      runsDir: '/runs/evidence',
+      project: fixtureProject(),
+      path: '/usr/bin',
+      environment: {
+        HOME: homedir(),
+        [CONFIG_HOME_ENV]: '/Users/operator/.config/platform',
+        [HARNESS_ENV_FILE_ENV]: '',
+        DOCKER_HOST: '',
+      },
+    })
+    expect(selected.sandbox).toBe('srt')
+    expect(selected.profile?.filesystem.denyRead).toEqual(
+      expect.arrayContaining([...READONLY_LENS_DENY_SOCKETS]),
+    )
+    expect(selected.profile?.network.allowUnixSockets).toEqual([])
+  })
+
+  test('a flagged profile uses a unix DOCKER_HOST instead of the standard socket paths', () => {
+    const profile = readonlyLensProfile({
+      worktree: '/runs/tree',
+      runsDir: '/runs/evidence',
+      project: fixtureProject(),
+      agent: 'grok',
+      path: '/usr/bin',
+      nodeModuleLinks: [],
+      allowDockerSocket: true,
+      environment: {
+        HOME: homedir(),
+        [CONFIG_HOME_ENV]: '/Users/operator/.config/platform',
+        [HARNESS_ENV_FILE_ENV]: '',
+        DOCKER_HOST: 'unix:///custom/docker.sock',
+      },
+    })
+
+    expect(profile.network.allowUnixSockets).toEqual(['/custom/docker.sock'])
   })
 
   test('an MCP Grok repository run is unconfined because srt blocks its transports', () => {

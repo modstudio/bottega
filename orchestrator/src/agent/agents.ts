@@ -318,6 +318,12 @@ function codexCommon(o: Omit<ArgvOpts, 'prompt'>): string[] {
   if (o.writableRoots?.length) {
     a.push('-c', `sandbox_workspace_write.writable_roots=${JSON.stringify(o.writableRoots)}`)
   }
+  if (o.sandboxWorkspaceWriteNetworkAccess) {
+    // Probe established on 2026-09-21 that Codex reaches the Docker socket
+    // through this network_access switch. It also opens outbound network for
+    // the run, which the ruling accepts for projects that declare the flag.
+    a.push('-c', 'sandbox_workspace_write.network_access=true')
+  }
   a.push(
     ...codexShellEnvironmentArgs(
       o.gitObjectEnvironment,
