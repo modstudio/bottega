@@ -20,32 +20,19 @@ describe('workflow cursor transition', () => {
     expect(decideCursorStart('abandoned')).toBe('retire')
   })
 
-  test('serves the current, next, and earlier steps without allowing a skip', () => {
+  test('serves the current and earlier steps without allowing a skip', () => {
     expect(
       decideCursorTransition(cursor(2, 'two'), {
         kind: 'serve',
         ordinal: 2,
         slug: 'two',
-        expectedOrdinal: 2,
-        expectedSlug: 'two',
       }),
     ).toMatchObject({ action: 'serve', move: false })
     expect(
       decideCursorTransition(cursor(2, 'two'), {
         kind: 'serve',
-        ordinal: 3,
-        slug: 'three',
-        expectedOrdinal: 2,
-        expectedSlug: 'two',
-      }),
-    ).toMatchObject({ action: 'serve', move: true, ordinal: 3 })
-    expect(
-      decideCursorTransition(cursor(2, 'two'), {
-        kind: 'serve',
         ordinal: 1,
         slug: 'one',
-        expectedOrdinal: 2,
-        expectedSlug: 'two',
       }),
     ).toMatchObject({ action: 'serve', move: false })
     expect(
@@ -53,8 +40,16 @@ describe('workflow cursor transition', () => {
         kind: 'serve',
         ordinal: 4,
         slug: 'four',
-        expectedOrdinal: 2,
-        expectedSlug: 'two',
+      }),
+    ).toEqual({ action: 'refuse', reason: 'ahead' })
+  })
+
+  test('refuses the step immediately ahead of the cursor', () => {
+    expect(
+      decideCursorTransition(cursor(2, 'two'), {
+        kind: 'serve',
+        ordinal: 3,
+        slug: 'three',
       }),
     ).toEqual({ action: 'refuse', reason: 'ahead' })
   })
@@ -65,8 +60,6 @@ describe('workflow cursor transition', () => {
         kind: 'serve',
         ordinal: 0,
         slug: 'one',
-        expectedOrdinal: 1,
-        expectedSlug: 'one',
       }).action,
     ).toBe('serve')
     expect(
@@ -74,8 +67,6 @@ describe('workflow cursor transition', () => {
         kind: 'serve',
         ordinal: 1,
         slug: 'two',
-        expectedOrdinal: 1,
-        expectedSlug: 'one',
       }),
     ).toEqual({ action: 'refuse', reason: 'compose-first' })
   })
@@ -96,8 +87,6 @@ describe('workflow cursor transition', () => {
         kind: 'serve',
         ordinal: 1,
         slug: 'two',
-        expectedOrdinal: 1,
-        expectedSlug: 'two',
       }),
     ).toEqual({ action: 'refuse', reason: 'state' })
     expect(

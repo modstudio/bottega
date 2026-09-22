@@ -247,8 +247,6 @@ function getWorkflowStepWithCursorImpl(
     kind: 'serve',
     ordinal: index,
     slug: requested.slug,
-    expectedOrdinal: row?.ordinal ?? -1,
-    expectedSlug: row?.step_slug ?? composition.steps[0]!.slug,
   })
   if (decision.action === 'refuse') {
     if (decision.reason === 'compose-first')

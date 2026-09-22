@@ -7,7 +7,7 @@ export type CursorValue = {
 }
 
 export type CursorTransitionRequest =
-  | { kind: 'serve'; ordinal: number; slug: string; expectedOrdinal: number; expectedSlug: string }
+  | { kind: 'serve'; ordinal: number; slug: string }
   | { kind: 'next'; total: number; nextSlug: string | null }
 
 export type CursorTransition =
@@ -43,14 +43,6 @@ export function decideCursorTransition(
         slug: cursor.stepSlug,
         move: false,
         resume: request.ordinal === cursor.ordinal,
-      }
-    if (request.ordinal === cursor.ordinal + 1)
-      return {
-        action: 'serve',
-        ordinal: request.ordinal,
-        slug: request.slug,
-        move: true,
-        resume: false,
       }
     return { action: 'refuse', reason: 'ahead' }
   }

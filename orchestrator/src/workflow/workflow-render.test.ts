@@ -69,7 +69,7 @@ describe('workflow rendering', () => {
     const lastInEveryMode = getWorkflowStep('choose', 'fixture', 'lens', args, d)
     expect(lastInEveryMode.next).toBeNull()
     expect(renderWorkflowStep(lastInEveryMode)).toEndWith(
-      "This is the last step of choose in every mode that contains it. The workflow is finished when this step's floor is met.",
+      "Next: when this step's floor is met, close it with `next_workflow_step` (MCP) or `orch workflow next`, giving a one-line note of how the floor was met; this is the last step of choose in every mode that contains it, and closing it finishes the workflow.",
     )
   })
 
@@ -103,12 +103,12 @@ describe('workflow rendering', () => {
         getWorkflowStep('ship', 'fixture', 'rebase', args, d, { mode: 'default' }),
       ),
     ).toEndWith(
-      "Next: when this step's floor is met, fetch step 2 lens — Run independent review lenses.",
+      "Next: when this step's floor is met, close it with `next_workflow_step` (MCP) or `orch workflow next`, giving a one-line note of how the floor was met; that serves step 2 lens — Run independent review lenses.",
     )
     expect(
       renderWorkflowStep(getWorkflowStep('ship', 'fixture', 'close', args, d, { mode: 'default' })),
     ).toEndWith(
-      "This is the last step of ship (default). The workflow is finished when this step's floor is met.",
+      "Next: when this step's floor is met, close it with `next_workflow_step` (MCP) or `orch workflow next`, giving a one-line note of how the floor was met; this is the last step of ship (default), and closing it finishes the workflow.",
     )
 
     const draft = setWorkflow(
@@ -128,7 +128,7 @@ describe('workflow rendering', () => {
     )
     promoteWorkflow('forked-next', draft.n, 'publish', 'test', d)
     expect(renderWorkflowStep(getWorkflowStep('forked-next', 'fixture', 'score', {}, d))).toEndWith(
-      "Next: when this step's floor is met, return to the workflow's step list and fetch the step after this one.",
+      "Next: when this step's floor is met, close it with `next_workflow_step` (MCP) or `orch workflow next`, giving a one-line note of how the floor was met; that serves the following step from the workflow's step list.",
     )
   })
 })

@@ -440,7 +440,7 @@ export function createDocsMcpServer(): McpServer {
     'get_workflow_step',
     {
       description:
-        'Fetch one workflow step body with argument substitutions applied. Pass mode so the cursor advances and the reply names the next step; a step ahead of the cursor is refused.',
+        'Fetch one workflow step body with argument substitutions applied. Pass mode so the workflow cursor applies: fetching step 1 opens the workflow, fetching the current step resumes it, and a step ahead of the cursor is refused. Close a step and receive the next one with next_workflow_step.',
       inputSchema: {
         slug: z.string().trim().min(1),
         project: z.string().trim().min(1),
