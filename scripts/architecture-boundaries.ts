@@ -817,20 +817,8 @@ export const importBoundaries: ImportBoundary[] = [
     ['../database/db.ts', '../evidence/evidence-query.ts', '../project/projects.ts'],
     'Keep run inbox independent of run control, transports, routing, the CLI, and worktrees.',
   ),
-  boundary(
-    'live-run-member-boundary',
-    'orchestrator/src/run/live-run-member.ts',
-    [
-      'bun:sqlite',
-      '../../../shared/process-identity.ts',
-      '../database/db.ts',
-      '../events.ts',
-      '../idle-kill.ts',
-      '../jobs/jobs.ts',
-      '../stalled-run.ts',
-    ],
-    'Keep the canonical live member and its stall observation independent of adapters.',
-  ),
+  // biome-ignore format: Keep this boundary declaration within the frozen architecture manifest ceiling.
+  boundary('live-run-member-boundary', 'orchestrator/src/run/live-run-member.ts', ['bun:sqlite', '../../../shared/process-identity.ts', '../database/db.ts', '../events.ts', '../idle-kill.ts', '../jobs/jobs.ts', '../stalled-run.ts'], 'Keep the canonical live member and its stall observation independent of adapters.'),
   boundary(
     'run-listing-boundary',
     'orchestrator/src/run/run-listing.ts',

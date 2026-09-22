@@ -26,11 +26,7 @@ const WORKTREE_CREATE_LOCK_TIMEOUT_MS = 5 * 60_000
 const WORKTREE_CREATE_LOCK_POLL_MS = 100
 const heldProjectLocks = new Set<string>()
 
-export {
-  type PidRecordIdentity,
-  pidRecordIdentity,
-  processStartTime,
-} from '../../../shared/process-identity.ts'
+export { processStartTime } from '../../../shared/process-identity.ts'
 
 export type ProjectLockIdentity = {
   session: string | null
