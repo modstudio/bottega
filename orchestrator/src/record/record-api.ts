@@ -19,7 +19,14 @@ import { CONFIG_SCOPES, ConfigServiceError, MACHINE_KEY_ID_PATTERN } from './rec
 import type { RecordDoc, RecordDocImportInput, RecordDocRevision } from './record-docs.ts'
 import { RecordDocError } from './record-docs.ts'
 import type { RecordProject } from './record-projects.ts'
-import type { RecordCursor, RecordRun, RecordRunDetail } from './record-runs.ts'
+import type {
+  RecordCursor,
+  RecordRun,
+  RecordRunDetail,
+  RecordRunsWindow,
+  RecordRunsWindowInput,
+} from './record-runs.ts'
+import { runsWindowQuery } from './record-runs-window-query.ts'
 import type { RecordSnapshot, SnapshotKind } from './record-snapshots.ts'
 import { SNAPSHOT_KINDS } from './record-snapshots.ts'
 import type { RecordScore } from './record-verdicts.ts'
@@ -52,6 +59,9 @@ type Deps = {
       status?: string
     },
   ): Promise<RecordRun[]>
+  readRunsWindow(
+    input: Tenant & Omit<RecordRunsWindowInput, keyof Tenant>,
+  ): Promise<RecordRunsWindow>
   readRun(input: Tenant & { id: string }): Promise<RecordRunDetail | null>
   readReviews(
     input: Tenant & { limit: number; before: RecordCursor | null },
@@ -357,6 +367,13 @@ export function recordApi(deps: Deps): Hono<ApiEnvironment> {
       items,
       nextCursor: hasMore && last ? encodeRecordCursor({ at: last.startedAt, id: last.id }) : null,
     })
+  })
+  app.get('/v1/runs/window', async (context) => {
+    const tenant = scope(context)
+    if (!tenant) return noSpace(context)
+    const query = runsWindowQuery.safeParse(context.req.query())
+    if (!query.success) return context.json({ error: 'invalid run window query' }, 400)
+    return context.json(await deps.readRunsWindow({ ...tenant, ...query.data }))
   })
   app.get('/v1/runs/:id', async (context) => {
     const tenant = scope(context)

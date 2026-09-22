@@ -177,6 +177,7 @@ function payload(source: string, kind: keyof typeof recordKinds): Payload {
   if (kind === 'run' && !Object.hasOwn(parsed, 'startedByUserId')) {
     Object.assign(parsed, { startedByUserId: null })
   }
+  if (kind === 'run' && !Object.hasOwn(parsed, 'taskKey')) Object.assign(parsed, { taskKey: null })
   const keys = Object.keys(parsed).sort()
   const expected = [...recordKinds[kind].columns].sort()
   if (keys.length !== expected.length || keys.some((key, index) => key !== expected[index])) {
@@ -254,6 +255,7 @@ function runValues(row: Payload, projectId: string | null) {
     specSha: nullableString(row.specSha),
     promptBytes: bigint(row.promptBytes),
     promptHead: String(row.promptHead),
+    taskKey: nullableString(row.taskKey),
     label: nullableString(row.label),
     lens: nullableString(row.lens),
     latencyMs: nullableBigint(row.latencyMs),

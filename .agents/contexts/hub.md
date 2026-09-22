@@ -78,8 +78,12 @@ the span containing its timestamp. A leg with one message emits a zero-length sp
 spend is retained without inventing duration. Token reconciliation must conserve the
 source total.
 
-Keep `claude_tokens`, each agent's `vendor_tokens`, and `vendor_cost_usd` separate. Token
-counts from different vendors are not comparable and must never become a combined total.
+Keep `claude_tokens`, each agent's `vendor_tokens`, and `vendor_cost_usd` separate in
+storage and in every measurement that feeds a decision, because counts from different
+vendors are not comparable. A screen may show one combined token figure only where it
+sits beside the same figures per agent, so the reader sees what was added together; the
+combined figure is a rough sense of volume and never routing, attribution or spend
+evidence.
 
 # Attribution
 

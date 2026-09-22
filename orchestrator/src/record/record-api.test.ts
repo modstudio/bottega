@@ -24,6 +24,17 @@ function appWith(session: RecordIdentity | null, overrides: Record<string, unkno
     setActiveSpace: async () => undefined,
     readHealth: async () => ({ ok: true, migrations: 14 }),
     readRuns: async () => [],
+    readRunsWindow: async (input: { offset: number; limit: 25 | 50 | 100 }) => ({
+      items: [],
+      matched: 0,
+      offset: input.offset,
+      limit: input.limit,
+      facets: { agents: [], projects: [] },
+      totals: { runs: 0, scored: 0, voided: 0, failed: 0 },
+      vendors: [],
+      unscored: 0,
+      live: [],
+    }),
     readRun: async () => null,
     readReviews: async () => [],
     readReview: async () => null,
@@ -310,6 +321,42 @@ describe('record API presentation routes', () => {
     expect((await app.request('/v1/runs?limit=101')).status).toBe(400)
     expect((await app.request('/v1/runs?project=p&agent=a&job=j&status=ok')).status).toBe(200)
     expect(received).toMatchObject({ project: 'p', agent: 'a', job: 'j', status: 'ok' })
+  })
+
+  test('validates run window inputs and passes the accepted query', async () => {
+    let received: Record<string, unknown> = {}
+    const app = appWith(identity, {
+      readRunsWindow: async (input: Record<string, unknown>) => {
+        received = input
+        return {
+          items: [],
+          matched: 0,
+          offset: input.offset,
+          limit: input.limit,
+          facets: { agents: [], projects: [] },
+          totals: { runs: 0, scored: 0, voided: 0, failed: 0 },
+          vendors: [],
+          unscored: 0,
+          live: [],
+        }
+      },
+    })
+    expect((await app.request('/v1/runs/window?hours=12')).status).toBe(400)
+    expect((await app.request('/v1/runs/window?hours=24&limit=20')).status).toBe(400)
+    expect((await app.request(`/v1/runs/window?hours=24&search=${'x'.repeat(201)}`)).status).toBe(
+      400,
+    )
+    expect(
+      (await app.request('/v1/runs/window?hours=168&project=p&agent=a&offset=25&limit=25')).status,
+    ).toBe(200)
+    expect(received).toMatchObject({
+      hours: 168,
+      project: 'p',
+      agent: 'a',
+      search: '',
+      offset: 25,
+      limit: 25,
+    })
   })
 
   test('returns stable 400 and 404 error shapes', async () => {

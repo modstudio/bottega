@@ -19,6 +19,8 @@ import {
 } from '../../hosted-work.ts'
 import { routingViewData } from '../../orch-transforms.ts'
 import { createRecordClient } from '../../record-client.ts'
+import { duration, liveRowDisplay, runRowDisplay } from '../../run-display.ts'
+import { runListInput } from '../../run-list-input.ts'
 import { selectSnapshot } from '../../snapshot-selection.ts'
 import type { Context } from '../context.ts'
 
@@ -26,6 +28,7 @@ const t = initTRPC.context<Context>().create()
 const uuid = z.string().uuid()
 const limit = z.number().int().min(1).max(100).default(20)
 const filter = z.string().min(1).optional()
+const HOSTED_STARTED_AT = new Date().toISOString()
 
 function recordClient(ctx: Context) {
   const baseUrl = process.env.HUB_RECORD_API_URL
@@ -120,18 +123,61 @@ export const recordRouter = t.router({
   setActiveSpace: t.procedure
     .input(z.object({ spaceId: uuid }))
     .mutation(({ ctx, input }) => recordClient(ctx).setActiveSpace(input.spaceId)),
-  runs: t.procedure
-    .input(
-      z.object({
-        limit,
-        cursor: z.string().optional(),
-        project: filter,
-        agent: filter,
-        job: filter,
-        status: filter,
-      }),
-    )
-    .query(({ ctx, input }) => recordClient(ctx).runs(input)),
+  runsView: t.procedure.input(runListInput).query(async ({ ctx, input }) => {
+    const now = Date.now()
+    const window = await recordClient(ctx).runsView(input)
+    const rows = window.items.map((run) => {
+      const row = {
+        id: run.id,
+        space: run.spaceName,
+        agent: run.agent,
+        job: run.job,
+        task: run.taskKey,
+        project: run.projectName,
+        at: run.startedAt,
+        engaged: run.latencyMs === null ? '-' : duration(run.latencyMs),
+        running: run.status === 'running',
+        status: run.status,
+        delivery: run.score?.delivery ?? null,
+        quality: run.score?.quality ?? null,
+        tokens: run.vendorTokens,
+        costUsd: run.vendorCostUsd,
+        probe: run.probe,
+        lens: run.lens,
+        evidence_excluded: run.evidenceExcluded,
+      }
+      return { ...row, display: runRowDisplay(row, now) }
+    })
+    const live = window.live.map((run) => {
+      const row = {
+        id: run.id,
+        space: run.spaceName,
+        agent: run.agent,
+        job: run.job,
+        repo: run.projectName,
+        elapsedMs: Math.max(0, now - new Date(run.startedAt).getTime()),
+        prompt_head: run.promptHead,
+      }
+      return { ...row, display: liveRowDisplay(row) }
+    })
+    return {
+      collectedAt: null,
+      servingSince: HOSTED_STARTED_AT,
+      activeAgents: [...new Set(live.map((run) => run.agent))],
+      view: 'runs' as const,
+      data: {
+        totals: { ...window.totals, stale_n: 0 },
+        vendors: window.vendors,
+        unscored: window.unscored,
+        facets: window.facets,
+        matched: window.matched,
+        offset: window.offset,
+        limit: window.limit,
+        live,
+        rows,
+      },
+    }
+  }),
   run: t.procedure
     .input(z.object({ id: uuid }))
     .query(({ ctx, input }) => recordClient(ctx).run(input.id)),

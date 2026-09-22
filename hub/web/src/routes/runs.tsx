@@ -1,17 +1,16 @@
-import { keepPreviousData, useQuery } from '@tanstack/react-query'
+import { keepPreviousData, type UseQueryOptions, useQuery } from '@tanstack/react-query'
 import { createFileRoute, useNavigate, useParams } from '@tanstack/react-router'
 import { ChevronRight } from 'lucide-react'
 import { useState } from 'react'
 import { Collection, type CollectionColumn } from '@/components/collection'
 import { ProjectMark, useWindowFilters, WindowControl } from '@/components/design-system'
-import { HostedRuns } from '@/components/hosted-runs'
 import { useNow } from '@/lib/clock'
 import { useDetailPanel } from '@/lib/detail-panel'
 import { collectedTime, compactTokens, duration } from '@/lib/format'
 import { isHostedMode } from '@/lib/hub-mode'
 import { useDebounced } from '@/lib/use-debounced'
 import { verdictTone } from '@/lib/verdict-tone'
-import { useWindowState } from '@/lib/window'
+import { useWindowState, type WindowHours } from '@/lib/window'
 import { trpc } from '@/trpc/client'
 import { Badge } from '@/ui/badge/badge'
 import { LiveDot } from '@/ui/badge/live-dot'
@@ -31,7 +30,8 @@ type RunDisplay = {
   started: string
 }
 type RunRow = {
-  id: number
+  id: number | string
+  space?: string
   agent: string
   job: string | null
   task: string | null
@@ -46,7 +46,8 @@ type RunRow = {
   display: RunDisplay
 }
 type LiveRow = {
-  id: number
+  id: number | string
+  space?: string
   agent: string
   job: string
   repo: string | null
@@ -59,7 +60,7 @@ type RunsPayload = {
   activeAgents: string[]
   data: {
     totals: { runs: number; scored: number; voided?: number; failed: number; stale_n: number }
-    vendors: { agent: string; tokens: number; runs: number }[]
+    vendors: { agent: string; tokens: number | null; runs: number }[]
     unscored: number
     facets: { agents: string[]; projects: string[] }
     matched: number
@@ -101,7 +102,6 @@ function Verdict({ row }: { row: RunRow }) {
 export const Route = createFileRoute('/runs')({ component: RunsPage })
 
 function RunsPage() {
-  if (isHostedMode()) return <HostedRuns />
   return <RunsList />
 }
 
@@ -117,6 +117,55 @@ function usePaging(question: string) {
   return { page, pageSize, setPage, setPageSize }
 }
 
+type RunsInput = {
+  hours: WindowHours
+  agent: string
+  project: string
+  offset: number
+  limit: PageSize
+  search: string
+}
+
+/** One payload shape from either source: the local orchestrator or the hosted record. */
+function useRunsQuery(input: RunsInput, paused: boolean) {
+  const refetch = { refetchInterval: paused ? (false as const) : 30_000 }
+  const options = (isHostedMode()
+    ? trpc.record.runsView.queryOptions(input, refetch)
+    : trpc.run.list.queryOptions(input, refetch)) as unknown as UseQueryOptions<RunsPayload>
+  return useQuery({ ...options, placeholderData: keepPreviousData })
+}
+
+/**
+ * One token figure over every agent. Vendors count tokens differently, so it sits
+ * beside the per-agent figures and is a sense of volume, never evidence.
+ */
+function combinedTokens(vendors: RunsPayload['data']['vendors']) {
+  const read = vendors.filter((vendor) => vendor.tokens !== null)
+  if (!read.length) return '-'
+  return compactTokens(read.reduce((sum, vendor) => sum + (vendor.tokens ?? 0), 0))
+}
+
+/** The window's counters as figure, label and hint. */
+function statCards(data: RunsPayload['data']) {
+  return [
+    [data.totals.runs.toLocaleString(), 'runs', 'in this window'],
+    [String(data.live.length), 'in flight', 'right now'],
+    [data.totals.scored.toLocaleString(), 'scored', 'judged'],
+    [(data.totals.voided ?? 0).toLocaleString(), 'voided', 'not routing evidence'],
+    [data.unscored.toLocaleString(), 'unscored', 'teaches the router nothing'],
+    [data.totals.failed.toLocaleString(), 'failed', 'counts against the agent'],
+  ]
+}
+
+/** A Space column earns its place only when the rows span more than one space. */
+function spansSpaces(rows: { space?: string }[]) {
+  return new Set(rows.map((row) => row.space).filter(Boolean)).size > 1
+}
+
+function spaceColumn<Row extends { space?: string }>(show: boolean): CollectionColumn<Row>[] {
+  return show ? [{ id: 'space', label: 'Space', render: (row) => row.space ?? '-' }] : []
+}
+
 function RunsList() {
   const navigate = useNavigate()
   const panel = useDetailPanel()
@@ -129,20 +178,15 @@ function RunsList() {
     `${windowState.hours}|${windowState.filters.agent}|${windowState.filters.project}|${searchQuery}`,
   )
   const now = useNow()
-  const query = useQuery({
-    ...trpc.run.list.queryOptions(
-      {
-        hours: windowState.hours,
-        agent: windowState.filters.agent,
-        project: windowState.filters.project,
-        offset: (page - 1) * pageSize,
-        limit: pageSize,
-        search: searchQuery,
-      },
-      { refetchInterval: openMenus ? false : 30_000 },
-    ),
-    placeholderData: keepPreviousData,
-  })
+  const input = {
+    hours: windowState.hours,
+    agent: windowState.filters.agent,
+    project: windowState.filters.project,
+    offset: (page - 1) * pageSize,
+    limit: pageSize,
+    search: searchQuery,
+  }
+  const query = useRunsQuery(input, openMenus > 0)
   const payload = query.data as unknown as RunsPayload | undefined
   const data = payload?.data
   const filtered = !!(windowState.filters.agent || windowState.filters.project)
@@ -153,19 +197,11 @@ function RunsList() {
     agents: data?.facets.agents,
     onOpenChange: menuChanged,
   })
-  const cards = data
-    ? [
-        [data.totals.runs.toLocaleString(), 'runs', 'in this window'],
-        [String(data.live.length), 'in flight', 'right now'],
-        [data.totals.scored.toLocaleString(), 'scored', 'judged'],
-        [(data.totals.voided ?? 0).toLocaleString(), 'voided', 'not routing evidence'],
-        [data.unscored.toLocaleString(), 'unscored', 'teaches the router nothing'],
-        [data.totals.failed.toLocaleString(), 'failed', 'counts against the agent'],
-      ]
-    : []
+  const cards = data ? statCards(data) : []
   // The server applies search and paging; these are the rows to draw.
   const liveRows = data?.live ?? []
   const runRows = data?.rows ?? []
+  const showSpace = spansSpaces([...liveRows, ...runRows])
   const liveColumns: CollectionColumn<LiveRow>[] = [
     {
       id: 'agent',
@@ -177,6 +213,7 @@ function RunsList() {
         </span>
       ),
     },
+    ...spaceColumn<LiveRow>(showSpace),
     {
       id: 'job',
       label: 'Job',
@@ -198,6 +235,7 @@ function RunsList() {
     },
   ]
   const runColumns: CollectionColumn<RunRow>[] = [
+    ...spaceColumn<RunRow>(showSpace),
     { id: 'project', label: 'Project', render: (row) => <ProjectMark name={row.project} /> },
     {
       id: 'task',
@@ -277,17 +315,15 @@ function RunsList() {
             ))}
             <StatTile
               label="agents"
-              hint="tokens are per agent, never summed"
+              hint="one figure over agents that count tokens differently"
               breakdown={[
                 {
-                  label: 'runs, all agents',
-                  value: data.vendors
-                    .reduce((sum, vendor) => sum + vendor.runs, 0)
-                    .toLocaleString(),
+                  label: `runs, all agents · ${combinedTokens(data.vendors)} tokens`,
+                  value: data.totals.runs.toLocaleString(),
                 },
                 ...data.vendors.map((vendor) => ({
                   label: `${vendor.agent} tokens · ${vendor.runs.toLocaleString()} runs`,
-                  value: compactTokens(vendor.tokens),
+                  value: vendor.tokens == null ? '-' : compactTokens(vendor.tokens),
                 })),
               ]}
             />

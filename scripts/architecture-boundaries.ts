@@ -581,6 +581,7 @@ export const importBoundaries: ImportBoundary[] = [
       './record-verdicts.ts',
       './record-projects.ts',
       './record-runs.ts',
+      './record-runs-window-query.ts',
     ],
     'Enforce the record-api concern boundary.',
   ),
