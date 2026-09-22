@@ -371,13 +371,25 @@ export type CursorListOptions = {
   cwd?: string
 }
 
+export function workflowCursorProjectScope(
+  options: Pick<CursorListOptions, 'all' | 'project' | 'session'>,
+  cwdProject: string | undefined,
+  cwd: string,
+): string | undefined {
+  if (options.all || (options.session && !options.project)) return undefined
+  if (options.project) return options.project
+  if (cwdProject) return cwdProject
+  throw new Error(`cannot list workflow cursors from ${cwd}: pass --project, --session or --all`)
+}
+
 export function listWorkflowCursors(
   options: CursorListOptions = {},
   d: Database = db(),
-): Array<CursorRow & { next_slug: string }> {
-  const project = options.all
-    ? undefined
-    : (options.project ?? projectAt(options.cwd ?? process.cwd())?.name)
+): Array<CursorRow & { next_slug: string; line: string }> {
+  const cwd = options.cwd ?? process.cwd()
+  const cwdProject =
+    options.all || options.project || options.session ? undefined : projectAt(cwd)?.name
+  const project = workflowCursorProjectScope(options, cwdProject, cwd)
   const clauses = [`state <> 'done'`]
   const values: string[] = []
   if (project) {
@@ -391,14 +403,15 @@ export function listWorkflowCursors(
   const rows = d
     .query(`SELECT * FROM workflow_cursor WHERE ${clauses.join(' AND ')} ORDER BY updated_at,id`)
     .all(...values) as CursorRow[]
-  return rows.map((row) => ({
-    ...row,
-    next_slug: cursorComposition(row, d).steps[row.ordinal + 1]?.slug ?? 'finished',
-  }))
+  return rows.map((row) => {
+    const listed = {
+      ...row,
+      next_slug: cursorComposition(row, d).steps[row.ordinal + 1]?.slug ?? 'finished',
+    }
+    return { ...listed, line: renderWorkflowCursorLine(listed) }
+  })
 }
 
-export function renderWorkflowCursorLine(
-  row: ReturnType<typeof listWorkflowCursors>[number],
-): string {
+export function renderWorkflowCursorLine(row: CursorRow & { next_slug: string }): string {
   return `${row.workflow_slug} ${row.workflow_key} ${row.project} step ${row.ordinal + 1}/${row.total_steps} ${row.step_slug} ${row.state} next: ${row.next_slug}${row.question ? ` question: ${row.question}` : ''}`
 }
