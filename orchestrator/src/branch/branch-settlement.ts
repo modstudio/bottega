@@ -15,7 +15,7 @@ export type ReclaimRun = {
   branch_kept_tip: string | null
   minted_branch: string | null
   base_commit: string | null
-  worktree_source: 'git' | 'recipe' | 'readonly_recipe' | null
+  worktree_source: 'git' | 'recipe' | 'clone' | 'readonly_recipe' | null
   status: string
   pid: number | null
   agent_pid: number | null

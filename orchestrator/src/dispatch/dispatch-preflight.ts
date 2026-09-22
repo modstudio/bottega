@@ -3,10 +3,16 @@
  * Knows the job catalogue, project register, worktree recipe, and recorded
  * worktree paths. Must not know transports, routing, or contracts.
  */
+
 import { seedGuidance } from '../cli/args.ts'
 import { db } from '../database/db.ts'
 import { realpathOrSpelled } from '../git/checkout-identity.ts'
-import { gitContext, linkedWorktreePaths, repoRootOf } from '../git/git-environment.ts'
+import {
+  borrowedCheckoutOf,
+  gitContext,
+  linkedWorktreePaths,
+  repoRootOf,
+} from '../git/git-environment.ts'
 import { job } from '../jobs/jobs.ts'
 import { resolveLens } from '../lens/lenses.ts'
 import {
@@ -42,6 +48,7 @@ export function callerCheckoutFacts(cwd: string): {
   repoRoot: string | null
   registeredProjectPath: string | null
   linkedWorktree: boolean
+  borrowedCheckout: boolean
 } {
   const checkoutRoot = gitContext(cwd, 'rev-parse', '--show-toplevel')
   const repoRoot = repoRootOf(cwd)
@@ -49,6 +56,7 @@ export function callerCheckoutFacts(cwd: string): {
     repoRoot,
     registeredProjectPath: projectAt(repoRoot ?? cwd)?.path ?? null,
     linkedWorktree: checkoutRoot !== null && linkedWorktreePaths(checkoutRoot) !== null,
+    borrowedCheckout: checkoutRoot !== null && borrowedCheckoutOf(checkoutRoot) !== null,
   }
 }
 

@@ -324,13 +324,7 @@ function codexCommon(o: Omit<ArgvOpts, 'prompt'>): string[] {
     // the run, which the ruling accepts for projects that declare the flag.
     a.push('-c', 'sandbox_workspace_write.network_access=true')
   }
-  a.push(
-    ...codexShellEnvironmentArgs(
-      o.gitObjectEnvironment,
-      o.gitConfigEnvironment,
-      o.recipeEnvironment,
-    ),
-  )
+  a.push(...codexShellEnvironmentArgs(o.gitConfigEnvironment, o.recipeEnvironment))
   if (o.mcp) {
     a.push('--approve-for-me')
   } else if (o.sandbox === 'exec') a.push('-s', CODEX_EXEC_SANDBOX)

@@ -11,7 +11,7 @@ import {
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { upsertProject } from '../project/projects.ts'
-import { removeFor } from './worktree-remove.ts'
+import { readOnlyRemovalRefusal, removeFor } from './worktree-remove.ts'
 
 const directories: string[] = []
 const originalPath = process.env.PATH
@@ -46,6 +46,58 @@ afterEach(() => {
 })
 
 describe('worktree removal safety', () => {
+  test('reader deletion accepts only this project clone or its partial reader directory', () => {
+    const repoRoot = '/projects/alpha'
+    expect(
+      readOnlyRemovalRefusal({
+        path: repoRoot,
+        repoRoot,
+        gitEntryExists: true,
+        borrowedSource: repoRoot,
+      }),
+    ).toContain('main checkout or an ancestor')
+    expect(
+      readOnlyRemovalRefusal({
+        path: '/projects',
+        repoRoot,
+        gitEntryExists: true,
+        borrowedSource: repoRoot,
+      }),
+    ).toContain('main checkout or an ancestor')
+    expect(
+      readOnlyRemovalRefusal({
+        path: '/projects/alpha/.claude/worktrees/orch-1',
+        repoRoot,
+        gitEntryExists: true,
+        borrowedSource: '/projects/bravo',
+      }),
+    ).toContain('does not identify a reader clone borrowing')
+    expect(
+      readOnlyRemovalRefusal({
+        path: '/tmp/orch-1',
+        repoRoot,
+        gitEntryExists: false,
+        borrowedSource: null,
+      }),
+    ).toContain('has no .git and is outside')
+    expect(
+      readOnlyRemovalRefusal({
+        path: '/projects/alpha/.claude/worktrees/orch-1',
+        repoRoot,
+        gitEntryExists: false,
+        borrowedSource: null,
+      }),
+    ).toBeNull()
+    expect(
+      readOnlyRemovalRefusal({
+        path: '/projects/alpha/.claude/worktrees/orch-1',
+        repoRoot,
+        gitEntryExists: true,
+        borrowedSource: repoRoot,
+      }),
+    ).toBeNull()
+  })
+
   test('forced fallback leaves a branch removeFor decided to keep', () => {
     const repoRoot = mkdtempSync(join(tmpdir(), 'orch-remove-main-'))
     const path = join(repoRoot, 'tree')

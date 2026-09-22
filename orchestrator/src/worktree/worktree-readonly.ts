@@ -1,7 +1,13 @@
 // concern: worktree-readonly
 import { existsSync, mkdirSync } from 'node:fs'
 import { dirname, join } from 'node:path'
-import { git, gitOk, repoRootOf, targetGitEnvironment } from '../git/git-environment.ts'
+import {
+  borrowedCheckoutOf,
+  git,
+  gitOk,
+  repoRootOf,
+  targetGitEnvironment,
+} from '../git/git-environment.ts'
 import type { WorktreeTool } from '../project/projects.ts'
 import { provisionReadOnlyTree, type ReadonlyProvision } from './readonly-provision.ts'
 import {
@@ -10,7 +16,7 @@ import {
   runCreateTool,
   verifyFreshWorktree,
 } from './worktree-create.ts'
-import { branchTip, removeReadOnlyTree } from './worktree-remove.ts'
+import { branchTip, removeReadOnlyDirectory, removeReadOnlyTree } from './worktree-remove.ts'
 import { assertCreateVarsAvailable } from './worktree-template.ts'
 import type { Worktree } from './worktree-types.ts'
 
@@ -27,12 +33,23 @@ export function createReadOnlyWorktree(
   mkdirSync(dirname(path), { recursive: true })
   if (existsSync(path))
     throw new Error(`worktree ${path} already exists; run ${runId} would overwrite it`)
-  git(['worktree', 'add', '--relative-paths', '--detach', path, base], repoRoot)
-  provisionReadOnlyTree(repoRoot, path, provision)
-  const worktree = { path, branch: '', base, repoRoot, source: 'git' as const }
-  attributeWorktree(worktree, runId, record)
-  verifyFreshWorktree(worktree)
-  return worktree
+  const worktree = { path, branch: '', base, repoRoot, source: 'clone' as const }
+  try {
+    git(['clone', '--shared', '--no-checkout', repoRoot, path], repoRoot)
+    git(['checkout', '--detach', base], path)
+    git(['remote', 'remove', 'origin'], path)
+    provisionReadOnlyTree(repoRoot, path, provision)
+    attributeWorktree(worktree, runId, record)
+    verifyFreshWorktree(worktree)
+    verifyBorrowedCheckout(path, repoRoot)
+    return worktree
+  } catch (error) {
+    const cleanup = removeReadOnlyDirectory(worktree)
+    if (cleanup.removed) throw error
+    throw new Error(
+      `${error instanceof Error ? error.message : String(error)}\ncleanup: ${cleanup.detail}`,
+    )
+  }
 }
 
 /** Let a project provision a detached read-only checkout at orch's chosen path. */
@@ -75,6 +92,7 @@ export function createReadOnlyWithTool(
     }
     attributeWorktree(worktree, runId, record)
     verifyFreshWorktree(worktree)
+    verifyBorrowedCheckout(path, repoRoot)
     return worktree
   } catch (error) {
     if (!existsSync(path)) throw error
@@ -102,6 +120,16 @@ export function createReadOnlyWithTool(
     throw new Error(
       `${error instanceof Error ? error.message : String(error)}\n` +
         `cleanup: ${cleanup.removed ? 'removed' : cleanup.detail}`,
+    )
+  }
+}
+
+/** Enforce the generic readonly_create contract after either creation path. */
+function verifyBorrowedCheckout(path: string, repoRoot: string): void {
+  const source = borrowedCheckoutOf(path)
+  if (!source || source !== repoRoot) {
+    throw new Error(
+      `read-only checkout ${path} does not borrow objects from main checkout ${repoRoot}`,
     )
   }
 }

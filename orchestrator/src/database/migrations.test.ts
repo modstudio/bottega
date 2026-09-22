@@ -62,7 +62,11 @@ test('agent operator migration preserves cost facts and the routing free set', (
     const before = database
       .query("SELECT name FROM agent WHERE billing IN ('free','local') ORDER BY name")
       .all()
-    expect(applyMigrations(database)).toEqual(['0039_agent_operator', '0040_workflow_cursor'])
+    expect(applyMigrations(database)).toEqual([
+      '0039_agent_operator',
+      '0040_workflow_cursor',
+      '0041_readonly_clone_source',
+    ])
     const after = database
       .query("SELECT name FROM agent WHERE billing IN ('free','none') ORDER BY name")
       .all()

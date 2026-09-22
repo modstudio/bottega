@@ -1,9 +1,34 @@
 import { describe, expect, test } from 'bun:test'
 import {
   classifyWorktreeDirty,
+  isUnmarkedBorrowedReaderClone,
   type TreeOwnershipInput,
   treeOwnership,
 } from './worktree-attribution.ts'
+
+describe('isUnmarkedBorrowedReaderClone', () => {
+  const reader = {
+    path: '/projects/alpha/.claude/worktrees/orch-42',
+    repoRoot: '/projects/alpha',
+    borrowedSource: '/projects/alpha',
+  }
+
+  test('accepts only a conventional direct child borrowing from this project', () => {
+    expect(isUnmarkedBorrowedReaderClone(reader)).toBeTrue()
+    expect(
+      isUnmarkedBorrowedReaderClone({ ...reader, path: '/projects/alpha/.claude/worktrees/other' }),
+    ).toBeFalse()
+    expect(
+      isUnmarkedBorrowedReaderClone({
+        ...reader,
+        path: '/projects/alpha/.claude/worktrees/nested/orch-42',
+      }),
+    ).toBeFalse()
+    expect(
+      isUnmarkedBorrowedReaderClone({ ...reader, borrowedSource: '/projects/bravo' }),
+    ).toBeFalse()
+  })
+})
 
 const base: TreeOwnershipInput = {
   conversationRunIds: [40, 41],

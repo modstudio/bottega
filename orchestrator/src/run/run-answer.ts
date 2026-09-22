@@ -216,7 +216,7 @@ export async function answerRun(
     session_id: string | null
     turn: number
     parent_run_id: number | null
-    worktree_source: 'recipe' | 'git' | 'readonly_recipe' | null
+    worktree_source: 'recipe' | 'git' | 'clone' | 'readonly_recipe' | null
     evidence_excluded: string | null
   } | null
   if (!row) throw new Error(`no run ${requestedId}`)
@@ -338,7 +338,7 @@ export async function answerRun(
     worktree: string | null
     branch: string | null
     base_commit: string | null
-    worktree_source: 'recipe' | 'git' | 'readonly_recipe' | null
+    worktree_source: 'recipe' | 'git' | 'clone' | 'readonly_recipe' | null
   }
   const sessionFrom = latest.vendor_session
     ? latest

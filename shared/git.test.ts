@@ -1,5 +1,32 @@
 import { describe, expect, test } from 'bun:test'
-import { scrubbedGitEnv } from './git.ts'
+import { borrowedCheckoutFromAlternates, scrubbedGitEnv } from './git.ts'
+
+describe('borrowed checkout identity', () => {
+  const objects = '/trees/reader/.git/objects'
+
+  test('accepts one absolute or relative non-bare checkout object store', () => {
+    expect(borrowedCheckoutFromAlternates('/projects/app/.git/objects\n', objects)).toBe(
+      '/projects/app',
+    )
+    expect(borrowedCheckoutFromAlternates('../../../main/.git/objects\n', objects)).toBe(
+      '/trees/main',
+    )
+  })
+
+  test('ignores comments but refuses multiple stores, bare stores, and a missing file', () => {
+    expect(
+      borrowedCheckoutFromAlternates('# shared source\n/projects/app/.git/objects\n', objects),
+    ).toBe('/projects/app')
+    expect(
+      borrowedCheckoutFromAlternates(
+        '/projects/one/.git/objects\n/projects/two/.git/objects\n',
+        objects,
+      ),
+    ).toBeNull()
+    expect(borrowedCheckoutFromAlternates('/projects/app.git/objects\n', objects)).toBeNull()
+    expect(borrowedCheckoutFromAlternates(null, objects)).toBeNull()
+  })
+})
 
 describe('shared git environment decisions', () => {
   test('the shared scrub removes repository-location variables git lists and orch routing, not global-behaviour GIT_*', () => {

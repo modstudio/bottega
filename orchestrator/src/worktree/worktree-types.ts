@@ -9,7 +9,7 @@ export type Worktree = {
   /** The repository the worktree belongs to. */
   repoRoot: string
   /** The lifecycle that created this tree, and therefore owns its removal. */
-  source?: 'recipe' | 'git' | 'readonly_recipe'
+  source?: 'recipe' | 'git' | 'clone' | 'readonly_recipe'
   /** Branch this run minted. Null/absent means it must never delete row.branch. */
   mintedBranch?: string | null
 }

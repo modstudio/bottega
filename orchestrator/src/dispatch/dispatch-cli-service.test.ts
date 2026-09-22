@@ -10,12 +10,13 @@ describe('caller checkout resolution', () => {
         repoRoot: '/project',
         registeredProjectPath: '/project',
         linkedWorktree: true,
+        borrowedCheckout: false,
       }),
     ).toEqual({
       callerCwd: '/project',
       launchCwd: '/project/.claude/worktrees/DEV-780',
       notice:
-        '! dispatched from linked worktree /project/.claude/worktrees/DEV-780; caller checkout is /project (pass --cwd to choose a tree)',
+        '! dispatched from project tree /project/.claude/worktrees/DEV-780; caller checkout is /project (pass --cwd to choose a tree)',
     })
   })
 
@@ -27,6 +28,7 @@ describe('caller checkout resolution', () => {
         repoRoot: '/project',
         registeredProjectPath: '/project',
         linkedWorktree: true,
+        borrowedCheckout: false,
       }),
     ).toEqual({
       callerCwd: '/project/.claude/worktrees/DEV-780',
@@ -43,8 +45,27 @@ describe('caller checkout resolution', () => {
         repoRoot: '/unregistered',
         registeredProjectPath: null,
         linkedWorktree: false,
+        borrowedCheckout: false,
       }),
     ).toEqual({ callerCwd: '/unregistered', launchCwd: '/unregistered', notice: null })
+  })
+
+  test('an implicit borrowed clone resolves to the registered project', () => {
+    expect(
+      callerCheckoutDecision({
+        launchCwd: '/project/.claude/worktrees/orch-832',
+        explicitCwd: null,
+        repoRoot: '/project',
+        registeredProjectPath: '/project',
+        linkedWorktree: false,
+        borrowedCheckout: true,
+      }),
+    ).toEqual({
+      callerCwd: '/project',
+      launchCwd: '/project/.claude/worktrees/orch-832',
+      notice:
+        '! dispatched from project tree /project/.claude/worktrees/orch-832; caller checkout is /project (pass --cwd to choose a tree)',
+    })
   })
 })
 

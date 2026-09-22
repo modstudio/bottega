@@ -1,12 +1,11 @@
 import { expect, test } from 'bun:test'
-import { mkdtempSync, readFileSync, rmSync } from 'node:fs'
+import { mkdtempSync, readFileSync, rmSync, statSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { git } from '../git/git-environment.ts'
+import { git, gitOk } from '../git/git-environment.ts'
 import { createReadOnlyWorktree } from './worktree-readonly.ts'
-import { removeWorktree } from './worktree-remove.ts'
 
-test('built-in read-only worktrees use relative git pointers', () => {
+test('built-in read-only trees are detached shared clones with private refs', () => {
   const repoRoot = mkdtempSync(join(tmpdir(), 'orch-readonly-worktree-'))
   const runId = 828
 
@@ -28,17 +27,13 @@ test('built-in read-only worktrees use relative git pointers', () => {
     const base = git(['rev-parse', 'HEAD'], repoRoot)
 
     const worktree = createReadOnlyWorktree(repoRoot, runId, base)
-    const pointer = readFileSync(join(worktree.path, '.git'), 'utf8').trim()
-    expect(pointer).toStartWith('gitdir: ')
-    expect(pointer.slice('gitdir: '.length)).not.toStartWith('/')
-
-    const adminPointer = readFileSync(
-      join(repoRoot, '.git', 'worktrees', `orch-${runId}`, 'gitdir'),
-      'utf8',
-    ).trim()
-    expect(adminPointer).not.toStartWith('/')
-
-    expect(removeWorktree(worktree)).toEqual({ removed: true, detail: worktree.path })
+    expect(statSync(join(worktree.path, '.git')).isDirectory()).toBe(true)
+    expect(git(['rev-parse', 'HEAD'], worktree.path)).toBe(base)
+    expect(gitOk(['symbolic-ref', '--quiet', 'HEAD'], worktree.path)).toBeNull()
+    expect(
+      readFileSync(join(worktree.path, '.git', 'objects', 'info', 'alternates'), 'utf8').trim(),
+    ).toEndWith('/.git/objects')
+    expect(git(['remote'], worktree.path)).toBe('')
   } finally {
     rmSync(repoRoot, { recursive: true, force: true })
   }

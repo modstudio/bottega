@@ -391,6 +391,7 @@ export function acpLeaderSocketPath(outPath: string, runtimeDir?: string): strin
 function acpEnvironment(opts: TransportStartOpts): Record<string, string> {
   const env: Record<string, string> = {
     ...opts.env,
+    ...opts.recipeEnvironment,
     NO_BROWSER: '1',
     INITIAL_AGENT_MODE: 'read-only',
   }

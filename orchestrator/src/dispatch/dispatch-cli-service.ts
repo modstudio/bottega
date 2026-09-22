@@ -63,13 +63,14 @@ export function callerCheckoutDecision(input: {
   repoRoot: string | null
   registeredProjectPath: string | null
   linkedWorktree: boolean
+  borrowedCheckout: boolean
 }): CallerCheckoutDecision {
   const callerCwd = input.explicitCwd ?? input.launchCwd
   if (
     input.explicitCwd !== null ||
     input.repoRoot === null ||
     input.registeredProjectPath === null ||
-    !input.linkedWorktree
+    (!input.linkedWorktree && !input.borrowedCheckout)
   ) {
     return { callerCwd, launchCwd: input.launchCwd, notice: null }
   }
@@ -77,7 +78,7 @@ export function callerCheckoutDecision(input: {
     callerCwd: input.registeredProjectPath,
     launchCwd: input.launchCwd,
     notice:
-      `! dispatched from linked worktree ${input.launchCwd}; caller checkout is ` +
+      `! dispatched from project tree ${input.launchCwd}; caller checkout is ` +
       `${input.registeredProjectPath} (pass --cwd to choose a tree)`,
   }
 }
