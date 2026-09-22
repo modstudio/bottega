@@ -112,6 +112,7 @@ import {
 import { claimRun } from './run-claim.ts'
 import { closeRun } from './run-close.ts'
 import { codexAcpReadonlyDockerRefusal, decideCodexSandbox } from './run-codex-sandbox.ts'
+import { decideRunLaunch } from './run-launch.ts'
 import { acquireRunLease } from './run-lease.ts'
 import { runLive } from './run-live.ts'
 import * as mcpAttachment from './run-mcp-attachment.ts'
@@ -528,35 +529,36 @@ export async function run(opts: {
     prompt = `${evidencePrompt.readerInstruction}\n\n${prompt}`
   }
   const requiresCanonSource = evidencePrompt.requiresCanonSource
-
-  // A resumed turn stays with the vendor session that owns the conversation.
-  const { agent: name, reason } = opts.resume
-    ? {
-        agent: opts.resume.agent,
-        reason:
-          `resumed run ${opts.resume.parent} (turn ${opts.resume.turn}); ` +
-          'repository path retargeting not applied because the turn is already bound to its worktree',
-      }
-    : // Stack-specific evidence steers routing once that cell has earned a comparison.
-      pick(
-        opts.job,
-        selectAgentForTransport(requestedTransport, opts.agent),
-        Buffer.byteLength(prompt) +
-          replyFileBytes(replySchemaName, runScratchDir(Number.MAX_SAFE_INTEGER)) +
-          (requestedJob.findings ? CALIBRATION_SUFFIX_RESERVE_BYTES : 0) +
-          (requiresCanonSource ? CANON_SOURCE_PROMPT_RESERVE_BYTES : 0),
-        true,
-        stackAt(callerCwd),
-        {
-          agents: opts.avoid,
-          models: opts.distinctModels,
-          model: opts.model,
-          noWaitCapacity: opts.noWaitCapacity,
-        },
-        opts.probe,
-        opts.lens,
-      )
-  const a = requireAgent(name)
+  const pickSource = () =>
+    pick(
+      opts.job,
+      selectAgentForTransport(requestedTransport, opts.agent),
+      Buffer.byteLength(prompt) +
+        replyFileBytes(replySchemaName, runScratchDir(Number.MAX_SAFE_INTEGER)) +
+        (requestedJob.findings ? CALIBRATION_SUFFIX_RESERVE_BYTES : 0) +
+        (requiresCanonSource ? CANON_SOURCE_PROMPT_RESERVE_BYTES : 0),
+      true,
+      stackAt(callerCwd),
+      {
+        agents: opts.avoid,
+        models: opts.distinctModels,
+        model: opts.model,
+        noWaitCapacity: opts.noWaitCapacity,
+      },
+      opts.probe,
+      opts.lens,
+    )
+  const source = opts.resume
+    ? { source: 'resume' as const, ...opts.resume }
+    : { source: 'pick' as const, ...pickSource() }
+  const launch = decideRunLaunch({
+    ...source,
+    explicitTransport: opts.transport !== undefined,
+    envTransport: Boolean(process.env.ORCH_TRANSPORT),
+  })
+  const a = requireAgent(launch.agent)
+  const transportName = launch.useRequestedTransport ? requestedTransport : a.defaultTransport
+  const { agent: name, reason } = launch
   const codexSandboxFacts = {
     agentIsCodex: name === 'codex',
     readsRepo: repoJob,
@@ -584,10 +586,6 @@ export async function run(opts: {
     prompt =
       split >= 0 ? prompt.slice(0, split) + boundLine + prompt.slice(split) : prompt + boundLine
   }
-  const transportName =
-    opts.resume || opts.transport !== undefined || process.env.ORCH_TRANSPORT
-      ? requestedTransport
-      : a.defaultTransport
   const transportRefusal = codexAcpReadonlyDockerRefusal({
     ...codexSandboxFacts,
     transport: transportName,
