@@ -37,4 +37,5 @@ hub/web/bun.lock
 # Working material, not the deliverable.
 .playwright-mcp/
 hub-*.png
+/*.png
 /tmp-shots/
