@@ -63,17 +63,20 @@ import { toolFor } from '../worktree/worktree-preflight.ts'
 import { type Changes, removeFor } from '../worktree/worktree-remove.ts'
 import type { Worktree } from '../worktree/worktree-types.ts'
 import { assertBranchHasNoAliveOwner } from './branch-owner-guard.ts'
-import {
-  type ResumeCreationLifecycle,
-  type ResumeTreePlan,
-  resumeCreationOptions,
-} from './resume-tree.ts'
+import { type ResumeTreePlan, resumeCreationOptions } from './resume-tree.ts'
 import {
   noRepoIsolatePath,
   type runFilePaths,
   runScratchDir,
   writeDispatchState,
 } from './run-artifacts.ts'
+import {
+  decideClaimTreePlan,
+  resumeCreationLifecycle,
+  resumeCreationTool,
+  shouldResolveTaskBranch,
+  taskBranchKey,
+} from './run-claim-plan.ts'
 import { errorTail, sha } from './run-process.ts'
 
 type RecreateResumeTreePlan = Extract<
@@ -95,49 +98,12 @@ function prepareResumeBranchIfNeeded(
   if (!current) git(['update-ref', `refs/heads/${plan.branch}`, plan.tip], repoRoot)
 }
 
-function resumeCreationLifecycle(tool: ReturnType<typeof toolFor>): ResumeCreationLifecycle {
-  if (tool?.create) return 'command-template'
-  if (tool?.recipe || tool?.recipePath) return 'recipe'
-  return 'built-in-git'
-}
-
-function resumeCreationTool(
-  useCreateTool: boolean,
-  tool: ReturnType<typeof toolFor>,
-): ReturnType<typeof toolFor> {
-  return useCreateTool ? tool : null
-}
-
 function restoreResumeIfNeeded(
   created: Worktree,
   plan: RecreateResumeTreePlan | undefined,
   runId: number,
 ): Worktree {
   return plan ? restoreResumedTree(created, plan, runId) : created
-}
-
-function taskBranchKey(
-  launchKey: string | null,
-  plan: RecreateResumeTreePlan | undefined,
-): string | null {
-  return plan ? null : launchKey
-}
-
-function shouldResolveTaskBranch(input: {
-  repoJob: boolean
-  writesJob: boolean
-  hasWorktree: boolean
-  taskKey: string | null
-  isResume: boolean
-  hasExplicitBase: boolean
-}): boolean {
-  return (
-    input.repoJob &&
-    input.writesJob &&
-    !input.hasWorktree &&
-    input.taskKey !== null &&
-    (!input.hasExplicitBase || input.isResume)
-  )
 }
 
 function restoreResumedTree(
@@ -361,6 +327,12 @@ export async function claimRun(input: ClaimInput): Promise<ClaimResult> {
   const noFailover = inheritedLaunch ? !!inheritedLaunch.no_failover : !!opts.noFailover
   const worktreeTool = repoJob ? toolFor(callerCwd) : null
   const resumePlan = opts.resume?.treePlan
+  const toolLifecycle = resumeCreationLifecycle({
+    hasCreate: Boolean(worktreeTool?.create),
+    hasRecipe: Boolean(worktreeTool?.recipe),
+    hasRecipePath: Boolean(worktreeTool?.recipePath),
+  })
+  const resumeCreation = resumeCreationOptions(resumePlan, toolLifecycle)
   let resolvedTaskBranch: TaskBranchCandidate | null = null
   const attachableTaskKey = taskBranchKey(launchKey, resumePlan)
   if (
@@ -607,6 +579,14 @@ export async function claimRun(input: ClaimInput): Promise<ClaimResult> {
     }
   ).id
   const sandboxRunDir = join(runsDir, `sandbox-${sandboxRoot}`)
+  const claimTreePlan = decideClaimTreePlan({
+    hasResolvedTaskWorktree: Boolean(resolvedTaskBranch?.worktree),
+    forbidsRepo,
+    repoJob,
+    hasWorktree: Boolean(worktree),
+    toolLifecycle,
+    resumeUsesCreateTool: repoJob ? resumeCreation.useCreateTool : null,
+  })
   /**
    * Cutting the worktree can FAIL, and the row already exists by now.
    *
@@ -619,30 +599,30 @@ export async function claimRun(input: ClaimInput): Promise<ClaimResult> {
    */
   let cwd = callerCwd
   try {
-    if (resolvedTaskBranch?.worktree) {
-      worktree = resolvedTaskBranch.worktree
-      taskBranchAttachment = true
-    }
-    const creating = repoJob && !worktree
-    if (forbidsRepo) {
-      // A self-contained job must not inherit the checkout it was launched
-      // from. Read-only controls mutation, not visibility; the incident this
-      // boundary closes was a reviewer reading the caller's HEAD and treating
-      // it as part of an inline pack. An empty directory gives the process no
-      // checkout at all, while launch_cwd retains project attribution.
-      isolatedCwd = noRepoIsolatePath(claim.id, runsDir)
-      removeIsolatedCwd = createIsolatedWorkerDirectory(isolatedCwd)
-      cwd = isolatedCwd
-      db().query('UPDATE run SET cwd=? WHERE id=?').run(cwd, claim.id)
-    } else if (repoJob) {
-      // A job that reads the repository must have a worktree, so a repository
-      // it cannot be cut from is a hard failure.
-      const tool = worktreeTool
-      if (creating) {
+    switch (claimTreePlan.mode) {
+      case 'attach':
+        worktree = resolvedTaskBranch!.worktree
+        taskBranchAttachment = true
+        break
+      case 'isolate': {
+        // A self-contained job must not inherit the checkout it was launched
+        // from. Read-only controls mutation, not visibility; the incident this
+        // boundary closes was a reviewer reading the caller's HEAD and treating
+        // it as part of an inline pack. An empty directory gives the process no
+        // checkout at all, while launch_cwd retains project attribution.
+        isolatedCwd = noRepoIsolatePath(claim.id, runsDir)
+        removeIsolatedCwd = createIsolatedWorkerDirectory(isolatedCwd)
+        cwd = isolatedCwd
+        db().query('UPDATE run SET cwd=? WHERE id=?').run(cwd, claim.id)
+        break
+      }
+      case 'create': {
+        // A job that reads the repository must have a worktree, so a repository
+        // it cannot be cut from is a hard failure.
+        const tool = worktreeTool
         const repoRoot = repoRootOf(callerCwd)
         if (!repoRoot) throw new Error(`not a git repository: ${callerCwd}`)
-        const resumeCreation = resumeCreationOptions(resumePlan, resumeCreationLifecycle(tool))
-        const creationTool = resumeCreationTool(resumeCreation.useCreateTool, tool)
+        const creationTool = resumeCreationTool(claimTreePlan.useCreateTool, tool)
         const recordWorktree = (created: Worktree) => {
           writeTransaction(() => {
             const result = db()
@@ -792,7 +772,10 @@ export async function claimRun(input: ClaimInput): Promise<ClaimResult> {
           }
           return restored
         })
+        break
       }
+      case 'caller':
+        break
     }
     if (worktree) {
       const inheritedWorktree = worktree
