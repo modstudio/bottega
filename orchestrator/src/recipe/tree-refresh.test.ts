@@ -2,11 +2,32 @@ import { describe, expect, test } from 'bun:test'
 import type { TrackedRecipe } from './recipe-schema.ts'
 import { executeTrackedRefreshSteps, type RecipeSnapshot } from './tracked-recipe.ts'
 import {
+  decideMainCheckoutBranch,
   decideTreeRefresh,
   refreshStepContext,
   requireRefreshSnapshot,
   snapshotlessRefreshPlaceholder,
 } from './tree-refresh.ts'
+
+describe('main checkout branch decision', () => {
+  test('allows the registered trunk branch', () => {
+    expect(decideMainCheckoutBranch('develop', 'develop')).toEqual({ action: 'refresh' })
+  })
+
+  test('refuses another branch and reports it', () => {
+    expect(decideMainCheckoutBranch('feature', 'develop')).toEqual({
+      action: 'refuse',
+      branch: 'feature',
+    })
+  })
+
+  test('refuses a detached HEAD', () => {
+    expect(decideMainCheckoutBranch(null, 'develop')).toEqual({
+      action: 'refuse',
+      branch: null,
+    })
+  })
+})
 
 describe('tree refresh decision', () => {
   test('a clean current tree stays current', () => {
