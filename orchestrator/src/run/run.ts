@@ -38,7 +38,6 @@ import { checkoutWatchSet } from '../git/checkout-identity.ts'
 import {
   gitContext,
   prepareWorktreeObjects,
-  repoRootOf,
   type WorktreeObjectEnvironment,
   worktreeGitDir,
 } from '../git/git-environment.ts'
@@ -65,9 +64,8 @@ import {
   readMcpConfig,
   storedMcpProbe,
 } from '../mcp/mcp-probe.ts'
-import { projectAt, projectByName, stackAt, type WorktreeTool } from '../project/projects.ts'
-import { recipeNotes } from '../recipe/recipe.ts'
-import { trackedRecipeEnvironment, trackedRecipeNotes } from '../recipe/tracked-recipe.ts'
+import { projectAt, projectByName, stackAt } from '../project/projects.ts'
+import { trackedRecipeEnvironment } from '../recipe/tracked-recipe.ts'
 import { signedInRecordUserId } from '../record/record-attribution.ts'
 import {
   assertSharedRefGuardOutsideWritableRoots,
@@ -118,7 +116,7 @@ import { acquireRunLease } from './run-lease.ts'
 import { runLive } from './run-live.ts'
 import * as mcpAttachment from './run-mcp-attachment.ts'
 import { bindSignals, childEnv, sha } from './run-process.ts'
-import { readonlyInfrastructurePrompt } from './run-readonly-infrastructure.ts'
+import { runInfrastructurePrompt } from './run-readonly-infrastructure.ts'
 import { finishRun } from './run-terminal.ts'
 import type { RunResult } from './run-types.ts'
 
@@ -139,10 +137,10 @@ function requiredRunLease(
   }
 }
 
-function generatedWorktreeNotes(tool: WorktreeTool, callerCwd: string): string {
-  if (tool.recipe) return recipeNotes(tool.recipe, "<this worktree's database>", '')
-  if (tool.recipePath) return trackedRecipeNotes(tool, repoRootOf(callerCwd) ?? callerCwd)
-  return ''
+function throwPreclaimRefusal(refusal: string | null, reserveId: number | undefined): void {
+  if (!refusal) return
+  if (reserveId) db().query('DELETE FROM run WHERE id=?').run(reserveId)
+  throw new Error(refusal)
 }
 
 /** From the run's recorded recipe, never a second register read that can differ from the one that built the tree. */
@@ -434,24 +432,13 @@ export async function run(opts: {
    * worker never to verify against somebody else's server, so the facts bottega
    * does know are stated on its behalf.
    */
-  const infra = (() => {
-    const tool = registeredWorktreeTool
-    if (!tool) return ''
-    const generated =
-      writesJob || (tool.readonly_create && tool.readonly_notes === undefined)
-        ? generatedWorktreeNotes(tool, callerCwd)
-        : ''
-    return readonlyInfrastructurePrompt({
-      readsRepo: repoJob,
-      writesRepo: writesJob,
-      readonlyCreate: Boolean(tool.readonly_create),
-      readonlyNotes: tool.readonly_notes,
-      readonlyDocker: tool.readonly_docker === true,
-      readOnlyBase,
-      regularNotes: tool.notes ?? '',
-      generatedNotes: generated,
-    })
-  })()
+  const infra = runInfrastructurePrompt({
+    tool: registeredWorktreeTool,
+    callerCwd,
+    readsRepo: repoJob,
+    writesRepo: writesJob,
+    readOnlyBase,
+  })
   const originalPrompt = opts.prompt
   const resolvedDialect = resolveReplyDialect(requestedJob)
   const generatedSchema = resolvedDialect.schema
@@ -606,10 +593,7 @@ export async function run(opts: {
     transport: transportName,
     projectName: runProjectName ?? 'unknown',
   })
-  if (transportRefusal) {
-    if (opts.reserveId) db().query('DELETE FROM run WHERE id=?').run(opts.reserveId)
-    throw new Error(transportRefusal)
-  }
+  throwPreclaimRefusal(transportRefusal, opts.reserveId)
   if (transportName === 'acp') {
     try {
       assertAcpAllowed(opts.job, name, a)
