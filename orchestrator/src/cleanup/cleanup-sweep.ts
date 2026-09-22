@@ -261,6 +261,116 @@ function sweepTerminalRunLeases(dry: boolean): void {
   }
 }
 
+type RecordedSweepState = {
+  cleanupFailed: boolean
+  inventoryErrors: Set<string>
+  leaked: Map<string, { resource: DockerResource; project: string; runId: number }>
+  kept: { line: string; reason: string }[]
+  counts: ClosedSweepCounts
+}
+
+function applyRecordedPostInventory(
+  r: SweepCandidate,
+  facts: RecordedRunSweepFacts,
+  inventory: ReturnType<typeof resourcesForConversation>,
+  state: RecordedSweepState,
+  presentation: CleanupPresentation,
+): void {
+  const project = r.repo ?? projectAt(r.worktree)?.name ?? 'unknown'
+  const postInventory: RecordedRunSweepFacts['postInventory'] = !inventory.ascertainable
+    ? 'unavailable'
+    : inventory.resources.length
+      ? 'leaked'
+      : 'empty'
+  const ruling = decideRecordedRunSweep({ ...facts, postInventory })
+  state.cleanupFailed ||= ruling.cleanupFailed
+  if (!inventory.ascertainable) {
+    state.inventoryErrors.add(inventory.reason)
+    state.kept.push({ line: `${r.id}  inventory unavailable`, reason: ruling.keepReason! })
+    presentation.error(`could not verify reclaim ${r.id}: ${ruling.presentationError}`)
+  } else if (inventory.resources.length) {
+    for (const resource of inventory.resources)
+      state.leaked.set(`${resource.kind}:${resource.name}`, {
+        resource,
+        project,
+        runId: r.id,
+      })
+    state.kept.push({ line: `${r.id}  leaked Docker resources`, reason: ruling.keepReason! })
+    presentation.error(
+      `could not fully reclaim ${r.id}: project ${project}'s ${ruling.presentationError}`,
+    )
+  } else {
+    const outcome = reportClosedSweepRow(
+      facts.closeOutcome as ClosedSweepOutcome,
+      r,
+      false,
+      presentation,
+    )
+    state.counts[outcome]++
+  }
+}
+
+function sweepRecordedRow(
+  r: SweepCandidate,
+  dry: boolean,
+  state: RecordedSweepState,
+  presentation: CleanupPresentation,
+): void {
+  const keep = (line: string, reason: string) => state.kept.push({ line, reason })
+  const current = db().query('SELECT worktree FROM run WHERE id=?').get(r.id) as {
+    worktree: string | null
+  } | null
+  const baseFacts: RecordedRunSweepFacts = {
+    dry,
+    pointerUnchanged: current?.worktree === r.worktree,
+    preInventory: 'not-needed',
+    closeOutcome: 'held',
+    closeDetail: '',
+    postInventory: null,
+  }
+  if (decideRecordedRunSweep(baseFacts).action === 'skip') return
+  let preInventory: RecordedRunSweepFacts['preInventory'] = 'not-needed'
+  if (shouldInventoryBeforeSweep(r, dry)) {
+    const before = resourcesForConversation(r.id)
+    preInventory = before.ascertainable ? 'ok' : 'unavailable'
+    if (!before.ascertainable) {
+      const ruling = decideRecordedRunSweep({ ...baseFacts, preInventory })
+      state.inventoryErrors.add(before.reason)
+      state.cleanupFailed = ruling.cleanupFailed
+      keep(`${r.id}  inventory unavailable`, ruling.keepReason!)
+      presentation.error(`could not verify reclaim ${r.id}: ${ruling.presentationError}`)
+      return
+    }
+  }
+  const closed = closeOutRun(r.id, { intent: 'sweep', dryRun: dry })
+  const closeFacts = {
+    ...baseFacts,
+    preInventory,
+    closeOutcome: closed.outcome,
+    closeDetail: closed.detail,
+  }
+  const immediate = decideRecordedRunSweep(closeFacts)
+  if (
+    (dry || closed.outcome === 'forgotten') &&
+    (immediate.action === 'released' || immediate.action === 'absent')
+  ) {
+    const outcome = reportClosedSweepRow(closed.outcome as ClosedSweepOutcome, r, dry, presentation)
+    state.counts[outcome]++
+    return
+  }
+  if (closed.outcome !== 'released' && closed.outcome !== 'absent') {
+    const ruling = decideRecordedRunSweep(closeFacts)
+    state.cleanupFailed ||= ruling.cleanupFailed
+    keep(`${r.id}  ${closed.outcome}: ${closed.detail}`, ruling.keepReason!)
+    if (ruling.presentationError)
+      presentation.error(`could not reclaim ${r.id}: ${ruling.presentationError}`)
+    return
+  }
+
+  const inventory = resourcesForConversation(r.id)
+  applyRecordedPostInventory(r, closeFacts, inventory, state, presentation)
+}
+
 /**
  * Reclaim worktrees, and the infrastructure behind them, without being asked.
  *
@@ -309,91 +419,16 @@ export async function sweepRuns(options: SweepOptions, helpers: SweepHelpers): P
   const keep = (line: string, reason: string) => {
     kept.push({ line, reason })
   }
-  sweepTerminalRunLeases(dry)
-  for (const r of rows) {
-    const current = db().query('SELECT worktree FROM run WHERE id=?').get(r.id) as {
-      worktree: string | null
-    } | null
-    const baseFacts: RecordedRunSweepFacts = {
-      dry,
-      pointerUnchanged: current?.worktree === r.worktree,
-      preInventory: 'not-needed',
-      closeOutcome: 'held',
-      closeDetail: '',
-      postInventory: null,
-    }
-    if (decideRecordedRunSweep(baseFacts).action === 'skip') continue
-    let preInventory: RecordedRunSweepFacts['preInventory'] = 'not-needed'
-    if (shouldInventoryBeforeSweep(r, dry)) {
-      const before = resourcesForConversation(r.id)
-      preInventory = before.ascertainable ? 'ok' : 'unavailable'
-      if (!before.ascertainable) {
-        const ruling = decideRecordedRunSweep({ ...baseFacts, preInventory })
-        inventoryErrors.add(before.reason)
-        cleanupFailed ||= ruling.cleanupFailed
-        keep(`${r.id}  inventory unavailable`, ruling.keepReason!)
-        options.presentation.error(`could not verify reclaim ${r.id}: ${ruling.presentationError}`)
-        continue
-      }
-    }
-    const closed = closeOutRun(r.id, { intent: 'sweep', dryRun: dry })
-    const closeFacts = {
-      ...baseFacts,
-      preInventory,
-      closeOutcome: closed.outcome,
-      closeDetail: closed.detail,
-    }
-    const immediate = decideRecordedRunSweep(closeFacts)
-    if (
-      (dry || closed.outcome === 'forgotten') &&
-      (immediate.action === 'released' || immediate.action === 'absent')
-    ) {
-      const outcome = reportClosedSweepRow(
-        closed.outcome as ClosedSweepOutcome,
-        r,
-        dry,
-        options.presentation,
-      )
-      closedCounts[outcome]++
-      continue
-    }
-    if (closed.outcome === 'released' || closed.outcome === 'absent') {
-      const project = r.repo ?? projectAt(r.worktree)?.name ?? 'unknown'
-      const inventory = resourcesForConversation(r.id)
-      const postInventory: RecordedRunSweepFacts['postInventory'] = !inventory.ascertainable
-        ? 'unavailable'
-        : inventory.resources.length
-          ? 'leaked'
-          : 'empty'
-      const ruling = decideRecordedRunSweep({ ...closeFacts, postInventory })
-      cleanupFailed ||= ruling.cleanupFailed
-      if (!inventory.ascertainable) {
-        inventoryErrors.add(inventory.reason)
-        keep(`${r.id}  inventory unavailable`, ruling.keepReason!)
-        options.presentation.error(`could not verify reclaim ${r.id}: ${ruling.presentationError}`)
-      } else if (inventory.resources.length) {
-        for (const resource of inventory.resources)
-          leaked.set(`${resource.kind}:${resource.name}`, {
-            resource,
-            project,
-            runId: r.id,
-          })
-        keep(`${r.id}  leaked Docker resources`, ruling.keepReason!)
-        options.presentation.error(
-          `could not fully reclaim ${r.id}: project ${project}'s ${ruling.presentationError}`,
-        )
-      } else {
-        const outcome = reportClosedSweepRow(closed.outcome, r, false, options.presentation)
-        closedCounts[outcome]++
-      }
-    } else {
-      const ruling = decideRecordedRunSweep(closeFacts)
-      cleanupFailed ||= ruling.cleanupFailed
-      keep(`${r.id}  ${closed.outcome}: ${closed.detail}`, ruling.keepReason!)
-      if (ruling.presentationError)
-        options.presentation.error(`could not reclaim ${r.id}: ${ruling.presentationError}`)
-    }
+  const recordedState: RecordedSweepState = {
+    cleanupFailed,
+    inventoryErrors,
+    leaked,
+    kept,
+    counts: closedCounts,
   }
+  sweepTerminalRunLeases(dry)
+  for (const r of rows) sweepRecordedRow(r, dry, recordedState, options.presentation)
+  cleanupFailed = recordedState.cleanupFailed
 
   /**
    * DATABASE ROWS ARE NOT AN INVENTORY OF WHAT IS ON DISK.
