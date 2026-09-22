@@ -49,7 +49,7 @@ describe('workflow prompt definitions', () => {
       workflow('ship-task', [{ name: 'note', description: 'Optional note.', required: false }]),
     ])
 
-    expect(prompt?.arguments[2]).toEqual({
+    expect(prompt?.arguments.find((argument) => argument.name === 'note')).toEqual({
       name: 'note',
       description: 'Optional note.',
       required: false,
