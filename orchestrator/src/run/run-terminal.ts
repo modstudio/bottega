@@ -25,7 +25,7 @@ import {
 } from '../contract/contract.ts'
 import { db, nowIso, tryWriteContention, writeTransaction } from '../database/db.ts'
 import { assessEvidence, recordEvidence } from '../evidence/evidence.ts'
-import { type classify, detectBlockers } from '../failure/failure.ts'
+import type { classify } from '../failure/failure.ts'
 import { terminateProcessGroup } from '../idle-kill.ts'
 import { isReaderJob, type Job } from '../jobs/jobs.ts'
 import type { McpConnection, McpMode } from '../mcp/mcp-preflight.ts'
@@ -48,6 +48,7 @@ import {
 import { resolveRootFromLastTurn } from './run-liveness.ts'
 import { enqueueRunRecord } from './run-outbox.ts'
 import { errorTail, live, liveCheckpoints } from './run-process.ts'
+import { blockersToRecord } from './run-terminal-blockers.ts'
 import { applyConfinementPrecedence, applyVendorTermination } from './run-terminal-precedence.ts'
 
 type TerminalOptions = {
@@ -469,56 +470,13 @@ export async function finishRun(input: TerminalInput): Promise<TerminalResult> {
   ;({ status, failureKind, error } = confinementPrecedence.outcome)
   preConfinement = confinementPrecedence.preConfinement
 
-  /**
-   * BLOCKERS, from every job — not only the ones with a contract.
-   *
-   * The runs that reported these were review lenses, which carry no contract
-   * at all, so a structured field alone would have caught none of them. What
-   * they did was say it in prose and carry on, and nothing could count that.
-   *
-   * Declared and detected are stored side by side and kept distinguishable,
-   * for the same reason measured and claimed facts are: one is the worker's
-   * own account, the other is our reading of its prose, and a reader deserves
-   * to know which they are looking at.
-   */
   try {
-    const rows: {
-      what: string
-      why: string
-      impact: string | null
-      source: string
-      kind: string | null
-    }[] = []
-    for (const b of contract?.blockers ?? []) {
-      /**
-       * A DECLARED blocker gets a kind too, where we recognise one.
-       *
-       * `kind` is what makes recurrence countable, and a declared blocker had
-       * none — so it grouped by its own prose, and two workers describing the
-       * same denied socket in different words counted as two separate
-       * problems. The detector already knows these shapes; run it over what
-       * the worker wrote and use its answer when it finds one.
-       *
-       * Null when nothing matches, which is honest: an unrecognised blocker
-       * is still worth recording, it just cannot be pooled with anything yet.
-       */
-      const [known] = detectBlockers(`${b.what}\n${b.why}`)
-      rows.push({
-        what: b.what,
-        why: b.why,
-        impact: b.impact ?? null,
-        source: 'declared',
-        kind: known?.kind ?? null,
-      })
-    }
-    // Detected only where nothing was declared: a worker that filled the
-    // field in has already told us, and adding our guess beside its answer
-    // would double-count one blocker.
-    if (!rows.length) {
-      for (const d of detectBlockers(output)) {
-        rows.push({ what: d.what, why: d.why, impact: null, source: 'detected', kind: d.kind })
-      }
-    }
+    const declared = (contract?.blockers ?? []).map((b) => ({
+      what: b.what,
+      why: b.why,
+      impact: b.impact ?? null,
+    }))
+    const rows = blockersToRecord({ declared, output })
     if (rows.length) {
       const q = db().query(
         `INSERT INTO blocker (run_id, at, what, why, impact, source, kind)
