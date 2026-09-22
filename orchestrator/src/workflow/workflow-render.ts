@@ -1,6 +1,8 @@
 import type { composeWorkflow, getWorkflowStep } from './workflows.ts'
 
-type WorkflowComposition = ReturnType<typeof composeWorkflow>
+type WorkflowComposition = ReturnType<typeof composeWorkflow> & {
+  cursor?: { n: number; slug: string; state: string; previousSession?: string | null } | null
+}
 type WorkflowStep = ReturnType<typeof getWorkflowStep>
 
 const legend =
@@ -15,7 +17,15 @@ export function renderWorkflowComposition(result: WorkflowComposition): string {
       .map(([key, value]) => ` --arg ${shellWord(`${key}=${value}`)}`)
       .join('')
     const first = result.steps[0]!
-    const contract = `Work the numbered steps below in order, one at a time. A step's line here is its name, not its instructions. Before you start a step, fetch its body: with the orch MCP tool \`get_workflow_step\` (slug "${result.workflow.slug}", project "${result.project}", mode "${result.mode.slug}", step "${first.slug}", args ${JSON.stringify(result.arguments)}), or with \`orch workflow step ${result.workflow.slug} ${first.slug} --project ${result.project} --mode ${result.mode.slug}${args}\` (one --arg per argument). Carry out the body until its floor is met, then fetch the next step. The workflow is finished only when the last step's floor is met; do not report it finished before then. Begin now by fetching step 1, ${first.slug}.`
+    const takeover = result.cursor?.previousSession
+      ? ` This cursor was driven by session ${result.cursor.previousSession} and is now yours.`
+      : ''
+    const continuation = result.cursor?.n
+      ? `Cursor: at step ${result.cursor.n} ${result.cursor.slug} (${result.cursor.state}); continue with next.${takeover}`
+      : `Begin now by fetching step 1, ${first.slug}.${takeover}`
+    const nextCommand = `orch workflow next ${result.workflow.slug} --project ${result.project} --mode ${result.mode.slug}${args} --note "<how the floor was met>"`
+    const awaitCommand = `orch workflow await ${result.workflow.slug} --project ${result.project} --mode ${result.mode.slug}${args} --question "..."`
+    const contract = `Work the numbered steps below in order, one at a time. A step's line here is its name, not its instructions. Before you start a step, fetch its body: with the orch MCP tool \`get_workflow_step\` (slug "${result.workflow.slug}", project "${result.project}", mode "${result.mode.slug}", step "${first.slug}", args ${JSON.stringify(result.arguments)}), or with \`orch workflow step ${result.workflow.slug} ${first.slug} --project ${result.project} --mode ${result.mode.slug}${args}\` (one --arg per argument). Carry out the body until its floor is met, then close it with \`${nextCommand}\` (or the MCP tool \`next_workflow_step\`), which serves the next step. If a step ends in a question for the operator, record it with \`${awaitCommand}\` before you stop. The workflow is finished only when the last step's floor is met; do not report it finished before then. ${continuation}`
     return [
       `${result.workflow.title} — ${result.mode.title}`,
       result.workflow.description,
