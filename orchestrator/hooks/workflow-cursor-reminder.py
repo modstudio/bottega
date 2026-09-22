@@ -61,17 +61,6 @@ def first_stderr_line(stderr):
     return ""
 
 
-def render_cursor_line(row):
-    line = (
-        f"{row['workflow_slug']} {row['workflow_key']} {row['project']} "
-        f"step {row['ordinal'] + 1}/{row['total_steps']} {row['step_slug']} "
-        f"{row['state']} next: {row['next_slug']}"
-    )
-    if row.get("question"):
-        line += f" question: {row['question']}"
-    return line
-
-
 def parse_cursor_rows(stdout):
     text = (stdout or "").strip()
     if not text:
@@ -79,27 +68,13 @@ def parse_cursor_rows(stdout):
     data = json.loads(text)
     if not isinstance(data, list):
         raise ValueError("cursor JSON is not a list")
-    required = (
-        "workflow_slug",
-        "workflow_key",
-        "project",
-        "step_slug",
-        "state",
-        "next_slug",
-    )
+    required = ("line", "state")
     rows = []
     for item in data:
         if not isinstance(item, dict):
             raise ValueError("cursor JSON row is not an object")
         if any(not isinstance(item.get(key), str) for key in required):
             raise ValueError("cursor JSON row is missing a string field")
-        if not isinstance(item.get("ordinal"), int) or not isinstance(
-            item.get("total_steps"), int
-        ):
-            raise ValueError("cursor JSON row has a non-integer step count")
-        question = item.get("question")
-        if question is not None and not isinstance(question, str):
-            raise ValueError("cursor JSON row has a non-string question")
         rows.append(item)
     return rows
 
@@ -145,7 +120,7 @@ def session_start_context(source, rows):
         )
     lines = [header]
     for row in rows:
-        line = render_cursor_line(row)
+        line = row["line"]
         if row["state"] == "awaiting-ruling":
             line += " Ruling is pending."
         lines.append(line)
@@ -153,7 +128,7 @@ def session_start_context(source, rows):
 
 
 def stop_message(rows):
-    return "\n".join(["Open workflow cursors."] + [render_cursor_line(row) for row in rows])
+    return "\n".join(["Open workflow cursors."] + [row["line"] for row in rows])
 
 
 def handle_session_start(payload):

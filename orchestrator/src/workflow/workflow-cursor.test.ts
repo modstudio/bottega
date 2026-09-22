@@ -7,6 +7,7 @@ import {
   getWorkflowStepWithCursor,
   listWorkflowCursors,
   nextWorkflowStep,
+  workflowCursorProjectScope,
 } from './workflow-cursor.ts'
 import { renderWorkflowComposition } from './workflow-render.ts'
 import { seedWorkflows } from './workflow-seeds.ts'
@@ -30,6 +31,29 @@ const args = { key: 'DEV-822', branch: 'DEV-822-work', worktree: '/tmp/work' }
 const context = { session: 'session-one' }
 
 describe('workflow cursor adapter', () => {
+  test('listing scope honors explicit flags and refuses an unresolved cwd', () => {
+    expect(workflowCursorProjectScope({}, 'fixture', '/fixture/worktree')).toBe('fixture')
+    expect(workflowCursorProjectScope({ project: 'other' }, 'fixture', '/fixture/worktree')).toBe(
+      'other',
+    )
+    expect(
+      workflowCursorProjectScope({ session: 'session-one' }, 'fixture', '/fixture/worktree'),
+    ).toBeUndefined()
+    expect(
+      workflowCursorProjectScope(
+        { session: 'session-one', project: 'other' },
+        'fixture',
+        '/fixture/worktree',
+      ),
+    ).toBe('other')
+    expect(
+      workflowCursorProjectScope({ all: true }, 'fixture', '/fixture/worktree'),
+    ).toBeUndefined()
+    expect(() => workflowCursorProjectScope({}, undefined, '/tmp')).toThrow(
+      'cannot list workflow cursors from /tmp: pass --project, --session or --all',
+    )
+  })
+
   test('compose creates once and recompose reports an advanced cursor', () => {
     const d = database()
     composeWorkflowWithCursor('ship', 'fixture', 'default', args, context, d)
@@ -78,6 +102,9 @@ describe('workflow cursor adapter', () => {
       d,
     )
     expect(listWorkflowCursors({ project: 'fixture', session: 'session-one' }, d)).toHaveLength(1)
+    expect(listWorkflowCursors({ project: 'fixture', session: 'session-one' }, d)[0]!.line).toBe(
+      'ship DEV-822 fixture step 1/9 rebase running next: lens',
+    )
     let output = ''
     for (const step of composition.steps) {
       output = nextWorkflowStep(
