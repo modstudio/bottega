@@ -20,6 +20,7 @@ export type CascadeRisk = {
   migration: string
   deletedTable: string
   dependentTable: string
+  detectedBy: ('parse' | 'replay')[]
 }
 
 export type CascadeProbe = {
@@ -190,7 +191,12 @@ function parserRisks(
             ),
         )
         if (!preserved && !isExempt(migration.tag, deletedTable, dependent, exemptions)) {
-          risks.push({ migration: migration.tag, deletedTable, dependentTable: dependent })
+          risks.push({
+            migration: migration.tag,
+            deletedTable,
+            dependentTable: dependent,
+            detectedBy: ['parse'],
+          })
         }
       }
     }
@@ -210,12 +216,173 @@ type TableInfo = {
   pk: number
 }
 
-function probeValue(column: TableInfo): string | number | Uint8Array {
+type ProbeValue = string | number | Uint8Array | null
+
+function probeValue(column: TableInfo): Exclude<ProbeValue, null> {
   const type = column.type.toUpperCase()
   if (type.includes('INT')) return 1
   if (type.includes('REAL') || type.includes('FLOA') || type.includes('DOUB')) return 1
   if (type.includes('BLOB')) return new Uint8Array([1])
   return 'probe'
+}
+
+function tableSql(database: Database, table: string): string {
+  return (
+    database.query("SELECT sql FROM sqlite_master WHERE type='table' AND name=?").get(table) as {
+      sql: string
+    }
+  ).sql
+}
+
+function checkExpressions(sql: string): string[] {
+  const expressions: string[] = []
+  for (let start = 0; start < sql.length; start++) {
+    if (sql.slice(start, start + 5).toUpperCase() !== 'CHECK') continue
+    let open = start + 5
+    while (/\s/.test(sql[open] ?? '')) open++
+    if (sql[open] !== '(') continue
+    let depth = 1
+    let quote: "'" | '"' | null = null
+    for (let index = open + 1; index < sql.length; index++) {
+      const character = sql[index]
+      if (quote) {
+        if (character === quote && sql[index + 1] === quote) index++
+        else if (character === quote) quote = null
+        continue
+      }
+      if (character === "'" || character === '"') quote = character
+      else if (character === '(') depth++
+      else if (character === ')' && --depth === 0) {
+        expressions.push(sql.slice(open + 1, index))
+        start = index
+        break
+      }
+    }
+  }
+  return expressions
+}
+
+function mentions(expression: string, column: string): boolean {
+  const escaped = column.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+  return new RegExp(`(?:^|[^a-zA-Z0-9_])${escaped}(?:$|[^a-zA-Z0-9_])`, 'i').test(expression)
+}
+
+function stringLiterals(expression: string): string[] {
+  return [...expression.matchAll(/'((?:''|[^'])*)'/g)].map((match) =>
+    match[1].replaceAll("''", "'"),
+  )
+}
+
+function candidates(
+  column: TableInfo,
+  checks: readonly string[],
+  foreign: ProbeValue[],
+  ordinal: number,
+): ProbeValue[] {
+  const related = checks.filter((check) => mentions(check, column.name))
+  const type = column.type.toUpperCase()
+  const values: ProbeValue[] = [...foreign]
+  if (!column.notnull && !column.pk) values.push(null)
+  if (
+    type.includes('INT') ||
+    type.includes('REAL') ||
+    type.includes('FLOA') ||
+    type.includes('DOUB')
+  ) {
+    values.push(ordinal, 1, 2, 0, -1)
+  } else if (type.includes('BLOB')) {
+    values.push(new Uint8Array([1]))
+  } else {
+    values.push(
+      ...related.flatMap(stringLiterals),
+      `probe-${ordinal}`,
+      'probe',
+      '[]',
+      '{}',
+      'a',
+      '0',
+    )
+  }
+  return values.filter(
+    (value, index, all) =>
+      all.findIndex((other) =>
+        value instanceof Uint8Array && other instanceof Uint8Array
+          ? value.toString() === other.toString()
+          : value === other,
+      ) === index,
+  )
+}
+
+function combinations<T>(lists: readonly T[][], limit = 4096): T[][] {
+  let result: T[][] = [[]]
+  for (const list of lists) {
+    result = result.flatMap((prefix) => list.map((value) => [...prefix, value])).slice(0, limit)
+  }
+  return result
+}
+
+function satisfies(
+  database: Database,
+  expression: string,
+  columns: readonly TableInfo[],
+  values: ReadonlyMap<string, ProbeValue>,
+): boolean {
+  const projection = columns.map((column) => `? AS ${quoteIdentifier(column.name)}`).join(', ')
+  const bindings = columns.map((column) => values.get(column.name) ?? null)
+  const result = database
+    .query(`SELECT (${expression}) AS satisfied FROM (SELECT ${projection})`)
+    .get(...bindings) as { satisfied: number | null }
+  return result.satisfied !== 0
+}
+
+function constrainedValues(
+  database: Database,
+  columns: readonly TableInfo[],
+  checks: readonly string[],
+  choices: ReadonlyMap<string, ProbeValue[]>,
+): Map<string, ProbeValue> {
+  const values = new Map(
+    columns.map((column) => [column.name, choices.get(column.name)?.[0] ?? probeValue(column)]),
+  )
+  for (let pass = 0; pass < checks.length + 1; pass++) {
+    let changed = false
+    for (const check of checks) {
+      if (satisfies(database, check, columns, values)) continue
+      const involved = columns.filter((column) => mentions(check, column.name))
+      const solution = combinations(involved.map((column) => choices.get(column.name) ?? [])).find(
+        (combination) => {
+          const attempt = new Map(values)
+          involved.forEach((column, index) => {
+            attempt.set(column.name, combination[index])
+          })
+          return satisfies(database, check, columns, attempt)
+        },
+      )
+      if (!solution) throw new Error(`could not satisfy CHECK (${check.trim()}) mechanically`)
+      involved.forEach((column, index) => {
+        values.set(column.name, solution[index])
+      })
+      changed = true
+    }
+    if (!changed) return values
+  }
+  const failing = checks.filter((check) => !satisfies(database, check, columns, values))
+  const involved = columns.filter((column) => failing.some((check) => mentions(check, column.name)))
+  const solution = combinations(
+    involved.map((column) => choices.get(column.name) ?? []),
+    65_536,
+  ).find((combination) => {
+    const attempt = new Map(values)
+    involved.forEach((column, index) => {
+      attempt.set(column.name, combination[index])
+    })
+    return checks.every((check) => satisfies(database, check, columns, attempt))
+  })
+  if (!solution) throw new Error('CHECK constraints could not be satisfied together')
+  involved.forEach((column, index) => {
+    values.set(column.name, solution[index])
+  })
+  return values
 }
 
 function tableNames(database: Database): string[] {
@@ -240,41 +407,79 @@ function foreignKeys(database: Database): ForeignKey[] {
 }
 
 function seedTables(database: Database, migration: string): CascadeProbe['unprobed'] {
+  const names = tableNames(database)
+  const targetRows = new Map(names.map((table) => [table, 1]))
+  for (const table of names) {
+    const references = database
+      .query(`PRAGMA foreign_key_list(${quoteIdentifier(table)})`)
+      .all() as {
+      table: string
+    }[]
+    for (const parent of new Set(references.map((key) => key.table))) {
+      if (references.filter((key) => key.table === parent).length > 1) targetRows.set(parent, 2)
+    }
+  }
   const pending = new Set(
-    tableNames(database).filter(
+    names.filter(
       (table) =>
         (
           database.query(`SELECT COUNT(*) AS count FROM ${quoteIdentifier(table)}`).get() as {
             count: number
           }
-        ).count === 0,
+        ).count < (targetRows.get(table) ?? 1),
     ),
   )
   const failures = new Map<string, string>()
   while (pending.size) {
     let inserted = 0
     for (const table of pending) {
+      const existing = (
+        database.query(`SELECT COUNT(*) AS count FROM ${quoteIdentifier(table)}`).get() as {
+          count: number
+        }
+      ).count
       const columns = database
         .query(`PRAGMA table_info(${quoteIdentifier(table)})`)
         .all() as TableInfo[]
-      const foreignColumns = new Set(
-        (
-          database.query(`PRAGMA foreign_key_list(${quoteIdentifier(table)})`).all() as {
-            from: string
-          }[]
-        ).map((key) => key.from),
-      )
+      const foreignKeys = database
+        .query(`PRAGMA foreign_key_list(${quoteIdentifier(table)})`)
+        .all() as { from: string; table: string; to: string }[]
+      const foreignColumns = new Set(foreignKeys.map((key) => key.from))
+      const checks = checkExpressions(tableSql(database, table))
       const required = columns.filter(
         (column) =>
           foreignColumns.has(column.name) ||
-          (column.dflt_value === null && (column.notnull || column.pk)),
+          checks.some((check) => mentions(check, column.name)) ||
+          (column.dflt_value === null &&
+            (column.notnull || (column.pk && !column.type.toUpperCase().includes('INT')))),
+      )
+      const choices = new Map(
+        required.map((column) => {
+          const key = foreignKeys.find((candidate) => candidate.from === column.name)
+          const foreign = key
+            ? (
+                database
+                  .query(
+                    `SELECT ${quoteIdentifier(key.to)} AS value FROM ${quoteIdentifier(key.table)} ORDER BY ${quoteIdentifier(key.to)} LIMIT 8`,
+                  )
+                  .all() as { value: ProbeValue }[]
+              ).map((row) => row.value)
+            : []
+          return [column.name, candidates(column, checks, foreign, existing + 1)] as const
+        }),
       )
       const sql = required.length
         ? `INSERT INTO ${quoteIdentifier(table)} (${required.map((column) => quoteIdentifier(column.name)).join(', ')}) VALUES (${required.map(() => '?').join(', ')})`
         : `INSERT INTO ${quoteIdentifier(table)} DEFAULT VALUES`
       try {
-        database.query(sql).run(...required.map(probeValue))
-        pending.delete(table)
+        const values = constrainedValues(database, required, checks, choices)
+        database.query(sql).run(...required.map((column) => values.get(column.name) ?? null))
+        const count = (
+          database.query(`SELECT COUNT(*) AS count FROM ${quoteIdentifier(table)}`).get() as {
+            count: number
+          }
+        ).count
+        if (count >= (targetRows.get(table) ?? 1)) pending.delete(table)
         failures.delete(table)
         inserted++
       } catch (error) {
@@ -330,6 +535,7 @@ function probeDestructiveMigration(
           migration: migration.tag,
           deletedTable: relationship.parent,
           dependentTable: table,
+          detectedBy: ['replay'],
         })
       }
     }
@@ -397,22 +603,25 @@ export function cascadeRisks(
     relationships = nextForeignKeys(relationships, tree, migrationKeys)
   }
   risks.push(...probeMigrations(migrations, exemptions).risks)
-  return risks.filter(
-    (risk, index, all) =>
-      all.findIndex(
-        (other) =>
-          other.migration === risk.migration &&
-          other.deletedTable === risk.deletedTable &&
-          other.dependentTable === risk.dependentTable,
-      ) === index,
-  )
+  const combined = new Map<string, CascadeRisk>()
+  for (const risk of risks) {
+    const key = `${risk.migration}:${risk.deletedTable}:${risk.dependentTable}`
+    const previous = combined.get(key)
+    if (!previous) combined.set(key, { ...risk, detectedBy: [...risk.detectedBy] })
+    else {
+      for (const source of risk.detectedBy) {
+        if (!previous.detectedBy.includes(source)) previous.detectedBy.push(source)
+      }
+    }
+  }
+  return [...combined.values()]
 }
 
 export function cascadeRefusal(risks: readonly CascadeRisk[]): string {
   return risks
     .map(
-      ({ migration, deletedTable, dependentTable }) =>
-        `${migration} deletes or drops ${deletedTable}, which would cascade-delete ${dependentTable}; ` +
+      ({ migration, deletedTable, dependentTable, detectedBy }) =>
+        `${migration} [${detectedBy.join('+')}] deletes or drops ${deletedTable}, which would cascade-delete ${dependentTable}; ` +
         `add ${dependentTable} to the migration's copy/delete/restore sequence`,
     )
     .join('\n')
@@ -438,6 +647,12 @@ if (process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1]) {
     console.warn(`cascade preservation probe: ${migration} could not seed ${table}: ${reason}`)
   }
   console.log(`cascade preservation timing: ${Math.round(performance.now() - started)}ms`)
+  if (result.unprobed.length) {
+    console.error(
+      `cascade preservation check refused: ${result.unprobed.length} table probe(s) were inconclusive`,
+    )
+    process.exit(1)
+  }
   if (result.risks.length) {
     console.error(cascadeRefusal(result.risks))
     process.exit(1)

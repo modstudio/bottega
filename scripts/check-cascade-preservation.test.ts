@@ -19,7 +19,12 @@ test('refuses deleting a parent without preserving its cascading dependent', () 
     { tag: '0001_rebuild', source: 'DELETE FROM parent;' },
   ])
   expect(risks).toEqual([
-    { migration: '0001_rebuild', deletedTable: 'parent', dependentTable: 'child' },
+    {
+      migration: '0001_rebuild',
+      deletedTable: 'parent',
+      dependentTable: 'child',
+      detectedBy: ['parse', 'replay'],
+    },
   ])
   expect(cascadeRefusal(risks)).toContain(
     'deletes or drops parent, which would cascade-delete child; add child',
@@ -59,7 +64,14 @@ test('recognizes a quoted destructive table name', () => {
       },
       { tag: '0001_rebuild', source: 'DELETE FROM "parent-table";' },
     ]),
-  ).toEqual([{ migration: '0001_rebuild', deletedTable: 'parent-table', dependentTable: 'child' }])
+  ).toEqual([
+    {
+      migration: '0001_rebuild',
+      deletedTable: 'parent-table',
+      dependentTable: 'child',
+      detectedBy: ['parse', 'replay'],
+    },
+  ])
 })
 
 test('recognizes a schema-qualified destructive table name', () => {
@@ -68,7 +80,14 @@ test('recognizes a schema-qualified destructive table name', () => {
       { tag: '0000_schema', source: schema },
       { tag: '0001_rebuild', source: 'DELETE FROM main.parent;' },
     ]),
-  ).toEqual([{ migration: '0001_rebuild', deletedTable: 'parent', dependentTable: 'child' }])
+  ).toEqual([
+    {
+      migration: '0001_rebuild',
+      deletedTable: 'parent',
+      dependentTable: 'child',
+      detectedBy: ['parse', 'replay'],
+    },
+  ])
 })
 
 test('refuses a restore that occurs before the destructive statement', () => {
@@ -84,7 +103,14 @@ test('refuses a restore that occurs before the destructive statement', () => {
           DELETE FROM parent;`,
       },
     ]),
-  ).toEqual([{ migration: '0001_rebuild', deletedTable: 'parent', dependentTable: 'child' }])
+  ).toEqual([
+    {
+      migration: '0001_rebuild',
+      deletedTable: 'parent',
+      dependentTable: 'child',
+      detectedBy: ['parse'],
+    },
+  ])
 })
 
 test('accepts explicit columns in the preservation copy and restore', () => {
@@ -111,7 +137,86 @@ test('execution probe observes a cascading row loss', () => {
       { tag: '0000_schema', source: schema },
       { tag: '0001_rebuild', source: 'DELETE FROM parent;' },
     ]).risks,
-  ).toEqual([{ migration: '0001_rebuild', deletedTable: 'parent', dependentTable: 'child' }])
+  ).toEqual([
+    {
+      migration: '0001_rebuild',
+      deletedTable: 'parent',
+      dependentTable: 'child',
+      detectedBy: ['replay'],
+    },
+  ])
+})
+
+test('execution probe chooses a value permitted by a CHECK constraint', () => {
+  const result = probeMigrations([
+    {
+      tag: '0000_schema',
+      source: `
+        CREATE TABLE parent (id INTEGER PRIMARY KEY, status TEXT NOT NULL CHECK(status IN ('ready','done')));
+        CREATE TABLE child (
+          id INTEGER PRIMARY KEY,
+          parent_id INTEGER NOT NULL REFERENCES parent(id) ON DELETE CASCADE,
+          verdict TEXT NOT NULL CHECK(verdict IN ('accepted','rejected'))
+        );`,
+    },
+    { tag: '0001_rebuild', source: 'DELETE FROM parent;' },
+  ])
+
+  expect(result.unprobed).toEqual([])
+  expect(result.risks).toEqual([
+    {
+      migration: '0001_rebuild',
+      deletedTable: 'parent',
+      dependentTable: 'child',
+      detectedBy: ['replay'],
+    },
+  ])
+})
+
+test('names a table whose CHECK constraints cannot be satisfied mechanically', () => {
+  const result = probeMigrations([
+    {
+      tag: '0000_schema',
+      source: `
+        CREATE TABLE parent (id INTEGER PRIMARY KEY);
+        CREATE TABLE child (
+          id INTEGER PRIMARY KEY,
+          parent_id INTEGER NOT NULL REFERENCES parent(id) ON DELETE CASCADE,
+          impossible INTEGER NOT NULL CHECK(impossible > 0 AND impossible < 0)
+        );`,
+    },
+    { tag: '0001_rebuild', source: 'DELETE FROM parent;' },
+  ])
+
+  expect(result.unprobed).toHaveLength(1)
+  expect(result.unprobed[0]).toMatchObject({ migration: '0001_rebuild', table: 'child' })
+})
+
+test('refuses the 0041 shape when a restored parent loses its cascading dependent', () => {
+  const migrations = [
+    { tag: '0000_schema', source: schema },
+    {
+      tag: '0041_parent_rebuild',
+      source: `
+        CREATE TEMP TABLE parent_before AS SELECT * FROM parent;
+        DELETE FROM parent;
+        INSERT INTO parent SELECT * FROM parent_before;
+        DROP TABLE parent_before;`,
+    },
+  ]
+  const risks = cascadeRisks(migrations)
+
+  expect(risks).toEqual([
+    {
+      migration: '0041_parent_rebuild',
+      deletedTable: 'parent',
+      dependentTable: 'child',
+      detectedBy: ['parse', 'replay'],
+    },
+  ])
+  expect(cascadeRefusal(risks)).toContain(
+    '0041_parent_rebuild [parse+replay] deletes or drops parent, which would cascade-delete child',
+  )
 })
 
 test('accepts a migration with no destructive statement', () => {
