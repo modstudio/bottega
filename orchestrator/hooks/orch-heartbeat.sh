@@ -6,9 +6,10 @@
 # in `orch wait` emits nothing for as long as the worker runs. From outside that
 # is indistinguishable from a session that has died, and the operator cannot tell
 # whether it needs a wake or is genuinely waiting. That ambiguity is the whole
-# reason this exists: it collapses to three states, one of which is actionable.
+# reason this exists: it collapses to four states, two of which are actionable.
 #
 #   BLOCKED  a worker asked a question; the session must rule and resume it
+#   STALLED  a worker is silent and using no CPU; stop and re-dispatch or wait
 #   WAITING  runs or landings still going, elapsed shown so a hung one is visible
 #   CLEAR    no runs, no landings, and nothing asked -> exits SILENTLY
 #
@@ -115,7 +116,7 @@ import sys, json, os, datetime
 sid = os.environ["SID"]
 now = datetime.datetime.now(datetime.timezone.utc)
 recent_seconds = max(2 * float(os.environ["INTERVAL"]), 600)
-out, ids, events = [], [], []
+out, ids, events, stalled = [], [], [], []
 saw = False
 for line in sys.stdin:
     line = line.strip()
@@ -190,12 +191,20 @@ for line in sys.stdin:
     idle_note = ""
     if isinstance(idle, str) and idle.startswith("idle "):
         idle_note = " " + idle
-    ids.append(str(d.get("id")) + ("i" if idle_note else ""))
+    stall_state = d.get("stall_state")
+    if status == "running" and stall_state not in ("healthy", "stalled", "unknown"):
+        raise SystemExit(2)
+    stall = d.get("stall")
+    if stall_state == "stalled":
+        if not isinstance(stall, str) or not stall:
+            raise SystemExit(2)
+        stalled.append(stall.replace("\t", " ").replace("\r", " ").replace("\n", " "))
+    ids.append(str(d.get("id")) + ("s" if stall_state == "stalled" else ("i" if idle_note else "")))
     out.append("%s/%s %s %s %s%s" % (d.get("id"), d.get("job"), d.get("agent"), d.get("status"), age, idle_note))
 if not saw:
     raise SystemExit(2)
 # count \t detail \t state-key (ids only - elapsed must never enter the key)
-print("STATE", len(out), " | ".join(out), ",".join(sorted(ids)), sep="\t")
+print("STATE", len(out), " | ".join(out), ",".join(sorted(ids)), len(stalled), " | ".join(stalled), sep="\t")
 for event in events:
     print("EVENT", *event, sep="\t")
 ') ; runs_parse_rc=$?
@@ -256,8 +265,11 @@ print("STATE", len(live), " | ".join(live), ",".join(ids), sep="\t")
   state=${observed%%$'\n'*}
   state=${state#*$'\t'}
   n=${state%%$'\t'*}; rest=${state#*$'\t'}
-  detail=${rest%%$'\t'*}; ids=${rest#*$'\t'}
+  detail=${rest%%$'\t'*}; rest=${rest#*$'\t'}
+  ids=${rest%%$'\t'*}; rest=${rest#*$'\t'}
+  stalled_n=${rest%%$'\t'*}; stalled_detail=${rest#*$'\t'}
   n=${n:-0}
+  stalled_n=${stalled_n:-0}
   landing_state=${landings_observed%%$'\n'*}
   landing_state=${landing_state#*$'\t'}
   landing_n=${landing_state%%$'\t'*}; landing_rest=${landing_state#*$'\t'}
@@ -288,6 +300,8 @@ print("STATE", len(live), " | ".join(live), ",".join(ids), sep="\t")
     ts=$(date +%H:%M:%S)
     if [ "$asking" -gt 0 ]; then
       echo "[$ts] BLOCKED - $asking question(s) waiting on you: run 'orch inbox', then 'orch answer <id>'. $n run(s) and $landing_n landing(s) live."
+    elif [ "$stalled_n" -gt 0 ]; then
+      echo "[$ts] STALLED - $stalled_n run(s): $stalled_detail"
     elif [ "$n" -gt 0 ] || [ "$landing_n" -gt 0 ]; then
       combined_detail="$detail"
       if [ -n "$landing_detail" ]; then

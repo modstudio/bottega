@@ -234,6 +234,8 @@ export const modules: ArchitectureModule[] = [
     '../git/git-environment.ts',
     '../hook-tree/hook-tree.ts',
     '../idle-kill.ts',
+    '../jobs/jobs.ts',
+    '../stalled-run.ts',
     './monitor-types.ts',
     '../../../shared/process-identity.ts',
     '../project/project-lock.ts',
@@ -251,6 +253,7 @@ export const modules: ArchitectureModule[] = [
     '../review/review-vocabulary.ts',
   ]),
   module('orchestrator/src/monitor/monitor-types.ts', ['../review/review-vocabulary.ts']),
+  module('orchestrator/src/stalled-run.ts', []),
   module('orchestrator/src/mail/password-reset-mailer.ts', [
     '@aws-sdk/client-sesv2',
     '../../../shared/brand.ts',

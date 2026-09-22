@@ -4,7 +4,9 @@
 import { resolveFailover } from '../collect/collect.ts'
 import { db } from '../database/db.ts'
 import { UNSCORED_WHERE } from '../evidence/evidence-query.ts'
+import { jobIdleKillMs } from '../jobs/jobs.ts'
 import { failureReason, type OutcomeRow, outcomeOf } from '../outcome.ts'
+import { idleStallMs, stalledRunDetail, stalledRunState } from '../stalled-run.ts'
 
 type RunListingFlags = {
   has(name: string): boolean
@@ -34,7 +36,9 @@ export async function runListingCommand(
   const { has, flag, values } = flags
   const { log, dur, chainIsStranded, strandedRecovery, thinOutputWarning } = presentation
   const { idleLabel, idleMsSince } = await import('../events.ts')
-  const { parseIdleReclaimedMs } = await import('../idle-kill.ts')
+  const { parseIdleReclaimedMs, processTreeCpuMoving, sampleProcesses } = await import(
+    '../idle-kill.ts'
+  )
   const jsonV1 = options.jsonV1
   const json = has('json') || jsonV1
   const where: string[] = ['r.parent_run_id IS NULL']
@@ -139,6 +143,7 @@ export async function runListingCommand(
      SELECT r.id, r.started_at, r.agent, r.job, r.repo, r.latency_ms, r.vendor_tokens,
             current_run.status, current_run.failure_kind, current_run.error,
             current_run.last_event_at, current_run.started_at AS current_started_at,
+            current_run.agent_pid AS current_agent_pid,
             s.delivery, s.quality,
             COALESCE(r.label, r.prompt_head) AS prompt_head, r.route_reason, r.sandbox
             ${
@@ -268,6 +273,7 @@ export async function runListingCommand(
     )
   }
 
+  const processSamples = rows.some((row) => row.status === 'running') ? sampleProcesses() : []
   rows = rows.map((r) => {
     const live = r.status === 'running'
     const lastEventAt = (r.last_event_at as string | null) ?? null
@@ -278,12 +284,37 @@ export async function runListingCommand(
         ? 'idle-killed'
         : null
     const since = live ? idleMsSince(lastEventAt, startedAt) : null
-    const { current_started_at: _currentStartedAt, ...rest } = r
+    const idleBoundMs = live ? jobIdleKillMs(String(r.job)) : null
+    const stallState = live
+      ? stalledRunState({
+          idleMs: since,
+          cpuMoving: processTreeCpuMoving(Number(r.current_agent_pid ?? 0), processSamples),
+          idleBoundMs: idleBoundMs!,
+          thresholdMs: idleStallMs(),
+        })
+      : null
+    const stall =
+      stallState === 'stalled' && since !== null && idleBoundMs !== null
+        ? stalledRunDetail({
+            id: Number(r.id),
+            agent: String(r.agent),
+            job: String(r.job),
+            idleMs: since,
+            idleBoundMs,
+          })
+        : null
+    const {
+      current_started_at: _currentStartedAt,
+      current_agent_pid: _currentAgentPid,
+      ...rest
+    } = r
     const reclaimed = r.failure_kind === 'idle' ? parseIdleReclaimedMs(String(r.error ?? '')) : null
     return {
       ...rest,
       idle,
       idle_ms: since,
+      stall_state: stallState,
+      stall,
       reclaimed_ms: reclaimed,
     }
   })

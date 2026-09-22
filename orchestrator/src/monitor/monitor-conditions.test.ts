@@ -11,6 +11,7 @@ import {
   reconcileHub,
   rulingConditions,
   staleTrustEntryConditions,
+  stalledRunCondition,
   terminalProcessPgid,
   unsettledClaimConditions,
 } from './monitor-conditions.ts'
@@ -48,6 +49,30 @@ describe('idle run classification', () => {
       kind: 'idle',
       subject: 'run:73',
       ageMs: 6 * 60_000,
+    })
+  })
+})
+
+describe('stalled run monitor condition', () => {
+  const row = {
+    id: 5406,
+    started_at: '2026-09-17T12:00:00.000Z',
+    last_event_at: '2026-09-17T12:01:00.000Z',
+    agent: 'codex',
+    job: 'review-lens',
+    session_id: 'session-5406',
+    cpuMoving: false,
+    idleBoundMs: 30 * 60_000,
+  }
+
+  test('reports the same facts and remedy used by the heartbeat', () => {
+    const condition = stalledRunCondition(row, Date.parse('2026-09-17T12:26:00.000Z'), 25 * 60_000)
+    expect(condition).toMatchObject({
+      kind: 'stalled-run',
+      subject: 'run:5406',
+      ownerSession: 'session-5406',
+      detail:
+        'run 5406 codex/review-lens has been silent for 25m and has used no CPU in that time; stop it and re-dispatch, or wait for the 30m idle bound',
     })
   })
 })

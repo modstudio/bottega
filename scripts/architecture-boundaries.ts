@@ -828,6 +828,8 @@ export const importBoundaries: ImportBoundary[] = [
       '../outcome.ts',
       '../events.ts',
       '../idle-kill.ts',
+      '../jobs/jobs.ts',
+      '../stalled-run.ts',
     ],
     'Keep run listing independent of run control, transports, routing, the CLI, and worktrees.',
   ),

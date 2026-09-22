@@ -8,6 +8,7 @@ import {
   deadRunningProcessConditions,
   idleRunConditions,
   rulingConditions,
+  stalledRunConditions,
   terminalCloseOutRuns,
   unscoredRuns,
 } from './monitor-conditions.ts'
@@ -23,6 +24,7 @@ const REVALIDATED_DELIVERY_KINDS = new Set([
   'asking-run',
   'dead-running-process',
   'idle',
+  'stalled-run',
   'task-waiting-on-ruling',
   'terminal-close-out-held',
   'terminal-close-out-failed',
@@ -96,6 +98,12 @@ function currentAddressedSubjects(kinds: Set<string>): Map<string, Set<string>> 
     record(
       'idle',
       idleRunConditions().map((condition) => condition.subject),
+    )
+  }
+  if (kinds.has('stalled-run')) {
+    record(
+      'stalled-run',
+      stalledRunConditions().map((condition) => condition.subject),
     )
   }
   if (kinds.has('task-waiting-on-ruling')) {
