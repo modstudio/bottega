@@ -11,9 +11,24 @@ export function resolveBase(cwd: string, ref: string): string {
   return git(['rev-parse', '--verify', '--end-of-options', `${ref}^{commit}`], repoRoot)
 }
 
-/** Resolve a read-only snapshot against the checkout the operator invoked. */
-export function resolveReadOnlyBase(cwd: string, ref: string): string {
-  return git(['rev-parse', '--verify', '--end-of-options', `${ref}^{commit}`], cwd)
+/** Keep fresh lookup at the caller; move failover lookup to a durable registered checkout. */
+export function readOnlyBaseResolutionDirectory(
+  callerCwd: string,
+  automaticFailover: boolean,
+  registeredProjectPath: string | null,
+): string {
+  return automaticFailover ? (registeredProjectPath ?? callerCwd) : callerCwd
+}
+
+/** Resolve a read-only snapshot in the directory selected for this dispatch kind. */
+export function resolveReadOnlyBase(
+  cwd: string,
+  ref: string,
+  automaticFailover = false,
+  registeredProjectPath: string | null = null,
+): string {
+  const directory = readOnlyBaseResolutionDirectory(cwd, automaticFailover, registeredProjectPath)
+  return git(['rev-parse', '--verify', '--end-of-options', `${ref}^{commit}`], directory)
 }
 
 export type CarriedWorkingState = {
