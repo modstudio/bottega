@@ -48,6 +48,7 @@ import {
 import { resolveRootFromLastTurn } from './run-liveness.ts'
 import { enqueueRunRecord } from './run-outbox.ts'
 import { errorTail, live, liveCheckpoints } from './run-process.ts'
+import { applyConfinementPrecedence, applyVendorTermination } from './run-terminal-precedence.ts'
 
 type TerminalOptions = {
   job: string
@@ -354,21 +355,13 @@ export async function finishRun(input: TerminalInput): Promise<TerminalResult> {
     contractObjects,
   })
   ;({ status, failureKind, error } = finalization)
-  /**
-   * A raw stdout/stderr stream ending in a vendor termination marker means the
-   * vendor killed the session. Whatever else the run appears to be — an ACP stop
-   * reason, a schema mismatch, a parsed question, a worker contract reporting
-   * done — is an artefact of a stream that was cut off. Vendor truncation
-   * therefore outranks every vendor-derived classification. It does NOT outrank
-   * confinement (escaped, confinement_unverified), which outranks everything by
-   * existing design.
-   */
-  if (vendorTerminatedStream) {
-    status = 'failed'
-    error = errorTail(vendorTerminatedStream)
-    failureKind = 'truncated'
-    acceptedQuestions = []
-  }
+  const vendorTermination = applyVendorTermination({
+    outcome: { status, failureKind, error },
+    vendorTerminationError: vendorTerminatedStream ? errorTail(vendorTerminatedStream) : null,
+    acceptedQuestions,
+  })
+  ;({ status, failureKind, error } = vendorTermination.outcome)
+  acceptedQuestions = vendorTermination.acceptedQuestions
   let parsedReview: ReviewReply | null = null
   if (requestedJob.findings && output && (status === 'ok' || confinementEvent)) {
     parsedReview = resolvedDialect.parse(output).reply as ReviewReply | null
@@ -462,20 +455,19 @@ export async function finishRun(input: TerminalInput): Promise<TerminalResult> {
     writeFileSync(outPath, output)
   }
 
-  // This post-process fact outranks every vendor exit or reply outcome. The
-  // reply and diff remain stored, but an escaped write can never be an ok or
-  // asking run and never inherits a failover-eligible vendor failure.
-  if (confinementFailures.length) {
-    preConfinement = JSON.stringify({ status, failureKind, error })
-    status = 'failed'
-    failureKind = 'confinement_unverified'
-    error = confinementUnverifiedError(confinementFailures)
-  } else if (confinementEvent?.classification === 'overlapping') {
-    preConfinement = JSON.stringify({ status, failureKind, error })
-    status = 'failed'
-    failureKind = 'escaped'
-    error = overlappingError(confinementEvent)
-  }
+  const confinementPrecedence = applyConfinementPrecedence({
+    outcome: { status, failureKind, error },
+    preConfinement,
+    confinementUnverifiedError: confinementFailures.length
+      ? confinementUnverifiedError(confinementFailures)
+      : null,
+    overlappingError:
+      confinementEvent?.classification === 'overlapping'
+        ? overlappingError(confinementEvent)
+        : null,
+  })
+  ;({ status, failureKind, error } = confinementPrecedence.outcome)
+  preConfinement = confinementPrecedence.preConfinement
 
   /**
    * BLOCKERS, from every job — not only the ones with a contract.
