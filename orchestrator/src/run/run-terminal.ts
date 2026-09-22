@@ -48,6 +48,7 @@ import {
 import { resolveRootFromLastTurn } from './run-liveness.ts'
 import { enqueueRunRecord } from './run-outbox.ts'
 import { errorTail, live, liveCheckpoints } from './run-process.ts'
+import { blockersToRecord } from './run-terminal-blockers.ts'
 import { applyConfinementPrecedence, applyVendorTermination } from './run-terminal-precedence.ts'
 
 type TerminalOptions = {
@@ -482,14 +483,7 @@ export async function finishRun(input: TerminalInput): Promise<TerminalResult> {
    * to know which they are looking at.
    */
   try {
-    const rows: {
-      what: string
-      why: string
-      impact: string | null
-      source: string
-      kind: string | null
-    }[] = []
-    for (const b of contract?.blockers ?? []) {
+    const declared = (contract?.blockers ?? []).map((b) => {
       /**
        * A DECLARED blocker gets a kind too, where we recognise one.
        *
@@ -503,22 +497,15 @@ export async function finishRun(input: TerminalInput): Promise<TerminalResult> {
        * is still worth recording, it just cannot be pooled with anything yet.
        */
       const [known] = detectBlockers(`${b.what}\n${b.why}`)
-      rows.push({
+      return {
         what: b.what,
         why: b.why,
         impact: b.impact ?? null,
-        source: 'declared',
         kind: known?.kind ?? null,
-      })
-    }
-    // Detected only where nothing was declared: a worker that filled the
-    // field in has already told us, and adding our guess beside its answer
-    // would double-count one blocker.
-    if (!rows.length) {
-      for (const d of detectBlockers(output)) {
-        rows.push({ what: d.what, why: d.why, impact: null, source: 'detected', kind: d.kind })
       }
-    }
+    })
+    const detected = declared.length ? [] : detectBlockers(output)
+    const rows = blockersToRecord({ declared, detected })
     if (rows.length) {
       const q = db().query(
         `INSERT INTO blocker (run_id, at, what, why, impact, source, kind)
