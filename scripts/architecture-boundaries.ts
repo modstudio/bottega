@@ -5,6 +5,8 @@ import {
   recordSchemaBoundaries,
 } from './architecture-record-boundaries.ts'
 
+const landing = '../landing-tree/landing-tree.ts'
+
 export type ImportBoundary = {
   name: string
   file: string
@@ -139,6 +141,7 @@ export const importBoundaries: ImportBoundary[] = [
       '../database/db.ts',
       '../resources/docker-resources.ts',
       '../hook-tree/hook-tree.ts',
+      '../landing-tree/release-observation.ts',
       '../../../shared/process-identity.ts',
       '../project/projects.ts',
       '../resources/resource-ownership.ts',
@@ -146,6 +149,7 @@ export const importBoundaries: ImportBoundary[] = [
       '../run/run-artifacts.ts',
       '../run/run-authority.ts',
       '../run/run-lease.ts',
+      '../run/synthetic-lifecycle-job.ts',
       '../worktree/worktree-attribution.ts',
       '../worktree/worktree-remove.ts',
       '../worktree/worktree-types.ts',
@@ -168,6 +172,8 @@ export const importBoundaries: ImportBoundary[] = [
       '../database/db.ts',
       '../git/git-environment.ts',
       '../hook-tree/hook-tree.ts',
+      landing,
+      '../landing-tree/release-observation.ts',
       '../idle-kill.ts',
       '../worktree/keep-tree-hold.ts',
       '../../../shared/process-identity.ts',
@@ -180,6 +186,7 @@ export const importBoundaries: ImportBoundary[] = [
       '../run/run-artifacts.ts',
       '../run/run-lease.ts',
       '../run/run-process.ts',
+      '../run/synthetic-lifecycle-job.ts',
       '../worktree/worktree.ts',
       '../worktree/worktree-attribution.ts',
       '../worktree/worktree-remove.ts',
@@ -331,7 +338,8 @@ export const importBoundaries: ImportBoundary[] = [
   boundary(
     'evidence-query-boundary',
     'orchestrator/src/evidence/evidence-query.ts',
-    ['../database/db.ts', '../failure/failure.ts', '../hook-tree/hook-tree.ts', 'bun:sqlite'],
+    // biome-ignore format: compact dependency list keeps this manifest within its frozen file ceiling.
+    ['../database/db.ts', '../failure/failure.ts', '../run/synthetic-lifecycle-job.ts', 'bun:sqlite'],
     'Enforce the evidence-query concern boundary.',
   ),
   boundary(
@@ -899,7 +907,7 @@ export const importBoundaries: ImportBoundary[] = [
   boundary(
     'run-outbox-boundary',
     'orchestrator/src/run/run-outbox.ts',
-    ['../../../shared/record/schema.ts', '../hook-tree/hook-tree.ts', 'bun:sqlite'],
+    ['../../../shared/record/schema.ts', './synthetic-lifecycle-job.ts', 'bun:sqlite'],
     'Enforce the run-outbox concern boundary.',
   ),
   boundary(

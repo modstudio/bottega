@@ -9,8 +9,10 @@ import { join, resolve } from 'node:path'
 import { pidAlive } from '../../../shared/process-identity.ts'
 import { db, nowIso, sessionId, writeTransaction } from '../database/db.ts'
 import { gitContext, repoRootOf, targetGitEnvironment } from '../git/git-environment.ts'
-import { HOOK_TREE_JOB, hookTreeHoldDecision } from '../hook-tree/hook-tree.ts'
+import { hookTreeHoldDecision } from '../hook-tree/hook-tree.ts'
 import { isGroupKillablePgid, runHasLiveDescendants } from '../idle-kill.ts'
+import { landingTreeHoldDecision } from '../landing-tree/landing-tree.ts'
+import { observeLandingTreeRelease } from '../landing-tree/release-observation.ts'
 import {
   projectLockState,
   reclaimStaleProjectLock,
@@ -36,6 +38,7 @@ import { runAlive } from '../run/run-alive.ts'
 import { RUNS_DIR } from '../run/run-artifacts.ts'
 import { removeFreeRunLease, runLeaseState } from '../run/run-lease.ts'
 import { processTable, terminateRunProcesses } from '../run/run-process.ts'
+import { HOOK_TREE_JOB, LANDING_TREE_JOB } from '../run/synthetic-lifecycle-job.ts'
 import { type KeepTreeHoldDecision, keepTreeHold } from '../worktree/keep-tree-hold.ts'
 import { worktreeExists } from '../worktree/worktree.ts'
 import { inspectTreeOwnership } from '../worktree/worktree-attribution.ts'
@@ -93,20 +96,25 @@ function conversationKeepTreeHold(rootId: number, now: string): ConversationKeep
       now,
     })
     if (decision.held) {
-      return hookTreeHoldDecision(
+      return landingTreeHoldDecision(
         { job: row.job },
-        {
-          ...decision,
-          reason: row.keep_tree_reason ?? 'explicit --keep-tree',
-        },
+        hookTreeHoldDecision(
+          { job: row.job },
+          {
+            ...decision,
+            reason: row.keep_tree_reason ?? 'explicit --keep-tree',
+          },
+        ),
       )
     }
     if ('expiredAt' in decision) expired.push(decision)
   }
   const latest = expired.sort((a, b) => Date.parse(b.expiredAt) - Date.parse(a.expiredAt))[0]
-  return hookTreeHoldDecision(
-    { job: rows.some((row) => row.job === HOOK_TREE_JOB) ? HOOK_TREE_JOB : '' },
-    latest ?? { held: false as const },
+  const hook = rows.some((row) => row.job === HOOK_TREE_JOB) ? HOOK_TREE_JOB : ''
+  const landing = rows.some((row) => row.job === LANDING_TREE_JOB) ? LANDING_TREE_JOB : ''
+  return landingTreeHoldDecision(
+    { job: landing },
+    hookTreeHoldDecision({ job: hook }, latest ?? { held: false as const }),
   )
 }
 
@@ -115,6 +123,12 @@ function closeOutKeepTreeDecision(
   intent: 'terminal' | 'explicit' | 'sweep' | 'tree-remove',
 ): ConversationKeepTreeHold {
   if (intent === 'tree-remove') return { held: false }
+  if (intent === 'sweep') {
+    const landing = db()
+      .query('SELECT 1 present FROM run WHERE (id=? OR parent_run_id=?) AND job=? LIMIT 1')
+      .get(rootId, rootId, LANDING_TREE_JOB)
+    if (landing) return { held: false }
+  }
   return conversationKeepTreeHold(rootId, nowIso())
 }
 
@@ -420,6 +434,55 @@ function turnHeadForCloseOut(
   return tip ? { branch, tip } : null
 }
 
+function landingTreeSweepHold(input: {
+  intent: 'terminal' | 'explicit' | 'sweep' | 'tree-remove'
+  runId: number
+  job: string
+  repo: string | null
+  worktree: string
+  branch: string | null
+  sessionId: string | null
+  launchKey: string | null
+}): CloseOutResult | null {
+  if (input.intent !== 'sweep' || input.job !== LANDING_TREE_JOB) return null
+  const decision = observeLandingTreeRelease(input)
+  return decision.action === 'keep'
+    ? {
+        runId: input.runId,
+        worktree: input.worktree,
+        outcome: 'held',
+        detail: decision.reason,
+      }
+    : null
+}
+
+function protectRetainedBranch(input: {
+  repoRoot: string
+  retainedRef: string | null
+  branchSnapshot: string | null
+  retainedBranch: string | null
+  runId: number
+  treePath: string
+}): CloseOutResult | null {
+  if (!input.retainedRef || !input.branchSnapshot) return null
+  const pinned = Bun.spawnSync(['git', 'update-ref', input.retainedRef, input.branchSnapshot], {
+    cwd: input.repoRoot,
+    env: targetGitEnvironment(input.repoRoot),
+    stdout: 'pipe',
+    stderr: 'pipe',
+  })
+  return pinned.exitCode === 0
+    ? null
+    : {
+        runId: input.runId,
+        worktree: input.treePath,
+        outcome: 'failed',
+        detail:
+          `could not protect retained branch ${input.retainedBranch} at ${input.branchSnapshot}: ` +
+          (pinned.stderr.toString().trim() || `git update-ref exited ${pinned.exitCode}`),
+      }
+}
+
 /** One cleanup path for terminalisation, explicit close-out, and sweep. */
 function attemptCloseOutRun(
   runId: number,
@@ -435,7 +498,7 @@ function attemptCloseOutRun(
   const row = db()
     .query(
       `SELECT id, COALESCE(parent_run_id,id) root_id, project_id, job, repo, cwd, worktree, branch,
-            base_commit, worktree_source, minted_branch, status, agent_pid
+            base_commit, worktree_source, minted_branch, status, agent_pid,session_id,launch_key
        FROM run WHERE id=?`,
     )
     .get(runId) as {
@@ -452,11 +515,14 @@ function attemptCloseOutRun(
     minted_branch: string | null
     status: string
     agent_pid: number | null
+    session_id: string | null
+    launch_key: string | null
   } | null
   if (!row) throw new Error(`no run ${runId}`)
   const root = db()
     .query(
-      `SELECT project_id,job,repo,cwd,worktree,branch,base_commit,worktree_source,minted_branch,status
+      `SELECT project_id,job,repo,cwd,worktree,branch,base_commit,worktree_source,minted_branch,status,
+              session_id,launch_key
        FROM run WHERE id=?`,
     )
     .get(row.root_id) as typeof row
@@ -474,6 +540,8 @@ function attemptCloseOutRun(
     worktree_source: root?.worktree_source ?? row.worktree_source,
     minted_branch: root?.minted_branch ?? row.minted_branch,
     status: root?.status ?? row.status,
+    session_id: root?.session_id ?? row.session_id,
+    launch_key: root?.launch_key ?? row.launch_key,
   }
   const terminalHold = terminalHoldResult(
     row.root_id,
@@ -660,6 +728,16 @@ function attemptCloseOutRun(
               options.dryRun,
             )
             if (lockedHold) return lockedHold
+            const landingSweepInput = {
+              intent: options.intent,
+              runId: row.root_id,
+              job: effective.job,
+              repo: effective.repo,
+              worktree: treePath,
+              branch: effective.branch,
+              sessionId: effective.session_id,
+              launchKey: effective.launch_key,
+            }
             const reclaimProof = proveWorktreeReconstructible(treePath)
             if (!reclaimProof.ok)
               return {
@@ -668,13 +746,14 @@ function attemptCloseOutRun(
                 outcome: 'held' as const,
                 detail: reclaimProof.action,
               }
-            if (options.dryRun)
+            if (options.dryRun) {
               return {
                 runId: row.root_id,
                 worktree: treePath,
                 outcome: 'released' as const,
                 detail: 'would release clean terminal worktree and keep its branch',
               }
+            }
             // The coordinator proves its own identity before descendants are signalled.
             const liveCoordinator = aliveConversationTurns(row.root_id).find(
               (turn) => turn.pid !== process.pid,
@@ -687,25 +766,19 @@ function attemptCloseOutRun(
                 detail: `coordinator lease for run ${liveCoordinator.id} is still held`,
               }
             terminateRunProcesses(row.id, [process.pid])
+            const landingHold = landingTreeSweepHold(landingSweepInput)
+            if (landingHold) return landingHold
             const branchSnapshot = retainedBranch ? branchTip(repoRoot, retainedBranch) : null
             const retainedRef = branchSnapshot ? `refs/orch/retained/${row.root_id}` : null
-            if (retainedRef && branchSnapshot) {
-              const pinned = Bun.spawnSync(['git', 'update-ref', retainedRef, branchSnapshot], {
-                cwd: repoRoot,
-                env: targetGitEnvironment(repoRoot),
-                stdout: 'pipe',
-                stderr: 'pipe',
-              })
-              if (pinned.exitCode !== 0)
-                return {
-                  runId: row.root_id,
-                  worktree: treePath,
-                  outcome: 'failed' as const,
-                  detail:
-                    `could not protect retained branch ${retainedBranch} at ${branchSnapshot}: ` +
-                    (pinned.stderr.toString().trim() || `git update-ref exited ${pinned.exitCode}`),
-                }
-            }
+            const pinFailure = protectRetainedBranch({
+              repoRoot,
+              retainedRef,
+              branchSnapshot,
+              retainedBranch,
+              runId: row.root_id,
+              treePath,
+            })
+            if (pinFailure) return pinFailure
             // Publish the recovery identity before a project-owned remover runs: a
             // remover may delete or move the ref before reporting its refusal.
             recordRetainedBranch(branchSnapshot, retainedRef)

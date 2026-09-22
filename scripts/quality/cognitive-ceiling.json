@@ -171,8 +171,9 @@
   {
     "file": "orchestrator/src/close/close-out.ts",
     "function": "withCleanupLock callback",
-    "line": 168,
-    "score": 24
+    "line": 723,
+    "score": 22,
+    "key": "orchestrator/src/close/close-out.ts\u0000withCleanupLock callback"
   },
   {
     "file": "orchestrator/src/collect/collect.ts",

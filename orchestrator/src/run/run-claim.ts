@@ -92,7 +92,7 @@ function taskBranchResolution(
   return supplied !== undefined ? supplied : resolveTaskBranch(callerCwd, key)
 }
 
-function prepareResumeBranchIfNeeded(
+export function prepareResumeBranchIfNeeded(
   repoRoot: string,
   plan: RecreateResumeTreePlan | undefined,
 ): void {

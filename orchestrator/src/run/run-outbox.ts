@@ -2,7 +2,7 @@
 /** Knows how a terminal local run becomes an ordered hosted-record mutation. Must not know Postgres. */
 import type { Database } from 'bun:sqlite'
 import { newRecordId, PLATFORM_SPACE_ID } from '../../../shared/record/schema.ts'
-import { HOOK_TREE_JOB } from '../hook-tree/hook-tree.ts'
+import { HOOK_TREE_JOB, LANDING_TREE_JOB } from './synthetic-lifecycle-job.ts'
 
 export const RUN_RECORD_PAYLOAD_COLUMNS = [
   'id',
@@ -198,26 +198,26 @@ export function enqueueRunRecord(
 
 export function backfillRunRecords(database: Database, machineId: string): RunRecordBackfillResult {
   const missing = database
-    .query<{ id: number }, [string]>(
-      'SELECT id FROM run WHERE record_id IS NULL AND job<>? ORDER BY id',
+    .query<{ id: number }, [string, string]>(
+      'SELECT id FROM run WHERE record_id IS NULL AND job NOT IN (?,?) ORDER BY id',
     )
-    .all(HOOK_TREE_JOB)
+    .all(HOOK_TREE_JOB, LANDING_TREE_JOB)
   for (const row of missing) {
     database.query('UPDATE run SET record_id=? WHERE id=?').run(newRecordId(), row.id)
   }
 
   const terminal = database
-    .query<{ id: number; finished_at: string }, [string]>(
+    .query<{ id: number; finished_at: string }, [string, string]>(
       `SELECT r.id, COALESCE(r.last_event_at, r.started_at) AS finished_at
            FROM run r
           WHERE r.status IN ('ok', 'failed', 'stale', 'stopped', 'asking')
-            AND r.job<>?
+            AND r.job NOT IN (?,?)
             AND NOT EXISTS (
               SELECT 1 FROM outbox WHERE kind='run' AND record_id=r.record_id
             )
           ORDER BY r.id`,
     )
-    .all(HOOK_TREE_JOB)
+    .all(HOOK_TREE_JOB, LANDING_TREE_JOB)
   for (const row of terminal) enqueueRunRecord(database, row.id, machineId, row.finished_at)
 
   const skippedLive = database

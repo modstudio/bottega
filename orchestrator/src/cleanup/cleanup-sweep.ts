@@ -5,6 +5,7 @@ import { pidAlive } from '../../../shared/process-identity.ts'
 import { closeOutRun, releaseSandboxDirectoryForConversation } from '../close/close-out.ts'
 import { db, sessionId, writableDb, writeTransaction } from '../database/db.ts'
 import { shouldSweepHookTree } from '../hook-tree/hook-tree.ts'
+import { observeLandingTreeRelease } from '../landing-tree/release-observation.ts'
 import { projectAt, projectByName, projects } from '../project/projects.ts'
 import {
   classifiedDockerResources,
@@ -21,6 +22,7 @@ import { runAlive } from '../run/run-alive.ts'
 import { RUNS_DIR } from '../run/run-artifacts.ts'
 import { auditRunMutation } from '../run/run-authority.ts'
 import { removeFreeRunLease, runLeaseIds, runLeaseState } from '../run/run-lease.ts'
+import { LANDING_TREE_JOB } from '../run/synthetic-lifecycle-job.ts'
 import {
   inspectTreeOwnership,
   isOrchWorktree,
@@ -78,6 +80,7 @@ type SweepCandidate = {
   agent_pid: number | null
   session_id: string | null
   session_last_seen: string | null
+  launch_key: string | null
 }
 type ClosedSweepCounts = Record<ClosedSweepOutcome, number>
 
@@ -321,6 +324,26 @@ function applyRecordedPostInventory(
   }
 }
 
+function landingTreeSweepDecision(r: SweepCandidate) {
+  return observeLandingTreeRelease({
+    job: r.job,
+    repo: r.repo,
+    worktree: r.worktree,
+    branch: r.branch,
+    sessionId: r.session_id,
+    launchKey: r.launch_key,
+  })
+}
+
+function landingTreeSweepRuling(
+  r: SweepCandidate,
+): { approved: true } | { approved: false; reason: string } {
+  const decision = landingTreeSweepDecision(r)
+  return decision.action === 'release'
+    ? { approved: true }
+    : { approved: false, reason: decision.reason }
+}
+
 function sweepRecordedRow(
   r: SweepCandidate,
   dry: boolean,
@@ -335,6 +358,13 @@ function sweepRecordedRow(
     pointerUnchanged: current?.worktree === r.worktree,
   })
   if (pointerRuling.action === 'skip') return
+  if (r.job === LANDING_TREE_JOB) {
+    const landing = landingTreeSweepRuling(r)
+    if (!landing.approved) {
+      keep(`${r.id}  held: ${r.worktree}`, landing.reason)
+      return
+    }
+  }
   let preInventory: 'unavailable' | 'ok' | 'not-needed' = 'not-needed'
   let preInventoryReason: string | null = null
   if (shouldInventoryBeforeSweep(r, dry)) {
@@ -400,7 +430,8 @@ export async function sweepRuns(options: SweepOptions, helpers: SweepHelpers): P
       .query(
         `SELECT r.id, COALESCE(r.parent_run_id, r.id) root_id,
               r.repo, r.worktree, r.branch, r.base_commit, r.worktree_source, r.status, r.job,
-              r.pid, r.agent_pid, r.session_id, seen.last_seen AS session_last_seen
+              r.pid, r.agent_pid, r.session_id, seen.last_seen AS session_last_seen,
+              r.launch_key
          FROM run r
          LEFT JOIN session_seen seen ON seen.session_id=r.session_id
         WHERE r.worktree IS NOT NULL AND r.status IN ('ok','failed','stale','stopped')

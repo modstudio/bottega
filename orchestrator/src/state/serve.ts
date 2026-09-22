@@ -12,7 +12,6 @@ import { existsSync, readFileSync } from 'node:fs'
 import { AGENTS, refreshAgents } from '../agent/agent-registry.ts'
 import { db } from '../database/db.ts'
 import { runTotals } from '../evidence/evidence-query.ts'
-import { nonHookTreeStatsSql } from '../hook-tree/hook-tree.ts'
 import { JOBS } from '../jobs/jobs.ts'
 import { messagesForRun, receiptMessagesForArchitect } from '../mailbox/mailbox.ts'
 import { summary as metricSummary } from '../metric/metric.ts'
@@ -20,6 +19,7 @@ import { projectAt } from '../project/projects.ts'
 import { reviewCalibration } from '../review/review-calibration.ts'
 import { candidates, scoreboard } from '../route/route.ts'
 import { reapStale } from '../run/run-liveness.ts'
+import { agentExecutionStatsSql } from '../run/synthetic-lifecycle-job.ts'
 import { registerStandardRuntime } from '../runtime/runtime-registration.ts'
 import { guide } from './guide.ts'
 
@@ -155,7 +155,7 @@ export function state(sinceDays: number | null = null) {
     .query(
       `SELECT COALESCE(r.repo,'—') repo, r.agent, COUNT(*) runs,
             SUM(COALESCE(r.vendor_tokens,0)) toks
-       FROM run r WHERE r.status='ok' AND r.probe=0 AND ${nonHookTreeStatsSql('r')}
+       FROM run r WHERE r.status='ok' AND r.probe=0 AND ${agentExecutionStatsSql('r')}
       GROUP BY r.repo, r.agent ORDER BY runs DESC`,
     )
     .all()
@@ -174,7 +174,7 @@ export function state(sinceDays: number | null = null) {
   // The runs tab counts everything ever, whatever the band is showing, so the
   // badge on it does not change meaning when the window does.
   const allTimeRuns = (
-    d.query(`SELECT COUNT(*) n FROM run r WHERE ${nonHookTreeStatsSql('r')}`).get() as {
+    d.query(`SELECT COUNT(*) n FROM run r WHERE ${agentExecutionStatsSql('r')}`).get() as {
       n: number
     }
   ).n

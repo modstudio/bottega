@@ -203,6 +203,7 @@ export function createWithTool(
   recordRecipeResource?: RecordRecipeResource,
   claimRecipePort?: ClaimRecipePort,
   requestedBranch?: string,
+  templateBaseRef?: string,
 ): Worktree {
   const repoRoot = repoRootOf(cwd)
   if (!repoRoot) throw new Error(`not a git repository: ${cwd}`)
@@ -229,6 +230,7 @@ export function createWithTool(
       recordRecipeResource,
       claimRecipePort,
       requestedBranch,
+      templateBaseRef,
     ),
   )
 }
@@ -247,6 +249,7 @@ function createWithToolUnlocked(
   recordRecipeResource?: RecordRecipeResource,
   claimRecipePort?: ClaimRecipePort,
   requestedBranch?: string,
+  templateBaseRef?: string,
 ): Worktree {
   // The project's own naming rule wins where it has one. `orch/<id>` is fine
   // where nothing enforces a convention and is refused outright where something
@@ -282,7 +285,14 @@ function createWithToolUnlocked(
   // template has a slot; without one the branch is still cut at that commit
   // after the tool returns.
   const base = baseRef ? resolveBase(repoRoot, baseRef) : git(['rev-parse', 'HEAD'], repoRoot)
-  const vars = worktreeCreateVariables(tool.branch, existingBranch, runId, key, seed, base)
+  const vars = worktreeCreateVariables(
+    tool.branch,
+    existingBranch,
+    runId,
+    key,
+    seed,
+    templateBaseRef ?? base,
+  )
   const { branch, name } = vars
   const r = runCreateTool(tool.create, vars, repoRoot, targetGitEnvironment(repoRoot))
   if (!r.ok) throw new Error(`the project's worktree tool failed:\n${r.out.slice(-1500)}`)
@@ -388,7 +398,7 @@ function createWithToolUnlocked(
   // commit from the tree it actually created so the run record and every later
   // diff name that floor rather than the caller checkout's incidental HEAD.
   const actualBase = gitOk(['rev-parse', 'HEAD'], path) ?? base
-  if (!detached) {
+  if (shouldCheckoutCreatedBranch(detached, existingBranch)) {
     const dirty = gitOk(['status', '--porcelain=v1', '--untracked-files=no'], path)
     if (baseRef && !dirty) git(['checkout', '-B', branch, base], path)
     else gitOk(['checkout', '-B', branch], path)
@@ -408,6 +418,10 @@ function createWithToolUnlocked(
     throw new Error(`${String((e as Error)?.message ?? e)}${leftover(path)}`)
   }
   return worktree
+}
+
+function shouldCheckoutCreatedBranch(detached: boolean, existingBranch?: string): boolean {
+  return !detached && !existingBranch
 }
 
 function createWithoutCommand(

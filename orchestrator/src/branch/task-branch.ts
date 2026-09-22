@@ -6,7 +6,7 @@
 
 import { db } from '../database/db.ts'
 import { realpathOrSpelled } from '../git/checkout-identity.ts'
-import { repoRootOf, targetGitEnvironment } from '../git/git-environment.ts'
+import { checkedOutWorktree, repoRootOf, targetGitEnvironment } from '../git/git-environment.ts'
 import type { Project } from '../project/projects.ts'
 import { projectAt, projects } from '../project/projects.ts'
 import { reviewRunEvidenceSql } from '../review/review-evidence-sql.ts'
@@ -213,7 +213,7 @@ function taskBranchPullRequestCheck(input: {
   })
 }
 
-function taskBranchAlreadyLanded(input: {
+export function taskBranchAlreadyLanded(input: {
   project: Project
   repoRoot: string
   launchKey: string
@@ -298,16 +298,6 @@ export function taskBranchPatchEquivalent(input: {
   )
   const cherry = taskBranchGit(input.cwd, 'cherry', input.trunkTip, squash)
   return cherry.split('\n').some((line) => line.startsWith('+ ')) ? null : 'squash'
-}
-
-function checkedOutWorktree(repoRoot: string, branch: string): string | null {
-  let path: string | null = null
-  for (const line of taskBranchGit(repoRoot, 'worktree', 'list', '--porcelain').split('\n')) {
-    if (line.startsWith('worktree ')) path = line.slice('worktree '.length)
-    else if (line === `branch refs/heads/${branch}`) return path
-    else if (!line) path = null
-  }
-  return null
 }
 
 export function resolveTaskBranch(cwd: string, launchKey: string): TaskBranchCandidate | null {
