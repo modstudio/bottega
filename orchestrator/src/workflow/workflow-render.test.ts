@@ -69,7 +69,7 @@ describe('workflow rendering', () => {
     const lastInEveryMode = getWorkflowStep('choose', 'fixture', 'lens', args, d)
     expect(lastInEveryMode.next).toBeNull()
     expect(renderWorkflowStep(lastInEveryMode)).toEndWith(
-      "This is the last step of choose in every mode that contains it. The workflow is finished when this step's floor is met.",
+      "Next: when this step's floor is met, close it with `next_workflow_step` (MCP) or `orch workflow next`, giving a one-line note of how the floor was met; this is the last step of choose in every mode that contains it, and closing it finishes the workflow.",
     )
   })
 
@@ -108,7 +108,7 @@ describe('workflow rendering', () => {
     expect(
       renderWorkflowStep(getWorkflowStep('ship', 'fixture', 'close', args, d, { mode: 'default' })),
     ).toEndWith(
-      "This is the last step of ship (default). The workflow is finished when this step's floor is met.",
+      "Next: when this step's floor is met, close it with `next_workflow_step` (MCP) or `orch workflow next`, giving a one-line note of how the floor was met; this is the last step of ship (default), and closing it finishes the workflow.",
     )
 
     const draft = setWorkflow(

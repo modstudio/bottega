@@ -7,7 +7,7 @@ export type CursorValue = {
 }
 
 export type CursorTransitionRequest =
-  | { kind: 'serve'; ordinal: number; slug: string; expectedOrdinal: number; expectedSlug: string }
+  | { kind: 'serve'; ordinal: number; slug: string }
   | { kind: 'next'; total: number; nextSlug: string | null }
 
 export type CursorTransition =
