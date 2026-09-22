@@ -389,6 +389,6 @@ export async function reviewCommand(
     return
   }
   throw new Error(
-    `unknown: orch review${sub ? ` ${sub}` : ''}. Try tier | record | triage | complete | calibration`,
+    `unknown: orch review${sub ? ` ${sub}` : ''}. Try tier | record | triage | complete | calibration | restore-findings`,
   )
 }

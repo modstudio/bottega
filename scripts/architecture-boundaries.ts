@@ -4,6 +4,7 @@ import {
   recordReadBoundariesBeforePublish,
   recordSchemaBoundaries,
 } from './architecture-record-boundaries.ts'
+import { reviewBoundarySpecs } from './architecture-review-boundaries.ts'
 
 const landing = '../landing-tree/landing-tree.ts'
 
@@ -700,68 +701,8 @@ export const importBoundaries: ImportBoundary[] = [
     ],
     'Enforce the resource-ownership concern boundary.',
   ),
-  boundary(
-    'review-boundary',
-    'orchestrator/src/review/review.ts',
-    [
-      '../../../shared/record/schema.ts',
-      '../database/db.ts',
-      './review-outbox.ts',
-      '../contract/contract.ts',
-      '../jobs/jobs.ts',
-      './review-coverage.ts',
-      './review-coverage-match.ts',
-      './review-pins.ts',
-      './review-tier.ts',
-    ],
-    'Keep review verdicts independent of landing policy and run-chain ownership.',
-    ['bun:sqlite', './review-types.ts'],
-  ),
-  boundary(
-    'review-commands-boundary',
-    'orchestrator/src/review/review-commands.ts',
-    [
-      'bun:sqlite',
-      'node:fs',
-      'zod',
-      '../database/db.ts',
-      '../git/git-environment.ts',
-      '../jobs/jobs.ts',
-      '../project/projects.ts',
-      './review.ts',
-      './review-calibration.ts',
-      './review-coverage.ts',
-      './review-evidence-sql.ts',
-      './review-pins.ts',
-      './review-tier.ts',
-      './review-triage.ts',
-      './review-vocabulary.ts',
-      './review-yield.ts',
-    ],
-    'Keep review commands independent of runs, transports, routing by value, the CLI, and worktrees by value.',
-  ),
-  boundary(
-    'review-outbox-boundary',
-    'orchestrator/src/review/review-outbox.ts',
-    ['../../../shared/record/schema.ts', '../database/db.ts', 'bun:sqlite'],
-    'Enforce the review-outbox concern boundary.',
-  ),
-  boundary(
-    'review-target-boundary',
-    'orchestrator/src/review/review-target.ts',
-    [
-      'node:path',
-      '../git/git-environment.ts',
-      '../project/projects.ts',
-      '../worktree/worktree-caller.ts',
-    ],
-    'Keep review-target resolution independent of execution and mutation concerns.',
-  ),
-  boundary(
-    'review-vocabulary-boundary',
-    'orchestrator/src/review/review-vocabulary.ts',
-    [],
-    'Enforce the review-vocabulary concern boundary.',
+  ...reviewBoundarySpecs.map((spec) =>
+    boundary(spec.name, spec.file, spec.allowed, spec.reason, spec.typeOnlyAllowed),
   ),
   boundary(
     'routing-commands-boundary',
