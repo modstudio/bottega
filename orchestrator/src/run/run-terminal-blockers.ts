@@ -1,17 +1,14 @@
 // concern: run-terminal-blockers
 
+import { detectBlockers } from '../failure/failure.ts'
+
 export type BlockerFacts = {
   declared: Array<{
     what: string
     why: string
-    impact?: string | null
-    kind: string | null
+    impact: string | null
   }>
-  detected: Array<{
-    what: string
-    why: string
-    kind: string | null
-  }>
+  output: string
 }
 
 export type BlockerRow = {
@@ -22,21 +19,28 @@ export type BlockerRow = {
   kind: string | null
 }
 
+/**
+ * A declared blocker gets the first kind the detector recognises in the
+ * worker's what and why. An unrecognised blocker is still recorded with a
+ * null kind rather than discarded.
+ *
+ * Detect output only when nothing was declared. A worker that filled the
+ * structured field has already reported the blocker, so adding a guess from
+ * its output would count one blocker twice.
+ */
 export function blockersToRecord(facts: BlockerFacts): BlockerRow[] {
   if (facts.declared.length) {
-    return facts.declared.map((blocker) => ({
-      what: blocker.what,
-      why: blocker.why,
-      impact: blocker.impact ?? null,
-      source: 'declared',
-      kind: blocker.kind,
-    }))
+    return facts.declared.map((blocker) => {
+      const [known] = detectBlockers(`${blocker.what}\n${blocker.why}`)
+      return {
+        ...blocker,
+        source: 'declared',
+        kind: known?.kind ?? null,
+      }
+    })
   }
 
-  // Detected only where nothing was declared: a worker that filled the
-  // field in has already told us, and adding our guess beside its answer
-  // would double-count one blocker.
-  return facts.detected.map((blocker) => ({
+  return detectBlockers(facts.output).map((blocker) => ({
     what: blocker.what,
     why: blocker.why,
     impact: null,

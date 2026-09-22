@@ -25,7 +25,7 @@ import {
 } from '../contract/contract.ts'
 import { db, nowIso, tryWriteContention, writeTransaction } from '../database/db.ts'
 import { assessEvidence, recordEvidence } from '../evidence/evidence.ts'
-import { type classify, detectBlockers } from '../failure/failure.ts'
+import type { classify } from '../failure/failure.ts'
 import { terminateProcessGroup } from '../idle-kill.ts'
 import { isReaderJob, type Job } from '../jobs/jobs.ts'
 import type { McpConnection, McpMode } from '../mcp/mcp-preflight.ts'
@@ -470,42 +470,13 @@ export async function finishRun(input: TerminalInput): Promise<TerminalResult> {
   ;({ status, failureKind, error } = confinementPrecedence.outcome)
   preConfinement = confinementPrecedence.preConfinement
 
-  /**
-   * BLOCKERS, from every job — not only the ones with a contract.
-   *
-   * The runs that reported these were review lenses, which carry no contract
-   * at all, so a structured field alone would have caught none of them. What
-   * they did was say it in prose and carry on, and nothing could count that.
-   *
-   * Declared and detected are stored side by side and kept distinguishable,
-   * for the same reason measured and claimed facts are: one is the worker's
-   * own account, the other is our reading of its prose, and a reader deserves
-   * to know which they are looking at.
-   */
   try {
-    const declared = (contract?.blockers ?? []).map((b) => {
-      /**
-       * A DECLARED blocker gets a kind too, where we recognise one.
-       *
-       * `kind` is what makes recurrence countable, and a declared blocker had
-       * none — so it grouped by its own prose, and two workers describing the
-       * same denied socket in different words counted as two separate
-       * problems. The detector already knows these shapes; run it over what
-       * the worker wrote and use its answer when it finds one.
-       *
-       * Null when nothing matches, which is honest: an unrecognised blocker
-       * is still worth recording, it just cannot be pooled with anything yet.
-       */
-      const [known] = detectBlockers(`${b.what}\n${b.why}`)
-      return {
-        what: b.what,
-        why: b.why,
-        impact: b.impact ?? null,
-        kind: known?.kind ?? null,
-      }
-    })
-    const detected = declared.length ? [] : detectBlockers(output)
-    const rows = blockersToRecord({ declared, detected })
+    const declared = (contract?.blockers ?? []).map((b) => ({
+      what: b.what,
+      why: b.why,
+      impact: b.impact ?? null,
+    }))
+    const rows = blockersToRecord({ declared, output })
     if (rows.length) {
       const q = db().query(
         `INSERT INTO blocker (run_id, at, what, why, impact, source, kind)

@@ -10,36 +10,32 @@ type Case = {
 describe('terminal blocker rows', () => {
   test.each([
     {
-      name: 'declared blockers keep their order and detector kinds',
+      name: 'a recognised declared blocker records the detector kind',
       facts: {
         declared: [
-          { what: 'first', why: 'denied socket', impact: 'suite not run', kind: 'denied' },
-          { what: 'second', why: 'unknown failure', impact: null, kind: null },
+          {
+            what: 'Docker access was denied',
+            why: 'I could not run the suite.',
+            impact: 'suite not run',
+          },
         ],
-        detected: [],
+        output: '',
       },
       expected: [
         {
-          what: 'first',
-          why: 'denied socket',
+          what: 'Docker access was denied',
+          why: 'I could not run the suite.',
           impact: 'suite not run',
           source: 'declared',
-          kind: 'denied',
-        },
-        {
-          what: 'second',
-          why: 'unknown failure',
-          impact: null,
-          source: 'declared',
-          kind: null,
+          kind: 'docker-denied',
         },
       ],
     },
     {
-      name: 'a declared blocker without impact records null',
+      name: 'an unrecognised declared blocker records a null kind',
       facts: {
-        declared: [{ what: 'tool missing', why: 'binary was unavailable', kind: null }],
-        detected: [],
+        declared: [{ what: 'tool missing', why: 'binary was unavailable', impact: null }],
+        output: '',
       },
       expected: [
         {
@@ -52,26 +48,26 @@ describe('terminal blocker rows', () => {
       ],
     },
     {
-      name: 'detected rows appear when nothing was declared',
+      name: 'detectable output records a detected row when nothing was declared',
       facts: {
         declared: [],
-        detected: [{ what: 'Docker denied', why: 'socket access failed', kind: 'denied' }],
+        output: 'Docker access was denied, so I could not run the suite.',
       },
       expected: [
         {
-          what: 'Docker denied',
-          why: 'socket access failed',
+          what: 'docker denied',
+          why: 'Docker access was denied, so I could not run the suite.',
           impact: null,
           source: 'detected',
-          kind: 'denied',
+          kind: 'docker-denied',
         },
       ],
     },
     {
-      name: 'a declared list suppresses detected blockers',
+      name: 'a declared blocker suppresses detectable output',
       facts: {
-        declared: [{ what: 'declared', why: 'worker report', impact: null, kind: null }],
-        detected: [{ what: 'detected', why: 'output match', kind: 'quota' }],
+        declared: [{ what: 'declared', why: 'worker report', impact: null }],
+        output: 'Docker access was denied, so I could not run the suite.',
       },
       expected: [
         {
@@ -85,7 +81,7 @@ describe('terminal blocker rows', () => {
     },
     {
       name: 'empty facts produce no rows',
-      facts: { declared: [], detected: [] },
+      facts: { declared: [], output: '' },
       expected: [],
     },
   ] satisfies Case[])('$name', ({ facts, expected }) => {
