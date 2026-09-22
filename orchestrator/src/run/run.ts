@@ -112,6 +112,7 @@ import {
 import { claimRun } from './run-claim.ts'
 import { closeRun } from './run-close.ts'
 import { codexAcpReadonlyDockerRefusal, decideCodexSandbox } from './run-codex-sandbox.ts'
+import { decideRunLaunch } from './run-launch.ts'
 import { acquireRunLease } from './run-lease.ts'
 import { runLive } from './run-live.ts'
 import * as mcpAttachment from './run-mcp-attachment.ts'
@@ -528,17 +529,9 @@ export async function run(opts: {
     prompt = `${evidencePrompt.readerInstruction}\n\n${prompt}`
   }
   const requiresCanonSource = evidencePrompt.requiresCanonSource
-
-  // A resumed turn stays with the vendor session that owns the conversation.
-  const { agent: name, reason } = opts.resume
-    ? {
-        agent: opts.resume.agent,
-        reason:
-          `resumed run ${opts.resume.parent} (turn ${opts.resume.turn}); ` +
-          'repository path retargeting not applied because the turn is already bound to its worktree',
-      }
-    : // Stack-specific evidence steers routing once that cell has earned a comparison.
-      pick(
+  const picked = opts.resume
+    ? null
+    : pick(
         opts.job,
         selectAgentForTransport(requestedTransport, opts.agent),
         Buffer.byteLength(prompt) +
@@ -556,7 +549,17 @@ export async function run(opts: {
         opts.probe,
         opts.lens,
       )
-  const a = requireAgent(name)
+  const a = requireAgent(opts.resume?.agent ?? picked!.agent)
+  const launch = decideRunLaunch({
+    resume: opts.resume ?? null,
+    pickedAgent: picked?.agent ?? null,
+    pickedReason: picked?.reason ?? null,
+    requestedTransport,
+    explicitTransport: opts.transport !== undefined,
+    envTransport: Boolean(process.env.ORCH_TRANSPORT),
+    agentDefaultTransport: a.defaultTransport,
+  })
+  const { agent: name, reason, transport: transportName } = launch
   const codexSandboxFacts = {
     agentIsCodex: name === 'codex',
     readsRepo: repoJob,
@@ -584,10 +587,6 @@ export async function run(opts: {
     prompt =
       split >= 0 ? prompt.slice(0, split) + boundLine + prompt.slice(split) : prompt + boundLine
   }
-  const transportName =
-    opts.resume || opts.transport !== undefined || process.env.ORCH_TRANSPORT
-      ? requestedTransport
-      : a.defaultTransport
   const transportRefusal = codexAcpReadonlyDockerRefusal({
     ...codexSandboxFacts,
     transport: transportName,

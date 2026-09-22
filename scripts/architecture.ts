@@ -520,6 +520,7 @@ export const modules: ArchitectureModule[] = [
     '../transport/transport.ts',
     '../worktree/worktree-types.ts',
   ]),
+  module('orchestrator/src/run/run-launch.ts', ['../transport/transport.ts']),
   module('orchestrator/src/live-outcome.ts', [
     './failure/failure.ts',
     './outcome.ts',
