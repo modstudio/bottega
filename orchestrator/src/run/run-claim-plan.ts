@@ -4,36 +4,26 @@
  * lifecycle facts. Must not create trees, touch stores, or run processes.
  */
 
+import type { ResumeCreationLifecycle } from './resume-tree.ts'
+
 export type ClaimTreePlanFacts = {
   hasResolvedTaskWorktree: boolean
   forbidsRepo: boolean
   repoJob: boolean
   hasWorktree: boolean
-  toolLifecycle: 'command-template' | 'recipe' | 'built-in-git'
-  resumeUsesCreateTool: boolean | null
 }
 
 export type ClaimTreePlanRuling =
   | { mode: 'attach' }
   | { mode: 'isolate' }
-  | {
-      mode: 'create'
-      lifecycle: ClaimTreePlanFacts['toolLifecycle']
-      useCreateTool: boolean
-    }
+  | { mode: 'create' }
   | { mode: 'caller' }
 
 /** Decide the claimed run's working-tree mode before performing any effects. */
 export function decideClaimTreePlan(facts: ClaimTreePlanFacts): ClaimTreePlanRuling {
   if (facts.hasResolvedTaskWorktree) return { mode: 'attach' }
   if (facts.forbidsRepo) return { mode: 'isolate' }
-  if (facts.repoJob && !facts.hasWorktree) {
-    return {
-      mode: 'create',
-      lifecycle: facts.toolLifecycle,
-      useCreateTool: facts.resumeUsesCreateTool ?? false,
-    }
-  }
+  if (facts.repoJob && !facts.hasWorktree) return { mode: 'create' }
   return { mode: 'caller' }
 }
 
@@ -41,7 +31,7 @@ export function resumeCreationLifecycle(facts: {
   hasCreate: boolean
   hasRecipe: boolean
   hasRecipePath: boolean
-}): ClaimTreePlanFacts['toolLifecycle'] {
+}): ResumeCreationLifecycle {
   if (facts.hasCreate) return 'command-template'
   if (facts.hasRecipe || facts.hasRecipePath) return 'recipe'
   return 'built-in-git'
@@ -51,8 +41,8 @@ export function resumeCreationTool<T>(useCreateTool: boolean, tool: T | null): T
   return useCreateTool ? tool : null
 }
 
-export function taskBranchKey<T>(launchKey: string | null, plan: T | undefined): string | null {
-  return plan ? null : launchKey
+export function taskBranchKey(launchKey: string | null, hasResumePlan: boolean): string | null {
+  return hasResumePlan ? null : launchKey
 }
 
 export function shouldResolveTaskBranch(input: {

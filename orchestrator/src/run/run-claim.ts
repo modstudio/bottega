@@ -327,14 +327,8 @@ export async function claimRun(input: ClaimInput): Promise<ClaimResult> {
   const noFailover = inheritedLaunch ? !!inheritedLaunch.no_failover : !!opts.noFailover
   const worktreeTool = repoJob ? toolFor(callerCwd) : null
   const resumePlan = opts.resume?.treePlan
-  const toolLifecycle = resumeCreationLifecycle({
-    hasCreate: Boolean(worktreeTool?.create),
-    hasRecipe: Boolean(worktreeTool?.recipe),
-    hasRecipePath: Boolean(worktreeTool?.recipePath),
-  })
-  const resumeCreation = resumeCreationOptions(resumePlan, toolLifecycle)
   let resolvedTaskBranch: TaskBranchCandidate | null = null
-  const attachableTaskKey = taskBranchKey(launchKey, resumePlan)
+  const attachableTaskKey = taskBranchKey(launchKey, Boolean(resumePlan))
   if (
     shouldResolveTaskBranch({
       repoJob,
@@ -579,13 +573,12 @@ export async function claimRun(input: ClaimInput): Promise<ClaimResult> {
     }
   ).id
   const sandboxRunDir = join(runsDir, `sandbox-${sandboxRoot}`)
+  const attachedTree = resolvedTaskBranch?.worktree ?? null
   const claimTreePlan = decideClaimTreePlan({
-    hasResolvedTaskWorktree: Boolean(resolvedTaskBranch?.worktree),
+    hasResolvedTaskWorktree: attachedTree !== null,
     forbidsRepo,
     repoJob,
     hasWorktree: Boolean(worktree),
-    toolLifecycle,
-    resumeUsesCreateTool: repoJob ? resumeCreation.useCreateTool : null,
   })
   /**
    * Cutting the worktree can FAIL, and the row already exists by now.
@@ -601,7 +594,7 @@ export async function claimRun(input: ClaimInput): Promise<ClaimResult> {
   try {
     switch (claimTreePlan.mode) {
       case 'attach':
-        worktree = resolvedTaskBranch!.worktree
+        worktree = attachedTree!
         taskBranchAttachment = true
         break
       case 'isolate': {
@@ -622,7 +615,13 @@ export async function claimRun(input: ClaimInput): Promise<ClaimResult> {
         const tool = worktreeTool
         const repoRoot = repoRootOf(callerCwd)
         if (!repoRoot) throw new Error(`not a git repository: ${callerCwd}`)
-        const creationTool = resumeCreationTool(claimTreePlan.useCreateTool, tool)
+        const toolLifecycle = resumeCreationLifecycle({
+          hasCreate: Boolean(worktreeTool?.create),
+          hasRecipe: Boolean(worktreeTool?.recipe),
+          hasRecipePath: Boolean(worktreeTool?.recipePath),
+        })
+        const resumeCreation = resumeCreationOptions(resumePlan, toolLifecycle)
+        const creationTool = resumeCreationTool(resumeCreation.useCreateTool, tool)
         const recordWorktree = (created: Worktree) => {
           writeTransaction(() => {
             const result = db()

@@ -12,8 +12,6 @@ const defaultFacts = {
   forbidsRepo: false,
   repoJob: false,
   hasWorktree: false,
-  toolLifecycle: 'built-in-git' as const,
-  resumeUsesCreateTool: null,
 }
 
 describe('claim tree plan', () => {
@@ -25,8 +23,6 @@ describe('claim tree plan', () => {
         forbidsRepo: true,
         repoJob: true,
         hasWorktree: false,
-        toolLifecycle: 'command-template' as const,
-        resumeUsesCreateTool: true,
       },
       expected: { mode: 'attach' as const },
     },
@@ -36,14 +32,9 @@ describe('claim tree plan', () => {
       expected: { mode: 'isolate' as const },
     },
     {
-      name: 'a repository job without a tree creates with its supplied lifecycle and tool choice',
-      facts: {
-        ...defaultFacts,
-        repoJob: true,
-        toolLifecycle: 'recipe' as const,
-        resumeUsesCreateTool: true,
-      },
-      expected: { mode: 'create' as const, lifecycle: 'recipe' as const, useCreateTool: true },
+      name: 'a repository job without a tree creates',
+      facts: { ...defaultFacts, repoJob: true },
+      expected: { mode: 'create' as const },
     },
     {
       name: 'a repository job with a tree stays in the caller cwd',
@@ -93,10 +84,10 @@ describe('task branch resolution eligibility', () => {
 
 describe('task branch key', () => {
   test.each([
-    { name: 'returns the launch key without a plan', plan: undefined, expected: 'DEV-831' },
-    { name: 'returns null when a plan is present', plan: { action: 'recreate' }, expected: null },
-  ])('$name', ({ plan, expected }) => {
-    expect(taskBranchKey('DEV-831', plan)).toBe(expected)
+    { name: 'returns the launch key without a plan', hasResumePlan: false, expected: 'DEV-831' },
+    { name: 'returns null when a plan is present', hasResumePlan: true, expected: null },
+  ])('$name', ({ hasResumePlan, expected }) => {
+    expect(taskBranchKey('DEV-831', hasResumePlan)).toBe(expected)
   })
 })
 
