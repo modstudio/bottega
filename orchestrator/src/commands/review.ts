@@ -2,7 +2,7 @@
 /** Registers review and confinement adapters. Must not own their behavior. */
 import type { Command } from 'commander'
 import { clearConfinement } from '../confinement/confinement-ruling.ts'
-import { reviewCommand } from '../review/review-commands.ts'
+import { dispatchReviewCommand } from '../review/review-command-dispatcher.ts'
 import { log, optionFlags } from './support.ts'
 
 export function register(program: Command): void {
@@ -20,9 +20,12 @@ export function register(program: Command): void {
     .option('--complete')
     .option('--json')
     .option('--prune')
+    .option('--write')
+    .option('--confirm-restore')
+    .option('--confirm-live-store <path>')
     .action(async (args, options) => {
       const argv = ['review', ...args]
-      await reviewCommand(argv[1], argv, optionFlags(options), {
+      await dispatchReviewCommand(argv[1], argv, optionFlags(options), {
         log,
         usage: (): never => {
           throw new Error('orch review --help')
