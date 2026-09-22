@@ -2,6 +2,7 @@ import { Database } from 'bun:sqlite'
 import { describe, expect, test } from 'bun:test'
 import { applyMigrations } from '../database/migrations.ts'
 import {
+  awaitWorkflowRuling,
   composeWorkflowWithCursor,
   getWorkflowStepWithCursor,
   listWorkflowCursors,
@@ -93,5 +94,29 @@ describe('workflow cursor adapter', () => {
     )
     expect(listWorkflowCursors({ session: 'session-one' }, d)).toEqual([])
     expect(d.query('SELECT state FROM workflow_cursor').get()).toEqual({ state: 'done' })
+  })
+
+  test('await records a question and fetching the current step resumes', () => {
+    const d = database()
+    composeWorkflowWithCursor('ship', 'fixture', 'default', args, context, d)
+    awaitWorkflowRuling('ship', 'fixture', 'default', args, 'Which ruling?', context, d)
+    expect(d.query('SELECT state,question FROM workflow_cursor').get()).toEqual({
+      state: 'awaiting-ruling',
+      question: 'Which ruling?',
+    })
+
+    getWorkflowStepWithCursor('ship', 'fixture', 'rebase', args, 'default', context, d)
+    expect(d.query('SELECT state,question FROM workflow_cursor').get()).toEqual({
+      state: 'running',
+      question: null,
+    })
+  })
+
+  test('a second session cannot silently take over a keyed cursor', () => {
+    const d = database()
+    composeWorkflowWithCursor('ship', 'fixture', 'default', args, context, d)
+    expect(() =>
+      composeWorkflowWithCursor('ship', 'fixture', 'default', args, { session: 'session-two' }, d),
+    ).toThrow(/already driven by session session-one/)
   })
 })

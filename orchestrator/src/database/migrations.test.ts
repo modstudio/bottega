@@ -39,7 +39,9 @@ test('a fresh database seeds discoverable agents without machine probe claims', 
 test('agent operator migration preserves cost facts and the routing free set', () => {
   const folder = mkdtempSync(join(tmpdir(), 'orch-agent-operator-'))
   mkdirSync(join(folder, 'meta'))
-  const prior = migrationJournal().slice(0, -1)
+  const journal = migrationJournal()
+  const operatorMigration = journal.findIndex((entry) => entry.tag === '0039_agent_operator')
+  const prior = journal.slice(0, operatorMigration)
   for (const entry of prior) {
     copyFileSync(join(MIGRATIONS_FOLDER, `${entry.tag}.sql`), join(folder, `${entry.tag}.sql`))
   }
@@ -60,7 +62,7 @@ test('agent operator migration preserves cost facts and the routing free set', (
     const before = database
       .query("SELECT name FROM agent WHERE billing IN ('free','local') ORDER BY name")
       .all()
-    expect(applyMigrations(database)).toEqual(['0039_agent_operator'])
+    expect(applyMigrations(database)).toEqual(['0039_agent_operator', '0040_workflow_cursor'])
     const after = database
       .query("SELECT name FROM agent WHERE billing IN ('free','none') ORDER BY name")
       .all()

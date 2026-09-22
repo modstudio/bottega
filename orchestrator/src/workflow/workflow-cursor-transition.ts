@@ -11,7 +11,7 @@ export type CursorTransitionRequest =
   | { kind: 'next'; total: number; nextSlug: string | null }
 
 export type CursorTransition =
-  | { action: 'serve'; ordinal: number; slug: string; move: boolean }
+  | { action: 'serve'; ordinal: number; slug: string; move: boolean; resume: boolean }
   | { action: 'finish' }
   | { action: 'refuse'; reason: 'compose-first' | 'ahead' | 'state' | 'not-started' }
 
@@ -23,13 +23,25 @@ export function decideCursorTransition(
   if (request.kind === 'serve') {
     if (!cursor) {
       return request.ordinal === 0
-        ? { action: 'serve', ordinal: 0, slug: request.slug, move: true }
+        ? { action: 'serve', ordinal: 0, slug: request.slug, move: true, resume: false }
         : { action: 'refuse', reason: 'compose-first' }
     }
     if (request.ordinal <= cursor.ordinal)
-      return { action: 'serve', ordinal: cursor.ordinal, slug: cursor.stepSlug, move: false }
+      return {
+        action: 'serve',
+        ordinal: cursor.ordinal,
+        slug: cursor.stepSlug,
+        move: false,
+        resume: request.ordinal === cursor.ordinal && cursor.state !== 'done',
+      }
     if (request.ordinal === cursor.ordinal + 1)
-      return { action: 'serve', ordinal: request.ordinal, slug: request.slug, move: true }
+      return {
+        action: 'serve',
+        ordinal: request.ordinal,
+        slug: request.slug,
+        move: true,
+        resume: false,
+      }
     return { action: 'refuse', reason: 'ahead' }
   }
 
@@ -41,5 +53,6 @@ export function decideCursorTransition(
     ordinal: cursor.ordinal + 1,
     slug: request.nextSlug!,
     move: true,
+    resume: false,
   }
 }

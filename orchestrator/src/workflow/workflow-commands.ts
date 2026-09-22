@@ -75,15 +75,25 @@ export function workflowCommand(argv: string[], presentation: Presentation): voi
   else if (sub === 'versions') print(workflowVersions(argv[2]!))
   else if (sub === 'compose') composeCommand(argv, json, print, presentation)
   else if (sub === 'step') stepCommand(argv, print)
-  else if (sub === 'next') nextCommand(argv, print)
-  else if (sub === 'await') awaitCommand(argv, print)
-  else if (sub === 'cursors') cursorsCommand(argv, print)
+  else if (cursorCommand(sub, argv, print)) return
   else if (sub === 'hydrate') hydrateCommand(argv, presentation)
   else if (sub === 'import') importCommand(argv, print)
   else
     throw new Error(
       'unknown: orch workflow. Try list | show | set | promote | retire | fork | versions | compose | step | next | await | cursors | hydrate | import',
     )
+}
+
+function cursorCommand(
+  sub: string | undefined,
+  argv: string[],
+  print: (value: unknown, line?: string) => void,
+): boolean {
+  if (sub === 'next') nextCommand(argv, print)
+  else if (sub === 'await') awaitCommand(argv, print)
+  else if (sub === 'cursors') cursorsCommand(argv, print)
+  else return false
+  return true
 }
 
 function setWorkflowCommand(argv: string[], print: (value: unknown, line?: string) => void): void {
@@ -157,6 +167,7 @@ function cursorsCommand(argv: string[], print: (value: unknown, line?: string) =
     project: flagValue(argv, 'project'),
     all: argv.includes('--all'),
   })
+  if (!rows.length) return
   print(rows, rows.map(renderWorkflowCursorLine).join('\n'))
 }
 

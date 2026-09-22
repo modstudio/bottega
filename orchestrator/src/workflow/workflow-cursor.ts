@@ -1,6 +1,6 @@
 import type { Database } from 'bun:sqlite'
 import { randomUUID } from 'node:crypto'
-import { db, nowIso, sessionId } from '../database/db.ts'
+import { db, nowIso, sessionId, writableDb, writeTransaction } from '../database/db.ts'
 import { projectAt } from '../project/projects.ts'
 import {
   type CursorState,
@@ -45,7 +45,20 @@ export const mcpWorkflowCursorContext = (): WorkflowCursorContext => ({
 })
 export const cliWorkflowCursorContext = (): WorkflowCursorContext => ({ session: sessionId() })
 
-const keyOf = (args: Record<string, string>) => args.key?.trim() ?? ''
+const keyOf = (workflow: string, args: Record<string, string>, d: Database): string => {
+  const row = d
+    .query(
+      `SELECT v.definition FROM workflow_version v
+       JOIN workflow w ON w.id=v.workflow_id
+       WHERE w.slug=? AND v.status='production'`,
+    )
+    .get(workflow) as { definition: string } | null
+  if (!row) return ''
+  const definition = JSON.parse(row.definition) as { arguments?: { name?: string }[] }
+  return definition.arguments?.some((argument) => argument.name === 'key')
+    ? (args.key?.trim() ?? '')
+    : ''
+}
 const instanceOf = (key: string, context: WorkflowCursorContext): string => {
   if (key) return ''
   const instance = context.session ?? context.instance
@@ -54,6 +67,8 @@ const instanceOf = (key: string, context: WorkflowCursorContext): string => {
     'keyless workflow cursor needs an identity; pass --arg key=<task key> or run under a harness that sets CLAUDE_CODE_SESSION_ID',
   )
 }
+const shellWord = (value: string) =>
+  /^[A-Za-z0-9_@%+=:,./-]+$/.test(value) ? value : `'${value.replace(/'/g, "'\\''")}'`
 
 const cursorValue = (row: CursorRow): CursorValue => ({
   ordinal: row.ordinal,
@@ -69,13 +84,19 @@ function findCursor(
   context: WorkflowCursorContext,
   d: Database,
 ): CursorRow | null {
-  const key = keyOf(args)
-  return d
+  const key = keyOf(workflow, args, d)
+  const row = d
     .query(
       `SELECT * FROM workflow_cursor
        WHERE project=? AND workflow_slug=? AND mode_slug=? AND workflow_key=? AND instance_id=?`,
     )
     .get(project, workflow, mode, key, instanceOf(key, context)) as CursorRow | null
+  if (key && row?.session_id && context.session && row.session_id !== context.session) {
+    throw new Error(
+      `workflow ${workflow} for ${key} is already driven by session ${row.session_id}; current session ${context.session} cannot advance it`,
+    )
+  }
+  return row
 }
 
 function insertCursor(
@@ -83,7 +104,7 @@ function insertCursor(
   context: WorkflowCursorContext,
   d: Database,
 ): CursorRow {
-  const key = keyOf(composition.arguments)
+  const key = keyOf(composition.workflow.slug, composition.arguments, d)
   const instance = instanceOf(key, context)
   const at = nowIso()
   d.query(
@@ -93,7 +114,7 @@ function insertCursor(
        total_steps,created_at,updated_at)
      VALUES (?,?,?,?,?,?,?,?,?,0,?,'running','[]',NULL,?,?,?)
      ON CONFLICT(project,workflow_slug,mode_slug,workflow_key,instance_id) DO UPDATE SET
-       session_id=COALESCE(excluded.session_id,workflow_cursor.session_id),
+       session_id=COALESCE(workflow_cursor.session_id,excluded.session_id),
        updated_at=excluded.updated_at`,
   ).run(
     composition.project,
@@ -133,15 +154,17 @@ export function composeWorkflowWithCursor(
 ) {
   const composition = composeWorkflow(slug, project, mode, args, d, selection)
   if (!composition.mode || composition.needs.arguments) return { ...composition, cursor: null }
-  const row = insertCursor(composition, context, d)
-  return {
-    ...composition,
-    cursor: {
-      n: row.ordinal === 0 ? 0 : row.ordinal + 1,
-      slug: row.step_slug,
-      state: row.state,
-    } satisfies CursorSummary,
-  }
+  return writeTransaction(() => {
+    const row = insertCursor(composition, context, d)
+    return {
+      ...composition,
+      cursor: {
+        n: row.ordinal === 0 ? 0 : row.ordinal + 1,
+        slug: row.step_slug,
+        state: row.state,
+      } satisfies CursorSummary,
+    }
+  }, d)
 }
 
 function cursorComposition(row: CursorRow, d: Database) {
@@ -158,7 +181,7 @@ function cursorComposition(row: CursorRow, d: Database) {
 function remedy(row: CursorRow, composition: ReturnType<typeof composeWorkflow>): string {
   const active = composition.steps[row.ordinal]!
   const args = Object.entries(JSON.parse(row.args) as Record<string, string>)
-    .map(([name, value]) => ` --arg ${name}=${value}`)
+    .map(([name, value]) => ` --arg ${shellWord(`${name}=${value}`)}`)
     .join('')
   return (
     `workflow ${row.workflow_slug} for ${row.workflow_key} is at step ${active.n} ${active.slug}; ` +
@@ -167,14 +190,14 @@ function remedy(row: CursorRow, composition: ReturnType<typeof composeWorkflow>)
   )
 }
 
-export function getWorkflowStepWithCursor(
+function getWorkflowStepWithCursorImpl(
   slug: string,
   project: string,
   stepSlug: string,
   args: Record<string, string>,
   mode: string,
   context: WorkflowCursorContext,
-  d: Database = db(),
+  d: Database = writableDb(),
 ) {
   let row = findCursor(project, slug, mode, args, context, d)
   const effectiveArgs = row ? (JSON.parse(row.args) as Record<string, string>) : args
@@ -195,33 +218,51 @@ export function getWorkflowStepWithCursor(
   if (decision.action === 'refuse') {
     if (decision.reason === 'compose-first')
       throw new Error(
-        `workflow ${slug} for ${keyOf(args)} has no cursor; compose the workflow first`,
+        `workflow ${slug} for ${keyOf(slug, args, d)} has no cursor; compose the workflow first`,
       )
     throw new Error(remedy(row!, composition))
   }
   if (decision.action !== 'serve') throw new Error('invalid serve transition')
   if (!row) row = insertCursor(composition, context, d)
-  if (decision.move) {
+  if (decision.move || decision.resume) {
     d.query(
       `UPDATE workflow_cursor SET ordinal=?,step_slug=?,state='running',question=NULL,
-       session_id=COALESCE(?,session_id),updated_at=? WHERE id=?`,
+       session_id=COALESCE(session_id,?),updated_at=? WHERE id=?`,
     ).run(decision.ordinal, decision.slug, context.session ?? null, nowIso(), row.id)
   }
   return getWorkflowStep(slug, project, stepSlug, effectiveArgs, d, selection)
 }
 
-export function nextWorkflowStep(
+export function getWorkflowStepWithCursor(
+  slug: string,
+  project: string,
+  stepSlug: string,
+  args: Record<string, string>,
+  mode: string,
+  context: WorkflowCursorContext,
+  d: Database = writableDb(),
+) {
+  return writeTransaction(
+    () => getWorkflowStepWithCursorImpl(slug, project, stepSlug, args, mode, context, d),
+    d,
+  )
+}
+
+function nextWorkflowStepImpl(
   slug: string,
   project: string,
   mode: string,
   args: Record<string, string>,
   note: string | undefined,
   context: WorkflowCursorContext,
-  d: Database = db(),
+  d: Database = writableDb(),
 ): string {
   const row = findCursor(project, slug, mode, args, context, d)
   if (!row)
-    throw new Error(`workflow ${slug} for ${keyOf(args)} has no cursor; compose the workflow first`)
+    throw new Error(
+      `workflow ${slug} for ${keyOf(slug, args, d)} has no cursor; compose the workflow first`,
+    )
+  if (row.state === 'done') throw new Error(`workflow ${slug} for ${row.workflow_key} is done`)
   if (!note?.trim()) {
     const composition = cursorComposition(row, d)
     const step = composition.steps[row.ordinal]!
@@ -246,13 +287,13 @@ export function nextWorkflowStep(
   if (decision.action === 'finish') {
     d.query(
       `UPDATE workflow_cursor SET state='done',closed=?,question=NULL,
-       session_id=COALESCE(?,session_id),updated_at=? WHERE id=?`,
+       session_id=COALESCE(session_id,?),updated_at=? WHERE id=?`,
     ).run(JSON.stringify(closed), context.session ?? null, at, row.id)
     return `Workflow ${slug} for ${row.workflow_key} is finished: ${closed.length} steps closed.`
   }
   d.query(
     `UPDATE workflow_cursor SET ordinal=?,step_slug=?,state='running',closed=?,question=NULL,
-     session_id=COALESCE(?,session_id),updated_at=? WHERE id=?`,
+     session_id=COALESCE(session_id,?),updated_at=? WHERE id=?`,
   ).run(
     decision.ordinal,
     decision.slug,
@@ -270,6 +311,44 @@ export function nextWorkflowStep(
   )
 }
 
+export function nextWorkflowStep(
+  slug: string,
+  project: string,
+  mode: string,
+  args: Record<string, string>,
+  note: string | undefined,
+  context: WorkflowCursorContext,
+  d: Database = writableDb(),
+): string {
+  return writeTransaction(
+    () => nextWorkflowStepImpl(slug, project, mode, args, note, context, d),
+    d,
+  )
+}
+
+function awaitWorkflowRulingImpl(
+  slug: string,
+  project: string,
+  mode: string,
+  args: Record<string, string>,
+  question: string | undefined,
+  context: WorkflowCursorContext,
+  d: Database = writableDb(),
+): CursorSummary {
+  if (!question?.trim()) throw new Error('--question is required')
+  const row = findCursor(project, slug, mode, args, context, d)
+  if (!row)
+    throw new Error(
+      `workflow ${slug} for ${keyOf(slug, args, d)} has no cursor; compose the workflow first`,
+    )
+  if (row.state === 'done') throw new Error(`workflow ${slug} for ${row.workflow_key} is done`)
+  d.query(
+    `UPDATE workflow_cursor SET state='awaiting-ruling',question=?,
+     session_id=COALESCE(session_id,?),updated_at=? WHERE id=?`,
+  ).run(question.trim(), context.session ?? null, nowIso(), row.id)
+  return { n: row.ordinal + 1, slug: row.step_slug, state: 'awaiting-ruling' }
+}
+
 export function awaitWorkflowRuling(
   slug: string,
   project: string,
@@ -277,18 +356,12 @@ export function awaitWorkflowRuling(
   args: Record<string, string>,
   question: string | undefined,
   context: WorkflowCursorContext,
-  d: Database = db(),
+  d: Database = writableDb(),
 ): CursorSummary {
-  if (!question?.trim()) throw new Error('--question is required')
-  const row = findCursor(project, slug, mode, args, context, d)
-  if (!row)
-    throw new Error(`workflow ${slug} for ${keyOf(args)} has no cursor; compose the workflow first`)
-  if (row.state === 'done') throw new Error(`workflow ${slug} for ${row.workflow_key} is done`)
-  d.query(
-    `UPDATE workflow_cursor SET state='awaiting-ruling',question=?,
-     session_id=COALESCE(?,session_id),updated_at=? WHERE id=?`,
-  ).run(question.trim(), context.session ?? null, nowIso(), row.id)
-  return { n: row.ordinal, slug: row.step_slug, state: 'awaiting-ruling' }
+  return writeTransaction(
+    () => awaitWorkflowRulingImpl(slug, project, mode, args, question, context, d),
+    d,
+  )
 }
 
 export type CursorListOptions = {

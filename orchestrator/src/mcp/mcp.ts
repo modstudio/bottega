@@ -46,13 +46,12 @@ import { projectAt, projectByName, projects } from '../project/projects.ts'
 import { getReview, listReviews } from '../review/review.ts'
 import {
   awaitWorkflowRuling,
-  composeWorkflowWithCursor,
   getWorkflowStepWithCursor,
   mcpWorkflowCursorContext,
   nextWorkflowStep,
 } from '../workflow/workflow-cursor.ts'
 import { renderWorkflowStep } from '../workflow/workflow-render.ts'
-import { getWorkflowStep, listWorkflows } from '../workflow/workflows.ts'
+import { composeWorkflow, getWorkflowStep, listWorkflows } from '../workflow/workflows.ts'
 import { decideMcpDocWrite } from './mcp-doc-write.ts'
 import { registerWorkflowPrompts } from './mcp-prompts.ts'
 
@@ -430,15 +429,10 @@ export function createDocsMcpServer(): McpServer {
     },
     async ({ slug, project, mode, args, version, catalogue_version }) =>
       text(
-        composeWorkflowWithCursor(
-          slug,
-          project,
-          mode,
-          args ?? {},
-          mcpWorkflowCursorContext(),
-          undefined,
-          { version, catalogueVersion: catalogue_version },
-        ),
+        composeWorkflow(slug, project, mode, args ?? {}, undefined, {
+          version,
+          catalogueVersion: catalogue_version,
+        }),
       ),
   )
 
