@@ -142,6 +142,7 @@ test('a pre-attribution run payload stays null instead of borrowing the pushing 
   const row = local.query<{ payload: string }, []>('SELECT payload FROM outbox').get()!
   const payload = JSON.parse(row.payload) as Record<string, unknown>
   delete payload.startedByUserId
+  delete payload.taskKey
   local.query('UPDATE outbox SET payload=?').run(JSON.stringify(payload))
   const remote = fakePostgres()
   expect(await syncRecord(options(local, remote))).toMatchObject({ pushed: 1, failed: 0 })

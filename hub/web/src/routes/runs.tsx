@@ -1,4 +1,4 @@
-import { keepPreviousData, useQuery } from '@tanstack/react-query'
+import { keepPreviousData, type UseQueryOptions, useQuery } from '@tanstack/react-query'
 import { createFileRoute, useNavigate, useParams } from '@tanstack/react-router'
 import { ChevronRight } from 'lucide-react'
 import { useState } from 'react'
@@ -137,12 +137,15 @@ function RunsList() {
     limit: pageSize,
     search: searchQuery,
   }
+  const queryOptions = (isHostedMode()
+    ? trpc.record.runsView.queryOptions(input, {
+        refetchInterval: openMenus ? false : 30_000,
+      })
+    : trpc.run.list.queryOptions(input, {
+        refetchInterval: openMenus ? false : 30_000,
+      })) as unknown as UseQueryOptions<RunsPayload>
   const query = useQuery({
-    ...(isHostedMode()
-      ? trpc.record.runsView.queryOptions(input, {
-          refetchInterval: openMenus ? false : 30_000,
-        })
-      : trpc.run.list.queryOptions(input, { refetchInterval: openMenus ? false : 30_000 })),
+    ...queryOptions,
     placeholderData: keepPreviousData,
   })
   const payload = query.data as unknown as RunsPayload | undefined

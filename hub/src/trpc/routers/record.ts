@@ -20,9 +20,9 @@ import {
 import { routingViewData } from '../../orch-transforms.ts'
 import { createRecordClient } from '../../record-client.ts'
 import { duration, liveRowDisplay, runRowDisplay } from '../../run-display.ts'
+import { runListInput } from '../../run-list-input.ts'
 import { selectSnapshot } from '../../snapshot-selection.ts'
 import type { Context } from '../context.ts'
-import { runListInput } from './run.ts'
 
 const t = initTRPC.context<Context>().create()
 const uuid = z.string().uuid()

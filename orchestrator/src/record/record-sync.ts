@@ -177,6 +177,7 @@ function payload(source: string, kind: keyof typeof recordKinds): Payload {
   if (kind === 'run' && !Object.hasOwn(parsed, 'startedByUserId')) {
     Object.assign(parsed, { startedByUserId: null })
   }
+  if (kind === 'run' && !Object.hasOwn(parsed, 'taskKey')) Object.assign(parsed, { taskKey: null })
   const keys = Object.keys(parsed).sort()
   const expected = [...recordKinds[kind].columns].sort()
   if (keys.length !== expected.length || keys.some((key, index) => key !== expected[index])) {
