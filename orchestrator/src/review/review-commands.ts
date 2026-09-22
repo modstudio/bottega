@@ -72,6 +72,73 @@ function resolveTierRangeInRepo(repo: string, from: string, to: string) {
   return resolution
 }
 
+function resolveTierTarget(value: string): { repo: string; from: string; to: string } {
+  if (/^\d+$/.test(value)) {
+    return (() => {
+      const runId = Number(value)
+      const row = db()
+        .query('SELECT repo, job, branch, base_commit, input_tree, head_commit FROM run WHERE id=?')
+        .get(runId) as {
+        repo: string | null
+        job: string
+        branch: string | null
+        base_commit: string | null
+        input_tree: string | null
+        head_commit: string | null
+      } | null
+      if (!row) throw new Error(`no run ${runId}`)
+      const project = row.repo ? projectByName(row.repo) : null
+      if (!project) throw new Error(`run ${runId} has no registered project`)
+      if (!row.base_commit) throw new Error(`run ${runId} has no recorded base commit`)
+      // A writer run's input tree IS its base: what it built lives on its
+      // branch. Measure the branch tip when the branch still exists. A
+      // reader's input tree is the artifact it reviewed, so a reader keeps
+      // it even when a branch is recorded (DEV-323).
+      const writer = (() => {
+        try {
+          return job(row.job).needs.writesRepo
+        } catch {
+          return false
+        }
+      })()
+      const branchLive =
+        writer &&
+        row.branch &&
+        Bun.spawnSync(['git', 'show-ref', '--verify', '--quiet', `refs/heads/${row.branch}`], {
+          cwd: project.path,
+          env: targetGitEnvironment(project.path),
+          stdout: 'pipe',
+          stderr: 'pipe',
+        }).exitCode === 0
+      const reviewed = branchLive ? `refs/heads/${row.branch}` : (row.input_tree ?? row.head_commit)
+      if (!reviewed) throw new Error(`run ${runId} has no recorded input tree or head commit`)
+      return { repo: project.path, from: row.base_commit, to: reviewed }
+    })()
+  }
+
+  const project = projectAt(process.cwd())
+  if (!project) throw new Error('review tier target is not inside a registered project')
+  const repo = project.path
+  const range = parseTierRange(value)
+  if (range && 'refusal' in range) throw new Error(range.refusal)
+  if (range) {
+    return { repo, ...resolveTierRangeInRepo(repo, range.from, range.to) }
+  }
+
+  const branch = Bun.spawnSync(['git', 'show-ref', '--verify', '--quiet', `refs/heads/${value}`], {
+    cwd: repo,
+    env: targetGitEnvironment(repo),
+    stdout: 'pipe',
+    stderr: 'pipe',
+  })
+  if (branch.exitCode !== 0) {
+    throw new Error('review tier accepts a branch, run id, or explicit <from>..<to> range')
+  }
+  const trunk = typeof project.settings.trunk === 'string' ? project.settings.trunk.trim() : ''
+  if (!trunk) throw new Error(`project ${project.name} has no trunk configured`)
+  return { repo, ...resolveTierRangeInRepo(repo, trunk, value) }
+}
+
 export async function reviewCommand(
   sub: string | undefined,
   argv: string[],
@@ -170,77 +237,7 @@ export async function reviewCommand(
   if (sub === 'tier') {
     const value = argv[2]
     if (!value) throw new Error('orch review tier <branch|run-id|from..to> [--json]')
-    let repo: string
-    let from: string
-    let to: string
-    if (/^\d+$/.test(value)) {
-      const runId = Number(value)
-      const row = db()
-        .query('SELECT repo, job, branch, base_commit, input_tree, head_commit FROM run WHERE id=?')
-        .get(runId) as {
-        repo: string | null
-        job: string
-        branch: string | null
-        base_commit: string | null
-        input_tree: string | null
-        head_commit: string | null
-      } | null
-      if (!row) throw new Error(`no run ${runId}`)
-      const project = row.repo ? projectByName(row.repo) : null
-      if (!project) throw new Error(`run ${runId} has no registered project`)
-      if (!row.base_commit) throw new Error(`run ${runId} has no recorded base commit`)
-      // A writer run's input tree IS its base: what it built lives on its
-      // branch. Measure the branch tip when the branch still exists. A
-      // reader's input tree is the artifact it reviewed, so a reader keeps
-      // it even when a branch is recorded (DEV-323).
-      const writer = (() => {
-        try {
-          return job(row.job).needs.writesRepo
-        } catch {
-          return false
-        }
-      })()
-      const branchLive =
-        writer &&
-        row.branch &&
-        Bun.spawnSync(['git', 'show-ref', '--verify', '--quiet', `refs/heads/${row.branch}`], {
-          cwd: project.path,
-          env: targetGitEnvironment(project.path),
-          stdout: 'pipe',
-          stderr: 'pipe',
-        }).exitCode === 0
-      const reviewed = branchLive ? `refs/heads/${row.branch}` : (row.input_tree ?? row.head_commit)
-      if (!reviewed) throw new Error(`run ${runId} has no recorded input tree or head commit`)
-      repo = project.path
-      from = row.base_commit
-      to = reviewed
-    } else {
-      const project = projectAt(process.cwd())
-      if (!project) throw new Error('review tier target is not inside a registered project')
-      repo = project.path
-      const range = parseTierRange(value)
-      if (range && 'refusal' in range) throw new Error(range.refusal)
-      if (range) {
-        ;({ from, to } = resolveTierRangeInRepo(repo, range.from, range.to))
-      } else {
-        const branch = Bun.spawnSync(
-          ['git', 'show-ref', '--verify', '--quiet', `refs/heads/${value}`],
-          {
-            cwd: repo,
-            env: targetGitEnvironment(repo),
-            stdout: 'pipe',
-            stderr: 'pipe',
-          },
-        )
-        if (branch.exitCode !== 0) {
-          throw new Error('review tier accepts a branch, run id, or explicit <from>..<to> range')
-        }
-        const trunk =
-          typeof project.settings.trunk === 'string' ? project.settings.trunk.trim() : ''
-        if (!trunk) throw new Error(`project ${project.name} has no trunk configured`)
-        ;({ from, to } = resolveTierRangeInRepo(repo, trunk, value))
-      }
-    }
+    const { repo, from, to } = resolveTierTarget(value)
     const tier = classifyReviewTier({ files: diffNumstat(repo, from, to) })
     if (has('json')) log(JSON.stringify(tier))
     else {

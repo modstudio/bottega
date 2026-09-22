@@ -10,7 +10,7 @@ export type ReviewTier = {
 
 export type ReviewTierFile = { path: string; insertions: number; deletions: number }
 
-export type TierRangeEndpointKind = 'commit' | 'tree' | 'other' | 'unresolvable'
+type TierRangeEndpointKind = 'commit' | 'tree' | 'other' | 'unresolvable'
 
 export type TierRangeEndpoint = {
   ref: string
