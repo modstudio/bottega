@@ -72,7 +72,7 @@ function replyFileMatches(
   contract: ReplyContract,
   text: string | null,
   dialect: ReplyDialect,
-  schema: unknown,
+  schema: Parameters<typeof validatesSchema>[1],
 ): boolean {
   if (text === null) return false
   if (contract !== 'custom') return dialect.parse(text).reply !== null
