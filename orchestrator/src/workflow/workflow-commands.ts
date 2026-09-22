@@ -13,7 +13,7 @@ import {
   showStepCatalogue,
   stepCatalogueVersions,
 } from './step-catalogue.ts'
-import { renderWorkflowComposition } from './workflow-render.ts'
+import { renderWorkflowComposition, renderWorkflowStep } from './workflow-render.ts'
 import { parseWorkflowTree, planWorkflowHydration } from './workflow-tree.ts'
 import { applyWorkflowTreePlan, collectWorkflowTree } from './workflow-tree-files.ts'
 import { importWorkflowTree, productionWorkflowTree } from './workflow-tree-store.ts'
@@ -93,8 +93,9 @@ function stepCommand(argv: string[], print: (value: unknown, line?: string) => v
   const step = getWorkflowStep(argv[2]!, project, argv[3]!, workflowArgs(argv), undefined, {
     version: positive(flagValue(argv, 'version'), '--version'),
     catalogueVersion: positive(flagValue(argv, 'catalogue-version'), '--catalogue-version'),
+    mode: flagValue(argv, 'mode'),
   })
-  print(step, `facts: ${JSON.stringify(step.facts)}\n${step.body}`)
+  print(step, renderWorkflowStep(step))
 }
 
 function catalogueCommand(argv: string[], print: (value: unknown, line?: string) => void): void {

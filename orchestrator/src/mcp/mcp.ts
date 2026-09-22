@@ -44,6 +44,7 @@ import {
 } from '../porting/porting.ts'
 import { projectAt, projectByName, projects } from '../project/projects.ts'
 import { getReview, listReviews } from '../review/review.ts'
+import { renderWorkflowStep } from '../workflow/workflow-render.ts'
 import { composeWorkflow, getWorkflowStep, listWorkflows } from '../workflow/workflows.ts'
 import { decideMcpDocWrite } from './mcp-doc-write.ts'
 import { registerWorkflowPrompts } from './mcp-prompts.ts'
@@ -432,15 +433,20 @@ export function createDocsMcpServer(): McpServer {
   server.registerTool(
     'get_workflow_step',
     {
-      description: 'Fetch one reached workflow step with argument substitutions applied.',
+      description:
+        'Fetch one workflow step body with argument substitutions applied. Pass mode so the reply names the next step.',
       inputSchema: {
         slug: z.string().trim().min(1),
         project: z.string().trim().min(1),
         step: z.string().trim().min(1),
+        mode: z.string().trim().min(1).optional(),
         args: z.record(z.string(), z.string()).optional(),
       },
     },
-    async ({ slug, project, step, args }) => text(getWorkflowStep(slug, project, step, args ?? {})),
+    async ({ slug, project, step, mode, args }) =>
+      text(
+        renderWorkflowStep(getWorkflowStep(slug, project, step, args ?? {}, undefined, { mode })),
+      ),
   )
 
   server.registerTool(

@@ -352,7 +352,7 @@ type WorkflowNeeds = {
   mode?: { slug: string; title: string; entry: string }[]
   arguments?: string[]
 }
-type WorkflowSelection = { version?: number; catalogueVersion?: number }
+type WorkflowSelection = { version?: number; catalogueVersion?: number; mode?: string }
 const selectedWorkflow = (slug: string, version: number | undefined, d: Database) =>
   version === undefined
     ? parseVersion(productionVersionRow(slug, d))
@@ -410,7 +410,12 @@ export function composeWorkflow(
     composeIndexSources,
   )
   return {
-    workflow: { slug, title: definition.title, version: row.n },
+    workflow: {
+      slug,
+      title: definition.title,
+      description: definition.description,
+      version: row.n,
+    },
     project: projectName,
     catalogue: { version: catalogue.n },
     mode: mode ? { slug: mode.slug, title: mode.title } : null,
@@ -447,8 +452,14 @@ export function getWorkflowStep(
   const row = selectedWorkflow(slug, selection.version, d),
     definition = row.definition,
     catalogue = selectedCatalogue(selection.catalogueVersion, d),
-    referenced = definition.modes.some((mode) => mode.steps.includes(stepSlug)),
+    selectedMode = selection.mode
+      ? definition.modes.find((mode) => mode.slug === selection.mode)
+      : undefined,
+    containingModes = definition.modes.filter((mode) => mode.steps.includes(stepSlug)),
+    referenced = selectedMode ? selectedMode.steps.includes(stepSlug) : containingModes.length > 0,
     step = catalogue.definition.steps.find((item) => item.slug === stepSlug)
+  if (selection.mode && !selectedMode)
+    throw new Error(`workflow "${slug}" has no mode "${selection.mode}"`)
   if (!referenced || !step) throw new Error(`workflow "${slug}" has no step "${stepSlug}"`)
   const missing = definition.arguments
     .filter((arg) => arg.required && !args[arg.name])
@@ -476,14 +487,28 @@ export function getWorkflowStep(
     }
     return String(value)
   })
+  const successor = (mode: WorkflowMode) => {
+    const index = mode.steps.indexOf(stepSlug)
+    if (index === mode.steps.length - 1) return null
+    const next = catalogue.definition.steps.find((item) => item.slug === mode.steps[index + 1])!
+    return { n: index + 2, slug: next.slug, title: next.title }
+  }
+  const successors = (selectedMode ? [selectedMode] : containingModes).map(successor)
+  const next = selectedMode
+    ? successors[0]
+    : successors.every((candidate) => JSON.stringify(candidate) === JSON.stringify(successors[0]))
+      ? successors[0]
+      : undefined
   return {
     ...step,
     workflow: slug,
     version: row.n,
     catalogueVersion: catalogue.n,
     project: projectName,
+    mode: selectedMode?.slug,
     facts,
     body,
+    next,
   }
 }
 
