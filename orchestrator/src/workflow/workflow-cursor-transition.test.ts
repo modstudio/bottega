@@ -68,7 +68,7 @@ describe('workflow cursor transition', () => {
     ).toEqual({ action: 'refuse', reason: 'compose-first' })
   })
 
-  test('finishes the last step, refuses done, and advances from awaiting-ruling', () => {
+  test('finishes the last step, refuses terminal cursors, and advances from awaiting-ruling', () => {
     expect(
       decideCursorTransition(cursor(2, 'three'), { kind: 'next', total: 3, nextSlug: null }),
     ).toEqual({ action: 'finish' })
@@ -77,6 +77,22 @@ describe('workflow cursor transition', () => {
         kind: 'next',
         total: 3,
         nextSlug: null,
+      }),
+    ).toEqual({ action: 'refuse', reason: 'state' })
+    expect(
+      decideCursorTransition(cursor(1, 'two', 'abandoned'), {
+        kind: 'serve',
+        ordinal: 1,
+        slug: 'two',
+        expectedOrdinal: 1,
+        expectedSlug: 'two',
+      }),
+    ).toEqual({ action: 'refuse', reason: 'state' })
+    expect(
+      decideCursorTransition(cursor(1, 'two', 'abandoned'), {
+        kind: 'next',
+        total: 3,
+        nextSlug: 'three',
       }),
     ).toEqual({ action: 'refuse', reason: 'state' })
     expect(

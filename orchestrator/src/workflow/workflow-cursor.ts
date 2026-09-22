@@ -264,7 +264,8 @@ function nextWorkflowStepImpl(
   const row = findCursor(project, slug, mode, args, context, d)
   if (!row)
     throw new Error(`workflow ${slug} for ${keyOf(args)} has no cursor; compose the workflow first`)
-  if (row.state === 'done') throw new Error(`workflow ${slug} for ${row.workflow_key} is done`)
+  if (row.state === 'done' || row.state === 'abandoned')
+    throw new Error(`workflow ${slug} for ${row.workflow_key} is ${row.state}`)
   if (!note?.trim()) {
     const composition = cursorComposition(row, d)
     const step = composition.steps[row.ordinal]!
@@ -328,6 +329,51 @@ export function nextWorkflowStep(
   )
 }
 
+function abandonWorkflowCursorImpl(
+  slug: string,
+  project: string,
+  mode: string,
+  args: Record<string, string>,
+  reason: string | undefined,
+  context: WorkflowCursorContext,
+  d: Database = writableDb(),
+): string {
+  if (!reason?.trim()) throw new Error('--reason is required')
+  const row = findCursor(project, slug, mode, args, context, d)
+  if (!row)
+    throw new Error(`workflow ${slug} for ${keyOf(args)} has no cursor; compose the workflow first`)
+  if (row.state === 'done' || row.state === 'abandoned')
+    throw new Error(`workflow ${slug} for ${row.workflow_key} is ${row.state}`)
+  const at = nowIso()
+  const closed = JSON.parse(row.closed) as ClosedStep[]
+  closed.push({
+    n: row.ordinal + 1,
+    slug: row.step_slug,
+    note: `abandoned: ${reason.trim()}`,
+    at,
+  })
+  d.query(
+    `UPDATE workflow_cursor SET state='abandoned',closed=?,question=NULL,
+     session_id=COALESCE(?,session_id),updated_at=? WHERE id=?`,
+  ).run(JSON.stringify(closed), context.session ?? null, at, row.id)
+  return `Workflow ${slug} for ${row.workflow_key} was abandoned at step ${row.ordinal + 1} ${row.step_slug}.`
+}
+
+export function abandonWorkflowCursor(
+  slug: string,
+  project: string,
+  mode: string,
+  args: Record<string, string>,
+  reason: string | undefined,
+  context: WorkflowCursorContext,
+  d: Database = writableDb(),
+): string {
+  return writeTransaction(
+    () => abandonWorkflowCursorImpl(slug, project, mode, args, reason, context, d),
+    d,
+  )
+}
+
 function awaitWorkflowRulingImpl(
   slug: string,
   project: string,
@@ -341,7 +387,8 @@ function awaitWorkflowRulingImpl(
   const row = findCursor(project, slug, mode, args, context, d)
   if (!row)
     throw new Error(`workflow ${slug} for ${keyOf(args)} has no cursor; compose the workflow first`)
-  if (row.state === 'done') throw new Error(`workflow ${slug} for ${row.workflow_key} is done`)
+  if (row.state === 'done' || row.state === 'abandoned')
+    throw new Error(`workflow ${slug} for ${row.workflow_key} is ${row.state}`)
   d.query(
     `UPDATE workflow_cursor SET state='awaiting-ruling',question=?,
      session_id=COALESCE(?,session_id),updated_at=? WHERE id=?`,
@@ -390,7 +437,7 @@ export function listWorkflowCursors(
   const cwdProject =
     options.all || options.project || options.session ? undefined : projectAt(cwd)?.name
   const project = workflowCursorProjectScope(options, cwdProject, cwd)
-  const clauses = [`state <> 'done'`]
+  const clauses = [`state NOT IN ('done','abandoned')`]
   const values: string[] = []
   if (project) {
     clauses.push('project=?')

@@ -1,4 +1,4 @@
-export type CursorState = 'running' | 'awaiting-ruling' | 'done'
+export type CursorState = 'running' | 'awaiting-ruling' | 'done' | 'abandoned'
 
 export type CursorValue = {
   ordinal: number
@@ -20,6 +20,8 @@ export function decideCursorTransition(
   cursor: CursorValue | null,
   request: CursorTransitionRequest,
 ): CursorTransition {
+  if (cursor?.state === 'done' || cursor?.state === 'abandoned')
+    return { action: 'refuse', reason: 'state' }
   if (request.kind === 'serve') {
     if (!cursor) {
       return request.ordinal === 0
@@ -32,7 +34,7 @@ export function decideCursorTransition(
         ordinal: cursor.ordinal,
         slug: cursor.stepSlug,
         move: false,
-        resume: request.ordinal === cursor.ordinal && cursor.state !== 'done',
+        resume: request.ordinal === cursor.ordinal,
       }
     if (request.ordinal === cursor.ordinal + 1)
       return {
@@ -46,7 +48,6 @@ export function decideCursorTransition(
   }
 
   if (!cursor) return { action: 'refuse', reason: 'compose-first' }
-  if (cursor.state === 'done') return { action: 'refuse', reason: 'state' }
   if (cursor.ordinal === request.total - 1) return { action: 'finish' }
   return {
     action: 'serve',
