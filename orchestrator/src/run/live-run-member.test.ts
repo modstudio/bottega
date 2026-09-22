@@ -13,10 +13,12 @@ describe('live run member', () => {
     agent: 'codex',
     job: 'review-lens',
     session_id: 'session-88',
-    agent_pid: 880,
+    agent_pid: process.pid,
     agent_start_time: 'recorded birth',
   }
-  const idle: ProcessSample[] = [{ pid: 880, ppid: 1, pgid: 880, cpu: 0, state: 'S' }]
+  const idle: ProcessSample[] = [
+    { pid: process.pid, ppid: 1, pgid: process.pid, cpu: 0, state: 'S' },
+  ]
   const busy: ProcessSample[] = [{ ...idle[0]!, cpu: 99 }]
 
   test('PID reuse cannot turn an idle unrelated process into a stall', () => {

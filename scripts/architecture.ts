@@ -234,7 +234,6 @@ export const modules: ArchitectureModule[] = [
     '../git/git-environment.ts',
     '../hook-tree/hook-tree.ts',
     '../idle-kill.ts',
-    '../jobs/jobs.ts',
     '../stalled-run.ts',
     './monitor-types.ts',
     '../../../shared/process-identity.ts',

@@ -1,6 +1,7 @@
 import { describe, expect, spyOn, test } from 'bun:test'
 import { addRun, score } from '../../test/fixtures/store.ts'
 import { db, nowIso } from '../database/db.ts'
+import { liveMemberStall } from '../run/live-run-member.ts'
 import {
   askingRuns,
   deadRunningProcessConditions,
@@ -11,7 +12,6 @@ import {
   reconcileHub,
   rulingConditions,
   staleTrustEntryConditions,
-  stalledRunCondition,
   stalledRunConditions,
   terminalProcessPgid,
   unsettledClaimConditions,
@@ -55,29 +55,7 @@ describe('idle run classification', () => {
 })
 
 describe('stalled run monitor condition', () => {
-  const row = {
-    id: 5406,
-    started_at: '2026-09-17T12:00:00.000Z',
-    last_event_at: '2026-09-17T12:01:00.000Z',
-    agent: 'codex',
-    job: 'review-lens',
-    session_id: 'session-5406',
-    cpuMoving: false,
-    idleBoundMs: 30 * 60_000,
-  }
-
-  test('reports the same facts and remedy used by the heartbeat', () => {
-    const condition = stalledRunCondition(row, Date.parse('2026-09-17T12:26:00.000Z'), 25 * 60_000)
-    expect(condition).toMatchObject({
-      kind: 'stalled-run',
-      subject: 'run:5406',
-      ownerSession: 'session-5406',
-      detail:
-        'run 5406 codex/review-lens has been silent for 25m and has used no CPU in that time; stop it and re-dispatch, or wait for the 30m idle bound',
-    })
-  })
-
-  test('uses the running turn identity shared with the listing', () => {
+  test('wraps the running turn stall observation in the monitor envelope', () => {
     const root = addRun({
       agent: 'codex',
       job: 'implement',
@@ -94,18 +72,33 @@ describe('stalled run monitor condition', () => {
     })
     db()
       .query('UPDATE run SET agent_pid=?,agent_start_time=?,last_event_at=? WHERE id=?')
-      .run(880, 'recorded birth', '2026-09-17T12:01:00.000Z', turn)
+      .run(process.pid, 'recorded birth', '2026-09-17T12:01:00.000Z', turn)
+
+    const clock = Date.parse('2026-09-17T12:30:00.000Z')
+    const samples = [{ pid: process.pid, ppid: 1, pgid: process.pid, cpu: 0, state: 'S' }]
+    const member = {
+      id: turn,
+      started_at: '2026-09-17T12:00:00.000Z',
+      last_event_at: '2026-09-17T12:01:00.000Z',
+      agent: 'grok',
+      job: 'review-lens',
+      session_id: 'session-chain',
+      agent_pid: process.pid,
+      agent_start_time: 'recorded birth',
+    }
+    const observed = liveMemberStall(member, samples, clock, 25 * 60_000, () => 'recorded birth')
 
     expect(
-      stalledRunConditions(Date.parse('2026-09-17T12:30:00.000Z'), {
-        samples: [{ pid: 880, ppid: 1, pgid: 880, cpu: 0, state: 'S' }],
+      stalledRunConditions(clock, {
+        samples,
         observedStartTime: () => 'recorded birth',
       }),
     ).toEqual([
       expect.objectContaining({
         subject: `run:${turn}`,
         ownerSession: 'session-chain',
-        detail: expect.stringContaining(`run ${turn} grok/review-lens`),
+        ageMs: observed.idleMs,
+        detail: observed.detail,
       }),
     ])
   })

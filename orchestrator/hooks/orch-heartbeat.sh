@@ -23,9 +23,10 @@
 # and a lower interval is what actually gets a blocked worker noticed sooner -
 # the poll can be frequent precisely because only transitions are expensive.
 #
-# The state key is (asking-count, run-count, sorted run ids, landing-count,
-# sorted landing ids). Work appearing or terminalising changes it; time passing
-# does not.
+# The state key is (asking-count, run-count, sorted run ids with each run's
+# liveness class, landing-count, sorted landing ids). A run changing liveness
+# class is a state change even when the ids are unchanged. Elapsed time never
+# enters the key.
 #
 # CLEAR is silent so this stays cheap to run often: the answer to "should this
 # session still be waiting" is only worth a notification when it is yes, or when
@@ -116,7 +117,7 @@ import sys, json, os, datetime
 sid = os.environ["SID"]
 now = datetime.datetime.now(datetime.timezone.utc)
 recent_seconds = max(2 * float(os.environ["INTERVAL"]), 600)
-out, ids, events, stalled = [], [], [], []
+out, ids, events, stalled, stalled_subjects = [], [], [], [], []
 saw = False
 for line in sys.stdin:
     line = line.strip()
@@ -199,12 +200,17 @@ for line in sys.stdin:
         if not isinstance(stall, str) or not stall:
             raise SystemExit(2)
         stalled.append(stall.replace("\t", " ").replace("\r", " ").replace("\n", " "))
+        member_id = d.get("live_member_id")
+        if not isinstance(member_id, int):
+            raise SystemExit(2)
+        stalled_subjects.append("run:" + str(member_id))
     ids.append(str(d.get("id")) + ("s" if stall_state == "stalled" else ("i" if idle_note else "")))
     out.append("%s/%s %s %s %s%s" % (d.get("id"), d.get("job"), d.get("agent"), d.get("status"), age, idle_note))
 if not saw:
     raise SystemExit(2)
 # count \t detail \t state-key (ids only - elapsed must never enter the key)
-print("STATE", len(out), " | ".join(out), ",".join(sorted(ids)), len(stalled), " | ".join(stalled), sep="\t")
+print("STATE", len(out), " | ".join(out), ",".join(sorted(ids)), len(stalled),
+      ",".join(sorted(stalled_subjects)), " | ".join(stalled), sep="\t")
 for event in events:
     print("EVENT", *event, sep="\t")
 ') ; runs_parse_rc=$?
@@ -267,7 +273,8 @@ print("STATE", len(live), " | ".join(live), ",".join(ids), sep="\t")
   n=${state%%$'\t'*}; rest=${state#*$'\t'}
   detail=${rest%%$'\t'*}; rest=${rest#*$'\t'}
   ids=${rest%%$'\t'*}; rest=${rest#*$'\t'}
-  stalled_n=${rest%%$'\t'*}; stalled_detail=${rest#*$'\t'}
+  stalled_n=${rest%%$'\t'*}; rest=${rest#*$'\t'}
+  stalled_subjects=${rest%%$'\t'*}; stalled_detail=${rest#*$'\t'}
   n=${n:-0}
   stalled_n=${stalled_n:-0}
   landing_state=${landings_observed%%$'\n'*}
@@ -295,24 +302,24 @@ print("STATE", len(live), " | ".join(live), ",".join(ids), sep="\t")
   key="$asking|$n|$ids|$landing_n|$landing_ids"
   since_emit=$((since_emit + 1))
   should_exit=0
+  direct_stalled_subjects=""
   if [ "$key" != "$prev_key" ] || [ "$since_emit" -ge "$KEEPALIVE_TICKS" ]; then
     prev_key="$key"; since_emit=0
     ts=$(date +%H:%M:%S)
     if [ "$asking" -gt 0 ]; then
       echo "[$ts] BLOCKED - $asking question(s) waiting on you: run 'orch inbox', then 'orch answer <id>'. $n run(s) and $landing_n landing(s) live."
-      if [ "$stalled_n" -gt 0 ]; then
-        echo "[$ts] STALLED - $stalled_n run(s): $stalled_detail"
-      fi
-    elif [ "$stalled_n" -gt 0 ]; then
+    fi
+    if [ "$stalled_n" -gt 0 ]; then
       echo "[$ts] STALLED - $stalled_n run(s): $stalled_detail"
-    elif [ "$n" -gt 0 ] || [ "$landing_n" -gt 0 ]; then
+      direct_stalled_subjects="$stalled_subjects"
+    elif [ "$asking" -eq 0 ] && { [ "$n" -gt 0 ] || [ "$landing_n" -gt 0 ]; }; then
       combined_detail="$detail"
       if [ -n "$landing_detail" ]; then
         [ -z "$combined_detail" ] || combined_detail="$combined_detail | "
         combined_detail="$combined_detail$landing_detail"
       fi
       echo "[$ts] WAITING - $n run(s) and $landing_n landing(s), nothing needed from you: $combined_detail"
-    else
+    elif [ "$asking" -eq 0 ]; then
       should_exit=1
     fi
   elif [ "$asking" -eq 0 ] && [ "$n" -eq 0 ] && [ "$landing_n" -eq 0 ]; then
@@ -342,7 +349,7 @@ print("STATE", len(live), " | ".join(live), ",".join(ids), sep="\t")
   if [ -s "$monitor_timed_out" ]; then monitor_rc=124; fi
   rm -f "$monitor_err" "$monitor_out" "$monitor_timed_out"
 
-  monitor_observed=$(printf '%s' "$monitor_raw" | SID="$SID" python3 -c '
+  monitor_observed=$(printf '%s' "$monitor_raw" | SID="$SID" STALLED_SUBJECTS="$direct_stalled_subjects" python3 -c '
 import sys, json, os
 try:
     rows = json.load(sys.stdin)
@@ -362,9 +369,10 @@ for row in rows:
         raise SystemExit(2)
     values = [row[key].replace("\t", " ").replace("\r", " ").replace("\n", " ")
               for key in ("kind", "subject", "detail")]
-    message = values[2] if values[0].startswith("landing-") else (
+    directly_reported = set(filter(None, os.environ["STALLED_SUBJECTS"].split(",")))
+    message = "" if values[0] == "stalled-run" and values[1] in directly_reported else (values[2] if values[0].startswith("landing-") else (
         "MONITOR " + values[0] + " " + values[1] + ": " + values[2]
-    )
+    ))
     print(str(row["noticeId"]) + "\t" + message)
 ' 2>/dev/null); monitor_parse_rc=$?
 

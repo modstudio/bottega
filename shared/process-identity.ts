@@ -36,3 +36,21 @@ export function processStartTime(pid: number): string | null {
     return null
   }
 }
+
+export type PidRecordIdentity = 'live' | 'dead' | 'reused' | 'unknown'
+
+/**
+ * Compare a recorded pid against its recorded birth time.
+ * Unknown is not live: destruction and sampling require an established identity.
+ */
+export function pidRecordIdentity(
+  pid: number | null | undefined,
+  recordedStartTime: string | null | undefined,
+  observedStartTime: (pid: number) => string | null = processStartTime,
+): PidRecordIdentity {
+  if (!pid || pid <= 1 || !pidAlive(pid)) return 'dead'
+  if (!recordedStartTime) return 'unknown'
+  const actual = observedStartTime(pid)
+  if (actual === null) return 'unknown'
+  return actual === recordedStartTime ? 'live' : 'reused'
+}

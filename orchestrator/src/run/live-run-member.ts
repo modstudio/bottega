@@ -1,8 +1,11 @@
 // concern: live-run-member
-/** Owns the canonical current member of a run chain and its stalled-run observation. */
+/**
+ * Owns the canonical current member of a run chain and its stalled-run observation.
+ * Knows nothing of monitor condition shape, the CLI, killing a run, or project locks.
+ */
 
 import type { Database } from 'bun:sqlite'
-import { processStartTime } from '../../../shared/process-identity.ts'
+import { pidRecordIdentity, processStartTime } from '../../../shared/process-identity.ts'
 import { db } from '../database/db.ts'
 import { idleMsSince } from '../events.ts'
 import { type ProcessSample, processTreeCpuMoving } from '../idle-kill.ts'
@@ -61,14 +64,9 @@ export function liveMemberStall(
 ): LiveMemberStall {
   const idleMs = idleMsSince(member.last_event_at, member.started_at, clock)
   const idleBoundMs = jobIdleKillMs(member.job)
-  const observed = member.agent_pid ? observedStartTime(member.agent_pid) : null
+  const identity = pidRecordIdentity(member.agent_pid, member.agent_start_time, observedStartTime)
   const cpuMoving =
-    member.agent_pid &&
-    member.agent_start_time !== null &&
-    observed !== null &&
-    observed === member.agent_start_time
-      ? processTreeCpuMoving(member.agent_pid, samples)
-      : null
+    identity === 'live' && member.agent_pid ? processTreeCpuMoving(member.agent_pid, samples) : null
   const state = stalledRunState({ idleMs, cpuMoving, idleBoundMs, thresholdMs })
   return {
     state,

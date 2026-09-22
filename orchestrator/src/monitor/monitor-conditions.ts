@@ -4,14 +4,18 @@ import { fileURLToPath } from 'node:url'
 
 import { existsSync } from 'node:fs'
 import { join } from 'node:path'
-import { pidAlive, processStartTime } from '../../../shared/process-identity.ts'
+import {
+  type PidRecordIdentity,
+  pidAlive,
+  pidRecordIdentity,
+  processStartTime,
+} from '../../../shared/process-identity.ts'
 import { db, liveRuns } from '../database/db.ts'
 import { idleLabel, idleMsSince, idleWarnMs } from '../events.ts'
 import { UNSCORED_WHERE } from '../evidence/evidence-query.ts'
 import { targetGitEnvironment } from '../git/git-environment.ts'
 import { hookTreeNotice } from '../hook-tree/hook-tree.ts'
 import { runHasLiveDescendants, sampleProcesses } from '../idle-kill.ts'
-import { type PidRecordIdentity, pidRecordIdentity } from '../project/project-lock.ts'
 import { projects } from '../project/projects.ts'
 import type { ResourceClaimKind } from '../resources/resource-claims.ts'
 import {
@@ -27,7 +31,7 @@ import {
   isSyntheticLifecycleJob,
   SYNTHETIC_LIFECYCLE_JOBS,
 } from '../run/synthetic-lifecycle-job.ts'
-import { idleStallMs, stalledRunDetail, stalledRunState } from '../stalled-run.ts'
+import { idleStallMs } from '../stalled-run.ts'
 import type { MonitorCondition } from './monitor-types.ts'
 
 const HUB = fileURLToPath(new URL('../../../bin/hub', import.meta.url))
@@ -199,39 +203,6 @@ export function idleRunConditions(clock = Date.now()): MonitorCondition[] {
   })
 }
 
-type StalledRunFacts = Omit<IdleRunFacts, 'pidAlive'> & {
-  cpuMoving: boolean | null
-  idleBoundMs: number
-}
-
-/** Classify and render a machine-wide stalled-run condition from observed facts. */
-export function stalledRunCondition(
-  run: StalledRunFacts,
-  clock = Date.now(),
-  thresholdMs = idleStallMs(),
-): MonitorCondition | null {
-  const idleMs = idleMsSince(run.last_event_at, run.started_at, clock)
-  if (
-    stalledRunState({
-      idleMs,
-      cpuMoving: run.cpuMoving,
-      idleBoundMs: run.idleBoundMs,
-      thresholdMs,
-    }) !== 'stalled' ||
-    idleMs === null
-  )
-    return null
-  return {
-    kind: 'stalled-run',
-    subject: `run:${run.id}`,
-    since: run.last_event_at ?? run.started_at,
-    ageMs: idleMs,
-    detail: stalledRunDetail({ ...run, idleMs }),
-    action: `run orch stop ${run.id}, then re-dispatch; otherwise wait for the idle bound`,
-    ownerSession: run.session_id,
-  }
-}
-
 /** Report silent, CPU-idle workers without changing their lifecycle. */
 export function stalledRunConditions(
   clock = Date.now(),
@@ -244,15 +215,19 @@ export function stalledRunConditions(
   const samples = deps.samples ?? (running.length ? sampleProcesses() : [])
   return running.flatMap((run): MonitorCondition[] => {
     const observed = liveMemberStall(run, samples, clock, idleStallMs(), deps.observedStartTime)
-    const condition = stalledRunCondition(
+    if (observed.state !== 'stalled' || observed.idleMs === null || observed.detail === null)
+      return []
+    return [
       {
-        ...run,
-        cpuMoving: observed.state === 'unknown' ? null : observed.state === 'healthy',
-        idleBoundMs: observed.idleBoundMs,
+        kind: 'stalled-run',
+        subject: `run:${run.id}`,
+        since: run.last_event_at ?? run.started_at,
+        ageMs: observed.idleMs,
+        detail: observed.detail,
+        action: `run orch stop ${run.id}, then re-dispatch; otherwise wait for the idle bound`,
+        ownerSession: run.session_id,
       },
-      clock,
-    )
-    return condition ? [condition] : []
+    ]
   })
 }
 
