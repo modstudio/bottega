@@ -146,8 +146,9 @@
   {
     "file": "orchestrator/src/cleanup/cleanup-sweep.ts",
     "function": "withCleanupLock callback#1",
-    "line": 266,
-    "score": 28
+    "line": 476,
+    "score": 24,
+    "key": "orchestrator/src/cleanup/cleanup-sweep.ts\u0000withCleanupLock callback#1"
   },
   {
     "file": "orchestrator/src/cleanup/cleanup.ts",
