@@ -108,12 +108,6 @@ function linkedNodeModules(worktree: string): string[] {
   return [...found].sort()
 }
 
-export function readonlyNeedsDocker(notes: string | undefined): boolean {
-  return /(?:\b(?:need|needs|require|requires|must use)\b.{0,80}\bdocker\b|\bdocker\b.{0,80}\b(?:needed|required|must be used)\b|\brun\b.{0,40}\b(?:checks?|tests?)\b.{0,40}\b(?:with|in|via)\s+docker\b)/is.test(
-    notes ?? '',
-  )
-}
-
 function localHost(baseUrl: string): string[] {
   if (!baseUrl) return []
   try {
@@ -241,7 +235,7 @@ export function selectReadonlySandbox(input: {
   runsDir: string
   scratchDir?: string
   project: Project | null
-  readonlyNotes?: string
+  readonlyDocker?: boolean
   override?: string
   path?: string
   localBaseUrl?: string
@@ -279,11 +273,11 @@ export function selectReadonlySandbox(input: {
         'the sandbox root is missing',
     )
   }
-  if (input.readsRepo && readonlyNeedsDocker(input.readonlyNotes)) {
+  if (input.readsRepo && input.readonlyDocker) {
     return {
       sandbox: 'host',
       profile: null,
-      reason: 'project worktree.readonly_notes says read-only checks need Docker',
+      reason: 'project worktree.readonly_docker allows read-only checks through Docker',
     }
   }
   return {

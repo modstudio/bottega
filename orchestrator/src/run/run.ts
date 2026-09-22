@@ -113,6 +113,7 @@ import {
 } from './run-artifacts.ts'
 import { claimRun } from './run-claim.ts'
 import { closeRun } from './run-close.ts'
+import { decideCodexSandbox } from './run-codex-sandbox.ts'
 import { acquireRunLease } from './run-lease.ts'
 import { runLive } from './run-live.ts'
 import * as mcpAttachment from './run-mcp-attachment.ts'
@@ -335,6 +336,7 @@ export async function run(opts: {
   const forbidsRepo = requestedJob.needs.readsRepo === false
   const requestedTransport = resolveRunTransport(opts)
   const callerCwd = opts.cwd ?? process.cwd()
+  const registeredWorktreeTool = toolFor(callerCwd)
   const seed = preflight(
     opts.job,
     callerCwd,
@@ -433,7 +435,7 @@ export async function run(opts: {
    */
   const infra = (() => {
     if (!repoJob) return ''
-    const tool = toolFor(opts.cwd ?? process.cwd())
+    const tool = registeredWorktreeTool
     if (!tool) return ''
     if (!writesJob && (!tool.readonly_create || tool.readonly_notes !== undefined)) {
       const tree =
@@ -441,8 +443,11 @@ export async function run(opts: {
           ? `This read-only run has the project's files at ${readOnlyBase}. ${tool.readonly_notes}`
           : `This read-only run has the project's files at ${readOnlyBase} with NO provisioned ` +
             `infrastructure (no databases, no generated env, no vendor tree).`
+      const docker = tool.readonly_docker
+        ? " Docker is reachable from this tree so that the project's gate can run; run the gate and no other Docker verb."
+        : ''
       return (
-        `${tree} Do not treat a test suite that cannot start as a finding; ` +
+        `${tree}${docker} Do not treat a test suite that cannot start as a finding; ` +
         `record what you could not run in could_not_verify.`
       )
     }
@@ -567,6 +572,12 @@ export async function run(opts: {
         opts.lens,
       )
   const a = requireAgent(name)
+  const codexSandbox = decideCodexSandbox({
+    agentIsCodex: name === 'codex',
+    readsRepo: repoJob,
+    writesRepo: writesJob,
+    readonlyDocker: registeredWorktreeTool?.readonly_docker === true,
+  })
   let boundMs: number
   try {
     // A durable historical row can name an agent that is no longer registered.
@@ -786,7 +797,7 @@ export async function run(opts: {
       runsDir: sandboxRunDir,
       scratchDir,
       project: projectAt(callerCwd),
-      readonlyNotes: toolFor(callerCwd)?.readonly_notes,
+      readonlyDocker: registeredWorktreeTool?.readonly_docker === true,
       override: process.env.ORCH_SANDBOX,
       path: process.env.PATH,
       localBaseUrl: modelHostUrl(),
@@ -1087,6 +1098,7 @@ export async function run(opts: {
       recipeEnvironment,
       scratchDir,
       writesJob,
+      codexSandbox,
       launchKey,
       requestedJob,
       boundMs,

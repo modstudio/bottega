@@ -144,6 +144,10 @@ export type LiveInput = {
   recipeEnvironment: Record<string, string>
   scratchDir: string
   writesJob: boolean
+  codexSandbox: {
+    sandbox: 'read-only' | 'workspace-write'
+    workspaceWriteNetworkAccess: boolean
+  }
   launchKey: string | null
   requestedJob: Job
   boundMs: number
@@ -221,6 +225,7 @@ export async function runLive(input: LiveInput): Promise<LiveResult> {
     recipeEnvironment,
     scratchDir,
     writesJob,
+    codexSandbox,
     launchKey,
     requestedJob,
     boundMs,
@@ -305,7 +310,8 @@ export async function runLive(input: LiveInput): Promise<LiveResult> {
       home: sandboxEnvironment.HOME,
       startedAt: started,
       write: writes,
-      sandbox: repoJob ? 'workspace-write' : 'read-only',
+      sandbox: codexSandbox.sandbox,
+      sandboxWorkspaceWriteNetworkAccess: codexSandbox.workspaceWriteNetworkAccess,
       mcp: usingMcp,
       mcpServer: mcpServerName ?? undefined,
       projectServers: codexMcpScope?.servers,

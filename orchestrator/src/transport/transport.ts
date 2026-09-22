@@ -71,6 +71,8 @@ export type ArgvOpts = {
    * passes it explicitly.
    */
   sandbox?: SandboxLevel
+  /** Open outbound network in Codex's workspace-write sandbox. */
+  sandboxWorkspaceWriteNetworkAccess?: boolean
   /** Exact extra paths made writable inside Codex's workspace-write sandbox. */
   writableRoots?: string[]
   /** Object-store override used to isolate scratch objects for read-only repository jobs. */
@@ -192,6 +194,7 @@ export type TransportStartOpts = {
   startedAt: number
   write?: boolean
   sandbox?: SandboxLevel
+  sandboxWorkspaceWriteNetworkAccess?: boolean
   mcp?: boolean
   mcpServer?: string
   projectServers?: ArgvOpts['projectServers']

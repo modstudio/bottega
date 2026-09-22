@@ -60,6 +60,7 @@ async function spawnCli(opts: TransportStartOpts): Promise<TransportHandle> {
     model: opts.model,
     write: opts.write,
     sandbox: opts.sandbox,
+    sandboxWorkspaceWriteNetworkAccess: opts.sandboxWorkspaceWriteNetworkAccess,
     writableRoots: opts.writableRoots,
     gitObjectEnvironment: opts.gitObjectEnvironment,
     gitConfigEnvironment: opts.gitConfigEnvironment,

@@ -12,7 +12,6 @@ import {
   prepareGrokMcpHome,
   READONLY_LENS_DENY_PATHS,
   readonlyLensProfile,
-  readonlyNeedsDocker,
   resetSandbox,
   sandboxRuntimeConfig,
   selectReadonlySandbox,
@@ -198,7 +197,7 @@ describe('readonly-lens sandbox profile', () => {
     })
   })
 
-  test('falls back to host when readonly notes need Docker', () => {
+  test('a declared Docker allowance selects host with its register reason', () => {
     expect(
       selectReadonlySandbox({
         agent: 'grok',
@@ -207,19 +206,29 @@ describe('readonly-lens sandbox profile', () => {
         worktree: '/runs/tree',
         runsDir: '/runs/evidence',
         project: fixtureProject(),
-        readonlyNotes: 'Run the checks with docker compose exec app bun test.',
+        readonlyDocker: true,
       }),
     ).toEqual({
       sandbox: 'host',
       profile: null,
-      reason: 'project worktree.readonly_notes says read-only checks need Docker',
+      reason: 'project worktree.readonly_docker allows read-only checks through Docker',
     })
   })
 
-  test('a note merely saying Docker is unavailable does not disable confinement', () => {
-    expect(
-      readonlyNeedsDocker('Docker is unavailable in read-only worktrees; use bun tests.'),
-    ).toBe(false)
+  test('an absent Docker allowance keeps srt and denies both system socket paths', () => {
+    const selected = selectReadonlySandbox({
+      agent: 'grok',
+      readsRepo: true,
+      writesRepo: false,
+      worktree: '/runs/tree',
+      runsDir: '/runs/evidence',
+      project: fixtureProject(),
+      path: '/usr/bin',
+    })
+    expect(selected.sandbox).toBe('srt')
+    expect(selected.profile?.filesystem.denyRead).toEqual(
+      expect.arrayContaining(['/var/run/docker.sock', '/run/docker.sock']),
+    )
   })
 
   test('an MCP Grok repository run is unconfined because srt blocks its transports', () => {
