@@ -34,14 +34,14 @@ describe('tracker-new MCP creation', () => {
         },
         async callTool(name, args) {
           calls.push({ name, args })
-          return { task: { key: 'FIX-1' } }
+          return { short_id: 'FIX-1' }
         },
       },
       project,
       { title: 'Title', body: 'Body', status: 'Todo' },
     )
 
-    expect(result).toEqual({ task: { key: 'FIX-1' } })
+    expect(result).toEqual({ short_id: 'FIX-1' })
     expect(calls).toEqual([
       {
         name: 'custom-create',

@@ -362,6 +362,14 @@ export async function resolveAssigneeIds(
 const uncachedAssignees: AssigneeResolver = (_namespace, refs, lookup) =>
   resolveAssigneeIds(refs, new Map(), lookup)
 
+const nonEmptyUppercase = (value: unknown): string | undefined =>
+  typeof value === 'string' && value.trim() ? value.toUpperCase() : undefined
+
+const workspaceCreatedTaskKey = (result: unknown): string | undefined => {
+  const record = result && typeof result === 'object' ? (result as Record<string, unknown>) : {}
+  return nonEmptyUppercase(record.short_id)
+}
+
 function workspaceSource(
   project: string,
   env: string,
@@ -457,6 +465,12 @@ function workspaceSource(
   }
 }
 
+const cursorCreatedTaskKey = (result: unknown): string | undefined => {
+  const record = result && typeof result === 'object' ? (result as Record<string, unknown>) : {}
+  const data = record.data && typeof record.data === 'object' ? record.data : {}
+  return nonEmptyUppercase('humanKey' in data ? data.humanKey : undefined)
+}
+
 /**
  * Dotted tool names (`task.list`) with a `{data:{items,nextCursor}}` envelope,
  * paged by cursor. The dot is the server's wire name even when clients display
@@ -535,6 +549,11 @@ function cursorMcpSource(
   }
 }
 
+const arrayCreatedTaskKey = (result: unknown): string | undefined => {
+  const record = result && typeof result === 'object' ? (result as Record<string, unknown>) : {}
+  return nonEmptyUppercase(record.key)
+}
+
 /**
  * Underscore tool names (`task_list`) with a bare-array reply. Some servers
  * carry these tools only on their platform origin, so the configured endpoint
@@ -594,6 +613,17 @@ function arrayMcpSource(
       }
     },
   }
+}
+
+/** Read a created task key only from the field owned by its tracker protocol. */
+export function trackerCreatedTaskKey(
+  protocol: TrackerProtocol,
+  result: unknown,
+): string | undefined {
+  if (protocol === 'workspace-mcp') return workspaceCreatedTaskKey(result)
+  if (protocol === 'cursor-mcp') return cursorCreatedTaskKey(result)
+  if (protocol === 'array-mcp') return arrayCreatedTaskKey(result)
+  return undefined
 }
 
 export function trackerSourceFor(

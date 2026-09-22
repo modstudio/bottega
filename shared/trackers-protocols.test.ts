@@ -12,6 +12,7 @@ import {
   TRACKER_TITLE_WRITE_REFUSAL,
   type TrackerProject,
   trackerCapabilities,
+  trackerCreatedTaskKey,
   trackerSourceFor,
   trackerWireAction,
   UNKNOWN_TRACKER_REFUSAL,
@@ -40,6 +41,33 @@ describe('tracker action names', () => {
         status: 'custom_status',
       }),
     ).toMatchObject({ update: 'custom_update', status: 'custom_status' })
+  })
+})
+
+describe('created tracker task keys', () => {
+  test('reads the workspace-mcp short id', () => {
+    expect(
+      trackerCreatedTaskKey('workspace-mcp', {
+        id: '01a0c96f-example',
+        short_id: 'STAR-5557',
+        message: 'Task created successfully.',
+      }),
+    ).toBe('STAR-5557')
+  })
+
+  test('reads the array-mcp key', () => {
+    expect(trackerCreatedTaskKey('array-mcp', { key: 'adn-42' })).toBe('ADN-42')
+  })
+
+  test('reads the cursor-mcp create envelope', () => {
+    expect(trackerCreatedTaskKey('cursor-mcp', { data: { humanKey: 'sto-17' } })).toBe('STO-17')
+  })
+
+  test('leaves missing and empty protocol keys undefined', () => {
+    expect(trackerCreatedTaskKey('workspace-mcp', { id: '01a0c96f-example' })).toBeUndefined()
+    expect(trackerCreatedTaskKey('array-mcp', { key: '  ' })).toBeUndefined()
+    expect(trackerCreatedTaskKey('cursor-mcp', { data: {} })).toBeUndefined()
+    expect(trackerCreatedTaskKey('hub', { key: 'HUB-1' })).toBeUndefined()
   })
 })
 
