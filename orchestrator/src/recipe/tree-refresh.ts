@@ -31,6 +31,15 @@ export function decideTreeRefresh(input: {
   return { action: 'refuse', reason: 'diverged' }
 }
 
+export function collidingRefreshPaths(input: {
+  incomingAddedPaths: string[]
+  ignoredPaths: string[]
+  untrackedPaths: string[]
+}): string[] {
+  const localPaths = new Set([...input.ignoredPaths, ...input.untrackedPaths])
+  return [...new Set(input.incomingAddedPaths.filter((path) => localPaths.has(path)))]
+}
+
 export type MainCheckoutBranchDecision =
   | { action: 'refresh' }
   | { action: 'refuse'; branch: string | null }
@@ -49,6 +58,65 @@ function countCommits(range: string, cwd: string): number {
     throw new Error(`git returned invalid commit count ${JSON.stringify(value)} for ${range}`)
   }
   return count
+}
+
+function pathsFromGit(value: string): string[] {
+  return value ? value.split('\n') : []
+}
+
+function fastForwardTree(treeRoot: string, trunk: string, branch: string): string {
+  git(['fetch', 'origin', trunk], treeRoot)
+  const remote = `origin/${trunk}`
+  const mergeBase = git(['merge-base', 'HEAD', remote], treeRoot)
+  const ownCommits = countCommits(`${mergeBase}..HEAD`, treeRoot)
+  const behindCommits = countCommits(`${mergeBase}..${remote}`, treeRoot)
+  const decision = decideTreeRefresh({ clean: true, ownCommits, behindCommits })
+  if (decision.action === 'refuse') {
+    throw new Error(
+      `worktree ${treeRoot} is ${behindCommits} commit(s) behind ${remote} and has ${ownCommits} own commit(s); rebase onto ${remote} before refreshing`,
+    )
+  }
+  if (decision.action === 'fast-forward') {
+    const incomingAddedPaths = pathsFromGit(
+      git(['diff', '--name-only', '--diff-filter=A', 'HEAD', remote], treeRoot),
+    )
+    const ignoredPaths = incomingAddedPaths.length
+      ? pathsFromGit(
+          git(
+            [
+              'ls-files',
+              '--others',
+              '--ignored',
+              '--exclude-standard',
+              '--',
+              ...incomingAddedPaths,
+            ],
+            treeRoot,
+          ),
+        )
+      : []
+    const untrackedPaths = incomingAddedPaths.length
+      ? pathsFromGit(
+          git(
+            ['ls-files', '--others', '--exclude-standard', '--', ...incomingAddedPaths],
+            treeRoot,
+          ),
+        )
+      : []
+    const collisions = collidingRefreshPaths({
+      incomingAddedPaths,
+      ignoredPaths,
+      untrackedPaths,
+    })
+    if (collisions.length) {
+      throw new Error(
+        `worktree ${treeRoot} has ignored or untracked files that incoming commits add: ${collisions.join(', ')}; move them aside (or commit them) before refreshing`,
+      )
+    }
+    git(['merge', '--ff-only', remote], treeRoot)
+    return `fast-forwarded ${branch} by ${behindCommits} commit(s) to ${remote}`
+  }
+  return `${branch} is current with ${remote}`
 }
 
 type RefreshOwner = {
@@ -180,22 +248,7 @@ function refreshMainCheckout(target: ReturnType<typeof registeredRefreshTarget>)
     )
   }
 
-  git(['fetch', 'origin', trunk], treeRoot)
-  const remote = `origin/${trunk}`
-  const mergeBase = git(['merge-base', 'HEAD', remote], treeRoot)
-  const ownCommits = countCommits(`${mergeBase}..HEAD`, treeRoot)
-  const behindCommits = countCommits(`${mergeBase}..${remote}`, treeRoot)
-  const decision = decideTreeRefresh({ clean: true, ownCommits, behindCommits })
-  if (decision.action === 'refuse') {
-    throw new Error(
-      `worktree ${treeRoot} is ${behindCommits} commit(s) behind ${remote} and has ${ownCommits} own commit(s); rebase onto ${remote} before refreshing`,
-    )
-  }
-  if (decision.action === 'fast-forward') {
-    git(['merge', '--ff-only', remote], treeRoot)
-    return [`fast-forwarded ${branch} by ${behindCommits} commit(s) to ${remote}`]
-  }
-  return [`${branch} is current with ${remote}`]
+  return [fastForwardTree(treeRoot, trunk, trunk)]
 }
 
 function refreshWorktree(target: ReturnType<typeof registeredRefreshTarget>): string[] {
@@ -232,24 +285,7 @@ function refreshWorktree(target: ReturnType<typeof registeredRefreshTarget>): st
   }
 
   const branch = git(['symbolic-ref', '--short', 'HEAD'], treeRoot)
-  git(['fetch', 'origin', trunk], treeRoot)
-  const remote = `origin/${trunk}`
-  const mergeBase = git(['merge-base', 'HEAD', remote], treeRoot)
-  const ownCommits = countCommits(`${mergeBase}..HEAD`, treeRoot)
-  const behindCommits = countCommits(`${mergeBase}..${remote}`, treeRoot)
-  const decision = decideTreeRefresh({ clean: true, ownCommits, behindCommits })
-  const messages: string[] = []
-  if (decision.action === 'refuse') {
-    throw new Error(
-      `worktree ${treeRoot} is ${behindCommits} commit(s) behind ${remote} and has ${ownCommits} own commit(s); rebase onto ${remote} before refreshing`,
-    )
-  }
-  if (decision.action === 'fast-forward') {
-    git(['merge', '--ff-only', remote], treeRoot)
-    messages.push(`fast-forwarded ${branch} by ${behindCommits} commit(s) to ${remote}`)
-  } else {
-    messages.push(`${branch} is current with ${remote}`)
-  }
+  const messages = [fastForwardTree(treeRoot, trunk, branch)]
 
   if (!loaded.recipe.refresh?.length) {
     messages.push(`tracked recipe ${recipePath} has no refresh steps; ran no steps`)
