@@ -30,6 +30,11 @@ const SLUG = /^[a-z0-9][a-z0-9-]{0,63}$/
 const object = (value: unknown): value is Record<string, unknown> =>
   typeof value === 'object' && value !== null && !Array.isArray(value)
 const text = (value: unknown) => (typeof value === 'string' ? value : '')
+const WORKFLOW_PROMPT_ARGUMENT_NAMES = new Set(['mode', 'project'])
+const workflowPromptArgumentNameErrors = (name: unknown): string[] =>
+  typeof name === 'string' && WORKFLOW_PROMPT_ARGUMENT_NAMES.has(name)
+    ? [`argument name "${name}" is reserved for the workflow prompt`]
+    : []
 
 function workflowStepSlugs(
   d: Database | undefined,
@@ -69,6 +74,7 @@ export function validateWorkflowDefinition(
     }
     if (typeof argument.name !== 'string')
       errors.push(`argument ${index + 1} name must be a string`)
+    errors.push(...workflowPromptArgumentNameErrors(argument.name))
     if (typeof argument.required !== 'boolean')
       errors.push(`argument "${text(argument.name)}" required must be a boolean`)
     if (typeof argument.description !== 'string')

@@ -116,6 +116,20 @@ describe('workflow definition validation', () => {
       'exactly one default mode is allowed',
     )
   })
+  test('reserves workflow prompt argument names', () => {
+    const d = database(),
+      definition = valid()
+    definition.arguments.push(
+      { name: 'mode', required: false, description: 'Mode.' },
+      { name: 'project', required: false, description: 'Project.' },
+    )
+    expect(validateWorkflowDefinition(definition, d)).toEqual(
+      expect.arrayContaining([
+        'argument name "mode" is reserved for the workflow prompt',
+        'argument name "project" is reserved for the workflow prompt',
+      ]),
+    )
+  })
 })
 
 describe('workflow versions and project composition', () => {
