@@ -2,13 +2,13 @@ import type { Database } from 'bun:sqlite'
 import { randomUUID } from 'node:crypto'
 import { db, nowIso, sessionId } from '../database/db.ts'
 import { projectAt } from '../project/projects.ts'
-import { renderWorkflowStep } from './workflow-render.ts'
-import { composeWorkflow, getWorkflowStep } from './workflows.ts'
 import {
-  decideCursorTransition,
   type CursorState,
   type CursorValue,
+  decideCursorTransition,
 } from './workflow-cursor-transition.ts'
+import { renderWorkflowStep } from './workflow-render.ts'
+import { composeWorkflow, getWorkflowStep } from './workflows.ts'
 
 export type WorkflowCursorContext = {
   session?: string | null
@@ -91,7 +91,7 @@ function insertCursor(
       (project,workflow_slug,mode_slug,workflow_key,instance_id,session_id,
        workflow_version,catalogue_version,args,ordinal,step_slug,state,closed,question,
        total_steps,created_at,updated_at)
-     VALUES (?,?,?,?,?,?,?,?,?,0,'','running','[]',NULL,?,?,?)
+     VALUES (?,?,?,?,?,?,?,?,?,0,?,'running','[]',NULL,?,?,?)
      ON CONFLICT(project,workflow_slug,mode_slug,workflow_key,instance_id) DO UPDATE SET
        session_id=COALESCE(excluded.session_id,workflow_cursor.session_id),
        updated_at=excluded.updated_at`,
@@ -105,6 +105,7 @@ function insertCursor(
     composition.workflow.version,
     composition.catalogue.version,
     JSON.stringify(composition.arguments),
+    composition.steps[0]!.slug,
     composition.steps.length,
     at,
     at,
@@ -135,7 +136,11 @@ export function composeWorkflowWithCursor(
   const row = insertCursor(composition, context, d)
   return {
     ...composition,
-    cursor: { n: row.ordinal, slug: row.step_slug, state: row.state } satisfies CursorSummary,
+    cursor: {
+      n: row.ordinal === 0 ? 0 : row.ordinal + 1,
+      slug: row.step_slug,
+      state: row.state,
+    } satisfies CursorSummary,
   }
 }
 
@@ -151,14 +156,14 @@ function cursorComposition(row: CursorRow, d: Database) {
 }
 
 function remedy(row: CursorRow, composition: ReturnType<typeof composeWorkflow>): string {
-  const active = row.ordinal === 0 ? composition.steps[0]! : composition.steps[row.ordinal - 1]!
+  const active = composition.steps[row.ordinal]!
   const args = Object.entries(JSON.parse(row.args) as Record<string, string>)
     .map(([name, value]) => ` --arg ${name}=${value}`)
     .join('')
   return (
     `workflow ${row.workflow_slug} for ${row.workflow_key} is at step ${active.n} ${active.slug}; ` +
     `fetch that step, or close it with: orch workflow next ${row.workflow_slug} --project ${row.project} ` +
-    `--mode ${row.mode_slug}${args} --note \"<how its floor was met>\"`
+    `--mode ${row.mode_slug}${args} --note "<how its floor was met>"`
   )
 }
 
@@ -182,16 +187,19 @@ export function getWorkflowStepWithCursor(
   const requested = composition.steps[index]!
   const decision = decideCursorTransition(row ? cursorValue(row) : null, {
     kind: 'serve',
-    ordinal: requested.n,
+    ordinal: index,
     slug: requested.slug,
-    expectedOrdinal: row?.ordinal ?? 0,
-    expectedSlug: row?.step_slug ?? '',
+    expectedOrdinal: row?.ordinal ?? -1,
+    expectedSlug: row?.step_slug ?? composition.steps[0]!.slug,
   })
   if (decision.action === 'refuse') {
     if (decision.reason === 'compose-first')
-      throw new Error(`workflow ${slug} for ${keyOf(args)} has no cursor; compose the workflow first`)
+      throw new Error(
+        `workflow ${slug} for ${keyOf(args)} has no cursor; compose the workflow first`,
+      )
     throw new Error(remedy(row!, composition))
   }
+  if (decision.action !== 'serve') throw new Error('invalid serve transition')
   if (!row) row = insertCursor(composition, context, d)
   if (decision.move) {
     d.query(
@@ -212,16 +220,17 @@ export function nextWorkflowStep(
   d: Database = db(),
 ): string {
   const row = findCursor(project, slug, mode, args, context, d)
-  if (!row) throw new Error(`workflow ${slug} for ${keyOf(args)} has no cursor; compose the workflow first`)
+  if (!row)
+    throw new Error(`workflow ${slug} for ${keyOf(args)} has no cursor; compose the workflow first`)
   if (!note?.trim()) {
     const composition = cursorComposition(row, d)
-    const step = composition.steps[Math.max(0, row.ordinal - 1)]!
+    const step = composition.steps[row.ordinal]!
     throw new Error(
       `--note is required: one line saying how step ${step.n} ${step.slug}'s floor was met`,
     )
   }
   const composition = cursorComposition(row, d)
-  const next = composition.steps[row.ordinal] ?? null
+  const next = composition.steps[row.ordinal + 1] ?? null
   const decision = decideCursorTransition(cursorValue(row), {
     kind: 'next',
     total: composition.steps.length,
@@ -233,7 +242,7 @@ export function nextWorkflowStep(
   }
   const at = nowIso()
   const closed = JSON.parse(row.closed) as ClosedStep[]
-  closed.push({ n: row.ordinal, slug: row.step_slug, note: note.trim(), at })
+  closed.push({ n: row.ordinal + 1, slug: row.step_slug, note: note.trim(), at })
   if (decision.action === 'finish') {
     d.query(
       `UPDATE workflow_cursor SET state='done',closed=?,question=NULL,
@@ -272,7 +281,8 @@ export function awaitWorkflowRuling(
 ): CursorSummary {
   if (!question?.trim()) throw new Error('--question is required')
   const row = findCursor(project, slug, mode, args, context, d)
-  if (!row) throw new Error(`workflow ${slug} for ${keyOf(args)} has no cursor; compose the workflow first`)
+  if (!row)
+    throw new Error(`workflow ${slug} for ${keyOf(args)} has no cursor; compose the workflow first`)
   if (row.state === 'done') throw new Error(`workflow ${slug} for ${row.workflow_key} is done`)
   d.query(
     `UPDATE workflow_cursor SET state='awaiting-ruling',question=?,
@@ -295,7 +305,9 @@ export function listWorkflowCursors(
   const currentSession = sessionId()
   const project =
     options.project ??
-    (!currentSession && !options.session ? projectAt(options.cwd ?? process.cwd())?.name : undefined)
+    (!currentSession && !options.session
+      ? projectAt(options.cwd ?? process.cwd())?.name
+      : undefined)
   const clauses = [`state <> 'done'`]
   const values: string[] = []
   if (project) {
@@ -312,10 +324,12 @@ export function listWorkflowCursors(
     .all(...values) as CursorRow[]
   return rows.map((row) => ({
     ...row,
-    next_slug: cursorComposition(row, d).steps[row.ordinal]?.slug ?? 'finished',
+    next_slug: cursorComposition(row, d).steps[row.ordinal + 1]?.slug ?? 'finished',
   }))
 }
 
-export function renderWorkflowCursorLine(row: ReturnType<typeof listWorkflowCursors>[number]): string {
-  return `${row.workflow_slug} ${row.workflow_key} ${row.project} step ${row.ordinal}/${row.total_steps} ${row.step_slug} ${row.state} next: ${row.next_slug}${row.question ? ` question: ${row.question}` : ''}`
+export function renderWorkflowCursorLine(
+  row: ReturnType<typeof listWorkflowCursors>[number],
+): string {
+  return `${row.workflow_slug} ${row.workflow_key} ${row.project} step ${row.ordinal + 1}/${row.total_steps} ${row.step_slug} ${row.state} next: ${row.next_slug}${row.question ? ` question: ${row.question}` : ''}`
 }

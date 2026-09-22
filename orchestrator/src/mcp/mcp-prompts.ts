@@ -1,16 +1,9 @@
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
 import { z } from 'zod'
 import { projectAt } from '../project/projects.ts'
+import { composeWorkflowWithCursor, mcpWorkflowCursorContext } from '../workflow/workflow-cursor.ts'
 import { renderWorkflowComposition } from '../workflow/workflow-render.ts'
-import {
-  composeWorkflowWithCursor,
-  mcpWorkflowCursorContext,
-} from '../workflow/workflow-cursor.ts'
-import {
-  composeWorkflow,
-  productionWorkflows,
-  type WorkflowDefinition,
-} from '../workflow/workflows.ts'
+import { productionWorkflows, type WorkflowDefinition } from '../workflow/workflows.ts'
 
 type ProductionWorkflow = { slug: string; definition: WorkflowDefinition }
 

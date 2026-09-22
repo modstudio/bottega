@@ -1,14 +1,14 @@
 import { Database } from 'bun:sqlite'
 import { describe, expect, test } from 'bun:test'
 import { applyMigrations } from '../database/migrations.ts'
-import { renderWorkflowComposition } from './workflow-render.ts'
-import { seedWorkflows } from './workflow-seeds.ts'
 import {
   composeWorkflowWithCursor,
   getWorkflowStepWithCursor,
   listWorkflowCursors,
   nextWorkflowStep,
 } from './workflow-cursor.ts'
+import { renderWorkflowComposition } from './workflow-render.ts'
+import { seedWorkflows } from './workflow-seeds.ts'
 
 const database = () => {
   const d = new Database(':memory:')
@@ -32,11 +32,12 @@ describe('workflow cursor adapter', () => {
     const d = database()
     composeWorkflowWithCursor('ship', 'fixture', 'default', args, context, d)
     getWorkflowStepWithCursor('ship', 'fixture', 'rebase', args, 'default', context, d)
+    nextWorkflowStep('ship', 'fixture', 'default', args, 'rebased', context, d)
     const recomposed = composeWorkflowWithCursor('ship', 'fixture', 'default', args, context, d)
 
     expect(d.query('SELECT count(*) count FROM workflow_cursor').get()).toEqual({ count: 1 })
     expect(renderWorkflowComposition(recomposed)).toContain(
-      'Cursor: at step 1 rebase (running); continue with next.',
+      'Cursor: at step 2 lens (running); continue with next.',
     )
   })
 
@@ -49,11 +50,12 @@ describe('workflow cursor adapter', () => {
     ).toThrow(/at step 1 rebase.*workflow next ship/)
 
     expect(nextWorkflowStep('ship', 'fixture', 'default', args, 'rebased', context, d)).toContain(
-      'Run independent review lenses',
+      'fetch step 3 score',
     )
-    expect(
-      d.query('SELECT ordinal,step_slug,closed FROM workflow_cursor').get(),
-    ).toMatchObject({ ordinal: 2, step_slug: 'lens' })
+    expect(d.query('SELECT ordinal,step_slug,closed FROM workflow_cursor').get()).toMatchObject({
+      ordinal: 1,
+      step_slug: 'lens',
+    })
     expect(
       JSON.parse(
         (d.query('SELECT closed FROM workflow_cursor').get() as { closed: string }).closed,
@@ -64,13 +66,31 @@ describe('workflow cursor adapter', () => {
   test('last next marks done and open listing omits it', () => {
     const d = database()
     const composition = composeWorkflowWithCursor('ship', 'fixture', 'default', args, context, d)
-    getWorkflowStepWithCursor('ship', 'fixture', composition.steps[0]!.slug, args, 'default', context, d)
+    getWorkflowStepWithCursor(
+      'ship',
+      'fixture',
+      composition.steps[0]!.slug,
+      args,
+      'default',
+      context,
+      d,
+    )
     expect(listWorkflowCursors({ session: 'session-one' }, d)).toHaveLength(1)
     let output = ''
     for (const step of composition.steps) {
-      output = nextWorkflowStep('ship', 'fixture', 'default', args, `closed ${step.slug}`, context, d)
+      output = nextWorkflowStep(
+        'ship',
+        'fixture',
+        'default',
+        args,
+        `closed ${step.slug}`,
+        context,
+        d,
+      )
     }
-    expect(output).toBe(`Workflow ship for DEV-822 is finished: ${composition.steps.length} steps closed.`)
+    expect(output).toBe(
+      `Workflow ship for DEV-822 is finished: ${composition.steps.length} steps closed.`,
+    )
     expect(listWorkflowCursors({ session: 'session-one' }, d)).toEqual([])
     expect(d.query('SELECT state FROM workflow_cursor').get()).toEqual({ state: 'done' })
   })

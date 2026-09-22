@@ -44,7 +44,6 @@ import {
 } from '../porting/porting.ts'
 import { projectAt, projectByName, projects } from '../project/projects.ts'
 import { getReview, listReviews } from '../review/review.ts'
-import { renderWorkflowStep } from '../workflow/workflow-render.ts'
 import {
   awaitWorkflowRuling,
   composeWorkflowWithCursor,
@@ -52,7 +51,8 @@ import {
   mcpWorkflowCursorContext,
   nextWorkflowStep,
 } from '../workflow/workflow-cursor.ts'
-import { composeWorkflow, getWorkflowStep, listWorkflows } from '../workflow/workflows.ts'
+import { renderWorkflowStep } from '../workflow/workflow-render.ts'
+import { getWorkflowStep, listWorkflows } from '../workflow/workflows.ts'
 import { decideMcpDocWrite } from './mcp-doc-write.ts'
 import { registerWorkflowPrompts } from './mcp-prompts.ts'
 
@@ -430,20 +430,15 @@ export function createDocsMcpServer(): McpServer {
     },
     async ({ slug, project, mode, args, version, catalogue_version }) =>
       text(
-        mode
-          ? composeWorkflowWithCursor(
-              slug,
-              project,
-              mode,
-              args ?? {},
-              mcpWorkflowCursorContext(),
-              undefined,
-              { version, catalogueVersion: catalogue_version },
-            )
-          : composeWorkflow(slug, project, mode, args ?? {}, undefined, {
-              version,
-              catalogueVersion: catalogue_version,
-            }),
+        composeWorkflowWithCursor(
+          slug,
+          project,
+          mode,
+          args ?? {},
+          mcpWorkflowCursorContext(),
+          undefined,
+          { version, catalogueVersion: catalogue_version },
+        ),
       ),
   )
 
@@ -491,16 +486,7 @@ export function createDocsMcpServer(): McpServer {
       },
     },
     async ({ slug, project, mode, args, note }) =>
-      text(
-        nextWorkflowStep(
-          slug,
-          project,
-          mode,
-          args ?? {},
-          note,
-          mcpWorkflowCursorContext(),
-        ),
-      ),
+      text(nextWorkflowStep(slug, project, mode, args ?? {}, note, mcpWorkflowCursorContext())),
   )
 
   server.registerTool(
@@ -517,14 +503,7 @@ export function createDocsMcpServer(): McpServer {
     },
     async ({ slug, project, mode, args, question }) =>
       text(
-        awaitWorkflowRuling(
-          slug,
-          project,
-          mode,
-          args ?? {},
-          question,
-          mcpWorkflowCursorContext(),
-        ),
+        awaitWorkflowRuling(slug, project, mode, args ?? {}, question, mcpWorkflowCursorContext()),
       ),
   )
 

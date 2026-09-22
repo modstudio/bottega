@@ -22,8 +22,8 @@ export function decideCursorTransition(
 ): CursorTransition {
   if (request.kind === 'serve') {
     if (!cursor) {
-      return request.ordinal === 1
-        ? { action: 'serve', ordinal: 1, slug: request.slug, move: true }
+      return request.ordinal === 0
+        ? { action: 'serve', ordinal: 0, slug: request.slug, move: true }
         : { action: 'refuse', reason: 'compose-first' }
     }
     if (request.ordinal <= cursor.ordinal)
@@ -35,8 +35,7 @@ export function decideCursorTransition(
 
   if (!cursor) return { action: 'refuse', reason: 'compose-first' }
   if (cursor.state === 'done') return { action: 'refuse', reason: 'state' }
-  if (cursor.ordinal === 0) return { action: 'refuse', reason: 'not-started' }
-  if (cursor.ordinal === request.total) return { action: 'finish' }
+  if (cursor.ordinal === request.total - 1) return { action: 'finish' }
   return {
     action: 'serve',
     ordinal: cursor.ordinal + 1,
