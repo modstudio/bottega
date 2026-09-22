@@ -22,7 +22,6 @@ export function workflowPromptDefinitions(
     title: definition.title,
     description: definition.description,
     arguments: [
-      ...definition.arguments,
       {
         name: 'mode',
         description: `Workflow mode slug. One of: ${definition.modes.map((mode) => mode.slug).join(', ')}. Omit to use the default mode.`,
@@ -34,6 +33,7 @@ export function workflowPromptDefinitions(
           "Registered project name. Omit to use the project that owns the server's working directory.",
         required: false,
       },
+      ...definition.arguments,
     ],
   }))
 }

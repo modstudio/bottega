@@ -28,8 +28,6 @@ describe('workflow prompt definitions', () => {
     ])
 
     expect(prompt?.arguments).toEqual([
-      { name: 'key', description: 'Task key.', required: true },
-      { name: 'branch', description: 'Branch name.', required: true },
       {
         name: 'mode',
         description: 'Workflow mode slug. One of: fast, careful. Omit to use the default mode.',
@@ -41,6 +39,8 @@ describe('workflow prompt definitions', () => {
           "Registered project name. Omit to use the project that owns the server's working directory.",
         required: false,
       },
+      { name: 'key', description: 'Task key.', required: true },
+      { name: 'branch', description: 'Branch name.', required: true },
     ])
   })
 
@@ -49,7 +49,7 @@ describe('workflow prompt definitions', () => {
       workflow('ship-task', [{ name: 'note', description: 'Optional note.', required: false }]),
     ])
 
-    expect(prompt?.arguments[0]).toEqual({
+    expect(prompt?.arguments[2]).toEqual({
       name: 'note',
       description: 'Optional note.',
       required: false,
