@@ -181,9 +181,40 @@ export const recordRouter = t.router({
       },
     }
   }),
-  run: t.procedure
-    .input(z.object({ id: uuid }))
-    .query(({ ctx, input }) => recordClient(ctx).run(input.id)),
+  run: t.procedure.input(z.object({ id: uuid })).query(async ({ ctx, input }) => {
+    const client = recordClient(ctx)
+    const [run, snapshots] = await Promise.all([client.run(input.id), client.snapshots()])
+    const jobs = snapshots.items
+      .filter((item) => item.kind === 'jobs' && item.machineId === run.machineId)
+      .sort((left, right) => right.takenAt.localeCompare(left.takenAt))[0]
+    const writesRepo =
+      jobs?.kind === 'jobs'
+        ? jobs.payload.find((job) => job.name === run.job)?.needs.writesRepo
+        : false
+    return {
+      id: run.id,
+      agent: run.agent,
+      job: run.job,
+      project: run.projectName,
+      latency_ms: run.latencyMs,
+      vendor_tokens: run.vendorTokens,
+      status: run.status,
+      failure_kind: run.failureKind,
+      probe: run.probe,
+      evidence_excluded: run.evidenceExcluded,
+      error: run.error,
+      prompt: run.promptHead,
+      promptBytes: run.promptBytes,
+      output: null,
+      delivery: run.score?.delivery ?? null,
+      quality: run.score?.quality ?? null,
+      fidelity: run.score?.fidelity ?? null,
+      note: run.score?.note ?? null,
+      scored_at: run.score?.scoredAt ?? null,
+      scoreAxes: writesRepo ? ['delivery', 'quality', 'fidelity'] : ['delivery', 'quality'],
+      reviews: run.reviews,
+    }
+  }),
   score: t.procedure
     .input(
       z.object({

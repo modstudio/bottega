@@ -25,7 +25,7 @@ type HostedReview = {
   findingCount?: number
 }
 
-export type HostedLens = {
+export type ReviewLens = {
   id?: string
   lens?: string
   agent?: string
@@ -43,7 +43,7 @@ function field(record: Record<string, unknown>, camel: string, snake: string) {
   return value == null ? '' : String(value)
 }
 
-export function HostedLensList({ lenses }: { lenses: HostedLens[] }) {
+export function ReviewLensList({ lenses }: { lenses: ReviewLens[] }) {
   if (!lenses.length) return <p className="mt-4 text-text-muted">No review lenses.</p>
   return (
     <div className="mt-4 space-y-6">
@@ -205,7 +205,7 @@ export function HostedReviewDetail({ id }: { id: string }) {
     )
   }
 
-  const lenses = (review.lenses ?? []) as HostedLens[]
+  const lenses = (review.lenses ?? []) as ReviewLens[]
   const projectName = typeof review.projectName === 'string' ? review.projectName : null
   return (
     <Companion
@@ -221,7 +221,7 @@ export function HostedReviewDetail({ id }: { id: string }) {
         label="Completed"
         value={review.completedAt == null ? '-' : String(review.completedAt)}
       />
-      <HostedLensList lenses={lenses} />
+      <ReviewLensList lenses={lenses} />
     </Companion>
   )
 }

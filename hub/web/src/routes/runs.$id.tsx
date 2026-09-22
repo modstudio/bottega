@@ -2,7 +2,7 @@ import { useMutation, useQuery } from '@tanstack/react-query'
 import { createFileRoute, useNavigate } from '@tanstack/react-router'
 import { Copy } from 'lucide-react'
 import { useEffect, useState } from 'react'
-import { HostedRunDetail } from '@/components/hosted-run-detail'
+import { type ReviewLens, ReviewLensList } from '@/components/hosted-reviews'
 import { duration, relativeTime } from '@/lib/format'
 import { isHostedMode } from '@/lib/hub-mode'
 import { queryClient, trpc } from '@/trpc/client'
@@ -20,7 +20,7 @@ type Delivery = (typeof DELIVERIES)[number]
 type Quality = (typeof QUALITIES)[number]
 type Fidelity = (typeof FIDELITIES)[number]
 type RunDetail = {
-  id: number
+  id: number | string
   agent: string
   job: string
   project: string | null
@@ -32,28 +32,38 @@ type RunDetail = {
   evidence_excluded: string | null
   error: string | null
   prompt: string | null
+  promptBytes?: number
   output: string | null
   delivery: Delivery | null
   quality: Quality | null
   fidelity: Fidelity | null
   note: string | null
   scored_at: string | null
-  scoreAxes: ('delivery' | 'quality' | 'fidelity')[]
+  scoreAxes: readonly ('delivery' | 'quality' | 'fidelity')[]
+  reviews: ReviewLens[]
 }
 
 export const Route = createFileRoute('/runs/$id')({ component: RunDetailRoute })
 
 function RunDetailRoute() {
   const { id } = Route.useParams()
-  if (isHostedMode()) return <HostedRunDetail id={id} />
   return <RunDetailPage id={id} />
 }
 
 function RunDetailPage({ id }: { id: string }) {
   const navigate = useNavigate()
+  const hosted = isHostedMode()
   const numericId = Number(id)
-  const detail = useQuery(trpc.run.get.queryOptions({ id: numericId }))
-  const run = detail.data as RunDetail | undefined
+  const hostedDetail = useQuery({
+    ...trpc.record.run.queryOptions({ id }),
+    enabled: hosted,
+  })
+  const localDetail = useQuery({
+    ...trpc.run.get.queryOptions({ id: numericId }),
+    enabled: !hosted,
+  })
+  const detail = hosted ? hostedDetail : localDetail
+  const run = detail.data as unknown as RunDetail | undefined
   const [delivery, setDelivery] = useState<Delivery | null>(null)
   const [quality, setQuality] = useState<Quality | null>(null)
   const [fidelity, setFidelity] = useState<Fidelity | null>(null)
@@ -68,30 +78,49 @@ function RunDetailPage({ id }: { id: string }) {
     setNote(run.note ?? '')
   }, [run])
 
-  const score = useMutation(
-    trpc.run.score.mutationOptions({
+  const onScoreSuccess = async () => {
+    if (hosted) {
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: trpc.record.run.queryKey({ id }) }),
+        queryClient.invalidateQueries({ queryKey: trpc.record.runsView.queryKey() }),
+      ])
+    } else {
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: trpc.run.get.queryKey({ id: numericId }) }),
+        queryClient.invalidateQueries({ queryKey: trpc.run.list.queryKey() }),
+      ])
+    }
+    setAmending(false)
+  }
+  const hostedScore = useMutation(
+    trpc.record.score.mutationOptions({
       onSuccess: async () => {
-        await Promise.all([
-          queryClient.invalidateQueries({ queryKey: trpc.run.get.queryKey({ id: numericId }) }),
-          queryClient.invalidateQueries({ queryKey: trpc.run.list.queryKey() }),
-        ])
-        setAmending(false)
+        await onScoreSuccess()
       },
     }),
   )
+  const localScore = useMutation(
+    trpc.run.score.mutationOptions({
+      onSuccess: async () => {
+        await onScoreSuccess()
+      },
+    }),
+  )
+  const score = hosted ? hostedScore : localScore
 
   const needsFidelity = Boolean(run?.scoreAxes.includes('fidelity') && delivery !== 'none')
   const canSign =
     delivery === 'none' || Boolean(delivery && quality && (!needsFidelity || fidelity))
   const sign = () => {
     if (!delivery || !canSign) return
-    score.mutate({
-      id: numericId,
+    const verdict = {
       delivery,
       quality: delivery === 'none' ? null : quality,
       fidelity: needsFidelity ? fidelity : null,
       note: note || null,
-    })
+    }
+    if (hosted) hostedScore.mutate({ id, ...verdict })
+    else localScore.mutate({ id: numericId, ...verdict })
   }
 
   const close = () => void navigate({ to: '/runs', resetScroll: false })
@@ -209,14 +238,27 @@ function RunDetailPage({ id }: { id: string }) {
       ) : null}
       {score.error ? (
         <p data-tone="error" className="mb-3 text-status-text">
-          Could not sign this run. {score.error.message} Check the selections and try again.
+          {score.error.message}
         </p>
       ) : null}
       {run.error ? <DetailBlock label="Error" value={run.error} /> : null}
       <div className="grid gap-4 @2xl/panel:grid-cols-2">
-        <DetailBlock label="Prompt" value={run.prompt || '(Prompt unavailable.)'} />
-        <DetailBlock label="Reply" value={run.output || '(Nothing came back.)'} />
+        <DetailBlock
+          label={
+            hosted
+              ? `Prompt excerpt (${run.promptBytes?.toLocaleString() ?? 'unknown'} bytes in the original prompt)`
+              : 'Prompt'
+          }
+          value={run.prompt || '(Prompt unavailable.)'}
+        />
+        <DetailBlock
+          label="Reply"
+          value={
+            hosted ? '(Hosted records do not keep replies.)' : run.output || '(Nothing came back.)'
+          }
+        />
       </div>
+      <ReviewLensList lenses={run.reviews} />
     </Companion>
   )
 }

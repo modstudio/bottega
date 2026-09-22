@@ -22,9 +22,9 @@ type RecordClientOptions = {
 
 const scoreSchema = z
   .object({
-    delivery: z.string(),
-    quality: z.string().nullable(),
-    fidelity: z.string().nullable(),
+    delivery: z.enum(['none', 'partial', 'full']),
+    quality: z.enum(['wrong', 'mixed', 'right']).nullable(),
+    fidelity: z.enum(['drifted', 'partial', 'faithful']).nullable(),
     scoredAt: z.string(),
     note: z.string().nullable().optional(),
     scoredBy: z.string().optional(),
@@ -88,6 +88,9 @@ const runWindowSchema = z.object({
 })
 
 const runDetailSchema = runSchema.passthrough().extend({
+  machineId: z.string().uuid(),
+  promptBytes: z.number(),
+  error: z.string().nullable(),
   reviews: z.array(z.unknown()),
 })
 
