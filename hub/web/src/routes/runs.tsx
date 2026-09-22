@@ -135,6 +135,16 @@ function useRunsQuery(input: RunsInput, paused: boolean) {
   return useQuery({ ...options, placeholderData: keepPreviousData })
 }
 
+/**
+ * One token figure over every agent. Vendors count tokens differently, so it sits
+ * beside the per-agent figures and is a sense of volume, never evidence.
+ */
+function combinedTokens(vendors: RunsPayload['data']['vendors']) {
+  const read = vendors.filter((vendor) => vendor.tokens !== null)
+  if (!read.length) return '-'
+  return compactTokens(read.reduce((sum, vendor) => sum + (vendor.tokens ?? 0), 0))
+}
+
 /** The window's counters as figure, label and hint. */
 function statCards(data: RunsPayload['data']) {
   return [
@@ -305,10 +315,10 @@ function RunsList() {
             ))}
             <StatTile
               label="agents"
-              hint="tokens are per agent, never summed"
+              hint="one figure over agents that count tokens differently"
               breakdown={[
                 {
-                  label: 'runs, all agents',
+                  label: `runs, all agents · ${combinedTokens(data.vendors)} tokens`,
                   value: data.totals.runs.toLocaleString(),
                 },
                 ...data.vendors.map((vendor) => ({
