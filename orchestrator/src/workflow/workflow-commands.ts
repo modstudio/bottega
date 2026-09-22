@@ -14,6 +14,15 @@ import {
   stepCatalogueVersions,
 } from './step-catalogue.ts'
 import { renderWorkflowComposition, renderWorkflowStep } from './workflow-render.ts'
+import {
+  awaitWorkflowRuling,
+  cliWorkflowCursorContext,
+  composeWorkflowWithCursor,
+  getWorkflowStepWithCursor,
+  listWorkflowCursors,
+  nextWorkflowStep,
+  renderWorkflowCursorLine,
+} from './workflow-cursor.ts'
 import { parseWorkflowTree, planWorkflowHydration } from './workflow-tree.ts'
 import { applyWorkflowTreePlan, collectWorkflowTree } from './workflow-tree-files.ts'
 import { importWorkflowTree, productionWorkflowTree } from './workflow-tree-store.ts'
@@ -66,11 +75,14 @@ export function workflowCommand(argv: string[], presentation: Presentation): voi
   else if (sub === 'versions') print(workflowVersions(argv[2]!))
   else if (sub === 'compose') composeCommand(argv, json, print, presentation)
   else if (sub === 'step') stepCommand(argv, print)
+  else if (sub === 'next') nextCommand(argv, print)
+  else if (sub === 'await') awaitCommand(argv, print)
+  else if (sub === 'cursors') cursorsCommand(argv, print)
   else if (sub === 'hydrate') hydrateCommand(argv, presentation)
   else if (sub === 'import') importCommand(argv, print)
   else
     throw new Error(
-      'unknown: orch workflow. Try list | show | set | promote | retire | fork | versions | compose | step | hydrate | import',
+      'unknown: orch workflow. Try list | show | set | promote | retire | fork | versions | compose | step | next | await | cursors | hydrate | import',
     )
 }
 
@@ -90,12 +102,47 @@ function setWorkflowCommand(argv: string[], print: (value: unknown, line?: strin
 function stepCommand(argv: string[], print: (value: unknown, line?: string) => void): void {
   const project = flagValue(argv, 'project')
   if (!project) throw new Error('--project is required')
-  const step = getWorkflowStep(argv[2]!, project, argv[3]!, workflowArgs(argv), undefined, {
-    version: positive(flagValue(argv, 'version'), '--version'),
-    catalogueVersion: positive(flagValue(argv, 'catalogue-version'), '--catalogue-version'),
-    mode: flagValue(argv, 'mode'),
-  })
+  const mode = flagValue(argv, 'mode')
+  const step = mode
+    ? getWorkflowStepWithCursor(
+        argv[2]!, project, argv[3]!, workflowArgs(argv), mode, cliWorkflowCursorContext(),
+      )
+    : getWorkflowStep(argv[2]!, project, argv[3]!, workflowArgs(argv), undefined, {
+        version: positive(flagValue(argv, 'version'), '--version'),
+        catalogueVersion: positive(flagValue(argv, 'catalogue-version'), '--catalogue-version'),
+      })
   print(step, renderWorkflowStep(step))
+}
+
+function nextCommand(argv: string[], print: (value: unknown, line?: string) => void): void {
+  const project = flagValue(argv, 'project')
+  const mode = flagValue(argv, 'mode')
+  if (!project) throw new Error('--project is required')
+  if (!mode) throw new Error('--mode is required')
+  const result = nextWorkflowStep(
+    argv[2]!, project, mode, workflowArgs(argv), flagValue(argv, 'note'), cliWorkflowCursorContext(),
+  )
+  print(result, result)
+}
+
+function awaitCommand(argv: string[], print: (value: unknown, line?: string) => void): void {
+  const project = flagValue(argv, 'project')
+  const mode = flagValue(argv, 'mode')
+  if (!project) throw new Error('--project is required')
+  if (!mode) throw new Error('--mode is required')
+  const result = awaitWorkflowRuling(
+    argv[2]!, project, mode, workflowArgs(argv), flagValue(argv, 'question'), cliWorkflowCursorContext(),
+  )
+  print(result, `workflow ${argv[2]} is awaiting a ruling at step ${result.n} ${result.slug}`)
+}
+
+function cursorsCommand(argv: string[], print: (value: unknown, line?: string) => void): void {
+  const rows = listWorkflowCursors({
+    session: flagValue(argv, 'session'),
+    project: flagValue(argv, 'project'),
+    all: argv.includes('--all'),
+  })
+  print(rows, rows.map(renderWorkflowCursorLine).join('\n'))
 }
 
 function catalogueCommand(argv: string[], print: (value: unknown, line?: string) => void): void {
@@ -192,17 +239,27 @@ function composeCommand(
 ): void {
   const project = flagValue(argv, 'project')
   if (!project) throw new Error('--project is required')
-  const result = composeWorkflow(
+  const mode = flagValue(argv, 'mode')
+  const args = workflowArgs(argv)
+  const pure = composeWorkflow(
     argv[2]!,
     project,
-    flagValue(argv, 'mode'),
-    workflowArgs(argv),
+    mode,
+    args,
     undefined,
     {
       version: positive(flagValue(argv, 'version'), '--version'),
       catalogueVersion: positive(flagValue(argv, 'catalogue-version'), '--catalogue-version'),
     },
   )
+  const result = pure.mode && !pure.needs.arguments
+    ? composeWorkflowWithCursor(
+        argv[2]!, project, mode, args, cliWorkflowCursorContext(), undefined, {
+          version: positive(flagValue(argv, 'version'), '--version'),
+          catalogueVersion: positive(flagValue(argv, 'catalogue-version'), '--catalogue-version'),
+        },
+      )
+    : pure
   print(result, json ? undefined : renderWorkflowComposition(result))
   if (Object.keys(result.needs).length) presentation.setExitCode(2)
 }

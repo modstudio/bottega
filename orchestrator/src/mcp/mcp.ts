@@ -45,6 +45,13 @@ import {
 import { projectAt, projectByName, projects } from '../project/projects.ts'
 import { getReview, listReviews } from '../review/review.ts'
 import { renderWorkflowStep } from '../workflow/workflow-render.ts'
+import {
+  awaitWorkflowRuling,
+  composeWorkflowWithCursor,
+  getWorkflowStepWithCursor,
+  mcpWorkflowCursorContext,
+  nextWorkflowStep,
+} from '../workflow/workflow-cursor.ts'
 import { composeWorkflow, getWorkflowStep, listWorkflows } from '../workflow/workflows.ts'
 import { decideMcpDocWrite } from './mcp-doc-write.ts'
 import { registerWorkflowPrompts } from './mcp-prompts.ts'
@@ -423,10 +430,20 @@ export function createDocsMcpServer(): McpServer {
     },
     async ({ slug, project, mode, args, version, catalogue_version }) =>
       text(
-        composeWorkflow(slug, project, mode, args ?? {}, undefined, {
-          version,
-          catalogueVersion: catalogue_version,
-        }),
+        mode
+          ? composeWorkflowWithCursor(
+              slug,
+              project,
+              mode,
+              args ?? {},
+              mcpWorkflowCursorContext(),
+              undefined,
+              { version, catalogueVersion: catalogue_version },
+            )
+          : composeWorkflow(slug, project, mode, args ?? {}, undefined, {
+              version,
+              catalogueVersion: catalogue_version,
+            }),
       ),
   )
 
@@ -434,7 +451,7 @@ export function createDocsMcpServer(): McpServer {
     'get_workflow_step',
     {
       description:
-        'Fetch one workflow step body with argument substitutions applied. Pass mode so the reply names the next step.',
+        'Fetch one workflow step body with argument substitutions applied. Pass mode so the cursor advances and the reply names the next step; a step ahead of the cursor is refused.',
       inputSchema: {
         slug: z.string().trim().min(1),
         project: z.string().trim().min(1),
@@ -445,7 +462,69 @@ export function createDocsMcpServer(): McpServer {
     },
     async ({ slug, project, step, mode, args }) =>
       text(
-        renderWorkflowStep(getWorkflowStep(slug, project, step, args ?? {}, undefined, { mode })),
+        renderWorkflowStep(
+          mode
+            ? getWorkflowStepWithCursor(
+                slug,
+                project,
+                step,
+                args ?? {},
+                mode,
+                mcpWorkflowCursorContext(),
+              )
+            : getWorkflowStep(slug, project, step, args ?? {}, undefined, { mode }),
+        ),
+      ),
+  )
+
+  server.registerTool(
+    'next_workflow_step',
+    {
+      description:
+        'Close the current step with a one-line note of how its floor was met and fetch the next; the cursor is the record.',
+      inputSchema: {
+        slug: z.string().trim().min(1),
+        project: z.string().trim().min(1),
+        mode: z.string().trim().min(1),
+        args: z.record(z.string(), z.string()).optional(),
+        note: z.string().trim().min(1),
+      },
+    },
+    async ({ slug, project, mode, args, note }) =>
+      text(
+        nextWorkflowStep(
+          slug,
+          project,
+          mode,
+          args ?? {},
+          note,
+          mcpWorkflowCursorContext(),
+        ),
+      ),
+  )
+
+  server.registerTool(
+    'await_workflow_ruling',
+    {
+      description: 'Record that the workflow is paused on a question for the operator.',
+      inputSchema: {
+        slug: z.string().trim().min(1),
+        project: z.string().trim().min(1),
+        mode: z.string().trim().min(1),
+        args: z.record(z.string(), z.string()).optional(),
+        question: z.string().trim().min(1),
+      },
+    },
+    async ({ slug, project, mode, args, question }) =>
+      text(
+        awaitWorkflowRuling(
+          slug,
+          project,
+          mode,
+          args ?? {},
+          question,
+          mcpWorkflowCursorContext(),
+        ),
       ),
   )
 

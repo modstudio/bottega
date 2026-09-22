@@ -281,6 +281,13 @@
       "when": 1788900000033,
       "tag": "0039_agent_operator",
       "breakpoints": true
+    },
+    {
+      "idx": 40,
+      "version": "6",
+      "when": 1788900000034,
+      "tag": "0040_workflow_cursor",
+      "breakpoints": true
     }
   ]
 }

@@ -3,6 +3,10 @@ import { z } from 'zod'
 import { projectAt } from '../project/projects.ts'
 import { renderWorkflowComposition } from '../workflow/workflow-render.ts'
 import {
+  composeWorkflowWithCursor,
+  mcpWorkflowCursorContext,
+} from '../workflow/workflow-cursor.ts'
+import {
   composeWorkflow,
   productionWorkflows,
   type WorkflowDefinition,
@@ -69,7 +73,15 @@ export function registerWorkflowPrompts(server: McpServer): void {
         }
         try {
           return promptMessage(
-            renderWorkflowComposition(composeWorkflow(prompt.name, projectName, mode, args)),
+            renderWorkflowComposition(
+              composeWorkflowWithCursor(
+                prompt.name,
+                projectName,
+                mode,
+                args,
+                mcpWorkflowCursorContext(),
+              ),
+            ),
           )
         } catch (error) {
           return promptMessage(error instanceof Error ? error.message : String(error))
