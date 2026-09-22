@@ -73,6 +73,15 @@ describe('workflow rendering', () => {
     )
   })
 
+  test('a composition missing required arguments names them instead of the contract', () => {
+    const rendered = renderWorkflowComposition(
+      composeWorkflow('ship', 'fixture', 'default', {}, database()),
+    )
+    expect(rendered).toContain('missing required arguments: key, branch, worktree')
+    expect(rendered).not.toContain('Work the numbered steps below')
+    expect(rendered).not.toContain('Choose a mode')
+  })
+
   test('step pointers name the successor, the selected-mode end, and an ambiguous successor', () => {
     const d = database()
     expect(

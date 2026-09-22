@@ -7,7 +7,7 @@ const legend =
   "Reading a step line: autonomy=ask means the step ends in a ruling by the operator; stop and ask before going on. autonomy=auto means proceed without asking. floor names the proof that the step is done: human-ruling, a person ruled; command-exit, the named command exited successfully and its output is recorded; recorded-artifact, a written artifact exists in the tracker or doc store; tracker-transition, the task's tracker state changed. Several floors means any one of them is enough. needs names the facts entries the step uses. job names the orch job the step dispatches, or - when you do the step yourself."
 
 export function renderWorkflowComposition(result: WorkflowComposition): string {
-  if (result.mode && result.steps.length) {
+  if (result.mode && result.steps.length && !result.needs.arguments) {
     const args = Object.entries(result.arguments)
       .map(([key, value]) => ` --arg ${key}=${value}`)
       .join('')
@@ -31,7 +31,9 @@ export function renderWorkflowComposition(result: WorkflowComposition): string {
   return [
     `${result.workflow.title} — ${result.mode?.title ?? 'choose a mode'}`,
     ...(result.needs.mode ?? []).map((mode) => `${mode.slug}: ${mode.entry}`),
-    'Choose a mode by answering its question, then compose again with that mode.',
+    ...(result.needs.mode
+      ? ['Choose a mode by answering its question, then compose again with that mode.']
+      : []),
     ...(result.needs.arguments
       ? [`missing required arguments: ${result.needs.arguments.join(', ')}`]
       : []),
