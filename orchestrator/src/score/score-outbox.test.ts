@@ -44,6 +44,10 @@ test('score payload maps every hosted verdict field', () => {
       note: 'complete',
       scored_at: STAMP,
       scored_by: 'architect',
+      reproduced: null,
+      coverage: null,
+      limits: null,
+      overlap: null,
     },
     MACHINE_ID,
   )
@@ -54,6 +58,10 @@ test('score payload maps every hosted verdict field', () => {
     localId: 42,
     scoredAt: STAMP,
     updatedAt: STAMP,
+    reproduced: null,
+    coverage: null,
+    limits: null,
+    overlap: null,
   })
 })
 

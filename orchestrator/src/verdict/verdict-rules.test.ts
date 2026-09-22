@@ -4,6 +4,7 @@ import { type JobFacts, refuseVerdict, type VerdictFacts } from './verdict-rules
 const readOnly: JobFacts = {
   writesRepo: false,
   producesFindings: false,
+  hasAnyReviewGrades: false,
   hasRequiredReviewGrades: false,
 }
 const valid: VerdictFacts = {
@@ -24,6 +25,7 @@ describe('verdict rules', () => {
     [{ fidelity: 'other' }, 'fidelity must be one of'],
     [{ job: writing }, 'repository-writing jobs require a fidelity verdict'],
     [{ fidelity: 'faithful' }, 'does not take a fidelity axis'],
+    [{ job: { ...readOnly, hasAnyReviewGrades: true } }, 'this job does not produce findings'],
     [
       { job: findings },
       'findings-producing jobs require reproduced, coverage, limits, and overlap review grades',

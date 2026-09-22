@@ -2,38 +2,31 @@
 /** Knows how a local verdict becomes an ordered hosted-record mutation. Must not know Postgres. */
 import type { Database } from 'bun:sqlite'
 import { PLATFORM_SPACE_ID } from '../../../shared/record/schema.ts'
+import type { VerdictPayload } from '../verdict/verdict-payload.ts'
+import { VERDICT_PAYLOAD_COLUMNS } from '../verdict/verdict-payload.ts'
 
-export const SCORE_RECORD_PAYLOAD_COLUMNS = [
-  'id',
-  'spaceId',
-  'projectName',
-  'machineId',
-  'localId',
-  'delivery',
-  'quality',
-  'fidelity',
-  'note',
-  'scoredAt',
-  'scoredBy',
-  'updatedAt',
-] as const
+export const SCORE_RECORD_PAYLOAD_COLUMNS = VERDICT_PAYLOAD_COLUMNS
 
 type LocalScore = {
   record_id: string | null
   local_id: number
   project_name: string | null
-  delivery: string
-  quality: string | null
-  fidelity: string | null
+  delivery: VerdictPayload['delivery']
+  quality: VerdictPayload['quality']
+  fidelity: VerdictPayload['fidelity']
   note: string | null
   scored_at: string
   scored_by: string
+  reproduced: VerdictPayload['reproduced']
+  coverage: VerdictPayload['coverage']
+  limits: VerdictPayload['limits']
+  overlap: VerdictPayload['overlap']
 }
 
 export function buildScoreRecordPayload(
   row: LocalScore & { record_id: string },
   machineId: string,
-): Record<string, unknown> {
+): VerdictPayload {
   return {
     id: row.record_id,
     spaceId: PLATFORM_SPACE_ID,
@@ -46,6 +39,10 @@ export function buildScoreRecordPayload(
     note: row.note,
     scoredAt: row.scored_at,
     scoredBy: row.scored_by,
+    reproduced: row.reproduced,
+    coverage: row.coverage,
+    limits: row.limits,
+    overlap: row.overlap,
     updatedAt: row.scored_at,
   }
 }
@@ -56,21 +53,38 @@ export function enqueueScoreRecord(database: Database, runId: number, machineId:
     .query<LocalScore, [number]>(
       `SELECT r.record_id, r.id AS local_id, project.name AS project_name,
               s.delivery, s.quality, s.fidelity,
-              s.note, s.scored_at, s.scored_by
+              s.note, s.scored_at, s.scored_by,
+              lens.reproduced, lens.coverage, lens.limits, lens.overlap
          FROM score s JOIN run r ON r.id=s.run_id
          LEFT JOIN project ON project.id=r.project_id
+         LEFT JOIN review_lens lens ON lens.run_id=r.id
         WHERE s.run_id=?`,
     )
     .get(runId)
   if (!row) throw new Error(`run ${runId} has no score and cannot be enqueued`)
   if (row.record_id === null) return false
   const payload = buildScoreRecordPayload({ ...row, record_id: row.record_id }, machineId)
-  database
-    .query(
-      `INSERT INTO outbox (kind, record_id, payload, created_at)
-       VALUES ('score', ?, ?, ?)`,
+  const pending = database
+    .query<{ id: number }, [string]>(
+      "SELECT id FROM outbox WHERE kind='score' AND record_id=? AND synced_at IS NULL ORDER BY id LIMIT 1",
     )
-    .run(row.record_id, JSON.stringify(payload), row.scored_at)
+    .get(row.record_id)
+  if (pending) {
+    database
+      .query(
+        `UPDATE outbox
+            SET payload=?, created_at=?, attempts=0, last_error=NULL
+          WHERE id=?`,
+      )
+      .run(JSON.stringify(payload), row.scored_at, pending.id)
+  } else {
+    database
+      .query(
+        `INSERT INTO outbox (kind, record_id, payload, created_at)
+         VALUES ('score', ?, ?, ?)`,
+      )
+      .run(row.record_id, JSON.stringify(payload), row.scored_at)
+  }
   return true
 }
 

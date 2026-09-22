@@ -116,9 +116,9 @@ export function weigh(
  * was filed as a quality problem because nothing better was on offer. Exported
  * from here so a level cannot exist that the prompts do not mention.
  */
-export const DELIVERY: Delivery[] = ['none', 'partial', 'full']
-export const QUALITY: Quality[] = ['wrong', 'mixed', 'right']
-export const FIDELITY: Fidelity[] = ['drifted', 'partial', 'faithful']
+export const DELIVERY = ['none', 'partial', 'full'] as const satisfies readonly Delivery[]
+export const QUALITY = ['wrong', 'mixed', 'right'] as const satisfies readonly Quality[]
+export const FIDELITY = ['drifted', 'partial', 'faithful'] as const satisfies readonly Fidelity[]
 
 /**
  * Whether the caller is allowed to judge a run.

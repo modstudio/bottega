@@ -31,6 +31,7 @@ import {
   type RunRecordBackfillResult,
 } from '../run/run-outbox.ts'
 import { backfillScoreRecords, SCORE_RECORD_PAYLOAD_COLUMNS } from '../score/score-outbox.ts'
+import { VERDICT_PAYLOAD_SCHEMA, type VerdictPayload } from '../verdict/verdict-payload.ts'
 import {
   backfillLandingEvidenceRecords,
   CONTENTION_RECORD_PAYLOAD_COLUMNS,
@@ -43,6 +44,7 @@ import {
 import { machineId, machineName } from './machine-identity.ts'
 import { pullRecordCache } from './record-cache.ts'
 import { currentRecordSession } from './record-session.ts'
+import { validateRecordVerdict } from './record-verdicts.ts'
 
 type OutboxRow = { id: number; kind: string; record_id: string; payload: string }
 type Payload = Record<string, unknown>
@@ -306,7 +308,7 @@ function runValues(row: Payload, projectId: string | null) {
   }
 }
 
-function scoreValues(row: Payload) {
+function scoreValues(row: VerdictPayload) {
   return {
     runId: String(row.id),
     spaceId: String(row.spaceId),
@@ -562,7 +564,9 @@ const recordKinds = {
     push: async (postgres: SQL, row: Payload, principal: RecordPrincipal) =>
       postgres.begin(async (tx) => {
         await bindPrincipal(tx, principal)
-        const values = scoreValues(row)
+        const verdict = VERDICT_PAYLOAD_SCHEMA.parse(row)
+        await validateRecordVerdict(tx, verdict)
+        const values = scoreValues(verdict)
         const { runId: _runId, ...updates } = values
         await drizzle({ client: tx })
           .insert(runScoreRecord)
@@ -724,14 +728,14 @@ async function pushOutboxRow(
     }
     await recordKinds[kind].push(attempt.postgres, record, rowPrincipal)
     local
-      .query('UPDATE outbox SET synced_at=?, last_error=NULL WHERE id=?')
-      .run(attempt.now(), row.id)
+      .query('UPDATE outbox SET synced_at=?, last_error=NULL WHERE id=? AND payload=?')
+      .run(attempt.now(), row.id, row.payload)
     return 'pushed'
   } catch (error) {
     const detail = errorDetail(error)
     local
-      .query('UPDATE outbox SET attempts=attempts+1, last_error=? WHERE id=?')
-      .run(detail, row.id)
+      .query('UPDATE outbox SET attempts=attempts+1, last_error=? WHERE id=? AND payload=?')
+      .run(detail, row.id, row.payload)
     const blocked = unreachableSpaceProject(detail)
     if (!blocked) return 'stop'
     attempt.blockedProjects.add(blocked)

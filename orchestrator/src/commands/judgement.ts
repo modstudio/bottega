@@ -32,32 +32,17 @@ const commonValueFlags = [
   '--overlap',
 ] as const
 
-function scoreNote(flags: ReturnType<typeof optionFlags>): string | null {
+export function scoreNote(flags: ReturnType<typeof optionFlags>): string | null {
   const inline = flags.flag('note')
   const file = flags.flag('note-file')
   if (inline !== undefined && file !== undefined)
     throw new Error('pass a score note with either --note or --note-file, not both')
-  const note = file === undefined ? inline : readFileSync(file, 'utf8')
+  if (file !== undefined) return readFileSync(file, 'utf8')
+  const note = inline
   if (note === undefined) return null
-  const unescaped = (quote: string) => {
-    let count = 0
-    for (let i = 0; i < note.length; i++) {
-      if (note[i] !== quote) continue
-      if (
-        quote === "'" &&
-        /[\p{L}\p{N}]/u.test(note[i - 1] ?? '') &&
-        /[\p{L}\p{N}]/u.test(note[i + 1] ?? '')
-      )
-        continue
-      let slashes = 0
-      for (let j = i - 1; j >= 0 && note[j] === '\\'; j--) slashes++
-      if (slashes % 2 === 0) count++
-    }
-    return count
-  }
-  if (note.trim() === '``' || ['"', "'", '`'].some((quote) => unescaped(quote) % 2 !== 0)) {
+  if (/^`{1,2}$/.test(note.trim())) {
     throw new Error(
-      'score note looks like an unexpanded shell fragment (a lone backtick pair or an unbalanced quote); put the note in a file and pass --note-file <path>',
+      'score note looks like an unexpanded shell fragment (a lone backtick); put the note in a file and pass --note-file <path>',
     )
   }
   return note
