@@ -48,7 +48,10 @@ export const READONLY_LENS_DENY_PATHS = [
   '~/Library/Keychains/login.keychain-db', // current macOS login keychain
 ] as const
 
-/** Host-control sockets: Docker access is equivalent to escaping the sandbox. */
+/**
+ * Host-control sockets denied unless worktree.readonly_docker declares that the
+ * project's checks only run in containers and the operator accepts host-equivalent access.
+ */
 export const READONLY_LENS_DENY_SOCKETS = ['/var/run/docker.sock', '/run/docker.sock'] as const
 
 export const SRT_LIBRARY = join(
@@ -73,6 +76,20 @@ export function resolveSecretPaths(project: Project | null): string[] {
     const expanded = expandHome(entry)
     return isAbsolute(expanded) ? resolve(expanded) : resolve(project.path, expanded)
   })
+}
+
+function dockerSocketPaths(environment: ConfigEnvironment): string[] {
+  const dockerHost = environment.DOCKER_HOST
+  if (dockerHost?.startsWith('unix://')) {
+    try {
+      return [resolve(new URL(dockerHost).pathname)]
+    } catch {
+      /* fall through to the standard socket paths */
+    }
+  }
+  return [...READONLY_LENS_DENY_SOCKETS, '~/.docker/run/docker.sock']
+    .map(expandHome)
+    .map((path) => resolve(path))
 }
 
 /**
@@ -128,7 +145,9 @@ export function readonlyLensProfile(input: {
   nodeModuleLinks?: string[]
   mcpAllowlist?: string[]
   environment?: ConfigEnvironment
+  allowDockerSocket?: boolean
 }): SandboxRuntimeConfig {
+  const environment = input.environment ?? process.env
   const toolchain = (input.path ?? process.env.PATH ?? '')
     .split(delimiter)
     .filter(Boolean)
@@ -145,7 +164,7 @@ export function readonlyLensProfile(input: {
   const protectedDenies = [
     ...new Set([
       ...READONLY_LENS_DENY_PATHS.map(expandHome).map((path) => resolve(path)),
-      ...resolveEnvFilePaths(input.environment ?? process.env).map((path) => resolve(path)),
+      ...resolveEnvFilePaths(environment).map((path) => resolve(path)),
       ...resolveSecretPaths(input.project),
     ]),
   ]
@@ -198,14 +217,17 @@ export function readonlyLensProfile(input: {
         ]),
       ],
       deniedDomains: [],
-      allowUnixSockets: [],
+      allowUnixSockets: input.allowDockerSocket ? dockerSocketPaths(environment) : [],
       // On macOS srt's one switch covers both binding and outbound loopback.
       // The per-run orch-ask listener uses an OS-assigned loopback port, so it
       // cannot be named in the static domain list before srt starts.
       allowLocalBinding: true,
     },
     filesystem: {
-      denyRead: [...protectedDenies, ...READONLY_LENS_DENY_SOCKETS],
+      denyRead: [
+        ...protectedDenies,
+        ...(input.allowDockerSocket ? [] : READONLY_LENS_DENY_SOCKETS),
+      ],
       allowWithinDeny,
       allowWrite: [...new Set([worktree, runsDir, ...(scratchDir ? [scratchDir] : [])])],
       denyWrite: [],
@@ -241,6 +263,7 @@ export function selectReadonlySandbox(input: {
   localBaseUrl?: string
   mcp?: boolean
   mcpAllowlist?: string[]
+  environment?: ConfigEnvironment
 }): SandboxSelection {
   if (!isReadonlySandboxCandidate(input)) {
     return { sandbox: 'host', profile: null, reason: null }
@@ -273,16 +296,12 @@ export function selectReadonlySandbox(input: {
         'the sandbox root is missing',
     )
   }
-  if (input.readsRepo && input.readonlyDocker) {
-    return {
-      sandbox: 'host',
-      profile: null,
-      reason: 'project worktree.readonly_docker allows read-only checks through Docker',
-    }
-  }
   return {
     sandbox: 'srt',
-    reason: null,
+    reason:
+      input.readsRepo && input.readonlyDocker
+        ? 'project worktree.readonly_docker allows the Docker socket; every other read-only confinement holds'
+        : null,
     profile: readonlyLensProfile({
       worktree: input.worktree,
       runsDir: input.runsDir,
@@ -292,6 +311,8 @@ export function selectReadonlySandbox(input: {
       path: input.path,
       localBaseUrl: input.localBaseUrl,
       mcpAllowlist: input.mcpAllowlist,
+      allowDockerSocket: input.readsRepo && input.readonlyDocker,
+      environment: input.environment,
     }),
   }
 }

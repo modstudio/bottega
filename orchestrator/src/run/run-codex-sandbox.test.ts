@@ -1,7 +1,42 @@
 import { describe, expect, test } from 'bun:test'
-import { decideCodexSandbox } from './run-codex-sandbox.ts'
+import { codexAcpReadonlyDockerRefusal, decideCodexSandbox } from './run-codex-sandbox.ts'
 
 describe('Codex sandbox decision', () => {
+  test('refuses flagged read-only Codex over ACP before it silently loses Docker', () => {
+    expect(
+      codexAcpReadonlyDockerRefusal({
+        agentIsCodex: true,
+        transport: 'acp',
+        readsRepo: true,
+        writesRepo: false,
+        readonlyDocker: true,
+        projectName: 'fixture',
+      }),
+    ).toBe(
+      "project fixture declares worktree.readonly_docker, which needs Codex's command sandbox; run with --transport cli",
+    )
+  })
+
+  test('allows CLI and combinations that do not need the read-only Docker ruling', () => {
+    const flaggedReadOnly = {
+      agentIsCodex: true,
+      transport: 'acp',
+      readsRepo: true,
+      writesRepo: false,
+      readonlyDocker: true,
+      projectName: 'fixture',
+    }
+    for (const allowed of [
+      { ...flaggedReadOnly, transport: 'cli' },
+      { ...flaggedReadOnly, agentIsCodex: false },
+      { ...flaggedReadOnly, readsRepo: false },
+      { ...flaggedReadOnly, writesRepo: true },
+      { ...flaggedReadOnly, readonlyDocker: false },
+    ]) {
+      expect(codexAcpReadonlyDockerRefusal(allowed)).toBeNull()
+    }
+  })
+
   test('a flagged read-only repository opens Docker through workspace-write network access', () => {
     expect(
       decideCodexSandbox({

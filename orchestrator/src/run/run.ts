@@ -113,11 +113,12 @@ import {
 } from './run-artifacts.ts'
 import { claimRun } from './run-claim.ts'
 import { closeRun } from './run-close.ts'
-import { decideCodexSandbox } from './run-codex-sandbox.ts'
+import { codexAcpReadonlyDockerRefusal, decideCodexSandbox } from './run-codex-sandbox.ts'
 import { acquireRunLease } from './run-lease.ts'
 import { runLive } from './run-live.ts'
 import * as mcpAttachment from './run-mcp-attachment.ts'
 import { bindSignals, childEnv, sha } from './run-process.ts'
+import { readonlyInfrastructurePrompt } from './run-readonly-infrastructure.ts'
 import { finishRun } from './run-terminal.ts'
 import type { RunResult } from './run-types.ts'
 
@@ -434,25 +435,22 @@ export async function run(opts: {
    * does know are stated on its behalf.
    */
   const infra = (() => {
-    if (!repoJob) return ''
     const tool = registeredWorktreeTool
     if (!tool) return ''
-    if (!writesJob && (!tool.readonly_create || tool.readonly_notes !== undefined)) {
-      const tree =
-        tool.readonly_notes !== undefined
-          ? `This read-only run has the project's files at ${readOnlyBase}. ${tool.readonly_notes}`
-          : `This read-only run has the project's files at ${readOnlyBase} with NO provisioned ` +
-            `infrastructure (no databases, no generated env, no vendor tree).`
-      const docker = tool.readonly_docker
-        ? " Docker is reachable from this tree so that the project's gate can run; run the gate and no other Docker verb."
+    const generated =
+      writesJob || (tool.readonly_create && tool.readonly_notes === undefined)
+        ? generatedWorktreeNotes(tool, callerCwd)
         : ''
-      return (
-        `${tree}${docker} Do not treat a test suite that cannot start as a finding; ` +
-        `record what you could not run in could_not_verify.`
-      )
-    }
-    const generated = generatedWorktreeNotes(tool, callerCwd)
-    return [tool.notes ?? '', generated].filter(Boolean).join('\n\n')
+    return readonlyInfrastructurePrompt({
+      readsRepo: repoJob,
+      writesRepo: writesJob,
+      readonlyCreate: Boolean(tool.readonly_create),
+      readonlyNotes: tool.readonly_notes,
+      readonlyDocker: tool.readonly_docker === true,
+      readOnlyBase,
+      regularNotes: tool.notes ?? '',
+      generatedNotes: generated,
+    })
   })()
   const originalPrompt = opts.prompt
   const resolvedDialect = resolveReplyDialect(requestedJob)
@@ -572,12 +570,13 @@ export async function run(opts: {
         opts.lens,
       )
   const a = requireAgent(name)
-  const codexSandbox = decideCodexSandbox({
+  const codexSandboxFacts = {
     agentIsCodex: name === 'codex',
     readsRepo: repoJob,
     writesRepo: writesJob,
     readonlyDocker: registeredWorktreeTool?.readonly_docker === true,
-  })
+  }
+  const codexSandbox = decideCodexSandbox(codexSandboxFacts)
   let boundMs: number
   try {
     // A durable historical row can name an agent that is no longer registered.
@@ -602,6 +601,15 @@ export async function run(opts: {
     opts.resume || opts.transport !== undefined || process.env.ORCH_TRANSPORT
       ? requestedTransport
       : a.defaultTransport
+  const transportRefusal = codexAcpReadonlyDockerRefusal({
+    ...codexSandboxFacts,
+    transport: transportName,
+    projectName: runProjectName ?? 'unknown',
+  })
+  if (transportRefusal) {
+    if (opts.reserveId) db().query('DELETE FROM run WHERE id=?').run(opts.reserveId)
+    throw new Error(transportRefusal)
+  }
   if (transportName === 'acp') {
     try {
       assertAcpAllowed(opts.job, name, a)
