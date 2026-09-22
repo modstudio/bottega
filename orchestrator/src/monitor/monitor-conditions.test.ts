@@ -12,6 +12,7 @@ import {
   rulingConditions,
   staleTrustEntryConditions,
   stalledRunCondition,
+  stalledRunConditions,
   terminalProcessPgid,
   unsettledClaimConditions,
 } from './monitor-conditions.ts'
@@ -74,6 +75,39 @@ describe('stalled run monitor condition', () => {
       detail:
         'run 5406 codex/review-lens has been silent for 25m and has used no CPU in that time; stop it and re-dispatch, or wait for the 30m idle bound',
     })
+  })
+
+  test('uses the running turn identity shared with the listing', () => {
+    const root = addRun({
+      agent: 'codex',
+      job: 'implement',
+      status: 'asking',
+      session: 'session-chain',
+    })
+    const turn = addRun({
+      agent: 'grok',
+      job: 'review-lens',
+      status: 'running',
+      parent: root,
+      turn: 2,
+      startedAt: '2026-09-17T12:00:00.000Z',
+    })
+    db()
+      .query('UPDATE run SET agent_pid=?,agent_start_time=?,last_event_at=? WHERE id=?')
+      .run(880, 'recorded birth', '2026-09-17T12:01:00.000Z', turn)
+
+    expect(
+      stalledRunConditions(Date.parse('2026-09-17T12:30:00.000Z'), {
+        samples: [{ pid: 880, ppid: 1, pgid: 880, cpu: 0, state: 'S' }],
+        observedStartTime: () => 'recorded birth',
+      }),
+    ).toEqual([
+      expect.objectContaining({
+        subject: `run:${turn}`,
+        ownerSession: 'session-chain',
+        detail: expect.stringContaining(`run ${turn} grok/review-lens`),
+      }),
+    ])
   })
 })
 function insertAnsweredQuestion(runId: number): void {

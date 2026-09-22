@@ -10,8 +10,7 @@ import { idleLabel, idleMsSince, idleWarnMs } from '../events.ts'
 import { UNSCORED_WHERE } from '../evidence/evidence-query.ts'
 import { targetGitEnvironment } from '../git/git-environment.ts'
 import { hookTreeNotice } from '../hook-tree/hook-tree.ts'
-import { processTreeCpuMoving, runHasLiveDescendants, sampleProcesses } from '../idle-kill.ts'
-import { jobIdleKillMs } from '../jobs/jobs.ts'
+import { runHasLiveDescendants, sampleProcesses } from '../idle-kill.ts'
 import { type PidRecordIdentity, pidRecordIdentity } from '../project/project-lock.ts'
 import { projects } from '../project/projects.ts'
 import type { ResourceClaimKind } from '../resources/resource-claims.ts'
@@ -20,6 +19,7 @@ import {
   retainedRefInventory,
   worktreeDatabaseInventory,
 } from '../resources/resource-inventory.ts'
+import { liveMemberStall, liveRunMembers } from '../run/live-run-member.ts'
 import { runAlive } from '../run/run-alive.ts'
 import { runLeaseState } from '../run/run-lease.ts'
 import {
@@ -233,22 +233,22 @@ export function stalledRunCondition(
 }
 
 /** Report silent, CPU-idle workers without changing their lifecycle. */
-export function stalledRunConditions(clock = Date.now()): MonitorCondition[] {
-  const running = db()
-    .query(
-      `SELECT id, started_at, last_event_at, agent, job, session_id, agent_pid
-       FROM run WHERE status='running'`,
-    )
-    .all() as Array<
-    Omit<StalledRunFacts, 'cpuMoving' | 'idleBoundMs'> & { agent_pid: number | null }
-  >
-  const samples = running.length ? sampleProcesses() : []
+export function stalledRunConditions(
+  clock = Date.now(),
+  deps: {
+    samples?: ReturnType<typeof sampleProcesses>
+    observedStartTime?: (pid: number) => string | null
+  } = {},
+): MonitorCondition[] {
+  const running = liveRunMembers()
+  const samples = deps.samples ?? (running.length ? sampleProcesses() : [])
   return running.flatMap((run): MonitorCondition[] => {
+    const observed = liveMemberStall(run, samples, clock, idleStallMs(), deps.observedStartTime)
     const condition = stalledRunCondition(
       {
         ...run,
-        cpuMoving: processTreeCpuMoving(run.agent_pid, samples),
-        idleBoundMs: jobIdleKillMs(run.job),
+        cpuMoving: observed.state === 'unknown' ? null : observed.state === 'healthy',
+        idleBoundMs: observed.idleBoundMs,
       },
       clock,
     )

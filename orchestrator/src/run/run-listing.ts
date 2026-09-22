@@ -4,10 +4,9 @@
 import { resolveFailover } from '../collect/collect.ts'
 import { db } from '../database/db.ts'
 import { UNSCORED_WHERE } from '../evidence/evidence-query.ts'
-import { type ProcessSample, processTreeCpuMoving, sampleProcesses } from '../idle-kill.ts'
-import { jobIdleKillMs } from '../jobs/jobs.ts'
+import { type ProcessSample, sampleProcesses } from '../idle-kill.ts'
 import { failureReason, type OutcomeRow, outcomeOf } from '../outcome.ts'
-import { idleStallMs, stalledRunDetail, stalledRunState } from '../stalled-run.ts'
+import { currentRunMemberJoin, liveMemberStall } from './live-run-member.ts'
 
 type RunListingFlags = {
   has(name: string): boolean
@@ -27,30 +26,6 @@ type RunListingPresentation = {
     output_path: string | null
     writesRepo: boolean
   }): string | null
-}
-
-function runStallFields(input: {
-  live: boolean
-  id: number
-  agent: string
-  job: string
-  agentPid: number
-  idleMs: number | null
-  samples: ProcessSample[]
-}): { stallState: 'healthy' | 'stalled' | 'unknown' | null; stall: string | null } {
-  if (!input.live) return { stallState: null, stall: null }
-  const idleBoundMs = jobIdleKillMs(input.job)
-  const stallState = stalledRunState({
-    idleMs: input.idleMs,
-    cpuMoving: processTreeCpuMoving(input.agentPid, input.samples),
-    idleBoundMs,
-    thresholdMs: idleStallMs(),
-  })
-  const stall =
-    stallState === 'stalled' && input.idleMs !== null
-      ? stalledRunDetail({ ...input, idleMs: input.idleMs, idleBoundMs })
-      : null
-  return { stallState, stall }
 }
 
 function processSamplesForRows(rows: Record<string, unknown>[]): ProcessSample[] {
@@ -170,7 +145,9 @@ export async function runListingCommand(
      SELECT r.id, r.started_at, r.agent, r.job, r.repo, r.latency_ms, r.vendor_tokens,
             current_run.status, current_run.failure_kind, current_run.error,
             current_run.last_event_at, current_run.started_at AS current_started_at,
-            current_run.agent_pid AS current_agent_pid,
+            current_run.id AS live_member_id, current_run.agent AS current_agent,
+            current_run.job AS current_job, current_run.agent_pid AS current_agent_pid,
+            current_run.agent_start_time AS current_agent_start_time,
             s.delivery, s.quality,
             COALESCE(r.label, r.prompt_head) AS prompt_head, r.route_reason, r.sandbox
             ${
@@ -181,11 +158,7 @@ export async function runListingCommand(
             }
        FROM run r
        ${unscoredJoin}
-       JOIN run current_run ON current_run.id = (
-         SELECT member.id FROM run member
-          WHERE member.id = r.id OR member.parent_run_id = r.id
-          ORDER BY member.turn DESC, member.id DESC LIMIT 1
-       )
+       ${currentRunMemberJoin('r')}
        LEFT JOIN score s ON s.run_id = r.id
       ${where.length ? 'WHERE ' + where.join(' AND ') : ''}
       ORDER BY r.id DESC LIMIT ?`,
@@ -311,18 +284,27 @@ export async function runListingCommand(
         ? 'idle-killed'
         : null
     const since = live ? idleMsSince(lastEventAt, startedAt) : null
-    const { stallState, stall } = runStallFields({
-      live,
-      id: Number(r.id),
-      agent: String(r.agent),
-      job: String(r.job),
-      agentPid: Number(r.current_agent_pid ?? 0),
-      idleMs: since,
-      samples: processSamples,
-    })
+    const stallObservation = live
+      ? liveMemberStall(
+          {
+            id: Number(r.live_member_id),
+            agent: String(r.current_agent),
+            job: String(r.current_job),
+            started_at: startedAt,
+            last_event_at: lastEventAt,
+            session_id: (r.session_id as string | null) ?? null,
+            agent_pid: (r.current_agent_pid as number | null) ?? null,
+            agent_start_time: (r.current_agent_start_time as string | null) ?? null,
+          },
+          processSamples,
+        )
+      : null
     const {
       current_started_at: _currentStartedAt,
+      current_agent: _currentAgent,
+      current_job: _currentJob,
       current_agent_pid: _currentAgentPid,
+      current_agent_start_time: _currentAgentStartTime,
       ...rest
     } = r
     const reclaimed = r.failure_kind === 'idle' ? parseIdleReclaimedMs(String(r.error ?? '')) : null
@@ -330,8 +312,8 @@ export async function runListingCommand(
       ...rest,
       idle,
       idle_ms: since,
-      stall_state: stallState,
-      stall,
+      stall_state: stallObservation?.state ?? null,
+      stall: stallObservation?.detail ?? null,
       reclaimed_ms: reclaimed,
     }
   })

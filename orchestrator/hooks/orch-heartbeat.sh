@@ -33,9 +33,9 @@
 # the Monitor tool reports the exit itself.
 #
 # Detection remains deliberately machine-wide in `orch monitor` (DEV-198).
-# This hook does not reproduce those detectors: it only claims the conditions
-# the monitor already addressed to this session. Conditions without an owner
-# stay in the monitor report for the fixer queue.
+# This hook also classifies stalled runs from the canonical run listing so the
+# owning session learns promptly; supplemental monitor notices remain below.
+# Conditions without an owner stay in the monitor report for the fixer queue.
 #
 # Usage:  orch-heartbeat.sh <session-id> [interval-seconds] [max-ticks]
 # Arm it under the Monitor tool; each emitted line becomes one notification.
@@ -300,6 +300,9 @@ print("STATE", len(live), " | ".join(live), ",".join(ids), sep="\t")
     ts=$(date +%H:%M:%S)
     if [ "$asking" -gt 0 ]; then
       echo "[$ts] BLOCKED - $asking question(s) waiting on you: run 'orch inbox', then 'orch answer <id>'. $n run(s) and $landing_n landing(s) live."
+      if [ "$stalled_n" -gt 0 ]; then
+        echo "[$ts] STALLED - $stalled_n run(s): $stalled_detail"
+      fi
     elif [ "$stalled_n" -gt 0 ]; then
       echo "[$ts] STALLED - $stalled_n run(s): $stalled_detail"
     elif [ "$n" -gt 0 ] || [ "$landing_n" -gt 0 ]; then

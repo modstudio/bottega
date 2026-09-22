@@ -243,8 +243,18 @@ export const modules: ArchitectureModule[] = [
     '../resources/resource-claims.ts',
     '../resources/resource-inventory.ts',
     '../run/run-alive.ts',
+    '../run/live-run-member.ts',
     '../run/run-lease.ts',
     '../run/synthetic-lifecycle-job.ts',
+  ]),
+  module('orchestrator/src/run/live-run-member.ts', [
+    'bun:sqlite',
+    '../../../shared/process-identity.ts',
+    '../database/db.ts',
+    '../events.ts',
+    '../idle-kill.ts',
+    '../jobs/jobs.ts',
+    '../stalled-run.ts',
   ]),
   module('orchestrator/src/monitor/monitor-notices.ts', [
     '../database/db.ts',
