@@ -529,37 +529,36 @@ export async function run(opts: {
     prompt = `${evidencePrompt.readerInstruction}\n\n${prompt}`
   }
   const requiresCanonSource = evidencePrompt.requiresCanonSource
-  const picked = opts.resume
-    ? null
-    : pick(
-        opts.job,
-        selectAgentForTransport(requestedTransport, opts.agent),
-        Buffer.byteLength(prompt) +
-          replyFileBytes(replySchemaName, runScratchDir(Number.MAX_SAFE_INTEGER)) +
-          (requestedJob.findings ? CALIBRATION_SUFFIX_RESERVE_BYTES : 0) +
-          (requiresCanonSource ? CANON_SOURCE_PROMPT_RESERVE_BYTES : 0),
-        true,
-        stackAt(callerCwd),
-        {
-          agents: opts.avoid,
-          models: opts.distinctModels,
-          model: opts.model,
-          noWaitCapacity: opts.noWaitCapacity,
-        },
-        opts.probe,
-        opts.lens,
-      )
-  const a = requireAgent(opts.resume?.agent ?? picked!.agent)
+  const pickSource = () =>
+    pick(
+      opts.job,
+      selectAgentForTransport(requestedTransport, opts.agent),
+      Buffer.byteLength(prompt) +
+        replyFileBytes(replySchemaName, runScratchDir(Number.MAX_SAFE_INTEGER)) +
+        (requestedJob.findings ? CALIBRATION_SUFFIX_RESERVE_BYTES : 0) +
+        (requiresCanonSource ? CANON_SOURCE_PROMPT_RESERVE_BYTES : 0),
+      true,
+      stackAt(callerCwd),
+      {
+        agents: opts.avoid,
+        models: opts.distinctModels,
+        model: opts.model,
+        noWaitCapacity: opts.noWaitCapacity,
+      },
+      opts.probe,
+      opts.lens,
+    )
+  const source = opts.resume
+    ? { source: 'resume' as const, ...opts.resume }
+    : { source: 'pick' as const, ...pickSource() }
   const launch = decideRunLaunch({
-    resume: opts.resume ?? null,
-    pickedAgent: picked?.agent ?? null,
-    pickedReason: picked?.reason ?? null,
-    requestedTransport,
+    ...source,
     explicitTransport: opts.transport !== undefined,
     envTransport: Boolean(process.env.ORCH_TRANSPORT),
-    agentDefaultTransport: a.defaultTransport,
   })
-  const { agent: name, reason, transport: transportName } = launch
+  const a = requireAgent(launch.agent)
+  const transportName = launch.useRequestedTransport ? requestedTransport : a.defaultTransport
+  const { agent: name, reason } = launch
   const codexSandboxFacts = {
     agentIsCodex: name === 'codex',
     readsRepo: repoJob,

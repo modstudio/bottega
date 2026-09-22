@@ -1,36 +1,31 @@
-import type { TransportName } from '../transport/transport.ts'
-
-export type RunLaunchFacts = {
-  resume: { parent: number; turn: number; agent: string } | null
-  pickedAgent: string | null
-  pickedReason: string | null
-  requestedTransport: TransportName
+export type RunLaunchFacts = (
+  | { source: 'resume'; parent: number; turn: number; agent: string }
+  | { source: 'pick'; agent: string; reason: string }
+) & {
   explicitTransport: boolean
   envTransport: boolean
-  agentDefaultTransport: TransportName
 }
 
 export type RunLaunchRuling = {
   agent: string
   reason: string
-  transport: TransportName
+  useRequestedTransport: boolean
 }
 
 export function decideRunLaunch(facts: RunLaunchFacts): RunLaunchRuling {
   // A resumed turn stays with the vendor session that owns the conversation.
-  const selected = facts.resume
-    ? {
-        agent: facts.resume.agent,
-        reason:
-          `resumed run ${facts.resume.parent} (turn ${facts.resume.turn}); ` +
-          'repository path retargeting not applied because the turn is already bound to its worktree',
-      }
-    : { agent: facts.pickedAgent!, reason: facts.pickedReason! }
+  const selected =
+    facts.source === 'resume'
+      ? {
+          agent: facts.agent,
+          reason:
+            `resumed run ${facts.parent} (turn ${facts.turn}); ` +
+            'repository path retargeting not applied because the turn is already bound to its worktree',
+        }
+      : { agent: facts.agent, reason: facts.reason }
   return {
     ...selected,
-    transport:
-      facts.resume || facts.explicitTransport || facts.envTransport
-        ? facts.requestedTransport
-        : facts.agentDefaultTransport,
+    useRequestedTransport:
+      facts.source === 'resume' || facts.explicitTransport || facts.envTransport,
   }
 }
