@@ -81,13 +81,6 @@
     "score": 29
   },
   {
-    "file": "hub/web/src/routes/runs.tsx",
-    "function": "RunsList",
-    "line": 96,
-    "score": 16,
-    "key": "hub/web/src/routes/runs.tsx\u0000RunsList"
-  },
-  {
     "file": "orchestrator/src/agent/agent-probe.ts",
     "function": "probeAgent",
     "line": 1151,

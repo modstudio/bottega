@@ -70,7 +70,9 @@ const runWindowSchema = z.object({
     voided: z.number(),
     failed: z.number(),
   }),
-  vendors: z.array(z.object({ agent: z.string(), tokens: z.number(), runs: z.number() })),
+  vendors: z.array(
+    z.object({ agent: z.string(), tokens: z.number().nullable(), runs: z.number() }),
+  ),
   unscored: z.number(),
   live: z.array(runSchema),
 })

@@ -10,7 +10,7 @@ import { collectedTime, compactTokens, duration } from '@/lib/format'
 import { isHostedMode } from '@/lib/hub-mode'
 import { useDebounced } from '@/lib/use-debounced'
 import { verdictTone } from '@/lib/verdict-tone'
-import { useWindowState } from '@/lib/window'
+import { useWindowState, type WindowHours } from '@/lib/window'
 import { trpc } from '@/trpc/client'
 import { Badge } from '@/ui/badge/badge'
 import { LiveDot } from '@/ui/badge/live-dot'
@@ -60,7 +60,7 @@ type RunsPayload = {
   activeAgents: string[]
   data: {
     totals: { runs: number; scored: number; voided?: number; failed: number; stale_n: number }
-    vendors: { agent: string; tokens: number; runs: number }[]
+    vendors: { agent: string; tokens: number | null; runs: number }[]
     unscored: number
     facets: { agents: string[]; projects: string[] }
     matched: number
@@ -117,6 +117,45 @@ function usePaging(question: string) {
   return { page, pageSize, setPage, setPageSize }
 }
 
+type RunsInput = {
+  hours: WindowHours
+  agent: string
+  project: string
+  offset: number
+  limit: PageSize
+  search: string
+}
+
+/** One payload shape from either source: the local orchestrator or the hosted record. */
+function useRunsQuery(input: RunsInput, paused: boolean) {
+  const refetch = { refetchInterval: paused ? (false as const) : 30_000 }
+  const options = (isHostedMode()
+    ? trpc.record.runsView.queryOptions(input, refetch)
+    : trpc.run.list.queryOptions(input, refetch)) as unknown as UseQueryOptions<RunsPayload>
+  return useQuery({ ...options, placeholderData: keepPreviousData })
+}
+
+/** The window's counters as figure, label and hint. */
+function statCards(data: RunsPayload['data']) {
+  return [
+    [data.totals.runs.toLocaleString(), 'runs', 'in this window'],
+    [String(data.live.length), 'in flight', 'right now'],
+    [data.totals.scored.toLocaleString(), 'scored', 'judged'],
+    [(data.totals.voided ?? 0).toLocaleString(), 'voided', 'not routing evidence'],
+    [data.unscored.toLocaleString(), 'unscored', 'teaches the router nothing'],
+    [data.totals.failed.toLocaleString(), 'failed', 'counts against the agent'],
+  ]
+}
+
+/** A Space column earns its place only when the rows span more than one space. */
+function spansSpaces(rows: { space?: string }[]) {
+  return new Set(rows.map((row) => row.space).filter(Boolean)).size > 1
+}
+
+function spaceColumn<Row extends { space?: string }>(show: boolean): CollectionColumn<Row>[] {
+  return show ? [{ id: 'space', label: 'Space', render: (row) => row.space ?? '-' }] : []
+}
+
 function RunsList() {
   const navigate = useNavigate()
   const panel = useDetailPanel()
@@ -137,17 +176,7 @@ function RunsList() {
     limit: pageSize,
     search: searchQuery,
   }
-  const queryOptions = (isHostedMode()
-    ? trpc.record.runsView.queryOptions(input, {
-        refetchInterval: openMenus ? false : 30_000,
-      })
-    : trpc.run.list.queryOptions(input, {
-        refetchInterval: openMenus ? false : 30_000,
-      })) as unknown as UseQueryOptions<RunsPayload>
-  const query = useQuery({
-    ...queryOptions,
-    placeholderData: keepPreviousData,
-  })
+  const query = useRunsQuery(input, openMenus > 0)
   const payload = query.data as unknown as RunsPayload | undefined
   const data = payload?.data
   const filtered = !!(windowState.filters.agent || windowState.filters.project)
@@ -158,21 +187,11 @@ function RunsList() {
     agents: data?.facets.agents,
     onOpenChange: menuChanged,
   })
-  const cards = data
-    ? [
-        [data.totals.runs.toLocaleString(), 'runs', 'in this window'],
-        [String(data.live.length), 'in flight', 'right now'],
-        [data.totals.scored.toLocaleString(), 'scored', 'judged'],
-        [(data.totals.voided ?? 0).toLocaleString(), 'voided', 'not routing evidence'],
-        [data.unscored.toLocaleString(), 'unscored', 'teaches the router nothing'],
-        [data.totals.failed.toLocaleString(), 'failed', 'counts against the agent'],
-      ]
-    : []
+  const cards = data ? statCards(data) : []
   // The server applies search and paging; these are the rows to draw.
   const liveRows = data?.live ?? []
   const runRows = data?.rows ?? []
-  const spaces = new Set([...liveRows, ...runRows].map((row) => row.space).filter(Boolean))
-  const showSpace = spaces.size > 1
+  const showSpace = spansSpaces([...liveRows, ...runRows])
   const liveColumns: CollectionColumn<LiveRow>[] = [
     {
       id: 'agent',
@@ -184,9 +203,7 @@ function RunsList() {
         </span>
       ),
     },
-    ...(showSpace
-      ? [{ id: 'space', label: 'Space', render: (row: LiveRow) => row.space ?? '-' }]
-      : []),
+    ...spaceColumn<LiveRow>(showSpace),
     {
       id: 'job',
       label: 'Job',
@@ -208,9 +225,7 @@ function RunsList() {
     },
   ]
   const runColumns: CollectionColumn<RunRow>[] = [
-    ...(showSpace
-      ? [{ id: 'space', label: 'Space', render: (row: RunRow) => row.space ?? '-' }]
-      : []),
+    ...spaceColumn<RunRow>(showSpace),
     { id: 'project', label: 'Project', render: (row) => <ProjectMark name={row.project} /> },
     {
       id: 'task',
@@ -294,13 +309,11 @@ function RunsList() {
               breakdown={[
                 {
                   label: 'runs, all agents',
-                  value: data.vendors
-                    .reduce((sum, vendor) => sum + vendor.runs, 0)
-                    .toLocaleString(),
+                  value: data.totals.runs.toLocaleString(),
                 },
                 ...data.vendors.map((vendor) => ({
                   label: `${vendor.agent} tokens · ${vendor.runs.toLocaleString()} runs`,
-                  value: compactTokens(vendor.tokens),
+                  value: vendor.tokens == null ? '-' : compactTokens(vendor.tokens),
                 })),
               ]}
             />

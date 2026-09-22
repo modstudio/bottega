@@ -73,8 +73,13 @@ export const recordReadBoundariesAfterPublish: ImportBoundary[] = [
   boundary(
     'record-runs-boundary',
     'orchestrator/src/record/record-runs.ts',
-    ['bun', '../../../shared/record/tenant.ts'],
-    'Enforce the record-runs concern boundary.',
+    [
+      'bun',
+      '../../../shared/record/tenant.ts',
+      '../failure/failure.ts',
+      '../hook-tree/hook-tree.ts',
+    ],
+    'Enforce the record-runs concern boundary; the window counters share the local definitions of evidence and the hook-tree job.',
   ),
   boundary(
     'record-snapshots-boundary',

@@ -581,8 +581,15 @@ export const importBoundaries: ImportBoundary[] = [
       './record-verdicts.ts',
       './record-projects.ts',
       './record-runs.ts',
+      './record-runs-window-query.ts',
     ],
     'Enforce the record-api concern boundary.',
+  ),
+  boundary(
+    'record-runs-window-query-boundary',
+    'orchestrator/src/record/record-runs-window-query.ts',
+    ['zod'],
+    'Keep the hosted run window query contract free of how the window is read.',
   ),
   boundary(
     'record-api-client-boundary',

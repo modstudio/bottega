@@ -34,7 +34,7 @@ export function BottomSheet({
 
   const heightAt = (clientY: number) =>
     Math.min(100, Math.max(0, ((window.innerHeight - clientY) / window.innerHeight) * 100))
-  const release = (event: PointerEvent<HTMLDivElement>) => {
+  const release = (event: PointerEvent<HTMLButtonElement>) => {
     if (!dragging) return
     setDragging(false)
     const released = heightAt(event.clientY)
@@ -54,9 +54,8 @@ export function BottomSheet({
       className={`fixed inset-x-0 top-auto bottom-0 max-h-none w-full max-w-none border-border-default border-t bg-surface-overlay text-text-primary shadow-overlay backdrop:bg-scrim starting:translate-y-full ${dragging ? '' : 'transition-[translate,height] duration-(--duration-base)'}`}
     >
       <div className="flex h-full flex-col">
-        <div
-          role="separator"
-          aria-orientation="horizontal"
+        <button
+          type="button"
           aria-label="Resize sheet"
           className="flex h-5 shrink-0 cursor-row-resize touch-none items-center justify-center"
           onPointerDown={(event) => {
@@ -70,7 +69,7 @@ export function BottomSheet({
           onPointerCancel={release}
         >
           <span aria-hidden className="h-1 w-10 rounded-full bg-border-strong" />
-        </div>
+        </button>
         <header className="flex h-11 shrink-0 items-center justify-between border-border-subtle border-b px-4">
           <h2 className="font-semibold text-md">{title}</h2>
           <IconButton size="sm" label="Close" onClick={onClose}>

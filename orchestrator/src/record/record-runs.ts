@@ -70,7 +70,7 @@ export type RecordRunsWindow = {
   limit: number
   facets: { agents: string[]; projects: string[] }
   totals: { runs: number; scored: number; voided: number; failed: number }
-  vendors: { agent: string; tokens: number; runs: number }[]
+  vendors: { agent: string; tokens: number | null; runs: number }[]
   unscored: number
   live: RecordRun[]
 }
@@ -194,18 +194,19 @@ export function recordRunsWindow(
     const current = newestTurnByRoot.get(run.parentRunId)
     if (!current || current < run.startedAt) newestTurnByRoot.set(run.parentRunId, run.startedAt)
   }
+  // Counters count the whole window, as the local page does; filters narrow only the tables.
   const totals = {
-    runs: filtered.length,
-    scored: filtered.filter(
+    runs: eligible.length,
+    scored: eligible.filter(
       (run) =>
         run.score !== null &&
         run.evidenceExcluded === null &&
         !NOT_EVIDENCE.includes(run.failureKind as (typeof NOT_EVIDENCE)[number]),
     ).length,
-    voided: filtered.filter((run) => run.evidenceExcluded !== null).length,
-    failed: filtered.filter((run) => run.status === 'failed').length,
+    voided: eligible.filter((run) => run.evidenceExcluded !== null).length,
+    failed: eligible.filter((run) => run.status === 'failed').length,
   }
-  const unscored = filtered.filter((run) => {
+  const unscored = eligible.filter((run) => {
     if (
       run.status !== 'ok' ||
       run.evidenceExcluded !== null ||
@@ -218,18 +219,21 @@ export function recordRunsWindow(
     return !score || (newestTurn !== undefined && score.scoredAt < newestTurn)
   }).length
   const agentRuns = new Map<string, number>()
-  const agentTokens = new Map<string, number>()
+  const agentTokens = new Map<string, number | null>()
   for (const run of eligible) {
     agentRuns.set(run.agent, (agentRuns.get(run.agent) ?? 0) + 1)
-    if (run.vendorTokens !== null)
-      agentTokens.set(run.agent, (agentTokens.get(run.agent) ?? 0) + run.vendorTokens)
+    const sum = agentTokens.get(run.agent) ?? null
+    agentTokens.set(run.agent, run.vendorTokens === null ? sum : (sum ?? 0) + run.vendorTokens)
   }
   const vendors = [...agentTokens].map(([agent, tokens]) => ({
     agent,
     tokens,
     runs: agentRuns.get(agent) ?? 0,
   }))
-  vendors.sort((left, right) => right.tokens - left.tokens || left.agent.localeCompare(right.agent))
+  vendors.sort(
+    (left, right) =>
+      (right.tokens ?? -1) - (left.tokens ?? -1) || left.agent.localeCompare(right.agent),
+  )
   return {
     items: searched.slice(input.offset, input.offset + input.limit),
     matched: searched.length,

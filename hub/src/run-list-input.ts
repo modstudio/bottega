@@ -1,7 +1,7 @@
 import { z } from 'zod'
 import { RUN_PAGE_LIMITS } from './run-display.ts'
 
-export const runHours = z.union([z.literal(24), z.literal(48), z.literal(168), z.literal(720)])
+const runHours = z.union([z.literal(24), z.literal(48), z.literal(168), z.literal(720)])
 
 export const runListInput = z.object({
   hours: runHours,

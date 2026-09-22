@@ -56,4 +56,17 @@ describe('record run window', () => {
     })
     expect(result.matched).toBe(1)
   })
+
+  test('counters count the whole window and list agents without token readings', () => {
+    const result = recordRunsWindow(
+      [run('1'), run('2', { agent: 'grok', vendorTokens: null, status: 'failed' })],
+      { agent: 'codex', project: '', search: '', offset: 0, limit: 25 },
+    )
+    expect(result.totals.runs).toBe(2)
+    expect(result.totals.failed).toBe(1)
+    expect(result.vendors).toEqual([
+      { agent: 'codex', tokens: 100, runs: 1 },
+      { agent: 'grok', tokens: null, runs: 1 },
+    ])
+  })
 })
