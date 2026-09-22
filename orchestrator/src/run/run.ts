@@ -68,7 +68,7 @@ import {
   reviewCalibration,
 } from '../review/review-calibration.ts'
 import { implicitReviewCoverageBase, resolveReviewTarget } from '../review/review-target.ts'
-import { chainTransport } from '../route/failover.ts'
+import { chainTransport, type ResolvedTaskBranch } from '../route/failover.ts'
 import { pick } from '../route/route.ts'
 import { preflightCodexMcpCatalogues } from '../sandbox/codex-mcp-preflight.ts'
 import { codexMcpSetupHeader, codexProjectServersForRun } from '../sandbox/codex-mcp-scope.ts'
@@ -246,6 +246,8 @@ export async function run(opts: {
   key?: string
   /** A caller-selected git floor, used only by lifecycle tools that accept it. */
   base?: string
+  /** The task branch resolution already performed by dispatch for this launch. */
+  resolvedTaskBranch?: ResolvedTaskBranch | null
   /** Fan-out diversity constraints, resolved by the CLI before a row exists. */
   avoid?: string[]
   distinctModels?: string[]

@@ -35,6 +35,7 @@ describe('protected project branch decision', () => {
 
 const pullRequest: MergedPullRequest = {
   number: 42,
+  state: 'MERGED',
   headRefName: 'DEV-616-orch-4235',
   headRefOid: 'def456',
   title: 'DEV-616: branch recognition',
