@@ -234,30 +234,36 @@ function tableSql(database: Database, table: string): string {
   ).sql
 }
 
+function readCheckExpression(
+  sql: string,
+  start: number,
+): { expression: string; end: number } | null {
+  let open = start + 5
+  while (/\s/.test(sql[open] ?? '')) open++
+  if (sql[open] !== '(') return null
+  let depth = 1
+  let quote: "'" | '"' | null = null
+  for (let index = open + 1; index < sql.length; index++) {
+    const character = sql[index]
+    if (quote && character === quote && sql[index + 1] === quote) index++
+    else if (quote && character === quote) quote = null
+    else if (!quote && (character === "'" || character === '"')) quote = character
+    else if (!quote && character === '(') depth++
+    else if (!quote && character === ')' && --depth === 0) {
+      return { expression: sql.slice(open + 1, index), end: index }
+    }
+  }
+  return null
+}
+
 function checkExpressions(sql: string): string[] {
   const expressions: string[] = []
   for (let start = 0; start < sql.length; start++) {
     if (sql.slice(start, start + 5).toUpperCase() !== 'CHECK') continue
-    let open = start + 5
-    while (/\s/.test(sql[open] ?? '')) open++
-    if (sql[open] !== '(') continue
-    let depth = 1
-    let quote: "'" | '"' | null = null
-    for (let index = open + 1; index < sql.length; index++) {
-      const character = sql[index]
-      if (quote) {
-        if (character === quote && sql[index + 1] === quote) index++
-        else if (character === quote) quote = null
-        continue
-      }
-      if (character === "'" || character === '"') quote = character
-      else if (character === '(') depth++
-      else if (character === ')' && --depth === 0) {
-        expressions.push(sql.slice(open + 1, index))
-        start = index
-        break
-      }
-    }
+    const check = readCheckExpression(sql, start)
+    if (!check) continue
+    expressions.push(check.expression)
+    start = check.end
   }
   return expressions
 }
@@ -406,38 +412,62 @@ function foreignKeys(database: Database): ForeignKey[] {
   )
 }
 
-function seedTables(database: Database, migration: string): CascadeProbe['unprobed'] {
-  const names = tableNames(database)
-  const targetRows = new Map(names.map((table) => [table, 1]))
+function rowCount(database: Database, table: string): number {
+  return (
+    database.query(`SELECT COUNT(*) AS count FROM ${quoteIdentifier(table)}`).get() as {
+      count: number
+    }
+  ).count
+}
+
+function probeTargetRows(database: Database, names: readonly string[]): Map<string, number> {
+  const targets = new Map(names.map((table) => [table, 1]))
   for (const table of names) {
     const references = database
       .query(`PRAGMA foreign_key_list(${quoteIdentifier(table)})`)
-      .all() as {
-      table: string
-    }[]
+      .all() as { table: string }[]
     for (const parent of new Set(references.map((key) => key.table))) {
-      if (references.filter((key) => key.table === parent).length > 1) targetRows.set(parent, 2)
+      if (references.filter((key) => key.table === parent).length > 1) targets.set(parent, 2)
     }
   }
+  return targets
+}
+
+function probeChoices(
+  database: Database,
+  columns: readonly TableInfo[],
+  foreignKeys: readonly { from: string; table: string; to: string }[],
+  checks: readonly string[],
+  ordinal: number,
+): Map<string, ProbeValue[]> {
+  return new Map(
+    columns.map((column) => {
+      const key = foreignKeys.find((candidate) => candidate.from === column.name)
+      const foreign = key
+        ? (
+            database
+              .query(
+                `SELECT ${quoteIdentifier(key.to)} AS value FROM ${quoteIdentifier(key.table)} ORDER BY ${quoteIdentifier(key.to)} LIMIT 8`,
+              )
+              .all() as { value: ProbeValue }[]
+          ).map((row) => row.value)
+        : []
+      return [column.name, candidates(column, checks, foreign, ordinal)]
+    }),
+  )
+}
+
+function seedTables(database: Database, migration: string): CascadeProbe['unprobed'] {
+  const names = tableNames(database)
+  const targetRows = probeTargetRows(database, names)
   const pending = new Set(
-    names.filter(
-      (table) =>
-        (
-          database.query(`SELECT COUNT(*) AS count FROM ${quoteIdentifier(table)}`).get() as {
-            count: number
-          }
-        ).count < (targetRows.get(table) ?? 1),
-    ),
+    names.filter((table) => rowCount(database, table) < (targetRows.get(table) ?? 1)),
   )
   const failures = new Map<string, string>()
   while (pending.size) {
     let inserted = 0
     for (const table of pending) {
-      const existing = (
-        database.query(`SELECT COUNT(*) AS count FROM ${quoteIdentifier(table)}`).get() as {
-          count: number
-        }
-      ).count
+      const existing = rowCount(database, table)
       const columns = database
         .query(`PRAGMA table_info(${quoteIdentifier(table)})`)
         .all() as TableInfo[]
@@ -453,32 +483,14 @@ function seedTables(database: Database, migration: string): CascadeProbe['unprob
           (column.dflt_value === null &&
             (column.notnull || (column.pk && !column.type.toUpperCase().includes('INT')))),
       )
-      const choices = new Map(
-        required.map((column) => {
-          const key = foreignKeys.find((candidate) => candidate.from === column.name)
-          const foreign = key
-            ? (
-                database
-                  .query(
-                    `SELECT ${quoteIdentifier(key.to)} AS value FROM ${quoteIdentifier(key.table)} ORDER BY ${quoteIdentifier(key.to)} LIMIT 8`,
-                  )
-                  .all() as { value: ProbeValue }[]
-              ).map((row) => row.value)
-            : []
-          return [column.name, candidates(column, checks, foreign, existing + 1)] as const
-        }),
-      )
+      const choices = probeChoices(database, required, foreignKeys, checks, existing + 1)
       const sql = required.length
         ? `INSERT INTO ${quoteIdentifier(table)} (${required.map((column) => quoteIdentifier(column.name)).join(', ')}) VALUES (${required.map(() => '?').join(', ')})`
         : `INSERT INTO ${quoteIdentifier(table)} DEFAULT VALUES`
       try {
         const values = constrainedValues(database, required, checks, choices)
         database.query(sql).run(...required.map((column) => values.get(column.name) ?? null))
-        const count = (
-          database.query(`SELECT COUNT(*) AS count FROM ${quoteIdentifier(table)}`).get() as {
-            count: number
-          }
-        ).count
+        const count = rowCount(database, table)
         if (count >= (targetRows.get(table) ?? 1)) pending.delete(table)
         failures.delete(table)
         inserted++
