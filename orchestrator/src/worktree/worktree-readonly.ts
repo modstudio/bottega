@@ -27,7 +27,7 @@ export function createReadOnlyWorktree(
   mkdirSync(dirname(path), { recursive: true })
   if (existsSync(path))
     throw new Error(`worktree ${path} already exists; run ${runId} would overwrite it`)
-  git(['worktree', 'add', '--detach', path, base], repoRoot)
+  git(['worktree', 'add', '--relative-paths', '--detach', path, base], repoRoot)
   provisionReadOnlyTree(repoRoot, path, provision)
   const worktree = { path, branch: '', base, repoRoot, source: 'git' as const }
   attributeWorktree(worktree, runId, record)
