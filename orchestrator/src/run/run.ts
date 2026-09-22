@@ -35,19 +35,8 @@ import { preflight } from '../dispatch/dispatch-preflight.ts'
 import { assessEvidencePrompt } from '../evidence/evidence.ts'
 import { type classify, notify } from '../failure/failure.ts'
 import { checkoutWatchSet } from '../git/checkout-identity.ts'
-import {
-  gitContext,
-  prepareWorktreeObjects,
-  type WorktreeObjectEnvironment,
-  worktreeGitDir,
-} from '../git/git-environment.ts'
-import {
-  isReaderJob,
-  type Job,
-  job,
-  jobBoundInstruction,
-  resolveJobTimeoutMs,
-} from '../jobs/jobs.ts'
+import { gitContext, worktreeGitDir } from '../git/git-environment.ts'
+import { isReaderJob, job, jobBoundInstruction, resolveJobTimeoutMs } from '../jobs/jobs.ts'
 import { resolveLens } from '../lens/lenses.ts'
 import {
   canonSourceFor,
@@ -70,7 +59,6 @@ import { signedInRecordUserId } from '../record/record-attribution.ts'
 import {
   assertSharedRefGuardOutsideWritableRoots,
   prepareSharedRefGuard,
-  workerSharedGitRoots,
 } from '../resources/ref-guard.ts'
 import { recordSandboxDirectoryClaim } from '../resources/resource-claims.ts'
 import { teardownTerminalRunResources } from '../resources/resource-ownership.ts'
@@ -120,6 +108,7 @@ import { bindSignals, childEnv, sha } from './run-process.ts'
 import { runInfrastructurePrompt } from './run-readonly-infrastructure.ts'
 import { finishRun } from './run-terminal.ts'
 import type { RunResult } from './run-types.ts'
+import { repositoryWorkerSharedGitRoots } from './run-writable-roots.ts'
 
 async function startedByForRun(reserveId: number | undefined): Promise<string | null> {
   if (reserveId !== undefined) return null
@@ -151,20 +140,6 @@ function trackedWorkerEnvironment(
   runId: number,
 ): Record<string, string> {
   return writesJob && worktree ? trackedRecipeEnvironment(runId) : {}
-}
-
-/** Read-only repository jobs isolate scratch objects; writing jobs need durable commits. */
-function gitObjectEnvironmentFor(
-  agent: string,
-  requestedJob: Job,
-  worktree: Worktree | null,
-): WorktreeObjectEnvironment | undefined {
-  return agent === 'codex' &&
-    requestedJob.needs.readsRepo &&
-    worktree &&
-    !requestedJob.needs.writesRepo
-    ? prepareWorktreeObjects(worktree.path)
-    : undefined
 }
 
 function resolveRunTransport(opts: {
@@ -739,16 +714,14 @@ export async function run(opts: {
   mcpConnection = claimedMcpConnection
   usingMcp = claimedUsingMcp
 
-  // Read-only Codex jobs keep scratch objects in this worktree's metadata and
-  // read existing objects through a common-store alternate. Writing jobs use
-  // the common store so commits survive removal of the disposable tree.
-  const gitObjectEnvironment = gitObjectEnvironmentFor(name, requestedJob, worktree)
+  // Readers and writers both write objects to the common store. Readers get no
+  // ref write access; the shared-ref guard covers the remaining writer roots.
   const writableRoots = [
     scratchDir,
     ...(repoJob && worktree
       ? [
           worktreeGitDir(worktree.path),
-          ...(writesJob ? workerSharedGitRoots(worktree.path, worktree.branch) : []),
+          ...repositoryWorkerSharedGitRoots(worktree.path, worktree.branch, writesJob),
         ]
       : []),
   ]
@@ -1081,7 +1054,6 @@ export async function run(opts: {
       codexMcpScope,
       mcpTrustGranted,
       writableRoots,
-      gitObjectEnvironment,
       gitConfigEnvironment,
       sandboxRunDir,
       grokMcpEnvironment,

@@ -27,16 +27,10 @@ function cwdMissing(cwd: string): boolean {
   return !existsSync(cwd)
 }
 
-export type WorktreeObjectEnvironment = {
-  GIT_OBJECT_DIRECTORY: string
-  GIT_ALTERNATE_OBJECT_DIRECTORIES: string
-}
-
 /** Resolve linked-worktree metadata without invoking git (git itself uses this environment). */
 function linkedWorktreePaths(cwd: string): {
   gitDir: string
   commonDir: string
-  objects: string
 } | null {
   const dotGit = join(cwd, '.git')
   if (!existsSync(dotGit)) return null
@@ -57,7 +51,7 @@ function linkedWorktreePaths(cwd: string): {
       `refusing writable git directory ${gitDir}: expected one worktree below ${worktrees}`,
     )
   }
-  return { gitDir, commonDir, objects: join(gitDir, 'objects') }
+  return { gitDir, commonDir }
 }
 
 function commonGitDir(cwd: string): string | null {
@@ -72,18 +66,8 @@ function commonGitDir(cwd: string): string | null {
   }
 }
 
-/** Use the isolated object store after it has been provisioned for this worktree. */
-export function worktreeGitEnvironment(cwd: string): WorktreeObjectEnvironment | undefined {
-  const paths = linkedWorktreePaths(cwd)
-  if (!paths || !existsSync(paths.objects)) return undefined
-  return {
-    GIT_OBJECT_DIRECTORY: paths.objects,
-    GIT_ALTERNATE_OBJECT_DIRECTORIES: join(paths.commonDir, 'objects'),
-  }
-}
-
 /** Drop a worker's repository routing before deriving routing for the target checkout. */
-export function targetGitEnvironment(cwd: string): NodeJS.ProcessEnv {
+export function targetGitEnvironment(_cwd: string): NodeJS.ProcessEnv {
   const env = scrubbedGitEnv()
   // Operational git must not inherit a worker GIT_CONFIG_GLOBAL (hooksPath,
   // worker identity). Delete rather than /dev/null: landing commits keep
@@ -91,7 +75,7 @@ export function targetGitEnvironment(cwd: string): NodeJS.ProcessEnv {
   delete env.GIT_CONFIG_GLOBAL
   delete env.GIT_CONFIG_SYSTEM
   delete env.GIT_CONFIG_NOSYSTEM
-  return { ...env, ...worktreeGitEnvironment(cwd) }
+  return env
 }
 
 /** A git invocation that throws with git's own words rather than a bare code. */
@@ -283,14 +267,6 @@ export function worktreeGitDir(cwd: string): string {
   const paths = linkedWorktreePaths(cwd)
   if (!paths) throw new Error(`refusing writable git directory: ${cwd} is not a linked worktree`)
   return paths.gitDir
-}
-
-/** Create the worker-local object database and describe how git must read it. */
-export function prepareWorktreeObjects(cwd: string): WorktreeObjectEnvironment {
-  const paths = linkedWorktreePaths(cwd)
-  if (!paths) throw new Error(`cannot isolate git objects: ${cwd} is not a linked worktree`)
-  mkdirSync(paths.objects, { recursive: true })
-  return worktreeGitEnvironment(cwd)!
 }
 
 export {

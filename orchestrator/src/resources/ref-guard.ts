@@ -392,5 +392,12 @@ export function workerSharedGitRoots(cwd: string, branch: string): string[] {
   if (!paths) throw new Error(`cannot resolve shared git roots: ${cwd} is not a linked worktree`)
   const ref = resolve(paths.commonDir, 'refs', 'heads', ...branch.split('/'))
   const reflog = resolve(paths.commonDir, 'logs', 'refs', 'heads', ...branch.split('/'))
-  return [join(paths.commonDir, 'objects'), dirname(ref), dirname(reflog)]
+  return [workerSharedGitObjectsRoot(cwd), dirname(ref), dirname(reflog)]
+}
+
+/** The common object store is the only shared Git path a reader may write. */
+export function workerSharedGitObjectsRoot(cwd: string): string {
+  const paths = linkedWorktreePaths(cwd)
+  if (!paths) throw new Error(`cannot resolve shared git roots: ${cwd} is not a linked worktree`)
+  return join(paths.commonDir, 'objects')
 }

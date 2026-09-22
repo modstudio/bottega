@@ -75,11 +75,6 @@ export type ArgvOpts = {
   sandboxWorkspaceWriteNetworkAccess?: boolean
   /** Exact extra paths made writable inside Codex's workspace-write sandbox. */
   writableRoots?: string[]
-  /** Object-store override used to isolate scratch objects for read-only repository jobs. */
-  gitObjectEnvironment?: {
-    GIT_OBJECT_DIRECTORY: string
-    GIT_ALTERNATE_OBJECT_DIRECTORIES: string
-  }
   /** Command-scoped git configuration enforced inside the worker's shell. */
   gitConfigEnvironment?: Record<string, string>
   /** Tracked-recipe allocation values (ORCH_INDEX, ORCH_PORTS_*, ORCH_ALLOC_*) set inside the worker's shell. */
@@ -200,7 +195,6 @@ export type TransportStartOpts = {
   projectServers?: ArgvOpts['projectServers']
   trustCwd?: string
   writableRoots?: ArgvOpts['writableRoots']
-  gitObjectEnvironment?: ArgvOpts['gitObjectEnvironment']
   gitConfigEnvironment?: ArgvOpts['gitConfigEnvironment']
   recipeEnvironment?: ArgvOpts['recipeEnvironment']
   srt?: { profile: SandboxRuntimeConfig; runtimeDir: string }
