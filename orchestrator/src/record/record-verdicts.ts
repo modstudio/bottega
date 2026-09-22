@@ -1,14 +1,9 @@
 // concern: record-verdicts
 /** Owns tenant-bound hosted run verdicts and evidence exclusion. Must not know local cache, CLI, or HTTP. */
 import { SQL } from 'bun'
-import {
-  DELIVERY,
-  type Delivery,
-  FIDELITY,
-  type Fidelity,
-  QUALITY,
-  type Quality,
-} from '../score/score.ts'
+import { job } from '../jobs/jobs.ts'
+import type { Delivery, Fidelity, Quality } from '../score/score.ts'
+import { refuseVerdict } from '../verdict/verdict-rules.ts'
 
 export class RecordVerdictError extends Error {
   status: 400 | 404 | 409
@@ -48,29 +43,6 @@ async function tenant<T>(input: Tenant, read: (tx: SQL) => Promise<T>): Promise<
   }
 }
 
-export function refuseScoreVerdict(input: {
-  delivery: string
-  quality: string | null
-  fidelity: string | null
-}): string | null {
-  if (!DELIVERY.includes(input.delivery as Delivery)) {
-    return `delivery must be one of: ${DELIVERY.join(' | ')}`
-  }
-  if (input.delivery === 'none' && input.quality) {
-    return "delivery 'none' takes no quality: there was nothing to judge"
-  }
-  if (
-    input.delivery !== 'none' &&
-    (!input.quality || !QUALITY.includes(input.quality as Quality))
-  ) {
-    return `delivery '${input.delivery}' needs a quality: ${QUALITY.join(' | ')}`
-  }
-  if (input.fidelity && !FIDELITY.includes(input.fidelity as Fidelity)) {
-    return `fidelity must be one of: ${FIDELITY.join(' | ')}`
-  }
-  return null
-}
-
 export async function upsertRecordScore(
   input: Tenant & {
     id: string
@@ -82,9 +54,36 @@ export async function upsertRecordScore(
     scoredBy: string
   },
 ): Promise<void> {
-  const refusal = refuseScoreVerdict(input)
-  if (refusal) throw new RecordVerdictError(refusal)
   return tenant(input, async (tx) => {
+    const runs = await tx`
+      SELECT job, failure_kind, probe FROM run
+      WHERE id=${input.id}::uuid AND space_id=${input.spaceId}::uuid
+    `
+    const run = runs[0] as Record<string, unknown> | undefined
+    if (!run) throw new RecordVerdictError('run not found; refresh the run list', 404)
+    const declaredJob = job(String(run.job))
+    let hasRequiredReviewGrades = false
+    if (declaredJob.findings && input.delivery !== 'none') {
+      const grades = await tx`
+        SELECT 1 FROM review_lens
+        WHERE run_id=${input.id}::uuid
+          AND reproduced IS NOT NULL AND coverage IS NOT NULL
+          AND limits IS NOT NULL AND overlap IS NOT NULL
+        LIMIT 1
+      `
+      hasRequiredReviewGrades = grades.length > 0
+    }
+    const refusal = refuseVerdict({
+      delivery: input.delivery,
+      quality: input.quality,
+      fidelity: input.fidelity,
+      writesRepo: Boolean(declaredJob.needs.writesRepo),
+      producesFindings: Boolean(declaredJob.findings),
+      hasRequiredReviewGrades,
+      failureKind: run.failure_kind == null ? null : String(run.failure_kind),
+      probe: Boolean(run.probe),
+    })
+    if (refusal) throw new RecordVerdictError(refusal)
     await tx`
       INSERT INTO run_score (
         run_id, space_id, delivery, quality, fidelity, note, scored_at, scored_by, updated_at

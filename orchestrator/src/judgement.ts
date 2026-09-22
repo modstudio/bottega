@@ -46,6 +46,7 @@ import {
   type Quality,
   weigh,
 } from './score/score.ts'
+import { refuseVerdict } from './verdict/verdict-rules.ts'
 
 type JudgementFlags = {
   has(name: string): boolean
@@ -472,7 +473,7 @@ export async function scoreRun(
   const row = db()
     .query(
       `SELECT root.id, root.agent, root.job, root.session_id, root.parent_run_id,
-          root.failure_kind, root.output_path
+          root.failure_kind, root.output_path, root.probe
      FROM run requested
      JOIN run root ON root.id = COALESCE(requested.parent_run_id, requested.id)
     WHERE requested.id = ?`,
@@ -485,6 +486,7 @@ export async function scoreRun(
     parent_run_id: number | null
     failure_kind: string | null
     output_path: string | null
+    probe: number
   } | null
   if (!row) throw new Error(`no run ${requestedId}`)
   const id = row.id
@@ -559,14 +561,6 @@ export async function scoreRun(
     )
     return
   }
-  if (row.failure_kind === 'unevidenced') {
-    throw new Error(`run ${id} cannot be scored: ${row.failure_kind} review`)
-  }
-  if (row.failure_kind && options.notEvidence.includes(row.failure_kind)) {
-    throw new Error(
-      `run ${id} cannot be scored: failure kind '${row.failure_kind}' is not evidence`,
-    )
-  }
   // A conversation is one unit of work and takes one verdict. Any turn id
   // resolves to the root, which is what routing reads and where the score is
   // recorded.
@@ -599,30 +593,22 @@ export async function scoreRun(
    * drift. Demanding the word forces the question to be asked, and the
    * question is the whole point of the axis.
    */
-  const needsFidelity = Boolean(JOBS[row.job]?.needs.writesRepo) && delivery !== 'none'
-  if (!delivery || !DELIVERY.includes(delivery)) {
-    throw new Error(
-      `first word is delivery — did an answer arrive?\n` +
-        `  none      nothing usable came back (a vendor error, an empty reply, a denial)\n` +
-        `  partial   an answer, but cut off or missing part of the ask\n` +
-        `  full      a complete answer\n\n` +
-        `then, unless delivery is 'none', quality — was it right?\n` +
-        `  wrong     confidently incorrect, or answered a different question\n` +
-        `  mixed     some of it right, some not\n` +
-        `  right     correct and usable as it stands\n\n` +
-        `  orch score ${id} full right --note "..."\n` +
-        `  orch score ${id} none --note "..."`,
-    )
-  }
-  if (delivery === 'none' && quality) {
-    throw new Error("delivery 'none' takes no quality: there was nothing to judge")
-  }
-  if (delivery !== 'none' && (!quality || !QUALITY.includes(quality))) {
-    throw new Error(`delivery '${delivery}' needs a quality: ${QUALITY.join(' | ')}`)
-  }
+  const writesRepo = Boolean(JOBS[row.job]?.needs.writesRepo)
+  const findingsJob = Boolean(job(row.job).findings)
+  const initialRefusal = refuseVerdict({
+    delivery: delivery ?? '',
+    quality: quality ?? null,
+    fidelity: fidelity ?? null,
+    writesRepo,
+    producesFindings: false,
+    hasRequiredReviewGrades: true,
+    failureKind: row.failure_kind,
+    probe: Boolean(row.probe),
+  })
+  if (initialRefusal) throw new Error(initialRefusal)
+  const needsFidelity = writesRepo && delivery !== 'none'
   const reviewGradeFlags = ['reproduced', 'coverage', 'limits', 'overlap'] as const
   const suppliedReviewGradeFlags = reviewGradeFlags.filter((name) => flags.flag(name) !== undefined)
-  const findingsJob = Boolean(job(row.job).findings)
   if (suppliedReviewGradeFlags.length && !findingsJob) {
     throw new Error(
       `${row.job} is not a findings-producing lens; review grade flags are not valid for this job`,
@@ -630,22 +616,6 @@ export async function scoreRun(
   }
   if (suppliedReviewGradeFlags.length && delivery === 'none') {
     throw new Error("delivery 'none' takes no review grades: there was no lens output to judge")
-  }
-  if (needsFidelity && (!fidelity || !FIDELITY.includes(fidelity))) {
-    throw new Error(
-      `${row.job} writes code, so it needs a third word — fidelity: did it build what\n` +
-        `you asked for, or something it decided on instead?\n` +
-        `  drifted   solved a different problem, or redesigned as it went\n` +
-        `  partial   mostly the spec, with decisions taken that were not its to take\n` +
-        `  faithful  built the spec, and ASKED wherever the spec ran out\n\n` +
-        `Asking is faithful. A worker that stopped, asked, and built what it was told\n` +
-        `did exactly the right thing and must not be marked down for it — read\n` +
-        `'orch diff ${id}' against the spec rather than the summary it wrote itself.\n\n` +
-        `  orch score ${id} ${delivery} ${quality} faithful --note "..."`,
-    )
-  }
-  if (!needsFidelity && fidelity) {
-    presentation.error(`${row.job} has no spec to be faithful to, so it is judged on two axes only`)
   }
   const scoredFidelity = needsFidelity ? fidelity : undefined
   let reviewGrade: { output: ReturnType<typeof parseReviewOutput>; grades: ReviewGrades } | null =
@@ -704,6 +674,17 @@ export async function scoreRun(
     }
     reviewGrade = { output, grades: raw as ReviewGrades }
   }
+  const refusal = refuseVerdict({
+    delivery: delivery!,
+    quality: quality ?? null,
+    fidelity: scoredFidelity ?? null,
+    writesRepo,
+    producesFindings: findingsJob,
+    hasRequiredReviewGrades: !findingsJob || delivery === 'none' || reviewGrade !== null,
+    failureKind: row.failure_kind,
+    probe: Boolean(row.probe),
+  })
+  if (refusal) throw new Error(refusal)
   const comparisonFlags = ['better-than', 'worse-than', 'same-as'] as const
   const suppliedComparisons = comparisonFlags.filter((name) => flags.flag(name) !== undefined)
   if (suppliedComparisons.length > 1) {

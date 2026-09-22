@@ -28,6 +28,9 @@ const t = initTRPC.context<Context>().create()
 const uuid = z.string().uuid()
 const limit = z.number().int().min(1).max(100).default(20)
 const filter = z.string().min(1).optional()
+const delivery = z.enum(['none', 'partial', 'full'])
+const quality = z.enum(['wrong', 'mixed', 'right'])
+const fidelity = z.enum(['drifted', 'partial', 'faithful'])
 const HOSTED_STARTED_AT = new Date().toISOString()
 
 function recordClient(ctx: Context) {
@@ -181,6 +184,28 @@ export const recordRouter = t.router({
   run: t.procedure
     .input(z.object({ id: uuid }))
     .query(({ ctx, input }) => recordClient(ctx).run(input.id)),
+  score: t.procedure
+    .input(
+      z.object({
+        id: uuid,
+        delivery,
+        quality: quality.nullable(),
+        fidelity: fidelity.nullable(),
+        note: z.string().nullable(),
+      }),
+    )
+    .mutation(({ ctx, input }) =>
+      recordClient(ctx).score(input.id, {
+        delivery: input.delivery,
+        quality: input.quality,
+        fidelity: input.fidelity,
+        note: input.note,
+        scoredAt: new Date().toISOString(),
+      }),
+    ),
+  void: t.procedure
+    .input(z.object({ id: uuid, reason: z.string().min(1) }))
+    .mutation(({ ctx, input }) => recordClient(ctx).void(input.id, { reason: input.reason })),
   reviews: t.procedure
     .input(z.object({ limit, cursor: z.string().optional() }))
     .query(({ ctx, input }) => recordClient(ctx).reviews(input)),

@@ -951,12 +951,12 @@ export function recordApi(deps: Deps): Hono<ApiEnvironment> {
         fidelity: z.string().nullable(),
         note: z.string().nullable(),
         scoredAt: z.string().datetime({ offset: true }),
-        scoredBy: z.string().min(1),
+        scoredBy: z.string().min(1).optional(),
       })
       .safeParse(await context.req.json().catch(() => null))
     if (!body.success) return context.json({ error: 'invalid score upsert' }, 400)
     try {
-      await deps.upsertScore({ ...tenant, id: id.data, ...body.data })
+      await deps.upsertScore({ ...tenant, id: id.data, ...body.data, scoredBy: tenant.userId })
       return context.json({ ok: true })
     } catch (error) {
       return writeError(context, error)

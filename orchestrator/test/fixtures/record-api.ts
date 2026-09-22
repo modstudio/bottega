@@ -5,7 +5,6 @@ import type {
   RecordDocImportInput,
   RecordDocUpsertInput,
 } from '../../src/record/record-api-client.ts'
-import { refuseScoreVerdict } from '../../src/record/record-verdicts.ts'
 
 type StoredDoc = {
   id: string
@@ -339,8 +338,6 @@ export function createMemoryRecordApiClient(): RecordApiClient {
       return { docs: matchingDocs.length, revisions: matchingRevisions.length }
     },
     async putScore(runId, input) {
-      const refusal = refuseScoreVerdict(input)
-      if (refusal) throw new Error(refusal)
       scores.set(runId, input)
     },
     async voidRun(runId, input) {

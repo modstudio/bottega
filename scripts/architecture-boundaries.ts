@@ -676,9 +676,15 @@ export const importBoundaries: ImportBoundary[] = [
     'Enforce the record-sync-command concern boundary.',
   ),
   boundary(
+    'verdict-rules-boundary',
+    'orchestrator/src/verdict/verdict-rules.ts',
+    ['../failure/failure.ts', '../score/score.ts'],
+    'Keep verdict policy pure and independent of local and hosted persistence adapters.',
+  ),
+  boundary(
     'record-verdicts-boundary',
     'orchestrator/src/record/record-verdicts.ts',
-    ['bun', '../score/score.ts'],
+    ['bun', '../jobs/jobs.ts', '../score/score.ts', '../verdict/verdict-rules.ts'],
     'Enforce the record-verdicts concern boundary.',
   ),
   boundary(
