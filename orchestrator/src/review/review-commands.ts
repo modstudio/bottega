@@ -12,7 +12,7 @@ import { reviewCalibration, reviewCalibrationFleet } from './review-calibration.
 import { coverageAudit } from './review-coverage.ts'
 import { REVIEW_WINDOW } from './review-evidence-sql.ts'
 import { reviewPins } from './review-pins.ts'
-import { classifyReviewTier, diffNumstat } from './review-tier.ts'
+import { classifyReviewTier, diffNumstat, resolveTierRange } from './review-tier.ts'
 import {
   completeReview,
   DISPOSITIONS,
@@ -24,6 +24,40 @@ import { REVIEW_SEVERITY } from './review-vocabulary.ts'
 
 type ReviewFlags = { has(name: string): boolean; flag(name: string): string | undefined }
 type ReviewPresentation = { log(...values: unknown[]): void; usage(): never }
+
+function resolveTierRangeInRepo(repo: string, from: string, to: string) {
+  const objectKind = (ref: string): 'commit' | 'tree' | 'other' | 'missing' => {
+    const result = Bun.spawnSync(['git', 'cat-file', '-t', ref], {
+      cwd: repo,
+      env: targetGitEnvironment(repo),
+      stdout: 'pipe',
+      stderr: 'pipe',
+    })
+    if (result.exitCode !== 0) return 'missing'
+    const kind = result.stdout.toString().trim()
+    return kind === 'commit' || kind === 'tree' ? kind : 'other'
+  }
+  const fromKind = objectKind(from)
+  const toKind = objectKind(to)
+  const base =
+    fromKind === 'commit' && toKind === 'commit'
+      ? Bun.spawnSync(['git', 'merge-base', from, to], {
+          cwd: repo,
+          env: targetGitEnvironment(repo),
+          stdout: 'pipe',
+          stderr: 'pipe',
+        })
+      : null
+  const resolution = resolveTierRange({
+    from,
+    to,
+    fromKind,
+    toKind,
+    mergeBase: base?.exitCode === 0 ? base.stdout.toString().trim() || null : null,
+  })
+  if ('refusal' in resolution) throw new Error(resolution.refusal)
+  return resolution
+}
 
 export async function reviewCommand(
   sub: string | undefined,
@@ -173,8 +207,7 @@ export async function reviewCommand(
       repo = project.path
       const range = value.match(/^(.+)\.\.(.+)$/)
       if (range) {
-        from = range[1]!
-        to = range[2]!
+        ;({ from, to } = resolveTierRangeInRepo(repo, range[1]!, range[2]!))
       } else {
         const branch = Bun.spawnSync(
           ['git', 'show-ref', '--verify', '--quiet', `refs/heads/${value}`],
@@ -191,16 +224,7 @@ export async function reviewCommand(
         const trunk =
           typeof project.settings.trunk === 'string' ? project.settings.trunk.trim() : ''
         if (!trunk) throw new Error(`project ${project.name} has no trunk configured`)
-        const base = Bun.spawnSync(['git', 'merge-base', trunk, value], {
-          cwd: repo,
-          env: targetGitEnvironment(repo),
-          stdout: 'pipe',
-          stderr: 'pipe',
-        })
-        if (base.exitCode !== 0)
-          throw new Error(base.stderr.toString().trim() || 'git merge-base failed')
-        from = base.stdout.toString().trim()
-        to = value
+        ;({ from, to } = resolveTierRangeInRepo(repo, trunk, value))
       }
     }
     const tier = classifyReviewTier({ files: diffNumstat(repo, from, to) })

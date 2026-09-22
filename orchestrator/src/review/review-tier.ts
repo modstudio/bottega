@@ -10,6 +10,42 @@ export type ReviewTier = {
 
 export type ReviewTierFile = { path: string; insertions: number; deletions: number }
 
+export type TierRangeFacts = {
+  from: string
+  to: string
+  fromKind: 'commit' | 'tree' | 'other' | 'missing'
+  toKind: 'commit' | 'tree' | 'other' | 'missing'
+  mergeBase: string | null
+}
+
+export function resolveTierRange(
+  facts: TierRangeFacts,
+): { from: string; to: string } | { refusal: string } {
+  for (const [ref, kind] of [
+    [facts.from, facts.fromKind],
+    [facts.to, facts.toKind],
+  ] as const) {
+    if (kind === 'missing') {
+      return {
+        refusal: `tier range endpoint "${ref}" is unresolvable; fetch it with git fetch --all --tags and retry`,
+      }
+    }
+    if (kind !== 'commit') {
+      return {
+        refusal: `tier range endpoint "${ref}" resolves to ${kind === 'tree' ? 'a tree' : 'a non-commit object'}; run git rev-parse HEAD and supply a commit ref instead`,
+      }
+    }
+  }
+  if (!facts.mergeBase) {
+    return {
+      refusal:
+        `could not establish a merge base for "${facts.from}" and "${facts.to}"; ` +
+        'use refs from related histories, or for a shallow clone run git fetch --deepen=100 (or git fetch the missing history), then retry',
+    }
+  }
+  return { from: facts.mergeBase, to: facts.to }
+}
+
 const REVIEW_HOT_PATHS: readonly {
   tier: 1 | 2 | 3
   pattern: RegExp

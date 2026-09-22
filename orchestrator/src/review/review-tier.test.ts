@@ -1,5 +1,54 @@
 import { describe, expect, test } from 'bun:test'
-import { classifyReviewTier } from './review-tier.ts'
+import { classifyReviewTier, resolveTierRange, type TierRangeFacts } from './review-tier.ts'
+
+describe('tier range resolution', () => {
+  const facts = (overrides: Partial<TierRangeFacts> = {}): TierRangeFacts => ({
+    from: 'trunk-tip',
+    to: 'branch-tip',
+    fromKind: 'commit',
+    toKind: 'commit',
+    mergeBase: 'fork-point',
+    ...overrides,
+  })
+
+  test('replaces a moving trunk tip with the merge base', () => {
+    expect(resolveTierRange(facts())).toEqual({ from: 'fork-point', to: 'branch-tip' })
+  })
+
+  test.each([
+    ['from', facts({ fromKind: 'tree' }), 'trunk-tip'],
+    ['to', facts({ toKind: 'tree' }), 'branch-tip'],
+  ] as const)('refuses a tree %s endpoint', (_side, input, ref) => {
+    const result = resolveTierRange(input)
+    expect(result).toHaveProperty('refusal')
+    expect('refusal' in result && result.refusal).toContain(ref)
+  })
+
+  test.each([
+    ['from', facts({ fromKind: 'missing' }), 'trunk-tip'],
+    ['to', facts({ toKind: 'missing' }), 'branch-tip'],
+  ] as const)('refuses a missing %s endpoint', (_side, input, ref) => {
+    const result = resolveTierRange(input)
+    expect(result).toHaveProperty('refusal')
+    expect('refusal' in result && result.refusal).toContain(ref)
+    expect('refusal' in result && result.refusal).toContain('git fetch')
+  })
+
+  test('refuses a missing merge base with remedies for both causes', () => {
+    const result = resolveTierRange(facts({ mergeBase: null }))
+    expect(result).toHaveProperty('refusal')
+    expect('refusal' in result && result.refusal).toContain('related histories')
+    expect('refusal' in result && result.refusal).toContain('shallow clone')
+    expect('refusal' in result && result.refusal).toContain('git fetch --deepen')
+  })
+
+  test('keeps healthy branch shorthand endpoints unchanged in effect', () => {
+    expect(resolveTierRange(facts({ from: 'fork-point' }))).toEqual({
+      from: 'fork-point',
+      to: 'branch-tip',
+    })
+  })
+})
 
 describe('review tier classification', () => {
   const cases = [
