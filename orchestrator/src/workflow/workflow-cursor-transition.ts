@@ -15,6 +15,14 @@ export type CursorTransition =
   | { action: 'finish' }
   | { action: 'refuse'; reason: 'compose-first' | 'ahead' | 'state' | 'not-started' }
 
+export type CursorStartDecision = 'insert' | 'reuse' | 'retire'
+
+/** Decide whether starting a cursor needs a new identity slot. */
+export function decideCursorStart(state: CursorState | null): CursorStartDecision {
+  if (state === 'done' || state === 'abandoned') return 'retire'
+  return state ? 'reuse' : 'insert'
+}
+
 /** The cursor state machine. Persistence and wording belong to its adapters. */
 export function decideCursorTransition(
   cursor: CursorValue | null,

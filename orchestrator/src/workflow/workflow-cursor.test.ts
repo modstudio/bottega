@@ -68,6 +68,73 @@ describe('workflow cursor adapter', () => {
     )
   })
 
+  test('abandoned cursor is retired and compose starts a fresh run', () => {
+    const d = database()
+    composeWorkflowWithCursor('ship', 'fixture', 'default', args, context, d)
+    abandonWorkflowCursor('ship', 'fixture', 'default', args, 'operator stopped', context, d)
+
+    const recomposed = composeWorkflowWithCursor('ship', 'fixture', 'default', args, context, d)
+
+    expect(recomposed.cursor).toMatchObject({ n: 0, slug: 'rebase', state: 'running' })
+    const rows = d
+      .query('SELECT id,instance_id,state,closed FROM workflow_cursor ORDER BY id')
+      .all() as Array<{ id: number; instance_id: string; state: string; closed: string }>
+    expect(rows).toHaveLength(2)
+    expect(rows[0]).toMatchObject({ instance_id: `#${rows[0]!.id}`, state: 'abandoned' })
+    expect(JSON.parse(rows[0]!.closed)).toMatchObject([
+      { n: 1, slug: 'rebase', note: 'abandoned: operator stopped' },
+    ])
+    expect(rows[1]).toMatchObject({ instance_id: '', state: 'running', closed: '[]' })
+  })
+
+  test('done cursor is retired and compose starts a fresh run', () => {
+    const d = database()
+    const composition = composeWorkflowWithCursor('ship', 'fixture', 'default', args, context, d)
+    for (const step of composition.steps)
+      nextWorkflowStep('ship', 'fixture', 'default', args, `closed ${step.slug}`, context, d)
+
+    const recomposed = composeWorkflowWithCursor('ship', 'fixture', 'default', args, context, d)
+
+    expect(recomposed.cursor).toMatchObject({ n: 0, slug: 'rebase', state: 'running' })
+    const rows = d
+      .query('SELECT id,instance_id,state,closed FROM workflow_cursor ORDER BY id')
+      .all() as Array<{ id: number; instance_id: string; state: string; closed: string }>
+    expect(rows).toHaveLength(2)
+    expect(rows[0]).toMatchObject({ instance_id: `#${rows[0]!.id}`, state: 'done' })
+    const closed = JSON.parse(rows[0]!.closed) as Array<{ slug: string; note: string }>
+    expect(closed).toHaveLength(composition.steps.length)
+    expect(closed[0]).toMatchObject({ slug: 'rebase', note: 'closed rebase' })
+    expect(closed.at(-1)).toMatchObject({ slug: composition.steps.at(-1)!.slug })
+    expect(rows[1]).toMatchObject({ instance_id: '', state: 'running', closed: '[]' })
+  })
+
+  test('first step fetch retires a terminal cursor and starts a fresh run', () => {
+    const d = database()
+    composeWorkflowWithCursor('ship', 'fixture', 'default', args, context, d)
+    abandonWorkflowCursor('ship', 'fixture', 'default', args, 'operator stopped', context, d)
+
+    getWorkflowStepWithCursor('ship', 'fixture', 'rebase', args, 'default', context, d)
+
+    expect(
+      d.query("SELECT count(*) count FROM workflow_cursor WHERE state='running'").get(),
+    ).toEqual({
+      count: 1,
+    })
+    expect(
+      d.query("SELECT count(*) count FROM workflow_cursor WHERE state='abandoned'").get(),
+    ).toEqual({ count: 1 })
+  })
+
+  test('step fetch on a terminal cursor directs the caller to compose again', () => {
+    const d = database()
+    composeWorkflowWithCursor('ship', 'fixture', 'default', args, context, d)
+    abandonWorkflowCursor('ship', 'fixture', 'default', args, 'operator stopped', context, d)
+
+    expect(() =>
+      getWorkflowStepWithCursor('ship', 'fixture', 'lens', args, 'default', context, d),
+    ).toThrow('workflow ship for DEV-822 is abandoned; compose it again to start a new run')
+  })
+
   test('fetch ahead refuses, next records a note and advances', () => {
     const d = database()
     composeWorkflowWithCursor('ship', 'fixture', 'default', args, context, d)

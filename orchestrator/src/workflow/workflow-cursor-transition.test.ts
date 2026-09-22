@@ -1,5 +1,9 @@
 import { describe, expect, test } from 'bun:test'
-import { type CursorValue, decideCursorTransition } from './workflow-cursor-transition.ts'
+import {
+  type CursorValue,
+  decideCursorStart,
+  decideCursorTransition,
+} from './workflow-cursor-transition.ts'
 
 const cursor = (ordinal: number, stepSlug: string, state: CursorValue['state'] = 'running') => ({
   ordinal,
@@ -8,6 +12,14 @@ const cursor = (ordinal: number, stepSlug: string, state: CursorValue['state'] =
 })
 
 describe('workflow cursor transition', () => {
+  test('retires terminal cursors before starting and reuses active cursors', () => {
+    expect(decideCursorStart(null)).toBe('insert')
+    expect(decideCursorStart('running')).toBe('reuse')
+    expect(decideCursorStart('awaiting-ruling')).toBe('reuse')
+    expect(decideCursorStart('done')).toBe('retire')
+    expect(decideCursorStart('abandoned')).toBe('retire')
+  })
+
   test('serves the current, next, and earlier steps without allowing a skip', () => {
     expect(
       decideCursorTransition(cursor(2, 'two'), {
