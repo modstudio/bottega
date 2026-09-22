@@ -157,6 +157,21 @@ describe('workflow versions and project composition', () => {
     expect(draft.n).not.toBe(production.n)
     expect(composed.workflow.version).toBe(production.n)
   })
+  test('step successor carries its one-based position and is null at the selected mode end', () => {
+    const d = database(),
+      args = { key: 'DEV-821', branch: 'DEV-821-test', worktree: '/tmp/test' }
+
+    expect(getWorkflowStep('ship', 'fixture', 'rebase', args, d, { mode: 'default' }).next).toEqual(
+      {
+        n: 2,
+        slug: 'lens',
+        title: 'Run independent review lenses',
+      },
+    )
+    expect(
+      getWorkflowStep('ship', 'fixture', 'close', args, d, { mode: 'default' }).next,
+    ).toBeNull()
+  })
   test('compose uses a requested draft catalogue version instead of production', () => {
     const d = database(),
       current = productionStepCatalogue(d).definition,
