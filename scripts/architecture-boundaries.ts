@@ -134,6 +134,7 @@ export const importBoundaries: ImportBoundary[] = [
       'node:fs',
       'node:path',
       './cleanup.ts',
+      './cleanup-sweep-decisions.ts',
       '../close/close-out.ts',
       '../database/db.ts',
       '../resources/docker-resources.ts',
@@ -150,6 +151,12 @@ export const importBoundaries: ImportBoundary[] = [
       '../worktree/worktree-types.ts',
     ],
     'Keep cleanup-sweep independent of transports, routing, reviews, contracts, the CLI, and durable execution.',
+  ),
+  boundary(
+    'cleanup-sweep-decisions-boundary',
+    'orchestrator/src/cleanup/cleanup-sweep-decisions.ts',
+    [],
+    'Keep cleanup sweep decisions pure and independent of filesystems, stores, commands, and processes.',
   ),
   boundary(
     'close-out-boundary',

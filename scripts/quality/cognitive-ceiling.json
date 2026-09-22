@@ -139,15 +139,16 @@
   {
     "file": "orchestrator/src/cleanup/cleanup-sweep.ts",
     "function": "sweepRuns",
-    "line": 223,
-    "score": 149,
+    "line": 391,
+    "score": 116,
     "key": "orchestrator/src/cleanup/cleanup-sweep.ts\u0000sweepRuns"
   },
   {
     "file": "orchestrator/src/cleanup/cleanup-sweep.ts",
     "function": "withCleanupLock callback#1",
-    "line": 266,
-    "score": 28
+    "line": 496,
+    "score": 23,
+    "key": "orchestrator/src/cleanup/cleanup-sweep.ts\u0000withCleanupLock callback#1"
   },
   {
     "file": "orchestrator/src/cleanup/cleanup.ts",

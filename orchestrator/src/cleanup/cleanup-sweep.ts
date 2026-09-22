@@ -37,6 +37,17 @@ import {
   verifyBranchOwnershipAfterCleanup,
   withCleanupLock,
 } from './cleanup.ts'
+import {
+  decideFilesystemOrphanAfterInventory,
+  decideFilesystemOrphanAfterRemoval,
+  decideFilesystemOrphanEligibility,
+  decideFilesystemOrphanUnderLock,
+  decideRecordedRunCloseOut,
+  decideRecordedRunPointer,
+  decideRecordedRunPostInventory,
+  decideRecordedRunPreInventory,
+  type RecordedRunPostInventoryFacts,
+} from './cleanup-sweep-decisions.ts'
 
 export type SweepOptions = {
   dryRun: boolean
@@ -50,10 +61,6 @@ export type SweepHelpers = {
 }
 
 const KEPT_ROW_LIMIT = 10
-
-function orphanKeepReason(detail: string): string {
-  return /^has commits not reachable from /.test(detail) ? 'holds commits not on trunk' : detail
-}
 
 type NamedRun = { id: number; status: string; alive: boolean }
 type ClosedSweepOutcome = 'released' | 'absent' | 'forgotten'
@@ -259,18 +266,111 @@ function sweepTerminalRunLeases(dry: boolean): void {
   }
 }
 
-function reportImmediateClosedSweep(
-  closed: ReturnType<typeof closeOutRun>,
-  row: SweepCandidate,
-  dry: boolean,
-  counts: ClosedSweepCounts,
+type RecordedSweepState = {
+  cleanupFailed: boolean
+  inventoryErrors: Set<string>
+  leaked: Map<string, { resource: DockerResource; project: string; runId: number }>
+  kept: { line: string; reason: string }[]
+  counts: ClosedSweepCounts
+}
+
+function applyRecordedPostInventory(
+  r: SweepCandidate,
+  closeOutcome: RecordedRunPostInventoryFacts['closeOutcome'],
+  inventory: ReturnType<typeof resourcesForConversation>,
+  state: RecordedSweepState,
   presentation: CleanupPresentation,
-): boolean {
-  if (!dry && closed.outcome !== 'forgotten') return false
-  if (!['released', 'absent', 'forgotten'].includes(closed.outcome)) return false
-  const outcome = reportClosedSweepRow(closed.outcome as ClosedSweepOutcome, row, dry, presentation)
-  counts[outcome]++
-  return true
+): void {
+  const project = r.repo ?? projectAt(r.worktree)?.name ?? 'unknown'
+  const inventoryReason = inventory.ascertainable ? null : inventory.reason
+  const resources = inventory.ascertainable ? inventory.resources : []
+  const inventoryFact: RecordedRunPostInventoryFacts['inventory'] = !inventory.ascertainable
+    ? 'unavailable'
+    : resources.length
+      ? 'leaked'
+      : 'empty'
+  const ruling = decideRecordedRunPostInventory({
+    closeOutcome,
+    inventory: inventoryFact,
+  })
+  state.cleanupFailed ||= ruling.cleanupFailed
+  if (ruling.action === 'inventory-unavailable') {
+    state.inventoryErrors.add(inventoryReason!)
+    state.kept.push({
+      line: `${r.id}  inventory unavailable`,
+      reason: ruling.keepReason!,
+    })
+    presentation.error(`could not verify reclaim ${r.id}: ${ruling.presentationError}`)
+  } else if (ruling.action === 'leak') {
+    for (const resource of resources)
+      state.leaked.set(`${resource.kind}:${resource.name}`, {
+        resource,
+        project,
+        runId: r.id,
+      })
+    state.kept.push({
+      line: `${r.id}  leaked Docker resources`,
+      reason: ruling.keepReason!,
+    })
+    presentation.error(
+      `could not fully reclaim ${r.id}: project ${project}'s ${ruling.presentationError}`,
+    )
+  } else {
+    const outcome = reportClosedSweepRow(closeOutcome, r, false, presentation)
+    state.counts[outcome]++
+  }
+}
+
+function sweepRecordedRow(
+  r: SweepCandidate,
+  dry: boolean,
+  state: RecordedSweepState,
+  presentation: CleanupPresentation,
+): void {
+  const keep = (line: string, reason: string) => state.kept.push({ line, reason })
+  const current = db().query('SELECT worktree FROM run WHERE id=?').get(r.id) as {
+    worktree: string | null
+  } | null
+  const pointerRuling = decideRecordedRunPointer({
+    pointerUnchanged: current?.worktree === r.worktree,
+  })
+  if (pointerRuling.action === 'skip') return
+  let preInventory: 'unavailable' | 'ok' | 'not-needed' = 'not-needed'
+  let preInventoryReason: string | null = null
+  if (shouldInventoryBeforeSweep(r, dry)) {
+    const before = resourcesForConversation(r.id)
+    preInventory = before.ascertainable ? 'ok' : 'unavailable'
+    preInventoryReason = before.ascertainable ? null : before.reason
+  }
+  const preInventoryRuling = decideRecordedRunPreInventory({ inventory: preInventory })
+  if (preInventoryRuling.action === 'keep') {
+    state.inventoryErrors.add(preInventoryReason!)
+    state.cleanupFailed = preInventoryRuling.cleanupFailed
+    keep(`${r.id}  inventory unavailable`, preInventoryRuling.keepReason)
+    presentation.error(`could not verify reclaim ${r.id}: ${preInventoryRuling.presentationError}`)
+    return
+  }
+  const closed = closeOutRun(r.id, { intent: 'sweep', dryRun: dry })
+  const closeRuling = decideRecordedRunCloseOut({
+    dry,
+    outcome: closed.outcome,
+    detail: closed.detail,
+  })
+  if (closeRuling.action === 'report') {
+    const outcome = reportClosedSweepRow(closed.outcome as ClosedSweepOutcome, r, dry, presentation)
+    state.counts[outcome]++
+    return
+  }
+  if (closeRuling.action === 'keep' || closeRuling.action === 'fail') {
+    state.cleanupFailed ||= closeRuling.cleanupFailed
+    keep(`${r.id}  ${closed.outcome}: ${closed.detail}`, closeRuling.keepReason)
+    if (closeRuling.action === 'fail')
+      presentation.error(`could not reclaim ${r.id}: ${closeRuling.presentationError}`)
+    return
+  }
+
+  const inventory = resourcesForConversation(r.id)
+  applyRecordedPostInventory(r, closeRuling.closeOutcome, inventory, state, presentation)
 }
 
 /**
@@ -313,7 +413,11 @@ export async function sweepRuns(options: SweepOptions, helpers: SweepHelpers): P
 
   const { removeFor, sweepWithTool } = await import('../worktree/worktree-remove.ts')
 
-  const closedCounts: ClosedSweepCounts = { released: 0, absent: 0, forgotten: 0 }
+  const closedCounts: ClosedSweepCounts = {
+    released: 0,
+    absent: 0,
+    forgotten: 0,
+  }
   let cleanupFailed = false
   const inventoryErrors = new Set<string>()
   const leaked = new Map<string, { resource: DockerResource; project: string; runId: number }>()
@@ -321,59 +425,16 @@ export async function sweepRuns(options: SweepOptions, helpers: SweepHelpers): P
   const keep = (line: string, reason: string) => {
     kept.push({ line, reason })
   }
-  sweepTerminalRunLeases(dry)
-  for (const r of rows) {
-    const current = db().query('SELECT worktree FROM run WHERE id=?').get(r.id) as {
-      worktree: string | null
-    } | null
-    if (current?.worktree !== r.worktree) continue
-    if (shouldInventoryBeforeSweep(r, dry)) {
-      const before = resourcesForConversation(r.id)
-      if (!before.ascertainable) {
-        inventoryErrors.add(before.reason)
-        cleanupFailed = true
-        keep(`${r.id}  inventory unavailable`, 'inventory unavailable')
-        options.presentation.error(`could not verify reclaim ${r.id}: inventory unavailable`)
-        continue
-      }
-    }
-    const closed = closeOutRun(r.id, { intent: 'sweep', dryRun: dry })
-    if (reportImmediateClosedSweep(closed, r, dry, closedCounts, options.presentation)) continue
-    if (closed.outcome === 'released' || closed.outcome === 'absent') {
-      const project = r.repo ?? projectAt(r.worktree)?.name ?? 'unknown'
-      const inventory = resourcesForConversation(r.id)
-      if (!inventory.ascertainable) {
-        inventoryErrors.add(inventory.reason)
-        cleanupFailed = true
-        keep(`${r.id}  inventory unavailable`, 'inventory unavailable')
-        options.presentation.error(`could not verify reclaim ${r.id}: inventory unavailable`)
-      } else if (inventory.resources.length) {
-        cleanupFailed = true
-        for (const resource of inventory.resources)
-          leaked.set(`${resource.kind}:${resource.name}`, {
-            resource,
-            project,
-            runId: r.id,
-          })
-        keep(`${r.id}  leaked Docker resources`, 'leaked Docker resources')
-        options.presentation.error(
-          `could not fully reclaim ${r.id}: project ${project}'s remove tool leaked Docker resources`,
-        )
-      } else {
-        const outcome = reportClosedSweepRow(closed.outcome, r, false, options.presentation)
-        closedCounts[outcome]++
-      }
-    } else {
-      const reason = closed.detail.startsWith('held by explicit --keep-tree')
-        ? 'held by explicit --keep-tree; clear with orch discard <run-id>'
-        : closed.detail
-      keep(`${r.id}  ${closed.outcome}: ${closed.detail}`, reason)
-      if (closed.outcome === 'failed') {
-        cleanupFailed = true
-        options.presentation.error(`could not reclaim ${r.id}: ${closed.detail}`)
-      }
-    }
+  const recordedState: RecordedSweepState = {
+    cleanupFailed,
+    inventoryErrors,
+    leaked,
+    kept,
+    counts: closedCounts,
   }
+  sweepTerminalRunLeases(dry)
+  for (const r of rows) sweepRecordedRow(r, dry, recordedState, options.presentation)
+  cleanupFailed = recordedState.cleanupFailed
 
   /**
    * DATABASE ROWS ARE NOT AN INVENTORY OF WHAT IS ON DISK.
@@ -400,23 +461,21 @@ export async function sweepRuns(options: SweepOptions, helpers: SweepHelpers): P
       if (remembered.has(realpathSync(path))) continue
 
       const label = `orphan  ${path}`
-      if (!isOrchWorktree(path, p.settings.worktree?.branch)) {
-        keep(`${label}  kept: not created by orch`, 'not created by orch')
-        continue
-      }
       const named = namedRun(entry.name, p.settings.worktree?.branch, p)
-      if (named?.alive) {
-        keep(`${label}  live — kept`, 'live — kept')
-        continue
-      }
       const trunk =
         typeof p.settings.trunk === 'string' && p.settings.trunk.trim() ? p.settings.trunk : 'HEAD'
       const safe = orphanSafety(path, p.path, trunk)
-      if (!safe.removable) {
-        keep(`${label}  ${safe.detail}`, orphanKeepReason(safe.detail))
+      const eligibilityRuling = decideFilesystemOrphanEligibility({
+        orchOwned: isOrchWorktree(path, p.settings.worktree?.branch),
+        alive: Boolean(named?.alive),
+        safe,
+        dry,
+      })
+      if (eligibilityRuling.action === 'keep') {
+        keep(`${label}  ${eligibilityRuling.keepLine}`, eligibilityRuling.keepReason)
         continue
       }
-      if (dry) {
+      if (eligibilityRuling.action === 'dry-would-reclaim') {
         options.presentation.log(`would reclaim ${label}; ${safe.detail}`)
         closedCounts.released++
         continue
@@ -434,26 +493,36 @@ export async function sweepRuns(options: SweepOptions, helpers: SweepHelpers): P
       const runId = orchRunId(entry.name)
       try {
         withCleanupLock(p.path, `sweep ${label}`, path, () => {
-          const ownerRow = { id: runId ?? -1, repo: p.name, branch: safe.branch }
+          const ownerRow = {
+            id: runId ?? -1,
+            repo: p.name,
+            branch: safe.branch,
+          }
           const worktreeRow = { id: runId ?? -1, worktree: path }
           const sharersBefore = liveWorktreeSharers(db(), worktreeRow)
-          if (sharersBefore.length) {
+          const lockedRun = namedRun(entry.name, p.settings.worktree?.branch, p)
+          const lockedRuling = decideFilesystemOrphanUnderLock({
+            sharers: sharersBefore.length,
+            lockedAlive: Boolean(lockedRun?.alive),
+          })
+          if (lockedRuling.action === 'shared-before') {
             const owners = sharersBefore.map((owner) => `${owner.id} (${owner.status})`).join(', ')
-            cleanupFailed = true
-            keep(`${label}  acquired by run(s): ${owners}`, 'shared with live run(s)')
+            cleanupFailed ||= lockedRuling.cleanupFailed
+            keep(`${label}  ${lockedRuling.keepLine}: ${owners}`, lockedRuling.keepReason!)
             options.presentation.error(`could not reclaim ${label}: acquired by run(s) ${owners}`)
+            return
+          }
+          if (lockedRuling.action === 'live') {
+            keep(`${label}  ${lockedRuling.keepLine}`, lockedRuling.keepReason!)
             return
           }
           const ownersBefore = evidenceOwningBranchOwners(ownerRow, p.path)
           const snapshot = safe.branch ? branchTip(p.path, safe.branch) : null
-          const lockedRun = namedRun(entry.name, p.settings.worktree?.branch, p)
-          if (lockedRun?.alive) {
-            keep(`${label}  live — kept`, 'live — kept')
-            return
-          }
           const res = removeFor(w, p.path, false, ownersBefore.length > 0, runId ?? undefined)
           const sharersAfter = liveWorktreeSharers(db(), worktreeRow)
           const ownersAfter = evidenceOwningBranchOwners(ownerRow, p.path, snapshot)
+          let ownershipRefusal: string | null = null
+          let ownershipWarning: string | null = null
           if (safe.branch) {
             const outcome = verifyBranchOwnershipAfterCleanup(
               runId ?? -1,
@@ -463,62 +532,73 @@ export async function sweepRuns(options: SweepOptions, helpers: SweepHelpers): P
               ownersBefore,
               ownersAfter,
             )
-            if (outcome.warning) options.presentation.error(`${label}: ${outcome.warning}`)
-            if (outcome.refusal) {
-              cleanupFailed = true
-              keep(`${label}  removal refused`, 'removal refused')
-              options.presentation.error(`could not reclaim ${label}: ${outcome.refusal}`)
-              return
-            }
+            ownershipRefusal = outcome.refusal
+            ownershipWarning = outcome.warning
           }
-          if (sharersAfter.length) {
+          const afterRemoval = decideFilesystemOrphanAfterRemoval({
+            sharers: sharersAfter.length,
+            removed: res.removed,
+            removeDetail: res.detail,
+            ownershipRefusal,
+            ownershipWarning,
+          })
+          if (afterRemoval.ownershipWarning)
+            options.presentation.error(`${label}: ${afterRemoval.ownershipWarning}`)
+          if (afterRemoval.action === 'removal-refused') {
+            cleanupFailed ||= afterRemoval.cleanupFailed
+            keep(`${label}  ${afterRemoval.keepLine}`, afterRemoval.keepReason!)
+            options.presentation.error(`could not reclaim ${label}: ${afterRemoval.error}`)
+            return
+          }
+          if (afterRemoval.action === 'shared-after') {
             const owners = sharersAfter.map((owner) => `${owner.id} (${owner.status})`).join(', ')
-            cleanupFailed = true
-            keep(
-              `${label}  acquired during cleanup by run(s): ${owners}`,
-              'shared with live run(s)',
-            )
+            cleanupFailed ||= afterRemoval.cleanupFailed
+            keep(`${label}  ${afterRemoval.keepLine}: ${owners}`, afterRemoval.keepReason!)
             options.presentation.error(
               `could not reclaim ${label}: acquired during cleanup by run(s) ${owners}`,
             )
             return
           }
-          if (res.removed) {
-            const inventory =
-              runId === null
-                ? { ascertainable: true as const, resources: [] }
-                : resourcesForConversation(runId)
-            if (!inventory.ascertainable) {
-              inventoryErrors.add(inventory.reason)
-              cleanupFailed = true
-              keep(`${label}  inventory unavailable`, 'inventory unavailable')
-              return
-            }
-            const left = inventory.resources
-            if (left.length) {
-              cleanupFailed = true
-              for (const resource of left)
-                leaked.set(`${resource.kind}:${resource.name}`, {
-                  resource,
-                  project: p.name,
-                  runId: resource.runId,
-                })
-              keep(`${label}  leaked Docker resources`, 'leaked Docker resources')
-            } else {
-              options.presentation.log(`reclaimed ${label}  ${res.detail}`)
-              if (res.output) options.presentation.log(res.output)
-              const owner = ownersAfter[0] ?? ownersBefore[0] ?? null
-              if (owner && safe.branch) {
-                options.presentation.log(
-                  `branch ${safe.branch} left because run ${owner.id} records it`,
-                )
-              }
-              closedCounts.released++
-            }
+          const inventory =
+            runId === null
+              ? { ascertainable: true as const, resources: [] }
+              : resourcesForConversation(runId)
+          const inventoryReason = inventory.ascertainable ? null : inventory.reason
+          const resources = inventory.ascertainable ? inventory.resources : []
+          const inventoryFact = !inventory.ascertainable
+            ? ('unavailable' as const)
+            : resources.length
+              ? ('leaked' as const)
+              : ('empty' as const)
+          const finalRuling = decideFilesystemOrphanAfterInventory({
+            runIdPresent: runId !== null,
+            inventory: inventoryFact,
+          })
+          cleanupFailed ||= finalRuling.cleanupFailed
+          if (finalRuling.action === 'inventory-unavailable') {
+            inventoryErrors.add(inventoryReason!)
+            keep(`${label}  ${finalRuling.keepLine}`, finalRuling.keepReason)
+            return
+          }
+          const left = resources
+          if (finalRuling.action === 'leaked') {
+            for (const resource of left)
+              leaked.set(`${resource.kind}:${resource.name}`, {
+                resource,
+                project: p.name,
+                runId: resource.runId,
+              })
+            keep(`${label}  ${finalRuling.keepLine}`, finalRuling.keepReason!)
           } else {
-            cleanupFailed = true
-            keep(`${label}  removal refused`, 'removal refused')
-            options.presentation.error(`could not reclaim ${label}: ${res.detail}`)
+            options.presentation.log(`reclaimed ${label}  ${res.detail}`)
+            if (res.output) options.presentation.log(res.output)
+            const owner = ownersAfter[0] ?? ownersBefore[0] ?? null
+            if (owner && safe.branch) {
+              options.presentation.log(
+                `branch ${safe.branch} left because run ${owner.id} records it`,
+              )
+            }
+            closedCounts.released++
           }
         })
       } catch (error) {
