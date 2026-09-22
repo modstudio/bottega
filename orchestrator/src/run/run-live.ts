@@ -13,8 +13,6 @@ import {
   REPLY_FILE_NAME,
   type ReplyDialect,
   realQuestions,
-  TEXT_REPLY_SCHEMA,
-  validatesSchema,
   type WorkerReply,
 } from '../contract/contract.ts'
 import { db, nowIso } from '../database/db.ts'
@@ -43,12 +41,10 @@ import { processStartTime } from '../project/project-lock.ts'
 import type { CodexMcpServer } from '../sandbox/codex-mcp-scope.ts'
 import type { SandboxSelection } from '../sandbox/sandbox.ts'
 import {
-  schemaMismatchError,
   type TransportName,
   type TransportResult,
   type TransportStartOpts,
   transportFor,
-  valueMatchesStrictSchema,
 } from '../transport/transport.ts'
 import type { Worktree } from '../worktree/worktree-types.ts'
 import {
@@ -58,6 +54,7 @@ import {
   recordFailedIdlePreservation,
 } from './checkpoint.ts'
 import { childEnv, errorTail, live, liveCheckpoints } from './run-process.ts'
+import { decideReplySource } from './run-reply-source.ts'
 
 function reviewChangedPaths(cwd: string, base: string, inputTree: string): string[] {
   const args = ['diff', '--name-only', `${base}..${inputTree}`]
@@ -73,25 +70,6 @@ function reviewChangedPaths(cwd: string, base: string, inputTree: string): strin
     )
   }
   return p.stdout.toString().trim().split('\n').filter(Boolean)
-}
-
-function presentReplyFileMatches(opts: {
-  text: string
-  schema: unknown
-  customSchema: boolean
-  dialect: ReplyDialect
-}): boolean {
-  const schema = opts.schema as Parameters<typeof validatesSchema>[1]
-  if (opts.customSchema) {
-    let value: unknown
-    try {
-      value = JSON.parse(opts.text)
-    } catch {
-      return false
-    }
-    return validatesSchema(value, schema)
-  }
-  return opts.dialect.parse(opts.text).reply !== null
 }
 
 /** A missing named reply is observable even when its final-message fallback is valid. */
@@ -572,47 +550,25 @@ export async function runLive(input: LiveInput): Promise<LiveResult> {
     resolvedSession = collected.sessionId ?? vendorSession
     output = collected.output
     const replyFile = join(scratchDir, REPLY_FILE_NAME)
-    if (existsSync(replyFile)) {
-      replyFilePresent = true
-      const fileOutput = readFileSync(replyFile, 'utf8')
-      output = fileOutput
-      const validationSchema = JSON.parse(readFileSync(originalSchemaPath!, 'utf8'))
-      if (
-        !presentReplyFileMatches({
-          text: fileOutput,
-          schema: validationSchema,
-          customSchema: Boolean(opts.schemaPath),
-          dialect: resolvedDialect,
-        })
-      ) {
-        replyFileError = `${REPLY_FILE_NAME} did not match the worker contract:\n${fileOutput}`
-      } else if (textReplyContract) {
-        output = (JSON.parse(fileOutput) as { answer: string }).answer
-      }
-      writeFileSync(outPath, output)
-    } else if (textReplyContract) {
-      // The public result stays plain text. A conforming fallback final message
-      // uses the file envelope, while legacy prose remains readable.
-      try {
-        const value = JSON.parse(output)
-        if (valueMatchesStrictSchema(TEXT_REPLY_SCHEMA, value)) output = value.answer
-      } catch {
-        /* Missing-file fallback may be the legacy plain-text result. */
-      }
-      writeFileSync(outPath, output)
-    }
-    if (!replyFilePresent && opts.schemaPath) {
-      let value: unknown
-      try {
-        value = JSON.parse(output)
-      } catch {
-        value = null
-      }
-      const validationSchema = JSON.parse(readFileSync(originalSchemaPath!, 'utf8'))
-      if (!valueMatchesStrictSchema(validationSchema, value)) {
-        replyFileError = schemaMismatchError(output)
-      }
-    }
+    const replyFileExists = existsSync(replyFile)
+    const customSchema = Boolean(opts.schemaPath)
+    const ruling = decideReplySource({
+      transportOutput: output,
+      replyFile: replyFileExists
+        ? { present: true, text: readFileSync(replyFile, 'utf8') }
+        : { present: false },
+      validationSchema:
+        replyFileExists || customSchema
+          ? JSON.parse(readFileSync(originalSchemaPath!, 'utf8'))
+          : null,
+      customSchema,
+      textContract: textReplyContract,
+      dialect: resolvedDialect,
+    })
+    output = ruling.output
+    replyFileError = ruling.replyFileError
+    replyFilePresent = ruling.replyFilePresent
+    if (ruling.rewriteOutputFile) writeFileSync(outPath, output)
     const transportQuestions = collected.asking
       ? collected.questions.map((item) => ({
           question: item.question,
