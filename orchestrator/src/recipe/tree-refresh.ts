@@ -5,7 +5,7 @@ import { resolve } from 'node:path'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { gitToplevel, inspectCheckout, resolvedPathsEqual } from '../../../shared/git.ts'
 import { recordedChainRootsForWorktree } from '../dispatch/dispatch-preflight.ts'
-import { git, repoRootOf } from '../git/git-environment.ts'
+import { git, gitOk, repoRootOf } from '../git/git-environment.ts'
 import { projectAt, resolvedWorktreeTool } from '../project/projects.ts'
 import { orchRunLabel } from '../resources/docker-resources.ts'
 import { resolveWorktreeLifecycle } from '../worktree/worktree-lifecycle.ts'
@@ -31,6 +31,26 @@ export function decideTreeRefresh(input: {
   return { action: 'refuse', reason: 'diverged' }
 }
 
+export function collidingRefreshPaths(input: {
+  incomingAddedPaths: string[]
+  ignoredPaths: string[]
+  untrackedPaths: string[]
+}): string[] {
+  const localPaths = new Set([...input.ignoredPaths, ...input.untrackedPaths])
+  return [...new Set(input.incomingAddedPaths.filter((path) => localPaths.has(path)))]
+}
+
+export type MainCheckoutBranchDecision =
+  | { action: 'refresh' }
+  | { action: 'refuse'; branch: string | null }
+
+export function decideMainCheckoutBranch(
+  branch: string | null,
+  trunk: string,
+): MainCheckoutBranchDecision {
+  return branch === trunk ? { action: 'refresh' } : { action: 'refuse', branch }
+}
+
 function countCommits(range: string, cwd: string): number {
   const value = git(['rev-list', '--count', range], cwd)
   const count = Number(value)
@@ -38,6 +58,65 @@ function countCommits(range: string, cwd: string): number {
     throw new Error(`git returned invalid commit count ${JSON.stringify(value)} for ${range}`)
   }
   return count
+}
+
+function pathsFromGit(value: string): string[] {
+  return value ? value.split('\n') : []
+}
+
+function fastForwardTree(treeRoot: string, trunk: string, branch: string): string {
+  git(['fetch', 'origin', trunk], treeRoot)
+  const remote = `origin/${trunk}`
+  const mergeBase = git(['merge-base', 'HEAD', remote], treeRoot)
+  const ownCommits = countCommits(`${mergeBase}..HEAD`, treeRoot)
+  const behindCommits = countCommits(`${mergeBase}..${remote}`, treeRoot)
+  const decision = decideTreeRefresh({ clean: true, ownCommits, behindCommits })
+  if (decision.action === 'refuse') {
+    throw new Error(
+      `worktree ${treeRoot} is ${behindCommits} commit(s) behind ${remote} and has ${ownCommits} own commit(s); rebase onto ${remote} before refreshing`,
+    )
+  }
+  if (decision.action === 'fast-forward') {
+    const incomingAddedPaths = pathsFromGit(
+      git(['diff', '--name-only', '--diff-filter=A', 'HEAD', remote], treeRoot),
+    )
+    const ignoredPaths = incomingAddedPaths.length
+      ? pathsFromGit(
+          git(
+            [
+              'ls-files',
+              '--others',
+              '--ignored',
+              '--exclude-standard',
+              '--',
+              ...incomingAddedPaths,
+            ],
+            treeRoot,
+          ),
+        )
+      : []
+    const untrackedPaths = incomingAddedPaths.length
+      ? pathsFromGit(
+          git(
+            ['ls-files', '--others', '--exclude-standard', '--', ...incomingAddedPaths],
+            treeRoot,
+          ),
+        )
+      : []
+    const collisions = collidingRefreshPaths({
+      incomingAddedPaths,
+      ignoredPaths,
+      untrackedPaths,
+    })
+    if (collisions.length) {
+      throw new Error(
+        `worktree ${treeRoot} has ignored or untracked files that incoming commits add: ${collisions.join(', ')}; move them aside (or commit them) before refreshing`,
+      )
+    }
+    git(['merge', '--ff-only', remote], treeRoot)
+    return `fast-forwarded ${branch} by ${behindCommits} commit(s) to ${remote}`
+  }
+  return `${branch} is current with ${remote}`
 }
 
 type RefreshOwner = {
@@ -114,8 +193,8 @@ export function refreshStepContext(input: {
   }
 }
 
-/** Bind a path to its registered project, landing branch and tracked recipe, or refuse. */
-function refreshTarget(path: string) {
+/** Bind a path to its registered project and landing branch, or refuse. */
+function registeredRefreshTarget(path: string) {
   const requested = resolve(path)
   const project = projectAt(requested)
   const treeRoot = gitToplevel(requested)
@@ -126,14 +205,14 @@ function refreshTarget(path: string) {
   if (!main || !resolvedPathsEqual(main, project.path)) {
     throw new Error(`path ${treeRoot} is not a git worktree of a registered project`)
   }
-  if (resolvedPathsEqual(treeRoot, main)) {
-    throw new Error(
-      `path ${treeRoot} is the main checkout for project ${project.name}, not a worktree`,
-    )
-  }
-
   const trunk = project.settings.trunk?.trim()
   if (!trunk) throw new Error(`project ${project.name} has no landing branch (register trunk)`)
+  return { project, treeRoot, main, trunk }
+}
+
+/** Bind a non-main checkout to its tracked recipe, or refuse. */
+function refreshTarget(target: ReturnType<typeof registeredRefreshTarget>) {
+  const { project, treeRoot, trunk } = target
   const tool = resolvedWorktreeTool(project)
   const lifecycle = resolveWorktreeLifecycle(tool)
   if (!tool || lifecycle.form !== 'tracked-recipe') {
@@ -144,8 +223,36 @@ function refreshTarget(path: string) {
   return { project, treeRoot, trunk, recipePath: lifecycle.recipePath }
 }
 
-function refreshTree(path: string): string[] {
-  const { project, treeRoot, trunk, recipePath } = refreshTarget(path)
+function refreshMainCheckout(target: ReturnType<typeof registeredRefreshTarget>): string[] {
+  const { treeRoot, trunk } = target
+  const branch = gitOk(['symbolic-ref', '--quiet', '--short', 'HEAD'], treeRoot)
+  const branchDecision = decideMainCheckoutBranch(branch, trunk)
+  if (branchDecision.action === 'refuse') {
+    throw new Error(
+      `main checkout ${treeRoot} is on branch ${branchDecision.branch ?? '(detached HEAD)'}, expected trunk ${trunk}; the main checkout must be on trunk to be refreshed`,
+    )
+  }
+
+  const checkout = inspectCheckout(treeRoot)
+  if (checkout.cleanliness === 'indeterminate') {
+    throw new Error(`could not determine whether worktree ${treeRoot} has tracked changes`)
+  }
+  const dirtyDecision = decideTreeRefresh({
+    clean: checkout.cleanliness === 'clean',
+    ownCommits: 0,
+    behindCommits: 0,
+  })
+  if (dirtyDecision.action === 'refuse') {
+    throw new Error(
+      `worktree ${treeRoot} has uncommitted tracked changes: ${checkout.dirtyTracked.join(', ')}`,
+    )
+  }
+
+  return [fastForwardTree(treeRoot, trunk, trunk)]
+}
+
+function refreshWorktree(target: ReturnType<typeof registeredRefreshTarget>): string[] {
+  const { project, treeRoot, trunk, recipePath } = refreshTarget(target)
   const loaded = loadTrackedRecipe(treeRoot, recipePath)
   if (!loaded.ok) throw new Error(loaded.errors.join('\n'))
   if (!loaded.recipe) {
@@ -178,24 +285,7 @@ function refreshTree(path: string): string[] {
   }
 
   const branch = git(['symbolic-ref', '--short', 'HEAD'], treeRoot)
-  git(['fetch', 'origin', trunk], treeRoot)
-  const remote = `origin/${trunk}`
-  const mergeBase = git(['merge-base', 'HEAD', remote], treeRoot)
-  const ownCommits = countCommits(`${mergeBase}..HEAD`, treeRoot)
-  const behindCommits = countCommits(`${mergeBase}..${remote}`, treeRoot)
-  const decision = decideTreeRefresh({ clean: true, ownCommits, behindCommits })
-  const messages: string[] = []
-  if (decision.action === 'refuse') {
-    throw new Error(
-      `worktree ${treeRoot} is ${behindCommits} commit(s) behind ${remote} and has ${ownCommits} own commit(s); rebase onto ${remote} before refreshing`,
-    )
-  }
-  if (decision.action === 'fast-forward') {
-    git(['merge', '--ff-only', remote], treeRoot)
-    messages.push(`fast-forwarded ${branch} by ${behindCommits} commit(s) to ${remote}`)
-  } else {
-    messages.push(`${branch} is current with ${remote}`)
-  }
+  const messages = [fastForwardTree(treeRoot, trunk, branch)]
 
   if (!loaded.recipe.refresh?.length) {
     messages.push(`tracked recipe ${recipePath} has no refresh steps; ran no steps`)
@@ -219,6 +309,13 @@ function refreshTree(path: string): string[] {
   }
   messages.push(`ran ${loaded.recipe.refresh.length} refresh step(s)`)
   return messages
+}
+
+function refreshTree(path: string): string[] {
+  const target = registeredRefreshTarget(path)
+  return resolvedPathsEqual(target.treeRoot, target.main)
+    ? refreshMainCheckout(target)
+    : refreshWorktree(target)
 }
 
 export function treeRefreshCommand(

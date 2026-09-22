@@ -2,11 +2,55 @@ import { describe, expect, test } from 'bun:test'
 import type { TrackedRecipe } from './recipe-schema.ts'
 import { executeTrackedRefreshSteps, type RecipeSnapshot } from './tracked-recipe.ts'
 import {
+  collidingRefreshPaths,
+  decideMainCheckoutBranch,
   decideTreeRefresh,
   refreshStepContext,
   requireRefreshSnapshot,
   snapshotlessRefreshPlaceholder,
 } from './tree-refresh.ts'
+
+describe('tree refresh path collisions', () => {
+  test('returns incoming paths that already exist as ignored or untracked files', () => {
+    expect(
+      collidingRefreshPaths({
+        incomingAddedPaths: ['ignored.env', 'tracked.txt', 'untracked.txt', 'ignored.env'],
+        ignoredPaths: ['ignored.env', 'unrelated-ignored.txt'],
+        untrackedPaths: ['untracked.txt', 'unrelated-untracked.txt'],
+      }),
+    ).toEqual(['ignored.env', 'untracked.txt'])
+  })
+
+  test('allows incoming paths with no local collision', () => {
+    expect(
+      collidingRefreshPaths({
+        incomingAddedPaths: ['new.txt'],
+        ignoredPaths: ['other.env'],
+        untrackedPaths: ['draft.txt'],
+      }),
+    ).toEqual([])
+  })
+})
+
+describe('main checkout branch decision', () => {
+  test('allows the registered trunk branch', () => {
+    expect(decideMainCheckoutBranch('develop', 'develop')).toEqual({ action: 'refresh' })
+  })
+
+  test('refuses another branch and reports it', () => {
+    expect(decideMainCheckoutBranch('feature', 'develop')).toEqual({
+      action: 'refuse',
+      branch: 'feature',
+    })
+  })
+
+  test('refuses a detached HEAD', () => {
+    expect(decideMainCheckoutBranch(null, 'develop')).toEqual({
+      action: 'refuse',
+      branch: null,
+    })
+  })
+})
 
 describe('tree refresh decision', () => {
   test('a clean current tree stays current', () => {
