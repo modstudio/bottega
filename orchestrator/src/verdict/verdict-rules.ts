@@ -14,7 +14,7 @@ export type VerdictFacts = {
   probe: boolean
 }
 
-export function refuseVerdict(input: VerdictFacts): string | null {
+function refuseEvidence(input: VerdictFacts): string | null {
   if (input.probe) return 'probe runs are diagnostics, not routing evidence; do not score this run'
   if (input.failureKind === 'unevidenced') {
     return 'unevidenced review is not evidence; void the run instead of scoring it'
@@ -22,6 +22,10 @@ export function refuseVerdict(input: VerdictFacts): string | null {
   if (input.failureKind && NOT_EVIDENCE.includes(input.failureKind as never)) {
     return `failure kind '${input.failureKind}' is not evidence; void the run instead of scoring it`
   }
+  return null
+}
+
+function refuseAxes(input: VerdictFacts): string | null {
   if (!DELIVERY.includes(input.delivery as never)) {
     return `delivery must be one of: ${DELIVERY.join(' | ')}; choose one of those delivery values`
   }
@@ -40,6 +44,14 @@ export function refuseVerdict(input: VerdictFacts): string | null {
   if ((!input.writesRepo || input.delivery === 'none') && input.fidelity) {
     return 'this verdict does not take a fidelity axis; remove the fidelity value'
   }
+  return null
+}
+
+export function refuseVerdict(input: VerdictFacts): string | null {
+  const evidenceRefusal = refuseEvidence(input)
+  if (evidenceRefusal) return evidenceRefusal
+  const axesRefusal = refuseAxes(input)
+  if (axesRefusal) return axesRefusal
   if (input.producesFindings && input.delivery !== 'none' && !input.hasRequiredReviewGrades) {
     return 'findings-producing jobs require reproduced, coverage, limits, and overlap review grades; record every required review grade before scoring'
   }

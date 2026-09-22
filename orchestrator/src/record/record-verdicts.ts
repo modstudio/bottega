@@ -1,7 +1,6 @@
 // concern: record-verdicts
 /** Owns tenant-bound hosted run verdicts and evidence exclusion. Must not know local cache, CLI, or HTTP. */
 import { SQL } from 'bun'
-import { job } from '../jobs/jobs.ts'
 import type { Delivery, Fidelity, Quality } from '../score/score.ts'
 import { refuseVerdict } from '../verdict/verdict-rules.ts'
 
@@ -56,12 +55,28 @@ export async function upsertRecordScore(
 ): Promise<void> {
   return tenant(input, async (tx) => {
     const runs = await tx`
-      SELECT job, failure_kind, probe FROM run
+      SELECT job, failure_kind, probe, machine_id FROM run
       WHERE id=${input.id}::uuid AND space_id=${input.spaceId}::uuid
     `
     const run = runs[0] as Record<string, unknown> | undefined
     if (!run) throw new RecordVerdictError('run not found; refresh the run list', 404)
-    const declaredJob = job(String(run.job))
+    const jobSnapshots = await tx`
+      SELECT item
+      FROM orch_snapshot snapshot
+      CROSS JOIN LATERAL jsonb_array_elements(snapshot.payload) item
+      WHERE snapshot.kind='jobs' AND snapshot.machine_id=${run.machine_id}::uuid
+        AND item->>'name'=${String(run.job)}
+      ORDER BY snapshot.taken_at DESC LIMIT 1
+    `
+    const declaredJob = jobSnapshots[0]?.item as
+      | { needs?: { writesRepo?: boolean }; findings?: boolean }
+      | undefined
+    if (!declaredJob) {
+      throw new RecordVerdictError(
+        `job capabilities for '${String(run.job)}' are unavailable; run orch record publish and retry`,
+        409,
+      )
+    }
     let hasRequiredReviewGrades = false
     if (declaredJob.findings && input.delivery !== 'none') {
       const grades = await tx`
@@ -77,7 +92,7 @@ export async function upsertRecordScore(
       delivery: input.delivery,
       quality: input.quality,
       fidelity: input.fidelity,
-      writesRepo: Boolean(declaredJob.needs.writesRepo),
+      writesRepo: Boolean(declaredJob.needs?.writesRepo),
       producesFindings: Boolean(declaredJob.findings),
       hasRequiredReviewGrades,
       failureKind: run.failure_kind == null ? null : String(run.failure_kind),

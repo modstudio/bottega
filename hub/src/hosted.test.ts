@@ -50,12 +50,14 @@ describe('hostedRouter', () => {
       'record.routing',
       'record.run',
       'record.runsView',
+      'record.score',
       'record.setActiveSpace',
       'record.settings',
       'record.snapshots',
       'record.spend',
       'record.task',
       'record.updateReportSubscription',
+      'record.void',
       'record.whoami',
     ])
   })

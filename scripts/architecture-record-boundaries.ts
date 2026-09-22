@@ -59,6 +59,12 @@ export const recordReadBoundariesBeforePublish: ImportBoundary[] = [
 
 export const recordReadBoundariesAfterPublish: ImportBoundary[] = [
   boundary(
+    'verdict-rules-boundary',
+    'orchestrator/src/verdict/verdict-rules.ts',
+    ['../failure/failure.ts', '../score/score.ts'],
+    'Keep verdict policy pure and independent of local and hosted persistence adapters.',
+  ),
+  boundary(
     'record-projects-boundary',
     'orchestrator/src/record/record-projects.ts',
     ['bun', '../../../shared/record/tenant.ts'],

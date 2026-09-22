@@ -71,7 +71,7 @@ function reviewsForRun(runId: number) {
                 triaged_severity AS triagedSeverity, triaged_at AS triagedAt
            FROM review_finding WHERE review_lens_id=? ORDER BY ordinal`,
       )
-      .all(lens.id),
+      .all(Number(lens.id)),
   }))
 }
 

@@ -606,6 +606,7 @@ export async function scoreRun(
     probe: Boolean(row.probe),
   })
   if (initialRefusal) throw new Error(initialRefusal)
+  const scoredDelivery = delivery as Delivery
   const needsFidelity = writesRepo && delivery !== 'none'
   const reviewGradeFlags = ['reproduced', 'coverage', 'limits', 'overlap'] as const
   const suppliedReviewGradeFlags = reviewGradeFlags.filter((name) => flags.flag(name) !== undefined)
@@ -708,7 +709,7 @@ export async function scoreRun(
   const recordId = hostedRunId(id)
   await pushHostedScore(
     recordId,
-    delivery,
+    scoredDelivery,
     quality ?? null,
     scoredFidelity ?? null,
     note,
@@ -723,7 +724,7 @@ export async function scoreRun(
     if (reviewGrade) gradeReviewLens(id, reviewGrade.output, reviewGrade.grades)
     recordScoreVerdict(
       id,
-      delivery,
+      scoredDelivery,
       quality ?? null,
       scoredFidelity ?? null,
       note,
@@ -732,7 +733,7 @@ export async function scoreRun(
     )
     auditRunMutation(scoreAuthority, wasScored ? 'rescore' : 'score', options.auditReason)
   })
-  const w = weigh(delivery, quality ?? null, scoredFidelity ?? null)
+  const w = weigh(scoredDelivery, quality ?? null, scoredFidelity ?? null)
   const axes = [delivery, quality, scoredFidelity].filter(Boolean).join(' ')
   presentation.log(`run ${id} (${row.agent}/${row.job}) scored ${axes}  [${w}]`)
   if (!comparison) {
