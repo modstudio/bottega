@@ -70,7 +70,7 @@ export type CheckpointResult = {
   error: string | null
 }
 
-/** Commit staged and modified tracked files to exactly the current run branch. */
+/** Commit staged, tracked, and untracked files to the run branch; gitignored files stay out. */
 export function checkpointRun(input: {
   database: Database
   runId: number
@@ -90,14 +90,10 @@ export function checkpointRun(input: {
     appendRunEvent(input.runId, { ts: nowIso(), type: 'text', text: `checkpoint failed: ${error}` })
     return { created: false, commit: null, checkpointNo, taskPointer, error }
   }
-  const dirty = git(
-    input.worktree,
-    ['status', '--porcelain', '--untracked-files=no'],
-    input.guardEnvironment,
-  )
+  const dirty = git(input.worktree, ['status', '--porcelain'], input.guardEnvironment)
   if (!dirty.ok) return refusal(dirty.error)
   if (!dirty.out) return { created: false, commit: null, checkpointNo, taskPointer, error: null }
-  const staged = git(input.worktree, ['add', '-u'], input.guardEnvironment)
+  const staged = git(input.worktree, ['add', '-A'], input.guardEnvironment)
   if (!staged.ok) return refusal(staged.error)
   // Adjacent to commit so the checked branch is the ref the commit will move.
   const currentBranch = git(
