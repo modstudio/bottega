@@ -182,6 +182,10 @@ export function repoOf(cwd: string): string | null {
   return projectAt(cwd)?.name ?? null
 }
 
+function readOnlyBaseProjectPath(repo: string | undefined, callerCwd: string): string | null {
+  return ((repo ? projectByName(repo) : null) ?? projectAt(callerCwd))?.path ?? null
+}
+
 /**
  * A pack is written before its disposable worktree exists, so callers naturally
  * name the checkout they are standing in. That path is an address, not review
@@ -345,9 +349,15 @@ export async function run(opts: {
       throw new Error('--base is only valid for the implement and fix jobs')
     }
   }
+  const requestedReadOnlyBase = reviewTarget?.commit ?? opts.base ?? 'HEAD'
   const readOnlyBase =
     repoJob && !writesJob && !opts.resume?.worktree
-      ? resolveReadOnlyBase(callerCwd, reviewTarget?.commit ?? opts.base ?? 'HEAD')
+      ? resolveReadOnlyBase(
+          callerCwd,
+          requestedReadOnlyBase,
+          opts.automaticFailover,
+          readOnlyBaseProjectPath(opts.repo, callerCwd),
+        )
       : null
   if (opts.base && readOnlyBase === null) resolveBase(callerCwd, opts.base)
   // REACHABILITY IS A ROUTING INPUT, not a run outcome, and this is the line
