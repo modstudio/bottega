@@ -1,37 +1,71 @@
 import { describe, expect, test } from 'bun:test'
-import { classifyReviewTier, resolveTierRange, type TierRangeFacts } from './review-tier.ts'
+import {
+  classifyReviewTier,
+  parseTierRange,
+  resolveTierRange,
+  type TierRangeEndpoint,
+  type TierRangeFacts,
+} from './review-tier.ts'
+
+describe('tier range parsing', () => {
+  test.each([
+    ['a..b', { from: 'a', to: 'b' }],
+    ['a...b', { from: 'a', to: 'b' }],
+    ['v1.2..v1.3', { from: 'v1.2', to: 'v1.3' }],
+  ] as const)('parses %s', (value, expected) => {
+    expect(parseTierRange(value)).toEqual(expected)
+  })
+
+  test.each(['a..b..c', 'a....b'])('refuses invalid range %s with the accepted forms', (value) => {
+    const result = parseTierRange(value)
+    expect(result).toHaveProperty('refusal')
+    expect(result && 'refusal' in result && result.refusal).toContain('<from>..<to>')
+    expect(result && 'refusal' in result && result.refusal).toContain('<from>...<to>')
+  })
+
+  test('returns null for a plain branch name', () => {
+    expect(parseTierRange('feature-branch')).toBeNull()
+  })
+})
 
 describe('tier range resolution', () => {
+  const endpoint = (
+    ref: string,
+    kind: TierRangeEndpoint['kind'] = 'commit',
+    commit: string | null = `${ref}-commit`,
+  ): TierRangeEndpoint => ({ ref, commit: kind === 'commit' ? commit : null, kind })
   const facts = (overrides: Partial<TierRangeFacts> = {}): TierRangeFacts => ({
-    from: 'trunk-tip',
-    to: 'branch-tip',
-    fromKind: 'commit',
-    toKind: 'commit',
+    from: endpoint('trunk-tip'),
+    to: endpoint('branch-tip'),
     mergeBase: 'fork-point',
     ...overrides,
   })
 
   test('replaces a moving trunk tip with the merge base', () => {
-    expect(resolveTierRange(facts())).toEqual({ from: 'fork-point', to: 'branch-tip' })
+    expect(resolveTierRange(facts())).toEqual({ from: 'fork-point', to: 'branch-tip-commit' })
   })
 
   test.each([
-    ['from', facts({ fromKind: 'tree' }), 'trunk-tip'],
-    ['to', facts({ toKind: 'tree' }), 'branch-tip'],
-  ] as const)('refuses a tree %s endpoint', (_side, input, ref) => {
+    ['tree', facts({ from: endpoint('trunk-tree', 'tree') }), 'trunk-tree'],
+    ['tree', facts({ to: endpoint('branch-tree', 'tree') }), 'branch-tree'],
+    ['other', facts({ to: endpoint('branch-blob', 'other') }), 'branch-blob'],
+  ] as const)('refuses a %s endpoint and names its typed ref', (_kind, input, ref) => {
     const result = resolveTierRange(input)
     expect(result).toHaveProperty('refusal')
     expect('refusal' in result && result.refusal).toContain(ref)
+    expect('refusal' in result && result.refusal).not.toContain(`${ref}-commit`)
   })
 
   test.each([
-    ['from', facts({ fromKind: 'missing' }), 'trunk-tip'],
-    ['to', facts({ toKind: 'missing' }), 'branch-tip'],
-  ] as const)('refuses a missing %s endpoint', (_side, input, ref) => {
+    ['from', facts({ from: endpoint('missing-trunk', 'unresolvable') }), 'missing-trunk'],
+    ['to', facts({ to: endpoint('missing-branch', 'unresolvable') }), 'missing-branch'],
+  ] as const)('refuses an unresolvable %s endpoint with both remedies', (_side, input, ref) => {
     const result = resolveTierRange(input)
     expect(result).toHaveProperty('refusal')
     expect('refusal' in result && result.refusal).toContain(ref)
-    expect('refusal' in result && result.refusal).toContain('git fetch')
+    expect('refusal' in result && result.refusal).toContain('fetch it')
+    expect('refusal' in result && result.refusal).toContain('revision expression')
+    expect('refusal' in result && result.refusal).toContain('check the spelling')
   })
 
   test('refuses a missing merge base with remedies for both causes', () => {
@@ -43,10 +77,18 @@ describe('tier range resolution', () => {
   })
 
   test('keeps healthy branch shorthand endpoints unchanged in effect', () => {
-    expect(resolveTierRange(facts({ from: 'fork-point' }))).toEqual({
+    expect(
+      resolveTierRange(facts({ from: endpoint('fork-point', 'commit', 'fork-point') })),
+    ).toEqual({
       from: 'fork-point',
-      to: 'branch-tip',
+      to: 'branch-tip-commit',
     })
+  })
+
+  test('uses a tag endpoint peeled to its commit', () => {
+    expect(
+      resolveTierRange(facts({ to: endpoint('release-tag', 'commit', 'peeled-release-commit') })),
+    ).toEqual({ from: 'fork-point', to: 'peeled-release-commit' })
   })
 })
 

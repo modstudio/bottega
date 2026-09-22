@@ -12,7 +12,13 @@ import { reviewCalibration, reviewCalibrationFleet } from './review-calibration.
 import { coverageAudit } from './review-coverage.ts'
 import { REVIEW_WINDOW } from './review-evidence-sql.ts'
 import { reviewPins } from './review-pins.ts'
-import { classifyReviewTier, diffNumstat, resolveTierRange } from './review-tier.ts'
+import {
+  classifyReviewTier,
+  diffNumstat,
+  parseTierRange,
+  resolveTierRange,
+  type TierRangeEndpoint,
+} from './review-tier.ts'
 import {
   completeReview,
   DISPOSITIONS,
@@ -26,22 +32,31 @@ type ReviewFlags = { has(name: string): boolean; flag(name: string): string | un
 type ReviewPresentation = { log(...values: unknown[]): void; usage(): never }
 
 function resolveTierRangeInRepo(repo: string, from: string, to: string) {
-  const objectKind = (ref: string): 'commit' | 'tree' | 'other' | 'missing' => {
-    const result = Bun.spawnSync(['git', 'cat-file', '-t', ref], {
+  const endpoint = (ref: string): TierRangeEndpoint => {
+    const peeled = Bun.spawnSync(['git', 'rev-parse', '--verify', '--quiet', `${ref}^{commit}`], {
       cwd: repo,
       env: targetGitEnvironment(repo),
       stdout: 'pipe',
       stderr: 'pipe',
     })
-    if (result.exitCode !== 0) return 'missing'
-    const kind = result.stdout.toString().trim()
-    return kind === 'commit' || kind === 'tree' ? kind : 'other'
+    if (peeled.exitCode === 0) {
+      return { ref, commit: peeled.stdout.toString().trim(), kind: 'commit' }
+    }
+    const object = Bun.spawnSync(['git', 'cat-file', '-t', ref], {
+      cwd: repo,
+      env: targetGitEnvironment(repo),
+      stdout: 'pipe',
+      stderr: 'pipe',
+    })
+    if (object.exitCode !== 0) return { ref, commit: null, kind: 'unresolvable' }
+    const kind = object.stdout.toString().trim()
+    return { ref, commit: null, kind: kind === 'tree' ? 'tree' : 'other' }
   }
-  const fromKind = objectKind(from)
-  const toKind = objectKind(to)
+  const fromEndpoint = endpoint(from)
+  const toEndpoint = endpoint(to)
   const base =
-    fromKind === 'commit' && toKind === 'commit'
-      ? Bun.spawnSync(['git', 'merge-base', from, to], {
+    fromEndpoint.kind === 'commit' && toEndpoint.kind === 'commit'
+      ? Bun.spawnSync(['git', 'merge-base', fromEndpoint.commit!, toEndpoint.commit!], {
           cwd: repo,
           env: targetGitEnvironment(repo),
           stdout: 'pipe',
@@ -49,10 +64,8 @@ function resolveTierRangeInRepo(repo: string, from: string, to: string) {
         })
       : null
   const resolution = resolveTierRange({
-    from,
-    to,
-    fromKind,
-    toKind,
+    from: fromEndpoint,
+    to: toEndpoint,
     mergeBase: base?.exitCode === 0 ? base.stdout.toString().trim() || null : null,
   })
   if ('refusal' in resolution) throw new Error(resolution.refusal)
@@ -205,9 +218,10 @@ export async function reviewCommand(
       const project = projectAt(process.cwd())
       if (!project) throw new Error('review tier target is not inside a registered project')
       repo = project.path
-      const range = value.match(/^(.+)\.\.(.+)$/)
+      const range = parseTierRange(value)
+      if (range && 'refusal' in range) throw new Error(range.refusal)
       if (range) {
-        ;({ from, to } = resolveTierRangeInRepo(repo, range[1]!, range[2]!))
+        ;({ from, to } = resolveTierRangeInRepo(repo, range.from, range.to))
       } else {
         const branch = Bun.spawnSync(
           ['git', 'show-ref', '--verify', '--quiet', `refs/heads/${value}`],
