@@ -73,6 +73,17 @@ function landingNoticeDetail(row: {
   return `${event} ${row.id}/${branch} ${duration}; inspect with 'orch branches'`
 }
 
+function recordStalledRunSubjects(
+  kinds: Set<string>,
+  record: (kind: string, subjects: string[]) => void,
+): void {
+  if (!kinds.has('stalled-run')) return
+  record(
+    'stalled-run',
+    stalledRunConditions().map((condition) => condition.subject),
+  )
+}
+
 function currentAddressedSubjects(kinds: Set<string>): Map<string, Set<string>> {
   for (const kind of kinds) {
     if (!APPEND_ONLY_DELIVERY_KINDS.has(kind) && !REVALIDATED_DELIVERY_KINDS.has(kind)) {
@@ -100,12 +111,7 @@ function currentAddressedSubjects(kinds: Set<string>): Map<string, Set<string>> 
       idleRunConditions().map((condition) => condition.subject),
     )
   }
-  if (kinds.has('stalled-run')) {
-    record(
-      'stalled-run',
-      stalledRunConditions().map((condition) => condition.subject),
-    )
-  }
+  recordStalledRunSubjects(kinds, record)
   if (kinds.has('task-waiting-on-ruling')) {
     record(
       'task-waiting-on-ruling',

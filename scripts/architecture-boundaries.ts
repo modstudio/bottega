@@ -8,6 +8,9 @@ import { reviewBoundarySpecs } from './architecture-review-boundaries.ts'
 
 const landing = '../landing-tree/landing-tree.ts'
 
+const normalizeTarget = (file: string, target: string) =>
+  target.startsWith('.') ? normalize(`${dirname(file)}/${target}`) : target
+
 export type ImportBoundary = {
   name: string
   file: string
@@ -25,12 +28,8 @@ const boundary = (
 ): ImportBoundary => ({
   name,
   file,
-  allowed: allowed.map((target) =>
-    target.startsWith('.') ? normalize(`${dirname(file)}/${target}`) : target,
-  ),
-  typeOnlyAllowed: typeOnlyAllowed.map((target) =>
-    target.startsWith('.') ? normalize(`${dirname(file)}/${target}`) : target,
-  ),
+  allowed: allowed.map((target) => normalizeTarget(file, target)),
+  typeOnlyAllowed: typeOnlyAllowed.map((target) => normalizeTarget(file, target)),
   reason,
 })
 

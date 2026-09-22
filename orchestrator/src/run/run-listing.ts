@@ -4,6 +4,7 @@
 import { resolveFailover } from '../collect/collect.ts'
 import { db } from '../database/db.ts'
 import { UNSCORED_WHERE } from '../evidence/evidence-query.ts'
+import { type ProcessSample, processTreeCpuMoving, sampleProcesses } from '../idle-kill.ts'
 import { jobIdleKillMs } from '../jobs/jobs.ts'
 import { failureReason, type OutcomeRow, outcomeOf } from '../outcome.ts'
 import { idleStallMs, stalledRunDetail, stalledRunState } from '../stalled-run.ts'
@@ -28,6 +29,34 @@ type RunListingPresentation = {
   }): string | null
 }
 
+function runStallFields(input: {
+  live: boolean
+  id: number
+  agent: string
+  job: string
+  agentPid: number
+  idleMs: number | null
+  samples: ProcessSample[]
+}): { stallState: 'healthy' | 'stalled' | 'unknown' | null; stall: string | null } {
+  if (!input.live) return { stallState: null, stall: null }
+  const idleBoundMs = jobIdleKillMs(input.job)
+  const stallState = stalledRunState({
+    idleMs: input.idleMs,
+    cpuMoving: processTreeCpuMoving(input.agentPid, input.samples),
+    idleBoundMs,
+    thresholdMs: idleStallMs(),
+  })
+  const stall =
+    stallState === 'stalled' && input.idleMs !== null
+      ? stalledRunDetail({ ...input, idleMs: input.idleMs, idleBoundMs })
+      : null
+  return { stallState, stall }
+}
+
+function processSamplesForRows(rows: Record<string, unknown>[]): ProcessSample[] {
+  return rows.some((row) => row.status === 'running') ? sampleProcesses() : []
+}
+
 export async function runListingCommand(
   options: { jsonV1: boolean },
   flags: RunListingFlags,
@@ -36,9 +65,7 @@ export async function runListingCommand(
   const { has, flag, values } = flags
   const { log, dur, chainIsStranded, strandedRecovery, thinOutputWarning } = presentation
   const { idleLabel, idleMsSince } = await import('../events.ts')
-  const { parseIdleReclaimedMs, processTreeCpuMoving, sampleProcesses } = await import(
-    '../idle-kill.ts'
-  )
+  const { parseIdleReclaimedMs } = await import('../idle-kill.ts')
   const jsonV1 = options.jsonV1
   const json = has('json') || jsonV1
   const where: string[] = ['r.parent_run_id IS NULL']
@@ -273,7 +300,7 @@ export async function runListingCommand(
     )
   }
 
-  const processSamples = rows.some((row) => row.status === 'running') ? sampleProcesses() : []
+  const processSamples = processSamplesForRows(rows)
   rows = rows.map((r) => {
     const live = r.status === 'running'
     const lastEventAt = (r.last_event_at as string | null) ?? null
@@ -284,25 +311,15 @@ export async function runListingCommand(
         ? 'idle-killed'
         : null
     const since = live ? idleMsSince(lastEventAt, startedAt) : null
-    const idleBoundMs = live ? jobIdleKillMs(String(r.job)) : null
-    const stallState = live
-      ? stalledRunState({
-          idleMs: since,
-          cpuMoving: processTreeCpuMoving(Number(r.current_agent_pid ?? 0), processSamples),
-          idleBoundMs: idleBoundMs!,
-          thresholdMs: idleStallMs(),
-        })
-      : null
-    const stall =
-      stallState === 'stalled' && since !== null && idleBoundMs !== null
-        ? stalledRunDetail({
-            id: Number(r.id),
-            agent: String(r.agent),
-            job: String(r.job),
-            idleMs: since,
-            idleBoundMs,
-          })
-        : null
+    const { stallState, stall } = runStallFields({
+      live,
+      id: Number(r.id),
+      agent: String(r.agent),
+      job: String(r.job),
+      agentPid: Number(r.current_agent_pid ?? 0),
+      idleMs: since,
+      samples: processSamples,
+    })
     const {
       current_started_at: _currentStartedAt,
       current_agent_pid: _currentAgentPid,
