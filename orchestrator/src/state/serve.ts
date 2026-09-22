@@ -25,6 +25,56 @@ import { guide } from './guide.ts'
 
 registerStandardRuntime()
 
+const jsonArray = (value: unknown) =>
+  typeof value === 'string' ? (JSON.parse(value) as unknown[]) : []
+
+function reviewsForRun(runId: number) {
+  const lenses = db()
+    .query(
+      `SELECT l.*, r.project_id AS review_project_id, r.recorded_at, r.completed_at,
+              r.tier, r.patch_id, r.commit_message
+         FROM review_lens l JOIN review r ON r.id=l.review_id
+        WHERE l.run_id=? ORDER BY r.recorded_at DESC, l.id DESC`,
+    )
+    .all(runId) as Record<string, unknown>[]
+  return lenses.map((lens) => ({
+    id: lens.id,
+    reviewId: lens.review_id,
+    runId: lens.run_id,
+    lens: lens.lens,
+    agent: lens.agent,
+    model: lens.model,
+    treeInspected: lens.tree_inspected,
+    reviewedTree: lens.reviewed_tree,
+    standardsRead: jsonArray(lens.standards_read),
+    filesCovered: jsonArray(lens.files_covered),
+    commandsRun: jsonArray(lens.commands_run),
+    couldNotVerify: jsonArray(lens.could_not_verify),
+    mcpTools: jsonArray(lens.mcp_tools),
+    docsRead: jsonArray(lens.docs_read),
+    substitutes: jsonArray(lens.substitutes),
+    reproduced: lens.reproduced,
+    coverage: lens.coverage,
+    limits: lens.limits,
+    overlap: lens.overlap,
+    reviewProjectId: lens.review_project_id,
+    recordedAt: lens.recorded_at,
+    completedAt: lens.completed_at,
+    tier: lens.tier,
+    patchId: lens.patch_id,
+    commitMessage: lens.commit_message,
+    findings: db()
+      .query(
+        `SELECT id, review_id AS reviewId, review_lens_id AS reviewLensId, ordinal,
+                severity, location, evidence, proposed_correction AS proposedCorrection,
+                disposition, rejection_category AS rejectionCategory,
+                triaged_severity AS triagedSeverity, triaged_at AS triagedAt
+           FROM review_finding WHERE review_lens_id=? ORDER BY ordinal`,
+      )
+      .all(Number(lens.id)),
+  }))
+}
+
 /** Full detail for one run: the whole prompt and the whole reply, read from disk. */
 export function runDetail(id: number, receipt = false) {
   const row = db()
@@ -67,6 +117,7 @@ export function runDetail(id: number, receipt = false) {
       : ['delivery', 'quality'],
     prompt: read(row.prompt_path),
     output: read(row.output_path),
+    reviews: reviewsForRun(id),
     messages,
     audit,
     // Runs recorded before prompts were kept on disk have only the head.

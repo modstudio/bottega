@@ -86,6 +86,31 @@ function appWith(session: RecordIdentity | null, overrides: Record<string, unkno
 const id = '01990000-0000-7000-8000-000000000001'
 
 describe('record API', () => {
+  test('records the authenticated user id and ignores a caller scorer label', async () => {
+    const scorers: string[] = []
+    const app = appWith(identity, {
+      upsertScore: async (input: { scoredBy: string }) => {
+        scorers.push(input.scoredBy)
+      },
+    })
+    const score = async (scoredBy?: string) =>
+      app.request(`/v1/runs/${id}/score`, {
+        method: 'PUT',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          delivery: 'none',
+          quality: null,
+          fidelity: null,
+          note: null,
+          scoredAt: '2026-09-22T12:00:00.000Z',
+          ...(scoredBy ? { scoredBy } : {}),
+        }),
+      })
+    expect((await score()).status).toBe(200)
+    expect((await score('caller-controlled')).status).toBe(200)
+    expect(scorers).toEqual(['user-a', 'user-a'])
+  })
+
   test('refuses unauthenticated v1 requests with a sign-in remedy', async () => {
     const response = await appWith(null).request('/v1/whoami')
     expect(response.status).toBe(401)

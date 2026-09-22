@@ -1,9 +1,11 @@
 import { describe, expect, test } from 'bun:test'
 import { writeFileSync } from 'node:fs'
 import { join } from 'node:path'
+import { reviewReply } from '../../test/fixtures/replies.ts'
 import { addRun, dir, score } from '../../test/fixtures/store.ts'
 import { trackedTestResidue } from '../../test/residue.ts'
 import { db, nowIso } from '../database/db.ts'
+import { recordReview } from '../review/review-triage.ts'
 import { runDetail, state } from './serve.ts'
 
 const trackResidue = trackedTestResidue()
@@ -24,6 +26,28 @@ describe('probes are excluded from every query that reports', () => {
 })
 
 describe('run detail', () => {
+  test('publishes local review lenses and findings in hosted detail shape', () => {
+    const id = addRun({ agent: 'codex', job: 'review-lens' })
+    db().query("UPDATE run SET lens='correctness', model='gpt' WHERE id=?").run(id)
+    recordReview(id, reviewReply(1), db())
+    expect(runDetail(id)!.reviews).toMatchObject([
+      {
+        runId: id,
+        lens: expect.any(String),
+        agent: 'codex',
+        standardsRead: expect.any(Array),
+        filesCovered: expect.any(Array),
+        findings: [
+          {
+            ordinal: 1,
+            severity: expect.any(String),
+            proposedCorrection: expect.any(String),
+          },
+        ],
+      },
+    ])
+  })
+
   test('publishes every field hub reads without publishing the ask credential', () => {
     const id = addRun({ agent: 'grok', job: 'craft', status: 'failed', latency: 1234, probe: 1 })
     const promptPath = trackResidue(join(dir, 'detail-prompt.txt'))

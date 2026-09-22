@@ -22,9 +22,9 @@ type RecordClientOptions = {
 
 const scoreSchema = z
   .object({
-    delivery: z.string(),
-    quality: z.string().nullable(),
-    fidelity: z.string().nullable(),
+    delivery: z.enum(['none', 'partial', 'full']),
+    quality: z.enum(['wrong', 'mixed', 'right']).nullable(),
+    fidelity: z.enum(['drifted', 'partial', 'faithful']).nullable(),
     scoredAt: z.string(),
     note: z.string().nullable().optional(),
     scoredBy: z.string().optional(),
@@ -32,6 +32,16 @@ const scoreSchema = z
     updatedAt: z.string().optional(),
   })
   .nullable()
+
+const scoreInputSchema = z.object({
+  delivery: z.enum(['none', 'partial', 'full']),
+  quality: z.enum(['wrong', 'mixed', 'right']).nullable(),
+  fidelity: z.enum(['drifted', 'partial', 'faithful']).nullable(),
+  note: z.string().nullable(),
+  scoredAt: z.string().datetime({ offset: true }),
+})
+const voidInputSchema = z.object({ reason: z.string().min(1) })
+const verdictResponseSchema = z.object({ ok: z.literal(true) })
 
 const runSchema = z.object({
   id: z.string().uuid(),
@@ -78,6 +88,9 @@ const runWindowSchema = z.object({
 })
 
 const runDetailSchema = runSchema.passthrough().extend({
+  machineId: z.string().uuid(),
+  promptBytes: z.number(),
+  error: z.string().nullable(),
   reviews: z.array(z.unknown()),
 })
 
@@ -237,6 +250,7 @@ function mappedError(status: number, body: unknown): TRPCError {
   if (status === 401) return new TRPCError({ code: 'UNAUTHORIZED', message: remedy ?? error })
   if (status === 409) return new TRPCError({ code: 'PRECONDITION_FAILED', message: error })
   if (status === 404) return new TRPCError({ code: 'NOT_FOUND', message: error })
+  if (status === 400) return new TRPCError({ code: 'BAD_REQUEST', message: error })
   return new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: error })
 }
 
@@ -297,6 +311,18 @@ export function createRecordClient(options: RecordClientOptions) {
         runWindowSchema,
       ),
     run: (id: string) => request(options, `/v1/runs/${id}`, runDetailSchema),
+    score: (id: string, input: z.input<typeof scoreInputSchema>) =>
+      request(options, `/v1/runs/${id}/score`, verdictResponseSchema, {
+        method: 'PUT',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify(scoreInputSchema.parse(input)),
+      }),
+    void: (id: string, input: z.input<typeof voidInputSchema>) =>
+      request(options, `/v1/runs/${id}/void`, verdictResponseSchema, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify(voidInputSchema.parse(input)),
+      }),
     reviews: (input: RecordReviewListInput = {}) =>
       request(
         options,

@@ -50,6 +50,46 @@ describe('record client', () => {
     expect(captured).toEqual({ method: 'PUT', body: JSON.stringify({ spaceId: 'space-b' }) })
   })
 
+  test('scores and voids hosted runs without sending a scorer identity', async () => {
+    const runId = '01990000-0000-7000-8000-000000000001'
+    const requests: { url: string; method: string; body: Record<string, unknown> }[] = []
+    const fetch: RecordFetch = async (url, init) => {
+      requests.push({
+        url,
+        method: init?.method ?? '',
+        body: JSON.parse(String(init?.body)) as Record<string, unknown>,
+      })
+      return jsonResponse({ ok: true })
+    }
+    const client = clientWith(fetch)
+    await client.score(runId, {
+      delivery: 'full',
+      quality: 'right',
+      fidelity: 'faithful',
+      note: null,
+      scoredAt: '2026-09-22T12:00:00.000Z',
+    })
+    await client.void(runId, { reason: 'not evidence' })
+    expect(requests).toEqual([
+      {
+        url: `https://api.example.test/v1/runs/${runId}/score`,
+        method: 'PUT',
+        body: {
+          delivery: 'full',
+          quality: 'right',
+          fidelity: 'faithful',
+          note: null,
+          scoredAt: '2026-09-22T12:00:00.000Z',
+        },
+      },
+      {
+        url: `https://api.example.test/v1/runs/${runId}/void`,
+        method: 'POST',
+        body: { reason: 'not evidence' },
+      },
+    ])
+  })
+
   test('maps 401 to UNAUTHORIZED with the API remedy text', async () => {
     const fetch: RecordFetch = async () =>
       jsonResponse({ error: 'record authentication required', remedy: 'sign in again' }, 401)

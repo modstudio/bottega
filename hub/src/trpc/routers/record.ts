@@ -28,6 +28,9 @@ const t = initTRPC.context<Context>().create()
 const uuid = z.string().uuid()
 const limit = z.number().int().min(1).max(100).default(20)
 const filter = z.string().min(1).optional()
+const delivery = z.enum(['none', 'partial', 'full'])
+const quality = z.enum(['wrong', 'mixed', 'right'])
+const fidelity = z.enum(['drifted', 'partial', 'faithful'])
 const HOSTED_STARTED_AT = new Date().toISOString()
 
 function recordClient(ctx: Context) {
@@ -178,9 +181,62 @@ export const recordRouter = t.router({
       },
     }
   }),
-  run: t.procedure
-    .input(z.object({ id: uuid }))
-    .query(({ ctx, input }) => recordClient(ctx).run(input.id)),
+  run: t.procedure.input(z.object({ id: uuid })).query(async ({ ctx, input }) => {
+    const client = recordClient(ctx)
+    const [run, snapshots] = await Promise.all([client.run(input.id), client.snapshots()])
+    const jobs = snapshots.items
+      .filter((item) => item.kind === 'jobs' && item.machineId === run.machineId)
+      .sort((left, right) => right.takenAt.localeCompare(left.takenAt))[0]
+    const writesRepo =
+      jobs?.kind === 'jobs'
+        ? jobs.payload.find((job) => job.name === run.job)?.needs.writesRepo
+        : false
+    return {
+      id: run.id,
+      agent: run.agent,
+      job: run.job,
+      project: run.projectName,
+      latency_ms: run.latencyMs,
+      vendor_tokens: run.vendorTokens,
+      status: run.status,
+      failure_kind: run.failureKind,
+      probe: run.probe,
+      evidence_excluded: run.evidenceExcluded,
+      error: run.error,
+      prompt: run.promptHead,
+      promptBytes: run.promptBytes,
+      output: null,
+      delivery: run.score?.delivery ?? null,
+      quality: run.score?.quality ?? null,
+      fidelity: run.score?.fidelity ?? null,
+      note: run.score?.note ?? null,
+      scored_at: run.score?.scoredAt ?? null,
+      scoreAxes: writesRepo ? ['delivery', 'quality', 'fidelity'] : ['delivery', 'quality'],
+      reviews: run.reviews,
+    }
+  }),
+  score: t.procedure
+    .input(
+      z.object({
+        id: uuid,
+        delivery,
+        quality: quality.nullable(),
+        fidelity: fidelity.nullable(),
+        note: z.string().nullable(),
+      }),
+    )
+    .mutation(({ ctx, input }) =>
+      recordClient(ctx).score(input.id, {
+        delivery: input.delivery,
+        quality: input.quality,
+        fidelity: input.fidelity,
+        note: input.note,
+        scoredAt: new Date().toISOString(),
+      }),
+    ),
+  void: t.procedure
+    .input(z.object({ id: uuid, reason: z.string().min(1) }))
+    .mutation(({ ctx, input }) => recordClient(ctx).void(input.id, { reason: input.reason })),
   reviews: t.procedure
     .input(z.object({ limit, cursor: z.string().optional() }))
     .query(({ ctx, input }) => recordClient(ctx).reviews(input)),

@@ -433,6 +433,7 @@ export const importBoundaries: ImportBoundary[] = [
       './run/run-authority.ts',
       './run/run-outbox.ts',
       './score/score.ts',
+      './verdict/verdict-rules.ts',
     ],
     'Keep judgement independent of transports, worktrees, routing, the CLI, durable execution, dispatch, and cleanup.',
   ),
@@ -678,7 +679,7 @@ export const importBoundaries: ImportBoundary[] = [
   boundary(
     'record-verdicts-boundary',
     'orchestrator/src/record/record-verdicts.ts',
-    ['bun', '../score/score.ts'],
+    ['bun', '../score/score.ts', '../verdict/verdict-rules.ts'],
     'Enforce the record-verdicts concern boundary.',
   ),
   boundary(

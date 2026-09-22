@@ -383,6 +383,7 @@ export const OrchRunDetailSchema = z
     note: nullableString,
     scored_at: nullableString,
     scoreAxes: z.array(z.enum(['delivery', 'quality', 'fidelity'])),
+    reviews: z.array(z.unknown()),
   })
   .passthrough()
 
