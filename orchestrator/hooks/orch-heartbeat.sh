@@ -396,7 +396,7 @@ print(token)
     if [ "$cap_mint_rc" -ne 0 ]; then
       [ -z "${CAP_DIR:-}" ] || rm -rf "$CAP_DIR"
       echo "[$(date +%H:%M:%S)] DEGRADED - monitor notice delivery capability unavailable. Health state still follows inbox and runs."
-    elif printf '%s\n' "$monitor_observed" | cut -f2-; then
+    elif printf '%s\n' "$monitor_observed" | cut -f2- | awk 'length > 0'; then
       export ORCH_MONITOR_CAPABILITY_PATH="$CAP_PATH"
       export ORCH_MONITOR_CAPABILITY_TOKEN="$CAP_TOKEN"
       ack_timed_out=$(mktemp)
