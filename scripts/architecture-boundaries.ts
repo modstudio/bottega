@@ -744,6 +744,7 @@ export const importBoundaries: ImportBoundary[] = [
       '../worktree/keep-tree-hold.ts',
       '../mcp/mcp-preflight.ts',
       '../outcome.ts',
+      '../workflow/autonomy.ts',
       './run.ts',
       './run-artifacts.ts',
       './run-authority.ts',
@@ -826,7 +827,12 @@ export const importBoundaries: ImportBoundary[] = [
   boundary(
     'run-inbox-boundary',
     'orchestrator/src/run/run-inbox.ts',
-    ['../database/db.ts', '../evidence/evidence-query.ts', '../project/projects.ts'],
+    [
+      '../database/db.ts',
+      '../evidence/evidence-query.ts',
+      '../project/projects.ts',
+      '../workflow/autonomy.ts',
+    ],
     'Keep run inbox independent of run control, transports, routing, the CLI, and worktrees.',
   ),
   // biome-ignore format: Keep this boundary declaration within the frozen architecture manifest ceiling.

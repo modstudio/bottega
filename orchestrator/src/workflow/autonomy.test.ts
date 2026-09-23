@@ -102,6 +102,7 @@ test('hosted failures are visible and local resolution continues', async () => {
 })
 
 test('a never-resolving hosted transport is bounded by the adapter timeout', async () => {
+  expect(HOSTED_AUTONOMY_TIMEOUT_MS).toBe(2000)
   const transport = ((_url: string | URL | Request, init?: RequestInit) =>
     new Promise<Response>((_resolve, reject) => {
       init?.signal?.addEventListener('abort', () => reject(init.signal?.reason), { once: true })
@@ -114,8 +115,9 @@ test('a never-resolving hosted transport is bounded by the adapter timeout', asy
       configClient({ ORCH_RECORD_API_URL: 'https://record.test' }, transport, 'token', signal),
     database(),
     { BOTTEGA_CONFIG_HOME: '/missing-fixture-config' },
+    10,
   )
   expect(result.note).toBe(
-    `hosted autonomy settings unavailable: timed out after ${HOSTED_AUTONOMY_TIMEOUT_MS} ms; resolved from local and project scopes`,
+    'hosted autonomy settings unavailable: timed out after 10 ms; resolved from local and project scopes',
   )
 })

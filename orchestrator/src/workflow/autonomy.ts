@@ -155,6 +155,7 @@ export async function resolveProjectAutonomy(
     configClient(process.env, fetch, undefined, signal),
   d: Database = db(),
   env: ConfigEnvironment = process.env,
+  timeoutMs: number = HOSTED_AUTONOMY_TIMEOUT_MS,
 ): Promise<AutonomyResolution> {
   const row = d
     .query('SELECT settings FROM project WHERE name=? AND retired_at IS NULL')
@@ -166,14 +167,14 @@ export async function resolveProjectAutonomy(
     space: AutonomySettings = {},
     note: string | undefined
   try {
-    const signal = AbortSignal.timeout(HOSTED_AUTONOMY_TIMEOUT_MS)
+    const signal = AbortSignal.timeout(timeoutMs)
     const rows = await clientFactory(signal).listEntries()
     user = hostedSettings(rows, 'user')
     space = hostedSettings(rows, 'space')
   } catch (error) {
     const reason =
       error instanceof DOMException && error.name === 'TimeoutError'
-        ? `timed out after ${HOSTED_AUTONOMY_TIMEOUT_MS} ms`
+        ? `timed out after ${timeoutMs} ms`
         : error instanceof Error
           ? error.message
           : String(error)
