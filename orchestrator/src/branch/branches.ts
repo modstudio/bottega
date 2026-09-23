@@ -79,7 +79,7 @@ type BranchReportProject = {
 
 export type BranchesReport = { projects: BranchReportProject[] }
 
-type BranchPruneReport = {
+export type BranchPruneReport = {
   project: string
   key: string | null
   allLocal: boolean
@@ -240,7 +240,13 @@ function branchReportFor(
     if (!run.minted_branch || !branches.has(run.minted_branch)) continue
     const key = run.launch_key ?? 'unkeyed'
     if (options.key !== undefined && key !== options.key) continue
-    if (decideProtectedBranch({ branch: run.minted_branch, trunk, productionBranch }) !== null) {
+    if (
+      decideProtectedBranch({
+        branch: run.minted_branch,
+        trunk,
+        productionBranch,
+      }) !== null
+    ) {
       protectedRuns.set(run.minted_branch, [...(protectedRuns.get(run.minted_branch) ?? []), run])
       continue
     }
@@ -350,7 +356,10 @@ function branchReportFor(
     })
   const protectedBranches = [...protectedRuns]
     .sort(([left], [right]) => left.localeCompare(right))
-    .map(([branch, branchRuns]) => ({ branch, runIds: branchRuns.map((run) => run.id) }))
+    .map(([branch, branchRuns]) => ({
+      branch,
+      runIds: branchRuns.map((run) => run.id),
+    }))
   const report: BranchReportProject = {
     project: project.name,
     trunk,
@@ -659,9 +668,16 @@ function deleteAndSettleBranch(
 ): void {
   const trunk = project.settings.trunk?.trim() ?? ''
   const productionBranch = project.settings.productionBranch?.trim() ?? ''
-  const protectedKind = decideProtectedBranch({ branch: row.branch, trunk, productionBranch })
+  const protectedKind = decideProtectedBranch({
+    branch: row.branch,
+    trunk,
+    productionBranch,
+  })
   if (protectedKind !== null) {
-    report.kept.push({ branch: row.branch, reason: `registered ${protectedKind}` })
+    report.kept.push({
+      branch: row.branch,
+      reason: `registered ${protectedKind}`,
+    })
     report.errors.push(`${row.branch}: refusing to delete registered ${protectedKind} branch`)
     return
   }
@@ -727,6 +743,51 @@ export function pruneBranches(options: {
   return report
 }
 
+/** Classify and prune every run-minted branch for one project through the ordinary prune path. */
+export function pruneProjectBranches(options: {
+  project: string
+  dryRun?: boolean
+}): BranchPruneReport {
+  const observed = branchesReport({ project: options.project })
+  const projectReport = observed.projects[0]!
+  if (projectReport.error) throw new Error(projectReport.error)
+  const project = projectByName(options.project)!
+  const report: BranchPruneReport = {
+    project: options.project,
+    key: null,
+    allLocal: false,
+    dryRun: options.dryRun ?? false,
+    deleted: [],
+    wouldDelete: [],
+    kept: [],
+    operator: [],
+    errors: [],
+  }
+  const seen = new Set<string>()
+  for (const row of projectReport.keys.flatMap((key) => key.branches)) {
+    if (seen.has(row.branch)) continue
+    seen.add(row.branch)
+    if (listOperatorBranch(row, report)) continue
+    if (!tipStillEligible(project, row, report)) continue
+    if (report.dryRun) report.wouldDelete.push(row.branch)
+    else deleteAndSettleBranch(project, row, report)
+  }
+  return report
+}
+
+/** Return the ordinary prune classifier's state for one recorded run branch. */
+export function classifyMintedBranch(project: string, branch: string): BranchStateDecision {
+  const observed = branchesReport({ project })
+  const projectReport = observed.projects[0]!
+  if (projectReport.error) return { state: 'unknown', error: projectReport.error }
+  return (
+    projectReport.keys.flatMap((key) => key.branches).find((row) => row.branch === branch) ?? {
+      state: 'unknown',
+      error: `branch ${branch} is not an existing orch-minted branch in project ${project}`,
+    }
+  )
+}
+
 function listOtherOperator(row: OtherBranchReportRow, report: BranchPruneReport): void {
   if (row.state === 'unlanded' || row.state === 'unknown') {
     report.operator.push({
@@ -748,7 +809,10 @@ function otherTipStillEligible(
   try {
     currentTip = localBranches(project).get(row.branch)
   } catch (error) {
-    report.kept.push({ branch: row.branch, reason: 'tip could not be rechecked' })
+    report.kept.push({
+      branch: row.branch,
+      reason: 'tip could not be rechecked',
+    })
     report.errors.push(`${row.branch}: ${error instanceof Error ? error.message : String(error)}`)
     return false
   }

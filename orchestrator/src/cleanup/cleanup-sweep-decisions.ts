@@ -1,5 +1,16 @@
 // concern: cleanup-sweep-decisions
 
+export function isSweepCandidate(input: {
+  status: string
+  worktree: string | null
+  closeOutOutcome: string | null
+}): boolean {
+  return (
+    ['ok', 'failed', 'stale', 'stopped'].includes(input.status) &&
+    (input.worktree !== null || ['held', 'failed'].includes(input.closeOutOutcome ?? ''))
+  )
+}
+
 export type RecordedRunPointerFacts = { pointerUnchanged: boolean }
 export type RecordedRunPointerRuling = { action: 'skip' | 'proceed' }
 

@@ -2,11 +2,13 @@
 import { existsSync, lstatSync, readdirSync, realpathSync } from 'node:fs'
 import { join, resolve } from 'node:path'
 import { pidAlive } from '../../../shared/process-identity.ts'
+import { pruneProjectBranches } from '../branch/branches.ts'
 import { closeOutRun, releaseSandboxDirectoryForConversation } from '../close/close-out.ts'
 import { db, sessionId, writableDb, writeTransaction } from '../database/db.ts'
 import { shouldSweepHookTree } from '../hook-tree/hook-tree.ts'
 import { observeLandingTreeRelease } from '../landing-tree/release-observation.ts'
 import { projectAt, projectByName, projects } from '../project/projects.ts'
+import { reclaimResidue } from '../reclaim/reclaim-residue.ts'
 import {
   classifiedDockerResources,
   type DockerResource,
@@ -48,6 +50,7 @@ import {
   decideRecordedRunPointer,
   decideRecordedRunPostInventory,
   decideRecordedRunPreInventory,
+  isSweepCandidate,
   type RecordedRunPostInventoryFacts,
 } from './cleanup-sweep-decisions.ts'
 
@@ -70,7 +73,7 @@ type SweepCandidate = {
   id: number
   root_id: number
   repo: string | null
-  worktree: string
+  worktree: string | null
   branch: string | null
   base_commit: string | null
   status: string
@@ -209,7 +212,7 @@ function sweepSandboxDirectories(
 
 function reportClosedSweepRow(
   outcome: ClosedSweepOutcome,
-  row: { id: number; root_id: number; worktree: string },
+  row: { id: number; root_id: number; worktree: string | null },
   dry: boolean,
   presentation: CleanupPresentation,
 ): ClosedSweepOutcome {
@@ -236,6 +239,7 @@ function reportClosedSweepRow(
 }
 
 function sweepTreeIsOwned(row: SweepCandidate): boolean {
+  if (!row.worktree) return false
   const project = row.repo ? projectByName(row.repo) : projectAt(row.worktree)
   if (!project) return false
   const conversationIds = (
@@ -284,7 +288,7 @@ function applyRecordedPostInventory(
   state: RecordedSweepState,
   presentation: CleanupPresentation,
 ): void {
-  const project = r.repo ?? projectAt(r.worktree)?.name ?? 'unknown'
+  const project = r.repo ?? (r.worktree ? projectAt(r.worktree)?.name : null) ?? 'unknown'
   const inventoryReason = inventory.ascertainable ? null : inventory.reason
   const resources = inventory.ascertainable ? inventory.resources : []
   const inventoryFact: RecordedRunPostInventoryFacts['inventory'] = !inventory.ascertainable
@@ -325,6 +329,7 @@ function applyRecordedPostInventory(
 }
 
 function landingTreeSweepDecision(r: SweepCandidate) {
+  if (!r.worktree) return { action: 'keep' as const, reason: 'landing tree path is absent' }
   return observeLandingTreeRelease({
     job: r.job,
     repo: r.repo,
@@ -372,7 +377,9 @@ function sweepRecordedRow(
     preInventory = before.ascertainable ? 'ok' : 'unavailable'
     preInventoryReason = before.ascertainable ? null : before.reason
   }
-  const preInventoryRuling = decideRecordedRunPreInventory({ inventory: preInventory })
+  const preInventoryRuling = decideRecordedRunPreInventory({
+    inventory: preInventory,
+  })
   if (preInventoryRuling.action === 'keep') {
     state.inventoryErrors.add(preInventoryReason!)
     state.cleanupFailed = preInventoryRuling.cleanupFailed
@@ -431,16 +438,30 @@ export async function sweepRuns(options: SweepOptions, helpers: SweepHelpers): P
         `SELECT r.id, COALESCE(r.parent_run_id, r.id) root_id,
               r.repo, r.worktree, r.branch, r.base_commit, r.worktree_source, r.status, r.job,
               r.pid, r.agent_pid, r.session_id, seen.last_seen AS session_last_seen,
-              r.launch_key
+              r.launch_key, r.close_out_outcome
          FROM run r
          LEFT JOIN session_seen seen ON seen.session_id=r.session_id
-        WHERE r.worktree IS NOT NULL AND r.status IN ('ok','failed','stale','stopped')
+        WHERE r.status IN ('ok','failed','stale','stopped')
         ORDER BY r.id`,
       )
-      .all() as SweepCandidate[]
+      .all() as Array<SweepCandidate & { close_out_outcome: string | null }>
   )
-    .filter(shouldSweepHookTree)
-    .filter((row) => !selectedProject || projectAt(row.worktree)?.name === selectedProject.name)
+    .filter((row) =>
+      isSweepCandidate({
+        status: row.status,
+        worktree: row.worktree,
+        closeOutOutcome: row.close_out_outcome,
+      }),
+    )
+    .filter(
+      (row) => !row.worktree || shouldSweepHookTree(row as SweepCandidate & { worktree: string }),
+    )
+    .filter(
+      (row) =>
+        !selectedProject ||
+        row.repo === selectedProject.name ||
+        Boolean(row.worktree && projectAt(row.worktree)?.name === selectedProject.name),
+    )
 
   const { removeFor, sweepWithTool } = await import('../worktree/worktree-remove.ts')
 
@@ -712,9 +733,21 @@ export async function sweepRuns(options: SweepOptions, helpers: SweepHelpers): P
     )
       continue
     const runId = trustOwners.get(heading)
-    options.presentation.log(
-      `grok trust entry for absent path ${path}${runId ? ` (run ${runId})` : ''}; prune by hand`,
-    )
+    if (!runId) {
+      cleanupFailed = true
+      options.presentation.error(
+        `could not reclaim grok trust entry for absent path ${path}: no recorded run owns ${heading}`,
+      )
+      continue
+    }
+    const reclaimed = reclaimResidue('trust', String(runId), { dryRun: dry })
+    if (reclaimed.ok) options.presentation.log(reclaimed.action)
+    else {
+      cleanupFailed = true
+      options.presentation.error(
+        `could not reclaim grok trust entry for absent path ${path}: ${reclaimed.action}`,
+      )
+    }
   }
 
   // Inventory is a read, so dry-run performs it too. A preview that omits
@@ -778,6 +811,27 @@ export async function sweepRuns(options: SweepOptions, helpers: SweepHelpers): P
   }
 
   const sandboxCounts = sweepSandboxDirectories(dry, options.presentation)
+
+  for (const project of sweepProjects) {
+    try {
+      const report = pruneProjectBranches({
+        project: project.name,
+        dryRun: dry,
+      })
+      const deleted = dry ? report.wouldDelete.length : report.deleted.length
+      options.presentation.log(
+        `${project.name} branches: ${dry ? 'would delete' : 'deleted'} ${deleted}, kept ${report.kept.length}`,
+      )
+      for (const error of report.errors)
+        options.presentation.error(`${project.name} branches: ${error}`)
+      cleanupFailed ||= report.errors.length > 0
+    } catch (error) {
+      cleanupFailed = true
+      options.presentation.error(
+        `${project.name} branches: classification unavailable; skipped: ${error instanceof Error ? error.message : String(error)}`,
+      )
+    }
+  }
 
   printSweepKept(
     closedCounts.released,

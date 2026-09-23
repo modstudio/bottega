@@ -22,6 +22,7 @@ import {
 } from '../project/project-lock.ts'
 import { projectAt, projectByName } from '../project/projects.ts'
 import { proveWorktreeReconstructible } from '../reclaim/reclaim.ts'
+import { reclaimResidue } from '../reclaim/reclaim-residue.ts'
 import {
   type ResourceClaimState,
   recordRetainedRefClaim,
@@ -51,6 +52,16 @@ export type CloseOutResult = {
   worktree: string | null
   outcome: 'released' | 'forgotten' | 'held' | 'live' | 'absent' | 'failed'
   detail: string
+}
+
+export function decideAbsentCloseOutResidue(input: {
+  outcome: CloseOutResult['outcome']
+  dryRun: boolean
+  project: string | null
+}): Array<'ref-guard' | 'retained-ref'> {
+  return input.outcome === 'absent' && !input.dryRun && input.project
+    ? ['ref-guard', 'retained-ref']
+    : []
 }
 
 const TERMINAL = new Set(['ok', 'failed', 'stale', 'stopped'])
@@ -239,7 +250,10 @@ function pathInside(candidate: string | null, directory: string): boolean {
 /** Release one conversation's vendor home after its tree and process claims are settled. */
 export function releaseSandboxDirectoryForConversation(
   rootId: number,
-  options: { dryRun?: boolean; worktreeState?: ResourceClaimState | 'no-tree' } = {},
+  options: {
+    dryRun?: boolean
+    worktreeState?: ResourceClaimState | 'no-tree'
+  } = {},
 ): SandboxReleaseResult {
   const path = join(RUNS_DIR, `sandbox-${rootId}`)
   const turns = db()
@@ -271,13 +285,28 @@ export function releaseSandboxDirectoryForConversation(
           detail: 'sandbox directory was already absent',
         })
       })
-    return { rootId, path, outcome: 'absent', detail: 'sandbox directory was already absent' }
+    return {
+      rootId,
+      path,
+      outcome: 'absent',
+      detail: 'sandbox directory was already absent',
+    }
   }
   if (decision.startsWith('keep:')) {
-    return { rootId, path, outcome: 'kept', detail: decision.slice('keep:'.length) }
+    return {
+      rootId,
+      path,
+      outcome: 'kept',
+      detail: decision.slice('keep:'.length),
+    }
   }
   if (options.dryRun) {
-    return { rootId, path, outcome: 'released', detail: 'would release sandbox directory' }
+    return {
+      rootId,
+      path,
+      outcome: 'released',
+      detail: 'would release sandbox directory',
+    }
   }
   try {
     rmSync(path, { recursive: true })
@@ -316,7 +345,12 @@ export function releaseSandboxDirectoryForConversation(
       })
     }
   })
-  return { rootId, path, outcome: 'released', detail: `removed sandbox directory ${path}` }
+  return {
+    rootId,
+    path,
+    outcome: 'released',
+    detail: `removed sandbox directory ${path}`,
+  }
 }
 
 function terminalHoldResult(
@@ -528,7 +562,12 @@ function attemptCloseOutRun(
     .get(row.root_id) as typeof row
   const treePath = row.worktree ?? root?.worktree ?? null
   if (!treePath)
-    return { runId: row.root_id, worktree: null, outcome: 'absent', detail: 'no worktree' }
+    return {
+      runId: row.root_id,
+      worktree: null,
+      outcome: 'absent',
+      detail: 'no worktree',
+    }
   const effective = {
     id: row.root_id,
     job: root?.job ?? row.job,
@@ -623,7 +662,10 @@ function attemptCloseOutRun(
   if (ownershipResult) return ownershipResult
 
   const liveRows = () => {
-    const sharers = liveWorktreeSharers(db(), { id: row.root_id, worktree: treePath })
+    const sharers = liveWorktreeSharers(db(), {
+      id: row.root_id,
+      worktree: treePath,
+    })
     const conversation = aliveConversationTurns(row.root_id)
     return [...conversation, ...sharers]
   }
@@ -645,7 +687,10 @@ function attemptCloseOutRun(
           `SELECT agent_pid, agent_pgid FROM run
           WHERE worktree IN (${spellings.map(() => '?').join(',')}) ORDER BY id`,
         )
-        .all(...spellings) as { agent_pid: number | null; agent_pgid: number | null }[])
+        .all(...spellings) as {
+        agent_pid: number | null
+        agent_pgid: number | null
+      }[])
     : []
   const agentPids = vendorRows.map((turn) => turn.agent_pid)
   const recordedPgids = [
@@ -944,6 +989,22 @@ export function closeOutRun(
   // symlinked path no longer resolves to the identity its other rows share.
   const spellingsBefore = conversationWorktreeSpellings(root.root_id)
   const result = attemptCloseOutRun(runId, { ...options, keepTreeDecision })
+  const projectRow = db().query('SELECT repo FROM run WHERE id=?').get(result.runId) as {
+    repo: string | null
+  } | null
+  const residueKinds = decideAbsentCloseOutResidue({
+    outcome: result.outcome,
+    dryRun: options.dryRun ?? false,
+    project: projectRow?.repo ?? null,
+  })
+  if (projectRow?.repo) {
+    const residueDetails = residueKinds.map((kind) =>
+      reclaimResidue(kind, `${projectRow.repo}:${result.runId}`),
+    )
+    if (residueDetails.length) {
+      result.detail = `${result.detail}; ${residueDetails.map((item) => item.action).join('; ')}`
+    }
+  }
   if (!keepTreeDecision.held && 'expiredAt' in keepTreeDecision) {
     result.detail = `${result.detail}; keep-tree hold expired at ${keepTreeDecision.expiredAt}`
   }

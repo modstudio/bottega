@@ -7,6 +7,7 @@ import { upsertProject } from '../project/projects.ts'
 import {
   clearConversationKeepTreeHold,
   closeOutRun,
+  decideAbsentCloseOutResidue,
   extractionRunId,
   releaseRunFailoverAttempts,
 } from './close-out.ts'
@@ -114,6 +115,32 @@ function closeOutFixture(
 describe('close-out extraction decision', () => {
   test('rejects filing a child turn extraction under the conversation root', () => {
     expect(extractionRunId({ id: 4267 })).toBe(4267)
+  })
+})
+
+describe('absent close-out residue decision', () => {
+  test('releases both residues only for a non-dry absent project run', () => {
+    expect(
+      decideAbsentCloseOutResidue({
+        outcome: 'absent',
+        dryRun: false,
+        project: 'bottega',
+      }),
+    ).toEqual(['ref-guard', 'retained-ref'])
+    expect(
+      decideAbsentCloseOutResidue({
+        outcome: 'absent',
+        dryRun: true,
+        project: 'bottega',
+      }),
+    ).toEqual([])
+    expect(
+      decideAbsentCloseOutResidue({
+        outcome: 'released',
+        dryRun: false,
+        project: 'bottega',
+      }),
+    ).toEqual([])
   })
 })
 
@@ -230,7 +257,11 @@ test('clearing a keep-tree hold lets terminal close-out proceed', () => {
 })
 
 test('releasing a failover successor releases every held attempt oldest first', () => {
-  const predecessor = addRun({ agent: 'codex', job: 'diagnose', status: 'failed' })
+  const predecessor = addRun({
+    agent: 'codex',
+    job: 'diagnose',
+    status: 'failed',
+  })
   const successor = addRun({ agent: 'claude', job: 'diagnose', status: 'ok' })
   const holdUntil = '2099-01-01T00:00:00.000Z'
   db()
