@@ -3,14 +3,20 @@
 
 export const autonomyStages = ['plan', 'implement', 'review', 'docs', 'canon', 'ship'] as const
 export const autonomyValues = ['ask', 'review', 'auto'] as const
+export const autonomyPresets = ['manual', 'guided', 'autonomous'] as const
+export const builtInAutonomyPreset: AutonomyPreset = 'guided'
 export type AutonomyStage = (typeof autonomyStages)[number]
 export type AutonomyValue = (typeof autonomyValues)[number]
+export type AutonomyPreset = (typeof autonomyPresets)[number]
 type CatalogueStep = { slug: string; stage?: AutonomyStage; autonomy: AutonomyValue }
-export type AutonomySettings = {
-  preset?: 'manual' | 'guided' | 'autonomous'
+type WorkflowAutonomySettings = {
+  preset?: AutonomyPreset
   stages?: Partial<Record<AutonomyStage, AutonomyValue>>
   steps?: Record<string, AutonomyValue>
   rulings?: 'agent' | 'user'
+}
+export type AutonomySettings = WorkflowAutonomySettings & {
+  workflows?: Record<string, WorkflowAutonomySettings>
 }
 export type AutonomyResolution = {
   steps: Record<string, { value: AutonomyValue; scope: string }>
@@ -30,62 +36,103 @@ const object = (value: unknown): value is Record<string, unknown> =>
 const allowed = (value: unknown, values: readonly string[]) =>
   typeof value === 'string' && values.includes(value)
 
-function validatePreset(value: unknown, scope: string): Pick<AutonomySettings, 'preset'> {
+function validatePreset(
+  value: unknown,
+  scope: string,
+  key = 'preset',
+): Pick<WorkflowAutonomySettings, 'preset'> {
   if (value === undefined) return {}
-  if (!allowed(value, ['manual', 'guided', 'autonomous']))
-    throw new Error(`invalid autonomy setting at ${scope} key preset: ${String(value)}`)
+  if (!allowed(value, autonomyPresets))
+    throw new Error(`invalid autonomy setting at ${scope} key ${key}: ${String(value)}`)
   return { preset: value as AutonomySettings['preset'] }
 }
 
-function validateRulings(value: unknown, scope: string): Pick<AutonomySettings, 'rulings'> {
+function validateRulings(
+  value: unknown,
+  scope: string,
+  key = 'rulings',
+): Pick<WorkflowAutonomySettings, 'rulings'> {
   if (value === undefined) return {}
   if (!allowed(value, ['agent', 'user']))
-    throw new Error(`invalid autonomy setting at ${scope} key rulings: ${String(value)}`)
+    throw new Error(`invalid autonomy setting at ${scope} key ${key}: ${String(value)}`)
   return { rulings: value as 'agent' | 'user' }
 }
 
-function validateStages(value: unknown, scope: string): Pick<AutonomySettings, 'stages'> {
+function validateStages(
+  value: unknown,
+  scope: string,
+  key = 'stages',
+): Pick<WorkflowAutonomySettings, 'stages'> {
   if (value === undefined) return {}
   if (!object(value))
-    throw new Error(`invalid autonomy setting at ${scope} key stages: expected an object`)
+    throw new Error(`invalid autonomy setting at ${scope} key ${key}: expected an object`)
   const stages: NonNullable<AutonomySettings['stages']> = {}
-  for (const [key, setting] of Object.entries(value)) {
-    if (!allowed(key, autonomyStages))
-      throw new Error(`invalid autonomy setting at ${scope} key stages.${key}: unknown stage`)
+  for (const [stage, setting] of Object.entries(value)) {
+    if (!allowed(stage, autonomyStages))
+      throw new Error(`invalid autonomy setting at ${scope} key ${key}.${stage}: unknown stage`)
     if (!allowed(setting, autonomyValues))
-      throw new Error(`invalid autonomy setting at ${scope} key stages.${key}: ${String(setting)}`)
-    stages[key as AutonomyStage] = setting as AutonomyValue
+      throw new Error(
+        `invalid autonomy setting at ${scope} key ${key}.${stage}: ${String(setting)}`,
+      )
+    stages[stage as AutonomyStage] = setting as AutonomyValue
   }
   return { stages }
 }
 
-function validateSteps(value: unknown, scope: string): Pick<AutonomySettings, 'steps'> {
+function validateSteps(
+  value: unknown,
+  scope: string,
+  key = 'steps',
+): Pick<WorkflowAutonomySettings, 'steps'> {
   if (value === undefined) return {}
   if (!object(value))
-    throw new Error(`invalid autonomy setting at ${scope} key steps: expected an object`)
+    throw new Error(`invalid autonomy setting at ${scope} key ${key}: expected an object`)
   const steps: NonNullable<AutonomySettings['steps']> = {}
-  for (const [key, setting] of Object.entries(value)) {
+  for (const [step, setting] of Object.entries(value)) {
     if (!allowed(setting, autonomyValues))
-      throw new Error(`invalid autonomy setting at ${scope} key steps.${key}: ${String(setting)}`)
-    steps[key] = setting as AutonomyValue
+      throw new Error(`invalid autonomy setting at ${scope} key ${key}.${step}: ${String(setting)}`)
+    steps[step] = setting as AutonomyValue
   }
   return { steps }
 }
 
-export function validateAutonomySettings(value: unknown, scope: string): AutonomySettings {
+function validateWorkflowSettings(
+  value: unknown,
+  scope: string,
+  prefix = '',
+): WorkflowAutonomySettings {
   if (value === undefined) return {}
-  if (!object(value)) throw new Error(`invalid autonomy setting at ${scope}: expected an object`)
+  if (!object(value))
+    throw new Error(
+      `invalid autonomy setting at ${scope}${prefix ? ` key ${prefix.slice(0, -1)}` : ''}: expected an object`,
+    )
   return {
-    ...validatePreset(value.preset, scope),
-    ...validateRulings(value.rulings, scope),
-    ...validateStages(value.stages, scope),
-    ...validateSteps(value.steps, scope),
+    ...validatePreset(value.preset, scope, `${prefix}preset`),
+    ...validateRulings(value.rulings, scope, `${prefix}rulings`),
+    ...validateStages(value.stages, scope, `${prefix}stages`),
+    ...validateSteps(value.steps, scope, `${prefix}steps`),
   }
+}
+
+function validateWorkflows(value: unknown, scope: string): Pick<AutonomySettings, 'workflows'> {
+  if (value === undefined) return {}
+  if (!object(value))
+    throw new Error(`invalid autonomy setting at ${scope} key workflows: expected an object`)
+  const workflows: NonNullable<AutonomySettings['workflows']> = {}
+  for (const [slug, settings] of Object.entries(value)) {
+    workflows[slug] = validateWorkflowSettings(settings, scope, `workflows.${slug}.`)
+  }
+  return { workflows }
+}
+
+export function validateAutonomySettings(value: unknown, scope: string): AutonomySettings {
+  const settings = validateWorkflowSettings(value, scope)
+  return object(value) ? { ...settings, ...validateWorkflows(value.workflows, scope) } : settings
 }
 
 function resolvedStepValue(
   step: Pick<CatalogueStep, 'slug' | 'stage' | 'autonomy'>,
-  settings: AutonomySettings,
+  settings: WorkflowAutonomySettings,
 ): AutonomyValue | undefined {
   const explicit =
     settings.steps?.[step.slug] ?? (step.stage ? settings.stages?.[step.stage] : undefined)
@@ -99,6 +146,7 @@ function resolvedStepValue(
 export function resolveAutonomy(
   steps: Pick<CatalogueStep, 'slug' | 'stage' | 'autonomy'>[],
   scopes: { name: string; settings: unknown }[],
+  workflow?: string,
 ): AutonomyResolution {
   const checked = scopes.map((scope) => ({
     name: scope.name,
@@ -107,7 +155,9 @@ export function resolveAutonomy(
   const resolved: AutonomyResolution['steps'] = {}
   for (const step of steps) {
     for (const scope of checked) {
-      const value = resolvedStepValue(step, scope.settings)
+      const value =
+        (workflow && resolvedStepValue(step, scope.settings.workflows?.[workflow] ?? {})) ||
+        resolvedStepValue(step, scope.settings)
       if (value) {
         resolved[step.slug] = { value, scope: scope.name }
         break
@@ -115,16 +165,23 @@ export function resolveAutonomy(
     }
     resolved[step.slug] ??= { value: step.autonomy, scope: 'built-in' }
   }
-  const ruling = checked.find(
-    (scope) => scope.settings.rulings !== undefined || scope.settings.preset !== undefined,
-  )
   const presetRuling = (preset: AutonomySettings['preset']): 'agent' | 'user' =>
     preset === 'manual' ? 'user' : 'agent'
+  const resolvedRuling = (settings: WorkflowAutonomySettings): 'agent' | 'user' | undefined =>
+    settings.rulings ?? (settings.preset === undefined ? undefined : presetRuling(settings.preset))
+  const ruling = checked
+    .map((scope) => ({
+      name: scope.name,
+      value:
+        (workflow && resolvedRuling(scope.settings.workflows?.[workflow] ?? {})) ||
+        resolvedRuling(scope.settings),
+    }))
+    .find(({ value }) => value !== undefined)
   return {
     steps: resolved,
     rulings: ruling
       ? {
-          value: ruling.settings.rulings ?? presetRuling(ruling.settings.preset),
+          value: ruling.value!,
           scope: ruling.name,
         }
       : { value: 'agent', scope: 'built-in' },
@@ -135,6 +192,52 @@ export const catalogueStepsForAutonomy = (
   steps: Pick<CatalogueStep, 'slug' | 'stage' | 'autonomy'>[],
 ): Pick<CatalogueStep, 'slug' | 'stage' | 'autonomy'>[] =>
   steps.map(({ slug, stage, autonomy }) => ({ slug, stage, autonomy }))
+
+export const builtInAutonomyScope = (defaultPreset?: AutonomyPreset) => ({
+  name: 'built-in',
+  settings: { preset: defaultPreset ?? builtInAutonomyPreset },
+})
+
+export function combineRulingsSnapshots(snapshots: RulingsResolution[]): RulingsResolution | null {
+  if (!snapshots.length) return null
+  return (
+    snapshots.find(({ complete }) => complete === false) ??
+    snapshots.find(({ value }) => value === 'user') ??
+    snapshots[0]!
+  )
+}
+
+function parseWorkflowAutonomySetting(
+  result: AutonomySettings,
+  key: string,
+  value: string,
+  source: string,
+): boolean {
+  if (!key.startsWith('workflow.')) return false
+  const [prefix, slug, kind, name, ...extra] = key.split('.')
+  if (
+    prefix !== 'workflow' ||
+    !slug ||
+    extra.length ||
+    !(
+      (name === undefined && (kind === 'preset' || kind === 'rulings')) ||
+      (name !== undefined && (kind === 'stage' || kind === 'step'))
+    )
+  )
+    throw new Error(`invalid ${source} autonomy key ${JSON.stringify(key)}`)
+  result.workflows ??= {}
+  result.workflows[slug] ??= {}
+  const workflow = result.workflows[slug]
+  if (kind === 'preset' || kind === 'rulings') (workflow as Record<string, unknown>)[kind] = value
+  else if (kind === 'stage') {
+    workflow.stages ??= {}
+    workflow.stages[name as AutonomyStage] = value as AutonomyValue
+  } else {
+    workflow.steps ??= {}
+    workflow.steps[name!] = value as AutonomyValue
+  }
+  return true
+}
 
 export function parseAutonomy(text: string | undefined, source: string): AutonomySettings {
   if (!text?.trim()) return {}
@@ -151,7 +254,8 @@ export function parseAutonomy(text: string | undefined, source: string): Autonom
     } else if (key.startsWith('step.')) {
       result.steps ??= {}
       result.steps[key.slice(5)] = value as AutonomyValue
-    } else throw new Error(`invalid ${source} autonomy key ${JSON.stringify(key)}`)
+    } else if (!parseWorkflowAutonomySetting(result, key, value, source))
+      throw new Error(`invalid ${source} autonomy key ${JSON.stringify(key)}`)
   }
   return validateAutonomySettings(result, source)
 }

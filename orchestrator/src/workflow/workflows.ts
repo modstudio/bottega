@@ -5,7 +5,14 @@ import {
   resolveDeclaredFacts,
   unresolvedTrackerActionPlaceholder,
 } from '../project/project-injection.ts'
-import { type AutonomyResolution, catalogueStepsForAutonomy, resolveAutonomy } from './autonomy.ts'
+import {
+  type AutonomyPreset,
+  type AutonomyResolution,
+  autonomyPresets,
+  builtInAutonomyScope,
+  catalogueStepsForAutonomy,
+  resolveAutonomy,
+} from './autonomy.ts'
 import {
   compatibleCatalogueStep,
   productionStepCatalogue,
@@ -25,6 +32,7 @@ type WorkflowMode = {
 export type WorkflowDefinition = {
   title: string
   description: string
+  defaultPreset?: AutonomyPreset
   arguments: WorkflowArgument[]
   modes: WorkflowMode[]
   // Steps are shared on purpose: a catalogue change reaches every workflow
@@ -41,6 +49,12 @@ const workflowPromptArgumentNameErrors = (name: unknown): string[] =>
   typeof name === 'string' && WORKFLOW_PROMPT_ARGUMENT_NAMES.has(name)
     ? [`argument name "${name}" is reserved for the workflow prompt`]
     : []
+
+const workflowDefaultPresetErrors = (preset: unknown): string[] =>
+  preset === undefined ||
+  (typeof preset === 'string' && autonomyPresets.includes(preset as AutonomyPreset))
+    ? []
+    : ['defaultPreset must be manual, guided, or autonomous']
 
 function workflowModeRequirementErrors(mode: Record<string, unknown>, args: unknown[]): string[] {
   if (mode.requires === undefined) return []
@@ -83,6 +97,7 @@ export function validateWorkflowDefinition(
   if (typeof value.title !== 'string') errors.push('title must be a string')
   else if (!value.title.trim()) errors.push('title must be non-empty')
   if (typeof value.description !== 'string') errors.push('description must be a string')
+  errors.push(...workflowDefaultPresetErrors(value.defaultPreset))
   const args = Array.isArray(value.arguments) ? value.arguments : []
   const modes = Array.isArray(value.modes) ? value.modes : []
   if (!Array.isArray(value.arguments)) errors.push('arguments must be an array')
@@ -450,9 +465,11 @@ export function composeWorkflow(
     ) ?? []
   const effectiveAutonomy =
     autonomy ??
-    resolveAutonomy(catalogueStepsForAutonomy(selected), [
-      { name: 'built-in', settings: { preset: 'guided' } },
-    ])
+    resolveAutonomy(
+      catalogueStepsForAutonomy(selected),
+      [builtInAutonomyScope(definition.defaultPreset)],
+      slug,
+    )
   const { resolved, facts } = resolveDeclaredFacts(
     project,
     selected.flatMap((step) => step.needs),
@@ -464,6 +481,7 @@ export function composeWorkflow(
       slug,
       title: definition.title,
       description: definition.description,
+      defaultPreset: definition.defaultPreset,
       version: row.n,
     },
     project: projectName,
@@ -536,9 +554,11 @@ export function getWorkflowStep(
   const { facts } = resolveDeclaredFacts(project, step.needs, args)
   const effectiveAutonomy =
     autonomy ??
-    resolveAutonomy(catalogueStepsForAutonomy([step]), [
-      { name: 'built-in', settings: { preset: 'guided' } },
-    ])
+    resolveAutonomy(
+      catalogueStepsForAutonomy([step]),
+      [builtInAutonomyScope(definition.defaultPreset)],
+      slug,
+    )
   const values: Record<string, unknown> = { ...args, ...facts }
   const body = step.body.replace(/\{\{([^{}]+)\}\}/g, (_all, path: string) => {
     let value: unknown = values

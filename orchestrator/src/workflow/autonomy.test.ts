@@ -1,5 +1,10 @@
 import { describe, expect, test } from 'bun:test'
-import { answerRulingRefusal, resolveAutonomy } from './autonomy.ts'
+import {
+  answerRulingRefusal,
+  parseAutonomy,
+  resolveAutonomy,
+  validateAutonomySettings,
+} from './autonomy.ts'
 
 const steps = [
   { slug: 'design', stage: 'plan' as const, autonomy: 'ask' as const },
@@ -19,6 +24,37 @@ describe('autonomy resolution', () => {
       design: { value: 'review', scope: 'project' },
       verify: { value: 'review', scope: 'session' },
     })
+  })
+
+  test('workflow settings beat general settings only within their scope', () => {
+    expect(
+      resolveAutonomy(
+        steps,
+        [
+          { name: 'higher', settings: { stages: { plan: 'review' } } },
+          {
+            name: 'lower',
+            settings: { workflows: { ship: { steps: { design: 'auto' } } } },
+          },
+        ],
+        'ship',
+      ).steps.design,
+    ).toEqual({ value: 'review', scope: 'higher' })
+    expect(
+      resolveAutonomy(
+        steps,
+        [
+          {
+            name: 'same',
+            settings: {
+              steps: { design: 'ask' },
+              workflows: { ship: { preset: 'autonomous' } },
+            },
+          },
+        ],
+        'ship',
+      ).steps.design,
+    ).toEqual({ value: 'auto', scope: 'same' })
   })
 
   test('presets and guided defaults resolve with their deciding scope', () => {
@@ -70,6 +106,58 @@ describe('autonomy resolution', () => {
         { name: 'session', settings: { preset: 'manual', rulings: 'agent' } },
       ]).rulings,
     ).toEqual({ value: 'agent', scope: 'session' })
+  })
+
+  test('workflow rulings follow their within-scope order and are ignored without a workflow', () => {
+    const settings = {
+      preset: 'manual',
+      rulings: 'user',
+      workflows: { ship: { preset: 'manual', rulings: 'agent' } },
+    } as const
+    expect(resolveAutonomy(steps, [{ name: 'same', settings }], 'ship').rulings).toEqual({
+      value: 'agent',
+      scope: 'same',
+    })
+    expect(resolveAutonomy(steps, [{ name: 'same', settings }]).rulings).toEqual({
+      value: 'user',
+      scope: 'same',
+    })
+    expect(
+      resolveAutonomy(
+        steps,
+        [
+          {
+            name: 'same',
+            settings: { rulings: 'user', workflows: { ship: { preset: 'guided' } } },
+          },
+        ],
+        'ship',
+      ).rulings,
+    ).toEqual({ value: 'agent', scope: 'same' })
+  })
+
+  test('workflow grammar and nested validation preserve the full setting path', () => {
+    expect(
+      parseAutonomy(
+        'workflow.ship.preset=guided,workflow.ship.rulings=user,workflow.ship.stage.review=auto,workflow.ship.step.lens=review',
+        'session',
+      ),
+    ).toEqual({
+      workflows: {
+        ship: {
+          preset: 'guided',
+          rulings: 'user',
+          stages: { review: 'auto' },
+          steps: { lens: 'review' },
+        },
+      },
+    })
+    expect(() =>
+      validateAutonomySettings(
+        { workflows: { 'fix-defect': { stages: { review: 'manual' } } } },
+        'project',
+      ),
+    ).toThrow('project key workflows.fix-defect.stages.review: manual')
   })
 
   test('answer decision refuses user rulings unless relayed by the operator', () => {

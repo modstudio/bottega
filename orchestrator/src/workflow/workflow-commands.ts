@@ -77,7 +77,7 @@ export async function workflowCommand(argv: string[], presentation: Presentation
     print(forkWorkflow(argv[2]!, positive(flag('from'), '--from'), flag('reason'), flag('author')))
   else if (sub === 'versions') print(workflowVersions(argv[2]!))
   else if (sub === 'compose') await composeCommand(argv, json, print, presentation)
-  else if (sub === 'step') stepCommand(argv, print)
+  else if (sub === 'step') await stepCommand(argv, print)
   else if (cursorCommand(sub, argv, print)) return
   else if (sub === 'hydrate') hydrateCommand(argv, presentation)
   else if (sub === 'import') importCommand(argv, print)
@@ -129,23 +129,41 @@ function setWorkflowCommand(argv: string[], print: (value: unknown, line?: strin
   )
 }
 
-function stepCommand(argv: string[], print: (value: unknown, line?: string) => void): void {
+async function stepCommand(
+  argv: string[],
+  print: (value: unknown, line?: string) => void,
+): Promise<void> {
   const project = flagValue(argv, 'project')
   if (!project) throw new Error('--project is required')
   const mode = flagValue(argv, 'mode')
+  const args = workflowArgs(argv)
+  const selection = {
+    version: positive(flagValue(argv, 'version'), '--version'),
+    catalogueVersion: positive(flagValue(argv, 'catalogue-version'), '--catalogue-version'),
+  }
+  const preliminary = composeWorkflow(argv[2]!, project, mode, args, undefined, selection)
+  const preliminaryStep = mode
+    ? undefined
+    : getWorkflowStep(argv[2]!, project, argv[3]!, args, undefined, selection)
+  const autonomy = await resolveProjectAutonomy(
+    project,
+    preliminary.workflow.slug,
+    preliminary.workflow.defaultPreset,
+    catalogueStepsForAutonomy(preliminaryStep ? [preliminaryStep] : preliminary.steps),
+    parseAutonomy(flagValues(argv, 'autonomy').join(','), 'session'),
+  )
   const step = mode
     ? getWorkflowStepWithCursor(
         argv[2]!,
         project,
         argv[3]!,
-        workflowArgs(argv),
+        args,
         mode,
         cliWorkflowCursorContext(),
+        undefined,
+        autonomy,
       )
-    : getWorkflowStep(argv[2]!, project, argv[3]!, workflowArgs(argv), undefined, {
-        version: positive(flagValue(argv, 'version'), '--version'),
-        catalogueVersion: positive(flagValue(argv, 'catalogue-version'), '--catalogue-version'),
-      })
+    : getWorkflowStep(argv[2]!, project, argv[3]!, args, undefined, selection, autonomy)
   print(step, renderWorkflowStep(step))
 }
 
@@ -295,6 +313,8 @@ async function composeCommand(
   const session = parseAutonomy(flagValues(argv, 'autonomy').join(','), 'session')
   const autonomy = await resolveProjectAutonomy(
     project,
+    preliminary.workflow.slug,
+    preliminary.workflow.defaultPreset,
     catalogueStepsForAutonomy(preliminary.steps),
     session,
   )

@@ -5,7 +5,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { ConfigClientError, configClient } from '../../../shared/config-client.ts'
 import { applyMigrations } from '../database/migrations.ts'
-import { answerRulingRefusal } from './autonomy.ts'
+import { answerRulingRefusal, combineRulingsSnapshots } from './autonomy.ts'
 import {
   HOSTED_AUTONOMY_TIMEOUT_MS,
   resolveAnswerRulings,
@@ -41,6 +41,8 @@ const timeoutClient = (signal: AbortSignal) =>
 test('hosted failures are visible and leave rulings incomplete without a higher decision', async () => {
   const result = await resolveProjectAutonomy(
     'fixture',
+    undefined,
+    'guided',
     steps,
     {},
     () =>
@@ -62,6 +64,8 @@ test('a never-resolving hosted transport is bounded by the adapter timeout', asy
   expect(HOSTED_AUTONOMY_TIMEOUT_MS).toBe(2000)
   const result = await resolveProjectAutonomy(
     'fixture',
+    undefined,
+    'guided',
     steps,
     {},
     timeoutClient,
@@ -72,6 +76,47 @@ test('a never-resolving hosted transport is bounded by the adapter timeout', asy
   expect(result.note).toBe(
     'hosted autonomy settings unavailable: timed out after 10 ms; resolved from local and project scopes',
   )
+})
+
+test('workflow built-in defaults and local workflow overrides resolve every step', async () => {
+  const builtIn = await resolveProjectAutonomy(
+    'fixture',
+    'fix-defect',
+    'autonomous',
+    steps,
+    {},
+    () => {
+      throw new ConfigClientError('not-configured', '/v1/config')
+    },
+    database(),
+    missingConfig,
+  )
+  expect(builtIn.steps).toEqual({
+    design: { value: 'auto', scope: 'built-in' },
+    verify: { value: 'auto', scope: 'built-in' },
+  })
+
+  const config = mkdtempSync(join(tmpdir(), 'autonomy-scopes-'))
+  writeFileSync(
+    join(config, 'machine.toml'),
+    '[autonomy.workflows.fix-defect]\npreset = "guided"\n',
+  )
+  const overridden = await resolveProjectAutonomy(
+    'fixture',
+    'fix-defect',
+    'autonomous',
+    steps,
+    {},
+    () => {
+      throw new ConfigClientError('not-configured', '/v1/config')
+    },
+    database(),
+    { BOTTEGA_CONFIG_HOME: config },
+  )
+  expect(overridden.steps).toEqual({
+    design: { value: 'ask', scope: 'local user' },
+    verify: { value: 'auto', scope: 'local user' },
+  })
 })
 
 test('answer proceeds when hosted is not configured', async () => {
@@ -114,7 +159,17 @@ test('answer proceeds after unavailable hosted config when local project decides
   expect(answerRulingRefusal(rulings, false)).toBeNull()
 })
 
-test('answer uses the newest active workflow rulings snapshot and otherwise resolves scopes', async () => {
+test('strict cursor snapshot combination prefers incomplete, then user, then agent', () => {
+  const incomplete = { value: 'agent' as const, scope: 'hosted user', complete: false }
+  const user = { value: 'user' as const, scope: 'session' }
+  const agent = { value: 'agent' as const, scope: 'project' }
+  expect(combineRulingsSnapshots([])).toBeNull()
+  expect(combineRulingsSnapshots([agent, user])).toBe(user)
+  expect(combineRulingsSnapshots([user, incomplete])).toBe(incomplete)
+  expect(combineRulingsSnapshots([agent])).toBe(agent)
+})
+
+test('answer strictly combines every active workflow rulings snapshot', async () => {
   const d = database(JSON.stringify({ autonomy: { rulings: 'agent' } }))
   const insert = d.query(
     `INSERT INTO workflow_cursor
@@ -140,6 +195,26 @@ test('answer uses the newest active workflow rulings snapshot and otherwise reso
   expect(await resolveAnswerRulings('fixture', 'DEV-866', undefined, d, missingConfig)).toEqual({
     value: 'user',
     scope: 'session',
+  })
+  insert.run(
+    'incomplete',
+    JSON.stringify({
+      rulings: {
+        value: 'agent',
+        scope: 'hosted user',
+        complete: false,
+        unavailableReason: 'offline',
+      },
+    }),
+    'running',
+    '3',
+    '3',
+  )
+  expect(await resolveAnswerRulings('fixture', 'DEV-866', undefined, d, missingConfig)).toEqual({
+    value: 'agent',
+    scope: 'hosted user',
+    complete: false,
+    unavailableReason: 'offline',
   })
   expect(await resolveAnswerRulings('fixture', 'OTHER', undefined, d, missingConfig)).toMatchObject(
     {

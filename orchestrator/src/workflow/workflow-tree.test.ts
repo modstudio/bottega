@@ -25,6 +25,7 @@ const store: WorkflowTreeStore = {
       definition: {
         title: 'Ship',
         description: 'Ship the change.',
+        defaultPreset: 'autonomous',
         arguments: [
           { name: 'key', required: true, description: 'Task key.' },
           { name: 'branch', required: false, description: 'Existing branch.' },
@@ -54,6 +55,7 @@ describe('planWorkflowHydration', () => {
       writes: [],
       deletes: [],
     })
+    expect(parseWorkflowTree(first.writes)).toEqual(store)
   })
 
   test('deletes a tree file whose slug is absent from production', () => {

@@ -12,8 +12,12 @@ import { readMachineAutonomy } from '../../../shared/machine-config.ts'
 import { db } from '../database/db.ts'
 import { projectByName } from '../project/projects.ts'
 import {
+  type AutonomyPreset,
   type AutonomyResolution,
   type AutonomySettings,
+  builtInAutonomyPreset,
+  builtInAutonomyScope,
+  combineRulingsSnapshots,
   parseAutonomy,
   resolveAutonomy,
 } from './autonomy.ts'
@@ -61,6 +65,8 @@ async function readHosted(
 
 export async function resolveProjectAutonomy(
   project: string,
+  workflow: string | undefined,
+  defaultPreset: AutonomyPreset | undefined,
   steps: Pick<CatalogueStep, 'slug' | 'stage' | 'autonomy'>[] = [],
   session: AutonomySettings = {},
   clientFactory: (signal: AbortSignal) => ConfigClient = (signal) =>
@@ -73,15 +79,19 @@ export async function resolveProjectAutonomy(
   if (!registered) throw new Error(`unknown project "${project}"`)
   const local = readMachineAutonomy(project, env)
   const hosted = await readHosted(clientFactory, timeoutMs)
-  const resolution = resolveAutonomy(steps, [
-    { name: 'session', settings: session },
-    { name: 'local project', settings: local.project },
-    { name: 'project', settings: registered.settings.autonomy },
-    { name: 'local user', settings: local.user },
-    { name: 'hosted user', settings: hosted.user },
-    { name: 'hosted space', settings: hosted.space },
-    { name: 'built-in', settings: { preset: 'guided' } },
-  ])
+  const resolution = resolveAutonomy(
+    steps,
+    [
+      { name: 'session', settings: session },
+      { name: 'local project', settings: local.project },
+      { name: 'project', settings: registered.settings.autonomy },
+      { name: 'local user', settings: local.user },
+      { name: 'hosted user', settings: hosted.user },
+      { name: 'hosted space', settings: hosted.space },
+      builtInAutonomyScope(defaultPreset ?? builtInAutonomyPreset),
+    ],
+    workflow,
+  )
   if (hosted.status === 'available')
     return { ...resolution, hosted: { status: hosted.status }, session }
   if (hosted.status === 'not-configured')
@@ -112,16 +122,20 @@ function workflowRulingsSnapshot(
   d: Database = db(),
 ): AutonomyResolution['rulings'] | null {
   if (!launchKey) return null
-  const row = d
+  const rows = d
     .query(
       `SELECT autonomy FROM workflow_cursor
        WHERE project=? AND workflow_key=? AND state IN ('running','awaiting-ruling')
-       ORDER BY updated_at DESC,id DESC LIMIT 1`,
+       ORDER BY updated_at DESC,id DESC`,
     )
-    .get(project, launchKey) as { autonomy: string | null } | null
-  if (!row?.autonomy) return null
-  const snapshot = JSON.parse(row.autonomy) as Partial<AutonomyResolution>
-  return snapshot.rulings ?? null
+    .all(project, launchKey) as { autonomy: string | null }[]
+  return combineRulingsSnapshots(
+    rows.flatMap((row) => {
+      if (!row.autonomy) return []
+      const snapshot = JSON.parse(row.autonomy) as Partial<AutonomyResolution>
+      return snapshot.rulings ? [snapshot.rulings] : []
+    }),
+  )
 }
 
 export async function resolveAnswerRulings(
@@ -134,5 +148,17 @@ export async function resolveAnswerRulings(
 ): Promise<AutonomyResolution['rulings']> {
   const snapshot = workflowRulingsSnapshot(project, launchKey, d)
   if (snapshot) return snapshot
-  return (await resolveProjectAutonomy(project, [], {}, clientFactory, d, env, timeoutMs)).rulings
+  return (
+    await resolveProjectAutonomy(
+      project,
+      undefined,
+      undefined,
+      [],
+      {},
+      clientFactory,
+      d,
+      env,
+      timeoutMs,
+    )
+  ).rulings
 }
