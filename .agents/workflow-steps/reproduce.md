@@ -1,5 +1,6 @@
 ---
 title: Establish the failing case
+stage: plan
 floor:
   - recorded-artifact
 job: null

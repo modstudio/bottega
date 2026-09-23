@@ -6,7 +6,7 @@ type WorkflowComposition = ReturnType<typeof composeWorkflow> & {
 type WorkflowStep = ReturnType<typeof getWorkflowStep>
 
 const legend =
-  "Reading a step line: autonomy=ask means the step ends in a ruling by the operator; stop and ask before going on. autonomy=auto means proceed without asking. floor names the proof that the step is done: human-ruling, a person ruled; command-exit, the named command exited successfully and its output is recorded; recorded-artifact, a written artifact exists in the tracker or doc store; tracker-transition, the task's tracker state changed. Several floors means any one of them is enough. needs names the facts entries the step uses. job names the orch job the step dispatches, or - when you do the step yourself."
+  "Reading a step line: autonomy=ask means the operator rules; autonomy=review means the agent rules and records it for the operator to review afterwards; autonomy=auto means the agent rules. floor names the proof that the step is done: ruling, a recorded ruling whose ruler follows the step autonomy; command-exit, the named command exited successfully and its output is recorded; recorded-artifact, a written artifact exists in the tracker or doc store; tracker-transition, the task's tracker state changed. Several floors means any one of them is enough. needs names the facts entries the step uses. job names the orch job the step dispatches, or - when you do the step yourself."
 
 const shellWord = (value: string) =>
   /^[A-Za-z0-9_@%+=:,./-]+$/.test(value) ? value : `'${value.replace(/'/g, "'\\''")}'`
@@ -32,17 +32,22 @@ export function renderWorkflowComposition(result: WorkflowComposition): string {
       '',
       contract,
       '',
+      `Worker questions: rulings=${result.rulings.value} (${result.rulings.scope}).`,
+      ...(result.autonomyNote ? [result.autonomyNote] : []),
+      '',
       legend,
       '',
       `facts: ${JSON.stringify(result.facts)}`,
       ...result.steps.map(
         (step) =>
-          `${step.n}. ${step.slug} — ${step.title} [job=${step.job ?? '-'} autonomy=${step.autonomy} floor=${step.floor.join('|')} needs=${step.needs.join('|') || '-'}]`,
+          `${step.n}. ${step.slug} — ${step.title} [job=${step.job ?? '-'} autonomy=${step.resolvedAutonomy.value}(${step.resolvedAutonomy.scope}) floor=${step.floor.join('|')} needs=${step.needs.join('|') || '-'}]`,
       ),
     ].join('\n')
   }
   return [
     `${result.workflow.title} — ${result.mode?.title ?? 'choose a mode'}`,
+    `Worker questions: rulings=${result.rulings.value} (${result.rulings.scope}).`,
+    ...(result.autonomyNote ? [result.autonomyNote] : []),
     ...(result.needs.mode ?? []).map((mode) => `${mode.slug}: ${mode.entry}`),
     ...(result.needs.mode
       ? ['Choose a mode by answering its question, then compose again with that mode.']
@@ -56,12 +61,18 @@ export function renderWorkflowComposition(result: WorkflowComposition): string {
     `facts: ${JSON.stringify(result.facts)}`,
     ...result.steps.map(
       (step) =>
-        `${step.n}. ${step.slug} — ${step.title} [job=${step.job ?? '-'} autonomy=${step.autonomy} floor=${step.floor.join('|')} needs=${step.needs.join('|') || '-'}]`,
+        `${step.n}. ${step.slug} — ${step.title} [job=${step.job ?? '-'} autonomy=${step.resolvedAutonomy.value}(${step.resolvedAutonomy.scope}) floor=${step.floor.join('|')} needs=${step.needs.join('|') || '-'}]`,
     ),
   ].join('\n')
 }
 
 export function renderWorkflowStep(step: WorkflowStep): string {
+  const autonomy =
+    step.resolvedAutonomy.value === 'ask'
+      ? 'stop and put the ruling to the operator; record the question with `orch workflow await`.'
+      : step.resolvedAutonomy.value === 'review'
+        ? 'rule yourself; the ruling is listed for the operator when the workflow finishes.'
+        : 'rule yourself.'
   const close =
     "Next: when this step's floor is met, close it with `next_workflow_step` (MCP) or `orch workflow next`, giving a one-line note of how the floor was met;"
   const pointer =
@@ -72,5 +83,5 @@ export function renderWorkflowStep(step: WorkflowStep): string {
         : step.mode
           ? `${close} this is the last step of ${step.workflow} (${step.mode}), and closing it finishes the workflow.`
           : `${close} this is the last step of ${step.workflow} in every mode that contains it, and closing it finishes the workflow.`
-  return `facts: ${JSON.stringify(step.facts)}\n${step.body}\n\n${pointer}`
+  return `facts: ${JSON.stringify(step.facts)}\nAutonomy: ${step.resolvedAutonomy.value} (${step.resolvedAutonomy.scope}) — ${autonomy}\n${step.body}\n\n${pointer}`
 }

@@ -43,6 +43,7 @@ function renderedFiles(store: WorkflowTreeStore): WorkflowTreeFile[] {
     body: document(
       {
         title: step.title,
+        ...(step.stage === undefined ? {} : { stage: step.stage }),
         floor: step.floor,
         job: step.job,
         autonomy: step.autonomy,
@@ -120,6 +121,7 @@ export function parseWorkflowTree(tree: WorkflowTreeFile[]): WorkflowTreeStore {
       steps.push({
         slug: match.slug,
         title: frontMatter.title as string,
+        stage: frontMatter.stage as CatalogueStep['stage'],
         floor: frontMatter.floor as CatalogueStep['floor'],
         job: frontMatter.job as string | null,
         autonomy: frontMatter.autonomy as CatalogueStep['autonomy'],

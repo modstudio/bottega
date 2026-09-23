@@ -9,6 +9,7 @@ import {
   REVIEW_OVERLAP,
   REVIEW_REPRODUCED,
 } from '../review/review-vocabulary.ts'
+import type { AutonomyStage, AutonomyValue } from './autonomy.ts'
 
 const seedDefinition = (definition: unknown) => JSON.stringify(definition)
 
@@ -183,7 +184,7 @@ const floors: Record<string, Record<string, string[]>> = {
     rebase: ['command-exit'],
     lens: ['recorded-artifact'],
     score: ['recorded-artifact'],
-    triage: ['human-ruling'],
+    triage: ['ruling'],
     complete: ['recorded-artifact'],
     fix: ['command-exit', 'recorded-artifact'],
     pr: ['command-exit', 'recorded-artifact'],
@@ -195,7 +196,7 @@ const floors: Record<string, Record<string, string[]>> = {
     fix: ['recorded-artifact'],
     verify: ['command-exit'],
     'blast-radius': ['recorded-artifact'],
-    triage: ['human-ruling'],
+    triage: ['ruling'],
     ship: ['command-exit', 'recorded-artifact'],
   },
 }
@@ -210,8 +211,30 @@ type SeedCatalogueStep = {
   body: string
   floor: string[]
   job: string | null
-  autonomy: 'auto' | 'ask' | 'manual'
+  stage: AutonomyStage
+  autonomy: AutonomyValue
   needs: string[]
+}
+const stages: Record<string, Record<string, SeedCatalogueStep['stage']>> = {
+  ship: {
+    rebase: 'ship',
+    lens: 'review',
+    score: 'review',
+    triage: 'review',
+    complete: 'review',
+    fix: 'review',
+    pr: 'ship',
+    merge: 'ship',
+    close: 'ship',
+  },
+  'fix-defect': {
+    diagnose: 'plan',
+    fix: 'implement',
+    verify: 'implement',
+    'blast-radius': 'review',
+    triage: 'review',
+    ship: 'ship',
+  },
 }
 const usesTrunk = (workflow: string, step: string) =>
   workflow === 'ship' && (step === 'rebase' || step === 'pr')
@@ -234,6 +257,7 @@ function catalogueDefinition() {
         slug: catalogueSlug(seed.slug, legacy.slug),
         title: legacy.title,
         body: catalogueBody(seed.slug, legacy.slug, legacy.body),
+        stage: stages[seed.slug]![legacy.slug]!,
         floor: floors[seed.slug]![legacy.slug]!,
         job: legacy.job,
         autonomy: legacy.autonomy as SeedCatalogueStep['autonomy'],

@@ -4,14 +4,15 @@ import type { Database } from 'bun:sqlite'
 import { db, writableDb } from '../database/db.ts'
 import { JOBS } from '../jobs/jobs.ts'
 import { type InjectionSource, injectionSources } from '../project/project-injection.ts'
+import {
+  type AutonomyStage,
+  type AutonomyValue,
+  autonomyStages,
+  autonomyValues,
+} from './autonomy.ts'
 import { versionedLifecycle } from './versioned-lifecycle.ts'
 
-const proofKinds = [
-  'command-exit',
-  'recorded-artifact',
-  'tracker-transition',
-  'human-ruling',
-] as const
+const proofKinds = ['command-exit', 'recorded-artifact', 'tracker-transition', 'ruling'] as const
 type ProofKind = (typeof proofKinds)[number]
 export type CatalogueStep = {
   slug: string
@@ -19,7 +20,9 @@ export type CatalogueStep = {
   body: string
   floor: ProofKind[]
   job: string | null
-  autonomy: 'auto' | 'ask' | 'manual'
+  /** Optional only when reading a stored catalogue created before stages existed. */
+  stage?: AutonomyStage
+  autonomy: AutonomyValue
   needs: InjectionSource[]
 }
 type StepCatalogueDefinition = { steps: CatalogueStep[] }
@@ -58,8 +61,25 @@ function validateIdentity(
   if (typeof item.body !== 'string') errors.push(`step "${slug}" body must be a string`)
   if (item.job !== null && (typeof item.job !== 'string' || !(item.job in JOBS)))
     errors.push(`step "${slug}" names unknown job "${String(item.job)}"`)
-  if (!['auto', 'ask', 'manual'].includes(String(item.autonomy)))
+  if (!(autonomyValues as readonly string[]).includes(String(item.autonomy)))
     errors.push(`step "${slug}" has invalid autonomy "${String(item.autonomy)}"`)
+  if (!(autonomyStages as readonly string[]).includes(String(item.stage)))
+    errors.push(`step "${slug}" has invalid or missing stage "${String(item.stage)}"`)
+}
+
+/** Stored catalogue history remains readable without being revalidated. */
+export function compatibleCatalogueStep(step: CatalogueStep): CatalogueStep {
+  const legacy = step as unknown as Omit<CatalogueStep, 'autonomy' | 'floor'> & {
+    autonomy: AutonomyValue | 'manual'
+    floor: string[]
+  }
+  return {
+    ...step,
+    autonomy: legacy.autonomy === 'manual' ? 'ask' : legacy.autonomy,
+    floor: legacy.floor.map((kind) =>
+      kind === 'human-ruling' ? 'ruling' : kind,
+    ) as CatalogueStep['floor'],
+  }
 }
 
 function validateFloor(item: Record<string, unknown>, errors: string[]): void {
@@ -106,8 +126,14 @@ const lifecycle = versionedLifecycle<StepCatalogueDefinition>({
 })
 const CATALOGUE = 'shared'
 
-export const showStepCatalogue = (n?: number, d: Database = db()) => lifecycle.show(CATALOGUE, n, d)
-export const productionStepCatalogue = (d: Database = db()) => lifecycle.production(CATALOGUE, d)
+const compatibleCatalogue = <T extends { definition: StepCatalogueDefinition }>(row: T): T => ({
+  ...row,
+  definition: { steps: row.definition.steps.map(compatibleCatalogueStep) },
+})
+export const showStepCatalogue = (n?: number, d: Database = db()) =>
+  compatibleCatalogue(lifecycle.show(CATALOGUE, n, d))
+export const productionStepCatalogue = (d: Database = db()) =>
+  compatibleCatalogue(lifecycle.production(CATALOGUE, d))
 export const setStepCatalogue = (
   definition: unknown,
   reason: string | undefined,
@@ -120,8 +146,7 @@ export const forkStepCatalogue = (
   author?: string,
   d: Database = writableDb(),
 ) => {
-  const source =
-    from === undefined ? lifecycle.production(CATALOGUE, d) : lifecycle.show(CATALOGUE, from, d)
+  const source = from === undefined ? productionStepCatalogue(d) : showStepCatalogue(from, d)
   return lifecycle.write(CATALOGUE, source.definition, reason, author, 'fork', d)
 }
 export const retireStepCatalogue = (

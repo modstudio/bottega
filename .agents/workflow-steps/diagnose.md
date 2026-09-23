@@ -1,5 +1,6 @@
 ---
 title: Diagnose
+stage: plan
 floor:
   - recorded-artifact
 job: diagnose

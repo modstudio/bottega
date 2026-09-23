@@ -72,6 +72,7 @@ describe('importWorkflowTree', () => {
       path: '.agents/workflow-steps/tree-step.md',
       body: `---\n${Bun.YAML.stringify({
         title: 'Tree step',
+        stage: 'implement',
         floor: ['command-exit'],
         job: null,
         autonomy: 'auto',

@@ -68,6 +68,7 @@ test('agent operator migration preserves cost facts and the routing free set', (
       '0041_readonly_clone_source',
       '0042_workflow_cursor_abandoned',
       '0043_lens_requires_execution',
+      '0044_workflow_cursor_autonomy',
     ])
     const after = database
       .query("SELECT name FROM agent WHERE billing IN ('free','none') ORDER BY name")

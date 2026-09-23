@@ -1,5 +1,6 @@
 ---
 title: Verify
+stage: implement
 floor:
   - command-exit
 job: null

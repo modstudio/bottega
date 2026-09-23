@@ -1,5 +1,6 @@
 ---
 title: Ship
+stage: ship
 floor:
   - command-exit
   - recorded-artifact

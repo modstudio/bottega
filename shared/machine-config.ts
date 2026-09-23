@@ -113,6 +113,7 @@ function validateFile(
   const visit = (value: Record<string, unknown>, prefix = ''): void => {
     for (const [name, child] of Object.entries(value)) {
       const key = prefix ? `${prefix}.${name}` : name
+      if (!prefix && (name === 'autonomy' || name === 'projects')) continue
       const childTable = validatedChildTable(table, known, child, key, path)
       if (childTable) visit(childTable, key)
     }
@@ -196,6 +197,30 @@ function readMachineFile(path: string): unknown {
   } catch (error) {
     const detail = error instanceof Error ? error.message : String(error)
     throw new Error(`refusing machine config ${path}: invalid TOML: ${detail}`)
+  }
+}
+
+/** Read the autonomy tables while sharing machine.toml path and TOML handling. */
+export function readMachineAutonomy(
+  project: string,
+  env: ConfigEnvironment = process.env,
+): { user: unknown; project: unknown } {
+  const path = machineConfigPath(env)
+  const parsed = readMachineFile(path)
+  if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed))
+    throw new Error(`refusing machine config ${path}: expected a TOML table`)
+  const root = parsed as Record<string, unknown>
+  const projects = root.projects
+  const projectTable =
+    typeof projects === 'object' && projects !== null && !Array.isArray(projects)
+      ? (projects as Record<string, unknown>)[project]
+      : undefined
+  return {
+    user: root.autonomy,
+    project:
+      typeof projectTable === 'object' && projectTable !== null && !Array.isArray(projectTable)
+        ? (projectTable as Record<string, unknown>).autonomy
+        : undefined,
   }
 }
 

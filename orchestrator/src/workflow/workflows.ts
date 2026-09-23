@@ -5,7 +5,12 @@ import {
   resolveDeclaredFacts,
   unresolvedTrackerActionPlaceholder,
 } from '../project/project-injection.ts'
-import { productionStepCatalogue, showStepCatalogue } from './step-catalogue.ts'
+import { type AutonomyResolution, catalogueStepsForAutonomy, resolveAutonomy } from './autonomy.ts'
+import {
+  compatibleCatalogueStep,
+  productionStepCatalogue,
+  showStepCatalogue,
+} from './step-catalogue.ts'
 import { type VersionEvent, versionedLifecycle } from './versioned-lifecycle.ts'
 
 type WorkflowArgument = { name: string; required: boolean; description: string }
@@ -31,7 +36,7 @@ const SLUG = /^[a-z0-9][a-z0-9-]{0,63}$/
 const object = (value: unknown): value is Record<string, unknown> =>
   typeof value === 'object' && value !== null && !Array.isArray(value)
 const text = (value: unknown) => (typeof value === 'string' ? value : '')
-const WORKFLOW_PROMPT_ARGUMENT_NAMES = new Set(['mode', 'project'])
+const WORKFLOW_PROMPT_ARGUMENT_NAMES = new Set(['mode', 'project', 'autonomy'])
 const workflowPromptArgumentNameErrors = (name: unknown): string[] =>
   typeof name === 'string' && WORKFLOW_PROMPT_ARGUMENT_NAMES.has(name)
     ? [`argument name "${name}" is reserved for the workflow prompt`]
@@ -407,6 +412,7 @@ export function composeWorkflow(
   args: Record<string, string> = {},
   d: Database = db(),
   selection: WorkflowSelection = {},
+  autonomy?: AutonomyResolution,
 ) {
   const row = selectedWorkflow(slug, selection.version, d),
     definition = row.definition,
@@ -439,9 +445,14 @@ export function composeWorkflow(
     settings: JSON.parse(projectRow.settings ?? '{}'),
   }
   const selected =
-    mode?.steps.map(
-      (stepSlug) => catalogue.definition.steps.find((step) => step.slug === stepSlug)!,
+    mode?.steps.map((stepSlug) =>
+      compatibleCatalogueStep(catalogue.definition.steps.find((step) => step.slug === stepSlug)!),
     ) ?? []
+  const effectiveAutonomy =
+    autonomy ??
+    resolveAutonomy(catalogueStepsForAutonomy(selected), [
+      { name: 'built-in', settings: { preset: 'guided' } },
+    ])
   const { resolved, facts } = resolveDeclaredFacts(
     project,
     selected.flatMap((step) => step.needs),
@@ -466,7 +477,9 @@ export function composeWorkflow(
           slug: step.slug,
           title: step.title,
           job: step.job,
+          stage: step.stage,
           autonomy: step.autonomy,
+          resolvedAutonomy: effectiveAutonomy.steps[step.slug]!,
           floor: step.floor,
           needs: step.needs,
         }
@@ -478,6 +491,8 @@ export function composeWorkflow(
     },
     facts,
     needs,
+    rulings: effectiveAutonomy.rulings,
+    autonomyNote: autonomy?.note,
   }
 }
 export function getWorkflowStep(
@@ -487,6 +502,7 @@ export function getWorkflowStep(
   args: Record<string, string> = {},
   d: Database = db(),
   selection: WorkflowSelection = {},
+  autonomy?: AutonomyResolution,
 ) {
   const row = selectedWorkflow(slug, selection.version, d),
     definition = row.definition,
@@ -496,7 +512,8 @@ export function getWorkflowStep(
       : undefined,
     containingModes = definition.modes.filter((mode) => mode.steps.includes(stepSlug)),
     referenced = selectedMode ? selectedMode.steps.includes(stepSlug) : containingModes.length > 0,
-    step = catalogue.definition.steps.find((item) => item.slug === stepSlug)
+    rawStep = catalogue.definition.steps.find((item) => item.slug === stepSlug),
+    step = rawStep ? compatibleCatalogueStep(rawStep) : undefined
   if (selection.mode && !selectedMode)
     throw new Error(`workflow "${slug}" has no mode "${selection.mode}"`)
   if (!referenced || !step) throw new Error(`workflow "${slug}" has no step "${stepSlug}"`)
@@ -517,6 +534,11 @@ export function getWorkflowStep(
     settings: JSON.parse(projectRow.settings ?? '{}'),
   }
   const { facts } = resolveDeclaredFacts(project, step.needs, args)
+  const effectiveAutonomy =
+    autonomy ??
+    resolveAutonomy(catalogueStepsForAutonomy([step]), [
+      { name: 'built-in', settings: { preset: 'guided' } },
+    ])
   const values: Record<string, unknown> = { ...args, ...facts }
   const body = step.body.replace(/\{\{([^{}]+)\}\}/g, (_all, path: string) => {
     let value: unknown = values
@@ -547,6 +569,7 @@ export function getWorkflowStep(
       : undefined
   return {
     ...step,
+    resolvedAutonomy: effectiveAutonomy.steps[step.slug]!,
     workflow: slug,
     version: row.n,
     catalogueVersion: catalogue.n,

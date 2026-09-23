@@ -1,5 +1,6 @@
 ---
 title: Restate the report
+stage: plan
 floor:
   - recorded-artifact
 job: null

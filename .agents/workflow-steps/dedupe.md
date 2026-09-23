@@ -1,7 +1,8 @@
 ---
 title: Check for existing work and decisions
+stage: plan
 floor:
-  - human-ruling
+  - ruling
 job: null
 autonomy: ask
 needs:

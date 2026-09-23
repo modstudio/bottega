@@ -1,5 +1,6 @@
 ---
 title: Write the task
+stage: plan
 floor:
   - recorded-artifact
 job: null

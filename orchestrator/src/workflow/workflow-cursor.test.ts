@@ -349,4 +349,69 @@ describe('workflow cursor adapter', () => {
     expect(listWorkflowCursors({ project: 'fixture' }, d)).toHaveLength(1)
     expect(listWorkflowCursors({ project: 'fixture', session: 'session-one' }, d)).toEqual([])
   })
+
+  test('next uses the cursor autonomy snapshot and finish lists review steps', () => {
+    const d = database()
+    const preliminary = composeWorkflowWithCursor('ship', 'fixture', 'default', args, context, d)
+    d.query('DELETE FROM workflow_cursor').run()
+    const resolution = {
+      steps: Object.fromEntries(
+        preliminary.steps.map((step) => [
+          step.slug,
+          {
+            value: step.slug === 'rebase' ? ('review' as const) : ('auto' as const),
+            scope: 'session',
+          },
+        ]),
+      ),
+      rulings: { value: 'agent' as const, scope: 'built-in' },
+      session: { steps: { rebase: 'review' as const } },
+    }
+    const composition = composeWorkflowWithCursor(
+      'ship',
+      'fixture',
+      'default',
+      args,
+      context,
+      d,
+      {},
+      resolution,
+    )
+    getWorkflowStepWithCursor(
+      'ship',
+      'fixture',
+      composition.steps[0]!.slug,
+      args,
+      'default',
+      context,
+      d,
+    )
+    let message = ''
+    for (const step of composition.steps) {
+      message = nextWorkflowStep(
+        'ship',
+        'fixture',
+        'default',
+        args,
+        `closed ${step.slug}`,
+        context,
+        d,
+      )
+    }
+    expect(message).toContain('For your review: 1. rebase — closed rebase')
+  })
+
+  test('a null pre-migration snapshot falls back to catalogue defaults', () => {
+    const d = database()
+    const resolution = {
+      steps: { rebase: { value: 'review' as const, scope: 'session' } },
+      rulings: { value: 'agent' as const, scope: 'built-in' },
+    }
+    composeWorkflowWithCursor('ship', 'fixture', 'default', args, context, d, {}, resolution)
+    d.query('UPDATE workflow_cursor SET autonomy=NULL').run()
+    getWorkflowStepWithCursor('ship', 'fixture', 'rebase', args, 'default', context, d)
+    nextWorkflowStep('ship', 'fixture', 'default', args, 'rebased', context, d)
+    const row = d.query('SELECT closed FROM workflow_cursor').get() as { closed: string }
+    expect(JSON.parse(row.closed)[0].review).toBeUndefined()
+  })
 })

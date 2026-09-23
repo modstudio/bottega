@@ -1,5 +1,6 @@
 ---
 title: Group the production-signal cohort
+stage: plan
 floor:
   - recorded-artifact
 job: null

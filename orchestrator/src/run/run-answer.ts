@@ -13,6 +13,8 @@ import { job } from '../jobs/jobs.ts'
 import { mcpRequestFromStored } from '../mcp/mcp-preflight.ts'
 import { failureReason } from '../outcome.ts'
 import { chainTransport, retryModelForAgent } from '../route/failover.ts'
+import { answerRulingRefusal } from '../workflow/autonomy.ts'
+import { resolveAnswerRulings } from '../workflow/autonomy-scopes.ts'
 import { keepTreeHold } from '../worktree/keep-tree-hold.ts'
 import { packedResumePrompt } from './run.ts'
 import { KEEP_RUN_FILES_DAYS, readDispatchState } from './run-artifacts.ts'
@@ -39,6 +41,22 @@ type RunAnswerHelpers = {
   presentation: RunControlPresentation
 }
 type RunFlags = { detach: boolean; follow: boolean; quiet: boolean }
+
+async function refuseUserRuling(
+  project: string | null,
+  launchKey: string | null,
+  argv: string[],
+): Promise<void> {
+  if (!project) return
+  const rulings = await resolveAnswerRulings(project, launchKey)
+  const refusal = answerRulingRefusal(rulings, argv.includes('--from-operator'))
+  if (refusal) throw new Error(refusal)
+}
+
+function requireAnswerRun<Row>(row: Row | null, requestedId: number): Row {
+  if (!row) throw new Error(`no run ${requestedId}`)
+  return row
+}
 
 export async function retryRun(
   id: number,
@@ -194,11 +212,12 @@ export async function answerRun(
   options: { argv: string[]; recordOnly: boolean; flags: RunFlags },
   helpers: RunAnswerHelpers,
 ): Promise<void> {
-  const row = db()
+  const found = db()
     .query(
       `SELECT root.id, root.agent, root.job, root.cwd, root.worktree, root.branch,
           root.base_commit, root.vendor_session, root.status, root.session_id,
-          root.turn, root.parent_run_id, root.worktree_source, root.evidence_excluded
+          root.turn, root.parent_run_id, root.worktree_source, root.evidence_excluded, root.repo,
+          root.launch_key
      FROM run requested
      JOIN run root ON root.id = COALESCE(requested.parent_run_id, requested.id)
     WHERE requested.id = ?`,
@@ -218,8 +237,11 @@ export async function answerRun(
     parent_run_id: number | null
     worktree_source: 'recipe' | 'git' | 'clone' | 'readonly_recipe' | null
     evidence_excluded: string | null
+    repo: string | null
+    launch_key: string | null
   } | null
-  if (!row) throw new Error(`no run ${requestedId}`)
+  const row = requireAnswerRun(found, requestedId)
+  await refuseUserRuling(row.repo, row.launch_key, options.argv)
   const id = row.id
   refuseEscapedChain(id)
   let answerAuthority = authorizeRunMutation(requestedId, 'answer')
@@ -484,7 +506,9 @@ export async function answerRun(
       SET answer=?, answered_at=?, answered_by=?, delivery_pending_at=?
     WHERE id=?`,
   )
-  const answeredBy = callerSession ?? 'anonymous (no session id)'
+  const answeredBy = options.argv.includes('--from-operator')
+    ? `operator via ${callerSession ?? 'anonymous (no session id)'}`
+    : (callerSession ?? 'anonymous (no session id)')
   writeTransaction(() => {
     answerAuthority = adoptRunMutation(answerAuthority, 'answer')
     open.forEach((q, i) => {

@@ -210,6 +210,30 @@ describe('workflow projection and seeds', () => {
       expect(step.body).toContain('{{trunk}}')
     }
   })
+  test('forking a legacy catalogue maps old vocabulary before refusing its missing stage', () => {
+    const d = database()
+    const catalogue = productionStepCatalogue(d)
+    const legacy = {
+      steps: catalogue.definition.steps.map(({ stage: _stage, ...step }, index) => ({
+        ...step,
+        ...(index === 0 ? { autonomy: 'manual', floor: ['human-ruling'] } : {}),
+      })),
+    }
+    d.query('UPDATE step_catalogue_version SET definition=? WHERE catalogue_id=? AND n=1').run(
+      JSON.stringify(legacy),
+      catalogue.owner_id,
+    )
+
+    let message = ''
+    try {
+      forkStepCatalogue(1, 'operator edit', 'architect', d)
+    } catch (error) {
+      message = error instanceof Error ? error.message : String(error)
+    }
+    expect(message).toContain('step "rebase" has invalid or missing stage "undefined"')
+    expect(message).not.toContain('human-ruling')
+    expect(message).not.toContain('manual')
+  })
   test('an operator-promoted catalogue records nothing on a seed bump (catches the DEV-778 class returning by the other door)', () => {
     const d = database(),
       catalogue = productionStepCatalogue(d),

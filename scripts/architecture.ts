@@ -1,6 +1,7 @@
 import { dirname, join, normalize } from 'node:path'
 import { CONCERNS } from '../shared/brand.ts'
 import { importBoundaries } from './architecture-boundaries.ts'
+import { uiFolders, uiLayers } from './architecture-ui-layers.ts'
 
 type ConcernManifest = {
   roots: typeof CONCERNS
@@ -39,52 +40,6 @@ const concerns: ConcernManifest = {
     },
   ],
 }
-
-/**
- * The hub dashboard's component layers, lowest first. A folder under
- * `hub/web/src/ui/` belongs to exactly one layer and may import only its own
- * layer or a lower one. `behavior` holds hooks and pure helpers with no markup;
- * `primitives` are single controls; `overlays` open above the page; `patterns`
- * compose controls into one reusable piece; `layout` arranges a screen.
- */
-const uiLayers: { name: string; folders: string[] }[] = [
-  { name: 'behavior', folders: ['state', 'dom', 'text'] },
-  {
-    name: 'primitives',
-    folders: [
-      'badge',
-      'identifier',
-      'button',
-      'field',
-      'checkbox',
-      'switch',
-      'spinner',
-      'kbd',
-      'separator',
-    ],
-  },
-  {
-    name: 'overlays',
-    folders: ['popover', 'tooltip', 'menu', 'listbox', 'dialog', 'sheet', 'bottom-sheet', 'toast'],
-  },
-  {
-    name: 'patterns',
-    folders: [
-      'tabs',
-      'segmented',
-      'empty-state',
-      'stat',
-      'table',
-      'page-header',
-      'project-mark',
-      'pagination',
-      'form-layout',
-    ],
-  },
-  { name: 'layout', folders: ['shell', 'table-card', 'toolbar-band', 'companion'] },
-]
-
-const uiFolders = (folders: string[]) => `^hub/web/src/ui/(?:${folders.join('|')})/`
 
 export const modules: ArchitectureModule[] = [
   module('retrieval/src/corpus/chunks.ts', ['node:fs/promises', 'node:path', 'bun']),
@@ -195,17 +150,31 @@ export const modules: ArchitectureModule[] = [
     '@modelcontextprotocol/sdk/server/mcp.js',
     'zod',
     '../project/projects.ts',
+    '../workflow/autonomy.ts',
+    '../workflow/autonomy-scopes.ts',
     '../workflow/workflow-render.ts',
     '../workflow/workflow-cursor.ts',
     '../workflow/workflows.ts',
   ]),
   module('orchestrator/src/workflow/workflow-render.ts', ['./workflows.ts']),
+  module('orchestrator/src/workflow/autonomy.ts', []),
+  module('orchestrator/src/workflow/autonomy-scopes.ts', [
+    'bun:sqlite',
+    '../../../shared/config-client.ts',
+    '../../../shared/config-directory.ts',
+    '../../../shared/machine-config.ts',
+    '../database/db.ts',
+    '../project/projects.ts',
+    './autonomy.ts',
+    './step-catalogue.ts',
+  ]),
   module('orchestrator/src/workflow/workflow-cursor-transition.ts', []),
   module('orchestrator/src/workflow/workflow-cursor.ts', [
     'bun:sqlite',
     'node:crypto',
     '../database/db.ts',
     '../project/projects.ts',
+    './autonomy.ts',
     './workflow-render.ts',
     './workflows.ts',
     './workflow-cursor-transition.ts',
@@ -900,7 +869,7 @@ export function architectureRules() {
     {
       name: 'hub-web-ui-folder-has-a-layer',
       severity: 'error',
-      comment: 'Every ui/ folder is declared in uiLayers in architecture.ts.',
+      comment: 'Every ui/ folder is declared in uiLayers in architecture-ui-layers.ts.',
       from: {
         path: '^hub/web/src/ui/',
         pathNot: uiFolders(uiLayers.flatMap((layer) => layer.folders)),

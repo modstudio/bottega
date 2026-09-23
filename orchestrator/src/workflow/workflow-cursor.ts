@@ -2,6 +2,7 @@ import type { Database } from 'bun:sqlite'
 import { randomUUID } from 'node:crypto'
 import { db, nowIso, sessionId, writableDb, writeTransaction } from '../database/db.ts'
 import { projectAt } from '../project/projects.ts'
+import type { AutonomyResolution } from './autonomy.ts'
 import {
   type CursorState,
   type CursorValue,
@@ -17,7 +18,7 @@ export type WorkflowCursorContext = {
   instance?: string
 }
 
-type ClosedStep = { n: number; slug: string; note: string; at: string }
+type ClosedStep = { n: number; slug: string; note: string; at: string; review?: true }
 type CursorRow = {
   id: number
   project: string
@@ -29,6 +30,7 @@ type CursorRow = {
   workflow_version: number
   catalogue_version: number
   args: string
+  autonomy: string | null
   ordinal: number
   step_slug: string
   state: CursorState
@@ -135,6 +137,7 @@ function insertCursor(
   composition: ReturnType<typeof composeWorkflow>,
   context: WorkflowCursorContext,
   d: Database,
+  autonomy?: AutonomyResolution,
 ): CursorRow {
   const key = keyOf(composition.arguments)
   const instance = instanceOf(key, context)
@@ -155,9 +158,9 @@ function insertCursor(
   d.query(
     `INSERT INTO workflow_cursor
       (project,workflow_slug,mode_slug,workflow_key,instance_id,session_id,
-       workflow_version,catalogue_version,args,ordinal,step_slug,state,closed,question,
+       workflow_version,catalogue_version,args,autonomy,ordinal,step_slug,state,closed,question,
        total_steps,created_at,updated_at)
-     VALUES (?,?,?,?,?,?,?,?,?,0,?,'running','[]',NULL,?,?,?)
+     VALUES (?,?,?,?,?,?,?,?,?,?,0,?,'running','[]',NULL,?,?,?)
      ON CONFLICT(project,workflow_slug,mode_slug,workflow_key,instance_id) DO UPDATE SET
        session_id=COALESCE(excluded.session_id,workflow_cursor.session_id),
        updated_at=excluded.updated_at`,
@@ -171,6 +174,14 @@ function insertCursor(
     composition.workflow.version,
     composition.catalogue.version,
     JSON.stringify(composition.arguments),
+    JSON.stringify(
+      autonomy ?? {
+        steps: Object.fromEntries(
+          composition.steps.map((step) => [step.slug, step.resolvedAutonomy]),
+        ),
+        rulings: composition.rulings,
+      },
+    ),
     composition.steps[0]!.slug,
     composition.steps.length,
     at,
@@ -201,8 +212,9 @@ export function composeWorkflowWithCursor(
   context: WorkflowCursorContext,
   d: Database = db(),
   selection: { version?: number; catalogueVersion?: number } = {},
+  autonomy?: AutonomyResolution,
 ) {
-  const composition = composeWorkflow(slug, project, mode, args, d, selection)
+  const composition = composeWorkflow(slug, project, mode, args, d, selection, autonomy)
   if (!composition.mode || composition.needs.arguments) return { ...composition, cursor: null }
   return writeTransaction(() => {
     const existing = findCursor(
@@ -217,7 +229,7 @@ export function composeWorkflowWithCursor(
       decideCursorStart(existing?.state ?? null) === 'reuse'
         ? takenOverFrom(existing, context)
         : null
-    const row = insertCursor(composition, context, d)
+    const row = insertCursor(composition, context, d, autonomy)
     return {
       ...cursorComposition(row, d),
       cursor: {
@@ -238,7 +250,12 @@ function cursorComposition(row: CursorRow, d: Database) {
     JSON.parse(row.args) as Record<string, string>,
     d,
     { version: row.workflow_version, catalogueVersion: row.catalogue_version },
+    cursorAutonomy(row),
   )
+}
+
+function cursorAutonomy(row: CursorRow): AutonomyResolution | undefined {
+  return row.autonomy ? (JSON.parse(row.autonomy) as AutonomyResolution) : undefined
 }
 
 function remedy(row: CursorRow, composition: ReturnType<typeof composeWorkflow>): string {
@@ -277,17 +294,26 @@ function getWorkflowStepWithCursorImpl(
   mode: string,
   context: WorkflowCursorContext,
   d: Database = writableDb(),
+  autonomy?: AutonomyResolution,
 ) {
   let row = findCursor(project, slug, mode, args, context, d)
   const startDecision = decideCursorStart(row?.state ?? null)
   if (row && startDecision === 'reuse') applyCursorArguments(row, args, d)
   const { effectiveArgs, selection } = cursorCompositionInput(row, args, mode)
-  const composition = composeWorkflow(slug, project, mode, effectiveArgs, d, selection)
+  const composition = composeWorkflow(
+    slug,
+    project,
+    mode,
+    effectiveArgs,
+    d,
+    selection,
+    row ? cursorAutonomy(row) : autonomy,
+  )
   const index = composition.steps.findIndex((step) => step.slug === stepSlug)
   if (index < 0) throw new Error(`workflow "${slug}" has no step "${stepSlug}"`)
   const requested = composition.steps[index]!
   if (index === 0 && startDecision === 'retire') {
-    row = insertCursor(composition, context, d)
+    row = insertCursor(composition, context, d, autonomy)
   }
   const decision = decideCursorTransition(row ? cursorValue(row) : null, {
     kind: 'serve',
@@ -306,14 +332,14 @@ function getWorkflowStepWithCursorImpl(
     throw new Error(remedy(row!, composition))
   }
   if (decision.action !== 'serve') throw new Error('invalid serve transition')
-  if (!row) row = insertCursor(composition, context, d)
+  if (!row) row = insertCursor(composition, context, d, autonomy)
   if (decision.move || decision.resume) {
     d.query(
       `UPDATE workflow_cursor SET ordinal=?,step_slug=?,state='running',question=NULL,
        session_id=COALESCE(?,session_id),updated_at=? WHERE id=?`,
     ).run(decision.ordinal, decision.slug, context.session ?? null, nowIso(), row.id)
   }
-  return getWorkflowStep(slug, project, stepSlug, effectiveArgs, d, selection)
+  return getWorkflowStep(slug, project, stepSlug, effectiveArgs, d, selection, cursorAutonomy(row))
 }
 
 export function getWorkflowStepWithCursor(
@@ -324,9 +350,10 @@ export function getWorkflowStepWithCursor(
   mode: string,
   context: WorkflowCursorContext,
   d: Database = writableDb(),
+  autonomy?: AutonomyResolution,
 ) {
   return writeTransaction(
-    () => getWorkflowStepWithCursorImpl(slug, project, stepSlug, args, mode, context, d),
+    () => getWorkflowStepWithCursorImpl(slug, project, stepSlug, args, mode, context, d, autonomy),
     d,
   )
 }
@@ -366,13 +393,26 @@ function nextWorkflowStepImpl(
   }
   const at = nowIso()
   const closed = JSON.parse(row.closed) as ClosedStep[]
-  closed.push({ n: row.ordinal + 1, slug: row.step_slug, note: note.trim(), at })
+  const review = composition.steps[row.ordinal]?.resolvedAutonomy.value === 'review'
+  closed.push({
+    n: row.ordinal + 1,
+    slug: row.step_slug,
+    note: note.trim(),
+    at,
+    ...(review ? { review: true as const } : {}),
+  })
   if (decision.action === 'finish') {
     d.query(
       `UPDATE workflow_cursor SET state='done',closed=?,question=NULL,
        session_id=COALESCE(?,session_id),updated_at=? WHERE id=?`,
     ).run(JSON.stringify(closed), context.session ?? null, at, row.id)
-    return `Workflow ${slug} for ${row.workflow_key} is finished: ${closed.length} steps closed.`
+    const reviews = closed
+      .filter((step) => step.review)
+      .map((step) => `For your review: ${step.n}. ${step.slug} — ${step.note}`)
+    return [
+      `Workflow ${slug} for ${row.workflow_key} is finished: ${closed.length} steps closed.`,
+      ...reviews,
+    ].join('\n')
   }
   d.query(
     `UPDATE workflow_cursor SET ordinal=?,step_slug=?,state='running',closed=?,question=NULL,
@@ -386,11 +426,19 @@ function nextWorkflowStepImpl(
     row.id,
   )
   return renderWorkflowStep(
-    getWorkflowStep(slug, project, decision.slug, JSON.parse(row.args), d, {
-      mode,
-      version: row.workflow_version,
-      catalogueVersion: row.catalogue_version,
-    }),
+    getWorkflowStep(
+      slug,
+      project,
+      decision.slug,
+      JSON.parse(row.args),
+      d,
+      {
+        mode,
+        version: row.workflow_version,
+        catalogueVersion: row.catalogue_version,
+      },
+      cursorAutonomy(row),
+    ),
   )
 }
 

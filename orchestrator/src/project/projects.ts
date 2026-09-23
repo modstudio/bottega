@@ -35,6 +35,7 @@ import type { TrackerSettings } from '../../../shared/trackers.ts'
 import { db, nowIso, writableDb, writeTransaction } from '../database/db.ts'
 import { loadTrackedRecipe, recipePointerErrors } from '../recipe/recipe-loader.ts'
 import { recordApiClient } from '../record/record-api-client.ts'
+import { type AutonomySettings, validateAutonomySettings } from '../workflow/autonomy.ts'
 import {
   type ReadonlyProvision,
   validateReadonlyProvision,
@@ -86,6 +87,7 @@ export type Project = {
   settings: ProjectSettings
 }
 export type ProjectSettings = {
+  autonomy?: AutonomySettings
   /** Record space slug that owns this project's hosted evidence. */
   space?: string
   /**
@@ -323,15 +325,15 @@ export function projects(opts?: { retired?: boolean }): Project[] {
   return (db().query(sql).all() as Parameters<typeof parse>[0][]).map(parse)
 }
 
-function projectRowByName(name: string): Project | null {
-  const r = db().query('SELECT * FROM project WHERE name = ?').get(name) as
+function projectRowByName(name: string, d = db()): Project | null {
+  const r = d.query('SELECT * FROM project WHERE name = ?').get(name) as
     | Parameters<typeof parse>[0]
     | null
   return r ? parse(r) : null
 }
 
-export function projectByName(name: string): Project | null {
-  const project = projectRowByName(name)
+export function projectByName(name: string, d = db()): Project | null {
+  const project = projectRowByName(name, d)
   return project?.retiredAt ? null : project
 }
 
@@ -558,6 +560,15 @@ function readonlyDockerProblems(value: unknown): string[] {
     : []
 }
 
+function autonomyProblems(value: unknown): string[] {
+  try {
+    validateAutonomySettings(value, 'project')
+    return []
+  } catch (error) {
+    return [error instanceof Error ? error.message : String(error)]
+  }
+}
+
 export function validateProjectSettings(settings: ProjectSettings, projectPath?: string): string[] {
   const problems = [
     ...validateProjectInjectionSettings(settings),
@@ -571,6 +582,7 @@ export function validateProjectSettings(settings: ProjectSettings, projectPath?:
     ...readonlyDockerProblems(settings.worktree?.readonly_docker),
     ...trackedRecipeProblems(settings.worktree, projectPath),
     ...projectSpaceProblems(settings.space),
+    ...autonomyProblems(settings.autonomy),
   ]
 
   if (invalidOptionalStringArray(settings.secretPaths)) {

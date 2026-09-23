@@ -1,5 +1,6 @@
 ---
 title: Review blast radius
+stage: review
 floor:
   - recorded-artifact
 job: review-lens

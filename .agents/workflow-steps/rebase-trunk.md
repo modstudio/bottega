@@ -1,5 +1,6 @@
 ---
 title: Rebase onto trunk
+stage: ship
 floor:
   - command-exit
 job: null

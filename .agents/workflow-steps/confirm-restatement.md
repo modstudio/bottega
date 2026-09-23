@@ -1,7 +1,8 @@
 ---
 title: Confirm the restatement
+stage: plan
 floor:
-  - human-ruling
+  - ruling
 job: null
 autonomy: ask
 needs:

@@ -1,5 +1,6 @@
 ---
 title: Decompose the work
+stage: plan
 floor:
   - recorded-artifact
 job: null

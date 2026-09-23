@@ -1,5 +1,6 @@
 ---
 title: Start the task
+stage: plan
 floor:
   - tracker-transition
 job: null

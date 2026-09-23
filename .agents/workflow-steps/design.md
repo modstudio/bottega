@@ -1,7 +1,8 @@
 ---
 title: Choose the solution
+stage: plan
 floor:
-  - human-ruling
+  - ruling
 job: null
 autonomy: ask
 needs:
