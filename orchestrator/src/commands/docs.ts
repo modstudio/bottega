@@ -43,6 +43,7 @@ export function register(program: Command): void {
     .option('--project <value>')
     .option('--reason <value>')
     .option('--baseline <value>')
+    .option('--accept')
     .option('--all')
     .option('--json')
     .option('--force')

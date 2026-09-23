@@ -15,6 +15,7 @@ import type { Finding } from '../../../shared/ratchet.ts'
 import { listDocs, removeDoc, setDoc } from '../doc/docs.ts'
 import { projectAt, projectByName } from '../project/projects.ts'
 import {
+  acceptPackDiff,
   allInjectChecks,
   allNumericLiterals,
   compilePack,
@@ -273,6 +274,39 @@ export function canonLintCommand(flags: CanonFlags, presentation: CanonPresentat
   if (flags.has('strict') && displayed.length) presentation.exitCode(1)
 }
 
+function canonDiffCommand(
+  flags: CanonFlags,
+  presentation: CanonPresentation,
+  input: { job: string; cwd: string },
+): void {
+  const result = diffPack(input)
+  if (flags.has('json')) presentation.log(JSON.stringify(result))
+  else {
+    presentation.log(
+      `canon ${result.job}/${result.project ?? '_'}: ${result.bytesDelta >= 0 ? '+' : ''}${result.bytesDelta} bytes`,
+    )
+    for (const doc of result.added)
+      presentation.log(
+        `  added ${doc.scope}/${doc.subject ?? '_'}/${doc.slug} revision ${doc.revisionId}`,
+      )
+    for (const doc of result.removed)
+      presentation.log(
+        `  removed ${doc.scope}/${doc.subject ?? '_'}/${doc.slug} revision ${doc.revisionId}`,
+      )
+    for (const doc of result.changed)
+      presentation.log(`  changed ${doc.slug} revision ${doc.fromRevision} -> ${doc.toRevision}`)
+  }
+  if (!flags.has('accept')) return
+  const accepted = acceptPackDiff(result)
+  if (accepted) {
+    presentation.log(
+      `accepted canon ${accepted.job}/${accepted.project ?? '_'}: stored ${accepted.docs.length} docs, ${accepted.bytes} bytes`,
+    )
+  } else {
+    presentation.log(`canon ${result.job}/${result.project ?? '_'}: nothing to accept`)
+  }
+}
+
 async function canonCommand(
   argv: string[],
   flags: CanonFlags,
@@ -364,19 +398,7 @@ async function canonCommand(
     return
   }
   if (sub === 'diff') {
-    const result = diffPack({ job: jobName, cwd })
-    if (has('json')) log(JSON.stringify(result))
-    else {
-      log(
-        `canon ${result.job}/${result.project ?? '_'}: ${result.bytesDelta >= 0 ? '+' : ''}${result.bytesDelta} bytes`,
-      )
-      for (const doc of result.added)
-        log(`  added ${doc.scope}/${doc.subject ?? '_'}/${doc.slug} revision ${doc.revisionId}`)
-      for (const doc of result.removed)
-        log(`  removed ${doc.scope}/${doc.subject ?? '_'}/${doc.slug} revision ${doc.revisionId}`)
-      for (const doc of result.changed)
-        log(`  changed ${doc.slug} revision ${doc.fromRevision} -> ${doc.toRevision}`)
-    }
+    canonDiffCommand(flags, presentation, { job: jobName, cwd })
     return
   }
   throw new Error(

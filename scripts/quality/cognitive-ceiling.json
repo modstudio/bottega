@@ -114,8 +114,9 @@
   {
     "file": "orchestrator/src/canon/canon-commands.ts",
     "function": "canonCommand",
-    "line": 9,
-    "score": 67
+    "line": 310,
+    "score": 52,
+    "key": "orchestrator/src/canon/canon-commands.ts\u0000canonCommand"
   },
   {
     "file": "orchestrator/src/canon/canon.ts",
