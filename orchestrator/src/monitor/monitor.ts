@@ -38,6 +38,7 @@ import {
   retainedRefConditions,
   rulingConditions,
   staleTrustEntryConditions,
+  stalledRunConditions,
   terminalCloseOutRuns,
   terminalProcessAliveConditions,
   unscoredRuns,
@@ -355,6 +356,7 @@ export async function monitor(
 
   conditions.push(...deadRunningProcessConditions(clock))
   conditions.push(...idleRunConditions(clock))
+  conditions.push(...stalledRunConditions(clock))
 
   const closeOuts = terminalCloseOutRuns(database)
   for (const run of closeOuts)

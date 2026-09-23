@@ -4,14 +4,18 @@ import { fileURLToPath } from 'node:url'
 
 import { existsSync } from 'node:fs'
 import { join } from 'node:path'
-import { pidAlive, processStartTime } from '../../../shared/process-identity.ts'
+import {
+  type PidRecordIdentity,
+  pidAlive,
+  pidRecordIdentity,
+  processStartTime,
+} from '../../../shared/process-identity.ts'
 import { db, liveRuns } from '../database/db.ts'
 import { idleLabel, idleMsSince, idleWarnMs } from '../events.ts'
 import { UNSCORED_WHERE } from '../evidence/evidence-query.ts'
 import { targetGitEnvironment } from '../git/git-environment.ts'
 import { hookTreeNotice } from '../hook-tree/hook-tree.ts'
-import { runHasLiveDescendants } from '../idle-kill.ts'
-import { type PidRecordIdentity, pidRecordIdentity } from '../project/project-lock.ts'
+import { runHasLiveDescendants, sampleProcesses } from '../idle-kill.ts'
 import { projects } from '../project/projects.ts'
 import type { ResourceClaimKind } from '../resources/resource-claims.ts'
 import {
@@ -19,6 +23,7 @@ import {
   retainedRefInventory,
   worktreeDatabaseInventory,
 } from '../resources/resource-inventory.ts'
+import { liveMemberStall, liveRunMembers } from '../run/live-run-member.ts'
 import { runAlive } from '../run/run-alive.ts'
 import { runLeaseState } from '../run/run-lease.ts'
 import {
@@ -26,6 +31,7 @@ import {
   isSyntheticLifecycleJob,
   SYNTHETIC_LIFECYCLE_JOBS,
 } from '../run/synthetic-lifecycle-job.ts'
+import { idleStallMs } from '../stalled-run.ts'
 import type { MonitorCondition } from './monitor-types.ts'
 
 const HUB = fileURLToPath(new URL('../../../bin/hub', import.meta.url))
@@ -194,6 +200,34 @@ export function idleRunConditions(clock = Date.now()): MonitorCondition[] {
       clock,
     )
     return condition ? [condition] : []
+  })
+}
+
+/** Report silent, CPU-idle workers without changing their lifecycle. */
+export function stalledRunConditions(
+  clock = Date.now(),
+  deps: {
+    samples?: ReturnType<typeof sampleProcesses>
+    observedStartTime?: (pid: number) => string | null
+  } = {},
+): MonitorCondition[] {
+  const running = liveRunMembers()
+  const samples = deps.samples ?? (running.length ? sampleProcesses() : [])
+  return running.flatMap((run): MonitorCondition[] => {
+    const observed = liveMemberStall(run, samples, clock, idleStallMs(), deps.observedStartTime)
+    if (observed.state !== 'stalled' || observed.idleMs === null || observed.detail === null)
+      return []
+    return [
+      {
+        kind: 'stalled-run',
+        subject: `run:${run.id}`,
+        since: run.last_event_at ?? run.started_at,
+        ageMs: observed.idleMs,
+        detail: observed.detail,
+        action: `run orch stop ${run.id}, then re-dispatch; otherwise wait for the idle bound`,
+        ownerSession: run.session_id,
+      },
+    ]
   })
 }
 

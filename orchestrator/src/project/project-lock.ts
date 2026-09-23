@@ -86,23 +86,6 @@ function projectLockParticipant(path: string): ProjectLockParticipant | null {
   }
 }
 
-export type PidRecordIdentity = 'live' | 'dead' | 'reused' | 'unknown'
-
-/**
- * Compare a recorded pid against its recorded birth time.
- * Unknown is not live: destruction requires an established identity.
- */
-export function pidRecordIdentity(
-  pid: number | null | undefined,
-  recordedStartTime: string | null | undefined,
-): PidRecordIdentity {
-  if (!pid || pid <= 1 || !pidAlive(pid)) return 'dead'
-  if (!recordedStartTime) return 'unknown'
-  const actual = processStartTime(pid)
-  if (actual === null) return 'unknown'
-  return actual === recordedStartTime ? 'live' : 'reused'
-}
-
 function staleProjectLockHolder(holder: ProjectLockParticipant): string | null {
   if (!pidAlive(holder.pid)) return `dead holder pid ${holder.pid}`
   if (holder.startTime === null) return null

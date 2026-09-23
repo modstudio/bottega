@@ -134,6 +134,15 @@ function processGroupCpuPercent(pid: number, samples: ProcessSample[]): number |
   return seen ? total : null
 }
 
+/** Observe whether the vendor process tree is currently consuming CPU. */
+export function processTreeCpuMoving(
+  pid: number | null | undefined,
+  samples: ProcessSample[],
+): boolean | null {
+  const cpu = processGroupCpuPercent(pid ?? 0, samples)
+  return cpu === null ? null : cpu >= CPU_IDLE_PERCENT
+}
+
 /** Linux D-state and macOS U-state are the same limit: SIGKILL will not land until the syscall returns. */
 function isUninterruptible(state: string): boolean {
   return /[DU]/.test(state)
@@ -455,11 +464,11 @@ export function shouldIdleKill(opts: {
     return { kill: false, idleMs, reason: 'silence below threshold' }
   }
   const samples = opts.samples ?? sampleProcesses()
-  const cpu = processGroupCpuPercent(pid, samples)
-  if (cpu === null) {
+  const cpuMoving = processTreeCpuMoving(pid, samples)
+  if (cpuMoving === null) {
     return { kill: false, idleMs, reason: 'process table unobservable' }
   }
-  if (cpu >= CPU_IDLE_PERCENT) {
+  if (cpuMoving) {
     return { kill: false, idleMs, reason: 'quiet but burning CPU' }
   }
   return { kill: true, idleMs, reason: null }

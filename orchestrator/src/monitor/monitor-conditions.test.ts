@@ -1,6 +1,7 @@
 import { describe, expect, spyOn, test } from 'bun:test'
 import { addRun, score } from '../../test/fixtures/store.ts'
 import { db, nowIso } from '../database/db.ts'
+import { liveMemberStall } from '../run/live-run-member.ts'
 import {
   askingRuns,
   deadRunningProcessConditions,
@@ -11,6 +12,7 @@ import {
   reconcileHub,
   rulingConditions,
   staleTrustEntryConditions,
+  stalledRunConditions,
   terminalProcessPgid,
   unsettledClaimConditions,
 } from './monitor-conditions.ts'
@@ -49,6 +51,56 @@ describe('idle run classification', () => {
       subject: 'run:73',
       ageMs: 6 * 60_000,
     })
+  })
+})
+
+describe('stalled run monitor condition', () => {
+  test('wraps the running turn stall observation in the monitor envelope', () => {
+    const root = addRun({
+      agent: 'codex',
+      job: 'implement',
+      status: 'asking',
+      session: 'session-chain',
+    })
+    const turn = addRun({
+      agent: 'grok',
+      job: 'review-lens',
+      status: 'running',
+      parent: root,
+      turn: 2,
+      startedAt: '2026-09-17T12:00:00.000Z',
+    })
+    db()
+      .query('UPDATE run SET agent_pid=?,agent_start_time=?,last_event_at=? WHERE id=?')
+      .run(process.pid, 'recorded birth', '2026-09-17T12:01:00.000Z', turn)
+
+    const clock = Date.parse('2026-09-17T12:30:00.000Z')
+    const samples = [{ pid: process.pid, ppid: 1, pgid: process.pid, cpu: 0, state: 'S' }]
+    const member = {
+      id: turn,
+      started_at: '2026-09-17T12:00:00.000Z',
+      last_event_at: '2026-09-17T12:01:00.000Z',
+      agent: 'grok',
+      job: 'review-lens',
+      session_id: 'session-chain',
+      agent_pid: process.pid,
+      agent_start_time: 'recorded birth',
+    }
+    const observed = liveMemberStall(member, samples, clock, 25 * 60_000, () => 'recorded birth')
+
+    expect(
+      stalledRunConditions(clock, {
+        samples,
+        observedStartTime: () => 'recorded birth',
+      }),
+    ).toEqual([
+      expect.objectContaining({
+        subject: `run:${turn}`,
+        ownerSession: 'session-chain',
+        ageMs: observed.idleMs,
+        detail: observed.detail,
+      }),
+    ])
   })
 })
 function insertAnsweredQuestion(runId: number): void {
