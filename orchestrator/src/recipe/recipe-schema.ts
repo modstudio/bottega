@@ -5,6 +5,23 @@ import { z } from 'zod'
 const strictObject = <Shape extends z.core.$ZodLooseShape>(shape: Shape) =>
   z.strictObject(shape, { error: 'unknown-key rule: objects may not contain unknown keys' })
 
+const provisionEntrySchema = strictObject({
+  path: z
+    .string()
+    .min(1)
+    .refine(
+      (path) =>
+        !(
+          !path.trim() ||
+          /^[\\/]/.test(path) ||
+          /^[A-Za-z]:[\\/]/.test(path) ||
+          path.split(/[\\/]+/).includes('..')
+        ),
+      { error: 'provision path must be a non-empty relative path without ..' },
+    ),
+  method: z.enum(['link', 'clone']),
+})
+
 const placeholderName = z.enum(['branch', 'name', 'base', 'seed', 'key', 'path', 'main', 'index'])
 
 const worktreeCreateArgSchema = z.union([
@@ -124,6 +141,12 @@ const recipeShape = strictObject({
     })
     .optional(),
   allocate: allocationsSchema.optional(),
+  provision: z
+    .array(provisionEntrySchema)
+    .describe(
+      "Dependency paths placed in the writer tree before env files and create steps. link shares the main checkout's immediate entries, so writes through a link reach the main checkout; clone makes an independent copy-on-write copy.",
+    )
+    .optional(),
   env: z.array(envFileSchema).optional(),
   shared: z.array(sharedSchema).optional(),
   pre: z.array(stepSchema).optional(),
@@ -375,6 +398,20 @@ function validateEnvPaths(recipe: RecipeInput, context: z.RefinementCtx): void {
   }
 }
 
+function validateProvisionPaths(recipe: RecipeInput, context: z.RefinementCtx): void {
+  const paths = new Set<string>()
+  for (const [index, entry] of (recipe.provision ?? []).entries()) {
+    if (paths.has(entry.path)) {
+      context.addIssue({
+        code: 'custom',
+        path: ['provision', index, 'path'],
+        message: `provision path must be unique: "${entry.path}"`,
+      })
+    }
+    paths.add(entry.path)
+  }
+}
+
 function isAbsoluteOrParentPath(path: string): boolean {
   return /^[\\/]/.test(path) || /^[A-Za-z]:[\\/]/.test(path) || path.split(/[\\/]+/).includes('..')
 }
@@ -448,6 +485,7 @@ const validatedRecipeSchema = recipeShape.superRefine((recipe, context) => {
   validateAllocationEnvironmentNames(recipe, context)
   validateWorkingDirectories(recipe, context)
   validateEnvPaths(recipe, context)
+  validateProvisionPaths(recipe, context)
   validateShared(recipe, context)
 })
 

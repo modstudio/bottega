@@ -37,13 +37,13 @@ import { loadTrackedRecipe, recipePointerErrors } from '../recipe/recipe-loader.
 import { recordApiClient } from '../record/record-api-client.ts'
 import { type AutonomySettings, validateAutonomySettings } from '../workflow/autonomy.ts'
 import {
-  type ReadonlyProvision,
-  validateReadonlyProvision,
-} from '../worktree/readonly-provision.ts'
-import {
   DEFAULT_PROJECT_CONFIG_PATH,
   resolveWorktreeLifecycle,
 } from '../worktree/worktree-lifecycle.ts'
+import {
+  type ReadonlyProvision,
+  validateReadonlyProvision,
+} from '../worktree/worktree-provision.ts'
 import {
   CREATE_VARS,
   createHasPlaceholder,

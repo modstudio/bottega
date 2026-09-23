@@ -9,13 +9,13 @@ import {
   targetGitEnvironment,
 } from '../git/git-environment.ts'
 import type { WorktreeTool } from '../project/projects.ts'
-import { provisionReadOnlyTree, type ReadonlyProvision } from './readonly-provision.ts'
 import {
   attributeWorktree,
   type RecordWorktree,
   runCreateTool,
   verifyFreshWorktree,
 } from './worktree-create.ts'
+import { provisionWorktree, type WorktreeProvision } from './worktree-provision.ts'
 import { branchTip, removeReadOnlyDirectory, removeReadOnlyTree } from './worktree-remove.ts'
 import { assertCreateVarsAvailable } from './worktree-template.ts'
 import type { Worktree } from './worktree-types.ts'
@@ -25,7 +25,7 @@ export function createReadOnlyWorktree(
   runId: number,
   base: string,
   record?: RecordWorktree,
-  provision: ReadonlyProvision = [],
+  provision: WorktreeProvision = [],
 ): Worktree {
   const repoRoot = repoRootOf(cwd)
   if (!repoRoot) throw new Error(`not a git repository: ${cwd}`)
@@ -38,7 +38,7 @@ export function createReadOnlyWorktree(
     git(['clone', '--shared', '--no-checkout', repoRoot, path], repoRoot)
     git(['checkout', '--detach', base], path)
     git(['remote', 'remove', 'origin'], path)
-    provisionReadOnlyTree(repoRoot, path, provision)
+    provisionWorktree(repoRoot, path, provision)
     attributeWorktree(worktree, runId, record)
     verifyFreshWorktree(worktree)
     verifyBorrowedCheckout(path, repoRoot)

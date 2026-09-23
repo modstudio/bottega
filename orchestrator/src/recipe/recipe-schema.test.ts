@@ -65,6 +65,33 @@ describe('tracked recipe refusal rules', () => {
     ).toBe(true)
   })
 
+  test('accepts valid provisions and refuses malformed or duplicate entries', () => {
+    expect(
+      recipeSchema.safeParse({
+        create: [],
+        provision: [
+          { path: 'node_modules', method: 'link' },
+          { path: 'vendor', method: 'clone' },
+        ],
+      }).success,
+    ).toBe(true)
+    expect(
+      messages({ create: [], provision: [{ path: '../vendor', method: 'clone' }] }).join('\n'),
+    ).toContain('provision path')
+    expect(
+      messages({ create: [], provision: [{ path: 'vendor', method: 'copy' }] }).join('\n'),
+    ).toContain('Invalid option')
+    expect(
+      messages({
+        create: [],
+        provision: [
+          { path: 'vendor', method: 'clone' },
+          { path: 'vendor', method: 'link' },
+        ],
+      }).join('\n'),
+    ).toContain('provision path must be unique')
+  })
+
   test('refuses an unknown key', () => {
     expect(messages({ ...minimal(), mystery: true }).join('\n')).toContain('unknown-key rule')
   })
