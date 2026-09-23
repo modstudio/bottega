@@ -23,4 +23,4 @@ Run `bun run check` on the reviewed branch, then use `gh pr create` and merge on
 
 ## Close out the session
 
-Release terminal worktrees with `orch close-out`, delete merged branches with `git branch -d`, close landed tasks with `hub task`, and offer a resume brief through `orch doc`. A session with held trees, unscored runs, or unclosed landed tasks is paused rather than finished.
+Release terminal worktrees with `orch close-out`, prune landed run branches with `orch branches prune`, which sweep also runs, close landed tasks with `hub task`, and offer a resume brief through `orch doc`. A session with held trees, unscored runs, or unclosed landed tasks is paused rather than finished.
