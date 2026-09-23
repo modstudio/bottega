@@ -295,7 +295,7 @@ function sweepUnjudgedRuns(
       kept++
       continue
     }
-    if (dry || expireUnjudgedRun(row)) {
+    if (dry || expireUnjudgedRun(row, shouldExpireUnjudgedOwner, UNJUDGED_OWNER_WINDOW_MS)) {
       expired++
       presentation.log(`${dry ? 'would expire' : 'expired'} unjudged run ${row.id}`)
     } else {

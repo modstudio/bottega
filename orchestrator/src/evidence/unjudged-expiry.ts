@@ -15,6 +15,14 @@ export type UnjudgedRun = {
 
 export const UNJUDGED_EXCLUSION_REASON = 'unjudged: owner gone'
 
+type UnjudgedExpiryDecision = (facts: {
+  ownerSessionId: string | null
+  ownerLastSeenAt: number | null
+  runLastActivityAt: number
+  now: number
+  windowMs: number
+}) => boolean
+
 export function unjudgedRuns(projectName: string | null): UnjudgedRun[] {
   return db()
     .query(
@@ -28,24 +36,46 @@ export function unjudgedRuns(projectName: string | null): UnjudgedRun[] {
          LEFT JOIN session_seen seen ON seen.session_id=r.session_id
          LEFT JOIN project ON project.id=r.project_id
         WHERE ${UNSCORED_WHERE}
-          AND (? IS NULL OR COALESCE(r.repo, project.name) IS NULL
-               OR COALESCE(r.repo, project.name)=?)
+          AND (? IS NULL OR COALESCE(r.repo, project.name)=?)
         ORDER BY r.id`,
     )
     .all(projectName, projectName) as UnjudgedRun[]
 }
 
 /** Exclude one still-unscored row and enqueue the changed run in one transaction. */
-export function expireUnjudgedRun(row: UnjudgedRun): boolean {
+export function expireUnjudgedRun(
+  row: UnjudgedRun,
+  shouldExpire: UnjudgedExpiryDecision,
+  windowMs: number,
+): boolean {
   let expired = false
   writeTransaction(() => {
-    const stillUnscored = db()
+    const fresh = db()
       .query(
-        `SELECT 1 present FROM run r LEFT JOIN score s ON s.run_id=r.id
+        `SELECT r.id, r.session_id, seen.last_seen AS session_last_seen,
+                (SELECT COALESCE(turn.last_event_at, turn.started_at)
+                   FROM run turn
+                  WHERE turn.id=r.id OR turn.parent_run_id=r.id
+                  ORDER BY turn.turn DESC, turn.id DESC LIMIT 1) AS run_last_activity
+           FROM run r
+           LEFT JOIN score s ON s.run_id=r.id
+           LEFT JOIN session_seen seen ON seen.session_id=r.session_id
           WHERE r.id=? AND ${UNSCORED_WHERE}`,
       )
-      .get(row.id)
-    if (!stillUnscored) return
+      .get(row.id) as UnjudgedRun | null
+    if (
+      !fresh ||
+      !shouldExpire({
+        ownerSessionId: fresh.session_id,
+        ownerLastSeenAt:
+          fresh.session_last_seen === null ? null : Date.parse(fresh.session_last_seen),
+        runLastActivityAt: Date.parse(fresh.run_last_activity),
+        now: Date.now(),
+        windowMs,
+      })
+    ) {
+      return
+    }
     const recordId =
       db()
         .query<{ record_id: string | null }, [number]>('SELECT record_id FROM run WHERE id=?')
@@ -53,7 +83,7 @@ export function expireUnjudgedRun(row: UnjudgedRun): boolean {
     db()
       .query('UPDATE run SET evidence_excluded=?, record_id=? WHERE id=?')
       .run(UNJUDGED_EXCLUSION_REASON, recordId, row.id)
-    enqueueRunRecord(db(), row.id, machineId(), row.run_last_activity)
+    enqueueRunRecord(db(), row.id, machineId(), fresh.run_last_activity)
     expired = true
   })
   return expired
