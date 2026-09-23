@@ -38,13 +38,7 @@ describe('vendor event log', () => {
       .map((line) => JSON.parse(line))
     expect(lines).toEqual([
       { ts: 't3', type: 'text', text: 'Hello world' },
-      {
-        ts: 't3',
-        type: 'tool_call',
-        kind: 'read',
-        title: 'Read',
-        locations: [{ path: 'foo.ts' }],
-      },
+      { ts: 't3', type: 'tool_call', kind: 'read', title: 'Read', locations: [{ path: 'foo.ts' }] },
       { ts: 't4', type: 'tool_call', title: 'Read' },
       {
         ts: 't4',
@@ -64,10 +58,7 @@ describe('vendor event log', () => {
   test('parses grok and codex JSON lines into stream events', () => {
     expect(
       eventsFromVendorLine(
-        JSON.stringify({
-          type: 'item.completed',
-          item: { type: 'agent_message', text: 'hi' },
-        }),
+        JSON.stringify({ type: 'item.completed', item: { type: 'agent_message', text: 'hi' } }),
       ),
     ).toEqual([{ kind: 'text', text: 'hi' }])
     expect(
@@ -120,9 +111,7 @@ describe('vendor event log', () => {
       eventsFromVendorLine(
         JSON.stringify({
           type: 'assistant',
-          message: {
-            content: [{ type: 'tool_use', name: 'Read', input: { path: 'a.ts' } }],
-          },
+          message: { content: [{ type: 'tool_use', name: 'Read', input: { path: 'a.ts' } }] },
         }),
       )[0],
     ).toMatchObject({ kind: 'tool', title: 'Read', target: 'a.ts' })

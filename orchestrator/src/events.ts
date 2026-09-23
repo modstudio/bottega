@@ -175,12 +175,7 @@ export function createEventLog(
         return
       }
       if (event.kind === 'usage') {
-        write({
-          ts,
-          type: 'usage',
-          tokens: event.tokens,
-          costUsd: event.costUsd,
-        })
+        write({ ts, type: 'usage', tokens: event.tokens, costUsd: event.costUsd })
       }
     },
     flush,
@@ -323,14 +318,7 @@ function eventsFromCodexItem(item: Record<string, unknown>, phase: string): Stre
     const output = stringField(item.aggregated_output)
     const locations = locationsFromUnknown(item)
     if (phase === 'started' || phase === 'updated') {
-      return [
-        toolEvent({
-          title,
-          toolKind: 'execute',
-          status: 'in_progress',
-          locations,
-        }),
-      ]
+      return [toolEvent({ title, toolKind: 'execute', status: 'in_progress', locations })]
     }
     return [
       toolEvent({
@@ -453,11 +441,7 @@ function readEventLog(path: string): RunLogEvent[] {
 function summariseEvent(event: RunLogEvent): PeekEventSummary {
   if (event.type === 'text') return { type: 'text', text: event.text.slice(0, PEEK_TEXT_CHARS) }
   if (event.type === 'tool_call') {
-    return {
-      type: 'tool_call',
-      title: event.title,
-      target: event.locations?.[0]?.path,
-    }
+    return { type: 'tool_call', title: event.title, target: event.locations?.[0]?.path }
   }
   if (event.type === 'tool_result')
     return { type: 'tool_result', status: event.status, bytes: event.bytes }

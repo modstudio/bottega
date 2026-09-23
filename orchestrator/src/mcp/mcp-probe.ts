@@ -268,11 +268,7 @@ async function stdioRpc(
   clearTimeout(timer)
   const decoded = decodeMessages(Buffer.from(stdout))
   if (!decoded.length && exit !== 0) {
-    return {
-      ok: false,
-      messages: [],
-      error: stderr.trim() || `stdio MCP server exited ${exit}`,
-    }
+    return { ok: false, messages: [], error: stderr.trim() || `stdio MCP server exited ${exit}` }
   }
   return { ok: true, messages: decoded, error: stderr.trim() || null }
 }
@@ -304,13 +300,7 @@ const text=await res.text(); process.stdout.write(text); process.exit(res.ok?0:1
     }
     const raw = [process.execPath, '--no-env-file', '-e', script, url, JSON.stringify(message)]
     const argv = wrap ? await wrap(raw[0]!, raw.slice(1)) : raw
-    const proc = Bun.spawn(argv, {
-      cwd,
-      env,
-      stdin: 'pipe',
-      stdout: 'pipe',
-      stderr: 'pipe',
-    })
+    const proc = Bun.spawn(argv, { cwd, env, stdin: 'pipe', stdout: 'pipe', stderr: 'pipe' })
     proc.stdin.write(JSON.stringify(headers ?? {}))
     proc.stdin.end()
     const timer = setTimeout(() => {
@@ -329,20 +319,12 @@ const text=await res.text(); process.stdout.write(text); process.exit(res.ok?0:1
     if (exit !== 0) {
       const combined = [stderr.trim(), stdout.trim()].filter(Boolean).join('\n')
       // Unbounded here: sanitizeProbeError bounds after redacting, so no cut can split a secret.
-      return {
-        ok: false,
-        messages: replies,
-        error: combined || `HTTP probe exited ${exit}`,
-      }
+      return { ok: false, messages: replies, error: combined || `HTTP probe exited ${exit}` }
     }
     try {
       replies.push(JSON.parse(stdout))
     } catch {
-      return {
-        ok: false,
-        messages: replies,
-        error: stdout || 'HTTP probe returned non-JSON',
-      }
+      return { ok: false, messages: replies, error: stdout || 'HTTP probe returned non-JSON' }
     }
   }
   return { ok: true, messages: replies, error: null }

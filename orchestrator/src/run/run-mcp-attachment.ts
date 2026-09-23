@@ -71,12 +71,7 @@ export function decideMcpMirrorMismatch(
 ): McpMirrorMismatch | null {
   const error = wrongProjectReason(server, namesSeen)
   if (!error) return null
-  const connection: McpConnection = {
-    server,
-    connected: false,
-    error,
-    namesSeen,
-  }
+  const connection: McpConnection = { server, connected: false, error, namesSeen }
   return {
     recorded: {
       server,

@@ -785,20 +785,14 @@ export async function run(opts: {
       )
       .run(why, Date.now() - started, claim.id)
     teardownTerminalRunResources(db(), claim.id)
-    throw Object.assign(new Error(`run ${claim.id} could not start: ${why}`), {
-      runId: claim.id,
-    })
+    throw Object.assign(new Error(`run ${claim.id} could not start: ${why}`), { runId: claim.id })
   }
   const sandboxEnvironment = sandboxSelection.profile ? prepareSandboxHome(name, sandboxRunDir) : {}
   const mcpEnvironment = childEnv(
     a,
     claim.id,
     runToken,
-    {
-      ...(gitConfigEnvironment ?? {}),
-      ...sandboxEnvironment,
-      ...grokMcpEnvironment,
-    },
+    { ...(gitConfigEnvironment ?? {}), ...sandboxEnvironment, ...grokMcpEnvironment },
     repoJob,
   )
   const codexMcpCatalogues = await preflightCodexMcpCatalogues(codexMcpScope, mcpEnvironment)

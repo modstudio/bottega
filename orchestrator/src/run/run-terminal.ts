@@ -339,10 +339,7 @@ export async function finishRun(input: TerminalInput): Promise<TerminalResult> {
   if (frozenBefore.length && frozenAfter.length && !confinementFailures.length) {
     const startedAt = db()
       .query('SELECT started_at, head_commit FROM run WHERE id=?')
-      .get(claim.id) as {
-      started_at: string
-      head_commit: string | null
-    } | null
+      .get(claim.id) as { started_at: string; head_commit: string | null } | null
     confinementEvent = classifyDivergence({
       before: frozenBefore,
       after: frozenAfter,
