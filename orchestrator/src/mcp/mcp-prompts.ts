@@ -48,11 +48,11 @@ const promptMessage = (text: string) => ({
   messages: [{ role: 'user' as const, content: { type: 'text' as const, text } }],
 })
 
-export const promptArgsSchema = (prompt: WorkflowPromptDefinition) =>
+const promptArgsSchema = (prompt: WorkflowPromptDefinition) =>
   Object.fromEntries(
     prompt.arguments.map((argument) => [
       argument.name,
-      z.string().describe(argument.description).optional(),
+      z.string().optional().describe(argument.description),
     ]),
   )
 
@@ -66,10 +66,10 @@ export function registerWorkflowPrompts(server: McpServer): void {
         argsSchema: promptArgsSchema(prompt),
       },
       (input) => {
-        const { mode, project, ...values } = input as Record<string, string | undefined>
-        const args = Object.fromEntries(
-          Object.entries(values).filter(
-            (entry): entry is [string, string] => entry[1] !== undefined,
+        // A client may send an unfilled argument as a blank string; it counts as omitted.
+        const { mode, project, ...args } = Object.fromEntries(
+          Object.entries(input as Record<string, string | undefined>).filter(
+            (entry): entry is [string, string] => Boolean(entry[1]?.trim()),
           ),
         )
         const projectName = project ?? projectAt(process.cwd())?.name
