@@ -5,6 +5,7 @@ import {
   abandonWorkflowCursor,
   awaitWorkflowRuling,
   composeWorkflowWithCursor,
+  decideCursorArguments,
   getWorkflowStepWithCursor,
   listWorkflowCursors,
   nextWorkflowStep,
@@ -32,6 +33,22 @@ const args = { key: 'DEV-822', branch: 'DEV-822-work', worktree: '/tmp/work' }
 const context = { session: 'session-one' }
 
 describe('workflow cursor adapter', () => {
+  test('late cursor arguments merge into empty slots and conflicting values refuse', () => {
+    expect(decideCursorArguments({ key: 'DEV-822' }, { branch: 'DEV-822-work' })).toEqual({
+      action: 'merge',
+      args: { key: 'DEV-822', branch: 'DEV-822-work' },
+    })
+    expect(decideCursorArguments({ key: 'DEV-822', branch: ' ' }, { branch: 'work' })).toEqual({
+      action: 'merge',
+      args: { key: 'DEV-822', branch: 'work' },
+    })
+    expect(decideCursorArguments({ key: 'DEV-822' }, { key: 'DEV-999' })).toEqual({
+      action: 'refuse',
+      reason:
+        'workflow argument "key" conflicts with the cursor: stored value "DEV-822", supplied value "DEV-999"; run orch workflow abandon for this cursor, then compose again',
+    })
+  })
+
   test('listing scope honors explicit flags and refuses an unresolved cwd', () => {
     expect(workflowCursorProjectScope({}, 'fixture', '/fixture/worktree')).toBe('fixture')
     expect(workflowCursorProjectScope({ project: 'other' }, 'fixture', '/fixture/worktree')).toBe(

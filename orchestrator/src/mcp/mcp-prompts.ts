@@ -29,7 +29,7 @@ export function workflowPromptDefinitions(
     arguments: [
       {
         name: 'mode',
-        description: `Workflow mode slug. One of: ${definition.modes.map((mode) => mode.slug).join(', ')}. Omit to use the default mode.`,
+        description: `Workflow mode slug. One of: ${definition.modes.map((mode) => mode.slug).join(', ')}. Omit to use the default mode, or to be asked which mode to run when the workflow has none.`,
       },
       {
         name: 'project',

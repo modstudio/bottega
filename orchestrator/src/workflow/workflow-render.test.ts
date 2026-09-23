@@ -87,13 +87,19 @@ describe('workflow rendering', () => {
     expect(rendered).toContain('--arg key=DEV-821 ')
   })
 
-  test('a composition missing required arguments names them instead of the contract', () => {
+  test('a composition missing required arguments stops to ask for them but keeps the step list', () => {
     const rendered = renderWorkflowComposition(
       composeWorkflow('ship', 'fixture', 'default', {}, database()),
     )
-    expect(rendered).toContain('missing required arguments: key, branch, worktree')
+    expect(rendered.split('\n').slice(0, 5)).toEqual([
+      'Ship a task — Ship',
+      'STOP. Do not start step 1. Ask the operator for each missing argument below, then compose again with them.',
+      '- key: The task key.',
+      '- branch: The branch to ship.',
+      "- worktree: The branch's worktree path.",
+    ])
+    expect(rendered).toContain('1. rebase — Rebase and verify')
     expect(rendered).not.toContain('Work the numbered steps below')
-    expect(rendered).not.toContain('Choose a mode')
   })
 
   test('step pointers name the successor, the selected-mode end, and an ambiguous successor', () => {

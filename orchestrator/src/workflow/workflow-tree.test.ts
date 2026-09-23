@@ -28,7 +28,15 @@ const store: WorkflowTreeStore = {
           { name: 'key', required: true, description: 'Task key.' },
           { name: 'branch', required: false, description: 'Existing branch.' },
         ],
-        modes: [{ slug: 'default', title: 'Ship', default: true, steps: ['verify'] }],
+        modes: [
+          {
+            slug: 'default',
+            title: 'Ship',
+            default: true,
+            requires: ['branch'],
+            steps: ['verify'],
+          },
+        ],
       },
     },
   ],

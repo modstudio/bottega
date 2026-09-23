@@ -48,7 +48,10 @@ export function renderWorkflowComposition(result: WorkflowComposition): string {
       ? ['Choose a mode by answering its question, then compose again with that mode.']
       : []),
     ...(result.needs.arguments
-      ? [`missing required arguments: ${result.needs.arguments.join(', ')}`]
+      ? [
+          'STOP. Do not start step 1. Ask the operator for each missing argument below, then compose again with them.',
+          ...result.needs.arguments.map(({ name, description }) => `- ${name}: ${description}`),
+        ]
       : []),
     `facts: ${JSON.stringify(result.facts)}`,
     ...result.steps.map(

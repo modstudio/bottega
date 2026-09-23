@@ -34,7 +34,8 @@ describe('workflow prompt definitions', () => {
     expect(prompt?.arguments).toEqual([
       {
         name: 'mode',
-        description: 'Workflow mode slug. One of: fast, careful. Omit to use the default mode.',
+        description:
+          'Workflow mode slug. One of: fast, careful. Omit to use the default mode, or to be asked which mode to run when the workflow has none.',
       },
       {
         name: 'project',
@@ -80,7 +81,7 @@ describe('workflow prompts on the wire', () => {
     expect(key?.description).toContain('Required by the workflow')
   })
 
-  test('blank-argument mutation: blank values count as omitted, so composition names the missing argument', async () => {
+  test('blank-argument mutation: blank values count as omitted, so composition asks for the missing argument', async () => {
     upsertProject({
       name: 'prompt-fixture',
       path: process.cwd(),
@@ -94,7 +95,7 @@ describe('workflow prompts on the wire', () => {
     })
 
     expect(result.messages[0]?.content).toMatchObject({
-      text: expect.stringContaining('missing required arguments: key'),
+      text: expect.stringContaining('- key: The filed task key.'),
     })
   })
 })
