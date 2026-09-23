@@ -1,5 +1,6 @@
 ---
 title: Complete the review
+stage: review
 floor:
   - recorded-artifact
 job: null

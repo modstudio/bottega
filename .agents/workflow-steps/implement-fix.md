@@ -1,5 +1,6 @@
 ---
 title: Implement the diagnosed fix
+stage: implement
 floor:
   - recorded-artifact
 job: implement

@@ -1,5 +1,6 @@
 ---
 title: Fix
+stage: implement
 floor:
   - recorded-artifact
 job: issue-worker

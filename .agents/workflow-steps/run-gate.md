@@ -1,5 +1,6 @@
 ---
 title: Run the project gate
+stage: ship
 floor:
   - command-exit
 job: null

@@ -309,6 +309,13 @@
       "when": 1788900000037,
       "tag": "0043_lens_requires_execution",
       "breakpoints": true
+    },
+    {
+      "idx": 44,
+      "version": "6",
+      "when": 1788900000038,
+      "tag": "0044_workflow_cursor_autonomy",
+      "breakpoints": true
     }
   ]
 }

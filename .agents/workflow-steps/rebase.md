@@ -1,5 +1,6 @@
 ---
 title: Rebase and verify
+stage: ship
 floor:
   - command-exit
 job: null

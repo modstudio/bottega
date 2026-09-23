@@ -1,7 +1,8 @@
 ---
 title: Rule on every documentation deviation
+stage: docs
 floor:
-  - human-ruling
+  - ruling
 job: null
 autonomy: ask
 needs:

@@ -1,5 +1,6 @@
 ---
 title: Open the pull request
+stage: ship
 floor:
   - command-exit
   - recorded-artifact

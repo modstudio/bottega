@@ -35,6 +35,7 @@ import type { TrackerSettings } from '../../../shared/trackers.ts'
 import { db, nowIso, writableDb, writeTransaction } from '../database/db.ts'
 import { loadTrackedRecipe, recipePointerErrors } from '../recipe/recipe-loader.ts'
 import { recordApiClient } from '../record/record-api-client.ts'
+import { type AutonomySettings, validateAutonomySettings } from '../workflow/autonomy.ts'
 import {
   type ReadonlyProvision,
   validateReadonlyProvision,
@@ -86,6 +87,7 @@ export type Project = {
   settings: ProjectSettings
 }
 export type ProjectSettings = {
+  autonomy?: AutonomySettings
   /** Record space slug that owns this project's hosted evidence. */
   space?: string
   /**
@@ -572,6 +574,11 @@ export function validateProjectSettings(settings: ProjectSettings, projectPath?:
     ...trackedRecipeProblems(settings.worktree, projectPath),
     ...projectSpaceProblems(settings.space),
   ]
+  try {
+    validateAutonomySettings(settings.autonomy, 'project')
+  } catch (error) {
+    problems.push(error instanceof Error ? error.message : String(error))
+  }
 
   if (invalidOptionalStringArray(settings.secretPaths)) {
     problems.push('secretPaths must be an array of non-empty path strings')

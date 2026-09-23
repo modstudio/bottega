@@ -1,5 +1,6 @@
 ---
 title: "Check the task's acceptance criteria"
+stage: review
 floor:
   - recorded-artifact
 job: null

@@ -1,5 +1,6 @@
 ---
 title: Close the task
+stage: ship
 floor:
   - tracker-transition
 job: null

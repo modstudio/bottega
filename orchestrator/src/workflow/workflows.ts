@@ -5,7 +5,8 @@ import {
   resolveDeclaredFacts,
   unresolvedTrackerActionPlaceholder,
 } from '../project/project-injection.ts'
-import { productionStepCatalogue, showStepCatalogue } from './step-catalogue.ts'
+import { compatibleCatalogueStep, productionStepCatalogue, showStepCatalogue } from './step-catalogue.ts'
+import type { AutonomyResolution } from './autonomy.ts'
 import { type VersionEvent, versionedLifecycle } from './versioned-lifecycle.ts'
 
 type WorkflowArgument = { name: string; required: boolean; description: string }
@@ -407,6 +408,7 @@ export function composeWorkflow(
   args: Record<string, string> = {},
   d: Database = db(),
   selection: WorkflowSelection = {},
+  autonomy?: AutonomyResolution,
 ) {
   const row = selectedWorkflow(slug, selection.version, d),
     definition = row.definition,
@@ -440,7 +442,7 @@ export function composeWorkflow(
   }
   const selected =
     mode?.steps.map(
-      (stepSlug) => catalogue.definition.steps.find((step) => step.slug === stepSlug)!,
+      (stepSlug) => compatibleCatalogueStep(catalogue.definition.steps.find((step) => step.slug === stepSlug)!),
     ) ?? []
   const { resolved, facts } = resolveDeclaredFacts(
     project,
@@ -466,7 +468,8 @@ export function composeWorkflow(
           slug: step.slug,
           title: step.title,
           job: step.job,
-          autonomy: step.autonomy,
+          stage: step.stage,
+          autonomy: autonomy?.steps[step.slug] ?? { value: step.autonomy, scope: 'built-in' },
           floor: step.floor,
           needs: step.needs,
         }
@@ -478,6 +481,8 @@ export function composeWorkflow(
     },
     facts,
     needs,
+    rulings: autonomy?.rulings ?? { value: 'agent' as const, scope: 'built-in' },
+    autonomyNote: autonomy?.note,
   }
 }
 export function getWorkflowStep(
@@ -487,6 +492,7 @@ export function getWorkflowStep(
   args: Record<string, string> = {},
   d: Database = db(),
   selection: WorkflowSelection = {},
+  autonomy?: AutonomyResolution,
 ) {
   const row = selectedWorkflow(slug, selection.version, d),
     definition = row.definition,
@@ -496,7 +502,8 @@ export function getWorkflowStep(
       : undefined,
     containingModes = definition.modes.filter((mode) => mode.steps.includes(stepSlug)),
     referenced = selectedMode ? selectedMode.steps.includes(stepSlug) : containingModes.length > 0,
-    step = catalogue.definition.steps.find((item) => item.slug === stepSlug)
+    rawStep = catalogue.definition.steps.find((item) => item.slug === stepSlug),
+    step = rawStep ? compatibleCatalogueStep(rawStep) : undefined
   if (selection.mode && !selectedMode)
     throw new Error(`workflow "${slug}" has no mode "${selection.mode}"`)
   if (!referenced || !step) throw new Error(`workflow "${slug}" has no step "${stepSlug}"`)
@@ -547,6 +554,7 @@ export function getWorkflowStep(
       : undefined
   return {
     ...step,
+    autonomy: autonomy?.steps[step.slug] ?? { value: step.autonomy, scope: 'built-in' },
     workflow: slug,
     version: row.n,
     catalogueVersion: catalogue.n,

@@ -1,5 +1,6 @@
 ---
 title: Fix accepted findings
+stage: review
 floor:
   - command-exit
   - recorded-artifact

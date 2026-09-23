@@ -1,5 +1,6 @@
 ---
 title: Apply the documentation dispositions
+stage: docs
 floor:
   - command-exit
   - recorded-artifact

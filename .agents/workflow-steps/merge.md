@@ -1,5 +1,6 @@
 ---
 title: Merge and pull
+stage: ship
 floor:
   - command-exit
   - recorded-artifact

@@ -1,5 +1,6 @@
 ---
 title: Merge the pull request
+stage: ship
 floor:
   - command-exit
   - recorded-artifact

@@ -5,12 +5,13 @@ import { db, writableDb } from '../database/db.ts'
 import { JOBS } from '../jobs/jobs.ts'
 import { type InjectionSource, injectionSources } from '../project/project-injection.ts'
 import { versionedLifecycle } from './versioned-lifecycle.ts'
+import { type AutonomyStage, autonomyStages, type AutonomyValue, autonomyValues } from './autonomy.ts'
 
 const proofKinds = [
   'command-exit',
   'recorded-artifact',
   'tracker-transition',
-  'human-ruling',
+  'ruling',
 ] as const
 type ProofKind = (typeof proofKinds)[number]
 export type CatalogueStep = {
@@ -19,7 +20,9 @@ export type CatalogueStep = {
   body: string
   floor: ProofKind[]
   job: string | null
-  autonomy: 'auto' | 'ask' | 'manual'
+  /** Optional only when reading a stored catalogue created before stages existed. */
+  stage?: AutonomyStage
+  autonomy: AutonomyValue
   needs: InjectionSource[]
 }
 type StepCatalogueDefinition = { steps: CatalogueStep[] }
@@ -58,8 +61,20 @@ function validateIdentity(
   if (typeof item.body !== 'string') errors.push(`step "${slug}" body must be a string`)
   if (item.job !== null && (typeof item.job !== 'string' || !(item.job in JOBS)))
     errors.push(`step "${slug}" names unknown job "${String(item.job)}"`)
-  if (!['auto', 'ask', 'manual'].includes(String(item.autonomy)))
+  if (!(autonomyValues as readonly string[]).includes(String(item.autonomy)))
     errors.push(`step "${slug}" has invalid autonomy "${String(item.autonomy)}"`)
+  if (!(autonomyStages as readonly string[]).includes(String(item.stage)))
+    errors.push(`step "${slug}" has invalid or missing stage "${String(item.stage)}"`)
+}
+
+/** Stored catalogue history remains readable without being revalidated. */
+export function compatibleCatalogueStep(step: CatalogueStep): CatalogueStep {
+  const legacy = step as CatalogueStep & { autonomy: AutonomyValue | 'manual'; floor: string[] }
+  return {
+    ...step,
+    autonomy: legacy.autonomy === 'manual' ? 'ask' : legacy.autonomy,
+    floor: legacy.floor.map((kind) => (kind === 'human-ruling' ? 'ruling' : kind)) as CatalogueStep['floor'],
+  }
 }
 
 function validateFloor(item: Record<string, unknown>, errors: string[]): void {

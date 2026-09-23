@@ -1,7 +1,8 @@
 ---
 title: Approve the plan
+stage: plan
 floor:
-  - human-ruling
+  - ruling
 job: null
 autonomy: ask
 needs:

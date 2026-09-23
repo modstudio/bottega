@@ -1,5 +1,6 @@
 ---
 title: Promote the release
+stage: ship
 floor:
   - command-exit
   - recorded-artifact

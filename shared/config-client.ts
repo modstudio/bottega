@@ -65,15 +65,16 @@ type ConfigIdentity = { user: { id: string }; activeSpaceId: string | null }
 export type ConfigClient = ReturnType<typeof createConfigClient>
 type Transport = typeof fetch
 
-function createConfigClient(baseUrl: string, token: string, transport: Transport) {
+function createConfigClient(baseUrl: string, token: string, transport: Transport, signal?: AbortSignal) {
   const request = async <T>(route: string, init: RequestInit = {}): Promise<T> => {
     const headers = new Headers(init.headers)
     headers.set('authorization', `Bearer ${token}`)
     if (init.body) headers.set('content-type', 'application/json')
     let response: Response
     try {
-      response = await transport(`${baseUrl}${route}`, { ...init, headers })
+      response = await transport(`${baseUrl}${route}`, { ...init, headers, signal: init.signal ?? signal })
     } catch {
+      if (signal?.aborted) throw signal.reason
       throw new ConfigClientError('unreachable', route)
     }
     if (!response.ok) throw new ConfigClientError('response', route, response.status)
@@ -178,10 +179,11 @@ export function configClient(
   env: Record<string, string | undefined> = process.env,
   transport: Transport = fetch,
   token?: string | null,
+  signal?: AbortSignal,
 ): ConfigClient {
   const url = env.ORCH_RECORD_API_URL
   if (!url) throw new ConfigClientError('not-configured', '/v1/config')
   const resolvedToken = token === undefined ? readRecordSessionToken() : token
   if (!resolvedToken) throw new ConfigClientError('not-configured', '/v1/config')
-  return createConfigClient(url.replace(/\/$/, ''), resolvedToken, transport)
+  return createConfigClient(url.replace(/\/$/, ''), resolvedToken, transport, signal)
 }

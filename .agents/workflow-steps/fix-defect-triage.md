@@ -1,7 +1,8 @@
 ---
 title: Triage findings
+stage: review
 floor:
-  - human-ruling
+  - ruling
 job: null
 autonomy: ask
 needs:

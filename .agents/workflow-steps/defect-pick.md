@@ -1,5 +1,6 @@
 ---
 title: Pick one defect
+stage: plan
 floor:
   - recorded-artifact
 job: null

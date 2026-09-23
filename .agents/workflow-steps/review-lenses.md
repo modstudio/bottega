@@ -1,5 +1,6 @@
 ---
 title: Run independent review lenses
+stage: review
 floor:
   - recorded-artifact
 job: review-lens

@@ -1,5 +1,6 @@
 ---
 title: Score the lenses
+stage: review
 floor:
   - recorded-artifact
 job: null
