@@ -13,7 +13,7 @@ export type UnjudgedRun = {
   run_last_activity: string
 }
 
-const UNJUDGED_EXCLUSION_REASON = 'unjudged: owner gone'
+export const UNJUDGED_EXCLUSION_REASON = 'unjudged: owner gone'
 
 export function unjudgedRuns(projectName: string | null): UnjudgedRun[] {
   return db()

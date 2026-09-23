@@ -433,6 +433,7 @@ export const importBoundaries: ImportBoundary[] = [
       'node:fs',
       '../../shared/record/schema.ts',
       './database/db.ts',
+      './evidence/unjudged-expiry.ts',
       './score/duel.ts',
       './jobs/jobs.ts',
       './record/machine-identity.ts',
