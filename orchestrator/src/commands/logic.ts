@@ -44,7 +44,7 @@ import {
 } from '../review/review-vocabulary.ts'
 import { answerCommand, continueCommand, retryCommand } from '../run/run-message-commands.ts'
 import { workflowCommand } from '../workflow/workflow-commands.ts'
-import { ORCH_DO_VALUE_OPTIONS } from './do-options.ts'
+import { ORCH_DO_OPTIONS } from './do-options.ts'
 import { collect, log, productArgv, rawArgv, write, writeStdout } from './support.ts'
 
 const presentation = {
@@ -280,28 +280,18 @@ export function register(program: Command): void {
       continueCommand(Number(id), rawArgv(command).slice(2), runFlags(options), presentation),
     )
   const doVerb = program.command('do <job> [prompt...]')
-  for (const option of ORCH_DO_VALUE_OPTIONS) {
-    const placeholder = 'placeholder' in option ? option.placeholder : 'value'
-    const flags = `--${option.name} ${option.value === 'required' ? `<${placeholder}>` : `[${placeholder}]`}`
-    if (option.name === 'deliverable') doVerb.option(flags, '', collect, [])
-    else doVerb.option(flags)
+  for (const option of ORCH_DO_OPTIONS) {
+    if ('name' in option && option.name === 'deliverable')
+      doVerb.option(option.flags, '', collect, [])
+    else doVerb.option(option.flags)
   }
-  doVerb
-    .option('--carry')
-    .option('--quiet')
-    .option('--probe')
-    .option('--follow')
-    .option('--detach')
-    .option('--porcelain')
-    .option('--no-failover')
-    .option('--no-wait-capacity')
-    .action((_job, _prompt, _options, command) =>
-      doCommand(rawArgv(command), {
-        error: console.error,
-        printRunId: (id) => write(`${id}\n`),
-        cwd: process.cwd,
-      }),
-    )
+  doVerb.action((_job, _prompt, _options, command) =>
+    doCommand(rawArgv(command), {
+      error: console.error,
+      printRunId: (id) => write(`${id}\n`),
+      cwd: process.cwd,
+    }),
+  )
   program
     .command('pick <job>')
     .option('--agent <value>')
