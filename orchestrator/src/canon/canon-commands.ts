@@ -297,7 +297,7 @@ function canonDiffCommand(
       presentation.log(`  changed ${doc.slug} revision ${doc.fromRevision} -> ${doc.toRevision}`)
   }
   if (!flags.has('accept')) return
-  const accepted = acceptPackDiff({ diff: result, cwd: input.cwd })
+  const accepted = acceptPackDiff(result)
   if (accepted) {
     presentation.log(
       `accepted canon ${accepted.job}/${accepted.project ?? '_'}: stored ${accepted.docs.length} docs, ${accepted.bytes} bytes`,

@@ -577,25 +577,17 @@ export type PackDiff = {
   bytesDelta: number
 }
 
-export function acceptPackDiff(input: { diff: PackDiff; cwd: string }): Pack | null {
-  const { diff, cwd } = input
-  if (
-    diff.added.length === 0 &&
-    diff.removed.length === 0 &&
-    diff.changed.length === 0 &&
-    diff.bytesDelta === 0
-  ) {
-    return null
-  }
+/** Store the pack the diff compiled as the new snapshot; null when it matches the stored one. */
+export function acceptPackDiff(diff: PackDiff): Pack | null {
+  if (diff.stored?.sha256 === diff.current.sha256) return null
   if (linkedWorktreeReadOnly) {
     throw new Error(
       'refusing canon acceptance: linked-worktree binary has read-only store access\n' +
         "remedy: run this command with the main checkout's bin/orch",
     )
   }
-  const pack = compilePack({ job: diff.job, cwd })
-  recordPack(pack)
-  return pack
+  recordPack(diff.current)
+  return diff.current
 }
 
 export function diffPack(input: { job: string; cwd: string }): PackDiff {
