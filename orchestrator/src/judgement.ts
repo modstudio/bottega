@@ -212,7 +212,7 @@ function scoredVoidFidelity(
   return needsFidelity ? fidelity : undefined
 }
 
-function enqueueVoidedRunRecord(id: number): void {
+function enqueueTerminalRunRecord(id: number): void {
   const row = db()
     .query<{ record_id: string | null; finished_at: string }, [number]>(
       `SELECT record_id, COALESCE(last_event_at, started_at) AS finished_at FROM run
@@ -220,6 +220,20 @@ function enqueueVoidedRunRecord(id: number): void {
     )
     .get(id)
   if (row?.record_id) enqueueRunRecord(db(), id, machineId(), row.finished_at)
+}
+
+function clearUnjudgedOwnerExclusion(id: number): boolean {
+  return (
+    db()
+      .query(
+        "UPDATE run SET evidence_excluded=NULL WHERE id=? AND evidence_excluded='unjudged: owner gone'",
+      )
+      .run(id).changes > 0
+  )
+}
+
+function reviveUnjudgedOwnerEvidence(id: number): void {
+  if (clearUnjudgedOwnerExclusion(id)) enqueueTerminalRunRecord(id)
 }
 
 type EvidenceExclusion = 'void' | 'blocked-by-tree'
@@ -288,7 +302,7 @@ function recordEvidenceExclusion(
       )
       enqueueScoreRecord(db(), id, machineId())
     }
-    enqueueVoidedRunRecord(id)
+    enqueueTerminalRunRecord(id)
     auditRunMutation(authority, 'void', options.auditReason)
   })
   if (blocked) {
@@ -487,6 +501,7 @@ export async function judgeRun(
       reviewId = gradeReviewLens(id, parsedOutput, gradeValues as ReviewGrades)
     }
     recordScoreVerdict(id, delivery!, quality ?? null, scoredFidelity, note, scoredAt, scorer)
+    reviveUnjudgedOwnerEvidence(id)
     if (reviewId) {
       if (delivery === 'none') {
         db().query('UPDATE review SET completed_at=? WHERE id=?').run(scoredAt, reviewId)
@@ -817,6 +832,7 @@ export async function scoreRun(
       scoredAt,
       recordedBy,
     )
+    reviveUnjudgedOwnerEvidence(id)
     auditRunMutation(scoreAuthority, wasScored ? 'rescore' : 'score', options.auditReason)
     enqueueScoreRecord(db(), id, machineId())
   })
