@@ -17,7 +17,6 @@ import {
   diffNumstat,
   parseTierRange,
   resolveTierRange,
-  selectReviewTierRepo,
   type TierRangeEndpoint,
 } from './review-tier.ts'
 import {
@@ -130,7 +129,7 @@ function resolveTierTarget(value: string): { repo: string; from: string; to: str
       `cannot resolve the caller's git top-level: ${topLevel.stderr.toString().trim() || `git rev-parse exited ${topLevel.exitCode}`}; run review tier from a git checkout of project ${project.name}`,
     )
   }
-  const repo = selectReviewTierRepo(topLevel.stdout.toString().trim(), project.path)
+  const repo = topLevel.stdout.toString().trim()
   const range = parseTierRange(value)
   if (range && 'refusal' in range) throw new Error(range.refusal)
   if (range) {
