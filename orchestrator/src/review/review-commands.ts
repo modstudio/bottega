@@ -3,6 +3,7 @@
 import { Database } from 'bun:sqlite'
 import { existsSync, readFileSync } from 'node:fs'
 import { z } from 'zod'
+import { gitToplevel } from '../../../shared/git.ts'
 import { DB_PATH, db } from '../database/db.ts'
 import { targetGitEnvironment } from '../git/git-environment.ts'
 import { job } from '../jobs/jobs.ts'
@@ -118,7 +119,12 @@ function resolveTierTarget(value: string): { repo: string; from: string; to: str
 
   const project = projectAt(process.cwd())
   if (!project) throw new Error('review tier target is not inside a registered project')
-  const repo = project.path
+  const repo = gitToplevel(process.cwd())
+  if (!repo) {
+    throw new Error(
+      `cannot resolve the caller's git top-level; run review tier from a git checkout of project ${project.name}`,
+    )
+  }
   const range = parseTierRange(value)
   if (range && 'refusal' in range) throw new Error(range.refusal)
   if (range) {
