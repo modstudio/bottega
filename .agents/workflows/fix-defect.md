@@ -6,10 +6,10 @@ arguments:
     description: The filed task key.
   - name: branch
     required: false
-    description: The branch carrying the fix, known once implement-fix has created its worktree; needed from run-gate on.
+    description: "The branch carrying the fix, known once implement-fix has created its worktree; needed from run-gate on."
   - name: worktree
     required: false
-    description: The fix branch's worktree path, known once implement-fix has created it; needed from run-gate on.
+    description: "The fix branch's worktree path, known once implement-fix has created it; needed from run-gate on."
   - name: signal
     required: false
     description: The production signal source or query from which a cohort is drawn.
@@ -44,7 +44,7 @@ modes:
       - close-task
   - slug: cohort
     title: Fix a root-cause cohort
-    entry: Which production signal should be grouped by root cause, and under which task key?
+    entry: "Which production signal should be grouped by root cause, and under which task key?"
     requires:
       - key
       - signal
