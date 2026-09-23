@@ -80,6 +80,21 @@ beforeEach(() => {
 })
 
 describe('score ruling', () => {
+  test('an owner score revives evidence expired while no judgement was available', async () => {
+    const id = insert()
+    db().query("UPDATE run SET evidence_excluded='unjudged: owner gone' WHERE id=?").run(id)
+
+    await score(id, ['full', 'right'])
+
+    expect(
+      db()
+        .query(
+          'SELECT run.evidence_excluded, score.delivery, score.quality FROM run JOIN score ON score.run_id=run.id WHERE run.id=?',
+        )
+        .get(id),
+    ).toEqual({ evidence_excluded: null, delivery: 'full', quality: 'right' })
+  })
+
   test('a leaf id scores the root of its conversation', async () => {
     const root = insert()
     const child = insert()

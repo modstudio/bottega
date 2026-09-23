@@ -17,7 +17,62 @@ import {
   type RecordedRunPointerFacts,
   type RecordedRunPostInventoryFacts,
   type RecordedRunPreInventoryFacts,
+  shouldExpireUnjudgedOwner,
+  UNJUDGED_OWNER_WINDOW_MS,
 } from './cleanup-sweep-decisions.ts'
+
+describe('unjudged owner expiry', () => {
+  const now = Date.parse('2026-09-23T12:00:00.000Z')
+  const windowMs = UNJUDGED_OWNER_WINDOW_MS
+
+  test('expires a run with no owner', () => {
+    expect(
+      shouldExpireUnjudgedOwner({
+        ownerSessionId: null,
+        ownerLastSeenAt: null,
+        runLastActivityAt: now,
+        now,
+        windowMs,
+      }),
+    ).toBe(true)
+  })
+
+  test('keeps an old run whose owner was seen within the window', () => {
+    expect(
+      shouldExpireUnjudgedOwner({
+        ownerSessionId: 'owner',
+        ownerLastSeenAt: now - windowMs + 1,
+        runLastActivityAt: now - windowMs * 2,
+        now,
+        windowMs,
+      }),
+    ).toBe(false)
+  })
+
+  test('expires a run whose owner was unseen beyond the window', () => {
+    expect(
+      shouldExpireUnjudgedOwner({
+        ownerSessionId: 'owner',
+        ownerLastSeenAt: now - windowMs - 1,
+        runLastActivityAt: now - windowMs * 2,
+        now,
+        windowMs,
+      }),
+    ).toBe(true)
+  })
+
+  test('keeps recent run activity when the owner has no session-seen row', () => {
+    expect(
+      shouldExpireUnjudgedOwner({
+        ownerSessionId: 'owner',
+        ownerLastSeenAt: null,
+        runLastActivityAt: now - windowMs + 1,
+        now,
+        windowMs,
+      }),
+    ).toBe(false)
+  })
+})
 
 describe('sweep candidate selection', () => {
   test('includes terminal held and failed close-outs after their pointer is cleared', () => {

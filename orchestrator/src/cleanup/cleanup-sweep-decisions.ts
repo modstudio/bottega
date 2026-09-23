@@ -1,5 +1,22 @@
 // concern: cleanup-sweep-decisions
 
+export const UNJUDGED_OWNER_WINDOW_MS = 3 * 24 * 60 * 60 * 1000
+
+export type UnjudgedOwnerFacts = {
+  ownerSessionId: string | null
+  ownerLastSeenAt: number | null
+  runLastActivityAt: number
+  now: number
+  windowMs: number
+}
+
+/** Decide whether an owed judgement still has a live-enough owner to provide it. */
+export function shouldExpireUnjudgedOwner(facts: UnjudgedOwnerFacts): boolean {
+  if (facts.ownerSessionId === null) return true
+  const ownerLastActivity = Math.max(facts.ownerLastSeenAt ?? -Infinity, facts.runLastActivityAt)
+  return facts.now - ownerLastActivity > facts.windowMs
+}
+
 export function isSweepCandidate(input: {
   status: string
   worktree: string | null

@@ -4,6 +4,7 @@ import { join, resolve } from 'node:path'
 import { pidAlive } from '../../../shared/process-identity.ts'
 import { closeOutRun, releaseSandboxDirectoryForConversation } from '../close/close-out.ts'
 import { db, sessionId, writableDb, writeTransaction } from '../database/db.ts'
+import { expireUnjudgedRun, unjudgedRuns } from '../evidence/unjudged-expiry.ts'
 import { shouldSweepHookTree } from '../hook-tree/hook-tree.ts'
 import { observeLandingTreeRelease } from '../landing-tree/release-observation.ts'
 import { projectAt, projectByName, projects } from '../project/projects.ts'
@@ -50,6 +51,8 @@ import {
   decideRecordedRunPreInventory,
   isSweepCandidate,
   type RecordedRunPostInventoryFacts,
+  shouldExpireUnjudgedOwner,
+  UNJUDGED_OWNER_WINDOW_MS,
 } from './cleanup-sweep-decisions.ts'
 import { pruneSweptProjectBranches, reclaimAbsentTrustEntries } from './cleanup-sweep-reclaim.ts'
 
@@ -272,6 +275,36 @@ function sweepTerminalRunLeases(dry: boolean): void {
   }
 }
 
+function sweepUnjudgedRuns(
+  dry: boolean,
+  selectedProject: { name: string } | null,
+  presentation: CleanupPresentation,
+): void {
+  const now = Date.now()
+  let expired = 0
+  let kept = 0
+  for (const row of unjudgedRuns(selectedProject?.name ?? null)) {
+    const shouldExpire = shouldExpireUnjudgedOwner({
+      ownerSessionId: row.session_id,
+      ownerLastSeenAt: row.session_last_seen === null ? null : Date.parse(row.session_last_seen),
+      runLastActivityAt: Date.parse(row.run_last_activity),
+      now,
+      windowMs: UNJUDGED_OWNER_WINDOW_MS,
+    })
+    if (!shouldExpire) {
+      kept++
+      continue
+    }
+    if (dry || expireUnjudgedRun(row, shouldExpireUnjudgedOwner, UNJUDGED_OWNER_WINDOW_MS)) {
+      expired++
+      presentation.log(`${dry ? 'would expire' : 'expired'} unjudged run ${row.id}`)
+    } else {
+      kept++
+    }
+  }
+  presentation.log(`\n${dry ? 'would expire' : 'expired'} unjudged ${expired}, kept ${kept}`)
+}
+
 type RecordedSweepState = {
   cleanupFailed: boolean
   inventoryErrors: Set<string>
@@ -431,6 +464,7 @@ export async function sweepRuns(options: SweepOptions, helpers: SweepHelpers): P
     throw new Error(`unknown project ${projectName}`)
   const sweepProjects = selectedProject ? [selectedProject] : projects()
   if (!dry) writableDb()
+  sweepUnjudgedRuns(dry, selectedProject, options.presentation)
   const rows = (
     db()
       .query(
