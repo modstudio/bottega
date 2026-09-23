@@ -244,6 +244,7 @@ if (
     './scripts/check-runtime.test.ts',
     './scripts/check-outcome.test.ts',
     './scripts/check-comment-hygiene.test.ts',
+    './scripts/check-cascade-preservation.test.ts',
     './scripts/check-test-placement.test.ts',
     './scripts/check-file-ceiling.test.ts',
     './scripts/check-cognitive-ceiling.test.ts',
@@ -276,6 +277,7 @@ printFailedLegTails(results)
 const gateSteps: GateStepResult[] = [...results]
 const staticChecks: StaticCheck[] = [
   staticCheck('scripts/check-machine-state.ts'),
+  staticCheck('scripts/check-cascade-preservation.ts'),
   staticCheck('scripts/check-postgres-migrations.ts'),
   staticCheck('scripts/check-hosted-hub-server-boundary.ts'),
   staticCheck('scripts/check-architecture.ts'),
