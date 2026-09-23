@@ -369,6 +369,16 @@ describe('project config document', () => {
     expect(
       configDocumentSchema.safeParse({ $schema: 'schema.json', worktree: minimal() }).success,
     ).toBe(true)
+    expect(
+      configDocumentSchema.safeParse({
+        worktree: { ...minimal(), relativePaths: true },
+      }).success,
+    ).toBe(true)
+    expect(
+      configDocumentSchema.safeParse({
+        worktree: { ...minimal(), relativePaths: 'true' },
+      }).success,
+    ).toBe(false)
   })
 
   test('accepts a document with no worktree lifecycle', () => {

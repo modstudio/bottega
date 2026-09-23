@@ -1,6 +1,14 @@
 /** Worktree provisioning places declared dependency paths without knowing reader or writer lifecycles. */
-import { existsSync, lstatSync, mkdirSync, readdirSync, realpathSync, symlinkSync } from 'node:fs'
-import { dirname, join, sep } from 'node:path'
+import {
+  existsSync,
+  lstatSync,
+  mkdirSync,
+  readdirSync,
+  realpathSync,
+  statSync,
+  symlinkSync,
+} from 'node:fs'
+import { dirname, join, relative, sep } from 'node:path'
 
 type ProvisionEntry = { path: string; method: 'link' | 'clone' }
 export type WorktreeProvision = ProvisionEntry[]
@@ -32,6 +40,18 @@ function escapesTree(tree: string, target: string): boolean {
   return resolved !== root && !resolved.startsWith(root + sep)
 }
 
+function linkProvision(source: string, target: string): void {
+  if (!statSync(source).isDirectory()) {
+    symlinkSync(relative(dirname(target), source), target)
+    return
+  }
+  mkdirSync(target)
+  for (const entry of readdirSync(source)) {
+    const entryTarget = join(target, entry)
+    symlinkSync(relative(dirname(entryTarget), join(source, entry)), entryTarget)
+  }
+}
+
 /** Place declared dependencies and report entries deliberately left alone. */
 export function provisionWorktree(
   main: string,
@@ -57,10 +77,7 @@ export function provisionWorktree(
     }
     mkdirSync(dirname(target), { recursive: true })
     if (provision.method === 'link') {
-      mkdirSync(target)
-      for (const entry of readdirSync(source)) {
-        symlinkSync(join(source, entry), join(target, entry))
-      }
+      linkProvision(source, target)
       continue
     }
     const copy = Bun.spawnSync(['cp', '-c', '-R', source, target], {
