@@ -83,19 +83,6 @@ function findCursor(
   return row
 }
 
-function findCursorForCall(
-  project: string,
-  workflow: string,
-  mode: string,
-  args: Record<string, string>,
-  context: WorkflowCursorContext,
-  d: Database,
-): CursorRow | null {
-  const exact = findCursor(project, workflow, mode, args, context, d)
-  if (exact || !keyOf(args) || (!context.session && !context.instance)) return exact
-  return findCursor(project, workflow, mode, {}, context, d)
-}
-
 export type CursorArgumentDecision =
   | { action: 'merge'; args: Record<string, string> }
   | { action: 'refuse'; reason: string }
@@ -291,7 +278,7 @@ function getWorkflowStepWithCursorImpl(
   context: WorkflowCursorContext,
   d: Database = writableDb(),
 ) {
-  let row = findCursorForCall(project, slug, mode, args, context, d)
+  let row = findCursor(project, slug, mode, args, context, d)
   const startDecision = decideCursorStart(row?.state ?? null)
   if (row && startDecision === 'reuse') applyCursorArguments(row, args, d)
   const { effectiveArgs, selection } = cursorCompositionInput(row, args, mode)
@@ -353,7 +340,7 @@ function nextWorkflowStepImpl(
   context: WorkflowCursorContext,
   d: Database = writableDb(),
 ): string {
-  const row = findCursorForCall(project, slug, mode, args, context, d)
+  const row = findCursor(project, slug, mode, args, context, d)
   if (!row)
     throw new Error(`workflow ${slug} for ${keyOf(args)} has no cursor; compose the workflow first`)
   if (row.state === 'done' || row.state === 'abandoned')

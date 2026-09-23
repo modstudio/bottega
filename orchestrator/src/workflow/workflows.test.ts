@@ -190,6 +190,38 @@ describe('workflow versions and project composition', () => {
     ).toBe('complete')
   })
 
+  test('a mode-less step fetch applies requirements from every containing mode', () => {
+    const d = database()
+    const draft = setWorkflow(
+      'mode-less-arguments',
+      {
+        title: 'Mode-less arguments',
+        description: 'Exercises mode-less step arguments.',
+        arguments: [{ name: 'key', required: false, description: 'Task key.' }],
+        modes: [
+          {
+            slug: 'a',
+            title: 'A',
+            default: true,
+            requires: ['key'],
+            steps: ['complete'],
+          },
+          { slug: 'b', title: 'B', steps: ['complete'] },
+          { slug: 'c', title: 'C', steps: ['score'] },
+        ],
+      },
+      'mode-less argument fixture',
+      'test',
+      d,
+    )
+    promoteWorkflow('mode-less-arguments', draft.n, 'publish', 'test', d)
+
+    expect(() => getWorkflowStep('mode-less-arguments', 'fixture', 'complete', {}, d)).toThrow(
+      'missing required arguments: key',
+    )
+    expect(getWorkflowStep('mode-less-arguments', 'fixture', 'score', {}, d).slug).toBe('score')
+  })
+
   test('compose uses a requested draft workflow version instead of production', () => {
     const d = database(),
       draft = setWorkflow(

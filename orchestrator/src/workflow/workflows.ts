@@ -386,14 +386,14 @@ const selectedCatalogue = (version: number | undefined, d: Database) =>
 
 function missingWorkflowArguments(
   definition: WorkflowDefinition,
-  mode: WorkflowMode | undefined,
+  modes: WorkflowMode[],
   args: Record<string, string>,
 ): { name: string; description: string }[] {
   const required = new Set([
     ...definition.arguments
       .filter((argument) => argument.required)
       .map((argument) => argument.name),
-    ...(mode?.requires ?? []),
+    ...modes.flatMap((mode) => mode.requires ?? []),
   ])
   return definition.arguments
     .filter((argument) => required.has(argument.name) && !args[argument.name]?.trim())
@@ -427,7 +427,7 @@ export function composeWorkflow(
       )
     : null
   if (refusal) throw new Error(refusal)
-  const missing = missingWorkflowArguments(definition, mode, args)
+  const missing = missingWorkflowArguments(definition, mode ? [mode] : [], args)
   if (missing.length) needs.arguments = missing
   const projectRow = d
     .query('SELECT name,stack,settings FROM project WHERE name=? AND retired_at IS NULL')
@@ -500,7 +500,11 @@ export function getWorkflowStep(
   if (selection.mode && !selectedMode)
     throw new Error(`workflow "${slug}" has no mode "${selection.mode}"`)
   if (!referenced || !step) throw new Error(`workflow "${slug}" has no step "${stepSlug}"`)
-  const missing = missingWorkflowArguments(definition, selectedMode, args)
+  const missing = missingWorkflowArguments(
+    definition,
+    selectedMode ? [selectedMode] : containingModes,
+    args,
+  )
   if (missing.length)
     throw new Error(`missing required arguments: ${missing.map(({ name }) => name).join(', ')}`)
   const projectRow = d
