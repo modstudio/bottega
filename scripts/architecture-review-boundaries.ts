@@ -38,6 +38,7 @@ export const reviewBoundarySpecs: ReviewBoundarySpec[] = [
       'bun:sqlite',
       'node:fs',
       'zod',
+      '../../../shared/git.ts',
       '../database/db.ts',
       '../git/git-environment.ts',
       '../jobs/jobs.ts',
