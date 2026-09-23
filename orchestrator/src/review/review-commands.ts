@@ -3,6 +3,7 @@
 import { Database } from 'bun:sqlite'
 import { existsSync, readFileSync } from 'node:fs'
 import { z } from 'zod'
+import { gitToplevel } from '../../../shared/git.ts'
 import { DB_PATH, db } from '../database/db.ts'
 import { targetGitEnvironment } from '../git/git-environment.ts'
 import { job } from '../jobs/jobs.ts'
@@ -118,18 +119,12 @@ function resolveTierTarget(value: string): { repo: string; from: string; to: str
 
   const project = projectAt(process.cwd())
   if (!project) throw new Error('review tier target is not inside a registered project')
-  const topLevel = Bun.spawnSync(['git', 'rev-parse', '--show-toplevel'], {
-    cwd: process.cwd(),
-    env: targetGitEnvironment(process.cwd()),
-    stdout: 'pipe',
-    stderr: 'pipe',
-  })
-  if (topLevel.exitCode !== 0) {
+  const repo = gitToplevel(process.cwd())
+  if (!repo) {
     throw new Error(
-      `cannot resolve the caller's git top-level: ${topLevel.stderr.toString().trim() || `git rev-parse exited ${topLevel.exitCode}`}; run review tier from a git checkout of project ${project.name}`,
+      `cannot resolve the caller's git top-level; run review tier from a git checkout of project ${project.name}`,
     )
   }
-  const repo = topLevel.stdout.toString().trim()
   const range = parseTierRange(value)
   if (range && 'refusal' in range) throw new Error(range.refusal)
   if (range) {
