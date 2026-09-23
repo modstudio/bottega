@@ -16,6 +16,20 @@ function resolveReviewMergeBase(cwd: string, commit: string, trunk: string): str
   return gitContext(cwd, 'merge-base', commit, trunkCommit)
 }
 
+export function emptyReviewRefusal(
+  commit: string,
+  base: string,
+  ref: string,
+  trunk: string,
+): string | null {
+  if (commit !== base) return null
+  return (
+    `refused: --review ${ref} resolves to ${commit.slice(0, 8)}, which is already on ${trunk}, ` +
+    `so there is no change to review. Pass the branch under review (the ref whose commits are not ` +
+    `on ${trunk}), not its base.`
+  )
+}
+
 /** Coverage base for a findings job dispatched without --review. Null if unmeasurable. */
 export function implicitReviewCoverageBase(cwd: string): string | null {
   const trunk = projectAt(cwd)?.settings.trunk?.trim()
@@ -61,6 +75,8 @@ export function resolveReviewTarget(
   if (!base) {
     throw new Error(`cannot find merge-base between review target ${branch} and trunk ${trunk}`)
   }
+  const refusal = emptyReviewRefusal(commit, base, reviewRef, trunk)
+  if (refusal) throw new Error(refusal)
   return { branch, commit, base }
 }
 
