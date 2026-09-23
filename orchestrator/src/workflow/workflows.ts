@@ -5,11 +5,7 @@ import {
   resolveDeclaredFacts,
   unresolvedTrackerActionPlaceholder,
 } from '../project/project-injection.ts'
-import {
-  type AutonomyResolution,
-  catalogueStepsForAutonomy,
-  resolveAutonomy,
-} from './autonomy.ts'
+import { type AutonomyResolution, catalogueStepsForAutonomy, resolveAutonomy } from './autonomy.ts'
 import {
   compatibleCatalogueStep,
   productionStepCatalogue,

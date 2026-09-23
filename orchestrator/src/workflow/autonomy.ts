@@ -1,12 +1,11 @@
 // concern: workflows
 /** Owns the pure workflow-autonomy vocabulary, parsing, resolution, and decisions. */
 
-import type { CatalogueStep } from './step-catalogue.ts'
-
 export const autonomyStages = ['plan', 'implement', 'review', 'docs', 'canon', 'ship'] as const
 export const autonomyValues = ['ask', 'review', 'auto'] as const
 export type AutonomyStage = (typeof autonomyStages)[number]
 export type AutonomyValue = (typeof autonomyValues)[number]
+type CatalogueStep = { slug: string; stage?: AutonomyStage; autonomy: AutonomyValue }
 export type AutonomySettings = {
   preset?: 'manual' | 'guided' | 'autonomous'
   stages?: Partial<Record<AutonomyStage, AutonomyValue>>
@@ -16,6 +15,7 @@ export type AutonomySettings = {
 export type AutonomyResolution = {
   steps: Record<string, { value: AutonomyValue; scope: string }>
   rulings: RulingsResolution
+  hosted?: { status: 'available' | 'not-configured' | 'unavailable'; reason?: string }
   note?: string
   session?: AutonomySettings
 }

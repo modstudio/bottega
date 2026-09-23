@@ -161,10 +161,12 @@ export const modules: ArchitectureModule[] = [
   module('orchestrator/src/workflow/autonomy-scopes.ts', [
     'bun:sqlite',
     '../../../shared/config-client.ts',
+    '../../../shared/config-directory.ts',
     '../../../shared/machine-config.ts',
     '../database/db.ts',
     '../project/projects.ts',
     './autonomy.ts',
+    './step-catalogue.ts',
   ]),
   module('orchestrator/src/workflow/workflow-cursor-transition.ts', []),
   module('orchestrator/src/workflow/workflow-cursor.ts', [

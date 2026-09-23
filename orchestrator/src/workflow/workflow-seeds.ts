@@ -3,13 +3,13 @@
  * Must not know workflow commands, adapters, execution, or project state. */
 import type { Database } from 'bun:sqlite'
 import { nowIso, writeTransaction } from '../database/db.ts'
-import type { AutonomyStage, AutonomyValue } from './autonomy.ts'
 import {
   REVIEW_COVERAGE,
   REVIEW_LIMITS,
   REVIEW_OVERLAP,
   REVIEW_REPRODUCED,
 } from '../review/review-vocabulary.ts'
+import type { AutonomyStage, AutonomyValue } from './autonomy.ts'
 
 const seedDefinition = (definition: unknown) => JSON.stringify(definition)
 

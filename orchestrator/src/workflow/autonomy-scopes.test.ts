@@ -1,8 +1,8 @@
 import { Database } from 'bun:sqlite'
+import { expect, test } from 'bun:test'
 import { mkdtempSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { expect, test } from 'bun:test'
 import { ConfigClientError, configClient } from '../../../shared/config-client.ts'
 import { applyMigrations } from '../database/migrations.ts'
 import { answerRulingRefusal } from './autonomy.ts'
@@ -43,7 +43,12 @@ test('hosted failures are visible and leave rulings incomplete without a higher 
     'fixture',
     steps,
     {},
-    () => ({ listEntries: async () => { throw new Error('offline') } }) as never,
+    () =>
+      ({
+        listEntries: async () => {
+          throw new Error('offline')
+        },
+      }) as never,
     database(),
     missingConfig,
   )
@@ -56,7 +61,13 @@ test('hosted failures are visible and leave rulings incomplete without a higher 
 test('a never-resolving hosted transport is bounded by the adapter timeout', async () => {
   expect(HOSTED_AUTONOMY_TIMEOUT_MS).toBe(2000)
   const result = await resolveProjectAutonomy(
-    'fixture', steps, {}, timeoutClient, database(), missingConfig, 10,
+    'fixture',
+    steps,
+    {},
+    timeoutClient,
+    database(),
+    missingConfig,
+    10,
   )
   expect(result.note).toBe(
     'hosted autonomy settings unavailable: timed out after 10 ms; resolved from local and project scopes',
@@ -65,16 +76,25 @@ test('a never-resolving hosted transport is bounded by the adapter timeout', asy
 
 test('answer proceeds when hosted is not configured', async () => {
   const rulings = await resolveAnswerRulings(
-    'fixture', null,
-    () => { throw new ConfigClientError('not-configured', '/v1/config') },
-    database(), missingConfig,
+    'fixture',
+    null,
+    () => {
+      throw new ConfigClientError('not-configured', '/v1/config')
+    },
+    database(),
+    missingConfig,
   )
   expect(answerRulingRefusal(rulings, false)).toBeNull()
 })
 
 test('answer refuses an unavailable hosted resolution without a higher ruling', async () => {
   const rulings = await resolveAnswerRulings(
-    'fixture', null, timeoutClient, database(), missingConfig, 10,
+    'fixture',
+    null,
+    timeoutClient,
+    database(),
+    missingConfig,
+    10,
   )
   expect(answerRulingRefusal(rulings, false)).toStartWith('rulings could not be resolved:')
 })
@@ -83,7 +103,12 @@ test('answer proceeds after unavailable hosted config when local project decides
   const config = mkdtempSync(join(tmpdir(), 'autonomy-scopes-'))
   writeFileSync(join(config, 'machine.toml'), '[projects.fixture.autonomy]\nrulings = "agent"\n')
   const rulings = await resolveAnswerRulings(
-    'fixture', null, timeoutClient, database(), { BOTTEGA_CONFIG_HOME: config }, 10,
+    'fixture',
+    null,
+    timeoutClient,
+    database(),
+    { BOTTEGA_CONFIG_HOME: config },
+    10,
   )
   expect(rulings).toMatchObject({ value: 'agent', scope: 'local project', complete: true })
   expect(answerRulingRefusal(rulings, false)).toBeNull()
@@ -98,12 +123,28 @@ test('answer uses the newest active workflow rulings snapshot and otherwise reso
        created_at,updated_at)
      VALUES ('fixture','ship','default','DEV-866',?,NULL,1,1,'{}',?,0,'design',?,'[]',NULL,1,?,?)`,
   )
-  insert.run('older', JSON.stringify({ rulings: { value: 'agent', scope: 'session' } }), 'running', '1', '1')
-  insert.run('newer', JSON.stringify({ rulings: { value: 'user', scope: 'session' } }), 'awaiting-ruling', '2', '2')
+  insert.run(
+    'older',
+    JSON.stringify({ rulings: { value: 'agent', scope: 'session' } }),
+    'running',
+    '1',
+    '1',
+  )
+  insert.run(
+    'newer',
+    JSON.stringify({ rulings: { value: 'user', scope: 'session' } }),
+    'awaiting-ruling',
+    '2',
+    '2',
+  )
   expect(await resolveAnswerRulings('fixture', 'DEV-866', undefined, d, missingConfig)).toEqual({
-    value: 'user', scope: 'session',
+    value: 'user',
+    scope: 'session',
   })
-  expect(await resolveAnswerRulings('fixture', 'OTHER', undefined, d, missingConfig)).toMatchObject({
-    value: 'agent', scope: 'project',
-  })
+  expect(await resolveAnswerRulings('fixture', 'OTHER', undefined, d, missingConfig)).toMatchObject(
+    {
+      value: 'agent',
+      scope: 'project',
+    },
+  )
 })

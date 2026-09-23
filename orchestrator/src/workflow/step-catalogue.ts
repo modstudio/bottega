@@ -146,8 +146,7 @@ export const forkStepCatalogue = (
   author?: string,
   d: Database = writableDb(),
 ) => {
-  const source =
-    from === undefined ? productionStepCatalogue(d) : showStepCatalogue(from, d)
+  const source = from === undefined ? productionStepCatalogue(d) : showStepCatalogue(from, d)
   return lifecycle.write(CATALOGUE, source.definition, reason, author, 'fork', d)
 }
 export const retireStepCatalogue = (

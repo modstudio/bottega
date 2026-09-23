@@ -3,8 +3,8 @@
 
 import type { Database } from 'bun:sqlite'
 import {
-  ConfigClientError,
   type ConfigClient,
+  ConfigClientError,
   configClient,
 } from '../../../shared/config-client.ts'
 import type { ConfigEnvironment } from '../../../shared/config-directory.ts'
@@ -21,7 +21,7 @@ import type { CatalogueStep } from './step-catalogue.ts'
 
 export const HOSTED_AUTONOMY_TIMEOUT_MS = 2000
 type HostedEntry = Awaited<ReturnType<ConfigClient['listEntries']>>[number]
-export const hostedSettings = (rows: HostedEntry[], scope: 'user' | 'space') =>
+const hostedSettings = (rows: HostedEntry[], scope: 'user' | 'space') =>
   parseAutonomy(
     rows
       .filter((row) => row.scope === scope && row.key.startsWith('autonomy.'))
@@ -32,8 +32,8 @@ export const hostedSettings = (rows: HostedEntry[], scope: 'user' | 'space') =>
 
 type HostedRead =
   | { status: 'available'; user: AutonomySettings; space: AutonomySettings }
-  | { status: 'not-configured'; user: {}; space: {} }
-  | { status: 'unavailable'; user: {}; space: {}; reason: string }
+  | { status: 'not-configured'; user: AutonomySettings; space: AutonomySettings; reason: string }
+  | { status: 'unavailable'; user: AutonomySettings; space: AutonomySettings; reason: string }
 
 async function readHosted(
   clientFactory: (signal: AbortSignal) => ConfigClient,
@@ -41,10 +41,14 @@ async function readHosted(
 ): Promise<HostedRead> {
   try {
     const rows = await clientFactory(AbortSignal.timeout(timeoutMs)).listEntries()
-    return { status: 'available', user: hostedSettings(rows, 'user'), space: hostedSettings(rows, 'space') }
+    return {
+      status: 'available',
+      user: hostedSettings(rows, 'user'),
+      space: hostedSettings(rows, 'space'),
+    }
   } catch (error) {
     if (error instanceof ConfigClientError && error.reason === 'not-configured')
-      return { status: 'not-configured', user: {}, space: {} }
+      return { status: 'not-configured', user: {}, space: {}, reason: error.message }
     const reason =
       error instanceof DOMException && error.name === 'TimeoutError'
         ? `timed out after ${timeoutMs} ms`
@@ -54,11 +58,6 @@ async function readHosted(
     return { status: 'unavailable', user: {}, space: {}, reason }
   }
 }
-
-const rulingSetAboveHosted = (settings: (AutonomySettings | undefined)[]) =>
-  settings.some(
-    (value) => value && (value.rulings !== undefined || value.preset !== undefined),
-  )
 
 export async function resolveProjectAutonomy(
   project: string,
@@ -74,7 +73,6 @@ export async function resolveProjectAutonomy(
   if (!registered) throw new Error(`unknown project "${project}"`)
   const local = readMachineAutonomy(project, env)
   const hosted = await readHosted(clientFactory, timeoutMs)
-  const aboveHosted = [session, local.project, registered.settings.autonomy ?? {}, local.user]
   const resolution = resolveAutonomy(steps, [
     { name: 'session', settings: session },
     { name: 'local project', settings: local.project },
@@ -84,20 +82,31 @@ export async function resolveProjectAutonomy(
     { name: 'hosted space', settings: hosted.space },
     { name: 'built-in', settings: { preset: 'guided' } },
   ])
-  if (hosted.status !== 'unavailable') return { ...resolution, session }
+  if (hosted.status === 'available')
+    return { ...resolution, hosted: { status: hosted.status }, session }
+  if (hosted.status === 'not-configured')
+    return {
+      ...resolution,
+      hosted: { status: hosted.status, reason: hosted.reason },
+      note: `hosted autonomy settings unavailable: ${hosted.reason}; resolved from local and project scopes`,
+      session,
+    }
   return {
     ...resolution,
     rulings: {
       ...resolution.rulings,
-      complete: rulingSetAboveHosted(aboveHosted),
+      complete: ['session', 'local project', 'project', 'local user'].includes(
+        resolution.rulings.scope,
+      ),
       unavailableReason: hosted.reason,
     },
+    hosted: { status: hosted.status, reason: hosted.reason },
     note: `hosted autonomy settings unavailable: ${hosted.reason}; resolved from local and project scopes`,
     session,
   }
 }
 
-export function workflowRulingsSnapshot(
+function workflowRulingsSnapshot(
   project: string,
   launchKey: string | null,
   d: Database = db(),

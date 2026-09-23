@@ -1,8 +1,5 @@
 import { describe, expect, test } from 'bun:test'
-import {
-  answerRulingRefusal,
-  resolveAutonomy,
-} from './autonomy.ts'
+import { answerRulingRefusal, resolveAutonomy } from './autonomy.ts'
 
 const steps = [
   { slug: 'design', stage: 'plan' as const, autonomy: 'ask' as const },
