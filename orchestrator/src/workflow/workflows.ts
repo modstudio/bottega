@@ -5,8 +5,12 @@ import {
   resolveDeclaredFacts,
   unresolvedTrackerActionPlaceholder,
 } from '../project/project-injection.ts'
-import { compatibleCatalogueStep, productionStepCatalogue, showStepCatalogue } from './step-catalogue.ts'
 import type { AutonomyResolution } from './autonomy.ts'
+import {
+  compatibleCatalogueStep,
+  productionStepCatalogue,
+  showStepCatalogue,
+} from './step-catalogue.ts'
 import { type VersionEvent, versionedLifecycle } from './versioned-lifecycle.ts'
 
 type WorkflowArgument = { name: string; required: boolean; description: string }
@@ -32,7 +36,7 @@ const SLUG = /^[a-z0-9][a-z0-9-]{0,63}$/
 const object = (value: unknown): value is Record<string, unknown> =>
   typeof value === 'object' && value !== null && !Array.isArray(value)
 const text = (value: unknown) => (typeof value === 'string' ? value : '')
-const WORKFLOW_PROMPT_ARGUMENT_NAMES = new Set(['mode', 'project'])
+const WORKFLOW_PROMPT_ARGUMENT_NAMES = new Set(['mode', 'project', 'autonomy'])
 const workflowPromptArgumentNameErrors = (name: unknown): string[] =>
   typeof name === 'string' && WORKFLOW_PROMPT_ARGUMENT_NAMES.has(name)
     ? [`argument name "${name}" is reserved for the workflow prompt`]
@@ -441,8 +445,8 @@ export function composeWorkflow(
     settings: JSON.parse(projectRow.settings ?? '{}'),
   }
   const selected =
-    mode?.steps.map(
-      (stepSlug) => compatibleCatalogueStep(catalogue.definition.steps.find((step) => step.slug === stepSlug)!),
+    mode?.steps.map((stepSlug) =>
+      compatibleCatalogueStep(catalogue.definition.steps.find((step) => step.slug === stepSlug)!),
     ) ?? []
   const { resolved, facts } = resolveDeclaredFacts(
     project,

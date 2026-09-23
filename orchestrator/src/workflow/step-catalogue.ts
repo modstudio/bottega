@@ -4,15 +4,15 @@ import type { Database } from 'bun:sqlite'
 import { db, writableDb } from '../database/db.ts'
 import { JOBS } from '../jobs/jobs.ts'
 import { type InjectionSource, injectionSources } from '../project/project-injection.ts'
+import {
+  type AutonomyStage,
+  type AutonomyValue,
+  autonomyStages,
+  autonomyValues,
+} from './autonomy.ts'
 import { versionedLifecycle } from './versioned-lifecycle.ts'
-import { type AutonomyStage, autonomyStages, type AutonomyValue, autonomyValues } from './autonomy.ts'
 
-const proofKinds = [
-  'command-exit',
-  'recorded-artifact',
-  'tracker-transition',
-  'ruling',
-] as const
+const proofKinds = ['command-exit', 'recorded-artifact', 'tracker-transition', 'ruling'] as const
 type ProofKind = (typeof proofKinds)[number]
 export type CatalogueStep = {
   slug: string
@@ -69,11 +69,16 @@ function validateIdentity(
 
 /** Stored catalogue history remains readable without being revalidated. */
 export function compatibleCatalogueStep(step: CatalogueStep): CatalogueStep {
-  const legacy = step as CatalogueStep & { autonomy: AutonomyValue | 'manual'; floor: string[] }
+  const legacy = step as unknown as Omit<CatalogueStep, 'autonomy' | 'floor'> & {
+    autonomy: AutonomyValue | 'manual'
+    floor: string[]
+  }
   return {
     ...step,
     autonomy: legacy.autonomy === 'manual' ? 'ask' : legacy.autonomy,
-    floor: legacy.floor.map((kind) => (kind === 'human-ruling' ? 'ruling' : kind)) as CatalogueStep['floor'],
+    floor: legacy.floor.map((kind) =>
+      kind === 'human-ruling' ? 'ruling' : kind,
+    ) as CatalogueStep['floor'],
   }
 }
 
@@ -121,8 +126,14 @@ const lifecycle = versionedLifecycle<StepCatalogueDefinition>({
 })
 const CATALOGUE = 'shared'
 
-export const showStepCatalogue = (n?: number, d: Database = db()) => lifecycle.show(CATALOGUE, n, d)
-export const productionStepCatalogue = (d: Database = db()) => lifecycle.production(CATALOGUE, d)
+const compatibleCatalogue = <T extends { definition: StepCatalogueDefinition }>(row: T): T => ({
+  ...row,
+  definition: { steps: row.definition.steps.map(compatibleCatalogueStep) },
+})
+export const showStepCatalogue = (n?: number, d: Database = db()) =>
+  compatibleCatalogue(lifecycle.show(CATALOGUE, n, d))
+export const productionStepCatalogue = (d: Database = db()) =>
+  compatibleCatalogue(lifecycle.production(CATALOGUE, d))
 export const setStepCatalogue = (
   definition: unknown,
   reason: string | undefined,

@@ -2,6 +2,7 @@ import type { Database } from 'bun:sqlite'
 import { randomUUID } from 'node:crypto'
 import { db, nowIso, sessionId, writableDb, writeTransaction } from '../database/db.ts'
 import { projectAt } from '../project/projects.ts'
+import type { AutonomyResolution } from './autonomy.ts'
 import {
   type CursorState,
   type CursorValue,
@@ -10,7 +11,6 @@ import {
 } from './workflow-cursor-transition.ts'
 import { renderWorkflowStep } from './workflow-render.ts'
 import { composeWorkflow, getWorkflowStep } from './workflows.ts'
-import type { AutonomyResolution } from './autonomy.ts'
 
 export type WorkflowCursorContext = {
   session?: string | null
@@ -174,10 +174,12 @@ function insertCursor(
     composition.workflow.version,
     composition.catalogue.version,
     JSON.stringify(composition.arguments),
-    JSON.stringify(autonomy ?? {
-      steps: Object.fromEntries(composition.steps.map((step) => [step.slug, step.autonomy])),
-      rulings: composition.rulings,
-    }),
+    JSON.stringify(
+      autonomy ?? {
+        steps: Object.fromEntries(composition.steps.map((step) => [step.slug, step.autonomy])),
+        rulings: composition.rulings,
+      },
+    ),
     composition.steps[0]!.slug,
     composition.steps.length,
     at,
@@ -290,17 +292,26 @@ function getWorkflowStepWithCursorImpl(
   mode: string,
   context: WorkflowCursorContext,
   d: Database = writableDb(),
+  autonomy?: AutonomyResolution,
 ) {
   let row = findCursor(project, slug, mode, args, context, d)
   const startDecision = decideCursorStart(row?.state ?? null)
   if (row && startDecision === 'reuse') applyCursorArguments(row, args, d)
   const { effectiveArgs, selection } = cursorCompositionInput(row, args, mode)
-  const composition = composeWorkflow(slug, project, mode, effectiveArgs, d, selection)
+  const composition = composeWorkflow(
+    slug,
+    project,
+    mode,
+    effectiveArgs,
+    d,
+    selection,
+    row ? cursorAutonomy(row) : autonomy,
+  )
   const index = composition.steps.findIndex((step) => step.slug === stepSlug)
   if (index < 0) throw new Error(`workflow "${slug}" has no step "${stepSlug}"`)
   const requested = composition.steps[index]!
   if (index === 0 && startDecision === 'retire') {
-    row = insertCursor(composition, context, d)
+    row = insertCursor(composition, context, d, autonomy)
   }
   const decision = decideCursorTransition(row ? cursorValue(row) : null, {
     kind: 'serve',
@@ -319,7 +330,7 @@ function getWorkflowStepWithCursorImpl(
     throw new Error(remedy(row!, composition))
   }
   if (decision.action !== 'serve') throw new Error('invalid serve transition')
-  if (!row) row = insertCursor(composition, context, d)
+  if (!row) row = insertCursor(composition, context, d, autonomy)
   if (decision.move || decision.resume) {
     d.query(
       `UPDATE workflow_cursor SET ordinal=?,step_slug=?,state='running',question=NULL,
@@ -337,9 +348,10 @@ export function getWorkflowStepWithCursor(
   mode: string,
   context: WorkflowCursorContext,
   d: Database = writableDb(),
+  autonomy?: AutonomyResolution,
 ) {
   return writeTransaction(
-    () => getWorkflowStepWithCursorImpl(slug, project, stepSlug, args, mode, context, d),
+    () => getWorkflowStepWithCursorImpl(slug, project, stepSlug, args, mode, context, d, autonomy),
     d,
   )
 }
@@ -380,7 +392,13 @@ function nextWorkflowStepImpl(
   const at = nowIso()
   const closed = JSON.parse(row.closed) as ClosedStep[]
   const review = composition.steps[row.ordinal]?.autonomy.value === 'review'
-  closed.push({ n: row.ordinal + 1, slug: row.step_slug, note: note.trim(), at, ...(review ? { review: true as const } : {}) })
+  closed.push({
+    n: row.ordinal + 1,
+    slug: row.step_slug,
+    note: note.trim(),
+    at,
+    ...(review ? { review: true as const } : {}),
+  })
   if (decision.action === 'finish') {
     d.query(
       `UPDATE workflow_cursor SET state='done',closed=?,question=NULL,
@@ -389,7 +407,10 @@ function nextWorkflowStepImpl(
     const reviews = closed
       .filter((step) => step.review)
       .map((step) => `For your review: ${step.n}. ${step.slug} — ${step.note}`)
-    return [`Workflow ${slug} for ${row.workflow_key} is finished: ${closed.length} steps closed.`, ...reviews].join('\n')
+    return [
+      `Workflow ${slug} for ${row.workflow_key} is finished: ${closed.length} steps closed.`,
+      ...reviews,
+    ].join('\n')
   }
   d.query(
     `UPDATE workflow_cursor SET ordinal=?,step_slug=?,state='running',closed=?,question=NULL,
@@ -403,11 +424,19 @@ function nextWorkflowStepImpl(
     row.id,
   )
   return renderWorkflowStep(
-    getWorkflowStep(slug, project, decision.slug, JSON.parse(row.args), d, {
-      mode,
-      version: row.workflow_version,
-      catalogueVersion: row.catalogue_version,
-    }, cursorAutonomy(row)),
+    getWorkflowStep(
+      slug,
+      project,
+      decision.slug,
+      JSON.parse(row.args),
+      d,
+      {
+        mode,
+        version: row.workflow_version,
+        catalogueVersion: row.catalogue_version,
+      },
+      cursorAutonomy(row),
+    ),
   )
 }
 

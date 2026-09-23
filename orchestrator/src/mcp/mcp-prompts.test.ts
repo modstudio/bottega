@@ -43,6 +43,10 @@ describe('workflow prompt definitions', () => {
           "Registered project name. Omit to use the project that owns the server's working directory.",
       },
       {
+        name: 'autonomy',
+        description: 'Comma-separated session autonomy key=value overrides.',
+      },
+      {
         name: 'key',
         description:
           'Task key. Required by the workflow; if omitted, the composition names it as missing.',

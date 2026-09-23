@@ -5,6 +5,7 @@ import { resolve } from 'node:path'
 import { gitToplevel, resolvedPathsEqual } from '../../../shared/git.ts'
 import { flagValue, flagValues } from '../cli/args.ts'
 import { projects } from '../project/projects.ts'
+import { parseAutonomy, resolveProjectAutonomy } from './autonomy.ts'
 import {
   forkStepCatalogue,
   promoteStepCatalogue,
@@ -47,7 +48,7 @@ const positive = (value: string | undefined, label: string): number | undefined 
   return n
 }
 
-export function workflowCommand(argv: string[], presentation: Presentation): void {
+export async function workflowCommand(argv: string[], presentation: Presentation): Promise<void> {
   const sub = argv[1]
   const json = argv.includes('--json')
   const flag = (name: string) => flagValue(argv, name)
@@ -74,7 +75,7 @@ export function workflowCommand(argv: string[], presentation: Presentation): voi
   else if (sub === 'fork')
     print(forkWorkflow(argv[2]!, positive(flag('from'), '--from'), flag('reason'), flag('author')))
   else if (sub === 'versions') print(workflowVersions(argv[2]!))
-  else if (sub === 'compose') composeCommand(argv, json, print, presentation)
+  else if (sub === 'compose') await composeCommand(argv, json, print, presentation)
   else if (sub === 'step') stepCommand(argv, print)
   else if (cursorCommand(sub, argv, print)) return
   else if (sub === 'hydrate') hydrateCommand(argv, presentation)
@@ -275,20 +276,32 @@ function workflowArgs(argv: string[]): Record<string, string> {
   )
 }
 
-function composeCommand(
+async function composeCommand(
   argv: string[],
   json: boolean,
   print: (value: unknown, line?: string) => void,
   presentation: Presentation,
-): void {
+): Promise<void> {
   const project = flagValue(argv, 'project')
   if (!project) throw new Error('--project is required')
   const mode = flagValue(argv, 'mode')
   const args = workflowArgs(argv)
-  const pure = composeWorkflow(argv[2]!, project, mode, args, undefined, {
+  const selection = {
     version: positive(flagValue(argv, 'version'), '--version'),
     catalogueVersion: positive(flagValue(argv, 'catalogue-version'), '--catalogue-version'),
-  })
+  }
+  const preliminary = composeWorkflow(argv[2]!, project, mode, args, undefined, selection)
+  const session = parseAutonomy(flagValues(argv, 'autonomy').join(','), 'session')
+  const autonomy = await resolveProjectAutonomy(
+    project,
+    preliminary.steps.map((step) => ({
+      slug: step.slug,
+      stage: step.stage,
+      default: step.autonomy.value,
+    })),
+    session,
+  )
+  const pure = composeWorkflow(argv[2]!, project, mode, args, undefined, selection, autonomy)
   const result =
     pure.mode && !pure.needs.arguments
       ? composeWorkflowWithCursor(
@@ -298,10 +311,8 @@ function composeCommand(
           args,
           cliWorkflowCursorContext(),
           undefined,
-          {
-            version: positive(flagValue(argv, 'version'), '--version'),
-            catalogueVersion: positive(flagValue(argv, 'catalogue-version'), '--catalogue-version'),
-          },
+          selection,
+          autonomy,
         )
       : pure
   print(result, json ? undefined : renderWorkflowComposition(result))

@@ -1,7 +1,10 @@
 // concern: workflows
 /** Owns pure workflow-autonomy resolution and gathers its ordered scopes. */
+
+import type { Database } from 'bun:sqlite'
 import type { ConfigClient } from '../../../shared/config-client.ts'
 import { configClient } from '../../../shared/config-client.ts'
+import type { ConfigEnvironment } from '../../../shared/config-directory.ts'
 import { readMachineAutonomy } from '../../../shared/machine-config.ts'
 import { db } from '../database/db.ts'
 
@@ -48,7 +51,9 @@ export function validateAutonomySettings(value: unknown, scope: string): Autonom
       if (!allowed(key, autonomyStages))
         throw new Error(`invalid autonomy setting at ${scope} key stages.${key}: unknown stage`)
       if (!allowed(setting, autonomyValues))
-        throw new Error(`invalid autonomy setting at ${scope} key stages.${key}: ${String(setting)}`)
+        throw new Error(
+          `invalid autonomy setting at ${scope} key stages.${key}: ${String(setting)}`,
+        )
       result.stages[key as AutonomyStage] = setting as AutonomyValue
     }
   }
@@ -112,16 +117,26 @@ export function parseAutonomy(text: string | undefined, source: string): Autonom
     const key = item.slice(0, at).trim()
     const value = item.slice(at + 1).trim()
     if (key === 'preset' || key === 'rulings') (result as Record<string, unknown>)[key] = value
-    else if (key.startsWith('stage.'))
-      (result.stages ??= {})[key.slice(6) as AutonomyStage] = value as AutonomyValue
-    else if (key.startsWith('step.'))
-      (result.steps ??= {})[key.slice(5)] = value as AutonomyValue
-    else throw new Error(`invalid ${source} autonomy key ${JSON.stringify(key)}`)
+    else if (key.startsWith('stage.')) {
+      result.stages ??= {}
+      result.stages[key.slice(6) as AutonomyStage] = value as AutonomyValue
+    } else if (key.startsWith('step.')) {
+      result.steps ??= {}
+      result.steps[key.slice(5)] = value as AutonomyValue
+    } else throw new Error(`invalid ${source} autonomy key ${JSON.stringify(key)}`)
   }
   return validateAutonomySettings(result, source)
 }
 
 export const HOSTED_AUTONOMY_TIMEOUT_MS = 2000
+export function answerRulingRefusal(
+  ruling: AutonomyResolution['rulings'],
+  fromOperator: boolean,
+): string | null {
+  return ruling.value === 'user' && !fromOperator
+    ? `rulings is user (${ruling.scope}): relay this question to the operator and answer with --from-operator`
+    : null
+}
 type HostedEntry = Awaited<ReturnType<ConfigClient['listEntries']>>[number]
 const hostedSettings = (rows: HostedEntry[], scope: 'user' | 'space') =>
   parseAutonomy(
@@ -136,25 +151,32 @@ export async function resolveProjectAutonomy(
   project: string,
   steps: { slug: string; stage?: AutonomyStage; default: AutonomyValue }[] = [],
   session: AutonomySettings = {},
-  client?: ConfigClient,
+  clientFactory: (signal: AbortSignal) => ConfigClient = (signal) =>
+    configClient(process.env, fetch, undefined, signal),
+  d: Database = db(),
+  env: ConfigEnvironment = process.env,
 ): Promise<AutonomyResolution> {
-  const row = db().query('SELECT settings FROM project WHERE name=? AND retired_at IS NULL').get(project) as
-    | { settings: string }
-    | null
+  const row = d
+    .query('SELECT settings FROM project WHERE name=? AND retired_at IS NULL')
+    .get(project) as { settings: string } | null
   if (!row) throw new Error(`unknown project "${project}"`)
   const registered = JSON.parse(row.settings || '{}') as { autonomy?: unknown }
-  const local = readMachineAutonomy(project)
-  let user: AutonomySettings = {}, space: AutonomySettings = {}, note: string | undefined
+  const local = readMachineAutonomy(project, env)
+  let user: AutonomySettings = {},
+    space: AutonomySettings = {},
+    note: string | undefined
   try {
     const signal = AbortSignal.timeout(HOSTED_AUTONOMY_TIMEOUT_MS)
-    const rows = await (client ?? configClient(process.env, fetch, undefined, signal)).listEntries()
+    const rows = await clientFactory(signal).listEntries()
     user = hostedSettings(rows, 'user')
     space = hostedSettings(rows, 'space')
   } catch (error) {
     const reason =
       error instanceof DOMException && error.name === 'TimeoutError'
         ? `timed out after ${HOSTED_AUTONOMY_TIMEOUT_MS} ms`
-        : error instanceof Error ? error.message : String(error)
+        : error instanceof Error
+          ? error.message
+          : String(error)
     note = `hosted autonomy settings unavailable: ${reason}; resolved from local and project scopes`
   }
   const resolution = resolveAutonomy(steps, [

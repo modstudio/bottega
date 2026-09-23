@@ -13,6 +13,7 @@ import { job } from '../jobs/jobs.ts'
 import { mcpRequestFromStored } from '../mcp/mcp-preflight.ts'
 import { failureReason } from '../outcome.ts'
 import { chainTransport, retryModelForAgent } from '../route/failover.ts'
+import { answerRulingRefusal, resolveProjectAutonomy } from '../workflow/autonomy.ts'
 import { keepTreeHold } from '../worktree/keep-tree-hold.ts'
 import { packedResumePrompt } from './run.ts'
 import { KEEP_RUN_FILES_DAYS, readDispatchState } from './run-artifacts.ts'
@@ -198,7 +199,7 @@ export async function answerRun(
     .query(
       `SELECT root.id, root.agent, root.job, root.cwd, root.worktree, root.branch,
           root.base_commit, root.vendor_session, root.status, root.session_id,
-          root.turn, root.parent_run_id, root.worktree_source, root.evidence_excluded
+          root.turn, root.parent_run_id, root.worktree_source, root.evidence_excluded, root.repo
      FROM run requested
      JOIN run root ON root.id = COALESCE(requested.parent_run_id, requested.id)
     WHERE requested.id = ?`,
@@ -218,8 +219,14 @@ export async function answerRun(
     parent_run_id: number | null
     worktree_source: 'recipe' | 'git' | 'clone' | 'readonly_recipe' | null
     evidence_excluded: string | null
+    repo: string | null
   } | null
   if (!row) throw new Error(`no run ${requestedId}`)
+  if (row.repo) {
+    const autonomy = await resolveProjectAutonomy(row.repo)
+    const refusal = answerRulingRefusal(autonomy.rulings, options.argv.includes('--from-operator'))
+    if (refusal) throw new Error(refusal)
+  }
   const id = row.id
   refuseEscapedChain(id)
   let answerAuthority = authorizeRunMutation(requestedId, 'answer')
@@ -484,7 +491,9 @@ export async function answerRun(
       SET answer=?, answered_at=?, answered_by=?, delivery_pending_at=?
     WHERE id=?`,
   )
-  const answeredBy = callerSession ?? 'anonymous (no session id)'
+  const answeredBy = options.argv.includes('--from-operator')
+    ? `operator via ${callerSession ?? 'anonymous (no session id)'}`
+    : (callerSession ?? 'anonymous (no session id)')
   writeTransaction(() => {
     answerAuthority = adoptRunMutation(answerAuthority, 'answer')
     open.forEach((q, i) => {

@@ -52,15 +52,17 @@ const promotePlanTask = (d: Database) => {
         ...current.steps,
         {
           slug: 'injection-search',
+          stage: 'plan',
           title: 'Search',
           body: 'Search with {{tracker.actions.search}}.',
-          floor: ['human-ruling'],
+          floor: ['ruling'],
           job: null,
           autonomy: 'ask',
           needs: ['tracker'],
         },
         {
           slug: 'injection-start',
+          stage: 'plan',
           title: 'Start',
           body: 'Move to {{tracker.states.active}} with {{tracker.actions.status}} after {{tracker.actions.get}}.',
           floor: ['tracker-transition'],
@@ -137,11 +139,13 @@ describe('workflow definition validation', () => {
     definition.arguments.push(
       { name: 'mode', required: false, description: 'Mode.' },
       { name: 'project', required: false, description: 'Project.' },
+      { name: 'autonomy', required: false, description: 'Autonomy.' },
     )
     expect(validateWorkflowDefinition(definition, d)).toEqual(
       expect.arrayContaining([
         'argument name "mode" is reserved for the workflow prompt',
         'argument name "project" is reserved for the workflow prompt',
+        'argument name "autonomy" is reserved for the workflow prompt',
       ]),
     )
   })
@@ -388,9 +392,10 @@ describe('workflow versions and project composition', () => {
           ...current.steps,
           {
             slug: 'land',
+            stage: 'ship',
             title: 'Land',
             body: 'Land on {{trunk}}.',
-            floor: ['human-ruling'],
+            floor: ['ruling'],
             job: null,
             autonomy: 'ask',
             needs: ['trunk'],
@@ -438,9 +443,10 @@ describe('workflow versions and project composition', () => {
           ...current.steps,
           {
             slug: 'release-facts',
+            stage: 'ship',
             title: 'Release facts',
             body: 'Read the release facts.',
-            floor: ['human-ruling'],
+            floor: ['ruling'],
             job: null,
             autonomy: 'ask',
             needs: ['release'],
@@ -493,9 +499,10 @@ describe('workflow versions and project composition', () => {
           ...current.steps,
           {
             slug: 'dedupe',
+            stage: 'plan',
             title: 'Dedupe',
             body: 'Search with {{tracker.actions.search}}.',
-            floor: ['human-ruling'],
+            floor: ['ruling'],
             job: null,
             autonomy: 'ask',
             needs: ['tracker'],
@@ -604,6 +611,7 @@ describe('workflow versions and project composition', () => {
           ...current.steps,
           {
             slug: 'late-argument',
+            stage: 'plan',
             title: 'Late argument',
             body: 'Use {{branch}}.',
             floor: ['recorded-artifact'],

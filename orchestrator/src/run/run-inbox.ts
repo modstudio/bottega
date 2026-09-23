@@ -3,6 +3,7 @@
 import { db, SESSION_LIVE_MS, sessionId } from '../database/db.ts'
 import { activeSql, voidedSql } from '../evidence/evidence-query.ts'
 import { projectAt } from '../project/projects.ts'
+import { resolveProjectAutonomy } from '../workflow/autonomy.ts'
 
 type RunInboxFlags = { has(name: string): boolean }
 type RunInboxPresentation = {
@@ -22,6 +23,7 @@ export async function runInboxCommand(
   const mine = !has('all')
   const activeOnly = has('active')
   const project = mine ? projectAt(process.cwd()) : null
+  const rulings = project ? (await resolveProjectAutonomy(project.name)).rulings : null
   const cutoff = new Date(Date.now() - SESSION_LIVE_MS).toISOString()
   const hasSessionSeen = Boolean(
     db().query(`SELECT 1 FROM sqlite_master WHERE type='table' AND name='session_seen'`).get(),
@@ -110,6 +112,8 @@ export async function runInboxCommand(
     )
     return
   }
+
+  if (rulings) log(`rulings=${rulings.value} (${rulings.scope})`)
 
   const recoverable = db()
     .query(

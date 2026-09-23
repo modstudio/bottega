@@ -44,6 +44,7 @@ import {
 } from '../porting/porting.ts'
 import { projectAt, projectByName, projects } from '../project/projects.ts'
 import { getReview, listReviews } from '../review/review.ts'
+import { parseAutonomy, resolveProjectAutonomy } from '../workflow/autonomy.ts'
 import {
   awaitWorkflowRuling,
   getWorkflowStepWithCursor,
@@ -425,15 +426,23 @@ export function createDocsMcpServer(): McpServer {
         args: z.record(z.string(), z.string()).optional(),
         version: z.number().int().positive().optional(),
         catalogue_version: z.number().int().positive().optional(),
+        autonomy: z.string().optional(),
       },
     },
-    async ({ slug, project, mode, args, version, catalogue_version }) =>
-      text(
-        composeWorkflow(slug, project, mode, args ?? {}, undefined, {
-          version,
-          catalogueVersion: catalogue_version,
-        }),
-      ),
+    async ({ slug, project, mode, args, version, catalogue_version, autonomy }) => {
+      const selection = { version, catalogueVersion: catalogue_version }
+      const preliminary = composeWorkflow(slug, project, mode, args ?? {}, undefined, selection)
+      const resolved = await resolveProjectAutonomy(
+        project,
+        preliminary.steps.map((step) => ({
+          slug: step.slug,
+          stage: step.stage,
+          default: step.autonomy.value,
+        })),
+        parseAutonomy(autonomy, 'session'),
+      )
+      return text(composeWorkflow(slug, project, mode, args ?? {}, undefined, selection, resolved))
+    },
   )
 
   server.registerTool(
@@ -447,10 +456,21 @@ export function createDocsMcpServer(): McpServer {
         step: z.string().trim().min(1),
         mode: z.string().trim().min(1).optional(),
         args: z.record(z.string(), z.string()).optional(),
+        autonomy: z.string().optional(),
       },
     },
-    async ({ slug, project, step, mode, args }) =>
-      text(
+    async ({ slug, project, step, mode, args, autonomy }) => {
+      const preliminary = composeWorkflow(slug, project, mode, args ?? {})
+      const resolved = await resolveProjectAutonomy(
+        project,
+        preliminary.steps.map((item) => ({
+          slug: item.slug,
+          stage: item.stage,
+          default: item.autonomy.value,
+        })),
+        parseAutonomy(autonomy, 'session'),
+      )
+      return text(
         renderWorkflowStep(
           mode
             ? getWorkflowStepWithCursor(
@@ -460,10 +480,13 @@ export function createDocsMcpServer(): McpServer {
                 args ?? {},
                 mode,
                 mcpWorkflowCursorContext(),
+                undefined,
+                resolved,
               )
-            : getWorkflowStep(slug, project, step, args ?? {}, undefined, { mode }),
+            : getWorkflowStep(slug, project, step, args ?? {}, undefined, { mode }, resolved),
         ),
-      ),
+      )
+    },
   )
 
   server.registerTool(

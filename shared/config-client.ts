@@ -65,14 +65,23 @@ type ConfigIdentity = { user: { id: string }; activeSpaceId: string | null }
 export type ConfigClient = ReturnType<typeof createConfigClient>
 type Transport = typeof fetch
 
-function createConfigClient(baseUrl: string, token: string, transport: Transport, signal?: AbortSignal) {
+function createConfigClient(
+  baseUrl: string,
+  token: string,
+  transport: Transport,
+  signal?: AbortSignal,
+) {
   const request = async <T>(route: string, init: RequestInit = {}): Promise<T> => {
     const headers = new Headers(init.headers)
     headers.set('authorization', `Bearer ${token}`)
     if (init.body) headers.set('content-type', 'application/json')
     let response: Response
     try {
-      response = await transport(`${baseUrl}${route}`, { ...init, headers, signal: init.signal ?? signal })
+      response = await transport(`${baseUrl}${route}`, {
+        ...init,
+        headers,
+        signal: init.signal ?? signal,
+      })
     } catch {
       if (signal?.aborted) throw signal.reason
       throw new ConfigClientError('unreachable', route)

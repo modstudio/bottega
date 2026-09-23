@@ -193,7 +193,13 @@ function takeFilePath(
  * recognised only before the first positional message word; after that every
  * remaining word is message text, including flag-shaped ones.
  */
-const ANSWER_BOOLEANS = new Set(['--follow', '--detach', '--quiet', '--record-only'])
+const ANSWER_BOOLEANS = new Set([
+  '--follow',
+  '--detach',
+  '--quiet',
+  '--record-only',
+  '--from-operator',
+])
 
 export function parseWorkerMessageArgs(
   args: string[],

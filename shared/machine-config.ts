@@ -113,6 +113,7 @@ function validateFile(
   const visit = (value: Record<string, unknown>, prefix = ''): void => {
     for (const [name, child] of Object.entries(value)) {
       const key = prefix ? `${prefix}.${name}` : name
+      if (!prefix && (name === 'autonomy' || name === 'projects')) continue
       const childTable = validatedChildTable(table, known, child, key, path)
       if (childTable) visit(childTable, key)
     }

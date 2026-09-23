@@ -48,7 +48,7 @@ const PROJECT_SETTING_COLUMNS = {
   trunk: 'landing_branch',
   worktree: 'worktree',
   workerMcpServers: 'worker_mcp_servers',
-} satisfies Record<Exclude<keyof Required<ProjectSettings>, 'space'>, string>
+} satisfies Record<Exclude<keyof Required<ProjectSettings>, 'space' | 'autonomy'>, string>
 
 function object(value: unknown, location: string): JsonObject {
   if (value === null || typeof value !== 'object' || Array.isArray(value)) {

@@ -216,12 +216,23 @@ type SeedCatalogueStep = {
 }
 const stages: Record<string, Record<string, SeedCatalogueStep['stage']>> = {
   ship: {
-    rebase: 'ship', lens: 'review', score: 'review', triage: 'review', complete: 'review',
-    fix: 'review', pr: 'ship', merge: 'ship', close: 'ship',
+    rebase: 'ship',
+    lens: 'review',
+    score: 'review',
+    triage: 'review',
+    complete: 'review',
+    fix: 'review',
+    pr: 'ship',
+    merge: 'ship',
+    close: 'ship',
   },
   'fix-defect': {
-    diagnose: 'plan', fix: 'implement', verify: 'implement', 'blast-radius': 'review',
-    triage: 'review', ship: 'ship',
+    diagnose: 'plan',
+    fix: 'implement',
+    verify: 'implement',
+    'blast-radius': 'review',
+    triage: 'review',
+    ship: 'ship',
   },
 }
 const usesTrunk = (workflow: string, step: string) =>

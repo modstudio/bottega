@@ -11,6 +11,7 @@ const store: WorkflowTreeStore = {
     {
       slug: 'verify',
       title: 'Verify',
+      stage: 'implement',
       floor: ['command-exit'],
       job: null,
       autonomy: 'auto',

@@ -134,6 +134,7 @@ export function register(program: Command): void {
     .option('--check')
     .option('--all')
     .option('--arg <value>', '', collect, [])
+    .option('--autonomy <value>', '', collect, [])
     .option('--json')
     .action((args, options) =>
       workflowCommand(productArgv('workflow', args, options), presentation),
@@ -257,6 +258,7 @@ export function register(program: Command): void {
     .option('--detach')
     .option('--quiet')
     .option('--record-only')
+    .option('--from-operator')
     .action((id, _message, options, command) =>
       answerCommand(
         Number(id),

@@ -1,9 +1,14 @@
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
 import { z } from 'zod'
 import { projectAt } from '../project/projects.ts'
+import { parseAutonomy, resolveProjectAutonomy } from '../workflow/autonomy.ts'
 import { composeWorkflowWithCursor, mcpWorkflowCursorContext } from '../workflow/workflow-cursor.ts'
 import { renderWorkflowComposition } from '../workflow/workflow-render.ts'
-import { productionWorkflows, type WorkflowDefinition } from '../workflow/workflows.ts'
+import {
+  composeWorkflow,
+  productionWorkflows,
+  type WorkflowDefinition,
+} from '../workflow/workflows.ts'
 
 type ProductionWorkflow = { slug: string; definition: WorkflowDefinition }
 
@@ -36,6 +41,10 @@ export function workflowPromptDefinitions(
         description:
           "Registered project name. Omit to use the project that owns the server's working directory.",
       },
+      {
+        name: 'autonomy',
+        description: 'Comma-separated session autonomy key=value overrides.',
+      },
       ...definition.arguments.map(({ name, description, required }) => ({
         name,
         description: required ? description + requiredNote : description,
@@ -65,9 +74,9 @@ export function registerWorkflowPrompts(server: McpServer): void {
         description: prompt.description,
         argsSchema: promptArgsSchema(prompt),
       },
-      (input) => {
+      async (input) => {
         // A client may send an unfilled argument as a blank string; it counts as omitted.
-        const { mode, project, ...args } = Object.fromEntries(
+        const { mode, project, autonomy, ...args } = Object.fromEntries(
           Object.entries(input as Record<string, string | undefined>).filter(
             (entry): entry is [string, string] => Boolean(entry[1]?.trim()),
           ),
@@ -77,6 +86,16 @@ export function registerWorkflowPrompts(server: McpServer): void {
           return promptMessage(`no registered project contains ${process.cwd()}`)
         }
         try {
+          const preliminary = composeWorkflow(prompt.name, projectName, mode, args)
+          const resolved = await resolveProjectAutonomy(
+            projectName,
+            preliminary.steps.map((step) => ({
+              slug: step.slug,
+              stage: step.stage,
+              default: step.autonomy.value,
+            })),
+            parseAutonomy(autonomy, 'session'),
+          )
           return promptMessage(
             renderWorkflowComposition(
               composeWorkflowWithCursor(
@@ -85,6 +104,9 @@ export function registerWorkflowPrompts(server: McpServer): void {
                 mode,
                 args,
                 mcpWorkflowCursorContext(),
+                undefined,
+                {},
+                resolved,
               ),
             ),
           )

@@ -37,6 +37,8 @@ describe('workflow rendering', () => {
     expect(rendered).toContain(`args ${JSON.stringify(args)}`)
     expect(rendered).toContain('--arg key=DEV-821')
     expect(rendered).toContain('step 1, rebase')
+    expect(rendered).toContain('autonomy=auto(built-in)')
+    expect(rendered).toContain('Worker questions: rulings=agent (built-in).')
   })
 
   test('a composition needing a mode asks for one without the driving contract', () => {
@@ -104,6 +106,11 @@ describe('workflow rendering', () => {
 
   test('step pointers name the successor, the selected-mode end, and an ambiguous successor', () => {
     const d = database()
+    expect(
+      renderWorkflowStep(
+        getWorkflowStep('ship', 'fixture', 'rebase', args, d, { mode: 'default' }),
+      ),
+    ).toContain('Autonomy: auto (built-in) — rule yourself.')
     expect(
       renderWorkflowStep(
         getWorkflowStep('ship', 'fixture', 'rebase', args, d, { mode: 'default' }),
