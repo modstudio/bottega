@@ -2,13 +2,11 @@
 import { existsSync, lstatSync, readdirSync, realpathSync } from 'node:fs'
 import { join, resolve } from 'node:path'
 import { pidAlive } from '../../../shared/process-identity.ts'
-import { pruneProjectBranches } from '../branch/branches.ts'
 import { closeOutRun, releaseSandboxDirectoryForConversation } from '../close/close-out.ts'
 import { db, sessionId, writableDb, writeTransaction } from '../database/db.ts'
 import { shouldSweepHookTree } from '../hook-tree/hook-tree.ts'
 import { observeLandingTreeRelease } from '../landing-tree/release-observation.ts'
 import { projectAt, projectByName, projects } from '../project/projects.ts'
-import { reclaimResidue } from '../reclaim/reclaim-residue.ts'
 import {
   classifiedDockerResources,
   type DockerResource,
@@ -53,6 +51,7 @@ import {
   isSweepCandidate,
   type RecordedRunPostInventoryFacts,
 } from './cleanup-sweep-decisions.ts'
+import { pruneSweptProjectBranches, reclaimAbsentTrustEntries } from './cleanup-sweep-reclaim.ts'
 
 export type SweepOptions = {
   dryRun: boolean
@@ -706,49 +705,14 @@ export async function sweepRuns(options: SweepOptions, helpers: SweepHelpers): P
     }
   }
 
-  const trustRuns = db()
-    .query('SELECT id, mcp_trust_path FROM run WHERE mcp_trust_path IS NOT NULL ORDER BY id')
-    .all() as { id: number; mcp_trust_path: string }[]
-  const trustOwners = new Map<string, number>()
-  for (const run of trustRuns) {
-    try {
-      const headings = JSON.parse(run.mcp_trust_path) as unknown
-      if (!Array.isArray(headings)) continue
-      for (const heading of headings) {
-        if (typeof heading === 'string' && !trustOwners.has(heading)) {
-          trustOwners.set(heading, run.id)
-        }
-      }
-    } catch {
-      /* observation from an older or incomplete row is not authority */
-    }
-  }
-  for (const heading of helpers.grokTrustHeadings()) {
-    const path = helpers.grokTrustPathFromHeading(heading)
-    if (!path || existsSync(path)) continue
-    if (
-      selectedProject &&
-      path !== selectedProject.path &&
-      !path.startsWith(`${selectedProject.path}/`)
-    )
-      continue
-    const runId = trustOwners.get(heading)
-    if (!runId) {
-      cleanupFailed = true
-      options.presentation.error(
-        `could not reclaim grok trust entry for absent path ${path}: no recorded run owns ${heading}`,
-      )
-      continue
-    }
-    const reclaimed = reclaimResidue('trust', String(runId), { dryRun: dry })
-    if (reclaimed.ok) options.presentation.log(reclaimed.action)
-    else {
-      cleanupFailed = true
-      options.presentation.error(
-        `could not reclaim grok trust entry for absent path ${path}: ${reclaimed.action}`,
-      )
-    }
-  }
+  const trustCleanupFailed = reclaimAbsentTrustEntries({
+    dryRun: dry,
+    selectedProject,
+    headings: helpers.grokTrustHeadings(),
+    pathFromHeading: helpers.grokTrustPathFromHeading,
+    presentation: options.presentation,
+  })
+  cleanupFailed ||= trustCleanupFailed
 
   // Inventory is a read, so dry-run performs it too. A preview that omits
   // already-leaked infrastructure is materially cleaner than the real run.
@@ -812,26 +776,12 @@ export async function sweepRuns(options: SweepOptions, helpers: SweepHelpers): P
 
   const sandboxCounts = sweepSandboxDirectories(dry, options.presentation)
 
-  for (const project of sweepProjects) {
-    try {
-      const report = pruneProjectBranches({
-        project: project.name,
-        dryRun: dry,
-      })
-      const deleted = dry ? report.wouldDelete.length : report.deleted.length
-      options.presentation.log(
-        `${project.name} branches: ${dry ? 'would delete' : 'deleted'} ${deleted}, kept ${report.kept.length}`,
-      )
-      for (const error of report.errors)
-        options.presentation.error(`${project.name} branches: ${error}`)
-      cleanupFailed ||= report.errors.length > 0
-    } catch (error) {
-      cleanupFailed = true
-      options.presentation.error(
-        `${project.name} branches: classification unavailable; skipped: ${error instanceof Error ? error.message : String(error)}`,
-      )
-    }
-  }
+  const branchCleanupFailed = pruneSweptProjectBranches({
+    dryRun: dry,
+    projects: sweepProjects,
+    presentation: options.presentation,
+  })
+  cleanupFailed ||= branchCleanupFailed
 
   printSweepKept(
     closedCounts.released,

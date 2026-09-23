@@ -102,6 +102,18 @@ export const modules: ArchitectureModule[] = [
     './queries.ts',
   ]),
   module('orchestrator/src/artifact-paths.ts', ['node:path']),
+  module('orchestrator/src/close/absent-close-out-residue.ts', [
+    '../database/db.ts',
+    '../reclaim/reclaim-residue.ts',
+  ]),
+  module('orchestrator/src/cleanup/cleanup-sweep-reclaim.ts', [
+    'node:fs',
+    '../branch/branches.ts',
+    '../database/db.ts',
+    '../project/projects.ts',
+    '../reclaim/reclaim-residue.ts',
+    './cleanup.ts',
+  ]),
   module('orchestrator/src/branch/branch-landing-record.ts', ['./branch-state.ts']),
   module('orchestrator/src/branch/branch-state.ts', ['./merged-pull-request.ts']),
   module('orchestrator/src/branch/merged-pull-request.ts', [

@@ -142,6 +142,15 @@ function existingTreeGitRefusal(path: string, repoRoot: string): ReclaimResult |
   })
 }
 
+function snapshotlessTrackedRecipeRefusal(input: {
+  hasRunRow: boolean
+  trackedRecipe: boolean
+}): ReclaimResult | null {
+  return !input.hasRunRow && input.trackedRecipe
+    ? refuse('tracked recipe tree has no recorded recipe snapshot; teardown cannot be established')
+    : null
+}
+
 function proveWorktree(path: string, clock: number, _allowDirty = false): WorktreeProof {
   const rows = runRows(path)
   const row = rows[0]
@@ -186,13 +195,11 @@ function proveWorktree(path: string, clock: number, _allowDirty = false): Worktr
   }
   const gitRefusal = existingTreeGitRefusal(path, project.path)
   if (gitRefusal) return { result: gitRefusal }
-  if (!row && resolvedWorktreeTool(project)?.recipePath) {
-    return {
-      result: refuse(
-        'tracked recipe tree has no recorded recipe snapshot; teardown cannot be established',
-      ),
-    }
-  }
+  const recipeRefusal = snapshotlessTrackedRecipeRefusal({
+    hasRunRow: Boolean(row),
+    trackedRecipe: Boolean(resolvedWorktreeTool(project)?.recipePath),
+  })
+  if (recipeRefusal) return { result: recipeRefusal }
   return {
     result: {
       ok: true,

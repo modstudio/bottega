@@ -137,6 +137,7 @@ export const importBoundaries: ImportBoundary[] = [
       'node:path',
       './cleanup.ts',
       './cleanup-sweep-decisions.ts',
+      './cleanup-sweep-reclaim.ts',
       '../close/close-out.ts',
       '../database/db.ts',
       '../resources/docker-resources.ts',
@@ -168,6 +169,7 @@ export const importBoundaries: ImportBoundary[] = [
     [
       'node:fs',
       'node:path',
+      './absent-close-out-residue.ts',
       './close-out-adoption.ts',
       '../database/db.ts',
       '../git/git-environment.ts',

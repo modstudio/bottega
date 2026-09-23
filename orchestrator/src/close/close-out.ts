@@ -22,7 +22,6 @@ import {
 } from '../project/project-lock.ts'
 import { projectAt, projectByName } from '../project/projects.ts'
 import { proveWorktreeReconstructible } from '../reclaim/reclaim.ts'
-import { reclaimResidue } from '../reclaim/reclaim-residue.ts'
 import {
   type ResourceClaimState,
   recordRetainedRefClaim,
@@ -45,6 +44,7 @@ import { worktreeExists } from '../worktree/worktree.ts'
 import { inspectTreeOwnership } from '../worktree/worktree-attribution.ts'
 import { branchTip, removeFor, restoreBranch } from '../worktree/worktree-remove.ts'
 import type { Worktree } from '../worktree/worktree-types.ts'
+import { releaseAbsentCloseOutResidue } from './absent-close-out-residue.ts'
 import { adoptedTreeCloseOutDecision } from './close-out-adoption.ts'
 
 export type CloseOutResult = {
@@ -52,16 +52,6 @@ export type CloseOutResult = {
   worktree: string | null
   outcome: 'released' | 'forgotten' | 'held' | 'live' | 'absent' | 'failed'
   detail: string
-}
-
-export function decideAbsentCloseOutResidue(input: {
-  outcome: CloseOutResult['outcome']
-  dryRun: boolean
-  project: string | null
-}): Array<'ref-guard' | 'retained-ref'> {
-  return input.outcome === 'absent' && !input.dryRun && input.project
-    ? ['ref-guard', 'retained-ref']
-    : []
 }
 
 const TERMINAL = new Set(['ok', 'failed', 'stale', 'stopped'])
@@ -989,22 +979,12 @@ export function closeOutRun(
   // symlinked path no longer resolves to the identity its other rows share.
   const spellingsBefore = conversationWorktreeSpellings(root.root_id)
   const result = attemptCloseOutRun(runId, { ...options, keepTreeDecision })
-  const projectRow = db().query('SELECT repo FROM run WHERE id=?').get(result.runId) as {
-    repo: string | null
-  } | null
-  const residueKinds = decideAbsentCloseOutResidue({
+  result.detail = releaseAbsentCloseOutResidue({
+    runId: result.runId,
     outcome: result.outcome,
+    detail: result.detail,
     dryRun: options.dryRun ?? false,
-    project: projectRow?.repo ?? null,
   })
-  if (projectRow?.repo) {
-    const residueDetails = residueKinds.map((kind) =>
-      reclaimResidue(kind, `${projectRow.repo}:${result.runId}`),
-    )
-    if (residueDetails.length) {
-      result.detail = `${result.detail}; ${residueDetails.map((item) => item.action).join('; ')}`
-    }
-  }
   if (!keepTreeDecision.held && 'expiredAt' in keepTreeDecision) {
     result.detail = `${result.detail}; keep-tree hold expired at ${keepTreeDecision.expiredAt}`
   }
