@@ -27,6 +27,7 @@ import {
   trackedAllocator,
   trackedRecipeEnvironment,
   trackedRecipeVars,
+  trackedWorktreeAddArgv,
   writeTrackedEnvFiles,
 } from './tracked-recipe.ts'
 
@@ -61,6 +62,50 @@ function writeEnv(recipe: TrackedRecipe, tree: string, project: string, vars = {
 }
 
 describe('tracked recipe execution', () => {
+  test('builds every worktree-add form with optional relative git pointers', () => {
+    const common = { branch: 'DEV-877-tree', path: '/trees/dev-877', base: 'main' }
+    expect(
+      trackedWorktreeAddArgv({
+        ...common,
+        detached: false,
+        existingBranch: false,
+        relativePaths: true,
+      }),
+    ).toEqual([
+      'worktree',
+      'add',
+      '--relative-paths',
+      '-b',
+      'DEV-877-tree',
+      '/trees/dev-877',
+      'main',
+    ])
+    expect(
+      trackedWorktreeAddArgv({
+        ...common,
+        detached: false,
+        existingBranch: true,
+        relativePaths: true,
+      }),
+    ).toEqual(['worktree', 'add', '--relative-paths', '/trees/dev-877', 'DEV-877-tree'])
+    expect(
+      trackedWorktreeAddArgv({
+        ...common,
+        detached: true,
+        existingBranch: false,
+        relativePaths: true,
+      }),
+    ).toEqual(['worktree', 'add', '--relative-paths', '--detach', '/trees/dev-877', 'main'])
+    expect(trackedWorktreeAddArgv({ ...common, detached: false, existingBranch: false })).toEqual([
+      'worktree',
+      'add',
+      '-b',
+      'DEV-877-tree',
+      '/trees/dev-877',
+      'main',
+    ])
+  })
+
   test('runs the fixture recipe refresh list in order', () => {
     const recipe: TrackedRecipe = {
       create: [],

@@ -611,6 +611,25 @@ function failTrackedCreation(input: {
   )
 }
 
+/** Build the one git worktree-add shape used by every tracked creation form. */
+export function trackedWorktreeAddArgv(input: {
+  branch: string
+  path: string
+  base: string
+  detached: boolean
+  existingBranch: boolean
+  relativePaths?: boolean
+}): string[] {
+  return [
+    'worktree',
+    'add',
+    ...(input.relativePaths ? ['--relative-paths'] : []),
+    ...(input.detached ? ['--detach'] : input.existingBranch ? [] : ['-b', input.branch]),
+    input.path,
+    input.existingBranch && !input.detached ? input.branch : input.base,
+  ]
+}
+
 export function createTrackedRecipe(
   input: TrackedCreateInput,
   runStep: StepRunner = kernelRunStep,
@@ -627,13 +646,14 @@ export function createTrackedRecipe(
   try {
     mkdirSync(dirname(path), { recursive: true })
     git(
-      [
-        'worktree',
-        'add',
-        ...(input.detached ? ['--detach'] : input.existingBranch ? [] : ['-b', branch]),
+      trackedWorktreeAddArgv({
+        branch,
         path,
-        input.existingBranch && !input.detached ? branch : base,
-      ],
+        base,
+        detached: Boolean(input.detached),
+        existingBranch: Boolean(input.existingBranch),
+        relativePaths: prepared.recipe.relativePaths,
+      }),
       input.repoRoot,
     )
   } catch (error) {

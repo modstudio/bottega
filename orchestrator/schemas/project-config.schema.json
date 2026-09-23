@@ -12,6 +12,10 @@
         "baseRef": {
           "type": "string"
         },
+        "relativePaths": {
+          "type": "boolean",
+          "description": "Pass --relative-paths to git worktree add so Git metadata remains valid when the checkout is mounted at another root. Defaults to false."
+        },
         "hookBranch": {
           "type": "string",
           "minLength": 1

@@ -126,6 +126,12 @@ const sharedSchema = strictObject({
 
 const recipeShape = strictObject({
   baseRef: z.string().optional(),
+  relativePaths: z
+    .boolean()
+    .describe(
+      'Pass --relative-paths to git worktree add so Git metadata remains valid when the checkout is mounted at another root. Defaults to false.',
+    )
+    .optional(),
   hookBranch: z
     .string()
     .min(1)

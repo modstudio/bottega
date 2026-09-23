@@ -4,12 +4,14 @@ import {
   mkdirSync,
   mkdtempSync,
   readFileSync,
+  readlinkSync,
+  renameSync,
   rmSync,
   symlinkSync,
   writeFileSync,
 } from 'node:fs'
 import { tmpdir } from 'node:os'
-import { join } from 'node:path'
+import { dirname, join } from 'node:path'
 import { provisionWorktree, validateReadonlyProvision } from './worktree-provision.ts'
 
 const roots: string[] = []
@@ -26,7 +28,7 @@ afterEach(() => {
   for (const root of roots.splice(0)) rmSync(root, { recursive: true, force: true })
 })
 
-test('link creates a real directory whose entries are symlinks', () => {
+test('directory link entries use relative targets and survive moving the common root', () => {
   const { main, tree } = fixture()
   mkdirSync(join(main, 'node_modules'))
   writeFileSync(join(main, 'node_modules', '.hidden'), 'hidden')
@@ -37,6 +39,32 @@ test('link creates a real directory whose entries are symlinks', () => {
   expect(lstatSync(join(tree, 'node_modules')).isDirectory()).toBe(true)
   expect(lstatSync(join(tree, 'node_modules', 'package')).isSymbolicLink()).toBe(true)
   expect(lstatSync(join(tree, 'node_modules', '.hidden')).isSymbolicLink()).toBe(true)
+  expect(readlinkSync(join(tree, 'node_modules', 'package'))).toBe(
+    '../../main/node_modules/package',
+  )
+  expect(readFileSync(join(tree, 'node_modules', 'package'), 'utf8')).toBe('contents')
+
+  const moved = `${dirname(main)}-moved`
+  renameSync(dirname(main), moved)
+  roots.splice(roots.indexOf(dirname(main)), 1, moved)
+  expect(readFileSync(join(moved, 'tree', 'node_modules', 'package'), 'utf8')).toBe('contents')
+})
+
+test('file link is one relative symlink and survives moving the common root', () => {
+  const { main, tree } = fixture()
+  writeFileSync(join(main, '.env.testing.local'), 'TOKEN=value')
+
+  provisionWorktree(main, tree, [{ path: '.env.testing.local', method: 'link' }])
+
+  const target = join(tree, '.env.testing.local')
+  expect(lstatSync(target).isSymbolicLink()).toBe(true)
+  expect(readlinkSync(target)).toBe('../main/.env.testing.local')
+  expect(readFileSync(target, 'utf8')).toBe('TOKEN=value')
+
+  const moved = `${dirname(main)}-moved`
+  renameSync(dirname(main), moved)
+  roots.splice(roots.indexOf(dirname(main)), 1, moved)
+  expect(readFileSync(join(moved, 'tree', '.env.testing.local'), 'utf8')).toBe('TOKEN=value')
 })
 
 test('missing source path is skipped and reported', () => {
