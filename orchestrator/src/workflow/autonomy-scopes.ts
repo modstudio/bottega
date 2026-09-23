@@ -15,6 +15,7 @@ import {
   type AutonomyPreset,
   type AutonomyResolution,
   type AutonomySettings,
+  builtInAutonomyPreset,
   builtInAutonomyScope,
   combineRulingsSnapshots,
   parseAutonomy,
@@ -87,7 +88,7 @@ export async function resolveProjectAutonomy(
       { name: 'local user', settings: local.user },
       { name: 'hosted user', settings: hosted.user },
       { name: 'hosted space', settings: hosted.space },
-      builtInAutonomyScope(defaultPreset),
+      builtInAutonomyScope(defaultPreset ?? builtInAutonomyPreset),
     ],
     workflow,
   )
