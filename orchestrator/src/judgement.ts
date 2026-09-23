@@ -565,10 +565,20 @@ export async function scoreRun(
   const scorer = flags.flag('scorer')
   const dashboardAuthorized = options.dashboardAuthorized
   const note = options.note
+  const blockedByTree = flags.has('blocked-by-tree')
+  if (blockedByTree && flags.has('void')) {
+    throw new Error('--blocked-by-tree and --void cannot be combined')
+  }
+  if (blockedByTree && !note?.trim()) {
+    throw new Error('--note is required with --blocked-by-tree')
+  }
+  if (blockedByTree && options.words.length) {
+    throw new Error('--blocked-by-tree records no delivery or quality verdict')
+  }
   let scoreAuthority = runMutationActor(id)
   const owner = judgeability(row.session_id, sessionId())
   let voidAuthority: RootAuthority | null = null
-  if (flags.has('void')) {
+  if (flags.has('void') || blockedByTree) {
     voidAuthority = authorizeRunMutation(id, 'void')
   } else {
     refuseForeignScore(id, owner, flags, dashboardAuthorized)
@@ -577,6 +587,21 @@ export async function scoreRun(
   const delivery = words[0] as Delivery | undefined
   const quality = words[1] as Quality | undefined
   const fidelity = words[2] as Fidelity | undefined
+  if (blockedByTree) {
+    const excludedReason = `blocked by its tree: ${note!.trim()}`
+    const recordId = hostedRunId(id)
+    writeTransaction(() => {
+      persistHostedRunId(id, recordId)
+      voidAuthority = adoptRunMutation(voidAuthority!, 'void')
+      db().query('UPDATE run SET evidence_excluded=? WHERE id=?').run(excludedReason, id)
+      enqueueVoidedRunRecord(id)
+      auditRunMutation(voidAuthority!, 'void', options.auditReason)
+    })
+    presentation.log(
+      `blocked-by-tree run ${id}: retained run and output; excluded from routing evidence; no verdict recorded`,
+    )
+    return
+  }
   if (flags.has('void')) {
     const cannotRecord = voidCannotRecord(row.failure_kind, options.notEvidence)
     const scoredFidelity =

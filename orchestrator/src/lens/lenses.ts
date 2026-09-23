@@ -13,6 +13,7 @@ type CoreRow = {
   slots: string
   version: number
   enabled: number
+  requires_execution: number
 }
 type ProfileRow = {
   id: number
@@ -107,6 +108,7 @@ const coreSnapshot = (row: CoreRow) =>
     excludes: row.excludes,
     slots: JSON.parse(row.slots),
     enabled: !!row.enabled,
+    requires_execution: !!row.requires_execution,
   })
 const profileSnapshot = (row: ProfileRow) =>
   JSON.stringify({ body: JSON.parse(row.body), enabled: !!row.enabled })
@@ -125,6 +127,7 @@ export function showLens(id: string, database: Database = db()) {
   return {
     ...row,
     enabled: !!row.enabled,
+    requires_execution: !!row.requires_execution,
     slots: JSON.parse(row.slots),
     profiles: profiles.map((p) => ({ ...p, enabled: !!p.enabled, body: JSON.parse(p.body) })),
   }
@@ -136,6 +139,7 @@ export function setLens(input: {
   excludes: string
   slots: string
   enabled: boolean
+  requiresExecution: boolean
   reason: string
 }) {
   writableDb()
@@ -150,7 +154,7 @@ export function setLens(input: {
     const prior = d.query('SELECT * FROM lens WHERE id=?').get(input.id) as CoreRow | null
     if (!prior)
       d.query(
-        'INSERT INTO lens (id,title,question,excludes,slots,version,enabled) VALUES (?,?,?,?,?,1,?)',
+        'INSERT INTO lens (id,title,question,excludes,slots,version,enabled,requires_execution) VALUES (?,?,?,?,?,1,?,?)',
       ).run(
         input.id,
         input.title,
@@ -158,19 +162,21 @@ export function setLens(input: {
         input.excludes,
         input.slots,
         input.enabled ? 1 : 0,
+        input.requiresExecution ? 1 : 0,
       )
     else {
       d.query(
         'INSERT INTO lens_revision (lens_id,version,prior_body,reason,session_id,at) VALUES (?,?,?,?,?,?)',
       ).run(input.id, prior.version, coreSnapshot(prior), input.reason, sessionId(), nowIso())
       d.query(
-        'UPDATE lens SET title=?,question=?,excludes=?,slots=?,version=version+1,enabled=? WHERE id=?',
+        'UPDATE lens SET title=?,question=?,excludes=?,slots=?,version=version+1,enabled=?,requires_execution=? WHERE id=?',
       ).run(
         input.title,
         input.question,
         input.excludes,
         input.slots,
         input.enabled ? 1 : 0,
+        input.requiresExecution ? 1 : 0,
         input.id,
       )
     }
@@ -397,6 +403,7 @@ export function resolveLens(id: string, projectName: string | null, d: Database 
     excludes: core.excludes,
     slots: declared.names,
     version: core.version,
+    requires_execution: !!core.requires_execution,
     profiles: profiles.map((p) => ({ axis: p.axis, name: p.name, version: p.version })),
     body,
   }

@@ -113,6 +113,7 @@ describe('lens catalogue', () => {
       excludes: correctness.excludes,
       slots: JSON.stringify(correctness.slots),
       enabled: false,
+      requiresExecution: false,
       reason: 'test switch-off',
     })
     expect(() => resolveLens('correctness', 'one')).toThrow(

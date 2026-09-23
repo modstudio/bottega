@@ -302,6 +302,13 @@
       "when": 1788900000036,
       "tag": "0042_workflow_cursor_abandoned",
       "breakpoints": true
+    },
+    {
+      "idx": 43,
+      "version": "6",
+      "when": 1788900000037,
+      "tag": "0043_lens_requires_execution",
+      "breakpoints": true
     }
   ]
 }

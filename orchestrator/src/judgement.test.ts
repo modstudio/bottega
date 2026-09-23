@@ -9,6 +9,7 @@ import { db } from './database/db.ts'
 import { NOT_EVIDENCE } from './failure/failure.ts'
 import { judgeRun, scoreRun } from './judgement.ts'
 import { completeReview, recordReview } from './review/review-triage.ts'
+import { candidates } from './route/route.ts'
 import { pairPartners } from './score/duel.ts'
 
 const trackResidue = trackedTestResidue()
@@ -607,6 +608,26 @@ describe('judge ruling', () => {
 })
 
 describe('voided output evidence', () => {
+  test('score --blocked-by-tree uses the void routing exclusion without recording a verdict', async () => {
+    const kept = insert('ok', 'understand')
+    const blocked = insert('ok', 'understand')
+    seedScore(kept, 'full', 'right')
+    await score(
+      blocked,
+      [],
+      { 'blocked-by-tree': true },
+      { note: 'the seeded database could not start' },
+    )
+    expect(db().query('SELECT evidence_excluded FROM run WHERE id=?').get(blocked)).toEqual({
+      evidence_excluded: 'blocked by its tree: the seeded database could not start',
+    })
+    expect(db().query('SELECT * FROM score WHERE run_id=?').get(blocked)).toBeNull()
+    expect(candidates('understand').find((row) => row.agent === 'codex')).toMatchObject({
+      scored: 1,
+      evidence: 1,
+    })
+  })
+
   test('score --void records its verdict but removes routing and duel evidence', async () => {
     const outputPath = trackResidue(join(dir, 'voided-output.txt'))
     writeFileSync(outputPath, 'the retained answer')

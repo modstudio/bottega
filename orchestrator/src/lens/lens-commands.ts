@@ -16,7 +16,7 @@ export function lensCommand(argv: string[], presentation: { log(value: string): 
       rows
         .map(
           (row) =>
-            `${row.id}  v${row.version}  ${row.enabled ? 'enabled' : 'disabled'}  ${row.title}`,
+            `${row.id}  v${row.version}  ${row.enabled ? 'enabled' : 'disabled'}  ${row.requires_execution ? 'requires execution' : 'reading only'}  ${row.title}`,
         )
         .join('\n'),
     )
@@ -32,6 +32,11 @@ export function lensCommand(argv: string[], presentation: { log(value: string): 
 const enabled = (argv: string[]) => {
   const value = flagValue(argv, 'enabled')
   if (value !== 'true' && value !== 'false') throw new Error('--enabled must be true or false')
+  return value === 'true'
+}
+const booleanFlag = (argv: string[], name: string) => {
+  const value = flagValue(argv, name)
+  if (value !== 'true' && value !== 'false') throw new Error(`--${name} must be true or false`)
   return value === 'true'
 }
 const source = (argv: string[], inline: string, file: string) => {
@@ -57,7 +62,9 @@ function setLensCommand(argv: string[], emit: Emit): void {
     excludes === undefined ||
     !reason?.trim()
   )
-    throw new Error('lens set requires id, title, question, excludes, enabled, slots, and reason')
+    throw new Error(
+      'lens set requires id, title, question, excludes, enabled, requires-execution, slots, and reason',
+    )
   emit(
     setLens({
       id,
@@ -66,6 +73,7 @@ function setLensCommand(argv: string[], emit: Emit): void {
       excludes,
       slots: source(argv, 'slots', 'slots-file'),
       enabled: enabled(argv),
+      requiresExecution: booleanFlag(argv, 'requires-execution'),
       reason,
     }),
   )
