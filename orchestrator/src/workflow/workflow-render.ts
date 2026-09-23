@@ -46,6 +46,8 @@ export function renderWorkflowComposition(result: WorkflowComposition): string {
   }
   return [
     `${result.workflow.title} — ${result.mode?.title ?? 'choose a mode'}`,
+    `Worker questions: rulings=${result.rulings.value} (${result.rulings.scope}).`,
+    ...(result.autonomyNote ? [result.autonomyNote] : []),
     ...(result.needs.mode ?? []).map((mode) => `${mode.slug}: ${mode.entry}`),
     ...(result.needs.mode
       ? ['Choose a mode by answering its question, then compose again with that mode.']

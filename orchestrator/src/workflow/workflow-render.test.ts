@@ -95,10 +95,10 @@ describe('workflow rendering', () => {
     )
     expect(rendered.split('\n').slice(0, 5)).toEqual([
       'Ship a task — Ship',
+      'Worker questions: rulings=agent (built-in).',
       'STOP. Do not start step 1. Ask the operator for each missing argument below, then compose again with them.',
       '- key: The task key.',
       '- branch: The branch to ship.',
-      "- worktree: The branch's worktree path.",
     ])
     expect(rendered).toContain('1. rebase — Rebase and verify')
     expect(rendered).not.toContain('Work the numbered steps below')
