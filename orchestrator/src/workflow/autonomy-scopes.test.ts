@@ -5,7 +5,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { ConfigClientError, configClient } from '../../../shared/config-client.ts'
 import { applyMigrations } from '../database/migrations.ts'
-import { answerRulingRefusal } from './autonomy.ts'
+import { answerRulingRefusal, combineRulingsSnapshots } from './autonomy.ts'
 import {
   HOSTED_AUTONOMY_TIMEOUT_MS,
   resolveAnswerRulings,
@@ -159,7 +159,17 @@ test('answer proceeds after unavailable hosted config when local project decides
   expect(answerRulingRefusal(rulings, false)).toBeNull()
 })
 
-test('answer uses the newest active workflow rulings snapshot and otherwise resolves scopes', async () => {
+test('strict cursor snapshot combination prefers incomplete, then user, then agent', () => {
+  const incomplete = { value: 'agent' as const, scope: 'hosted user', complete: false }
+  const user = { value: 'user' as const, scope: 'session' }
+  const agent = { value: 'agent' as const, scope: 'project' }
+  expect(combineRulingsSnapshots([])).toBeNull()
+  expect(combineRulingsSnapshots([agent, user])).toBe(user)
+  expect(combineRulingsSnapshots([user, incomplete])).toBe(incomplete)
+  expect(combineRulingsSnapshots([agent])).toBe(agent)
+})
+
+test('answer strictly combines every active workflow rulings snapshot', async () => {
   const d = database(JSON.stringify({ autonomy: { rulings: 'agent' } }))
   const insert = d.query(
     `INSERT INTO workflow_cursor
@@ -185,6 +195,26 @@ test('answer uses the newest active workflow rulings snapshot and otherwise reso
   expect(await resolveAnswerRulings('fixture', 'DEV-866', undefined, d, missingConfig)).toEqual({
     value: 'user',
     scope: 'session',
+  })
+  insert.run(
+    'incomplete',
+    JSON.stringify({
+      rulings: {
+        value: 'agent',
+        scope: 'hosted user',
+        complete: false,
+        unavailableReason: 'offline',
+      },
+    }),
+    'running',
+    '3',
+    '3',
+  )
+  expect(await resolveAnswerRulings('fixture', 'DEV-866', undefined, d, missingConfig)).toEqual({
+    value: 'agent',
+    scope: 'hosted user',
+    complete: false,
+    unavailableReason: 'offline',
   })
   expect(await resolveAnswerRulings('fixture', 'OTHER', undefined, d, missingConfig)).toMatchObject(
     {

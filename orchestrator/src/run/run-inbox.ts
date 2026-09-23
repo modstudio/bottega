@@ -15,8 +15,8 @@ type RunInboxPresentation = {
 
 async function rulingsHeader(project: { name: string } | null): Promise<string | null> {
   if (!project) return null
-  const rulings = (await resolveProjectAutonomy(project.name, undefined, 'guided')).rulings
-  return `rulings=${rulings.value} (${rulings.scope})${
+  const rulings = (await resolveProjectAutonomy(project.name, undefined, undefined)).rulings
+  return `project default: rulings=${rulings.value} (${rulings.scope})${
     rulings.value === 'agent'
       ? '; answer what the specification or canon settles; relay a design or product-direction question to the operator and answer it with --from-operator.'
       : ''

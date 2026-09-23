@@ -460,11 +460,14 @@ export function createDocsMcpServer(): McpServer {
     },
     async ({ slug, project, step, mode, args, autonomy }) => {
       const preliminary = composeWorkflow(slug, project, mode, args ?? {})
+      const preliminaryStep = mode
+        ? undefined
+        : getWorkflowStep(slug, project, step, args ?? {}, undefined, { mode })
       const resolved = await resolveProjectAutonomy(
         project,
         preliminary.workflow.slug,
         preliminary.workflow.defaultPreset,
-        catalogueStepsForAutonomy(preliminary.steps),
+        catalogueStepsForAutonomy(preliminaryStep ? [preliminaryStep] : preliminary.steps),
         parseAutonomy(autonomy, 'session'),
       )
       return text(

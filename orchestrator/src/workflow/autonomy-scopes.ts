@@ -12,8 +12,11 @@ import { readMachineAutonomy } from '../../../shared/machine-config.ts'
 import { db } from '../database/db.ts'
 import { projectByName } from '../project/projects.ts'
 import {
+  type AutonomyPreset,
   type AutonomyResolution,
   type AutonomySettings,
+  builtInAutonomyScope,
+  combineRulingsSnapshots,
   parseAutonomy,
   resolveAutonomy,
 } from './autonomy.ts'
@@ -62,7 +65,7 @@ async function readHosted(
 export async function resolveProjectAutonomy(
   project: string,
   workflow: string | undefined,
-  defaultPreset: AutonomySettings['preset'],
+  defaultPreset: AutonomyPreset | undefined,
   steps: Pick<CatalogueStep, 'slug' | 'stage' | 'autonomy'>[] = [],
   session: AutonomySettings = {},
   clientFactory: (signal: AbortSignal) => ConfigClient = (signal) =>
@@ -84,7 +87,7 @@ export async function resolveProjectAutonomy(
       { name: 'local user', settings: local.user },
       { name: 'hosted user', settings: hosted.user },
       { name: 'hosted space', settings: hosted.space },
-      { name: 'built-in', settings: { preset: defaultPreset ?? 'guided' } },
+      builtInAutonomyScope(defaultPreset),
     ],
     workflow,
   )
@@ -118,16 +121,20 @@ function workflowRulingsSnapshot(
   d: Database = db(),
 ): AutonomyResolution['rulings'] | null {
   if (!launchKey) return null
-  const row = d
+  const rows = d
     .query(
       `SELECT autonomy FROM workflow_cursor
        WHERE project=? AND workflow_key=? AND state IN ('running','awaiting-ruling')
-       ORDER BY updated_at DESC,id DESC LIMIT 1`,
+       ORDER BY updated_at DESC,id DESC`,
     )
-    .get(project, launchKey) as { autonomy: string | null } | null
-  if (!row?.autonomy) return null
-  const snapshot = JSON.parse(row.autonomy) as Partial<AutonomyResolution>
-  return snapshot.rulings ?? null
+    .all(project, launchKey) as { autonomy: string | null }[]
+  return combineRulingsSnapshots(
+    rows.flatMap((row) => {
+      if (!row.autonomy) return []
+      const snapshot = JSON.parse(row.autonomy) as Partial<AutonomyResolution>
+      return snapshot.rulings ? [snapshot.rulings] : []
+    }),
+  )
 }
 
 export async function resolveAnswerRulings(
@@ -144,7 +151,7 @@ export async function resolveAnswerRulings(
     await resolveProjectAutonomy(
       project,
       undefined,
-      'guided',
+      undefined,
       [],
       {},
       clientFactory,

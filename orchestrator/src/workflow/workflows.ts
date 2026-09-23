@@ -5,7 +5,14 @@ import {
   resolveDeclaredFacts,
   unresolvedTrackerActionPlaceholder,
 } from '../project/project-injection.ts'
-import { type AutonomyResolution, catalogueStepsForAutonomy, resolveAutonomy } from './autonomy.ts'
+import {
+  type AutonomyPreset,
+  type AutonomyResolution,
+  autonomyPresets,
+  builtInAutonomyScope,
+  catalogueStepsForAutonomy,
+  resolveAutonomy,
+} from './autonomy.ts'
 import {
   compatibleCatalogueStep,
   productionStepCatalogue,
@@ -25,7 +32,7 @@ type WorkflowMode = {
 export type WorkflowDefinition = {
   title: string
   description: string
-  defaultPreset?: 'manual' | 'guided' | 'autonomous'
+  defaultPreset?: AutonomyPreset
   arguments: WorkflowArgument[]
   modes: WorkflowMode[]
   // Steps are shared on purpose: a catalogue change reaches every workflow
@@ -45,7 +52,7 @@ const workflowPromptArgumentNameErrors = (name: unknown): string[] =>
 
 const workflowDefaultPresetErrors = (preset: unknown): string[] =>
   preset === undefined ||
-  (typeof preset === 'string' && ['manual', 'guided', 'autonomous'].includes(preset))
+  (typeof preset === 'string' && autonomyPresets.includes(preset as AutonomyPreset))
     ? []
     : ['defaultPreset must be manual, guided, or autonomous']
 
@@ -460,7 +467,7 @@ export function composeWorkflow(
     autonomy ??
     resolveAutonomy(
       catalogueStepsForAutonomy(selected),
-      [{ name: 'built-in', settings: { preset: definition.defaultPreset ?? 'guided' } }],
+      [builtInAutonomyScope(definition.defaultPreset)],
       slug,
     )
   const { resolved, facts } = resolveDeclaredFacts(
@@ -549,7 +556,7 @@ export function getWorkflowStep(
     autonomy ??
     resolveAutonomy(
       catalogueStepsForAutonomy([step]),
-      [{ name: 'built-in', settings: { preset: definition.defaultPreset ?? 'guided' } }],
+      [builtInAutonomyScope(definition.defaultPreset)],
       slug,
     )
   const values: Record<string, unknown> = { ...args, ...facts }

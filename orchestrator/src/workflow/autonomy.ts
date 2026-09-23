@@ -3,11 +3,14 @@
 
 export const autonomyStages = ['plan', 'implement', 'review', 'docs', 'canon', 'ship'] as const
 export const autonomyValues = ['ask', 'review', 'auto'] as const
+export const autonomyPresets = ['manual', 'guided', 'autonomous'] as const
+export const builtInAutonomyPreset: AutonomyPreset = 'guided'
 export type AutonomyStage = (typeof autonomyStages)[number]
 export type AutonomyValue = (typeof autonomyValues)[number]
+export type AutonomyPreset = (typeof autonomyPresets)[number]
 type CatalogueStep = { slug: string; stage?: AutonomyStage; autonomy: AutonomyValue }
 type WorkflowAutonomySettings = {
-  preset?: 'manual' | 'guided' | 'autonomous'
+  preset?: AutonomyPreset
   stages?: Partial<Record<AutonomyStage, AutonomyValue>>
   steps?: Record<string, AutonomyValue>
   rulings?: 'agent' | 'user'
@@ -39,7 +42,7 @@ function validatePreset(
   key = 'preset',
 ): Pick<WorkflowAutonomySettings, 'preset'> {
   if (value === undefined) return {}
-  if (!allowed(value, ['manual', 'guided', 'autonomous']))
+  if (!allowed(value, autonomyPresets))
     throw new Error(`invalid autonomy setting at ${scope} key ${key}: ${String(value)}`)
   return { preset: value as AutonomySettings['preset'] }
 }
@@ -189,6 +192,20 @@ export const catalogueStepsForAutonomy = (
   steps: Pick<CatalogueStep, 'slug' | 'stage' | 'autonomy'>[],
 ): Pick<CatalogueStep, 'slug' | 'stage' | 'autonomy'>[] =>
   steps.map(({ slug, stage, autonomy }) => ({ slug, stage, autonomy }))
+
+export const builtInAutonomyScope = (defaultPreset?: AutonomyPreset) => ({
+  name: 'built-in',
+  settings: { preset: defaultPreset ?? builtInAutonomyPreset },
+})
+
+export function combineRulingsSnapshots(snapshots: RulingsResolution[]): RulingsResolution | null {
+  if (!snapshots.length) return null
+  return (
+    snapshots.find(({ complete }) => complete === false) ??
+    snapshots.find(({ value }) => value === 'user') ??
+    snapshots[0]!
+  )
+}
 
 function parseWorkflowAutonomySetting(
   result: AutonomySettings,

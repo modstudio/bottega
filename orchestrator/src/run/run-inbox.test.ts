@@ -91,6 +91,7 @@ test('project inbox exposes a foreign question without adopting it', async () =>
   })
   question(id, 'foreign?')
   const shown = await inbox()
+  expect(shown).toContain('project default: rulings=agent')
   expect(shown).toContain('visible here, but owned by another session')
   expect(shown).toContain('foreign?')
   expect(shown).toContain(

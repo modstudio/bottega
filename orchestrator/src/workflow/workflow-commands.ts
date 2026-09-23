@@ -142,11 +142,14 @@ async function stepCommand(
     catalogueVersion: positive(flagValue(argv, 'catalogue-version'), '--catalogue-version'),
   }
   const preliminary = composeWorkflow(argv[2]!, project, mode, args, undefined, selection)
+  const preliminaryStep = mode
+    ? undefined
+    : getWorkflowStep(argv[2]!, project, argv[3]!, args, undefined, selection)
   const autonomy = await resolveProjectAutonomy(
     project,
     preliminary.workflow.slug,
     preliminary.workflow.defaultPreset,
-    catalogueStepsForAutonomy(preliminary.steps),
+    catalogueStepsForAutonomy(preliminaryStep ? [preliminaryStep] : preliminary.steps),
     parseAutonomy(flagValues(argv, 'autonomy').join(','), 'session'),
   )
   const step = mode
