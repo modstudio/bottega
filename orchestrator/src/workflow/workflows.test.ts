@@ -36,6 +36,25 @@ const database = () => {
   d.exec('PRAGMA foreign_keys=ON')
   applyMigrations(d)
   seedWorkflows(d)
+  const catalogue = productionStepCatalogue(d)
+  d.query('UPDATE step_catalogue_version SET definition=? WHERE catalogue_id=? AND n=?').run(
+    JSON.stringify({
+      steps: catalogue.definition.steps.map((step) => ({
+        ...step,
+        body: step.body
+          .replace(
+            'Dispatch `orch do diagnose --key {{key}}`',
+            'Dispatch `orch do diagnose --key {{key}} "Diagnose {{key}}."`',
+          )
+          .replace(
+            'Dispatch `orch do issue-worker --key {{key}}`',
+            'Dispatch `orch do issue-worker --key {{key}} --file specification.md`',
+          ),
+      })),
+    }),
+    catalogue.owner_id,
+    catalogue.n,
+  )
   d.query('INSERT INTO project (name,path,stack,settings) VALUES (?,?,?,?)').run(
     'fixture',
     '/fixture',

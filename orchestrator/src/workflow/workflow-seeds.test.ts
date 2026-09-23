@@ -251,7 +251,18 @@ describe('workflow projection and seeds', () => {
               body: step.body.replace('--base {{trunk}}', '--base main'),
               needs: step.needs.filter((need) => need !== 'trunk'),
             }
-          return step
+          return {
+            ...step,
+            body: step.body
+              .replace(
+                'Dispatch `orch do diagnose --key {{key}}`',
+                'Dispatch `orch do diagnose --key {{key}} "Diagnose {{key}}."`',
+              )
+              .replace(
+                'Dispatch `orch do issue-worker --key {{key}}`',
+                'Dispatch `orch do issue-worker --key {{key}} --file specification.md`',
+              ),
+          }
         }),
       }
     d.query('UPDATE step_catalogue_version SET definition=? WHERE catalogue_id=? AND n=1').run(
