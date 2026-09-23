@@ -14,8 +14,10 @@ export type StreamEvent =
       title: string
       status?: string
       toolKind?: string
+      server?: string
       target?: string
       result?: string
+      error?: string
       locations?: Array<{ path: string }>
     }
 
@@ -173,7 +175,12 @@ export function createEventLog(
         return
       }
       if (event.kind === 'usage') {
-        write({ ts, type: 'usage', tokens: event.tokens, costUsd: event.costUsd })
+        write({
+          ts,
+          type: 'usage',
+          tokens: event.tokens,
+          costUsd: event.costUsd,
+        })
       }
     },
     flush,
@@ -228,8 +235,10 @@ function toolEvent(opts: {
   title: string
   status?: string
   toolKind?: string
+  server?: string
   target?: string
   result?: string
+  error?: string
   locations?: Array<{ path: string }>
 }): Extract<StreamEvent, { kind: 'tool' }> {
   return { kind: 'tool', ...opts }
@@ -314,7 +323,14 @@ function eventsFromCodexItem(item: Record<string, unknown>, phase: string): Stre
     const output = stringField(item.aggregated_output)
     const locations = locationsFromUnknown(item)
     if (phase === 'started' || phase === 'updated') {
-      return [toolEvent({ title, toolKind: 'execute', status: 'in_progress', locations })]
+      return [
+        toolEvent({
+          title,
+          toolKind: 'execute',
+          status: 'in_progress',
+          locations,
+        }),
+      ]
     }
     return [
       toolEvent({
@@ -331,7 +347,19 @@ function eventsFromCodexItem(item: Record<string, unknown>, phase: string): Stre
       stringField(item.tool) ?? stringField(item.query) ?? stringField(item.server) ?? itemType
     const locations = locationsFromUnknown(item.changes) ?? locationsFromUnknown(item)
     const result = typeof item.result === 'string' ? item.result : undefined
-    const status = phase === 'completed' ? 'completed' : 'in_progress'
+    const itemError =
+      typeof item.error === 'string'
+        ? item.error
+        : isRecord(item.error)
+          ? stringField(item.error.message)
+          : undefined
+    const reportedStatus = stringField(item.status)
+    const status =
+      itemError || reportedStatus === 'failed' || reportedStatus === 'error'
+        ? 'failed'
+        : phase === 'completed'
+          ? 'completed'
+          : 'in_progress'
     return [
       toolEvent({
         title,
@@ -339,6 +367,8 @@ function eventsFromCodexItem(item: Record<string, unknown>, phase: string): Stre
           itemType === 'file_change' ? 'edit' : itemType === 'web_search' ? 'search' : 'mcp',
         status,
         result,
+        ...(itemType === 'mcp_tool_call' ? { server: stringField(item.server) } : {}),
+        ...(itemError ? { error: itemError } : {}),
         locations,
         target: locations?.[0]?.path,
       }),
@@ -423,7 +453,11 @@ function readEventLog(path: string): RunLogEvent[] {
 function summariseEvent(event: RunLogEvent): PeekEventSummary {
   if (event.type === 'text') return { type: 'text', text: event.text.slice(0, PEEK_TEXT_CHARS) }
   if (event.type === 'tool_call') {
-    return { type: 'tool_call', title: event.title, target: event.locations?.[0]?.path }
+    return {
+      type: 'tool_call',
+      title: event.title,
+      target: event.locations?.[0]?.path,
+    }
   }
   if (event.type === 'tool_result')
     return { type: 'tool_result', status: event.status, bytes: event.bytes }

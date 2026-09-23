@@ -24,6 +24,7 @@ import {
   type WorkerReply,
 } from '../contract/contract.ts'
 import { db, nowIso, tryWriteContention, writeTransaction } from '../database/db.ts'
+import type { StreamEvent } from '../events.ts'
 import { assessEvidence, recordEvidence } from '../evidence/evidence.ts'
 import type { classify } from '../failure/failure.ts'
 import { terminateProcessGroup } from '../idle-kill.ts'
@@ -46,6 +47,7 @@ import {
   type TerminalSnapshot,
 } from './run-artifacts.ts'
 import { resolveRootFromLastTurn } from './run-liveness.ts'
+import { decideFinalMcpConnection } from './run-mcp-attachment.ts'
 import { enqueueRunRecord } from './run-outbox.ts'
 import { errorTail, live, liveCheckpoints } from './run-process.ts'
 import { blockersToRecord } from './run-terminal-blockers.ts'
@@ -104,6 +106,7 @@ export type TerminalInput = {
   resolvedSession: string | null
   name: string
   artifactsPersisted: boolean
+  workerEvents: StreamEvent[]
 }
 
 export type TerminalResult = {
@@ -251,6 +254,7 @@ export async function finishRun(input: TerminalInput): Promise<TerminalResult> {
     resolvedSession,
     name,
     artifactsPersisted,
+    workerEvents,
   } = input
   if (timer) clearTimeout(timer)
   if (checkpointTimer) clearInterval(checkpointTimer)
@@ -335,7 +339,10 @@ export async function finishRun(input: TerminalInput): Promise<TerminalResult> {
   if (frozenBefore.length && frozenAfter.length && !confinementFailures.length) {
     const startedAt = db()
       .query('SELECT started_at, head_commit FROM run WHERE id=?')
-      .get(claim.id) as { started_at: string; head_commit: string | null } | null
+      .get(claim.id) as {
+      started_at: string
+      head_commit: string | null
+    } | null
     confinementEvent = classifyDivergence({
       before: frozenBefore,
       after: frozenAfter,
@@ -470,6 +477,33 @@ export async function finishRun(input: TerminalInput): Promise<TerminalResult> {
   ;({ status, failureKind, error } = confinementPrecedence.outcome)
   preConfinement = confinementPrecedence.preConfinement
 
+  const recordedMcp = db()
+    .query('SELECT mcp_connected, mcp_error FROM run WHERE id=?')
+    .get(claim.id) as {
+    mcp_connected: number | null
+    mcp_error: string | null
+  } | null
+  const finalMcp =
+    mcpMode && ownMcpServer
+      ? decideFinalMcpConnection({
+          requiredServer: ownMcpServer,
+          mcpMode,
+          preLaunchEvidence: recordedMcp
+            ? {
+                server: ownMcpServer,
+                connected:
+                  recordedMcp.mcp_connected === null ? null : recordedMcp.mcp_connected === 1,
+                error: recordedMcp.mcp_error,
+              }
+            : null,
+          workerEvents,
+          outcome: { status, error, failureKind },
+        })
+      : null
+  if (finalMcp) {
+    ;({ status, error, failureKind } = finalMcp.outcome)
+  }
+
   try {
     const declared = (contract?.blockers ?? []).map((b) => ({
       what: b.what,
@@ -525,7 +559,7 @@ export async function finishRun(input: TerminalInput): Promise<TerminalResult> {
     parsedReview &&
     parsedReview.provenance.could_not_verify.length === 0 &&
     (parsedReview.provenance.substitutes.length > 0 ||
-      (mcpMode !== null && mcpConnection?.connected !== true) ||
+      (mcpMode !== null && finalMcp?.connected !== 1) ||
       Boolean(provenanceWrongProjectTool))
   const localMachineId = machineId()
   const writeTerminalRow = () =>
@@ -561,6 +595,12 @@ export async function finishRun(input: TerminalInput): Promise<TerminalResult> {
           provenanceSilent ? 'silent' : null,
           claim.id,
         )
+
+      if (finalMcp) {
+        db()
+          .query('UPDATE run SET mcp_connected=?, mcp_error=? WHERE id=?')
+          .run(finalMcp.connected, finalMcp.error, claim.id)
+      }
 
       /**
        * The facts, recorded without anyone's opinion.

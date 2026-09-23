@@ -2,6 +2,7 @@ import { describe, expect, test } from 'bun:test'
 import { PLATFORM_NAME } from '../../../shared/brand.ts'
 import type { McpConnection } from '../mcp/mcp-preflight.ts'
 import {
+  decideFinalMcpConnection,
   decideMcpAttachment,
   decideMcpMirrorMismatch,
   decideMcpToolProbe,
@@ -10,7 +11,11 @@ import {
 
 const mcpServerName = PLATFORM_NAME.toLowerCase()
 const projectName = 'bottega'
-const connected: McpConnection = { server: mcpServerName, connected: true, error: null }
+const connected: McpConnection = {
+  server: mcpServerName,
+  connected: true,
+  error: null,
+}
 const disconnected: McpConnection = {
   server: mcpServerName,
   connected: false,
@@ -167,6 +172,30 @@ describe('MCP mirror attachment ruling', () => {
 })
 
 describe('MCP tool-probe attachment ruling', () => {
+  test('a successful required orch probe launches with worker attachment unverified', () => {
+    const ruling = decideMcpToolProbe(
+      {
+        server: mcpServerName,
+        tool: 'ping',
+        ok: true,
+        error: null,
+        durationMs: 1,
+        detail: 'called ping',
+        namesSeen: [mcpServerName],
+      },
+      mcpServerName,
+      'require',
+      'codex',
+      projectName,
+    )
+    expect(ruling.callEvidence).toEqual({
+      connected: null,
+      error: 'orch probe ok: ping; worker attachment unverified',
+    })
+    expect(ruling.refusalReason).toBeNull()
+    expect(ruling.failedConnection).toBeNull()
+  })
+
   test('an unobservable required probe is refused with the existing guidance', () => {
     const ruling = decideMcpToolProbe(
       {
@@ -211,5 +240,106 @@ describe('MCP tool-probe attachment ruling', () => {
       error: 'call failed',
       namesSeen: [mcpServerName],
     })
+  })
+})
+
+describe('final worker MCP evidence', () => {
+  const outcome = { status: 'ok', error: null, failureKind: null }
+  const preLaunchEvidence = {
+    server: mcpServerName,
+    connected: true,
+    error: 'grok mcp doctor healthy; worker attachment unverified',
+  }
+
+  test('healthy doctor evidence alone stays unverified', () => {
+    expect(
+      decideFinalMcpConnection({
+        requiredServer: mcpServerName,
+        mcpMode: 'require',
+        preLaunchEvidence,
+        workerEvents: [],
+        outcome,
+      }),
+    ).toEqual({ connected: null, error: preLaunchEvidence.error, outcome })
+  })
+
+  test('a completed worker call on the required server verifies attachment', () => {
+    expect(
+      decideFinalMcpConnection({
+        requiredServer: mcpServerName,
+        mcpMode: 'require',
+        preLaunchEvidence,
+        workerEvents: [
+          {
+            kind: 'tool',
+            toolKind: 'mcp',
+            server: mcpServerName,
+            title: 'task_list',
+            status: 'completed',
+          },
+        ],
+        outcome,
+      }),
+    ).toEqual({
+      connected: 1,
+      error: `verified: worker tool call ${mcpServerName}.task_list`,
+      outcome,
+    })
+  })
+
+  test.each([
+    {
+      name: 'required',
+      mcpMode: 'require' as const,
+      expectedOutcome: {
+        status: 'failed',
+        error: `MCP server '${mcpServerName}' was unreachable to the worker: authentication failed`,
+        failureKind: 'mcp_unverified',
+      },
+    },
+    { name: 'preferred', mcpMode: 'prefer' as const, expectedOutcome: outcome },
+  ])('a failed worker call is recorded in $name mode', ({ mcpMode, expectedOutcome }) => {
+    expect(
+      decideFinalMcpConnection({
+        requiredServer: mcpServerName,
+        mcpMode,
+        preLaunchEvidence,
+        workerEvents: [
+          {
+            kind: 'tool',
+            toolKind: 'mcp',
+            server: mcpServerName,
+            title: 'task_list',
+            status: 'failed',
+            error: 'authentication failed',
+          },
+        ],
+        outcome,
+      }),
+    ).toEqual({
+      connected: 0,
+      error: 'authentication failed',
+      outcome: expectedOutcome,
+    })
+  })
+
+  test('a call on another server does not verify the required server', () => {
+    expect(
+      decideFinalMcpConnection({
+        requiredServer: mcpServerName,
+        mcpMode: 'require',
+        preLaunchEvidence,
+        workerEvents: [
+          {
+            kind: 'tool',
+            toolKind: 'mcp',
+            server: 'other',
+            title: 'task_list',
+            status: 'completed',
+          },
+        ],
+        outcome,
+      }).connected,
+    ).toBeNull()
   })
 })

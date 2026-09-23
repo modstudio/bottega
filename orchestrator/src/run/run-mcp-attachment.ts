@@ -71,7 +71,12 @@ export function decideMcpMirrorMismatch(
 ): McpMirrorMismatch | null {
   const error = wrongProjectReason(server, namesSeen)
   if (!error) return null
-  const connection: McpConnection = { server, connected: false, error, namesSeen }
+  const connection: McpConnection = {
+    server,
+    connected: false,
+    error,
+    namesSeen,
+  }
   return {
     recorded: {
       server,
@@ -94,6 +99,73 @@ export type McpToolProbeRuling = {
   failedConnection: McpConnection | null
 }
 
+export type WorkerMcpEvent = {
+  kind: string
+  toolKind?: string
+  server?: string
+  title?: string
+  status?: string
+  error?: string
+}
+
+export type FinalMcpFacts<FailureKind extends string> = {
+  requiredServer: string
+  mcpMode: McpMode | null
+  preLaunchEvidence: McpConnection | null
+  workerEvents: readonly WorkerMcpEvent[]
+  outcome: {
+    status: string
+    error: string | null
+    failureKind: FailureKind | null
+  }
+}
+
+export type FinalMcpRuling<FailureKind extends string> = {
+  connected: 0 | 1 | null
+  error: string | null
+  outcome: {
+    status: string
+    error: string | null
+    failureKind: FailureKind | 'mcp_unverified' | null
+  }
+}
+
+/** Decide final connection evidence from the worker's structured stream, never its prose. */
+export function decideFinalMcpConnection<FailureKind extends string>(
+  facts: FinalMcpFacts<FailureKind>,
+): FinalMcpRuling<FailureKind> {
+  const calls = facts.workerEvents.filter(
+    (event) =>
+      event.kind === 'tool' && event.toolKind === 'mcp' && event.server === facts.requiredServer,
+  )
+  const completed = calls.find((event) => event.status === 'completed')
+  if (completed) {
+    return {
+      connected: 1,
+      error: `verified: worker tool call ${facts.requiredServer}.${completed.title ?? 'unknown'}`,
+      outcome: facts.outcome,
+    }
+  }
+  const failed = calls.find((event) => event.status === 'failed')
+  if (failed) {
+    const reason = failed.error ?? 'MCP tool call failed'
+    const outcome =
+      facts.mcpMode === 'require' && facts.outcome.status === 'ok'
+        ? {
+            status: 'failed',
+            failureKind: 'mcp_unverified' as const,
+            error: `MCP server '${facts.requiredServer}' was unreachable to the worker: ${reason}`,
+          }
+        : facts.outcome
+    return { connected: 0, error: reason, outcome }
+  }
+  return {
+    connected: facts.preLaunchEvidence?.connected === false ? 0 : null,
+    error: facts.preLaunchEvidence?.error ?? null,
+    outcome: facts.outcome,
+  }
+}
+
 /** Translate a completed tool probe into attachment policy; the caller records and enforces it. */
 export function decideMcpToolProbe(
   probe: McpProbeResult,
@@ -103,8 +175,9 @@ export function decideMcpToolProbe(
   projectName: string | null,
 ): McpToolProbeRuling {
   const callEvidence = mcpCallEvidence(probe)
+  const orchProbeReachedTool = probe.ok && probe.tool !== 'tools/list'
   const refusalReason =
-    callEvidence.connected !== 1 && mcpMode === 'require'
+    !orchProbeReachedTool && mcpMode === 'require'
       ? callEvidence.connected === 0
         ? `MCP tool call failed on ${server}: ${callEvidence.error}`
         : `mcp unverifiable on ${agent}: ${callEvidence.error}` +

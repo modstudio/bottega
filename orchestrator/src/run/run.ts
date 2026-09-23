@@ -32,6 +32,7 @@ import {
   writeTransaction,
 } from '../database/db.ts'
 import { preflight } from '../dispatch/dispatch-preflight.ts'
+import type { StreamEvent } from '../events.ts'
 import { assessEvidencePrompt } from '../evidence/evidence.ts'
 import { type classify, notify } from '../failure/failure.ts'
 import { checkoutWatchSet } from '../git/checkout-identity.ts'
@@ -784,14 +785,20 @@ export async function run(opts: {
       )
       .run(why, Date.now() - started, claim.id)
     teardownTerminalRunResources(db(), claim.id)
-    throw Object.assign(new Error(`run ${claim.id} could not start: ${why}`), { runId: claim.id })
+    throw Object.assign(new Error(`run ${claim.id} could not start: ${why}`), {
+      runId: claim.id,
+    })
   }
   const sandboxEnvironment = sandboxSelection.profile ? prepareSandboxHome(name, sandboxRunDir) : {}
   const mcpEnvironment = childEnv(
     a,
     claim.id,
     runToken,
-    { ...(gitConfigEnvironment ?? {}), ...sandboxEnvironment, ...grokMcpEnvironment },
+    {
+      ...(gitConfigEnvironment ?? {}),
+      ...sandboxEnvironment,
+      ...grokMcpEnvironment,
+    },
     repoJob,
   )
   const codexMcpCatalogues = await preflightCodexMcpCatalogues(codexMcpScope, mcpEnvironment)
@@ -965,6 +972,7 @@ export async function run(opts: {
   let confinementEvent: ConfinementEvent | null = null
   let frozenBefore: import('../confinement/confinement.ts').FrozenCheckout[] = []
   let askLoopback: AskLoopback | null = null
+  let workerEvents: StreamEvent[] = []
   let runLease: ReturnType<typeof acquireRunLease> | null = null
   // Start after orch's own worktree and hook setup, immediately before the
   // vendor process. The interval establishes when a change happened, not who
@@ -1038,6 +1046,7 @@ export async function run(opts: {
       frozenBefore,
       askLoopback,
       mcpSetupHeader,
+      workerEvents,
     } = await runLive({
       repoJob,
       name,
@@ -1138,6 +1147,7 @@ export async function run(opts: {
         resolvedSession,
         name,
         artifactsPersisted,
+        workerEvents,
       }))
     } finally {
       runLease?.release()

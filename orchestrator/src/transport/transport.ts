@@ -124,8 +124,10 @@ export type NormalizedEvent =
       title: string
       status?: string
       toolKind?: string
+      server?: string
       target?: string
       result?: string
+      error?: string
       locations?: Array<{ path: string }>
     }
   | {
@@ -454,10 +456,16 @@ export function outcomeFromTransport(result: {
 }): { status: 'ok' | 'asking' | 'failed'; failureKind: FailureKind | null } {
   if (result.asking) return { status: 'asking', failureKind: null }
   if (result.stopReason && result.stopReason !== 'end_turn') {
-    return { status: 'failed', failureKind: failureKindFromStop(result.stopReason, result.error) }
+    return {
+      status: 'failed',
+      failureKind: failureKindFromStop(result.stopReason, result.error),
+    }
   }
   if (result.error || result.exitCode !== 0 || !result.output.trim()) {
-    return { status: 'failed', failureKind: failureKindFromStop(result.stopReason, result.error) }
+    return {
+      status: 'failed',
+      failureKind: failureKindFromStop(result.stopReason, result.error),
+    }
   }
   return { status: 'ok', failureKind: null }
 }
@@ -477,13 +485,19 @@ export function decideAcpPermission(
       options.find((option) => option.kind === 'allow_once') ??
       options.find((option) => option.kind === 'allow_always')
     if (allow)
-      return { decision: 'allow', outcome: { outcome: 'selected', optionId: allow.optionId } }
+      return {
+        decision: 'allow',
+        outcome: { outcome: 'selected', optionId: allow.optionId },
+      }
   }
   const reject =
     options.find((option) => option.kind === 'reject_once') ??
     options.find((option) => option.kind === 'reject_always')
   if (reject)
-    return { decision: 'reject', outcome: { outcome: 'selected', optionId: reject.optionId } }
+    return {
+      decision: 'reject',
+      outcome: { outcome: 'selected', optionId: reject.optionId },
+    }
   return { decision: 'reject', outcome: { outcome: 'cancelled' } }
 }
 

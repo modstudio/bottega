@@ -18,7 +18,7 @@ import {
   type WorkerReply,
 } from '../contract/contract.ts'
 import { db, nowIso } from '../database/db.ts'
-import { appendRunEvent, teeTransportEvents } from '../events.ts'
+import { appendRunEvent, type StreamEvent, teeTransportEvents } from '../events.ts'
 import { type classify, hasVendorTerminationMarker } from '../failure/failure.ts'
 import { contentTree, gitContext, targetGitEnvironment } from '../git/git-environment.ts'
 import {
@@ -201,6 +201,7 @@ export type LiveResult = {
   frozenBefore: import('../confinement/confinement.ts').FrozenCheckout[]
   askLoopback: AskLoopback | null
   mcpSetupHeader: string | null
+  workerEvents: StreamEvent[]
 }
 
 export async function runLive(input: LiveInput): Promise<LiveResult> {
@@ -275,6 +276,7 @@ export async function runLive(input: LiveInput): Promise<LiveResult> {
   const confinementEvent: ConfinementEvent | null = null
   const frozenBefore: import('../confinement/confinement.ts').FrozenCheckout[] = []
   let askLoopback: AskLoopback | null = null
+  let workerEvents: StreamEvent[] = []
 
   try {
     if (repoJob) {
@@ -566,6 +568,10 @@ export async function runLive(input: LiveInput): Promise<LiveResult> {
       checkpointMessages.map((message) => message.id),
     )
     const collected = await Promise.race([handle.collect(), forcedCollect])
+    workerEvents = collected.events.filter(
+      (event): event is StreamEvent =>
+        event.kind === 'text' || event.kind === 'usage' || event.kind === 'tool',
+    )
     await teeing.catch(() => {
       /* the live log is observation, never outcome */
     })
@@ -788,5 +794,6 @@ export async function runLive(input: LiveInput): Promise<LiveResult> {
     frozenBefore,
     askLoopback,
     mcpSetupHeader,
+    workerEvents,
   }
 }
