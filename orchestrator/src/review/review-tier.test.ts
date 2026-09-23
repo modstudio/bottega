@@ -3,9 +3,22 @@ import {
   classifyReviewTier,
   parseTierRange,
   resolveTierRange,
+  selectReviewTierRepo,
   type TierRangeEndpoint,
   type TierRangeFacts,
 } from './review-tier.ts'
+
+describe('review tier repository selection', () => {
+  test('keeps the registered checkout for a caller in that checkout', () => {
+    expect(selectReviewTierRepo('/work/project', '/work/project')).toBe('/work/project')
+  })
+
+  test("uses a linked worktree caller's own top-level", () => {
+    expect(selectReviewTierRepo('/work/project/.claude/worktrees/DEV-867', '/work/project')).toBe(
+      '/work/project/.claude/worktrees/DEV-867',
+    )
+  })
+})
 
 describe('tier range parsing', () => {
   test.each([

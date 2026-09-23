@@ -26,6 +26,10 @@ export type TierRangeFacts = {
 
 const TIER_RANGE_FORMS = '<from>..<to> or <from>...<to>'
 
+export function selectReviewTierRepo(callerTopLevel: string, projectPath: string): string {
+  return callerTopLevel === projectPath ? projectPath : callerTopLevel
+}
+
 export function parseTierRange(
   value: string,
 ): { from: string; to: string } | { refusal: string } | null {

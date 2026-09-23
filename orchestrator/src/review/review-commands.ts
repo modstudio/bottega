@@ -17,6 +17,7 @@ import {
   diffNumstat,
   parseTierRange,
   resolveTierRange,
+  selectReviewTierRepo,
   type TierRangeEndpoint,
 } from './review-tier.ts'
 import {
@@ -118,7 +119,18 @@ function resolveTierTarget(value: string): { repo: string; from: string; to: str
 
   const project = projectAt(process.cwd())
   if (!project) throw new Error('review tier target is not inside a registered project')
-  const repo = project.path
+  const topLevel = Bun.spawnSync(['git', 'rev-parse', '--show-toplevel'], {
+    cwd: process.cwd(),
+    env: targetGitEnvironment(process.cwd()),
+    stdout: 'pipe',
+    stderr: 'pipe',
+  })
+  if (topLevel.exitCode !== 0) {
+    throw new Error(
+      `cannot resolve the caller's git top-level: ${topLevel.stderr.toString().trim() || `git rev-parse exited ${topLevel.exitCode}`}; run review tier from a git checkout of project ${project.name}`,
+    )
+  }
+  const repo = selectReviewTierRepo(topLevel.stdout.toString().trim(), project.path)
   const range = parseTierRange(value)
   if (range && 'refusal' in range) throw new Error(range.refusal)
   if (range) {
