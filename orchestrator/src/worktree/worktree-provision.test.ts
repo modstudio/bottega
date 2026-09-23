@@ -2,7 +2,7 @@ import { afterEach, expect, test } from 'bun:test'
 import { lstatSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { provisionReadOnlyTree, validateReadonlyProvision } from './readonly-provision.ts'
+import { provisionWorktree, validateReadonlyProvision } from './worktree-provision.ts'
 
 const roots: string[] = []
 const fixture = () => {
@@ -24,18 +24,18 @@ test('link creates a real directory whose entries are symlinks', () => {
   writeFileSync(join(main, 'node_modules', '.hidden'), 'hidden')
   writeFileSync(join(main, 'node_modules', 'package'), 'contents')
 
-  provisionReadOnlyTree(main, tree, [{ path: 'node_modules', method: 'link' }])
+  provisionWorktree(main, tree, [{ path: 'node_modules', method: 'link' }])
 
   expect(lstatSync(join(tree, 'node_modules')).isDirectory()).toBe(true)
   expect(lstatSync(join(tree, 'node_modules', 'package')).isSymbolicLink()).toBe(true)
   expect(lstatSync(join(tree, 'node_modules', '.hidden')).isSymbolicLink()).toBe(true)
 })
 
-test('missing source path is skipped', () => {
+test('missing source path is skipped and reported', () => {
   const { main, tree } = fixture()
-  expect(() =>
-    provisionReadOnlyTree(main, tree, [{ path: 'missing', method: 'link' }]),
-  ).not.toThrow()
+  expect(provisionWorktree(main, tree, [{ path: 'missing', method: 'link' }])).toEqual([
+    { path: 'missing', reason: 'missing source' },
+  ])
   expect(() => lstatSync(join(tree, 'missing'))).toThrow()
 })
 
@@ -46,7 +46,7 @@ test('existing target is left alone', () => {
   writeFileSync(join(main, 'vendor', 'source'), 'source')
   writeFileSync(join(tree, 'vendor', 'kept'), 'kept')
 
-  provisionReadOnlyTree(main, tree, [{ path: 'vendor', method: 'clone' }])
+  provisionWorktree(main, tree, [{ path: 'vendor', method: 'clone' }])
 
   expect(readFileSync(join(tree, 'vendor', 'kept'), 'utf8')).toBe('kept')
   expect(() => lstatSync(join(tree, 'vendor', 'source'))).toThrow()
@@ -65,4 +65,10 @@ test('validation refuses malformed readonly provision declarations', () => {
   expect(validateReadonlyProvision({ path: 'vendor', method: 'clone' })).toEqual([
     'worktree.readonly_provision must be an array',
   ])
+  expect(
+    validateReadonlyProvision([
+      { path: 'vendor', method: 'clone' },
+      { path: 'vendor', method: 'link' },
+    ]),
+  ).toEqual(['worktree.readonly_provision path must be unique: "vendor"'])
 })

@@ -33,6 +33,7 @@ import {
   settleClaims,
 } from '../resources/resource-claims.ts'
 import { resolveBase } from '../worktree/worktree-caller.ts'
+import { provisionWorktree } from '../worktree/worktree-provision.ts'
 import type { Worktree } from '../worktree/worktree-types.ts'
 import { managedBlockPlan, omitKeys } from './env-file.ts'
 import {
@@ -650,6 +651,32 @@ export function createTrackedRecipe(
   }
   input.attribute(worktree)
   const context = { treeRoot: path, vars }
+  try {
+    const skipped = provisionWorktree(input.repoRoot, path, prepared.recipe.provision ?? [])
+    for (const entry of skipped) {
+      console.error(`orch: provision skipped "${entry.path}": ${entry.reason}`)
+    }
+  } catch (error) {
+    failTrackedCreation({
+      createInput: input,
+      worktree,
+      snapshot,
+      allocationAttempt: prepared.allocationAttempt,
+      allocator,
+      creation: {
+        failure: {
+          name: 'provision',
+          phase: 'run',
+          status: 'failed',
+          exitCode: null,
+          argv: null,
+          detail: String((error as Error)?.message ?? error),
+          durationMs: 0,
+        },
+        compensation: [],
+      },
+    })
+  }
   const envFailure = writeTrackedEnvFiles(prepared.recipe, context, input.repoRoot)
   if (envFailure) {
     failTrackedCreation({

@@ -61,6 +61,25 @@
           },
           "additionalProperties": false
         },
+        "provision": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "path": {
+                "type": "string",
+                "minLength": 1
+              },
+              "method": {
+                "type": "string",
+                "enum": ["link", "clone"]
+              }
+            },
+            "required": ["path", "method"],
+            "additionalProperties": false
+          },
+          "description": "Dependency paths placed in the writer tree before env files and create steps. link shares the main checkout's immediate entries, so writes through a link reach the main checkout; clone makes an independent copy-on-write copy."
+        },
         "env": {
           "type": "array",
           "items": {

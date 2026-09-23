@@ -686,13 +686,14 @@ export const modules: ArchitectureModule[] = [
   ]),
   module('orchestrator/src/worktree/worktree-readonly.ts', [
     '../project/projects.ts',
-    './readonly-provision.ts',
+    './worktree-provision.ts',
     './worktree-template.ts',
     '../git/git-environment.ts',
     './worktree-remove.ts',
     './worktree-create.ts',
     './worktree-types.ts',
   ]),
+  module('orchestrator/src/worktree/worktree-provision.ts', ['node:fs', 'node:path']),
   module('orchestrator/src/worktree/worktree-remove.ts', [
     '../database/db.ts',
     '../project/projects.ts',

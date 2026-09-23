@@ -1,9 +1,14 @@
-/** Read-only provisioning knows declared file placement between a main checkout and its disposable tree. It must not know projects, run control, worker contracts, databases, ports, environments, or teardown. */
+/** Worktree provisioning places declared dependency paths without knowing reader or writer lifecycles. */
 import { existsSync, lstatSync, mkdirSync, readdirSync, symlinkSync } from 'node:fs'
 import { dirname, isAbsolute, join } from 'node:path'
 
-type ReadonlyProvisionEntry = { path: string; method: 'link' | 'clone' }
-export type ReadonlyProvision = ReadonlyProvisionEntry[]
+type ProvisionEntry = { path: string; method: 'link' | 'clone' }
+export type WorktreeProvision = ProvisionEntry[]
+export type ReadonlyProvision = WorktreeProvision
+export type ProvisionSkip = {
+  path: string
+  reason: 'missing source' | 'existing target'
+}
 
 function targetExists(path: string): boolean {
   try {
@@ -14,16 +19,24 @@ function targetExists(path: string): boolean {
   }
 }
 
-/** Place dependencies that must exist before a read-only sandbox starts. */
-export function provisionReadOnlyTree(
+/** Place declared dependencies and report entries deliberately left alone. */
+export function provisionWorktree(
   main: string,
   tree: string,
-  provisions: ReadonlyProvision,
-): void {
+  provisions: WorktreeProvision,
+): ProvisionSkip[] {
+  const skipped: ProvisionSkip[] = []
   for (const provision of provisions) {
     const source = join(main, provision.path)
     const target = join(tree, provision.path)
-    if (!existsSync(source) || targetExists(target)) continue
+    if (!existsSync(source)) {
+      skipped.push({ path: provision.path, reason: 'missing source' })
+      continue
+    }
+    if (targetExists(target)) {
+      skipped.push({ path: provision.path, reason: 'existing target' })
+      continue
+    }
     mkdirSync(dirname(target), { recursive: true })
     if (provision.method === 'link') {
       mkdirSync(target)
@@ -37,29 +50,35 @@ export function provisionReadOnlyTree(
       stderr: 'pipe',
     })
     if (copy.exitCode !== 0) {
-      throw new Error(copy.stderr.toString().trim() || `cp exited ${copy.exitCode}`)
+      const detail = copy.stderr.toString().trim() || `cp exited ${copy.exitCode}`
+      throw new Error(`could not clone provision "${provision.path}": ${detail}`)
     }
   }
+  return skipped
 }
 
-/** Validate the register-owned declaration at its input boundary. */
+function provisionPathProblem(path: string): boolean {
+  return !path.trim() || isAbsolute(path) || path.split(/[\\/]+/).includes('..')
+}
+
+/** Validate the register-owned reader declaration at its input boundary. */
 export function validateReadonlyProvision(value: unknown): string[] {
   if (value === undefined) return []
   if (!Array.isArray(value)) return ['worktree.readonly_provision must be an array']
   const problems: string[] = []
+  const paths = new Set<string>()
   for (const entry of value) {
     if (!entry || typeof entry !== 'object' || Array.isArray(entry)) {
       problems.push('worktree.readonly_provision entries must be objects')
       continue
     }
     const candidate = entry as Record<string, unknown>
-    if (
-      typeof candidate.path !== 'string' ||
-      !candidate.path.trim() ||
-      isAbsolute(candidate.path) ||
-      candidate.path.split('/').includes('..')
-    ) {
+    if (typeof candidate.path !== 'string' || provisionPathProblem(candidate.path)) {
       problems.push('worktree.readonly_provision path must be a non-empty relative path without ..')
+    } else if (paths.has(candidate.path)) {
+      problems.push(`worktree.readonly_provision path must be unique: "${candidate.path}"`)
+    } else {
+      paths.add(candidate.path)
     }
     if (candidate.method !== 'link' && candidate.method !== 'clone') {
       problems.push("worktree.readonly_provision method must be 'link' or 'clone'")
