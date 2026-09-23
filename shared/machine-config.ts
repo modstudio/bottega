@@ -179,11 +179,11 @@ export function resolveMachineValue<
   return result.data as Table[Key]['type'] extends 'integer' ? number : string
 }
 
-export function machineConfigPath(env: ConfigEnvironment): string {
+function machineConfigPath(env: ConfigEnvironment): string {
   return join(resolveConfigRoot(env), 'machine.toml')
 }
 
-export function readMachineFile(path: string): unknown {
+function readMachineFile(path: string): unknown {
   let text: string
   try {
     text = readFileSync(path, 'utf8')

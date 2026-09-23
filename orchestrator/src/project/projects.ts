@@ -560,6 +560,15 @@ function readonlyDockerProblems(value: unknown): string[] {
     : []
 }
 
+function autonomyProblems(value: unknown): string[] {
+  try {
+    validateAutonomySettings(value, 'project')
+    return []
+  } catch (error) {
+    return [error instanceof Error ? error.message : String(error)]
+  }
+}
+
 export function validateProjectSettings(settings: ProjectSettings, projectPath?: string): string[] {
   const problems = [
     ...validateProjectInjectionSettings(settings),
@@ -573,12 +582,8 @@ export function validateProjectSettings(settings: ProjectSettings, projectPath?:
     ...readonlyDockerProblems(settings.worktree?.readonly_docker),
     ...trackedRecipeProblems(settings.worktree, projectPath),
     ...projectSpaceProblems(settings.space),
+    ...autonomyProblems(settings.autonomy),
   ]
-  try {
-    validateAutonomySettings(settings.autonomy, 'project')
-  } catch (error) {
-    problems.push(error instanceof Error ? error.message : String(error))
-  }
 
   if (invalidOptionalStringArray(settings.secretPaths)) {
     problems.push('secretPaths must be an array of non-empty path strings')

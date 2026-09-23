@@ -41,6 +41,18 @@ type RunAnswerHelpers = {
 }
 type RunFlags = { detach: boolean; follow: boolean; quiet: boolean }
 
+async function refuseUserRuling(project: string | null, argv: string[]): Promise<void> {
+  if (!project) return
+  const autonomy = await resolveProjectAutonomy(project)
+  const refusal = answerRulingRefusal(autonomy.rulings, argv.includes('--from-operator'))
+  if (refusal) throw new Error(refusal)
+}
+
+function requireAnswerRun<Row>(row: Row | null, requestedId: number): Row {
+  if (!row) throw new Error(`no run ${requestedId}`)
+  return row
+}
+
 export async function retryRun(
   id: number,
   options: { agent?: string; model?: string; flags: RunFlags },
@@ -195,7 +207,7 @@ export async function answerRun(
   options: { argv: string[]; recordOnly: boolean; flags: RunFlags },
   helpers: RunAnswerHelpers,
 ): Promise<void> {
-  const row = db()
+  const found = db()
     .query(
       `SELECT root.id, root.agent, root.job, root.cwd, root.worktree, root.branch,
           root.base_commit, root.vendor_session, root.status, root.session_id,
@@ -221,12 +233,8 @@ export async function answerRun(
     evidence_excluded: string | null
     repo: string | null
   } | null
-  if (!row) throw new Error(`no run ${requestedId}`)
-  if (row.repo) {
-    const autonomy = await resolveProjectAutonomy(row.repo)
-    const refusal = answerRulingRefusal(autonomy.rulings, options.argv.includes('--from-operator'))
-    if (refusal) throw new Error(refusal)
-  }
+  const row = requireAnswerRun(found, requestedId)
+  await refuseUserRuling(row.repo, options.argv)
   const id = row.id
   refuseEscapedChain(id)
   let answerAuthority = authorizeRunMutation(requestedId, 'answer')

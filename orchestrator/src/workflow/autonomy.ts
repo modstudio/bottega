@@ -29,45 +29,70 @@ const object = (value: unknown): value is Record<string, unknown> =>
 const allowed = (value: unknown, values: readonly string[]) =>
   typeof value === 'string' && values.includes(value)
 
+function validatePreset(value: unknown, scope: string): Pick<AutonomySettings, 'preset'> {
+  if (value === undefined) return {}
+  if (!allowed(value, ['manual', 'guided', 'autonomous']))
+    throw new Error(`invalid autonomy setting at ${scope} key preset: ${String(value)}`)
+  return { preset: value as AutonomySettings['preset'] }
+}
+
+function validateRulings(value: unknown, scope: string): Pick<AutonomySettings, 'rulings'> {
+  if (value === undefined) return {}
+  if (!allowed(value, ['agent', 'user']))
+    throw new Error(`invalid autonomy setting at ${scope} key rulings: ${String(value)}`)
+  return { rulings: value as 'agent' | 'user' }
+}
+
+function validateStages(value: unknown, scope: string): Pick<AutonomySettings, 'stages'> {
+  if (value === undefined) return {}
+  if (!object(value))
+    throw new Error(`invalid autonomy setting at ${scope} key stages: expected an object`)
+  const stages: NonNullable<AutonomySettings['stages']> = {}
+  for (const [key, setting] of Object.entries(value)) {
+    if (!allowed(key, autonomyStages))
+      throw new Error(`invalid autonomy setting at ${scope} key stages.${key}: unknown stage`)
+    if (!allowed(setting, autonomyValues))
+      throw new Error(`invalid autonomy setting at ${scope} key stages.${key}: ${String(setting)}`)
+    stages[key as AutonomyStage] = setting as AutonomyValue
+  }
+  return { stages }
+}
+
+function validateSteps(value: unknown, scope: string): Pick<AutonomySettings, 'steps'> {
+  if (value === undefined) return {}
+  if (!object(value))
+    throw new Error(`invalid autonomy setting at ${scope} key steps: expected an object`)
+  const steps: NonNullable<AutonomySettings['steps']> = {}
+  for (const [key, setting] of Object.entries(value)) {
+    if (!allowed(setting, autonomyValues))
+      throw new Error(`invalid autonomy setting at ${scope} key steps.${key}: ${String(setting)}`)
+    steps[key] = setting as AutonomyValue
+  }
+  return { steps }
+}
+
 export function validateAutonomySettings(value: unknown, scope: string): AutonomySettings {
   if (value === undefined) return {}
   if (!object(value)) throw new Error(`invalid autonomy setting at ${scope}: expected an object`)
-  const result: AutonomySettings = {}
-  if (value.preset !== undefined) {
-    if (!allowed(value.preset, ['manual', 'guided', 'autonomous']))
-      throw new Error(`invalid autonomy setting at ${scope} key preset: ${String(value.preset)}`)
-    result.preset = value.preset as AutonomySettings['preset']
+  return {
+    ...validatePreset(value.preset, scope),
+    ...validateRulings(value.rulings, scope),
+    ...validateStages(value.stages, scope),
+    ...validateSteps(value.steps, scope),
   }
-  if (value.rulings !== undefined) {
-    if (!allowed(value.rulings, ['agent', 'user']))
-      throw new Error(`invalid autonomy setting at ${scope} key rulings: ${String(value.rulings)}`)
-    result.rulings = value.rulings as 'agent' | 'user'
-  }
-  if (value.stages !== undefined) {
-    if (!object(value.stages))
-      throw new Error(`invalid autonomy setting at ${scope} key stages: expected an object`)
-    result.stages = {}
-    for (const [key, setting] of Object.entries(value.stages)) {
-      if (!allowed(key, autonomyStages))
-        throw new Error(`invalid autonomy setting at ${scope} key stages.${key}: unknown stage`)
-      if (!allowed(setting, autonomyValues))
-        throw new Error(
-          `invalid autonomy setting at ${scope} key stages.${key}: ${String(setting)}`,
-        )
-      result.stages[key as AutonomyStage] = setting as AutonomyValue
-    }
-  }
-  if (value.steps !== undefined) {
-    if (!object(value.steps))
-      throw new Error(`invalid autonomy setting at ${scope} key steps: expected an object`)
-    result.steps = {}
-    for (const [key, setting] of Object.entries(value.steps)) {
-      if (!allowed(setting, autonomyValues))
-        throw new Error(`invalid autonomy setting at ${scope} key steps.${key}: ${String(setting)}`)
-      result.steps[key] = setting as AutonomyValue
-    }
-  }
-  return result
+}
+
+function resolvedStepValue(
+  step: { slug: string; stage?: AutonomyStage; default: AutonomyValue },
+  settings: AutonomySettings,
+): AutonomyValue | undefined {
+  const explicit =
+    settings.steps?.[step.slug] ?? (step.stage ? settings.stages?.[step.stage] : undefined)
+  if (explicit) return explicit
+  if (settings.preset === 'manual') return 'ask'
+  if (settings.preset === 'autonomous') return 'auto'
+  if (settings.preset === 'guided') return step.default
+  return undefined
 }
 
 export function resolveAutonomy(
@@ -81,17 +106,7 @@ export function resolveAutonomy(
   const resolved: AutonomyResolution['steps'] = {}
   for (const step of steps) {
     for (const scope of checked) {
-      const preset = scope.settings.preset
-      const value =
-        scope.settings.steps?.[step.slug] ??
-        (step.stage ? scope.settings.stages?.[step.stage] : undefined) ??
-        (preset === 'manual'
-          ? 'ask'
-          : preset === 'autonomous'
-            ? 'auto'
-            : preset === 'guided'
-              ? step.default
-              : undefined)
+      const value = resolvedStepValue(step, scope.settings)
       if (value) {
         resolved[step.slug] = { value, scope: scope.name }
         break

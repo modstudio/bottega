@@ -13,6 +13,16 @@ type RunInboxPresentation = {
   strandedRecovery(rootId: number): string
 }
 
+async function rulingsHeader(project: { name: string } | null): Promise<string | null> {
+  if (!project) return null
+  const rulings = (await resolveProjectAutonomy(project.name)).rulings
+  return `rulings=${rulings.value} (${rulings.scope})`
+}
+
+function presentHeader(header: string | null): string[] {
+  return header ? [header] : []
+}
+
 export async function runInboxCommand(
   flags: RunInboxFlags,
   presentation: RunInboxPresentation,
@@ -23,7 +33,7 @@ export async function runInboxCommand(
   const mine = !has('all')
   const activeOnly = has('active')
   const project = mine ? projectAt(process.cwd()) : null
-  const rulings = project ? (await resolveProjectAutonomy(project.name)).rulings : null
+  const header = await rulingsHeader(project)
   const cutoff = new Date(Date.now() - SESSION_LIVE_MS).toISOString()
   const hasSessionSeen = Boolean(
     db().query(`SELECT 1 FROM sqlite_master WHERE type='table' AND name='session_seen'`).get(),
@@ -113,7 +123,9 @@ export async function runInboxCommand(
     return
   }
 
-  if (rulings) log(`rulings=${rulings.value} (${rulings.scope})`)
+  presentHeader(header).forEach((line) => {
+    log(line)
+  })
 
   const recoverable = db()
     .query(

@@ -1,6 +1,7 @@
 import { dirname, join, normalize } from 'node:path'
 import { CONCERNS } from '../shared/brand.ts'
 import { importBoundaries } from './architecture-boundaries.ts'
+import { uiFolders, uiLayers } from './architecture-ui-layers.ts'
 
 type ConcernManifest = {
   roots: typeof CONCERNS
@@ -47,45 +48,6 @@ const concerns: ConcernManifest = {
  * `primitives` are single controls; `overlays` open above the page; `patterns`
  * compose controls into one reusable piece; `layout` arranges a screen.
  */
-const uiLayers: { name: string; folders: string[] }[] = [
-  { name: 'behavior', folders: ['state', 'dom', 'text'] },
-  {
-    name: 'primitives',
-    folders: [
-      'badge',
-      'identifier',
-      'button',
-      'field',
-      'checkbox',
-      'switch',
-      'spinner',
-      'kbd',
-      'separator',
-    ],
-  },
-  {
-    name: 'overlays',
-    folders: ['popover', 'tooltip', 'menu', 'listbox', 'dialog', 'sheet', 'bottom-sheet', 'toast'],
-  },
-  {
-    name: 'patterns',
-    folders: [
-      'tabs',
-      'segmented',
-      'empty-state',
-      'stat',
-      'table',
-      'page-header',
-      'project-mark',
-      'pagination',
-      'form-layout',
-    ],
-  },
-  { name: 'layout', folders: ['shell', 'table-card', 'toolbar-band', 'companion'] },
-]
-
-const uiFolders = (folders: string[]) => `^hub/web/src/ui/(?:${folders.join('|')})/`
-
 export const modules: ArchitectureModule[] = [
   module('retrieval/src/corpus/chunks.ts', ['node:fs/promises', 'node:path', 'bun']),
   module('retrieval/src/services/endpoints.ts', []),
