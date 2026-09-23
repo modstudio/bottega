@@ -1,9 +1,10 @@
 // concern: judgement
 /** Knows run rows, reviews and findings, score arithmetic, duel persistence, and judgeability. Must not know transports, worktrees, routing, the CLI, durable execution, dispatch, or cleanup. */
-import { UNJUDGED_EXCLUSION_REASON } from './evidence/unjudged-expiry.ts'
+
 import { existsSync, readFileSync } from 'node:fs'
 import { newRecordId } from '../../shared/record/schema.ts'
 import { db, nowIso, sessionId, writeTransaction } from './database/db.ts'
+import { UNJUDGED_EXCLUSION_REASON } from './evidence/unjudged-expiry.ts'
 import { JOBS, job } from './jobs/jobs.ts'
 import { machineId } from './record/machine-identity.ts'
 import { cleanReviewEvidence, parseReviewOutput } from './review/review.ts'
@@ -226,9 +227,7 @@ function enqueueTerminalRunRecord(id: number): void {
 function clearUnjudgedOwnerExclusion(id: number): boolean {
   return (
     db()
-      .query(
-        'UPDATE run SET evidence_excluded=NULL WHERE id=? AND evidence_excluded=?',
-      )
+      .query('UPDATE run SET evidence_excluded=NULL WHERE id=? AND evidence_excluded=?')
       .run(id, UNJUDGED_EXCLUSION_REASON).changes > 0
   )
 }
