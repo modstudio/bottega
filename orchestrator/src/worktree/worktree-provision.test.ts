@@ -1,5 +1,13 @@
 import { afterEach, expect, test } from 'bun:test'
-import { lstatSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import {
+  lstatSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+  symlinkSync,
+  writeFileSync,
+} from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { provisionWorktree, validateReadonlyProvision } from './worktree-provision.ts'
@@ -71,4 +79,18 @@ test('validation refuses malformed readonly provision declarations', () => {
       { path: 'vendor', method: 'link' },
     ]),
   ).toEqual(['worktree.readonly_provision path must be unique: "vendor"'])
+})
+
+test('a path through a symlinked ancestor that leaves the tree is refused and creates nothing outside', () => {
+  const { main, tree } = fixture()
+  mkdirSync(join(main, 'deps', 'vendor'), { recursive: true })
+  writeFileSync(join(main, 'deps', 'vendor', 'autoload.php'), '<?php')
+  const outside = join(tree, '..', 'outside')
+  mkdirSync(outside)
+  symlinkSync(outside, join(tree, 'deps'))
+
+  expect(() => provisionWorktree(main, tree, [{ path: 'deps/vendor', method: 'link' }])).toThrow(
+    'resolves outside the tree',
+  )
+  expect(() => lstatSync(join(outside, 'vendor'))).toThrow()
 })

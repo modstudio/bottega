@@ -1,6 +1,6 @@
 /** Worktree provisioning places declared dependency paths without knowing reader or writer lifecycles. */
-import { existsSync, lstatSync, mkdirSync, readdirSync, symlinkSync } from 'node:fs'
-import { dirname, join } from 'node:path'
+import { existsSync, lstatSync, mkdirSync, readdirSync, realpathSync, symlinkSync } from 'node:fs'
+import { dirname, join, sep } from 'node:path'
 
 type ProvisionEntry = { path: string; method: 'link' | 'clone' }
 export type WorktreeProvision = ProvisionEntry[]
@@ -17,6 +17,19 @@ function targetExists(path: string): boolean {
   } catch {
     return false
   }
+}
+
+/**
+ * The deepest existing ancestor of `target` must resolve inside the tree. A
+ * symlinked ancestor checked out by the branch would otherwise send the
+ * provisioned copy outside the tree, where tree removal never reaches it.
+ */
+function escapesTree(tree: string, target: string): boolean {
+  let ancestor = dirname(target)
+  while (!targetExists(ancestor)) ancestor = dirname(ancestor)
+  const root = realpathSync(tree)
+  const resolved = realpathSync(ancestor)
+  return resolved !== root && !resolved.startsWith(root + sep)
 }
 
 /** Place declared dependencies and report entries deliberately left alone. */
@@ -36,6 +49,11 @@ export function provisionWorktree(
     if (targetExists(target)) {
       skipped.push({ path: provision.path, reason: 'existing target' })
       continue
+    }
+    if (escapesTree(tree, target)) {
+      throw new Error(
+        `provision "${provision.path}" resolves outside the tree through a symlinked ancestor; remove the symlink from the branch or declare a path that does not pass through it`,
+      )
     }
     mkdirSync(dirname(target), { recursive: true })
     if (provision.method === 'link') {
