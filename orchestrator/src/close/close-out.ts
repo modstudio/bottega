@@ -44,6 +44,7 @@ import { worktreeExists } from '../worktree/worktree.ts'
 import { inspectTreeOwnership } from '../worktree/worktree-attribution.ts'
 import { branchTip, removeFor, restoreBranch } from '../worktree/worktree-remove.ts'
 import type { Worktree } from '../worktree/worktree-types.ts'
+import { releaseAbsentCloseOutResidue } from './absent-close-out-residue.ts'
 import { adoptedTreeCloseOutDecision } from './close-out-adoption.ts'
 
 export type CloseOutResult = {
@@ -239,7 +240,10 @@ function pathInside(candidate: string | null, directory: string): boolean {
 /** Release one conversation's vendor home after its tree and process claims are settled. */
 export function releaseSandboxDirectoryForConversation(
   rootId: number,
-  options: { dryRun?: boolean; worktreeState?: ResourceClaimState | 'no-tree' } = {},
+  options: {
+    dryRun?: boolean
+    worktreeState?: ResourceClaimState | 'no-tree'
+  } = {},
 ): SandboxReleaseResult {
   const path = join(RUNS_DIR, `sandbox-${rootId}`)
   const turns = db()
@@ -271,13 +275,28 @@ export function releaseSandboxDirectoryForConversation(
           detail: 'sandbox directory was already absent',
         })
       })
-    return { rootId, path, outcome: 'absent', detail: 'sandbox directory was already absent' }
+    return {
+      rootId,
+      path,
+      outcome: 'absent',
+      detail: 'sandbox directory was already absent',
+    }
   }
   if (decision.startsWith('keep:')) {
-    return { rootId, path, outcome: 'kept', detail: decision.slice('keep:'.length) }
+    return {
+      rootId,
+      path,
+      outcome: 'kept',
+      detail: decision.slice('keep:'.length),
+    }
   }
   if (options.dryRun) {
-    return { rootId, path, outcome: 'released', detail: 'would release sandbox directory' }
+    return {
+      rootId,
+      path,
+      outcome: 'released',
+      detail: 'would release sandbox directory',
+    }
   }
   try {
     rmSync(path, { recursive: true })
@@ -316,7 +335,12 @@ export function releaseSandboxDirectoryForConversation(
       })
     }
   })
-  return { rootId, path, outcome: 'released', detail: `removed sandbox directory ${path}` }
+  return {
+    rootId,
+    path,
+    outcome: 'released',
+    detail: `removed sandbox directory ${path}`,
+  }
 }
 
 function terminalHoldResult(
@@ -528,7 +552,12 @@ function attemptCloseOutRun(
     .get(row.root_id) as typeof row
   const treePath = row.worktree ?? root?.worktree ?? null
   if (!treePath)
-    return { runId: row.root_id, worktree: null, outcome: 'absent', detail: 'no worktree' }
+    return {
+      runId: row.root_id,
+      worktree: null,
+      outcome: 'absent',
+      detail: 'no worktree',
+    }
   const effective = {
     id: row.root_id,
     job: root?.job ?? row.job,
@@ -623,7 +652,10 @@ function attemptCloseOutRun(
   if (ownershipResult) return ownershipResult
 
   const liveRows = () => {
-    const sharers = liveWorktreeSharers(db(), { id: row.root_id, worktree: treePath })
+    const sharers = liveWorktreeSharers(db(), {
+      id: row.root_id,
+      worktree: treePath,
+    })
     const conversation = aliveConversationTurns(row.root_id)
     return [...conversation, ...sharers]
   }
@@ -645,7 +677,10 @@ function attemptCloseOutRun(
           `SELECT agent_pid, agent_pgid FROM run
           WHERE worktree IN (${spellings.map(() => '?').join(',')}) ORDER BY id`,
         )
-        .all(...spellings) as { agent_pid: number | null; agent_pgid: number | null }[])
+        .all(...spellings) as {
+        agent_pid: number | null
+        agent_pgid: number | null
+      }[])
     : []
   const agentPids = vendorRows.map((turn) => turn.agent_pid)
   const recordedPgids = [
@@ -944,6 +979,12 @@ export function closeOutRun(
   // symlinked path no longer resolves to the identity its other rows share.
   const spellingsBefore = conversationWorktreeSpellings(root.root_id)
   const result = attemptCloseOutRun(runId, { ...options, keepTreeDecision })
+  result.detail = releaseAbsentCloseOutResidue({
+    runId: result.runId,
+    outcome: result.outcome,
+    detail: result.detail,
+    dryRun: options.dryRun ?? false,
+  })
   if (!keepTreeDecision.held && 'expiredAt' in keepTreeDecision) {
     result.detail = `${result.detail}; keep-tree hold expired at ${keepTreeDecision.expiredAt}`
   }

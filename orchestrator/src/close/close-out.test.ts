@@ -230,7 +230,11 @@ test('clearing a keep-tree hold lets terminal close-out proceed', () => {
 })
 
 test('releasing a failover successor releases every held attempt oldest first', () => {
-  const predecessor = addRun({ agent: 'codex', job: 'diagnose', status: 'failed' })
+  const predecessor = addRun({
+    agent: 'codex',
+    job: 'diagnose',
+    status: 'failed',
+  })
   const successor = addRun({ agent: 'claude', job: 'diagnose', status: 'ok' })
   const holdUntil = '2099-01-01T00:00:00.000Z'
   db()

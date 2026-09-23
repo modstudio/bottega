@@ -12,11 +12,45 @@ import {
   type FilesystemOrphanAfterRemovalFacts,
   type FilesystemOrphanEligibilityFacts,
   type FilesystemOrphanUnderLockFacts,
+  isSweepCandidate,
   type RecordedRunCloseOutFacts,
   type RecordedRunPointerFacts,
   type RecordedRunPostInventoryFacts,
   type RecordedRunPreInventoryFacts,
 } from './cleanup-sweep-decisions.ts'
+
+describe('sweep candidate selection', () => {
+  test('includes terminal held and failed close-outs after their pointer is cleared', () => {
+    expect(
+      isSweepCandidate({
+        status: 'ok',
+        worktree: null,
+        closeOutOutcome: 'held',
+      }),
+    ).toBe(true)
+    expect(
+      isSweepCandidate({
+        status: 'failed',
+        worktree: null,
+        closeOutOutcome: 'failed',
+      }),
+    ).toBe(true)
+    expect(
+      isSweepCandidate({
+        status: 'ok',
+        worktree: null,
+        closeOutOutcome: 'absent',
+      }),
+    ).toBe(false)
+    expect(
+      isSweepCandidate({
+        status: 'running',
+        worktree: '/tree',
+        closeOutOutcome: null,
+      }),
+    ).toBe(false)
+  })
+})
 
 describe('recorded run pointer ruling', () => {
   const cases: Array<{

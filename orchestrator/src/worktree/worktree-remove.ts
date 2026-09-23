@@ -21,6 +21,7 @@ import {
 import { teardownTrackedRecipe } from '../recipe/tracked-recipe.ts'
 import { markedWorktreeRunId, removeSharedRefGuard } from '../resources/ref-guard.ts'
 import { recipePortClaimForRun, settleDatabaseClaim } from '../resources/resource-claims.ts'
+import { snapshotlessTrackedRecipeRefusal } from './snapshotless-tracked-recipe.ts'
 import { extractWorktree, ORCH_RUN_MARKER } from './worktree-attribution.ts'
 import { runShellTool } from './worktree-tool.ts'
 import type { Worktree } from './worktree-types.ts'
@@ -256,15 +257,14 @@ function removeWithoutCommand(
   keepBranch: boolean,
   runId?: number,
 ): { removed: boolean; detail: string } {
+  const snapshotRefusal = snapshotlessTrackedRecipeRefusal({
+    hasRunRow: runId !== undefined,
+    trackedRecipe: Boolean(tool.recipePath),
+  })
+  if (snapshotRefusal) return { removed: false, detail: snapshotRefusal }
   if (tool.recipePath) {
-    if (runId === undefined)
-      return {
-        removed: false,
-        detail:
-          'tracked recipe tree has no recorded recipe snapshot; teardown cannot be established',
-      }
     return teardownTrackedRecipe({
-      runId,
+      runId: runId as number,
       worktree: w,
       remove: () => removeWorktree(w, keepBranch),
     })

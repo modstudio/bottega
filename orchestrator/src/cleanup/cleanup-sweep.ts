@@ -48,8 +48,10 @@ import {
   decideRecordedRunPointer,
   decideRecordedRunPostInventory,
   decideRecordedRunPreInventory,
+  isSweepCandidate,
   type RecordedRunPostInventoryFacts,
 } from './cleanup-sweep-decisions.ts'
+import { pruneSweptProjectBranches, reclaimAbsentTrustEntries } from './cleanup-sweep-reclaim.ts'
 
 export type SweepOptions = {
   dryRun: boolean
@@ -70,7 +72,7 @@ type SweepCandidate = {
   id: number
   root_id: number
   repo: string | null
-  worktree: string
+  worktree: string | null
   branch: string | null
   base_commit: string | null
   status: string
@@ -209,7 +211,7 @@ function sweepSandboxDirectories(
 
 function reportClosedSweepRow(
   outcome: ClosedSweepOutcome,
-  row: { id: number; root_id: number; worktree: string },
+  row: { id: number; root_id: number; worktree: string | null },
   dry: boolean,
   presentation: CleanupPresentation,
 ): ClosedSweepOutcome {
@@ -236,6 +238,7 @@ function reportClosedSweepRow(
 }
 
 function sweepTreeIsOwned(row: SweepCandidate): boolean {
+  if (!row.worktree) return false
   const project = row.repo ? projectByName(row.repo) : projectAt(row.worktree)
   if (!project) return false
   const conversationIds = (
@@ -284,7 +287,7 @@ function applyRecordedPostInventory(
   state: RecordedSweepState,
   presentation: CleanupPresentation,
 ): void {
-  const project = r.repo ?? projectAt(r.worktree)?.name ?? 'unknown'
+  const project = r.repo ?? (r.worktree ? projectAt(r.worktree)?.name : null) ?? 'unknown'
   const inventoryReason = inventory.ascertainable ? null : inventory.reason
   const resources = inventory.ascertainable ? inventory.resources : []
   const inventoryFact: RecordedRunPostInventoryFacts['inventory'] = !inventory.ascertainable
@@ -325,6 +328,7 @@ function applyRecordedPostInventory(
 }
 
 function landingTreeSweepDecision(r: SweepCandidate) {
+  if (!r.worktree) return { action: 'keep' as const, reason: 'landing tree path is absent' }
   return observeLandingTreeRelease({
     job: r.job,
     repo: r.repo,
@@ -372,7 +376,9 @@ function sweepRecordedRow(
     preInventory = before.ascertainable ? 'ok' : 'unavailable'
     preInventoryReason = before.ascertainable ? null : before.reason
   }
-  const preInventoryRuling = decideRecordedRunPreInventory({ inventory: preInventory })
+  const preInventoryRuling = decideRecordedRunPreInventory({
+    inventory: preInventory,
+  })
   if (preInventoryRuling.action === 'keep') {
     state.inventoryErrors.add(preInventoryReason!)
     state.cleanupFailed = preInventoryRuling.cleanupFailed
@@ -431,16 +437,30 @@ export async function sweepRuns(options: SweepOptions, helpers: SweepHelpers): P
         `SELECT r.id, COALESCE(r.parent_run_id, r.id) root_id,
               r.repo, r.worktree, r.branch, r.base_commit, r.worktree_source, r.status, r.job,
               r.pid, r.agent_pid, r.session_id, seen.last_seen AS session_last_seen,
-              r.launch_key
+              r.launch_key, r.close_out_outcome
          FROM run r
          LEFT JOIN session_seen seen ON seen.session_id=r.session_id
-        WHERE r.worktree IS NOT NULL AND r.status IN ('ok','failed','stale','stopped')
+        WHERE r.status IN ('ok','failed','stale','stopped')
         ORDER BY r.id`,
       )
-      .all() as SweepCandidate[]
+      .all() as Array<SweepCandidate & { close_out_outcome: string | null }>
   )
-    .filter(shouldSweepHookTree)
-    .filter((row) => !selectedProject || projectAt(row.worktree)?.name === selectedProject.name)
+    .filter((row) =>
+      isSweepCandidate({
+        status: row.status,
+        worktree: row.worktree,
+        closeOutOutcome: row.close_out_outcome,
+      }),
+    )
+    .filter(
+      (row) => !row.worktree || shouldSweepHookTree(row as SweepCandidate & { worktree: string }),
+    )
+    .filter(
+      (row) =>
+        !selectedProject ||
+        row.repo === selectedProject.name ||
+        Boolean(row.worktree && projectAt(row.worktree)?.name === selectedProject.name),
+    )
 
   const { removeFor, sweepWithTool } = await import('../worktree/worktree-remove.ts')
 
@@ -685,37 +705,14 @@ export async function sweepRuns(options: SweepOptions, helpers: SweepHelpers): P
     }
   }
 
-  const trustRuns = db()
-    .query('SELECT id, mcp_trust_path FROM run WHERE mcp_trust_path IS NOT NULL ORDER BY id')
-    .all() as { id: number; mcp_trust_path: string }[]
-  const trustOwners = new Map<string, number>()
-  for (const run of trustRuns) {
-    try {
-      const headings = JSON.parse(run.mcp_trust_path) as unknown
-      if (!Array.isArray(headings)) continue
-      for (const heading of headings) {
-        if (typeof heading === 'string' && !trustOwners.has(heading)) {
-          trustOwners.set(heading, run.id)
-        }
-      }
-    } catch {
-      /* observation from an older or incomplete row is not authority */
-    }
-  }
-  for (const heading of helpers.grokTrustHeadings()) {
-    const path = helpers.grokTrustPathFromHeading(heading)
-    if (!path || existsSync(path)) continue
-    if (
-      selectedProject &&
-      path !== selectedProject.path &&
-      !path.startsWith(`${selectedProject.path}/`)
-    )
-      continue
-    const runId = trustOwners.get(heading)
-    options.presentation.log(
-      `grok trust entry for absent path ${path}${runId ? ` (run ${runId})` : ''}; prune by hand`,
-    )
-  }
+  const trustCleanupFailed = reclaimAbsentTrustEntries({
+    dryRun: dry,
+    selectedProject,
+    headings: helpers.grokTrustHeadings(),
+    pathFromHeading: helpers.grokTrustPathFromHeading,
+    presentation: options.presentation,
+  })
+  cleanupFailed ||= trustCleanupFailed
 
   // Inventory is a read, so dry-run performs it too. A preview that omits
   // already-leaked infrastructure is materially cleaner than the real run.
@@ -778,6 +775,13 @@ export async function sweepRuns(options: SweepOptions, helpers: SweepHelpers): P
   }
 
   const sandboxCounts = sweepSandboxDirectories(dry, options.presentation)
+
+  const branchCleanupFailed = pruneSweptProjectBranches({
+    dryRun: dry,
+    projects: sweepProjects,
+    presentation: options.presentation,
+  })
+  cleanupFailed ||= branchCleanupFailed
 
   printSweepKept(
     closedCounts.released,

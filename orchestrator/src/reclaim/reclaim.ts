@@ -2,6 +2,8 @@ import { existsSync, realpathSync } from 'node:fs'
 import { isAbsolute, relative, resolve, sep } from 'node:path'
 import { pidAlive } from '../../../shared/process-identity.ts'
 import { branchRows, type ReclaimRun, settleDeletedBranch } from '../branch/branch-settlement.ts'
+import { type BranchLanding, isPruneSafeLandingState } from '../branch/branch-state.ts'
+import { classifyMintedBranch } from '../branch/branches.ts'
 import { db, sessionId, writableDb, writeTransaction } from '../database/db.ts'
 import { chainScoreJoin, EVIDENCE_CLOSED_SQL } from '../evidence/evidence-query.ts'
 import { targetGitEnvironment } from '../git/git-environment.ts'
@@ -10,12 +12,13 @@ import {
   withWorktreeCreateLock,
   withWorktreeLease,
 } from '../project/project-lock.ts'
-import { projectAt, projectByName } from '../project/projects.ts'
+import { projectAt, projectByName, resolvedWorktreeTool } from '../project/projects.ts'
 import { settleClaims } from '../resources/resource-claims.ts'
 import { otherConversationWorktreeSharers } from '../resources/resource-ownership.ts'
 import { runAlive } from '../run/run-alive.ts'
 import { runLeaseState } from '../run/run-lease.ts'
 import { keepTreeHold } from '../worktree/keep-tree-hold.ts'
+import { snapshotlessTrackedRecipeRefusal } from '../worktree/snapshotless-tracked-recipe.ts'
 import {
   markedWorktreeSource,
   orphanSafety,
@@ -82,6 +85,17 @@ function absentCommits(repoRoot: string, subject: string, trunk: string): string
   return result.ok ? result.out.split('\n').filter(Boolean) : null
 }
 
+export function decideBranchReclaimEvidence(input: {
+  absentCommits: readonly string[]
+  classification: BranchLanding['state']
+}): { allowed: true; proof: string } | { allowed: false; state: BranchLanding['state'] } {
+  if (input.absentCommits.length === 0) return { allowed: true, proof: 'reachable' }
+  if (isPruneSafeLandingState(input.classification)) {
+    return { allowed: true, proof: input.classification }
+  }
+  return { allowed: false, state: input.classification }
+}
+
 type WorktreeProof = {
   result: ReclaimResult
   rows?: ReclaimRun[]
@@ -105,7 +119,10 @@ function proveRunOwners(
 }
 
 function fullClaimRefusal(path: string, runId: number): ReclaimResult | null {
-  const sharers = otherConversationWorktreeSharers(db(), { id: runId, worktree: path })
+  const sharers = otherConversationWorktreeSharers(db(), {
+    id: runId,
+    worktree: path,
+  })
   if (!sharers.length) return null
   return refuse(
     `worktree ${path} is still claimed by other conversation(s): ` +
@@ -133,7 +150,9 @@ function proveWorktree(path: string, clock: number, _allowDirty = false): Worktr
   if (!project) return { result: refuse(`worktree ${path} has no registered project`) }
   const registeredPath = realpathSync(project.path)
   if (path === registeredPath) {
-    return { result: refuse(`worktree ${path} is the project's registered checkout`) }
+    return {
+      result: refuse(`worktree ${path} is the project's registered checkout`),
+    }
   }
   const worktreesRoot = resolve(registeredPath, '.claude', 'worktrees')
   const fromRoot = relative(worktreesRoot, path)
@@ -168,6 +187,11 @@ function proveWorktree(path: string, clock: number, _allowDirty = false): Worktr
   }
   const gitRefusal = existingTreeGitRefusal(path, project.path)
   if (gitRefusal) return { result: gitRefusal }
+  const recipeRefusal = snapshotlessTrackedRecipeRefusal({
+    hasRunRow: Boolean(row),
+    trackedRecipe: Boolean(resolvedWorktreeTool(project)?.recipePath),
+  })
+  if (recipeRefusal) return { result: refuse(recipeRefusal) }
   return {
     result: {
       ok: true,
@@ -302,7 +326,7 @@ export function reclaimWorktree(
   )
 }
 
-/** Reclaim one local branch only when its commits remain reachable or its exact kept tip is recorded. */
+/** Reclaim a local branch when every commit reaches trunk or the prune classifier marks it safe. */
 export function reclaimBranch(
   subject: string,
   options: { dryRun?: boolean; clock?: number } = {},
@@ -332,11 +356,16 @@ export function reclaimBranch(
   const prove = (): { result: ReclaimResult; tip?: string } => {
     const rows = branchRows(projectName, branch)
     if (!rows.length)
-      return { result: refuse(`no run row records minted branch ${projectName}:${branch}`) }
+      return {
+        result: refuse(`no run row records minted branch ${projectName}:${branch}`),
+      }
     const owners = proveRunOwners(rows)
     if (owners) return { result: owners }
     const tip = branchTip(project.path, branch)
-    if (!tip) return { result: refuse(`branch ${projectName}:${branch} does not exist`) }
+    if (!tip)
+      return {
+        result: refuse(`branch ${projectName}:${branch} does not exist`),
+      }
     const worktrees = git(project.path, ['worktree', 'list', '--porcelain'])
     if (!worktrees.ok) {
       return {
@@ -349,28 +378,51 @@ export function reclaimBranch(
       .split('\n')
       .some((line) => line === `branch refs/heads/${branch}`)
     if (checkedOut)
-      return { result: refuse(`branch ${projectName}:${branch} is checked out in a worktree`) }
-    if (!trunk) return { result: refuse(`project ${projectName} records no landing branch`) }
-    const recorded = rows.some((row) => row.branch_kept === branch && row.branch_kept_tip === tip)
+      return {
+        result: refuse(`branch ${projectName}:${branch} is checked out in a worktree`),
+      }
+    if (!trunk)
+      return {
+        result: refuse(`project ${projectName} records no landing branch`),
+      }
     const absent = absentCommits(project.path, branch, trunk)
     if (absent === null)
-      return { result: refuse(`reachability from landing branch ${trunk} could not be inspected`) }
-    if (absent.length && !recorded) {
       return {
-        result: refuse(`commits unreachable from landing branch ${trunk}: ${absent.join(', ')}`),
+        result: refuse(`reachability from landing branch ${trunk} could not be inspected`),
+      }
+    const classification = absent.length
+      ? classifyMintedBranch(projectName, branch)
+      : { state: 'empty' as const }
+    const evidence = decideBranchReclaimEvidence({
+      absentCommits: absent,
+      classification: classification.state,
+    })
+    if (!evidence.allowed) {
+      return {
+        result: refuse(
+          `branch classification is ${evidence.state}; commits unreachable from landing branch ${trunk}: ${absent.join(', ')}; ` +
+            `prove a landing with orch branches landed ${branch} --pr <number>, or delete it by hand with git branch -D ${branch}`,
+        ),
       }
     }
-    const proof = recorded
-      ? `tip ${tip} is recorded in branch_kept_tip`
-      : `every commit is reachable from ${trunk}`
+    const proof =
+      evidence.proof === 'reachable'
+        ? `every commit is reachable from ${trunk}`
+        : `prune classifier marks the branch ${evidence.proof}`
     return {
-      result: { ok: true, action: `would reclaim branch ${projectName}:${branch}; ${proof}` },
+      result: {
+        ok: true,
+        action: `would reclaim branch ${projectName}:${branch}; ${proof}`,
+      },
       tip,
     }
   }
   const preview = prove()
   if (!preview.result.ok || options.dryRun) return preview.result
-  const owner = { session: sessionId(), what: `reclaim branch ${projectName}:${branch}` }
+  const owner = {
+    session: sessionId(),
+    what: `reclaim branch ${projectName}:${branch}`,
+  }
   return withWorktreeCreateLock(
     project.path,
     () =>
@@ -390,7 +442,10 @@ export function reclaimBranch(
             )
           }
           settleDeletedBranch(projectName, branch)
-          return { ok: true, action: `reclaimed branch ${projectName}:${branch}` }
+          return {
+            ok: true,
+            action: `reclaimed branch ${projectName}:${branch}`,
+          }
         },
         5 * 60_000,
       ),

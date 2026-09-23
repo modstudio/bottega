@@ -156,6 +156,12 @@ type PruneEligibility =
   | { eligible: true }
   | { eligible: false; reason: 'state' | 'checked-out' | 'live' | 'tip-moved' }
 
+export function isPruneSafeLandingState(
+  state: BranchLanding['state'],
+): state is 'landed' | 'superseded' | 'empty' {
+  return state === 'landed' || state === 'superseded' || state === 'empty'
+}
+
 /** Decides whether an observed branch may be deleted, without performing any I/O. */
 export function decidePruneEligibility(input: {
   state: BranchLanding['state']
@@ -163,7 +169,7 @@ export function decidePruneEligibility(input: {
   liveRun: boolean
   tipMoved: boolean
 }): PruneEligibility {
-  if (!['landed', 'superseded', 'empty'].includes(input.state)) {
+  if (!isPruneSafeLandingState(input.state)) {
     return { eligible: false, reason: 'state' }
   }
   if (input.checkedOut) return { eligible: false, reason: 'checked-out' }
