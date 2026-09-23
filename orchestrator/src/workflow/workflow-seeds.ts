@@ -10,6 +10,7 @@ import {
   REVIEW_REPRODUCED,
 } from '../review/review-vocabulary.ts'
 import type { AutonomyStage, AutonomyValue } from './autonomy.ts'
+import { validateStepCatalogue } from './step-catalogue.ts'
 
 const seedDefinition = (definition: unknown) => JSON.stringify(definition)
 
@@ -132,7 +133,7 @@ const seeds = [
           job: 'diagnose',
           autonomy: 'auto',
           gate: null,
-          body: 'Dispatch `orch do diagnose --key {{key}}` and establish the cause before editing.',
+          body: 'Dispatch `orch do diagnose --key {{key}} "Diagnose {{key}}: read it with {{tracker.actions.get}}, establish its cause with file:line evidence, and change nothing."` and establish the cause before editing.',
         },
         {
           slug: 'fix',
@@ -140,7 +141,7 @@ const seeds = [
           job: 'issue-worker',
           autonomy: 'auto',
           gate: null,
-          body: 'Dispatch `orch do issue-worker --key {{key}}` with the diagnosis.',
+          body: 'Write the fix specification to a file: the recorded diagnosis, the before-fix reproduction, the fix to make, and what must remain true. Dispatch `orch do issue-worker --key {{key}} --file <specification file>`.',
         },
         {
           slug: 'verify',
@@ -306,8 +307,9 @@ function workflowDefinition(seed: LegacySeed) {
 function seedCatalogue(d: Database, now: string): void {
   const seeded = catalogueDefinition(),
     seededDefinition = JSON.stringify(seeded),
-    revision = 2,
+    revision = 3,
     reason = `seed r${revision}`
+  requireValidSeedCatalogue(seeded)
   let catalogue = d.query("SELECT id FROM step_catalogue WHERE slug='shared'").get() as {
     id: number
   } | null
@@ -336,14 +338,16 @@ function seedCatalogue(d: Database, now: string): void {
       "SELECT n,definition FROM step_catalogue_version WHERE catalogue_id=? AND status='production'",
     )
     .get(catalogue.id) as { n: number; definition: string } | null
-  const definition = prior
-    ? JSON.stringify({
+  const assembled = prior
+    ? {
         steps: mergeSeededSteps(
           (JSON.parse(prior.definition) as { steps: SeedCatalogueStep[] }).steps,
           seeded.steps,
         ),
-      })
-    : seededDefinition
+      }
+    : seeded
+  requireValidSeedCatalogue(assembled)
+  const definition = JSON.stringify(assembled)
   if (prior?.definition === definition) return
   const { n: maxN } = d
     .query('SELECT COALESCE(MAX(n),0) AS n FROM step_catalogue_version WHERE catalogue_id=?')
@@ -366,6 +370,14 @@ function seedCatalogue(d: Database, now: string): void {
   d.query(
     `INSERT INTO step_catalogue_event (catalogue_id,version_n,event,author,reason,session_id,at) VALUES (?,?,'promote','seed',?,NULL,?)`,
   ).run(catalogue.id, n, reason, now)
+}
+
+function requireValidSeedCatalogue(definition: unknown): void {
+  const errors = validateStepCatalogue(definition)
+  if (errors.length)
+    throw new Error(
+      `invalid seeded step catalogue:\n${errors.map((error) => `- ${error}`).join('\n')}`,
+    )
 }
 
 function storedCatalogueSeedRevision(d: Database, catalogueId: number): number {

@@ -1,9 +1,11 @@
 import { Database } from 'bun:sqlite'
 import { describe, expect, test } from 'bun:test'
+import { fileURLToPath } from 'node:url'
 import { applyMigrations } from '../database/migrations.ts'
 import { productionStepCatalogue, showStepCatalogue } from './step-catalogue.ts'
 import { seedWorkflows } from './workflow-seeds.ts'
 import { parseWorkflowTree, planWorkflowHydration } from './workflow-tree.ts'
+import { collectWorkflowTree } from './workflow-tree-files.ts'
 import { importWorkflowTree, productionWorkflowTree } from './workflow-tree-store.ts'
 import { productionWorkflows, showWorkflow } from './workflows.ts'
 
@@ -19,6 +21,20 @@ const renderedTree = (d: Database) =>
   planWorkflowHydration({ store: productionWorkflowTree(d), tree: [] }).writes
 
 describe('importWorkflowTree', () => {
+  test('the current workflow tree imports into a test store', () => {
+    const d = database()
+    const root = fileURLToPath(new URL('../../..', import.meta.url))
+
+    expect(() =>
+      importWorkflowTree(
+        parseWorkflowTree(collectWorkflowTree(root)),
+        'validate current tree',
+        'test',
+        d,
+      ),
+    ).not.toThrow()
+  })
+
   test('an edited step becomes a catalogue draft while production remains unchanged', () => {
     const d = database()
     const production = productionStepCatalogue(d)

@@ -141,6 +141,7 @@ export function versionedLifecycle<T>(config: VersionedStoreConfig<T>) {
       const target = show(slug, n, d)
       if (target.status !== 'draft')
         throw new Error(`${config.noun} "${slug}" version ${n} is not a draft`)
+      config.validate(target.definition, d)
       preflight?.(target.definition, d)
       const prior = d
         .query(

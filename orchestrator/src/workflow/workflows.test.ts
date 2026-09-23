@@ -681,9 +681,7 @@ describe('workflow versions and project composition', () => {
     const withoutTemp = setStepCatalogue({ steps: current.steps }, 'drop temp', 'a', d)
     promoteStepCatalogue(withoutTemp.n, 'publish', 'a', d)
     expect(() => promoteWorkflow('stale-flow', draft.n, 'publish', 'a', d)).toThrow(
-      'workflow "stale-flow" names steps absent from the production catalogue:\n' +
-        '- mode "default": "temp"\n' +
-        'fix: promote a catalogue step with that slug, or set the workflow to a mode that does not use it',
+      'invalid workflow definition:\n- mode "default" references missing step "temp"',
     )
   })
 })

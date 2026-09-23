@@ -1,6 +1,7 @@
 // concern: workflows
 /** Owns the shared, versioned workflow-step catalogue. */
 import type { Database } from 'bun:sqlite'
+import { orchDoValueOptionNames } from '../commands/do-options.ts'
 import { db, writableDb } from '../database/db.ts'
 import { JOBS } from '../jobs/jobs.ts'
 import { type InjectionSource, injectionSources } from '../project/project-injection.ts'
@@ -43,8 +44,91 @@ export function validateStepCatalogue(value: unknown): string[] {
     validateIdentity(item, seen, errors)
     validateFloor(item, errors)
     validateNeeds(item, errors)
+    validateDispatchPrompts(item, errors)
   }
   return [...new Set(errors)]
+}
+
+function validateDispatchPrompts(item: Record<string, unknown>, errors: string[]): void {
+  if (typeof item.body !== 'string') return
+  const slug = String(item.slug ?? '')
+  for (const match of item.body.matchAll(/`([^`\n]+)`/g)) {
+    const command = match[1]!.trim()
+    if (!/^(?:orch|\S*\/bin\/orch)\s+do\s+\S+/.test(command)) continue
+    if (!dispatchHasPromptOrFile(command))
+      errors.push(
+        `step "${slug}" dispatch "${command}" must include --file or a double-quoted argument`,
+      )
+  }
+}
+
+type ShellToken = { value: string; quoted: boolean }
+
+function shellTokens(command: string): ShellToken[] {
+  const tokens: ShellToken[] = []
+  let value = '',
+    quote: '"' | "'" | null = null,
+    quoted = false,
+    escaped = false
+  const push = () => {
+    if (value || quoted) tokens.push({ value, quoted })
+    value = ''
+    quoted = false
+  }
+  for (const character of command) {
+    if (escaped) {
+      value += character
+      escaped = false
+    } else if (character === '\\' && quote !== "'") escaped = true
+    else if (quote) {
+      if (character === quote) quote = null
+      else value += character
+    } else if (character === '"' || character === "'") {
+      quote = character
+      quoted = true
+    } else if (/\s/.test(character)) push()
+    else value += character
+  }
+  if (escaped) value += '\\'
+  push()
+  return tokens
+}
+
+function dispatchHasPromptOrFile(command: string): boolean {
+  const tokens = shellTokens(command)
+  let file = ''
+  for (let index = 3; index < tokens.length; index++) {
+    const token = tokens[index]!
+    const option = consumeDispatchOption(tokens, index)
+    if (option) {
+      index = option.next
+      if (option.file !== null) file = option.file
+      continue
+    }
+    if (token.quoted && token.value.trim()) return true
+  }
+  return Boolean(file.trim())
+}
+
+function consumeDispatchOption(
+  tokens: ShellToken[],
+  index: number,
+): { next: number; file: string | null } | null {
+  const token = tokens[index]!
+  if (!token.value.startsWith('--')) return null
+  const [flag, inline] = token.value.slice(2).split('=', 2),
+    valueKind = orchDoValueOptionNames.get(flag!)
+  if (!valueKind) return { next: index, file: null }
+  const following = tokens[index + 1],
+    consumesFollowing =
+      inline === undefined &&
+      following !== undefined &&
+      (valueKind === 'required' || !following.value.startsWith('--')),
+    optionValue = inline ?? (consumesFollowing ? following?.value : undefined)
+  return {
+    next: consumesFollowing ? index + 1 : index,
+    file: flag === 'file' ? (optionValue ?? '') : null,
+  }
 }
 
 function validateIdentity(
