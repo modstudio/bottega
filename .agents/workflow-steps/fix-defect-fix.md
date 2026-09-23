@@ -8,4 +8,4 @@ autonomy: auto
 needs:
   []
 ---
-Dispatch `orch do issue-worker --key {{key}}` with the diagnosis.
+Write the fix specification to a file: the recorded diagnosis, the before-fix reproduction, the fix to make, and what must remain true. Dispatch `orch do issue-worker --key {{key}} --file <specification file>`.

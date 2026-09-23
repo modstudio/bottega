@@ -10,7 +10,7 @@ needs:
 ---
 A run fixes exactly one item. Work through the sources in order, moving to the next only when the current one yields nothing fixable:
 
-1. Open tasks from `{{tracker.actions.search}}` that report broken behaviour. Skip a task in the tracker's active state, and one with a live orch run or an unanswered question (`orch inbox`). Prefer the oldest.
+1. Open tasks from `{{tracker.actions.search}}` that report broken behaviour: exclude every task in the tracker's done state (`{{tracker.states.done}}`) or active state (`{{tracker.states.active}}`), and dropped or cancelled tasks. Use the search action's own status filter when it has one, rather than reading the whole board.
 2. Current conditions from `orch monitor` for this project that need a code change. Residue that monitor or `orch reclaim` releases is not a defect.
 3. Recent failed runs from `orch runs` whose failure is attributed to orch or the harness rather than to the agent.
 4. Actionable notes from `hub note list --project <project> --actionable`. Promotion is a person's act: record the chosen note, ask the operator to run `hub note promote <id>`, and stop until they have.

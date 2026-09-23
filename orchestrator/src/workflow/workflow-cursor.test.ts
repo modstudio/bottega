@@ -209,6 +209,56 @@ describe('workflow cursor adapter', () => {
     expect(d.query('SELECT state FROM workflow_cursor').get()).toEqual({ state: 'done' })
   })
 
+  test('keyless cursor finish text names its mode', () => {
+    const d = database()
+    const draft = setWorkflow(
+      'keyless-fixture',
+      {
+        title: 'Keyless fixture',
+        description: 'Exercises keyless cursor messages.',
+        arguments: [],
+        modes: [
+          {
+            slug: 'agent',
+            title: 'Agent',
+            default: true,
+            steps: ['close'],
+          },
+        ],
+      },
+      'test fixture',
+      'test',
+      d,
+    )
+    promoteWorkflow('keyless-fixture', draft.n, 'test fixture', 'test', d)
+    const keylessArgs = {}
+    const keylessContext = { session: 'keyless-session' }
+    const composition = composeWorkflowWithCursor(
+      'keyless-fixture',
+      'fixture',
+      'agent',
+      keylessArgs,
+      keylessContext,
+      d,
+    )
+    let output = ''
+
+    for (const step of composition.steps)
+      output = nextWorkflowStep(
+        'keyless-fixture',
+        'fixture',
+        'agent',
+        keylessArgs,
+        `closed ${step.slug}`,
+        keylessContext,
+        d,
+      )
+
+    expect(output).toBe(
+      `Workflow keyless-fixture (agent) is finished: ${composition.steps.length} steps closed.`,
+    )
+  })
+
   test('await records a question and fetching the current step resumes', () => {
     const d = database()
     composeWorkflowWithCursor('ship', 'fixture', 'default', args, context, d)

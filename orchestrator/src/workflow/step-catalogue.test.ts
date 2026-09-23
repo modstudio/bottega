@@ -25,3 +25,21 @@ test('stored legacy steps normalize without revalidation', () => {
     compatibleCatalogueStep({ ...step, autonomy: 'manual', floor: ['human-ruling'] } as never),
   ).toMatchObject({ autonomy: 'ask', floor: ['ruling'] })
 })
+
+test('orch do dispatches require a prompt or file', () => {
+  const definition = (body: string) => ({ steps: [{ ...step, stage: 'implement', body }] })
+
+  expect(validateStepCatalogue(definition('Dispatch `orch do implement --key DEV-1`.'))).toContain(
+    'step "design" dispatch "orch do implement --key DEV-1" must include --file or a double-quoted argument',
+  )
+  expect(
+    validateStepCatalogue(
+      definition('Dispatch `orch do implement --key DEV-1 "Implement the specified change."`.'),
+    ),
+  ).toEqual([])
+  expect(
+    validateStepCatalogue(
+      definition('Dispatch `/checkout/bin/orch do implement --key DEV-1 --file specification.md`.'),
+    ),
+  ).toEqual([])
+})

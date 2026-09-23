@@ -43,8 +43,24 @@ export function validateStepCatalogue(value: unknown): string[] {
     validateIdentity(item, seen, errors)
     validateFloor(item, errors)
     validateNeeds(item, errors)
+    validateDispatchPrompts(item, errors)
   }
   return [...new Set(errors)]
+}
+
+function validateDispatchPrompts(item: Record<string, unknown>, errors: string[]): void {
+  if (typeof item.body !== 'string') return
+  const slug = String(item.slug ?? '')
+  for (const match of item.body.matchAll(/`([^`\n]+)`/g)) {
+    const command = match[1]!.trim()
+    if (!/^(?:orch|\S*\/bin\/orch)\s+do\s+\S+/.test(command)) continue
+    const hasFile = /(?:^|\s)--file(?:=|\s|$)/.test(command)
+    const hasQuotedArgument = /(?:^|\s)"(?:[^"\\]|\\.)*"(?=\s|$)/.test(command)
+    if (!hasFile && !hasQuotedArgument)
+      errors.push(
+        `step "${slug}" dispatch "${command}" must include --file or a double-quoted argument`,
+      )
+  }
 }
 
 function validateIdentity(

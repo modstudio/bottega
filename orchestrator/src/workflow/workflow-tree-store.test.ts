@@ -4,6 +4,7 @@ import { applyMigrations } from '../database/migrations.ts'
 import { productionStepCatalogue, showStepCatalogue } from './step-catalogue.ts'
 import { seedWorkflows } from './workflow-seeds.ts'
 import { parseWorkflowTree, planWorkflowHydration } from './workflow-tree.ts'
+import { collectWorkflowTree } from './workflow-tree-files.ts'
 import { importWorkflowTree, productionWorkflowTree } from './workflow-tree-store.ts'
 import { productionWorkflows, showWorkflow } from './workflows.ts'
 
@@ -16,9 +17,34 @@ const database = () => {
 }
 
 const renderedTree = (d: Database) =>
-  planWorkflowHydration({ store: productionWorkflowTree(d), tree: [] }).writes
+  planWorkflowHydration({ store: productionWorkflowTree(d), tree: [] }).writes.map((file) => ({
+    ...file,
+    body: file.body
+      .replace(
+        'Dispatch `orch do diagnose --key {{key}}`',
+        'Dispatch `orch do diagnose --key {{key}} "Diagnose {{key}}."`',
+      )
+      .replace(
+        'Dispatch `orch do issue-worker --key {{key}}`',
+        'Dispatch `orch do issue-worker --key {{key}} --file specification.md`',
+      ),
+  }))
 
 describe('importWorkflowTree', () => {
+  test('the current workflow tree imports into a test store', () => {
+    const d = database()
+    const root = new URL('../../..', import.meta.url).pathname
+
+    expect(() =>
+      importWorkflowTree(
+        parseWorkflowTree(collectWorkflowTree(root)),
+        'validate current tree',
+        'test',
+        d,
+      ),
+    ).not.toThrow()
+  })
+
   test('an edited step becomes a catalogue draft while production remains unchanged', () => {
     const d = database()
     const production = productionStepCatalogue(d)
@@ -28,7 +54,7 @@ describe('importWorkflowTree', () => {
 
     const result = importWorkflowTree(parseWorkflowTree(tree), 'edit lens', 'worker', d)
 
-    expect(result.steps).toEqual(['lens'])
+    expect(result.steps).toEqual(['diagnose', 'fix-defect-fix', 'lens'])
     const draft = d
       .query("SELECT n FROM step_catalogue_version WHERE status='draft' ORDER BY n DESC LIMIT 1")
       .get() as { n: number }
@@ -97,7 +123,10 @@ describe('importWorkflowTree', () => {
 
     const result = importWorkflowTree(parseWorkflowTree(tree), 'add tree flow', 'worker', d)
 
-    expect(result).toEqual({ steps: ['tree-step'], workflows: ['tree-flow'] })
+    expect(result).toEqual({
+      steps: ['diagnose', 'fix-defect-fix', 'tree-step'],
+      workflows: ['tree-flow'],
+    })
     const draft = d
       .query("SELECT n FROM step_catalogue_version WHERE status='draft' ORDER BY n DESC LIMIT 1")
       .get() as { n: number }
