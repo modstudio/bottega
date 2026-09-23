@@ -11,8 +11,13 @@ export type WorkflowPromptDefinition = {
   name: string
   title: string
   description: string
-  arguments: { name: string; description: string; required: boolean }[]
+  arguments: { name: string; description: string }[]
 }
+
+// A client refuses a prompt whose advertised argument is missing before the
+// server sees it, so every argument is advertised as optional and composition
+// names the workflow-required ones it did not receive.
+const requiredNote = ' Required by the workflow; if omitted, the composition names it as missing.'
 
 export function workflowPromptDefinitions(
   workflows: ProductionWorkflow[],
@@ -25,15 +30,16 @@ export function workflowPromptDefinitions(
       {
         name: 'mode',
         description: `Workflow mode slug. One of: ${definition.modes.map((mode) => mode.slug).join(', ')}. Omit to use the default mode.`,
-        required: false,
       },
       {
         name: 'project',
         description:
           "Registered project name. Omit to use the project that owns the server's working directory.",
-        required: false,
       },
-      ...definition.arguments,
+      ...definition.arguments.map(({ name, description, required }) => ({
+        name,
+        description: required ? description + requiredNote : description,
+      })),
     ],
   }))
 }
@@ -42,17 +48,23 @@ const promptMessage = (text: string) => ({
   messages: [{ role: 'user' as const, content: { type: 'text' as const, text } }],
 })
 
+export const promptArgsSchema = (prompt: WorkflowPromptDefinition) =>
+  Object.fromEntries(
+    prompt.arguments.map((argument) => [
+      argument.name,
+      z.string().describe(argument.description).optional(),
+    ]),
+  )
+
 export function registerWorkflowPrompts(server: McpServer): void {
   for (const prompt of workflowPromptDefinitions(productionWorkflows())) {
-    const argsSchema = Object.fromEntries(
-      prompt.arguments.map((argument) => {
-        const schema = z.string().describe(argument.description)
-        return [argument.name, argument.required ? schema.catch('') : schema.optional()]
-      }),
-    )
     server.registerPrompt(
       prompt.name,
-      { title: prompt.title, description: prompt.description, argsSchema },
+      {
+        title: prompt.title,
+        description: prompt.description,
+        argsSchema: promptArgsSchema(prompt),
+      },
       (input) => {
         const { mode, project, ...values } = input as Record<string, string | undefined>
         const args = Object.fromEntries(

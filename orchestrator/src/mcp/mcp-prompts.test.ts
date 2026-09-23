@@ -1,6 +1,7 @@
 import { describe, expect, test } from 'bun:test'
+import { isSchemaOptional } from '@modelcontextprotocol/sdk/server/zod-compat.js'
 import type { WorkflowDefinition } from '../workflow/workflows.ts'
-import { workflowPromptDefinitions } from './mcp-prompts.ts'
+import { promptArgsSchema, workflowPromptDefinitions } from './mcp-prompts.ts'
 
 const workflow = (
   slug: string,
@@ -19,11 +20,11 @@ const workflow = (
 })
 
 describe('workflow prompt definitions', () => {
-  test('declared-argument and mode-list mutation: retains required arguments and every mode', () => {
+  test('declared-argument and mode-list mutation: retains every argument and mode, naming the required ones', () => {
     const [prompt] = workflowPromptDefinitions([
       workflow('ship-task', [
         { name: 'key', description: 'Task key.', required: true },
-        { name: 'branch', description: 'Branch name.', required: true },
+        { name: 'note', description: 'Optional note.', required: false },
       ]),
     ])
 
@@ -31,29 +32,28 @@ describe('workflow prompt definitions', () => {
       {
         name: 'mode',
         description: 'Workflow mode slug. One of: fast, careful. Omit to use the default mode.',
-        required: false,
       },
       {
         name: 'project',
         description:
           "Registered project name. Omit to use the project that owns the server's working directory.",
-        required: false,
       },
-      { name: 'key', description: 'Task key.', required: true },
-      { name: 'branch', description: 'Branch name.', required: true },
+      {
+        name: 'key',
+        description:
+          'Task key. Required by the workflow; if omitted, the composition names it as missing.',
+      },
+      { name: 'note', description: 'Optional note.' },
     ])
   })
 
-  test('requiredness mutation: retains optional declared arguments as optional', () => {
+  test('advertised-requiredness mutation: a workflow-required argument is still optional to the client', () => {
     const [prompt] = workflowPromptDefinitions([
-      workflow('ship-task', [{ name: 'note', description: 'Optional note.', required: false }]),
+      workflow('ship-task', [{ name: 'key', description: 'Task key.', required: true }]),
     ])
 
-    expect(prompt?.arguments.find((argument) => argument.name === 'note')).toEqual({
-      name: 'note',
-      description: 'Optional note.',
-      required: false,
-    })
+    for (const schema of Object.values(promptArgsSchema(prompt!)))
+      expect(isSchemaOptional(schema)).toBe(true)
   })
 
   test('prompt-name mutation: uses workflow slugs unchanged', () => {
