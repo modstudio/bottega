@@ -6,7 +6,7 @@ export const autonomyValues = ['ask', 'review', 'auto'] as const
 export type AutonomyStage = (typeof autonomyStages)[number]
 export type AutonomyValue = (typeof autonomyValues)[number]
 type CatalogueStep = { slug: string; stage?: AutonomyStage; autonomy: AutonomyValue }
-export type WorkflowAutonomySettings = {
+type WorkflowAutonomySettings = {
   preset?: 'manual' | 'guided' | 'autonomous'
   stages?: Partial<Record<AutonomyStage, AutonomyValue>>
   steps?: Record<string, AutonomyValue>
@@ -190,6 +190,38 @@ export const catalogueStepsForAutonomy = (
 ): Pick<CatalogueStep, 'slug' | 'stage' | 'autonomy'>[] =>
   steps.map(({ slug, stage, autonomy }) => ({ slug, stage, autonomy }))
 
+function parseWorkflowAutonomySetting(
+  result: AutonomySettings,
+  key: string,
+  value: string,
+  source: string,
+): boolean {
+  if (!key.startsWith('workflow.')) return false
+  const [prefix, slug, kind, name, ...extra] = key.split('.')
+  if (
+    prefix !== 'workflow' ||
+    !slug ||
+    extra.length ||
+    !(
+      (name === undefined && (kind === 'preset' || kind === 'rulings')) ||
+      (name !== undefined && (kind === 'stage' || kind === 'step'))
+    )
+  )
+    throw new Error(`invalid ${source} autonomy key ${JSON.stringify(key)}`)
+  result.workflows ??= {}
+  result.workflows[slug] ??= {}
+  const workflow = result.workflows[slug]
+  if (kind === 'preset' || kind === 'rulings') (workflow as Record<string, unknown>)[kind] = value
+  else if (kind === 'stage') {
+    workflow.stages ??= {}
+    workflow.stages[name as AutonomyStage] = value as AutonomyValue
+  } else {
+    workflow.steps ??= {}
+    workflow.steps[name!] = value as AutonomyValue
+  }
+  return true
+}
+
 export function parseAutonomy(text: string | undefined, source: string): AutonomySettings {
   if (!text?.trim()) return {}
   const result: AutonomySettings = {}
@@ -205,30 +237,8 @@ export function parseAutonomy(text: string | undefined, source: string): Autonom
     } else if (key.startsWith('step.')) {
       result.steps ??= {}
       result.steps[key.slice(5)] = value as AutonomyValue
-    } else if (key.startsWith('workflow.')) {
-      const [prefix, slug, kind, name, ...extra] = key.split('.')
-      if (
-        prefix !== 'workflow' ||
-        !slug ||
-        extra.length ||
-        !(
-          (name === undefined && (kind === 'preset' || kind === 'rulings')) ||
-          (name !== undefined && (kind === 'stage' || kind === 'step'))
-        )
-      )
-        throw new Error(`invalid ${source} autonomy key ${JSON.stringify(key)}`)
-      result.workflows ??= {}
-      const workflow = (result.workflows[slug] ??= {})
-      if (kind === 'preset' || kind === 'rulings')
-        (workflow as Record<string, unknown>)[kind] = value
-      else if (kind === 'stage') {
-        workflow.stages ??= {}
-        workflow.stages[name as AutonomyStage] = value as AutonomyValue
-      } else {
-        workflow.steps ??= {}
-        workflow.steps[name!] = value as AutonomyValue
-      }
-    } else throw new Error(`invalid ${source} autonomy key ${JSON.stringify(key)}`)
+    } else if (!parseWorkflowAutonomySetting(result, key, value, source))
+      throw new Error(`invalid ${source} autonomy key ${JSON.stringify(key)}`)
   }
   return validateAutonomySettings(result, source)
 }

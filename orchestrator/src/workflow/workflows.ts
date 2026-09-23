@@ -43,6 +43,12 @@ const workflowPromptArgumentNameErrors = (name: unknown): string[] =>
     ? [`argument name "${name}" is reserved for the workflow prompt`]
     : []
 
+const workflowDefaultPresetErrors = (preset: unknown): string[] =>
+  preset === undefined ||
+  (typeof preset === 'string' && ['manual', 'guided', 'autonomous'].includes(preset))
+    ? []
+    : ['defaultPreset must be manual, guided, or autonomous']
+
 function workflowModeRequirementErrors(mode: Record<string, unknown>, args: unknown[]): string[] {
   if (mode.requires === undefined) return []
   if (!Array.isArray(mode.requires) || mode.requires.some((name) => typeof name !== 'string'))
@@ -84,14 +90,7 @@ export function validateWorkflowDefinition(
   if (typeof value.title !== 'string') errors.push('title must be a string')
   else if (!value.title.trim()) errors.push('title must be non-empty')
   if (typeof value.description !== 'string') errors.push('description must be a string')
-  if (
-    value.defaultPreset !== undefined &&
-    !(
-      typeof value.defaultPreset === 'string' &&
-      ['manual', 'guided', 'autonomous'].includes(value.defaultPreset)
-    )
-  )
-    errors.push('defaultPreset must be manual, guided, or autonomous')
+  errors.push(...workflowDefaultPresetErrors(value.defaultPreset))
   const args = Array.isArray(value.arguments) ? value.arguments : []
   const modes = Array.isArray(value.modes) ? value.modes : []
   if (!Array.isArray(value.arguments)) errors.push('arguments must be an array')
