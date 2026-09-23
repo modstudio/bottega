@@ -31,7 +31,6 @@ import {
   adoptRunMutation,
   auditRunMutation,
   authorizeRunMutation,
-  type RootAuthority,
   runMutationActor,
 } from './run/run-authority.ts'
 import { enqueueRunRecord } from './run/run-outbox.ts'
@@ -221,6 +220,91 @@ function enqueueVoidedRunRecord(id: number): void {
     )
     .get(id)
   if (row?.record_id) enqueueRunRecord(db(), id, machineId(), row.finished_at)
+}
+
+type EvidenceExclusion = 'void' | 'blocked-by-tree'
+
+function requestedEvidenceExclusion(
+  flags: JudgementFlags,
+  options: ScoreOptions,
+): EvidenceExclusion | null {
+  if (!flags.has('blocked-by-tree')) return flags.has('void') ? 'void' : null
+  if (flags.has('void')) throw new Error('--blocked-by-tree and --void cannot be combined')
+  if (!options.note?.trim()) throw new Error('--note is required with --blocked-by-tree')
+  if (options.words.length)
+    throw new Error('--blocked-by-tree records no delivery or quality verdict')
+  return 'blocked-by-tree'
+}
+
+function refuseScoredBlockedByTree(id: number, exclusion: EvidenceExclusion): void {
+  if (exclusion !== 'blocked-by-tree') return
+  const verdict = db()
+    .query<{ delivery: string; quality: string | null }, [number]>(
+      'SELECT delivery, quality FROM score WHERE run_id=?',
+    )
+    .get(id)
+  if (!verdict) return
+  throw new Error(
+    `refused: run ${id} already has a verdict (${verdict.delivery} ${verdict.quality}); ` +
+      '--blocked-by-tree applies only to an unscored run, because removing a recorded verdict is not supported',
+  )
+}
+
+function recordEvidenceExclusion(
+  id: number,
+  row: { failure_kind: string | null; job: string },
+  exclusion: EvidenceExclusion,
+  flags: JudgementFlags,
+  options: ScoreOptions,
+  presentation: JudgementPresentation,
+): void {
+  let authority = authorizeRunMutation(id, 'void')
+  const blocked = exclusion === 'blocked-by-tree'
+  const delivery = options.words[0] as Delivery | undefined
+  const quality = options.words[1] as Quality | undefined
+  const fidelity = options.words[2] as Fidelity | undefined
+  const cannotRecord = blocked ? null : voidCannotRecord(row.failure_kind, options.notEvidence)
+  const scoredFidelity =
+    !cannotRecord && delivery ? scoredVoidFidelity(row.job, delivery, quality, fidelity) : undefined
+  const excludedReason = blocked
+    ? `blocked by its tree: ${options.note!.trim()}`
+    : 'voided with orch score --void'
+  const recordId = hostedRunId(id)
+  const scoredAt = nowIso()
+  const recordedBy = flags.flag('scorer') ?? process.env.ORCH_SCORER ?? 'claude'
+  writeTransaction(() => {
+    persistHostedRunId(id, recordId)
+    authority = adoptRunMutation(authority, 'void')
+    db().query('UPDATE run SET evidence_excluded=? WHERE id=?').run(excludedReason, id)
+    if (!blocked && !cannotRecord && delivery) {
+      recordScoreVerdict(
+        id,
+        delivery,
+        quality ?? null,
+        scoredFidelity ?? null,
+        options.note,
+        scoredAt,
+        recordedBy,
+      )
+      enqueueScoreRecord(db(), id, machineId())
+    }
+    enqueueVoidedRunRecord(id)
+    auditRunMutation(authority, 'void', options.auditReason)
+  })
+  if (blocked) {
+    presentation.log(
+      `blocked-by-tree run ${id}: retained run and output; excluded from routing evidence; no verdict recorded`,
+    )
+    return
+  }
+  const verdictResult = cannotRecord
+    ? `verdict was not recorded: ${cannotRecord}`
+    : delivery
+      ? `verdict recorded: ${[delivery, quality, scoredFidelity].filter(Boolean).join(' ')}`
+      : 'no verdict was provided; existing verdict unchanged'
+  presentation.log(
+    `voided run ${id}: retained run and output; excluded from routing evidence; ${verdictResult}`,
+  )
 }
 export async function judgeRun(
   requestedId: number,
@@ -562,60 +646,22 @@ export async function scoreRun(
   if (row.agent === '(pending)' && !(flags.has('void') && row.failure_kind === 'harness')) {
     throw new Error(`run ${id} cannot be scored: its agent is the placeholder '(pending)'`)
   }
+  const exclusion = requestedEvidenceExclusion(flags, options)
+  if (exclusion) {
+    refuseScoredBlockedByTree(id, exclusion)
+    recordEvidenceExclusion(id, row, exclusion, flags, options, presentation)
+    return
+  }
   const scorer = flags.flag('scorer')
   const dashboardAuthorized = options.dashboardAuthorized
   const note = options.note
   let scoreAuthority = runMutationActor(id)
   const owner = judgeability(row.session_id, sessionId())
-  let voidAuthority: RootAuthority | null = null
-  if (flags.has('void')) {
-    voidAuthority = authorizeRunMutation(id, 'void')
-  } else {
-    refuseForeignScore(id, owner, flags, dashboardAuthorized)
-  }
+  refuseForeignScore(id, owner, flags, dashboardAuthorized)
   const words = options.words
   const delivery = words[0] as Delivery | undefined
   const quality = words[1] as Quality | undefined
   const fidelity = words[2] as Fidelity | undefined
-  if (flags.has('void')) {
-    const cannotRecord = voidCannotRecord(row.failure_kind, options.notEvidence)
-    const scoredFidelity =
-      !cannotRecord && delivery
-        ? scoredVoidFidelity(row.job, delivery, quality, fidelity)
-        : undefined
-    const scoredAt = nowIso()
-    const voidReason = 'voided with orch score --void'
-    const recordId = hostedRunId(id)
-    const recordedBy = scorer ?? process.env.ORCH_SCORER ?? 'claude'
-    writeTransaction(() => {
-      persistHostedRunId(id, recordId)
-      voidAuthority = adoptRunMutation(voidAuthority!, 'void')
-      db().query('UPDATE run SET evidence_excluded=? WHERE id=?').run(voidReason, id)
-      if (!cannotRecord && delivery) {
-        recordScoreVerdict(
-          id,
-          delivery,
-          quality ?? null,
-          scoredFidelity ?? null,
-          note,
-          scoredAt,
-          recordedBy,
-        )
-        enqueueScoreRecord(db(), id, machineId())
-      }
-      enqueueVoidedRunRecord(id)
-      auditRunMutation(voidAuthority!, 'void', options.auditReason)
-    })
-    const verdictResult = cannotRecord
-      ? `verdict was not recorded: ${cannotRecord}`
-      : delivery
-        ? `verdict recorded: ${[delivery, quality, scoredFidelity].filter(Boolean).join(' ')}`
-        : 'no verdict was provided; existing verdict unchanged'
-    presentation.log(
-      `voided run ${id}: retained run and output; excluded from routing evidence; ${verdictResult}`,
-    )
-    return
-  }
   // A conversation is one unit of work and takes one verdict. Any turn id
   // resolves to the root, which is what routing reads and where the score is
   // recorded.

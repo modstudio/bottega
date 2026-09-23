@@ -2,6 +2,7 @@
 /** Knows dispatch command preflight and run dispatch. Must not know transports, routing by value, worktrees, the CLI, or reviews. */
 import { existsSync } from 'node:fs'
 import { isReaderJob, job, reclaimsTreeByDefault, resolveJobTimeoutMs } from '../jobs/jobs.ts'
+import { resolveLens } from '../lens/lenses.ts'
 import type { McpRequest } from '../mcp/mcp-preflight.ts'
 import {
   projectAt,
@@ -14,6 +15,7 @@ import {
 import type { DetachSpec } from '../route/failover.ts'
 import { keepTreeExemptionFromOption } from '../worktree/keep-tree-hold.ts'
 import { preflight, resolvedFindingsLens } from './dispatch-preflight.ts'
+import { executionRequirementRefusal } from './execution-requirement.ts'
 import { reviewLensPrompt } from './review-lens-prompt.ts'
 
 type TransportName = 'cli' | 'acp'
@@ -121,6 +123,33 @@ function assertDispatchableProject(
   }
 }
 
+function requiresExecution(
+  requested: ReturnType<typeof job>,
+  explicit: boolean,
+  lens: string | undefined,
+  project: string | null,
+): boolean {
+  if (explicit) return true
+  if (!lens || !requested.findings) return false
+  return Boolean(resolveLens(lens, project)?.requires_execution)
+}
+
+function assertExecutionRequirement(input: {
+  requested: ReturnType<typeof job>
+  explicit: boolean
+  jobName: string
+  lens: string | undefined
+  project: string | null
+}): void {
+  const refusal = executionRequirementRefusal({
+    declared: requiresExecution(input.requested, input.explicit, input.lens, input.project),
+    job: input.jobName,
+    lens: input.lens,
+    treeKind: input.requested.needs.writesRepo ? 'writer' : 'reader',
+  })
+  if (refusal) throw new Error(refusal)
+}
+
 export async function dispatchCommand(
   argv: string[],
   flags: DispatchFlags,
@@ -191,6 +220,14 @@ export async function dispatchCommand(
     has('carry'),
     explicitRepo,
   )
+  const lens = flag('lens')
+  assertExecutionRequirement({
+    requested,
+    explicit: has('requires-execution'),
+    jobName,
+    lens,
+    project: explicitRepo ?? projectAt(callerCwd)?.name ?? null,
+  })
   if (requested.needs.readsRepo) warnCallerDrift(callerCwd, base)
   warnTaskBranchBypass(
     callerCwd,
@@ -243,7 +280,7 @@ export async function dispatchCommand(
   const prompt = reviewLensPrompt({
     lens: resolvedFindingsLens(
       requested.findings,
-      flag('lens'),
+      lens,
       explicitRepo ?? projectAt(callerCwd)?.name ?? null,
     ),
     supplied: await readPrompt(),
@@ -286,7 +323,7 @@ export async function dispatchCommand(
       agent,
       schema,
       label: flag('label'),
-      lens: flag('lens'),
+      lens,
       mcp: mcp,
       model: flag('model'),
       probe: has('probe'),
@@ -346,7 +383,7 @@ export async function dispatchCommand(
     agent,
     schema,
     label: flag('label'),
-    lens: flag('lens'),
+    lens,
     mcp: mcp,
     model: flag('model'),
     probe: has('probe'),

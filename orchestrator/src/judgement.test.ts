@@ -9,6 +9,7 @@ import { db } from './database/db.ts'
 import { NOT_EVIDENCE } from './failure/failure.ts'
 import { judgeRun, scoreRun } from './judgement.ts'
 import { completeReview, recordReview } from './review/review-triage.ts'
+import { candidates } from './route/route.ts'
 import { pairPartners } from './score/duel.ts'
 
 const trackResidue = trackedTestResidue()
@@ -267,6 +268,33 @@ describe('score ruling', () => {
       delivery: 'full',
       quality: 'right',
     })
+  })
+
+  test('score --blocked-by-tree refuses a scored root without changing its verdict or exclusion', async () => {
+    const root = insert()
+    const child = insert()
+    db().query('UPDATE run SET parent_run_id=?,turn=2 WHERE id=?').run(root, child)
+    await score(root, ['full', 'right'])
+    const before = db()
+      .query(
+        `SELECT score.delivery, score.quality, run.evidence_excluded
+           FROM run JOIN score ON score.run_id=run.id WHERE run.id=?`,
+      )
+      .get(root)
+
+    await expect(
+      score(child, [], { 'blocked-by-tree': true }, { note: 'superseded tree' }),
+    ).rejects.toThrow(
+      `refused: run ${root} already has a verdict (full right); --blocked-by-tree applies only to an unscored run, because removing a recorded verdict is not supported`,
+    )
+    expect(
+      db()
+        .query(
+          `SELECT score.delivery, score.quality, run.evidence_excluded
+             FROM run JOIN score ON score.run_id=run.id WHERE run.id=?`,
+        )
+        .get(root),
+    ).toEqual(before)
   })
 
   test('score and re-score store the merged note locally and keep one current score outbox row', async () => {
@@ -607,6 +635,26 @@ describe('judge ruling', () => {
 })
 
 describe('voided output evidence', () => {
+  test('score --blocked-by-tree uses the void routing exclusion without recording a verdict', async () => {
+    const kept = insert('ok', 'understand')
+    const blocked = insert('ok', 'understand')
+    seedScore(kept, 'full', 'right')
+    await score(
+      blocked,
+      [],
+      { 'blocked-by-tree': true },
+      { note: 'the seeded database could not start' },
+    )
+    expect(db().query('SELECT evidence_excluded FROM run WHERE id=?').get(blocked)).toEqual({
+      evidence_excluded: 'blocked by its tree: the seeded database could not start',
+    })
+    expect(db().query('SELECT * FROM score WHERE run_id=?').get(blocked)).toBeNull()
+    expect(candidates('understand').find((row) => row.agent === 'codex')).toMatchObject({
+      scored: 1,
+      evidence: 1,
+    })
+  })
+
   test('score --void records its verdict but removes routing and duel evidence', async () => {
     const outputPath = trackResidue(join(dir, 'voided-output.txt'))
     writeFileSync(outputPath, 'the retained answer')
