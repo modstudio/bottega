@@ -236,6 +236,20 @@ function requestedEvidenceExclusion(
   return 'blocked-by-tree'
 }
 
+function refuseScoredBlockedByTree(id: number, exclusion: EvidenceExclusion): void {
+  if (exclusion !== 'blocked-by-tree') return
+  const verdict = db()
+    .query<{ delivery: string; quality: string | null }, [number]>(
+      'SELECT delivery, quality FROM score WHERE run_id=?',
+    )
+    .get(id)
+  if (!verdict) return
+  throw new Error(
+    `refused: run ${id} already has a verdict (${verdict.delivery} ${verdict.quality}); ` +
+      '--blocked-by-tree applies only to an unscored run, because removing a recorded verdict is not supported',
+  )
+}
+
 function recordEvidenceExclusion(
   id: number,
   row: { failure_kind: string | null; job: string },
@@ -634,6 +648,7 @@ export async function scoreRun(
   }
   const exclusion = requestedEvidenceExclusion(flags, options)
   if (exclusion) {
+    refuseScoredBlockedByTree(id, exclusion)
     recordEvidenceExclusion(id, row, exclusion, flags, options, presentation)
     return
   }
