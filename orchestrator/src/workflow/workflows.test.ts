@@ -116,6 +116,21 @@ describe('workflow definition validation', () => {
       'exactly one default mode is allowed',
     )
   })
+  test('refuses malformed or undeclared mode requirements', () => {
+    const d = database()
+    expect(
+      validateWorkflowDefinition(
+        { ...valid(), modes: [{ ...valid().modes[0]!, requires: ['absent'] }] },
+        d,
+      ),
+    ).toContain('mode "default" requires undeclared argument "absent"')
+    expect(
+      validateWorkflowDefinition(
+        { ...valid(), modes: [{ ...valid().modes[0]!, requires: 'key' }] },
+        d,
+      ),
+    ).toContain('mode "default" requires must be a string array')
+  })
   test('reserves workflow prompt argument names', () => {
     const d = database(),
       definition = valid()
@@ -133,6 +148,80 @@ describe('workflow definition validation', () => {
 })
 
 describe('workflow versions and project composition', () => {
+  test("a mode's requirements apply to compose and step only in that mode", () => {
+    const d = database()
+    const draft = setWorkflow(
+      'mode-arguments',
+      {
+        title: 'Mode arguments',
+        description: 'Exercises mode arguments.',
+        arguments: [{ name: 'key', required: false, description: 'Task key.' }],
+        modes: [
+          {
+            slug: 'required',
+            title: 'Required',
+            default: true,
+            requires: ['key'],
+            steps: ['complete'],
+          },
+          { slug: 'optional', title: 'Optional', steps: ['complete'] },
+        ],
+      },
+      'mode argument fixture',
+      'test',
+      d,
+    )
+    promoteWorkflow('mode-arguments', draft.n, 'publish', 'test', d)
+
+    expect(composeWorkflow('mode-arguments', 'fixture', 'required', {}, d).needs.arguments).toEqual(
+      [{ name: 'key', description: 'Task key.' }],
+    )
+    expect(
+      composeWorkflow('mode-arguments', 'fixture', 'required', { key: '   ' }, d).needs.arguments,
+    ).toEqual([{ name: 'key', description: 'Task key.' }])
+    expect(composeWorkflow('mode-arguments', 'fixture', 'optional', {}, d).needs.arguments).toBe(
+      undefined,
+    )
+    expect(() =>
+      getWorkflowStep('mode-arguments', 'fixture', 'complete', {}, d, { mode: 'required' }),
+    ).toThrow('missing required arguments: key')
+    expect(
+      getWorkflowStep('mode-arguments', 'fixture', 'complete', {}, d, { mode: 'optional' }).slug,
+    ).toBe('complete')
+  })
+
+  test('a mode-less step fetch applies requirements from every containing mode', () => {
+    const d = database()
+    const draft = setWorkflow(
+      'mode-less-arguments',
+      {
+        title: 'Mode-less arguments',
+        description: 'Exercises mode-less step arguments.',
+        arguments: [{ name: 'key', required: false, description: 'Task key.' }],
+        modes: [
+          {
+            slug: 'a',
+            title: 'A',
+            default: true,
+            requires: ['key'],
+            steps: ['complete'],
+          },
+          { slug: 'b', title: 'B', steps: ['complete'] },
+          { slug: 'c', title: 'C', steps: ['score'] },
+        ],
+      },
+      'mode-less argument fixture',
+      'test',
+      d,
+    )
+    promoteWorkflow('mode-less-arguments', draft.n, 'publish', 'test', d)
+
+    expect(() => getWorkflowStep('mode-less-arguments', 'fixture', 'complete', {}, d)).toThrow(
+      'missing required arguments: key',
+    )
+    expect(getWorkflowStep('mode-less-arguments', 'fixture', 'score', {}, d).slug).toBe('score')
+  })
+
   test('compose uses a requested draft workflow version instead of production', () => {
     const d = database(),
       draft = setWorkflow(
@@ -504,6 +593,49 @@ describe('workflow versions and project composition', () => {
     promoteStepCatalogue(draft.n, 'publish', 'a', d)
     expect(() => getWorkflowStep('ship', 'fixture', 'lens', args, d)).toThrow(
       'unresolved workflow placeholder "unknown"',
+    )
+  })
+  test('an unresolved declared argument placeholder names the late-argument remedy', () => {
+    const d = database(),
+      current = productionStepCatalogue(d).definition
+    const catalogue = setStepCatalogue(
+      {
+        steps: [
+          ...current.steps,
+          {
+            slug: 'late-argument',
+            title: 'Late argument',
+            body: 'Use {{branch}}.',
+            floor: ['recorded-artifact'],
+            job: null,
+            autonomy: 'auto',
+            needs: [],
+          },
+        ],
+      },
+      'late argument fixture',
+      'test',
+      d,
+    )
+    promoteStepCatalogue(catalogue.n, 'publish', 'test', d)
+    const workflow = setWorkflow(
+      'late-argument',
+      {
+        title: 'Late argument',
+        description: 'Use an argument later.',
+        arguments: [{ name: 'branch', required: false, description: 'Branch.' }],
+        modes: [{ slug: 'default', title: 'Default', default: true, steps: ['late-argument'] }],
+      },
+      'late argument fixture',
+      'test',
+      d,
+    )
+    promoteWorkflow('late-argument', workflow.n, 'publish', 'test', d)
+
+    expect(() =>
+      getWorkflowStep('late-argument', 'fixture', 'late-argument', {}, d, { mode: 'default' }),
+    ).toThrow(
+      'unresolved workflow placeholder "branch"; pass --arg branch=<value> on this step or next call',
     )
   })
   test('catalogue promotion refuses dropping a production workflow step', () => {

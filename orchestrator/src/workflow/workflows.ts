@@ -14,6 +14,7 @@ type WorkflowMode = {
   title: string
   default?: boolean
   entry?: string
+  requires?: string[]
   steps: string[]
 }
 export type WorkflowDefinition = {
@@ -35,6 +36,22 @@ const workflowPromptArgumentNameErrors = (name: unknown): string[] =>
   typeof name === 'string' && WORKFLOW_PROMPT_ARGUMENT_NAMES.has(name)
     ? [`argument name "${name}" is reserved for the workflow prompt`]
     : []
+
+function workflowModeRequirementErrors(mode: Record<string, unknown>, args: unknown[]): string[] {
+  if (mode.requires === undefined) return []
+  if (!Array.isArray(mode.requires) || mode.requires.some((name) => typeof name !== 'string'))
+    return [`mode "${text(mode.slug)}" requires must be a string array`]
+  const argumentNames = new Set(
+    args.flatMap((argument) =>
+      object(argument) && typeof argument.name === 'string' ? [argument.name] : [],
+    ),
+  )
+  return mode.requires.flatMap((name) =>
+    argumentNames.has(name)
+      ? []
+      : [`mode "${text(mode.slug)}" requires undeclared argument "${name}"`],
+  )
+}
 
 function workflowStepSlugs(
   d: Database | undefined,
@@ -92,6 +109,7 @@ export function validateWorkflowDefinition(
       errors.push(`mode "${text(mode.slug)}" default must be a boolean`)
     if (mode.entry !== undefined && typeof mode.entry !== 'string')
       errors.push(`mode "${text(mode.slug)}" entry must be a string`)
+    errors.push(...workflowModeRequirementErrors(mode, args))
     if (!Array.isArray(mode.steps) || mode.steps.some((step) => typeof step !== 'string'))
       errors.push(`mode "${text(mode.slug)}" steps must be a string array`)
   }
@@ -356,7 +374,7 @@ export function workflowVersions(slug: string, d: Database = db()) {
 
 type WorkflowNeeds = {
   mode?: { slug: string; title: string; entry: string }[]
-  arguments?: string[]
+  arguments?: { name: string; description: string }[]
 }
 type WorkflowSelection = { version?: number; catalogueVersion?: number; mode?: string }
 const selectedWorkflow = (slug: string, version: number | undefined, d: Database) =>
@@ -365,6 +383,23 @@ const selectedWorkflow = (slug: string, version: number | undefined, d: Database
     : showWorkflow(slug, version, d)
 const selectedCatalogue = (version: number | undefined, d: Database) =>
   version === undefined ? productionStepCatalogue(d) : showStepCatalogue(version, d)
+
+function missingWorkflowArguments(
+  definition: WorkflowDefinition,
+  modes: WorkflowMode[],
+  args: Record<string, string>,
+): { name: string; description: string }[] {
+  const required = new Set([
+    ...definition.arguments
+      .filter((argument) => argument.required)
+      .map((argument) => argument.name),
+    ...modes.flatMap((mode) => mode.requires ?? []),
+  ])
+  return definition.arguments
+    .filter((argument) => required.has(argument.name) && !args[argument.name]?.trim())
+    .map(({ name, description }) => ({ name, description }))
+}
+
 export function composeWorkflow(
   slug: string,
   projectName: string,
@@ -392,9 +427,7 @@ export function composeWorkflow(
       )
     : null
   if (refusal) throw new Error(refusal)
-  const missing = definition.arguments
-    .filter((arg) => arg.required && !args[arg.name])
-    .map((arg) => arg.name)
+  const missing = missingWorkflowArguments(definition, mode ? [mode] : [], args)
   if (missing.length) needs.arguments = missing
   const projectRow = d
     .query('SELECT name,stack,settings FROM project WHERE name=? AND retired_at IS NULL')
@@ -467,10 +500,13 @@ export function getWorkflowStep(
   if (selection.mode && !selectedMode)
     throw new Error(`workflow "${slug}" has no mode "${selection.mode}"`)
   if (!referenced || !step) throw new Error(`workflow "${slug}" has no step "${stepSlug}"`)
-  const missing = definition.arguments
-    .filter((arg) => arg.required && !args[arg.name])
-    .map((arg) => arg.name)
-  if (missing.length) throw new Error(`missing required arguments: ${missing.join(', ')}`)
+  const missing = missingWorkflowArguments(
+    definition,
+    selectedMode ? [selectedMode] : containingModes,
+    args,
+  )
+  if (missing.length)
+    throw new Error(`missing required arguments: ${missing.map(({ name }) => name).join(', ')}`)
   const projectRow = d
     .query('SELECT name,stack,settings FROM project WHERE name=? AND retired_at IS NULL')
     .get(projectName) as { name: string; stack: string | null; settings: string | null } | null
@@ -485,8 +521,12 @@ export function getWorkflowStep(
   const body = step.body.replace(/\{\{([^{}]+)\}\}/g, (_all, path: string) => {
     let value: unknown = values
     for (const part of path.split('.')) value = object(value) ? value[part] : undefined
-    if (value === undefined || value === null || typeof value === 'object')
-      throw new Error(`unresolved workflow placeholder "${path}"`)
+    if (value === undefined || value === null || typeof value === 'object') {
+      const remedy = definition.arguments.some((argument) => argument.name === path)
+        ? `; pass --arg ${path}=<value> on this step or next call`
+        : ''
+      throw new Error(`unresolved workflow placeholder "${path}"${remedy}`)
+    }
     if (path.startsWith('tracker.actions.') && typeof value === 'string') {
       const reason = unresolvedTrackerActionPlaceholder(value, project.name, args.key)
       if (reason) throw new Error(`unresolved workflow placeholder "${path}": ${reason}`)

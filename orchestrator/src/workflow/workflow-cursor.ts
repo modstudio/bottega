@@ -83,6 +83,50 @@ function findCursor(
   return row
 }
 
+export type CursorArgumentDecision =
+  | { action: 'merge'; args: Record<string, string> }
+  | { action: 'refuse'; reason: string }
+
+export function decideCursorArguments(
+  stored: Record<string, string>,
+  supplied: Record<string, string>,
+): CursorArgumentDecision {
+  const merged = { ...stored }
+  for (const [name, suppliedValue] of Object.entries(supplied)) {
+    if (!suppliedValue.trim()) continue
+    const storedValue = stored[name]
+    if (storedValue?.trim() && storedValue !== suppliedValue) {
+      return {
+        action: 'refuse',
+        reason:
+          `workflow argument "${name}" conflicts with the cursor: stored value "${storedValue}", ` +
+          `supplied value "${suppliedValue}"; run orch workflow abandon for this cursor, then compose again`,
+      }
+    }
+    if (!storedValue?.trim()) merged[name] = suppliedValue
+  }
+  return { action: 'merge', args: merged }
+}
+
+function applyCursorArguments(
+  row: CursorRow,
+  supplied: Record<string, string>,
+  d: Database,
+): Record<string, string> {
+  const decision = decideCursorArguments(JSON.parse(row.args) as Record<string, string>, supplied)
+  if (decision.action === 'refuse') throw new Error(decision.reason)
+  const encoded = JSON.stringify(decision.args)
+  if (encoded !== row.args) {
+    d.query('UPDATE workflow_cursor SET args=?,updated_at=? WHERE id=?').run(
+      encoded,
+      nowIso(),
+      row.id,
+    )
+    row.args = encoded
+  }
+  return decision.args
+}
+
 /** The session that drove this cursor before the current one took it over, or null. */
 const takenOverFrom = (row: CursorRow | null, context: WorkflowCursorContext): string | null =>
   row?.session_id && context.session && row.session_id !== context.session ? row.session_id : null
@@ -235,7 +279,9 @@ function getWorkflowStepWithCursorImpl(
   d: Database = writableDb(),
 ) {
   let row = findCursor(project, slug, mode, args, context, d)
-  const { startDecision, effectiveArgs, selection } = cursorCompositionInput(row, args, mode)
+  const startDecision = decideCursorStart(row?.state ?? null)
+  if (row && startDecision === 'reuse') applyCursorArguments(row, args, d)
+  const { effectiveArgs, selection } = cursorCompositionInput(row, args, mode)
   const composition = composeWorkflow(slug, project, mode, effectiveArgs, d, selection)
   const index = composition.steps.findIndex((step) => step.slug === stepSlug)
   if (index < 0) throw new Error(`workflow "${slug}" has no step "${stepSlug}"`)
@@ -299,6 +345,7 @@ function nextWorkflowStepImpl(
     throw new Error(`workflow ${slug} for ${keyOf(args)} has no cursor; compose the workflow first`)
   if (row.state === 'done' || row.state === 'abandoned')
     throw new Error(`workflow ${slug} for ${row.workflow_key} is ${row.state}`)
+  applyCursorArguments(row, args, d)
   if (!note?.trim()) {
     const composition = cursorComposition(row, d)
     const step = composition.steps[row.ordinal]!
