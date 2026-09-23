@@ -1,6 +1,6 @@
 /** Worktree provisioning places declared dependency paths without knowing reader or writer lifecycles. */
 import { existsSync, lstatSync, mkdirSync, readdirSync, symlinkSync } from 'node:fs'
-import { dirname, isAbsolute, join } from 'node:path'
+import { dirname, join } from 'node:path'
 
 type ProvisionEntry = { path: string; method: 'link' | 'clone' }
 export type WorktreeProvision = ProvisionEntry[]
@@ -58,7 +58,12 @@ export function provisionWorktree(
 }
 
 function provisionPathProblem(path: string): boolean {
-  return !path.trim() || isAbsolute(path) || path.split(/[\\/]+/).includes('..')
+  return (
+    !path.trim() ||
+    /^[\\/]/.test(path) ||
+    /^[A-Za-z]:[\\/]/.test(path) ||
+    path.split(/[\\/]+/).includes('..')
+  )
 }
 
 /** Validate the register-owned reader declaration at its input boundary. */
