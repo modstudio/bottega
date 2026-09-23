@@ -140,6 +140,7 @@ export const importBoundaries: ImportBoundary[] = [
       './cleanup-sweep-reclaim.ts',
       '../close/close-out.ts',
       '../database/db.ts',
+      '../evidence/unjudged-expiry.ts',
       '../resources/docker-resources.ts',
       '../hook-tree/hook-tree.ts',
       '../landing-tree/release-observation.ts',
