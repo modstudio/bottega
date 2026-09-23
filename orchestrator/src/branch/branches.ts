@@ -3,6 +3,7 @@
 
 import { db, nowIso, sessionId, writableDb, writeTransaction } from '../database/db.ts'
 import { targetGitEnvironment } from '../git/git-environment.ts'
+import { withWorktreeCreateLock } from '../project/project-lock.ts'
 import type { Project } from '../project/projects.ts'
 import { projectByName, projects } from '../project/projects.ts'
 import { type PullRequestLandingEvidence, verifyBranchLanding } from './branch-landing-record.ts'
@@ -681,23 +682,44 @@ function deleteAndSettleBranch(
     report.errors.push(`${row.branch}: refusing to delete registered ${protectedKind} branch`)
     return
   }
+  let deleted = false
   try {
-    writableDb()
-    command(
-      project.path,
-      ['git', 'update-ref', '-d', `refs/heads/${row.branch}`, row.tip],
-      `delete branch ${row.branch}`,
-    )
-    if (localBranches(project).has(row.branch)) {
-      throw new Error('branch still exists after compare-at-tip deletion')
-    }
-    report.deleted.push(row.branch)
+    withWorktreeCreateLock(project.path, () => {
+      const currentTip = localBranches(project).get(row.branch)
+      const checkedOut = checkedOutBranches(project).has(row.branch)
+      const liveRun = projectRuns(project).some(
+        (run) =>
+          run.minted_branch === row.branch && (run.status === 'running' || run.status === 'asking'),
+      )
+      const eligibility = decidePruneEligibility({
+        state: row.state,
+        checkedOut,
+        liveRun,
+        tipMoved: currentTip !== row.tip,
+      })
+      if (!eligibility.eligible) {
+        report.kept.push({ branch: row.branch, reason: eligibility.reason })
+        return
+      }
+      writableDb()
+      command(
+        project.path,
+        ['git', 'update-ref', '-d', `refs/heads/${row.branch}`, row.tip],
+        `delete branch ${row.branch}`,
+      )
+      if (localBranches(project).has(row.branch)) {
+        throw new Error('branch still exists after compare-at-tip deletion')
+      }
+      deleted = true
+      report.deleted.push(row.branch)
+    })
   } catch (error) {
     const reason = error instanceof Error ? error.message : String(error)
     report.kept.push({ branch: row.branch, reason: 'deletion failed' })
     report.errors.push(`${row.branch}: ${reason}`)
     return
   }
+  if (!deleted) return
   try {
     settleDeletedBranch(project.name, row.branch)
   } catch (error) {
@@ -733,8 +755,8 @@ export function pruneBranches(options: {
   }
   for (const row of keyReport?.branches ?? []) {
     if (listOperatorBranch(row, report)) continue
-    if (!tipStillEligible(project, row, report)) continue
     if (report.dryRun) {
+      if (!tipStillEligible(project, row, report)) continue
       report.wouldDelete.push(row.branch)
       continue
     }
@@ -768,9 +790,10 @@ export function pruneProjectBranches(options: {
     if (seen.has(row.branch)) continue
     seen.add(row.branch)
     if (listOperatorBranch(row, report)) continue
-    if (!tipStillEligible(project, row, report)) continue
-    if (report.dryRun) report.wouldDelete.push(row.branch)
-    else deleteAndSettleBranch(project, row, report)
+    if (report.dryRun) {
+      if (!tipStillEligible(project, row, report)) continue
+      report.wouldDelete.push(row.branch)
+    } else deleteAndSettleBranch(project, row, report)
   }
   return report
 }

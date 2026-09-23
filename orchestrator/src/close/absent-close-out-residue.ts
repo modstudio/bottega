@@ -3,6 +3,8 @@
 import { db } from '../database/db.ts'
 import { reclaimResidue } from '../reclaim/reclaim-residue.ts'
 
+type AbsentResidueKind = 'ref-guard' | 'retained-ref'
+
 type AbsentCloseOutInput = {
   runId: number
   outcome: 'released' | 'forgotten' | 'held' | 'live' | 'absent' | 'failed'
@@ -14,10 +16,28 @@ export function decideAbsentCloseOutResidue(input: {
   outcome: AbsentCloseOutInput['outcome']
   dryRun: boolean
   project: string | null
-}): Array<'ref-guard' | 'retained-ref'> {
+}): AbsentResidueKind[] {
   return input.outcome === 'absent' && !input.dryRun && input.project
     ? ['ref-guard', 'retained-ref']
     : []
+}
+
+export function releaseAbsentCloseOutResidueKinds(input: {
+  detail: string
+  kinds: readonly AbsentResidueKind[]
+  subject: string
+  reclaim?: typeof reclaimResidue
+}): string {
+  const reclaim = input.reclaim ?? reclaimResidue
+  const details = input.kinds.map((kind) => {
+    try {
+      return reclaim(kind, input.subject).action
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error)
+      return `${kind} not released: ${message}`
+    }
+  })
+  return details.length ? `${input.detail}; ${details.join('; ')}` : input.detail
 }
 
 export function releaseAbsentCloseOutResidue(input: AbsentCloseOutInput): string {
@@ -30,6 +50,9 @@ export function releaseAbsentCloseOutResidue(input: AbsentCloseOutInput): string
     project: projectRow?.repo ?? null,
   })
   if (!projectRow?.repo || !kinds.length) return input.detail
-  const details = kinds.map((kind) => reclaimResidue(kind, `${projectRow.repo}:${input.runId}`))
-  return `${input.detail}; ${details.map((item) => item.action).join('; ')}`
+  return releaseAbsentCloseOutResidueKinds({
+    detail: input.detail,
+    kinds,
+    subject: `${projectRow.repo}:${input.runId}`,
+  })
 }

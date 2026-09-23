@@ -2,7 +2,7 @@ import { existsSync, realpathSync } from 'node:fs'
 import { isAbsolute, relative, resolve, sep } from 'node:path'
 import { pidAlive } from '../../../shared/process-identity.ts'
 import { branchRows, type ReclaimRun, settleDeletedBranch } from '../branch/branch-settlement.ts'
-import type { BranchLanding } from '../branch/branch-state.ts'
+import { type BranchLanding, isPruneSafeLandingState } from '../branch/branch-state.ts'
 import { classifyMintedBranch } from '../branch/branches.ts'
 import { db, sessionId, writableDb, writeTransaction } from '../database/db.ts'
 import { chainScoreJoin, EVIDENCE_CLOSED_SQL } from '../evidence/evidence-query.ts'
@@ -18,6 +18,7 @@ import { otherConversationWorktreeSharers } from '../resources/resource-ownershi
 import { runAlive } from '../run/run-alive.ts'
 import { runLeaseState } from '../run/run-lease.ts'
 import { keepTreeHold } from '../worktree/keep-tree-hold.ts'
+import { snapshotlessTrackedRecipeRefusal } from '../worktree/snapshotless-tracked-recipe.ts'
 import {
   markedWorktreeSource,
   orphanSafety,
@@ -89,7 +90,7 @@ export function decideBranchReclaimEvidence(input: {
   classification: BranchLanding['state']
 }): { allowed: true; proof: string } | { allowed: false; state: BranchLanding['state'] } {
   if (input.absentCommits.length === 0) return { allowed: true, proof: 'reachable' }
-  if (['landed', 'superseded', 'empty'].includes(input.classification)) {
+  if (isPruneSafeLandingState(input.classification)) {
     return { allowed: true, proof: input.classification }
   }
   return { allowed: false, state: input.classification }
@@ -142,15 +143,6 @@ function existingTreeGitRefusal(path: string, repoRoot: string): ReclaimResult |
   })
 }
 
-function snapshotlessTrackedRecipeRefusal(input: {
-  hasRunRow: boolean
-  trackedRecipe: boolean
-}): ReclaimResult | null {
-  return !input.hasRunRow && input.trackedRecipe
-    ? refuse('tracked recipe tree has no recorded recipe snapshot; teardown cannot be established')
-    : null
-}
-
 function proveWorktree(path: string, clock: number, _allowDirty = false): WorktreeProof {
   const rows = runRows(path)
   const row = rows[0]
@@ -199,7 +191,7 @@ function proveWorktree(path: string, clock: number, _allowDirty = false): Worktr
     hasRunRow: Boolean(row),
     trackedRecipe: Boolean(resolvedWorktreeTool(project)?.recipePath),
   })
-  if (recipeRefusal) return { result: recipeRefusal }
+  if (recipeRefusal) return { result: refuse(recipeRefusal) }
   return {
     result: {
       ok: true,
@@ -334,7 +326,7 @@ export function reclaimWorktree(
   )
 }
 
-/** Reclaim one local branch only when its commits remain reachable or its exact kept tip is recorded. */
+/** Reclaim a local branch when every commit reaches trunk or the prune classifier marks it safe. */
 export function reclaimBranch(
   subject: string,
   options: { dryRun?: boolean; clock?: number } = {},

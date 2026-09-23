@@ -1,5 +1,8 @@
 import { describe, expect, test } from 'bun:test'
-import { decideAbsentCloseOutResidue } from './absent-close-out-residue.ts'
+import {
+  decideAbsentCloseOutResidue,
+  releaseAbsentCloseOutResidueKinds,
+} from './absent-close-out-residue.ts'
 
 describe('absent close-out residue decision', () => {
   test('releases both residues only for a non-dry absent project run', () => {
@@ -12,5 +15,21 @@ describe('absent close-out residue decision', () => {
     expect(
       decideAbsentCloseOutResidue({ outcome: 'released', dryRun: false, project: 'project-a' }),
     ).toEqual([])
+  })
+
+  test('appends each reclaim failure and continues releasing later residue', () => {
+    expect(
+      releaseAbsentCloseOutResidueKinds({
+        detail: 'conversation absent',
+        kinds: ['ref-guard', 'retained-ref'],
+        subject: 'project-a:42',
+        reclaim: (kind) => {
+          if (kind === 'ref-guard') throw new Error('not a git repository')
+          return { ok: true, action: 'released retained ref' }
+        },
+      }),
+    ).toBe(
+      'conversation absent; ref-guard not released: not a git repository; released retained ref',
+    )
   })
 })
