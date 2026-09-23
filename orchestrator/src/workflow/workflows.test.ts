@@ -36,25 +36,6 @@ const database = () => {
   d.exec('PRAGMA foreign_keys=ON')
   applyMigrations(d)
   seedWorkflows(d)
-  const catalogue = productionStepCatalogue(d)
-  d.query('UPDATE step_catalogue_version SET definition=? WHERE catalogue_id=? AND n=?').run(
-    JSON.stringify({
-      steps: catalogue.definition.steps.map((step) => ({
-        ...step,
-        body: step.body
-          .replace(
-            'Dispatch `orch do diagnose --key {{key}}`',
-            'Dispatch `orch do diagnose --key {{key}} "Diagnose {{key}}."`',
-          )
-          .replace(
-            'Dispatch `orch do issue-worker --key {{key}}`',
-            'Dispatch `orch do issue-worker --key {{key}} --file specification.md`',
-          ),
-      })),
-    }),
-    catalogue.owner_id,
-    catalogue.n,
-  )
   d.query('INSERT INTO project (name,path,stack,settings) VALUES (?,?,?,?)').run(
     'fixture',
     '/fixture',
@@ -700,9 +681,7 @@ describe('workflow versions and project composition', () => {
     const withoutTemp = setStepCatalogue({ steps: current.steps }, 'drop temp', 'a', d)
     promoteStepCatalogue(withoutTemp.n, 'publish', 'a', d)
     expect(() => promoteWorkflow('stale-flow', draft.n, 'publish', 'a', d)).toThrow(
-      'workflow "stale-flow" names steps absent from the production catalogue:\n' +
-        '- mode "default": "temp"\n' +
-        'fix: promote a catalogue step with that slug, or set the workflow to a mode that does not use it',
+      'invalid workflow definition:\n- mode "default" references missing step "temp"',
     )
   })
 })

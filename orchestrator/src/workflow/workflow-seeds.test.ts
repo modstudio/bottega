@@ -7,6 +7,7 @@ import {
   promoteStepCatalogue,
   showStepCatalogue,
   stepCatalogueVersions,
+  validateStepCatalogue,
 } from './step-catalogue.ts'
 import { mergeSeededSteps, seedMayPromote, seedWorkflows } from './workflow-seeds.ts'
 import {
@@ -141,7 +142,9 @@ describe('workflow projection and seeds', () => {
   }
   test('fresh stores seed current revisions as production version 1', () => {
     const d = database()
-    expect(productionStepCatalogue(d).reason).toBe('seed r2')
+    const catalogue = productionStepCatalogue(d)
+    expect(catalogue.reason).toBe('seed r3')
+    expect(validateStepCatalogue(catalogue.definition)).toEqual([])
     expect(listWorkflows(d).filter((w) => ['ship', 'fix-defect'].includes(w.slug)).length).toBe(2)
     for (const [slug, revision] of [
       ['ship', 3],
@@ -203,7 +206,7 @@ describe('workflow projection and seeds', () => {
     expect(showStepCatalogue(1, d).status).toBe('retired')
     const advanced = showStepCatalogue(2, d)
     expect(advanced.status).toBe('production')
-    expect(advanced.reason).toBe('seed r2')
+    expect(advanced.reason).toBe('seed r3')
     for (const slug of ['rebase', 'pr']) {
       const step = advanced.definition.steps.find((item) => item.slug === slug)!
       expect(step.needs).toContain('trunk')
@@ -251,18 +254,7 @@ describe('workflow projection and seeds', () => {
               body: step.body.replace('--base {{trunk}}', '--base main'),
               needs: step.needs.filter((need) => need !== 'trunk'),
             }
-          return {
-            ...step,
-            body: step.body
-              .replace(
-                'Dispatch `orch do diagnose --key {{key}}`',
-                'Dispatch `orch do diagnose --key {{key}} "Diagnose {{key}}."`',
-              )
-              .replace(
-                'Dispatch `orch do issue-worker --key {{key}}`',
-                'Dispatch `orch do issue-worker --key {{key}} --file specification.md`',
-              ),
-          }
+          return step
         }),
       }
     d.query('UPDATE step_catalogue_version SET definition=? WHERE catalogue_id=? AND n=1').run(

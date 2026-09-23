@@ -44,6 +44,7 @@ import {
 } from '../review/review-vocabulary.ts'
 import { answerCommand, continueCommand, retryCommand } from '../run/run-message-commands.ts'
 import { workflowCommand } from '../workflow/workflow-commands.ts'
+import { ORCH_DO_VALUE_OPTIONS } from './do-options.ts'
 import { collect, log, productArgv, rawArgv, write, writeStdout } from './support.ts'
 
 const presentation = {
@@ -278,25 +279,14 @@ export function register(program: Command): void {
     .action((id, _message, options, command) =>
       continueCommand(Number(id), rawArgv(command).slice(2), runFlags(options), presentation),
     )
-  program
-    .command('do <job> [prompt...]')
-    .option('--agent <value>')
-    .option('--avoid <value>')
-    .option('--distinct-from <value>')
-    .option('--base <value>')
-    .option('--review <value>')
-    .option('--file <value>')
-    .option('--schema <value>')
-    .option('--model <value>')
-    .option('--transport <value>')
-    .option('--label <value>')
-    .option('--lens <value>')
-    .option('--seed <value>')
-    .option('--key <value>')
-    .option('--repo <value>')
-    .option('--cwd <value>')
-    .option('--deliverable <value>', '', collect, [])
-    .option('--timeout <value>')
+  const doVerb = program.command('do <job> [prompt...]')
+  for (const option of ORCH_DO_VALUE_OPTIONS) {
+    const placeholder = 'placeholder' in option ? option.placeholder : 'value'
+    const flags = `--${option.name} ${option.value === 'required' ? `<${placeholder}>` : `[${placeholder}]`}`
+    if (option.name === 'deliverable') doVerb.option(flags, '', collect, [])
+    else doVerb.option(flags)
+  }
+  doVerb
     .option('--carry')
     .option('--quiet')
     .option('--probe')
@@ -304,10 +294,7 @@ export function register(program: Command): void {
     .option('--detach')
     .option('--porcelain')
     .option('--no-failover')
-    .option('--keep-tree [hours]')
-    .option('--keep-tree-reason <text>')
     .option('--no-wait-capacity')
-    .option('--mcp [mode]')
     .action((_job, _prompt, _options, command) =>
       doCommand(rawArgv(command), {
         error: console.error,
