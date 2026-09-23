@@ -40,7 +40,7 @@ export function renderWorkflowComposition(result: WorkflowComposition): string {
       `facts: ${JSON.stringify(result.facts)}`,
       ...result.steps.map(
         (step) =>
-          `${step.n}. ${step.slug} — ${step.title} [job=${step.job ?? '-'} autonomy=${step.autonomy.value}(${step.autonomy.scope}) floor=${step.floor.join('|')} needs=${step.needs.join('|') || '-'}]`,
+          `${step.n}. ${step.slug} — ${step.title} [job=${step.job ?? '-'} autonomy=${step.resolvedAutonomy.value}(${step.resolvedAutonomy.scope}) floor=${step.floor.join('|')} needs=${step.needs.join('|') || '-'}]`,
       ),
     ].join('\n')
   }
@@ -61,16 +61,16 @@ export function renderWorkflowComposition(result: WorkflowComposition): string {
     `facts: ${JSON.stringify(result.facts)}`,
     ...result.steps.map(
       (step) =>
-        `${step.n}. ${step.slug} — ${step.title} [job=${step.job ?? '-'} autonomy=${step.autonomy.value}(${step.autonomy.scope}) floor=${step.floor.join('|')} needs=${step.needs.join('|') || '-'}]`,
+        `${step.n}. ${step.slug} — ${step.title} [job=${step.job ?? '-'} autonomy=${step.resolvedAutonomy.value}(${step.resolvedAutonomy.scope}) floor=${step.floor.join('|')} needs=${step.needs.join('|') || '-'}]`,
     ),
   ].join('\n')
 }
 
 export function renderWorkflowStep(step: WorkflowStep): string {
   const autonomy =
-    step.autonomy.value === 'ask'
+    step.resolvedAutonomy.value === 'ask'
       ? 'stop and put the ruling to the operator; record the question with `orch workflow await`.'
-      : step.autonomy.value === 'review'
+      : step.resolvedAutonomy.value === 'review'
         ? 'rule yourself; the ruling is listed for the operator when the workflow finishes.'
         : 'rule yourself.'
   const close =
@@ -83,5 +83,5 @@ export function renderWorkflowStep(step: WorkflowStep): string {
         : step.mode
           ? `${close} this is the last step of ${step.workflow} (${step.mode}), and closing it finishes the workflow.`
           : `${close} this is the last step of ${step.workflow} in every mode that contains it, and closing it finishes the workflow.`
-  return `facts: ${JSON.stringify(step.facts)}\nAutonomy: ${step.autonomy.value} (${step.autonomy.scope}) — ${autonomy}\n${step.body}\n\n${pointer}`
+  return `facts: ${JSON.stringify(step.facts)}\nAutonomy: ${step.resolvedAutonomy.value} (${step.resolvedAutonomy.scope}) — ${autonomy}\n${step.body}\n\n${pointer}`
 }

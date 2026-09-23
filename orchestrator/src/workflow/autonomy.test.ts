@@ -1,17 +1,12 @@
-import { Database } from 'bun:sqlite'
 import { describe, expect, test } from 'bun:test'
-import { configClient } from '../../../shared/config-client.ts'
-import { applyMigrations } from '../database/migrations.ts'
 import {
   answerRulingRefusal,
-  HOSTED_AUTONOMY_TIMEOUT_MS,
   resolveAutonomy,
-  resolveProjectAutonomy,
 } from './autonomy.ts'
 
 const steps = [
-  { slug: 'design', stage: 'plan' as const, default: 'ask' as const },
-  { slug: 'verify', stage: 'implement' as const, default: 'auto' as const },
+  { slug: 'design', stage: 'plan' as const, autonomy: 'ask' as const },
+  { slug: 'verify', stage: 'implement' as const, autonomy: 'auto' as const },
 ]
 
 describe('autonomy resolution', () => {
@@ -62,62 +57,37 @@ describe('autonomy resolution', () => {
     ).toThrow('local project key stages.plan')
   })
 
+  test('presets set rulings and explicit rulings beat the same scope preset', () => {
+    for (const [preset, value] of [
+      ['manual', 'user'],
+      ['guided', 'agent'],
+      ['autonomous', 'agent'],
+    ] as const) {
+      expect(resolveAutonomy(steps, [{ name: preset, settings: { preset } }]).rulings).toEqual({
+        value,
+        scope: preset,
+      })
+    }
+    expect(
+      resolveAutonomy(steps, [
+        { name: 'session', settings: { preset: 'manual', rulings: 'agent' } },
+      ]).rulings,
+    ).toEqual({ value: 'agent', scope: 'session' })
+  })
+
   test('answer decision refuses user rulings unless relayed by the operator', () => {
     const ruling = { value: 'user' as const, scope: 'local user' }
     expect(answerRulingRefusal(ruling, false)).toBe(
       'rulings is user (local user): relay this question to the operator and answer with --from-operator',
     )
     expect(answerRulingRefusal(ruling, true)).toBeNull()
+    expect(
+      answerRulingRefusal(
+        { value: 'agent', scope: 'built-in', complete: false, unavailableReason: 'offline' },
+        false,
+      ),
+    ).toBe(
+      'rulings could not be resolved: hosted autonomy settings unavailable (offline); answer with --from-operator, or set rulings in machine.toml or the project register',
+    )
   })
-})
-
-const database = () => {
-  const d = new Database(':memory:')
-  applyMigrations(d)
-  d.query('INSERT INTO project (name,path,settings) VALUES (?,?,?)').run(
-    'fixture',
-    '/fixture',
-    '{}',
-  )
-  return d
-}
-
-test('hosted failures are visible and local resolution continues', async () => {
-  const result = await resolveProjectAutonomy(
-    'fixture',
-    steps,
-    {},
-    () =>
-      ({
-        listEntries: async () => {
-          throw new Error('offline')
-        },
-      }) as never,
-    database(),
-    { BOTTEGA_CONFIG_HOME: '/missing-fixture-config' },
-  )
-  expect(result.note).toBe(
-    'hosted autonomy settings unavailable: offline; resolved from local and project scopes',
-  )
-})
-
-test('a never-resolving hosted transport is bounded by the adapter timeout', async () => {
-  expect(HOSTED_AUTONOMY_TIMEOUT_MS).toBe(2000)
-  const transport = ((_url: string | URL | Request, init?: RequestInit) =>
-    new Promise<Response>((_resolve, reject) => {
-      init?.signal?.addEventListener('abort', () => reject(init.signal?.reason), { once: true })
-    })) as typeof fetch
-  const result = await resolveProjectAutonomy(
-    'fixture',
-    steps,
-    {},
-    (signal) =>
-      configClient({ ORCH_RECORD_API_URL: 'https://record.test' }, transport, 'token', signal),
-    database(),
-    { BOTTEGA_CONFIG_HOME: '/missing-fixture-config' },
-    10,
-  )
-  expect(result.note).toBe(
-    'hosted autonomy settings unavailable: timed out after 10 ms; resolved from local and project scopes',
-  )
 })

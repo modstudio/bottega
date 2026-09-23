@@ -1,7 +1,8 @@
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
 import { z } from 'zod'
 import { projectAt } from '../project/projects.ts'
-import { parseAutonomy, resolveProjectAutonomy } from '../workflow/autonomy.ts'
+import { catalogueStepsForAutonomy, parseAutonomy } from '../workflow/autonomy.ts'
+import { resolveProjectAutonomy } from '../workflow/autonomy-scopes.ts'
 import { composeWorkflowWithCursor, mcpWorkflowCursorContext } from '../workflow/workflow-cursor.ts'
 import { renderWorkflowComposition } from '../workflow/workflow-render.ts'
 import {
@@ -89,11 +90,7 @@ export function registerWorkflowPrompts(server: McpServer): void {
           const preliminary = composeWorkflow(prompt.name, projectName, mode, args)
           const resolved = await resolveProjectAutonomy(
             projectName,
-            preliminary.steps.map((step) => ({
-              slug: step.slug,
-              stage: step.stage,
-              default: step.autonomy.value,
-            })),
+            catalogueStepsForAutonomy(preliminary.steps),
             parseAutonomy(autonomy, 'session'),
           )
           return promptMessage(

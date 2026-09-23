@@ -41,13 +41,6 @@ const concerns: ConcernManifest = {
   ],
 }
 
-/**
- * The hub dashboard's component layers, lowest first. A folder under
- * `hub/web/src/ui/` belongs to exactly one layer and may import only its own
- * layer or a lower one. `behavior` holds hooks and pure helpers with no markup;
- * `primitives` are single controls; `overlays` open above the page; `patterns`
- * compose controls into one reusable piece; `layout` arranges a screen.
- */
 export const modules: ArchitectureModule[] = [
   module('retrieval/src/corpus/chunks.ts', ['node:fs/promises', 'node:path', 'bun']),
   module('retrieval/src/services/endpoints.ts', []),
@@ -158,11 +151,21 @@ export const modules: ArchitectureModule[] = [
     'zod',
     '../project/projects.ts',
     '../workflow/autonomy.ts',
+    '../workflow/autonomy-scopes.ts',
     '../workflow/workflow-render.ts',
     '../workflow/workflow-cursor.ts',
     '../workflow/workflows.ts',
   ]),
   module('orchestrator/src/workflow/workflow-render.ts', ['./workflows.ts']),
+  module('orchestrator/src/workflow/autonomy.ts', []),
+  module('orchestrator/src/workflow/autonomy-scopes.ts', [
+    'bun:sqlite',
+    '../../../shared/config-client.ts',
+    '../../../shared/machine-config.ts',
+    '../database/db.ts',
+    '../project/projects.ts',
+    './autonomy.ts',
+  ]),
   module('orchestrator/src/workflow/workflow-cursor-transition.ts', []),
   module('orchestrator/src/workflow/workflow-cursor.ts', [
     'bun:sqlite',
@@ -864,7 +867,7 @@ export function architectureRules() {
     {
       name: 'hub-web-ui-folder-has-a-layer',
       severity: 'error',
-      comment: 'Every ui/ folder is declared in uiLayers in architecture.ts.',
+      comment: 'Every ui/ folder is declared in uiLayers in architecture-ui-layers.ts.',
       from: {
         path: '^hub/web/src/ui/',
         pathNot: uiFolders(uiLayers.flatMap((layer) => layer.folders)),

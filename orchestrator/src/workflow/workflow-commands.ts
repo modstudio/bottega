@@ -5,7 +5,8 @@ import { resolve } from 'node:path'
 import { gitToplevel, resolvedPathsEqual } from '../../../shared/git.ts'
 import { flagValue, flagValues } from '../cli/args.ts'
 import { projects } from '../project/projects.ts'
-import { parseAutonomy, resolveProjectAutonomy } from './autonomy.ts'
+import { catalogueStepsForAutonomy, parseAutonomy } from './autonomy.ts'
+import { resolveProjectAutonomy } from './autonomy-scopes.ts'
 import {
   forkStepCatalogue,
   promoteStepCatalogue,
@@ -294,11 +295,7 @@ async function composeCommand(
   const session = parseAutonomy(flagValues(argv, 'autonomy').join(','), 'session')
   const autonomy = await resolveProjectAutonomy(
     project,
-    preliminary.steps.map((step) => ({
-      slug: step.slug,
-      stage: step.stage,
-      default: step.autonomy.value,
-    })),
+    catalogueStepsForAutonomy(preliminary.steps),
     session,
   )
   const pure = composeWorkflow(argv[2]!, project, mode, args, undefined, selection, autonomy)

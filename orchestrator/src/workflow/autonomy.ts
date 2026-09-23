@@ -1,12 +1,7 @@
 // concern: workflows
-/** Owns pure workflow-autonomy resolution and gathers its ordered scopes. */
+/** Owns the pure workflow-autonomy vocabulary, parsing, resolution, and decisions. */
 
-import type { Database } from 'bun:sqlite'
-import type { ConfigClient } from '../../../shared/config-client.ts'
-import { configClient } from '../../../shared/config-client.ts'
-import type { ConfigEnvironment } from '../../../shared/config-directory.ts'
-import { readMachineAutonomy } from '../../../shared/machine-config.ts'
-import { db } from '../database/db.ts'
+import type { CatalogueStep } from './step-catalogue.ts'
 
 export const autonomyStages = ['plan', 'implement', 'review', 'docs', 'canon', 'ship'] as const
 export const autonomyValues = ['ask', 'review', 'auto'] as const
@@ -20,9 +15,15 @@ export type AutonomySettings = {
 }
 export type AutonomyResolution = {
   steps: Record<string, { value: AutonomyValue; scope: string }>
-  rulings: { value: 'agent' | 'user'; scope: string }
+  rulings: RulingsResolution
   note?: string
   session?: AutonomySettings
+}
+export type RulingsResolution = {
+  value: 'agent' | 'user'
+  scope: string
+  complete?: boolean
+  unavailableReason?: string
 }
 const object = (value: unknown): value is Record<string, unknown> =>
   typeof value === 'object' && value !== null && !Array.isArray(value)
@@ -83,7 +84,7 @@ export function validateAutonomySettings(value: unknown, scope: string): Autonom
 }
 
 function resolvedStepValue(
-  step: { slug: string; stage?: AutonomyStage; default: AutonomyValue },
+  step: Pick<CatalogueStep, 'slug' | 'stage' | 'autonomy'>,
   settings: AutonomySettings,
 ): AutonomyValue | undefined {
   const explicit =
@@ -91,12 +92,12 @@ function resolvedStepValue(
   if (explicit) return explicit
   if (settings.preset === 'manual') return 'ask'
   if (settings.preset === 'autonomous') return 'auto'
-  if (settings.preset === 'guided') return step.default
+  if (settings.preset === 'guided') return step.autonomy
   return undefined
 }
 
 export function resolveAutonomy(
-  steps: { slug: string; stage?: AutonomyStage; default: AutonomyValue }[],
+  steps: Pick<CatalogueStep, 'slug' | 'stage' | 'autonomy'>[],
   scopes: { name: string; settings: unknown }[],
 ): AutonomyResolution {
   const checked = scopes.map((scope) => ({
@@ -112,16 +113,28 @@ export function resolveAutonomy(
         break
       }
     }
-    resolved[step.slug] ??= { value: step.default, scope: 'built-in' }
+    resolved[step.slug] ??= { value: step.autonomy, scope: 'built-in' }
   }
-  const ruling = checked.find((scope) => scope.settings.rulings !== undefined)
+  const ruling = checked.find(
+    (scope) => scope.settings.rulings !== undefined || scope.settings.preset !== undefined,
+  )
+  const presetRuling = (preset: AutonomySettings['preset']): 'agent' | 'user' =>
+    preset === 'manual' ? 'user' : 'agent'
   return {
     steps: resolved,
     rulings: ruling
-      ? { value: ruling.settings.rulings!, scope: ruling.name }
+      ? {
+          value: ruling.settings.rulings ?? presetRuling(ruling.settings.preset),
+          scope: ruling.name,
+        }
       : { value: 'agent', scope: 'built-in' },
   }
 }
+
+export const catalogueStepsForAutonomy = (
+  steps: Pick<CatalogueStep, 'slug' | 'stage' | 'autonomy'>[],
+): Pick<CatalogueStep, 'slug' | 'stage' | 'autonomy'>[] =>
+  steps.map(({ slug, stage, autonomy }) => ({ slug, stage, autonomy }))
 
 export function parseAutonomy(text: string | undefined, source: string): AutonomySettings {
   if (!text?.trim()) return {}
@@ -143,66 +156,16 @@ export function parseAutonomy(text: string | undefined, source: string): Autonom
   return validateAutonomySettings(result, source)
 }
 
-export const HOSTED_AUTONOMY_TIMEOUT_MS = 2000
 export function answerRulingRefusal(
-  ruling: AutonomyResolution['rulings'],
+  ruling: RulingsResolution,
   fromOperator: boolean,
 ): string | null {
+  if (!fromOperator && ruling.complete === false)
+    return (
+      `rulings could not be resolved: hosted autonomy settings unavailable (${ruling.unavailableReason}); ` +
+      'answer with --from-operator, or set rulings in machine.toml or the project register'
+    )
   return ruling.value === 'user' && !fromOperator
     ? `rulings is user (${ruling.scope}): relay this question to the operator and answer with --from-operator`
     : null
-}
-type HostedEntry = Awaited<ReturnType<ConfigClient['listEntries']>>[number]
-const hostedSettings = (rows: HostedEntry[], scope: 'user' | 'space') =>
-  parseAutonomy(
-    rows
-      .filter((row) => row.scope === scope && row.key.startsWith('autonomy.'))
-      .map((row) => `${row.key.slice(9)}=${row.value}`)
-      .join(','),
-    `hosted ${scope}`,
-  )
-
-export async function resolveProjectAutonomy(
-  project: string,
-  steps: { slug: string; stage?: AutonomyStage; default: AutonomyValue }[] = [],
-  session: AutonomySettings = {},
-  clientFactory: (signal: AbortSignal) => ConfigClient = (signal) =>
-    configClient(process.env, fetch, undefined, signal),
-  d: Database = db(),
-  env: ConfigEnvironment = process.env,
-  timeoutMs: number = HOSTED_AUTONOMY_TIMEOUT_MS,
-): Promise<AutonomyResolution> {
-  const row = d
-    .query('SELECT settings FROM project WHERE name=? AND retired_at IS NULL')
-    .get(project) as { settings: string } | null
-  if (!row) throw new Error(`unknown project "${project}"`)
-  const registered = JSON.parse(row.settings || '{}') as { autonomy?: unknown }
-  const local = readMachineAutonomy(project, env)
-  let user: AutonomySettings = {},
-    space: AutonomySettings = {},
-    note: string | undefined
-  try {
-    const signal = AbortSignal.timeout(timeoutMs)
-    const rows = await clientFactory(signal).listEntries()
-    user = hostedSettings(rows, 'user')
-    space = hostedSettings(rows, 'space')
-  } catch (error) {
-    const reason =
-      error instanceof DOMException && error.name === 'TimeoutError'
-        ? `timed out after ${timeoutMs} ms`
-        : error instanceof Error
-          ? error.message
-          : String(error)
-    note = `hosted autonomy settings unavailable: ${reason}; resolved from local and project scopes`
-  }
-  const resolution = resolveAutonomy(steps, [
-    { name: 'session', settings: session },
-    { name: 'local project', settings: local.project },
-    { name: 'project', settings: registered.autonomy },
-    { name: 'local user', settings: local.user },
-    { name: 'hosted user', settings: user },
-    { name: 'hosted space', settings: space },
-    { name: 'built-in', settings: { preset: 'guided' } },
-  ])
-  return { ...resolution, note, session }
 }

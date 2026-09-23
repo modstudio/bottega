@@ -44,7 +44,8 @@ import {
 } from '../porting/porting.ts'
 import { projectAt, projectByName, projects } from '../project/projects.ts'
 import { getReview, listReviews } from '../review/review.ts'
-import { parseAutonomy, resolveProjectAutonomy } from '../workflow/autonomy.ts'
+import { catalogueStepsForAutonomy, parseAutonomy } from '../workflow/autonomy.ts'
+import { resolveProjectAutonomy } from '../workflow/autonomy-scopes.ts'
 import {
   awaitWorkflowRuling,
   getWorkflowStepWithCursor,
@@ -434,11 +435,7 @@ export function createDocsMcpServer(): McpServer {
       const preliminary = composeWorkflow(slug, project, mode, args ?? {}, undefined, selection)
       const resolved = await resolveProjectAutonomy(
         project,
-        preliminary.steps.map((step) => ({
-          slug: step.slug,
-          stage: step.stage,
-          default: step.autonomy.value,
-        })),
+        catalogueStepsForAutonomy(preliminary.steps),
         parseAutonomy(autonomy, 'session'),
       )
       return text(composeWorkflow(slug, project, mode, args ?? {}, undefined, selection, resolved))
@@ -463,11 +460,7 @@ export function createDocsMcpServer(): McpServer {
       const preliminary = composeWorkflow(slug, project, mode, args ?? {})
       const resolved = await resolveProjectAutonomy(
         project,
-        preliminary.steps.map((item) => ({
-          slug: item.slug,
-          stage: item.stage,
-          default: item.autonomy.value,
-        })),
+        catalogueStepsForAutonomy(preliminary.steps),
         parseAutonomy(autonomy, 'session'),
       )
       return text(

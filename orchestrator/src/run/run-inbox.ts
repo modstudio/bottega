@@ -3,7 +3,7 @@
 import { db, SESSION_LIVE_MS, sessionId } from '../database/db.ts'
 import { activeSql, voidedSql } from '../evidence/evidence-query.ts'
 import { projectAt } from '../project/projects.ts'
-import { resolveProjectAutonomy } from '../workflow/autonomy.ts'
+import { resolveProjectAutonomy } from '../workflow/autonomy-scopes.ts'
 
 type RunInboxFlags = { has(name: string): boolean }
 type RunInboxPresentation = {

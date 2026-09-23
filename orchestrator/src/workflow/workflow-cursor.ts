@@ -176,7 +176,9 @@ function insertCursor(
     JSON.stringify(composition.arguments),
     JSON.stringify(
       autonomy ?? {
-        steps: Object.fromEntries(composition.steps.map((step) => [step.slug, step.autonomy])),
+        steps: Object.fromEntries(
+          composition.steps.map((step) => [step.slug, step.resolvedAutonomy]),
+        ),
         rulings: composition.rulings,
       },
     ),
@@ -391,7 +393,7 @@ function nextWorkflowStepImpl(
   }
   const at = nowIso()
   const closed = JSON.parse(row.closed) as ClosedStep[]
-  const review = composition.steps[row.ordinal]?.autonomy.value === 'review'
+  const review = composition.steps[row.ordinal]?.resolvedAutonomy.value === 'review'
   closed.push({
     n: row.ordinal + 1,
     slug: row.step_slug,

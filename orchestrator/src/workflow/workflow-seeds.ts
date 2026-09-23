@@ -3,6 +3,7 @@
  * Must not know workflow commands, adapters, execution, or project state. */
 import type { Database } from 'bun:sqlite'
 import { nowIso, writeTransaction } from '../database/db.ts'
+import type { AutonomyStage, AutonomyValue } from './autonomy.ts'
 import {
   REVIEW_COVERAGE,
   REVIEW_LIMITS,
@@ -210,8 +211,8 @@ type SeedCatalogueStep = {
   body: string
   floor: string[]
   job: string | null
-  stage: 'plan' | 'implement' | 'review' | 'ship'
-  autonomy: 'auto' | 'ask' | 'review'
+  stage: AutonomyStage
+  autonomy: AutonomyValue
   needs: string[]
 }
 const stages: Record<string, Record<string, SeedCatalogueStep['stage']>> = {

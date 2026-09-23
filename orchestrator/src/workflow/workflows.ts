@@ -5,7 +5,11 @@ import {
   resolveDeclaredFacts,
   unresolvedTrackerActionPlaceholder,
 } from '../project/project-injection.ts'
-import type { AutonomyResolution } from './autonomy.ts'
+import {
+  type AutonomyResolution,
+  catalogueStepsForAutonomy,
+  resolveAutonomy,
+} from './autonomy.ts'
 import {
   compatibleCatalogueStep,
   productionStepCatalogue,
@@ -448,6 +452,11 @@ export function composeWorkflow(
     mode?.steps.map((stepSlug) =>
       compatibleCatalogueStep(catalogue.definition.steps.find((step) => step.slug === stepSlug)!),
     ) ?? []
+  const effectiveAutonomy =
+    autonomy ??
+    resolveAutonomy(catalogueStepsForAutonomy(selected), [
+      { name: 'built-in', settings: { preset: 'guided' } },
+    ])
   const { resolved, facts } = resolveDeclaredFacts(
     project,
     selected.flatMap((step) => step.needs),
@@ -473,7 +482,8 @@ export function composeWorkflow(
           title: step.title,
           job: step.job,
           stage: step.stage,
-          autonomy: autonomy?.steps[step.slug] ?? { value: step.autonomy, scope: 'built-in' },
+          autonomy: step.autonomy,
+          resolvedAutonomy: effectiveAutonomy.steps[step.slug]!,
           floor: step.floor,
           needs: step.needs,
         }
@@ -485,7 +495,7 @@ export function composeWorkflow(
     },
     facts,
     needs,
-    rulings: autonomy?.rulings ?? { value: 'agent' as const, scope: 'built-in' },
+    rulings: effectiveAutonomy.rulings,
     autonomyNote: autonomy?.note,
   }
 }
@@ -528,6 +538,11 @@ export function getWorkflowStep(
     settings: JSON.parse(projectRow.settings ?? '{}'),
   }
   const { facts } = resolveDeclaredFacts(project, step.needs, args)
+  const effectiveAutonomy =
+    autonomy ??
+    resolveAutonomy(catalogueStepsForAutonomy([step]), [
+      { name: 'built-in', settings: { preset: 'guided' } },
+    ])
   const values: Record<string, unknown> = { ...args, ...facts }
   const body = step.body.replace(/\{\{([^{}]+)\}\}/g, (_all, path: string) => {
     let value: unknown = values
@@ -558,7 +573,7 @@ export function getWorkflowStep(
       : undefined
   return {
     ...step,
-    autonomy: autonomy?.steps[step.slug] ?? { value: step.autonomy, scope: 'built-in' },
+    resolvedAutonomy: effectiveAutonomy.steps[step.slug]!,
     workflow: slug,
     version: row.n,
     catalogueVersion: catalogue.n,

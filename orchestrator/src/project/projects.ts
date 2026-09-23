@@ -325,15 +325,15 @@ export function projects(opts?: { retired?: boolean }): Project[] {
   return (db().query(sql).all() as Parameters<typeof parse>[0][]).map(parse)
 }
 
-function projectRowByName(name: string): Project | null {
-  const r = db().query('SELECT * FROM project WHERE name = ?').get(name) as
+function projectRowByName(name: string, d = db()): Project | null {
+  const r = d.query('SELECT * FROM project WHERE name = ?').get(name) as
     | Parameters<typeof parse>[0]
     | null
   return r ? parse(r) : null
 }
 
-export function projectByName(name: string): Project | null {
-  const project = projectRowByName(name)
+export function projectByName(name: string, d = db()): Project | null {
+  const project = projectRowByName(name, d)
   return project?.retiredAt ? null : project
 }
 

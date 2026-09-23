@@ -13,7 +13,8 @@ import { job } from '../jobs/jobs.ts'
 import { mcpRequestFromStored } from '../mcp/mcp-preflight.ts'
 import { failureReason } from '../outcome.ts'
 import { chainTransport, retryModelForAgent } from '../route/failover.ts'
-import { answerRulingRefusal, resolveProjectAutonomy } from '../workflow/autonomy.ts'
+import { answerRulingRefusal } from '../workflow/autonomy.ts'
+import { resolveAnswerRulings } from '../workflow/autonomy-scopes.ts'
 import { keepTreeHold } from '../worktree/keep-tree-hold.ts'
 import { packedResumePrompt } from './run.ts'
 import { KEEP_RUN_FILES_DAYS, readDispatchState } from './run-artifacts.ts'
@@ -41,10 +42,14 @@ type RunAnswerHelpers = {
 }
 type RunFlags = { detach: boolean; follow: boolean; quiet: boolean }
 
-async function refuseUserRuling(project: string | null, argv: string[]): Promise<void> {
+async function refuseUserRuling(
+  project: string | null,
+  launchKey: string | null,
+  argv: string[],
+): Promise<void> {
   if (!project) return
-  const autonomy = await resolveProjectAutonomy(project)
-  const refusal = answerRulingRefusal(autonomy.rulings, argv.includes('--from-operator'))
+  const rulings = await resolveAnswerRulings(project, launchKey)
+  const refusal = answerRulingRefusal(rulings, argv.includes('--from-operator'))
   if (refusal) throw new Error(refusal)
 }
 
@@ -211,7 +216,8 @@ export async function answerRun(
     .query(
       `SELECT root.id, root.agent, root.job, root.cwd, root.worktree, root.branch,
           root.base_commit, root.vendor_session, root.status, root.session_id,
-          root.turn, root.parent_run_id, root.worktree_source, root.evidence_excluded, root.repo
+          root.turn, root.parent_run_id, root.worktree_source, root.evidence_excluded, root.repo,
+          root.launch_key
      FROM run requested
      JOIN run root ON root.id = COALESCE(requested.parent_run_id, requested.id)
     WHERE requested.id = ?`,
@@ -232,9 +238,10 @@ export async function answerRun(
     worktree_source: 'recipe' | 'git' | 'clone' | 'readonly_recipe' | null
     evidence_excluded: string | null
     repo: string | null
+    launch_key: string | null
   } | null
   const row = requireAnswerRun(found, requestedId)
-  await refuseUserRuling(row.repo, options.argv)
+  await refuseUserRuling(row.repo, row.launch_key, options.argv)
   const id = row.id
   refuseEscapedChain(id)
   let answerAuthority = authorizeRunMutation(requestedId, 'answer')
