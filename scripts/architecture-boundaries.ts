@@ -238,14 +238,22 @@ export const importBoundaries: ImportBoundary[] = [
     [
       'node:fs',
       './dispatch-preflight.ts',
+      './execution-requirement.ts',
       './review-lens-prompt.ts',
       '../jobs/jobs.ts',
+      '../lens/lenses.ts',
       '../worktree/keep-tree-hold.ts',
       '../project/projects.ts',
       '../route/failover.ts',
       '../mcp/mcp-preflight.ts',
     ],
     'Keep dispatch command adapters independent of transports, routing, worktrees, the CLI, and reviews.',
+  ),
+  boundary(
+    'execution-requirement-boundary',
+    'orchestrator/src/dispatch/execution-requirement.ts',
+    [],
+    'Keep execution requirement admission a pure decision over declared execution and tree kind.',
   ),
   boundary(
     'dispatch-preflight-boundary',

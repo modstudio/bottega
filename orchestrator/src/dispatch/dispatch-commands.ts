@@ -123,6 +123,33 @@ function assertDispatchableProject(
   }
 }
 
+function requiresExecution(
+  requested: ReturnType<typeof job>,
+  explicit: boolean,
+  lens: string | undefined,
+  project: string | null,
+): boolean {
+  if (explicit) return true
+  if (!lens || !requested.findings) return false
+  return Boolean(resolveLens(lens, project)?.requires_execution)
+}
+
+function assertExecutionRequirement(input: {
+  requested: ReturnType<typeof job>
+  explicit: boolean
+  jobName: string
+  lens: string | undefined
+  project: string | null
+}): void {
+  const refusal = executionRequirementRefusal({
+    declared: requiresExecution(input.requested, input.explicit, input.lens, input.project),
+    job: input.jobName,
+    lens: input.lens,
+    treeKind: input.requested.needs.writesRepo ? 'writer' : 'reader',
+  })
+  if (refusal) throw new Error(refusal)
+}
+
 export async function dispatchCommand(
   argv: string[],
   flags: DispatchFlags,
@@ -194,18 +221,13 @@ export async function dispatchCommand(
     explicitRepo,
   )
   const lens = flag('lens')
-  const catalogueRequiresExecution = lens
-    ? Boolean(
-        resolveLens(lens, explicitRepo ?? projectAt(callerCwd)?.name ?? null)?.requires_execution,
-      )
-    : false
-  const executionRefusal = executionRequirementRefusal({
-    declared: has('requires-execution') || catalogueRequiresExecution,
-    job: jobName,
+  assertExecutionRequirement({
+    requested,
+    explicit: has('requires-execution'),
+    jobName,
     lens,
-    treeKind: requested.needs.writesRepo ? 'writer' : 'reader',
+    project: explicitRepo ?? projectAt(callerCwd)?.name ?? null,
   })
-  if (executionRefusal) throw new Error(executionRefusal)
   if (requested.needs.readsRepo) warnCallerDrift(callerCwd, base)
   warnTaskBranchBypass(
     callerCwd,

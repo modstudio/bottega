@@ -1,4 +1,4 @@
-// concern: dispatch
+// concern: execution-requirement
 /** Decides whether a declared execution dependency fits the tree a job receives. */
 export function executionRequirementRefusal(input: {
   declared: boolean
