@@ -93,6 +93,9 @@ test('project inbox exposes a foreign question without adopting it', async () =>
   const shown = await inbox()
   expect(shown).toContain('visible here, but owned by another session')
   expect(shown).toContain('foreign?')
+  expect(shown).toContain(
+    'answer what the specification or canon settles; relay a design or product-direction question to the operator and answer it with --from-operator.',
+  )
 })
 test('project inbox reports a recently-seen foreign owner as live, without authority', async () => {
   upsertProject({ name: 'live-project', path: process.cwd() })

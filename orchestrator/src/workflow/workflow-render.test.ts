@@ -39,6 +39,12 @@ describe('workflow rendering', () => {
     expect(rendered).toContain('step 1, rebase')
     expect(rendered).toContain('autonomy=auto(built-in)')
     expect(rendered).toContain('Worker questions: rulings=agent (built-in).')
+    expect(rendered).toContain(
+      'answer what the specification or canon settles; relay a design or product-direction question to the operator and answer it with --from-operator.',
+    )
+    expect(rendered).toContain(
+      'At every autonomy, a genuine design or product-direction decision goes to the operator: record it with `orch workflow await` and stop.',
+    )
   })
 
   test('a composition needing a mode asks for one without the driving contract', () => {
@@ -95,7 +101,7 @@ describe('workflow rendering', () => {
     )
     expect(rendered.split('\n').slice(0, 5)).toEqual([
       'Ship a task — Ship',
-      'Worker questions: rulings=agent (built-in).',
+      'Worker questions: rulings=agent (built-in). answer what the specification or canon settles; relay a design or product-direction question to the operator and answer it with --from-operator.',
       'STOP. Do not start step 1. Ask the operator for each missing argument below, then compose again with them.',
       '- key: The task key.',
       '- branch: The branch to ship.',
@@ -110,7 +116,9 @@ describe('workflow rendering', () => {
       renderWorkflowStep(
         getWorkflowStep('ship', 'fixture', 'rebase', args, d, { mode: 'default' }),
       ),
-    ).toContain('Autonomy: auto (built-in) — rule yourself.')
+    ).toContain(
+      'Autonomy: auto (built-in) — rule yourself; a design or product-direction decision still goes to the operator (`orch workflow await`).',
+    )
     expect(
       renderWorkflowStep(
         getWorkflowStep('ship', 'fixture', 'rebase', args, d, { mode: 'default' }),

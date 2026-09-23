@@ -1,5 +1,6 @@
 ---
 title: Fix a defect
+defaultPreset: autonomous
 arguments:
   - name: key
     required: false

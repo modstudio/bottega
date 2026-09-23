@@ -41,6 +41,8 @@ const timeoutClient = (signal: AbortSignal) =>
 test('hosted failures are visible and leave rulings incomplete without a higher decision', async () => {
   const result = await resolveProjectAutonomy(
     'fixture',
+    undefined,
+    'guided',
     steps,
     {},
     () =>
@@ -62,6 +64,8 @@ test('a never-resolving hosted transport is bounded by the adapter timeout', asy
   expect(HOSTED_AUTONOMY_TIMEOUT_MS).toBe(2000)
   const result = await resolveProjectAutonomy(
     'fixture',
+    undefined,
+    'guided',
     steps,
     {},
     timeoutClient,
@@ -72,6 +76,47 @@ test('a never-resolving hosted transport is bounded by the adapter timeout', asy
   expect(result.note).toBe(
     'hosted autonomy settings unavailable: timed out after 10 ms; resolved from local and project scopes',
   )
+})
+
+test('workflow built-in defaults and local workflow overrides resolve every step', async () => {
+  const builtIn = await resolveProjectAutonomy(
+    'fixture',
+    'fix-defect',
+    'autonomous',
+    steps,
+    {},
+    () => {
+      throw new ConfigClientError('not-configured', '/v1/config')
+    },
+    database(),
+    missingConfig,
+  )
+  expect(builtIn.steps).toEqual({
+    design: { value: 'auto', scope: 'built-in' },
+    verify: { value: 'auto', scope: 'built-in' },
+  })
+
+  const config = mkdtempSync(join(tmpdir(), 'autonomy-scopes-'))
+  writeFileSync(
+    join(config, 'machine.toml'),
+    '[autonomy.workflows.fix-defect]\npreset = "guided"\n',
+  )
+  const overridden = await resolveProjectAutonomy(
+    'fixture',
+    'fix-defect',
+    'autonomous',
+    steps,
+    {},
+    () => {
+      throw new ConfigClientError('not-configured', '/v1/config')
+    },
+    database(),
+    { BOTTEGA_CONFIG_HOME: config },
+  )
+  expect(overridden.steps).toEqual({
+    design: { value: 'ask', scope: 'local user' },
+    verify: { value: 'auto', scope: 'local user' },
+  })
 })
 
 test('answer proceeds when hosted is not configured', async () => {

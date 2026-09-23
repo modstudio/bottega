@@ -90,6 +90,8 @@ export function registerWorkflowPrompts(server: McpServer): void {
           const preliminary = composeWorkflow(prompt.name, projectName, mode, args)
           const resolved = await resolveProjectAutonomy(
             projectName,
+            preliminary.workflow.slug,
+            preliminary.workflow.defaultPreset,
             catalogueStepsForAutonomy(preliminary.steps),
             parseAutonomy(autonomy, 'session'),
           )

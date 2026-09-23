@@ -61,6 +61,8 @@ async function readHosted(
 
 export async function resolveProjectAutonomy(
   project: string,
+  workflow: string | undefined,
+  defaultPreset: AutonomySettings['preset'],
   steps: Pick<CatalogueStep, 'slug' | 'stage' | 'autonomy'>[] = [],
   session: AutonomySettings = {},
   clientFactory: (signal: AbortSignal) => ConfigClient = (signal) =>
@@ -73,15 +75,19 @@ export async function resolveProjectAutonomy(
   if (!registered) throw new Error(`unknown project "${project}"`)
   const local = readMachineAutonomy(project, env)
   const hosted = await readHosted(clientFactory, timeoutMs)
-  const resolution = resolveAutonomy(steps, [
-    { name: 'session', settings: session },
-    { name: 'local project', settings: local.project },
-    { name: 'project', settings: registered.settings.autonomy },
-    { name: 'local user', settings: local.user },
-    { name: 'hosted user', settings: hosted.user },
-    { name: 'hosted space', settings: hosted.space },
-    { name: 'built-in', settings: { preset: 'guided' } },
-  ])
+  const resolution = resolveAutonomy(
+    steps,
+    [
+      { name: 'session', settings: session },
+      { name: 'local project', settings: local.project },
+      { name: 'project', settings: registered.settings.autonomy },
+      { name: 'local user', settings: local.user },
+      { name: 'hosted user', settings: hosted.user },
+      { name: 'hosted space', settings: hosted.space },
+      { name: 'built-in', settings: { preset: defaultPreset ?? 'guided' } },
+    ],
+    workflow,
+  )
   if (hosted.status === 'available')
     return { ...resolution, hosted: { status: hosted.status }, session }
   if (hosted.status === 'not-configured')
@@ -134,5 +140,17 @@ export async function resolveAnswerRulings(
 ): Promise<AutonomyResolution['rulings']> {
   const snapshot = workflowRulingsSnapshot(project, launchKey, d)
   if (snapshot) return snapshot
-  return (await resolveProjectAutonomy(project, [], {}, clientFactory, d, env, timeoutMs)).rulings
+  return (
+    await resolveProjectAutonomy(
+      project,
+      undefined,
+      'guided',
+      [],
+      {},
+      clientFactory,
+      d,
+      env,
+      timeoutMs,
+    )
+  ).rulings
 }

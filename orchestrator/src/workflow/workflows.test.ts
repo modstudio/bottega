@@ -118,6 +118,13 @@ describe('workflow definition validation', () => {
       'exactly one default mode is allowed',
     )
   })
+  test('validates the workflow default preset', () => {
+    const d = database()
+    expect(validateWorkflowDefinition({ ...valid(), defaultPreset: 'autonomous' }, d)).toEqual([])
+    expect(validateWorkflowDefinition({ ...valid(), defaultPreset: 'automatic' }, d)).toContain(
+      'defaultPreset must be manual, guided, or autonomous',
+    )
+  })
   test('refuses malformed or undeclared mode requirements', () => {
     const d = database()
     expect(

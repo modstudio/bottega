@@ -25,6 +25,7 @@ type WorkflowMode = {
 export type WorkflowDefinition = {
   title: string
   description: string
+  defaultPreset?: 'manual' | 'guided' | 'autonomous'
   arguments: WorkflowArgument[]
   modes: WorkflowMode[]
   // Steps are shared on purpose: a catalogue change reaches every workflow
@@ -83,6 +84,14 @@ export function validateWorkflowDefinition(
   if (typeof value.title !== 'string') errors.push('title must be a string')
   else if (!value.title.trim()) errors.push('title must be non-empty')
   if (typeof value.description !== 'string') errors.push('description must be a string')
+  if (
+    value.defaultPreset !== undefined &&
+    !(
+      typeof value.defaultPreset === 'string' &&
+      ['manual', 'guided', 'autonomous'].includes(value.defaultPreset)
+    )
+  )
+    errors.push('defaultPreset must be manual, guided, or autonomous')
   const args = Array.isArray(value.arguments) ? value.arguments : []
   const modes = Array.isArray(value.modes) ? value.modes : []
   if (!Array.isArray(value.arguments)) errors.push('arguments must be an array')
@@ -450,9 +459,11 @@ export function composeWorkflow(
     ) ?? []
   const effectiveAutonomy =
     autonomy ??
-    resolveAutonomy(catalogueStepsForAutonomy(selected), [
-      { name: 'built-in', settings: { preset: 'guided' } },
-    ])
+    resolveAutonomy(
+      catalogueStepsForAutonomy(selected),
+      [{ name: 'built-in', settings: { preset: definition.defaultPreset ?? 'guided' } }],
+      slug,
+    )
   const { resolved, facts } = resolveDeclaredFacts(
     project,
     selected.flatMap((step) => step.needs),
@@ -464,6 +475,7 @@ export function composeWorkflow(
       slug,
       title: definition.title,
       description: definition.description,
+      defaultPreset: definition.defaultPreset,
       version: row.n,
     },
     project: projectName,
@@ -536,9 +548,11 @@ export function getWorkflowStep(
   const { facts } = resolveDeclaredFacts(project, step.needs, args)
   const effectiveAutonomy =
     autonomy ??
-    resolveAutonomy(catalogueStepsForAutonomy([step]), [
-      { name: 'built-in', settings: { preset: 'guided' } },
-    ])
+    resolveAutonomy(
+      catalogueStepsForAutonomy([step]),
+      [{ name: 'built-in', settings: { preset: definition.defaultPreset ?? 'guided' } }],
+      slug,
+    )
   const values: Record<string, unknown> = { ...args, ...facts }
   const body = step.body.replace(/\{\{([^{}]+)\}\}/g, (_all, path: string) => {
     let value: unknown = values

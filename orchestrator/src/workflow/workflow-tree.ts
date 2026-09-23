@@ -57,6 +57,9 @@ function renderedFiles(store: WorkflowTreeStore): WorkflowTreeFile[] {
     body: document(
       {
         title: definition.title,
+        ...(definition.defaultPreset === undefined
+          ? {}
+          : { defaultPreset: definition.defaultPreset }),
         arguments: definition.arguments,
         modes: definition.modes,
       },
@@ -133,6 +136,11 @@ export function parseWorkflowTree(tree: WorkflowTreeFile[]): WorkflowTreeStore {
         slug: match.slug,
         definition: {
           title: frontMatter.title as string,
+          ...(frontMatter.defaultPreset === undefined
+            ? {}
+            : {
+                defaultPreset: frontMatter.defaultPreset as WorkflowDefinition['defaultPreset'],
+              }),
           arguments: frontMatter.arguments as WorkflowDefinition['arguments'],
           modes: frontMatter.modes as WorkflowDefinition['modes'],
           description: parsed.body,
