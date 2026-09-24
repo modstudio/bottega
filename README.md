@@ -3,28 +3,29 @@
 A workshop. One designer holds the whole picture, several hands build to that
 design, and nothing ships the designer has not read and signed.
 
-Bottega is orchestration that sits **below** a frontier harness, not in place of
-one. The architect designs, rules and judges in the harness. Bottega routes the
-building to external agents on flat-rate subscriptions and local models, scores
-what comes back, and sends the next job to whichever agent has earned it.
-
-The delegation costs nothing in judgment because workers are forbidden to make
-decisions: a worker reaching a judgment call stops and asks, and fidelity is a
-scored axis so deviation is measured rather than trusted. See `AGENTS.md` for
-the reasoning.
+Bottega runs coding agents under a project's rules. The architect designs,
+rules and judges in a frontier harness; Bottega dispatches the building to
+external agents on flat-rate subscriptions and local models, each in its own
+disposable worktree, under a contract that forbids the worker to decide
+anything. A worker reaching a judgment call stops and asks, and the architect's
+ruling resumes the same worker in the same tree. Every result is reviewed and
+scored, and fidelity is a scored axis, so deviation is measured rather than
+trusted. The scores then route the next job to whichever agent has earned it.
+See `AGENTS.md` for the reasoning.
 
 ## Today
 
-Everything runs on one machine.
+Execution is local. The record of what happened is hosted.
 
 ```mermaid
 flowchart LR
     H["frontier harness<br/><i>architect · rules · judges</i>"]:::h
-    O["<b>orch</b><br/>route · dispatch · score<br/>worktrees · contracts · canon"]:::c
-    U["<b>hub</b><br/>tasks · intervals · cost<br/>dashboard on :7778"]:::c
-    W["vendor agents<br/>codex · grok · agy · qwen-local"]:::e
+    O["<b>orch</b><br/>dispatch · contracts · rulings<br/>worktrees · review · score · route"]:::c
+    U["<b>hub</b><br/>tasks · intervals · cost · reports"]:::c
+    W["vendor agents<br/>codex · grok · local models"]:::e
     OD[("orch.db<br/>runs/ artifacts")]:::s
-    HD[("hub.db")]:::s
+    HD[("hub.db<br/>task cache")]:::s
+    RC[("<b>record</b><br/>Postgres + RLS · spaces")]:::r
 
     H --> O
     O -- spawns --> W
@@ -32,63 +33,50 @@ flowchart LR
     O --> OD
     U --> HD
     U -- "shells the binary,<br/>never opens orch.db" --> O
+    OD -- "outbox sync" --> RC
+    U -- "hosted API" --> RC
 
     classDef h fill:#2b2b2b,stroke:#888,color:#ddd
     classDef c fill:#1e3a5f,stroke:#4a90d9,color:#e8f0fa
     classDef s fill:#3d2b4f,stroke:#a06cd5,color:#f0e8fa
+    classDef r fill:#2f4a2f,stroke:#6cbf6c,color:#eaf7ea
     classDef e fill:#4a3520,stroke:#d99a4a,color:#faf0e8
 ```
+
+Everything that touches a disk stays on the machine: worktrees, worker
+processes, the gate, run artifacts. Evidence such as runs, verdicts, reviews and
+landings is written locally first and reaches the hosted record through an
+idempotent outbox, so an unreachable record never stops dispatch or scoring.
+Shared state such as tasks and the doc store is written through the hosted
+service, with the local store as a read cache; such a write is refused, never
+queued, while the service is unreachable. The record is multi-tenant: each
+project belongs to one space, set by `settings.space` in the project register.
 
 `hub` reaching `orch` through its binary rather than its database is deliberate.
 A database shared between two concerns is how two concerns quietly become one.
 
 | concern | what it is |
 |---|---|
-| `orchestrator/` | Route work to external agents, score them per job, route the next job by the evidence. Its own canon. |
+| `orchestrator/` | Dispatch work to external agents under contracts, carry rulings, review and score the results, and route the next job by the evidence. Its own canon. |
 | `hub/` | Every project's work in one view: what is in flight, what it cost, and scheduled report subscriptions. Its own canon. |
 | `ops/` | The machine itself: refresh, launchd, brew upkeep. |
 | `local-stack/` | Serving models locally, and the local model host. |
-| `shared/` | The only code any two concerns may both import. |
+| `retrieval/` | Embedding and rerank clients, chunking, and the benchmark that measures how often agents find the right source or doc. |
+| `shared/` | The only code any two concerns may both import, including the hosted record schema. |
 
 Concerns do not reach into each other. `bun run check` enforces it, because a
 boundary nobody checks has already drifted.
 
 ## Where this is going
 
-**Not built.** The target is a hosted record with one local agent per machine.
-Everything that touches a disk stays local; every fact worth keeping moves to a
-multi-tenant record that a team, a second machine, or a different harness can
-reach.
+Bottega is being made usable by any developer: under any leading harness, on
+macOS or Linux, with the human able to take the deciding role, and working out
+of the box with no tracker and no hosted record. The epic plan, its decisions
+and its order:
 
-```mermaid
-flowchart TB
-    HH["frontier harness — <b>any</b>"]:::h
-    AD["harness adapter"]:::c
-    CLI["<b>CLI</b> — execution<br/>dispatch · worktrees · hooks<br/>cache + write queue"]:::c
-    WK["vendor agents"]:::e
-    API["<b>API</b><br/>tRPC · remote MCP · machine protocol"]:::c
-    VW["<b>viewer</b>"]:::c
-    RC[("<b>record</b><br/>Postgres + RLS · artifacts")]:::s
+    ./bin/hub task doc show 22
 
-    HH --> AD --> CLI
-    CLI -- spawns --> WK
-    WK -- "run-scoped proxy" --> CLI
-    CLI --> API
-    HH -- "MCP" --> API
-    VW --> API
-    API --> RC
-
-    classDef h fill:#2b2b2b,stroke:#888,color:#ddd,stroke-dasharray:4 3
-    classDef c fill:#1e3a5f,stroke:#4a90d9,color:#e8f0fa
-    classDef s fill:#3d2b4f,stroke:#a06cd5,color:#f0e8fa
-    classDef e fill:#4a3520,stroke:#d99a4a,color:#faf0e8
-```
-
-Three properties the picture exists to fix: the harness on top is swappable, the
-record is reached only through the API and never by opening a database, and a
-worker's only credential is a run-scoped proxy — it never holds a tenant token.
-
-The plan, its evidence and its open rulings:
+The hosting design and its rulings:
 `orch doc show hosting-architecture --scope project --subject bottega`
 
 ## Getting started
