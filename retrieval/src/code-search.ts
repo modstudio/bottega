@@ -1,9 +1,8 @@
-// concern: retrieval-search
-/** Refreshes the document-vector index and serves semantic document search. */
+// concern: retrieval-code-search
+/** Refreshes one project's code-vector corpus and serves semantic code search. */
 
 import { createHash } from 'node:crypto'
-import { resolve } from 'node:path'
-import type { DocSearchOutput } from '../../shared/orch-contract.ts'
+import type { CodeSearchOutput } from '../../shared/orch-contract.ts'
 import { resolveRetrievalDatabase } from '../../shared/state-directory.ts'
 import {
   EMBEDDING_DIMENSION,
@@ -12,7 +11,7 @@ import {
   queryDocument,
   RERANK_CANDIDATES,
 } from './contract.ts'
-import { type Chunk, chunkDocument, loadDocCorpus } from './corpus/chunks.ts'
+import { type Chunk, chunkDocument, loadCodeCorpus } from './corpus/chunks.ts'
 import { applyRefresh, indexedRows, openIndexDatabase, storedRows } from './index-store.ts'
 import { planRefresh } from './refresh-plan.ts'
 import { embed, endpointsFromEnvironment, rerank } from './services/endpoints.ts'
@@ -36,28 +35,29 @@ function contentHash(chunk: Chunk): string {
   return createHash('sha256').update(chunkDocument(chunk)).digest('hex')
 }
 
-export async function search(
+export async function searchCode(
+  project: { name: string; path: string },
   query: string,
   k: number,
   options: {
-    repositoryRoot?: string
     environment?: NodeJS.ProcessEnv
     databasePath?: string
     clients?: Clients
     loadChunks?: (repositoryRoot: string) => Promise<Chunk[]>
   } = {},
-): Promise<DocSearchOutput> {
+): Promise<CodeSearchOutput> {
   if (!query.trim()) throw new Error('search query must not be empty')
   if (!Number.isInteger(k) || k < 1) throw new Error('search k must be a positive integer')
   const environment = options.environment ?? process.env
   const endpoints = endpointsFromEnvironment(environment)
   const clients = options.clients ?? { embed, rerank }
+  const corpusKey = `code:${project.name}`
   const database = openIndexDatabase(options.databasePath ?? resolveRetrievalDatabase(environment))
   try {
-    const repositoryRoot = options.repositoryRoot ?? resolve(import.meta.dir, '../..')
-    const chunks = await (options.loadChunks ?? loadDocCorpus)(repositoryRoot)
+    const loaded = await (options.loadChunks ?? loadCodeCorpus)(project.path)
+    const chunks = loaded.map((chunk) => ({ ...chunk, id: `${corpusKey}:${chunk.id}` }))
     const current = chunks.map((chunk) => ({ chunk, contentHash: contentHash(chunk) }))
-    const plan = planRefresh(current, storedRows(database, 'docs'))
+    const plan = planRefresh(current, storedRows(database, corpusKey))
     const embeddedRows = []
     for (let start = 0; start < plan.embed.length; start += EMBED_BATCH_SIZE) {
       const batch = plan.embed.slice(start, start + EMBED_BATCH_SIZE)
@@ -77,11 +77,11 @@ export async function search(
       )
     }
     const applied = applyRefresh(database, {
-      corpusKey: 'docs',
+      corpusKey,
+      project: project.name,
       delete: plan.delete,
       upsert: embeddedRows,
     })
-
     const [queryVector] = await clients.embed(endpoints.embedUrl, [queryDocument(query)])
     const queryArray = new Float32Array(queryVector ?? [])
     if (queryArray.length !== EMBEDDING_DIMENSION) {
@@ -89,7 +89,7 @@ export async function search(
         `embedding endpoint returned query dimension ${queryArray.length}; expected ${EMBEDDING_DIMENSION}`,
       )
     }
-    const rows = indexedRows(database, 'docs').filter(
+    const rows = indexedRows(database, corpusKey).filter(
       (row) =>
         row.model === EMBEDDING_MODEL &&
         row.dimension === EMBEDDING_DIMENSION &&
@@ -134,15 +134,13 @@ export async function search(
       },
       results: ranked.map(({ row, rerankScore }) => {
         const characters = Array.from(row.text)
-        const truncated = characters.length > SNIPPET_CHARACTERS
         return {
-          scope: row.scope,
-          subject: row.subject,
-          slug: row.slug,
-          title: row.title,
-          headingPath: JSON.parse(row.headingPath) as string[],
+          project: row.project ?? project.name,
+          path: row.repositoryPath ?? '',
+          startLine: row.startLine ?? 1,
+          endLine: row.endLine ?? 1,
           snippet: characters.slice(0, SNIPPET_CHARACTERS).join(''),
-          truncated,
+          truncated: characters.length > SNIPPET_CHARACTERS,
           embeddingScore: embeddingScores.get(row.chunkId)!,
           rerankScore,
         }

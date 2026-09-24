@@ -49,6 +49,11 @@ export const modules: ArchitectureModule[] = [
     '../../../shared/install-root.ts',
     '../../../shared/orch-contract.ts',
   ]),
+  module('orchestrator/src/code/code-search.ts', [
+    '../../../shared/install-root.ts',
+    '../../../shared/orch-contract.ts',
+    '../project/projects.ts',
+  ]),
   module('orchestrator/src/run/question-vocabulary.ts', []),
   module('orchestrator/src/run/question-delivery.ts', [
     '../database/db.ts',

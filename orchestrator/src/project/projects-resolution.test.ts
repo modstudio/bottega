@@ -40,6 +40,15 @@ afterEach(() => {
 })
 
 describe('projects are data, not code', () => {
+  test('code search opt-in is a boolean-only project setting', () => {
+    expect(validateProjectSettings({ search: { code: true } })).toEqual([])
+    expect(
+      validateProjectSettings({ search: { code: 'yes' } } as unknown as Parameters<
+        typeof validateProjectSettings
+      >[0]),
+    ).toContain('search.code must be a boolean')
+  })
+
   test('checks accept the optional policy shapes', () => {
     expect(
       validateProjectSettings({

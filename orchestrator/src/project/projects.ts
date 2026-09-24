@@ -500,6 +500,21 @@ function managedContextProblems(value: unknown): string[] {
     : ['managedContext must be a boolean']
 }
 
+function projectSearchProblems(value: unknown): string[] {
+  if (value === undefined) return []
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    return ['search must be an object']
+  }
+  const search = value as Record<string, unknown>
+  const problems = Object.keys(search)
+    .filter((name) => name !== 'code')
+    .map((name) => `search.${name} is not recognized`)
+  if (search.code !== undefined && typeof search.code !== 'boolean') {
+    problems.push('search.code must be a boolean')
+  }
+  return problems
+}
+
 export function validateProjectSettings(settings: ProjectSettings, projectPath?: string): string[] {
   const problems = [
     ...validateProjectInjectionSettings(settings),
@@ -516,6 +531,7 @@ export function validateProjectSettings(settings: ProjectSettings, projectPath?:
     ...autonomyProblems(settings.autonomy),
     ...projectChecksProblems(settings.checks),
     ...managedContextProblems(settings.managedContext),
+    ...projectSearchProblems(settings.search),
   ]
 
   if (invalidOptionalStringArray(settings.secretPaths)) {

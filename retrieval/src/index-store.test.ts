@@ -28,7 +28,11 @@ test('two handles interleave cold schema creation and reject a stale repeated re
       headingPath: [],
     }
     const candidate = { chunk, contentHash: 'hash', observed: null }
-    const prepared = { delete: [], upsert: [{ ...candidate, document: 'one', vector }] }
+    const prepared = {
+      corpusKey: 'docs',
+      delete: [],
+      upsert: [{ ...candidate, document: 'one', vector }],
+    }
     expect(applyRefresh(first, prepared)).toEqual({ embedded: 1, deleted: 0, stale: 0 })
     expect(applyRefresh(second, prepared)).toEqual({ embedded: 0, deleted: 0, stale: 1 })
 
@@ -57,6 +61,7 @@ test('stale deletes and upserts lose when another handle changes only the instru
     headingPath: [],
   })
   const prepare = (plan: ReturnType<typeof planRefresh>): Parameters<typeof applyRefresh>[1] => ({
+    corpusKey: 'docs',
     delete: plan.delete,
     upsert: plan.embed.map((candidate) => ({
       ...candidate,
@@ -116,6 +121,71 @@ test('stale deletes and upserts lose when another handle changes only the instru
   } finally {
     first.close()
     second.close()
+    rmSync(directory, { recursive: true })
+  }
+})
+
+test('refreshes isolate docs and each project code corpus', () => {
+  const directory = mkdtempSync(join(tmpdir(), 'retrieval-corpus-isolation-test-'))
+  const database = new Database(join(directory, 'retrieval.db'), { create: true })
+  const codeChunk = (project: string): Chunk => ({
+    id: `code:${project}:src/answer.ts:1-1`,
+    path: 'src/answer.ts',
+    identity: { kind: 'code', path: 'src/answer.ts' },
+    startLine: 1,
+    endLine: 1,
+    text: project,
+  })
+  const docChunk: Chunk = {
+    id: 'doc:project/p/doc:section-1-1',
+    path: 'doc:project/p/doc',
+    identity: { kind: 'doc', scope: 'project', subject: 'p', slug: 'doc' },
+    startLine: 1,
+    endLine: 1,
+    text: 'doc',
+    docTitle: 'Doc',
+    headingPath: [],
+  }
+  const seed = (corpusKey: string, chunk: Chunk, project?: string) =>
+    applyRefresh(database, {
+      corpusKey,
+      project,
+      delete: [],
+      upsert: [
+        {
+          chunk,
+          contentHash: `${corpusKey}-hash`,
+          observed: null,
+          document: chunk.text,
+          vector,
+        },
+      ],
+    })
+  try {
+    configureIndexDatabase(database)
+    seed('docs', docChunk)
+    seed('code:one', codeChunk('one'), 'one')
+    seed('code:two', codeChunk('two'), 'two')
+
+    applyRefresh(database, {
+      corpusKey: 'docs',
+      delete: planRefresh([], storedRows(database, 'docs')).delete,
+      upsert: [],
+    })
+    expect(storedRows(database, 'docs')).toHaveLength(0)
+    expect(storedRows(database, 'code:one')).toHaveLength(1)
+    expect(storedRows(database, 'code:two')).toHaveLength(1)
+
+    applyRefresh(database, {
+      corpusKey: 'code:one',
+      project: 'one',
+      delete: planRefresh([], storedRows(database, 'code:one')).delete,
+      upsert: [],
+    })
+    expect(storedRows(database, 'code:one')).toHaveLength(0)
+    expect(storedRows(database, 'code:two')).toHaveLength(1)
+  } finally {
+    database.close()
     rmSync(directory, { recursive: true })
   }
 })

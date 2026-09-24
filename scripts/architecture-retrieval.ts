@@ -24,6 +24,17 @@ export const retrievalModules: RetrievalModule[] = [
     './contract.ts',
     './refresh-plan.ts',
   ]),
+  module('retrieval/src/code-search.ts', [
+    'node:crypto',
+    '../../shared/orch-contract.ts',
+    '../../shared/state-directory.ts',
+    './contract.ts',
+    './corpus/chunks.ts',
+    './index-store.ts',
+    './refresh-plan.ts',
+    './services/endpoints.ts',
+    './vector-ranking.ts',
+  ]),
   module('retrieval/src/search.ts', [
     'node:crypto',
     'node:path',
@@ -37,7 +48,9 @@ export const retrievalModules: RetrievalModule[] = [
     './vector-ranking.ts',
   ]),
   module('retrieval/src/search-cli.ts', [
+    'node:path',
     '../../shared/orch-contract.ts',
+    './code-search.ts',
     './search.ts',
     './services/endpoints.ts',
   ]),
@@ -47,6 +60,8 @@ export const retrievalModules: RetrievalModule[] = [
   module('retrieval/src/benchmark/benchmark.ts', [
     'node:fs/promises',
     'node:path',
+    '../../../shared/brand.ts',
+    '../code-search.ts',
     '../corpus/chunks.ts',
     '../contract.ts',
     '../search.ts',

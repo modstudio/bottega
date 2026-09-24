@@ -286,6 +286,7 @@ export const CLI_COMMANDS = new Set([
   'canon',
   'check',
   'close-out',
+  'code',
   'config',
   'confinement',
   'continue',

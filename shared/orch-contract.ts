@@ -40,6 +40,31 @@ export const DocSearchOutputSchema = z
 
 export type DocSearchOutput = z.infer<typeof DocSearchOutputSchema>
 
+export const CodeSearchOutputSchema = z
+  .object({
+    query: z.string(),
+    k: z.number().int(),
+    contract: DocSearchOutputSchema.shape.contract,
+    refresh: DocSearchOutputSchema.shape.refresh,
+    results: z.array(
+      z
+        .object({
+          project: z.string(),
+          path: z.string(),
+          startLine: z.number().int().positive(),
+          endLine: z.number().int().positive(),
+          snippet: z.string(),
+          truncated: z.boolean(),
+          embeddingScore: z.number().finite(),
+          rerankScore: z.number().finite(),
+        })
+        .strict(),
+    ),
+  })
+  .strict()
+
+export type CodeSearchOutput = z.infer<typeof CodeSearchOutputSchema>
+
 const nullableString = z.string().nullable()
 const nullableNumber = z.number().finite().nullable()
 
@@ -61,6 +86,7 @@ export const OrchProjectSchema = z
         envPrefix: z.string().optional(),
         keyPrefixes: z.array(z.string()).optional(),
         space: z.string().optional(),
+        search: z.object({ code: z.boolean().optional() }).strict().optional(),
         tracker: OrchTrackerSettingsSchema.optional(),
       })
       .passthrough(),

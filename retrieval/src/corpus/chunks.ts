@@ -26,7 +26,7 @@ export type DocRow = {
   body: string
 }
 
-const SOURCE_GLOBS = [
+const CODE_SOURCE_GLOBS = [
   'orchestrator/src/**/*.ts',
   'hub/src/**/*.ts',
   'retrieval/src/**/*.ts',
@@ -36,7 +36,14 @@ const SOURCE_GLOBS = [
 ] as const
 
 /** The benchmark's own labeled questions quote every answer verbatim, so indexing them would let the benchmark find itself. */
-const EXCLUDED_PREFIXES = ['retrieval/src/benchmark/'] as const
+const CODE_EXCLUDED_PREFIXES = ['retrieval/src/benchmark/'] as const
+
+function isCodeCorpusPath(path: string): boolean {
+  return (
+    CODE_SOURCE_GLOBS.some((pattern) => new Glob(pattern).match(path)) &&
+    !CODE_EXCLUDED_PREFIXES.some((prefix) => path.startsWith(prefix))
+  )
+}
 
 export function chunkText(path: string, text: string, size = 60, overlap = 10): Chunk[] {
   if (size <= overlap || overlap < 0)
@@ -228,21 +235,33 @@ export async function loadDocCorpus(repositoryRoot: string): Promise<Chunk[]> {
   return rows.filter((doc) => doc.scope !== 'resume').flatMap((doc) => chunkDoc(doc))
 }
 
-export async function loadCorpus(repositoryRoot: string): Promise<Chunk[]> {
+export async function loadCodeCorpus(repositoryRoot: string): Promise<Chunk[]> {
   const root = resolve(repositoryRoot)
-  const files = new Set<string>()
-  for (const pattern of SOURCE_GLOBS) {
-    for await (const file of new Glob(pattern).scan({ cwd: root, onlyFiles: true })) {
-      if (!EXCLUDED_PREFIXES.some((prefix) => file.startsWith(prefix))) files.add(file)
-    }
+  const child = Bun.spawn(['git', '-C', root, 'ls-files', '-z'], {
+    stdout: 'pipe',
+    stderr: 'pipe',
+  })
+  const [stdout, stderr, exitCode] = await Promise.all([
+    new Response(child.stdout).text(),
+    new Response(child.stderr).text(),
+    child.exited,
+  ])
+  if (exitCode !== 0) {
+    throw new Error(`tracked code corpus listing failed: ${stderr.trim() || `exit ${exitCode}`}`)
   }
+  const files = stdout.split('\0').filter(Boolean).filter(isCodeCorpusPath).sort()
   const chunks: Chunk[] = []
-  for (const path of [...files].sort()) {
+  for (const path of files) {
     const absolute = resolve(root, path)
     if (relative(root, absolute).startsWith('..'))
       throw new Error(`corpus path escaped root: ${path}`)
     chunks.push(...chunkText(path, await readFile(absolute, 'utf8')))
   }
+  return chunks
+}
+
+export async function loadCorpus(repositoryRoot: string): Promise<Chunk[]> {
+  const chunks = await loadCodeCorpus(repositoryRoot)
   chunks.push(...(await loadDocCorpus(repositoryRoot)))
   return chunks
 }

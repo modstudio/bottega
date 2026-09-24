@@ -2,6 +2,8 @@
 /** Runs the live, non-gating comparison of embeddings, reranking, and ripgrep. */
 import { access, readFile } from 'node:fs/promises'
 import { resolve } from 'node:path'
+import { PLATFORM_SLUG } from '../../../shared/brand.ts'
+import { searchCode } from '../code-search.ts'
 import { queryDocument, RERANK_CANDIDATES } from '../contract.ts'
 import { type Chunk, chunkDocument, loadCorpus, splitChunksToModelLimit } from '../corpus/chunks.ts'
 import { search } from '../search.ts'
@@ -102,21 +104,29 @@ async function validateQueries(repositoryRoot: string, chunks: Chunk[]): Promise
 
 function reportSet(
   queries: LabeledQuery[],
-  rankings: { keyword: Ranking[]; embeddings: Ranking[]; reranked: Ranking[]; index?: Ranking[] },
+  rankings: {
+    keyword: Ranking[]
+    embeddings: Ranking[]
+    reranked: Ranking[]
+    index?: Ranking[]
+    codeIndex?: Ranking[]
+  },
 ) {
   const missedIds = rankings.keyword
     .filter((ranking) => rankOfFirstLabel(ranking) < 0 || rankOfFirstLabel(ranking) >= 5)
     .map((ranking) => ranking.queryId)
     .filter((queryId) =>
-      [rankings.embeddings, rankings.reranked, ...(rankings.index ? [rankings.index] : [])].every(
-        (method) => {
-          const ranking = method.find((candidate) => candidate.queryId === queryId)
-          return (
-            ranking !== undefined &&
-            (rankOfFirstLabel(ranking) < 0 || rankOfFirstLabel(ranking) >= 5)
-          )
-        },
-      ),
+      [
+        rankings.embeddings,
+        rankings.reranked,
+        ...(rankings.index ? [rankings.index] : []),
+        ...(rankings.codeIndex ? [rankings.codeIndex] : []),
+      ].every((method) => {
+        const ranking = method.find((candidate) => candidate.queryId === queryId)
+        return (
+          ranking !== undefined && (rankOfFirstLabel(ranking) < 0 || rankOfFirstLabel(ranking) >= 5)
+        )
+      }),
     )
   return {
     queryCount: queries.length,
@@ -125,6 +135,7 @@ function reportSet(
       embeddings: scoreRankings(rankings.embeddings),
       embeddingsPlusRerank: scoreRankings(rankings.reranked),
       ...(rankings.index ? { index: scoreRankings(rankings.index) } : {}),
+      ...(rankings.codeIndex ? { codeIndex: scoreRankings(rankings.codeIndex) } : {}),
     },
     missedByEveryMethodAt5: queries
       .filter((query) => missedIds.includes(query.id))
@@ -153,6 +164,7 @@ async function main() {
   const rerankedRankings: Ranking[] = []
   const keywordRankings: Ranking[] = []
   const indexRankings: Ranking[] = []
+  const codeIndexRankings: Ranking[] = []
 
   for (const [index, query] of queries.entries()) {
     const embedded = rankByEmbedding(chunks, corpusVectors, queryVectors[index] ?? [])
@@ -200,14 +212,32 @@ async function main() {
     })
   }
 
+  for (const query of REAL_CODE_QUERIES) {
+    const output = await searchCode({ name: PLATFORM_SLUG, path: repositoryRoot }, query.query, 5)
+    codeIndexRankings.push({
+      queryId: query.id,
+      goldLabels: query.goldLabels,
+      chunks: output.results.map((result, index) => ({
+        id: `code-index:${query.id}:${index}`,
+        path: result.path,
+        identity: { kind: 'code' as const, path: result.path },
+        startLine: result.startLine,
+        endLine: result.endLine,
+        text: result.snippet,
+      })),
+    })
+  }
+
   const rankingsFor = (querySet: LabeledQuery[]) => {
     const ids = new Set(querySet.map((query) => query.id))
     const indexed = indexRankings.filter((ranking) => ids.has(ranking.queryId))
+    const codeIndexed = codeIndexRankings.filter((ranking) => ids.has(ranking.queryId))
     return {
       keyword: keywordRankings.filter((ranking) => ids.has(ranking.queryId)),
       embeddings: embeddingRankings.filter((ranking) => ids.has(ranking.queryId)),
       reranked: rerankedRankings.filter((ranking) => ids.has(ranking.queryId)),
       ...(indexed.length ? { index: indexed } : {}),
+      ...(codeIndexed.length ? { codeIndex: codeIndexed } : {}),
     }
   }
 

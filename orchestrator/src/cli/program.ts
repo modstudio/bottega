@@ -3,6 +3,7 @@
 import { Command, CommanderError } from 'commander'
 import { register as registerBranches } from '../commands/branches.ts'
 import { register as registerCleanup } from '../commands/cleanup.ts'
+import { register as registerCode } from '../commands/code.ts'
 import { register as registerConfig } from '../commands/config.ts'
 import { register as registerDocs } from '../commands/docs.ts'
 import { register as registerHealth } from '../commands/health.ts'
@@ -31,6 +32,7 @@ export const program = new Command()
   .showSuggestionAfterError()
 
 registerReview(program)
+registerCode(program)
 registerBranches(program)
 registerRecordAuth(program)
 registerDocs(program)
