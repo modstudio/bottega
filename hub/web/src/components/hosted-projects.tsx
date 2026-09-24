@@ -12,6 +12,7 @@ type HostedProject = {
   name: string
   keyPrefixes: string[]
   stack: string | null
+  managedContext: boolean
   landingBranch: string | null
   color: string | null
   colorDark: string | null
@@ -42,6 +43,12 @@ export function HostedProjects() {
       ),
     },
     { id: 'stack', label: 'Stack', render: (project) => project.stack ?? '-' },
+    {
+      id: 'context',
+      label: 'Context',
+      render: (project) =>
+        project.managedContext ? <Badge tone="success">managed</Badge> : '-',
+    },
     {
       id: 'landing',
       label: 'Landing',

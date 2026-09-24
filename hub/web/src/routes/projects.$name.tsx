@@ -65,9 +65,11 @@ function ProjectForm({ project }: { project: ProjectRow }) {
   const initialColor = typeof project.settings.color === 'string' ? project.settings.color : ''
   const initialColorDark =
     typeof project.settings.colorDark === 'string' ? project.settings.colorDark : ''
+  const initialManagedContext = project.settings.managedContext === true
   const [path, setPath] = useState(project.path)
   const [stack, setStack] = useState(project.stack ?? '')
   const [canon, setCanon] = useState(project.canon)
+  const [managedContext, setManagedContext] = useState(initialManagedContext)
   const [trunk, setTrunk] = useState(initialTrunk)
   const [keyPrefixes, setKeyPrefixes] = useState(initialPrefixes.join(', '))
   const [color, setColor] = useState(initialColor)
@@ -85,6 +87,7 @@ function ProjectForm({ project }: { project: ProjectRow }) {
     path !== project.path ||
     stack !== (project.stack ?? '') ||
     canon !== project.canon ||
+    managedContext !== initialManagedContext ||
     trunk !== initialTrunk ||
     JSON.stringify(prefixes) !== JSON.stringify(initialPrefixes) ||
     color !== initialColor ||
@@ -136,6 +139,7 @@ function ProjectForm({ project }: { project: ProjectRow }) {
     }
 
     const settings: Record<string, unknown> = {}
+    if (managedContext !== initialManagedContext) settings.managedContext = managedContext
     if (trunk !== initialTrunk) settings.trunk = trunk
     if (JSON.stringify(prefixes) !== JSON.stringify(initialPrefixes))
       settings.keyPrefixes = prefixes
@@ -218,7 +222,7 @@ function ProjectForm({ project }: { project: ProjectRow }) {
               control={<Input value={stack} onChange={(event) => setStack(event.target.value)} />}
             />
             <SettingBlock
-              label="Canon"
+              label="Canon ratio"
               cli={`orch project set ${shellQuote(project.name)} ${canon ? '--canon' : '--no-canon'}`}
               control={
                 <label htmlFor="project-canon" className="flex items-center gap-2">
@@ -227,7 +231,7 @@ function ProjectForm({ project }: { project: ProjectRow }) {
                     checked={canon}
                     onChange={(event) => setCanon(event.target.checked)}
                   />
-                  Included in canon
+                  Counts toward canon ratio
                 </label>
               }
             />
@@ -257,6 +261,27 @@ function ProjectForm({ project }: { project: ProjectRow }) {
               cli={settingsCommand(project.name, { colorDark })}
               control={
                 <Input value={colorDark} onChange={(event) => setColorDark(event.target.value)} />
+              }
+            />
+          </div>
+        </FieldSection>
+        <FieldSection
+          title="Context"
+          description="Whether Bottega stores, lints, hydrates and injects this project's agent context."
+        >
+          <div className="space-y-5">
+            <SettingBlock
+              label="Managed context"
+              cli={settingsCommand(project.name, { managedContext })}
+              control={
+                <label htmlFor="project-managed-context" className="flex items-center gap-2">
+                  <Checkbox
+                    id="project-managed-context"
+                    checked={managedContext}
+                    onChange={(event) => setManagedContext(event.target.checked)}
+                  />
+                  Managed by Bottega
+                </label>
               }
             />
           </div>
