@@ -101,11 +101,7 @@ function ProjectForm({ project }: { project: ProjectRow }) {
   const settingsFields: SettingsField[] = [
     ['managedContext', managedContext !== initialManagedContext, () => managedContext],
     ['trunk', trunk !== initialTrunk, () => trunk],
-    [
-      'keyPrefixes',
-      JSON.stringify(prefixes) !== JSON.stringify(initialPrefixes),
-      () => prefixes,
-    ],
+    ['keyPrefixes', JSON.stringify(prefixes) !== JSON.stringify(initialPrefixes), () => prefixes],
     ['color', color !== initialColor, () => color],
     ['colorDark', colorDark !== initialColorDark, () => colorDark],
     ['tracker', tracker !== pretty(project.settings.tracker), () => parseJsonField(tracker)],
