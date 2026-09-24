@@ -1,4 +1,5 @@
 import { expect, test } from 'bun:test'
+import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { searchDocs } from './doc-search.ts'
 
 test('orch adapter parses the retrieval JSON contract', async () => {
@@ -10,7 +11,7 @@ test('orch adapter parses the retrieval JSON contract', async () => {
     results: [
       {
         scope: 'project',
-        subject: 'bottega',
+        subject: PLATFORM_SLUG,
         slug: 'design',
         title: 'Design',
         headingPath: ['Why'],

@@ -48,7 +48,7 @@ function validScore(value: unknown): value is number {
   return typeof value === 'number' && Number.isFinite(value)
 }
 
-export function parseDocSearchOutput(stdout: string): DocSearchOutput {
+function parseDocSearchOutput(stdout: string): DocSearchOutput {
   let value: unknown
   try {
     value = JSON.parse(stdout)

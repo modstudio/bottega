@@ -6,6 +6,7 @@
   "type": "module",
   "scripts": {
     "benchmark": "bun src/benchmark/benchmark.ts",
+    "search": "bun src/search-cli.ts",
     "typecheck": "tsc --noEmit",
     "test": "bun test src"
   },

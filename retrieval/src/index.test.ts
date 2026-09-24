@@ -89,4 +89,27 @@ describe('retrieval index', () => {
       rmSync(directory, { recursive: true })
     }
   })
+
+  test('refreshes and searches the SQLite Float32 index with bounded Unicode snippets', async () => {
+    const directory = mkdtempSync(join(tmpdir(), 'retrieval-search-test-'))
+    const text = '🙂'.repeat(501)
+    try {
+      const result = await search('question', 1, {
+        repositoryRoot: '/unused',
+        databasePath: join(directory, 'retrieval.db'),
+        loadChunks: async () => [chunk('one', text)],
+        clients: {
+          embed: async (_url, input) =>
+            input.map(() => [1, ...Array.from<number>({ length: 1_023 }).fill(0)]),
+          rerank: async () => [0.9],
+        },
+      })
+
+      expect(result.refresh).toEqual({ embedded: 1, deleted: 0, unchanged: 0 })
+      expect(Array.from(result.results[0]!.snippet)).toHaveLength(500)
+      expect(result.results[0]).toMatchObject({ truncated: true, rerankScore: 0.9 })
+    } finally {
+      rmSync(directory, { recursive: true })
+    }
+  })
 })

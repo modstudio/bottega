@@ -67,6 +67,43 @@ function docDelivery(value: string | undefined): 'inject' | 'demand' | undefined
   throw new Error('--delivery must be inject or demand')
 }
 
+async function semanticSearch(
+  argv: string[],
+  flags: DocFlags,
+  presentation: DocPresentation,
+): Promise<void> {
+  const query = argv[2]
+  if (!query) throw new Error('orch doc search "<query>" [--k N] [--json]')
+  const rawK = flags.flag('k') ?? '5'
+  if (!/^\d+$/.test(rawK) || Number(rawK) < 1) throw new Error('--k must be a positive integer')
+  const output = await searchDocs(query, Number(rawK))
+  if (flags.has('json')) {
+    presentation.log(JSON.stringify(output))
+    return
+  }
+  presentation.log(
+    `refresh: ${output.refresh.embedded} embedded, ${output.refresh.deleted} deleted, ${output.refresh.unchanged} unchanged`,
+  )
+  for (const result of output.results) {
+    presentation.log(
+      `${result.scope}/${result.subject ?? '_'}/${result.slug} · ${result.headingPath.join(' > ') || result.title}`,
+    )
+    presentation.log(`  ${result.snippet}${result.truncated ? '…' : ''}`)
+  }
+}
+
+async function handledEarlyDocCommand(
+  sub: string,
+  argv: string[],
+  flags: DocFlags,
+  presentation: DocPresentation,
+): Promise<boolean> {
+  if (sub === 'lint') lintDocs(flags, presentation)
+  else if (sub === 'search') await semanticSearch(argv, flags, presentation)
+  else return false
+  return true
+}
+
 export async function docCommand(
   sub: string,
   argv: string[],
@@ -76,30 +113,7 @@ export async function docCommand(
   const { has, flag } = flags
   const scope = flag('scope')
   const subject = flag('subject') ?? null
-  if (sub === 'lint') {
-    lintDocs(flags, presentation)
-    return
-  }
-  if (sub === 'search') {
-    const query = argv[2]
-    if (!query) throw new Error('orch doc search "<query>" [--k N] [--json]')
-    const rawK = flag('k') ?? '5'
-    if (!/^\d+$/.test(rawK) || Number(rawK) < 1) throw new Error('--k must be a positive integer')
-    const output = await searchDocs(query, Number(rawK))
-    if (has('json')) presentation.log(JSON.stringify(output))
-    else {
-      presentation.log(
-        `refresh: ${output.refresh.embedded} embedded, ${output.refresh.deleted} deleted, ${output.refresh.unchanged} unchanged`,
-      )
-      for (const result of output.results) {
-        presentation.log(
-          `${result.scope}/${result.subject ?? '_'}/${result.slug} · ${result.headingPath.join(' > ') || result.title}`,
-        )
-        presentation.log(`  ${result.snippet}${result.truncated ? '…' : ''}`)
-      }
-    }
-    return
-  }
+  if (await handledEarlyDocCommand(sub, argv, flags, presentation)) return
   if (sub === 'list') {
     const rows = listDocs({ scope, ...(has('subject') ? { subject } : {}) })
     if (has('json')) {

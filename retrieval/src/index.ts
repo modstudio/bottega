@@ -34,9 +34,9 @@ export type RefreshPlan = {
   unchanged: string[]
 }
 
-export type RefreshCounts = { embedded: number; deleted: number; unchanged: number }
+type RefreshCounts = { embedded: number; deleted: number; unchanged: number }
 
-export type SearchResult = {
+type SearchResult = {
   scope: string
   subject: string | null
   slug: string
@@ -78,7 +78,7 @@ const currentContract = {
   instructionVersion: INSTRUCTION_VERSION,
 }
 
-export function contentHash(chunk: Chunk): string {
+function contentHash(chunk: Chunk): string {
   return createHash('sha256').update(chunkDocument(chunk)).digest('hex')
 }
 
@@ -163,7 +163,7 @@ function vectorBlob(vector: number[]): Uint8Array {
   return new Uint8Array(new Float32Array(vector).buffer)
 }
 
-export async function refreshIndex(
+async function refreshIndex(
   database: Database,
   chunks: Chunk[],
   embedDocuments: (documents: string[]) => Promise<number[][]>,
@@ -221,7 +221,7 @@ export async function refreshIndex(
   }
 }
 
-export function cosine(left: Float32Array, right: Float32Array): number {
+function cosine(left: Float32Array, right: Float32Array): number {
   if (left.length !== right.length) throw new Error('cosine vectors must have equal dimensions')
   let dot = 0
   let leftMagnitude = 0
