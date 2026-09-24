@@ -52,11 +52,11 @@ def main() -> int:
         return 0
     if payload.get("tool_name") != "Bash":
         return 0
-    markers = load_markers()
-    if markers is None:
-        return 0
     command = str(payload.get("tool_input", {}).get("command", ""))
     if not WRITES.search(command):
+        return 0
+    markers = load_markers()
+    if markers is None:
         return 0
     text = command
     cwd = payload.get("cwd") or os.getcwd()

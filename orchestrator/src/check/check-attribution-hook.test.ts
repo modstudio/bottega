@@ -60,9 +60,10 @@ describe('attribution hook', () => {
   })
 
   for (const state of ['absent', 'unreadable', 'malformed'] as const) {
-    test(`denies when the marker file is ${state}`, () => {
+    test(`allows non-writes and denies writes when the marker file is ${state}`, () => {
       const { root, hook, markerFile } = layout(state)
-      const reason = denialReason(invoke(hook, root, 'echo harmless'))
+      expect(invoke(hook, root, 'ls')).toBeNull()
+      const reason = denialReason(invoke(hook, root, 'git commit -m x'))
       expect(reason).toContain(markerFile)
       expect(reason).toContain('Cannot enforce AI attribution')
     })

@@ -1,6 +1,9 @@
 {
   "blocked": [
     "Co-Authored-By: Claude <noreply@anthropic.com>",
+    "Co-authored-by: ChatGPT <noreply@openai.com>",
+    "Co-authored-by: Codex <codex@openai.com>",
+    "Co-authored-by: Copilot <175728472+Copilot@users.noreply.github.com>",
     "Co-authored-by: Someone <noreply@anthropic.com>",
     "Co-authored-by: OpenAI <noreply@openai.com>",
     "Co-authored-by: ChatGPT <assistant@example.test>",
@@ -35,6 +38,9 @@
     "Use OpenAI, ChatGPT, Codex, Gemini, Google, Grok, xAI, Copilot, Cursor, Anthropic, and Claude in this comparison.",
     "This AI feature is tested without attribution.",
     "The Anthropic API is one possible implementation.",
+    "Co-authored-by: Jane Doe <jane@google.com>",
+    "Co-authored-by: Max Aim <max@example.com>",
+    "Co-authored-by: Sam <sam@openai.com>",
     "Remove generated files before committing."
   ]
 }
