@@ -269,8 +269,7 @@ realPostgres('RLS proof against real Postgres', () => {
       'postgres',
       'postgres',
       `
-      DROP FUNCTION IF EXISTS invitation_open_for(text);
-      DO $$ DECLARE t record; BEGIN FOR t IN SELECT tablename FROM pg_tables WHERE schemaname = 'public' LOOP EXECUTE format('DROP TABLE IF EXISTS public.%I CASCADE', t.tablename); END LOOP; END $$;
+      DROP SCHEMA IF EXISTS public CASCADE; CREATE SCHEMA public AUTHORIZATION ${RECORD_OWNER_ROLE};
       DROP SCHEMA IF EXISTS drizzle CASCADE;
     `,
     )
