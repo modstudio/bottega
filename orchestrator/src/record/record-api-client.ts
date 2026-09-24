@@ -107,6 +107,16 @@ export type RecordApiClient = {
     to: string
     count: number
   }): Promise<{ docs: number; revisions: number }>
+  upsertProject(input: {
+    name: string
+    previousName?: string
+    path: string
+    stack: string | null
+    canon: boolean
+    settings: Record<string, unknown>
+    retiredAt: string | null
+  }): Promise<{ name: string }>
+  retireProject(name: string): Promise<{ name: string }>
   putScore(runId: string, input: VerdictInput): Promise<void>
   voidRun(runId: string, input: { reason: string }): Promise<void>
   unvoidRun(runId: string, input: { note: string }): Promise<void>
@@ -251,6 +261,10 @@ export function recordApiClient(): RecordApiClient {
       request(`/v1/docs/${id}/restore`, { method: 'POST', body: JSON.stringify(input) }).then(ids),
     renameSubject: (input) =>
       request('/v1/docs/rename-subject', { method: 'POST', body: JSON.stringify(input) }),
+    upsertProject: (input) =>
+      request('/v1/projects', { method: 'PUT', body: JSON.stringify(input) }),
+    retireProject: (name) =>
+      request(`/v1/projects/${encodeURIComponent(name)}/retire`, { method: 'POST' }),
     putScore: async (runId, input) => {
       await request(`/v1/runs/${runId}/score`, { method: 'PUT', body: JSON.stringify(input) })
     },

@@ -11,11 +11,12 @@ import {
 import { applyMigrations } from '../database/migrations.ts'
 import { backfillLandingEvidenceRecords } from '../record/landing-outbox.ts'
 import { RECORD_SESSION_KEY, recordAuth, setActiveRecordSpace } from '../record/record-auth.ts'
+import { PROJECT_SETTINGS_NOT_IMPORTED } from '../record/record-project-columns.ts'
 import { syncRecord } from '../record/record-sync.ts'
 import { backfillReviewRecords } from '../review/review-outbox.ts'
 import { backfillRunRecords } from '../run/run-outbox.ts'
 import { backfillScoreRecords } from '../score/score-outbox.ts'
-import { importProjects, PROJECT_SETTINGS_NOT_IMPORTED } from './postgres-import.ts'
+import { importProjects } from './postgres-import.ts'
 import { migratePostgres } from './postgres-migrate.ts'
 
 const container = process.env.ORCH_TEST_POSTGRES_CONTAINER

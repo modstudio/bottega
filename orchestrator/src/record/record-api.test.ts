@@ -39,6 +39,8 @@ function appWith(session: RecordIdentity | null, overrides: Record<string, unkno
     readReviews: async () => [],
     readReview: async () => null,
     readProjects: async () => [],
+    upsertProject: async () => ({ name: 'one' }),
+    retireProject: async () => ({ name: 'one' }),
     listDocs: async () => [],
     readDoc: async () => null,
     listDocRevisions: async () => [],
@@ -490,6 +492,81 @@ describe('record API presentation routes', () => {
       'gate',
     ])
       expect(forbidden in rows[0]!).toBe(false)
+  })
+
+  test('validates project upsert at the edge and passes the tenant', async () => {
+    const calls: Array<{ name: string; userId: string; spaceId: string }> = []
+    const app = appWith(identity, {
+      upsertProject: async (input: { name: string; userId: string; spaceId: string }) => {
+        calls.push(input)
+        return { name: input.name }
+      },
+    })
+    const invalid = await app.request('/v1/projects', {
+      method: 'PUT',
+      headers: { 'content-type': 'application/json' },
+      body: '{}',
+    })
+    expect(invalid.status).toBe(400)
+    expect(await invalid.json()).toEqual({ error: 'invalid project upsert' })
+    const response = await app.request('/v1/projects', {
+      method: 'PUT',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        name: 'probe',
+        path: '/w/probe',
+        stack: 'ts',
+        canon: true,
+        settings: { managedContext: true },
+        retiredAt: null,
+      }),
+    })
+    expect(response.status).toBe(200)
+    expect(calls).toEqual([
+      expect.objectContaining({ name: 'probe', userId: 'user-a', spaceId: 'space-a' }),
+    ])
+  })
+
+  test('returns a hosted project name collision as 409', async () => {
+    const { RecordProjectError } = await import('./record-projects.ts')
+    const app = appWith(identity, {
+      upsertProject: async () => {
+        throw new RecordProjectError(
+          'cannot rename hosted project "alpha" to "beta": hosted project "beta" already exists',
+          409,
+        )
+      },
+    })
+    const response = await app.request('/v1/projects', {
+      method: 'PUT',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        name: 'beta',
+        previousName: 'alpha',
+        path: '/w/beta',
+        stack: null,
+        canon: true,
+        settings: {},
+        retiredAt: null,
+      }),
+    })
+    expect(response.status).toBe(409)
+    expect(await response.json()).toEqual({
+      error: 'cannot rename hosted project "alpha" to "beta": hosted project "beta" already exists',
+    })
+  })
+
+  test('retires a project by name', async () => {
+    const calls: string[] = []
+    const app = appWith(identity, {
+      retireProject: async (input: { name: string }) => {
+        calls.push(input.name)
+        return { name: input.name }
+      },
+    })
+    const response = await app.request('/v1/projects/probe/retire', { method: 'POST' })
+    expect(response.status).toBe(200)
+    expect(calls).toEqual(['probe'])
   })
 
   test('CORS allows configured origins with credentials and omits headers otherwise', async () => {

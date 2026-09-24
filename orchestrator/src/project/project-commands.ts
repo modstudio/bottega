@@ -9,20 +9,23 @@ import { selectProjectProfile } from '../lens/lenses.ts'
 import { lifecycleForm } from '../worktree/worktree-lifecycle.ts'
 import { migrateCreate } from '../worktree/worktree-template.ts'
 import {
+  applyLocalProjectRename,
+  assertProjectRename,
   assertRegisterBranches,
   type Project,
   type ProjectSettings,
   projectByName,
   projects,
-  removeProject,
-  renameProject,
+  pushProjects,
+  removeWrittenProject,
   retiredProjectByName,
-  retireProject,
+  retireWrittenProject,
   sniffStack,
-  unretireProject,
+  unretireWrittenProject,
   upsertProject,
   validateProjectSettings,
   worktreeWarnings,
+  writeHostedProject,
 } from './projects.ts'
 
 type ProjectFlags = { has(name: string): boolean; flag(name: string): string | undefined }
@@ -150,14 +153,11 @@ async function addProjectCommand(
     retiredAt: null,
     settings,
   }
-  const incomplete = worktreeWarnings(candidate).filter(
-    (w) =>
-      w.startsWith('has a create command but no branch template') ||
-      w.startsWith('has a create command with a {seed} placeholder but no seeds list'),
-  )
+  const incomplete = incompleteWorktreeProblems(candidate)
   if (incomplete.length && !has('allow-incomplete')) throw new Error(incomplete.join('\n'))
   assertRegisterBranches(candidate)
   const wasRetired = Boolean(retiredProjectByName(name))
+  await writeHostedProject(candidate)
   upsertProject(candidate)
   if (has('json')) {
     presentation.log(JSON.stringify(projectByName(name)))
@@ -175,19 +175,142 @@ async function addProjectCommand(
   }
 }
 
-function retireProjectCommand(
+function mergeableObject(value: unknown): value is Record<string, unknown> {
+  return Boolean(value) && typeof value === 'object' && !Array.isArray(value)
+}
+
+function mergeProjectSettings(
+  current: Record<string, unknown>,
+  patch: Record<string, unknown>,
+): Record<string, unknown> {
+  const out: Record<string, unknown> = { ...current }
+  for (const [key, value] of Object.entries(patch)) {
+    if (value === null) {
+      delete out[key]
+      continue
+    }
+    const previous = out[key]
+    out[key] =
+      mergeableObject(value) && mergeableObject(previous)
+        ? mergeProjectSettings(previous, value)
+        : value
+  }
+  return out
+}
+
+function skipLegacyCreateMigration(
+  project: ReturnType<typeof projectByName>,
+  candidate: {
+    settings: { worktree?: { create?: unknown } }
+    path: string
+  },
+  problem: string,
+): boolean {
+  return (
+    typeof project?.settings.worktree?.create === 'string' &&
+    candidate.settings.worktree?.create === project.settings.worktree.create &&
+    problem === 'worktree.create is a shell string; migrate it (DEV-308)'
+  )
+}
+
+function incompleteWorktreeProblems(candidate: Parameters<typeof worktreeWarnings>[0]): string[] {
+  return worktreeWarnings(candidate).filter(
+    (warning) =>
+      warning.startsWith('has a create command but no branch template') ||
+      warning.startsWith('has a create command with a {seed} placeholder but no seeds list'),
+  )
+}
+
+async function persistSetProject(
+  currentName: string,
+  nextName: string,
+  previousTrunk: string | null,
+  candidate: Parameters<typeof upsertProject>[0] & { settings: { trunk?: unknown } },
+): Promise<void> {
+  const renamed = nextName === currentName ? null : assertProjectRename(currentName, nextName)
+  await writeHostedProject({
+    ...candidate,
+    previousName: renamed ? currentName : undefined,
+  })
+  const nextTrunk = typeof candidate.settings.trunk === 'string' ? candidate.settings.trunk : null
+  writeTransaction(() => {
+    if (renamed) applyLocalProjectRename(renamed, currentName, nextName)
+    upsertProject(candidate)
+  })
+  if (previousTrunk === nextTrunk) return
+  tryWriteContention({
+    resourceKind: 'register',
+    resourceKey: nextName,
+    eventKind: 'invalidation',
+    cause: `trunk ${previousTrunk ?? '(unset)'} -> ${nextTrunk ?? '(unset)'}`,
+  })
+}
+
+async function setProjectCommand(
   argv: string[],
   flags: ProjectFlags,
   presentation: ProjectPresentation,
-): void {
+  requireMembership: (url: string, space: string) => Promise<unknown>,
+): Promise<void> {
+  const name = argv[2]
+  if (!name)
+    throw new Error(
+      'orch project set <name> [--stack X] [--path P] [--canon|--no-canon] [--settings JSON] [--json]',
+    )
+  const project = projectByName(name)
+  if (!project) throw new Error(`no project "${name}"`)
+  let settings = project.settings
+  if (flags.flag('settings')) {
+    try {
+      const patch = JSON.parse(flags.flag('settings')!)
+      settings = mergeProjectSettings(settings, patch) as typeof settings
+      await validateDeclaredSpace(patch, requireMembership)
+    } catch (error) {
+      throw new Error(`--settings must be JSON: ${error}`)
+    }
+  }
+  const nextName = flags.flag('name') ?? name
+  const candidate = {
+    id: project.id,
+    name: nextName,
+    path: flags.flag('path') ?? project.path,
+    stack: flags.flag('stack') ?? project.stack,
+    canon: flags.has('no-canon') ? false : flags.has('canon') ? true : project.canon,
+    retiredAt: project.retiredAt,
+    settings,
+  }
+  const malformed = validateProjectSettings(candidate.settings, candidate.path).filter(
+    (problem) => !skipLegacyCreateMigration(project, candidate, problem),
+  )
+  if (malformed.length) throw new Error(malformed.join('\n'))
+  const incomplete = incompleteWorktreeProblems(candidate)
+  if (incomplete.length && !flags.has('allow-incomplete')) throw new Error(incomplete.join('\n'))
+  assertRegisterBranches(candidate)
+  const previousTrunk = typeof project.settings.trunk === 'string' ? project.settings.trunk : null
+  await persistSetProject(name, nextName, previousTrunk, candidate)
+  if (flags.has('json')) {
+    presentation.log(JSON.stringify(projectByName(nextName)))
+    return
+  }
+  presentation.log(`updated ${nextName}`)
+  for (const warning of worktreeWarnings(projectByName(nextName)!)) {
+    presentation.log(`${' '.repeat(14)} ! ${warning}`)
+  }
+}
+
+async function retireProjectCommand(
+  argv: string[],
+  flags: ProjectFlags,
+  presentation: ProjectPresentation,
+): Promise<void> {
   const name = argv[2]
   if (!name) throw new Error('orch project retire <name> [--undo]')
   if (flags.has('undo')) {
-    unretireProject(name)
+    await unretireWrittenProject(name)
     presentation.log(`un-retired ${name}`)
     return
   }
-  const outcome = retireProject(name)
+  const outcome = await retireWrittenProject(name)
   presentation.log(outcome === 'already-retired' ? `already retired ${name}` : `retired ${name}`)
 }
 
@@ -213,105 +336,7 @@ export async function projectCommand(
   }
 
   if (sub === 'set') {
-    const name = argv[2]
-    if (!name)
-      throw new Error(
-        'orch project set <name> [--stack X] [--path P] [--canon|--no-canon] [--settings JSON] [--json]',
-      )
-    const p = projectByName(name)
-    if (!p) throw new Error(`no project "${name}"`)
-    /**
-     * Merged DEEPLY, because one level was not enough.
-     *
-     * A settings blob holds unrelated concerns written at different times —
-     * tracker vocabulary, trunk name, color, the whole worktree lifecycle —
-     * and replacing it wholesale to change one drops the others. A shallow
-     * merge only moved the problem down a level: updating `worktree.notes`
-     * replaced the entire `worktree` object and silently discarded its
-     * create, remove, sweep and branch template. Which happened to one project,
-     * minutes after the comment above was written promising it would not.
-     *
-     * Objects merge; JSON null deletes; anything else replaces. An array is
-     * a value someone meant to set, not a thing to append to.
-     */
-    const deepMerge = (a: Record<string, unknown>, b: Record<string, unknown>) => {
-      const out: Record<string, unknown> = { ...a }
-      for (const [k, v] of Object.entries(b)) {
-        if (v === null) {
-          delete out[k]
-          continue
-        }
-        const prev = out[k]
-        out[k] =
-          v &&
-          typeof v === 'object' &&
-          !Array.isArray(v) &&
-          prev &&
-          typeof prev === 'object' &&
-          !Array.isArray(prev)
-            ? deepMerge(prev as Record<string, unknown>, v as Record<string, unknown>)
-            : v
-      }
-      return out
-    }
-    let settings = p.settings
-    if (flag('settings')) {
-      try {
-        const patch = JSON.parse(flag('settings')!)
-        settings = deepMerge(settings, patch) as typeof settings
-        await validateDeclaredSpace(patch, dependencies.requireSpaceMembership)
-      } catch (e) {
-        throw new Error(`--settings must be JSON: ${e}`)
-      }
-    }
-    const nextName = flag('name') ?? name
-    const candidate = {
-      id: p.id,
-      name: nextName,
-      path: flag('path') ?? p.path,
-      stack: flag('stack') ?? p.stack,
-      canon: has('no-canon') ? false : has('canon') ? true : p.canon,
-      retiredAt: p.retiredAt,
-      settings,
-    }
-    const malformed = validateProjectSettings(candidate.settings, candidate.path).filter(
-      (problem) =>
-        !(
-          typeof p.settings.worktree?.create === 'string' &&
-          candidate.settings.worktree?.create === p.settings.worktree.create &&
-          problem === 'worktree.create is a shell string; migrate it (DEV-308)'
-        ),
-    )
-    if (malformed.length) throw new Error(malformed.join('\n'))
-    const incomplete = worktreeWarnings(candidate).filter(
-      (w) =>
-        w.startsWith('has a create command but no branch template') ||
-        w.startsWith('has a create command with a {seed} placeholder but no seeds list'),
-    )
-    if (incomplete.length && !has('allow-incomplete')) throw new Error(incomplete.join('\n'))
-    assertRegisterBranches(candidate)
-    if (nextName !== name) await renameProject(name, nextName)
-    const previousTrunk = typeof p.settings.trunk === 'string' ? p.settings.trunk : null
-    const nextTrunk = typeof candidate.settings.trunk === 'string' ? candidate.settings.trunk : null
-    writeTransaction(() => {
-      upsertProject(candidate)
-    })
-    if (previousTrunk !== nextTrunk) {
-      tryWriteContention({
-        resourceKind: 'register',
-        resourceKey: nextName,
-        eventKind: 'invalidation',
-        cause: `trunk ${previousTrunk ?? '(unset)'} -> ${nextTrunk ?? '(unset)'}`,
-      })
-    }
-    if (has('json')) {
-      presentation.log(JSON.stringify(projectByName(nextName)))
-      return
-    }
-    presentation.log(`updated ${nextName}`)
-    for (const w of worktreeWarnings(projectByName(nextName)!)) {
-      presentation.log(`${' '.repeat(14)} ! ${w}`)
-    }
+    await setProjectCommand(argv, flags, presentation, dependencies.requireSpaceMembership)
     return
   }
 
@@ -378,14 +403,26 @@ export async function projectCommand(
   if (sub === 'remove') {
     const name = argv[2]
     if (!name) throw new Error('orch project remove <name>')
-    presentation.log(removeProject(name) ? `removed ${name}` : `no project "${name}"`)
+    presentation.log(
+      (await removeWrittenProject(name)) ? `removed ${name}` : `no project "${name}"`,
+    )
     return
   }
 
   if (sub === 'retire') {
-    retireProjectCommand(argv, flags, presentation)
+    await retireProjectCommand(argv, flags, presentation)
     return
   }
 
-  throw new Error(`unknown: orch project ${sub}. Try list | add | set | remove | retire`)
+  if (sub === 'push') {
+    const names = await pushProjects()
+    if (has('json')) {
+      presentation.log(JSON.stringify(names))
+      return
+    }
+    presentation.log(`pushed ${names.length} project${names.length === 1 ? '' : 's'}`)
+    return
+  }
+
+  throw new Error(`unknown: orch project ${sub}. Try list | add | set | remove | retire | push`)
 }

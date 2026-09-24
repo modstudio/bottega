@@ -1,7 +1,7 @@
 import { Database } from 'bun:sqlite'
 import { SQL } from 'bun'
-import { newRecordId } from '../../../shared/record/schema.ts'
-import type { ProjectSettings } from '../project/projects.ts'
+import { hostedProjectColumns } from '../record/record-project-columns.ts'
+import { upsertHostedProjectRow } from '../record/record-projects.ts'
 
 type SourceProject = {
   id: number
@@ -30,47 +30,11 @@ export type ProjectImportOptions = {
   spaceId: string
 }
 
-export const PROJECT_SETTINGS_NOT_IMPORTED = [
-  { key: 'space', reason: "the imported row's space_id carries this value" },
-  { key: 'autonomy', reason: 'local-register policy is not carried by the hosted project row' },
-  { key: 'checks', reason: 'local-register policy is not carried by the hosted project row' },
-] as const satisfies ReadonlyArray<{ key: keyof Required<ProjectSettings>; reason: string }>
-
-const PROJECT_SETTING_COLUMNS = {
-  color: 'color',
-  colorDark: 'color_dark',
-  docs: 'docs',
-  envPrefix: 'env_prefix',
-  gate: 'gate',
-  keyPrefixes: 'key_prefixes',
-  managedContext: 'managed_context',
-  mcp: 'mcp_probe_tool',
-  mcpServer: 'mcp_server',
-  productionBranch: 'production_branch',
-  release: 'release',
-  requireCleanMain: 'require_clean_main',
-  secretPaths: 'secret_paths',
-  states: 'states',
-  tracker: 'tracker',
-  trunk: 'landing_branch',
-  worktree: 'worktree',
-  workerMcpServers: 'worker_mcp_servers',
-} satisfies Record<
-  Exclude<keyof Required<ProjectSettings>, (typeof PROJECT_SETTINGS_NOT_IMPORTED)[number]['key']>,
-  string
->
-
 function object(value: unknown, location: string): JsonObject {
   if (value === null || typeof value !== 'object' || Array.isArray(value)) {
     throw new Error(`${location} must be a JSON object`)
   }
   return value as JsonObject
-}
-
-function optionalString(value: unknown, location: string): string | null {
-  if (value === undefined || value === null) return null
-  if (typeof value !== 'string') throw new Error(`${location} must be a string`)
-  return value
 }
 
 function projectSettings(row: SourceProject): JsonObject {
@@ -81,54 +45,7 @@ function projectSettings(row: SourceProject): JsonObject {
   } catch {
     throw new Error(`project ${row.name} settings is not valid JSON`)
   }
-  const settings = object(parsed, `project ${row.name} settings`)
-  const notImported = new Set<string>(PROJECT_SETTINGS_NOT_IMPORTED.map(({ key }) => key))
-  const unknown = Object.keys(settings).filter(
-    (key) => !notImported.has(key) && !Object.hasOwn(PROJECT_SETTING_COLUMNS, key),
-  )
-  if (unknown.length) {
-    throw new Error(`project ${row.name} has unmapped settings keys: ${unknown.sort().join(', ')}`)
-  }
-  return settings
-}
-
-function optionalStringArray(
-  settings: JsonObject,
-  key: 'keyPrefixes' | 'secretPaths' | 'workerMcpServers',
-  project: string,
-): string[] | null {
-  const value = settings[key]
-  if (value === undefined || value === null) return null
-  if (!Array.isArray(value) || value.some((item) => typeof item !== 'string')) {
-    throw new Error(`project ${project} settings.${key} must be an array of strings`)
-  }
-  return value as string[]
-}
-
-function keyPrefixes(settings: JsonObject, project: string): string[] {
-  return optionalStringArray(settings, 'keyPrefixes', project) ?? []
-}
-
-function postgresTextArray(sql: Pick<SQL, 'array'>, value: string[] | null) {
-  if (value === null) return null
-  return sql.array(value, 'text')
-}
-
-function mcpProbeTool(settings: JsonObject, project: string): string | null {
-  if (settings.mcp === undefined || settings.mcp === null) return null
-  const mcp = object(settings.mcp, `project ${project} settings.mcp`)
-  const unknown = Object.keys(mcp).filter((key) => key !== 'probe_tool')
-  if (unknown.length) {
-    throw new Error(
-      `project ${project} has unmapped settings.mcp keys: ${unknown.sort().join(', ')}`,
-    )
-  }
-  return optionalString(mcp.probe_tool, `project ${project} settings.mcp.probe_tool`)
-}
-
-function document(value: unknown, location: string): string | null {
-  if (value === undefined || value === null) return null
-  return JSON.stringify(object(value, location))
+  return object(parsed, `project ${row.name} settings`)
 }
 
 function readSources(
@@ -203,75 +120,20 @@ export async function importProjects(options: ProjectImportOptions): Promise<Pro
       const retiredPrefixOwners = new Map<string, string[]>()
       for (const row of source.projects) {
         const settings = projectSettings(row)
-        const prefixes = keyPrefixes(settings, row.name)
-        for (const prefix of prefixes) {
+        const columns = hostedProjectColumns(settings, row.name)
+        for (const prefix of columns.keyPrefixes) {
           const owners = row.retired_at === null ? prefixOwners : retiredPrefixOwners
           owners.set(prefix, [...(owners.get(prefix) ?? []), row.name])
         }
-
-        const existing = await tx`
-          SELECT id FROM project WHERE space_id = ${options.spaceId}::uuid AND name = ${row.name}
-        `
-        const id = existing.length ? String(existing[0]!.id) : newRecordId()
-        const docs = document(settings.docs, `project ${row.name} settings.docs`)
-        const release = document(settings.release, `project ${row.name} settings.release`)
-        const states = document(settings.states, `project ${row.name} settings.states`)
-        const tracker = document(settings.tracker, `project ${row.name} settings.tracker`)
-        const worktree = document(settings.worktree, `project ${row.name} settings.worktree`)
-        const workerMcpServers = optionalStringArray(settings, 'workerMcpServers', row.name)
-        const secretPaths = optionalStringArray(settings, 'secretPaths', row.name)
-        await tx`
-          INSERT INTO project (
-            id, space_id, name, key_prefixes, checkout_path, stack, canon, managed_context,
-            landing_branch, production_branch, gate, require_clean_main, color,
-            color_dark, env_prefix, mcp_server, worker_mcp_servers, secret_paths,
-            mcp_probe_tool, docs, release, states, tracker, worktree, retired_at, created_at
-          ) VALUES (
-            ${id}::uuid, ${options.spaceId}::uuid, ${row.name}, ${tx.array(prefixes, 'text')},
-            ${row.path}, ${row.stack}, ${row.canon !== 0}, ${settings.managedContext === true},
-            ${optionalString(settings.trunk, `project ${row.name} settings.trunk`)},
-            ${optionalString(settings.productionBranch, `project ${row.name} settings.productionBranch`)},
-            ${optionalString(settings.gate, `project ${row.name} settings.gate`)},
-            ${settings.requireCleanMain !== false},
-            ${optionalString(settings.color, `project ${row.name} settings.color`)},
-            ${optionalString(settings.colorDark, `project ${row.name} settings.colorDark`)},
-            ${optionalString(settings.envPrefix, `project ${row.name} settings.envPrefix`)},
-            ${optionalString(settings.mcpServer, `project ${row.name} settings.mcpServer`)},
-            ${postgresTextArray(tx, workerMcpServers)},
-            ${postgresTextArray(tx, secretPaths)},
-            ${mcpProbeTool(settings, row.name)},
-            (${docs}::jsonb #>> '{}')::jsonb,
-            (${release}::jsonb #>> '{}')::jsonb,
-            (${states}::jsonb #>> '{}')::jsonb,
-            (${tracker}::jsonb #>> '{}')::jsonb,
-            (${worktree}::jsonb #>> '{}')::jsonb,
-            ${row.retired_at},
-            now()
-          )
-          ON CONFLICT (space_id, name) DO UPDATE SET
-            key_prefixes = EXCLUDED.key_prefixes,
-            checkout_path = EXCLUDED.checkout_path,
-            stack = EXCLUDED.stack,
-            canon = EXCLUDED.canon,
-            managed_context = EXCLUDED.managed_context,
-            landing_branch = EXCLUDED.landing_branch,
-            production_branch = EXCLUDED.production_branch,
-            gate = EXCLUDED.gate,
-            require_clean_main = EXCLUDED.require_clean_main,
-            color = EXCLUDED.color,
-            color_dark = EXCLUDED.color_dark,
-            env_prefix = EXCLUDED.env_prefix,
-            mcp_server = EXCLUDED.mcp_server,
-            worker_mcp_servers = EXCLUDED.worker_mcp_servers,
-            secret_paths = EXCLUDED.secret_paths,
-            mcp_probe_tool = EXCLUDED.mcp_probe_tool,
-            docs = EXCLUDED.docs,
-            release = EXCLUDED.release,
-            states = EXCLUDED.states,
-            tracker = EXCLUDED.tracker,
-            worktree = EXCLUDED.worktree,
-            retired_at = EXCLUDED.retired_at
-        `
+        const id = await upsertHostedProjectRow(tx, {
+          spaceId: options.spaceId,
+          name: row.name,
+          path: row.path,
+          stack: row.stack,
+          canon: row.canon !== 0,
+          retiredAt: row.retired_at,
+          columns,
+        })
         projectIds.set(row.name, id)
       }
 

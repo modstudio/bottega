@@ -126,6 +126,8 @@ function capturingClient(overrides: Partial<RecordApiClient> = {}): {
     consumeDoc: unused,
     restoreDoc: unused,
     renameSubject: unused,
+    upsertProject: unused,
+    retireProject: unused,
     putScore: unused,
     voidRun: unused,
     unvoidRun: unused,

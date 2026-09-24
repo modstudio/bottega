@@ -29,6 +29,8 @@ function clientWith(overrides: Partial<RecordApiClient> = {}): RecordApiClient {
     }),
     restoreDoc: async () => ({ id: newRecordId(), revisionId: newRecordId() }),
     renameSubject: async () => ({ docs: 0, revisions: 0 }),
+    upsertProject: async () => ({ name: 'unused' }),
+    retireProject: async () => ({ name: 'unused' }),
     putScore: async () => undefined,
     voidRun: async () => undefined,
     unvoidRun: async () => undefined,
