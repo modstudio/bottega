@@ -17,6 +17,7 @@ import {
 } from '../porting/porting.ts'
 import { upsertProject } from '../project/projects.ts'
 import { reviewCommand } from '../review/review-commands.ts'
+import { docCommand } from './doc-commands.ts'
 import {
   removeDoc as deleteDoc,
   diffDocRevisions,
@@ -64,7 +65,8 @@ async function command(args: string[], stdin = '') {
     },
   }
   try {
-    if (args[0] === 'port') await portCommand(args[1], args[2], args, flags, presentation)
+    if (args[0] === 'doc') await docCommand(args[1] ?? 'list', args, flags, presentation)
+    else if (args[0] === 'port') await portCommand(args[1], args[2], args, flags, presentation)
     else if (args[0] === 'review') await reviewCommand(args[1], args, flags, presentation)
   } catch (error) {
     code = 1
@@ -286,6 +288,22 @@ describe('scoped operator docs', () => {
     const body = "quote' backtick` newline\n"
     await setDoc({ scope: 'global', subject: null, slug: 'round-trip', title: 'T', body })
     expect(getDoc('global', null, 'round-trip')?.body).toBe(body)
+  })
+
+  test('orch doc lint prints findings as JSON and exits one', async () => {
+    const stored = await setDoc({
+      scope: 'global',
+      subject: null,
+      slug: 'lint-me',
+      title: 'Lint me',
+      body: 'Current.',
+    })
+    db().query('UPDATE doc SET body=? WHERE id=?').run('This was formerly different.', stored.id)
+    const result = await command(['doc', 'lint', '--scope', 'global', '--json'])
+    expect(result.code).toBe(1)
+    expect(JSON.parse(result.out)).toEqual([
+      expect.objectContaining({ slug: 'lint-me', rule: 'doc/history', remedy: expect.any(String) }),
+    ])
   })
 
   test('orch doc history, diff, and restore operate on revisions without rewinding', async () => {

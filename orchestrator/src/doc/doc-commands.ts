@@ -6,18 +6,21 @@
 import { readFileSync } from 'node:fs'
 import { checkDoc, repoRootForDoc } from '../canon/canon.ts'
 import {
+  collectDocReferenceProjects,
   consumeDoc,
   diffDocRevisions,
   docSubjects,
   exportDocs,
   getDoc,
   importDocs,
+  lintStoredDoc,
   listDocRevisions,
   listDocs,
   listOpenResumes,
   removeDoc,
   restoreDoc,
   setDoc,
+  storedDocsHaveRepositoryReferences,
 } from './docs.ts'
 
 type DocFlags = { has(name: string): boolean; flag(name: string): string | undefined }
@@ -28,6 +31,39 @@ type DocPresentation = {
   stdinText(): Promise<string>
   stdinIsTTY: boolean
   cwd(): string
+  exitCode?(code: number): void
+}
+
+function lintDocs(flags: DocFlags, presentation: DocPresentation): void {
+  const scope = flags.flag('scope')
+  const subject = flags.flag('subject') ?? null
+  const rows = listDocs({ scope, ...(flags.has('subject') ? { subject } : {}) })
+  const findings = rows.flatMap((doc) =>
+    lintStoredDoc(
+      doc,
+      storedDocsHaveRepositoryReferences([doc]) ? collectDocReferenceProjects(doc) : undefined,
+    ).map((finding) => ({
+      scope: doc.scope,
+      subject: doc.subject,
+      slug: doc.slug,
+      ...finding,
+    })),
+  )
+  if (flags.has('json')) presentation.log(JSON.stringify(findings))
+  else {
+    for (const finding of findings) {
+      presentation.log(
+        `${finding.scope}/${finding.subject ?? '_'}/${finding.slug}:${finding.line} ${finding.rule} ${finding.message}`,
+      )
+      presentation.log(`  remedy: ${finding.remedy}`)
+    }
+  }
+  if (findings.length) presentation.exitCode?.(1)
+}
+
+function docDelivery(value: string | undefined): 'inject' | 'demand' | undefined {
+  if (value === undefined || value === 'inject' || value === 'demand') return value
+  throw new Error('--delivery must be inject or demand')
 }
 
 export async function docCommand(
@@ -39,6 +75,10 @@ export async function docCommand(
   const { has, flag } = flags
   const scope = flag('scope')
   const subject = flag('subject') ?? null
+  if (sub === 'lint') {
+    lintDocs(flags, presentation)
+    return
+  }
   if (sub === 'list') {
     const rows = listDocs({ scope, ...(has('subject') ? { subject } : {}) })
     if (has('json')) {
@@ -85,10 +125,7 @@ export async function docCommand(
         : (() => {
             throw new Error('no body: pass --file F or pipe markdown on stdin')
           })()
-    const delivery = flag('delivery')
-    if (delivery !== undefined && delivery !== 'inject' && delivery !== 'demand') {
-      throw new Error('--delivery must be inject or demand')
-    }
+    const delivery = docDelivery(flag('delivery'))
     const forceInject = flag('force-inject')
     if (has('force-inject') && !forceInject?.trim())
       throw new Error('--force-inject requires a non-empty reason')
@@ -101,7 +138,7 @@ export async function docCommand(
       reason,
       author: flag('author'),
       forceInject,
-      delivery: delivery as 'inject' | 'demand' | undefined,
+      delivery,
     })
     const root = repoRootForDoc(doc)
     const warnings = root ? checkDoc(body, { repoRoot: root }) : []
@@ -234,6 +271,6 @@ export async function docCommand(
     return
   }
   throw new Error(
-    `unknown: orch doc ${sub}. Try list | show | set | consume | rm | history | diff | restore | subjects | export | import | resumes`,
+    `unknown: orch doc ${sub}. Try list | show | set | lint | consume | rm | history | diff | restore | subjects | export | import | resumes`,
   )
 }

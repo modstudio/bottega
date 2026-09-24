@@ -12,6 +12,7 @@ import {
   REFERENCE_BYTES,
   RULE_BYTES,
 } from './canon-budget.ts'
+import { lintProse, proseLines } from './prose-lint.ts'
 
 export type CanonFile = { path: string; text: string; symlinkTarget?: string }
 export type CanonSourceText = { path: string; text: string }
@@ -37,30 +38,8 @@ type CanonLintSummary = {
 }
 export type CanonLintResult = { summary: CanonLintSummary; findings: CanonFinding[] }
 
-const TASK_KEY_PATTERN = /\b[A-Z][A-Z0-9]{1,9}-\d+\b/
-const TASK_KEY_EXEMPTIONS = ['UTF', 'SHA', 'ISO', 'RFC', 'ES', 'TLS', 'HTTP', 'IPV']
-
 const REFERENCE_EXEMPTIONS: { reference: string; reason: string }[] =
   CANON_REFERENCE_EXEMPTIONS.map(({ path, reason }) => ({ reference: path, reason }))
-
-const HISTORY_PATTERNS = [
-  /\bused to\b/i,
-  /\bwas (?:called|named)\b/i,
-  /\brenamed\b/i,
-  /\bno longer\b/i,
-  /\bpreviously\b/i,
-  /\bformerly\b/i,
-  /\b(?:that|this|it) (?:has )?changed\b/i,
-  /\b20\d\d-\d\d-\d\d\b/i,
-]
-
-const ISSUE_PATTERNS = [
-  /\bworkaround\b/i,
-  /\bknown issue\b/i,
-  /\buntil (?:it is |this is )?fixed\b/i,
-  /\bTODO\b/i,
-  /\bFIXME\b/i,
-]
 
 export type CanonKind =
   | 'entry'
@@ -156,68 +135,21 @@ export function canonFrontmatter(text: string): {
   }
 }
 
-function containsTaskKey(line: string): boolean {
-  const exemptions = new Set(TASK_KEY_EXEMPTIONS)
-  return [...line.matchAll(new RegExp(TASK_KEY_PATTERN.source, 'g'))].some((match) => {
-    const prefix = match[0].slice(0, match[0].lastIndexOf('-'))
-    return !exemptions.has(prefix)
-  })
-}
-
 function proseFindings(file: CanonFile, findings: CanonFinding[]): void {
-  let fence: '`' | '~' | null = null
-  for (const [index, line] of file.text.split(/\r?\n/).entries()) {
-    const marker = line.match(/^\s*(`{3,}|~{3,})/)?.[1]?.[0] as '`' | '~' | undefined
-    if (marker) {
-      if (fence === marker) fence = null
-      else if (fence === null) fence = marker
-      continue
-    }
-    if (fence !== null) continue
-    const withoutInlineCode = line.replace(/(`+)[^`]*?\1/g, '')
-    const historyPattern = HISTORY_PATTERNS.find((pattern) => pattern.test(withoutInlineCode))
-    if (historyPattern) {
-      findings.push({
-        file: file.path,
-        line: index + 1,
-        rule: 'canon/history',
-        message: `matches banned history pattern ${historyPattern.source}`,
-      })
-    }
-    const issuePattern = ISSUE_PATTERNS.find((pattern) => pattern.test(withoutInlineCode))
-    if (containsTaskKey(line)) {
-      findings.push({
-        file: file.path,
-        line: index + 1,
-        rule: 'canon/issue',
-        message: 'contains a task key',
-      })
-    } else if (issuePattern) {
-      findings.push({
-        file: file.path,
-        line: index + 1,
-        rule: 'canon/issue',
-        message: `matches banned issue pattern ${issuePattern.source}`,
-      })
-    }
-  }
+  findings.push(
+    ...lintProse(file.text).map(({ line, rule, message }) => ({
+      file: file.path,
+      line,
+      rule: `canon/${rule}`,
+      message,
+    })),
+  )
 }
 
 type LineSpan = { content: string; line: number }
 
 function scannedLines(file: CanonFile): { text: string; line: number }[] {
-  const lines: { text: string; line: number }[] = []
-  let fence: '`' | '~' | null = null
-  for (const [index, text] of file.text.split(/\r?\n/).entries()) {
-    const marker = text.match(/^\s*(`{3,}|~{3,})/)?.[1]?.[0] as '`' | '~' | undefined
-    if (marker) {
-      if (fence === marker) fence = null
-      else if (fence === null) fence = marker
-      continue
-    }
-    if (fence === null) lines.push({ text, line: index + 1 })
-  }
-  return lines
+  return proseLines(file.text)
 }
 
 function inlineCodeSpans(file: CanonFile): LineSpan[] {
@@ -438,25 +370,13 @@ function referenceScriptFindings(file: CanonFile, packageScripts: string[]): Can
   )
 }
 
-function numeralFindings(file: CanonFile): CanonFinding[] {
-  return scannedLines(file).flatMap(({ text, line }) => {
-    const prose = text
-      .replace(/(`+)[^`\n]*?\1/g, (value) => ' '.repeat(value.length))
-      .replace(/\[[^\]]*\]\([^)]*\)/g, (value) => ' '.repeat(value.length))
-    const orderedMarker = prose.match(/^\s*(?:#+\s*)?(\d+)[.)]\s/)
-    for (const match of prose.matchAll(/(?<![A-Za-z0-9_-])\d+(?![A-Za-z0-9_-])/g)) {
-      if (orderedMarker && match.index === prose.indexOf(orderedMarker[1]!)) continue
-      return [
-        {
-          file: file.path,
-          line,
-          rule: 'canon/numeral',
-          message: `prose contains numeral ${match[0]}; name its constant or reporting command`,
-        },
-      ]
-    }
-    return []
-  })
+/** Runs the pure repository-reference rules against any markdown body. */
+export function lintCanonReferences(file: CanonFile, input: CanonLintInput): CanonFinding[] {
+  return [
+    ...referenceFindings(file, input),
+    ...referenceCodeFindings(file, input.sourceTexts),
+    ...referenceScriptFindings(file, input.packageScripts),
+  ]
 }
 
 function chainFiles(path: string, agentsByPath: Map<string, CanonFile>): CanonFile[] {
@@ -615,10 +535,7 @@ function contentFindings(classified: Classified, input: CanonLintInput): CanonFi
   if (!kind || kind === 'alias' || kind === 'publication') return []
   const findings: CanonFinding[] = []
   proseFindings(file, findings)
-  findings.push(...referenceFindings(file, input))
-  findings.push(...referenceCodeFindings(file, input.sourceTexts))
-  findings.push(...referenceScriptFindings(file, input.packageScripts))
-  findings.push(...numeralFindings(file))
+  findings.push(...lintCanonReferences(file, input))
   if (kind === 'rule' || kind === 'context' || kind === 'reference') {
     findings.push(...frontmatterFinding(file, kind))
   }

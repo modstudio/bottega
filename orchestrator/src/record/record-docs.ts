@@ -7,6 +7,7 @@ import {
   consumeDocBody,
   type DocDelivery,
   type DocRevisionOp,
+  recordDocLintRefusal,
   refuseDocWrite,
 } from '../doc/doc-write-allowed.ts'
 
@@ -275,6 +276,14 @@ export async function upsertRecordDoc(
   },
 ): Promise<{ id: string; revisionId: string }> {
   return tenant(input, async (tx) => {
+    const existing = await tx`
+      SELECT id, scope, subject, slug, body FROM doc
+      WHERE space_id=${input.spaceId}::uuid
+        AND scope=${input.scope}
+        AND COALESCE(subject, '')=${input.subject ?? ''}
+        AND slug=${input.slug}
+        AND deleted_at IS NULL
+    `
     const facts = await canonFacts(
       tx,
       input.spaceId,
@@ -295,6 +304,19 @@ export async function upsertRecordDoc(
         ...facts,
       }),
     )
+    assertWrite(
+      recordDocLintRefusal(
+        input,
+        existing[0]
+          ? {
+              scope: String(existing[0].scope),
+              subject: existing[0].subject == null ? null : String(existing[0].subject),
+              slug: String(existing[0].slug),
+              body: String(existing[0].body),
+            }
+          : undefined,
+      ),
+    )
     const resolvedProject = await projectId(
       tx,
       input.spaceId,
@@ -303,14 +325,6 @@ export async function upsertRecordDoc(
           ? input.subject
           : null),
     )
-    const existing = await tx`
-      SELECT id FROM doc
-      WHERE space_id=${input.spaceId}::uuid
-        AND scope=${input.scope}
-        AND COALESCE(subject, '')=${input.subject ?? ''}
-        AND slug=${input.slug}
-        AND deleted_at IS NULL
-    `
     const now = input.at ?? new Date().toISOString()
     const docId = existing[0] ? String(existing[0].id) : (input.id ?? newRecordId())
     const op: DocRevisionOp = input.op ?? (existing[0] ? 'set' : 'create')
@@ -661,6 +675,19 @@ export async function importRecordDoc(
       )
     }
     refuseNewerHosted(existing, input.doc)
+    assertWrite(
+      recordDocLintRefusal(
+        input.doc,
+        existing
+          ? {
+              scope: String(existing.scope),
+              subject: existing.subject == null ? null : String(existing.subject),
+              slug: String(existing.slug),
+              body: String(existing.body),
+            }
+          : undefined,
+      ),
+    )
     const resolvedProject = await projectId(tx, input.spaceId, input.doc.projectName)
     const id = existing ? String(existing.id) : newRecordId()
     await writeImportedDoc(tx, {

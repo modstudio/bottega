@@ -41,6 +41,12 @@ export type ImportFiles = {
 
 export type SourceCoverageGap = { file: string; offset: number; text: string }
 
+function fencedSourceArtifact(body: string): string {
+  const longestTildeRun = Math.max(0, ...[...body.matchAll(/~+/g)].map((match) => match[0].length))
+  const fence = '~'.repeat(Math.max(3, longestTildeRun + 1))
+  return `${fence}text\n${body}\n${fence}\n`
+}
+
 const object = (value: unknown): value is Record<string, unknown> =>
   Boolean(value) && typeof value === 'object' && !Array.isArray(value)
 
@@ -997,6 +1003,7 @@ export async function applyImport(
   for (const row of plan.docs)
     await importDoc({
       ...row,
+      body: fencedSourceArtifact(row.body),
       delivery: 'demand',
       ...context,
     })
