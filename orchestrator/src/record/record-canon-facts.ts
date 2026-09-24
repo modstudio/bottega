@@ -43,17 +43,9 @@ async function userWriteRefusal(
   user: Row[],
   changed: Row[],
 ): Promise<string | null> {
-  const targets = await tx`
-    SELECT name FROM project
-    WHERE space_id=${spaceId}::uuid
-      AND retired_at IS NULL
-      AND COALESCE((settings->>'managedContext')::boolean, false)
-    ORDER BY name
-  `
-  const names = targets.length
-    ? targets.map((row: Record<string, unknown>) => String(row.name))
-    : [null]
-  for (const name of names) {
+  const names = await managedCanonProjectNames(tx, spaceId)
+  const targetNames = names.length ? names : [null]
+  for (const name of targetNames) {
     const rows = name
       ? await tx`
           SELECT slug, body FROM doc
@@ -70,6 +62,17 @@ async function userWriteRefusal(
     if (refusal) return refusal
   }
   return null
+}
+
+export async function managedCanonProjectNames(tx: SQL, spaceId: string): Promise<string[]> {
+  const targets = await tx`
+    SELECT name FROM project
+    WHERE space_id=${spaceId}::uuid
+      AND retired_at IS NULL
+      AND managed_context
+    ORDER BY name
+  `
+  return targets.map((row: Record<string, unknown>) => String(row.name))
 }
 
 export async function canonFacts(
