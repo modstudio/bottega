@@ -258,8 +258,9 @@ async function collectSlow(scheduled = false) {
  */
 export function watch(holder: string, onError = (e: Error) => console.error(`hub: ${e.message}`)) {
   let busy = false
+  let stopping = false
   const guard = (work: () => Promise<void>) => async () => {
-    if (busy || !acquireLease(holder)) return
+    if (stopping || busy || !acquireLease(holder)) return
     busy = true
     // A failed collect must not stop the loop or take the server down: the
     // stored data is still the last good reading, which is the point of having
@@ -285,14 +286,16 @@ export function watch(holder: string, onError = (e: Error) => console.error(`hub
   const a = setInterval(() => void fast(), FAST_MS)
   const b = setInterval(() => void slow(), SLOW_MS)
 
-  const stop = () => {
+  const stop = async () => {
+    stopping = true
     clearInterval(a)
     clearInterval(b)
+    while (busy) await Bun.sleep(10)
     releaseLease(holder)
   }
   for (const sig of ['SIGINT', 'SIGTERM'] as const) {
-    process.on(sig, () => {
-      stop()
+    process.on(sig, async () => {
+      await stop()
       process.exit(0)
     })
   }

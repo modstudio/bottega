@@ -5,7 +5,7 @@ import { engagedMs, human } from '../../shared/interval.ts'
 import type { OrchBlockers } from '../../shared/orch-contract.ts'
 import { appStaticPath, resolveAppStatic } from './app-static.ts'
 import { attributeRun } from './attribute.ts'
-import { leaseHolder, watch } from './collect.ts'
+import { leaseHolder, releaseLease, watch } from './collect.ts'
 import { db, enableSchemaReload, nowIso } from './db.ts'
 import { promptLens } from './excerpt.ts'
 import { chainVendorTokens, executionSpans } from './ingest/runs.ts'
@@ -30,12 +30,14 @@ import {
   runRowDisplay,
   type SearchableLiveRun,
 } from './run-display.ts'
+import { startRevisionMonitor } from './service-revision.ts'
 import { projectFlightDone } from './task-projections.ts'
 import { hoursAgo } from './time.ts'
 import { createContext } from './trpc/context.ts'
 import { appRouter } from './trpc/router.ts'
 
 const ORCH_CACHE_TTL_MS = 30_000
+const SERVE_DRAIN_MS = 5_000
 
 type CacheEntry<T> = { checkedAt: number; hasValue: boolean; value?: T; pending?: Promise<T> }
 
@@ -529,7 +531,8 @@ export function serve(port: number) {
   //
   // The lease means this is safe beside the launchd daemon: whichever holds it
   // collects, the other waits, and neither has to know the other exists.
-  if (port !== 0) watch(`serve:${process.pid}`)
+  const holder = `serve:${process.pid}`
+  const stopWatch = port !== 0 ? watch(holder) : async () => {}
   enableSchemaReload((from, to) => {
     console.log(`schema changed: reloading query layer (user_version ${from} -> ${to})`)
   })
@@ -587,6 +590,19 @@ export function serve(port: number) {
       return new Response(file)
     },
   })
+  if (port !== 0) {
+    startRevisionMonitor(
+      'serve',
+      holder,
+      async () => {
+        const drained = server.stop(false)
+        await Promise.race([drained, Bun.sleep(SERVE_DRAIN_MS)])
+        server.stop(true)
+        await stopWatch()
+      },
+      () => releaseLease(holder),
+    )
+  }
   console.log(`hub serving on http://127.0.0.1:${server.port}`)
   return server
 }
