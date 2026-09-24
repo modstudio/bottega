@@ -549,6 +549,24 @@ try {
       WHERE subscription_id=${emailSubscription.id}::uuid`
     if (remainingEmailRecipients.length !== 2)
       throw new Error('unsubscribing an email recipient removed another recipient')
+    await updateHostedReportSubscription(actorUrl, identity, emailSubscription.id, {
+      scope: { kind: 'space' },
+      cadence: 'daily',
+      hour: 8,
+      zone: 'America/New_York',
+      recipientUserIds: [USER],
+      recipientEmails: [],
+      enabled: true,
+    })
+    const memberOnlyRecipients =
+      await admin`SELECT user_id,email FROM hub_report_subscription_recipient
+      WHERE subscription_id=${emailSubscription.id}::uuid`
+    if (
+      memberOnlyRecipients.length !== 1 ||
+      memberOnlyRecipients[0]?.user_id !== USER ||
+      memberOnlyRecipients[0]?.email !== null
+    )
+      throw new Error('updating a subscription to member-only recipients kept an email row')
     await unsubscribeHostedReportSubscription(actorUrl, identity, emailSubscription.id)
     const subscription = await createHostedReportSubscription(actorUrl, identity, {
       scope: { kind: 'project', project: PLATFORM_SLUG },

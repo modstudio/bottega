@@ -472,9 +472,15 @@ export async function updateHostedReportSubscription(
       await tx`INSERT INTO hub_report_subscription_recipient
         (id,space_id,subscription_id,user_id,created_at)
         VALUES (${newRecordId()}::uuid,${identity.spaceId}::uuid,${id}::uuid,${userId}::uuid,now())`
-    await tx`DELETE FROM hub_report_subscription_recipient
-      WHERE space_id=${identity.spaceId}::uuid AND subscription_id=${id}::uuid AND email IS NOT NULL
-      AND NOT (email = ANY(${planned.recipient_emails}::text[]))`
+    if (planned.recipient_emails.length === 0)
+      await tx`DELETE FROM hub_report_subscription_recipient
+        WHERE space_id=${identity.spaceId}::uuid AND subscription_id=${id}::uuid
+          AND email IS NOT NULL`
+    else
+      await tx`DELETE FROM hub_report_subscription_recipient
+        WHERE space_id=${identity.spaceId}::uuid AND subscription_id=${id}::uuid
+          AND email IS NOT NULL
+          AND NOT (email = ANY(${planned.recipient_emails}::text[]))`
     for (const email of planned.recipient_emails)
       await tx`INSERT INTO hub_report_subscription_recipient
         (id,space_id,subscription_id,email,unsubscribe_token,created_at)
