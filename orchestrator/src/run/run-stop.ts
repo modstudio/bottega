@@ -13,6 +13,7 @@ import { db, nowIso, writeTransaction } from '../database/db.ts'
 import { teardownTerminalRunResources } from '../resources/resource-ownership.ts'
 import { branchTip, removeBranch, unmergedBranch } from '../worktree/worktree-remove.ts'
 import type { Worktree } from '../worktree/worktree-types.ts'
+import { ANSWER_CHANNEL_CLI, ANSWERER_KIND_AGENT } from './question-vocabulary.ts'
 import { adoptRunMutation, auditRunMutation, authorizeRunMutation } from './run-authority.ts'
 import { resolveRootFromLastTurn } from './run-liveness.ts'
 
@@ -241,11 +242,19 @@ export async function abandonRun(
     }
     db()
       .query(
-        `UPDATE question SET answered_by=?, answered_at=?, answer='(abandoned)', delivery_pending_at=NULL
+        `UPDATE question SET answered_by=?, answered_at=?, answer='(abandoned)',
+            answerer_kind=?, answer_channel=?, delivery_pending_at=NULL
           WHERE answered_at IS NULL AND run_id IN
             (SELECT id FROM run WHERE id=? OR parent_run_id=?)`,
       )
-      .run(callerSession ?? 'anonymous (no session id)', at, authority.rootId, authority.rootId)
+      .run(
+        callerSession ?? 'anonymous (no session id)',
+        at,
+        ANSWERER_KIND_AGENT,
+        ANSWER_CHANNEL_CLI,
+        authority.rootId,
+        authority.rootId,
+      )
     db()
       .query(
         `UPDATE question SET delivery_pending_at=NULL

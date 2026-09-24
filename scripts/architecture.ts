@@ -57,6 +57,11 @@ export const modules: ArchitectureModule[] = [
     './queries.ts',
   ]),
   module('orchestrator/src/artifact-paths.ts', ['node:path']),
+  module('orchestrator/src/run/question-vocabulary.ts', []),
+  module('orchestrator/src/run/question-delivery.ts', [
+    '../database/db.ts',
+    './question-vocabulary.ts',
+  ]),
   module('orchestrator/src/run/run-answer-liveness.ts', []),
   module('orchestrator/src/close/absent-close-out-residue.ts', [
     '../database/db.ts',
@@ -572,6 +577,7 @@ export const modules: ArchitectureModule[] = [
     './run-liveness.ts',
     './run-outbox.ts',
     './run-process.ts',
+    './question-vocabulary.ts',
     './run-terminal-blockers.ts',
     './run-terminal-precedence.ts',
     '../sandbox/sandbox.ts',

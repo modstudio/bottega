@@ -7,6 +7,13 @@ import { UNSCORED_WHERE } from '../evidence/evidence-query.ts'
 import { type ProcessSample, sampleProcesses } from '../idle-kill.ts'
 import { failureReason, type OutcomeRow, outcomeOf } from '../outcome.ts'
 import { currentRunMemberJoin, liveMemberStall } from './live-run-member.ts'
+import type {
+  AnswerChannel,
+  AnswererKind,
+  AskedVia,
+  QuestionDeliveryMode,
+  QuestionDeliveryOutcome,
+} from './question-vocabulary.ts'
 
 type RunListingFlags = {
   has(name: string): boolean
@@ -196,7 +203,8 @@ export async function runListingCommand(
       ? (
           db()
             .query(
-              `SELECT q.id, q.run_id, q.asked_at, q.answered_at
+              `SELECT q.id, q.run_id, q.asked_at, q.answered_at, q.asked_via,
+                      q.answerer_kind, q.answer_channel
          FROM question q JOIN run owner ON owner.id = q.run_id
         WHERE owner.id = ? OR owner.parent_run_id = ?
         ORDER BY q.id`,
@@ -206,12 +214,32 @@ export async function runListingCommand(
             run_id: number
             asked_at: string
             answered_at: string | null
+            asked_via: AskedVia | null
+            answerer_kind: AnswererKind | null
+            answer_channel: AnswerChannel | null
           }[]
         ).map((q) => ({
           id: q.id,
           run_id: q.run_id,
           asked_at: q.asked_at,
           answered_at: q.answered_at ?? null,
+          asked_via: q.asked_via ?? null,
+          answerer_kind: q.answerer_kind ?? null,
+          answer_channel: q.answer_channel ?? null,
+          deliveries: db()
+            .query(
+              `SELECT id, question_id, run_id, mode, outcome, at, error
+                 FROM question_delivery WHERE question_id=? ORDER BY id`,
+            )
+            .all(q.id) as {
+            id: number
+            question_id: number
+            run_id: number | null
+            mode: QuestionDeliveryMode
+            outcome: QuestionDeliveryOutcome
+            at: string
+            error: string | null
+          }[],
         }))
       : undefined
     return [

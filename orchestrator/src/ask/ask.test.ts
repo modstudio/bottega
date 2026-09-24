@@ -64,9 +64,9 @@ describe('the live ask channel always answers', () => {
     const run = addRun({ agent: 'codex', job: 'implement', status: 'running' })
     await ask({ runId: run, question: 'still open', timeoutMs: 50 })
     const open = db()
-      .query('SELECT COUNT(*) AS n FROM question WHERE run_id = ? AND answered_at IS NULL')
-      .get(run) as { n: number }
-    expect(open.n).toBe(1)
+      .query('SELECT asked_via FROM question WHERE run_id = ? AND answered_at IS NULL')
+      .get(run)
+    expect(open).toEqual({ asked_via: 'live' })
   })
 
   test('missing required text instructs the worker without recording or returning an error', async () => {
