@@ -150,7 +150,14 @@ export function registerInvitationAuthProofs(
 
 function registerNewInviteeInvitationProofs(actorUrl: string, password: string): void {
   const createInvitee = async (email: string) => {
-    const auth = recordAuth(actorUrl, process.env, process.env.RECORD_AUTH_DATABASE_URL)
+    const noMail = async () => {}
+    const auth = recordAuth(
+      actorUrl,
+      process.env,
+      process.env.RECORD_AUTH_DATABASE_URL,
+      noMail,
+      noMail,
+    )
     const owner = await auth.api.signInEmail({ body: { email: SIGN_UP_AUTH.emailA, password } })
     if (!owner.token) throw new Error('owner sign-in has no bearer token')
     const ownerSession = await auth.api.getSession({ headers: bearerHeaders(owner.token) })
@@ -161,7 +168,7 @@ function registerNewInviteeInvitationProofs(actorUrl: string, password: string):
       body: { email, role: 'member', organizationId: spaceId },
     })
     const signup = await auth.api.signUpEmail({
-      body: { email, name: 'New Invitee', password: SIGN_UP_AUTH.password },
+      body: { email, name: `New Invitee ${email}`, password: SIGN_UP_AUTH.password },
     })
     if (!signup.token) throw new Error('invited signup has no bearer token')
     expect(signup.user.emailVerified).toBe(false)
