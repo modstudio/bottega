@@ -266,6 +266,7 @@ export const modules: ArchitectureModule[] = [
     './measures.ts',
     './report-delivery.ts',
     './report-renderer.ts',
+    './hosted-task-reference.ts',
     './hosted-tasks.ts',
   ]),
   module('orchestrator/src/postgres/postgres-migrate.ts', []),

@@ -22,6 +22,7 @@ export type HostedNote = {
   stale_at: string | null
   stale_reason: string | null
   promoted_task: string | null
+  promoted_task_id?: string | null
   updated_at: string
   deleted_at: string | null
 }
@@ -184,13 +185,20 @@ export async function patchHostedNote(
       AND number=${number} AND deleted_at IS NULL FOR UPDATE`,
     )[0]
     if (!current) return null
+    const promotedTask =
+      changes.promoted_task === undefined ? current.promoted_task : changes.promoted_task
+    const promotedTaskId = promotedTask
+      ? (rows<{ id: string }>(
+          await tx`SELECT id FROM hub_task WHERE space_id=${identity.spaceId}::uuid AND key=${promotedTask}`,
+        )[0]?.id ?? null)
+      : null
     return rows<HostedNote>(
       await tx`UPDATE hub_note SET text=${changes.text ?? current.text},
       area=${changes.area === undefined ? current.area : changes.area},anchors=${changes.anchors ?? current.anchors},
       sightings=${changes.sightings ?? current.sightings},last_seen_at=${changes.last_seen_at ?? current.last_seen_at}::timestamptz,
       stale_at=${changes.stale_at === undefined ? current.stale_at : changes.stale_at}::timestamptz,
       stale_reason=${changes.stale_reason === undefined ? current.stale_reason : changes.stale_reason},
-      promoted_task=${changes.promoted_task === undefined ? current.promoted_task : changes.promoted_task},updated_at=now()
+      promoted_task=${promotedTask},promoted_task_id=${promotedTaskId}::uuid,updated_at=now()
       WHERE space_id=${identity.spaceId}::uuid AND number=${number} RETURNING *,number::int number`,
     )[0]!
   })
@@ -252,7 +260,7 @@ export async function promoteHostedNote(
       body: `${note.text}\n\nSIGHTINGS (${note.sightings})\n${evidence}`,
     })
     const promoted = rows<HostedNote>(
-      await tx`UPDATE hub_note SET promoted_task=${task.key},last_seen_at=now(),updated_at=now()
+      await tx`UPDATE hub_note SET promoted_task=${task.key},promoted_task_id=${task.id}::uuid,last_seen_at=now(),updated_at=now()
       WHERE space_id=${identity.spaceId}::uuid AND number=${number} RETURNING *,number::int number`,
     )[0]!
     return { note: promoted, task }
@@ -352,18 +360,26 @@ export async function mirrorHostedNotes(
     await lockNoteNumbers(tx, identity)
     const noteIds: Array<{ number: number; id: string }> = []
     for (const row of body.notes) {
+      const promotedTaskId = row.promoted_task
+        ? (rows<{ id: string }>(
+            await tx`SELECT id FROM hub_task WHERE space_id=${identity.spaceId}::uuid
+              AND (id=${row.promoted_task_id ?? null}::uuid OR key=${row.promoted_task})
+              ORDER BY (id=${row.promoted_task_id ?? null}::uuid) DESC LIMIT 1`,
+          )[0]?.id ?? null)
+        : null
       const inserted = rows<{ number: number; id: string }>(
         await tx`INSERT INTO hub_note
       (id,space_id,project_name,number,project,text,area,anchors,sightings,created_at,last_seen_at,
-       stale_at,stale_reason,promoted_task,updated_at,deleted_at)
+       stale_at,stale_reason,promoted_task,promoted_task_id,updated_at,deleted_at)
       VALUES (${row.id}::uuid,${identity.spaceId}::uuid,${row.project_name},${row.number},${row.project},
        ${row.text},${row.area},${row.anchors},${row.sightings},${row.created_at}::timestamptz,
-       ${row.last_seen_at}::timestamptz,${row.stale_at}::timestamptz,${row.stale_reason},${row.promoted_task},
+       ${row.last_seen_at}::timestamptz,${row.stale_at}::timestamptz,${row.stale_reason},${row.promoted_task},${promotedTaskId}::uuid,
        ${row.updated_at}::timestamptz,${row.deleted_at}::timestamptz)
       ON CONFLICT(space_id,number) DO UPDATE SET project_name=excluded.project_name,project=excluded.project,
        text=excluded.text,area=excluded.area,anchors=excluded.anchors,sightings=excluded.sightings,
        created_at=excluded.created_at,last_seen_at=excluded.last_seen_at,stale_at=excluded.stale_at,
-       stale_reason=excluded.stale_reason,promoted_task=excluded.promoted_task,updated_at=excluded.updated_at,
+       stale_reason=excluded.stale_reason,promoted_task=excluded.promoted_task,
+       promoted_task_id=excluded.promoted_task_id,updated_at=excluded.updated_at,
        deleted_at=excluded.deleted_at RETURNING number::int number,id`,
       )[0]!
       noteIds.push(inserted)

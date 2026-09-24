@@ -20,6 +20,7 @@ export async function pushNotes(options: NoteClientOptions & { dryRun?: boolean 
       stale_at: row.stale_at as string | null,
       stale_reason: row.stale_reason as string | null,
       promoted_task: row.promoted_task as string | null,
+      promoted_task_id: row.promoted_task_record_id as string | null,
       updated_at: row.last_seen_at as string,
       deleted_at: null,
     }))

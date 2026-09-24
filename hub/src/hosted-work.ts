@@ -1,5 +1,6 @@
 import { engagedMs, human } from '../../shared/interval.ts'
 import { selectHostedReportSubscriptions } from './hosted-reports.ts'
+import { hostedTaskJoin } from './hosted-task-reference.ts'
 import { type TaskIdentity, withHostedTenant } from './hosted-tasks.ts'
 import { computeMeasures, type MeasureInterval, type MeasureStatusEvent } from './measures.ts'
 import {
@@ -100,7 +101,7 @@ async function windowFacts(databaseUrl: string, identity: TaskIdentity, from: st
     }>(
       await tx`
       SELECT e.space_id,t.key,t.project,t.title,e.at,e.to_status FROM hub_task_status_event e
-      JOIN hub_task t ON t.space_id=e.space_id AND t.key=e.task_key
+      JOIN hub_task t ON ${hostedTaskJoin(tx, 'e')}
       WHERE e.deleted_at IS NULL AND t.deleted_at IS NULL
         AND e.at >= ${from}::timestamptz AND e.at < ${to}::timestamptz AND e.to_status='done'
       ORDER BY e.at DESC`,
@@ -294,20 +295,23 @@ export async function hostedTaskDetail(
     if (!task) return null
     const comments = rows<Record<string, unknown>>(
       await tx`
-      SELECT id,body,created_at FROM hub_task_comment WHERE space_id=${spaceId}::uuid
-        AND task_key=${key} AND deleted_at IS NULL ORDER BY created_at,id`,
+      SELECT c.id,c.body,c.created_at FROM hub_task_comment c JOIN hub_task t ON ${hostedTaskJoin(tx, 'c')}
+        WHERE t.id=${String(task.id)}::uuid AND c.space_id=${spaceId}::uuid
+        AND c.deleted_at IS NULL ORDER BY c.created_at,c.id`,
     )
     const documents = rows<Record<string, unknown>>(
       await tx`
-      SELECT id,role,title,body,version,created_at,updated_at FROM hub_task_document
-      WHERE space_id=${spaceId}::uuid AND task_key=${key} AND deleted_at IS NULL
-      ORDER BY created_at,id`,
+      SELECT d.id,d.role,d.title,d.body,d.version,d.created_at,d.updated_at
+      FROM hub_task_document d JOIN hub_task t ON ${hostedTaskJoin(tx, 'd')}
+      WHERE t.id=${String(task.id)}::uuid AND d.space_id=${spaceId}::uuid AND d.deleted_at IS NULL
+      ORDER BY d.created_at,d.id`,
     )
     const statusHistory = rows<Record<string, unknown>>(
       await tx`
-      SELECT id,at,from_status,to_status FROM hub_task_status_event
-      WHERE space_id=${spaceId}::uuid AND task_key=${key} AND deleted_at IS NULL
-      ORDER BY at DESC,id`,
+      SELECT e.id,e.at,e.from_status,e.to_status FROM hub_task_status_event e
+      JOIN hub_task t ON ${hostedTaskJoin(tx, 'e')}
+      WHERE t.id=${String(task.id)}::uuid AND e.space_id=${spaceId}::uuid AND e.deleted_at IS NULL
+      ORDER BY e.at DESC,e.id`,
     )
     const intervals = rows<RawInterval & { user_id: string | null }>(
       await tx`

@@ -1,3 +1,4 @@
+import { hostedTaskJoin } from './hosted-task-reference.ts'
 import { type TaskIdentity, withHostedTenant } from './hosted-tasks.ts'
 import {
   computeMeasures,
@@ -69,7 +70,7 @@ export async function loadHostedMeasureRows(
       await tx`
       SELECT t.id AS task_id, e.task_key, t.project, e.at, e.to_status
       FROM hub_task_status_event e
-      JOIN hub_task t ON t.space_id=e.space_id AND t.key=e.task_key
+      JOIN hub_task t ON ${hostedTaskJoin(tx, 'e')}
       WHERE e.deleted_at IS NULL AND t.deleted_at IS NULL
         AND e.at >= ${window.from}::timestamptz AND e.at < ${window.to}::timestamptz
         AND e.to_status='done'`,
