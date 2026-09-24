@@ -25,6 +25,7 @@ import { lintStoredDoc } from './doc-lint-adapter.ts'
 import {
   consumeDocBody,
   type DocRevisionOp,
+  decideDocRevisionWrite,
   globalCanonWriteTargets,
   refuseCanonWrite,
   refuseOversizedInject,
@@ -43,11 +44,12 @@ export type Doc = {
   created_at: string
   updated_at: string
   record_id: string | null
+  revision: string | null
 }
 
 export type DocMetadata = Pick<
   Doc,
-  'id' | 'scope' | 'subject' | 'slug' | 'title' | 'updated_at'
+  'id' | 'scope' | 'subject' | 'slug' | 'title' | 'updated_at' | 'revision'
 > & {
   bytes: number
 }
@@ -82,6 +84,7 @@ export type DocWriteContext = {
   /** A complete preflighted set used only while bootstrapping an empty canon store. */
   canonSet?: CanonRow[]
   allowCanonBootstrap?: boolean
+  expectedRevision?: string
 }
 
 function assertInjectSize(input: {
@@ -135,6 +138,7 @@ function assertInjectSize(input: {
         created_at: '',
         updated_at: '',
         record_id: null,
+        revision: null,
       }
       const docs = [...selected, proposed]
       const packBytes = Buffer.byteLength(docsMarkdown(docs))
@@ -266,7 +270,8 @@ export function listDocs(filters: { scope?: string; subject?: string | null } = 
   }
   return db()
     .query(
-      `SELECT * FROM doc${where.length ? ` WHERE ${where.join(' AND ')}` : ''} ` +
+      `SELECT d.*, (SELECT r.record_id FROM doc_revision r WHERE r.doc_id=d.id ORDER BY r.id DESC LIMIT 1) AS revision
+       FROM doc d${where.length ? ` WHERE ${where.join(' AND ')}` : ''} ` +
         "ORDER BY scope, COALESCE(subject, ''), slug",
     )
     .all(...values) as Doc[]
@@ -317,8 +322,10 @@ export function listDocMetadata(filters: DocListFilters = {}): DocMetadata[] {
     : "scope, COALESCE(subject, ''), slug"
   return db()
     .query(
-      `SELECT id, scope, subject, slug, title, length(CAST(body AS BLOB)) AS bytes, updated_at
-     FROM doc${where.length ? ` WHERE ${where.join(' AND ')}` : ''} ORDER BY ${order}`,
+      `SELECT d.id, d.scope, d.subject, d.slug, d.title, length(CAST(d.body AS BLOB)) AS bytes,
+              d.updated_at,
+              (SELECT r.record_id FROM doc_revision r WHERE r.doc_id=d.id ORDER BY r.id DESC LIMIT 1) AS revision
+       FROM doc d${where.length ? ` WHERE ${where.join(' AND ')}` : ''} ORDER BY ${order}`,
     )
     .all(...values) as DocMetadata[]
 }
@@ -326,7 +333,10 @@ export function listDocMetadata(filters: DocListFilters = {}): DocMetadata[] {
 export function getDoc(scope: string, subject: string | null, slug: string): Doc | null {
   validScope(scope)
   return db()
-    .query('SELECT * FROM doc WHERE scope = ? AND subject IS ? AND slug = ?')
+    .query(
+      `SELECT d.*, (SELECT r.record_id FROM doc_revision r WHERE r.doc_id=d.id ORDER BY r.id DESC LIMIT 1) AS revision
+       FROM doc d WHERE scope = ? AND subject IS ? AND slug = ?`,
+    )
     .get(scope, subject, slug) as Doc | null
 }
 
@@ -461,6 +471,13 @@ async function setDocWithOp(input: DocWriteInput, requestedOp?: 'import'): Promi
   validate(input.scope, input.subject, input.slug)
   const identity = writeIdentity(input)
   const prior = getDoc(input.scope, input.subject, input.slug)
+  const revisionDecision = decideDocRevisionWrite({
+    expected: input.expectedRevision,
+    current: prior?.revision ?? null,
+    isCreate: prior === null,
+    scope: input.scope,
+  })
+  if (!revisionDecision.allow) throw new Error(revisionDecision.reason)
   const delivery =
     input.scope === 'canon' ? 'demand' : (input.delivery ?? prior?.delivery ?? 'inject')
   assertDocWriteAllowed({ ...input, delivery })
@@ -481,9 +498,17 @@ async function setDocWithOp(input: DocWriteInput, requestedOp?: 'import'): Promi
     forceInject: input.forceInject,
     op: requestedOp ?? (prior ? 'set' : 'create'),
     id: prior?.record_id ?? undefined,
+    expectedRevision: input.expectedRevision,
   })
   return writeTransaction(() => {
     const existing = getDoc(input.scope, input.subject, input.slug)
+    const localDecision = decideDocRevisionWrite({
+      expected: input.expectedRevision,
+      current: existing?.revision ?? null,
+      isCreate: existing === null,
+      scope: input.scope,
+    })
+    if (!localDecision.allow) throw new Error(localDecision.reason)
     const at = nowIso()
     let doc: Doc
     if (existing) {
@@ -499,31 +524,29 @@ async function setDocWithOp(input: DocWriteInput, requestedOp?: 'import'): Promi
         )
       doc = getDoc(input.scope, input.subject, input.slug)!
     } else {
-      const id = (
-        db()
-          .query(
-            `INSERT INTO doc (scope, subject, project_id, slug, title, body, delivery, created_at, updated_at, record_id)
+      db()
+        .query(
+          `INSERT INTO doc (scope, subject, project_id, slug, title, body, delivery, created_at, updated_at, record_id)
          VALUES (?,?,?,?,?,?,?,?,?,?) RETURNING id`,
-          )
-          .get(
-            input.scope,
-            input.subject,
-            input.scope === 'project' || (input.scope === 'canon' && input.subject)
-              ? projectByName(input.subject!)!.id
-              : null,
-            input.slug,
-            input.title,
-            input.body,
-            input.scope === 'canon' ? 'demand' : (input.delivery ?? 'inject'),
-            at,
-            at,
-            hosted.id,
-          ) as { id: number }
-      ).id
-      doc = db().query('SELECT * FROM doc WHERE id=?').get(id) as Doc
+        )
+        .get(
+          input.scope,
+          input.subject,
+          input.scope === 'project' || (input.scope === 'canon' && input.subject)
+            ? projectByName(input.subject!)!.id
+            : null,
+          input.slug,
+          input.title,
+          input.body,
+          input.scope === 'canon' ? 'demand' : (input.delivery ?? 'inject'),
+          at,
+          at,
+          hosted.id,
+        )
+      doc = getDoc(input.scope, input.subject, input.slug)!
     }
     insertRevision(doc, requestedOp ?? (existing ? 'set' : 'create'), input, at, hosted.revisionId)
-    return doc
+    return getDoc(input.scope, input.subject, input.slug)!
   })
 }
 
@@ -661,7 +684,7 @@ export async function consumeDoc(
       .run(patched.body, consumedAt, recordId, doc.id)
     const result = getDoc(scope, subject, slug)!
     insertRevision(result, 'consume', context, consumedAt, hosted.revisionId)
-    return { ...result, already_consumed: false }
+    return { ...getDoc(scope, subject, slug)!, already_consumed: false }
   })
 }
 
@@ -891,6 +914,7 @@ export async function importDocs(dir: string, context: DocWriteContext): Promise
             ...parsed,
             delivery: importedDelivery(scope),
             ...context,
+            expectedRevision: getDoc(scope, subject, file.name.slice(0, -3))?.revision ?? undefined,
           },
           'import',
         )
@@ -1022,7 +1046,7 @@ export async function restoreDoc(
       doc = getDoc(scope, subject, slug)!
     }
     insertRevision(doc, 'restore', context, at, hosted.revisionId)
-    return doc
+    return getDoc(scope, subject, slug)!
   })
 }
 

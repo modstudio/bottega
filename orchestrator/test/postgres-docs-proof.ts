@@ -184,6 +184,44 @@ export async function proveHostedDocs(input: {
   const created = (await put.json()) as { id: string; revisionId: string }
   expect(created.id).toBeString()
   expect(created.revisionId).toBeString()
+  const updated = await fetch(`${input.origin}/v1/docs`, {
+    method: 'PUT',
+    headers,
+    body: JSON.stringify({
+      scope: 'machine',
+      subject: null,
+      slug: 'proof',
+      title: 'Proof',
+      body: 'hosted update',
+      delivery: 'inject',
+      reason: 'postgres compare-and-set proof',
+      author: 'proof',
+      expectedRevision: created.revisionId,
+    }),
+  })
+  expect(updated.status).toBe(200)
+  const updatedIds = (await updated.json()) as { revisionId: string }
+  const stale = await fetch(`${input.origin}/v1/docs`, {
+    method: 'PUT',
+    headers,
+    body: JSON.stringify({
+      scope: 'machine',
+      subject: null,
+      slug: 'proof',
+      title: 'Proof',
+      body: 'stale overwrite',
+      delivery: 'inject',
+      reason: 'postgres stale compare-and-set proof',
+      author: 'proof',
+      expectedRevision: created.revisionId,
+    }),
+  })
+  expect(stale.status).toBe(409)
+  expect(await stale.json()).toMatchObject({
+    error: expect.stringContaining(
+      `expected revision ${created.revisionId}, current revision ${updatedIds.revisionId}`,
+    ),
+  })
   await selectSpace(identity.personalSpaceId)
   const personalDefault = await fetch(`${input.origin}/v1/docs?scope=machine`, { headers })
   expect(personalDefault.status).toBe(200)

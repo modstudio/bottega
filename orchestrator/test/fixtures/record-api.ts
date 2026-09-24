@@ -1,5 +1,9 @@
 import { newRecordId } from '../../../shared/record/schema.ts'
-import { consumeDocBody, refuseDocWrite } from '../../src/doc/doc-write-allowed.ts'
+import {
+  consumeDocBody,
+  decideDocRevisionWrite,
+  refuseDocWrite,
+} from '../../src/doc/doc-write-allowed.ts'
 import type {
   RecordApiClient,
   RecordDocImportInput,
@@ -114,7 +118,13 @@ export function createMemoryRecordApiClient(): RecordApiClient {
           .filter((doc) => doc.scope === 'canon' && doc.subject === null && !doc.deletedAt)
           .map((doc) => doc.slug),
         projectCanonSlugs: [...docs.values()]
-          .filter((doc) => doc.scope === 'canon' && doc.subject === input.subject && !doc.deletedAt)
+          .filter(
+            (doc) =>
+              doc.scope === 'canon' &&
+              doc.subject !== null &&
+              doc.subject === input.subject &&
+              !doc.deletedAt,
+          )
           .map((doc) => doc.slug),
         currentCanon: [],
         nextCanon: [{ slug: input.slug, body: input.body }],
@@ -123,6 +133,14 @@ export function createMemoryRecordApiClient(): RecordApiClient {
       if (refusal) throw new Error(refusal)
       const now = input.at ?? new Date().toISOString()
       const existing = live(input.scope, input.subject, input.slug)
+      const current = existing ? (revisions.get(existing.id)?.at(-1)?.id ?? null) : null
+      const revisionDecision = decideDocRevisionWrite({
+        expected: input.expectedRevision,
+        current,
+        isCreate: !existing,
+        scope: input.scope,
+      })
+      if (!revisionDecision.allow) throw new Error(revisionDecision.reason)
       const id = existing?.id ?? input.id ?? newRecordId()
       const revisionId = input.revisionId ?? newRecordId()
       docs.set(id, {

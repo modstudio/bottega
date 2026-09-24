@@ -24,6 +24,54 @@ import {
 } from './docs.ts'
 
 describe('scoped operator docs', () => {
+  test('canon updates compare the exposed hosted revision in both local write checks', async () => {
+    const created = await writeDoc({
+      scope: 'canon',
+      subject: null,
+      slug: '.agents/rules/revision-token.md',
+      title: 'Revision token',
+      body: '---\ndescription: Revision token\n---\n\nCurrent rule.\n',
+      reason: 'create revision token fixture',
+      allowCanonBootstrap: true,
+    })
+    expect(created.revision).toMatch(/^[0-9a-f-]{36}$/)
+    expect(listDocs({ scope: 'canon' })[0]?.revision).toBe(created.revision)
+    expect(listDocMetadata({ scope: 'canon' })[0]?.revision).toBe(created.revision)
+
+    await expect(
+      writeDoc({
+        scope: 'canon',
+        subject: null,
+        slug: created.slug,
+        title: created.title,
+        body: `${created.body}\nMore current guidance.\n`,
+        reason: 'missing token',
+      }),
+    ).rejects.toThrow(`current revision ${created.revision}; pass --expect ${created.revision}`)
+
+    const updated = await writeDoc({
+      scope: 'canon',
+      subject: null,
+      slug: created.slug,
+      title: created.title,
+      body: `${created.body}\nMore current guidance.\n`,
+      reason: 'matching token',
+      expectedRevision: created.revision!,
+    })
+    expect(updated.revision).not.toBe(created.revision)
+    await expect(
+      writeDoc({
+        scope: 'canon',
+        subject: null,
+        slug: created.slug,
+        title: created.title,
+        body: `${updated.body}\nLatest guidance.\n`,
+        reason: 'stale token',
+        expectedRevision: created.revision!,
+      }),
+    ).rejects.toThrow(`expected revision ${created.revision}, current revision ${updated.revision}`)
+  })
+
   test('set refuses lint findings without changing the store', async () => {
     await expect(
       setDoc({

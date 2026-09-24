@@ -94,6 +94,7 @@ type Deps = {
       at?: string
       id?: string
       revisionId?: string
+      expectedRevision?: string
     },
   ): Promise<{ id: string; revisionId: string }>
   importDoc(input: Tenant & RecordDocImportInput): Promise<{ id: string; revisionIds: string[] }>
@@ -817,6 +818,7 @@ export function recordApi(deps: Deps): Hono<ApiEnvironment> {
         at: isoSchema.optional(),
         id: z.string().uuid().optional(),
         revisionId: z.string().uuid().optional(),
+        expectedRevision: z.string().uuid().optional(),
       })
       .safeParse(await context.req.json().catch(() => null))
     if (!body.success) return context.json({ error: 'invalid doc upsert' }, 400)

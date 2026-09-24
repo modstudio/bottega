@@ -7,6 +7,7 @@ import {
   consumeDocBody,
   type DocDelivery,
   type DocRevisionOp,
+  decideDocRevisionWrite,
   recordDocLintRefusal,
   refuseDocWrite,
 } from '../doc/doc-write-allowed.ts'
@@ -276,6 +277,7 @@ export async function upsertRecordDoc(
     at?: string
     id?: string
     revisionId?: string
+    expectedRevision?: string
   },
 ): Promise<{ id: string; revisionId: string }> {
   return tenant(input, async (tx) => {
@@ -286,7 +288,22 @@ export async function upsertRecordDoc(
         AND COALESCE(subject, '')=${input.subject ?? ''}
         AND slug=${input.slug}
         AND deleted_at IS NULL
+      FOR UPDATE
     `
+    const currentRevision = existing[0]
+      ? await tx`
+          SELECT id FROM doc_revision
+          WHERE space_id=${input.spaceId}::uuid AND doc_id=${String(existing[0].id)}::uuid
+          ORDER BY at DESC, id DESC LIMIT 1
+        `
+      : []
+    const revisionDecision = decideDocRevisionWrite({
+      expected: input.expectedRevision,
+      current: currentRevision[0] ? String(currentRevision[0].id) : null,
+      isCreate: !existing[0],
+      scope: input.scope,
+    })
+    if (!revisionDecision.allow) throw new RecordDocError(revisionDecision.reason, 409)
     const facts = await canonFacts(
       tx,
       input.spaceId,

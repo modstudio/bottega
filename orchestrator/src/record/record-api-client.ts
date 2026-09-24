@@ -25,6 +25,7 @@ export type RecordDocUpsertInput = {
   at?: string
   id?: string
   revisionId?: string
+  expectedRevision?: string
 }
 
 export type RecordDocImportInput = {
