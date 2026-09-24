@@ -13,6 +13,7 @@ import { reviewCalibration, reviewCalibrationFleet } from './review-calibration.
 import { coverageAudit } from './review-coverage.ts'
 import { REVIEW_WINDOW } from './review-evidence-sql.ts'
 import { reviewPins } from './review-pins.ts'
+import { reviewTrunkRef } from './review-target.ts'
 import {
   classifyReviewTier,
   diffNumstat,
@@ -32,8 +33,8 @@ import { REVIEW_SEVERITY } from './review-vocabulary.ts'
 type ReviewFlags = { has(name: string): boolean; flag(name: string): string | undefined }
 type ReviewPresentation = { log(...values: unknown[]): void; usage(): never }
 
-function resolveTierRangeInRepo(repo: string, from: string, to: string) {
-  const endpoint = (ref: string): TierRangeEndpoint => {
+function resolveTierRangeInRepo(repo: string, from: string, to: string, fromLabel = from) {
+  const endpoint = (ref: string, label = ref): TierRangeEndpoint => {
     const peeled = Bun.spawnSync(['git', 'rev-parse', '--verify', '--quiet', `${ref}^{commit}`], {
       cwd: repo,
       env: targetGitEnvironment(repo),
@@ -41,7 +42,7 @@ function resolveTierRangeInRepo(repo: string, from: string, to: string) {
       stderr: 'pipe',
     })
     if (peeled.exitCode === 0) {
-      return { ref, commit: peeled.stdout.toString().trim(), kind: 'commit' }
+      return { ref: label, commit: peeled.stdout.toString().trim(), kind: 'commit' }
     }
     const object = Bun.spawnSync(['git', 'cat-file', '-t', ref], {
       cwd: repo,
@@ -49,11 +50,11 @@ function resolveTierRangeInRepo(repo: string, from: string, to: string) {
       stdout: 'pipe',
       stderr: 'pipe',
     })
-    if (object.exitCode !== 0) return { ref, commit: null, kind: 'unresolvable' }
+    if (object.exitCode !== 0) return { ref: label, commit: null, kind: 'unresolvable' }
     const kind = object.stdout.toString().trim()
-    return { ref, commit: null, kind: kind === 'tree' ? 'tree' : 'other' }
+    return { ref: label, commit: null, kind: kind === 'tree' ? 'tree' : 'other' }
   }
-  const fromEndpoint = endpoint(from)
+  const fromEndpoint = endpoint(from, fromLabel)
   const toEndpoint = endpoint(to)
   const base =
     fromEndpoint.kind === 'commit' && toEndpoint.kind === 'commit'
@@ -142,7 +143,17 @@ function resolveTierTarget(value: string): { repo: string; from: string; to: str
   }
   const trunk = typeof project.settings.trunk === 'string' ? project.settings.trunk.trim() : ''
   if (!trunk) throw new Error(`project ${project.name} has no trunk configured`)
-  return { repo, ...resolveTierRangeInRepo(repo, trunk, value) }
+  const remoteTrackingRefExists =
+    Bun.spawnSync(['git', 'show-ref', '--verify', '--quiet', `refs/remotes/origin/${trunk}`], {
+      cwd: repo,
+      env: targetGitEnvironment(repo),
+      stdout: 'pipe',
+      stderr: 'pipe',
+    }).exitCode === 0
+  return {
+    repo,
+    ...resolveTierRangeInRepo(repo, reviewTrunkRef(remoteTrackingRefExists, trunk), value, trunk),
+  }
 }
 
 export async function reviewCommand(

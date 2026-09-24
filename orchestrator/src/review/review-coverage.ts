@@ -3,6 +3,7 @@ import type { Database } from 'bun:sqlite'
 import { db } from '../database/db.ts'
 import { changeIdentity } from './change-identity.ts'
 import { git, reviewGit, targetGitEnvironment } from './review-pins.ts'
+import { reviewTrunkRef } from './review-target.ts'
 import type {
   CoverageGitResult,
   CoverageGitRunner,
@@ -91,7 +92,7 @@ function changedPaths(runner: CoverageGitRunner, from: string, to: string): Set<
   return new Set(output ? output.split('\n') : [])
 }
 
-function reviewCoverageVerdict(
+export function reviewCoverageVerdict(
   repoRoot: string,
   review: ReviewCoverageInput,
   tip: string,
@@ -147,12 +148,19 @@ function reviewCoverageVerdict(
     }
   }
   const oldBase = oldBaseResult.out
-  const newBaseArgs = ['merge-base', tip, trunk]
+  const remoteTrackingRefExists = runner([
+    'show-ref',
+    '--verify',
+    '--quiet',
+    `refs/remotes/origin/${trunk}`,
+  ]).ok
+  const newBaseArgs = ['merge-base', tip, reviewTrunkRef(remoteTrackingRefExists, trunk)]
+  const newBaseDisplayArgs = ['merge-base', tip, trunk]
   const newBaseResult = runner(newBaseArgs)
   if (!newBaseResult.ok) {
     return {
       kind: 'invalid',
-      reason: `git ${newBaseArgs.join(' ')} failed: ${newBaseResult.err}`,
+      reason: `git ${newBaseDisplayArgs.join(' ')} failed: ${newBaseResult.err}`,
       resolution: resolved.resolution,
     }
   }

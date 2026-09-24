@@ -10,9 +10,16 @@ import { resolveBase } from '../worktree/worktree-caller.ts'
 
 const EXPLICIT_REVIEW_JOBS = new Set(['review-lens', 'safety', 'craft'])
 
+/** Prefer the last-fetched trunk when it exists; otherwise use the local trunk. */
+export function reviewTrunkRef(remoteTrackingRefExists: boolean, trunk: string): string {
+  return remoteTrackingRefExists ? `origin/${trunk}` : trunk
+}
+
 /** Trunk merge-base of a reviewed commit. Same resolution for --review and implicit lenses. */
 function resolveReviewMergeBase(cwd: string, commit: string, trunk: string): string | null {
-  const trunkCommit = resolveBase(cwd, `${trunk}^{commit}`)
+  const remoteTrackingRefExists =
+    gitContext(cwd, 'show-ref', '--verify', `refs/remotes/origin/${trunk}`) !== null
+  const trunkCommit = resolveBase(cwd, `${reviewTrunkRef(remoteTrackingRefExists, trunk)}^{commit}`)
   return gitContext(cwd, 'merge-base', commit, trunkCommit)
 }
 

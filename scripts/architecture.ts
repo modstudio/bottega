@@ -443,6 +443,7 @@ export const modules: ArchitectureModule[] = [
     './change-identity.ts',
     './review-evidence-sql.ts',
     './review-pins.ts',
+    './review-target.ts',
     './review-types.ts',
   ]),
   module('orchestrator/src/review/review-coverage-match.ts', []),
