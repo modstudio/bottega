@@ -78,6 +78,13 @@ export type TrackerResult = {
   error?: string
 }
 
+export function trackerLegError(results: TrackerResult[]): string | null {
+  const failures = results.filter((result) => result.error)
+  return failures.length
+    ? failures.map((result) => `${result.project}: ${result.error}`).join('; ')
+    : null
+}
+
 export async function trackerCredentials(
   project: Project,
   env: string,
@@ -89,7 +96,10 @@ export async function trackerCredentials(
   try {
     return { project, credentials: await read(env) }
   } catch (cause) {
-    return { project, error: cause instanceof Error ? cause.message : String(cause) }
+    return {
+      project,
+      error: cause instanceof Error ? cause.message : String(cause),
+    }
   }
 }
 
@@ -536,7 +546,12 @@ export async function ingestTrackers(
       }> => {
         if ('error' in tracker) {
           return {
-            result: { project: tracker.project, tasks: 0, changed: 0, error: tracker.error },
+            result: {
+              project: tracker.project,
+              tasks: 0,
+              changed: 0,
+              error: tracker.error,
+            },
             filled: 0,
           }
         }
@@ -544,7 +559,12 @@ export async function ingestTrackers(
         const resolved = await trackerCredentials(s.project, s.env)
         if ('error' in resolved) {
           return {
-            result: { project: s.project, tasks: 0, changed: 0, error: resolved.error },
+            result: {
+              project: s.project,
+              tasks: 0,
+              changed: 0,
+              error: resolved.error,
+            },
             filled: 0,
           }
         }
@@ -625,15 +645,24 @@ export async function ingestTrackers(
   // fetching everything would cost.
   const filled = results.reduce((sum, item) => sum + item.filled, 0)
   const out = results.map((item) => item.result)
-  if (filled) out.push({ project: 'backfill', tasks: filled, changed: 0, activity: true })
+  if (filled)
+    out.push({
+      project: 'backfill',
+      tasks: filled,
+      changed: 0,
+      activity: true,
+    })
 
   mirror.reportSkipped()
 
-  writeTransaction((conn) =>
-    conn
-      .query(`INSERT INTO setting (key, value) VALUES ('collect.trackers.at', ?)
-                ON CONFLICT(key) DO UPDATE SET value = excluded.value`)
-      .run(JSON.stringify(at)),
-  )
+  if (!trackerLegError(out))
+    writeTransaction((conn) =>
+      conn
+        .query(
+          `INSERT INTO setting (key, value) VALUES ('collect.trackers.at', ?)
+                  ON CONFLICT(key) DO UPDATE SET value = excluded.value`,
+        )
+        .run(JSON.stringify(at)),
+    )
   return out
 }

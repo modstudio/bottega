@@ -1,3 +1,4 @@
+import { jsonBody } from './http-json.ts'
 import { RECORD_SIGN_IN_REMEDY } from './record-remedies.ts'
 import { readRecordSessionToken } from './record-session.ts'
 
@@ -7,13 +8,20 @@ export class ConfigClientError extends Error {
   readonly reason: ConfigClientErrorReason
   readonly route: string
   readonly status?: number
-  constructor(reason: ConfigClientErrorReason, route: string, status?: number) {
+  constructor(
+    reason: ConfigClientErrorReason,
+    route: string,
+    status?: number,
+    details?: { url: string; contentType: string },
+  ) {
     super(
       reason === 'not-configured'
         ? `hosted config is not configured; ${RECORD_SIGN_IN_REMEDY}`
         : reason === 'unreachable'
           ? `hosted config route ${route} is unreachable`
-          : `hosted config route ${route} returned HTTP ${status}`,
+          : details
+            ? `hosted config refused the response from ${details.url} (status ${status}, content type ${details.contentType}): expected JSON. ${RECORD_SIGN_IN_REMEDY}`
+            : `hosted config route ${route} returned HTTP ${status}`,
     )
     this.name = 'ConfigClientError'
     this.reason = reason
@@ -86,8 +94,14 @@ function createConfigClient(
       if (signal?.aborted) throw signal.reason
       throw new ConfigClientError('unreachable', route)
     }
+    const body = await jsonBody(response, `${baseUrl}${route}`)
+    if (!body.ok)
+      throw new ConfigClientError('response', route, response.status, {
+        url: body.url,
+        contentType: body.contentType,
+      })
     if (!response.ok) throw new ConfigClientError('response', route, response.status)
-    return (await response.json()) as T
+    return body.value as T
   }
   const query = (values: Record<string, string>) => `?${new URLSearchParams(values)}`
   return {
@@ -115,7 +129,11 @@ function createConfigClient(
       }),
     deleteEntry: (
       key: string,
-      input: { scope: ConfigScope; environment: string; expectedRowVersion: number },
+      input: {
+        scope: ConfigScope
+        environment: string
+        expectedRowVersion: number
+      },
     ) =>
       request<{ deleted: true }>(`/v1/config/entries/${encodeURIComponent(key)}`, {
         method: 'DELETE',
@@ -145,7 +163,11 @@ function createConfigClient(
       }),
     deleteSecret: (
       key: string,
-      input: { scope: ConfigScope; environment: string; expectedRowVersion: number },
+      input: {
+        scope: ConfigScope
+        environment: string
+        expectedRowVersion: number
+      },
     ) =>
       request<{ deleted: true }>(`/v1/config/secrets/${encodeURIComponent(key)}`, {
         method: 'DELETE',
@@ -180,7 +202,9 @@ function createConfigClient(
         body: JSON.stringify({ publicKey, label }),
       }),
     revokeMachineKey: (keyId: string) =>
-      request<{ revoked: true }>(`/v1/config/machine-keys/${keyId}/revoke`, { method: 'POST' }),
+      request<{ revoked: true }>(`/v1/config/machine-keys/${keyId}/revoke`, {
+        method: 'POST',
+      }),
   }
 }
 

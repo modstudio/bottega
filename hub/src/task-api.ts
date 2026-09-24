@@ -237,7 +237,7 @@ export async function taskApi(
   )
   if (!who) return json({ error: 'authorization and an active space are required' }, 401)
   if (request.method === 'GET' && url.pathname === '/v1/tasks/identity')
-    return json({ activeSpaceId: who.spaceId, memberships: who.memberships })
+    return json({ userId: who.userId, activeSpaceId: who.spaceId, memberships: who.memberships })
   const keyMatch = /^\/v1\/tasks\/([^/]+)$/.exec(url.pathname)
   const commentMatch = /^\/v1\/tasks\/([^/]+)\/comments$/.exec(url.pathname)
   const documentsMatch = /^\/v1\/tasks\/([^/]+)\/documents$/.exec(url.pathname)

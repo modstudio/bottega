@@ -5,7 +5,7 @@ import {
   resetFixtureStore,
   runFixture,
 } from '../test/run-fixtures.ts'
-import { runsSince } from './collect.ts'
+import { collectFast, runsSince } from './collect.ts'
 import * as dbMod from './db.ts'
 import { db, writeTransaction } from './db.ts'
 import { ingestRuns } from './ingest/runs.ts'
@@ -16,6 +16,34 @@ beforeAll(resetFixtureStore)
 afterEach(clearOrchCache)
 
 describe('run ingest', () => {
+  test('a failing transcripts leg does not stop the runs watermark advancing', async () => {
+    const watermark = '2026-09-24T16:00:00.000Z'
+    const results = await collectFast({
+      runs: async () => {
+        writeTransaction((conn) =>
+          conn
+            .query(`INSERT INTO setting (key, value) VALUES ('collect.runs.at', ?)
+                    ON CONFLICT(key) DO UPDATE SET value = excluded.value`)
+            .run(JSON.stringify(watermark)),
+        )
+        return { rows: 0, skipped: 0 }
+      },
+      transcripts: async () => {
+        throw new Error('identity returned HTML')
+      },
+    })
+
+    expect(results).toEqual([
+      { source: 'runs', ok: true },
+      { source: 'transcripts', ok: false, error: 'identity returned HTML' },
+    ])
+    expect(
+      db()
+        .query<{ value: string }, []>(`SELECT value FROM setting WHERE key='collect.runs.at'`)
+        .get()?.value,
+    ).toBe(JSON.stringify(watermark))
+  })
+
   test('runsSince keeps the two-hour window when collection is current', () => {
     writeTransaction((conn) =>
       conn

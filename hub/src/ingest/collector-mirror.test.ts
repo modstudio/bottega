@@ -77,6 +77,7 @@ mock.module('../task-client.ts', () => ({
   hostedTaskIdentity: async () => {
     if (refuseIdentity) throw new Error('simulated identity refusal')
     return {
+      userId: 'user-active',
       activeSpaceId: 'space-active',
       memberships: [
         { spaceId: 'space-active', slug: 'active' },

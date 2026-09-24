@@ -36,6 +36,7 @@ test('task push selects active-space projects and reports every skipped project 
       { name: 'unknown-space', settings: { space: 'missing' } },
     ],
     {
+      userId: 'user-a',
       activeSpaceId: 'space-a',
       memberships: [
         { spaceId: 'space-a', slug: 'active' },
@@ -94,7 +95,7 @@ test('task push persists ids only after each successful batch and retries an unp
   const stub = async (input: string, init?: RequestInit) => {
     const path = new URL(input).pathname
     if (path === '/v1/tasks/identity')
-      return Response.json({ activeSpaceId: 'space-a', memberships: [] })
+      return Response.json({ userId: 'user-a', activeSpaceId: 'space-a', memberships: [] })
     if (path === '/v1/tasks/mirror') {
       const body = JSON.parse(String(init?.body)) as {
         expectedSpaceId?: string
@@ -200,7 +201,7 @@ test('task push adopts a hosted holder id and uses it on the next push', async (
   const stub = async (input: string, init?: RequestInit) => {
     const path = new URL(input).pathname
     if (path === '/v1/tasks/identity')
-      return Response.json({ activeSpaceId: 'space-a', memberships: [] })
+      return Response.json({ userId: 'user-a', activeSpaceId: 'space-a', memberships: [] })
     if (path === '/v1/tasks/mirror') {
       const body = JSON.parse(String(init?.body)) as {
         statusEvents?: Array<{
@@ -275,7 +276,7 @@ test('task push persists a task adoption and cascades its child identity', async
   const stub = async (input: string, init?: RequestInit) => {
     const path = new URL(input).pathname
     if (path === '/v1/tasks/identity')
-      return Response.json({ activeSpaceId: 'space-a', memberships: [] })
+      return Response.json({ userId: 'user-a', activeSpaceId: 'space-a', memberships: [] })
     if (path === '/v1/tasks/mirror') {
       const body = JSON.parse(String(init?.body)) as { tasks?: Array<{ key: string }> }
       const task = body.tasks?.[0]
