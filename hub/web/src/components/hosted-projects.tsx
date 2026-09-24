@@ -2,22 +2,9 @@ import { useQuery } from '@tanstack/react-query'
 import { FolderGit2 } from 'lucide-react'
 import { Collection, type CollectionColumn } from '@/components/collection'
 import { type ProjectColors, ProjectMark } from '@/components/design-system'
-import { trpc } from '@/trpc/client'
+import { type HostedProjectRow as HostedProject, trpc } from '@/trpc/client'
 import { Badge } from '@/ui/badge/badge'
 import { PageHeader } from '@/ui/page-header/page-header'
-
-type HostedProject = {
-  spaceId: string
-  spaceName: string
-  name: string
-  keyPrefixes: string[]
-  stack: string | null
-  managedContext: boolean
-  landingBranch: string | null
-  color: string | null
-  colorDark: string | null
-  retiredAt: string | null
-}
 
 export function hostedProjectColors(projects: HostedProject[]): ProjectColors {
   const colors: ProjectColors = {}

@@ -26,10 +26,17 @@ function pretty(value: unknown) {
   return value === undefined ? '' : JSON.stringify(value, null, 2)
 }
 
+function parseJsonField(text: string): unknown {
+  return text.trim() ? JSON.parse(text) : null
+}
+
+/** One settings field: its register key, whether the form differs from the register, and its value. */
+type SettingsField = [key: string, changed: boolean, value: () => unknown]
+
 /** The settings patch holds only the keys whose field differs from the register. */
-function changedSettings(fields: [key: string, changed: boolean, value: unknown][]) {
+function changedSettings(fields: SettingsField[]) {
   return Object.fromEntries(
-    fields.filter(([, changed]) => changed).map(([key, , value]) => [key, value]),
+    fields.filter(([, changed]) => changed).map(([key, , value]) => [key, value()]),
   )
 }
 
@@ -91,17 +98,24 @@ function ProjectForm({ project }: { project: ProjectRow }) {
     .split(',')
     .map((value) => value.trim())
     .filter(Boolean)
+  const settingsFields: SettingsField[] = [
+    ['managedContext', managedContext !== initialManagedContext, () => managedContext],
+    ['trunk', trunk !== initialTrunk, () => trunk],
+    [
+      'keyPrefixes',
+      JSON.stringify(prefixes) !== JSON.stringify(initialPrefixes),
+      () => prefixes,
+    ],
+    ['color', color !== initialColor, () => color],
+    ['colorDark', colorDark !== initialColorDark, () => colorDark],
+    ['tracker', tracker !== pretty(project.settings.tracker), () => parseJsonField(tracker)],
+    ['worktree', worktree !== pretty(project.settings.worktree), () => parseJsonField(worktree)],
+  ]
   const changed =
     path !== project.path ||
     stack !== (project.stack ?? '') ||
     canon !== project.canon ||
-    managedContext !== initialManagedContext ||
-    trunk !== initialTrunk ||
-    JSON.stringify(prefixes) !== JSON.stringify(initialPrefixes) ||
-    color !== initialColor ||
-    colorDark !== initialColorDark ||
-    tracker !== pretty(project.settings.tracker) ||
-    worktree !== pretty(project.settings.worktree)
+    settingsFields.some(([, fieldChanged]) => fieldChanged)
 
   const save = useMutation(
     trpc.project.set.mutationOptions({
@@ -127,10 +141,8 @@ function ProjectForm({ project }: { project: ProjectRow }) {
   const submit = (event: React.FormEvent) => {
     event.preventDefault()
     setError(null)
-    let trackerValue: unknown
-    let worktreeValue: unknown
     try {
-      trackerValue = tracker.trim() ? JSON.parse(tracker) : null
+      parseJsonField(tracker)
     } catch (cause) {
       setError(
         `Tracker must be valid JSON: ${cause instanceof Error ? cause.message : String(cause)}`,
@@ -138,7 +150,7 @@ function ProjectForm({ project }: { project: ProjectRow }) {
       return
     }
     try {
-      worktreeValue = worktree.trim() ? JSON.parse(worktree) : null
+      parseJsonField(worktree)
     } catch (cause) {
       setError(
         `Worktree must be valid JSON: ${cause instanceof Error ? cause.message : String(cause)}`,
@@ -146,15 +158,7 @@ function ProjectForm({ project }: { project: ProjectRow }) {
       return
     }
 
-    const settings = changedSettings([
-      ['managedContext', managedContext !== initialManagedContext, managedContext],
-      ['trunk', trunk !== initialTrunk, trunk],
-      ['keyPrefixes', JSON.stringify(prefixes) !== JSON.stringify(initialPrefixes), prefixes],
-      ['color', color !== initialColor, color],
-      ['colorDark', colorDark !== initialColorDark, colorDark],
-      ['tracker', tracker !== pretty(project.settings.tracker), trackerValue],
-      ['worktree', worktree !== pretty(project.settings.worktree), worktreeValue],
-    ])
+    const settings = changedSettings(settingsFields)
 
     save.mutate({
       name: project.name,
