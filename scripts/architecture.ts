@@ -57,6 +57,7 @@ export const modules: ArchitectureModule[] = [
     './queries.ts',
   ]),
   module('orchestrator/src/artifact-paths.ts', ['node:path']),
+  module('orchestrator/src/run/run-answer-liveness.ts', []),
   module('orchestrator/src/close/absent-close-out-residue.ts', [
     '../database/db.ts',
     '../reclaim/reclaim-residue.ts',

@@ -4,7 +4,6 @@ import { fileURLToPath } from 'node:url'
 import { addRun, score } from '../../test/fixtures/store.ts'
 import { db } from '../database/db.ts'
 import {
-  activeSql,
   pendingForSession,
   UNSCORED_WHERE,
   unscoredCount,
@@ -326,19 +325,12 @@ describe('the Stop hook and orch agree on what is unscored', () => {
     const id = addRun({ agent: 'codex', job: 'implement', status: 'asking' })
     db().query("UPDATE run SET evidence_excluded='' WHERE id=?").run(id)
     const row = db()
-      .query(
-        `SELECT ${voidedSql('r')} AS voided, ${activeSql('r')} AS active FROM run r WHERE id=?`,
-      )
-      .get(id) as { voided: number; active: number }
-    expect(row).toEqual({ voided: 1, active: 0 })
+      .query(`SELECT ${voidedSql('r')} AS voided FROM run r WHERE id=?`)
+      .get(id) as { voided: number }
+    expect(row).toEqual({ voided: 1 })
     const nulled = db()
-      .query(
-        `SELECT ${voidedSql('r')} AS voided, ${activeSql('r')} AS active FROM run r WHERE id=?`,
-      )
-      .get(addRun({ agent: 'codex', job: 'implement', status: 'asking' })) as {
-      voided: number
-      active: number
-    }
-    expect(nulled).toEqual({ voided: 0, active: 1 })
+      .query(`SELECT ${voidedSql('r')} AS voided FROM run r WHERE id=?`)
+      .get(addRun({ agent: 'codex', job: 'implement', status: 'asking' })) as { voided: number }
+    expect(nulled).toEqual({ voided: 0 })
   })
 })

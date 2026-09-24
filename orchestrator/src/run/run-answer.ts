@@ -17,6 +17,7 @@ import { answerRulingRefusal } from '../workflow/autonomy.ts'
 import { resolveAnswerRulings } from '../workflow/autonomy-scopes.ts'
 import { keepTreeHold } from '../worktree/keep-tree-hold.ts'
 import { packedResumePrompt } from './run.ts'
+import { answerRunLivenessRefusal } from './run-answer-liveness.ts'
 import { KEEP_RUN_FILES_DAYS, readDispatchState } from './run-artifacts.ts'
 import { adoptRunMutation, auditRunMutation, authorizeRunMutation } from './run-authority.ts'
 import {
@@ -41,20 +42,6 @@ type RunAnswerHelpers = {
   presentation: RunControlPresentation
 }
 type RunFlags = { detach: boolean; follow: boolean; quiet: boolean }
-
-export function answerRunLivenessRefusal(
-  root: { status: string; evidence_excluded: string | null },
-  open: readonly { owner_status: string }[],
-): string | null {
-  if (root.evidence_excluded !== null) return 'voided'
-  if (
-    open.some(
-      (question) => question.owner_status === 'running' || question.owner_status === 'asking',
-    )
-  )
-    return null
-  return open[0]?.owner_status ?? null
-}
 
 async function refuseUserRuling(
   project: string | null,
@@ -300,7 +287,10 @@ export async function answerRun(
 
   // A ruling resumes a live chain. Stopped, failed, stale and voided roots
   // used to record the answer and spawn a new turn, which is retry's job.
-  const livenessRefusal = answerRunLivenessRefusal(row, open)
+  const livenessRefusal = answerRunLivenessRefusal(
+    { status: row.status, voided: row.evidence_excluded !== null },
+    open,
+  )
   if (livenessRefusal !== null) {
     throw new Error(
       `run ${id} is ${livenessRefusal}. ` +

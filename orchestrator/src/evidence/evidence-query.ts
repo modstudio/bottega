@@ -96,11 +96,6 @@ export function voidedSql(alias = 'r'): string {
 
 export const VOIDED_SQL = voidedSql()
 
-/** A live chain: running or asking, and not voided. */
-export function activeSql(alias = 'r'): string {
-  return `${alias}.status IN ('running','asking') AND NOT (${voidedSql(alias)})`
-}
-
 const NOT_EVIDENCE_SQL = NOT_EVIDENCE.map((kind) => `'${kind}'`).join(', ')
 
 const SCORED_EVIDENCE_SQL = `s.delivery IS NOT NULL
