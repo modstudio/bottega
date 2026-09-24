@@ -33,7 +33,7 @@
 # it needs something. Exit 0 with no output is the "nothing to say" answer, and
 # the Monitor tool reports the exit itself.
 #
-# Detection remains deliberately machine-wide in `orch monitor` (DEV-198).
+# Detection remains deliberately machine-wide in `orch monitor`.
 # This hook also classifies stalled runs from the canonical run listing so the
 # owning session learns promptly; supplemental monitor notices remain below.
 # Conditions without an owner stay in the monitor report for the fixer queue.
@@ -218,7 +218,7 @@ for event in events:
   # A landing is deliberately not a run, but it is live work owned by the same
   # session. Read only the small session slice directly from the store; this is
   # part of health computation and therefore remains ahead of all supplemental
-  # monitor-notice work (DEV-390).
+  # monitor-notice work.
   landings_observed=$(SID="$SID" ORCH_DB_PATH="$DB_PATH" python3 -c '
 import datetime, json, os, sqlite3, sys
 path = os.environ["ORCH_DB_PATH"]

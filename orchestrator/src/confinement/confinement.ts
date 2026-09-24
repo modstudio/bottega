@@ -36,7 +36,7 @@ type ConfinementLockHolder = {
 
 export type ConfinementEvent = {
   classification: ConfinementClass
-  /** Absent on events recorded before DEV-372. */
+  /** Optional because stored events may not include a checkout. */
   checkout?: string
   attribution: AttributionKind
   lockHolder: ConfinementLockHolder | null

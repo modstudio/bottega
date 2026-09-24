@@ -85,8 +85,7 @@ function sameStore(a: string, b: string): boolean {
  * ORCH_DB used to authorize a linked-worktree binary to write whatever it named,
  * and the dispatcher exports the live path to every worker. A worker's own test
  * leg therefore held a write handle on the live store from a tree whose binary
- * should only ever have read it (DEV-314's class, third instance 2026-09-07:
- * every row in 27 tables deleted). Location and write authority are separate:
+ * should only ever have read it. Location and write authority are separate:
  * a linked binary may read the main store under any name and never writes it.
  * ORCH_DB_WRITE=1 is the operator's explicit, recorded insistence.
  */

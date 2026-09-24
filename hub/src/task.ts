@@ -64,9 +64,9 @@ const DUPLICATE_STOP_WORDS = new Set(
   ),
 )
 
-// Provisional, measured against the real reports that prompted DEV-267:
-// DEV-209/DEV-210 scored 0.248, DEV-265/DEV-266 scored 0.227, and the best
-// unrelated result across those four searches scored 0.151.
+// Provisional, measured against the reports that introduced duplicate detection:
+// known duplicates scored at least 0.227, while the best unrelated result across
+// those searches scored 0.151.
 const DUPLICATE_THRESHOLD = 0.2
 const DUPLICATE_LIMIT = 3
 

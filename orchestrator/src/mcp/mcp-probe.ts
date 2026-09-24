@@ -182,8 +182,8 @@ export function mcpConfigAllowlist(
 
 /**
  * A tree is the wrong project's only when the REQUIRED server is absent and
- * another project's server is what the tree sees instead (DEV-194's shape: a
- * worktree discovering a different .mcp.json). Bottega's .mcp.json
+ * another project's server is what the tree sees instead, such as a worktree
+ * discovering a different .mcp.json. Bottega's .mcp.json
  * registers every project's server deliberately, so extra names beside a
  * present required server are not evidence of anything.
  */

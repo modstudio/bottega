@@ -161,7 +161,7 @@ export function attributeWorktree(
 /**
  * Fill and run a trusted shell declaration. Create reaches this only through
  * the registration-validated pipeline escape hatch; remove and sweep remain
- * lifecycle shell templates outside DEV-182's create-command migration.
+ * lifecycle shell templates are outside the create-command pipeline.
  */
 
 export function runCreateTool(

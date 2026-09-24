@@ -816,7 +816,7 @@ type MainCheckoutInspection = {
  * - tracked modifications block
  * - an in-progress sequence blocks (merge / cherry-pick / rebase / revert /
  *   am / bisect); residue of a pseudo-ref over a clean tree does not —
- *   refusing residue would recreate DEV-432
+ *   refusing residue would incorrectly block an otherwise clean tree
  * - untracked files warn and do not block (orch.db and build output live there)
  * - ignored files are silent
  * - submodules: `--ignore-submodules=untracked`, so a dirty gitlink or tracked

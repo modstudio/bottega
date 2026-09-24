@@ -115,7 +115,7 @@ const UNMARKED_GUARD_PREFIX = 'unmarked-'
  * marker; a tree built by hand (the lifecycle harness, an operator landing a
  * branch from a tree orch did not cut) has none and gets a key derived from
  * its real path, so concurrent preparations on one tree still converge on one
- * directory (DEV-225). Refusing here would leave a hand-made tree UNGUARDED at
+ * directory. Refusing here would leave a hand-made tree UNGUARDED at
  * the point the guard matters most. Unmarked guards are not reclaimed as
  * litter: nothing records which tree they served once it is gone, and a
  * hand-made tree is rare.

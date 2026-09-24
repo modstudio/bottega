@@ -220,7 +220,7 @@ export function recordedChainRootsForWorktree(path: string): number[] {
  * The caller-at-trunk exemption is granted from explicit resume identity only:
  * the chain being resumed, or a --base / --cwd that resolves to exactly one
  * recorded run's worktree path or branch tip. Equality is realpath or commit,
- * never a suffix, and never a table scan (DEV-318).
+ * never a suffix, and never a table scan.
  */
 export function namesRecordedRunTree(opts: {
   cwd: string
