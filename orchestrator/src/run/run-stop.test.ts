@@ -85,9 +85,18 @@ test('abandon retires an asking run from the live inbox and keeps it in all as t
   })
   expect(
     db()
-      .query('SELECT answer,answered_by,delivery_pending_at FROM question WHERE run_id=?')
+      .query(
+        `SELECT answer,answered_by,answerer_kind,answer_channel,delivery_pending_at
+           FROM question WHERE run_id=?`,
+      )
       .get(id),
-  ).toEqual({ answer: '(abandoned)', answered_by: 'orch-test-session', delivery_pending_at: null })
+  ).toEqual({
+    answer: '(abandoned)',
+    answered_by: 'orch-test-session',
+    answerer_kind: 'agent',
+    answer_channel: 'cli',
+    delivery_pending_at: null,
+  })
 })
 
 test('a foreign session can neither stop nor abandon an owned run', async () => {

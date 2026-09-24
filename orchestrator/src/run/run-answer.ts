@@ -16,6 +16,12 @@ import { chainTransport, retryModelForAgent } from '../route/failover.ts'
 import { answerRulingRefusal } from '../workflow/autonomy.ts'
 import { resolveAnswerRulings } from '../workflow/autonomy-scopes.ts'
 import { keepTreeHold } from '../worktree/keep-tree-hold.ts'
+import {
+  ANSWER_CHANNELS,
+  answererKindFromAnsweredBy,
+  appendLiveQuestionDeliveries,
+  appendQuestionDeliveries,
+} from './question-facts.ts'
 import { packedResumePrompt } from './run.ts'
 import { answerRunLivenessRefusal } from './run-answer-liveness.ts'
 import { KEEP_RUN_FILES_DAYS, readDispatchState } from './run-artifacts.ts'
@@ -40,6 +46,7 @@ type RunAnswerHelpers = {
     sources: { commandFile?: string; positionals: string[] }
   }): Promise<string | undefined>
   presentation: RunControlPresentation
+  dispatch?: typeof detach
 }
 type RunFlags = { detach: boolean; follow: boolean; quiet: boolean }
 
@@ -104,13 +111,13 @@ export async function retryRun(
   // partial edit. Continue the same conversation in the same tree instead.
   const recordedRulings = db()
     .query(
-      `SELECT q.question, q.answer
+      `SELECT q.id, q.question, q.answer
      FROM question q JOIN run owner ON owner.id = q.run_id
     WHERE (owner.id = ? OR owner.parent_run_id = ?)
       AND q.delivery_pending_at IS NOT NULL AND q.answer IS NOT NULL
     ORDER BY q.id`,
     )
-    .all(row.root_id, row.root_id) as { question: string; answer: string }[]
+    .all(row.root_id, row.root_id) as { id: number; question: string; answer: string }[]
   if (job(row.job).needs.writesRepo && !recordedRulings.length) {
     const requested = options.agent
     if (requested && requested !== row.agent) {
@@ -153,8 +160,8 @@ export async function retryRun(
   const retryPrompt = recordedRulings.length
     ? `${originalPrompt}\n\n---\n\n${rulingPrompt(recordedRulings)}`
     : originalPrompt
-  const dispatch = readDispatchState(row.root_id)
-  const newId = await detach(
+  const dispatchState = readDispatchState(row.root_id)
+  const newId = await (helpers.dispatch ?? detach)(
     row.job,
     retryPrompt,
     {
@@ -189,11 +196,22 @@ export async function retryRun(
             }
           })()
         : undefined,
-      deliverables: dispatch.deliverables,
-      timeoutMinutes: dispatch.timeoutMinutes ?? undefined,
+      deliverables: dispatchState.deliverables,
+      timeoutMinutes: dispatchState.timeoutMinutes ?? undefined,
     },
     agent,
   )
+  if (recordedRulings.length) {
+    appendQuestionDeliveries(
+      recordedRulings.map((ruling) => ruling.id),
+      {
+        runId: newId,
+        mode: 'retry',
+        outcome: 'delivered',
+        at: new Date(Date.now()).toISOString(),
+      },
+    )
+  }
   auditRunMutation(retryAuthority, 'retry', `retried as run ${newId}`)
   console.error(`— run ${newId} is retry of ${id}`)
   await follow(newId, options.flags.quiet, true, helpers.presentation)
@@ -508,7 +526,8 @@ export async function answerRun(
   const now = new Date(Date.now()).toISOString()
   const upd = db().query(
     `UPDATE question
-      SET answer=?, answered_at=?, answered_by=?, delivery_pending_at=?
+      SET answer=?, answered_at=?, answered_by=?, answerer_kind=?, answer_channel=?,
+          delivery_pending_at=?
     WHERE id=?`,
   )
   const answeredBy = options.argv.includes('--from-operator')
@@ -517,13 +536,25 @@ export async function answerRun(
   writeTransaction(() => {
     answerAuthority = adoptRunMutation(answerAuthority, 'answer')
     open.forEach((q, i) => {
-      upd.run(answers[i]!.answer, now, answeredBy, ownersLive ? null : now, q.id)
+      upd.run(
+        answers[i]!.answer,
+        now,
+        answeredBy,
+        answererKindFromAnsweredBy(answeredBy),
+        ANSWER_CHANNELS[0],
+        ownersLive ? null : now,
+        q.id,
+      )
     })
     if (skipResume) db().query("UPDATE run SET status='asking' WHERE id=?").run(id)
     auditRunMutation(answerAuthority, 'answer')
   })
 
   if (skipResume) {
+    appendQuestionDeliveries(
+      open.map((question) => question.id),
+      { runId: null, mode: 'record-only', outcome: 'delivered', at: now },
+    )
     console.log(
       `recorded ${answers.length} ruling(s) for run ${id}; resume was skipped by --record-only. ` +
         `The run remains asking; use orch retry ${id} --agent … to re-dispatch with the ruling appended to the spec, ` +
@@ -533,6 +564,7 @@ export async function answerRun(
   }
 
   if (ownersLive) {
+    appendLiveQuestionDeliveries(open, now)
     // Delivered. The worker's own tool call is polling this row and will
     // return with it inside a second; there is nothing else to do, and
     // starting a new turn here would put two workers in one worktree.
@@ -557,7 +589,7 @@ export async function answerRun(
    */
   let childId: number
   try {
-    childId = await detach(row.job, rulingPrompt(answers), {
+    childId = await (helpers.dispatch ?? detach)(row.job, rulingPrompt(answers), {
       cwd: latest.cwd ?? row.cwd ?? process.cwd(),
       ...resumeLaunchForRoot(id),
       transport: chainTransport(id) ?? undefined,
@@ -581,22 +613,42 @@ export async function answerRun(
       },
     })
   } catch (e) {
+    const error = (e as Error).message
     writeTransaction(() => {
+      appendQuestionDeliveries(
+        open.map((question) => question.id),
+        {
+          runId: null,
+          mode: 'resume',
+          outcome: 'failed',
+          at: new Date(Date.now()).toISOString(),
+          error,
+        },
+      )
       for (const q of open) {
         db()
           .query(
             `UPDATE question
-            SET answer=NULL, answered_at=NULL, answered_by=NULL, delivery_pending_at=NULL
+            SET answer=NULL, answered_at=NULL, answered_by=NULL, answerer_kind=NULL,
+                answer_channel=NULL, delivery_pending_at=NULL
           WHERE id=?`,
           )
           .run(q.id)
       }
     })
     throw new Error(
-      `Resume failed: ${(e as Error).message}\n` +
-        `The ruling was rolled back and the question is still open.`,
+      `Resume failed: ${error}\nThe ruling was rolled back and the question is still open.`,
     )
   }
+  appendQuestionDeliveries(
+    open.map((question) => question.id),
+    {
+      runId: childId,
+      mode: 'resume',
+      outcome: 'delivered',
+      at: new Date(Date.now()).toISOString(),
+    },
+  )
   console.log(`ruled on ${answers.length} question(s); resumed run ${id} as run ${childId}`)
   if (options.flags.detach || !options.flags.follow) {
     if (!options.flags.quiet) {

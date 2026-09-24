@@ -276,20 +276,66 @@ describe('run listing', () => {
     const child = insert('asking')
     db().query('UPDATE run SET parent_run_id=?,turn=2 WHERE id=?').run(root, child)
     db()
-      .query('INSERT INTO question (run_id,asked_at,question,answered_at) VALUES (?,?,?,?)')
-      .run(root, '2026-09-04T10:00:00.000Z', 'root q', '2026-09-04T10:05:00.000Z')
+      .query(
+        `INSERT INTO question
+           (run_id,asked_at,question,answered_at,asked_via,answerer_kind,answer_channel)
+         VALUES (?,?,?,?,?,?,?)`,
+      )
+      .run(
+        root,
+        '2026-09-04T10:00:00.000Z',
+        'root q',
+        '2026-09-04T10:05:00.000Z',
+        'reply',
+        'operator',
+        'cli',
+      )
     db()
       .query('INSERT INTO question (run_id,asked_at,question) VALUES (?,?,?)')
       .run(child, '2026-09-04T10:10:00.000Z', 'child q')
+    const rootQuestion = db().query('SELECT id FROM question WHERE run_id=?').get(root) as {
+      id: number
+    }
+    db()
+      .query(
+        `INSERT INTO question_delivery (question_id,run_id,mode,outcome,at,error)
+         VALUES (?,?,?,?,?,?)`,
+      )
+      .run(rootQuestion.id, child, 'resume', 'delivered', '2026-09-04T10:06:00.000Z', null)
     const row = runJson((await command({ json: true, id: [String(root)] }))[0]!)
     expect(row.questions).toEqual([
-      expect.objectContaining({ run_id: root, answered_at: '2026-09-04T10:05:00.000Z' }),
-      expect.objectContaining({ run_id: child, answered_at: null }),
+      expect.objectContaining({
+        run_id: root,
+        answered_at: '2026-09-04T10:05:00.000Z',
+        asked_via: 'reply',
+        answerer_kind: 'operator',
+        answer_channel: 'cli',
+        deliveries: [
+          {
+            id: expect.any(Number),
+            question_id: rootQuestion.id,
+            run_id: child,
+            mode: 'resume',
+            outcome: 'delivered',
+            at: '2026-09-04T10:06:00.000Z',
+            error: null,
+          },
+        ],
+      }),
+      expect.objectContaining({
+        run_id: child,
+        answered_at: null,
+        asked_via: null,
+        answerer_kind: null,
+        answer_channel: null,
+        deliveries: [],
+      }),
     ])
     expect(
       row.questions.every(
         (question: object) =>
-          Object.keys(question).sort().join() === 'answered_at,asked_at,id,run_id',
+          Object.keys(question).sort().join() ===
+          'answer_channel,answered_at,answerer_kind,asked_at,asked_via,deliveries,id,run_id',
       ),
     ).toBe(true)
   })

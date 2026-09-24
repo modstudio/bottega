@@ -11,6 +11,7 @@ import { packedResumePrompt } from './run.ts'
 import { answerRun, retryRun } from './run-answer.ts'
 import { answerRunLivenessRefusal } from './run-answer-liveness.ts'
 import { continueRun } from './run-control.ts'
+import type { detach } from './run-dispatch.ts'
 
 const trackResidue = trackedTestResidue()
 
@@ -102,11 +103,108 @@ describe('run answers', () => {
       .run(id, new Date().toISOString(), 'which shape?')
     await answerRun(id, { argv: ['use the existing shape'], recordOnly: true, flags }, helpers)
     expect(
-      db().query('SELECT answer,delivery_pending_at FROM question WHERE run_id=?').get(id),
-    ).toEqual({ answer: 'use the existing shape', delivery_pending_at: expect.any(String) })
+      db()
+        .query(
+          `SELECT answer,answerer_kind,answer_channel,delivery_pending_at
+             FROM question WHERE run_id=?`,
+        )
+        .get(id),
+    ).toEqual({
+      answer: 'use the existing shape',
+      answerer_kind: 'agent',
+      answer_channel: 'cli',
+      delivery_pending_at: expect.any(String),
+    })
+    expect(
+      db()
+        .query(
+          'SELECT run_id,mode,outcome,error FROM question_delivery WHERE question_id=(SELECT id FROM question WHERE run_id=?)',
+        )
+        .get(id),
+    ).toEqual({ run_id: null, mode: 'record-only', outcome: 'delivered', error: null })
     expect(
       rulingPrompt([{ question: 'which shape?', answer: 'use the existing shape' }]),
     ).toContain('THE RULING: use the existing shape')
+  })
+
+  test('resume records the new turn that received the ruling', async () => {
+    const id = insert('asking')
+    db()
+      .query('UPDATE run SET session_id=?,vendor_session=? WHERE id=?')
+      .run('orch-test-session', 'vendor', id)
+    db()
+      .query('INSERT INTO question (run_id,asked_at,question) VALUES (?,?,?)')
+      .run(id, new Date().toISOString(), 'which shape?')
+    let childId = 0
+    const dispatch: typeof detach = async (_job, _prompt, spec) => {
+      childId = addRun({
+        agent: spec.resume!.agent,
+        job: 'file-question',
+        status: 'running',
+        parent: spec.resume!.parent,
+        turn: spec.resume!.turn,
+      })
+      return childId
+    }
+    await answerRun(
+      id,
+      { argv: ['use the existing shape'], recordOnly: false, flags },
+      { ...helpers, dispatch },
+    )
+    expect(
+      db()
+        .query(
+          'SELECT run_id,mode,outcome,error FROM question_delivery WHERE question_id=(SELECT id FROM question WHERE run_id=?)',
+        )
+        .get(id),
+    ).toEqual({ run_id: childId, mode: 'resume', outcome: 'delivered', error: null })
+  })
+
+  test('failed resume keeps its delivery failure after reopening the question', async () => {
+    const id = insert('asking')
+    db()
+      .query('UPDATE run SET session_id=?,vendor_session=? WHERE id=?')
+      .run('orch-test-session', 'vendor', id)
+    db()
+      .query('INSERT INTO question (run_id,asked_at,question) VALUES (?,?,?)')
+      .run(id, new Date().toISOString(), 'which shape?')
+    const dispatch: typeof detach = async () => {
+      throw new Error('fixture dispatch failed')
+    }
+    await expect(
+      answerRun(
+        id,
+        { argv: ['use the existing shape'], recordOnly: false, flags },
+        { ...helpers, dispatch },
+      ),
+    ).rejects.toThrow('Resume failed: fixture dispatch failed')
+    expect(
+      db()
+        .query(
+          `SELECT answer,answered_at,answered_by,answerer_kind,answer_channel,delivery_pending_at
+             FROM question WHERE run_id=?`,
+        )
+        .get(id),
+    ).toEqual({
+      answer: null,
+      answered_at: null,
+      answered_by: null,
+      answerer_kind: null,
+      answer_channel: null,
+      delivery_pending_at: null,
+    })
+    expect(
+      db()
+        .query(
+          'SELECT run_id,mode,outcome,error FROM question_delivery WHERE question_id=(SELECT id FROM question WHERE run_id=?)',
+        )
+        .get(id),
+    ).toEqual({
+      run_id: null,
+      mode: 'resume',
+      outcome: 'failed',
+      error: 'fixture dispatch failed',
+    })
   })
   test('answer refuses six individually-legal --file rulings whose packed resume exceeds argv', async () => {
     const id = insert('asking', 'implement')

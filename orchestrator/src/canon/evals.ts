@@ -419,7 +419,8 @@ function terminaliseJudgedProbe(runId: number): void {
   const answered = db()
     .query(
       `UPDATE question
-        SET answer='(answered by canon eval)', answered_at=?, answered_by='canon-eval'
+        SET answer='(answered by canon eval)', answered_at=?, answered_by='canon-eval',
+            answerer_kind='eval', answer_channel='cli'
       WHERE run_id=? AND answered_at IS NULL`,
     )
     .run(answeredAt, runId)

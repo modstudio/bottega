@@ -767,6 +767,7 @@ export const importBoundaries: ImportBoundary[] = [
       './run-authority.ts',
       './run-control.ts',
       './run-dispatch.ts',
+      './question-facts.ts',
       '../git/git-environment.ts',
     ],
     'Keep run-answer independent of transports, worktrees, routing, reviews, and the CLI.',

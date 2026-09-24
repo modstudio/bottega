@@ -81,8 +81,8 @@ export async function ask(o: {
   db().query("UPDATE run SET status='asking' WHERE id=? AND status='running'").run(o.runId)
   const { id } = db()
     .query(
-      `INSERT INTO question (run_id, asked_at, question, options, recommendation, why)
-     VALUES (?,?,?,?,?,?) RETURNING id`,
+      `INSERT INTO question (run_id, asked_at, question, options, recommendation, why, asked_via)
+     VALUES (?,?,?,?,?,?,'live') RETURNING id`,
     )
     .get(
       o.runId,

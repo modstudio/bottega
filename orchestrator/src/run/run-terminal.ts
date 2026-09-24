@@ -471,8 +471,8 @@ export async function finishRun(input: TerminalInput): Promise<TerminalResult> {
       }[]
     ).map((row) => row.question)
     const q = db().query(
-      `INSERT INTO question (run_id, asked_at, question, options, recommendation, why)
-         VALUES (?,?,?,?,?,?)`,
+      `INSERT INTO question (run_id, asked_at, question, options, recommendation, why, asked_via)
+         VALUES (?,?,?,?,?,?,'reply')`,
     )
     for (const item of questionsToInsert(existingQuestionTexts, acceptedQuestions)) {
       q.run(
