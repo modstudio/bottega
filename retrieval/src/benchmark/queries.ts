@@ -147,6 +147,173 @@ export const CODE_QUERIES: BenchmarkQuery[] = [
   ),
 ]
 
+const codeQuestion = (
+  id: string,
+  query: string,
+  goldPath: string,
+  excerpt: string,
+  otherAnswers: string[] = [],
+): BenchmarkQuery => ({
+  id,
+  query,
+  goldLabels: [goldPath, ...otherAnswers],
+  provenance: { path: goldPath, excerpt },
+})
+
+export const REAL_CODE_QUERIES: BenchmarkQuery[] = [
+  codeQuestion(
+    'real-routing-eligibility',
+    'Where does routing decide which agents are eligible for a job?',
+    'orchestrator/src/route/route.ts',
+    'if (declared && !declared.includes(jobName)) {',
+  ),
+  codeQuestion(
+    'real-mcp-probe-tool-error',
+    'Where is an MCP probe result judged a failure when the tool returns an error?',
+    'orchestrator/src/mcp/mcp-probe.ts',
+    'if (response?.result?.isError !== true) continue',
+  ),
+  codeQuestion(
+    'real-review-merge-base',
+    'What resolves the merge base for a review target?',
+    'orchestrator/src/review/review-target.ts',
+    "return gitContext(cwd, 'merge-base', commit, trunkCommit)",
+  ),
+  codeQuestion(
+    'real-continue-tree',
+    'How does orch continue decide which worktree and branch to resume?',
+    'orchestrator/src/run/resume-tree.ts',
+    "source: 'latest turn branch',",
+  ),
+  codeQuestion(
+    'real-project-settings-validation',
+    "Where are a project's register settings validated?",
+    'orchestrator/src/project/projects.ts',
+    'export function validateProjectSettings(settings: ProjectSettings, projectPath?: string): string[] {',
+  ),
+  codeQuestion(
+    'real-wait-asking',
+    'What makes orch wait return when a worker starts asking a question?',
+    'orchestrator/src/collect/collect.ts',
+    "asking?.state === 'open'",
+  ),
+  codeQuestion(
+    'real-hosted-project-columns',
+    'Where does hosted import map project settings to database columns?',
+    'orchestrator/src/postgres/postgres-import.ts',
+    'const columns = hostedProjectColumns(settings, row.name)',
+    ['orchestrator/src/record/record-project-columns.ts'],
+  ),
+  codeQuestion(
+    'real-score-refusal',
+    'Where is a score refused because the run is not evidence, or because a void targets a child turn?',
+    'orchestrator/src/verdict/verdict-rules.ts',
+    'export function refuseChildTurnVoid(',
+  ),
+  codeQuestion(
+    'real-outbox-push-order',
+    'What pushes outbox rows to the hosted record, and in what order?',
+    'orchestrator/src/record/record-sync.ts',
+    'const [leftPhase, leftId] = outboxOrder(left.kind, left.id)',
+  ),
+  codeQuestion(
+    'real-hosted-doc-list',
+    'Where are hosted docs listed for a space?',
+    'orchestrator/src/record/record-docs.ts',
+    'export async function listRecordDocs(input: Tenant & RecordDocListInput): Promise<RecordDoc[]> {',
+  ),
+  codeQuestion(
+    'real-report-rendering',
+    "Where is the report email's text and HTML rendered?",
+    'hub/src/report-renderer.ts',
+    'export function renderHtml(',
+  ),
+  codeQuestion(
+    'real-report-measures',
+    'What computes tasks done and cycle time for reports?',
+    'hub/src/measures.ts',
+    'const cycleTime = cycleTimeOf(rows, events, from, to)',
+  ),
+  codeQuestion(
+    'real-file-ceiling',
+    'Where is the per-file line ceiling enforced?',
+    'scripts/check-file-ceiling.ts',
+    'const decision = decideCeiling({',
+  ),
+  codeQuestion(
+    'real-retrieval-command',
+    'Where does orch spawn the retrieval search command and parse its output?',
+    'orchestrator/src/doc/doc-search.ts',
+    'const child = Bun.spawn([',
+  ),
+  codeQuestion(
+    'real-reply-source',
+    "Where does a run choose the reply file over the transport's final message?",
+    'orchestrator/src/run/run-reply-source.ts',
+    'if (facts.replyFile.present) {',
+  ),
+  codeQuestion(
+    'real-grok-tool-limit',
+    "Where is grok's MCP tool-name limit declared?",
+    'orchestrator/src/agent/agents.ts',
+    'mcpToolNamePattern:',
+  ),
+  codeQuestion(
+    'real-comment-checks',
+    'What finds task keys and history phrases in code comments?',
+    'orchestrator/src/check/check-comments.ts',
+    'export function commentFindings(comment: CommentSource, rules: CommentRules): CommentFinding[] {',
+  ),
+  codeQuestion(
+    'real-review-tier',
+    "How is a change's review tier computed from risk and size?",
+    'orchestrator/src/review/review-tier.ts',
+    'return { tier: Math.max(risk, size) as 0 | 1 | 2 | 3, risk, size, reasons }',
+  ),
+  codeQuestion(
+    'real-canon-hydration',
+    "Where are canon rows written into a worktree's files?",
+    'orchestrator/src/canon/canon-commands.ts',
+    'writeFileSync(target, body)',
+  ),
+  codeQuestion(
+    'real-doc-lint',
+    'What lints a doc when it is written to the store?',
+    'orchestrator/src/doc/doc-lint.ts',
+    'export function lintDoc(doc: LintableDoc): DocLintFinding[] {',
+  ),
+  codeQuestion(
+    'real-mcp-tool-compatibility',
+    "What decides whether an agent can use a project MCP server's tool names?",
+    'orchestrator/src/mcp/mcp-compatibility.ts',
+    'const admitted = pattern ? listed.filter((name) => new RegExp(pattern).test(name)) : [...listed]',
+  ),
+  codeQuestion(
+    'real-orphan-removal',
+    'Where does sweep decide whether an orphaned worktree directory is safe to remove?',
+    'orchestrator/src/cleanup/cleanup-sweep-decisions.ts',
+    'if (!facts.safe.removable) {',
+  ),
+  codeQuestion(
+    'real-index-stale-write',
+    'Where is the stale-write check applied when the search index refreshes?',
+    'retrieval/src/index-store.ts',
+    'if (!sameIdentity(observedIdentity(candidate.chunk.id), candidate.observed)) {',
+  ),
+  codeQuestion(
+    'real-model-host-reachability',
+    'How does orch decide the local model host is reachable?',
+    'orchestrator/src/agent/model-host.ts',
+    "const res = await fetch(new URL('models', baseUrl.replace(/\\/?$/, '/')), {",
+  ),
+  codeQuestion(
+    'real-workflow-step-slug',
+    'Where is a numbered workflow step turned into a step slug?',
+    'orchestrator/src/workflow/workflow-step-reference.ts',
+    'if (slugs.size === 1) return candidates[0]!.step',
+  ),
+]
+
 const doc = (
   id: string,
   query: string,

@@ -15,7 +15,14 @@ import {
 import { cosineTopK } from '../vector-ranking.ts'
 import { keywordRanking } from './keyword.ts'
 import { type Ranking, rankOfFirstLabel, scoreRankings } from './metrics.ts'
-import { CODE_QUERIES, DOC_QUERIES, type DocBenchmarkQuery, type LabeledQuery } from './queries.ts'
+import {
+  type BenchmarkQuery,
+  CODE_QUERIES,
+  DOC_QUERIES,
+  type DocBenchmarkQuery,
+  type LabeledQuery,
+  REAL_CODE_QUERIES,
+} from './queries.ts'
 
 const EMBED_BATCH_SIZE = 64
 
@@ -37,20 +44,31 @@ async function embedBatches(url: string, documents: string[]): Promise<number[][
 }
 
 async function validateQueries(repositoryRoot: string, chunks: Chunk[]): Promise<void> {
-  if (CODE_QUERIES.length < 20 || CODE_QUERIES.length > 40) {
-    throw new Error(`code benchmark requires 20 to 40 queries; found ${CODE_QUERIES.length}`)
-  }
-  for (const query of CODE_QUERIES) {
-    const goldPath = query.goldLabels[0]
-    if (!goldPath) throw new Error(`${query.id} has no code label`)
-    await access(resolve(repositoryRoot, goldPath))
-    const source = await readFile(resolve(repositoryRoot, query.provenance.path), 'utf8')
-    const plainSource = source.replace(/[`*_]/g, '').replace(/\s+/g, ' ')
-    const excerpt = query.provenance.excerpt.replace(/\s+/g, ' ')
-    if (!plainSource.includes(excerpt)) {
-      throw new Error(`${query.id} provenance excerpt is absent from ${query.provenance.path}`)
+  const codeChunkPaths = new Set(
+    chunks.filter((chunk) => chunk.identity.kind === 'code').map((chunk) => chunk.path),
+  )
+  const validateCodeSet = async (name: string, queries: BenchmarkQuery[]) => {
+    if (queries.length < 20 || queries.length > 40) {
+      throw new Error(`${name} benchmark requires 20 to 40 queries; found ${queries.length}`)
+    }
+    for (const query of queries) {
+      if (!query.goldLabels.length) throw new Error(`${query.id} has no code label`)
+      for (const goldPath of query.goldLabels) {
+        await access(resolve(repositoryRoot, goldPath))
+        if (!codeChunkPaths.has(goldPath)) {
+          throw new Error(`${query.id} code label is absent from the corpus: ${goldPath}`)
+        }
+      }
+      const source = await readFile(resolve(repositoryRoot, query.provenance.path), 'utf8')
+      const plainSource = source.replace(/[`*_]/g, '').replace(/\s+/g, ' ')
+      const excerpt = query.provenance.excerpt.replace(/\s+/g, ' ')
+      if (!plainSource.includes(excerpt)) {
+        throw new Error(`${query.id} provenance excerpt is absent from ${query.provenance.path}`)
+      }
     }
   }
+  await validateCodeSet('code', CODE_QUERIES)
+  await validateCodeSet('real code', REAL_CODE_QUERIES)
   if (DOC_QUERIES.length < 25) {
     throw new Error(`doc benchmark requires at least 25 queries; found ${DOC_QUERIES.length}`)
   }
@@ -124,7 +142,7 @@ async function main() {
   await probeEndpoints(endpoints)
 
   const startedAt = performance.now()
-  const queries: LabeledQuery[] = [...CODE_QUERIES, ...DOC_QUERIES]
+  const queries: LabeledQuery[] = [...CODE_QUERIES, ...REAL_CODE_QUERIES, ...DOC_QUERIES]
   const documents = chunks.map(chunkDocument)
   const corpusVectors = await embedBatches(endpoints.embedUrl, documents)
   const queryVectors = await embedBatches(
@@ -213,6 +231,7 @@ async function main() {
         },
         querySets: {
           code: reportSet(CODE_QUERIES, rankingsFor(CODE_QUERIES)),
+          realCode: reportSet(REAL_CODE_QUERIES, rankingsFor(REAL_CODE_QUERIES)),
           docs: reportSet(DOC_QUERIES, rankingsFor(DOC_QUERIES)),
         },
         keywordMethod:
