@@ -5,14 +5,35 @@ import type { OrchRun } from './ingest/runs.ts'
 import { type Project, projectRoot, projects } from './projects.ts'
 import { taskIdentityDecision } from './task-identity.ts'
 
-/** Every ticket key this estate issues, resolved only when attribution first needs it. */
-function keyPrefixes(): string {
-  return [...new Set(projects().flatMap((project) => project.settings.keyPrefixes ?? []))]
-    .map((prefix) => prefix.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'))
-    .join('|')
+/** Every ticket prefix registered or observed in this process's attribution pass. */
+let cachedKeyPrefixes: string | null = null
+
+/** Start a new attribution pass by snapshotting the current backing store. */
+export function refreshKeyPrefixes(): void {
+  cachedKeyPrefixes = null
 }
 
-/** A fresh bare-ticket matcher; constructing it is what lazily reads the register. */
+function keyPrefixes(): string {
+  if (cachedKeyPrefixes !== null) return cachedKeyPrefixes
+
+  const observed = db()
+    .query<{ key: string }, []>(`SELECT key FROM task UNION SELECT key FROM task_identity_claim`)
+    .all()
+    .flatMap(({ key }) => key.toUpperCase().match(/^([A-Z]+)-\d+$/)?.[1] ?? [])
+  cachedKeyPrefixes = [
+    ...new Set([
+      ...projects().flatMap((project) => project.settings.keyPrefixes ?? []),
+      ...observed,
+    ]),
+  ]
+    .map((prefix) => prefix.toUpperCase())
+    .filter((prefix) => /^[A-Z]+$/.test(prefix))
+    .map((prefix) => prefix.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'))
+    .join('|')
+  return cachedKeyPrefixes
+}
+
+/** A fresh bare-ticket matcher over the pass-cached recognizable prefixes. */
 export function keyPattern(): RegExp {
   const keys = keyPrefixes()
   return new RegExp(keys ? `\\b(?:${keys})-\\d+` : '(?!)', 'g')

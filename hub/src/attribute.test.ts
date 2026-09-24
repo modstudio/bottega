@@ -12,7 +12,10 @@ beforeAll(() => {
         ('alpha-alp-5362','ALP-5362','alpha','mcp','2026-01-01','2026-01-01'),
         ('alpha-bet-40','BET-40','alpha','mcp','2026-01-01','2026-01-01'),
         ('beta-bet-2533','BET-2533','beta','mcp','2026-01-01','2026-01-01'),
-        ('gamma-gam-986','GAM-986','gamma','mcp','2026-01-01','2026-01-01');
+        ('gamma-gam-986','GAM-986','gamma','mcp','2026-01-01','2026-01-01'),
+        ('stopal-ops-40','OPS-40','stopal','mcp','2026-01-01','2026-01-01');
+      INSERT INTO task_identity_claim(project,external_id,key,first_seen,last_seen)
+      VALUES ('stopal','stopal-41','CLM-41','2026-01-01','2026-01-01');
     `)
   })
 })
@@ -90,6 +93,27 @@ describe('attribute()', () => {
     expect(
       attribute({ cwd: '/fixtures/repos/alpha', commitSubjects: ['BET-2533 unrelated change'] }),
     ).toEqual({ project: 'alpha', key: null, via: null })
+  })
+
+  test('recognizes task prefixes in use even when the project did not register them', () => {
+    expect(attribute({ cwd: '/fixtures/repos/stopal', prompts: ['work on OPS-40'] })).toEqual({
+      project: 'stopal',
+      key: 'OPS-40',
+      via: 'prompt',
+    })
+    expect(
+      attribute({ cwd: '/fixtures/repos/stopal', commitSubjects: ['OPS-40 implement the change'] }),
+    ).toEqual({ project: 'stopal', key: 'OPS-40', via: 'commit' })
+    expect(attribute({ cwd: '/fixtures/repos/stopal', prompts: ['work on CLM-41'] })).toEqual({
+      project: 'stopal',
+      key: 'CLM-41',
+      via: 'prompt',
+    })
+    expect(attribute({ cwd: '/fixtures/repos/stopal', prompts: ['send as UTF-8'] })).toEqual({
+      project: 'stopal',
+      key: null,
+      via: null,
+    })
   })
 
   test('an injected payload never names a task', () => {

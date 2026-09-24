@@ -4,7 +4,7 @@ import { join } from 'node:path'
 import { createInterface } from 'node:readline'
 import { DEFAULT_IDLE_CAP_MS, spansFromTimestamps, union } from '../../../shared/interval.ts'
 import { readMachineValue } from '../../../shared/machine-config.ts'
-import { attribute, isInjected, projectOf } from '../attribute.ts'
+import { attribute, isInjected, projectOf, refreshKeyPrefixes } from '../attribute.ts'
 import { nowIso, writeTransaction } from '../db.ts'
 import { signedInRecordUserId } from '../sync.ts'
 
@@ -169,6 +169,7 @@ export async function ingestTranscripts(
   idleCapMs = DEFAULT_IDLE_CAP_MS,
   attributedUserId?: string | null,
 ): Promise<{ files: number; rows: number; source: 'read' | 'disabled' }> {
+  refreshKeyPrefixes()
   const root = resolveTranscriptRoot(readMachineValue('hub.transcript_root'))
   if (root.source === 'disabled') return { files: 0, rows: 0, source: 'disabled' }
 

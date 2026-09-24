@@ -91,5 +91,13 @@ console.log(
       canon: true,
       settings: { keyPrefixes: ['SHR'] },
     },
+    {
+      id: 9,
+      name: 'stopal',
+      path: '/fixtures/repos/stopal',
+      stack: null,
+      canon: true,
+      settings: {},
+    },
   ]),
 )
