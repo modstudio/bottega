@@ -35,6 +35,9 @@ const SOURCE_GLOBS = [
   '.agents/**/*.md',
 ] as const
 
+/** The benchmark's own labeled questions quote every answer verbatim, so indexing them would let the benchmark find itself. */
+const EXCLUDED_PREFIXES = ['retrieval/src/benchmark/'] as const
+
 export function chunkText(path: string, text: string, size = 60, overlap = 10): Chunk[] {
   if (size <= overlap || overlap < 0)
     throw new Error('chunk size must exceed a non-negative overlap')
@@ -229,7 +232,9 @@ export async function loadCorpus(repositoryRoot: string): Promise<Chunk[]> {
   const root = resolve(repositoryRoot)
   const files = new Set<string>()
   for (const pattern of SOURCE_GLOBS) {
-    for await (const file of new Glob(pattern).scan({ cwd: root, onlyFiles: true })) files.add(file)
+    for await (const file of new Glob(pattern).scan({ cwd: root, onlyFiles: true })) {
+      if (!EXCLUDED_PREFIXES.some((prefix) => file.startsWith(prefix))) files.add(file)
+    }
   }
   const chunks: Chunk[] = []
   for (const path of [...files].sort()) {
