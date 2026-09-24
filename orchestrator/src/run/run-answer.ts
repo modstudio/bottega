@@ -17,6 +17,7 @@ import { answerRulingRefusal } from '../workflow/autonomy.ts'
 import { resolveAnswerRulings } from '../workflow/autonomy-scopes.ts'
 import { keepTreeHold } from '../worktree/keep-tree-hold.ts'
 import { packedResumePrompt } from './run.ts'
+import { answerRunLivenessRefusal } from './run-answer-liveness.ts'
 import { KEEP_RUN_FILES_DAYS, readDispatchState } from './run-artifacts.ts'
 import { adoptRunMutation, auditRunMutation, authorizeRunMutation } from './run-authority.ts'
 import {
@@ -286,9 +287,13 @@ export async function answerRun(
 
   // A ruling resumes a live chain. Stopped, failed, stale and voided roots
   // used to record the answer and spawn a new turn, which is retry's job.
-  if (row.evidence_excluded !== null || (row.status !== 'running' && row.status !== 'asking')) {
+  const livenessRefusal = answerRunLivenessRefusal(
+    { status: row.status, voided: row.evidence_excluded !== null },
+    open,
+  )
+  if (livenessRefusal !== null) {
     throw new Error(
-      `run ${id} is ${row.evidence_excluded !== null ? 'voided' : row.status}. ` +
+      `run ${id} is ${livenessRefusal}. ` +
         'invariant: a ruling resumes a live chain; a terminal chain is retried or abandoned. ' +
         `orch retry ${id} --agent <name> (carries the recorded ruling) or orch abandon ${id}`,
     )

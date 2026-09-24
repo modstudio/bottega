@@ -1,9 +1,10 @@
 // concern: run-inbox
 /** Knows asking-run and ruling inbox. Must not know run control, transports, routing, the CLI, or worktrees. */
 import { db, SESSION_LIVE_MS, sessionId } from '../database/db.ts'
-import { activeSql, voidedSql } from '../evidence/evidence-query.ts'
+import { voidedSql } from '../evidence/evidence-query.ts'
 import { projectAt } from '../project/projects.ts'
 import { resolveProjectAutonomy } from '../workflow/autonomy-scopes.ts'
+import { answerRunLivenessRefusal } from './run-answer-liveness.ts'
 
 type RunInboxFlags = { has(name: string): boolean }
 type RunInboxPresentation = {
@@ -48,23 +49,18 @@ export async function runInboxCommand(
   const sessionRecent = hasSessionSeen
     ? 'CASE WHEN r.session_id IS NOT NULL AND seen.last_seen >= ? THEN 1 ELSE 0 END'
     : '0'
-  const allRows = db()
+  const queriedRows = db()
     .query(
       `SELECT q.id, q.run_id, q.asked_at, q.question, q.options, q.recommendation, q.why,
+            q.answered_at,
             r.agent, r.job, r.repo, r.status, r.session_id,
             root.status root_status,
-            ${activeSql('root')} root_active,
             ${voidedSql('root')} root_voided,
             COALESCE(r.parent_run_id, r.id) root_id,
             ${sessionRecent} session_recent
        FROM question q JOIN run r ON r.id = q.run_id
        JOIN run root ON root.id = COALESCE(r.parent_run_id, r.id)
        ${seenJoin}
-      WHERE ${
-        mine || activeOnly
-          ? `q.answered_at IS NULL AND ${activeSql('root')}`
-          : `q.answered_at IS NULL OR NOT (${activeSql('root')})`
-      }
       ORDER BY q.run_id, q.id`,
     )
     .all(...(hasSessionSeen ? [cutoff] : [])) as {
@@ -72,6 +68,7 @@ export async function runInboxCommand(
     run_id: number
     asked_at: string
     question: string
+    answered_at: string | null
     options: string | null
     recommendation: string | null
     why: string | null
@@ -81,11 +78,23 @@ export async function runInboxCommand(
     status: string
     session_id: string | null
     root_status: string
-    root_active: number
     root_voided: number
     root_id: number
     session_recent: number
   }[]
+  const isLive = (question: (typeof queriedRows)[number]) =>
+    answerRunLivenessRefusal(
+      {
+        status: question.root_status,
+        voided: Boolean(question.root_voided),
+      },
+      [{ owner_status: question.status }],
+    ) === null
+  const allRows = queriedRows.filter((question) =>
+    mine || activeOnly
+      ? question.answered_at === null && isLive(question)
+      : question.answered_at === null || !isLive(question),
+  )
   // Inside a registered project, the default view is the union of questions in
   // that project and questions owned by this session. Visibility does not make
   // a question owned by another session answerable.
@@ -95,7 +104,7 @@ export async function runInboxCommand(
       : allRows.filter((q) => sid !== null && q.session_id === sid)
     : allRows
   const canAnswer = (owner: string | null) => owner === null || (sid !== null && owner === sid)
-  const active = rows.filter((q) => q.root_active)
+  const active = rows.filter(isLive)
   const terminal = rows.filter((q) => !active.includes(q))
   const answerable = active.filter((q) => canAnswer(q.session_id))
   const visible = active.filter((q) => !canAnswer(q.session_id))
@@ -115,7 +124,7 @@ export async function runInboxCommand(
           // which a last-seen timestamp cannot establish.
           session_live: q.session_recent ? true : null,
           session_liveness: q.session_recent ? 'live' : 'unknown',
-          can_answer: Boolean(q.root_active) && canAnswer(q.session_id),
+          can_answer: isLive(q) && canAnswer(q.session_id),
           question: q.question,
           options: q.options ? (JSON.parse(q.options) as string[]) : [],
           recommendation: q.recommendation,

@@ -2,7 +2,7 @@ import { beforeEach, expect, test } from 'bun:test'
 import { readFileSync } from 'node:fs'
 import { addRun } from '../../test/fixtures/store.ts'
 import { db } from '../database/db.ts'
-import { activeSql, VOIDED_SQL, voidedSql } from '../evidence/evidence-query.ts'
+import { VOIDED_SQL, voidedSql } from '../evidence/evidence-query.ts'
 import { upsertProject } from '../project/projects.ts'
 import { runInboxCommand } from './run-inbox.ts'
 
@@ -10,16 +10,12 @@ const normalize = (sql: string) => sql.replace(/\s+/g, ' ').trim()
 
 test('inbox voided membership is VOIDED_SQL, not a second copy', () => {
   const inbox = readFileSync(new URL('./run-inbox.ts', import.meta.url), 'utf8')
-  expect(inbox).toContain("activeSql('root')")
   expect(inbox).toContain("voidedSql('root')")
   expect(inbox).not.toMatch(/evidence_excluded/)
   expect(normalize(VOIDED_SQL.replaceAll('r.', 'root.'))).toBe(normalize(voidedSql('root')))
   expect(
     normalize(VOIDED_SQL.replaceAll('r.', 'root.').replace('IS NOT NULL', 'IS NULL')),
   ).not.toBe(normalize(voidedSql('root')))
-  expect(activeSql('root')).toBe(
-    `root.status IN ('running','asking') AND NOT (${voidedSql('root')})`,
-  )
 })
 
 beforeEach(() => {
@@ -68,6 +64,31 @@ test('inbox names the canonical root in its answer footer', async () => {
   question(child, 'which?')
   expect(await inbox()).toContain(`orch answer ${root}`)
 })
+test.each(['ok', 'failed'])(
+  'inbox treats an asking child under a %s root as live',
+  async (status) => {
+    const root = addRun({
+      agent: 'codex',
+      job: 'implement',
+      status,
+      session: 'orch-test-session',
+    })
+    const child = addRun({
+      agent: 'codex',
+      job: 'implement',
+      status: 'asking',
+      session: 'orch-test-session',
+      parent: root,
+      turn: 2,
+    })
+    question(child, `${status} root continuation?`)
+
+    expect(await inbox()).toContain(`${status} root continuation?`)
+    expect(JSON.parse(await inbox({ all: true, json: true }))).toContainEqual(
+      expect.objectContaining({ run_id: child, can_answer: true }),
+    )
+  },
+)
 test('inbox keeps own questions in their existing format outside a registered project', async () => {
   const id = addRun({
     agent: 'codex',
@@ -153,11 +174,19 @@ test('inbox --all --active --json includes active foreign and omits terminal que
   })
 })
 test('inbox treats an empty-string exclusion as voided, matching VOIDED_SQL', async () => {
-  const id = addRun({ agent: 'codex', job: 'implement', status: 'asking', session: 'foreign' })
-  db().query("UPDATE run SET evidence_excluded='' WHERE id=?").run(id)
-  question(id, 'voided?')
+  const root = addRun({ agent: 'codex', job: 'implement', status: 'ok', session: 'foreign' })
+  const child = addRun({
+    agent: 'codex',
+    job: 'implement',
+    status: 'asking',
+    session: 'foreign',
+    parent: root,
+    turn: 2,
+  })
+  db().query("UPDATE run SET evidence_excluded='' WHERE id=?").run(root)
+  question(child, 'voided?')
   expect(JSON.parse(await inbox({ all: true, json: true }))).toContainEqual(
-    expect.objectContaining({ run_id: id, status: 'voided', can_answer: false }),
+    expect.objectContaining({ run_id: child, status: 'voided', can_answer: false }),
   )
 })
 test('bare project inbox includes its questions and this session questions from other projects', async () => {
