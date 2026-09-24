@@ -91,14 +91,14 @@ export function MeasuresSummary({
       />
       {showShipped && 'shipped' in measures ? (
         <StatTile
-          label="How many tasks landed"
+          label="Tasks done"
           figure={measures.shipped.count.toLocaleString()}
-          hint="Landed in this window."
+          hint="Tasks moved to done in this window."
         />
       ) : null}
       {'cycleTime' in measures && measures.cycleTime ? (
         <StatTile
-          label="How long landed work took"
+          label="Cycle time for tasks done"
           figure={hour(measures.cycleTime.medianMs)}
           hint={`Median cycle time; n=${measures.cycleTime.n}.`}
         />

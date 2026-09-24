@@ -122,7 +122,7 @@ export function renderHtml(
   // reader is entitled to see the real figure in the same table rather than
   // inferring it from the KPI above. The counts DO add; only the hours do not,
   // and the footnote says why.
-  // A header row and bare numbers, rather than repeating "shipped" and "open"
+  // A header row and bare numbers, rather than repeating "done" and "open"
   // on every line. Five columns each carrying a word is what crowded this off
   // the side of a phone; the words belong at the top, once.
   const th = (text: string, align = 'right') => `
@@ -131,7 +131,7 @@ export function renderHtml(
                letter-spacing:.09em;text-transform:uppercase;color:${FAINT};
                white-space:nowrap">${esc(text)}</td>`
 
-  const headRow = `<tr>${th('', 'left')}${th('task')}${th('engaged')}${th('shipped')}${th('open')}</tr>`
+  const headRow = `<tr>${th('', 'left')}${th('task')}${th('engaged')}${th('done')}${th('open')}</tr>`
 
   const totalRow = `
     <tr>
@@ -183,7 +183,7 @@ export function renderHtml(
       <div style="font-family:${SANS};font-weight:400;font-size:12px;line-height:1.4;color:${FAINT};padding-top:5px">
         ${esc(i.key ?? '')} &middot; ${esc(i.engaged)} engaged
         &middot; ${esc(compactTokens(i.agentTokens))} agent tokens
-        ${i.closed ? `&middot; <span style="color:#15703C">shipped</span>` : ''}</div>
+        ${i.closed ? `&middot; <span style="color:#15703C">done</span>` : ''}</div>
     </td></tr>`
   }
 
@@ -204,7 +204,7 @@ export function renderHtml(
       <span style="font-family:${SANS};font-weight:600;font-size:15px;line-height:1.4;color:${INK};padding-left:9px">${esc(p.project)}</span>
       <span class="gstat" style="font-family:${SANS};font-weight:400;font-size:12px;line-height:1.5;color:${FAINT};padding-left:9px">
         ${hours1(p.taskMs)}h of task work in ${hours1(p.engagedMs)}h
-        &middot; ${p.shipped} shipped &middot; ${p.moving} open</span>
+        &middot; ${p.shipped} done &middot; ${p.moving} open</span>
     </td></tr>
     <tr><td><table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0">
       ${[...done, ...open].map(task).join('')}
@@ -238,7 +238,7 @@ export function renderHtml(
       .ttl  { font-size:15px !important }
     }
     /* Narrower still - the 320px phones. The table's minimum width is set by
-       its COLUMN HEADERS, not its numbers: "ENGAGED" and "SHIPPED" at 9.5px
+       its COLUMN HEADERS, not its numbers: "ENGAGED" and "DONE" at 9.5px
        with letter-spacing were holding the card at 334px inside a 320px
        screen. Dropping the tracking and a half-point of size is enough; the
        numbers were never the problem. */
@@ -265,7 +265,7 @@ export function renderHtml(
 
     <tr><td style="padding:20px 0 4px">
       <table role="presentation" cellpadding="0" cellspacing="0" border="0">
-        <tr>${kpi(hours1(g.taskMs) + 'h', 'task hours')}${kpi(hours1(g.engagedMs) + 'h', 'engaged')}${kpi(String(shipped), 'shipped')}${kpi(String(moving), 'open')}</tr>
+        <tr>${kpi(hours1(g.taskMs) + 'h', 'task hours')}${kpi(hours1(g.engagedMs) + 'h', 'engaged')}${kpi(String(shipped), 'done')}${kpi(String(moving), 'open')}</tr>
       </table>
     </td></tr>
 
@@ -333,10 +333,10 @@ function reportMeasureLines(presentation: ReportPresentation) {
   lines.push(`Agent runs cost ${measureMoney(measures.cost.vendorCostUsd)}.`)
   if ('shipped' in measures) {
     lines.push(
-      `${measures.shipped.count} ${measures.shipped.count === 1 ? 'item landed' : 'items landed'}.`,
+      `${measures.shipped.count} ${measures.shipped.count === 1 ? 'task moved' : 'tasks moved'} to done in this window.`,
       measures.cycleTime
-        ? `Median cycle time was ${measureHours(measures.cycleTime.medianMs)} across ${measures.cycleTime.n} ${measures.cycleTime.n === 1 ? 'item' : 'items'}.`
-        : 'No landed item had enough recorded activity to calculate cycle time.',
+        ? `Median cycle time for tasks done was ${measureHours(measures.cycleTime.medianMs)} across ${measures.cycleTime.n} ${measures.cycleTime.n === 1 ? 'task' : 'tasks'}.`
+        : 'No task moved to done had enough recorded activity to calculate cycle time.',
     )
   }
   return lines
@@ -359,7 +359,7 @@ export function renderText(
   const shipped = tasks.filter((i) => i.closed).length
   return [
     `${hours1(g.taskMs)}h of task work in ${hours1(g.engagedMs)}h engaged · ` +
-      `${shipped} shipped · ${tasks.length - shipped} in progress`,
+      `${shipped} done · ${tasks.length - shipped} in progress`,
     `the last ${g.hours} hours across ${g.projects.length} projects`,
     ...(presentation ? [presentation.windowLine, '', ...reportMeasureLines(presentation)] : []),
     '',
@@ -367,12 +367,12 @@ export function renderText(
     `  ${'PROJECT'.padEnd(11)} ${'TASK'.padStart(6)} ${'ENGAGED'.padStart(8)}`,
     `  ${'TOTAL'.padEnd(11)} ${(hours1(g.taskMs) + 'h').padStart(6)}` +
       ` ${(hours1(g.engagedMs) + 'h').padStart(8)}` +
-      `  ${String(shipped).padStart(2)} shipped  ${String(tasks.length - shipped).padStart(2)} open`,
+      `  ${String(shipped).padStart(2)} done  ${String(tasks.length - shipped).padStart(2)} open`,
     ...g.projects.map(
       (p) =>
         `  ${p.project.padEnd(11)} ${(hours1(p.taskMs) + 'h').padStart(6)}` +
         ` ${(hours1(p.engagedMs) + 'h').padStart(8)}` +
-        `  ${String(p.shipped).padStart(2)} shipped  ${String(p.moving).padStart(2)} open`,
+        `  ${String(p.shipped).padStart(2)} done  ${String(p.moving).padStart(2)} open`,
     ),
     ...g.projects.flatMap((p) => [
       '',

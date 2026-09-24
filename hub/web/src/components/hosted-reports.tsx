@@ -145,7 +145,7 @@ export function ProjectBreakdown({
               <TableHead>Agent-hours started</TableHead>
               <TableHead>Session time</TableHead>
               <TableHead>Cost</TableHead>
-              <TableHead>Landed</TableHead>
+              <TableHead>Done</TableHead>
               <TableHead>Cycle time</TableHead>
             </TableRow>
           </TableHeader>
@@ -211,7 +211,8 @@ export function ProjectBreakdown({
                       <>
                         {value.shipped.count}
                         <div className="text-xs text-text-muted">
-                          {value.shipped.sample.eventCount} events
+                          Tasks moved to done in this window · {value.shipped.sample.eventCount}{' '}
+                          events
                         </div>
                       </>
                     ) : (

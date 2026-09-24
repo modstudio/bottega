@@ -142,7 +142,7 @@ history before writing, and each mapping uses the commit's actual instant.
 The daily report is a projection of canonical tasks, engaged time, and spend. It does not
 reconstruct work by clustering raw events.
 
-“Shipped” means closed inside the report window. A task completed earlier but touched in
+“Done” means moved to done inside the report window. A task completed earlier but touched in
 the window belongs under also worked on. Determine closure from an observed status
 transition, falling back to the tracker's update timestamp where observation history is
 unavailable. The send floor measures engaged time rather than conversation gaps.
