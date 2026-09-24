@@ -10,6 +10,7 @@ registerStandardRuntime()
 
 import { strictlyAuthenticatedWorkerRun } from '../ask/ask.ts'
 import { checkDoc, repoRootForDoc } from '../canon/canon.ts'
+import { searchProjectCode } from '../code/code-search.ts'
 import { searchDocs } from '../doc/doc-search.ts'
 import {
   consumeDoc,
@@ -660,6 +661,36 @@ export function createDocsMcpServer(): McpServer {
       },
     },
     async ({ query, k }) => text(await searchDocs(query, k ?? 5)),
+  )
+
+  server.registerTool(
+    'search_code',
+    {
+      description: 'Find code by meaning and return repository paths and line ranges to open.',
+      inputSchema: {
+        query: z.string().trim().min(1),
+        project: z.string().trim().min(1).optional(),
+        k: z.number().int().positive().optional(),
+      },
+    },
+    async ({ query, project, k }) => {
+      const cwd = process.cwd()
+      const callerProject = projectAt(cwd)
+      const selected = project ? projectByName(project) : callerProject
+      if (!selected) {
+        throw new Error(
+          project
+            ? `no project "${project}"`
+            : 'the working directory is not inside a registered project; pass project',
+        )
+      }
+      if (callerProject?.name !== selected.name) {
+        throw new Error(
+          `the caller's checkout does not belong to project ${selected.name}; run from that project's checkout`,
+        )
+      }
+      return text(await searchProjectCode(selected, cwd, query, k ?? 5))
+    },
   )
 
   server.registerTool(

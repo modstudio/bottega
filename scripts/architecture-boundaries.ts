@@ -38,6 +38,12 @@ const boundary = (
 // Widen a row deliberately, with its reason still true, rather than routing around it.
 export const importBoundaries: ImportBoundary[] = [
   boundary(
+    'code-commands-boundary',
+    'orchestrator/src/code/code-commands.ts',
+    ['../project/projects.ts', './code-search.ts'],
+    'Keep code search commands independent of stores, transports, and retrieval internals.',
+  ),
+  boundary(
     'agent-commands-boundary',
     'orchestrator/src/agent/agent-commands.ts',
     [

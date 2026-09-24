@@ -101,6 +101,8 @@ export type WorktreeTool = {
 }
 
 export type ProjectSettings = {
+  /** Local opt-ins for semantic search corpora. */
+  search?: { code?: boolean }
   autonomy?: AutonomySettings
   /** Whether Bottega manages and validates this project's hydrated canon context. */
   managedContext?: boolean
