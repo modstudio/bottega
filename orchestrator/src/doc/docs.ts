@@ -32,6 +32,8 @@ import {
   refuseProjectOrGlobalInject,
 } from './doc-write-allowed.ts'
 
+type RevisionToken = string
+
 export type Doc = {
   id: number
   scope: DocScope
@@ -44,7 +46,7 @@ export type Doc = {
   created_at: string
   updated_at: string
   record_id: string | null
-  revision: string | null
+  revision: RevisionToken | null
 }
 
 export type DocMetadata = Pick<
@@ -170,6 +172,9 @@ export type DocListFilters = {
   updatedAtOrder?: 'asc' | 'desc'
 }
 
+const LATEST_REVISION_SQL =
+  '(SELECT r.record_id FROM doc_revision r WHERE r.doc_id=d.id ORDER BY r.id DESC LIMIT 1)'
+
 function validScope(scope: string): asserts scope is DocScope {
   if (!DOC_SCOPES.includes(scope as DocScope)) {
     throw new Error(`unknown doc scope "${scope}"; valid scopes: ${DOC_SCOPES.join(', ')}`)
@@ -270,8 +275,7 @@ export function listDocs(filters: { scope?: string; subject?: string | null } = 
   }
   return db()
     .query(
-      `SELECT d.*, (SELECT r.record_id FROM doc_revision r WHERE r.doc_id=d.id ORDER BY r.id DESC LIMIT 1) AS revision
-       FROM doc d${where.length ? ` WHERE ${where.join(' AND ')}` : ''} ` +
+      `SELECT d.*, ${LATEST_REVISION_SQL} AS revision FROM doc d${where.length ? ` WHERE ${where.join(' AND ')}` : ''} ` +
         "ORDER BY scope, COALESCE(subject, ''), slug",
     )
     .all(...values) as Doc[]
@@ -322,9 +326,7 @@ export function listDocMetadata(filters: DocListFilters = {}): DocMetadata[] {
     : "scope, COALESCE(subject, ''), slug"
   return db()
     .query(
-      `SELECT d.id, d.scope, d.subject, d.slug, d.title, length(CAST(d.body AS BLOB)) AS bytes,
-              d.updated_at,
-              (SELECT r.record_id FROM doc_revision r WHERE r.doc_id=d.id ORDER BY r.id DESC LIMIT 1) AS revision
+      `SELECT d.id, d.scope, d.subject, d.slug, d.title, length(CAST(d.body AS BLOB)) AS bytes, d.updated_at, ${LATEST_REVISION_SQL} AS revision
        FROM doc d${where.length ? ` WHERE ${where.join(' AND ')}` : ''} ORDER BY ${order}`,
     )
     .all(...values) as DocMetadata[]
@@ -334,8 +336,7 @@ export function getDoc(scope: string, subject: string | null, slug: string): Doc
   validScope(scope)
   return db()
     .query(
-      `SELECT d.*, (SELECT r.record_id FROM doc_revision r WHERE r.doc_id=d.id ORDER BY r.id DESC LIMIT 1) AS revision
-       FROM doc d WHERE scope = ? AND subject IS ? AND slug = ?`,
+      `SELECT d.*, ${LATEST_REVISION_SQL} AS revision FROM doc d WHERE scope = ? AND subject IS ? AND slug = ?`,
     )
     .get(scope, subject, slug) as Doc | null
 }
@@ -466,18 +467,18 @@ function assertDocLint(input: DocWriteInput, prior: Doc | null): void {
   if (refusal) throw new Error(refusal)
 }
 
+// biome-ignore format: compact local wrapper keeps this module within its frozen file ceiling.
+function assertRevisionWrite(input: DocWriteInput, current: string | null, isCreate: boolean): void {
+  const decision = decideDocRevisionWrite({ expected: input.expectedRevision, current, isCreate, scope: input.scope })
+  if (!decision.allow) throw new Error(decision.reason)
+}
+
 async function setDocWithOp(input: DocWriteInput, requestedOp?: 'import'): Promise<Doc> {
   writableDb()
   validate(input.scope, input.subject, input.slug)
   const identity = writeIdentity(input)
   const prior = getDoc(input.scope, input.subject, input.slug)
-  const revisionDecision = decideDocRevisionWrite({
-    expected: input.expectedRevision,
-    current: prior?.revision ?? null,
-    isCreate: prior === null,
-    scope: input.scope,
-  })
-  if (!revisionDecision.allow) throw new Error(revisionDecision.reason)
+  assertRevisionWrite(input, prior?.revision ?? null, prior === null)
   const delivery =
     input.scope === 'canon' ? 'demand' : (input.delivery ?? prior?.delivery ?? 'inject')
   assertDocWriteAllowed({ ...input, delivery })
@@ -502,13 +503,7 @@ async function setDocWithOp(input: DocWriteInput, requestedOp?: 'import'): Promi
   })
   return writeTransaction(() => {
     const existing = getDoc(input.scope, input.subject, input.slug)
-    const localDecision = decideDocRevisionWrite({
-      expected: input.expectedRevision,
-      current: existing?.revision ?? null,
-      isCreate: existing === null,
-      scope: input.scope,
-    })
-    if (!localDecision.allow) throw new Error(localDecision.reason)
+    assertRevisionWrite(input, existing?.revision ?? null, existing === null)
     const at = nowIso()
     let doc: Doc
     if (existing) {
