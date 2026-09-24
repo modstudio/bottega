@@ -45,7 +45,7 @@ export const CodeSearchOutputSchema = z
     query: z.string(),
     k: z.number().int(),
     contract: DocSearchOutputSchema.shape.contract,
-    refresh: DocSearchOutputSchema.shape.refresh,
+    refresh: DocSearchOutputSchema.shape.refresh.extend({ pruned: z.number().int() }).strict(),
     results: z.array(
       z
         .object({

@@ -4,7 +4,14 @@ import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import type { Chunk } from './corpus/chunks.ts'
-import { applyRefresh, configureIndexDatabase, indexedRows, storedRows } from './index-store.ts'
+import {
+  applyCodeCacheRefresh,
+  applyRefresh,
+  codeCacheRows,
+  configureIndexDatabase,
+  indexedRows,
+  storedRows,
+} from './index-store.ts'
 import { planRefresh } from './refresh-plan.ts'
 
 const vector = [1, ...Array.from<number>({ length: 1_023 }).fill(0)]
@@ -184,6 +191,34 @@ test('refreshes isolate docs and each project code corpus', () => {
     })
     expect(storedRows(database, 'code:one')).toHaveLength(0)
     expect(storedRows(database, 'code:two')).toHaveLength(1)
+  } finally {
+    database.close()
+    rmSync(directory, { recursive: true })
+  }
+})
+
+test('document refreshes leave code cache rows intact and code refresh prunes expired rows', () => {
+  const directory = mkdtempSync(join(tmpdir(), 'retrieval-cache-isolation-test-'))
+  const database = new Database(join(directory, 'retrieval.db'), { create: true })
+  try {
+    configureIndexDatabase(database)
+    applyCodeCacheRefresh(database, {
+      seenContentHashes: ['old'],
+      embedded: [{ contentHash: 'old', document: 'old', vector }],
+      now: 1,
+    })
+    applyRefresh(database, { corpusKey: 'docs', delete: [], upsert: [] })
+    expect(codeCacheRows(database, ['old'])).toHaveLength(1)
+
+    const refreshed = applyCodeCacheRefresh(database, {
+      seenContentHashes: ['current'],
+      embedded: [{ contentHash: 'current', document: 'current', vector }],
+      now: 101,
+      retentionMs: 50,
+    })
+    expect(refreshed).toEqual({ embedded: 1, pruned: 1 })
+    expect(codeCacheRows(database, ['old'])).toHaveLength(0)
+    expect(codeCacheRows(database, ['current'])).toHaveLength(1)
   } finally {
     database.close()
     rmSync(directory, { recursive: true })

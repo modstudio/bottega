@@ -27,6 +27,7 @@ async function runRetrieval(argv: string[]) {
 
 export async function searchProjectCode(
   project: Project,
+  checkoutPath: string,
   query: string,
   k: number,
   runner: Runner = runRetrieval,
@@ -40,7 +41,7 @@ export async function searchProjectCode(
     query,
     '--code',
     '--project',
-    project.path,
+    checkoutPath,
     '--k',
     String(k),
     '--json',

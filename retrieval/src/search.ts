@@ -1,40 +1,17 @@
 // concern: retrieval-search
-/** Refreshes the document-vector index and serves semantic document search. */
+/** Adapts the document corpus and compare-and-swap store to indexed search. */
 
-import { createHash } from 'node:crypto'
 import { resolve } from 'node:path'
 import type { DocSearchOutput } from '../../shared/orch-contract.ts'
-import { resolveRetrievalDatabase } from '../../shared/state-directory.ts'
+import { type Chunk, loadDocCorpus } from './corpus/chunks.ts'
+import { applyRefresh, indexedRows, storedRows } from './index-store.ts'
 import {
-  EMBEDDING_DIMENSION,
-  EMBEDDING_MODEL,
-  INSTRUCTION_VERSION,
-  queryDocument,
-  RERANK_CANDIDATES,
-} from './contract.ts'
-import { type Chunk, chunkDocument, loadDocCorpus } from './corpus/chunks.ts'
-import { applyRefresh, indexedRows, openIndexDatabase, storedRows } from './index-store.ts'
+  boundedSnippet,
+  currentContract,
+  indexedSearch,
+  type SearchClients,
+} from './indexed-search.ts'
 import { planRefresh } from './refresh-plan.ts'
-import { embed, endpointsFromEnvironment, rerank } from './services/endpoints.ts'
-import { cosineTopK } from './vector-ranking.ts'
-
-const EMBED_BATCH_SIZE = 64
-const SNIPPET_CHARACTERS = 500
-
-type Clients = {
-  embed(url: string, input: string[]): Promise<number[][]>
-  rerank(url: string, query: string, documents: string[]): Promise<number[]>
-}
-
-const currentContract = {
-  model: EMBEDDING_MODEL,
-  dimension: EMBEDDING_DIMENSION,
-  instructionVersion: INSTRUCTION_VERSION,
-}
-
-function contentHash(chunk: Chunk): string {
-  return createHash('sha256').update(chunkDocument(chunk)).digest('hex')
-}
 
 export async function search(
   query: string,
@@ -43,112 +20,67 @@ export async function search(
     repositoryRoot?: string
     environment?: NodeJS.ProcessEnv
     databasePath?: string
-    clients?: Clients
+    clients?: SearchClients
     loadChunks?: (repositoryRoot: string) => Promise<Chunk[]>
   } = {},
 ): Promise<DocSearchOutput> {
-  if (!query.trim()) throw new Error('search query must not be empty')
-  if (!Number.isInteger(k) || k < 1) throw new Error('search k must be a positive integer')
-  const environment = options.environment ?? process.env
-  const endpoints = endpointsFromEnvironment(environment)
-  const clients = options.clients ?? { embed, rerank }
-  const database = openIndexDatabase(options.databasePath ?? resolveRetrievalDatabase(environment))
-  try {
-    const repositoryRoot = options.repositoryRoot ?? resolve(import.meta.dir, '../..')
-    const chunks = await (options.loadChunks ?? loadDocCorpus)(repositoryRoot)
-    const current = chunks.map((chunk) => ({ chunk, contentHash: contentHash(chunk) }))
-    const plan = planRefresh(current, storedRows(database, 'docs'))
-    const embeddedRows = []
-    for (let start = 0; start < plan.embed.length; start += EMBED_BATCH_SIZE) {
-      const batch = plan.embed.slice(start, start + EMBED_BATCH_SIZE)
-      const vectors = await clients.embed(
-        endpoints.embedUrl,
-        batch.map(({ chunk }) => chunkDocument(chunk)),
-      )
-      if (vectors.length !== batch.length) {
-        throw new Error('embedding endpoint did not return one vector per indexed chunk')
-      }
-      embeddedRows.push(
-        ...batch.map((candidate, index) => ({
-          ...candidate,
-          document: chunkDocument(candidate.chunk),
-          vector: vectors[index] ?? [],
-        })),
-      )
-    }
-    const applied = applyRefresh(database, {
-      corpusKey: 'docs',
-      delete: plan.delete,
-      upsert: embeddedRows,
-    })
-
-    const [queryVector] = await clients.embed(endpoints.embedUrl, [queryDocument(query)])
-    const queryArray = new Float32Array(queryVector ?? [])
-    if (queryArray.length !== EMBEDDING_DIMENSION) {
-      throw new Error(
-        `embedding endpoint returned query dimension ${queryArray.length}; expected ${EMBEDDING_DIMENSION}`,
-      )
-    }
-    const rows = indexedRows(database, 'docs').filter(
-      (row) =>
-        row.model === EMBEDDING_MODEL &&
-        row.dimension === EMBEDDING_DIMENSION &&
-        row.instructionVersion === INSTRUCTION_VERSION,
-    )
-    const byId = new Map(rows.map((row) => [row.chunkId, row]))
-    const embedded = cosineTopK(
-      rows.map((row) => ({
-        id: row.chunkId,
-        vector: new Float32Array(
-          row.vector.buffer,
-          row.vector.byteOffset,
-          row.vector.byteLength / Float32Array.BYTES_PER_ELEMENT,
-        ),
-      })),
-      queryArray,
-      Math.min(RERANK_CANDIDATES, rows.length),
-    )
-    const candidates = embedded.map(({ id }) => byId.get(id)!)
-    const rerankScores = await clients.rerank(
-      endpoints.rerankUrl,
-      query,
-      candidates.map((row) => row.document),
-    )
-    const embeddingScores = new Map(embedded.map(({ id, score }) => [id, score]))
-    const ranked = candidates
-      .map((row, index) => ({ row, rerankScore: rerankScores[index] ?? Number.NEGATIVE_INFINITY }))
-      .sort(
-        (left, right) =>
-          right.rerankScore - left.rerankScore || left.row.chunkId.localeCompare(right.row.chunkId),
-      )
-      .slice(0, k)
-    return {
-      query,
-      k,
-      contract: currentContract,
-      refresh: {
-        embedded: applied.embedded,
-        deleted: applied.deleted,
-        unchanged: plan.unchanged.length,
-        stale: applied.stale,
-      },
-      results: ranked.map(({ row, rerankScore }) => {
-        const characters = Array.from(row.text)
-        const truncated = characters.length > SNIPPET_CHARACTERS
+  const repositoryRoot = options.repositoryRoot ?? resolve(import.meta.dir, '../..')
+  let refreshPlan: ReturnType<typeof planRefresh> | undefined
+  return indexedSearch(
+    query,
+    k,
+    {
+      loadChunks: () => (options.loadChunks ?? loadDocCorpus)(repositoryRoot),
+      plan: (database, candidates) => {
+        const plan = planRefresh(candidates, storedRows(database, 'docs'))
+        refreshPlan = plan
+        const documents = new Map(
+          candidates.map((candidate) => [candidate.chunk.id, candidate.document]),
+        )
         return {
-          scope: row.scope,
-          subject: row.subject,
-          slug: row.slug,
-          title: row.title,
-          headingPath: JSON.parse(row.headingPath) as string[],
-          snippet: characters.slice(0, SNIPPET_CHARACTERS).join(''),
-          truncated,
-          embeddingScore: embeddingScores.get(row.chunkId)!,
-          rerankScore,
+          embed: plan.embed.map((candidate) => ({
+            ...candidate,
+            document: documents.get(candidate.chunk.id)!,
+          })),
+          unchanged: plan.unchanged.length,
         }
-      }),
-    }
-  } finally {
-    database.close()
-  }
+      },
+      apply: (database, _candidates, embedded) => {
+        if (!refreshPlan) throw new Error('document refresh was not planned')
+        const applied = applyRefresh(database, {
+          corpusKey: 'docs',
+          delete: refreshPlan.delete,
+          upsert: embedded.map((candidate) => ({
+            ...candidate,
+            observed: candidate.observed ?? null,
+          })),
+        })
+        return {
+          embedded: applied.embedded,
+          deleted: applied.deleted,
+          unchanged: refreshPlan.unchanged.length,
+          stale: applied.stale,
+        }
+      },
+      rows: (database) =>
+        indexedRows(database, 'docs')
+          .filter(
+            (row) =>
+              row.model === currentContract.model &&
+              row.dimension === currentContract.dimension &&
+              row.instructionVersion === currentContract.instructionVersion,
+          )
+          .map((row) => ({ ...row, id: row.chunkId })),
+    },
+    (row, scores) => ({
+      scope: row.scope,
+      subject: row.subject,
+      slug: row.slug,
+      title: row.title,
+      headingPath: JSON.parse(row.headingPath) as string[],
+      ...boundedSnippet(row.text),
+      ...scores,
+    }),
+    options,
+  )
 }

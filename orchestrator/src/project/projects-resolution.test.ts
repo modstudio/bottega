@@ -2,6 +2,7 @@ import { afterEach, describe, expect, test } from 'bun:test'
 import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { codeSearchCommand } from '../code/code-commands.ts'
 import { db, writableDb } from '../database/db.ts'
 import {
   type ProjectReferenceCounts,
@@ -116,6 +117,24 @@ describe('projects are data, not code', () => {
     // Not '/w/alphabet': containment must respect the path separator, or a
     // project named as a prefix of another would swallow it.
     expect(projectAt('/w/alphabet')).toBeNull()
+  })
+
+  test('code search refuses a caller checkout outside the selected project', async () => {
+    upsertProject({
+      name: 'alpha',
+      path: '/w/alpha',
+      settings: { search: { code: true } },
+    })
+    await expect(
+      codeSearchCommand(
+        'meaning',
+        {
+          has: () => false,
+          flag: (name) => (name === 'project' ? 'alpha' : undefined),
+        },
+        { cwd: () => '/somewhere/else', log: () => undefined },
+      ),
+    ).rejects.toThrow("caller's checkout does not belong")
   })
 
   test('the longest matching path wins, so nesting resolves inward', () => {

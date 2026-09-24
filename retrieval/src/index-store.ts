@@ -30,6 +30,17 @@ type IndexedRow = StoredVectorRow & {
   vector: Uint8Array
 }
 
+export type CodeCacheRow = {
+  contentHash: string
+  model: string
+  dimension: number
+  instructionVersion: string
+  document: string
+  vector: Uint8Array
+}
+
+const CODE_VECTOR_CACHE_RETENTION_MS = 30 * 24 * 60 * 60 * 1_000
+
 type VectorUpsert = PlannedUpsert & {
   document: string
   vector: number[]
@@ -75,6 +86,18 @@ export function configureIndexDatabase(database: Database): void {
           vector BLOB NOT NULL
         )
       `)
+      database.exec(`
+        CREATE TABLE IF NOT EXISTS code_vector_cache (
+          content_hash TEXT NOT NULL,
+          model TEXT NOT NULL,
+          dimension INTEGER NOT NULL,
+          instruction_version TEXT NOT NULL,
+          document TEXT NOT NULL,
+          vector BLOB NOT NULL,
+          last_seen_at INTEGER NOT NULL,
+          PRIMARY KEY (content_hash, model, dimension, instruction_version)
+        )
+      `)
       const columns = new Set(
         database
           .query<{ name: string }, []>('PRAGMA table_info(document_vector)')
@@ -91,6 +114,85 @@ export function configureIndexDatabase(database: Database): void {
         if (!columns.has(name))
           database.exec(`ALTER TABLE document_vector ADD COLUMN ${name} ${declaration}`)
       }
+    })
+    .immediate()
+}
+
+export function codeCacheRows(database: Database, contentHashes: string[]): CodeCacheRow[] {
+  if (!contentHashes.length) return []
+  const find = database.query<
+    {
+      content_hash: string
+      model: string
+      dimension: number
+      instruction_version: string
+      document: string
+      vector: Uint8Array
+    },
+    [string, string, number, string]
+  >(`
+    SELECT content_hash, model, dimension, instruction_version, document, vector
+      FROM code_vector_cache
+     WHERE content_hash = ? AND model = ? AND dimension = ? AND instruction_version = ?
+  `)
+  return contentHashes.flatMap((contentHash) => {
+    const row = find.get(contentHash, EMBEDDING_MODEL, EMBEDDING_DIMENSION, INSTRUCTION_VERSION)
+    return row
+      ? [
+          {
+            contentHash: row.content_hash,
+            model: row.model,
+            dimension: row.dimension,
+            instructionVersion: row.instruction_version,
+            document: row.document,
+            vector: row.vector,
+          },
+        ]
+      : []
+  })
+}
+
+export function applyCodeCacheRefresh(
+  database: Database,
+  input: {
+    seenContentHashes: string[]
+    embedded: Array<{ contentHash: string; document: string; vector: number[] }>
+    now?: number
+    retentionMs?: number
+  },
+): { embedded: number; pruned: number } {
+  const now = input.now ?? Date.now()
+  const retentionMs = input.retentionMs ?? CODE_VECTOR_CACHE_RETENTION_MS
+  const insert = database.query(`
+    INSERT OR IGNORE INTO code_vector_cache (
+      content_hash, model, dimension, instruction_version, document, vector, last_seen_at
+    ) VALUES (?, ?, ?, ?, ?, ?, ?)
+  `)
+  const touch = database.query(`
+    UPDATE code_vector_cache SET last_seen_at = ?
+     WHERE content_hash = ? AND model = ? AND dimension = ? AND instruction_version = ?
+  `)
+  const prune = database.query('DELETE FROM code_vector_cache WHERE last_seen_at < ?')
+  return database
+    .transaction(() => {
+      let embedded = 0
+      for (const candidate of input.embedded) {
+        const result = insert.run(
+          candidate.contentHash,
+          EMBEDDING_MODEL,
+          EMBEDDING_DIMENSION,
+          INSTRUCTION_VERSION,
+          candidate.document,
+          vectorBlob(candidate.vector),
+          now,
+        )
+        embedded += Number(result.changes)
+      }
+      for (const contentHash of new Set(input.seenContentHashes)) {
+        touch.run(now, contentHash, EMBEDDING_MODEL, EMBEDDING_DIMENSION, INSTRUCTION_VERSION)
+      }
+      const pruned = Number(prune.run(now - retentionMs).changes)
+      return { embedded, pruned }
     })
     .immediate()
 }

@@ -13,6 +13,7 @@ export async function codeSearchCommand(
 ): Promise<void> {
   if (!query) throw new Error('orch code search "<query>" [--project P] [--k N] [--json]')
   const projectName = flags.flag('project')
+  const callerProject = projectAt(presentation.cwd())
   const project = projectName ? projectByName(projectName) : projectAt(presentation.cwd())
   if (!project) {
     throw new Error(
@@ -21,9 +22,14 @@ export async function codeSearchCommand(
         : 'the working directory is not inside a registered project; pass --project P',
     )
   }
+  if (callerProject?.name !== project.name) {
+    throw new Error(
+      `the caller's checkout does not belong to project ${project.name}; run from that project's checkout`,
+    )
+  }
   const rawK = flags.flag('k') ?? '5'
   if (!/^\d+$/.test(rawK) || Number(rawK) < 1) throw new Error('--k must be a positive integer')
-  const output = await searchProjectCode(project, query, Number(rawK))
+  const output = await searchProjectCode(project, presentation.cwd(), query, Number(rawK))
   if (flags.has('json')) {
     presentation.log(JSON.stringify(output))
     return

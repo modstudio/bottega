@@ -674,7 +674,9 @@ export function createDocsMcpServer(): McpServer {
       },
     },
     async ({ query, project, k }) => {
-      const selected = project ? projectByName(project) : projectAt(process.cwd())
+      const cwd = process.cwd()
+      const callerProject = projectAt(cwd)
+      const selected = project ? projectByName(project) : callerProject
       if (!selected) {
         throw new Error(
           project
@@ -682,7 +684,12 @@ export function createDocsMcpServer(): McpServer {
             : 'the working directory is not inside a registered project; pass project',
         )
       }
-      return text(await searchProjectCode(selected, query, k ?? 5))
+      if (callerProject?.name !== selected.name) {
+        throw new Error(
+          `the caller's checkout does not belong to project ${selected.name}; run from that project's checkout`,
+        )
+      }
+      return text(await searchProjectCode(selected, cwd, query, k ?? 5))
     },
   )
 
