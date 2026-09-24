@@ -21,24 +21,42 @@ describe('chunkText', () => {
     const [chunk] = chunkDoc(
       {
         scope: 'project',
-        subject: 'bottega',
+        subject: 'subject',
         slug: 'retrieval-design',
         title: 'Retrieval design',
         body: 'The measured design.',
       },
-      10,
-      1,
+      1_000,
     )
 
     expect(chunk?.identity).toEqual({
       kind: 'doc',
       scope: 'project',
-      subject: 'bottega',
+      subject: 'subject',
       slug: 'retrieval-design',
     })
-    expect(chunk?.path).toBe('doc:project/bottega/retrieval-design')
+    expect(chunk?.path).toBe('doc:project/subject/retrieval-design')
     expect(docIdentity({ scope: 'global', subject: null, slug: 'shared-rule' })).toBe(
       'doc:global/_/shared-rule',
+    )
+  })
+
+  test('bounds doc chunks by characters while preserving their identity', () => {
+    const chunks = chunkDoc(
+      {
+        scope: 'project',
+        subject: 'subject',
+        slug: 'long-doc',
+        title: 'Long doc',
+        body: 'content '.repeat(400),
+      },
+      700,
+    )
+
+    expect(chunks.length).toBeGreaterThan(1)
+    expect(chunks.every((chunk) => chunk.path.length + 32 + chunk.text.length <= 700)).toBe(true)
+    expect(new Set(chunks.map((chunk) => chunk.path))).toEqual(
+      new Set(['doc:project/subject/long-doc']),
     )
   })
 })

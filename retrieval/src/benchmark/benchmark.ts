@@ -3,7 +3,13 @@
 import { access, readFile } from 'node:fs/promises'
 import { resolve } from 'node:path'
 import { type Chunk, chunkDocument, loadCorpus } from '../corpus/chunks.ts'
-import { embed, endpointsFromEnvironment, probeEndpoints, rerank } from '../services/endpoints.ts'
+import {
+  embed,
+  embeddingCharacterLimit,
+  endpointsFromEnvironment,
+  probeEndpoints,
+  rerank,
+} from '../services/endpoints.ts'
 import { keywordRanking } from './keyword.ts'
 import { type Ranking, rankOfFirstLabel, scoreRankings } from './metrics.ts'
 import { CODE_QUERIES, DOC_QUERIES, type DocBenchmarkQuery, type LabelledQuery } from './queries.ts'
@@ -117,9 +123,10 @@ function reportSet(
 
 async function main() {
   const repositoryRoot = resolve(import.meta.dir, '../../..')
-  const chunks = await loadCorpus(repositoryRoot)
-  await validateQueries(repositoryRoot, chunks)
   const endpoints = endpointsFromEnvironment(process.env)
+  const docMaxCharacters = await embeddingCharacterLimit(endpoints.embedUrl)
+  const chunks = await loadCorpus(repositoryRoot, docMaxCharacters)
+  await validateQueries(repositoryRoot, chunks)
   await probeEndpoints(endpoints)
 
   const startedAt = performance.now()
@@ -179,8 +186,11 @@ async function main() {
             chunks.filter((chunk) => chunk.identity.kind === 'doc').map((chunk) => chunk.path),
           ).size,
           chunks: chunks.length,
-          chunking:
-            '60-line windows with 10-line overlap; path and start line prefix each document',
+          chunking: {
+            code: '60-line windows with 10-line overlap',
+            docs: `character windows capped at ${docMaxCharacters} characters from served model metadata`,
+            embeddingInput: 'path and start line prefix each document',
+          },
         },
         querySets: {
           code: reportSet(CODE_QUERIES, rankingsFor(CODE_QUERIES)),

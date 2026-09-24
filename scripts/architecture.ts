@@ -45,7 +45,7 @@ export const modules: ArchitectureModule[] = [
   module('retrieval/src/corpus/chunks.ts', ['node:fs/promises', 'node:path', 'bun']),
   module('retrieval/src/services/endpoints.ts', []),
   module('retrieval/src/benchmark/metrics.ts', ['../corpus/chunks.ts']),
-  module('retrieval/src/benchmark/queries.ts', []),
+  module('retrieval/src/benchmark/queries.ts', ['../../../shared/brand.ts']),
   module('retrieval/src/benchmark/keyword.ts', ['../corpus/chunks.ts']),
   module('retrieval/src/benchmark/benchmark.ts', [
     'node:fs/promises',

@@ -47,7 +47,7 @@ describe('scoreRankings', () => {
     const metrics = scoreRankings([
       {
         queryId: 'two-valid-docs',
-        goldLabels: ['doc:project/bottega/first', 'doc:global/_/second'],
+        goldLabels: ['doc:project/subject/first', 'doc:global/_/second'],
         chunks: [
           docChunk('machine', null, 'other', 'other'),
           docChunk('global', null, 'second', 'answer'),

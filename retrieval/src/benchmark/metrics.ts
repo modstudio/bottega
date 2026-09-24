@@ -6,7 +6,7 @@ import { docIdentity } from '../corpus/chunks.ts'
 export type Ranking = { queryId: string; chunks: Chunk[]; goldLabels: string[] }
 type RetrievalMetrics = { hitAt1: number; hitAt5: number; mrr: number }
 
-export function chunkLabel(chunk: Chunk): string {
+function chunkLabel(chunk: Chunk): string {
   return chunk.identity.kind === 'code' ? chunk.identity.path : docIdentity(chunk.identity)
 }
 

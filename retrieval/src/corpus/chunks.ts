@@ -14,7 +14,7 @@ export type Chunk = {
 }
 
 export type DocIdentity = { kind: 'doc'; scope: string; subject: string | null; slug: string }
-export type CorpusIdentity = { kind: 'code'; path: string } | DocIdentity
+type CorpusIdentity = { kind: 'code'; path: string } | DocIdentity
 
 export type DocRow = {
   scope: string
@@ -60,7 +60,10 @@ export function docIdentity(identity: Omit<DocIdentity, 'kind'>): string {
   return `doc:${identity.scope}/${identity.subject ?? '_'}/${identity.slug}`
 }
 
-export function chunkDoc(doc: DocRow, size = 60, overlap = 10): Chunk[] {
+const DOC_CHUNK_OVERLAP_CHARACTERS = 512
+const DOC_CHUNK_PREFIX_RESERVE = 32
+
+export function chunkDoc(doc: DocRow, maxCharacters: number): Chunk[] {
   const identity: DocIdentity = {
     kind: 'doc',
     scope: doc.scope,
@@ -68,11 +71,30 @@ export function chunkDoc(doc: DocRow, size = 60, overlap = 10): Chunk[] {
     slug: doc.slug,
   }
   const path = docIdentity(identity)
-  return chunkText(path, `# ${doc.title}\n\n${doc.body}`, size, overlap).map((chunk) => ({
-    ...chunk,
-    id: `${path}:${chunk.startLine}-${chunk.endLine}`,
-    identity,
-  }))
+  const text = `# ${doc.title}\n\n${doc.body}`
+  const textLimit = maxCharacters - path.length - DOC_CHUNK_PREFIX_RESERVE
+  if (textLimit <= DOC_CHUNK_OVERLAP_CHARACTERS) {
+    throw new Error('doc character limit must leave room for chunk identity and overlap')
+  }
+  const chunks: Chunk[] = []
+  for (let start = 0; start < text.length; start += textLimit - DOC_CHUNK_OVERLAP_CHARACTERS) {
+    const end = Math.min(start + textLimit, text.length)
+    const body = text.slice(start, end).trim()
+    if (body) {
+      const startLine = text.slice(0, start).split('\n').length
+      const endLine = startLine + text.slice(start, end).split('\n').length - 1
+      chunks.push({
+        id: `${path}:chars-${start}-${end}`,
+        path,
+        identity,
+        startLine,
+        endLine,
+        text: body,
+      })
+    }
+    if (end === text.length) break
+  }
+  return chunks
 }
 
 function isDocRow(value: unknown): value is DocRow {
@@ -87,7 +109,7 @@ function isDocRow(value: unknown): value is DocRow {
   )
 }
 
-export async function loadDocCorpus(repositoryRoot: string): Promise<Chunk[]> {
+async function loadDocCorpus(repositoryRoot: string, docMaxCharacters: number): Promise<Chunk[]> {
   const child = Bun.spawn([resolve(repositoryRoot, 'bin/orch'), 'doc', 'list', '--json'], {
     cwd: repositoryRoot,
     stdout: 'pipe',
@@ -115,10 +137,15 @@ export async function loadDocCorpus(repositoryRoot: string): Promise<Chunk[]> {
   if (!Array.isArray(rows) || !rows.every(isDocRow)) {
     throw new Error('doc corpus export did not contain valid document rows')
   }
-  return rows.filter((doc) => doc.scope !== 'resume').flatMap((doc) => chunkDoc(doc))
+  return rows
+    .filter((doc) => doc.scope !== 'resume')
+    .flatMap((doc) => chunkDoc(doc, docMaxCharacters))
 }
 
-export async function loadCorpus(repositoryRoot: string): Promise<Chunk[]> {
+export async function loadCorpus(
+  repositoryRoot: string,
+  docMaxCharacters: number,
+): Promise<Chunk[]> {
   const root = resolve(repositoryRoot)
   const files = new Set<string>()
   for (const pattern of SOURCE_GLOBS) {
@@ -131,7 +158,7 @@ export async function loadCorpus(repositoryRoot: string): Promise<Chunk[]> {
       throw new Error(`corpus path escaped root: ${path}`)
     chunks.push(...chunkText(path, await readFile(absolute, 'utf8')))
   }
-  chunks.push(...(await loadDocCorpus(repositoryRoot)))
+  chunks.push(...(await loadDocCorpus(repositoryRoot, docMaxCharacters)))
   return chunks
 }
 
