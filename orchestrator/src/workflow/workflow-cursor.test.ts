@@ -360,6 +360,10 @@ describe('workflow cursor adapter', () => {
     )
     promoteWorkflow('ship', draft.n, 'publish', 'test', d)
 
+    expect(
+      getWorkflowStepWithCursor('ship', 'fixture', '2', args, 'default', context, d).slug,
+    ).toBe('lens')
+
     const recomposed = composeWorkflowWithCursor(
       'ship',
       'fixture',

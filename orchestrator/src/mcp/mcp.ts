@@ -466,12 +466,7 @@ export function createDocsMcpServer(): McpServer {
     },
     async ({ slug, project, step, mode, args, autonomy }) => {
       const preliminary = composeWorkflow(slug, project, mode, args ?? {})
-      const stepSlug = resolveWorkflowStepReference(
-        step,
-        mode && preliminary.mode
-          ? [{ mode: preliminary.mode.slug, steps: preliminary.steps.map((item) => item.slug) }]
-          : workflowModeStepLists(slug),
-      )
+      const stepSlug = mode ? step : resolveWorkflowStepReference(step, workflowModeStepLists(slug))
       const preliminaryStep = mode
         ? undefined
         : getWorkflowStep(slug, project, stepSlug, args ?? {}, undefined, { mode })

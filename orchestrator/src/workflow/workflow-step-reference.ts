@@ -10,6 +10,7 @@ export function resolveWorkflowStepReference(
   reference: string,
   modeStepLists: readonly WorkflowModeStepList[],
 ): string {
+  if (modeStepLists.some(({ steps }) => steps.includes(reference))) return reference
   if (!/^\d+$/.test(reference)) return reference
 
   const position = BigInt(reference)

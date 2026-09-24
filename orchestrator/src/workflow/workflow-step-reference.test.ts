@@ -8,6 +8,12 @@ describe('workflow step references', () => {
     ).toBe('implement')
   })
 
+  test('prefers an exact step slug over a position', () => {
+    expect(
+      resolveWorkflowStepReference('2', [{ mode: 'single', steps: ['prepare', 'review', '2'] }]),
+    ).toBe('2')
+  })
+
   test('refuses a position outside the valid range', () => {
     expect(() =>
       resolveWorkflowStepReference('3', [{ mode: 'single', steps: ['reproduce', 'implement'] }]),

@@ -144,12 +144,9 @@ async function stepCommand(
     catalogueVersion: positive(flagValue(argv, 'catalogue-version'), '--catalogue-version'),
   }
   const preliminary = composeWorkflow(argv[2]!, project, mode, args, undefined, selection)
-  const stepSlug = resolveWorkflowStepReference(
-    argv[3]!,
-    mode && preliminary.mode
-      ? [{ mode: preliminary.mode.slug, steps: preliminary.steps.map((step) => step.slug) }]
-      : workflowModeStepLists(argv[2]!, undefined, selection),
-  )
+  const stepSlug = mode
+    ? argv[3]!
+    : resolveWorkflowStepReference(argv[3]!, workflowModeStepLists(argv[2]!, undefined, selection))
   const preliminaryStep = mode
     ? undefined
     : getWorkflowStep(argv[2]!, project, stepSlug, args, undefined, selection)
