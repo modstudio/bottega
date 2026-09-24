@@ -343,6 +343,9 @@ export function createMemoryRecordApiClient(): RecordApiClient {
     async voidRun(runId, input) {
       voids.set(runId, input.reason)
     },
+    async unvoidRun(runId) {
+      voids.delete(runId)
+    },
     async listScores() {
       const items = [
         ...[...scores.entries()].map(([runId, score]) => ({ runId, ...score })),

@@ -1,9 +1,14 @@
 import { Database } from 'bun:sqlite'
 import { expect } from 'bun:test'
 import { newRecordId } from '../../shared/record/schema.ts'
+import { applyMigrations } from '../src/database/migrations.ts'
+import { pullRecordCache } from '../src/record/record-cache.ts'
 import { syncRecord } from '../src/record/record-sync.ts'
+import { listRecordScores, unvoidRecordRun, voidRecordRun } from '../src/record/record-verdicts.ts'
 import { RUN_RECORD_PAYLOAD_COLUMNS } from '../src/run/run-outbox.ts'
 import { SCORE_RECORD_PAYLOAD_COLUMNS } from '../src/score/score-outbox.ts'
+import { VOID_EXCLUSION_REASON } from '../src/verdict/verdict-rules.ts'
+import { createMemoryRecordApiClient, installRecordApiClient } from './fixtures/record-api.ts'
 
 export { proveHostedDocs } from './postgres-docs-proof.ts'
 
@@ -170,6 +175,90 @@ export async function proveScoreRecordSync(input: {
   const actorRead = select(input.spaceId, "delivery || '|' || quality || '|' || note")
   const otherSpaceRead = select(input.otherSpaceId, 'run_id')
 
+  const unscoredId = newRecordId()
+  Object.assign(run, { id: unscoredId, localId: 100 })
+  local
+    .query("INSERT INTO outbox (id,kind,record_id,payload,created_at) VALUES (3,'run',?,?,?)")
+    .run(unscoredId, JSON.stringify(run), String(run.createdAt))
+  expect(await sync(input.actorUrl)).toMatchObject({ pushed: 1, failed: 0, pending: 0 })
+  const tenant = { url: input.actorUrl, userId: input.userId, spaceId: input.spaceId }
+  await voidRecordRun({ ...tenant, id: recordId, reason: VOID_EXCLUSION_REASON })
+  await voidRecordRun({ ...tenant, id: unscoredId, reason: VOID_EXCLUSION_REASON })
+  const voidRows = await listRecordScores({ ...tenant, limit: 100, cursor: null })
+  const cursor = voidRows
+    .filter((row) => row.runId === recordId || row.runId === unscoredId)
+    .map((row) => row.updatedAt)
+    .sort()
+    .at(-1)!
+  await Bun.sleep(2)
+  await unvoidRecordRun({ ...tenant, id: recordId, note: 'mistaken scored void' })
+  await unvoidRecordRun({ ...tenant, id: unscoredId, note: 'mistaken unscored void' })
+  const cache = new Database(':memory:')
+  applyMigrations(cache)
+  cache
+    .query(
+      `INSERT INTO run
+        (id,record_id,started_at,agent,job,prompt_sha,prompt_bytes,prompt_head,status,evidence_excluded)
+       VALUES (991,?,?,?,?,?,?,?,?,?), (992,?,?,?,?,?,?,?,?,?)`,
+    )
+    .run(
+      recordId,
+      String(run.startedAt),
+      'codex',
+      'probe',
+      'prompt',
+      6,
+      'prompt',
+      'ok',
+      VOID_EXCLUSION_REASON,
+      unscoredId,
+      String(run.startedAt),
+      'codex',
+      'probe',
+      'prompt',
+      6,
+      'prompt',
+      'ok',
+      VOID_EXCLUSION_REASON,
+    )
+  cache
+    .query(
+      `INSERT INTO score (run_id,delivery,quality,note,scored_at,scored_by)
+       VALUES (991,'full','right','first',?,'architect')`,
+    )
+    .run(String(score.scoredAt))
+  cache.query("INSERT INTO schema_meta (key,value) VALUES ('record_scores_cursor',?)").run(cursor)
+  const memoryClient = createMemoryRecordApiClient()
+  installRecordApiClient({
+    ...memoryClient,
+    listScores: async (query) => ({
+      items: await listRecordScores({
+        ...tenant,
+        updatedSince: query.updatedSince,
+        limit: query.limit ?? 100,
+        cursor: null,
+      }),
+      nextCursor: null,
+    }),
+  })
+  try {
+    expect(await pullRecordCache(cache)).toMatchObject({ scores: 2 })
+    expect(
+      cache
+        .query<{ id: number; evidence_excluded: string | null }, []>(
+          'SELECT id,evidence_excluded FROM run WHERE id IN (991,992) ORDER BY id',
+        )
+        .all(),
+    ).toEqual([
+      { id: 991, evidence_excluded: null },
+      { id: 992, evidence_excluded: null },
+    ])
+    expect(cache.query('SELECT run_id FROM score ORDER BY run_id').all()).toEqual([{ run_id: 991 }])
+  } finally {
+    installRecordApiClient(memoryClient)
+    cache.close()
+  }
+
   Object.assign(score, {
     delivery: 'partial',
     quality: 'mixed',
@@ -178,7 +267,7 @@ export async function proveScoreRecordSync(input: {
     updatedAt: '2026-09-15T01:03:00.000Z',
   })
   local
-    .query("INSERT INTO outbox (id,kind,record_id,payload,created_at) VALUES (3,'score',?,?,?)")
+    .query("INSERT INTO outbox (id,kind,record_id,payload,created_at) VALUES (4,'score',?,?,?)")
     .run(recordId, JSON.stringify(score), String(score.scoredAt))
   expect(await sync(input.actorUrl)).toMatchObject({ pushed: 1, failed: 0, pending: 0 })
   const rescoredRead = select(input.spaceId, "delivery || '|' || quality || '|' || note")

@@ -127,6 +127,7 @@ function capturingClient(overrides: Partial<RecordApiClient> = {}): {
     renameSubject: unused,
     putScore: unused,
     voidRun: unused,
+    unvoidRun: unused,
     listScores: unused,
     counts: async () => ({
       docs: hosted.size,

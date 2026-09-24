@@ -48,7 +48,12 @@ import {
   weigh,
 } from './score/score.ts'
 import { enqueueScoreRecord } from './score/score-outbox.ts'
-import { refuseVerdict, type VerdictRefusal } from './verdict/verdict-rules.ts'
+import {
+  refuseUnvoid,
+  refuseVerdict,
+  type VerdictRefusal,
+  VOID_EXCLUSION_REASON,
+} from './verdict/verdict-rules.ts'
 
 type JudgmentFlags = {
   has(name: string): boolean
@@ -214,14 +219,17 @@ function scoredVoidFidelity(
   return needsFidelity ? fidelity : undefined
 }
 
-function enqueueTerminalRunRecord(id: number): void {
+function enqueueTerminalRunRecord(
+  id: number,
+  evidenceUnvoid: { note: string } | null = null,
+): void {
   const row = db()
     .query<{ record_id: string | null; finished_at: string }, [number]>(
       `SELECT record_id, COALESCE(last_event_at, started_at) AS finished_at FROM run
         WHERE id=? AND status IN ('ok','failed','stale','stopped')`,
     )
     .get(id)
-  if (row?.record_id) enqueueRunRecord(db(), id, machineId(), row.finished_at)
+  if (row?.record_id) enqueueRunRecord(db(), id, machineId(), row.finished_at, evidenceUnvoid)
 }
 
 function clearUnjudgedOwnerExclusion(id: number): boolean {
@@ -242,6 +250,7 @@ function requestedEvidenceExclusion(
   flags: JudgmentFlags,
   options: ScoreOptions,
 ): EvidenceExclusion | null {
+  if (flags.has('unvoid')) return null
   if (!flags.has('blocked-by-tree')) return flags.has('void') ? 'void' : null
   if (flags.has('void')) throw new Error('--blocked-by-tree and --void cannot be combined')
   if (!options.note?.trim()) throw new Error('--note is required with --blocked-by-tree')
@@ -282,7 +291,7 @@ function recordEvidenceExclusion(
     !cannotRecord && delivery ? scoredVoidFidelity(row.job, delivery, quality, fidelity) : undefined
   const excludedReason = blocked
     ? `blocked by its tree: ${options.note!.trim()}`
-    : 'voided with orch score --void'
+    : VOID_EXCLUSION_REASON
   const recordId = hostedRunId(id)
   const scoredAt = nowIso()
   const recordedBy = flags.flag('scorer') ?? process.env.ORCH_SCORER ?? 'claude'
@@ -319,6 +328,32 @@ function recordEvidenceExclusion(
   presentation.log(
     `voided run ${id}: retained run and output; excluded from routing evidence; ${verdictResult}`,
   )
+}
+
+function recordEvidenceUnvoid(
+  id: number,
+  evidenceExcluded: string | null,
+  flags: JudgmentFlags,
+  options: ScoreOptions,
+  presentation: JudgmentPresentation,
+): void {
+  if (flags.has('void')) throw new Error('--unvoid and --void cannot be combined')
+  if (flags.has('blocked-by-tree')) {
+    throw new Error('--unvoid and --blocked-by-tree cannot be combined')
+  }
+  if (options.words.length) throw new Error('--unvoid cannot be combined with a verdict')
+  const note = options.note?.trim()
+  if (!note) throw new Error('--note is required with --unvoid')
+  const refusal = refuseUnvoid(evidenceExcluded)
+  if (refusal) throw new Error(`refused: run ${id} ${refusal}`)
+  let authority = authorizeRunMutation(id, 'unvoid')
+  writeTransaction(() => {
+    authority = adoptRunMutation(authority, 'unvoid')
+    db().query('UPDATE run SET evidence_excluded=NULL WHERE id=?').run(id)
+    enqueueTerminalRunRecord(id, { note })
+    auditRunMutation(authority, 'unvoid', note)
+  })
+  presentation.log(`unvoided run ${id}: routing evidence restored; existing verdict unchanged`)
 }
 export async function judgeRun(
   requestedId: number,
@@ -629,6 +664,29 @@ function scoringHelp(
   return refusal.message
 }
 
+function recordRequestedUnvoid(
+  id: number,
+  evidenceExcluded: string | null,
+  flags: JudgmentFlags,
+  options: ScoreOptions,
+  presentation: JudgmentPresentation,
+): boolean {
+  if (!flags.has('unvoid')) return false
+  recordEvidenceUnvoid(id, evidenceExcluded, flags, options, presentation)
+  return true
+}
+
+function refusePendingAgentScore(
+  id: number,
+  agent: string,
+  failureKind: string | null,
+  flags: JudgmentFlags,
+): void {
+  if (agent === '(pending)' && !(flags.has('void') && failureKind === 'harness')) {
+    throw new Error(`run ${id} cannot be scored: its agent is the placeholder '(pending)'`)
+  }
+}
+
 export async function scoreRun(
   requestedId: number,
   flags: JudgmentFlags,
@@ -638,7 +696,7 @@ export async function scoreRun(
   const row = db()
     .query(
       `SELECT root.id, root.agent, root.job, root.session_id, root.parent_run_id,
-          root.failure_kind, root.output_path, root.probe
+          root.failure_kind, root.output_path, root.probe, root.evidence_excluded
      FROM run requested
      JOIN run root ON root.id = COALESCE(requested.parent_run_id, requested.id)
     WHERE requested.id = ?`,
@@ -652,15 +710,15 @@ export async function scoreRun(
     failure_kind: string | null
     output_path: string | null
     probe: number
+    evidence_excluded: string | null
   } | null
   if (!row) throw new Error(`no run ${requestedId}`)
   const id = row.id
+  if (recordRequestedUnvoid(id, row.evidence_excluded, flags, options, presentation)) return
   // A pick-time harness refusal never selected an agent, but it is still a
   // real failed row the owning session must be able to clear from its ledger.
   // Voiding that one shape records the note without manufacturing evidence.
-  if (row.agent === '(pending)' && !(flags.has('void') && row.failure_kind === 'harness')) {
-    throw new Error(`run ${id} cannot be scored: its agent is the placeholder '(pending)'`)
-  }
+  refusePendingAgentScore(id, row.agent, row.failure_kind, flags)
   const exclusion = requestedEvidenceExclusion(flags, options)
   if (exclusion) {
     refuseScoredBlockedByTree(id, exclusion)

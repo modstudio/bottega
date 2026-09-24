@@ -118,10 +118,10 @@ function applyScore(local: Database, item: Record<string, unknown>): void {
     .query<{ id: number }, [string]>('SELECT id FROM run WHERE record_id=?')
     .get(runId)
   if (!localRun) return
-  if (typeof item.evidenceExcluded === 'string') {
+  if (Object.hasOwn(item, 'evidenceExcluded')) {
     local
       .query('UPDATE run SET evidence_excluded=? WHERE id=?')
-      .run(item.evidenceExcluded, localRun.id)
+      .run(item.evidenceExcluded == null ? null : String(item.evidenceExcluded), localRun.id)
   }
   if (item.delivery == null) return
   local

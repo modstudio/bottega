@@ -5,6 +5,7 @@ import { JOBS } from '../jobs/jobs.ts'
 import { chainTerminationAt } from '../run/run-liveness.ts'
 import { weigh } from '../score/score.ts'
 import { median } from '../state/statistics.ts'
+import { VOID_EXCLUSION_REASON } from '../verdict/verdict-rules.ts'
 import {
   COOLDOWN_MIN,
   currentPolicySelection,
@@ -274,7 +275,7 @@ function events(includeVoided = false): Event[] {
         AND r.agent <> '(pending)'
         ${
           includeVoided
-            ? "AND (r.evidence_excluded IS NULL OR r.evidence_excluded='voided with orch score --void')"
+            ? `AND (r.evidence_excluded IS NULL OR r.evidence_excluded='${VOID_EXCLUSION_REASON}')`
             : 'AND r.evidence_excluded IS NULL'
         }
       ORDER BY r.job, r.started_at, r.id`,

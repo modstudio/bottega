@@ -132,6 +132,9 @@ export const runExclusion = pgTable.withRLS(
     spaceId: spaceIdentity(),
     reason: text().notNull(),
     excludedAt: timestamp('excluded_at', { withTimezone: true }).notNull(),
+    supersededAt: timestamp('superseded_at', { withTimezone: true }),
+    supersededBy: text('superseded_by'),
+    supersedeNote: text('supersede_note'),
   },
   (table) => [...tenantPolicies('run_exclusion', table.spaceId)],
 )

@@ -45,6 +45,7 @@ export const RUN_RECORD_PAYLOAD_COLUMNS = [
   'stack',
   'model',
   'evidenceExcluded',
+  'evidenceUnvoid',
   'inputTree',
   'headCommit',
   'reviewRef',
@@ -98,6 +99,7 @@ export function buildRunRecordPayload(
   row: LocalRun,
   machineId: string,
   finishedAt: string,
+  evidenceUnvoid: { note: string } | null = null,
 ): Record<string, unknown> {
   return {
     id: row.record_id,
@@ -140,6 +142,7 @@ export function buildRunRecordPayload(
     stack: row.stack,
     model: row.model,
     evidenceExcluded: row.evidence_excluded,
+    evidenceUnvoid,
     inputTree: row.input_tree,
     headCommit: row.head_commit,
     reviewRef: row.review_ref,
@@ -170,6 +173,7 @@ export function enqueueRunRecord(
   runId: number,
   machineId: string,
   finishedAt: string,
+  evidenceUnvoid: { note: string } | null = null,
 ): void {
   const row = database
     .query<EnqueueRun, [number]>(
@@ -189,7 +193,7 @@ export function enqueueRunRecord(
   if (row.parent_run_id !== null && row.parent_record_id === null) {
     throw new Error(`run ${runId} has parent_run_id ${row.parent_run_id} without a record id`)
   }
-  const payload = buildRunRecordPayload(row, machineId, finishedAt)
+  const payload = buildRunRecordPayload(row, machineId, finishedAt, evidenceUnvoid)
   database
     .query(
       `INSERT INTO outbox (kind, record_id, payload, created_at)
