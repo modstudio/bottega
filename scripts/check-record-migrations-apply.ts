@@ -67,9 +67,9 @@ async function main(): Promise<void> {
   try {
     await database.waitReady
     await provision(database)
-    for (const migration of migrations) {
-      await database.transaction((transaction) => applyMigration(transaction, migration))
-    }
+    await database.transaction(async (transaction) => {
+      for (const migration of migrations) await applyMigration(transaction, migration)
+    })
     console.log(`record migrations apply: ${migrations.length} applied`)
   } finally {
     await database.close()
