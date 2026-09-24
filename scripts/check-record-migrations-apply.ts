@@ -14,7 +14,7 @@ const root = fileURLToPath(new URL('..', import.meta.url))
 const migrationsFolder = join(root, 'shared', 'record', 'migrations')
 const rerun = 'bun scripts/check-record-migrations-apply.ts'
 const brokenDocBackfill = '20260924180716_dev_906_doc_latest_revision'
-const repairedDocBackfill = '20260924202812_dev_918_doc_latest_revision_backfill'
+const repairedDocBackfill = '20260924201224_dev_917_doc_latest_revision_repair'
 const proofDocId = '01990000-0000-7000-8000-000000000010'
 const proofRevisionId = '01990000-0000-7000-8000-000000000012'
 
@@ -165,7 +165,7 @@ async function main(): Promise<void> {
             migration.name === repairedDocBackfill &&
             (await proofLatestRevision(transaction)) !== proofRevisionId
           ) {
-            throw new CheckFailure('DEV-918 doc backfill did not select the newest proof revision')
+            throw new CheckFailure('DEV-917 doc backfill did not select the newest proof revision')
           }
         }
       })

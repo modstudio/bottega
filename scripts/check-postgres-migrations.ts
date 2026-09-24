@@ -7,7 +7,7 @@ import { analyzeForcedRlsDml, type ForcedRlsDmlFinding } from './postgres-migrat
 const root = fileURLToPath(new URL('..', import.meta.url))
 const drizzleKit = join(root, 'node_modules', '.bin', 'drizzle-kit')
 const migrationsFolder = join(root, 'shared', 'record', 'migrations')
-const repairedMigration = '20260924202812_dev_918_doc_latest_revision_backfill'
+const repairedMigration = '20260924201224_dev_917_doc_latest_revision_repair'
 const executeKeyword = 'EXECUTE'
 
 type MigrationException = ForcedRlsDmlFinding & { migration: string; reasonText: string }
