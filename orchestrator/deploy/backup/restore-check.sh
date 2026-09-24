@@ -82,6 +82,7 @@ fi
 docker exec "$container" psql --username postgres --dbname postgres --set ON_ERROR_STOP=1 \
   --command 'CREATE ROLE record_owner NOLOGIN' \
   --command 'CREATE ROLE record_actor NOLOGIN' \
+  --command 'CREATE ROLE record_auth NOLOGIN' \
   --command 'CREATE ROLE record_reader NOLOGIN' \
   --command 'CREATE DATABASE record_restore_check OWNER record_owner'
 docker cp "$dump_path" "${container}:/tmp/record.dump"

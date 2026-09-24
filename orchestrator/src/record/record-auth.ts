@@ -243,6 +243,8 @@ export function recordAuth(
     plugins: [
       organization({
         invitationExpiresIn: RECORD_INVITATION_EXPIRES_IN_SECONDS,
+        // Invitation ids are unguessable and are delivered only in the invitation email.
+        requireEmailVerificationOnInvitation: false,
         sendInvitationEmail: async ({ id, email, organization: invitedSpace, inviter, role }) => {
           if (!hubUrl)
             throw new Error(

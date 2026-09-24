@@ -25,10 +25,12 @@ export type InvitationDetail = OrganizationInvitation & {
 
 export class OrganizationRequestError extends Error {
   readonly status: number
+  readonly code: string | null
 
-  constructor(message: string, status: number) {
+  constructor(message: string, status: number, code: string | null) {
     super(message)
     this.status = status
+    this.code = code
   }
 }
 
@@ -49,6 +51,17 @@ function errorMessage(body: unknown, fallback: string) {
   return fallback
 }
 
+function errorCode(body: unknown): string | null {
+  if (!body || typeof body !== 'object') return null
+  const value = body as Record<string, unknown>
+  if (typeof value.code === 'string' && value.code) return value.code
+  if (value.error && typeof value.error === 'object') {
+    const error = value.error as Record<string, unknown>
+    if (typeof error.code === 'string' && error.code) return error.code
+  }
+  return null
+}
+
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const response = await fetch(organizationUrl(path), {
     ...init,
@@ -60,6 +73,7 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
     throw new OrganizationRequestError(
       errorMessage(body, 'The request could not be completed'),
       response.status,
+      errorCode(body),
     )
   }
   return body as T

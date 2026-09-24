@@ -146,7 +146,8 @@ function SignedInInvitation({ id, email }: { id: string; email: string }) {
   if (invitation.isPending) return <p>Loading invitation…</p>
   if (invitation.error) {
     const mismatch =
-      invitation.error instanceof OrganizationRequestError && invitation.error.status === 403
+      invitation.error instanceof OrganizationRequestError &&
+      invitation.error.code === 'YOU_ARE_NOT_THE_RECIPIENT_OF_THE_INVITATION'
     return (
       <section>
         <PageHeader title="Accept invitation" />
@@ -163,7 +164,7 @@ function SignedInInvitation({ id, email }: { id: string; email: string }) {
             </Button>
           </>
         ) : (
-          <p>{invalidMessage}</p>
+          <p>{invitation.error.message || invalidMessage}</p>
         )}
       </section>
     )

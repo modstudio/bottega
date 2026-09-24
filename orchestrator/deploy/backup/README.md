@@ -67,20 +67,21 @@ With no file argument, the script builds the backup image, downloads the newest 
 orchestrator/deploy/backup/restore-check.sh
 ```
 
-The check creates the `record_owner`, `record_actor`, and `record_reader` roles before restoring. It verifies table and constraint inventory, prints row counts for `run`, `run_score`, `doc`, `doc_revision`, and `project`, and always removes the container.
+The check creates the `record_owner`, `record_actor`, `record_auth`, and `record_reader` roles before restoring. It verifies table and constraint inventory, prints row counts for `run`, `run_score`, `doc`, `doc_revision`, and `project`, and always removes the container.
 
 ## Restore the hosted record
 
 1. Stop every writer, including the record API and direct CLI syncs. Preserve the current database and role credentials until the replacement has been validated.
 2. Restore into a new scratch database first with `restore-check.sh`. Compare the printed row counts with the source or the last known healthy report.
-3. As the PostgreSQL cluster administrator, ensure the login roles `record_owner`, `record_actor`, and `record_reader` exist. Create an empty replacement database owned by `record_owner`; then run `ALTER SCHEMA public OWNER TO record_owner` in it. The owner connection belongs in `ORCH_RECORD_MIGRATE_URL`; application traffic must continue to use `record_actor` through `ORCH_RECORD_URL`.
+3. As the PostgreSQL cluster administrator, ensure the login roles `record_owner`, `record_actor`, `record_auth`, and `record_reader` exist. Create an empty replacement database owned by `record_owner`; then run `ALTER SCHEMA public OWNER TO record_owner` in it. The owner connection belongs in `ORCH_RECORD_MIGRATE_URL`; application traffic must continue to use `record_actor` through `ORCH_RECORD_URL`.
 4. Restore the archive with the PostgreSQL 18 client and fail on the first error:
 
    ```sh
    pg_restore --exit-on-error --dbname '<replacement-owner-url>' ./record-<UTC timestamp>.dump
    ```
 
-   Run `pg_restore` as a role that bypasses row security (the cluster administrator), because `FORCE ROW LEVEL SECURITY` refuses row loads from any other role. Do not use `--no-owner` for the real restore. Archive ownership and grants depend on the three roles already existing. Confirm that `public` and restored application objects are owned by `record_owner`, and that the `drizzle` migration schema and journal were restored.
+   Run `pg_restore` as a role that bypasses row security (the cluster administrator), because `FORCE ROW LEVEL SECURITY` refuses row loads from any other role. Do not use `--no-owner` for the real restore. Archive ownership and grants depend on the four roles already existing. Confirm that `public` and restored application objects are owned by `record_owner`, and that the `drizzle` migration schema and journal were restored.
+
 5. Run SQL checks for table count, constraint count, and the five row counts used by `restore-check.sh`. Also test an actor connection and a reader connection so grants and row-level security behavior are not inferred from a successful `pg_restore` exit alone.
 6. Point the API and migration secrets at the replacement database, start the writers, and verify API health plus a read. Keep the previous database intact until those checks pass. If the database must retain the name `record`, perform the final rename or drop/recreate only during the maintenance window, with all connections terminated and a rollback copy available.
 
