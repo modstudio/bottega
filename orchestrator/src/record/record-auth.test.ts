@@ -12,17 +12,22 @@ import { RECORD_INVITATION_EXPIRES_IN_SECONDS } from './record-invitation.ts'
 
 let priorSecret: string | undefined
 let priorHubUrl: string | undefined
+let priorAuthUrl: string | undefined
 beforeAll(() => {
   priorSecret = process.env.BETTER_AUTH_SECRET
   priorHubUrl = process.env.RECORD_HUB_URL
+  priorAuthUrl = process.env.RECORD_AUTH_DATABASE_URL
   process.env.BETTER_AUTH_SECRET = 'test-secret-at-least-thirty-two-characters'
   process.env.RECORD_HUB_URL = 'https://hub.example.test'
+  process.env.RECORD_AUTH_DATABASE_URL = 'postgres://record-auth.invalid/database'
 })
 afterAll(() => {
   if (priorSecret === undefined) delete process.env.BETTER_AUTH_SECRET
   else process.env.BETTER_AUTH_SECRET = priorSecret
   if (priorHubUrl === undefined) delete process.env.RECORD_HUB_URL
   else process.env.RECORD_HUB_URL = priorHubUrl
+  if (priorAuthUrl === undefined) delete process.env.RECORD_AUTH_DATABASE_URL
+  else process.env.RECORD_AUTH_DATABASE_URL = priorAuthUrl
 })
 
 test('auth instance builds without connecting to a database', () => {
@@ -46,6 +51,7 @@ test('password reset links use the configured hosted hub and the injected sender
     {
       BETTER_AUTH_SECRET: 'test-secret-at-least-thirty-two-characters',
       RECORD_HUB_URL: 'https://hub.example.test',
+      RECORD_AUTH_DATABASE_URL: 'postgres://record-auth.invalid/database',
     },
     async (input) => {
       sent = input
@@ -66,6 +72,7 @@ test('organization invitations use the seven-day lifetime and configured hosted 
     {
       BETTER_AUTH_SECRET: 'test-secret-at-least-thirty-two-characters',
       RECORD_HUB_URL: 'https://hub.example.test',
+      RECORD_AUTH_DATABASE_URL: 'postgres://record-auth.invalid/database',
     },
     async () => {},
     async (input) => {

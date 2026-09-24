@@ -3,12 +3,19 @@ import { recordApiServerConfig } from './record-api-server.ts'
 
 const complete = {
   ORCH_RECORD_URL: 'postgres://record.test/record',
+  RECORD_AUTH_DATABASE_URL: 'postgres://record-auth.test/record',
   BETTER_AUTH_SECRET: 'secret-at-least-thirty-two-characters',
   BETTER_AUTH_URL: 'https://api.example.test',
   RECORD_HUB_URL: 'https://hub.example.test',
 }
 
-for (const name of ['ORCH_RECORD_URL', 'BETTER_AUTH_SECRET', 'BETTER_AUTH_URL', 'RECORD_HUB_URL']) {
+for (const name of [
+  'ORCH_RECORD_URL',
+  'RECORD_AUTH_DATABASE_URL',
+  'BETTER_AUTH_SECRET',
+  'BETTER_AUTH_URL',
+  'RECORD_HUB_URL',
+]) {
   test(`server refuses without ${name}`, () => {
     expect(() => recordApiServerConfig({ ...complete, [name]: undefined })).toThrow(
       `${name} is required to serve the record API`,

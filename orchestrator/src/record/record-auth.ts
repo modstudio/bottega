@@ -175,12 +175,18 @@ export function recordAuth(
 ) {
   const secret = environment.BETTER_AUTH_SECRET
   if (!secret) throw new Error('BETTER_AUTH_SECRET is required for record authentication')
+  const authUrl = environment.RECORD_AUTH_DATABASE_URL
+  if (!authUrl)
+    throw new Error(
+      'RECORD_AUTH_DATABASE_URL is required for record authentication; set it to the record_auth connection',
+    )
   const trustedOrigins = recordAllowedOrigins(environment)
   const cookieDomain = environment.RECORD_AUTH_COOKIE_DOMAIN
   const hubUrl = environment.RECORD_HUB_URL
-  // Auth instances are short-lived at the CLI boundary; a one-connection pool keeps repeated
+  // Auth instances are short-lived at the CLI boundary; one-connection pools keep repeated
   // commands from reserving the database's entire connection budget before garbage collection.
   const client = new SQL(url, { max: 1 })
+  const authClient = new SQL(authUrl, { max: 1 })
   const personalSpaces = personalSpacePort(client)
   const invitationOnlySignUp = Object.assign(
     async (input: unknown) => {
@@ -203,7 +209,7 @@ export function recordAuth(
   return betterAuth({
     secret,
     ...(trustedOrigins.length ? { trustedOrigins } : {}),
-    database: drizzleAdapter(drizzle({ client }), {
+    database: drizzleAdapter(drizzle({ client: authClient }), {
       provider: 'pg',
       schema: { user, session, account, verification, space, membership, invitation },
     }),

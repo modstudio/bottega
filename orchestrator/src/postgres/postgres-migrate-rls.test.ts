@@ -4,6 +4,7 @@ import {
   newRecordId,
   PLATFORM_SPACE_ID,
   RECORD_ACTOR_ROLE,
+  RECORD_AUTH_ROLE,
   RECORD_OWNER_ROLE,
   RECORD_READER_ROLE,
 } from '../../../shared/record/schema.ts'
@@ -349,6 +350,7 @@ realPostgres('RLS proof against real Postgres', () => {
     delete process.env.BETTER_AUTH_SECRET
     delete process.env.BETTER_AUTH_URL
     delete process.env.RECORD_HUB_URL
+    delete process.env.RECORD_AUTH_DATABASE_URL
     if (!container) return
     psql(
       'postgres',
@@ -426,12 +428,19 @@ realPostgres('RLS proof against real Postgres', () => {
       'actor-password',
       `SET app.user_id='${authUserB}'; SET app.space_id='${authSpaceB}';
        SELECT count(*) FROM membership WHERE user_id='${authUserB}';
+       SELECT count(*) FROM membership WHERE space_id='${authSpaceA}';
        SELECT count(*) FROM space WHERE id='${authSpaceB}';
        SELECT count(*) FROM project WHERE id='${authProjectA}';
        SELECT count(*) FROM run WHERE id='${authRunA}';`,
     )
     expect(visible.code, visible.stderr).toBe(0)
-    expect(visible.stdout.split('\n')).toEqual(['1', '1', '0', '0'])
+    expect(visible.stdout.split('\n')).toEqual(['1', '0', '1', '0', '0'])
+  })
+
+  test('the auth role cannot read non-auth record tables', () => {
+    const denied = psql(RECORD_AUTH_ROLE, 'auth-password', 'SELECT count(*) FROM hub_task;')
+    expect(denied.code).not.toBe(0)
+    expect(denied.stderr).toContain('permission denied for table hub_task')
   })
 
   test('CLI whoami prints the user, active space, and only that user memberships', async () => {
@@ -490,7 +499,7 @@ realPostgres('RLS proof against real Postgres', () => {
     ).resolves.toBeString()
     await expect(
       inviteToActiveRecordSpace(actorUrl!, 'admin-owner@example.test', 'owner', invitationAuth),
-    ).rejects.toThrow('not allowed to invite user with this role')
+    ).rejects.toThrow('not allowed to invite a user with this role')
   })
 
   test('an owner does not list invitations they sent into their active space', async () => {

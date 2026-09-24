@@ -7,6 +7,7 @@ import { fileURLToPath } from 'node:url'
 import { FROZEN_STATE_NAMES } from '../../shared/brand.ts'
 import {
   RECORD_ACTOR_ROLE,
+  RECORD_AUTH_ROLE,
   RECORD_OWNER_ROLE,
   RECORD_READER_ROLE,
 } from '../../shared/record/schema.ts'
@@ -106,6 +107,7 @@ try {
   postgres(`
     CREATE ROLE ${RECORD_OWNER_ROLE} LOGIN PASSWORD 'owner-password' NOSUPERUSER NOBYPASSRLS;
     CREATE ROLE ${RECORD_ACTOR_ROLE} LOGIN PASSWORD 'actor-password' NOSUPERUSER NOBYPASSRLS;
+    CREATE ROLE ${RECORD_AUTH_ROLE} LOGIN PASSWORD 'auth-password' NOSUPERUSER NOBYPASSRLS;
     CREATE ROLE ${RECORD_READER_ROLE} LOGIN PASSWORD 'reader-password' NOSUPERUSER NOBYPASSRLS;
     CREATE ROLE public_probe LOGIN PASSWORD 'public-password' NOSUPERUSER NOBYPASSRLS;
     GRANT CREATE ON DATABASE postgres TO ${RECORD_OWNER_ROLE};
@@ -116,6 +118,7 @@ try {
 
   const ownerUrl = `postgres://${RECORD_OWNER_ROLE}:owner-password@127.0.0.1:${port}/postgres`
   const actorUrl = `postgres://${RECORD_ACTOR_ROLE}:actor-password@127.0.0.1:${port}/postgres`
+  const authUrl = `postgres://${RECORD_AUTH_ROLE}:auth-password@127.0.0.1:${port}/postgres`
   const recipientMigrationUrl = `postgres://${RECORD_OWNER_ROLE}:owner-password@127.0.0.1:${port}/recipient_migration`
 
   const recipientMigration = await run(
@@ -130,6 +133,7 @@ try {
       ORCH_TEST_POSTGRES_CONTAINER: container,
       ORCH_RECORD_MIGRATE_URL: ownerUrl,
       ORCH_RECORD_URL: actorUrl,
+      RECORD_AUTH_DATABASE_URL: authUrl,
       ORCH_TEST_POSTGRES_FALSIFY: falsifyMode,
     },
   )
@@ -143,6 +147,7 @@ try {
       const evidence = await run(['bun', 'run', '--cwd', '../hub', 'test:postgres'], {
         ORCH_TEST_POSTGRES_URL: `postgres://postgres:postgres@127.0.0.1:${port}/postgres`,
         ORCH_RECORD_URL: actorUrl,
+        RECORD_AUTH_DATABASE_URL: authUrl,
       })
       if (evidence !== 0) process.exitCode = evidence
       else
@@ -159,6 +164,7 @@ try {
             ORCH_TEST_POSTGRES_URL: `postgres://postgres:postgres@127.0.0.1:${port}/postgres`,
             ORCH_RECORD_MIGRATE_URL: ownerUrl,
             ORCH_RECORD_URL: actorUrl,
+            RECORD_AUTH_DATABASE_URL: authUrl,
             ORCH_TEST_SOURCE_ORCH_DB: sourceOrchDb,
             ORCH_TEST_SOURCE_HUB_DB: sourceHubDb,
           },
@@ -173,11 +179,13 @@ try {
         REASSIGN OWNED BY ${RECORD_OWNER_ROLE} TO postgres;
         DROP OWNED BY ${RECORD_OWNER_ROLE};
         DROP OWNED BY ${RECORD_ACTOR_ROLE};
+        DROP OWNED BY ${RECORD_AUTH_ROLE};
         DROP OWNED BY ${RECORD_READER_ROLE};
         DROP OWNED BY public_probe;
         DROP ROLE IF EXISTS public_probe;
         DROP ROLE IF EXISTS ${RECORD_READER_ROLE};
         DROP ROLE IF EXISTS ${RECORD_ACTOR_ROLE};
+        DROP ROLE IF EXISTS ${RECORD_AUTH_ROLE};
         DROP ROLE IF EXISTS ${RECORD_OWNER_ROLE};
       `)
     } catch (error) {

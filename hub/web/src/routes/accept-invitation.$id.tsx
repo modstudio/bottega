@@ -87,9 +87,10 @@ function SignedOutInvitation({ onAuthenticated }: { onAuthenticated: () => void 
       </div>
       <form className="space-y-4" onSubmit={(event) => void submit(event)}>
         {mode === 'create' ? (
-          <label className="block space-y-1">
+          <label htmlFor="invitation-name" className="block space-y-1">
             <span>Name</span>
             <Input
+              id="invitation-name"
               required
               autoComplete="name"
               value={name}
@@ -97,9 +98,10 @@ function SignedOutInvitation({ onAuthenticated }: { onAuthenticated: () => void 
             />
           </label>
         ) : null}
-        <label className="block space-y-1">
+        <label htmlFor="invitation-email" className="block space-y-1">
           <span>Email</span>
           <Input
+            id="invitation-email"
             required
             type="email"
             autoComplete="username"
@@ -107,9 +109,10 @@ function SignedOutInvitation({ onAuthenticated }: { onAuthenticated: () => void 
             onChange={(event) => setEmail(event.target.value)}
           />
         </label>
-        <label className="block space-y-1">
+        <label htmlFor="invitation-password" className="block space-y-1">
           <span>Password</span>
           <Input
+            id="invitation-password"
             required
             minLength={12}
             type="password"

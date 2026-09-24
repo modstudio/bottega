@@ -277,9 +277,10 @@ function InviteForm({
         invite.mutate()
       }}
     >
-      <label className="grid gap-1">
+      <label htmlFor="member-invite-email" className="grid gap-1">
         <span>Email</span>
         <Input
+          id="member-invite-email"
           type="email"
           required
           value={email}
