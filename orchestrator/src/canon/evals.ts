@@ -4,10 +4,11 @@
  *
  * Evals are `--probe` runs. They never become routing evidence.
  */
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { AGENTS } from '../agent/agent-registry.ts'
+import { type CleanupPresentation, discardRun } from '../cleanup/cleanup.ts'
 import {
   hasRealQuestions,
   isAsking,
@@ -30,6 +31,11 @@ import {
   EMPTY_CANON_SHA,
   resolveCanonEvalProject,
 } from './canon-eval-pack.ts'
+import {
+  decideEvalOwnedScratchRelease,
+  decideEvalScratchWorktreeMatch,
+  thrownEvalRunId,
+} from './canon-eval-scratch.ts'
 import { DEFAULT_EVAL_AGENT } from './canon-eval-status.ts'
 
 const CANON_EVAL_LENS = 'canon-eval'
@@ -432,6 +438,69 @@ function insertEval(row: {
     )
 }
 
+const evalScratchPresentation: CleanupPresentation = {
+  log: () => {},
+  error: () => {},
+  setExitCode: () => {},
+  keptBranchLine: (branch) => branch,
+}
+
+function realpathIfPresent(path: string): string {
+  if (!existsSync(path)) return path
+  try {
+    return realpathSync(path)
+  } catch {
+    return path
+  }
+}
+
+function recordedEvalScratchRunId(repo: string): number | null {
+  const treeRoot = join(realpathSync(repo), '.claude', 'worktrees')
+  const rows = db()
+    .query(`SELECT id, worktree FROM run WHERE worktree IS NOT NULL ORDER BY id DESC`)
+    .all() as { id: number; worktree: string }[]
+  return (
+    rows.find((row) =>
+      decideEvalScratchWorktreeMatch({
+        worktree: realpathIfPresent(row.worktree),
+        scratchTreeRoot: treeRoot,
+      }),
+    )?.id ?? null
+  )
+}
+
+async function runCanonEvalAttempt(
+  input: Parameters<typeof run>[0],
+  rememberRunId: (id: number) => void,
+): ReturnType<typeof run> {
+  try {
+    return await run(input)
+  } catch (error) {
+    const id = thrownEvalRunId(error)
+    if (id !== null) rememberRunId(id)
+    throw error
+  }
+}
+
+async function releaseEvalOwnedScratchWorktree(repo: string, runId: number | null): Promise<void> {
+  const id = runId ?? recordedEvalScratchRunId(repo)
+  if (
+    decideEvalOwnedScratchRelease({
+      scratchOwnedByEval: true,
+      runCreated: id !== null,
+    }) !== 'release' ||
+    id === null
+  ) {
+    return
+  }
+  await discardRun(id, {
+    force: false,
+    evalOwnedScratch: true,
+    auditReason: 'canon-eval scratch',
+    presentation: evalScratchPresentation,
+  })
+}
+
 /**
  * A behavioral failure is an eval result, not an unfinished agent run. Once
  * the reply has been judged, close the probe's question and record the run as
@@ -477,6 +546,7 @@ export async function runCanonEvals(opts: {
     for (const ev of selected) {
       const { pack, canonSha } = evalPack(ev, project)
       const { repo, mainHead } = createScratchRepo(ev)
+      let runId: number | null = null
       try {
         const prior = lastPassSha(ev.slug, agent)
         if (!opts.force && prior === canonSha) {
@@ -493,16 +563,22 @@ export async function runCanonEvals(opts: {
           })
           continue
         }
-        const result = await run({
-          job: ev.job,
-          prompt: ev.prompt,
-          agent,
-          probe: true,
-          cwd: repo,
-          canonPack: pack,
-          lens: JOBS[ev.job]?.findings ? CANON_EVAL_LENS : undefined,
-          label: `canon-eval:${ev.slug}`,
-        })
+        const result = await runCanonEvalAttempt(
+          {
+            job: ev.job,
+            prompt: ev.prompt,
+            agent,
+            probe: true,
+            cwd: repo,
+            canonPack: pack,
+            lens: JOBS[ev.job]?.findings ? CANON_EVAL_LENS : undefined,
+            label: `canon-eval:${ev.slug}`,
+          },
+          (id) => {
+            runId = id
+          },
+        )
+        runId = result.id
         const reply = parseEvalReply(ev, result.output, result.contract)
         const checked = ev.check(reply)
         const extra = extraAssertions(ev, reply, repo, mainHead, result.id)
@@ -543,7 +619,11 @@ export async function runCanonEvals(opts: {
           at: nowIso(),
         })
       } finally {
-        rmSync(repo, { recursive: true, force: true })
+        try {
+          await releaseEvalOwnedScratchWorktree(repo, runId)
+        } finally {
+          rmSync(repo, { recursive: true, force: true })
+        }
       }
     }
     return results
