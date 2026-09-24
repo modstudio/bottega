@@ -1,6 +1,5 @@
 import { describe, expect, test } from 'bun:test'
-import { refuseCanonWrite } from './doc-write-allowed.ts'
-import { globalCanonWriteTargets } from './docs.ts'
+import { globalCanonWriteTargets, refuseCanonWrite } from './doc-write-allowed.ts'
 
 const rule = {
   slug: '.agents/rules/10-code.md',

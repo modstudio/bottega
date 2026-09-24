@@ -20,6 +20,19 @@ export type DocRevisionOp =
 
 export type CanonRow = { slug: string; body: string }
 
+export type GlobalCanonWriteTarget = {
+  name: string
+  path: string
+  settings: { managedContext?: boolean }
+}
+
+export function globalCanonWriteTargets(
+  registered: GlobalCanonWriteTarget[],
+): (GlobalCanonWriteTarget | null)[] {
+  const optedIn = registered.filter((project) => project.settings.managedContext === true)
+  return optedIn.length ? optedIn : [null]
+}
+
 /** Hosted services have no checkout inventory, so they enforce every pure rule except references. */
 export function recordDocLintRefusal(
   next: Pick<LintableDoc, 'scope' | 'subject' | 'slug' | 'body'>,

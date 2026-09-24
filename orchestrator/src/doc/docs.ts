@@ -18,13 +18,14 @@ import { type CanonRow, composeCanonRows } from '../canon/canon-hydrate.ts'
 import { DEFAULT_PACK_BYTES } from '../canon/pack-budget.ts'
 import { db, nowIso, sessionId, writableDb, writeTransaction } from '../database/db.ts'
 import { JOBS } from '../jobs/jobs.ts'
-import { type Project, projectAt, projectByName, projects } from '../project/projects.ts'
+import { projectAt, projectByName, projects } from '../project/projects.ts'
 import { recordApiClient } from '../record/record-api-client.ts'
 import { docLintRefusal, introducedDocFindings } from './doc-lint.ts'
 import { lintStoredDoc } from './doc-lint-adapter.ts'
 import {
   consumeDocBody,
   type DocRevisionOp,
+  globalCanonWriteTargets,
   refuseCanonWrite,
   refuseOversizedInject,
   refuseProjectOrGlobalInject,
@@ -386,15 +387,6 @@ type DocWriteInput = {
   body: string
   delivery?: 'inject' | 'demand'
 } & DocWriteContext
-
-type GlobalCanonWriteTarget = Pick<Project, 'name' | 'path' | 'settings'>
-
-export function globalCanonWriteTargets(
-  registered: GlobalCanonWriteTarget[],
-): (GlobalCanonWriteTarget | null)[] {
-  const optedIn = registered.filter((project) => project.settings.managedContext === true)
-  return optedIn.length ? optedIn : [null]
-}
 
 function assertCanonWriteAllowed(input: DocWriteInput): void {
   if (input.scope !== 'canon') return
