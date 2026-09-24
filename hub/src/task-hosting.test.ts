@@ -98,6 +98,38 @@ describe('hosted-only task safety', () => {
     ).rejects.toThrow('unless stubs are injected')
   })
 
+  test('the task identity route returns the active space and membership slugs', async () => {
+    const response = await taskApi(
+      new Request('https://hub.example.test/v1/tasks/identity', {
+        headers: { authorization: 'Bearer test' },
+      }),
+      {
+        recordApiUrl: 'https://record.example.test',
+        recordDatabaseUrl: 'postgres://unused',
+      },
+      {
+        fetch: async () =>
+          Response.json({
+            user: { id: 'user-1' },
+            activeSpaceId: 'space-a',
+            memberships: [
+              { space_id: 'space-a', slug: 'workshop' },
+              { space_id: 'space-b', slug: 'stopal' },
+            ],
+          }),
+      },
+    )
+
+    expect(response?.status).toBe(200)
+    expect(await response?.json()).toEqual({
+      activeSpaceId: 'space-a',
+      memberships: [
+        { space_id: 'space-a', slug: 'workshop' },
+        { space_id: 'space-b', slug: 'stopal' },
+      ],
+    })
+  })
+
   test('cache pull applies an update and a soft delete', () => {
     const at = '2026-09-17T12:00:00.000Z'
     writeTransaction((conn) => {

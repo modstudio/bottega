@@ -39,7 +39,16 @@ async function request<T>(
   } catch (error) {
     throw new Error(`hosted hub is unreachable: ${(error as Error).message}. ${REMEDY}`)
   }
-  const value = (await response.json().catch(() => null)) as Record<string, unknown> | null
+  const url = `${baseUrl.replace(/\/$/, '')}${path}`
+  const contentType = response.headers.get('content-type') ?? 'missing'
+  const isJson = /^application\/(?:[a-z0-9!#$&^_.+-]+\+)?json(?:\s*;|$)/i.test(contentType)
+  const value = isJson
+    ? ((await response.json().catch(() => null)) as Record<string, unknown> | null)
+    : null
+  if (!isJson || !value || typeof value !== 'object' || Array.isArray(value))
+    throw new Error(
+      `hosted hub refused the response from ${url} (status ${response.status}, content type ${contentType}): expected a JSON object`,
+    )
   if (!response.ok && response.status === 409)
     throw new Error(
       `hosted hub refused the write (409): ${String(value?.error ?? 'unknown error')}${
@@ -132,9 +141,11 @@ export async function hostedTaskIdentity(
   const value = await request<{
     activeSpaceId: string | null
     memberships: Array<{ space_id?: unknown; slug?: unknown }>
-  }>('/v1/whoami', 'GET', undefined, options)
+  }>('/v1/tasks/identity', 'GET', undefined, options)
   if (!value.activeSpaceId)
     throw new Error('hosted hub has no active space; switch spaces and retry')
+  if (!Array.isArray(value.memberships))
+    throw new Error('hosted hub returned a malformed task identity: memberships must be an array')
   return {
     activeSpaceId: value.activeSpaceId,
     memberships: value.memberships.flatMap((row) =>

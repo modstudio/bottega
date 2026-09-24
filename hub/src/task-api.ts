@@ -47,6 +47,12 @@ async function identity(request: Request, base: string, fetchImpl: typeof fetch)
           const id = (row as Record<string, unknown>)?.space_id
           return typeof id === 'string' ? [id] : []
         }),
+        memberships: memberships.flatMap((row) => {
+          const membership = row as Record<string, unknown>
+          return typeof membership.space_id === 'string' && typeof membership.slug === 'string'
+            ? [{ space_id: membership.space_id, slug: membership.slug }]
+            : []
+        }),
       }
     : null
 }
@@ -65,7 +71,12 @@ type RouteContext = {
   url: URL
   config: Config
   dependencies: Dependencies
-  who: { userId: string; spaceId: string }
+  who: {
+    userId: string
+    spaceId: string
+    spaceIds: string[]
+    memberships: Array<{ space_id: string; slug: string }>
+  }
   body: Record<string, unknown> | null
   keyMatch: RegExpExecArray | null
   commentMatch: RegExpExecArray | null
@@ -191,6 +202,8 @@ export async function taskApi(
     (dependencies.fetch ?? fetch) as typeof fetch,
   )
   if (!who) return json({ error: 'authorization and an active space are required' }, 401)
+  if (request.method === 'GET' && url.pathname === '/v1/tasks/identity')
+    return json({ activeSpaceId: who.spaceId, memberships: who.memberships })
   const keyMatch = /^\/v1\/tasks\/([^/]+)$/.exec(url.pathname)
   const commentMatch = /^\/v1\/tasks\/([^/]+)\/comments$/.exec(url.pathname)
   const documentsMatch = /^\/v1\/tasks\/([^/]+)\/documents$/.exec(url.pathname)
