@@ -425,6 +425,44 @@ function parseState(text: string, plan: ImportPlan, byName: Map<string, Project[
   }
 }
 
+function appendRef(
+  taskKey: string,
+  where: string,
+  notes: string,
+  commits: string[],
+  paths: string[],
+  sources: { project: Project; note: string }[],
+  registered: Project[],
+  plan: ImportPlan,
+): void {
+  if (sources.length === 0) return
+  if (new Set(sources.map((source) => source.project.id)).size !== sources.length) {
+    plan.refusals.push(
+      refusal(`ledger ref "${taskKey}"`, where, 'a source project is named more than once'),
+    )
+    return
+  }
+  const target = targetForSources(
+    taskKey,
+    sources.map((source) => source.project),
+    registered,
+    plan.pairs,
+    plan.refusals,
+  )
+  if (!target) return
+  plan.refs.push({
+    taskKey,
+    targetProjectId: target.id,
+    note: notes,
+    sources: sources.map((source) => ({
+      source_project_id: source.project.id,
+      commits,
+      paths,
+      note: source.note,
+    })),
+  })
+}
+
 function parseRefs(
   text: string,
   registered: Project[],
@@ -503,37 +541,7 @@ function parseRefs(
         )
       }
     }
-    if (
-      sources.length > 0 &&
-      new Set(sources.map((source) => source.project.id)).size === sources.length
-    ) {
-      const target = targetForSources(
-        taskKey,
-        sources.map((source) => source.project),
-        registered,
-        plan.pairs,
-        plan.refusals,
-      )
-      if (target)
-        plan.refs.push({
-          taskKey,
-          targetProjectId: target.id,
-          note: notes,
-          sources: sources.map((source) => ({
-            source_project_id: source.project.id,
-            commits,
-            paths,
-            note: source.note,
-          })),
-        })
-    } else if (
-      sources.length > 1 &&
-      new Set(sources.map((source) => source.project.id)).size !== sources.length
-    ) {
-      plan.refusals.push(
-        refusal(`ledger ref "${taskKey}"`, where, 'a source project is named more than once'),
-      )
-    }
+    appendRef(taskKey, where, notes, commits, paths, sources, registered, plan)
   }
 }
 

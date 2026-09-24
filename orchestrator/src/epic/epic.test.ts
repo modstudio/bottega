@@ -1,4 +1,5 @@
 import { describe, expect, spyOn, test } from 'bun:test'
+import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { addRun } from '../../test/fixtures/store.ts'
 import { db } from '../database/db.ts'
 import { reapStale } from '../run/run-liveness.ts'
@@ -297,14 +298,14 @@ describe('epic scoreboard', () => {
       args,
     })) as unknown as typeof Bun.spawn)
     try {
-      expect(await epicChildren('bottega', 'DEV-500')).toEqual(children)
+      expect(await epicChildren(PLATFORM_SLUG, 'DEV-500')).toEqual(children)
       expect(spawn).toHaveBeenCalledTimes(1)
       expect(spawn.mock.calls[0]![0]).toEqual(
         expect.arrayContaining([
           'task',
           'list',
           '--project',
-          'bottega',
+          PLATFORM_SLUG,
           '--parent',
           'DEV-500',
           '--json',

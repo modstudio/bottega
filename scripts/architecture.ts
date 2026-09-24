@@ -499,8 +499,10 @@ export const modules: ArchitectureModule[] = [
     '../worktree/worktree-remove.ts',
     '../worktree/worktree-types.ts',
     './run-claim-plan.ts',
+    './run-task-reference.ts',
   ]),
   module('orchestrator/src/run/run-claim-plan.ts', ['./resume-tree.ts']),
+  module('orchestrator/src/run/run-task-reference.ts', []),
   module('orchestrator/src/run/run-close.ts', [
     '../close/close-out.ts',
     '../contract/contract.ts',

@@ -85,7 +85,7 @@ describe('project.list', () => {
   test('returns the project register rows', async () => {
     const rows = await caller.project.list()
 
-    expect(rows).toHaveLength(6)
+    expect(rows).toHaveLength(8)
     expect(rows[0]).toEqual({
       id: 1,
       name: 'alpha',

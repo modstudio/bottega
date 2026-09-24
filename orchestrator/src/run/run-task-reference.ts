@@ -1,4 +1,4 @@
-// concern: dispatch task reference
+// concern: run task reference
 /** Resolves an optional durable hub task identity without making hub availability a dispatch prerequisite. */
 import { fileURLToPath } from 'node:url'
 
@@ -21,4 +21,14 @@ export async function resolveTaskRecordId(project: string, key: string): Promise
   } catch {
     return null
   }
+}
+
+export async function resolveRunTaskRecordId(input: {
+  inherited: string | null | undefined
+  project: string | null
+  key: string | null
+}): Promise<string | null> {
+  if (input.inherited) return input.inherited
+  if (!input.project || !input.key) return null
+  return resolveTaskRecordId(input.project, input.key)
 }

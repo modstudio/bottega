@@ -17,7 +17,6 @@ import { replyFileInstruction, TEXT_REPLY_SCHEMA } from '../contract/contract.ts
 import { db, nowIso, sessionId, writeTransaction } from '../database/db.ts'
 import { namesRecordedRunTree } from '../dispatch/dispatch-preflight.ts'
 import { retargetRepositoryPromptForDispatch } from '../dispatch/prompt-retarget.ts'
-import { resolveTaskRecordId } from '../dispatch/task-reference.ts'
 import { appendRunEvent } from '../events.ts'
 import { checkoutAliases, realpathOrSpelled } from '../git/checkout-identity.ts'
 import { branchOf, git, gitContext, repoRootOf } from '../git/git-environment.ts'
@@ -79,6 +78,7 @@ import {
   taskBranchKey,
 } from './run-claim-plan.ts'
 import { errorTail, sha } from './run-process.ts'
+import { resolveRunTaskRecordId } from './run-task-reference.ts'
 
 type RecreateResumeTreePlan = Extract<
   ResumeTreePlan,
@@ -334,9 +334,11 @@ export async function claimRun(input: ClaimInput): Promise<ClaimResult> {
     ? (opts.key ?? null)
     : (opts.key ?? inferredReadOnlyKey(callerCwd))
   const launchKey = inheritedLaunch?.launch_key ?? attributedKey
-  const taskRecordId =
-    inheritedLaunch?.task_record_id ??
-    (launchKey && runProjectName ? await resolveTaskRecordId(runProjectName, launchKey) : null)
+  const taskRecordId = await resolveRunTaskRecordId({
+    inherited: inheritedLaunch?.task_record_id,
+    project: runProjectName,
+    key: launchKey,
+  })
   const launchBase = inheritedLaunch?.launch_base ?? opts.base ?? null
   const noFailover = inheritedLaunch ? !!inheritedLaunch.no_failover : !!opts.noFailover
   const worktreeTool = repoJob ? toolFor(callerCwd) : null

@@ -28,6 +28,7 @@ import { tellCommand } from '../mailbox/mailbox-commands.ts'
 import { mcpCommand } from '../mcp/mcp-commands.ts'
 import { metricCommand } from '../metric/metric-commands.ts'
 import { monitorCommand } from '../monitor/monitor-commands.ts'
+import { projectAt } from '../project/projects.ts'
 import { treeRefreshCommand } from '../recipe/tree-refresh.ts'
 import { reclaimCommand } from '../reclaim/reclaim-commands.ts'
 import {
@@ -424,7 +425,11 @@ export function register(program: Command): void {
     .command('epic <key>')
     .option('--json')
     .allowExcessArguments(false)
-    .action((key, options) => epicCommand(key, Boolean(options.json), presentation))
+    .action((key, options) => {
+      const project = projectAt(process.cwd())
+      if (!project) throw new Error('orch epic requires a registered project working directory')
+      return epicCommand(project.name, key, Boolean(options.json), presentation)
+    })
   program
     .command('jobs')
     .option('--json')
