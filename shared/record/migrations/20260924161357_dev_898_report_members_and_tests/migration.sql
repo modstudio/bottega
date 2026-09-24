@@ -13,9 +13,14 @@ CREATE UNIQUE INDEX "hub_send_subscription_period_unique" ON "hub_send" ("subscr
 ALTER TABLE "hub_report_subscription_member" ADD CONSTRAINT "hub_report_subscription_member_space_id_space_id_fkey" FOREIGN KEY ("space_id") REFERENCES "space"("id");--> statement-breakpoint
 ALTER TABLE "hub_report_subscription_member" ADD CONSTRAINT "hub_report_subscription_member_ND9aMX9CHD2U_fkey" FOREIGN KEY ("subscription_id") REFERENCES "hub_report_subscription"("id");--> statement-breakpoint
 ALTER TABLE "hub_report_subscription_member" ADD CONSTRAINT "hub_report_subscription_member_user_id_user_id_fkey" FOREIGN KEY ("user_id") REFERENCES "user"("id");--> statement-breakpoint
-INSERT INTO "hub_report_subscription_member" ("id","space_id","subscription_id","user_id","created_at")
-SELECT gen_random_uuid(),"space_id","id","person_user_id",now()
-FROM "hub_report_subscription" WHERE "scope_kind"='person';--> statement-breakpoint
+WITH existing_person_subscription AS (
+  SELECT "id","space_id","person_user_id" FROM "hub_report_subscription" WHERE "scope_kind"='person'
+), migrated_subscription_member AS (
+  INSERT INTO "hub_report_subscription_member" ("id","space_id","subscription_id","user_id","created_at")
+  SELECT gen_random_uuid(),"space_id","id","person_user_id",now() FROM existing_person_subscription
+  RETURNING "id"
+)
+SELECT count(*) FROM migrated_subscription_member;--> statement-breakpoint
 ALTER TABLE "hub_report_subscription" DROP CONSTRAINT "hub_report_subscription_scope_kind_check";--> statement-breakpoint
 ALTER TABLE "hub_report_subscription" DROP CONSTRAINT "hub_report_subscription_scope_check";--> statement-breakpoint
 UPDATE "hub_report_subscription" SET "scope_kind"='members' WHERE "scope_kind"='person';--> statement-breakpoint
