@@ -133,8 +133,10 @@ function grokMcpConnection(
         .join('; ')
       return {
         server,
-        connected: found.healthy === true,
-        error: error || null,
+        connected: found.healthy === true ? null : false,
+        error:
+          error ||
+          (found.healthy === true ? 'grok mcp doctor healthy; worker attachment unverified' : null),
         namesSeen: available,
       }
     }

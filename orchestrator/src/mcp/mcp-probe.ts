@@ -485,12 +485,15 @@ export function parseMcpProbe(value: string | null | undefined): McpProbeResult 
 
 export type McpCallEvidence = { connected: 0 | 1 | null; error: string | null }
 
-/** Connection evidence means a successful named tool call, never a handshake. */
+/** Orch's probe can disprove reachability, but cannot prove the worker attached the server. */
 export function mcpCallEvidence(result: McpProbeResult | null): McpCallEvidence {
   if (!result) return { connected: null, error: 'unverified: no tool call observed' }
   if (!result.ok) return { connected: 0, error: result.error ?? 'MCP probe failed' }
   if (result.tool === 'tools/list') {
     return { connected: null, error: 'unverified: no tool call observed' }
   }
-  return { connected: 1, error: `verified: successful tool call ${result.tool}` }
+  return {
+    connected: null,
+    error: `orch probe ok: ${result.tool}; worker attachment unverified`,
+  }
 }

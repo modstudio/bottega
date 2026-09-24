@@ -56,6 +56,12 @@ type TerminalOptions = {
   resume?: { parent: number }
 }
 
+type TerminalMcpRuling = {
+  connected: 0 | 1 | null
+  error: string | null
+  requiredFailure: string | null
+} | null
+
 export type TerminalInput = {
   timer: ReturnType<typeof setTimeout> | null
   checkpointTimer: ReturnType<typeof setInterval> | null
@@ -104,6 +110,7 @@ export type TerminalInput = {
   resolvedSession: string | null
   name: string
   artifactsPersisted: boolean
+  mcpRuling: TerminalMcpRuling
 }
 
 export type TerminalResult = {
@@ -202,6 +209,33 @@ function confinementUnverifiedError(failures: FreezeFailure[]): string {
   )
 }
 
+function applyRequiredMcpFailure(
+  outcome: {
+    status: string
+    error: string | null
+    failureKind: ReturnType<typeof classify> | null
+  },
+  ruling: TerminalMcpRuling,
+): typeof outcome {
+  if (!ruling?.requiredFailure || outcome.status !== 'ok') return outcome
+  return {
+    status: 'failed',
+    error: ruling.requiredFailure,
+    failureKind: 'mcp_unverified',
+  }
+}
+
+function recordTerminalMcpEvidence(
+  database: Database,
+  runId: number,
+  ruling: TerminalMcpRuling,
+): void {
+  if (!ruling) return
+  database
+    .query('UPDATE run SET mcp_connected=?, mcp_error=? WHERE id=?')
+    .run(ruling.connected, ruling.error, runId)
+}
+
 export async function finishRun(input: TerminalInput): Promise<TerminalResult> {
   let {
     timer,
@@ -251,6 +285,7 @@ export async function finishRun(input: TerminalInput): Promise<TerminalResult> {
     resolvedSession,
     name,
     artifactsPersisted,
+    mcpRuling,
   } = input
   if (timer) clearTimeout(timer)
   if (checkpointTimer) clearInterval(checkpointTimer)
@@ -470,6 +505,11 @@ export async function finishRun(input: TerminalInput): Promise<TerminalResult> {
   ;({ status, failureKind, error } = confinementPrecedence.outcome)
   preConfinement = confinementPrecedence.preConfinement
 
+  ;({ status, error, failureKind } = applyRequiredMcpFailure(
+    { status, error, failureKind },
+    mcpRuling,
+  ))
+
   try {
     const declared = (contract?.blockers ?? []).map((b) => ({
       what: b.what,
@@ -525,7 +565,7 @@ export async function finishRun(input: TerminalInput): Promise<TerminalResult> {
     parsedReview &&
     parsedReview.provenance.could_not_verify.length === 0 &&
     (parsedReview.provenance.substitutes.length > 0 ||
-      (mcpMode !== null && mcpConnection?.connected !== true) ||
+      (mcpMode !== null && mcpRuling?.connected !== 1) ||
       Boolean(provenanceWrongProjectTool))
   const localMachineId = machineId()
   const writeTerminalRow = () =>
@@ -561,6 +601,8 @@ export async function finishRun(input: TerminalInput): Promise<TerminalResult> {
           provenanceSilent ? 'silent' : null,
           claim.id,
         )
+
+      recordTerminalMcpEvidence(db(), claim.id, mcpRuling)
 
       /**
        * The facts, recorded without anyone's opinion.

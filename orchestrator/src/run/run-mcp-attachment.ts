@@ -94,6 +94,61 @@ export type McpToolProbeRuling = {
   failedConnection: McpConnection | null
 }
 
+type WorkerMcpEvent = {
+  kind: string
+  toolKind?: string
+  server?: string
+  title?: string
+  status?: string
+  error?: string
+}
+
+type FinalMcpFacts = {
+  requiredServer: string
+  mcpMode: McpMode | null
+  preLaunchEvidence: McpConnection | null
+  workerEvents: readonly WorkerMcpEvent[]
+}
+
+type FinalMcpRuling = {
+  connected: 0 | 1 | null
+  error: string | null
+  requiredFailure: string | null
+}
+
+/** Decide final connection evidence from the worker's structured stream, never its prose. */
+export function decideFinalMcpConnection(facts: FinalMcpFacts): FinalMcpRuling {
+  const calls = facts.workerEvents.filter(
+    (event) =>
+      event.kind === 'tool' && event.toolKind === 'mcp' && event.server === facts.requiredServer,
+  )
+  const completed = calls.find((event) => event.status === 'completed')
+  if (completed) {
+    return {
+      connected: 1,
+      error: `verified: worker tool call ${facts.requiredServer}.${completed.title ?? 'unknown'}`,
+      requiredFailure: null,
+    }
+  }
+  const failed = calls.find((event) => event.status === 'failed')
+  if (failed) {
+    const reason = failed.error ?? 'MCP tool call failed'
+    return {
+      connected: 0,
+      error: reason,
+      requiredFailure:
+        facts.mcpMode === 'require'
+          ? `MCP server '${facts.requiredServer}' was unreachable to the worker: ${reason}`
+          : null,
+    }
+  }
+  return {
+    connected: facts.preLaunchEvidence?.connected === false ? 0 : null,
+    error: facts.preLaunchEvidence?.error ?? null,
+    requiredFailure: null,
+  }
+}
+
 /** Translate a completed tool probe into attachment policy; the caller records and enforces it. */
 export function decideMcpToolProbe(
   probe: McpProbeResult,
@@ -103,8 +158,9 @@ export function decideMcpToolProbe(
   projectName: string | null,
 ): McpToolProbeRuling {
   const callEvidence = mcpCallEvidence(probe)
+  const orchProbeReachedTool = probe.ok && probe.tool !== 'tools/list'
   const refusalReason =
-    callEvidence.connected !== 1 && mcpMode === 'require'
+    !orchProbeReachedTool && mcpMode === 'require'
       ? callEvidence.connected === 0
         ? `MCP tool call failed on ${server}: ${callEvidence.error}`
         : `mcp unverifiable on ${agent}: ${callEvidence.error}` +

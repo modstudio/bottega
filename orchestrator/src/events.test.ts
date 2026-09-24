@@ -80,6 +80,28 @@ describe('vendor event log', () => {
     expect(
       eventsFromVendorLine(
         JSON.stringify({
+          type: 'item.completed',
+          item: {
+            type: 'mcp_tool_call',
+            server: 'starship',
+            tool: 'task_list',
+          },
+        }),
+      ),
+    ).toEqual([
+      {
+        kind: 'tool',
+        title: 'task_list',
+        toolKind: 'mcp',
+        server: 'starship',
+        status: 'completed',
+        locations: undefined,
+        target: undefined,
+      },
+    ])
+    expect(
+      eventsFromVendorLine(
+        JSON.stringify({
           type: 'assistant',
           message: { content: [{ type: 'text', text: 'looking' }] },
         }),

@@ -290,12 +290,6 @@
   },
   {
     "file": "orchestrator/src/events.ts",
-    "function": "eventsFromCodexItem",
-    "line": 251,
-    "score": 18
-  },
-  {
-    "file": "orchestrator/src/events.ts",
     "function": "eventsFromVendorLine",
     "line": 283,
     "score": 30

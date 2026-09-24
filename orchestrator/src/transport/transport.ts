@@ -124,8 +124,10 @@ export type NormalizedEvent =
       title: string
       status?: string
       toolKind?: string
+      server?: string
       target?: string
       result?: string
+      error?: string
       locations?: Array<{ path: string }>
     }
   | {
