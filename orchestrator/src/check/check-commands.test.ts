@@ -15,6 +15,7 @@ import { applyMigrations } from '../database/migrations.ts'
 import type { ProjectSettings } from '../project/projects.ts'
 
 const cli = resolve(import.meta.dir, '../cli/orch.ts')
+const britishSample = readFileSync(join(import.meta.dir, 'fixtures/british-samples.txt'), 'utf8').trim()
 
 function run(database: string, ...argv: string[]) {
   return Bun.spawnSync(['bun', '--no-env-file', cli, 'check', '--enabled', ...argv], {
@@ -133,12 +134,12 @@ describe('orch check --enabled', () => {
   test('a project typos config cannot override American English', () => {
     const root = repository('checks-american-english')
     writeFileSync(join(root, 'typos.toml'), '[default]\nlocale = "en-gb"\n')
-    writeFileSync(join(root, 'README.md'), 'colour\n')
+    writeFileSync(join(root, 'README.md'), `${britishSample}\n`)
     const bin = mkdtempSync(join(dir, 'american-english-bin-'))
     const typos = join(bin, 'typos')
     writeFileSync(
       typos,
-      '#!/bin/sh\nif [ "$1" = "--version" ]; then echo "typos-cli 1.50.0"; exit 0; fi\ncase " $* " in *" --locale en-us "*) ;; *) exit 9 ;; esac\nprintf \'%s\\n\' \'{"type":"typo","path":"./README.md","line_num":1,"byte_offset":0,"typo":"colour","corrections":["color"]}\'\nexit 2\n',
+      `#!/bin/sh\nif [ "$1" = "--version" ]; then echo "typos-cli 1.50.0"; exit 0; fi\ncase " $* " in *" --locale en-us "*) ;; *) exit 9 ;; esac\nprintf '%s\\n' '{"type":"typo","path":"./README.md","line_num":1,"byte_offset":0,"typo":"${britishSample}","corrections":["color"]}'\nexit 2\n`,
     )
     chmodSync(typos, 0o755)
     const database = registerProject('checks-american-english', root, {
@@ -157,7 +158,7 @@ describe('orch check --enabled', () => {
     )
 
     expect(result.exitCode).toBe(1)
-    expect(result.stdout.toString()).toContain('README.md:1:1 colour -> color')
+    expect(result.stdout.toString()).toContain(`README.md:1:1 ${britishSample} -> color`)
     expect(result.stdout.toString()).toContain('failed check: spelling')
   })
 

@@ -583,7 +583,7 @@ function projectChecksProblems(value: unknown): string[] {
   const problems: string[] = []
   for (const name of Object.keys(checks)) {
     if (name !== 'spelling' && name !== 'attribution') {
-      problems.push(`checks.${name} is not a recognised check`)
+      problems.push(`checks.${name} is not a recognized check`)
     }
   }
   for (const name of ['spelling', 'attribution'] as const) {
