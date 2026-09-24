@@ -513,8 +513,8 @@ describe('record API presentation routes', () => {
       method: 'PUT',
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify({
-        name: 'bottega',
-        path: '/w/bottega',
+        name: 'probe',
+        path: '/w/probe',
         stack: 'ts',
         canon: true,
         settings: { managedContext: true },
@@ -523,7 +523,7 @@ describe('record API presentation routes', () => {
     })
     expect(response.status).toBe(200)
     expect(calls).toEqual([
-      expect.objectContaining({ name: 'bottega', userId: 'user-a', spaceId: 'space-a' }),
+      expect.objectContaining({ name: 'probe', userId: 'user-a', spaceId: 'space-a' }),
     ])
   })
 
@@ -564,9 +564,9 @@ describe('record API presentation routes', () => {
         return { name: input.name }
       },
     })
-    const response = await app.request('/v1/projects/bottega/retire', { method: 'POST' })
+    const response = await app.request('/v1/projects/probe/retire', { method: 'POST' })
     expect(response.status).toBe(200)
-    expect(calls).toEqual(['bottega'])
+    expect(calls).toEqual(['probe'])
   })
 
   test('CORS allows configured origins with credentials and omits headers otherwise', async () => {

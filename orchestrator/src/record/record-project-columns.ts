@@ -1,12 +1,11 @@
 // concern: record-project-columns
 /** Maps local project settings onto hosted project columns. Must not know SQL or HTTP. */
-import type { ProjectSettings } from '../project/projects.ts'
 
 export const PROJECT_SETTINGS_NOT_IMPORTED = [
   { key: 'space', reason: "the imported row's space_id carries this value" },
   { key: 'autonomy', reason: 'local-register policy is not carried by the hosted project row' },
   { key: 'checks', reason: 'local-register policy is not carried by the hosted project row' },
-] as const satisfies ReadonlyArray<{ key: keyof Required<ProjectSettings>; reason: string }>
+] as const
 
 export const PROJECT_SETTING_COLUMNS = {
   color: 'color',
@@ -27,10 +26,7 @@ export const PROJECT_SETTING_COLUMNS = {
   trunk: 'landing_branch',
   worktree: 'worktree',
   workerMcpServers: 'worker_mcp_servers',
-} satisfies Record<
-  Exclude<keyof Required<ProjectSettings>, (typeof PROJECT_SETTINGS_NOT_IMPORTED)[number]['key']>,
-  string
->
+} as const
 
 export type HostedProjectColumns = {
   keyPrefixes: string[]

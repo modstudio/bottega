@@ -9,7 +9,7 @@ const samples = {
   color: { setting: '#fff', column: 'color', value: '#fff' },
   colorDark: { setting: '#000', column: 'colorDark', value: '#000' },
   docs: { setting: { path: 'docs' }, column: 'docs', value: '{"path":"docs"}' },
-  envPrefix: { setting: 'BOTTEGA', column: 'envPrefix', value: 'BOTTEGA' },
+  envPrefix: { setting: 'PROBE', column: 'envPrefix', value: 'PROBE' },
   gate: { setting: 'bun run check', column: 'gate', value: 'bun run check' },
   keyPrefixes: { setting: ['DEV'], column: 'keyPrefixes', value: ['DEV'] },
   managedContext: { setting: true, column: 'managedContext', value: true },
@@ -24,7 +24,7 @@ const samples = {
   trunk: { setting: 'develop', column: 'landingBranch', value: 'develop' },
   worktree: { setting: { notes: 'plain git' }, column: 'worktree', value: '{"notes":"plain git"}' },
   workerMcpServers: { setting: ['orch'], column: 'workerMcpServers', value: ['orch'] },
-} as const satisfies Record<
+} satisfies Record<
   keyof typeof PROJECT_SETTING_COLUMNS,
   { setting: unknown; column: string; value: unknown }
 >

@@ -1,9 +1,18 @@
 import { Database } from 'bun:sqlite'
 import { SQL } from 'bun'
-import { hostedProjectColumns } from '../record/record-project-columns.ts'
+import type { ProjectSettings } from '../project/projects.ts'
+import {
+  hostedProjectColumns,
+  PROJECT_SETTING_COLUMNS,
+  type PROJECT_SETTINGS_NOT_IMPORTED,
+} from '../record/record-project-columns.ts'
 import { upsertHostedProjectRow } from '../record/record-projects.ts'
 
-export { PROJECT_SETTINGS_NOT_IMPORTED } from '../record/record-project-columns.ts'
+const _hostedColumnsCoverSettings: Record<
+  Exclude<keyof Required<ProjectSettings>, (typeof PROJECT_SETTINGS_NOT_IMPORTED)[number]['key']>,
+  string
+> = PROJECT_SETTING_COLUMNS
+void _hostedColumnsCoverSettings
 
 type SourceProject = {
   id: number
