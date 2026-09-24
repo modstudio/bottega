@@ -102,6 +102,87 @@ test('hosted failure leaves the local register unchanged', async () => {
   expect(projectByName('hosted-fail')).toBeNull()
 })
 
+test('hosted rename failure leaves hosted and local unchanged', async () => {
+  upsertProject({ name: 'rename-src', path: '/w/rename-src' })
+  const hosted: string[] = []
+  installRecordApiClient({
+    ...createMemoryRecordApiClient(),
+    upsertProject: async (input) => {
+      hosted.push(input.name)
+      throw new Error('record API 503\ncleared by: orch record doctor')
+    },
+    renameSubject: async () => {
+      throw new Error('must not chain a second hosted rename')
+    },
+  })
+  await expect(
+    runProject(['project', 'set', 'rename-src'], { name: 'rename-dst' }),
+  ).rejects.toThrow('cleared by: orch record doctor')
+  expect(hosted).toEqual(['rename-dst'])
+  expect(projectByName('rename-src')?.path).toBe('/w/rename-src')
+  expect(projectByName('rename-dst')).toBeNull()
+})
+
+test('local rename collision makes no hosted call', async () => {
+  upsertProject({ name: 'taken-src', path: '/w/taken-src' })
+  upsertProject({ name: 'taken-dst', path: '/w/taken-dst' })
+  let hosted = 0
+  installRecordApiClient({
+    ...createMemoryRecordApiClient(),
+    upsertProject: async (input) => {
+      hosted += 1
+      return { name: input.name }
+    },
+    renameSubject: async () => {
+      throw new Error('must not chain a second hosted rename')
+    },
+  })
+  await expect(runProject(['project', 'set', 'taken-src'], { name: 'taken-dst' })).rejects.toThrow(
+    'project "taken-dst" already exists',
+  )
+  expect(hosted).toBe(0)
+  expect(projectByName('taken-src')?.path).toBe('/w/taken-src')
+  expect(projectByName('taken-dst')?.path).toBe('/w/taken-dst')
+})
+
+test('empty rename target makes no hosted call', async () => {
+  upsertProject({ name: 'empty-src', path: '/w/empty-src' })
+  let hosted = 0
+  installRecordApiClient({
+    ...createMemoryRecordApiClient(),
+    upsertProject: async (input) => {
+      hosted += 1
+      return { name: input.name }
+    },
+  })
+  await expect(runProject(['project', 'set', 'empty-src'], { name: '   ' })).rejects.toThrow(
+    'project --name must be non-empty',
+  )
+  expect(hosted).toBe(0)
+  expect(projectByName('empty-src')?.path).toBe('/w/empty-src')
+})
+
+test('rename writes the hosted project once then updates the local name', async () => {
+  upsertProject({ name: 'once-src', path: '/w/once-src' })
+  const hosted: Array<{ name: string; previousName?: string }> = []
+  installRecordApiClient({
+    ...createMemoryRecordApiClient(),
+    upsertProject: async (input) => {
+      hosted.push({ name: input.name, previousName: input.previousName })
+      return { name: input.name }
+    },
+    renameSubject: async () => {
+      throw new Error('must not chain a second hosted rename')
+    },
+  })
+  expect(await runProject(['project', 'set', 'once-src'], { name: 'once-dst' })).toBe(
+    'updated once-dst',
+  )
+  expect(hosted).toEqual([{ name: 'once-dst', previousName: 'once-src' }])
+  expect(projectByName('once-src')).toBeNull()
+  expect(projectByName('once-dst')?.path).toBe('/w/once-src')
+})
+
 test('project push writes every registered project to the hosted record', async () => {
   const names: string[] = []
   installRecordApiClient({

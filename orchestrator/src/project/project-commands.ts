@@ -9,6 +9,8 @@ import { selectProjectProfile } from '../lens/lenses.ts'
 import { lifecycleForm } from '../worktree/worktree-lifecycle.ts'
 import { migrateCreate } from '../worktree/worktree-template.ts'
 import {
+  applyLocalProjectRename,
+  assertProjectRename,
   assertRegisterBranches,
   type Project,
   type ProjectSettings,
@@ -16,7 +18,6 @@ import {
   projects,
   pushProjects,
   removeWrittenProject,
-  renameProject,
   retiredProjectByName,
   retireWrittenProject,
   sniffStack,
@@ -152,11 +153,7 @@ async function addProjectCommand(
     retiredAt: null,
     settings,
   }
-  const incomplete = worktreeWarnings(candidate).filter(
-    (w) =>
-      w.startsWith('has a create command but no branch template') ||
-      w.startsWith('has a create command with a {seed} placeholder but no seeds list'),
-  )
+  const incomplete = incompleteWorktreeProblems(candidate)
   if (incomplete.length && !has('allow-incomplete')) throw new Error(incomplete.join('\n'))
   assertRegisterBranches(candidate)
   const wasRetired = Boolean(retiredProjectByName(name))
@@ -230,13 +227,14 @@ async function persistSetProject(
   previousTrunk: string | null,
   candidate: Parameters<typeof upsertProject>[0] & { settings: { trunk?: unknown } },
 ): Promise<void> {
+  const renamed = nextName === currentName ? null : assertProjectRename(currentName, nextName)
   await writeHostedProject({
     ...candidate,
-    previousName: nextName === currentName ? undefined : currentName,
+    previousName: renamed ? currentName : undefined,
   })
-  if (nextName !== currentName) await renameProject(currentName, nextName)
   const nextTrunk = typeof candidate.settings.trunk === 'string' ? candidate.settings.trunk : null
   writeTransaction(() => {
+    if (renamed) applyLocalProjectRename(renamed, currentName, nextName)
     upsertProject(candidate)
   })
   if (previousTrunk === nextTrunk) return

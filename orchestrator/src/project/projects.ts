@@ -32,7 +32,7 @@ import {
   type SequenceState,
 } from '../../../shared/git.ts'
 import type { TrackerSettings } from '../../../shared/trackers.ts'
-import { db, nowIso, writableDb, writeTransaction } from '../database/db.ts'
+import { db, nowIso, writableDb } from '../database/db.ts'
 import { loadTrackedRecipe, recipePointerErrors } from '../recipe/recipe-loader.ts'
 import { recordApiClient } from '../record/record-api-client.ts'
 import { type AutonomySettings, validateAutonomySettings } from '../workflow/autonomy.ts'
@@ -466,41 +466,34 @@ export function setProjectRecordSpace(name: string, space: string): void {
   db().query('UPDATE project SET settings=? WHERE id=?').run(JSON.stringify(settings), project.id)
 }
 
-/** Rename the referent and refresh every deprecated one-release name mirror atomically. */
-export async function renameProject(currentName: string, nextName: string): Promise<void> {
-  writableDb()
+/** Local rename preconditions: existence, a non-empty target, and a free name. */
+export function assertProjectRename(currentName: string, nextName: string): { id: number } {
   if (!nextName.trim()) throw new Error('project --name must be non-empty')
   const current = projectByName(currentName)
   if (!current) throw new Error(`no project "${currentName}"`)
   if (currentName !== nextName && projectByName(nextName))
     throw new Error(`project "${nextName}" already exists`)
+  return { id: current.id }
+}
+
+/** Rename the local referent and every deprecated one-release name mirror. */
+export function applyLocalProjectRename(
+  current: { id: number },
+  currentName: string,
+  nextName: string,
+): void {
   const d = db()
-  const docs =
-    d
-      .query<{ n: number }, [string]>('SELECT count(*) AS n FROM doc WHERE subject=?')
-      .get(currentName)?.n ?? 0
-  const revisions =
-    d
-      .query<{ n: number }, [string]>('SELECT count(*) AS n FROM doc_revision WHERE subject=?')
-      .get(currentName)?.n ?? 0
-  await recordApiClient().renameSubject({
-    from: currentName,
-    to: nextName,
-    count: docs + revisions,
-  })
-  writeTransaction(() => {
-    d.query('UPDATE project SET name=? WHERE id=?').run(nextName, current.id)
-    for (const [table, column] of [
-      ['run', 'repo'],
-      ['canon_pack', 'project'],
-      ['landing', 'project'],
-      ['landing_override', 'project'],
-      ['landing_review_carry', 'project'],
-    ])
-      d.query(`UPDATE ${table} SET ${column}=? WHERE project_id=?`).run(nextName, current.id)
-    d.query('UPDATE doc SET subject=? WHERE subject=?').run(nextName, currentName)
-    d.query('UPDATE doc_revision SET subject=? WHERE subject=?').run(nextName, currentName)
-  }, d)
+  d.query('UPDATE project SET name=? WHERE id=?').run(nextName, current.id)
+  for (const [table, column] of [
+    ['run', 'repo'],
+    ['canon_pack', 'project'],
+    ['landing', 'project'],
+    ['landing_override', 'project'],
+    ['landing_review_carry', 'project'],
+  ])
+    d.query(`UPDATE ${table} SET ${column}=? WHERE project_id=?`).run(nextName, current.id)
+  d.query('UPDATE doc SET subject=? WHERE subject=?').run(nextName, currentName)
+  d.query('UPDATE doc_revision SET subject=? WHERE subject=?').run(nextName, currentName)
 }
 
 export type ProjectReferenceCounts = {

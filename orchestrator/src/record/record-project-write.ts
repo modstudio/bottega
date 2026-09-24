@@ -5,6 +5,7 @@ export type HostedProjectNameRow = {
   id: string
   name: string
   retiredAt: string | null
+  checkoutPath: string | null
 }
 
 export type HostedProjectWritePlan =
@@ -19,10 +20,14 @@ export function hostedProjectCollisionMessage(from: string, to: string): string 
 export function decideHostedProjectWrite(input: {
   currentName: string
   nextName: string
+  path: string
   current: HostedProjectNameRow | null
   next: HostedProjectNameRow | null
 }): HostedProjectWritePlan {
   if (input.next && input.next.id !== input.current?.id) {
+    if (!input.current && input.next.checkoutPath === input.path) {
+      return { kind: 'upsert', name: input.nextName }
+    }
     return {
       kind: 'refuse',
       message: hostedProjectCollisionMessage(input.currentName, input.nextName),

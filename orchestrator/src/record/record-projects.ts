@@ -57,7 +57,24 @@ function namedRow(row: Record<string, unknown> | undefined): HostedProjectNameRo
     id: String(row.id),
     name: String(row.name),
     retiredAt: row.retired_at == null ? null : new Date(String(row.retired_at)).toISOString(),
+    checkoutPath: row.checkout_path == null ? null : String(row.checkout_path),
   }
+}
+
+async function renameHostedDocSubjects(
+  tx: SQL,
+  spaceId: string,
+  from: string,
+  to: string,
+): Promise<void> {
+  await tx`
+    UPDATE doc SET subject=${to}, updated_at=now()
+    WHERE space_id=${spaceId}::uuid AND subject=${from}
+  `
+  await tx`
+    UPDATE doc_revision SET subject=${to}
+    WHERE space_id=${spaceId}::uuid AND subject=${from}
+  `
 }
 
 function postgresTextArray(sql: Pick<SQL, 'array'>, value: string[] | null) {
@@ -133,30 +150,24 @@ export async function upsertHostedProjectRow(
 export async function listRecordProjects(
   input: { url: string } & TenantPrincipal,
 ): Promise<RecordProject[]> {
-  const client = new SQL(input.url)
-  try {
-    return await client.begin(async (tx) => {
-      await bindTenant(tx, input)
-      const rows =
-        await tx`SELECT p.space_id, s.name AS space_name, p.name, p.key_prefixes, p.stack,
-          p.managed_context, p.landing_branch, p.color, p.color_dark, p.retired_at
-          FROM project p JOIN space s ON s.id=p.space_id ORDER BY s.name,p.name`
-      return rows.map((row: Record<string, unknown>) => ({
-        spaceId: String(row.space_id),
-        spaceName: String(row.space_name),
-        name: String(row.name),
-        keyPrefixes: row.key_prefixes as string[],
-        stack: row.stack == null ? null : String(row.stack),
-        managedContext: row.managed_context === true,
-        landingBranch: row.landing_branch == null ? null : String(row.landing_branch),
-        color: row.color == null ? null : String(row.color),
-        colorDark: row.color_dark == null ? null : String(row.color_dark),
-        retiredAt: row.retired_at == null ? null : new Date(String(row.retired_at)).toISOString(),
-      }))
-    })
-  } finally {
-    await client.close()
-  }
+  return tenant(input, async (tx) => {
+    const rows =
+      await tx`SELECT p.space_id, s.name AS space_name, p.name, p.key_prefixes, p.stack,
+        p.managed_context, p.landing_branch, p.color, p.color_dark, p.retired_at
+        FROM project p JOIN space s ON s.id=p.space_id ORDER BY s.name,p.name`
+    return rows.map((row: Record<string, unknown>) => ({
+      spaceId: String(row.space_id),
+      spaceName: String(row.space_name),
+      name: String(row.name),
+      keyPrefixes: row.key_prefixes as string[],
+      stack: row.stack == null ? null : String(row.stack),
+      managedContext: row.managed_context === true,
+      landingBranch: row.landing_branch == null ? null : String(row.landing_branch),
+      color: row.color == null ? null : String(row.color),
+      colorDark: row.color_dark == null ? null : String(row.color_dark),
+      retiredAt: row.retired_at == null ? null : new Date(String(row.retired_at)).toISOString(),
+    }))
+  })
 }
 
 export async function upsertRecordProject(
@@ -166,31 +177,35 @@ export async function upsertRecordProject(
     const currentName = input.previousName ?? input.name
     const nextName = input.name
     const currentRows = await tx`
-      SELECT id, name, retired_at FROM project
+      SELECT id, name, retired_at, checkout_path FROM project
       WHERE space_id=${input.spaceId}::uuid AND name=${currentName}
     `
     const nextRows =
       currentName === nextName
         ? currentRows
         : await tx`
-          SELECT id, name, retired_at FROM project
+          SELECT id, name, retired_at, checkout_path FROM project
           WHERE space_id=${input.spaceId}::uuid AND name=${nextName}
         `
     const plan = decideHostedProjectWrite({
       currentName,
       nextName,
+      path: input.path,
       current: namedRow(currentRows[0] as Record<string, unknown> | undefined),
       next: namedRow(nextRows[0] as Record<string, unknown> | undefined),
     })
     if (plan.kind === 'refuse') throw new RecordProjectError(plan.message, 409)
-    if (plan.kind === 'rename') {
-      await tx`UPDATE project SET name=${plan.to} WHERE id=${plan.id}::uuid`
-    }
     let columns: HostedProjectColumns
     try {
       columns = hostedProjectColumns(input.settings, nextName)
     } catch (error) {
       throw new RecordProjectError(error instanceof Error ? error.message : String(error), 400)
+    }
+    if (plan.kind === 'rename') {
+      await tx`UPDATE project SET name=${plan.to} WHERE id=${plan.id}::uuid`
+    }
+    if (currentName !== nextName) {
+      await renameHostedDocSubjects(tx, input.spaceId, currentName, nextName)
     }
     await upsertHostedProjectRow(tx, {
       spaceId: input.spaceId,

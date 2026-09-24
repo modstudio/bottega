@@ -33,8 +33,10 @@ describe('hostedProjectColumns', () => {
   test('maps every settings key onto its hosted column', () => {
     expect(Object.keys(samples).sort()).toEqual(Object.keys(PROJECT_SETTING_COLUMNS).sort())
     for (const [key, sample] of Object.entries(samples)) {
+      const column = PROJECT_SETTING_COLUMNS[key as keyof typeof PROJECT_SETTING_COLUMNS]
+      expect(column, key).toBe(sample.column)
       const columns = hostedProjectColumns({ [key]: sample.setting }, 'mapped')
-      expect(columns[sample.column as keyof typeof columns], key).toEqual(sample.value)
+      expect(columns[column], key).toEqual(sample.value)
     }
   })
 
