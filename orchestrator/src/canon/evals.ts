@@ -4,7 +4,7 @@
  *
  * Evals are `--probe` runs. They never become routing evidence.
  */
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { AGENTS } from '../agent/agent-registry.ts'
@@ -31,7 +31,11 @@ import {
   EMPTY_CANON_SHA,
   resolveCanonEvalProject,
 } from './canon-eval-pack.ts'
-import { decideEvalOwnedScratchRelease } from './canon-eval-scratch.ts'
+import {
+  decideEvalOwnedScratchRelease,
+  decideEvalScratchWorktreeMatch,
+  thrownEvalRunId,
+} from './canon-eval-scratch.ts'
 import { DEFAULT_EVAL_AGENT } from './canon-eval-status.ts'
 
 const CANON_EVAL_LENS = 'canon-eval'
@@ -441,15 +445,41 @@ const evalScratchPresentation: CleanupPresentation = {
   keptBranchLine: (branch) => branch,
 }
 
+function realpathIfPresent(path: string): string {
+  if (!existsSync(path)) return path
+  try {
+    return realpathSync(path)
+  } catch {
+    return path
+  }
+}
+
 function recordedEvalScratchRunId(repo: string): number | null {
-  const treeRoot = join(repo, '.claude', 'worktrees')
-  const prefix = `${treeRoot}/`
+  const treeRoot = join(realpathSync(repo), '.claude', 'worktrees')
   const rows = db()
     .query(`SELECT id, worktree FROM run WHERE worktree IS NOT NULL ORDER BY id DESC`)
     .all() as { id: number; worktree: string }[]
   return (
-    rows.find((row) => row.worktree === treeRoot || row.worktree.startsWith(prefix))?.id ?? null
+    rows.find((row) =>
+      decideEvalScratchWorktreeMatch({
+        worktree: realpathIfPresent(row.worktree),
+        scratchTreeRoot: treeRoot,
+      }),
+    )?.id ?? null
   )
+}
+
+async function runCanonEvalAttempt(
+  input: Parameters<typeof run>[0],
+  rememberRunId: (id: number) => void,
+): ReturnType<typeof run> {
+  try {
+    return await run(input)
+  } catch (error) {
+    const id = thrownEvalRunId(error)
+    if (id !== null) rememberRunId(id)
+    throw error
+  }
 }
 
 async function releaseEvalOwnedScratchWorktree(repo: string, runId: number | null): Promise<void> {
@@ -533,16 +563,21 @@ export async function runCanonEvals(opts: {
           })
           continue
         }
-        const result = await run({
-          job: ev.job,
-          prompt: ev.prompt,
-          agent,
-          probe: true,
-          cwd: repo,
-          canonPack: pack,
-          lens: JOBS[ev.job]?.findings ? CANON_EVAL_LENS : undefined,
-          label: `canon-eval:${ev.slug}`,
-        })
+        const result = await runCanonEvalAttempt(
+          {
+            job: ev.job,
+            prompt: ev.prompt,
+            agent,
+            probe: true,
+            cwd: repo,
+            canonPack: pack,
+            lens: JOBS[ev.job]?.findings ? CANON_EVAL_LENS : undefined,
+            label: `canon-eval:${ev.slug}`,
+          },
+          (id) => {
+            runId = id
+          },
+        )
         runId = result.id
         const reply = parseEvalReply(ev, result.output, result.contract)
         const checked = ev.check(reply)
