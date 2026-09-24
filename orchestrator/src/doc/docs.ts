@@ -32,6 +32,7 @@ import {
   consumeDocBody,
   type DocRevisionOp,
   globalCanonWriteTargets,
+  importedDocDelivery,
   refuseCanonWrite,
   refuseOversizedInject,
   refuseProjectOrGlobalInject,
@@ -596,8 +597,6 @@ export async function removeDoc(
   })
 }
 
-export type ConsumedDoc = Doc & { already_consumed: boolean }
-
 /**
  * Consuming a resume changes metadata inside a body whose exact text is the
  * recovery artifact. Patch only the three named fields instead of parsing and
@@ -608,7 +607,7 @@ export async function consumeDoc(
   subject: string | null,
   slug: string,
   context: DocWriteContext,
-): Promise<ConsumedDoc> {
+): Promise<Doc & { already_consumed: boolean }> {
   writableDb()
   validateHistoricAddress(scope, slug)
   const identity = docWriteIdentity(context)
@@ -888,7 +887,7 @@ export async function importDocs(dir: string, context: DocWriteContext): Promise
             subject,
             slug: file.name.slice(0, -3),
             ...parsed,
-            delivery: scope === 'project' || scope === 'global' ? 'demand' : undefined,
+            delivery: importedDocDelivery(scope),
             ...context,
             expectedRevision: getDoc(scope, subject, file.name.slice(0, -3))?.revision ?? undefined,
           },

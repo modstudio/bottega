@@ -33,6 +33,10 @@ export function globalCanonWriteTargets(
   return optedIn.length ? optedIn : [null]
 }
 
+export function importedDocDelivery(scope: string): 'demand' | undefined {
+  return scope === 'project' || scope === 'global' ? 'demand' : undefined
+}
+
 export type DocRevisionDecision = { allow: true } | { allow: false; reason: string }
 
 /** Decides optimistic document writes without knowing either backing store. */
