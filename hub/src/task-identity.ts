@@ -9,12 +9,72 @@ export const taskIdentityRelationships = [
   { table: 'note', keyColumn: 'promoted_task', recordColumn: 'promoted_task_record_id' },
 ] as const
 
-export function taskRecordIdFor(conn: Database, key: string): string | null {
-  return (
-    conn
-      .query<{ record_id: string | null }, [string]>('SELECT record_id FROM task WHERE key=?')
-      .get(key)?.record_id ?? null
+export function taskRecordIdFor(conn: Database, key: string, project?: string): string | null {
+  try {
+    return resolveTask(conn, key, project)
+  } catch (error) {
+    if (error instanceof Error && error.message === `no task ${key.toUpperCase()}`) return null
+    if (
+      error instanceof Error &&
+      error.message.includes("candidate exists but is not cached; stage 3's re-collection")
+    )
+      return null
+    throw error
+  }
+}
+
+export type TaskIdentityCandidate = {
+  project: string
+  key: string
+  recordId: string | null
+  cached: boolean
+}
+
+/** Resolve a human label at the edge; internal task work uses the returned UUID. */
+export function resolveTask(conn: Database, key: string, scope?: string): string {
+  const upper = key.toUpperCase()
+  const rows = conn
+    .query<
+      { project: string; key: string; record_id: string | null; cached: number },
+      [string, string | null, string | null, string, string | null, string | null]
+    >(
+      `SELECT project,key,record_id,1 cached FROM task
+       WHERE key=? AND (? IS NULL OR project=?)
+       UNION ALL
+       SELECT c.project,c.key,t.record_id,CASE WHEN t.record_id IS NULL THEN 0 ELSE 1 END cached
+       FROM task_identity_claim c
+       LEFT JOIN task t ON t.project=c.project AND t.external_id=c.external_id
+       WHERE c.key=? AND (? IS NULL OR c.project=?)`,
+    )
+    .all(upper, scope ?? null, scope ?? null, upper, scope ?? null, scope ?? null)
+  const candidates = new Map<string, TaskIdentityCandidate>()
+  for (const row of rows) {
+    const id = `${row.project}\0${row.record_id ?? ''}`
+    const existing = candidates.get(id)
+    if (!existing || row.cached > Number(existing.cached)) {
+      candidates.set(id, {
+        project: row.project,
+        key: row.key,
+        recordId: row.record_id,
+        cached: Boolean(row.cached),
+      })
+    }
+  }
+  const found = [...candidates.values()].sort(
+    (left, right) => left.project.localeCompare(right.project) || left.key.localeCompare(right.key),
   )
+  if (!found.length) throw new Error(`no task ${upper}`)
+  if (found.length === 1 && found[0]!.recordId) return found[0]!.recordId
+  const detail = found
+    .map(
+      (candidate) =>
+        `${candidate.project} ${candidate.key} ${candidate.recordId ?? '(not cached)'}`,
+    )
+    .join('\n')
+  const notCached = found.some((candidate) => !candidate.recordId)
+    ? "\nA candidate exists but is not cached; stage 3's re-collection will bring it back."
+    : ''
+  throw new Error(`task ${upper} is ambiguous:\n${detail}\npass --project${notCached}`)
 }
 
 export function claimTaskIdentity(

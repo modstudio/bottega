@@ -178,6 +178,20 @@ describe('work.task', () => {
     expect(result.source).toBe('local')
   })
 
+  test('passes record id and project identity to local task reads', async () => {
+    const seen: unknown[] = []
+    const router = createWorkRouter({
+      strip: fakeStrip,
+      view: fakeView,
+      taskRecord: ((key: string, scope: unknown) => {
+        seen.push(key, scope)
+        return { task: { key }, source: 'local', project: null, runs: [], comments: [], documents: [] }
+      }) as never,
+    })
+    await router.createCaller({}).task({ key: 'SAME-1', project: 'alpha', recordId: 'task-alpha' })
+    expect(seen).toEqual(['SAME-1', { project: 'alpha', recordId: 'task-alpha' }])
+  })
+
   test('maps an unknown key to NOT_FOUND', async () => {
     const router = createWorkRouter({
       strip: fakeStrip,

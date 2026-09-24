@@ -275,7 +275,7 @@ function writeTrackerCache(
       const was = before.get(task.key)
       upsertTrackerTaskOn(conn, task, at)
       if (!local.has(task.key) && was !== undefined && was !== task.category) {
-        const taskRecordId = taskRecordIdFor(conn, task.key)
+        const taskRecordId = taskRecordIdFor(conn, task.key, task.project)
         event.run(newRecordId(), task.key, taskRecordId, at, was, task.category)
         changed++
       }

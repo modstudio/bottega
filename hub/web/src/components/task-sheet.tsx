@@ -79,13 +79,30 @@ function DocumentEditor({ document }: { document: TaskRecordResponse['documents'
   )
 }
 
-function HostedAwareTaskSheet({ taskKey, onClose }: { taskKey: string; onClose: () => void }) {
+function HostedAwareTaskSheet({
+  taskKey,
+  recordId,
+  onClose,
+}: {
+  taskKey: string
+  recordId?: string
+  onClose: () => void
+}) {
   if (isHostedMode()) return <HostedTaskSheet taskKey={taskKey} onClose={onClose} />
-  return <TaskSheet taskKey={taskKey} onClose={onClose} />
+  return <TaskSheet taskKey={taskKey} recordId={recordId} onClose={onClose} />
 }
 
-function TaskSheet({ taskKey, onClose }: { taskKey: string; onClose: () => void }) {
-  const record = useQuery(trpc.work.task.queryOptions({ key: taskKey }))
+function TaskSheet({
+  taskKey,
+  recordId,
+  onClose,
+}: {
+  taskKey: string
+  recordId?: string
+  onClose: () => void
+}) {
+  const identity = { key: taskKey, ...(recordId ? { recordId } : {}) }
+  const record = useQuery(trpc.work.task.queryOptions(identity))
   const [title, setTitle] = useState('')
   const [comment, setComment] = useState('')
   const taskTitle = record.data?.task.title
@@ -185,7 +202,7 @@ function TaskSheet({ taskKey, onClose }: { taskKey: string; onClose: () => void 
                       <Button
                         variant="primary"
                         disabled={saveTitle.isPending || !title.trim()}
-                        onClick={() => saveTitle.mutate({ key: taskKey, title })}
+                        onClick={() => saveTitle.mutate({ ...identity, title })}
                       >
                         Save
                       </Button>
@@ -215,7 +232,7 @@ function TaskSheet({ taskKey, onClose }: { taskKey: string; onClose: () => void 
                       }))}
                       onChange={(status) =>
                         saveStatus.mutate({
-                          key: taskKey,
+                          ...identity,
                           status: status as 'open' | 'active' | 'review' | 'done' | 'dropped',
                         })
                       }
@@ -277,7 +294,7 @@ function TaskSheet({ taskKey, onClose }: { taskKey: string; onClose: () => void 
                     variant="primary"
                     size="sm"
                     disabled={addComment.isPending || !comment.trim()}
-                    onClick={() => addComment.mutate({ key: taskKey, body: comment })}
+                    onClick={() => addComment.mutate({ ...identity, body: comment })}
                   >
                     Add comment
                   </Button>

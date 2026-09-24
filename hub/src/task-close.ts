@@ -8,8 +8,11 @@ export async function closeThenPrune(
     close?: (key: string) => Promise<TaskRow>
     prune?: typeof pruneTaskBranches
   } = {},
+  project?: string,
 ) {
-  const closed = await (dependencies.close ?? closeTask)(key)
+  const closed = dependencies.close
+    ? await dependencies.close(key)
+    : await closeTask(key, { scope: { project } })
   if (keepBranches) return { closed, pruned: null, pruneError: null }
   try {
     return {

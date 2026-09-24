@@ -91,6 +91,7 @@ test('board bucketing fields and live state are shaped outside either database a
   const cards = projectBoardCards(
     [
       {
+        record_id: 'task-record-701',
         key: 'DEV-701',
         project: 'workshop',
         title: 'Hosted work pages',
@@ -102,7 +103,7 @@ test('board bucketing fields and live state are shaped outside either database a
         last_seen: '2026-09-17T11:00:00.000Z',
       },
     ],
-    ['DEV-701'],
+    ['task-record-701'],
     project,
   )
   expect(cards[0]).toMatchObject({
@@ -123,5 +124,20 @@ test('lens projections keep duplicate task keys separate and label their spaces'
   expect(tasks.map(({ spaceId, spaceName }) => ({ spaceId, spaceName }))).toEqual([
     { spaceId: 'space-a', spaceName: 'Personal' },
     { spaceId: 'space-b', spaceName: 'Workshop' },
+  ])
+})
+
+test('local projection keeps one shared label separate by task record id', () => {
+  const tasks = projectTasksInWindow(
+    [
+      { ...row, task_record_id: 'alpha-record', project: 'alpha', task_project: 'alpha' },
+      { ...row, task_record_id: 'beta-record', project: 'beta', task_project: 'beta' },
+    ],
+    project,
+    now,
+  )
+  expect(tasks.map(({ recordId, project }) => ({ recordId, project }))).toEqual([
+    { recordId: 'alpha-record', project: 'alpha' },
+    { recordId: 'beta-record', project: 'beta' },
   ])
 })

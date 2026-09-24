@@ -297,6 +297,7 @@ function TaskTable({
         void navigate({
           to: from === 'flight' ? '/flight/tasks/$key' : '/done/tasks/$key',
           params: { key: row.spaceId ? `${row.spaceId}:${row.key}` : row.key! },
+          search: { id: row.recordId },
           resetScroll: false,
         })
       }
@@ -581,6 +582,7 @@ function BoardCardView({ card }: { card: BoardCard }) {
     <Link
       to="/board/tasks/$key"
       params={{ key: card.spaceId ? `${card.spaceId}:${card.key}` : card.key }}
+      search={{ id: card.recordId }}
       resetScroll={false}
       data-record-key={card.key}
       data-project=""
@@ -841,6 +843,7 @@ export function BoardView() {
                       params: {
                         key: card.spaceId ? `${card.spaceId}:${card.key}` : card.key,
                       },
+                      search: { id: card.recordId },
                       resetScroll: false,
                     })
                   }
