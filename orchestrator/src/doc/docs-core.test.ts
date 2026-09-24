@@ -24,6 +24,28 @@ import {
 } from './docs.ts'
 
 describe('scoped operator docs', () => {
+  test('owned canon is visible only through its owner address locally', async () => {
+    const owner = '01990000-0000-7000-8000-000000000091'
+    const created = await writeDoc({
+      scope: 'canon',
+      subject: null,
+      owner,
+      slug: '.agents/rules/private-owner.md',
+      title: 'Private owner',
+      body: '---\ndescription: Private owner\n---\n\nPrivate rule.\n',
+      reason: 'prove owner visibility',
+      allowCanonBootstrap: true,
+    })
+    expect(listDocs({ scope: 'canon', subject: null }).some((row) => row.id === created.id)).toBe(
+      false,
+    )
+    expect(listDocs({ scope: 'canon', subject: null, owner })).toContainEqual(created)
+    expect(getDoc('canon', null, created.slug)).toBeNull()
+    expect(getDoc('canon', null, created.slug, owner)?.id).toBe(created.id)
+    expect(listDocRevisions('canon', null, created.slug)).toEqual([])
+    expect(listDocRevisions('canon', null, created.slug, owner)).toHaveLength(1)
+  })
+
   test('canon updates compare the exposed hosted revision in both local write checks', async () => {
     const created = await writeDoc({
       scope: 'canon',

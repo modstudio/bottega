@@ -82,7 +82,7 @@ describe('Drizzle migration journal', () => {
       },
       {
         name: 'doc_address',
-        sql: "CREATE UNIQUE INDEX doc_address ON doc(scope, COALESCE(subject, ''), slug)",
+        sql: "CREATE UNIQUE INDEX doc_address ON doc(scope, COALESCE(subject, ''), COALESCE(owner, ''), slug)",
       },
     ])
     d.close()

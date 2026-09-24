@@ -11,7 +11,12 @@
  */
 import { mkdirSync, readdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
-import { DOC_SCOPE_SUBJECT_KIND, DOC_SCOPES, type DocScope } from '../../../shared/docs.ts'
+import {
+  DOC_SCOPE_ALLOWS_OWNER,
+  DOC_SCOPE_SUBJECT_KIND,
+  DOC_SCOPES,
+  type DocScope,
+} from '../../../shared/docs.ts'
 import { AGENTS } from '../agent/agent-registry.ts'
 import { collectCanonLintInput } from '../canon/canon-files.ts'
 import { type CanonRow, composeCanonRows } from '../canon/canon-hydrate.ts'
@@ -396,7 +401,7 @@ function assertCanonWriteAllowed(input: DocWriteInput): void {
     { slug: input.slug, body: input.body },
   ]
   const next = composeCanonRows(
-    (project ? global : changedRows).map((row) => ({ ...row, subject: null })),
+    (input.owner || project ? global : changedRows).map((row) => ({ ...row, subject: null })),
     (input.owner ? changedRows : user).map((row) => ({
       ...row,
       subject: null,
@@ -472,7 +477,7 @@ function assertDocLint(input: DocWriteInput, prior: Doc | null): void {
 
 async function setDocWithOp(input: DocWriteInput, requestedOp?: 'import'): Promise<Doc> {
   writableDb()
-  if (input.owner && (input.scope !== 'canon' || input.subject !== null)) {
+  if (input.owner && (!DOC_SCOPE_ALLOWS_OWNER[input.scope as DocScope] || input.subject !== null)) {
     throw new Error('user canon requires scope canon and no subject')
   }
   validate(input.scope, input.subject, input.slug)

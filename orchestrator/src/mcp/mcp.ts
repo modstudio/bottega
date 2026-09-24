@@ -19,8 +19,8 @@ import {
   listDocMetadata,
   listDocRevisions,
   listDocs,
-  signedInDocOwner,
   setDoc,
+  signedInDocOwner,
 } from '../doc/docs.ts'
 import { filedIssueDataLine } from '../issue/issue-file.ts'
 import {
@@ -653,7 +653,7 @@ export function createDocsMcpServer(): McpServer {
     async ({ scope, subject, slug, user }) => {
       if (user && subject !== undefined) throw new Error('user cannot be used with subject')
       if (!user && !scope) throw new Error('scope is required unless user is true')
-      const resolvedScope = user ? 'canon' : scope
+      const resolvedScope = user ? 'canon' : scope!
       const doc = getDoc(
         resolvedScope,
         user ? null : (subject ?? null),
@@ -757,7 +757,7 @@ export function createDocsMcpServer(): McpServer {
       if (!user && !scope) throw new Error('scope is required unless user is true')
       return text(
         listDocRevisions(
-          user ? 'canon' : scope,
+          user ? 'canon' : scope!,
           user ? null : (subject ?? null),
           slug,
           user ? await signedInDocOwner() : null,

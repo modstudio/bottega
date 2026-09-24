@@ -3,15 +3,16 @@
 import { SQL } from 'bun'
 import { newRecordId } from '../../../shared/record/schema.ts'
 import { bindTenant, type TenantPrincipal } from '../../../shared/record/tenant.ts'
+import { composeCanonRows } from '../canon/canon-hydrate.ts'
 import {
   consumeDocBody,
   type DocDelivery,
   type DocRevisionOp,
   decideDocRevisionWrite,
   recordDocLintRefusal,
+  refuseCanonWrite,
   refuseDocWrite,
 } from '../doc/doc-write-allowed.ts'
-import { composeCanonRows } from '../canon/canon-hydrate.ts'
 
 export type RecordDoc = {
   id: string
@@ -177,6 +178,7 @@ async function canonFacts(
       projectCanonSlugs: [] as string[],
       currentCanon: [] as { slug: string; body: string }[],
       nextCanon: [] as { slug: string; body: string }[],
+      canonRefusal: null,
     }
   }
   const global = await tx`
@@ -211,16 +213,60 @@ async function canonFacts(
     userRows.map((row) => ({ ...row, subject: null, owner })),
     projectRows.map((row) => ({ ...row, subject })),
   ).map(({ slug, body }) => ({ slug, body }))
-  const nextCanon = composeCanonRows(
-    (owner || subject ? globalRows : changed).map((row) => ({ ...row, subject: null })),
-    (owner ? changed : userRows).map((row) => ({ ...row, subject: null, owner })),
-    (subject ? changed : projectRows).map((row) => ({ ...row, subject })),
-  ).map(({ slug, body }) => ({ slug, body }))
+  let canonRefusal: string | null = null
+  let nextCanon = currentCanon
+  try {
+    nextCanon = composeCanonRows(
+      (owner || subject ? globalRows : changed).map((row) => ({ ...row, subject: null })),
+      (owner ? changed : userRows).map((row) => ({ ...row, subject: null, owner })),
+      (subject ? changed : projectRows).map((row) => ({ ...row, subject })),
+    ).map(({ slug: rowSlug, body: rowBody }) => ({ slug: rowSlug, body: rowBody }))
+  } catch (error) {
+    canonRefusal = error instanceof Error ? error.message : String(error)
+  }
+  if (owner && !canonRefusal) {
+    const targets = await tx`
+      SELECT name FROM project
+      WHERE space_id=${spaceId}::uuid
+        AND retired_at IS NULL
+        AND COALESCE((settings->>'managedContext')::boolean, false)
+      ORDER BY name
+    `
+    const names = targets.length
+      ? targets.map((row: Record<string, unknown>) => String(row.name))
+      : [null]
+    for (const name of names) {
+      const rows = name
+        ? await tx`
+            SELECT slug, body FROM doc
+            WHERE space_id=${spaceId}::uuid AND scope='canon' AND subject=${name}
+              AND owner_user_id IS NULL AND deleted_at IS NULL
+          `
+        : []
+      try {
+        const targetCurrent = composeCanonRows(
+          globalRows.map((row) => ({ ...row, subject: null })),
+          userRows.map((row) => ({ ...row, subject: null, owner })),
+          asRows(rows).map((row) => ({ ...row, subject: name })),
+        ).map(({ slug: rowSlug, body: rowBody }) => ({ slug: rowSlug, body: rowBody }))
+        const targetNext = composeCanonRows(
+          globalRows.map((row) => ({ ...row, subject: null })),
+          changed.map((row) => ({ ...row, subject: null, owner })),
+          asRows(rows).map((row) => ({ ...row, subject: name })),
+        ).map(({ slug: rowSlug, body: rowBody }) => ({ slug: rowSlug, body: rowBody }))
+        canonRefusal = refuseCanonWrite({ current: targetCurrent, next: targetNext })
+      } catch (error) {
+        canonRefusal = error instanceof Error ? error.message : String(error)
+      }
+      if (canonRefusal) break
+    }
+  }
   return {
     globalCanonSlugs: globalRows.map((row) => row.slug),
     projectCanonSlugs: projectRows.map((row) => row.slug),
     currentCanon,
     nextCanon,
+    canonRefusal,
   }
 }
 
@@ -353,6 +399,7 @@ export async function upsertRecordDoc(
       input.body,
       input.owner ?? null,
     )
+    assertWrite(facts.canonRefusal)
     assertWrite(
       refuseDocWrite({
         scope: input.scope,
@@ -623,6 +670,7 @@ export async function restoreRecordDoc(
       body,
       revision.owner_user_id == null ? null : String(revision.owner_user_id),
     )
+    assertWrite(facts.canonRefusal)
     assertWrite(
       refuseDocWrite({
         scope,
