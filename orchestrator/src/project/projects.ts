@@ -88,6 +88,8 @@ export type Project = {
 }
 export type ProjectSettings = {
   autonomy?: AutonomySettings
+  /** Whether Bottega manages and validates this project's hydrated canon context. */
+  managedContext?: boolean
   /** Optional repository checks. Absent and false both leave a check disabled. */
   checks?: {
     spelling?: boolean
@@ -619,6 +621,12 @@ function projectChecksProblems(value: unknown): string[] {
   return problems
 }
 
+function managedContextProblems(value: unknown): string[] {
+  return value === undefined || typeof value === 'boolean'
+    ? []
+    : ['managedContext must be a boolean']
+}
+
 export function validateProjectSettings(settings: ProjectSettings, projectPath?: string): string[] {
   const problems = [
     ...validateProjectInjectionSettings(settings),
@@ -634,6 +642,7 @@ export function validateProjectSettings(settings: ProjectSettings, projectPath?:
     ...projectSpaceProblems(settings.space),
     ...autonomyProblems(settings.autonomy),
     ...projectChecksProblems(settings.checks),
+    ...managedContextProblems(settings.managedContext),
   ]
 
   if (invalidOptionalStringArray(settings.secretPaths)) {

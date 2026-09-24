@@ -43,6 +43,7 @@ const PROJECT_SETTING_COLUMNS = {
   envPrefix: 'env_prefix',
   gate: 'gate',
   keyPrefixes: 'key_prefixes',
+  managedContext: 'managed_context',
   mcp: 'mcp_probe_tool',
   mcpServer: 'mcp_server',
   productionBranch: 'production_branch',
@@ -221,13 +222,13 @@ export async function importProjects(options: ProjectImportOptions): Promise<Pro
         const secretPaths = optionalStringArray(settings, 'secretPaths', row.name)
         await tx`
           INSERT INTO project (
-            id, space_id, name, key_prefixes, checkout_path, stack, canon,
+            id, space_id, name, key_prefixes, checkout_path, stack, canon, managed_context,
             landing_branch, production_branch, gate, require_clean_main, color,
             color_dark, env_prefix, mcp_server, worker_mcp_servers, secret_paths,
             mcp_probe_tool, docs, release, states, tracker, worktree, retired_at, created_at
           ) VALUES (
             ${id}::uuid, ${options.spaceId}::uuid, ${row.name}, ${tx.array(prefixes, 'text')},
-            ${row.path}, ${row.stack}, ${row.canon !== 0},
+            ${row.path}, ${row.stack}, ${row.canon !== 0}, ${settings.managedContext === true},
             ${optionalString(settings.trunk, `project ${row.name} settings.trunk`)},
             ${optionalString(settings.productionBranch, `project ${row.name} settings.productionBranch`)},
             ${optionalString(settings.gate, `project ${row.name} settings.gate`)},
@@ -252,6 +253,7 @@ export async function importProjects(options: ProjectImportOptions): Promise<Pro
             checkout_path = EXCLUDED.checkout_path,
             stack = EXCLUDED.stack,
             canon = EXCLUDED.canon,
+            managed_context = EXCLUDED.managed_context,
             landing_branch = EXCLUDED.landing_branch,
             production_branch = EXCLUDED.production_branch,
             gate = EXCLUDED.gate,

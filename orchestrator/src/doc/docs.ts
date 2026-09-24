@@ -18,13 +18,14 @@ import { type CanonRow, composeCanonRows } from '../canon/canon-hydrate.ts'
 import { DEFAULT_PACK_BYTES } from '../canon/pack-budget.ts'
 import { db, nowIso, sessionId, writableDb, writeTransaction } from '../database/db.ts'
 import { JOBS } from '../jobs/jobs.ts'
-import { projectAt, projectByName } from '../project/projects.ts'
+import { projectAt, projectByName, projects } from '../project/projects.ts'
 import { recordApiClient } from '../record/record-api-client.ts'
 import { docLintRefusal, introducedDocFindings } from './doc-lint.ts'
 import { lintStoredDoc } from './doc-lint-adapter.ts'
 import {
   consumeDocBody,
   type DocRevisionOp,
+  globalCanonWriteTargets,
   refuseCanonWrite,
   refuseOversizedInject,
   refuseProjectOrGlobalInject,
@@ -403,13 +404,14 @@ function assertCanonWriteAllowed(input: DocWriteInput): void {
       subject: project?.name ?? '',
     })),
   ).map(({ slug, body }) => ({ slug, body }))
-  const projectsToCheck = project
-    ? [project]
-    : (db().query('SELECT name,path FROM project WHERE canon=1 ORDER BY name').all() as {
-        name: string
-        path: string
-      }[])
+  const projectsToCheck = project ? [project] : globalCanonWriteTargets(projects())
   const refusals = projectsToCheck.map((target) => {
+    if (!target) {
+      return refuseCanonWrite({
+        current: global.map(({ slug, body }) => ({ slug, body })),
+        next,
+      })
+    }
     const targetProjectRows = listDocs({ scope: 'canon', subject: target.name })
     const targetCurrent = composeCanonRows(global, targetProjectRows).map(({ slug, body }) => ({
       slug,
@@ -430,14 +432,6 @@ function assertCanonWriteAllowed(input: DocWriteInput): void {
       sourceTexts: collected.sourceTexts,
     })
   })
-  if (!project && projectsToCheck.length === 0) {
-    refusals.push(
-      refuseCanonWrite({
-        current: global.map(({ slug, body }) => ({ slug, body })),
-        next,
-      }),
-    )
-  }
   const refusal = refusals.find((value) => value)
   if (refusal && !input.allowCanonBootstrap) throw new Error(refusal)
 }

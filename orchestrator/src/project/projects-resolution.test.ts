@@ -83,6 +83,14 @@ describe('projects are data, not code', () => {
     expect(validateProjectSettings({ worktree: { readonly_docker: true } })).toEqual([])
   })
 
+  test('managedContext must be boolean when present', () => {
+    expect(
+      validateProjectSettings({
+        managedContext: 'yes',
+      } as unknown as Parameters<typeof validateProjectSettings>[0]),
+    ).toContain('managedContext must be a boolean')
+  })
+
   test('a directory belongs to the project that contains it', () => {
     upsertProject({ name: 'alpha', path: '/w/alpha', stack: 'php-laravel' })
     expect(projectAt('/w/alpha')?.name).toBe('alpha')
