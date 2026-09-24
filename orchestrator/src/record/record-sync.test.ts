@@ -13,6 +13,26 @@ const MACHINE_ID = '01990000-0000-7000-8000-000000000099'
 const PROJECT_ID = '01990000-0000-7000-8000-000000000088'
 const STAMP = '2026-09-15T01:01:00.000Z'
 
+type HostedExclusion = {
+  rowReason: string | null
+  supersededAt: string | null
+  runReason: string | null
+}
+
+function hostedExclusionResult(
+  source: string,
+  hostedExclusion: HostedExclusion,
+): Record<string, unknown>[] | null {
+  if (source.includes('SELECT reason FROM run_exclusion') && source.includes('superseded_at')) {
+    if (hostedExclusion.rowReason === null || hostedExclusion.supersededAt !== null) return []
+    return [{ reason: hostedExclusion.rowReason }]
+  }
+  if (source.includes('SELECT evidence_excluded FROM run')) {
+    return [{ evidence_excluded: hostedExclusion.runReason }]
+  }
+  return null
+}
+
 function localOutbox(
   count: number,
   projectName: string | null = PLATFORM_SLUG,
@@ -64,11 +84,7 @@ function fakePostgres(
     findings: boolean
     onWrite?: () => void
   },
-  hostedExclusion: {
-    rowReason: string | null
-    supersededAt: string | null
-    runReason: string | null
-  } = {
+  hostedExclusion: HostedExclusion = {
     rowReason: 'voided with orch score --void',
     supersededAt: null,
     runReason: 'voided with orch score --void',
@@ -114,16 +130,8 @@ function fakePostgres(
         { column_name: 'supersede_note' },
       ]
     }
-    if (source.includes('SELECT reason FROM run_exclusion') && source.includes('superseded_at')) {
-      return hostedExclusion.rowReason === null
-        ? []
-        : hostedExclusion.supersededAt === null
-          ? [{ reason: hostedExclusion.rowReason }]
-          : []
-    }
-    if (source.includes('SELECT evidence_excluded FROM run')) {
-      return [{ evidence_excluded: hostedExclusion.runReason }]
-    }
+    const exclusionResult = hostedExclusionResult(source, hostedExclusion)
+    if (exclusionResult) return exclusionResult
     if (source.includes('SELECT reason FROM run_exclusion')) return []
     return source.includes('SELECT id FROM project') ? [{ id: PROJECT_ID }] : []
   }) as unknown as SQL
