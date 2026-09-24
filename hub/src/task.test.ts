@@ -94,15 +94,17 @@ const hosted = {
 describe('local task tracker', () => {
   const seed = (key: string, project: string, source: 'mcp' | 'local' = 'local') => {
     const stamp = new Date().toISOString()
+    const recordId = Bun.randomUUIDv7()
     writeTransaction((conn) =>
       conn
         .query(
           `INSERT INTO task
-        (key, project, title, status, status_category, source, first_seen, last_seen)
-       VALUES (?, ?, 'seed', 'open', 'open', ?, ?, ?)`,
+        (record_id,key, project, title, status, status_category, source, first_seen, last_seen)
+       VALUES (?, ?, ?, 'seed', 'open', 'open', ?, ?, ?)`,
         )
-        .run(key, project, source, stamp, stamp),
+        .run(recordId, key, project, source, stamp, stamp),
     )
+    return recordId
   }
 
   test('issues above the highest existing number for the project prefix', async () => {
@@ -173,17 +175,17 @@ describe('local task tracker', () => {
   })
 
   test('updates a synchronized document through its hosted record id', async () => {
-    seed('DEV-884', 'workshop')
+    const taskRecordId = seed('DEV-884', 'workshop')
     const at = new Date().toISOString()
     const recordId = 'hosted-document-884'
     const inserted = writeTransaction((conn) =>
       conn
         .query(
           `INSERT INTO task_document
-          (record_id,task_key,title,body,version,created_at,updated_at)
-          VALUES (?, 'DEV-884', 'Before', 'Body', 'version-before', ?, ?)`,
+          (record_id,task_key,task_record_id,title,body,version,created_at,updated_at)
+          VALUES (?, 'DEV-884', ?, 'Before', 'Body', 'version-before', ?, ?)`,
         )
-        .run(recordId, at, at),
+        .run(recordId, taskRecordId, at, at),
     )
     const requests: Array<{ method: string | undefined; pathname: string }> = []
 
@@ -285,10 +287,11 @@ describe('local task tracker', () => {
       { project: 'workshop', title: 'Inspectable task', body: 'Task body' },
       { hosted },
     )
-    const comment = await commentTask(task.key, 'A useful comment', { hosted })
+    const comment = await commentTask(task.key, {}, 'A useful comment', { hosted })
     expect(comment.task_record_id).toBe(task.record_id)
     const ordinary = await createTaskDocument(
       { task: task.key, title: 'Notes', body: '# Notes' },
+      {},
       { hosted },
     )
     const handoff = await createTaskDocument(
@@ -298,6 +301,7 @@ describe('local task tracker', () => {
         body: '# Handoff',
         role: 'handoff',
       },
+      {},
       { hosted },
     )
     writeTransaction((conn) => {
@@ -335,5 +339,21 @@ describe('local task tracker', () => {
       expect.objectContaining({ id: 1812, agent: 'codex', vendor_tokens: 123 }),
     ])
     expect(taskRecord(task.key).task.key).toBe(task.key)
+  })
+
+  test('task detail joins children by task record id, not their shared label', () => {
+    const recordId = seed('SAME-77', 'alpha')
+    writeTransaction((conn) => {
+      conn
+        .query(
+          `INSERT INTO task_comment(task_key,task_record_id,body,created_at) VALUES
+           ('SAME-77',?,'alpha comment','2026-09-01'),
+           ('SAME-77','other-task-record','beta comment','2026-09-02')`,
+        )
+        .run(recordId)
+    })
+    expect(showTask('SAME-77', { recordId }).comments.map((row) => row.body)).toEqual([
+      'alpha comment',
+    ])
   })
 })

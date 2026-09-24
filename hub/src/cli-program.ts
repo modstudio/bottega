@@ -95,23 +95,26 @@ const taskCommandShapes = new Map<
   ['duplicates', { positionalCount: 0, valueFlags: new Set(['--project', '--title']) }],
   ['tracker-new', { positionalCount: 0, valueFlags: new Set(['--project', '--title', '--body']) }],
   ['list', { positionalCount: 0, valueFlags: new Set(['--project', '--status', '--parent']) }],
-  ['show', { positionalCount: 1, valueFlags: new Set() }],
+  ['show', { positionalCount: 1, valueFlags: new Set(['--project']) }],
   [
     'set',
     {
       positionalCount: 1,
-      valueFlags: new Set(['--title', '--status', '--parent', '--body', '--assignee']),
+      valueFlags: new Set(['--project', '--title', '--status', '--parent', '--body', '--assignee']),
     },
   ],
-  ['close', { positionalCount: 1, valueFlags: new Set() }],
-  ['comment', { positionalCount: 2, valueFlags: new Set() }],
+  ['close', { positionalCount: 1, valueFlags: new Set(['--project']) }],
+  ['comment', { positionalCount: 2, valueFlags: new Set(['--project']) }],
   ['import', { positionalCount: 1, valueFlags: new Set() }],
   ['push', { positionalCount: 0, valueFlags: new Set() }],
   [
     'doc new',
-    { positionalCount: 1, valueFlags: new Set(['--title', '--role', '--body', '--body-file']) },
+    {
+      positionalCount: 1,
+      valueFlags: new Set(['--project', '--title', '--role', '--body', '--body-file']),
+    },
   ],
-  ['doc list', { positionalCount: 1, valueFlags: new Set() }],
+  ['doc list', { positionalCount: 1, valueFlags: new Set(['--project']) }],
   ['doc show', { positionalCount: 1, valueFlags: new Set() }],
   [
     'doc set',
@@ -123,9 +126,12 @@ const taskCommandShapes = new Map<
   ['doc rm', { positionalCount: 1, valueFlags: new Set() }],
   [
     'document new',
-    { positionalCount: 1, valueFlags: new Set(['--title', '--role', '--body', '--body-file']) },
+    {
+      positionalCount: 1,
+      valueFlags: new Set(['--project', '--title', '--role', '--body', '--body-file']),
+    },
   ],
-  ['document list', { positionalCount: 1, valueFlags: new Set() }],
+  ['document list', { positionalCount: 1, valueFlags: new Set(['--project']) }],
   ['document show', { positionalCount: 1, valueFlags: new Set() }],
   [
     'document set',
@@ -196,15 +202,15 @@ const TASK_USAGE = `hub task new --project X --title "..." [--status Y] [--paren
                [--body "..."|--body-file PATH] [--allow-duplicate "reason"]
   hub task duplicates --project X --title "..." --json
   hub task list [--project X] [--status Y] [--parent KEY] [--json]
-  hub task show <KEY> [--json]
-  hub task set <KEY> [--title "..."] [--status Y] [--parent KEY|--no-parent]
+  hub task show <KEY> [--project X] [--json]
+  hub task set <KEY> [--project X] [--title "..."] [--status Y] [--parent KEY|--no-parent]
                [--body "..."] [--assignee NAME] [--force]
-  hub task close <KEY> [--keep-branches]
-  hub task comment <KEY> "..."
+  hub task close <KEY> [--project X] [--keep-branches]
+  hub task comment <KEY> "..." [--project X]
   hub task tracker-new --project X --title "..." --body "..."
-  hub task doc new <KEY> --title "..." [--role handoff]
+  hub task doc new <KEY> [--project X] --title "..." [--role handoff]
                [--body "..."|--body-file PATH]
-  hub task doc list <KEY> [--json]
+  hub task doc list <KEY> [--project X] [--json]
   hub task doc show <ID> [--json]
   hub task doc set <ID> [--title "..."] [--role handoff|--no-role]
                [--body "..."|--body-file PATH] [--version TOKEN]
@@ -459,7 +465,12 @@ async function task() {
   }
 
   async function closeAndPruneTask(key: string) {
-    const { closed, pruned, pruneError } = await closeThenPrune(key, has('keep-branches'))
+    const { closed, pruned, pruneError } = await closeThenPrune(
+      key,
+      { project: flag('project') },
+      has('keep-branches'),
+      {},
+    )
     printRow(closed)
     if (pruneError) {
       console.error(`branch prune failed: ${pruneError.message}`)
@@ -488,12 +499,15 @@ async function task() {
     const action = argv[2]
     const ref = argv[3] ?? ''
     if (action === 'new') {
-      const document = await createTaskDocument({
-        task: ref,
-        title: required('title'),
-        body: newBody(),
-        role: flag('role'),
-      })
+      const document = await createTaskDocument(
+        {
+          task: ref,
+          title: required('title'),
+          body: newBody(),
+          role: flag('role'),
+        },
+        { project: flag('project') },
+      )
       // This is a value for the caller to pass back, not presentational output.
       // Bun inspects a numeric console argument and ANSI-wraps it when
       // FORCE_COLOR is set, even when NO_COLOR is set too.
@@ -501,7 +515,7 @@ async function task() {
       return
     }
     if (action === 'list') {
-      const documents = listTaskDocuments(ref)
+      const documents = listTaskDocuments(ref, { project: flag('project') })
       if (has('json')) console.log(JSON.stringify(documents))
       else if (!documents.length) console.log('no documents')
       else
@@ -594,7 +608,7 @@ async function task() {
     return
   }
   if (sub === 'show') {
-    const shown = showTask(argv[2] ?? '')
+    const shown = showTask(argv[2] ?? '', { project: flag('project') })
     if (has('json')) console.log(JSON.stringify(shown))
     else {
       printRow(shown.task)
@@ -628,7 +642,11 @@ async function task() {
       ...(has('assignee') ? { assignee: required('assignee') } : {}),
     }
     if (!Object.keys(changes).length) throw new Error('hub task set requires a field to change')
-    printRow(await setTask(argv[2] ?? '', changes, { force: has('force') }))
+    printRow(
+      await setTask(argv[2] ?? '', { project: flag('project') }, changes, {
+        force: has('force'),
+      }),
+    )
     return
   }
   if (sub === 'close') {
@@ -638,7 +656,7 @@ async function task() {
   if (sub === 'comment') {
     const body = argv[3]
     if (!body) throw new Error('hub task comment <KEY> "..."')
-    const comment = await commentTask(argv[2] ?? '', body)
+    const comment = await commentTask(argv[2] ?? '', { project: flag('project') }, body)
     console.log(`${comment.task_key} commented ${comment.created_at}`)
     return
   }

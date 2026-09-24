@@ -45,6 +45,14 @@ const input = z.object({
   }),
 })
 
+const taskIdentityInput = {
+  key: z.string().min(1).max(64),
+  scope: z.object({
+    project: z.string().min(1).max(64).optional(),
+    recordId: z.string().min(1).max(128).optional(),
+  }),
+}
+
 type ViewData = Awaited<ReturnType<typeof view>>
 type TaskData = Extract<ViewData, { dropped: unknown }>
 type BoardData = Extract<ViewData, { cards: unknown }>
@@ -77,43 +85,45 @@ export function createWorkRouter(given: Partial<WorkDeps> = {}) {
       data: (await deps.view(name, value.hours, value.filters)) as TaskData,
     }))
   return t.router({
-    task: t.procedure
-      .input(z.object({ key: z.string().min(1).max(64) }))
-      .query(({ input: value }) => {
-        try {
-          return deps.taskRecord(value.key)
-        } catch (cause) {
-          const message = cause instanceof Error ? cause.message : String(cause)
-          if (message.startsWith('no task ')) throw new TRPCError({ code: 'NOT_FOUND', message })
-          throw cause
-        }
-      }),
+    task: t.procedure.input(z.object(taskIdentityInput)).query(({ input: value }) => {
+      try {
+        return deps.taskRecord(value.key, value.scope)
+      } catch (cause) {
+        const message = cause instanceof Error ? cause.message : String(cause)
+        if (message.startsWith('no task ')) throw new TRPCError({ code: 'NOT_FOUND', message })
+        throw cause
+      }
+    }),
     setStatus: t.procedure
       .input(
         z.object({
-          key: z.string().min(1).max(64),
+          ...taskIdentityInput,
           status: z.enum(TASK_STATUSES),
         }),
       )
       .mutation(({ input: value }) =>
-        write(() => deps.setTask(value.key, { status: value.status })),
+        write(() => deps.setTask(value.key, value.scope, { status: value.status })),
       ),
     setTitle: t.procedure
       .input(
         z.object({
-          key: z.string().min(1).max(64),
+          ...taskIdentityInput,
           title: z.string().trim().min(1).max(500),
         }),
       )
-      .mutation(({ input: value }) => write(() => deps.setTask(value.key, { title: value.title }))),
+      .mutation(({ input: value }) =>
+        write(() => deps.setTask(value.key, value.scope, { title: value.title })),
+      ),
     comment: t.procedure
       .input(
         z.object({
-          key: z.string().min(1).max(64),
+          ...taskIdentityInput,
           body: z.string().trim().min(1),
         }),
       )
-      .mutation(({ input: value }) => write(() => deps.commentTask(value.key, value.body))),
+      .mutation(({ input: value }) =>
+        write(() => deps.commentTask(value.key, value.scope, value.body)),
+      ),
     setDocument: t.procedure
       .input(
         z.object({

@@ -10,7 +10,9 @@ export function applyHostedNote(conn: Database, row: HostedNote) {
     conn.query('DELETE FROM note WHERE id=?').run(row.number)
     return
   }
-  const promotedTaskRecordId = row.promoted_task ? taskRecordIdFor(conn, row.promoted_task) : null
+  const promotedTaskRecordId = row.promoted_task
+    ? taskRecordIdFor(conn, row.promoted_task, row.project)
+    : null
   conn
     .query(`INSERT INTO note(record_id,id,project,text,area,anchors,sightings,created_at,last_seen_at,stale_at,stale_reason,promoted_task,promoted_task_record_id)
     VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?) ON CONFLICT(id) DO UPDATE SET record_id=excluded.record_id,

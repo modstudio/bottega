@@ -2,6 +2,7 @@ import { engagedMs } from '../../shared/interval.ts'
 import type { Capabilities } from '../../shared/trackers.ts'
 import { db, writeTransaction } from './db.ts'
 import { projects } from './projects.ts'
+import { taskIdentityDecision } from './task-identity.ts'
 import {
   type DayIntervalRow,
   type DayRow,
@@ -12,6 +13,7 @@ import {
   projectSpendGrid,
   projectTasksInWindow,
   type RatioSummary,
+  taskIdentity,
   type WindowIntervalRow,
 } from './task-projections.ts'
 
@@ -19,18 +21,58 @@ export type TaskRow = ReturnType<typeof projectTasksInWindow>[number]
 
 /** One indexed overlap scan, with task metadata only for keys in that window. */
 export function intervalsInWindow(from: string, to: string): WindowIntervalRow[] {
-  return db()
+  const conn = db()
+  const rows = conn
     .query<WindowIntervalRow, [string, string]>(
       `SELECT i.task_key, i.project, i.source, i.agent, i.job, i.start_at, i.end_at, i.open,
             i.claude_tokens, i.vendor_tokens, i.vendor_cost_usd,
-            t.project AS task_project, t.title AS task_title, t.status AS task_status,
-            t.status_category AS task_status_category, t.source AS task_source,
-            t.updated_at AS task_updated_at, t.closed_at AS task_closed_at
-       FROM interval i LEFT JOIN task t ON t.key = i.task_key
+            NULL AS task_record_id, NULL AS task_project, NULL AS task_title, NULL AS task_status,
+            NULL AS task_status_category, NULL AS task_source,
+            NULL AS task_updated_at, NULL AS task_closed_at
+       FROM interval i
       WHERE i.end_at >= ? AND i.start_at < ?
       ORDER BY i.start_at`,
     )
     .all(from, to)
+  return rows.map((row) => {
+    if (!row.task_key) return row
+    const decision = taskIdentityDecision(conn, row.task_key, row.project ?? undefined)
+    if ('several' in decision) {
+      throw new Error(`task ${row.task_key} is ambiguous; pass --project`)
+    }
+    if ('one' in decision) {
+      const recordId = decision.one
+      const task = conn
+        .query<
+          {
+            project: string
+            title: string | null
+            status: string | null
+            status_category: string | null
+            source: string
+            updated_at: string | null
+            closed_at: string | null
+          },
+          [string]
+        >(
+          `SELECT project,title,status,status_category,source,updated_at,closed_at FROM task WHERE record_id=?`,
+        )
+        .get(recordId)
+      if (!task) return row
+      return {
+        ...row,
+        task_record_id: recordId,
+        task_project: task.project,
+        task_title: task.title,
+        task_status: task.status,
+        task_status_category: task.status_category,
+        task_source: task.source,
+        task_updated_at: task.updated_at,
+        task_closed_at: task.closed_at,
+      }
+    }
+    return row
+  })
 }
 
 /**
@@ -77,11 +119,18 @@ export function stripWindow(from: string, to: string) {
 export function completedInWindow(from: string, to: string) {
   return db()
     .query<
-      { key: string; project: string; title: string | null; at: string; to_status: string },
+      {
+        key: string
+        task_record_id: string
+        project: string
+        title: string | null
+        at: string
+        to_status: string
+      },
       [string, string]
     >(
-      `SELECT t.key, t.project, t.title, e.at, e.to_status
-       FROM task_status_event e JOIN task t ON t.key = e.task_key
+      `SELECT t.key, e.task_record_id, t.project, t.title, e.at, e.to_status
+       FROM task_status_event e JOIN task t ON t.record_id = e.task_record_id
       WHERE e.at >= ? AND e.at < ? AND e.to_status = 'done'
       ORDER BY e.at DESC`,
     )
@@ -233,6 +282,7 @@ export function spendGrid(windowDays = 14) {
 type BoardTask = {
   spaceId?: string
   spaceName?: string
+  recordId?: string
   key: string
   project: string | null
   title: string | null
@@ -312,6 +362,7 @@ export function boardTasks(windowDays = 14, cap = 250): Board {
     .query<
       {
         key: string
+        record_id: string | null
         project: string | null
         title: string | null
         assignee: string | null
@@ -323,28 +374,42 @@ export function boardTasks(windowDays = 14, cap = 250): Board {
       },
       []
     >(
-      `SELECT t.key, t.project, t.title, t.assignee, t.status, t.status_category, t.source,
+      `SELECT t.key, t.record_id, t.project, t.title, t.assignee, t.status, t.status_category, t.source,
             t.updated_at, t.last_seen
        FROM task t`,
     )
     .all()
 
+  const intervalIdentity = (row: { task_key: string; project: string | null }) => {
+    const decision = taskIdentityDecision(db(), row.task_key, row.project ?? undefined)
+    if ('one' in decision) {
+      return taskIdentity({
+        recordId: decision.one,
+        key: row.task_key,
+        project: row.project,
+      })
+    }
+    if ('several' in decision) throw new Error(`task ${row.task_key} is ambiguous; pass --project`)
+    return null
+  }
   const recent = db()
-    .query<{ task_key: string }, [string]>(
-      `SELECT DISTINCT task_key FROM interval WHERE task_key IS NOT NULL AND start_at >= ?`,
+    .query<{ task_key: string; project: string | null }, [string]>(
+      `SELECT DISTINCT task_key,project FROM interval WHERE task_key IS NOT NULL AND start_at >= ?`,
     )
     .all(since)
-    .map((row) => row.task_key)
+    .map(intervalIdentity)
+    .filter((id): id is string => id !== null)
 
   // Who is being worked on right now, in ONE query rather than one per row.
   const live = new Set(
     db()
-      .query<{ task_key: string }, []>(
-        `SELECT DISTINCT task_key FROM interval
+      .query<{ task_key: string; project: string | null }, []>(
+        `SELECT DISTINCT task_key,project FROM interval
         WHERE open = 1 AND task_key IS NOT NULL`,
       )
       .all()
-      .map((r) => r.task_key),
+      .map(intervalIdentity)
+      .filter((id): id is string => id !== null),
   )
 
   return projectBoard({ rows, recentKeys: recent, liveKeys: [...live], projects: projects(), cap })

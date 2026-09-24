@@ -173,9 +173,32 @@ describe('work.task', () => {
       view: fakeView,
       taskRecord: () => record as never,
     })
-    const result = await router.createCaller({}).task({ key: 'DEV-1' })
+    const result = await router.createCaller({}).task({ key: 'DEV-1', scope: {} })
     expect(result.task.key).toBe('DEV-1')
     expect(result.source).toBe('local')
+  })
+
+  test('passes record id and project identity to local task reads', async () => {
+    const seen: unknown[] = []
+    const router = createWorkRouter({
+      strip: fakeStrip,
+      view: fakeView,
+      taskRecord: ((key: string, scope: unknown) => {
+        seen.push(key, scope)
+        return {
+          task: { key },
+          source: 'local',
+          project: null,
+          runs: [],
+          comments: [],
+          documents: [],
+        }
+      }) as never,
+    })
+    await router
+      .createCaller({})
+      .task({ key: 'SAME-1', scope: { project: 'alpha', recordId: 'task-alpha' } })
+    expect(seen).toEqual(['SAME-1', { project: 'alpha', recordId: 'task-alpha' }])
   })
 
   test('maps an unknown key to NOT_FOUND', async () => {
@@ -186,10 +209,12 @@ describe('work.task', () => {
         throw new Error('no task DEV-404')
       },
     })
-    await expect(router.createCaller({}).task({ key: 'DEV-404' })).rejects.toMatchObject({
-      code: 'NOT_FOUND',
-      message: 'no task DEV-404',
-    })
+    await expect(router.createCaller({}).task({ key: 'DEV-404', scope: {} })).rejects.toMatchObject(
+      {
+        code: 'NOT_FOUND',
+        message: 'no task DEV-404',
+      },
+    )
   })
 
   test('each local write mutation preserves the non-local refusal', async () => {
@@ -204,15 +229,17 @@ describe('work.task', () => {
       updateTaskDocument: refusal as never,
     })
     const writes = router.createCaller({})
-    await expect(writes.setStatus({ key: 'EXT-1', status: 'active' })).rejects.toMatchObject({
+    await expect(
+      writes.setStatus({ key: 'EXT-1', scope: {}, status: 'active' }),
+    ).rejects.toMatchObject({
       code: 'BAD_REQUEST',
       message: 'task EXT-1 is not local',
     })
-    await expect(writes.setTitle({ key: 'EXT-1', title: 'No' })).rejects.toMatchObject({
+    await expect(writes.setTitle({ key: 'EXT-1', scope: {}, title: 'No' })).rejects.toMatchObject({
       code: 'BAD_REQUEST',
       message: 'task EXT-1 is not local',
     })
-    await expect(writes.comment({ key: 'EXT-1', body: 'No' })).rejects.toMatchObject({
+    await expect(writes.comment({ key: 'EXT-1', scope: {}, body: 'No' })).rejects.toMatchObject({
       code: 'BAD_REQUEST',
       message: 'task EXT-1 is not local',
     })
@@ -230,7 +257,7 @@ describe('work.task', () => {
       }) as never,
     })
     await expect(
-      router.createCaller({}).setStatus({ key: 'DEV-404', status: 'active' }),
+      router.createCaller({}).setStatus({ key: 'DEV-404', scope: {}, status: 'active' }),
     ).rejects.toMatchObject({ code: 'NOT_FOUND', message: 'no task DEV-404' })
   })
 

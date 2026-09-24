@@ -9,12 +9,120 @@ export const taskIdentityRelationships = [
   { table: 'note', keyColumn: 'promoted_task', recordColumn: 'promoted_task_record_id' },
 ] as const
 
-export function taskRecordIdFor(conn: Database, key: string): string | null {
-  return (
-    conn
-      .query<{ record_id: string | null }, [string]>('SELECT record_id FROM task WHERE key=?')
-      .get(key)?.record_id ?? null
+type TaskIdentityCandidate = {
+  project: string
+  key: string
+  recordId: string | null
+  cached: boolean
+}
+
+export type TaskIdentityDecision =
+  | { one: string }
+  | { none: true }
+  | { uncachedOnly: TaskIdentityCandidate[] }
+  | { several: TaskIdentityCandidate[] }
+
+function taskIdentityCandidates(conn: Database, key: string): TaskIdentityCandidate[] {
+  const upper = key.toUpperCase()
+  const rows = conn
+    .query<
+      { project: string; key: string; record_id: string | null; cached: number },
+      [string, string]
+    >(
+      `SELECT project,key,record_id,1 cached FROM task
+       WHERE key=?
+       UNION ALL
+       SELECT c.project,c.key,t.record_id,CASE WHEN t.record_id IS NULL THEN 0 ELSE 1 END cached
+       FROM task_identity_claim c
+       LEFT JOIN task t ON t.project=c.project AND t.external_id=c.external_id
+       WHERE c.key=?`,
+    )
+    .all(upper, upper)
+  const candidates = new Map<string, TaskIdentityCandidate>()
+  for (const row of rows) {
+    const id = `${row.project}\0${row.record_id ?? ''}`
+    const existing = candidates.get(id)
+    if (!existing || row.cached > Number(existing.cached)) {
+      candidates.set(id, {
+        project: row.project,
+        key: row.key,
+        recordId: row.record_id,
+        cached: Boolean(row.cached),
+      })
+    }
+  }
+  return [...candidates.values()].sort(
+    (left, right) => left.project.localeCompare(right.project) || left.key.localeCompare(right.key),
   )
+}
+
+/** Make the identity choice without coupling callers to refusal text. */
+function decideTaskIdentity(
+  candidates: TaskIdentityCandidate[],
+  project?: string,
+): TaskIdentityDecision {
+  const found = project
+    ? candidates.filter((candidate) => candidate.project === project)
+    : candidates
+  if (!found.length) return { none: true }
+  if (found.length === 1 && found[0]!.recordId) return { one: found[0]!.recordId }
+  if (found.every((candidate) => !candidate.recordId)) return { uncachedOnly: found }
+  return { several: found }
+}
+
+export function taskIdentityDecision(
+  conn: Database,
+  key: string,
+  project?: string,
+): TaskIdentityDecision {
+  return decideTaskIdentity(taskIdentityCandidates(conn, key), project)
+}
+
+function nullableRecordId(decision: TaskIdentityDecision): string | null {
+  if ('one' in decision) return decision.one
+  if ('none' in decision || 'uncachedOnly' in decision) return null
+  throw ambiguousTaskError(decision.several)
+}
+
+export const taskRecordIdFor = (conn: Database, key: string, project?: string) =>
+  nullableRecordId(taskIdentityDecision(conn, key, project))
+
+function candidateDetail(candidates: TaskIdentityCandidate[]) {
+  return candidates
+    .map(
+      (candidate) =>
+        `${candidate.project} ${candidate.key} ${candidate.recordId ?? '(not cached)'}`,
+    )
+    .join('\n')
+}
+
+function ambiguousTaskError(candidates: TaskIdentityCandidate[]) {
+  return new Error(
+    `task ${candidates[0]!.key} is ambiguous:\n${candidateDetail(candidates)}\npass --project`,
+  )
+}
+
+/** Resolve a human label at the edge; internal task work uses the returned UUID. */
+export function resolveTask(conn: Database, key: string, project?: string): string {
+  const upper = key.toUpperCase()
+  const candidates = taskIdentityCandidates(conn, upper)
+  const decision = decideTaskIdentity(candidates, project)
+  if ('one' in decision) return decision.one
+  if ('none' in decision) throw new Error(`no task ${upper}`)
+  if ('several' in decision) throw ambiguousTaskError(decision.several)
+
+  const detail = candidateDetail(decision.uncachedOnly)
+  const cachedProjects = candidates
+    .filter((candidate) => candidate.recordId)
+    .map((candidate) => candidate.project)
+  const collision = cachedProjects.length
+    ? ` because another project's task holds the same key here; pass --project ${cachedProjects[0]} to reach the cached task`
+    : ''
+  const subject =
+    decision.uncachedOnly.length === 1
+      ? `task ${upper} exists in ${decision.uncachedOnly[0]!.project} but is not cached on this machine${collision}`
+      : `tasks labeled ${upper} exist but are not cached on this machine${collision}`
+  throw new Error(`${subject}. Re-collect the missing project to bring it back.\n${detail}`)
 }
 
 export function claimTaskIdentity(

@@ -180,6 +180,7 @@ export type IntervalRow = {
   space_id?: string
   space_name?: string
   task_key: string | null
+  task_record_id?: string | null
   project: string | null
   source: string
   agent: string | null
@@ -207,6 +208,7 @@ export type ProjectedTask = {
   spaceId?: string
   spaceName?: string
   key: string | null
+  recordId?: string
   project: string | null
   title: string | null
   status: string | null
@@ -241,6 +243,17 @@ function foldVendors(rows: IntervalRow[]): AgentSpend[] {
   return [...by.values()].sort((a, b) => b.tokens - a.tokens)
 }
 
+/** The one identity formula shared by hosted, local, and unattributed task evidence. */
+export function taskIdentity(row: {
+  spaceId?: string
+  recordId?: string | null
+  key: string | null
+  project?: string | null
+}) {
+  if (row.spaceId) return `${row.spaceId}\0${row.key ?? ''}`
+  return row.recordId ?? `unattributed:${row.project ?? 'unknown'}:${row.key ?? ''}`
+}
+
 export function projectTasksInWindow(
   rows: WindowIntervalRow[],
   projectRows: ProjectionProject[],
@@ -248,7 +261,12 @@ export function projectTasksInWindow(
 ): ProjectedTask[] {
   const groups = new Map<string, WindowIntervalRow[]>()
   for (const row of rows) {
-    const id = `${row.space_id ?? ''}\0${row.task_key ?? `unattributed:${row.project ?? 'unknown'}`}`
+    const id = taskIdentity({
+      spaceId: row.space_id,
+      recordId: row.task_record_id,
+      key: row.task_key,
+      project: row.project,
+    })
     groups.set(id, [...(groups.get(id) ?? []), row])
   }
   const project = (spaceId: string | undefined, name: string | null) =>
@@ -267,6 +285,7 @@ export function projectTasksInWindow(
       spaceId: first.space_id,
       spaceName: first.space_name,
       key,
+      ...(first.task_record_id ? { recordId: first.task_record_id } : {}),
       project: projectName,
       title: first.task_title,
       status: first.task_status,
@@ -303,6 +322,7 @@ export function projectTasksInWindow(
 export type CompletedRow = {
   space_id?: string
   key: string
+  task_record_id?: string
   project: string
   title: string | null
   at: string
@@ -353,17 +373,22 @@ export function projectFlightDone(input: {
       (!input.filters.project || row.project === input.filters.project) &&
       sourceMatches(row, input.filters.source),
   )
-  const identity = (row: { spaceId?: string; key: string | null }) =>
-    `${row.spaceId ?? ''}\0${row.key}`
   const closed = new Set(
-    input.completed.map((row) => identity({ spaceId: row.space_id, key: row.key })),
+    input.completed.map((row) =>
+      taskIdentity({
+        spaceId: row.space_id,
+        recordId: row.task_record_id,
+        key: row.key,
+        project: row.project,
+      }),
+    ),
   )
   const inFlight = (row: ProjectedTask) =>
     row.workingNow || ['active', 'review'].includes(row.statusCategory ?? '')
   const wanted =
     input.name === 'done'
       ? rows.filter(
-          (row) => row.key && (closed.has(identity(row)) || row.statusCategory === 'done'),
+          (row) => row.key && (closed.has(taskIdentity(row)) || row.statusCategory === 'done'),
         )
       : rows.filter(inFlight)
   const unmapped = rows.filter(
@@ -397,7 +422,13 @@ export function projectFlightDone(input: {
     runs: row.key
       ? projectRuns(
           input.intervals.filter(
-            (item) => item.task_key === row.key && item.space_id === row.spaceId,
+            (item) =>
+              taskIdentity({
+                spaceId: item.space_id,
+                recordId: item.task_record_id,
+                key: item.task_key,
+                project: item.project,
+              }) === taskIdentity(row),
           ),
           input.now,
         )
@@ -431,6 +462,7 @@ export type BoardSourceRow = {
   space_id?: string
   space_name?: string
   key: string
+  record_id?: string | null
   project: string | null
   title: string | null
   assignee: string | null
@@ -450,11 +482,17 @@ export function projectBoardCards(
   return rows.map((row) => {
     const project =
       projectRows.find((item) => item.spaceId === row.space_id && item.name === row.project) ?? null
-    const identity = row.space_id ? `${row.space_id}\0${row.key}` : row.key
+    const identity = taskIdentity({
+      spaceId: row.space_id,
+      recordId: row.record_id,
+      key: row.key,
+      project: row.project,
+    })
     return {
       spaceId: row.space_id,
       spaceName: row.space_name,
       key: row.key,
+      ...(row.record_id ? { recordId: row.record_id } : {}),
       project: row.project,
       title: row.title,
       assignee: row.assignee,
@@ -480,7 +518,14 @@ export function projectBoard(input: {
   const eligible = input.rows.filter(
     (row) =>
       ['active', 'review'].includes(row.status_category ?? '') ||
-      recent.has(row.space_id ? `${row.space_id}\0${row.key}` : row.key) ||
+      recent.has(
+        taskIdentity({
+          spaceId: row.space_id,
+          recordId: row.record_id,
+          key: row.key,
+          project: row.project,
+        }),
+      ) ||
       (row.source === 'local' && !['done', 'dropped'].includes(row.status_category ?? '')),
   )
   const count = (bucket: (row: BoardSourceRow) => string) =>
