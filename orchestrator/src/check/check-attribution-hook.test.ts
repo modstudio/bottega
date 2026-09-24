@@ -49,7 +49,7 @@ function denialReason(output: unknown): string | undefined {
     ?.hookSpecificOutput?.permissionDecisionReason
 }
 
-describe('no-attribution hook', () => {
+describe('attribution hook', () => {
   test('uses the shared fixture for blocked and allowed attribution text', () => {
     const { root, hook } = layout()
     const result = python(root, [fixtureRunner, hook, fixturePath])
