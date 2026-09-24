@@ -306,10 +306,9 @@ async function mirrorTrackerSnapshot(
     .map((task) => {
       const localRow = trackerIdentityRow(db(), task)!
       return {
-        id: localRow.record_id,
+        record_id: localRow.record_id,
         key: localRow.key,
         project: task.project,
-        project_name: task.project,
         title: task.title,
         status: task.status,
         status_category: task.category,
@@ -321,9 +320,7 @@ async function mirrorTrackerSnapshot(
         source: 'mcp' as const,
         first_seen: at,
         last_seen: at,
-        created_at: at,
         updated_at: task.updatedAt ?? at,
-        deleted_at: null,
       }
     })
   const mirroredEvents = tasks.flatMap((task) => {
@@ -358,7 +355,7 @@ async function mirrorTrackerSnapshot(
   })
   try {
     for (let index = 0; index < mirroredTasks.length; index += 500) {
-      await mirrorCollectedTasks({ tasks: mirroredTasks.slice(index, index + 500) })
+      await mirrorCollectedTasks(mirroredTasks.slice(index, index + 500))
     }
     for (let index = 0; index < mirroredEvents.length; index += 500)
       await hostedMirrorTasks({ tasks: [], statusEvents: mirroredEvents.slice(index, index + 500) })
@@ -438,30 +435,25 @@ async function backfillTrackerTasks(
       if (!local.has(identity) && differs(task, existing.get(identity))) activity = true
       const localRow = trackerIdentityRow(db(), task)!
       try {
-        await mirrorCollectedTasks({
-          tasks: [
-            {
-              id: localRow.record_id,
-              key: localRow.key,
-              project: task.project,
-              project_name: task.project,
-              title: task.title,
-              status: task.status,
-              status_category: task.category,
-              parent_key: null,
-              body: null,
-              assignee: task.assignee,
-              opened_at: task.updatedAt ?? at,
-              closed_at: task.category === 'done' ? at : null,
-              source: 'mcp',
-              first_seen: at,
-              last_seen: at,
-              created_at: at,
-              updated_at: task.updatedAt ?? at,
-              deleted_at: null,
-            },
-          ],
-        })
+        await mirrorCollectedTasks([
+          {
+            record_id: localRow.record_id,
+            key: localRow.key,
+            project: task.project,
+            title: task.title,
+            status: task.status,
+            status_category: task.category,
+            parent_key: null,
+            body: null,
+            assignee: task.assignee,
+            opened_at: task.updatedAt ?? at,
+            closed_at: task.category === 'done' ? at : null,
+            source: 'mcp',
+            first_seen: at,
+            last_seen: at,
+            updated_at: task.updatedAt ?? at,
+          },
+        ])
       } catch (error) {
         console.error(`hub: tracker task mirror skipped: ${(error as Error).message}`)
       }

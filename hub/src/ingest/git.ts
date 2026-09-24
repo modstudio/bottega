@@ -203,14 +203,13 @@ export async function ingestGit(since: string): Promise<{ days: number; tasks: n
   })
   try {
     const mirrored = [...tasks.values()].map((t) => ({
-      id: db()
+      record_id: db()
         .query<{ record_id: string }, [string, string]>(
           `SELECT record_id FROM task WHERE project=? AND key=?`,
         )
         .get(t.project, t.key)!.record_id,
       key: t.key,
       project: t.project,
-      project_name: t.project,
       title: null,
       status: null,
       status_category: null,
@@ -222,12 +221,10 @@ export async function ingestGit(since: string): Promise<{ days: number; tasks: n
       source: 'git' as const,
       first_seen: at,
       last_seen: at,
-      created_at: at,
       updated_at: t.last,
-      deleted_at: null,
     }))
     for (let index = 0; index < mirrored.length; index += 500) {
-      await mirrorCollectedTasks({ tasks: mirrored.slice(index, index + 500) })
+      await mirrorCollectedTasks(mirrored.slice(index, index + 500))
     }
   } catch (error) {
     console.error(`hub: git task mirror skipped: ${(error as Error).message}`)
