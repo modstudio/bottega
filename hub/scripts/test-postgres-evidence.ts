@@ -17,6 +17,7 @@ import {
   promoteHostedNote,
   reapHostedNotes,
 } from '../src/hosted-notes.ts'
+import { hostedGatherReport } from '../src/hosted-report-gather.ts'
 import {
   appendHostedSend,
   createHostedReportSubscription,
@@ -45,6 +46,7 @@ import {
   hostedTaskDetail,
 } from '../src/hosted-work.ts'
 import { computeMeasures } from '../src/measures.ts'
+import { hostedDeliveryRepository } from '../src/report-delivery-hosted.ts'
 
 const adminUrl = process.env.ORCH_TEST_POSTGRES_URL
 const actorUrl = process.env.ORCH_RECORD_URL
@@ -517,6 +519,21 @@ try {
       recipientUserIds: [USER],
       recipientEmails: [' First@Example.Test ', 'second@example.test'],
     })
+    const deliveryRepository = hostedDeliveryRepository(actorUrl)
+    const deliveryCandidate = (await deliveryRepository.discover()).find(
+      (candidate) => candidate.subscriptionId === emailSubscription.id,
+    )
+    if (!deliveryCandidate) throw new Error('email subscription was not a delivery candidate')
+    if (!(await deliveryRepository.recipientsAreMembers(deliveryCandidate, [USER])))
+      throw new Error('single-member delivery recipient membership check failed')
+    const memberReport = await hostedGatherReport(
+      actorUrl,
+      identity,
+      { from: interval.start_at, to: interval.end_at },
+      { kind: 'members', userIds: [USER] },
+    )
+    if (!memberReport.items.some((item) => item.key === created.key))
+      throw new Error('single-member report scope did not gather the member interval')
     const emailRows =
       await admin`SELECT email,unsubscribe_token FROM hub_report_subscription_recipient
       WHERE subscription_id=${emailSubscription.id}::uuid ORDER BY email NULLS FIRST`
@@ -549,6 +566,24 @@ try {
       WHERE subscription_id=${emailSubscription.id}::uuid`
     if (remainingEmailRecipients.length !== 2)
       throw new Error('unsubscribing an email recipient removed another recipient')
+    await updateHostedReportSubscription(actorUrl, identity, emailSubscription.id, {
+      scope: { kind: 'space' },
+      cadence: 'daily',
+      hour: 8,
+      zone: 'America/New_York',
+      recipientUserIds: [USER],
+      recipientEmails: ['second@example.test'],
+      enabled: true,
+    })
+    const singleEmailRecipients =
+      await admin`SELECT user_id,email FROM hub_report_subscription_recipient
+      WHERE subscription_id=${emailSubscription.id}::uuid ORDER BY email NULLS FIRST`
+    if (
+      singleEmailRecipients.length !== 2 ||
+      singleEmailRecipients[0]?.user_id !== USER ||
+      singleEmailRecipients[1]?.email !== 'second@example.test'
+    )
+      throw new Error('subscription update did not keep exactly one email recipient')
     await updateHostedReportSubscription(actorUrl, identity, emailSubscription.id, {
       scope: { kind: 'space' },
       cadence: 'daily',

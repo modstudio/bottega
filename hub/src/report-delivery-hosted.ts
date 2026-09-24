@@ -160,7 +160,8 @@ export function hostedDeliveryRepository(databaseUrl: string): DeliveryRepositor
       return withHostedTenant(databaseUrl, identity(value, recipientUserIds[0]), async (tx) => {
         const member = rows<{ count: number }>(
           await tx`SELECT count(*)::int AS count FROM membership
-          WHERE space_id=${value.spaceId}::uuid AND user_id = ANY(${recipientUserIds}::uuid[])`,
+          WHERE space_id=${value.spaceId}::uuid
+            AND user_id = ANY(${tx.array(recipientUserIds, 'uuid')})`,
         )[0]!
         return Number(member.count) === recipientUserIds.length
       })
