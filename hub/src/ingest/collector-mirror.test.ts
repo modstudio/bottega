@@ -16,27 +16,49 @@ const project = {
     },
   },
 }
+const stopalProject = {
+  ...project,
+  id: 2,
+  name: 'stopal',
+  path: '/fixtures/repos/stopal',
+  settings: {
+    ...project.settings,
+    keyPrefixes: ['STO'],
+    space: 'stopal',
+    tracker: { ...project.settings.tracker, envPrefix: 'STOPAL' },
+  },
+}
 
 mock.module('../projects.ts', () => ({
-  projects: () => [project],
+  projects: () => [project, stopalProject],
   projectRoot: () => '/fixtures/repos',
   projectNames: () => ['alpha'],
   refreshProjects: () => {},
 }))
 
 mock.module('../mcp.ts', () => ({
-  credentials: async () => ({ url: 'https://tracker.example.test', token: 'tracker-token' }),
+  credentials: async (prefix: string) => ({
+    url: `https://${prefix.toLowerCase()}.example.test`,
+    token: 'tracker-token',
+  }),
   Mcp: class {
+    private url: string
+    constructor(url: string) {
+      this.url = url
+    }
     async initialize() {}
     async callTool() {
+      const stopal = this.url.includes('stopal')
+      const prefix = stopal ? 'STO' : 'ALP'
+      const status = trackerStatuses[prefix] ?? 'started'
       return {
         tasks: [
           {
-            id: 'tracker-alp-1',
-            short_id: 'ALP-1',
+            id: `tracker-${prefix.toLowerCase()}-1`,
+            short_id: `${prefix}-1`,
             summary: 'Collected task',
-            status: 'started',
-            status_category: 'started',
+            status,
+            status_category: status,
           },
         ],
         last_page: 1,
@@ -46,16 +68,33 @@ mock.module('../mcp.ts', () => ({
 }))
 
 let refuseMirror = false
+let refuseIdentity = false
+const trackerStatuses: Record<string, string> = { ALP: 'started', STO: 'started' }
 const mirrored = new Map<string, string[]>()
+const mirroredEvents: Array<{ task_key: string; project_name: string }> = []
 mock.module('../task-client.ts', () => ({
-  hostedMirrorTasks: async (body: { tasks: Array<{ id: string; key: string }> }) => {
-    for (const task of body.tasks) {
+  hostedTaskIdentity: async () => {
+    if (refuseIdentity) throw new Error('simulated identity refusal')
+    return {
+      activeSpaceId: 'space-active',
+      memberships: [
+        { spaceId: 'space-active', slug: 'active' },
+        { spaceId: 'space-stopal', slug: 'stopal' },
+      ],
+    }
+  },
+  hostedMirrorTasks: async (body: {
+    tasks: Array<{ id: string; key: string }>
+    statusEvents?: Array<{ task_key: string; project_name: string }>
+  }) => {
+    for (const task of body.tasks ?? []) {
       const ids = mirrored.get(task.key) ?? []
       ids.push(task.id)
       mirrored.set(task.key, ids)
     }
+    mirroredEvents.push(...(body.statusEvents ?? []))
     if (refuseMirror) throw new Error('simulated hosted refusal')
-    return { upserted: body.tasks.length, adoptions: [] }
+    return { upserted: (body.tasks ?? []).length, adoptions: [] }
   },
 }))
 
@@ -81,7 +120,11 @@ beforeEach(() => {
       conn.exec(`DELETE FROM ${table}`)
   })
   mirrored.clear()
+  mirroredEvents.length = 0
   refuseMirror = false
+  refuseIdentity = false
+  trackerStatuses.ALP = 'started'
+  trackerStatuses.STO = 'started'
 })
 
 test('a refused tracker mirror still writes locally and retries the persisted task id', async () => {
@@ -104,13 +147,16 @@ test('a refused tracker mirror still writes locally and retries the persisted ta
   expect(mirrored.get('ALP-1')).toEqual([local.record_id, local.record_id])
 })
 
-test('git seeding mirrors its persisted task id across two passes', async () => {
-  const output = new TextEncoder().encode(
-    '\u00002026-09-24\t2026-09-24T12:00:00.000Z\tdeadbeef\tALP-2 collected\n1\t0\tsrc/file.ts\n',
-  )
-  const spawn = spyOn(Bun, 'spawnSync').mockReturnValue({ stdout: output } as ReturnType<
-    typeof Bun.spawnSync
-  >)
+test('git seeding keeps a foreign-space task local and mirrors only the active-space task', async () => {
+  const spawn = spyOn(Bun, 'spawnSync').mockImplementation(((command: string[]) => {
+    const stopal = command.includes('/fixtures/repos/stopal')
+    const key = stopal ? 'STO-2' : 'ALP-2'
+    const sha = stopal ? 'feedface' : 'deadbeef'
+    const output = new TextEncoder().encode(
+      `\u00002026-09-24\t2026-09-24T12:00:00.000Z\t${sha}\t${key} collected\n1\t0\tsrc/file.ts\n`,
+    )
+    return { stdout: output } as ReturnType<typeof Bun.spawnSync>
+  }) as typeof Bun.spawnSync)
   try {
     await ingestGit('2026-09-01')
     await ingestGit('2026-09-01')
@@ -124,4 +170,52 @@ test('git seeding mirrors its persisted task id across two passes', async () => 
     )
     .get()!.record_id
   expect(mirrored.get('ALP-2')).toEqual([localId, localId])
+  expect(
+    db().query<{ project: string }, []>(`SELECT project FROM task WHERE key='STO-2'`).get()
+      ?.project,
+  ).toBe('stopal')
+  expect(mirrored.has('STO-2')).toBe(false)
+})
+
+test('tracker status events use the same project-space filter as task snapshots', async () => {
+  await ingestTrackers()
+  trackerStatuses.ALP = 'completed'
+  trackerStatuses.STO = 'completed'
+  await ingestTrackers()
+
+  expect(
+    db()
+      .query<{ project: string; count: number }, []>(
+        `SELECT t.project,count(*) count FROM task_status_event e
+         JOIN task t ON t.record_id=e.task_record_id GROUP BY t.project ORDER BY t.project`,
+      )
+      .all(),
+  ).toEqual([
+    { project: 'alpha', count: 1 },
+    { project: 'stopal', count: 1 },
+  ])
+  expect(mirroredEvents.map((event) => event.project_name)).toEqual(['alpha'])
+})
+
+test('an unreadable identity keeps collected tasks local and performs no hosted writes', async () => {
+  refuseIdentity = true
+  const errors = spyOn(console, 'error').mockImplementation(() => {})
+  const output = new TextEncoder().encode(
+    '\u00002026-09-24\t2026-09-24T12:00:00.000Z\tdeadbeef\tALP-3 collected\n1\t0\tsrc/file.ts\n',
+  )
+  const spawn = spyOn(Bun, 'spawnSync').mockReturnValue({ stdout: output } as ReturnType<
+    typeof Bun.spawnSync
+  >)
+  try {
+    await ingestGit('2026-09-01')
+  } finally {
+    spawn.mockRestore()
+  }
+
+  expect(db().query(`SELECT 1 FROM task WHERE key='ALP-3'`).get()).toBeTruthy()
+  expect(mirrored.size).toBe(0)
+  expect(errors.mock.calls.map((call) => String(call[0])).join('\n')).toContain(
+    'reason=identity-unreadable',
+  )
+  errors.mockRestore()
 })
