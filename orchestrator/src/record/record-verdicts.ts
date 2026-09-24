@@ -143,7 +143,7 @@ export async function voidRecordRun(input: Tenant & { id: string; reason: string
 const UNVOID_MIGRATION_REMEDY =
   'hosted unvoid requires the pending record migration; apply it with `orch record migrate` before retrying'
 
-export async function supersedeRecordVoid(
+async function supersedeRecordVoid(
   tx: SQL,
   input: Pick<Tenant, 'spaceId' | 'userId'> & { id: string; note: string },
 ): Promise<void> {
@@ -189,24 +189,26 @@ export async function listRecordScores(
       SELECT
         COALESCE(s.run_id, e.run_id) AS run_id,
         s.delivery, s.quality, s.fidelity, s.note, s.scored_at, s.scored_by,
-        COALESCE(s.updated_at, e.excluded_at) AS updated_at,
-        COALESCE(r.evidence_excluded, e.reason) AS evidence_excluded
+        GREATEST(s.updated_at, e.excluded_at, e.superseded_at) AS updated_at,
+        CASE WHEN e.superseded_at IS NOT NULL THEN NULL
+          ELSE COALESCE(r.evidence_excluded, e.reason)
+        END AS evidence_excluded
       FROM run_score s
-      FULL OUTER JOIN (
-        SELECT * FROM run_exclusion WHERE superseded_at IS NULL
-      ) e ON e.run_id=s.run_id AND e.space_id=s.space_id
+      FULL OUTER JOIN run_exclusion e ON e.run_id=s.run_id AND e.space_id=s.space_id
       LEFT JOIN run r ON r.id=COALESCE(s.run_id, e.run_id)
       WHERE COALESCE(s.space_id, e.space_id)=${input.spaceId}::uuid
         AND (
           ${input.updatedSince ?? null}::timestamptz IS NULL
-          OR COALESCE(s.updated_at, e.excluded_at) > ${input.updatedSince ?? null}::timestamptz
+          OR GREATEST(s.updated_at, e.excluded_at, e.superseded_at)
+            > ${input.updatedSince ?? null}::timestamptz
         )
         AND (
           ${input.cursor?.at ?? null}::timestamptz IS NULL
-          OR (COALESCE(s.updated_at, e.excluded_at), COALESCE(s.run_id, e.run_id))
+          OR (GREATEST(s.updated_at, e.excluded_at, e.superseded_at), COALESCE(s.run_id, e.run_id))
             > (${input.cursor?.at ?? null}::timestamptz, ${input.cursor?.id ?? null}::uuid)
         )
-      ORDER BY COALESCE(s.updated_at, e.excluded_at), COALESCE(s.run_id, e.run_id)
+      ORDER BY GREATEST(s.updated_at, e.excluded_at, e.superseded_at),
+        COALESCE(s.run_id, e.run_id)
       LIMIT ${input.limit + 1}
     `
     return rows.map((row: Record<string, unknown>) => ({

@@ -6,6 +6,7 @@ import { Hono } from 'hono'
 import { cors } from 'hono/cors'
 import { z } from 'zod'
 import { VERDICT_INPUT_SCHEMA, type VerdictInput } from '../verdict/verdict-payload.ts'
+import { VOID_EXCLUSION_REASON } from '../verdict/verdict-rules.ts'
 import { RECORD_SIGN_IN_REMEDY, type RecordIdentity } from './record-auth.ts'
 import type {
   ConfigEntry,
@@ -960,7 +961,7 @@ export function recordApi(deps: Deps): Hono<ApiEnvironment> {
     if (!id.success) return context.json({ error: 'run id must be a uuid' }, 400)
     const body = z
       .object({
-        reason: z.string().min(1).default('voided with orch score --void'),
+        reason: z.string().min(1).default(VOID_EXCLUSION_REASON),
       })
       .safeParse(await context.req.json().catch(() => ({})))
     if (!body.success) return context.json({ error: 'invalid void' }, 400)

@@ -37,6 +37,7 @@ import {
 } from '../run/run-outbox.ts'
 import { backfillScoreRecords, SCORE_RECORD_PAYLOAD_COLUMNS } from '../score/score-outbox.ts'
 import { VERDICT_PAYLOAD_SCHEMA, type VerdictPayload } from '../verdict/verdict-payload.ts'
+import { refuseUnvoid, VOID_EXCLUSION_REASON } from '../verdict/verdict-rules.ts'
 import {
   backfillLandingEvidenceRecords,
   CONTENTION_RECORD_PAYLOAD_COLUMNS,
@@ -49,7 +50,7 @@ import {
 import { machineId, machineName } from './machine-identity.ts'
 import { pullRecordCache } from './record-cache.ts'
 import { currentRecordSession } from './record-session.ts'
-import { supersedeRecordVoid, validateRecordVerdict } from './record-verdicts.ts'
+import { validateRecordVerdict } from './record-verdicts.ts'
 
 type OutboxRow = { id: number; kind: string; record_id: string; payload: string }
 type Payload = Record<string, unknown>
@@ -376,12 +377,39 @@ async function pushRun(postgres: SQL, row: Payload, principal: RecordPrincipal):
       ) {
         throw new Error('run outbox evidenceUnvoid must contain a note')
       }
-      await supersedeRecordVoid(tx, {
-        id: values.id,
-        spaceId: principal.spaceId,
-        userId: principal.userId,
-        note: String((evidenceUnvoid as Record<string, unknown>).note),
-      })
+      const columns = await tx`
+        SELECT column_name FROM information_schema.columns
+        WHERE table_schema='public' AND table_name='run_exclusion'
+          AND column_name IN ('superseded_at','superseded_by','supersede_note')
+      `
+      if (columns.length !== 3) {
+        throw new Error(
+          'hosted unvoid requires the pending record migration; apply it with `orch record migrate` before retrying',
+        )
+      }
+      const exclusions = await tx`
+        SELECT reason, superseded_at FROM run_exclusion
+        WHERE run_id=${values.id}::uuid AND space_id=${principal.spaceId}::uuid
+      `
+      const exclusion = exclusions[0] as Record<string, unknown> | undefined
+      const reason = exclusion?.reason == null ? null : String(exclusion.reason)
+      const refusal = refuseUnvoid(reason)
+      if (refusal) throw new Error(`refused: ${refusal}`)
+      if (exclusion?.superseded_at == null) {
+        const now = new Date().toISOString()
+        await tx`
+          UPDATE run_exclusion
+          SET superseded_at=${now}::timestamptz, superseded_by=${principal.userId},
+              supersede_note=${String((evidenceUnvoid as Record<string, unknown>).note)}
+          WHERE run_id=${values.id}::uuid AND space_id=${principal.spaceId}::uuid
+            AND reason=${VOID_EXCLUSION_REASON} AND superseded_at IS NULL
+        `
+        await tx`
+          UPDATE run SET evidence_excluded=NULL, updated_at=${now}::timestamptz
+          WHERE id=${values.id}::uuid AND space_id=${principal.spaceId}::uuid
+            AND evidence_excluded=${VOID_EXCLUSION_REASON}
+        `
+      }
     }
     const exclusion = await tx`
       SELECT reason FROM run_exclusion WHERE run_id=${values.id}::uuid
