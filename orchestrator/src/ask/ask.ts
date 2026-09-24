@@ -36,6 +36,7 @@ import { z } from 'zod'
 import { db, nowIso, writableDb } from '../database/db.ts'
 import { appendRunEvent } from '../events.ts'
 import { checkMessages, messageArchitect } from '../mailbox/mailbox.ts'
+import { ASKED_VIA_LIVE } from '../run/question-vocabulary.ts'
 
 /**
  * How long a worker waits for a ruling before falling back.
@@ -82,7 +83,7 @@ export async function ask(o: {
   const { id } = db()
     .query(
       `INSERT INTO question (run_id, asked_at, question, options, recommendation, why, asked_via)
-     VALUES (?,?,?,?,?,?,'live') RETURNING id`,
+     VALUES (?,?,?,?,?,?,?) RETURNING id`,
     )
     .get(
       o.runId,
@@ -91,6 +92,7 @@ export async function ask(o: {
       o.options?.length ? JSON.stringify(o.options) : null,
       o.recommendation ?? null,
       o.why ?? null,
+      ASKED_VIA_LIVE,
     ) as { id: number }
 
   const deadline = Date.now() + (o.timeoutMs ?? ASK_TIMEOUT_MS)

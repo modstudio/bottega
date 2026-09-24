@@ -1,5 +1,5 @@
 import { expect, test } from 'bun:test'
-import { answererKindFromAnsweredBy } from './question-facts.ts'
+import { answererKindFromAnsweredBy } from './question-vocabulary.ts'
 
 test('answered_by maps to the durable answerer kind used by the backfill', () => {
   expect(answererKindFromAnsweredBy(null)).toBeNull()

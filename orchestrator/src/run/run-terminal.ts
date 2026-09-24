@@ -38,6 +38,7 @@ import { resetSandbox } from '../sandbox/sandbox.ts'
 import { type Changes, changesIn } from '../worktree/worktree-remove.ts'
 import type { Worktree } from '../worktree/worktree-types.ts'
 import { checkpointRun, latestCheckpoint } from './checkpoint.ts'
+import { ASKED_VIA_REPLY } from './question-vocabulary.ts'
 import {
   persistRunArtifacts,
   persistTerminalSnapshot,
@@ -472,7 +473,7 @@ export async function finishRun(input: TerminalInput): Promise<TerminalResult> {
     ).map((row) => row.question)
     const q = db().query(
       `INSERT INTO question (run_id, asked_at, question, options, recommendation, why, asked_via)
-         VALUES (?,?,?,?,?,?,'reply')`,
+         VALUES (?,?,?,?,?,?,?)`,
     )
     for (const item of questionsToInsert(existingQuestionTexts, acceptedQuestions)) {
       q.run(
@@ -482,6 +483,7 @@ export async function finishRun(input: TerminalInput): Promise<TerminalResult> {
         item.options?.length ? JSON.stringify(item.options) : null,
         item.recommendation ?? null,
         item.why ?? null,
+        ASKED_VIA_REPLY,
       )
     }
   }

@@ -16,12 +16,17 @@ import { chainTransport, retryModelForAgent } from '../route/failover.ts'
 import { answerRulingRefusal } from '../workflow/autonomy.ts'
 import { resolveAnswerRulings } from '../workflow/autonomy-scopes.ts'
 import { keepTreeHold } from '../worktree/keep-tree-hold.ts'
+import { appendQuestionDeliveries } from './question-delivery.ts'
 import {
-  ANSWER_CHANNELS,
+  ANSWER_CHANNEL_CLI,
   answererKindFromAnsweredBy,
-  appendLiveQuestionDeliveries,
-  appendQuestionDeliveries,
-} from './question-facts.ts'
+  QUESTION_DELIVERY_MODE_LIVE,
+  QUESTION_DELIVERY_MODE_RECORD_ONLY,
+  QUESTION_DELIVERY_MODE_RESUME,
+  QUESTION_DELIVERY_MODE_RETRY,
+  QUESTION_DELIVERY_OUTCOME_DELIVERED,
+  QUESTION_DELIVERY_OUTCOME_FAILED,
+} from './question-vocabulary.ts'
 import { packedResumePrompt } from './run.ts'
 import { answerRunLivenessRefusal } from './run-answer-liveness.ts'
 import { KEEP_RUN_FILES_DAYS, readDispatchState } from './run-artifacts.ts'
@@ -161,53 +166,68 @@ export async function retryRun(
     ? `${originalPrompt}\n\n---\n\n${rulingPrompt(recordedRulings)}`
     : originalPrompt
   const dispatchState = readDispatchState(row.root_id)
-  const newId = await (helpers.dispatch ?? detach)(
-    row.job,
-    retryPrompt,
-    {
+  let newId: number
+  try {
+    newId = await (helpers.dispatch ?? detach)(
+      row.job,
+      retryPrompt,
+      {
+        agent,
+        schema: row.schema_path ?? undefined,
+        mcp: mcpRequestFromStored(row.mcp, row.mcp_error),
+        model: retryModelForAgent(row.agent, row.model, agent, options.model),
+        lens: row.lens ?? undefined,
+        probe: !!row.probe,
+        retryOf: id,
+        cwd: row.launch_cwd ?? row.cwd ?? undefined,
+        seed: row.launch_seed ?? undefined,
+        key: row.launch_key ?? undefined,
+        base: row.launch_base ?? undefined,
+        noFailover: !!row.no_failover,
+        transport: chainTransport(row.root_id) ?? undefined,
+        keepTree: row.keep_tree
+          ? (() => {
+              const decision = keepTreeHold({
+                keepTree: row.keep_tree,
+                keepTreeUntil: row.keep_tree_until,
+                startedAt: row.started_at,
+                now: new Date().toISOString(),
+              })
+              return {
+                until: decision.held
+                  ? decision.until
+                  : 'expiredAt' in decision
+                    ? decision.expiredAt
+                    : row.started_at,
+                reason: row.keep_tree_reason ?? 'explicit --keep-tree',
+              }
+            })()
+          : undefined,
+        deliverables: dispatchState.deliverables,
+        timeoutMinutes: dispatchState.timeoutMinutes ?? undefined,
+      },
       agent,
-      schema: row.schema_path ?? undefined,
-      mcp: mcpRequestFromStored(row.mcp, row.mcp_error),
-      model: retryModelForAgent(row.agent, row.model, agent, options.model),
-      lens: row.lens ?? undefined,
-      probe: !!row.probe,
-      retryOf: id,
-      cwd: row.launch_cwd ?? row.cwd ?? undefined,
-      seed: row.launch_seed ?? undefined,
-      key: row.launch_key ?? undefined,
-      base: row.launch_base ?? undefined,
-      noFailover: !!row.no_failover,
-      transport: chainTransport(row.root_id) ?? undefined,
-      keepTree: row.keep_tree
-        ? (() => {
-            const decision = keepTreeHold({
-              keepTree: row.keep_tree,
-              keepTreeUntil: row.keep_tree_until,
-              startedAt: row.started_at,
-              now: new Date().toISOString(),
-            })
-            return {
-              until: decision.held
-                ? decision.until
-                : 'expiredAt' in decision
-                  ? decision.expiredAt
-                  : row.started_at,
-              reason: row.keep_tree_reason ?? 'explicit --keep-tree',
-            }
-          })()
-        : undefined,
-      deliverables: dispatchState.deliverables,
-      timeoutMinutes: dispatchState.timeoutMinutes ?? undefined,
-    },
-    agent,
-  )
+    )
+  } catch (error) {
+    appendQuestionDeliveries(
+      recordedRulings.map((ruling) => ruling.id),
+      {
+        runId: null,
+        mode: QUESTION_DELIVERY_MODE_RETRY,
+        outcome: QUESTION_DELIVERY_OUTCOME_FAILED,
+        at: new Date(Date.now()).toISOString(),
+        error: (error as Error).message,
+      },
+    )
+    throw error
+  }
   if (recordedRulings.length) {
     appendQuestionDeliveries(
       recordedRulings.map((ruling) => ruling.id),
       {
         runId: newId,
-        mode: 'retry',
-        outcome: 'delivered',
+        mode: QUESTION_DELIVERY_MODE_RETRY,
+        outcome: QUESTION_DELIVERY_OUTCOME_DELIVERED,
         at: new Date(Date.now()).toISOString(),
       },
     )
@@ -541,20 +561,36 @@ export async function answerRun(
         now,
         answeredBy,
         answererKindFromAnsweredBy(answeredBy),
-        ANSWER_CHANNELS[0],
+        ANSWER_CHANNEL_CLI,
         ownersLive ? null : now,
         q.id,
       )
     })
     if (skipResume) db().query("UPDATE run SET status='asking' WHERE id=?").run(id)
+    if (skipResume) {
+      appendQuestionDeliveries(
+        open.map((question) => question.id),
+        {
+          runId: null,
+          mode: QUESTION_DELIVERY_MODE_RECORD_ONLY,
+          outcome: QUESTION_DELIVERY_OUTCOME_DELIVERED,
+          at: now,
+        },
+      )
+    } else if (ownersLive) {
+      for (const question of open) {
+        appendQuestionDeliveries([question.id], {
+          runId: question.owner_id,
+          mode: QUESTION_DELIVERY_MODE_LIVE,
+          outcome: QUESTION_DELIVERY_OUTCOME_DELIVERED,
+          at: now,
+        })
+      }
+    }
     auditRunMutation(answerAuthority, 'answer')
   })
 
   if (skipResume) {
-    appendQuestionDeliveries(
-      open.map((question) => question.id),
-      { runId: null, mode: 'record-only', outcome: 'delivered', at: now },
-    )
     console.log(
       `recorded ${answers.length} ruling(s) for run ${id}; resume was skipped by --record-only. ` +
         `The run remains asking; use orch retry ${id} --agent … to re-dispatch with the ruling appended to the spec, ` +
@@ -564,7 +600,6 @@ export async function answerRun(
   }
 
   if (ownersLive) {
-    appendLiveQuestionDeliveries(open, now)
     // Delivered. The worker's own tool call is polling this row and will
     // return with it inside a second; there is nothing else to do, and
     // starting a new turn here would put two workers in one worktree.
@@ -619,8 +654,8 @@ export async function answerRun(
         open.map((question) => question.id),
         {
           runId: null,
-          mode: 'resume',
-          outcome: 'failed',
+          mode: QUESTION_DELIVERY_MODE_RESUME,
+          outcome: QUESTION_DELIVERY_OUTCOME_FAILED,
           at: new Date(Date.now()).toISOString(),
           error,
         },
@@ -644,8 +679,8 @@ export async function answerRun(
     open.map((question) => question.id),
     {
       runId: childId,
-      mode: 'resume',
-      outcome: 'delivered',
+      mode: QUESTION_DELIVERY_MODE_RESUME,
+      outcome: QUESTION_DELIVERY_OUTCOME_DELIVERED,
       at: new Date(Date.now()).toISOString(),
     },
   )

@@ -721,6 +721,43 @@ describe('retry command', () => {
     expect(db().query('SELECT COUNT(*) n FROM run WHERE parent_run_id=?').get(id)).toEqual({ n: 0 })
   })
 
+  test('a rejected retry dispatch records failed ruling delivery', async () => {
+    const id = failed()
+    const questionId = (
+      db()
+        .query(
+          `INSERT INTO question
+             (run_id, asked_at, question, answer, answered_at, delivery_pending_at)
+           VALUES (?,?,?,?,?,?) RETURNING id`,
+        )
+        .get(
+          id,
+          new Date().toISOString(),
+          'which shape?',
+          'use the existing shape',
+          new Date().toISOString(),
+          new Date().toISOString(),
+        ) as { id: number }
+    ).id
+    const dispatch: typeof detach = async () => {
+      throw new Error('fixture retry dispatch failed')
+    }
+
+    await expect(retryRun(id, { flags }, { ...helpers, dispatch })).rejects.toThrow(
+      'fixture retry dispatch failed',
+    )
+    expect(
+      db()
+        .query('SELECT run_id,mode,outcome,error FROM question_delivery WHERE question_id=?')
+        .get(questionId),
+    ).toEqual({
+      run_id: null,
+      mode: 'retry',
+      outcome: 'failed',
+      error: 'fixture retry dispatch failed',
+    })
+  })
+
   test('retry and continue give the same refusal when the chain has no session', async () => {
     for (const command of ['retry', 'continue'] as const) {
       const id = addRun({ agent: 'codex', job: 'implement', status: 'failed' })

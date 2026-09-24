@@ -19,6 +19,7 @@ import {
 import { db, nowIso, writeTransaction } from '../database/db.ts'
 import { JOBS } from '../jobs/jobs.ts'
 import { parseReviewOutput, parseReviewReply } from '../review/review.ts'
+import { ANSWER_CHANNEL_CLI, ANSWERER_KIND_EVAL } from '../run/question-vocabulary.ts'
 import { run } from '../run/run.ts'
 import { auditRunMutation, runMutationActor } from '../run/run-authority.ts'
 import { checkDoc, compilePack } from './canon.ts'
@@ -420,10 +421,10 @@ function terminaliseJudgedProbe(runId: number): void {
     .query(
       `UPDATE question
         SET answer='(answered by canon eval)', answered_at=?, answered_by='canon-eval',
-            answerer_kind='eval', answer_channel='cli'
+            answerer_kind=?, answer_channel=?
       WHERE run_id=? AND answered_at IS NULL`,
     )
-    .run(answeredAt, runId)
+    .run(answeredAt, ANSWERER_KIND_EVAL, ANSWER_CHANNEL_CLI, runId)
   const terminalised = db()
     .query(
       `UPDATE run SET status='ok', error=NULL, failure_kind=NULL

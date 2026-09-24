@@ -7,6 +7,13 @@ import { UNSCORED_WHERE } from '../evidence/evidence-query.ts'
 import { type ProcessSample, sampleProcesses } from '../idle-kill.ts'
 import { failureReason, type OutcomeRow, outcomeOf } from '../outcome.ts'
 import { currentRunMemberJoin, liveMemberStall } from './live-run-member.ts'
+import type {
+  AnswerChannel,
+  AnswererKind,
+  AskedVia,
+  QuestionDeliveryMode,
+  QuestionDeliveryOutcome,
+} from './question-vocabulary.ts'
 
 type RunListingFlags = {
   has(name: string): boolean
@@ -207,9 +214,9 @@ export async function runListingCommand(
             run_id: number
             asked_at: string
             answered_at: string | null
-            asked_via: string | null
-            answerer_kind: string | null
-            answer_channel: string | null
+            asked_via: AskedVia | null
+            answerer_kind: AnswererKind | null
+            answer_channel: AnswerChannel | null
           }[]
         ).map((q) => ({
           id: q.id,
@@ -224,7 +231,15 @@ export async function runListingCommand(
               `SELECT id, question_id, run_id, mode, outcome, at, error
                  FROM question_delivery WHERE question_id=? ORDER BY id`,
             )
-            .all(q.id),
+            .all(q.id) as {
+            id: number
+            question_id: number
+            run_id: number | null
+            mode: QuestionDeliveryMode
+            outcome: QuestionDeliveryOutcome
+            at: string
+            error: string | null
+          }[],
         }))
       : undefined
     return [
