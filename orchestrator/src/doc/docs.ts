@@ -9,7 +9,7 @@
  * recovery. Canon docs are the source for the global and
  * project hydrated instruction tree and enter worker packs through the canon path.
  */
-import { mkdirSync, readdirSync, readFileSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { DOC_SCOPE_SUBJECT_KIND, DOC_SCOPES, type DocScope } from '../../../shared/docs.ts'
 import { AGENTS } from '../agent/agent-registry.ts'
@@ -18,9 +18,14 @@ import { type CanonRow, composeCanonRows } from '../canon/canon-hydrate.ts'
 import { DEFAULT_PACK_BYTES } from '../canon/pack-budget.ts'
 import { db, nowIso, sessionId, writableDb, writeTransaction } from '../database/db.ts'
 import { JOBS } from '../jobs/jobs.ts'
-import { projectAt, projectByName } from '../project/projects.ts'
+import { projectAt, projectByName, projects } from '../project/projects.ts'
 import { recordApiClient } from '../record/record-api-client.ts'
-import { type DocLintFinding, docHasRepositoryReferences, lintDoc } from './doc-lint.ts'
+import {
+  type DocLintFinding,
+  type DocReferenceProject,
+  docHasRepositoryReferences,
+  lintDoc,
+} from './doc-lint.ts'
 import {
   consumeDocBody,
   type DocRevisionOp,
@@ -448,20 +453,22 @@ function assertDocWriteAllowed(input: DocWriteInput & { delivery: 'inject' | 'de
   assertCanonWriteAllowed(input)
 }
 
-function docRepositoryRoot(doc: Pick<DocWriteInput, 'scope' | 'subject'>): string {
-  const project =
-    doc.scope === 'project' && doc.subject ? projectByName(doc.subject) : projectAt(process.cwd())
-  return canonGitRoot(project?.path ?? process.cwd())
+export function collectDocReferenceProjects(): DocReferenceProject[] {
+  return projects().map((project) => ({
+    name: project.name,
+    checkout: existsSync(project.path) ? collectCanonLintInput(canonGitRoot(project.path)) : null,
+  }))
 }
 
 export function lintStoredDoc(
   doc: Pick<Doc, 'scope' | 'subject' | 'slug' | 'body'>,
+  referenceProjects?: DocReferenceProject[],
 ): DocLintFinding[] {
   if (doc.scope === 'resume' || doc.scope === 'canon') return []
   return lintDoc({
     ...doc,
     ...(docHasRepositoryReferences(doc.body)
-      ? { references: collectCanonLintInput(docRepositoryRoot(doc)) }
+      ? { referenceProjects: referenceProjects ?? collectDocReferenceProjects() }
       : {}),
   })
 }

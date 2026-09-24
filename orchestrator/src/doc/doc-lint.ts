@@ -16,7 +16,12 @@ export type LintableDoc = {
   subject: string | null
   slug: string
   body: string
-  references?: CanonLintInput
+  referenceProjects?: DocReferenceProject[]
+}
+
+export type DocReferenceProject = {
+  name: string
+  checkout: CanonLintInput | null
 }
 
 export function docHasRepositoryReferences(body: string): boolean {
@@ -32,12 +37,64 @@ const DESIGN_HEADINGS = [
 const PROVISIONAL_HEADING = '## Provisional'
 
 function referenceRemedy(rule: string): string {
+  if (rule === 'doc/reference-unverifiable')
+    return 'restore the registered project checkout or correct its registered path'
   if (rule === 'doc/reference-path')
     return 'cite a tracked repository path or remove the stale citation'
   if (rule === 'doc/reference-symbol') return 'cite an identifier declared by the referenced path'
   if (rule === 'doc/line-anchor') return 'replace the line anchor with a stable identifier'
   if (rule === 'doc/reference-code') return 'cite an identifier that occurs in tracked source'
   return 'name a package script defined on the repository tree'
+}
+
+function mergedReferenceInput(inputs: CanonLintInput[]): CanonLintInput {
+  const texts = new Map<string, string>()
+  for (const input of inputs) {
+    for (const source of [...input.sourceTexts, ...input.files]) {
+      const previous = texts.get(source.path)
+      texts.set(source.path, previous === undefined ? source.text : `${previous}\n${source.text}`)
+    }
+  }
+  return {
+    files: [],
+    trackedPaths: [...new Set(inputs.flatMap(({ trackedPaths }) => trackedPaths))],
+    packageScripts: [...new Set(inputs.flatMap(({ packageScripts }) => packageScripts))],
+    sourceTexts: [...texts].map(([path, text]) => ({ path, text })),
+  }
+}
+
+function referenceTargets(doc: LintableDoc): DocReferenceProject[] {
+  if (!doc.referenceProjects) return []
+  if (doc.scope !== 'project') return doc.referenceProjects
+  return doc.referenceProjects.filter(({ name }) => name === doc.subject)
+}
+
+function referenceFindings(doc: LintableDoc): DocLintFinding[] {
+  const targets = referenceTargets(doc)
+  const unavailable = targets.filter(({ checkout }) => checkout === null)
+  const findings: DocLintFinding[] = unavailable.map(({ name }) => ({
+    rule: 'doc/reference-unverifiable',
+    line: 1,
+    message: `registered project ${name} checkout is missing`,
+    remedy: referenceRemedy('doc/reference-unverifiable'),
+  }))
+  const available = targets.flatMap(({ checkout }) => (checkout ? [checkout] : []))
+  if (!available.length) return findings
+  return [
+    ...findings,
+    ...lintCanonReferences(
+      { path: `doc/${doc.scope}/${doc.subject ?? '_'}/${doc.slug}.md`, text: doc.body },
+      mergedReferenceInput(available),
+    ).map((finding) => {
+      const rule = finding.rule.replace(/^canon\//, 'doc/')
+      return {
+        rule,
+        line: finding.line,
+        message: finding.message,
+        remedy: referenceRemedy(rule),
+      }
+    }),
+  ]
 }
 
 function designHeadingFindings(body: string): DocLintFinding[] {
@@ -81,23 +138,8 @@ export function lintDoc(doc: LintableDoc): DocLintFinding[] {
     ...finding,
     rule: `doc/${finding.rule}`,
   }))
-  if (doc.references) {
-    findings.push(
-      ...lintCanonReferences(
-        { path: `doc/${doc.scope}/${doc.subject ?? '_'}/${doc.slug}.md`, text: doc.body },
-        doc.references,
-      ).map((finding) => {
-        const rule = finding.rule.replace(/^canon\//, 'doc/')
-        return {
-          rule,
-          line: finding.line,
-          message: finding.message,
-          remedy: referenceRemedy(rule),
-        }
-      }),
-    )
-  }
-  if (doc.slug.startsWith('design/')) findings.push(...designHeadingFindings(doc.body))
+  if (doc.referenceProjects) findings.push(...referenceFindings(doc))
+  if (doc.slug.startsWith('design-')) findings.push(...designHeadingFindings(doc.body))
   return findings.sort(
     (a, b) => a.rule.localeCompare(b.rule) || a.line - b.line || a.message.localeCompare(b.message),
   )
