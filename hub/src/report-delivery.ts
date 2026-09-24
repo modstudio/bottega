@@ -37,7 +37,11 @@ export type DeliveryStatus = 'skipped' | 'failed'
 
 export type DeliveryRepository = {
   discover(): Promise<DeliveryCandidate[]>
-  load(candidate: DeliveryCandidate, period: DeliveryPeriod): Promise<DeliverySubscription>
+  load(
+    candidate: DeliveryCandidate,
+    period: DeliveryPeriod,
+    options?: { includeDisabled?: boolean },
+  ): Promise<DeliverySubscription>
   recipientsAreMembers(candidate: DeliveryCandidate, recipientUserIds: string[]): Promise<boolean>
   recordFinal(
     candidate: DeliveryCandidate,

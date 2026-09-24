@@ -1,12 +1,10 @@
 import {
-  addHostedReportSubscriptionRecipient,
   appendHostedSend,
   createHostedReportSubscription,
   hostedReportCounts,
   listHostedReportSubscriptions,
   listHostedSends,
   mirrorHostedReports,
-  removeHostedReportSubscriptionRecipient,
   unsubscribeHostedReportSubscription,
   updateHostedReportSubscription,
 } from './hosted-reports.ts'
@@ -88,26 +86,6 @@ async function subscriptionRoute(
         body as never,
       ),
       201,
-    )
-  const recipient = /^\/v1\/report-subscriptions\/([^/]+)\/recipients\/([^/]+)$/.exec(url.pathname)
-  if (request.method === 'POST' && recipient)
-    return json(
-      await call(dependencies.addRecipient, addHostedReportSubscriptionRecipient)(
-        config.recordDatabaseUrl,
-        who,
-        recipient[1]!,
-        recipient[2]!,
-      ),
-      201,
-    )
-  if (request.method === 'DELETE' && recipient)
-    return json(
-      await call(dependencies.removeRecipient, removeHostedReportSubscriptionRecipient)(
-        config.recordDatabaseUrl,
-        who,
-        recipient[1]!,
-        recipient[2]!,
-      ),
     )
   const unsubscribe = /^\/v1\/report-subscriptions\/([^/]+)$/.exec(url.pathname)
   if (request.method === 'PUT' && unsubscribe)

@@ -18,12 +18,10 @@ import {
   reapHostedNotes,
 } from '../src/hosted-notes.ts'
 import {
-  addHostedReportSubscriptionRecipient,
   appendHostedSend,
   createHostedReportSubscription,
   listHostedReportSubscriptions,
   listHostedSends,
-  removeHostedReportSubscriptionRecipient,
   unsubscribeHostedReportSubscription,
   updateHostedReportSubscription,
 } from '../src/hosted-reports.ts'
@@ -365,7 +363,15 @@ try {
       (id,space_id,send_id,user_id,name,email,created_at) VALUES
       (${newRecordId()}::uuid,${SPACE_A}::uuid,${historicalSend[0]!.id}::uuid,
        ${SECOND_USER}::uuid,'Hub Second','hub-second@example.test',now())`
-    await removeHostedReportSubscriptionRecipient(actorUrl, identity, subscription.id, SECOND_USER)
+    await updateHostedReportSubscription(actorUrl, identity, subscription.id, {
+      scope: { kind: 'project', project: PLATFORM_SLUG },
+      cadence: 'weekly',
+      hour: 8,
+      weekday: 'monday',
+      zone: 'America/New_York',
+      recipientUserIds: [USER],
+      enabled: true,
+    })
     const afterOneRemoval = await listHostedReportSubscriptions(actorUrl, identity)
     if (
       afterOneRemoval.subscriptions[0]?.recipients.length !== 1 ||
@@ -376,24 +382,42 @@ try {
       WHERE send_id=${historicalSend[0]!.id}::uuid`
     if (preservedRecipient[0]?.user_id !== SECOND_USER)
       throw new Error('removing a recipient rewrote an existing send row')
-    await addHostedReportSubscriptionRecipient(actorUrl, identity, subscription.id, SECOND_USER)
     const updatedSubscription = await updateHostedReportSubscription(
       actorUrl,
       identity,
       subscription.id,
       {
+        scope: { kind: 'members', userIds: [USER, SECOND_USER] },
         cadence: 'daily',
         hour: 18,
         zone: 'America/New_York',
+        recipientUserIds: [USER, SECOND_USER],
         enabled: true,
       },
     )
-    if (updatedSubscription.hour !== 18 || updatedSubscription.cadence !== 'daily')
-      throw new Error('subscription update did not change its cadence and hour')
+    if (
+      updatedSubscription.hour !== 18 ||
+      updatedSubscription.cadence !== 'daily' ||
+      updatedSubscription.members.length !== 2 ||
+      updatedSubscription.recipients.length !== 2
+    )
+      throw new Error('subscription update did not replace its scope, recipients and schedule')
     const preservedSend = await admin`SELECT subscription_id,period_end FROM hub_send
       WHERE subscription_id=${subscription.id}::uuid`
     if (preservedSend.length !== 1)
       throw new Error('subscription update did not preserve the record of what was sent')
+    await admin`INSERT INTO hub_send
+      (id,space_id,at,"window",recipients,projects,items,status,error,test,created_at,machine,
+       subscription_id,period_start,period_end)
+      VALUES (${newRecordId()}::uuid,${SPACE_A}::uuid,now(),'test','hub@example.test','subscription',
+      0,'sent',NULL,1,now(),'test',${subscription.id}::uuid,
+      ${'2029-12-31T00:00:00.000Z'}::timestamptz,${'2030-01-01T00:00:00.000Z'}::timestamptz)`
+    const afterTestSend = (await client`SELECT last_period_end FROM hub_report_delivery_candidates()
+      WHERE subscription_id=${subscription.id}::uuid`) as {
+      last_period_end: string | Date | null
+    }[]
+    if (new Date(afterTestSend[0]!.last_period_end!).toISOString() !== '2026-09-17T15:30:00.000Z')
+      throw new Error('a test send advanced the subscription schedule')
     const visibleSubscriptions = await listHostedReportSubscriptions(actorUrl, identity)
     if (
       visibleSubscriptions.subscriptions.length !== 1 ||
@@ -405,9 +429,11 @@ try {
     for (const operation of [
       () =>
         updateHostedReportSubscription(actorUrl, otherIdentity, subscription.id, {
+          scope: { kind: 'space' },
           cadence: 'daily',
           hour: 7,
           zone: 'America/New_York',
+          recipientUserIds: [USER],
           enabled: true,
         }),
       () => unsubscribeHostedReportSubscription(actorUrl, otherIdentity, subscription.id),
@@ -443,7 +469,8 @@ try {
       throw new Error('hosted spend adapter did not return the seeded interval')
     const pageSettings = await hostedSettings(actorUrl, identity, [PLATFORM_SLUG])
     if (
-      pageSettings.sends.length !== 1 ||
+      pageSettings.sends.length !== 2 ||
+      pageSettings.sends.filter((send) => Number(send.test) === 1).length !== 1 ||
       pageSettings.members.length !== 2 ||
       pageSettings.subscriptions.length !== 1
     )
@@ -459,15 +486,6 @@ try {
     )
       throw new Error('another space observed a hosted page adapter row')
 
-    await removeHostedReportSubscriptionRecipient(actorUrl, identity, subscription.id, USER)
-    await removeHostedReportSubscriptionRecipient(actorUrl, identity, subscription.id, SECOND_USER)
-    const recipientless = await listHostedReportSubscriptions(actorUrl, identity)
-    if (recipientless.subscriptions[0]?.recipients.length !== 0)
-      throw new Error('the last subscription recipient was not removed')
-    const candidatesWithoutRecipients = (await client`SELECT subscription_id
-      FROM hub_report_delivery_candidates()`) as { subscription_id: string }[]
-    if (candidatesWithoutRecipients.some((row) => row.subscription_id === subscription.id))
-      throw new Error('a subscription without recipients remained due for delivery')
     await unsubscribeHostedReportSubscription(actorUrl, identity, subscription.id)
     if ((await listHostedReportSubscriptions(actorUrl, identity)).subscriptions.length)
       throw new Error('removed subscription remained visible in its space')
@@ -616,6 +634,7 @@ try {
   await admin`DELETE FROM hub_note WHERE space_id IN (${SPACE_A}::uuid, ${SPACE_B}::uuid)`
   await admin`DELETE FROM hub_send_recipient WHERE space_id IN (${SPACE_A}::uuid, ${SPACE_B}::uuid)`
   await admin`DELETE FROM hub_send WHERE space_id IN (${SPACE_A}::uuid, ${SPACE_B}::uuid)`
+  await admin`DELETE FROM hub_report_subscription_member WHERE space_id IN (${SPACE_A}::uuid, ${SPACE_B}::uuid)`
   await admin`DELETE FROM hub_report_subscription_recipient WHERE space_id IN (${SPACE_A}::uuid, ${SPACE_B}::uuid)`
   await admin`DELETE FROM hub_report_subscription WHERE space_id IN (${SPACE_A}::uuid, ${SPACE_B}::uuid)`
   await admin`DELETE FROM membership WHERE space_id IN (${SPACE_A}::uuid, ${SPACE_B}::uuid)`

@@ -16,7 +16,9 @@ type Settings = RecordSettingsResponse
 type Subscription = Settings['subscriptions'][number]
 type Member = Settings['members'][number]
 type Draft = {
-  scope: string
+  scope: 'space' | 'project' | 'members'
+  project: string
+  memberUserIds: string[]
   cadence: 'daily' | 'weekly'
   hour: number
   weekday: Weekday
@@ -40,11 +42,9 @@ function SubscriptionDialog({
   onClose: () => void
 }) {
   const [draft, setDraft] = useState<Draft>({
-    scope: row
-      ? row.scope_kind === 'project'
-        ? `project:${row.project_name}`
-        : row.scope_kind
-      : 'space',
+    scope: row?.scope_kind ?? 'space',
+    project: row?.project_name ?? projects[0] ?? '',
+    memberUserIds: row?.members.map((member) => member.user_id) ?? [],
     cadence: row?.cadence ?? 'daily',
     hour: row?.hour ?? 9,
     weekday: row?.weekday ?? 'monday',
@@ -52,6 +52,8 @@ function SubscriptionDialog({
     enabled: row?.enabled ?? true,
     recipientUserIds: row?.recipients.map((recipient) => recipient.user_id) ?? [],
   })
+  const [confirmingDelete, setConfirmingDelete] = useState(false)
+  const [testMessage, setTestMessage] = useState('')
   const create = useMutation({
     ...trpc.record.createReportSubscription.mutationOptions(),
     onSuccess: async () => {
@@ -66,6 +68,21 @@ function SubscriptionDialog({
       onClose()
     },
   })
+  const remove = useMutation({
+    ...trpc.record.removeReportSubscription.mutationOptions(),
+    onSuccess: async () => {
+      await refresh()
+      onClose()
+    },
+  })
+  const sendTest = useMutation({
+    ...trpc.record.sendReportSubscriptionTest.mutationOptions(),
+    onSuccess: (result) => {
+      setTestMessage(`Test sent to ${result.email}`)
+      void refresh()
+    },
+    onError: (error) => setTestMessage(error.message),
+  })
   const change = (patch: Partial<Draft>) => setDraft((current) => ({ ...current, ...patch }))
   const save = () => {
     const cadence = {
@@ -75,77 +92,111 @@ function SubscriptionDialog({
       zone: draft.zone,
       enabled: draft.enabled,
     }
-    if (row) return update.mutate({ id: row.id, ...cadence })
-    const scope = draft.scope.startsWith('project:')
-      ? ({ kind: 'project', project: draft.scope.slice('project:'.length) } as const)
-      : draft.scope === 'person'
-        ? ({ kind: 'person' } as const)
-        : ({ kind: 'space' } as const)
-    create.mutate({ ...cadence, scope, recipientUserIds: draft.recipientUserIds })
+    const scope =
+      draft.scope === 'project'
+        ? ({ kind: 'project', project: draft.project } as const)
+        : draft.scope === 'members'
+          ? ({ kind: 'members', userIds: draft.memberUserIds } as const)
+          : ({ kind: 'space' } as const)
+    const input = { ...cadence, scope, recipientUserIds: draft.recipientUserIds }
+    if (row) return update.mutate({ id: row.id, ...input })
+    create.mutate(input)
   }
+  const pending = create.isPending || update.isPending || remove.isPending || sendTest.isPending
+  const failure = create.error ?? update.error ?? remove.error
   return (
     <Dialog
       open
       onOpenChange={(open) => !open && onClose()}
       title={row ? 'Edit subscription' : 'Create subscription'}
-      description={row ? 'Change its schedule.' : 'Choose a schedule and space members.'}
+      description="Choose what the report covers, when it is sent, and who receives it."
       footer={
-        <>
-          <Button variant="secondary" onClick={onClose}>
-            Cancel
-          </Button>
-          <Button
-            variant="primary"
-            disabled={
-              create.isPending || update.isPending || (!row && !draft.recipientUserIds.length)
-            }
-            onClick={save}
-          >
-            {row ? 'Save changes' : 'Create subscription'}
-          </Button>
-        </>
+        <div className="flex w-full items-center justify-between gap-2">
+          <div className="flex items-center gap-2">
+            {row ? (
+              <>
+                <Button
+                  variant="danger"
+                  disabled={pending}
+                  onClick={() =>
+                    confirmingDelete ? remove.mutate({ id: row.id }) : setConfirmingDelete(true)
+                  }
+                >
+                  {confirmingDelete ? 'Confirm delete' : 'Delete'}
+                </Button>
+                <Button
+                  variant="secondary"
+                  disabled={pending}
+                  onClick={() => {
+                    setTestMessage('')
+                    sendTest.mutate({ id: row.id })
+                  }}
+                >
+                  Send test
+                </Button>
+                {testMessage ? (
+                  <span className="text-sm text-text-muted">{testMessage}</span>
+                ) : null}
+              </>
+            ) : null}
+          </div>
+          <div className="flex gap-2">
+            <Button variant="secondary" onClick={onClose}>
+              Cancel
+            </Button>
+            <Button
+              variant="primary"
+              disabled={
+                pending ||
+                !draft.recipientUserIds.length ||
+                (draft.scope === 'members' && !draft.memberUserIds.length)
+              }
+              onClick={save}
+            >
+              {row ? 'Save changes' : 'Create subscription'}
+            </Button>
+          </div>
+        </div>
       }
     >
       <div className="grid gap-4">
-        {!row ? (
-          <>
-            <Select
-              label="Subscription scope"
-              value={draft.scope}
-              options={[
-                { value: 'space', label: 'This space' },
-                { value: 'person', label: 'My work in this space' },
-                ...projects.map((project) => ({ value: `project:${project}`, label: project })),
-              ]}
-              onChange={(scope) => change({ scope })}
-            />
-            <div className="grid gap-2">
-              <span className="text-sm text-text-muted">Recipients</span>
-              {members.map((member) => (
-                <label
-                  key={member.user_id}
-                  htmlFor={`recipient-${member.user_id}`}
-                  className="flex items-center gap-2 text-sm"
-                >
-                  <Checkbox
-                    id={`recipient-${member.user_id}`}
-                    checked={draft.recipientUserIds.includes(member.user_id)}
-                    onChange={(event) =>
-                      change({
-                        recipientUserIds: event.target.checked
-                          ? [...draft.recipientUserIds, member.user_id]
-                          : draft.recipientUserIds.filter((id) => id !== member.user_id),
-                      })
-                    }
-                  />
-                  {member.name} ({member.email})
-                </label>
-              ))}
-            </div>
-          </>
-        ) : null}
+        {failure ? <p className="text-sm text-status-text">{failure.message}</p> : null}
         <Select
-          label="Report cadence"
+          label="Report covers"
+          value={draft.scope}
+          options={[
+            { value: 'space', label: 'Space' },
+            { value: 'project', label: 'Project' },
+            { value: 'members', label: 'Members' },
+          ]}
+          onChange={(scope) => change({ scope: scope as Draft['scope'] })}
+        />
+        {draft.scope === 'project' ? (
+          <Select
+            label="Project"
+            value={draft.project}
+            options={projects.map((project) => ({ value: project, label: project }))}
+            onChange={(project) => change({ project })}
+          />
+        ) : null}
+        {draft.scope === 'members' ? (
+          <MemberChecks
+            label="Members"
+            prefix="scope-member"
+            members={members}
+            selected={draft.memberUserIds}
+            onChange={(memberUserIds) => change({ memberUserIds })}
+          />
+        ) : null}
+        <MemberChecks
+          label="Recipients"
+          prefix="recipient"
+          members={members}
+          selected={draft.recipientUserIds}
+          onChange={(recipientUserIds) => change({ recipientUserIds })}
+        />
+        <Select
+          label="Cadence"
           value={draft.cadence}
           options={[
             { value: 'daily', label: 'Daily' },
@@ -155,14 +206,14 @@ function SubscriptionDialog({
         />
         {draft.cadence === 'weekly' ? (
           <Select
-            label="Report weekday"
+            label="Weekday"
             value={draft.weekday}
             options={WEEKDAYS.map((day) => ({ value: day, label: day }))}
             onChange={(weekday) => change({ weekday: weekday as Weekday })}
           />
         ) : null}
         <Select
-          label="Report hour"
+          label="Hour"
           value={String(draft.hour)}
           options={Array.from({ length: 24 }, (_, hour) => ({
             value: String(hour),
@@ -171,7 +222,7 @@ function SubscriptionDialog({
           onChange={(hour) => change({ hour: Number(hour) })}
         />
         <Select
-          label="Report time zone"
+          label="Time zone"
           value={draft.zone}
           options={TIME_ZONES.map((zone) => ({ value: zone, label: zone }))}
           onChange={(zone) => change({ zone })}
@@ -189,63 +240,42 @@ function SubscriptionDialog({
   )
 }
 
-function Recipients({ row, members }: { row: Subscription; members: Member[] }) {
-  const [selected, setSelected] = useState('')
-  const add = useMutation({
-    ...trpc.record.addReportSubscriptionRecipient.mutationOptions(),
-    onSuccess: async () => {
-      setSelected('')
-      await refresh()
-    },
-  })
-  const remove = useMutation({
-    ...trpc.record.removeReportSubscriptionRecipient.mutationOptions(),
-    onSuccess: refresh,
-  })
-  const available = members.filter(
-    (member) => !row.recipients.some((recipient) => recipient.user_id === member.user_id),
-  )
+function MemberChecks({
+  label,
+  prefix,
+  members,
+  selected,
+  onChange,
+}: {
+  label: string
+  prefix: string
+  members: Member[]
+  selected: string[]
+  onChange: (ids: string[]) => void
+}) {
   return (
     <div className="grid gap-2">
-      {row.recipients.map((recipient) => (
-        <div key={recipient.user_id} className="flex items-center justify-between gap-2">
-          <span>
-            {recipient.name} ({recipient.email})
-          </span>
-          <Button
-            size="sm"
-            variant="ghost"
-            disabled={remove.isPending}
-            onClick={() => remove.mutate({ id: row.id, userId: recipient.user_id })}
-          >
-            Remove
-          </Button>
-        </div>
-      ))}
-      {!row.recipients.length ? (
-        <p className="text-status-text">No recipients; this subscription is not due.</p>
-      ) : null}
-      {available.length ? (
-        <div className="flex gap-2">
-          <Select
-            label="Add recipient"
-            value={selected}
-            options={[
-              { value: '', label: 'Add member…' },
-              ...available.map((member) => ({ value: member.user_id, label: member.name })),
-            ]}
-            onChange={setSelected}
+      <span className="text-sm text-text-muted">{label}</span>
+      {members.map((member) => (
+        <label
+          key={member.user_id}
+          htmlFor={`${prefix}-${member.user_id}`}
+          className="flex items-center gap-2 text-sm"
+        >
+          <Checkbox
+            id={`${prefix}-${member.user_id}`}
+            checked={selected.includes(member.user_id)}
+            onChange={(event) =>
+              onChange(
+                event.target.checked
+                  ? [...selected, member.user_id]
+                  : selected.filter((id) => id !== member.user_id),
+              )
+            }
           />
-          <Button
-            size="sm"
-            variant="secondary"
-            disabled={!selected || add.isPending}
-            onClick={() => add.mutate({ id: row.id, userId: selected })}
-          >
-            Add
-          </Button>
-        </div>
-      ) : null}
+          {member.name} ({member.email})
+        </label>
+      ))}
     </div>
   )
 }
@@ -257,10 +287,6 @@ export function SettingsPage() {
   const data = query.data
   const [creating, setCreating] = useState(false)
   const [editing, setEditing] = useState<Subscription>()
-  const remove = useMutation({
-    ...trpc.record.removeReportSubscription.mutationOptions(),
-    onSuccess: refresh,
-  })
   return (
     <section>
       <PageHeader title="Report subscriptions" subtitle="Schedules and delivery history" />
@@ -282,7 +308,7 @@ export function SettingsPage() {
                   <TableHead>Scope</TableHead>
                   <TableHead>Schedule</TableHead>
                   <TableHead>Recipients</TableHead>
-                  <TableHead>Actions</TableHead>
+                  <TableHead></TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -290,8 +316,10 @@ export function SettingsPage() {
                   <TableRow key={row.id}>
                     <TableCell>
                       {row.scope_kind === 'project'
-                        ? `project ${row.project_name}`
-                        : row.scope_kind}
+                        ? `Project: ${row.project_name}`
+                        : row.scope_kind === 'members'
+                          ? `Members: ${row.members.map((member) => member.name).join(', ')}`
+                          : 'Space'}
                     </TableCell>
                     <TableCell muted>
                       {row.cadence === 'weekly'
@@ -302,22 +330,12 @@ export function SettingsPage() {
                       </Badge>
                     </TableCell>
                     <TableCell>
-                      <Recipients row={row} members={data.members} />
+                      {row.recipients.map((recipient) => recipient.name).join(', ')}
                     </TableCell>
                     <TableCell>
-                      <div className="flex gap-2">
-                        <Button size="sm" variant="secondary" onClick={() => setEditing(row)}>
-                          Edit
-                        </Button>
-                        <Button
-                          size="sm"
-                          variant="ghost"
-                          disabled={remove.isPending}
-                          onClick={() => remove.mutate({ id: row.id })}
-                        >
-                          Delete
-                        </Button>
-                      </div>
+                      <Button size="sm" variant="secondary" onClick={() => setEditing(row)}>
+                        Edit
+                      </Button>
                     </TableCell>
                   </TableRow>
                 ))}
@@ -356,7 +374,10 @@ export function SettingsPage() {
                   <TableRow key={`${row.at}:${row.recipients}`}>
                     <TableCell muted>{row.at.slice(0, 16).replace('T', ' ')}</TableCell>
                     <TableCell>
-                      <Badge>{String(row.status)}</Badge>
+                      <div className="flex gap-1">
+                        <Badge>{String(row.status)}</Badge>
+                        {row.test ? <Badge tone="neutral">test</Badge> : null}
+                      </div>
                     </TableCell>
                     <TableCell numeric>{row.items.toLocaleString()}</TableCell>
                     <TableCell muted>

@@ -23,7 +23,7 @@ describe('report subscriptions', () => {
     )
     expect(created.scope_kind).toBe('project')
     expect(created.project_name).toBe('workshop')
-    expect(created.person_user_id).toBeNull()
+    expect(created.member_user_ids).toEqual([])
     expect(created.recipient_user_ids).toEqual([caller.userId])
     expect(() =>
       planReportSubscription(
@@ -51,22 +51,29 @@ describe('report subscriptions', () => {
     ).toThrow('a subscription requires at least one recipient')
   })
 
-  test('a person-scope subscription names a user, and a space-scope one does not', () => {
-    const person = planReportSubscription(caller, { scope: { kind: 'person' }, ...daily }, facts)
-    expect(person.scope_kind).toBe('person')
-    expect(person.person_user_id).toBe(caller.userId)
-    expect(person.project_name).toBeNull()
+  test('a members-scope subscription accepts any space members and requires one', () => {
+    const selected = planReportSubscription(
+      caller,
+      { scope: { kind: 'members', userIds: [member, caller.userId] }, ...daily },
+      facts,
+    )
+    expect(selected.scope_kind).toBe('members')
+    expect(selected.member_user_ids).toEqual([member, caller.userId])
+    expect(selected.project_name).toBeNull()
     const space = planReportSubscription(caller, { scope: { kind: 'space' }, ...daily }, facts)
     expect(space.scope_kind).toBe('space')
-    expect(space.person_user_id).toBeNull()
+    expect(space.member_user_ids).toEqual([])
     expect(space.project_name).toBeNull()
     expect(() =>
       planReportSubscription(
         caller,
-        { scope: { kind: 'person', userId: member }, ...daily },
+        { scope: { kind: 'members', userIds: [outsider] }, ...daily },
         facts,
       ),
-    ).toThrow('person scope must be the calling member')
+    ).toThrow('every report member must be a member of this space')
+    expect(() =>
+      planReportSubscription(caller, { scope: { kind: 'members', userIds: [] }, ...daily }, facts),
+    ).toThrow('members scope requires at least one member')
   })
 
   test('the cadence round-trips with its zone', () => {
@@ -97,31 +104,30 @@ describe('report subscriptions', () => {
     expect(() => assertReportSubscriptionFound(null)).toThrow('report subscription not found')
   })
 
-  test('an update accepts delivery fields and refuses scope or recipient changes', () => {
+  test('an update validates and carries scope and recipient changes like create', () => {
     expect(
-      planReportSubscriptionUpdate({
-        cadence: 'weekly',
-        hour: 18,
-        weekday: 'friday',
-        zone: 'Europe/London',
-        enabled: false,
-      }),
-    ).toEqual({
+      planReportSubscriptionUpdate(
+        caller,
+        {
+          scope: { kind: 'members', userIds: [member] },
+          recipientUserIds: [member],
+          cadence: 'weekly',
+          hour: 18,
+          weekday: 'friday',
+          zone: 'Europe/London',
+          enabled: false,
+        },
+        facts,
+      ),
+    ).toMatchObject({
+      scope_kind: 'members',
+      member_user_ids: [member],
+      recipient_user_ids: [member],
       cadence: 'weekly',
       hour: 18,
       weekday: 'friday',
       zone: 'Europe/London',
       enabled: false,
     })
-    expect(() =>
-      planReportSubscriptionUpdate({ ...daily, enabled: true, scope: { kind: 'space' } } as never),
-    ).toThrow('scope cannot be changed')
-    expect(() =>
-      planReportSubscriptionUpdate({
-        ...daily,
-        enabled: true,
-        recipientUserIds: [member],
-      } as never),
-    ).toThrow('scope cannot be changed')
   })
 })

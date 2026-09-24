@@ -103,6 +103,27 @@ describe('hours running and agent-hours', () => {
       }).agentHours.sumMs,
     ).toBe(HOUR)
   })
+
+  test('members scope combines only the selected members across projects', () => {
+    const rows = {
+      intervals: [
+        interval({ source: 'orch', startAt: FROM, endAt: TO, userId: MAYA, project: 'one' }),
+        interval({ source: 'orch', startAt: FROM, endAt: TO, userId: ALEX, project: 'two' }),
+        interval({
+          source: 'orch',
+          startAt: FROM,
+          endAt: TO,
+          userId: '01990000-0000-7000-8000-000000000003',
+          project: 'three',
+        }),
+      ],
+      events: [event()],
+    }
+    const measures = computeMeasures(rows, WINDOW, { kind: 'members', userIds: [MAYA, ALEX] })
+    expect(measures.scope).toBe('members')
+    expect(measures.agentHours.sumMs).toBe(HOUR * 4)
+    expect('shipped' in measures).toBe(false)
+  })
 })
 
 describe('session time', () => {
@@ -357,7 +378,8 @@ describe('shipped and cycle time', () => {
     }
     const measures = computeMeasures(rows, WINDOW, { kind: 'space' })
     expect(measures.scope).toBe('space')
-    if (measures.scope === 'person') throw new Error('expected space')
+    if (measures.scope === 'person' || measures.scope === 'members')
+      throw new Error('expected space')
     expect(measures.cycleTime?.n).toBe(3)
     const samples = [
       Date.parse('2026-09-17T12:10:00.000Z') - Date.parse('2026-09-17T10:00:00.000Z'),
@@ -372,7 +394,8 @@ describe('shipped and cycle time', () => {
   test('cycle time is absent rather than zero when nothing shipped', () => {
     const measures = computeMeasures({ intervals: [], events: [] }, WINDOW, { kind: 'space' })
     expect(measures.scope).toBe('space')
-    if (measures.scope === 'person') throw new Error('expected space')
+    if (measures.scope === 'person' || measures.scope === 'members')
+      throw new Error('expected space')
     expect(measures.shipped.count).toBe(0)
     expect(measures.cycleTime).toBeUndefined()
     expect('cycleTime' in measures).toBe(false)
@@ -403,7 +426,8 @@ describe('shipped and cycle time', () => {
     }
 
     const measures = computeMeasures(rows, WINDOW, { kind: 'space' })
-    if (measures.scope === 'person') throw new Error('expected space')
+    if (measures.scope === 'person' || measures.scope === 'members')
+      throw new Error('expected space')
     expect(measures.shipped.count).toBe(2)
     expect(measures.cycleTime?.n).toBe(2)
   })
@@ -412,7 +436,8 @@ describe('shipped and cycle time', () => {
     const measures = computeMeasures({ intervals: [], events: [event()] }, WINDOW, {
       kind: 'space',
     })
-    if (measures.scope === 'person') throw new Error('expected space')
+    if (measures.scope === 'person' || measures.scope === 'members')
+      throw new Error('expected space')
     expect(measures.shipped.count).toBe(1)
     expect(measures.cycleTime).toBeUndefined()
   })

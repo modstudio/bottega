@@ -32,7 +32,7 @@ function renderSettings(recipients = [member]) {
         id: '01990000-0000-7000-8000-000000000768',
         scope_kind: 'project' as const,
         project_name: 'workshop',
-        person_user_id: null,
+        members: [],
         cadence: 'weekly' as const,
         hour: 8,
         weekday: 'monday' as const,
@@ -60,11 +60,13 @@ test('settings render subscriptions and send history without retired SMTP contro
   expect(settings).toContain('Send history')
   expect(settings).toContain('reader@example.test')
   expect(settings).toContain('Create subscription')
-  expect(settings).toContain('Remove')
+  expect(settings).toContain('Edit')
   expect(settings.toLowerCase()).not.toContain('smtp')
-  expect(settings).not.toContain('Send a test')
+  expect(settings).not.toContain('Confirm delete')
 })
 
-test('a subscription without recipients says that it is not due', () => {
-  expect(renderSettings([])).toContain('No recipients; this subscription is not due.')
+test('a subscription without recipients keeps the recipient cell read-only', () => {
+  const settings = renderSettings([])
+  expect(settings).toContain('Recipients')
+  expect(settings).not.toContain('Add member')
 })
