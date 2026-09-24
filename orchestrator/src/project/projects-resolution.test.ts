@@ -40,6 +40,21 @@ afterEach(() => {
 })
 
 describe('projects are data, not code', () => {
+  test('checks accept only the two optional boolean switches', () => {
+    expect(validateProjectSettings({ checks: { spelling: true, attribution: false } })).toEqual([])
+    expect(
+      validateProjectSettings({ checks: { spelling: 'yes' } as unknown as { spelling: boolean } }),
+    ).toContain('checks.spelling must be a boolean')
+    expect(
+      validateProjectSettings({ checks: { unknown: true } as unknown as { spelling: boolean } }),
+    ).toContain('checks.unknown is not a recognised check')
+    expect(
+      validateProjectSettings({ checks: null } as unknown as Parameters<
+        typeof validateProjectSettings
+      >[0]),
+    ).toContain('checks must be an object')
+  })
+
   test('readonly_docker must be boolean when present', () => {
     expect(
       validateProjectSettings({

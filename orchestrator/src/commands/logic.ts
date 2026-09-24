@@ -6,6 +6,7 @@ import { assetPath } from '../../../shared/install-root.ts'
 import { agentCommand, agentsCommand } from '../agent/agent-commands.ts'
 import { serveAsk } from '../ask/ask.ts'
 import { setupAskCommand } from '../ask/ask-commands.ts'
+import { checkCommand } from '../check/check-commands.ts'
 import { closeOutCommand } from '../close/close-out-command.ts'
 import { peekCommand, resultCommand, waitCommand } from '../collect/collection-commands.ts'
 import { contractCommand } from '../contract/contract-command.ts'
@@ -71,6 +72,25 @@ const runFlags = (options: OptionValues) => ({
 })
 
 export function register(program: Command): void {
+  program
+    .command('check <kind>')
+    .option('--project <value>')
+    .option('--fix')
+    .option('--message <file>')
+    .option('--range [rev-range]')
+    .option('--pr <number-or-url>')
+    .allowExcessArguments(false)
+    .action((kind, options) =>
+      checkCommand(productArgv('check', [kind], options), {
+        log,
+        setExitCode: (code) => {
+          process.exitCode = code
+        },
+        stdinText: () => Bun.stdin.text(),
+        stdinIsTTY: () => process.stdin.isTTY,
+        cwd: process.cwd,
+      }),
+    )
   const tree = program.command('tree')
   tree
     .command('create')

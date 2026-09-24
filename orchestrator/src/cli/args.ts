@@ -284,6 +284,7 @@ export const CLI_COMMANDS = new Set([
   'blockers',
   'branches',
   'canon',
+  'check',
   'close-out',
   'config',
   'confinement',

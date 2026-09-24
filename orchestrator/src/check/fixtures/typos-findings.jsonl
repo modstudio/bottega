@@ -1,0 +1,2 @@
+{"type":"typo","path":"./notes/readme.md","line_num":4,"byte_offset":7,"typo":"teh","corrections":["the"]}
+{"type":"typo","path":"src/code.ts","line_num":12,"byte_offset":0,"typo":"cataloguee","corrections":["catalogue","catalogued"]}
