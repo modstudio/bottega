@@ -174,12 +174,40 @@ async function attributionCommand(argv: string[], presentation: Presentation): P
   if (findings.length) presentation.setExitCode(1)
 }
 
+type EnabledCheck = 'spelling' | 'attribution'
+
+function projectEnabledChecks(project: Project): EnabledCheck[] {
+  return (['spelling', 'attribution'] as const).filter(
+    (name) => project.settings.checks?.[name] === true,
+  )
+}
+
+async function enabledCheckFailed(
+  name: EnabledCheck,
+  common: string[],
+  presentation: Presentation,
+): Promise<boolean> {
+  let failed = false
+  const checkPresentation: Presentation = {
+    ...presentation,
+    setExitCode(code) {
+      if (code !== 0) failed = true
+    },
+  }
+  try {
+    const checkArgv = ['check', name, ...common, ...(name === 'attribution' ? ['--range'] : [])]
+    if (name === 'spelling') spellingCommand(checkArgv, checkPresentation)
+    else await attributionCommand(checkArgv, checkPresentation)
+  } catch (error) {
+    presentation.log(error instanceof Error ? error.message : String(error))
+    failed = true
+  }
+  return failed
+}
+
 async function enabledCommand(argv: string[], presentation: Presentation): Promise<void> {
   const project = selectedProject(argv, presentation.cwd())
-  const enabled = [
-    ...(project.settings.checks?.spelling ? (['spelling'] as const) : []),
-    ...(project.settings.checks?.attribution ? (['attribution'] as const) : []),
-  ]
+  const enabled = projectEnabledChecks(project)
   if (!enabled.length) {
     presentation.log(`no checks enabled for ${project.name}`)
     return
@@ -188,22 +216,7 @@ async function enabledCommand(argv: string[], presentation: Presentation): Promi
   const common = argv.slice(1).filter((argument) => argument !== '--enabled')
   const failures: string[] = []
   for (const name of enabled) {
-    let failed = false
-    const checkPresentation: Presentation = {
-      ...presentation,
-      setExitCode(code) {
-        if (code !== 0) failed = true
-      },
-    }
-    try {
-      const checkArgv = ['check', name, ...common, ...(name === 'attribution' ? ['--range'] : [])]
-      if (name === 'spelling') spellingCommand(checkArgv, checkPresentation)
-      else await attributionCommand(checkArgv, checkPresentation)
-    } catch (error) {
-      failed = true
-      presentation.log(error instanceof Error ? error.message : String(error))
-    }
-    if (failed) failures.push(name)
+    if (await enabledCheckFailed(name, common, presentation)) failures.push(name)
   }
   for (const name of failures) presentation.log(`failed check: ${name}`)
   if (failures.length) presentation.setExitCode(1)
