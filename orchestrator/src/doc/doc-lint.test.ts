@@ -1,9 +1,10 @@
 import { describe, expect, test } from 'bun:test'
+import { PLATFORM_NAME } from '../../../shared/brand.ts'
 import { lintDoc } from './doc-lint.ts'
 
 const doc = (body: string, extra: Partial<Parameters<typeof lintDoc>[0]> = {}) => ({
   scope: 'project',
-  subject: 'bottega',
+  subject: PLATFORM_NAME.toLowerCase(),
   slug: 'guide',
   body,
   ...extra,

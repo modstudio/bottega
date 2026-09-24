@@ -8,10 +8,10 @@ export type ProseFinding = {
   remedy: string
 }
 
-export const TASK_KEY_PATTERN = /\b[A-Z][A-Z0-9]{1,9}-\d+\b/
-export const TASK_KEY_EXEMPTIONS = ['UTF', 'SHA', 'ISO', 'RFC', 'ES', 'TLS', 'HTTP', 'IPV']
+const TASK_KEY_PATTERN = /\b[A-Z][A-Z0-9]{1,9}-\d+\b/
+const TASK_KEY_EXEMPTIONS = ['UTF', 'SHA', 'ISO', 'RFC', 'ES', 'TLS', 'HTTP', 'IPV']
 
-export const HISTORY_PATTERNS = [
+const HISTORY_PATTERNS = [
   /\bused to\b/i,
   /\bwas (?:called|named)\b/i,
   /\brenamed\b/i,
@@ -21,7 +21,7 @@ export const HISTORY_PATTERNS = [
   /\b(?:that|this|it) (?:has )?changed\b/i,
 ]
 
-export const ISSUE_PATTERNS = [
+const ISSUE_PATTERNS = [
   /\bworkaround\b/i,
   /\bknown issue\b/i,
   /\buntil (?:it is |this is )?fixed\b/i,
