@@ -9,6 +9,7 @@ import { CONTINUE_WORKING_FORMS } from '../cli/args.ts'
 import { branchNote, failoverSummary, resolveFailover } from '../collect/collect.ts'
 import { db, nowIso, writeTransaction } from '../database/db.ts'
 import { appendRunEvent } from '../events.ts'
+import { realpathOrSpelled, withoutTrailingSeparators } from '../git/checkout-identity.ts'
 import { branchOf, gitContext, worktreeListPorcelain } from '../git/git-environment.ts'
 import { mcpRequestFromStored } from '../mcp/mcp-preflight.ts'
 import { outcomeOf } from '../outcome.ts'
@@ -369,16 +370,28 @@ function refuseHeldContinuationBranch(
   plan: ResumeTreePlan | null,
 ): void {
   if (!plan || !projectPath) return
+  const worktrees = parseWorktreeList(worktreeListPorcelain(projectPath))
+  const canonicalPath = (path: string): string => withoutTrailingSeparators(realpathOrSpelled(path))
+  const canonicalWorktrees = worktrees.map((worktree) => ({
+    ...worktree,
+    path: canonicalPath(worktree.path),
+  }))
   const availability = continuationBranchAvailability(
     plan.branch,
-    recordedTreePath,
-    parseWorktreeList(worktreeListPorcelain(projectPath)),
+    recordedTreePath ? canonicalPath(recordedTreePath) : null,
+    canonicalWorktrees,
   )
   if (availability.action === 'continue') return
+  const holdingPath =
+    worktrees.find(
+      (worktree, index) =>
+        worktree.branch === plan.branch &&
+        canonicalWorktrees[index]?.path === availability.holdingPath,
+    )?.path ?? availability.holdingPath
   throw new Error(
-    `run ${id} cannot continue: branch ${plan.branch} is checked out at ${availability.holdingPath}\n` +
-      `release it with git worktree remove ${availability.holdingPath}, ` +
-      `or orch tree remove ${availability.holdingPath} if it is an orch-opened tree`,
+    `run ${id} cannot continue: branch ${plan.branch} is checked out at ${holdingPath}\n` +
+      `release it with git worktree remove ${holdingPath}, ` +
+      `or orch tree remove ${holdingPath} if it is an orch-opened tree`,
   )
 }
 

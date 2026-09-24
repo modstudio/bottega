@@ -1,4 +1,5 @@
 import { describe, expect, test } from 'bun:test'
+import { realpathOrSpelled, withoutTrailingSeparators } from '../git/checkout-identity.ts'
 import {
   continuationBranchAvailability,
   continuationBranchPlan,
@@ -32,6 +33,21 @@ branch refs/heads/DEV-878-orch-5931
 `)
 
 describe('continuation branch availability', () => {
+  test('compares paths after adapter-style trailing-separator normalization', () => {
+    const canonicalPath = (path: string): string =>
+      withoutTrailingSeparators(realpathOrSpelled(path))
+    const recordedTreePath = canonicalPath('/projects/workshop/.claude/worktrees/orch-5931///')
+    const canonicalWorktrees = worktrees.slice(0, 2).map((worktree) => ({
+      ...worktree,
+      path: canonicalPath(worktree.path),
+    }))
+
+    expect(recordedTreePath).toBe('/projects/workshop/.claude/worktrees/orch-5931')
+    expect(
+      continuationBranchAvailability('DEV-878-orch-5931', recordedTreePath, canonicalWorktrees),
+    ).toEqual({ action: 'continue' })
+  })
+
   test('refuses a continuation branch held by another tree and names its path', () => {
     expect(
       continuationBranchAvailability(
