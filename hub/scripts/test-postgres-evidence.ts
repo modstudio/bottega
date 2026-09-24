@@ -188,6 +188,88 @@ try {
     const detail = await hostedTaskDetail(actorUrl, identity, created.key)
     if (detail?.statusHistory.length !== 1 || detail.intervals.length !== 1)
       throw new Error('hosted task detail did not return status history and intervals')
+
+    const legacyCommentId = '01990000-0000-7000-8000-000000000680'
+    const legacyDocumentId = '01990000-0000-7000-8000-000000000681'
+    const legacyEventId = '01990000-0000-7000-8000-000000000682'
+    const legacyChildId = '01990000-0000-7000-8000-000000000683'
+    const legacyNoteId = '01990000-0000-7000-8000-000000000684'
+    await admin`INSERT INTO hub_task_comment
+      (id,space_id,project_name,task_key,body,created_at,updated_at) VALUES
+      (${legacyCommentId}::uuid,${SPACE_A}::uuid,${PLATFORM_SLUG},${mirrored.key},'legacy',${stamp}::timestamptz,${stamp}::timestamptz)`
+    await admin`INSERT INTO hub_task_document
+      (id,space_id,project_name,task_key,title,body,version,created_at,updated_at) VALUES
+      (${legacyDocumentId}::uuid,${SPACE_A}::uuid,${PLATFORM_SLUG},${mirrored.key},'legacy','legacy','v1',${stamp}::timestamptz,${stamp}::timestamptz)`
+    await admin`INSERT INTO hub_task_status_event
+      (id,space_id,project_name,task_key,at,from_status,to_status,created_at,updated_at) VALUES
+      (${legacyEventId}::uuid,${SPACE_A}::uuid,${PLATFORM_SLUG},${mirrored.key},${stamp}::timestamptz,NULL,'open',${stamp}::timestamptz,${stamp}::timestamptz)`
+    await admin`INSERT INTO hub_task
+      (id,space_id,project_name,key,project,title,status,status_category,parent_key,source,
+       first_seen,last_seen,created_at,updated_at) VALUES
+      (${legacyChildId}::uuid,${SPACE_A}::uuid,${PLATFORM_SLUG},'DEV-LEGACY-CHILD',${PLATFORM_SLUG},
+       'legacy child','open','open',${mirrored.key},'mcp',${stamp}::timestamptz,${stamp}::timestamptz,
+       ${stamp}::timestamptz,${stamp}::timestamptz)`
+    await admin`INSERT INTO hub_note
+      (id,space_id,project_name,number,project,text,anchors,sightings,created_at,last_seen_at,
+       promoted_task,updated_at) VALUES
+      (${legacyNoteId}::uuid,${SPACE_A}::uuid,${PLATFORM_SLUG},799,${PLATFORM_SLUG},'legacy note','[]',1,
+       ${stamp}::timestamptz,${stamp}::timestamptz,${mirrored.key},${stamp}::timestamptz)`
+
+    const renamed = {
+      ...mirrored,
+      key: 'DEV-702',
+      updated_at: '2026-09-17T12:11:00.000Z',
+      last_seen: '2026-09-17T12:11:00.000Z',
+    }
+    await mirrorHostedTasks(actorUrl, identity, { tasks: [renamed] })
+    const repaired = await admin`
+      SELECT 'comment' kind,task_key key,task_id id FROM hub_task_comment WHERE id=${legacyCommentId}::uuid
+      UNION ALL SELECT 'document',task_key,task_id FROM hub_task_document WHERE id=${legacyDocumentId}::uuid
+      UNION ALL SELECT 'event',task_key,task_id FROM hub_task_status_event WHERE id=${legacyEventId}::uuid
+      UNION ALL SELECT 'child',parent_key,parent_id FROM hub_task WHERE id=${legacyChildId}::uuid
+      UNION ALL SELECT 'note',promoted_task,promoted_task_id FROM hub_note WHERE id=${legacyNoteId}::uuid
+      ORDER BY kind`
+    if (
+      repaired.length !== 5 ||
+      repaired.some((row) => row.key !== renamed.key || row.id !== mirrored.id)
+    )
+      throw new Error('task rename did not repair all five legacy hosted relationships')
+
+    const holderId = '01990000-0000-7000-8000-000000000685'
+    const incomingId = '01990000-0000-7000-8000-000000000686'
+    await admin`INSERT INTO hub_task_status_event
+      (id,legacy_local_id,space_id,project_name,task_key,at,from_status,to_status,created_at,updated_at)
+      VALUES (${holderId}::uuid,77,${SPACE_A}::uuid,${PLATFORM_SLUG},${renamed.key},
+        ${'2026-09-17T12:12:00.000Z'}::timestamptz,'open','active',
+        ${'2026-09-17T12:12:00.000Z'}::timestamptz,${'2026-09-17T12:12:00.000Z'}::timestamptz)`
+    const adopted = await mirrorHostedTasks(actorUrl, identity, {
+      tasks: [],
+      statusEvents: [
+        {
+          id: incomingId,
+          legacy_local_id: 77,
+          newly_assigned: true,
+          task_key: renamed.key,
+          task_id: mirrored.id,
+          project_name: PLATFORM_SLUG,
+          at: '2026-09-17T12:12:00.000Z',
+          from_status: 'open',
+          to_status: 'active',
+          created_at: '2026-09-17T12:12:00.000Z',
+          updated_at: '2026-09-17T12:12:00.000Z',
+          deleted_at: null,
+        },
+      ],
+    })
+    const adoptedHolder = await admin`SELECT task_key,task_id FROM hub_task_status_event
+      WHERE id=${holderId}::uuid`
+    if (
+      adopted.adoptions[0]?.id !== holderId ||
+      adoptedHolder[0]?.task_key !== renamed.key ||
+      adoptedHolder[0]?.task_id !== mirrored.id
+    )
+      throw new Error('status-event adoption did not resolve the legacy holder task id')
+
     if (await hostedTaskDetail(actorUrl, { userId: USER, spaceId: SPACE_B }, created.key))
       throw new Error('another space observed hosted task detail')
     const other = await listHostedTasks(actorUrl, { userId: USER, spaceId: SPACE_B }, {})

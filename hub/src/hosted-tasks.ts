@@ -1,7 +1,12 @@
 import { SQL } from 'bun'
 import { newRecordId } from '../../shared/record/schema.ts'
 import { bindTenant, type TenantPrincipal } from '../../shared/record/tenant.ts'
-import { childTaskLabelUpdate, hostedTaskJoin } from './hosted-task-reference.ts'
+import {
+  hostedTaskJoin,
+  hostedTaskRelationship,
+  repairHostedTaskReferences,
+  taskIdFor,
+} from './hosted-task-reference.ts'
 
 export type TaskIdentity = TenantPrincipal
 export type HostedTask = {
@@ -31,7 +36,6 @@ export type HostedComment = {
   newly_assigned?: boolean
   task_key: string
   task_id?: string | null
-  task_record_id?: string | null
   project_name: string
   body: string
   created_at: string
@@ -44,7 +48,6 @@ export type HostedDocument = {
   newly_assigned?: boolean
   task_key: string
   task_id?: string | null
-  task_record_id?: string | null
   project_name: string
   role: string | null
   title: string
@@ -60,7 +63,6 @@ export type HostedStatusEvent = {
   newly_assigned?: boolean
   task_key: string
   task_id?: string | null
-  task_record_id?: string | null
   project_name: string
   at: string
   from_status: string | null
@@ -88,21 +90,6 @@ export async function withHostedTenant<T>(
 
 const rows = <T>(value: unknown) => value as T[]
 
-async function taskIdFor(tx: SQL, spaceId: string, key: string | null, preferred?: string | null) {
-  if (preferred) {
-    const selected = rows<{ id: string }>(
-      await tx`SELECT id FROM hub_task WHERE id=${preferred}::uuid AND space_id=${spaceId}::uuid`,
-    )[0]
-    if (selected) return selected.id
-  }
-  if (!key) return null
-  return (
-    rows<{ id: string }>(
-      await tx`SELECT id FROM hub_task WHERE space_id=${spaceId}::uuid AND key=${key}`,
-    )[0]?.id ?? null
-  )
-}
-
 export async function listHostedTasks(
   url: string,
   identity: TaskIdentity,
@@ -118,14 +105,16 @@ export async function listHostedTasks(
   return withHostedTenant(url, identity, async (tx) => {
     const since = filters.updatedSince ?? filters.cursor ?? '1970-01-01T00:00:00.000Z'
     const parentId = filters.parent ? await taskIdFor(tx, identity.spaceId, filters.parent) : null
+    const parent = hostedTaskRelationship('hub_task')
     const tasks = rows<HostedTask>(
       await tx`
       SELECT * FROM hub_task WHERE space_id=${identity.spaceId}::uuid
         AND (${filters.project ?? null}::text IS NULL OR project_name=${filters.project ?? null})
         AND (${filters.status ?? null}::text IS NULL OR status_category=${filters.status ?? null})
         AND (${filters.parent ?? null}::text IS NULL
-          OR parent_id=${parentId}::uuid
-          OR (parent_id IS NULL AND parent_key=${filters.parent ?? null}))
+          OR ${tx.unsafe(parent.idColumn)}=${parentId}::uuid
+          OR (${tx.unsafe(parent.idColumn)} IS NULL AND
+            ${tx.unsafe(parent.keyColumn)}=${filters.parent ?? null}))
         AND updated_at > ${since}::timestamptz
         AND (${filters.includeDeleted ?? false} OR deleted_at IS NULL)
       ORDER BY updated_at, key`,
@@ -170,13 +159,13 @@ export async function getHostedTask(url: string, identity: TaskIdentity, key: st
     if (!task) return null
     const comments = rows<HostedComment>(
       await tx`
-      SELECT c.* FROM hub_task_comment c JOIN hub_task t ON ${hostedTaskJoin(tx, 'c')}
+      SELECT c.* FROM hub_task_comment c JOIN hub_task t ON ${hostedTaskJoin(tx, 'hub_task_comment', 'c')}
         WHERE t.id=${task.id}::uuid AND c.space_id=${identity.spaceId}::uuid
         AND c.deleted_at IS NULL ORDER BY c.created_at,c.id`,
     )
     const documents = rows<HostedDocument>(
       await tx`
-      SELECT d.* FROM hub_task_document d JOIN hub_task t ON ${hostedTaskJoin(tx, 'd')}
+      SELECT d.* FROM hub_task_document d JOIN hub_task t ON ${hostedTaskJoin(tx, 'hub_task_document', 'd')}
         WHERE t.id=${task.id}::uuid AND d.space_id=${identity.spaceId}::uuid
         AND d.deleted_at IS NULL ORDER BY d.created_at,d.id`,
     )
@@ -505,29 +494,15 @@ async function mirrorTaskRow(tx: SQL, identity: TaskIdentity, row: HostedTask) {
         (${row.source}='local' OR (source <> 'local' AND (${row.source} <> 'git' OR source='git')))
       RETURNING id`,
     )
-    const labelUpdate = childTaskLabelUpdate(existing!.key, row.key)
-    if (changed.length && labelUpdate) {
-      await tx`UPDATE hub_task_comment SET task_key=${labelUpdate.nextKey},task_id=${row.id}::uuid,
-        updated_at=GREATEST(updated_at,${row.updated_at}::timestamptz)
-        WHERE space_id=${identity.spaceId}::uuid
-          AND (task_id=${row.id}::uuid OR (task_id IS NULL AND task_key=${labelUpdate.previousKey}))`
-      await tx`UPDATE hub_task_document SET task_key=${labelUpdate.nextKey},task_id=${row.id}::uuid,
-        updated_at=GREATEST(updated_at,${row.updated_at}::timestamptz)
-        WHERE space_id=${identity.spaceId}::uuid
-          AND (task_id=${row.id}::uuid OR (task_id IS NULL AND task_key=${labelUpdate.previousKey}))`
-      await tx`UPDATE hub_task_status_event SET task_key=${labelUpdate.nextKey},task_id=${row.id}::uuid,
-        updated_at=GREATEST(updated_at,${row.updated_at}::timestamptz)
-        WHERE space_id=${identity.spaceId}::uuid
-          AND (task_id=${row.id}::uuid OR (task_id IS NULL AND task_key=${labelUpdate.previousKey}))`
-      await tx`UPDATE hub_task SET parent_key=${labelUpdate.nextKey},parent_id=${row.id}::uuid,
-        updated_at=GREATEST(updated_at,${row.updated_at}::timestamptz)
-        WHERE space_id=${identity.spaceId}::uuid AND id<>${row.id}::uuid
-          AND (parent_id=${row.id}::uuid OR (parent_id IS NULL AND parent_key=${labelUpdate.previousKey}))`
-      await tx`UPDATE hub_note SET promoted_task=${labelUpdate.nextKey},promoted_task_id=${row.id}::uuid,
-        updated_at=GREATEST(updated_at,${row.updated_at}::timestamptz)
-        WHERE space_id=${identity.spaceId}::uuid
-          AND (promoted_task_id=${row.id}::uuid OR (promoted_task_id IS NULL AND promoted_task=${labelUpdate.previousKey}))`
-    }
+    if (changed.length)
+      await repairHostedTaskReferences(
+        tx,
+        identity.spaceId,
+        row.id,
+        existing!.key,
+        row.key,
+        row.updated_at,
+      )
     return
   }
   const changed = rows<{ id: string }>(
@@ -564,12 +539,7 @@ async function mirrorCommentRow(
   identity: TaskIdentity,
   row: HostedComment,
 ): Promise<MirrorAdoption | null> {
-  const taskId = await taskIdFor(
-    tx,
-    identity.spaceId,
-    row.task_key,
-    row.task_record_id ?? row.task_id,
-  )
+  const taskId = await taskIdFor(tx, identity.spaceId, row.task_key, row.task_id)
   const existing = rows<{ id: string; space_id: string; legacy_local_id: number | null }>(
     await tx`SELECT id,space_id,legacy_local_id FROM hub_task_comment WHERE id=${row.id}::uuid`,
   )[0]
@@ -622,12 +592,7 @@ async function mirrorDocumentRow(
   identity: TaskIdentity,
   row: HostedDocument,
 ): Promise<MirrorAdoption | null> {
-  const taskId = await taskIdFor(
-    tx,
-    identity.spaceId,
-    row.task_key,
-    row.task_record_id ?? row.task_id,
-  )
+  const taskId = await taskIdFor(tx, identity.spaceId, row.task_key, row.task_id)
   const existing = rows<{ id: string; space_id: string; legacy_local_id: number | null }>(
     await tx`SELECT id,space_id,legacy_local_id FROM hub_task_document WHERE id=${row.id}::uuid`,
   )[0]
@@ -681,12 +646,7 @@ async function mirrorStatusEventRow(
   identity: TaskIdentity,
   row: HostedStatusEvent,
 ): Promise<MirrorAdoption | null> {
-  const taskId = await taskIdFor(
-    tx,
-    identity.spaceId,
-    row.task_key,
-    row.task_record_id ?? row.task_id,
-  )
+  const taskId = await taskIdFor(tx, identity.spaceId, row.task_key, row.task_id)
   const existing = rows<{ id: string; space_id: string; legacy_local_id: number | null }>(
     await tx`SELECT id,space_id,legacy_local_id FROM hub_task_status_event WHERE id=${row.id}::uuid`,
   )[0]
@@ -718,10 +678,12 @@ async function mirrorStatusEventRow(
     row.newly_assigned,
   )
   const proceed = applyMirrorDecision(decision)
-  if (decision.action === 'idempotent-duplicate')
+  if (decision.action === 'idempotent-duplicate' || decision.action === 'adopt') {
+    const id = decision.action === 'adopt' ? decision.id : row.id
     await tx`UPDATE hub_task_status_event SET legacy_local_id=COALESCE(legacy_local_id,${row.legacy_local_id}),
       task_key=${row.task_key},task_id=${taskId}::uuid
-      WHERE id=${row.id}::uuid`
+      WHERE id=${id}::uuid`
+  }
   if (!proceed)
     return decision.action === 'adopt'
       ? {
@@ -748,9 +710,10 @@ export async function mirrorHostedTasks(url: string, identity: TaskIdentity, bod
     for (const row of body.tasks) await mirrorTaskRow(tx, identity, row)
     for (const row of body.tasks) {
       const parentId = await taskIdFor(tx, identity.spaceId, row.parent_key, row.parent_id)
-      await tx`UPDATE hub_task SET parent_id=${parentId}::uuid
+      const parent = hostedTaskRelationship('hub_task')
+      await tx`UPDATE hub_task SET ${tx.unsafe(parent.idColumn)}=${parentId}::uuid
         WHERE id=${row.id}::uuid AND space_id=${identity.spaceId}::uuid
-          AND parent_key IS NOT DISTINCT FROM ${row.parent_key}`
+          AND ${tx.unsafe(parent.keyColumn)} IS NOT DISTINCT FROM ${row.parent_key}`
     }
     for (const row of body.comments ?? []) {
       const adoption = await mirrorCommentRow(tx, identity, row)
@@ -783,13 +746,13 @@ export async function hostedTaskCounts(url: string, identity: TaskIdentity) {
       await tx`SELECT source,count(*)::int count FROM hub_task WHERE space_id=${identity.spaceId}::uuid AND deleted_at IS NULL GROUP BY source ORDER BY source`,
     ),
     task_comment: rows<{ source: string; count: number }>(
-      await tx`SELECT t.source,count(*)::int count FROM hub_task_comment c JOIN hub_task t ON ${hostedTaskJoin(tx, 'c')} WHERE c.space_id=${identity.spaceId}::uuid AND c.deleted_at IS NULL GROUP BY t.source ORDER BY t.source`,
+      await tx`SELECT t.source,count(*)::int count FROM hub_task_comment c JOIN hub_task t ON ${hostedTaskJoin(tx, 'hub_task_comment', 'c')} WHERE c.space_id=${identity.spaceId}::uuid AND c.deleted_at IS NULL GROUP BY t.source ORDER BY t.source`,
     ),
     task_document: rows<{ source: string; count: number }>(
-      await tx`SELECT t.source,count(*)::int count FROM hub_task_document d JOIN hub_task t ON ${hostedTaskJoin(tx, 'd')} WHERE d.space_id=${identity.spaceId}::uuid AND d.deleted_at IS NULL GROUP BY t.source ORDER BY t.source`,
+      await tx`SELECT t.source,count(*)::int count FROM hub_task_document d JOIN hub_task t ON ${hostedTaskJoin(tx, 'hub_task_document', 'd')} WHERE d.space_id=${identity.spaceId}::uuid AND d.deleted_at IS NULL GROUP BY t.source ORDER BY t.source`,
     ),
     task_status_event: rows<{ source: string; count: number }>(
-      await tx`SELECT t.source,count(*)::int count FROM hub_task_status_event e JOIN hub_task t ON ${hostedTaskJoin(tx, 'e')} WHERE e.space_id=${identity.spaceId}::uuid AND e.deleted_at IS NULL GROUP BY t.source ORDER BY t.source`,
+      await tx`SELECT t.source,count(*)::int count FROM hub_task_status_event e JOIN hub_task t ON ${hostedTaskJoin(tx, 'hub_task_status_event', 'e')} WHERE e.space_id=${identity.spaceId}::uuid AND e.deleted_at IS NULL GROUP BY t.source ORDER BY t.source`,
     ),
   }))
 }

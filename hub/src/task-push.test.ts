@@ -101,6 +101,8 @@ test('task push persists ids only after each successful batch and retries an unp
           id: string
           legacy_local_id: number
           newly_assigned: boolean
+          task_id: string | null
+          task_record_id?: string
         }>
       }
       const events = body.statusEvents ?? []
@@ -189,6 +191,8 @@ test('task push adopts a hosted holder id and uses it on the next push', async (
     id: string
     legacy_local_id: number
     newly_assigned: boolean
+    task_id: string | null
+    task_record_id?: string
   }> = []
   let adopted = false
   const stub = async (input: string, init?: RequestInit) => {
@@ -201,6 +205,8 @@ test('task push adopts a hosted holder id and uses it on the next push', async (
           id: string
           legacy_local_id: number
           newly_assigned: boolean
+          task_id: string | null
+          task_record_id?: string
         }>
       }
       const event = body.statusEvents?.[0]
@@ -238,6 +244,10 @@ test('task push adopts a hosted holder id and uses it on the next push', async (
   await pushTasks(options)
 
   expect(sentEvents).toHaveLength(2)
-  expect(sentEvents[0]?.newly_assigned).toBeTrue()
+  expect(sentEvents[0]).toMatchObject({
+    newly_assigned: true,
+    task_id: '01990000-0000-7000-8000-000000000001',
+  })
+  expect(sentEvents[0]).not.toHaveProperty('task_record_id')
   expect(sentEvents[1]).toMatchObject({ id: holderId, newly_assigned: false })
 })

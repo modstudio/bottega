@@ -101,7 +101,7 @@ async function windowFacts(databaseUrl: string, identity: TaskIdentity, from: st
     }>(
       await tx`
       SELECT e.space_id,t.key,t.project,t.title,e.at,e.to_status FROM hub_task_status_event e
-      JOIN hub_task t ON ${hostedTaskJoin(tx, 'e')}
+      JOIN hub_task t ON ${hostedTaskJoin(tx, 'hub_task_status_event', 'e')}
       WHERE e.deleted_at IS NULL AND t.deleted_at IS NULL
         AND e.at >= ${from}::timestamptz AND e.at < ${to}::timestamptz AND e.to_status='done'
       ORDER BY e.at DESC`,
@@ -295,21 +295,21 @@ export async function hostedTaskDetail(
     if (!task) return null
     const comments = rows<Record<string, unknown>>(
       await tx`
-      SELECT c.id,c.body,c.created_at FROM hub_task_comment c JOIN hub_task t ON ${hostedTaskJoin(tx, 'c')}
+      SELECT c.id,c.body,c.created_at FROM hub_task_comment c JOIN hub_task t ON ${hostedTaskJoin(tx, 'hub_task_comment', 'c')}
         WHERE t.id=${String(task.id)}::uuid AND c.space_id=${spaceId}::uuid
         AND c.deleted_at IS NULL ORDER BY c.created_at,c.id`,
     )
     const documents = rows<Record<string, unknown>>(
       await tx`
       SELECT d.id,d.role,d.title,d.body,d.version,d.created_at,d.updated_at
-      FROM hub_task_document d JOIN hub_task t ON ${hostedTaskJoin(tx, 'd')}
+      FROM hub_task_document d JOIN hub_task t ON ${hostedTaskJoin(tx, 'hub_task_document', 'd')}
       WHERE t.id=${String(task.id)}::uuid AND d.space_id=${spaceId}::uuid AND d.deleted_at IS NULL
       ORDER BY d.created_at,d.id`,
     )
     const statusHistory = rows<Record<string, unknown>>(
       await tx`
       SELECT e.id,e.at,e.from_status,e.to_status FROM hub_task_status_event e
-      JOIN hub_task t ON ${hostedTaskJoin(tx, 'e')}
+      JOIN hub_task t ON ${hostedTaskJoin(tx, 'hub_task_status_event', 'e')}
       WHERE t.id=${String(task.id)}::uuid AND e.space_id=${spaceId}::uuid AND e.deleted_at IS NULL
       ORDER BY e.at DESC,e.id`,
     )

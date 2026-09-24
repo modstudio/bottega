@@ -147,7 +147,7 @@ export async function hostedGatherReport(
     const completed = rows<{ task_id: string }>(
       await tx`
       SELECT t.id AS task_id FROM hub_task_status_event e
-      JOIN hub_task t ON ${hostedTaskJoin(tx, 'e')}
+      JOIN hub_task t ON ${hostedTaskJoin(tx, 'hub_task_status_event', 'e')}
       WHERE e.deleted_at IS NULL AND t.deleted_at IS NULL AND e.to_status='done'
         AND e.at >= ${period.from}::timestamptz AND e.at < ${period.to}::timestamptz
         AND (${project}::text IS NULL OR t.project=${project})`,

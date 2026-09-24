@@ -1,6 +1,7 @@
 import { SQL } from 'bun'
 import { newRecordId } from '../../shared/record/schema.ts'
 import { bindTenant } from '../../shared/record/tenant.ts'
+import { hostedTaskReference, taskIdFor } from './hosted-task-reference.ts'
 import {
   confirmSoftDelete,
   createHostedTaskInTransaction,
@@ -187,10 +188,13 @@ export async function patchHostedNote(
     if (!current) return null
     const promotedTask =
       changes.promoted_task === undefined ? current.promoted_task : changes.promoted_task
-    const promotedTaskId = promotedTask
-      ? (rows<{ id: string }>(
-          await tx`SELECT id FROM hub_task WHERE space_id=${identity.spaceId}::uuid AND key=${promotedTask}`,
-        )[0]?.id ?? null)
+    const promotedReference = hostedTaskReference('hub_note', {
+      promoted_task: promotedTask,
+      promoted_task_id:
+        changes.promoted_task === undefined ? (current.promoted_task_id ?? null) : null,
+    })
+    const promotedTaskId = promotedReference.key
+      ? await taskIdFor(tx, identity.spaceId, promotedReference.key, promotedReference.id)
       : null
     return rows<HostedNote>(
       await tx`UPDATE hub_note SET text=${changes.text ?? current.text},
@@ -360,12 +364,9 @@ export async function mirrorHostedNotes(
     await lockNoteNumbers(tx, identity)
     const noteIds: Array<{ number: number; id: string }> = []
     for (const row of body.notes) {
-      const promotedTaskId = row.promoted_task
-        ? (rows<{ id: string }>(
-            await tx`SELECT id FROM hub_task WHERE space_id=${identity.spaceId}::uuid
-              AND (id=${row.promoted_task_id ?? null}::uuid OR key=${row.promoted_task})
-              ORDER BY (id=${row.promoted_task_id ?? null}::uuid) DESC LIMIT 1`,
-          )[0]?.id ?? null)
+      const promotedReference = hostedTaskReference('hub_note', row)
+      const promotedTaskId = promotedReference.key
+        ? await taskIdFor(tx, identity.spaceId, promotedReference.key, promotedReference.id)
         : null
       const inserted = rows<{ number: number; id: string }>(
         await tx`INSERT INTO hub_note

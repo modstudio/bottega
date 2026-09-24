@@ -24,6 +24,7 @@ type MirroredChild = {
   id: string
   record_id: string | null
   task_key: string
+  task_id: string | null
   legacy_local_id: number
   newly_assigned: boolean
   project_name: string
@@ -177,10 +178,12 @@ export async function pushTasks(options: Options = {}) {
   const child = (table: string): MirroredChild[] => {
     const rows = db().query<ChildRow, []>(`SELECT * FROM ${table} ORDER BY id`).all()
     return rows.map((row) => {
+      const { task_record_id: taskId, ...hosted } = row
       return {
-        ...row,
+        ...hosted,
         id: row.record_id ?? newRecordId(),
         record_id: row.record_id,
+        task_id: taskId,
         legacy_local_id: row.id,
         newly_assigned: row.record_id === null,
         project_name: taskByKey.get(row.task_key)?.project_name ?? '',

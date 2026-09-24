@@ -70,7 +70,7 @@ export async function loadHostedMeasureRows(
       await tx`
       SELECT t.id AS task_id, e.task_key, t.project, e.at, e.to_status
       FROM hub_task_status_event e
-      JOIN hub_task t ON ${hostedTaskJoin(tx, 'e')}
+      JOIN hub_task t ON ${hostedTaskJoin(tx, 'hub_task_status_event', 'e')}
       WHERE e.deleted_at IS NULL AND t.deleted_at IS NULL
         AND e.at >= ${window.from}::timestamptz AND e.at < ${window.to}::timestamptz
         AND e.to_status='done'`,
