@@ -24,7 +24,12 @@ import { ANSWER_CHANNEL_CLI, ANSWERER_KIND_EVAL } from '../run/question-vocabula
 import { run } from '../run/run.ts'
 import { auditRunMutation, runMutationActor } from '../run/run-authority.ts'
 import { checkDoc, compilePack } from './canon.ts'
-import { type CanonEvalProject, decideCanonEvalPack, EMPTY_CANON_SHA } from './canon-eval-pack.ts'
+import {
+  type CanonEvalProject,
+  decideCanonEvalPack,
+  EMPTY_CANON_SHA,
+  resolveCanonEvalProject,
+} from './canon-eval-pack.ts'
 import { DEFAULT_EVAL_AGENT } from './canon-eval-status.ts'
 
 const CANON_EVAL_LENS = 'canon-eval'
@@ -317,22 +322,20 @@ function createScratchRepo(ev: CanonEval): { repo: string; mainHead: string } {
 }
 
 function evalProject(input: { project?: string; cwd: string }): CanonEvalProject {
-  return decideCanonEvalPack({
+  return resolveCanonEvalProject({
     requestedProjectName: input.project,
     requestedProject: input.project ? projectByName(input.project) : null,
     cwdProject: projectAt(input.cwd),
-  }).project
+  })
 }
 
-function evalPack(ev: CanonEval, project: CanonEvalProject): ReturnType<typeof compilePack> {
+function evalPack(
+  ev: CanonEval,
+  project: CanonEvalProject,
+): { pack: ReturnType<typeof compilePack>; canonSha: string } {
   const pack = compilePack({ job: ev.job, cwd: project.path })
-  decideCanonEvalPack({
-    requestedProjectName: project.name,
-    requestedProject: project,
-    cwdProject: null,
-    pack,
-  })
-  return pack
+  const decision = decideCanonEvalPack({ project, pack })
+  return { pack, canonSha: decision.canonSha }
 }
 
 /** Compile the pack an eval would receive without creating or running its scratch repository. */
@@ -341,7 +344,7 @@ export function currentCanonEvalSha(
   opts: { project?: string; cwd?: string } = {},
 ): string {
   const project = evalProject({ project: opts.project, cwd: opts.cwd ?? process.cwd() })
-  return evalPack(ev, project).sha256
+  return evalPack(ev, project).canonSha
 }
 
 function parseEvalReply(
@@ -472,15 +475,15 @@ export async function runCanonEvals(opts: {
   return withHermeticGitEnv(async () => {
     const results: CanonEvalRecord[] = []
     for (const ev of selected) {
-      const pack = evalPack(ev, project)
+      const { pack, canonSha } = evalPack(ev, project)
       const { repo, mainHead } = createScratchRepo(ev)
       try {
         const prior = lastPassSha(ev.slug, agent)
-        if (!opts.force && prior === pack.sha256) {
+        if (!opts.force && prior === canonSha) {
           results.push({
             slug: ev.slug,
             runId: null,
-            canonSha: pack.sha256,
+            canonSha,
             agent,
             model: null,
             pass: null,
@@ -521,7 +524,7 @@ export async function runCanonEvals(opts: {
           insertEval({
             slug: ev.slug,
             runId: result.id,
-            canonSha: row.canon_sha ?? pack.sha256,
+            canonSha: row.canon_sha ?? canonSha,
             agent: result.agent,
             model: row.model,
             pass,
@@ -531,7 +534,7 @@ export async function runCanonEvals(opts: {
         results.push({
           slug: ev.slug,
           runId: result.id,
-          canonSha: row.canon_sha ?? pack.sha256,
+          canonSha: row.canon_sha ?? canonSha,
           agent: result.agent,
           model: row.model,
           pass,

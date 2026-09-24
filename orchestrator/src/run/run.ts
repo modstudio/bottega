@@ -109,6 +109,7 @@ import { runLive } from './run-live.ts'
 import * as mcpAttachment from './run-mcp-attachment.ts'
 import { finalWorkerMcpRuling } from './run-mcp-attachment-record.ts'
 import { enforceRunMcpGrammar } from './run-mcp-grammar.ts'
+import { operatorKnowledgeSection } from './run-pack-prompt.ts'
 import { refuseUnstartedRun } from './run-prelaunch-refusal.ts'
 import { bindSignals, childEnv, sha } from './run-process.ts'
 import { runInfrastructurePrompt } from './run-readonly-infrastructure.ts'
@@ -485,9 +486,7 @@ export async function run(opts: {
       })
     }
   }
-  const docsSection = pack?.docs.length
-    ? `WHAT THE OPERATOR WANTS YOU TO KNOW\n\n${pack.markdown}`
-    : ''
+  const docsSection = operatorKnowledgeSection(pack ?? null)
   let prompt =
     writesJob && (!opts.resume || opts.resume.fresh)
       ? [
