@@ -30,6 +30,7 @@ import {
   EMPTY_CANON_SHA,
   resolveCanonEvalProject,
 } from './canon-eval-pack.ts'
+import { releaseEvalOwnedScratchWorktree } from './canon-eval-scratch.ts'
 import { DEFAULT_EVAL_AGENT } from './canon-eval-status.ts'
 
 const CANON_EVAL_LENS = 'canon-eval'
@@ -477,6 +478,7 @@ export async function runCanonEvals(opts: {
     for (const ev of selected) {
       const { pack, canonSha } = evalPack(ev, project)
       const { repo, mainHead } = createScratchRepo(ev)
+      let runId: number | null = null
       try {
         const prior = lastPassSha(ev.slug, agent)
         if (!opts.force && prior === canonSha) {
@@ -503,6 +505,7 @@ export async function runCanonEvals(opts: {
           lens: JOBS[ev.job]?.findings ? CANON_EVAL_LENS : undefined,
           label: `canon-eval:${ev.slug}`,
         })
+        runId = result.id
         const reply = parseEvalReply(ev, result.output, result.contract)
         const checked = ev.check(reply)
         const extra = extraAssertions(ev, reply, repo, mainHead, result.id)
@@ -543,7 +546,11 @@ export async function runCanonEvals(opts: {
           at: nowIso(),
         })
       } finally {
-        rmSync(repo, { recursive: true, force: true })
+        try {
+          await releaseEvalOwnedScratchWorktree(repo, runId)
+        } finally {
+          rmSync(repo, { recursive: true, force: true })
+        }
       }
     }
     return results

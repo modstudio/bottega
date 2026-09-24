@@ -43,6 +43,8 @@ export type CleanupOptions = {
   force: boolean
   auditReason: string | null
   presentation: CleanupPresentation
+  /** In-process only: eval-owned scratch is reclaimable. Not a CLI flag. */
+  evalOwnedScratch?: boolean
 }
 
 export type CleanupRow = {
@@ -562,6 +564,7 @@ export function discardWorktree(
  */
 
 export async function discardRun(id: number, options: CleanupOptions): Promise<void> {
+  const force = options.force || options.evalOwnedScratch === true
   let authority = authorizeRunMutation(id, 'discard')
   const rootRow = db()
     .query(
@@ -618,7 +621,7 @@ export async function discardRun(id: number, options: CleanupOptions): Promise<v
           worktree_source: artifact.worktree_source ?? rootRow.worktree_source,
         },
         'discarded',
-        options.force,
+        force,
         authority,
         options,
       )
@@ -634,7 +637,7 @@ export async function discardRun(id: number, options: CleanupOptions): Promise<v
     worktree_source: rootRow.worktree_source ?? artifact?.worktree_source ?? null,
   }
   if (!row.worktree) {
-    if (!options.force || !row.branch_kept) {
+    if (!force || !row.branch_kept) {
       throw new Error(`run ${id} has no worktree to discard`)
     }
     const repoRoot = cleanupRepoRoot(row)
@@ -687,6 +690,6 @@ export async function discardRun(id: number, options: CleanupOptions): Promise<v
     return
   }
 
-  await discardWorktree(row as CleanupRow, 'discarded', options.force, authority, options)
+  await discardWorktree(row as CleanupRow, 'discarded', force, authority, options)
   return
 }
