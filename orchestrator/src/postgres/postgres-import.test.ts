@@ -302,7 +302,9 @@ realPostgres('project import against copied live SQLite data', () => {
         .all()
         .map((row) => [row.id, row.attempts]),
     )
-    source.query('UPDATE outbox SET synced_at=NULL').run()
+    source
+      .query("UPDATE outbox SET synced_at=NULL WHERE synced_at IS NOT NULL AND kind <> 'score'")
+      .run()
     // The copy carries real started_by ids, whose users exist in the live record
     // and not in this fresh database, so the run foreign key would refuse them.
     // Stand-ins with those ids make the copy's attribution replayable here.
@@ -324,7 +326,15 @@ realPostgres('project import against copied live SQLite data', () => {
         .all()
         .map((project) => [project.name, PLATFORM_SPACE_ID]),
     )
+    const refusedHistoryRows: Array<{
+      id: number
+      kind: string
+      attempts: number
+      last_error: string
+    }> = []
+    let replayPasses = 0
     while (true) {
+      replayPasses++
       const synced = await syncRecord({
         recordUrl: actorUrl!,
         local: source,
@@ -352,6 +362,14 @@ realPostgres('project import against copied live SQLite data', () => {
       const unexpected = refused.filter((row) => !historyIds.has(row.id))
       expect(unexpected).toEqual([])
       if (refused.length === 0 || unexpected.length > 0) break
+      refusedHistoryRows.push(...refused)
+      if (replayPasses >= 25) {
+        throw new Error(
+          `live-copy history replay exceeded 25 passes:\n${refusedHistoryRows
+            .map((row) => `${row.id} ${row.kind}: ${row.last_error}`)
+            .join('\n')}`,
+        )
+      }
       for (const row of refused) {
         source.query('UPDATE outbox SET synced_at=? WHERE id=?').run('history-refused', row.id)
       }
