@@ -23,6 +23,7 @@ type MirroredChild = {
   record_id: string | null
   task_key: string
   legacy_local_id: number
+  newly_assigned: boolean
   project_name: string
   deleted_at: null
   [key: string]: unknown
@@ -37,6 +38,7 @@ type PushCollections = {
       project: string
       project_name: string
       source: string
+      newly_assigned?: boolean
     }
   >
   comments: Array<Record<string, unknown> & { task_key: string; project_name: string }>
@@ -108,15 +110,30 @@ function sourceCounts<T>(values: T[], source: (row: T) => string | undefined) {
   return Object.fromEntries([...counts].sort(([a], [b]) => a.localeCompare(b)))
 }
 
-function persistMirrorAdoptions(
+function persistMirrorBatch(
+  name: keyof PushCollections,
+  rows: Array<Record<string, unknown>>,
   adoptions: Array<{
     table: 'task_comment' | 'task_document' | 'task_status_event'
     legacy_local_id: number
     id: string
   }>,
 ) {
-  if (!adoptions.length) return
+  const newlyAssigned = rows.filter((row) => row.newly_assigned === true)
+  if (!newlyAssigned.length && !adoptions.length) return
   writeTransaction((conn) => {
+    if (name === 'tasks') {
+      const update = conn.query(`UPDATE task SET record_id=? WHERE key=? AND record_id IS NULL`)
+      for (const row of newlyAssigned) update.run(row.id as string, row.key as string)
+    } else {
+      const table = {
+        comments: 'task_comment',
+        documents: 'task_document',
+        statusEvents: 'task_status_event',
+      }[name]
+      const update = conn.query(`UPDATE ${table} SET record_id=? WHERE id=? AND record_id IS NULL`)
+      for (const row of newlyAssigned) update.run(row.id as string, row.legacy_local_id as number)
+    }
     for (const adoption of adoptions)
       conn
         .query(`UPDATE ${adoption.table} SET record_id=? WHERE id=?`)
@@ -126,9 +143,9 @@ function persistMirrorAdoptions(
 
 export async function pushTasks(options: Options = {}) {
   const taskRows = db().query<TaskRow, []>(`SELECT * FROM task ORDER BY key`).all()
-  const taskRecordIds = new Map(taskRows.map((row) => [row.key, row.record_id]))
   const tasks = taskRows.map((row) => ({
     id: row.record_id ?? newRecordId(),
+    newly_assigned: row.record_id === null,
     key: row.key,
     project: row.project,
     project_name: row.project,
@@ -148,10 +165,8 @@ export async function pushTasks(options: Options = {}) {
     deleted_at: null,
   }))
   const taskByKey = new Map(tasks.map((row) => [row.key, row]))
-  const childRecordIds = new Map<string, Map<number, string | null>>()
   const child = (table: string): MirroredChild[] => {
     const rows = db().query<ChildRow, []>(`SELECT * FROM ${table} ORDER BY id`).all()
-    childRecordIds.set(table, new Map(rows.map((row) => [row.id, row.record_id])))
     return rows.map((row) => ({
       ...row,
       id: row.record_id ?? newRecordId(),
@@ -179,19 +194,10 @@ export async function pushTasks(options: Options = {}) {
     identity,
   )
   const active = selected.rows
-  const missingTaskIds = active.tasks.filter((row) => taskRecordIds.get(row.key) === null)
-  const missingChildIds = (
-    [
-      ['task_comment', active.comments],
-      ['task_document', active.documents],
-      ['task_status_event', active.statusEvents],
-    ] as const
-  ).flatMap(([table, rows]) =>
-    rows
-      .filter((row) => childRecordIds.get(table)?.get(row.legacy_local_id as number) === null)
-      .map((row) => ({ table, row })),
+  const assignedRecordIds = Object.values(active).reduce(
+    (count, rows) => count + rows.filter((row) => row.newly_assigned === true).length,
+    0,
   )
-  const assignedRecordIds = missingTaskIds.length + missingChildIds.length
   const selectedTaskByKey = new Map(active.tasks.map((row) => [row.key, row]))
   const local = {
     task: sourceCounts(active.tasks, (row) => row.source),
@@ -210,25 +216,17 @@ export async function pushTasks(options: Options = {}) {
   }
   if (options.dryRun)
     return { local, skipped: selected.skipped, assignedRecordIds, hosted: null, match: null }
-  if (assignedRecordIds)
-    writeTransaction((conn) => {
-      const taskUpdate = conn.query(`UPDATE task SET record_id=? WHERE key=?`)
-      for (const row of missingTaskIds) taskUpdate.run(row.id as string, row.key)
-      for (const { table, row } of missingChildIds)
-        conn
-          .query(`UPDATE ${table} SET record_id=? WHERE id=?`)
-          .run(row.id as string, row.legacy_local_id as number)
-    })
   for (const [name, rows] of Object.entries(active))
     for (let index = 0; index < rows.length; index += 500) {
+      const batch = rows.slice(index, index + 500)
       const response = await hostedMirrorTasks(
         {
-          tasks: name === 'tasks' ? rows.slice(index, index + 500) : [],
-          [name]: rows.slice(index, index + 500),
+          tasks: name === 'tasks' ? batch : [],
+          [name]: batch,
         },
         requestOptions,
       )
-      persistMirrorAdoptions(response.adoptions ?? [])
+      persistMirrorBatch(name as keyof PushCollections, batch, response.adoptions ?? [])
     }
   const maxima = new Map<string, { project: string; prefix: string; next: number }>()
   for (const task of active.tasks) {

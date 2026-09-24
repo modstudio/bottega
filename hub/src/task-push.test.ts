@@ -74,33 +74,57 @@ test('task push selects active-space projects and reports every skipped project 
   ])
 })
 
-test('task push persists generated record ids and a dry run leaves them unassigned', async () => {
+test('task push persists ids only after each successful batch and retries an unpersisted batch', async () => {
   const at = '2026-09-24T12:00:00.000Z'
   writeTransaction((conn) => {
     conn
-      .query(`INSERT INTO task(key,project,title,status,status_category,source,first_seen,last_seen)
-        VALUES ('LOC-885','workshop','Push ids','open','open','local',?,?)`)
+      .query(`INSERT INTO task(record_id,key,project,title,status,status_category,source,first_seen,last_seen)
+        VALUES ('01990000-0000-7000-8000-000000000001','LOC-885','workshop','Push ids','open','open','local',?,?)`)
       .run(at, at)
-    conn
-      .query(`INSERT INTO task_comment(task_key,body,created_at) VALUES ('LOC-885','body',?)`)
-      .run(at)
-    conn
-      .query(`INSERT INTO task_document(task_key,title,body,version,created_at,updated_at)
-        VALUES ('LOC-885','title','body','v1',?,?)`)
-      .run(at, at)
-    conn
-      .query(`INSERT INTO task_status_event(task_key,at,from_status,to_status)
-        VALUES ('LOC-885',?,NULL,'open')`)
-      .run(at)
+    const insert = conn.query(
+      `INSERT INTO task_status_event(task_key,at,from_status,to_status)
+       VALUES ('LOC-885',?,NULL,'open')`,
+    )
+    for (let index = 0; index < 501; index++)
+      insert.run(new Date(Date.parse(at) + index).toISOString())
   })
-  const mirrorBodies: Record<string, unknown>[] = []
+  const holderId = '01990000-0000-7000-8000-000000000099'
+  let statusBatch = 0
+  let failSecondBatch = true
   const stub = async (input: string, init?: RequestInit) => {
     const path = new URL(input).pathname
     if (path === '/v1/tasks/identity')
       return Response.json({ activeSpaceId: 'space-a', memberships: [] })
     if (path === '/v1/tasks/mirror') {
-      mirrorBodies.push(JSON.parse(String(init?.body)))
-      return Response.json({ upserted: 1 })
+      const body = JSON.parse(String(init?.body)) as {
+        statusEvents?: Array<{
+          id: string
+          legacy_local_id: number
+          newly_assigned: boolean
+        }>
+      }
+      const events = body.statusEvents ?? []
+      if (!events.length) return Response.json({ upserted: 0, adoptions: [] })
+      statusBatch++
+      if (failSecondBatch && statusBatch === 2)
+        return Response.json({ error: 'simulated second batch failure' }, { status: 409 })
+      const last = events.find((event) => event.legacy_local_id === 501)
+      if (!last) return Response.json({ upserted: events.length, adoptions: [] })
+      if (!last.newly_assigned)
+        return Response.json(
+          { error: 'existing holder refused a persisted fresh id' },
+          { status: 409 },
+        )
+      return Response.json({
+        upserted: events.length,
+        adoptions: [
+          {
+            table: 'task_status_event',
+            legacy_local_id: last.legacy_local_id,
+            id: holderId,
+          },
+        ],
+      })
     }
     if (path === '/v1/tasks/counts') return Response.json({})
     return Response.json({ error: 'unexpected request' }, { status: 500 })
@@ -108,34 +132,40 @@ test('task push persists generated record ids and a dry run leaves them unassign
   const options = { baseUrl: 'https://hub.example.test', token: 'test', fetch: stub }
 
   const dryRun = await pushTasks({ ...options, dryRun: true })
-  expect(dryRun.assignedRecordIds).toBe(4)
-  for (const table of ['task', 'task_comment', 'task_document', 'task_status_event'])
-    expect(
-      db().query<{ record_id: string | null }, []>(`SELECT record_id FROM ${table}`).get()
-        ?.record_id,
-    ).toBeNull()
+  expect(dryRun.assignedRecordIds).toBe(501)
+  expect(
+    db()
+      .query<{ count: number }, []>(
+        `SELECT count(*) count FROM task_status_event WHERE record_id IS NOT NULL`,
+      )
+      .get()?.count,
+  ).toBe(0)
 
-  await pushTasks(options)
-  const firstIds = mirrorBodies
-    .flatMap((body) =>
-      ['tasks', 'comments', 'documents', 'statusEvents'].flatMap((name) => body[name] ?? []),
-    )
-    .map((row) => (row as { id: string }).id)
-  mirrorBodies.length = 0
-  await pushTasks(options)
-  const secondIds = mirrorBodies
-    .flatMap((body) =>
-      ['tasks', 'comments', 'documents', 'statusEvents'].flatMap((name) => body[name] ?? []),
-    )
-    .map((row) => (row as { id: string }).id)
+  await expect(pushTasks(options)).rejects.toThrow('simulated second batch failure')
+  expect(
+    db()
+      .query<{ count: number }, []>(
+        `SELECT count(*) count FROM task_status_event WHERE record_id IS NOT NULL`,
+      )
+      .get()?.count,
+  ).toBe(500)
 
-  expect(firstIds).toHaveLength(4)
-  expect(secondIds).toEqual(firstIds)
-  for (const table of ['task', 'task_comment', 'task_document', 'task_status_event'])
-    expect(
-      db().query<{ record_id: string | null }, []>(`SELECT record_id FROM ${table}`).get()
-        ?.record_id,
-    ).toBeString()
+  failSecondBatch = false
+  statusBatch = 0
+  await pushTasks(options)
+
+  expect(
+    db()
+      .query<{ count: number }, []>(
+        `SELECT count(*) count FROM task_status_event WHERE record_id IS NOT NULL`,
+      )
+      .get()?.count,
+  ).toBe(501)
+  expect(
+    db()
+      .query<{ record_id: string }, []>(`SELECT record_id FROM task_status_event WHERE id=501`)
+      .get()?.record_id,
+  ).toBe(holderId)
 })
 
 test('task push adopts a hosted holder id and uses it on the next push', async () => {
