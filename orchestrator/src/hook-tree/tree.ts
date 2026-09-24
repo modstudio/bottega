@@ -162,13 +162,24 @@ export function createHookTree(input: {
 
 export function removeHookTree(requestedPath: string): void {
   const wanted = canonicalPath(requestedPath)
-  const owners = (
+  const recordedOwners = (
     db().query(`SELECT id,job,worktree FROM run WHERE worktree IS NOT NULL ORDER BY id`).all() as {
       id: number
       job: string
       worktree: string
     }[]
   ).filter((row) => canonicalPath(row.worktree) === wanted)
+  const owners = recordedOwners.length
+    ? recordedOwners
+    : (
+        db()
+          .query(
+            `SELECT run.id,run.job,resource_claim.allocation_key worktree
+             FROM resource_claim JOIN run ON run.id=resource_claim.root_run_id
+             WHERE resource_claim.kind='worktree' ORDER BY run.id`,
+          )
+          .all() as { id: number; job: string; worktree: string }[]
+      ).filter((row) => isSyntheticLifecycleJob(row.job) && canonicalPath(row.worktree) === wanted)
   if (!owners.length || owners.every((row) => !isSyntheticLifecycleJob(row.job))) {
     throw new Error(`${requestedPath} is not an architect-owned tree`)
   }
