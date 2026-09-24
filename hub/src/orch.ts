@@ -400,6 +400,7 @@ export type DocRow = {
   title: string
   body: string
   delivery: 'inject' | 'demand'
+  revision: string | null
   created_at: string
   updated_at: string
 }
@@ -424,6 +425,7 @@ export type DocSetInput = {
   body: string
   reason: string
   delivery?: 'inject' | 'demand'
+  expectedRevision?: string
 }
 
 export type DocRevisionMetadata = {
@@ -443,6 +445,7 @@ export type DocArgvInput = {
   body?: string
   reason?: string
   delivery?: 'inject' | 'demand'
+  expectedRevision?: string
 }
 
 export type DocOp = 'list' | 'get' | 'set' | 'remove' | 'history' | 'subjects'
@@ -486,6 +489,7 @@ export function docArgv(op: DocOp, input: DocArgvInput = {}): string[] {
         '--author',
         'hub-dashboard',
         ...(input.delivery ? ['--delivery', input.delivery] : []),
+        ...(input.expectedRevision ? ['--expect', input.expectedRevision] : []),
         '--json',
       ]
     case 'remove':
@@ -500,6 +504,7 @@ export function docArgv(op: DocOp, input: DocArgvInput = {}): string[] {
         input.reason!,
         '--author',
         'hub-dashboard',
+        ...(input.expectedRevision ? ['--expect', input.expectedRevision] : []),
         '--json',
       ]
     case 'history':
@@ -518,8 +523,16 @@ export const docGet = (scope: string, subject: string | null, slug: string) =>
 export const docSet = (input: DocSetInput) =>
   jsonDocument<DocRow>(docArgv('set', input), { stdin: input.body })
 
-export const docRemove = (scope: string, subject: string | null, slug: string, reason: string) =>
-  jsonDocument<{ removed: boolean }>(docArgv('remove', { scope, subject, slug, reason }))
+export const docRemove = (
+  scope: string,
+  subject: string | null,
+  slug: string,
+  reason: string,
+  expectedRevision?: string,
+) =>
+  jsonDocument<{ removed: boolean }>(
+    docArgv('remove', { scope, subject, slug, reason, expectedRevision }),
+  )
 
 export const docHistory = (scope: string, subject: string | null, slug: string) =>
   jsonDocument<DocRevisionMetadata[]>(docArgv('history', { scope, subject, slug }))

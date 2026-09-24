@@ -124,7 +124,13 @@ function DocPage() {
     }
     if (!scoped) return
     if (!reason.trim()) return
-    remove.mutate({ scope, subject, slug, reason })
+    remove.mutate({
+      scope,
+      subject,
+      slug,
+      reason,
+      expectedRevision: doc.data?.revision ?? undefined,
+    })
   }
 
   if (!scoped) {
@@ -166,7 +172,18 @@ function DocPage() {
               <Button
                 variant="primary"
                 size="sm"
-                onClick={() => save.mutate({ scope, subject, slug, title, body, delivery, reason })}
+                onClick={() =>
+                  save.mutate({
+                    scope,
+                    subject,
+                    slug,
+                    title,
+                    body,
+                    delivery,
+                    reason,
+                    expectedRevision: doc.data?.revision ?? undefined,
+                  })
+                }
                 disabled={save.isPending || !title || !reason.trim()}
               >
                 <Save size={14} />

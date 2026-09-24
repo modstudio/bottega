@@ -299,6 +299,20 @@ describe('docArgv', () => {
     ])
   })
 
+  test('set includes expect exactly when an expected revision is given', () => {
+    const argv = docArgv('set', {
+      scope: 'canon',
+      subject: 'alpha',
+      slug: '.agents/rules/docs.md',
+      title: 'Docs',
+      reason: 'updated',
+      expectedRevision: 'revision-1',
+    })
+    const expectAt = argv.indexOf('--expect')
+    expect(argv.filter((argument) => argument === '--expect')).toHaveLength(1)
+    expect(argv.slice(expectAt, expectAt + 2)).toEqual(['--expect', 'revision-1'])
+  })
+
   test('remove without subject', () => {
     expect(
       docArgv('remove', { scope: 'machine', subject: null, slug: 'host', reason: 'why' }),
@@ -333,6 +347,19 @@ describe('docArgv', () => {
       'hub-dashboard',
       '--json',
     ])
+  })
+
+  test('remove includes expect exactly when an expected revision is given', () => {
+    const argv = docArgv('remove', {
+      scope: 'canon',
+      subject: 'alpha',
+      slug: '.agents/rules/docs.md',
+      reason: 'obsolete',
+      expectedRevision: 'revision-1',
+    })
+    const expectAt = argv.indexOf('--expect')
+    expect(argv.filter((argument) => argument === '--expect')).toHaveLength(1)
+    expect(argv.slice(expectAt, expectAt + 2)).toEqual(['--expect', 'revision-1'])
   })
 
   test('subjects', () => {
