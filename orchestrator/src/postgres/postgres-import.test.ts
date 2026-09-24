@@ -15,6 +15,7 @@ import { PROJECT_SETTINGS_NOT_IMPORTED } from '../record/record-project-columns.
 import { syncRecord } from '../record/record-sync.ts'
 import { backfillReviewRecords } from '../review/review-outbox.ts'
 import { backfillRunRecords } from '../run/run-outbox.ts'
+import { HOOK_TREE_JOB, LANDING_TREE_JOB } from '../run/synthetic-lifecycle-job.ts'
 import { backfillScoreRecords } from '../score/score-outbox.ts'
 import { importProjects } from './postgres-import.ts'
 import { migratePostgres } from './postgres-migrate.ts'
@@ -391,12 +392,12 @@ realPostgres('project import against copied live SQLite data', () => {
       `live-copy history refused: ${refusedHistory.length}; errors: ${JSON.stringify(refusalMessages)}`,
     )
     const missingOutbox = source
-      .query<{ count: number }, []>(
+      .query<{ count: number }, [string, string]>(
         `SELECT count(*) AS count FROM run r
-         WHERE r.status <> 'running'
+         WHERE r.status <> 'running' AND r.job NOT IN (?,?)
            AND NOT EXISTS (SELECT 1 FROM outbox o WHERE o.kind='run' AND o.record_id=r.record_id)`,
       )
-      .get()!.count
+      .get(HOOK_TREE_JOB, LANDING_TREE_JOB)!.count
     expect(missingOutbox).toBe(0)
     source.close()
   })
