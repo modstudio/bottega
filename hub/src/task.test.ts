@@ -11,6 +11,7 @@ import {
   duplicateScore,
   showTask,
   taskRecord,
+  updateTaskDocument,
 } from './task.ts'
 
 beforeAll(resetFixtureStore)
@@ -166,6 +167,54 @@ describe('local task tracker', () => {
     expect(after.status_category).toBe('open')
     expect(after.body).toBe('Local body')
     expect(after.assignee).toBe('Local Owner')
+  })
+
+  test('updates a synchronized document through its hosted record id', async () => {
+    seed('DEV-884', 'workshop')
+    const at = new Date().toISOString()
+    const recordId = 'hosted-document-884'
+    const inserted = writeTransaction((conn) =>
+      conn
+        .query(
+          `INSERT INTO task_document
+          (record_id,task_key,title,body,version,created_at,updated_at)
+          VALUES (?, 'DEV-884', 'Before', 'Body', 'version-before', ?, ?)`,
+        )
+        .run(recordId, at, at),
+    )
+    const requests: Array<{ method: string | undefined; pathname: string }> = []
+
+    await updateTaskDocument(
+      Number(inserted.lastInsertRowid),
+      { title: 'After' },
+      {
+        hosted: {
+          baseUrl: 'https://hub.example.test',
+          token: 'test',
+          fetch: async (input, init) => {
+            const url = new URL(input)
+            requests.push({ method: init?.method, pathname: url.pathname })
+            return Response.json({
+              id: recordId,
+              legacy_local_id: Number(inserted.lastInsertRowid),
+              task_key: 'DEV-884',
+              project_name: 'workshop',
+              role: null,
+              title: 'After',
+              body: 'Body',
+              version: 'version-after',
+              created_at: at,
+              updated_at: at,
+              deleted_at: null,
+            })
+          },
+        },
+      },
+    )
+
+    expect(requests).toEqual([
+      { method: 'PATCH', pathname: `/v1/tasks/DEV-884/documents/${recordId}` },
+    ])
   })
 
   test('duplicate title matching is deterministic, thresholded, and capped at three', () => {
