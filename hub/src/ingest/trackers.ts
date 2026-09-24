@@ -120,6 +120,13 @@ const trackerTaskLabel = (project: string, key: string) => `${project}\0${key}`
 
 const TRACKER_LABEL_COLLISION = 'tracker label collision'
 
+type TrackerIdentityRow = {
+  record_id: string
+  key: string
+  source: string
+  external_id: string | null
+}
+
 function differs(t: TrackerTask, old: ExistingTask | undefined): boolean {
   if (!old) return true
   return (
@@ -133,12 +140,10 @@ function differs(t: TrackerTask, old: ExistingTask | undefined): boolean {
   )
 }
 
-/** Write the tracker-owned fields without ever replacing a locally-owned task. */
-function upsertTrackerTaskOn(conn: Database, t: TrackerTask, at: string) {
-  type IdentityRow = { record_id: string; key: string; source: string; external_id: string | null }
+function trackerIdentityRow(conn: Database, t: TrackerTask): TrackerIdentityRow | null {
   let row = t.externalId
     ? conn
-        .query<IdentityRow, [string, string]>(
+        .query<TrackerIdentityRow, [string, string]>(
           'SELECT record_id,key,source,external_id FROM task WHERE project=? AND external_id=?',
         )
         .get(t.project, t.externalId)
@@ -146,7 +151,7 @@ function upsertTrackerTaskOn(conn: Database, t: TrackerTask, at: string) {
 
   if (!row && t.externalId) {
     row = conn
-      .query<IdentityRow, [string, string]>(
+      .query<TrackerIdentityRow, [string, string]>(
         `SELECT record_id,key,source,external_id FROM task
          WHERE project=? AND key=? AND external_id IS NULL`,
       )
@@ -154,94 +159,107 @@ function upsertTrackerTaskOn(conn: Database, t: TrackerTask, at: string) {
   }
   if (!row && !t.externalId) {
     row = conn
-      .query<IdentityRow, [string, string]>(
+      .query<TrackerIdentityRow, [string, string]>(
         'SELECT record_id,key,source,external_id FROM task WHERE project=? AND key=?',
       )
       .get(t.project, t.key)
   }
-  if (row?.source === 'local') return
+  return row
+}
 
-  if (row) {
-    const collision =
-      row.key === t.key
-        ? null
-        : conn
-            .query<{ record_id: string }, [string, string, string]>(
-              'SELECT record_id FROM task WHERE project=? AND key=? AND record_id<>?',
-            )
-            .get(t.project, t.key, row.record_id)
-    if (collision) {
-      console.error(
-        `tracker label collision project=${t.project} external_id=${t.externalId} incoming=${t.key} held_by=${collision.record_id}; keeping ${row.key}`,
-      )
-      conn
-        .query(
-          `INSERT INTO task_identity_migration_repairs
-             (table_name,row_id,task_key,old_record_id,new_record_id,old_external_id,new_external_id,reason,projects)
-           VALUES ('task',?,?,?,?,?,?,?,?)
-           ON CONFLICT(table_name,row_id,reason) DO UPDATE SET
-             task_key=excluded.task_key,old_record_id=excluded.old_record_id,
-             new_record_id=excluded.new_record_id,old_external_id=excluded.old_external_id,
-             new_external_id=excluded.new_external_id,projects=excluded.projects`,
-        )
-        .run(
-          row.record_id,
-          t.key,
-          row.record_id,
-          collision.record_id,
-          row.external_id,
-          t.externalId,
-          TRACKER_LABEL_COLLISION,
-          t.project,
-        )
-    } else {
-      conn
-        .query(
-          `DELETE FROM task_identity_migration_repairs
-           WHERE table_name='task' AND row_id=? AND reason=?`,
-        )
-        .run(row.record_id, TRACKER_LABEL_COLLISION)
-    }
+function trackerLabelAfterCollisionCheck(
+  conn: Database,
+  t: TrackerTask,
+  row: TrackerIdentityRow,
+): string {
+  const collision =
+    row.key === t.key
+      ? null
+      : conn
+          .query<{ record_id: string }, [string, string, string]>(
+            'SELECT record_id FROM task WHERE project=? AND key=? AND record_id<>?',
+          )
+          .get(t.project, t.key, row.record_id)
+  if (collision) {
+    console.error(
+      `tracker label collision project=${t.project} external_id=${t.externalId} incoming=${t.key} held_by=${collision.record_id}; keeping ${row.key}`,
+    )
     conn
       .query(
-        `UPDATE task SET external_id=COALESCE(?,external_id), key=?, title=?, status=?,
-           status_category=?, updated_at=COALESCE(?,updated_at), assignee=?, closed_at=?,
-           source='mcp', last_seen=? WHERE record_id=?`,
+        `INSERT INTO task_identity_migration_repairs
+           (table_name,row_id,task_key,old_record_id,new_record_id,old_external_id,new_external_id,reason,projects)
+         VALUES ('task',?,?,?,?,?,?,?,?)
+         ON CONFLICT(table_name,row_id,reason) DO UPDATE SET
+           task_key=excluded.task_key,old_record_id=excluded.old_record_id,
+           new_record_id=excluded.new_record_id,old_external_id=excluded.old_external_id,
+           new_external_id=excluded.new_external_id,projects=excluded.projects`,
       )
       .run(
-        t.externalId,
-        collision ? row.key : t.key,
-        t.title,
-        t.status,
-        t.category,
-        t.updatedAt,
-        t.assignee,
-        t.category === 'done' ? at : null,
-        at,
         row.record_id,
-      )
-  } else {
-    conn
-      .query(
-        `INSERT INTO task (record_id, external_id, key, project, title, status, status_category,
-          updated_at, assignee, closed_at, source, first_seen, last_seen)
-         VALUES (?,?,?,?,?,?,?,?,?,?, 'mcp', ?, ?)`,
-      )
-      .run(
-        newRecordId(),
-        t.externalId,
         t.key,
+        row.record_id,
+        collision.record_id,
+        row.external_id,
+        t.externalId,
+        TRACKER_LABEL_COLLISION,
         t.project,
-        t.title,
-        t.status,
-        t.category,
-        t.updatedAt,
-        t.assignee,
-        t.category === 'done' ? at : null,
-        at,
-        at,
       )
+    return row.key
   }
+  conn
+    .query(
+      `DELETE FROM task_identity_migration_repairs
+       WHERE table_name='task' AND row_id=? AND reason=?`,
+    )
+    .run(row.record_id, TRACKER_LABEL_COLLISION)
+  return t.key
+}
+
+function updateTrackerTask(conn: Database, t: TrackerTask, row: TrackerIdentityRow, at: string) {
+  conn
+    .query(
+      `UPDATE task SET external_id=COALESCE(?,external_id), key=?, title=?, status=?,
+         status_category=?, updated_at=COALESCE(?,updated_at), assignee=?, closed_at=?,
+         source='mcp', last_seen=? WHERE record_id=?`,
+    )
+    .run(
+      t.externalId,
+      trackerLabelAfterCollisionCheck(conn, t, row),
+      t.title,
+      t.status,
+      t.category,
+      t.updatedAt,
+      t.assignee,
+      t.category === 'done' ? at : null,
+      at,
+      row.record_id,
+    )
+}
+
+function insertTrackerTask(conn: Database, t: TrackerTask, at: string) {
+  conn
+    .query(
+      `INSERT INTO task (record_id, external_id, key, project, title, status, status_category,
+        updated_at, assignee, closed_at, source, first_seen, last_seen)
+       VALUES (?,?,?,?,?,?,?,?,?,?, 'mcp', ?, ?)`,
+    )
+    .run(
+      newRecordId(),
+      t.externalId,
+      t.key,
+      t.project,
+      t.title,
+      t.status,
+      t.category,
+      t.updatedAt,
+      t.assignee,
+      t.category === 'done' ? at : null,
+      at,
+      at,
+    )
+}
+
+function refreshTrackerClaim(conn: Database, t: TrackerTask, at: string) {
   const resolved = t.externalId
     ? conn
         .query<{ key: string; external_id: string }, [string, string]>(
@@ -253,13 +271,23 @@ function upsertTrackerTaskOn(conn: Database, t: TrackerTask, at: string) {
           'SELECT key,external_id FROM task WHERE project=? AND key=?',
         )
         .get(t.project, t.key)
-  if (resolved?.external_id)
+  if (resolved?.external_id) {
     claimTaskIdentity(conn, {
       project: t.project,
       externalId: resolved.external_id,
       key: resolved.key,
       at,
     })
+  }
+}
+
+/** Write the tracker-owned fields without ever replacing a locally-owned task. */
+function upsertTrackerTaskOn(conn: Database, t: TrackerTask, at: string) {
+  const row = trackerIdentityRow(conn, t)
+  if (row?.source === 'local') return
+  if (row) updateTrackerTask(conn, t, row, at)
+  else insertTrackerTask(conn, t, at)
+  refreshTrackerClaim(conn, t, at)
 }
 
 export function upsertTrackerTask(t: TrackerTask, at = nowIso()) {

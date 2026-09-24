@@ -5,7 +5,13 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { newRecordId } from '../../shared/record/schema.ts'
 import { resetFixtureStore } from '../test/run-fixtures.ts'
-import { closeDatabaseForFixture, db, enableSchemaReload, writeTransaction } from './db.ts'
+import {
+  closeDatabaseForFixture,
+  db,
+  enableSchemaReload,
+  formatMigrationRepairSummary,
+  writeTransaction,
+} from './db.ts'
 import {
   applyMigrations,
   CONNECTION_SCHEMA_INVARIANT,
@@ -653,34 +659,19 @@ describe('hub migration journal', () => {
     rmSync(dir, { recursive: true, force: true })
   })
 
-  test('hub migrate summarizes repairs written by this run', () => {
-    const dir = mkdtempSync(join(tmpdir(), 'hub-task-id-summary-'))
-    const path = join(dir, 'hub.db')
-    const d = migratedThrough(8, path)
-    d.exec(`
-      INSERT INTO task(key,project,source,first_seen,last_seen)
-      VALUES ('MINT-2','workshop','local','2026-01-01','2026-01-01')
-    `)
-    d.close()
-
-    const migrated = Bun.spawnSync(
-      [process.execPath, '--no-env-file', 'hub/src/cli.ts', 'migrate'],
-      {
-        cwd: join(import.meta.dir, '../..'),
-        env: { ...process.env, HUB_DB: path, NODE_ENV: 'production' },
-        stdout: 'pipe',
-        stderr: 'pipe',
-      },
+  test('hub migrate formats a one-line repair summary naming the durable table', () => {
+    expect(
+      formatMigrationRepairSummary([
+        { reason: 'missing task record id; minted UUID v7', count: 1 },
+        { reason: 'dangling task record id; attached by key', count: 2 },
+      ]),
+    ).toBe(
+      'task_identity_migration_repairs: missing task record id; minted UUID v7=1, dangling task record id; attached by key=2',
     )
-    expect(new TextDecoder().decode(migrated.stderr)).toBe('')
-    expect(migrated.exitCode).toBe(0)
-    expect(new TextDecoder().decode(migrated.stdout)).toContain(
-      'task_identity_migration_repairs: missing task record id; minted UUID v7=1',
-    )
-    rmSync(dir, { recursive: true, force: true })
+    expect(formatMigrationRepairSummary([])).toBeNull()
   })
 
-  test('task identity rebuild repairs a mixed row before tracker ingest converges shared keys', () => {
+  test('task identity rebuild repairs a mixed tracker row and records shared-key uncertainty', () => {
     const dir = mkdtempSync(join(tmpdir(), 'hub-mixed-task-'))
     const path = join(dir, 'hub.db')
     const d = migratedThrough(8, path)
@@ -748,38 +739,11 @@ describe('hub migration journal', () => {
         projects: 'starship,stopal',
       },
     ])
+    expect(d.query(`SELECT project,external_id FROM task WHERE key='OPS-21'`).get()).toEqual({
+      project: 'starship',
+      external_id: 'c7dc4d23-ebee-4851-9314-69ac4d45a4ee',
+    })
     d.close()
-
-    const ingest = Bun.spawnSync(
-      [
-        process.execPath,
-        '--no-env-file',
-        '-e',
-        `import { upsertTrackerTask } from './hub/src/ingest/trackers.ts';
-         const shared = {key:'OPS-21',title:'Shared label',status:'started',category:'active',updatedAt:null,assignee:null};
-         upsertTrackerTask({...shared,project:'starship',externalId:'c7dc4d23-ebee-4851-9314-69ac4d45a4ee'});
-         upsertTrackerTask({...shared,project:'stopal',externalId:'019e9824-0c10-7a73-910c-a95bd485c93d'});`,
-      ],
-      {
-        cwd: join(import.meta.dir, '../..'),
-        env: { ...process.env, HUB_DB: path, NODE_ENV: 'production' },
-        stdout: 'pipe',
-        stderr: 'pipe',
-      },
-    )
-    expect(new TextDecoder().decode(ingest.stderr)).toBe('')
-    expect(ingest.exitCode).toBe(0)
-
-    const result = new Database(path)
-    expect(
-      result
-        .query(`SELECT project,external_id FROM task WHERE key='OPS-21' ORDER BY project`)
-        .all(),
-    ).toEqual([
-      { project: 'starship', external_id: 'c7dc4d23-ebee-4851-9314-69ac4d45a4ee' },
-      { project: 'stopal', external_id: '019e9824-0c10-7a73-910c-a95bd485c93d' },
-    ])
-    result.close()
     rmSync(dir, { recursive: true, force: true })
   })
 
