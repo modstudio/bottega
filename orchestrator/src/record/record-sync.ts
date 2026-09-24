@@ -178,13 +178,6 @@ async function bindPrincipal(tx: SQL, principal: RecordPrincipal): Promise<void>
   await tx`SELECT set_config('app.space_id', ${principal.spaceId}, true)`
 }
 
-function backfillLegacyScoreGrades(record: object, kind: keyof typeof recordKinds): void {
-  if (kind !== 'score') return
-  for (const grade of ['reproduced', 'coverage', 'limits', 'overlap']) {
-    if (!Object.hasOwn(record, grade)) Object.assign(record, { [grade]: null })
-  }
-}
-
 function payload(source: string, kind: keyof typeof recordKinds): Payload {
   const parsed = JSON.parse(source) as unknown
   if (parsed === null || typeof parsed !== 'object' || Array.isArray(parsed)) {
@@ -194,7 +187,6 @@ function payload(source: string, kind: keyof typeof recordKinds): Payload {
   if (compatibleProjectKinds.has(kind) && !Object.hasOwn(parsed, 'projectName')) {
     Object.assign(parsed, { projectName: null })
   }
-  backfillLegacyScoreGrades(parsed, kind)
   if (kind === 'run' && !Object.hasOwn(parsed, 'startedByUserId')) {
     Object.assign(parsed, { startedByUserId: null })
   }

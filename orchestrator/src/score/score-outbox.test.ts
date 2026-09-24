@@ -88,9 +88,10 @@ test('score enqueue participates in its caller transaction and skips runs withou
   localOnly.close()
 })
 
-test('score backfill enqueues each hosted score once', () => {
+test('score backfill enqueues a missing hosted score and leaves it alone after sync', () => {
   const database = scoredRun()
   expect(backfillScoreRecords(database, MACHINE_ID)).toBe(1)
+  database.query("UPDATE outbox SET synced_at='2026-09-16T02:00:00.000Z'").run()
   expect(backfillScoreRecords(database, MACHINE_ID)).toBe(0)
   const outbox = database
     .query<{ kind: string; record_id: string; payload: string }, []>('SELECT * FROM outbox')
@@ -98,5 +99,65 @@ test('score backfill enqueues each hosted score once', () => {
   expect(outbox.kind).toBe('score')
   expect(outbox.record_id).toBe(RECORD_ID)
   expect(JSON.parse(outbox.payload)).toMatchObject({ note: 'first', scoredBy: 'architect' })
+  database.close()
+})
+
+test('score backfill rebuilds a legacy pending payload with review grades without changing a synced row', () => {
+  const database = scoredRun()
+  database
+    .query("INSERT INTO review (id, recorded_at) VALUES (7, '2026-09-16T00:30:00.000Z')")
+    .run()
+  database
+    .query(
+      `INSERT INTO review_lens
+       (review_id,run_id,lens,agent,standards_read,files_covered,commands_run,could_not_verify,
+        reproduced,coverage,limits,overlap)
+       VALUES (7,42,'correctness','codex','[]','[]','[]','[]','all','adequate','named','alone')`,
+    )
+    .run()
+  const legacyPayload = JSON.stringify({
+    id: RECORD_ID,
+    spaceId: '01990000-0000-7000-8000-000000000001',
+    machineId: MACHINE_ID,
+    localId: 42,
+    delivery: 'full',
+    quality: 'right',
+    fidelity: 'faithful',
+    note: 'first',
+    scoredAt: STAMP,
+    scoredBy: 'architect',
+    updatedAt: STAMP,
+  })
+  expect(Object.keys(JSON.parse(legacyPayload))).toHaveLength(11)
+  database
+    .query(
+      `INSERT INTO outbox (kind,record_id,payload,created_at)
+       VALUES ('score',?,?,?)`,
+    )
+    .run(RECORD_ID, legacyPayload, STAMP)
+  database
+    .query(
+      `INSERT INTO outbox (kind,record_id,payload,created_at,synced_at)
+       VALUES ('score',?,?,?,'2026-09-16T02:00:00.000Z')`,
+    )
+    .run(RECORD_ID, legacyPayload, STAMP)
+
+  expect(backfillScoreRecords(database, MACHINE_ID)).toBe(1)
+  const rows = database
+    .query<{ payload: string; synced_at: string | null }, []>(
+      'SELECT payload,synced_at FROM outbox ORDER BY id',
+    )
+    .all()
+  expect(JSON.parse(rows[0]!.payload)).toMatchObject({
+    projectName: null,
+    reproduced: 'all',
+    coverage: 'adequate',
+    limits: 'named',
+    overlap: 'alone',
+  })
+  expect(Object.keys(JSON.parse(rows[0]!.payload)).sort()).toEqual(
+    [...SCORE_RECORD_PAYLOAD_COLUMNS].sort(),
+  )
+  expect(rows[1]!.payload).toBe(legacyPayload)
   database.close()
 })

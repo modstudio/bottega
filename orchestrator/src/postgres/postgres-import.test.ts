@@ -291,7 +291,7 @@ realPostgres('project import against copied live SQLite data', () => {
     console.log(
       `live-copy backfill: minted ${backfill.minted}, enqueued ${backfill.enqueued}, skipped-live ${backfill.skippedLive}`,
     )
-    console.log(`live-copy score backfill: enqueued ${scoreBackfill}`)
+    console.log(`live-copy score backfill: enqueued or refreshed ${scoreBackfill}`)
     console.log(
       `live-copy review backfill: minted ${reviewBackfill.mintedReviews} reviews, ${reviewBackfill.mintedLenses} lenses, ${reviewBackfill.mintedFindings} findings; enqueued ${reviewBackfill.enqueuedReviews} reviews`,
     )

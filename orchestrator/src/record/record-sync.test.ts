@@ -354,36 +354,6 @@ test('a re-score while the old payload is in flight remains pending and is deliv
   local.close()
 })
 
-test('a legacy score payload syncs with absent attribution and review grades as null', async () => {
-  const local = localScoreOutbox()
-  const row = local.query<{ payload: string }, []>('SELECT payload FROM outbox').get()!
-  const payload = JSON.parse(row.payload) as Record<string, unknown>
-  delete payload.projectName
-  delete payload.reproduced
-  delete payload.coverage
-  delete payload.limits
-  delete payload.overlap
-  expect(Object.keys(payload)).toHaveLength(11)
-  local.query('UPDATE outbox SET payload=?').run(JSON.stringify(payload))
-  const remote = fakePostgres(false, RECORD_ACTOR_ROLE, {
-    job: 'file-question',
-    writesRepo: false,
-    findings: false,
-  })
-
-  expect(await syncRecord(options(local, remote))).toEqual({
-    pushed: 1,
-    failed: 0,
-    pending: 0,
-    configured: true,
-  })
-  expect(
-    remote.statements.some((sql) => sql.toLowerCase().includes('insert into "run_score"')),
-  ).toBe(true)
-  expect(remote.statements.some((sql) => sql.includes('SELECT id FROM project'))).toBe(false)
-  local.close()
-})
-
 test.each([
   {
     name: 'missing findings grades',
