@@ -7,9 +7,9 @@ import type { Chunk } from './corpus/chunks.ts'
 import {
   applyCodeCacheRefresh,
   applyRefresh,
-  codeCacheRows,
   configureIndexDatabase,
   indexedRows,
+  planCodeCache,
   storedRows,
 } from './index-store.ts'
 import { planRefresh } from './refresh-plan.ts'
@@ -208,7 +208,7 @@ test('document refreshes leave code cache rows intact and code refresh prunes ex
       now: 1,
     })
     applyRefresh(database, { corpusKey: 'docs', delete: [], upsert: [] })
-    expect(codeCacheRows(database, ['old'])).toHaveLength(1)
+    expect(planCodeCache(database, ['old'], 1).hits).toHaveLength(1)
 
     const refreshed = applyCodeCacheRefresh(database, {
       seenContentHashes: ['current'],
@@ -217,8 +217,8 @@ test('document refreshes leave code cache rows intact and code refresh prunes ex
       retentionMs: 50,
     })
     expect(refreshed).toEqual({ embedded: 1, pruned: 1 })
-    expect(codeCacheRows(database, ['old'])).toHaveLength(0)
-    expect(codeCacheRows(database, ['current'])).toHaveLength(1)
+    expect(planCodeCache(database, ['old'], 101).hits).toHaveLength(0)
+    expect(planCodeCache(database, ['current'], 101).hits).toHaveLength(1)
   } finally {
     database.close()
     rmSync(directory, { recursive: true })

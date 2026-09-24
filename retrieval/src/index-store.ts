@@ -39,6 +39,11 @@ export type CodeCacheRow = {
   vector: Uint8Array
 }
 
+export type CodeCachePlan = {
+  hits: CodeCacheRow[]
+  missingContentHashes: string[]
+}
+
 const CODE_VECTOR_CACHE_RETENTION_MS = 30 * 24 * 60 * 60 * 1_000
 
 type VectorUpsert = PlannedUpsert & {
@@ -118,8 +123,11 @@ export function configureIndexDatabase(database: Database): void {
     .immediate()
 }
 
-export function codeCacheRows(database: Database, contentHashes: string[]): CodeCacheRow[] {
-  if (!contentHashes.length) return []
+export function planCodeCache(
+  database: Database,
+  contentHashes: string[],
+  now = Date.now(),
+): CodeCachePlan {
   const find = database.query<
     {
       content_hash: string
@@ -135,21 +143,33 @@ export function codeCacheRows(database: Database, contentHashes: string[]): Code
       FROM code_vector_cache
      WHERE content_hash = ? AND model = ? AND dimension = ? AND instruction_version = ?
   `)
-  return contentHashes.flatMap((contentHash) => {
-    const row = find.get(contentHash, EMBEDDING_MODEL, EMBEDDING_DIMENSION, INSTRUCTION_VERSION)
-    return row
-      ? [
-          {
-            contentHash: row.content_hash,
-            model: row.model,
-            dimension: row.dimension,
-            instructionVersion: row.instruction_version,
-            document: row.document,
-            vector: row.vector,
-          },
-        ]
-      : []
-  })
+  const touch = database.query(`
+    UPDATE code_vector_cache SET last_seen_at = ?
+     WHERE content_hash = ? AND model = ? AND dimension = ? AND instruction_version = ?
+  `)
+  return database
+    .transaction(() => {
+      const hits: CodeCacheRow[] = []
+      const missingContentHashes: string[] = []
+      for (const contentHash of new Set(contentHashes)) {
+        const row = find.get(contentHash, EMBEDDING_MODEL, EMBEDDING_DIMENSION, INSTRUCTION_VERSION)
+        if (!row) {
+          missingContentHashes.push(contentHash)
+          continue
+        }
+        touch.run(now, contentHash, EMBEDDING_MODEL, EMBEDDING_DIMENSION, INSTRUCTION_VERSION)
+        hits.push({
+          contentHash: row.content_hash,
+          model: row.model,
+          dimension: row.dimension,
+          instructionVersion: row.instruction_version,
+          document: row.document,
+          vector: new Uint8Array(row.vector),
+        })
+      }
+      return { hits, missingContentHashes }
+    })
+    .immediate()
 }
 
 export function applyCodeCacheRefresh(

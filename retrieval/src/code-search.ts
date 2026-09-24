@@ -3,7 +3,7 @@
 
 import type { CodeSearchOutput } from '../../shared/orch-contract.ts'
 import { type Chunk, loadCodeCorpus } from './corpus/chunks.ts'
-import { applyCodeCacheRefresh, codeCacheRows } from './index-store.ts'
+import { applyCodeCacheRefresh, type CodeCacheRow, planCodeCache } from './index-store.ts'
 import {
   boundedSnippet,
   type IndexedCandidate,
@@ -24,30 +24,46 @@ export async function searchCode(
     retentionMs?: number
   } = {},
 ): Promise<CodeSearchOutput> {
+  let plannedHits = new Map<string, CodeCacheRow>()
+  let embeddedRows = new Map<
+    string,
+    { contentHash: string; document: string; vector: Uint8Array }
+  >()
   return indexedSearch(
     query,
     k,
     {
       loadChunks: () => (options.loadChunks ?? loadCodeCorpus)(project.path),
       plan: (database, candidates) => {
-        const cached = new Set(
-          codeCacheRows(
-            database,
-            candidates.map(({ contentHash }) => contentHash),
-          ).map(({ contentHash }) => contentHash),
+        const planned = planCodeCache(
+          database,
+          candidates.map(({ contentHash }) => contentHash),
+          options.now,
         )
+        plannedHits = new Map(planned.hits.map((row) => [row.contentHash, row]))
+        const missing = new Set(planned.missingContentHashes)
         const missingByHash = new Map<string, IndexedCandidate>()
         for (const candidate of candidates) {
-          if (!cached.has(candidate.contentHash) && !missingByHash.has(candidate.contentHash)) {
+          if (missing.has(candidate.contentHash) && !missingByHash.has(candidate.contentHash)) {
             missingByHash.set(candidate.contentHash, candidate)
           }
         }
         return {
           embed: [...missingByHash.values()],
-          unchanged: candidates.filter(({ contentHash }) => cached.has(contentHash)).length,
+          unchanged: candidates.filter(({ contentHash }) => plannedHits.has(contentHash)).length,
         }
       },
       apply: (database, candidates, embedded) => {
+        embeddedRows = new Map(
+          embedded.map((row) => [
+            row.contentHash,
+            {
+              contentHash: row.contentHash,
+              document: row.document,
+              vector: new Uint8Array(new Float32Array(row.vector).buffer),
+            },
+          ]),
+        )
         const applied = applyCodeCacheRefresh(database, {
           seenContentHashes: candidates.map(({ contentHash }) => contentHash),
           embedded,
@@ -62,16 +78,11 @@ export async function searchCode(
           pruned: applied.pruned,
         }
       },
-      rows: (database, candidates) => {
-        const cached = new Map(
-          codeCacheRows(
-            database,
-            candidates.map(({ contentHash }) => contentHash),
-          ).map((row) => [row.contentHash, row]),
-        )
+      rows: (_database, candidates) => {
         return candidates.map((candidate) => {
-          const row = cached.get(candidate.contentHash)
-          if (!row) throw new Error(`code vector cache missed ${candidate.contentHash}`)
+          const row =
+            plannedHits.get(candidate.contentHash) ?? embeddedRows.get(candidate.contentHash)
+          if (!row) throw new Error(`code vector plan missed ${candidate.contentHash}`)
           return {
             ...row,
             id: candidate.chunk.id,
