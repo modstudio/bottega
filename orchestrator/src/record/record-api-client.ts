@@ -2,7 +2,7 @@
 /** HTTP client for the record API. Must not know SQL or local table shape. */
 
 import type { DocDelivery, DocRevisionOp } from '../doc/doc-write-allowed.ts'
-import { RECORD_WRITE_REMEDY } from '../doc/doc-write-allowed.ts'
+import { MISSING_HOSTED_REVISION_REMEDY, RECORD_WRITE_REMEDY } from '../doc/doc-write-allowed.ts'
 import type { VerdictInput } from '../verdict/verdict-payload.ts'
 import { bearerHeaders, RECORD_SIGN_IN_REMEDY, type RecordIdentity } from './record-auth.ts'
 import { storedRecordToken } from './record-session.ts'
@@ -160,6 +160,7 @@ function recordApiError(body: unknown, status: number): Error {
     (typeof record.message === 'string' && record.message) ||
     (typeof nested.message === 'string' && nested.message) ||
     `record API ${status}`
+  if (message.includes(MISSING_HOSTED_REVISION_REMEDY)) return new Error(message)
   return recordApiUnreachable(new Error(message))
 }
 

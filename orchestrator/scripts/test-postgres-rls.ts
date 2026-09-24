@@ -114,15 +114,19 @@ try {
     ALTER SCHEMA public OWNER TO ${RECORD_OWNER_ROLE};
     CREATE DATABASE recipient_migration OWNER ${RECORD_OWNER_ROLE};
     CREATE DATABASE hosted_task_id_migration OWNER ${RECORD_OWNER_ROLE};
+    CREATE DATABASE doc_revision_migration OWNER ${RECORD_OWNER_ROLE};
   `)
   postgres(`ALTER SCHEMA public OWNER TO ${RECORD_OWNER_ROLE};`, 'recipient_migration')
   postgres(`ALTER SCHEMA public OWNER TO ${RECORD_OWNER_ROLE};`, 'hosted_task_id_migration')
+  postgres(`ALTER SCHEMA public OWNER TO ${RECORD_OWNER_ROLE};`, 'doc_revision_migration')
 
   const ownerUrl = `postgres://${RECORD_OWNER_ROLE}:owner-password@127.0.0.1:${port}/postgres`
   const actorUrl = `postgres://${RECORD_ACTOR_ROLE}:actor-password@127.0.0.1:${port}/postgres`
   const authUrl = `postgres://${RECORD_AUTH_ROLE}:auth-password@127.0.0.1:${port}/postgres`
   const recipientMigrationUrl = `postgres://${RECORD_OWNER_ROLE}:owner-password@127.0.0.1:${port}/recipient_migration`
   const hostedTaskIdMigrationUrl = `postgres://${RECORD_OWNER_ROLE}:owner-password@127.0.0.1:${port}/hosted_task_id_migration`
+  const docRevisionMigrationUrl = `postgres://${RECORD_OWNER_ROLE}:owner-password@127.0.0.1:${port}/doc_revision_migration`
+  const docRevisionMigrationSuperuserUrl = `postgres://postgres:postgres@127.0.0.1:${port}/doc_revision_migration`
 
   const recipientMigration = await run(
     ['bun', 'test', '--timeout', '30000', 'src/postgres/postgres-migrate-recipients.test.ts'],
@@ -135,6 +139,21 @@ try {
     { ORCH_TEST_HOSTED_TASK_ID_MIGRATION_URL: hostedTaskIdMigrationUrl },
   )
   if (hostedTaskIdMigration !== 0) process.exit(hostedTaskIdMigration)
+
+  const docRevisionMigration = await run(
+    [
+      'bun',
+      'test',
+      '--timeout',
+      '30000',
+      'src/postgres/postgres-migrate-doc-latest-revision.test.ts',
+    ],
+    {
+      ORCH_TEST_DOC_REVISION_MIGRATION_URL: docRevisionMigrationUrl,
+      ORCH_TEST_DOC_REVISION_MIGRATION_SUPERUSER_URL: docRevisionMigrationSuperuserUrl,
+    },
+  )
+  if (docRevisionMigration !== 0) process.exit(docRevisionMigration)
 
   const rls = await run(
     ['bun', 'test', '--timeout', '30000', 'src/postgres/postgres-migrate-rls.test.ts'],
@@ -186,6 +205,7 @@ try {
       postgres(`
         DROP DATABASE IF EXISTS recipient_migration WITH (FORCE);
         DROP DATABASE IF EXISTS hosted_task_id_migration WITH (FORCE);
+        DROP DATABASE IF EXISTS doc_revision_migration WITH (FORCE);
         REASSIGN OWNED BY ${RECORD_OWNER_ROLE} TO postgres;
         DROP OWNED BY ${RECORD_OWNER_ROLE};
         DROP OWNED BY ${RECORD_ACTOR_ROLE};
