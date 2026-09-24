@@ -2,6 +2,7 @@ import { createHash } from 'node:crypto'
 import { readRecordSessionToken } from '../../shared/record-session.ts'
 import { db, nowIso, writeTransaction } from './db.ts'
 import type { DayEvidence, IntervalEvidence, IntervalKey } from './hosted-evidence.ts'
+import { hostedSignedInUserId } from './task-client.ts'
 
 const TEST_REFUSAL =
   'hub evidence sync refuses a real hosted URL unless a stub is injected in tests'
@@ -15,13 +16,7 @@ export async function signedInRecordUserId(
   const baseUrl = options.baseUrl ?? process.env.HUB_HOSTED_URL
   const token = Object.hasOwn(options, 'token') ? options.token : readRecordSessionToken()
   if (!baseUrl || !token) return null
-  const response = await (options.fetch ?? fetch)(`${baseUrl.replace(/\/$/, '')}/v1/whoami`, {
-    headers: { authorization: `Bearer ${token}` },
-  })
-  if (response.status === 401) return null
-  if (!response.ok) throw new Error(`record identity ${response.status}`)
-  const body = (await response.json()) as { user?: { id?: unknown } }
-  return typeof body.user?.id === 'string' ? body.user.id : null
+  return hostedSignedInUserId({ baseUrl, token, fetch: options.fetch })
 }
 
 export type SyncTablePlan<T> = {

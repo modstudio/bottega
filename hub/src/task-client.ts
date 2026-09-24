@@ -8,6 +8,7 @@ const REMEDY = 'Set HUB_HOSTED_URL and run `orch record doctor`.'
 export type TaskFetch = (input: string, init?: RequestInit) => Promise<Response>
 
 export type HostedTaskIdentity = {
+  userId: string
   activeSpaceId: string
   memberships: RecordSpaceMembership[]
 }
@@ -18,12 +19,13 @@ export function assertHostedTaskWriteConfigured(options: { baseUrl?: string } = 
   return baseUrl
 }
 
-async function request<T>(
+async function responseObject(
   path: string,
   method: string,
   body?: unknown,
   options: { baseUrl?: string; token?: string | null; fetch?: TaskFetch } = {},
-): Promise<T> {
+  allowUnauthorized = false,
+): Promise<{ response: Response; value: Record<string, unknown> }> {
   const baseUrl = assertHostedTaskWriteConfigured(options)
   if (process.env.NODE_ENV === 'test' && !options.fetch) throw new Error(TEST_REFUSAL)
   const token = options.token ?? readRecordSessionToken()
@@ -42,6 +44,7 @@ async function request<T>(
     throw new Error(`hosted hub is unreachable: ${(error as Error).message}. ${REMEDY}`)
   }
   const url = `${baseUrl.replace(/\/$/, '')}${path}`
+  if (allowUnauthorized && response.status === 401) return { response, value: {} }
   const contentType = response.headers.get('content-type') ?? 'missing'
   const isJson = /^application\/(?:[a-z0-9!#$&^_.+-]+\+)?json(?:\s*;|$)/i.test(contentType)
   const value = isJson
@@ -49,8 +52,18 @@ async function request<T>(
     : null
   if (!isJson || !value || typeof value !== 'object' || Array.isArray(value))
     throw new Error(
-      `hosted hub refused the response from ${url} (status ${response.status}, content type ${contentType}): expected a JSON object`,
+      `hosted hub refused the response from ${url} (status ${response.status}, content type ${contentType}): expected a JSON object. ${REMEDY}`,
     )
+  return { response, value }
+}
+
+async function request<T>(
+  path: string,
+  method: string,
+  body?: unknown,
+  options: { baseUrl?: string; token?: string | null; fetch?: TaskFetch } = {},
+): Promise<T> {
+  const { response, value } = await responseObject(path, method, body, options)
   if (!response.ok && path === '/v1/tasks/identity' && response.status === 404)
     throw new Error(
       `hosted hub does not serve the task identity route (404): ${String(
@@ -185,7 +198,35 @@ export async function hostedTaskIdentity(
     throw new Error('hosted hub has no active space; switch spaces and retry')
   if (!Array.isArray(value.memberships))
     throw new Error('hosted hub returned a malformed task identity: memberships must be an array')
-  return { activeSpaceId: value.activeSpaceId, memberships: value.memberships }
+  if (typeof value.userId !== 'string')
+    throw new Error('hosted hub returned a malformed task identity: userId must be a string')
+  return {
+    userId: value.userId,
+    activeSpaceId: value.activeSpaceId,
+    memberships: value.memberships,
+  }
+}
+
+export async function hostedSignedInUserId(
+  options?: Parameters<typeof request>[3],
+): Promise<string | null> {
+  const { response, value } = await responseObject(
+    '/v1/tasks/identity',
+    'GET',
+    undefined,
+    options,
+    true,
+  )
+  if (response.status === 401) return null
+  if (!response.ok)
+    throw new Error(
+      `hosted hub refused the request (${response.status}): ${String(value.error ?? 'unknown error')}${
+        value.remedy ? `. ${String(value.remedy)}` : ''
+      }`,
+    )
+  if (typeof value.userId !== 'string')
+    throw new Error('hosted hub returned a malformed task identity: userId must be a string')
+  return value.userId
 }
 export const hostedTaskCounts = (options?: Parameters<typeof request>[3]) =>
   request<Record<string, Array<{ source: string; count: number }>>>(

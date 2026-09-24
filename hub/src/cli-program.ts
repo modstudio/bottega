@@ -5,7 +5,7 @@ import { human } from '../../shared/interval.ts'
 import { readMachineValue } from '../../shared/machine-config.ts'
 import { type TrackerProtocol, trackerCreatedTaskKey } from '../../shared/trackers.ts'
 import { projectOf } from './attribute.ts'
-import { releaseLease, watch, withLease } from './collect.ts'
+import { collectOnce, releaseLease, watch, withLease } from './collect.ts'
 import {
   DB_PATH,
   db,
@@ -16,10 +16,6 @@ import {
   writeTransaction,
 } from './db.ts'
 import { reclaimFixtureQuestions } from './fixture-question-reclaim.ts'
-import { ingestGit } from './ingest/git.ts'
-import { ingestRuns } from './ingest/runs.ts'
-import { ingestTrackers } from './ingest/trackers.ts'
-import { ingestTranscripts } from './ingest/transcripts.ts'
 import { credentials, Mcp } from './mcp.ts'
 import { canonicalSchemaHash, expectedSchemaHash, schemaVersionLabel } from './migrations.ts'
 import {
@@ -39,7 +35,7 @@ import {
 import { pushNotes } from './note-push.ts'
 import { startDashboardCapability } from './orch.ts'
 import { projects } from './projects.ts'
-import { estateEngagedMs, rollUpDays, tasksInWindow } from './query.ts'
+import { estateEngagedMs, tasksInWindow } from './query.ts'
 import { printReconcile, reconcileOpenIntervals } from './reconcile.ts'
 import { runReportCommand } from './report-cli.ts'
 import { listOpenRulings, rulingsPayload } from './rulings.ts'
@@ -279,49 +275,12 @@ as long.
 async function collect() {
   const since = flag('since') ?? hoursAgo(24 * 30)
   const only = flag('only')
-  const run = (name: string) => !only || only === name
   const t0 = Date.now()
-
-  if (run('git')) {
-    const g = await ingestGit(since.slice(0, 10))
-    console.log(`git          ${g.days} days, ${g.tasks} task keys`)
-  }
-  if (run('runs')) {
-    const r = await ingestRuns(since)
-    console.log(`runs         ${r.rows} intervals, ${r.skipped} skipped`)
-  }
-  if (run('transcripts')) {
-    const t = await ingestTranscripts(since)
-    console.log(
-      t.source === 'disabled'
-        ? 'transcripts  disabled'
-        : `transcripts  ${t.rows} intervals from ${t.files} files`,
-    )
-  }
-
-  if (run('tasks')) {
-    for (const t of await ingestTrackers()) {
-      const note = t.skipped
-        ? `skipped: ${t.skipped}`
-        : t.error
-          ? `FAILED: ${t.error}`
-          : `${t.tasks} tasks, ${t.changed} status changes`
-      console.log(`${('tracker/' + t.project).padEnd(21)}${note}`)
-    }
-  }
-
-  // The day grain is DERIVED from the intervals rather than collected on its
-  // own. Two passes over the same transcripts would eventually disagree, and
-  // the ratio would then depend on which one you read.
-  console.log(`days         ${rollUpDays()} rolled up`)
-
-  writeTransaction((conn) =>
-    conn
-      .query(`INSERT INTO setting (key, value) VALUES ('collect.at', ?)
-                ON CONFLICT(key) DO UPDATE SET value = excluded.value`)
-      .run(JSON.stringify(nowIso())),
-  )
+  const results = await collectOnce(since, only)
+  for (const result of results)
+    console.log(`${result.source.padEnd(18)}${result.ok ? 'ok' : `FAILED: ${result.error}`}`)
   console.log(`\ncollected in ${human(Date.now() - t0)}`)
+  if (results.some((result) => !result.ok)) process.exitCode = 1
 }
 
 function tasks() {

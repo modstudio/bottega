@@ -293,6 +293,7 @@ describe('hosted-only task safety', () => {
 
     expect(response?.status).toBe(200)
     expect(await response?.json()).toEqual({
+      userId: 'user-1',
       activeSpaceId: 'space-a',
       memberships: [
         { spaceId: 'space-a', slug: 'workshop' },

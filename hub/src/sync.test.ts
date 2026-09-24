@@ -8,12 +8,38 @@ describe('evidence sync planning', () => {
       await signedInRecordUserId({
         baseUrl: 'https://record.example.test',
         token: 'session',
-        fetch: async () => Response.json({ user: { id: 'user-42' } }),
+        fetch: async (url) => {
+          expect(url).toBe('https://record.example.test/v1/tasks/identity')
+          return Response.json({ userId: 'user-42' })
+        },
       }),
     ).toBe('user-42')
     expect(
       await signedInRecordUserId({ baseUrl: 'https://record.example.test', token: null }),
     ).toBeNull()
+    expect(
+      await signedInRecordUserId({
+        baseUrl: 'https://record.example.test',
+        token: 'expired',
+        fetch: async () => new Response('signed out', { status: 401 }),
+      }),
+    ).toBeNull()
+  })
+
+  test('names the hosted hub response when identity returns HTML', async () => {
+    await expect(
+      signedInRecordUserId({
+        baseUrl: 'https://record.example.test',
+        token: 'session',
+        fetch: async () =>
+          new Response('<html>app</html>', {
+            status: 200,
+            headers: { 'content-type': 'text/html' },
+          }),
+      }),
+    ).rejects.toThrow(
+      'hosted hub refused the response from https://record.example.test/v1/tasks/identity (status 200, content type text/html)',
+    )
   })
 
   test('hashes stable content deterministically', () => {

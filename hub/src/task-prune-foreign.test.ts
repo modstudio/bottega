@@ -25,6 +25,7 @@ const task = (key: string, project: string, source: HostedTask['source'] = 'mcp'
 })
 
 const identity = {
+  userId: 'user-active',
   activeSpaceId: 'space-active',
   memberships: [
     { spaceId: 'space-active', slug: 'active' },

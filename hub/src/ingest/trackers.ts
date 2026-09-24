@@ -629,11 +629,12 @@ export async function ingestTrackers(
 
   mirror.reportSkipped()
 
-  writeTransaction((conn) =>
-    conn
-      .query(`INSERT INTO setting (key, value) VALUES ('collect.trackers.at', ?)
-                ON CONFLICT(key) DO UPDATE SET value = excluded.value`)
-      .run(JSON.stringify(at)),
-  )
+  if (out.every((result) => !result.error && !result.skipped))
+    writeTransaction((conn) =>
+      conn
+        .query(`INSERT INTO setting (key, value) VALUES ('collect.trackers.at', ?)
+                  ON CONFLICT(key) DO UPDATE SET value = excluded.value`)
+        .run(JSON.stringify(at)),
+    )
   return out
 }

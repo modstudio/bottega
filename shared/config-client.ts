@@ -7,13 +7,20 @@ export class ConfigClientError extends Error {
   readonly reason: ConfigClientErrorReason
   readonly route: string
   readonly status?: number
-  constructor(reason: ConfigClientErrorReason, route: string, status?: number) {
+  constructor(
+    reason: ConfigClientErrorReason,
+    route: string,
+    status?: number,
+    details?: { url: string; contentType: string },
+  ) {
     super(
       reason === 'not-configured'
         ? `hosted config is not configured; ${RECORD_SIGN_IN_REMEDY}`
         : reason === 'unreachable'
           ? `hosted config route ${route} is unreachable`
-          : `hosted config route ${route} returned HTTP ${status}`,
+          : details
+            ? `hosted config refused the response from ${details.url} (status ${status}, content type ${details.contentType}): expected JSON. ${RECORD_SIGN_IN_REMEDY}`
+            : `hosted config route ${route} returned HTTP ${status}`,
     )
     this.name = 'ConfigClientError'
     this.reason = reason
@@ -86,8 +93,24 @@ function createConfigClient(
       if (signal?.aborted) throw signal.reason
       throw new ConfigClientError('unreachable', route)
     }
+    const contentType = response.headers.get('content-type') ?? 'missing'
+    const isJson = /^application\/(?:[a-z0-9!#$&^_.+-]+\+)?json(?:\s*;|$)/i.test(contentType)
+    if (!isJson)
+      throw new ConfigClientError('response', route, response.status, {
+        url: `${baseUrl}${route}`,
+        contentType,
+      })
+    let value: T
+    try {
+      value = (await response.json()) as T
+    } catch {
+      throw new ConfigClientError('response', route, response.status, {
+        url: `${baseUrl}${route}`,
+        contentType,
+      })
+    }
     if (!response.ok) throw new ConfigClientError('response', route, response.status)
-    return (await response.json()) as T
+    return value
   }
   const query = (values: Record<string, string>) => `?${new URLSearchParams(values)}`
   return {

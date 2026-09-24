@@ -35,3 +35,18 @@ test('config client names an unreachable route and response status without expos
   expect(error).toMatchObject({ reason: 'response', status: 403 })
   expect((error as Error).message).not.toContain('secret body')
 })
+
+test('config client refuses a non-JSON response with its source and response facts', async () => {
+  const client = configClient(
+    { ORCH_RECORD_API_URL: 'https://record.test' },
+    async () =>
+      new Response('<html>app</html>', {
+        status: 200,
+        headers: { 'content-type': 'text/html' },
+      }),
+    'test',
+  )
+  await expect(client.whoami()).rejects.toThrow(
+    'hosted config refused the response from https://record.test/v1/whoami (status 200, content type text/html)',
+  )
+})
