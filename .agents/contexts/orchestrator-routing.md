@@ -4,7 +4,7 @@ paths:
   - orchestrator/src/**/route*.ts
   - orchestrator/src/**/routing*.ts
   - orchestrator/src/**/score.ts
-  - orchestrator/src/**/judgement.ts
+  - orchestrator/src/**/judgment.ts
   - orchestrator/src/**/evidence*.ts
   - orchestrator/src/**/agents.ts
   - orchestrator/src/**/agent-*.ts
