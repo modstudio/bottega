@@ -76,6 +76,23 @@ async function command(args: string[], stdin = '') {
 }
 
 describe('scoped operator docs', () => {
+  test('orch doc get and list --json expose the latest hosted revision', async () => {
+    const stored = await setDoc({
+      scope: 'global',
+      subject: null,
+      slug: 'revision-read',
+      title: 'Revision read',
+      body: 'Current.',
+    })
+    const shown = await command(['doc', 'get', 'revision-read', '--scope', 'global', '--json'])
+    expect(shown.code).toBe(0)
+    expect(JSON.parse(shown.out).revision).toBe(stored.revision)
+    const listed = await command(['doc', 'list', '--scope', 'global', '--json'])
+    expect(JSON.parse(listed.out)).toContainEqual(
+      expect.objectContaining({ slug: 'revision-read', revision: stored.revision }),
+    )
+  })
+
   test('orch port exposes baseline, skip, ledger resolution, correction, and doctrine lifecycle', async () => {
     upsertProject({ name: 'source-invented', path: '/w/source', settings: {} })
     upsertProject({
@@ -226,6 +243,18 @@ describe('scoped operator docs', () => {
       return JSON.parse(content[0].text)
     }
     try {
+      const mcpDoc = await setDoc({
+        scope: 'global',
+        subject: null,
+        slug: 'mcp-revision-read',
+        title: 'MCP revision read',
+        body: 'Current.',
+      })
+      const mcpRead = await client.callTool({
+        name: 'get_doc',
+        arguments: { scope: 'global', slug: mcpDoc.slug },
+      })
+      expect(value(mcpRead)).toMatchObject({ slug: mcpDoc.slug, revision: mcpDoc.revision })
       await client.callTool({
         name: 'set_port_baseline',
         arguments: {

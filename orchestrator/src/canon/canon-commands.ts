@@ -166,7 +166,9 @@ async function canonImportCommand(
     global,
     rows.map((row) => ({ ...row, subject: project.name })),
   ).map(({ slug, body }) => ({ slug, body }))
-  const projectSlugs = listDocs({ scope: 'canon', subject: project.name }).map(({ slug }) => slug)
+  const projectRows = listDocs({ scope: 'canon', subject: project.name })
+  const projectSlugs = projectRows.map(({ slug }) => slug)
+  const projectBySlug = new Map(projectRows.map((row) => [row.slug, row]))
   const removals = canonSlugsToRemove(
     projectSlugs,
     rows.map(({ slug }) => slug),
@@ -190,11 +192,17 @@ async function canonImportCommand(
       reason,
       canonSet: rows,
       allowCanonBootstrap: bootstrap,
+      expectedRevision: projectBySlug.get(row.slug)?.revision ?? undefined,
     })
   }
   let removed = 0
   for (const slug of removals) {
-    if (await removeDoc('canon', project.name, slug, { reason })) {
+    if (
+      await removeDoc('canon', project.name, slug, {
+        reason,
+        expectedRevision: projectBySlug.get(slug)?.revision ?? undefined,
+      })
+    ) {
       presentation.log(`removed ${slug}`)
       removed++
     }

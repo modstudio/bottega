@@ -97,9 +97,9 @@ export async function docCommand(
     }
     return
   }
-  if (sub === 'show') {
+  if (sub === 'show' || sub === 'get') {
     const slug = argv[2]
-    if (!slug || !scope) throw new Error('orch doc show <slug> --scope S [--subject X]')
+    if (!slug || !scope) throw new Error(`orch doc ${sub} <slug> --scope S [--subject X]`)
     const doc = getDoc(scope, subject, slug)
     if (!doc) throw new Error(`no ${scope} doc "${slug}"; use orch doc list --scope ${scope}`)
     if (has('json')) {
@@ -115,7 +115,7 @@ export async function docCommand(
     const reason = flag('reason')
     if (!slug || !scope || title === undefined || !reason?.trim()) {
       throw new Error(
-        'orch doc set <slug> --scope S [--subject X] --title T --reason TEXT (--file F | body on stdin)',
+        'orch doc set <slug> --scope S [--subject X] --title T --reason TEXT [--expect REVISION] (--file F | body on stdin)',
       )
     }
     const body = flag('file')
@@ -139,6 +139,7 @@ export async function docCommand(
       author: flag('author'),
       forceInject,
       delivery,
+      expectedRevision: flag('expect'),
     })
     const root = repoRootForDoc(doc)
     const warnings = root ? checkDoc(body, { repoRoot: root }) : []
@@ -151,10 +152,12 @@ export async function docCommand(
   }
   if (sub === 'consume') {
     const slug = argv[2]
-    if (!slug || !scope) throw new Error('orch doc consume <slug> --scope S [--subject X]')
+    if (!slug || !scope)
+      throw new Error('orch doc consume <slug> --scope S [--subject X] [--expect REVISION]')
     const result = await consumeDoc(scope, subject, slug, {
       reason: flag('reason') ?? 'consumed by session',
       author: flag('author'),
+      expectedRevision: flag('expect'),
     })
     if (has('json')) {
       presentation.log(JSON.stringify(result))
@@ -171,8 +174,14 @@ export async function docCommand(
     const slug = argv[2]
     const reason = flag('reason')
     if (!slug || !scope || !reason?.trim())
-      throw new Error('orch doc rm <slug> --scope S [--subject X] --reason TEXT')
-    const removed = await removeDoc(scope, subject, slug, { reason, author: flag('author') })
+      throw new Error(
+        'orch doc rm <slug> --scope S [--subject X] --reason TEXT [--expect REVISION]',
+      )
+    const removed = await removeDoc(scope, subject, slug, {
+      reason,
+      author: flag('author'),
+      expectedRevision: flag('expect'),
+    })
     if (has('json')) {
       presentation.log(JSON.stringify({ removed }))
       return
@@ -243,11 +252,14 @@ export async function docCommand(
     const revisionId = Number(argv[5])
     const reason = flag('reason')
     if (!revisionId || !reason?.trim()) {
-      throw new Error('orch doc restore <scope> <subject|-> <slug> <rev> --reason TEXT')
+      throw new Error(
+        'orch doc restore <scope> <subject|-> <slug> <rev> --reason TEXT [--expect REVISION]',
+      )
     }
     const restored = await restoreDoc(addressScope, addressSubject, slug, revisionId, {
       reason,
       author: flag('author'),
+      expectedRevision: flag('expect'),
     })
     presentation.log(
       has('json')
@@ -271,6 +283,6 @@ export async function docCommand(
     return
   }
   throw new Error(
-    `unknown: orch doc ${sub}. Try list | show | set | lint | consume | rm | history | diff | restore | subjects | export | import | resumes`,
+    `unknown: orch doc ${sub}. Try list | get | show | set | lint | consume | rm | history | diff | restore | subjects | export | import | resumes`,
   )
 }

@@ -24,6 +24,116 @@ import {
 } from './docs.ts'
 
 describe('scoped operator docs', () => {
+  test('canon updates compare the exposed hosted revision in both local write checks', async () => {
+    const created = await writeDoc({
+      scope: 'canon',
+      subject: null,
+      slug: '.agents/rules/revision-token.md',
+      title: 'Revision token',
+      body: '---\ndescription: Revision token\n---\n\nCurrent rule.\n',
+      reason: 'create revision token fixture',
+      allowCanonBootstrap: true,
+    })
+    expect(created.revision).toMatch(/^[0-9a-f-]{36}$/)
+    expect(listDocs({ scope: 'canon' })[0]?.revision).toBe(created.revision)
+    expect(listDocMetadata({ scope: 'canon' })[0]?.revision).toBe(created.revision)
+
+    await expect(
+      writeDoc({
+        scope: 'canon',
+        subject: null,
+        slug: created.slug,
+        title: created.title,
+        body: `${created.body}\nMore current guidance.\n`,
+        reason: 'missing token',
+      }),
+    ).rejects.toThrow(`current revision ${created.revision}; pass --expect ${created.revision}`)
+
+    const updated = await writeDoc({
+      scope: 'canon',
+      subject: null,
+      slug: created.slug,
+      title: created.title,
+      body: `${created.body}\nMore current guidance.\n`,
+      reason: 'matching token',
+      expectedRevision: created.revision!,
+    })
+    expect(updated.revision).not.toBe(created.revision)
+    await expect(
+      writeDoc({
+        scope: 'canon',
+        subject: null,
+        slug: created.slug,
+        title: created.title,
+        body: `${updated.body}\nLatest guidance.\n`,
+        reason: 'stale token',
+        expectedRevision: created.revision!,
+      }),
+    ).rejects.toThrow(`expected revision ${created.revision}, current revision ${updated.revision}`)
+  })
+
+  test('consume, remove, and restore refuse an optional stale revision', async () => {
+    const created = await writeDoc({
+      scope: 'global',
+      subject: null,
+      slug: 'stale-verbs',
+      title: 'Stale verbs',
+      body: '---\nstatus: open\n---\n\nInitial.\n',
+      delivery: 'demand',
+      reason: 'create stale verb fixture',
+    })
+    const target = listDocRevisions('global', null, created.slug)[0]!.id
+    const updated = await writeDoc({
+      scope: 'global',
+      subject: null,
+      slug: created.slug,
+      title: created.title,
+      body: '---\nstatus: open\n---\n\nUpdated.\n',
+      delivery: 'demand',
+      reason: 'advance stale verb fixture',
+      expectedRevision: created.revision!,
+    })
+    for (const write of [
+      () =>
+        consumeDocument('global', null, created.slug, {
+          reason: 'stale consume',
+          expectedRevision: created.revision!,
+        }),
+      () =>
+        deleteDoc('global', null, created.slug, {
+          reason: 'stale remove',
+          expectedRevision: created.revision!,
+        }),
+      () =>
+        restoreDoc('global', null, created.slug, target, {
+          reason: 'stale restore',
+          expectedRevision: created.revision!,
+        }),
+    ]) {
+      await expect(write()).rejects.toThrow(
+        `expected revision ${created.revision}, current revision ${updated.revision}`,
+      )
+    }
+  })
+
+  test('canon mutation reports a missing hosted revision without suggesting an unusable token', async () => {
+    const created = await writeDoc({
+      scope: 'canon',
+      subject: null,
+      slug: '.agents/rules/missing-hosted-revision.md',
+      title: 'Missing hosted revision',
+      body: '---\ndescription: Missing hosted revision\n---\n\nCurrent rule.\n',
+      reason: 'create missing revision fixture',
+      allowCanonBootstrap: true,
+    })
+    db().query('UPDATE doc_revision SET record_id=NULL WHERE doc_id=?').run(created.id)
+    await expect(
+      deleteDoc('canon', null, created.slug, { reason: 'remove broken fixture' }),
+    ).rejects.toThrow(
+      'this row has no hosted revision id, so its revision cannot be checked; this is unexpected and should be reported',
+    )
+  })
+
   test('set refuses lint findings without changing the store', async () => {
     await expect(
       setDoc({
@@ -217,7 +327,11 @@ describe('scoped operator docs', () => {
       allowCanonBootstrap: true,
     })
     const revision = listDocRevisions('canon', 'known', slug)[0]!
-    await deleteDoc('canon', 'known', slug, { reason: 'make the historic row restorable' })
+    await deleteDoc('canon', 'known', slug, {
+      reason: 'make the historic row restorable',
+      expectedRevision: projectDoc.revision!,
+    })
+    const deletedRevision = getDocRevision(listDocRevisions('canon', 'known', slug)[0]!.id)
     await writeDoc({
       scope: 'canon',
       subject: null,
@@ -231,6 +345,7 @@ describe('scoped operator docs', () => {
     await expect(
       restoreDoc('canon', 'known', projectDoc.slug, revision.id, {
         reason: 'restore colliding project rule',
+        expectedRevision: deletedRevision!.record_id!,
       }),
     ).rejects.toThrow('refusing canon path collision')
   })

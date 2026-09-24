@@ -184,6 +184,72 @@ export async function proveHostedDocs(input: {
   const created = (await put.json()) as { id: string; revisionId: string }
   expect(created.id).toBeString()
   expect(created.revisionId).toBeString()
+  const updated = await fetch(`${input.origin}/v1/docs`, {
+    method: 'PUT',
+    headers,
+    body: JSON.stringify({
+      scope: 'machine',
+      subject: null,
+      slug: 'proof',
+      title: 'Proof',
+      body: 'hosted update',
+      delivery: 'inject',
+      reason: 'postgres compare-and-set proof',
+      author: 'proof',
+      expectedRevision: created.revisionId,
+    }),
+  })
+  expect(updated.status).toBe(200)
+  const updatedIds = (await updated.json()) as { revisionId: string }
+  const timedWrite = async (body: string, expectedRevision: string, at?: string) => {
+    const response = await fetch(`${input.origin}/v1/docs`, {
+      method: 'PUT',
+      headers,
+      body: JSON.stringify({
+        scope: 'machine',
+        subject: null,
+        slug: 'proof',
+        title: 'Proof',
+        body,
+        delivery: 'inject',
+        reason: `${body} compare-and-set proof`,
+        author: 'proof',
+        expectedRevision,
+        at,
+      }),
+    })
+    expect(response.status).toBe(200)
+    return (await response.json()) as { revisionId: string }
+  }
+  const backdated = await timedWrite('backdated', updatedIds.revisionId, '2000-01-01T00:00:00.000Z')
+  const afterBackdated = await timedWrite('after backdated', backdated.revisionId)
+  const futureDated = await timedWrite(
+    'future dated',
+    afterBackdated.revisionId,
+    '2100-01-01T00:00:00.000Z',
+  )
+  const afterFutureDated = await timedWrite('after future dated', futureDated.revisionId)
+  const stale = await fetch(`${input.origin}/v1/docs`, {
+    method: 'PUT',
+    headers,
+    body: JSON.stringify({
+      scope: 'machine',
+      subject: null,
+      slug: 'proof',
+      title: 'Proof',
+      body: 'stale overwrite',
+      delivery: 'inject',
+      reason: 'postgres stale compare-and-set proof',
+      author: 'proof',
+      expectedRevision: created.revisionId,
+    }),
+  })
+  expect(stale.status).toBe(409)
+  expect(await stale.json()).toMatchObject({
+    error: expect.stringContaining(
+      `expected revision ${created.revisionId}, current revision ${afterFutureDated.revisionId}`,
+    ),
+  })
   await selectSpace(identity.personalSpaceId)
   const personalDefault = await fetch(`${input.origin}/v1/docs?scope=machine`, { headers })
   expect(personalDefault.status).toBe(200)
@@ -222,7 +288,11 @@ export async function proveHostedDocs(input: {
   const removed = await fetch(`${input.origin}/v1/docs/${created.id}`, {
     method: 'DELETE',
     headers,
-    body: JSON.stringify({ reason: 'hide it', author: 'proof' }),
+    body: JSON.stringify({
+      reason: 'hide it',
+      author: 'proof',
+      expectedRevision: afterFutureDated.revisionId,
+    }),
   })
   expect(removed.status).toBe(200)
   const hidden = await fetch(`${input.origin}/v1/docs?scope=machine`, { headers })

@@ -301,6 +301,12 @@ export const importBoundaries: ImportBoundary[] = [
     'Keep document lint decisions pure and independent of filesystems, stores, commands, and processes.',
   ),
   boundary(
+    'local-doc-revisions-boundary',
+    'orchestrator/src/doc/doc-revision-store.ts',
+    ['../database/db.ts', './doc-write-allowed.ts'],
+    'Keep local revision ordering and compare-and-set facts independent of hosted transport and CLI.',
+  ),
+  boundary(
     'doc-write-allowed-boundary',
     'orchestrator/src/doc/doc-write-allowed.ts',
     [

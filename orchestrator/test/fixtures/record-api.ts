@@ -1,5 +1,9 @@
 import { newRecordId } from '../../../shared/record/schema.ts'
-import { consumeDocBody, refuseDocWrite } from '../../src/doc/doc-write-allowed.ts'
+import {
+  consumeDocBody,
+  decideDocRevisionWrite,
+  refuseDocWrite,
+} from '../../src/doc/doc-write-allowed.ts'
 import type {
   RecordApiClient,
   RecordDocImportInput,
@@ -114,7 +118,13 @@ export function createMemoryRecordApiClient(): RecordApiClient {
           .filter((doc) => doc.scope === 'canon' && doc.subject === null && !doc.deletedAt)
           .map((doc) => doc.slug),
         projectCanonSlugs: [...docs.values()]
-          .filter((doc) => doc.scope === 'canon' && doc.subject === input.subject && !doc.deletedAt)
+          .filter(
+            (doc) =>
+              doc.scope === 'canon' &&
+              doc.subject !== null &&
+              doc.subject === input.subject &&
+              !doc.deletedAt,
+          )
           .map((doc) => doc.slug),
         currentCanon: [],
         nextCanon: [{ slug: input.slug, body: input.body }],
@@ -123,6 +133,14 @@ export function createMemoryRecordApiClient(): RecordApiClient {
       if (refusal) throw new Error(refusal)
       const now = input.at ?? new Date().toISOString()
       const existing = live(input.scope, input.subject, input.slug)
+      const current = existing ? (revisions.get(existing.id)?.at(-1)?.id ?? null) : null
+      const revisionDecision = decideDocRevisionWrite({
+        expected: input.expectedRevision,
+        current,
+        isCreate: !existing,
+        scope: input.scope,
+      })
+      if (!revisionDecision.allow) throw new Error(revisionDecision.reason)
       const id = existing?.id ?? input.id ?? newRecordId()
       const revisionId = input.revisionId ?? newRecordId()
       docs.set(id, {
@@ -172,6 +190,14 @@ export function createMemoryRecordApiClient(): RecordApiClient {
       const existing =
         liveDoc ??
         [...atAddress].sort((left, right) => right.updatedAt.localeCompare(left.updatedAt))[0]
+      const current = existing ? (revisions.get(existing.id)?.at(-1)?.id ?? null) : null
+      const decision = decideDocRevisionWrite({
+        expected: input.expectedRevision,
+        current,
+        isCreate: !existing,
+        scope: input.doc.scope,
+      })
+      if (!decision.allow) throw new Error(decision.reason)
       const id = existing?.id ?? newRecordId()
       docs.set(id, {
         id,
@@ -223,6 +249,13 @@ export function createMemoryRecordApiClient(): RecordApiClient {
     async deleteDoc(id, input) {
       const doc = docs.get(id)
       if (!doc) throw new Error('doc not found')
+      const decision = decideDocRevisionWrite({
+        expected: input.expectedRevision,
+        current: revisions.get(id)?.at(-1)?.id ?? null,
+        isCreate: false,
+        scope: doc.scope,
+      })
+      if (!decision.allow) throw new Error(decision.reason)
       const now = new Date().toISOString()
       const revisionId = newRecordId()
       docs.set(id, { ...doc, deletedAt: now, updatedAt: now })
@@ -247,6 +280,13 @@ export function createMemoryRecordApiClient(): RecordApiClient {
     async consumeDoc(id, input) {
       const doc = docs.get(id)
       if (!doc || doc.deletedAt) throw new Error('doc not found')
+      const decision = decideDocRevisionWrite({
+        expected: input.expectedRevision,
+        current: revisions.get(id)?.at(-1)?.id ?? null,
+        isCreate: false,
+        scope: doc.scope,
+      })
+      if (!decision.allow) throw new Error(decision.reason)
       const now = new Date().toISOString()
       const consumed = consumeDocBody(doc.body, now, input.author)
       if (consumed.alreadyConsumed) return { id, revisionId: '', alreadyConsumed: true }
@@ -275,6 +315,13 @@ export function createMemoryRecordApiClient(): RecordApiClient {
       const list = revisions.get(id) ?? []
       const revision = list.find((row) => row.id === input.revisionId) ?? list.at(-1)
       if (!doc && !revision) throw new Error('revision not found')
+      const decision = decideDocRevisionWrite({
+        expected: input.expectedRevision,
+        current: list.at(-1)?.id ?? null,
+        isCreate: false,
+        scope: doc?.scope ?? revision!.scope,
+      })
+      if (!decision.allow) throw new Error(decision.reason)
       const source = revision ?? {
         title: doc!.title,
         body: doc!.body,

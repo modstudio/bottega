@@ -19,6 +19,7 @@ export function register(program: Command): void {
     .option('--author <value>')
     .option('--delivery <value>')
     .option('--force-inject <value>')
+    .option('--expect <revision>')
     .option('--cwd <value>')
     .option('--json')
     .action(async (args, options) => {

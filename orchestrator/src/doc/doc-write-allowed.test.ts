@@ -1,5 +1,9 @@
 import { describe, expect, test } from 'bun:test'
-import { globalCanonWriteTargets, refuseCanonWrite } from './doc-write-allowed.ts'
+import {
+  decideDocRevisionWrite,
+  globalCanonWriteTargets,
+  refuseCanonWrite,
+} from './doc-write-allowed.ts'
 
 const rule = {
   slug: '.agents/rules/10-code.md',
@@ -55,5 +59,60 @@ describe('globalCanonWriteTargets', () => {
   test('falls back to checking global rows alone when no project is opted in', () => {
     expect(globalCanonWriteTargets([candidate('unmanaged', false)])).toEqual([null])
     expect(globalCanonWriteTargets([])).toEqual([null])
+  })
+})
+
+describe('decideDocRevisionWrite', () => {
+  test('requires the current revision for an existing canon doc', () => {
+    expect(
+      decideDocRevisionWrite({ current: 'revision-2', isCreate: false, scope: 'canon' }),
+    ).toEqual({
+      allow: false,
+      reason:
+        'refusing canon update at current revision revision-2; pass --expect revision-2\n' +
+        're-read with orch doc get and re-apply the edit',
+    })
+    expect(
+      decideDocRevisionWrite({
+        expected: 'revision-2',
+        current: 'revision-2',
+        isCreate: false,
+        scope: 'canon',
+      }),
+    ).toEqual({ allow: true })
+  })
+
+  test('refuses stale optional tokens in other scopes and tokens for a create', () => {
+    expect(
+      decideDocRevisionWrite({ current: 'revision-2', isCreate: false, scope: 'global' }),
+    ).toEqual({ allow: true })
+    for (const input of [
+      { expected: 'revision-1', current: 'revision-2', isCreate: false, scope: 'global' },
+      { expected: 'revision-1', current: null, isCreate: true, scope: 'canon' },
+    ]) {
+      const decision = decideDocRevisionWrite(input)
+      expect(decision.allow).toBe(false)
+      if (!decision.allow) {
+        expect(decision.reason).toContain('expected revision revision-1')
+        expect(decision.reason).toContain('re-read with orch doc get and re-apply')
+      }
+    }
+  })
+
+  test('allows creates without a token in every scope', () => {
+    expect(decideDocRevisionWrite({ current: null, isCreate: true, scope: 'canon' })).toEqual({
+      allow: true,
+    })
+  })
+
+  test('refuses an existing canon row whose hosted revision is absent without inventing a token', () => {
+    const decision = decideDocRevisionWrite({ current: null, isCreate: false, scope: 'canon' })
+    expect(decision).toEqual({
+      allow: false,
+      reason:
+        'refusing canon write: this row has no hosted revision id, so its revision cannot be checked; ' +
+        'this is unexpected and should be reported',
+    })
+    if (!decision.allow) expect(decision.reason).not.toContain('--expect')
   })
 })

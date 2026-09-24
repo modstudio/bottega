@@ -7,6 +7,7 @@ import {
   consumeDocBody,
   type DocDelivery,
   type DocRevisionOp,
+  decideDocRevisionWrite,
   recordDocLintRefusal,
   refuseDocWrite,
 } from '../doc/doc-write-allowed.ts'
@@ -44,6 +45,7 @@ export type RecordDocRevision = {
 }
 
 export type RecordDocImportInput = {
+  expectedRevision?: string
   doc: {
     scope: string
     subject: string | null
@@ -199,6 +201,21 @@ function assertWrite(refusal: string | null): void {
   if (refusal) throw new RecordDocError(refusal)
 }
 
+function assertRevisionWrite(input: {
+  expectedRevision?: string
+  current: unknown
+  isCreate: boolean
+  scope: string
+}): void {
+  const decision = decideDocRevisionWrite({
+    expected: input.expectedRevision,
+    current: input.current == null ? null : String(input.current),
+    isCreate: input.isCreate,
+    scope: input.scope,
+  })
+  if (!decision.allow) throw new RecordDocError(decision.reason, 409)
+}
+
 export async function listRecordDocs(input: Tenant & RecordDocListInput): Promise<RecordDoc[]> {
   return tenant(input, async (tx) => {
     const spaceIds = input.spaceIds?.length ? input.spaceIds : [input.spaceId]
@@ -276,17 +293,25 @@ export async function upsertRecordDoc(
     at?: string
     id?: string
     revisionId?: string
+    expectedRevision?: string
   },
 ): Promise<{ id: string; revisionId: string }> {
   return tenant(input, async (tx) => {
     const existing = await tx`
-      SELECT id, scope, subject, slug, body FROM doc
+      SELECT id, scope, subject, slug, body, latest_revision_id FROM doc
       WHERE space_id=${input.spaceId}::uuid
         AND scope=${input.scope}
         AND COALESCE(subject, '')=${input.subject ?? ''}
         AND slug=${input.slug}
         AND deleted_at IS NULL
+      FOR UPDATE
     `
+    assertRevisionWrite({
+      expectedRevision: input.expectedRevision,
+      current: existing[0]?.latest_revision_id,
+      isCreate: !existing[0],
+      scope: input.scope,
+    })
     const facts = await canonFacts(
       tx,
       input.spaceId,
@@ -399,29 +424,47 @@ async function insertRevision(
           AND at=${input.at}::timestamptz AND op=${input.op}
           AND author=${input.author} AND reason=${input.reason}
       `
-  if (existing[0]) return String(existing[0].id)
+  const storedId = existing[0] ? String(existing[0].id) : id
+  if (!existing[0]) {
+    await tx`
+      INSERT INTO doc_revision (
+        id, space_id, doc_id, scope, subject, slug, project_id, op, title, body, delivery,
+        author, reason, session_id, at
+      ) VALUES (
+        ${id}::uuid, ${input.spaceId}::uuid, ${input.docId}::uuid, ${input.scope}, ${input.subject},
+        ${input.slug}, ${input.projectId}::uuid, ${input.op}, ${input.title}, ${input.body},
+        ${input.delivery}, ${input.author}, ${input.reason}, ${input.sessionId}, ${input.at}::timestamptz
+      )
+    `
+  }
   await tx`
-    INSERT INTO doc_revision (
-      id, space_id, doc_id, scope, subject, slug, project_id, op, title, body, delivery,
-      author, reason, session_id, at
-    ) VALUES (
-      ${id}::uuid, ${input.spaceId}::uuid, ${input.docId}::uuid, ${input.scope}, ${input.subject},
-      ${input.slug}, ${input.projectId}::uuid, ${input.op}, ${input.title}, ${input.body},
-      ${input.delivery}, ${input.author}, ${input.reason}, ${input.sessionId}, ${input.at}::timestamptz
-    )
+    UPDATE doc SET latest_revision_id=${storedId}::uuid
+    WHERE space_id=${input.spaceId}::uuid AND id=${input.docId}::uuid
   `
-  return id
+  return storedId
 }
 
 export async function deleteRecordDoc(
-  input: Tenant & { id: string; reason: string; author: string; sessionId?: string | null },
+  input: Tenant & {
+    id: string
+    reason: string
+    author: string
+    sessionId?: string | null
+    expectedRevision?: string
+  },
 ): Promise<{ id: string; revisionId: string }> {
   return tenant(input, async (tx) => {
     const rows = await tx`
-      SELECT * FROM doc WHERE space_id=${input.spaceId}::uuid AND id=${input.id}::uuid
+      SELECT * FROM doc WHERE space_id=${input.spaceId}::uuid AND id=${input.id}::uuid FOR UPDATE
     `
     if (!rows[0]) throw new RecordDocError('doc not found', 404)
     const doc = rows[0] as Record<string, unknown>
+    assertRevisionWrite({
+      expectedRevision: input.expectedRevision,
+      current: doc.latest_revision_id,
+      isCreate: false,
+      scope: String(doc.scope),
+    })
     if (rows.length !== 1)
       throw new RecordDocError('refusing to delete more than one document', 409)
     const now = new Date().toISOString()
@@ -450,15 +493,28 @@ export async function deleteRecordDoc(
 }
 
 export async function consumeRecordDoc(
-  input: Tenant & { id: string; reason: string; author: string; sessionId?: string | null },
+  input: Tenant & {
+    id: string
+    reason: string
+    author: string
+    sessionId?: string | null
+    expectedRevision?: string
+  },
 ): Promise<{ id: string; revisionId: string; alreadyConsumed: boolean }> {
   return tenant(input, async (tx) => {
     const rows = await tx`
       SELECT * FROM doc
       WHERE space_id=${input.spaceId}::uuid AND id=${input.id}::uuid AND deleted_at IS NULL
+      FOR UPDATE
     `
     if (!rows[0]) throw new RecordDocError('doc not found', 404)
     const doc = rows[0] as Record<string, unknown>
+    assertRevisionWrite({
+      expectedRevision: input.expectedRevision,
+      current: doc.latest_revision_id,
+      isCreate: false,
+      scope: String(doc.scope),
+    })
     const now = new Date().toISOString()
     const consumed = consumeDocBody(String(doc.body), now, input.sessionId ?? input.author)
     if (consumed.alreadyConsumed) return { id: input.id, revisionId: '', alreadyConsumed: true }
@@ -493,9 +549,22 @@ export async function restoreRecordDoc(
     reason: string
     author: string
     sessionId?: string | null
+    expectedRevision?: string
   },
 ): Promise<{ id: string; revisionId: string }> {
   return tenant(input, async (tx) => {
+    const existing = await tx`
+      SELECT * FROM doc
+      WHERE space_id=${input.spaceId}::uuid AND id=${input.id}::uuid
+      FOR UPDATE
+    `
+    if (!existing[0]) throw new RecordDocError('doc not found', 404)
+    assertRevisionWrite({
+      expectedRevision: input.expectedRevision,
+      current: existing[0].latest_revision_id,
+      isCreate: false,
+      scope: String(existing[0].scope),
+    })
     const revisionRows = await tx`
       SELECT * FROM doc_revision
       WHERE space_id=${input.spaceId}::uuid AND id=${input.revisionId}::uuid AND doc_id=${input.id}::uuid
@@ -520,11 +589,6 @@ export async function restoreRecordDoc(
       }),
     )
     const now = new Date().toISOString()
-    const existing = await tx`
-      SELECT id FROM doc
-      WHERE space_id=${input.spaceId}::uuid AND id=${input.id}::uuid
-    `
-    if (!existing[0]) throw new RecordDocError('doc not found', 404)
     await tx`
       UPDATE doc
       SET title=${String(revision.title)}, body=${body}, delivery=${delivery},
@@ -610,6 +674,7 @@ async function existingDocAtAddress(
       AND slug=${doc.slug}
     ORDER BY (deleted_at IS NULL) DESC, updated_at DESC, id DESC
     LIMIT 1
+    FOR UPDATE
   `
   return rows[0] as Record<string, unknown> | undefined
 }
@@ -670,6 +735,12 @@ export async function importRecordDoc(
 ): Promise<{ id: string; revisionIds: string[] }> {
   return tenant(input, async (tx) => {
     const existing = await existingDocAtAddress(tx, input.spaceId, input.doc)
+    assertRevisionWrite({
+      expectedRevision: input.expectedRevision,
+      current: existing?.latest_revision_id,
+      isCreate: !existing,
+      scope: input.doc.scope,
+    })
     if (existing && input.doc.deletedAt !== null && existing.deleted_at == null) {
       const subject = existing.subject == null ? '' : String(existing.subject)
       throw new RecordDocError(

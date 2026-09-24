@@ -33,6 +33,52 @@ export function globalCanonWriteTargets(
   return optedIn.length ? optedIn : [null]
 }
 
+export function importedDocDelivery(scope: string): 'demand' | undefined {
+  return scope === 'project' || scope === 'global' ? 'demand' : undefined
+}
+
+export type DocRevisionDecision = { allow: true } | { allow: false; reason: string }
+
+/** Decides optimistic document writes without knowing either backing store. */
+export function decideDocRevisionWrite(input: {
+  expected?: string
+  current: string | null
+  isCreate: boolean
+  scope: string
+}): DocRevisionDecision {
+  if (!input.isCreate && input.scope === 'canon' && input.current === null) {
+    return {
+      allow: false,
+      reason:
+        'refusing canon write: this row has no hosted revision id, so its revision cannot be checked; ' +
+        'this is unexpected and should be reported',
+    }
+  }
+  if (input.isCreate && input.expected === undefined) return { allow: true }
+  if (!input.isCreate && input.scope !== 'canon' && input.expected === undefined) {
+    return { allow: true }
+  }
+
+  const current = input.current ?? '(no current revision)'
+  if (!input.isCreate && input.expected === undefined) {
+    return {
+      allow: false,
+      reason:
+        `refusing canon update at current revision ${current}; pass --expect ${current}\n` +
+        're-read with orch doc get and re-apply the edit',
+    }
+  }
+  if (input.expected !== input.current) {
+    return {
+      allow: false,
+      reason:
+        `refusing stale document update: expected revision ${input.expected}, current revision ${current}\n` +
+        're-read with orch doc get and re-apply the edit',
+    }
+  }
+  return { allow: true }
+}
+
 /** Hosted services have no checkout inventory, so they enforce every pure rule except references. */
 export function recordDocLintRefusal(
   next: Pick<LintableDoc, 'scope' | 'subject' | 'slug' | 'body'>,

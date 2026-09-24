@@ -25,9 +25,11 @@ export type RecordDocUpsertInput = {
   at?: string
   id?: string
   revisionId?: string
+  expectedRevision?: string
 }
 
 export type RecordDocImportInput = {
+  expectedRevision?: string
   doc: {
     scope: string
     subject: string | null
@@ -85,15 +87,15 @@ export type RecordApiClient = {
   importDoc(input: RecordDocImportInput): Promise<{ id: string; revisionIds: string[] }>
   deleteDoc(
     id: string,
-    input: { reason: string; author: string },
+    input: { reason: string; author: string; expectedRevision?: string },
   ): Promise<{ id: string; revisionId: string }>
   consumeDoc(
     id: string,
-    input: { reason: string; author: string },
+    input: { reason: string; author: string; expectedRevision?: string },
   ): Promise<{ id: string; revisionId: string; alreadyConsumed: boolean }>
   restoreDoc(
     id: string,
-    input: { revisionId: string; reason: string; author: string },
+    input: { revisionId: string; reason: string; author: string; expectedRevision?: string },
   ): Promise<{ id: string; revisionId: string }>
   renameSubject(input: {
     from: string

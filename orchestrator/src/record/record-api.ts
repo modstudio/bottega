@@ -94,14 +94,15 @@ type Deps = {
       at?: string
       id?: string
       revisionId?: string
+      expectedRevision?: string
     },
   ): Promise<{ id: string; revisionId: string }>
   importDoc(input: Tenant & RecordDocImportInput): Promise<{ id: string; revisionIds: string[] }>
   deleteDoc(
-    input: Tenant & { id: string; reason: string; author: string },
+    input: Tenant & { id: string; reason: string; author: string; expectedRevision?: string },
   ): Promise<{ id: string; revisionId: string }>
   consumeDoc(
-    input: Tenant & { id: string; reason: string; author: string },
+    input: Tenant & { id: string; reason: string; author: string; expectedRevision?: string },
   ): Promise<{ id: string; revisionId: string; alreadyConsumed: boolean }>
   restoreDoc(
     input: Tenant & {
@@ -109,6 +110,7 @@ type Deps = {
       revisionId: string
       reason: string
       author: string
+      expectedRevision?: string
     },
   ): Promise<{ id: string; revisionId: string }>
   renameDocSubject(
@@ -225,7 +227,13 @@ const wrapSchema = z.object({
   enc: base64urlSchema,
   ciphertext: base64urlSchema,
 })
+const docWriteContextSchema = z.object({
+  reason: z.string().trim().min(1),
+  author: z.string().trim().min(1),
+  expectedRevision: z.string().uuid().optional(),
+})
 const docImportSchema = z.object({
+  expectedRevision: z.string().uuid().optional(),
   doc: z.object({
     scope: z.string().min(1),
     subject: z.string().nullable(),
@@ -817,6 +825,7 @@ export function recordApi(deps: Deps): Hono<ApiEnvironment> {
         at: isoSchema.optional(),
         id: z.string().uuid().optional(),
         revisionId: z.string().uuid().optional(),
+        expectedRevision: z.string().uuid().optional(),
       })
       .safeParse(await context.req.json().catch(() => null))
     if (!body.success) return context.json({ error: 'invalid doc upsert' }, 400)
@@ -842,12 +851,7 @@ export function recordApi(deps: Deps): Hono<ApiEnvironment> {
     if (!tenant) return noSpace(context)
     const id = idSchema.safeParse(context.req.param('id'))
     if (!id.success) return context.json({ error: 'doc id must be a uuid' }, 400)
-    const body = z
-      .object({
-        reason: z.string().trim().min(1),
-        author: z.string().trim().min(1),
-      })
-      .safeParse(await context.req.json().catch(() => null))
+    const body = docWriteContextSchema.safeParse(await context.req.json().catch(() => null))
     if (!body.success) return context.json({ error: 'invalid doc delete' }, 400)
     try {
       return context.json(await deps.deleteDoc({ ...tenant, id: id.data, ...body.data }))
@@ -860,12 +864,7 @@ export function recordApi(deps: Deps): Hono<ApiEnvironment> {
     if (!tenant) return noSpace(context)
     const id = idSchema.safeParse(context.req.param('id'))
     if (!id.success) return context.json({ error: 'doc id must be a uuid' }, 400)
-    const body = z
-      .object({
-        reason: z.string().trim().min(1),
-        author: z.string().trim().min(1),
-      })
-      .safeParse(await context.req.json().catch(() => null))
+    const body = docWriteContextSchema.safeParse(await context.req.json().catch(() => null))
     if (!body.success) return context.json({ error: 'invalid doc consume' }, 400)
     try {
       return context.json(await deps.consumeDoc({ ...tenant, id: id.data, ...body.data }))
@@ -878,11 +877,9 @@ export function recordApi(deps: Deps): Hono<ApiEnvironment> {
     if (!tenant) return noSpace(context)
     const id = idSchema.safeParse(context.req.param('id'))
     if (!id.success) return context.json({ error: 'doc id must be a uuid' }, 400)
-    const body = z
-      .object({
+    const body = docWriteContextSchema
+      .extend({
         revisionId: z.string().uuid(),
-        reason: z.string().trim().min(1),
-        author: z.string().trim().min(1),
       })
       .safeParse(await context.req.json().catch(() => null))
     if (!body.success) return context.json({ error: 'invalid doc restore' }, 400)
