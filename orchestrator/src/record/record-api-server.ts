@@ -47,6 +47,7 @@ import { listRecordSnapshots, upsertRecordSnapshot } from './record-snapshots.ts
 import {
   countRecordScores,
   listRecordScores,
+  unvoidRecordRun,
   upsertRecordScore,
   voidRecordRun,
 } from './record-verdicts.ts'
@@ -125,6 +126,7 @@ export function startRecordApiServer(environment: ServerEnvironment = process.en
         fidelity: input.fidelity as 'drifted' | 'partial' | 'faithful' | null,
       }),
     voidRun: voidRecordRun,
+    unvoidRun: unvoidRecordRun,
     listScores: listRecordScores,
     countScores: countRecordScores,
     upsertSnapshot: upsertRecordSnapshot,

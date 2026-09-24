@@ -98,6 +98,17 @@ function fakePostgres(
           ]
         : []
     }
+    if (source.includes('information_schema.columns')) {
+      return [
+        { column_name: 'superseded_at' },
+        { column_name: 'superseded_by' },
+        { column_name: 'supersede_note' },
+      ]
+    }
+    if (source.includes('SELECT reason, superseded_at FROM run_exclusion')) {
+      return [{ reason: 'voided with orch score --void', superseded_at: null }]
+    }
+    if (source.includes('SELECT reason FROM run_exclusion')) return []
     return source.includes('SELECT id FROM project') ? [{ id: PROJECT_ID }] : []
   }) as unknown as SQL
   tx.options = {} as SQL['options']
@@ -185,6 +196,17 @@ test('sync upserts once and a second pass has no run mutation', async () => {
     remote.statements.filter((sql) => sql.toLowerCase().includes('insert into "run"')),
   ).toHaveLength(firstRunWrites)
   local.close()
+})
+
+test('sync supersedes the hosted void before pushing an unvoided run', async () => {
+  const local = localOutbox(1, PLATFORM_SLUG, {
+    evidenceExcluded: null,
+    evidenceUnvoid: { note: 'mistaken void' },
+  })
+  const remote = fakePostgres()
+  expect(await syncRecord(options(local, remote))).toMatchObject({ pushed: 1, failed: 0 })
+  expect(remote.statements.some((sql) => sql.includes('UPDATE run_exclusion'))).toBe(true)
+  expect(remote.statements.some((sql) => sql.includes('supersede_note'))).toBe(true)
 })
 
 test('a re-score while the old payload is in flight remains pending and is delivered next', async () => {

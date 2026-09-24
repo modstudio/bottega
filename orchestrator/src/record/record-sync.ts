@@ -49,7 +49,7 @@ import {
 import { machineId, machineName } from './machine-identity.ts'
 import { pullRecordCache } from './record-cache.ts'
 import { currentRecordSession } from './record-session.ts'
-import { validateRecordVerdict } from './record-verdicts.ts'
+import { supersedeRecordVoid, validateRecordVerdict } from './record-verdicts.ts'
 
 type OutboxRow = { id: number; kind: string; record_id: string; payload: string }
 type Payload = Record<string, unknown>
@@ -172,6 +172,9 @@ function payload(source: string, kind: keyof typeof recordKinds): Payload {
     Object.assign(parsed, { startedByUserId: null })
   }
   if (kind === 'run' && !Object.hasOwn(parsed, 'taskKey')) Object.assign(parsed, { taskKey: null })
+  if (kind === 'run' && !Object.hasOwn(parsed, 'evidenceUnvoid')) {
+    Object.assign(parsed, { evidenceUnvoid: null })
+  }
   const keys = Object.keys(parsed).sort()
   const expected = [...recordKinds[kind].columns].sort()
   if (keys.length !== expected.length || keys.some((key, index) => key !== expected[index])) {
@@ -364,8 +367,25 @@ async function pushRun(postgres: SQL, row: Payload, principal: RecordPrincipal):
       projectId = String(projects[0]!.id)
     }
     const values = runValues(row, projectId)
+    const evidenceUnvoid = row.evidenceUnvoid
+    if (evidenceUnvoid !== null) {
+      if (
+        typeof evidenceUnvoid !== 'object' ||
+        Array.isArray(evidenceUnvoid) ||
+        typeof (evidenceUnvoid as Record<string, unknown>).note !== 'string'
+      ) {
+        throw new Error('run outbox evidenceUnvoid must contain a note')
+      }
+      await supersedeRecordVoid(tx, {
+        id: values.id,
+        spaceId: principal.spaceId,
+        userId: principal.userId,
+        note: String((evidenceUnvoid as Record<string, unknown>).note),
+      })
+    }
     const exclusion = await tx`
-      SELECT reason FROM run_exclusion WHERE run_id=${values.id}::uuid AND space_id=${principal.spaceId}::uuid
+      SELECT reason FROM run_exclusion WHERE run_id=${values.id}::uuid
+        AND space_id=${principal.spaceId}::uuid AND superseded_at IS NULL
     `
     if (exclusion[0]?.reason) values.evidenceExcluded = String(exclusion[0].reason)
     const { id: _id, createdAt: _createdAt, ...updates } = values

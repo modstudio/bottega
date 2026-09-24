@@ -11,6 +11,7 @@ import { judgeRun, scoreRun } from './judgment.ts'
 import { completeReview, recordReview } from './review/review-triage.ts'
 import { candidates } from './route/route.ts'
 import { pairPartners } from './score/duel.ts'
+import { VOID_EXCLUSION_REASON } from './verdict/verdict-rules.ts'
 
 const trackResidue = trackedTestResidue()
 
@@ -650,6 +651,57 @@ describe('judge ruling', () => {
 })
 
 describe('voided output evidence', () => {
+  test('score --unvoid resolves a turn to its root, keeps the score, audits, and enqueues', async () => {
+    const root = insert('ok', 'review-lens')
+    const turn = addRun({
+      agent: 'codex',
+      job: 'review-lens',
+      status: 'ok',
+      session: 'orch-test-session',
+      parent: root,
+    })
+    seedScore(root, 'full', 'right')
+    db().query('UPDATE run SET evidence_excluded=? WHERE id=?').run(VOID_EXCLUSION_REASON, root)
+
+    await score(turn, [], { unvoid: true }, { note: 'void targeted the wrong run' })
+
+    expect(db().query('SELECT evidence_excluded FROM run WHERE id=?').get(root)).toEqual({
+      evidence_excluded: null,
+    })
+    expect(db().query('SELECT delivery,quality FROM score WHERE run_id=?').get(root)).toEqual({
+      delivery: 'full',
+      quality: 'right',
+    })
+    expect(
+      db()
+        .query('SELECT action,reason FROM run_mutation_audit WHERE run_id=? ORDER BY rowid DESC')
+        .get(root),
+    ).toEqual({ action: 'unvoid', reason: 'void targeted the wrong run' })
+    const payload = db()
+      .query<{ payload: string }, [number]>(
+        `SELECT payload FROM outbox
+         WHERE record_id=(SELECT record_id FROM run WHERE id=?) ORDER BY id DESC`,
+      )
+      .get(root)
+    expect(JSON.parse(payload!.payload)).toMatchObject({
+      evidenceExcluded: null,
+      evidenceUnvoid: { note: 'void targeted the wrong run' },
+    })
+  })
+
+  test('score --unvoid requires a note and refuses other exclusions and verdicts', async () => {
+    const id = insert('ok', 'review-lens')
+    db().query('UPDATE run SET evidence_excluded=? WHERE id=?').run(VOID_EXCLUSION_REASON, id)
+    await expect(score(id, [], { unvoid: true })).rejects.toThrow('--note is required')
+    await expect(
+      score(id, ['full', 'right'], { unvoid: true }, { note: 'mistake' }),
+    ).rejects.toThrow('--unvoid cannot be combined with a verdict')
+    db().query("UPDATE run SET evidence_excluded='unjudged: owner gone' WHERE id=?").run(id)
+    await expect(score(id, [], { unvoid: true }, { note: 'mistake' })).rejects.toThrow(
+      "actual exclusion is 'unjudged: owner gone'",
+    )
+  })
+
   test('score --blocked-by-tree uses the void routing exclusion without recording a verdict', async () => {
     const kept = insert('ok', 'understand')
     const blocked = insert('ok', 'understand')

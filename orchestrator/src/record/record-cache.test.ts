@@ -56,6 +56,7 @@ describe('record cache pull', () => {
       renameSubject: async () => ({ docs: 0, revisions: 0 }),
       putScore: async () => undefined,
       voidRun: async () => undefined,
+      unvoidRun: async () => undefined,
       listScores: async () => ({ items: [], nextCursor: null }),
       counts: async () => ({ docs: 0, revisions: 0, scores: 0, voids: 0 }),
     }

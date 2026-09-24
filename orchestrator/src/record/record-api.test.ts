@@ -51,6 +51,7 @@ function appWith(session: RecordIdentity | null, overrides: Record<string, unkno
     countDocs: async () => ({ docs: 0, revisions: 0 }),
     upsertScore: async () => undefined,
     voidRun: async () => undefined,
+    unvoidRun: async () => undefined,
     listScores: async () => [],
     countScores: async () => ({ scores: 0, voids: 0 }),
     upsertSnapshot: async () => ({ takenAt: '2026-09-17T12:00:00.000Z' }),
@@ -86,6 +87,31 @@ function appWith(session: RecordIdentity | null, overrides: Record<string, unkno
 const id = '01990000-0000-7000-8000-000000000001'
 
 describe('record API', () => {
+  test('requires an unvoid note and passes the authenticated tenant to the service', async () => {
+    const calls: Array<{ id: string; note: string; userId: string; spaceId: string }> = []
+    const app = appWith(identity, {
+      unvoidRun: async (input: { id: string; note: string; userId: string; spaceId: string }) => {
+        calls.push(input)
+      },
+    })
+    const missing = await app.request(`/v1/runs/${id}/unvoid`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({}),
+    })
+    expect(missing.status).toBe(400)
+    expect(await missing.json()).toEqual({ error: 'invalid unvoid: note is required' })
+    const response = await app.request(`/v1/runs/${id}/unvoid`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ note: 'mistaken void' }),
+    })
+    expect(response.status).toBe(200)
+    expect(calls).toEqual([
+      expect.objectContaining({ id, note: 'mistaken void', userId: 'user-a', spaceId: 'space-a' }),
+    ])
+  })
+
   test('records the authenticated user id and ignores a caller scorer label', async () => {
     const scorers: string[] = []
     const app = appWith(identity, {

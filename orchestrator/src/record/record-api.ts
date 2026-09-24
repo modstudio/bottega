@@ -126,6 +126,7 @@ type Deps = {
       },
   ): Promise<void>
   voidRun(input: Tenant & { id: string; reason: string }): Promise<void>
+  unvoidRun(input: Tenant & { id: string; note: string }): Promise<void>
   listScores(
     input: Tenant & {
       updatedSince?: string
@@ -965,6 +966,22 @@ export function recordApi(deps: Deps): Hono<ApiEnvironment> {
     if (!body.success) return context.json({ error: 'invalid void' }, 400)
     try {
       await deps.voidRun({ ...tenant, id: id.data, reason: body.data.reason })
+      return context.json({ ok: true })
+    } catch (error) {
+      return writeError(context, error)
+    }
+  })
+  app.post('/v1/runs/:id/unvoid', async (context) => {
+    const tenant = scope(context)
+    if (!tenant) return noSpace(context)
+    const id = idSchema.safeParse(context.req.param('id'))
+    if (!id.success) return context.json({ error: 'run id must be a uuid' }, 400)
+    const body = z
+      .object({ note: z.string().trim().min(1) })
+      .safeParse(await context.req.json().catch(() => null))
+    if (!body.success) return context.json({ error: 'invalid unvoid: note is required' }, 400)
+    try {
+      await deps.unvoidRun({ ...tenant, id: id.data, note: body.data.note })
       return context.json({ ok: true })
     } catch (error) {
       return writeError(context, error)

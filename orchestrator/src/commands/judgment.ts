@@ -125,7 +125,9 @@ function addJudgmentOptions(command: Command, judge: boolean): Command {
     command.option(`${name} <value>`)
   if (!judge) command.option('--scorer <value>')
   command.option('--force').allowExcessArguments(false)
-  return judge ? command.option('--discard') : command.option('--void').option('--blocked-by-tree')
+  return judge
+    ? command.option('--discard')
+    : command.option('--void').option('--unvoid').option('--blocked-by-tree')
 }
 
 export function register(program: Command): void {

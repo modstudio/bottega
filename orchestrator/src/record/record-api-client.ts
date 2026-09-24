@@ -101,6 +101,7 @@ export type RecordApiClient = {
   }): Promise<{ docs: number; revisions: number }>
   putScore(runId: string, input: VerdictInput): Promise<void>
   voidRun(runId: string, input: { reason: string }): Promise<void>
+  unvoidRun(runId: string, input: { note: string }): Promise<void>
   listScores(query: {
     updatedSince?: string
     limit?: number
@@ -231,6 +232,9 @@ export function recordApiClient(): RecordApiClient {
     },
     voidRun: async (runId, input) => {
       await request(`/v1/runs/${runId}/void`, { method: 'POST', body: JSON.stringify(input) })
+    },
+    unvoidRun: async (runId, input) => {
+      await request(`/v1/runs/${runId}/unvoid`, { method: 'POST', body: JSON.stringify(input) })
     },
     listScores: (query) => {
       const search = new URLSearchParams()

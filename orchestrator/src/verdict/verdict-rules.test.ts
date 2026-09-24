@@ -1,5 +1,11 @@
 import { describe, expect, test } from 'bun:test'
-import { type JobFacts, refuseVerdict, type VerdictFacts } from './verdict-rules.ts'
+import {
+  type JobFacts,
+  refuseUnvoid,
+  refuseVerdict,
+  type VerdictFacts,
+  VOID_EXCLUSION_REASON,
+} from './verdict-rules.ts'
 
 const readOnly: JobFacts = {
   writesRepo: false,
@@ -18,6 +24,17 @@ const writing: JobFacts = { ...readOnly, writesRepo: true }
 const findings: JobFacts = { ...readOnly, producesFindings: true }
 
 describe('verdict rules', () => {
+  test('unvoid allows only the orch score --void exclusion reason', () => {
+    expect(refuseUnvoid(VOID_EXCLUSION_REASON)).toBeNull()
+    for (const reason of [
+      'blocked by its tree: database unavailable',
+      'shared an output file with other runs',
+      'unjudged: owner gone',
+    ]) {
+      expect(refuseUnvoid(reason)).toContain(`actual exclusion is '${reason}'`)
+    }
+  })
+
   test.each([
     [{ delivery: 'other' }, 'delivery must be one of'],
     [{ delivery: 'none', quality: 'right' }, "delivery 'none' takes no quality"],

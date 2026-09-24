@@ -3,6 +3,13 @@
 import { NOT_EVIDENCE } from '../failure/failure.ts'
 import { DELIVERY, FIDELITY, QUALITY } from '../score/score.ts'
 
+export const VOID_EXCLUSION_REASON = 'voided with orch score --void'
+
+export function refuseUnvoid(evidenceExcluded: string | null): string | null {
+  if (evidenceExcluded === VOID_EXCLUSION_REASON) return null
+  return `unvoid requires '${VOID_EXCLUSION_REASON}'; actual exclusion is ${evidenceExcluded === null ? 'none' : `'${evidenceExcluded}'`}`
+}
+
 /**
  * What the job declares. Null where the scoring side cannot see it: the hosted
  * record knows a run's job by name only, and a machine that has not published

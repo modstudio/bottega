@@ -3,7 +3,7 @@
 import { SQL } from 'bun'
 import type { Delivery, Fidelity, Quality } from '../score/score.ts'
 import type { VerdictInput } from '../verdict/verdict-payload.ts'
-import { refuseVerdict } from '../verdict/verdict-rules.ts'
+import { refuseUnvoid, refuseVerdict, VOID_EXCLUSION_REASON } from '../verdict/verdict-rules.ts'
 
 export class RecordVerdictError extends Error {
   status: 400 | 404 | 409
@@ -134,9 +134,51 @@ export async function voidRecordRun(input: Tenant & { id: string; reason: string
     await tx`
       INSERT INTO run_exclusion (run_id, space_id, reason, excluded_at)
       VALUES (${input.id}::uuid, ${input.spaceId}::uuid, ${input.reason}, ${now}::timestamptz)
-      ON CONFLICT (run_id) DO UPDATE SET reason=excluded.reason, excluded_at=excluded.excluded_at
+      ON CONFLICT (run_id) DO UPDATE SET reason=excluded.reason, excluded_at=excluded.excluded_at,
+        superseded_at=NULL, superseded_by=NULL, supersede_note=NULL
     `
   })
+}
+
+const UNVOID_MIGRATION_REMEDY =
+  'hosted unvoid requires the pending record migration; apply it with `orch record migrate` before retrying'
+
+export async function supersedeRecordVoid(
+  tx: SQL,
+  input: Pick<Tenant, 'spaceId' | 'userId'> & { id: string; note: string },
+): Promise<void> {
+  const columns = await tx`
+    SELECT column_name FROM information_schema.columns
+    WHERE table_schema='public' AND table_name='run_exclusion'
+      AND column_name IN ('superseded_at','superseded_by','supersede_note')
+  `
+  if (columns.length !== 3) throw new RecordVerdictError(UNVOID_MIGRATION_REMEDY, 409)
+  const exclusions = await tx`
+    SELECT reason, superseded_at FROM run_exclusion
+    WHERE run_id=${input.id}::uuid AND space_id=${input.spaceId}::uuid
+  `
+  const exclusion = exclusions[0] as Record<string, unknown> | undefined
+  const reason = exclusion?.reason == null ? null : String(exclusion.reason)
+  const refusal = refuseUnvoid(reason)
+  if (refusal) throw new RecordVerdictError(`refused: ${refusal}`, 409)
+  if (exclusion?.superseded_at != null) return
+  const now = new Date().toISOString()
+  await tx`
+    UPDATE run_exclusion
+    SET superseded_at=${now}::timestamptz, superseded_by=${input.userId},
+        supersede_note=${input.note}
+    WHERE run_id=${input.id}::uuid AND space_id=${input.spaceId}::uuid
+      AND reason=${VOID_EXCLUSION_REASON} AND superseded_at IS NULL
+  `
+  await tx`
+    UPDATE run SET evidence_excluded=NULL, updated_at=${now}::timestamptz
+    WHERE id=${input.id}::uuid AND space_id=${input.spaceId}::uuid
+      AND evidence_excluded=${VOID_EXCLUSION_REASON}
+  `
+}
+
+export async function unvoidRecordRun(input: Tenant & { id: string; note: string }): Promise<void> {
+  return tenant(input, (tx) => supersedeRecordVoid(tx, input))
 }
 
 export async function listRecordScores(
@@ -151,6 +193,7 @@ export async function listRecordScores(
         COALESCE(r.evidence_excluded, e.reason) AS evidence_excluded
       FROM run_score s
       FULL OUTER JOIN run_exclusion e ON e.run_id=s.run_id AND e.space_id=s.space_id
+        AND e.superseded_at IS NULL
       LEFT JOIN run r ON r.id=COALESCE(s.run_id, e.run_id)
       WHERE COALESCE(s.space_id, e.space_id)=${input.spaceId}::uuid
         AND (
@@ -183,8 +226,8 @@ export async function countRecordScores(input: Tenant): Promise<{ scores: number
   return tenant(input, async (tx) => {
     const scores =
       await tx`SELECT count(*)::integer AS n FROM run_score WHERE space_id=${input.spaceId}::uuid`
-    const voids =
-      await tx`SELECT count(*)::integer AS n FROM run_exclusion WHERE space_id=${input.spaceId}::uuid`
+    const voids = await tx`SELECT count(*)::integer AS n FROM run_exclusion
+        WHERE space_id=${input.spaceId}::uuid AND superseded_at IS NULL`
     return { scores: Number(scores[0]?.n ?? 0), voids: Number(voids[0]?.n ?? 0) }
   })
 }
