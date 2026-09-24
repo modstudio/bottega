@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'bun:test'
 import { PLATFORM_NAME } from '../../../shared/brand.ts'
 import type { CanonLintInput } from '../canon/canon-lint.ts'
-import { type DocReferenceProject, lintDoc } from './doc-lint.ts'
+import { type DocReferenceProject, introducedDocFindings, lintDoc } from './doc-lint.ts'
 
 const checkout = (paths: string[]): CanonLintInput => ({
   files: [],
@@ -123,5 +123,14 @@ describe('stored document lint', () => {
         message: expect.stringContaining('missing'),
       }),
     ])
+  })
+
+  test('the update ratchet compares rule and message without line numbers', () => {
+    const baseline = lintDoc(doc('This was formerly different.'))
+    const moved = lintDoc(doc('\nThis was formerly different.'))
+    expect(introducedDocFindings(baseline, moved)).toEqual([])
+    expect(
+      introducedDocFindings(baseline, lintDoc(doc('This was formerly different.\nDEV-880.'))),
+    ).toEqual([expect.objectContaining({ rule: 'doc/issue', message: 'contains a task key' })])
   })
 })

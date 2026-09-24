@@ -21,9 +21,9 @@ modes:
       - ship-triage
       - complete
       - ship-fix
-      - design-records
       - pr
       - merge
+      - design-records
       - close
 ---
 Rebase, independently review, triage, fix, merge by pull request, and close a task.

@@ -20,6 +20,7 @@ import { db, nowIso, sessionId, writableDb, writeTransaction } from '../database
 import { JOBS } from '../jobs/jobs.ts'
 import { projectAt, projectByName } from '../project/projects.ts'
 import { recordApiClient } from '../record/record-api-client.ts'
+import { docLintRefusal, introducedDocFindings } from './doc-lint.ts'
 import { lintStoredDoc } from './doc-lint-adapter.ts'
 import {
   consumeDocBody,
@@ -454,19 +455,11 @@ export {
   storedDocsHaveRepositoryReferences,
 } from './doc-lint-adapter.ts'
 
-function assertDocLint(input: DocWriteInput): void {
+function assertDocLint(input: DocWriteInput, prior: Doc | null): void {
   const findings = lintStoredDoc(input as Pick<Doc, 'scope' | 'subject' | 'slug' | 'body'>)
-  if (!findings.length) return
-  const address = `${input.scope}/${input.subject ?? '_'}/${input.slug}`
-  throw new Error(
-    `refusing doc ${address}:\n` +
-      findings
-        .map(
-          (finding) =>
-            `- ${finding.rule} line ${finding.line}: ${finding.message}\n  remedy: ${finding.remedy}`,
-        )
-        .join('\n'),
-  )
+  const introduced = prior ? introducedDocFindings(lintStoredDoc(prior), findings) : findings
+  const refusal = docLintRefusal(input, introduced)
+  if (refusal) throw new Error(refusal)
 }
 
 async function setDocWithOp(input: DocWriteInput, requestedOp?: 'import'): Promise<Doc> {
@@ -477,7 +470,7 @@ async function setDocWithOp(input: DocWriteInput, requestedOp?: 'import'): Promi
   const delivery =
     input.scope === 'canon' ? 'demand' : (input.delivery ?? prior?.delivery ?? 'inject')
   assertDocWriteAllowed({ ...input, delivery })
-  assertDocLint(input)
+  assertDocLint(input, prior)
   const hosted = await recordApiClient().upsertDoc({
     scope: input.scope,
     subject: input.subject,
@@ -960,15 +953,18 @@ export async function restoreDoc(
     delivery: revision.delivery,
     ...context,
   })
-  assertDocLint({
-    scope,
-    subject,
-    slug,
-    title: revision.title,
-    body: revision.body,
-    delivery: revision.delivery,
-    ...context,
-  })
+  assertDocLint(
+    {
+      scope,
+      subject,
+      slug,
+      title: revision.title,
+      body: revision.body,
+      delivery: revision.delivery,
+      ...context,
+    },
+    null,
+  )
   let recordId = getDoc(scope, subject, slug)?.record_id
   if (!recordId) {
     const listed = await recordApiClient().listDocs({

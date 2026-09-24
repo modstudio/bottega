@@ -23,6 +23,7 @@ export type DocReferenceProject = {
   name: string
   stack: string | null
   checkout: CanonLintInput | null
+  unavailable?: string
 }
 
 export function docHasRepositoryReferences(body: string): boolean {
@@ -77,7 +78,7 @@ function referenceTargets(doc: LintableDoc): DocReferenceProject[] {
 
 function referenceFindings(doc: LintableDoc): DocLintFinding[] {
   const targets = referenceTargets(doc)
-  if (doc.scope === 'stack' && !targets.some(({ checkout }) => checkout !== null)) {
+  if (doc.scope === 'stack' && targets.length === 0) {
     return [
       {
         rule: 'doc/reference-unverifiable',
@@ -88,10 +89,12 @@ function referenceFindings(doc: LintableDoc): DocLintFinding[] {
     ]
   }
   const unavailable = targets.filter(({ checkout }) => checkout === null)
-  const findings: DocLintFinding[] = (doc.scope === 'stack' ? [] : unavailable).map(({ name }) => ({
+  const findings: DocLintFinding[] = unavailable.map(({ name, unavailable: detail }) => ({
     rule: 'doc/reference-unverifiable',
     line: 1,
-    message: `registered project ${name} checkout is missing`,
+    message: detail
+      ? `registered project ${name} checkout could not be inspected: ${detail}`
+      : `registered project ${name} checkout is missing`,
     remedy: referenceRemedy('doc/reference-unverifiable'),
   }))
   const available = targets.flatMap(({ checkout }) => (checkout ? [checkout] : []))
@@ -158,5 +161,42 @@ export function lintDoc(doc: LintableDoc): DocLintFinding[] {
   if (doc.slug.startsWith('design-')) findings.push(...designHeadingFindings(doc.body))
   return findings.sort(
     (a, b) => a.rule.localeCompare(b.rule) || a.line - b.line || a.message.localeCompare(b.message),
+  )
+}
+
+/** A doc update may keep legacy findings, but may not add another rule/message pair. */
+export function introducedDocFindings(
+  baseline: DocLintFinding[],
+  findings: DocLintFinding[],
+): DocLintFinding[] {
+  const remaining = new Map<string, number>()
+  const key = (finding: DocLintFinding) => JSON.stringify([finding.rule, finding.message])
+  for (const finding of baseline) {
+    const fingerprint = key(finding)
+    remaining.set(fingerprint, (remaining.get(fingerprint) ?? 0) + 1)
+  }
+  return findings.filter((finding) => {
+    const fingerprint = key(finding)
+    const count = remaining.get(fingerprint) ?? 0
+    if (count === 0) return true
+    remaining.set(fingerprint, count - 1)
+    return false
+  })
+}
+
+export function docLintRefusal(
+  doc: Pick<LintableDoc, 'scope' | 'subject' | 'slug'>,
+  findings: DocLintFinding[],
+): string | null {
+  if (!findings.length) return null
+  const address = `${doc.scope}/${doc.subject ?? '_'}/${doc.slug}`
+  return (
+    `refusing doc ${address}:\n` +
+    findings
+      .map(
+        (finding) =>
+          `- ${finding.rule} line ${finding.line}: ${finding.message}\n  remedy: ${finding.remedy}`,
+      )
+      .join('\n')
   )
 }

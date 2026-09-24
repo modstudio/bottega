@@ -37,6 +37,66 @@ describe('scoped operator docs', () => {
     expect(getDoc('global', null, 'bad-prose')).toBeNull()
   })
 
+  test('set permits a clean append to legacy findings', async () => {
+    const stored = await setDoc({
+      scope: 'global',
+      subject: null,
+      slug: 'legacy-prose',
+      title: 'Legacy prose',
+      body: 'Current.',
+    })
+    db().query('UPDATE doc SET body=? WHERE id=?').run('This was formerly different.', stored.id)
+    await expect(
+      setDoc({
+        scope: 'global',
+        subject: null,
+        slug: 'legacy-prose',
+        title: 'Legacy prose',
+        body: 'This was formerly different.\n\nCurrent behaviour is direct.',
+      }),
+    ).resolves.toMatchObject({ body: expect.stringContaining('Current behaviour is direct.') })
+  })
+
+  test('set refuses a finding introduced while editing a legacy document', async () => {
+    const stored = await setDoc({
+      scope: 'global',
+      subject: null,
+      slug: 'legacy-edit',
+      title: 'Legacy edit',
+      body: 'Current.',
+    })
+    db().query('UPDATE doc SET body=? WHERE id=?').run('This was formerly different.', stored.id)
+    await expect(
+      setDoc({
+        scope: 'global',
+        subject: null,
+        slug: 'legacy-edit',
+        title: 'Legacy edit',
+        body: 'This was formerly different.\n\nDEV-880 tracks this.',
+      }),
+    ).rejects.toThrow('contains a task key')
+  })
+
+  test('an unreadable unrelated checkout does not affect a project doc write', async () => {
+    upsertProject({ name: 'known', path: process.cwd(), stack: null, canon: true, settings: {} })
+    upsertProject({
+      name: 'unreadable',
+      path: '/dev/null',
+      stack: null,
+      canon: false,
+      settings: {},
+    })
+    await expect(
+      setDoc({
+        scope: 'project',
+        subject: 'known',
+        slug: 'target-only',
+        title: 'Target only',
+        body: 'See `package.json`.',
+      }),
+    ).resolves.toMatchObject({ slug: 'target-only' })
+  })
+
   test('CRUD round-trips and set is a uniqueness-preserving upsert', async () => {
     const first = await setDoc({
       scope: 'global',

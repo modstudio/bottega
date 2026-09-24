@@ -4,6 +4,7 @@ import { composeCanonRows } from '../canon/canon-hydrate.ts'
 import type { CanonSourceText } from '../canon/canon-lint.ts'
 import { decideCanonWrite } from '../canon/canon-write-gate.ts'
 import { DEFAULT_PACK_BYTES, MAX_INJECT_DOC_BYTES } from '../canon/pack-budget.ts'
+import { docLintRefusal, introducedDocFindings, type LintableDoc, lintDoc } from './doc-lint.ts'
 
 export const RECORD_WRITE_REMEDY = 'cleared by: orch record doctor'
 
@@ -18,6 +19,16 @@ export type DocRevisionOp =
   | 'backfill'
 
 export type CanonRow = { slug: string; body: string }
+
+/** Hosted services have no checkout inventory, so they enforce every pure rule except references. */
+export function recordDocLintRefusal(
+  next: Pick<LintableDoc, 'scope' | 'subject' | 'slug' | 'body'>,
+  current?: Pick<LintableDoc, 'scope' | 'subject' | 'slug' | 'body'>,
+): string | null {
+  const findings = lintDoc(next)
+  const introduced = current ? introducedDocFindings(lintDoc(current), findings) : findings
+  return docLintRefusal(next, introduced)
+}
 
 export function refuseProjectOrGlobalInject(scope: string, delivery: DocDelivery): string | null {
   if ((scope === 'project' || scope === 'global') && delivery === 'inject') {

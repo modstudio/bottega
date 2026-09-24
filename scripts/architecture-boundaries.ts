@@ -307,6 +307,7 @@ export const importBoundaries: ImportBoundary[] = [
       '../canon/canon-write-gate.ts',
       '../canon/pack-budget.ts',
       '../canon/canon-lint.ts',
+      './doc-lint.ts',
     ],
     'Keep document write decisions independent of stores, HTTP, filesystems, and CLI.',
   ),

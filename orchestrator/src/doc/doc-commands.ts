@@ -38,11 +38,11 @@ function lintDocs(flags: DocFlags, presentation: DocPresentation): void {
   const scope = flags.flag('scope')
   const subject = flags.flag('subject') ?? null
   const rows = listDocs({ scope, ...(flags.has('subject') ? { subject } : {}) })
-  const referenceProjects = storedDocsHaveRepositoryReferences(rows)
-    ? collectDocReferenceProjects()
-    : undefined
   const findings = rows.flatMap((doc) =>
-    lintStoredDoc(doc, referenceProjects).map((finding) => ({
+    lintStoredDoc(
+      doc,
+      storedDocsHaveRepositoryReferences([doc]) ? collectDocReferenceProjects(doc) : undefined,
+    ).map((finding) => ({
       scope: doc.scope,
       subject: doc.subject,
       slug: doc.slug,

@@ -24,9 +24,9 @@ modes:
       - apply-findings
       - acceptance
       - run-gate
-      - design-records
       - open-pr
       - merge-pr
+      - design-records
       - promote-release
       - close-task
   - slug: merge
@@ -38,8 +38,8 @@ modes:
       - apply-findings
       - acceptance
       - run-gate
-      - design-records
       - open-pr
       - merge-pr
+      - design-records
 ---
 Review, gate, merge, promote through the project's release rungs, and close the task at the last rung reached. The `merge` mode stops after merge and leaves promotion and closing to the caller.
