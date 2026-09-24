@@ -27,6 +27,30 @@ describe('hosted-only task safety', () => {
       reason:
         "refusing to mirror comment 760 with id id-1: legacy local id 760 in space space-a already belongs to id id-2; restore this local row's record id to id-2, or ask the hosted-space operator to resolve the local id collision",
     })
+    expect(
+      mirrorCollisionDecision(
+        { id: 'id-1', spaceId: 'space-a', naturalKey: 'comment 760' },
+        null,
+        'update',
+        'id',
+        { id: 'id-2', spaceId: 'space-a', legacyLocalId: 760 },
+        true,
+      ),
+    ).toEqual({ action: 'adopt', id: 'id-2' })
+    expect(
+      mirrorCollisionDecision(
+        { id: 'id-1', spaceId: 'space-a', naturalKey: 'document 760' },
+        null,
+        'update',
+        'id',
+        { id: 'id-2', spaceId: 'space-b', legacyLocalId: 760 },
+        true,
+      ),
+    ).toEqual({
+      action: 'refuse',
+      reason:
+        "refusing to mirror document 760 with id id-1: legacy local id 760 in space space-b already belongs to id id-2; restore this local row's record id to id-2, or ask the hosted-space operator to resolve the local id collision",
+    })
     expect(mirrorCollisionDecision(incoming, incoming, 'update')).toEqual({
       action: 'update-same-row',
     })

@@ -108,6 +108,22 @@ function sourceCounts<T>(values: T[], source: (row: T) => string | undefined) {
   return Object.fromEntries([...counts].sort(([a], [b]) => a.localeCompare(b)))
 }
 
+function persistMirrorAdoptions(
+  adoptions: Array<{
+    table: 'task_comment' | 'task_document' | 'task_status_event'
+    legacy_local_id: number
+    id: string
+  }>,
+) {
+  if (!adoptions.length) return
+  writeTransaction((conn) => {
+    for (const adoption of adoptions)
+      conn
+        .query(`UPDATE ${adoption.table} SET record_id=? WHERE id=?`)
+        .run(adoption.id, adoption.legacy_local_id)
+  })
+}
+
 export async function pushTasks(options: Options = {}) {
   const taskRows = db().query<TaskRow, []>(`SELECT * FROM task ORDER BY key`).all()
   const taskRecordIds = new Map(taskRows.map((row) => [row.key, row.record_id]))
@@ -140,6 +156,7 @@ export async function pushTasks(options: Options = {}) {
       ...row,
       id: row.record_id ?? newRecordId(),
       legacy_local_id: row.id,
+      newly_assigned: row.record_id === null,
       project_name: taskByKey.get(row.task_key)?.project_name ?? '',
       deleted_at: null,
     }))
@@ -203,14 +220,16 @@ export async function pushTasks(options: Options = {}) {
           .run(row.id as string, row.legacy_local_id as number)
     })
   for (const [name, rows] of Object.entries(active))
-    for (let index = 0; index < rows.length; index += 500)
-      await hostedMirrorTasks(
+    for (let index = 0; index < rows.length; index += 500) {
+      const response = await hostedMirrorTasks(
         {
           tasks: name === 'tasks' ? rows.slice(index, index + 500) : [],
           [name]: rows.slice(index, index + 500),
         },
         requestOptions,
       )
+      persistMirrorAdoptions(response.adoptions ?? [])
+    }
   const maxima = new Map<string, { project: string; prefix: string; next: number }>()
   for (const task of active.tasks) {
     const match = /^([A-Z][A-Z0-9]*)-(\d+)$/.exec(task.key)
