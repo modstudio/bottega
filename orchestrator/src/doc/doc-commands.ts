@@ -5,6 +5,7 @@
  */
 import { readFileSync } from 'node:fs'
 import { checkDoc, repoRootForDoc } from '../canon/canon.ts'
+import { searchDocs } from './doc-search.ts'
 import {
   collectDocReferenceProjects,
   consumeDoc,
@@ -77,6 +78,26 @@ export async function docCommand(
   const subject = flag('subject') ?? null
   if (sub === 'lint') {
     lintDocs(flags, presentation)
+    return
+  }
+  if (sub === 'search') {
+    const query = argv[2]
+    if (!query) throw new Error('orch doc search "<query>" [--k N] [--json]')
+    const rawK = flag('k') ?? '5'
+    if (!/^\d+$/.test(rawK) || Number(rawK) < 1) throw new Error('--k must be a positive integer')
+    const output = await searchDocs(query, Number(rawK))
+    if (has('json')) presentation.log(JSON.stringify(output))
+    else {
+      presentation.log(
+        `refresh: ${output.refresh.embedded} embedded, ${output.refresh.deleted} deleted, ${output.refresh.unchanged} unchanged`,
+      )
+      for (const result of output.results) {
+        presentation.log(
+          `${result.scope}/${result.subject ?? '_'}/${result.slug} · ${result.headingPath.join(' > ') || result.title}`,
+        )
+        presentation.log(`  ${result.snippet}${result.truncated ? '…' : ''}`)
+      }
+    }
     return
   }
   if (sub === 'list') {
@@ -283,6 +304,6 @@ export async function docCommand(
     return
   }
   throw new Error(
-    `unknown: orch doc ${sub}. Try list | get | show | set | lint | consume | rm | history | diff | restore | subjects | export | import | resumes`,
+    `unknown: orch doc ${sub}. Try list | get | show | search | set | lint | consume | rm | history | diff | restore | subjects | export | import | resumes`,
   )
 }

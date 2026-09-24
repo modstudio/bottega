@@ -16,6 +16,7 @@ test('the payload has only the declared runtime paths', () => {
     'orchestrator/src/cli/orch.ts',
     'hub/src/cli.ts',
     'orchestrator/src/run/exec.ts',
+    'retrieval/src/search-cli.ts',
     'orchestrator/migrations',
     'hub/migrations',
     'orchestrator/hooks',
@@ -34,6 +35,7 @@ test('the payload has only the declared runtime paths', () => {
     DIST_MANIFEST,
     'bin/orch',
     'bin/hub',
+    'bin/retrieval-search',
   ])
 })
 

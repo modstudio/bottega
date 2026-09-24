@@ -47,6 +47,7 @@ export const PLATFORM_SLUG = 'bottega'
 export const FROZEN_STATE_NAMES = {
   orchestratorDatabase: 'orch.db',
   hubDatabase: 'hub.db',
+  retrievalDatabase: 'retrieval.db',
   runsDirectory: 'runs',
 } as const
 

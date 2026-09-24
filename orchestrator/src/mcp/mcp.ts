@@ -10,6 +10,7 @@ registerStandardRuntime()
 
 import { strictlyAuthenticatedWorkerRun } from '../ask/ask.ts'
 import { checkDoc, repoRootForDoc } from '../canon/canon.ts'
+import { searchDocs } from '../doc/doc-search.ts'
 import {
   consumeDoc,
   docsMarkdown,
@@ -647,6 +648,18 @@ export function createDocsMcpServer(): McpServer {
       if (!doc) throw new Error(`no ${scope} doc "${slug}"`)
       return text(doc)
     },
+  )
+
+  server.registerTool(
+    'search_docs',
+    {
+      description: 'Find docs by meaning and return addresses to open with get_doc.',
+      inputSchema: {
+        query: z.string().trim().min(1),
+        k: z.number().int().positive().optional(),
+      },
+    },
+    async ({ query, k }) => text(await searchDocs(query, k ?? 5)),
   )
 
   server.registerTool(

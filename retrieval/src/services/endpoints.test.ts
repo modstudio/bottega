@@ -9,13 +9,13 @@ describe('retrieval endpoints', () => {
     })
   })
 
-  test('refuses with the tunnel remedy when an endpoint is absent', async () => {
+  test('refuses with the doctor remedy when an endpoint is absent', async () => {
     const absent = () => Promise.reject(new Error('connection refused'))
 
     await expect(
       probeEndpoints({ embedUrl: 'http://embed/v1', rerankUrl: 'http://rerank/v1' }, absent),
     ).rejects.toThrow(
-      'embedding endpoint could not be established at http://embed/v1/embeddings: connection refused. Run `launchctl kickstart -k gui/$(id -u)/com.user.gx10-services-tunnel` and retry.',
+      'embedding endpoint could not be established at http://embed/v1/embeddings: connection refused. Run `orch doctor` to check model-host reachability and retry.',
     )
   })
 })

@@ -1,7 +1,8 @@
 // concern: retrieval-endpoints
 /** Probes and calls the two OpenAI-compatible retrieval services. */
 
-const EMBEDDING_MODEL = 'Qwen/Qwen3-Embedding-0.6B'
+import { EMBEDDING_MODEL } from '../contract.ts'
+
 const RERANK_MODEL = 'Qwen/Qwen3-Reranker-0.6B'
 const DEFAULT_EMBED_URL = 'http://127.0.0.1:8011/v1'
 const DEFAULT_RERANK_URL = 'http://127.0.0.1:8012/v1'
@@ -23,7 +24,7 @@ export function endpointsFromEnvironment(environment: NodeJS.ProcessEnv): Retrie
 function refusal(kind: string, url: string, detail: string): Error {
   return new Error(
     `${kind} endpoint could not be established at ${url}: ${detail}. ` +
-      'Run `launchctl kickstart -k gui/$(id -u)/com.user.gx10-services-tunnel` and retry.',
+      'Run `orch doctor` to check model-host reachability and retry.',
   )
 }
 
