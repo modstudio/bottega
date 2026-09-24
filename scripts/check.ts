@@ -14,10 +14,6 @@ type Command = { cwd: string; argv: string[] }
 type Leg = { name: string; commands: Command[] }
 type LegResult = GateStepResult & { tail: string[] }
 type StaticCheck = { name: string; argv: string[] }
-type RegisteredProject = {
-  path: string
-  settings?: { checks?: { spelling?: boolean; attribution?: boolean } }
-}
 
 const root = fileURLToPath(new URL('..', import.meta.url))
 const checkStartedAt = performance.now()
@@ -158,38 +154,6 @@ function staticCheck(name: string, extra: string[] = []): StaticCheck {
   return { name, argv: ['bun', `${root}${name}`, ...extra] }
 }
 
-function enabledProjectChecks(): StaticCheck[] {
-  const listed = Bun.spawnSync([`${root}bin/orch`, 'project', 'list', '--json'], {
-    cwd: root,
-    stdout: 'pipe',
-    stderr: 'pipe',
-  })
-  if (listed.exitCode !== 0) {
-    const detail = listed.stderr.toString().trim()
-    throw new Error(
-      `could not read the project register for opt-in checks${detail ? `: ${detail}` : ''}`,
-    )
-  }
-  const projects = JSON.parse(listed.stdout.toString()) as RegisteredProject[]
-  const project = projects
-    .filter(({ path }) => root === `${path}/` || root.startsWith(`${path.replace(/\/$/, '')}/`))
-    .sort((left, right) => right.path.length - left.path.length)[0]
-  if (!project) throw new Error(`no registered project contains gate checkout ${root}`)
-  return [
-    ...(project.settings?.checks?.spelling
-      ? [{ name: 'project spelling', argv: [`${root}bin/orch`, 'check', 'spelling'] }]
-      : []),
-    ...(project.settings?.checks?.attribution
-      ? [
-          {
-            name: 'project attribution',
-            argv: [`${root}bin/orch`, 'check', 'attribution', '--range'],
-          },
-        ]
-      : []),
-  ]
-}
-
 async function recordGateStep(check: StaticCheck): Promise<GateStepResult> {
   return { name: check.name, exitCode: await inherit(check.argv) }
 }
@@ -312,7 +276,7 @@ const results = await Promise.all(
 printFailedLegTails(results)
 const gateSteps: GateStepResult[] = [...results]
 const staticChecks: StaticCheck[] = [
-  ...enabledProjectChecks(),
+  { name: 'project checks', argv: [`${root}bin/orch`, 'check', '--enabled'] },
   staticCheck('scripts/check-machine-state.ts'),
   staticCheck('scripts/check-cascade-preservation.ts'),
   staticCheck('scripts/check-postgres-migrations.ts'),

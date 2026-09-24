@@ -73,7 +73,8 @@ const runFlags = (options: OptionValues) => ({
 
 export function register(program: Command): void {
   program
-    .command('check <kind>')
+    .command('check [kind]')
+    .option('--enabled')
     .option('--project <value>')
     .option('--fix')
     .option('--message <file>')
@@ -81,7 +82,7 @@ export function register(program: Command): void {
     .option('--pr <number-or-url>')
     .allowExcessArguments(false)
     .action((kind, options) =>
-      checkCommand(productArgv('check', [kind], options), {
+      checkCommand(productArgv('check', kind ? [kind] : [], options), {
         log,
         setExitCode: (code) => {
           process.exitCode = code

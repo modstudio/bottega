@@ -159,6 +159,32 @@ describe('workflow definition validation', () => {
 })
 
 describe('workflow versions and project composition', () => {
+  test('renders the registered name through the built-in project placeholder', () => {
+    const d = database()
+    const current = productionStepCatalogue(d).definition
+    const catalogue = setStepCatalogue(
+      {
+        steps: current.steps.map((step) =>
+          step.slug === 'lens' ? { ...step, body: 'Check {{project}}.' } : step,
+        ),
+      },
+      'project placeholder fixture',
+      'test',
+      d,
+    )
+    promoteStepCatalogue(catalogue.n, 'publish', 'test', d)
+
+    expect(
+      getWorkflowStep(
+        'ship',
+        'fixture',
+        'lens',
+        { key: 'DEV-1', branch: 'DEV-1-work', worktree: '/work' },
+        d,
+      ).body,
+    ).toBe('Check fixture.')
+  })
+
   test("a mode's requirements apply to compose and step only in that mode", () => {
     const d = database()
     const draft = setWorkflow(

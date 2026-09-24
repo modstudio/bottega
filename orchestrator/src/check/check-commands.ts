@@ -1,4 +1,4 @@
-import { existsSync, readFileSync } from 'node:fs'
+import { existsSync, readFileSync, realpathSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { gitToplevel } from '../../../shared/git.ts'
 import { flagValue } from '../cli/args.ts'
@@ -32,8 +32,13 @@ function selectedProject(argv: string[], cwd: string): Project {
 }
 
 function checkout(project: Project, explicitProject: boolean, cwd: string): string {
-  if (explicitProject) return project.path
   const root = gitToplevel(cwd)
+  if (explicitProject) {
+    if (!root) return project.path
+    const actual = realpathSync(root)
+    const registered = realpathSync(project.path)
+    if (actual !== registered && !actual.startsWith(`${registered}/`)) return project.path
+  }
   if (!root) throw new Error(`refusing ${cwd}: not a git checkout`)
   return root
 }
@@ -169,9 +174,47 @@ async function attributionCommand(argv: string[], presentation: Presentation): P
   if (findings.length) presentation.setExitCode(1)
 }
 
+async function enabledCommand(argv: string[], presentation: Presentation): Promise<void> {
+  const project = selectedProject(argv, presentation.cwd())
+  const enabled = [
+    ...(project.settings.checks?.spelling ? (['spelling'] as const) : []),
+    ...(project.settings.checks?.attribution ? (['attribution'] as const) : []),
+  ]
+  if (!enabled.length) {
+    presentation.log(`no checks enabled for ${project.name}`)
+    return
+  }
+
+  const common = argv.slice(1).filter((argument) => argument !== '--enabled')
+  const failures: string[] = []
+  for (const name of enabled) {
+    let failed = false
+    const checkPresentation: Presentation = {
+      ...presentation,
+      setExitCode(code) {
+        if (code !== 0) failed = true
+      },
+    }
+    try {
+      const checkArgv = ['check', name, ...common, ...(name === 'attribution' ? ['--range'] : [])]
+      if (name === 'spelling') spellingCommand(checkArgv, checkPresentation)
+      else await attributionCommand(checkArgv, checkPresentation)
+    } catch (error) {
+      failed = true
+      presentation.log(error instanceof Error ? error.message : String(error))
+    }
+    if (failed) failures.push(name)
+  }
+  for (const name of failures) presentation.log(`failed check: ${name}`)
+  if (failures.length) presentation.setExitCode(1)
+}
+
 export async function checkCommand(argv: string[], presentation: Presentation): Promise<void> {
   const kind = argv[1]
-  if (kind === 'spelling') spellingCommand(argv, presentation)
+  if (argv.includes('--enabled')) {
+    if (kind !== '--enabled') throw new Error('--enabled cannot be combined with a check name')
+    await enabledCommand(argv, presentation)
+  } else if (kind === 'spelling') spellingCommand(argv, presentation)
   else if (kind === 'attribution') await attributionCommand(argv, presentation)
-  else throw new Error('unknown: orch check. Try spelling | attribution')
+  else throw new Error('unknown: orch check. Try --enabled | spelling | attribution')
 }

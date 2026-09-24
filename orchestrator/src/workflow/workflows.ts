@@ -559,7 +559,7 @@ export function getWorkflowStep(
       [builtInAutonomyScope(definition.defaultPreset)],
       slug,
     )
-  const values: Record<string, unknown> = { ...args, ...facts }
+  const values: Record<string, unknown> = { project: projectName, ...args, ...facts }
   const body = step.body.replace(/\{\{([^{}]+)\}\}/g, (_all, path: string) => {
     let value: unknown = values
     for (const part of path.split('.')) value = object(value) ? value[part] : undefined

@@ -8,6 +8,6 @@ autonomy: auto
 needs:
   - gate
 ---
-Run `{{gate}}` in `{{worktree}}` in the foreground against the exact tree that will ship.
+Run `{{gate}}` in `{{worktree}}` in the foreground against the exact tree that will ship. Then, in `{{worktree}}`, run `orch check --enabled --project {{project}}`.
 
-This step is done only when the gate command exits zero. A skipped, backgrounded, partial, or unavailable gate does not complete it.
+This step is done only when both commands exit zero. A skipped, backgrounded, partial, or unavailable gate or enabled project check does not complete it.
