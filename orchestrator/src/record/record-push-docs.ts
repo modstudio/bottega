@@ -88,6 +88,7 @@ function groupFromLive(
     localDocId: doc.id,
     localRevisionIds: revisions.map((row) => row.id),
     payload: {
+      expectedRevision: revisions.at(-1)?.record_id ?? undefined,
       doc: {
         scope: doc.scope,
         subject: doc.subject,
@@ -117,6 +118,7 @@ function groupFromDeleted(revisions: LocalRevision[], names: Map<number, string>
     localDocId: null,
     localRevisionIds: revisions.map((row) => row.id),
     payload: {
+      expectedRevision: revisions.at(-1)?.record_id ?? undefined,
       doc: {
         scope: last.scope,
         subject: last.subject,

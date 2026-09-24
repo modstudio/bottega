@@ -33,6 +33,7 @@ export const doc = pgTable.withRLS(
     createdAt: createdAt(),
     updatedAt: updatedAt(),
     deletedAt: timestamp('deleted_at', { withTimezone: true }),
+    latestRevisionId: uuid('latest_revision_id'),
   },
   (table) => [
     check(

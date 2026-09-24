@@ -42,12 +42,20 @@ export function decideDocRevisionWrite(input: {
   isCreate: boolean
   scope: string
 }): DocRevisionDecision {
+  if (!input.isCreate && input.scope === 'canon' && input.current === null) {
+    return {
+      allow: false,
+      reason:
+        'refusing canon write: this row has no hosted revision id, so its revision cannot be checked; ' +
+        'this is unexpected and should be reported',
+    }
+  }
   if (input.isCreate && input.expected === undefined) return { allow: true }
   if (!input.isCreate && input.scope !== 'canon' && input.expected === undefined) {
     return { allow: true }
   }
 
-  const current = input.current ?? '(no hosted revision)'
+  const current = input.current ?? '(no current revision)'
   if (!input.isCreate && input.expected === undefined) {
     return {
       allow: false,

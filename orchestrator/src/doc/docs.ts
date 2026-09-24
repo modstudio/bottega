@@ -16,23 +16,26 @@ import { AGENTS } from '../agent/agent-registry.ts'
 import { collectCanonLintInput } from '../canon/canon-files.ts'
 import { type CanonRow, composeCanonRows } from '../canon/canon-hydrate.ts'
 import { DEFAULT_PACK_BYTES } from '../canon/pack-budget.ts'
-import { db, nowIso, sessionId, writableDb, writeTransaction } from '../database/db.ts'
+import { db, nowIso, writableDb, writeTransaction } from '../database/db.ts'
 import { JOBS } from '../jobs/jobs.ts'
 import { projectAt, projectByName, projects } from '../project/projects.ts'
 import { recordApiClient } from '../record/record-api-client.ts'
 import { docLintRefusal, introducedDocFindings } from './doc-lint.ts'
 import { lintStoredDoc } from './doc-lint-adapter.ts'
 import {
+  assertLocalRevisionWrite,
+  currentDocRevision,
+  docWriteIdentity,
+  insertLocalRevision,
+} from './doc-revision-store.ts'
+import {
   consumeDocBody,
   type DocRevisionOp,
-  decideDocRevisionWrite,
   globalCanonWriteTargets,
   refuseCanonWrite,
   refuseOversizedInject,
   refuseProjectOrGlobalInject,
 } from './doc-write-allowed.ts'
-
-type RevisionToken = string
 
 export type Doc = {
   id: number
@@ -46,7 +49,7 @@ export type Doc = {
   created_at: string
   updated_at: string
   record_id: string | null
-  revision: RevisionToken | null
+  revision: string | null
 }
 
 export type DocMetadata = Pick<
@@ -341,55 +344,6 @@ export function getDoc(scope: string, subject: string | null, slug: string): Doc
     .get(scope, subject, slug) as Doc | null
 }
 
-function writeIdentity(context: DocWriteContext): {
-  author: string
-  reason: string
-  session: string | null
-} {
-  const reason = context.reason?.trim()
-  if (!reason)
-    throw new Error(
-      'doc write reason is required; pass --reason on the CLI or reason through MCP/Hub',
-    )
-  const session = sessionId()
-  const author = (context.author ?? session ?? 'unknown').trim()
-  if (!author)
-    throw new Error('doc write author must not be empty; omit it to use the session or unknown')
-  return { author, reason, session }
-}
-
-function insertRevision(
-  doc: Doc,
-  op: DocRevisionOp,
-  context: DocWriteContext,
-  at: string,
-  recordId: string,
-): void {
-  const identity = writeIdentity(context)
-  db()
-    .query(
-      `INSERT INTO doc_revision
-       (doc_id, scope, subject, project_id, slug, op, title, body, delivery, author, reason, session_id, at, record_id)
-     VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
-    )
-    .run(
-      doc.id,
-      doc.scope,
-      doc.subject,
-      doc.project_id,
-      doc.slug,
-      op,
-      doc.title,
-      doc.body,
-      doc.delivery,
-      identity.author,
-      identity.reason,
-      identity.session,
-      at,
-      recordId,
-    )
-}
-
 type DocWriteInput = {
   scope: string
   subject: string | null
@@ -467,18 +421,12 @@ function assertDocLint(input: DocWriteInput, prior: Doc | null): void {
   if (refusal) throw new Error(refusal)
 }
 
-// biome-ignore format: compact local wrapper keeps this module within its frozen file ceiling.
-function assertRevisionWrite(input: DocWriteInput, current: string | null, isCreate: boolean): void {
-  const decision = decideDocRevisionWrite({ expected: input.expectedRevision, current, isCreate, scope: input.scope })
-  if (!decision.allow) throw new Error(decision.reason)
-}
-
 async function setDocWithOp(input: DocWriteInput, requestedOp?: 'import'): Promise<Doc> {
   writableDb()
   validate(input.scope, input.subject, input.slug)
-  const identity = writeIdentity(input)
+  const identity = docWriteIdentity(input)
   const prior = getDoc(input.scope, input.subject, input.slug)
-  assertRevisionWrite(input, prior?.revision ?? null, prior === null)
+  assertLocalRevisionWrite(input, prior?.revision ?? null, prior === null)
   const delivery =
     input.scope === 'canon' ? 'demand' : (input.delivery ?? prior?.delivery ?? 'inject')
   assertDocWriteAllowed({ ...input, delivery })
@@ -503,7 +451,7 @@ async function setDocWithOp(input: DocWriteInput, requestedOp?: 'import'): Promi
   })
   return writeTransaction(() => {
     const existing = getDoc(input.scope, input.subject, input.slug)
-    assertRevisionWrite(input, existing?.revision ?? null, existing === null)
+    assertLocalRevisionWrite(input, existing?.revision ?? null, existing === null)
     const at = nowIso()
     let doc: Doc
     if (existing) {
@@ -540,7 +488,13 @@ async function setDocWithOp(input: DocWriteInput, requestedOp?: 'import'): Promi
         )
       doc = getDoc(input.scope, input.subject, input.slug)!
     }
-    insertRevision(doc, requestedOp ?? (existing ? 'set' : 'create'), input, at, hosted.revisionId)
+    insertLocalRevision(
+      doc,
+      requestedOp ?? (existing ? 'set' : 'create'),
+      identity,
+      at,
+      hosted.revisionId,
+    )
     return getDoc(input.scope, input.subject, input.slug)!
   })
 }
@@ -596,10 +550,16 @@ export async function removeDoc(
 ): Promise<boolean> {
   writableDb()
   validScope(scope)
-  const identity = writeIdentity(context)
+  const identity = docWriteIdentity(context)
   const doc = getDoc(scope, subject, slug)
   if (!doc) return false
+  assertLocalRevisionWrite(
+    { scope, expectedRevision: context.expectedRevision },
+    doc.revision,
+    false,
+  )
   let recordId = doc.record_id
+  let hostedExpected = context.expectedRevision
   if (!recordId) {
     const hosted = await recordApiClient().upsertDoc({
       scope: doc.scope,
@@ -611,17 +571,27 @@ export async function removeDoc(
       reason: identity.reason,
       author: identity.author,
       id: undefined,
+      expectedRevision: context.expectedRevision,
     })
     recordId = hosted.id
+    hostedExpected = hosted.revisionId
   }
   const hosted = await recordApiClient().deleteDoc(recordId, {
     reason: identity.reason,
     author: identity.author,
+    expectedRevision: hostedExpected,
   })
   return writeTransaction(() => {
+    const existing = getDoc(scope, subject, slug)
+    if (!existing) throw new Error(`no ${scope} doc "${slug}"`)
+    assertLocalRevisionWrite(
+      { scope, expectedRevision: context.expectedRevision },
+      existing.revision,
+      false,
+    )
     const at = nowIso()
-    db().query('DELETE FROM doc WHERE id=?').run(doc.id)
-    insertRevision(doc, 'delete', context, at, hosted.revisionId)
+    db().query('DELETE FROM doc WHERE id=?').run(existing.id)
+    insertLocalRevision(existing, 'delete', identity, at, hosted.revisionId)
     return true
   })
 }
@@ -641,7 +611,7 @@ export async function consumeDoc(
 ): Promise<ConsumedDoc> {
   writableDb()
   validateHistoricAddress(scope, slug)
-  const identity = writeIdentity(context)
+  const identity = docWriteIdentity(context)
   const doc = getDoc(scope, subject, slug)
   if (!doc) throw new Error(`no ${scope} doc "${slug}"`)
   const consumedAt = nowIso()
@@ -653,32 +623,47 @@ export async function consumeDoc(
     throw new Error(`${scope} doc "${slug}" ${message.replace(/^document /, '')}`)
   }
   if (patched.alreadyConsumed) return { ...doc, already_consumed: true }
+  assertLocalRevisionWrite(
+    { scope, expectedRevision: context.expectedRevision },
+    doc.revision,
+    false,
+  )
   let recordId = doc.record_id
+  let hostedExpected = context.expectedRevision
   if (!recordId) {
-    recordId = (
-      await recordApiClient().upsertDoc({
-        scope: doc.scope,
-        subject: doc.subject,
-        slug: doc.slug,
-        title: doc.title,
-        body: doc.body,
-        delivery: doc.delivery,
-        reason: identity.reason,
-        author: identity.author,
-      })
-    ).id
+    const created = await recordApiClient().upsertDoc({
+      scope: doc.scope,
+      subject: doc.subject,
+      slug: doc.slug,
+      title: doc.title,
+      body: doc.body,
+      delivery: doc.delivery,
+      reason: identity.reason,
+      author: identity.author,
+      expectedRevision: context.expectedRevision,
+    })
+    recordId = created.id
+    hostedExpected = created.revisionId
   }
   const hosted = await recordApiClient().consumeDoc(recordId, {
     reason: identity.reason,
     author: identity.author,
+    expectedRevision: hostedExpected,
   })
   if (hosted.alreadyConsumed) return { ...doc, already_consumed: true }
   return writeTransaction(() => {
+    const existing = getDoc(scope, subject, slug)
+    if (!existing) throw new Error(`no ${scope} doc "${slug}"`)
+    assertLocalRevisionWrite(
+      { scope, expectedRevision: context.expectedRevision },
+      existing.revision,
+      false,
+    )
     db()
       .query('UPDATE doc SET body=?, updated_at=?, record_id=? WHERE id=?')
-      .run(patched.body, consumedAt, recordId, doc.id)
+      .run(patched.body, consumedAt, recordId, existing.id)
     const result = getDoc(scope, subject, slug)!
-    insertRevision(result, 'consume', context, consumedAt, hosted.revisionId)
+    insertLocalRevision(result, 'consume', identity, consumedAt, hosted.revisionId)
     return { ...getDoc(scope, subject, slug)!, already_consumed: false }
   })
 }
@@ -881,13 +866,9 @@ function importedDoc(path: string, fileName: string): { title: string; body: str
   return { title, body: match[2]! }
 }
 
-function importedDelivery(scope: DocScope): 'demand' | undefined {
-  return scope === 'project' || scope === 'global' ? 'demand' : undefined
-}
-
 export async function importDocs(dir: string, context: DocWriteContext): Promise<number> {
   writableDb()
-  writeIdentity(context)
+  docWriteIdentity(context)
   let count = 0
   for (const scopeEntry of readdirSync(dir, { withFileTypes: true })) {
     if (!scopeEntry.isDirectory()) continue
@@ -907,7 +888,7 @@ export async function importDocs(dir: string, context: DocWriteContext): Promise
             subject,
             slug: file.name.slice(0, -3),
             ...parsed,
-            delivery: importedDelivery(scope),
+            delivery: scope === 'project' || scope === 'global' ? 'demand' : undefined,
             ...context,
             expectedRevision: getDoc(scope, subject, file.name.slice(0, -3))?.revision ?? undefined,
           },
@@ -947,7 +928,7 @@ export async function restoreDoc(
 ): Promise<Doc> {
   writableDb()
   validateHistoricAddress(scope, slug)
-  const identity = writeIdentity(context)
+  const identity = docWriteIdentity(context)
   const revision = getDocRevision(revisionId)
   if (
     !revision ||
@@ -957,6 +938,12 @@ export async function restoreDoc(
   ) {
     throw new Error(`no revision ${revisionId} for ${scope}/${subject ?? '_'}/${slug}`)
   }
+  const expectedCurrent = currentDocRevision(scope, subject, slug)
+  assertLocalRevisionWrite(
+    { scope, expectedRevision: context.expectedRevision },
+    expectedCurrent,
+    false,
+  )
   assertDocWriteAllowed({
     scope,
     subject,
@@ -979,6 +966,7 @@ export async function restoreDoc(
     null,
   )
   let recordId = getDoc(scope, subject, slug)?.record_id
+  let hostedExpected = context.expectedRevision
   if (!recordId) {
     const listed = await recordApiClient().listDocs({
       scope,
@@ -992,26 +980,32 @@ export async function restoreDoc(
     recordId = match && typeof match.id === 'string' ? match.id : null
   }
   if (!recordId) {
-    recordId = (
-      await recordApiClient().upsertDoc({
-        scope,
-        subject,
-        slug,
-        title: revision.title,
-        body: revision.body,
-        delivery: revision.delivery,
-        reason: identity.reason,
-        author: identity.author,
-        op: 'restore',
-      })
-    ).id
+    const created = await recordApiClient().upsertDoc({
+      scope,
+      subject,
+      slug,
+      title: revision.title,
+      body: revision.body,
+      delivery: revision.delivery,
+      reason: identity.reason,
+      author: identity.author,
+      op: 'restore',
+    })
+    recordId = created.id
+    hostedExpected = created.revisionId
   }
   const hosted = await recordApiClient().restoreDoc(recordId, {
     revisionId: revision.record_id ?? recordId,
     reason: identity.reason,
     author: identity.author,
+    expectedRevision: hostedExpected,
   })
   return writeTransaction(() => {
+    assertLocalRevisionWrite(
+      { scope, expectedRevision: context.expectedRevision },
+      currentDocRevision(scope, subject, slug),
+      false,
+    )
     const existing = getDoc(scope, subject, slug)
     const at = nowIso()
     let doc: Doc
@@ -1040,7 +1034,7 @@ export async function restoreDoc(
         )
       doc = getDoc(scope, subject, slug)!
     }
-    insertRevision(doc, 'restore', context, at, hosted.revisionId)
+    insertLocalRevision(doc, 'restore', identity, at, hosted.revisionId)
     return getDoc(scope, subject, slug)!
   })
 }

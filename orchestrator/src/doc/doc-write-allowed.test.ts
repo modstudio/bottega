@@ -104,4 +104,15 @@ describe('decideDocRevisionWrite', () => {
       allow: true,
     })
   })
+
+  test('refuses an existing canon row whose hosted revision is absent without inventing a token', () => {
+    const decision = decideDocRevisionWrite({ current: null, isCreate: false, scope: 'canon' })
+    expect(decision).toEqual({
+      allow: false,
+      reason:
+        'refusing canon write: this row has no hosted revision id, so its revision cannot be checked; ' +
+        'this is unexpected and should be reported',
+    })
+    if (!decision.allow) expect(decision.reason).not.toContain('--expect')
+  })
 })

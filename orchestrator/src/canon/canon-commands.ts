@@ -197,7 +197,12 @@ async function canonImportCommand(
   }
   let removed = 0
   for (const slug of removals) {
-    if (await removeDoc('canon', project.name, slug, { reason })) {
+    if (
+      await removeDoc('canon', project.name, slug, {
+        reason,
+        expectedRevision: projectBySlug.get(slug)?.revision ?? undefined,
+      })
+    ) {
       presentation.log(`removed ${slug}`)
       removed++
     }
