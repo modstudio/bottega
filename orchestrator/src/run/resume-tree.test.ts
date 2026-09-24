@@ -1,6 +1,8 @@
 import { describe, expect, test } from 'bun:test'
 import {
+  continuationBranchAvailability,
   continuationBranchPlan,
+  parseWorktreeList,
   type ResumeTreeFacts,
   resumeCreationOptions,
   resumeTreePlan,
@@ -15,6 +17,51 @@ const base: ResumeTreeFacts = {
   retainedTip: 'retained-tip',
   recordedTip: 'recorded-tip',
 }
+
+const worktrees = parseWorktreeList(`worktree /projects/workshop
+HEAD aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+branch refs/heads/main
+
+worktree /projects/workshop/.claude/worktrees/orch-5931
+HEAD bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
+branch refs/heads/DEV-878-orch-5931
+
+worktree /projects/workshop/.claude/worktrees/landing
+HEAD bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
+branch refs/heads/DEV-878-orch-5931
+`)
+
+describe('continuation branch availability', () => {
+  test('refuses a continuation branch held by another tree and names its path', () => {
+    expect(
+      continuationBranchAvailability(
+        'DEV-878-orch-5931',
+        '/projects/workshop/.claude/worktrees/orch-5931',
+        worktrees.slice(0, 1).concat(worktrees.slice(2)),
+      ),
+    ).toEqual({ action: 'refuse', holdingPath: '/projects/workshop/.claude/worktrees/landing' })
+  })
+
+  test("allows the chain's own recorded tree to hold the continuation branch", () => {
+    expect(
+      continuationBranchAvailability(
+        'DEV-878-orch-5931',
+        '/projects/workshop/.claude/worktrees/orch-5931',
+        worktrees.slice(0, 2),
+      ),
+    ).toEqual({ action: 'continue' })
+  })
+
+  test('allows a continuation branch that is not checked out', () => {
+    expect(
+      continuationBranchAvailability(
+        'DEV-912-orch-6044',
+        '/projects/workshop/.claude/worktrees/orch-6044',
+        worktrees,
+      ),
+    ).toEqual({ action: 'continue' })
+  })
+})
 
 describe('resume tree decision', () => {
   test('attaches the matching recorded tree without requiring a recoverable tip', () => {
