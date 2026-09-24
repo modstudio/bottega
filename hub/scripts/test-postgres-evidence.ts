@@ -181,7 +181,7 @@ try {
     if (visible.statusEvents.length !== 1)
       throw new Error('status patch did not append exactly one event')
     await upsertIntervals(actorUrl, identity, [
-      { ...interval, task_key: created.key, ref: 'orch:hosted-view-fixture' },
+      { ...interval, task_key: created.key, ref: 'orch:hosted-view-fixture', user_id: USER },
     ])
     const hostedDone = await hostedFlightDone(actorUrl, identity, {
       name: 'done',
