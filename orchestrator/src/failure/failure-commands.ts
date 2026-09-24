@@ -8,7 +8,7 @@ type FailureFlags = { has(name: string): boolean }
 type FailurePresentation = { log(...values: unknown[]): void }
 
 /**
- * Re-run only the DEV-122 quota/auth signatures over old, unclassified
+ * Re-run only the quota/auth signatures over old, unclassified
  * failures. This is deliberately not a general reclassification: a stored
  * failure is evidence, and changing its meaning on anything less than that
  * row's own vendor error would rewrite the agent's record.

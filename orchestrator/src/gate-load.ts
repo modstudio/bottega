@@ -9,7 +9,7 @@ export type HostLoad = {
   freeMem: number
 }
 
-/** Two concurrent gates is the measured safe operating point (DEV-375). */
+/** Two concurrent gates is the measured safe operating point. */
 export const GATE_CONCURRENCY_LIMIT = 2
 const FREE_MEM_FLOOR_BYTES = 1024 * 1024 * 1024
 const GATE_HOLD_POLL_MS = 250

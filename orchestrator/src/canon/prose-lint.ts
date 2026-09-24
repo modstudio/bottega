@@ -11,6 +11,22 @@ export type ProseFinding = {
 const TASK_KEY_PATTERN = /\b[A-Z][A-Z0-9]{1,9}-\d+\b/
 const TASK_KEY_EXEMPTIONS = ['UTF', 'SHA', 'ISO', 'RFC', 'ES', 'TLS', 'HTTP', 'IPV']
 
+/** Phrase-level history patterns available to comment checks; single-word prose rules stay local. */
+export const DEFAULT_COMMENT_HISTORY_PHRASES = [
+  'used to be',
+  'used to have',
+  'formerly',
+  'back when',
+  'previously',
+  'was omitted',
+  'this replaces',
+  'this replaced',
+  'the first draft',
+  'restores the earlier',
+  'restores the old',
+  'restores the previous',
+] as const
+
 const HISTORY_PATTERNS = [
   /\bused to\b/i,
   /\bwas (?:called|named)\b/i,

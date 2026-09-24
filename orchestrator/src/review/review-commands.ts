@@ -94,7 +94,7 @@ function resolveTierTarget(value: string): { repo: string; from: string; to: str
       // A writer run's input tree IS its base: what it built lives on its
       // branch. Measure the branch tip when the branch still exists. A
       // reader's input tree is the artifact it reviewed, so a reader keeps
-      // it even when a branch is recorded (DEV-323).
+      // it even when a branch is recorded.
       const writer = (() => {
         try {
           return job(row.job).needs.writesRepo

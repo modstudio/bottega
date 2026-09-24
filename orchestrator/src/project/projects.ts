@@ -92,6 +92,8 @@ export type ProjectSettings = {
   checks?: {
     spelling?: boolean
     attribution?: boolean
+    commentTaskKeys?: boolean
+    commentHistory?: boolean | { phrases: string[] }
   }
   /** Record space slug that owns this project's hosted evidence. */
   space?: string
@@ -574,23 +576,46 @@ function autonomyProblems(value: unknown): string[] {
   }
 }
 
+const PROJECT_CHECK_NAMES = new Set([
+  'spelling',
+  'attribution',
+  'commentTaskKeys',
+  'commentHistory',
+])
+
+function commentHistoryProblems(value: unknown): string[] {
+  if (value === undefined || typeof value === 'boolean') return []
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    return ['checks.commentHistory must be a boolean or an object with phrases']
+  }
+  const config = value as Record<string, unknown>
+  const problems = Object.keys(config)
+    .filter((name) => name !== 'phrases')
+    .map((name) => `checks.commentHistory.${name} is not recognized`)
+  if (
+    !Array.isArray(config.phrases) ||
+    config.phrases.some((phrase) => typeof phrase !== 'string' || !phrase.trim())
+  ) {
+    problems.push('checks.commentHistory.phrases must be an array of non-empty strings')
+  }
+  return problems
+}
+
 function projectChecksProblems(value: unknown): string[] {
   if (value === undefined) return []
   if (!value || typeof value !== 'object' || Array.isArray(value)) {
     return ['checks must be an object']
   }
   const checks = value as Record<string, unknown>
-  const problems: string[] = []
-  for (const name of Object.keys(checks)) {
-    if (name !== 'spelling' && name !== 'attribution') {
-      problems.push(`checks.${name} is not a recognized check`)
-    }
-  }
-  for (const name of ['spelling', 'attribution'] as const) {
+  const problems = Object.keys(checks)
+    .filter((name) => !PROJECT_CHECK_NAMES.has(name))
+    .map((name) => `checks.${name} is not a recognized check`)
+  for (const name of ['spelling', 'attribution', 'commentTaskKeys'] as const) {
     if (checks[name] !== undefined && typeof checks[name] !== 'boolean') {
       problems.push(`checks.${name} must be a boolean`)
     }
   }
+  problems.push(...commentHistoryProblems(checks.commentHistory))
   return problems
 }
 
@@ -791,7 +816,7 @@ type MainCheckoutInspection = {
  * - tracked modifications block
  * - an in-progress sequence blocks (merge / cherry-pick / rebase / revert /
  *   am / bisect); residue of a pseudo-ref over a clean tree does not —
- *   refusing residue would recreate DEV-432
+ *   refusing residue would incorrectly block an otherwise clean tree
  * - untracked files warn and do not block (orch.db and build output live there)
  * - ignored files are silent
  * - submodules: `--ignore-submodules=untracked`, so a dirty gitlink or tracked

@@ -394,7 +394,7 @@ describe('routing counts failures as evidence', () => {
   })
 
   test('a later-id success finishing before quota failures does not mask them', () => {
-    // Exact fan-out shape from DEV-132: ids are launch order, not completion
+    // IDs are launch order, not completion
     // order. The success launches last but completes while its older siblings
     // are still running; their later quota deaths must open the circuit.
     const base = Date.now() - 10 * 60_000

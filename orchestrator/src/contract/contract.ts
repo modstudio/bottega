@@ -424,7 +424,7 @@ export function parseReviewReply(value: unknown): ReviewReply | null {
   )
     return null
   const p = v.provenance
-  // The three DEV-371 provenance lists are demanded by the schema, but an agent
+  // The three provenance lists are demanded by the schema, but an agent
   // whose schema binding was dropped (codex with MCP tools active) follows the
   // prose contract only; an absent list reads as empty rather than as a
   // malformed reply, so a review is never lost to a missing empty array.

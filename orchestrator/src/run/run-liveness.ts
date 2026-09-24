@@ -77,17 +77,16 @@ export function chainTerminationAt(database: Database, memberId: number): string
  * continue`), not ended, so it is left alone too.
  *
  * The root may be `asking` after the first turn, or `ok`/`failed` while a
- * later resumed turn finishes. The old asking-only guard was part of DEV-146's
- * stranded-root repair; the unanswered-question and last-terminal-turn guards
- * now protect that case without blocking ordinary resumed roll-up. `stopped`
+ * later resumed turn finishes. The unanswered-question and last-terminal-turn
+ * guards protect stranded roots without blocking ordinary resumed roll-up. `stopped`
  * and `stale` roots remain locked because those lifecycle decisions must not
  * be undone by a worker finishing concurrently, and a `running` root is a live
  * first turn that a stale child row must never overwrite (lens run 2277).
  *
  * The terminal turn's error and failure_kind are part of that state and travel
- * with its status. The deliberate kind exception is a stale or abandoned child: DEV-146
- * established that stranding or abandoning a chain inserts a judgment on the
- * root, while copying the child's NOT_EVIDENCE kind would erase that judgment
+ * with its status. The deliberate kind exception is a stale or abandoned child:
+ * stranding or abandoning a chain inserts a judgment on the root, while copying
+ * the child's NOT_EVIDENCE kind would erase that judgment
  * from routing. Those lifecycle outcomes therefore retain the root's kind.
  */
 export function resolveRootFromLastTurn(database: Database, rootId: number): number {

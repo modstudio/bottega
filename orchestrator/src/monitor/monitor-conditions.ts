@@ -448,7 +448,7 @@ export function rulingConditions(clock = Date.now()): {
   return { conditions, errors: [] }
 }
 
-/** DEV-211 owns the repair. The monitor invokes its audited command and records its report. */
+/** The hub reconciler owns the repair; the monitor invokes it and records its report. */
 export function reconcileHub(clock: number): { conditions: MonitorCondition[]; errors: string[] } {
   const p = Bun.spawnSync([HUB, 'reconcile'], { stdout: 'pipe', stderr: 'pipe' })
   if (p.exitCode !== 0) {

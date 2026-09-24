@@ -1,5 +1,5 @@
 /**
- * Idle kill: the action half of DEV-374's idle detector.
+ * Idle kill: the action half of the idle detector.
  *
  * Two timeouts, composed, not one. The wall stays. This is the second, shorter
  * no-activity bound. Jenkins ships both; Travis runs a 10-minute no-output

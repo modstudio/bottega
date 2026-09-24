@@ -32,7 +32,7 @@ type Migration = { tag: string; source: string }
 type AstNode = Node & Record<string, unknown>
 type ForeignKey = { parent: string; dependent: string }
 
-// These migrations were already applied before this gate existed. DEV-852 restores every
+// These migrations may already be applied. The repair restores every
 // missing review_finding row from its outbox payload, whichever migration removed it.
 const EXEMPTIONS: readonly CascadeExemption[] = [
   {
