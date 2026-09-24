@@ -32,7 +32,8 @@ export async function tokenize(
   prompt: string,
   fetcher: Fetch = fetch,
 ): Promise<{ count: number; maxModelLength: number }> {
-  const url = `${baseUrl.replace(/\/$/, '')}/tokenize`
+  // vLLM serves /tokenize at the server root, beside the OpenAI-compatible /v1 routes.
+  const url = `${baseUrl.replace(/\/$/, '').replace(/\/v1$/, '')}/tokenize`
   const body = await postJson<TokenizeResponse>(
     'embedding tokenizer',
     url,
