@@ -2,8 +2,11 @@
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { PGlite, type Transaction } from '@electric-sql/pglite'
+import type { SQL } from 'bun'
 import { type MigrationMeta, readMigrationFiles } from 'drizzle-orm/migrator'
+import { managedCanonProjectNames } from '../orchestrator/src/record/record-canon-facts.ts'
 import {
+  PLATFORM_SPACE_ID,
   RECORD_ACTOR_ROLE,
   RECORD_AUTH_ROLE,
   RECORD_OWNER_ROLE,
@@ -17,6 +20,8 @@ const brokenDocBackfill = '20260924180716_dev_906_doc_latest_revision'
 const repairedDocBackfill = '20260924201224_dev_917_doc_latest_revision_repair'
 const proofDocId = '01990000-0000-7000-8000-000000000010'
 const proofRevisionId = '01990000-0000-7000-8000-000000000012'
+const managedProjectId = '01990000-0000-7000-8000-000000000013'
+const unmanagedProjectId = '01990000-0000-7000-8000-000000000014'
 
 class CheckFailure extends Error {}
 
@@ -128,6 +133,31 @@ async function proofLatestRevision(transaction: Transaction): Promise<string | n
   return result.rows[0]?.latest_revision_id ?? null
 }
 
+function sqlTag(transaction: Transaction): SQL {
+  return (async (parts: TemplateStringsArray, ...values: unknown[]) => {
+    const statement = parts.reduce(
+      (sql, part, index) => `${sql}${index === 0 ? '' : `$${index}`}${part}`,
+      '',
+    )
+    return (await transaction.query(statement, values)).rows
+  }) as unknown as SQL
+}
+
+async function proofManagedCanonProjects(transaction: Transaction): Promise<void> {
+  await transaction.exec(`
+    SELECT set_config('app.space_id', '${PLATFORM_SPACE_ID}', true);
+    INSERT INTO project (id, space_id, name, managed_context, created_at) VALUES
+      ('${managedProjectId}', '${PLATFORM_SPACE_ID}', 'managed-proof', true, now()),
+      ('${unmanagedProjectId}', '${PLATFORM_SPACE_ID}', 'unmanaged-proof', false, now());
+  `)
+  const names = await managedCanonProjectNames(sqlTag(transaction), PLATFORM_SPACE_ID)
+  if (names.length !== 1 || names[0] !== 'managed-proof') {
+    throw new CheckFailure(
+      `user-canon managed project selection returned ${JSON.stringify(names)} instead of ["managed-proof"]`,
+    )
+  }
+}
+
 async function main(): Promise<void> {
   let database: PGlite | undefined
   let failure: unknown
@@ -168,6 +198,7 @@ async function main(): Promise<void> {
             throw new CheckFailure('DEV-917 doc backfill did not select the newest proof revision')
           }
         }
+        await proofManagedCanonProjects(transaction)
       })
     } catch (error) {
       throw error instanceof CheckFailure ? error : phaseFailure('replaying migrations', error)
