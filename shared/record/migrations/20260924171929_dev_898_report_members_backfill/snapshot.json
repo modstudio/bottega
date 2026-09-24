@@ -1,8 +1,8 @@
 {
+  "id": "f854f410-6534-4843-8e17-9ada39861928",
+  "prevIds": ["cf7db3fd-d4a9-46de-bb6c-993c1675b991"],
   "version": "8",
   "dialect": "postgres",
-  "id": "c84e3c5d-c4a8-47b6-ba4c-2dbd458f3d4e",
-  "prevIds": ["20b8196a-7f2f-41a1-9f14-69dc61b50008"],
   "ddl": [
     {
       "isRlsEnabled": false,
@@ -5444,6 +5444,19 @@
       "table": "hub_report_subscription"
     },
     {
+      "type": "uuid",
+      "typeSchema": null,
+      "notNull": false,
+      "dimensions": 0,
+      "default": null,
+      "generated": null,
+      "identity": null,
+      "name": "person_user_id",
+      "entityType": "columns",
+      "schema": "public",
+      "table": "hub_report_subscription"
+    },
+    {
       "type": "text",
       "typeSchema": null,
       "notNull": true,
@@ -8143,6 +8156,19 @@
     },
     {
       "nameExplicit": false,
+      "columns": ["person_user_id"],
+      "schemaTo": "public",
+      "tableTo": "user",
+      "columnsTo": ["id"],
+      "onUpdate": "NO ACTION",
+      "onDelete": "NO ACTION",
+      "name": "hub_report_subscription_person_user_id_user_id_fkey",
+      "entityType": "fks",
+      "schema": "public",
+      "table": "hub_report_subscription"
+    },
+    {
+      "nameExplicit": false,
       "columns": ["space_id"],
       "schemaTo": "public",
       "tableTo": "space",
@@ -9256,14 +9282,14 @@
       "table": "hub_note_acknowledgement"
     },
     {
-      "value": "\"scope_kind\" IN ('space','project','members')",
+      "value": "\"scope_kind\" IN ('space','project','person','members')",
       "name": "hub_report_subscription_scope_kind_check",
       "entityType": "checks",
       "schema": "public",
       "table": "hub_report_subscription"
     },
     {
-      "value": "(\"scope_kind\" = 'space' AND \"project_name\" IS NULL)\n        OR (\"scope_kind\" = 'project' AND \"project_name\" IS NOT NULL)\n        OR (\"scope_kind\" = 'members' AND \"project_name\" IS NULL)",
+      "value": "(\"scope_kind\" = 'space' AND \"project_name\" IS NULL AND \"person_user_id\" IS NULL)\n        OR (\"scope_kind\" = 'project' AND \"project_name\" IS NOT NULL AND \"person_user_id\" IS NULL)\n        OR (\"scope_kind\" = 'person' AND \"person_user_id\" IS NOT NULL AND \"project_name\" IS NULL)\n        OR (\"scope_kind\" = 'members' AND \"project_name\" IS NULL)",
       "name": "hub_report_subscription_scope_check",
       "entityType": "checks",
       "schema": "public",
