@@ -1,4 +1,4 @@
-import { existsSync, readFileSync, realpathSync } from 'node:fs'
+import { readFileSync, realpathSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { gitToplevel } from '../../../shared/git.ts'
 import { flagValue } from '../cli/args.ts'
@@ -56,11 +56,7 @@ function spellingCommand(argv: string[], presentation: Presentation): void {
   const refusal = typosVersionRefusal(binary ? typosVersion(binary) : null, process.platform)
   if (refusal) throw new Error(refusal)
 
-  const hasConfiguration = ['typos.toml', '_typos.toml'].some((name) =>
-    existsSync(resolve(root, name)),
-  )
-  const command = [binary!, '--format', 'json']
-  if (!hasConfiguration) command.push('--locale', 'en-us')
+  const command = [binary!, '--format', 'json', '--locale', 'en-us']
   if (argv.includes('--fix')) command.push('--write-changes')
   command.push('.')
   const result = Bun.spawnSync(command, { cwd: root, stdout: 'pipe', stderr: 'pipe' })
@@ -195,7 +191,12 @@ async function enabledCheckFailed(
     },
   }
   try {
-    const checkArgv = ['check', name, ...common, ...(name === 'attribution' ? ['--range'] : [])]
+    const checkArgv = [
+      'check',
+      name,
+      ...common,
+      ...(name === 'attribution' && !common.includes('--pr') ? ['--range'] : []),
+    ]
     if (name === 'spelling') spellingCommand(checkArgv, checkPresentation)
     else await attributionCommand(checkArgv, checkPresentation)
   } catch (error) {
@@ -207,7 +208,11 @@ async function enabledCheckFailed(
 
 async function enabledCommand(argv: string[], presentation: Presentation): Promise<void> {
   const project = selectedProject(argv, presentation.cwd())
-  const enabled = projectEnabledChecks(project)
+  const enabled = argv.includes('--pr')
+    ? project.settings.checks?.attribution === true
+      ? (['attribution'] as const)
+      : []
+    : projectEnabledChecks(project)
   if (!enabled.length) {
     presentation.log(`no checks enabled for ${project.name}`)
     return
