@@ -1,5 +1,6 @@
 import type { Database } from 'bun:sqlite'
 import { db } from './db.ts'
+import { taskAdoptionCollisionCount } from './task-adoption.ts'
 
 const TASK_KEY_PREFIX_SOURCE = '[A-Z][A-Z0-9]*'
 const TASK_KEY_PATTERN = new RegExp(`^(${TASK_KEY_PREFIX_SOURCE})-\\d+$`)
@@ -155,6 +156,8 @@ export function claimTaskIdentity(
 }
 
 export type TaskIdentityDoctor = {
+  adoptionCollisions: number
+  tasksWithoutRecordId: number
   trackerTasksWithoutExternalId: number
   parentsWithoutRecordId: number
   promotedNotesWithoutTaskRecordId: number
@@ -174,6 +177,8 @@ export function taskIdentityDoctor(conn: Database = db()): TaskIdentityDoctor {
     )
     .all()
   return {
+    adoptionCollisions: taskAdoptionCollisionCount(conn),
+    tasksWithoutRecordId: count(conn, 'SELECT COUNT(*) count FROM task WHERE record_id IS NULL'),
     trackerTasksWithoutExternalId: count(
       conn,
       "SELECT COUNT(*) count FROM task WHERE source='mcp' AND external_id IS NULL",
@@ -201,6 +206,8 @@ export function taskIdentityDoctor(conn: Database = db()): TaskIdentityDoctor {
 
 export function formatTaskIdentityDoctor(identity: TaskIdentityDoctor): string[] {
   return [
+    `task identity  adoption collisions ${identity.adoptionCollisions}`,
+    `task identity  tasks without record id ${identity.tasksWithoutRecordId}`,
     `task identity  tracker tasks without external id ${identity.trackerTasksWithoutExternalId}`,
     `task identity  parents without record id ${identity.parentsWithoutRecordId}`,
     `task identity  promoted notes without task record id ${identity.promotedNotesWithoutTaskRecordId}`,

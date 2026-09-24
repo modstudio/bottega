@@ -3,6 +3,7 @@ import { recordSpaceMembership } from '../../shared/record-space-membership.ts'
 import { db, writeTransaction } from './db.ts'
 import { projects } from './projects.ts'
 import type { TaskRow } from './task.ts'
+import { persistTaskAdoptionsOn, type TaskAdoption } from './task-adoption.ts'
 import {
   type HostedTaskIdentity,
   hostedMirrorTasks,
@@ -116,21 +117,36 @@ function sourceCounts<T>(values: T[], source: (row: T) => string | undefined) {
 function persistMirrorBatch(
   name: keyof PushCollections,
   rows: Array<Record<string, unknown>>,
-  adoptions: Array<{
-    table: 'task_comment' | 'task_document' | 'task_status_event'
-    legacy_local_id: number
-    id: string
-  }>,
+  adoptions: Array<
+    | TaskAdoption
+    | {
+        table: 'task_comment' | 'task_document' | 'task_status_event'
+        legacy_local_id: number
+        id: string
+      }
+  >,
 ) {
+  const taskAdoptions = adoptions.filter(
+    (adoption): adoption is TaskAdoption => adoption.table === 'task',
+  )
+  const childAdoptions = adoptions.filter(
+    (adoption): adoption is Exclude<(typeof adoptions)[number], TaskAdoption> =>
+      adoption.table !== 'task',
+  )
   const newlyAssigned = rows.filter((row) => row.newly_assigned === true)
   if (!newlyAssigned.length && !adoptions.length) return
   writeTransaction((conn) => {
+    persistTaskAdoptionsOn(conn, taskAdoptions)
     if (name === 'tasks') {
       const update = conn.query(`UPDATE task SET record_id=? WHERE record_id=?`)
+      const adopted = new Set(
+        taskAdoptions.map((adoption) => `${adoption.project}\0${adoption.key}`),
+      )
       for (const row of newlyAssigned) {
         const id = row.id as string
         const key = row.key as string
         const project = row.project as string
+        if (adopted.has(`${project}\0${key}`)) continue
         const previousRecordId = resolveTask(conn, key, project)
         update.run(id, previousRecordId)
       }
@@ -143,7 +159,7 @@ function persistMirrorBatch(
       const update = conn.query(`UPDATE ${table} SET record_id=? WHERE id=? AND record_id IS NULL`)
       for (const row of newlyAssigned) update.run(row.id as string, row.legacy_local_id as number)
     }
-    for (const adoption of adoptions)
+    for (const adoption of childAdoptions)
       conn
         .query(`UPDATE ${adoption.table} SET record_id=? WHERE id=?`)
         .run(adoption.id, adoption.legacy_local_id)

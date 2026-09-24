@@ -139,11 +139,14 @@ export async function hostedTaskChanges(
 export const hostedMirrorTasks = (body: unknown, options?: Parameters<typeof request>[3]) =>
   request<{
     upserted: number
-    adoptions?: Array<{
-      table: 'task_comment' | 'task_document' | 'task_status_event'
-      legacy_local_id: number
-      id: string
-    }>
+    adoptions?: Array<
+      | { table: 'task'; project: string; key: string; id: string }
+      | {
+          table: 'task_comment' | 'task_document' | 'task_status_event'
+          legacy_local_id: number
+          id: string
+        }
+    >
   }>('/v1/tasks/mirror', 'PUT', body, options)
 export async function hostedTaskIdentity(
   options?: Parameters<typeof request>[3],

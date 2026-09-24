@@ -11,6 +11,7 @@ import {
 export type TaskIdentity = TenantPrincipal
 export type HostedTask = {
   id: string
+  newly_assigned?: boolean
   key: string
   project: string
   project_name: string
@@ -412,6 +413,8 @@ export function mirrorCollisionDecision(
         `to the id for ${incoming.naturalKey}, or ask the hosted-space operator to resolve the id collision`,
     }
   if (identity === 'natural-key' && naturalKeyHolder && naturalKeyHolder.id !== incoming.id) {
+    if (!existing && newlyAssigned && naturalKeyHolder.spaceId === incoming.spaceId)
+      return { action: 'adopt', id: naturalKeyHolder.id }
     return {
       action: 'refuse',
       reason:
@@ -451,6 +454,13 @@ type MirrorAdoption = {
   id: string
 }
 
+type MirrorTaskAdoption = {
+  table: 'task'
+  project: string
+  key: string
+  id: string
+}
+
 function selectedMirrorIdentity<T extends { id: string; space_id: string }>(
   row: T | undefined,
   naturalKey: (row: T) => string,
@@ -462,7 +472,11 @@ function localMirrorNaturalKey(kind: 'comment' | 'document' | 'status event', id
   return id === null ? `${kind} with no local id` : `${kind} ${id}`
 }
 
-async function mirrorTaskRow(tx: SQL, identity: TaskIdentity, row: HostedTask) {
+async function mirrorTaskRow(
+  tx: SQL,
+  identity: TaskIdentity,
+  row: HostedTask,
+): Promise<MirrorTaskAdoption | null> {
   const existing = rows<{ id: string; space_id: string; key: string }>(
     await tx`SELECT id,space_id,key FROM hub_task WHERE id=${row.id}::uuid`,
   )[0]
@@ -476,11 +490,36 @@ async function mirrorTaskRow(tx: SQL, identity: TaskIdentity, row: HostedTask) {
     'update',
     'natural-key',
     null,
-    false,
+    row.source === 'mcp' || row.source === 'git' || row.newly_assigned === true,
     selectedMirrorIdentity(keyHolder, (selected) => `task ${selected.key}`),
   )
   applyMirrorDecision(decision)
   const parentId = await taskIdFor(tx, identity.spaceId, row.parent_key, row.parent_id)
+  const targetId = decision.action === 'adopt' ? decision.id : row.id
+  if (decision.action === 'adopt') {
+    const changed = rows<{ id: string }>(
+      await tx`UPDATE hub_task SET
+      project_name=${row.project_name},key=${row.key},project=${row.project},title=${row.title},
+      status=${row.status},status_category=${row.status_category},parent_key=${row.parent_key},parent_id=${parentId}::uuid,
+      body=${row.body},assignee=${row.assignee},opened_at=${row.opened_at}::timestamptz,
+      closed_at=${row.closed_at}::timestamptz,source=${row.source},
+      first_seen=${row.first_seen}::timestamptz,last_seen=${row.last_seen}::timestamptz,
+      updated_at=${row.updated_at}::timestamptz,deleted_at=${row.deleted_at}::timestamptz
+      WHERE id=${targetId}::uuid AND space_id=${identity.spaceId}::uuid AND
+        (${row.source}='local' OR (source <> 'local' AND (${row.source} <> 'git' OR source='git')))
+      RETURNING id`,
+    )
+    if (changed.length)
+      await repairHostedTaskReferences(
+        tx,
+        identity.spaceId,
+        targetId,
+        keyHolder!.key,
+        row.key,
+        row.updated_at,
+      )
+    return { table: 'task', project: row.project, key: row.key, id: targetId }
+  }
   if (decision.action === 'update-same-row') {
     const changed = rows<{ id: string }>(
       await tx`UPDATE hub_task SET
@@ -503,7 +542,7 @@ async function mirrorTaskRow(tx: SQL, identity: TaskIdentity, row: HostedTask) {
         row.key,
         row.updated_at,
       )
-    return
+    return null
   }
   const changed = rows<{ id: string }>(
     await tx`INSERT INTO hub_task
@@ -520,18 +559,20 @@ async function mirrorTaskRow(tx: SQL, identity: TaskIdentity, row: HostedTask) {
       await tx`SELECT id,space_id,key FROM hub_task
         WHERE space_id=${identity.spaceId}::uuid AND key=${row.key}`,
     )[0]
-    applyMirrorDecision(
-      mirrorCollisionDecision(
-        { id: row.id, spaceId: identity.spaceId, naturalKey: `task ${row.key}` },
-        null,
-        'update',
-        'natural-key',
-        null,
-        false,
-        selectedMirrorIdentity(collision, (selected) => `task ${selected.key}`),
-      ),
+    const collisionDecision = mirrorCollisionDecision(
+      { id: row.id, spaceId: identity.spaceId, naturalKey: `task ${row.key}` },
+      null,
+      'update',
+      'natural-key',
+      null,
+      row.source === 'mcp' || row.source === 'git' || row.newly_assigned === true,
+      selectedMirrorIdentity(collision, (selected) => `task ${selected.key}`),
     )
+    applyMirrorDecision(collisionDecision)
+    if (collisionDecision.action === 'adopt')
+      return { table: 'task', project: row.project, key: row.key, id: collisionDecision.id }
   }
+  return null
 }
 
 async function mirrorCommentRow(
@@ -706,13 +747,18 @@ export async function mirrorHostedTasks(url: string, identity: TaskIdentity, bod
     (body.statusEvents?.length ?? 0)
   if (total > 500) throw new Error('mirror accepts at most 500 rows')
   return withHostedTenant(url, identity, async (tx) => {
-    const adoptions: MirrorAdoption[] = []
-    for (const row of body.tasks) await mirrorTaskRow(tx, identity, row)
+    const adoptions: Array<MirrorAdoption | MirrorTaskAdoption> = []
+    const taskIds = new Map<string, string>()
+    for (const row of body.tasks) {
+      const adoption = await mirrorTaskRow(tx, identity, row)
+      if (adoption) adoptions.push(adoption)
+      taskIds.set(row.key, adoption?.id ?? row.id)
+    }
     for (const row of body.tasks) {
       const parentId = await taskIdFor(tx, identity.spaceId, row.parent_key, row.parent_id)
       const parent = hostedTaskRelationship('hub_task')
       await tx`UPDATE hub_task SET ${tx.unsafe(parent.idColumn)}=${parentId}::uuid
-        WHERE id=${row.id}::uuid AND space_id=${identity.spaceId}::uuid
+        WHERE id=${taskIds.get(row.key)!}::uuid AND space_id=${identity.spaceId}::uuid
           AND ${tx.unsafe(parent.keyColumn)} IS NOT DISTINCT FROM ${row.parent_key}`
     }
     for (const row of body.comments ?? []) {

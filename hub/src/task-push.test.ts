@@ -251,3 +251,50 @@ test('task push adopts a hosted holder id and uses it on the next push', async (
   expect(sentEvents[0]).not.toHaveProperty('task_record_id')
   expect(sentEvents[1]).toMatchObject({ id: holderId, newly_assigned: false })
 })
+
+test('task push persists a task adoption and cascades its child identity', async () => {
+  const at = '2026-09-24T12:00:00.000Z'
+  const incomingId = '01990000-0000-7000-8000-000000000001'
+  const holderId = '01990000-0000-7000-8000-000000000099'
+  writeTransaction((conn) => {
+    conn
+      .query(
+        `INSERT INTO task(record_id,key,project,title,status,status_category,source,first_seen,last_seen)
+         VALUES (?,'LOC-887','workshop','Adopt task','open','open','local',?,?)`,
+      )
+      .run(incomingId, at, at)
+    conn
+      .query(
+        `INSERT INTO task_comment(task_key,task_record_id,body,created_at)
+         VALUES ('LOC-887',?,'child',?)`,
+      )
+      .run(incomingId, at)
+  })
+  const stub = async (input: string, init?: RequestInit) => {
+    const path = new URL(input).pathname
+    if (path === '/v1/tasks/identity')
+      return Response.json({ activeSpaceId: 'space-a', memberships: [] })
+    if (path === '/v1/tasks/mirror') {
+      const body = JSON.parse(String(init?.body)) as { tasks?: Array<{ key: string }> }
+      const task = body.tasks?.[0]
+      return Response.json({
+        upserted: task ? 1 : 0,
+        adoptions: task
+          ? [{ table: 'task', project: 'workshop', key: task.key, id: holderId }]
+          : [],
+      })
+    }
+    if (path === '/v1/tasks/counts') return Response.json({})
+    return Response.json({ error: 'unexpected request' }, { status: 500 })
+  }
+
+  await pushTasks({ baseUrl: 'https://hub.example.test', token: 'test', fetch: stub })
+
+  expect(db().query<{ record_id: string }, []>(`SELECT record_id FROM task`).get()?.record_id).toBe(
+    holderId,
+  )
+  expect(
+    db().query<{ task_record_id: string }, []>(`SELECT task_record_id FROM task_comment`).get()
+      ?.task_record_id,
+  ).toBe(holderId)
+})
