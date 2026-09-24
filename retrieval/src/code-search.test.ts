@@ -166,3 +166,101 @@ test('a cache row pruned before planning is treated as a miss and embedded', asy
     rmSync(directory, { recursive: true })
   }
 })
+
+test('exclude removes test chunks before cache planning', async () => {
+  const directory = mkdtempSync(join(tmpdir(), 'retrieval-code-exclude-test-'))
+  const embeddedDocuments: string[] = []
+  try {
+    const result = await searchCode({ name: 'fixture', path: '/checkout' }, 'answer', 5, {
+      databasePath: join(directory, 'retrieval.db'),
+      testPolicy: 'exclude',
+      loadChunks: async () => [
+        chunk('src/answer.ts', 'production answer'),
+        chunk('src/answer.test.ts', 'test answer'),
+        chunk('src/test/helper.ts', 'helper answer'),
+      ],
+      clients: {
+        embed: async (_url, inputs) => {
+          embeddedDocuments.push(...inputs.filter((input) => !input.startsWith('Instruct:')))
+          return inputs.map(() => vector(0))
+        },
+        rerank: async (_url, _query, documents) => documents.map(() => 1),
+      },
+    })
+
+    expect(embeddedDocuments).toHaveLength(1)
+    expect(embeddedDocuments[0]).toContain('src/answer.ts')
+    expect(result.refresh).toMatchObject({ embedded: 1 })
+    expect(result.results.map(({ path }) => path)).toEqual(['src/answer.ts'])
+  } finally {
+    rmSync(directory, { recursive: true })
+  }
+})
+
+test('downrank puts production before tests and preserves rerank order within each group', async () => {
+  const directory = mkdtempSync(join(tmpdir(), 'retrieval-code-downrank-test-'))
+  const scores = new Map([
+    ['production first', 0.8],
+    ['production second', 0.6],
+    ['test first', 0.9],
+    ['test second', 0.7],
+  ])
+  try {
+    const result = await searchCode({ name: 'fixture', path: '/checkout' }, 'answer', 4, {
+      databasePath: join(directory, 'retrieval.db'),
+      testPolicy: 'downrank',
+      loadChunks: async () => [
+        chunk('src/second.ts', 'production second'),
+        chunk('src/first.test.ts', 'test first'),
+        chunk('src/first.ts', 'production first'),
+        chunk('src/test/second.ts', 'test second'),
+      ],
+      clients: {
+        embed: async (_url, inputs) => inputs.map(() => vector(0)),
+        rerank: async (_url, _query, documents) =>
+          documents.map(
+            (document) => [...scores].find(([text]) => document.includes(text))?.[1] ?? 0,
+          ),
+      },
+    })
+
+    expect(result.results.map(({ path }) => path)).toEqual([
+      'src/first.ts',
+      'src/second.ts',
+      'src/first.test.ts',
+      'src/test/second.ts',
+    ])
+  } finally {
+    rmSync(directory, { recursive: true })
+  }
+})
+
+test('the omitted test policy is identical to include', async () => {
+  const directory = mkdtempSync(join(tmpdir(), 'retrieval-code-default-policy-test-'))
+  const clients = {
+    embed: async (_url: string, inputs: string[]) => inputs.map(() => vector(0)),
+    rerank: async (_url: string, _query: string, documents: string[]) =>
+      documents.map((document) => (document.includes('test answer') ? 1 : 0.5)),
+  }
+  const loadChunks = async () => [
+    chunk('src/answer.ts', 'production answer'),
+    chunk('src/answer.test.ts', 'test answer'),
+  ]
+  try {
+    const defaultResult = await searchCode({ name: 'fixture', path: '/checkout' }, 'answer', 2, {
+      databasePath: join(directory, 'default.db'),
+      clients,
+      loadChunks,
+    })
+    const includeResult = await searchCode({ name: 'fixture', path: '/checkout' }, 'answer', 2, {
+      databasePath: join(directory, 'include.db'),
+      clients,
+      loadChunks,
+      testPolicy: 'include',
+    })
+
+    expect(defaultResult).toEqual(includeResult)
+  } finally {
+    rmSync(directory, { recursive: true })
+  }
+})

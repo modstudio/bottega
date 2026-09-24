@@ -38,6 +38,10 @@ const CODE_SOURCE_GLOBS = [
 /** The benchmark's own labeled questions quote every answer verbatim, so indexing them would let the benchmark find itself. */
 const CODE_EXCLUDED_PREFIXES = ['retrieval/src/benchmark/'] as const
 
+export function isTestCodePath(path: string): boolean {
+  return path.endsWith('.test.ts') || path.endsWith('.test.tsx') || /(^|\/)test\//.test(path)
+}
+
 function isCodeCorpusPath(path: string): boolean {
   return (
     CODE_SOURCE_GLOBS.some((pattern) => new Glob(pattern).match(path)) &&

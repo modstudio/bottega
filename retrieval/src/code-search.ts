@@ -2,7 +2,7 @@
 /** Adapts a caller checkout and the content-addressed cache to indexed search. */
 
 import type { CodeSearchOutput } from '../../shared/orch-contract.ts'
-import { type Chunk, loadCodeCorpus } from './corpus/chunks.ts'
+import { type Chunk, isTestCodePath, loadCodeCorpus } from './corpus/chunks.ts'
 import { applyCodeCacheRefresh, type CodeCacheRow, planCodeCache } from './index-store.ts'
 import {
   boundedSnippet,
@@ -10,6 +10,8 @@ import {
   indexedSearch,
   type SearchClients,
 } from './indexed-search.ts'
+
+type CodeTestPolicy = 'include' | 'exclude' | 'downrank'
 
 export async function searchCode(
   project: { name: string; path: string },
@@ -22,8 +24,10 @@ export async function searchCode(
     loadChunks?: (repositoryRoot: string) => Promise<Chunk[]>
     now?: number
     retentionMs?: number
+    testPolicy?: CodeTestPolicy
   } = {},
 ): Promise<CodeSearchOutput> {
+  const testPolicy = options.testPolicy ?? 'include'
   let plannedHits = new Map<string, CodeCacheRow>()
   let embeddedRows = new Map<
     string,
@@ -33,7 +37,12 @@ export async function searchCode(
     query,
     k,
     {
-      loadChunks: () => (options.loadChunks ?? loadCodeCorpus)(project.path),
+      loadChunks: async () => {
+        const chunks = await (options.loadChunks ?? loadCodeCorpus)(project.path)
+        return testPolicy === 'exclude'
+          ? chunks.filter((chunk) => !isTestCodePath(chunk.path))
+          : chunks
+      },
       plan: (database, candidates) => {
         const planned = planCodeCache(
           database,
@@ -100,6 +109,9 @@ export async function searchCode(
       ...boundedSnippet(row.text),
       ...scores,
     }),
-    options,
+    {
+      ...options,
+      downrank: testPolicy === 'downrank' ? (row) => isTestCodePath(row.chunk.path) : undefined,
+    },
   )
 }
