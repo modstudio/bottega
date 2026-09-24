@@ -1,4 +1,5 @@
 import { readRecordSessionToken } from '../../shared/record-session.ts'
+import type { RecordSpaceMembership } from '../../shared/record-space-membership.ts'
 import type { HostedComment, HostedDocument, HostedTask } from './hosted-tasks.ts'
 
 const TEST_REFUSAL = 'hub task client refuses a real hosted URL unless a stub is injected in tests'
@@ -7,7 +8,7 @@ export type TaskFetch = (input: string, init?: RequestInit) => Promise<Response>
 
 export type HostedTaskIdentity = {
   activeSpaceId: string
-  memberships: Array<{ spaceId: string; slug: string }>
+  memberships: RecordSpaceMembership[]
 }
 
 export function assertHostedTaskWriteConfigured(options: { baseUrl?: string } = {}) {
@@ -49,15 +50,17 @@ async function request<T>(
     throw new Error(
       `hosted hub refused the response from ${url} (status ${response.status}, content type ${contentType}): expected a JSON object`,
     )
-  if (!response.ok && response.status === 409)
+  if (!response.ok && path === '/v1/tasks/identity' && response.status === 404)
     throw new Error(
-      `hosted hub refused the write (409): ${String(value?.error ?? 'unknown error')}${
-        value?.remedy ? `. ${String(value.remedy)}` : ''
-      }`,
+      `hosted hub does not serve the task identity route (404): ${String(
+        value.error ?? 'unknown error',
+      )}${value.remedy ? `. ${String(value.remedy)}` : ''}; redeploy the hosted hub from this revision`,
     )
   if (!response.ok)
     throw new Error(
-      `hosted hub refused the write (${response.status}): ${String(value?.error ?? 'unknown error')}. ${REMEDY}`,
+      `hosted hub refused the request (${response.status}): ${String(value.error ?? 'unknown error')}${
+        value.remedy ? `. ${String(value.remedy)}` : ''
+      }`,
     )
   return value as T
 }
@@ -138,22 +141,17 @@ export const hostedMirrorTasks = (body: unknown, options?: Parameters<typeof req
 export async function hostedTaskIdentity(
   options?: Parameters<typeof request>[3],
 ): Promise<HostedTaskIdentity> {
-  const value = await request<{
-    activeSpaceId: string | null
-    memberships: Array<{ space_id?: unknown; slug?: unknown }>
-  }>('/v1/tasks/identity', 'GET', undefined, options)
+  const value = await request<HostedTaskIdentity & { activeSpaceId: string | null }>(
+    '/v1/tasks/identity',
+    'GET',
+    undefined,
+    options,
+  )
   if (!value.activeSpaceId)
     throw new Error('hosted hub has no active space; switch spaces and retry')
   if (!Array.isArray(value.memberships))
     throw new Error('hosted hub returned a malformed task identity: memberships must be an array')
-  return {
-    activeSpaceId: value.activeSpaceId,
-    memberships: value.memberships.flatMap((row) =>
-      typeof row.space_id === 'string' && typeof row.slug === 'string'
-        ? [{ spaceId: row.space_id, slug: row.slug }]
-        : [],
-    ),
-  }
+  return { activeSpaceId: value.activeSpaceId, memberships: value.memberships }
 }
 export const hostedTaskCounts = (options?: Parameters<typeof request>[3]) =>
   request<Record<string, Array<{ source: string; count: number }>>>(

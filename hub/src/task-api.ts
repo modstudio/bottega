@@ -1,4 +1,8 @@
 import {
+  parseRecordSpaceMemberships,
+  type RecordSpaceMembership,
+} from '../../shared/record-space-membership.ts'
+import {
   addHostedComment,
   createHostedDocument,
   createHostedTask,
@@ -38,21 +42,13 @@ async function identity(request: Request, base: string, fetchImpl: typeof fetch)
   if (!response.ok) return null
   const value = (await response.json().catch(() => null)) as Record<string, unknown> | null
   const user = value?.user as Record<string, unknown> | undefined
-  const memberships = Array.isArray(value?.memberships) ? value.memberships : []
+  const memberships = parseRecordSpaceMemberships(value?.memberships)
   return typeof user?.id === 'string' && typeof value?.activeSpaceId === 'string'
     ? {
         userId: user.id,
         spaceId: value.activeSpaceId,
-        spaceIds: memberships.flatMap((row) => {
-          const id = (row as Record<string, unknown>)?.space_id
-          return typeof id === 'string' ? [id] : []
-        }),
-        memberships: memberships.flatMap((row) => {
-          const membership = row as Record<string, unknown>
-          return typeof membership.space_id === 'string' && typeof membership.slug === 'string'
-            ? [{ space_id: membership.space_id, slug: membership.slug }]
-            : []
-        }),
+        spaceIds: memberships.map((row) => row.spaceId),
+        memberships,
       }
     : null
 }
@@ -75,7 +71,7 @@ type RouteContext = {
     userId: string
     spaceId: string
     spaceIds: string[]
-    memberships: Array<{ space_id: string; slug: string }>
+    memberships: RecordSpaceMembership[]
   }
   body: Record<string, unknown> | null
   keyMatch: RegExpExecArray | null

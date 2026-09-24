@@ -17,7 +17,11 @@ import {
   review as reviewRecord,
 } from '../../../shared/record/schema-review.ts'
 import { run as runRecord, runScore as runScoreRecord } from '../../../shared/record/schema-run.ts'
-import { recordSpaceMembership } from '../../../shared/record-space-membership.ts'
+import {
+  parseRecordSpaceMemberships,
+  type RecordSpaceMembership,
+  recordSpaceMembership,
+} from '../../../shared/record-space-membership.ts'
 import { db, nowIso } from '../database/db.ts'
 import {
   backfillReviewRecords,
@@ -69,33 +73,22 @@ export type RecordSyncOptions = {
   now?: () => string
   identity?: { id: string; name: string }
   principal?: { userId: string; spaceId: string }
-  memberships?: RecordMembership[]
+  memberships?: RecordSpaceMembership[]
   projectSpaces?: Record<string, string>
 }
 
 type RecordPrincipal = { userId: string; spaceId: string }
-type RecordMembership = {
-  spaceId: string
-  slug: string
-  name?: string
-  role?: string
-  permission?: string
-}
-
 async function syncMemberships(
   postgres: SQL,
   principal: RecordPrincipal,
-): Promise<RecordMembership[]> {
+): Promise<RecordSpaceMembership[]> {
   return postgres.begin(async (tx) => {
     await bindPrincipal(tx, principal)
     const rows = await tx`
       SELECT m.space_id, s.slug FROM membership m JOIN space s ON s.id=m.space_id
       WHERE m.user_id=${principal.userId}::uuid
     `
-    return rows.map((row: Record<string, unknown>) => ({
-      spaceId: String(row.space_id),
-      slug: String(row.slug),
-    }))
+    return parseRecordSpaceMemberships(rows)
   })
 }
 
@@ -122,7 +115,7 @@ function declaredProjectSpace(
 function projectPrincipal(
   projectName: string | null,
   fallback: RecordPrincipal,
-  memberships: readonly RecordMembership[],
+  memberships: readonly RecordSpaceMembership[],
   local: Database,
   overrides?: Record<string, string>,
 ): RecordPrincipal {
@@ -685,7 +678,7 @@ type OutboxAttempt = {
   local: Database
   identity: { id: string; name: string }
   principal: RecordPrincipal
-  memberships: readonly RecordMembership[]
+  memberships: readonly RecordSpaceMembership[]
   principals: Map<string | null, RecordPrincipal>
   blockedProjects: Set<string>
   projectSpaces?: Record<string, string>

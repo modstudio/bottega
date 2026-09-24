@@ -391,6 +391,13 @@ function applyMirrorDecision(decision: MirrorCollisionDecision): boolean {
   return decision.action !== 'idempotent-duplicate'
 }
 
+function selectedMirrorIdentity<T extends { id: string; space_id: string }>(
+  row: T | undefined,
+  naturalKey: (row: T) => string,
+): MirrorIdentity | null {
+  return row ? { id: row.id, spaceId: row.space_id, naturalKey: naturalKey(row) } : null
+}
+
 async function mirrorTaskRow(tx: SQL, identity: TaskIdentity, row: HostedTask) {
   const existing = rows<{ id: string; space_id: string; key: string }>(
     await tx`SELECT id,space_id,key FROM hub_task WHERE id=${row.id}::uuid`,
@@ -398,9 +405,7 @@ async function mirrorTaskRow(tx: SQL, identity: TaskIdentity, row: HostedTask) {
   applyMirrorDecision(
     mirrorCollisionDecision(
       { id: row.id, spaceId: identity.spaceId, naturalKey: `task ${row.key}` },
-      existing
-        ? { id: existing.id, spaceId: existing.space_id, naturalKey: `task ${existing.key}` }
-        : null,
+      selectedMirrorIdentity(existing, (selected) => `task ${selected.key}`),
       'update',
     ),
   )
@@ -419,13 +424,7 @@ async function mirrorCommentRow(tx: SQL, identity: TaskIdentity, row: HostedComm
   applyMirrorDecision(
     mirrorCollisionDecision(
       { id: row.id, spaceId: identity.spaceId, naturalKey: `comment ${row.legacy_local_id}` },
-      existing
-        ? {
-            id: existing.id,
-            spaceId: existing.space_id,
-            naturalKey: `comment ${existing.legacy_local_id}`,
-          }
-        : null,
+      selectedMirrorIdentity(existing, (selected) => `comment ${selected.legacy_local_id}`),
       'update',
     ),
   )
@@ -442,13 +441,7 @@ async function mirrorDocumentRow(tx: SQL, identity: TaskIdentity, row: HostedDoc
   applyMirrorDecision(
     mirrorCollisionDecision(
       { id: row.id, spaceId: identity.spaceId, naturalKey: `document ${row.legacy_local_id}` },
-      existing
-        ? {
-            id: existing.id,
-            spaceId: existing.space_id,
-            naturalKey: `document ${existing.legacy_local_id}`,
-          }
-        : null,
+      selectedMirrorIdentity(existing, (selected) => `document ${selected.legacy_local_id}`),
       'update',
     ),
   )
@@ -469,13 +462,7 @@ async function mirrorStatusEventRow(tx: SQL, identity: TaskIdentity, row: Hosted
         spaceId: identity.spaceId,
         naturalKey: `status event ${row.legacy_local_id}`,
       },
-      existing
-        ? {
-            id: existing.id,
-            spaceId: existing.space_id,
-            naturalKey: `status event ${existing.legacy_local_id}`,
-          }
-        : null,
+      selectedMirrorIdentity(existing, (selected) => `status event ${selected.legacy_local_id}`),
       'idempotent',
     ),
   )

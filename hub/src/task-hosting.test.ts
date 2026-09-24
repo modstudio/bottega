@@ -5,6 +5,7 @@ import { confirmSoftDelete, mirrorCollisionDecision } from './hosted-tasks.ts'
 import { createTask } from './task.ts'
 import { taskApi } from './task-api.ts'
 import { applyHostedTaskChanges } from './task-cache.ts'
+import { hostedCreateTask, hostedTaskIdentity } from './task-client.ts'
 import { closeThenPrune } from './task-close.ts'
 
 beforeAll(resetFixtureStore)
@@ -124,10 +125,38 @@ describe('hosted-only task safety', () => {
     expect(await response?.json()).toEqual({
       activeSpaceId: 'space-a',
       memberships: [
-        { space_id: 'space-a', slug: 'workshop' },
-        { space_id: 'space-b', slug: 'stopal' },
+        { spaceId: 'space-a', slug: 'workshop' },
+        { spaceId: 'space-b', slug: 'stopal' },
       ],
     })
+  })
+
+  test('hosted refusals preserve server errors and remedies without suggesting local configuration', async () => {
+    const options = {
+      baseUrl: 'https://hub.example.test',
+      token: 'test',
+      fetch: async () =>
+        Response.json(
+          { error: 'task not found', remedy: 'Create the task in the active space.' },
+          { status: 404 },
+        ),
+    }
+
+    await expect(hostedCreateTask({}, options)).rejects.toThrow(
+      'hosted hub refused the request (404): task not found. Create the task in the active space.',
+    )
+  })
+
+  test('a missing hosted task identity route requires redeployment', async () => {
+    await expect(
+      hostedTaskIdentity({
+        baseUrl: 'https://hub.example.test',
+        token: 'test',
+        fetch: async () => Response.json({ error: 'route not found' }, { status: 404 }),
+      }),
+    ).rejects.toThrow(
+      'hosted hub does not serve the task identity route (404): route not found; redeploy the hosted hub from this revision',
+    )
   })
 
   test('cache pull applies an update and a soft delete', () => {
