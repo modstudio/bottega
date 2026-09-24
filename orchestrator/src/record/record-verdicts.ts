@@ -192,8 +192,9 @@ export async function listRecordScores(
         COALESCE(s.updated_at, e.excluded_at) AS updated_at,
         COALESCE(r.evidence_excluded, e.reason) AS evidence_excluded
       FROM run_score s
-      FULL OUTER JOIN run_exclusion e ON e.run_id=s.run_id AND e.space_id=s.space_id
-        AND e.superseded_at IS NULL
+      FULL OUTER JOIN (
+        SELECT * FROM run_exclusion WHERE superseded_at IS NULL
+      ) e ON e.run_id=s.run_id AND e.space_id=s.space_id
       LEFT JOIN run r ON r.id=COALESCE(s.run_id, e.run_id)
       WHERE COALESCE(s.space_id, e.space_id)=${input.spaceId}::uuid
         AND (

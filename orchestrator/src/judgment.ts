@@ -664,6 +664,29 @@ function scoringHelp(
   return refusal.message
 }
 
+function recordRequestedUnvoid(
+  id: number,
+  evidenceExcluded: string | null,
+  flags: JudgmentFlags,
+  options: ScoreOptions,
+  presentation: JudgmentPresentation,
+): boolean {
+  if (!flags.has('unvoid')) return false
+  recordEvidenceUnvoid(id, evidenceExcluded, flags, options, presentation)
+  return true
+}
+
+function refusePendingAgentScore(
+  id: number,
+  agent: string,
+  failureKind: string | null,
+  flags: JudgmentFlags,
+): void {
+  if (agent === '(pending)' && !(flags.has('void') && failureKind === 'harness')) {
+    throw new Error(`run ${id} cannot be scored: its agent is the placeholder '(pending)'`)
+  }
+}
+
 export async function scoreRun(
   requestedId: number,
   flags: JudgmentFlags,
@@ -691,16 +714,11 @@ export async function scoreRun(
   } | null
   if (!row) throw new Error(`no run ${requestedId}`)
   const id = row.id
-  if (flags.has('unvoid')) {
-    recordEvidenceUnvoid(id, row.evidence_excluded, flags, options, presentation)
-    return
-  }
+  if (recordRequestedUnvoid(id, row.evidence_excluded, flags, options, presentation)) return
   // A pick-time harness refusal never selected an agent, but it is still a
   // real failed row the owning session must be able to clear from its ledger.
   // Voiding that one shape records the note without manufacturing evidence.
-  if (row.agent === '(pending)' && !(flags.has('void') && row.failure_kind === 'harness')) {
-    throw new Error(`run ${id} cannot be scored: its agent is the placeholder '(pending)'`)
-  }
+  refusePendingAgentScore(id, row.agent, row.failure_kind, flags)
   const exclusion = requestedEvidenceExclusion(flags, options)
   if (exclusion) {
     refuseScoredBlockedByTree(id, exclusion)
