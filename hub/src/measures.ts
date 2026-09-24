@@ -10,6 +10,7 @@ export type MeasureScope =
   | { kind: 'project'; project: string }
   | { kind: 'person'; userId: string; project?: string }
   | { kind: 'members'; userIds: string[] }
+  | { kind: 'projects'; projectIds: string[] }
 
 export type MeasureInterval = {
   source: string
@@ -20,6 +21,7 @@ export type MeasureInterval = {
   taskKey: string | null
   taskId: string | null
   project: string | null
+  projectId?: string | null
   vendorTokens: number
   vendorCostUsd: number | null
 }
@@ -28,6 +30,7 @@ export type MeasureStatusEvent = {
   taskId: string
   taskKey: string
   project: string
+  projectId?: string | null
   at: string
   toStatus: string
 }
@@ -101,11 +104,14 @@ type AggregateMeasures = SharedMeasures & {
 type SpaceOrProjectMeasures =
   | (AggregateMeasures & { scope: 'space' })
   | (AggregateMeasures & { scope: 'project' })
+  | (AggregateMeasures & { scope: 'projects' })
 export type Measures = PersonMeasures | SpaceOrProjectMeasures
 
 const at = (iso: string) => new Date(iso).getTime()
 
 function inScope(interval: MeasureInterval, scope: MeasureScope): boolean {
+  if (scope.kind === 'projects')
+    return !!interval.projectId && scope.projectIds.includes(interval.projectId)
   if (scope.kind === 'project') return interval.project === scope.project
   if (scope.kind === 'person')
     return (
@@ -116,6 +122,8 @@ function inScope(interval: MeasureInterval, scope: MeasureScope): boolean {
 }
 
 function eventInScope(event: MeasureStatusEvent, scope: MeasureScope): boolean {
+  if (scope.kind === 'projects')
+    return !!event.projectId && scope.projectIds.includes(event.projectId)
   if (scope.kind === 'project') return event.project === scope.project
   return scope.kind !== 'person' && scope.kind !== 'members'
 }

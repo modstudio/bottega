@@ -26,6 +26,7 @@ export type HostedReportRow = {
   task_title: string | null
   task_status: string | null
   project_color: string | null
+  project_id?: string | null
 }
 
 type RawReportRow = Omit<HostedReportRow, 'start_at' | 'end_at' | 'open' | 'vendor_tokens'> & {
@@ -125,9 +126,11 @@ export async function hostedGatherReport(
     const person = scope.kind === 'person' ? scope.userId : null
     const members = scope.kind === 'members' ? scope.userIds : null
     const memberIds = tx.array(members ?? [], 'uuid')
+    const projectIds = scope.kind === 'projects' ? scope.projectIds : null
     const reportRows = rows<RawReportRow>(
       await tx`
       SELECT i.space_id,t.id AS task_id,i.task_key,i.project_name,i.start_at,i.end_at,i.open,i.vendor_tokens,
+        p.id AS project_id,
         t.project AS task_project,t.title AS task_title,t.status AS task_status,p.color AS project_color
       FROM hub_interval i
       LEFT JOIN hub_task t ON t.space_id=i.space_id AND t.key=i.task_key AND t.deleted_at IS NULL
@@ -137,6 +140,7 @@ export async function hostedGatherReport(
         AND (${project}::text IS NULL OR COALESCE(t.project,i.project_name)=${project})
         AND (${person}::uuid IS NULL OR i.user_id=${person}::uuid)
         AND (${members === null} OR i.user_id = ANY(${memberIds}))
+        AND (${projectIds === null} OR p.id = ANY(${tx.array(projectIds ?? [], 'uuid')}))
       ORDER BY i.start_at`,
     ).map((row) => ({
       ...row,
@@ -149,9 +153,11 @@ export async function hostedGatherReport(
       await tx`
       SELECT t.id AS task_id FROM hub_task_status_event e
       JOIN hub_task t ON ${hostedTaskJoin(tx, 'hub_task_status_event', 'e')}
+      LEFT JOIN project p ON p.space_id=t.space_id AND p.name=t.project AND p.retired_at IS NULL
       WHERE e.deleted_at IS NULL AND t.deleted_at IS NULL AND e.to_status='done'
         AND e.at >= ${period.from}::timestamptz AND e.at < ${period.to}::timestamptz
-        AND (${project}::text IS NULL OR t.project=${project})`,
+        AND (${project}::text IS NULL OR t.project=${project})
+        AND (${projectIds === null} OR p.id = ANY(${tx.array(projectIds ?? [], 'uuid')}))`,
     )
     return gatherHostedReport(reportRows, new Set(completed.map((row) => row.task_id)), period)
   })

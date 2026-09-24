@@ -31,6 +31,9 @@ export type DeliverySubscription = {
   scopeName: string
   measures: Measures
   report: GatheredReport
+  sections?: { name: string; measures: Measures; report: GatheredReport }[]
+  exclusions?: string[]
+  unavailableReason?: string
 }
 
 export type RenderedReport = { subject: string; text: string; html: string }
@@ -208,10 +211,24 @@ export function renderReport(
     windowLine: `Window: ${localWindow(period, candidate.zone)}`,
     measures: subscription.measures,
   }
-  return {
+  const base = {
     subject: `Report: ${subscription.scopeName}`,
     text: renderText(subscription.report, new Map(), presentation),
     html: renderHtml(subscription.report, new Map(), presentation),
+  }
+  if (!subscription.sections?.length) return base
+  const sectionText = subscription.sections.map((section) =>
+    renderText(section.report, new Map(), { ...presentation, scopeName: section.name, measures: section.measures }),
+  )
+  const sectionHtml = subscription.sections.map((section) =>
+    renderHtml(section.report, new Map(), { ...presentation, scopeName: section.name, measures: section.measures })
+      .replace(/^.*?<body[^>]*>/s, '')
+      .replace(/<\/body>.*$/s, ''),
+  )
+  return {
+    ...base,
+    text: `${base.text}\n\n${sectionText.join('\n\n')}`,
+    html: base.html.replace('</body>', `${sectionHtml.join('')} </body>`),
   }
 }
 
@@ -243,6 +260,7 @@ async function loadSubscription(
 }
 
 function skipReason(subscription: DeliverySubscription) {
+  if (subscription.unavailableReason) return subscription.unavailableReason
   if (!subscription.recipients.length) return 'subscription has no recipients'
   if (subscription.recipients.some((recipient) => recipient.userId && !recipient.isMember))
     return 'a recipient is no longer a member of this space'
@@ -364,7 +382,12 @@ async function dispatchReport(
           : undefined,
       })
     }
-    await input.repository.recordOutcome(candidate, intentId, 'sent')
+    await input.repository.recordOutcome(
+      candidate,
+      intentId,
+      'sent',
+      subscription.exclusions?.length ? subscription.exclusions.join('\n') : undefined,
+    )
     return 'sent'
   } catch (cause) {
     const reason = cause instanceof Error ? cause.message : String(cause)
