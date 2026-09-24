@@ -5,6 +5,11 @@ const TEST_REFUSAL = 'hub task client refuses a real hosted URL unless a stub is
 const REMEDY = 'Set HUB_HOSTED_URL and run `orch record doctor`.'
 export type TaskFetch = (input: string, init?: RequestInit) => Promise<Response>
 
+export type HostedTaskIdentity = {
+  activeSpaceId: string
+  memberships: Array<{ spaceId: string; slug: string }>
+}
+
 export function assertHostedTaskWriteConfigured(options: { baseUrl?: string } = {}) {
   const baseUrl = options.baseUrl ?? process.env.HUB_HOSTED_URL
   if (!baseUrl) throw new Error(`hosted hub is not configured. ${REMEDY}`)
@@ -35,6 +40,12 @@ async function request<T>(
     throw new Error(`hosted hub is unreachable: ${(error as Error).message}. ${REMEDY}`)
   }
   const value = (await response.json().catch(() => null)) as Record<string, unknown> | null
+  if (!response.ok && response.status === 409)
+    throw new Error(
+      `hosted hub refused the write (409): ${String(value?.error ?? 'unknown error')}${
+        value?.remedy ? `. ${String(value.remedy)}` : ''
+      }`,
+    )
   if (!response.ok)
     throw new Error(
       `hosted hub refused the write (${response.status}): ${String(value?.error ?? 'unknown error')}. ${REMEDY}`,
@@ -115,6 +126,24 @@ export async function hostedTaskChanges(
 
 export const hostedMirrorTasks = (body: unknown, options?: Parameters<typeof request>[3]) =>
   request<{ upserted: number }>('/v1/tasks/mirror', 'PUT', body, options)
+export async function hostedTaskIdentity(
+  options?: Parameters<typeof request>[3],
+): Promise<HostedTaskIdentity> {
+  const value = await request<{
+    activeSpaceId: string | null
+    memberships: Array<{ space_id?: unknown; slug?: unknown }>
+  }>('/v1/whoami', 'GET', undefined, options)
+  if (!value.activeSpaceId)
+    throw new Error('hosted hub has no active space; switch spaces and retry')
+  return {
+    activeSpaceId: value.activeSpaceId,
+    memberships: value.memberships.flatMap((row) =>
+      typeof row.space_id === 'string' && typeof row.slug === 'string'
+        ? [{ spaceId: row.space_id, slug: row.slug }]
+        : [],
+    ),
+  }
+}
 export const hostedTaskCounts = (options?: Parameters<typeof request>[3]) =>
   request<Record<string, Array<{ source: string; count: number }>>>(
     '/v1/tasks/counts',

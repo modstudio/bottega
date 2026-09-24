@@ -364,6 +364,128 @@ type MirrorBody = {
   raiseSequences?: Array<{ project: string; prefix: string; next: number }>
 }
 
+type MirrorIdentity = { id: string; spaceId: string; naturalKey: string }
+type MirrorCollisionDecision =
+  | { action: 'insert' | 'update-same-row' | 'idempotent-duplicate' }
+  | { action: 'refuse'; reason: string }
+
+export function mirrorCollisionDecision(
+  incoming: MirrorIdentity,
+  existing: MirrorIdentity | null,
+  sameRow: 'update' | 'idempotent',
+): MirrorCollisionDecision {
+  if (!existing) return { action: 'insert' }
+  if (existing.spaceId === incoming.spaceId && existing.naturalKey === incoming.naturalKey)
+    return { action: sameRow === 'update' ? 'update-same-row' : 'idempotent-duplicate' }
+  return {
+    action: 'refuse',
+    reason:
+      `refusing to mirror ${incoming.naturalKey}: id ${incoming.id} already belongs to ` +
+      `${existing.naturalKey} in space ${existing.spaceId}; restore this local row's record id ` +
+      `to the id for ${incoming.naturalKey}, or ask the hosted-space operator to resolve the id collision`,
+  }
+}
+
+function applyMirrorDecision(decision: MirrorCollisionDecision): boolean {
+  if (decision.action === 'refuse') throw new Error(decision.reason)
+  return decision.action !== 'idempotent-duplicate'
+}
+
+async function mirrorTaskRow(tx: SQL, identity: TaskIdentity, row: HostedTask) {
+  const existing = rows<{ id: string; space_id: string; key: string }>(
+    await tx`SELECT id,space_id,key FROM hub_task WHERE id=${row.id}::uuid`,
+  )[0]
+  applyMirrorDecision(
+    mirrorCollisionDecision(
+      { id: row.id, spaceId: identity.spaceId, naturalKey: `task ${row.key}` },
+      existing
+        ? { id: existing.id, spaceId: existing.space_id, naturalKey: `task ${existing.key}` }
+        : null,
+      'update',
+    ),
+  )
+  await tx`INSERT INTO hub_task
+    (id,space_id,project_name,key,project,title,status,status_category,parent_key,body,assignee,
+     opened_at,closed_at,source,first_seen,last_seen,created_at,updated_at,deleted_at)
+    VALUES (${row.id || newRecordId()}::uuid,${identity.spaceId}::uuid,${row.project_name},${row.key},${row.project},${row.title},${row.status},${row.status_category},${row.parent_key},${row.body},${row.assignee},${row.opened_at}::timestamptz,${row.closed_at}::timestamptz,${row.source},${row.first_seen}::timestamptz,${row.last_seen}::timestamptz,${row.created_at}::timestamptz,${row.updated_at}::timestamptz,${row.deleted_at}::timestamptz)
+    ON CONFLICT (space_id,key) DO UPDATE SET project_name=excluded.project_name,project=excluded.project,title=excluded.title,status=excluded.status,status_category=excluded.status_category,parent_key=excluded.parent_key,body=excluded.body,assignee=excluded.assignee,opened_at=excluded.opened_at,closed_at=excluded.closed_at,source=excluded.source,first_seen=excluded.first_seen,last_seen=excluded.last_seen,updated_at=excluded.updated_at,deleted_at=excluded.deleted_at
+    WHERE excluded.source='local' OR (hub_task.source <> 'local' AND (excluded.source <> 'git' OR hub_task.source='git'))`
+}
+
+async function mirrorCommentRow(tx: SQL, identity: TaskIdentity, row: HostedComment) {
+  const existing = rows<{ id: string; space_id: string; legacy_local_id: string }>(
+    await tx`SELECT id,space_id,legacy_local_id FROM hub_task_comment WHERE id=${row.id}::uuid`,
+  )[0]
+  applyMirrorDecision(
+    mirrorCollisionDecision(
+      { id: row.id, spaceId: identity.spaceId, naturalKey: `comment ${row.legacy_local_id}` },
+      existing
+        ? {
+            id: existing.id,
+            spaceId: existing.space_id,
+            naturalKey: `comment ${existing.legacy_local_id}`,
+          }
+        : null,
+      'update',
+    ),
+  )
+  await tx`INSERT INTO hub_task_comment
+    (id,legacy_local_id,space_id,project_name,task_key,body,created_at,updated_at,deleted_at)
+    VALUES (${row.id}::uuid,${row.legacy_local_id},${identity.spaceId}::uuid,${row.project_name},${row.task_key},${row.body},${row.created_at}::timestamptz,${row.updated_at}::timestamptz,${row.deleted_at}::timestamptz)
+    ON CONFLICT (space_id,legacy_local_id) DO UPDATE SET body=excluded.body,updated_at=excluded.updated_at,deleted_at=excluded.deleted_at`
+}
+
+async function mirrorDocumentRow(tx: SQL, identity: TaskIdentity, row: HostedDocument) {
+  const existing = rows<{ id: string; space_id: string; legacy_local_id: string }>(
+    await tx`SELECT id,space_id,legacy_local_id FROM hub_task_document WHERE id=${row.id}::uuid`,
+  )[0]
+  applyMirrorDecision(
+    mirrorCollisionDecision(
+      { id: row.id, spaceId: identity.spaceId, naturalKey: `document ${row.legacy_local_id}` },
+      existing
+        ? {
+            id: existing.id,
+            spaceId: existing.space_id,
+            naturalKey: `document ${existing.legacy_local_id}`,
+          }
+        : null,
+      'update',
+    ),
+  )
+  await tx`INSERT INTO hub_task_document
+    (id,legacy_local_id,space_id,project_name,task_key,role,title,body,version,created_at,updated_at,deleted_at)
+    VALUES (${row.id}::uuid,${row.legacy_local_id},${identity.spaceId}::uuid,${row.project_name},${row.task_key},${row.role},${row.title},${row.body},${row.version},${row.created_at}::timestamptz,${row.updated_at}::timestamptz,${row.deleted_at}::timestamptz)
+    ON CONFLICT (space_id,legacy_local_id) DO UPDATE SET role=excluded.role,title=excluded.title,body=excluded.body,version=excluded.version,updated_at=excluded.updated_at,deleted_at=excluded.deleted_at`
+}
+
+async function mirrorStatusEventRow(tx: SQL, identity: TaskIdentity, row: HostedStatusEvent) {
+  const existing = rows<{ id: string; space_id: string; legacy_local_id: string }>(
+    await tx`SELECT id,space_id,legacy_local_id FROM hub_task_status_event WHERE id=${row.id}::uuid`,
+  )[0]
+  const proceed = applyMirrorDecision(
+    mirrorCollisionDecision(
+      {
+        id: row.id,
+        spaceId: identity.spaceId,
+        naturalKey: `status event ${row.legacy_local_id}`,
+      },
+      existing
+        ? {
+            id: existing.id,
+            spaceId: existing.space_id,
+            naturalKey: `status event ${existing.legacy_local_id}`,
+          }
+        : null,
+      'idempotent',
+    ),
+  )
+  if (!proceed) return
+  await tx`INSERT INTO hub_task_status_event
+    (id,legacy_local_id,space_id,project_name,task_key,at,from_status,to_status,created_at,updated_at,deleted_at)
+    VALUES (${row.id}::uuid,${row.legacy_local_id},${identity.spaceId}::uuid,${row.project_name},${row.task_key},${row.at}::timestamptz,${row.from_status},${row.to_status},${row.created_at}::timestamptz,${row.updated_at}::timestamptz,${row.deleted_at}::timestamptz)
+    ON CONFLICT (space_id,legacy_local_id) DO NOTHING`
+}
+
 export async function mirrorHostedTasks(url: string, identity: TaskIdentity, body: MirrorBody) {
   const total =
     body.tasks.length +
@@ -372,28 +494,10 @@ export async function mirrorHostedTasks(url: string, identity: TaskIdentity, bod
     (body.statusEvents?.length ?? 0)
   if (total > 500) throw new Error('mirror accepts at most 500 rows')
   return withHostedTenant(url, identity, async (tx) => {
-    for (const row of body.tasks)
-      await tx`INSERT INTO hub_task
-      (id,space_id,project_name,key,project,title,status,status_category,parent_key,body,assignee,
-       opened_at,closed_at,source,first_seen,last_seen,created_at,updated_at,deleted_at)
-      VALUES (${row.id || newRecordId()}::uuid,${identity.spaceId}::uuid,${row.project_name},${row.key},${row.project},${row.title},${row.status},${row.status_category},${row.parent_key},${row.body},${row.assignee},${row.opened_at}::timestamptz,${row.closed_at}::timestamptz,${row.source},${row.first_seen}::timestamptz,${row.last_seen}::timestamptz,${row.created_at}::timestamptz,${row.updated_at}::timestamptz,${row.deleted_at}::timestamptz)
-      ON CONFLICT (space_id,key) DO UPDATE SET project_name=excluded.project_name,project=excluded.project,title=excluded.title,status=excluded.status,status_category=excluded.status_category,parent_key=excluded.parent_key,body=excluded.body,assignee=excluded.assignee,opened_at=excluded.opened_at,closed_at=excluded.closed_at,source=excluded.source,first_seen=excluded.first_seen,last_seen=excluded.last_seen,updated_at=excluded.updated_at,deleted_at=excluded.deleted_at
-      WHERE excluded.source='local' OR (hub_task.source <> 'local' AND (excluded.source <> 'git' OR hub_task.source='git'))`
-    for (const row of body.comments ?? [])
-      await tx`INSERT INTO hub_task_comment
-      (id,legacy_local_id,space_id,project_name,task_key,body,created_at,updated_at,deleted_at)
-      VALUES (${row.id}::uuid,${row.legacy_local_id},${identity.spaceId}::uuid,${row.project_name},${row.task_key},${row.body},${row.created_at}::timestamptz,${row.updated_at}::timestamptz,${row.deleted_at}::timestamptz)
-      ON CONFLICT (space_id,legacy_local_id) DO UPDATE SET body=excluded.body,updated_at=excluded.updated_at,deleted_at=excluded.deleted_at`
-    for (const row of body.documents ?? [])
-      await tx`INSERT INTO hub_task_document
-      (id,legacy_local_id,space_id,project_name,task_key,role,title,body,version,created_at,updated_at,deleted_at)
-      VALUES (${row.id}::uuid,${row.legacy_local_id},${identity.spaceId}::uuid,${row.project_name},${row.task_key},${row.role},${row.title},${row.body},${row.version},${row.created_at}::timestamptz,${row.updated_at}::timestamptz,${row.deleted_at}::timestamptz)
-      ON CONFLICT (space_id,legacy_local_id) DO UPDATE SET role=excluded.role,title=excluded.title,body=excluded.body,version=excluded.version,updated_at=excluded.updated_at,deleted_at=excluded.deleted_at`
-    for (const row of body.statusEvents ?? [])
-      await tx`INSERT INTO hub_task_status_event
-      (id,legacy_local_id,space_id,project_name,task_key,at,from_status,to_status,created_at,updated_at,deleted_at)
-      VALUES (${row.id}::uuid,${row.legacy_local_id},${identity.spaceId}::uuid,${row.project_name},${row.task_key},${row.at}::timestamptz,${row.from_status},${row.to_status},${row.created_at}::timestamptz,${row.updated_at}::timestamptz,${row.deleted_at}::timestamptz)
-      ON CONFLICT DO NOTHING`
+    for (const row of body.tasks) await mirrorTaskRow(tx, identity, row)
+    for (const row of body.comments ?? []) await mirrorCommentRow(tx, identity, row)
+    for (const row of body.documents ?? []) await mirrorDocumentRow(tx, identity, row)
+    for (const row of body.statusEvents ?? []) await mirrorStatusEventRow(tx, identity, row)
     for (const sequence of body.raiseSequences ?? []) {
       const project = rows<{ id: string }>(
         await tx`SELECT id FROM project WHERE space_id=${identity.spaceId}::uuid AND name=${sequence.project}`,

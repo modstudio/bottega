@@ -1,7 +1,7 @@
 import { beforeAll, describe, expect, test } from 'bun:test'
 import { resetFixtureStore } from '../test/run-fixtures.ts'
 import { db, writeTransaction } from './db.ts'
-import { confirmSoftDelete } from './hosted-tasks.ts'
+import { confirmSoftDelete, mirrorCollisionDecision } from './hosted-tasks.ts'
 import { createTask } from './task.ts'
 import { taskApi } from './task-api.ts'
 import { applyHostedTaskChanges } from './task-cache.ts'
@@ -10,6 +10,28 @@ import { closeThenPrune } from './task-close.ts'
 beforeAll(resetFixtureStore)
 
 describe('hosted-only task safety', () => {
+  test('mirror collision decisions insert, update, deduplicate events, and refuse reused ids', () => {
+    const incoming = { id: 'id-1', spaceId: 'space-a', naturalKey: 'task DEV-1' }
+    expect(mirrorCollisionDecision(incoming, null, 'update')).toEqual({ action: 'insert' })
+    expect(mirrorCollisionDecision(incoming, incoming, 'update')).toEqual({
+      action: 'update-same-row',
+    })
+    expect(mirrorCollisionDecision(incoming, incoming, 'idempotent')).toEqual({
+      action: 'idempotent-duplicate',
+    })
+    expect(
+      mirrorCollisionDecision(
+        incoming,
+        { id: 'id-1', spaceId: 'space-b', naturalKey: 'task OPS-12' },
+        'update',
+      ),
+    ).toEqual({
+      action: 'refuse',
+      reason:
+        "refusing to mirror task DEV-1: id id-1 already belongs to task OPS-12 in space space-b; restore this local row's record id to the id for task DEV-1, or ask the hosted-space operator to resolve the id collision",
+    })
+  })
+
   test('an unreachable hosted write refuses and leaves the cache unchanged', async () => {
     const before = db().query<{ count: number }, []>(`SELECT count(*) count FROM task`).get()!.count
     await expect(

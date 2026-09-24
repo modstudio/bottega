@@ -17,6 +17,7 @@ import {
   review as reviewRecord,
 } from '../../../shared/record/schema-review.ts'
 import { run as runRecord, runScore as runScoreRecord } from '../../../shared/record/schema-run.ts'
+import { recordSpaceMembership } from '../../../shared/record-space-membership.ts'
 import { db, nowIso } from '../database/db.ts'
 import {
   backfillReviewRecords,
@@ -128,9 +129,7 @@ function projectPrincipal(
   if (!projectName) return fallback
   const declared = declaredProjectSpace(local, projectName, overrides)
   if (!declared) return fallback
-  const membership = memberships.find(
-    (candidate) => candidate.slug === declared || candidate.spaceId === declared,
-  )
+  const membership = recordSpaceMembership(declared, memberships)
   if (!membership) {
     throw new Error(
       `project ${projectName} declares record space ${declared}, but the signed-in user is not a member; join it first with an invitation, then retry`,

@@ -38,8 +38,16 @@ async function identity(request: Request, base: string, fetchImpl: typeof fetch)
   if (!response.ok) return null
   const value = (await response.json().catch(() => null)) as Record<string, unknown> | null
   const user = value?.user as Record<string, unknown> | undefined
+  const memberships = Array.isArray(value?.memberships) ? value.memberships : []
   return typeof user?.id === 'string' && typeof value?.activeSpaceId === 'string'
-    ? { userId: user.id, spaceId: value.activeSpaceId }
+    ? {
+        userId: user.id,
+        spaceId: value.activeSpaceId,
+        spaceIds: memberships.flatMap((row) => {
+          const id = (row as Record<string, unknown>)?.space_id
+          return typeof id === 'string' ? [id] : []
+        }),
+      }
     : null
 }
 

@@ -686,6 +686,7 @@ export const importBoundaries: ImportBoundary[] = [
       '../../../shared/record/schema-landing.ts',
       '../../../shared/record/schema-review.ts',
       '../../../shared/record/schema-run.ts',
+      '../../../shared/record-space-membership.ts',
       '../database/db.ts',
       './landing-outbox.ts',
       './machine-identity.ts',
