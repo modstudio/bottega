@@ -25,7 +25,7 @@ import { filedIssueQueueFailureAction } from './issue-queue-failure.ts'
 
 const HUB = fileURLToPath(new URL('../../../bin/hub', import.meta.url))
 
-type HeldIssueTree = { runId: number; path: string; why: string; project: string | null }
+type HeldIssueTree = { runId: number; path: string; why: string }
 
 function issueLeaseDirectory(): string {
   const platform = projectByName(PLATFORM_SLUG)
@@ -181,7 +181,7 @@ async function claimAndWork(key: string, queueMode: boolean): Promise<ClaimResul
 function heldIssueTrees(): HeldIssueTree[] {
   const rows = db()
     .query(
-      `SELECT id, worktree, keep_tree, keep_tree_reason, status, repo FROM run
+      `SELECT id, worktree, keep_tree, keep_tree_reason, status FROM run
        WHERE job IN ('diagnose','issue-worker') AND worktree IS NOT NULL
          AND status IN ('ok','failed','stale','stopped') ORDER BY id`,
     )
@@ -191,7 +191,6 @@ function heldIssueTrees(): HeldIssueTree[] {
     keep_tree: number
     keep_tree_reason: string | null
     status: string
-    repo: string | null
   }[]
   const seen = new Set<string>()
   return rows.flatMap((row) => {
@@ -203,7 +202,7 @@ function heldIssueTrees(): HeldIssueTree[] {
       : dirty.dirty
         ? dirty.detail
         : `terminal ${row.status} ${row.id} tree remains on disk`
-    return [{ runId: row.id, path: row.worktree, why, project: row.repo }]
+    return [{ runId: row.id, path: row.worktree, why }]
   })
 }
 
@@ -248,64 +247,37 @@ export async function dispatchFiledIssues(key?: string): Promise<boolean> {
 }
 
 type ListedIssue = { key: string; title: string | null }
-type ProjectListedIssue = ListedIssue & { project: string | null }
-type ProjectFiledIssueLoopRun = FiledIssueLoopRun & { project: string | null }
-
-type ProjectFiledIssueQueueState = {
-  waiting: ProjectListedIssue[]
-  unworked: ProjectListedIssue[]
-  held: HeldIssueTree[]
-  unscored: ProjectFiledIssueLoopRun[]
-}
 
 export type FiledIssueQueueState = {
   waiting: ListedIssue[]
   unworked: ListedIssue[]
-  blocked: null | { held: Omit<HeldIssueTree, 'project'>[]; limit: number }
+  blocked: null | { held: HeldIssueTree[]; limit: number }
   unscored: FiledIssueLoopRun[]
 }
 
-function presentFiledIssueQueueState(state: ProjectFiledIssueQueueState): FiledIssueQueueState {
-  const held = state.held.map(({ project: _project, ...tree }) => tree)
-  return {
-    waiting: state.waiting.map(({ project: _project, ...issue }) => issue),
-    unworked: state.unworked.map(({ project: _project, ...issue }) => issue),
-    blocked: held.length >= MAX_HELD_ISSUE_TREES ? { held, limit: MAX_HELD_ISSUE_TREES } : null,
-    unscored: state.unscored.map(({ project: _project, ...run }) => run),
-  }
-}
-
 export function filedIssueStateForProject(
-  state: ProjectFiledIssueQueueState,
+  state: FiledIssueQueueState,
   project: string | null,
 ): FiledIssueQueueState {
-  const belongs = (row: { project: string | null }) => project !== null && row.project === project
-  return presentFiledIssueQueueState({
-    waiting: state.waiting.filter(belongs),
-    unworked: state.unworked.filter(belongs),
-    held: state.held.filter(belongs),
-    unscored: state.unscored.filter(belongs),
-  })
+  return project === PLATFORM_SLUG
+    ? state
+    : { waiting: [], unworked: [], blocked: null, unscored: [] }
 }
 
 export function unscoredFiledIssueLoopRuns(): FiledIssueLoopRun[] {
-  return projectFiledIssueLoopRuns().map(({ project: _project, ...run }) => run)
-}
-
-function projectFiledIssueLoopRuns(): ProjectFiledIssueLoopRun[] {
   const rows = db()
     .query(
-      `SELECT r.id, r.job, r.label, r.repo
+      `SELECT r.id, r.job, r.label
        FROM run r LEFT JOIN score s ON s.run_id = r.id
        WHERE r.job IN ('diagnose','issue-worker','review-lens')
          AND r.session_id IS NULL
          AND ${UNSCORED_WHERE}
        ORDER BY r.id`,
     )
-    .all() as { id: number; job: string; label: string | null; repo: string | null }[]
+    .all() as { id: number; job: string; label: string | null }[]
   return rows.flatMap((row) => {
     const found = filedIssueLoopRun(row)
-    return found ? [{ ...found, project: row.repo }] : []
+    return found ? [found] : []
   })
 }
 
@@ -318,34 +290,22 @@ export async function filedIssueQueueState(
   const waiting = rows.flatMap((task) => {
     try {
       return task.status_category === 'review' && parseFiledIssue({ task }).kind === 'defect'
-        ? [
-            {
-              key: task.key,
-              title: task.title,
-              project: parseFiledIssue({ task }).reportingProject,
-            },
-          ]
+        ? [{ key: task.key, title: task.title }]
         : []
     } catch {
       return []
     }
   })
-  const unworked = eligibleFiledIssueTasks(rows, liveLease).map((task) => ({
-    key: task.key,
-    title: task.title,
-    project: parseFiledIssue({ task }).reportingProject,
+  const unworked = eligibleFiledIssueTasks(rows, liveLease).map(({ key, title }) => ({
+    key,
+    title,
   }))
   const held = heldIssueTrees()
   const state = {
     waiting,
     unworked,
-    held,
-    unscored:
-      project === undefined
-        ? unscoredFiledIssueLoopRuns().map((run) => ({ ...run, project: null }))
-        : projectFiledIssueLoopRuns(),
+    blocked: held.length >= MAX_HELD_ISSUE_TREES ? { held, limit: MAX_HELD_ISSUE_TREES } : null,
+    unscored: unscoredFiledIssueLoopRuns(),
   }
-  return project === undefined
-    ? presentFiledIssueQueueState(state)
-    : filedIssueStateForProject(state, project)
+  return project === undefined ? state : filedIssueStateForProject(state, project)
 }

@@ -1,4 +1,5 @@
 import { describe, expect, test } from 'bun:test'
+import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { addRun, score } from '../../test/fixtures/store.ts'
 import { db } from '../database/db.ts'
 import {
@@ -7,27 +8,28 @@ import {
   unscoredFiledIssueLoopRuns,
 } from './issue-dispatch.ts'
 
-test('project-scoped filed issue state keeps its project and an unregistered cwd keeps nothing', () => {
+test('project-scoped filed issue state belongs wholly to the platform project', () => {
   const state = {
     waiting: [
-      { key: 'DEV-1', title: 'here', project: 'here' },
-      { key: 'DEV-2', title: 'elsewhere', project: 'elsewhere' },
+      { key: 'DEV-1', title: 'waiting' },
+      { key: 'DEV-2', title: 'also waiting' },
     ],
-    unworked: [{ key: 'DEV-3', title: null, project: 'here' }],
-    held: [
-      { runId: 1, path: '/here', why: 'held', project: 'here' },
-      { runId: 2, path: '/unknown', why: 'held', project: null },
-    ],
+    unworked: [{ key: 'DEV-3', title: null }],
+    blocked: {
+      held: [{ runId: 1, path: '/tree', why: 'held' }],
+      limit: 1,
+    },
     unscored: [
-      { runId: 3, job: 'diagnose', issueKey: 'DEV-1', project: 'here' },
-      { runId: 4, job: 'diagnose', issueKey: 'DEV-2', project: 'elsewhere' },
+      { runId: 3, job: 'diagnose', issueKey: 'DEV-1' },
+      { runId: 4, job: 'diagnose', issueKey: 'DEV-2' },
     ],
   }
-  expect(filedIssueStateForProject(state, 'here')).toEqual({
-    waiting: [{ key: 'DEV-1', title: 'here' }],
-    unworked: [{ key: 'DEV-3', title: null }],
+  expect(filedIssueStateForProject(state, PLATFORM_SLUG)).toEqual(state)
+  expect(filedIssueStateForProject(state, 'other-project')).toEqual({
+    waiting: [],
+    unworked: [],
     blocked: null,
-    unscored: [{ runId: 3, job: 'diagnose', issueKey: 'DEV-1' }],
+    unscored: [],
   })
   expect(filedIssueStateForProject(state, null)).toEqual({
     waiting: [],
