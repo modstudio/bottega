@@ -1,8 +1,6 @@
 PRAGMA defer_foreign_keys = ON;
 --> statement-breakpoint
-DROP TABLE IF EXISTS temp.task_identity_migration_repairs;
---> statement-breakpoint
-CREATE TEMP TABLE task_identity_migration_repairs (
+CREATE TABLE task_identity_migration_repairs (
   table_name TEXT NOT NULL,
   row_id TEXT NOT NULL,
   task_key TEXT NOT NULL,
@@ -15,11 +13,29 @@ CREATE TEMP TABLE task_identity_migration_repairs (
   PRIMARY KEY (table_name, row_id, reason)
 );
 --> statement-breakpoint
-UPDATE task
-SET record_id = lower(hex(randomblob(4))) || '-' || lower(hex(randomblob(2))) || '-4' ||
+-- newRecordId() is the runtime minter; this is its migration-only UUID-v7 equivalent.
+INSERT INTO task_identity_migration_repairs
+  (table_name,row_id,task_key,new_record_id,reason,projects)
+SELECT 'task',project || char(0) || key,key,
+  substr(timestamp_hex, 1, 8) || '-' || substr(timestamp_hex, 9, 4) || '-7' ||
   substr(lower(hex(randomblob(2))), 2) || '-' ||
   substr('89ab', abs(random()) % 4 + 1, 1) || substr(lower(hex(randomblob(2))), 2) || '-' ||
-  lower(hex(randomblob(6)))
+  lower(hex(randomblob(6))),
+  'missing task record id; minted UUID v7',project
+FROM (
+  SELECT project,key,printf('%012x', CAST(unixepoch('subsec') * 1000 AS INTEGER)) timestamp_hex
+  FROM task WHERE record_id IS NULL
+);
+--> statement-breakpoint
+UPDATE task
+SET record_id = (
+  SELECT repair.new_record_id
+  FROM task_identity_migration_repairs repair
+  WHERE repair.table_name = 'task'
+    AND repair.reason = 'missing task record id; minted UUID v7'
+    AND repair.projects = task.project
+    AND repair.task_key = task.key
+)
 WHERE record_id IS NULL;
 --> statement-breakpoint
 INSERT INTO task_identity_migration_repairs
@@ -125,13 +141,55 @@ WHERE id IN (
   SELECT row_id FROM task_identity_migration_repairs WHERE table_name = 'task_status_event'
 );
 --> statement-breakpoint
+INSERT INTO task_identity_migration_repairs
+  (table_name,row_id,task_key,old_record_id,new_record_id,reason,projects)
+SELECT 'task',child.record_id,child.parent_key,child.parent_record_id,parent.record_id,
+  CASE WHEN child.parent_record_id IS NULL
+    THEN 'missing parent record id; attached by project and key'
+    ELSE 'dangling parent record id; attached by project and key' END,child.project
+FROM task child
+JOIN task parent ON parent.project = child.project AND parent.key = child.parent_key
+LEFT JOIN task current ON current.record_id = child.parent_record_id
+WHERE child.parent_key IS NOT NULL AND current.record_id IS NULL;
+--> statement-breakpoint
 UPDATE task
-SET parent_record_id = (SELECT parent.record_id FROM task parent WHERE parent.key = task.parent_key)
-WHERE parent_record_id IS NULL AND parent_key IS NOT NULL;
+SET parent_record_id = (
+  SELECT repair.new_record_id FROM task_identity_migration_repairs repair
+  WHERE repair.table_name = 'task' AND repair.row_id = task.record_id
+    AND repair.reason IN ('missing parent record id; attached by project and key',
+      'dangling parent record id; attached by project and key')
+)
+WHERE record_id IN (
+  SELECT row_id FROM task_identity_migration_repairs
+  WHERE table_name = 'task'
+    AND reason IN ('missing parent record id; attached by project and key',
+      'dangling parent record id; attached by project and key')
+);
+--> statement-breakpoint
+INSERT INTO task_identity_migration_repairs
+  (table_name,row_id,task_key,old_record_id,new_record_id,reason,projects)
+SELECT 'note',child.id,child.promoted_task,child.promoted_task_record_id,parent.record_id,
+  CASE WHEN child.promoted_task_record_id IS NULL
+    THEN 'missing promoted task record id; attached by project and key'
+    ELSE 'dangling promoted task record id; attached by project and key' END,child.project
+FROM note child
+JOIN task parent ON parent.project = child.project AND parent.key = child.promoted_task
+LEFT JOIN task current ON current.record_id = child.promoted_task_record_id
+WHERE child.promoted_task IS NOT NULL AND current.record_id IS NULL;
 --> statement-breakpoint
 UPDATE note
-SET promoted_task_record_id = (SELECT record_id FROM task WHERE task.key = note.promoted_task)
-WHERE promoted_task_record_id IS NULL AND promoted_task IS NOT NULL;
+SET promoted_task_record_id = (
+  SELECT repair.new_record_id FROM task_identity_migration_repairs repair
+  WHERE repair.table_name = 'note' AND repair.row_id = note.id
+    AND repair.reason IN ('missing promoted task record id; attached by project and key',
+      'dangling promoted task record id; attached by project and key')
+)
+WHERE id IN (
+  SELECT CAST(row_id AS INTEGER) FROM task_identity_migration_repairs
+  WHERE table_name = 'note'
+    AND reason IN ('missing promoted task record id; attached by project and key',
+      'dangling promoted task record id; attached by project and key')
+);
 --> statement-breakpoint
 CREATE TEMP TABLE task_identity_migration_guard (detail TEXT);
 --> statement-breakpoint

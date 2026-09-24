@@ -6,7 +6,15 @@ import { readMachineValue } from '../../shared/machine-config.ts'
 import { type TrackerProtocol, trackerCreatedTaskKey } from '../../shared/trackers.ts'
 import { projectOf } from './attribute.ts'
 import { releaseLease, watch, withLease } from './collect.ts'
-import { DB_PATH, db, migrateDatabase, nowIso, requireDatabase, writeTransaction } from './db.ts'
+import {
+  DB_PATH,
+  db,
+  formatMigrationRepairSummary,
+  migrateDatabase,
+  nowIso,
+  requireDatabase,
+  writeTransaction,
+} from './db.ts'
 import { reclaimFixtureQuestions } from './fixture-question-reclaim.ts'
 import { ingestGit } from './ingest/git.ts'
 import { ingestRuns } from './ingest/runs.ts'
@@ -856,6 +864,8 @@ try {
         console.log(`migrated ${migrated.path}`)
         for (const version of migrated.versions) console.log(`  applied ${version}`)
       }
+      const repairSummary = formatMigrationRepairSummary(migrated.repairs)
+      if (repairSummary) console.log(repairSummary)
       break
     }
     case 'doctor':

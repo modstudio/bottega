@@ -116,7 +116,9 @@ type ExistingTask = {
   assignee: string | null
 }
 
-const trackerTaskIdentity = (project: string, key: string) => `${project}\0${key}`
+const trackerTaskLabel = (project: string, key: string) => `${project}\0${key}`
+
+const TRACKER_LABEL_COLLISION = 'tracker label collision'
 
 function differs(t: TrackerTask, old: ExistingTask | undefined): boolean {
   if (!old) return true
@@ -133,56 +135,129 @@ function differs(t: TrackerTask, old: ExistingTask | undefined): boolean {
 
 /** Write the tracker-owned fields without ever replacing a locally-owned task. */
 function upsertTrackerTaskOn(conn: Database, t: TrackerTask, at: string) {
-  const local = conn
-    .query<{ source: string }, [string, string]>(
-      'SELECT source FROM task WHERE project=? AND key=?',
-    )
-    .get(t.project, t.key)
-  if (local?.source === 'local') return
-  const recordId = newRecordId()
-  const conflictTarget = t.externalId
-    ? '(project,external_id) WHERE external_id IS NOT NULL'
-    : '(project,key)'
-  conn
-    .query(
-      `INSERT INTO task (record_id, external_id, key, project, title, status, status_category, updated_at, assignee,
-                       closed_at, source, first_seen, last_seen)
-     VALUES (?,?,?,?,?,?,?,?,?,?, 'mcp', ?, ?)
-     ON CONFLICT${conflictTarget} DO UPDATE SET
-       record_id=COALESCE(task.record_id, excluded.record_id),
-       external_id=COALESCE(excluded.external_id, task.external_id),
-       project=excluded.project, title=excluded.title, status=excluded.status,
-       status_category=excluded.status_category,
-       updated_at=COALESCE(excluded.updated_at, task.updated_at),
-       assignee=excluded.assignee,
-       closed_at=excluded.closed_at,
-       source='mcp', last_seen=excluded.last_seen
-     WHERE task.source <> 'local'`,
-    )
-    .run(
-      recordId,
-      t.externalId,
-      t.key,
-      t.project,
-      t.title,
-      t.status,
-      t.category,
-      t.updatedAt,
-      t.assignee,
-      t.category === 'done' ? at : null,
-      at,
-      at,
-    )
-  const effectiveExternalId = conn
-    .query<{ external_id: string | null }, [string, string]>(
-      'SELECT external_id FROM task WHERE project=? AND key=?',
-    )
-    .get(t.project, t.key)?.external_id
-  if (effectiveExternalId)
+  type IdentityRow = { record_id: string; key: string; source: string; external_id: string | null }
+  let row = t.externalId
+    ? conn
+        .query<IdentityRow, [string, string]>(
+          'SELECT record_id,key,source,external_id FROM task WHERE project=? AND external_id=?',
+        )
+        .get(t.project, t.externalId)
+    : null
+
+  if (!row && t.externalId) {
+    row = conn
+      .query<IdentityRow, [string, string]>(
+        `SELECT record_id,key,source,external_id FROM task
+         WHERE project=? AND key=? AND external_id IS NULL`,
+      )
+      .get(t.project, t.key)
+  }
+  if (!row && !t.externalId) {
+    row = conn
+      .query<IdentityRow, [string, string]>(
+        'SELECT record_id,key,source,external_id FROM task WHERE project=? AND key=?',
+      )
+      .get(t.project, t.key)
+  }
+  if (row?.source === 'local') return
+
+  if (row) {
+    const collision =
+      row.key === t.key
+        ? null
+        : conn
+            .query<{ record_id: string }, [string, string, string]>(
+              'SELECT record_id FROM task WHERE project=? AND key=? AND record_id<>?',
+            )
+            .get(t.project, t.key, row.record_id)
+    if (collision) {
+      console.error(
+        `tracker label collision project=${t.project} external_id=${t.externalId} incoming=${t.key} held_by=${collision.record_id}; keeping ${row.key}`,
+      )
+      conn
+        .query(
+          `INSERT INTO task_identity_migration_repairs
+             (table_name,row_id,task_key,old_record_id,new_record_id,old_external_id,new_external_id,reason,projects)
+           VALUES ('task',?,?,?,?,?,?,?,?)
+           ON CONFLICT(table_name,row_id,reason) DO UPDATE SET
+             task_key=excluded.task_key,old_record_id=excluded.old_record_id,
+             new_record_id=excluded.new_record_id,old_external_id=excluded.old_external_id,
+             new_external_id=excluded.new_external_id,projects=excluded.projects`,
+        )
+        .run(
+          row.record_id,
+          t.key,
+          row.record_id,
+          collision.record_id,
+          row.external_id,
+          t.externalId,
+          TRACKER_LABEL_COLLISION,
+          t.project,
+        )
+    } else {
+      conn
+        .query(
+          `DELETE FROM task_identity_migration_repairs
+           WHERE table_name='task' AND row_id=? AND reason=?`,
+        )
+        .run(row.record_id, TRACKER_LABEL_COLLISION)
+    }
+    conn
+      .query(
+        `UPDATE task SET external_id=COALESCE(?,external_id), key=?, title=?, status=?,
+           status_category=?, updated_at=COALESCE(?,updated_at), assignee=?, closed_at=?,
+           source='mcp', last_seen=? WHERE record_id=?`,
+      )
+      .run(
+        t.externalId,
+        collision ? row.key : t.key,
+        t.title,
+        t.status,
+        t.category,
+        t.updatedAt,
+        t.assignee,
+        t.category === 'done' ? at : null,
+        at,
+        row.record_id,
+      )
+  } else {
+    conn
+      .query(
+        `INSERT INTO task (record_id, external_id, key, project, title, status, status_category,
+          updated_at, assignee, closed_at, source, first_seen, last_seen)
+         VALUES (?,?,?,?,?,?,?,?,?,?, 'mcp', ?, ?)`,
+      )
+      .run(
+        newRecordId(),
+        t.externalId,
+        t.key,
+        t.project,
+        t.title,
+        t.status,
+        t.category,
+        t.updatedAt,
+        t.assignee,
+        t.category === 'done' ? at : null,
+        at,
+        at,
+      )
+  }
+  const resolved = t.externalId
+    ? conn
+        .query<{ key: string; external_id: string }, [string, string]>(
+          'SELECT key,external_id FROM task WHERE project=? AND external_id=?',
+        )
+        .get(t.project, t.externalId)
+    : conn
+        .query<{ key: string; external_id: string | null }, [string, string]>(
+          'SELECT key,external_id FROM task WHERE project=? AND key=?',
+        )
+        .get(t.project, t.key)
+  if (resolved?.external_id)
     claimTaskIdentity(conn, {
       project: t.project,
-      externalId: effectiveExternalId,
-      key: t.key,
+      externalId: resolved.external_id,
+      key: resolved.key,
       at,
     })
 }
@@ -198,7 +273,7 @@ async function mirrorTrackerSnapshot(
   at: string,
 ): Promise<Error | null> {
   const mirroredTasks = tasks
-    .filter((task) => !local.has(trackerTaskIdentity(task.project, task.key)))
+    .filter((task) => !local.has(trackerTaskLabel(task.project, task.key)))
     .map((task) => ({
       id: newRecordId(),
       key: task.key,
@@ -220,7 +295,7 @@ async function mirrorTrackerSnapshot(
       deleted_at: null,
     }))
   const mirroredEvents = tasks.flatMap((task) => {
-    const identity = trackerTaskIdentity(task.project, task.key)
+    const identity = trackerTaskLabel(task.project, task.key)
     const was = before.get(identity)
     return !local.has(identity) && was !== undefined && was !== task.category
       ? [
@@ -286,7 +361,7 @@ function writeTrackerCache(
        VALUES (?,?,?,?,?,?)`,
     )
     for (const task of tasks) {
-      const identity = trackerTaskIdentity(task.project, task.key)
+      const identity = trackerTaskLabel(task.project, task.key)
       const was = before.get(identity)
       upsertTrackerTaskOn(conn, task, at)
       if (!local.has(identity) && was !== undefined && was !== task.category) {
@@ -340,7 +415,7 @@ async function backfillTrackerTasks(
       })
       upsertTrackerTask(task, at)
       filled++
-      const identity = trackerTaskIdentity(task.project, task.key)
+      const identity = trackerTaskLabel(task.project, task.key)
       if (!local.has(identity) && differs(task, existing.get(identity))) activity = true
     } catch {
       /* not findable; it stays git-derived and says so */
@@ -377,7 +452,7 @@ export async function ingestTrackers(
         `SELECT key, project, status_category FROM task WHERE status_category IS NOT NULL`,
       )
       .all()
-      .map((r) => [trackerTaskIdentity(r.project, r.key), r.status_category]),
+      .map((r) => [trackerTaskLabel(r.project, r.key), r.status_category]),
   )
   const local = new Set(
     d
@@ -385,7 +460,7 @@ export async function ingestTrackers(
         `SELECT key, project FROM task WHERE source = 'local'`,
       )
       .all()
-      .map((row) => trackerTaskIdentity(row.project, row.key)),
+      .map((row) => trackerTaskLabel(row.project, row.key)),
   )
   const existing = new Map(
     d
@@ -394,7 +469,7 @@ export async function ingestTrackers(
          FROM task WHERE source <> 'local'`,
       )
       .all()
-      .map((row) => [trackerTaskIdentity(row.project, row.key), row]),
+      .map((row) => [trackerTaskLabel(row.project, row.key), row]),
   )
 
   const missing = d
@@ -454,7 +529,7 @@ export async function ingestTrackers(
           // transition that did not happen. Last wins: the lookup is the fresher read.
           const unique = new Map(tasks.map((t) => [t.key, t]))
           let activity = [...unique.values()].some((t) => {
-            const identity = trackerTaskIdentity(t.project, t.key)
+            const identity = trackerTaskLabel(t.project, t.key)
             return !local.has(identity) && differs(t, existing.get(identity))
           })
 

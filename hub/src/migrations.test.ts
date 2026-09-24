@@ -3,6 +3,7 @@ import { beforeAll, describe, expect, test } from 'bun:test'
 import { copyFileSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { newRecordId } from '../../shared/record/schema.ts'
 import { resetFixtureStore } from '../test/run-fixtures.ts'
 import { closeDatabaseForFixture, db, enableSchemaReload, writeTransaction } from './db.ts'
 import {
@@ -149,7 +150,7 @@ describe('hub migration journal', () => {
     const d = fresh()
     expect(canonicalSchemaHash(d)).toBe(expectedSchemaHash())
     expect(expectedSchemaHash()).toBe(
-      'dd9ed48f41a4f1c14918f3509377c026fa5466dcfb9bdf4c89b13e6bc6063ed4',
+      '049f49f927ef5e57e3e17c3746c53add8180451f80b4381f7f0fdec889e4b4af',
     )
     d.close()
   })
@@ -509,14 +510,16 @@ describe('hub migration journal', () => {
       VALUES (20,'DEV-2','dangling-document','dangling','body','v1','2026-01-01','2026-01-01');
       INSERT INTO task_status_event(id,task_key,task_record_id,at,to_status)
       VALUES (30,'DEV-2','dangling-event','2026-01-02','active');
-      UPDATE note SET promoted_task='DEV-2' WHERE id=(SELECT MIN(id) FROM note);
+      UPDATE note SET project='workshop',promoted_task='DEV-2' WHERE id=(SELECT MIN(id) FROM note);
     `)
     expect(applyMigrations(d)).toEqual(['0009_task_record_identity'])
     expect(
       d
         .query(
           `SELECT table_name,row_id,task_key,old_record_id,new_record_id
-         FROM task_identity_migration_repairs ORDER BY table_name`,
+         FROM task_identity_migration_repairs
+         WHERE table_name IN ('task_comment','task_document','task_status_event')
+         ORDER BY table_name`,
         )
         .all(),
     ).toEqual([
@@ -580,6 +583,19 @@ describe('hub migration journal', () => {
     ).toEqual({
       promoted_task_record_id: 'child-id',
     })
+    expect(
+      d
+        .query(
+          `SELECT reason,COUNT(*) count FROM task_identity_migration_repairs
+           GROUP BY reason ORDER BY reason`,
+        )
+        .all(),
+    ).toEqual([
+      { reason: 'dangling task record id; attached by key', count: 3 },
+      { reason: 'missing parent record id; attached by project and key', count: 1 },
+      { reason: 'missing promoted task record id; attached by project and key', count: 1 },
+      { reason: 'missing task record id; attached by key', count: 3 },
+    ])
     d.exec("UPDATE task SET record_id='child-id-new' WHERE record_id='child-id'")
     expect(d.query('SELECT DISTINCT task_record_id FROM task_comment').all()).toEqual([
       { task_record_id: 'child-id-new' },
@@ -591,6 +607,77 @@ describe('hub migration journal', () => {
       { task_record_id: 'child-id-new' },
     ])
     d.close()
+  })
+
+  test('task identity rebuild mints ordered UUID-v7 ids and keeps its repair report', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'hub-task-id-report-'))
+    const path = join(dir, 'hub.db')
+    const d = migratedThrough(8, path)
+    const prior = newRecordId()
+    const priorTimestamp = Number.parseInt(prior.slice(0, 8) + prior.slice(9, 13), 16)
+    while (Date.now() <= priorTimestamp) {}
+    d.exec(`
+      INSERT INTO task(key,project,source,first_seen,last_seen)
+      VALUES ('MINT-1','workshop','local','2026-01-01','2026-01-01')
+    `)
+    const before = Date.now()
+    expect(applyMigrations(d)).toEqual(['0009_task_record_identity'])
+    const after = Date.now()
+    const minted = d
+      .query<{ record_id: string }, []>("SELECT record_id FROM task WHERE key='MINT-1'")
+      .get()!.record_id
+    expect(minted).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/)
+    const mintedTimestamp = Number.parseInt(minted.slice(0, 8) + minted.slice(9, 13), 16)
+    expect(mintedTimestamp).toBeGreaterThanOrEqual(before)
+    expect(mintedTimestamp).toBeLessThanOrEqual(after)
+    expect(minted > prior).toBe(true)
+    d.close()
+
+    const reopened = new Database(path)
+    expect(
+      reopened
+        .query(
+          `SELECT table_name,task_key,new_record_id,reason,projects
+           FROM task_identity_migration_repairs
+           WHERE reason='missing task record id; minted UUID v7'`,
+        )
+        .get(),
+    ).toEqual({
+      table_name: 'task',
+      task_key: 'MINT-1',
+      new_record_id: minted,
+      reason: 'missing task record id; minted UUID v7',
+      projects: 'workshop',
+    })
+    reopened.close()
+    rmSync(dir, { recursive: true, force: true })
+  })
+
+  test('hub migrate summarizes repairs written by this run', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'hub-task-id-summary-'))
+    const path = join(dir, 'hub.db')
+    const d = migratedThrough(8, path)
+    d.exec(`
+      INSERT INTO task(key,project,source,first_seen,last_seen)
+      VALUES ('MINT-2','workshop','local','2026-01-01','2026-01-01')
+    `)
+    d.close()
+
+    const migrated = Bun.spawnSync(
+      [process.execPath, '--no-env-file', 'hub/src/cli.ts', 'migrate'],
+      {
+        cwd: join(import.meta.dir, '../..'),
+        env: { ...process.env, HUB_DB: path, NODE_ENV: 'production' },
+        stdout: 'pipe',
+        stderr: 'pipe',
+      },
+    )
+    expect(new TextDecoder().decode(migrated.stderr)).toBe('')
+    expect(migrated.exitCode).toBe(0)
+    expect(new TextDecoder().decode(migrated.stdout)).toContain(
+      'task_identity_migration_repairs: missing task record id; minted UUID v7=1',
+    )
+    rmSync(dir, { recursive: true, force: true })
   })
 
   test('task identity rebuild repairs a mixed row before tracker ingest converges shared keys', () => {

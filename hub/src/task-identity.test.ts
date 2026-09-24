@@ -74,9 +74,8 @@ describe('task identity doctor', () => {
     `)
     const result = taskIdentityDoctor(conn)
     expect(result).toMatchObject({
-      tasksWithoutRecordId: 0,
       trackerTasksWithoutExternalId: 1,
-      commentsWithoutTaskRecordId: 0,
+      collidedKeyUncertainties: 0,
       sharedKeys: [{ key: 'SHARED-1', projects: ['alpha', 'beta'], lastSeen: '2026-01-03' }],
     })
     expect(formatTaskIdentityDoctor(result)).toContain(

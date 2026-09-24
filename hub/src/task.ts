@@ -43,7 +43,7 @@ export type TaskComment = {
   id: number
   record_id: string | null
   task_key: string
-  task_record_id: string | null
+  task_record_id: string
   body: string
   created_at: string
 }
@@ -113,7 +113,7 @@ export type TaskDocumentSummary = {
   id: number
   record_id: string | null
   task_key: string
-  task_record_id: string | null
+  task_record_id: string
   role: TaskDocumentRole | null
   title: string
   updated_at: string

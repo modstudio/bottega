@@ -1,9 +1,10 @@
-import { afterAll, beforeAll, describe, expect, test } from 'bun:test'
+import { afterAll, beforeAll, describe, expect, spyOn, test } from 'bun:test'
 import { resolveAssigneeIds } from '../../../shared/trackers.ts'
 import { resetFixtureStore } from '../../test/run-fixtures.ts'
-import { db } from '../db.ts'
+import { db, writeTransaction } from '../db.ts'
 import { trackerPresentation } from '../projects.ts'
 import { showTask } from '../task.ts'
+import { taskIdentityDoctor } from '../task-identity.ts'
 import {
   ingestTrackers,
   trackerCredentials,
@@ -208,5 +209,104 @@ describe('tracker assignees', () => {
       { project: 'starship', external_id: 'starship-21' },
       { project: 'stopal', external_id: 'stopal-21' },
     ])
+  })
+
+  test('a tracker external id claims an existing null-identity label row', () => {
+    writeTransaction((conn) =>
+      conn.exec(`
+        INSERT INTO task(record_id,key,project,source,first_seen,last_seen)
+        VALUES ('null-external-record','ALP-901','alpha','mcp','2026-01-01','2026-01-01')
+      `),
+    )
+
+    upsertTrackerTask({
+      externalId: 'tracker-alp-901',
+      key: 'ALP-901',
+      project: 'alpha',
+      title: 'Claimed identity',
+      status: 'started',
+      category: 'active',
+      updatedAt: null,
+      assignee: null,
+    })
+
+    expect(
+      db()
+        .query(`SELECT record_id,external_id FROM task WHERE project='alpha' AND key='ALP-901'`)
+        .all(),
+    ).toEqual([{ record_id: 'null-external-record', external_id: 'tracker-alp-901' }])
+  })
+
+  test('an external-id match adopts the incoming tracker label and refreshes its claim', () => {
+    const task = {
+      externalId: 'tracker-rename-1',
+      project: 'alpha' as const,
+      title: 'Renamed task',
+      status: 'started',
+      category: 'active' as const,
+      updatedAt: null,
+      assignee: null,
+    }
+    upsertTrackerTask({ ...task, key: 'REN-1' })
+    upsertTrackerTask({ ...task, key: 'REN-2' })
+
+    expect(
+      db()
+        .query(`SELECT key FROM task WHERE project='alpha' AND external_id='tracker-rename-1'`)
+        .get(),
+    ).toEqual({ key: 'REN-2' })
+    expect(
+      db()
+        .query(
+          `SELECT key FROM task_identity_claim
+           WHERE project='alpha' AND external_id='tracker-rename-1'`,
+        )
+        .get(),
+    ).toEqual({ key: 'REN-2' })
+  })
+
+  test('a colliding tracker rename is reported, skipped, and converges on the next pass', () => {
+    const error = spyOn(console, 'error').mockImplementation(() => {})
+    const task = {
+      project: 'alpha' as const,
+      title: 'Collision task',
+      status: 'started',
+      category: 'active' as const,
+      updatedAt: null,
+      assignee: null,
+    }
+    upsertTrackerTask({ ...task, externalId: 'collision-target', key: 'COL-OLD' })
+    upsertTrackerTask({ ...task, externalId: 'collision-holder', key: 'COL-NEW' })
+
+    upsertTrackerTask({ ...task, externalId: 'collision-target', key: 'COL-NEW' })
+    expect(error).toHaveBeenCalledTimes(1)
+    expect(db().query(`SELECT key FROM task WHERE external_id='collision-target'`).get()).toEqual({
+      key: 'COL-OLD',
+    })
+    expect(
+      db()
+        .query<{ count: number }, []>(
+          `SELECT COUNT(*) count FROM task_identity_migration_repairs
+           WHERE reason='tracker label collision'`,
+        )
+        .get()?.count,
+    ).toBe(1)
+    expect(taskIdentityDoctor().collidedKeyUncertainties).toBe(1)
+
+    upsertTrackerTask({ ...task, externalId: 'collision-holder', key: 'COL-FREED' })
+    upsertTrackerTask({ ...task, externalId: 'collision-target', key: 'COL-NEW' })
+    expect(db().query(`SELECT key FROM task WHERE external_id='collision-target'`).get()).toEqual({
+      key: 'COL-NEW',
+    })
+    expect(
+      db()
+        .query<{ count: number }, []>(
+          `SELECT COUNT(*) count FROM task_identity_migration_repairs
+           WHERE reason='tracker label collision'`,
+        )
+        .get()?.count,
+    ).toBe(0)
+    expect(taskIdentityDoctor().collidedKeyUncertainties).toBe(0)
+    error.mockRestore()
   })
 })
