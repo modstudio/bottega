@@ -1,5 +1,5 @@
 // concern: retrieval-keyword
-/** Ranks the shared chunk corpus from literal query-term matches returned by ripgrep. */
+/** Ranks the shared in-memory corpus from literal query-term matches returned by ripgrep. */
 import type { Chunk } from '../corpus/chunks.ts'
 
 const STOP_WORDS = new Set([
@@ -23,7 +23,7 @@ const STOP_WORDS = new Set([
 
 type RipgrepMatch = {
   type: 'match'
-  data: { path: { text: string }; lines: { text: string }; line_number: number }
+  data: { lines: { text: string }; line_number: number }
 }
 
 function isMatch(event: RipgrepMatch | { type: string }): event is RipgrepMatch {
@@ -41,45 +41,16 @@ function termsFor(query: string): string[] {
   ]
 }
 
-function containingChunks(chunksByPath: Map<string, Chunk[]>, path: string, line: number): Chunk[] {
-  return (chunksByPath.get(path) ?? []).filter(
-    (chunk) => chunk.startLine <= line && chunk.endLine >= line,
-  )
-}
-
-export async function keywordRanking(
-  repositoryRoot: string,
-  query: string,
-  chunks: Chunk[],
-): Promise<Chunk[]> {
+export async function keywordRanking(query: string, chunks: Chunk[]): Promise<Chunk[]> {
   const terms = termsFor(query)
-  const chunksByPath = new Map<string, Chunk[]>()
-  for (const chunk of chunks) {
-    const current = chunksByPath.get(chunk.path) ?? []
-    current.push(chunk)
-    chunksByPath.set(chunk.path, current)
-  }
   const scores = new Map<string, Set<string>>()
   if (terms.length) {
-    const child = Bun.spawn(
-      [
-        'rg',
-        '--json',
-        '--ignore-case',
-        '--glob',
-        '*.ts',
-        '--glob',
-        '.agents/**/*.md',
-        '--regexp',
-        terms.join('|'),
-        'orchestrator/src',
-        'hub/src',
-        'shared',
-        'scripts',
-        '.agents',
-      ],
-      { cwd: repositoryRoot, stdout: 'pipe', stderr: 'pipe' },
-    )
+    const corpus = chunks.map((chunk) => chunk.text.replaceAll('\n', ' ')).join('\n')
+    const child = Bun.spawn(['rg', '--json', '--ignore-case', '--regexp', terms.join('|'), '-'], {
+      stdin: new Blob([corpus]),
+      stdout: 'pipe',
+      stderr: 'pipe',
+    })
     const [stdout, stderr, exitCode] = await Promise.all([
       new Response(child.stdout).text(),
       new Response(child.stderr).text(),
@@ -92,17 +63,13 @@ export async function keywordRanking(
       if (!line) continue
       const event = JSON.parse(line) as RipgrepMatch | { type: string }
       if (!isMatch(event)) continue
+      const chunk = chunks[event.data.line_number - 1]
+      if (!chunk) continue
       const lower = event.data.lines.text.toLowerCase()
       const matched = terms.filter((term) => lower.includes(term))
-      for (const chunk of containingChunks(
-        chunksByPath,
-        event.data.path.text,
-        event.data.line_number,
-      )) {
-        const current = scores.get(chunk.id) ?? new Set<string>()
-        for (const term of matched) current.add(term)
-        scores.set(chunk.id, current)
-      }
+      const current = scores.get(chunk.id) ?? new Set<string>()
+      for (const term of matched) current.add(term)
+      scores.set(chunk.id, current)
     }
   }
   return [...chunks].sort((left, right) => {

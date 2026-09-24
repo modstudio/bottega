@@ -8,6 +8,7 @@ const DEFAULT_RERANK_URL = 'http://127.0.0.1:8012/v1'
 
 type Fetch = (input: string | URL | Request, init?: RequestInit) => Promise<Response>
 type EmbeddingResponse = { data?: Array<{ index: number; embedding: number[] }> }
+type TokenizeResponse = { count?: number; max_model_len?: number }
 type RerankResponse = { results?: Array<{ index: number; relevance_score: number }> }
 
 type RetrievalEndpoints = { embedUrl: string; rerankUrl: string }
@@ -24,6 +25,25 @@ function refusal(kind: string, url: string, detail: string): Error {
     `${kind} endpoint could not be established at ${url}: ${detail}. ` +
       'Run `launchctl kickstart -k gui/$(id -u)/com.user.gx10-services-tunnel` and retry.',
   )
+}
+
+export async function tokenize(
+  baseUrl: string,
+  prompt: string,
+  fetcher: Fetch = fetch,
+): Promise<{ count: number; maxModelLength: number }> {
+  // vLLM serves /tokenize at the server root, beside the OpenAI-compatible /v1 routes.
+  const url = `${baseUrl.replace(/\/$/, '').replace(/\/v1$/, '')}/tokenize`
+  const body = await postJson<TokenizeResponse>(
+    'embedding tokenizer',
+    url,
+    { model: EMBEDDING_MODEL, prompt },
+    fetcher,
+  )
+  if (!Number.isFinite(body.count) || !Number.isFinite(body.max_model_len)) {
+    throw refusal('embedding tokenizer', url, 'response did not contain count and max_model_len')
+  }
+  return { count: body.count!, maxModelLength: body.max_model_len! }
 }
 
 async function postJson<T>(kind: string, url: string, body: unknown, fetcher: Fetch): Promise<T> {
