@@ -61,16 +61,10 @@ export async function proveProjectSpaceRecordSync(input: {
         {
           spaceId: input.firstSpaceId,
           slug: 'alpha-space',
-          name: 'Alpha',
-          role: 'owner',
-          permission: 'write',
         },
         {
           spaceId: input.secondSpaceId,
           slug: 'beta-space',
-          name: 'Beta',
-          role: 'owner',
-          permission: 'write',
         },
       ],
       projectSpaces: { alpha: 'alpha-space', beta: 'beta-space' },

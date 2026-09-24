@@ -1,9 +1,15 @@
 import { readRecordSessionToken } from '../../shared/record-session.ts'
+import type { RecordSpaceMembership } from '../../shared/record-space-membership.ts'
 import type { HostedComment, HostedDocument, HostedTask } from './hosted-tasks.ts'
 
 const TEST_REFUSAL = 'hub task client refuses a real hosted URL unless a stub is injected in tests'
 const REMEDY = 'Set HUB_HOSTED_URL and run `orch record doctor`.'
 export type TaskFetch = (input: string, init?: RequestInit) => Promise<Response>
+
+export type HostedTaskIdentity = {
+  activeSpaceId: string
+  memberships: RecordSpaceMembership[]
+}
 
 export function assertHostedTaskWriteConfigured(options: { baseUrl?: string } = {}) {
   const baseUrl = options.baseUrl ?? process.env.HUB_HOSTED_URL
@@ -34,10 +40,27 @@ async function request<T>(
   } catch (error) {
     throw new Error(`hosted hub is unreachable: ${(error as Error).message}. ${REMEDY}`)
   }
-  const value = (await response.json().catch(() => null)) as Record<string, unknown> | null
+  const url = `${baseUrl.replace(/\/$/, '')}${path}`
+  const contentType = response.headers.get('content-type') ?? 'missing'
+  const isJson = /^application\/(?:[a-z0-9!#$&^_.+-]+\+)?json(?:\s*;|$)/i.test(contentType)
+  const value = isJson
+    ? ((await response.json().catch(() => null)) as Record<string, unknown> | null)
+    : null
+  if (!isJson || !value || typeof value !== 'object' || Array.isArray(value))
+    throw new Error(
+      `hosted hub refused the response from ${url} (status ${response.status}, content type ${contentType}): expected a JSON object`,
+    )
+  if (!response.ok && path === '/v1/tasks/identity' && response.status === 404)
+    throw new Error(
+      `hosted hub does not serve the task identity route (404): ${String(
+        value.error ?? 'unknown error',
+      )}${value.remedy ? `. ${String(value.remedy)}` : ''}; redeploy the hosted hub from this revision`,
+    )
   if (!response.ok)
     throw new Error(
-      `hosted hub refused the write (${response.status}): ${String(value?.error ?? 'unknown error')}. ${REMEDY}`,
+      `hosted hub refused the request (${response.status}): ${String(value.error ?? 'unknown error')}${
+        value.remedy ? `. ${String(value.remedy)}` : ''
+      }`,
     )
   return value as T
 }
@@ -115,6 +138,21 @@ export async function hostedTaskChanges(
 
 export const hostedMirrorTasks = (body: unknown, options?: Parameters<typeof request>[3]) =>
   request<{ upserted: number }>('/v1/tasks/mirror', 'PUT', body, options)
+export async function hostedTaskIdentity(
+  options?: Parameters<typeof request>[3],
+): Promise<HostedTaskIdentity> {
+  const value = await request<HostedTaskIdentity & { activeSpaceId: string | null }>(
+    '/v1/tasks/identity',
+    'GET',
+    undefined,
+    options,
+  )
+  if (!value.activeSpaceId)
+    throw new Error('hosted hub has no active space; switch spaces and retry')
+  if (!Array.isArray(value.memberships))
+    throw new Error('hosted hub returned a malformed task identity: memberships must be an array')
+  return { activeSpaceId: value.activeSpaceId, memberships: value.memberships }
+}
 export const hostedTaskCounts = (options?: Parameters<typeof request>[3]) =>
   request<Record<string, Array<{ source: string; count: number }>>>(
     '/v1/tasks/counts',

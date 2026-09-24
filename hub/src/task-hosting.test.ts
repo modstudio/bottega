@@ -1,15 +1,38 @@
 import { beforeAll, describe, expect, test } from 'bun:test'
 import { resetFixtureStore } from '../test/run-fixtures.ts'
 import { db, writeTransaction } from './db.ts'
-import { confirmSoftDelete } from './hosted-tasks.ts'
+import { confirmSoftDelete, mirrorCollisionDecision } from './hosted-tasks.ts'
 import { createTask } from './task.ts'
 import { taskApi } from './task-api.ts'
 import { applyHostedTaskChanges } from './task-cache.ts'
+import { hostedCreateTask, hostedTaskIdentity } from './task-client.ts'
 import { closeThenPrune } from './task-close.ts'
 
 beforeAll(resetFixtureStore)
 
 describe('hosted-only task safety', () => {
+  test('mirror collision decisions insert, update, deduplicate events, and refuse reused ids', () => {
+    const incoming = { id: 'id-1', spaceId: 'space-a', naturalKey: 'task DEV-1' }
+    expect(mirrorCollisionDecision(incoming, null, 'update')).toEqual({ action: 'insert' })
+    expect(mirrorCollisionDecision(incoming, incoming, 'update')).toEqual({
+      action: 'update-same-row',
+    })
+    expect(mirrorCollisionDecision(incoming, incoming, 'idempotent')).toEqual({
+      action: 'idempotent-duplicate',
+    })
+    expect(
+      mirrorCollisionDecision(
+        incoming,
+        { id: 'id-1', spaceId: 'space-b', naturalKey: 'task OPS-12' },
+        'update',
+      ),
+    ).toEqual({
+      action: 'refuse',
+      reason:
+        "refusing to mirror task DEV-1: id id-1 already belongs to task OPS-12 in space space-b; restore this local row's record id to the id for task DEV-1, or ask the hosted-space operator to resolve the id collision",
+    })
+  })
+
   test('an unreachable hosted write refuses and leaves the cache unchanged', async () => {
     const before = db().query<{ count: number }, []>(`SELECT count(*) count FROM task`).get()!.count
     await expect(
@@ -74,6 +97,66 @@ describe('hosted-only task safety', () => {
         },
       ),
     ).rejects.toThrow('unless stubs are injected')
+  })
+
+  test('the task identity route returns the active space and membership slugs', async () => {
+    const response = await taskApi(
+      new Request('https://hub.example.test/v1/tasks/identity', {
+        headers: { authorization: 'Bearer test' },
+      }),
+      {
+        recordApiUrl: 'https://record.example.test',
+        recordDatabaseUrl: 'postgres://unused',
+      },
+      {
+        fetch: async () =>
+          Response.json({
+            user: { id: 'user-1' },
+            activeSpaceId: 'space-a',
+            memberships: [
+              { space_id: 'space-a', slug: 'workshop' },
+              { space_id: 'space-b', slug: 'stopal' },
+            ],
+          }),
+      },
+    )
+
+    expect(response?.status).toBe(200)
+    expect(await response?.json()).toEqual({
+      activeSpaceId: 'space-a',
+      memberships: [
+        { spaceId: 'space-a', slug: 'workshop' },
+        { spaceId: 'space-b', slug: 'stopal' },
+      ],
+    })
+  })
+
+  test('hosted refusals preserve server errors and remedies without suggesting local configuration', async () => {
+    const options = {
+      baseUrl: 'https://hub.example.test',
+      token: 'test',
+      fetch: async () =>
+        Response.json(
+          { error: 'task not found', remedy: 'Create the task in the active space.' },
+          { status: 404 },
+        ),
+    }
+
+    await expect(hostedCreateTask({}, options)).rejects.toThrow(
+      'hosted hub refused the request (404): task not found. Create the task in the active space.',
+    )
+  })
+
+  test('a missing hosted task identity route requires redeployment', async () => {
+    await expect(
+      hostedTaskIdentity({
+        baseUrl: 'https://hub.example.test',
+        token: 'test',
+        fetch: async () => Response.json({ error: 'route not found' }, { status: 404 }),
+      }),
+    ).rejects.toThrow(
+      'hosted hub does not serve the task identity route (404): route not found; redeploy the hosted hub from this revision',
+    )
   })
 
   test('cache pull applies an update and a soft delete', () => {

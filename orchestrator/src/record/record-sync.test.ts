@@ -388,9 +388,7 @@ test('declared project spaces override the active space while an unset project f
   expect(
     await syncRecord({
       ...options(local, remote),
-      memberships: [
-        { spaceId: declaredSpace, slug: 'team', name: 'Team', role: 'owner', permission: 'write' },
-      ],
+      memberships: [{ spaceId: declaredSpace, slug: 'team' }],
       projectSpaces: { declared: 'team' },
     }),
   ).toEqual({ pushed: 2, failed: 0, pending: 0, configured: true })
@@ -413,8 +411,8 @@ test('two declared projects bind their own spaces in separate transactions', asy
     await syncRecord({
       ...options(local, remote),
       memberships: [
-        { spaceId: alpha, slug: 'alpha', name: 'Alpha', role: 'owner', permission: 'write' },
-        { spaceId: beta, slug: 'beta', name: 'Beta', role: 'owner', permission: 'write' },
+        { spaceId: alpha, slug: 'alpha' },
+        { spaceId: beta, slug: 'beta' },
       ],
       projectSpaces: { alpha: 'alpha', beta: 'beta' },
     }),

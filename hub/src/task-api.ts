@@ -1,4 +1,8 @@
 import {
+  parseRecordSpaceMemberships,
+  type RecordSpaceMembership,
+} from '../../shared/record-space-membership.ts'
+import {
   addHostedComment,
   createHostedDocument,
   createHostedTask,
@@ -38,8 +42,14 @@ async function identity(request: Request, base: string, fetchImpl: typeof fetch)
   if (!response.ok) return null
   const value = (await response.json().catch(() => null)) as Record<string, unknown> | null
   const user = value?.user as Record<string, unknown> | undefined
+  const memberships = parseRecordSpaceMemberships(value?.memberships)
   return typeof user?.id === 'string' && typeof value?.activeSpaceId === 'string'
-    ? { userId: user.id, spaceId: value.activeSpaceId }
+    ? {
+        userId: user.id,
+        spaceId: value.activeSpaceId,
+        spaceIds: memberships.map((row) => row.spaceId),
+        memberships,
+      }
     : null
 }
 
@@ -57,7 +67,12 @@ type RouteContext = {
   url: URL
   config: Config
   dependencies: Dependencies
-  who: { userId: string; spaceId: string }
+  who: {
+    userId: string
+    spaceId: string
+    spaceIds: string[]
+    memberships: RecordSpaceMembership[]
+  }
   body: Record<string, unknown> | null
   keyMatch: RegExpExecArray | null
   commentMatch: RegExpExecArray | null
@@ -183,6 +198,8 @@ export async function taskApi(
     (dependencies.fetch ?? fetch) as typeof fetch,
   )
   if (!who) return json({ error: 'authorization and an active space are required' }, 401)
+  if (request.method === 'GET' && url.pathname === '/v1/tasks/identity')
+    return json({ activeSpaceId: who.spaceId, memberships: who.memberships })
   const keyMatch = /^\/v1\/tasks\/([^/]+)$/.exec(url.pathname)
   const commentMatch = /^\/v1\/tasks\/([^/]+)\/comments$/.exec(url.pathname)
   const documentsMatch = /^\/v1\/tasks\/([^/]+)\/documents$/.exec(url.pathname)
