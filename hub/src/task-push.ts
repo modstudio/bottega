@@ -1,6 +1,6 @@
 import { newRecordId } from '../../shared/record/schema.ts'
 import { recordSpaceMembership } from '../../shared/record-space-membership.ts'
-import { db } from './db.ts'
+import { db, writeTransaction } from './db.ts'
 import { projects } from './projects.ts'
 import type { TaskRow } from './task.ts'
 import {
@@ -109,41 +109,41 @@ function sourceCounts<T>(values: T[], source: (row: T) => string | undefined) {
 }
 
 export async function pushTasks(options: Options = {}) {
-  const tasks = db()
-    .query<TaskRow, []>(`SELECT * FROM task ORDER BY key`)
-    .all()
-    .map((row) => ({
+  const taskRows = db().query<TaskRow, []>(`SELECT * FROM task ORDER BY key`).all()
+  const taskRecordIds = new Map(taskRows.map((row) => [row.key, row.record_id]))
+  const tasks = taskRows.map((row) => ({
+    id: row.record_id ?? newRecordId(),
+    key: row.key,
+    project: row.project,
+    project_name: row.project,
+    title: row.title,
+    status: row.status,
+    status_category: row.status_category,
+    parent_key: row.parent_key,
+    body: row.body,
+    assignee: row.assignee,
+    opened_at: row.opened_at,
+    closed_at: row.closed_at,
+    source: row.source,
+    first_seen: row.first_seen,
+    last_seen: row.last_seen,
+    created_at: row.first_seen,
+    updated_at: row.updated_at ?? row.last_seen,
+    deleted_at: null,
+  }))
+  const taskByKey = new Map(tasks.map((row) => [row.key, row]))
+  const childRecordIds = new Map<string, Map<number, string | null>>()
+  const child = (table: string): MirroredChild[] => {
+    const rows = db().query<ChildRow, []>(`SELECT * FROM ${table} ORDER BY id`).all()
+    childRecordIds.set(table, new Map(rows.map((row) => [row.id, row.record_id])))
+    return rows.map((row) => ({
+      ...row,
       id: row.record_id ?? newRecordId(),
-      key: row.key,
-      project: row.project,
-      project_name: row.project,
-      title: row.title,
-      status: row.status,
-      status_category: row.status_category,
-      parent_key: row.parent_key,
-      body: row.body,
-      assignee: row.assignee,
-      opened_at: row.opened_at,
-      closed_at: row.closed_at,
-      source: row.source,
-      first_seen: row.first_seen,
-      last_seen: row.last_seen,
-      created_at: row.first_seen,
-      updated_at: row.updated_at ?? row.last_seen,
+      legacy_local_id: row.id,
+      project_name: taskByKey.get(row.task_key)?.project_name ?? '',
       deleted_at: null,
     }))
-  const taskByKey = new Map(tasks.map((row) => [row.key, row]))
-  const child = (table: string): MirroredChild[] =>
-    db()
-      .query<ChildRow, []>(`SELECT * FROM ${table} ORDER BY id`)
-      .all()
-      .map((row) => ({
-        ...row,
-        id: row.record_id ?? newRecordId(),
-        legacy_local_id: row.id,
-        project_name: taskByKey.get(row.task_key)?.project_name ?? '',
-        deleted_at: null,
-      }))
+  }
   const comments = child('task_comment').map((row) => ({
     ...row,
     updated_at: row.created_at,
@@ -162,6 +162,19 @@ export async function pushTasks(options: Options = {}) {
     identity,
   )
   const active = selected.rows
+  const missingTaskIds = active.tasks.filter((row) => taskRecordIds.get(row.key) === null)
+  const missingChildIds = (
+    [
+      ['task_comment', active.comments],
+      ['task_document', active.documents],
+      ['task_status_event', active.statusEvents],
+    ] as const
+  ).flatMap(([table, rows]) =>
+    rows
+      .filter((row) => childRecordIds.get(table)?.get(row.legacy_local_id as number) === null)
+      .map((row) => ({ table, row })),
+  )
+  const assignedRecordIds = missingTaskIds.length + missingChildIds.length
   const selectedTaskByKey = new Map(active.tasks.map((row) => [row.key, row]))
   const local = {
     task: sourceCounts(active.tasks, (row) => row.source),
@@ -178,7 +191,17 @@ export async function pushTasks(options: Options = {}) {
       (row) => selectedTaskByKey.get(row.task_key)?.source,
     ),
   }
-  if (options.dryRun) return { local, skipped: selected.skipped, hosted: null, match: null }
+  if (options.dryRun)
+    return { local, skipped: selected.skipped, assignedRecordIds, hosted: null, match: null }
+  if (assignedRecordIds)
+    writeTransaction((conn) => {
+      const taskUpdate = conn.query(`UPDATE task SET record_id=? WHERE key=?`)
+      for (const row of missingTaskIds) taskUpdate.run(row.id as string, row.key)
+      for (const { table, row } of missingChildIds)
+        conn
+          .query(`UPDATE ${table} SET record_id=? WHERE id=?`)
+          .run(row.id as string, row.legacy_local_id as number)
+    })
   for (const [name, rows] of Object.entries(active))
     for (let index = 0; index < rows.length; index += 500)
       await hostedMirrorTasks(
@@ -203,5 +226,5 @@ export async function pushTasks(options: Options = {}) {
     Object.entries(hostedRows).map(([table, rows]) => [table, grouped(rows)]),
   )
   const match = JSON.stringify(local) === JSON.stringify(hosted)
-  return { local, skipped: selected.skipped, hosted, match }
+  return { local, skipped: selected.skipped, assignedRecordIds, hosted, match }
 }

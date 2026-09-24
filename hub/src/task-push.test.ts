@@ -1,5 +1,9 @@
-import { expect, test } from 'bun:test'
-import { selectTaskPushRows } from './task-push.ts'
+import { beforeEach, expect, test } from 'bun:test'
+import { resetFixtureStore } from '../test/run-fixtures.ts'
+import { db, writeTransaction } from './db.ts'
+import { pushTasks, selectTaskPushRows } from './task-push.ts'
+
+beforeEach(resetFixtureStore)
 
 test('task push selects active-space projects and reports every skipped project and reason', () => {
   const task = (key: string, project_name: string) => ({
@@ -68,4 +72,68 @@ test('task push selects active-space projects and reports every skipped project 
       statusEvents: 0,
     },
   ])
+})
+
+test('task push persists generated record ids and a dry run leaves them unassigned', async () => {
+  const at = '2026-09-24T12:00:00.000Z'
+  writeTransaction((conn) => {
+    conn
+      .query(`INSERT INTO task(key,project,title,status,status_category,source,first_seen,last_seen)
+        VALUES ('LOC-885','workshop','Push ids','open','open','local',?,?)`)
+      .run(at, at)
+    conn
+      .query(`INSERT INTO task_comment(task_key,body,created_at) VALUES ('LOC-885','body',?)`)
+      .run(at)
+    conn
+      .query(`INSERT INTO task_document(task_key,title,body,version,created_at,updated_at)
+        VALUES ('LOC-885','title','body','v1',?,?)`)
+      .run(at, at)
+    conn
+      .query(`INSERT INTO task_status_event(task_key,at,from_status,to_status)
+        VALUES ('LOC-885',?,NULL,'open')`)
+      .run(at)
+  })
+  const mirrorBodies: Record<string, unknown>[] = []
+  const stub = async (input: string, init?: RequestInit) => {
+    const path = new URL(input).pathname
+    if (path === '/v1/tasks/identity')
+      return Response.json({ activeSpaceId: 'space-a', memberships: [] })
+    if (path === '/v1/tasks/mirror') {
+      mirrorBodies.push(JSON.parse(String(init?.body)))
+      return Response.json({ upserted: 1 })
+    }
+    if (path === '/v1/tasks/counts') return Response.json({})
+    return Response.json({ error: 'unexpected request' }, { status: 500 })
+  }
+  const options = { baseUrl: 'https://hub.example.test', token: 'test', fetch: stub }
+
+  const dryRun = await pushTasks({ ...options, dryRun: true })
+  expect(dryRun.assignedRecordIds).toBe(4)
+  for (const table of ['task', 'task_comment', 'task_document', 'task_status_event'])
+    expect(
+      db().query<{ record_id: string | null }, []>(`SELECT record_id FROM ${table}`).get()
+        ?.record_id,
+    ).toBeNull()
+
+  await pushTasks(options)
+  const firstIds = mirrorBodies
+    .flatMap((body) =>
+      ['tasks', 'comments', 'documents', 'statusEvents'].flatMap((name) => body[name] ?? []),
+    )
+    .map((row) => (row as { id: string }).id)
+  mirrorBodies.length = 0
+  await pushTasks(options)
+  const secondIds = mirrorBodies
+    .flatMap((body) =>
+      ['tasks', 'comments', 'documents', 'statusEvents'].flatMap((name) => body[name] ?? []),
+    )
+    .map((row) => (row as { id: string }).id)
+
+  expect(firstIds).toHaveLength(4)
+  expect(secondIds).toEqual(firstIds)
+  for (const table of ['task', 'task_comment', 'task_document', 'task_status_event'])
+    expect(
+      db().query<{ record_id: string | null }, []>(`SELECT record_id FROM ${table}`).get()
+        ?.record_id,
+    ).toBeString()
 })
