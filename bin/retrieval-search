@@ -1,0 +1,2 @@
+#!/bin/sh
+exec bun --no-env-file "$(dirname "$(readlink -f "$0" 2>/dev/null || echo "$0")")/../retrieval/src/search-cli.ts" "$@"

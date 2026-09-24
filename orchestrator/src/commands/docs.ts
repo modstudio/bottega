@@ -21,6 +21,7 @@ export function register(program: Command): void {
     .option('--force-inject <value>')
     .option('--expect <revision>')
     .option('--cwd <value>')
+    .option('--k <value>')
     .option('--json')
     .action(async (args, options) => {
       const argv = ['doc', ...args]

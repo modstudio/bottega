@@ -30,7 +30,7 @@
         "shared/record/schema-hub.ts!",
         "shared/record/schema-snapshots.ts!",
         ".githooks/*!",
-        "bin/{hub,orch}!",
+        "bin/{hub,orch,retrieval-search}!",
         "hub/bin/*.sh!",
         "local-stack/bin/*.sh!",
         "ops/install.sh!",
@@ -92,7 +92,7 @@
       "project": ["src/**/*.ts!", "!src/**/*.test.ts", "!src/**/*.fixture*.ts", "!test/**/*.ts"]
     },
     "retrieval": {
-      "entry": ["src/benchmark/benchmark.ts!"],
+      "entry": ["src/benchmark/benchmark.ts!", "src/search-cli.ts!"],
       "project": ["src/**/*.ts!", "!src/**/*.test.ts"]
     },
     "hub/web": {

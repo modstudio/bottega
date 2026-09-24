@@ -35,6 +35,8 @@ export type StatePaths = {
   orchestratorRuns: string
   hubDirectory: string
   hubDatabase: string
+  retrievalDirectory: string
+  retrievalDatabase: string
 }
 
 /** Compose every frozen state path from the single resolved root. */
@@ -42,6 +44,7 @@ export function resolveStatePaths(env: StateEnvironment): StatePaths {
   const root = resolveStateRoot(env)
   const orchestratorDirectory = join(root, 'orchestrator')
   const hubDirectory = join(root, 'hub')
+  const retrievalDirectory = join(root, 'retrieval')
   return {
     root,
     orchestratorDirectory,
@@ -49,6 +52,8 @@ export function resolveStatePaths(env: StateEnvironment): StatePaths {
     orchestratorRuns: join(orchestratorDirectory, FROZEN_STATE_NAMES.runsDirectory),
     hubDirectory,
     hubDatabase: join(hubDirectory, FROZEN_STATE_NAMES.hubDatabase),
+    retrievalDirectory,
+    retrievalDatabase: join(retrievalDirectory, FROZEN_STATE_NAMES.retrievalDatabase),
   }
 }
 
@@ -72,6 +77,10 @@ export function resolveRunsDirectory(env: StateEnvironment): string {
 
 export function resolveHubDatabase(env: StateEnvironment): string {
   return env.HUB_DB ? resolve(env.HUB_DB) : resolveStatePaths(env).hubDatabase
+}
+
+export function resolveRetrievalDatabase(env: StateEnvironment): string {
+  return resolveStatePaths(env).retrievalDatabase
 }
 
 export type LegacyStoreMove = {

@@ -1,6 +1,7 @@
 import { dirname, join, normalize } from 'node:path'
 import { CONCERNS } from '../shared/brand.ts'
 import { importBoundaries } from './architecture-boundaries.ts'
+import { retrievalModules } from './architecture-retrieval.ts'
 import { uiFolders, uiLayers } from './architecture-ui-layers.ts'
 
 type ConcernManifest = {
@@ -42,21 +43,12 @@ const concerns: ConcernManifest = {
 }
 
 export const modules: ArchitectureModule[] = [
-  module('retrieval/src/corpus/chunks.ts', ['node:fs/promises', 'node:path', 'bun']),
-  module('retrieval/src/services/endpoints.ts', []),
-  module('retrieval/src/benchmark/metrics.ts', ['../corpus/chunks.ts']),
-  module('retrieval/src/benchmark/queries.ts', ['../../../shared/brand.ts']),
-  module('retrieval/src/benchmark/keyword.ts', ['../corpus/chunks.ts']),
-  module('retrieval/src/benchmark/benchmark.ts', [
-    'node:fs/promises',
-    'node:path',
-    '../corpus/chunks.ts',
-    '../services/endpoints.ts',
-    './keyword.ts',
-    './metrics.ts',
-    './queries.ts',
-  ]),
+  ...retrievalModules,
   module('orchestrator/src/artifact-paths.ts', ['node:path']),
+  module('orchestrator/src/doc/doc-search.ts', [
+    '../../../shared/install-root.ts',
+    '../../../shared/orch-contract.ts',
+  ]),
   module('orchestrator/src/run/question-vocabulary.ts', []),
   module('orchestrator/src/run/question-delivery.ts', [
     '../database/db.ts',

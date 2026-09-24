@@ -11,6 +11,8 @@ export type Chunk = {
   startLine: number
   endLine: number
   text: string
+  docTitle?: string
+  headingPath?: string[]
 }
 
 export type DocIdentity = { kind: 'doc'; scope: string; subject: string | null; slug: string }
@@ -173,6 +175,8 @@ export function chunkDoc(doc: DocRow): Chunk[] {
       startLine,
       endLine: startLine + text.split('\n').length - 1,
       text,
+      docTitle: doc.title,
+      headingPath: section.headings.map((heading) => heading.replace(/^#{1,6}\s+/, '')),
     }))
   })
 }
@@ -189,7 +193,7 @@ function isDocRow(value: unknown): value is DocRow {
   )
 }
 
-async function loadDocCorpus(repositoryRoot: string): Promise<Chunk[]> {
+export async function loadDocCorpus(repositoryRoot: string): Promise<Chunk[]> {
   const child = Bun.spawn([resolve(repositoryRoot, 'bin/orch'), 'doc', 'list', '--json'], {
     cwd: repositoryRoot,
     stdout: 'pipe',

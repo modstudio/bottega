@@ -12,6 +12,7 @@ export const DECLARED_PAYLOAD_PATHS = [
   'orchestrator/src/cli/orch.ts',
   'hub/src/cli.ts',
   'orchestrator/src/run/exec.ts',
+  'retrieval/src/search-cli.ts',
   'orchestrator/migrations',
   'hub/migrations',
   'orchestrator/hooks',
@@ -30,6 +31,7 @@ export const DECLARED_PAYLOAD_PATHS = [
   DIST_MANIFEST,
   'bin/orch',
   'bin/hub',
+  'bin/retrieval-search',
 ] as const
 
 export function releaseVersion(tag: string): string {
@@ -109,6 +111,7 @@ export async function buildRelease(tag: string): Promise<string> {
   await bundle('orchestrator/src/cli/orch.ts', join(payloadRoot, 'orchestrator/src/cli/orch.ts'))
   await bundle('hub/src/cli.ts', join(payloadRoot, 'hub/src/cli.ts'))
   await bundle('orchestrator/src/run/exec.ts', join(payloadRoot, 'orchestrator/src/run/exec.ts'))
+  await bundle('retrieval/src/search-cli.ts', join(payloadRoot, 'retrieval/src/search-cli.ts'))
 
   copyDirectory('orchestrator/migrations', join(payloadRoot, 'orchestrator/migrations'))
   copyDirectory('hub/migrations', join(payloadRoot, 'hub/migrations'))
@@ -141,6 +144,7 @@ export async function buildRelease(tag: string): Promise<string> {
   for (const [name, entrypoint] of [
     ['orch', 'orchestrator/src/cli/orch.ts'],
     ['hub', 'hub/src/cli.ts'],
+    ['retrieval-search', 'retrieval/src/search-cli.ts'],
   ] as const) {
     const path = join(payloadRoot, 'bin', name)
     mkdirSync(join(path, '..'), { recursive: true })

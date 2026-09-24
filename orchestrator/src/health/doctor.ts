@@ -45,6 +45,7 @@ type DoctorPresentation = {
   pick(job: string): { agent: string }
   jobs(): string[]
   acpRuntimeGaps(): string | null
+  retrievalCheck(): Promise<{ stdout: string; stderr: string; exitCode: number }>
 }
 
 export function canonEvalDoctorDecision(input: {
@@ -99,13 +100,23 @@ function localContextDiagnosis(
   )
 }
 
+function reportRetrievalCheck(
+  result: { stdout: string; stderr: string; exitCode: number },
+  presentation: Pick<DoctorPresentation, 'log' | 'exitCode'>,
+): void {
+  presentation.log('retrieval endpoints')
+  for (const line of result.stdout.trim().split('\n').filter(Boolean)) presentation.log(`  ${line}`)
+  if (result.stderr.trim()) presentation.log(`  ${result.stderr.trim()}`)
+  if (result.exitCode !== 0) presentation.exitCode(1)
+}
+
 export async function doctorCommand(
   flags: DoctorFlags,
   presentation: DoctorPresentation,
   agentStatus: typeof doctorAgentStatus = doctorAgentStatus,
 ): Promise<void> {
   const { has } = flags
-  const { log, exitCode, candidates, pick, jobs, acpRuntimeGaps } = presentation
+  const { log, exitCode, candidates, pick, jobs, acpRuntimeGaps, retrievalCheck } = presentation
   // Probed BEFORE the agent list is printed, not after it. Doctor used to
   // report `qwen36-goose ready` and `reachable NO` four lines apart and mean
   // both: the roster asked whether it was configured and the probe asked
@@ -113,6 +124,7 @@ export async function doctorCommand(
   // status column and the routing table below it cannot contradict
   // each other.
   const r = await ensureLocalHealth()
+  reportRetrievalCheck(await retrievalCheck(), presentation)
   const { CanonBudgetError, compilePack, findingsForPack } = await import('../canon/canon.ts')
   const { listDocs } = await import('../doc/docs.ts')
   const { DEFAULT_PACK_BYTES, MAX_INJECT_DOC_BYTES } = await import('../canon/pack-budget.ts')

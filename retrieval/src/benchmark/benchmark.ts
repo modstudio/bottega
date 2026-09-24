@@ -2,7 +2,9 @@
 /** Runs the live, non-gating comparison of embeddings, reranking, and ripgrep. */
 import { access, readFile } from 'node:fs/promises'
 import { resolve } from 'node:path'
+import { queryDocument, RERANK_CANDIDATES } from '../contract.ts'
 import { type Chunk, chunkDocument, loadCorpus, splitChunksToModelLimit } from '../corpus/chunks.ts'
+import { search } from '../search.ts'
 import {
   embed,
   endpointsFromEnvironment,
@@ -10,33 +12,20 @@ import {
   rerank,
   tokenize,
 } from '../services/endpoints.ts'
+import { cosineTopK } from '../vector-ranking.ts'
 import { keywordRanking } from './keyword.ts'
 import { type Ranking, rankOfFirstLabel, scoreRankings } from './metrics.ts'
 import { CODE_QUERIES, DOC_QUERIES, type DocBenchmarkQuery, type LabeledQuery } from './queries.ts'
 
 const EMBED_BATCH_SIZE = 64
-const RERANK_CANDIDATES = 20
-
-function cosine(left: number[], right: number[]): number {
-  let dot = 0
-  let leftMagnitude = 0
-  let rightMagnitude = 0
-  for (let index = 0; index < left.length; index += 1) {
-    const leftValue = left[index] ?? 0
-    const rightValue = right[index] ?? 0
-    dot += leftValue * rightValue
-    leftMagnitude += leftValue * leftValue
-    rightMagnitude += rightValue * rightValue
-  }
-  const denominator = Math.sqrt(leftMagnitude) * Math.sqrt(rightMagnitude)
-  return denominator ? dot / denominator : 0
-}
 
 function rankByEmbedding(chunks: Chunk[], vectors: number[][], queryVector: number[]): Chunk[] {
-  return chunks
-    .map((chunk, index) => ({ chunk, score: cosine(vectors[index] ?? [], queryVector) }))
-    .sort((left, right) => right.score - left.score || left.chunk.id.localeCompare(right.chunk.id))
-    .map(({ chunk }) => chunk)
+  const byId = new Map(chunks.map((chunk) => [chunk.id, chunk]))
+  return cosineTopK(
+    chunks.map((chunk, index) => ({ id: chunk.id, vector: vectors[index] ?? [] })),
+    queryVector,
+    chunks.length,
+  ).map(({ id }) => byId.get(id)!)
 }
 
 async function embedBatches(url: string, documents: string[]): Promise<number[][]> {
@@ -95,18 +84,21 @@ async function validateQueries(repositoryRoot: string, chunks: Chunk[]): Promise
 
 function reportSet(
   queries: LabeledQuery[],
-  rankings: { keyword: Ranking[]; embeddings: Ranking[]; reranked: Ranking[] },
+  rankings: { keyword: Ranking[]; embeddings: Ranking[]; reranked: Ranking[]; index?: Ranking[] },
 ) {
   const missedIds = rankings.keyword
     .filter((ranking) => rankOfFirstLabel(ranking) < 0 || rankOfFirstLabel(ranking) >= 5)
     .map((ranking) => ranking.queryId)
     .filter((queryId) =>
-      [rankings.embeddings, rankings.reranked].every((method) => {
-        const ranking = method.find((candidate) => candidate.queryId === queryId)
-        return (
-          ranking !== undefined && (rankOfFirstLabel(ranking) < 0 || rankOfFirstLabel(ranking) >= 5)
-        )
-      }),
+      [rankings.embeddings, rankings.reranked, ...(rankings.index ? [rankings.index] : [])].every(
+        (method) => {
+          const ranking = method.find((candidate) => candidate.queryId === queryId)
+          return (
+            ranking !== undefined &&
+            (rankOfFirstLabel(ranking) < 0 || rankOfFirstLabel(ranking) >= 5)
+          )
+        },
+      ),
     )
   return {
     queryCount: queries.length,
@@ -114,6 +106,7 @@ function reportSet(
       keyword: scoreRankings(rankings.keyword),
       embeddings: scoreRankings(rankings.embeddings),
       embeddingsPlusRerank: scoreRankings(rankings.reranked),
+      ...(rankings.index ? { index: scoreRankings(rankings.index) } : {}),
     },
     missedByEveryMethodAt5: queries
       .filter((query) => missedIds.includes(query.id))
@@ -136,11 +129,12 @@ async function main() {
   const corpusVectors = await embedBatches(endpoints.embedUrl, documents)
   const queryVectors = await embedBatches(
     endpoints.embedUrl,
-    queries.map((query) => query.query),
+    queries.map((query) => queryDocument(query.query)),
   )
   const embeddingRankings: Ranking[] = []
   const rerankedRankings: Ranking[] = []
   const keywordRankings: Ranking[] = []
+  const indexRankings: Ranking[] = []
 
   for (const [index, query] of queries.entries()) {
     const embedded = rankByEmbedding(chunks, corpusVectors, queryVectors[index] ?? [])
@@ -167,12 +161,35 @@ async function main() {
     })
   }
 
+  for (const query of DOC_QUERIES) {
+    const output = await search(query.query, 5, { repositoryRoot })
+    indexRankings.push({
+      queryId: query.id,
+      goldLabels: query.goldLabels,
+      chunks: output.results.map((result, index) => ({
+        id: `index:${query.id}:${index}`,
+        path: `doc:${result.scope}/${result.subject ?? '_'}/${result.slug}`,
+        identity: {
+          kind: 'doc' as const,
+          scope: result.scope,
+          subject: result.subject,
+          slug: result.slug,
+        },
+        startLine: 1,
+        endLine: 1,
+        text: result.snippet,
+      })),
+    })
+  }
+
   const rankingsFor = (querySet: LabeledQuery[]) => {
     const ids = new Set(querySet.map((query) => query.id))
+    const indexed = indexRankings.filter((ranking) => ids.has(ranking.queryId))
     return {
       keyword: keywordRankings.filter((ranking) => ids.has(ranking.queryId)),
       embeddings: embeddingRankings.filter((ranking) => ids.has(ranking.queryId)),
       reranked: rerankedRankings.filter((ranking) => ids.has(ranking.queryId)),
+      ...(indexed.length ? { index: indexed } : {}),
     }
   }
 

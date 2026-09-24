@@ -1,6 +1,45 @@
 import { z } from 'zod'
 import { refuseHubActionOverrides, trackerSettingsShape } from './trackers.ts'
 
+export const DocSearchOutputSchema = z
+  .object({
+    query: z.string(),
+    k: z.number().int(),
+    contract: z
+      .object({
+        model: z.string(),
+        dimension: z.number().int(),
+        instructionVersion: z.string(),
+      })
+      .strict(),
+    refresh: z
+      .object({
+        embedded: z.number().int(),
+        deleted: z.number().int(),
+        unchanged: z.number().int(),
+        stale: z.number().int(),
+      })
+      .strict(),
+    results: z.array(
+      z
+        .object({
+          scope: z.string(),
+          subject: z.string().nullable(),
+          slug: z.string(),
+          title: z.string(),
+          headingPath: z.array(z.string()),
+          snippet: z.string(),
+          truncated: z.boolean(),
+          embeddingScore: z.number().finite(),
+          rerankScore: z.number().finite(),
+        })
+        .strict(),
+    ),
+  })
+  .strict()
+
+export type DocSearchOutput = z.infer<typeof DocSearchOutputSchema>
+
 const nullableString = z.string().nullable()
 const nullableNumber = z.number().finite().nullable()
 
