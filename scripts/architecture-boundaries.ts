@@ -1,4 +1,5 @@
 import { dirname, normalize } from 'node:path'
+import { mcpBoundarySpecs } from './architecture-mcp-boundaries.ts'
 import {
   recordReadBoundariesAfterPublish,
   recordReadBoundariesBeforePublish,
@@ -475,24 +476,7 @@ export const importBoundaries: ImportBoundary[] = [
     ['node:os', '../../../shared/record/schema.ts', '../database/db.ts'],
     'Enforce the machine-identity concern boundary.',
   ),
-  boundary(
-    'mcp-commands-boundary',
-    'orchestrator/src/mcp/mcp-commands.ts',
-    ['./mcp.ts'],
-    'Keep MCP command adapters independent of the run nucleus and the CLI: they compose concern modules for one verb and own no lifecycle.',
-  ),
-  boundary(
-    'mcp-preflight-boundary',
-    'orchestrator/src/mcp/mcp-preflight.ts',
-    [
-      '../agent/agent-registry.ts',
-      '../jobs/jobs.ts',
-      '../project/projects.ts',
-      '../run/run-process.ts',
-    ],
-    'Keep MCP preflight independent of execution, transport, routing, and mutation.',
-    ['../contract/contract.ts'],
-  ),
+  ...mcpBoundarySpecs,
   boundary(
     'metric-commands-boundary',
     'orchestrator/src/metric/metric-commands.ts',

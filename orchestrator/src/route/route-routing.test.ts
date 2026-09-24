@@ -314,6 +314,69 @@ describe('a repository-reading job gets a disposable writable disk', () => {
 })
 
 describe('fan-out routing exclusions', () => {
+  test('a known incompatible MCP catalogue excludes grok and refuses an explicit pin', () => {
+    const project = db()
+      .query(
+        "INSERT INTO project (name,path,settings) VALUES ('compat-fixture','/compat-fixture','{}') RETURNING id",
+      )
+      .get() as { id: number }
+    const run = addRun({ agent: 'codex', job: 'mcp-query', repo: 'compat-fixture' })
+    db()
+      .query('UPDATE run SET project_id=?, mcp_server=?, mcp_probe=? WHERE id=?')
+      .run(
+        project.id,
+        'compat-fixture',
+        JSON.stringify({
+          server: 'compat-fixture',
+          tool: 'workflow.list',
+          ok: true,
+          error: null,
+          durationMs: 1,
+          detail: 'listed: 2 tools',
+          namesSeen: ['compat-fixture'],
+          listedTools: ['workflow.list', 'task.get'],
+        }),
+        run,
+      )
+    const newerOldEvidence = addRun({
+      agent: 'grok',
+      job: 'mcp-query',
+      repo: 'compat-fixture',
+      startedAt: '2099-01-01T00:00:00.000Z',
+    })
+    db()
+      .query('UPDATE run SET project_id=?, mcp_server=?, mcp_probe=? WHERE id=?')
+      .run(
+        project.id,
+        'compat-fixture',
+        JSON.stringify({
+          server: 'compat-fixture',
+          tool: 'workflow.list',
+          ok: true,
+          error: null,
+          durationMs: 1,
+          detail: 'old evidence has no catalogue',
+          namesSeen: ['compat-fixture'],
+        }),
+        newerOldEvidence,
+      )
+    const requiredMcp = {
+      projectId: project.id,
+      project: 'compat-fixture',
+      server: 'compat-fixture',
+      mode: 'require' as const,
+    }
+    expect(pick('mcp-query', undefined, 0, false, null, { requiredMcp }).agent).toBe('codex')
+    expect(() => pick('mcp-query', 'grok', 0, false, null, { requiredMcp })).toThrow(
+      "MCP server 'compat-fixture' tool-name grammar is incompatible: 0/2 admitted by ^[A-Za-z0-9_-]{1,64}$",
+    )
+    expect(
+      pick('mcp-query', 'grok', 0, false, null, {
+        requiredMcp: { ...requiredMcp, mode: 'prefer' },
+      }).agent,
+    ).toBe('grok')
+  })
+
   test('avoid removes an agent while another eligible agent remains', () => {
     expect(pick('review-lens', undefined, 0, false, null, { agents: ['grok'] }).agent).toBe('codex')
   })

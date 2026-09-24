@@ -120,6 +120,7 @@ export const modules: ArchitectureModule[] = [
     '@modelcontextprotocol/sdk/client/stdio.js',
     '@modelcontextprotocol/sdk/client/streamableHttp.js',
   ]),
+  module('orchestrator/src/mcp/mcp-compatibility.ts', []),
   module('orchestrator/src/sandbox/codex-mcp-preflight.ts', [
     '../mcp/mcp-tool-list.ts',
     './codex-mcp-scope.ts',

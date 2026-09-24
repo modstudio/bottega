@@ -43,9 +43,9 @@ import {
   canonSourceFor,
   canonSourceInstruction,
   effectiveMcpRequest,
-  type McpMode,
   type McpRequest,
   probeRequestedMcp,
+  requiredMcpServer,
   storedMcpRequest,
 } from '../mcp/mcp-preflight.ts'
 import {
@@ -107,6 +107,9 @@ import { decideRunLaunch } from './run-launch.ts'
 import { acquireRunLease } from './run-lease.ts'
 import { runLive } from './run-live.ts'
 import * as mcpAttachment from './run-mcp-attachment.ts'
+import { finalWorkerMcpRuling } from './run-mcp-attachment-record.ts'
+import { enforceRunMcpGrammar } from './run-mcp-grammar.ts'
+import { refuseUnstartedRun } from './run-prelaunch-refusal.ts'
 import { bindSignals, childEnv, sha } from './run-process.ts'
 import { runInfrastructurePrompt } from './run-readonly-infrastructure.ts'
 import { finishRun } from './run-terminal.ts'
@@ -133,31 +136,6 @@ function throwPreclaimRefusal(refusal: string | null, reserveId: number | undefi
   if (!refusal) return
   if (reserveId) db().query('DELETE FROM run WHERE id=?').run(reserveId)
   throw new Error(refusal)
-}
-
-function finalWorkerMcpRuling(
-  runId: number,
-  mcpMode: McpMode | null,
-  requiredServer: string | null,
-  workerEvents: readonly StreamEvent[],
-): ReturnType<typeof mcpAttachment.decideFinalMcpConnection> | null {
-  if (!mcpMode || !requiredServer) return null
-  const recorded = db().query('SELECT mcp_connected, mcp_error FROM run WHERE id=?').get(runId) as {
-    mcp_connected: number | null
-    mcp_error: string | null
-  } | null
-  return mcpAttachment.decideFinalMcpConnection({
-    requiredServer,
-    mcpMode,
-    preLaunchEvidence: recorded
-      ? {
-          server: requiredServer,
-          connected: recorded.mcp_connected === null ? null : recorded.mcp_connected === 1,
-          error: recorded.mcp_error,
-        }
-      : null,
-    workerEvents,
-  })
 }
 
 /** From the run's recorded recipe, never a second register read that can differ from the one that built the tree. */
@@ -562,6 +540,7 @@ export async function run(opts: {
         models: opts.distinctModels,
         model: opts.model,
         noWaitCapacity: opts.noWaitCapacity,
+        requiredMcp: requiredMcpServer(mcpRequest, callerCwd, runProjectName ?? undefined),
       },
       opts.probe,
       opts.lens,
@@ -889,17 +868,22 @@ export async function run(opts: {
             probeRuling.callEvidence.error,
             claim.id,
           )
+        const grammarFailure = await enforceRunMcpGrammar({
+          server: mcpServerName,
+          mode: mcpMode,
+          probe,
+          pattern: a.mcpToolNamePattern,
+          runId: claim.id,
+          started,
+          resetSandbox,
+        })
+        probeRuling.failedConnection = grammarFailure ?? probeRuling.failedConnection
         if (probeRuling.refusalReason) {
-          const why = probeRuling.refusalReason
-          db()
-            .query(
-              `UPDATE run SET status='failed', error=?, failure_kind='mcp_unverified', latency_ms=? WHERE id=?`,
-            )
-            .run(why, Date.now() - started, claim.id)
-          await resetSandbox()
-          teardownTerminalRunResources(db(), claim.id)
-          throw Object.assign(new Error(`run ${claim.id} could not start: ${why}`), {
+          await refuseUnstartedRun({
             runId: claim.id,
+            started,
+            why: probeRuling.refusalReason,
+            resetSandbox,
           })
         }
         if (probeRuling.failedConnection) {

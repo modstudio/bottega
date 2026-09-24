@@ -63,6 +63,8 @@ export type Agent = {
    */
   model: string
   caps: Caps
+  /** MCP tool names this harness admits. Absent means it translates every server name. */
+  mcpToolNamePattern?: string
   /** Transport decision and the measured ACP capabilities for this installed adapter. */
   defaultTransport: 'cli' | 'acp'
   acp?: {
@@ -493,6 +495,7 @@ export const BUILTIN_AGENTS: Record<string, Agent> = {
     model: process.env.ORCH_GROK_MODEL ?? 'grok-4.6',
     billing: 'subscription',
     operatedBy: 'vendor',
+    mcpToolNamePattern: '^[A-Za-z0-9_-]{1,64}$',
     // Project servers come from the worker tree's `.mcp.json`; the run-scoped
     // GROK_HOME disables entries the project's workerMcpServers does not own.
     // Dispatch preflights that clamped view and stores folder trust there too.
