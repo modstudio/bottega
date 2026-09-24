@@ -1,5 +1,5 @@
 import { Database } from 'bun:sqlite'
-import { afterAll, afterEach, beforeEach } from 'bun:test'
+import { afterAll, afterEach, beforeAll, beforeEach } from 'bun:test'
 import {
   chmodSync,
   copyFileSync,
@@ -13,6 +13,7 @@ import {
 import { tmpdir } from 'node:os'
 import { basename, dirname, join, resolve } from 'node:path'
 import { FROZEN_STATE_NAMES } from '../../shared/brand.ts'
+import { CONFIG_HOME_ENV } from '../../shared/config-directory.ts'
 import { createTestHubDatabaseGuard } from '../../shared/test-hub-database.ts'
 
 const discoveryEnv = Object.fromEntries(
@@ -52,6 +53,9 @@ export const REGISTERED_LIVE_STORE = resolve(
 export const dir = mkdtempSync(join(tmpdir(), 'orch-test-'))
 const originalPath = process.env.PATH
 const originalSandbox = process.env.ORCH_SANDBOX
+const originalConfigHome = process.env[CONFIG_HOME_ENV]
+const originalRecordApiUrl = process.env.ORCH_RECORD_API_URL
+let configDir: string
 const store = join(dir, 'test.db')
 const template = join(dir, 'template.db')
 process.env.ORCH_DB = store
@@ -172,6 +176,12 @@ const { db } = await import('../src/database/db.ts')
 let sequence: { name: string; seq: number }[] = []
 let childrenBeforeTest = new Set<string>()
 
+beforeAll(() => {
+  configDir = mkdtempSync(join(tmpdir(), 'orch-test-config-'))
+  process.env[CONFIG_HOME_ENV] = configDir
+  delete process.env.ORCH_RECORD_API_URL
+})
+
 beforeEach(() => {
   installRecordApiClient(createMemoryRecordApiClient())
   registerStandardTransports()
@@ -233,5 +243,10 @@ afterAll(() => {
   else process.env.PATH = originalPath
   if (originalSandbox === undefined) delete process.env.ORCH_SANDBOX
   else process.env.ORCH_SANDBOX = originalSandbox
+  if (originalConfigHome === undefined) delete process.env[CONFIG_HOME_ENV]
+  else process.env[CONFIG_HOME_ENV] = originalConfigHome
+  if (originalRecordApiUrl === undefined) delete process.env.ORCH_RECORD_API_URL
+  else process.env.ORCH_RECORD_API_URL = originalRecordApiUrl
+  rmSync(configDir, { recursive: true, force: true })
   rmSync(dir, { recursive: true, force: true })
 })
