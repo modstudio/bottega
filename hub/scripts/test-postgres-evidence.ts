@@ -20,9 +20,11 @@ import {
 import {
   appendHostedSend,
   createHostedReportSubscription,
+  hostedEmailRecipientByToken,
   listHostedReportSubscriptions,
   listHostedSends,
   unsubscribeHostedReportSubscription,
+  unsubscribeHostedEmailRecipient,
   updateHostedReportSubscription,
 } from '../src/hosted-reports.ts'
 import { hostedTaskPresence, softDeleteHostedTasks } from '../src/hosted-task-prune.ts'
@@ -463,6 +465,22 @@ try {
     const otherIdentity = { userId: USER, spaceId: SPACE_B }
     if ((await listHostedSends(actorUrl, otherIdentity, {})).sends.length)
       throw new Error('another space observed send history')
+    const recipientColumns =
+      await admin`SELECT column_name,is_nullable FROM information_schema.columns
+      WHERE table_schema='public' AND table_name='hub_report_subscription_recipient'
+        AND column_name IN ('user_id','email','unsubscribe_token') ORDER BY column_name`
+    if (
+      recipientColumns.length !== 3 ||
+      recipientColumns.some((column) => column.is_nullable !== 'YES')
+    )
+      throw new Error('report email recipient columns did not migrate as nullable')
+    const recipientKindCheck = await admin`SELECT pg_get_constraintdef(oid) definition
+      FROM pg_constraint WHERE conname='hub_report_subscription_recipient_kind_check'`
+    if (
+      recipientKindCheck.length !== 1 ||
+      !String(recipientKindCheck[0]?.definition).includes('unsubscribe_token')
+    )
+      throw new Error('report recipient kind CHECK was not installed')
     let nonMemberRefused = false
     try {
       await createHostedReportSubscription(actorUrl, identity, {
@@ -476,6 +494,49 @@ try {
       nonMemberRefused = String((error as Error).message).includes('must be a member')
     }
     if (!nonMemberRefused) throw new Error('a non-member report recipient was accepted')
+    let memberEmailRefused = false
+    try {
+      await createHostedReportSubscription(actorUrl, identity, {
+        scope: { kind: 'space' },
+        cadence: 'daily',
+        hour: 8,
+        zone: 'America/New_York',
+        recipientUserIds: [],
+        recipientEmails: ['outside@example.test'],
+      })
+    } catch (error) {
+      memberEmailRefused = String((error as Error).message).includes('owner or admin')
+    }
+    if (!memberEmailRefused) throw new Error('a member added an email report recipient')
+    await admin`UPDATE membership SET role='owner' WHERE space_id=${SPACE_A}::uuid AND user_id=${USER}::uuid`
+    const emailSubscription = await createHostedReportSubscription(actorUrl, identity, {
+      scope: { kind: 'space' },
+      cadence: 'daily',
+      hour: 8,
+      zone: 'America/New_York',
+      recipientUserIds: [USER],
+      recipientEmails: [' First@Example.Test ', 'second@example.test'],
+    })
+    const emailRows =
+      await admin`SELECT email,unsubscribe_token FROM hub_report_subscription_recipient
+      WHERE subscription_id=${emailSubscription.id}::uuid ORDER BY email NULLS FIRST`
+    if (
+      emailRows.length !== 3 ||
+      emailRows[1]?.email !== 'first@example.test' ||
+      !emailRows[1]?.unsubscribe_token
+    )
+      throw new Error('email report recipients were not normalized or tokenized')
+    const emailDetail = await hostedEmailRecipientByToken(actorUrl, emailRows[1]!.unsubscribe_token)
+    if (emailDetail?.email !== 'first@example.test' || emailDetail.space !== 'Evidence A')
+      throw new Error('public report unsubscribe detail was not available by token')
+    if (!(await unsubscribeHostedEmailRecipient(actorUrl, emailRows[1]!.unsubscribe_token)))
+      throw new Error('public report unsubscribe did not remove its email row')
+    const remainingEmailRecipients =
+      await admin`SELECT user_id,email FROM hub_report_subscription_recipient
+      WHERE subscription_id=${emailSubscription.id}::uuid`
+    if (remainingEmailRecipients.length !== 2)
+      throw new Error('unsubscribing an email recipient removed another recipient')
+    await unsubscribeHostedReportSubscription(actorUrl, identity, emailSubscription.id)
     const subscription = await createHostedReportSubscription(actorUrl, identity, {
       scope: { kind: 'project', project: PLATFORM_SLUG },
       cadence: 'weekly',

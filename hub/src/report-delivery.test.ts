@@ -215,8 +215,11 @@ describe('hosted report delivery', () => {
     }
     await runReportDeliveryPass({ repository: fake.repository, mail, now })
     await runReportDeliveryPass({ repository: fake.repository, mail, now })
-    expect(sent).toHaveLength(1)
-    expect(sent[0]!.to).toEqual(['maya@example.test', 'noah@example.test'])
+    expect(sent).toHaveLength(2)
+    expect(sent.map((message) => message.to)).toEqual([
+      ['maya@example.test'],
+      ['noah@example.test'],
+    ])
     expect(sent[0]!.html).toContain('<!doctype html>')
     expect(sent[0]!.text).not.toBe(sent[0]!.html)
     expect(fake.rows).toEqual([{ subscription: '1', status: 'sent', reason: undefined }])
@@ -241,6 +244,50 @@ describe('hosted report delivery', () => {
       status: 'skipped',
       reason: 'scope had no recorded work in this period',
     })
+  })
+
+  test('email recipients get an unsubscribe link and one-click headers; members do not', async () => {
+    const fake = fakeRepository([candidate('11')], async () =>
+      subscription({
+        recipients: [
+          ...subscription().recipients,
+          {
+            userId: null,
+            name: 'outside@example.test',
+            email: 'outside@example.test',
+            isMember: true,
+            unsubscribeToken: 'unguessable-token',
+          },
+        ],
+      }),
+    )
+    const sent: {
+      to: string[]
+      text: string
+      html: string
+      headers?: { name: string; value: string }[]
+    }[] = []
+    await runReportDeliveryPass({
+      repository: fake.repository,
+      mail: {
+        async send(input) {
+          sent.push(input)
+        },
+      },
+      now,
+      hostedOrigin: 'https://hub.example.test',
+    })
+    expect(sent[0]!.headers).toBeUndefined()
+    expect(sent[0]!.text).not.toContain('/unsubscribe/')
+    expect(sent[1]!.text).toContain('https://hub.example.test/unsubscribe/unguessable-token')
+    expect(sent[1]!.html).toContain('https://hub.example.test/unsubscribe/unguessable-token')
+    expect(sent[1]!.headers).toEqual([
+      {
+        name: 'List-Unsubscribe',
+        value: '<https://hub.example.test/unsubscribe/unguessable-token>',
+      },
+      { name: 'List-Unsubscribe-Post', value: 'List-Unsubscribe=One-Click' },
+    ])
   })
 
   test('one subscription failure is recorded and does not stop another', async () => {
@@ -369,12 +416,24 @@ describe('hosted report delivery', () => {
       async send(command) {
         commands.push(command)
       },
-    }).send({ to: ['maya@example.test'], subject: 'Report', text: 'text', html: '<p>text</p>' })
+    }).send({
+      to: ['maya@example.test'],
+      subject: 'Report',
+      text: 'text',
+      html: '<p>text</p>',
+      headers: [
+        { name: 'List-Unsubscribe', value: '<https://hub.example.test/unsubscribe/token>' },
+      ],
+    })
     expect(commands).toHaveLength(1)
     expect(
       (commands[0] as { input: { Destination: { ToAddresses: string[] } } }).input.Destination
         .ToAddresses,
     ).toEqual(['maya@example.test'])
+    expect(
+      (commands[0] as { input: { Content: { Simple: { Headers: unknown[] } } } }).input.Content
+        .Simple.Headers,
+    ).toEqual([{ Name: 'List-Unsubscribe', Value: '<https://hub.example.test/unsubscribe/token>' }])
     await expect(
       sesReportMailClient(environment).send({
         to: ['maya@example.test'],

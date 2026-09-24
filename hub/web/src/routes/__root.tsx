@@ -92,7 +92,8 @@ export const Route = createRootRoute({
       (pathname === '/sign-in' ||
         pathname === '/forgot-password' ||
         pathname === '/reset-password' ||
-        pathname.startsWith('/accept-invitation/'))
+        pathname.startsWith('/accept-invitation/') ||
+        pathname.startsWith('/unsubscribe/'))
     ) {
       return (
         <HostedSignInFrame>

@@ -35,6 +35,7 @@ import { Route as AcceptInvitationIdRouteImport } from './routes/accept-invitati
 import { Route as ProjectsNameRouteImport } from './routes/projects.$name'
 import { Route as ReviewsIdRouteImport } from './routes/reviews.$id'
 import { Route as RunsIdRouteImport } from './routes/runs.$id'
+import { Route as UnsubscribeTokenRouteImport } from './routes/unsubscribe.$token'
 import { Route as BoardTasksKeyRouteImport } from './routes/board.tasks.$key'
 import { Route as DoneTasksKeyRouteImport } from './routes/done.tasks.$key'
 import { Route as FlightTasksKeyRouteImport } from './routes/flight.tasks.$key'
@@ -170,6 +171,11 @@ const RunsIdRoute = RunsIdRouteImport.update({
   path: '/$id',
   getParentRoute: () => RunsRoute,
 } as any)
+const UnsubscribeTokenRoute = UnsubscribeTokenRouteImport.update({
+  id: '/unsubscribe/$token',
+  path: '/unsubscribe/$token',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const BoardTasksKeyRoute = BoardTasksKeyRouteImport.update({
   id: '/tasks/$key',
   path: '/tasks/$key',
@@ -218,6 +224,7 @@ export interface FileRoutesByFullPath {
   '/projects/$name': typeof ProjectsNameRoute
   '/reviews/$id': typeof ReviewsIdRoute
   '/runs/$id': typeof RunsIdRoute
+  '/unsubscribe/$token': typeof UnsubscribeTokenRoute
   '/board/tasks/$key': typeof BoardTasksKeyRoute
   '/done/tasks/$key': typeof DoneTasksKeyRoute
   '/flight/tasks/$key': typeof FlightTasksKeyRoute
@@ -250,6 +257,7 @@ export interface FileRoutesByTo {
   '/projects/$name': typeof ProjectsNameRoute
   '/reviews/$id': typeof ReviewsIdRoute
   '/runs/$id': typeof RunsIdRoute
+  '/unsubscribe/$token': typeof UnsubscribeTokenRoute
   '/board/tasks/$key': typeof BoardTasksKeyRoute
   '/done/tasks/$key': typeof DoneTasksKeyRoute
   '/flight/tasks/$key': typeof FlightTasksKeyRoute
@@ -283,6 +291,7 @@ export interface FileRoutesById {
   '/projects/$name': typeof ProjectsNameRoute
   '/reviews/$id': typeof ReviewsIdRoute
   '/runs/$id': typeof RunsIdRoute
+  '/unsubscribe/$token': typeof UnsubscribeTokenRoute
   '/board/tasks/$key': typeof BoardTasksKeyRoute
   '/done/tasks/$key': typeof DoneTasksKeyRoute
   '/flight/tasks/$key': typeof FlightTasksKeyRoute
@@ -317,6 +326,7 @@ export interface FileRouteTypes {
     | '/projects/$name'
     | '/reviews/$id'
     | '/runs/$id'
+    | '/unsubscribe/$token'
     | '/board/tasks/$key'
     | '/done/tasks/$key'
     | '/flight/tasks/$key'
@@ -349,6 +359,7 @@ export interface FileRouteTypes {
     | '/projects/$name'
     | '/reviews/$id'
     | '/runs/$id'
+    | '/unsubscribe/$token'
     | '/board/tasks/$key'
     | '/done/tasks/$key'
     | '/flight/tasks/$key'
@@ -381,6 +392,7 @@ export interface FileRouteTypes {
     | '/projects/$name'
     | '/reviews/$id'
     | '/runs/$id'
+    | '/unsubscribe/$token'
     | '/board/tasks/$key'
     | '/done/tasks/$key'
     | '/flight/tasks/$key'
@@ -411,6 +423,7 @@ export interface RootRouteChildren {
   SignInRoute: typeof SignInRoute
   SpendRoute: typeof SpendRoute
   AcceptInvitationIdRoute: typeof AcceptInvitationIdRoute
+  UnsubscribeTokenRoute: typeof UnsubscribeTokenRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -597,6 +610,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof RunsIdRouteImport
       parentRoute: typeof RunsRoute
     }
+    '/unsubscribe/$token': {
+      id: '/unsubscribe/$token'
+      path: '/unsubscribe/$token'
+      fullPath: '/unsubscribe/$token'
+      preLoaderRoute: typeof UnsubscribeTokenRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/board/tasks/$key': {
       id: '/board/tasks/$key'
       path: '/tasks/$key'
@@ -726,6 +746,7 @@ const rootRouteChildren: RootRouteChildren = {
   SignInRoute: SignInRoute,
   SpendRoute: SpendRoute,
   AcceptInvitationIdRoute: AcceptInvitationIdRoute,
+  UnsubscribeTokenRoute: UnsubscribeTokenRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)

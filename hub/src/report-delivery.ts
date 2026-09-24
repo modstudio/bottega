@@ -18,10 +18,11 @@ export type DeliveryCandidate = {
 export type DeliveryPeriod = MeasureWindow & { key: string }
 
 type DeliveryRecipient = {
-  userId: string
+  userId: string | null
   name: string
   email: string
   isMember: boolean
+  unsubscribeToken?: string | null
 }
 
 export type DeliverySubscription = {
@@ -62,7 +63,9 @@ export type DeliveryRepository = {
 }
 
 export type ReportMailClient = {
-  send(input: RenderedReport & { to: string[] }): Promise<void>
+  send(
+    input: RenderedReport & { to: string[]; headers?: { name: string; value: string }[] },
+  ): Promise<void>
 }
 
 const WEEKDAY = new Map([
@@ -241,7 +244,7 @@ async function loadSubscription(
 
 function skipReason(subscription: DeliverySubscription) {
   if (!subscription.recipients.length) return 'subscription has no recipients'
-  if (subscription.recipients.some((recipient) => !recipient.isMember))
+  if (subscription.recipients.some((recipient) => recipient.userId && !recipient.isMember))
     return 'a recipient is no longer a member of this space'
   if (!hasRecordedWork(subscription.measures)) return 'scope had no recorded work in this period'
   return null
@@ -284,6 +287,7 @@ async function dispatchReport(
     repository: DeliveryRepository
     mail: ReportMailClient
     dryRun: boolean
+    hostedOrigin?: string
     print?: (text: string) => void
   },
   candidate: DeliveryCandidate,
@@ -299,7 +303,7 @@ async function dispatchReport(
   }
   const members = await input.repository.recipientsAreMembers(
     candidate,
-    subscription.recipients.map((recipient) => recipient.userId),
+    subscription.recipients.flatMap((recipient) => (recipient.userId ? [recipient.userId] : [])),
   )
   if (!members) {
     await recordSkip(
@@ -318,10 +322,25 @@ async function dispatchReport(
   })
   if (!intentId) return 'duplicate'
   try {
-    await input.mail.send({
-      ...rendered,
-      to: subscription.recipients.map((recipient) => recipient.email),
-    })
+    for (const recipient of subscription.recipients) {
+      const unsubscribeUrl = recipient.unsubscribeToken
+        ? `${requiredHostedOrigin(input.hostedOrigin)}/unsubscribe/${recipient.unsubscribeToken}`
+        : null
+      await input.mail.send({
+        ...rendered,
+        text: unsubscribeUrl ? `${rendered.text}\n\nUnsubscribe: ${unsubscribeUrl}` : rendered.text,
+        html: unsubscribeUrl
+          ? `${rendered.html}<p><a href="${unsubscribeUrl}">Unsubscribe</a></p>`
+          : rendered.html,
+        to: [recipient.email],
+        headers: unsubscribeUrl
+          ? [
+              { name: 'List-Unsubscribe', value: `<${unsubscribeUrl}>` },
+              { name: 'List-Unsubscribe-Post', value: 'List-Unsubscribe=One-Click' },
+            ]
+          : undefined,
+      })
+    }
     await input.repository.recordOutcome(candidate, intentId, 'sent')
     return 'sent'
   } catch (cause) {
@@ -331,11 +350,18 @@ async function dispatchReport(
   }
 }
 
+function requiredHostedOrigin(origin?: string) {
+  const value = origin?.replace(/\/$/, '')
+  if (!value) throw new Error('HUB_HOSTED_URL is required for email-recipient unsubscribe links')
+  return value
+}
+
 async function processCandidate(
   input: {
     repository: DeliveryRepository
     mail: ReportMailClient
     dryRun: boolean
+    hostedOrigin?: string
     print?: (text: string) => void
   },
   candidate: DeliveryCandidate,
@@ -365,6 +391,7 @@ export async function runReportDeliveryPass(input: {
   now?: Date
   dryRun?: boolean
   print?: (text: string) => void
+  hostedOrigin?: string
 }) {
   const now = input.now ?? new Date()
   const result = { due: 0, sent: 0, skipped: 0, failed: 0 }

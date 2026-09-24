@@ -24,6 +24,7 @@ export async function runReportDeliveryCommand(
     repository: hostedDeliveryRepository(databaseUrl),
     mail: sesReportMailClient(environment),
     dryRun,
+    hostedOrigin: environment.HUB_HOSTED_URL,
     print: console.log,
   })
   console.log(

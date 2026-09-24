@@ -51,6 +51,45 @@ describe('report subscriptions', () => {
     ).toThrow('a subscription requires at least one recipient')
   })
 
+  test('only an owner or admin can add an email recipient, and member addresses are refused', () => {
+    expect(() =>
+      planReportSubscription(
+        caller,
+        {
+          scope: { kind: 'space' },
+          ...daily,
+          recipientUserIds: [],
+          recipientEmails: ['outside@example.test'],
+        },
+        { ...facts, membershipRole: 'member' },
+      ),
+    ).toThrow('only a space owner or admin may change email recipients')
+    expect(() =>
+      planReportSubscription(
+        caller,
+        {
+          scope: { kind: 'space' },
+          ...daily,
+          recipientUserIds: [],
+          recipientEmails: [' READER@EXAMPLE.TEST '],
+        },
+        { ...facts, membershipRole: 'owner', memberEmails: ['reader@example.test'] },
+      ),
+    ).toThrow('space members must be added as member recipients')
+    expect(
+      planReportSubscription(
+        caller,
+        {
+          scope: { kind: 'space' },
+          ...daily,
+          recipientUserIds: [],
+          recipientEmails: [' Outside@Example.Test '],
+        },
+        { ...facts, membershipRole: 'admin', memberEmails: [] },
+      ).recipient_emails,
+    ).toEqual(['outside@example.test'])
+  })
+
   test('a members-scope subscription accepts any space members and requires one', () => {
     const selected = planReportSubscription(
       caller,
@@ -129,5 +168,33 @@ describe('report subscriptions', () => {
       zone: 'Europe/London',
       enabled: false,
     })
+  })
+
+  test('a member can preserve existing email recipients but cannot change them', () => {
+    const input = {
+      scope: { kind: 'space' } as const,
+      recipientUserIds: [caller.userId],
+      recipientEmails: ['outside@example.test'],
+      ...daily,
+      enabled: true,
+    }
+    expect(
+      planReportSubscriptionUpdate(caller, input, {
+        ...facts,
+        membershipRole: 'member',
+        existingRecipientEmails: ['outside@example.test'],
+      }).recipient_emails,
+    ).toEqual(['outside@example.test'])
+    expect(() =>
+      planReportSubscriptionUpdate(
+        caller,
+        { ...input, recipientEmails: ['other@example.test'] },
+        {
+          ...facts,
+          membershipRole: 'member',
+          existingRecipientEmails: ['outside@example.test'],
+        },
+      ),
+    ).toThrow('only a space owner or admin may change email recipients')
   })
 })
