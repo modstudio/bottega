@@ -12,7 +12,7 @@ export function mcpToolCallsObservable(
 }
 
 /** Mint a one-tool stdio MCP server used by the registration MCP probe. */
-export function mintStdioPingServer(dir: string): string {
+export function mintStdioPingServer(dir: string, toolErrorText?: string): string {
   const server = join(dir, 'minted-mcp-server.ts')
   writeFileSync(
     server,
@@ -36,7 +36,11 @@ process.stdin.on('data', (chunk) => {
     buf = buf.subarray(offset + length)
     if (message.method === 'initialize') reply(message.id, { protocolVersion: '2024-11-05', capabilities: {}, serverInfo: { name: 'minted' } })
     else if (message.method === 'tools/list') reply(message.id, { tools: [{ name: 'ping', inputSchema: { type: 'object' } }] })
-    else if (message.method === 'tools/call') reply(message.id, { content: [{ type: 'text', text: 'pong' }] })
+    else if (message.method === 'tools/call') reply(message.id, ${
+      toolErrorText
+        ? `{ isError: true, content: [{ type: 'text', text: ${JSON.stringify(toolErrorText)} }] }`
+        : `{ content: [{ type: 'text', text: 'pong' }] }`
+    })
   }
 })
 `,
@@ -58,6 +62,8 @@ export type McpProbeResult = {
   durationMs: number
   detail: string | null
   namesSeen: string[]
+  /** Tool catalogue returned by tools/list. Absent on old evidence and failed listings. */
+  listedTools?: string[]
 }
 
 export type McpServerConfig = {
@@ -340,6 +346,39 @@ function toolNames(messages: unknown[]): string[] {
   return names
 }
 
+function toolResultError(messages: unknown[]): string | null {
+  for (const message of messages) {
+    const response = message as {
+      result?: { isError?: boolean; content?: { type?: string; text?: string }[] }
+    }
+    if (response?.result?.isError !== true) continue
+    return (
+      response.result.content
+        ?.filter((item) => item.type === 'text' && typeof item.text === 'string')
+        .map((item) => item.text)
+        .join('\n') || 'MCP tool returned an error'
+    )
+  }
+  return null
+}
+
+function finishToolCall(
+  result: McpProbeResult,
+  messages: unknown[],
+  secrets: string[],
+  listedCount: number,
+  tool: string,
+): McpProbeResult {
+  const error = toolResultError(messages)
+  if (error) {
+    result.ok = false
+    result.error = sanitizeProbeError(error, secrets)
+  } else {
+    result.detail = `listed: ${listedCount} tools; called ${tool}`
+  }
+  return result
+}
+
 export async function probeMcpServer(input: {
   server: string
   config: McpServerConfig | undefined
@@ -414,6 +453,7 @@ export async function probeMcpServer(input: {
     durationMs: Date.now() - started,
     detail: `listed: ${listed.length} tools`,
     namesSeen,
+    listedTools: listed,
   }
   if (!input.probeTool) return result
   const call = {
@@ -463,8 +503,7 @@ export async function probeMcpServer(input: {
     result.error = sanitizeProbeError(callError, secrets)
     return result
   }
-  result.detail = `listed: ${listed.length} tools; called ${input.probeTool}`
-  return result
+  return finishToolCall(result, called.messages, secrets, listed.length, input.probeTool)
 }
 
 export function storedMcpProbe(result: McpProbeResult): string {

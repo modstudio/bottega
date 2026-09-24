@@ -16,7 +16,7 @@ import {
   notify,
 } from '../failure/failure.ts'
 import { type Job, reclaimsTreeByDefault } from '../jobs/jobs.ts'
-import { mcpRequestFromStored } from '../mcp/mcp-preflight.ts'
+import { mcpRequestFromStored, requiredMcpServer } from '../mcp/mcp-preflight.ts'
 import { resolveBranchRef, stackAt } from '../project/projects.ts'
 import { CALIBRATION_SUFFIX_RESERVE_BYTES } from '../review/review-calibration.ts'
 import {
@@ -215,7 +215,14 @@ export async function closeRun(input: CloseInput): Promise<RunResult> {
             (requestedJob.findings ? CALIBRATION_SUFFIX_RESERVE_BYTES : 0),
           true,
           stackAt(first.launch_cwd ?? callerCwd),
-          { agents: [...new Set([...(opts.avoid ?? []), ...tried])] },
+          {
+            agents: [...new Set([...(opts.avoid ?? []), ...tried])],
+            requiredMcp: requiredMcpServer(
+              mcpRequestFromStored(first.mcp, first.mcp_error),
+              first.launch_cwd ?? callerCwd,
+              first.repo ?? undefined,
+            ),
+          },
           false,
           first.lens ?? undefined,
         )

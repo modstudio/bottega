@@ -1,5 +1,14 @@
 import { expect, test } from 'bun:test'
-import { disabledProjectMcpServers, mcpCallEvidence } from './mcp-probe.ts'
+import { mkdtempSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
+import {
+  disabledProjectMcpServers,
+  mcpCallEvidence,
+  mintStdioPingServer,
+  probeMcpServer,
+  readMcpConfig,
+} from './mcp-probe.ts'
 
 test('computes the complement only for declared worker MCP scope', () => {
   const names = ['orch', 'starship', 'stopal']
@@ -23,4 +32,19 @@ test('a successful orch tool probe leaves worker attachment unverified', () => {
     connected: null,
     error: 'orch probe ok: task_list; worker attachment unverified',
   })
+})
+
+test('a tools/call result with isError fails the in-process probe and sanitizes its text', async () => {
+  const dir = mkdtempSync(join(tmpdir(), 'mcp-probe-error-'))
+  mintStdioPingServer(dir, 'refused secret-value-123')
+  const result = await probeMcpServer({
+    server: 'minted',
+    config: { ...readMcpConfig(dir).minted!, env: { TOKEN: 'secret-value-123' } },
+    cwd: dir,
+    env: { ...process.env } as Record<string, string>,
+    probeTool: 'ping',
+  })
+  expect(result.ok).toBe(false)
+  expect(result.error).toBe('refused [redacted]')
+  expect(result.listedTools).toEqual(['ping'])
 })

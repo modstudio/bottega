@@ -8,6 +8,12 @@ import { failingDefaultCanonEvals } from '../canon/canon-eval-status.ts'
 import { db } from '../database/db.ts'
 import { COOLS_DOWN, NOT_EVIDENCE } from '../failure/failure.ts'
 import { JOBS, job } from '../jobs/jobs.ts'
+import {
+  decideMcpCompatibility,
+  latestMcpListing,
+  mcpIncompatibilityReason,
+  type RequiredMcpServer,
+} from '../mcp/mcp-compatibility.ts'
 import { calibrationFor } from '../runtime/calibration-port.ts'
 import { FIDELITY_PENALTY, WEIGHT, weigh } from '../score/score.ts'
 import { median } from '../state/statistics.ts'
@@ -81,6 +87,27 @@ export const EVIDENCE_WINDOW = 40
  * not depend on a finely tuned number. Revisit it when a run lands in the gap.
  */
 export const PROMPT_SIZE_BOUNDARY = 16 * 1024
+
+function mcpCandidateIneligibility(
+  pattern: string | undefined,
+  requiredMcp: RequiredMcpServer | undefined,
+): string | null {
+  if (!requiredMcp || !pattern) return null
+  const listing = latestMcpListing(requiredMcp.projectId, requiredMcp.server)
+  const compatibility = decideMcpCompatibility(listing?.listedTools, pattern)
+  return compatibility.verdict === 'incompatible'
+    ? mcpIncompatibilityReason({ server: requiredMcp.server, pattern, compatibility })
+    : null
+}
+
+function applyMcpEligibility(
+  eligible: boolean,
+  why: string,
+  mcpWhy: string | null,
+): { eligible: boolean; why: string } {
+  if (!eligible || !mcpWhy) return { eligible, why }
+  return { eligible: false, why: mcpWhy }
+}
 
 export type PromptSizeBucket = 'small' | 'large'
 
@@ -392,6 +419,7 @@ export function candidates(
   modelOverride?: string,
   coolingProbeAgent?: string,
   lens?: string | null,
+  requiredMcp?: RequiredMcpServer,
 ): Candidate[] {
   const j = job(jobName)
   // probe = 0: calibration traffic is deliberately trivial, so counting it would
@@ -573,6 +601,7 @@ export function candidates(
     const score = evidence > 0 ? (recent.pts + weigh('none', null) * failures) / evidence : null
     let eligible = true
     let why = ''
+    const mcpWhy = mcpCandidateIneligibility(a.mcpToolNamePattern, requiredMcp)
     const unavailable = unavailableReason(name)
     const runningRunIds = (
       db()
@@ -625,6 +654,7 @@ export function candidates(
         }
       }
     }
+    ;({ eligible, why } = applyMcpEligibility(eligible, why, mcpWhy))
     if (eligible && a.maxConcurrent && runningRunIds.length >= a.maxConcurrent) {
       eligible = false
       why = `at capacity (${a.maxConcurrent} running)`
@@ -736,6 +766,7 @@ export function evidenceFor(
   stack: string | null | undefined,
   modelOverride?: string,
   lens?: string | null,
+  requiredMcp?: RequiredMcpServer,
 ): {
   cands: Candidate[]
   level: 'lens' | 'stack' | 'job'
@@ -750,12 +781,36 @@ export function evidenceFor(
       : stack
         ? { level: 'stack' as const, value: stack }
         : null
-  const jobWide = candidates(jobName, promptBytes, undefined, modelOverride)
+  const jobWide = candidates(
+    jobName,
+    promptBytes,
+    undefined,
+    modelOverride,
+    undefined,
+    undefined,
+    requiredMcp,
+  )
   if (requested) {
     const scoped =
       requested.level === 'lens'
-        ? candidates(jobName, promptBytes, undefined, modelOverride, undefined, requested.value)
-        : candidates(jobName, promptBytes, requested.value, modelOverride)
+        ? candidates(
+            jobName,
+            promptBytes,
+            undefined,
+            modelOverride,
+            undefined,
+            requested.value,
+            requiredMcp,
+          )
+        : candidates(
+            jobName,
+            promptBytes,
+            requested.value,
+            modelOverride,
+            undefined,
+            undefined,
+            requiredMcp,
+          )
     // `!c.cooling` too: pick() discards a cooling agent AFTER this decision, so
     // counting one here could narrow the scope on the strength of an agent that
     // is then thrown away — leaving a scoped view with a single usable
@@ -902,7 +957,13 @@ export function pick(
   explore = true,
   stack?: string | null,
   /** Agents and effective models a fan-out has already used. */
-  avoid: { agents?: string[]; models?: string[]; model?: string; noWaitCapacity?: boolean } = {},
+  avoid: {
+    agents?: string[]
+    models?: string[]
+    model?: string
+    noWaitCapacity?: boolean
+    requiredMcp?: RequiredMcpServer
+  } = {},
   /** An explicit calibration probe may test whether its named agent recovered. */
   probe = false,
   /** Stable findings viewpoint used for reviewer-precision calibration. */
@@ -910,7 +971,7 @@ export function pick(
   rng: () => number = Math.random,
 ): { agent: string; reason: string } {
   const j = job(jobName)
-  const ev = evidenceFor(jobName, promptBytes, stack, avoid.model, lens)
+  const ev = evidenceFor(jobName, promptBytes, stack, avoid.model, lens, avoid.requiredMcp)
   const cands = ev.cands
   // Named in every reason below, so a route drawn from four PHP runs is never
   // mistaken for one drawn from thirty mixed ones.
@@ -937,6 +998,7 @@ export function pick(
           avoid.model,
           override,
           ev.level === 'lens' ? ev.lens : undefined,
+          avoid.requiredMcp,
         )
       : cands
     const c = probeCandidates.find((x) => x.agent === override)

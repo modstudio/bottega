@@ -134,11 +134,18 @@ export function register(program: Command): void {
     .allowExcessArguments(false)
     .action((job) => contractCommand(job, { write }))
   program
-    .command('mcp')
+    .command('mcp [verb]')
     .option('--config')
+    .option('--project <value>')
     .allowExcessArguments(false)
-    .action((options) =>
-      mcpCommand(Boolean(options.config), assetPath('bin', 'orch'), presentation),
+    .action((verb, options) =>
+      mcpCommand(
+        Boolean(options.config),
+        verb,
+        options.project,
+        assetPath('bin', 'orch'),
+        presentation,
+      ),
     )
   program
     .command('workflow [args...]')

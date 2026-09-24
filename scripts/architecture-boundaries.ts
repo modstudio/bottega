@@ -478,7 +478,7 @@ export const importBoundaries: ImportBoundary[] = [
   boundary(
     'mcp-commands-boundary',
     'orchestrator/src/mcp/mcp-commands.ts',
-    ['./mcp.ts'],
+    ['./mcp.ts', './mcp-compatibility.ts'],
     'Keep MCP command adapters independent of the run nucleus and the CLI: they compose concern modules for one verb and own no lifecycle.',
   ),
   boundary(
@@ -491,7 +491,7 @@ export const importBoundaries: ImportBoundary[] = [
       '../run/run-process.ts',
     ],
     'Keep MCP preflight independent of execution, transport, routing, and mutation.',
-    ['../contract/contract.ts'],
+    ['../contract/contract.ts', './mcp-compatibility.ts'],
   ),
   boundary(
     'metric-commands-boundary',

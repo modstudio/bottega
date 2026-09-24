@@ -120,6 +120,13 @@ export const modules: ArchitectureModule[] = [
     '@modelcontextprotocol/sdk/client/stdio.js',
     '@modelcontextprotocol/sdk/client/streamableHttp.js',
   ]),
+  module('orchestrator/src/mcp/mcp-compatibility.ts', [
+    'bun:sqlite',
+    '../agent/agent-registry.ts',
+    '../database/db.ts',
+    '../project/projects.ts',
+    './mcp-probe.ts',
+  ]),
   module('orchestrator/src/sandbox/codex-mcp-preflight.ts', [
     '../mcp/mcp-tool-list.ts',
     './codex-mcp-scope.ts',
@@ -500,6 +507,15 @@ export const modules: ArchitectureModule[] = [
     './run-claim-plan.ts',
   ]),
   module('orchestrator/src/run/run-claim-plan.ts', ['./resume-tree.ts']),
+  module('orchestrator/src/run/run-mcp-grammar.ts', [
+    '../database/db.ts',
+    '../events.ts',
+    '../mcp/mcp-compatibility.ts',
+    '../mcp/mcp-preflight.ts',
+    '../mcp/mcp-probe.ts',
+    '../resources/resource-ownership.ts',
+    './run-mcp-attachment.ts',
+  ]),
   module('orchestrator/src/run/run-close.ts', [
     '../close/close-out.ts',
     '../contract/contract.ts',

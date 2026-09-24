@@ -7,8 +7,9 @@
 import { AGENTS } from '../agent/agent-registry.ts'
 import type { CanonSource } from '../contract/contract.ts'
 import { job } from '../jobs/jobs.ts'
-import { projectAt, validateStoredProjectSettings } from '../project/projects.ts'
+import { projectAt, projectByName, validateStoredProjectSettings } from '../project/projects.ts'
 import { childEnv } from '../run/run-process.ts'
+import type { RequiredMcpServer } from './mcp-compatibility.ts'
 
 export type McpConnection = {
   server: string
@@ -49,6 +50,22 @@ export function provenanceServer(entry: string, knownServers: ReadonlySet<string
 export function requestedMcpMode(request: McpRequest | undefined): McpMode | null {
   if (request === 'prefer') return 'prefer'
   return request ? 'require' : null
+}
+
+/** Project/server identity required by compatibility-aware routing. */
+export function requiredMcpServer(
+  request: McpRequest | undefined,
+  cwd: string,
+  projectName?: string,
+): RequiredMcpServer | undefined {
+  if (!requestedMcpMode(request)) return undefined
+  const project = projectName ? projectByName(projectName) : projectAt(cwd)
+  if (!project) return undefined
+  return {
+    projectId: project.id,
+    project: project.name,
+    server: project.settings.mcpServer ?? project.name,
+  }
 }
 
 /** Existing run.mcp stores none=0, require=1, and prefer=2. */

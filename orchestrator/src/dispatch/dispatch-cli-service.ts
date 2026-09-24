@@ -17,7 +17,7 @@ import { readStrictCodexSchema } from '../contract/codex-schema.ts'
 import { contractConflicts } from '../contract/contract.ts'
 import { sessionId } from '../database/db.ts'
 import { JOBS, job } from '../jobs/jobs.ts'
-import type { McpRequest } from '../mcp/mcp-preflight.ts'
+import { effectiveMcpRequest, type McpRequest, requiredMcpServer } from '../mcp/mcp-preflight.ts'
 import { stackAt } from '../project/projects.ts'
 import { implicitReviewWarning } from '../review/review-target.ts'
 import {
@@ -290,14 +290,20 @@ export async function doCommand(argv: string[], presentation: Presentation): Pro
   }
   const detach = async (jobName: string, text: string, spec: DetachSpec) => {
     let selected: string | undefined
-    if (!spec.resume && spec.mcp)
+    const mcpRequest = effectiveMcpRequest(spec.mcp, job(jobName))
+    if (!spec.resume && mcpRequest)
       selected = pick(
         jobName,
         spec.agent,
         text.length,
         true,
         stackAt(spec.cwd ?? presentation.cwd()),
-        { agents: spec.avoid, models: spec.distinctModels, model: spec.model },
+        {
+          agents: spec.avoid,
+          models: spec.distinctModels,
+          model: spec.model,
+          requiredMcp: requiredMcpServer(mcpRequest, spec.cwd ?? presentation.cwd(), spec.repo),
+        },
         spec.probe,
         spec.lens,
       ).agent
