@@ -13,13 +13,14 @@ import { mkdirSync, readdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { DOC_SCOPE_SUBJECT_KIND, DOC_SCOPES, type DocScope } from '../../../shared/docs.ts'
 import { AGENTS } from '../agent/agent-registry.ts'
-import { collectCanonLintInput } from '../canon/canon-files.ts'
+import { canonGitRoot, collectCanonLintInput } from '../canon/canon-files.ts'
 import { type CanonRow, composeCanonRows } from '../canon/canon-hydrate.ts'
 import { DEFAULT_PACK_BYTES } from '../canon/pack-budget.ts'
 import { db, nowIso, sessionId, writableDb, writeTransaction } from '../database/db.ts'
 import { JOBS } from '../jobs/jobs.ts'
 import { projectAt, projectByName } from '../project/projects.ts'
 import { recordApiClient } from '../record/record-api-client.ts'
+import { type DocLintFinding, docHasRepositoryReferences, lintDoc } from './doc-lint.ts'
 import {
   consumeDocBody,
   type DocRevisionOp,
@@ -447,6 +448,39 @@ function assertDocWriteAllowed(input: DocWriteInput & { delivery: 'inject' | 'de
   assertCanonWriteAllowed(input)
 }
 
+function docRepositoryRoot(doc: Pick<DocWriteInput, 'scope' | 'subject'>): string {
+  const project =
+    doc.scope === 'project' && doc.subject ? projectByName(doc.subject) : projectAt(process.cwd())
+  return canonGitRoot(project?.path ?? process.cwd())
+}
+
+export function lintStoredDoc(
+  doc: Pick<Doc, 'scope' | 'subject' | 'slug' | 'body'>,
+): DocLintFinding[] {
+  if (doc.scope === 'resume' || doc.scope === 'canon') return []
+  return lintDoc({
+    ...doc,
+    ...(docHasRepositoryReferences(doc.body)
+      ? { references: collectCanonLintInput(docRepositoryRoot(doc)) }
+      : {}),
+  })
+}
+
+function assertDocLint(input: DocWriteInput): void {
+  const findings = lintStoredDoc(input as Pick<Doc, 'scope' | 'subject' | 'slug' | 'body'>)
+  if (!findings.length) return
+  const address = `${input.scope}/${input.subject ?? '_'}/${input.slug}`
+  throw new Error(
+    `refusing doc ${address}:\n` +
+      findings
+        .map(
+          (finding) =>
+            `- ${finding.rule} line ${finding.line}: ${finding.message}\n  remedy: ${finding.remedy}`,
+        )
+        .join('\n'),
+  )
+}
+
 async function setDocWithOp(input: DocWriteInput, requestedOp?: 'import'): Promise<Doc> {
   writableDb()
   validate(input.scope, input.subject, input.slug)
@@ -455,6 +489,7 @@ async function setDocWithOp(input: DocWriteInput, requestedOp?: 'import'): Promi
   const delivery =
     input.scope === 'canon' ? 'demand' : (input.delivery ?? prior?.delivery ?? 'inject')
   assertDocWriteAllowed({ ...input, delivery })
+  assertDocLint(input)
   const hosted = await recordApiClient().upsertDoc({
     scope: input.scope,
     subject: input.subject,
@@ -929,6 +964,15 @@ export async function restoreDoc(
     throw new Error(`no revision ${revisionId} for ${scope}/${subject ?? '_'}/${slug}`)
   }
   assertDocWriteAllowed({
+    scope,
+    subject,
+    slug,
+    title: revision.title,
+    body: revision.body,
+    delivery: revision.delivery,
+    ...context,
+  })
+  assertDocLint({
     scope,
     subject,
     slug,

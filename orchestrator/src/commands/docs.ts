@@ -31,6 +31,9 @@ export function register(program: Command): void {
         stdinText: () => Bun.stdin.text(),
         stdinIsTTY: process.stdin.isTTY,
         cwd: process.cwd,
+        exitCode: (code) => {
+          process.exitCode = code
+        },
       })
     })
 

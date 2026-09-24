@@ -21,6 +21,7 @@ modes:
       - ship-triage
       - complete
       - ship-fix
+      - design-records
       - pr
       - merge
       - close

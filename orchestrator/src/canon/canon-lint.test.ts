@@ -139,6 +139,12 @@ describe('canon prose rules', () => {
     expect(result.map((finding) => finding.line)).toEqual([1, 3, 4, 5])
     expect(rules([{ path: 'AGENTS.md', text: 'Current rule.' }], 'canon/issue')).toEqual([])
   })
+
+  test('dates report outside code', () => {
+    expect(
+      rules([{ path: 'AGENTS.md', text: 'Current on 2026-09-23.\n`2026-09-24`' }], 'canon/date'),
+    ).toEqual([expect.objectContaining({ line: 1 })])
+  })
 })
 
 describe('canon current reference rules', () => {

@@ -12,6 +12,7 @@ import {
   exportDocs,
   getDoc,
   importDocs,
+  lintStoredDoc,
   listDocRevisions,
   listDocs,
   listOpenResumes,
@@ -28,6 +29,7 @@ type DocPresentation = {
   stdinText(): Promise<string>
   stdinIsTTY: boolean
   cwd(): string
+  exitCode?(code: number): void
 }
 
 export async function docCommand(
@@ -39,6 +41,28 @@ export async function docCommand(
   const { has, flag } = flags
   const scope = flag('scope')
   const subject = flag('subject') ?? null
+  if (sub === 'lint') {
+    const rows = listDocs({ scope, ...(has('subject') ? { subject } : {}) })
+    const findings = rows.flatMap((doc) =>
+      lintStoredDoc(doc).map((finding) => ({
+        scope: doc.scope,
+        subject: doc.subject,
+        slug: doc.slug,
+        ...finding,
+      })),
+    )
+    if (has('json')) presentation.log(JSON.stringify(findings))
+    else {
+      for (const finding of findings) {
+        presentation.log(
+          `${finding.scope}/${finding.subject ?? '_'}/${finding.slug}:${finding.line} ${finding.rule} ${finding.message}`,
+        )
+        presentation.log(`  remedy: ${finding.remedy}`)
+      }
+    }
+    if (findings.length) presentation.exitCode?.(1)
+    return
+  }
   if (sub === 'list') {
     const rows = listDocs({ scope, ...(has('subject') ? { subject } : {}) })
     if (has('json')) {
@@ -234,6 +258,6 @@ export async function docCommand(
     return
   }
   throw new Error(
-    `unknown: orch doc ${sub}. Try list | show | set | consume | rm | history | diff | restore | subjects | export | import | resumes`,
+    `unknown: orch doc ${sub}. Try list | show | set | lint | consume | rm | history | diff | restore | subjects | export | import | resumes`,
   )
 }

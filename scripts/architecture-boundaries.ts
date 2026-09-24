@@ -93,8 +93,15 @@ export const importBoundaries: ImportBoundary[] = [
       '../../../shared/canon-references.ts',
       '../../../shared/ratchet.ts',
       './canon-budget.ts',
+      './prose-lint.ts',
     ],
     'Keep canon lint decisions pure and independent of filesystems, stores, commands, and processes.',
+  ),
+  boundary(
+    'prose-lint-boundary',
+    'orchestrator/src/canon/prose-lint.ts',
+    [],
+    'Keep shared prose lint decisions pure and independent of filesystems, stores, commands, and processes.',
   ),
   boundary(
     'canon-write-gate-boundary',
@@ -285,6 +292,12 @@ export const importBoundaries: ImportBoundary[] = [
     'orchestrator/src/doc/doc-commands.ts',
     ['node:fs', '../canon/canon.ts', './docs.ts'],
     'Keep doc commands independent of database writes beyond docs, runs, routing, transports, and the CLI.',
+  ),
+  boundary(
+    'doc-lint-boundary',
+    'orchestrator/src/doc/doc-lint.ts',
+    ['../../../shared/docs.ts', '../canon/canon-lint.ts', '../canon/prose-lint.ts'],
+    'Keep document lint decisions pure and independent of filesystems, stores, commands, and processes.',
   ),
   boundary(
     'doc-write-allowed-boundary',

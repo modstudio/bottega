@@ -24,6 +24,19 @@ import {
 } from './docs.ts'
 
 describe('scoped operator docs', () => {
+  test('set refuses lint findings without changing the store', async () => {
+    await expect(
+      setDoc({
+        scope: 'global',
+        subject: null,
+        slug: 'bad-prose',
+        title: 'Bad prose',
+        body: 'This was formerly different.',
+      }),
+    ).rejects.toThrow('remedy: state only the current rule')
+    expect(getDoc('global', null, 'bad-prose')).toBeNull()
+  })
+
   test('CRUD round-trips and set is a uniqueness-preserving upsert', async () => {
     const first = await setDoc({
       scope: 'global',

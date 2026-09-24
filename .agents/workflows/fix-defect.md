@@ -38,6 +38,7 @@ modes:
       - blast-radius
       - triage-findings
       - apply-findings
+      - design-records
       - run-gate
       - open-pr
       - merge-pr
@@ -59,6 +60,7 @@ modes:
       - blast-radius
       - triage-findings
       - apply-findings
+      - design-records
       - run-gate
       - open-pr
       - merge-pr

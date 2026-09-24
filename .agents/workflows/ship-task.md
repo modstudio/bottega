@@ -24,6 +24,7 @@ modes:
       - apply-findings
       - acceptance
       - run-gate
+      - design-records
       - open-pr
       - merge-pr
       - promote-release
@@ -37,6 +38,7 @@ modes:
       - apply-findings
       - acceptance
       - run-gate
+      - design-records
       - open-pr
       - merge-pr
 ---
