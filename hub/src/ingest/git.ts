@@ -1,9 +1,9 @@
 import { categorizeFile, type FileKind } from '../../../shared/file-kind.ts'
 import { newRecordId } from '../../../shared/record/schema.ts'
 import { keyPattern, refreshKeyPrefixes } from '../attribute.ts'
-import { nowIso, type Project, writeTransaction } from '../db.ts'
+import { db, nowIso, type Project, writeTransaction } from '../db.ts'
 import { projects } from '../projects.ts'
-import { hostedMirrorTasks } from '../task-client.ts'
+import { mirrorCollectedTasks } from './collector-mirror.ts'
 
 /**
  * Generated files, which are not work.
@@ -146,34 +146,6 @@ function scanGit(since: string) {
 export async function ingestGit(since: string): Promise<{ days: number; tasks: number }> {
   const { days, tasks, commits } = scanGit(since)
   const at = nowIso()
-  let taskMirrorSucceeded = true
-  try {
-    const mirrored = [...tasks.values()].map((t) => ({
-      id: newRecordId(),
-      key: t.key,
-      project: t.project,
-      project_name: t.project,
-      title: null,
-      status: null,
-      status_category: null,
-      parent_key: null,
-      body: null,
-      assignee: null,
-      opened_at: t.first,
-      closed_at: null,
-      source: 'git' as const,
-      first_seen: at,
-      last_seen: at,
-      created_at: at,
-      updated_at: t.last,
-      deleted_at: null,
-    }))
-    for (let index = 0; index < mirrored.length; index += 500)
-      await hostedMirrorTasks({ tasks: mirrored.slice(index, index + 500) })
-  } catch (error) {
-    console.error(`hub: git task mirror skipped: ${(error as Error).message}`)
-    taskMirrorSucceeded = false
-  }
   writeTransaction((conn) => {
     const dayStmt = conn.query(
       `INSERT INTO day (day, tasks, commits, files,
@@ -222,13 +194,43 @@ export async function ingestGit(since: string): Promise<{ days: number; tasks: n
         at,
       )
     }
-    if (taskMirrorSucceeded)
-      for (const t of tasks.values())
-        taskStmt.run(newRecordId(), t.key, t.project, t.first, t.last, at, at)
+    for (const t of tasks.values())
+      taskStmt.run(newRecordId(), t.key, t.project, t.first, t.last, at, at)
     conn
       .query(`INSERT INTO setting (key, value) VALUES ('collect.git.at', ?)
                 ON CONFLICT(key) DO UPDATE SET value = excluded.value`)
       .run(JSON.stringify(at))
   })
-  return { days: days.size, tasks: taskMirrorSucceeded ? tasks.size : 0 }
+  try {
+    const mirrored = [...tasks.values()].map((t) => ({
+      id: db()
+        .query<{ record_id: string }, [string, string]>(
+          `SELECT record_id FROM task WHERE project=? AND key=?`,
+        )
+        .get(t.project, t.key)!.record_id,
+      key: t.key,
+      project: t.project,
+      project_name: t.project,
+      title: null,
+      status: null,
+      status_category: null,
+      parent_key: null,
+      body: null,
+      assignee: null,
+      opened_at: t.first,
+      closed_at: null,
+      source: 'git' as const,
+      first_seen: at,
+      last_seen: at,
+      created_at: at,
+      updated_at: t.last,
+      deleted_at: null,
+    }))
+    for (let index = 0; index < mirrored.length; index += 500) {
+      await mirrorCollectedTasks({ tasks: mirrored.slice(index, index + 500) })
+    }
+  } catch (error) {
+    console.error(`hub: git task mirror skipped: ${(error as Error).message}`)
+  }
+  return { days: days.size, tasks: tasks.size }
 }

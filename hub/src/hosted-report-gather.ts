@@ -2,6 +2,7 @@
 /** Builds the existing report projection from hosted record rows. */
 
 import { engagedMs, human } from '../../shared/interval.ts'
+import { hostedTaskJoin } from './hosted-task-reference.ts'
 import { type TaskIdentity, withHostedTenant } from './hosted-tasks.ts'
 import type { MeasureScope } from './measures.ts'
 import type { DeliveryPeriod } from './report-delivery.ts'
@@ -146,7 +147,7 @@ export async function hostedGatherReport(
     const completed = rows<{ task_id: string }>(
       await tx`
       SELECT t.id AS task_id FROM hub_task_status_event e
-      JOIN hub_task t ON t.space_id=e.space_id AND t.key=e.task_key
+      JOIN hub_task t ON ${hostedTaskJoin(tx, 'hub_task_status_event', 'e')}
       WHERE e.deleted_at IS NULL AND t.deleted_at IS NULL AND e.to_status='done'
         AND e.at >= ${period.from}::timestamptz AND e.at < ${period.to}::timestamptz
         AND (${project}::text IS NULL OR t.project=${project})`,

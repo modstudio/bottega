@@ -3,9 +3,11 @@
 
 import { sql } from 'drizzle-orm'
 import {
+  type AnyPgColumn,
   bigint,
   check,
   doublePrecision,
+  index,
   integer,
   pgPolicy,
   pgTable,
@@ -32,6 +34,9 @@ export const hubTask = pgTable.withRLS(
     status: text(),
     statusCategory: text('status_category'),
     parentKey: text('parent_key'),
+    parentId: uuid('parent_id').references((): AnyPgColumn => hubTask.id, {
+      onDelete: 'set null',
+    }),
     body: text(),
     assignee: text(),
     openedAt: timestamp('opened_at', { withTimezone: true }),
@@ -45,6 +50,7 @@ export const hubTask = pgTable.withRLS(
   },
   (table) => [
     unique('hub_task_space_key_unique').on(table.spaceId, table.key),
+    index('hub_task_parent_id_idx').on(table.parentId),
     check(
       'hub_task_status_category_check',
       sql`${table.statusCategory} IS NULL OR ${table.statusCategory} IN ('open','active','review','done','dropped')`,
@@ -62,6 +68,7 @@ export const hubTaskComment = pgTable.withRLS(
     spaceId: spaceIdentity(),
     projectName: text('project_name').notNull(),
     taskKey: text('task_key').notNull(),
+    taskId: uuid('task_id').references(() => hubTask.id, { onDelete: 'cascade' }),
     body: text().notNull(),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull(),
     updatedAt: updatedAt(),
@@ -70,6 +77,7 @@ export const hubTaskComment = pgTable.withRLS(
   (table) => [
     unique('hub_task_comment_space_id_unique').on(table.spaceId, table.id),
     unique('hub_task_comment_legacy_unique').on(table.spaceId, table.legacyLocalId),
+    index('hub_task_comment_task_id_idx').on(table.taskId),
     ...tenantPolicies('hub_task_comment', table.spaceId),
   ],
 )
@@ -82,6 +90,7 @@ export const hubTaskDocument = pgTable.withRLS(
     spaceId: spaceIdentity(),
     projectName: text('project_name').notNull(),
     taskKey: text('task_key').notNull(),
+    taskId: uuid('task_id').references(() => hubTask.id, { onDelete: 'cascade' }),
     role: text(),
     title: text().notNull(),
     body: text().notNull(),
@@ -93,6 +102,7 @@ export const hubTaskDocument = pgTable.withRLS(
   (table) => [
     unique('hub_task_document_space_id_unique').on(table.spaceId, table.id),
     unique('hub_task_document_legacy_unique').on(table.spaceId, table.legacyLocalId),
+    index('hub_task_document_task_id_idx').on(table.taskId),
     check('hub_task_document_role_check', sql`${table.role} IS NULL OR ${table.role} = 'handoff'`),
     ...tenantPolicies('hub_task_document', table.spaceId),
   ],
@@ -106,6 +116,7 @@ export const hubTaskStatusEvent = pgTable.withRLS(
     spaceId: spaceIdentity(),
     projectName: text('project_name').notNull(),
     taskKey: text('task_key').notNull(),
+    taskId: uuid('task_id').references(() => hubTask.id, { onDelete: 'cascade' }),
     at: timestamp({ withTimezone: true }).notNull(),
     fromStatus: text('from_status'),
     toStatus: text('to_status').notNull(),
@@ -122,6 +133,7 @@ export const hubTaskStatusEvent = pgTable.withRLS(
       table.toStatus,
       table.at,
     ),
+    index('hub_task_status_event_task_id_idx').on(table.taskId),
     ...tenantPolicies('hub_task_status_event', table.spaceId),
   ],
 )
@@ -143,11 +155,15 @@ export const hubNote = pgTable.withRLS(
     staleAt: timestamp('stale_at', { withTimezone: true }),
     staleReason: text('stale_reason'),
     promotedTask: text('promoted_task'),
+    promotedTaskId: uuid('promoted_task_id').references(() => hubTask.id, {
+      onDelete: 'set null',
+    }),
     updatedAt: updatedAt(),
     deletedAt: timestamp('deleted_at', { withTimezone: true }),
   },
   (table) => [
     unique('hub_note_space_number_unique').on(table.spaceId, table.number),
+    index('hub_note_promoted_task_id_idx').on(table.promotedTaskId),
     check('hub_note_sightings_check', sql`${table.sightings} > 0`),
     ...tenantPolicies('hub_note', table.spaceId),
   ],

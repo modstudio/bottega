@@ -12,6 +12,7 @@ import { credentials, Mcp } from '../mcp.ts'
 import { projects } from '../projects.ts'
 import { hostedMirrorTasks } from '../task-client.ts'
 import { claimTaskIdentity, taskRecordIdFor } from '../task-identity.ts'
+import { mirrorCollectedTasks } from './collector-mirror.ts'
 
 export type { TrackerTask } from '../../../shared/trackers.ts'
 
@@ -302,35 +303,48 @@ async function mirrorTrackerSnapshot(
 ): Promise<Error | null> {
   const mirroredTasks = tasks
     .filter((task) => !local.has(trackerTaskLabel(task.project, task.key)))
-    .map((task) => ({
-      id: newRecordId(),
-      key: task.key,
-      project: task.project,
-      project_name: task.project,
-      title: task.title,
-      status: task.status,
-      status_category: task.category,
-      parent_key: null,
-      body: null,
-      assignee: task.assignee,
-      opened_at: task.updatedAt ?? at,
-      closed_at: task.category === 'done' ? at : null,
-      source: 'mcp' as const,
-      first_seen: at,
-      last_seen: at,
-      created_at: at,
-      updated_at: task.updatedAt ?? at,
-      deleted_at: null,
-    }))
+    .map((task) => {
+      const localRow = trackerIdentityRow(db(), task)!
+      return {
+        id: localRow.record_id,
+        key: localRow.key,
+        project: task.project,
+        project_name: task.project,
+        title: task.title,
+        status: task.status,
+        status_category: task.category,
+        parent_key: null,
+        body: null,
+        assignee: task.assignee,
+        opened_at: task.updatedAt ?? at,
+        closed_at: task.category === 'done' ? at : null,
+        source: 'mcp' as const,
+        first_seen: at,
+        last_seen: at,
+        created_at: at,
+        updated_at: task.updatedAt ?? at,
+        deleted_at: null,
+      }
+    })
   const mirroredEvents = tasks.flatMap((task) => {
     const identity = trackerTaskLabel(task.project, task.key)
     const was = before.get(identity)
-    return !local.has(identity) && was !== undefined && was !== task.category
+    const event =
+      !local.has(identity) && was !== undefined && was !== task.category
+        ? db()
+            .query<{ record_id: string; task_record_id: string }, [string, string, string, string]>(
+              `SELECT record_id,task_record_id FROM task_status_event
+               WHERE task_record_id=? AND at=? AND from_status=? AND to_status=?`,
+            )
+            .get(trackerIdentityRow(db(), task)!.record_id, at, was, task.category)
+        : null
+    return event
       ? [
           {
-            id: newRecordId(),
+            id: event.record_id,
             legacy_local_id: null,
             task_key: task.key,
+            task_id: event.task_record_id,
             project_name: task.project,
             at,
             from_status: was,
@@ -343,8 +357,9 @@ async function mirrorTrackerSnapshot(
       : []
   })
   try {
-    for (let index = 0; index < mirroredTasks.length; index += 500)
-      await hostedMirrorTasks({ tasks: mirroredTasks.slice(index, index + 500) })
+    for (let index = 0; index < mirroredTasks.length; index += 500) {
+      await mirrorCollectedTasks({ tasks: mirroredTasks.slice(index, index + 500) })
+    }
     for (let index = 0; index < mirroredEvents.length; index += 500)
       await hostedMirrorTasks({ tasks: [], statusEvents: mirroredEvents.slice(index, index + 500) })
     return null
@@ -417,34 +432,39 @@ async function backfillTrackerTasks(
     try {
       const task = await source.lookup(client, task_key)
       if (!task) continue
-      await hostedMirrorTasks({
-        tasks: [
-          {
-            id: newRecordId(),
-            key: task.key,
-            project: task.project,
-            project_name: task.project,
-            title: task.title,
-            status: task.status,
-            status_category: task.category,
-            parent_key: null,
-            body: null,
-            assignee: task.assignee,
-            opened_at: task.updatedAt ?? at,
-            closed_at: task.category === 'done' ? at : null,
-            source: 'mcp',
-            first_seen: at,
-            last_seen: at,
-            created_at: at,
-            updated_at: task.updatedAt ?? at,
-            deleted_at: null,
-          },
-        ],
-      })
       upsertTrackerTask(task, at)
       filled++
       const identity = trackerTaskLabel(task.project, task.key)
       if (!local.has(identity) && differs(task, existing.get(identity))) activity = true
+      const localRow = trackerIdentityRow(db(), task)!
+      try {
+        await mirrorCollectedTasks({
+          tasks: [
+            {
+              id: localRow.record_id,
+              key: localRow.key,
+              project: task.project,
+              project_name: task.project,
+              title: task.title,
+              status: task.status,
+              status_category: task.category,
+              parent_key: null,
+              body: null,
+              assignee: task.assignee,
+              opened_at: task.updatedAt ?? at,
+              closed_at: task.category === 'done' ? at : null,
+              source: 'mcp',
+              first_seen: at,
+              last_seen: at,
+              created_at: at,
+              updated_at: task.updatedAt ?? at,
+              deleted_at: null,
+            },
+          ],
+        })
+      } catch (error) {
+        console.error(`hub: tracker task mirror skipped: ${(error as Error).message}`)
+      }
     } catch {
       /* not findable; it stays git-derived and says so */
     }
@@ -561,19 +581,8 @@ export async function ingestTrackers(
             return !local.has(identity) && differs(t, existing.get(identity))
           })
 
-          const mirrorError = await mirrorTrackerSnapshot([...unique.values()], local, before, at)
-          if (mirrorError) {
-            return {
-              result: {
-                project: s.project,
-                tasks: 0,
-                changed: 0,
-                error: `hosted mirror skipped: ${mirrorError.message}`,
-              },
-              filled: 0,
-            }
-          }
           const changed = writeTrackerCache(unique.values(), before, local, at)
+          const mirrorError = await mirrorTrackerSnapshot([...unique.values()], local, before, at)
 
           // Use the connection which already proved reachable for the handful of
           // closed tasks recent work names. A failed full sync is not immediately
@@ -581,7 +590,13 @@ export async function ingestTrackers(
           const backfill = await backfillTrackerTasks(s, m, missing, local, existing, at)
           activity ||= backfill.activity
           return {
-            result: { project: s.project, tasks: unique.size, changed, activity },
+            result: {
+              project: s.project,
+              tasks: unique.size,
+              changed,
+              activity,
+              ...(mirrorError ? { error: `hosted mirror skipped: ${mirrorError.message}` } : {}),
+            },
             filled: backfill.filled,
           }
         } catch (e) {
