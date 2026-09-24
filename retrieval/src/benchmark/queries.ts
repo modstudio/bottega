@@ -173,7 +173,7 @@ export const DOC_QUERIES: DocBenchmarkQuery[] = [
     'project',
     PLATFORM_SLUG,
     'roadmap',
-    "Measure how often agents' real questions find the right doc",
+    "Measure how often agents' real questions find the right doc, comparing keyword, embeddings and rerank.",
   ),
   doc(
     'doc-mcp-routing',
@@ -181,7 +181,7 @@ export const DOC_QUERIES: DocBenchmarkQuery[] = [
     'project',
     PLATFORM_SLUG,
     'design-mcp-agent-compatibility',
-    "Routing does not send an `--mcp` job to an agent that cannot use the job's required server.",
+    'When a job requires a server, routing does not send it to an agent that is incompatible with that server, and a run whose own probe shows the mismatch refuses before launch.',
   ),
   doc(
     'doc-durable-engine-revisit',
@@ -205,7 +205,7 @@ export const DOC_QUERIES: DocBenchmarkQuery[] = [
     'project',
     PLATFORM_SLUG,
     'system-map',
-    'Tasks and workflows are product, not machinery.',
+    'Tasks and workflows are product, not machinery. They are the surfaces the other projects take from here instead of maintaining four drifting copies.',
   ),
   doc(
     'doc-worktree-no-preference',
@@ -253,7 +253,7 @@ export const DOC_QUERIES: DocBenchmarkQuery[] = [
     'agent',
     'grok',
     'capabilities-observed',
-    'It discovers `<project>/.mcp.json` from its WORKING DIRECTORY',
+    'It discovers `<project>/.mcp.json` from its WORKING DIRECTORY — its own doctor names the source as `mcpJson` with the path — from both a main checkout and from a worktree carrying the `.mcp.json` symlink.',
   ),
   doc(
     'doc-qwen-schema',
@@ -277,7 +277,7 @@ export const DOC_QUERIES: DocBenchmarkQuery[] = [
     'machine',
     null,
     'local-model-host-network',
-    'the network is never the bottleneck',
+    "Against a 16.7 ms per-token decode, the network is never the bottleneck — a full context pack crosses in less than a sixth of one token's generation time. Faster networking would buy nothing.",
   ),
   doc(
     'doc-gx10-retrieval-tunnel',
@@ -285,7 +285,7 @@ export const DOC_QUERIES: DocBenchmarkQuery[] = [
     'machine',
     null,
     'local-model-host-tunnel',
-    'The second is not folded into the first so that a fault in retrieval cannot take the model endpoint down.',
+    '`com.user.gx10-services-tunnel` carries the retrieval services. The second is not folded into the first so that a fault in retrieval cannot take the model endpoint down.',
   ),
   doc(
     'doc-gx10-outage-attribution',
@@ -325,7 +325,7 @@ export const DOC_QUERIES: DocBenchmarkQuery[] = [
     'canon',
     PLATFORM_SLUG,
     '.agents/rules/20-build-and-buy.md',
-    'The architect researches current practice and maintained solutions before specifying and dispatching work.',
+    'The architect researches current practice and maintained solutions before specifying and dispatching work. This cannot be delegated to a networkless worker or answered from memory.',
   ),
   doc(
     'doc-unit-test-location',
@@ -349,7 +349,7 @@ export const DOC_QUERIES: DocBenchmarkQuery[] = [
     'canon',
     PLATFORM_SLUG,
     '.agents/rules/50-writing.md',
-    'Never narrate former names, abandoned approaches, dated decisions or the sequence by which the current state arose',
+    'Never narrate former names, abandoned approaches, dated decisions or the sequence by which the current state arose; Git holds that record.',
   ),
   doc(
     'doc-suggestion-promotion',
