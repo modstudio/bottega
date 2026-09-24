@@ -9,6 +9,15 @@ function usage(): never {
   throw new Error('usage: bun retrieval/src/search-cli.ts "<query>" [--k N] [--json]')
 }
 
+export function formatRefreshSummary(refresh: {
+  embedded: number
+  deleted: number
+  unchanged: number
+  stale: number
+}): string {
+  return `refresh: ${refresh.embedded} embedded, ${refresh.deleted} deleted, ${refresh.unchanged} unchanged, ${refresh.stale} stale`
+}
+
 async function main(argv: string[]): Promise<void> {
   if (argv.length === 1 && argv[0] === '--check') {
     const statuses = await probeEndpointStatuses(endpointsFromEnvironment(process.env))
@@ -36,9 +45,7 @@ async function main(argv: string[]): Promise<void> {
     console.log(JSON.stringify(output))
     return
   }
-  console.log(
-    `refresh: ${output.refresh.embedded} embedded, ${output.refresh.deleted} deleted, ${output.refresh.unchanged} unchanged`,
-  )
+  console.log(formatRefreshSummary(output.refresh))
   for (const result of output.results) {
     console.log(
       `${result.scope}/${result.subject ?? '_'}/${result.slug} · ${result.headingPath.join(' > ') || result.title}`,
@@ -48,9 +55,11 @@ async function main(argv: string[]): Promise<void> {
   }
 }
 
-try {
-  await main(process.argv.slice(2))
-} catch (error) {
-  console.error(error instanceof Error ? error.message : String(error))
-  process.exit(1)
+if (import.meta.main) {
+  try {
+    await main(process.argv.slice(2))
+  } catch (error) {
+    console.error(error instanceof Error ? error.message : String(error))
+    process.exit(1)
+  }
 }

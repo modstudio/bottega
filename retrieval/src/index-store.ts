@@ -5,7 +5,12 @@ import { Database } from 'bun:sqlite'
 import { mkdirSync } from 'node:fs'
 import { dirname } from 'node:path'
 import { EMBEDDING_DIMENSION, EMBEDDING_MODEL, INSTRUCTION_VERSION } from './contract.ts'
-import type { PlannedDelete, PlannedUpsert, StoredVectorRow } from './refresh-plan.ts'
+import type {
+  PlannedDelete,
+  PlannedUpsert,
+  StoredVectorIdentity,
+  StoredVectorRow,
+} from './refresh-plan.ts'
 
 const RETRIEVAL_BUSY_TIMEOUT_MS = 15_000
 
@@ -114,15 +119,42 @@ export function applyRefresh(database: Database, prepared: PreparedRefresh): App
       document=excluded.document, vector=excluded.vector
   `)
   const remove = database.query('DELETE FROM document_vector WHERE chunk_id = ?')
-  const currentHash = database.query<{ content_hash: string }, [string]>(
-    'SELECT content_hash FROM document_vector WHERE chunk_id = ?',
+  const currentIdentity = database.query<
+    {
+      content_hash: string
+      model: string
+      dimension: number
+      instruction_version: string
+    },
+    [string]
+  >(
+    `SELECT content_hash, model, dimension, instruction_version
+       FROM document_vector WHERE chunk_id = ?`,
   )
+  const observedIdentity = (chunkId: string): StoredVectorIdentity | null => {
+    const row = currentIdentity.get(chunkId)
+    return row
+      ? {
+          contentHash: row.content_hash,
+          model: row.model,
+          dimension: row.dimension,
+          instructionVersion: row.instruction_version,
+        }
+      : null
+  }
+  const sameIdentity = (
+    left: StoredVectorIdentity | null,
+    right: StoredVectorIdentity | null,
+  ): boolean =>
+    left?.contentHash === right?.contentHash &&
+    left?.model === right?.model &&
+    left?.dimension === right?.dimension &&
+    left?.instructionVersion === right?.instructionVersion
   return database
     .transaction(() => {
       const counts: AppliedRefresh = { embedded: 0, deleted: 0, stale: 0 }
       for (const candidate of prepared.delete) {
-        const current = currentHash.get(candidate.chunkId)?.content_hash ?? null
-        if (current !== candidate.observedContentHash) {
+        if (!sameIdentity(observedIdentity(candidate.chunkId), candidate.observed)) {
           counts.stale++
           continue
         }
@@ -130,8 +162,7 @@ export function applyRefresh(database: Database, prepared: PreparedRefresh): App
         counts.deleted++
       }
       for (const candidate of prepared.upsert) {
-        const current = currentHash.get(candidate.chunk.id)?.content_hash ?? null
-        if (current !== candidate.observedContentHash) {
+        if (!sameIdentity(observedIdentity(candidate.chunk.id), candidate.observed)) {
           counts.stale++
           continue
         }

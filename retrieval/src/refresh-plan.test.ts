@@ -42,16 +42,33 @@ describe('retrieval refresh plan', () => {
     ])
 
     expect(
-      plan.embed.map(({ chunk: value, observedContentHash }) => ({
+      plan.embed.map(({ chunk: value, observed }) => ({
         id: value.id,
-        observedContentHash,
+        observed,
       })),
     ).toEqual([
-      { id: 'changed', observedContentHash: 'old-hash' },
-      { id: 'contract', observedContentHash: 'contract-hash' },
-      { id: 'new', observedContentHash: null },
+      {
+        id: 'changed',
+        observed: {
+          contentHash: 'old-hash',
+          model: 'Qwen/Qwen3-Embedding-0.6B',
+          dimension: 1_024,
+          instructionVersion: 'doc-search-v1',
+        },
+      },
+      {
+        id: 'contract',
+        observed: {
+          contentHash: 'contract-hash',
+          model: 'Qwen/Qwen3-Embedding-0.6B',
+          dimension: 1_024,
+          instructionVersion: 'old',
+        },
+      },
+      { id: 'new', observed: null },
     ])
-    expect(plan.delete).toEqual([{ chunkId: 'vanished', observedContentHash: 'gone' }])
+    const { chunkId: _, ...vanishedIdentity } = stored('vanished', 'gone')
+    expect(plan.delete).toEqual([{ chunkId: 'vanished', observed: vanishedIdentity }])
     expect(plan.unchanged).toEqual(['same'])
   })
 })

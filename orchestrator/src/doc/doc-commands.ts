@@ -67,6 +67,15 @@ function docDelivery(value: string | undefined): 'inject' | 'demand' | undefined
   throw new Error('--delivery must be inject or demand')
 }
 
+export function formatDocSearchRefresh(refresh: {
+  embedded: number
+  deleted: number
+  unchanged: number
+  stale: number
+}): string {
+  return `refresh: ${refresh.embedded} embedded, ${refresh.deleted} deleted, ${refresh.unchanged} unchanged, ${refresh.stale} stale`
+}
+
 async function semanticSearch(
   argv: string[],
   flags: DocFlags,
@@ -81,9 +90,7 @@ async function semanticSearch(
     presentation.log(JSON.stringify(output))
     return
   }
-  presentation.log(
-    `refresh: ${output.refresh.embedded} embedded, ${output.refresh.deleted} deleted, ${output.refresh.unchanged} unchanged`,
-  )
+  presentation.log(formatDocSearchRefresh(output.refresh))
   for (const result of output.results) {
     presentation.log(
       `${result.scope}/${result.subject ?? '_'}/${result.slug} · ${result.headingPath.join(' > ') || result.title}`,

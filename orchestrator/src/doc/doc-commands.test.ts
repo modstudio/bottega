@@ -17,7 +17,7 @@ import {
 } from '../porting/porting.ts'
 import { upsertProject } from '../project/projects.ts'
 import { reviewCommand } from '../review/review-commands.ts'
-import { docCommand } from './doc-commands.ts'
+import { docCommand, formatDocSearchRefresh } from './doc-commands.ts'
 import {
   removeDoc as deleteDoc,
   diffDocRevisions,
@@ -30,6 +30,12 @@ import {
 } from './docs.ts'
 
 const listPairs = () => db().query('SELECT * FROM port_pair ORDER BY id').all() as PortPair[]
+
+test('orch doc search human output reports stale refresh work', () => {
+  expect(formatDocSearchRefresh({ embedded: 2, deleted: 1, unchanged: 3, stale: 4 })).toBe(
+    'refresh: 2 embedded, 1 deleted, 3 unchanged, 4 stale',
+  )
+})
 
 async function command(args: string[], stdin = '') {
   const values = new Map<string, string>()

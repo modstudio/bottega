@@ -27,7 +27,7 @@ test('two handles interleave cold schema creation and reject a stale repeated re
       docTitle: 'Doc',
       headingPath: [],
     }
-    const candidate = { chunk, contentHash: 'hash', observedContentHash: null }
+    const candidate = { chunk, contentHash: 'hash', observed: null }
     const prepared = { delete: [], upsert: [{ ...candidate, document: 'one', vector }] }
     expect(applyRefresh(first, prepared)).toEqual({ embedded: 1, deleted: 0, stale: 0 })
     expect(applyRefresh(second, prepared)).toEqual({ embedded: 0, deleted: 0, stale: 1 })
@@ -41,7 +41,7 @@ test('two handles interleave cold schema creation and reject a stale repeated re
   }
 })
 
-test('a refresh planned from an old snapshot cannot overwrite a newer committed corpus', () => {
+test('stale deletes and upserts lose when another handle changes only the instruction version', () => {
   const directory = mkdtempSync(join(tmpdir(), 'retrieval-stale-refresh-test-'))
   const path = join(directory, 'retrieval.db')
   const first = new Database(path, { create: true })
@@ -76,24 +76,42 @@ test('a refresh planned from an old snapshot cannot overwrite a newer committed 
     )
     applyRefresh(first, prepare(seedPlan))
 
-    const snapshot = storedRows(first)
+    first.exec("UPDATE document_vector SET instruction_version = 'old-contract'")
+    const oldContractSnapshot = storedRows(first)
     const older = planRefresh(
-      [{ chunk: docChunk('changed', 'older'), contentHash: 'older-hash' }],
-      snapshot,
+      [{ chunk: docChunk('changed', 'seed'), contentHash: 'seed-hash' }],
+      oldContractSnapshot,
     )
     const newer = planRefresh(
       [
-        { chunk: docChunk('changed', 'newer'), contentHash: 'newer-hash' },
-        { chunk: docChunk('removed', 'newer removed'), contentHash: 'newer-removed-hash' },
+        { chunk: docChunk('changed', 'seed'), contentHash: 'seed-hash' },
+        { chunk: docChunk('removed', 'seed removed'), contentHash: 'removed-hash' },
       ],
-      snapshot,
+      oldContractSnapshot,
     )
 
     expect(applyRefresh(second, prepare(newer))).toEqual({ embedded: 2, deleted: 0, stale: 0 })
     expect(applyRefresh(first, prepare(older))).toEqual({ embedded: 0, deleted: 0, stale: 2 })
-    expect(indexedRows(first).map(({ chunkId, text }) => ({ chunkId, text }))).toEqual([
-      { chunkId: 'changed', text: 'newer' },
-      { chunkId: 'removed', text: 'newer removed' },
+    expect(
+      indexedRows(first).map(({ chunkId, text, contentHash, instructionVersion }) => ({
+        chunkId,
+        text,
+        contentHash,
+        instructionVersion,
+      })),
+    ).toEqual([
+      {
+        chunkId: 'changed',
+        text: 'seed',
+        contentHash: 'seed-hash',
+        instructionVersion: 'doc-search-v1',
+      },
+      {
+        chunkId: 'removed',
+        text: 'seed removed',
+        contentHash: 'removed-hash',
+        instructionVersion: 'doc-search-v1',
+      },
     ])
   } finally {
     first.close()
