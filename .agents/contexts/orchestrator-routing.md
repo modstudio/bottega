@@ -9,7 +9,7 @@ paths:
   - orchestrator/src/**/agents.ts
   - orchestrator/src/**/agent-*.ts
   - orchestrator/src/**/capabilities.ts
-  - orchestrator/src/**/local-host.ts
+  - orchestrator/src/**/model-host.ts
   - orchestrator/src/**/failover.ts
   - orchestrator/src/**/failure*.ts
   - orchestrator/src/**/recalibration.ts
@@ -151,7 +151,7 @@ An agent is a row: harness, backend, and model. None of those is a capability de
 
 # Local model
 
-`local-acp` drives the OpenAI-compatible endpoint through Goose ACP. Register with `orch agent add`, then probe. `orch doctor` prints the command when `ORCH_LOCAL_BASE_URL` and `ORCH_LOCAL_MODEL` are set and no enabled ACP row points at that endpoint. Another local model is another row, not another driver. `qwen-local` remains only as a disabled referent so its recorded runs keep their meaning.
+`local-acp` drives the OpenAI-compatible endpoint through Goose ACP. Register with `orch agent add`, then probe. `orch doctor` prints the command when `ORCH_MODEL_HOST_URL` and `ORCH_MODEL_HOST_MODEL` are set and no enabled ACP row points at that endpoint. Another local model is another row, not another driver. `qwen-local` remains only as a disabled referent so its recorded runs keep their meaning.
 
 `available()` is configuration; `orch doctor` is reachability. The registration probe is the authority on file tools and structured output; `/v1/models` is the authority on the served window (`LOCAL_CONTEXT_TOKENS`). `local-acp` must be served with a window of at least a deep job's `contextTokens` plus `OUTPUT_RESERVE`.
 
