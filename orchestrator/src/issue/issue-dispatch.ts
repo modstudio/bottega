@@ -255,6 +255,15 @@ export type FiledIssueQueueState = {
   unscored: FiledIssueLoopRun[]
 }
 
+export function filedIssueStateForProject(
+  state: FiledIssueQueueState,
+  project: string | null,
+): FiledIssueQueueState {
+  return project === PLATFORM_SLUG
+    ? state
+    : { waiting: [], unworked: [], blocked: null, unscored: [] }
+}
+
 export function unscoredFiledIssueLoopRuns(): FiledIssueLoopRun[] {
   const rows = db()
     .query(
@@ -272,7 +281,9 @@ export function unscoredFiledIssueLoopRuns(): FiledIssueLoopRun[] {
   })
 }
 
-export async function filedIssueQueueState(): Promise<FiledIssueQueueState> {
+export async function filedIssueQueueState(
+  project: string | null | undefined = undefined,
+): Promise<FiledIssueQueueState> {
   const rows = JSON.parse(
     await hub(['task', 'list', '--project', PLATFORM_SLUG, '--json']),
   ) as FiledIssueTaskRow[]
@@ -290,10 +301,11 @@ export async function filedIssueQueueState(): Promise<FiledIssueQueueState> {
     title,
   }))
   const held = heldIssueTrees()
-  return {
+  const state = {
     waiting,
     unworked,
     blocked: held.length >= MAX_HELD_ISSUE_TREES ? { held, limit: MAX_HELD_ISSUE_TREES } : null,
     unscored: unscoredFiledIssueLoopRuns(),
   }
+  return project === undefined ? state : filedIssueStateForProject(state, project)
 }

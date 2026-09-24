@@ -29,15 +29,20 @@ export function register(program: Command): void {
     .command('inbox')
     .option('--all')
     .option('--active')
+    .option('--cwd <path>')
     .option('--json')
     .allowExcessArguments(false)
     .action(async (options) => {
-      await runInboxCommand(optionFlags(options), {
-        log,
-        dur: duration,
-        chainHasPendingDelivery,
-        strandedRecovery,
-      })
+      await runInboxCommand(
+        optionFlags(options),
+        {
+          log,
+          dur: duration,
+          chainHasPendingDelivery,
+          strandedRecovery,
+        },
+        options.cwd,
+      )
     })
 
   program

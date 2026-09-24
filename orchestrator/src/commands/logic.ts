@@ -187,12 +187,13 @@ export function register(program: Command): void {
   program
     .command('fix-defect [key]')
     .option('--waiting')
+    .option('--cwd <path>')
     .option('--json')
     .allowExcessArguments(false)
     .action((key, options) =>
       fixDefectCommand(
         key,
-        { waiting: Boolean(options.waiting), json: Boolean(options.json) },
+        { waiting: Boolean(options.waiting), json: Boolean(options.json), cwd: options.cwd },
         presentation,
       ),
     )

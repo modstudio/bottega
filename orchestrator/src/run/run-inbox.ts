@@ -14,6 +14,43 @@ type RunInboxPresentation = {
   strandedRecovery(rootId: number): string
 }
 
+export function rowsForInboxProject<T extends { repo: string | null }>(
+  rows: T[],
+  project: string | null,
+): T[] {
+  return project === null ? [] : rows.filter((row) => row.repo === project)
+}
+
+function rowsForInboxView<T extends { repo: string | null; session_id: string | null }>(
+  rows: T[],
+  scopedProject: string | null | undefined,
+  defaultProject: string | null,
+  mine: boolean,
+  sid: string | null,
+): T[] {
+  if (scopedProject !== undefined) return rowsForInboxProject(rows, scopedProject)
+  if (!mine) return rows
+  if (defaultProject)
+    return rows.filter(
+      (row) => row.repo === defaultProject || (sid !== null && row.session_id === sid),
+    )
+  return rows.filter((row) => sid !== null && row.session_id === sid)
+}
+
+function inboxJson(rows: object[], scopedProject: string | null | undefined): string {
+  if (scopedProject === undefined) return JSON.stringify(rows)
+  return JSON.stringify({
+    cwd_registered: scopedProject !== null,
+    project: scopedProject,
+    rows,
+  })
+}
+
+function emptyInboxMessage(project: { name: string } | null, mine: boolean): string {
+  if (project) return `no open questions for ${project.name}`
+  return mine ? 'no questions waiting on you' : 'no open questions'
+}
+
 async function rulingsHeader(project: { name: string } | null): Promise<string | null> {
   if (!project) return null
   const rulings = (await resolveProjectAutonomy(project.name, undefined, undefined)).rulings
@@ -31,13 +68,17 @@ function presentHeader(header: string | null): string[] {
 export async function runInboxCommand(
   flags: RunInboxFlags,
   presentation: RunInboxPresentation,
+  requestedCwd?: string,
 ): Promise<void> {
   const { has } = flags
   const { log, dur, chainHasPendingDelivery, strandedRecovery } = presentation
   const sid = sessionId()
   const mine = !has('all')
   const activeOnly = has('active')
-  const project = mine ? projectAt(process.cwd()) : null
+  const scoped = requestedCwd !== undefined
+  const scopedProject = scoped ? projectAt(requestedCwd) : null
+  const project = scoped ? scopedProject : mine ? projectAt(process.cwd()) : null
+  const scopedProjectName = scoped ? (scopedProject?.name ?? null) : undefined
   const header = await rulingsHeader(project)
   const cutoff = new Date(Date.now() - SESSION_LIVE_MS).toISOString()
   const hasSessionSeen = Boolean(
@@ -98,11 +139,7 @@ export async function runInboxCommand(
   // Inside a registered project, the default view is the union of questions in
   // that project and questions owned by this session. Visibility does not make
   // a question owned by another session answerable.
-  const rows = mine
-    ? project
-      ? allRows.filter((q) => q.repo === project.name || (sid !== null && q.session_id === sid))
-      : allRows.filter((q) => sid !== null && q.session_id === sid)
-    : allRows
+  const rows = rowsForInboxView(allRows, scopedProjectName, project?.name ?? null, mine, sid)
   const canAnswer = (owner: string | null) => owner === null || (sid !== null && owner === sid)
   const active = rows.filter(isLive)
   const terminal = rows.filter((q) => !active.includes(q))
@@ -110,29 +147,26 @@ export async function runInboxCommand(
   const visible = active.filter((q) => !canAnswer(q.session_id))
 
   if (has('json')) {
-    log(
-      JSON.stringify(
-        rows.map((q) => ({
-          question_id: q.id,
-          run_id: q.run_id,
-          answer_id: q.root_id,
-          job: q.job,
-          agent: q.agent,
-          repo: q.repo,
-          asked_at: q.asked_at,
-          // Kept as a nullable compatibility field: false used to assert death,
-          // which a last-seen timestamp cannot establish.
-          session_live: q.session_recent ? true : null,
-          session_liveness: q.session_recent ? 'live' : 'unknown',
-          can_answer: isLive(q) && canAnswer(q.session_id),
-          question: q.question,
-          options: q.options ? (JSON.parse(q.options) as string[]) : [],
-          recommendation: q.recommendation,
-          why: q.why,
-          status: q.root_voided ? 'voided' : q.root_status,
-        })),
-      ),
-    )
+    const presentedRows = rows.map((q) => ({
+      question_id: q.id,
+      run_id: q.run_id,
+      answer_id: q.root_id,
+      job: q.job,
+      agent: q.agent,
+      repo: q.repo,
+      asked_at: q.asked_at,
+      // Kept as a nullable compatibility field: false used to assert death,
+      // which a last-seen timestamp cannot establish.
+      session_live: q.session_recent ? true : null,
+      session_liveness: q.session_recent ? 'live' : 'unknown',
+      can_answer: isLive(q) && canAnswer(q.session_id),
+      question: q.question,
+      options: q.options ? (JSON.parse(q.options) as string[]) : [],
+      recommendation: q.recommendation,
+      why: q.why,
+      status: q.root_voided ? 'voided' : q.root_status,
+    }))
+    log(inboxJson(presentedRows, scopedProjectName))
     return
   }
 
@@ -140,7 +174,7 @@ export async function runInboxCommand(
     log(line)
   })
 
-  const recoverable = db()
+  const queriedRecoverable = db()
     .query(
       `SELECT root.id, root.agent, root.job, root.repo, root.session_id
        FROM run root
@@ -151,7 +185,7 @@ export async function runInboxCommand(
              AND pending.answered_at IS NOT NULL
              AND pending.delivery_pending_at IS NOT NULL
         ))
-        ${mine ? (project ? 'AND (root.repo = ? OR root.session_id = ?)' : 'AND root.session_id = ?') : ''}
+        ${!scoped && mine ? (project ? 'AND (root.repo = ? OR root.session_id = ?)' : 'AND root.session_id = ?') : ''}
         AND NOT EXISTS (
           SELECT 1 FROM question q JOIN run owner ON owner.id = q.run_id
            WHERE (owner.id = root.id OR owner.parent_run_id = root.id)
@@ -163,22 +197,17 @@ export async function runInboxCommand(
         )
       ORDER BY root.id`,
     )
-    .all(...(mine ? (project ? [project.name, sid] : [sid]) : [])) as {
+    .all(...(!scoped && mine ? (project ? [project.name, sid] : [sid]) : [])) as {
     id: number
     agent: string
     job: string
     repo: string | null
     session_id: string | null
   }[]
+  const recoverable = rowsForInboxView(queriedRecoverable, scopedProjectName, null, false, sid)
 
   if (!rows.length && !recoverable.length) {
-    log(
-      mine && project
-        ? `no open questions for ${project.name}`
-        : mine
-          ? 'no questions waiting on you'
-          : 'no open questions',
-    )
+    log(emptyInboxMessage(project, mine))
     return
   }
   let lastRun = -1

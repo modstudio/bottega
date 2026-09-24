@@ -4,7 +4,7 @@ import { addRun } from '../../test/fixtures/store.ts'
 import { db } from '../database/db.ts'
 import { VOIDED_SQL, voidedSql } from '../evidence/evidence-query.ts'
 import { upsertProject } from '../project/projects.ts'
-import { runInboxCommand } from './run-inbox.ts'
+import { rowsForInboxProject, runInboxCommand } from './run-inbox.ts'
 
 const normalize = (sql: string) => sql.replace(/\s+/g, ' ').trim()
 
@@ -21,7 +21,9 @@ test('inbox voided membership is VOIDED_SQL, not a second copy', () => {
 beforeEach(() => {
   process.env.CLAUDE_CODE_SESSION_ID = 'orch-test-session'
 })
-async function inbox(options: { all?: boolean; active?: boolean; json?: boolean } = {}) {
+async function inbox(
+  options: { all?: boolean; active?: boolean; json?: boolean; cwd?: string } = {},
+) {
   const lines: string[] = []
   await runInboxCommand(
     { has: (name) => Boolean(options[name as keyof typeof options]) },
@@ -38,9 +40,26 @@ async function inbox(options: { all?: boolean; active?: boolean; json?: boolean 
         ),
       strandedRecovery: (root) => `stranded — orch retry ${root} --agent`,
     },
+    options.cwd,
   )
   return lines.join('\n')
 }
+
+test('explicit project scope keeps only that project and an unregistered cwd keeps nothing', () => {
+  const rows = [
+    { repo: 'here', id: 1 },
+    { repo: 'elsewhere', id: 2 },
+    { repo: null, id: 3 },
+  ]
+  expect(rowsForInboxProject(rows, 'here')).toEqual([{ repo: 'here', id: 1 }])
+  expect(rowsForInboxProject(rows, null)).toEqual([])
+})
+
+test('scoped inbox JSON identifies an unregistered cwd', async () => {
+  expect(
+    JSON.parse(await inbox({ all: true, active: true, json: true, cwd: '/unregistered' })),
+  ).toEqual({ cwd_registered: false, project: null, rows: [] })
+})
 const question = (run: number, text: string) =>
   db()
     .query('INSERT INTO question (run_id,asked_at,question) VALUES (?,?,?) RETURNING id')
