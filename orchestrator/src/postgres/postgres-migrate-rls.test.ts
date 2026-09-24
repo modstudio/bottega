@@ -348,7 +348,10 @@ realPostgres('RLS proof against real Postgres', () => {
     expect(visible.stdout.split('\n')).toEqual(['1', '0', '1', '0', '0'])
   })
 
-  registerOwnedCanonPrivacyProof(authSpaceA, authUserA, authUserB, SPACE_A)
+  registerOwnedCanonPrivacyProof(
+    () => ({ spaceId: authSpaceA, ownerUserId: authUserA, otherUserId: authUserB }),
+    SPACE_A,
+  )
 
   test('CLI whoami prints the user, active space, and only that user memberships', async () => {
     recordSession.setToken(tokenB)

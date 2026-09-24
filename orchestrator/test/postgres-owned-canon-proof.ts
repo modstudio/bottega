@@ -3,12 +3,11 @@ import { newRecordId, RECORD_ACTOR_ROLE, RECORD_OWNER_ROLE } from '../../shared/
 import { asSpace, psql, succeeds } from './fixtures/postgres-rls.ts'
 
 export function registerOwnedCanonPrivacyProof(
-  spaceId: string,
-  ownerUserId: string,
-  otherUserId: string,
+  authIds: () => { spaceId: string; ownerUserId: string; otherUserId: string },
   fixtureSpaceId: string,
 ): void {
   test('another user in the same space cannot read owned canon', () => {
+    const { spaceId, ownerUserId, otherUserId } = authIds()
     const ownedDoc = newRecordId()
     const membership = newRecordId()
     succeeds(
