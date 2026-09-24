@@ -391,7 +391,9 @@ type MirrorBody = {
 type MirrorIdentity = { id: string; spaceId: string; naturalKey: string }
 type MirrorLegacyLocalIdHolder = { id: string; spaceId: string; legacyLocalId: number }
 type MirrorCollisionDecision =
-  | { action: 'insert' | 'update-same-row' | 'idempotent-duplicate' }
+  | { action: 'insert' }
+  | { action: 'update-same-row' }
+  | { action: 'idempotent-duplicate' }
   | { action: 'adopt'; id: string }
   | { action: 'refuse'; reason: string }
 
@@ -437,7 +439,7 @@ export function mirrorCollisionDecision(
   incoming: MirrorIdentity,
   existing: MirrorIdentity | null,
   sameRow: 'update' | 'idempotent',
-  identity: 'natural-key' | 'id' = 'natural-key',
+  identity: 'natural-key' | 'id' | 'status-event' = 'natural-key',
   legacyLocalIdHolder: MirrorLegacyLocalIdHolder | null = null,
   mayAdopt = false,
   naturalKeyHolder: MirrorIdentity | null = null,
@@ -451,8 +453,13 @@ export function mirrorCollisionDecision(
         `to the id for ${incoming.naturalKey}, or ask the hosted-space operator to resolve the id collision`,
     }
   const naturalKeyCollision =
-    identity === 'natural-key'
-      ? naturalKeyCollisionDecision(incoming, existing, mayAdopt, naturalKeyHolder)
+    identity !== 'id'
+      ? naturalKeyCollisionDecision(
+          incoming,
+          existing,
+          identity === 'status-event' || mayAdopt,
+          naturalKeyHolder,
+        )
       : null
   if (naturalKeyCollision) return naturalKeyCollision
   if (!existing) {
@@ -504,6 +511,68 @@ function selectedMirrorIdentity<T extends { id: string; space_id: string }>(
 
 function localMirrorNaturalKey(kind: 'comment' | 'document' | 'status event', id: number | null) {
   return id === null ? `${kind} with no local id` : `${kind} ${id}`
+}
+
+function statusEventMirrorNaturalKey(row: HostedStatusEvent) {
+  return `status event for task ${row.task_id ?? row.task_key} to ${row.to_status} at ${row.at}`
+}
+
+type HostedStatusEventHolder = {
+  id: string
+  space_id: string
+  legacy_local_id: number | null
+  task_id: string | null
+  from_status: string | null
+}
+
+async function statusEventNaturalKeyHolder(
+  tx: SQL,
+  identity: TaskIdentity,
+  row: HostedStatusEvent,
+): Promise<HostedStatusEventHolder | undefined> {
+  if (row.task_id)
+    return rows<HostedStatusEventHolder>(
+      await tx`SELECT id,space_id,legacy_local_id,task_id,from_status
+        FROM hub_task_status_event
+        WHERE space_id=${identity.spaceId}::uuid
+          AND (task_id=${row.task_id}::uuid OR
+            (task_id IS NULL AND task_key=${row.task_key}))
+          AND to_status=${row.to_status} AND at=${row.at}::timestamptz`,
+    )[0]
+  return rows<HostedStatusEventHolder>(
+    await tx`SELECT id,space_id,legacy_local_id,task_id,from_status
+      FROM hub_task_status_event
+      WHERE space_id=${identity.spaceId}::uuid AND task_key=${row.task_key}
+        AND to_status=${row.to_status} AND at=${row.at}::timestamptz`,
+  )[0]
+}
+
+async function updateMirroredStatusEvent(
+  tx: SQL,
+  row: HostedStatusEvent,
+  taskId: string | null,
+  decision: { action: 'idempotent-duplicate' } | { action: 'adopt'; id: string },
+  naturalKeyHolder: HostedStatusEventHolder | undefined,
+): Promise<MirrorAdoption | null> {
+  const id = decision.action === 'adopt' ? decision.id : row.id
+  const naturalKeyAdoption = decision.action === 'adopt' && naturalKeyHolder?.id === decision.id
+  if (naturalKeyAdoption) {
+    if (naturalKeyHolder.from_status !== row.from_status)
+      console.error(
+        `hub: status event ${decision.id} kept from_status ${naturalKeyHolder.from_status ?? 'null'} instead of incoming ${row.from_status ?? 'null'}`,
+      )
+    await tx`UPDATE hub_task_status_event SET
+      legacy_local_id=COALESCE(legacy_local_id,${row.legacy_local_id}),
+      task_id=COALESCE(task_id,${taskId}::uuid)
+      WHERE id=${id}::uuid`
+  } else
+    await tx`UPDATE hub_task_status_event SET
+      legacy_local_id=COALESCE(legacy_local_id,${row.legacy_local_id}),
+      task_key=${row.task_key},task_id=${taskId}::uuid
+      WHERE id=${id}::uuid`
+  return decision.action === 'adopt'
+    ? { table: 'task_status_event', legacy_local_id: row.legacy_local_id!, id }
+    : null
 }
 
 async function mirrorTaskRow(
@@ -710,6 +779,10 @@ async function mirrorStatusEventRow(
             WHERE space_id=${identity.spaceId}::uuid AND legacy_local_id=${row.legacy_local_id}`,
         )[0]
       : undefined
+  const naturalKeyHolder =
+    !existing && !legacyLocalIdHolder
+      ? await statusEventNaturalKeyHolder(tx, identity, row)
+      : undefined
   const decision = mirrorCollisionDecision(
     {
       id: row.id,
@@ -720,7 +793,7 @@ async function mirrorStatusEventRow(
       localMirrorNaturalKey('status event', selected.legacy_local_id),
     ),
     'idempotent',
-    'id',
+    'status-event',
     legacyLocalIdHolder
       ? {
           id: legacyLocalIdHolder.id,
@@ -729,22 +802,11 @@ async function mirrorStatusEventRow(
         }
       : null,
     row.newly_assigned,
+    selectedMirrorIdentity(naturalKeyHolder, () => statusEventMirrorNaturalKey(row)),
   )
-  const proceed = applyMirrorDecision(decision)
-  if (decision.action === 'idempotent-duplicate' || decision.action === 'adopt') {
-    const id = decision.action === 'adopt' ? decision.id : row.id
-    await tx`UPDATE hub_task_status_event SET legacy_local_id=COALESCE(legacy_local_id,${row.legacy_local_id}),
-      task_key=${row.task_key},task_id=${taskId}::uuid
-      WHERE id=${id}::uuid`
-  }
-  if (!proceed)
-    return decision.action === 'adopt'
-      ? {
-          table: 'task_status_event',
-          legacy_local_id: row.legacy_local_id!,
-          id: decision.id,
-        }
-      : null
+  applyMirrorDecision(decision)
+  if (decision.action === 'idempotent-duplicate' || decision.action === 'adopt')
+    return updateMirroredStatusEvent(tx, row, taskId, decision, naturalKeyHolder)
   await tx`INSERT INTO hub_task_status_event
     (id,legacy_local_id,space_id,project_name,task_key,task_id,at,from_status,to_status,created_at,updated_at,deleted_at)
     VALUES (${row.id}::uuid,${row.legacy_local_id},${identity.spaceId}::uuid,${row.project_name},${row.task_key},${taskId}::uuid,${row.at}::timestamptz,${row.from_status},${row.to_status},${row.created_at}::timestamptz,${row.updated_at}::timestamptz,${row.deleted_at}::timestamptz)`

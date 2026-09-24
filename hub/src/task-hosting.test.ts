@@ -100,6 +100,21 @@ describe('hosted-only task safety', () => {
     ).toEqual({ action: 'idempotent-duplicate' })
     expect(
       mirrorCollisionDecision(
+        { id: 'pushed-id', spaceId: 'space-a', naturalKey: 'status event DEV-1/open/at' },
+        null,
+        'idempotent',
+        'status-event',
+        null,
+        false,
+        {
+          id: 'collector-id',
+          spaceId: 'space-a',
+          naturalKey: 'status event DEV-1/open/at',
+        },
+      ),
+    ).toEqual({ action: 'adopt', id: 'collector-id' })
+    expect(
+      mirrorCollisionDecision(
         { id: 'id-1', spaceId: 'space-b', naturalKey: 'document 12' },
         { id: 'id-1', spaceId: 'space-a', naturalKey: 'document with no local id' },
         'update',

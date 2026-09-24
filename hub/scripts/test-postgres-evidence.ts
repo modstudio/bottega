@@ -270,6 +270,62 @@ try {
     )
       throw new Error('status-event adoption did not resolve the legacy holder task id')
 
+    const collectorEventId = '01990000-0000-7000-8000-000000000687'
+    const pushedEventId = '01990000-0000-7000-8000-000000000688'
+    const naturalEventAt = '2026-09-17T12:13:00.000Z'
+    await mirrorHostedTasks(actorUrl, identity, {
+      tasks: [],
+      statusEvents: [
+        {
+          id: collectorEventId,
+          legacy_local_id: null,
+          task_key: renamed.key,
+          task_id: null,
+          project_name: PLATFORM_SLUG,
+          at: naturalEventAt,
+          from_status: 'open',
+          to_status: 'active',
+          created_at: naturalEventAt,
+          updated_at: naturalEventAt,
+          deleted_at: null,
+        },
+      ],
+    })
+    const naturalAdoption = await mirrorHostedTasks(actorUrl, identity, {
+      tasks: [],
+      statusEvents: [
+        {
+          id: pushedEventId,
+          legacy_local_id: 78,
+          newly_assigned: false,
+          task_key: renamed.key,
+          task_id: mirrored.id,
+          project_name: PLATFORM_SLUG,
+          at: naturalEventAt,
+          from_status: 'backlog',
+          to_status: 'active',
+          created_at: naturalEventAt,
+          updated_at: naturalEventAt,
+          deleted_at: null,
+        },
+      ],
+    })
+    const naturalHolder = await admin`SELECT id,legacy_local_id,task_id,from_status
+      FROM hub_task_status_event
+      WHERE space_id=${SPACE_A}::uuid AND task_key=${renamed.key}
+        AND to_status='active' AND at=${naturalEventAt}::timestamptz`
+    if (
+      naturalAdoption.adoptions[0]?.table !== 'task_status_event' ||
+      naturalAdoption.adoptions[0]?.id !== collectorEventId ||
+      naturalAdoption.adoptions[0]?.legacy_local_id !== 78 ||
+      naturalHolder.length !== 1 ||
+      naturalHolder[0]?.id !== collectorEventId ||
+      Number(naturalHolder[0]?.legacy_local_id) !== 78 ||
+      naturalHolder[0]?.task_id !== mirrored.id ||
+      naturalHolder[0]?.from_status !== 'open'
+    )
+      throw new Error('status-event natural-key holder was not adopted without insertion')
+
     if (await hostedTaskDetail(actorUrl, { userId: USER, spaceId: SPACE_B }, created.key))
       throw new Error('another space observed hosted task detail')
     const other = await listHostedTasks(actorUrl, { userId: USER, spaceId: SPACE_B }, {})
