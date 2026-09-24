@@ -4,8 +4,9 @@ import { recordSpaceRole, refuseDuplicateRecordSpaceSlug } from './record-space.
 describe('record space decisions', () => {
   test('accepts only supported invitation roles', () => {
     expect(recordSpaceRole('member')).toBe('member')
+    expect(recordSpaceRole('admin')).toBe('admin')
     expect(recordSpaceRole('owner')).toBe('owner')
-    expect(() => recordSpaceRole('operator')).toThrow('must be member or owner')
+    expect(() => recordSpaceRole('operator')).toThrow('must be member, admin, or owner')
   })
 
   test('refuses creating a second space with the same slug and names the existing id', () => {

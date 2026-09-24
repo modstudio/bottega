@@ -3,11 +3,11 @@
 
 import { SQL } from 'bun'
 import { newRecordId } from '../../../shared/record/schema.ts'
+import { type RecordApiClient, recordApiClient } from './record-api-client.ts'
 import { setActiveRecordSpace } from './record-auth.ts'
 import { currentRecordUserSession } from './record-session.ts'
 
-const RECORD_INVITATION_TTL_DAYS = 7
-const RECORD_SPACE_ROLES = ['member', 'owner'] as const
+const RECORD_SPACE_ROLES = ['member', 'admin', 'owner'] as const
 export type RecordSpaceRole = (typeof RECORD_SPACE_ROLES)[number]
 
 export type RecordMembership = {
@@ -28,8 +28,8 @@ export type RecordInvitation = {
 }
 
 export function recordSpaceRole(value: string): RecordSpaceRole {
-  if (value === 'member' || value === 'owner') return value
-  throw new Error('record invitation role must be member or owner')
+  if (value === 'member' || value === 'admin' || value === 'owner') return value
+  throw new Error('record invitation role must be member, admin, or owner')
 }
 
 function resolveRecordSpace(
@@ -148,38 +148,18 @@ export async function inviteToActiveRecordSpace(
   url: string,
   email: string,
   role: RecordSpaceRole,
+  client: Pick<RecordApiClient, 'inviteMember'> = recordApiClient(),
 ): Promise<string> {
-  return withRecordSession(url, async (tx, current) => {
-    if (!current.activeSpaceId) {
-      throw new Error('record session has no active space; run `orch record space switch <slug>`')
-    }
-    const callers = await tx`
-      SELECT role FROM membership
-      WHERE user_id=${current.user.id}::uuid AND space_id=${current.activeSpaceId}::uuid
-    `
-    if (callers[0]?.role !== 'owner') {
-      throw new Error('record space invitation requires the owner role in the active space')
-    }
-    const normalizedEmail = email.toLowerCase()
-    const pending = await tx`
-      SELECT id FROM invitation
-      WHERE space_id=${current.activeSpaceId}::uuid AND lower(email)=${normalizedEmail}
-        AND status='pending' AND expires_at > now()
-      ORDER BY created_at LIMIT 1
-    `
-    if (pending[0]) {
-      throw new Error(`pending record invitation already exists: ${String(pending[0].id)}`)
-    }
-    const id = newRecordId()
-    await tx`
-      INSERT INTO invitation
-        (id,space_id,email,inviter_id,role,status,expires_at,created_at)
-      VALUES
-        (${id}::uuid,${current.activeSpaceId}::uuid,${normalizedEmail},${current.user.id}::uuid,
-         ${role},'pending',now() + (${RECORD_INVITATION_TTL_DAYS} || ' days')::interval,now())
-    `
-    return id
+  const current = await currentRecordUserSession(url)
+  if (!current.activeSpaceId) {
+    throw new Error('record session has no active space; run `orch record space switch <slug>`')
+  }
+  const invitation = await client.inviteMember({
+    email,
+    role,
+    organizationId: current.activeSpaceId,
   })
+  return invitation.id
 }
 
 export async function pendingRecordInvitations(url: string): Promise<RecordInvitation[]> {

@@ -1,5 +1,11 @@
 import { expect, test } from 'bun:test'
-import { RECORD_SIGN_UP_INVITATION_REQUIRED, recordAuth } from '../../src/record/record-auth.ts'
+import { RECORD_AUTH_ROLE } from '../../../shared/record/schema.ts'
+import type { RecordApiClient } from '../../src/record/record-api-client.ts'
+import {
+  bearerHeaders,
+  RECORD_SIGN_UP_INVITATION_REQUIRED,
+  recordAuth,
+} from '../../src/record/record-auth.ts'
 
 export const SIGN_UP_AUTH = {
   emailA: 'auth-a@example.test',
@@ -29,6 +35,19 @@ export const SIGN_UP_CLI_OUTPUT = [
   `signed up ${SIGN_UP_AUTH.emailA}`,
   `signed up ${SIGN_UP_AUTH.emailB}`,
 ]
+
+export function invitationApiClient(
+  auth: ReturnType<typeof recordAuth>,
+  token: () => string | null,
+): Pick<RecordApiClient, 'inviteMember'> {
+  return {
+    inviteMember: (input) => {
+      const current = token()
+      if (!current) throw new Error('record test session has no token')
+      return auth.api.createInvitation({ headers: bearerHeaders(current), body: input })
+    },
+  }
+}
 
 export function signUpInvitationFixtures(spaceId: string, inviterId: string): string {
   return `
@@ -121,4 +140,68 @@ export function registerInvitationAuthProofs(
     proveInvitationPredicate(query))
   test('sign-up requires the same pending invitation state without leaking its status', () =>
     proveInvitationOnlySignUp(actorUrl, succeeds, password))
+  test('the auth role cannot read non-auth record tables', () => {
+    const denied = query(RECORD_AUTH_ROLE, 'auth-password', 'SELECT count(*) FROM hub_task;')
+    expect(denied.code).not.toBe(0)
+    expect(denied.stderr).toContain('permission denied for table hub_task')
+  })
+  registerNewInviteeInvitationProofs(actorUrl, password)
+}
+
+function registerNewInviteeInvitationProofs(actorUrl: string, password: string): void {
+  const createInvitee = async (email: string) => {
+    const noMail = async () => {}
+    const auth = recordAuth(
+      actorUrl,
+      process.env,
+      process.env.RECORD_AUTH_DATABASE_URL,
+      noMail,
+      noMail,
+    )
+    const owner = await auth.api.signInEmail({ body: { email: SIGN_UP_AUTH.emailA, password } })
+    if (!owner.token) throw new Error('owner sign-in has no bearer token')
+    const ownerSession = await auth.api.getSession({ headers: bearerHeaders(owner.token) })
+    if (!ownerSession?.session.activeOrganizationId) throw new Error('owner has no active space')
+    const spaceId = ownerSession.session.activeOrganizationId
+    const invitation = await auth.api.createInvitation({
+      headers: bearerHeaders(owner.token),
+      body: { email, role: 'member', organizationId: spaceId },
+    })
+    const signup = await auth.api.signUpEmail({
+      body: { email, name: `New Invitee ${email}`, password: SIGN_UP_AUTH.password },
+    })
+    if (!signup.token) throw new Error('invited signup has no bearer token')
+    expect(signup.user.emailVerified).toBe(false)
+    return { auth, invitation, headers: bearerHeaders(signup.token), spaceId }
+  }
+
+  test('a newly signed-up unverified invitee can get and accept an invitation', async () => {
+    const email = 'auth-new-accept@example.test'
+    const { auth, invitation, headers, spaceId } = await createInvitee(email)
+    await expect(
+      auth.api.getInvitation({ headers, query: { id: invitation.id } }),
+    ).resolves.toMatchObject({ id: invitation.id, email })
+    await expect(
+      auth.api.acceptInvitation({
+        headers,
+        body: { invitationId: invitation.id },
+      }),
+    ).resolves.toMatchObject({
+      invitation: { id: invitation.id, status: 'accepted' },
+      member: { organizationId: spaceId, role: 'member' },
+    })
+  })
+
+  test('a newly signed-up unverified invitee can reject an invitation', async () => {
+    const email = 'auth-new-reject@example.test'
+    const { auth, invitation, headers } = await createInvitee(email)
+    await expect(
+      auth.api.rejectInvitation({
+        headers,
+        body: { invitationId: invitation.id },
+      }),
+    ).resolves.toMatchObject({
+      invitation: { id: invitation.id, status: 'rejected' },
+    })
+  })
 }

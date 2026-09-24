@@ -68,6 +68,7 @@ export function recordApiServerConfig(environment: ServerEnvironment = process.e
   return {
     port,
     recordUrl: required(environment, 'ORCH_RECORD_URL'),
+    authDatabaseUrl: required(environment, 'RECORD_AUTH_DATABASE_URL'),
     authSecret: required(environment, 'BETTER_AUTH_SECRET'),
     authUrl: required(environment, 'BETTER_AUTH_URL'),
     hubUrl: required(environment, 'RECORD_HUB_URL'),
@@ -77,7 +78,7 @@ export function recordApiServerConfig(environment: ServerEnvironment = process.e
 
 export function startRecordApiServer(environment: ServerEnvironment = process.env) {
   const config = recordApiServerConfig(environment)
-  const auth = recordAuth(config.recordUrl, environment)
+  const auth = recordAuth(config.recordUrl, environment, config.authDatabaseUrl)
   const migrations = recordMigrationCount()
   const app = recordApi({
     recordUrl: config.recordUrl,

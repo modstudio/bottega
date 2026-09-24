@@ -19,6 +19,7 @@ import { Route as FlightRouteImport } from './routes/flight'
 import { Route as ForgotPasswordRouteImport } from './routes/forgot-password'
 import { Route as HealthRouteImport } from './routes/health'
 import { Route as JobsRouteImport } from './routes/jobs'
+import { Route as MembersRouteImport } from './routes/members'
 import { Route as NotesRouteImport } from './routes/notes'
 import { Route as ProjectsRouteImport } from './routes/projects'
 import { Route as RatioRouteImport } from './routes/ratio'
@@ -30,6 +31,7 @@ import { Route as RunsRouteImport } from './routes/runs'
 import { Route as SettingsRouteImport } from './routes/settings'
 import { Route as SignInRouteImport } from './routes/sign-in'
 import { Route as SpendRouteImport } from './routes/spend'
+import { Route as AcceptInvitationIdRouteImport } from './routes/accept-invitation.$id'
 import { Route as ProjectsNameRouteImport } from './routes/projects.$name'
 import { Route as ReviewsIdRouteImport } from './routes/reviews.$id'
 import { Route as RunsIdRouteImport } from './routes/runs.$id'
@@ -88,6 +90,11 @@ const JobsRoute = JobsRouteImport.update({
   path: '/jobs',
   getParentRoute: () => rootRouteImport,
 } as any)
+const MembersRoute = MembersRouteImport.update({
+  id: '/members',
+  path: '/members',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const NotesRoute = NotesRouteImport.update({
   id: '/notes',
   path: '/notes',
@@ -143,6 +150,11 @@ const SpendRoute = SpendRouteImport.update({
   path: '/spend',
   getParentRoute: () => rootRouteImport,
 } as any)
+const AcceptInvitationIdRoute = AcceptInvitationIdRouteImport.update({
+  id: '/accept-invitation/$id',
+  path: '/accept-invitation/$id',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const ProjectsNameRoute = ProjectsNameRouteImport.update({
   id: '/$name',
   path: '/$name',
@@ -190,6 +202,7 @@ export interface FileRoutesByFullPath {
   '/forgot-password': typeof ForgotPasswordRoute
   '/health': typeof HealthRoute
   '/jobs': typeof JobsRoute
+  '/members': typeof MembersRoute
   '/notes': typeof NotesRoute
   '/projects': typeof ProjectsRouteWithChildren
   '/ratio': typeof RatioRoute
@@ -201,6 +214,7 @@ export interface FileRoutesByFullPath {
   '/settings': typeof SettingsRoute
   '/sign-in': typeof SignInRoute
   '/spend': typeof SpendRoute
+  '/accept-invitation/$id': typeof AcceptInvitationIdRoute
   '/projects/$name': typeof ProjectsNameRoute
   '/reviews/$id': typeof ReviewsIdRoute
   '/runs/$id': typeof RunsIdRoute
@@ -220,6 +234,7 @@ export interface FileRoutesByTo {
   '/forgot-password': typeof ForgotPasswordRoute
   '/health': typeof HealthRoute
   '/jobs': typeof JobsRoute
+  '/members': typeof MembersRoute
   '/notes': typeof NotesRoute
   '/projects': typeof ProjectsRouteWithChildren
   '/ratio': typeof RatioRoute
@@ -231,6 +246,7 @@ export interface FileRoutesByTo {
   '/settings': typeof SettingsRoute
   '/sign-in': typeof SignInRoute
   '/spend': typeof SpendRoute
+  '/accept-invitation/$id': typeof AcceptInvitationIdRoute
   '/projects/$name': typeof ProjectsNameRoute
   '/reviews/$id': typeof ReviewsIdRoute
   '/runs/$id': typeof RunsIdRoute
@@ -251,6 +267,7 @@ export interface FileRoutesById {
   '/forgot-password': typeof ForgotPasswordRoute
   '/health': typeof HealthRoute
   '/jobs': typeof JobsRoute
+  '/members': typeof MembersRoute
   '/notes': typeof NotesRoute
   '/projects': typeof ProjectsRouteWithChildren
   '/ratio': typeof RatioRoute
@@ -262,6 +279,7 @@ export interface FileRoutesById {
   '/settings': typeof SettingsRoute
   '/sign-in': typeof SignInRoute
   '/spend': typeof SpendRoute
+  '/accept-invitation/$id': typeof AcceptInvitationIdRoute
   '/projects/$name': typeof ProjectsNameRoute
   '/reviews/$id': typeof ReviewsIdRoute
   '/runs/$id': typeof RunsIdRoute
@@ -283,6 +301,7 @@ export interface FileRouteTypes {
     | '/forgot-password'
     | '/health'
     | '/jobs'
+    | '/members'
     | '/notes'
     | '/projects'
     | '/ratio'
@@ -294,6 +313,7 @@ export interface FileRouteTypes {
     | '/settings'
     | '/sign-in'
     | '/spend'
+    | '/accept-invitation/$id'
     | '/projects/$name'
     | '/reviews/$id'
     | '/runs/$id'
@@ -313,6 +333,7 @@ export interface FileRouteTypes {
     | '/forgot-password'
     | '/health'
     | '/jobs'
+    | '/members'
     | '/notes'
     | '/projects'
     | '/ratio'
@@ -324,6 +345,7 @@ export interface FileRouteTypes {
     | '/settings'
     | '/sign-in'
     | '/spend'
+    | '/accept-invitation/$id'
     | '/projects/$name'
     | '/reviews/$id'
     | '/runs/$id'
@@ -343,6 +365,7 @@ export interface FileRouteTypes {
     | '/forgot-password'
     | '/health'
     | '/jobs'
+    | '/members'
     | '/notes'
     | '/projects'
     | '/ratio'
@@ -354,6 +377,7 @@ export interface FileRouteTypes {
     | '/settings'
     | '/sign-in'
     | '/spend'
+    | '/accept-invitation/$id'
     | '/projects/$name'
     | '/reviews/$id'
     | '/runs/$id'
@@ -374,6 +398,7 @@ export interface RootRouteChildren {
   ForgotPasswordRoute: typeof ForgotPasswordRoute
   HealthRoute: typeof HealthRoute
   JobsRoute: typeof JobsRoute
+  MembersRoute: typeof MembersRoute
   NotesRoute: typeof NotesRoute
   ProjectsRoute: typeof ProjectsRouteWithChildren
   RatioRoute: typeof RatioRoute
@@ -385,6 +410,7 @@ export interface RootRouteChildren {
   SettingsRoute: typeof SettingsRoute
   SignInRoute: typeof SignInRoute
   SpendRoute: typeof SpendRoute
+  AcceptInvitationIdRoute: typeof AcceptInvitationIdRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -457,6 +483,13 @@ declare module '@tanstack/react-router' {
       path: '/jobs'
       fullPath: '/jobs'
       preLoaderRoute: typeof JobsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/members': {
+      id: '/members'
+      path: '/members'
+      fullPath: '/members'
+      preLoaderRoute: typeof MembersRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/notes': {
@@ -534,6 +567,13 @@ declare module '@tanstack/react-router' {
       path: '/spend'
       fullPath: '/spend'
       preLoaderRoute: typeof SpendRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/accept-invitation/$id': {
+      id: '/accept-invitation/$id'
+      path: '/accept-invitation/$id'
+      fullPath: '/accept-invitation/$id'
+      preLoaderRoute: typeof AcceptInvitationIdRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/projects/$name': {
@@ -673,6 +713,7 @@ const rootRouteChildren: RootRouteChildren = {
   ForgotPasswordRoute: ForgotPasswordRoute,
   HealthRoute: HealthRoute,
   JobsRoute: JobsRoute,
+  MembersRoute: MembersRoute,
   NotesRoute: NotesRoute,
   ProjectsRoute: ProjectsRouteWithChildren,
   RatioRoute: RatioRoute,
@@ -684,6 +725,7 @@ const rootRouteChildren: RootRouteChildren = {
   SettingsRoute: SettingsRoute,
   SignInRoute: SignInRoute,
   SpendRoute: SpendRoute,
+  AcceptInvitationIdRoute: AcceptInvitationIdRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)

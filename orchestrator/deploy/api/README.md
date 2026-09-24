@@ -6,6 +6,7 @@ Run these commands from the repository root. Create the app directly; do not use
 fly apps create bottega-api --org bottega
 fly secrets set -a bottega-api \
   ORCH_RECORD_URL='postgres://record_actor:<password>@bottega-record.flycast:5432/record' \
+  RECORD_AUTH_DATABASE_URL='postgres://record_auth:<password>@bottega-record.flycast:5432/record' \
   BETTER_AUTH_SECRET='<generated-secret>' \
   BETTER_AUTH_URL='https://api.bottega.run' \
   RECORD_HUB_URL='https://app.bottega.run' \
@@ -18,6 +19,17 @@ fly ips allocate-v4 --shared -a bottega-api
 fly ips allocate-v6 -a bottega-api
 fly certs add api.bottega.run -a bottega-api
 ```
+
+Before migrating, create the dedicated Better Auth login as the PostgreSQL administrator:
+
+```sql
+CREATE ROLE record_auth LOGIN PASSWORD '<password>' NOSUPERUSER NOBYPASSRLS;
+```
+
+The migration grants this role only the auth tables it needs and explicit access through RLS for
+spaces, memberships, and invitations. Put its connection URL in the
+`RECORD_AUTH_DATABASE_URL` Fly secret shown above. Application data continues to use
+`record_actor` through `ORCH_RECORD_URL`.
 
 For browser clients, set `RECORD_API_ALLOWED_ORIGINS` to a comma-separated list of exact
 origins. This enables credentialed CORS for those origins and also configures Better Auth's

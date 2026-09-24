@@ -59,6 +59,11 @@ export type RecordDocImportInput = {
 
 export type RecordApiClient = {
   whoami(): Promise<RecordIdentity>
+  inviteMember(input: {
+    email: string
+    role: 'member' | 'admin' | 'owner'
+    organizationId: string
+  }): Promise<{ id: string }>
   putSnapshot(
     kind: SnapshotKind,
     input: { machineId: string; payload: unknown },
@@ -134,6 +139,20 @@ function recordApiUnreachable(error: unknown): Error {
   return new Error(`${detail}\n${RECORD_WRITE_REMEDY}`)
 }
 
+function recordApiError(body: unknown, status: number): Error {
+  const record = body && typeof body === 'object' ? (body as Record<string, unknown>) : {}
+  const nested =
+    record.error && typeof record.error === 'object'
+      ? (record.error as Record<string, unknown>)
+      : {}
+  const message =
+    (typeof record.error === 'string' && record.error) ||
+    (typeof record.message === 'string' && record.message) ||
+    (typeof nested.message === 'string' && nested.message) ||
+    `record API ${status}`
+  return recordApiUnreachable(new Error(message))
+}
+
 function recordApiBaseUrl(): string {
   const url = process.env.ORCH_RECORD_API_URL
   if (!url) throw recordApiUnreachable(new Error('ORCH_RECORD_API_URL is not set'))
@@ -157,11 +176,7 @@ async function request<T>(
     throw recordApiUnreachable(error)
   }
   const body = await response.json().catch(() => null)
-  if (!response.ok) {
-    const record = body && typeof body === 'object' ? (body as Record<string, unknown>) : {}
-    const error = typeof record.error === 'string' ? record.error : `record API ${response.status}`
-    throw recordApiUnreachable(new Error(error))
-  }
+  if (!response.ok) throw recordApiError(body, response.status)
   return (init.schema ? init.schema(body) : (body as T)) as T
 }
 
@@ -191,6 +206,11 @@ export function recordApiClient(): RecordApiClient {
   if (process.env.NODE_ENV === 'test') throw new Error(TEST_REFUSAL)
   return {
     whoami: () => request('/v1/whoami'),
+    inviteMember: (input) =>
+      request('/api/auth/organization/invite-member', {
+        method: 'POST',
+        body: JSON.stringify(input),
+      }),
     putSnapshot: (kind, input) =>
       request(`/v1/snapshots/${kind}`, { method: 'PUT', body: JSON.stringify(input) }),
     listSnapshots: () => request('/v1/snapshots'),

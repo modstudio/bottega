@@ -8,6 +8,7 @@ import {
   recordIdentityFromRows,
   sessionSpace,
 } from './record-auth.ts'
+import { RECORD_INVITATION_EXPIRES_IN_SECONDS } from './record-invitation.ts'
 
 let priorSecret: string | undefined
 let priorHubUrl: string | undefined
@@ -46,6 +47,7 @@ test('password reset links use the configured hosted hub and the injected sender
       BETTER_AUTH_SECRET: 'test-secret-at-least-thirty-two-characters',
       RECORD_HUB_URL: 'https://hub.example.test',
     },
+    undefined,
     async (input) => {
       sent = input
     },
@@ -55,6 +57,40 @@ test('password reset links use the configured hosted hub and the injected sender
   expect(sent).toEqual({
     to: 'reader@example.test',
     resetUrl: 'https://hub.example.test/reset-password?token=token-one',
+  })
+})
+
+test('organization invitations use the seven-day lifetime and configured hosted hub', async () => {
+  let sent: Parameters<NonNullable<Parameters<typeof recordAuth>[4]>>[0] | undefined
+  const auth = recordAuth(
+    'postgres://record.invalid/database',
+    {
+      BETTER_AUTH_SECRET: 'test-secret-at-least-thirty-two-characters',
+      RECORD_HUB_URL: 'https://hub.example.test',
+    },
+    'postgres://record-auth.invalid/database',
+    async () => {},
+    async (input) => {
+      sent = input
+    },
+  )
+  const organizationOptions = auth.options.plugins?.find(
+    (plugin) => plugin.id === 'organization',
+  )?.options
+  expect(organizationOptions?.invitationExpiresIn).toBe(RECORD_INVITATION_EXPIRES_IN_SECONDS)
+  await organizationOptions?.sendInvitationEmail?.({
+    id: 'invitation-one',
+    email: 'invitee@example.test',
+    organization: { name: 'Shared Space' },
+    inviter: { user: { name: 'Avery Owner' } },
+    role: 'admin',
+  } as never)
+  expect(sent).toEqual({
+    to: 'invitee@example.test',
+    invitationUrl: 'https://hub.example.test/accept-invitation/invitation-one',
+    spaceName: 'Shared Space',
+    inviterName: 'Avery Owner',
+    role: 'admin',
   })
 })
 

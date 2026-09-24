@@ -29,7 +29,9 @@ export const recordReadBoundariesBeforePublish: ImportBoundary[] = [
       '../../../shared/record/schema.ts',
       '../../../shared/record-remedies.ts',
       '../../../shared/record/schema-auth.ts',
+      '../mail/invitation-mailer.ts',
       '../mail/password-reset-mailer.ts',
+      './record-invitation.ts',
     ],
     'Enforce the record-auth concern boundary.',
   ),
@@ -123,7 +125,7 @@ export const recordSchemaBoundaries: ImportBoundary[] = [
   boundary(
     'postgres-schema-auth-boundary',
     'shared/record/schema-auth.ts',
-    ['drizzle-orm/pg-core', './schema.ts'],
+    ['drizzle-orm', 'drizzle-orm/pg-core', './schema.ts'],
     'Enforce the Better Auth schema concern boundary.',
   ),
   boundary(

@@ -1,7 +1,15 @@
 // concern: postgres-schema-auth
 /** Better Auth-owned record tables. Must not know local execution state or run phases. */
-import { index, pgTable, text, timestamp, uuid } from 'drizzle-orm/pg-core'
-import { inviteePolicies, space, spaceIdentity, tenantPolicies, user } from './schema.ts'
+import { sql } from 'drizzle-orm'
+import { index, pgPolicy, pgTable, text, timestamp, uuid } from 'drizzle-orm/pg-core'
+import {
+  inviteePolicies,
+  RECORD_AUTH_ROLE,
+  space,
+  spaceIdentity,
+  tenantPolicies,
+  user,
+} from './schema.ts'
 
 const identity = () => uuid('id').primaryKey()
 
@@ -73,5 +81,11 @@ export const invitation = pgTable.withRLS(
     index('invitation_email_idx').on(table.email),
     ...tenantPolicies('invitation', table.spaceId),
     ...inviteePolicies('invitation', table.email),
+    pgPolicy('invitation_auth_all', {
+      for: 'all',
+      to: RECORD_AUTH_ROLE,
+      using: sql`true`,
+      withCheck: sql`true`,
+    }),
   ],
 )

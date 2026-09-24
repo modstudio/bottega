@@ -17,6 +17,7 @@ test('hosted mode exposes its hosted routes', () => {
       '/flight',
       '/health',
       '/jobs',
+      '/members',
       '/notes',
       '/projects',
       '/ratio',
@@ -52,4 +53,15 @@ test('hosted mode exposes its hosted routes', () => {
   expect(isHostedPath('/settings')).toBe(true)
   expect(isHostedPath('/design')).toBe(false)
   expect(isHostedPath('/projects/alpha')).toBe(false)
+})
+
+test('hosted member-management routes remain reachable and members appear in settings', () => {
+  expect(isHostedPath('/members')).toBe(true)
+  expect(isHostedPath('/accept-invitation/invitation-id')).toBe(true)
+  const settings = navForMode('hosted')
+    .flatMap((section) => section.entries)
+    .find((entry) => 'items' in entry && entry.label === 'Settings')
+  expect(settings && 'items' in settings ? settings.items.map((item) => item.to) : []).toContain(
+    '/members',
+  )
 })

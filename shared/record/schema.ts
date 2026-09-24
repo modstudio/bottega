@@ -16,6 +16,7 @@ import {
 /** Stable id and application-owned name for the platform tenant. */
 export const PLATFORM_SPACE_ID = '01990000-0000-7000-8000-000000000001' as const
 export const RECORD_OWNER_ROLE = 'record_owner' as const
+export const RECORD_AUTH_ROLE = 'record_auth' as const
 export const RECORD_ACTOR_ROLE = 'record_actor' as const
 export const RECORD_READER_ROLE = 'record_reader' as const
 
@@ -67,6 +68,12 @@ export const space = pgTable.withRLS(
         withCheck: sql`${table.id} = ${currentSpace}`,
       }),
       pgPolicy('space_space_delete', { for: 'delete', using: sql`${table.id} = ${currentSpace}` }),
+      pgPolicy('space_auth_all', {
+        for: 'all',
+        to: RECORD_AUTH_ROLE,
+        using: sql`true`,
+        withCheck: sql`true`,
+      }),
     ]
   },
 )
@@ -133,6 +140,12 @@ export const membership = pgTable.withRLS(
       pgPolicy('membership_space_delete', {
         for: 'delete',
         using: sql`${table.spaceId} = ${currentSpace}`,
+      }),
+      pgPolicy('membership_auth_all', {
+        for: 'all',
+        to: RECORD_AUTH_ROLE,
+        using: sql`true`,
+        withCheck: sql`true`,
       }),
     ]
   },
