@@ -139,6 +139,20 @@ function recordApiUnreachable(error: unknown): Error {
   return new Error(`${detail}\n${RECORD_WRITE_REMEDY}`)
 }
 
+function recordApiError(body: unknown, status: number): Error {
+  const record = body && typeof body === 'object' ? (body as Record<string, unknown>) : {}
+  const nested =
+    record.error && typeof record.error === 'object'
+      ? (record.error as Record<string, unknown>)
+      : {}
+  const message =
+    (typeof record.error === 'string' && record.error) ||
+    (typeof record.message === 'string' && record.message) ||
+    (typeof nested.message === 'string' && nested.message) ||
+    `record API ${status}`
+  return recordApiUnreachable(new Error(message))
+}
+
 function recordApiBaseUrl(): string {
   const url = process.env.ORCH_RECORD_API_URL
   if (!url) throw recordApiUnreachable(new Error('ORCH_RECORD_API_URL is not set'))
@@ -162,19 +176,7 @@ async function request<T>(
     throw recordApiUnreachable(error)
   }
   const body = await response.json().catch(() => null)
-  if (!response.ok) {
-    const record = body && typeof body === 'object' ? (body as Record<string, unknown>) : {}
-    const nested =
-      record.error && typeof record.error === 'object'
-        ? (record.error as Record<string, unknown>)
-        : {}
-    const error =
-      (typeof record.error === 'string' && record.error) ||
-      (typeof record.message === 'string' && record.message) ||
-      (typeof nested.message === 'string' && nested.message) ||
-      `record API ${response.status}`
-    throw recordApiUnreachable(new Error(error))
-  }
+  if (!response.ok) throw recordApiError(body, response.status)
   return (init.schema ? init.schema(body) : (body as T)) as T
 }
 

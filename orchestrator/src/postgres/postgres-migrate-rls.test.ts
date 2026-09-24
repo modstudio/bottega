@@ -9,6 +9,7 @@ import {
 } from '../../../shared/record/schema.ts'
 import { asSpace, asSpaces, psql, succeeds } from '../../test/fixtures/postgres-rls.ts'
 import {
+  invitationApiClient,
   registerInvitationAuthProofs,
   SIGN_UP_AUTH,
   SIGN_UP_CLI_OUTPUT,
@@ -23,7 +24,6 @@ import { registerProjectSpaceProofs } from '../../test/postgres-project-space-pr
 import { registerActiveSpaceProofs } from '../../test/postgres-remembered-space-proof.ts'
 import { proveHostedDocs, proveScoreRecordSync } from '../../test/postgres-score-proof.ts'
 import { registerStaleMembershipProof } from '../../test/postgres-stale-membership-proof.ts'
-import type { RecordApiClient } from '../record/record-api-client.ts'
 import { startRecordApiServer } from '../record/record-api-server.ts'
 import { bearerHeaders, recordAuth, setActiveRecordSpace } from '../record/record-auth.ts'
 import { signInCommand, signUpCommand, whoamiCommand } from '../record/record-auth-command.ts'
@@ -77,7 +77,7 @@ realPostgres('RLS proof against real Postgres', () => {
   let repairToken = ''
   let pendingInvitation = ''
   let invitationAuth: ReturnType<typeof recordAuth>
-  let invitationClient: Pick<RecordApiClient, 'inviteMember'>
+  let invitationClient: ReturnType<typeof invitationApiClient>
   const invitationEmails: Array<Parameters<NonNullable<Parameters<typeof recordAuth>[4]>>[0]> = []
   const authProjectA = newRecordId()
   const authProjectB = newRecordId()
@@ -91,13 +91,7 @@ realPostgres('RLS proof against real Postgres', () => {
     invitationAuth = recordAuth(actorUrl!, process.env, undefined, undefined, async (input) => {
       invitationEmails.push(input)
     })
-    invitationClient = {
-      inviteMember: async (input) => {
-        const token = recordSession.token()
-        if (!token) throw new Error('record test session has no token')
-        return invitationAuth.api.createInvitation({ headers: bearerHeaders(token), body: input })
-      },
-    }
+    invitationClient = invitationApiClient(invitationAuth, recordSession.token)
     await migratePostgres()
 
     succeeds(

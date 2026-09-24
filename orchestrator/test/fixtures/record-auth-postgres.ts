@@ -1,6 +1,11 @@
 import { expect, test } from 'bun:test'
 import { RECORD_AUTH_ROLE } from '../../../shared/record/schema.ts'
-import { RECORD_SIGN_UP_INVITATION_REQUIRED, recordAuth } from '../../src/record/record-auth.ts'
+import type { RecordApiClient } from '../../src/record/record-api-client.ts'
+import {
+  bearerHeaders,
+  RECORD_SIGN_UP_INVITATION_REQUIRED,
+  recordAuth,
+} from '../../src/record/record-auth.ts'
 
 export const SIGN_UP_AUTH = {
   emailA: 'auth-a@example.test',
@@ -30,6 +35,19 @@ export const SIGN_UP_CLI_OUTPUT = [
   `signed up ${SIGN_UP_AUTH.emailA}`,
   `signed up ${SIGN_UP_AUTH.emailB}`,
 ]
+
+export function invitationApiClient(
+  auth: ReturnType<typeof recordAuth>,
+  token: () => string | null,
+): Pick<RecordApiClient, 'inviteMember'> {
+  return {
+    inviteMember: (input) => {
+      const current = token()
+      if (!current) throw new Error('record test session has no token')
+      return auth.api.createInvitation({ headers: bearerHeaders(current), body: input })
+    },
+  }
+}
 
 export function signUpInvitationFixtures(spaceId: string, inviterId: string): string {
   return `

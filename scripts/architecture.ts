@@ -382,6 +382,7 @@ export const modules: ArchitectureModule[] = [
   ]),
   module('orchestrator/src/record/record-space.ts', [
     '../../../shared/record/schema.ts',
+    './record-api-client.ts',
     './record-auth.ts',
     './record-session.ts',
   ]),
