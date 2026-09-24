@@ -150,3 +150,74 @@ test('project task identity migration backfills ledger project relationships', (
     rmSync(folder, { recursive: true, force: true })
   }
 })
+
+test('user canon owner migration preserves docs and enforces owner addresses', () => {
+  const folder = mkdtempSync(join(tmpdir(), 'orch-user-canon-owner-'))
+  mkdirSync(join(folder, 'meta'))
+  const journal = migrationJournal()
+  const ownerMigration = journal.findIndex((entry) => entry.tag === '0048_user_canon_owner')
+  const prior = journal.slice(0, ownerMigration)
+  for (const entry of prior) {
+    copyFileSync(join(MIGRATIONS_FOLDER, `${entry.tag}.sql`), join(folder, `${entry.tag}.sql`))
+  }
+  writeFileSync(
+    join(folder, 'meta', '_journal.json'),
+    JSON.stringify({ version: '7', dialect: 'sqlite', entries: prior }),
+  )
+  const database = new Database(':memory:')
+  try {
+    applyMigrations(database, folder)
+    database
+      .query(
+        `INSERT INTO doc
+          (id,scope,subject,slug,title,body,delivery,created_at,updated_at,record_id)
+         VALUES (1,'canon',NULL,'.agents/rules/existing.md','Existing','body','inject',
+           '2026-01-01','2026-01-01','record-doc')`,
+      )
+      .run()
+    database
+      .query(
+        `INSERT INTO doc_revision
+          (id,doc_id,scope,subject,slug,op,title,body,delivery,author,reason,at,record_id)
+         VALUES (1,1,'canon',NULL,'.agents/rules/existing.md','create','Existing','body','inject',
+           'operator','preserve existing row','2026-01-01','record-revision')`,
+      )
+      .run()
+
+    expect(applyMigrations(database)).toEqual(['0048_user_canon_owner'])
+    expect(database.query('SELECT title, record_id, owner FROM doc WHERE id=1').get()).toEqual({
+      title: 'Existing',
+      record_id: 'record-doc',
+      owner: null,
+    })
+    expect(
+      database.query('SELECT reason, record_id, owner FROM doc_revision WHERE id=1').get(),
+    ).toEqual({
+      reason: 'preserve existing row',
+      record_id: 'record-revision',
+      owner: null,
+    })
+
+    const insertDoc = database.query(
+      `INSERT INTO doc
+        (scope,subject,slug,title,body,delivery,created_at,updated_at,owner)
+       VALUES (?,?,?,?,?,'inject','2026-01-02','2026-01-02','user-1')`,
+    )
+    expect(() => insertDoc.run('project', 'target', 'private', 'Private', 'body')).toThrow()
+    expect(() =>
+      insertDoc.run('canon', 'target', '.agents/rules/private.md', 'Private', 'body'),
+    ).toThrow()
+
+    const insertRevision = database.query(
+      `INSERT INTO doc_revision
+        (doc_id,scope,subject,slug,op,title,body,delivery,author,reason,at,owner)
+       VALUES (1,?,?,?,'set','Private','body','inject','operator','reject invalid row',
+         '2026-01-02','user-1')`,
+    )
+    expect(() => insertRevision.run('project', 'target', 'private')).toThrow()
+    expect(() => insertRevision.run('canon', 'target', '.agents/rules/private.md')).toThrow()
+  } finally {
+    database.close()
+    rmSync(folder, { recursive: true, force: true })
+  }
+})

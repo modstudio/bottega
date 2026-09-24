@@ -1013,6 +1013,7 @@ export async function restoreDoc(
   assertDocWriteAllowed({
     scope,
     subject,
+    owner,
     slug,
     title: revision.title,
     body: revision.body,
@@ -1023,13 +1024,14 @@ export async function restoreDoc(
     {
       scope,
       subject,
+      owner,
       slug,
       title: revision.title,
       body: revision.body,
       delivery: revision.delivery,
       ...context,
     },
-    null,
+    getDoc(scope, subject, slug, owner),
   )
   let recordId = getDoc(scope, subject, slug, owner)?.record_id
   let hostedExpected = context.expectedRevision

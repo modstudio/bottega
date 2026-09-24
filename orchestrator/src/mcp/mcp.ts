@@ -770,10 +770,10 @@ export function createDocsMcpServer(): McpServer {
     'get_doc_revision',
     {
       description: 'Get one operator document revision, including its body.',
-      inputSchema: { id: z.number().int().positive() },
+      inputSchema: { id: z.number().int().positive(), user: z.boolean().optional() },
     },
-    async ({ id }) => {
-      const revision = getDocRevision(id)
+    async ({ id, user }) => {
+      const revision = getDocRevision(id, user ? await signedInDocOwner() : null)
       if (!revision) throw new Error(`no doc revision ${id}`)
       return text(revision)
     },

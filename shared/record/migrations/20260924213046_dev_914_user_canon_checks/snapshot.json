@@ -1,8 +1,8 @@
 {
   "version": "8",
   "dialect": "postgres",
-  "id": "746596ef-f2d9-45f3-9a69-1f554480db8e",
-  "prevIds": ["d020da5d-7801-4040-804d-8fed2f54939b"],
+  "id": "6ecd5787-5e35-4674-aef7-18606e949b67",
+  "prevIds": ["02af2106-57e0-4f73-8bb5-db4be6877f4b"],
   "ddl": [
     {
       "isRlsEnabled": false,
@@ -5288,6 +5288,19 @@
       "table": "hub_note"
     },
     {
+      "type": "uuid",
+      "typeSchema": null,
+      "notNull": false,
+      "dimensions": 0,
+      "default": null,
+      "generated": null,
+      "identity": null,
+      "name": "promoted_task_id",
+      "entityType": "columns",
+      "schema": "public",
+      "table": "hub_note"
+    },
+    {
       "type": "timestamp with time zone",
       "typeSchema": null,
       "notNull": true,
@@ -6146,6 +6159,19 @@
       "table": "hub_task"
     },
     {
+      "type": "uuid",
+      "typeSchema": null,
+      "notNull": false,
+      "dimensions": 0,
+      "default": null,
+      "generated": null,
+      "identity": null,
+      "name": "parent_id",
+      "entityType": "columns",
+      "schema": "public",
+      "table": "hub_task"
+    },
+    {
       "type": "text",
       "typeSchema": null,
       "notNull": false,
@@ -6341,6 +6367,19 @@
       "table": "hub_task_comment"
     },
     {
+      "type": "uuid",
+      "typeSchema": null,
+      "notNull": false,
+      "dimensions": 0,
+      "default": null,
+      "generated": null,
+      "identity": null,
+      "name": "task_id",
+      "entityType": "columns",
+      "schema": "public",
+      "table": "hub_task_comment"
+    },
+    {
       "type": "text",
       "typeSchema": null,
       "notNull": true,
@@ -6453,6 +6492,19 @@
       "generated": null,
       "identity": null,
       "name": "task_key",
+      "entityType": "columns",
+      "schema": "public",
+      "table": "hub_task_document"
+    },
+    {
+      "type": "uuid",
+      "typeSchema": null,
+      "notNull": false,
+      "dimensions": 0,
+      "default": null,
+      "generated": null,
+      "identity": null,
+      "name": "task_id",
       "entityType": "columns",
       "schema": "public",
       "table": "hub_task_document"
@@ -6609,6 +6661,19 @@
       "generated": null,
       "identity": null,
       "name": "task_key",
+      "entityType": "columns",
+      "schema": "public",
+      "table": "hub_task_status_event"
+    },
+    {
+      "type": "uuid",
+      "typeSchema": null,
+      "notNull": false,
+      "dimensions": 0,
+      "default": null,
+      "generated": null,
+      "identity": null,
+      "name": "task_id",
       "entityType": "columns",
       "schema": "public",
       "table": "hub_task_status_event"
@@ -7487,6 +7552,27 @@
       "nameExplicit": true,
       "columns": [
         {
+          "value": "promoted_task_id",
+          "isExpression": false,
+          "asc": true,
+          "nullsFirst": false,
+          "opclass": null
+        }
+      ],
+      "isUnique": false,
+      "where": null,
+      "with": "",
+      "method": "btree",
+      "concurrently": false,
+      "name": "hub_note_promoted_task_id_idx",
+      "entityType": "indexes",
+      "schema": "public",
+      "table": "hub_note"
+    },
+    {
+      "nameExplicit": true,
+      "columns": [
+        {
           "value": "subscription_id",
           "isExpression": false,
           "asc": true,
@@ -7510,6 +7596,90 @@
       "entityType": "indexes",
       "schema": "public",
       "table": "hub_send"
+    },
+    {
+      "nameExplicit": true,
+      "columns": [
+        {
+          "value": "parent_id",
+          "isExpression": false,
+          "asc": true,
+          "nullsFirst": false,
+          "opclass": null
+        }
+      ],
+      "isUnique": false,
+      "where": null,
+      "with": "",
+      "method": "btree",
+      "concurrently": false,
+      "name": "hub_task_parent_id_idx",
+      "entityType": "indexes",
+      "schema": "public",
+      "table": "hub_task"
+    },
+    {
+      "nameExplicit": true,
+      "columns": [
+        {
+          "value": "task_id",
+          "isExpression": false,
+          "asc": true,
+          "nullsFirst": false,
+          "opclass": null
+        }
+      ],
+      "isUnique": false,
+      "where": null,
+      "with": "",
+      "method": "btree",
+      "concurrently": false,
+      "name": "hub_task_comment_task_id_idx",
+      "entityType": "indexes",
+      "schema": "public",
+      "table": "hub_task_comment"
+    },
+    {
+      "nameExplicit": true,
+      "columns": [
+        {
+          "value": "task_id",
+          "isExpression": false,
+          "asc": true,
+          "nullsFirst": false,
+          "opclass": null
+        }
+      ],
+      "isUnique": false,
+      "where": null,
+      "with": "",
+      "method": "btree",
+      "concurrently": false,
+      "name": "hub_task_document_task_id_idx",
+      "entityType": "indexes",
+      "schema": "public",
+      "table": "hub_task_document"
+    },
+    {
+      "nameExplicit": true,
+      "columns": [
+        {
+          "value": "task_id",
+          "isExpression": false,
+          "asc": true,
+          "nullsFirst": false,
+          "opclass": null
+        }
+      ],
+      "isUnique": false,
+      "where": null,
+      "with": "",
+      "method": "btree",
+      "concurrently": false,
+      "name": "hub_task_status_event_task_id_idx",
+      "entityType": "indexes",
+      "schema": "public",
+      "table": "hub_task_status_event"
     },
     {
       "nameExplicit": false,
@@ -8202,6 +8372,19 @@
     },
     {
       "nameExplicit": false,
+      "columns": ["promoted_task_id"],
+      "schemaTo": "public",
+      "tableTo": "hub_task",
+      "columnsTo": ["id"],
+      "onUpdate": "NO ACTION",
+      "onDelete": "SET NULL",
+      "name": "hub_note_promoted_task_id_hub_task_id_fkey",
+      "entityType": "fks",
+      "schema": "public",
+      "table": "hub_note"
+    },
+    {
+      "nameExplicit": false,
       "columns": ["space_id"],
       "schemaTo": "public",
       "tableTo": "space",
@@ -8384,6 +8567,19 @@
     },
     {
       "nameExplicit": false,
+      "columns": ["parent_id"],
+      "schemaTo": "public",
+      "tableTo": "hub_task",
+      "columnsTo": ["id"],
+      "onUpdate": "NO ACTION",
+      "onDelete": "SET NULL",
+      "name": "hub_task_parent_id_hub_task_id_fkey",
+      "entityType": "fks",
+      "schema": "public",
+      "table": "hub_task"
+    },
+    {
+      "nameExplicit": false,
       "columns": ["space_id"],
       "schemaTo": "public",
       "tableTo": "space",
@@ -8391,6 +8587,19 @@
       "onUpdate": "NO ACTION",
       "onDelete": "NO ACTION",
       "name": "hub_task_comment_space_id_space_id_fkey",
+      "entityType": "fks",
+      "schema": "public",
+      "table": "hub_task_comment"
+    },
+    {
+      "nameExplicit": false,
+      "columns": ["task_id"],
+      "schemaTo": "public",
+      "tableTo": "hub_task",
+      "columnsTo": ["id"],
+      "onUpdate": "NO ACTION",
+      "onDelete": "CASCADE",
+      "name": "hub_task_comment_task_id_hub_task_id_fkey",
       "entityType": "fks",
       "schema": "public",
       "table": "hub_task_comment"
@@ -8410,6 +8619,19 @@
     },
     {
       "nameExplicit": false,
+      "columns": ["task_id"],
+      "schemaTo": "public",
+      "tableTo": "hub_task",
+      "columnsTo": ["id"],
+      "onUpdate": "NO ACTION",
+      "onDelete": "CASCADE",
+      "name": "hub_task_document_task_id_hub_task_id_fkey",
+      "entityType": "fks",
+      "schema": "public",
+      "table": "hub_task_document"
+    },
+    {
+      "nameExplicit": false,
       "columns": ["space_id"],
       "schemaTo": "public",
       "tableTo": "space",
@@ -8417,6 +8639,19 @@
       "onUpdate": "NO ACTION",
       "onDelete": "NO ACTION",
       "name": "hub_task_status_event_space_id_space_id_fkey",
+      "entityType": "fks",
+      "schema": "public",
+      "table": "hub_task_status_event"
+    },
+    {
+      "nameExplicit": false,
+      "columns": ["task_id"],
+      "schemaTo": "public",
+      "tableTo": "hub_task",
+      "columnsTo": ["id"],
+      "onUpdate": "NO ACTION",
+      "onDelete": "CASCADE",
+      "name": "hub_task_status_event_task_id_hub_task_id_fkey",
       "entityType": "fks",
       "schema": "public",
       "table": "hub_task_status_event"

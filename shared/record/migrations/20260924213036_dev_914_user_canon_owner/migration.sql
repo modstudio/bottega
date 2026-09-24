@@ -1,3 +1,4 @@
+SET LOCAL lock_timeout = '5s';--> statement-breakpoint
 ALTER TABLE "doc" ADD COLUMN "owner_user_id" uuid;--> statement-breakpoint
 ALTER TABLE "doc_revision" ADD COLUMN "owner_user_id" uuid;--> statement-breakpoint
 DROP INDEX "doc_live_address";--> statement-breakpoint
