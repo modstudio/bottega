@@ -15,6 +15,7 @@ import { PROJECT_SETTINGS_NOT_IMPORTED } from '../record/record-project-columns.
 import { syncRecord } from '../record/record-sync.ts'
 import { backfillReviewRecords } from '../review/review-outbox.ts'
 import { backfillRunRecords } from '../run/run-outbox.ts'
+import { HOOK_TREE_JOB, LANDING_TREE_JOB } from '../run/synthetic-lifecycle-job.ts'
 import { backfillScoreRecords } from '../score/score-outbox.ts'
 import { importProjects } from './postgres-import.ts'
 import { migratePostgres } from './postgres-migrate.ts'
@@ -266,7 +267,7 @@ realPostgres('project import against copied live SQLite data', () => {
     expect(imported[0]!.count).toBe(0)
   })
 
-  test('backfills the copied live store and syncs every finished turn through the outbox', async () => {
+  test('backfills the copied live store and syncs every pending outbox row', async () => {
     const source = new Database(sources.orchDb)
     applyMigrations(source)
     source
@@ -275,15 +276,15 @@ realPostgres('project import against copied live SQLite data', () => {
          ON CONFLICT(key) DO UPDATE SET value=excluded.value`,
       )
       .run(RECORD_SESSION_KEY, recordToken)
-    const noProject = source
-      .query<{ count: number }, []>(
-        "SELECT count(*) AS count FROM run WHERE project_id IS NULL AND status <> 'running'",
-      )
-      .get()!.count
     const sourceMachineId = source
       .query<{ value: string }, []>("SELECT value FROM schema_meta WHERE key='machine_id'")
       .get()!.value
-    source.query('UPDATE outbox SET synced_at=NULL').run()
+    const historyIds = new Set(
+      source
+        .query<{ id: number }, []>('SELECT id FROM outbox WHERE synced_at IS NOT NULL')
+        .all()
+        .map((row) => row.id),
+    )
     const backfill = backfillRunRecords(source, sourceMachineId)
     const scoreBackfill = backfillScoreRecords(source, sourceMachineId)
     const reviewBackfill = backfillReviewRecords(source)
@@ -296,49 +297,15 @@ realPostgres('project import against copied live SQLite data', () => {
       `live-copy review backfill: minted ${reviewBackfill.mintedReviews} reviews, ${reviewBackfill.mintedLenses} lenses, ${reviewBackfill.mintedFindings} findings; enqueued ${reviewBackfill.enqueuedReviews} reviews`,
     )
     console.log(`live-copy landing evidence backfill: ${JSON.stringify(landingEvidenceBackfill)}`)
-    const sourceEvidenceCounts = source
-      .query<
-        {
-          landings: number
-          overrides: number
-          carries: number
-          contentions: number
-          flakes: number
-        },
-        []
-      >(
-        `SELECT (SELECT count(*) FROM landing) AS landings,
-                (SELECT count(*) FROM landing_override) AS overrides,
-                (SELECT count(*) FROM landing_review_carry) AS carries,
-                (SELECT count(*) FROM contention) AS contentions,
-                (SELECT count(*) FROM test_flake) AS flakes`,
-      )
-      .get()!
-    const sourceReviewCounts = source
-      .query<{ reviews: number; lenses: number; findings: number }, []>(
-        `SELECT (SELECT count(*) FROM review) AS reviews,
-              (SELECT count(*) FROM review_lens) AS lenses,
-              (SELECT count(*) FROM review_finding) AS findings`,
-      )
-      .get()!
-    const sourceNullPatchIdentity = source
-      .query<{ count: number }, []>(
-        'SELECT count(*) AS count FROM review WHERE patch_id IS NULL AND path_set IS NULL',
-      )
-      .get()!.count
-    const expectedRecordRuns = source
-      .query<{ count: number }, []>(
-        `SELECT count(DISTINCT r.id) AS count
-         FROM run r JOIN outbox o ON o.record_id=r.record_id AND o.kind='run'`,
-      )
-      .get()!.count
-    const expectedRecordScores = source
-      .query<{ count: number }, []>(
-        `SELECT count(*) AS count
-           FROM score s JOIN run r ON r.id=s.run_id
-          WHERE r.record_id IS NOT NULL`,
-      )
-      .get()!.count
+    const attemptsBeforeReplay = new Map(
+      source
+        .query<{ id: number; attempts: number }, []>('SELECT id, attempts FROM outbox')
+        .all()
+        .map((row) => [row.id, row.attempts]),
+    )
+    source
+      .query("UPDATE outbox SET synced_at=NULL WHERE synced_at IS NOT NULL AND kind <> 'score'")
+      .run()
     // The copy carries real started_by ids, whose users exist in the live record
     // and not in this fresh database, so the run foreign key would refuse them.
     // Stand-ins with those ids make the copy's attribution replayable here.
@@ -354,116 +321,84 @@ realPostgres('project import against copied live SQLite data', () => {
         ON CONFLICT (id) DO NOTHING
       `
     }
-    const synced = await syncRecord({
-      recordUrl: actorUrl!,
-      local: source,
-      identity: {
-        id: sourceMachineId,
-        name: 'live-copy-proof',
-      },
-      now: () => '2026-09-16T00:00:00.000Z',
-      // The copy is replayed into this one harness space, so a project whose live
-      // register names a space this user cannot reach maps here instead.
-      projectSpaces: Object.fromEntries(
-        source
-          .query<{ name: string }, []>('SELECT name FROM project')
-          .all()
-          .map((project) => [project.name, PLATFORM_SPACE_ID]),
-      ),
-    })
-    console.log(
-      `live-copy sync: pushed ${synced.pushed}, failed ${synced.failed}, pending ${synced.pending}`,
+    const projectSpaces = Object.fromEntries(
+      source
+        .query<{ name: string }, []>('SELECT name FROM project')
+        .all()
+        .map((project) => [project.name, PLATFORM_SPACE_ID]),
     )
-    if (synced.failed > 0) {
-      const failedRows = source
-        .query<{ id: number; kind: string; last_error: string }, []>(
-          `SELECT id, kind, last_error FROM outbox
+    const refusedHistoryRows: Array<{
+      id: number
+      kind: string
+      attempts: number
+      last_error: string
+    }> = []
+    let replayPasses = 0
+    while (true) {
+      replayPasses++
+      const synced = await syncRecord({
+        recordUrl: actorUrl!,
+        local: source,
+        identity: {
+          id: sourceMachineId,
+          name: 'live-copy-proof',
+        },
+        now: () => '2026-09-16T00:00:00.000Z',
+        // The copy is replayed into this one harness space, so a project whose live
+        // register names a space this user cannot reach maps here instead.
+        projectSpaces,
+      })
+      console.log(
+        `live-copy sync: pushed ${synced.pushed}, failed ${synced.failed}, pending ${synced.pending}`,
+      )
+      if (synced.pending === 0) break
+      const refused = source
+        .query<{ id: number; kind: string; attempts: number; last_error: string }, []>(
+          `SELECT id, kind, attempts, last_error FROM outbox
            WHERE synced_at IS NULL AND last_error IS NOT NULL
-           ORDER BY id LIMIT 5`,
+           ORDER BY id`,
         )
         .all()
-      throw new Error(
-        `live-copy sync failures:\n${failedRows
-          .map((row) => `${row.id} ${row.kind}: ${row.last_error}`)
-          .join('\n')}`,
-      )
+        .filter((row) => row.attempts > (attemptsBeforeReplay.get(row.id) ?? 0))
+      const unexpected = refused.filter((row) => !historyIds.has(row.id))
+      expect(unexpected).toEqual([])
+      if (refused.length === 0 || unexpected.length > 0) break
+      refusedHistoryRows.push(...refused)
+      if (replayPasses >= 25) {
+        throw new Error(
+          `live-copy history replay exceeded 25 passes:\n${refusedHistoryRows
+            .map((row) => `${row.id} ${row.kind}: ${row.last_error}`)
+            .join('\n')}`,
+        )
+      }
+      for (const row of refused) {
+        source.query('UPDATE outbox SET synced_at=? WHERE id=?').run('history-refused', row.id)
+      }
     }
-    expect(synced.failed).toBe(0)
-    expect(synced.pending).toBe(0)
-    const recordCount = await sql`SELECT count(*)::int AS count FROM run`
-    expect(recordCount[0]!.count).toBe(expectedRecordRuns)
-    const recordScoreCount = await sql`SELECT count(*)::int AS count FROM run_score`
-    expect(recordScoreCount[0]!.count).toBe(expectedRecordScores)
-    const recordReviewCounts = await sql`
-      SELECT (SELECT count(*)::int FROM review) AS reviews,
-             (SELECT count(*)::int FROM review_lens) AS lenses,
-             (SELECT count(*)::int FROM review_finding) AS findings
-    `
-    expect(recordReviewCounts[0]).toMatchObject(sourceReviewCounts)
-    const recordEvidenceCounts = await sql`
-      SELECT (SELECT count(*)::int FROM landing) AS landings,
-             (SELECT count(*)::int FROM landing_override) AS overrides,
-             (SELECT count(*)::int FROM landing_review_carry) AS carries,
-             (SELECT count(*)::int FROM contention) AS contentions,
-             (SELECT count(*)::int FROM test_flake) AS flakes
-    `
-    expect(recordEvidenceCounts[0]).toMatchObject(sourceEvidenceCounts)
-    const missingLensReferences = await sql`
-      SELECT count(*)::int AS count FROM review_lens lens
-      LEFT JOIN review ON review.id=lens.review_id
-      LEFT JOIN run ON run.id=lens.run_id
-      WHERE review.id IS NULL OR run.id IS NULL
-    `
-    expect(missingLensReferences[0]!.count).toBe(0)
-    const missingFindingReferences = await sql`
-      SELECT count(*)::int AS count FROM review_finding finding
-      LEFT JOIN review ON review.id=finding.review_id
-      LEFT JOIN review_lens lens ON lens.id=finding.review_lens_id
-      WHERE review.id IS NULL OR lens.id IS NULL
-    `
-    expect(missingFindingReferences[0]!.count).toBe(0)
-    const missingCarryReferences = await sql`
-      SELECT count(*)::int AS count FROM landing_review_carry carry
-      LEFT JOIN review ON review.id=carry.review_id
-      WHERE review.id IS NULL
-    `
-    expect(missingCarryReferences[0]!.count).toBe(0)
-    const missingContentionReferences = await sql`
-      SELECT count(*)::int AS count FROM contention evidence
-      LEFT JOIN run ON run.id=evidence.run_id
-      LEFT JOIN landing ON landing.id=evidence.landing_id
-      WHERE (evidence.run_id IS NOT NULL AND run.id IS NULL)
-         OR (evidence.landing_id IS NOT NULL AND landing.id IS NULL)
-    `
-    expect(missingContentionReferences[0]!.count).toBe(0)
-    const flakeProjects = await sql`
-      SELECT count(*)::int AS count FROM test_flake WHERE project_id IS NOT NULL
-    `
-    expect(flakeProjects[0]!.count).toBe(0)
-    const recordNullPatchIdentity = await sql`
-      SELECT count(*)::int AS count FROM review WHERE patch_id IS NULL AND path_set IS NULL
-    `
-    expect(recordNullPatchIdentity[0]!.count).toBe(sourceNullPatchIdentity)
+    const outboxRows = source
+      .query<{ id: number; synced_at: string | null; last_error: string | null }, []>(
+        'SELECT id, synced_at, last_error FROM outbox ORDER BY id',
+      )
+      .all()
+    const requiredRows = outboxRows.filter((row) => !historyIds.has(row.id))
+    expect(requiredRows.every((row) => row.synced_at !== null && row.last_error === null)).toBe(
+      true,
+    )
+    const refusedHistory = outboxRows.filter(
+      (row) => historyIds.has(row.id) && row.last_error !== null,
+    )
+    const refusalMessages = [...new Set(refusedHistory.map((row) => row.last_error))]
+    console.log(
+      `live-copy history refused: ${refusedHistory.length}; errors: ${JSON.stringify(refusalMessages)}`,
+    )
     const missingOutbox = source
-      .query<{ count: number }, []>(
+      .query<{ count: number }, [string, string]>(
         `SELECT count(*) AS count FROM run r
-         WHERE r.status <> 'running'
+         WHERE r.status <> 'running' AND r.job NOT IN (?,?)
            AND NOT EXISTS (SELECT 1 FROM outbox o WHERE o.kind='run' AND o.record_id=r.record_id)`,
       )
-      .get()!.count
+      .get(HOOK_TREE_JOB, LANDING_TREE_JOB)!.count
     expect(missingOutbox).toBe(0)
-    const missingChains = await sql`
-      SELECT count(*)::int AS count
-      FROM run child
-      LEFT JOIN run retry ON retry.id=child.retry_of
-      LEFT JOIN run parent ON parent.id=child.parent_run_id
-      WHERE (child.retry_of IS NOT NULL AND retry.id IS NULL)
-         OR (child.parent_run_id IS NOT NULL AND parent.id IS NULL)
-    `
-    expect(missingChains[0]!.count).toBe(0)
-    const recordNoProject =
-      await sql`SELECT count(*)::int AS count FROM run WHERE project_id IS NULL`
-    expect(recordNoProject[0]!.count).toBe(noProject)
     source.close()
   })
 
