@@ -231,7 +231,7 @@ const USAGE = `hub — every project's tasks in flight, what each cost, and sche
   hub rulings [--json]        open questions ingested from orch, with age
       --json                  one JSON document: {stale_after, questions}
   hub reclaim-fixture-questions [--dry-run] [--json]
-                              remove orphan question and interval rows from the documented gate fixtures
+                              remove question, interval and task rows left by the documented gate fixtures
 
   ${TASK_USAGE}
 
@@ -907,14 +907,20 @@ try {
       printReconcile(await reconcileOpenIntervals({ dryRun: has('dry-run') }))
       break
     case 'reclaim-fixture-questions': {
-      const { rows, intervals } = await reclaimFixtureQuestions(has('dry-run'))
-      if (has('json')) console.log(JSON.stringify({ rows, intervals }))
+      const registeredProjects = new Set(projects().map((project) => project.name))
+      const { rows, intervals, tasks } = await reclaimFixtureQuestions(
+        has('dry-run'),
+        registeredProjects,
+      )
+      if (has('json')) console.log(JSON.stringify({ rows, intervals, tasks }))
       else {
         const verb = has('dry-run') ? 'would remove' : 'removed'
         for (const row of rows)
           console.log(`${verb} question ${row.question_id} ${row.session_id} ${row.run_ref}`)
         for (const interval of intervals)
           console.log(`${verb} interval ${interval.id} ${interval.ref}`)
+        for (const task of tasks)
+          console.log(`${verb} task ${task.key} ${task.project} ${task.title}`)
       }
       break
     }

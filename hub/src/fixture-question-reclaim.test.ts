@@ -1,9 +1,16 @@
-import { expect, test } from 'bun:test'
+import { beforeEach, expect, test } from 'bun:test'
+import { resetFixtureStore } from '../test/run-fixtures.ts'
+import { db, writeTransaction } from './db.ts'
 import {
   type FixtureQuestion,
+  type FixtureTask,
   fixtureIntervalsWithoutRuns,
   fixtureQuestionsWithoutRuns,
+  fixtureTasksToReclaim,
+  reclaimFixtureQuestions,
 } from './fixture-question-reclaim.ts'
+
+beforeEach(resetFixtureStore)
 
 test('fixture question selection removes only documented sessions whose run is absent', () => {
   const row = (
@@ -85,4 +92,69 @@ test('turn ref looks up the turn id not the root (mutation: look up parsed.root 
       ]),
     ),
   ).toEqual([])
+})
+
+const fixtureTask = (overrides: Partial<FixtureTask> = {}): FixtureTask => ({
+  key: 'ALP-899',
+  project: 'alpha',
+  title: 'No assignment field',
+  opened_at: null,
+  ...overrides,
+})
+
+test('fixture task selection includes an exact unregistered unopened match', () => {
+  const row = fixtureTask()
+  expect(fixtureTasksToReclaim([row], new Set())).toEqual([row])
+})
+
+test('fixture task selection keeps a matching key with a different title', () => {
+  expect(fixtureTasksToReclaim([fixtureTask({ title: 'Different title' })], new Set())).toEqual([])
+})
+
+test('fixture task selection keeps a task with a non-null opened_at', () => {
+  expect(
+    fixtureTasksToReclaim([fixtureTask({ opened_at: '2026-09-24T12:00:00.000Z' })], new Set()),
+  ).toEqual([])
+})
+
+test('fixture task selection keeps a task in a registered project', () => {
+  expect(fixtureTasksToReclaim([fixtureTask()], new Set(['alpha']))).toEqual([])
+})
+
+test('fixture task reclaim deletes the task and all child rows in one fixture-store transaction', async () => {
+  writeTransaction((connection) => {
+    connection
+      .query(
+        `INSERT INTO task
+          (key,project,title,status,status_category,opened_at,updated_at,source,first_seen,last_seen)
+         VALUES (?,?,?,?,?,?,?,?,?,?)`,
+      )
+      .run('ALP-899', 'alpha', 'No assignment field', null, null, null, null, 'mcp', '', '')
+    connection
+      .query('INSERT INTO task_comment(task_key,body,created_at) VALUES (?,?,?)')
+      .run('ALP-899', 'comment', '')
+    connection
+      .query(
+        `INSERT INTO task_document(task_key,title,body,version,created_at,updated_at)
+         VALUES (?,?,?,?,?,?)`,
+      )
+      .run('ALP-899', 'document', 'body', 'v1', '', '')
+    connection
+      .query('INSERT INTO task_status_event(task_key,at,to_status) VALUES (?,?,?)')
+      .run('ALP-899', '', 'open')
+  })
+
+  const dryRun = await reclaimFixtureQuestions(true, new Set())
+
+  expect(dryRun.tasks).toEqual([fixtureTask()])
+  for (const table of ['task_comment', 'task_document', 'task_status_event', 'task']) {
+    expect(db().query(`SELECT * FROM ${table}`).all()).toHaveLength(1)
+  }
+
+  const result = await reclaimFixtureQuestions(false, new Set())
+
+  expect(result.tasks).toEqual([fixtureTask()])
+  for (const table of ['task_comment', 'task_document', 'task_status_event', 'task']) {
+    expect(db().query(`SELECT * FROM ${table}`).all()).toEqual([])
+  }
 })

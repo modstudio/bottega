@@ -1,5 +1,5 @@
 // concern: fixture-question-reclaim
-/** One-time removal of question and interval rows leaked by the named gate fixtures. */
+/** One-time removal of question, interval and task rows leaked by the named gate fixtures. */
 import { db, writeTransaction } from './db.ts'
 import { readRunsById } from './orch.ts'
 import { indexRunAnswers, runRef } from './reconcile.ts'
@@ -15,6 +15,14 @@ const FIXTURE_INTERVAL_REFS = new Set([
   'orch:10001',
   'orch:9301:turn:9302',
 ])
+const FIXTURE_TASKS = [
+  { key: 'ALP-899', project: 'alpha', title: 'No assignment field' },
+  { key: 'ALP-900', project: 'alpha', title: 'seed' },
+  { key: 'ALP-997', project: 'alpha', title: 'Awaiting Oracle' },
+  { key: 'ALP-998', project: 'alpha', title: 'Vendor Mystery' },
+  { key: 'BET-700', project: 'beta', title: 'seed' },
+  { key: 'LOC-638', project: 'workshop', title: 'Ticketed report work' },
+] as const
 
 export type FixtureQuestion = {
   question_id: number
@@ -28,6 +36,13 @@ export type FixtureInterval = {
   id: number
   source: string
   ref: string
+}
+
+export type FixtureTask = {
+  key: string
+  project: string
+  title: string | null
+  opened_at: string | null
 }
 
 export function fixtureQuestionsWithoutRuns(
@@ -57,9 +72,25 @@ export function fixtureIntervalsWithoutRuns(
   })
 }
 
+export function fixtureTasksToReclaim(
+  rows: FixtureTask[],
+  registeredProjects: ReadonlySet<string>,
+): FixtureTask[] {
+  return rows.filter(
+    (row) =>
+      row.opened_at === null &&
+      !registeredProjects.has(row.project) &&
+      FIXTURE_TASKS.some(
+        (fixture) =>
+          fixture.key === row.key && fixture.project === row.project && fixture.title === row.title,
+      ),
+  )
+}
+
 export async function reclaimFixtureQuestions(
   dryRun: boolean,
-): Promise<{ rows: FixtureQuestion[]; intervals: FixtureInterval[] }> {
+  registeredProjects: ReadonlySet<string>,
+): Promise<{ rows: FixtureQuestion[]; intervals: FixtureInterval[]; tasks: FixtureTask[] }> {
   const database = db()
   const questions = database
     .query(
@@ -74,6 +105,9 @@ export async function reclaimFixtureQuestions(
   const intervals = database
     .query('SELECT id, source, ref FROM interval ORDER BY id')
     .all() as FixtureInterval[]
+  const tasks = database
+    .query('SELECT key, project, title, opened_at FROM task ORDER BY key')
+    .all() as FixtureTask[]
   const listed = intervals.filter(
     (interval) => interval.source === 'orch' && FIXTURE_INTERVAL_REFS.has(interval.ref),
   )
@@ -96,13 +130,24 @@ export async function reclaimFixtureQuestions(
   const selectedIntervals = fixtureIntervalsWithoutRuns(listed, answersById)
   for (const interval of selectedIntervals) refs.delete(interval.ref)
   const selected = fixtureQuestionsWithoutRuns(questions, refs)
-  if (!dryRun && (selected.length || selectedIntervals.length)) {
+  const selectedTasks = fixtureTasksToReclaim(tasks, registeredProjects)
+  if (!dryRun && (selected.length || selectedIntervals.length || selectedTasks.length)) {
     writeTransaction((connection) => {
       const removeQuestion = connection.query('DELETE FROM question WHERE question_id=?')
       for (const row of selected) removeQuestion.run(row.question_id)
       const removeInterval = connection.query('DELETE FROM interval WHERE id=?')
       for (const interval of selectedIntervals) removeInterval.run(interval.id)
+      const removeTaskComments = connection.query('DELETE FROM task_comment WHERE task_key=?')
+      const removeTaskDocuments = connection.query('DELETE FROM task_document WHERE task_key=?')
+      const removeTaskEvents = connection.query('DELETE FROM task_status_event WHERE task_key=?')
+      const removeTask = connection.query('DELETE FROM task WHERE key=?')
+      for (const task of selectedTasks) {
+        removeTaskComments.run(task.key)
+        removeTaskDocuments.run(task.key)
+        removeTaskEvents.run(task.key)
+        removeTask.run(task.key)
+      }
     })
   }
-  return { rows: selected, intervals: selectedIntervals }
+  return { rows: selected, intervals: selectedIntervals, tasks: selectedTasks }
 }
