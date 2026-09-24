@@ -240,6 +240,7 @@ export async function pushTasks(options: Options = {}) {
         {
           tasks: name === 'tasks' ? batch : [],
           [name]: batch,
+          expectedSpaceId: identity.activeSpaceId,
         },
         requestOptions,
       )
@@ -254,7 +255,14 @@ export async function pushTasks(options: Options = {}) {
     if (!old || next > old.next)
       maxima.set(match[1]!, { project: task.project, prefix: match[1]!, next })
   }
-  await hostedMirrorTasks({ tasks: [], raiseSequences: [...maxima.values()] }, requestOptions)
+  await hostedMirrorTasks(
+    {
+      tasks: [],
+      raiseSequences: [...maxima.values()],
+      expectedSpaceId: identity.activeSpaceId,
+    },
+    requestOptions,
+  )
   const hostedRows = await hostedTaskCounts(requestOptions)
   const hosted = Object.fromEntries(
     Object.entries(hostedRows).map(([table, rows]) => [table, grouped(rows)]),

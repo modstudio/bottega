@@ -3,7 +3,7 @@ import { newRecordId } from '../../../shared/record/schema.ts'
 import { keyPattern, refreshKeyPrefixes } from '../attribute.ts'
 import { db, nowIso, type Project, writeTransaction } from '../db.ts'
 import { projects } from '../projects.ts'
-import { mirrorCollectedTasks } from './collector-mirror.ts'
+import { createCollectorMirrorPass } from './collector-mirror.ts'
 
 /**
  * Generated files, which are not work.
@@ -144,6 +144,7 @@ function scanGit(since: string) {
  * vanish from the view entirely.
  */
 export async function ingestGit(since: string): Promise<{ days: number; tasks: number }> {
+  const mirror = await createCollectorMirrorPass('git')
   const { days, tasks, commits } = scanGit(since)
   const at = nowIso()
   writeTransaction((conn) => {
@@ -224,10 +225,12 @@ export async function ingestGit(since: string): Promise<{ days: number; tasks: n
       updated_at: t.last,
     }))
     for (let index = 0; index < mirrored.length; index += 500) {
-      await mirrorCollectedTasks(mirrored.slice(index, index + 500))
+      await mirror.mirrorTasks(mirrored.slice(index, index + 500))
     }
   } catch (error) {
     console.error(`hub: git task mirror skipped: ${(error as Error).message}`)
+  } finally {
+    mirror.reportSkipped()
   }
   return { days: days.size, tasks: tasks.size }
 }

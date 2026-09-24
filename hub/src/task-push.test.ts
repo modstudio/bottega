@@ -97,6 +97,7 @@ test('task push persists ids only after each successful batch and retries an unp
       return Response.json({ activeSpaceId: 'space-a', memberships: [] })
     if (path === '/v1/tasks/mirror') {
       const body = JSON.parse(String(init?.body)) as {
+        expectedSpaceId?: string
         statusEvents?: Array<{
           id: string
           legacy_local_id: number
@@ -105,6 +106,7 @@ test('task push persists ids only after each successful batch and retries an unp
           task_record_id?: string
         }>
       }
+      expect(body.expectedSpaceId).toBe('space-a')
       const events = body.statusEvents ?? []
       if (!events.length) return Response.json({ upserted: 0, adoptions: [] })
       statusBatch++

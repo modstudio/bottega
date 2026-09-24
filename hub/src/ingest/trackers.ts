@@ -10,9 +10,8 @@ import {
 import { db, nowIso, type Project, writeTransaction } from '../db.ts'
 import { credentials, Mcp } from '../mcp.ts'
 import { projects } from '../projects.ts'
-import { hostedMirrorTasks } from '../task-client.ts'
 import { claimTaskIdentity, taskRecordIdFor } from '../task-identity.ts'
-import { mirrorCollectedTasks } from './collector-mirror.ts'
+import { type CollectorMirrorPass, createCollectorMirrorPass } from './collector-mirror.ts'
 
 export type { TrackerTask } from '../../../shared/trackers.ts'
 
@@ -296,6 +295,7 @@ export function upsertTrackerTask(t: TrackerTask, at = nowIso()) {
 }
 
 async function mirrorTrackerSnapshot(
+  mirror: CollectorMirrorPass,
   tasks: TrackerTask[],
   local: ReadonlySet<string>,
   before: ReadonlyMap<string, string>,
@@ -344,7 +344,7 @@ async function mirrorTrackerSnapshot(
             task_id: event.task_record_id,
             project_name: task.project,
             at,
-            from_status: was,
+            from_status: was ?? null,
             to_status: task.category,
             created_at: at,
             updated_at: at,
@@ -355,10 +355,10 @@ async function mirrorTrackerSnapshot(
   })
   try {
     for (let index = 0; index < mirroredTasks.length; index += 500) {
-      await mirrorCollectedTasks(mirroredTasks.slice(index, index + 500))
+      await mirror.mirrorTasks(mirroredTasks.slice(index, index + 500))
     }
     for (let index = 0; index < mirroredEvents.length; index += 500)
-      await hostedMirrorTasks({ tasks: [], statusEvents: mirroredEvents.slice(index, index + 500) })
+      await mirror.mirrorStatusEvents(mirroredEvents.slice(index, index + 500))
     return null
   } catch (error) {
     return error as Error
@@ -415,6 +415,7 @@ function writeTrackerCache(
 }
 
 async function backfillTrackerTasks(
+  mirror: CollectorMirrorPass,
   source: TrackerSource,
   client: Mcp,
   missing: { task_key: string; project: string }[],
@@ -435,7 +436,7 @@ async function backfillTrackerTasks(
       if (!local.has(identity) && differs(task, existing.get(identity))) activity = true
       const localRow = trackerIdentityRow(db(), task)!
       try {
-        await mirrorCollectedTasks([
+        await mirror.mirrorTasks([
           {
             record_id: localRow.record_id,
             key: localRow.key,
@@ -475,6 +476,7 @@ async function backfillTrackerTasks(
 export async function ingestTrackers(
   only: ReadonlySet<Project> | null = null,
 ): Promise<TrackerResult[]> {
+  const mirror = await createCollectorMirrorPass('tracker')
   const d = db()
   const at = nowIso()
   const registrations = trackerRegistrations(projects())
@@ -574,12 +576,18 @@ export async function ingestTrackers(
           })
 
           const changed = writeTrackerCache(unique.values(), before, local, at)
-          const mirrorError = await mirrorTrackerSnapshot([...unique.values()], local, before, at)
+          const mirrorError = await mirrorTrackerSnapshot(
+            mirror,
+            [...unique.values()],
+            local,
+            before,
+            at,
+          )
 
           // Use the connection which already proved reachable for the handful of
           // closed tasks recent work names. A failed full sync is not immediately
           // retried here: that doubled traffic precisely when a server was down.
-          const backfill = await backfillTrackerTasks(s, m, missing, local, existing, at)
+          const backfill = await backfillTrackerTasks(mirror, s, m, missing, local, existing, at)
           activity ||= backfill.activity
           return {
             result: {
@@ -618,6 +626,8 @@ export async function ingestTrackers(
   const filled = results.reduce((sum, item) => sum + item.filled, 0)
   const out = results.map((item) => item.result)
   if (filled) out.push({ project: 'backfill', tasks: filled, changed: 0, activity: true })
+
+  mirror.reportSkipped()
 
   writeTransaction((conn) =>
     conn

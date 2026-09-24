@@ -1,7 +1,7 @@
 import { beforeAll, describe, expect, test } from 'bun:test'
 import { resetFixtureStore } from '../test/run-fixtures.ts'
 import { db, writeTransaction } from './db.ts'
-import { confirmCount, mirrorCollisionDecision } from './hosted-tasks.ts'
+import { assertMirrorExpectedSpace, confirmCount, mirrorCollisionDecision } from './hosted-tasks.ts'
 import { createTask } from './task.ts'
 import { taskApi } from './task-api.ts'
 import { applyHostedTaskChanges } from './task-cache.ts'
@@ -16,6 +16,41 @@ import { closeThenPrune } from './task-close.ts'
 beforeAll(resetFixtureStore)
 
 describe('hosted-only task safety', () => {
+  test('mirror expected-space checks name both spaces and accept older clients', () => {
+    expect(() => assertMirrorExpectedSpace(undefined, 'space-b')).not.toThrow()
+    expect(() => assertMirrorExpectedSpace('space-b', 'space-b')).not.toThrow()
+    expect(() => assertMirrorExpectedSpace('space-a', 'space-b')).toThrow(
+      'mirror expected space space-a, actual space space-b; re-run after the active space settles',
+    )
+  })
+
+  test('a mismatched mirror request reaches no write service', async () => {
+    let writes = 0
+    const response = await taskApi(
+      new Request('https://hub.example.test/v1/tasks/mirror', {
+        method: 'PUT',
+        headers: { authorization: 'Bearer test', 'content-type': 'application/json' },
+        body: JSON.stringify({ tasks: [], expectedSpaceId: 'space-a' }),
+      }),
+      { recordApiUrl: 'https://record.example.test', recordDatabaseUrl: 'postgres://unused' },
+      {
+        fetch: async () =>
+          Response.json({ user: { id: 'user-1' }, activeSpaceId: 'space-b', memberships: [] }),
+        mirror: async () => {
+          writes++
+          return { upserted: 0, adoptions: [] }
+        },
+      },
+    )
+
+    expect(response?.status).toBe(409)
+    expect(await response?.json()).toEqual({
+      error:
+        'mirror expected space space-a, actual space space-b; re-run after the active space settles',
+    })
+    expect(writes).toBe(0)
+  })
+
   test('mirror collision decisions insert, update, deduplicate events, and refuse reused ids', () => {
     const incoming = { id: 'id-1', spaceId: 'space-a', naturalKey: 'task DEV-1' }
     expect(mirrorCollisionDecision(incoming, null, 'update')).toEqual({ action: 'insert' })

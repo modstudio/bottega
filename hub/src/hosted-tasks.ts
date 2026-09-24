@@ -388,10 +388,35 @@ export async function softDeleteHostedDocuments(
 
 type MirrorBody = {
   tasks: HostedTask[]
+  expectedSpaceId?: string
   comments?: HostedComment[]
   documents?: HostedDocument[]
   statusEvents?: HostedStatusEvent[]
   raiseSequences?: Array<{ project: string; prefix: string; next: number }>
+}
+
+class MirrorExpectedSpaceMismatchError extends Error {
+  override name = 'MirrorExpectedSpaceMismatchError'
+}
+
+/** Refuse a mirror selected for a different active space before opening a transaction. */
+export function assertMirrorExpectedSpace(
+  expectedSpaceId: string | undefined,
+  actualSpaceId: string,
+) {
+  if (expectedSpaceId === undefined || expectedSpaceId === actualSpaceId) return
+  throw new MirrorExpectedSpaceMismatchError(
+    `mirror expected space ${expectedSpaceId}, actual space ${actualSpaceId}; re-run after the active space settles`,
+  )
+}
+
+export function isMirrorExpectedSpaceMismatch(error: unknown) {
+  const message = error instanceof Error ? error.message : String(error)
+  return (
+    message.includes('mirror expected space ') &&
+    message.includes('actual space ') &&
+    message.includes('re-run after the active space settles')
+  )
 }
 
 type MirrorIdentity = { id: string; spaceId: string; naturalKey: string }
@@ -888,6 +913,7 @@ async function mirrorHostedTaskBody(
 }
 
 export async function mirrorHostedTasks(url: string, identity: TaskIdentity, body: MirrorBody) {
+  assertMirrorExpectedSpace(body.expectedSpaceId, identity.spaceId)
   const total =
     body.tasks.length +
     (body.comments?.length ?? 0) +
