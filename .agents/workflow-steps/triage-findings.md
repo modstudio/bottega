@@ -12,4 +12,4 @@ Give every finding an independent refutation pass before accepting it: re-read t
 
 Record every finding's disposition with `orch review triage`, and grade every lens with `orch judge`. Do not let a finding disappear through omission.
 
-This step is done only when a human has ruled on every finding as accepted, modified, rejected, or skipped, every disposition is recorded, and every lens is graded.
+This step is done only when every finding has a recorded ruling as accepted, modified, rejected, or skipped, every disposition is recorded, and every lens is graded.
