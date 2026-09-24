@@ -324,7 +324,7 @@ async function dispatchReport(
   try {
     for (const recipient of subscription.recipients) {
       const unsubscribeUrl = recipient.unsubscribeToken
-        ? `${requiredHostedOrigin(input.hostedOrigin)}/unsubscribe/${recipient.unsubscribeToken}`
+        ? `${requiredHostedOrigin(input.hostedOrigin)}/unsubscribe/${candidate.spaceId}/${recipient.unsubscribeToken}`
         : null
       await input.mail.send({
         ...rendered,

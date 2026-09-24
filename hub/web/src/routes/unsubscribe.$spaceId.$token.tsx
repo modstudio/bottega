@@ -5,19 +5,23 @@ import { isHostedMode } from '@/lib/hub-mode'
 import { Button } from '@/ui/button/button'
 import { PageHeader } from '@/ui/page-header/page-header'
 
-export const Route = createFileRoute('/unsubscribe/$token')({ component: UnsubscribeRoute })
+export const Route = createFileRoute('/unsubscribe/$spaceId/$token')({
+  component: UnsubscribeRoute,
+})
 
 function UnsubscribeRoute() {
-  const { token } = Route.useParams()
+  const { spaceId, token } = Route.useParams()
   if (!isHostedMode()) return <Navigate to="/" />
-  return <UnsubscribePage token={token} />
+  return <UnsubscribePage spaceId={spaceId} token={token} />
 }
 
-function UnsubscribePage({ token }: { token: string }) {
+function UnsubscribePage({ spaceId, token }: { spaceId: string; token: string }) {
   const details = useQuery({
-    queryKey: ['report-unsubscribe', token],
+    queryKey: ['report-unsubscribe', spaceId, token],
     queryFn: async () => {
-      const response = await fetch(`/v1/report-unsubscribe/${encodeURIComponent(token)}`)
+      const response = await fetch(
+        `/v1/report-unsubscribe/${encodeURIComponent(spaceId)}/${encodeURIComponent(token)}`,
+      )
       if (!response.ok) throw new Error('Could not load this unsubscribe link.')
       return (await response.json()) as {
         email: string
@@ -32,7 +36,9 @@ function UnsubscribePage({ token }: { token: string }) {
   const unsubscribe = async () => {
     setPending(true)
     try {
-      await fetch(`/unsubscribe/${encodeURIComponent(token)}`, { method: 'POST' })
+      await fetch(`/unsubscribe/${encodeURIComponent(spaceId)}/${encodeURIComponent(token)}`, {
+        method: 'POST',
+      })
       setDone(true)
     } finally {
       setPending(false)

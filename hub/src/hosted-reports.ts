@@ -1,7 +1,7 @@
 import { randomBytes } from 'node:crypto'
 import { SQL } from 'bun'
 import { newRecordId } from '../../shared/record/schema.ts'
-import type { TaskIdentity } from './hosted-tasks.ts'
+import { type TaskIdentity, withHostedTenant } from './hosted-tasks.ts'
 
 export type HostedSend = {
   id: string
@@ -484,30 +484,39 @@ export async function updateHostedReportSubscription(
   })
 }
 
-export async function hostedEmailRecipientByToken(url: string, token: string) {
-  const client = new SQL(url)
-  try {
+const PUBLIC_REPORT_USER_ID = '00000000-0000-0000-0000-000000000000'
+
+export async function hostedEmailRecipientByToken(url: string, spaceId: string, token: string) {
+  return withHostedTenant(url, { spaceId, userId: PUBLIC_REPORT_USER_ID }, async (tx) => {
     return (
       rows<{ email: string; subscription: string; space: string }>(
-        await client`SELECT * FROM hub_report_email_recipient(${token})`,
+        await tx`SELECT r.email,
+          s.cadence || ' ' || CASE s.scope_kind
+            WHEN 'project' THEN 'project ' || s.project_name
+            WHEN 'members' THEN 'members'
+            ELSE 'space'
+          END || ' report' AS subscription,
+          sp.name AS space
+        FROM hub_report_subscription_recipient r
+        JOIN hub_report_subscription s ON s.id=r.subscription_id AND s.space_id=r.space_id
+        JOIN space sp ON sp.id=r.space_id
+        WHERE r.space_id=${spaceId}::uuid AND r.unsubscribe_token=${token}
+          AND s.deleted_at IS NULL`,
       )[0] ?? null
     )
-  } finally {
-    await client.close()
-  }
+  })
 }
 
-export async function unsubscribeHostedEmailRecipient(url: string, token: string) {
-  const client = new SQL(url)
-  try {
+export async function unsubscribeHostedEmailRecipient(url: string, spaceId: string, token: string) {
+  return withHostedTenant(url, { spaceId, userId: PUBLIC_REPORT_USER_ID }, async (tx) => {
     return Boolean(
       rows<{ id: string }>(
-        await client`SELECT id FROM hub_unsubscribe_report_email_recipient(${token})`,
+        await tx`DELETE FROM hub_report_subscription_recipient
+        WHERE space_id=${spaceId}::uuid AND unsubscribe_token=${token}
+        RETURNING id`,
       )[0],
     )
-  } finally {
-    await client.close()
-  }
+  })
 }
 
 export async function unsubscribeHostedReportSubscription(

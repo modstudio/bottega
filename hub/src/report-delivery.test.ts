@@ -279,12 +279,17 @@ describe('hosted report delivery', () => {
     })
     expect(sent[0]!.headers).toBeUndefined()
     expect(sent[0]!.text).not.toContain('/unsubscribe/')
-    expect(sent[1]!.text).toContain('https://hub.example.test/unsubscribe/unguessable-token')
-    expect(sent[1]!.html).toContain('https://hub.example.test/unsubscribe/unguessable-token')
+    expect(sent[1]!.text).toContain(
+      'https://hub.example.test/unsubscribe/01990000-0000-7000-8000-000000000011/unguessable-token',
+    )
+    expect(sent[1]!.html).toContain(
+      'https://hub.example.test/unsubscribe/01990000-0000-7000-8000-000000000011/unguessable-token',
+    )
     expect(sent[1]!.headers).toEqual([
       {
         name: 'List-Unsubscribe',
-        value: '<https://hub.example.test/unsubscribe/unguessable-token>',
+        value:
+          '<https://hub.example.test/unsubscribe/01990000-0000-7000-8000-000000000011/unguessable-token>',
       },
       { name: 'List-Unsubscribe-Post', value: 'List-Unsubscribe=One-Click' },
     ])

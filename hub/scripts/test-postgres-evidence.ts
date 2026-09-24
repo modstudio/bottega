@@ -526,10 +526,23 @@ try {
       !emailRows[1]?.unsubscribe_token
     )
       throw new Error('email report recipients were not normalized or tokenized')
-    const emailDetail = await hostedEmailRecipientByToken(actorUrl, emailRows[1]!.unsubscribe_token)
+    const emailDetail = await hostedEmailRecipientByToken(
+      actorUrl,
+      SPACE_A,
+      emailRows[1]!.unsubscribe_token,
+    )
     if (emailDetail?.email !== 'first@example.test' || emailDetail.space !== 'Evidence A')
       throw new Error('public report unsubscribe detail was not available by token')
-    if (!(await unsubscribeHostedEmailRecipient(actorUrl, emailRows[1]!.unsubscribe_token)))
+    if (
+      (await hostedEmailRecipientByToken(actorUrl, SPACE_B, emailRows[1]!.unsubscribe_token)) !==
+      null
+    )
+      throw new Error('public report unsubscribe detail crossed its bound space')
+    if (await unsubscribeHostedEmailRecipient(actorUrl, SPACE_B, emailRows[1]!.unsubscribe_token))
+      throw new Error('public report unsubscribe deleted through the wrong bound space')
+    if (
+      !(await unsubscribeHostedEmailRecipient(actorUrl, SPACE_A, emailRows[1]!.unsubscribe_token))
+    )
       throw new Error('public report unsubscribe did not remove its email row')
     const remainingEmailRecipients =
       await admin`SELECT user_id,email FROM hub_report_subscription_recipient

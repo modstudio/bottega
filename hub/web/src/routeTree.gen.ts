@@ -35,10 +35,10 @@ import { Route as AcceptInvitationIdRouteImport } from './routes/accept-invitati
 import { Route as ProjectsNameRouteImport } from './routes/projects.$name'
 import { Route as ReviewsIdRouteImport } from './routes/reviews.$id'
 import { Route as RunsIdRouteImport } from './routes/runs.$id'
-import { Route as UnsubscribeTokenRouteImport } from './routes/unsubscribe.$token'
 import { Route as BoardTasksKeyRouteImport } from './routes/board.tasks.$key'
 import { Route as DoneTasksKeyRouteImport } from './routes/done.tasks.$key'
 import { Route as FlightTasksKeyRouteImport } from './routes/flight.tasks.$key'
+import { Route as UnsubscribeSpaceIdTokenRouteImport } from './routes/unsubscribe.$spaceId.$token'
 import { Route as DocsScopeSubjectSlugRouteImport } from './routes/docs.$scope.$subject.$slug'
 
 const IndexRoute = IndexRouteImport.update({
@@ -171,11 +171,6 @@ const RunsIdRoute = RunsIdRouteImport.update({
   path: '/$id',
   getParentRoute: () => RunsRoute,
 } as any)
-const UnsubscribeTokenRoute = UnsubscribeTokenRouteImport.update({
-  id: '/unsubscribe/$token',
-  path: '/unsubscribe/$token',
-  getParentRoute: () => rootRouteImport,
-} as any)
 const BoardTasksKeyRoute = BoardTasksKeyRouteImport.update({
   id: '/tasks/$key',
   path: '/tasks/$key',
@@ -190,6 +185,11 @@ const FlightTasksKeyRoute = FlightTasksKeyRouteImport.update({
   id: '/tasks/$key',
   path: '/tasks/$key',
   getParentRoute: () => FlightRoute,
+} as any)
+const UnsubscribeSpaceIdTokenRoute = UnsubscribeSpaceIdTokenRouteImport.update({
+  id: '/unsubscribe/$spaceId/$token',
+  path: '/unsubscribe/$spaceId/$token',
+  getParentRoute: () => rootRouteImport,
 } as any)
 const DocsScopeSubjectSlugRoute = DocsScopeSubjectSlugRouteImport.update({
   id: '/$scope/$subject/$slug',
@@ -224,10 +224,10 @@ export interface FileRoutesByFullPath {
   '/projects/$name': typeof ProjectsNameRoute
   '/reviews/$id': typeof ReviewsIdRoute
   '/runs/$id': typeof RunsIdRoute
-  '/unsubscribe/$token': typeof UnsubscribeTokenRoute
   '/board/tasks/$key': typeof BoardTasksKeyRoute
   '/done/tasks/$key': typeof DoneTasksKeyRoute
   '/flight/tasks/$key': typeof FlightTasksKeyRoute
+  '/unsubscribe/$spaceId/$token': typeof UnsubscribeSpaceIdTokenRoute
   '/docs/$scope/$subject/$slug': typeof DocsScopeSubjectSlugRoute
 }
 export interface FileRoutesByTo {
@@ -257,10 +257,10 @@ export interface FileRoutesByTo {
   '/projects/$name': typeof ProjectsNameRoute
   '/reviews/$id': typeof ReviewsIdRoute
   '/runs/$id': typeof RunsIdRoute
-  '/unsubscribe/$token': typeof UnsubscribeTokenRoute
   '/board/tasks/$key': typeof BoardTasksKeyRoute
   '/done/tasks/$key': typeof DoneTasksKeyRoute
   '/flight/tasks/$key': typeof FlightTasksKeyRoute
+  '/unsubscribe/$spaceId/$token': typeof UnsubscribeSpaceIdTokenRoute
   '/docs/$scope/$subject/$slug': typeof DocsScopeSubjectSlugRoute
 }
 export interface FileRoutesById {
@@ -291,10 +291,10 @@ export interface FileRoutesById {
   '/projects/$name': typeof ProjectsNameRoute
   '/reviews/$id': typeof ReviewsIdRoute
   '/runs/$id': typeof RunsIdRoute
-  '/unsubscribe/$token': typeof UnsubscribeTokenRoute
   '/board/tasks/$key': typeof BoardTasksKeyRoute
   '/done/tasks/$key': typeof DoneTasksKeyRoute
   '/flight/tasks/$key': typeof FlightTasksKeyRoute
+  '/unsubscribe/$spaceId/$token': typeof UnsubscribeSpaceIdTokenRoute
   '/docs/$scope/$subject/$slug': typeof DocsScopeSubjectSlugRoute
 }
 export interface FileRouteTypes {
@@ -326,10 +326,10 @@ export interface FileRouteTypes {
     | '/projects/$name'
     | '/reviews/$id'
     | '/runs/$id'
-    | '/unsubscribe/$token'
     | '/board/tasks/$key'
     | '/done/tasks/$key'
     | '/flight/tasks/$key'
+    | '/unsubscribe/$spaceId/$token'
     | '/docs/$scope/$subject/$slug'
   fileRoutesByTo: FileRoutesByTo
   to:
@@ -359,10 +359,10 @@ export interface FileRouteTypes {
     | '/projects/$name'
     | '/reviews/$id'
     | '/runs/$id'
-    | '/unsubscribe/$token'
     | '/board/tasks/$key'
     | '/done/tasks/$key'
     | '/flight/tasks/$key'
+    | '/unsubscribe/$spaceId/$token'
     | '/docs/$scope/$subject/$slug'
   id:
     | '__root__'
@@ -392,10 +392,10 @@ export interface FileRouteTypes {
     | '/projects/$name'
     | '/reviews/$id'
     | '/runs/$id'
-    | '/unsubscribe/$token'
     | '/board/tasks/$key'
     | '/done/tasks/$key'
     | '/flight/tasks/$key'
+    | '/unsubscribe/$spaceId/$token'
     | '/docs/$scope/$subject/$slug'
   fileRoutesById: FileRoutesById
 }
@@ -423,7 +423,7 @@ export interface RootRouteChildren {
   SignInRoute: typeof SignInRoute
   SpendRoute: typeof SpendRoute
   AcceptInvitationIdRoute: typeof AcceptInvitationIdRoute
-  UnsubscribeTokenRoute: typeof UnsubscribeTokenRoute
+  UnsubscribeSpaceIdTokenRoute: typeof UnsubscribeSpaceIdTokenRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -610,13 +610,6 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof RunsIdRouteImport
       parentRoute: typeof RunsRoute
     }
-    '/unsubscribe/$token': {
-      id: '/unsubscribe/$token'
-      path: '/unsubscribe/$token'
-      fullPath: '/unsubscribe/$token'
-      preLoaderRoute: typeof UnsubscribeTokenRouteImport
-      parentRoute: typeof rootRouteImport
-    }
     '/board/tasks/$key': {
       id: '/board/tasks/$key'
       path: '/tasks/$key'
@@ -637,6 +630,13 @@ declare module '@tanstack/react-router' {
       fullPath: '/flight/tasks/$key'
       preLoaderRoute: typeof FlightTasksKeyRouteImport
       parentRoute: typeof FlightRoute
+    }
+    '/unsubscribe/$spaceId/$token': {
+      id: '/unsubscribe/$spaceId/$token'
+      path: '/unsubscribe/$spaceId/$token'
+      fullPath: '/unsubscribe/$spaceId/$token'
+      preLoaderRoute: typeof UnsubscribeSpaceIdTokenRouteImport
+      parentRoute: typeof rootRouteImport
     }
     '/docs/$scope/$subject/$slug': {
       id: '/docs/$scope/$subject/$slug'
@@ -746,7 +746,7 @@ const rootRouteChildren: RootRouteChildren = {
   SignInRoute: SignInRoute,
   SpendRoute: SpendRoute,
   AcceptInvitationIdRoute: AcceptInvitationIdRoute,
-  UnsubscribeTokenRoute: UnsubscribeTokenRoute,
+  UnsubscribeSpaceIdTokenRoute: UnsubscribeSpaceIdTokenRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)

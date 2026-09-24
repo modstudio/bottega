@@ -54,20 +54,22 @@ test('the hosted route cannot update or remove a subscription in another space',
 
 test('email unsubscribe lookup and one-click POST need no session', async () => {
   const dependencies = {
-    emailRecipientByToken: (_url: string, token: string) => ({
+    emailRecipientByToken: (_url: string, spaceId: string, token: string) => ({
+      ...(spaceId === ownSpace ? {} : { invalidSpace: true }),
       email: `${token}@example.test`,
       subscription: 'daily report',
       space: 'Workshop',
     }),
-    unsubscribeEmailRecipient: (_url: string, token: string) => token === 'mail-token',
+    unsubscribeEmailRecipient: (_url: string, spaceId: string, token: string) =>
+      spaceId === ownSpace && token === 'mail-token',
   }
   const lookup = await reportApi(
-    new Request('https://hub.example.test/v1/report-unsubscribe/mail-token'),
+    new Request(`https://hub.example.test/v1/report-unsubscribe/${ownSpace}/mail-token`),
     config,
     dependencies,
   )
   const unsubscribe = await reportApi(
-    new Request('https://hub.example.test/unsubscribe/mail-token', { method: 'POST' }),
+    new Request(`https://hub.example.test/unsubscribe/${ownSpace}/mail-token`, { method: 'POST' }),
     config,
     dependencies,
   )
