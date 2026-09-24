@@ -5,6 +5,13 @@ import { DELIVERY, FIDELITY, QUALITY } from '../score/score.ts'
 
 export const VOID_EXCLUSION_REASON = 'voided with orch score --void'
 
+export function effectiveHostedExclusion(
+  activeExclusionReason: string | null,
+  runEvidenceExcluded: string | null,
+): string | null {
+  return activeExclusionReason ?? runEvidenceExcluded
+}
+
 export function refuseUnvoid(evidenceExcluded: string | null): string | null {
   if (evidenceExcluded === VOID_EXCLUSION_REASON) return null
   return `unvoid requires '${VOID_EXCLUSION_REASON}'; actual exclusion is ${evidenceExcluded === null ? 'none' : `'${evidenceExcluded}'`}`

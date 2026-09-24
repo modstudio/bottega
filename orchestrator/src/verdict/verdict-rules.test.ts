@@ -1,5 +1,6 @@
 import { describe, expect, test } from 'bun:test'
 import {
+  effectiveHostedExclusion,
   type JobFacts,
   refuseUnvoid,
   refuseVerdict,
@@ -24,6 +25,12 @@ const writing: JobFacts = { ...readOnly, writesRepo: true }
 const findings: JobFacts = { ...readOnly, producesFindings: true }
 
 describe('verdict rules', () => {
+  test('uses the active hosted exclusion before the run-row fallback', () => {
+    expect(effectiveHostedExclusion('active reason', 'run reason')).toBe('active reason')
+    expect(effectiveHostedExclusion(null, 'run reason')).toBe('run reason')
+    expect(effectiveHostedExclusion(null, null)).toBeNull()
+  })
+
   test('unvoid allows only the orch score --void exclusion reason', () => {
     expect(refuseUnvoid(VOID_EXCLUSION_REASON)).toBeNull()
     for (const reason of [

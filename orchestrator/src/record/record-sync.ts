@@ -37,7 +37,11 @@ import {
 } from '../run/run-outbox.ts'
 import { backfillScoreRecords, SCORE_RECORD_PAYLOAD_COLUMNS } from '../score/score-outbox.ts'
 import { VERDICT_PAYLOAD_SCHEMA, type VerdictPayload } from '../verdict/verdict-payload.ts'
-import { refuseUnvoid, VOID_EXCLUSION_REASON } from '../verdict/verdict-rules.ts'
+import {
+  effectiveHostedExclusion,
+  refuseUnvoid,
+  VOID_EXCLUSION_REASON,
+} from '../verdict/verdict-rules.ts'
 import {
   backfillLandingEvidenceRecords,
   CONTENTION_RECORD_PAYLOAD_COLUMNS,
@@ -388,14 +392,23 @@ async function pushRun(postgres: SQL, row: Payload, principal: RecordPrincipal):
         )
       }
       const exclusions = await tx`
-        SELECT reason, superseded_at FROM run_exclusion
+        SELECT reason FROM run_exclusion
         WHERE run_id=${values.id}::uuid AND space_id=${principal.spaceId}::uuid
+          AND superseded_at IS NULL
       `
-      const exclusion = exclusions[0] as Record<string, unknown> | undefined
-      const reason = exclusion?.reason == null ? null : String(exclusion.reason)
-      const refusal = refuseUnvoid(reason)
-      if (refusal) throw new Error(`refused: ${refusal}`)
-      if (exclusion?.superseded_at == null) {
+      const runs = await tx`
+        SELECT evidence_excluded FROM run
+        WHERE id=${values.id}::uuid AND space_id=${principal.spaceId}::uuid
+      `
+      const exclusionReason = exclusions[0]?.reason
+      const runReason = runs[0]?.evidence_excluded
+      const reason = effectiveHostedExclusion(
+        exclusionReason == null ? null : String(exclusionReason),
+        runReason == null ? null : String(runReason),
+      )
+      if (reason !== null) {
+        const refusal = refuseUnvoid(reason)
+        if (refusal) throw new Error(`refused: ${refusal}`)
         const now = new Date().toISOString()
         await tx`
           UPDATE run_exclusion

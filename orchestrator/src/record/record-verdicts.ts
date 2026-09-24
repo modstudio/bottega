@@ -3,7 +3,12 @@
 import { SQL } from 'bun'
 import type { Delivery, Fidelity, Quality } from '../score/score.ts'
 import type { VerdictInput } from '../verdict/verdict-payload.ts'
-import { refuseUnvoid, refuseVerdict, VOID_EXCLUSION_REASON } from '../verdict/verdict-rules.ts'
+import {
+  effectiveHostedExclusion,
+  refuseUnvoid,
+  refuseVerdict,
+  VOID_EXCLUSION_REASON,
+} from '../verdict/verdict-rules.ts'
 
 export class RecordVerdictError extends Error {
   status: 400 | 404 | 409
@@ -154,14 +159,23 @@ async function supersedeRecordVoid(
   `
   if (columns.length !== 3) throw new RecordVerdictError(UNVOID_MIGRATION_REMEDY, 409)
   const exclusions = await tx`
-    SELECT reason, superseded_at FROM run_exclusion
+    SELECT reason FROM run_exclusion
     WHERE run_id=${input.id}::uuid AND space_id=${input.spaceId}::uuid
+      AND superseded_at IS NULL
   `
-  const exclusion = exclusions[0] as Record<string, unknown> | undefined
-  const reason = exclusion?.reason == null ? null : String(exclusion.reason)
+  const runs = await tx`
+    SELECT evidence_excluded FROM run
+    WHERE id=${input.id}::uuid AND space_id=${input.spaceId}::uuid
+  `
+  const exclusionReason = exclusions[0]?.reason
+  const runReason = runs[0]?.evidence_excluded
+  const reason = effectiveHostedExclusion(
+    exclusionReason == null ? null : String(exclusionReason),
+    runReason == null ? null : String(runReason),
+  )
+  if (reason === null) return
   const refusal = refuseUnvoid(reason)
   if (refusal) throw new RecordVerdictError(`refused: ${refusal}`, 409)
-  if (exclusion?.superseded_at != null) return
   const now = new Date().toISOString()
   await tx`
     UPDATE run_exclusion
