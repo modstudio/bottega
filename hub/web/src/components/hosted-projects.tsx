@@ -46,8 +46,7 @@ export function HostedProjects() {
     {
       id: 'context',
       label: 'Context',
-      render: (project) =>
-        project.managedContext ? <Badge tone="success">managed</Badge> : '-',
+      render: (project) => (project.managedContext ? <Badge tone="success">managed</Badge> : '-'),
     },
     {
       id: 'landing',
