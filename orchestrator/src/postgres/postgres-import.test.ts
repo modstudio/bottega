@@ -278,6 +278,12 @@ realPostgres('project import against copied live SQLite data', () => {
     const sourceMachineId = source
       .query<{ value: string }, []>("SELECT value FROM schema_meta WHERE key='machine_id'")
       .get()!.value
+    const historyIds = new Set(
+      source
+        .query<{ id: number }, []>('SELECT id FROM outbox WHERE synced_at IS NOT NULL')
+        .all()
+        .map((row) => row.id),
+    )
     const backfill = backfillRunRecords(source, sourceMachineId)
     const scoreBackfill = backfillScoreRecords(source, sourceMachineId)
     const reviewBackfill = backfillReviewRecords(source)
@@ -290,9 +296,13 @@ realPostgres('project import against copied live SQLite data', () => {
       `live-copy review backfill: minted ${reviewBackfill.mintedReviews} reviews, ${reviewBackfill.mintedLenses} lenses, ${reviewBackfill.mintedFindings} findings; enqueued ${reviewBackfill.enqueuedReviews} reviews`,
     )
     console.log(`live-copy landing evidence backfill: ${JSON.stringify(landingEvidenceBackfill)}`)
-    const expectedPending = source
-      .query<{ count: number }, []>('SELECT count(*) AS count FROM outbox WHERE synced_at IS NULL')
-      .get()!.count
+    const attemptsBeforeReplay = new Map(
+      source
+        .query<{ id: number; attempts: number }, []>('SELECT id, attempts FROM outbox')
+        .all()
+        .map((row) => [row.id, row.attempts]),
+    )
+    source.query('UPDATE outbox SET synced_at=NULL').run()
     // The copy carries real started_by ids, whose users exist in the live record
     // and not in this fresh database, so the run foreign key would refuse them.
     // Stand-ins with those ids make the copy's attribution replayable here.
@@ -308,43 +318,60 @@ realPostgres('project import against copied live SQLite data', () => {
         ON CONFLICT (id) DO NOTHING
       `
     }
-    const synced = await syncRecord({
-      recordUrl: actorUrl!,
-      local: source,
-      identity: {
-        id: sourceMachineId,
-        name: 'live-copy-proof',
-      },
-      now: () => '2026-09-16T00:00:00.000Z',
-      // The copy is replayed into this one harness space, so a project whose live
-      // register names a space this user cannot reach maps here instead.
-      projectSpaces: Object.fromEntries(
-        source
-          .query<{ name: string }, []>('SELECT name FROM project')
-          .all()
-          .map((project) => [project.name, PLATFORM_SPACE_ID]),
-      ),
-    })
-    console.log(
-      `live-copy sync: pushed ${synced.pushed}, failed ${synced.failed}, pending ${synced.pending}`,
+    const projectSpaces = Object.fromEntries(
+      source
+        .query<{ name: string }, []>('SELECT name FROM project')
+        .all()
+        .map((project) => [project.name, PLATFORM_SPACE_ID]),
     )
-    if (synced.failed > 0) {
-      const failedRows = source
-        .query<{ id: number; kind: string; last_error: string }, []>(
-          `SELECT id, kind, last_error FROM outbox
+    while (true) {
+      const synced = await syncRecord({
+        recordUrl: actorUrl!,
+        local: source,
+        identity: {
+          id: sourceMachineId,
+          name: 'live-copy-proof',
+        },
+        now: () => '2026-09-16T00:00:00.000Z',
+        // The copy is replayed into this one harness space, so a project whose live
+        // register names a space this user cannot reach maps here instead.
+        projectSpaces,
+      })
+      console.log(
+        `live-copy sync: pushed ${synced.pushed}, failed ${synced.failed}, pending ${synced.pending}`,
+      )
+      if (synced.pending === 0) break
+      const refused = source
+        .query<{ id: number; kind: string; attempts: number; last_error: string }, []>(
+          `SELECT id, kind, attempts, last_error FROM outbox
            WHERE synced_at IS NULL AND last_error IS NOT NULL
-           ORDER BY id LIMIT 5`,
+           ORDER BY id`,
         )
         .all()
-      throw new Error(
-        `live-copy sync failures:\n${failedRows
-          .map((row) => `${row.id} ${row.kind}: ${row.last_error}`)
-          .join('\n')}`,
-      )
+        .filter((row) => row.attempts > (attemptsBeforeReplay.get(row.id) ?? 0))
+      const unexpected = refused.filter((row) => !historyIds.has(row.id))
+      expect(unexpected).toEqual([])
+      if (refused.length === 0 || unexpected.length > 0) break
+      for (const row of refused) {
+        source.query('UPDATE outbox SET synced_at=? WHERE id=?').run('history-refused', row.id)
+      }
     }
-    expect(synced.pushed).toBe(expectedPending)
-    expect(synced.failed).toBe(0)
-    expect(synced.pending).toBe(0)
+    const outboxRows = source
+      .query<{ id: number; synced_at: string | null; last_error: string | null }, []>(
+        'SELECT id, synced_at, last_error FROM outbox ORDER BY id',
+      )
+      .all()
+    const requiredRows = outboxRows.filter((row) => !historyIds.has(row.id))
+    expect(requiredRows.every((row) => row.synced_at !== null && row.last_error === null)).toBe(
+      true,
+    )
+    const refusedHistory = outboxRows.filter(
+      (row) => historyIds.has(row.id) && row.last_error !== null,
+    )
+    const refusalMessages = [...new Set(refusedHistory.map((row) => row.last_error))]
+    console.log(
+      `live-copy history refused: ${refusedHistory.length}; errors: ${JSON.stringify(refusalMessages)}`,
+    )
     const missingOutbox = source
       .query<{ count: number }, []>(
         `SELECT count(*) AS count FROM run r
