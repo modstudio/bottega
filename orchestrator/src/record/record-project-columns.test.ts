@@ -1,5 +1,6 @@
 import { describe, expect, test } from 'bun:test'
 import {
+  type HostedProjectColumns,
   hostedProjectColumns,
   PROJECT_SETTING_COLUMNS,
   PROJECT_SETTINGS_NOT_IMPORTED,
@@ -26,14 +27,15 @@ const samples = {
   workerMcpServers: { setting: ['orch'], column: 'workerMcpServers', value: ['orch'] },
 } satisfies Record<
   keyof typeof PROJECT_SETTING_COLUMNS,
-  { setting: unknown; column: string; value: unknown }
+  { setting: unknown; column: keyof HostedProjectColumns; value: unknown }
 >
 
 describe('hostedProjectColumns', () => {
   test('maps every settings key onto its hosted column', () => {
     expect(Object.keys(samples).sort()).toEqual(Object.keys(PROJECT_SETTING_COLUMNS).sort())
-    for (const [key, sample] of Object.entries(samples)) {
-      const column = PROJECT_SETTING_COLUMNS[key as keyof typeof PROJECT_SETTING_COLUMNS]
+    for (const key of Object.keys(samples) as Array<keyof typeof samples>) {
+      const sample = samples[key]
+      const column = PROJECT_SETTING_COLUMNS[key]
       expect(column, key).toBe(sample.column)
       const columns = hostedProjectColumns({ [key]: sample.setting }, 'mapped')
       expect(columns[column], key).toEqual(sample.value)

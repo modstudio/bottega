@@ -6,13 +6,16 @@ const boundary = (
   file: string,
   allowed: string[],
   reason: string,
+  typeOnlyAllowed: string[] = [],
 ): ImportBoundary => ({
   name,
   file,
   allowed: allowed.map((target) =>
     target.startsWith('.') ? normalize(`${dirname(file)}/${target}`) : target,
   ),
-  typeOnlyAllowed: [],
+  typeOnlyAllowed: typeOnlyAllowed.map((target) =>
+    target.startsWith('.') ? normalize(`${dirname(file)}/${target}`) : target,
+  ),
   reason,
 })
 
@@ -122,6 +125,27 @@ export const recordReadBoundariesAfterPublish: ImportBoundary[] = [
 ]
 
 export const recordSchemaBoundaries: ImportBoundary[] = [
+  boundary(
+    'record-project-columns-boundary',
+    'orchestrator/src/record/record-project-columns.ts',
+    [],
+    'Keep the hosted project column mapping pure and independent of SQL, HTTP, and stores.',
+    ['../project/project-settings.ts'],
+  ),
+  boundary(
+    'project-settings-boundary',
+    'orchestrator/src/project/project-settings.ts',
+    [],
+    'Keep the project settings shape independent of stores, SQL, and HTTP.',
+    [
+      '../../../shared/trackers.ts',
+      '../recipe/recipe.ts',
+      '../workflow/autonomy.ts',
+      '../worktree/worktree-provision.ts',
+      '../worktree/worktree-template.ts',
+      './project-injection.ts',
+    ],
+  ),
   boundary(
     'postgres-schema-config-boundary',
     'shared/record/schema-config.ts',

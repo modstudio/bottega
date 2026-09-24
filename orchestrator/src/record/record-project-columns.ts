@@ -1,7 +1,7 @@
 // concern: record-project-columns
 /** Maps local project settings onto hosted project columns. Must not know SQL or HTTP. */
 
-import type { ProjectSettings } from '../project/projects.ts'
+import type { ProjectSettings } from '../project/project-settings.ts'
 
 export const PROJECT_SETTINGS_NOT_IMPORTED = [
   { key: 'space', reason: "the imported row's space_id carries this value" },
@@ -157,7 +157,10 @@ export function hostedProjectColumns(
       settings.release,
       `project ${project} settings.release`,
     ),
-    [PROJECT_SETTING_COLUMNS.states]: document(settings.states, `project ${project} settings.states`),
+    [PROJECT_SETTING_COLUMNS.states]: document(
+      settings.states,
+      `project ${project} settings.states`,
+    ),
     [PROJECT_SETTING_COLUMNS.tracker]: document(
       settings.tracker,
       `project ${project} settings.tracker`,

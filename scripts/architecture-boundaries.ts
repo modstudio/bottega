@@ -613,13 +613,6 @@ export const importBoundaries: ImportBoundary[] = [
     'Keep hosted project routes independent of SQL and local execution.',
   ),
   boundary(
-    'record-project-columns-boundary',
-    'orchestrator/src/record/record-project-columns.ts',
-    [],
-    'Keep the hosted project column mapping pure and independent of SQL, HTTP, and stores.',
-    ['../project/projects.ts'],
-  ),
-  boundary(
     'record-project-write-boundary',
     'orchestrator/src/record/record-project-write.ts',
     [],

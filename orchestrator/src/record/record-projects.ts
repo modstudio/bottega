@@ -151,8 +151,7 @@ export async function listRecordProjects(
   input: { url: string } & TenantPrincipal,
 ): Promise<RecordProject[]> {
   return tenant(input, async (tx) => {
-    const rows =
-      await tx`SELECT p.space_id, s.name AS space_name, p.name, p.key_prefixes, p.stack,
+    const rows = await tx`SELECT p.space_id, s.name AS space_name, p.name, p.key_prefixes, p.stack,
         p.managed_context, p.landing_branch, p.color, p.color_dark, p.retired_at
         FROM project p JOIN space s ON s.id=p.space_id ORDER BY s.name,p.name`
     return rows.map((row: Record<string, unknown>) => ({
