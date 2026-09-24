@@ -13,6 +13,26 @@ const MACHINE_ID = '01990000-0000-7000-8000-000000000099'
 const PROJECT_ID = '01990000-0000-7000-8000-000000000088'
 const STAMP = '2026-09-15T01:01:00.000Z'
 
+type HostedExclusion = {
+  rowReason: string | null
+  supersededAt: string | null
+  runReason: string | null
+}
+
+function hostedExclusionResult(
+  source: string,
+  hostedExclusion: HostedExclusion,
+): Record<string, unknown>[] | null {
+  if (source.includes('SELECT reason FROM run_exclusion') && source.includes('superseded_at')) {
+    if (hostedExclusion.rowReason === null || hostedExclusion.supersededAt !== null) return []
+    return [{ reason: hostedExclusion.rowReason }]
+  }
+  if (source.includes('SELECT evidence_excluded FROM run')) {
+    return [{ evidence_excluded: hostedExclusion.runReason }]
+  }
+  return null
+}
+
 function localOutbox(
   count: number,
   projectName: string | null = PLATFORM_SLUG,
@@ -64,6 +84,11 @@ function fakePostgres(
     findings: boolean
     onWrite?: () => void
   },
+  hostedExclusion: HostedExclusion = {
+    rowReason: 'voided with orch score --void',
+    supersededAt: null,
+    runReason: 'voided with orch score --void',
+  },
 ): {
   sql: SQL
   statements: string[]
@@ -105,9 +130,8 @@ function fakePostgres(
         { column_name: 'supersede_note' },
       ]
     }
-    if (source.includes('SELECT reason, superseded_at FROM run_exclusion')) {
-      return [{ reason: 'voided with orch score --void', superseded_at: null }]
-    }
+    const exclusionResult = hostedExclusionResult(source, hostedExclusion)
+    if (exclusionResult) return exclusionResult
     if (source.includes('SELECT reason FROM run_exclusion')) return []
     return source.includes('SELECT id FROM project') ? [{ id: PROJECT_ID }] : []
   }) as unknown as SQL
@@ -207,6 +231,55 @@ test('sync supersedes the hosted void before pushing an unvoided run', async () 
   expect(await syncRecord(options(local, remote))).toMatchObject({ pushed: 1, failed: 0 })
   expect(remote.statements.some((sql) => sql.includes('UPDATE run_exclusion'))).toBe(true)
   expect(remote.statements.some((sql) => sql.includes('supersede_note'))).toBe(true)
+})
+
+test('sync clears a hosted run-row void when no exclusion row exists', async () => {
+  const local = localOutbox(1, PLATFORM_SLUG, {
+    evidenceExcluded: null,
+    evidenceUnvoid: { note: 'mistaken void' },
+  })
+  const remote = fakePostgres(false, RECORD_ACTOR_ROLE, undefined, {
+    rowReason: null,
+    supersededAt: null,
+    runReason: 'voided with orch score --void',
+  })
+  expect(await syncRecord(options(local, remote))).toMatchObject({ pushed: 1, failed: 0 })
+  expect(
+    remote.statements.some((sql) => sql.includes('UPDATE run SET evidence_excluded=NULL')),
+  ).toBe(true)
+})
+
+test('sync accepts an unvoid as a no-op when the hosted run has no exclusion', async () => {
+  const local = localOutbox(1, PLATFORM_SLUG, {
+    evidenceExcluded: null,
+    evidenceUnvoid: { note: 'already restored' },
+  })
+  const remote = fakePostgres(false, RECORD_ACTOR_ROLE, undefined, {
+    rowReason: null,
+    supersededAt: null,
+    runReason: null,
+  })
+  expect(await syncRecord(options(local, remote))).toMatchObject({ pushed: 1, failed: 0 })
+  expect(remote.statements.some((sql) => sql.includes('UPDATE run_exclusion'))).toBe(false)
+  expect(
+    remote.statements.some((sql) => sql.includes('UPDATE run SET evidence_excluded=NULL')),
+  ).toBe(false)
+})
+
+test('sync refuses an unvoid when the effective hosted exclusion has another reason', async () => {
+  const local = localOutbox(1, PLATFORM_SLUG, {
+    evidenceExcluded: null,
+    evidenceUnvoid: { note: 'wrong exclusion' },
+  })
+  const remote = fakePostgres(false, RECORD_ACTOR_ROLE, undefined, {
+    rowReason: null,
+    supersededAt: null,
+    runReason: 'unjudged: owner gone',
+  })
+  expect(await syncRecord(options(local, remote))).toMatchObject({ pushed: 0, failed: 1 })
+  expect(
+    local.query<{ last_error: string }, []>('SELECT last_error FROM outbox').get()!.last_error,
+  ).toContain("actual exclusion is 'unjudged: owner gone'")
 })
 
 test('a re-score while the old payload is in flight remains pending and is delivered next', async () => {
