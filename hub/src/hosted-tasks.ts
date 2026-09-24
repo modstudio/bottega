@@ -507,12 +507,26 @@ async function mirrorTaskRow(tx: SQL, identity: TaskIdentity, row: HostedTask) {
     )
     const labelUpdate = childTaskLabelUpdate(existing!.key, row.key)
     if (changed.length && labelUpdate) {
-      await tx`UPDATE hub_task_comment SET task_key=${labelUpdate.nextKey},updated_at=GREATEST(updated_at,${row.updated_at}::timestamptz)
-        WHERE space_id=${identity.spaceId}::uuid AND task_id=${row.id}::uuid`
-      await tx`UPDATE hub_task_document SET task_key=${labelUpdate.nextKey},updated_at=GREATEST(updated_at,${row.updated_at}::timestamptz)
-        WHERE space_id=${identity.spaceId}::uuid AND task_id=${row.id}::uuid`
-      await tx`UPDATE hub_task_status_event SET task_key=${labelUpdate.nextKey},updated_at=GREATEST(updated_at,${row.updated_at}::timestamptz)
-        WHERE space_id=${identity.spaceId}::uuid AND task_id=${row.id}::uuid`
+      await tx`UPDATE hub_task_comment SET task_key=${labelUpdate.nextKey},task_id=${row.id}::uuid,
+        updated_at=GREATEST(updated_at,${row.updated_at}::timestamptz)
+        WHERE space_id=${identity.spaceId}::uuid
+          AND (task_id=${row.id}::uuid OR (task_id IS NULL AND task_key=${labelUpdate.previousKey}))`
+      await tx`UPDATE hub_task_document SET task_key=${labelUpdate.nextKey},task_id=${row.id}::uuid,
+        updated_at=GREATEST(updated_at,${row.updated_at}::timestamptz)
+        WHERE space_id=${identity.spaceId}::uuid
+          AND (task_id=${row.id}::uuid OR (task_id IS NULL AND task_key=${labelUpdate.previousKey}))`
+      await tx`UPDATE hub_task_status_event SET task_key=${labelUpdate.nextKey},task_id=${row.id}::uuid,
+        updated_at=GREATEST(updated_at,${row.updated_at}::timestamptz)
+        WHERE space_id=${identity.spaceId}::uuid
+          AND (task_id=${row.id}::uuid OR (task_id IS NULL AND task_key=${labelUpdate.previousKey}))`
+      await tx`UPDATE hub_task SET parent_key=${labelUpdate.nextKey},parent_id=${row.id}::uuid,
+        updated_at=GREATEST(updated_at,${row.updated_at}::timestamptz)
+        WHERE space_id=${identity.spaceId}::uuid AND id<>${row.id}::uuid
+          AND (parent_id=${row.id}::uuid OR (parent_id IS NULL AND parent_key=${labelUpdate.previousKey}))`
+      await tx`UPDATE hub_note SET promoted_task=${labelUpdate.nextKey},promoted_task_id=${row.id}::uuid,
+        updated_at=GREATEST(updated_at,${row.updated_at}::timestamptz)
+        WHERE space_id=${identity.spaceId}::uuid
+          AND (promoted_task_id=${row.id}::uuid OR (promoted_task_id IS NULL AND promoted_task=${labelUpdate.previousKey}))`
     }
     return
   }
