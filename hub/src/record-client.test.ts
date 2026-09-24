@@ -50,6 +50,21 @@ describe('record client', () => {
     expect(captured).toEqual({ method: 'PUT', body: JSON.stringify({ spaceId: 'space-b' }) })
   })
 
+  test('opts doc lists into readable spaces only when requested', async () => {
+    const urls: string[] = []
+    const fetch: RecordFetch = async (input) => {
+      urls.push(input)
+      return jsonResponse({ items: [], nextCursor: null })
+    }
+    const client = clientWith(fetch)
+    await client.docs()
+    await client.docs({ acrossReadableSpaces: true })
+    expect(urls).toEqual([
+      'https://api.example.test/v1/docs',
+      'https://api.example.test/v1/docs?acrossReadableSpaces=true',
+    ])
+  })
+
   test('scores and voids hosted runs without sending a scorer identity', async () => {
     const runId = '01990000-0000-7000-8000-000000000001'
     const requests: { url: string; method: string; body: Record<string, unknown> }[] = []

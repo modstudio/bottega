@@ -77,6 +77,7 @@ export type RecordApiClient = {
     limit?: number
     cursor?: string | null
     includeDeleted?: boolean
+    acrossReadableSpaces?: boolean
   }): Promise<{ items: Record<string, unknown>[]; nextCursor: string | null }>
   getDoc(id: string): Promise<Record<string, unknown>>
   listRevisions(id: string): Promise<Record<string, unknown>[]>
@@ -199,6 +200,7 @@ export function recordApiClient(): RecordApiClient {
       if (query.limit) search.set('limit', String(query.limit))
       if (query.cursor) search.set('cursor', query.cursor)
       if (query.includeDeleted) search.set('includeDeleted', 'true')
+      if (query.acrossReadableSpaces) search.set('acrossReadableSpaces', 'true')
       const suffix = search.toString()
       return request(`/v1/docs${suffix ? `?${suffix}` : ''}`)
     },

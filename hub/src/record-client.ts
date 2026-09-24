@@ -241,6 +241,7 @@ type RecordDocListInput = {
   subject?: string
   limit?: number
   cursor?: string
+  acrossReadableSpaces?: boolean
 }
 
 function mappedError(status: number, body: unknown): TRPCError {
@@ -340,6 +341,7 @@ export function createRecordClient(options: RecordClientOptions) {
           subject: input.subject,
           limit: input.limit,
           cursor: input.cursor,
+          acrossReadableSpaces: input.acrossReadableSpaces ? 'true' : undefined,
         }),
         docsSchema,
       ),

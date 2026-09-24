@@ -252,6 +252,7 @@ export const recordRouter = t.router({
         subject: filter,
         limit,
         cursor: z.string().optional(),
+        acrossReadableSpaces: z.boolean().optional(),
       }),
     )
     .query(({ ctx, input }) => recordClient(ctx).docs(input)),
