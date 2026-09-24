@@ -244,6 +244,7 @@ if (
     './scripts/check-runtime.test.ts',
     './scripts/check-outcome.test.ts',
     './scripts/check-cascade-preservation.test.ts',
+    './scripts/postgres-migration-rls.test.ts',
     './scripts/check-test-placement.test.ts',
     './scripts/check-file-ceiling.test.ts',
     './scripts/check-cognitive-ceiling.test.ts',

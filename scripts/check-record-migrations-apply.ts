@@ -13,6 +13,10 @@ import {
 const root = fileURLToPath(new URL('..', import.meta.url))
 const migrationsFolder = join(root, 'shared', 'record', 'migrations')
 const rerun = 'bun scripts/check-record-migrations-apply.ts'
+const brokenDocBackfill = '20260924180716_dev_906_doc_latest_revision'
+const repairedDocBackfill = '20260924201224_dev_917_doc_latest_revision_repair'
+const proofDocId = '01990000-0000-7000-8000-000000000010'
+const proofRevisionId = '01990000-0000-7000-8000-000000000012'
 
 class CheckFailure extends Error {}
 
@@ -82,6 +86,48 @@ async function applyMigration(transaction: Transaction, migration: MigrationMeta
   }
 }
 
+async function seedDocBackfillProof(transaction: Transaction): Promise<void> {
+  await transaction.exec(`
+    SELECT set_config('app.space_id', '01990000-0000-7000-8000-000000000001', true);
+    INSERT INTO doc (id, space_id, scope, subject, slug, title, body, delivery, created_at, updated_at)
+    VALUES (
+      '${proofDocId}', '01990000-0000-7000-8000-000000000001', 'global', NULL,
+      'migration-proof', 'Migration proof', 'body', 'demand',
+      '2026-09-24T19:00:00Z', '2026-09-24T19:00:00Z'
+    );
+    INSERT INTO doc_revision (
+      id, space_id, doc_id, scope, subject, slug, op, title, body, delivery,
+      author, reason, at
+    ) VALUES
+      (
+        '01990000-0000-7000-8000-000000000011',
+        '01990000-0000-7000-8000-000000000001', '${proofDocId}', 'global', NULL,
+        'migration-proof', 'create', 'Migration proof', 'body', 'demand',
+        'migration-check', 'prove latest revision backfill', '2026-09-24T19:00:00Z'
+      ),
+      (
+        '${proofRevisionId}', '01990000-0000-7000-8000-000000000001',
+        '${proofDocId}', 'global', NULL, 'migration-proof', 'set', 'Migration proof',
+        'new body', 'demand', 'migration-check', 'prove latest revision backfill',
+        '2026-09-24T19:00:00Z'
+      );
+    SELECT set_config('app.space_id', '', true);
+  `)
+}
+
+async function proofLatestRevision(transaction: Transaction): Promise<string | null> {
+  await transaction.exec(
+    `SELECT set_config('app.space_id', '01990000-0000-7000-8000-000000000001', true);`,
+  )
+  const result = await transaction.query<{ latest_revision_id: string | null }>(
+    'SELECT latest_revision_id FROM doc WHERE id = $1',
+    [proofDocId],
+  )
+  await transaction.exec(`SELECT set_config('app.space_id', '', true);`)
+  if (result.rows.length !== 1) throw new CheckFailure('doc backfill proof row is not visible')
+  return result.rows[0]?.latest_revision_id ?? null
+}
+
 async function main(): Promise<void> {
   let database: PGlite | undefined
   let failure: unknown
@@ -106,7 +152,22 @@ async function main(): Promise<void> {
     }
     try {
       await database.transaction(async (transaction) => {
-        for (const migration of migrations) await applyMigration(transaction, migration)
+        for (const migration of migrations) {
+          if (migration.name === brokenDocBackfill) await seedDocBackfillProof(transaction)
+          await applyMigration(transaction, migration)
+          if (
+            migration.name === brokenDocBackfill &&
+            (await proofLatestRevision(transaction)) !== null
+          ) {
+            throw new CheckFailure('DEV-906 doc backfill unexpectedly populated the proof row')
+          }
+          if (
+            migration.name === repairedDocBackfill &&
+            (await proofLatestRevision(transaction)) !== proofRevisionId
+          ) {
+            throw new CheckFailure('DEV-917 doc backfill did not select the newest proof revision')
+          }
+        }
       })
     } catch (error) {
       throw error instanceof CheckFailure ? error : phaseFailure('replaying migrations', error)
