@@ -392,6 +392,7 @@ export async function updateHostedReportSubscription(
   input: ReportSubscriptionUpdateInput,
 ) {
   return tenant(url, identity, async (tx) => {
+    await selectHostedReportSubscription(tx, identity.spaceId, id)
     const projects = rows<{ name: string }>(
       await tx`SELECT name FROM project WHERE space_id=${identity.spaceId}::uuid`,
     )

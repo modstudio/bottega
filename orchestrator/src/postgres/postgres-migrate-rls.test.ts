@@ -343,7 +343,11 @@ realPostgres('RLS proof against real Postgres', () => {
       'postgres',
       `
       DROP FUNCTION IF EXISTS invitation_open_for(text);
-      DROP TABLE IF EXISTS config_secret, config_entry, secret_dek_wrap, machine_public_key, secret_dek, invitation, verification, account, session, test_flake, contention, landing_review_carry, landing_override, landing, review_finding, review_lens, review, run_exclusion, run_score, run, doc_revision, doc, orch_snapshot, hub_send_recipient, hub_send, hub_report_subscription_recipient, hub_report_subscription, hub_note_acknowledgement, hub_note, hub_task_status_event, hub_task_document, hub_task_comment, hub_task, hub_interval, hub_day, membership, machine, seq, project, "user", space CASCADE;
+      DO $$ DECLARE t record; BEGIN
+        FOR t IN SELECT tablename FROM pg_tables WHERE schemaname = 'public' LOOP
+          EXECUTE format('DROP TABLE IF EXISTS public.%I CASCADE', t.tablename);
+        END LOOP;
+      END $$;
       DROP SCHEMA IF EXISTS drizzle CASCADE;
     `,
     )

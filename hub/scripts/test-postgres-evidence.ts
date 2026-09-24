@@ -469,7 +469,8 @@ try {
       throw new Error('hosted spend adapter did not return the seeded interval')
     const pageSettings = await hostedSettings(actorUrl, identity, [PLATFORM_SLUG])
     if (
-      pageSettings.sends.length !== 1 ||
+      pageSettings.sends.length !== 2 ||
+      pageSettings.sends.filter((send) => Number(send.test) === 1).length !== 1 ||
       pageSettings.members.length !== 2 ||
       pageSettings.subscriptions.length !== 1
     )
