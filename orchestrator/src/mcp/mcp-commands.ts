@@ -1,7 +1,7 @@
 // concern: mcp-commands
 /** Owns MCP server entry and configuration presentation. Must not know CLI grammar. */
 import { serveDocsMcp } from './mcp.ts'
-import { mcpCompatibilityRows } from './mcp-compatibility.ts'
+import { mcpCompatibilityRows } from './mcp-compatibility-record.ts'
 
 export async function mcpCommand(
   config: boolean,

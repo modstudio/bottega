@@ -8,12 +8,8 @@ import { failingDefaultCanonEvals } from '../canon/canon-eval-status.ts'
 import { db } from '../database/db.ts'
 import { COOLS_DOWN, NOT_EVIDENCE } from '../failure/failure.ts'
 import { JOBS, job } from '../jobs/jobs.ts'
-import {
-  decideMcpCompatibility,
-  latestMcpListing,
-  mcpIncompatibilityReason,
-  type RequiredMcpServer,
-} from '../mcp/mcp-compatibility.ts'
+import { decideMcpGrammarRuling, type RequiredMcpServer } from '../mcp/mcp-compatibility.ts'
+import { latestMcpListing } from '../mcp/mcp-compatibility-record.ts'
 import { calibrationFor } from '../runtime/calibration-port.ts'
 import { FIDELITY_PENALTY, WEIGHT, weigh } from '../score/score.ts'
 import { median } from '../state/statistics.ts'
@@ -94,10 +90,12 @@ function mcpCandidateIneligibility(
 ): string | null {
   if (!requiredMcp || !pattern) return null
   const listing = latestMcpListing(requiredMcp.projectId, requiredMcp.server)
-  const compatibility = decideMcpCompatibility(listing?.listedTools, pattern)
-  return compatibility.verdict === 'incompatible'
-    ? mcpIncompatibilityReason({ server: requiredMcp.server, pattern, compatibility })
-    : null
+  return decideMcpGrammarRuling({
+    mode: requiredMcp.mode,
+    server: requiredMcp.server,
+    listedTools: listing?.listedTools,
+    pattern,
+  }).routingIneligibility
 }
 
 function applyMcpEligibility(

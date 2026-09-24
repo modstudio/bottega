@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test'
-import { decideMcpCompatibility, mcpGrammarMismatchRefusal } from './mcp-compatibility.ts'
+import { decideMcpCompatibility, decideMcpGrammarRuling } from './mcp-compatibility.ts'
 
 const grok = '^[A-Za-z0-9_-]{1,64}$'
 
@@ -24,15 +24,29 @@ describe('MCP tool-name compatibility', () => {
     })
   })
 
-  test('the pre-launch backstop names the mismatch and re-dispatch remedy', () => {
+  test('the pre-launch backstop refuses require and degrades prefer', () => {
     expect(
-      mcpGrammarMismatchRefusal({
+      decideMcpGrammarRuling({
+        mode: 'require',
+        server: 'stopal',
+        listedTools: ['workflow.list', 'task.get'],
+        pattern: grok,
+      }).refusal,
+    ).toBe(
+      "MCP server 'stopal' tool-name grammar is incompatible: 0/2 admitted by ^[A-Za-z0-9_-]{1,64}$; re-dispatch to route to a compatible agent",
+    )
+    expect(
+      decideMcpGrammarRuling({
+        mode: 'prefer',
         server: 'stopal',
         listedTools: ['workflow.list', 'task.get'],
         pattern: grok,
       }),
-    ).toBe(
-      "MCP server 'stopal' tool-name grammar is incompatible: 0/2 admitted by ^[A-Za-z0-9_-]{1,64}$; re-dispatch to route to a compatible agent",
-    )
+    ).toEqual({
+      routingIneligibility: null,
+      refusal: null,
+      failedConnection:
+        "MCP server 'stopal' tool-name grammar is incompatible: 0/2 admitted by ^[A-Za-z0-9_-]{1,64}$",
+    })
   })
 })

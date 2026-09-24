@@ -107,7 +107,9 @@ import { decideRunLaunch } from './run-launch.ts'
 import { acquireRunLease } from './run-lease.ts'
 import { runLive } from './run-live.ts'
 import * as mcpAttachment from './run-mcp-attachment.ts'
-import { enforceRunMcpGrammar, finalWorkerMcpRuling } from './run-mcp-grammar.ts'
+import { finalWorkerMcpRuling } from './run-mcp-attachment-record.ts'
+import { enforceRunMcpGrammar } from './run-mcp-grammar.ts'
+import { refuseUnstartedRun } from './run-prelaunch-refusal.ts'
 import { bindSignals, childEnv, sha } from './run-process.ts'
 import { runInfrastructurePrompt } from './run-readonly-infrastructure.ts'
 import { finishRun } from './run-terminal.ts'
@@ -866,25 +868,22 @@ export async function run(opts: {
             probeRuling.callEvidence.error,
             claim.id,
           )
-        await enforceRunMcpGrammar({
+        const grammarFailure = await enforceRunMcpGrammar({
           server: mcpServerName,
+          mode: mcpMode,
           probe,
           pattern: a.mcpToolNamePattern,
           runId: claim.id,
           started,
           resetSandbox,
         })
+        probeRuling.failedConnection = grammarFailure ?? probeRuling.failedConnection
         if (probeRuling.refusalReason) {
-          const why = probeRuling.refusalReason
-          db()
-            .query(
-              `UPDATE run SET status='failed', error=?, failure_kind='mcp_unverified', latency_ms=? WHERE id=?`,
-            )
-            .run(why, Date.now() - started, claim.id)
-          await resetSandbox()
-          teardownTerminalRunResources(db(), claim.id)
-          throw Object.assign(new Error(`run ${claim.id} could not start: ${why}`), {
+          await refuseUnstartedRun({
             runId: claim.id,
+            started,
+            why: probeRuling.refusalReason,
+            resetSandbox,
           })
         }
         if (probeRuling.failedConnection) {

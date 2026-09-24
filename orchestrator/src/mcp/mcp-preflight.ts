@@ -65,6 +65,7 @@ export function requiredMcpServer(
     projectId: project.id,
     project: project.name,
     server: project.settings.mcpServer ?? project.name,
+    mode: requestedMcpMode(request)!,
   }
 }
 

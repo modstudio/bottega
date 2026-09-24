@@ -364,11 +364,17 @@ describe('fan-out routing exclusions', () => {
       projectId: project.id,
       project: 'compat-fixture',
       server: 'compat-fixture',
+      mode: 'require' as const,
     }
     expect(pick('mcp-query', undefined, 0, false, null, { requiredMcp }).agent).toBe('codex')
     expect(() => pick('mcp-query', 'grok', 0, false, null, { requiredMcp })).toThrow(
       "MCP server 'compat-fixture' tool-name grammar is incompatible: 0/2 admitted by ^[A-Za-z0-9_-]{1,64}$",
     )
+    expect(
+      pick('mcp-query', 'grok', 0, false, null, {
+        requiredMcp: { ...requiredMcp, mode: 'prefer' },
+      }).agent,
+    ).toBe('grok')
   })
 
   test('avoid removes an agent while another eligible agent remains', () => {
