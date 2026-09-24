@@ -13,6 +13,7 @@ import {
 import { tmpdir } from 'node:os'
 import { basename, dirname, join, resolve } from 'node:path'
 import { FROZEN_STATE_NAMES } from '../../shared/brand.ts'
+import { CONFIG_HOME_ENV } from '../../shared/config-directory.ts'
 import { createTestHubDatabaseGuard } from '../../shared/test-hub-database.ts'
 
 const discoveryEnv = Object.fromEntries(
@@ -52,8 +53,13 @@ export const REGISTERED_LIVE_STORE = resolve(
 export const dir = mkdtempSync(join(tmpdir(), 'orch-test-'))
 const originalPath = process.env.PATH
 const originalSandbox = process.env.ORCH_SANDBOX
+const originalConfigHome = process.env[CONFIG_HOME_ENV]
+const originalRecordApiUrl = process.env.ORCH_RECORD_API_URL
+const configDir = mkdtempSync(join(tmpdir(), 'orch-test-config-'))
 const store = join(dir, 'test.db')
 const template = join(dir, 'template.db')
+process.env[CONFIG_HOME_ENV] = configDir
+delete process.env.ORCH_RECORD_API_URL
 process.env.ORCH_DB = store
 process.env.HUB_DB = join(dir, FROZEN_STATE_NAMES.hubDatabase)
 process.env.ORCH_RUNS = join(dir, FROZEN_STATE_NAMES.runsDirectory)
@@ -233,5 +239,10 @@ afterAll(() => {
   else process.env.PATH = originalPath
   if (originalSandbox === undefined) delete process.env.ORCH_SANDBOX
   else process.env.ORCH_SANDBOX = originalSandbox
+  if (originalConfigHome === undefined) delete process.env[CONFIG_HOME_ENV]
+  else process.env[CONFIG_HOME_ENV] = originalConfigHome
+  if (originalRecordApiUrl === undefined) delete process.env.ORCH_RECORD_API_URL
+  else process.env.ORCH_RECORD_API_URL = originalRecordApiUrl
+  rmSync(configDir, { recursive: true, force: true })
   rmSync(dir, { recursive: true, force: true })
 })

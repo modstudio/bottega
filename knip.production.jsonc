@@ -45,6 +45,7 @@
       "project": [
         "scripts/**/*.ts!",
         "!scripts/**/*.test.ts",
+        "!scripts/test-preload.ts",
         "!scripts/quality/test-timing-decision.ts",
         "shared/**/*.ts!",
         "!shared/**/*.test.ts",

@@ -36,6 +36,7 @@
         "ops/bin/*.sh!",
         "scripts/check.ts!",
         "scripts/check-*.ts!",
+        "scripts/test-preload.ts!",
         "scripts/**/*.test.ts",
         "shared/**/*.test.ts",
         "scripts/architecture.test.ts",
@@ -76,8 +77,8 @@
       "project": ["src/**/*.ts!", "test/**/*.ts"]
     },
     "retrieval": {
-      "entry": ["src/benchmark/benchmark.ts!", "src/**/*.test.ts"],
-      "project": ["src/**/*.ts!"]
+      "entry": ["src/benchmark/benchmark.ts!", "src/**/*.test.ts", "test/preload.ts!"],
+      "project": ["src/**/*.ts!", "test/**/*.ts"]
     },
     "hub/web": {
       "entry": ["src/main.tsx!", "src/**/*.test.{ts,tsx}"],
