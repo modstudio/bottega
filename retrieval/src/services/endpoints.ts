@@ -5,11 +5,10 @@ const EMBEDDING_MODEL = 'Qwen/Qwen3-Embedding-0.6B'
 const RERANK_MODEL = 'Qwen/Qwen3-Reranker-0.6B'
 const DEFAULT_EMBED_URL = 'http://127.0.0.1:8011/v1'
 const DEFAULT_RERANK_URL = 'http://127.0.0.1:8012/v1'
-const CONSERVATIVE_CHARACTERS_PER_TOKEN = 3
 
 type Fetch = (input: string | URL | Request, init?: RequestInit) => Promise<Response>
 type EmbeddingResponse = { data?: Array<{ index: number; embedding: number[] }> }
-type ModelsResponse = { data?: Array<{ id: string; max_model_len?: number }> }
+type TokenizeResponse = { count?: number; max_model_len?: number }
 type RerankResponse = { results?: Array<{ index: number; relevance_score: number }> }
 
 type RetrievalEndpoints = { embedUrl: string; rerankUrl: string }
@@ -28,41 +27,22 @@ function refusal(kind: string, url: string, detail: string): Error {
   )
 }
 
-export async function embeddingCharacterLimit(
+export async function tokenize(
   baseUrl: string,
+  prompt: string,
   fetcher: Fetch = fetch,
-): Promise<number> {
-  const url = `${baseUrl.replace(/\/$/, '')}/models`
-  let response: Response
-  try {
-    response = await fetcher(url, { signal: AbortSignal.timeout(15_000) })
-  } catch (error) {
-    throw refusal(
-      'embedding model metadata',
-      url,
-      error instanceof Error ? error.message : String(error),
-    )
+): Promise<{ count: number; maxModelLength: number }> {
+  const url = `${baseUrl.replace(/\/$/, '')}/tokenize`
+  const body = await postJson<TokenizeResponse>(
+    'embedding tokenizer',
+    url,
+    { model: EMBEDDING_MODEL, prompt },
+    fetcher,
+  )
+  if (!Number.isFinite(body.count) || !Number.isFinite(body.max_model_len)) {
+    throw refusal('embedding tokenizer', url, 'response did not contain count and max_model_len')
   }
-  if (!response.ok) throw refusal('embedding model metadata', url, `HTTP ${response.status}`)
-  let body: ModelsResponse
-  try {
-    body = (await response.json()) as ModelsResponse
-  } catch (error) {
-    throw refusal(
-      'embedding model metadata',
-      url,
-      `invalid JSON: ${error instanceof Error ? error.message : String(error)}`,
-    )
-  }
-  const model = body.data?.find((candidate) => candidate.id === EMBEDDING_MODEL)
-  if (!model?.max_model_len || !Number.isFinite(model.max_model_len)) {
-    throw refusal(
-      'embedding model metadata',
-      url,
-      `response did not contain max_model_len for ${EMBEDDING_MODEL}`,
-    )
-  }
-  return Math.floor(model.max_model_len * CONSERVATIVE_CHARACTERS_PER_TOKEN)
+  return { count: body.count!, maxModelLength: body.max_model_len! }
 }
 
 async function postJson<T>(kind: string, url: string, body: unknown, fetcher: Fetch): Promise<T> {
