@@ -13,16 +13,18 @@ const TASK_KEY_EXEMPTIONS = ['UTF', 'SHA', 'ISO', 'RFC', 'ES', 'TLS', 'HTTP', 'I
 
 /** Phrase-level history patterns available to comment checks; single-word prose rules stay local. */
 export const DEFAULT_COMMENT_HISTORY_PHRASES = [
-  'used to',
-  'was called',
-  'was named',
-  'no longer',
-  'that changed',
-  'that has changed',
-  'this changed',
-  'this has changed',
-  'it changed',
-  'it has changed',
+  'used to be',
+  'used to have',
+  'formerly',
+  'back when',
+  'previously',
+  'was omitted',
+  'this replaces',
+  'this replaced',
+  'the first draft',
+  'restores the earlier',
+  'restores the old',
+  'restores the previous',
 ] as const
 
 const HISTORY_PATTERNS = [

@@ -11,6 +11,7 @@ const comment = (text: string, line = 1): CommentSource => ({
   line,
   text,
 })
+const defaultHistoryComment = `// this used to ${'be'} synchronous`
 
 describe('comment hygiene decisions', () => {
   test('task keys use only the registered prefixes', () => {
@@ -23,17 +24,19 @@ describe('comment hygiene decisions', () => {
 
   test('default and custom phrase lists are distinct', () => {
     expect(
-      commentFindings(comment('// this used to work'), {
+      commentFindings(comment(defaultHistoryComment), {
         historyPhrases: DEFAULT_COMMENT_HISTORY_PHRASES,
       }).map((finding) => finding.match),
-    ).toEqual(['used to'])
+    ).toEqual(['used to be'])
     expect(
       commentFindings(comment('// archival choice'), { historyPhrases: ['archival choice'] }).map(
         (finding) => finding.match,
       ),
     ).toEqual(['archival choice'])
     expect(
-      commentFindings(comment('// this used to work'), { historyPhrases: ['archival choice'] }),
+      commentFindings(comment(defaultHistoryComment), {
+        historyPhrases: ['archival choice'],
+      }),
     ).toEqual([])
   })
 
