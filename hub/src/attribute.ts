@@ -84,15 +84,13 @@ export function projectOf(cwd: string | undefined | null): Project | null {
   return projects().find((project) => project.name === clone)?.name ?? null
 }
 
-/** Which project issues a given key, or null if no prefix claims it. */
-export function projectOfKey(key: string): Project | null {
+/** Whether a key has a prefix registered for the already-known project. */
+function keyBelongsToProject(key: string, project: Project): boolean {
   const prefix = key.split('-')[0]!.toUpperCase()
-  for (const project of projects()) {
-    if ((project.settings.keyPrefixes ?? []).map((value) => value.toUpperCase()).includes(prefix)) {
-      return project.name
-    }
-  }
-  return null
+  const registered = projects().find((candidate) => candidate.name === project)
+  return (registered?.settings.keyPrefixes ?? [])
+    .map((value) => value.toUpperCase())
+    .includes(prefix)
 }
 
 export type Attribution = {
@@ -156,14 +154,14 @@ export function attribute(input: {
 
   const fromWorktree = input.cwd ? keyFromWorktree(input.cwd) : null
   if (fromWorktree) {
-    return { project: projectOfKey(fromWorktree) ?? project, key: fromWorktree, via: 'worktree' }
+    return { project, key: fromWorktree, via: 'worktree' }
   }
 
   for (const subject of input.commitSubjects ?? []) {
     const m = subject.match(keyPattern())
     if (m?.[0]) {
       const key = m[0].toUpperCase()
-      return { project: projectOfKey(key) ?? project, key, via: 'commit' }
+      return { project, key, via: 'commit' }
     }
   }
 
@@ -175,9 +173,8 @@ export function attribute(input: {
       // A key from prose only counts when it belongs to the repo the work was
       // happening in. Cross-project chatter is common — a session in one project
       // discussing another project's ticket is not time spent on that ticket.
-      const owner = projectOfKey(key)
-      if (project && owner && owner !== project) continue
-      return { project: owner ?? project, key, via: 'prompt' }
+      if (project && !keyBelongsToProject(key, project)) continue
+      return { project, key, via: 'prompt' }
     }
   }
 
@@ -224,8 +221,7 @@ export function keyFromBranch(
   const m = branch.match(worktreeKeyPattern())
   if (!m) return null
   const key = `${m[1]!.toUpperCase()}-${m[2]}`
-  const owner = projectOfKey(key)
-  if (project && owner && owner !== project) return null
+  if (project && !keyBelongsToProject(key, project)) return null
   return key
 }
 
@@ -241,8 +237,7 @@ function keyFromPromptFile(
       const k = m[0]!.toUpperCase()
       // The same ownership rule prose keys already follow: a run in one project
       // mentioning an AB ticket is chatter, not time spent on it.
-      const owner = projectOfKey(k)
-      if (project && owner && owner !== project) continue
+      if (project && !keyBelongsToProject(k, project)) continue
       key = k
       break
     }
@@ -266,7 +261,7 @@ export function attributeRun(run: OrchRun): Attribution {
   if (launchKey) {
     const project = projectOf(run.cwd)
     return {
-      project: projectOfKey(launchKey) ?? project,
+      project,
       key: launchKey,
       via: 'launch_key',
     }

@@ -1,6 +1,6 @@
 import { beforeAll, describe, expect, test } from 'bun:test'
 import { resetFixtureStore } from '../test/run-fixtures.ts'
-import { projectOf, projectOfKey } from './attribute.ts'
+import { projectOf } from './attribute.ts'
 import { projectNames } from './projects.ts'
 
 beforeAll(resetFixtureStore)
@@ -27,15 +27,5 @@ describe('project attribution', () => {
     expect(projectOf('/tmp/scratch')).toBeNull()
     expect(projectOf(undefined)).toBeNull()
     expect(projectOf('/fixtures/repos/some-other-repo')).toBeNull()
-  })
-
-  test('each prefix routes to its project', () => {
-    expect(projectOfKey('ALP-5347')).toBe('alpha')
-    expect(projectOfKey('BET-2533')).toBe('beta')
-    expect(projectOfKey('GAM-986')).toBe('gamma')
-    expect(projectOfKey('DEL-708')).toBe('delta')
-    expect(projectOfKey('SHUL-12')).toBe('delta')
-    expect(projectOfKey('LOC-1')).toBe('workshop')
-    expect(projectOfKey('NOPE-1')).toBeNull()
   })
 })

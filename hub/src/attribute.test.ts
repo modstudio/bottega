@@ -106,6 +106,20 @@ describe('attribute()', () => {
     expect(silent.key).toBeNull()
     expect([named.project, silent.project, worktree.project]).toEqual(['alpha', 'alpha', 'alpha'])
   })
+
+  test('a shared key prefix never chooses a project', () => {
+    expect(
+      attribute({
+        cwd: '/fixtures/repos/zeta/.claude/worktrees/SHR-42',
+        commitSubjects: ['SHR-42 shared label'],
+      }),
+    ).toEqual({ project: 'zeta', key: 'SHR-42', via: 'worktree' })
+    expect(attribute({ cwd: null, prompts: ['work on SHR-42'] })).toEqual({
+      project: null,
+      key: 'SHR-42',
+      via: 'prompt',
+    })
+  })
 })
 
 describe('injected markers', () => {

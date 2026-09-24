@@ -274,7 +274,7 @@ export function epicScoreboard(
   return {
     epicKey,
     membership: {
-      source: `hub task list --parent ${epicKey} --json`,
+      source: `hub task list --project <project> --parent ${epicKey} --json`,
       runEvidence:
         'run.launch_key, falling back to a child key embedded in run.branch, then the head commit subject',
       landingEvidence:
@@ -422,12 +422,15 @@ function totalRow(rows: EpicTaskScore[], timing: DurationMetrics): EpicTaskScore
   }
 }
 
-export async function epicChildren(epicKey: string): Promise<EpicChild[]> {
-  const child = Bun.spawn([HUB, 'task', 'list', '--parent', epicKey, '--json'], {
-    stdout: 'pipe',
-    stderr: 'pipe',
-    env: { ...process.env },
-  })
+export async function epicChildren(project: string, epicKey: string): Promise<EpicChild[]> {
+  const child = Bun.spawn(
+    [HUB, 'task', 'list', '--project', project, '--parent', epicKey, '--json'],
+    {
+      stdout: 'pipe',
+      stderr: 'pipe',
+      env: { ...process.env },
+    },
+  )
   const [stdout, stderr, code] = await Promise.all([
     new Response(child.stdout).text(),
     new Response(child.stderr).text(),

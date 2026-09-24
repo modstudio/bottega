@@ -80,6 +80,7 @@ export function register(program: Command): void {
     .command('port [args...]')
     .option('--reason <value>')
     .option('--sources <value>')
+    .option('--project <value>')
     .option('--note <value>')
     .option('--title <value>')
     .option('--file <value>')

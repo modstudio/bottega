@@ -1,6 +1,6 @@
 import { categorizeFile, type FileKind } from '../../../shared/file-kind.ts'
 import { newRecordId } from '../../../shared/record/schema.ts'
-import { keyPattern, projectOfKey } from '../attribute.ts'
+import { keyPattern } from '../attribute.ts'
 import { nowIso, type Project, writeTransaction } from '../db.ts'
 import { projects } from '../projects.ts'
 import { hostedMirrorTasks } from '../task-client.ts'
@@ -111,7 +111,7 @@ function scanGit(since: string) {
           } else {
             tasks.set(key, {
               key,
-              project: projectOfKey(key) ?? repo,
+              project: repo,
               first: d,
               last: d,
               commits: 1,

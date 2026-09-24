@@ -75,5 +75,21 @@ console.log(
       canon: true,
       settings: {},
     },
+    {
+      id: 7,
+      name: 'epsilon',
+      path: '/fixtures/repos/epsilon',
+      stack: null,
+      canon: true,
+      settings: { keyPrefixes: ['SHR'] },
+    },
+    {
+      id: 8,
+      name: 'zeta',
+      path: '/fixtures/repos/zeta',
+      stack: null,
+      canon: true,
+      settings: { keyPrefixes: ['SHR'] },
+    },
   ]),
 )

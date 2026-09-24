@@ -86,7 +86,7 @@ async function hub(args: string[]): Promise<string> {
 async function task(
   key: string,
 ): Promise<{ task: FiledIssueTaskRow; comments?: { body?: unknown }[] }> {
-  return JSON.parse(await hub(['task', 'show', key, '--json']))
+  return JSON.parse(await hub(['task', 'show', key, '--project', PLATFORM_SLUG, '--json']))
 }
 
 /** Only an explicit retry may reclaim review after a valid seed answer. */
@@ -132,11 +132,11 @@ async function claimAndWork(key: string, queueMode: boolean): Promise<ClaimResul
         `${key} is not claimable: expected a filed issue in open or stale active state, or an explicit retry after a valid seed answer`,
       )
     }
-    await hub(['task', 'set', key, '--status', 'active'])
+    await hub(['task', 'set', key, '--project', PLATFORM_SLUG, '--status', 'active'])
     claimed = true
     try {
       await workIssue(key)
-      await hub(['task', 'set', key, '--status', 'review'])
+      await hub(['task', 'set', key, '--project', PLATFORM_SLUG, '--status', 'review'])
       console.log(`${key} -> review`)
     } catch (cause) {
       try {
@@ -145,6 +145,8 @@ async function claimAndWork(key: string, queueMode: boolean): Promise<ClaimResul
           'comment',
           key,
           `Coordinator pass ended with error: ${String((cause as Error)?.message ?? cause)}`,
+          '--project',
+          PLATFORM_SLUG,
         ])
       } catch (recordCause) {
         console.error(
@@ -153,7 +155,7 @@ async function claimAndWork(key: string, queueMode: boolean): Promise<ClaimResul
         throw recordCause
       }
       try {
-        await hub(['task', 'set', key, '--status', 'review'])
+        await hub(['task', 'set', key, '--project', PLATFORM_SLUG, '--status', 'review'])
       } catch (statusCause) {
         console.error(
           `${key}: could not move active issue to review: ${String((statusCause as Error)?.message ?? statusCause)}`,

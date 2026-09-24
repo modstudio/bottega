@@ -50,7 +50,7 @@ describe('porting data model', () => {
       { candidate: 'candidate-one', reason: 'not applicable' },
     ])
   })
-  test('keeps each ledger source project distinct and resolves the target by key prefix', () => {
+  test('keeps the same task label distinct in two target projects', () => {
     upsertProject({ name: 'source-one-invented', path: '/w/source-one', settings: {} })
     upsertProject({ name: 'source-two-invented', path: '/w/source-two', settings: {} })
     upsertProject({
@@ -58,9 +58,15 @@ describe('porting data model', () => {
       path: '/w/target',
       settings: { keyPrefixes: ['TGT'] },
     })
+    upsertProject({
+      name: 'other-target-invented',
+      path: '/w/other-target',
+      settings: { keyPrefixes: ['TGT'] },
+    })
     const byName = Object.fromEntries(projects().map((project) => [project.name, project]))
     const ref = setLedgerRef({
       taskKey: 'TGT-42',
+      targetProjectId: byName['target-invented']!.id,
       note: 'adapt this natively',
       createdAt: '2026-09-03T00:00:00.000Z',
       sources: [
@@ -79,7 +85,13 @@ describe('porting data model', () => {
       ],
     })
     expect(ref.target_project_id).toBe(byName['target-invented']!.id)
-    expect(ledgerRef('TGT-42')!.sources).toEqual([
+    setLedgerRef({
+      taskKey: 'TGT-42',
+      targetProjectId: byName['other-target-invented']!.id,
+      note: 'same label, other project',
+      sources: [ref.sources[0]!],
+    })
+    expect(ledgerRef(byName['target-invented']!.id, 'TGT-42')!.sources).toEqual([
       {
         source_project_id: byName['source-one-invented']!.id,
         commits: ['aaa'],
@@ -93,9 +105,11 @@ describe('porting data model', () => {
         note: 'second source',
       },
     ])
-    expect(() => setLedgerRef({ taskKey: 'NONE-1', note: '', sources: ref.sources })).toThrow(
-      'no registered project owns task key',
-    )
+    expect(ledgerRef(byName['other-target-invented']!.id, 'TGT-42')).toMatchObject({
+      note: 'same label, other project',
+      target_project_id: byName['other-target-invented']!.id,
+    })
+    expect(listLedgerRefs(true)).toHaveLength(2)
   })
   test('resolution preserves provenance and default listings omit completed refs', () => {
     upsertProject({ name: 'source-invented', path: '/w/source', settings: {} })
@@ -107,20 +121,24 @@ describe('porting data model', () => {
     const source = projects().find((project) => project.name === 'source-invented')!
     setLedgerRef({
       taskKey: 'TGT-42',
+      targetProjectId: projects().find((project) => project.name === 'target-invented')!.id,
       note: 'provenance',
       sources: [
         { source_project_id: source.id, commits: ['abc'], paths: ['src/a.ts'], note: 'source' },
       ],
     })
     expect(listLedgerRefs()).toHaveLength(1)
-    expect(resolveLedgerRef('TGT-42', '2026-09-04T00:00:00.000Z')).toMatchObject({
+    const target = projects().find((project) => project.name === 'target-invented')!
+    expect(resolveLedgerRef(target.id, 'TGT-42', '2026-09-04T00:00:00.000Z')).toMatchObject({
       task_key: 'TGT-42',
       resolved_at: '2026-09-04T00:00:00.000Z',
       sources: [{ commits: ['abc'], paths: ['src/a.ts'] }],
     })
     expect(listLedgerRefs()).toEqual([])
     expect(listLedgerRefs(true)).toHaveLength(1)
-    expect(resolveLedgerRef('TGT-42', 'later')?.resolved_at).toBe('2026-09-04T00:00:00.000Z')
+    expect(resolveLedgerRef(target.id, 'TGT-42', 'later')?.resolved_at).toBe(
+      '2026-09-04T00:00:00.000Z',
+    )
   })
   test('retires doctrine without freeing its stable number', () => {
     addDoctrineRule(7, 'Invented rule', 'Keep the example invented.', '2026-09-01T00:00:00.000Z')

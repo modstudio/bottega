@@ -297,10 +297,18 @@ describe('epic scoreboard', () => {
       args,
     })) as unknown as typeof Bun.spawn)
     try {
-      expect(await epicChildren('DEV-500')).toEqual(children)
+      expect(await epicChildren('bottega', 'DEV-500')).toEqual(children)
       expect(spawn).toHaveBeenCalledTimes(1)
       expect(spawn.mock.calls[0]![0]).toEqual(
-        expect.arrayContaining(['task', 'list', '--parent', 'DEV-500', '--json']),
+        expect.arrayContaining([
+          'task',
+          'list',
+          '--project',
+          'bottega',
+          '--parent',
+          'DEV-500',
+          '--json',
+        ]),
       )
     } finally {
       spawn.mockRestore()

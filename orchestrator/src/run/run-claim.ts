@@ -17,6 +17,7 @@ import { replyFileInstruction, TEXT_REPLY_SCHEMA } from '../contract/contract.ts
 import { db, nowIso, sessionId, writeTransaction } from '../database/db.ts'
 import { namesRecordedRunTree } from '../dispatch/dispatch-preflight.ts'
 import { retargetRepositoryPromptForDispatch } from '../dispatch/prompt-retarget.ts'
+import { resolveTaskRecordId } from '../dispatch/task-reference.ts'
 import { appendRunEvent } from '../events.ts'
 import { checkoutAliases, realpathOrSpelled } from '../git/checkout-identity.ts'
 import { branchOf, git, gitContext, repoRootOf } from '../git/git-environment.ts'
@@ -312,7 +313,7 @@ export async function claimRun(input: ClaimInput): Promise<ClaimResult> {
   const inheritedLaunch = opts.resume
     ? (db()
         .query(
-          `SELECT launch_cwd, launch_seed, launch_key, launch_base, no_failover
+          `SELECT launch_cwd, launch_seed, launch_key, launch_base, no_failover, task_record_id
              FROM run WHERE id=?`,
         )
         .get(opts.resume.parent) as {
@@ -321,6 +322,7 @@ export async function claimRun(input: ClaimInput): Promise<ClaimResult> {
         launch_key: string | null
         launch_base: string | null
         no_failover: number
+        task_record_id: string | null
       })
     : null
   const launchCwd = inheritedLaunch?.launch_cwd ?? opts.launchCwd ?? callerCwd
@@ -332,6 +334,9 @@ export async function claimRun(input: ClaimInput): Promise<ClaimResult> {
     ? (opts.key ?? null)
     : (opts.key ?? inferredReadOnlyKey(callerCwd))
   const launchKey = inheritedLaunch?.launch_key ?? attributedKey
+  const taskRecordId =
+    inheritedLaunch?.task_record_id ??
+    (launchKey && runProjectName ? await resolveTaskRecordId(runProjectName, launchKey) : null)
   const launchBase = inheritedLaunch?.launch_base ?? opts.base ?? null
   const noFailover = inheritedLaunch ? !!inheritedLaunch.no_failover : !!opts.noFailover
   const worktreeTool = repoJob ? toolFor(callerCwd) : null
@@ -385,7 +390,7 @@ export async function claimRun(input: ClaimInput): Promise<ClaimResult> {
           `UPDATE run SET record_id=?, started_at=?, agent=?, job=?, repo=?, project_id=?, cwd=?, prompt_sha=?, spec_sha=?,
                           prompt_bytes=?, prompt_head=?, label=?, status='running', probe=?, retry_of=?,
                           route_reason=?, branch=?, parent_run_id=?, turn=?, vendor_session=?, docs_injected=?, doc_revisions=?, canon_sha=?,
-                          launch_cwd=?, launch_seed=?, launch_key=?, launch_base=?, no_failover=?,
+                          launch_cwd=?, launch_seed=?, launch_key=?, task_record_id=?, launch_base=?, no_failover=?,
                           automatic_failover=?, review_ref=?, pid=?, mcp=?, transport=?
             WHERE id=? RETURNING id`,
         )
@@ -419,6 +424,7 @@ export async function claimRun(input: ClaimInput): Promise<ClaimResult> {
           launchCwd,
           launchSeed,
           launchKey,
+          taskRecordId,
           launchBase,
           noFailover ? 1 : 0,
           opts.automaticFailover ? 1 : 0,
@@ -431,9 +437,9 @@ export async function claimRun(input: ClaimInput): Promise<ClaimResult> {
     : (db()
         .query(
           `INSERT INTO run (record_id, started_at, agent, job, repo, project_id, cwd, prompt_sha, spec_sha, prompt_bytes, prompt_head, label, status, session_id, probe, retry_of, route_reason, branch, parent_run_id, turn, vendor_session, docs_injected, doc_revisions, canon_sha,
-                            launch_cwd, launch_seed, launch_key, launch_base, no_failover,
+                            launch_cwd, launch_seed, launch_key, task_record_id, launch_base, no_failover,
                             automatic_failover, review_ref, pid, mcp, transport, started_by_user_id)
-           VALUES (?,?,?,?,?,?,?,?,?,?,?,?,'running',?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?) RETURNING id`,
+           VALUES (?,?,?,?,?,?,?,?,?,?,?,?,'running',?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?) RETURNING id`,
         )
         .get(
           recordId,
@@ -467,6 +473,7 @@ export async function claimRun(input: ClaimInput): Promise<ClaimResult> {
           launchCwd,
           launchSeed,
           launchKey,
+          taskRecordId,
           launchBase,
           noFailover ? 1 : 0,
           opts.automaticFailover ? 1 : 0,

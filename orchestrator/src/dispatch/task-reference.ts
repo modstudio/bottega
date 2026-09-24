@@ -1,0 +1,24 @@
+// concern: dispatch task reference
+/** Resolves an optional durable hub task identity without making hub availability a dispatch prerequisite. */
+import { fileURLToPath } from 'node:url'
+
+const HUB = fileURLToPath(new URL('../../../bin/hub', import.meta.url))
+
+export async function resolveTaskRecordId(project: string, key: string): Promise<string | null> {
+  try {
+    const child = Bun.spawn([HUB, 'task', 'show', key, '--project', project, '--json'], {
+      stdout: 'pipe',
+      stderr: 'ignore',
+      env: { ...process.env },
+    })
+    const [stdout, code] = await Promise.all([new Response(child.stdout).text(), child.exited])
+    if (code !== 0) return null
+    const shown: unknown = JSON.parse(stdout)
+    if (!shown || typeof shown !== 'object' || !('task' in shown)) return null
+    const task = shown.task
+    if (!task || typeof task !== 'object' || !('record_id' in task)) return null
+    return typeof task.record_id === 'string' && task.record_id ? task.record_id : null
+  } catch {
+    return null
+  }
+}

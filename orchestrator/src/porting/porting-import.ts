@@ -21,6 +21,7 @@ export type ImportPlan = {
   skips: { pairKey: string; candidate: string; reason: string }[]
   refs: {
     taskKey: string
+    targetProjectId: number
     note: string
     sources: { source_project_id: number; commits: string[]; paths: string[]; note: string }[]
   }[]
@@ -258,26 +259,32 @@ function stateSupplementBody(state: Record<string, unknown>): string {
   return entries.map(([where, value]) => `${where}\n${originalValue(value)}`).join('\n\n')
 }
 
-function targetForTaskKey(
+function targetForSources(
   taskKey: string,
+  sources: Project[],
   registered: Project[],
+  pairs: ImportPlan['pairs'],
   refusals: ImportRefusal[],
 ): Project | null {
   const where = `refs.json ${taskKey}`
-  const prefix = taskKey.match(/^([A-Za-z][A-Za-z0-9]*)-\d+$/)?.[1]
-  if (!prefix) {
+  if (!/^[A-Za-z][A-Za-z0-9]*-\d+$/.test(taskKey)) {
     refusals.push(refusal(`task key "${taskKey}"`, where, 'invalid target task key'))
     return null
   }
-  const matches = registered.filter((project) => project.settings.keyPrefixes?.includes(prefix))
+  const targetIds = sources.map(
+    (source) =>
+      new Set(pairs.filter((pair) => pair.sourceId === source.id).map((pair) => pair.targetId)),
+  )
+  const shared = [...(targetIds[0] ?? [])].filter((id) => targetIds.every((ids) => ids.has(id)))
+  const matches = registered.filter((project) => shared.includes(project.id))
   if (matches.length !== 1) {
     refusals.push(
       refusal(
         `task key "${taskKey}"`,
         where,
         matches.length === 0
-          ? 'no registered project owns this task key'
-          : 'several registered projects own this task key',
+          ? 'its source projects have no common registered port target'
+          : 'its source projects have several common registered port targets',
       ),
     )
     return null
@@ -439,7 +446,6 @@ function parseRefs(
   for (const [taskKey, value] of Object.entries(refs)) {
     if (taskKey.startsWith('_')) continue
     const where = `refs.json ${taskKey}`
-    const target = targetForTaskKey(taskKey, registered, plan.refusals)
     if (!object(value)) {
       plan.refusals.push(refusal(`ledger ref "${taskKey}"`, where, 'expected an object'))
       continue
@@ -498,20 +504,28 @@ function parseRefs(
       }
     }
     if (
-      target &&
       sources.length > 0 &&
       new Set(sources.map((source) => source.project.id)).size === sources.length
     ) {
-      plan.refs.push({
+      const target = targetForSources(
         taskKey,
-        note: notes,
-        sources: sources.map((source) => ({
-          source_project_id: source.project.id,
-          commits,
-          paths,
-          note: source.note,
-        })),
-      })
+        sources.map((source) => source.project),
+        registered,
+        plan.pairs,
+        plan.refusals,
+      )
+      if (target)
+        plan.refs.push({
+          taskKey,
+          targetProjectId: target.id,
+          note: notes,
+          sources: sources.map((source) => ({
+            source_project_id: source.project.id,
+            commits,
+            paths,
+            note: source.note,
+          })),
+        })
     } else if (
       sources.length > 1 &&
       new Set(sources.map((source) => source.project.id)).size !== sources.length
