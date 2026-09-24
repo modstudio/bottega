@@ -1,6 +1,7 @@
 import { dirname, join, normalize } from 'node:path'
 import { CONCERNS } from '../shared/brand.ts'
 import { importBoundaries } from './architecture-boundaries.ts'
+import { retrievalModules } from './architecture-retrieval.ts'
 import { uiFolders, uiLayers } from './architecture-ui-layers.ts'
 
 type ConcernManifest = {
@@ -42,25 +43,7 @@ const concerns: ConcernManifest = {
 }
 
 export const modules: ArchitectureModule[] = [
-  module('retrieval/src/corpus/chunks.ts', ['node:fs/promises', 'node:path', 'bun']),
-  module('retrieval/src/contract.ts', []),
-  module('retrieval/src/services/endpoints.ts', ['../contract.ts']),
-  module('retrieval/src/refresh-plan.ts', ['./contract.ts', './corpus/chunks.ts']),
-  module('retrieval/src/vector-ranking.ts', []),
-  // biome-ignore format: compact dependency list keeps this manifest within its frozen file ceiling.
-  module('retrieval/src/index-store.ts', ['node:fs', 'node:path', 'bun:sqlite', './contract.ts', './refresh-plan.ts']),
-  // biome-ignore format: compact dependency list keeps this manifest within its frozen file ceiling.
-  module('retrieval/src/search.ts', ['node:crypto', 'node:path', '../../shared/orch-contract.ts', '../../shared/state-directory.ts', './contract.ts', './corpus/chunks.ts', './index-store.ts', './refresh-plan.ts', './services/endpoints.ts', './vector-ranking.ts']),
-  module('retrieval/src/search-cli.ts', [
-    '../../shared/orch-contract.ts',
-    './search.ts',
-    './services/endpoints.ts',
-  ]),
-  module('retrieval/src/benchmark/metrics.ts', ['../corpus/chunks.ts']),
-  module('retrieval/src/benchmark/queries.ts', ['../../../shared/brand.ts']),
-  module('retrieval/src/benchmark/keyword.ts', ['../corpus/chunks.ts']),
-  // biome-ignore format: compact dependency list keeps this manifest within its frozen file ceiling.
-  module('retrieval/src/benchmark/benchmark.ts', ['node:fs/promises', 'node:path', '../corpus/chunks.ts', '../contract.ts', '../search.ts', '../services/endpoints.ts', '../vector-ranking.ts', './keyword.ts', './metrics.ts', './queries.ts']),
+  ...retrievalModules,
   module('orchestrator/src/artifact-paths.ts', ['node:path']),
   module('orchestrator/src/doc/doc-search.ts', [
     '../../../shared/install-root.ts',
