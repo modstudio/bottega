@@ -19,6 +19,13 @@ export const mcpModules: McpModule[] = [
   ]),
   module('orchestrator/src/mcp/mcp-compatibility.ts', []),
   module('orchestrator/src/mcp/mcp-doc-write.ts', []),
+  module('orchestrator/src/mcp/mcp-doc-tools.ts', [
+    '@modelcontextprotocol/sdk/server/mcp.js',
+    'zod',
+    '../canon/canon.ts',
+    '../doc/docs.ts',
+    './mcp-doc-write.ts',
+  ]),
   module('orchestrator/src/mcp/mcp-search-tools.ts', [
     '@modelcontextprotocol/sdk/server/mcp.js',
     'zod',
