@@ -516,6 +516,12 @@ export function parseMcpProbe(value: string | null | undefined): McpProbeResult 
     const parsed = JSON.parse(value) as McpProbeResult
     if (typeof parsed?.ok !== 'boolean' || typeof parsed.server !== 'string') return null
     if (!Array.isArray(parsed.namesSeen) || typeof parsed.durationMs !== 'number') return null
+    if (
+      parsed.listedTools !== undefined &&
+      (!Array.isArray(parsed.listedTools) ||
+        parsed.listedTools.some((name) => typeof name !== 'string'))
+    )
+      return null
     return parsed
   } catch {
     return null

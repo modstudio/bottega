@@ -6,7 +6,7 @@ import { db } from '../database/db.ts'
 import { projects } from '../project/projects.ts'
 import { parseMcpProbe, readMcpConfig } from './mcp-probe.ts'
 
-export type McpCompatibilityVerdict = 'compatible' | 'partial' | 'incompatible' | 'unknown'
+type McpCompatibilityVerdict = 'compatible' | 'partial' | 'incompatible' | 'unknown'
 
 export type RequiredMcpServer = { projectId: number; project: string; server: string }
 

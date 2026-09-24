@@ -338,6 +338,28 @@ describe('fan-out routing exclusions', () => {
         }),
         run,
       )
+    const newerOldEvidence = addRun({
+      agent: 'grok',
+      job: 'mcp-query',
+      repo: 'compat-fixture',
+      startedAt: '2099-01-01T00:00:00.000Z',
+    })
+    db()
+      .query('UPDATE run SET project_id=?, mcp_server=?, mcp_probe=? WHERE id=?')
+      .run(
+        project.id,
+        'compat-fixture',
+        JSON.stringify({
+          server: 'compat-fixture',
+          tool: 'workflow.list',
+          ok: true,
+          error: null,
+          durationMs: 1,
+          detail: 'old evidence has no catalogue',
+          namesSeen: ['compat-fixture'],
+        }),
+        newerOldEvidence,
+      )
     const requiredMcp = {
       projectId: project.id,
       project: 'compat-fixture',
