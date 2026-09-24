@@ -29,6 +29,7 @@ export type DocRow = {
 const SOURCE_GLOBS = [
   'orchestrator/src/**/*.ts',
   'hub/src/**/*.ts',
+  'retrieval/src/**/*.ts',
   'shared/**/*.ts',
   'scripts/**/*.ts',
   '.agents/**/*.md',

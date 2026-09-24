@@ -44,13 +44,21 @@ async function embedBatches(url: string, documents: string[]): Promise<number[][
 }
 
 async function validateQueries(repositoryRoot: string, chunks: Chunk[]): Promise<void> {
+  const codeChunkPaths = new Set(
+    chunks.filter((chunk) => chunk.identity.kind === 'code').map((chunk) => chunk.path),
+  )
   const validateCodeSet = async (name: string, queries: BenchmarkQuery[]) => {
     if (queries.length < 20 || queries.length > 40) {
       throw new Error(`${name} benchmark requires 20 to 40 queries; found ${queries.length}`)
     }
     for (const query of queries) {
       if (!query.goldLabels.length) throw new Error(`${query.id} has no code label`)
-      for (const goldPath of query.goldLabels) await access(resolve(repositoryRoot, goldPath))
+      for (const goldPath of query.goldLabels) {
+        await access(resolve(repositoryRoot, goldPath))
+        if (!codeChunkPaths.has(goldPath)) {
+          throw new Error(`${query.id} code label is absent from the corpus: ${goldPath}`)
+        }
+      }
       const source = await readFile(resolve(repositoryRoot, query.provenance.path), 'utf8')
       const plainSource = source.replace(/[`*_]/g, '').replace(/\s+/g, ' ')
       const excerpt = query.provenance.excerpt.replace(/\s+/g, ' ')

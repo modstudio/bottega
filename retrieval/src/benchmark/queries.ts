@@ -273,9 +273,8 @@ export const REAL_CODE_QUERIES: BenchmarkQuery[] = [
   codeQuestion(
     'real-canon-hydration',
     "Where are canon rows written into a worktree's files?",
-    'orchestrator/src/canon/canon-hydrate.ts',
-    '.map(({ slug, body }) => ({ path: slug, body }))',
-    ['orchestrator/src/canon/canon-commands.ts'],
+    'orchestrator/src/canon/canon-commands.ts',
+    'writeFileSync(target, body)',
   ),
   codeQuestion(
     'real-doc-lint',
