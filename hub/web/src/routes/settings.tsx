@@ -33,24 +33,12 @@ type Draft = {
 export const Route = createFileRoute('/settings')({ component: SettingsPage })
 const refresh = () => queryClient.invalidateQueries({ queryKey: trpc.record.settings.queryKey() })
 
-function SubscriptionDialog({
-  row,
-  projects,
-  members,
-  manageableProjects,
-  isPersonalSpace,
-  canManageEmails,
-  onClose,
-}: {
-  row?: Subscription
-  projects: string[]
-  members: Member[]
-  manageableProjects: Settings['manageableProjects']
-  isPersonalSpace: boolean
-  canManageEmails: boolean
-  onClose: () => void
-}) {
-  const [draft, setDraft] = useState<Draft>({
+function initialDraft(
+  row: Subscription | undefined,
+  projects: string[],
+  manageableProjects: Settings['manageableProjects'],
+): Draft {
+  return {
     scope: row?.scope_kind ?? 'space',
     project: row?.project_name ?? projects[0] ?? '',
     memberUserIds: row?.members.map((member) => member.user_id) ?? [],
@@ -69,7 +57,83 @@ function SubscriptionDialog({
       row?.recipients
         .filter((recipient) => !recipient.user_id)
         .map((recipient) => recipient.email) ?? [],
-  })
+  }
+}
+
+function draftScope(draft: Draft) {
+  if (draft.scope === 'project') return { kind: 'project' as const, project: draft.project }
+  if (draft.scope === 'members') return { kind: 'members' as const, userIds: draft.memberUserIds }
+  if (draft.scope === 'projects') return { kind: 'projects' as const, projectIds: draft.projectIds }
+  return { kind: 'space' as const }
+}
+
+function ProjectsAcrossSpaces({
+  projects,
+  selected,
+  onChange,
+}: {
+  projects: Settings['manageableProjects']
+  selected: string[]
+  onChange: (projectIds: string[]) => void
+}) {
+  return (
+    <div className="grid gap-2">
+      <span className="text-sm text-text-muted">Projects across spaces</span>
+      {[...new Set(projects.map((project) => project.space_name))].map((spaceName) => (
+        <div key={spaceName} className="grid gap-1">
+          <span className="text-sm">{spaceName}</span>
+          {projects
+            .filter((project) => project.space_name === spaceName)
+            .map((project) => (
+              <label
+                key={project.id}
+                htmlFor={`scope-project-${project.id}`}
+                className="flex items-center gap-2 text-sm"
+              >
+                <Checkbox
+                  id={`scope-project-${project.id}`}
+                  checked={selected.includes(project.id)}
+                  onChange={(event) =>
+                    onChange(
+                      event.target.checked
+                        ? [...selected, project.id]
+                        : selected.filter((id) => id !== project.id),
+                    )
+                  }
+                />
+                {project.name}
+              </label>
+            ))}
+        </div>
+      ))}
+    </div>
+  )
+}
+
+const subscriptionCannotSave = (draft: Draft, pending: boolean) =>
+  pending ||
+  (!draft.recipientUserIds.length && !draft.recipientEmails.length) ||
+  (draft.scope === 'members' && !draft.memberUserIds.length) ||
+  (draft.scope === 'projects' && !draft.projectIds.length)
+
+function SubscriptionDialog({
+  row,
+  projects,
+  members,
+  manageableProjects,
+  isPersonalSpace,
+  canManageEmails,
+  onClose,
+}: {
+  row?: Subscription
+  projects: string[]
+  members: Member[]
+  manageableProjects: Settings['manageableProjects']
+  isPersonalSpace: boolean
+  canManageEmails: boolean
+  onClose: () => void
+}) {
+  const [draft, setDraft] = useState<Draft>(() => initialDraft(row, projects, manageableProjects))
   const [email, setEmail] = useState('')
   const [confirmingDelete, setConfirmingDelete] = useState(false)
   const [testMessage, setTestMessage] = useState('')
@@ -111,17 +175,9 @@ function SubscriptionDialog({
       zone: draft.zone,
       enabled: draft.enabled,
     }
-    const scope =
-      draft.scope === 'project'
-        ? ({ kind: 'project', project: draft.project } as const)
-        : draft.scope === 'members'
-          ? ({ kind: 'members', userIds: draft.memberUserIds } as const)
-          : draft.scope === 'projects'
-            ? ({ kind: 'projects', projectIds: draft.projectIds } as const)
-            : ({ kind: 'space' } as const)
     const input = {
       ...cadence,
-      scope,
+      scope: draftScope(draft),
       recipientUserIds: draft.recipientUserIds,
       recipientEmails: draft.recipientEmails,
     }
@@ -172,12 +228,7 @@ function SubscriptionDialog({
             </Button>
             <Button
               variant="primary"
-              disabled={
-                pending ||
-                (!draft.recipientUserIds.length && !draft.recipientEmails.length) ||
-                (draft.scope === 'members' && !draft.memberUserIds.length) ||
-                (draft.scope === 'projects' && !draft.projectIds.length)
-              }
+              disabled={subscriptionCannotSave(draft, pending)}
               onClick={save}
             >
               {row ? 'Save changes' : 'Create subscription'}
@@ -217,38 +268,11 @@ function SubscriptionDialog({
           />
         ) : null}
         {draft.scope === 'projects' ? (
-          <div className="grid gap-2">
-            <span className="text-sm text-text-muted">Projects across spaces</span>
-            {[...new Set(manageableProjects.map((project) => project.space_name))].map(
-              (spaceName) => (
-                <div key={spaceName} className="grid gap-1">
-                  <span className="text-sm">{spaceName}</span>
-                  {manageableProjects
-                    .filter((project) => project.space_name === spaceName)
-                    .map((project) => (
-                      <label
-                        key={project.id}
-                        htmlFor={`scope-project-${project.id}`}
-                        className="flex items-center gap-2 text-sm"
-                      >
-                        <Checkbox
-                          id={`scope-project-${project.id}`}
-                          checked={draft.projectIds.includes(project.id)}
-                          onChange={(event) =>
-                            change({
-                              projectIds: event.target.checked
-                                ? [...draft.projectIds, project.id]
-                                : draft.projectIds.filter((id) => id !== project.id),
-                            })
-                          }
-                        />
-                        {project.name}
-                      </label>
-                    ))}
-                </div>
-              ),
-            )}
-          </div>
+          <ProjectsAcrossSpaces
+            projects={manageableProjects}
+            selected={draft.projectIds}
+            onChange={(projectIds) => change({ projectIds })}
+          />
         ) : null}
         <MemberChecks
           label="Recipients"

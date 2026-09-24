@@ -23,6 +23,17 @@ async function reportPush(dryRun: boolean) {
   if (result.match === false) process.exitCode = 1
 }
 
+function subscriptionScope(
+  row: Awaited<ReturnType<typeof hostedListReportSubscriptions>>['subscriptions'][number],
+) {
+  if (row.scope_kind === 'project') return `project ${row.project_name}`
+  if (row.scope_kind === 'members')
+    return `members ${row.members.map((member) => member.user_id).join(',')}`
+  if (row.scope_kind === 'projects')
+    return `projects ${row.projects.map((project) => `${project.space_name}/${project.project_name}`).join(',')}`
+  return 'space'
+}
+
 async function reportList(json: boolean) {
   const { subscriptions } = await hostedListReportSubscriptions()
   if (json) {
@@ -34,14 +45,7 @@ async function reportList(json: boolean) {
     return
   }
   for (const row of subscriptions) {
-    const scope =
-      row.scope_kind === 'project'
-        ? `project ${row.project_name}`
-        : row.scope_kind === 'members'
-          ? `members ${row.members.map((member) => member.user_id).join(',')}`
-          : row.scope_kind === 'projects'
-            ? `projects ${row.projects.map((project) => `${project.space_name}/${project.project_name}`).join(',')}`
-            : 'space'
+    const scope = subscriptionScope(row)
     const when =
       row.cadence === 'weekly'
         ? `weekly ${row.weekday} ${row.hour}:00 ${row.zone}`

@@ -114,6 +114,10 @@ export async function hostedMeasures(
   return computeMeasures(await loadHostedMeasureRows(databaseUrl, identity, window), window, scope)
 }
 
+export function emptyHostedMeasures(window: MeasureWindow): Measures {
+  return computeMeasures({ intervals: [], events: [] }, window, { kind: 'space' })
+}
+
 export type HostedMeasurePerson = { userId: string; name: string; email: string }
 
 /** Members with attributed evidence in this window; this is not a user directory. */

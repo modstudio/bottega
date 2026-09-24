@@ -381,26 +381,7 @@ async function dispatchReport(
   if (!intentId) return 'duplicate'
   try {
     for (const recipient of subscription.recipients) {
-      const unsubscribeUrl = recipient.unsubscribeToken
-        ? `${prepared.hostedOrigin}/unsubscribe/${candidate.spaceId}/${recipient.unsubscribeToken}`
-        : null
-      await input.mail.send({
-        ...rendered,
-        text: unsubscribeUrl ? `${rendered.text}\n\nUnsubscribe: ${unsubscribeUrl}` : rendered.text,
-        html: unsubscribeUrl
-          ? rendered.html.replace(
-              '</body>',
-              `<p><a href="${unsubscribeUrl}">Unsubscribe</a></p></body>`,
-            )
-          : rendered.html,
-        to: [recipient.email],
-        headers: unsubscribeUrl
-          ? [
-              { name: 'List-Unsubscribe', value: `<${unsubscribeUrl}>` },
-              { name: 'List-Unsubscribe-Post', value: 'List-Unsubscribe=One-Click' },
-            ]
-          : undefined,
-      })
+      await sendRecipient(input.mail, candidate, recipient, rendered, prepared.hostedOrigin)
     }
     await input.repository.recordOutcome(
       candidate,
@@ -414,6 +395,35 @@ async function dispatchReport(
     await input.repository.recordOutcome(candidate, intentId, 'failed', reason)
     return 'failed'
   }
+}
+
+async function sendRecipient(
+  mail: ReportMailClient,
+  candidate: DeliveryCandidate,
+  recipient: DeliveryRecipient,
+  rendered: RenderedReport,
+  hostedOrigin: string | null,
+) {
+  const unsubscribeUrl = recipient.unsubscribeToken
+    ? `${hostedOrigin}/unsubscribe/${candidate.spaceId}/${recipient.unsubscribeToken}`
+    : null
+  await mail.send({
+    ...rendered,
+    text: unsubscribeUrl ? `${rendered.text}\n\nUnsubscribe: ${unsubscribeUrl}` : rendered.text,
+    html: unsubscribeUrl
+      ? rendered.html.replace(
+          '</body>',
+          `<p><a href="${unsubscribeUrl}">Unsubscribe</a></p></body>`,
+        )
+      : rendered.html,
+    to: [recipient.email],
+    headers: unsubscribeUrl
+      ? [
+          { name: 'List-Unsubscribe', value: `<${unsubscribeUrl}>` },
+          { name: 'List-Unsubscribe-Post', value: 'List-Unsubscribe=One-Click' },
+        ]
+      : undefined,
+  })
 }
 
 function requiredHostedOrigin(origin?: string) {

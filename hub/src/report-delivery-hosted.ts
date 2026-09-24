@@ -5,10 +5,9 @@ import { hostname } from 'node:os'
 import { SESv2Client, SendEmailCommand } from '@aws-sdk/client-sesv2'
 import { SQL } from 'bun'
 import { newRecordId } from '../../shared/record/schema.ts'
-import { hostedMeasures } from './hosted-measures.ts'
+import { emptyHostedMeasures, hostedMeasures } from './hosted-measures.ts'
 import { gatherHostedReport, hostedGatherReport } from './hosted-report-gather.ts'
 import { withHostedTenant } from './hosted-tasks.ts'
-import { computeMeasures } from './measures.ts'
 import type {
   DeliveryCandidate,
   DeliveryPeriod,
@@ -49,6 +48,75 @@ function candidate(row: RawCandidate): DeliveryCandidate {
 
 function identity(value: DeliveryCandidate, userId = '00000000-0000-0000-0000-000000000000') {
   return { spaceId: value.spaceId, userId }
+}
+
+type SelectedProject = {
+  project_id: string
+  project_name: string | null
+  snapshot_name: string
+  space_id: string | null
+  snapshot_space_id: string
+  space_name: string | null
+  role: string | null
+  retired_at: string | Date | null
+}
+
+const projectIsAvailable = (project: SelectedProject) =>
+  Boolean(
+    project.project_name &&
+      project.space_id &&
+      project.space_name &&
+      !project.retired_at &&
+      (project.role === 'owner' || project.role === 'admin'),
+  )
+
+function projectExclusions(projects: SelectedProject[]) {
+  return projects.flatMap((project) => {
+    const name = `${project.space_name ?? project.snapshot_space_id}/${project.snapshot_name}`
+    if (!project.project_name || project.retired_at) return [`${name}: project was deleted`]
+    if (project.role !== 'owner' && project.role !== 'admin')
+      return [`${name}: subscription owner is no longer an owner or admin`]
+    return []
+  })
+}
+
+function loadedScope(
+  loaded: {
+    scope_kind: 'space' | 'project' | 'members' | 'projects'
+    project_name: string | null
+    member_ids: string[]
+  },
+  projects: SelectedProject[],
+) {
+  if (loaded.scope_kind === 'project')
+    return { kind: 'project' as const, project: loaded.project_name! }
+  if (loaded.scope_kind === 'members')
+    return { kind: 'members' as const, userIds: loaded.member_ids }
+  if (loaded.scope_kind === 'projects')
+    return { kind: 'projects' as const, projectIds: projects.map((row) => row.project_id) }
+  return { kind: 'space' as const }
+}
+
+function loadedScopeName(loaded: {
+  scope_kind: 'space' | 'project' | 'members' | 'projects'
+  project_name: string | null
+  member_names: string[]
+  space_name: string
+}) {
+  if (loaded.scope_kind === 'project') return loaded.project_name!
+  if (loaded.scope_kind === 'members') return loaded.member_names.join(', ')
+  if (loaded.scope_kind === 'projects') return 'Selected projects'
+  return loaded.space_name
+}
+
+function projectsBySpace(projects: SelectedProject[]) {
+  const groups = new Map<string, SelectedProject[]>()
+  for (const project of projects) {
+    const current = groups.get(project.space_id!) ?? []
+    current.push(project)
+    groups.set(project.space_id!, current)
+  }
+  return groups
 }
 
 export function hostedDeliveryRepository(databaseUrl: string): DeliveryRepository {
@@ -149,16 +217,7 @@ export function hostedDeliveryRepository(databaseUrl: string): DeliveryRepositor
       const selectedProjects =
         loaded.scope_kind === 'projects'
           ? await withHostedTenant(databaseUrl, deliveryIdentity, async (tx) =>
-              rows<{
-                project_id: string
-                project_name: string | null
-                snapshot_name: string
-                space_id: string | null
-                snapshot_space_id: string
-                space_name: string | null
-                role: string | null
-                retired_at: string | Date | null
-              }>(
+              rows<SelectedProject>(
                 await tx`SELECT x.project_id,p.name AS project_name,x.project_name AS snapshot_name,
                   p.space_id,x.project_space_id AS snapshot_space_id,sp.name AS space_name,
                   m.role,p.retired_at
@@ -171,40 +230,10 @@ export function hostedDeliveryRepository(databaseUrl: string): DeliveryRepositor
               ),
             )
           : []
-      const validProjects = selectedProjects.filter(
-        (project) =>
-          project.project_name &&
-          project.space_id &&
-          project.space_name &&
-          !project.retired_at &&
-          (project.role === 'owner' || project.role === 'admin'),
-      )
-      const exclusions = selectedProjects.flatMap((project) => {
-        const name = `${project.space_name ?? project.snapshot_space_id}/${project.snapshot_name}`
-        if (!project.project_name || project.retired_at) return [`${name}: project was deleted`]
-        if (project.role !== 'owner' && project.role !== 'admin')
-          return [`${name}: subscription owner is no longer an owner or admin`]
-        return []
-      })
-      const scope =
-        loaded.scope_kind === 'project'
-          ? ({ kind: 'project', project: loaded.project_name! } as const)
-          : loaded.scope_kind === 'members'
-            ? ({ kind: 'members', userIds: loaded.member_ids } as const)
-            : loaded.scope_kind === 'projects'
-              ? ({
-                  kind: 'projects',
-                  projectIds: validProjects.map((row) => row.project_id),
-                } as const)
-              : ({ kind: 'space' } as const)
-      const scopeName =
-        loaded.scope_kind === 'project'
-          ? loaded.project_name!
-          : loaded.scope_kind === 'members'
-            ? loaded.member_names.join(', ')
-            : loaded.scope_kind === 'projects'
-              ? 'Selected projects'
-              : loaded.space_name
+      const validProjects = selectedProjects.filter(projectIsAvailable)
+      const exclusions = projectExclusions(selectedProjects)
+      const scope = loadedScope(loaded, validProjects)
+      const scopeName = loadedScopeName(loaded)
       const recipientIdentity =
         loaded.scope_kind === 'projects'
           ? {
@@ -217,7 +246,7 @@ export function hostedDeliveryRepository(databaseUrl: string): DeliveryRepositor
           recipients,
           scope,
           scopeName,
-          measures: computeMeasures({ intervals: [], events: [] }, period, { kind: 'space' }),
+          measures: emptyHostedMeasures(period),
           report: gatherHostedReport([], new Set(), period),
           exclusions,
           unavailableReason: exclusions.join('\n') || 'subscription has no chosen projects',
@@ -227,12 +256,7 @@ export function hostedDeliveryRepository(databaseUrl: string): DeliveryRepositor
         hostedMeasures(databaseUrl, recipientIdentity, period, scope),
         hostedGatherReport(databaseUrl, recipientIdentity, period, scope),
       ])
-      const sectionGroups = new Map<string, typeof validProjects>()
-      for (const project of validProjects) {
-        const current = sectionGroups.get(project.space_id!) ?? []
-        current.push(project)
-        sectionGroups.set(project.space_id!, current)
-      }
+      const sectionGroups = projectsBySpace(validProjects)
       const sections =
         loaded.scope_kind === 'projects'
           ? await Promise.all(
@@ -265,12 +289,12 @@ export function hostedDeliveryRepository(databaseUrl: string): DeliveryRepositor
     },
     async recipientsAreMembers(value, recipientUserIds) {
       if (!recipientUserIds.length) return true
-      return withHostedTenant(databaseUrl, identity(value, recipientUserIds[0]), async (tx) => {
-        const member = rows<{ count: number }>(
-          await tx`SELECT count(*)::int AS count FROM membership
+        return withHostedTenant(databaseUrl, identity(value, recipientUserIds[0]), async (tx) => {
+          const member = rows<{ count: number }>(
+            await tx`SELECT count(*)::int AS count FROM membership
           WHERE space_id=${value.spaceId}::uuid
             AND user_id = ANY(${tx.array(recipientUserIds, 'uuid')})`,
-        )[0]!
+          )[0]!
         return Number(member.count) === recipientUserIds.length
       })
     },

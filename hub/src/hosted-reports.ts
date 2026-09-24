@@ -160,34 +160,57 @@ function planSubscriptionScope(
 > {
   if (!scope || !['space', 'project', 'members', 'projects'].includes(scope.kind))
     throw new Error('scope must be space, a project in this space, members, or projects')
-  if (scope.kind === 'project') {
-    const project = scope.project.trim()
-    if (!project) throw new Error('project scope requires a project')
-    if (!projectNames.includes(project)) throw new Error(`project ${project} is not in this space`)
-    return { scope_kind: 'project', project_name: project, member_user_ids: [], project_ids: [] }
-  }
-  if (scope.kind === 'members') {
-    const users = [...new Set(scope.userIds)]
-    if (!users.length) throw new Error('members scope requires at least one member')
-    if (users.some((userId) => !memberUserIds.includes(userId)))
-      throw new Error('every report member must be a member of this space')
-    return { scope_kind: 'members', project_name: null, member_user_ids: users, project_ids: [] }
-  }
-  if (scope.kind === 'projects') {
-    if (facts.personalSpaceId !== facts.subscriptionSpaceId)
-      throw new Error('projects scope is available only in your personal space')
-    const projects = [...new Set(scope.projectIds)]
-    if (!projects.length) throw new Error('projects scope requires at least one project')
-    if (projects.some((projectId) => !(facts.eligibleProjectIds ?? []).includes(projectId)))
-      throw new Error('every report project must belong to a space you own or administer')
-    return {
-      scope_kind: 'projects',
-      project_name: null,
-      member_user_ids: [],
-      project_ids: projects,
-    }
-  }
+  if (scope.kind === 'project') return planProjectScope(scope.project, projectNames)
+  if (scope.kind === 'members') return planMembersScope(scope.userIds, memberUserIds)
+  if (scope.kind === 'projects') return planProjectsScope(scope.projectIds, facts)
   return { scope_kind: 'space', project_name: null, member_user_ids: [], project_ids: [] }
+}
+
+function planProjectScope(projectValue: string, projectNames: readonly string[]) {
+  const project = projectValue.trim()
+  if (!project) throw new Error('project scope requires a project')
+  if (!projectNames.includes(project)) throw new Error(`project ${project} is not in this space`)
+  return {
+    scope_kind: 'project' as const,
+    project_name: project,
+    member_user_ids: [],
+    project_ids: [],
+  }
+}
+
+function planMembersScope(userIds: readonly string[], memberUserIds: readonly string[]) {
+  const users = [...new Set(userIds)]
+  if (!users.length) throw new Error('members scope requires at least one member')
+  if (users.some((userId) => !memberUserIds.includes(userId)))
+    throw new Error('every report member must be a member of this space')
+  return {
+    scope_kind: 'members' as const,
+    project_name: null,
+    member_user_ids: users,
+    project_ids: [],
+  }
+}
+
+function planProjectsScope(
+  projectIds: readonly string[],
+  facts: {
+    personalSpaceId?: string | null
+    subscriptionSpaceId: string
+    eligibleProjectIds?: readonly string[]
+  },
+) {
+  if (facts.personalSpaceId !== facts.subscriptionSpaceId)
+    throw new Error('projects scope is available only in your personal space')
+  const projects = [...new Set(projectIds)]
+  if (!projects.length) throw new Error('projects scope requires at least one project')
+  if (projects.some((projectId) => !(facts.eligibleProjectIds ?? []).includes(projectId)))
+    throw new Error('every report project must belong to a space you own or administer')
+  return {
+    scope_kind: 'projects' as const,
+    project_name: null,
+    member_user_ids: [],
+    project_ids: projects,
+  }
 }
 
 function planSubscriptionCadence(
