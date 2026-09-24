@@ -797,6 +797,7 @@ export const importBoundaries: ImportBoundary[] = [
       '../database/db.ts',
       '../events.ts',
       '../route/failover.ts',
+      '../git/checkout-identity.ts',
       '../git/git-environment.ts',
       '../mcp/mcp-preflight.ts',
       '../outcome.ts',
