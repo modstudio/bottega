@@ -26,6 +26,7 @@ import {
   renderWorkflowCursorLine,
 } from './workflow-cursor.ts'
 import { renderWorkflowComposition, renderWorkflowStep } from './workflow-render.ts'
+import { resolveWorkflowStepReference } from './workflow-step-reference.ts'
 import { parseWorkflowTree, planWorkflowHydration } from './workflow-tree.ts'
 import { applyWorkflowTreePlan, collectWorkflowTree } from './workflow-tree-files.ts'
 import { importWorkflowTree, productionWorkflowTree } from './workflow-tree-store.ts'
@@ -38,6 +39,7 @@ import {
   retireWorkflow,
   setWorkflow,
   showWorkflow,
+  workflowModeStepLists,
   workflowVersions,
 } from './workflows.ts'
 
@@ -142,9 +144,15 @@ async function stepCommand(
     catalogueVersion: positive(flagValue(argv, 'catalogue-version'), '--catalogue-version'),
   }
   const preliminary = composeWorkflow(argv[2]!, project, mode, args, undefined, selection)
+  const stepSlug = resolveWorkflowStepReference(
+    argv[3]!,
+    mode && preliminary.mode
+      ? [{ mode: preliminary.mode.slug, steps: preliminary.steps.map((step) => step.slug) }]
+      : workflowModeStepLists(argv[2]!, undefined, selection),
+  )
   const preliminaryStep = mode
     ? undefined
-    : getWorkflowStep(argv[2]!, project, argv[3]!, args, undefined, selection)
+    : getWorkflowStep(argv[2]!, project, stepSlug, args, undefined, selection)
   const autonomy = await resolveProjectAutonomy(
     project,
     preliminary.workflow.slug,
@@ -156,14 +164,14 @@ async function stepCommand(
     ? getWorkflowStepWithCursor(
         argv[2]!,
         project,
-        argv[3]!,
+        stepSlug,
         args,
         mode,
         cliWorkflowCursorContext(),
         undefined,
         autonomy,
       )
-    : getWorkflowStep(argv[2]!, project, argv[3]!, args, undefined, selection, autonomy)
+    : getWorkflowStep(argv[2]!, project, stepSlug, args, undefined, selection, autonomy)
   print(step, renderWorkflowStep(step))
 }
 

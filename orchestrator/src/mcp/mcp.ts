@@ -53,7 +53,13 @@ import {
   nextWorkflowStep,
 } from '../workflow/workflow-cursor.ts'
 import { renderWorkflowStep } from '../workflow/workflow-render.ts'
-import { composeWorkflow, getWorkflowStep, listWorkflows } from '../workflow/workflows.ts'
+import { resolveWorkflowStepReference } from '../workflow/workflow-step-reference.ts'
+import {
+  composeWorkflow,
+  getWorkflowStep,
+  listWorkflows,
+  workflowModeStepLists,
+} from '../workflow/workflows.ts'
 import { decideMcpDocWrite } from './mcp-doc-write.ts'
 import { registerWorkflowPrompts } from './mcp-prompts.ts'
 
@@ -448,7 +454,7 @@ export function createDocsMcpServer(): McpServer {
     'get_workflow_step',
     {
       description:
-        'Fetch one workflow step body with argument substitutions applied. Pass mode so the workflow cursor applies: fetching step 1 opens the workflow, fetching the current step resumes it, and a step ahead of the cursor is refused. Close a step and receive the next one with next_workflow_step.',
+        'Fetch one workflow step body with argument substitutions applied. Step accepts a slug or a 1-based position from compose_workflow. Pass mode so the workflow cursor applies: fetching step 1 opens the workflow, fetching the current step resumes it, and a step ahead of the cursor is refused. Close a step and receive the next one with next_workflow_step.',
       inputSchema: {
         slug: z.string().trim().min(1),
         project: z.string().trim().min(1),
@@ -460,9 +466,15 @@ export function createDocsMcpServer(): McpServer {
     },
     async ({ slug, project, step, mode, args, autonomy }) => {
       const preliminary = composeWorkflow(slug, project, mode, args ?? {})
+      const stepSlug = resolveWorkflowStepReference(
+        step,
+        mode && preliminary.mode
+          ? [{ mode: preliminary.mode.slug, steps: preliminary.steps.map((item) => item.slug) }]
+          : workflowModeStepLists(slug),
+      )
       const preliminaryStep = mode
         ? undefined
-        : getWorkflowStep(slug, project, step, args ?? {}, undefined, { mode })
+        : getWorkflowStep(slug, project, stepSlug, args ?? {}, undefined, { mode })
       const resolved = await resolveProjectAutonomy(
         project,
         preliminary.workflow.slug,
@@ -476,14 +488,14 @@ export function createDocsMcpServer(): McpServer {
             ? getWorkflowStepWithCursor(
                 slug,
                 project,
-                step,
+                stepSlug,
                 args ?? {},
                 mode,
                 mcpWorkflowCursorContext(),
                 undefined,
                 resolved,
               )
-            : getWorkflowStep(slug, project, step, args ?? {}, undefined, { mode }, resolved),
+            : getWorkflowStep(slug, project, stepSlug, args ?? {}, undefined, { mode }, resolved),
         ),
       )
     },
