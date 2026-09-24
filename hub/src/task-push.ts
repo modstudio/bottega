@@ -1,9 +1,10 @@
 import { newRecordId } from '../../shared/record/schema.ts'
 import { recordSpaceMembership } from '../../shared/record-space-membership.ts'
 import { db, writeTransaction } from './db.ts'
+import { isTaskMirrorAdoption, type MirrorAdoption } from './hosted-tasks.ts'
 import { projects } from './projects.ts'
 import type { TaskRow } from './task.ts'
-import { persistTaskAdoptionsOn, type TaskAdoption } from './task-adoption.ts'
+import { persistTaskAdoptionsOn } from './task-adoption.ts'
 import {
   type HostedTaskIdentity,
   hostedMirrorTasks,
@@ -117,21 +118,12 @@ function sourceCounts<T>(values: T[], source: (row: T) => string | undefined) {
 function persistMirrorBatch(
   name: keyof PushCollections,
   rows: Array<Record<string, unknown>>,
-  adoptions: Array<
-    | TaskAdoption
-    | {
-        table: 'task_comment' | 'task_document' | 'task_status_event'
-        legacy_local_id: number
-        id: string
-      }
-  >,
+  adoptions: MirrorAdoption[],
 ) {
-  const taskAdoptions = adoptions.filter(
-    (adoption): adoption is TaskAdoption => adoption.table === 'task',
-  )
+  const taskAdoptions = adoptions.filter(isTaskMirrorAdoption)
   const childAdoptions = adoptions.filter(
-    (adoption): adoption is Exclude<(typeof adoptions)[number], TaskAdoption> =>
-      adoption.table !== 'task',
+    (adoption): adoption is Exclude<MirrorAdoption, { table: 'task' }> =>
+      !isTaskMirrorAdoption(adoption),
   )
   const newlyAssigned = rows.filter((row) => row.newly_assigned === true)
   if (!newlyAssigned.length && !adoptions.length) return

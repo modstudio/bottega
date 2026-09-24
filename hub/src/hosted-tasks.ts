@@ -391,18 +391,20 @@ type MirrorBody = {
 type MirrorIdentity = { id: string; spaceId: string; naturalKey: string }
 type MirrorLegacyLocalIdHolder = { id: string; spaceId: string; legacyLocalId: number }
 type MirrorCollisionDecision =
-  | { action: 'insert' | 'update-same-row' | 'idempotent-duplicate' }
+  | { action: 'insert' }
+  | { action: 'update-same-row' }
+  | { action: 'idempotent-duplicate' }
   | { action: 'adopt'; id: string }
   | { action: 'refuse'; reason: string }
 
 function naturalKeyCollisionDecision(
   incoming: MirrorIdentity,
   existing: MirrorIdentity | null,
-  newlyAssigned: boolean,
+  mayAdopt: boolean,
   naturalKeyHolder: MirrorIdentity | null,
 ): MirrorCollisionDecision | null {
   if (!naturalKeyHolder || naturalKeyHolder.id === incoming.id) return null
-  if (!existing && newlyAssigned && naturalKeyHolder.spaceId === incoming.spaceId)
+  if (!existing && mayAdopt && naturalKeyHolder.spaceId === incoming.spaceId)
     return { action: 'adopt', id: naturalKeyHolder.id }
   return {
     action: 'refuse',
@@ -417,11 +419,11 @@ function naturalKeyCollisionDecision(
 
 function legacyLocalIdCollisionDecision(
   incoming: MirrorIdentity,
-  newlyAssigned: boolean,
+  mayAdopt: boolean,
   legacyLocalIdHolder: MirrorLegacyLocalIdHolder | null,
 ): MirrorCollisionDecision | null {
   if (!legacyLocalIdHolder || legacyLocalIdHolder.id === incoming.id) return null
-  if (newlyAssigned && legacyLocalIdHolder.spaceId === incoming.spaceId)
+  if (mayAdopt && legacyLocalIdHolder.spaceId === incoming.spaceId)
     return { action: 'adopt', id: legacyLocalIdHolder.id }
   return {
     action: 'refuse',
@@ -437,9 +439,9 @@ export function mirrorCollisionDecision(
   incoming: MirrorIdentity,
   existing: MirrorIdentity | null,
   sameRow: 'update' | 'idempotent',
-  identity: 'natural-key' | 'id' = 'natural-key',
+  identity: 'natural-key' | 'id' | 'status-event' = 'natural-key',
   legacyLocalIdHolder: MirrorLegacyLocalIdHolder | null = null,
-  newlyAssigned = false,
+  mayAdopt = false,
   naturalKeyHolder: MirrorIdentity | null = null,
 ): MirrorCollisionDecision {
   if (existing && existing.spaceId !== incoming.spaceId)
@@ -451,16 +453,17 @@ export function mirrorCollisionDecision(
         `to the id for ${incoming.naturalKey}, or ask the hosted-space operator to resolve the id collision`,
     }
   const naturalKeyCollision =
-    identity === 'natural-key'
-      ? naturalKeyCollisionDecision(incoming, existing, newlyAssigned, naturalKeyHolder)
+    identity !== 'id'
+      ? naturalKeyCollisionDecision(
+          incoming,
+          existing,
+          identity === 'status-event' || mayAdopt,
+          naturalKeyHolder,
+        )
       : null
   if (naturalKeyCollision) return naturalKeyCollision
   if (!existing) {
-    const legacyCollision = legacyLocalIdCollisionDecision(
-      incoming,
-      newlyAssigned,
-      legacyLocalIdHolder,
-    )
+    const legacyCollision = legacyLocalIdCollisionDecision(incoming, mayAdopt, legacyLocalIdHolder)
     if (legacyCollision) return legacyCollision
     return { action: 'insert' }
   }
@@ -472,17 +475,31 @@ function applyMirrorDecision(decision: MirrorCollisionDecision): boolean {
   return decision.action !== 'idempotent-duplicate' && decision.action !== 'adopt'
 }
 
-type MirrorAdoption = {
-  table: 'task_comment' | 'task_document' | 'task_status_event'
-  legacy_local_id: number
-  id: string
+export type MirrorAdoption =
+  | {
+      table: 'task'
+      project: string
+      key: string
+      id: string
+    }
+  | {
+      table: 'task_comment' | 'task_document' | 'task_status_event'
+      legacy_local_id: number
+      id: string
+    }
+
+export function isTaskMirrorAdoption(
+  adoption: MirrorAdoption,
+): adoption is Extract<MirrorAdoption, { table: 'task' }> {
+  return adoption.table === 'task'
 }
 
-type MirrorTaskAdoption = {
-  table: 'task'
-  project: string
-  key: string
-  id: string
+function taskRowMayAdopt(row: HostedTask): boolean {
+  return row.source === 'mcp' || row.source === 'git' || row.newly_assigned === true
+}
+
+function taskMirrorAdoption(row: HostedTask, id: string): MirrorAdoption {
+  return { table: 'task', project: row.project, key: row.key, id }
 }
 
 function selectedMirrorIdentity<T extends { id: string; space_id: string }>(
@@ -496,11 +513,73 @@ function localMirrorNaturalKey(kind: 'comment' | 'document' | 'status event', id
   return id === null ? `${kind} with no local id` : `${kind} ${id}`
 }
 
+function statusEventMirrorNaturalKey(row: HostedStatusEvent) {
+  return `status event for task ${row.task_id ?? row.task_key} to ${row.to_status} at ${row.at}`
+}
+
+type HostedStatusEventHolder = {
+  id: string
+  space_id: string
+  legacy_local_id: number | null
+  task_id: string | null
+  from_status: string | null
+}
+
+async function statusEventNaturalKeyHolder(
+  tx: SQL,
+  identity: TaskIdentity,
+  row: HostedStatusEvent,
+): Promise<HostedStatusEventHolder | undefined> {
+  if (row.task_id)
+    return rows<HostedStatusEventHolder>(
+      await tx`SELECT id,space_id,legacy_local_id,task_id,from_status
+        FROM hub_task_status_event
+        WHERE space_id=${identity.spaceId}::uuid
+          AND (task_id=${row.task_id}::uuid OR
+            (task_id IS NULL AND task_key=${row.task_key}))
+          AND to_status=${row.to_status} AND at=${row.at}::timestamptz`,
+    )[0]
+  return rows<HostedStatusEventHolder>(
+    await tx`SELECT id,space_id,legacy_local_id,task_id,from_status
+      FROM hub_task_status_event
+      WHERE space_id=${identity.spaceId}::uuid AND task_key=${row.task_key}
+        AND to_status=${row.to_status} AND at=${row.at}::timestamptz`,
+  )[0]
+}
+
+async function updateMirroredStatusEvent(
+  tx: SQL,
+  row: HostedStatusEvent,
+  taskId: string | null,
+  decision: { action: 'idempotent-duplicate' } | { action: 'adopt'; id: string },
+  naturalKeyHolder: HostedStatusEventHolder | undefined,
+): Promise<MirrorAdoption | null> {
+  const id = decision.action === 'adopt' ? decision.id : row.id
+  const naturalKeyAdoption = decision.action === 'adopt' && naturalKeyHolder?.id === decision.id
+  if (naturalKeyAdoption) {
+    if (naturalKeyHolder.from_status !== row.from_status)
+      console.error(
+        `hub: status event ${decision.id} kept from_status ${naturalKeyHolder.from_status ?? 'null'} instead of incoming ${row.from_status ?? 'null'}`,
+      )
+    await tx`UPDATE hub_task_status_event SET
+      legacy_local_id=COALESCE(legacy_local_id,${row.legacy_local_id}),
+      task_id=COALESCE(task_id,${taskId}::uuid)
+      WHERE id=${id}::uuid`
+  } else
+    await tx`UPDATE hub_task_status_event SET
+      legacy_local_id=COALESCE(legacy_local_id,${row.legacy_local_id}),
+      task_key=${row.task_key},task_id=${taskId}::uuid
+      WHERE id=${id}::uuid`
+  return decision.action === 'adopt'
+    ? { table: 'task_status_event', legacy_local_id: row.legacy_local_id!, id }
+    : null
+}
+
 async function mirrorTaskRow(
   tx: SQL,
   identity: TaskIdentity,
   row: HostedTask,
-): Promise<MirrorTaskAdoption | null> {
+): Promise<MirrorAdoption | null> {
   const existing = rows<{ id: string; space_id: string; key: string }>(
     await tx`SELECT id,space_id,key FROM hub_task WHERE id=${row.id}::uuid`,
   )[0]
@@ -508,20 +587,21 @@ async function mirrorTaskRow(
     await tx`SELECT id,space_id,key FROM hub_task
       WHERE space_id=${identity.spaceId}::uuid AND key=${row.key}`,
   )[0]
-  const adoptable = row.source === 'mcp' || row.source === 'git' || row.newly_assigned === true
+  const mayAdopt = taskRowMayAdopt(row)
   const decision = mirrorCollisionDecision(
     { id: row.id, spaceId: identity.spaceId, naturalKey: `task ${row.key}` },
     selectedMirrorIdentity(existing, (selected) => `task ${selected.key}`),
     'update',
     'natural-key',
     null,
-    adoptable,
+    mayAdopt,
     selectedMirrorIdentity(keyHolder, (selected) => `task ${selected.key}`),
   )
   applyMirrorDecision(decision)
   const parentId = await taskIdFor(tx, identity.spaceId, row.parent_key, row.parent_id)
-  const targetId = decision.action === 'adopt' ? decision.id : row.id
-  if (decision.action === 'adopt') {
+  if (decision.action === 'adopt' || decision.action === 'update-same-row') {
+    const targetId = decision.action === 'adopt' ? decision.id : row.id
+    const previousKey = decision.action === 'adopt' ? keyHolder!.key : existing!.key
     const changed = rows<{ id: string }>(
       await tx`UPDATE hub_task SET
       project_name=${row.project_name},key=${row.key},project=${row.project},title=${row.title},
@@ -539,35 +619,11 @@ async function mirrorTaskRow(
         tx,
         identity.spaceId,
         targetId,
-        keyHolder!.key,
+        previousKey,
         row.key,
         row.updated_at,
       )
-    return { table: 'task', project: row.project, key: row.key, id: targetId }
-  }
-  if (decision.action === 'update-same-row') {
-    const changed = rows<{ id: string }>(
-      await tx`UPDATE hub_task SET
-      project_name=${row.project_name},key=${row.key},project=${row.project},title=${row.title},
-      status=${row.status},status_category=${row.status_category},parent_key=${row.parent_key},parent_id=${parentId}::uuid,
-      body=${row.body},assignee=${row.assignee},opened_at=${row.opened_at}::timestamptz,
-      closed_at=${row.closed_at}::timestamptz,source=${row.source},
-      first_seen=${row.first_seen}::timestamptz,last_seen=${row.last_seen}::timestamptz,
-      updated_at=${row.updated_at}::timestamptz,deleted_at=${row.deleted_at}::timestamptz
-      WHERE id=${row.id}::uuid AND space_id=${identity.spaceId}::uuid AND
-        (${row.source}='local' OR (source <> 'local' AND (${row.source} <> 'git' OR source='git')))
-      RETURNING id`,
-    )
-    if (changed.length)
-      await repairHostedTaskReferences(
-        tx,
-        identity.spaceId,
-        row.id,
-        existing!.key,
-        row.key,
-        row.updated_at,
-      )
-    return null
+    return decision.action === 'adopt' ? taskMirrorAdoption(row, targetId) : null
   }
   const changed = rows<{ id: string }>(
     await tx`INSERT INTO hub_task
@@ -575,12 +631,11 @@ async function mirrorTaskRow(
      opened_at,closed_at,source,first_seen,last_seen,created_at,updated_at,deleted_at)
     VALUES (${row.id || newRecordId()}::uuid,${identity.spaceId}::uuid,${row.project_name},${row.key},${row.project},${row.title},${row.status},${row.status_category},${row.parent_key},${parentId}::uuid,${row.body},${row.assignee},${row.opened_at}::timestamptz,${row.closed_at}::timestamptz,${row.source},${row.first_seen}::timestamptz,${row.last_seen}::timestamptz,${row.created_at}::timestamptz,${row.updated_at}::timestamptz,${row.deleted_at}::timestamptz)
     ON CONFLICT (space_id,key) DO UPDATE SET project_name=excluded.project_name,project=excluded.project,title=excluded.title,status=excluded.status,status_category=excluded.status_category,parent_key=excluded.parent_key,parent_id=excluded.parent_id,body=excluded.body,assignee=excluded.assignee,opened_at=excluded.opened_at,closed_at=excluded.closed_at,source=excluded.source,first_seen=excluded.first_seen,last_seen=excluded.last_seen,updated_at=excluded.updated_at,deleted_at=excluded.deleted_at
-    WHERE (hub_task.id=excluded.id OR ${adoptable}) AND
+    WHERE (hub_task.id=excluded.id OR ${mayAdopt}) AND
       (excluded.source='local' OR (hub_task.source <> 'local' AND (excluded.source <> 'git' OR hub_task.source='git')))
     RETURNING id`,
   )
-  if (changed[0] && changed[0].id !== row.id)
-    return { table: 'task', project: row.project, key: row.key, id: changed[0].id }
+  if (changed[0] && changed[0].id !== row.id) return taskMirrorAdoption(row, changed[0].id)
   if (!changed.length) {
     const collision = rows<{ id: string; space_id: string; key: string }>(
       await tx`SELECT id,space_id,key FROM hub_task
@@ -592,12 +647,11 @@ async function mirrorTaskRow(
       'update',
       'natural-key',
       null,
-      adoptable,
+      mayAdopt,
       selectedMirrorIdentity(collision, (selected) => `task ${selected.key}`),
     )
     applyMirrorDecision(collisionDecision)
-    if (collisionDecision.action === 'adopt')
-      return { table: 'task', project: row.project, key: row.key, id: collisionDecision.id }
+    if (collisionDecision.action === 'adopt') return taskMirrorAdoption(row, collisionDecision.id)
   }
   return null
 }
@@ -725,6 +779,10 @@ async function mirrorStatusEventRow(
             WHERE space_id=${identity.spaceId}::uuid AND legacy_local_id=${row.legacy_local_id}`,
         )[0]
       : undefined
+  const naturalKeyHolder =
+    !existing && !legacyLocalIdHolder
+      ? await statusEventNaturalKeyHolder(tx, identity, row)
+      : undefined
   const decision = mirrorCollisionDecision(
     {
       id: row.id,
@@ -735,7 +793,7 @@ async function mirrorStatusEventRow(
       localMirrorNaturalKey('status event', selected.legacy_local_id),
     ),
     'idempotent',
-    'id',
+    'status-event',
     legacyLocalIdHolder
       ? {
           id: legacyLocalIdHolder.id,
@@ -744,22 +802,11 @@ async function mirrorStatusEventRow(
         }
       : null,
     row.newly_assigned,
+    selectedMirrorIdentity(naturalKeyHolder, () => statusEventMirrorNaturalKey(row)),
   )
-  const proceed = applyMirrorDecision(decision)
-  if (decision.action === 'idempotent-duplicate' || decision.action === 'adopt') {
-    const id = decision.action === 'adopt' ? decision.id : row.id
-    await tx`UPDATE hub_task_status_event SET legacy_local_id=COALESCE(legacy_local_id,${row.legacy_local_id}),
-      task_key=${row.task_key},task_id=${taskId}::uuid
-      WHERE id=${id}::uuid`
-  }
-  if (!proceed)
-    return decision.action === 'adopt'
-      ? {
-          table: 'task_status_event',
-          legacy_local_id: row.legacy_local_id!,
-          id: decision.id,
-        }
-      : null
+  applyMirrorDecision(decision)
+  if (decision.action === 'idempotent-duplicate' || decision.action === 'adopt')
+    return updateMirroredStatusEvent(tx, row, taskId, decision, naturalKeyHolder)
   await tx`INSERT INTO hub_task_status_event
     (id,legacy_local_id,space_id,project_name,task_key,task_id,at,from_status,to_status,created_at,updated_at,deleted_at)
     VALUES (${row.id}::uuid,${row.legacy_local_id},${identity.spaceId}::uuid,${row.project_name},${row.task_key},${taskId}::uuid,${row.at}::timestamptz,${row.from_status},${row.to_status},${row.created_at}::timestamptz,${row.updated_at}::timestamptz,${row.deleted_at}::timestamptz)`
@@ -767,7 +814,7 @@ async function mirrorStatusEventRow(
 }
 
 async function mirrorTaskRows(tx: SQL, identity: TaskIdentity, body: MirrorBody) {
-  const adoptions: Array<MirrorAdoption | MirrorTaskAdoption> = []
+  const adoptions: MirrorAdoption[] = []
   const taskIds = new Map<string, string>()
   for (const row of body.tasks) {
     const adoption = await mirrorTaskRow(tx, identity, row)
