@@ -1,6 +1,6 @@
 export type ForcedRlsDmlFinding = {
   table: string
-  operation: 'DELETE' | 'DO' | 'EXECUTE' | 'INSERT' | 'UPDATE'
+  operation: 'DELETE' | 'EXECUTE' | 'INSERT' | 'UPDATE'
   reason:
     | 'force-enabled'
     | 'force-not-restored'
@@ -16,12 +16,12 @@ export type ForcedRlsMigrationAnalysis = {
 type MigrationEvent =
   | { kind: 'force'; table: string; forced: boolean }
   | { kind: 'dml'; table: string; operation: 'DELETE' | 'INSERT' | 'UPDATE' }
-  | { kind: 'dynamic'; operation: 'DO' | 'EXECUTE' }
+  | { kind: 'dynamic'; operation: 'EXECUTE' }
 
 const identifier = `(?:"(?:[^"]|"")*"|[a-z_][a-z0-9_$]*)`
 const qualifiedIdentifier = String.raw`${identifier}(?:\s*\.\s*${identifier})?`
 const migrationEvent = new RegExp(
-  String.raw`\bALTER\s+TABLE\s+(?:ONLY\s+)?(${qualifiedIdentifier})\s+(NO\s+)?FORCE\s+ROW\s+LEVEL\s+SECURITY\b|\b(UPDATE)\s+(?:ONLY\s+)?(${qualifiedIdentifier})|\b(INSERT)\s+INTO\s+(${qualifiedIdentifier})|\b(DELETE)\s+FROM\s+(?:ONLY\s+)?(${qualifiedIdentifier})|(?:^|;)\s*(DO|EXECUTE)\b`,
+  String.raw`\bALTER\s+TABLE\s+(?:ONLY\s+)?(${qualifiedIdentifier})\s+(NO\s+)?FORCE\s+ROW\s+LEVEL\s+SECURITY\b|\b(UPDATE)\s+(?:ONLY\s+)?(${qualifiedIdentifier})|\b(INSERT)\s+INTO\s+(${qualifiedIdentifier})|\b(DELETE)\s+FROM\s+(?:ONLY\s+)?(${qualifiedIdentifier})|\b(EXECUTE)\b`,
   'giu',
 )
 
@@ -58,13 +58,35 @@ function maskedSpanEnd(sql: string, start: number): number | null {
     const close = sql.indexOf('*/', start + 2)
     return close < 0 ? sql.length : close + 2
   }
-  if (sql[start] === "'") return singleQuotedStringEnd(sql, start)
-  return sql[start] === '$' ? dollarQuotedStringEnd(sql, start) : null
+  return sql[start] === "'" ? singleQuotedStringEnd(sql, start) : null
 }
 
 function maskCommentsAndStrings(sql: string): string {
   let result = ''
+  let doDelimiter: string | null = null
   for (let index = 0; index < sql.length; ) {
+    if (doDelimiter && sql.startsWith(doDelimiter, index)) {
+      result += ' '.repeat(doDelimiter.length)
+      index += doDelimiter.length
+      doDelimiter = null
+      continue
+    }
+    if (sql[index] === '$') {
+      const delimiter = sql.slice(index).match(/^\$(?:[a-z_][a-z0-9_]*)?\$/i)?.[0]
+      if (delimiter) {
+        const statementPrefix = result.slice(result.lastIndexOf(';') + 1)
+        if (!doDelimiter && /^\s*DO\b/i.test(statementPrefix)) {
+          result += ' '.repeat(delimiter.length)
+          index += delimiter.length
+          doDelimiter = delimiter
+          continue
+        }
+        const end = dollarQuotedStringEnd(sql, index) ?? sql.length
+        result += ' '.repeat(end - index)
+        index = end
+        continue
+      }
+    }
     const end = maskedSpanEnd(sql, index)
     if (end === null) {
       result += sql[index]
@@ -83,7 +105,7 @@ function migrationEvents(sql: string): MigrationEvent[] {
     if (match[3]) return { kind: 'dml', operation: 'UPDATE', table: tableName(match[4]) }
     if (match[5]) return { kind: 'dml', operation: 'INSERT', table: tableName(match[6]) }
     if (match[7]) return { kind: 'dml', operation: 'DELETE', table: tableName(match[8]) }
-    return { kind: 'dynamic', operation: match[9]!.toUpperCase() as 'DO' | 'EXECUTE' }
+    return { kind: 'dynamic', operation: 'EXECUTE' }
   })
 }
 
@@ -96,7 +118,7 @@ export function analyzeForcedRlsDml(
   const knownForcedTables = new Set(initiallyForced)
   const findings: ForcedRlsDmlFinding[] = []
   const liftedDml = new Map<string, Set<'DELETE' | 'INSERT' | 'UPDATE'>>()
-  const liftedDynamic = new Map<'DO' | 'EXECUTE', Set<string>>()
+  const liftedDynamic = new Map<'EXECUTE', Set<string>>()
 
   for (const event of migrationEvents(sql)) {
     if (event.kind === 'force') {

@@ -42,7 +42,20 @@ test('masks a dollar-quoted fake FORCE lift but still rejects the real update', 
   ])
 })
 
-test('rejects a top-level DO block while FORCE ROW LEVEL SECURITY is active', () => {
+test('accepts a read-only DO block while FORCE ROW LEVEL SECURITY is active', () => {
+  const result = analyzeForcedRlsDml(
+    `DO $$
+     BEGIN
+       PERFORM count(*) FROM doc;
+       RAISE NOTICE 'checked';
+     END
+     $$;`,
+    new Set(['doc']),
+  )
+  expect(result.findings).toEqual([])
+})
+
+test('rejects DML inside a DO block on a forced table', () => {
   const result = analyzeForcedRlsDml(
     `DO $migration$
      BEGIN
@@ -52,7 +65,21 @@ test('rejects a top-level DO block while FORCE ROW LEVEL SECURITY is active', ()
     new Set(['doc']),
   )
   expect(result.findings).toEqual([
-    { table: '*', operation: 'DO', reason: 'dynamic-sql-force-enabled' },
+    { table: 'doc', operation: 'UPDATE', reason: 'force-enabled' },
+  ])
+})
+
+test('rejects EXECUTE inside a DO block while FORCE ROW LEVEL SECURITY is active', () => {
+  const result = analyzeForcedRlsDml(
+    `DO $$
+     BEGIN
+       EXECUTE 'UPDATE doc SET body = body';
+     END
+     $$;`,
+    new Set(['doc']),
+  )
+  expect(result.findings).toEqual([
+    { table: '*', operation: 'EXECUTE', reason: 'dynamic-sql-force-enabled' },
   ])
 })
 

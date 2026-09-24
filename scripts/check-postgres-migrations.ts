@@ -28,6 +28,13 @@ const APPLIED_MIGRATION_EXCEPTIONS: readonly MigrationException[] = [
       'already applied; the following slug NOT NULL constraint guarantees the update succeeded',
   },
   {
+    migration: '20260918161600_dev_803_send_recipient_append_only',
+    table: '*',
+    operation: 'EXECUTE',
+    reason: 'dynamic-sql-force-enabled',
+    reasonText: 'EXECUTEs a rewritten CREATE OR REPLACE FUNCTION definition: DDL, writes no rows',
+  },
+  {
     migration: '20260924180716_dev_906_doc_latest_revision',
     table: 'doc',
     operation: 'UPDATE',
