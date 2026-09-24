@@ -37,6 +37,7 @@ import { runReportCommand } from './report-cli.ts'
 import { listOpenRulings, rulingsPayload } from './rulings.ts'
 import { serve } from './serve.ts'
 import { ownServeRecord, servePortIsFree, stopRecordedServe } from './serve-lifecycle.ts'
+import { formatServiceRevisionDoctor, startRevisionMonitor } from './service-revision.ts'
 import { printSyncResult, syncEvidence } from './sync.ts'
 import {
   commentTask,
@@ -847,12 +848,16 @@ try {
       console.log(`schema version ${schemaVersionLabel(db())}`)
       {
         for (const line of formatTaskIdentityDoctor(taskIdentityDoctor())) console.log(line)
+        for (const line of formatServiceRevisionDoctor()) console.log(line)
       }
       break
     case 'collect':
       if (has('watch')) {
         console.log(`hub: collecting every ${20}s (fast) and ${300}s (slow); ctrl-c to stop`)
-        watch(`collect:${process.pid}`, (e) => console.error(`hub: collect failed: ${e.message}`))
+        const holder = `collect:${process.pid}`
+        let stop = async () => {}
+        startRevisionMonitor('collect', holder, () => stop())
+        stop = watch(holder, (e) => console.error(`hub: collect failed: ${e.message}`))
         // Hold the process open for launchd, which restarts anything that exits.
         await new Promise(() => {})
       }
