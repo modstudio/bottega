@@ -1,8 +1,8 @@
 {
   "version": "8",
   "dialect": "postgres",
-  "id": "3756c802-6411-4555-afab-b21caafae5b4",
-  "prevIds": ["20b8196a-7f2f-41a1-9f14-69dc61b50008"],
+  "id": "715b570a-253e-4cb7-afda-b9e0dfdec988",
+  "prevIds": ["3b2077b5-99a8-4230-a8d9-bdedbde6f214", "9d5e9058-690f-49f7-b131-edffe948cbb8"],
   "ddl": [
     {
       "isRlsEnabled": false,
@@ -169,6 +169,12 @@
     {
       "isRlsEnabled": true,
       "name": "hub_report_subscription",
+      "entityType": "tables",
+      "schema": "public"
+    },
+    {
+      "isRlsEnabled": true,
+      "name": "hub_report_subscription_member",
       "entityType": "tables",
       "schema": "public"
     },
@@ -480,6 +486,19 @@
       "generated": null,
       "identity": null,
       "name": "canon",
+      "entityType": "columns",
+      "schema": "public",
+      "table": "project"
+    },
+    {
+      "type": "boolean",
+      "typeSchema": null,
+      "notNull": true,
+      "dimensions": 0,
+      "default": "false",
+      "generated": null,
+      "identity": null,
+      "name": "managed_context",
       "entityType": "columns",
       "schema": "public",
       "table": "project"
@@ -5451,19 +5470,6 @@
       "table": "hub_report_subscription"
     },
     {
-      "type": "uuid",
-      "typeSchema": null,
-      "notNull": false,
-      "dimensions": 0,
-      "default": null,
-      "generated": null,
-      "identity": null,
-      "name": "person_user_id",
-      "entityType": "columns",
-      "schema": "public",
-      "table": "hub_report_subscription"
-    },
-    {
       "type": "text",
       "typeSchema": null,
       "notNull": true,
@@ -5566,6 +5572,71 @@
       "entityType": "columns",
       "schema": "public",
       "table": "hub_report_subscription"
+    },
+    {
+      "type": "uuid",
+      "typeSchema": null,
+      "notNull": true,
+      "dimensions": 0,
+      "default": null,
+      "generated": null,
+      "identity": null,
+      "name": "id",
+      "entityType": "columns",
+      "schema": "public",
+      "table": "hub_report_subscription_member"
+    },
+    {
+      "type": "uuid",
+      "typeSchema": null,
+      "notNull": true,
+      "dimensions": 0,
+      "default": null,
+      "generated": null,
+      "identity": null,
+      "name": "space_id",
+      "entityType": "columns",
+      "schema": "public",
+      "table": "hub_report_subscription_member"
+    },
+    {
+      "type": "uuid",
+      "typeSchema": null,
+      "notNull": true,
+      "dimensions": 0,
+      "default": null,
+      "generated": null,
+      "identity": null,
+      "name": "subscription_id",
+      "entityType": "columns",
+      "schema": "public",
+      "table": "hub_report_subscription_member"
+    },
+    {
+      "type": "uuid",
+      "typeSchema": null,
+      "notNull": true,
+      "dimensions": 0,
+      "default": null,
+      "generated": null,
+      "identity": null,
+      "name": "user_id",
+      "entityType": "columns",
+      "schema": "public",
+      "table": "hub_report_subscription_member"
+    },
+    {
+      "type": "timestamp with time zone",
+      "typeSchema": null,
+      "notNull": true,
+      "dimensions": 0,
+      "default": null,
+      "generated": null,
+      "identity": null,
+      "name": "created_at",
+      "entityType": "columns",
+      "schema": "public",
+      "table": "hub_report_subscription_member"
     },
     {
       "type": "uuid",
@@ -7380,6 +7451,34 @@
       "table": "doc_revision"
     },
     {
+      "nameExplicit": true,
+      "columns": [
+        {
+          "value": "subscription_id",
+          "isExpression": false,
+          "asc": true,
+          "nullsFirst": false,
+          "opclass": null
+        },
+        {
+          "value": "period_end",
+          "isExpression": false,
+          "asc": true,
+          "nullsFirst": false,
+          "opclass": null
+        }
+      ],
+      "isUnique": true,
+      "where": "\"test\" = 0",
+      "with": "",
+      "method": "btree",
+      "concurrently": false,
+      "name": "hub_send_subscription_period_unique",
+      "entityType": "indexes",
+      "schema": "public",
+      "table": "hub_send"
+    },
+    {
       "nameExplicit": false,
       "columns": ["user_id"],
       "schemaTo": "public",
@@ -8070,16 +8169,42 @@
     },
     {
       "nameExplicit": false,
-      "columns": ["person_user_id"],
+      "columns": ["space_id"],
+      "schemaTo": "public",
+      "tableTo": "space",
+      "columnsTo": ["id"],
+      "onUpdate": "NO ACTION",
+      "onDelete": "NO ACTION",
+      "name": "hub_report_subscription_member_space_id_space_id_fkey",
+      "entityType": "fks",
+      "schema": "public",
+      "table": "hub_report_subscription_member"
+    },
+    {
+      "nameExplicit": false,
+      "columns": ["subscription_id"],
+      "schemaTo": "public",
+      "tableTo": "hub_report_subscription",
+      "columnsTo": ["id"],
+      "onUpdate": "NO ACTION",
+      "onDelete": "NO ACTION",
+      "name": "hub_report_subscription_member_ND9aMX9CHD2U_fkey",
+      "entityType": "fks",
+      "schema": "public",
+      "table": "hub_report_subscription_member"
+    },
+    {
+      "nameExplicit": false,
+      "columns": ["user_id"],
       "schemaTo": "public",
       "tableTo": "user",
       "columnsTo": ["id"],
       "onUpdate": "NO ACTION",
       "onDelete": "NO ACTION",
-      "name": "hub_report_subscription_person_user_id_user_id_fkey",
+      "name": "hub_report_subscription_member_user_id_user_id_fkey",
       "entityType": "fks",
       "schema": "public",
-      "table": "hub_report_subscription"
+      "table": "hub_report_subscription_member"
     },
     {
       "nameExplicit": false,
@@ -8602,6 +8727,14 @@
     {
       "columns": ["id"],
       "nameExplicit": false,
+      "name": "hub_report_subscription_member_pkey",
+      "schema": "public",
+      "table": "hub_report_subscription_member",
+      "entityType": "pks"
+    },
+    {
+      "columns": ["id"],
+      "nameExplicit": false,
       "name": "hub_report_subscription_recipient_pkey",
       "schema": "public",
       "table": "hub_report_subscription_recipient",
@@ -8835,6 +8968,15 @@
       "nameExplicit": true,
       "columns": ["subscription_id", "user_id"],
       "nullsNotDistinct": false,
+      "name": "hub_report_subscription_member_unique",
+      "entityType": "uniques",
+      "schema": "public",
+      "table": "hub_report_subscription_member"
+    },
+    {
+      "nameExplicit": true,
+      "columns": ["subscription_id", "user_id"],
+      "nullsNotDistinct": false,
       "name": "hub_report_subscription_recipient_unique",
       "entityType": "uniques",
       "schema": "public",
@@ -8845,15 +8987,6 @@
       "columns": ["space_id", "legacy_local_id"],
       "nullsNotDistinct": false,
       "name": "hub_send_space_legacy_unique",
-      "entityType": "uniques",
-      "schema": "public",
-      "table": "hub_send"
-    },
-    {
-      "nameExplicit": true,
-      "columns": ["subscription_id", "period_end"],
-      "nullsNotDistinct": false,
-      "name": "hub_send_subscription_period_unique",
       "entityType": "uniques",
       "schema": "public",
       "table": "hub_send"
@@ -9149,14 +9282,14 @@
       "table": "hub_note_acknowledgement"
     },
     {
-      "value": "\"scope_kind\" IN ('space','project','person')",
+      "value": "\"scope_kind\" IN ('space','project','members')",
       "name": "hub_report_subscription_scope_kind_check",
       "entityType": "checks",
       "schema": "public",
       "table": "hub_report_subscription"
     },
     {
-      "value": "(\"scope_kind\" = 'space' AND \"project_name\" IS NULL AND \"person_user_id\" IS NULL)\n        OR (\"scope_kind\" = 'project' AND \"project_name\" IS NOT NULL AND \"person_user_id\" IS NULL)\n        OR (\"scope_kind\" = 'person' AND \"person_user_id\" IS NOT NULL AND \"project_name\" IS NULL)",
+      "value": "(\"scope_kind\" = 'space' AND \"project_name\" IS NULL)\n        OR (\"scope_kind\" = 'project' AND \"project_name\" IS NOT NULL)\n        OR (\"scope_kind\" = 'members' AND \"project_name\" IS NULL)",
       "name": "hub_report_subscription_scope_check",
       "entityType": "checks",
       "schema": "public",
@@ -10307,6 +10440,50 @@
       "entityType": "policies",
       "schema": "public",
       "table": "hub_report_subscription"
+    },
+    {
+      "as": "PERMISSIVE",
+      "for": "SELECT",
+      "roles": ["public"],
+      "using": "\"hub_report_subscription_member\".\"space_id\" = nullif(current_setting('app.space_id', true), '')::uuid OR \"hub_report_subscription_member\".\"space_id\" = ANY(\n    string_to_array(nullif(current_setting('app.space_ids', true), ''), ',')::uuid[]\n  )",
+      "withCheck": null,
+      "name": "hub_report_subscription_member_space_select",
+      "entityType": "policies",
+      "schema": "public",
+      "table": "hub_report_subscription_member"
+    },
+    {
+      "as": "PERMISSIVE",
+      "for": "INSERT",
+      "roles": ["public"],
+      "using": null,
+      "withCheck": "\"hub_report_subscription_member\".\"space_id\" = nullif(current_setting('app.space_id', true), '')::uuid",
+      "name": "hub_report_subscription_member_space_insert",
+      "entityType": "policies",
+      "schema": "public",
+      "table": "hub_report_subscription_member"
+    },
+    {
+      "as": "PERMISSIVE",
+      "for": "UPDATE",
+      "roles": ["public"],
+      "using": "\"hub_report_subscription_member\".\"space_id\" = nullif(current_setting('app.space_id', true), '')::uuid",
+      "withCheck": "\"hub_report_subscription_member\".\"space_id\" = nullif(current_setting('app.space_id', true), '')::uuid",
+      "name": "hub_report_subscription_member_space_update",
+      "entityType": "policies",
+      "schema": "public",
+      "table": "hub_report_subscription_member"
+    },
+    {
+      "as": "PERMISSIVE",
+      "for": "DELETE",
+      "roles": ["public"],
+      "using": "\"hub_report_subscription_member\".\"space_id\" = nullif(current_setting('app.space_id', true), '')::uuid",
+      "withCheck": null,
+      "name": "hub_report_subscription_member_space_delete",
+      "entityType": "policies",
+      "schema": "public",
+      "table": "hub_report_subscription_member"
     },
     {
       "as": "PERMISSIVE",
