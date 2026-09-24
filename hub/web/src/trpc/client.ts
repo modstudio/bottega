@@ -55,6 +55,7 @@ const client = createTRPCClient<AppRouter>({
 export const trpc = createTRPCOptionsProxy<AppRouter>({ client, queryClient })
 
 export type ProjectRow = inferRouterOutputs<AppRouter>['project']['list'][number]
+export type HostedProjectRow = inferRouterOutputs<AppRouter>['record']['projects'][number]
 export type FlightResponse = inferRouterOutputs<AppRouter>['work']['flight']
 export type BoardResponse = inferRouterOutputs<AppRouter>['work']['board']
 export type RecordSettingsResponse = inferRouterOutputs<AppRouter>['record']['settings']

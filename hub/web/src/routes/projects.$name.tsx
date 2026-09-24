@@ -10,6 +10,7 @@ import { Textarea } from '@/ui/field/textarea'
 import { FieldSection, SettingBlock } from '@/ui/form-layout/form-layout'
 import { Sheet } from '@/ui/sheet/sheet'
 import { toast } from '@/ui/toast/toast'
+import { PLATFORM_NAME } from '../../../../shared/brand.ts'
 
 export const Route = createFileRoute('/projects/$name')({ component: ProjectEditPage })
 
@@ -23,6 +24,20 @@ function settingsCommand(name: string, value: Record<string, unknown>) {
 
 function pretty(value: unknown) {
   return value === undefined ? '' : JSON.stringify(value, null, 2)
+}
+
+function parseJsonField(text: string): unknown {
+  return text.trim() ? JSON.parse(text) : null
+}
+
+/** One settings field: its register key, whether the form differs from the register, and its value. */
+type SettingsField = [key: string, changed: boolean, value: () => unknown]
+
+/** The settings patch holds only the keys whose field differs from the register. */
+function changedSettings(fields: SettingsField[]) {
+  return Object.fromEntries(
+    fields.filter(([, changed]) => changed).map(([key, , value]) => [key, value()]),
+  )
 }
 
 function ProjectEditPage() {
@@ -65,9 +80,11 @@ function ProjectForm({ project }: { project: ProjectRow }) {
   const initialColor = typeof project.settings.color === 'string' ? project.settings.color : ''
   const initialColorDark =
     typeof project.settings.colorDark === 'string' ? project.settings.colorDark : ''
+  const initialManagedContext = project.settings.managedContext === true
   const [path, setPath] = useState(project.path)
   const [stack, setStack] = useState(project.stack ?? '')
   const [canon, setCanon] = useState(project.canon)
+  const [managedContext, setManagedContext] = useState(initialManagedContext)
   const [trunk, setTrunk] = useState(initialTrunk)
   const [keyPrefixes, setKeyPrefixes] = useState(initialPrefixes.join(', '))
   const [color, setColor] = useState(initialColor)
@@ -81,16 +98,20 @@ function ProjectForm({ project }: { project: ProjectRow }) {
     .split(',')
     .map((value) => value.trim())
     .filter(Boolean)
+  const settingsFields: SettingsField[] = [
+    ['managedContext', managedContext !== initialManagedContext, () => managedContext],
+    ['trunk', trunk !== initialTrunk, () => trunk],
+    ['keyPrefixes', JSON.stringify(prefixes) !== JSON.stringify(initialPrefixes), () => prefixes],
+    ['color', color !== initialColor, () => color],
+    ['colorDark', colorDark !== initialColorDark, () => colorDark],
+    ['tracker', tracker !== pretty(project.settings.tracker), () => parseJsonField(tracker)],
+    ['worktree', worktree !== pretty(project.settings.worktree), () => parseJsonField(worktree)],
+  ]
   const changed =
     path !== project.path ||
     stack !== (project.stack ?? '') ||
     canon !== project.canon ||
-    trunk !== initialTrunk ||
-    JSON.stringify(prefixes) !== JSON.stringify(initialPrefixes) ||
-    color !== initialColor ||
-    colorDark !== initialColorDark ||
-    tracker !== pretty(project.settings.tracker) ||
-    worktree !== pretty(project.settings.worktree)
+    settingsFields.some(([, fieldChanged]) => fieldChanged)
 
   const save = useMutation(
     trpc.project.set.mutationOptions({
@@ -116,10 +137,8 @@ function ProjectForm({ project }: { project: ProjectRow }) {
   const submit = (event: React.FormEvent) => {
     event.preventDefault()
     setError(null)
-    let trackerValue: unknown
-    let worktreeValue: unknown
     try {
-      trackerValue = tracker.trim() ? JSON.parse(tracker) : null
+      parseJsonField(tracker)
     } catch (cause) {
       setError(
         `Tracker must be valid JSON: ${cause instanceof Error ? cause.message : String(cause)}`,
@@ -127,7 +146,7 @@ function ProjectForm({ project }: { project: ProjectRow }) {
       return
     }
     try {
-      worktreeValue = worktree.trim() ? JSON.parse(worktree) : null
+      parseJsonField(worktree)
     } catch (cause) {
       setError(
         `Worktree must be valid JSON: ${cause instanceof Error ? cause.message : String(cause)}`,
@@ -135,14 +154,7 @@ function ProjectForm({ project }: { project: ProjectRow }) {
       return
     }
 
-    const settings: Record<string, unknown> = {}
-    if (trunk !== initialTrunk) settings.trunk = trunk
-    if (JSON.stringify(prefixes) !== JSON.stringify(initialPrefixes))
-      settings.keyPrefixes = prefixes
-    if (color !== initialColor) settings.color = color
-    if (colorDark !== initialColorDark) settings.colorDark = colorDark
-    if (tracker !== pretty(project.settings.tracker)) settings.tracker = trackerValue
-    if (worktree !== pretty(project.settings.worktree)) settings.worktree = worktreeValue
+    const settings = changedSettings(settingsFields)
 
     save.mutate({
       name: project.name,
@@ -218,7 +230,7 @@ function ProjectForm({ project }: { project: ProjectRow }) {
               control={<Input value={stack} onChange={(event) => setStack(event.target.value)} />}
             />
             <SettingBlock
-              label="Canon"
+              label="Canon ratio"
               cli={`orch project set ${shellQuote(project.name)} ${canon ? '--canon' : '--no-canon'}`}
               control={
                 <label htmlFor="project-canon" className="flex items-center gap-2">
@@ -227,7 +239,7 @@ function ProjectForm({ project }: { project: ProjectRow }) {
                     checked={canon}
                     onChange={(event) => setCanon(event.target.checked)}
                   />
-                  Included in canon
+                  Counts toward canon ratio
                 </label>
               }
             />
@@ -257,6 +269,27 @@ function ProjectForm({ project }: { project: ProjectRow }) {
               cli={settingsCommand(project.name, { colorDark })}
               control={
                 <Input value={colorDark} onChange={(event) => setColorDark(event.target.value)} />
+              }
+            />
+          </div>
+        </FieldSection>
+        <FieldSection
+          title="Context"
+          description={`Whether ${PLATFORM_NAME} stores, lints, hydrates and injects this project's agent context.`}
+        >
+          <div className="space-y-5">
+            <SettingBlock
+              label="Managed context"
+              cli={settingsCommand(project.name, { managedContext })}
+              control={
+                <label htmlFor="project-managed-context" className="flex items-center gap-2">
+                  <Checkbox
+                    id="project-managed-context"
+                    checked={managedContext}
+                    onChange={(event) => setManagedContext(event.target.checked)}
+                  />
+                  Managed by {PLATFORM_NAME}
+                </label>
               }
             />
           </div>

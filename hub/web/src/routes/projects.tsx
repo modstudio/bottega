@@ -112,9 +112,15 @@ function ProjectsPage() {
       ),
     },
     {
+      id: 'context',
+      label: 'Context',
+      render: (project) =>
+        project.settings.managedContext === true ? <Badge tone="success">managed</Badge> : '-',
+    },
+    {
       id: 'canon',
-      label: 'Canon',
-      render: (project) => (project.canon ? <Badge>canon</Badge> : '-'),
+      label: 'Canon ratio',
+      render: (project) => (project.canon ? <Badge>counts</Badge> : '-'),
     },
     { id: 'tracker', label: 'Tracker', render: (project) => <TrackerState project={project} /> },
     { id: 'worktree', label: 'Worktree', render: (project) => worktreeMode(project.settings) },
@@ -197,7 +203,7 @@ function ProjectsPage() {
               checked={canon}
               onChange={(event) => setCanon(event.target.checked)}
             />
-            Canon
+            Counts toward canon ratio
           </label>
           {error ? (
             <p data-tone="error" className="text-status-text">
