@@ -196,7 +196,7 @@ export async function ingestGit(since: string): Promise<{ days: number; tasks: n
     const taskStmt = conn.query(
       `INSERT INTO task (record_id,key, project, source, opened_at, updated_at, first_seen, last_seen)
      VALUES (?,?,?,'git',?,?,?,?)
-     ON CONFLICT(key) DO UPDATE SET
+     ON CONFLICT(project,key) DO UPDATE SET
        record_id = COALESCE(task.record_id, excluded.record_id),
        last_seen  = excluded.last_seen,
        updated_at = MAX(COALESCE(task.updated_at,''), excluded.updated_at)`,

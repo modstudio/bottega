@@ -185,4 +185,28 @@ describe('tracker assignees', () => {
         .get(),
     ).toEqual({ external_id: 'tracker-alp-900', last_seen: '2026-09-24T10:00:00.000Z' })
   })
+
+  test('the same label in two projects keeps distinct tracker identities', () => {
+    const shared = {
+      key: 'OPS-21',
+      title: 'Shared label',
+      status: 'started',
+      category: 'active' as const,
+      updatedAt: null,
+      assignee: null,
+    }
+    upsertTrackerTask({ ...shared, project: 'starship', externalId: 'starship-21' })
+    upsertTrackerTask({ ...shared, project: 'stopal', externalId: 'stopal-21' })
+
+    expect(
+      db()
+        .query<{ project: string; external_id: string }, []>(
+          `SELECT project,external_id FROM task WHERE key='OPS-21' ORDER BY project`,
+        )
+        .all(),
+    ).toEqual([
+      { project: 'starship', external_id: 'starship-21' },
+      { project: 'stopal', external_id: 'stopal-21' },
+    ])
+  })
 })

@@ -230,7 +230,7 @@ describe('local task tracker', () => {
       ['DEV-1', 'open', 'alpha beta gamma delta theta'],
       ['DEV-5', 'open', 'unrelated words only'],
     ].map(([key, status, title]) => ({
-      record_id: null,
+      record_id: `${key}-record`,
       external_id: null,
       key: key!,
       project: 'workshop',
@@ -343,14 +343,15 @@ describe('local task tracker', () => {
 
   test('task detail joins children by task record id, not their shared label', () => {
     const recordId = seed('SAME-77', 'alpha')
+    const otherRecordId = seed('SAME-77', 'beta')
     writeTransaction((conn) => {
       conn
         .query(
           `INSERT INTO task_comment(task_key,task_record_id,body,created_at) VALUES
            ('SAME-77',?,'alpha comment','2026-09-01'),
-           ('SAME-77','other-task-record','beta comment','2026-09-02')`,
+           ('SAME-77',?,'beta comment','2026-09-02')`,
         )
-        .run(recordId)
+        .run(recordId, otherRecordId)
     })
     expect(showTask('SAME-77', { recordId }).comments.map((row) => row.body)).toEqual([
       'alpha comment',

@@ -50,8 +50,8 @@ export function applyHostedTask(conn: Database, row: HostedChanges['tasks'][numb
     .query(`INSERT INTO task
       (record_id,key,project,title,status,status_category,parent_key,parent_record_id,body,assignee,opened_at,
        closed_at,updated_at,source,first_seen,last_seen)
-      VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?) ON CONFLICT(key) DO UPDATE SET
-      record_id=excluded.record_id,project=excluded.project,title=excluded.title,
+      VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?) ON CONFLICT(record_id) DO UPDATE SET
+      key=excluded.key,project=excluded.project,title=excluded.title,
       status=excluded.status,status_category=excluded.status_category,parent_key=excluded.parent_key,
       parent_record_id=excluded.parent_record_id,
       body=excluded.body,assignee=excluded.assignee,opened_at=excluded.opened_at,

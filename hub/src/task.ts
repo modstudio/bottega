@@ -20,7 +20,7 @@ import { resolveTask, taskIdentityDecision, taskRecordIdFor } from './task-ident
 export type TaskScope = { project?: string; recordId?: string }
 
 export type TaskRow = {
-  record_id: string | null
+  record_id: string
   external_id: string | null
   key: string
   project: string
@@ -179,7 +179,7 @@ function cacheTask(conn: import('bun:sqlite').Database, row: HostedTask) {
     (record_id,key,project,title,status,status_category,parent_key,parent_record_id,body,assignee,opened_at,closed_at,
      updated_at,source,first_seen,last_seen)
     VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
-    ON CONFLICT(key) DO UPDATE SET record_id=excluded.record_id,project=excluded.project,
+    ON CONFLICT(project,key) DO UPDATE SET record_id=excluded.record_id,
       title=excluded.title,status=excluded.status,status_category=excluded.status_category,
       parent_key=excluded.parent_key,parent_record_id=excluded.parent_record_id,
       body=excluded.body,assignee=excluded.assignee,

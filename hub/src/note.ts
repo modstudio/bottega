@@ -187,7 +187,7 @@ function noteCandidates(text: string, project?: string): NoteCandidate[] {
   return duplicateCandidates(
     notes.map(
       (note): TaskRow => ({
-        record_id: null,
+        record_id: String(note.id),
         external_id: null,
         key: String(note.id),
         project: note.project,

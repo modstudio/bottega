@@ -31,6 +31,26 @@ const fresh = () => {
   return d
 }
 
+const migratedThrough = (lastIndex: number) => {
+  const folder = mkdtempSync(join(tmpdir(), 'hub-migration-stage-'))
+  mkdirSync(join(folder, 'meta'))
+  const entries = migrationJournal().slice(0, lastIndex + 1)
+  for (const entry of entries)
+    copyFileSync(
+      join(MIGRATIONS_FOLDER, `${entry.tag}.sql`),
+      join(folder, `${entry.tag}.sql`),
+    )
+  writeFileSync(
+    join(folder, 'meta', '_journal.json'),
+    JSON.stringify({ version: '7', dialect: 'sqlite', entries }),
+  )
+  const database = new Database(':memory:')
+  database.exec('PRAGMA foreign_keys = ON')
+  applyMigrations(database, folder)
+  rmSync(folder, { recursive: true, force: true })
+  return database
+}
+
 const baselineFresh = () => {
   const d = new Database(':memory:')
   d.exec('PRAGMA foreign_keys = ON')
@@ -132,7 +152,7 @@ describe('hub migration journal', () => {
     const d = fresh()
     expect(canonicalSchemaHash(d)).toBe(expectedSchemaHash())
     expect(expectedSchemaHash()).toBe(
-      '725ae1dc3270693faad473803f2191979de4ca47b41693dee9c2931b07f63f75',
+      'dd9ed48f41a4f1c14918f3509377c026fa5466dcfb9bdf4c89b13e6bc6063ed4',
     )
     d.close()
   })
@@ -156,9 +176,8 @@ describe('hub migration journal', () => {
     ahead.close()
   })
 
-  test('a matching pre-journal store adopts 0000 without rebuilding its schema', () => {
+  test('a matching pre-journal store adopts 0000 and reaches the current schema', () => {
     const d = baselineFresh()
-    const before = applicationSchemaRows(d)
     expect(applyMigrations(d)).toEqual([
       '0000_hub_baseline',
       '0001_note',
@@ -169,20 +188,9 @@ describe('hub migration journal', () => {
       '0006_send_record_id',
       '0007_interval_attribution',
       '0008_task_identity',
+      '0009_task_record_identity',
     ])
-    stripPostBaselineApplicationObjects(d)
-    const after = applicationSchemaRows(d)
-    expect(
-      after.map((row) => ({
-        ...row,
-        sql: row.sql
-          ?.replace(/, record_id TEXT/g, '')
-          .replace(/, external_id TEXT/g, '')
-          .replace(/, parent_record_id TEXT/g, '')
-          .replace(/, task_record_id TEXT/g, '')
-          .replace(/, user_id TEXT/g, ''),
-      })),
-    ).toEqual(before)
+    expect(canonicalSchemaHash(d)).toBe(expectedSchemaHash())
     d.close()
   })
 
@@ -289,6 +297,7 @@ describe('hub migration journal', () => {
       '0006_send_record_id',
       '0007_interval_attribution',
       '0008_task_identity',
+      '0009_task_record_identity',
     ])
     expect(canonicalSchemaHash(legacy)).toBe(expectedSchemaHash())
     legacy.close()
@@ -485,8 +494,8 @@ describe('hub migration journal', () => {
     rmSync(dir, { recursive: true, force: true })
   })
 
-  test('task identity backfill fills every existing key relationship', () => {
-    const d = fresh()
+  test('task identity rebuild backfills relationships and cascades record-id updates', () => {
+    const d = migratedThrough(8)
     d.exec(`
       INSERT INTO task(record_id,key,project,source,first_seen,last_seen)
       VALUES ('parent-id','DEV-1','workshop','local','2026-01-01','2026-01-01');
@@ -499,7 +508,7 @@ describe('hub migration journal', () => {
       VALUES ('DEV-2','2026-01-01','open');
       UPDATE note SET promoted_task='DEV-2' WHERE id=(SELECT MIN(id) FROM note);
     `)
-    expect(applyMigrations(d)).toEqual([])
+    expect(applyMigrations(d)).toEqual(['0009_task_record_identity'])
     expect(d.query('SELECT parent_record_id FROM task WHERE key="DEV-2"').get()).toEqual({
       parent_record_id: 'parent-id',
     })
@@ -517,6 +526,31 @@ describe('hub migration journal', () => {
     ).toEqual({
       promoted_task_record_id: 'child-id',
     })
+    d.exec("UPDATE task SET record_id='child-id-new' WHERE record_id='child-id'")
+    expect(d.query('SELECT task_record_id FROM task_comment').get()).toEqual({
+      task_record_id: 'child-id-new',
+    })
+    expect(d.query('SELECT task_record_id FROM task_document').get()).toEqual({
+      task_record_id: 'child-id-new',
+    })
+    expect(d.query('SELECT task_record_id FROM task_status_event').get()).toEqual({
+      task_record_id: 'child-id-new',
+    })
+    d.close()
+  })
+
+  test('task identity rebuild refuses and names an unresolvable child', () => {
+    const d = migratedThrough(8)
+    d.exec('PRAGMA foreign_keys = OFF')
+    d.exec(`INSERT INTO task_status_event(task_key,at,to_status)
+      VALUES ('MISSING-42','2026-01-01','open')`)
+    d.exec('PRAGMA foreign_keys = ON')
+    expect(() => applyMigrations(d)).toThrow(
+      'unresolved task_status_event rows: 1:MISSING-42',
+    )
+    expect(
+      d.query("SELECT name FROM sqlite_master WHERE name='task_new'").get(),
+    ).toBeNull()
     d.close()
   })
 

@@ -82,8 +82,8 @@ test('task push persists ids only after each successful batch and retries an unp
         VALUES ('01990000-0000-7000-8000-000000000001','LOC-885','workshop','Push ids','open','open','local',?,?)`)
       .run(at, at)
     const insert = conn.query(
-      `INSERT INTO task_status_event(task_key,at,from_status,to_status)
-       VALUES ('LOC-885',?,NULL,'open')`,
+      `INSERT INTO task_status_event(task_key,task_record_id,at,from_status,to_status)
+       VALUES ('LOC-885','01990000-0000-7000-8000-000000000001',?,NULL,'open')`,
     )
     for (let index = 0; index < 501; index++)
       insert.run(new Date(Date.parse(at) + index).toISOString())
@@ -179,8 +179,8 @@ test('task push adopts a hosted holder id and uses it on the next push', async (
       .run(at, at)
     conn
       .query(
-        `INSERT INTO task_status_event(task_key,at,from_status,to_status)
-        VALUES ('LOC-886',?,NULL,'open')`,
+        `INSERT INTO task_status_event(task_key,task_record_id,at,from_status,to_status)
+        VALUES ('LOC-886','01990000-0000-7000-8000-000000000001',?,NULL,'open')`,
       )
       .run(at)
   })
