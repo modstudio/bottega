@@ -9,12 +9,19 @@ import { CONTINUE_WORKING_FORMS } from '../cli/args.ts'
 import { branchNote, failoverSummary, resolveFailover } from '../collect/collect.ts'
 import { db, nowIso, writeTransaction } from '../database/db.ts'
 import { appendRunEvent } from '../events.ts'
-import { branchOf, gitContext } from '../git/git-environment.ts'
+import { realpathOrSpelled, withoutTrailingSeparators } from '../git/checkout-identity.ts'
+import { branchOf, gitContext, worktreeListPorcelain } from '../git/git-environment.ts'
 import { mcpRequestFromStored } from '../mcp/mcp-preflight.ts'
 import { outcomeOf } from '../outcome.ts'
 import { projectAt, resolvedWorktreeTool } from '../project/projects.ts'
 import { chainTransport } from '../route/failover.ts'
-import { continuationBranchPlan, type ResumeTreePlan, resumeTreePlan } from './resume-tree.ts'
+import {
+  continuationBranchAvailability,
+  continuationBranchPlan,
+  parseWorktreeList,
+  type ResumeTreePlan,
+  resumeTreePlan,
+} from './resume-tree.ts'
 import { packedResumePrompt } from './run.ts'
 import { adoptRunMutation, auditRunMutation, authorizeRunMutation } from './run-authority.ts'
 import { detach } from './run-dispatch.ts'
@@ -356,6 +363,38 @@ function inheritedResumeWorktree(
   }
 }
 
+function refuseHeldContinuationBranch(
+  id: number,
+  projectPath: string | null,
+  recordedTreePath: string | null,
+  plan: ResumeTreePlan | null,
+): void {
+  if (!plan || !projectPath) return
+  const worktrees = parseWorktreeList(worktreeListPorcelain(projectPath))
+  const canonicalPath = (path: string): string => withoutTrailingSeparators(realpathOrSpelled(path))
+  const canonicalWorktrees = worktrees.map((worktree) => ({
+    ...worktree,
+    path: canonicalPath(worktree.path),
+  }))
+  const availability = continuationBranchAvailability(
+    plan.branch,
+    recordedTreePath ? canonicalPath(recordedTreePath) : null,
+    canonicalWorktrees,
+  )
+  if (availability.action === 'continue') return
+  const holdingPath =
+    worktrees.find(
+      (worktree, index) =>
+        worktree.branch === plan.branch &&
+        canonicalWorktrees[index]?.path === availability.holdingPath,
+    )?.path ?? availability.holdingPath
+  throw new Error(
+    `run ${id} cannot continue: branch ${plan.branch} is checked out at ${holdingPath}\n` +
+      `release it with git worktree remove ${holdingPath}, ` +
+      `or orch tree remove ${holdingPath} if it is an orch-opened tree`,
+  )
+}
+
 function recreatedTreePlan(
   plan: ResumeTreePlan | null,
 ): Extract<ResumeTreePlan, { action: 'recreate-on-branch' | 'recreate-then-restore' }> | undefined {
@@ -456,6 +495,7 @@ export async function continueRun(
     plan: treePlan,
     branchSource,
   } = continuationTree(id, row, latest, launch.launch_cwd)
+  refuseHeldContinuationBranch(id, project?.path ?? null, latest.worktree, treePlan)
   const savedCheckpointContext = (await import('./checkpoint.ts')).checkpointResumeContext(
     db(),
     id,

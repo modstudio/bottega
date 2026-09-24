@@ -110,6 +110,11 @@ export function checkedOutWorktree(repoRoot: string, branch: string): string | n
   return null
 }
 
+/** Read Git's stable worktree inventory, refusing when Git cannot provide it. */
+export function worktreeListPorcelain(repoRoot: string): string {
+  return git(['worktree', 'list', '--porcelain'], repoRoot)
+}
+
 /** Same, but a failure is an answer rather than an error. */
 function gitOk(args: string[], cwd: string): string | null {
   if (cwdMissing(cwd)) return null

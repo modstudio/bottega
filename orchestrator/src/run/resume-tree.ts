@@ -49,6 +49,40 @@ export type ResumeCreationOptions = {
   useCreateTool: boolean
 }
 
+export type ContinuationBranchAvailability =
+  | { action: 'continue' }
+  | { action: 'refuse'; holdingPath: string }
+
+export type WorktreeCheckout = { path: string; branch: string | null }
+
+/** Parse Git's stable worktree inventory into the facts the decision consumes. */
+export function parseWorktreeList(porcelain: string): WorktreeCheckout[] {
+  const worktrees: WorktreeCheckout[] = []
+  let current: WorktreeCheckout | null = null
+  for (const line of porcelain.split('\n')) {
+    if (line.startsWith('worktree ')) {
+      if (current) worktrees.push(current)
+      current = { path: line.slice('worktree '.length), branch: null }
+    } else if (current && line.startsWith('branch refs/heads/')) {
+      current.branch = line.slice('branch refs/heads/'.length)
+    }
+  }
+  if (current) worktrees.push(current)
+  return worktrees
+}
+
+/** Refuse a branch held anywhere except the chain's own recorded checkout. */
+export function continuationBranchAvailability(
+  branch: string,
+  recordedTreePath: string | null,
+  worktrees: readonly WorktreeCheckout[],
+): ContinuationBranchAvailability {
+  const holder = worktrees.find(
+    (worktree) => worktree.branch === branch && worktree.path !== recordedTreePath,
+  )
+  return holder ? { action: 'refuse', holdingPath: holder.path } : { action: 'continue' }
+}
+
 /** Keep command-owned branch creation; recipes and Git recreate the conversation branch. */
 export function resumeCreationOptions(
   plan:
