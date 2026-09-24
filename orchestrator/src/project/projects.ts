@@ -88,6 +88,11 @@ export type Project = {
 }
 export type ProjectSettings = {
   autonomy?: AutonomySettings
+  /** Optional repository checks. Absent and false both leave a check disabled. */
+  checks?: {
+    spelling?: boolean
+    attribution?: boolean
+  }
   /** Record space slug that owns this project's hosted evidence. */
   space?: string
   /**
@@ -569,6 +574,26 @@ function autonomyProblems(value: unknown): string[] {
   }
 }
 
+function projectChecksProblems(value: unknown): string[] {
+  if (value === undefined) return []
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    return ['checks must be an object']
+  }
+  const checks = value as Record<string, unknown>
+  const problems: string[] = []
+  for (const name of Object.keys(checks)) {
+    if (name !== 'spelling' && name !== 'attribution') {
+      problems.push(`checks.${name} is not a recognised check`)
+    }
+  }
+  for (const name of ['spelling', 'attribution'] as const) {
+    if (checks[name] !== undefined && typeof checks[name] !== 'boolean') {
+      problems.push(`checks.${name} must be a boolean`)
+    }
+  }
+  return problems
+}
+
 export function validateProjectSettings(settings: ProjectSettings, projectPath?: string): string[] {
   const problems = [
     ...validateProjectInjectionSettings(settings),
@@ -583,6 +608,7 @@ export function validateProjectSettings(settings: ProjectSettings, projectPath?:
     ...trackedRecipeProblems(settings.worktree, projectPath),
     ...projectSpaceProblems(settings.space),
     ...autonomyProblems(settings.autonomy),
+    ...projectChecksProblems(settings.checks),
   ]
 
   if (invalidOptionalStringArray(settings.secretPaths)) {

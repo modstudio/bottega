@@ -276,6 +276,7 @@ const results = await Promise.all(
 printFailedLegTails(results)
 const gateSteps: GateStepResult[] = [...results]
 const staticChecks: StaticCheck[] = [
+  { name: 'project checks', argv: [`${root}bin/orch`, 'check', '--enabled'] },
   staticCheck('scripts/check-machine-state.ts'),
   staticCheck('scripts/check-cascade-preservation.ts'),
   staticCheck('scripts/check-postgres-migrations.ts'),

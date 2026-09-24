@@ -26,6 +26,7 @@ export const DECLARED_PAYLOAD_PATHS = [
   'shared/config-directory.ts',
   'shared/machine-config.ts',
   'shared/env-source.ts',
+  'shared/attribution-markers.json',
   DIST_MANIFEST,
   'bin/orch',
   'bin/hub',
@@ -46,8 +47,17 @@ export function distributionManifest(
   return { name: PLATFORM_NAME, version, built, commit }
 }
 
-async function run(argv: string[], cwd = repositoryRoot): Promise<string> {
-  const child = Bun.spawn(argv, { cwd, stdout: 'pipe', stderr: 'inherit' })
+export async function run(
+  argv: string[],
+  cwd = repositoryRoot,
+  stdinPath?: string,
+): Promise<string> {
+  const child = Bun.spawn(argv, {
+    cwd,
+    stdout: 'pipe',
+    stderr: 'inherit',
+    ...(stdinPath ? { stdin: Bun.file(stdinPath) } : {}),
+  })
   const output = await new Response(child.stdout).text()
   const exitCode = await child.exited
   if (exitCode !== 0) throw new Error(`${argv.join(' ')} exited ${exitCode}`)
@@ -119,6 +129,7 @@ export async function buildRelease(tag: string): Promise<string> {
   ]) {
     await bundle(source, join(payloadRoot, source))
   }
+  copyFile('shared/attribution-markers.json', join(payloadRoot, 'shared/attribution-markers.json'))
 
   const commit = await run(['git', 'rev-parse', 'HEAD'])
   const built = await run(['git', 'show', '-s', '--format=%cI', 'HEAD'])

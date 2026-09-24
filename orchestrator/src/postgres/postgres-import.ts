@@ -48,7 +48,10 @@ const PROJECT_SETTING_COLUMNS = {
   trunk: 'landing_branch',
   worktree: 'worktree',
   workerMcpServers: 'worker_mcp_servers',
-} satisfies Record<Exclude<keyof Required<ProjectSettings>, 'space' | 'autonomy'>, string>
+} satisfies Record<
+  Exclude<keyof Required<ProjectSettings>, 'space' | 'autonomy' | 'checks'>,
+  string
+>
 
 function object(value: unknown, location: string): JsonObject {
   if (value === null || typeof value !== 'object' || Array.isArray(value)) {
@@ -73,7 +76,7 @@ function projectSettings(row: SourceProject): JsonObject {
   }
   const settings = object(parsed, `project ${row.name} settings`)
   const unknown = Object.keys(settings).filter(
-    (key) => key !== 'space' && !Object.hasOwn(PROJECT_SETTING_COLUMNS, key),
+    (key) => key !== 'space' && key !== 'checks' && !Object.hasOwn(PROJECT_SETTING_COLUMNS, key),
   )
   if (unknown.length) {
     throw new Error(`project ${row.name} has unmapped settings keys: ${unknown.sort().join(', ')}`)

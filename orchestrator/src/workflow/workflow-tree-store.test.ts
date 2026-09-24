@@ -2,12 +2,16 @@ import { Database } from 'bun:sqlite'
 import { describe, expect, test } from 'bun:test'
 import { fileURLToPath } from 'node:url'
 import { applyMigrations } from '../database/migrations.ts'
-import { productionStepCatalogue, showStepCatalogue } from './step-catalogue.ts'
+import {
+  productionStepCatalogue,
+  promoteStepCatalogue,
+  showStepCatalogue,
+} from './step-catalogue.ts'
 import { seedWorkflows } from './workflow-seeds.ts'
 import { parseWorkflowTree, planWorkflowHydration } from './workflow-tree.ts'
 import { collectWorkflowTree } from './workflow-tree-files.ts'
 import { importWorkflowTree, productionWorkflowTree } from './workflow-tree-store.ts'
-import { productionWorkflows, showWorkflow } from './workflows.ts'
+import { productionWorkflows, promoteWorkflow, showWorkflow } from './workflows.ts'
 
 const database = () => {
   const d = new Database(':memory:')
@@ -21,18 +25,28 @@ const renderedTree = (d: Database) =>
   planWorkflowHydration({ store: productionWorkflowTree(d), tree: [] }).writes
 
 describe('importWorkflowTree', () => {
-  test('the current workflow tree imports into a test store', () => {
+  test('the current workflow tree round-trips through import and hydrate', () => {
     const d = database()
     const root = fileURLToPath(new URL('../../..', import.meta.url))
+    const tree = collectWorkflowTree(root)
 
-    expect(() =>
-      importWorkflowTree(
-        parseWorkflowTree(collectWorkflowTree(root)),
-        'validate current tree',
-        'test',
-        d,
-      ),
-    ).not.toThrow()
+    const imported = importWorkflowTree(parseWorkflowTree(tree), 'validate current tree', 'test', d)
+    const draft = d
+      .query("SELECT n FROM step_catalogue_version WHERE status='draft' ORDER BY n DESC LIMIT 1")
+      .get() as { n: number } | null
+    if (draft) promoteStepCatalogue(draft.n, 'round-trip fixture', 'test', d)
+    for (const slug of imported.workflows) {
+      const workflowDraft = d
+        .query(
+          "SELECT v.n FROM workflow_version v JOIN workflow w ON w.id=v.workflow_id WHERE w.slug=? AND v.status='draft'",
+        )
+        .get(slug) as { n: number }
+      promoteWorkflow(slug, workflowDraft.n, 'round-trip fixture', 'test', d)
+    }
+    expect(planWorkflowHydration({ store: productionWorkflowTree(d), tree })).toEqual({
+      writes: [],
+      deletes: [],
+    })
   })
 
   test('an edited step becomes a catalogue draft while production remains unchanged', () => {
