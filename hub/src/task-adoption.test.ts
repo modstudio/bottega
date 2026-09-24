@@ -1,5 +1,6 @@
 import { Database } from 'bun:sqlite'
 import { expect, spyOn, test } from 'bun:test'
+import { PLATFORM_SLUG } from '../../shared/brand.ts'
 import { applyMigrations } from './migrations.ts'
 import { persistTaskAdoptions, taskAdoptionCollisionCount } from './task-adoption.ts'
 
@@ -9,14 +10,14 @@ test('task adoption re-keys a local task and cascades to its children', () => {
   applyMigrations(conn)
   conn.exec(`
     INSERT INTO task(record_id,key,project,source,first_seen,last_seen)
-    VALUES ('old-id','DEV-895','bottega','mcp','2026-09-24','2026-09-24');
+    VALUES ('old-id','DEV-895','${PLATFORM_SLUG}','mcp','2026-09-24','2026-09-24');
     INSERT INTO task_comment(task_key,task_record_id,body,created_at)
     VALUES ('DEV-895','old-id','child','2026-09-24');
   `)
 
   expect(
     persistTaskAdoptions(
-      [{ table: 'task', project: 'bottega', key: 'DEV-895', id: 'hosted-id' }],
+      [{ table: 'task', project: PLATFORM_SLUG, key: 'DEV-895', id: 'hosted-id' }],
       conn,
     ),
   ).toBe(0)
@@ -35,14 +36,14 @@ test('task adoption records and skips a local id collision', () => {
   applyMigrations(conn)
   conn.exec(`
     INSERT INTO task(record_id,key,project,source,first_seen,last_seen) VALUES
-      ('incoming-id','DEV-895','bottega','mcp','2026-09-24','2026-09-24'),
+      ('incoming-id','DEV-895','${PLATFORM_SLUG}','mcp','2026-09-24','2026-09-24'),
       ('hosted-id','OPS-21','stopal','mcp','2026-09-24','2026-09-24');
   `)
   const log = spyOn(console, 'error').mockImplementation(() => {})
   try {
     expect(
       persistTaskAdoptions(
-        [{ table: 'task', project: 'bottega', key: 'DEV-895', id: 'hosted-id' }],
+        [{ table: 'task', project: PLATFORM_SLUG, key: 'DEV-895', id: 'hosted-id' }],
         conn,
       ),
     ).toBe(1)

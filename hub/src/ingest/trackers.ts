@@ -10,9 +10,9 @@ import {
 import { db, nowIso, type Project, writeTransaction } from '../db.ts'
 import { credentials, Mcp } from '../mcp.ts'
 import { projects } from '../projects.ts'
-import { persistTaskAdoptions, type TaskAdoption } from '../task-adoption.ts'
 import { hostedMirrorTasks } from '../task-client.ts'
 import { claimTaskIdentity, taskRecordIdFor } from '../task-identity.ts'
+import { mirrorCollectedTasks } from './collector-mirror.ts'
 
 export type { TrackerTask } from '../../../shared/trackers.ts'
 
@@ -358,12 +358,7 @@ async function mirrorTrackerSnapshot(
   })
   try {
     for (let index = 0; index < mirroredTasks.length; index += 500) {
-      const response = await hostedMirrorTasks({ tasks: mirroredTasks.slice(index, index + 500) })
-      persistTaskAdoptions(
-        (response.adoptions ?? []).filter(
-          (adoption): adoption is TaskAdoption => adoption.table === 'task',
-        ),
-      )
+      await mirrorCollectedTasks({ tasks: mirroredTasks.slice(index, index + 500) })
     }
     for (let index = 0; index < mirroredEvents.length; index += 500)
       await hostedMirrorTasks({ tasks: [], statusEvents: mirroredEvents.slice(index, index + 500) })
@@ -443,7 +438,7 @@ async function backfillTrackerTasks(
       if (!local.has(identity) && differs(task, existing.get(identity))) activity = true
       const localRow = trackerIdentityRow(db(), task)!
       try {
-        const response = await hostedMirrorTasks({
+        await mirrorCollectedTasks({
           tasks: [
             {
               id: localRow.record_id,
@@ -467,11 +462,6 @@ async function backfillTrackerTasks(
             },
           ],
         })
-        persistTaskAdoptions(
-          (response.adoptions ?? []).filter(
-            (adoption): adoption is TaskAdoption => adoption.table === 'task',
-          ),
-        )
       } catch (error) {
         console.error(`hub: tracker task mirror skipped: ${(error as Error).message}`)
       }

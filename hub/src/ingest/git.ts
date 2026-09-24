@@ -3,8 +3,7 @@ import { newRecordId } from '../../../shared/record/schema.ts'
 import { keyPattern, refreshKeyPrefixes } from '../attribute.ts'
 import { db, nowIso, type Project, writeTransaction } from '../db.ts'
 import { projects } from '../projects.ts'
-import { persistTaskAdoptions, type TaskAdoption } from '../task-adoption.ts'
-import { hostedMirrorTasks } from '../task-client.ts'
+import { mirrorCollectedTasks } from './collector-mirror.ts'
 
 /**
  * Generated files, which are not work.
@@ -228,12 +227,7 @@ export async function ingestGit(since: string): Promise<{ days: number; tasks: n
       deleted_at: null,
     }))
     for (let index = 0; index < mirrored.length; index += 500) {
-      const response = await hostedMirrorTasks({ tasks: mirrored.slice(index, index + 500) })
-      persistTaskAdoptions(
-        (response.adoptions ?? []).filter(
-          (adoption): adoption is TaskAdoption => adoption.table === 'task',
-        ),
-      )
+      await mirrorCollectedTasks({ tasks: mirrored.slice(index, index + 500) })
     }
   } catch (error) {
     console.error(`hub: git task mirror skipped: ${(error as Error).message}`)
