@@ -5,6 +5,7 @@ import { scoreRankings } from './metrics.ts'
 const chunk = (path: string, id: string): Chunk => ({
   id,
   path,
+  identity: { kind: 'code', path },
   startLine: 1,
   endLine: 1,
   text: id,
@@ -15,21 +16,50 @@ describe('scoreRankings', () => {
     const metrics = scoreRankings([
       {
         queryId: 'first',
-        goldPath: 'gold.ts',
+        goldLabels: ['gold.ts'],
         chunks: [chunk('gold.ts', 'a'), chunk('other.ts', 'b')],
       },
       {
         queryId: 'third',
-        goldPath: 'gold.ts',
+        goldLabels: ['gold.ts'],
         chunks: [chunk('one.ts', 'c'), chunk('two.ts', 'd'), chunk('gold.ts', 'e')],
       },
       {
         queryId: 'missing',
-        goldPath: 'gold.ts',
+        goldLabels: ['gold.ts'],
         chunks: [chunk('other.ts', 'f')],
       },
     ])
 
-    expect(metrics).toEqual({ recallAt1: 1 / 3, recallAt5: 2 / 3, mrr: 4 / 9 })
+    expect(metrics).toEqual({ hitAt1: 1 / 3, hitAt5: 2 / 3, mrr: 4 / 9 })
+  })
+
+  test('computes hits and reciprocal rank over multiple doc labels', () => {
+    const docChunk = (scope: string, subject: string | null, slug: string, id: string): Chunk => ({
+      id,
+      path: `doc:${scope}/${subject ?? '_'}/${slug}`,
+      identity: { kind: 'doc', scope, subject, slug },
+      startLine: 1,
+      endLine: 1,
+      text: id,
+    })
+
+    const metrics = scoreRankings([
+      {
+        queryId: 'two-valid-docs',
+        goldLabels: ['doc:project/bottega/first', 'doc:global/_/second'],
+        chunks: [
+          docChunk('machine', null, 'other', 'other'),
+          docChunk('global', null, 'second', 'answer'),
+        ],
+      },
+      {
+        queryId: 'missing-doc',
+        goldLabels: ['doc:agent/codex/missing'],
+        chunks: [docChunk('agent', 'codex', 'different', 'different')],
+      },
+    ])
+
+    expect(metrics).toEqual({ hitAt1: 0, hitAt5: 1 / 2, mrr: 1 / 4 })
   })
 })

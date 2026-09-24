@@ -7,9 +7,21 @@ import { Glob } from 'bun'
 export type Chunk = {
   id: string
   path: string
+  identity: CorpusIdentity
   startLine: number
   endLine: number
   text: string
+}
+
+export type DocIdentity = { kind: 'doc'; scope: string; subject: string | null; slug: string }
+export type CorpusIdentity = { kind: 'code'; path: string } | DocIdentity
+
+export type DocRow = {
+  scope: string
+  subject: string | null
+  slug: string
+  title: string
+  body: string
 }
 
 const SOURCE_GLOBS = [
@@ -33,6 +45,7 @@ export function chunkText(path: string, text: string, size = 60, overlap = 10): 
       chunks.push({
         id: `${path}:${startLine}-${end}`,
         path,
+        identity: { kind: 'code', path },
         startLine,
         endLine: end,
         text: body,
@@ -41,6 +54,68 @@ export function chunkText(path: string, text: string, size = 60, overlap = 10): 
     if (end === lines.length) break
   }
   return chunks
+}
+
+export function docIdentity(identity: Omit<DocIdentity, 'kind'>): string {
+  return `doc:${identity.scope}/${identity.subject ?? '_'}/${identity.slug}`
+}
+
+export function chunkDoc(doc: DocRow, size = 60, overlap = 10): Chunk[] {
+  const identity: DocIdentity = {
+    kind: 'doc',
+    scope: doc.scope,
+    subject: doc.subject,
+    slug: doc.slug,
+  }
+  const path = docIdentity(identity)
+  return chunkText(path, `# ${doc.title}\n\n${doc.body}`, size, overlap).map((chunk) => ({
+    ...chunk,
+    id: `${path}:${chunk.startLine}-${chunk.endLine}`,
+    identity,
+  }))
+}
+
+function isDocRow(value: unknown): value is DocRow {
+  if (!value || typeof value !== 'object') return false
+  const row = value as Record<string, unknown>
+  return (
+    typeof row.scope === 'string' &&
+    (typeof row.subject === 'string' || row.subject === null) &&
+    typeof row.slug === 'string' &&
+    typeof row.title === 'string' &&
+    typeof row.body === 'string'
+  )
+}
+
+export async function loadDocCorpus(repositoryRoot: string): Promise<Chunk[]> {
+  const child = Bun.spawn([resolve(repositoryRoot, 'bin/orch'), 'doc', 'list', '--json'], {
+    cwd: repositoryRoot,
+    stdout: 'pipe',
+    stderr: 'pipe',
+  })
+  const [stdout, stderr, exitCode] = await Promise.all([
+    new Response(child.stdout).text(),
+    new Response(child.stderr).text(),
+    child.exited,
+  ])
+  if (exitCode !== 0) {
+    throw new Error(
+      `doc corpus export failed: ${stderr.trim() || `exit ${exitCode}`}. ` +
+        'Run `bin/orch doc list --json` from the repository root.',
+    )
+  }
+  let rows: unknown
+  try {
+    rows = JSON.parse(stdout)
+  } catch (error) {
+    throw new Error(
+      `doc corpus export was not JSON: ${error instanceof Error ? error.message : String(error)}`,
+    )
+  }
+  if (!Array.isArray(rows) || !rows.every(isDocRow)) {
+    throw new Error('doc corpus export did not contain valid document rows')
+  }
+  return rows.filter((doc) => doc.scope !== 'resume').flatMap((doc) => chunkDoc(doc))
 }
 
 export async function loadCorpus(repositoryRoot: string): Promise<Chunk[]> {
@@ -56,6 +131,7 @@ export async function loadCorpus(repositoryRoot: string): Promise<Chunk[]> {
       throw new Error(`corpus path escaped root: ${path}`)
     chunks.push(...chunkText(path, await readFile(absolute, 'utf8')))
   }
+  chunks.push(...(await loadDocCorpus(repositoryRoot)))
   return chunks
 }
 

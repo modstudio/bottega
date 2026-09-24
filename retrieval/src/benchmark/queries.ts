@@ -1,21 +1,29 @@
 // concern: retrieval-queries
-/** Fixed benchmark questions copied from canon, with their enforcing source files as gold. */
+/** Fixed code statements and agent-shaped doc questions with their labelled answers. */
 
-type BenchmarkQuery = {
+export type LabelledQuery = {
   id: string
   query: string
-  goldPath: string
+  goldLabels: string[]
+}
+
+export type BenchmarkQuery = LabelledQuery & {
   provenance: { path: string; excerpt: string }
+}
+
+export type DocBenchmarkQuery = LabelledQuery & {
+  scope: 'project' | 'global' | 'agent' | 'machine' | 'job' | 'canon'
+  provenance: { doc: string; excerpt: string }
 }
 
 const rule = (id: string, query: string, goldPath: string, path: string): BenchmarkQuery => ({
   id,
   query,
-  goldPath,
+  goldLabels: [goldPath],
   provenance: { path, excerpt: query },
 })
 
-export const BENCHMARK_QUERIES: BenchmarkQuery[] = [
+export const CODE_QUERIES: BenchmarkQuery[] = [
   rule(
     'module-boundaries',
     'A module owns one concern, states what it knows and must not know, and is reached only through its exported service or schemas.',
@@ -135,5 +143,227 @@ export const BENCHMARK_QUERIES: BenchmarkQuery[] = [
     'Suite time is shared and bun run check reports the budget.',
     'scripts/check-runtime.ts',
     '.agents/rules/30-tests.md',
+  ),
+]
+
+const doc = (
+  id: string,
+  query: string,
+  scope: DocBenchmarkQuery['scope'],
+  subject: string | null,
+  slug: string,
+  excerpt: string,
+  otherAnswers: string[] = [],
+): DocBenchmarkQuery => {
+  const label = `doc:${scope}/${subject ?? '_'}/${slug}`
+  return {
+    id,
+    query,
+    scope,
+    goldLabels: [label, ...otherAnswers],
+    provenance: { doc: label, excerpt },
+  }
+}
+
+export const DOC_QUERIES: DocBenchmarkQuery[] = [
+  doc(
+    'doc-knowledge-order',
+    'What has to be measured before we build semantic search for agents?',
+    'project',
+    'bottega',
+    'roadmap',
+    "Measure how often agents' real questions find the right doc",
+  ),
+  doc(
+    'doc-mcp-routing',
+    'How should routing react when an agent cannot use a project server’s tool names?',
+    'project',
+    'bottega',
+    'design-mcp-agent-compatibility',
+    "Routing does not send an `--mcp` job to an agent that cannot use the job's required server.",
+  ),
+  doc(
+    'doc-durable-engine-revisit',
+    'When should we reconsider using a maintained engine for run supervision?',
+    'project',
+    'bottega',
+    'durable-execution-decision',
+    'Ask again when any of these becomes true:',
+  ),
+  doc(
+    'doc-hosted-secrets-cache',
+    'May a local cache ever hold plaintext user secrets from the hosted record?',
+    'project',
+    'bottega',
+    'hosted-config-design',
+    'A local cache may hold secret rows only as ciphertext.',
+  ),
+  doc(
+    'doc-product-boundary',
+    'Are tasks and development workflows product behavior or replaceable plumbing here?',
+    'project',
+    'bottega',
+    'system-map',
+    'Tasks and workflows are product, not machinery.',
+  ),
+  doc(
+    'doc-worktree-no-preference',
+    'What provisioning shape should a project use when it has no existing preference?',
+    'global',
+    null,
+    'default-worktree-provisioning',
+    'One file, `bottega.jsonc`, at the project root, with a `worktree` key.',
+  ),
+  doc(
+    'doc-worktree-allocation-ownership',
+    'Who allocates ports and who creates the database for a disposable checkout?',
+    'global',
+    null,
+    'default-worktree-provisioning',
+    'Orch allocates and claims; the project creates and destroys.',
+  ),
+  doc(
+    'doc-port-bun-layout',
+    'How do I translate a portable TypeScript module between Stopal and Adanim?',
+    'global',
+    null,
+    'port-stack-mapping',
+    'stopal is flat `apps/api/src/modules/<name>/`, adanim splits',
+  ),
+  doc(
+    'doc-port-reflected-tools',
+    'Where do I add a callable tool in Adanim if there are no hand-written tool files?',
+    'global',
+    null,
+    'port-category-map',
+    'MCP tools are reflected, not hand-written',
+  ),
+  doc(
+    'doc-codex-paginated-tools',
+    'Why can Codex connect to an MCP server but still fail to see some of its tools?',
+    'agent',
+    'codex',
+    'mcp-registration',
+    "Codex reads only the first page of a server's `tools/list`.",
+  ),
+  doc(
+    'doc-grok-project-server',
+    'Where does Grok discover a repository-local MCP server configuration?',
+    'agent',
+    'grok',
+    'capabilities-observed',
+    'It discovers `<project>/.mcp.json` from its WORKING DIRECTORY',
+  ),
+  doc(
+    'doc-qwen-schema',
+    'Can the local Qwen agent enforce a JSON schema in its current CLI version?',
+    'agent',
+    'qwen-local',
+    'capabilities-observed',
+    'version 0.7.1 does not implement it.',
+  ),
+  doc(
+    'doc-gx10-memory-sizing',
+    'What command should I trust for model memory sizing on the local AI box?',
+    'machine',
+    null,
+    'local-model-host-hardware',
+    'Use `free -h`.',
+  ),
+  doc(
+    'doc-gx10-network-bottleneck',
+    'Would upgrading the LAN make local model generation meaningfully faster?',
+    'machine',
+    null,
+    'local-model-host-network',
+    'the network is never the bottleneck',
+  ),
+  doc(
+    'doc-gx10-retrieval-tunnel',
+    'Which local forwards carry embeddings and reranking, and why are they separate from generation?',
+    'machine',
+    null,
+    'local-model-host-tunnel',
+    'The second is not folded into the first so that a fault in retrieval cannot take the model endpoint down.',
+  ),
+  doc(
+    'doc-gx10-outage-attribution',
+    'How do we avoid scoring the local model for a failure caused by the host being offline?',
+    'machine',
+    null,
+    'local-model-host-incidents',
+    'two verdicts against a model that was never consulted',
+  ),
+  doc(
+    'doc-inline-review-evidence',
+    'How can a readless review agent receive enough evidence to judge a normal commit?',
+    'job',
+    'review-lens-inline',
+    'self-contained-pack',
+    'A diff is already a self-contained pack.',
+  ),
+  doc(
+    'doc-worker-decision',
+    'What should a worker do when implementation reaches a genuine judgement call?',
+    'canon',
+    'bottega',
+    '.agents/rules/00-principles.md',
+    'A worker that reaches a judgement call stops and asks.',
+  ),
+  doc(
+    'doc-transaction-owner',
+    'Which module owns all writes made inside a transaction?',
+    'canon',
+    'bottega',
+    '.agents/rules/10-code.md',
+    'The module that opens it owns every write inside it.',
+  ),
+  doc(
+    'doc-research-duty',
+    'Who must research maintained alternatives before a build task is specified?',
+    'canon',
+    'bottega',
+    '.agents/rules/20-build-and-buy.md',
+    'The architect researches current practice and maintained solutions before specifying and dispatching work.',
+  ),
+  doc(
+    'doc-unit-test-location',
+    'Where should a unit test live so it moves with its subject?',
+    'canon',
+    'bottega',
+    '.agents/rules/30-tests.md',
+    'A unit test is `<module>.test.ts` beside its module',
+  ),
+  doc(
+    'doc-teardown-ownership',
+    'Who is responsible for releasing a resource created during ordinary work?',
+    'canon',
+    'bottega',
+    '.agents/rules/40-caution.md',
+    'The task that provisions a resource tears it down.',
+  ),
+  doc(
+    'doc-current-documentation',
+    'Should documentation explain the historical sequence that produced the current rule?',
+    'canon',
+    'bottega',
+    '.agents/rules/50-writing.md',
+    'Never narrate former names, abandoned approaches, dated decisions or the sequence by which the current state arose',
+  ),
+  doc(
+    'doc-suggestion-promotion',
+    'Can scheduled curation turn an observation into a task automatically?',
+    'canon',
+    'bottega',
+    '.agents/rules/60-tasks.md',
+    'Promotion is always a human act',
+  ),
+  doc(
+    'doc-unanswered-worker',
+    'May a run continue while its implementation worker is waiting for a ruling?',
+    'canon',
+    'bottega',
+    '.agents/rules/70-sessions.md',
+    'Never continue or land a chain while its worker has an unanswered question',
   ),
 ]
