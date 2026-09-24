@@ -5,6 +5,19 @@ import { DELIVERY, FIDELITY, QUALITY } from '../score/score.ts'
 
 export const VOID_EXCLUSION_REASON = 'voided with orch score --void'
 
+export function refuseChildTurnVoid(
+  requestedId: number,
+  resolvedRootId: number,
+  voidRequested: boolean,
+): string | null {
+  if (!voidRequested || requestedId === resolvedRootId) return null
+  return (
+    `refused: turn ${requestedId} is not routing evidence on its own because routing reads roots; ` +
+    'voiding one turn is never needed. ' +
+    `To void the whole conversation, run orch score ${resolvedRootId} --void.`
+  )
+}
+
 export function effectiveHostedExclusion(
   activeExclusionReason: string | null,
   runEvidenceExcluded: string | null,

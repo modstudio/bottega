@@ -2,6 +2,7 @@ import { describe, expect, test } from 'bun:test'
 import {
   effectiveHostedExclusion,
   type JobFacts,
+  refuseChildTurnVoid,
   refuseUnvoid,
   refuseVerdict,
   type VerdictFacts,
@@ -25,6 +26,19 @@ const writing: JobFacts = { ...readOnly, writesRepo: true }
 const findings: JobFacts = { ...readOnly, producesFindings: true }
 
 describe('verdict rules', () => {
+  test('refuses voiding a child turn and names the conversation root', () => {
+    expect(refuseChildTurnVoid(5988, 5931, true)).toBe(
+      'refused: turn 5988 is not routing evidence on its own because routing reads roots; ' +
+        'voiding one turn is never needed. ' +
+        'To void the whole conversation, run orch score 5931 --void.',
+    )
+  })
+
+  test('allows a root void and a child-turn non-void score', () => {
+    expect(refuseChildTurnVoid(5931, 5931, true)).toBeNull()
+    expect(refuseChildTurnVoid(5988, 5931, false)).toBeNull()
+  })
+
   test('uses the active hosted exclusion before the run-row fallback', () => {
     expect(effectiveHostedExclusion('active reason', 'run reason')).toBe('active reason')
     expect(effectiveHostedExclusion(null, 'run reason')).toBe('run reason')

@@ -49,6 +49,7 @@ import {
 } from './score/score.ts'
 import { enqueueScoreRecord } from './score/score-outbox.ts'
 import {
+  refuseChildTurnVoid,
   refuseUnvoid,
   refuseVerdict,
   type VerdictRefusal,
@@ -687,6 +688,12 @@ function refusePendingAgentScore(
   }
 }
 
+/** Refuses a --void aimed at a child turn before any write; routing reads roots only. */
+function assertVoidTargetsRoot(requestedId: number, rootId: number, voidRequested: boolean): void {
+  const refusal = refuseChildTurnVoid(requestedId, rootId, voidRequested)
+  if (refusal) throw new Error(refusal)
+}
+
 export async function scoreRun(
   requestedId: number,
   flags: JudgmentFlags,
@@ -714,6 +721,7 @@ export async function scoreRun(
   } | null
   if (!row) throw new Error(`no run ${requestedId}`)
   const id = row.id
+  assertVoidTargetsRoot(requestedId, id, flags.has('void'))
   if (recordRequestedUnvoid(id, row.evidence_excluded, flags, options, presentation)) return
   // A pick-time harness refusal never selected an agent, but it is still a
   // real failed row the owning session must be able to clear from its ledger.
