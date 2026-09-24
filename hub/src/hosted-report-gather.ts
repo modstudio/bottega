@@ -13,6 +13,8 @@ const number = (value: string | number | bigint | null | undefined) => Number(va
 const rows = <T>(value: unknown) => value as T[]
 
 export type HostedReportRow = {
+  space_id: string
+  task_id: string | null
   task_key: string | null
   project_name: string | null
   start_at: string
@@ -43,20 +45,20 @@ function span(row: HostedReportRow, period: DeliveryPeriod) {
 
 export function gatherHostedReport(
   sourceRows: HostedReportRow[],
-  closedKeys: ReadonlySet<string>,
+  closedTaskIds: ReadonlySet<string>,
   period: DeliveryPeriod,
 ): GatheredReport {
   const usable = sourceRows.filter((row) => (row.task_project ?? row.project_name) !== null)
   const groups = new Map<string, HostedReportRow[]>()
   for (const row of usable) {
     const project = row.task_project ?? row.project_name!
-    const id = row.task_key ?? `\0untasked:${project}`
+    const id = row.task_id ?? `\0untasked:${row.space_id}:${project}`
     groups.set(id, [...(groups.get(id) ?? []), row])
   }
 
-  const projected = [...groups.entries()].map(([id, grouped]) => {
+  const projected = [...groups.values()].map((grouped) => {
     const first = grouped[0]!
-    const key = id.startsWith('\0') ? null : id
+    const key = first.task_key
     const project = first.task_project ?? first.project_name!
     const itemSpans = grouped.map((row) => span(row, period))
     const engaged = engagedMs(itemSpans)
@@ -65,7 +67,7 @@ export function gatherHostedReport(
       project,
       title: key ? first.task_title : null,
       status: key ? first.task_status : null,
-      closed: key ? closedKeys.has(key) : false,
+      closed: first.task_id ? closedTaskIds.has(first.task_id) : false,
       engaged: human(engaged),
       engagedMs: engaged,
       agentTokens: grouped.reduce((sum, row) => sum + row.vendor_tokens, 0),
@@ -122,7 +124,7 @@ export async function hostedGatherReport(
     const person = scope.kind === 'person' ? scope.userId : null
     const reportRows = rows<RawReportRow>(
       await tx`
-      SELECT i.task_key,i.project_name,i.start_at,i.end_at,i.open,i.vendor_tokens,
+      SELECT i.space_id,t.id AS task_id,i.task_key,i.project_name,i.start_at,i.end_at,i.open,i.vendor_tokens,
         t.project AS task_project,t.title AS task_title,t.status AS task_status,p.color AS project_color
       FROM hub_interval i
       LEFT JOIN hub_task t ON t.space_id=i.space_id AND t.key=i.task_key AND t.deleted_at IS NULL
@@ -139,14 +141,14 @@ export async function hostedGatherReport(
       open: number(row.open),
       vendor_tokens: number(row.vendor_tokens),
     }))
-    const completed = rows<{ task_key: string }>(
+    const completed = rows<{ task_id: string }>(
       await tx`
-      SELECT e.task_key FROM hub_task_status_event e
+      SELECT t.id AS task_id FROM hub_task_status_event e
       JOIN hub_task t ON t.space_id=e.space_id AND t.key=e.task_key
       WHERE e.deleted_at IS NULL AND t.deleted_at IS NULL AND e.to_status='done'
         AND e.at >= ${period.from}::timestamptz AND e.at < ${period.to}::timestamptz
         AND (${project}::text IS NULL OR t.project=${project})`,
     )
-    return gatherHostedReport(reportRows, new Set(completed.map((row) => row.task_key)), period)
+    return gatherHostedReport(reportRows, new Set(completed.map((row) => row.task_id)), period)
   })
 }

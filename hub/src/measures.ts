@@ -17,12 +17,14 @@ export type MeasureInterval = {
   open: number
   userId: string | null
   taskKey: string | null
+  taskId: string | null
   project: string | null
   vendorTokens: number
   vendorCostUsd: number | null
 }
 
 export type MeasureStatusEvent = {
+  taskId: string
   taskKey: string
   project: string
   at: string
@@ -300,13 +302,13 @@ function costOf(orch: (Span & { interval: MeasureInterval })[], person: boolean)
 function doneEvents(events: MeasureStatusEvent[], from: number, to: number): MeasureStatusEvent[] {
   return events
     .filter((event) => event.toStatus === 'done' && at(event.at) >= from && at(event.at) < to)
-    .sort((left, right) => at(left.at) - at(right.at) || left.taskKey.localeCompare(right.taskKey))
+    .sort((left, right) => at(left.at) - at(right.at) || left.taskId.localeCompare(right.taskId))
 }
 
 function shippedOf(events: MeasureStatusEvent[], from: number, to: number): Shipped {
   const done = doneEvents(events, from, to)
-  const keys = new Set(done.map((event) => event.taskKey))
-  return { count: keys.size, sample: { taskCount: keys.size, eventCount: done.length } }
+  const ids = new Set(done.map((event) => event.taskId))
+  return { count: ids.size, sample: { taskCount: ids.size, eventCount: done.length } }
 }
 
 function cycleTimeOf(
@@ -317,18 +319,18 @@ function cycleTimeOf(
 ): CycleTime | undefined {
   const closeAt = new Map<string, number>()
   for (const event of doneEvents(events, from, to)) {
-    if (!closeAt.has(event.taskKey)) closeAt.set(event.taskKey, at(event.at))
+    if (!closeAt.has(event.taskId)) closeAt.set(event.taskId, at(event.at))
   }
   const firstStart = new Map<string, number>()
   for (const interval of rows.intervals) {
-    if (!interval.taskKey || !closeAt.has(interval.taskKey)) continue
+    if (!interval.taskId || !closeAt.has(interval.taskId)) continue
     const start = at(interval.startAt)
-    const current = firstStart.get(interval.taskKey)
-    if (current === undefined || start < current) firstStart.set(interval.taskKey, start)
+    const current = firstStart.get(interval.taskId)
+    if (current === undefined || start < current) firstStart.set(interval.taskId, start)
   }
   const samples: number[] = []
-  for (const [taskKey, close] of closeAt) {
-    const start = firstStart.get(taskKey)
+  for (const [taskId, close] of closeAt) {
+    const start = firstStart.get(taskId)
     if (start === undefined || start >= close) continue
     samples.push(close - start)
   }

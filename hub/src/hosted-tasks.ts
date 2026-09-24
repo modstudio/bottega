@@ -381,8 +381,20 @@ export function mirrorCollisionDecision(
   identity: 'natural-key' | 'id' = 'natural-key',
   legacyLocalIdHolder: MirrorLegacyLocalIdHolder | null = null,
   newlyAssigned = false,
+  naturalKeyHolder: MirrorIdentity | null = null,
 ): MirrorCollisionDecision {
   if (!existing) {
+    if (naturalKeyHolder && naturalKeyHolder.id !== incoming.id) {
+      return {
+        action: 'refuse',
+        reason:
+          `refusing to mirror ${incoming.naturalKey} with id ${incoming.id}: ` +
+          `${naturalKeyHolder.naturalKey} in space ${naturalKeyHolder.spaceId} already belongs to ` +
+          `id ${naturalKeyHolder.id}; restore this local row's record id to ` +
+          `${naturalKeyHolder.id}, change the task key in that space, or ask the hosted-space ` +
+          `operator to resolve the task key collision`,
+      }
+    }
     if (legacyLocalIdHolder && legacyLocalIdHolder.id !== incoming.id) {
       if (newlyAssigned && legacyLocalIdHolder.spaceId === incoming.spaceId)
         return { action: 'adopt', id: legacyLocalIdHolder.id }
@@ -437,19 +449,50 @@ async function mirrorTaskRow(tx: SQL, identity: TaskIdentity, row: HostedTask) {
   const existing = rows<{ id: string; space_id: string; key: string }>(
     await tx`SELECT id,space_id,key FROM hub_task WHERE id=${row.id}::uuid`,
   )[0]
+  const keyHolder = existing
+    ? undefined
+    : rows<{ id: string; space_id: string; key: string }>(
+        await tx`SELECT id,space_id,key FROM hub_task
+          WHERE space_id=${identity.spaceId}::uuid AND key=${row.key}`,
+      )[0]
   applyMirrorDecision(
     mirrorCollisionDecision(
       { id: row.id, spaceId: identity.spaceId, naturalKey: `task ${row.key}` },
       selectedMirrorIdentity(existing, (selected) => `task ${selected.key}`),
       'update',
+      'natural-key',
+      null,
+      false,
+      selectedMirrorIdentity(keyHolder, (selected) => `task ${selected.key}`),
     ),
   )
-  await tx`INSERT INTO hub_task
+  const changed = rows<{ id: string }>(
+    await tx`INSERT INTO hub_task
     (id,space_id,project_name,key,project,title,status,status_category,parent_key,body,assignee,
      opened_at,closed_at,source,first_seen,last_seen,created_at,updated_at,deleted_at)
     VALUES (${row.id || newRecordId()}::uuid,${identity.spaceId}::uuid,${row.project_name},${row.key},${row.project},${row.title},${row.status},${row.status_category},${row.parent_key},${row.body},${row.assignee},${row.opened_at}::timestamptz,${row.closed_at}::timestamptz,${row.source},${row.first_seen}::timestamptz,${row.last_seen}::timestamptz,${row.created_at}::timestamptz,${row.updated_at}::timestamptz,${row.deleted_at}::timestamptz)
     ON CONFLICT (space_id,key) DO UPDATE SET project_name=excluded.project_name,project=excluded.project,title=excluded.title,status=excluded.status,status_category=excluded.status_category,parent_key=excluded.parent_key,body=excluded.body,assignee=excluded.assignee,opened_at=excluded.opened_at,closed_at=excluded.closed_at,source=excluded.source,first_seen=excluded.first_seen,last_seen=excluded.last_seen,updated_at=excluded.updated_at,deleted_at=excluded.deleted_at
-    WHERE excluded.source='local' OR (hub_task.source <> 'local' AND (excluded.source <> 'git' OR hub_task.source='git'))`
+    WHERE hub_task.id=excluded.id AND
+      (excluded.source='local' OR (hub_task.source <> 'local' AND (excluded.source <> 'git' OR hub_task.source='git')))
+    RETURNING id`,
+  )
+  if (!changed.length) {
+    const collision = rows<{ id: string; space_id: string; key: string }>(
+      await tx`SELECT id,space_id,key FROM hub_task
+        WHERE space_id=${identity.spaceId}::uuid AND key=${row.key}`,
+    )[0]
+    applyMirrorDecision(
+      mirrorCollisionDecision(
+        { id: row.id, spaceId: identity.spaceId, naturalKey: `task ${row.key}` },
+        null,
+        'update',
+        'natural-key',
+        null,
+        false,
+        selectedMirrorIdentity(collision, (selected) => `task ${selected.key}`),
+      ),
+    )
+  }
 }
 
 async function mirrorCommentRow(

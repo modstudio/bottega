@@ -15,6 +15,17 @@ describe('hosted-only task safety', () => {
     const incoming = { id: 'id-1', spaceId: 'space-a', naturalKey: 'task DEV-1' }
     expect(mirrorCollisionDecision(incoming, null, 'update')).toEqual({ action: 'insert' })
     expect(
+      mirrorCollisionDecision(incoming, null, 'update', 'natural-key', null, false, {
+        id: 'id-2',
+        spaceId: 'space-a',
+        naturalKey: 'task DEV-1',
+      }),
+    ).toEqual({
+      action: 'refuse',
+      reason:
+        "refusing to mirror task DEV-1 with id id-1: task DEV-1 in space space-a already belongs to id id-2; restore this local row's record id to id-2, change the task key in that space, or ask the hosted-space operator to resolve the task key collision",
+    })
+    expect(
       mirrorCollisionDecision(
         { id: 'id-1', spaceId: 'space-a', naturalKey: 'comment 760' },
         null,
