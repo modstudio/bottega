@@ -244,7 +244,6 @@ describe('MCP tool-probe attachment ruling', () => {
 })
 
 describe('final worker MCP evidence', () => {
-  const outcome = { status: 'ok', error: null, failureKind: null }
   const preLaunchEvidence = {
     server: mcpServerName,
     connected: true,
@@ -258,9 +257,8 @@ describe('final worker MCP evidence', () => {
         mcpMode: 'require',
         preLaunchEvidence,
         workerEvents: [],
-        outcome,
       }),
-    ).toEqual({ connected: null, error: preLaunchEvidence.error, outcome })
+    ).toEqual({ connected: null, error: preLaunchEvidence.error, requiredFailure: null })
   })
 
   test('a completed worker call on the required server verifies attachment', () => {
@@ -278,12 +276,11 @@ describe('final worker MCP evidence', () => {
             status: 'completed',
           },
         ],
-        outcome,
       }),
     ).toEqual({
       connected: 1,
       error: `verified: worker tool call ${mcpServerName}.task_list`,
-      outcome,
+      requiredFailure: null,
     })
   })
 
@@ -291,14 +288,10 @@ describe('final worker MCP evidence', () => {
     {
       name: 'required',
       mcpMode: 'require' as const,
-      expectedOutcome: {
-        status: 'failed',
-        error: `MCP server '${mcpServerName}' was unreachable to the worker: authentication failed`,
-        failureKind: 'mcp_unverified',
-      },
+      requiredFailure: `MCP server '${mcpServerName}' was unreachable to the worker: authentication failed`,
     },
-    { name: 'preferred', mcpMode: 'prefer' as const, expectedOutcome: outcome },
-  ])('a failed worker call is recorded in $name mode', ({ mcpMode, expectedOutcome }) => {
+    { name: 'preferred', mcpMode: 'prefer' as const, requiredFailure: null },
+  ])('a failed worker call is recorded in $name mode', ({ mcpMode, requiredFailure }) => {
     expect(
       decideFinalMcpConnection({
         requiredServer: mcpServerName,
@@ -314,12 +307,11 @@ describe('final worker MCP evidence', () => {
             error: 'authentication failed',
           },
         ],
-        outcome,
       }),
     ).toEqual({
       connected: 0,
       error: 'authentication failed',
-      outcome: expectedOutcome,
+      requiredFailure,
     })
   })
 
@@ -338,7 +330,6 @@ describe('final worker MCP evidence', () => {
             status: 'completed',
           },
         ],
-        outcome,
       }).connected,
     ).toBeNull()
   })

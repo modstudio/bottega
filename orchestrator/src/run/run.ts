@@ -43,6 +43,7 @@ import {
   canonSourceFor,
   canonSourceInstruction,
   effectiveMcpRequest,
+  type McpMode,
   type McpRequest,
   probeRequestedMcp,
   storedMcpRequest,
@@ -132,6 +133,30 @@ function throwPreclaimRefusal(refusal: string | null, reserveId: number | undefi
   if (!refusal) return
   if (reserveId) db().query('DELETE FROM run WHERE id=?').run(reserveId)
   throw new Error(refusal)
+}
+
+function finalWorkerMcpRuling(
+  runId: number,
+  mcpMode: McpMode | null,
+  requiredServer: string | null,
+  workerEvents: readonly StreamEvent[],
+): ReturnType<typeof mcpAttachment.decideFinalMcpConnection> | null {
+  if (!mcpMode || !requiredServer) return null
+  const recorded = db()
+    .query('SELECT mcp_connected, mcp_error FROM run WHERE id=?')
+    .get(runId) as { mcp_connected: number | null; mcp_error: string | null } | null
+  return mcpAttachment.decideFinalMcpConnection({
+    requiredServer,
+    mcpMode,
+    preLaunchEvidence: recorded
+      ? {
+          server: requiredServer,
+          connected: recorded.mcp_connected === null ? null : recorded.mcp_connected === 1,
+          error: recorded.mcp_error,
+        }
+      : null,
+    workerEvents,
+  })
 }
 
 /** From the run's recorded recipe, never a second register read that can differ from the one that built the tree. */
@@ -1082,6 +1107,7 @@ export async function run(opts: {
       mcpSetupHeader,
     }))
   } finally {
+    const mcpRuling = finalWorkerMcpRuling(claim.id, mcpMode, mcpServerName, workerEvents)
     try {
       ;({
         status,
@@ -1141,7 +1167,7 @@ export async function run(opts: {
         resolvedSession,
         name,
         artifactsPersisted,
-        workerEvents,
+        mcpRuling,
       }))
     } finally {
       runLease?.release()

@@ -287,6 +287,47 @@ function toolUseEvents(content: unknown): StreamEvent[] {
   return events
 }
 
+function codexToolOutcome(
+  item: Record<string, unknown>,
+  phase: string,
+): { status: string; error?: string } {
+  const error =
+    typeof item.error === 'string'
+      ? item.error
+      : isRecord(item.error)
+        ? stringField(item.error.message)
+        : undefined
+  const reportedStatus = stringField(item.status)
+  if (error || reportedStatus === 'failed' || reportedStatus === 'error') {
+    return { status: 'failed', ...(error ? { error } : {}) }
+  }
+  return { status: phase === 'completed' ? 'completed' : 'in_progress' }
+}
+
+const CODEX_TOOL_ITEM_TYPES = new Set(['mcp_tool_call', 'web_search', 'file_change'])
+
+function codexRichToolEvent(
+  item: Record<string, unknown>,
+  itemType: string,
+  phase: string,
+): StreamEvent {
+  const title =
+    stringField(item.tool) ?? stringField(item.query) ?? stringField(item.server) ?? itemType
+  const locations = locationsFromUnknown(item.changes) ?? locationsFromUnknown(item)
+  const result = typeof item.result === 'string' ? item.result : undefined
+  const outcome = codexToolOutcome(item, phase)
+  return toolEvent({
+    title,
+    toolKind: itemType === 'file_change' ? 'edit' : itemType === 'web_search' ? 'search' : 'mcp',
+    status: outcome.status,
+    result,
+    ...(itemType === 'mcp_tool_call' ? { server: stringField(item.server) } : {}),
+    ...(outcome.error ? { error: outcome.error } : {}),
+    locations,
+    target: locations?.[0]?.path,
+  })
+}
+
 function usageFrom(value: unknown): Extract<StreamEvent, { kind: 'usage' }> | null {
   if (!isRecord(value)) return null
   const input = typeof value.input_tokens === 'number' ? value.input_tokens : 0
@@ -330,37 +371,8 @@ function eventsFromCodexItem(item: Record<string, unknown>, phase: string): Stre
       }),
     ]
   }
-  if (itemType === 'mcp_tool_call' || itemType === 'web_search' || itemType === 'file_change') {
-    const title =
-      stringField(item.tool) ?? stringField(item.query) ?? stringField(item.server) ?? itemType
-    const locations = locationsFromUnknown(item.changes) ?? locationsFromUnknown(item)
-    const result = typeof item.result === 'string' ? item.result : undefined
-    const itemError =
-      typeof item.error === 'string'
-        ? item.error
-        : isRecord(item.error)
-          ? stringField(item.error.message)
-          : undefined
-    const reportedStatus = stringField(item.status)
-    const status =
-      itemError || reportedStatus === 'failed' || reportedStatus === 'error'
-        ? 'failed'
-        : phase === 'completed'
-          ? 'completed'
-          : 'in_progress'
-    return [
-      toolEvent({
-        title,
-        toolKind:
-          itemType === 'file_change' ? 'edit' : itemType === 'web_search' ? 'search' : 'mcp',
-        status,
-        result,
-        ...(itemType === 'mcp_tool_call' ? { server: stringField(item.server) } : {}),
-        ...(itemError ? { error: itemError } : {}),
-        locations,
-        target: locations?.[0]?.path,
-      }),
-    ]
+  if (CODEX_TOOL_ITEM_TYPES.has(itemType)) {
+    return [codexRichToolEvent(item, itemType, phase)]
   }
   return []
 }

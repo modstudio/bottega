@@ -24,7 +24,6 @@ import {
   type WorkerReply,
 } from '../contract/contract.ts'
 import { db, nowIso, tryWriteContention, writeTransaction } from '../database/db.ts'
-import type { StreamEvent } from '../events.ts'
 import { assessEvidence, recordEvidence } from '../evidence/evidence.ts'
 import type { classify } from '../failure/failure.ts'
 import { terminateProcessGroup } from '../idle-kill.ts'
@@ -47,7 +46,6 @@ import {
   type TerminalSnapshot,
 } from './run-artifacts.ts'
 import { resolveRootFromLastTurn } from './run-liveness.ts'
-import { decideFinalMcpConnection } from './run-mcp-attachment.ts'
 import { enqueueRunRecord } from './run-outbox.ts'
 import { errorTail, live, liveCheckpoints } from './run-process.ts'
 import { blockersToRecord } from './run-terminal-blockers.ts'
@@ -57,6 +55,12 @@ type TerminalOptions = {
   job: string
   resume?: { parent: number }
 }
+
+type TerminalMcpRuling = {
+  connected: 0 | 1 | null
+  error: string | null
+  requiredFailure: string | null
+} | null
 
 export type TerminalInput = {
   timer: ReturnType<typeof setTimeout> | null
@@ -106,7 +110,7 @@ export type TerminalInput = {
   resolvedSession: string | null
   name: string
   artifactsPersisted: boolean
-  workerEvents: StreamEvent[]
+  mcpRuling: TerminalMcpRuling
 }
 
 export type TerminalResult = {
@@ -205,6 +209,33 @@ function confinementUnverifiedError(failures: FreezeFailure[]): string {
   )
 }
 
+function applyRequiredMcpFailure(
+  outcome: {
+    status: string
+    error: string | null
+    failureKind: ReturnType<typeof classify> | null
+  },
+  ruling: TerminalMcpRuling,
+): typeof outcome {
+  if (!ruling?.requiredFailure || outcome.status !== 'ok') return outcome
+  return {
+    status: 'failed',
+    error: ruling.requiredFailure,
+    failureKind: 'mcp_unverified',
+  }
+}
+
+function recordTerminalMcpEvidence(
+  database: Database,
+  runId: number,
+  ruling: TerminalMcpRuling,
+): void {
+  if (!ruling) return
+  database
+    .query('UPDATE run SET mcp_connected=?, mcp_error=? WHERE id=?')
+    .run(ruling.connected, ruling.error, runId)
+}
+
 export async function finishRun(input: TerminalInput): Promise<TerminalResult> {
   let {
     timer,
@@ -254,7 +285,7 @@ export async function finishRun(input: TerminalInput): Promise<TerminalResult> {
     resolvedSession,
     name,
     artifactsPersisted,
-    workerEvents,
+    mcpRuling,
   } = input
   if (timer) clearTimeout(timer)
   if (checkpointTimer) clearInterval(checkpointTimer)
@@ -474,32 +505,10 @@ export async function finishRun(input: TerminalInput): Promise<TerminalResult> {
   ;({ status, failureKind, error } = confinementPrecedence.outcome)
   preConfinement = confinementPrecedence.preConfinement
 
-  const recordedMcp = db()
-    .query('SELECT mcp_connected, mcp_error FROM run WHERE id=?')
-    .get(claim.id) as {
-    mcp_connected: number | null
-    mcp_error: string | null
-  } | null
-  const finalMcp =
-    mcpMode && ownMcpServer
-      ? decideFinalMcpConnection({
-          requiredServer: ownMcpServer,
-          mcpMode,
-          preLaunchEvidence: recordedMcp
-            ? {
-                server: ownMcpServer,
-                connected:
-                  recordedMcp.mcp_connected === null ? null : recordedMcp.mcp_connected === 1,
-                error: recordedMcp.mcp_error,
-              }
-            : null,
-          workerEvents,
-          outcome: { status, error, failureKind },
-        })
-      : null
-  if (finalMcp) {
-    ;({ status, error, failureKind } = finalMcp.outcome)
-  }
+  ;({ status, error, failureKind } = applyRequiredMcpFailure(
+    { status, error, failureKind },
+    mcpRuling,
+  ))
 
   try {
     const declared = (contract?.blockers ?? []).map((b) => ({
@@ -556,7 +565,7 @@ export async function finishRun(input: TerminalInput): Promise<TerminalResult> {
     parsedReview &&
     parsedReview.provenance.could_not_verify.length === 0 &&
     (parsedReview.provenance.substitutes.length > 0 ||
-      (mcpMode !== null && finalMcp?.connected !== 1) ||
+      (mcpMode !== null && mcpRuling?.connected !== 1) ||
       Boolean(provenanceWrongProjectTool))
   const localMachineId = machineId()
   const writeTerminalRow = () =>
@@ -593,11 +602,7 @@ export async function finishRun(input: TerminalInput): Promise<TerminalResult> {
           claim.id,
         )
 
-      if (finalMcp) {
-        db()
-          .query('UPDATE run SET mcp_connected=?, mcp_error=? WHERE id=?')
-          .run(finalMcp.connected, finalMcp.error, claim.id)
-      }
+      recordTerminalMcpEvidence(db(), claim.id, mcpRuling)
 
       /**
        * The facts, recorded without anyone's opinion.

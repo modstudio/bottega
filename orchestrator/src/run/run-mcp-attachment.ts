@@ -94,7 +94,7 @@ export type McpToolProbeRuling = {
   failedConnection: McpConnection | null
 }
 
-export type WorkerMcpEvent = {
+type WorkerMcpEvent = {
   kind: string
   toolKind?: string
   server?: string
@@ -103,32 +103,21 @@ export type WorkerMcpEvent = {
   error?: string
 }
 
-export type FinalMcpFacts<FailureKind extends string> = {
+type FinalMcpFacts = {
   requiredServer: string
   mcpMode: McpMode | null
   preLaunchEvidence: McpConnection | null
   workerEvents: readonly WorkerMcpEvent[]
-  outcome: {
-    status: string
-    error: string | null
-    failureKind: FailureKind | null
-  }
 }
 
-export type FinalMcpRuling<FailureKind extends string> = {
+type FinalMcpRuling = {
   connected: 0 | 1 | null
   error: string | null
-  outcome: {
-    status: string
-    error: string | null
-    failureKind: FailureKind | 'mcp_unverified' | null
-  }
+  requiredFailure: string | null
 }
 
 /** Decide final connection evidence from the worker's structured stream, never its prose. */
-export function decideFinalMcpConnection<FailureKind extends string>(
-  facts: FinalMcpFacts<FailureKind>,
-): FinalMcpRuling<FailureKind> {
+export function decideFinalMcpConnection(facts: FinalMcpFacts): FinalMcpRuling {
   const calls = facts.workerEvents.filter(
     (event) =>
       event.kind === 'tool' && event.toolKind === 'mcp' && event.server === facts.requiredServer,
@@ -138,26 +127,25 @@ export function decideFinalMcpConnection<FailureKind extends string>(
     return {
       connected: 1,
       error: `verified: worker tool call ${facts.requiredServer}.${completed.title ?? 'unknown'}`,
-      outcome: facts.outcome,
+      requiredFailure: null,
     }
   }
   const failed = calls.find((event) => event.status === 'failed')
   if (failed) {
     const reason = failed.error ?? 'MCP tool call failed'
-    const outcome =
-      facts.mcpMode === 'require' && facts.outcome.status === 'ok'
-        ? {
-            status: 'failed',
-            failureKind: 'mcp_unverified' as const,
-            error: `MCP server '${facts.requiredServer}' was unreachable to the worker: ${reason}`,
-          }
-        : facts.outcome
-    return { connected: 0, error: reason, outcome }
+    return {
+      connected: 0,
+      error: reason,
+      requiredFailure:
+        facts.mcpMode === 'require'
+          ? `MCP server '${facts.requiredServer}' was unreachable to the worker: ${reason}`
+          : null,
+    }
   }
   return {
     connected: facts.preLaunchEvidence?.connected === false ? 0 : null,
     error: facts.preLaunchEvidence?.error ?? null,
-    outcome: facts.outcome,
+    requiredFailure: null,
   }
 }
 
