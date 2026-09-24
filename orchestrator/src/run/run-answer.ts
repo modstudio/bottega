@@ -42,6 +42,20 @@ type RunAnswerHelpers = {
 }
 type RunFlags = { detach: boolean; follow: boolean; quiet: boolean }
 
+export function answerRunLivenessRefusal(
+  root: { status: string; evidence_excluded: string | null },
+  open: readonly { owner_status: string }[],
+): string | null {
+  if (root.evidence_excluded !== null) return 'voided'
+  if (
+    open.some(
+      (question) => question.owner_status === 'running' || question.owner_status === 'asking',
+    )
+  )
+    return null
+  return open[0]?.owner_status ?? null
+}
+
 async function refuseUserRuling(
   project: string | null,
   launchKey: string | null,
@@ -286,9 +300,10 @@ export async function answerRun(
 
   // A ruling resumes a live chain. Stopped, failed, stale and voided roots
   // used to record the answer and spawn a new turn, which is retry's job.
-  if (row.evidence_excluded !== null || (row.status !== 'running' && row.status !== 'asking')) {
+  const livenessRefusal = answerRunLivenessRefusal(row, open)
+  if (livenessRefusal !== null) {
     throw new Error(
-      `run ${id} is ${row.evidence_excluded !== null ? 'voided' : row.status}. ` +
+      `run ${id} is ${livenessRefusal}. ` +
         'invariant: a ruling resumes a live chain; a terminal chain is retried or abandoned. ' +
         `orch retry ${id} --agent <name> (carries the recorded ruling) or orch abandon ${id}`,
     )

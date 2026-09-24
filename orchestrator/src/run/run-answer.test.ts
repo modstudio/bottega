@@ -8,7 +8,7 @@ import { assertWorkerText, readMessageText, readWorkerFile } from '../cli/args.t
 import { rulingPrompt } from '../contract/contract.ts'
 import { db } from '../database/db.ts'
 import { packedResumePrompt } from './run.ts'
-import { answerRun, retryRun } from './run-answer.ts'
+import { answerRun, answerRunLivenessRefusal, retryRun } from './run-answer.ts'
 import { continueRun } from './run-control.ts'
 
 const trackResidue = trackedTestResidue()
@@ -29,6 +29,42 @@ const helpers = {
 const flags = { detach: true, follow: false, quiet: true }
 const retry = (id: number, options: { agent?: string; model?: string } = {}) =>
   retryRun(id, { ...options, flags }, helpers)
+
+describe('answer run liveness', () => {
+  test('a continuation child asking under an ok root proceeds', () => {
+    expect(
+      answerRunLivenessRefusal({ status: 'ok', evidence_excluded: null }, [
+        { owner_status: 'asking' },
+      ]),
+    ).toBeNull()
+  })
+
+  test('a voided root refuses', () => {
+    expect(
+      answerRunLivenessRefusal(
+        { status: 'asking', evidence_excluded: 'voided with orch score --void' },
+        [{ owner_status: 'asking' }],
+      ),
+    ).toBe('voided')
+  })
+
+  test('all terminal owners refuse with an owner status', () => {
+    expect(
+      answerRunLivenessRefusal({ status: 'running', evidence_excluded: null }, [
+        { owner_status: 'failed' },
+        { owner_status: 'stopped' },
+      ]),
+    ).toBe('failed')
+  })
+
+  test('a root that is itself asking proceeds', () => {
+    expect(
+      answerRunLivenessRefusal({ status: 'asking', evidence_excluded: null }, [
+        { owner_status: 'asking' },
+      ]),
+    ).toBeNull()
+  })
+})
 
 function insert(status: string, job = 'file-question'): number {
   return (
@@ -200,9 +236,9 @@ test('answer says an existing ruling stuck and reports the current status', asyn
   ).rejects.toThrow('has already been ruled on')
 })
 
-test('answer delivers a child turn live ruling without resuming the root', async () => {
-  const root = insert('running', 'implement')
-  const child = insert('running', 'implement')
+test('answer delivers an asking child ruling under an ok root without resuming the root', async () => {
+  const root = insert('ok', 'implement')
+  const child = insert('asking', 'implement')
   db()
     .query('UPDATE run SET session_id=?,vendor_session=? WHERE id=?')
     .run('orch-test-session', 'vendor', root)
