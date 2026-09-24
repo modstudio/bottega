@@ -1,7 +1,7 @@
 import { expect, test } from 'bun:test'
 import type { HostedTask } from './hosted-tasks.ts'
-import { confirmSoftDelete } from './hosted-tasks.ts'
-import { confirmForeignTaskPrune, selectForeignHostedTasks } from './task-prune-foreign.ts'
+import { confirmCount } from './hosted-tasks.ts'
+import { selectForeignHostedTasks } from './task-prune-foreign.ts'
 
 const task = (key: string, project: string, source: HostedTask['source'] = 'mcp'): HostedTask => ({
   id: `id-${key}`,
@@ -96,10 +96,8 @@ test('foreign task selection shares push space rules and reports own-space prese
   ).toEqual([selected[0]!])
 })
 
-test('foreign prune requires its exact count and the hosted bulk gate still guards multiple rows', () => {
-  expect(() => confirmForeignTaskPrune(1)).toThrow('--confirm 1')
-  expect(() => confirmForeignTaskPrune(1, 0)).toThrow('--confirm 1')
-  expect(() => confirmForeignTaskPrune(1, 1)).not.toThrow()
-  expect(() => confirmSoftDelete(2, 1)).toThrow('confirmation count 2')
-  expect(() => confirmSoftDelete(2, 2)).not.toThrow()
+test('foreign prune uses the strict hosted confirmation policy', () => {
+  expect(() => confirmCount(1, undefined, 'exact-always')).toThrow('confirmation count 1')
+  expect(() => confirmCount(1, 0, 'exact-always')).toThrow('confirmation count 1')
+  expect(() => confirmCount(1, 1, 'exact-always')).not.toThrow()
 })

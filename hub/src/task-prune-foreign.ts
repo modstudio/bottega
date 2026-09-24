@@ -1,5 +1,5 @@
 import type { HostedTaskPresencePair } from './hosted-task-prune.ts'
-import type { HostedTask } from './hosted-tasks.ts'
+import { confirmCount, type HostedTask } from './hosted-tasks.ts'
 import { projects } from './projects.ts'
 import {
   hostedDeleteTasks,
@@ -44,11 +44,6 @@ export function selectForeignHostedTasks(
   })
 }
 
-export function confirmForeignTaskPrune(count: number, confirmation?: number) {
-  if (confirmation !== count)
-    throw new Error(`refusing to prune ${count} tasks without --confirm ${count}`)
-}
-
 type Options = {
   dryRun?: boolean
   confirmation?: number
@@ -76,7 +71,7 @@ export async function pruneForeignHostedTasks(options: Options = {}) {
   })
   if (options.dryRun)
     return { active_space_id: identity.activeSpaceId, tasks: selected, deleted: null }
-  confirmForeignTaskPrune(selected.length, options.confirmation)
+  confirmCount(selected.length, options.confirmation, 'exact-always')
   const deleted = await hostedDeleteTasks(
     selected.map((task) => task.id),
     options.confirmation,

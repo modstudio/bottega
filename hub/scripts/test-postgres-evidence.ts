@@ -811,6 +811,24 @@ try {
     ])
     if (presence.present.length !== 1 || presence.refused[0]?.reason !== 'not-a-member')
       throw new Error('task presence did not distinguish member and non-member spaces')
+    await softDeleteHostedTasks(actorUrl, membershipIdentity, [pruneId]).then(
+      () => {
+        throw new Error('one-task prune accepted missing confirmation')
+      },
+      (error) => {
+        if (!(error instanceof Error) || !error.message.includes('confirmation count 1'))
+          throw error
+      },
+    )
+    await softDeleteHostedTasks(actorUrl, membershipIdentity, [pruneId], 0).then(
+      () => {
+        throw new Error('one-task prune accepted mismatched confirmation')
+      },
+      (error) => {
+        if (!(error instanceof Error) || !error.message.includes('confirmation count 1'))
+          throw error
+      },
+    )
     const deleted = await softDeleteHostedTasks(actorUrl, membershipIdentity, [pruneId, guardId], 1)
     if (
       deleted.tasks !== 1 ||

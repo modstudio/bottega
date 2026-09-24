@@ -1,7 +1,7 @@
 import { beforeAll, describe, expect, test } from 'bun:test'
 import { resetFixtureStore } from '../test/run-fixtures.ts'
 import { db, writeTransaction } from './db.ts'
-import { confirmSoftDelete, mirrorCollisionDecision } from './hosted-tasks.ts'
+import { confirmCount, mirrorCollisionDecision } from './hosted-tasks.ts'
 import { createTask } from './task.ts'
 import { taskApi } from './task-api.ts'
 import { applyHostedTaskChanges } from './task-cache.ts'
@@ -211,10 +211,13 @@ describe('hosted-only task safety', () => {
     expect(pruned).toBeFalse()
   })
 
-  test('multi-row soft deletes require the exact confirmation count', () => {
-    expect(() => confirmSoftDelete(2)).toThrow('confirmation count 2')
-    expect(() => confirmSoftDelete(2, 1)).toThrow('confirmation count 2')
-    expect(() => confirmSoftDelete(2, 2)).not.toThrow()
+  test('soft deletes apply their declared confirmation policy', () => {
+    expect(() => confirmCount(1, undefined, 'exact-always')).toThrow('confirmation count 1')
+    expect(() => confirmCount(1, 0, 'exact-always')).toThrow('confirmation count 1')
+    expect(() => confirmCount(1, 1, 'exact-always')).not.toThrow()
+    expect(() => confirmCount(1, undefined, 'bulk-only')).not.toThrow()
+    expect(() => confirmCount(2, 1, 'bulk-only')).toThrow('confirmation count 2')
+    expect(() => confirmCount(2, 2, 'bulk-only')).not.toThrow()
   })
 
   test('the task API refuses real dependencies under the test runner', async () => {

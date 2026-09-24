@@ -1,7 +1,7 @@
 import type { SQL } from 'bun'
 import type { TenantPrincipal } from '../../shared/record/tenant.ts'
 import { hostedTaskRelationships } from './hosted-task-reference.ts'
-import { confirmSoftDelete, type TaskIdentity, withHostedTenant } from './hosted-tasks.ts'
+import { confirmCount, type TaskIdentity, withHostedTenant } from './hosted-tasks.ts'
 
 export type HostedTaskPresencePair = { space_id: string; key: string }
 
@@ -44,7 +44,8 @@ async function softDeleteChildren(
   taskKeys: string[],
 ) {
   const counts: Record<string, number> = {}
-  for (const relationship of hostedTaskRelationships.slice(0, 3)) {
+  for (const relationship of hostedTaskRelationships) {
+    if (relationship.onTaskDelete !== 'soft-delete-child') continue
     const deleted = rows<{ id: string }>(
       await tx`UPDATE ${tx.unsafe(relationship.table)} SET deleted_at=now(),updated_at=now()
         WHERE space_id=${identity.spaceId}::uuid AND deleted_at IS NULL AND
@@ -58,6 +59,16 @@ async function softDeleteChildren(
   return counts
 }
 
+async function clearIncomingTaskLinks(tx: SQL, identity: TenantPrincipal, taskIds: string[]) {
+  for (const relationship of hostedTaskRelationships) {
+    if (relationship.onTaskDelete !== 'clear-incoming') continue
+    await tx`UPDATE ${tx.unsafe(relationship.table)}
+      SET ${tx.unsafe(relationship.idColumn)}=NULL,updated_at=now()
+      WHERE space_id=${identity.spaceId}::uuid AND
+        ${tx.unsafe(relationship.idColumn)} IN ${tx(taskIds)}`
+  }
+}
+
 export async function softDeleteHostedTasks(
   url: string,
   identity: TaskIdentity,
@@ -66,22 +77,19 @@ export async function softDeleteHostedTasks(
 ) {
   return withHostedTenant(url, identity, async (tx) => {
     if (!taskIds.length) {
-      confirmSoftDelete(0, confirmation)
+      confirmCount(0, confirmation, 'exact-always')
       return { tasks: 0, comments: 0, documents: 0, statusEvents: 0 }
     }
     const found = rows<{ id: string; key: string }>(
       await tx`SELECT id,key FROM hub_task WHERE space_id=${identity.spaceId}::uuid
         AND id IN ${tx(taskIds)} AND deleted_at IS NULL FOR UPDATE`,
     )
-    confirmSoftDelete(found.length, confirmation)
+    confirmCount(found.length, confirmation, 'exact-always')
     if (!found.length) return { tasks: 0, comments: 0, documents: 0, statusEvents: 0 }
     const ids = found.map((row) => row.id)
     const keys = found.map((row) => row.key)
     const children = await softDeleteChildren(tx, identity, ids, keys)
-    await tx`UPDATE hub_task SET parent_id=NULL,updated_at=now()
-      WHERE space_id=${identity.spaceId}::uuid AND parent_id IN ${tx(ids)}`
-    await tx`UPDATE hub_note SET promoted_task_id=NULL,updated_at=now()
-      WHERE space_id=${identity.spaceId}::uuid AND promoted_task_id IN ${tx(ids)}`
+    await clearIncomingTaskLinks(tx, identity, ids)
     const tasks = rows<{ id: string }>(
       await tx`UPDATE hub_task SET deleted_at=now(),updated_at=now()
         WHERE space_id=${identity.spaceId}::uuid AND id IN ${tx(ids)} RETURNING id`,
