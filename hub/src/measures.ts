@@ -9,6 +9,7 @@ export type MeasureScope =
   | { kind: 'space' }
   | { kind: 'project'; project: string }
   | { kind: 'person'; userId: string; project?: string }
+  | { kind: 'members'; userIds: string[] }
 
 export type MeasureInterval = {
   source: string
@@ -90,12 +91,16 @@ type SharedMeasures = {
   cost: Cost
 }
 
-type PersonMeasures = SharedMeasures & { scope: 'person' }
-type SpaceOrProjectMeasures = SharedMeasures & {
-  scope: 'space' | 'project'
+type PersonMeasures =
+  | (SharedMeasures & { scope: 'person' })
+  | (SharedMeasures & { scope: 'members' })
+type AggregateMeasures = SharedMeasures & {
   shipped: Shipped
   cycleTime?: CycleTime
 }
+type SpaceOrProjectMeasures =
+  | (AggregateMeasures & { scope: 'space' })
+  | (AggregateMeasures & { scope: 'project' })
 export type Measures = PersonMeasures | SpaceOrProjectMeasures
 
 const at = (iso: string) => new Date(iso).getTime()
@@ -106,12 +111,13 @@ function inScope(interval: MeasureInterval, scope: MeasureScope): boolean {
     return (
       interval.userId === scope.userId && (!scope.project || interval.project === scope.project)
     )
+  if (scope.kind === 'members') return !!interval.userId && scope.userIds.includes(interval.userId)
   return true
 }
 
 function eventInScope(event: MeasureStatusEvent, scope: MeasureScope): boolean {
   if (scope.kind === 'project') return event.project === scope.project
-  return scope.kind !== 'person'
+  return scope.kind !== 'person' && scope.kind !== 'members'
 }
 
 function clipSpan(start: number, end: number, open: number, from: number, to: number): Span | null {
@@ -353,7 +359,7 @@ export function computeMeasures(
     })
   const orch = spans.filter((row) => row.interval.source === 'orch')
   const claude = spans.filter((row) => row.interval.source === 'claude')
-  const person = scope.kind === 'person'
+  const person = scope.kind === 'person' || scope.kind === 'members'
   const events = rows.events.filter((event) => eventInScope(event, scope))
   const shared: SharedMeasures = {
     hoursRunning: hoursRunningOf(spans),
@@ -361,7 +367,7 @@ export function computeMeasures(
     sessionTime: sessionTimeOf(claude, orch, person),
     cost: costOf(orch, person),
   }
-  if (person) return { scope: 'person', ...shared }
+  if (person) return { scope: scope.kind, ...shared }
   const cycleTime = cycleTimeOf(rows, events, from, to)
   return {
     scope: scope.kind,

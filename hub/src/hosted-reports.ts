@@ -43,9 +43,9 @@ const TIME_ZONES = new Set(Intl.supportedValuesOf('timeZone'))
 
 export type HostedReportSubscription = {
   id: string
-  scope_kind: 'space' | 'project' | 'person'
+  scope_kind: 'space' | 'project' | 'members'
   project_name: string | null
-  person_user_id: string | null
+  members: HostedReportMember[]
   cadence: 'daily' | 'weekly'
   hour: number
   weekday: Weekday | null
@@ -63,10 +63,12 @@ export type HostedReportRecipient = {
   email: string
 }
 
+export type HostedReportMember = HostedReportRecipient
+
 type ReportSubscriptionScopeInput =
   | { kind: 'space' }
   | { kind: 'project'; project: string }
-  | { kind: 'person'; userId?: string }
+  | { kind: 'members'; userIds: string[] }
 
 export type ReportSubscriptionWriteInput = {
   scope: ReportSubscriptionScopeInput
@@ -78,19 +80,12 @@ export type ReportSubscriptionWriteInput = {
   enabled?: boolean
 }
 
-export type ReportSubscriptionUpdateInput = {
-  cadence: string
-  hour: number
-  weekday?: string | null
-  zone: string
-  enabled: boolean
-  scope?: never
-}
+export type ReportSubscriptionUpdateInput = ReportSubscriptionWriteInput & { enabled: boolean }
 
 type PlannedReportSubscription = {
   scope_kind: HostedReportSubscription['scope_kind']
   project_name: string | null
-  person_user_id: string | null
+  member_user_ids: string[]
   cadence: HostedReportSubscription['cadence']
   hour: number
   weekday: Weekday | null
@@ -103,7 +98,6 @@ type RawSubscription = {
   id: string
   scope_kind: HostedReportSubscription['scope_kind']
   project_name: string | null
-  person_user_id: string | null
   cadence: HostedReportSubscription['cadence']
   hour: string | number
   weekday: Weekday | null
@@ -118,7 +112,7 @@ function asSubscription(row: RawSubscription): HostedReportSubscription {
     id: row.id,
     scope_kind: row.scope_kind,
     project_name: row.project_name,
-    person_user_id: row.person_user_id,
+    members: [],
     cadence: row.cadence,
     hour: Number(row.hour),
     weekday: row.weekday,
@@ -136,24 +130,26 @@ export function assertReportSubscriptionFound<T>(row: T | null | undefined): T {
 }
 
 function planSubscriptionScope(
-  caller: { userId: string },
   scope: ReportSubscriptionScopeInput | undefined,
   projectNames: readonly string[],
-): Pick<PlannedReportSubscription, 'scope_kind' | 'project_name' | 'person_user_id'> {
-  if (!scope || (scope.kind !== 'space' && scope.kind !== 'project' && scope.kind !== 'person'))
-    throw new Error('scope must be space, a project in this space, or yourself')
+  memberUserIds: readonly string[],
+): Pick<PlannedReportSubscription, 'scope_kind' | 'project_name' | 'member_user_ids'> {
+  if (!scope || (scope.kind !== 'space' && scope.kind !== 'project' && scope.kind !== 'members'))
+    throw new Error('scope must be space, a project in this space, or members')
   if (scope.kind === 'project') {
     const project = scope.project.trim()
     if (!project) throw new Error('project scope requires a project')
     if (!projectNames.includes(project)) throw new Error(`project ${project} is not in this space`)
-    return { scope_kind: 'project', project_name: project, person_user_id: null }
+    return { scope_kind: 'project', project_name: project, member_user_ids: [] }
   }
-  if (scope.kind === 'person') {
-    const person = scope.userId ?? caller.userId
-    if (person !== caller.userId) throw new Error('person scope must be the calling member')
-    return { scope_kind: 'person', project_name: null, person_user_id: person }
+  if (scope.kind === 'members') {
+    const users = [...new Set(scope.userIds)]
+    if (!users.length) throw new Error('members scope requires at least one member')
+    if (users.some((userId) => !memberUserIds.includes(userId)))
+      throw new Error('every report member must be a member of this space')
+    return { scope_kind: 'members', project_name: null, member_user_ids: users }
   }
-  return { scope_kind: 'space', project_name: null, person_user_id: null }
+  return { scope_kind: 'space', project_name: null, member_user_ids: [] }
 }
 
 function planSubscriptionCadence(
@@ -174,15 +170,11 @@ function planSubscriptionCadence(
 }
 
 export function planReportSubscriptionUpdate(
-  input: ReportSubscriptionUpdateInput & Record<string, unknown>,
-): Pick<PlannedReportSubscription, 'cadence' | 'hour' | 'weekday' | 'zone' | 'enabled'> {
-  if ('scope' in input || 'recipientUserIds' in input)
-    throw new Error('scope cannot be changed; edit recipients separately')
-  const editable = new Set(['cadence', 'hour', 'weekday', 'zone', 'enabled'])
-  if (Object.keys(input).some((field) => !editable.has(field)))
-    throw new Error('only cadence, hour, weekday, zone and enabled can be changed')
-  if (typeof input.enabled !== 'boolean') throw new Error('enabled must be true or false')
-  return { ...planSubscriptionCadence(input), enabled: input.enabled }
+  caller: { userId: string; spaceId: string },
+  input: ReportSubscriptionUpdateInput,
+  facts: { projectNames: readonly string[]; memberUserIds: readonly string[] },
+): PlannedReportSubscription {
+  return planReportSubscription(caller, input, facts)
 }
 
 function cadenceFields(
@@ -201,13 +193,15 @@ export function planReportSubscription(
   input: ReportSubscriptionWriteInput,
   facts: { projectNames: readonly string[]; memberUserIds: readonly string[] },
 ): PlannedReportSubscription {
+  if (input.enabled !== undefined && typeof input.enabled !== 'boolean')
+    throw new Error('enabled must be true or false')
   const recipientUserIds = [...new Set(input.recipientUserIds ?? [caller.userId])]
   if (recipientUserIds.length === 0)
     throw new Error('a subscription requires at least one recipient')
   if (recipientUserIds.some((userId) => !facts.memberUserIds.includes(userId)))
     throw new Error('every recipient must be a member of this space')
   return {
-    ...planSubscriptionScope(caller, input.scope, facts.projectNames),
+    ...planSubscriptionScope(input.scope, facts.projectNames, facts.memberUserIds),
     ...planSubscriptionCadence(input),
     recipient_user_ids: recipientUserIds,
     enabled: input.enabled !== false,
@@ -304,7 +298,7 @@ export async function hostedReportCounts(url: string, identity: TaskIdentity) {
 }
 
 const subscriptionSelect = (tx: SQL, spaceId: string, id?: string) => tx`
-  SELECT s.id,s.scope_kind,s.project_name,s.person_user_id,s.cadence,s.hour,s.weekday,s.zone,
+  SELECT s.id,s.scope_kind,s.project_name,s.cadence,s.hour,s.weekday,s.zone,
     s.enabled,s.created_at,s.updated_at
   FROM hub_report_subscription s
   WHERE s.space_id=${spaceId}::uuid AND s.deleted_at IS NULL
@@ -320,14 +314,26 @@ export async function selectHostedReportSubscriptions(tx: SQL, spaceId: string) 
     FROM hub_report_subscription_recipient r JOIN "user" u ON u.id=r.user_id
     WHERE r.space_id=${spaceId}::uuid ORDER BY r.created_at,r.id`,
   )
+  const members = rows<HostedReportMember & { subscription_id: string }>(
+    await tx`SELECT m.id,m.subscription_id,m.user_id,u.name,u.email
+    FROM hub_report_subscription_member m JOIN "user" u ON u.id=m.user_id
+    WHERE m.space_id=${spaceId}::uuid ORDER BY m.created_at,m.id`,
+  )
   const bySubscription = new Map<string, HostedReportRecipient[]>()
   for (const { subscription_id, ...recipient } of recipients) {
     const current = bySubscription.get(subscription_id) ?? []
     current.push(recipient)
     bySubscription.set(subscription_id, current)
   }
+  const membersBySubscription = new Map<string, HostedReportMember[]>()
+  for (const { subscription_id, ...member } of members) {
+    const current = membersBySubscription.get(subscription_id) ?? []
+    current.push(member)
+    membersBySubscription.set(subscription_id, current)
+  }
   return subscriptions.map((subscription) => ({
     ...subscription,
+    members: membersBySubscription.get(subscription.id) ?? [],
     recipients: bySubscription.get(subscription.id) ?? [],
   }))
 }
@@ -362,11 +368,15 @@ export async function createHostedReportSubscription(
     })
     const id = newRecordId()
     await tx`INSERT INTO hub_report_subscription
-      (id,space_id,scope_kind,project_name,person_user_id,cadence,hour,weekday,zone,
+      (id,space_id,scope_kind,project_name,cadence,hour,weekday,zone,
        enabled,created_at,updated_at)
       VALUES (${id}::uuid,${identity.spaceId}::uuid,${planned.scope_kind},${planned.project_name},
-      ${planned.person_user_id}::uuid,${planned.cadence},${planned.hour},${planned.weekday},
-      ${planned.zone},${planned.enabled ? 1 : 0},now(),now())`
+      ${planned.cadence},${planned.hour},${planned.weekday},${planned.zone},
+      ${planned.enabled ? 1 : 0},now(),now())`
+    for (const userId of planned.member_user_ids)
+      await tx`INSERT INTO hub_report_subscription_member
+        (id,space_id,subscription_id,user_id,created_at)
+        VALUES (${newRecordId()}::uuid,${identity.spaceId}::uuid,${id}::uuid,${userId}::uuid,now())`
     for (const userId of planned.recipient_user_ids)
       await tx`INSERT INTO hub_report_subscription_recipient
         (id,space_id,subscription_id,user_id,created_at)
@@ -379,58 +389,41 @@ export async function updateHostedReportSubscription(
   url: string,
   identity: TaskIdentity,
   id: string,
-  input: ReportSubscriptionUpdateInput & Record<string, unknown>,
+  input: ReportSubscriptionUpdateInput,
 ) {
-  const planned = planReportSubscriptionUpdate(input)
   return tenant(url, identity, async (tx) => {
+    const projects = rows<{ name: string }>(
+      await tx`SELECT name FROM project WHERE space_id=${identity.spaceId}::uuid`,
+    )
+    const members = rows<{ user_id: string }>(
+      await tx`SELECT user_id FROM membership WHERE space_id=${identity.spaceId}::uuid`,
+    )
+    const planned = planReportSubscriptionUpdate(identity, input, {
+      projectNames: projects.map((row) => row.name),
+      memberUserIds: members.map((row) => row.user_id),
+    })
     assertReportSubscriptionFound(
       rows<{ id: string }>(
-        await tx`UPDATE hub_report_subscription SET cadence=${planned.cadence},hour=${planned.hour},
+        await tx`UPDATE hub_report_subscription SET scope_kind=${planned.scope_kind},
+        project_name=${planned.project_name},cadence=${planned.cadence},hour=${planned.hour},
         weekday=${planned.weekday},zone=${planned.zone},enabled=${planned.enabled ? 1 : 0},
         updated_at=now()
         WHERE space_id=${identity.spaceId}::uuid AND id=${id}::uuid AND deleted_at IS NULL
         RETURNING id`,
       )[0],
     )
-    return selectHostedReportSubscription(tx, identity.spaceId, id)
-  })
-}
-
-export async function addHostedReportSubscriptionRecipient(
-  url: string,
-  identity: TaskIdentity,
-  id: string,
-  userId: string,
-) {
-  return tenant(url, identity, async (tx) => {
-    await selectHostedReportSubscription(tx, identity.spaceId, id)
-    const member = rows<{ present: number }>(
-      await tx`SELECT 1 AS present FROM membership
-      WHERE space_id=${identity.spaceId}::uuid AND user_id=${userId}::uuid`,
-    )[0]
-    if (!member) throw new Error('recipient is not a member of this space')
-    await tx`INSERT INTO hub_report_subscription_recipient
-      (id,space_id,subscription_id,user_id,created_at)
-      VALUES (${newRecordId()}::uuid,${identity.spaceId}::uuid,${id}::uuid,${userId}::uuid,now())
-      ON CONFLICT(subscription_id,user_id) DO NOTHING`
-    return selectHostedReportSubscription(tx, identity.spaceId, id)
-  })
-}
-
-export async function removeHostedReportSubscriptionRecipient(
-  url: string,
-  identity: TaskIdentity,
-  id: string,
-  userId: string,
-) {
-  return tenant(url, identity, async (tx) => {
-    await selectHostedReportSubscription(tx, identity.spaceId, id)
-    const removed = rows<{ id: string }>(
-      await tx`DELETE FROM hub_report_subscription_recipient
-      WHERE space_id=${identity.spaceId}::uuid AND subscription_id=${id}::uuid
-        AND user_id=${userId}::uuid RETURNING id`,
-    )[0]
-    if (!removed) throw new Error('report subscription recipient not found')
+    await tx`DELETE FROM hub_report_subscription_member
+      WHERE space_id=${identity.spaceId}::uuid AND subscription_id=${id}::uuid`
+    for (const userId of planned.member_user_ids)
+      await tx`INSERT INTO hub_report_subscription_member
+        (id,space_id,subscription_id,user_id,created_at)
+        VALUES (${newRecordId()}::uuid,${identity.spaceId}::uuid,${id}::uuid,${userId}::uuid,now())`
+    await tx`DELETE FROM hub_report_subscription_recipient
+      WHERE space_id=${identity.spaceId}::uuid AND subscription_id=${id}::uuid`
+    for (const userId of planned.recipient_user_ids)
+      await tx`INSERT INTO hub_report_subscription_recipient
+        (id,space_id,subscription_id,user_id,created_at)
+        VALUES (${newRecordId()}::uuid,${identity.spaceId}::uuid,${id}::uuid,${userId}::uuid,now())`
     return selectHostedReportSubscription(tx, identity.spaceId, id)
   })
 }

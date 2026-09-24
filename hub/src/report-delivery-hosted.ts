@@ -15,6 +15,7 @@ import type {
   DeliveryStatus,
   ReportMailClient,
 } from './report-delivery.ts'
+import { renderReport } from './report-delivery.ts'
 
 type Environment = Record<string, string | undefined>
 type SesPort = { send(command: SendEmailCommand): Promise<unknown> }
@@ -63,7 +64,7 @@ export function hostedDeliveryRepository(databaseUrl: string): DeliveryRepositor
         ${`${period.from}/${period.to}`},${input.recipients ?? 'recipient unavailable'},'subscription',
         ${input.items ?? 0},${input.status},${input.reason},0,now(),${hostname()},
         ${value.subscriptionId}::uuid,${period.from}::timestamptz,${period.to}::timestamptz)
-        ON CONFLICT(subscription_id,period_end) DO NOTHING`
+        ON CONFLICT(subscription_id,period_end) WHERE test=0 DO NOTHING`
     })
   }
 
@@ -78,22 +79,27 @@ export function hostedDeliveryRepository(databaseUrl: string): DeliveryRepositor
         await client.close()
       }
     },
-    async load(value, period) {
+    async load(value, period, options) {
       const loaded = await withHostedTenant(databaseUrl, identity(value), async (tx) => {
         return rows<{
-          scope_kind: 'space' | 'project' | 'person'
+          scope_kind: 'space' | 'project' | 'members'
           project_name: string | null
-          person_user_id: string | null
-          person_name: string | null
+          member_ids: string[]
+          member_names: string[]
           space_name: string
         }>(
-          await tx`SELECT s.scope_kind,s.project_name,s.person_user_id,p.name AS person_name,
-            sp.name AS space_name
+          await tx`SELECT s.scope_kind,s.project_name,sp.name AS space_name,
+            COALESCE(array_agg(m.user_id ORDER BY m.created_at,m.id)
+              FILTER (WHERE m.user_id IS NOT NULL),'{}') AS member_ids,
+            COALESCE(array_agg(COALESCE(NULLIF(u.name,''),u.email) ORDER BY m.created_at,m.id)
+              FILTER (WHERE m.user_id IS NOT NULL),'{}') AS member_names
           FROM hub_report_subscription s
           JOIN space sp ON sp.id=s.space_id
-          LEFT JOIN "user" p ON p.id=s.person_user_id
+          LEFT JOIN hub_report_subscription_member m ON m.subscription_id=s.id AND m.space_id=s.space_id
+          LEFT JOIN "user" u ON u.id=m.user_id
           WHERE s.id=${value.subscriptionId}::uuid AND s.space_id=${value.spaceId}::uuid
-            AND s.enabled=1 AND s.deleted_at IS NULL`,
+            AND (${options?.includeDisabled ?? false} OR s.enabled=1) AND s.deleted_at IS NULL
+          GROUP BY s.id,sp.name`,
         )[0]
       })
       if (!loaded) throw new Error('report subscription is no longer enabled')
@@ -116,14 +122,14 @@ export function hostedDeliveryRepository(databaseUrl: string): DeliveryRepositor
       const scope =
         loaded.scope_kind === 'project'
           ? ({ kind: 'project', project: loaded.project_name! } as const)
-          : loaded.scope_kind === 'person'
-            ? ({ kind: 'person', userId: loaded.person_user_id! } as const)
+          : loaded.scope_kind === 'members'
+            ? ({ kind: 'members', userIds: loaded.member_ids } as const)
             : ({ kind: 'space' } as const)
       const scopeName =
         loaded.scope_kind === 'project'
           ? loaded.project_name!
-          : loaded.scope_kind === 'person'
-            ? loaded.person_name || 'Person'
+          : loaded.scope_kind === 'members'
+            ? loaded.member_names.join(', ')
             : loaded.space_name
       const recipientIdentity = identity(value, recipients[0]?.userId)
       const [measures, report] = await Promise.all([
@@ -159,7 +165,7 @@ export function hostedDeliveryRepository(databaseUrl: string): DeliveryRepositor
           VALUES (${id}::uuid,${value.spaceId}::uuid,now(),${`${period.from}/${period.to}`},
           ${input.recipients.map((recipient) => recipient.email).join(', ')},'subscription',${input.items},'pending',NULL,0,now(),${hostname()},
           ${value.subscriptionId}::uuid,${period.from}::timestamptz,${period.to}::timestamptz)
-          ON CONFLICT(subscription_id,period_end) DO NOTHING RETURNING id`,
+          ON CONFLICT(subscription_id,period_end) WHERE test=0 DO NOTHING RETURNING id`,
         )[0]
         if (!inserted) return null
         for (const recipient of input.recipients)
@@ -220,5 +226,93 @@ export function sesReportMailClient(
         }),
       )
     },
+  }
+}
+
+export async function sendHostedReportSubscriptionTest(
+  databaseUrl: string,
+  caller: { spaceId: string; userId: string },
+  subscriptionId: string,
+  options: { now?: Date; mail?: ReportMailClient } = {},
+) {
+  const now = options.now ?? new Date()
+  const loaded = await withHostedTenant(
+    databaseUrl,
+    caller,
+    async (tx) =>
+      rows<{
+        cadence: 'daily' | 'weekly'
+        hour: number
+        weekday: string | null
+        zone: string
+        created_at: string | Date
+        name: string
+        email: string
+      }>(
+        await tx`SELECT s.cadence,s.hour,s.weekday,s.zone,s.created_at,u.name,u.email
+      FROM hub_report_subscription s JOIN "user" u ON u.id=${caller.userId}::uuid
+      WHERE s.id=${subscriptionId}::uuid AND s.space_id=${caller.spaceId}::uuid
+        AND s.deleted_at IS NULL`,
+      )[0],
+  )
+  if (!loaded) throw new Error('report subscription not found')
+  const candidate: DeliveryCandidate = {
+    subscriptionId,
+    spaceId: caller.spaceId,
+    cadence: loaded.cadence,
+    hour: Number(loaded.hour),
+    weekday: loaded.weekday,
+    zone: loaded.zone,
+    createdAt: iso(loaded.created_at)!,
+    lastPeriodEnd: null,
+  }
+  const to = now.toISOString()
+  const period: DeliveryPeriod = {
+    from: new Date(
+      now.getTime() - (loaded.cadence === 'daily' ? 24 : 168) * 3_600_000,
+    ).toISOString(),
+    to,
+    key: to,
+  }
+  const sendId = newRecordId()
+  await withHostedTenant(databaseUrl, caller, async (tx) => {
+    await tx`INSERT INTO hub_send
+      (id,space_id,at,"window",recipients,projects,items,status,error,test,created_at,machine,
+       subscription_id,period_start,period_end)
+      VALUES (${sendId}::uuid,${caller.spaceId}::uuid,now(),${`${period.from}/${period.to}`},
+      ${loaded.email},'subscription',0,'pending',NULL,1,now(),${hostname()},
+      ${subscriptionId}::uuid,${period.from}::timestamptz,${period.to}::timestamptz)`
+    await tx`INSERT INTO hub_send_recipient
+      (id,space_id,send_id,user_id,name,email,created_at)
+      VALUES (${newRecordId()}::uuid,${caller.spaceId}::uuid,${sendId}::uuid,
+      ${caller.userId}::uuid,${loaded.name || loaded.email},${loaded.email},now())`
+  })
+  try {
+    const subscription = await hostedDeliveryRepository(databaseUrl).load(candidate, period, {
+      includeDisabled: true,
+    })
+    const rendered = renderReport(candidate, period, {
+      ...subscription,
+      recipients: [
+        {
+          userId: caller.userId,
+          name: loaded.name || loaded.email,
+          email: loaded.email,
+          isMember: true,
+        },
+      ],
+    })
+    await (options.mail ?? sesReportMailClient()).send({ ...rendered, to: [loaded.email] })
+    await withHostedTenant(databaseUrl, caller, async (tx) => {
+      await tx`UPDATE hub_send SET status='sent',items=${subscription.report.items.length},at=now()
+        WHERE id=${sendId}::uuid`
+    })
+    return { id: sendId, status: 'sent' as const, email: loaded.email }
+  } catch (cause) {
+    const reason = cause instanceof Error ? cause.message : String(cause)
+    await withHostedTenant(databaseUrl, caller, async (tx) => {
+      await tx`UPDATE hub_send SET status='failed',error=${reason},at=now() WHERE id=${sendId}::uuid`
+    })
+    throw new Error(reason)
   }
 }

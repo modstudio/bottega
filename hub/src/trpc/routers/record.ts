@@ -2,9 +2,7 @@ import { initTRPC, TRPCError } from '@trpc/server'
 import { z } from 'zod'
 import { hostedMeasurePeople, hostedMeasures } from '../../hosted-measures.ts'
 import {
-  addHostedReportSubscriptionRecipient,
   createHostedReportSubscription,
-  removeHostedReportSubscriptionRecipient,
   unsubscribeHostedReportSubscription,
   updateHostedReportSubscription,
 } from '../../hosted-reports.ts'
@@ -19,6 +17,7 @@ import {
 } from '../../hosted-work.ts'
 import { routingViewData } from '../../orch-transforms.ts'
 import { createRecordClient } from '../../record-client.ts'
+import { sendHostedReportSubscriptionTest } from '../../report-delivery-hosted.ts'
 import { duration, liveRowDisplay, runRowDisplay } from '../../run-display.ts'
 import { runListInput } from '../../run-list-input.ts'
 import { selectSnapshot } from '../../snapshot-selection.ts'
@@ -101,7 +100,7 @@ const subscriptionCadenceInput = z
 const subscriptionScope = z.discriminatedUnion('kind', [
   z.object({ kind: z.literal('space') }).strict(),
   z.object({ kind: z.literal('project'), project: z.string().min(1).max(64) }).strict(),
-  z.object({ kind: z.literal('person') }).strict(),
+  z.object({ kind: z.literal('members'), userIds: z.array(uuid).min(1) }).strict(),
 ])
 
 function optionalSnapshot<T extends { machineId: string; takenAt: string }>(
@@ -401,7 +400,13 @@ export const recordRouter = t.router({
       return createHostedReportSubscription(recordDatabaseUrl(), identity, input)
     }),
   updateReportSubscription: t.procedure
-    .input(subscriptionCadenceInput.extend({ id: uuid }))
+    .input(
+      subscriptionCadenceInput.extend({
+        id: uuid,
+        scope: subscriptionScope,
+        recipientUserIds: z.array(uuid).min(1),
+      }),
+    )
     .mutation(async ({ ctx, input }) => {
       const { identity } = await hostedIdentity(ctx)
       const { id, ...update } = input
@@ -413,27 +418,11 @@ export const recordRouter = t.router({
       const { identity } = await hostedIdentity(ctx)
       return unsubscribeHostedReportSubscription(recordDatabaseUrl(), identity, input.id)
     }),
-  addReportSubscriptionRecipient: t.procedure
-    .input(z.object({ id: uuid, userId: uuid }).strict())
+  sendReportSubscriptionTest: t.procedure
+    .input(z.object({ id: uuid }).strict())
     .mutation(async ({ ctx, input }) => {
       const { identity } = await hostedIdentity(ctx)
-      return addHostedReportSubscriptionRecipient(
-        recordDatabaseUrl(),
-        identity,
-        input.id,
-        input.userId,
-      )
-    }),
-  removeReportSubscriptionRecipient: t.procedure
-    .input(z.object({ id: uuid, userId: uuid }).strict())
-    .mutation(async ({ ctx, input }) => {
-      const { identity } = await hostedIdentity(ctx)
-      return removeHostedReportSubscriptionRecipient(
-        recordDatabaseUrl(),
-        identity,
-        input.id,
-        input.userId,
-      )
+      return sendHostedReportSubscriptionTest(recordDatabaseUrl(), identity, input.id)
     }),
   task: t.procedure
     .input(z.object({ key: z.string().min(1).max(64), spaceId: uuid.optional() }))

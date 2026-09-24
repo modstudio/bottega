@@ -122,6 +122,7 @@ export async function hostedGatherReport(
           ? (scope.project ?? null)
           : null
     const person = scope.kind === 'person' ? scope.userId : null
+    const members = scope.kind === 'members' ? scope.userIds : null
     const reportRows = rows<RawReportRow>(
       await tx`
       SELECT i.space_id,t.id AS task_id,i.task_key,i.project_name,i.start_at,i.end_at,i.open,i.vendor_tokens,
@@ -133,6 +134,7 @@ export async function hostedGatherReport(
       WHERE i.start_at < ${period.to}::timestamptz AND i.end_at >= ${period.from}::timestamptz
         AND (${project}::text IS NULL OR COALESCE(t.project,i.project_name)=${project})
         AND (${person}::uuid IS NULL OR i.user_id=${person}::uuid)
+        AND (${members}::uuid[] IS NULL OR i.user_id = ANY(${members}::uuid[]))
       ORDER BY i.start_at`,
     ).map((row) => ({
       ...row,

@@ -11,6 +11,12 @@ function flagOf(argv: string[], name: string) {
   return i >= 0 ? argv[i + 1] : undefined
 }
 
+function flagsOf(argv: string[], name: string) {
+  return argv.flatMap((value, index) =>
+    value === `--${name}` && argv[index + 1] ? [argv[index + 1]!] : [],
+  )
+}
+
 async function reportPush(dryRun: boolean) {
   const result = await pushReports({ dryRun })
   console.log(JSON.stringify(result, null, 2))
@@ -31,8 +37,8 @@ async function reportList(json: boolean) {
     const scope =
       row.scope_kind === 'project'
         ? `project ${row.project_name}`
-        : row.scope_kind === 'person'
-          ? `person ${row.person_user_id}`
+        : row.scope_kind === 'members'
+          ? `members ${row.members.map((member) => member.user_id).join(',')}`
           : 'space'
     const when =
       row.cadence === 'weekly'
@@ -49,9 +55,9 @@ function subscribeScope(argv: string[]) {
   if (kind === 'space') return { kind: 'space' as const }
   if (kind === 'project')
     return { kind: 'project' as const, project: flagOf(argv, 'project') ?? '' }
-  if (kind === 'person') return { kind: 'person' as const }
+  if (kind === 'members') return { kind: 'members' as const, userIds: flagsOf(argv, 'member') }
   throw new Error(
-    'usage: hub report subscribe --scope space|project|person [--project NAME] --cadence daily|weekly --hour N [--day monday] --zone AREA/CITY [--recipient USER_ID]',
+    'usage: hub report subscribe --scope space|project|members [--project NAME] [--member USER_ID] --cadence daily|weekly --hour N [--day monday] --zone AREA/CITY [--recipient USER_ID]',
   )
 }
 

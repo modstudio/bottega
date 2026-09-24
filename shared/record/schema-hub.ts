@@ -12,6 +12,7 @@ import {
   text,
   timestamp,
   unique,
+  uniqueIndex,
   uuid,
 } from 'drizzle-orm/pg-core'
 import { spaceIdentity, tenantPolicies, user } from './schema.ts'
@@ -180,7 +181,6 @@ export const hubReportSubscription = pgTable.withRLS(
     spaceId: spaceIdentity(),
     scopeKind: text('scope_kind').notNull(),
     projectName: text('project_name'),
-    personUserId: uuid('person_user_id').references(() => user.id),
     cadence: text().notNull(),
     hour: integer().notNull(),
     weekday: text(),
@@ -193,13 +193,13 @@ export const hubReportSubscription = pgTable.withRLS(
   (table) => [
     check(
       'hub_report_subscription_scope_kind_check',
-      sql`${table.scopeKind} IN ('space','project','person')`,
+      sql`${table.scopeKind} IN ('space','project','members')`,
     ),
     check(
       'hub_report_subscription_scope_check',
-      sql`(${table.scopeKind} = 'space' AND ${table.projectName} IS NULL AND ${table.personUserId} IS NULL)
-        OR (${table.scopeKind} = 'project' AND ${table.projectName} IS NOT NULL AND ${table.personUserId} IS NULL)
-        OR (${table.scopeKind} = 'person' AND ${table.personUserId} IS NOT NULL AND ${table.projectName} IS NULL)`,
+      sql`(${table.scopeKind} = 'space' AND ${table.projectName} IS NULL)
+        OR (${table.scopeKind} = 'project' AND ${table.projectName} IS NOT NULL)
+        OR (${table.scopeKind} = 'members' AND ${table.projectName} IS NULL)`,
     ),
     check('hub_report_subscription_cadence_check', sql`${table.cadence} IN ('daily','weekly')`),
     check('hub_report_subscription_hour_check', sql`${table.hour} >= 0 AND ${table.hour} <= 23`),
@@ -211,6 +211,25 @@ export const hubReportSubscription = pgTable.withRLS(
     check('hub_report_subscription_zone_check', sql`char_length(${table.zone}) > 0`),
     check('hub_report_subscription_enabled_check', sql`${table.enabled} IN (0,1)`),
     ...tenantPolicies('hub_report_subscription', table.spaceId),
+  ],
+)
+
+export const hubReportSubscriptionMember = pgTable.withRLS(
+  'hub_report_subscription_member',
+  {
+    id: identity(),
+    spaceId: spaceIdentity(),
+    subscriptionId: uuid('subscription_id')
+      .notNull()
+      .references(() => hubReportSubscription.id),
+    userId: uuid('user_id')
+      .notNull()
+      .references(() => user.id),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull(),
+  },
+  (table) => [
+    unique('hub_report_subscription_member_unique').on(table.subscriptionId, table.userId),
+    ...tenantPolicies('hub_report_subscription_member', table.spaceId),
   ],
 )
 
@@ -255,7 +274,9 @@ export const hubSend = pgTable.withRLS(
   },
   (table) => [
     unique('hub_send_space_legacy_unique').on(table.spaceId, table.legacyLocalId),
-    unique('hub_send_subscription_period_unique').on(table.subscriptionId, table.periodEnd),
+    uniqueIndex('hub_send_subscription_period_unique')
+      .on(table.subscriptionId, table.periodEnd)
+      .where(sql`${table.test} = 0`),
     check('hub_send_status_check', sql`${table.status} IN ('pending','sent','skipped','failed')`),
     check(
       'hub_send_subscription_period_check',
