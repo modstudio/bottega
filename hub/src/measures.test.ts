@@ -426,7 +426,8 @@ describe('shipped and cycle time', () => {
     }
 
     const measures = computeMeasures(rows, WINDOW, { kind: 'space' })
-    if (measures.scope === 'person') throw new Error('expected space')
+    if (measures.scope === 'person' || measures.scope === 'members')
+      throw new Error('expected space')
     expect(measures.shipped.count).toBe(2)
     expect(measures.cycleTime?.n).toBe(2)
   })
