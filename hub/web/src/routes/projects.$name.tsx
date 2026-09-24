@@ -2,6 +2,7 @@ import { useMutation, useQuery } from '@tanstack/react-query'
 import { createFileRoute, useNavigate } from '@tanstack/react-router'
 import { Save, Trash2 } from 'lucide-react'
 import { useState } from 'react'
+import { PLATFORM_NAME } from '../../../../shared/brand.ts'
 import { type ProjectRow, queryClient, trpc } from '@/trpc/client'
 import { Button } from '@/ui/button/button'
 import { Checkbox } from '@/ui/checkbox/checkbox'
@@ -23,6 +24,13 @@ function settingsCommand(name: string, value: Record<string, unknown>) {
 
 function pretty(value: unknown) {
   return value === undefined ? '' : JSON.stringify(value, null, 2)
+}
+
+/** The settings patch holds only the keys whose field differs from the register. */
+function changedSettings(fields: [key: string, changed: boolean, value: unknown][]) {
+  return Object.fromEntries(
+    fields.filter(([, changed]) => changed).map(([key, , value]) => [key, value]),
+  )
 }
 
 function ProjectEditPage() {
@@ -138,15 +146,15 @@ function ProjectForm({ project }: { project: ProjectRow }) {
       return
     }
 
-    const settings: Record<string, unknown> = {}
-    if (managedContext !== initialManagedContext) settings.managedContext = managedContext
-    if (trunk !== initialTrunk) settings.trunk = trunk
-    if (JSON.stringify(prefixes) !== JSON.stringify(initialPrefixes))
-      settings.keyPrefixes = prefixes
-    if (color !== initialColor) settings.color = color
-    if (colorDark !== initialColorDark) settings.colorDark = colorDark
-    if (tracker !== pretty(project.settings.tracker)) settings.tracker = trackerValue
-    if (worktree !== pretty(project.settings.worktree)) settings.worktree = worktreeValue
+    const settings = changedSettings([
+      ['managedContext', managedContext !== initialManagedContext, managedContext],
+      ['trunk', trunk !== initialTrunk, trunk],
+      ['keyPrefixes', JSON.stringify(prefixes) !== JSON.stringify(initialPrefixes), prefixes],
+      ['color', color !== initialColor, color],
+      ['colorDark', colorDark !== initialColorDark, colorDark],
+      ['tracker', tracker !== pretty(project.settings.tracker), trackerValue],
+      ['worktree', worktree !== pretty(project.settings.worktree), worktreeValue],
+    ])
 
     save.mutate({
       name: project.name,
@@ -267,7 +275,7 @@ function ProjectForm({ project }: { project: ProjectRow }) {
         </FieldSection>
         <FieldSection
           title="Context"
-          description="Whether Bottega stores, lints, hydrates and injects this project's agent context."
+          description={`Whether ${PLATFORM_NAME} stores, lints, hydrates and injects this project's agent context.`}
         >
           <div className="space-y-5">
             <SettingBlock
@@ -280,7 +288,7 @@ function ProjectForm({ project }: { project: ProjectRow }) {
                     checked={managedContext}
                     onChange={(event) => setManagedContext(event.target.checked)}
                   />
-                  Managed by Bottega
+                  Managed by {PLATFORM_NAME}
                 </label>
               }
             />

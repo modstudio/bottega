@@ -69,12 +69,6 @@
     "score": 20
   },
   {
-    "file": "hub/web/src/routes/projects.$name.tsx",
-    "function": "submit",
-    "line": 81,
-    "score": 18
-  },
-  {
     "file": "hub/web/src/routes/runs.$id.tsx",
     "function": "RunDetailPage",
     "line": 30,
