@@ -1,13 +1,23 @@
 #!/usr/bin/env bun
 // concern: retrieval-search-cli
 /** Presents the stable semantic document-search contract. */
-import { search } from './index.ts'
+import { DocSearchOutputSchema } from '../../shared/orch-contract.ts'
+import { search } from './search.ts'
+import { endpointsFromEnvironment, probeEndpointStatuses } from './services/endpoints.ts'
 
 function usage(): never {
   throw new Error('usage: bun retrieval/src/search-cli.ts "<query>" [--k N] [--json]')
 }
 
 async function main(argv: string[]): Promise<void> {
+  if (argv.length === 1 && argv[0] === '--check') {
+    const statuses = await probeEndpointStatuses(endpointsFromEnvironment(process.env))
+    for (const status of statuses) {
+      console.log(`${status.kind} ${status.url} ${status.reachable ? 'reachable' : 'unreachable'}`)
+    }
+    if (statuses.some((status) => !status.reachable)) process.exitCode = 1
+    return
+  }
   const query = argv[0]
   if (!query || query.startsWith('--')) usage()
   let k = 5
@@ -21,7 +31,7 @@ async function main(argv: string[]): Promise<void> {
       k = Number(value)
     } else usage()
   }
-  const output = await search(query, k)
+  const output = DocSearchOutputSchema.parse(await search(query, k))
   if (json) {
     console.log(JSON.stringify(output))
     return

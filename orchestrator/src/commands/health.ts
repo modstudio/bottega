@@ -1,6 +1,7 @@
 // concern: cli
 /** Registers health reporting adapters. Must not own their behavior. */
 import type { Command } from 'commander'
+import { checkRetrieval } from '../doc/doc-search.ts'
 import { reclassifyFailuresCommand } from '../failure/failure-commands.ts'
 import { doctorCommand } from '../health/doctor.ts'
 import { blockersCommand, healthCommand } from '../health/health-commands.ts'
@@ -46,6 +47,7 @@ export function register(program: Command): void {
         pick,
         jobs: () => Object.keys(JOBS),
         acpRuntimeGaps,
+        retrievalCheck: checkRetrieval,
       })
     })
 }

@@ -24,7 +24,8 @@ export function endpointsFromEnvironment(environment: NodeJS.ProcessEnv): Retrie
 function refusal(kind: string, url: string, detail: string): Error {
   return new Error(
     `${kind} endpoint could not be established at ${url}: ${detail}. ` +
-      'Run `orch doctor` to check model-host reachability and retry.',
+      'Run `bin/retrieval-search --check` and retry. ' +
+      'Configure the endpoints with ORCH_EMBED_URL and ORCH_RERANK_URL.',
   )
 }
 
@@ -114,4 +115,18 @@ export async function probeEndpoints(
 ): Promise<void> {
   await embed(endpoints.embedUrl, ['retrieval endpoint probe'], fetcher)
   await rerank(endpoints.rerankUrl, 'retrieval endpoint probe', ['probe document'], fetcher)
+}
+
+export async function probeEndpointStatuses(
+  endpoints: RetrievalEndpoints,
+  fetcher: Fetch = fetch,
+): Promise<Array<{ kind: 'embedding' | 'reranking'; url: string; reachable: boolean }>> {
+  const probes = await Promise.allSettled([
+    embed(endpoints.embedUrl, ['retrieval endpoint probe'], fetcher),
+    rerank(endpoints.rerankUrl, 'retrieval endpoint probe', ['probe document'], fetcher),
+  ])
+  return [
+    { kind: 'embedding', url: endpoints.embedUrl, reachable: probes[0]?.status === 'fulfilled' },
+    { kind: 'reranking', url: endpoints.rerankUrl, reachable: probes[1]?.status === 'fulfilled' },
+  ]
 }

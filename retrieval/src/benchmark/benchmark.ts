@@ -4,7 +4,7 @@ import { access, readFile } from 'node:fs/promises'
 import { resolve } from 'node:path'
 import { queryDocument, RERANK_CANDIDATES } from '../contract.ts'
 import { type Chunk, chunkDocument, loadCorpus, splitChunksToModelLimit } from '../corpus/chunks.ts'
-import { search } from '../index.ts'
+import { search } from '../search.ts'
 import {
   embed,
   endpointsFromEnvironment,
@@ -12,31 +12,20 @@ import {
   rerank,
   tokenize,
 } from '../services/endpoints.ts'
+import { cosineTopK } from '../vector-ranking.ts'
 import { keywordRanking } from './keyword.ts'
 import { type Ranking, rankOfFirstLabel, scoreRankings } from './metrics.ts'
 import { CODE_QUERIES, DOC_QUERIES, type DocBenchmarkQuery, type LabeledQuery } from './queries.ts'
 
 const EMBED_BATCH_SIZE = 64
-function cosine(left: number[], right: number[]): number {
-  let dot = 0
-  let leftMagnitude = 0
-  let rightMagnitude = 0
-  for (let index = 0; index < left.length; index += 1) {
-    const leftValue = left[index] ?? 0
-    const rightValue = right[index] ?? 0
-    dot += leftValue * rightValue
-    leftMagnitude += leftValue * leftValue
-    rightMagnitude += rightValue * rightValue
-  }
-  const denominator = Math.sqrt(leftMagnitude) * Math.sqrt(rightMagnitude)
-  return denominator ? dot / denominator : 0
-}
 
 function rankByEmbedding(chunks: Chunk[], vectors: number[][], queryVector: number[]): Chunk[] {
-  return chunks
-    .map((chunk, index) => ({ chunk, score: cosine(vectors[index] ?? [], queryVector) }))
-    .sort((left, right) => right.score - left.score || left.chunk.id.localeCompare(right.chunk.id))
-    .map(({ chunk }) => chunk)
+  const byId = new Map(chunks.map((chunk) => [chunk.id, chunk]))
+  return cosineTopK(
+    chunks.map((chunk, index) => ({ id: chunk.id, vector: vectors[index] ?? [] })),
+    queryVector,
+    chunks.length,
+  ).map(({ id }) => byId.get(id)!)
 }
 
 async function embedBatches(url: string, documents: string[]): Promise<number[][]> {

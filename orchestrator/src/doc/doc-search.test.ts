@@ -1,6 +1,6 @@
 import { expect, test } from 'bun:test'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
-import { searchDocs } from './doc-search.ts'
+import { checkRetrieval, searchDocs } from './doc-search.ts'
 
 test('orch adapter parses the retrieval JSON contract', async () => {
   const output = {
@@ -39,4 +39,14 @@ test('orch adapter refuses malformed or failed retrieval output', async () => {
   await expect(
     searchDocs('meaning', 1, async () => ({ stdout: '', stderr: 'endpoint absent', exitCode: 1 })),
   ).rejects.toThrow('endpoint absent')
+})
+
+test('orch adapter checks retrieval through the same executable boundary', async () => {
+  const seen: string[][] = []
+  const output = await checkRetrieval(async (argv) => {
+    seen.push(argv)
+    return { stdout: 'embedding http://embed/v1 reachable\n', stderr: '', exitCode: 0 }
+  })
+  expect(seen).toEqual([['--check']])
+  expect(output.exitCode).toBe(0)
 })
