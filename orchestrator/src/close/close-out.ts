@@ -78,7 +78,7 @@ type ConversationKeepTreeHold =
 function conversationKeepTreeHold(rootId: number, now: string): ConversationKeepTreeHold {
   const rows = db()
     .query(
-      `SELECT job,keep_tree,keep_tree_until,keep_tree_reason,started_at FROM run
+      `SELECT job,keep_tree,keep_tree_until,keep_tree_reason,started_at,worktree FROM run
        WHERE id=? OR parent_run_id=? ORDER BY id`,
     )
     .all(rootId, rootId) as {
@@ -87,7 +87,9 @@ function conversationKeepTreeHold(rootId: number, now: string): ConversationKeep
     keep_tree_until: string | null
     keep_tree_reason: string | null
     started_at: string
+    worktree: string | null
   }[]
+  const treeExists = rows.some((row) => row.worktree !== null && existsSync(row.worktree))
   const expired: { held: false; expiredAt: string }[] = []
   for (const row of rows) {
     const decision = keepTreeHold({
@@ -98,9 +100,9 @@ function conversationKeepTreeHold(rootId: number, now: string): ConversationKeep
     })
     if (decision.held) {
       return landingTreeHoldDecision(
-        { job: row.job },
+        { job: row.job, treeExists },
         hookTreeHoldDecision(
-          { job: row.job },
+          { job: row.job, treeExists },
           {
             ...decision,
             reason: row.keep_tree_reason ?? 'explicit --keep-tree',
@@ -114,8 +116,8 @@ function conversationKeepTreeHold(rootId: number, now: string): ConversationKeep
   const hook = rows.some((row) => row.job === HOOK_TREE_JOB) ? HOOK_TREE_JOB : ''
   const landing = rows.some((row) => row.job === LANDING_TREE_JOB) ? LANDING_TREE_JOB : ''
   return landingTreeHoldDecision(
-    { job: landing },
-    hookTreeHoldDecision({ job: hook }, latest ?? { held: false as const }),
+    { job: landing, treeExists },
+    hookTreeHoldDecision({ job: hook, treeExists }, latest ?? { held: false as const }),
   )
 }
 

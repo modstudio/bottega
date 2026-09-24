@@ -67,10 +67,10 @@ export function landingTreeReleaseDecision(
 }
 
 export function landingTreeHoldDecision<T>(
-  row: { job: string },
+  row: { job: string; treeExists: boolean },
   ordinary: T,
 ): T | { held: true; until: null; reason: string } {
-  return row.job === LANDING_TREE_JOB
+  return row.job === LANDING_TREE_JOB && row.treeExists
     ? { held: true, until: null, reason: 'landing tree; remove with orch tree remove <path>' }
     : ordinary
 }

@@ -3,11 +3,24 @@ import {
   LANDING_TREE_JOB,
   landingTreeCommandBase,
   landingTreeCommandCapability,
+  landingTreeHoldDecision,
   landingTreeOpeningRefusal,
   landingTreeReleaseDecision,
 } from './landing-tree.ts'
 
 describe('landing-tree decisions', () => {
+  test('holds an existing landing tree and leaves an absent tree to its ordinary decision', () => {
+    const ordinary = { held: false as const }
+    expect(landingTreeHoldDecision({ job: LANDING_TREE_JOB, treeExists: true }, ordinary)).toEqual({
+      held: true,
+      until: null,
+      reason: 'landing tree; remove with orch tree remove <path>',
+    })
+    expect(landingTreeHoldDecision({ job: LANDING_TREE_JOB, treeExists: false }, ordinary)).toBe(
+      ordinary,
+    )
+  })
+
   test('names opening refusals and their remedies', () => {
     expect(landingTreeOpeningRefusal({ branch: null, seeds: [] })).toContain(
       'use a finished writer run',

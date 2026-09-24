@@ -12,12 +12,22 @@ import {
 describe('hook-tree lifecycle decisions', () => {
   test('holds hook trees without an expiry and leaves ordinary holds unchanged', () => {
     const ordinary = { held: false as const, expiredAt: '2026-09-16T00:00:00.000Z' }
-    expect(hookTreeHoldDecision({ job: HOOK_TREE_JOB }, ordinary)).toEqual({
+    expect(hookTreeHoldDecision({ job: HOOK_TREE_JOB, treeExists: true }, ordinary)).toEqual({
       held: true,
       until: null,
       reason: 'hook tree; remove with orch tree remove <path>',
     })
-    expect(hookTreeHoldDecision({ job: 'implement' }, ordinary)).toBe(ordinary)
+    expect(hookTreeHoldDecision({ job: HOOK_TREE_JOB, treeExists: false }, ordinary)).toBe(ordinary)
+    expect(hookTreeHoldDecision({ job: 'implement', treeExists: true }, ordinary)).toBe(ordinary)
+  })
+
+  test('does not change an explicit hold when a hook tree is absent', () => {
+    const explicit = {
+      held: true as const,
+      until: '2099-01-01T00:00:00.000Z',
+      reason: 'explicit --keep-tree',
+    }
+    expect(hookTreeHoldDecision({ job: HOOK_TREE_JOB, treeExists: false }, explicit)).toBe(explicit)
   })
 
   test('keeps hook trees out of sweep without changing ordinary runs', () => {

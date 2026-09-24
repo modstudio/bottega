@@ -10,16 +10,18 @@ export const HOOK_TREE_NOTICE_AFTER_MS = 7 * 24 * 60 * 60 * 1000
 
 export type HookTreeIdentity = { job: string }
 
+type HookTreeHoldFacts = HookTreeIdentity & { treeExists: boolean }
+
 function isHookTree(run: HookTreeIdentity): boolean {
   return run.job === HOOK_TREE_JOB
 }
 
 /** Hook trees are held indefinitely; bounded ordinary run holds remain unchanged. */
 export function hookTreeHoldDecision<T>(
-  run: HookTreeIdentity,
+  run: HookTreeHoldFacts,
   ordinary: T,
 ): T | { held: true; until: null; reason: string } {
-  return isHookTree(run)
+  return isHookTree(run) && run.treeExists
     ? { held: true, until: null, reason: 'hook tree; remove with orch tree remove <path>' }
     : ordinary
 }
