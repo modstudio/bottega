@@ -142,9 +142,10 @@ function finalWorkerMcpRuling(
   workerEvents: readonly StreamEvent[],
 ): ReturnType<typeof mcpAttachment.decideFinalMcpConnection> | null {
   if (!mcpMode || !requiredServer) return null
-  const recorded = db()
-    .query('SELECT mcp_connected, mcp_error FROM run WHERE id=?')
-    .get(runId) as { mcp_connected: number | null; mcp_error: string | null } | null
+  const recorded = db().query('SELECT mcp_connected, mcp_error FROM run WHERE id=?').get(runId) as {
+    mcp_connected: number | null
+    mcp_error: string | null
+  } | null
   return mcpAttachment.decideFinalMcpConnection({
     requiredServer,
     mcpMode,
