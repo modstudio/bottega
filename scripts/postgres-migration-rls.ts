@@ -21,7 +21,7 @@ type MigrationEvent =
 const identifier = `(?:"(?:[^"]|"")*"|[a-z_][a-z0-9_$]*)`
 const qualifiedIdentifier = String.raw`${identifier}(?:\s*\.\s*${identifier})?`
 const migrationEvent = new RegExp(
-  String.raw`\bALTER\s+TABLE\s+(?:ONLY\s+)?(${qualifiedIdentifier})\s+(NO\s+)?FORCE\s+ROW\s+LEVEL\s+SECURITY\b|\b(UPDATE)\s+(?:ONLY\s+)?(${qualifiedIdentifier})|\b(INSERT)\s+INTO\s+(${qualifiedIdentifier})|\b(DELETE)\s+FROM\s+(?:ONLY\s+)?(${qualifiedIdentifier})|\b(EXECUTE)\b`,
+  String.raw`\bALTER\s+TABLE\s+(?:ONLY\s+)?(${qualifiedIdentifier})\s+(NO\s+)?FORCE\s+ROW\s+LEVEL\s+SECURITY\b|\b(UPDATE)\s+(?:ONLY\s+)?(${qualifiedIdentifier})|\b(INSERT)\s+INTO\s+(${qualifiedIdentifier})|\b(DELETE)\s+FROM\s+(?:ONLY\s+)?(${qualifiedIdentifier})|(?:^|;|\bBEGIN\b|\bTHEN\b|\bELSE\b|\bLOOP\b)\s*(EXECUTE)\b`,
   'giu',
 )
 
@@ -61,31 +61,43 @@ function maskedSpanEnd(sql: string, start: number): number | null {
   return sql[start] === "'" ? singleQuotedStringEnd(sql, start) : null
 }
 
+type DollarQuoteStep = { end: number; nextDoDelimiter: string | null }
+
+function dollarQuoteStep(
+  sql: string,
+  start: number,
+  maskedPrefix: string,
+  doDelimiter: string | null,
+): DollarQuoteStep | null {
+  if (sql[start] !== '$') return null
+  const delimiter = sql.slice(start).match(/^\$(?:[a-z_][a-z0-9_]*)?\$/i)?.[0]
+  if (!delimiter) return null
+  if (doDelimiter === delimiter) {
+    return { end: start + delimiter.length, nextDoDelimiter: null }
+  }
+  const statementPrefix = maskedPrefix.slice(maskedPrefix.lastIndexOf(';') + 1)
+  if (!doDelimiter && /^\s*DO\b/i.test(statementPrefix)) {
+    return {
+      end: start + delimiter.length,
+      nextDoDelimiter: delimiter,
+    }
+  }
+  return {
+    end: dollarQuotedStringEnd(sql, start) ?? sql.length,
+    nextDoDelimiter: doDelimiter,
+  }
+}
+
 function maskCommentsAndStrings(sql: string): string {
   let result = ''
   let doDelimiter: string | null = null
   for (let index = 0; index < sql.length; ) {
-    if (doDelimiter && sql.startsWith(doDelimiter, index)) {
-      result += ' '.repeat(doDelimiter.length)
-      index += doDelimiter.length
-      doDelimiter = null
+    const dollarQuote = dollarQuoteStep(sql, index, result, doDelimiter)
+    if (dollarQuote) {
+      result += ' '.repeat(dollarQuote.end - index)
+      index = dollarQuote.end
+      doDelimiter = dollarQuote.nextDoDelimiter
       continue
-    }
-    if (sql[index] === '$') {
-      const delimiter = sql.slice(index).match(/^\$(?:[a-z_][a-z0-9_]*)?\$/i)?.[0]
-      if (delimiter) {
-        const statementPrefix = result.slice(result.lastIndexOf(';') + 1)
-        if (!doDelimiter && /^\s*DO\b/i.test(statementPrefix)) {
-          result += ' '.repeat(delimiter.length)
-          index += delimiter.length
-          doDelimiter = delimiter
-          continue
-        }
-        const end = dollarQuotedStringEnd(sql, index) ?? sql.length
-        result += ' '.repeat(end - index)
-        index = end
-        continue
-      }
     }
     const end = maskedSpanEnd(sql, index)
     if (end === null) {
@@ -97,6 +109,62 @@ function maskCommentsAndStrings(sql: string): string {
     }
   }
   return result
+}
+
+type AnalysisState = {
+  initiallyForced: Set<string>
+  forcedTables: Set<string>
+  knownForcedTables: Set<string>
+  findings: ForcedRlsDmlFinding[]
+  liftedDml: Map<string, Set<'DELETE' | 'INSERT' | 'UPDATE'>>
+  liftedDynamic: Map<'EXECUTE', Set<string>>
+}
+
+function applyMigrationEvent(event: MigrationEvent, state: AnalysisState): void {
+  if (event.kind === 'force') {
+    if (event.forced) {
+      state.forcedTables.add(event.table)
+      state.knownForcedTables.add(event.table)
+    } else state.forcedTables.delete(event.table)
+    return
+  }
+  if (event.kind === 'dynamic') {
+    if (state.forcedTables.size > 0) {
+      state.findings.push({
+        table: '*',
+        operation: event.operation,
+        reason: 'dynamic-sql-force-enabled',
+      })
+    } else if (state.knownForcedTables.size > 0) {
+      state.liftedDynamic.set(event.operation, new Set(state.knownForcedTables))
+    }
+    return
+  }
+  if (state.forcedTables.has(event.table)) {
+    state.findings.push({
+      table: event.table,
+      operation: event.operation,
+      reason: 'force-enabled',
+    })
+    return
+  }
+  if (!state.initiallyForced.has(event.table)) return
+  const operations = state.liftedDml.get(event.table) ?? new Set()
+  operations.add(event.operation)
+  state.liftedDml.set(event.table, operations)
+}
+
+function appendRestorationFindings(state: AnalysisState): void {
+  for (const [table, operations] of state.liftedDml) {
+    if (state.forcedTables.has(table)) continue
+    for (const operation of operations) {
+      state.findings.push({ table, operation, reason: 'force-not-restored' })
+    }
+  }
+  for (const [operation, tables] of state.liftedDynamic) {
+    if ([...tables].every((table) => state.forcedTables.has(table))) continue
+    state.findings.push({ table: '*', operation, reason: 'dynamic-sql-force-not-restored' })
+  }
 }
 
 function migrationEvents(sql: string): MigrationEvent[] {
@@ -114,51 +182,15 @@ export function analyzeForcedRlsDml(
   initiallyForcedTables: ReadonlySet<string>,
 ): ForcedRlsMigrationAnalysis {
   const initiallyForced = new Set([...initiallyForcedTables].map((table) => table.toLowerCase()))
-  const forcedTables = new Set(initiallyForced)
-  const knownForcedTables = new Set(initiallyForced)
-  const findings: ForcedRlsDmlFinding[] = []
-  const liftedDml = new Map<string, Set<'DELETE' | 'INSERT' | 'UPDATE'>>()
-  const liftedDynamic = new Map<'EXECUTE', Set<string>>()
-
-  for (const event of migrationEvents(sql)) {
-    if (event.kind === 'force') {
-      if (event.forced) {
-        forcedTables.add(event.table)
-        knownForcedTables.add(event.table)
-      }
-      else forcedTables.delete(event.table)
-      continue
-    }
-    if (event.kind === 'dynamic') {
-      if (forcedTables.size > 0) {
-        findings.push({
-          table: '*',
-          operation: event.operation,
-          reason: 'dynamic-sql-force-enabled',
-        })
-      } else if (knownForcedTables.size > 0) {
-        liftedDynamic.set(event.operation, new Set(knownForcedTables))
-      }
-      continue
-    }
-    if (forcedTables.has(event.table)) {
-      findings.push({ table: event.table, operation: event.operation, reason: 'force-enabled' })
-    } else if (initiallyForced.has(event.table)) {
-      const operations = liftedDml.get(event.table) ?? new Set()
-      operations.add(event.operation)
-      liftedDml.set(event.table, operations)
-    }
+  const state: AnalysisState = {
+    initiallyForced,
+    forcedTables: new Set(initiallyForced),
+    knownForcedTables: new Set(initiallyForced),
+    findings: [],
+    liftedDml: new Map(),
+    liftedDynamic: new Map(),
   }
-
-  for (const [table, operations] of liftedDml) {
-    if (forcedTables.has(table)) continue
-    for (const operation of operations) {
-      findings.push({ table, operation, reason: 'force-not-restored' })
-    }
-  }
-  for (const [operation, tables] of liftedDynamic) {
-    if ([...tables].every((table) => forcedTables.has(table))) continue
-    findings.push({ table: '*', operation, reason: 'dynamic-sql-force-not-restored' })
-  }
-  return { findings, forcedTables }
+  for (const event of migrationEvents(sql)) applyMigrationEvent(event, state)
+  appendRestorationFindings(state)
+  return { findings: state.findings, forcedTables: state.forcedTables }
 }

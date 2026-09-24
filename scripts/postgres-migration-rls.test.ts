@@ -37,9 +37,7 @@ test('masks a dollar-quoted fake FORCE lift but still rejects the real update', 
      UPDATE doc SET body = body;`,
     new Set(['doc']),
   )
-  expect(result.findings).toEqual([
-    { table: 'doc', operation: 'UPDATE', reason: 'force-enabled' },
-  ])
+  expect(result.findings).toEqual([{ table: 'doc', operation: 'UPDATE', reason: 'force-enabled' }])
 })
 
 test('accepts a read-only DO block while FORCE ROW LEVEL SECURITY is active', () => {
@@ -64,9 +62,7 @@ test('rejects DML inside a DO block on a forced table', () => {
      $migration$;`,
     new Set(['doc']),
   )
-  expect(result.findings).toEqual([
-    { table: 'doc', operation: 'UPDATE', reason: 'force-enabled' },
-  ])
+  expect(result.findings).toEqual([{ table: 'doc', operation: 'UPDATE', reason: 'force-enabled' }])
 })
 
 test('rejects EXECUTE inside a DO block while FORCE ROW LEVEL SECURITY is active', () => {
@@ -81,6 +77,14 @@ test('rejects EXECUTE inside a DO block while FORCE ROW LEVEL SECURITY is active
   expect(result.findings).toEqual([
     { table: '*', operation: 'EXECUTE', reason: 'dynamic-sql-force-enabled' },
   ])
+})
+
+test('accepts GRANT EXECUTE ON FUNCTION as a privilege statement', () => {
+  const result = analyzeForcedRlsDml(
+    'GRANT EXECUTE ON FUNCTION move_doc() TO record_actor;',
+    new Set(['doc']),
+  )
+  expect(result.findings).toEqual([])
 })
 
 test('accepts EXECUTE inside a CREATE FUNCTION body', () => {

@@ -8,6 +8,7 @@ const root = fileURLToPath(new URL('..', import.meta.url))
 const drizzleKit = join(root, 'node_modules', '.bin', 'drizzle-kit')
 const migrationsFolder = join(root, 'shared', 'record', 'migrations')
 const repairedMigration = '20260924202812_dev_918_doc_latest_revision_backfill'
+const executeKeyword = 'EXECUTE'
 
 type MigrationException = ForcedRlsDmlFinding & { migration: string; reasonText: string }
 
@@ -32,7 +33,7 @@ const APPLIED_MIGRATION_EXCEPTIONS: readonly MigrationException[] = [
     table: '*',
     operation: 'EXECUTE',
     reason: 'dynamic-sql-force-enabled',
-    reasonText: 'EXECUTEs a rewritten CREATE OR REPLACE FUNCTION definition: DDL, writes no rows',
+    reasonText: `${executeKeyword}s a rewritten CREATE OR REPLACE FUNCTION definition: DDL, writes no rows`,
   },
   {
     migration: '20260924180716_dev_906_doc_latest_revision',
