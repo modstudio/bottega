@@ -190,6 +190,7 @@ export function hostedDeliveryRepository(databaseUrl: string): DeliveryRepositor
 }
 
 const TEST_REFUSAL = 'report mailer refuses a real SES client under the test runner'
+const TEST_SEND_COOLDOWN_SECONDS = 60
 
 function required(environment: Environment, name: string) {
   const value = environment[name]
@@ -276,6 +277,15 @@ export async function sendHostedReportSubscriptionTest(
   }
   const sendId = newRecordId()
   await withHostedTenant(databaseUrl, caller, async (tx) => {
+    await tx`SELECT pg_advisory_xact_lock(hashtext(${subscriptionId}))`
+    const recent = rows<{ id: string }>(
+      await tx`SELECT id FROM hub_send WHERE subscription_id=${subscriptionId}::uuid AND test=1
+        AND created_at > now() - make_interval(secs => ${TEST_SEND_COOLDOWN_SECONDS})`,
+    )[0]
+    if (recent)
+      throw new Error(
+        `a test was sent for this subscription less than ${TEST_SEND_COOLDOWN_SECONDS} seconds ago; wait and try again`,
+      )
     await tx`INSERT INTO hub_send
       (id,space_id,at,"window",recipients,projects,items,status,error,test,created_at,machine,
        subscription_id,period_start,period_end)

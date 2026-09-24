@@ -103,6 +103,7 @@ function SubscriptionDialog({
     create.mutate(input)
   }
   const pending = create.isPending || update.isPending || remove.isPending || sendTest.isPending
+  const failure = create.error ?? update.error ?? remove.error
   return (
     <Dialog
       open
@@ -159,6 +160,7 @@ function SubscriptionDialog({
       }
     >
       <div className="grid gap-4">
+        {failure ? <p className="text-sm text-status-text">{failure.message}</p> : null}
         <Select
           label="Report covers"
           value={draft.scope}
