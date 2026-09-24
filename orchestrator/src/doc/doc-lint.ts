@@ -21,6 +21,7 @@ export type LintableDoc = {
 
 export type DocReferenceProject = {
   name: string
+  stack: string | null
   checkout: CanonLintInput | null
 }
 
@@ -65,14 +66,29 @@ function mergedReferenceInput(inputs: CanonLintInput[]): CanonLintInput {
 
 function referenceTargets(doc: LintableDoc): DocReferenceProject[] {
   if (!doc.referenceProjects) return []
-  if (doc.scope !== 'project') return doc.referenceProjects
-  return doc.referenceProjects.filter(({ name }) => name === doc.subject)
+  if (doc.scope === 'project') {
+    return doc.referenceProjects.filter(({ name }) => name === doc.subject)
+  }
+  if (doc.scope === 'stack') {
+    return doc.referenceProjects.filter(({ stack }) => stack === doc.subject)
+  }
+  return doc.referenceProjects
 }
 
 function referenceFindings(doc: LintableDoc): DocLintFinding[] {
   const targets = referenceTargets(doc)
+  if (doc.scope === 'stack' && !targets.some(({ checkout }) => checkout !== null)) {
+    return [
+      {
+        rule: 'doc/reference-unverifiable',
+        line: 1,
+        message: `no available registered project checkout for stack ${doc.subject}`,
+        remedy: 'register or restore a project checkout for the named stack',
+      },
+    ]
+  }
   const unavailable = targets.filter(({ checkout }) => checkout === null)
-  const findings: DocLintFinding[] = unavailable.map(({ name }) => ({
+  const findings: DocLintFinding[] = (doc.scope === 'stack' ? [] : unavailable).map(({ name }) => ({
     rule: 'doc/reference-unverifiable',
     line: 1,
     message: `registered project ${name} checkout is missing`,

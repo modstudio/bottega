@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'bun:test'
 import { PLATFORM_NAME } from '../../../shared/brand.ts'
 import type { CanonLintInput } from '../canon/canon-lint.ts'
-import { lintDoc, type DocReferenceProject } from './doc-lint.ts'
+import { type DocReferenceProject, lintDoc } from './doc-lint.ts'
 
 const checkout = (paths: string[]): CanonLintInput => ({
   files: [],
@@ -11,8 +11,12 @@ const checkout = (paths: string[]): CanonLintInput => ({
 })
 
 const referenceProjects: DocReferenceProject[] = [
-  { name: PLATFORM_NAME.toLowerCase(), checkout: checkout(['orchestrator/own.ts']) },
-  { name: 'another-project', checkout: checkout(['src/other.ts']) },
+  {
+    name: PLATFORM_NAME.toLowerCase(),
+    stack: 'bun',
+    checkout: checkout(['orchestrator/own.ts']),
+  },
+  { name: 'another-project', stack: 'other', checkout: checkout(['src/other.ts']) },
 ]
 
 const doc = (body: string, extra: Partial<Parameters<typeof lintDoc>[0]> = {}) => ({
@@ -62,9 +66,9 @@ describe('stored document lint', () => {
   })
 
   test('a project document does not resolve paths against another project', () => {
-    expect(
-      lintDoc(doc('See `src/other.ts`.', { referenceProjects })),
-    ).toEqual([expect.objectContaining({ rule: 'doc/reference-path' })])
+    expect(lintDoc(doc('See `src/other.ts`.', { referenceProjects }))).toEqual([
+      expect.objectContaining({ rule: 'doc/reference-path' }),
+    ])
   })
 
   test('a global document resolves paths against any registered project', () => {
@@ -78,13 +82,45 @@ describe('stored document lint', () => {
       lintDoc(
         doc('See `src/one.ts` and `src/two.ts`.', {
           subject: 'missing-project',
-          referenceProjects: [{ name: 'missing-project', checkout: null }],
+          referenceProjects: [{ name: 'missing-project', stack: 'missing', checkout: null }],
         }),
       ),
     ).toEqual([
       expect.objectContaining({
         rule: 'doc/reference-unverifiable',
         message: expect.stringContaining('missing-project'),
+      }),
+    ])
+  })
+
+  test('a stack document resolves against projects on its stack', () => {
+    expect(
+      lintDoc(
+        doc('See `src/other.ts`.', {
+          scope: 'stack',
+          subject: 'other',
+          referenceProjects,
+        }),
+      ),
+    ).toEqual([])
+  })
+
+  test('a stack with no available checkout produces one unverifiable finding', () => {
+    expect(
+      lintDoc(
+        doc('See `src/one.ts` and `src/two.ts`.', {
+          scope: 'stack',
+          subject: 'missing',
+          referenceProjects: [
+            { name: 'missing-one', stack: 'missing', checkout: null },
+            { name: 'other', stack: 'other', checkout: checkout(['src/other.ts']) },
+          ],
+        }),
+      ),
+    ).toEqual([
+      expect.objectContaining({
+        rule: 'doc/reference-unverifiable',
+        message: expect.stringContaining('missing'),
       }),
     ])
   })

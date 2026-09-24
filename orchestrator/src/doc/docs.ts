@@ -9,23 +9,18 @@
  * recovery. Canon docs are the source for the global and
  * project hydrated instruction tree and enter worker packs through the canon path.
  */
-import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from 'node:fs'
+import { mkdirSync, readdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { DOC_SCOPE_SUBJECT_KIND, DOC_SCOPES, type DocScope } from '../../../shared/docs.ts'
 import { AGENTS } from '../agent/agent-registry.ts'
-import { canonGitRoot, collectCanonLintInput } from '../canon/canon-files.ts'
+import { collectCanonLintInput } from '../canon/canon-files.ts'
 import { type CanonRow, composeCanonRows } from '../canon/canon-hydrate.ts'
 import { DEFAULT_PACK_BYTES } from '../canon/pack-budget.ts'
 import { db, nowIso, sessionId, writableDb, writeTransaction } from '../database/db.ts'
 import { JOBS } from '../jobs/jobs.ts'
-import { projectAt, projectByName, projects } from '../project/projects.ts'
+import { projectAt, projectByName } from '../project/projects.ts'
 import { recordApiClient } from '../record/record-api-client.ts'
-import {
-  type DocLintFinding,
-  type DocReferenceProject,
-  docHasRepositoryReferences,
-  lintDoc,
-} from './doc-lint.ts'
+import { lintStoredDoc } from './doc-lint-adapter.ts'
 import {
   consumeDocBody,
   type DocRevisionOp,
@@ -453,25 +448,11 @@ function assertDocWriteAllowed(input: DocWriteInput & { delivery: 'inject' | 'de
   assertCanonWriteAllowed(input)
 }
 
-export function collectDocReferenceProjects(): DocReferenceProject[] {
-  return projects().map((project) => ({
-    name: project.name,
-    checkout: existsSync(project.path) ? collectCanonLintInput(canonGitRoot(project.path)) : null,
-  }))
-}
-
-export function lintStoredDoc(
-  doc: Pick<Doc, 'scope' | 'subject' | 'slug' | 'body'>,
-  referenceProjects?: DocReferenceProject[],
-): DocLintFinding[] {
-  if (doc.scope === 'resume' || doc.scope === 'canon') return []
-  return lintDoc({
-    ...doc,
-    ...(docHasRepositoryReferences(doc.body)
-      ? { referenceProjects: referenceProjects ?? collectDocReferenceProjects() }
-      : {}),
-  })
-}
+export {
+  collectDocReferenceProjects,
+  lintStoredDoc,
+  storedDocsHaveRepositoryReferences,
+} from './doc-lint-adapter.ts'
 
 function assertDocLint(input: DocWriteInput): void {
   const findings = lintStoredDoc(input as Pick<Doc, 'scope' | 'subject' | 'slug' | 'body'>)

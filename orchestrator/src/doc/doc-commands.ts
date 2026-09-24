@@ -6,8 +6,8 @@
 import { readFileSync } from 'node:fs'
 import { checkDoc, repoRootForDoc } from '../canon/canon.ts'
 import {
-  consumeDoc,
   collectDocReferenceProjects,
+  consumeDoc,
   diffDocRevisions,
   docSubjects,
   exportDocs,
@@ -20,8 +20,8 @@ import {
   removeDoc,
   restoreDoc,
   setDoc,
+  storedDocsHaveRepositoryReferences,
 } from './docs.ts'
-import { docHasRepositoryReferences } from './doc-lint.ts'
 
 type DocFlags = { has(name: string): boolean; flag(name: string): string | undefined }
 type DocPresentation = {
@@ -38,7 +38,7 @@ function lintDocs(flags: DocFlags, presentation: DocPresentation): void {
   const scope = flags.flag('scope')
   const subject = flags.flag('subject') ?? null
   const rows = listDocs({ scope, ...(flags.has('subject') ? { subject } : {}) })
-  const referenceProjects = rows.some((doc) => docHasRepositoryReferences(doc.body))
+  const referenceProjects = storedDocsHaveRepositoryReferences(rows)
     ? collectDocReferenceProjects()
     : undefined
   const findings = rows.flatMap((doc) =>
