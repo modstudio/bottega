@@ -25,6 +25,8 @@ import {
 import { canonGitRoot, collectCanonLintInput, collectCanonTree } from './canon-files.ts'
 import { composeCanonRows, planHydration } from './canon-hydrate.ts'
 import { classifyCanonFile, introducedCanonFindings, lintCanon } from './canon-lint.ts'
+import { HARNESS_NAMES, type HarnessName, type LoadPlan, planHarnessLoad } from './canon-load.ts'
+import { gatherHarnessLoadFacts } from './canon-load-files.ts'
 import { decideCanonWrite } from './canon-write-gate.ts'
 import { canonEvalsReport, runCanonEvals } from './evals.ts'
 
@@ -420,8 +422,49 @@ async function canonCommand(
     return
   }
   throw new Error(
-    'unknown: orch canon. Try import | hydrate | list | check | diff | eval | evals | lint',
+    'unknown: orch canon. Try import | hydrate | list | check | diff | eval | evals | lint | load',
   )
+}
+
+function requestedHarness(flags: CanonFlags): HarnessName | undefined {
+  const value = flags.flag('harness')
+  if (!value) return undefined
+  if ((HARNESS_NAMES as readonly string[]).includes(value)) return value as HarnessName
+  throw new Error(`unknown --harness ${JSON.stringify(value)}; use claude, codex, or grok`)
+}
+
+function printLoadPlans(plans: LoadPlan[], log: (...values: unknown[]) => void): void {
+  for (const [index, plan] of plans.entries()) {
+    if (index) log('')
+    log(plan.harness)
+    const files = [...plan.files].sort((left, right) => {
+      const size = right.size - left.size
+      return size !== 0 ? size : left.path.localeCompare(right.path)
+    })
+    for (const file of files) {
+      log(`  ${file.size}  ${file.kind}  ${file.path}  ${file.reason}`)
+    }
+    if (plan.limit === null) log(`  ${plan.total} ${plan.unit}  ${plan.status}`)
+    else log(`  ${plan.total}/${plan.limit} ${plan.unit}  ${plan.status}`)
+    for (const row of plan.cut) log(`  cut ${row.path}  ${row.omitted} ${plan.unit} omitted`)
+  }
+}
+
+function canonLoadCommand(flags: CanonFlags, presentation: CanonPresentation): void {
+  const requested = flags.flag('cwd')
+  if (!requested) throw new Error('--cwd is required')
+  const cwd = resolve(requested)
+  const harness = requestedHarness(flags)
+  const loadFacts = gatherHarnessLoadFacts(cwd)
+  const names = harness ? [harness] : [...HARNESS_NAMES]
+  const plans = names.map((name) => planHarnessLoad(loadFacts, name))
+  if (flags.has('json')) {
+    presentation.log(
+      JSON.stringify({ cwd: loadFacts.directoryChain.at(-1) ?? cwd, harnesses: plans }),
+    )
+    return
+  }
+  printLoadPlans(plans, presentation.log)
 }
 
 async function canonStoreCommand(
@@ -441,6 +484,10 @@ export async function dispatchCanonCommand(
   flags: CanonFlags,
   presentation: CanonPresentation,
 ): Promise<void> {
+  if (argv[1] === 'load') {
+    canonLoadCommand(flags, presentation)
+    return
+  }
   if (await canonStoreCommand(argv[1], flags, presentation)) return
   await canonCommand(argv, flags, presentation)
 }

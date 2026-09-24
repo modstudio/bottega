@@ -9,9 +9,9 @@ export const CLAUDE_IMPORT_MAX_HOPS = 4
 export const HARNESS_NAMES = ['claude', 'codex', 'grok'] as const
 
 export type HarnessName = (typeof HARNESS_NAMES)[number]
-export type LoadKind = 'always-on' | 'conditional'
-export type LoadStatus = 'ok' | 'over' | 'truncated'
-export type LoadUnit = 'chars' | 'bytes'
+type LoadKind = 'always-on' | 'conditional'
+type LoadStatus = 'ok' | 'over' | 'truncated'
+type LoadUnit = 'chars' | 'bytes'
 
 export type CandidateFile = {
   path: string
@@ -27,7 +27,7 @@ export type HarnessLoadFacts = {
   env: { grokClaudeAgentsEnabled: boolean; grokClaudeRulesEnabled: boolean }
 }
 
-export type LoadedFile = {
+type LoadedFile = {
   path: string
   size: number
   kind: LoadKind
@@ -35,7 +35,7 @@ export type LoadedFile = {
   loadedSize?: number
 }
 
-export type LoadCut = { path: string; omitted: number }
+type LoadCut = { path: string; omitted: number }
 
 export type LoadPlan = {
   harness: HarnessName
@@ -77,15 +77,11 @@ function indexFiles(files: CandidateFile[]): Map<string, CandidateFile> {
   return byPath
 }
 
-function findAt(facts: HarnessLoadFacts, byPath: Map<string, CandidateFile>, dir: string, name: string) {
+function findAt(byPath: Map<string, CandidateFile>, dir: string, name: string) {
   return byPath.get(normalize(join(dir, name)))
 }
 
-function filesUnder(
-  files: CandidateFile[],
-  dir: string,
-  recursive: boolean,
-): CandidateFile[] {
+function filesUnder(files: CandidateFile[], dir: string, recursive: boolean): CandidateFile[] {
   const prefix = dir.endsWith(sep) ? dir : dir + sep
   return files.filter((file) => {
     if (!file.path.startsWith(prefix) || !file.path.endsWith('.md')) return false
@@ -207,13 +203,13 @@ function planClaudeLoad(facts: HarnessLoadFacts): LoadPlan {
     loaded: new Map(),
     unit: 'chars',
   }
-  const userClaude = findAt(facts, builder.byPath, facts.home.claude, 'CLAUDE.md')
+  const userClaude = findAt(builder.byPath, facts.home.claude, 'CLAUDE.md')
   if (userClaude) addClaudeInstruction(builder, userClaude, 'user CLAUDE.md')
   addRuleTree(builder, join(facts.home.claude, 'rules'), true, true, 'user')
   for (const dir of facts.directoryChain) {
-    const claude = findAt(facts, builder.byPath, dir, 'CLAUDE.md')
-    const local = findAt(facts, builder.byPath, dir, 'CLAUDE.local.md')
-    const agents = findAt(facts, builder.byPath, dir, 'AGENTS.md')
+    const claude = findAt(builder.byPath, dir, 'CLAUDE.md')
+    const local = findAt(builder.byPath, dir, 'CLAUDE.local.md')
+    const agents = findAt(builder.byPath, dir, 'AGENTS.md')
     if (claude) addClaudeInstruction(builder, claude, 'project CLAUDE.md')
     else if (agents) add(builder, agents, 'always-on', 'project AGENTS.md (no CLAUDE.md)')
     if (local) addClaudeInstruction(builder, local, 'project CLAUDE.local.md')
@@ -232,8 +228,7 @@ function planCodexProjectFiles(
   const files: CandidateFile[] = []
   const seen = new Set<string>()
   for (const dir of facts.directoryChain) {
-    const chosen =
-      findAt(facts, byPath, dir, 'AGENTS.override.md') ?? findAt(facts, byPath, dir, 'AGENTS.md')
+    const chosen = findAt(byPath, dir, 'AGENTS.override.md') ?? findAt(byPath, dir, 'AGENTS.md')
     if (!chosen) continue
     const id = identity(chosen)
     if (seen.has(id)) continue
@@ -277,8 +272,8 @@ function planCodexLoad(facts: HarnessLoadFacts): LoadPlan {
   const files: LoadedFile[] = []
   const cut: LoadCut[] = []
   const user =
-    findAt(facts, byPath, facts.home.codex, 'AGENTS.override.md') ??
-    findAt(facts, byPath, facts.home.codex, 'AGENTS.md')
+    findAt(byPath, facts.home.codex, 'AGENTS.override.md') ??
+    findAt(byPath, facts.home.codex, 'AGENTS.md')
   if (user) {
     const name = basename(user.path) === 'AGENTS.override.md' ? 'AGENTS.override.md' : 'AGENTS.md'
     files.push({
@@ -316,17 +311,17 @@ function planGrokLoad(facts: HarnessLoadFacts): LoadPlan {
     loaded: new Map(),
     unit: 'chars',
   }
-  const userGrok = findAt(facts, builder.byPath, facts.home.grok, 'AGENTS.md')
+  const userGrok = findAt(builder.byPath, facts.home.grok, 'AGENTS.md')
   if (userGrok) add(builder, userGrok, 'always-on', 'user AGENTS.md')
   if (facts.env.grokClaudeAgentsEnabled) {
     const userClaude =
-      findAt(facts, builder.byPath, facts.home.claude, 'Claude.md') ??
-      findAt(facts, builder.byPath, facts.home.claude, 'CLAUDE.md')
+      findAt(builder.byPath, facts.home.claude, 'Claude.md') ??
+      findAt(builder.byPath, facts.home.claude, 'CLAUDE.md')
     if (userClaude) add(builder, userClaude, 'always-on', 'user Claude-compat')
   }
   for (const dir of facts.directoryChain) {
     for (const name of GROK_INSTRUCTION_NAMES) {
-      const file = findAt(facts, builder.byPath, dir, name)
+      const file = findAt(builder.byPath, dir, name)
       if (file) add(builder, file, 'always-on', `project ${basename(file.path)}`)
     }
   }

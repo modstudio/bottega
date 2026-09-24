@@ -1,21 +1,15 @@
 // concern: canon-load-files
 /** Knows how to gather harness load facts from disk. Must not know stores, commands, runs, routing, or worktrees. */
-import {
-  lstatSync,
-  readdirSync,
-  readFileSync,
-  realpathSync,
-  statSync,
-} from 'node:fs'
+import { lstatSync, readdirSync, readFileSync, realpathSync, statSync } from 'node:fs'
 import { basename, join, relative, resolve, sep } from 'node:path'
+import { canonGitRoot } from './canon-files.ts'
 import {
   type CandidateFile,
-  claudeImportSpecs,
   CLAUDE_IMPORT_MAX_HOPS,
+  claudeImportSpecs,
   type HarnessLoadFacts,
   resolveClaudeImport,
 } from './canon-load.ts'
-import { canonGitRoot } from './canon-files.ts'
 
 const INSTRUCTION_NAMES = [
   'AGENTS.md',
@@ -29,7 +23,7 @@ const INSTRUCTION_NAMES = [
 
 type Seen = Set<string>
 
-function missing(path: string, error: unknown): boolean {
+function missing(error: unknown): boolean {
   return (error as NodeJS.ErrnoException).code === 'ENOENT'
 }
 
@@ -41,7 +35,7 @@ function realPathOf(path: string): string | null {
   }
 }
 
-function readCandidate(path: string, seen: Seen): CandidateFile | null {
+function readCandidate(path: string, seen: Seen, uniqueReal = true): CandidateFile | null {
   try {
     const stat = lstatSync(path)
     const symlink = stat.isSymbolicLink()
@@ -49,42 +43,57 @@ function readCandidate(path: string, seen: Seen): CandidateFile | null {
     if (!followed.isFile()) return null
     const realPath = realPathOf(path)
     if (!realPath) return null
-    if (seen.has(realPath)) return null
+    if (uniqueReal && seen.has(realPath)) return null
     seen.add(realPath)
     return { path: resolve(path), text: readFileSync(path, 'utf8'), symlink, realPath }
   } catch (error) {
-    if (missing(path, error)) return null
+    if (missing(error)) return null
     return null
   }
 }
 
-function pushCandidate(files: CandidateFile[], path: string, seen: Seen): void {
-  const file = readCandidate(path, seen)
+function pushCandidate(files: CandidateFile[], path: string, seen: Seen, uniqueReal = true): void {
+  const file = readCandidate(path, seen, uniqueReal)
   if (file) files.push(file)
 }
 
-function walkMarkdown(dir: string, recursive: boolean, seen: Seen, files: CandidateFile[]): void {
-  let entries: ReturnType<typeof readdirSync>
-  try {
-    entries = readdirSync(dir, { withFileTypes: true })
-  } catch {
-    return
-  }
+function claimWalkDir(dir: string, seen: Seen): boolean {
   const dirReal = realPathOf(dir)
-  if (dirReal) {
-    if (seen.has(`dir:${dirReal}`)) return
-    seen.add(`dir:${dirReal}`)
+  if (!dirReal) return true
+  if (seen.has(`dir:${dirReal}`)) return false
+  seen.add(`dir:${dirReal}`)
+  return true
+}
+
+function direntIsDirectory(
+  entry: { isDirectory(): boolean; isSymbolicLink(): boolean },
+  full: string,
+) {
+  if (entry.isDirectory()) return true
+  if (!entry.isSymbolicLink()) return false
+  try {
+    return statSync(full).isDirectory()
+  } catch {
+    return null
   }
+}
+
+function readDirents(dir: string) {
+  try {
+    return readdirSync(dir, { withFileTypes: true })
+  } catch {
+    return null
+  }
+}
+
+function walkMarkdown(dir: string, recursive: boolean, seen: Seen, files: CandidateFile[]): void {
+  const entries = readDirents(dir)
+  if (!entries) return
+  if (!claimWalkDir(dir, seen)) return
   for (const entry of entries) {
     const full = join(dir, entry.name)
-    let directory = entry.isDirectory()
-    if (entry.isSymbolicLink()) {
-      try {
-        directory = statSync(full).isDirectory()
-      } catch {
-        continue
-      }
-    }
+    const directory = direntIsDirectory(entry, full)
+    if (directory === null) continue
     if (directory) {
       if (recursive) walkMarkdown(full, true, seen, files)
       continue
@@ -109,18 +118,31 @@ function directoryChain(root: string, cwd: string): string[] {
   return chain
 }
 
-function collectNamedFiles(dirs: string[], names: string[], seen: Seen, files: CandidateFile[]): void {
+function collectNamedFiles(
+  dirs: string[],
+  names: string[],
+  seen: Seen,
+  files: CandidateFile[],
+): void {
   for (const dir of dirs) {
-    for (const name of names) pushCandidate(files, join(dir, name), seen)
+    for (const name of names) pushCandidate(files, join(dir, name), seen, false)
   }
 }
 
 function collectImportTargets(files: CandidateFile[], seen: Seen): void {
   const queue: { file: CandidateFile; depth: number }[] = []
+  const queued = new Set<string>()
+  const enqueue = (file: CandidateFile, depth: number) => {
+    const id = file.realPath || file.path
+    const key = `${id}:${depth}`
+    if (queued.has(key)) return
+    queued.add(key)
+    queue.push({ file, depth })
+  }
   for (const file of files) {
     const name = basename(file.path)
     if (name === 'CLAUDE.md' || name === 'CLAUDE.local.md' || name === 'Claude.md') {
-      queue.push({ file, depth: 0 })
+      enqueue(file, 0)
     }
   }
   for (const item of queue) {
@@ -131,13 +153,13 @@ function collectImportTargets(files: CandidateFile[], seen: Seen): void {
         (file) => file.path === targetPath || file.realPath === targetPath,
       )
       if (existing) {
-        queue.push({ file: existing, depth: item.depth + 1 })
+        enqueue(existing, item.depth + 1)
         continue
       }
       const added = readCandidate(targetPath, seen)
       if (!added) continue
       files.push(added)
-      queue.push({ file: added, depth: item.depth + 1 })
+      enqueue(added, item.depth + 1)
     }
   }
 }
@@ -154,16 +176,17 @@ export function gatherHarnessLoadFacts(
   try {
     resolvedCwd = realpathSync(resolve(cwd))
   } catch (error) {
-    if (missing(cwd, error)) throw new Error(`--cwd ${cwd} does not exist`)
+    if (missing(error)) throw new Error(`--cwd ${cwd} does not exist`)
     throw error
   }
   const root = realpathSync(canonGitRoot(resolvedCwd))
   const chain = directoryChain(root, resolvedCwd)
   const home = env.HOME
   if (!home) throw new Error('HOME is unset; set HOME to the user home directory')
-  const claudeHome = join(home, '.claude')
-  const grokHome = join(home, '.grok')
-  const codexHome = env.CODEX_HOME && env.CODEX_HOME.length > 0 ? env.CODEX_HOME : join(home, '.codex')
+  const claudeHome = resolve(home, '.claude')
+  const grokHome = resolve(home, '.grok')
+  const codexHome =
+    env.CODEX_HOME && env.CODEX_HOME.length > 0 ? resolve(env.CODEX_HOME) : resolve(home, '.codex')
   const files: CandidateFile[] = []
   const seen: Seen = new Set()
   collectNamedFiles([claudeHome], ['CLAUDE.md', 'Claude.md'], seen, files)
